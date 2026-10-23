@@ -67,14 +67,21 @@
 | --- | --- |
 | `web/src/App.tsx` | 会话读取、失效处理、公开看板访问控制与顶层页面组合 |
 | `web/src/app/routes.ts` | 解析 URL，复用看板/插件的严格路径解析及旧链接兼容 |
-| `web/src/app/navigation.ts` | 后台侧栏分组、名称与当前页面归属 |
+| `web/src/app/navigation.ts` | 后台侧栏的七个功能区、入口名称与当前页面归属，分组规则见[功能地图](product-map.md) |
 | `web/src/app/AdminPage.tsx` | 按解析结果选择页面，保留服务器筛选和组件重挂载边界 |
 | `web/src/app/AdminShell.tsx`、`Login.tsx` | 后台布局与登录表单 |
-| `web/src/pages/` | 服务器、系统设置、诊断、监控等核心管理页面 |
-| `web/src/plugins/` | 插件目录及 sing-box、DDNS、阿里云业务界面 |
-| `web/src/display/`、`statistics/` | 独立服务器看板与统计展示 |
+| `web/src/display/`、`statistics/` | 总览：服务器看板与统计报表 |
+| `web/src/servers/` | 服务器列表、接入与编辑、服务器详情分页（概况、资产与流量、Agent 与任务、插件）及其组成部分 |
+| `web/src/server-diagnostics/` | 服务器详情中的 IP 信息、节点验机与 TCP 诊断 |
+| `web/src/fleet/`、`operations/` | 运维工具；自动化与恢复 |
+| `web/src/monitoring/` | 告警事件、延迟检测、告警设置及其规则、Webhook 和渠道状态 |
+| `web/src/network-workbench/`、`network-configuration/` | 网络检测；网络配置 |
+| `web/src/plugins/` | 插件中心（目录与服务器启用）及 sing-box、DDNS、阿里云业务界面 |
+| `web/src/system/`、`control-center/` | 面板设置、账号安全；管理与安全及全局搜索、外观偏好 |
 | `web/src/api.ts`、`hooks.ts`、`components.tsx` | 共享请求、状态钩子和通用组件 |
 | `web/src/i18n.tsx` | 语言上下文、浏览器语言选择、管理员偏好同步及静态界面词典 |
+
+页面目录与功能区一一对应：新增页面放进它所属功能区的目录，跨功能区共用的数据模型和工具函数留在 `web/src/` 根目录（如 `probes.ts`、`server-assets.ts`）。页面标题与侧栏入口同名，眉题使用分组名，说明文字先讲“在这里做什么”。
 
 后台分区导航统一使用 `styles.css` 中的 `.ui-tab-list`，按钮通过 `aria-pressed`、页面链接通过 `aria-current="page"` 标记当前项；沿用“管理与安全”的浅底、细边框、6px 圆角与绿色选中态。`.button`、`.ui-button`、`.text-button`、`.icon-button` 和 `.back-link` 共用边框、圆角、悬停、禁用和键盘焦点规则，提供普通、紧凑与图标三种尺寸；主操作与危险操作保留颜色语义。文字操作也使用紧凑描边按钮，按钮组允许换行。页面样式只保留分区间距，不再单独定义导航按钮颜色、尺寸或选中轮廓。
 
@@ -89,4 +96,4 @@ Hash URL 是书签与兼容入口。新增页面要同时考虑路由、导航�
 - 使用文档放在 `docs/`，新的设计决策追加 `docs/adr/`，验证记录放在 `docs/acceptance/` 并标明源码和未验证范围；更新相应索引。
 - 部署模板及生成入口有摘要、签名和旧版本依赖；通过既有生成工具更新，不按普通重复文件删除。生产数据、真实凭据和临时日志不进入仓库。
 
-本轮只整理代码组合入口与文档导航；现有脚本、迁移、安装入口和历史验收记录继续使用原路径。
+本轮只整理代码组合入口与文档导航；现有脚本、迁移、安装入口和历史验收记录继续使用原路径。2026-10-24 前端 `pages/` 按功能区拆分目录，见 [ADR 0086](adr/0086-product-map-and-navigation.md)。

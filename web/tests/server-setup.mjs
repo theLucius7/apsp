@@ -283,7 +283,7 @@ try {
     assert.equal(await catalogLink.getAttribute('href'), '#/plugins/catalog')
     await catalogLink.click()
     await dialog.waitFor({ state: 'hidden' })
-    await page.getByRole('heading', { name: '插件目录', exact: true }).waitFor()
+    await page.getByRole('heading', { name: '插件中心', exact: true }).waitFor()
     await page.getByRole('heading', { name: '服务器 Agent', exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: /导入|安装/ }).count(), 0, 'The retained catalogue only displays available packages')
     assert.equal(enrollments.length, previousEnrollmentCount, 'Opening the catalogue does not issue an enrollment token')

@@ -32,16 +32,17 @@ function lazyPage<P extends object>(load: () => Promise<{ default: ComponentType
 }
 
 // Each administrator page loads on first visit, keeping the initial bundle small.
-const Servers = lazyPage(() => import('../pages/Servers'))
-const ServerDetail = lazyPage(() => import('../pages/ServerDetail'))
-const ServerToolPage = lazyPage(() => import('../pages/ServerToolPage'))
-const Plugins = lazyPage(() => import('../pages/Plugins'))
-const PluginCatalog = lazyPage(() => import('../pages/PluginCatalog'))
-const Security = lazyPage(() => import('../pages/Security'))
-const Settings = lazyPage(() => import('../pages/Settings'))
-const Notifications = lazyPage(() => import('../pages/Notifications'))
-const LatencyTasks = lazyPage(() => import('../pages/LatencyTasks'))
-const Statistics = lazyPage(() => import('../pages/Statistics'))
+const Servers = lazyPage(() => import('../servers/Servers'))
+const ServerDetail = lazyPage(() => import('../servers/ServerDetail'))
+const ServerToolPage = lazyPage(() => import('../servers/ServerToolPage'))
+const PluginEnablement = lazyPage(() => import('../plugins/PluginEnablement'))
+const PluginCatalog = lazyPage(() => import('../plugins/PluginCatalog'))
+const Security = lazyPage(() => import('../system/Security'))
+const Settings = lazyPage(() => import('../system/Settings'))
+const AlertSettings = lazyPage(() => import('../monitoring/AlertSettings'))
+const Notifications = lazyPage(() => import('../monitoring/Notifications'))
+const LatencyTasks = lazyPage(() => import('../monitoring/LatencyTasks'))
+const Statistics = lazyPage(() => import('../statistics/Statistics'))
 const SingboxOverview = lazyPage(() => import('../plugins/singbox/Overview'))
 const Nodes = lazyPage(() => import('../plugins/singbox/Nodes'))
 const ProxyUsers = lazyPage(() => import('../plugins/singbox/ProxyUsers'))
@@ -67,9 +68,8 @@ function page(route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' }>):
       if (section === 'network-configuration') return <NetworkConfiguration key={serverId} serverId={serverId} />
       if (section === 'operations') return <OperationsPage key={serverId} selectedServerId={serverId} />
       if (section === 'ddns') return <Ddns key={serverId} serverId={serverId} />
-      if (section === 'plugins') return <Plugins key={serverId} serverId={serverId} />
-      if (section) return <ServerToolPage key={`${serverId}/${section}`} id={serverId} section={section} />
-      return <ServerDetail key={serverId} id={serverId} />
+      if (section === 'ip-info' || section === 'node-quality' || section === 'tcp-quality') return <ServerToolPage key={`${serverId}/${section}`} id={serverId} section={section} />
+      return <ServerDetail key={serverId} id={serverId} section={section} />
     }
     case 'fleet': return <FleetOperations />
     case 'network-workbench': return <NetworkWorkbench />
@@ -93,15 +93,16 @@ function page(route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' }>):
     />
     case 'proxy-users': return <ProxyUsers />
     case 'groups': return <Groups />
-    case 'plugins': return <Plugins />
+    case 'plugins': return <PluginEnablement />
     case 'catalog': return <PluginCatalog />
     case 'settings': return <Settings />
+    case 'alert-settings': return <AlertSettings />
     case 'notifications': return <Notifications />
     case 'security': return <Security />
     case 'not-found': return <div className="not-found">
       <h1>这个页面不存在</h1>
-      <p>从左侧导航选择一个页面，或回到服务器列表。</p>
-      <a className="button button-primary" href="#/servers">返回服务器</a>
+      <p>链接可能已失效。从左侧导航选择一个页面，或回到服务器列表。</p>
+      <a className="button button-primary" href="#/servers">返回服务器列表</a>
     </div>
   }
 }

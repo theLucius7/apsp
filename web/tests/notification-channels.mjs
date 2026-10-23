@@ -46,7 +46,7 @@ try {
       errors.push(`${method} ${path}`);return reply({error:'Unexpected API'},404)
     })
     await installControlCenterFixtures(page)
-    await page.goto(`http://127.0.0.1:${server.address().port}/#/system/settings`)
+    await page.goto(`http://127.0.0.1:${server.address().port}/#/monitoring/settings`)
     const panel=page.locator('section').filter({has:page.getByRole('heading',{name:/^Webhook 通知/})})
     await panel.getByLabel('通知服务预设',{exact:false}).waitFor()
     assert.equal(await panel.getByLabel('通知服务预设',{exact:false}).locator('option').count(),9)

@@ -2,7 +2,6 @@ import { Badge, Empty, ErrorNotice, Icon, Loading } from '../../components'
 import { navigate, time } from '../../format'
 import { resourceWriteError, useResource } from '../../hooks'
 import type { Deployment, Node, PluginServer, Server } from '../../types'
-import { installationView, sourceLabel } from './Settings'
 import RuntimeOperations from './RuntimeOperations'
 
 export default function ServerBusiness({ server }: { server: Server }) {
@@ -12,10 +11,10 @@ export default function ServerBusiness({ server }: { server: Server }) {
   const nodes = useResource<Node[]>(enabled ? '/api/plugins/sing-box/nodes' : null)
   const status = deployment.data?.status
   const refresh = () => { metadata.reload(); deployment.reload(); nodes.reload() }
-  if (metadata.error) return <ErrorNotice message={metadata.error} retry={metadata.reload} />
-  if (!enabled) return null
-  const installation = installationView(metadata.data!)
-  return <div data-plugin="sing-box"><div className="notice"><div><strong>sing-box 插件</strong> <Badge tone={installation.tone}>{installation.label}</Badge><p>{installation.reason}</p><p>{sourceLabel(metadata.data?.source)}{server.static_info.runtime_version && ` · 运行时 ${server.static_info.runtime_version}`}</p><div className="row-actions"><a className="text-button" href={`#/plugins/sing-box/nodes?server=${server.id}`}>创建代理节点</a><a className="text-button" href="#/plugins/sing-box/users">管理代理用户</a><a className="text-button" href="#/plugins/sing-box/nodes?kind=chains">创建链路</a></div></div></div>
+  // The plugin settings beside this view read the same server and report its failures.
+  if (metadata.error || !enabled) return null
+  // Installation state and enablement source are shown by the plugin settings beside this view.
+  return <div data-plugin="sing-box"><div className="notice"><div><strong>sing-box 代理业务</strong><p>{server.static_info.runtime_version ? `运行时 ${server.static_info.runtime_version}` : '运行时版本尚未上报'}</p><div className="row-actions"><a className="text-button" href={`#/plugins/sing-box/nodes?server=${server.id}`}>创建代理节点</a><a className="text-button" href="#/plugins/sing-box/users">管理代理用户</a><a className="text-button" href="#/plugins/sing-box/nodes?kind=chains">创建链路</a></div></div></div>
     <ErrorNotice message={deployment.error || nodes.error} retry={refresh} />
 <section className="panel"><div className="panel-heading"><h2>配置部署</h2>{status && <Badge tone={status.healthy ? 'good' : status.applied_rev ? 'bad' : 'warm'}>{status.healthy ? '当前配置健康' : status.applied_rev ? '健康检查未通过' : '等待应用'}</Badge>}</div>{deployment.loading && !deployment.data ? <Loading /> : !status ? <Empty icon="nodes" title="还没有发布记录" description="启用后先安装空运行时；新增有效节点须在下方运维入口采集并确认完整预检。尚无运行时账号时可明确首次安装空运行时，安装回执后再重新预检。" /> : <div className="panel-body"><div className="revision-grid"><div><span>目标版本</span><strong><small>版本</small> {status.target_rev}</strong></div><Icon name="arrow" /><div><span>已应用版本</span><strong><small>版本</small> {status.applied_rev || '—'}</strong></div></div>{status.last_error && <div className="notice notice-error"><div><strong>最近一次部署失败</strong><p className="break-all">{status.last_error}</p>{status.healthy && <p>旧配置仍健康，节点继续使用上次成功应用的版本。</p>}</div></div>}{status.target_rev > status.applied_rev && !status.last_error && <div className="notice">正在等待设备应用最新配置。设备离线时会在重连后继续。</div>}<div className="detail-caption">最后更新 {time(status.updated_at)}</div></div>}</section>
     <section className="panel"><div className="panel-body"><RuntimeOperations serverId={server.id} status={status} deploymentError={() => resourceWriteError(metadata, deployment)} getStatus={() => deployment.getCurrent()?.status} /></div></section>

@@ -23,6 +23,15 @@ const paths: Record<string, ReactNode> = {
   down: <path d="M12 3v18m-6-6 6 6 6-6" />,
   up: <path d="M12 21V3m-6 6 6-6 6 6" />,
   lock: <><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2" /></>,
+  grid: <><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></>,
+  chart: <path d="M3 21h18M6 17v-6m6 6V5m6 12V9" />,
+  terminal: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="m7 9 3 3-3 3m5 0h5" /></>,
+  clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  bell: <path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4l2-2Zm4 4a2 2 0 0 0 4 0" />,
+  sliders: <><path d="M4 6h9m4 0h3M4 12h3m4 0h9M4 18h11m4 0h1" /><circle cx="15" cy="6" r="2" /><circle cx="9" cy="12" r="2" /><circle cx="17" cy="18" r="2" /></>,
+  globe: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9Z" /></>,
+  cloud: <path d="M7 18a4 4 0 0 1-.5-8A6 6 0 0 1 18 9.5a4.3 4.3 0 0 1-.5 8.5H7Z" />,
+  shield: <path d="m12 3-8 3v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6l-8-3Z" />,
 }
 export function Icon({ name, size = 20 }: { name: string; size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] ?? paths.box}</svg> }
 export function Brand() { const { t } = useI18n(); return <div className="brand"><span className="brand-mark"><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><circle cx="16" cy="16" r="10.5" stroke="currentColor" opacity=".5" /><path d="m21 8-3 11-7 5 3-11 7-5Z" fill="currentColor" /><path d="M16 1v4m0 22v4M1 16h4m22 0h4" stroke="currentColor" /></svg></span><div><strong>{t('apsp')}</strong><small>{t('服务器与节点')}</small></div></div> }

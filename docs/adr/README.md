@@ -52,7 +52,7 @@
 - [ADR 0045：混合链路的执行与验证](0045-mixed-path-execution.md)
 - [ADR 0054：链路写入时复核资源快照与原选择](0054-chain-resource-snapshot-writes.md)
 - [ADR 0083：代理流量按天汇总与数据保留](0083-usage-daily-rollup-and-retention.md)
-- [ADR 0084：管理界面重排、节点页分区与离线时间](0084-admin-layout-and-node-sections.md)
+- [ADR 0084：管理界面重排、节点页分区与离线时间](0084-admin-layout-and-node-sections.md)（导航分组已由 ADR 0086 取代）
 - [ADR 0085：重新架构：插件边界、订阅来源与链路模型（已接受，分阶段实施）](0085-rearchitecture-plugins-sources-chains.md)
 
 ## 诊断、IP 查询与执行保护
@@ -117,3 +117,7 @@
 - [0080：sing-box 运维业务流程](0080-singbox-operations-workflows.md)
 - [0081：批量运维与独立恢复](0081-operations-recovery-and-cloud-ledger.md)
 - [0082：管理员权限、凭据与操作上下文](0082-control-center.md)
+
+## 产品定位与界面（2026-10-24）
+
+- [ADR 0086：产品定位、功能分区与管理界面导航](0086-product-map-and-navigation.md)：七个功能区、服务器详情分页、设置拆分与前端目录；定位与归类规则见[功能地图](../product-map.md)
