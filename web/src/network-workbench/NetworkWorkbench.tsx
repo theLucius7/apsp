@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, errorMessage } from '../api'
+import { PageHeader } from '../components'
 import './workbench.css'
 import FormDraftToolbar from '../control-center/FormDraftToolbar'
 import PathView from './PathView'
@@ -107,7 +108,7 @@ export default function NetworkWorkbench({ servers: suppliedServers, initialServ
   const numeric = typeof value === 'number' || ['server_id', 'reverse_server'].includes(key)
   return <label key={key}>{fieldLabels[key] ?? key}<input type={numeric ? 'number' : 'text'} value={value == null ? '' : String(value)} onChange={e => update(e.target.value === '' && value === null ? null : numeric ? Number(e.target.value) : e.target.value)} /></label>
  }
- return <section className="network-workbench"><h2>网络检测与验机</h2><p>每个结果保留“从哪里测到哪里”、工具版本、参数和清理证据。完整NodeQuality仍受现有门禁约束。</p>
+ return <section className="network-workbench"><PageHeader eyebrow="网络" title="网络检测" description="从面板或指定服务器测试连通性、路由、吞吐、硬件与 IP 质量。每个结果都记录从哪里测到哪里、工具版本和参数；完整 NodeQuality 验机仍受安全门禁约束。" />
  {error && <p role="alert" className="error">{error}</p>}{message && <p role="status">{message}</p>}
  {tab === 'plan' && serverListMessage && <p role="status">{serverListMessage}</p>}
  <nav className="nw-tabs ui-tab-list" aria-label="工作台视图">{[['plan', '测试方案'], ['targets', '授权目标'], ['tools', '工具与许可'], ['providers', 'IP资料来源'], ['reports', '任务与报告']].map(([value, text]) => <button type="button" key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>{text}</button>)}</nav>

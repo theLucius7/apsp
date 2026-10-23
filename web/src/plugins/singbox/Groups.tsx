@@ -65,7 +65,7 @@ export default function Groups({ initialTab = 'policy-groups' }: { initialTab?: 
     }, () => { setEditor(null); refresh() })
   }
   return <>
-    <PageHeader eyebrow="sing-box 插件" title="策略与套餐" description="把节点与链路整理成策略组，用套餐设定流量与有效期，在代理用户页面分别分配。"><Refresh onClick={refresh} /><a className="button button-secondary" href="#/plugins/sing-box/nodes">管理代理节点</a><a className="button button-secondary" href="#/plugins/sing-box/users">分配给代理用户</a></PageHeader>
+    <PageHeader eyebrow="代理服务" title="策略与套餐" description="策略组决定用户能用哪些节点与链路，套餐决定流量额度和有效期。两者在「代理用户」中分别分配。"><Refresh onClick={refresh} /><a className="button button-secondary" href="#/plugins/sing-box/nodes">管理代理节点</a><a className="button button-secondary" href="#/plugins/sing-box/users">分配给代理用户</a></PageHeader>
     <div className="group-tabs ui-tab-list" role="group" aria-label="管理内容">{(Object.keys(labels) as Tab[]).map(key => <button type="button" key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{labels[key]}</button>)}</div>
     <ErrorNotice message={policies.error || packages.error || flat.error || resources.error} retry={refresh} />
     <section className="panel">

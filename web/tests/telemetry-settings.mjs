@@ -75,7 +75,7 @@ try {
     await policy.getByRole('status').waitFor()
     assert.equal(retention,90)
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/servers/1`)
+    await page.goto(`${origin}/#/servers/1/agent`)
     const settings=page.locator('section.panel').filter({has:page.getByRole('heading',{name:'数据上报与保存',exact:true})})
     const interval=settings.getByLabel('历史批量写入间隔（秒）',{exact:false})
     await interval.waitFor()
