@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
-import { Confirm, ErrorNotice, Field, FormDialog, Icon, PageHeader, Refresh, RefreshNotice, Stat } from '../../components'
+import { Confirm, ErrorNotice, Field, FormDialog, PageHeader, Refresh, RefreshNotice, Stat } from '../../components'
 import { bytes } from '../../format'
 import { resourceWriteError, useAction, useRefreshNotice, useResource, useResourceGroup } from '../../hooks'
 import type { Node, PluginServer, Usage } from '../../types'
@@ -21,7 +21,14 @@ import { validCatalog } from './catalog'
 import { sourceMigrationPath, validSourceMigration } from './orderedSourceTypes'
 import { nodeHash } from './nodeRoute'
 import type { NodeView } from './nodeRoute'
-import './nodes.css'
+
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
+import { ActivityIcon, CheckIcon, PlusIcon, ServerIcon, WaypointsIcon } from 'lucide-react'
+import { SegmentedLink, SegmentedNav } from '@/components/segmented'
+import { Notice } from '@/components/panel'
 
 const root = '/api/plugins/sing-box'
 const views: readonly { key: NodeView; label: string }[] = [
@@ -185,38 +192,38 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     entryServerIds: servers.getCurrent()?.filter(server => server.enabled && (!currentFilter.current || server.id === Number(currentFilter.current))).map(server => server.id) ?? [],
   })
 
-  return <div className="nodes-page" onInvalidCapture={event => {
+  return <div data-slot="nodes-page" className="min-w-0" onInvalidCapture={event => {
     if (!(event.target instanceof HTMLElement)) return
     const details = event.target.closest('details')
     if (details) details.open = true
   }}>
     <PageHeader eyebrow="代理服务" title="代理节点" description="管理你服务器上的节点、由多段组成的链路，以及从订阅来源导入的外部节点。">
       <Refresh onClick={refresh} />
-      <button className="button button-primary" disabled={!canCreate} onClick={() => edit('new')}><Icon name="plus" size={18} />创建节点</button>
-      <button className="button button-secondary" disabled={!canCreateChain || creatingChain} onClick={openChainEditor}>创建链路</button>
+      <Button disabled={!canCreate} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />创建节点</Button>
+      <Button variant="outline" disabled={!canCreateChain || creatingChain} onClick={openChainEditor}>创建链路</Button>
     </PageHeader>
-    <div className="stats-grid stats-four">
-      <Stat icon="nodes" label="代理资源" value={resources.data && ordered.data ? inventoryCount : '—'} note="直连节点与独立链路入口" />
-      <Stat icon="server" label="所在服务器" value={resources.data ? new Set(all.map(node => node.server_id)).size : '—'} note="每台服务器运行一份完整配置" />
-      <Stat icon="nodes" label="物理监听数" value={nodes.data ? nodes.data.length : '—'} note="受管节点监听，不重复计算链路引用" />
-      <Stat icon="activity" label="累计代理流量" value={usage.data ? bytes(usage.data.total) : '—'} note="含已删除节点的历史用量" />
+    <div className="mb-6 grid gap-3 max-sm:gap-2 grid-cols-2 lg:grid-cols-4">
+      <Stat icon={WaypointsIcon} label="代理资源" value={resources.data && ordered.data ? inventoryCount : '—'} note="直连节点与独立链路入口" />
+      <Stat icon={ServerIcon} label="所在服务器" value={resources.data ? new Set(all.map(node => node.server_id)).size : '—'} note="每台服务器运行一份完整配置" />
+      <Stat icon={WaypointsIcon} label="物理监听数" value={nodes.data ? nodes.data.length : '—'} note="受管节点监听，不重复计算链路引用" />
+      <Stat icon={ActivityIcon} label="累计代理流量" value={usage.data ? bytes(usage.data.total) : '—'} note="含已删除节点的历史用量" />
     </div>
     <ErrorNotice message={resources.error || nodes.error || servers.error || usage.error} retry={refresh} />
     {refreshNotice.visible && <RefreshNotice />}
-    {saved !== null && <div className="notice" role="status"><span>目标已保存；新增有效监听或部署配置变化须完整预检确认，实际应用等待设备回执。</span><button className="text-button" onClick={() => setDeployment(saved)}>查看差异、完整预检与发布状态</button></div>}
-    {!!createdChains.length && <div className="notice" role="status"><span>已保存 {createdChains.length} 条链路，正在等待依赖与路径验证。</span><a href={resourceLink({ kind: 'chain', id: createdChains[0] })}>查看链路详情</a></div>}
+    {saved !== null && <Notice role="status"><span>目标已保存；新增有效监听或部署配置变化须完整预检确认，实际应用等待设备回执。</span><Button variant="ghost" size="sm" onClick={() => setDeployment(saved)}>查看差异、完整预检与发布状态</Button></Notice>}
+    {!!createdChains.length && <Notice role="status"><span>已保存 {createdChains.length} 条链路，正在等待依赖与路径验证。</span><a className="text-primary underline-offset-4 hover:underline" href={resourceLink({ kind: 'chain', id: createdChains[0] })}>查看链路详情</a></Notice>}
     {creatingChain && <ChainEditor writeError={() => writeError()} getCurrent={chainCurrent} nodes={nodes.data ?? []} resources={all} sourcesMigrated={migrated}
       servers={enabledServers.filter(server => !filter || server.id === Number(filter))} availableServers={enabledServers}
       onClose={() => setCreatingChain(false)} onSaved={receipt => { setCreatingChain(false); setCreatedChains(receipt.chain_ids); refresh() }} />}
-    <nav className="node-views ui-tab-list" aria-label="节点视图">
-      {views.map(item => <a key={item.key} href={routeHash(item.key)} className={activeView === item.key ? 'active' : ''}
+    <SegmentedNav className="mt-1 mb-5" aria-label="节点视图">
+      {views.map(item => <SegmentedLink key={item.key} href={routeHash(item.key)}
         aria-current={activeView === item.key ? 'page' : undefined}>
         {item.label}
-        {item.key === 'catalog' && catalogCount !== undefined && <span className="count" aria-hidden="true">{catalogCount}</span>}
-        {item.key === 'chains' && chainCount !== undefined && <span className="count" aria-hidden="true">{chainCount}</span>}
-      </a>)}
-    </nav>
-    <div className="node-view" hidden={activeView !== 'catalog'}>
+        {item.key === 'catalog' && catalogCount !== undefined && <span className="bg-muted text-muted-foreground min-w-5 rounded px-1.5 text-center text-xs font-medium tabular-nums" aria-hidden="true">{catalogCount}</span>}
+        {item.key === 'chains' && chainCount !== undefined && <span className="bg-muted text-muted-foreground min-w-5 rounded px-1.5 text-center text-xs font-medium tabular-nums" aria-hidden="true">{chainCount}</span>}
+      </SegmentedLink>)}
+    </SegmentedNav>
+    <div hidden={activeView !== 'catalog'}>
       <NodeCatalog query={catalog} nodes={nodes.data ?? []} servers={enabledServers} getServers={() => servers.getCurrent()} usage={usage.data ?? undefined}
         server={filter} getServer={() => currentFilter.current} onServer={value => { currentFilter.current = value; setFilter(value) }}
         kind={kind} onKind={setKind}
@@ -224,20 +231,20 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
         metadataTarget={catalogMetadata} onMetadataOpened={() => setCatalogMetadata(null)} initialServerRole={initialServerRole}
         onChanged={refresh} managedWriteError={() => writeError() || resourceWriteError(ordered)}
         onEdit={edit} onDelete={confirmDelete} onDeployment={setDeployment} />
-      <div className="notice quiet-notice"><Icon name="check" size={18} /><div><strong>目标配置与发布</strong><p>保存后等待 5 秒合并处理。新增有效监听或协议、TLS、服务设置变化须先在部署进度内查看差异、采集并确认完整预检；原监听内凭据更新、撤销和停用继续自动处理。未授权给任何用户的节点不会监听端口；订阅只包含设备已成功应用的配置。</p></div></div>
+      <Notice tone="quiet"><CheckIcon className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden="true" /><div><strong className="font-medium">目标配置与发布</strong><p className="text-muted-foreground">保存后等待 5 秒合并处理。新增有效监听或协议、TLS、服务设置变化须先在部署进度内查看差异、采集并确认完整预检；原监听内凭据更新、撤销和停用继续自动处理。未授权给任何用户的节点不会监听端口；订阅只包含设备已成功应用的配置。</p></div></Notice>
     </div>
-    <div className="node-view" hidden={activeView !== 'chains'}>
+    <div hidden={activeView !== 'chains'}>
       <OrderedResources resourcesQuery={orderedQuery} nodesQuery={nodes} serversQuery={servers} usage={usage} hideFlatRows
         onOrganize={resource => { setCatalogMetadata({ kind: resource.kind, id: resource.id }); window.location.hash = routeHash('catalog').slice(1) }}
         flatKeys={all.map(resource => `${resource.kind}:${resource.id}`)} selected={selectedOrdered} onCloseSelected={closeDetail}
         filter={filter} initialServerRole={initialServerRole} getServerId={() => currentFilter.current ? Number(currentFilter.current) : undefined}
         onEdit={edit} onChanged={refresh} onAddSource={() => { setSourceCreate(value => value + 1); window.location.hash = routeHash('sources').slice(1) }} createRequest={orderedCreate} />
     </div>
-    <div className="node-view" hidden={activeView !== 'sources'}>
+    <div hidden={activeView !== 'sources'}>
       {migrationQuery.error && <ErrorNotice message={`订阅来源迁移状态读取失败：${migrationQuery.error}`} retry={migrationQuery.reload} />}
       {migrated ? <>
         <Sources createRequest={sourceCreate} migrated onCatalogChange={refresh} />
-        <details className="source-archive"><summary>数字编号来源（已迁移，只读）</summary>{!creatingChain && <SubscriptionSources migrated onChange={refresh} />}</details>
+        <details data-slot="source-archive" className="mt-6"><summary className="text-muted-foreground cursor-pointer py-3 font-semibold">数字编号来源（已迁移，只读）</summary>{!creatingChain && <SubscriptionSources migrated onChange={refresh} />}</details>
       </> : <>
         {!creatingChain && <SubscriptionSources migrated={migrated} onChange={refresh} />}
         <Sources createRequest={sourceCreate} migrated={migrated} onCatalogChange={refresh} />
@@ -247,33 +254,33 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
       onEdit={node => { closeDetail(); edit(node) }}
       onDelete={resource => { if (!refreshNotice.allows(writeError(resource))) return; closeDetail(); confirmDelete(resource) }}
       onDeployment={id => { closeDetail(); setDeployment(id) }} />}
-    {editor && <FormDialog wide className="node-editor" title={editor === 'new' ? '创建节点' : '编辑节点'} onClose={() => setEditor(null)} onSubmit={submit}
+    {editor && <FormDialog wide slot="node-editor" title={editor === 'new' ? '创建节点' : '编辑节点'} onClose={() => setEditor(null)} onSubmit={submit}
       busy={action.busy} submitDisabled={Boolean(editorError)} error={editorError || action.error} submitLabel={editor === 'new' ? '创建目标节点' : '保存目标配置'}>
-      <h3>基本信息</h3>
-      <div className="node-fields-grid">
-        <Field label="节点名称"><input name="name" required maxLength={128} defaultValue={editor === 'new' ? '' : editor.name} placeholder="例如：香港 · 直连" autoComplete="off" /></Field>
-        {editor === 'new' && <Field label="所属服务器"><select name="server_id" required value={draftServer} onChange={event => setDraftServer(event.target.value)}>
+      <h3 className="mt-1.5 mb-4 text-sm font-semibold">基本信息</h3>
+      <div className="grid gap-x-5 sm:grid-cols-2">
+        <Field label="节点名称"><Input name="name" required maxLength={128} defaultValue={editor === 'new' ? '' : editor.name} placeholder="例如：香港 · 直连" autoComplete="off" /></Field>
+        {editor === 'new' && <Field label="所属服务器"><NativeSelect className="w-full" name="server_id" required value={draftServer} onChange={event => setDraftServer(event.target.value)}>
           {draftServer && !enabledServers.some(server => String(server.id) === draftServer) && <option value={draftServer}>已选服务器已不存在或未启用（原选择保留）</option>}
           {enabledServers.map(server => <option key={server.id} value={server.id}>{server.name}{server.online ? ' · 在线' : ' · 离线'}</option>)}
-        </select></Field>}
-        <label className="node-switch"><input name="enabled" type="checkbox" defaultChecked={editor === 'new' || editor.enabled !== false} /><span>启用节点<small>停用保留授权与历史流量。</small></span></label>
+        </NativeSelect></Field>}
+        <label className="flex items-start gap-2.5 pt-3 pb-5 text-sm"><Checkbox name="enabled" defaultChecked={editor === 'new' || editor.enabled !== false} className="mt-0.5" /><span>启用节点<small className="text-muted-foreground mt-1.5 block text-xs leading-relaxed">停用保留授权与历史流量。</small></span></label>
       </div>
-      {connectionLocked && <div className="node-lock-notice" role="status">此节点已被链路引用，当前可修改名称和启用状态。调整连接参数请先替换链路中的节点。<br />
+      {connectionLocked && <div className="bg-muted mb-5 rounded-lg px-4 py-3 text-sm leading-relaxed" role="status">此节点已被链路引用，当前可修改名称和启用状态。调整连接参数请先替换链路中的节点。<br />
         {(currentEditor?.referenced_chains ?? (editor === 'new' ? [] : editor.referenced_chains) ?? []).map(chain =>
-          <a key={chain.id} href={resourceLink({ kind: 'chain', id: chain.id })} onClick={() => setEditor(null)}>{chain.name}</a>)}
+          <a className="mr-3" key={chain.id} href={resourceLink({ kind: 'chain', id: chain.id })} onClick={() => setEditor(null)}>{chain.name}</a>)}
       </div>}
-      <fieldset className="node-connection-fields" disabled={connectionLocked}>
-        <h3>连接地址</h3>
-        <div className="node-fields-grid">
+      <fieldset className="m-0 min-w-0 border-0 p-0 disabled:opacity-65" disabled={connectionLocked}>
+        <h3 className="mt-1.5 mb-4 text-sm font-semibold">连接地址</h3>
+        <div className="grid gap-x-5 sm:grid-cols-2">
           <Field label="监听端口" hint={editor === 'new' ? '可填写 443 等端口；留空时从 20000–29999 自动分配。18085 为保留端口。' : '修改后客户端需更新订阅；服务器上已有其他服务占用的端口不可使用。'}>
-            <input name="port" type="number" min={1} max={65535} step={1} required={editor !== 'new'} defaultValue={editor === 'new' ? '' : editor.port} placeholder="自动分配" />
+            <Input name="port" type="number" min={1} max={65535} step={1} required={editor !== 'new'} defaultValue={editor === 'new' ? '' : editor.port} placeholder="自动分配" />
           </Field>
           <Field label="公开地址" hint="填写客户端连接使用的域名或 IP，不含协议、端口和路径。">
-            <input name="public_host" required defaultValue={editor === 'new' ? '' : editor.public_host} placeholder="node.example.com" autoComplete="off" spellCheck={false} />
+            <Input name="public_host" required defaultValue={editor === 'new' ? '' : editor.public_host} placeholder="node.example.com" autoComplete="off" spellCheck={false} />
           </Field>
           <ConnectionFields node={editor} />
         </div>
-        <h3>协议与安全</h3>
+        <h3 className="mt-1.5 mb-4 text-sm font-semibold">协议与安全</h3>
         <ProtocolFields key={editor === 'new' ? 'new' : editor.id} node={editor} />
       </fieldset>
     </FormDialog>}

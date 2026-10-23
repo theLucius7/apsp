@@ -42,7 +42,7 @@ try {
       else { errors.push(`Unexpected API ${path}`); return route.fulfill({ status:404, json:{} }) }
       await route.fulfill({ json:data })
     })
-    const catalogRows = page.locator(width < 768 ? '.catalog-card' : '.catalog-table tbody tr')
+    const catalogRows = page.locator(width < 768 ? '[data-slot=catalog-card]' : '[data-slot=catalog-table] tbody tr')
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes?server=2`)
     await page.getByRole('heading', { name:'代理节点', exact:true }).waitFor({ timeout:3000 })
@@ -75,7 +75,7 @@ try {
     for (const query of ['server=0','server=1&server=2','server=9007199254740992','server=1e2','kind=unknown','view=unknown','view=chains&view=sources','other=1']) {
       await page.evaluate(query => { location.hash = '/plugins/sing-box/nodes?' + query }, query)
       await page.getByRole('heading', { name:'这个页面不存在', exact:true }).waitFor()
-      assert.equal(await page.locator('.node-editor').count(), 0)
+      assert.equal(await page.locator('[data-dialog=node-editor]').count(), 0)
     }
     assert.deepEqual(writes, [])
     assert.deepEqual(errors, [])

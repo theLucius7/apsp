@@ -98,9 +98,9 @@ try {
     })
     const enabled = async locator => { await locator.waitFor(); const until = Date.now() + 6500; while (await locator.isDisabled() && Date.now() < until) await page.waitForTimeout(20); assert.equal(await locator.isDisabled(), false) }
     // Wrapping Field labels also contain option text; require the exact visible label span.
-    const fieldSelect = (scope, label) => scope.locator('label.field').filter({ has: page.getByText(label, { exact: true }) }).locator('select')
+    const fieldSelect = (scope, label) => scope.locator('label[data-slot=field]').filter({ has: page.getByText(label, { exact: true }) }).locator('select')
     const poll = () => page.clock.fastForward(5000)
-    const shot = async name => { if (!process.env.APSP_UI_SCREENSHOT_DIR) return; await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true }); await page.locator('[role=dialog]').evaluateAll(dialogs => { for (const dialog of dialogs) for (const animation of (dialog.closest('.modal-shade') ?? dialog).getAnimations({ subtree: true })) if (animation.effect?.getComputedTiming().iterations !== Infinity) animation.finish() }); await page.screenshot({ animations: 'disabled', path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `ordered-${name}-${width}.png`) }) }
+    const shot = async name => { if (!process.env.APSP_UI_SCREENSHOT_DIR) return; await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true }); await page.locator('[role=dialog]').evaluateAll(dialogs => { for (const dialog of dialogs) for (const animation of (dialog.parentElement ?? dialog).getAnimations({ subtree: true })) if (animation.effect?.getComputedTiming().iterations !== Infinity) animation.finish() }); await page.screenshot({ animations: 'disabled', path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `ordered-${name}-${width}.png`) }) }
     // The server filter lives in the catalog section; chains and sources have their own sections.
     const showView = name => page.getByRole('navigation', { name: '节点视图', exact: true }).getByRole('link', { name, exact: true }).click()
     const scope = async server => { await showView('节点库'); await page.getByRole('combobox', { name: '按服务器筛选', exact: true }).selectOption(server); await showView('链路') }
@@ -157,7 +157,7 @@ try {
     assert.equal(await dialog.getByLabel('链路显示名称', { exact: true }).inputValue(), '显示名可独立修改'); await enabled(dialog.getByRole('button', { name: '重试原修改', exact: true })); await dialog.getByRole('button', { name: '重试原修改', exact: true }).click(); await dialog.waitFor({ state: 'hidden' })
     const editWrites = writes.filter(write => write.method === 'PATCH'); assert.equal(editWrites.length, 2); assert.equal(editWrites[0].serialized, editWrites[1].serialized)
     const broken = ordered.find(resource => resource.id === 30); broken.available = false; broken.unavailable_reasons = ['受管段缺失，等待清理']; oldNodesFailure = true; sourceFailure = true
-    await poll(); const brokenRow = page.locator('[data-resource-key="chain:30"]'); await brokenRow.getByText('资源已不可用', { exact: true }).waitFor(); await enabled(brokenRow.getByRole('button', { name: '删除', exact: true })); await brokenRow.getByRole('button', { name: '删除', exact: true }).click(); await page.getByRole('dialog').getByRole('button', { name: '确认删除', exact: true }).click(); await page.locator('[data-resource-key="chain:30"]').waitFor({ state: 'hidden' })
+    await poll(); const brokenRow = page.locator('[data-resource-key="chain:30"]'); await brokenRow.getByText('资源已不可用', { exact: true }).waitFor(); await enabled(brokenRow.getByRole('button', { name: '删除', exact: true })); await brokenRow.getByRole('button', { name: '删除', exact: true }).click(); await page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true }).click(); await page.locator('[data-resource-key="chain:30"]').waitFor({ state: 'hidden' })
     assert.equal(ordered.some(resource => resource.id === 31), true); assert.equal(await page.evaluate(() => Object.keys(localStorage).length), 0); assert.deepEqual(errors, [])
     await shot('broken-cleanup'); console.log(`ordered chains actual-dist contracts passed ${width}`); await page.close()
   }

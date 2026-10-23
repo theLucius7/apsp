@@ -1,9 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect } from 'react'
 import type { ReactNode } from 'react'
+import { LanguagesIcon } from 'lucide-react'
+import { NativeSelect } from '@/components/ui/native-select'
+import { cn } from '@/lib/utils'
+import { useLocaleStore } from './stores/locale'
+import type { Locale } from './stores/locale'
 
-export type Locale = 'zh-CN' | 'en-US'
-
-const STORAGE_KEY = 'apsp-locale'
+export type { Locale }
 const translatedTextSources = new WeakMap<Node, string>()
 const translatedAttributeSources = new WeakMap<Element, Map<string, string>>()
 
@@ -131,22 +134,18 @@ const english: Record<string, string> = {
   '正在读取服务器': 'Reading servers', '正在读取历史采样': 'Reading historical samples', '正在读取拨测结果': 'Reading probe results', '正在读取拨测配置': 'Reading probe configuration',
   '暂时无法读取最新设备状态。': 'The latest device status is temporarily unavailable.', '尚未添加节点': 'No nodes added yet', '尚未配置拨测': 'No probes configured',
   '前往后台配置拨测': 'Configure probes in administration', '前往服务器管理': 'Open server management', '参考汇率': 'Reference exchange rate', '汇率': 'Exchange rate', '汇率缺失': 'Exchange rate missing',
-}
-
-function readInitialLocale(): Locale {
-  try {
-    const value = localStorage.getItem(STORAGE_KEY)
-    if (value === 'en-US' || value === 'zh-CN') return value
-  } catch { /* Storage may be unavailable. */ }
-  return 'zh-CN'
+  '加载中': 'Loading', '更多': 'More', '折叠侧栏': 'Collapse sidebar', '展开侧栏': 'Expand sidebar',
+  '调整侧栏宽度': 'Resize sidebar', '调整列表宽度': 'Resize list', '调整代理用户列表宽度': 'Resize proxy user list', '调整台账列表宽度': 'Resize inventory list',
+  '按空格键拿起此项，用上下方向键移动位置，再按空格键放下；按 Esc 取消。': 'Press Space to pick up this item, move it with the up and down arrow keys, then press Space to drop it; press Escape to cancel.', '筛选与视图': 'Filters and view', '返回服务器看板': 'Back to server dashboard', '返回看板': 'Back to dashboard',
+  '表格': 'Table', '资源趋势': 'Resource trends', '网络接口': 'Network interfaces', '图形处理器': 'GPU',
+  '设备状态': 'Device status', '采样信息': 'Sampling details', '系统信息': 'System information', '资产与流量额度': 'Assets and traffic quota',
+  '连接中断，等待更新': 'Connection interrupted, waiting for updates',
 }
 
 export function translate(value: string, locale: Locale): string {
   return locale === 'en-US' ? english[value] ?? value : value
 }
 
-type I18nValue = { locale: Locale; setLocale: (locale: Locale) => void; t: (value: string) => string }
-const I18nContext = createContext<I18nValue | null>(null)
 
 function translateStaticDom(locale: Locale) {
   if (typeof document === 'undefined' || !document.body) return
@@ -184,12 +183,9 @@ function translateStaticDom(locale: Locale) {
   })
 }
 
+/** Keeps document language attributes and static DOM text in the chosen locale. */
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(readInitialLocale)
-  const setLocale = useCallback((next: Locale) => {
-    try { localStorage.setItem(STORAGE_KEY, next) } catch { /* Keep the in-memory selection. */ }
-    setLocaleState(next)
-  }, [])
+  const locale = useLocaleStore(state => state.locale)
   useEffect(() => {
     document.documentElement.lang = locale
     document.documentElement.dataset.locale = locale
@@ -198,23 +194,24 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     observer.observe(document.body, { childList: true, subtree: true, characterData: true })
     return () => observer.disconnect()
   }, [locale])
-  const value = useMemo(() => ({ locale, setLocale, t: (text: string) => translate(text, locale) }), [locale, setLocale])
-  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>
+  return children
 }
 
 export function useI18n() {
-  const value = useContext(I18nContext)
-  if (!value) throw new Error('useI18n must be used inside I18nProvider')
-  return value
+  const locale = useLocaleStore(state => state.locale)
+  const setLocale = useLocaleStore(state => state.setLocale)
+  const t = useCallback((text: string) => translate(text, locale), [locale])
+  return { locale, setLocale, t }
 }
 
 export function LanguageSelect({ className = '' }: { className?: string }) {
   const { locale, setLocale, t } = useI18n()
-  return <label className={`locale-picker ${className}`.trim()}>
+  return <label className={cn('relative inline-flex min-w-0 items-center', className)}>
     <span className="sr-only">{t('界面语言')}</span>
-    <select aria-label={t('界面语言')} value={locale} onChange={event => setLocale(event.target.value as Locale)}>
+    <LanguagesIcon className="text-muted-foreground pointer-events-none absolute left-2.5 z-10 size-4" aria-hidden="true" />
+    <NativeSelect aria-label={t('界面语言')} value={locale} onChange={event => setLocale(event.target.value as Locale)} className="min-w-32 *:data-[slot=native-select]:pl-8">
       <option value="zh-CN">简体中文</option>
       <option value="en-US">English</option>
-    </select>
+    </NativeSelect>
   </label>
 }

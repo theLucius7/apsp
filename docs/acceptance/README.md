@@ -10,6 +10,7 @@
 
 ## 入口、整合与待验条件
 
+- [2026-10-23 界面完全重构（shadcn/ui Nova）](ui-refactor-20261023.md)
 - [2026-10-04 其余分支与 main 整合](branch-main-integration-20261004.md)
 - [2026-10-03 全仓缺陷扫描与修复（按严重程度清单）](defect-scan-20261003.md)
 - [2026-10-03 代理流量按天汇总与数据保留（D5–D7）](usage-rollup-retention.md)

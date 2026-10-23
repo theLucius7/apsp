@@ -5,22 +5,25 @@ import { useAction } from '../hooks'
 import { assetDraft, assetPayload } from '../server-assets'
 import type { Server } from '../types'
 import ServerAssetFields, { SetupNavigation } from './ServerAssetFields'
-import './server-setup.css'
+
 import ServerOperationsFields from './ServerOperationsFields'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 
 export default function ServerEdit({ server, onClose, onSaved }: { server: Server; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState(server.name)
   const [asset, setAsset] = useState(() => assetDraft(server.asset_settings))
   const [autoUpdate, setAutoUpdate] = useState(server.agent_settings?.auto_update ?? false)
   const action = useAction()
-  return <Modal title="编辑服务器" onClose={onClose} busy={action.busy} className="server-setup-modal"><form onSubmit={event => { event.preventDefault(); void action.run(() => api(`/api/servers/${server.id}`, 'PATCH', { name: name.trim(), asset_settings: assetPayload(asset), auto_update: autoUpdate }), onSaved) }}>
+  return <Modal title="编辑服务器" onClose={onClose} busy={action.busy} className="sm:max-w-[52.5rem]"><form onSubmit={event => { event.preventDefault(); void action.run(() => api(`/api/servers/${server.id}`, 'PATCH', { name: name.trim(), asset_settings: assetPayload(asset), auto_update: autoUpdate }), onSaved) }}>
     <SetupNavigation />
-    <div className="server-setup-body"><fieldset disabled={action.busy}>
-      <section className="server-setup-section" id="setup-basics"><Field label="服务器名称"><input required pattern=".*\S.*" maxLength={128} value={name} onChange={event => setName(event.target.value)} /></Field></section>
-      <section className="server-setup-section"><label className="server-setup-toggle"><span><strong>自动更新 Agent</strong><small>从 GitHub 获取面板选定的兼容签名版本；下载失败时保留现有版本。</small></span><input type="checkbox" role="switch" checked={autoUpdate} onChange={event => setAutoUpdate(event.target.checked)} /><span className="server-setup-switch" aria-hidden="true" /></label></section>
+    <div className="bg-muted/40 px-4 py-5 sm:px-7 sm:py-6"><fieldset disabled={action.busy}>
+      <section className="bg-card mb-4 scroll-mt-16 rounded-xl border p-5 last:mb-0 max-sm:p-4" id="setup-basics"><Field className="mb-0" label="服务器名称"><Input required pattern=".*\S.*" maxLength={128} value={name} onChange={event => setName(event.target.value)} /></Field></section>
+      <section className="bg-card mb-4 scroll-mt-16 rounded-xl border p-5 last:mb-0 max-sm:p-4"><label className="relative flex cursor-pointer items-center gap-4 border-b py-3.5 last:border-0 last:pb-0"><span className="min-w-0 flex-1"><strong className="block text-sm font-medium">自动更新 Agent</strong><small className="text-muted-foreground mt-1 block text-xs leading-relaxed">从 GitHub 获取面板选定的兼容签名版本；下载失败时保留现有版本。</small></span><Switch checked={autoUpdate} onCheckedChange={checked => setAutoUpdate(checked)} /></label></section>
       <ServerAssetFields value={asset} onChange={setAsset} />
       <ServerOperationsFields asset={asset} onChange={setAsset} />
     </fieldset><ErrorNotice message={action.error} /></div>
-    <footer className="server-setup-footer"><span>采样与拨测可在服务器详情中调整</span><button type="button" className="button button-secondary" disabled={action.busy} onClick={onClose}>取消</button><button className="button button-primary" disabled={action.busy}>{action.busy ? '正在保存…' : '保存修改'}</button></footer>
+    <footer className="bg-popover sticky bottom-0 z-[1] flex flex-wrap items-center justify-end gap-2 border-t px-4 py-3 sm:px-7"><span className="text-muted-foreground min-w-32 flex-1 text-xs max-sm:mb-1 max-sm:basis-full">采样与拨测可在服务器详情中调整</span><Button type="button" variant="outline" disabled={action.busy} onClick={onClose}>取消</Button><Button disabled={action.busy}>{action.busy ? '正在保存…' : '保存修改'}</Button></footer>
   </form></Modal>
 }

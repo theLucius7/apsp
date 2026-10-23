@@ -60,7 +60,7 @@ try {
     const url=`http://127.0.0.1:${httpServer.address().port}/#/servers/1/plugins`
     await installControlCenterFixtures(page)
     await page.goto(url)
-    const operations=page.locator('.runtime-operations')
+    const operations=page.locator('[data-slot=runtime-operations]')
     await operations.getByRole('button',{name:'读取状态与日志',exact:true}).click()
     await operations.getByRole('log').getByText(/连接错误/).waitFor()
     assert.deepEqual(writes[0],{operation:'inspect',expected_revision:null})

@@ -78,12 +78,17 @@
 | `web/src/network-workbench/`、`network-configuration/` | 网络检测；网络配置 |
 | `web/src/plugins/` | 插件中心（目录与服务器启用）及 sing-box、DDNS、阿里云业务界面 |
 | `web/src/system/`、`control-center/` | 面板设置、账号安全；管理与安全及全局搜索、外观偏好 |
-| `web/src/api.ts`、`hooks.ts`、`components.tsx` | 共享请求、状态钩子和通用组件 |
+| `web/src/api.ts`、`hooks.ts`、`components.tsx` | 共享请求、状态钩子和通用组件（页头、通知、弹窗、确认框、字段、复制） |
+| `web/src/index.css` | Tailwind CSS v4 入口与全部设计参数：浅色/暗色颜色、圆角、密度、基础样式 |
+| `web/src/components/ui/` | shadcn/ui Nova 组件源码（Radix UI 底层），按普通源码维护 |
+| `web/src/components/` | 面板、分段导航、主从分栏（`list-detail.tsx`）与拖拽列表（`sortable.tsx`） |
+| `web/src/lib/` | `cn()`、Motion 时长与预设、媒体查询及本地存储工具 |
+| `web/src/stores/` | Zustand 跨组件界面状态：语言、外观、外框、会话与看板货币 |
 | `web/src/i18n.tsx` | 语言上下文、浏览器语言选择、管理员偏好同步及静态界面词典 |
 
 页面目录与功能区一一对应：新增页面放进它所属功能区的目录，跨功能区共用的数据模型和工具函数留在 `web/src/` 根目录（如 `probes.ts`、`server-assets.ts`）。页面标题与侧栏入口同名，眉题使用分组名，说明文字先讲“在这里做什么”。
 
-后台分区导航统一使用 `styles.css` 中的 `.ui-tab-list`，按钮通过 `aria-pressed`、页面链接通过 `aria-current="page"` 标记当前项；沿用“管理与安全”的浅底、细边框、6px 圆角与绿色选中态。`.button`、`.ui-button`、`.text-button`、`.icon-button` 和 `.back-link` 共用边框、圆角、悬停、禁用和键盘焦点规则，提供普通、紧凑与图标三种尺寸；主操作与危险操作保留颜色语义。文字操作也使用紧凑描边按钮，按钮组允许换行。页面样式只保留分区间距，不再单独定义导航按钮颜色、尺寸或选中轮廓。
+界面约定见 [ADR 0088](adr/0088-ui-component-system.md)：组件使用 `components/ui/` 中的 shadcn/ui Nova 组件，样式只写 Tailwind 类并引用 `index.css` 的设计变量，不再新增 CSS 文件或颜色字面量；图标来自 `lucide-react`，图标按钮必须有 `aria-label`；动画只用 `motion/react` 的 `m.*` 与 `lib/motion.ts` 预设；可调分栏通过 `components/ui/resizable.tsx`，拖拽排序通过 `components/sortable.tsx`；跨组件界面状态放入 `stores/`，服务端数据仍经 `useResource` 与写保护。分区导航用 `SegmentedNav`，按钮通过 `aria-pressed`、页面链接通过 `aria-current="page"` 标记当前项；测试钩子使用 `data-slot` 与 `data-dialog`。
 
 Hash URL 是书签与兼容入口。新增页面要同时考虑路由、导航、管理员访问边界；公开访问只放行明确的看板路由，不据路径前缀推断权限。
 

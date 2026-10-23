@@ -1,10 +1,13 @@
-import { ErrorNotice, Icon, Loading, PageHeader } from '../components'
+import { ErrorNotice, Loading, PageHeader } from '../components'
 import { useResource } from '../hooks'
 import type { Server } from '../types'
 import NodeQuality from '../server-diagnostics/NodeQuality'
 import TcpQuality from '../server-diagnostics/TcpQuality'
 import ServerIpInfo from '../server-diagnostics/ServerIpInfo'
 import ServerNavigation from './ServerNavigation'
+import { buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { ArrowLeftIcon } from 'lucide-react'
 
 type ToolSection = 'ip-info' | 'node-quality' | 'tcp-quality'
 
@@ -18,7 +21,7 @@ export default function ServerToolPage({ id, section }: { id: number; section: T
   const server = useResource<Server>(`/api/servers/${id}`)
   const entry = server.data
   return <>
-    <a className="back-link" href="#/servers"><Icon name="back" size={16} />返回服务器列表</a>
+    <a className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'mb-4 -ml-2')} href="#/servers"><ArrowLeftIcon className="size-4" aria-hidden="true" />返回服务器列表</a>
     <ErrorNotice message={server.error} retry={server.reload} />
     {!entry ? server.loading && <Loading /> : <>
       <PageHeader eyebrow={`服务器 #${entry.id}`} title={entry.name} description={descriptions[section]} />

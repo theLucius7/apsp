@@ -4,6 +4,7 @@ import { Badge, ErrorNotice } from '../../components'
 import { time } from '../../format'
 import { useAction } from '../../hooks'
 import type { ConversionCheck, MixedConversion } from './resourceTypes'
+import { Button } from '@/components/ui/button'
 
 const stateNames: Record<MixedConversion['state'], string> = { preparing: '正在准备有序候选', switched: '入口已切换', completed: '已转换', reverted: '已退回混合链路' }
 const stateTones = { preparing: 'neutral', switched: 'neutral', completed: 'good', reverted: 'warm' } as const
@@ -29,17 +30,17 @@ export default function ChainConversion({ base, conversion, writeError, onChange
     if (action.busy || writeError() || !check?.ready || check.mixed_generation === null) return
     void action.run(() => api<ConversionCheck>(`${base}/conversion`, 'POST', { expected_generation: check.mixed_generation }), () => { setCheck(null); onChanged() })
   }
-  return <section className="chain-conversion" aria-label="转为有序链路">
-    <h3>转为有序链路</h3>
-    {conversion && <p className="notice" role="status"><Badge tone={stateTones[conversion.state]}>{stateNames[conversion.state]}</Badge><span>{progress(conversion)}</span><small>开始于 {time(conversion.started_at)}</small></p>}
-    <p className="helper">转换会在设备上真实切换一次。转换期间混合路径继续承载用户；有序候选通过路径探测后才切换入口，切换前失败会自动退回混合链路，切换后只能走有序链路自己的恢复流程。链路编号、入口、授权和计量不变，内部中继标识会更换。</p>
+  return <section className="mt-6 grid gap-2" aria-label="转为有序链路">
+    <h3 className="m-0 text-sm font-semibold">转为有序链路</h3>
+    {conversion && <p className="bg-muted/60 text-foreground mb-4 justify-between rounded-lg border px-3 py-2.5 text-sm leading-relaxed flex flex-wrap items-center gap-2" role="status"><Badge tone={stateTones[conversion.state]}>{stateNames[conversion.state]}</Badge><span>{progress(conversion)}</span><small>开始于 {time(conversion.started_at)}</small></p>}
+    <p className="text-muted-foreground mt-3 text-xs leading-relaxed">转换会在设备上真实切换一次。转换期间混合路径继续承载用户；有序候选通过路径探测后才切换入口，切换前失败会自动退回混合链路，切换后只能走有序链路自己的恢复流程。链路编号、入口、授权和计量不变，内部中继标识会更换。</p>
     {check && (check.ready
-      ? <p className="notice" role="status">可以转换：将以混合第 {check.mixed_generation} 代为基础创建有序候选。</p>
-      : <ul className="resource-reasons" aria-label="暂不能转换的原因">{check.messages.map((message, index) => <li key={index}>{message}</li>)}</ul>)}
+      ? <p className="bg-muted/60 text-foreground mb-4 justify-between rounded-lg border px-3 py-2.5 text-sm leading-relaxed flex flex-wrap items-center gap-2" role="status">可以转换：将以混合第 {check.mixed_generation} 代为基础创建有序候选。</p>
+      : <ul className="list-disc pl-5 leading-relaxed" aria-label="暂不能转换的原因">{check.messages.map((message, index) => <li key={index}>{message}</li>)}</ul>)}
     <ErrorNotice message={action.error} />
-    <div className="row-actions">
-      <button type="button" className="button button-secondary button-small" disabled={action.busy || running || Boolean(writeError())} onClick={inspect}>检查转换条件</button>
-      <button type="button" className="button button-primary button-small" disabled={action.busy || running || !check?.ready || Boolean(writeError())} onClick={start}>开始转换</button>
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <Button type="button" variant="outline" size="sm" disabled={action.busy || running || Boolean(writeError())} onClick={inspect}>检查转换条件</Button>
+      <Button type="button" size="sm" disabled={action.busy || running || !check?.ready || Boolean(writeError())} onClick={start}>开始转换</Button>
     </div>
   </section>
 }

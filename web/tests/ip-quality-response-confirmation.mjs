@@ -127,7 +127,7 @@ try {
       await page.getByText(ip, { exact: true }).waitFor()
     }
     async function chapter(label = 'IPQualityScore') {
-      const value = page.locator('details.quality-database').filter({ has: page.locator('summary').getByText(label, { exact: true }) })
+      const value = page.locator('details[data-slot=quality-database]').filter({ has: page.locator('summary').getByText(label, { exact: true }) })
       await value.locator('summary').waitFor()
       await value.locator('summary').click()
       return value
@@ -143,7 +143,7 @@ try {
       assert(text.includes(`目标 IP：${ip}`))
       assert(text.includes(`耗时 ${problem.elapsed_ms} 毫秒`))
       if (problem.http_status !== null) assert(text.includes(`HTTP ${problem.http_status}`))
-      assert.equal(await page.locator('.quality-result > .quality-summary .badge').innerText(), '质量未知')
+      assert.equal(await page.locator('[data-slot=quality-result] > [data-slot=quality-summary] [data-slot=badge]').innerText(), '质量未知')
       assert.equal(await value.getByText('本次已查询', { exact: true }).count(), 0)
     }
     for (const [name] of invalidRawCases) {
@@ -174,7 +174,7 @@ try {
     assert.equal(await field(value, scoreLabel), '0'); assert.equal(await field(value, proxyLabel), '否')
     assert.match(await value.locator('summary').innerText(), /本次已查询/)
     assert((await value.innerText()).includes('最近成功结果'))
-    assert.equal(await page.locator('.quality-result > .quality-summary .badge').innerText(), '1 / 7 项数据有当前成功结果')
+    assert.equal(await page.locator('[data-slot=quality-result] > [data-slot=quality-summary] [data-slot=badge]').innerText(), '1 / 7 项数据有当前成功结果')
     cases.push('confirmed-zero-false')
 
     // A partially valid raw response retains only its valid field; wrong fields do not become defaults.
@@ -211,7 +211,7 @@ try {
       await value.getByText(problem.message, { exact: true }).waitFor()
       assert.equal(await field(value, scoreLabel), '17'); assert.equal(await field(value, proxyLabel), '是')
       assert.match(await value.locator('summary').innerText(), /历史结果/)
-      assert.equal(await page.locator('.quality-result > .quality-summary .badge').innerText(), '当前没有有效成功结果 · 1 项历史结果')
+      assert.equal(await page.locator('[data-slot=quality-result] > [data-slot=quality-summary] [data-slot=badge]').innerText(), '当前没有有效成功结果 · 1 项历史结果')
       const text = await value.innerText()
       assert(text.includes('正在显示历史结果')); assert(text.includes(`上次成功于 ${oldSuccess}`))
       assert(text.includes(`当前失败类别：${errorLabels[problem.kind]}`)); assert(text.includes(problem.message))
@@ -238,13 +238,13 @@ try {
 
     const writes = requests.filter(request => request.method !== 'GET').length
     await load(view([]))
-    const providerCards = page.locator('.quality-body > .quality-databases > .quality-database')
+    const providerCards = page.locator('[data-slot=quality-body] > [data-slot=quality-databases] > [data-slot=quality-database]')
     for (const [label, reason] of [['AbuseIPDB 官方接口', officialReason], ['IPQuality 节点自查', nodeReason]]) {
       const card = providerCards.filter({ has: page.getByText(label, { exact: true }) })
       assert(await card.getByText('未启用 · 信息未知', { exact: true }).isVisible())
       assert(await card.getByText(reason, { exact: true }).isVisible())
     }
-    assert.equal(await page.locator('.quality-result').count(), 0)
+    assert.equal(await page.locator('[data-slot=quality-result]').count(), 0)
     assert(await page.getByText('尚未查询质量。点击“刷新 IP 质量”查询已启用入口。', { exact: true }).isVisible())
     assert(await page.getByText('流媒体解锁：未知。当前出口尚未确认，不能据此判断流媒体是否解锁。', { exact: true }).isVisible())
     assert(await page.getByRole('button', { name: '运行节点出口自查', exact: true }).isDisabled())

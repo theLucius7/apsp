@@ -3,6 +3,10 @@ import { ErrorNotice, Field } from '../components'
 import type { FleetProfile } from './types'
 import { operationStages, useOperation } from './useOperation'
 import { useFleetPermissions } from './permissions'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
+import { Notice, Panel } from '@/components/panel'
 
 const hash = async (bytes: Uint8Array) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes).buffer))).map(byte => byte.toString(16).padStart(2, '0')).join('')
 const encode = (bytes: Uint8Array) => { let value = ''; for (const byte of bytes) value += String.fromCharCode(byte); return btoa(value) }
@@ -72,21 +76,21 @@ export default function FleetFileTransfer({ profile }: { profile: FleetProfile }
     const url = URL.createObjectURL(new Blob([new Uint8Array(received.bytes).buffer], { type: 'application/octet-stream' })), link = document.createElement('a')
     link.href = url; link.download = received.path.split(/[\\/]/).pop() || 'server-file'; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
-  return <section className="panel"><h2>二进制文件传输</h2><ErrorNotice message={error || reader.error || writer.error} /><p className="subtle">受限普通文件，最大 {maximum} 字节。保留原始字节并核对 SHA-256；上传只保存文件，不应用配置或重启服务。</p><p className="subtle">允许读取目录：{profile.policy.read_directories.join('、') || '未授权'}；允许写入目录：{profile.policy.write_directories.join('、') || '未授权'}。敏感文件与符号链接限制由设备再次核对。</p>
-    {readReason && <p className="notice" role="status">读取不可用：{readReason}</p>}{writeReason && <p className="notice" role="status">上传不可用：{writeReason}</p>}
-    <Field label="目标文件绝对路径"><input value={path} disabled={busy || writer.pending || reader.pending || Boolean(readReason && writeReason)} onChange={event => { scope.current += 1; setPath(event.target.value); setPrevious(''); setReceived(null); setVerified(false); setPreparedHash('') }} /></Field>
-    <div className="fleet-controls"><button className="button button-secondary" disabled={Boolean(readReason) || busy || reader.pending || !path.trim() || !profile.policy.read_directories.length} onClick={() => void read()}>请求读取原始文件</button><button className="button button-secondary" disabled={Boolean(readReason) || !received || busy} onClick={download}>下载已校验的原始文件</button></div>
+  return <Panel><h2 className="text-base font-semibold">二进制文件传输</h2><ErrorNotice message={error || reader.error || writer.error} /><p className="text-muted-foreground text-xs">受限普通文件，最大 {maximum} 字节。保留原始字节并核对 SHA-256；上传只保存文件，不应用配置或重启服务。</p><p className="text-muted-foreground text-xs">允许读取目录：{profile.policy.read_directories.join('、') || '未授权'}；允许写入目录：{profile.policy.write_directories.join('、') || '未授权'}。敏感文件与符号链接限制由设备再次核对。</p>
+    {readReason && <Notice role="status">读取不可用：{readReason}</Notice>}{writeReason && <Notice role="status">上传不可用：{writeReason}</Notice>}
+    <Field label="目标文件绝对路径"><Input value={path} disabled={busy || writer.pending || reader.pending || Boolean(readReason && writeReason)} onChange={event => { scope.current += 1; setPath(event.target.value); setPrevious(''); setReceived(null); setVerified(false); setPreparedHash('') }} /></Field>
+    <div className="my-3 flex flex-wrap items-end gap-2 max-sm:flex-col max-sm:items-stretch"><Button variant="outline" disabled={Boolean(readReason) || busy || reader.pending || !path.trim() || !profile.policy.read_directories.length} onClick={() => void read()}>请求读取原始文件</Button><Button variant="outline" disabled={Boolean(readReason) || !received || busy} onClick={download}>下载已校验的原始文件</Button></div>
     {received && <p>已校验 {received.bytes.length} 字节 · <code>{received.sha256}</code>。可用作覆盖前的旧版本依据。</p>}
-    <Field label="本地二进制文件"><input type="file" disabled={Boolean(writeReason) || busy || writer.pending} onChange={event => { const file = event.target.files?.[0] ?? null; setSelected(file); setVerified(false); setPreparedHash(''); setError(file && file.size > maximum ? '文件超过授权大小上限。' : '') }} /></Field>
-    <Field label="目标文件条件"><select value={mode} disabled={Boolean(writeReason) || busy || writer.pending} onChange={event => setMode(event.target.value)}><option value="create">仅创建新文件（已有文件会拒绝）</option><option value="replace">更新已有文件（必须核对旧 SHA-256）</option></select></Field>
-    {mode === 'replace' && <Field label="远端旧文件 SHA-256"><input value={previous} disabled={Boolean(writeReason) || busy || writer.pending} maxLength={64} onChange={event => setPrevious(event.target.value)} placeholder="先读取原文件或填入独立核对的摘要" /></Field>}
+    <Field label="本地二进制文件"><Input type="file" disabled={Boolean(writeReason) || busy || writer.pending} onChange={event => { const file = event.target.files?.[0] ?? null; setSelected(file); setVerified(false); setPreparedHash(''); setError(file && file.size > maximum ? '文件超过授权大小上限。' : '') }} /></Field>
+    <Field label="目标文件条件"><NativeSelect className="w-full" value={mode} disabled={Boolean(writeReason) || busy || writer.pending} onChange={event => setMode(event.target.value)}><option value="create">仅创建新文件（已有文件会拒绝）</option><option value="replace">更新已有文件（必须核对旧 SHA-256）</option></NativeSelect></Field>
+    {mode === 'replace' && <Field label="远端旧文件 SHA-256"><Input value={previous} disabled={Boolean(writeReason) || busy || writer.pending} maxLength={64} onChange={event => setPrevious(event.target.value)} placeholder="先读取原文件或填入独立核对的摘要" /></Field>}
     {selected && <p>待上传：{selected.name} · {selected.size} 字节；目标 {path || '未填写'}。{preparedHash && <code>{preparedHash}</code>}</p>}
-    <button className="button button-primary" disabled={Boolean(writeReason) || busy || writer.pending || maximum <= 0 || !selected || selected.size > maximum || !path.trim() || !profile.policy.write_directories.length || (mode === 'replace' && !/^[a-f0-9]{64}$/i.test(previous.trim()))} onClick={() => void upload()}>确认受限上传并保存</button>
+    <Button disabled={Boolean(writeReason) || busy || writer.pending || maximum <= 0 || !selected || selected.size > maximum || !path.trim() || !profile.policy.write_directories.length || (mode === 'replace' && !/^[a-f0-9]{64}$/i.test(previous.trim()))} onClick={() => void upload()}>确认受限上传并保存</Button>
     <p role="status">上传阶段：{preparing && !writer.busy ? '正在读取本地文件并计算完整性摘要' : operationStages[writer.phase] ?? '等待操作状态'}。{verified && '本次完整性与设备保存回执已匹配；尚未应用到服务。'}</p>
     <p role="status">下载阶段：{checking ? '正在核对设备回执的原始字节完整性' : operationStages[reader.phase] ?? '等待操作状态'}。{received && '原始字节完整性已通过本地核对。'}</p>
-    <p className="subtle">当前通道不提供逐字节进度，阶段和总字节数按真实证据显示。结果未知或查询中断时保留原任务，不自动重传。</p>
-    {(writer.pending || reader.pending) && <p className="subtle">在服务器操作历史中发起与原任务关联的“新的只读核对”，再按真实设备证据人工结束未知记录。人工结束不等于上传成功。</p>}
-    {writer.operationId && <p>上传任务 <code>{writer.operationId}</code> <button className="text-button" disabled={Boolean(writeReason) || busy} onClick={() => { if (permissionsNow.current.writeReason()) { setError(permissionsNow.current.writeReason()); return } void writer.refresh().then(result => { if (result) uploadResult(result) }) }}>读取原任务状态</button></p>}
-    {reader.operationId && <p>下载任务 <code>{reader.operationId}</code> <button className="text-button" disabled={Boolean(readReason) || busy} onClick={() => { if (permissionsNow.current.readReason()) { setError(permissionsNow.current.readReason()); return } void reader.refresh().then(result => { if (result) return readResult(result) }) }}>读取原任务状态</button></p>}
-  </section>
+    <p className="text-muted-foreground text-xs">当前通道不提供逐字节进度，阶段和总字节数按真实证据显示。结果未知或查询中断时保留原任务，不自动重传。</p>
+    {(writer.pending || reader.pending) && <p className="text-muted-foreground text-xs">在服务器操作历史中发起与原任务关联的“新的只读核对”，再按真实设备证据人工结束未知记录。人工结束不等于上传成功。</p>}
+    {writer.operationId && <p>上传任务 <code>{writer.operationId}</code> <Button variant="ghost" size="sm" disabled={Boolean(writeReason) || busy} onClick={() => { if (permissionsNow.current.writeReason()) { setError(permissionsNow.current.writeReason()); return } void writer.refresh().then(result => { if (result) uploadResult(result) }) }}>读取原任务状态</Button></p>}
+    {reader.operationId && <p>下载任务 <code>{reader.operationId}</code> <Button variant="ghost" size="sm" disabled={Boolean(readReason) || busy} onClick={() => { if (permissionsNow.current.readReason()) { setError(permissionsNow.current.readReason()); return } void reader.refresh().then(result => { if (result) return readResult(result) }) }}>读取原任务状态</Button></p>}
+  </Panel>
 }

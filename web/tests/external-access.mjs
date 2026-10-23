@@ -92,13 +92,14 @@ try {
     try {
       await installControlCenterFixtures(page)
       await page.goto(`${origin}/#/plugins/sing-box/users`)
-      const section = page.getByRole('region', { name: '外部节点授权' })
+      // Open modal dialogs hide the page behind them from the accessibility tree.
+      const section = page.getByRole('region', { name: '外部节点授权', includeHidden: true })
       await wait(() => section.getByRole('button', { name: '管理分配' }).isEnabled(), 'External assignment read completes')
       await section.getByRole('button', { name: '管理分配' }).click()
       const dialog = page.getByRole('dialog'), save = dialog.getByRole('button', { name: '保存分配', exact: true })
       await dialog.getByRole('combobox', { name: 'TEST_ONLY 原分配 更新方式' }).selectOption('pinned')
       await dialog.getByRole('checkbox', { name: /TEST_ONLY 新节点/ }).check()
-      assert.equal(await dialog.locator('fieldset.group-choices').first().getByRole('checkbox').count(), 2)
+      assert.equal(await dialog.locator('fieldset[data-slot=group-choices]').first().getByRole('checkbox').count(), 2)
       assert.equal(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth), true, 'Assignment editor fits viewport')
       const pending = hold()
       await page.clock.runFor(5000); await wait(() => pending.reached > 0, 'Background assignment request starts')
@@ -110,7 +111,7 @@ try {
       await page.clock.runFor(5000)
       await wait(() => save.isEnabled(), 'Recovered read allows the retained draft')
       await dialog.getByLabel('搜索外部节点').fill('TEST_ONLY 保留草稿')
-      const parentRefresh = () => page.getByRole('button', { name: '刷新', exact: true }).first().evaluate(button => button.click())
+      const parentRefresh = () => page.getByRole('button', { name: '刷新', exact: true, includeHidden: true }).first().evaluate(button => button.click())
       // Each held parent GET is observed before invoking the real submit callback.
       for (const dependency of [`${root}/users`, `${root}/nodes`, `${root}/proxy-resources`, `${root}/users/1/accesses`, `${root}/users/1/entitlement`]) {
         let release; const promise = new Promise(done => { release = done })
@@ -141,7 +142,7 @@ try {
         await parentRefresh(); await changed; await wait(() => save.isDisabled(), label)
         await forceSubmit(dialog); assert.equal(writes.length, 0, `${label} must issue zero PUTs`)
         assert.equal(await dialog.getByLabel('搜索外部节点').inputValue(), 'TEST_ONLY 保留草稿')
-        assert.equal(await dialog.locator('fieldset.group-choices').first().getByRole('checkbox').count(), 2)
+        assert.equal(await dialog.locator('fieldset[data-slot=group-choices]').first().getByRole('checkbox').count(), 2)
         data = structuredClone(original); await parentRefresh(); await wait(() => save.isEnabled(), `${label} original identity recovered`)
       }
       users = []
@@ -150,7 +151,7 @@ try {
       await forceSubmit(dialog); assert.equal(writes.length, 0, 'A disappeared user cannot receive the old external authorization')
       assert.equal(await dialog.getByLabel('搜索外部节点').inputValue(), 'TEST_ONLY 保留草稿')
       users = structuredClone(userRows); await parentRefresh(); await wait(() => save.isEnabled(), 'Only the original restored user can resume')
-      await page.evaluate(() => { const form = document.querySelector('[role="dialog"] form'); const choice = [...document.querySelectorAll('.user-roster button')].find(button => button.textContent.includes('TEST_ONLY 第二用户')); choice.click(); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+      await page.evaluate(() => { const form = document.querySelector('[role="dialog"] form'); const choice = [...document.querySelectorAll('[data-slot=user-roster] button')].find(button => button.textContent.includes('TEST_ONLY 第二用户')); choice.click(); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
       assert.equal(writes.length, 0, 'Same-event user switch never redirects the original draft to the new user')
       await dialog.waitFor({ state: 'hidden' })
       await page.getByRole('button', { name: /TEST_ONLY 用户/ }).click()
@@ -160,13 +161,13 @@ try {
       await dialog.getByText('TEST_ONLY 授权已变化', { exact: true }).waitFor()
       assert.equal(writes.length, 1)
       assert.deepEqual(writes[0].accesses, [{ ...ref(first), update_mode: 'pinned' }, ref(second)])
-      assert.equal(await dialog.locator('fieldset.group-choices').first().getByRole('checkbox').count(), 2, 'Conflict retains the draft')
+      assert.equal(await dialog.locator('fieldset[data-slot=group-choices]').first().getByRole('checkbox').count(), 2, 'Conflict retains the draft')
       const reloading = hold()
       await dialog.getByRole('button', { name: '重新读取授权', exact: true }).click()
       await wait(() => reloading.reached > 0, 'Reload draft must actually fetch, not reuse its rejected cache')
       await forceSubmit(dialog); assert.equal(writes.length, 1)
       finish(false)
-      await wait(async () => await dialog.locator('fieldset.group-choices').first().getByRole('checkbox').count() === 1, 'Explicit reload adopts the current assignment snapshot')
+      await wait(async () => await dialog.locator('fieldset[data-slot=group-choices]').first().getByRole('checkbox').count() === 1, 'Explicit reload adopts the current assignment snapshot')
       await dialog.getByLabel('搜索外部节点').fill('')
       await dialog.getByRole('checkbox', { name: /TEST_ONLY 新节点/ }).check()
       putFailure = false
@@ -180,7 +181,7 @@ try {
       const subscription = page.getByRole('dialog')
       await subscription.getByText('TEST_ONLY 外部入口', { exact: true }).waitFor()
       await subscription.getByText('TEST_ONLY 受管入口', { exact: true }).waitFor()
-      assert.equal(await subscription.locator('.subscription-nodes li').count(), 2, 'Managed and external IDs do not collide')
+      assert.equal(await subscription.locator('[data-slot=subscription-nodes] li').count(), 2, 'Managed and external IDs do not collide')
       assert.equal(await subscription.getByRole('combobox').inputValue(), 'singbox')
       assert.equal(await subscription.locator('option[value=links]').evaluate(option => option.disabled), true)
       assert(subscriptionReads > 0)

@@ -327,14 +327,14 @@ try {
     await failedRead(`${prefix}/package-groups`)
     await blockedForm(dialog, '确认分配')
     assert.equal(await dialog.locator('select[name="package_group_id"]').inputValue(), '2')
-    await recoverRead(`${prefix}/package-groups`, () => page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true }).evaluate(button => button.click()), async () => {
+    await recoverRead(`${prefix}/package-groups`, () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click()), async () => {
       await blockedForm(dialog, '确认分配')
       assert.equal(await dialog.locator('select[name="package_group_id"]').inputValue(), '2')
     })
     await enabled(dialog.getByRole('button', { name: '确认分配', exact: true }))
     await failedRead(`${prefix}/users/1/entitlement`)
     await blockedForm(dialog, '确认分配')
-    await recoverRead(`${prefix}/users/1/entitlement`, () => page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true }).evaluate(button => button.click()), async () => {
+    await recoverRead(`${prefix}/users/1/entitlement`, () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click()), async () => {
       await blockedForm(dialog, '确认分配')
       assert.equal(await dialog.locator('select[name="package_group_id"]').inputValue(), '2')
     })
@@ -369,11 +369,11 @@ try {
     await page.getByRole('button', { name: '完成', exact: true }).click()
     assert.equal(writes.length, 2, 'subscription display must not write credentials or grants')
 
-    const direct = page.getByRole('checkbox', { name: '授权 节点 1', exact: true })
+    const direct = page.getByRole('switch', { name: '授权 节点 1', exact: true })
     // A clean snapshot is also unwritable while the real header refresh is pending.
     assert.equal(failures.size, 0)
     await enabled(direct)
-    await recoverRead(`${prefix}/proxy-resources`, page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true }), async () => {
+    await recoverRead(`${prefix}/proxy-resources`, page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }), async () => {
       assert.equal(await direct.isDisabled(), true)
       assert.equal(await direct.isChecked(), false)
       assert.equal(accessWrites.length, 0)
@@ -381,7 +381,7 @@ try {
     await enabled(direct)
     // Each direct-grant dependency must independently block writes after a failed GET.
     for (const dependency of [`${prefix}/users`, `${prefix}/proxy-resources`, `${prefix}/users/1/accesses`]) {
-      await failedRead(dependency, () => page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true }).click())
+      await failedRead(dependency, () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).click())
       assert.equal(await direct.isDisabled(), true)
       assert.equal(await direct.isChecked(), false)
       assert.equal(await page.getByText(user.name, { exact: true }).count() > 0, true, 'last good data remains visible')
@@ -392,7 +392,7 @@ try {
       await enabled(direct)
     }
     // A metrics-only failure has no authority over access edits.
-    await failedRead(`${prefix}/usage`, () => page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true }).click())
+    await failedRead(`${prefix}/usage`, () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).click())
     await enabled(direct)
     const grantSaved = page.waitForResponse(response => new URL(response.url()).pathname === `${prefix}/users/1/accesses` && response.request().method() === 'POST' && response.status() === 200)
     const grantReadback = page.waitForResponse(async response => new URL(response.url()).pathname === `${prefix}/users/1/accesses` && response.request().method() === 'GET' && response.status() === 200 && (await response.json()).some(access => access.user_id === 1 && access.node_id === 1 && access.direct_grant === true))
@@ -406,14 +406,14 @@ try {
     assert.equal(await direct.isChecked(), true, 'the real successful access readback must select the controlled switch')
     assert.deepEqual(accessWrites, [{ node_id: 1 }])
     failures.delete(`${prefix}/usage`)
-    await page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true }).click()
+    await page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).click()
 
     await page.getByRole('button', { name: '编辑', exact: true }).click()
     dialog = page.getByRole('dialog')
     await dialog.getByRole('textbox', { name: '代理用户名称', exact: true }).fill('已保留的用户草稿')
     await failedRead(`${prefix}/users`)
     await blockedForm(dialog, '保存修改')
-    await recoverRead(`${prefix}/users`, () => page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true }).evaluate(button => button.click()), async () => {
+    await recoverRead(`${prefix}/users`, () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click()), async () => {
       await blockedForm(dialog, '保存修改')
       assert.equal(await dialog.getByRole('textbox', { name: '代理用户名称', exact: true }).inputValue(), '已保留的用户草稿')
     })
@@ -425,14 +425,14 @@ try {
     await page.getByRole('button', { name: '创建策略组', exact: true }).click()
     dialog = page.getByRole('dialog')
     await dialog.getByRole('textbox', { name: '名称', exact: true }).fill('已保留的策略草稿')
-    await dialog.locator('input[name="node_ids"][value="2"]').check()
+    await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="2"])').check()
     // Let the actual periodic GET begin; no prior error or click behind the open dialog.
     assert.equal(failures.size, 0)
     await enabled(dialog.getByRole('button', { name: '保存', exact: true }))
     await recoverRead(`${prefix}/proxy-resources`, null, async () => {
       await blockedForm(dialog, '保存')
       assert.equal(await dialog.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '已保留的策略草稿')
-      assert.equal(await dialog.locator('input[name="node_ids"][value="2"]').isChecked(), true)
+      assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="2"])').isChecked(), true)
     })
     await enabled(dialog.getByRole('button', { name: '保存', exact: true }))
     await failedRead(`${prefix}/proxy-resources`)
@@ -440,21 +440,21 @@ try {
     await recoverRead(`${prefix}/proxy-resources`, dialog.getByRole('button', { name: '重试', exact: true }), async () => {
       await blockedForm(dialog, '保存')
       assert.equal(await dialog.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '已保留的策略草稿')
-      assert.equal(await dialog.locator('input[name="node_ids"][value="2"]').isChecked(), true)
+      assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="2"])').isChecked(), true)
       chainEntries = [{ id: 1, name: '恢复后的链路身份', entry_node_id: 2, exit_node_id: 1, available: true }]
     })
-    await enabled(dialog.locator('input[name="node_ids"][value="2"]'))
-    assert.equal(await dialog.locator('input[name="node_ids"][value="2"]').isChecked(), true, 'a changed node identity must not silently drop the draft selection')
+    await enabled(dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="2"])'))
+    assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="2"])').isChecked(), true, 'a changed node identity must not silently drop the draft selection')
     assert.equal(await dialog.getByRole('button', { name: '保存', exact: true }).isDisabled(), true)
     assert.equal(groupWrites.length, 0)
-    const unavailableNode = dialog.locator('input[name="node_ids"][value="2"]')
+    const unavailableNode = dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="2"])')
     const nodeDraftMutations = mutations.length
     await unavailableNode.click()
     await unavailableNode.waitFor({ state: 'hidden' })
     assert.equal(await unavailableNode.count(), 0, 'explicitly cancelling an unavailable node removes only that draft choice')
     await enabled(dialog.getByRole('button', { name: '保存', exact: true }))
     assert.equal(mutations.length, nodeDraftMutations, 'cancelling a draft selection must not write')
-    await dialog.locator('input[name="node_ids"][value="1"]').check()
+    await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="1"])').check()
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     await dialog.waitFor({ state: 'hidden' })
     assert.deepEqual(groupWrites[0].payload, { name: '已保留的策略草稿', node_ids: [1], chain_ids: [] })
@@ -462,24 +462,24 @@ try {
     // Existing unavailable IDs remain visible when opening, and after recovery removes them.
     policies[0].chain_ids = [42]
     chainEntries.push({ id: 42, name: '已不可用旧链路', entry_node_id: 99, exit_node_id: 100, available: false })
-    await page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true }).click()
+    await page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).click()
     const originalPolicyRow = page.getByRole('row').filter({ has: page.getByText('原策略', { exact: true }) })
     await originalPolicyRow.getByRole('button', { name: '编辑', exact: true }).click()
     dialog = page.getByRole('dialog')
-    assert.equal(await dialog.locator('input[name="chain_ids"][value="42"]').isChecked(), true)
+    assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="chain_ids"][value="42"])').isChecked(), true)
     assert.equal(await dialog.getByRole('button', { name: '保存', exact: true }).isDisabled(), true)
     await failedRead(`${prefix}/proxy-resources`)
     await blockedForm(dialog, '保存')
     await recoverRead(`${prefix}/proxy-resources`, dialog.getByRole('button', { name: '重试', exact: true }), async () => {
       await blockedForm(dialog, '保存')
-      assert.equal(await dialog.locator('input[name="chain_ids"][value="42"]').isChecked(), true)
+      assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="chain_ids"][value="42"])').isChecked(), true)
       chainEntries = chainEntries.filter(chain => chain.id !== 42)
     })
-    await enabled(dialog.locator('input[name="chain_ids"][value="42"]'))
-    assert.equal(await dialog.locator('input[name="chain_ids"][value="42"]').isChecked(), true)
+    await enabled(dialog.locator('[role=checkbox]:has(+ input[name="chain_ids"][value="42"])'))
+    assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="chain_ids"][value="42"])').isChecked(), true)
     assert.equal(await dialog.getByRole('button', { name: '保存', exact: true }).isDisabled(), true)
     assert.equal(groupWrites.length, 1)
-    const unavailableChain = dialog.locator('input[name="chain_ids"][value="42"]')
+    const unavailableChain = dialog.locator('[role=checkbox]:has(+ input[name="chain_ids"][value="42"])')
     const chainDraftMutations = mutations.length
     await unavailableChain.click()
     await unavailableChain.waitFor({ state: 'hidden' })
@@ -506,7 +506,7 @@ try {
     await dialog.waitFor({ state: 'hidden' })
     const renamedPackageRow = page.getByRole('row').filter({ has: page.getByText('已保留的套餐草稿', { exact: true }) })
     await renamedPackageRow.getByRole('button', { name: '删除', exact: true }).click()
-    dialog = page.getByRole('dialog')
+    dialog = page.getByRole('alertdialog')
     await failedRead(`${prefix}/package-groups`)
     assert.equal(await dialog.getByRole('button', { name: '确认删除', exact: true }).isDisabled(), true)
     assert.equal(groupWrites.length, 3)

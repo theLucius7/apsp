@@ -102,8 +102,8 @@ try {
       assert.equal(control.writes.length, baseline, 'Failed refresh sends zero writes'); ++totals.blocked
       control.recover(path); await refresh(); await restored(); await wait(() => control.writes.length === baseline + 1, 'Exactly one recovered write'); ++totals.recovered
     }
-    const nodesRefresh = page => page.locator('.page-header button').filter({ hasText: /^刷新$/ }).evaluate(button => button.click())
-    const sourceRefresh = page => page.locator('.subscription-sources > .panel-heading button').filter({ hasText: /^刷新$/ }).evaluate(button => button.click())
+    const nodesRefresh = page => page.locator('[data-slot=page-header] button').filter({ hasText: /^刷新$/ }).evaluate(button => button.click())
+    const sourceRefresh = page => page.locator('[data-slot=subscription-sources] > [data-slot=panel-header] button').filter({ hasText: /^刷新$/ }).evaluate(button => button.click())
     await fixture('/plugins/sing-box/nodes', async control => {
       const { page, writes } = control
       await page.getByRole('button', { name: '创建节点', exact: true }).first().click()
@@ -122,8 +122,8 @@ try {
     })
     await fixture('/plugins/sing-box/nodes', async control => {
       const { page } = control
-      await page.locator(width < 768 ? '.catalog-card' : '.catalog-table tbody tr').filter({ hasText: 'TEST_ONLY 节点 1' }).getByRole('button', { name: '删除', exact: true }).click()
-      const button = page.getByRole('dialog').getByRole('button', { name: '确认删除', exact: true })
+      await page.locator(width < 768 ? '[data-slot=catalog-card]' : '[data-slot=catalog-table] tbody tr').filter({ hasText: 'TEST_ONLY 节点 1' }).getByRole('button', { name: '删除', exact: true }).click()
+      const button = page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true })
       await block(control, `${prefix}/proxy-resources`, () => nodesRefresh(page), () => forceClick(button), () => button.click())
     })
     await fixture('/plugins/sing-box/nodes', async control => {
@@ -134,7 +134,7 @@ try {
       assert.deepEqual(writes[0].body.items[0].hops, [{ kind: 'managed', node_id: 2 }])
     })
     for (const creating of [false, true]) await fixture('/plugins/sing-box/nodes?view=sources', async control => {
-      const { page, writes } = control, sourcePanel = page.locator('.subscription-sources')
+      const { page, writes } = control, sourcePanel = page.locator('[data-slot=subscription-sources]')
       await sourcePanel.getByRole('button', { name: creating ? '添加来源' : '设置与更新', exact: true }).first().click()
       const dialog = page.getByRole('dialog'); await dialog.getByLabel('来源名称', { exact: true }).fill('TEST_ONLY 来源草稿')
       if (creating) { await dialog.getByLabel('来源类型').selectOption('inline'); await dialog.getByLabel('配置内容', { exact: false }).fill('TEST_ONLY content') }
@@ -152,8 +152,8 @@ try {
     })
     await fixture('/plugins/sing-box/nodes?view=sources', async control => {
       const { page } = control
-      await page.locator('.subscription-sources').getByRole('button', { name: '删除', exact: true }).click()
-      const button = page.getByRole('dialog').getByRole('button', { name: '确认删除', exact: true })
+      await page.locator('[data-slot=subscription-sources]').getByRole('button', { name: '删除', exact: true }).click()
+      const button = page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true })
       await block(control, `${prefix}/subscription-sources`, () => sourceRefresh(page), () => forceClick(button), () => button.click())
     })
     await fixture('/plugins/sing-box/nodes/chain/7', async control => {
@@ -164,9 +164,9 @@ try {
     })
     await fixture('/plugins/sing-box/nodes', async control => {
       const { page, writes, status } = control
-      await page.locator(width < 768 ? '.catalog-card' : '.catalog-table tbody tr').filter({ hasText: 'TEST_ONLY 节点 1' }).getByRole('button', { name: '部署', exact: true }).click()
-      const dialog = page.getByRole('dialog'), runtime = dialog.locator('.runtime-operations')
-      const refresh = () => dialog.locator('.node-deployment-heading button').filter({ hasText: /^刷新$/ }).evaluate(button => button.click())
+      await page.locator(width < 768 ? '[data-slot=catalog-card]' : '[data-slot=catalog-table] tbody tr').filter({ hasText: 'TEST_ONLY 节点 1' }).getByRole('button', { name: '部署', exact: true }).click()
+      const dialog = page.getByRole('dialog'), runtime = dialog.locator('[data-slot=runtime-operations]')
+      const refresh = () => dialog.locator('[data-slot=node-deployment-heading] button').filter({ hasText: /^刷新$/ }).evaluate(button => button.click())
       const inspect = runtime.getByRole('button', { name: '读取状态与日志', exact: true })
       await wait(() => inspect.isEnabled(), 'Runtime/deployment initial snapshots')
       await block(control, `${prefix}/servers/1/deployments`, refresh, () => forceClick(inspect), () => inspect.click())
@@ -212,7 +212,7 @@ try {
     await fixture('/system/plugins', async control => {
       const { page, hosts } = control; hosts[0].enabled = false
       // The initial response can already be in flight; explicitly refresh the installation collection.
-      const refresh = () => page.locator('section.panel').filter({ has: page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }) }).getByRole('button', { name: '刷新', exact: true }).evaluate(button => button.click())
+      const refresh = () => page.locator('section[data-slot=panel]').filter({ has: page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }) }).getByRole('button', { name: '刷新', exact: true }).evaluate(button => button.click())
       await refresh(); const enable = page.getByRole('button', { name: '启用并安装 sing-box', exact: true }); await wait(() => enable.isEnabled(), 'Enable snapshot')
       await block(control, `${prefix}/servers`, refresh, () => forceClick(enable), () => enable.click())
     })

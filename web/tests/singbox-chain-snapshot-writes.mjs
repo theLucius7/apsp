@@ -20,22 +20,22 @@ const origin = `http://127.0.0.1:${server.address().port}`
 const totals = { scenarios: 0, blocked: 0, recovered: 0, requests: 0, external: [], unexpected: [], errors: [] }
 const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
 const wait = async (condition, description) => { const deadline = Date.now() + 10000; while (!await condition()) { assert(Date.now() < deadline, description); await new Promise(resolve => setTimeout(resolve, 20)) } }
-const refresh = page => page.locator('.page-header button').filter({ hasText: /^刷新$/ }).evaluate(button => button.click())
+const refresh = page => page.locator('[data-slot=page-header] button').filter({ hasText: /^刷新$/ }).evaluate(button => button.click())
 const refreshReads = async page => {
   const responses = ['nodes', 'proxy-resources', 'servers'].map(name => page.waitForResponse(response => new URL(response.url()).pathname === `${prefix}/${name}` && response.request().method() === 'GET'))
   await refresh(page); await Promise.all(responses)
 }
 const forceForm = (form, reload = false) => form.evaluate((element, reload) => {
-  if (reload) Array.from(document.querySelectorAll('.page-header button')).find(button => button.textContent.trim() === '刷新').click()
+  if (reload) Array.from(document.querySelectorAll('[data-slot=page-header] button')).find(button => button.textContent.trim() === '刷新').click()
   element.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
 }, reload)
 const forceClick = (button, reload = false) => button.evaluate((element, reload) => {
-  if (reload) Array.from(document.querySelectorAll('.page-header button')).find(button => button.textContent.trim() === '刷新').click()
+  if (reload) Array.from(document.querySelectorAll('[data-slot=page-header] button')).find(button => button.textContent.trim() === '刷新').click()
   const disabled = element.disabled; try { element.disabled = false; element.click() } finally { element.disabled = disabled }
 }, reload)
 try {
   for (const width of [1440, 390]) {
-    const originalChain = page => page.locator(`${width < 768 ? '.catalog-card' : '.catalog-table tbody tr'}[data-resource-key="chain:7"]`)
+    const originalChain = page => page.locator(`${width < 768 ? '[data-slot=catalog-card]' : '[data-slot=catalog-table] tbody tr'}[data-resource-key="chain:7"]`)
     const fixture = async (routeHash, callback) => {
       const page = await browser.newPage({ viewport: { width, height: 1000 } }); page.setDefaultTimeout(10000)
       page.on('pageerror', error => totals.errors.push(error.message))
@@ -133,7 +133,7 @@ try {
         })
         await fixture(hash, async control => {
           await originalChain(control.page).getByRole('button', { name: '删除', exact: true }).click()
-          const button = control.page.getByRole('dialog').getByRole('button', { name: '确认删除', exact: true })
+          const button = control.page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true })
           await block(control, dependency, reload => forceClick(button, reload), () => button.click())
           assert.deepEqual(control.writes, [{ method: 'DELETE', path: `${prefix}/proxy-resources/chain/7` }])
         })
@@ -200,7 +200,7 @@ try {
     await fixture('/plugins/sing-box/nodes', async control => {
       await originalChain(control.page).getByRole('button', { name: '删除', exact: true }).click()
       control.resources.splice(control.resources.findIndex(value => value.kind === 'chain'), 1); await refresh(control.page)
-      const dialog = control.page.getByRole('dialog'); await dialog.getByText('此代理资源已不存在，请重新选择；当前草稿已保留。', { exact: true }).waitFor()
+      const dialog = control.page.getByRole('alertdialog'); await dialog.getByText('此代理资源已不存在，请重新选择；当前草稿已保留。', { exact: true }).waitFor()
       await forceClick(dialog.getByRole('button', { name: '确认删除', exact: true })); assert.equal(control.writes.length, 0); ++totals.blocked
       await dialog.getByRole('button', { name: '取消', exact: true }).click(); await dialog.waitFor({ state: 'hidden' })
     })

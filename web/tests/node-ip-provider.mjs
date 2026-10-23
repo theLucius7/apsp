@@ -86,7 +86,7 @@ try {
       await page.getByRole('button',{name:'节点正式 IP 查询',exact:true}).waitFor()
     }
     async function chapter(label) {
-      const element = page.locator('details.quality-database').filter({has:page.locator('summary').getByText(label,{exact:true})})
+      const element = page.locator('details[data-slot=quality-database]').filter({has:page.locator('summary').getByText(label,{exact:true})})
       await element.locator('summary').click(); return element
     }
     async function field(chapter,label) { return chapter.locator('dl > div').filter({has:page.locator('dt').getByText(label,{exact:true})}).locator('dd').innerText() }
@@ -102,7 +102,7 @@ try {
       assert(text.includes('最近成功结果'))
       if (source.includes('db-ip')) assert.equal(await field(element,'纬度'),'0')
     }
-    assert((await page.locator('.quality-body').innerText()).includes('流媒体解锁：未知'))
+    assert((await page.locator('[data-slot=quality-body]').innerText()).includes('流媒体解锁：未知'))
     cases.push('typed-false-zero-node-source-and-streaming-unknown')
     const count = posts.length
     await page.getByRole('button',{name:'节点正式 IP 查询',exact:true}).click()

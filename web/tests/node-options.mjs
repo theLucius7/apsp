@@ -92,7 +92,7 @@ try {
         nodeReadGate = {reached:false,promise:new Promise(done => {release=done})}
         const before = writes.length
         await dialog.locator('form').evaluate(form => {
-          document.querySelector('.page-header button').click()
+          document.querySelector('[data-slot=page-header] button').click()
           form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))
         })
         await wait(() => nodeReadGate.reached,'A real current node read must be held')
@@ -140,7 +140,7 @@ try {
     assert.equal(await dialog.locator('[name=public_host]').isDisabled(),true)
     assert.equal(await dialog.locator('[name=name]').isEnabled(),true)
     await dialog.locator('[name=name]').fill('仅修改名称')
-    await dialog.locator('[name=enabled]').uncheck()
+    await dialog.locator('[role=checkbox]:has(+ [name=enabled])').uncheck()
     await dialog.getByRole('button',{name:'保存目标配置',exact:true}).click()
     await dialog.waitFor({state:'hidden'})
     assert.deepEqual(writes.at(-1).body,{name:'仅修改名称',enabled:false})

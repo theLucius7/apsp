@@ -167,7 +167,7 @@ try {
     await dialog.getByRole('button', { name: '复制配置', exact: true }).click()
     await page.getByRole('heading', { name: '欢迎回来', exact: true }).waitFor()
     assert.equal(await page.getByRole('dialog').count(), 0)
-    assert.equal(await page.locator('.subscription-preview').count(), 0)
+    assert.equal(await page.locator('[data-slot=subscription-preview]').count(), 0)
     assert.equal((await page.locator('body').innerText()).includes('fixture-secret'), false)
     assert.equal((await page.locator('body').innerText()).includes('fresh-fixture'), false)
     assert.deepEqual(await page.evaluate(() => [...Object.keys(localStorage), ...Object.keys(sessionStorage)].filter(key => /subscription|token|config/i.test(key))), [])
@@ -185,7 +185,7 @@ try {
   await page.goto(`${origin}/#/plugins/sing-box/users`)
   await page.getByRole('heading', { name: '欢迎回来', exact: true }).waitFor()
   assert.deepEqual(privateRequests, [])
-  assert.equal(await page.locator('.subscription-dialog').count(), 0)
+  assert.equal(await page.locator('[data-dialog=subscription-dialog]').count(), 0)
   await context.close()
   console.log(JSON.stringify(results))
 } finally { await browser.close(); server.close() }

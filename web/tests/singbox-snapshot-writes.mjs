@@ -26,9 +26,9 @@ const wait = async (condition, description) => {
   const deadline = Date.now() + 10000
   while (!await condition()) { assert(Date.now() < deadline, description); await new Promise(resolve => setTimeout(resolve, 20)) }
 }
-const forceSubmit = (dialog, reload = false) => dialog.locator('form').evaluate((form, reload) => { if (reload) Array.from(document.querySelectorAll('.page-header button')).find(button => button.textContent.trim() === '刷新').click(); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) }, reload)
-const forceClick = (button, reload = false) => button.evaluate((element, reload) => { if (reload) Array.from(document.querySelectorAll('.page-header button')).find(button => button.textContent.trim() === '刷新').click(); const disabled = element.disabled; try { element.disabled = false; element.click() } finally { element.disabled = disabled } }, reload)
-const refresh = page => page.locator('.page-header button').filter({ hasText: /^刷新$/ }).evaluate(button => button.click())
+const forceSubmit = (dialog, reload = false) => dialog.locator('form').evaluate((form, reload) => { if (reload) Array.from(document.querySelectorAll('[data-slot=page-header] button')).find(button => button.textContent.trim() === '刷新').click(); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) }, reload)
+const forceClick = (button, reload = false) => button.evaluate((element, reload) => { if (reload) Array.from(document.querySelectorAll('[data-slot=page-header] button')).find(button => button.textContent.trim() === '刷新').click(); const disabled = element.disabled; try { element.disabled = false; element.click() } finally { element.disabled = disabled } }, reload)
+const refresh = page => page.locator('[data-slot=page-header] button').filter({ hasText: /^刷新$/ }).evaluate(button => button.click())
 
 let browser
 const totals = { scenarios: 0, requests: 0, writes: 0, blocked_submissions: 0, unexpected: [], external: [], page_errors: [], screenshots: [] }
@@ -201,8 +201,8 @@ try {
       const { page, writes } = control
       await page.getByRole('row').filter({ hasText: 'TEST_ONLY 原策略' }).getByRole('button', { name: '编辑', exact: true }).click()
       const dialog = page.getByRole('dialog'), name = dialog.locator('input[name="name"]')
-      await name.fill('TEST_ONLY 保留策略草稿'); await dialog.locator('input[name="node_ids"][value="2"]').check()
-      const draft = async () => { assert.equal(await name.inputValue(), 'TEST_ONLY 保留策略草稿'); assert(await dialog.locator('input[name="chain_ids"][value="10"]').isChecked()); assert(await dialog.locator('input[name="node_ids"][value="2"]').isChecked()) }
+      await name.fill('TEST_ONLY 保留策略草稿'); await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="2"])').check()
+      const draft = async () => { assert.equal(await name.inputValue(), 'TEST_ONLY 保留策略草稿'); assert(await dialog.locator('[role=checkbox]:has(+ input[name="chain_ids"][value="10"])').isChecked()); assert(await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="2"])').isChecked()) }
       await blockAndRecover(control, `${prefix}/${dependency}`, sameEvent => forceSubmit(dialog, sameEvent), () => dialog.getByRole('button', { name: '保存', exact: true }).click(), draft)
       assert.deepEqual(writes[0], { method: 'PUT', path: `${prefix}/policy-groups/1`, payload: { name: 'TEST_ONLY 保留策略草稿', node_ids: [1, 2], chain_ids: [10] } })
     })
@@ -218,7 +218,7 @@ try {
       const { page, writes } = control
       if (kind === 'package-groups') await page.getByRole('button', { name: '套餐组', exact: true }).click()
       await page.getByRole('row').filter({ hasText: kind === 'policy-groups' ? 'TEST_ONLY 新策略' : 'TEST_ONLY 套餐 2' }).getByRole('button', { name: '删除', exact: true }).click()
-      const button = page.getByRole('dialog').getByRole('button', { name: '确认删除', exact: true })
+      const button = page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true })
       await blockAndRecover(control, `${prefix}/${kind}`, sameEvent => forceClick(button, sameEvent), () => button.click())
       assert.equal(writes[0].method, 'DELETE'); assert.equal(writes[0].path, `${prefix}/${kind}/2`)
     })
@@ -232,7 +232,7 @@ try {
     })
     for (const dependency of ['users', 'nodes', 'proxy-resources', 'users/1/accesses', 'users/1/entitlement']) await fixture('users', async control => {
       const { page, writes } = control
-      await page.locator('.user-heading').getByRole('button', { name: '编辑', exact: true }).click()
+      await page.locator('[data-slot=user-heading]').getByRole('button', { name: '编辑', exact: true }).click()
       const dialog = page.getByRole('dialog'); await dialog.locator('input[name="name"]').fill('TEST_ONLY 用户草稿')
       await blockAndRecover(control, `${prefix}/${dependency}`, sameEvent => forceSubmit(dialog, sameEvent), () => dialog.getByRole('button', { name: '保存修改', exact: true }).click(), async () => assert.equal(await dialog.locator('input[name="name"]').inputValue(), 'TEST_ONLY 用户草稿'))
       assert.deepEqual(writes[0], { method: 'PATCH', path: `${prefix}/users/1`, payload: { name: 'TEST_ONLY 用户草稿' } })
@@ -263,16 +263,16 @@ try {
     })
     for (const granted of [false, true]) await fixture('users', async control => {
       const { page, writes } = control; control.setDirect(granted); await refresh(page)
-      const input = page.getByRole('checkbox', { name: '授权 TEST_ONLY 节点 1', exact: true })
+      const input = page.getByRole('switch', { name: '授权 TEST_ONLY 节点 1', exact: true })
       await wait(async () => await input.isEnabled() && await input.isChecked() === granted, 'direct grant readback')
-      const attempt = (reload = false) => input.evaluate((element, reload) => { if (reload) Array.from(document.querySelectorAll('.page-header button')).find(button => button.textContent.trim() === '刷新').click(); const disabled = element.disabled; try { element.disabled = false; element.click() } finally { element.disabled = disabled } }, reload)
+      const attempt = (reload = false) => input.evaluate((element, reload) => { if (reload) Array.from(document.querySelectorAll('[data-slot=page-header] button')).find(button => button.textContent.trim() === '刷新').click(); const disabled = element.disabled; try { element.disabled = false; element.click() } finally { element.disabled = disabled } }, reload)
       await blockAndRecover(control, `${prefix}/users/1/entitlement`, attempt, async () => { await wait(() => input.isEnabled(), 'grant snapshot restored'); await input.click() })
       assert.equal(writes[0].method, granted ? 'DELETE' : 'POST'); assert.equal(writes[0].path, `${prefix}/users/1/accesses${granted ? '/1' : ''}`)
     })
     await fixture('users', async control => {
       const { page, writes } = control
-      await page.locator('.user-heading').getByRole('button', { name: '删除', exact: true }).click()
-      const button = page.getByRole('dialog').getByRole('button', { name: '确认删除', exact: true })
+      await page.locator('[data-slot=user-heading]').getByRole('button', { name: '删除', exact: true }).click()
+      const button = page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true })
       await blockAndRecover(control, `${prefix}/users`, sameEvent => forceClick(button, sameEvent), () => button.click())
       assert.equal(writes[0].method, 'DELETE'); assert.equal(writes[0].path, `${prefix}/users/1`)
     })
@@ -289,10 +289,10 @@ try {
       const dialog = page.getByRole('dialog'); await dialog.locator('input[name="name"]').fill('TEST_ONLY 消失资源草稿')
       resources.splice(resources.findIndex(value => value.kind === 'chain'), 1); resources.splice(resources.findIndex(value => value.id === 1), 1)
       await refresh(page); await dialog.getByText('已选资源已不可用或身份已变更，请取消这些选择后再保存。其余草稿已保留。', { exact: true }).waitFor()
-      assert(await dialog.locator('input[name="chain_ids"][value="10"]').isChecked()); assert(await dialog.locator('input[name="node_ids"][value="1"]').isChecked())
+      assert(await dialog.locator('[role=checkbox]:has(+ input[name="chain_ids"][value="10"])').isChecked()); assert(await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="1"])').isChecked())
       await forceSubmit(dialog); assert.equal(writes.length, 0)
       if (process.env.APSP_UI_SCREENSHOT_DIR) { await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true }); const screenshot = resolve(process.env.APSP_UI_SCREENSHOT_DIR, `singbox-snapshot-missing-resource-${width}.png`); await page.screenshot({ path: screenshot, fullPage: true }); totals.screenshots.push(screenshot) }
-      await dialog.locator('input[name="chain_ids"][value="10"]').click(); assert.equal(await dialog.locator('input[name="chain_ids"][value="10"]').count(), 0); await dialog.locator('input[name="node_ids"][value="1"]').click(); assert.equal(await dialog.locator('input[name="node_ids"][value="1"]').count(), 0); await dialog.getByRole('button', { name: '保存', exact: true }).click()
+      await dialog.locator('[role=checkbox]:has(+ input[name="chain_ids"][value="10"])').click(); assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="chain_ids"][value="10"])').count(), 0); await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="1"])').click(); assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="1"])').count(), 0); await dialog.getByRole('button', { name: '保存', exact: true }).click()
       assert.deepEqual(writes[0].payload, { name: 'TEST_ONLY 消失资源草稿', node_ids: [], chain_ids: [] })
     })
     await fixture('groups', async control => {
@@ -322,7 +322,7 @@ try {
     })
     await fixture('users', async control => {
       const { page, users, writes } = control
-      await page.locator('.user-heading').getByRole('button', { name: '编辑', exact: true }).click()
+      await page.locator('[data-slot=user-heading]').getByRole('button', { name: '编辑', exact: true }).click()
       const dialog = page.getByRole('dialog'); await dialog.locator('input[name="name"]').fill('TEST_ONLY 最后用户草稿'); users.splice(0); await refresh(page)
       await dialog.getByText('此代理用户已不存在，请重新选择；当前草稿已保留。', { exact: true }).waitFor(); await forceSubmit(dialog); assert.equal(writes.length, 0)
       assert.equal(await dialog.locator('input[name="name"]').inputValue(), 'TEST_ONLY 最后用户草稿')
@@ -334,11 +334,11 @@ try {
     })
     await fixture('users', async control => {
       const { page, users, writes } = control
-      await page.locator('.user-heading').getByRole('button', { name: '编辑', exact: true }).click()
+      await page.locator('[data-slot=user-heading]').getByRole('button', { name: '编辑', exact: true }).click()
       const dialog = page.getByRole('dialog'); await dialog.locator('input[name="name"]').fill('TEST_ONLY 消失用户草稿'); users.splice(0, 1); await refresh(page)
       await dialog.getByText('此代理用户已不存在，请重新选择；当前草稿已保留。', { exact: true }).waitFor(); await forceSubmit(dialog); assert.equal(writes.length, 0)
-      assert.equal(await dialog.locator('input[name="name"]').inputValue(), 'TEST_ONLY 消失用户草稿'); assert.equal(await page.locator('.user-row[aria-pressed="true"]').count(), 0, 'removed selected user must not silently switch to another user')
-      await dialog.getByRole('button', { name: '取消', exact: true }).click(); await page.locator('.user-row').filter({ hasText: 'TEST_ONLY 用户 2' }).click(); await page.locator('.user-heading').getByRole('heading', { name: 'TEST_ONLY 用户 2', exact: true }).waitFor()
+      assert.equal(await dialog.locator('input[name="name"]').inputValue(), 'TEST_ONLY 消失用户草稿'); assert.equal(await page.locator('[data-slot=user-roster] button[aria-pressed="true"]').count(), 0, 'removed selected user must not silently switch to another user')
+      await dialog.getByRole('button', { name: '取消', exact: true }).click(); await page.locator('[data-slot=user-roster] button').filter({ hasText: 'TEST_ONLY 用户 2' }).click(); await page.locator('[data-slot=user-heading]').getByRole('heading', { name: 'TEST_ONLY 用户 2', exact: true }).waitFor()
     })
   }
   assert.deepEqual(totals.unexpected, []); assert.deepEqual(totals.external, []); assert.deepEqual(totals.page_errors, [])

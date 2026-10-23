@@ -1,20 +1,40 @@
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { AnimatePresence, m } from 'motion/react'
+import { ArrowDownIcon, ArrowUpIcon, DatabaseIcon, LayoutGridIcon, ListFilterIcon, RefreshCwIcon, SearchIcon, ServerIcon, TableIcon, WalletIcon } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import type { ProbeOverview } from '../probes'
 import type { Server } from '../types'
 import { aggregate, fresh, network, size, speed } from './data'
 import { dashboardCounts, savedSort, savedView, selectServers, snapshotUnavailable } from './dashboard'
 import type { DashboardFilter, DashboardSort, DashboardView } from './dashboard'
-import { Icon } from './Icon'
 import { ServerCard } from './ServerCard'
 import ServerTable from './ServerTable'
 import { useDashboardPoll } from './useDashboardPoll'
 import { useDashboardServers } from './useDashboardServers'
 import { useCurrency } from './CurrencyContext'
 import { costSummary, money, quoteState } from './currency'
+import { DisplayNotice, surface, toneText } from './ui'
+import { cn } from '@/lib/utils'
+import { itemMotion, revealMotion } from '@/lib/motion'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
+import { Spinner } from '@/components/ui/spinner'
+import { SegmentedButton, SegmentedGroup } from '@/components/segmented'
 
-function Stat({ icon, label, value, unit, children, tone, title }: { icon?: string; label: string; value: ReactNode; unit?: string; children: ReactNode; tone?: string; title?: string }) {
-  return <div className="d-overview-item" title={title}><div className="d-overview-label"><span>{label}</span><span className={`d-stat-icon ${tone ? `d-${tone}` : ''}`}><Icon name={icon ?? 'server'} size={17} /></span></div><div className="d-overview-value"><strong className={tone ? `d-${tone}` : ''}>{value}</strong>{unit && <b>{unit}</b>}</div><div className="d-overview-note">{children}</div></div>
+function Stat({ icon: Icon = ServerIcon, label, value, unit, children, tone, title }: { icon?: LucideIcon; label: string; value: ReactNode; unit?: string; children: ReactNode; tone?: string; title?: string }) {
+  return <div data-slot="overview-item" className="min-w-0 border-border px-5 py-4 max-sm:min-h-24 max-sm:px-3.5 max-sm:py-3" title={title}>
+    <div data-slot="overview-label" className="text-muted-foreground mb-2 flex items-center justify-between gap-2 text-sm font-medium">
+      <span>{label}</span>
+      <span className={cn('bg-primary/10 text-primary grid size-7 place-items-center rounded-md', tone && toneText[tone])}><Icon className="size-4" aria-hidden="true" /></span>
+    </div>
+    <div data-slot="overview-value" className="flex min-w-0 items-baseline gap-1.5">
+      <strong className={cn('truncate text-[1.75rem] leading-tight font-semibold tracking-tight tabular-nums max-sm:text-2xl', tone && toneText[tone])}>{value}</strong>
+      {unit && <b className="text-muted-foreground shrink-0 text-sm font-medium">{unit}</b>}
+    </div>
+    <div className="text-muted-foreground mt-1.5 flex min-h-4 items-center gap-2 overflow-hidden text-xs whitespace-nowrap *:truncate">{children}</div>
+  </div>
 }
 
 function readPreference(key: string): string | null {
@@ -74,35 +94,63 @@ export default function Overview({ now }: { now: number }) {
   const refresh = () => { resource.reload(); probes.reload() }
   const reset = () => { setQuery(''); setFilter('all'); setGroup(''); setRegion('') }
   const changed = Boolean(query || filter !== 'all' || group || region)
+  const customised = filter !== 'all' || Boolean(region) || sort !== 'default' || view !== 'cards'
   const chooseView = (value: DashboardView) => { setView(value); savePreference('view', value) }
   const chooseSort = (value: string) => { const next = savedSort(value); setSort(next); savePreference('sort', next) }
-  return <div className="d-home">
-    <section className={`d-overview d-glass ${showCosts ? 'd-overview-assets' : ''}`} aria-label="服务器总览">
-      <Stat icon="server" label="在线节点" value={!servers || unavailable ? '—' : counts.online} unit={servers ? `/ ${entries.length} 台` : undefined} tone="good">{unavailable ? '等待更新' : !entries.length ? '等待接入' : counts.online === counts.all ? '全部运行正常' : `${counts.offline} 台离线${counts.pending ? ` · ${counts.pending} 台待接入` : ''}`}</Stat>
-      {showCosts && <Stat icon="wallet" label="资产" value={money(costs.total, currency)} title={`${costs.converted} 台可折算 · ${costs.missingPrices} 台未填写费用；每 30 天约 ${money(costs.recurring, currency)}`}><span>剩余价值 {money(costs.remaining, currency)}</span>{costs.missingRates > 0 ? <span className="d-warning" title={`${costs.missingRates} 台缺少汇率，未计入合计`}>汇率缺失</span> : staleCosts ? <span className="d-warning" title={referenceState === 'read-error' ? '汇率读取失败，使用上次有效汇率' : referenceState === 'stale' ? '使用上次有效汇率' : '无法确认参考汇率状态'}>{referenceState === 'read-error' ? '汇率读取失败' : referenceState === 'stale' ? '旧汇率' : '汇率状态未知'}</span> : null}</Stat>}
-      <Stat icon="database" label="累计流量" value={size(total)} title={`网卡累计 · ${completeCounters.length} / ${entries.length} 台有完整计数`}><span className="d-good">上传 {size(sent.value)}</span><span className="d-info">下载 {size(received.value)}</span></Stat>
-      <Stat icon="up" label="实时上行" value={uploadValue} unit={uploadUnit} tone="good" title={`${upload.count} / ${entries.length} 台有有效采样`}>{peak(topUpload, 'transmit_bytes_per_sec')}</Stat>
-      <Stat icon="down" label="实时下行" value={downloadValue} unit={downloadUnit} tone="info" title={`${download.count} / ${entries.length} 台有有效采样`}>{peak(topDownload, 'receive_bytes_per_sec')}</Stat>
+  return <div data-slot="dashboard-home" className="flex flex-col gap-4">
+    <section aria-label="服务器总览" className={cn(surface, 'grid overflow-hidden [&>*]:border-border max-lg:grid-cols-2 max-lg:[&>*:nth-child(even)]:border-l max-lg:[&>*:not(:nth-last-child(-n+2))]:border-b max-lg:[&>*:last-child:nth-child(odd)]:col-span-full lg:[&>*+*]:border-l', showCosts ? 'lg:grid-cols-5' : 'lg:grid-cols-4')}>
+      <Stat icon={ServerIcon} label="在线节点" value={!servers || unavailable ? '—' : counts.online} unit={servers ? `/ ${entries.length} 台` : undefined} tone="good">{unavailable ? '等待更新' : !entries.length ? '等待接入' : counts.online === counts.all ? '全部运行正常' : `${counts.offline} 台离线${counts.pending ? ` · ${counts.pending} 台待接入` : ''}`}</Stat>
+      {showCosts && <Stat icon={WalletIcon} label="资产" value={money(costs.total, currency)} title={`${costs.converted} 台可折算 · ${costs.missingPrices} 台未填写费用；每 30 天约 ${money(costs.recurring, currency)}`}><span>剩余价值 {money(costs.remaining, currency)}</span>{costs.missingRates > 0 ? <span className="text-warning" title={`${costs.missingRates} 台缺少汇率，未计入合计`}>汇率缺失</span> : staleCosts ? <span className="text-warning" title={referenceState === 'read-error' ? '汇率读取失败，使用上次有效汇率' : referenceState === 'stale' ? '使用上次有效汇率' : '无法确认参考汇率状态'}>{referenceState === 'read-error' ? '汇率读取失败' : referenceState === 'stale' ? '旧汇率' : '汇率状态未知'}</span> : null}</Stat>}
+      <Stat icon={DatabaseIcon} label="累计流量" value={size(total)} title={`网卡累计 · ${completeCounters.length} / ${entries.length} 台有完整计数`}><span className="text-success">上传 {size(sent.value)}</span><span className="text-info">下载 {size(received.value)}</span></Stat>
+      <Stat icon={ArrowUpIcon} label="实时上行" value={uploadValue} unit={uploadUnit} tone="good" title={`${upload.count} / ${entries.length} 台有有效采样`}>{peak(topUpload, 'transmit_bytes_per_sec')}</Stat>
+      <Stat icon={ArrowDownIcon} label="实时下行" value={downloadValue} unit={downloadUnit} tone="info" title={`${download.count} / ${entries.length} 台有有效采样`}>{peak(topDownload, 'receive_bytes_per_sec')}</Stat>
     </section>
-    <div className="d-dashboard-toolbar">
-      <div className="d-toolbar"><label className="d-search"><Icon name="search" size={16} /><input type="search" aria-label="搜索服务器" placeholder="搜索节点" value={query} onChange={event => setQuery(event.target.value)} /></label>
-        <div className="d-segmented d-group-tabs" role="group" aria-label="服务器分组"><button aria-pressed={!group} onClick={() => setGroup('')}>全部</button>{groups.map(name => <button key={name} aria-pressed={group === name} onClick={() => setGroup(name)}>{name}</button>)}</div>
-        <div className="d-toolbar-actions"><span className="d-result-count">{servers ? `${visible.length} 个节点` : '等待数据'}</span><button className={`d-icon-button ${filter !== 'all' || region || sort !== 'default' || view !== 'cards' ? 'd-options-active' : ''}`} aria-label="筛选与视图" title="筛选与视图" aria-expanded={optionsOpen} aria-controls="dashboard-options" onClick={() => setOptionsOpen(value => !value)}><Icon name="list" size={16} /></button><button className="d-icon-button" aria-label="刷新服务器" title="刷新服务器" onClick={refresh} disabled={loading && probes.loading}><Icon name="refresh" size={17} /></button></div>
-      </div>
-      {optionsOpen && <div className="d-dashboard-options" id="dashboard-options">
-        <div className="d-segmented" role="group" aria-label="服务器状态筛选">{filters.map(([value, label]) => <button key={value} aria-label={label} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}<span className="d-filter-count" aria-hidden="true">{!servers || (value !== 'all' && unavailable) ? '—' : counts[value]}</span></button>)}</div>
-        <div className="d-asset-filters"><label>地区<select aria-label="地区" value={region} onChange={event => setRegion(event.target.value)}><option value="">全部地区</option>{regions.map(name => <option key={name} value={name}>{name}</option>)}</select></label>
-          <label>排序<select aria-label="排序" value={sort} onChange={event => chooseSort(event.target.value)}><option value="default">默认顺序</option><option value="attention">需关注的优先</option><option value="name">按名称</option><option value="cpu">处理器占用优先</option><option value="memory">内存占用优先</option><option value="network">网络速率优先</option></select></label>
+    <div data-slot="dashboard-toolbar" className="min-w-0">
+      <div className="flex min-h-9 items-center gap-3 max-lg:flex-wrap max-lg:gap-2">
+        <label className="relative flex min-w-44 flex-[0_1_300px] items-center max-lg:flex-[1_1_180px] max-sm:min-w-24 max-sm:flex-[1_1_100px]">
+          <SearchIcon className="text-muted-foreground pointer-events-none absolute left-2.5 size-4" aria-hidden="true" />
+          <Input type="search" aria-label="搜索服务器" placeholder="搜索节点" value={query} onChange={event => setQuery(event.target.value)} className="pl-8" />
+        </label>
+        <SegmentedGroup aria-label="服务器分组" className="no-scrollbar max-w-full flex-nowrap overflow-x-auto max-lg:order-3 max-lg:flex-[1_1_100%]">
+          <SegmentedButton aria-pressed={!group} onClick={() => setGroup('')}>全部</SegmentedButton>
+          {groups.map(name => <SegmentedButton key={name} aria-pressed={group === name} onClick={() => setGroup(name)}>{name}</SegmentedButton>)}
+        </SegmentedGroup>
+        <div className="ml-auto flex flex-none items-center gap-1">
+          <span className="text-muted-foreground mr-1.5 text-xs whitespace-nowrap">{servers ? `${visible.length} 个节点` : '等待数据'}</span>
+          <Button variant="ghost" size="icon" className={cn(customised && 'bg-primary/10 text-primary')} aria-label="筛选与视图" title="筛选与视图" aria-expanded={optionsOpen} aria-controls="dashboard-options" onClick={() => setOptionsOpen(value => !value)}><ListFilterIcon /></Button>
+          <Button variant="ghost" size="icon" aria-label="刷新服务器" title="刷新服务器" onClick={refresh} disabled={loading && probes.loading}><RefreshCwIcon /></Button>
         </div>
-        <div className="d-dashboard-view">{changed && <button className="d-clear-filters" onClick={reset}>清除筛选</button>}<div className="d-segmented" role="group" aria-label="看板视图"><button aria-pressed={view === 'cards'} onClick={() => chooseView('cards')}><Icon name="grid" size={14} />卡片</button><button aria-pressed={view === 'table'} onClick={() => chooseView('table')}><Icon name="list" size={14} />表格</button></div></div>
-      </div>}
+      </div>
+      <AnimatePresence initial={false}>
+        {optionsOpen && <m.div key="options" {...revealMotion} className="overflow-hidden">
+          <div id="dashboard-options" className="mt-3 flex flex-wrap items-center gap-3 border-t pt-3">
+            <SegmentedGroup aria-label="服务器状态筛选" className="max-w-full max-sm:flex-[1_1_100%] max-sm:*:flex-1">
+              {filters.map(([value, label]) => <SegmentedButton key={value} aria-label={label} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}<span data-slot="filter-count" className="text-muted-foreground text-xs tabular-nums" aria-hidden="true">{!servers || (value !== 'all' && unavailable) ? '—' : counts[value]}</span></SegmentedButton>)}
+            </SegmentedGroup>
+            <div className="text-muted-foreground flex flex-wrap gap-3 text-xs max-sm:w-full max-sm:gap-2">
+              <label className="flex items-center gap-2 max-sm:flex-auto max-sm:justify-between">地区<NativeSelect size="sm" aria-label="地区" value={region} onChange={event => setRegion(event.target.value)} className="max-w-40"><option value="">全部地区</option>{regions.map(name => <option key={name} value={name}>{name}</option>)}</NativeSelect></label>
+              <label className="flex items-center gap-2 max-sm:flex-auto max-sm:justify-between">排序<NativeSelect size="sm" aria-label="排序" value={sort} onChange={event => chooseSort(event.target.value)} className="max-w-40"><option value="default">默认顺序</option><option value="attention">需关注的优先</option><option value="name">按名称</option><option value="cpu">处理器占用优先</option><option value="memory">内存占用优先</option><option value="network">网络速率优先</option></NativeSelect></label>
+            </div>
+            <div className="ml-auto flex items-center gap-3 max-sm:m-0 max-sm:w-full max-sm:justify-end">
+              {changed && <Button variant="link" size="sm" onClick={reset}>清除筛选</Button>}
+              <SegmentedGroup aria-label="看板视图">
+                <SegmentedButton aria-pressed={view === 'cards'} onClick={() => chooseView('cards')}><LayoutGridIcon aria-hidden="true" />卡片</SegmentedButton>
+                <SegmentedButton aria-pressed={view === 'table'} onClick={() => chooseView('table')}><TableIcon aria-hidden="true" />表格</SegmentedButton>
+              </SegmentedGroup>
+            </div>
+          </div>
+        </m.div>}
+      </AnimatePresence>
     </div>
-    {!error && unavailable && servers && <div className="d-notice" role="status"><span>连接中断，等待更新</span><button onClick={refresh}>重试</button></div>}
-    {error && <div className="d-notice d-error" role="alert"><span>{error}</span><button onClick={refresh}>重试</button></div>}
-    {probes.error && <div className="d-notice d-error" role="alert"><span>拨测读取失败</span><button onClick={probes.reload}>重试拨测</button></div>}
-    {!servers ? !error && <div className="d-empty" role="status">{loading ? <><span className="spinner" />正在读取服务器…</> : '等待数据'}</div> : visible.length ? view === 'cards' ?
-      <section className="d-node-grid" aria-label="服务器列表">{visible.map(server => <ServerCard key={server.id} server={server} unavailable={unavailable} probes={probes.data ? byServer.get(server.id) ?? [] : undefined} probeError={probeUnavailable} probeLoading={probes.loading} now={now} />)}</section> :
+    {!error && unavailable && servers && <DisplayNotice role="status" onRetry={refresh}>连接中断，等待更新</DisplayNotice>}
+    {error && <DisplayNotice tone="error" onRetry={refresh}>{error}</DisplayNotice>}
+    {probes.error && <DisplayNotice tone="error" onRetry={probes.reload} retryLabel="重试拨测">拨测读取失败</DisplayNotice>}
+    {!servers ? !error && <div className="text-muted-foreground flex min-h-80 flex-col items-center justify-center gap-3 p-6 text-center text-sm" role="status">{loading ? <><Spinner role="presentation" aria-hidden="true" aria-label={undefined} />正在读取服务器…</> : '等待数据'}</div> : visible.length ? view === 'cards' ?
+      <section aria-label="服务器列表" className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] items-start gap-3 max-sm:grid-cols-1">
+        {/* Filtering removes cards at once so results never mix with stale entries; kept cards glide into place. */}
+        {visible.map(server => <m.div key={server.id} layout="position" {...itemMotion} className="min-w-0"><ServerCard server={server} unavailable={unavailable} probes={probes.data ? byServer.get(server.id) ?? [] : undefined} probeError={probeUnavailable} probeLoading={probes.loading} now={now} /></m.div>)}
+      </section> :
       <ServerTable servers={visible} unavailable={unavailable} byServer={byServer} probesKnown={probes.data !== undefined} probeError={probeUnavailable} probeLoading={probes.loading} now={now} /> :
-      !error && <div className="d-empty"><Icon name="server" size={32} /><strong>{entries.length ? '没有匹配的节点' : resource.hiddenOnly ? '节点已隐藏' : '尚未添加节点'}</strong>{entries.length ? <button className="d-button" onClick={reset}>清除筛选</button> : <a className="d-button" href="#/servers">前往服务器管理</a>}</div>}
+      !error && <div className="text-muted-foreground flex min-h-80 flex-col items-center justify-center gap-3 p-6 text-center"><ServerIcon className="size-8" aria-hidden="true" /><strong className="text-foreground text-sm font-medium">{entries.length ? '没有匹配的节点' : resource.hiddenOnly ? '节点已隐藏' : '尚未添加节点'}</strong>{entries.length ? <Button onClick={reset}>清除筛选</Button> : <a className={buttonVariants()} href="#/servers">前往服务器管理</a>}</div>}
   </div>
 }

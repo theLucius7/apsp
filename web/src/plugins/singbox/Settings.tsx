@@ -2,6 +2,10 @@ import { api } from '../../api'
 import { Badge, Empty, ErrorNotice, Loading, Refresh } from '../../components'
 import { resourceWriteError, useAction, useResource } from '../../hooks'
 import type { PluginServer } from '../../types'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { ServerIcon } from 'lucide-react'
+import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
 export function sourceLabel(source: PluginServer['source'] | undefined) {
   return source === 'administrator' ? '管理员明确启用' : source === 'agent_capability' ? '设备声明 sing-box 能力' : source === 'legacy_nodes' ? '兼容已有代理节点' : source === 'legacy_deployments' ? '兼容已有代理部署' : '尚未启用'
@@ -38,10 +42,10 @@ export default function Settings({ serverId }: { serverId?: number }) {
     if (!current || current.id !== id || current.read_only || current.enabled) return
     void action.run(() => api(`/api/plugins/sing-box/servers/${id}/enable`, 'POST', {}), servers.reload)
   }
-  return <section className="panel"><div className="panel-heading"><h2>sing-box 安装与运行状态</h2><Refresh onClick={servers.reload} /></div><div className="panel-body"><p className="helper">选择服务器安装 sing-box。安装成功后，创建节点并为代理用户分配可用节点或链路。</p><ErrorNotice message={servers.error || action.error} retry={servers.reload} /></div>
-    {servers.loading && !servers.data ? <Loading /> : !servers.data?.length ? !servers.error && <Empty icon="server" title="还没有服务器" description="先添加并接入服务器，再安装插件。"><a className="button button-primary" href="#/servers">添加服务器</a></Empty> : <div className="table-wrap"><table><thead><tr><th>服务器</th><th>安装与运行状态</th><th>设备支持</th><th>操作</th></tr></thead><tbody>{servers.data.map(server => {
+  return <Panel><PanelHeader><PanelTitle>sing-box 安装与运行状态</PanelTitle><Refresh onClick={servers.reload} /></PanelHeader><div className="p-4"><p className="text-muted-foreground mt-3 text-xs leading-relaxed">选择服务器安装 sing-box。安装成功后，创建节点并为代理用户分配可用节点或链路。</p><ErrorNotice message={servers.error || action.error} retry={servers.reload} /></div>
+    {servers.loading && !servers.data ? <Loading /> : !servers.data?.length ? !servers.error && <Empty icon={ServerIcon} title="还没有服务器" description="先添加并接入服务器，再安装插件。"><a className={buttonVariants()} href="#/servers">添加服务器</a></Empty> : <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>服务器</TableHead><TableHead>安装与运行状态</TableHead><TableHead>设备支持</TableHead><TableHead>操作</TableHead></TableRow></TableHeader><TableBody>{servers.data.map(server => {
       const installation = installationView(server)
-      return <tr key={server.id}><td><a className="text-button" href={`#/servers/${server.id}`}>{server.name}</a>{server.enabled && <small>{sourceLabel(server.source)}</small>}</td><td><Badge tone={installation.tone}>{installation.label}</Badge><small>{installation.reason}</small></td><td>{server.agent_supported ? '设备支持 sing-box' : '设备尚未声明支持'}{server.read_only && <small>保留已有启用记录</small>}</td><td>{server.enabled ? <a className="button button-secondary button-small" href={`#/plugins/sing-box/nodes?server=${server.id}`}>管理节点</a> : <button className="button button-primary button-small" disabled={action.busy || Boolean(writeError()) || server.read_only} onClick={() => enable(server.id)}>启用并安装 sing-box</button>}</td></tr>
-    })}</tbody></table></div>}
-  </section>
+      return <TableRow key={server.id}><TableCell><a className={buttonVariants({ variant: 'ghost', size: 'sm' })} href={`#/servers/${server.id}`}>{server.name}</a>{server.enabled && <small>{sourceLabel(server.source)}</small>}</TableCell><TableCell><Badge tone={installation.tone}>{installation.label}</Badge><small>{installation.reason}</small></TableCell><TableCell>{server.agent_supported ? '设备支持 sing-box' : '设备尚未声明支持'}{server.read_only && <small>保留已有启用记录</small>}</TableCell><TableCell>{server.enabled ? <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={`#/plugins/sing-box/nodes?server=${server.id}`}>管理节点</a> : <Button size="sm" disabled={action.busy || Boolean(writeError()) || server.read_only} onClick={() => enable(server.id)}>启用并安装 sing-box</Button>}</TableCell></TableRow>
+    })}</TableBody></Table></div>}
+  </Panel>
 }

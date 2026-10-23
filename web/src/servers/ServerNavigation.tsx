@@ -1,3 +1,6 @@
+import { SegmentedLink, SegmentedNav } from '@/components/segmented'
+import { buttonVariants } from '@/components/ui/button'
+
 export type ServerSectionKey = 'overview' | 'assets' | 'agent' | 'plugins' | 'ip-info' | 'node-quality' | 'tcp-quality'
 
 // Views of this one server, in the order an administrator usually needs them.
@@ -21,14 +24,14 @@ const workspaces: readonly { path: string; label: string }[] = [
 ]
 
 export default function ServerNavigation({ id, active }: { id: number; active: ServerSectionKey }) {
-  return <div className="server-navigation">
-    <nav className="ui-tab-list" aria-label="服务器导航">
-      {sections.map(section => <a key={section.key} href={`#/servers/${id}${section.path}`}
-        aria-current={active === section.key ? 'page' : undefined}>{section.label}</a>)}
-    </nav>
-    <nav className="server-workspaces" aria-label="带此服务器打开">
-      <span>带此服务器打开</span>
-      {workspaces.map(workspace => <a key={workspace.path} className="text-button" href={`#/servers/${id}${workspace.path}`}>{workspace.label}</a>)}
+  return <div data-slot="server-navigation" className="mb-6 grid min-w-0 gap-2.5">
+    <SegmentedNav aria-label="服务器导航">
+      {sections.map(section => <SegmentedLink key={section.key} href={`#/servers/${id}${section.path}`}
+        aria-current={active === section.key ? 'page' : undefined}>{section.label}</SegmentedLink>)}
+    </SegmentedNav>
+    <nav data-slot="server-workspaces" className="text-muted-foreground flex min-w-0 flex-wrap items-center gap-1 text-xs" aria-label="带此服务器打开">
+      <span className="mr-1">带此服务器打开</span>
+      {workspaces.map(workspace => <a key={workspace.path} className={buttonVariants({ variant: 'ghost', size: 'xs' })} href={`#/servers/${id}${workspace.path}`}>{workspace.label}</a>)}
     </nav>
   </div>
 }

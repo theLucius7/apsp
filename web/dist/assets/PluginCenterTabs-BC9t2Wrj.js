@@ -1,1 +1,0 @@
-import{j as a}from"./index-yTCJAjj2.js";function s({active:e}){return a.jsxs("nav",{className:"ui-tab-list section-tabs","aria-label":"插件中心",children:[a.jsx("a",{href:"#/plugins/catalog","aria-current":e==="catalog"?"page":void 0,children:"插件目录"}),a.jsx("a",{href:"#/system/plugins","aria-current":e==="enablement"?"page":void 0,children:"服务器启用"})]})}export{s as P};

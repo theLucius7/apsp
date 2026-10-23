@@ -9,7 +9,7 @@ const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFil
 
 // Narrow screens fold the main navigation behind the menu button.
 async function openNav(page, name) {
-  await page.locator('.sidebar').waitFor()
+  await page.locator('[data-slot=sidebar]').waitFor()
   const menu = page.getByRole('button', { name: '菜单', exact: true })
   if (await menu.isVisible() && await menu.getAttribute('aria-expanded') !== 'true') await menu.click()
   await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name, exact: true }).click()
@@ -138,7 +138,7 @@ try {
     await page.getByRole('button', { name: '启用', exact: true }).waitFor()
     assert.equal(tasks[0].spec.enabled, false)
     await page.getByRole('button', { name: '删除', exact: true }).click()
-    await page.getByRole('dialog').getByRole('button', { name: '确认删除' }).click()
+    await page.getByRole('alertdialog').getByRole('button', { name: '确认删除' }).click()
     await page.getByRole('heading', { name: '尚未配置统一延迟任务' }).waitFor()
     await openNav(page, '告警设置')
     await page.getByRole('heading', { name: '告警设置', exact: true }).waitFor()
@@ -153,7 +153,7 @@ try {
     await page.getByRole('alert').filter({ hasText: '模板变量无效' }).waitFor()
     await page.getByLabel('消息模板', { exact: false }).fill('{{title}}\n{{server}}\n{{message}}\n{{time}}\n{{event}}')
     await page.getByText('查看模板预览', { exact: true }).click()
-    await page.locator('form.monitoring-settings .monitoring-preview').filter({ hasText: '示例服务器' }).waitFor()
+    await page.locator('[data-slot=monitoring-preview]').filter({ hasText: '示例服务器' }).waitFor()
     await page.getByRole('button', { name: '保存设置' }).click()
     await page.getByRole('status').filter({ hasText: '设置已保存' }).waitFor()
     const saved = writes.filter(write => write.path === '/api/settings').at(-1).body
@@ -183,7 +183,7 @@ try {
     await page.getByRole('button', { name: '启用', exact: true }).waitFor()
     assert.equal(rules[0].spec.enabled, false)
     await page.getByRole('button', { name: '删除', exact: true }).click()
-    await page.getByRole('dialog').getByRole('button', { name: '确认删除' }).click()
+    await page.getByRole('alertdialog').getByRole('button', { name: '确认删除' }).click()
     await page.getByText('尚未配置资源规则。', { exact: false }).waitFor()
     await openNav(page, '告警事件')
     await page.getByText(/^测试事件 offline/).waitFor()
