@@ -60,7 +60,7 @@ export default function PluginCatalog() {
     <PluginCenterTabs active="catalog" />
     <Notice tone="quiet"><ServerIcon className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden="true" /><div><strong className="font-medium">按插件说明管理云账号或服务器</strong><p className="text-muted-foreground">设备插件由 Agent 下载、校验和执行；面板插件使用已上报的数据处理任务。下载包已验证，不代表服务器已安装或已就绪。</p></div></Notice>
     <ErrorNotice message={resource.error} retry={resource.reload} />
-    {resource.loading && !resource.data && <Loading />}
+    {resource.loading && !resource.data && <Loading variant="cards" rows={3} />}
     <div data-slot="catalog-grid" className="mb-6 grid items-start gap-5 xl:grid-cols-2" aria-label="插件目录">
       {catalog.plugins.map(plugin => <article data-slot="panel" className="bg-card text-card-foreground ring-foreground/10 overflow-hidden rounded-xl ring-1 mb-0 min-w-0" key={plugin.id} data-catalog-plugin={plugin.id}>
         <PanelHeader><div className="flex min-w-0 items-center gap-2.5"><plugin.icon className="text-muted-foreground size-4" aria-hidden="true" /><PanelTitle className="wrap-anywhere">{plugin.title}</PanelTitle></div><Badge>{plugin.execution === 'panel' ? '面板插件' : unavailable ? '版本状态未知' : plugin.versions.length ? '有已验证下载包' : '暂无下载包'}</Badge></PanelHeader>

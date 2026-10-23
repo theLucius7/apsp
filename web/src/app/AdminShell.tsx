@@ -4,7 +4,7 @@ import { m } from 'motion/react'
 import { LogOutIcon, MenuIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, XIcon } from 'lucide-react'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { useResource } from '../hooks'
-import GlobalSearch from '../control-center/GlobalSearch'
+import CommandPalette from '../control-center/CommandPalette'
 import Reauthentication from '../control-center/Reauthentication'
 import Appearance from '../control-center/Appearance'
 import { Brand, ErrorNotice } from '../components'
@@ -62,7 +62,7 @@ export default function AdminShell({ current, busy, error, onLogout, children }:
 
   const navigationList = <Navigation items={visibleNavigation} current={current} collapsed={desktop && collapsed} />
   const account = <AccountButton actor={actor.data} busy={busy} onLogout={onLogout} collapsed={desktop && collapsed} />
-  const main = <MainColumn current={current} error={error} mobile={!desktop}>{children}</MainColumn>
+  const main = <MainColumn current={current} pages={visibleNavigation} error={error} mobile={!desktop}>{children}</MainColumn>
 
   return <TooltipProvider delayDuration={200}>
     <div data-slot="app-shell" className="bg-background text-foreground flex h-dvh min-h-0 flex-col overflow-hidden md:flex-row">
@@ -144,7 +144,7 @@ function AccountButton({ actor, busy, onLogout, collapsed }: { actor?: Actor; bu
   </button>
 }
 
-function MainColumn({ current, error, mobile, children }: { current?: NavigationItem; error: string; mobile: boolean; children: ReactNode }) {
+function MainColumn({ current, pages, error, mobile, children }: { current?: NavigationItem; pages: readonly NavigationItem[]; error: string; mobile: boolean; children: ReactNode }) {
   const { t } = useI18n()
   const scroller = useRef<HTMLDivElement>(null)
   // A new page starts at the top of the scrolling column.
@@ -155,7 +155,7 @@ function MainColumn({ current, error, mobile, children }: { current?: Navigation
         {current && <><span className="truncate max-sm:hidden">{t(current.group)}</span><span aria-hidden="true" className="max-sm:hidden">/</span></>}
         <strong aria-current="page" className="text-foreground truncate font-medium">{t(current?.label ?? '页面不存在')}</strong>
       </nav>
-      <GlobalSearch />
+      <CommandPalette pages={pages} />
       <LanguageSelect />
       <Badge variant="success" className="max-lg:hidden"><span className="size-1.5 rounded-full bg-current" aria-hidden="true" />{t('管理员会话已登录')}</Badge>
     </div>

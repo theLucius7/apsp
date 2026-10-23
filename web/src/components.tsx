@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Empty as UiEmpty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
+import { Skeleton } from '@/components/ui/skeleton'
 export type Tone = 'good' | 'bad' | 'warm' | 'neutral'
 const toneVariant = { good: 'success', bad: 'destructive', warm: 'warning', neutral: 'secondary' } as const
 
@@ -88,10 +89,30 @@ export function Empty({ icon: Icon = BoxIcon, title, description, children }: { 
   </UiEmpty>
 }
 
-export function Loading() {
+/**
+ * Placeholder while the first snapshot loads. Lists, card grids and panels show
+ * the shape of the coming content so the page does not jump when data arrives;
+ * small areas keep the spinner.
+ */
+export function Loading({ variant = 'spinner', rows = 4 }: { variant?: 'spinner' | 'table' | 'cards' | 'panel'; rows?: number }) {
   const { t } = useI18n()
-  return <div data-slot="loading" role="status" className="text-muted-foreground flex min-h-40 items-center justify-center gap-2 text-sm">
+  if (variant === 'spinner') return <div data-slot="loading" role="status" className="text-muted-foreground flex min-h-40 items-center justify-center gap-2 text-sm">
     <Spinner role="presentation" aria-hidden="true" aria-label={undefined} />{t('正在加载…')}
+  </div>
+  const lines = Array.from({ length: rows }, (_, index) => index)
+  return <div data-slot="loading" data-variant={variant} role="status" className="min-w-0">
+    <span className="sr-only">{t('正在加载…')}</span>
+    {variant === 'table' && <div aria-hidden="true" className="divide-y">{lines.map(index => <div key={index} className="flex items-center gap-4 px-4 py-3">
+      <Skeleton className="size-8 shrink-0 rounded-lg" />
+      <div className="grid min-w-0 flex-1 gap-1.5"><Skeleton className="h-3.5 w-2/5 max-w-56" /><Skeleton className="h-3 w-1/4 max-w-36" /></div>
+      <Skeleton className="h-3.5 w-16 max-sm:hidden" /><Skeleton className="h-3.5 w-24 max-md:hidden" /><Skeleton className="h-7 w-14 rounded-lg" />
+    </div>)}</div>}
+    {variant === 'cards' && <div aria-hidden="true" className="mb-6 grid grid-cols-2 gap-3 max-sm:gap-2 lg:grid-cols-4">{lines.map(index => <div key={index} className="ring-foreground/10 grid gap-3 rounded-xl p-4 ring-1">
+      <Skeleton className="h-3 w-1/2" /><Skeleton className="h-6 w-2/3" /><Skeleton className="h-3 w-3/4" />
+    </div>)}</div>}
+    {variant === 'panel' && <div aria-hidden="true" className="ring-foreground/10 mb-4 grid gap-3 rounded-xl p-4 ring-1">
+      <Skeleton className="h-4 w-1/3" />{lines.map(index => <Skeleton key={index} className="h-3.5" style={{ width: `${90 - index * 12}%` }} />)}
+    </div>}
   </div>
 }
 
@@ -109,8 +130,11 @@ export function Stat({ label, value, note, icon: Icon }: { label: string; value:
   </div>
 }
 
-export function Meter({ value, className }: { value?: number; className?: string }) {
-  return <Progress value={Math.min(100, Math.max(0, value ?? 0))} className={cn('mt-1.5 h-1 max-w-28', className)} />
+/** Usage bar that turns warning and then destructive, matching the dashboard thresholds (75% / 90% by default). */
+export function Meter({ value, label, warning = 75, danger = 90, className }: { value?: number; label?: string; warning?: number; danger?: number; className?: string }) {
+  const level = Math.min(100, Math.max(0, value ?? 0))
+  const tone = level >= danger ? 'bg-destructive' : level >= warning ? 'bg-warning' : undefined
+  return <Progress value={level} aria-label={label} indicatorClassName={tone} className={cn('mt-1.5 h-1 max-w-28', className)} />
 }
 
 export function Modal({ title, children, onClose, busy = false, wide = false, className = '', slot }: { title: string; children: ReactNode; onClose: () => void; busy?: boolean; wide?: boolean; className?: string; slot?: string }) {
@@ -176,6 +200,14 @@ export function Confirm({ title, children, busy, disabled = false, confirmDisabl
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>
+}
+
+/** A titled on/off setting with its explanation; the whole row toggles its control. */
+export function SettingRow({ title, description, children, className }: { title: ReactNode; description?: ReactNode; children: ReactNode; className?: string }) {
+  return <label data-slot="setting-row" className={cn('relative flex cursor-pointer items-center gap-4 border-b py-3.5 last:border-0 last:pb-0', className)}>
+    <span className="min-w-0 flex-1"><strong className="block text-sm font-medium">{title}</strong>{description && <small className="text-muted-foreground mt-1 block text-xs leading-relaxed">{description}</small>}</span>
+    {children}
+  </label>
 }
 
 export function Field({ label, hint, children, className }: { label: string; hint?: string; children: ReactNode; className?: string }) {
