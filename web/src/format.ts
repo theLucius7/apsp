@@ -19,3 +19,13 @@ export function uptime(value?: number) {
   return days ? `${days} 天 ${hours} 小时` : `${hours} 小时 ${minutes} 分钟`
 }
 export function navigate(path: string) { window.location.hash = path }
+
+/** Coarse relative time for status lines, such as "12 分钟前"; the exact time belongs in a tooltip. */
+export function ago(seconds?: number | null, now = Date.now() / 1000) {
+  if (!seconds) return '时间未知'
+  const elapsed = Math.max(0, now - seconds)
+  if (elapsed < 60) return '刚刚'
+  if (elapsed < 3600) return `${Math.floor(elapsed / 60)} 分钟前`
+  if (elapsed < 86400) return `${Math.floor(elapsed / 3600)} 小时前`
+  return `${Math.floor(elapsed / 86400)} 天前`
+}

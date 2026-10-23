@@ -145,6 +145,8 @@ try {
 
       const slow = hold(readPath)
       await page.clock.runFor(5000); await wait(() => slow.reached > 0, 'Next automatic poll must run')
+      // Advance the paused clock only after the pending read has rendered, so its delayed warning timer exists.
+      await wait(() => save.isDisabled(), 'The pending read blocks the draft before time advances'); await settle()
       await page.clock.runFor(600); await settle()
       assert.equal(await dialog.getByRole('alert').count(), 1, 'A slow dependency must eventually show its warning despite fast sibling responses')
       assert(await save.isDisabled())

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api'
-import { Badge, ErrorNotice, Field, Loading } from '../components'
+import { Badge, ErrorNotice, Field, Loading, SettingRow } from '../components'
 import { useAction, useResource } from '../hooks'
 import { previewWebhook, webhookPresets, type Preset } from './webhook-presets'
 import { Button } from '@/components/ui/button'
@@ -24,7 +24,7 @@ function Form({ initial }: { initial: Summary }) {
   return <Panel aria-labelledby="webhook-title"><div className="p-4"><h2 className="mt-6 mb-3 text-base font-semibold" id="webhook-title">Webhook 通知 <Badge tone={saved.url_configured ? 'good' : 'neutral'}>{saved.url_configured ? '已配置' : '未配置'}</Badge></h2>
     <p className="text-muted-foreground mt-3 text-xs leading-relaxed">可与 Telegram 同时启用。两个渠道独立重试，成功的渠道不会因另一渠道失败而重发。</p>
     <form onSubmit={event => { event.preventDefault(); void save.run(() => api<Summary>('/api/notifications/webhook', 'PATCH', { enabled, preset, url, headers, body, clear_headers: clearHeaders }), value => { apply(value); setNotice('Webhook 设置已保存。') }) }}><fieldset disabled={busy}>
-      <label className="relative flex cursor-pointer items-center gap-4 border-b py-3.5 last:border-0 last:pb-0"><span className="min-w-0 flex-1"><strong className="block text-sm font-medium">启用 Webhook</strong><small className="text-muted-foreground mt-1 block text-xs leading-relaxed">自动推送已启用的告警；总通知开关关闭时暂停自动发送。</small></span><Switch checked={enabled} onCheckedChange={checked => { setEnabled(checked); mark() }} /></label>
+      <SettingRow title="启用 Webhook" description="自动推送已启用的告警；总通知开关关闭时暂停自动发送。"><Switch checked={enabled} onCheckedChange={checked => { setEnabled(checked); mark() }} /></SettingRow>
       <div className="mb-4 grid gap-4 sm:grid-cols-2"><Field label="通知服务预设" hint="更换预设会清空旧地址和认证信息，并载入新模板。"><NativeSelect className="w-full" value={preset} onChange={event => { const next = webhookPresets.find(value => value.id === event.target.value)!; setPreset(next.id); setUrl(next.url); setHeaders(next.headers); setBody(next.body); setClearHeaders(false); mark() }}>{webhookPresets.map(value => <option key={value.id} value={value.id}>{value.name}</option>)}</NativeSelect></Field>
         <Field label="Webhook 地址" hint={saved.url_configured && preset === saved.preset ? '已配置；留空保留原地址，保存后不回显。' : '输入 HTTP 或 HTTPS 地址，支持自建服务。'}><Input type="password" autoComplete="new-password" maxLength={2048} value={url} placeholder={saved.url_configured && preset === saved.preset ? '已配置，留空保持' : '输入通知地址'} onChange={event => { setUrl(event.target.value); mark() }} /></Field></div>
       <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{selected.hint}</p>

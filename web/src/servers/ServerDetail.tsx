@@ -38,7 +38,7 @@ export default function ServerDetail({ id, section = 'overview' }: { id: number;
   if (!entry) return <>
     {back}
     <ErrorNotice message={server.error} retry={server.reload} />
-    {server.loading && <Loading />}
+    {server.loading && <Loading variant="panel" rows={5} />}
     {/* Plugin enablement only needs the server ID, so it stays usable while the server read fails. */}
     {section === 'plugins' && !server.loading && <PluginSettings key={`${id}-${pluginRevision}`} serverId={id} />}
   </>

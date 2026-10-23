@@ -131,7 +131,7 @@ export default function ProxyUsers() {
       <div className="p-4">
         <ErrorNotice message={accesses.error || entitlement.error || userError(selected ?? undefined) || (!editor && !deleting && !resetting ? action.error : '')} retry={accesses.error ? accesses.reload : undefined} />
         {notice && <Notice tone="success" role="status">{notice}</Notice>}
-        {accesses.loading && !accesses.data ? <Loading /> : !nodes.data?.length
+        {accesses.loading && !accesses.data ? <Loading variant="table" rows={3} /> : !nodes.data?.length
           ? <Empty icon={WaypointsIcon} title="还没有可授权的节点" description="先创建节点，再为代理用户开启访问权限。"><a className={buttonVariants({ variant: 'outline' })} href="#/plugins/sing-box/nodes">前往节点</a></Empty>
           : <div className="grid gap-2.5">{grantableNodes.map(node => {
             const access = accesses.data?.find(access => access.node_id === node.id)
@@ -173,7 +173,7 @@ export default function ProxyUsers() {
     <ErrorNotice message={users.error || nodes.error || resources.error || usage.error} retry={refresh} />
     <ErrorNotice message={users.ready && selected && !user ? missingSelection : undefined} />
     {users.ready && selected && !user && <Button variant="outline" size="sm" disabled={action.busy} onClick={clearDeletedSelection}>清除已删除的用户选择</Button>}
-    {users.loading && !users.data ? <Panel><Loading /></Panel> : !users.data?.length
+    {users.loading && !users.data ? <Panel><Loading variant="table" /></Panel> : !users.data?.length
       ? <Panel><Empty icon={UsersIcon} title="创建代理用户，开始分配节点" description="每个代理用户在每个节点上的凭据相互独立，流量按代理用户和节点统计。">
         <Button disabled={Boolean(userError())} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />创建代理用户</Button>
       </Empty></Panel>

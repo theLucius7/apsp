@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api'
-import { ErrorNotice, Field, Modal } from '../components'
+import { ErrorNotice, Field, Modal, SettingRow } from '../components'
 import { useAction } from '../hooks'
 import { assetDraft, assetPayload } from '../server-assets'
 import type { Server } from '../types'
@@ -20,7 +20,7 @@ export default function ServerEdit({ server, onClose, onSaved }: { server: Serve
     <SetupNavigation />
     <div className="bg-muted/40 px-4 py-5 sm:px-7 sm:py-6"><fieldset disabled={action.busy}>
       <section className="bg-card mb-4 scroll-mt-16 rounded-xl border p-5 last:mb-0 max-sm:p-4" id="setup-basics"><Field className="mb-0" label="服务器名称"><Input required pattern=".*\S.*" maxLength={128} value={name} onChange={event => setName(event.target.value)} /></Field></section>
-      <section className="bg-card mb-4 scroll-mt-16 rounded-xl border p-5 last:mb-0 max-sm:p-4"><label className="relative flex cursor-pointer items-center gap-4 border-b py-3.5 last:border-0 last:pb-0"><span className="min-w-0 flex-1"><strong className="block text-sm font-medium">自动更新 Agent</strong><small className="text-muted-foreground mt-1 block text-xs leading-relaxed">从 GitHub 获取面板选定的兼容签名版本；下载失败时保留现有版本。</small></span><Switch checked={autoUpdate} onCheckedChange={checked => setAutoUpdate(checked)} /></label></section>
+      <section className="bg-card mb-4 scroll-mt-16 rounded-xl border p-5 last:mb-0 max-sm:p-4"><SettingRow title="自动更新 Agent" description="从 GitHub 获取面板选定的兼容签名版本；下载失败时保留现有版本。"><Switch checked={autoUpdate} onCheckedChange={checked => setAutoUpdate(checked)} /></SettingRow></section>
       <ServerAssetFields value={asset} onChange={setAsset} />
       <ServerOperationsFields asset={asset} onChange={setAsset} />
     </fieldset><ErrorNotice message={action.error} /></div>

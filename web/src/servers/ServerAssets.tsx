@@ -23,7 +23,7 @@ export default function ServerAssets({ server, onEdit, onReload }: { server: Ser
       <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground text-sm">剩余流量 / 口径</dt><dd className="m-0 text-sm">{trafficSize(traffic?.remaining)} / {trafficModes[asset.traffic_limit_type]}</dd></div>
       <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground text-sm">统计网卡</dt><dd className="m-0 text-sm">{asset.network_interface || '所有上报网卡'}{traffic?.interfaces.length ? `（已观测：${traffic.interfaces.join('、')}）` : ''}</dd></div>
     </dl>
-    {traffic?.percent != null && <div className="my-4 flex items-center gap-3 text-sm"><Meter value={traffic.percent} /><span>{traffic.percent.toFixed(1)}%</span></div>}
+    {traffic?.percent != null && <div className="my-4 flex items-center gap-3 text-sm"><Meter value={traffic.percent} label="本期流量用量" warning={80} danger={100} /><span>{traffic.percent.toFixed(1)}%</span></div>}
     <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{observed ? `本期观测始于 ${time(traffic?.observed_from ? traffic.observed_from / 1000 : undefined)}，最新计数 ${time(traffic?.last_sample_at ? traffic.last_sample_at / 1000 : undefined)}。` : '等待具有采样时间的完整网卡计数，首个采样仅建立基线。'}{traffic?.incomplete ? ' 检测到采样缺失、网卡变化或计数重置，本期观测可能不完整。' : ''} 超额与到期仅提示状态；观测流量可能与供应商账单不同。</p>
   </div></Panel>{correcting && <TrafficCorrection server={correcting} onClose={() => setCorrecting(null)} onSaved={() => { setCorrecting(null); onReload() }} />}</>
 }
