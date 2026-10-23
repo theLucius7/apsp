@@ -1,4 +1,4 @@
-import { ActivityIcon, BellRingIcon, BlocksIcon, BoxesIcon, ChartColumnIcon, CloudCogIcon, GaugeIcon, GlobeIcon, LayoutDashboardIcon, NetworkIcon, PackageSearchIcon, ServerCogIcon, ServerIcon, ShieldCheckIcon, SlidersHorizontalIcon, TimerIcon, UserCogIcon, UsersIcon, WaypointsIcon, WrenchIcon } from 'lucide-react'
+import { BellRingIcon, BlocksIcon, BoxesIcon, ChartColumnIcon, CloudCogIcon, GaugeIcon, GlobeIcon, KeyRoundIcon, LayersIcon, LayoutDashboardIcon, NetworkIcon, ServerIcon, Settings2Icon, ShieldCheckIcon, SlidersHorizontalIcon, SquareTerminalIcon, TimerIcon, UsersIcon, WaypointsIcon, WorkflowIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AppRoute } from './routes'
 
@@ -12,44 +12,56 @@ export type NavigationItem = {
 
 type NavigationGroup = { label: string; items: readonly Omit<NavigationItem, 'group'>[] }
 
-// Groups follow the administrator's tasks: observe, manage servers, run the proxy
-// business, extend servers with plugins, then configure the panel itself.
+// Groups follow what the administrator is doing, not how a feature is built:
+// a plugin's pages sit in the group of the task they serve, and "扩展" only holds
+// plugin management and plugins without a better home. See docs/product-map.md.
 const groups: readonly NavigationGroup[] = [
-  { label: '概览', items: [
-    { page: 'statistics', path: '/statistics', label: '统计仪表盘', icon: ChartColumnIcon },
+  { label: '总览', items: [
     { page: 'dashboard', path: '/dashboard', label: '服务器看板', icon: LayoutDashboardIcon },
+    { page: 'statistics', path: '/statistics', label: '统计报表', icon: ChartColumnIcon },
   ] },
   { label: '服务器', items: [
-    { page: 'servers', path: '/servers', label: '服务器', icon: ServerIcon },
-    { page: 'fleet', path: '/fleet', label: '接入与日常运维', icon: ServerCogIcon },
-    { page: 'network-workbench', path: '/network-workbench', label: '网络与验机', icon: GaugeIcon },
-    { page: 'network-configuration', path: '/network-configuration', label: '网络与证书', icon: NetworkIcon },
-    { page: 'operations', path: '/operations', label: '批量运维与恢复', icon: WrenchIcon },
+    { page: 'servers', path: '/servers', label: '服务器列表', icon: ServerIcon },
+    { page: 'fleet', path: '/fleet', label: '运维工具', icon: SquareTerminalIcon },
+    { page: 'operations', path: '/operations', label: '自动化与恢复', icon: WorkflowIcon },
+  ] },
+  { label: '监控告警', items: [
+    { page: 'notifications', path: '/system/notifications', label: '告警事件', icon: BellRingIcon },
     { page: 'latency', path: '/latency', label: '延迟检测', icon: TimerIcon },
+    { page: 'alert-settings', path: '/monitoring/settings', label: '告警设置', icon: SlidersHorizontalIcon },
+  ] },
+  { label: '网络', items: [
+    { page: 'network-workbench', path: '/network-workbench', label: '网络检测', icon: GaugeIcon },
+    { page: 'network-configuration', path: '/network-configuration', label: '网络配置', icon: NetworkIcon },
+    { page: 'ddns', path: '/plugins/ddns', label: '动态域名解析', icon: GlobeIcon },
   ] },
   { label: '代理服务', items: [
-    { page: 'singbox-overview', path: '/plugins/sing-box', label: '代理服务', icon: BoxesIcon },
+    { page: 'singbox-overview', path: '/plugins/sing-box', label: '服务概览', icon: BoxesIcon },
     { page: 'nodes', path: '/plugins/sing-box/nodes', label: '代理节点', icon: WaypointsIcon },
     { page: 'proxy-users', path: '/plugins/sing-box/users', label: '代理用户', icon: UsersIcon },
-    { page: 'groups', path: '/plugins/sing-box/groups', label: '策略与套餐', icon: SlidersHorizontalIcon },
+    { page: 'groups', path: '/plugins/sing-box/groups', label: '策略与套餐', icon: LayersIcon },
   ] },
-  { label: '扩展插件', items: [
-    { page: 'ddns', path: '/plugins/ddns', label: '动态域名解析', icon: GlobeIcon },
+  { label: '扩展', items: [
+    { page: 'catalog', path: '/plugins/catalog', label: '插件中心', icon: BlocksIcon },
     { page: 'alicloud', path: '/plugins/alicloud', label: '阿里云 CDT', icon: CloudCogIcon },
-    { page: 'plugins', path: '/system/plugins', label: '服务器插件', icon: BlocksIcon },
-    { page: 'catalog', path: '/plugins/catalog', label: '插件目录', icon: PackageSearchIcon },
   ] },
   { label: '系统', items: [
-    { page: 'settings', path: '/system/settings', label: '看板与通知', icon: ActivityIcon },
-    { page: 'notifications', path: '/system/notifications', label: '告警通知', icon: BellRingIcon },
+    { page: 'settings', path: '/system/settings', label: '面板设置', icon: Settings2Icon },
     { page: 'control-center', path: '/system/control-center', label: '管理与安全', icon: ShieldCheckIcon },
-    { page: 'security', path: '/system/administrator', label: '系统管理员', icon: UserCogIcon },
+    { page: 'security', path: '/system/administrator', label: '账号安全', icon: KeyRoundIcon },
   ] },
 ]
 
 export const navigation: readonly NavigationItem[] = groups.flatMap(group => group.items.map(item => ({ ...item, group: group.label })))
 
+// Workspaces opened from a server keep their own sidebar entry; every other
+// server section belongs to the server list.
+const serverWorkspaces = new Set<string>(['ddns', 'fleet', 'network-workbench', 'network-configuration', 'operations'])
+
 export function currentNavigation(route: AppRoute): NavigationItem | undefined {
-  const page = route.page === 'server' ? (['ddns', 'fleet', 'network-workbench', 'network-configuration', 'operations'].includes(route.section ?? '') ? route.section : 'servers') : route.page
+  const page = route.page === 'server' ? (serverWorkspaces.has(route.section ?? '') ? route.section : 'servers')
+    // Plugin enablement is the second view of the plugin centre.
+    : route.page === 'plugins' ? 'catalog'
+      : route.page
   return navigation.find(item => item.page === page)
 }

@@ -16,7 +16,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Empty as UiEmpty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
-
 export type Tone = 'good' | 'bad' | 'warm' | 'neutral'
 const toneVariant = { good: 'success', bad: 'destructive', warm: 'warning', neutral: 'secondary' } as const
 
@@ -28,8 +27,7 @@ export function Brand({ className }: { className?: string }) {
       <strong className="truncate text-base font-semibold tracking-wide">{t('apsp')}</strong>
       <small className="text-muted-foreground truncate text-xs">{t('服务器与节点')}</small>
     </span>
-  </div>
-}
+  </div>}
 
 export function Badge({ children, tone = 'neutral', className }: { children: ReactNode; tone?: Tone; className?: string }) {
   return <UiBadge data-tone={tone} variant={toneVariant[tone]} className={className}>

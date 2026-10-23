@@ -65,7 +65,7 @@ try {
   await page.goto(`${origin}/#/system/administrator`)
   await page.getByLabel('管理员密码', { exact: true }).fill(password)
   await page.getByRole('button', { name: '登录面板', exact: true }).click()
-  await page.getByRole('heading', { name: '系统管理员', exact: true }).waitFor()
+  await page.getByRole('heading', { name: '账号安全', exact: true }).waitFor()
   await page.getByRole('button', { name: '添加 Passkey', exact: true }).click()
   let dialog = page.getByRole('dialog')
   await dialog.getByLabel('密钥名称', { exact: true }).fill('管理员测试密钥')
@@ -80,7 +80,7 @@ try {
   await page.locator('[data-slot=logout-button]').click()
   await page.getByRole('heading', { name: '欢迎回来', exact: true }).waitFor()
   await page.getByRole('button', { name: '使用初始所有者 Passkey 登录', exact: true }).click()
-  await page.getByRole('heading', { name: '系统管理员', exact: true }).waitFor()
+  await page.getByRole('heading', { name: '账号安全', exact: true }).waitFor()
   assert.equal((await request(page, '/api/me', undefined, 'GET')).status, 200)
   results.push('administrator passwordless login and admin cookie')
 

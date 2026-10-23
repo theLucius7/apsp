@@ -48,7 +48,7 @@ try {
     })
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/statistics`)
-    await page.getByRole('heading', { name: '统计仪表盘', exact: true }).waitFor()
+    await page.getByRole('heading', { name: '统计报表', exact: true }).waitFor()
     await page.getByRole('heading', { name: '代理流量趋势', exact: true }).waitFor()
     const chart = page.getByRole('region', { name: '网卡流量趋势', exact: true })
     assert.equal(await chart.locator('[data-slot=statistics-chart-bar]').count(), 7)

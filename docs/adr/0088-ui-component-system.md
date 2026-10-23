@@ -1,0 +1,92 @@
+# ADR 0088：界面重构：shadcn/ui Nova、Tailwind CSS v4 与统一交互库
+
+- 状态：已实现；本地 TypeScript、Bun 单元测试、生产构建与浏览器夹具回归验证，未在真实设备或生产面板上验收。GitHub Actions 仍按临时安排暂停，相关 CI 记为未验证。
+- 日期：2026-10-23。
+
+## 背景
+
+前端此前由约二十个手写 CSS 文件组成（`styles.css`、`app/shell.css`、看板、插件及各页面样式），按钮、页签、表单、弹窗和看板各有一套尺寸与配色；暗色主题依靠逐个选择器覆盖，修改一处常需要同步多处。前几轮“统一按钮、下拉、导航”的整改仍在这些文件上叠加规则。
+
+用户要求完全重构界面并固定技术约定：
+
+| 方面 | 约定 |
+| --- | --- |
+| UI 组件 | shadcn/ui Nova，固定同一套底层实现，使用 Radix UI |
+| 样式 | Tailwind CSS v4 + CSS 变量，统一维护颜色、间距、字号、圆角 |
+| 图标 | Lucide（`lucide-react`），统一尺寸、线宽和图标按钮 |
+| 动画 | Motion（`motion`，从 `motion/react` 导入），统一时长、缓动和减少动态效果 |
+| 普通布局 | CSS Grid / Flex，通过 Tailwind 编写 |
+| 可调整分栏 | `react-resizable-panels`，通过统一的 Resizable 组件使用 |
+| 拖拽排序 | dnd-kit，固定一代 API 和版本，统一手柄、反馈及键盘操作 |
+| 跨组件 UI 状态 | Zustand；页面局部状态继续使用 React，服务端数据沿用现有请求机制 |
+
+设计要求：紧凑清晰的运维控制台；中性灰为基础、青绿色为主强调色，成功/警告/错误使用固定语义色；正文 14px、辅助 12px；概览用卡片、批量管理用表格、详情按业务任务分组；统一页面标题、说明、主操作、筛选栏和内容区；浅色、深色同时设计，桌面紧凑、手机保留触控空间；管理端、公开看板、代理用户门户共用设计参数和基础组件，各自选择信息密度。
+
+## 决定
+
+### 依赖
+
+新增依赖全部固定精确版本，记录在 `web/package.json` 与 `web/bun.lock`：
+
+| 依赖 | 版本 | 用途 |
+| --- | --- | --- |
+| `radix-ui` | 1.7.0 | shadcn/ui Nova 的唯一底层组件实现（对话框、确认框、复选框、开关、切换按钮、提示、分隔线等） |
+| `class-variance-authority`、`clsx`、`tailwind-merge` | 0.7.1、2.1.1、3.7.0 | shadcn/ui 的变体与 `cn()` 类名合并 |
+| `tailwindcss`、`@tailwindcss/vite`（开发依赖） | 4.3.3 | 样式生成；只在构建期使用 |
+| `lucide-react` | 1.52.0 | 图标 |
+| `motion` | 14.0.0 | 动画 |
+| `react-resizable-panels` | 4.14.3 | 可调整分栏 |
+| `@dnd-kit/core`、`@dnd-kit/sortable`、`@dnd-kit/modifiers`、`@dnd-kit/utilities` | 6.3.1、10.0.0、9.0.0、3.2.2 | 拖拽排序（经典稳定 API 一代） |
+| `zustand` | 5.0.15 | 跨组件界面状态 |
+
+不引入 shadcn CLI、PostCSS 配置或其他组件库。
+
+### 组件与样式
+
+1. **组件源码归仓库所有。** `web/components.json` 记录 `radix-nova` 风格、中性底色和 Lucide 图标库。`web/src/components/ui/` 中的组件按 shadcn/ui Nova 注册表源码生成：Radix 基础组件加 Nova 的样式规则，生成后作为普通源码维护。业务通用组件放在 `web/src/components.tsx`（页头、通知、空状态、统计、弹窗、确认框、字段、复制）与 `web/src/components/`（面板、分段导航、主从分栏、拖拽列表）。
+2. **设计参数集中在 `web/src/index.css`。** `:root` 定义浅色，`[data-theme="dark"]` 重新声明全部颜色；颜色使用 oklch。主色色相 183（青绿），成功、警告、错误、信息各有固定语义色及其前景色；另有图表 5 色、侧栏色、圆角刻度。`[data-density="compact"]` 通过缩小 `--spacing` 收紧间距。组件只能引用这些变量，`tests/contrast.test.ts` 检查两套主题的文字对比度、暗色是否完整重声明以及变量块以外不得出现颜色字面量。
+3. **删除全部旧样式文件。** 除 `index.css` 外，`web/src` 不再包含 CSS 文件；页面样式全部写成 Tailwind 类。
+4. **页面结构。** 页面使用 `PageHeader`（眉题、标题、说明、主操作）→ 可选分段导航/筛选栏 → 内容区。概览指标用 `Stat` 卡片，批量管理用 `Table`，详情页按任务分组成 `Panel`。
+5. **三个入口共用参数。** 管理端使用紧凑密度；公开看板使用同一组变量和组件，以卡片为主并保留独立的浅/深色切换；代理用户门户沿用基础组件，跟随系统主题。
+
+### 图标
+
+图标统一来自 `lucide-react`。按钮内默认 16px（Nova 规则），紧凑按钮 14px，线宽保持 Lucide 默认值 2。只有图标的按钮使用 `Button` 的 `icon`/`icon-sm`/`icon-xs` 尺寸并必须提供 `aria-label`；装饰性图标设置 `aria-hidden`。服务器系统标志和地区旗帜仍是图片资源，不属于界面图标。
+
+### 动画
+
+- `main.tsx` 使用 `LazyMotion`（严格模式，异步加载 `domMax` 特性包）与 `MotionConfig reducedMotion="user"`；组件只使用 `m.*`，避免把完整动画库打入首屏。
+- `web/src/lib/motion.ts` 固定时长（快 0.12s、基础 0.18s、慢 0.26s）、缓动曲线和预设（淡入、弹窗、浮层、页面、展开、列表项）。CSS 过渡（含拖拽回位）也读取同一组参数。
+- 系统设置减少动态效果时，`index.css` 将 CSS 过渡与动画缩短到几乎为零，Motion 跳过位移与布局动画。
+- 弹窗、确认框和提示浮层通过 Radix 的 `forceMount` 与 `AnimatePresence` 完成进入/退出动画。筛选结果、已恢复的错误提示等**过期内容立即移除**，只让新内容进入时有动画，避免旧数据与新数据同时出现。
+
+### 布局、拖拽与状态
+
+- **分栏。** `components/ui/resizable.tsx` 包装 `react-resizable-panels`。后台侧栏在桌面可拖动宽度并可折叠；`ListDetailLayout` 为列表/详情页提供统一的可调分栏，手机宽度改为上下排列。分栏尺寸经 `lib/layout-storage.ts` 存入浏览器本地存储，读写失败时使用默认值。
+- **拖拽。** `components/sortable.tsx` 统一 dnd-kit 的用法：只有手柄按钮可拖动（`拖动排序：名称`），支持鼠标、触控和键盘（空格拾起、方向键移动、空格放下、Esc 取消），限制在纵向与列表内，拖动中的条目有统一的阴影与层级，屏幕阅读器播报使用中文。节点库的“自定义排序”使用它，原有上移/下移按钮保留作为替代操作。
+- **状态。** `web/src/stores/` 中的 Zustand store 只保存跨组件界面状态：语言、外观（主题与密度）、外框（侧栏折叠、手机菜单）、会话（登录状态、公开看板、提示）和看板货币。表单、弹窗开关等页面局部状态仍用 React；服务端数据继续经过 `api.ts`、`useResource`/`useResourceGroup` 及原有的写保护与快照校验，不放进 store。
+
+### 可访问性与测试钩子
+
+- 确认框使用 Radix AlertDialog（`role="alertdialog"`），普通弹窗使用 Dialog（`role="dialog"`）。模态弹窗打开期间，页面其余部分对辅助技术隐藏；浏览器夹具在需要操作弹窗背后的元素（模拟同一事件中的刷新）时显式使用 `includeHidden`。
+- 复选框与开关是 Radix 控件；在表单内时 Radix 额外渲染隐藏的原生输入，保持 `FormData` 字段名和值不变。即时生效的授权开关使用 `role="switch"`。
+- 旧的类名测试钩子改为 `data-slot`（组件与页面区块）和 `data-dialog`（具体弹窗）。
+
+### 构建
+
+Vite 将 React 与 Radix 拆成独立分包，Motion 特性包按需加载，主入口约 232 KB，所有分包低于 500 KB 警告线。`web/dist` 照旧提交，并由 CI 检查重建一致性。
+
+## 替代方案
+
+- **继续在手写 CSS 上整改：** 用户明确要求完全重构，且现有规则已多次叠加覆盖，不再采用。
+- **shadcn/ui 的 Base UI 底层：** 用户建议在无其他偏好时使用 Radix UI，且 Radix 版本更成熟，固定为 Radix。
+- **dnd-kit 新一代 `@dnd-kit/react`：** 仍为 0.x，接口变化较快；按“固定一代 API”的要求选用经典稳定的 `core/sortable`。
+- **`framer-motion`：** 已更名为 `motion`，按用户要求从 `motion/react` 导入。
+- **Redux、Jotai 或 React Context：** 用户指定 Zustand；原有 Context 只保留 i18n 的提供者外壳，状态本身移入 store。
+
+## 后果
+
+- 依赖与构建产物增加，但首屏主包保持在 500 KB 警告线以下；新增依赖均为浏览器端或构建期依赖，不影响面板与 Agent 的 Rust 依赖。
+- 组件源码进入仓库后由本项目维护；更新 shadcn/ui 时需人工对照注册表差异，不能直接覆盖本地修改。
+- 浏览器夹具的定位方式随之调整（`data-slot`、`alertdialog`、`switch`、`includeHidden`）。接口、路由、权限、写保护和数据校验逻辑保持不变。
+- 真实设备、生产面板和 GitHub Actions 未在本次变更中验证。

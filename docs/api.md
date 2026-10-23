@@ -155,7 +155,7 @@
 
 元数据为 `{id,name,enabled,online,agent_supported,read_only,source,installation}`。source 为 `administrator`、兼容 `legacy_nodes` / `legacy_deployments` 或 null；旧能力标记仅保留历史记录，单独能力声明不自动启用。`installation={state,reason,target_rev,applied_rev}`，state 为 `not_enabled`、`queued`、`waiting_agent`、`offline`、`pending`、`ready` 或 `failed`，reason 提供中文原因。启用安排无部署服务器的首次安全配置，重复请求不延后待办；实际安装仍须签名制品、设备支持和应用确认。创建节点和读取部署需先启用，否则返回 409。未启用服务器详情不请求节点或部署；已有网卡遥测继续显示。详见 [安装流程](singbox-installation.md)。
 
-服务器插件页 `/#/servers/{id}/plugins` 只管理这一台服务器，原 `/#/system/plugins` 保留为服务器插件汇总页。插件目录选择服务器后只跳转；启用仍须管理员明确调用上述服务器级接口，不创建全局安装或启用状态。
+服务器详情的「插件」分页 `/#/servers/{id}/plugins` 只管理这一台服务器；`/#/system/plugins` 是「插件中心 → 服务器启用」汇总页。插件目录选择服务器后只跳转；启用仍须管理员明确调用上述服务器级接口，不创建全局安装或启用状态。
 
 ## 节点
 
@@ -420,7 +420,7 @@
 
 `GET /api/artifacts` 返回签名与实际内容均验证通过的制品数组，每项包含 `name`、`version`、`arch`、`sha256`、`bytes`，例如 `{"name":"sing-box","version":"版本","arch":"amd64","sha256":"摘要","bytes":123}`。`arch` 可为旧 `amd64/arm64` 或精确签名 ABI。插件目录按组件身份归并不同版本和架构；`agent` 独立展示为基础组件，已登记插件为 `sing-box`、`nodequality`、`tcpquality`，未登记组件仅展示分发信息。此响应不是任何服务器的已安装列表，也不能代替服务器能力、版本或安全门禁检查。
 
-界面入口为插件目录 `/#/plugins/catalog`，旧 `/#/artifacts` 书签继续可用。目录展示介绍与分发版本，选择服务器后跳转对应服务器的插件或诊断页，不发起安装、启用或任务；页面职责见 [插件目录与服务器执行边界](plugin-catalog.md)。
+界面入口为「插件中心 → 插件目录」`/#/plugins/catalog`，旧 `/#/artifacts` 书签继续可用。目录展示介绍与分发版本，选择服务器后跳转对应服务器的插件或诊断页，不发起安装、启用或任务；页面职责见 [插件中心与服务器执行边界](plugin-catalog.md)。
 
 `GET /api/artifacts/targets` 返回 `{default_targets,supported_targets}`，仅管理员可读取。默认目标由现有服务器上报的 Agent/运行时平台架构推断；没有可用上报时使用面板宿主平台。
 

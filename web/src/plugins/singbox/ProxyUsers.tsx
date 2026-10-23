@@ -160,7 +160,7 @@ export default function ProxyUsers() {
     </Panel>
   </>
   return <>
-    <PageHeader eyebrow="访问管理" title="代理用户" description="分别为代理用户分配策略组和套餐，管理订阅，并查看实际代理流量。">
+    <PageHeader eyebrow="代理服务" title="代理用户" description="为代理用户分配策略组（能用哪些节点）和套餐（流量与有效期），管理订阅链接并查看实际代理流量。">
       <Refresh onClick={refresh} />
       <Button disabled={Boolean(userError())} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />创建代理用户</Button>
     </PageHeader>

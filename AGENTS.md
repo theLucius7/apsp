@@ -43,6 +43,8 @@
   - 业务插件（sing-box、DDNS、阿里云）是 `plugins/*/panel/` 下的独立 crate，工作区依赖只能是宿主、`protocol`、`compiler` 和云 API 公共库 `plugins/cloud_api/panel/`，插件之间不互相依赖；插件业务不得移回宿主或组装 crate。
   - sing-box 面板业务保持物理位于根 `plugins/singbox/panel/`，以独立 crate 暴露；组装 crate 只登记与再导出，不把业务实现搬回 `crates/panel/src/plugins/`。
   - 只有 `apsp-panel` 同时依赖宿主和具体插件，负责登记插件并保存唯一的迁移序列。
+- 管理界面和使用文档按[功能地图](docs/product-map.md)的七个功能区组织：新增页面先确定所属功能区和侧栏入口，前端目录与功能区对应；已发布的 Hash 路径只改显示名称、不改地址，见 [ADR 0086](docs/adr/0086-product-map-and-navigation.md)。
+- 产品定位为自托管的代理网络控制平面（[ADR 0087](docs/adr/0087-narrow-positioning-proxy-network.md)）。新功能必须服务节点、链路、用户与订阅，或运营这张网络所需的服务器、线路与费用感知；否则进入路线图候选池。按功能地图的分级处理现有功能：降级功能只修缺陷和安全问题，冻结功能只修安全问题，移除功能或数据需用户单独授权。
 - 系统管理员与代理用户分别命名；服务器网卡总流量留在 core。计量 `epoch` 只标记计数器重置，不得用作套餐周期。业务搬迁保留用户 ID、令牌、旧订阅路径、节点凭据、授权和历史流量，数据库表先不改名。
 - 诊断任务生命周期、资源预算、持久化、取消及历史由共用服务管理；插件只转换参数、执行和解析报告，见 [ADR 0028](docs/adr/0028-shared-diagnostic-job-service.md)。后续插件登记代码可以经独立审查和相称验证后合入准备；NodeQuality 迁移及前置阶段的实机验收通过后，才能签收、正式发布或部署后续新增诊断能力。
 - 特权操作必须经过 `Privileged` trait，服务管理经过 `ServiceManager` trait；外部运行时是独立的系统服务（Linux systemd/OpenRC、macOS launchd、FreeBSD rc.d、Windows 计划任务）。

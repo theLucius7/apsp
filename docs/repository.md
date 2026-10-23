@@ -67,12 +67,17 @@
 | --- | --- |
 | `web/src/App.tsx` | 会话读取、失效处理、公开看板访问控制与顶层页面组合 |
 | `web/src/app/routes.ts` | 解析 URL，复用看板/插件的严格路径解析及旧链接兼容 |
-| `web/src/app/navigation.ts` | 后台侧栏分组、名称与当前页面归属 |
+| `web/src/app/navigation.ts` | 后台侧栏的七个功能区、入口名称与当前页面归属，分组规则见[功能地图](product-map.md) |
 | `web/src/app/AdminPage.tsx` | 按解析结果选择页面，保留服务器筛选和组件重挂载边界 |
 | `web/src/app/AdminShell.tsx`、`Login.tsx` | 后台布局与登录表单 |
-| `web/src/pages/` | 服务器、系统设置、诊断、监控等核心管理页面 |
-| `web/src/plugins/` | 插件目录及 sing-box、DDNS、阿里云业务界面 |
-| `web/src/display/`、`statistics/` | 独立服务器看板与统计展示 |
+| `web/src/display/`、`statistics/` | 总览：服务器看板与统计报表 |
+| `web/src/servers/` | 服务器列表、接入与编辑、服务器详情分页（概况、资产与流量、Agent 与任务、插件）及其组成部分 |
+| `web/src/server-diagnostics/` | 服务器详情中的 IP 信息、节点验机与 TCP 诊断 |
+| `web/src/fleet/`、`operations/` | 运维工具；自动化与恢复 |
+| `web/src/monitoring/` | 告警事件、延迟检测、告警设置及其规则、Webhook 和渠道状态 |
+| `web/src/network-workbench/`、`network-configuration/` | 网络检测；网络配置 |
+| `web/src/plugins/` | 插件中心（目录与服务器启用）及 sing-box、DDNS、阿里云业务界面 |
+| `web/src/system/`、`control-center/` | 面板设置、账号安全；管理与安全及全局搜索、外观偏好 |
 | `web/src/api.ts`、`hooks.ts`、`components.tsx` | 共享请求、状态钩子和通用组件（页头、通知、弹窗、确认框、字段、复制） |
 | `web/src/index.css` | Tailwind CSS v4 入口与全部设计参数：浅色/暗色颜色、圆角、密度、基础样式 |
 | `web/src/components/ui/` | shadcn/ui Nova 组件源码（Radix UI 底层），按普通源码维护 |
@@ -81,7 +86,9 @@
 | `web/src/stores/` | Zustand 跨组件界面状态：语言、外观、外框、会话与看板货币 |
 | `web/src/i18n.tsx` | 语言上下文、浏览器语言选择、管理员偏好同步及静态界面词典 |
 
-界面约定见 [ADR 0086](adr/0086-ui-component-system.md)：组件使用 `components/ui/` 中的 shadcn/ui Nova 组件，样式只写 Tailwind 类并引用 `index.css` 的设计变量，不再新增 CSS 文件或颜色字面量；图标来自 `lucide-react`，图标按钮必须有 `aria-label`；动画只用 `motion/react` 的 `m.*` 与 `lib/motion.ts` 预设；可调分栏通过 `components/ui/resizable.tsx`，拖拽排序通过 `components/sortable.tsx`；跨组件界面状态放入 `stores/`，服务端数据仍经 `useResource` 与写保护。分区导航用 `SegmentedNav`，按钮通过 `aria-pressed`、页面链接通过 `aria-current="page"` 标记当前项；测试钩子使用 `data-slot` 与 `data-dialog`。
+页面目录与功能区一一对应：新增页面放进它所属功能区的目录，跨功能区共用的数据模型和工具函数留在 `web/src/` 根目录（如 `probes.ts`、`server-assets.ts`）。页面标题与侧栏入口同名，眉题使用分组名，说明文字先讲“在这里做什么”。
+
+界面约定见 [ADR 0088](adr/0088-ui-component-system.md)：组件使用 `components/ui/` 中的 shadcn/ui Nova 组件，样式只写 Tailwind 类并引用 `index.css` 的设计变量，不再新增 CSS 文件或颜色字面量；图标来自 `lucide-react`，图标按钮必须有 `aria-label`；动画只用 `motion/react` 的 `m.*` 与 `lib/motion.ts` 预设；可调分栏通过 `components/ui/resizable.tsx`，拖拽排序通过 `components/sortable.tsx`；跨组件界面状态放入 `stores/`，服务端数据仍经 `useResource` 与写保护。分区导航用 `SegmentedNav`，按钮通过 `aria-pressed`、页面链接通过 `aria-current="page"` 标记当前项；测试钩子使用 `data-slot` 与 `data-dialog`。
 
 Hash URL 是书签与兼容入口。新增页面要同时考虑路由、导航、管理员访问边界；公开访问只放行明确的看板路由，不据路径前缀推断权限。
 
@@ -94,4 +101,4 @@ Hash URL 是书签与兼容入口。新增页面要同时考虑路由、导航�
 - 使用文档放在 `docs/`，新的设计决策追加 `docs/adr/`，验证记录放在 `docs/acceptance/` 并标明源码和未验证范围；更新相应索引。
 - 部署模板及生成入口有摘要、签名和旧版本依赖；通过既有生成工具更新，不按普通重复文件删除。生产数据、真实凭据和临时日志不进入仓库。
 
-本轮只整理代码组合入口与文档导航；现有脚本、迁移、安装入口和历史验收记录继续使用原路径。
+本轮只整理代码组合入口与文档导航；现有脚本、迁移、安装入口和历史验收记录继续使用原路径。2026-10-24 前端 `pages/` 按功能区拆分目录，见 [ADR 0086](adr/0086-product-map-and-navigation.md)。

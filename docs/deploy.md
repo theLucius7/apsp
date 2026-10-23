@@ -165,7 +165,7 @@ SQL
 
 旧 0.3.0 及更早 Agent 的签名不包含后来新增的完整验机启动门禁。恢复既有安装前须先通过受控维护停止旧 Agent；入口不会自行停用运行中的服务。已有配置需 Python 3.11 或更新版本严格解析，预检只读取配置指定的状态库，未显式配置时使用原 `/var/lib/apsp/core/state.db`。systemd/OpenRC 状态与本地状态端点无法明确确认停止，或 SQLite/WAL/SHM、检查点损坏、读取期间变化时拒绝安装。`Preparing` 的 NodeQuality 完整任务（包括旧缺 plugin/mode 字段）被拒绝，原 JSON 不改；`Started` 保留精确旧版本，旧 Agent 只继续其确切 r2 及原参数回收，其他版本/新参数要求兼容的新签名 Agent，不能降级后把历史变成失败。门禁放行 daily 不代表旧 0.3.0 适配器支持 mode，实际日常执行仍需相应兼容的已签 Agent/包装器。接入前及激活前重复预检，最后拒绝时恢复旧配置；这不宣称能阻止其他特权操作者在预检后另行启动服务。
 
-正常部署无需在服务器编译运行时或 `docker cp` 制品。面板原“制品”页现为[插件目录](plugin-catalog.md)，只介绍插件和展示版本、架构，不再提供 Release 导入表单，也不在面板本机安装插件。旧 `/#/artifacts` 书签继续显示目录，新入口为 `/#/plugins/catalog`。
+正常部署无需在服务器编译运行时或 `docker cp` 制品。面板原“制品”页现为「插件中心 → [插件目录](plugin-catalog.md)」，只介绍插件和展示版本、架构，不再提供 Release 导入表单，也不在面板本机安装插件。旧 `/#/artifacts` 书签继续显示目录，新入口为 `/#/plugins/catalog`。
 
 签名 Release 的准备属于部署维护流程。保留的管理员运维接口 `POST /api/artifacts/import-release` 按 [API 文档](api.md)的认证和 CSRF 要求提交已发布标签，可省略 `targets` 自动匹配服务器平台，或显式传入目标平台架构。自动匹配使用已接入服务器的上报信息；没有可用信息时默认面板宿主平台，新服务器与面板架构不同时应显式选择目标。ARM 目标仅下载兼容的 ARM 制品，不下载 AMD。完整签名 proof 始终保存并验证，草稿、缺签名、错误版本、归档或摘要不一致均拒绝。
 
@@ -367,6 +367,6 @@ IP 信息页区分一个 check-place 聚合入口和 AbuseIPDB 官方接口。�
 
 ## 服务器运营设置与 Agent 下载
 
-升级到包含 `0018_server_operations.sql` 的版本后，后台「看板与通知」配置公开看板、离线阈值与 Telegram。服务器新增和编辑中配置单节点告警、Agent 自动更新与 GitHub 镜像；详情可进行本期流量矫正。默认私有看板、离线阈值 5 分钟，Telegram 默认关闭。操作和计量语义见 [服务器资产与运营说明](server-assets.md)。
+升级到包含 `0018_server_operations.sql` 的版本后，后台「面板设置」配置公开看板，「告警设置」配置离线阈值与 Telegram。服务器新增和编辑中配置单节点告警、Agent 自动更新与 GitHub 镜像；详情可进行本期流量矫正。默认私有看板、离线阈值 5 分钟，Telegram 默认关闭。操作和计量语义见 [服务器资产与运营说明](server-assets.md)。
 
 Agent 安装与自动更新从 GitHub Release 获取已签二进制，面板只下发更新元数据，旧 Agent 下载接口不再提供文件。部署前需要使用本次源码的独立可信 bootstrap；它包含从 GitHub 下载后安装已签 Agent 的静态 Linux 执行器，可兼容旧 0.3.0 的完整签名 proof，不修改正式 Release。新平台仍需发布对应签名制品；衔接说明见 [发布与安装说明](release.md)。本次源码工作不代表已发布新 Release 或完成多平台实机升级验收，CI 暂停安排继续有效。

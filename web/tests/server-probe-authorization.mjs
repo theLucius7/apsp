@@ -67,7 +67,7 @@ try {
       unexpected.push(`${method} ${path}`); return respond({ error: 'Unexpected request' }, 500)
     })
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/servers/1`)
+    await page.goto(`${origin}/#/servers/1/agent`)
     const panel = page.locator('section[data-slot=panel]').filter({ has: page.getByRole('heading', { name: '持续网络拨测', exact: true }) })
     await panel.getByText('未取得执行授权', { exact: false }).waitFor()
     const oldRow = panel.getByRole('row').filter({ hasText: '旧回环目标' })

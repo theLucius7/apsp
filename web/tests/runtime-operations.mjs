@@ -57,7 +57,7 @@ try {
       else { errors.push(`Unexpected ${method}: ${path}`); return route.fulfill({status:404,json:{}}) }
       return route.fulfill({json:value})
     })
-    const url=`http://127.0.0.1:${httpServer.address().port}/#/servers/1`
+    const url=`http://127.0.0.1:${httpServer.address().port}/#/servers/1/plugins`
     await installControlCenterFixtures(page)
     await page.goto(url)
     const operations=page.locator('[data-slot=runtime-operations]')

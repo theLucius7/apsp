@@ -82,7 +82,7 @@ try {
     })
     await page.goto(`${origin}/#/network-workbench`)
     const workbench = page.locator('section[data-slot=network-workbench]')
-    await workbench.getByRole('heading', { name: '网络检测与验机', exact: true }).waitFor()
+    await workbench.getByRole('heading', { name: '网络检测', exact: true }).waitFor()
     await workbench.getByText('当前权限不包含服务器列表读取；可使用面板来源或当前服务器详情上下文。', { exact: true }).waitFor()
     assert.equal(await workbench.getByRole('button', { name: '预览后提交执行', exact: true }).isDisabled(), true)
     await workbench.getByRole('button', { name: '授权目标', exact: true }).click()

@@ -197,7 +197,7 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     const details = event.target.closest('details')
     if (details) details.open = true
   }}>
-    <PageHeader eyebrow="sing-box 插件" title="代理节点" description="统一管理受管节点、有序链路与外部节点，整理来源并分配订阅。">
+    <PageHeader eyebrow="代理服务" title="代理节点" description="管理你服务器上的节点、由多段组成的链路，以及从订阅来源导入的外部节点。">
       <Refresh onClick={refresh} />
       <Button disabled={!canCreate} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />创建节点</Button>
       <Button variant="outline" disabled={!canCreateChain || creatingChain} onClick={openChainEditor}>创建链路</Button>

@@ -37,7 +37,7 @@ export default function Alicloud() {
     : resourceError(current, removing.value, { idle: true, accountRevision: removing.accountRevision })
   const resumeError = () => !resume ? '' : powerError(current, resume.value, undefined, resume.accountRevision) ||
     (!current()?.resources.find(r => r.id === resume.value.id)?.manual_hold ? '手动暂停状态已变化，请重新核对。' : '')
-  return <div className="grid min-w-0 gap-5"><PageHeader eyebrow="云服务插件" title="阿里云 CDT 与带宽" description="管理流量、账单、余额和公网带宽，配置 ECS 启停计划、阈值停机与抢占式保活。"><Refresh onClick={overview.reload} /><Button disabled={!available || action.busy || (data?.accounts.length ?? 8) >= 8} onClick={() => open({ type: 'account' })}><PlusIcon aria-hidden="true" />添加云账号</Button></PageHeader>
+  return <div className="grid min-w-0 gap-5"><PageHeader eyebrow="扩展" title="阿里云 CDT 与带宽" description="管理流量、账单、余额和公网带宽，配置 ECS 启停计划、阈值停机与抢占式保活。"><Refresh onClick={overview.reload} /><Button disabled={!available || action.busy || (data?.accounts.length ?? 8) >= 8} onClick={() => open({ type: 'account' })}><PlusIcon aria-hidden="true" />添加云账号</Button></PageHeader>
     <ErrorNotice message={overview.error || action.error} retry={overview.reload} />
     <Notice tone="quiet"><ActivityIcon className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden="true" /><div><strong className="font-medium">流量查询、账单与免费额度分别核对</strong><p className="text-muted-foreground">兼容 CDT-Monitor 的国内 / 海外用量查询只用于展示；自动降速依据带账期的完整 CDT 账单，数据存在延迟。免费额度与开通状态请在<a className="text-primary underline-offset-4 hover:underline" href="https://cdt.console.aliyun.com/" target="_blank" rel="noreferrer">阿里云 CDT 控制台</a>核对。</p></div></Notice>
     {!data && overview.loading ? <Loading /> : !data ? <Empty title="云服务状态暂不可用" description="请刷新后再管理账号和资源。" /> : <>

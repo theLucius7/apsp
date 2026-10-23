@@ -98,6 +98,8 @@ try {
     assert.deepEqual(created.asset_settings.tags, ['线路:BGP', 'SSD'])
     assert.equal(created.asset_settings.reset_day, 31)
     await dialog.getByRole('button', { name: '查看服务器' }).click()
+    // Assets are a tab of the server page.
+    await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '资产与流量', exact: true }).click()
     await page.getByRole('heading', { name: '资产与流量额度' }).waitFor()
     await page.getByText('USD 12.50 / 90 天', { exact: true }).waitFor()
     await page.getByRole('button', { name: '编辑资产配置' }).click()
@@ -141,7 +143,7 @@ try {
     await page.getByText('线路:BGP', { exact: true }).waitFor()
     await page.getByText(/统计网卡：eth\*,!eth1/).waitFor()
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/servers/2`)
+    await page.goto(`${origin}/#/servers/2/assets`)
     await page.getByRole('button', { name: '编辑资产配置' }).click()
     await dialog.getByRole('switch', { name: /在展示页隐藏/ }).check()
     await dialog.getByLabel('每周期金额', { exact: false }).fill('')

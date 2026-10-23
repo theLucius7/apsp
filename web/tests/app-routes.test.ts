@@ -53,8 +53,10 @@ test('node page sections are addressable and malformed sections are refused', ()
 })
 
 test('navigation groups follow administrator tasks and keep every destination', () => {
-  expect([...new Set(navigation.map(item => item.group))]).toEqual(['概览', '服务器', '代理服务', '扩展插件', '系统'])
+  expect([...new Set(navigation.map(item => item.group))]).toEqual(['总览', '服务器', '监控告警', '网络', '代理服务', '扩展', '系统'])
   expect(navigation).toHaveLength(20)
+  // A group never repeats its own name as an entry, so the breadcrumb is never "服务器 / 服务器".
+  for (const item of navigation) expect(item.label).not.toBe(item.group)
   expect(new Set(navigation.map(item => item.path)).size).toBe(navigation.length)
   expect(currentNavigation(resolveRoute('/plugins/sing-box/nodes?view=sources'))?.label).toBe('代理节点')
   expect(currentNavigation(resolveRoute('/plugins/sing-box/nodes?view=sources'))?.group).toBe('代理服务')
@@ -71,4 +73,20 @@ test('platform management pages preserve selected server context alongside the n
   for (const path of ['/servers/0/fleet', '/servers/9007199254740992/network-workbench', '/servers/42/operations/extra']) {
     expect(resolveRoute(path)).toEqual({ page: 'not-found' })
   }
+})
+
+test('server sections, plugin centre views and split settings resolve to one sidebar entry each', () => {
+  for (const section of ['assets', 'agent', 'plugins', 'ip-info', 'node-quality', 'tcp-quality'] as const) {
+    expect(resolveRoute(`/servers/42/${section}`)).toEqual({ page: 'server', serverId: 42, section })
+    expect(currentNavigation(resolveRoute(`/servers/42/${section}`))?.path).toBe('/servers')
+  }
+  expect(resolveRoute('/system/plugins')).toEqual({ page: 'plugins' })
+  expect(currentNavigation(resolveRoute('/system/plugins'))?.label).toBe('插件中心')
+  expect(currentNavigation(resolveRoute('/plugins/catalog'))?.label).toBe('插件中心')
+  expect(resolveRoute('/monitoring/settings')).toEqual({ page: 'alert-settings' })
+  expect(currentNavigation(resolveRoute('/monitoring/settings'))?.group).toBe('监控告警')
+  expect(currentNavigation(resolveRoute('/system/settings'))?.label).toBe('面板设置')
+  expect(currentNavigation(resolveRoute('/system/notifications'))?.group).toBe('监控告警')
+  expect(currentNavigation(resolveRoute('/plugins/ddns'))?.group).toBe('网络')
+  for (const path of ['/servers/42/overview', '/servers/42/assets/extra', '/monitoring/settings/extra']) expect(resolveRoute(path)).toEqual({ page: 'not-found' })
 })

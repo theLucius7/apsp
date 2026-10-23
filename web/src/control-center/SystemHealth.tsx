@@ -13,7 +13,7 @@ type Health = { version: string; sampled_at: number; uptime_seconds: number; dat
 const time = (value: number | null | undefined) => value ? new Date(value * 1000).toLocaleString('zh-CN') : '暂无观察'
 const bytes = (value: number | undefined) => value === undefined ? '未知' : value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(2)} GiB` : `${(value / 1024 ** 2).toFixed(1)} MiB`
 const statusNames: Record<string, string> = { healthy: '周期成功', running: '执行中', failed: '周期失败', stale: '观察已过期', unknown: '未知', observed: '已观察', recorded: '已有记录' }
-const workerNames: Record<string, string> = { maintenance: '面板维护', 'telemetry-history': '监控历史', 'control-center': '记录清理', 'network-workbench': '检测计划', operations: '批量运维', 'operations-backups': '定时备份', 'network-certificates': '证书续期', ddns: 'DNS 同步', alicloud: '云资源同步', 'alicloud-cost-cache': '云费用缓存', 'alicloud-power': '云启停计划', 'sing-box': '代理业务' }
+const workerNames: Record<string, string> = { maintenance: '面板维护', 'telemetry-history': '监控历史', 'control-center': '记录清理', 'network-workbench': '检测计划', operations: '自动化任务', 'operations-backups': '定时备份', 'network-certificates': '证书续期', ddns: 'DNS 同步', alicloud: '云资源同步', 'alicloud-cost-cache': '云费用缓存', 'alicloud-power': '云启停计划', 'sing-box': '代理服务' }
 const kindNames: Record<string, string> = { monitoring: '监控', logs: '日志', ip: 'IP 查询', terminal: '终端', 'proxy-access': '代理访问', audit: '审计' }
 const queueNames: Record<string, string> = { commands: '远程命令', diagnostics: '诊断任务', notifications: '通知投递', fleet: '日常运维', operations: '批量计划' }
 const verificationNames: Record<string, string> = { declared: '仅登记清单', integrity_verified: '完整性已核对', restored: '曾通过隔离恢复' }

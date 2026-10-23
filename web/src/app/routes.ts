@@ -5,9 +5,11 @@ import { resourceRoute } from '../plugins/singbox/resourceTypes'
 import type { ResourceKey } from '../plugins/singbox/resourceTypes'
 import type { NodeView } from '../plugins/singbox/nodeRoute'
 
-type ServerSection = 'ip-info' | 'node-quality' | 'tcp-quality' | 'plugins' | 'ddns' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations'
+// Sections of one server; ddns, fleet, network and operations are workspaces
+// opened with this server preselected.
+type ServerSection = 'assets' | 'agent' | 'ip-info' | 'node-quality' | 'tcp-quality' | 'plugins' | 'ddns' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations'
 type SimplePage = 'singbox-overview' | 'servers' | 'statistics' | 'latency' | 'alicloud' | 'ddns'
-  | 'proxy-users' | 'groups' | 'plugins' | 'catalog' | 'settings' | 'notifications' | 'security' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations' | 'control-center' | 'not-found'
+  | 'proxy-users' | 'groups' | 'plugins' | 'catalog' | 'settings' | 'alert-settings' | 'notifications' | 'security' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations' | 'control-center' | 'not-found'
 
 export type AppRoute =
   | { page: 'dashboard'; serverId?: number }
@@ -26,6 +28,7 @@ const pages: Readonly<Record<string, SimplePage>> = {
   '/plugins/sing-box': 'singbox-overview',
   '/statistics': 'statistics',
   '/latency': 'latency',
+  '/monitoring/settings': 'alert-settings',
   '/plugins/alicloud': 'alicloud',
   '/plugins/ddns': 'ddns',
   '/plugins/sing-box/users': 'proxy-users',
@@ -42,7 +45,7 @@ export function resolveRoute(path: string): AppRoute {
   const display = dashboardRoute(path)
   if (display) return { page: 'dashboard', ...display }
 
-  const server = path.match(/^\/servers\/([1-9]\d*)(?:\/(ip-info|node-quality|tcp-quality|plugins|ddns|fleet|network-workbench|network-configuration|operations))?$/)
+  const server = path.match(/^\/servers\/([1-9]\d*)(?:\/(assets|agent|ip-info|node-quality|tcp-quality|plugins|ddns|fleet|network-workbench|network-configuration|operations))?$/)
   if (server && Number.isSafeInteger(Number(server[1]))) {
     return { page: 'server', serverId: Number(server[1]), section: server[2] as ServerSection | undefined }
   }

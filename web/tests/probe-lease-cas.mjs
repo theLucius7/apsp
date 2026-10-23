@@ -68,7 +68,7 @@ try {
     })
     try {
       await installControlCenterFixtures(page)
-      await page.goto(`${origin}/#/servers/1`)
+      await page.goto(`${origin}/#/servers/1/agent`)
       const panel = page.locator('section[data-slot=panel]').filter({ has: page.getByRole('heading', { name: '持续网络拨测', exact: true }) }), form = panel.locator('form')
       const row = () => panel.getByRole('row').filter({ has: page.getByRole('button', { name: configured?.name ?? 'TEST_ONLY 当前拨测', exact: true }) })
       const legacyRow = panel.getByRole('row').filter({ hasText: 'TEST_ONLY 旧拨测' })

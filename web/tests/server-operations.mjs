@@ -103,17 +103,28 @@ try {
     assert.equal(await page.locator('[data-slot=sidebar]').count(), 0)
     rejectLogin = false
     await page.getByRole('button', { name: '登录面板' }).click()
-    await page.getByRole('heading', { name: '看板与通知', exact: true }).waitFor()
+    await page.getByRole('heading', { name: '面板设置', exact: true }).waitFor()
     assert.deepEqual(sessions.slice(0, 2), [0, 1].map(() => ({ path: '/api/login', body: { login_name: 'admin', password: 'TEST_ONLY', totp_code: '123456' } })))
+    // Panel settings change only the public dashboard switch.
+    assert.equal(await page.getByLabel('离线告警阈值（分钟）', { exact: false }).count(), 0)
     await page.getByRole('switch', { name: /^公开服务器看板/ }).uncheck()
-    await page.getByLabel('离线告警阈值（分钟）', { exact: false }).fill('8')
     if (screenshots) await page.screenshot({ path: resolve(screenshots, `operations-settings-${width}.png`), fullPage: true, animations: 'disabled' })
     await page.getByRole('button', { name: '保存设置' }).click()
     await page.getByRole('status').filter({ hasText: '设置已保存' }).waitFor()
-    const settingsWrite = writes.find(write => write.path === '/api/settings').body
+    const dashboardWrite = writes.find(write => write.path === '/api/settings').body
+    assert.equal(dashboardWrite.public_dashboard, false)
+    assert.equal(Object.hasOwn(dashboardWrite, 'telegram_token'), false)
+    // Alert thresholds live in the alert settings and keep the switch saved above.
+    await openNav(page, '告警设置')
+    await page.getByRole('heading', { name: '告警设置', exact: true }).waitFor()
+    await page.getByLabel('离线告警阈值（分钟）', { exact: false }).fill('8')
+    await page.getByRole('button', { name: '保存设置' }).click()
+    await page.getByRole('status').filter({ hasText: '设置已保存' }).waitFor()
+    const settingsWrite = writes.filter(write => write.path === '/api/settings').at(-1).body
     assert.equal(settingsWrite.offline_minutes, 8)
+    assert.equal(settingsWrite.public_dashboard, false)
     assert.equal(Object.hasOwn(settingsWrite, 'telegram_token'), false)
-    await openNav(page, '服务器')
+    await openNav(page, '服务器列表')
     assert.equal(await page.getByRole('link', { name: '打开服务器看板', exact: true }).count(), 0)
     await page.getByRole('button', { name: '编辑', exact: true }).click()
     let dialog = page.getByRole('dialog')
@@ -127,6 +138,8 @@ try {
     assert.equal(edit.auto_update, false); assert.equal(edit.asset_settings.offline_notify, false)
     assert.equal(edit.asset_settings.agent_mirror, 'https://mirror.example.com')
     await page.getByRole('button', { name: '详情', exact: true }).click()
+    // Traffic correction belongs to the server's assets tab.
+    await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '资产与流量', exact: true }).click()
     await page.getByRole('button', { name: '流量矫正', exact: true }).click()
     dialog = page.getByRole('dialog')
     await dialog.getByLabel('矫正后的上传流量').fill('999')
@@ -137,7 +150,7 @@ try {
     await dialog.waitFor({ state: 'detached' })
     const correction = writes.find(write => write.path.endsWith('traffic-correction')).body
     assert.equal(correction.baseline_uploaded, '100'); assert.equal(correction.uploaded, '999')
-    await openNav(page, '告警通知')
+    await openNav(page, '告警事件')
     await page.getByText('持续离线', { exact: true }).waitFor()
     await page.getByText('模拟网络失败', { exact: true }).waitFor()
     await page.getByRole('button', { name: /退出登录/ }).click()
@@ -147,7 +160,7 @@ try {
     await page.getByLabel('管理员密码', { exact: true }).fill('TEST_ONLY')
     await page.getByRole('button', { name: '登录面板' }).click()
     await page.getByText('持续离线', { exact: true }).waitFor()
-    assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '告警通知', exact: true, includeHidden: true }).getAttribute('aria-current'), 'page')
+    assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '告警事件', exact: true, includeHidden: true }).getAttribute('aria-current'), 'page')
     assert.deepEqual(errors, [])
     results.push({ width, publicAccess: 'passed', revocation: 'passed', sessions: 'passed', settings: 'passed', operations: 'passed' })
     await context.close()

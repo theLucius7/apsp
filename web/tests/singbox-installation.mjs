@@ -8,6 +8,13 @@ import { resolve, extname, sep } from 'node:path'
 // Exercise the actual dist with loopback fixtures; no Agent, release, or production access.
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
+// Read-only runtime operations view shown on the server's plugin tab once sing-box is enabled.
+const operationsViewFixture = {
+  runtime: { supported_versions: [], selected_version: 'TEST_ONLY', reason: 'TEST_ONLY 未读取真实运行时版本。', compatibility_metadata: { upstream_release: 'https://example.com/TEST_ONLY', upstream_commit: 'TEST_ONLY', protocols: [], acceptance_scope: 'TEST_ONLY 只读夹具' } },
+  preflight: { id: null, ready: false, confirmed: false, device_checks_pending: false, checks: [] },
+  drift: { state: 'unknown', target_revision: null, applied_revision: null, last_observed_at: null, reason: 'TEST_ONLY 无真实配置检查点。', checkpoint_supported: false, checkpoint: { state: 'unknown', observed_at: null, reason: 'TEST_ONLY 未读取进程或文件。' } },
+  changes: [], history: [], paths: [], hop_observations: [], path_diagnosis: 'TEST_ONLY 无真实路径证据。',
+}
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const server = createServer(async (request, response) => {
   const pathname = new URL(request.url, 'http://127.0.0.1').pathname
@@ -61,6 +68,12 @@ try {
         else if (pathname === prefix) value = [selected(), other]
         else if (pathname === `${prefix}/1`) value = selected()
         else if (pathname === `${prefix}/2`) value = other
+        // The server's plugin tab shares the server header and shows plugin business once enabled.
+        else if (pathname === '/api/servers/1') value = { id: 1, name, online: true, device_public_key: 'TEST_ONLY', capabilities: ['singbox'], static_info: {}, latest_metrics: {}, manifest_rev: targetRev }
+        else if (pathname === `${prefix}/1/deployments`) value = { status: null, history: [] }
+        else if (pathname === `${prefix}/1/runtime-operations`) value = { supported: false, online: false, retiring: false, operations: [] }
+        else if (pathname === '/api/plugins/sing-box/nodes') value = []
+        else if (pathname === `${prefix}/1/operations-view` && !url.search) value = operationsViewFixture
       } else if (pathname === `${prefix}/1/enable` && method === 'POST') {
         const payload = request.postDataJSON()
         assert.deepEqual(payload, {})
@@ -78,8 +91,9 @@ try {
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/system/plugins`)
     await page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }).waitFor()
-    assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '服务器插件', exact: true, includeHidden: true }).getAttribute('aria-current'), 'page')
-    assert.equal(await page.title(), '服务器插件 · apsp')
+    assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '插件中心', exact: true, includeHidden: true }).getAttribute('aria-current'), 'page')
+    assert.equal(await page.getByRole('navigation', { name: '插件中心' }).getByRole('link', { name: '服务器启用', exact: true }).getAttribute('aria-current'), 'page')
+    assert.equal(await page.title(), '插件中心 · apsp')
     const row = page.locator('tbody tr').filter({ has: page.getByRole('link', { name, exact: true }) })
     await row.getByText('设备支持 sing-box', { exact: true }).waitFor()
     assert.equal(await row.getByText('未启用', { exact: true }).count(), 1)
@@ -126,10 +140,11 @@ try {
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1/plugins`)
     await page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }).waitFor()
-    await page.getByText('已安装并运行', { exact: true }).waitFor()
-    assert.equal(await page.locator('tbody tr').count(), 1)
+    await page.getByText('已安装并运行', { exact: true }).first().waitFor()
+    const settings = page.locator('section').filter({ has: page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }) })
+    assert.equal(await settings.locator('tbody tr').count(), 1)
     assert.equal(await page.getByRole('link', { name: otherName, exact: true }).count(), 0)
-    assert.equal(await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '服务器插件', exact: true }).getAttribute('aria-current'), 'page')
+    assert.equal(await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '插件', exact: true }).getAttribute('aria-current'), 'page')
     assert(reads.slice(beforeSingle).includes(`${prefix}/1`))
     assert.equal(reads.slice(beforeSingle).includes(prefix), false, 'per-server view must not load the entire collection')
     assert.equal(writes.length, 1)

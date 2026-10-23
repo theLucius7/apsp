@@ -65,6 +65,10 @@ try {
           if (metadataFailure) { await route.fulfill({ status: 403, json: { error: 'PLUGIN_STATE_UNKNOWN' } }); return }
           value = metadata
         } else if (path === '/api/servers/2') value = servers[1]
+        // Once enabled, the server's plugin tab also reads the plugin business for that server only.
+        else if (path === '/api/plugins/sing-box/servers/2/deployments') value = { status: null, history: [] }
+        else if (path === '/api/plugins/sing-box/servers/2/runtime-operations') value = { supported: false, online: false, retiring: false, operations: [] }
+        else if (path === '/api/plugins/sing-box/nodes') value = []
         else if (path === '/api/servers/2/node-quality/reports') value = { plugin_ready: false, plugin_reason: '测试安全门禁', full_ready: false, full_reason: '测试安全门禁', cancel_supported: false, reports: [] }
         else if (path === '/api/servers/2/diagnostics') value = { cancel_supported: false, plugins: [{ plugin: 'tcpquality', title: 'TCP 连接诊断', version: 'TEST_ONLY', ready: false, reason: '测试安全门禁' }], reports: [] }
         else if (path === '/api/plugins/tcpquality/servers/2/targets') value = []
@@ -78,7 +82,7 @@ try {
     const openCatalog = async (path = '/plugins/catalog') => {
       await installControlCenterFixtures(page)
       await page.goto(`${origin}/#${path}`)
-      await page.getByRole('heading', { name: '插件目录', exact: true }).waitFor()
+      await page.getByRole('heading', { name: '插件中心', exact: true }).waitFor()
       await page.getByText('有已验证下载包', { exact: true }).first().waitFor()
     }
     await openCatalog('/artifacts')
@@ -92,8 +96,9 @@ try {
     assert.deepEqual(mutations, [])
     await openCatalog('/artifacts')
     assert.equal(await cards.count(), 5)
-    assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '插件目录', exact: true, includeHidden: true }).getAttribute('aria-current'), 'page')
-    assert.equal(await page.title(), '插件目录 · apsp')
+    assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '插件中心', exact: true, includeHidden: true }).getAttribute('aria-current'), 'page')
+    assert.equal(await page.getByRole('navigation', { name: '插件中心' }).getByRole('link', { name: '插件目录', exact: true }).getAttribute('aria-current'), 'page')
+    assert.equal(await page.title(), '插件中心 · apsp')
     assert.equal(await page.getByRole('link', { name: '制品', exact: true }).count(), 0)
     assert.equal(await page.locator('[data-slot=catalog-grid], [data-slot=catalog-unknown]').locator('form, input').count(), 0)
     assert.equal(await page.getByRole('button', { name: /导入|安装/ }).count(), 0)
@@ -171,7 +176,8 @@ try {
     }
     assert.equal(reads.includes('/api/plugins/sing-box/servers'), false)
     metadataFailure = true
-    await page.getByRole('button', { name: '刷新', exact: true }).click()
+    // The server header has its own refresh; this one belongs to the sing-box panel.
+    await page.locator('section').filter({ has: page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }) }).getByRole('button', { name: '刷新', exact: true }).click()
     await page.getByText('PLUGIN_STATE_UNKNOWN', { exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: '启用并安装 sing-box', exact: true }).isDisabled(), true)
     metadataFailure = false

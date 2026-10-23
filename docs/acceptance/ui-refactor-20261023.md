@@ -1,6 +1,6 @@
 # 2026-10-23 界面完全重构（shadcn/ui Nova）
 
-用户要求完全重构界面：组件统一为 shadcn/ui Nova（Radix UI），样式使用 Tailwind CSS v4 与 CSS 变量，图标使用 Lucide，动画使用 Motion，可调分栏使用 react-resizable-panels，拖拽使用 dnd-kit，跨组件状态使用 Zustand。设计决定与新增依赖说明见 [ADR 0086](../adr/0086-ui-component-system.md)，实施中的选择记录在[待决问题](../open-questions.md)的 2026-10-23 条目。
+用户要求完全重构界面：组件统一为 shadcn/ui Nova（Radix UI），样式使用 Tailwind CSS v4 与 CSS 变量，图标使用 Lucide，动画使用 Motion，可调分栏使用 react-resizable-panels，拖拽使用 dnd-kit，跨组件状态使用 Zustand。设计决定与新增依赖说明见 [ADR 0088](../adr/0088-ui-component-system.md)，实施中的选择记录在[待决问题](../open-questions.md)的 2026-10-23 条目。
 
 工作在分支 `claude/dreamy-heisenberg-w2g0rn` 上进行，起点是主线 `1263b2d`。按仓库节奏，全部修改先完成并冻结，再集中验证；验证发现的问题修复后只补验受影响的范围，最后对冻结后的最终构建全量重跑浏览器回归。远端 CI 继续暂停，未触发、重跑或恢复。没有发布、部署，也没有访问真实设备或生产面板。
 
@@ -31,6 +31,18 @@
   - 冻结输入后对最终构建全量重跑：51 组全部通过，合计约 1485 秒（4 路并行）。主题对比审计覆盖登录、服务器列表、确认框和公开看板 × 浅色/暗色 × 1440/390 宽度共 16 个页面状态、1354 个可见文字节点，全部达到 WCAG AA，且无横向滚动、无页面错误。
 - **Rust 嵌入与 Passkey：** 使用最终 `web/dist` 编译 `apsp-panel`，运行 `frontend` 与 `passkeys` 两个测试目标（含被忽略的浏览器用例）：7 项全部通过。其中 `compiled_embedded_frontend_matches_every_dist_file_for_get_and_head` 确认 68 个构建文件均按原内容与缓存头嵌入；`virtual_authenticator_browser_roundtrip` 通过 Rust 拉起面板与隔离测试数据库，用 Chromium 虚拟认证器完成 `passkeys.mjs` 的管理员与代理用户 Passkey 往返。首次运行因测试角色没有在默认库建模式的权限而在 sqlx 准备阶段失败，改为该角色自有的测试库后重跑通过，与代码无关。
 - **仓库检查：** `cargo fmt --check`、`tools/check-core-boundary.py`、`git diff --check`、`bun install --frozen-lockfile` 通过。本次没有修改 Rust 源码，未重跑全工作区 Clippy 与 `cargo test`。
+
+## 与主线整合
+
+提交 PR 后主线合入了七个功能区整理（ADR 0086）、定位收窄（ADR 0087）和路线图（主线 `43dcf39`）。按用户要求在本分支合并主线并解决冲突：
+
+- 主线把 `pages/` 拆入 `servers/`、`server-diagnostics/`、`monitoring/`、`system/`、`statistics/`、`plugins/`，并新增服务器详情分页（概况、资产与流量、Agent 与任务、插件）、插件中心页签、面板设置与告警设置两页。新增和移动后的页面全部改用本次的组件与样式；主线对文案、链接、路由和导入路径的修改逐处保留。
+- 侧栏采用主线的七组结构与名称，图标换为 Lucide；主线新增的 SVG 图标与样式文件不再需要，随旧样式一并删除。
+- 本次界面约定 ADR 顺延为 0088；文档冲突合并两边内容。`web/dist` 不手工合并，用 Bun 1.4.2 重新构建。
+
+整合后验证：`tsc -b` 通过；Bun 191 项通过、0 失败（2463 次断言）；Bun 1.4.2 生产构建通过。51 组浏览器回归中 50 组首轮通过；`admin-refresh.mjs` 在四路并行的首个批次里有一次时序断言未等到慢读取警告，单独重跑两次均通过，记为并行负载下的时序波动，未改代码。Rust 嵌入与 Passkey 结果见下条。
+
+- **整合后的 Rust 嵌入与 Passkey：** 用整合后的 `web/dist` 重新编译面板，`frontend` 与 `passkeys` 测试目标 7 项全部通过，包括主线也修改过的 `passkeys.mjs` 虚拟认证器浏览器往返。
 
 ## 未验证范围
 
