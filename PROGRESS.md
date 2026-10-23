@@ -5,7 +5,23 @@
 - 用户要求继续优化界面。路线图 0.2“界面体现分级”依赖待定的决定 D6，本轮不做；本轮只改不依赖产品决定的交互与反馈，没有新增依赖。
 - 顶栏搜索改为命令面板（Ctrl/⌘+K 或 `/`）：可跳转当前账号可见的全部页面，并包含收藏、最近访问和全局搜索结果；支持方向键、回车和 Shift+回车收藏，较晚返回的搜索结果不会打乱键盘选择。
 - 主要列表、表格、卡片和详情页的首次加载改为与内容同形的骨架占位。服务器列表增加表头全选（含混合状态）和只在有选择时出现的批量操作栏；用量条按 75% / 90% 阈值变色并带可读名称；离线服务器显示最后联络时间。重复的开关设置行合并为 `SettingRow`。
-- 验证：Bun 1.4.2 下 `tsc -b`、构建通过；Bun 192/0（2469 个断言）；最终构建上 53 组浏览器回归（新增命令面板与服务器列表两组）全部通过，详见[验收记录](docs/acceptance/ui-refinement-20261024.md)。并行负载暴露的 `admin-refresh` 夹具时序问题与命令面板选择重置缺陷均已修复。CI 继续暂停，记为未验证；未改 Rust，未运行 cargo。
+- 验证：Bun 1.4.2 下 `tsc -b`、构建通过；Bun 192/0（2469 个断言）；最终构建上 53 组浏览器回归（新增命令面板与服务器列表两组）全部通过，合入主线 #169、#171 后重建并全量重跑，53 组仍全部通过，详见[验收记录](docs/acceptance/ui-refinement-20261024.md)。并行负载暴露的 `admin-refresh` 夹具时序问题与命令面板选择重置缺陷均已修复。CI 继续暂停，记为未验证；未改 Rust，未运行 cargo。
+
+## 2026-10-24：全局搜索结果打开对应功能分区
+
+- ADR 0086 拆分服务器详情与告警设置后，全局搜索仍把三类结果指向旧位置：旧地址仍可打开，但不是管理该对象的页面。远程命令由服务器概况改为「Agent 与任务」`/servers/{id}/agent`；周期拨测由「TCP 诊断」改为同一分页，与 TCP 诊断页“在「Agent 与任务」的周期拨测中添加、停用或修改目标”的说明一致；资源告警规则由「告警事件」改为「告警设置」`/monitoring/settings`。
+- 对照 `ServerNavigation.tsx` 与 `navigation.ts` 核对其余类别：服务器、IP、IP 质量、IP 来源观测、DNS 记录、网络台账、综合测试、节点、代理用户、设备操作、运维任务、维护窗口、事件和延迟任务指向的页面或工作区没有迁移，无需修改。另发现诊断任务中的 IPQuality 节点出口自查（插件 `ipquality`）落入默认分支打开网络检测，而其报告只在「IP 信息」列出；这不是 ADR 0086 造成的迁移，但属同一表达式中的错误目标，一并改为 `/servers/{id}/ip-info`。
+- `crates/panel/tests/control_center_search.rs` 新增 `result_paths_open_the_page_section_that_manages_each_object`，用真实数据库记录固定远程命令、周期拨测、告警规则和四种诊断插件结果的 `path`；`docs/control-center-search.md` 补充路径规则。
+- 集中验证：输入为 `3c92501` 加本提交的 Rust 改动，使用本机 PostgreSQL 16.15（`DATABASE_URL` 角色可建库）及取自 `crates/protocol/tests/fixtures/public-keys.json` 的 `APSP_RELEASE_PUBLIC_KEYS`。`cargo fmt --check` 通过；`cargo clippy -p apsp-panel-host --all-targets -- -D warnings` 与 `cargo clippy -p apsp-panel --test control_center_search -- -D warnings` 通过；`cargo test -p apsp-panel --test control_center_search` 8 项全部通过。首轮 `cargo fmt --check` 要求拆开新测试中的一行元组，改为先绑定路径后通过；随后 main 合入 PR #169（含嵌入面板的 `web/dist`），分支快进后在最终输入上重跑以上全部检查。
+- 已知问题：「告警设置」先读取需要所有者会话的 `/api/settings`，读取失败时不显示资源告警规则；具备 `monitoring:read` 与全服务器授权的非所有者管理员能搜到告警规则，打开后只看到权限错误。原目标「告警事件」同样不列出规则；本次未改页面与权限。
+- 未验证：其余 Rust 测试、前端测试与浏览器回归未运行（前端未改动）；GitHub Actions 继续暂停，未触发 CI。记录本摘要后停止本轮启动的 PostgreSQL 集群，删除测试数据库与角色、`target/` 及 Cargo 下载缓存。
+
+## 2026-10-24：功能分区快捷入口与部署构建修正
+
+- 告警事件的“通知设置”指向独立告警设置页；服务概览的“查看部署”指向该服务器的插件分页。避免快捷入口仍停留在功能拆分前的面板设置或服务器概况。
+- Tailwind 默认扫描范围包含已提交的 `web/dist`，重复构建会额外收集旧 bundle 中的工具类。将扫描范围限定为 `src` 和 HTML 入口；实际比较带旧产物与清空产物后的两次构建，70 个文件逐字节一致。
+- 基于已合并的 PR #168 重建前端产物，TypeScript/Vite 通过。主题审计首轮在登录错误提示出现时记录一次对比度失败，独立复测通过；提示由 Motion 的 JavaScript 透明度动画显示，原 `getAnimations()` 等待无法覆盖。审计补充等待提示及其祖先透明度稳定，不修改颜色或产品动画。最终产物上 `monitoring.mjs`、`singbox-business.mjs`、`theme-contrast.mjs` 三组复验全部通过；主题审计覆盖 16 个页面状态、1362 个文字节点。
+- 未修改 Rust，未重跑 Rust 测试；GitHub Actions 继续暂停。
 
 ## 2026-10-24：后续规划细化为里程碑与工作包
 

@@ -271,6 +271,58 @@ async fn owner_parses_and_executes_every_search_category_on_empty_tables(
 }
 
 #[sqlx::test]
+async fn result_paths_open_the_page_section_that_manages_each_object(pool: PgPool) -> Result<()> {
+    let panel = Panel::start(pool).await?;
+    let server = panel.server("section-path", json!({})).await?;
+    let command = Uuid::new_v4();
+    sqlx::query("INSERT INTO remote_commands(id,server_id,requested_at,spec) VALUES($1,$2,0,'{}')")
+        .bind(command)
+        .bind(server)
+        .execute(&panel.pool)
+        .await?;
+    let probe = Uuid::new_v4();
+    sqlx::query("INSERT INTO network_probes(id,server_id,spec) VALUES($1,$2,'{}')")
+        .bind(probe)
+        .bind(server)
+        .execute(&panel.pool)
+        .await?;
+    let rule = Uuid::new_v4();
+    sqlx::query("INSERT INTO alert_rules(id,spec) VALUES($1,'{}')")
+        .bind(rule)
+        .execute(&panel.pool)
+        .await?;
+    let agent = format!("/servers/{server}/agent");
+    let mut cases = vec![
+        ("command-task", command, agent.clone()),
+        ("probe-rule", probe, agent),
+        ("alert-rule", rule, "/monitoring/settings".to_owned()),
+    ];
+    for (plugin, section) in [
+        ("nodequality", "node-quality"),
+        ("tcpquality", "tcp-quality"),
+        ("ipquality", "ip-info"),
+        ("network-workbench", "network-workbench"),
+    ] {
+        let job = Uuid::new_v4();
+        sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,job,status,created_at,updated_at,expires_at) VALUES($1,$2,$3,'succeeded',0,0,0)")
+            .bind(job).bind(server).bind(json!({"plugin":plugin})).execute(&panel.pool).await?;
+        let path = format!("/servers/{server}/{section}");
+        cases.push(("diagnostic-task", job, path));
+    }
+    let cookie = panel.session(1).await?;
+    for (kind, id, path) in cases {
+        let id = id.to_string();
+        let value = panel.search(&cookie, &id).await?;
+        let row = items(&value)?
+            .iter()
+            .find(|row| row["kind"] == kind && row["id"] == id)
+            .with_context(|| format!("{kind} search result"))?;
+        assert_eq!(row["path"], path, "{kind}");
+    }
+    Ok(())
+}
+
+#[sqlx::test]
 async fn scoped_ip_filter_precedes_limit_and_preserves_observation_sources(
     pool: PgPool,
 ) -> Result<()> {

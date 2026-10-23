@@ -107,6 +107,16 @@ async function run() {
             await page.getByLabel('管理员密码').fill('TEST_ONLY')
             await page.getByRole('button', { name: /登录面板/ }).click()
             await page.getByRole('alert').waitFor()
+            // Motion can animate opacity in JavaScript, outside getAnimations().
+            // Audit the settled notice, rather than a transient entrance frame.
+            await page.waitForFunction(() => {
+              const alert = document.querySelector('[role="alert"]')
+              if (!alert) return false
+              for (let element = alert; element; element = element.parentElement) {
+                if (Number(getComputedStyle(element).opacity) !== 1) return false
+              }
+              return true
+            }, null, { timeout: 5000 })
           } else if (scenario === 'dashboard') {
             await page.locator('[data-slot=server-card]').first().waitFor()
           } else {
