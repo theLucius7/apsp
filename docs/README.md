@@ -1,18 +1,30 @@
 # 文档导航
 
-先读[功能地图](product-map.md)了解 apsp 的定位、七个功能区和各自边界；下面的使用文档按同样的分区排列。代码位置见[目录说明](repository.md)，近期实现与验证见 [PROGRESS](../PROGRESS.md)。本文只是导航，具体限制和验收结果以对应专题为准。
+先读[功能地图](product-map.md)了解 apsp 的定位（自托管的代理网络控制平面）、功能分级和各自边界；下面的使用文档按功能区排列，代理服务在前，标“实验”的文档对应已降级或冻结的功能。代码位置见[目录说明](repository.md)，近期实现与验证见 [PROGRESS](../PROGRESS.md)。本文只是导航，具体限制和验收结果以对应专题为准。
 
 ## 开始使用
 
 | 需要做什么 | 文档 |
 | --- | --- |
-| 了解产品定位、功能分区、界面用语和不做的事 | [功能地图](product-map.md) |
+| 了解产品定位、功能分级、界面用语和不做的事 | [功能地图](product-map.md)、[定位决策](adr/0087-narrow-positioning-proxy-network.md) |
 | 了解接下来的版本计划与待决定事项 | [后续路线图](roadmap.md)（提议） |
 | 安装面板、备份升级、导入签名制品、接入 Agent | [部署与节点接入](deploy.md) |
 | 确认系统、架构、服务管理与升级能力 | [设备平台与能力](platforms.md) |
 | 从旧名称迁移既有安装 | [改名说明](apsp-renaming.md) |
 
 ## 按功能区
+
+### 代理服务（核心，sing-box 插件）
+
+| 需要做什么 | 文档 |
+| --- | --- |
+| 为服务器启用并安装 sing-box | [安装与控制流程](singbox-installation.md) |
+| 配置代理协议、端点和证书 | [协议与证书](proxy-protocols.md) |
+| 整理节点库、导入外部订阅并直接授权 | [节点库与外部订阅](node-catalog.md) |
+| 配置策略组、套餐、授权和周期 | [策略与套餐](singbox-groups.md) |
+| 导入机场订阅并创建混合链路 | [Agent 运维与混合链路](agent-runtime-and-chains.md) |
+| 为代理用户开通自助门户与 Passkey | [Passkey 登录与开通](passkeys.md) |
+| 了解运维与代理用户的完整流程 | [运维与代理用户流程](singbox-operations-workflows.md)、[读取与编辑保护](singbox-snapshot-editing.md) |
 
 ### 总览
 
@@ -26,9 +38,9 @@
 | 需要做什么 | 文档 |
 | --- | --- |
 | 配置地区、成本、到期、续费及网卡流量额度 | [服务器资产](server-assets.md) |
-| 使用终端、日志与文件、资产生命周期和批量登记 | [日常运维](fleet-operations.md) |
-| 批量任务与定时计划、故障事件、备份恢复和云费用账本 | [自动化与恢复](operations-recovery.md) |
-| 查看 Agent 运行时状态、执行或取消远程命令 | [Agent 运维与混合链路](agent-runtime-and-chains.md) |
+| 使用终端、日志与文件、资产生命周期和批量登记（实验） | [日常运维](fleet-operations.md) |
+| 面板备份与恢复；批量任务、故障事件和云费用账本（实验） | [自动化与恢复](operations-recovery.md) |
+| 查看 Agent 运行时状态、执行或取消远程命令（远程命令为实验） | [Agent 运维与混合链路](agent-runtime-and-chains.md) |
 
 ### 监控告警
 
@@ -40,20 +52,9 @@
 
 | 需要做什么 | 文档 |
 | --- | --- |
-| 测量连通性、路由、吞吐、硬件与 IP 质量 | [网络检测](network-workbench.md) |
-| 维护域名、证书、端点、转发、隧道、组网与防火墙 | [网络配置](network-configuration.md) |
+| 测量连通性、路由与 IP 质量；吞吐与硬件测试（实验） | [网络检测](network-workbench.md) |
+| 维护域名、证书、端点、转发、隧道、组网与防火墙（实验） | [网络配置](network-configuration.md) |
 | 让域名跟随服务器公网 IP 自动更新 | [DDNS 插件](ddns.md) |
-
-### 代理服务（sing-box 插件）
-
-| 需要做什么 | 文档 |
-| --- | --- |
-| 为服务器启用并安装 sing-box | [安装与控制流程](singbox-installation.md) |
-| 配置代理协议、端点和证书 | [协议与证书](proxy-protocols.md) |
-| 整理节点库、导入外部订阅并直接授权 | [节点库与外部订阅](node-catalog.md) |
-| 配置策略组、套餐、授权和周期 | [策略与套餐](singbox-groups.md) |
-| 导入机场订阅并创建混合链路 | [Agent 运维与混合链路](agent-runtime-and-chains.md) |
-| 了解运维与代理用户的完整流程 | [运维与代理用户流程](singbox-operations-workflows.md)、[读取与编辑保护](singbox-snapshot-editing.md) |
 
 ### 扩展
 
