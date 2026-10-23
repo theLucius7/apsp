@@ -8,8 +8,8 @@ import { flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fi
 
 // Shipped dist with private loopback API responses; native compiler and persistence checks are separate.
 const catalogView = resources => resources.map(resource => ({ ...resource, original_name: resource.name, tags: [], note: '', sort_order: resource.id, revision: '1'.repeat(64), metadata_revision: 0 }))
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
-const root = process.env.SINAN_WEB_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url))
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
+const root = process.env.APSP_WEB_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname
@@ -18,7 +18,7 @@ const server = createServer(async (request, response) => {
   try { const body = await readFile(file); response.writeHead(200, { 'Content-Type': mime[extname(file)] ?? 'application/octet-stream' }); response.end(body) } catch { response.writeHead(404).end() }
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
 const wait = async (condition, reason) => {
   const deadline = Date.now()+8000
   while(!await condition()) {assert(Date.now()<deadline,reason); await new Promise(done=>setTimeout(done,40))}

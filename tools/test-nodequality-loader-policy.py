@@ -90,8 +90,8 @@ class LoaderTests(unittest.TestCase):
         path.write_bytes(PRELUDE.encode() + b'\ninvoke(){\n' + call + b'}\ninvoke\n')
         (directory / '.runner').mkdir()
         env = self.environment(directory, mode)
-        env.update(BASH_ENV=str(PLUGIN / 'exit-observer.sh'), SINAN_REPORT_UPSTREAM=str(path),
-                   SINAN_REPORT_WORKSPACE=str(directory))
+        env.update(BASH_ENV=str(PLUGIN / 'exit-observer.sh'), APSP_REPORT_UPSTREAM=str(path),
+                   APSP_REPORT_WORKSPACE=str(directory))
         return subprocess.run(['/bin/bash', str(path)], env=env, capture_output=True, timeout=5)
 
     def test_empty_and_partial_failures_never_start_any_of_five_consumers(self):
@@ -195,8 +195,8 @@ class LoaderTests(unittest.TestCase):
                     earlier = directory / 'earlier-report.log'
                     earlier.write_text('previous completed chapter')
                     stubs = r'''
-work_dir=$SINAN_REPORT_WORKSPACE/nodequality-fixture
-result_directory=$SINAN_REPORT_WORKSPACE
+work_dir=$APSP_REPORT_WORKSPACE/nodequality-fixture
+result_directory=$APSP_REPORT_WORKSPACE
 header_info_filename=chapter.log
 hardware_quality_filename=chapter.log
 ip_quality_filename=chapter.log
@@ -212,12 +212,12 @@ pre_fetch_info(){ osinfo=(fixture); meminfo=(fixture); diskinfo=(fixture); }
                     script = cleanup + (PRELUDE + stubs + function + '\nmain(){\n'
                         + "trap 'sig_cleanup' INT TERM SIGHUP EXIT\n"
                         + main_call + '\n'
-                        + 'printf next > "$SINAN_REPORT_WORKSPACE/next"\npost_cleanup\n}\nmain\n').encode()
+                        + 'printf next > "$APSP_REPORT_WORKSPACE/next"\npost_cleanup\n}\nmain\n').encode()
                     path = directory / 'entry.sh'
                     path.write_bytes(script)
                     env = self.environment(directory, mode)
-                    env.update(BASH_ENV=str(PLUGIN / 'exit-observer.sh'), SINAN_REPORT_UPSTREAM=str(path),
-                               SINAN_REPORT_WORKSPACE=str(directory))
+                    env.update(BASH_ENV=str(PLUGIN / 'exit-observer.sh'), APSP_REPORT_UPSTREAM=str(path),
+                               APSP_REPORT_WORKSPACE=str(directory))
                     run = subprocess.run(['/bin/bash', str(path)], env=env, capture_output=True, timeout=5)
                     self.assertEqual(run.returncode, 1, run.stderr)
                     expected = mode == 'success'

@@ -2,7 +2,7 @@ use super::*;
 use anyhow::Result;
 use sqlx::PgPool;
 
-fn node(credential: &str) -> sinan_compiler::Node {
+fn node(credential: &str) -> apsp_compiler::Node {
     serde_json::from_value(json!({"id":1,"name":"Example node","port":443,"public_host":"proxy.example.invalid","sni":"proxy.example.invalid","private_key":"TEST_ONLY-private-key","public_key":"TEST_ONLY-public-key","short_id":"01020304","users":[{"user_id":1,"uuid":"00000000-0000-4000-8000-000000000001","credential":credential}]})).expect("node fixture")
 }
 
@@ -122,7 +122,7 @@ async fn fixture(pool: &PgPool) -> Result<(i64, i64, i64, i64)> {
     let user:i64=sqlx::query_scalar("INSERT INTO users(name,subscription_token) VALUES('Fixture user','TEST_ONLY-operations-token') RETURNING id").fetch_one(pool).await?;
     let node:i64=sqlx::query_scalar("INSERT INTO nodes(name,server_id,port,public_host,sni,private_key,public_key,short_id) VALUES('Fixture node',$1,443,'proxy.example.invalid','proxy.example.invalid','TEST_ONLY-private','TEST_ONLY-public','01020304') RETURNING id").bind(server).fetch_one(pool).await?;
     let package:i64=sqlx::query_scalar("INSERT INTO singbox_package_groups(name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,duration_days) VALUES('Fixture package',1000,1,0,0,'UTC',365) RETURNING id").fetch_one(pool).await?;
-    let assignment:i64=sqlx::query_scalar("INSERT INTO singbox_package_assignments(user_id,request_id,package_group_id,package_name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,starts_at,expires_at) VALUES($1,$2,$3,'Fixture package',1000,1,0,0,'UTC',$4-1,$4+86400) RETURNING id").bind(user).bind(Uuid::new_v4()).bind(package).bind(sinan_protocol::now_timestamp()).fetch_one(pool).await?;
+    let assignment:i64=sqlx::query_scalar("INSERT INTO singbox_package_assignments(user_id,request_id,package_group_id,package_name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,starts_at,expires_at) VALUES($1,$2,$3,'Fixture package',1000,1,0,0,'UTC',$4-1,$4+86400) RETURNING id").bind(user).bind(Uuid::new_v4()).bind(package).bind(apsp_protocol::now_timestamp()).fetch_one(pool).await?;
     sqlx::query("INSERT INTO singbox_user_packages(user_id,assignment_id) VALUES($1,$2)")
         .bind(user)
         .bind(assignment)
@@ -140,7 +140,7 @@ async fn usage(
     at: i64,
 ) -> Result<()> {
     let epoch = Uuid::new_v4();
-    sqlx::query("INSERT INTO usage_batches(server_id,epoch,seq,payload_hash,received_at) VALUES($1,$2,1,'TEST_ONLY-hash',$3)").bind(server).bind(epoch).bind(sinan_protocol::now_timestamp()).execute(pool).await?;
+    sqlx::query("INSERT INTO usage_batches(server_id,epoch,seq,payload_hash,received_at) VALUES($1,$2,1,'TEST_ONLY-hash',$3)").bind(server).bind(epoch).bind(apsp_protocol::now_timestamp()).execute(pool).await?;
     sqlx::query("INSERT INTO usage_records(server_id,epoch,seq,stat_name,user_id,node_id,uplink,downlink,period_start,period_end) VALUES($1,$2,1,$3,$4,$5,$6,0,$7-1,$7)").bind(server).bind(epoch).bind(format!("u{user}_n{node}")).bind(user).bind(node).bind(bytes).bind(at).execute(pool).await?;
     Ok(())
 }
@@ -148,7 +148,7 @@ async fn usage(
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn quota_reset_preserves_ledger_and_late_batches_still_charge(pool: PgPool) -> Result<()> {
     let (server, user, node, _) = fixture(&pool).await?;
-    let at = sinan_protocol::now_timestamp();
+    let at = apsp_protocol::now_timestamp();
     usage(&pool, server, user, node, 700, at).await?;
     let mut tx = pool.begin().await?;
     snapshots::snapshot(&mut tx, &Operation::ResetQuota { user_id: user }).await?;
@@ -197,7 +197,7 @@ async fn extension_creates_snapshot_without_resetting_cycle_or_used_bytes(
     pool: PgPool,
 ) -> Result<()> {
     let (server, user, node, original) = fixture(&pool).await?;
-    let at = sinan_protocol::now_timestamp();
+    let at = apsp_protocol::now_timestamp();
     usage(&pool, server, user, node, 600, at).await?;
     let before:(i64,i64,String,i64)=sqlx::query_as("SELECT starts_at,expires_at,used_bytes,cycle_start FROM singbox_entitlements($1) WHERE user_id=$2").bind(at).bind(user).fetch_one(&pool).await?;
     let mut tx = pool.begin().await?;
@@ -252,15 +252,7 @@ async fn preview_fingerprint_changes_after_late_usage_and_group_changes(
     let mut tx = pool.begin().await?;
     let (first, _) = snapshots::snapshot(&mut tx, &operation).await?;
     tx.commit().await?;
-    usage(
-        &pool,
-        server,
-        user,
-        node,
-        1,
-        sinan_protocol::now_timestamp(),
-    )
-    .await?;
+    usage(&pool, server, user, node, 1, apsp_protocol::now_timestamp()).await?;
     let mut tx = pool.begin().await?;
     let (second, _) = snapshots::snapshot(&mut tx, &operation).await?;
     tx.commit().await?;
@@ -282,7 +274,7 @@ async fn rotation_requires_exact_new_applied_identity_and_recent_device_evidence
 ) -> Result<()> {
     let (server, user, node_id, _) = fixture(&pool).await?;
     sqlx::query("INSERT INTO accesses(user_id,node_id,uuid,stat_name,credential) VALUES($1,$2,$3,$4,'TEST_ONLY-before')").bind(user).bind(node_id).bind(Uuid::new_v4()).bind(format!("u{user}_n{node_id}")).execute(&pool).await?;
-    sqlx::query("INSERT INTO server_module_status(server_id,module,target_rev,applied_rev,healthy,updated_at) VALUES($1,'singbox',1,1,TRUE,$2)").bind(server).bind(sinan_protocol::now_timestamp()).execute(&pool).await?;
+    sqlx::query("INSERT INTO server_module_status(server_id,module,target_rev,applied_rev,healthy,updated_at) VALUES($1,'singbox',1,1,TRUE,$2)").bind(server).bind(apsp_protocol::now_timestamp()).execute(&pool).await?;
     let mut tx = pool.begin().await?;
     mutations::execute(
         &mut tx,
@@ -303,13 +295,13 @@ async fn rotation_requires_exact_new_applied_identity_and_recent_device_evidence
             .await?;
     let mut applied = node(&credential);
     applied.id = node_id;
-    applied.users = vec![sinan_compiler::Access {
+    applied.users = vec![apsp_compiler::Access {
         user_id: user,
         uuid,
         credential,
     }];
-    sqlx::query("INSERT INTO deployments(server_id,module,rev,bundle,bundle_sha256,source_json,created_at) VALUES($1,'singbox',2,'TEST_ONLY-bundle','TEST_ONLY-hash',$2,$3)").bind(server).bind(json!([applied])).bind(sinan_protocol::now_timestamp()).execute(&pool).await?;
-    sqlx::query("UPDATE server_module_status SET target_rev=2,applied_rev=2,healthy=TRUE,updated_at=$2 WHERE server_id=$1 AND module='singbox'").bind(server).bind(sinan_protocol::now_timestamp()).execute(&pool).await?;
+    sqlx::query("INSERT INTO deployments(server_id,module,rev,bundle,bundle_sha256,source_json,created_at) VALUES($1,'singbox',2,'TEST_ONLY-bundle','TEST_ONLY-hash',$2,$3)").bind(server).bind(json!([applied])).bind(apsp_protocol::now_timestamp()).execute(&pool).await?;
+    sqlx::query("UPDATE server_module_status SET target_rev=2,applied_rev=2,healthy=TRUE,updated_at=$2 WHERE server_id=$1 AND module='singbox'").bind(server).bind(apsp_protocol::now_timestamp()).execute(&pool).await?;
     sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
         .bind(server)
         .execute(&pool)
@@ -320,7 +312,7 @@ async fn rotation_requires_exact_new_applied_identity_and_recent_device_evidence
     tx.commit().await?;
     sqlx::query("UPDATE servers SET last_seen=$2 WHERE id=$1")
         .bind(server)
-        .bind(sinan_protocol::now_timestamp())
+        .bind(apsp_protocol::now_timestamp())
         .execute(&pool)
         .await?;
     let mut tx = pool.begin().await?;

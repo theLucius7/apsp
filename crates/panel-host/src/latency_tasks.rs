@@ -2,6 +2,7 @@ use crate::{
     AppState, auth,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::ProbeSpec;
 use axum::{
     Json,
     extract::{Path, State},
@@ -9,7 +10,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sinan_protocol::ProbeSpec;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 

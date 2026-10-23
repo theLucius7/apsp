@@ -32,7 +32,7 @@ class NodeQueryContracts(unittest.TestCase):
         return {provider: (KEY, None) for provider in query.PROVIDERS}
 
     def execute(self, answer, ips=None, version='both', configured=None):
-        with tempfile.TemporaryDirectory(prefix='sinan-node-query-contract-') as directory:
+        with tempfile.TemporaryDirectory(prefix='apsp-node-query-contract-') as directory:
             workspace = Path(directory).resolve()
             source = workspace / 'node-ips.json'
             source.write_text(json.dumps(ips or ['1.1.1.1']))
@@ -89,7 +89,7 @@ class NodeQueryContracts(unittest.TestCase):
         for provider in query.PROVIDERS:
             value, captured = self.curl(json.dumps(self.body(provider)).encode() + b'\n200', provider=provider,
                                        environment={'HTTP_PROXY': 'TEST_ONLY_proxy', 'https_proxy': 'TEST_ONLY_proxy',
-                                                    'SINAN_SECRET': KEY, 'CURL_CA_BUNDLE': 'TEST_ONLY_alternate_CA',
+                                                    'APSP_SECRET': KEY, 'CURL_CA_BUNDLE': 'TEST_ONLY_alternate_CA',
                                                     'SSL_CERT_FILE': 'TEST_ONLY_alternate_CA',
                                                     'SSL_CERT_DIR': 'TEST_ONLY_alternate_CA',
                                                     'SSLKEYLOGFILE': 'TEST_ONLY_tls_secrets', 'QLOGDIR': 'TEST_ONLY_logs'})
@@ -194,7 +194,7 @@ class NodeQueryContracts(unittest.TestCase):
         with self.assertRaises(query.QueryFailure): query.identity('ipregistry-node', {'ip': '1.1.1.1', 'type': 'IPv6'}, 4)
 
     def test_special_use_frozen_inputs_never_start_provider_requests(self):
-        with tempfile.TemporaryDirectory(prefix='sinan-node-query-special-input-') as directory:
+        with tempfile.TemporaryDirectory(prefix='apsp-node-query-special-input-') as directory:
             workspace = Path(directory).resolve()
             source = workspace / 'node-ips.json'
             for ip in ['192.88.99.2', '2001:2::1', '3fff::1']:
@@ -206,7 +206,7 @@ class NodeQueryContracts(unittest.TestCase):
                 requests.assert_not_called()
 
     def test_frozen_input_refuses_symlink_directory_and_oversized_file(self):
-        with tempfile.TemporaryDirectory(prefix='sinan-node-query-input-') as directory:
+        with tempfile.TemporaryDirectory(prefix='apsp-node-query-input-') as directory:
             workspace = Path(directory).resolve()
             source = workspace / 'node-ips.json'
             target = workspace / 'other.json'
@@ -224,7 +224,7 @@ class NodeQueryContracts(unittest.TestCase):
                 query.frozen_ips(workspace, source, time.monotonic() + 3)
 
     def test_real_fifo_frozen_input_is_rejected_before_any_provider_request(self):
-        with tempfile.TemporaryDirectory(prefix='sinan-node-query-input-fifo-') as directory:
+        with tempfile.TemporaryDirectory(prefix='apsp-node-query-input-fifo-') as directory:
             workspace = Path(directory).resolve()
             source = workspace / 'node-ips.json'
             os.mkfifo(source, mode=0o600)
@@ -258,7 +258,7 @@ class NodeQueryContracts(unittest.TestCase):
                 self.assertTrue(all(item[0] is None for item in query.load_configuration().values()))
 
     def test_real_fifo_configuration_is_rejected_without_waiting_for_a_writer(self):
-        with tempfile.TemporaryDirectory(prefix='sinan-node-query-fifo-') as directory:
+        with tempfile.TemporaryDirectory(prefix='apsp-node-query-fifo-') as directory:
             path = Path(directory) / 'credentials.json'
             os.mkfifo(path, mode=0o600)
             script = '''

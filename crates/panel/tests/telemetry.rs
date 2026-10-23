@@ -4,13 +4,13 @@ mod business_support;
 mod release_support;
 
 use anyhow::Result;
+use apsp_protocol::{
+    AgentSettings, Metrics, TelemetryAck, TelemetryBatch, TelemetrySample, telemetry::now_millis,
+};
 use business_support::TestPanel;
 use flate2::{Compression, write::GzEncoder};
 use reqwest::{Method, StatusCode};
 use serde_json::json;
-use sinan_protocol::{
-    AgentSettings, Metrics, TelemetryAck, TelemetryBatch, TelemetrySample, telemetry::now_millis,
-};
 use sqlx::PgPool;
 use std::io::Write;
 use uuid::Uuid;
@@ -169,8 +169,8 @@ async fn settings_require_auth_and_telemetry_rejects_oversized_decompression(
 async fn heartbeat_and_sample_times_are_distinct_and_stale_history_remains_visible(
     pool: PgPool,
 ) -> Result<()> {
+    use apsp_protocol::{Envelope, Heartbeat, now_timestamp};
     use business_support::send_envelope;
-    use sinan_protocol::{Envelope, Heartbeat, now_timestamp};
     let panel = TestPanel::start(pool).await?;
     let cookie = panel.admin_cookie().await?;
     let (server, mut socket, ack) = panel
@@ -255,8 +255,8 @@ async fn heartbeat_and_sample_times_are_distinct_and_stale_history_remains_visib
 
 #[sqlx::test]
 async fn legacy_metrics_keep_values_without_inventing_collection_time(pool: PgPool) -> Result<()> {
+    use apsp_protocol::Envelope;
     use business_support::send_envelope;
-    use sinan_protocol::Envelope;
     let panel = TestPanel::start(pool).await?;
     let cookie = panel.admin_cookie().await?;
     let (server, mut socket, _) = panel

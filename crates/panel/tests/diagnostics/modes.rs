@@ -12,8 +12,8 @@ async fn daily_targets_exclude_unconfirmed_revoked_and_expired_monitoring_scope(
         .await?;
     capable(&panel, server).await?;
     fixture(&panel).await?;
-    use sinan_protocol::ProbeAddressFamily::{Any, Ipv4};
-    let now = sinan_protocol::now_timestamp();
+    use apsp_protocol::ProbeAddressFamily::{Any, Ipv4};
+    let now = apsp_protocol::now_timestamp();
     for (name, authorization, enabled, expires_at, family) in [
         ("TEST_ONLY owned", Some(true), true, None, Any),
         ("TEST_ONLY unconfirmed", None, true, None, Any),
@@ -30,7 +30,7 @@ async fn daily_targets_exclude_unconfirmed_revoked_and_expired_monitoring_scope(
         ("TEST_ONLY restricted family", Some(true), true, None, Ipv4),
     ] {
         let id = Uuid::new_v4();
-        let mut spec: sinan_protocol::ProbeSpec = serde_json::from_value(json!({
+        let mut spec: apsp_protocol::ProbeSpec = serde_json::from_value(json!({
             "id":id,"name":name,"kind":"tcp","target":"127.0.0.1","port":443,
             "interval_secs":60,"carrier":"","enabled":enabled
         }))?;
@@ -134,10 +134,10 @@ async fn modes_require_admin_confirmation_gate_capability_and_bound_daily_target
     assert!(view["plugin_reason"].as_str().unwrap().contains("Linux"));
     capable(&panel, server).await?;
     for index in 0..8 {
-        let mut spec = sinan_protocol::ProbeSpec {
+        let mut spec = apsp_protocol::ProbeSpec {
             id: Uuid::new_v4(),
             name: format!("private target {index}"),
-            kind: sinan_protocol::ProbeKind::Tcp,
+            kind: apsp_protocol::ProbeKind::Tcp,
             target: "127.0.0.1".into(),
             port: Some(443),
             interval_secs: 60,
@@ -198,7 +198,7 @@ async fn modes_require_admin_confirmation_gate_capability_and_bound_daily_target
         "UPDATE diagnostic_jobs SET status='cancel_requested',cancel_requested_at=$2 WHERE id=$1",
     )
     .bind(Uuid::parse_str(daily["id"].as_str().unwrap())?)
-    .bind(sinan_protocol::now_timestamp())
+    .bind(apsp_protocol::now_timestamp())
     .execute(&panel.state.pool)
     .await?;
     for request in [
@@ -223,7 +223,7 @@ async fn full_stays_disabled_after_admin_acknowledges_unknown_traffic(pool: PgPo
     let (server, _socket, _ack) = panel.authenticated_device(&cookie, "流量未知夹具").await?;
     capable(&panel, server).await?;
     fixture(&panel).await?;
-    sqlx::query("INSERT INTO deployments(server_id,module,rev,bundle,bundle_sha256,created_at) VALUES($1,'singbox',1,'TEST_ONLY','TEST_ONLY',$2)").bind(server).bind(sinan_protocol::now_timestamp()).execute(&panel.state.pool).await?;
+    sqlx::query("INSERT INTO deployments(server_id,module,rev,bundle,bundle_sha256,created_at) VALUES($1,'singbox',1,'TEST_ONLY','TEST_ONLY',$2)").bind(server).bind(apsp_protocol::now_timestamp()).execute(&panel.state.pool).await?;
     let path = format!("/api/servers/{server}/node-quality/reports");
     assert_eq!(
         panel
@@ -281,7 +281,7 @@ async fn recent_proxy_traffic_remains_a_warning_even_when_metrics_show_idle(
     let node = panel.create_node(&cookie, server, "计量节点").await?;
     let account = panel.create_user(&cookie, "计量账户").await?;
     let epoch = Uuid::new_v4();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query(
         "INSERT INTO usage_batches(server_id,epoch,seq,payload_hash) VALUES($1,$2,1,'TEST_ONLY')",
     )

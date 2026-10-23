@@ -50,7 +50,7 @@ pub(super) fn digests(outbound: &NormalizedOutbound) -> (String, String) {
         _ => Value::Null,
     };
     let identity = json!({
-        "identity_schema":"sinan-external-endpoint-v1",
+        "identity_schema":"apsp-external-endpoint-v1",
         "protocol":outbound.protocol(),
         "server":common.server,
         "server_port":common.server_port,

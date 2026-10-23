@@ -16,7 +16,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / 'crates/protocol/tests/fixtures'
-PWSH = os.environ.get('SINAN_PWSH') or shutil.which('pwsh')
+PWSH = os.environ.get('APSP_PWSH') or shutil.which('pwsh')
 sys.path.insert(0, str(ROOT / 'tools'))
 import release
 
@@ -40,7 +40,7 @@ class PowerShellGenerationTests(unittest.TestCase):
 @unittest.skipUnless(PWSH and shutil.which('minisign'), 'requires pwsh and minisign; native service install is separate')
 class PowerShellBootstrapTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='sinan-powershell-')
+        self.temporary = tempfile.TemporaryDirectory(prefix='apsp-powershell-')
         self.directory = Path(self.temporary.name)
         self.bundle = self.directory / '0.3.0'
         self.bundle.mkdir()
@@ -48,7 +48,7 @@ class PowerShellBootstrapTests(unittest.TestCase):
         for target in ('windows-amd64', 'windows-arm64', 'freebsd-amd64', 'macos-arm64'):
             payload = b'TEST ONLY binary, never execute ' + target.encode()
             entry = {'name': 'agent', 'version': '0.3.0', 'arch': target, 'format': 'raw',
-                     'binary_name': 'sinan-agent.exe' if target.startswith('windows-') else 'sinan-agent',
+                     'binary_name': 'apsp-agent.exe' if target.startswith('windows-') else 'apsp-agent',
                      'archive_size': len(payload), 'binary_size': len(payload),
                      'binary_sha256': release.digest(payload)}
             entry['asset_name'] = release.asset_name(entry)
@@ -61,7 +61,7 @@ class PowerShellBootstrapTests(unittest.TestCase):
         for name in ('release.json', 'install.sh'):
             sums[name] = release.digest((self.bundle / name).read_bytes())
         (self.bundle / 'SHA256SUMS').write_text(''.join(f'{sums[path]}  {path}\n' for path in sorted(sums)))
-        subprocess.run(['minisign', '-S', '-m', str(self.bundle / 'SHA256SUMS'), '-s', str(FIXTURES / 'TEST_ONLY.key'), '-t', 'Sinan TEST ONLY PowerShell fixture'], check=True, capture_output=True)
+        subprocess.run(['minisign', '-S', '-m', str(self.bundle / 'SHA256SUMS'), '-s', str(FIXTURES / 'TEST_ONLY.key'), '-t', 'Apsp TEST ONLY PowerShell fixture'], check=True, capture_output=True)
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -78,7 +78,7 @@ class PowerShellBootstrapTests(unittest.TestCase):
 
     def test_signed_native_manifest_validates_exact_version_and_all_targets(self):
         key = release.load_roots(FIXTURES / 'public-keys.json')[0]
-        self.assert_ok(f'$script:Roots=@({quote(key)}); Test-ReleaseSignature {quote(self.bundle)} {quote(shutil.which("minisign"))}; $m=Read-ReleaseManifest {quote(self.bundle)} 0.3.0; Assert-Sinan ($m.artifacts.Count -eq 4) "wrong count"; Assert-Sinan ($m.artifacts[0].binary_name -eq "sinan-agent.exe") "wrong Windows binary"')
+        self.assert_ok(f'$script:Roots=@({quote(key)}); Test-ReleaseSignature {quote(self.bundle)} {quote(shutil.which("minisign"))}; $m=Read-ReleaseManifest {quote(self.bundle)} 0.3.0; Assert-Apsp ($m.artifacts.Count -eq 4) "wrong count"; Assert-Apsp ($m.artifacts[0].binary_name -eq "apsp-agent.exe") "wrong Windows binary"')
         result = self.run_ps(f'Read-ReleaseManifest {quote(self.bundle)} 0.4.0')
         self.assertNotEqual(result.returncode, 0)
 
@@ -97,7 +97,7 @@ class PowerShellBootstrapTests(unittest.TestCase):
         fake = 'untrusted comment: TEST ONLY\n' + base64.b64encode(b'ED' + b'\0' * 72).decode() + '\ntrusted comment: TEST ONLY\n' + base64.b64encode(b'\0' * 64).decode() + '\n'
         (self.bundle / 'SHA256SUMS.minisig').write_text(fake)
         key = release.load_roots(FIXTURES / 'public-keys.json')[0]
-        self.assert_ok(f'$script:Roots=@({quote(key)}); $global:LASTEXITCODE=0; $ErrorActionPreference="Continue"; $rejected=$false; try {{ Test-ReleaseSignature {quote(self.bundle)} {quote(blocked)} }} catch {{ $rejected=$true }}; Assert-Sinan $rejected "non-executable verifier accepted fake signature"; Assert-Sinan ($null -eq $global:LASTEXITCODE) "verifier reused stale native success"')
+        self.assert_ok(f'$script:Roots=@({quote(key)}); $global:LASTEXITCODE=0; $ErrorActionPreference="Continue"; $rejected=$false; try {{ Test-ReleaseSignature {quote(self.bundle)} {quote(blocked)} }} catch {{ $rejected=$true }}; Assert-Apsp $rejected "non-executable verifier accepted fake signature"; Assert-Apsp ($null -eq $global:LASTEXITCODE) "verifier reused stale native success"')
 
     def test_real_verifier_rejects_bad_signature_and_can_continue_to_the_correct_root(self):
         key = release.load_roots(FIXTURES / 'public-keys.json')[0]
@@ -107,15 +107,15 @@ class PowerShellBootstrapTests(unittest.TestCase):
         result = self.run_ps(f'$script:Roots=@({quote(key)}); $global:LASTEXITCODE=0; Test-ReleaseSignature {quote(self.bundle)} {quote(shutil.which("minisign"))}')
         self.assertNotEqual(result.returncode, 0)
         (self.bundle / 'SHA256SUMS').write_bytes(original)
-        self.assert_ok(f'$script:Roots=@({quote(wrong)},{quote(key)}); $global:LASTEXITCODE=7; Test-ReleaseSignature {quote(self.bundle)} {quote(shutil.which("minisign"))}; Assert-Sinan ($global:LASTEXITCODE -eq 0) "correct root was not attempted after wrong signature"')
+        self.assert_ok(f'$script:Roots=@({quote(wrong)},{quote(key)}); $global:LASTEXITCODE=7; Test-ReleaseSignature {quote(self.bundle)} {quote(shutil.which("minisign"))}; Assert-Apsp ($global:LASTEXITCODE -eq 0) "correct root was not attempted after wrong signature"')
 
     def test_agent_native_calls_require_current_success_and_reject_failed_launch(self):
         blocked = self.directory / 'blocked-agent.exe'
         blocked.write_bytes(b'TEST ONLY non-executable Agent, never run')
         blocked.chmod(0o600)
-        self.assert_ok(f'$global:LASTEXITCODE=0; $ErrorActionPreference="Continue"; $rejected=$false; try {{ Invoke-CheckedAgent {quote(blocked)} @("fixture") }} catch {{ $rejected=$true }}; Assert-Sinan $rejected "non-executable Agent accepted stale success"; Assert-Sinan ($null -eq $global:LASTEXITCODE) "Agent reused stale native exit"')
+        self.assert_ok(f'$global:LASTEXITCODE=0; $ErrorActionPreference="Continue"; $rejected=$false; try {{ Invoke-CheckedAgent {quote(blocked)} @("fixture") }} catch {{ $rejected=$true }}; Assert-Apsp $rejected "non-executable Agent accepted stale success"; Assert-Apsp ($null -eq $global:LASTEXITCODE) "Agent reused stale native exit"')
         for status in (0, 7):
-            code = f'$global:LASTEXITCODE=0; $ErrorActionPreference="Continue"; $rejected=$false; try {{ Invoke-CheckedAgent {quote(PWSH)} @("-NoProfile","-NonInteractive","-Command","[Environment]::Exit({status})") }} catch {{ $rejected=$true }}; Assert-Sinan ($rejected -eq ${"true" if status else "false"}) "wrong current Agent status"; Assert-Sinan ($global:LASTEXITCODE -eq {status}) "wrong current native exit"'
+            code = f'$global:LASTEXITCODE=0; $ErrorActionPreference="Continue"; $rejected=$false; try {{ Invoke-CheckedAgent {quote(PWSH)} @("-NoProfile","-NonInteractive","-Command","[Environment]::Exit({status})") }} catch {{ $rejected=$true }}; Assert-Apsp ($rejected -eq ${"true" if status else "false"}) "wrong current Agent status"; Assert-Apsp ($global:LASTEXITCODE -eq {status}) "wrong current native exit"'
             self.assert_ok(code)
     def test_canonical_manifest_rejects_metadata_installer_and_duplicate_path_tampering(self):
         manifest = self.bundle / 'SHA256SUMS'
@@ -166,17 +166,17 @@ class PowerShellBootstrapTests(unittest.TestCase):
 
     def test_previous_windows_agent_reads_reference_file_and_rejects_path_escape(self):
         core = self.directory / 'core'
-        binary = core / '0.2.0' / 'sinan-agent.exe'
+        binary = core / '0.2.0' / 'apsp-agent.exe'
         binary.parent.mkdir(parents=True)
         binary.write_bytes(b'TEST ONLY never execute')
         reference = core / 'current'
-        reference.write_text(json.dumps({'sinan_directory_reference': True, 'target': str(binary.parent)}))
+        reference.write_text(json.dumps({'apsp_directory_reference': True, 'target': str(binary.parent)}))
         config = self.directory / 'agent.toml'
         prelude = 'function Assert-ProtectedTree([string]$Path) {}\n'
         for value in (json.dumps(str(core)), "'" + str(core) + "'"):
             config.write_text('agent_root = ' + value + '\n')
-            self.assert_ok(prelude + f'Assert-Sinan ((Get-PreviousAgent {quote(self.directory)} {quote(config)}) -eq {quote(binary)}) "wrong previous binary"')
-        reference.write_text(json.dumps({'sinan_directory_reference': True, 'target': str(self.directory / 'elsewhere/0.2.0')}))
+            self.assert_ok(prelude + f'Assert-Apsp ((Get-PreviousAgent {quote(self.directory)} {quote(config)}) -eq {quote(binary)}) "wrong previous binary"')
+        reference.write_text(json.dumps({'apsp_directory_reference': True, 'target': str(self.directory / 'elsewhere/0.2.0')}))
         self.assertNotEqual(self.run_ps(prelude + f'Get-PreviousAgent {quote(self.directory)} {quote(config)}').returncode, 0)
 
     def test_origin_and_github_redirect_allowlists(self):
@@ -188,16 +188,16 @@ class PowerShellBootstrapTests(unittest.TestCase):
             self.assertNotEqual(self.run_ps('Assert-GithubUrl ([Uri]' + quote(url) + ')').returncode, 0)
 
     def test_github_mirror_never_uses_panel_or_ip_origin(self):
-        self.assert_ok("Assert-Mirror https://mirror.example.com/prefix https://panel.example.com; Assert-GithubUrl ([Uri]'https://mirror.example.com/https://github.com/file') mirror.example.com; Assert-Sinan ((Get-ReleaseUrl https://github.com/file https://mirror.example.com/prefix) -eq 'https://mirror.example.com/prefix/https://github.com/file') 'bad mirror URL'")
+        self.assert_ok("Assert-Mirror https://mirror.example.com/prefix https://panel.example.com; Assert-GithubUrl ([Uri]'https://mirror.example.com/https://github.com/file') mirror.example.com; Assert-Apsp ((Get-ReleaseUrl https://github.com/file https://mirror.example.com/prefix) -eq 'https://mirror.example.com/prefix/https://github.com/file') 'bad mirror URL'")
         for mirror in ('https://panel.example.com/mirror', 'http://mirror.example.com', 'https://127.0.0.1', 'https://localhost', 'https://user:pass@mirror.example.com', 'https://mirror.example.com:444', 'https://mirror.example.com?token=fixture'):
             self.assertNotEqual(self.run_ps('Assert-Mirror ' + quote(mirror) + ' https://panel.example.com').returncode, 0)
         template = (ROOT / 'deploy/bootstrap.ps1.tmpl').read_text()
         self.assertNotIn("'/api/bootstrap/'", template)
-        self.assertIn('Receive-SinanFile $url $agent $selected.binary_size $true', template)
+        self.assertIn('Receive-ApspFile $url $agent $selected.binary_size $true', template)
         self.assertIn('Windows 服务安装仅支持稳定版本', template)
 
     def test_windows_architecture_uses_native_os_under_wow64(self):
-        self.assert_ok('$env:PROCESSOR_ARCHITECTURE="AMD64"; $env:PROCESSOR_ARCHITEW6432="ARM64"; Assert-Sinan ((Get-HostTarget) -eq "windows-arm64") "wrong native architecture"; $env:PROCESSOR_ARCHITEW6432=""; Assert-Sinan ((Get-HostTarget) -eq "windows-amd64") "wrong native architecture"')
+        self.assert_ok('$env:PROCESSOR_ARCHITECTURE="AMD64"; $env:PROCESSOR_ARCHITEW6432="ARM64"; Assert-Apsp ((Get-HostTarget) -eq "windows-arm64") "wrong native architecture"; $env:PROCESSOR_ARCHITEW6432=""; Assert-Apsp ((Get-HostTarget) -eq "windows-amd64") "wrong native architecture"')
         self.assertNotEqual(self.run_ps('$env:PROCESSOR_ARCHITEW6432=""; $env:PROCESSOR_ARCHITECTURE="X86"; Get-HostTarget').returncode, 0)
 
     @unittest.skipUnless(shutil.which('rustc'), 'requires rustc to exercise the actual launcher quote function')
@@ -251,13 +251,13 @@ class PowerShellBootstrapTests(unittest.TestCase):
         origin = f'http://127.0.0.1:{server.server_port}'
         try:
             payload = self.directory / 'payload'
-            self.assert_ok(f'Receive-SinanFile {quote(origin + "/payload")} {quote(payload)} 5 $false 5')
+            self.assert_ok(f'Receive-ApspFile {quote(origin + "/payload")} {quote(payload)} 5 $false 5')
             self.assertEqual(payload.read_bytes(), b'valid')
             for path, limit, size in (('/payload', 4, 0), ('/payload', 6, 6), ('/redirect', 5, 5)):
                 payload.unlink(missing_ok=True)
-                self.assertNotEqual(self.run_ps(f'Receive-SinanFile {quote(origin + path)} {quote(payload)} {limit} $false {size}').returncode, 0)
+                self.assertNotEqual(self.run_ps(f'Receive-ApspFile {quote(origin + path)} {quote(payload)} {limit} $false {size}').returncode, 0)
                 self.assertFalse(payload.exists())
-            self.assert_ok(f'$v=@(Get-ReleaseCandidates {quote(self.directory)} {quote(origin)} fixture windows-amd64 latest); Assert-Sinan ($v[0] -eq "0.10.0" -and $v[1] -eq "0.9.0" -and $v.Count -eq 2) "numeric ordering failed"')
+            self.assert_ok(f'$v=@(Get-ReleaseCandidates {quote(self.directory)} {quote(origin)} fixture windows-amd64 latest); Assert-Apsp ($v[0] -eq "0.10.0" -and $v[1] -eq "0.9.0" -and $v.Count -eq 2) "numeric ordering failed"')
         finally:
             server.shutdown(); server.server_close(); thread.join()
 

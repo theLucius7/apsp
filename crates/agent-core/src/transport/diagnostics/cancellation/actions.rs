@@ -53,7 +53,7 @@ impl DiagnosticWorker {
     ) -> Result<Option<DiagnosticReport>> {
         let job = &request.job;
         let adapter = self.adapters.get(&job.plugin);
-        let unit = format!("sinan-diagnostic-{}.service", job.id);
+        let unit = format!("apsp-diagnostic-{}.service", job.id);
         let directory = self
             .config
             .runtime_root

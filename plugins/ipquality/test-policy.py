@@ -29,9 +29,9 @@ def module(name, path):
     return result
 
 
-transport = module('sinan_ipquality_transport_fixture', HERE / 'transport.py')
-helper = module('sinan_ipquality_source_fixture', HERE / 'source-helper.py')
-policy = module('sinan_ipquality_policy_fixture', HERE / 'source-policy.py')
+transport = module('apsp_ipquality_transport_fixture', HERE / 'transport.py')
+helper = module('apsp_ipquality_source_fixture', HERE / 'source-helper.py')
+policy = module('apsp_ipquality_policy_fixture', HERE / 'source-policy.py')
 
 
 def documentation_fixture_ip(value, family=None):
@@ -55,7 +55,7 @@ class SourceClosureTests(unittest.TestCase):
             self.assertNotEqual(policies[name], (node / (name + '-policy.py')).read_bytes())
 
     def test_wrong_generic_media_helper_is_rejected_without_changing_reviewed_digest(self):
-        with tempfile.TemporaryDirectory(prefix='sinan-ipquality-policy-closure-') as name:
+        with tempfile.TemporaryDirectory(prefix='apsp-ipquality-policy-closure-') as name:
             root = Path(name)
             here, shared = root / 'ipquality', root / 'nodequality'
             here.mkdir()
@@ -74,7 +74,7 @@ class SourceClosureTests(unittest.TestCase):
                     path.write_bytes(actual[role])
 
     def test_published_role_filenames_use_exact_copies_and_do_not_fall_back_on_mismatch(self):
-        with tempfile.TemporaryDirectory(prefix='sinan-ipquality-policy-offer-') as name:
+        with tempfile.TemporaryDirectory(prefix='apsp-ipquality-policy-offer-') as name:
             here = Path(name) / 'ipquality'
             policies = here / 'policies'
             policies.mkdir(parents=True)
@@ -148,7 +148,7 @@ class SourceClosureTests(unittest.TestCase):
                   b'.Sources.ipregistry=$registry | .Sources.DBIP=$dbip | .Media.DisneyPlus += $disney | '
                   b'.Media.Youtube += $youtube\')\n}\n')
         following = b'declare -A preserved_global=()\ncheck_IP(){\n: # next function\n}\n'
-        quoted = b'head_updates+=".Head |= . + { IP: $(sinan_node_json_text "${IP:-null}") } | "\n'
+        quoted = b'head_updates+=".Head |= . + { IP: $(apsp_node_json_text "${IP:-null}") } | "\n'
         self.assertEqual(policy.quote_json_values(before + field + ending + following),
                          before + quoted + ending + following)
 
@@ -157,9 +157,9 @@ class SourceClosureTests(unittest.TestCase):
             self.skipTest('requires local exact four-role upstream cache; does not download sources')
         files = {name: (SOURCE_CACHE / name).read_bytes() for name in helper.EXPECTED}
         transformed = helper.transform_files(files)['patched-ip.sh']
-        bash = os.environ.get('SINAN_IPQUALITY_TEST_BASH',
-                              os.environ.get('SINAN_NODEQUALITY_TEST_BASH', '/bin/bash'))
-        with tempfile.TemporaryDirectory(prefix='sinan-ipquality-syntax-') as directory:
+        bash = os.environ.get('APSP_IPQUALITY_TEST_BASH',
+                              os.environ.get('APSP_NODEQUALITY_TEST_BASH', '/bin/bash'))
+        with tempfile.TemporaryDirectory(prefix='apsp-ipquality-syntax-') as directory:
             path = Path(directory) / 'patched-ip.sh'
             path.write_bytes(transformed)
             result = subprocess.run([bash, '-n', str(path)], capture_output=True, timeout=10)
@@ -177,15 +177,15 @@ class SourceClosureTests(unittest.TestCase):
         for forbidden in (b'get_opts', b'show_ad', b'countRunTimes', b'read_ref', b'check_connectivity', b'upload.check.place'):
             self.assertNotIn(forbidden, final_main)
         self.assertIn(b'SMTP / DNSBL', script)
-        self.assertIn(b'sinan_ip_score_json "${ipqs[score]:-}"', script)
+        self.assertIn(b'apsp_ip_score_json "${ipqs[score]:-}"', script)
         self.assertNotIn(b'score_updates+=".Score |= . + { IPQS: \\"${ipapi[ipqs]', script)
-        self.assertIn(b'$(sinan_node_json_text "${maxmind[org]:-null}")', script)
+        self.assertIn(b'$(apsp_node_json_text "${maxmind[org]:-null}")', script)
         self.assertEqual(transformed['LICENSE.ip'], files['LICENSE.ip'])
 
     def test_actual_upstream_serializer_treats_organization_as_data_and_unknown_factor_as_null(self):
         if SOURCE_CACHE is None:
             self.skipTest('requires local exact four-role upstream cache; does not download sources')
-        bash = os.environ.get('SINAN_IPQUALITY_TEST_BASH', os.environ.get('SINAN_NODEQUALITY_TEST_BASH', '/bin/bash'))
+        bash = os.environ.get('APSP_IPQUALITY_TEST_BASH', os.environ.get('APSP_NODEQUALITY_TEST_BASH', '/bin/bash'))
         if int(subprocess.check_output([bash, '-c', 'printf "%s" "${BASH_VERSINFO[0]}"'], text=True)) < 4:
             self.skipTest('the fixed upstream profile requires Bash >= 4; production Debian uses Bash 5')
         if not shutil.which('jq'):
@@ -205,7 +205,7 @@ save_json || exit 70
 printf '%s' "$ipjson"
 '''.encode()
         organization = 'fixture " | error("provider data must not execute") | " \\ suffix'
-        with tempfile.TemporaryDirectory(prefix='sinan-ipquality-serializer-') as directory:
+        with tempfile.TemporaryDirectory(prefix='apsp-ipquality-serializer-') as directory:
             path = Path(directory) / 'serializer.sh'
             path.write_bytes(definitions + harness)
             result = subprocess.run([bash, str(path)], capture_output=True, timeout=15,
@@ -221,13 +221,13 @@ printf '%s' "$ipjson"
 
 class RequestGuardTests(unittest.TestCase):
     def setUp(self):
-        self.workspace = tempfile.TemporaryDirectory(prefix='sinan-ipquality-guard-')
+        self.workspace = tempfile.TemporaryDirectory(prefix='apsp-ipquality-guard-')
         self.directory = Path(self.workspace.name)
         self.receipts = self.directory / 'attempts.jsonl'
         self.environment = mock.patch.dict(os.environ, {
-            'SINAN_IPQUALITY_FAMILY': '4', 'SINAN_IPQUALITY_TARGET_IP': EXAMPLE_IP,
-            'SINAN_IPQUALITY_ATTEMPTS': str(self.receipts),
-            'SINAN_IPQUALITY_PARTIAL': str(self.directory / 'partial.json'),
+            'APSP_IPQUALITY_FAMILY': '4', 'APSP_IPQUALITY_TARGET_IP': EXAMPLE_IP,
+            'APSP_IPQUALITY_ATTEMPTS': str(self.receipts),
+            'APSP_IPQUALITY_PARTIAL': str(self.directory / 'partial.json'),
         })
         self.environment.start()
         self.public_fixture = mock.patch.object(transport, 'canonical_ip', side_effect=documentation_fixture_ip)
@@ -387,7 +387,7 @@ class RequestGuardTests(unittest.TestCase):
             transport.snapshot(io.BytesIO(prior))
 
     def test_discovery_distinct_fallback_preserves_failure(self):
-        os.environ.pop('SINAN_IPQUALITY_TARGET_IP')
+        os.environ.pop('APSP_IPQUALITY_TARGET_IP')
         responses = [self.captured(b'', status=0, code=6), self.captured(EXAMPLE_IP.encode())]
         with (mock.patch.object(transport, 'capture', side_effect=responses) as capture,
               mock.patch.object(sys, 'stdout', new=io.TextIOWrapper(io.BytesIO(), encoding='utf-8'))):

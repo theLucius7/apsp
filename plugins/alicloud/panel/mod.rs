@@ -18,10 +18,10 @@ pub use api::routes;
 pub use security_groups::routes as security_groups_routes;
 pub use worker::run;
 
-pub(crate) use sinan_cloud_api as cloud_api;
+pub(crate) use apsp_cloud_api as cloud_api;
 #[cfg(test)]
-pub(crate) use sinan_panel_host::config;
-pub(crate) use sinan_panel_host::{AppState, auth, control_center, error, notifications, settings};
+pub(crate) use apsp_panel_host::config;
+pub(crate) use apsp_panel_host::{AppState, auth, control_center, error, notifications, settings};
 
 use crate::error::{ApiError, ApiResult};
 use sqlx::{PgPool, Postgres, Transaction};

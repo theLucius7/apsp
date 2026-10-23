@@ -87,14 +87,14 @@ async fn preview(
     if rule.revision != input.revision {
         return Err(ApiError::Conflict("规则已被修改，请刷新后预览".into()));
     }
-    if rule.lease_until > sinan_protocol::now_timestamp() {
+    if rule.lease_until > apsp_protocol::now_timestamp() {
         return Err(ApiError::Conflict("规则正在执行，请稍后核对".into()));
     }
     let info = model::observation(&state.pool, rule.config.server_id).await?;
     let desired = info.select(
         &rule.config,
         rule.last_ip.as_deref(),
-        sinan_protocol::now_timestamp(),
+        apsp_protocol::now_timestamp(),
     );
     let _permit = state
         .quality_permits
@@ -114,7 +114,7 @@ async fn preview(
         Ok(remote) => (remote, None),
         Err(error) => (None, Some(error.code.to_owned())),
     };
-    let checked_at = sinan_protocol::now_timestamp();
+    let checked_at = apsp_protocol::now_timestamp();
     let change = match (error.is_some(), desired.as_ref(), remote.as_ref()) {
         (false, Ok(desired), Some(remote))
             if remote.values == vec![desired.to_string()]

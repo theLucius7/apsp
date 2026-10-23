@@ -13,7 +13,7 @@ const diagnosisFixture = user => ({ user_id: user.id, account: { user_id: user.i
 const templateFixture = { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY 完整模板未读取。', supported_client: 'singbox', supported_version: '1.14.2', schema_validation: true, runtime_validation: false, limitations: 'TEST_ONLY 没有保存的模板，未执行真实客户端验证。' }
 
 // TEST_ONLY: the actual dist is served on loopback; every API and external request is intercepted.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url)), prefix = '/api/plugins/sing-box'
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const server = createServer(async (request, response) => {
@@ -35,7 +35,7 @@ const totals = { scenarios: 0, requests: 0, writes: 0, blocked_submissions: 0, u
 try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   const origin = `http://127.0.0.1:${server.address().port}`
-  browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+  browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
   for (const width of [1440, 390]) {
     const fixture = async (routeName, callback) => {
       const page = await browser.newPage({ viewport: { width, height: 1000 } })
@@ -291,7 +291,7 @@ try {
       await refresh(page); await dialog.getByText('已选资源已不可用或身份已变更，请取消这些选择后再保存。其余草稿已保留。', { exact: true }).waitFor()
       assert(await dialog.locator('input[name="chain_ids"][value="10"]').isChecked()); assert(await dialog.locator('input[name="node_ids"][value="1"]').isChecked())
       await forceSubmit(dialog); assert.equal(writes.length, 0)
-      if (process.env.SINAN_UI_SCREENSHOT_DIR) { await mkdir(process.env.SINAN_UI_SCREENSHOT_DIR, { recursive: true }); const screenshot = resolve(process.env.SINAN_UI_SCREENSHOT_DIR, `singbox-snapshot-missing-resource-${width}.png`); await page.screenshot({ path: screenshot, fullPage: true }); totals.screenshots.push(screenshot) }
+      if (process.env.APSP_UI_SCREENSHOT_DIR) { await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true }); const screenshot = resolve(process.env.APSP_UI_SCREENSHOT_DIR, `singbox-snapshot-missing-resource-${width}.png`); await page.screenshot({ path: screenshot, fullPage: true }); totals.screenshots.push(screenshot) }
       await dialog.locator('input[name="chain_ids"][value="10"]').click(); assert.equal(await dialog.locator('input[name="chain_ids"][value="10"]').count(), 0); await dialog.locator('input[name="node_ids"][value="1"]').click(); assert.equal(await dialog.locator('input[name="node_ids"][value="1"]').count(), 0); await dialog.getByRole('button', { name: '保存', exact: true }).click()
       assert.deepEqual(writes[0].payload, { name: 'TEST_ONLY 消失资源草稿', node_ids: [], chain_ids: [] })
     })

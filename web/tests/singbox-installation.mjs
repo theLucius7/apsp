@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
 
 // Exercise the actual dist with loopback fixtures; no Agent, release, or production access.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const server = createServer(async (request, response) => {
@@ -20,7 +20,7 @@ const server = createServer(async (request, response) => {
 let browser
 try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-  browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+  browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
   const origin = `http://127.0.0.1:${server.address().port}`
   for (const width of [1440, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 1000 }, serviceWorkers: 'block' })
@@ -79,7 +79,7 @@ try {
     await page.goto(`${origin}/#/system/plugins`)
     await page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }).waitFor()
     assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '服务器插件', exact: true, includeHidden: true }).getAttribute('aria-current'), 'page')
-    assert.equal(await page.title(), '服务器插件 · 司南')
+    assert.equal(await page.title(), '服务器插件 · apsp')
     const row = page.locator('tbody tr').filter({ has: page.getByRole('link', { name, exact: true }) })
     await row.getByText('设备支持 sing-box', { exact: true }).waitFor()
     assert.equal(await row.getByText('未启用', { exact: true }).count(), 1)

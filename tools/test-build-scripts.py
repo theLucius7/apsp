@@ -28,13 +28,13 @@ class BuildScriptTests(unittest.TestCase):
             (root / "Cargo.toml").write_text('[workspace.package]\nversion = "9.8.7"\n')
             agent = root / "crates/agent"
             agent.mkdir(parents=True)
-            (agent / "Cargo.toml").write_text('[package]\nname = "sinan-agent"\nversion = "1.2.3"\n')
-            binary = root / "sinan-agent"
+            (agent / "Cargo.toml").write_text('[package]\nname = "apsp-agent"\nversion = "1.2.3"\n')
+            binary = root / "apsp-agent"
             binary.write_text(
                 f"#!{sys.executable}\n"
                 "import sys\n"
-                f"if sys.argv[1:] == ['--version']: print('sinan-agent {reported_version}')\n"
-                "elif sys.argv[1:] == ['--help']: print('sinan-agent')\n"
+                f"if sys.argv[1:] == ['--version']: print('apsp-agent {reported_version}')\n"
+                "elif sys.argv[1:] == ['--help']: print('apsp-agent')\n"
                 "elif sys.argv[1:] == ['run', '--help']: print('--monitor-only')\n"
                 "else: sys.exit(2)\n"
             )
@@ -56,14 +56,14 @@ class BuildScriptTests(unittest.TestCase):
             output = artifacts / "1.2.3"
             payload = binary.read_bytes()
             digest = hashlib.sha256(payload).hexdigest()
-            self.assertEqual((output / "x86_64-unknown-freebsd/sinan-agent").read_bytes(), payload)
+            self.assertEqual((output / "x86_64-unknown-freebsd/apsp-agent").read_bytes(), payload)
             self.assertEqual((output / "freebsd-amd64").read_bytes(), payload)
             self.assertEqual((output / "SHA256SUMS").read_text(), f"{digest}  freebsd-amd64\n")
             self.assertFalse((artifacts / "9.8.7").exists())
 
     def test_prebuilt_agent_rejects_binary_reporting_workspace_version(self):
         with self.independent_prebuilt_agent(reported_version="9.8.7") as (root, _):
-            with self.assertRaisesRegex(ValueError, "unexpected Agent version: sinan-agent 9.8.7"):
+            with self.assertRaisesRegex(ValueError, "unexpected Agent version: apsp-agent 9.8.7"):
                 NATIVE_AGENT["main"]()
             self.assertFalse((root / "artifacts").exists())
 
@@ -146,7 +146,7 @@ class BuildScriptTests(unittest.TestCase):
             for target in NATIVE_AGENT["TARGETS"]:
                 with self.subTest(target=target):
                     output = package(binary, target, "0.1.0", root / "artifacts")
-                    name = "sinan-agent.exe" if "windows" in target else "sinan-agent"
+                    name = "apsp-agent.exe" if "windows" in target else "apsp-agent"
                     digest = hashlib.sha256(payload).hexdigest()
                     self.assertEqual((output / name).read_bytes(), payload)
                     self.assertEqual(

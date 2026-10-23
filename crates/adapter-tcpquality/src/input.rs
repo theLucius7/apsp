@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, ensure};
+use apsp_adapter_sdk::DiagnosticSpec;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sinan_adapter_sdk::DiagnosticSpec;
 use std::{
     collections::BTreeSet,
     net::IpAddr,
@@ -11,7 +11,7 @@ use std::{
 pub(crate) const INPUT_LIMIT: usize = 16 * 1024;
 pub(crate) const OUTPUT_LIMIT: usize = 64 * 1024;
 pub(crate) const ENGINE_VERSION: &str = "0.3.0";
-pub(crate) const BINARY: &str = "sinan-tcp-probe";
+pub(crate) const BINARY: &str = "apsp-tcp-probe";
 pub(crate) const SEMANTICS: &str = "连接成功率和 TCP 建连耗时；不是包丢失率、吞吐测速或上游 TcpQuality 兼容评分。地区与运营商是管理员配置标签，未指定地区不推断。";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

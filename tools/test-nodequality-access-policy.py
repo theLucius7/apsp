@@ -21,7 +21,7 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / 'plugins/nodequality'
 READONLY_SOURCES = None
-BASH = os.environ.get('SINAN_NODEQUALITY_TEST_BASH', '/bin/bash')
+BASH = os.environ.get('APSP_NODEQUALITY_TEST_BASH', '/bin/bash')
 
 
 def module(name, path):
@@ -72,7 +72,7 @@ def request():
         if 'body_size' in scenario:
             sys.stdout.write('x' * scenario['body_size'])
         if '--write-out' in args and not scenario.get('omit_footer'):
-            sys.stdout.write('\nSINAN_HTTP:' + str(scenario.get('status', '000')) + '\nSINAN_TIME:0.001')
+            sys.stdout.write('\nAPSP_HTTP:' + str(scenario.get('status', '000')) + '\nAPSP_TIME:0.001')
         raise SystemExit(scenario['code'])
     endpoint = os.environ['RECORDER']
     if not endpoint.startswith('http://127.0.0.1:'):
@@ -282,7 +282,7 @@ class AccessTests(unittest.TestCase):
             factors = [line for line in text.splitlines() if line.startswith('factor_updates+=') and ('"DBIP"' in line or '"ipregistry"' in line)]
             media = [line for line in text.splitlines() if line.startswith('media_updates+=') and 'DisneyPlus' in line]
             script += body(text, 'factor_bool')
-            script += body(text, 'sinan_ip_score_json')
+            script += body(text, 'apsp_ip_score_json')
             script += '\nscore_updates=""\nfactor_updates=""\nmedia_updates=""\n'
             script += score + '\n' + '\n'.join(factors + media) + '\n'
             script += 'ipjson=\'{"Media":{"Other":"retained"},"Score":{"Other":42},"Factor":{}}\'\n'

@@ -1,11 +1,11 @@
 //! Offline signed workbench adapter; common core owns budgets and cancellation.
 use crate::files;
 use anyhow::{Context, Result, ensure};
-use serde_json::Value;
-use sinan_adapter_sdk::{
+use apsp_adapter_sdk::{
     BoxFuture, DiagnosticAdapter, DiagnosticDescriptor, DiagnosticOutput, DiagnosticSection,
     DiagnosticSpec, Privileged, ServiceJob,
 };
+use serde_json::Value;
 use std::time::Duration;
 use tokio::time::Instant;
 #[derive(Clone, Copy, Debug, Default)]
@@ -44,7 +44,7 @@ impl DiagnosticAdapter for WorkbenchAdapter {
     fn describe(&self) -> DiagnosticDescriptor {
         DiagnosticDescriptor {
             plugin_name: "network-workbench".into(),
-            binary_name: "sinan-network-workbench".into(),
+            binary_name: "apsp-network-workbench".into(),
         }
     }
     fn capabilities(&self) -> Vec<String> {
@@ -109,7 +109,7 @@ impl DiagnosticAdapter for WorkbenchAdapter {
                 inspected.output.stderr
             );
             Ok(ServiceJob {
-                unit: format!("sinan-diagnostic-{}.service", spec.id),
+                unit: format!("apsp-diagnostic-{}.service", spec.id),
                 program: spec.binary_path.clone(),
                 args: vec![
                     "--input".into(),
@@ -124,12 +124,12 @@ impl DiagnosticAdapter for WorkbenchAdapter {
                 ],
                 working_directory: spec.job_dir.clone(),
                 timeout_secs: spec.timeout_secs,
-                memory_max: sinan_adapter_sdk::MemoryMax::new(1024 * 1024 * 1024)?,
-                tasks_max: sinan_adapter_sdk::TasksMax::new(64)?,
-                cpu_weight: sinan_adapter_sdk::CpuWeight::new(100)?,
-                cpu_max_percent: sinan_adapter_sdk::CpuMaxPercent::new(6400)?,
-                io_weight: sinan_adapter_sdk::IoWeight::new(10)?,
-                oom_score_adjust: sinan_adapter_sdk::OomScoreAdjust::new(500)?,
+                memory_max: apsp_adapter_sdk::MemoryMax::new(1024 * 1024 * 1024)?,
+                tasks_max: apsp_adapter_sdk::TasksMax::new(64)?,
+                cpu_weight: apsp_adapter_sdk::CpuWeight::new(100)?,
+                cpu_max_percent: apsp_adapter_sdk::CpuMaxPercent::new(6400)?,
+                io_weight: apsp_adapter_sdk::IoWeight::new(10)?,
+                oom_score_adjust: apsp_adapter_sdk::OomScoreAdjust::new(500)?,
             })
         })
     }

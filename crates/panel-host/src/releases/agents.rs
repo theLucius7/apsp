@@ -106,9 +106,9 @@ fn valid_agent(release: &StoredRelease, artifact: &VerifiedArtifact) -> bool {
     let entry = artifact.metadata();
     let metadata = release.verified.metadata();
     let binary_name = if entry.arch.starts_with("windows-") {
-        "sinan-agent.exe"
+        "apsp-agent.exe"
     } else {
-        "sinan-agent"
+        "apsp-agent"
     };
     entry.name == "agent"
         && entry.format == "raw"
@@ -119,7 +119,7 @@ fn valid_agent(release: &StoredRelease, artifact: &VerifiedArtifact) -> bool {
         // and the Agent's independent installation/cache checks still apply.
         && version_key(&entry.version)
             .is_some_and(|version| version >= MINIMUM_INSTALLATION_VERSION)
-        && (linux_target(&entry.arch) || sinan_protocol::release_version(&entry.version).is_some())
+        && (linux_target(&entry.arch) || apsp_protocol::release_version(&entry.version).is_some())
         && metadata.tag == format!("agent-v{}", entry.version)
         && metadata.protocol_min <= PROTOCOL_MAX
         && metadata.protocol_max >= PROTOCOL_MIN
@@ -150,7 +150,7 @@ async fn versions(
             if entry.name != "agent" || version.is_some_and(|version| version != entry.version) {
                 continue;
             }
-            if version.is_none() && sinan_protocol::release_version(&entry.version).is_none() {
+            if version.is_none() && apsp_protocol::release_version(&entry.version).is_none() {
                 continue;
             }
             let artifact = release

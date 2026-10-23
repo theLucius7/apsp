@@ -20,7 +20,7 @@ TOOLS = {
     'grep': 'grep', 'sed': 'sed', 'awk': 'gawk', 'bc': 'bc',
     'openssl': 'openssl', 'update-ca-certificates': 'ca-certificates',
 }
-KIND = 'sinan-ipquality-debian12-preparation'
+KIND = 'apsp-ipquality-debian12-preparation'
 
 
 def module(name, path):
@@ -31,19 +31,19 @@ def module(name, path):
 
 
 def factory():
-    build = module('sinan_ipquality_debian_factory', ROOT / 'tools/nodequality-rootfs-build.py')
+    build = module('apsp_ipquality_debian_factory', ROOT / 'tools/nodequality-rootfs-build.py')
     build.TOOL_PACKAGES = dict(TOOLS)
     build.PROVENANCE_KIND = KIND
     build.PENDING = ['IPQuality: independent source policy, license review and node acceptance are separate']
-    profile = module('sinan_ipquality_minimal_factory_profile', ROOT / 'tools/ipquality-profile.py')
+    profile = module('apsp_ipquality_minimal_factory_profile', ROOT / 'tools/ipquality-profile.py')
     build.INPUT_PROFILE = profile.Profile(build, TOOLS)
     return build
 
 
 def collector():
-    collect = module('sinan_ipquality_debian_collector', ROOT / 'tools/nodequality-rootfs-collect.py')
+    collect = module('apsp_ipquality_debian_collector', ROOT / 'tools/nodequality-rootfs-collect.py')
     collect.BUILD = factory()
-    collect.COLLECTION_KIND = 'sinan-ipquality-debian-input-collection'
+    collect.COLLECTION_KIND = 'apsp-ipquality-debian-input-collection'
     return collect
 
 
@@ -54,7 +54,7 @@ def main():
     sys.argv = [sys.argv[0], *sys.argv[1:]]
     if chosen == 'derive' or (chosen == 'bind' and any(
             value == '--derived-inputs' or value.startswith('--derived-inputs=') for value in sys.argv[2:])):
-        return module('sinan_ipquality_input_derivation', ROOT / 'tools/ipquality-inputs.py').main()
+        return module('apsp_ipquality_input_derivation', ROOT / 'tools/ipquality-inputs.py').main()
     if chosen == 'prepare':
         build = factory()
         parser = argparse.ArgumentParser(description=__doc__)

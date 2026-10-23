@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / 'plugins/nodequality'
 READONLY_SOURCES = None
 TITLES = ('81280792', '70143836')
-BASH = os.environ.get('SINAN_NODEQUALITY_TEST_BASH', '/bin/bash')
+BASH = os.environ.get('APSP_NODEQUALITY_TEST_BASH', '/bin/bash')
 
 
 def module(name, path):

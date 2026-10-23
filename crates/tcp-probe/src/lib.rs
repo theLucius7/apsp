@@ -11,7 +11,7 @@ pub use journal::Journal;
 pub use model::{IpVersion, Report, Snapshot, Target};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const SOURCE_COMMIT: Option<&str> = option_env!("SINAN_NATIVE_TCP_SOURCE_COMMIT");
+pub const SOURCE_COMMIT: Option<&str> = option_env!("APSP_NATIVE_TCP_SOURCE_COMMIT");
 const _: () = {
     if let Some(commit) = SOURCE_COMMIT {
         let bytes = commit.as_bytes();

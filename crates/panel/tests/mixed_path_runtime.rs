@@ -1,16 +1,16 @@
 #![forbid(unsafe_code)]
 
 use anyhow::{Context, Result, ensure};
+use apsp_compiler::{
+    Access, Node, ProtocolConfig, compile_client,
+    external::ExternalOutbound,
+    paths::{self, Control, Hop},
+};
 use base64::{
     Engine,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use serde_json::{Value, json};
-use sinan_compiler::{
-    Access, Node, ProtocolConfig, compile_client,
-    external::ExternalOutbound,
-    paths::{self, Control, Hop},
-};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -137,7 +137,7 @@ async fn tap(target: u16, http: bool) -> Result<Tap> {
 fn node(id: i64, port: u16, public_port: u16, users: Vec<Access>) -> Node {
     let secret = x25519_dalek::StaticSecret::from([id as u8; 32]);
     let public = x25519_dalek::PublicKey::from(&secret);
-    let settings = sinan_compiler::NodeSettings {
+    let settings = apsp_compiler::NodeSettings {
         public_port: Some(public_port),
         ..Default::default()
     };
@@ -363,11 +363,11 @@ server.serve_forever()
 }
 
 #[tokio::test]
-#[ignore = "requires SINAN_TEST_UPSTREAM=official v1.14.2, OpenSSL and isolated loopback ports; excludes unavailable official accounting extension"]
+#[ignore = "requires APSP_TEST_UPSTREAM=official v1.14.2, OpenSSL and isolated loopback ports; excludes unavailable official accounting extension"]
 async fn external_middle_hop_carries_tcp_udp_and_never_bypasses_a_stopped_hop() -> Result<()> {
-    let binary = PathBuf::from(std::env::var("SINAN_TEST_UPSTREAM")?);
+    let binary = PathBuf::from(std::env::var("APSP_TEST_UPSTREAM")?);
     let directory =
-        Directory(std::env::temp_dir().join(format!("sinan-mixed-runtime-{}", Uuid::new_v4())));
+        Directory(std::env::temp_dir().join(format!("apsp-mixed-runtime-{}", Uuid::new_v4())));
     std::fs::create_dir_all(&directory.0)?;
     let (handshake, _, mut tls) = tls_fixture(&directory.0).await?;
     for with_middle in [false, true] {
@@ -503,9 +503,9 @@ async fn external_middle_hop_carries_tcp_udp_and_never_bypasses_a_stopped_hop() 
 #[tokio::test]
 #[ignore = "requires official v1.14.2, OpenSSL, Python and exclusive loopback port 18086; proves native Clash path validation, not distributed Agent acceptance"]
 async fn clash_delay_checks_the_compiled_path_and_fails_when_external_middle_stops() -> Result<()> {
-    let binary = PathBuf::from(std::env::var("SINAN_TEST_UPSTREAM")?);
+    let binary = PathBuf::from(std::env::var("APSP_TEST_UPSTREAM")?);
     let directory =
-        Directory(std::env::temp_dir().join(format!("sinan-mixed-clash-{}", Uuid::new_v4())));
+        Directory(std::env::temp_dir().join(format!("apsp-mixed-clash-{}", Uuid::new_v4())));
     std::fs::create_dir_all(&directory.0)?;
     let (handshake, certificate, mut tls) = tls_fixture(&directory.0).await?;
     let (target, mut target_process) = https_target(&directory.0, &certificate).await?;

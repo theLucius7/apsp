@@ -3,6 +3,9 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::{
+    RuntimeOperation, RuntimeOperationRequest, RuntimeOperationResult, now_timestamp,
+};
 use axum::{
     Json,
     extract::{Path, State},
@@ -10,9 +13,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sinan_protocol::{
-    RuntimeOperation, RuntimeOperationRequest, RuntimeOperationResult, now_timestamp,
-};
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
@@ -163,8 +163,8 @@ async fn dispatch(
                 .is_some_and(|at| now_timestamp().saturating_sub(at) <= 60)
             || !caps.as_array().is_some_and(|v| {
                 [
-                    sinan_protocol::RUNTIME_OPERATIONS_CAPABILITY,
-                    sinan_protocol::RUNTIME_CHECKPOINT_CAPABILITY,
+                    apsp_protocol::RUNTIME_OPERATIONS_CAPABILITY,
+                    apsp_protocol::RUNTIME_CHECKPOINT_CAPABILITY,
                 ]
                 .iter()
                 .all(|required| v.iter().any(|capability| capability == *required))
@@ -180,7 +180,7 @@ async fn dispatch(
         )
         .await?;
         let snapshot: Value = row.get("artifact_snapshot");
-        let selected: sinan_protocol::Artifact =
+        let selected: apsp_protocol::Artifact =
             serde_json::from_value(snapshot[server.to_string()].clone())
                 .map_err(anyhow::Error::from)?;
         if selected.sha256 != artifact.sha256 {
@@ -343,7 +343,7 @@ pub(crate) async fn inspect_member(
             .is_some_and(|at| now_timestamp().saturating_sub(at) <= 60)
         || !caps.as_array().is_some_and(|v| {
             v.iter()
-                .any(|c| c == sinan_protocol::RUNTIME_OPERATIONS_CAPABILITY)
+                .any(|c| c == apsp_protocol::RUNTIME_OPERATIONS_CAPABILITY)
         })
     {
         return Err(ApiError::Conflict(

@@ -25,7 +25,7 @@ export function useDashboardServers(paused: boolean, id?: number) {
       // Forget metadata and abort older reads before requesting the new visible
       // projection. Reconcile each live snapshot once to avoid refresh loops.
       metadata.clear(); metadata.reload()
-      if (scopeChanged && live.data.public_view) window.dispatchEvent(new Event('sinan:unauthorized'))
+      if (scopeChanged && live.data.public_view) window.dispatchEvent(new Event('apsp:unauthorized'))
     } else if (!id && live.data.servers.some(server => !rows.some(row => row.id === server.id))) metadata.reload()
   }, [rows, live.data, scopeChanged, id, metadata.clear, metadata.reload])
   useEffect(() => { if (metadata.denied) live.clear() }, [metadata.denied, live.clear])

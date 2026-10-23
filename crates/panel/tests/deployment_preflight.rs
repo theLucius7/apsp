@@ -5,11 +5,11 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
+use apsp_panel::{plugins::singbox::entitlements, publisher};
+use apsp_protocol::{Bundle, UsageBatch, UsageRecord, now_timestamp};
 use business_support::{TestPanel, deployment::observe, id};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::{plugins::singbox::entitlements, publisher};
-use sinan_protocol::{Bundle, UsageBatch, UsageRecord, now_timestamp};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -359,7 +359,7 @@ async fn same_listener_credentials_quota_and_final_revocation_publish_without_ne
         .json()
         .await?;
     let starts = assignment["starts_at"].as_i64().context("package starts")?;
-    sinan_panel::usage::ingest(
+    apsp_panel::usage::ingest(
         &panel.state,
         server,
         UsageBatch {

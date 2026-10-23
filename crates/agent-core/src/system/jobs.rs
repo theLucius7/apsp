@@ -1,7 +1,7 @@
 use super::*;
 
-pub(super) const DIAGNOSTIC_LOCK_PATH: &str = "/run/sinan-diagnostic/lock";
-const DIAGNOSTIC_LOCK_DIRECTORY: &str = "/run/sinan-diagnostic";
+pub(super) const DIAGNOSTIC_LOCK_PATH: &str = "/run/apsp-diagnostic/lock";
+const DIAGNOSTIC_LOCK_DIRECTORY: &str = "/run/apsp-diagnostic";
 
 pub(super) async fn prepare_diagnostic_lock(ops: &dyn Privileged) -> Result<()> {
     let directory = Path::new(DIAGNOSTIC_LOCK_DIRECTORY);
@@ -56,7 +56,7 @@ impl SystemServiceManager {
                 "--no-legend".into(),
                 "--plain".into(),
                 "--no-pager".into(),
-                "sinan-diagnostic-*.service".into(),
+                "apsp-diagnostic-*.service".into(),
             ];
             let execution = self
                 .privileged
@@ -202,7 +202,7 @@ fn parse_running_units(output: &str) -> Result<Vec<String>> {
 }
 
 pub(super) fn valid_job_unit(unit: &str) -> bool {
-    unit.strip_prefix("sinan-diagnostic-")
+    unit.strip_prefix("apsp-diagnostic-")
         .and_then(|value| value.strip_suffix(".service"))
         .is_some_and(|id| Uuid::parse_str(id).is_ok_and(|uuid| uuid.to_string() == id))
 }

@@ -3,6 +3,7 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use axum::{
     Json,
     extract::{Path, State},
@@ -14,15 +15,14 @@ use rand::{RngCore, rngs::OsRng};
 use ring::aead::{AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 use sqlx::Row;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
 fn keyring() -> ApiResult<(String, BTreeMap<String, Vec<u8>>)> {
-    let raw = std::env::var("SINAN_CREDENTIAL_KEYS")
+    let raw = std::env::var("APSP_CREDENTIAL_KEYS")
         .map_err(|_| ApiError::Conflict("凭据加密密钥环尚未配置".into()))?;
-    let current = std::env::var("SINAN_CREDENTIAL_CURRENT_KEY")
+    let current = std::env::var("APSP_CREDENTIAL_CURRENT_KEY")
         .map_err(|_| ApiError::Conflict("当前凭据加密密钥标识尚未配置".into()))?;
     let supplied: BTreeMap<String, String> =
         serde_json::from_str(&raw).map_err(|_| ApiError::Conflict("凭据密钥环格式无效".into()))?;
@@ -49,7 +49,7 @@ fn keyring() -> ApiResult<(String, BTreeMap<String, Vec<u8>>)> {
 }
 
 fn aad(id: Uuid, kind: &str, version: i64) -> String {
-    format!("sinan-credential-v1:{id}:{kind}:{version}")
+    format!("apsp-credential-v1:{id}:{kind}:{version}")
 }
 fn key(bytes: &[u8]) -> ApiResult<LessSafeKey> {
     UnboundKey::new(&AES_256_GCM, bytes)

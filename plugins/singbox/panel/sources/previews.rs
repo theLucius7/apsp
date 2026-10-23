@@ -72,7 +72,7 @@ fn projection(id: Uuid, expires_at: i64, batch: &parse::ParsedBatch) -> Preview 
                     .and_then(Value::as_str)
                     .unwrap_or(
                         if capabilities.required_transport
-                            == sinan_compiler::external::ExternalTransport::Udp
+                            == apsp_compiler::external::ExternalTransport::Udp
                         {
                             "quic"
                         } else {
@@ -169,7 +169,7 @@ pub(super) async fn create(
     let (body, _body_sha256, batch, _permit) = parse::admitted_parse(body, permit)
         .await
         .map_err(|error| ApiError::BadRequest(format!("解析来源失败：{}", error.0)))?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let expires_at = now + 600;
     let id = Uuid::new_v4();
     let response = projection(id, expires_at, &batch);
@@ -262,7 +262,7 @@ pub(super) async fn commit(
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(|| ApiError::Conflict("预览已保存或不存在，请重新解析".into()))?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     if !captured.matches_capture(&captured, now) {
         return Err(ApiError::Conflict(
             "预览已过期或解析器已更新，请重新解析".into(),
@@ -295,7 +295,7 @@ pub(super) async fn commit(
         .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| ApiError::Conflict("预览已保存或不存在，请重新解析".into()))?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     if !stored.matches_capture(&captured, now) {
         return Err(ApiError::Conflict(
             "预览已变化、过期或解析器已更新，请重新解析".into(),

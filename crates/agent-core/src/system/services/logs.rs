@@ -1,6 +1,6 @@
 use super::{ServiceBackend, SystemServiceManager};
 use anyhow::{Result, ensure};
-use sinan_adapter_sdk::{ServiceLogLine, ServiceLogs};
+use apsp_adapter_sdk::{ServiceLogLine, ServiceLogs};
 use std::{path::Path, time::Duration};
 
 const MAX_BYTES: usize = 64 * 1024;
@@ -45,7 +45,7 @@ impl SystemServiceManager {
                 vec![
                     "-c".into(),
                     MAX_BYTES.to_string(),
-                    "/var/log/sinan/runtime.log".into(),
+                    "/var/log/apsp/runtime.log".into(),
                 ],
             ),
             ServiceBackend::FreeBsd => (

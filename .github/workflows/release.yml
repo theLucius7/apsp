@@ -19,7 +19,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: sinan-release-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  group: apsp-release-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
@@ -29,7 +29,7 @@ jobs:
     outputs:
       agent_version: ${{ steps.version.outputs.agent_version }}
     env:
-      SINAN_RELEASE_PUBLIC_KEYS: ${{ vars.SINAN_RELEASE_PUBLIC_KEYS }}
+      APSP_RELEASE_PUBLIC_KEYS: ${{ vars.APSP_RELEASE_PUBLIC_KEYS }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -48,7 +48,7 @@ jobs:
           release.ensure(isinstance(version, str), 'Agent version must be independent of panel')
           release.ensure(os.environ['GITHUB_REF_NAME'] == 'agent-v' + version, 'tag does not match Agent version')
           keys = pathlib.Path(os.environ['RUNNER_TEMP']) / 'production-public-keys.json'
-          keys.write_text(os.environ['SINAN_RELEASE_PUBLIC_KEYS'])
+          keys.write_text(os.environ['APSP_RELEASE_PUBLIC_KEYS'])
           release.load_roots(keys, publication=True)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('agent_version=' + version + '\n')
@@ -69,7 +69,7 @@ jobs:
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
     env:
-      SINAN_RELEASE_PUBLIC_KEYS: ${{ vars.SINAN_RELEASE_PUBLIC_KEYS }}
+      APSP_RELEASE_PUBLIC_KEYS: ${{ vars.APSP_RELEASE_PUBLIC_KEYS }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
@@ -113,9 +113,9 @@ jobs:
       - name: Build pinned runtime on cache miss
         if: steps.runtime-cache.outputs.cache-hit != 'true'
         run: |
-          docker build --platform=linux/amd64 -f tools/singbox-builder.Dockerfile -t sinan-release-runtime:1.14.2 .
+          docker build --platform=linux/amd64 -f tools/singbox-builder.Dockerfile -t apsp-release-runtime:1.14.2 .
           mkdir -p '${{ runner.temp }}/artifacts'
-          docker run --rm --platform=linux/amd64 -v '${{ runner.temp }}/artifacts:/artifacts' sinan-release-runtime:1.14.2 '${{ matrix.arch }}' /artifacts
+          docker run --rm --platform=linux/amd64 -v '${{ runner.temp }}/artifacts:/artifacts' apsp-release-runtime:1.14.2 '${{ matrix.arch }}' /artifacts
       - name: Inspect cached or fresh runtime without executing it
         run: python3 tools/verify-release-runtime.py --root '${{ runner.temp }}/artifacts' --arch '${{ matrix.arch }}'
       - uses: actions/upload-artifact@v7.0.1
@@ -144,7 +144,7 @@ jobs:
           path: ${{ runner.temp }}/artifacts
       - name: Render immutable installer and canonical manifests
         run: |
-          python3 tools/release.py render-installer --template deploy/install.sh.tmpl --agent-unit deploy/sinan-agent.service --runtime-unit plugins/sing-box/sinan-singbox@.service --output '${{ runner.temp }}/install.sh'
+          python3 tools/release.py render-installer --template deploy/install.sh.tmpl --agent-unit deploy/apsp-agent.service --runtime-unit plugins/sing-box/apsp-singbox@.service --output '${{ runner.temp }}/install.sh'
           python3 tools/release.py assemble --source '${{ runner.temp }}/artifacts' --output '${{ runner.temp }}/release' --agent-version "$AGENT_VERSION" --runtime-version 1.14.2 --tag "$RELEASE_TAG" --installer '${{ runner.temp }}/install.sh'
       - name: Create draft without any signing secret
         run: |
@@ -185,7 +185,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ inputs.tag }}
       PUBLISH: ${{ inputs.publish }}
-      SINAN_RELEASE_PUBLIC_KEYS: ${{ vars.SINAN_RELEASE_PUBLIC_KEYS }}
+      APSP_RELEASE_PUBLIC_KEYS: ${{ vars.APSP_RELEASE_PUBLIC_KEYS }}
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Install public signature verifier
@@ -197,7 +197,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import os
-          Path(os.environ['RUNNER_TEMP'], 'production-public-keys.json').write_text(os.environ['SINAN_RELEASE_PUBLIC_KEYS'])
+          Path(os.environ['RUNNER_TEMP'], 'production-public-keys.json').write_text(os.environ['APSP_RELEASE_PUBLIC_KEYS'])
           PY
           publication_args=()
           if [[ "$PUBLISH" == true ]]; then publication_args+=(--publish); fi

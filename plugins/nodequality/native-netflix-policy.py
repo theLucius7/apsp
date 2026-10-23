@@ -9,8 +9,8 @@ SOURCES = {
     },
 }
 
-HELPERS = r'''# Sinan modification (2026-10-01): recognize only complete Netflix title pages.
-sinan_netflix_page_error(){
+HELPERS = r'''# Apsp modification (2026-10-01): recognize only complete Netflix title pages.
+apsp_netflix_page_error(){
 local body="$1" title="$2" lower LC_ALL=C
 lower=${body,,}
 # Read all bounded input instead of grep -q: its early exit can cause SIGPIPE
@@ -37,7 +37,7 @@ return 0
 }
 '''.encode()
 
-FETCH = r'''sinan_netflix_fetch(){
+FETCH = r'''apsp_netflix_fetch(){
 local response code http elapsed body category='' reason='' attempted url
 url="https://www.netflix.com/title/$2"
 attempted=$(date +%s)
@@ -64,12 +64,12 @@ case "$code" in
 esac
 fi
 netflix[attempts]=$(jq -cn --argjson prior "${netflix[attempts]:-[]}" --arg target_ip "$IP" --arg url "$url" --arg attempted_at "$attempted" --arg elapsed_seconds "$elapsed" --arg http_status "$http" --argjson curl_exit "$code" --arg error "$category" '$prior + [{target_ip:$target_ip,url:$url,attempted_at:($attempted_at|tonumber),elapsed_seconds:(if $elapsed_seconds == "" then null else ($elapsed_seconds|tonumber) end),http_status:(if $http_status == "000" then null else ($http_status|tonumber) end),curl_exit:$curl_exit,error:(if $error == "" then null else $error end)}]')
-if [[ -n $category ]];then sinan_netflix_unknown "$category" "$reason";return 1;fi
+if [[ -n $category ]];then apsp_netflix_unknown "$category" "$reason";return 1;fi
 printf -v "$3" '%s' "$body"
 }
 '''.encode()
 
-CHECKED_FETCH = r'''sinan_netflix_fetch(){
+CHECKED_FETCH = r'''apsp_netflix_fetch(){
 local capture encoded reader response code='' http='' elapsed='' body='' category='' reason='' attempted url size nonzero body_size
 local producer_status head_status encoding_status exit_line http_line time_line
 url="https://www.netflix.com/title/$2"
@@ -80,18 +80,18 @@ attempted=$(date +%s)
 # deadline. Reaching the cap never invents a completed curl result.
 capture=$(
 if {
-if curl $CurlARG -$1 -fsL -X GET --max-time 10 --tlsv1.3 --max-filesize 2097152 --write-out $'\nSINAN_HTTP:%{http_code}\nSINAN_TIME:%{time_total}' "$url" 2>/dev/null;then producer_code=0;else producer_code=$?;fi
-printf '\nSINAN_CURL_EXIT:%s\n' "$producer_code" 2>/dev/null
+if curl $CurlARG -$1 -fsL -X GET --max-time 10 --tlsv1.3 --max-filesize 2097152 --write-out $'\nAPSP_HTTP:%{http_code}\nAPSP_TIME:%{time_total}' "$url" 2>/dev/null;then producer_code=0;else producer_code=$?;fi
+printf '\nAPSP_CURL_EXIT:%s\n' "$producer_code" 2>/dev/null
 } 2>/dev/null | head -c 2097280 | base64;then
 pipeline_status=("${PIPESTATUS[@]}")
 else
 pipeline_status=("${PIPESTATUS[@]}")
 fi
-printf '\nSINAN_READER:%s:%s:%s' "${pipeline_status[0]}" "${pipeline_status[1]}" "${pipeline_status[2]}"
+printf '\nAPSP_READER:%s:%s:%s' "${pipeline_status[0]}" "${pipeline_status[1]}" "${pipeline_status[2]}"
 )
 reader=${capture##*$'\n'}
 encoded=${capture%$'\n'*}
-if [[ $reader =~ ^SINAN_READER:([0-9]+):([0-9]+):([0-9]+)$ ]];then
+if [[ $reader =~ ^APSP_READER:([0-9]+):([0-9]+):([0-9]+)$ ]];then
 producer_status=${BASH_REMATCH[1]}
 head_status=${BASH_REMATCH[2]}
 encoding_status=${BASH_REMATCH[3]}
@@ -119,9 +119,9 @@ time_line=${response##*$'\n'}
 response=${response%$'\n'*}
 http_line=${response##*$'\n'}
 body=${response%$'\n'*}
-if [[ $exit_line =~ ^SINAN_CURL_EXIT:([0-9]+)$ ]];then code=${BASH_REMATCH[1]};fi
-if [[ $time_line =~ ^SINAN_TIME:([0-9]+([.][0-9]+)?)$ ]];then elapsed=${BASH_REMATCH[1]};fi
-if [[ $http_line =~ ^SINAN_HTTP:([0-9]{3})$ ]];then http=${BASH_REMATCH[1]};fi
+if [[ $exit_line =~ ^APSP_CURL_EXIT:([0-9]+)$ ]];then code=${BASH_REMATCH[1]};fi
+if [[ $time_line =~ ^APSP_TIME:([0-9]+([.][0-9]+)?)$ ]];then elapsed=${BASH_REMATCH[1]};fi
+if [[ $http_line =~ ^APSP_HTTP:([0-9]{3})$ ]];then http=${BASH_REMATCH[1]};fi
 if [[ -z $code || -z $http || -z $elapsed || $code -gt 255 ]];then
 code='';http='';elapsed='';category=incomplete_response;reason='响应未取得完整的传输确认'
 fi
@@ -157,14 +157,14 @@ case "$code" in
 esac
 fi
 if [[ -z $category ]];then
-if reason=$(sinan_netflix_page_error "$body" "$2");then
+if reason=$(apsp_netflix_page_error "$body" "$2");then
 [[ -z $reason ]] || category=schema_mismatch
 else
 category=reader_error;reason='有界页面判别失败'
 fi
 fi
 netflix[attempts]=$(jq -cn --argjson prior "${netflix[attempts]:-[]}" --arg target_ip "$IP" --arg url "$url" --arg attempted_at "$attempted" --arg elapsed_seconds "$elapsed" --arg http_status "$http" --arg captured_bytes "${size:-}" --argjson curl_exit "${code:-null}" --arg error "$category" '$prior + [{target_ip:$target_ip,url:$url,attempted_at:($attempted_at|tonumber),elapsed_seconds:(if $elapsed_seconds=="" then null else ($elapsed_seconds|tonumber) end),http_status:(if $http_status=="" or $http_status=="000" then null else ($http_status|tonumber) end),curl_exit:$curl_exit,captured_bytes:(if $captured_bytes=="" then null else ($captured_bytes|tonumber) end),reader_limit_bytes:2097280,producer_deadline_seconds:10,error:(if $error=="" then null else $error end)}]')
-if [[ -n $category ]];then sinan_netflix_unknown "$category" "$reason";return 1;fi
+if [[ -n $category ]];then apsp_netflix_unknown "$category" "$reason";return 1;fi
 printf -v "$3" '%s' "$body"
 }
 '''.encode()
@@ -173,7 +173,7 @@ CLASSIFIER = r'''result1=$(echo $result1|grep 'Oh no!')
 result2=$(echo $result2|grep 'Oh no!')
 '''.encode()
 
-CHECKED_CLASSIFIER = r'''# Sinan: a missing unavailable-title marker is expected, even under errexit.
+CHECKED_CLASSIFIER = r'''# Apsp: a missing unavailable-title marker is expected, even under errexit.
 if result1=$(echo $result1|grep 'Oh no!');then :;else result1='';fi
 if result2=$(echo $result2|grep 'Oh no!');then :;else result2='';fi
 '''.encode()

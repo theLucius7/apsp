@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 //! sing-box business plugin: proxy users, nodes, chains, sources and publication.
 //!
-//! The plugin reaches panel services only through the `sinan-panel-host` API.
+//! The plugin reaches panel services only through the `apsp-panel-host` API.
 
 pub mod accesses;
 mod activity;
@@ -41,15 +41,15 @@ pub mod usage;
 
 pub use activity::runtime_activity_on;
 
+#[cfg(test)]
+pub(crate) use apsp_panel_host::config;
+pub(crate) use apsp_panel_host::{
+    AppState, agent_api, artifacts, auth, control_center, error, fleet, ip_quality,
+    network_configuration, passkeys, plugin_api, releases, runtime_control,
+};
 use axum::{
     Router,
     routing::{delete, get, post},
-};
-#[cfg(test)]
-pub(crate) use sinan_panel_host::config;
-pub(crate) use sinan_panel_host::{
-    AppState, agent_api, artifacts, auth, control_center, error, fleet, ip_quality,
-    network_configuration, passkeys, plugin_api, releases, runtime_control,
 };
 
 pub async fn run(state: AppState) {

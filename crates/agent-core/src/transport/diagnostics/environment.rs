@@ -1,6 +1,6 @@
 use super::*;
-use sinan_adapter_sdk::DiagnosticResources;
-use sinan_protocol::DiagnosticSectionUpdate;
+use apsp_adapter_sdk::DiagnosticResources;
+use apsp_protocol::DiagnosticSectionUpdate;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(super) struct ExecutionEnvironment {

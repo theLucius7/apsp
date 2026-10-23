@@ -1,15 +1,15 @@
 #![forbid(unsafe_code)]
 
 use anyhow::{Context, Result};
-use reqwest::{Client, StatusCode, header};
-use serde_json::{Value, json};
-use sinan_panel::{
+use apsp_panel::{
     AppState,
     auth::{hash_token, random_token},
     config::Config,
     router,
 };
-use sinan_protocol::now_timestamp;
+use apsp_protocol::now_timestamp;
+use reqwest::{Client, StatusCode, header};
+use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::{net::SocketAddr, path::PathBuf};
 use tokio::{net::TcpListener, task::JoinHandle};
@@ -44,7 +44,7 @@ impl Panel {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let listen = listener.local_addr()?;
         let base = format!("http://{listen}");
-        let directory = std::env::temp_dir().join(format!("sinan-search-test-{}", Uuid::new_v4()));
+        let directory = std::env::temp_dir().join(format!("apsp-search-test-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory)?;
         let state = AppState::new(
             pool.clone(),
@@ -82,7 +82,7 @@ impl Panel {
             .bind(now_timestamp() + 3600)
             .execute(&self.pool)
             .await?;
-        Ok(format!("sinan_session={token}"))
+        Ok(format!("apsp_session={token}"))
     }
 
     async fn server(&self, name: &str, info: Value) -> Result<i64> {
@@ -115,7 +115,7 @@ impl Panel {
         all_servers: bool,
         capabilities: &[&str],
     ) -> Result<String> {
-        let token = format!("sinan_api_{}", random_token());
+        let token = format!("apsp_api_{}", random_token());
         sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,all_servers,expires_at,created_at) VALUES($1,$2,$3,'search fixture',$4,$5,$6,$7,0)")
             .bind(Uuid::new_v4()).bind(actor).bind(hash_token(&token)).bind(json!(capabilities))
             .bind(json!(servers)).bind(all_servers).bind(now_timestamp() + 3600)

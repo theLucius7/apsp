@@ -7,6 +7,7 @@ use crate::{
     auth::{hash_token, random_token},
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use argon2::{
     Argon2,
     password_hash::{PasswordHasher, SaltString},
@@ -19,7 +20,6 @@ use axum::{
 use rand::{RngCore, rngs::OsRng};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -289,7 +289,7 @@ pub async fn create_token(
             "令牌授权只能选择当前存在的服务器".into(),
         ));
     }
-    let token = format!("sinan_api_{}", random_token());
+    let token = format!("apsp_api_{}", random_token());
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,all_servers,expires_at,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)")
         .bind(id).bind(actor.admin_id).bind(hash_token(&token)).bind(input.name).bind(json!(input.capabilities)).bind(json!(input.server_ids)).bind(input.all_servers).bind(input.expires_at).bind(now).execute(&state.pool).await?;

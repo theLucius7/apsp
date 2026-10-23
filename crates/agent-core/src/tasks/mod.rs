@@ -4,7 +4,7 @@ mod state;
 
 use crate::{SharedState, artifacts::PanelClient};
 use anyhow::Result;
-use sinan_adapter_sdk::Privileged;
+use apsp_adapter_sdk::Privileged;
 use std::sync::Arc;
 use tokio::sync::watch;
 

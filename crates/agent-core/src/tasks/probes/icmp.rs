@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, ensure};
-use sinan_adapter_sdk::{Execution, Privileged};
+use apsp_adapter_sdk::{Execution, Privileged};
 use std::{net::IpAddr, path::Path};
 
 #[derive(Debug, PartialEq)]
@@ -155,7 +155,7 @@ fn parse_ping(text: &str) -> Result<Measurement> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sinan_adapter_sdk::CommandOutput;
+    use apsp_adapter_sdk::CommandOutput;
 
     #[test]
     fn summaries_cover_iputils_busybox_bsd_ipv6_duplicates_and_total_loss() -> Result<()> {

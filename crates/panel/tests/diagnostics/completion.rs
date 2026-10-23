@@ -37,7 +37,7 @@ async fn cleaning_keeps_mutex_reports_and_chapters_until_terminal_confirmation(
         .bind(id)
         .execute(&panel.state.pool)
         .await?;
-    let chapter = json!({"id":id,"name":"net_quality","text":"停止前已经保存的网络章节","complete":false,"revision":1,"collected_at":sinan_protocol::now_timestamp()});
+    let chapter = json!({"id":id,"name":"net_quality","text":"停止前已经保存的网络章节","complete":false,"revision":1,"collected_at":apsp_protocol::now_timestamp()});
     assert_eq!(
         panel
             .client
@@ -116,7 +116,7 @@ async fn cleaning_keeps_mutex_reports_and_chapters_until_terminal_confirmation(
         assert_eq!(view["reports"][0]["sections"][0]["text"], chapter["text"]);
     }
     let recreated =
-        sinan_panel::AppState::new(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
+        apsp_panel::AppState::new(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
     diagnostics::expire(&recreated).await?;
     assert_eq!(stored(&panel, id).await?, saved);
     assert_eq!(
@@ -177,7 +177,7 @@ async fn late_cleaning_restores_panel_timeout_without_requiring_new_capability_f
     // historical device that no longer advertises it when reporting this job.
     sqlx::query("UPDATE servers SET capabilities=capabilities-$2 WHERE id=$1")
         .bind(server)
-        .bind(sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY)
+        .bind(apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY)
         .execute(&panel.state.pool)
         .await?;
     let capabilities: Value = sqlx::query_scalar("SELECT capabilities FROM servers WHERE id=$1")
@@ -189,7 +189,7 @@ async fn late_cleaning_restores_panel_timeout_without_requiring_new_capability_f
             .as_array()
             .unwrap()
             .iter()
-            .any(|value| value.as_str() == Some(sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY))
+            .any(|value| value.as_str() == Some(apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY))
     );
     assert_eq!(
         update(
@@ -259,7 +259,7 @@ async fn late_cleaning_conflict_preserves_evidence_without_replacing_new_task(
     let mut second_job = first["job"].clone();
     second_job["id"] = json!(second_id);
     sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,job,created_at,updated_at,expires_at,expected_sections) VALUES($1,$2,$3,$4,$4,$4+3600,ARRAY['header_info'])")
-        .bind(second_id).bind(server).bind(second_job).bind(sinan_protocol::now_timestamp())
+        .bind(second_id).bind(server).bind(second_job).bind(apsp_protocol::now_timestamp())
         .execute(&panel.state.pool).await?;
     let second_before = stored(&panel, second_id).await?;
     let queue: Value = panel
@@ -327,8 +327,8 @@ async fn cleaning_during_cancellation_never_confirms_cleanup_or_erases_report(
     sqlx::query("UPDATE servers SET capabilities=capabilities || $2 WHERE id=$1")
         .bind(server)
         .bind(json!([
-            sinan_protocol::DIAGNOSTIC_CANCEL_CAPABILITY,
-            sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY
+            apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY,
+            apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY
         ]))
         .execute(&panel.state.pool)
         .await?;
@@ -563,7 +563,7 @@ async fn panel_timeout_retains_ownership_until_legacy_shaped_task_is_confirmed_c
     }
     sqlx::query("UPDATE servers SET capabilities=capabilities || $2 WHERE id=$1")
         .bind(server)
-        .bind(json!([sinan_protocol::DIAGNOSTIC_CANCEL_CAPABILITY]))
+        .bind(json!([apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY]))
         .execute(&panel.state.pool)
         .await?;
     assert_eq!(
@@ -647,7 +647,7 @@ async fn unresolved_corrupt_tasks_remain_visible_and_block_starts_beyond_latest_
     }
     sqlx::query("UPDATE servers SET capabilities=capabilities || $2 WHERE id=$1")
         .bind(server)
-        .bind(json!([sinan_protocol::DIAGNOSTIC_CANCEL_CAPABILITY]))
+        .bind(json!([apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY]))
         .execute(&panel.state.pool)
         .await?;
     for damaged in [

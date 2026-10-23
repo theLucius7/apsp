@@ -95,7 +95,7 @@ export default function SubscriptionDialog({ user, format, onFormatChange, onClo
         if (action === 'download') {
           const url = URL.createObjectURL(new Blob([value.content], { type: format === 'singbox' ? 'application/json;charset=utf-8' : 'text/plain;charset=utf-8' }))
           const anchor = document.createElement('a')
-          anchor.href = url; anchor.download = format === 'singbox' ? 'sinan-subscription.json' : 'sinan-subscription.txt'
+          anchor.href = url; anchor.download = format === 'singbox' ? 'apsp-subscription.json' : 'apsp-subscription.txt'
           try { document.body.append(anchor); anchor.click(); setNotice('已请求浏览器保存订阅文件。') }
           finally { anchor.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000) }
         }

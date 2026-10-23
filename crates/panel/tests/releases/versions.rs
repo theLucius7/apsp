@@ -1,5 +1,5 @@
 use super::*;
-use sinan_protocol::release::canonical_asset_name;
+use apsp_protocol::release::canonical_asset_name;
 use std::sync::Mutex;
 
 fn platform_bundle(version: &str, protocol: (u16, u16), targets: &[&str]) -> Result<Bundle> {
@@ -8,9 +8,9 @@ fn platform_bundle(version: &str, protocol: (u16, u16), targets: &[&str]) -> Res
         .map(|target| {
             let binary = format!("fixture Agent {version} {target}").into_bytes();
             let name = if target.starts_with("windows-") {
-                "sinan-agent.exe"
+                "apsp-agent.exe"
             } else {
-                "sinan-agent"
+                "apsp-agent"
             };
             let mut entry = signing::entry("agent", version, name, "raw", &binary, &binary);
             entry.arch = (*target).into();
@@ -78,7 +78,7 @@ async fn explicit_installation_distinguishes_missing_protocol_and_platform_failu
             Err(ApiError::Conflict(message)) => assert!(message.contains(expected), "{message}"),
             other => panic!("expected explicit selection failure, got {other:?}"),
         }
-        let installation = sinan_panel::installation::select_with_mirror(
+        let installation = apsp_panel::installation::select_with_mirror(
             &fixture.state,
             Some(version),
             "fixture-token",
@@ -92,7 +92,7 @@ async fn explicit_installation_distinguishes_missing_protocol_and_platform_failu
             _ => panic!("expected explicit installation failure"),
         }
     }
-    let installed = sinan_panel::installation::select_with_mirror(
+    let installed = apsp_panel::installation::select_with_mirror(
         &fixture.state,
         Some("0.9.0"),
         "fixture-token",
@@ -144,7 +144,7 @@ async fn signed_legacy_identity_is_preserved_but_not_offered_as_standard_install
             format!("fixture Agent {version} linux-musl-amd64").as_bytes()
         );
     }
-    let selected = sinan_panel::installation::select_with_mirror(
+    let selected = apsp_panel::installation::select_with_mirror(
         &fixture.state,
         Some("0.4.0"),
         "TEST_ONLY fixture token",
@@ -295,7 +295,7 @@ async fn github_updates_use_signed_identities_without_cached_target_payloads() -
     assert_eq!(
         release.artifact.url,
         format!(
-            "https://github.com/theLucius7/sinan/releases/download/{}/agent-0.3.0-linux-musl-amd64",
+            "https://github.com/theLucius7/apsp/releases/download/{}/agent-0.3.0-linux-musl-amd64",
             bundle.tag
         )
     );
@@ -367,7 +367,7 @@ async fn native_agents_remain_selectable_without_panel_payloads() -> Result<()> 
             .context("native signed update missing")?;
         assert_eq!(release.version, "0.3.0");
         assert!(release.artifact.url.starts_with(
-            "https://github.com/theLucius7/sinan/releases/download/agent-v0.3.0/agent-0.3.0-"
+            "https://github.com/theLucius7/apsp/releases/download/agent-v0.3.0/agent-0.3.0-"
         ));
         assert!(release.artifact.url.ends_with(target));
         assert_eq!(release.artifact.proof, Some(bundle.proof.clone()));

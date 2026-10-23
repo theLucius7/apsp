@@ -10,13 +10,13 @@ SOURCES = {
 }
 REPLACEMENTS = [
     (b'get_mark(){\n',
-     b"get_mark(){\nunset 'markinfo[cpu_pct]' 'markinfo[gpu_pct]' 'markinfo[mem_pct]' 'markinfo[disk_pct]' 'markinfo[total_pct]' # Sinan: no stale percentiles.\n"),
+     b"get_mark(){\nunset 'markinfo[cpu_pct]' 'markinfo[gpu_pct]' 'markinfo[mem_pct]' 'markinfo[disk_pct]' 'markinfo[total_pct]' # Apsp: no stale percentiles.\n"),
     (b'markinfo[count]="$count"\n',
-     b'markinfo[count]="$count"\n[[ $sinan_public_report_upload == true ]] || return 0 # Sinan: keep local scores; decline percentile upload.\n'),
+     b'markinfo[count]="$count"\n[[ $apsp_public_report_upload == true ]] || return 0 # Apsp: keep local scores; decline percentile upload.\n'),
     (b'echo -ne "\\r${smark[title]}\\n"\n',
-     b'echo -ne "\\r${smark[title]}\\n"\n[[ $sinan_public_report_upload == true ]] || printf \'%s\\n\' \'\xe7\x99\xbe\xe5\x88\x86\xe4\xbd\x8d\xe6\x9c\xaa\xe7\x9f\xa5\xef\xbc\x9a\xe6\x9c\xaa\xe5\x85\x81\xe8\xae\xb8\xe4\xb8\x8a\xe4\xbc\xa0\xe6\x9c\xac\xe6\x9c\xba\xe8\xaf\x84\xe5\x88\x86\xef\xbc\x9b\xe6\x9c\xac\xe5\x9c\xb0\xe8\xaf\x84\xe5\x88\x86\xe5\xb7\xb2\xe4\xbf\x9d\xe7\x95\x99\xe3\x80\x82\'\n'),
+     b'echo -ne "\\r${smark[title]}\\n"\n[[ $apsp_public_report_upload == true ]] || printf \'%s\\n\' \'\xe7\x99\xbe\xe5\x88\x86\xe4\xbd\x8d\xe6\x9c\xaa\xe7\x9f\xa5\xef\xbc\x9a\xe6\x9c\xaa\xe5\x85\x81\xe8\xae\xb8\xe4\xb8\x8a\xe4\xbc\xa0\xe6\x9c\xac\xe6\x9c\xba\xe8\xaf\x84\xe5\x88\x86\xef\xbc\x9b\xe6\x9c\xac\xe5\x9c\xb0\xe8\xaf\x84\xe5\x88\x86\xe5\xb7\xb2\xe4\xbf\x9d\xe7\x95\x99\xe3\x80\x82\'\n'),
     (b'--arg disk_pct "${markinfo[disk_pct]:-}" \\\n',
-     b'--arg disk_pct "${markinfo[disk_pct]:-}" \\\n--arg percentile_upload "$sinan_public_report_upload" \\\n'),
+     b'--arg disk_pct "${markinfo[disk_pct]:-}" \\\n--arg percentile_upload "$apsp_public_report_upload" \\\n'),
     (b'      disk_pct:     num($disk_pct)\n',
      b'      disk_pct:     num($disk_pct),\n      percentile_upload_allowed: ($percentile_upload == "true")\n'),
 ]

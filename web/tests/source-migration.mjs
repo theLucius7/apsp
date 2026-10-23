@@ -11,7 +11,7 @@ import { sourceMigrationFixture, sourceNodePageFixture, sourceRevisionFixture, s
 // page header creates ordered chains instead of mixed ones. Until the state is
 // confirmed, numbered-source writes and the header form stay blocked. Owned
 // fixtures only.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 const server = createServer(async (request, response) => {
   const pathname = new URL(request.url, 'http://127.0.0.1').pathname
@@ -23,7 +23,7 @@ const server = createServer(async (request, response) => {
 let browser
 try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-  browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+  browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
   const origin = `http://127.0.0.1:${server.address().port}`, prefix = '/api/plugins/sing-box'
   for (const width of [1440, 390]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } })
@@ -32,7 +32,7 @@ try {
     let migration = sourceMigrationFixture(true)
     const servers = [1, 2].map(id => ({ id, name: `受管服务器 ${id}`, enabled: true, online: true, agent_supported: true, read_only: false }))
     const nodes = [1, 2].map(id => ({ id, name: `受管监听 ${id}`, server_id: id, protocol: 'vless-reality', enabled: true, public_host: `managed${id}.example.com`, sni: 'www.example.com', port: 20000 + id }))
-    const numbered = { id: 10, name: '旧机场', kind: 'url', source_host: 'old.example.com', url_configured: true, authorization_configured: false, content_configured: false, settings_revision: 1, identity_epoch: 1, refresh_interval_seconds: 86400, auto_refresh: true, user_agent: 'Sinan-subscription-import/1', traffic: {}, changes: { added: 0, updated: 0, missing: 0, unsupported: 0 }, archived: false, current_revision_id: 5, last_attempt_at: 1790860800, last_success_at: 1790860800, last_error: null, supported_count: 1, unsupported_count: 0, active_job_id: null, dependency_ids: [], migrated_to: 1 }
+    const numbered = { id: 10, name: '旧机场', kind: 'url', source_host: 'old.example.com', url_configured: true, authorization_configured: false, content_configured: false, settings_revision: 1, identity_epoch: 1, refresh_interval_seconds: 86400, auto_refresh: true, user_agent: 'Apsp-subscription-import/1', traffic: {}, changes: { added: 0, updated: 0, missing: 0, unsupported: 0 }, archived: false, current_revision_id: 5, last_attempt_at: 1790860800, last_success_at: 1790860800, last_error: null, supported_count: 1, unsupported_count: 0, active_job_id: null, dependency_ids: [], migrated_to: 1 }
     const numberedNode = { id: 501, source_id: 10, node_version_id: 601, source_revision_id: 5, identity_epoch: 1, name: '旧机场节点', protocol: 'trojan', server: 'exit.example.com', port: 443, transport: 'tcp', tcp: true, udp: false, selectable: true, present: true, identity_unique: true, adopted: true, metadata_revision: 1, reason: null }
     const ordered = subscriptionSourceFixture({ name: '旧机场', latest_success: sourceRevisionFixture() })
     page.on('pageerror', error => errors.push(error.message))

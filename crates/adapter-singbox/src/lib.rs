@@ -10,7 +10,7 @@ mod validation;
 mod version;
 
 use anyhow::{Context, Result, bail};
-use sinan_adapter_sdk::{
+use apsp_adapter_sdk::{
     Adapter, BoxFuture, Descriptor, Plan, Prepared, Privileged, RuntimeProbeMeasurement,
     RuntimeSpec, ServiceManager, UsageSource,
 };
@@ -23,7 +23,7 @@ const SERVICE_QUERY_TIMEOUT: Duration = Duration::from_secs(if cfg!(windows) { 3
 // A cold scheduled PowerShell process on Windows ARM64 can need nearly 30 seconds
 // before the runtime starts. Allow startup and a complete service status query.
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(if cfg!(windows) { 90 } else { 8 });
-const SERVICE_UNIT: &str = "sinan-singbox@main.service";
+const SERVICE_UNIT: &str = "apsp-singbox@main.service";
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SingboxAdapter;
@@ -90,7 +90,7 @@ impl Adapter for SingboxAdapter {
                 Vec::new()
             },
             service_unit: SERVICE_UNIT.into(),
-            service_group: "sinan-singbox".into(),
+            service_group: "apsp-singbox".into(),
         }
     }
 
@@ -245,7 +245,7 @@ impl UsageSource for SingboxAdapter {
     fn read_counters<'a>(
         &'a self,
         runtime: &'a Prepared,
-    ) -> BoxFuture<'a, Vec<sinan_adapter_sdk::Counter>> {
+    ) -> BoxFuture<'a, Vec<apsp_adapter_sdk::Counter>> {
         Box::pin(async move {
             let users = stats::configured_users(&runtime.spec)?;
             let response = stats::query(&runtime.spec.stats_listen).await?;

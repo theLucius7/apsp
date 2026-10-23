@@ -2,12 +2,12 @@
 
 use std::collections::BTreeSet;
 
-use serde_json::{Value, json};
-use sinan_panel_host::{
+use apsp_panel_host::{
     AppState,
     error::ApiResult,
     plugin_api::{RuntimeStepPolicy, SearchSource},
 };
+use serde_json::{Value, json};
 
 pub fn sensitive_key(key: &str) -> bool {
     key.contains("subscription")
@@ -39,7 +39,7 @@ pub async fn audit_snapshot(state: &AppState, path: &str) -> ApiResult<Option<Va
     Ok(Some(snapshot.unwrap_or(Value::Null)))
 }
 
-pub fn signed_tool_packages(entries: &[sinan_panel_host::artifacts::ArtifactEntry]) -> Vec<Value> {
+pub fn signed_tool_packages(entries: &[apsp_panel_host::artifacts::ArtifactEntry]) -> Vec<Value> {
     let versions: BTreeSet<_> = entries
         .iter()
         .filter(|entry| entry.name == "sing-box")

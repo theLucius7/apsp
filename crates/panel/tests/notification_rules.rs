@@ -3,10 +3,10 @@ mod business_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::Result;
+use apsp_panel::{notifications, settings::Settings};
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::{notifications, settings::Settings};
 use sqlx::PgPool;
 
 async fn config(pool: &PgPool, expiry: u16, traffic: u8) -> Result<()> {
@@ -63,7 +63,7 @@ async fn resource_windows_require_complete_valid_samples_and_recover_once(
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "resource fixture").await?;
     let excluded = panel.create_server(&cookie, "excluded").await?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let end = now / 60 * 60;
     config(pool, 0, 0).await?;
     sqlx::query("UPDATE servers SET last_seen=$1,metrics_sampled_at=$1*1000")
@@ -222,7 +222,7 @@ async fn expiry_and_traffic_reminders_deduplicate_by_record_and_cycle(pool: PgPo
     let pool = &panel.state.pool;
     let cookie = panel.admin_cookie().await?;
     let id = panel.create_server(&cookie, "asset fixture").await?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     config(pool, 7, 80).await?;
     sqlx::query("UPDATE servers SET asset_settings=$2 WHERE id=$1")
         .bind(id)
@@ -235,7 +235,7 @@ async fn expiry_and_traffic_reminders_deduplicate_by_record_and_cycle(pool: PgPo
     notifications::evaluate(pool, now, now).await?;
     assert_eq!(count(pool, "expiry").await?, 1);
     assert_eq!(count(pool, "traffic").await?, 2, "80% and 85% milestones");
-    let cycle: i64 = sqlx::query_scalar("SELECT sinan_traffic_cycle_start($1,1)")
+    let cycle: i64 = sqlx::query_scalar("SELECT apsp_traffic_cycle_start($1,1)")
         .bind(now)
         .fetch_one(pool)
         .await?;
@@ -277,7 +277,7 @@ async fn expiry_and_traffic_reminders_deduplicate_by_record_and_cycle(pool: PgPo
     assert_eq!(count(pool, "expiry").await?, 1);
     assert_eq!(count(pool, "traffic").await?, 5);
     // A new billing cycle has independent receipts and observed bytes.
-    let next: i64 = sqlx::query_scalar("SELECT sinan_traffic_cycle_start($1+32*86400,1)")
+    let next: i64 = sqlx::query_scalar("SELECT apsp_traffic_cycle_start($1+32*86400,1)")
         .bind(cycle)
         .fetch_one(pool)
         .await?;
@@ -349,7 +349,7 @@ async fn settings_validate_templates_mask_secrets_and_cancel_changed_recipient(
     assert!(text.contains("telegram_token_configured"));
     settings.as_object_mut().unwrap().remove("telegram_token");
     let id = panel.create_server(&cookie, "secret fixture").await?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("UPDATE servers SET last_seen=$2 WHERE id=$1")
         .bind(id)
         .bind(now - 600)

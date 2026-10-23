@@ -16,7 +16,7 @@ async fn setup(pool: PgPool) -> anyhow::Result<(AppState, Directory, Uuid, Uuid)
         .await?;
     sqlx::query("INSERT INTO administrator_profiles(admin_id,login_name,display_name,role,all_servers,created_at,updated_at) VALUES(1,'admin','TEST_ONLY owner','owner',true,0,0)").execute(&pool).await?;
     let directory =
-        Directory(std::env::temp_dir().join(format!("sinan-job-backup-test-{}", Uuid::new_v4())));
+        Directory(std::env::temp_dir().join(format!("apsp-job-backup-test-{}", Uuid::new_v4())));
     std::fs::create_dir(&directory.0)?;
     let state = AppState::new(
         pool.clone(),

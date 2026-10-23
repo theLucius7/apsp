@@ -24,14 +24,14 @@ def runner(base):
     ensure(base == canonical.canonical_runner(bundle),
            "node query requires the unchanged canonical r19 runner")
     helper = canonical.runtime().ordinary(PLUGIN / "node-query.py", 128 * 1024)
-    ensure(helper.endswith(b"\n") and b"\nSINAN_OFFICIAL_NODE_QUERY\n" not in helper,
+    ensure(helper.endswith(b"\n") and b"\nAPSP_OFFICIAL_NODE_QUERY\n" not in helper,
            "invalid official node-query payload")
     result = replace_once(base, ("version=" + canonical.CANONICAL_VERSION + "\n").encode(),
                           ("version=" + VERSION + "\n").encode())
     result = replace_once(result, b"--mode daily|full", b"--mode daily|ip|full")
     result = replace_once(result, b"       nodequality --version\n",
                           b"       IP mode requires --ips-file <WORKSPACE/node-ips.json> --job-id <UUID>.\n"
-                          b"       Official private credentials stay in /etc/sinan/nodequality-providers.json.\n"
+                          b"       Official private credentials stay in /etc/apsp/nodequality-providers.json.\n"
                           b"       nodequality --version\n")
     result = replace_once(result, b"targets_file=\n", b"targets_file=\nips_file=\njob_id=\n")
     result = replace_once(result, b"    --targets-file) targets_file=$2 ;;\n",
@@ -48,8 +48,8 @@ def runner(base):
         b'  [[ -z $ips_file && -z $job_id ]] || die \'IP options require IP mode\'\n'
         b'fi\n')
     injection = b'''if [[ $mode == ip ]]; then
-  cat > "$runtime/node-query.py" <<'SINAN_OFFICIAL_NODE_QUERY'
-''' + helper + b'''SINAN_OFFICIAL_NODE_QUERY
+  cat > "$runtime/node-query.py" <<'APSP_OFFICIAL_NODE_QUERY'
+''' + helper + b'''APSP_OFFICIAL_NODE_QUERY
   python3 "$runtime/node-query.py" --workspace "$workspace" --ips-file "$ips_file" \\
     --ip-version "$ip_version" --job-id "$job_id"
   exit 0

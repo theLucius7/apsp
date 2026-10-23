@@ -1,13 +1,13 @@
 [package]
-name = "sinan-agent-core"
+name = "apsp-agent-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-sinan-adapter-sdk.workspace = true
-sinan-protocol.workspace = true
+apsp-adapter-sdk.workspace = true
+apsp-protocol.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true

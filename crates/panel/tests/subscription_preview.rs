@@ -115,7 +115,7 @@ async fn previews_and_downloads_use_the_same_applied_seven_protocol_snapshot(
         .error_for_status()?;
     assert_eq!(
         download.headers()["content-disposition"],
-        format!("attachment; filename=\"sinan-{uid}.json\"")
+        format!("attachment; filename=\"apsp-{uid}.json\"")
     );
     assert_eq!(download.headers()["referrer-policy"], "no-referrer");
     assert_eq!(download.text().await?, content);
@@ -197,7 +197,7 @@ async fn paused_and_expired_entitlements_cannot_return_preview_credentials(
         )
         .await?
         .error_for_status()?;
-    sqlx::query("UPDATE singbox_package_assignments SET starts_at=$2-172800,expires_at=$2-86400 WHERE user_id=$1").bind(uid).bind(sinan_protocol::now_timestamp()).execute(&pool).await?;
+    sqlx::query("UPDATE singbox_package_assignments SET starts_at=$2-172800,expires_at=$2-86400 WHERE user_id=$1").bind(uid).bind(apsp_protocol::now_timestamp()).execute(&pool).await?;
     let expired = preview(&panel, &cookie, uid, "singbox").await?;
     assert_eq!(expired["status"], "blocked");
     assert_eq!(expired["entitlement"]["status"], "expired");

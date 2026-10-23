@@ -2,13 +2,13 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
-use axum::{Json, extract::State, http::StatusCode};
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use ed25519_dalek::{Signature, VerifyingKey};
-use sinan_protocol::{
+use apsp_protocol::{
     Envelope, RETIREMENT_CAPABILITY, RetirementReceipt, RetirementRequest, RetirementResult,
     now_timestamp, retirement_receipt_message,
 };
+use axum::{Json, extract::State, http::StatusCode};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use ed25519_dalek::{Signature, VerifyingKey};
 use sqlx::{Postgres, Row, Transaction};
 use std::time::Duration;
 use tokio::time::{Instant, sleep, timeout};

@@ -43,7 +43,7 @@ class OpenrcFixtureTests(unittest.TestCase):
 
     @unittest.skipUnless(os.geteuid() == 0, "container root is needed to reproduce runner ownership")
     def test_runner_owned_checkout_is_rejected_but_container_copy_is_accepted(self):
-        with tempfile.TemporaryDirectory(prefix="sinan-openrc-trust-", dir="/root") as temporary:
+        with tempfile.TemporaryDirectory(prefix="apsp-openrc-trust-", dir="/root") as temporary:
             directory = Path(temporary)
             checkout = directory / "checkout"
             fixture = checkout / "crates/protocol/tests/fixtures/public-keys.json"
@@ -93,7 +93,7 @@ class OpenrcFixtureTests(unittest.TestCase):
             self.assertEqual(metadata["artifacts"][0]["version"], smoke.AGENT_VERSION)
             result = subprocess.run([sys.executable, "-c", smoke.AGENT.decode(), "--version"],
                                     check=True, capture_output=True, text=True)
-            self.assertEqual(result.stdout.strip(), f"sinan-agent {smoke.AGENT_VERSION}")
+            self.assertEqual(result.stdout.strip(), f"apsp-agent {smoke.AGENT_VERSION}")
 
 
 if __name__ == "__main__":

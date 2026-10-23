@@ -5,11 +5,11 @@ mod business_support;
 mod release_support;
 
 use anyhow::Result;
+use apsp_panel::server_assets::{AssetSettings, TrafficMode, renew_due};
+use apsp_protocol::now_timestamp;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::server_assets::{AssetSettings, TrafficMode, renew_due};
-use sinan_protocol::now_timestamp;
 use sqlx::PgPool;
 
 #[test]
@@ -285,7 +285,7 @@ async fn utc_cycles_handle_short_months_leap_days_and_year_boundaries(pool: PgPo
         ("2026-01-01", 1, "2026-01-01"),
     ] {
         let result: String = sqlx::query_scalar(
-            "SELECT (to_timestamp(sinan_traffic_cycle_start(EXTRACT(EPOCH FROM $1::date::timestamp AT TIME ZONE 'UTC')::bigint,$2)) AT TIME ZONE 'UTC')::date::text",
+            "SELECT (to_timestamp(apsp_traffic_cycle_start(EXTRACT(EPOCH FROM $1::date::timestamp AT TIME ZONE 'UTC')::bigint,$2)) AT TIME ZONE 'UTC')::date::text",
         ).bind(day).bind(reset).fetch_one(&pool).await?;
         assert_eq!(result, expected, "{day}/{reset}");
     }

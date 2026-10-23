@@ -3,14 +3,14 @@
 set -euo pipefail
 repository=$(cd "$(dirname "$0")/.." && pwd)
 cd "$repository"
-SINAN_RELEASE_PUBLIC_KEYS=$(python3 scripts/ci-test-trust.py)
-export SINAN_RELEASE_PUBLIC_KEYS
-export COMPOSE_PROJECT_NAME="sinan-ci-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$$"
-export SINAN_BIND_ADDRESS=127.0.0.1
-export SINAN_PORT=${SINAN_PORT:-18080}
-export SINAN_PUBLIC_URL="http://127.0.0.1:$SINAN_PORT"
-export SINAN_DB_PASSWORD=${SINAN_DB_PASSWORD:-$(python3 -c 'import secrets; print(secrets.token_hex(24))')}
-export SINAN_ADMIN_PASSWORD=${SINAN_ADMIN_PASSWORD:-$(python3 -c 'import secrets; print(secrets.token_hex(24))')}
+APSP_RELEASE_PUBLIC_KEYS=$(python3 scripts/ci-test-trust.py)
+export APSP_RELEASE_PUBLIC_KEYS
+export COMPOSE_PROJECT_NAME="apsp-ci-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$$"
+export APSP_BIND_ADDRESS=127.0.0.1
+export APSP_PORT=${APSP_PORT:-18080}
+export APSP_PUBLIC_URL="http://127.0.0.1:$APSP_PORT"
+export APSP_DB_PASSWORD=${APSP_DB_PASSWORD:-$(python3 -c 'import secrets; print(secrets.token_hex(24))')}
+export APSP_ADMIN_PASSWORD=${APSP_ADMIN_PASSWORD:-$(python3 -c 'import secrets; print(secrets.token_hex(24))')}
 compose=(docker compose --env-file /dev/null -f deploy/docker-compose.yml)
 state_file=$(mktemp)
 cleanup() {
@@ -37,7 +37,7 @@ import urllib.request
 from pathlib import Path
 
 phase, state_file = sys.argv[1:]
-base = 'http://127.0.0.1:' + os.environ['SINAN_PORT']
+base = 'http://127.0.0.1:' + os.environ['APSP_PORT']
 client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 
 def request(path, data=None):
@@ -51,7 +51,7 @@ with request('/') as response:
     assert response.headers.get_content_type() == 'text/html'
     assert response.headers['Cache-Control'] == 'no-store'
     html = response.read().decode()
-    assert '司南' in html
+    assert 'apsp' in html
 assets = re.findall(r'(?:src|href)="(/assets/[^\"]+)"', html)
 assert any(path.endswith('.js') for path in assets)
 assert any(path.endswith('.css') for path in assets)
@@ -70,7 +70,7 @@ for path in ['/api/does-not-exist', '/assets/missing.js']:
         assert error.code == 404
     else:
         raise AssertionError(path + ' must return 404')
-with request('/api/login', {'password': os.environ['SINAN_ADMIN_PASSWORD']}) as response:
+with request('/api/login', {'password': os.environ['APSP_ADMIN_PASSWORD']}) as response:
     assert 'HttpOnly' in response.headers['Set-Cookie']
 if phase == 'create':
     with request('/api/servers', {'name': 'CI 持久化检查'}) as response:

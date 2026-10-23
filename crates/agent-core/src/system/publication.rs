@@ -2,7 +2,7 @@ use super::{parent_directory, sync_directory};
 use crate::artifacts::safe_component;
 use anyhow::{Result, ensure};
 #[cfg(not(target_os = "linux"))]
-use sinan_adapter_sdk::CommandOutput;
+use apsp_adapter_sdk::CommandOutput;
 use std::{
     fs,
     path::{Path, PathBuf},

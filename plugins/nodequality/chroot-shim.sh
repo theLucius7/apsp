@@ -8,4 +8,4 @@ if [[ $# == 4 && $2 == /bin/bash && $3 == -c ]]; then
     exit 70
   fi
 fi
-exec "$SINAN_REAL_CHROOT" "$@"
+exec "$APSP_REAL_CHROOT" "$@"

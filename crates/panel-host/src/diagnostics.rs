@@ -2,6 +2,10 @@ use crate::{
     AppState, artifacts, auth,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::{
+    DiagnosticJob, DiagnosticReport, DiagnosticSectionUpdate, DiagnosticStatus, DiagnosticUpdate,
+    now_timestamp,
+};
 use axum::{
     Json,
     extract::{Path, State},
@@ -9,10 +13,6 @@ use axum::{
 };
 use serde::Serialize;
 use serde_json::Value;
-use sinan_protocol::{
-    DiagnosticJob, DiagnosticReport, DiagnosticSectionUpdate, DiagnosticStatus, DiagnosticUpdate,
-    now_timestamp,
-};
 use sqlx::{FromRow, Row};
 use uuid::Uuid;
 
@@ -98,7 +98,7 @@ pub async fn pending(
     if !capabilities.as_array().is_some_and(|values| {
         values
             .iter()
-            .any(|value| value.as_str() == Some(sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY))
+            .any(|value| value.as_str() == Some(apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY))
     }) {
         // Existing device checkpoints still report and cancel through their own
         // endpoints; unconfirmed cleanup must never authorize a fresh start.

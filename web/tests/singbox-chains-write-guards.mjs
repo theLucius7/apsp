@@ -8,7 +8,7 @@ import { resolve, extname, sep } from 'node:path'
 import { flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
 
 // Exercise the actual dist; every API request is intercepted by an owned fixture.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const server = createServer(async (request, response) => {
@@ -23,7 +23,7 @@ let browser
 const results = []
 try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-  browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+  browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
   const origin = `http://127.0.0.1:${server.address().port}`
   for (const width of [1280, 390]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } })

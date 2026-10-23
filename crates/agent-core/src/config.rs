@@ -18,7 +18,7 @@ pub struct Config {
     pub public_ips: Vec<String>,
     /// Only the node operator can permit arbitrary commands from the panel.
     pub allow_remote_commands: bool,
-    pub settings: sinan_protocol::AgentSettings,
+    pub settings: apsp_protocol::AgentSettings,
 }
 
 impl Default for Config {
@@ -26,22 +26,22 @@ impl Default for Config {
         let mut config = Self {
             panel_url: String::new(),
             panel_ca_file: None,
-            identity_dir: "/etc/sinan/identity".into(),
-            state_db: "/var/lib/sinan/core/state.db".into(),
-            runtime_root: "/var/lib/sinan/plugins".into(),
-            install_root: "/opt/sinan/plugins".into(),
-            agent_root: "/opt/sinan/core".into(),
-            status_socket: "/run/sinan/agent.sock".into(),
+            identity_dir: "/etc/apsp/identity".into(),
+            state_db: "/var/lib/apsp/core/state.db".into(),
+            runtime_root: "/var/lib/apsp/plugins".into(),
+            install_root: "/opt/apsp/plugins".into(),
+            agent_root: "/opt/apsp/core".into(),
+            status_socket: "/run/apsp/agent.sock".into(),
             operation_timeout_secs: 30,
             public_ips: Vec::new(),
             allow_remote_commands: false,
-            settings: sinan_protocol::AgentSettings::default(),
+            settings: apsp_protocol::AgentSettings::default(),
         };
         if cfg!(windows) {
             let root = std::env::var_os("ProgramData")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("C:\\ProgramData"))
-                .join("Sinan");
+                .join("Apsp");
             config.identity_dir = root.join("identity");
             config.state_db = root.join("state/core/state.db");
             config.runtime_root = root.join("state/plugins");
@@ -50,12 +50,12 @@ impl Default for Config {
             config.status_socket = root.join("state/core/status.json");
             config.operation_timeout_secs = 120;
         } else if cfg!(target_os = "macos") {
-            config.identity_dir = "/private/etc/sinan/identity".into();
-            config.state_db = "/private/var/lib/sinan/core/state.db".into();
-            config.runtime_root = "/private/var/lib/sinan/plugins".into();
-            config.status_socket = "/private/var/run/sinan/agent.sock".into();
+            config.identity_dir = "/private/etc/apsp/identity".into();
+            config.state_db = "/private/var/lib/apsp/core/state.db".into();
+            config.runtime_root = "/private/var/lib/apsp/plugins".into();
+            config.status_socket = "/private/var/run/apsp/agent.sock".into();
         } else if cfg!(target_os = "freebsd") {
-            config.status_socket = "/var/run/sinan/agent.sock".into();
+            config.status_socket = "/var/run/apsp/agent.sock".into();
         }
         config
     }
@@ -69,9 +69,9 @@ pub fn default_path() -> PathBuf {
             .expect("default identity parent")
             .join("agent.toml")
     } else if cfg!(target_os = "macos") {
-        "/private/etc/sinan/agent.toml".into()
+        "/private/etc/apsp/agent.toml".into()
     } else {
-        "/etc/sinan/agent.toml".into()
+        "/etc/apsp/agent.toml".into()
     }
 }
 
@@ -188,30 +188,27 @@ mod tests {
     #[test]
     fn macos_system_alias_migration_is_fixed_and_preserves_custom_paths() {
         let mut config = Config {
-            identity_dir: "/etc/sinan/identity".into(),
-            state_db: "/var/lib/sinan/core/state.db".into(),
-            runtime_root: "/var/lib/sinan/plugins".into(),
-            status_socket: "/var/run/sinan/agent.sock".into(),
+            identity_dir: "/etc/apsp/identity".into(),
+            state_db: "/var/lib/apsp/core/state.db".into(),
+            runtime_root: "/var/lib/apsp/plugins".into(),
+            status_socket: "/var/run/apsp/agent.sock".into(),
             install_root: "/opt/custom-artifacts".into(),
             agent_root: "/various/custom-agent".into(),
             ..Config::default()
         };
         config.use_macos_system_paths();
-        assert_eq!(
-            config.identity_dir,
-            Path::new("/private/etc/sinan/identity")
-        );
+        assert_eq!(config.identity_dir, Path::new("/private/etc/apsp/identity"));
         assert_eq!(
             config.state_db,
-            Path::new("/private/var/lib/sinan/core/state.db")
+            Path::new("/private/var/lib/apsp/core/state.db")
         );
         assert_eq!(
             config.runtime_root,
-            Path::new("/private/var/lib/sinan/plugins")
+            Path::new("/private/var/lib/apsp/plugins")
         );
         assert_eq!(
             config.status_socket,
-            Path::new("/private/var/run/sinan/agent.sock")
+            Path::new("/private/var/run/apsp/agent.sock")
         );
         assert_eq!(config.install_root, Path::new("/opt/custom-artifacts"));
         assert_eq!(config.agent_root, Path::new("/various/custom-agent"));
@@ -220,15 +217,15 @@ mod tests {
     #[test]
     fn macos_alias_migration_preserves_existing_var_installation_references() {
         let mut config = Config {
-            install_root: "/var/sinan-plugins".into(),
-            agent_root: "/var/sinan-core".into(),
+            install_root: "/var/apsp-plugins".into(),
+            agent_root: "/var/apsp-core".into(),
             ..Config::default()
         };
         let saved_runtime = config.install_root.join("demo/1.0.0/runtime");
         let existing_agent_link = config.agent_root.join("0.3.0");
         config.use_macos_system_paths();
-        assert_eq!(config.install_root, Path::new("/var/sinan-plugins"));
-        assert_eq!(config.agent_root, Path::new("/var/sinan-core"));
+        assert_eq!(config.install_root, Path::new("/var/apsp-plugins"));
+        assert_eq!(config.agent_root, Path::new("/var/apsp-core"));
         assert_eq!(
             saved_runtime,
             config.install_root.join("demo/1.0.0/runtime")
@@ -243,14 +240,13 @@ mod tests {
     #[test]
     fn macos_defaults_and_loaded_legacy_paths_avoid_system_symlink_ancestors() -> anyhow::Result<()>
     {
-        let root =
-            std::env::temp_dir().join(format!("sinan-macos-config-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("apsp-macos-config-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&root)?;
         let path = root.join("agent.toml");
         let outcome = (|| {
             std::fs::write(
                 &path,
-                "panel_url = 'http://127.0.0.1:9'\nidentity_dir = '/etc/sinan/identity'\nstate_db = '/var/lib/sinan/core/state.db'\nruntime_root = '/var/lib/sinan/plugins'\nstatus_socket = '/var/run/sinan/agent.sock'\n",
+                "panel_url = 'http://127.0.0.1:9'\nidentity_dir = '/etc/apsp/identity'\nstate_db = '/var/lib/apsp/core/state.db'\nruntime_root = '/var/lib/apsp/plugins'\nstatus_socket = '/var/run/apsp/agent.sock'\n",
             )?;
             for config in [Config::default(), Config::load(&path)?] {
                 for path in [
@@ -270,7 +266,7 @@ mod tests {
                     }
                 }
             }
-            assert_eq!(default_path(), Path::new("/private/etc/sinan/agent.toml"));
+            assert_eq!(default_path(), Path::new("/private/etc/apsp/agent.toml"));
             Ok(())
         })();
         std::fs::remove_dir_all(root)?;

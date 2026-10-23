@@ -1,7 +1,7 @@
 use super::{Sha1, Sha256};
+use apsp_protocol::release::RELEASE_SOURCE_REPO;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use sha2::Digest;
-use sinan_protocol::release::RELEASE_SOURCE_REPO;
 
 const BOOTSTRAP: &[u8] = include_bytes!("../../../../deploy/bootstrap.ps1");
 
@@ -69,7 +69,7 @@ pub fn command_with_mirror(
             "foreach($entry in $existing.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])){{ ",
             "if($entry.AccessControlType -eq 'Allow' -and ($entry.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -eq 0 -and ($entry.FileSystemRights -band $mask) -ne 0 -and $entry.IdentityReference.Value -notin $trusted){{throw '安装目录允许非管理员替换或写入'}} }}; ",
             "$up=[IO.Directory]::GetParent($current); $current=if($up){{$up.FullName}}else{{$null}} }}; ",
-            "$d=Join-Path $parent ('sinan-install-'+[Guid]::NewGuid().ToString('N')); ",
+            "$d=Join-Path $parent ('apsp-install-'+[Guid]::NewGuid().ToString('N')); ",
             "$acl=[Security.AccessControl.DirectorySecurity]::new(); ",
             "$acl.SetAccessRuleProtection($true,$false); ",
             "$acl.SetOwner([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')); ",
@@ -83,7 +83,7 @@ pub fn command_with_mirror(
             "Add-Type -AssemblyName System.Net.Http; $h=[Net.Http.HttpClientHandler]::new(); ",
             "$h.UseProxy=$false; $h.AllowAutoRedirect=$false; ",
             "$c=[Net.Http.HttpClient]::new($h); $c.Timeout=[TimeSpan]::FromSeconds(120); ",
-            "$c.MaxResponseContentBufferSize=262144; $c.DefaultRequestHeaders.UserAgent.ParseAdd('sinan-bootstrap'); ",
+            "$c.MaxResponseContentBufferSize=262144; $c.DefaultRequestHeaders.UserAgent.ParseAdd('apsp-bootstrap'); ",
             "$c.DefaultRequestHeaders.Accept.ParseAdd('application/vnd.github.raw+json'); ",
             "try{{$r=$c.GetAsync({url}).GetAwaiter().GetResult(); ",
             "try{{if([int]$r.StatusCode -ne 200){{throw '可信安装器下载失败'}}; ",

@@ -5,12 +5,12 @@ use crate::{
     state::IntentRecord,
     system::SystemOps,
 };
-use sha2::{Digest, Sha256};
-use sinan_adapter_sdk::{BoxFuture, Plan, RuntimeSpec, ServiceManager};
-use sinan_protocol::{
+use apsp_adapter_sdk::{BoxFuture, Plan, RuntimeSpec, ServiceManager};
+use apsp_protocol::{
     ApplyStatus, Bundle, RuntimeCheckpointRequest, RuntimePathProbeRequest, RuntimePathProbeResult,
     RuntimeRecoveryBarrierRequest, now_timestamp,
 };
+use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs,

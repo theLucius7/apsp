@@ -10,7 +10,7 @@
 - 学习静态资料与实时采样分开刷新、暂停隐藏页、按服务器身份过滤实时数据、没有新采样就不补造点的做法。
 - 学习长时间历史按粒度聚合、用真实样本数加权，以及费用按统一币种、付款周期和已知到期日比较的体验。
 
-NodeFlare 使用 MIT 许可，已有界面样式与图标改编继续保留 `web/public/notices/NodeFlare.txt` 及页面底部许可入口。本轮刷新、聚合 SVG 图、请求身份隔离、汇率换算与测试是针对 Sinan API 原创实现；没有引入 NodeFlare 后端、Recharts、SSE 协议或它的硬编码估算汇率，也没有增加前端依赖。
+NodeFlare 使用 MIT 许可，已有界面样式与图标改编继续保留 `web/public/notices/NodeFlare.txt` 及页面底部许可入口。本轮刷新、聚合 SVG 图、请求身份隔离、汇率换算与测试是针对 Apsp API 原创实现；没有引入 NodeFlare 后端、Recharts、SSE 协议或它的硬编码估算汇率，也没有增加前端依赖。
 
 ## 数据语义与刷新节奏
 

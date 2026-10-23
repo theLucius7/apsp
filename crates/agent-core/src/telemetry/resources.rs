@@ -53,7 +53,7 @@ pub(super) fn processes(system: &System, cpu_ready: bool, elapsed: Option<f64>) 
     });
     services.truncate(128);
     processes.truncate(64);
-    let mut result = json!({"sampled_at":sinan_protocol::telemetry::now_millis(),"total":total,"limit":64,"truncated":total>64,"processes":processes,"services":services,"services_total":services_total,"services_limit":128,"services_truncated":services_total>128,"maximum_bytes":65536});
+    let mut result = json!({"sampled_at":apsp_protocol::telemetry::now_millis(),"total":total,"limit":64,"truncated":total>64,"processes":processes,"services":services,"services_total":services_total,"services_limit":128,"services_truncated":services_total>128,"maximum_bytes":65536});
     while serde_json::to_vec(&result).is_ok_and(|bytes| bytes.len() > 65536) {
         let processes = result["processes"]
             .as_array_mut()

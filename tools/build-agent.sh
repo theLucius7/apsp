@@ -40,7 +40,7 @@ rustup target list --installed | grep -Fxq "$target" || die "run: rustup target 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 [[ -f $repo/Cargo.lock && -f $repo/crates/agent/Cargo.toml ]] || die 'run this script from its checked-out tools directory'
 metadata=$(cargo metadata --locked --no-deps --format-version 1 --manifest-path "$repo/Cargo.toml")
-version=$(printf '%s' "$metadata" | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "sinan-agent"))')
+version=$(printf '%s' "$metadata" | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "apsp-agent"))')
 target_dir=$(printf '%s' "$metadata" | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]] || die 'invalid Agent package version'
 output=$2/agent/$version
@@ -101,8 +101,8 @@ linker_key=$(printf '%s' "$target_key" | tr '[:lower:]' '[:upper:]')
 export "CARGO_TARGET_${linker_key}_LINKER=musl-gcc"
 export "CC_${target_key}=musl-gcc"
 export "RUSTFLAGS=${RUSTFLAGS:+$RUSTFLAGS }-Ctarget-feature=+crt-static"
-cargo build --locked --release --package sinan-agent --target "$target" --manifest-path "$repo/Cargo.toml"
-binary=$target_dir/$target/release/sinan-agent
+cargo build --locked --release --package apsp-agent --target "$target" --manifest-path "$repo/Cargo.toml"
+binary=$target_dir/$target/release/apsp-agent
 header=$(readelf -h "$binary")
 if [[ $arch == amd64 ]]; then
   [[ $header == *'Advanced Micro Devices X86-64'* ]] || die 'built binary has the wrong architecture'
@@ -112,7 +112,7 @@ fi
 program_headers=$(readelf -lW "$binary")
 dynamic_entries=$(readelf -dW "$binary")
 [[ $program_headers != *INTERP* && $dynamic_entries != *NEEDED* ]] || die 'Agent is not statically linked'
-[[ $(timeout 30 "$binary" --version) == "sinan-agent $version" ]] || die 'Agent version verification failed'
+[[ $(timeout 30 "$binary" --version) == "apsp-agent $version" ]] || die 'Agent version verification failed'
 timeout 30 "$binary" --help
 python3 - "$repo/tools" "$output" "$arch" "$binary" <<'PY_PUBLISH'
 import pathlib

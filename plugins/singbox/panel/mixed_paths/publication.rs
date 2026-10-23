@@ -2,7 +2,7 @@ mod advance;
 pub use advance::advance;
 
 use super::models::servers;
-use sinan_compiler::{
+use apsp_compiler::{
     Node, Relay,
     paths::{self, Control, Path},
 };

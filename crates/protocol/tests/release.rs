@@ -2,13 +2,13 @@
 
 #[path = "support/release.rs"]
 mod support;
+use apsp_protocol::release::{ReleaseMetadata, TrustedKeys, verify_release};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use sinan_protocol::release::{ReleaseMetadata, TrustedKeys, verify_release};
 
-fn proof() -> sinan_protocol::release::ReleaseProof {
+fn proof() -> apsp_protocol::release::ReleaseProof {
     let bytes = b"test executable";
     support::signed_release(vec![(
-        support::entry("agent", "0.3.0", "sinan-agent", "raw", bytes, bytes),
+        support::entry("agent", "0.3.0", "apsp-agent", "raw", bytes, bytes),
         bytes.to_vec(),
     )])
 }
@@ -29,7 +29,7 @@ fn verifies_signed_identities_and_rejects_tampering() {
         .artifact(
             "agent",
             "0.3.0",
-            sinan_protocol::release::native_arch().unwrap(),
+            apsp_protocol::release::native_arch().unwrap(),
         )
         .unwrap();
     artifact.verify_archive(b"test executable").unwrap();
@@ -108,7 +108,7 @@ fn explicit_roots_allow_rotation_but_reject_wrong_and_duplicate_keys() {
         .is_err()
     );
     let expected = format!(
-        "untrusted comment: Sinan TEST ONLY rotation key; public deterministic seed\n{}\n",
+        "untrusted comment: Apsp TEST ONLY rotation key; public deterministic seed\n{}\n",
         other
     );
     assert_eq!(expected, include_str!("fixtures/TEST_ONLY_ROTATION.pub"));
@@ -116,13 +116,13 @@ fn explicit_roots_allow_rotation_but_reject_wrong_and_duplicate_keys() {
 
 #[test]
 fn signed_platform_identities_preserve_canonical_asset_names() {
-    use sinan_protocol::release::{canonical_asset_name, canonical_path};
+    use apsp_protocol::release::{canonical_asset_name, canonical_path};
     let bytes = b"platform executable";
-    for target in sinan_protocol::platform::ARTIFACT_TARGETS {
+    for target in apsp_protocol::platform::ARTIFACT_TARGETS {
         let binary_name = if target.starts_with("windows-") {
-            "sinan-agent.exe"
+            "apsp-agent.exe"
         } else {
-            "sinan-agent"
+            "apsp-agent"
         };
         let mut entry = support::entry("agent", "0.3.0", binary_name, "raw", bytes, bytes);
         entry.arch = (*target).into();
@@ -142,7 +142,7 @@ fn signed_platform_identities_preserve_canonical_asset_names() {
 
 #[test]
 fn signed_auxiliary_metadata_rejects_reserved_names_unbounded_lists_and_raw_files() {
-    use sinan_protocol::release::{ReleaseFile, canonical_asset_name};
+    use apsp_protocol::release::{ReleaseFile, canonical_asset_name};
     let bytes = b"signed archive fixture";
     let valid_file = ReleaseFile {
         sha256: support::hash(b"DLL"),
@@ -217,7 +217,7 @@ fn signed_auxiliary_metadata_rejects_reserved_names_unbounded_lists_and_raw_file
         )
         .is_err()
     );
-    let mut raw = support::entry("agent", "0.3.0", "sinan-agent", "raw", bytes, bytes);
+    let mut raw = support::entry("agent", "0.3.0", "apsp-agent", "raw", bytes, bytes);
     raw.auxiliary_files.insert("wintun.dll".into(), valid_file);
     assert!(
         verify_release(

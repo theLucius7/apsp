@@ -1,12 +1,12 @@
 #![forbid(unsafe_code)]
 
-use rusqlite::{Connection, params};
-use sinan_adapter_sdk::Counter;
-use sinan_agent_core::{
+use apsp_adapter_sdk::Counter;
+use apsp_agent_core::{
     state::State,
     usage::{MAX_PENDING_USAGE_BATCHES, MAX_PENDING_USAGE_BYTES, MAX_USAGE_BATCH_BYTES},
 };
-use sinan_protocol::{Envelope, UsageBatch, UsageRecord};
+use apsp_protocol::{Envelope, UsageBatch, UsageRecord};
+use rusqlite::{Connection, params};
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -14,7 +14,7 @@ struct Database(PathBuf);
 
 impl Database {
     fn new() -> Self {
-        Self(std::env::temp_dir().join(format!("sinan-usage-bounds-{}.db", Uuid::new_v4())))
+        Self(std::env::temp_dir().join(format!("apsp-usage-bounds-{}.db", Uuid::new_v4())))
     }
 
     fn open(&self) -> State {

@@ -253,10 +253,10 @@ pub(crate) async fn sync_users(tx: &mut Transaction<'_, Postgres>, users: &[i64]
     for row in missing {
         let user: i64 = row.get("user_id");
         let node: i64 = row.get("node_id");
-        let config: sinan_compiler::ProtocolConfig =
+        let config: apsp_compiler::ProtocolConfig =
             serde_json::from_value(row.get("protocol_config")).map_err(anyhow::Error::from)?;
         sqlx::query("INSERT INTO accesses(user_id,node_id,uuid,stat_name,direct_grant,credential) VALUES($1,$2,$3,$4,FALSE,$5)")
-            .bind(user).bind(node).bind(Uuid::new_v4()).bind(sinan_compiler::stat_name(user,node))
+            .bind(user).bind(node).bind(Uuid::new_v4()).bind(apsp_compiler::stat_name(user,node))
             .bind(super::node_protocol::credential(config.credential_size())).execute(&mut **tx).await?;
     }
     Ok(())

@@ -1,5 +1,5 @@
 use super::*;
-use sinan_protocol::{AuthorizedProbe, ProbeExecution};
+use apsp_protocol::{AuthorizedProbe, ProbeExecution};
 
 pub(super) async fn sample_loop(
     state: SharedState,
@@ -99,7 +99,7 @@ pub(super) async fn sample_loop(
         let now = Instant::now();
         let panel_now = lease.panel_time();
         if schedule.values().any(|entry| {
-            entry.last_started_at > panel_now.saturating_add(sinan_protocol::MAX_PROBE_LEASE_SECS)
+            entry.last_started_at > panel_now.saturating_add(apsp_protocol::MAX_PROBE_LEASE_SECS)
         }) {
             for (_, _, _, task) in running.values() {
                 task.abort();

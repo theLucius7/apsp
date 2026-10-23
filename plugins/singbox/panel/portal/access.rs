@@ -4,17 +4,17 @@ use crate::{
     error::{ApiError, ApiResult},
     passkeys as keys,
 };
+use apsp_protocol::now_timestamp;
 use axum::{
     extract::{Path, State},
     http::HeaderMap,
     response::Response,
 };
 use serde_json::json;
-use sinan_protocol::now_timestamp;
 use sqlx::{Postgres, Row, Transaction, postgres::PgRow};
 use uuid::Uuid;
 
-pub(super) const COOKIE: &str = "sinan_proxy_session";
+pub(super) const COOKIE: &str = "apsp_proxy_session";
 const SESSION_SECONDS: i64 = 86400;
 
 pub(super) fn session_hash(headers: &HeaderMap) -> ApiResult<String> {

@@ -5,7 +5,7 @@ import { readFile, mkdir } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname
@@ -16,8 +16,8 @@ const server = createServer(async (request, response) => {
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const origin = `http://127.0.0.1:${server.address().port}`
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
-const screenshots = process.env.SINAN_UI_SCREENSHOT_DIR
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
+const screenshots = process.env.APSP_UI_SCREENSHOT_DIR
 if (screenshots) await mkdir(screenshots, { recursive: true })
 const results = []
 
@@ -62,7 +62,7 @@ try {
         }
         return fulfill(entry)
       }
-      if (path.endsWith('/enrollment')) return fulfill({ token: 'TEST_ONLY', expires_at: second + 86400, install_command: 'sudo sinan-bootstrap --token TEST_ONLY', installation: { version: '0.3.0', tag: 'agent-v0.3.0' } })
+      if (path.endsWith('/enrollment')) return fulfill({ token: 'TEST_ONLY', expires_at: second + 86400, install_command: 'sudo apsp-bootstrap --token TEST_ONLY', installation: { version: '0.3.0', tag: 'agent-v0.3.0' } })
       if (path.endsWith('/agent-settings')) return fulfill(settings)
       if (path.endsWith('/probes') || path.endsWith('/probe-results') || path.endsWith('/commands') || path.endsWith('/metrics') || path === '/api/probes/overview') return fulfill([])
       if (/^\/api\/plugins\/sing-box\/servers\/\d+$/.test(path)) return fulfill({ id: 2, name: '东京资产', enabled: false, online: true, agent_supported: false, read_only: false, source: null })

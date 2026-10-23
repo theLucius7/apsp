@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 // v2 reads provider-assigned node ids, so v1 cache validators no longer apply.
-pub const PARSER_VERSION: &str = "sinan-subscription-v2";
+pub const PARSER_VERSION: &str = "apsp-subscription-v2";
 pub const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_NODES: usize = 5000;
 pub const MAX_DEPTH: usize = 64;

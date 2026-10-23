@@ -11,10 +11,10 @@ import subprocess
 import time
 import uuid
 
-CONFIG = pathlib.Path('/etc/sinan/nodequality-providers.json')
+CONFIG = pathlib.Path('/etc/apsp/nodequality-providers.json')
 CURL = '/usr/bin/curl'
-SCHEMA = 'sinan.node-ip-quality.v1'
-CONFIG_SCHEMA = 'sinan.node-ip-quality-config.v1'
+SCHEMA = 'apsp.node-ip-quality.v1'
+CONFIG_SCHEMA = 'apsp.node-ip-quality-config.v1'
 BODY_LIMIT = 65536
 REPORT_LIMIT = 64 * 1024
 TOTAL_SECONDS = 75
@@ -168,7 +168,7 @@ def curl_json(provider, key, target, family, deadline):
     config += ['header = ' + quote(header) for header in headers]
     environment = {name: value for name, value in os.environ.items()
                    if name.lower() not in REQUEST_ENV_BLOCKED
-                   and not name.startswith('SINAN_')}
+                   and not name.startswith('APSP_')}
     started = time.monotonic()
     try:
         process = subprocess.Popen([CURL, '--disable', '--config', '-'], stdin=subprocess.PIPE,

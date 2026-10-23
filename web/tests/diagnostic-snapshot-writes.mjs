@@ -7,7 +7,7 @@ import { extname, resolve, sep } from 'node:path'
 
 // TEST_ONLY: actual built UI against owned loopback APIs. This does not certify
 // native process cleanup, capabilities, providers, or diagnostic execution.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url)), base = '/api/servers/1'
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname, file = resolve(dist, path === '/' ? 'index.html' : `.${path}`)
@@ -17,7 +17,7 @@ const server = createServer(async (request, response) => {
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const origin = `http://127.0.0.1:${server.address().port}`, totals = { scenarios: 0, blocked: 0, recovered: 0, requests: 0, external: [], unexpected: [], errors: [] }
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
 const wait = async (condition, description) => { const deadline = Date.now() + 12000; while (!await condition()) { assert(Date.now() < deadline, description); await new Promise(resolve => setTimeout(resolve, 20)) } }
 const forceClick = button => button.evaluate(element => {
   const disabled = element.disabled
@@ -146,7 +146,7 @@ try {
       // Old text-only history lacks a task identity and must remain readable.
       record.status = 'failed'; record.agent_completed = false; delete record.job.id
       await poll(); await wait(() => start.isEnabled(), 'Text-only history remains readable without occupying diagnostics')
-      if (process.env.SINAN_UI_SCREENSHOT_DIR) { await mkdir(process.env.SINAN_UI_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: resolve(process.env.SINAN_UI_SCREENSHOT_DIR, `diagnostic-snapshot-${plugin}-${width}.png`), fullPage: true }) }
+      if (process.env.APSP_UI_SCREENSHOT_DIR) { await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `diagnostic-snapshot-${plugin}-${width}.png`), fullPage: true }) }
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
       ++totals.scenarios
     } finally { for (const gate of gates.values()) gate.release(); await Promise.all(pending); await page.close() }

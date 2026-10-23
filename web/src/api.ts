@@ -21,7 +21,7 @@ export async function api<T>(path: string, method = 'GET', body?: unknown, signa
       await requestReauthentication()
       return api<T>(path, method, body, signal, adminSession, true)
     }
-    if (response.status === 401 && adminSession && path !== '/api/login' && !path.startsWith('/api/login/passkey/')) window.dispatchEvent(new Event('sinan:unauthorized'))
+    if (response.status === 401 && adminSession && path !== '/api/login' && !path.startsWith('/api/login/passkey/')) window.dispatchEvent(new Event('apsp:unauthorized'))
     throw new ApiError(response.status, message)
   }
   if (response.status === 204) return undefined as T

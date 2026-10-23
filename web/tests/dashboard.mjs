@@ -6,7 +6,7 @@ import { readFile, mkdir } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 
 // Narrow screens fold the main navigation behind the menu button.
 async function openNav(page, name) {
@@ -26,8 +26,8 @@ const host = createServer(async (request, response) => {
 })
 await new Promise(done => host.listen(0, '127.0.0.1', done))
 const origin = `http://127.0.0.1:${host.address().port}`
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
-const screenshots = process.env.SINAN_UI_SCREENSHOT_DIR
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
+const screenshots = process.env.APSP_UI_SCREENSHOT_DIR
 if (screenshots) await mkdir(screenshots, { recursive: true })
 const results = []
 let activePage

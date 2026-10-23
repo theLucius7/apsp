@@ -1,10 +1,10 @@
 #![forbid(unsafe_code)]
 
+use apsp_compiler::{Node, ProtocolConfig, Relay, compile_server, compile_server_with_relays};
 use base64::{
     Engine,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
-use sinan_compiler::{Node, ProtocolConfig, Relay, compile_server, compile_server_with_relays};
 use uuid::Uuid;
 
 #[test]

@@ -1,8 +1,8 @@
 use super::{ApplyIntent, Reconciler};
 use crate::state::IntentRecord;
 use anyhow::{Context, Result};
-use sinan_adapter_sdk::{Plan, Prepared};
-use sinan_protocol::{ApplyResult, ApplyStatus, UsageBatch, now_timestamp};
+use apsp_adapter_sdk::{Plan, Prepared};
+use apsp_protocol::{ApplyResult, ApplyStatus, UsageBatch, now_timestamp};
 use uuid::Uuid;
 
 impl Reconciler {

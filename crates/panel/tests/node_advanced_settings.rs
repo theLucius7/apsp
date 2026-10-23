@@ -212,7 +212,7 @@ async fn protocol_options_roundtrip_preserve_credentials_and_reach_the_correct_s
     .bind(server)
     .fetch_one(&pool)
     .await?;
-    let bundle: sinan_protocol::Bundle = serde_json::from_str(&bundle)?;
+    let bundle: apsp_protocol::Bundle = serde_json::from_str(&bundle)?;
     let native: Value = serde_json::from_str(&bundle.files["config.json"])?;
     let url = format!(
         "{}?format=singbox",

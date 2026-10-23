@@ -5,7 +5,7 @@
 
 ## 问题与决定
 
-原固定 NodeQuality 链保留完整上游源码和许可材料，但原 BenchOS 是缺少完整构建来源的独立归档。其现有两架构归档都超过 Sinan 外层制品的 256 MiB 总预算，不能直接换一个下载地址后称为受控离线环境。当前尚未提供适用于这条工具链的 Geekbench 授权证明，其他第三方工具的固定来源、再分发和上传行为仍有未闭合项。
+原固定 NodeQuality 链保留完整上游源码和许可材料，但原 BenchOS 是缺少完整构建来源的独立归档。其现有两架构归档都超过 Apsp 外层制品的 256 MiB 总预算，不能直接换一个下载地址后称为受控离线环境。当前尚未提供适用于这条工具链的 Geekbench 授权证明，其他第三方工具的固定来源、再分发和上传行为仍有未闭合项。
 
 新增 `tools/nodequality-rootfs-build.py`，只接受显式输入锁和已经取得的本地普通文件。工具不下载、执行在线脚本、自动批准 builder 镜像或启用完整验机。分别执行准备、原生构建和导出；制品打包重新核验准备目录，并将最终归档与清单绑定。主线 r19 默认入口和已有完整源码不因此被替换，r18 历史制品继续可读。r20 是显式选择的准备制品，其包装器仍拒绝完整验机。
 
@@ -93,12 +93,12 @@ Bookworm 的 `stun-client` 在 amd64 与 arm64 提供客户端 `/usr/bin/stun`�
 
 导出将 Debian 合法链接链展开为指向清单内普通文件/目录的相对链接；硬链接作为各自普通文件保存，不保留宿主 owner、setuid/setgid、capabilities 或其他 xattr。目录 mode 仅 0700/0755，文件仅 0600/0644/0755，符号链接 header mode 0777、size 0。归档是纯 USTAR 与 gzip，固定排序、时间、uid/gid 0、空 uname/gname、gzip mtime 0；不以 PAX/GNU 扩展绕过长路径限制。
 
-归档不含 BenchOs 外层目录；输出 `rootfs.tar.gz` 与 `rootfs-manifest.json`。manifest schema 1 严格字段为 `schema, arch, archive:{sha256,size}, expanded_size, stream_size, entries_sha256, entries`。entries 按 path 排序，摘要来自 ASCII、排序键、无额外空白的 canonical JSON。展开最多 2 GiB、完整 tar stream 最多 2 GiB+64 MiB、最多十万个成员；清单最多 8 MiB。四份元数据每份最多 1 MiB，作为普通文件嵌入 `usr/share/sinan-rootfs/`：
+归档不含 BenchOs 外层目录；输出 `rootfs.tar.gz` 与 `rootfs-manifest.json`。manifest schema 1 严格字段为 `schema, arch, archive:{sha256,size}, expanded_size, stream_size, entries_sha256, entries`。entries 按 path 排序，摘要来自 ASCII、排序键、无额外空白的 canonical JSON。展开最多 2 GiB、完整 tar stream 最多 2 GiB+64 MiB、最多十万个成员；清单最多 8 MiB。四份元数据每份最多 1 MiB，作为普通文件嵌入 `usr/share/apsp-rootfs/`：
 
 - `inputs-lock.json`。
 - `source-inventory.json`。
 - `license-inventory.json`：保留版权/许可证实际文件摘要、安装包身份及基础命令实际路径/摘要，`reviewed=false`。
-- `provenance.json`：kind 为 `sinan-nodequality-debian12-preparation`，绑定锁/源库存/许可库存/构建模块摘要，`source_authenticated=true` 只表示固定 Debian 输入链认证，`full_ready=false`、`reproducibility_verified=false`。
+- `provenance.json`：kind 为 `apsp-nodequality-debian12-preparation`，绑定锁/源库存/许可库存/构建模块摘要，`source_authenticated=true` 只表示固定 Debian 输入链认证，`full_ready=false`、`reproducibility_verified=false`。
 
 相同四份 sidecar 与 `export-receipt.json` 保存到导出目录。`verify_export(rootfs_directory, prepared, arch)` 返回 receipt dict；`archive`、`manifest` 都是嵌套 `{sha256,size}`，另有锁/库存/provenance/build tool 摘要、outer reserve 和两个 false 标记。它认证 receipt、sidecar 与 manifest 的绑定；packer 随后必须调用独立 `rootfs.py` 的严格 USTAR/gzip 全归档验证与 `read_metadata`，核验实际四份嵌入字节。不能只看四个 JSON 的声明就签收任意归档。
 

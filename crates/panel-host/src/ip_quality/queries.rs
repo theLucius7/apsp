@@ -3,9 +3,9 @@ use super::{
     CACHE_SECS, IpQuality, QualityDatabase, QueryAttempt, QueryError, QueryErrorKind,
     database_result, documentation_ip, public_ip,
 };
+use apsp_protocol::now_timestamp;
 use futures_util::{StreamExt, stream};
 use reqwest::Client;
-use sinan_protocol::now_timestamp;
 use std::{
     collections::BTreeMap,
     future::Future,

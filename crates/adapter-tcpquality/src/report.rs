@@ -243,7 +243,7 @@ impl Report {
             report.schema == 1
                 && report.method == "tcp_connect"
                 && report.semantics == input::SEMANTICS
-                && report.engine.name == "sinan-native-tcp-connect-v1"
+                && report.engine.name == "apsp-native-tcp-connect-v1"
                 && report.engine.version == input::ENGINE_VERSION
                 && report.engine.source_commit.as_deref() == Some(input.source)
                 && report.target_digest == input.digest

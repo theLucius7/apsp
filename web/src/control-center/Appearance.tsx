@@ -16,8 +16,8 @@ export default function Appearance() {
     }
     apply(); media.addEventListener('change', apply)
     const update = () => { void preference.reload() }
-    window.addEventListener('sinan:appearance-updated', update)
-    return () => { media.removeEventListener('change', apply); window.removeEventListener('sinan:appearance-updated', update) }
+    window.addEventListener('apsp:appearance-updated', update)
+    return () => { media.removeEventListener('change', apply); window.removeEventListener('apsp:appearance-updated', update) }
   }, [locale, preference.value, preference.reload, setLocale])
   return null
 }

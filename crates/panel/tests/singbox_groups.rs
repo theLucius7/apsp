@@ -15,11 +15,11 @@ mod release_support;
 mod scheduling;
 
 use anyhow::{Context, Result, ensure};
+use apsp_panel::plugins::singbox::entitlements;
+use apsp_protocol::{Bundle, UsageBatch, UsageRecord, now_timestamp};
 use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::plugins::singbox::entitlements;
-use sinan_protocol::{Bundle, UsageBatch, UsageRecord, now_timestamp};
 use sqlx::PgPool;
 use uuid::Uuid;
 

@@ -51,7 +51,7 @@ pub(super) async fn fixture(pool: PgPool) -> Result<Fixture> {
         let server = panel.create_server(&cookie, name).await?;
         sqlx::query("UPDATE servers SET capabilities=$2,static_info=$3 WHERE id=$1")
             .bind(server).bind(json!([RUNTIME_CHECKPOINT_CAPABILITY,RUNTIME_RECOVERY_BARRIER_CAPABILITY,RUNTIME_PATH_PROBE_CAPABILITY]))
-            .bind(json!({"os":"linux","arch":sinan_protocol::release::native_arch()?,"libc":"gnu","runtime_libc":"gnu"}))
+            .bind(json!({"os":"linux","arch":apsp_protocol::release::native_arch()?,"libc":"gnu","runtime_libc":"gnu"}))
             .execute(&panel.state.pool).await?;
         let node = id(&panel.create_node(&cookie, server, name).await?)?;
         api(
@@ -70,7 +70,7 @@ pub(super) async fn fixture(pool: PgPool) -> Result<Fixture> {
         "request_id":Uuid::new_v4(),"name":"Controlled X","input":{"kind":"inline","content":content("TEST_ONLY external password")}
     })), StatusCode::ACCEPTED).await?;
     let source = receipt["source_id"].as_i64().context("source ID")?;
-    sinan_panel::plugins::singbox::subscription_sources::worker::run_once(&panel.state).await?;
+    apsp_panel::plugins::singbox::subscription_sources::worker::run_once(&panel.state).await?;
     let page = api(
         &panel,
         &cookie,
@@ -181,7 +181,7 @@ pub(super) async fn confirm_devices(state: &AppState) -> Result<()> {
     let manifests:Vec<(i64,Value)>=sqlx::query_as("SELECT s.id,s.static_info FROM servers s WHERE s.deleted_at IS NULL AND s.dirty_at IS NULL AND EXISTS(SELECT 1 FROM deployments d WHERE d.server_id=s.id AND d.module='singbox') ORDER BY s.id").fetch_all(&state.pool).await?;
     for (server, info) in manifests {
         ensure!(
-            sinan_panel::plugins::singbox::agent::manifest_module(state, server, &info)
+            apsp_panel::plugins::singbox::agent::manifest_module(state, server, &info)
                 .await?
                 .is_some(),
             "TEST_ONLY signed manifest preparation is missing"
@@ -256,10 +256,10 @@ pub(super) async fn advance(fixture: &Fixture, chain: i64, terminal: &str) -> Re
         }
         fixture.panel.publish_now().await?;
         confirm_devices(&fixture.panel.state).await?;
-        sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state)
+        apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state)
             .await?;
         finish_controls(&fixture.panel.state, true).await?;
-        sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state)
+        apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state)
             .await?;
     }
     anyhow::bail!("ordered fixture did not reach {terminal}; phases: {phases:?}")

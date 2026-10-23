@@ -6,7 +6,7 @@ import { mkdir, readFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const now = Math.floor(Date.now() / 1000), ip = '2001:db8::2', nic = '192.0.2.1'
@@ -40,7 +40,7 @@ const server = createServer(async (request, response) => {
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const origin = `http://127.0.0.1:${server.address().port}`
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
 try {
   for (const width of [1440, 390]) {
     reset()
@@ -106,9 +106,9 @@ try {
     })
     await page.getByText('测试夹具：状态读取失败', { exact: true }).waitFor()
     assert(await page.getByRole('button', { name: '运行节点出口自查', exact: true }).isDisabled())
-    if (process.env.SINAN_SCREENSHOT_DIR) {
-      await mkdir(process.env.SINAN_SCREENSHOT_DIR, { recursive: true })
-      await page.screenshot({ path: resolve(process.env.SINAN_SCREENSHOT_DIR, `node-ipquality-${width}.png`), fullPage: true })
+    if (process.env.APSP_SCREENSHOT_DIR) {
+      await mkdir(process.env.APSP_SCREENSHOT_DIR, { recursive: true })
+      await page.screenshot({ path: resolve(process.env.APSP_SCREENSHOT_DIR, `node-ipquality-${width}.png`), fullPage: true })
     }
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false)
     assert.deepEqual(errors, [])

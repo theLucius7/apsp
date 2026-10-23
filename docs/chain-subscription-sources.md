@@ -27,7 +27,7 @@ Mihomo 的节点集合形式见其 [官方 provider 说明](https://wiki.metacub
 
 解析后保留所需的认证、加密、TLS/SNI、transport、network、UoT/mux 等参数，在受限类型中校验。不能静默删掉未知必要参数后宣布兼容。原全局路由及选择组明确不导入；必要的代理插件、依赖或安全语义无法表达时，该节点不可选。SS URI 按官方 [SIP002](https://shadowsocks.org/doc/sip002.html) 区分一般 AEAD 与 AEAD-2022 的编码规则，不能把所有 `ss://` 都用同一种 Base64 拆法。
 
-HTTP/H2 转换还须核对原格式与固定运行时的 TLS 行为。无法等价的 `h2` 无 TLS、`http` 有 TLS 明确不可选，Mihomo 明文 HTTP 缺省方法保留为 `GET`；原生 sing-box JSON 保持原参数。解析器升级为 `sinan-subscriptions-2`，旧条件请求缓存不能免除新正文解析，已有冻结历史不回写。本次补修的固定一手源码与待验证范围见 [转换记录](acceptance/subscription-transport-conversion.md)。
+HTTP/H2 转换还须核对原格式与固定运行时的 TLS 行为。无法等价的 `h2` 无 TLS、`http` 有 TLS 明确不可选，Mihomo 明文 HTTP 缺省方法保留为 `GET`；原生 sing-box JSON 保持原参数。解析器升级为 `apsp-subscriptions-2`，旧条件请求缓存不能免除新正文解析，已有冻结历史不回写。本次补修的固定一手源码与待验证范围见 [转换记录](acceptance/subscription-transport-conversion.md)。
 
 链路位置可用性依据每一段实际配置计算，包含最终用户网络与下层承载需求。导入一个 Hysteria2 节点成功，不表示它能放在仅支持 TCP 的前一段之后。格式解析、协议转换、整条路径承载校验和实际连通分别记录结果。
 
@@ -115,9 +115,9 @@ URL 来源支持手动刷新及可配置周期刷新，默认每日一次；上�
 - 设置：请求标识 `user_agent`（未设置时不发送）、自动刷新开关 `auto_refresh`；刷新周期放宽为 300–2592000 秒。
 - 状态：上游流量信息 `traffic` 与变更摘要 `changes`。
 - 节点：采用标记 `adopted`，以及与数字编号来源共用序列的数字别名 `public_id`。
-- 解析器：读取 sing-box JSON 和 Mihomo 节点上的 `provider_id`，解析器版本升为 `sinan-subscription-v2`。
+- 解析器：读取 sing-box JSON 和 Mihomo 节点上的 `provider_id`，解析器版本升为 `apsp-subscription-v2`。
 
-2026-10-04 起（S1b 后端），数字编号来源可以用 `sinan-panel source-migration` 显式迁入有序来源，迁移后节点库、外部授权和用户订阅改读有序来源，数字编号来源只读；命令、取舍和回滚条件见[迁移方案第 11 节](rearchitecture-phase3-plan.md#11-s1b来源迁移工具与使用方切换)。界面已合并：有序来源界面可设置请求标识与自动刷新，显示用量与变化，可预览后导入、将节点加入或移出节点库；迁移后数字编号来源只读。
+2026-10-04 起（S1b 后端），数字编号来源可以用 `apsp-panel source-migration` 显式迁入有序来源，迁移后节点库、外部授权和用户订阅改读有序来源，数字编号来源只读；命令、取舍和回滚条件见[迁移方案第 11 节](rearchitecture-phase3-plan.md#11-s1b来源迁移工具与使用方切换)。界面已合并：有序来源界面可设置请求标识与自动刷新，显示用量与变化，可预览后导入、将节点加入或移出节点库；迁移后数字编号来源只读。
 
 来源接口是 ADR 0055 本步范围；最后一行路径版本应用仍待后续实现。当前两跳链路不接受外部节点，界面预览的“可用于选点”只表示来源资格，不能据此认为已有链路创建或发布能力。实际字段及请求收据见 [HTTP API](api.md#订阅来源)。
 

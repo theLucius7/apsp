@@ -24,9 +24,9 @@
 ```sh
 python3 tools/nodequality-rootfs-collect.py collect \
   --request tools/nodequality-rootfs-request-amd64.json \
-  --keyring /var/lib/sinan-factory/reviewed-bookworm.gpg \
-  --keyring-provenance /var/lib/sinan-factory/keyring-provenance.json \
-  --output /var/lib/sinan-factory/inputs-amd64-20261001 \
+  --keyring /var/lib/apsp-factory/reviewed-bookworm.gpg \
+  --keyring-provenance /var/lib/apsp-factory/keyring-provenance.json \
+  --output /var/lib/apsp-factory/inputs-amd64-20261001 \
   --max-total-bytes 6442450944 \
   --reserve-free-bytes 2147483648 \
   --timeout-seconds 7200
@@ -67,9 +67,9 @@ python3 tools/nodequality-rootfs-collect.py collect \
 
 ```sh
 python3 tools/nodequality-rootfs-collect.py bind \
-  --materials /var/lib/sinan-factory/inputs-amd64-20261001 \
-  --candidate-builder /var/lib/sinan-factory/candidate-builder.json \
-  --output /var/lib/sinan-factory/bound-amd64-20261001 \
+  --materials /var/lib/apsp-factory/inputs-amd64-20261001 \
+  --candidate-builder /var/lib/apsp-factory/candidate-builder.json \
+  --output /var/lib/apsp-factory/bound-amd64-20261001 \
   --timeout-seconds 600
 ```
 

@@ -245,7 +245,7 @@ impl Fixture {
         let root = stdfs::canonicalize(std::env::temp_dir())
             .unwrap()
             .join(format!(
-                "sinan-ip-adapter-{}-{}",
+                "apsp-ip-adapter-{}-{}",
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::SeqCst)
             ));
@@ -314,7 +314,7 @@ impl Privileged for Recorder {
         &'a self,
         _: &'a Path,
         _: &'a [String],
-    ) -> BoxFuture<'a, sinan_adapter_sdk::CommandOutput> {
+    ) -> BoxFuture<'a, apsp_adapter_sdk::CommandOutput> {
         Box::pin(async { anyhow::bail!("unbounded execute is forbidden in this fixture") })
     }
     fn execute_bounded<'a>(
@@ -323,7 +323,7 @@ impl Privileged for Recorder {
         args: &'a [String],
         seconds: u32,
         maximum: usize,
-    ) -> BoxFuture<'a, sinan_adapter_sdk::Execution> {
+    ) -> BoxFuture<'a, apsp_adapter_sdk::Execution> {
         Box::pin(async move {
             assert_eq!(args, &["--version".to_owned()]);
             assert_eq!(seconds, 2);
@@ -332,8 +332,8 @@ impl Privileged for Recorder {
             if self.hang {
                 std::future::pending::<()>().await;
             }
-            Ok(sinan_adapter_sdk::Execution {
-                output: sinan_adapter_sdk::CommandOutput {
+            Ok(apsp_adapter_sdk::Execution {
+                output: apsp_adapter_sdk::CommandOutput {
                     success: true,
                     stdout: if self.wrong_version {
                         "ipquality main".into()
@@ -390,10 +390,7 @@ async fn command_is_bound_to_actual_signed_archive_hash_and_preserves_core_timeo
     let recorder = Recorder::default();
     let adapter = IpQualityAdapter::new();
     let service = adapter.prepare(&spec, &recorder).await.unwrap();
-    assert_eq!(
-        service.unit,
-        format!("sinan-diagnostic-{}.service", spec.id)
-    );
+    assert_eq!(service.unit, format!("apsp-diagnostic-{}.service", spec.id));
     assert_eq!(service.timeout_secs, spec.timeout_secs);
     assert_eq!(service.memory_max.get(), 128 * 1024 * 1024);
     assert_eq!(service.tasks_max.get(), 64);

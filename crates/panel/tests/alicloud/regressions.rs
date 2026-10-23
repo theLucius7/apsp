@@ -11,7 +11,7 @@ async fn unresolved_cloud_receipts_block_credential_identity_changes_but_allow_d
     let power_resource = Uuid::new_v4();
     let bandwidth = Uuid::new_v4();
     let power = Uuid::new_v4();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret) VALUES($1,'测试账号',$2,$3)")
         .bind(account).bind(KEY).bind(SECRET).execute(&pool).await?;
     for (id, cloud_id) in [

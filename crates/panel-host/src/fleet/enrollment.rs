@@ -3,10 +3,10 @@ use crate::{
     error::{ApiError, ApiResult},
     server_assets::AssetSettings,
 };
+use apsp_protocol::{AgentSettings, ProbeSpec, now_timestamp, telemetry::TelemetrySettings};
 use axum::{Json, extract::State, http::HeaderMap};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sinan_protocol::{AgentSettings, ProbeSpec, now_timestamp, telemetry::TelemetrySettings};
 use sqlx::Row;
 use uuid::Uuid;
 

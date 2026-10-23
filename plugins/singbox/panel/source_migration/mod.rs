@@ -1,6 +1,6 @@
 //! Moves numbered subscription sources into ordered sources (ADR 0079 phase 3,
 //! step S1b). Nothing here runs on its own: the operator runs
-//! `sinan-panel source-migration precheck|apply|rollback` during a maintenance
+//! `apsp-panel source-migration precheck|apply|rollback` during a maintenance
 //! window, and `snapshot`/`compare` record what the migration must not change.
 
 mod import;

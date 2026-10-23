@@ -4,11 +4,11 @@ use crate::{
     error::{ApiError, ApiResult},
     runtime_control,
 };
-use serde_json::{Value, json};
-use sinan_protocol::{
+use apsp_protocol::{
     RuntimeCheckpoint, RuntimePathProbeRequest, RuntimePathProbeResult,
     RuntimeRecoveryBarrierRequest, now_timestamp,
 };
+use serde_json::{Value, json};
 use sqlx::{PgConnection, Postgres, Transaction};
 use std::collections::BTreeSet;
 use uuid::Uuid;
@@ -79,9 +79,9 @@ async fn prepare_candidate(
     )
     .await?;
     let path = storage::compiler_path(chain.id, generation, &frozen, false);
-    sinan_compiler::validate_path(&path)
+    apsp_compiler::validate_path(&path)
         .map_err(|error| ApiError::BadRequest(format!("完整路径无法编译：{error}")))?;
-    let capabilities = sinan_compiler::path_capabilities(&path)
+    let capabilities = apsp_compiler::path_capabilities(&path)
         .map_err(|error| ApiError::BadRequest(format!("路径下层承载不兼容：{error}")))?;
     if !capabilities.tcp {
         return Err(ApiError::Conflict(

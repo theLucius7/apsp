@@ -1,5 +1,5 @@
 [package]
-name = "sinan-plugin-singbox"
+name = "apsp-plugin-singbox"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,9 +14,9 @@ autobenches = false
 path = "mod.rs"
 
 [dependencies]
-sinan-panel-host.workspace = true
-sinan-protocol.workspace = true
-sinan-compiler.workspace = true
+apsp-panel-host.workspace = true
+apsp-protocol.workspace = true
+apsp-compiler.workspace = true
 axum.workspace = true
 sqlx.workspace = true
 tokio.workspace = true

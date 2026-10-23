@@ -1,4 +1,4 @@
-use sinan_protocol::release::{
+use apsp_protocol::release::{
     ReleaseError, VerifiedArtifact, VerifiedRelease, native_arch, native_target,
 };
 use std::{fs::File, io::Read};
@@ -89,7 +89,7 @@ pub(crate) fn artifact(
     name: &str,
     version: &str,
 ) -> Result<VerifiedArtifact, ReleaseError> {
-    let target = sinan_protocol::platform::artifact_target(
+    let target = apsp_protocol::platform::artifact_target(
         std::env::consts::OS,
         libc(),
         std::env::consts::ARCH,
@@ -138,7 +138,7 @@ fn artifact_for_targets(
 mod tests {
     use super::*;
     use crate::release_test_support as support;
-    use sinan_protocol::release::{canonical_asset_name, verify_release};
+    use apsp_protocol::release::{canonical_asset_name, verify_release};
 
     fn elf(interpreter: &[u8]) -> Vec<u8> {
         let mut bytes = vec![0; 120];

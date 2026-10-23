@@ -3,7 +3,7 @@ use crate::{
     release_test_support::{entry, hash, signed_release, trusted_keys},
     system::SystemOps,
 };
-use sinan_protocol::Artifact;
+use apsp_protocol::Artifact;
 use std::{os::unix::fs::PermissionsExt, path::PathBuf, sync::Mutex};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -32,7 +32,7 @@ impl Fixture {
             entry("agent", version, executable_name(), "raw", bytes, bytes),
             bytes.to_vec(),
         )]);
-        let metadata: sinan_protocol::release::ReleaseMetadata =
+        let metadata: apsp_protocol::release::ReleaseMetadata =
             serde_json::from_str(&proof.metadata_json).unwrap();
         Artifact {
             url: format!(
@@ -83,7 +83,7 @@ impl Fixture {
     }
 
     async fn with_version(version: &str) -> Result<Self> {
-        let root = std::env::temp_dir().join(format!("sinan-update-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("apsp-update-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&root)?;
         let source = root.join("fixture.rs");
         std::fs::write(
@@ -93,7 +93,7 @@ fn main() {
     MARK_EXECUTED
     let arguments: Vec<_> = std::env::args().skip(1).collect();
     if arguments == ["--version"] {
-        println!("sinan-agent FIXTURE_VERSION");
+        println!("apsp-agent FIXTURE_VERSION");
     } else if arguments.len() == 3 && arguments[0] == "--config" && arguments[2] == "verify-cache" {
         if std::fs::read(&arguments[1]).unwrap() != b"accept cache" { std::process::exit(17); }
     } else {

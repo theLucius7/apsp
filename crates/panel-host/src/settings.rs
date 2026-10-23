@@ -38,7 +38,7 @@ impl Default for Settings {
             telegram_token: String::new(),
             telegram_thread_id: None,
             telegram_template:
-                "司南 · {{title}}\n服务器：{{server}}\n{{message}}\n时间：{{time}}\n事件：{{event}}"
+                "apsp · {{title}}\n服务器：{{server}}\n{{message}}\n时间：{{time}}\n事件：{{event}}"
                     .into(),
             webhook: None,
         }

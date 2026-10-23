@@ -211,7 +211,7 @@ pub async fn put(
         let created_at = previous
             .iter()
             .find(|binding| binding.matches(&entry))
-            .map_or_else(sinan_protocol::now_timestamp, |binding| binding.created_at);
+            .map_or_else(apsp_protocol::now_timestamp, |binding| binding.created_at);
         sqlx::query("INSERT INTO singbox_external_accesses(user_id,external_node_id,source_id,identity_epoch,node_version_id,update_mode,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)")
             .bind(id).bind(entry.external_node_id).bind(entry.source_id).bind(entry.identity_epoch).bind(entry.node_version_id).bind(entry.update_mode.as_str()).bind(created_at).execute(&mut *tx).await?;
     }

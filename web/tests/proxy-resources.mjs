@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
 
 // Exercise the shipped UI with owned API fixtures, including a committed request whose response is lost.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/',import.meta.url))
 const server = createServer(async (request,response) => {
   const path = new URL(request.url,'http://127.0.0.1').pathname
@@ -20,7 +20,7 @@ const server = createServer(async (request,response) => {
 let browser
 try {
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve))
-  browser = await chromium.launch({headless:true,...(process.env.SINAN_CHROME_PATH ? {executablePath:process.env.SINAN_CHROME_PATH} : {})})
+  browser = await chromium.launch({headless:true,...(process.env.APSP_CHROME_PATH ? {executablePath:process.env.APSP_CHROME_PATH} : {})})
   const origin = `http://127.0.0.1:${server.address().port}`
   for (const width of [1440,390,320]) {
     const page = await browser.newPage({viewport:{width,height:1000}})
@@ -117,7 +117,7 @@ try {
     const views = page.getByRole('navigation',{name:'节点视图',exact:true})
     const showView = name => views.getByRole('link',{name,exact:true}).click()
     const chainRows = page.locator('.proxy-resource-table tbody tr')
-    const screenshot = async name => {if (process.env.SINAN_UI_SCREENSHOT_DIR) {await mkdir(process.env.SINAN_UI_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:resolve(process.env.SINAN_UI_SCREENSHOT_DIR,`proxy-${name}-${width}.png`)})}}
+    const screenshot = async name => {if (process.env.APSP_UI_SCREENSHOT_DIR) {await mkdir(process.env.APSP_UI_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:resolve(process.env.APSP_UI_SCREENSHOT_DIR,`proxy-${name}-${width}.png`)})}}
     const catalogRows = page.locator(width < 768 ? '.catalog-card' : '.catalog-table tbody tr')
     const directKey = id => page.locator(`${width < 768 ? '.catalog-card' : '.catalog-table tbody tr'}[data-resource-key="direct:${id}"]`)
     const resourceCount = async () => await catalogRows.count() + await page.locator('.proxy-resource-table tbody tr').count()

@@ -6,7 +6,7 @@
 
 ## 问题
 
-派生入口已经从认证 Debian 缓存选择独立 IPQuality 闭包，但原工厂只检查十一种直接包是否存在。完整 NodeQuality 的 237 包库存也可能通过这一条件；后续 prepare、build、export 和制品校验没有同一份最小闭包证明，不能声称成品独立且最小。问题已记录为 [Issue #146](https://github.com/theLucius7/sinan/issues/146)。
+派生入口已经从认证 Debian 缓存选择独立 IPQuality 闭包，但原工厂只检查十一种直接包是否存在。完整 NodeQuality 的 237 包库存也可能通过这一条件；后续 prepare、build、export 和制品校验没有同一份最小闭包证明，不能声称成品独立且最小。问题已记录为 [Issue #146](https://github.com/theLucius7/apsp/issues/146)。
 
 上一整步的实际派生在磁盘管理预留处拒绝，旧材料和失败证据保持。本步增加独立输出盘后取得一次真实离线派生成功；builder 审核与完整制品仍未完成，源码准备不能被当作已发布能力。
 

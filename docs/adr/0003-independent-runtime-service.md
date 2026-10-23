@@ -10,9 +10,9 @@ Agent 升级、重启或暂时故障不应中断已经提供的代理服务。�
 
 ## 决策
 
-sing-box 由独立的 `sinan-singbox@main.service` 管理，不能作为 Agent 的长期子进程运行。Agent 通过服务管理接口请求重载、重启和检查状态。MVP 只管理 `main` 一个实例。
+sing-box 由独立的 `apsp-singbox@main.service` 管理，不能作为 Agent 的长期子进程运行。Agent 通过服务管理接口请求重载、重启和检查状态。MVP 只管理 `main` 一个实例。
 
-Agent 自身由 `sinan-agent.service` 管理。运行时使用专用系统用户 `sinan-singbox`，服务模板采用最小所需能力与 `NoNewPrivileges=true`。配置和二进制使用版本目录及 `current` 符号链接选择。
+Agent 自身由 `apsp-agent.service` 管理。运行时使用专用系统用户 `apsp-singbox`，服务模板采用最小所需能力与 `NoNewPrivileges=true`。配置和二进制使用版本目录及 `current` 符号链接选择。
 
 ## 影响
 

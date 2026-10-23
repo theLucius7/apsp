@@ -176,7 +176,7 @@ async fn daily_rollup_and_cycle_windows_match_the_ledger(pool: PgPool) -> Result
 async fn entitlement_usage_keeps_the_original_cycle_boundaries(pool: PgPool) -> Result<()> {
     let (server, users, nodes) = identities(&pool).await?;
     let user = users[0];
-    let at = sinan_protocol::now_timestamp();
+    let at = apsp_protocol::now_timestamp();
     // A +05:45 zone puts both cycle boundaries inside UTC days.
     let zone = "Asia/Kathmandu";
     let group: i64 = sqlx::query_scalar("INSERT INTO singbox_package_groups(name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,duration_days) VALUES('TEST_ONLY package',1110,1,0,0,$1,3650) RETURNING id")

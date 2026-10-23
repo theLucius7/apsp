@@ -19,15 +19,15 @@ EXPECTED = {
     'ip-dnsbl.list': ('ref/dnsbl.list', 'a92ca482843310167309c82f05cb7e208d7decc7f8bb7eada0f96af42f1143ad', 8812),
 }
 POLICIES = {
-    'report': '0c66e702084820e399a16b18b51ba331cd8edd406dd96ede7c2ee84f78c30245',
-    'dependency': '9424dded5fd6c74ff9888fa6e2e3d9482fe8db144fa4c572682fca3f8cf5b5de',
+    'report': '468311a213e820f920a9f556dfaaf6883002232d459c9e36d2622db2d7b43b26',
+    'dependency': '15e9ead93061a7bd2da3bf54a7244123ec6b4e1161695317a5fb9b539399d2b6',
     'data': '0115f90f8ce521eab1472d8426b8f8dfbf1fefca427ae0fdfd557b346a8fdab3',
-    'ip-score': 'f5ae90c823d6b6d993c9254369220f6128ac7169f41b557c603ab00f184f245f',
-    'browser': '04de9983ccbe2a7651011e3b05b1092cd0a25af950ff3a97f583536f4c693ef1',
-    'query': 'e4ec8e34c9264b25b64d5ec6252f419762493be9b928d96beaba7addffe3aa00',
-    'access': '83db5e84f2c2c793eb4eff0d43ba0e439b196ab7a940a2a293d9b513860985b9',
-    'netflix': 'b928c6d4ac92b26f72207914d269b5154f09441bad3ca9eb5f036654f20f5eb7',
-    'openai': '1def74828e5414ad41f184f45e821fb686ed9898b3ed665663acc978ed191928',
+    'ip-score': '9ef1a5cf9a6c442d5abdf8ee91f2b42458c940a49f74c6d13a649cc5fb2ce303',
+    'browser': '0b4ad0d200bae6b6919f5ae3d2b69b1c46c7f388dc29f4d4f25e95d6ec3c9723',
+    'query': 'fe459061e903f815369f637a42e5197661f160c0ec2a1b24915317a37e68453b',
+    'access': '7520a325667855eaa9ab3535a3d65045e9a6ee006b6eae39e1cf2653908c4b2b',
+    'netflix': '9b1a56cd71af3370d990d89be5c1a937a8de6f788f1e2da2e86738e42db0cd22',
+    'openai': 'b7390471a552dee857414214dec3d5c5f5870caab27a357ef4b66780474ded7b',
 }
 REVIEWED_POLICY_FILES = {'browser': 'native-browser-policy.py',
                          'netflix': 'native-netflix-policy.py'}
@@ -109,7 +109,7 @@ def policy_bytes():
 def load_policies():
     result = {}
     for name, content in policy_bytes().items():
-        namespace = {'__name__': 'sinan_ipquality_' + name.replace('-', '_')}
+        namespace = {'__name__': 'apsp_ipquality_' + name.replace('-', '_')}
         # Only these previously pinned local transforms execute here. They do
         # not execute upstream source, write files or perform provider queries.
         exec(compile(content, name + '-policy.py', 'exec'), namespace)
@@ -123,7 +123,7 @@ def transform_files(source_directory):
     here = Path(__file__).resolve().parent
     validate(decode(ordinary(here / 'source-lock.json', 65536)))
     source_policy = ordinary(here / 'source-policy.py', 65536)
-    namespace = {'__name__': 'sinan_standalone_ipquality_policy'}
+    namespace = {'__name__': 'apsp_standalone_ipquality_policy'}
     exec(compile(source_policy, 'source-policy.py', 'exec'), namespace)
     patched = namespace['transform'](files['ip.sh'], load_policies(),
                                       {name: files[name] for name in ('ip-iso3166.json', 'ip-dnsbl.list')})

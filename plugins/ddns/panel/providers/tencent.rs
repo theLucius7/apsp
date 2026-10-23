@@ -35,7 +35,7 @@ impl Tencent {
         body: Value,
     ) -> Result<Value, Failure> {
         let body = body.to_string();
-        let timestamp = sinan_protocol::now_timestamp();
+        let timestamp = apsp_protocol::now_timestamp();
         let auth = signing::tencent(
             key,
             secret,

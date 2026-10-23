@@ -1,6 +1,6 @@
 use anyhow::{Context, ensure};
+use apsp_adapter_sdk::Privileged;
 use serde_json::{Value, json};
-use sinan_adapter_sdk::Privileged;
 use std::{net::IpAddr, path::Path};
 
 /// This executor requires separate local `port_forward` authorization.
@@ -19,7 +19,7 @@ pub async fn execute(privileged: &dyn Privileged, operation: &Value) -> anyhow::
                 .all(|byte| byte.is_ascii_hexdigit() || byte == b'-'),
         "invalid forwarding rule identifier"
     );
-    let unit = format!("sinan-forward-{id}.service");
+    let unit = format!("apsp-forward-{id}.service");
     match operation["action"].as_str() {
         Some("start") => {
             let listen: IpAddr = operation["listen_address"]
@@ -159,7 +159,7 @@ async fn status(privileged: &dyn Privileged, unit: &str, id: &str) -> anyhow::Re
         .filter_map(|line| line.split_once('='))
         .collect();
     Ok(
-        json!({"rule_id":id,"sampled_at":sinan_protocol::now_timestamp(),"active_state":fields.get("ActiveState"),"sub_state":fields.get("SubState"),"result":fields.get("Result"),"process_id":fields.get("MainPID"),"load_state":fields.get("LoadState"),"reachability":"not_measured","persistent":false}),
+        json!({"rule_id":id,"sampled_at":apsp_protocol::now_timestamp(),"active_state":fields.get("ActiveState"),"sub_state":fields.get("SubState"),"result":fields.get("Result"),"process_id":fields.get("MainPID"),"load_state":fields.get("LoadState"),"reachability":"not_measured","persistent":false}),
     )
 }
 

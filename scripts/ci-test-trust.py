@@ -30,7 +30,7 @@ def main():
     value = public_keys()
     if args.github_env:
         with args.github_env.open("a") as output:
-            output.write("SINAN_RELEASE_PUBLIC_KEYS=" + value + "\n")
+            output.write("APSP_RELEASE_PUBLIC_KEYS=" + value + "\n")
     else:
         print(value)
 

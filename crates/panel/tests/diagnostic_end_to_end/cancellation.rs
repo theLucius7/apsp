@@ -47,10 +47,10 @@ async fn cancellation_crosses_real_agent_websocket_http_and_recovers_after_resta
                 .await?;
         Ok(capabilities.as_array().is_some_and(|caps| {
             caps.iter()
-                .any(|cap| cap == sinan_protocol::DIAGNOSTIC_CANCEL_CAPABILITY)
+                .any(|cap| cap == apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY)
                 && caps
                     .iter()
-                    .any(|cap| cap == sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY)
+                    .any(|cap| cap == apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY)
         }))
     })
     .await?;
@@ -114,7 +114,7 @@ async fn cancellation_crosses_real_agent_websocket_http_and_recovers_after_resta
     )
     .await?;
     let saved = State::open(&config.state_db)?
-        .get_json::<Vec<sinan_protocol::DiagnosticCancelRequest>>("diagnostics:cancellations")?
+        .get_json::<Vec<apsp_protocol::DiagnosticCancelRequest>>("diagnostics:cancellations")?
         .context("durable cancellation intent")?;
     assert_eq!(saved.len(), 1);
     assert_eq!(saved[0].job.id, job);
@@ -127,7 +127,7 @@ async fn cancellation_crosses_real_agent_websocket_http_and_recovers_after_resta
     saved["Started"]["spec"]["version"] = json!("a92fca6c0067df29ddd03fdc2fee6f3000f64545-r3");
     saved["Started"]["spec"]["options"] = json!({});
     state.set_json("diagnostics:active", &saved)?;
-    let mut requests: Vec<sinan_protocol::DiagnosticCancelRequest> = state
+    let mut requests: Vec<apsp_protocol::DiagnosticCancelRequest> = state
         .get_json("diagnostics:cancellations")?
         .context("saved cancellation")?;
     requests[0].job.version = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r3".into();

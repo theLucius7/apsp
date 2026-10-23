@@ -14,7 +14,7 @@ const diagnosisFixture = user => ({ user_id: user.id, account: { user_id: user.i
 const templateFixture = { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY 完整模板未读取。', supported_client: 'singbox', supported_version: '1.14.2', schema_validation: true, runtime_validation: false, limitations: 'TEST_ONLY 没有保存的模板，未执行真实客户端验证。' }
 
 // Serve the actual built dist; all business requests use private API fixtures.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const server = createServer(async (request, response) => {
@@ -28,7 +28,7 @@ const server = createServer(async (request, response) => {
 let browser
 try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-  browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+  browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
   const origin = `http://127.0.0.1:${server.address().port}`
   for (const width of [1280, 390]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } })
@@ -189,7 +189,7 @@ try {
           available_formats: ['singbox', 'links'], granted_nodes: groupIds.length, eligible_nodes: groupIds.length,
           ready_nodes: nodes.filter(node => groupIds.includes(node.id)),
           content: format === 'singbox' ? JSON.stringify({ outbounds: [{ tag: 'TEST_ONLY 当前用户节点' }] }) : 'vless://TEST_ONLY@proxy.example.com:20002',
-          filename: format === 'singbox' ? 'sinan-subscription.json' : 'sinan-subscription.txt',
+          filename: format === 'singbox' ? 'apsp-subscription.json' : 'apsp-subscription.txt',
           content_type: format === 'singbox' ? 'application/json' : 'text/plain', entitlement: entitlement(),
         }
       }

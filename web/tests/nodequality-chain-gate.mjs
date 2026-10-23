@@ -7,8 +7,8 @@ import { resolve, extname, sep } from 'node:path'
 
 // Use the committed bundle and loopback-only fixtures. Rust tests verify the
 // creation/dispatch policies; this exercises their visible readiness contract.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE
-  ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE
+  ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const server = createServer(async (request, response) => {
@@ -19,7 +19,7 @@ const server = createServer(async (request, response) => {
   catch { response.writeHead(404).end() }
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
   const errors = []

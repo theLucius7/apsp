@@ -3,9 +3,9 @@ use crate::{
     diagnostics::service::{DiagnosticPlugin, JobPlan, PlanFuture, SectionContext, SectionFuture},
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::{DiagnosticResourceBudget, DiagnosticSectionUpdate};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sinan_protocol::{DiagnosticResourceBudget, DiagnosticSectionUpdate};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 pub struct NetworkWorkbenchPlugin;
@@ -106,7 +106,7 @@ impl DiagnosticPlugin for NetworkWorkbenchPlugin {
             if let Some(target) = &execution.target
                 && target
                     .authorized_until
-                    .is_some_and(|end| end <= sinan_protocol::now_timestamp())
+                    .is_some_and(|end| end <= apsp_protocol::now_timestamp())
             {
                 return Err(ApiError::Conflict("探测目标授权已到期".into()));
             }

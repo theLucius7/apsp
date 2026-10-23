@@ -8,7 +8,7 @@ sys.dont_write_bytecode = True
 
 
 def record(kind, args):
-    value = {'kind': kind, 'argv': args, 'policy': os.environ.get('SINAN_UPLOAD_REPORT'),
+    value = {'kind': kind, 'argv': args, 'policy': os.environ.get('APSP_UPLOAD_REPORT'),
              'nqenv': os.environ.get('NQENV')}
     data = (json.dumps(value, sort_keys=True) + '\n').encode()
     if len(data) > 8192:
@@ -309,8 +309,8 @@ run_net_trace > "$FIXTURE_OUTPUT_DIRECTORY/backroute_trace.log"
 '''
     # The collector receives only our synthetic ZIP; no entrypoint public upload.
     result += python + ' ' + tool + ' --assemble\n'
-    result += 'python3 "$SINAN_REPORT_HELPER" capture "$SINAN_REPORT_WORKSPACE" < "$FIXTURE_OUTPUT_DIRECTORY/archive.base64"\n'
-    result += '[[ $SINAN_UPLOAD_REPORT == true ]] || printf disabled > "$SINAN_REPORT_WORKSPACE/upload-disabled.txt"\nexit 0\n'
+    result += 'python3 "$APSP_REPORT_HELPER" capture "$APSP_REPORT_WORKSPACE" < "$FIXTURE_OUTPUT_DIRECTORY/archive.base64"\n'
+    result += '[[ $APSP_UPLOAD_REPORT == true ]] || printf disabled > "$APSP_REPORT_WORKSPACE/upload-disabled.txt"\nexit 0\n'
     return result.encode() + source_tests.fixture.loader_anchors('NodeQuality.sh', result.encode())
 
 
@@ -337,13 +337,13 @@ def assemble():
 
 class PolicyTests(unittest.TestCase):
     def test_load_time_guard_rejects_invalid_values_before_bootstrap_or_probes(self):
-        with tempfile.TemporaryDirectory(prefix='sinan-report-guard-') as temporary:
+        with tempfile.TemporaryDirectory(prefix='apsp-report-guard-') as temporary:
             marker = Path(temporary) / 'probe'
             program = policy.POLICY + b'printf started > "$FIXTURE_PROBE"\n'
             for value in (None, 'false', 'true', '', 'TRUE', '1', 'true\nfalse'):
                 environment = {'PATH': os.environ['PATH'], 'FIXTURE_PROBE': str(marker)}
                 if value is not None:
-                    environment['SINAN_UPLOAD_REPORT'] = value
+                    environment['APSP_UPLOAD_REPORT'] = value
                 run = subprocess.run(['bash'], input=program, env=environment,
                                      capture_output=True, timeout=3)
                 allowed = value in (None, 'false', 'true')
@@ -353,7 +353,7 @@ class PolicyTests(unittest.TestCase):
                     marker.unlink()
 
     def test_transform_requires_canonical_sha_known_role_unique_anchors_and_output_sha(self):
-        with tempfile.TemporaryDirectory(prefix='sinan-report-transform-') as temporary:
+        with tempfile.TemporaryDirectory(prefix='apsp-report-transform-') as temporary:
             plugin = Path(temporary) / 'plugin'
             shutil.copytree(PLUGIN, plugin)
             contents = {name: source_tests.fixture.inert_source(name, policy)

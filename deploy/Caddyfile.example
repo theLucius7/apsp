@@ -1,6 +1,6 @@
 # Point this hostname at the server and use the same HTTPS origin in .env.
 # Append this site block to an existing Caddyfile; do not replace other sites.
-# Match the upstream port to SINAN_PORT. Caddy handles WebSocket upgrades.
+# Match the upstream port to APSP_PORT. Caddy handles WebSocket upgrades.
 panel.example.com {
 	encode zstd gzip
 	header X-Content-Type-Options nosniff

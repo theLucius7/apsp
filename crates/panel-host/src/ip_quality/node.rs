@@ -8,8 +8,8 @@ use crate::{
     },
     error::ApiResult,
 };
+use apsp_protocol::DiagnosticSectionUpdate;
 use serde::Serialize;
-use sinan_protocol::DiagnosticSectionUpdate;
 use sqlx::Row;
 
 pub const PROVIDER_PREFIX: &str = "ipquality-node/";

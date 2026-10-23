@@ -4,10 +4,10 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
+use apsp_panel::plugins::singbox::sources::parse::{PARSER_VERSION, digest};
 use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::plugins::singbox::sources::parse::{PARSER_VERSION, digest};
 use sqlx::PgPool;
 
 const ROOT: &str = "/api/plugins/sing-box";
@@ -509,7 +509,7 @@ async fn mixed_subscription_keeps_managed_applied_health_and_entitlement_gates(
         )
         .await?
         .error_for_status()?;
-    sqlx::query("UPDATE singbox_package_assignments SET starts_at=$2-172800,expires_at=$2-86400 WHERE user_id=$1").bind(uid).bind(sinan_protocol::now_timestamp()).execute(&pool).await?;
+    sqlx::query("UPDATE singbox_package_assignments SET starts_at=$2-172800,expires_at=$2-86400 WHERE user_id=$1").bind(uid).bind(apsp_protocol::now_timestamp()).execute(&pool).await?;
     ensure!(
         panel
             .client

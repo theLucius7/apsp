@@ -1,12 +1,12 @@
 use crate::error::{ApiError, ApiResult};
+use apsp_compiler::paths::{Hop, Path};
 use serde::{Deserialize, Serialize};
-use sinan_compiler::paths::{Hop, Path};
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
-pub(crate) fn path_error(error: sinan_compiler::CompileError) -> ApiError {
+pub(crate) fn path_error(error: apsp_compiler::CompileError) -> ApiError {
     let reason = match &error {
-        sinan_compiler::CompileError::InvalidNode { reason, .. } => reason.as_str(),
+        apsp_compiler::CompileError::InvalidNode { reason, .. } => reason.as_str(),
         _ => "",
     };
     let message = match reason {
@@ -126,12 +126,12 @@ pub(crate) async fn insert_version_on(
     inputs: &[HopInput],
     previous: Option<i64>,
 ) -> ApiResult<()> {
-    let networks = sinan_compiler::paths::validate(path).map_err(path_error)?;
+    let networks = apsp_compiler::paths::validate(path).map_err(path_error)?;
     let value = serde_json::to_value(path).map_err(anyhow::Error::from)?;
     let hash =
         crate::auth::hash_token(&serde_json::to_string(&value).map_err(anyhow::Error::from)?);
     let generation = i64::try_from(path.generation).map_err(anyhow::Error::from)?;
-    let at = sinan_protocol::now_timestamp();
+    let at = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO singbox_chain_versions(chain_id,generation,previous_generation,path_json,semantic_hash,networks,stage,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,'waiting_dependencies',$7,$7)")
         .bind(path.chain_id).bind(generation).bind(previous).bind(value).bind(hash).bind(serde_json::to_value(networks).map_err(anyhow::Error::from)?).bind(at).execute(&mut **tx).await?;
     for (position, (hop, input)) in path.hops.iter().zip(inputs).enumerate() {
@@ -242,7 +242,7 @@ pub(crate) async fn seed_legacy_on(tx: &mut Transaction<'_, Postgres>, id: i64) 
             identity,
         }],
     };
-    sqlx::query("INSERT INTO singbox_chain_versions(chain_id,generation,legacy,path_json,semantic_hash,networks,stage,created_at,updated_at) VALUES($1,1,TRUE,$2,'legacy-preserved','{\"tcp\":true,\"udp\":true}','active',$3,$3)").bind(id).bind(serde_json::to_value(&path).map_err(anyhow::Error::from)?).bind(sinan_protocol::now_timestamp()).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO singbox_chain_versions(chain_id,generation,legacy,path_json,semantic_hash,networks,stage,created_at,updated_at) VALUES($1,1,TRUE,$2,'legacy-preserved','{\"tcp\":true,\"udp\":true}','active',$3,$3)").bind(id).bind(serde_json::to_value(&path).map_err(anyhow::Error::from)?).bind(apsp_protocol::now_timestamp()).execute(&mut **tx).await?;
     sqlx::query("INSERT INTO singbox_chain_hops(chain_id,generation,position,kind,managed_node_id,managed_server_id,endpoint_json,relay_uuid) VALUES($1,1,0,'managed',$2,$3,$4,$5)").bind(id).bind(exit.id).bind(exit.server_id).bind(serde_json::to_value(endpoint).map_err(anyhow::Error::from)?).bind(identity).execute(&mut **tx).await?;
     sqlx::query("UPDATE singbox_chains SET active_generation=1 WHERE id=$1")
         .bind(id)
@@ -292,8 +292,8 @@ pub(crate) async fn validate_frozen_on(
         .bind(server)
         .fetch_optional(&mut **tx)
         .await?
-        .map(|(secret, test_url)| sinan_compiler::paths::Control { secret, test_url });
-        sinan_compiler::paths::compile(
+        .map(|(secret, test_url)| apsp_compiler::paths::Control { secret, test_url });
+        apsp_compiler::paths::compile(
             server,
             &nodes,
             &[],

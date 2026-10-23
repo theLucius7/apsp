@@ -38,10 +38,10 @@ LOAD_ROOTFS = b'''function load_bench_os(){
 }
 '''
 LOCAL_ROOTFS = b'''function load_bench_os(){
-    python3 "$SINAN_ROOTFS_HELPER" extract \\
-        --archive "$SINAN_ROOTFS_DIRECTORY/rootfs.tar.gz" \\
-        --manifest "$SINAN_ROOTFS_DIRECTORY/rootfs-manifest.json" \\
-        --workspace "$work_dir" --arch "$SINAN_ROOTFS_ARCH" \\
+    python3 "$APSP_ROOTFS_HELPER" extract \\
+        --archive "$APSP_ROOTFS_DIRECTORY/rootfs.tar.gz" \\
+        --manifest "$APSP_ROOTFS_DIRECTORY/rootfs-manifest.json" \\
+        --workspace "$work_dir" --arch "$APSP_ROOTFS_ARCH" \\
         --destination BenchOs || return $?
     cd "$work_dir/BenchOs" || return $?
     mount -t proc /proc proc/ || return $?
@@ -122,7 +122,7 @@ def legacy_runner(bundle_bytes):
 
 
 def canonical_runner(bundle_bytes):
-    helper = module("sinan_offline_source_helper", PLUGIN / "native-source-helper.py")
+    helper = module("apsp_offline_source_helper", PLUGIN / "native-source-helper.py")
     bundle = helper.decode(bundle_bytes)
     ensure(isinstance(bundle, dict) and set(bundle) == {"schema", "lock", "files"}
            and type(bundle["schema"]) is int and bundle["schema"] == 1,
@@ -162,7 +162,7 @@ def offline_runner(base):
     entry = embedded(base, MARKERS["NODEQUALITY_SOURCE"])
     patched = replace_once(entry, LOAD_ROOTFS, LOCAL_ROOTFS)
     patched = replace_once(patched, b"    load_bench_os\n",
-                           b"    load_bench_os || exit $? # Sinan: no online rootfs fallback.\n")
+                           b"    load_bench_os || exit $? # Apsp: no online rootfs fallback.\n")
     result = replace_once(base, entry, patched)
     result = replace_once(result, b"New full executions are refused before filesystem changes or upstream tools.",
                           b"This artifact includes a verified offline rootfs preparation.\n"
@@ -171,19 +171,19 @@ def offline_runner(base):
                           ("version=" + VERSION + "\n").encode())
     # Preserve the canonical artifact's complete-execution admission unchanged.
     extractor = history.source("rootfs.py")
-    ensure(extractor.endswith(b"\n") and b"\nSINAN_NODEQUALITY_ROOTFS_HELPER\n" not in extractor,
+    ensure(extractor.endswith(b"\n") and b"\nAPSP_NODEQUALITY_ROOTFS_HELPER\n" not in extractor,
            "invalid embedded rootfs helper")
-    injection = b'''cat > "$runtime/rootfs.py" <<'SINAN_NODEQUALITY_ROOTFS_HELPER'
-''' + extractor + b'''SINAN_NODEQUALITY_ROOTFS_HELPER
-export SINAN_ROOTFS_HELPER=$runtime/rootfs.py
-SINAN_ROOTFS_DIRECTORY=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-export SINAN_ROOTFS_DIRECTORY
+    injection = b'''cat > "$runtime/rootfs.py" <<'APSP_NODEQUALITY_ROOTFS_HELPER'
+''' + extractor + b'''APSP_NODEQUALITY_ROOTFS_HELPER
+export APSP_ROOTFS_HELPER=$runtime/rootfs.py
+APSP_ROOTFS_DIRECTORY=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+export APSP_ROOTFS_DIRECTORY
 case "$(uname -m)" in
-  x86_64) SINAN_ROOTFS_ARCH=amd64 ;;
-  aarch64|arm64) SINAN_ROOTFS_ARCH=arm64 ;;
+  x86_64) APSP_ROOTFS_ARCH=amd64 ;;
+  aarch64|arm64) APSP_ROOTFS_ARCH=arm64 ;;
   *) die 'unsupported offline rootfs architecture' ;;
 esac
-export SINAN_ROOTFS_ARCH
+export APSP_ROOTFS_ARCH
 '''
     result = replace_once(result, b"cat > \"$runtime/NodeQuality.sh\" <<'SINAN_NODEQUALITY_SOURCE_A92FCA6'\n",
                           injection + b"cat > \"$runtime/NodeQuality.sh\" <<'SINAN_NODEQUALITY_SOURCE_A92FCA6'\n")
@@ -203,12 +203,12 @@ def validate_files(files, version, arch):
     manifest = helper.load_manifest(files["rootfs-manifest.json"], arch)
     # Build/release validation may use temporary disk. The Agent runtime reads
     # the signed ordinary archive in place and never copies it into a variable.
-    with tempfile.TemporaryDirectory(prefix="sinan-rootfs-intake-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="apsp-rootfs-intake-") as temporary:
         archive = Path(temporary).resolve(strict=True) / "rootfs.tar.gz"
         with archive.open("xb") as output:
             output.write(files["rootfs.tar.gz"])
         helper.verify_archive(archive, manifest)
-        names = ["usr/share/sinan-rootfs/" + name for name in
+        names = ["usr/share/apsp-rootfs/" + name for name in
                  ("provenance.json", "inputs-lock.json", "source-inventory.json", "license-inventory.json")]
         metadata = helper.read_metadata(archive, manifest, names)
     provenance = json.loads(metadata[names[0]], object_pairs_hook=unique_object)
@@ -218,7 +218,7 @@ def validate_files(files, version, arch):
                 "pending_capabilities"}
     ensure(isinstance(provenance, dict) and set(provenance) == expected
            and type(provenance["schema"]) is int and provenance["schema"] == 1
-           and provenance["kind"] == "sinan-nodequality-debian12-preparation"
+           and provenance["kind"] == "apsp-nodequality-debian12-preparation"
            and provenance["arch"] == arch and provenance["full_ready"] is False
            and provenance["source_authenticated"] is True
            and provenance["reproducibility_verified"] is False,

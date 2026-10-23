@@ -3,6 +3,7 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -11,7 +12,6 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 pub(super) use service_events::observe as observe_service_result;
-use sinan_protocol::now_timestamp;
 use sqlx::Row;
 
 pub async fn health(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
@@ -96,7 +96,7 @@ async fn window(
 pub(crate) async fn observe(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     server: i64,
-    sample: &sinan_protocol::TelemetrySample,
+    sample: &apsp_protocol::TelemetrySample,
 ) -> ApiResult<()> {
     let row = sqlx::query("SELECT latest_metrics,metrics_sampled_at FROM servers WHERE id=$1")
         .bind(server)

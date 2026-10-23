@@ -1,6 +1,6 @@
 use super::*;
-use sinan_adapter_sdk::{BoxFuture, CommandOutput};
-use sinan_protocol::{
+use apsp_adapter_sdk::{BoxFuture, CommandOutput};
+use apsp_protocol::{
     AuthorizedProbe, ProbeAddressFamily, ProbeAuthorization, ProbeAuthorizationKind, ProbeLease,
     ProbeMonitor, ProbeNetwork,
 };

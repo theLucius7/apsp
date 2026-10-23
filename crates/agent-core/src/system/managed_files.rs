@@ -89,8 +89,8 @@ pub(super) struct StateLock {
     _child: tokio::process::Child,
     _input: tokio::process::ChildStdin,
 }
-impl sinan_adapter_sdk::ManagedStateLock for StateLock {}
-pub(super) async fn lock(path: &Path) -> Result<Box<dyn sinan_adapter_sdk::ManagedStateLock>> {
+impl apsp_adapter_sdk::ManagedStateLock for StateLock {}
+pub(super) async fn lock(path: &Path) -> Result<Box<dyn apsp_adapter_sdk::ManagedStateLock>> {
     use tokio::io::{AsyncBufReadExt, BufReader};
     let mut child = Command::new("/usr/bin/python3")
         .args(["-I", "-u", "-c", include_str!("managed_state_lock.py")])

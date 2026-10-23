@@ -38,7 +38,7 @@ async fn prepare(pool: &PgPool, id: Uuid, s: &State, action: &str, mode: &str) -
     let r = super::super::resource(pool, id).await.unwrap();
     let mut tx = lock(pool, r.account_id).await.unwrap();
     let a = account_on(&mut tx, r.account_id).await.unwrap();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let id = jobs::prepare(
         &mut tx,
         &a,
@@ -248,7 +248,7 @@ async fn evaluate(pool: &PgPool, a: Uuid, r: Uuid, s: &State, now: i64) -> Resou
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn threshold_is_sticky_and_preempts_start_notify_is_deduplicated(pool: PgPool) {
     let (a, r) = seed(&pool).await;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let mut p = policy();
     p.schedule_enabled = false;
     sqlx::query("UPDATE alicloud_resources SET power_policy=$2 WHERE id=$1")
@@ -311,7 +311,7 @@ async fn manual_hold_and_non_spot_instances_disable_keepalive_and_schedule_dedup
     let mut p = policy();
     p.threshold_action = "off".into();
     p.schedule_enabled = false;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("UPDATE alicloud_resources SET power_policy=$2,manual_hold=true WHERE id=$1")
         .bind(r)
         .bind(Json(&p))

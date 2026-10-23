@@ -18,7 +18,7 @@ import release
 class OfficialQueryArtifactTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        directory = os.environ.get("SINAN_NODEQUALITY_CANONICAL_SOURCES")
+        directory = os.environ.get("APSP_NODEQUALITY_CANONICAL_SOURCES")
         if not directory:
             raise unittest.SkipTest("requires verified local canonical NodeQuality sources")
         helper = canonical.module("official_query_fixture_sources", canonical.PLUGIN / "source-helper.py")
@@ -31,12 +31,12 @@ class OfficialQueryArtifactTests(unittest.TestCase):
         for sentinel in canonical.MARKERS.values():
             self.assertEqual(canonical.embedded(self.runner, sentinel),
                              canonical.embedded(self.base, sentinel))
-        self.assertEqual(canonical.embedded(self.runner, "SINAN_NODEQUALITY_EXECUTION_ADMISSION"),
-                         canonical.embedded(self.base, "SINAN_NODEQUALITY_EXECUTION_ADMISSION"))
-        self.assertEqual(canonical.embedded(self.runner, "SINAN_OFFICIAL_IP_HELPER"),
-                         canonical.embedded(self.base, "SINAN_OFFICIAL_IP_HELPER"))
+        self.assertEqual(canonical.embedded(self.runner, "APSP_NODEQUALITY_EXECUTION_ADMISSION"),
+                         canonical.embedded(self.base, "APSP_NODEQUALITY_EXECUTION_ADMISSION"))
+        self.assertEqual(canonical.embedded(self.runner, "APSP_OFFICIAL_IP_HELPER"),
+                         canonical.embedded(self.base, "APSP_OFFICIAL_IP_HELPER"))
         helper = (canonical.PLUGIN / "node-query.py").read_bytes()
-        self.assertEqual(canonical.embedded(self.runner, "SINAN_OFFICIAL_NODE_QUERY"), helper)
+        self.assertEqual(canonical.embedded(self.runner, "APSP_OFFICIAL_NODE_QUERY"), helper)
         for arch in ("amd64", "arm64"):
             artifact.validate_files({artifact.BINARY: self.runner}, artifact.VERSION, arch)
 
@@ -84,7 +84,7 @@ class OfficialQueryArtifactTests(unittest.TestCase):
         specification.loader.exec_module(builder)
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory).resolve()
-            args = SimpleNamespace(arch="amd64", sources=Path(os.environ["SINAN_NODEQUALITY_CANONICAL_SOURCES"]), output=output)
+            args = SimpleNamespace(arch="amd64", sources=Path(os.environ["APSP_NODEQUALITY_CANONICAL_SOURCES"]), output=output)
             first = builder.build(args)
             initial = first.read_bytes()
             with self.assertRaises(ValueError):

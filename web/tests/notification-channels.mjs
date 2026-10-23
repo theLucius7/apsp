@@ -5,7 +5,7 @@ import { readFile, mkdir } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
 
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname
@@ -15,8 +15,8 @@ const server = createServer(async (request, response) => {
   catch { response.writeHead(404).end() }
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-const browser = await chromium.launch({headless:true,...(process.env.SINAN_CHROME_PATH ? {executablePath:process.env.SINAN_CHROME_PATH} : {})})
-if(process.env.SINAN_UI_SCREENSHOT_DIR) await mkdir(process.env.SINAN_UI_SCREENSHOT_DIR,{recursive:true})
+const browser = await chromium.launch({headless:true,...(process.env.APSP_CHROME_PATH ? {executablePath:process.env.APSP_CHROME_PATH} : {})})
+if(process.env.APSP_UI_SCREENSHOT_DIR) await mkdir(process.env.APSP_UI_SCREENSHOT_DIR,{recursive:true})
 try {
   for(const width of [1440,390,320]) {
     const page=await browser.newPage({viewport:{width,height:1000}}), errors=[],writes=[]
@@ -80,7 +80,7 @@ try {
     await panel.getByRole('button',{name:'保存 Webhook',exact:true}).click()
     await panel.getByRole('status').filter({hasText:'设置已保存'}).waitFor()
     assert.equal(writes.at(-1).url,'');assert.equal(writes.at(-1).body,'');assert.equal(writes.at(-1).clear_headers,true)
-    if(process.env.SINAN_UI_SCREENSHOT_DIR)await page.screenshot({path:resolve(process.env.SINAN_UI_SCREENSHOT_DIR,`notifications-${width}.png`),fullPage:true})
+    if(process.env.APSP_UI_SCREENSHOT_DIR)await page.screenshot({path:resolve(process.env.APSP_UI_SCREENSHOT_DIR,`notifications-${width}.png`),fullPage:true})
     const overflow=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,elements:[...document.querySelectorAll('body *')].filter(element=>element.getBoundingClientRect().right>innerWidth+1).map(element=>({tag:element.tagName,classes:element.className,right:element.getBoundingClientRect().right,text:element.textContent?.slice(0,45)})).slice(0,15)}))
     assert.equal(overflow.scroll<=width,true,JSON.stringify(overflow))
     await panel.getByRole('button',{name:'删除 Webhook 配置',exact:true}).click()

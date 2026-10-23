@@ -16,7 +16,7 @@ SCRIPT = ROOT / "scripts/panel.py"
 FAKE_DOCKER = r'''
 import json, os, sys
 args = sys.argv[1:]
-assert "SINAN_ADMIN_PASSWORD" not in os.environ
+assert "APSP_ADMIN_PASSWORD" not in os.environ
 with open(os.environ["PANEL_TEST_LOG"], "a") as output:
     output.write(json.dumps(args) + "\n")
 if "ps" in args and "--services" in args:
@@ -64,7 +64,7 @@ class ManagerTests(unittest.TestCase):
         self.env_file = self.root / ".env"
         self.backups = self.root / "backups"
         self.env = {**os.environ, "PATH": f"{self.root}{os.pathsep}{os.environ['PATH']}",
-                    "PANEL_TEST_LOG": str(self.log), "SINAN_ADMIN_PASSWORD": "must-not-override-file"}
+                    "PANEL_TEST_LOG": str(self.log), "APSP_ADMIN_PASSWORD": "must-not-override-file"}
 
     def run_cli(self, action, *arguments, **overrides):
         return subprocess.run([sys.executable, str(SCRIPT), action, "--env-file", str(self.env_file),
@@ -85,8 +85,8 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.env_file.read_bytes(), content)
         values = dict(line.split("=", 1) for line in content.decode().splitlines())
-        self.assertEqual(json.loads(values["SINAN_RELEASE_PUBLIC_KEYS"]), json.loads((ROOT / "deploy/release-public-keys.json").read_text()))
-        self.assertNotIn(values["SINAN_ADMIN_PASSWORD"], result.stdout + result.stderr)
+        self.assertEqual(json.loads(values["APSP_RELEASE_PUBLIC_KEYS"]), json.loads((ROOT / "deploy/release-public-keys.json").read_text()))
+        self.assertNotIn(values["APSP_ADMIN_PASSWORD"], result.stdout + result.stderr)
         self.assertEqual(self.env_file.stat().st_mode & 0o777, 0o600)
         self.assertEqual(self.commands(), [])
 
@@ -123,10 +123,10 @@ class ManagerTests(unittest.TestCase):
 
     def test_backup_keeps_required_key_id_and_independent_reference_without_copying_keyring(self):
         self.init()
-        private = 'SINAN_CREDENTIAL_KEYS={"TEST_ONLY-key":"TEST_ONLY private master key sentinel"}\nSINAN_CREDENTIAL_CURRENT_KEY=TEST_ONLY-key\n'
+        private = 'APSP_CREDENTIAL_KEYS={"TEST_ONLY-key":"TEST_ONLY private master key sentinel"}\nAPSP_CREDENTIAL_CURRENT_KEY=TEST_ONLY-key\n'
         reference = "TEST_ONLY independent offline keyring location"
         with self.env_file.open("a") as environment:
-            environment.write(private + f"SINAN_BACKUP_KEYRING_REFERENCE={reference}\n")
+            environment.write(private + f"APSP_BACKUP_KEYRING_REFERENCE={reference}\n")
         content = self.env_file.read_bytes()
         result = self.run_cli("backup", PANEL_TEST_KEY_IDS='["TEST_ONLY-key"]')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -138,8 +138,8 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(manifest["keyring_reference"], reference)
         self.assertFalse(manifest["keyring_included"])
         backup_environment = (destination / "environment").read_text()
-        self.assertNotIn("SINAN_CREDENTIAL_KEYS", backup_environment)
-        self.assertNotIn("SINAN_CREDENTIAL_CURRENT_KEY", backup_environment)
+        self.assertNotIn("APSP_CREDENTIAL_KEYS", backup_environment)
+        self.assertNotIn("APSP_CREDENTIAL_CURRENT_KEY", backup_environment)
         self.assertNotIn("TEST_ONLY private master key sentinel", backup_environment)
         self.assertEqual(backup_environment, content.decode().replace(private, ""))
         for filename, digest in manifest["sha256"].items():
@@ -150,13 +150,13 @@ class ManagerTests(unittest.TestCase):
 
     def test_required_backup_keys_without_independent_reference_block_upgrade_and_restore_service(self):
         self.init()
-        private = "SINAN_CREDENTIAL_KEYS=TEST_ONLY private master key sentinel\nSINAN_CREDENTIAL_CURRENT_KEY=TEST_ONLY-key\n"
+        private = "APSP_CREDENTIAL_KEYS=TEST_ONLY private master key sentinel\nAPSP_CREDENTIAL_CURRENT_KEY=TEST_ONLY-key\n"
         with self.env_file.open("a") as environment:
             environment.write(private)
         content = self.env_file.read_bytes()
         result = self.run_cli("upgrade", PANEL_TEST_KEY_IDS='["TEST_ONLY-key"]')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("SINAN_BACKUP_KEYRING_REFERENCE", result.stderr)
+        self.assertIn("APSP_BACKUP_KEYRING_REFERENCE", result.stderr)
         self.assertEqual(self.env_file.read_bytes(), content)
         destination, = self.backups.iterdir()
         self.assertFalse((destination / "manifest.json").exists())
@@ -207,8 +207,8 @@ class ManagerTests(unittest.TestCase):
         commands = self.commands()
         container = next(command for command in commands if command[:2] == ["ps", "-aq"])
         volumes = next(command for command in commands if command[:2] == ["volume", "ls"])
-        self.assertIn("label=com.docker.compose.project=sinan", container)
-        self.assertIn("label=com.docker.compose.project=sinan", volumes)
+        self.assertIn("label=com.docker.compose.project=apsp", container)
+        self.assertIn("label=com.docker.compose.project=apsp", volumes)
         self.assertFalse(any("com.docker.compose.volume=" in argument for argument in volumes))
         self.assertEqual(self.env_file.stat().st_mode & 0o777, 0o600)
 

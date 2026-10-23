@@ -12,7 +12,7 @@ import stat
 import subprocess
 import tarfile
 
-OLD_NAMESPACE = "sinan-plugin-install-20261001-r3"
+OLD_NAMESPACE = "apsp-plugin-install-20261001-r3"
 HARNESSES = ("common.py", "setup.py", "artifact.py", "exercise.py", "finish.py", "driver.py", "build-v3.py")
 MAX_ARCHIVE = 32 * 1024 * 1024
 
@@ -85,7 +85,7 @@ def main():
     parser.add_argument("--namespace", required=True)
     args = parser.parse_args()
     require(re.fullmatch(r"[0-9a-f]{40}", args.source_commit), "explicit full source commit required")
-    require(re.fullmatch(r"sinan-plugin-install-20[0-9]{6}-r[1-9][0-9]{0,2}", args.namespace)
+    require(re.fullmatch(r"apsp-plugin-install-20[0-9]{6}-r[1-9][0-9]{0,2}", args.namespace)
             and args.namespace != OLD_NAMESPACE, "new private namespace required")
     source = args.source.absolute()
     require(git(source, "rev-parse", "HEAD").decode().strip() == args.source_commit, "HEAD differs from freeze")

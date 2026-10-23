@@ -12,15 +12,15 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: sinan
-          POSTGRES_PASSWORD: sinan-test
-          POSTGRES_DB: sinan_test
+          POSTGRES_USER: apsp
+          POSTGRES_PASSWORD: apsp-test
+          POSTGRES_DB: apsp_test
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U sinan"
+          --health-cmd "pg_isready -U apsp"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      DATABASE_URL: postgres://sinan:sinan-test@127.0.0.1:5432/sinan_test
+      DATABASE_URL: postgres://apsp:apsp-test@127.0.0.1:5432/apsp_test
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Compile only the deliberately public CI test trust root
@@ -109,8 +109,8 @@ jobs:
         run: python3 tools/ci-run.py cargo test --locked
       - name: Verify independent diagnostic services with real systemd
         run: |
-          cargo test -p sinan-agent-core --lib --no-run --message-format=json > /tmp/sinan-core-tests.jsonl
-          diagnostic_test_binary=$(python3 -c 'import json; print(next(item["executable"] for item in (json.loads(line) for line in open("/tmp/sinan-core-tests.jsonl")) if item.get("reason") == "compiler-artifact" and item.get("executable") and item["target"]["name"] == "sinan_agent_core"))')
+          cargo test -p apsp-agent-core --lib --no-run --message-format=json > /tmp/apsp-core-tests.jsonl
+          diagnostic_test_binary=$(python3 -c 'import json; print(next(item["executable"] for item in (json.loads(line) for line in open("/tmp/apsp-core-tests.jsonl")) if item.get("reason") == "compiler-artifact" and item.get("executable") and item["target"]["name"] == "apsp_agent_core"))')
           python3 tools/ci-run.py sudo "$diagnostic_test_binary" real_systemd_diagnostic_ --ignored --test-threads=1
 
   compose-smoke:
@@ -170,23 +170,23 @@ jobs:
           sudo apt-get install -y --no-install-recommends musl-tools build-essential binutils python3 python3-cryptography coreutils
       - name: Build and verify the static Agent on its native architecture
         if: matrix.libc == 'musl'
-        run: bash tools/build-agent.sh '${{ matrix.arch }}' '${{ runner.temp }}/sinan-artifacts'
+        run: bash tools/build-agent.sh '${{ matrix.arch }}' '${{ runner.temp }}/apsp-artifacts'
       - name: Verify the installer, independent OpenRC services, and diagnostic jobs
         if: matrix.libc == 'musl'
         env:
-          SINAN_TEST_AGENT: /src/target/${{ matrix.target }}/release/sinan-agent
+          APSP_TEST_AGENT: /src/target/${{ matrix.target }}/release/apsp-agent
         run: python3 tools/ci-run.py bash scripts/ci-openrc-smoke.sh
       - name: Build and verify the dynamic glibc Agent
         if: matrix.libc == 'gnu'
-        run: python3 tools/build-agent.py '${{ matrix.target }}' '${{ runner.temp }}/sinan-artifacts'
+        run: python3 tools/build-agent.py '${{ matrix.target }}' '${{ runner.temp }}/apsp-artifacts'
       - name: Verify native Agent operation and failed-update recovery
         env:
-          SINAN_EXPECT_RUNTIME_LIBC: gnu
-        run: python3 tools/ci-run.py python3 tools/agent-smoke.py 'target/${{ matrix.target }}/release/sinan-agent'
+          APSP_EXPECT_RUNTIME_LIBC: gnu
+        run: python3 tools/ci-run.py python3 tools/agent-smoke.py 'target/${{ matrix.target }}/release/apsp-agent'
       - uses: actions/upload-artifact@v7.0.1
         with:
-          name: sinan-TEST_ONLY-agent-linux-${{ matrix.libc }}-${{ matrix.arch }}
-          path: ${{ runner.temp }}/sinan-artifacts/
+          name: apsp-TEST_ONLY-agent-linux-${{ matrix.libc }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/apsp-artifacts/
           if-no-files-found: error
           retention-days: 7
 
@@ -242,10 +242,10 @@ jobs:
             chmod 755 "$RUNNER_TEMP/runtime/run-runtime"
             binary="$RUNNER_TEMP/runtime/run-runtime"
           fi
-          SINAN_TEST_SINGBOX="$binary" cargo test --locked --package sinan-adapter-singbox --test runtime -- --ignored
+          APSP_TEST_SINGBOX="$binary" cargo test --locked --package apsp-adapter-singbox --test runtime -- --ignored
       - uses: actions/upload-artifact@v7.0.1
         with:
-          name: sinan-TEST_ONLY-runtime-linux-${{ matrix.libc }}-${{ matrix.arch }}
+          name: apsp-TEST_ONLY-runtime-linux-${{ matrix.libc }}-${{ matrix.arch }}
           path: ${{ runner.temp }}/runtime-artifacts/
           if-no-files-found: error
           retention-days: 7
@@ -297,10 +297,10 @@ jobs:
       - name: Build the signer for the deliberately public TEST_ONLY key
         shell: bash
         run: |
-          cargo build --locked -p sinan-protocol --example ci-fixture-sign --target '${{ matrix.target }}'
+          cargo build --locked -p apsp-protocol --example ci-fixture-sign --target '${{ matrix.target }}'
           signer="$PWD/target/${{ matrix.target }}/debug/examples/ci-fixture-sign"
           if [ '${{ matrix.platform }}' = windows ]; then signer=$(cygpath -w "$signer.exe"); fi
-          printf '%s\n' "SINAN_CI_FIXTURE_SIGNER=$signer" >> "$GITHUB_ENV"
+          printf '%s\n' "APSP_CI_FIXTURE_SIGNER=$signer" >> "$GITHUB_ENV"
       - name: Build, verify, and package the native Agent
         id: native-agent-build
         run: python tools/ci-run.py python tools/build-agent.py '${{ matrix.target }}' .ci-artifacts
@@ -309,11 +309,11 @@ jobs:
         shell: bash
         run: |
           umask 077
-          cargo test --locked -p sinan-agent-core --test artifacts atomic_writes_and_links_preserve_modes_and_real_files -- --exact
+          cargo test --locked -p apsp-agent-core --test artifacts atomic_writes_and_links_preserve_modes_and_real_files -- --exact
       - name: Verify native Agent operation and failed-update recovery
         shell: bash
         run: |
-          binary=target/${{ matrix.target }}/release/sinan-agent
+          binary=target/${{ matrix.target }}/release/apsp-agent
           if [ '${{ matrix.platform }}' = windows ]; then binary="$binary.exe"; fi
           python tools/ci-run.py python tools/agent-smoke.py "$binary"
       - name: Build the pinned upstream native runtime
@@ -324,22 +324,22 @@ jobs:
         if: ${{ !cancelled() && steps.native-runtime-build.outcome == 'success' }}
         shell: bash
         run: |
-          binary=target/${{ matrix.target }}/release/sinan-agent
+          binary=target/${{ matrix.target }}/release/apsp-agent
           runtime=.ci-artifacts/sing-box/1.14.2/${{ matrix.platform }}-${{ matrix.arch }}
           if [ '${{ matrix.platform }}' = windows ]; then
             python tools/ci-run.py python tools/native-service-smoke.py "$binary.exe" "$runtime"
           else
-            sudo env CI=true GITHUB_ACTIONS=true "SINAN_CI_FIXTURE_SIGNER=$SINAN_CI_FIXTURE_SIGNER" "$(command -v python)" tools/ci-run.py "$(command -v python)" tools/native-service-smoke.py "$binary" "$runtime"
+            sudo env CI=true GITHUB_ACTIONS=true "APSP_CI_FIXTURE_SIGNER=$APSP_CI_FIXTURE_SIGNER" "$(command -v python)" tools/ci-run.py "$(command -v python)" tools/native-service-smoke.py "$binary" "$runtime"
           fi
       - uses: actions/upload-artifact@v7.0.1
         with:
-          name: sinan-TEST_ONLY-runtime-${{ matrix.platform }}-${{ matrix.arch }}
+          name: apsp-TEST_ONLY-runtime-${{ matrix.platform }}-${{ matrix.arch }}
           path: .ci-artifacts/sing-box/
           if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@v7.0.1
         with:
-          name: sinan-TEST_ONLY-agent-${{ matrix.platform }}-${{ matrix.arch }}
+          name: apsp-TEST_ONLY-agent-${{ matrix.platform }}-${{ matrix.arch }}
           path: .ci-artifacts/agent/
           include-hidden-files: true
           if-no-files-found: error
@@ -350,7 +350,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      CARGO_TARGET_DIR: /tmp/sinan-freebsd-target
+      CARGO_TARGET_DIR: /tmp/apsp-freebsd-target
     strategy:
       fail-fast: false
       matrix:
@@ -371,7 +371,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2.9.2
         with:
           key: freebsd-cross-${{ matrix.target }}
-          workspaces: . -> /tmp/sinan-freebsd-target
+          workspaces: . -> /tmp/apsp-freebsd-target
           cache-directories: ~/.cargo/bin
       - name: Install the reference cross compiler
         run: cargo install cross --git https://github.com/cross-rs/cross --rev 8c1a8aa4b661711f4b7b6ac07c2e8929ce2f7d27 --locked
@@ -380,9 +380,9 @@ jobs:
         env:
           AGENT_TARGET: ${{ matrix.target }}
         run: |
-          cross build --locked --release --package sinan-agent --target "$AGENT_TARGET"
+          cross build --locked --release --package apsp-agent --target "$AGENT_TARGET"
           mkdir -p .ci-binaries
-          cp "$CARGO_TARGET_DIR/$AGENT_TARGET/release/sinan-agent" .ci-binaries/sinan-agent
+          cp "$CARGO_TARGET_DIR/$AGENT_TARGET/release/apsp-agent" .ci-binaries/apsp-agent
           python3 - <<'PY'
           import os
           from pathlib import Path
@@ -390,7 +390,7 @@ jobs:
           import tomllib
 
           target = os.environ['AGENT_TARGET']
-          runpy.run_path('tools/build-agent.py')['verify_architecture'](Path('.ci-binaries/sinan-agent'), target)
+          runpy.run_path('tools/build-agent.py')['verify_architecture'](Path('.ci-binaries/apsp-agent'), target)
           version = tomllib.loads(Path('crates/agent/Cargo.toml').read_text())['package']['version']
           with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
               output.write(f'version={version}\n')
@@ -409,12 +409,12 @@ jobs:
           copyback: false
           run: |
             set -eu
-            chmod 755 .ci-binaries/sinan-agent
-            test "$(.ci-binaries/sinan-agent --version)" = 'sinan-agent ${{ steps.build.outputs.version }}'
-            .ci-binaries/sinan-agent --help
-            mkdir -p /tmp/sinan-runtime
-            tar -xzf .ci-artifacts/sing-box/1.14.2/freebsd-${{ matrix.arch }} -C /tmp/sinan-runtime
-            /tmp/sinan-runtime/sing-box version
+            chmod 755 .ci-binaries/apsp-agent
+            test "$(.ci-binaries/apsp-agent --version)" = 'apsp-agent ${{ steps.build.outputs.version }}'
+            .ci-binaries/apsp-agent --help
+            mkdir -p /tmp/apsp-runtime
+            tar -xzf .ci-artifacts/sing-box/1.14.2/freebsd-${{ matrix.arch }} -C /tmp/apsp-runtime
+            /tmp/apsp-runtime/sing-box version
       - name: Verify the same binary on FreeBSD 14
         uses: vmactions/freebsd-vm@v1.5.8
         with:
@@ -423,11 +423,11 @@ jobs:
           copyback: false
           run: |
             set -eu
-            test "$(.ci-binaries/sinan-agent --version)" = 'sinan-agent ${{ steps.build.outputs.version }}'
-            .ci-binaries/sinan-agent --help
-            mkdir -p /tmp/sinan-runtime
-            tar -xzf .ci-artifacts/sing-box/1.14.2/freebsd-${{ matrix.arch }} -C /tmp/sinan-runtime
-            /tmp/sinan-runtime/sing-box version
+            test "$(.ci-binaries/apsp-agent --version)" = 'apsp-agent ${{ steps.build.outputs.version }}'
+            .ci-binaries/apsp-agent --help
+            mkdir -p /tmp/apsp-runtime
+            tar -xzf .ci-artifacts/sing-box/1.14.2/freebsd-${{ matrix.arch }} -C /tmp/apsp-runtime
+            /tmp/apsp-runtime/sing-box version
       - name: Verify and package the same binary on FreeBSD 15
         uses: vmactions/freebsd-vm@v1.5.8
         with:
@@ -437,23 +437,23 @@ jobs:
           prepare: pkg install -y python311 py311-sqlite3 py311-cryptography
           run: |
             set -eu
-            python3.11 tools/build-agent.py '${{ matrix.target }}' .ci-artifacts --binary .ci-binaries/sinan-agent
-            mkdir -p /tmp/sinan-cores
-            sysctl kern.corefile=/tmp/sinan-cores/%N.%P.core
+            python3.11 tools/build-agent.py '${{ matrix.target }}' .ci-artifacts --binary .ci-binaries/apsp-agent
+            mkdir -p /tmp/apsp-cores
+            sysctl kern.corefile=/tmp/apsp-cores/%N.%P.core
             ulimit -c unlimited
             result=0
-            env GITHUB_ACTIONS=true SINAN_SMOKE_CORE_DIR=/tmp/sinan-cores python3.11 tools/ci-run.py python3.11 tools/agent-smoke.py .ci-binaries/sinan-agent || result=1
-            env CI=true GITHUB_ACTIONS=true python3.11 tools/ci-run.py python3.11 tools/native-service-smoke.py .ci-binaries/sinan-agent .ci-artifacts/sing-box/1.14.2/freebsd-${{ matrix.arch }} || result=1
+            env GITHUB_ACTIONS=true APSP_SMOKE_CORE_DIR=/tmp/apsp-cores python3.11 tools/ci-run.py python3.11 tools/agent-smoke.py .ci-binaries/apsp-agent || result=1
+            env CI=true GITHUB_ACTIONS=true python3.11 tools/ci-run.py python3.11 tools/native-service-smoke.py .ci-binaries/apsp-agent .ci-artifacts/sing-box/1.14.2/freebsd-${{ matrix.arch }} || result=1
             exit "$result"
       - uses: actions/upload-artifact@v7.0.1
         with:
-          name: sinan-TEST_ONLY-runtime-freebsd-${{ matrix.arch }}
+          name: apsp-TEST_ONLY-runtime-freebsd-${{ matrix.arch }}
           path: .ci-artifacts/sing-box/
           if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@v7.0.1
         with:
-          name: sinan-TEST_ONLY-agent-freebsd-${{ matrix.arch }}
+          name: apsp-TEST_ONLY-agent-freebsd-${{ matrix.arch }}
           path: .ci-artifacts/agent/
           include-hidden-files: true
           if-no-files-found: error
@@ -471,8 +471,8 @@ jobs:
         run: python3 scripts/ci-test-trust.py --github-env "$GITHUB_ENV"
       - uses: actions/download-artifact@v8.0.1
         with:
-          name: sinan-TEST_ONLY-agent-linux-musl-amd64
-          path: ${{ runner.temp }}/sinan-agent
+          name: apsp-TEST_ONLY-agent-linux-musl-amd64
+          path: ${{ runner.temp }}/apsp-agent
       - name: Install the independent operator signature verifier
         run: |
           sudo apt-get update
@@ -485,40 +485,40 @@ jobs:
         id: runtime-cache
         uses: actions/cache/restore@v6.1.0
         with:
-          path: ${{ runner.temp }}/sinan-runtime-artifacts
-          key: sinan-runtime-linux-amd64-1.14.2-${{ hashFiles('tools/build-singbox.sh', 'tools/singbox-builder.Dockerfile') }}
+          path: ${{ runner.temp }}/apsp-runtime-artifacts
+          key: apsp-runtime-linux-amd64-1.14.2-${{ hashFiles('tools/build-singbox.sh', 'tools/singbox-builder.Dockerfile') }}
       - name: Build the unchanged upstream runtime on a cache miss
         if: steps.runtime-cache.outputs.cache-hit != 'true'
         run: |
-          mkdir -p '${{ runner.temp }}/sinan-runtime-artifacts'
-          docker build --platform linux/amd64 -f tools/singbox-builder.Dockerfile -t sinan-ci-runtime-builder .
+          mkdir -p '${{ runner.temp }}/apsp-runtime-artifacts'
+          docker build --platform linux/amd64 -f tools/singbox-builder.Dockerfile -t apsp-ci-runtime-builder .
           docker run --rm --platform linux/amd64 \
-            --mount 'type=bind,src=${{ runner.temp }}/sinan-runtime-artifacts,dst=/artifacts' \
-            sinan-ci-runtime-builder amd64 /artifacts
-          sudo chown -R "$(id -u):$(id -g)" '${{ runner.temp }}/sinan-runtime-artifacts'
-          docker image rm sinan-ci-runtime-builder
+            --mount 'type=bind,src=${{ runner.temp }}/apsp-runtime-artifacts,dst=/artifacts' \
+            apsp-ci-runtime-builder amd64 /artifacts
+          sudo chown -R "$(id -u):$(id -g)" '${{ runner.temp }}/apsp-runtime-artifacts'
+          docker image rm apsp-ci-runtime-builder
       - name: Verify the restored or newly built runtime
         run: |
           python3 scripts/verify-e2e-runtime.py \
-            '${{ runner.temp }}/sinan-runtime-artifacts' \
-            '${{ runner.temp }}/sinan-runtime-check'
+            '${{ runner.temp }}/apsp-runtime-artifacts' \
+            '${{ runner.temp }}/apsp-runtime-check'
       - name: Cache the verified runtime
         if: steps.runtime-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
-          path: ${{ runner.temp }}/sinan-runtime-artifacts
+          path: ${{ runner.temp }}/apsp-runtime-artifacts
           key: ${{ steps.runtime-cache.outputs.cache-primary-key }}
       - name: Run real installation, Reality traffic, and restart accounting
         run: |
           bash scripts/ci-real-e2e.sh \
-            --agent-root '${{ runner.temp }}/sinan-agent' \
-            --runtime-root '${{ runner.temp }}/sinan-runtime-artifacts' \
-            --summary '${{ runner.temp }}/sinan-real-e2e-summary.json'
+            --agent-root '${{ runner.temp }}/apsp-agent' \
+            --runtime-root '${{ runner.temp }}/apsp-runtime-artifacts' \
+            --summary '${{ runner.temp }}/apsp-real-e2e-summary.json'
       - name: Publish only the allowlisted acceptance summary
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: sinan-real-e2e-summary
-          path: ${{ runner.temp }}/sinan-real-e2e-summary.json
+          name: apsp-real-e2e-summary
+          path: ${{ runner.temp }}/apsp-real-e2e-summary.json
           if-no-files-found: warn
           retention-days: 7

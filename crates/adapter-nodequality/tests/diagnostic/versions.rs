@@ -43,11 +43,11 @@ async fn saved_full_jobs_are_not_prepared_but_keep_each_report_version() {
         R18,
         R19,
         VERSION,
-        sinan_adapter_nodequality::NATIVE_VERSION,
-        sinan_adapter_nodequality::NATIVE_LEGACY_VERSION,
-        sinan_adapter_nodequality::NATIVE_OFFLINE_ROOTFS_VERSION,
-        sinan_adapter_nodequality::OFFLINE_ROOTFS_VERSION,
-        sinan_adapter_nodequality::NODE_QUERY_VERSION,
+        apsp_adapter_nodequality::NATIVE_VERSION,
+        apsp_adapter_nodequality::NATIVE_LEGACY_VERSION,
+        apsp_adapter_nodequality::NATIVE_OFFLINE_ROOTFS_VERSION,
+        apsp_adapter_nodequality::OFFLINE_ROOTFS_VERSION,
+        apsp_adapter_nodequality::NODE_QUERY_VERSION,
     ] {
         let scratch = Scratch::new();
         let mut spec = scratch.spec();
@@ -91,11 +91,11 @@ async fn r4_through_r22_daily_jobs_keep_mode_targets_budget_and_saved_chapters()
         R18,
         R19,
         VERSION,
-        sinan_adapter_nodequality::NATIVE_VERSION,
-        sinan_adapter_nodequality::NATIVE_LEGACY_VERSION,
-        sinan_adapter_nodequality::NATIVE_OFFLINE_ROOTFS_VERSION,
-        sinan_adapter_nodequality::OFFLINE_ROOTFS_VERSION,
-        sinan_adapter_nodequality::NODE_QUERY_VERSION,
+        apsp_adapter_nodequality::NATIVE_VERSION,
+        apsp_adapter_nodequality::NATIVE_LEGACY_VERSION,
+        apsp_adapter_nodequality::NATIVE_OFFLINE_ROOTFS_VERSION,
+        apsp_adapter_nodequality::OFFLINE_ROOTFS_VERSION,
+        apsp_adapter_nodequality::NODE_QUERY_VERSION,
     ] {
         let scratch = Scratch::new();
         let mut spec = scratch.spec();
@@ -189,7 +189,7 @@ async fn saved_r4_job_rejects_a_different_artifact_version() {
 
 #[tokio::test]
 async fn official_node_queries_require_exact_version_and_private_bounded_inputs() {
-    use sinan_adapter_nodequality::{NODE_QUERY_VERSION, OFFLINE_ROOTFS_VERSION};
+    use apsp_adapter_nodequality::{NODE_QUERY_VERSION, OFFLINE_ROOTFS_VERSION};
     let scratch = Scratch::new();
     let mut spec = scratch.spec();
     spec.version = NODE_QUERY_VERSION.into();
@@ -253,7 +253,7 @@ async fn official_node_queries_require_exact_version_and_private_bounded_inputs(
 
 #[test]
 fn namespaced_preparation_keeps_r22_default_and_exact_auxiliary_roles() {
-    use sinan_adapter_nodequality::{
+    use apsp_adapter_nodequality::{
         NATIVE_LEGACY_VERSION, NATIVE_OFFLINE_ROOTFS_VERSION, NATIVE_VERSION,
     };
     let adapter = NodeQualityAdapter::new();
@@ -269,7 +269,7 @@ fn namespaced_preparation_keeps_r22_default_and_exact_auxiliary_roles() {
             .is_empty()
     );
     for version in [
-        sinan_adapter_nodequality::OFFLINE_ROOTFS_VERSION,
+        apsp_adapter_nodequality::OFFLINE_ROOTFS_VERSION,
         NATIVE_OFFLINE_ROOTFS_VERSION,
     ] {
         assert_eq!(
@@ -282,7 +282,7 @@ fn namespaced_preparation_keeps_r22_default_and_exact_auxiliary_roles() {
     }
     assert!(
         adapter
-            .auxiliary_files_for_version(sinan_adapter_nodequality::NODE_QUERY_VERSION)
+            .auxiliary_files_for_version(apsp_adapter_nodequality::NODE_QUERY_VERSION)
             .is_empty()
     );
     for version in [

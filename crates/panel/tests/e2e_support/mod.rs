@@ -1,20 +1,20 @@
 use crate::{release_fixture, release_support};
 
 use anyhow::{Context, Result};
-use flate2::{Compression, write::GzEncoder};
-use reqwest::{Client, Method, header};
-use serde_json::{Value, json};
-use sinan_adapter_sdk::{
+use apsp_adapter_sdk::{
     Adapter, BoxFuture, Descriptor, Plan, Prepared, Privileged, RuntimeSpec, ServiceManager,
     UsageSource,
 };
-use sinan_agent_core::{
+use apsp_agent_core::{
     config::Config as AgentConfig,
     fake::{FakeAdapter, FakeServiceManager},
     system::SystemOps,
     transport,
 };
-use sinan_panel::{AppState, config::Config, publisher, router};
+use apsp_panel::{AppState, config::Config, publisher, router};
+use flate2::{Compression, write::GzEncoder};
+use reqwest::{Client, Method, header};
+use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::{fs, future::Future, path::PathBuf, sync::Arc, time::Duration};
 use tokio::{net::TcpListener, task::JoinHandle};
@@ -109,7 +109,7 @@ impl Harness {
     pub fn agent_config(&self) -> AgentConfig {
         let root = self.directory.join("agent");
         AgentConfig {
-            settings: sinan_protocol::AgentSettings {
+            settings: apsp_protocol::AgentSettings {
                 discover_public_ips: false,
                 ..Default::default()
             },
@@ -139,8 +139,8 @@ impl Harness {
         let mut entry =
             release_support::entry("sing-box", "1.14.2", "demo", "tar.gz", &archive, binary);
         // Real telemetry reports the host ABI; this fake runtime must use that signed identity.
-        entry.arch = sinan_protocol::release::native_target()?;
-        entry.asset_name = sinan_protocol::release::canonical_asset_name(&entry)?;
+        entry.arch = apsp_protocol::release::native_target()?;
+        entry.asset_name = apsp_protocol::release::canonical_asset_name(&entry)?;
         release_fixture::write_entries(&self.state.config.data_dir, vec![(entry, archive)])?;
         Ok(binary.to_vec())
     }

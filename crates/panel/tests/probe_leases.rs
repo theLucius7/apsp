@@ -6,14 +6,14 @@ mod probe_support;
 mod release_support;
 
 use anyhow::Result;
-use business_support::TestPanel;
-use reqwest::{Method, StatusCode};
-use serde_json::{Value, json};
-use sinan_panel::probes::ConfiguredProbe;
-use sinan_protocol::{
+use apsp_panel::probes::ConfiguredProbe;
+use apsp_protocol::{
     PROBE_LEASE_CAPABILITY, ProbeBatch, ProbeExecution, ProbeLease, ProbeResult, TaskAck,
     now_timestamp, telemetry::now_millis,
 };
+use business_support::TestPanel;
+use reqwest::{Method, StatusCode};
+use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -67,7 +67,7 @@ fn sample(lease: &ProbeLease) -> ProbeResult {
         latency_ms: Some(1.0),
         loss_percent: 0.0,
         error: None,
-        address_family: Some(sinan_protocol::ProbeAddressFamily::Ipv4),
+        address_family: Some(apsp_protocol::ProbeAddressFamily::Ipv4),
         attempts: Some(4),
         execution: Some(ProbeExecution {
             lease_id: lease.id,
@@ -121,7 +121,7 @@ async fn issuance_requires_capability_and_reuses_only_the_same_device_session(
     assert_eq!(first, lease(&panel, &ack.session_token).await?);
     let second_token = "TEST_ONLY independent session";
     sqlx::query("INSERT INTO sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
-        .bind(sinan_panel::auth::hash_token(second_token))
+        .bind(apsp_panel::auth::hash_token(second_token))
         .bind(server)
         .bind(now_timestamp() + 60)
         .execute(&panel.state.pool)

@@ -11,7 +11,7 @@ pub(super) fn validate_saved_target(
     ensure!(
         !id.is_nil()
             && spec.id == id.to_string()
-            && service.unit == format!("sinan-diagnostic-{id}.service")
+            && service.unit == format!("apsp-diagnostic-{id}.service")
             && spec.job_dir == directory
             && service.working_directory == directory
             && spec.binary_path == service.program

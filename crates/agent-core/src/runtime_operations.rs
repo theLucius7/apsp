@@ -1,10 +1,10 @@
 use crate::{SharedState, artifacts::PanelClient, reconcile::Reconciler};
 use anyhow::{Result, ensure};
-use serde::{Deserialize, Serialize};
-use sinan_protocol::{
+use apsp_protocol::{
     ApplyStatus, RuntimeOperation, RuntimeOperationError, RuntimeOperationRequest,
     RuntimeOperationResult, TaskAck, now_timestamp,
 };
+use serde::{Deserialize, Serialize};
 
 const LEDGER_KEY: &str = "runtime_operations_v1";
 const MAX_RECORDS: usize = 64;
@@ -85,7 +85,7 @@ pub(crate) async fn poll(
     reconcilers: &[(String, std::sync::Arc<Reconciler>)],
     state: &SharedState,
     client: &PanelClient,
-    outgoing: &tokio::sync::mpsc::Sender<sinan_protocol::Envelope>,
+    outgoing: &tokio::sync::mpsc::Sender<apsp_protocol::Envelope>,
 ) -> Result<()> {
     let offset = state
         .lock()
@@ -151,7 +151,7 @@ async fn execute(
     request: &RuntimeOperationRequest,
     reconcilers: &[(String, std::sync::Arc<Reconciler>)],
     client: &PanelClient,
-    outgoing: &tokio::sync::mpsc::Sender<sinan_protocol::Envelope>,
+    outgoing: &tokio::sync::mpsc::Sender<apsp_protocol::Envelope>,
     offset: i64,
 ) -> RuntimeOperationResult {
     if request.expires_at <= now_timestamp().saturating_add(offset) {
@@ -194,7 +194,7 @@ async fn execute(
             RuntimeOperation::RetryDeployment => match reconciler.reconcile(target, client).await {
                 Ok(applied) => {
                     let success = applied.status == ApplyStatus::Applied;
-                    if let Ok(envelope) = sinan_protocol::Envelope::new("apply.result", applied) {
+                    if let Ok(envelope) = apsp_protocol::Envelope::new("apply.result", applied) {
                         let _ = outgoing.try_send(envelope);
                     }
                     success
@@ -226,7 +226,7 @@ async fn execute(
     if request.operation == RuntimeOperation::Restart
         && let Some(snapshot) = &completed.snapshot
     {
-        let applied = sinan_protocol::ApplyResult {
+        let applied = apsp_protocol::ApplyResult {
             module: request.module.clone(),
             rev: request.expected_revision.unwrap_or_default(),
             op_id: request.id,
@@ -240,7 +240,7 @@ async fn execute(
                 .error
                 .map(|_| "runtime restart failed; inspect local service state".into()),
         };
-        if let Ok(envelope) = sinan_protocol::Envelope::new("apply.result", applied) {
+        if let Ok(envelope) = apsp_protocol::Envelope::new("apply.result", applied) {
             let _ = outgoing.try_send(envelope);
         }
     }

@@ -9,7 +9,7 @@ import { orderedResourceFixture, pathFixtureUuid, flatResourceFixtures, proxyRes
 import { sourceNodeFixture, sourceNodePageFixture, sourceRevisionFixture, sourceUuid, subscriptionSourceFixture } from './subscription-source-fixtures.mjs'
 
 // Serve the real final dist. Owned public fixtures exercise UI contracts, not live proxy delivery.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 const server = createServer(async (request, response) => {
   const file = resolve(dist, new URL(request.url, 'http://127.0.0.1').pathname === '/' ? 'index.html' : `.${new URL(request.url, 'http://127.0.0.1').pathname}`)
@@ -20,7 +20,7 @@ const server = createServer(async (request, response) => {
 let browser
 try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-  browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+  browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
   const origin = `http://127.0.0.1:${server.address().port}`, prefix = '/api/plugins/sing-box'
   for (const width of [1440, 390, 320]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } }); page.setDefaultTimeout(7000); await page.clock.install()
@@ -100,7 +100,7 @@ try {
     // Wrapping Field labels also contain option text; require the exact visible label span.
     const fieldSelect = (scope, label) => scope.locator('label.field').filter({ has: page.getByText(label, { exact: true }) }).locator('select')
     const poll = () => page.clock.fastForward(5000)
-    const shot = async name => { if (!process.env.SINAN_UI_SCREENSHOT_DIR) return; await mkdir(process.env.SINAN_UI_SCREENSHOT_DIR, { recursive: true }); await page.locator('[role=dialog]').evaluateAll(dialogs => { for (const dialog of dialogs) for (const animation of (dialog.closest('.modal-shade') ?? dialog).getAnimations({ subtree: true })) if (animation.effect?.getComputedTiming().iterations !== Infinity) animation.finish() }); await page.screenshot({ animations: 'disabled', path: resolve(process.env.SINAN_UI_SCREENSHOT_DIR, `ordered-${name}-${width}.png`) }) }
+    const shot = async name => { if (!process.env.APSP_UI_SCREENSHOT_DIR) return; await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true }); await page.locator('[role=dialog]').evaluateAll(dialogs => { for (const dialog of dialogs) for (const animation of (dialog.closest('.modal-shade') ?? dialog).getAnimations({ subtree: true })) if (animation.effect?.getComputedTiming().iterations !== Infinity) animation.finish() }); await page.screenshot({ animations: 'disabled', path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `ordered-${name}-${width}.png`) }) }
     // The server filter lives in the catalog section; chains and sources have their own sections.
     const showView = name => page.getByRole('navigation', { name: '节点视图', exact: true }).getByRole('link', { name, exact: true }).click()
     const scope = async server => { await showView('节点库'); await page.getByRole('combobox', { name: '按服务器筛选', exact: true }).selectOption(server); await showView('链路') }

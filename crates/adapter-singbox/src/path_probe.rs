@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, bail, ensure};
+use apsp_adapter_sdk::{Prepared, RuntimeProbeMeasurement, RuntimeProbePlan, RuntimeSpec};
 use reqwest::{Url, header};
-use sinan_adapter_sdk::{Prepared, RuntimeProbeMeasurement, RuntimeProbePlan, RuntimeSpec};
 use std::{collections::BTreeSet, net::SocketAddr, time::Duration};
 
 pub(crate) const PLAN_FILE: &str = "runtime-probes.json";

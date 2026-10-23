@@ -172,8 +172,8 @@ async fn quota_blocks_subscription_and_runtime_without_erasing_history(pool: PgP
             .is_empty()
     );
     let batch = usage(uid, node, now_timestamp(), 40, 60);
-    sinan_panel::usage::ingest(&panel.state, server, batch.clone()).await?;
-    sinan_panel::usage::ingest(&panel.state, server, batch).await?;
+    apsp_panel::usage::ingest(&panel.state, server, batch.clone()).await?;
+    apsp_panel::usage::ingest(&panel.state, server, batch).await?;
     assert_eq!(
         entitlement(&panel, &cookie, uid).await?["used_bytes"],
         "100"
@@ -214,7 +214,7 @@ async fn quota_blocks_subscription_and_runtime_without_erasing_history(pool: PgP
     );
     // Reassignment cannot reset usage, and a fresh runtime epoch is not a billing cycle.
     assign(&panel, &cookie, uid, plan, Uuid::new_v4()).await?;
-    sinan_panel::usage::ingest(
+    apsp_panel::usage::ingest(
         &panel.state,
         server,
         usage(uid, node, now_timestamp(), 1, 1),
@@ -229,7 +229,7 @@ async fn quota_blocks_subscription_and_runtime_without_erasing_history(pool: PgP
     assert_eq!(eligible(&pool, uid, next).await?, vec![node]);
     entitlements::refresh(&pool, next).await?;
     // A late replay from the old month does not consume the new month's quota.
-    sinan_panel::usage::ingest(&panel.state, server, usage(uid, node, next, 1000, 1000)).await?;
+    apsp_panel::usage::ingest(&panel.state, server, usage(uid, node, next, 1000, 1000)).await?;
     let new_usage: String =
         sqlx::query_scalar("SELECT used_bytes FROM singbox_entitlements($1) WHERE user_id=$2")
             .bind(next)
@@ -263,8 +263,8 @@ async fn quota_is_shared_across_nodes_and_terminal_samples_remain_chargeable(
     assign(&panel, &cookie, user, plan, Uuid::new_v4()).await?;
     panel.publish_now().await?;
     let (x, y) = tokio::join!(
-        sinan_panel::usage::ingest(&panel.state, a, usage(user, na, now_timestamp(), 50, 50)),
-        sinan_panel::usage::ingest(&panel.state, b, usage(user, nb, now_timestamp(), 49, 50))
+        apsp_panel::usage::ingest(&panel.state, a, usage(user, na, now_timestamp(), 50, 50)),
+        apsp_panel::usage::ingest(&panel.state, b, usage(user, nb, now_timestamp(), 49, 50))
     );
     x?;
     y?;
@@ -280,7 +280,7 @@ async fn quota_is_shared_across_nodes_and_terminal_samples_remain_chargeable(
         None,
     )
     .await?;
-    sinan_panel::usage::ingest(&panel.state, a, usage(user, na, now_timestamp(), 0, 1)).await?;
+    apsp_panel::usage::ingest(&panel.state, a, usage(user, na, now_timestamp(), 0, 1)).await?;
     assert_eq!(
         entitlement(&panel, &cookie, user).await?["status"],
         "exhausted"

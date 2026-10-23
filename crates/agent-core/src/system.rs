@@ -16,7 +16,7 @@ mod resources;
 mod runtime_process;
 mod syscall_protection;
 
-pub use sinan_adapter_sdk::{Privileged, ServiceManager};
+pub use apsp_adapter_sdk::{Privileged, ServiceManager};
 
 mod services;
 #[cfg(test)]
@@ -25,7 +25,7 @@ pub use services::{ServiceBackend, SystemServiceManager};
 
 use crate::artifacts::safe_component;
 use anyhow::{Context, Result, ensure};
-use sinan_adapter_sdk::{BoxFuture, CommandOutput, JobStatus, ServiceJob};
+use apsp_adapter_sdk::{BoxFuture, CommandOutput, JobStatus, ServiceJob};
 use std::{
     fs::{self, File, OpenOptions},
     io::Write,
@@ -117,7 +117,7 @@ impl Privileged for SystemOps {
     fn lock_managed_state<'a>(
         &'a self,
         path: &'a Path,
-    ) -> sinan_adapter_sdk::BoxFuture<'a, Box<dyn sinan_adapter_sdk::ManagedStateLock>> {
+    ) -> apsp_adapter_sdk::BoxFuture<'a, Box<dyn apsp_adapter_sdk::ManagedStateLock>> {
         Box::pin(async move {
             #[cfg(target_os = "linux")]
             {
@@ -134,7 +134,7 @@ impl Privileged for SystemOps {
         &'a self,
         path: &'a Path,
         maximum: usize,
-    ) -> sinan_adapter_sdk::BoxFuture<'a, serde_json::Value> {
+    ) -> apsp_adapter_sdk::BoxFuture<'a, serde_json::Value> {
         Box::pin(async move {
             #[cfg(target_os = "linux")]
             {
@@ -153,7 +153,7 @@ impl Privileged for SystemOps {
         bytes: Option<&'a [u8]>,
         expected: &'a serde_json::Value,
         metadata: &'a serde_json::Value,
-    ) -> sinan_adapter_sdk::BoxFuture<'a, serde_json::Value> {
+    ) -> apsp_adapter_sdk::BoxFuture<'a, serde_json::Value> {
         Box::pin(async move {
             #[cfg(target_os = "linux")]
             {
@@ -203,7 +203,7 @@ impl Privileged for SystemOps {
         account: &'a str,
         columns: u16,
         rows: u16,
-    ) -> BoxFuture<'a, Box<dyn sinan_adapter_sdk::TerminalProcess>> {
+    ) -> BoxFuture<'a, Box<dyn apsp_adapter_sdk::TerminalProcess>> {
         Box::pin(terminal::open(account, columns, rows))
     }
 
@@ -211,7 +211,7 @@ impl Privileged for SystemOps {
         &'a self,
         pid: u32,
         control_group: &'a str,
-    ) -> BoxFuture<'a, sinan_adapter_sdk::RuntimeInstance> {
+    ) -> BoxFuture<'a, apsp_adapter_sdk::RuntimeInstance> {
         Box::pin(runtime_process::inspect(pid, control_group))
     }
 
@@ -221,32 +221,32 @@ impl Privileged for SystemOps {
         args: &'a [String],
         seconds: u32,
         maximum: usize,
-        observer: &'a dyn sinan_adapter_sdk::CommandObserver,
-    ) -> BoxFuture<'a, sinan_adapter_sdk::ControlledExecution> {
+        observer: &'a dyn apsp_adapter_sdk::CommandObserver,
+    ) -> BoxFuture<'a, apsp_adapter_sdk::ControlledExecution> {
         Box::pin(command_process::execute(
             program, args, seconds, maximum, observer,
         ))
     }
     fn recover_command<'a>(
         &'a self,
-        process: &'a sinan_adapter_sdk::CommandProcessIdentity,
+        process: &'a apsp_adapter_sdk::CommandProcessIdentity,
     ) -> BoxFuture<'a, ()> {
         Box::pin(command_process::recover(process))
     }
-    fn diagnostic_memory(&self) -> BoxFuture<'_, sinan_adapter_sdk::DiagnosticMemory> {
+    fn diagnostic_memory(&self) -> BoxFuture<'_, apsp_adapter_sdk::DiagnosticMemory> {
         Box::pin(resources::memory())
     }
     fn diagnostic_resources<'a>(
         &'a self,
         directory: &'a Path,
-    ) -> BoxFuture<'a, sinan_adapter_sdk::DiagnosticResources> {
+    ) -> BoxFuture<'a, apsp_adapter_sdk::DiagnosticResources> {
         Box::pin(resources::snapshot(self, directory))
     }
     fn spawn_managed<'a>(
         &'a self,
         program: &'a Path,
         args: &'a [String],
-    ) -> BoxFuture<'a, Box<dyn sinan_adapter_sdk::ManagedProcess>> {
+    ) -> BoxFuture<'a, Box<dyn apsp_adapter_sdk::ManagedProcess>> {
         Box::pin(async move { execution::spawn(program, args) })
     }
     fn execute_bounded<'a>(
@@ -255,7 +255,7 @@ impl Privileged for SystemOps {
         args: &'a [String],
         seconds: u32,
         maximum: usize,
-    ) -> BoxFuture<'a, sinan_adapter_sdk::Execution> {
+    ) -> BoxFuture<'a, apsp_adapter_sdk::Execution> {
         Box::pin(execution::execute(program, args, seconds, maximum))
     }
     fn execute<'a>(

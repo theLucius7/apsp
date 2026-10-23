@@ -1,5 +1,5 @@
 [package]
-name = "sinan-adapter-sdk"
+name = "apsp-adapter-sdk"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

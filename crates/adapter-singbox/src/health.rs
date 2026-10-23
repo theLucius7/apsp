@@ -1,6 +1,6 @@
 use crate::native::{Listener, Transport};
 use anyhow::{Context, Result};
-use sinan_adapter_sdk::Prepared;
+use apsp_adapter_sdk::Prepared;
 use std::{io::ErrorKind, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     net::{TcpStream, UdpSocket},

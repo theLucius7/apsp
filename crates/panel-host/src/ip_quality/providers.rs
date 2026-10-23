@@ -59,7 +59,7 @@ impl Default for ProviderRegistry {
 
 impl ProviderRegistry {
     pub fn from_env() -> Self {
-        match std::env::var("SINAN_ABUSEIPDB_API_KEY") {
+        match std::env::var("APSP_ABUSEIPDB_API_KEY") {
             Ok(key) => Self::configured(Some(&key)),
             Err(std::env::VarError::NotPresent) => Self::default(),
             Err(std::env::VarError::NotUnicode(_)) => Self::configured(Some("\0")),
@@ -80,9 +80,9 @@ impl ProviderRegistry {
             });
         let reason = credential.is_none().then(|| {
             if key.is_none_or(|key| key.trim().is_empty()) {
-                "未配置 SINAN_ABUSEIPDB_API_KEY，正式接口未启用，信息未知".into()
+                "未配置 APSP_ABUSEIPDB_API_KEY，正式接口未启用，信息未知".into()
             } else {
-                "SINAN_ABUSEIPDB_API_KEY 格式无效，正式接口未启用，信息未知".into()
+                "APSP_ABUSEIPDB_API_KEY 格式无效，正式接口未启用，信息未知".into()
             }
         });
         Self { providers: vec![

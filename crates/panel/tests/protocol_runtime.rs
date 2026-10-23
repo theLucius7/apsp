@@ -5,13 +5,13 @@
 mod support;
 
 use anyhow::{Context, Result, ensure};
-use base64::{Engine, engine::general_purpose::STANDARD};
-use serde_json::Value;
-use sinan_adapter_sdk::{Adapter, Plan, RuntimeSpec, UsageSource};
-use sinan_adapter_singbox::SingboxAdapter;
-use sinan_compiler::{
+use apsp_adapter_sdk::{Adapter, Plan, RuntimeSpec, UsageSource};
+use apsp_adapter_singbox::SingboxAdapter;
+use apsp_compiler::{
     Access, Node, ProtocolConfig, SsMethod, TlsConfig, compile_client, compile_server,
 };
+use base64::{Engine, engine::general_purpose::STANDARD};
+use serde_json::Value;
 use std::{path::Path, process::Stdio, time::Duration};
 use support::{TempDir, TestOps, TestServices};
 use tokio::{
@@ -153,9 +153,9 @@ fn start(
 }
 
 #[tokio::test]
-#[ignore = "requires openssl and upstream v1.14.2 with Naive, QUIC, ACME and V2Ray API; set SINAN_TEST_SINGBOX"]
+#[ignore = "requires openssl and upstream v1.14.2 with Naive, QUIC, ACME and V2Ray API; set APSP_TEST_SINGBOX"]
 async fn all_protocols_authenticate_account_and_revoke_with_real_runtime() -> Result<()> {
-    let binary = std::path::PathBuf::from(std::env::var("SINAN_TEST_SINGBOX")?);
+    let binary = std::path::PathBuf::from(std::env::var("APSP_TEST_SINGBOX")?);
     let directory = TempDir::new();
     let certificate = directory.0.join("certificate.pem");
     let key = directory.0.join("key.pem");

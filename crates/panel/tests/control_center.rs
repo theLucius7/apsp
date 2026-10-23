@@ -1,14 +1,14 @@
 #![forbid(unsafe_code)]
 use anyhow::{Context, Result};
-use reqwest::{Client, StatusCode, header};
-use serde_json::{Value, json};
-use sinan_panel::{
+use apsp_panel::{
     AppState,
     auth::{hash_token, random_token},
     config::Config,
     router,
 };
-use sinan_protocol::now_timestamp;
+use apsp_protocol::now_timestamp;
+use reqwest::{Client, StatusCode, header};
+use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::{net::SocketAddr, path::PathBuf};
 use tokio::{net::TcpListener, task::JoinHandle};
@@ -26,7 +26,7 @@ impl Panel {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let listen = listener.local_addr()?;
         let base = format!("http://{listen}");
-        let directory = std::env::temp_dir().join(format!("sinan-control-test-{}", Uuid::new_v4()));
+        let directory = std::env::temp_dir().join(format!("apsp-control-test-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory)?;
         let state = AppState::new(
             pool.clone(),
@@ -68,7 +68,7 @@ impl Panel {
         if recent {
             sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3)").bind(hash).bind(now).bind(now+300).execute(&self.pool).await?;
         }
-        Ok(format!("sinan_session={token}"))
+        Ok(format!("apsp_session={token}"))
     }
     async fn server(&self, name: &str) -> Result<i64> {
         Ok(
@@ -142,7 +142,7 @@ async fn cloud_resources_apply_scope_before_limit_and_keep_token_intersection(
     assert!(resources[0]["balance"].is_null());
     assert!(resources[0]["balance_error"].is_null());
     assert_eq!(resources[0]["balance_scope"], "resource_only");
-    let token = format!("sinan_api_{}", random_token());
+    let token = format!("apsp_api_{}", random_token());
     sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,all_servers,expires_at,created_at) VALUES($1,1,$2,'cloud scope','[\"cloud:read\"]',$3,false,$4,0)")
         .bind(Uuid::new_v4()).bind(hash_token(&token)).bind(json!([first])).bind(now_timestamp()+3600).execute(&panel.pool).await?;
     let response: Value = panel
@@ -250,7 +250,7 @@ async fn owner_api_token_retains_capability_and_server_limits(pool: PgPool) -> R
     let panel = Panel::start(pool).await?;
     let first = panel.server("allowed").await?;
     let second = panel.server("unassigned").await?;
-    let token = format!("sinan_api_{}", random_token());
+    let token = format!("apsp_api_{}", random_token());
     sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,all_servers,expires_at,created_at) VALUES($1,1,$2,'read-only','[\"servers:read\"]',$3,false,$4,0)").bind(Uuid::new_v4()).bind(hash_token(&token)).bind(json!([first])).bind(now_timestamp()+3600).execute(&panel.pool).await?;
     let values: Vec<Value> = panel
         .client
@@ -363,7 +363,7 @@ async fn proof_is_session_bound_and_preference_conflicts_preserve_values(
     assert_eq!(response.status(), StatusCode::OK);
     let value: Value = response.json().await?;
     let issued = value["token"].as_str().context("issued token")?.to_owned();
-    assert!(issued.starts_with("sinan_api_"));
+    assert!(issued.starts_with("apsp_api_"));
     let url = format!("{}/api/control-center/preferences/view:servers", panel.base);
     assert_eq!(
         panel
@@ -420,7 +420,7 @@ async fn authorization_changes_revoke_existing_credentials_and_protect_the_last_
     let viewer = panel.viewer(first).await?;
     let owner = panel.session(1, true).await?;
     let session = panel.session(viewer, false).await?;
-    let token = format!("sinan_api_{}", random_token());
+    let token = format!("apsp_api_{}", random_token());
     sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,all_servers,expires_at,created_at) VALUES($1,$2,$3,'viewer','[\"servers:read\"]',$4,false,$5,0)")
         .bind(Uuid::new_v4()).bind(viewer).bind(hash_token(&token)).bind(json!([first])).bind(now_timestamp()+3600).execute(&panel.pool).await?;
     let update = json!({"login_name":"viewer","display_name":"只读","role":"viewer","enabled":true,"all_servers":false,"capabilities":["servers:read"],"server_ids":[second],"password":null,"expected_revision":1});

@@ -1,6 +1,6 @@
 use super::*;
+use apsp_protocol::telemetry::TelemetrySettings;
 use serde::{Deserialize, Serialize};
-use sinan_protocol::telemetry::TelemetrySettings;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

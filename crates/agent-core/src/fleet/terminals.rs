@@ -1,7 +1,7 @@
 use crate::{SharedState, artifacts::PanelClient};
 use anyhow::{Result, ensure};
-use sinan_adapter_sdk::{Privileged, TerminalProcess};
-use sinan_protocol::fleet::{AccessPolicy, TerminalControl, TerminalEvent};
+use apsp_adapter_sdk::{Privileged, TerminalProcess};
+use apsp_protocol::fleet::{AccessPolicy, TerminalControl, TerminalEvent};
 use std::{
     collections::{HashMap, hash_map::Entry},
     time::{Duration, Instant},
@@ -59,8 +59,8 @@ impl Session {
         self.closing
             || control.close_requested
             || self.account != control.account
-            || self.expires_at <= sinan_protocol::now_timestamp()
-            || control.expires_at <= sinan_protocol::now_timestamp()
+            || self.expires_at <= apsp_protocol::now_timestamp()
+            || control.expires_at <= apsp_protocol::now_timestamp()
             || !local.terminal_accounts.contains(&self.account)
             || !control.policy.terminal_accounts.contains(&self.account)
     }
@@ -96,7 +96,7 @@ impl Sessions {
                 .iter_mut()
                 .filter(|(_, session)| {
                     session.closing
-                        || session.expires_at <= sinan_protocol::now_timestamp()
+                        || session.expires_at <= apsp_protocol::now_timestamp()
                         || !local.terminal_accounts.contains(&session.account)
                 })
                 .map(|(id, session)| session.stop(*id)),
@@ -143,7 +143,7 @@ impl Sessions {
                 let allowed = local.terminal_accounts.contains(&control.account)
                     && control.policy.terminal_accounts.contains(&control.account)
                     && !control.close_requested
-                    && control.expires_at > sinan_protocol::now_timestamp()
+                    && control.expires_at > apsp_protocol::now_timestamp()
                     && !already_seen;
                 let opened = if allowed {
                     ops.open_terminal(&control.account, control.columns, control.rows)
@@ -301,7 +301,7 @@ impl Sessions {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sinan_adapter_sdk::BoxFuture;
+    use apsp_adapter_sdk::BoxFuture;
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -339,7 +339,7 @@ mod tests {
             process: Some(Box::new(Process { calls, fail })),
             sequence: 0,
             input_sequence: 0,
-            expires_at: sinan_protocol::now_timestamp() + 60,
+            expires_at: apsp_protocol::now_timestamp() + 60,
             pending: Some(TerminalEvent {
                 id: Uuid::nil(),
                 sequence: 1,
@@ -441,7 +441,7 @@ mod tests {
                 policy: remote,
                 columns: 80,
                 rows: 24,
-                expires_at: sinan_protocol::now_timestamp() + 60,
+                expires_at: apsp_protocol::now_timestamp() + 60,
                 close_requested: remote_close,
                 output_sequence: 0,
                 inputs: Vec::new(),

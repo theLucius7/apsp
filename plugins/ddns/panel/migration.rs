@@ -82,7 +82,7 @@ async fn preview(
             "目标服务器不可用或尚未启用 DDNS 插件".into(),
         ));
     }
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let mut snapshot = Vec::new();
     let mut items = Vec::new();
     let mut destinations = BTreeSet::new();
@@ -168,7 +168,7 @@ async fn apply(
         .bind(input.preview_id).fetch_optional(&mut *tx).await?;
     let (target_id, sqlx::types::Json(snapshot), expires_at, applied_at) =
         row.ok_or(ApiError::NotFound)?;
-    if expires_at <= sinan_protocol::now_timestamp() || applied_at.is_some() {
+    if expires_at <= apsp_protocol::now_timestamp() || applied_at.is_some() {
         return Err(ApiError::Conflict(
             "预览已过期或已经应用，请重新预览".into(),
         ));
@@ -198,7 +198,7 @@ async fn apply(
         super::credentials::authorize_reference(&state, &headers, &destination).await?;
         rules.push((rule, destination));
     }
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let mut ids = Vec::new();
     for (mut rule, destination) in rules {
         let reset_identity = identity(&rule.config) != identity(&destination);

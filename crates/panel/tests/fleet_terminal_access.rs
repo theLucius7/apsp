@@ -1,18 +1,18 @@
 #![forbid(unsafe_code)]
 
 use anyhow::{Context, Result};
-use reqwest::{Client, StatusCode, header};
-use serde_json::{Value, json};
-use sinan_panel::{
+use apsp_panel::{
     AppState,
     auth::{hash_token, random_token},
     config::Config,
     router,
 };
-use sinan_protocol::{
+use apsp_protocol::{
     fleet::{AccessPolicy, TERMINAL_CAPABILITY},
     now_timestamp,
 };
+use reqwest::{Client, StatusCode, header};
+use serde_json::{Value, json};
 use sqlx::{PgPool, Row};
 use std::{net::SocketAddr, path::PathBuf, time::Duration};
 use tokio::{net::TcpListener, task::JoinHandle};
@@ -31,7 +31,7 @@ impl Panel {
         let listen = listener.local_addr()?;
         let base = format!("http://{listen}");
         let directory =
-            std::env::temp_dir().join(format!("sinan-terminal-access-{}", Uuid::new_v4()));
+            std::env::temp_dir().join(format!("apsp-terminal-access-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory)?;
         let state = AppState::new(
             pool.clone(),
@@ -71,7 +71,7 @@ impl Panel {
             .execute(&self.pool)
             .await?;
         sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3)").bind(hash).bind(now).bind(now+300).execute(&self.pool).await?;
-        Ok(format!("sinan_session={token}"))
+        Ok(format!("apsp_session={token}"))
     }
     async fn fixture(&self) -> Result<(i64, i64, String, Uuid)> {
         let server: i64 = sqlx::query_scalar("INSERT INTO servers(name,capabilities) VALUES('TEST_ONLY terminal server',$1) RETURNING id").bind(json!([TERMINAL_CAPABILITY])).fetch_one(&self.pool).await?;
@@ -155,7 +155,7 @@ async fn output_and_input_bind_the_originating_admin_session_but_emergency_close
             StatusCode::FORBIDDEN
         );
     }
-    let token = format!("sinan_api_{}", random_token());
+    let token = format!("apsp_api_{}", random_token());
     sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,expires_at,created_at) VALUES($1,1,$2,'TEST_ONLY terminal token','[\"terminal:read\",\"terminal:write\"]',$3,$4,0)").bind(Uuid::new_v4()).bind(hash_token(&token)).bind(json!([server])).bind(now_timestamp()+3600).execute(&panel.pool).await?;
     assert_eq!(
         panel
@@ -291,7 +291,7 @@ async fn contended_authorization_fails_promptly_without_terminal_or_secret_audit
     let (server, _, cookie, id) = panel.fixture().await?;
     let hash = hash_token(
         cookie
-            .strip_prefix("sinan_session=")
+            .strip_prefix("apsp_session=")
             .context("session cookie")?,
     );
     let before: Value =

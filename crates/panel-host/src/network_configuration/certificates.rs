@@ -52,7 +52,7 @@ async fn import(
     let certificate = x509::parse(&input.public_chain).map_err(|_| {
         ApiError::BadRequest("公钥证书链、有效期或DNS覆盖域名无效；此接口拒绝私钥".into())
     })?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     if certificate.not_after <= now || certificate.not_before > now + 60 {
         return Err(ApiError::BadRequest("证书尚未生效或已到期".into()));
     }
@@ -123,7 +123,7 @@ async fn select(
             "切换期望证书版本需明确确认；部署须由维护方另行执行".into(),
         ));
     }
-    let pem:String=sqlx::query_scalar("SELECT public_chain FROM network_certificate_versions WHERE certificate_id=$1 AND id=$2 AND not_after>$3").bind(id).bind(input.version_id).bind(sinan_protocol::now_timestamp()).fetch_optional(&state.pool).await?.ok_or(ApiError::NotFound)?;
+    let pem:String=sqlx::query_scalar("SELECT public_chain FROM network_certificate_versions WHERE certificate_id=$1 AND id=$2 AND not_after>$3").bind(id).bind(input.version_id).bind(apsp_protocol::now_timestamp()).fetch_optional(&state.pool).await?.ok_or(ApiError::NotFound)?;
     let cert = x509::parse(&pem)?;
     if let Configuration::Certificate { targets, .. } = config {
         for target in targets {
@@ -134,7 +134,7 @@ async fn select(
     } else {
         return Err(ApiError::BadRequest("请选择证书台账".into()));
     }
-    let changed=sqlx::query("UPDATE network_documents SET active_version=$2,revision=revision+1,updated_at=$4 WHERE id=$1 AND revision=$3").bind(id).bind(input.version_id).bind(input.revision).bind(sinan_protocol::now_timestamp()).execute(&state.pool).await?;
+    let changed=sqlx::query("UPDATE network_documents SET active_version=$2,revision=revision+1,updated_at=$4 WHERE id=$1 AND revision=$3").bind(id).bind(input.version_id).bind(input.revision).bind(apsp_protocol::now_timestamp()).execute(&state.pool).await?;
     if changed.rows_affected() != 1 {
         return Err(ApiError::Conflict("台账版本已改变".into()));
     }
@@ -169,7 +169,7 @@ async fn verify(
     let row=sqlx::query("SELECT fingerprint,not_after FROM network_certificate_versions WHERE certificate_id=$1 AND id=$2").bind(id).bind(version).fetch_one(&state.pool).await?;
     let expected: String = row.get("fingerprint");
     let result = handshake(&target.domain, target.port, &expected).await;
-    let observed_at = sinan_protocol::now_timestamp();
+    let observed_at = apsp_protocol::now_timestamp();
     let value = match result {
         Ok(observed) => {
             json!({"status":"verified","fingerprint":observed,"version_id":version,"from":"panel","to":format!("{}:{}",target.domain,target.port),"trust_chain":"validated","hostname":"validated","observed_at":observed_at})

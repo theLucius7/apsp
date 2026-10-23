@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use anyhow::{Context, Result, bail};
-use sinan_adapter_sdk::{
+use apsp_adapter_sdk::{
     BoxFuture, DiagnosticAdapter, DiagnosticDescriptor, DiagnosticOutput, DiagnosticSection,
     DiagnosticSpec, Privileged, ServiceJob,
 };
@@ -15,7 +15,7 @@ pub const OFFLINE_ROOTFS_VERSION: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f645
 pub const NODE_QUERY_VERSION: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r21";
 pub const NODE_QUERY_CAPABILITY: &str = "diagnostic:nodequality-node-query";
 /// Explicit namespaced preparation, never an alias for a historical signed version.
-pub const NATIVE_VERSION: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r2";
+pub const NATIVE_VERSION: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-apsp-native-r2";
 /// Exact historical native artifact identity retained for recovery and daily jobs.
 pub const NATIVE_LEGACY_VERSION: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r1";
 pub const NATIVE_OFFLINE_ROOTFS_VERSION: &str =
@@ -327,18 +327,18 @@ impl DiagnosticAdapter for NodeQualityAdapter {
                 args.extend(["--job-id".into(), spec.id.clone()]);
             }
             Ok(ServiceJob {
-                unit: format!("sinan-diagnostic-{}.service", spec.id),
+                unit: format!("apsp-diagnostic-{}.service", spec.id),
                 program: spec.binary_path.clone(),
                 args,
                 working_directory: spec.job_dir.clone(),
                 timeout_secs: spec.timeout_secs,
                 memory_max: if matches!(mode.name, "daily" | "ip") {
-                    sinan_adapter_sdk::MemoryMax::new(64 * 1024 * 1024)?
+                    apsp_adapter_sdk::MemoryMax::new(64 * 1024 * 1024)?
                 } else {
                     Default::default()
                 },
                 tasks_max: if matches!(mode.name, "daily" | "ip") {
-                    sinan_adapter_sdk::TasksMax::new(32)?
+                    apsp_adapter_sdk::TasksMax::new(32)?
                 } else {
                     Default::default()
                 },

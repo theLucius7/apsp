@@ -228,7 +228,7 @@ impl Cloudflare {
         let record = matching.first().copied();
         if record.is_some_and(|record| {
             rule.record_id.as_deref() != Some(record.id.as_str())
-                && record.comment.as_deref() != Some(format!("sinan-ddns:{}", rule.id).as_str())
+                && record.comment.as_deref() != Some(format!("apsp-ddns:{}", rule.id).as_str())
                 && !config.adopt_existing
         }) {
             return Err("record_not_owned".into());
@@ -257,7 +257,7 @@ impl Cloudflare {
         expected_matches(current.as_ref(), expected)?;
         let matching: Vec<_> = record.iter().collect();
         let path = format!("zones/{}/dns_records", config.zone_id);
-        let marker = format!("sinan-ddns:{}", rule.id);
+        let marker = format!("apsp-ddns:{}", rule.id);
         let ttl = if config.proxied { 1 } else { config.ttl };
         let (method, path, body, previous_id) = if let Some(record) = matching.first() {
             let owned = rule.record_id.as_deref() == Some(record.id.as_str())

@@ -1,6 +1,6 @@
+use apsp_compiler::{ManagedEndpointSnapshot, Node, PathHop};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sinan_compiler::{ManagedEndpointSnapshot, Node, PathHop};
 use sqlx::FromRow;
 use uuid::Uuid;
 
@@ -32,7 +32,7 @@ pub(crate) enum FrozenHop {
         node_version_id: Uuid,
         source_revision_id: Uuid,
         update_mode: String,
-        outbound: Box<sinan_compiler::external::NormalizedOutbound>,
+        outbound: Box<apsp_compiler::external::NormalizedOutbound>,
         content_digest: String,
     },
 }

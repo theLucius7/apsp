@@ -3,6 +3,7 @@ use crate::{
     AppState, control_center,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use axum::{
     Json,
     extract::{Path, State},
@@ -10,7 +11,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
@@ -170,7 +170,7 @@ pub(super) fn supported(capabilities: &Value) -> bool {
     capabilities.as_array().is_some_and(|values| {
         values
             .iter()
-            .any(|v| v.as_str() == Some(sinan_protocol::fleet::OPERATIONS_CAPABILITY))
+            .any(|v| v.as_str() == Some(apsp_protocol::fleet::OPERATIONS_CAPABILITY))
     })
 }
 

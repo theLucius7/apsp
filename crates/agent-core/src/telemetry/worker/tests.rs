@@ -3,7 +3,7 @@ use crate::{
     State, artifacts::PanelClient, fake::FakeServiceManager, retirement::Retirement,
     system::SystemOps,
 };
-use sinan_protocol::{Metrics, TelemetryBatch, TelemetrySample, telemetry::now_millis};
+use apsp_protocol::{Metrics, TelemetryBatch, TelemetrySample, telemetry::now_millis};
 use std::{
     io::Read,
     path::Path,

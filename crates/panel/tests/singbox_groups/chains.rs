@@ -3,9 +3,9 @@ use super::*;
 pub(super) async fn ordered_negative_inputs(panel: &TestPanel) -> Result<()> {
     sqlx::query("UPDATE servers SET capabilities=$1")
         .bind(json!([
-            sinan_protocol::RUNTIME_CHECKPOINT_CAPABILITY,
-            sinan_protocol::RUNTIME_RECOVERY_BARRIER_CAPABILITY,
-            sinan_protocol::RUNTIME_PATH_PROBE_CAPABILITY
+            apsp_protocol::RUNTIME_CHECKPOINT_CAPABILITY,
+            apsp_protocol::RUNTIME_RECOVERY_BARRIER_CAPABILITY,
+            apsp_protocol::RUNTIME_PATH_PROBE_CAPABILITY
         ]))
         .execute(&panel.state.pool)
         .await?;

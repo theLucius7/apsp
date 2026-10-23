@@ -100,7 +100,7 @@ pub(super) async fn reserve(
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO dns_record_history(id,account_id,account_revision,request,previous,status,error_code,occurred_at,requested_by,account_snapshot,credential_version,preview_id,rollback_of) VALUES($1,$2,$3,$4,$5,'unknown','intent_committed',$6,$7,$8,$9,$10,$11)")
         .bind(id).bind(account.id).bind(account.revision).bind(json!(request)).bind(previous)
-        .bind(sinan_protocol::now_timestamp()).bind(origin.administrator).bind(json!(account.config))
+        .bind(apsp_protocol::now_timestamp()).bind(origin.administrator).bind(json!(account.config))
         .bind(origin.credential_version).bind(origin.preview).bind(origin.rollback)
         .execute(connection).await?;
     Ok(id)
@@ -154,9 +154,7 @@ pub(super) async fn apply(
     let row: Option<(i64, Value, Value, i64, Option<i64>)> = sqlx::query_as("SELECT account_revision,request,snapshot,expires_at,applied_at FROM dns_record_previews WHERE id=$1 AND account_id=$2 FOR UPDATE")
         .bind(input.preview_id).bind(id).fetch_optional(&mut *tx).await?;
     let (revision, request, before, expires, applied) = row.ok_or(ApiError::NotFound)?;
-    if revision != locked.revision
-        || expires <= sinan_protocol::now_timestamp()
-        || applied.is_some()
+    if revision != locked.revision || expires <= apsp_protocol::now_timestamp() || applied.is_some()
     {
         return Err(ApiError::Conflict(
             "账号或预览已变化、过期或已经执行，请重新预览".into(),
@@ -184,7 +182,7 @@ pub(super) async fn apply(
     .await?;
     sqlx::query("UPDATE dns_record_previews SET applied_at=$2 WHERE id=$1")
         .bind(input.preview_id)
-        .bind(sinan_protocol::now_timestamp())
+        .bind(apsp_protocol::now_timestamp())
         .execute(&mut *tx)
         .await?;
     // The consumed preview and uncertain operation survive a dropped request or restart.
@@ -298,7 +296,7 @@ pub(super) async fn mark_started(
 ) -> ApiResult<()> {
     // Use a separate committed write before provider I/O. No history row lock is held by the writer.
     let changed = sqlx::query("UPDATE dns_record_history SET write_started_at=$3,error_code='provider_unconfirmed' WHERE id=$1 AND account_id=$2 AND status='unknown' AND write_started_at IS NULL")
-        .bind(operation).bind(account).bind(sinan_protocol::now_timestamp()).execute(pool).await?.rows_affected();
+        .bind(operation).bind(account).bind(apsp_protocol::now_timestamp()).execute(pool).await?.rows_affected();
     if changed != 1 {
         return Err(ApiError::Conflict(
             "DNS 变更已经发送或结束，不能重放".into(),

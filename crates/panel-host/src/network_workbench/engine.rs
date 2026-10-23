@@ -4,9 +4,9 @@ use crate::{
     diagnostics::service,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 use sqlx::Row;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
@@ -581,7 +581,7 @@ async fn panel(
         source: "面板".into(),
         target: target.map_or(String::new(), |v| v.host.clone()),
         method: execution.check.name().into(),
-        tool: "sinan-panel".into(),
+        tool: "apsp-panel".into(),
         tool_version: env!("CARGO_PKG_VERSION").into(),
         parameters: json!(execution.check),
         collected_at: now_timestamp(),

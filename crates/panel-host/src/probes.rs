@@ -2,16 +2,16 @@ use crate::{
     AppState, auth,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::{
+    AuthorizedProbe, MAX_PROBE_LEASE_SECS, PROBE_LEASE_CAPABILITY, ProbeBatch, ProbeLease,
+    ProbeResult, ProbeSpec, TaskAck, now_timestamp, telemetry::now_millis,
+};
 use axum::{
     Json,
     extract::{Path, Query, State},
     http::HeaderMap,
 };
 use sha2::{Digest, Sha256};
-use sinan_protocol::{
-    AuthorizedProbe, MAX_PROBE_LEASE_SECS, PROBE_LEASE_CAPABILITY, ProbeBatch, ProbeLease,
-    ProbeResult, ProbeSpec, TaskAck, now_timestamp, telemetry::now_millis,
-};
 use sqlx::{Postgres, Transaction};
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -555,7 +555,7 @@ pub async fn ingest(
                     .is_some_and(|v| !v.is_finite() || !(0.0..=60_000.0).contains(&v))
                 || r.error.as_ref().is_some_and(|v| v.len() > 1024)
                 || r.attempts.is_some_and(|attempts| attempts != 4)
-                || r.address_family == Some(sinan_protocol::ProbeAddressFamily::Any)
+                || r.address_family == Some(apsp_protocol::ProbeAddressFamily::Any)
         })
     {
         return Err(ApiError::BadRequest("拨测结果格式无效".into()));
@@ -604,7 +604,7 @@ pub async fn ingest(
                     spec.authorized_at(result.sampled_at.div_euclid(1000))
                         && spec.authorized_at(now_timestamp())
                         && result.address_family.is_none_or(|family| {
-                            spec.address_family() == sinan_protocol::ProbeAddressFamily::Any
+                            spec.address_family() == apsp_protocol::ProbeAddressFamily::Any
                                 || spec.address_family() == family
                         })
                 });

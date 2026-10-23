@@ -1,7 +1,7 @@
 use crate::State;
 use anyhow::{Result, ensure};
+use apsp_protocol::{TelemetryAck, TelemetrySample};
 use rusqlite::params;
-use sinan_protocol::{TelemetryAck, TelemetrySample};
 
 const MAX_ROWS: usize = 7200;
 const MAX_BYTES: i64 = 64 * 1024 * 1024;
@@ -102,7 +102,7 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sinan_protocol::Metrics;
+    use apsp_protocol::Metrics;
     use std::path::Path;
     use uuid::Uuid;
 

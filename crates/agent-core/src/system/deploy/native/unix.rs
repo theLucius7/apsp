@@ -139,7 +139,7 @@ async fn service(
 ) -> Result<()> {
     let service = unit.strip_suffix(".service").unwrap_or(unit);
     if backend == ServiceBackend::Launchd {
-        let label = format!("org.sinan.{}", service.replace('@', "."));
+        let label = format!("org.apsp.{}", service.replace('@', "."));
         let path = PathBuf::from("/Library/LaunchDaemons").join(format!("{label}.plist"));
         let log = PathBuf::from(format!("/var/log/{service}.log"));
         let mode = if account.is_some() { 0o660 } else { 0o600 };
@@ -251,7 +251,7 @@ pub(super) async fn register(
     if descriptor.is_none() {
         args.push("--monitor-only".into());
     }
-    service(ops, backend, "sinan-agent.service", &args, None, &root).await?;
+    service(ops, backend, "apsp-agent.service", &args, None, &root).await?;
     if let Some(descriptor) = descriptor {
         let runtime = config
             .runtime_root
@@ -310,7 +310,7 @@ mod tests {
     #[test]
     fn runtime_launcher_rechecks_before_every_execution_and_stops_on_failure() -> Result<()> {
         let temporary =
-            std::env::temp_dir().join(format!("sinan-launcher-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("apsp-launcher-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&temporary)?;
         let result = (|| {
             let agent = temporary.join("agent 'verifier'");

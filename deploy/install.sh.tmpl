@@ -1,6 +1,6 @@
 #!/bin/sh
 # Static signed release installer. Invoke only after independent verification.
-# SINAN_BOOTSTRAP_AGENT_SOURCE=preloaded-github-v1
+# APSP_BOOTSTRAP_AGENT_SOURCE=preloaded-github-v1
 set -eu
 umask 027
 BUNDLE=
@@ -27,7 +27,7 @@ if [ -d /run/systemd/system ] && command -v systemctl >/dev/null; then
 elif [ -f /run/openrc/softlevel ] && command -v rc-service >/dev/null && command -v rc-update >/dev/null; then
   INIT=openrc
   for tool in openrc-run supervise-daemon; do command -v "$tool" >/dev/null || exit 1; done
-  SUPERVISOR_HELP=$(RC_SVCNAME=sinan-agent supervise-daemon sinan-agent --help 2>&1)
+  SUPERVISOR_HELP=$(RC_SVCNAME=apsp-agent supervise-daemon apsp-agent --help 2>&1)
   case "$SUPERVISOR_HELP" in *--capabilities*) ;; *) echo 'OpenRC 缺少 libcap 支持' >&2; exit 1 ;; esac
   case "$SUPERVISOR_HELP" in *--no-new-privs*) ;; *) echo 'OpenRC 缺少 no_new_privs 支持' >&2; exit 1 ;; esac
 else
@@ -44,33 +44,33 @@ python3 -I - "$VERSION" <<'PY'
 PY
 DOWNLOAD=$(mktemp -d)
 STAGE=
-PREVIOUS=$(readlink /opt/sinan/core/current 2>/dev/null || true)
+PREVIOUS=$(readlink /opt/apsp/core/current 2>/dev/null || true)
 ACTIVATING=0
 COMPLETED=0
 CONFIGURATION_CHANGED=0
-if [ -f /etc/sinan/agent.toml ]; then cp -p /etc/sinan/agent.toml "$DOWNLOAD/agent.toml.previous"; fi
-if [ "$INIT" = systemd ] && [ -f /etc/systemd/system/sinan-agent.service ]; then cp -p /etc/systemd/system/sinan-agent.service "$DOWNLOAD/agent.service.previous"; fi
-if [ "$INIT" = openrc ] && [ -f /etc/init.d/sinan-agent ]; then cp -p /etc/init.d/sinan-agent "$DOWNLOAD/agent.openrc.previous"; fi
+if [ -f /etc/apsp/agent.toml ]; then cp -p /etc/apsp/agent.toml "$DOWNLOAD/agent.toml.previous"; fi
+if [ "$INIT" = systemd ] && [ -f /etc/systemd/system/apsp-agent.service ]; then cp -p /etc/systemd/system/apsp-agent.service "$DOWNLOAD/agent.service.previous"; fi
+if [ "$INIT" = openrc ] && [ -f /etc/init.d/apsp-agent ]; then cp -p /etc/init.d/apsp-agent "$DOWNLOAD/agent.openrc.previous"; fi
 cleanup() {
   result=$?
   trap - EXIT HUP INT TERM
   if [ "$CONFIGURATION_CHANGED" = 1 ] && [ "$ACTIVATING" != 1 ] && [ "$COMPLETED" != 1 ] && [ -f "$DOWNLOAD/agent.toml.previous" ]; then
-    cp -p "$DOWNLOAD/agent.toml.previous" /etc/sinan/agent.toml
+    cp -p "$DOWNLOAD/agent.toml.previous" /etc/apsp/agent.toml
   fi
   if [ "$ACTIVATING" = 1 ] && [ "$COMPLETED" != 1 ]; then
     printf '%s\n' '新 Agent 未通过启动检查，正在恢复上一版本。' >&2
-    if [ "$INIT" = systemd ]; then systemctl stop sinan-agent.service || true
-    else rc-service sinan-agent stop || true; fi
-    if [ -f "$DOWNLOAD/agent.toml.previous" ]; then cp -p "$DOWNLOAD/agent.toml.previous" /etc/sinan/agent.toml; fi
-    if [ -f "$DOWNLOAD/agent.service.previous" ]; then cp -p "$DOWNLOAD/agent.service.previous" /etc/systemd/system/sinan-agent.service; systemctl daemon-reload; fi
-    if [ -f "$DOWNLOAD/agent.openrc.previous" ]; then cp -p "$DOWNLOAD/agent.openrc.previous" /etc/init.d/sinan-agent; rc-update --update; fi
+    if [ "$INIT" = systemd ]; then systemctl stop apsp-agent.service || true
+    else rc-service apsp-agent stop || true; fi
+    if [ -f "$DOWNLOAD/agent.toml.previous" ]; then cp -p "$DOWNLOAD/agent.toml.previous" /etc/apsp/agent.toml; fi
+    if [ -f "$DOWNLOAD/agent.service.previous" ]; then cp -p "$DOWNLOAD/agent.service.previous" /etc/systemd/system/apsp-agent.service; systemctl daemon-reload; fi
+    if [ -f "$DOWNLOAD/agent.openrc.previous" ]; then cp -p "$DOWNLOAD/agent.openrc.previous" /etc/init.d/apsp-agent; rc-update --update; fi
     if [ -n "$PREVIOUS" ]; then
-      ln -s "$PREVIOUS" "/opt/sinan/core/recover.$$"
-      mv -Tf "/opt/sinan/core/recover.$$" /opt/sinan/core/current
-      if [ "$INIT" = systemd ]; then systemctl restart sinan-agent.service || true
-      else rc-service sinan-agent restart || true; fi
+      ln -s "$PREVIOUS" "/opt/apsp/core/recover.$$"
+      mv -Tf "/opt/apsp/core/recover.$$" /opt/apsp/core/current
+      if [ "$INIT" = systemd ]; then systemctl restart apsp-agent.service || true
+      else rc-service apsp-agent restart || true; fi
     else
-      rm -f /opt/sinan/core/current
+      rm -f /opt/apsp/core/current
     fi
   fi
   rm -rf "$DOWNLOAD"
@@ -82,7 +82,7 @@ trap 'exit 130' INT
 trap 'exit 143' HUP TERM
 TOKEN=$(cat "$TOKEN_FILE")
 # Bootstrap downloaded this asset from GitHub and verified the signed proof.
-python3 -I - "$BUNDLE" "$VERSION" "$ARCH" "$DOWNLOAD/sinan-agent" "$PANEL" "$TOKEN_FILE" "$TARGET" <<'PY'
+python3 -I - "$BUNDLE" "$VERSION" "$ARCH" "$DOWNLOAD/apsp-agent" "$PANEL" "$TOKEN_FILE" "$TARGET" <<'PY'
 import hashlib, ipaddress, json, pathlib, platform, re, subprocess, sys, urllib.parse
 
 def ensure(condition, message):
@@ -106,7 +106,7 @@ def protected_existing_parents(path):
 root, version, arch, asset = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3], pathlib.Path(sys.argv[4])
 panel, token_file = sys.argv[5], pathlib.Path(sys.argv[6])
 target = sys.argv[7]
-protected_existing_parents(pathlib.Path('/opt/sinan/core'))
+protected_existing_parents(pathlib.Path('/opt/apsp/core'))
 ensure(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?', version), '无效 Agent 版本')
 ensure(arch in ('amd64', 'arm64'), '无效 Agent 架构')
 ensure(target in (arch, 'linux-musl-' + arch, 'linux-gnu-' + arch), 'Agent 平台与本机 CPU 不匹配')
@@ -137,14 +137,14 @@ if origin.scheme == 'http':
 metadata_bytes = ordinary(root / 'release.json', 32768)
 metadata = json.loads(metadata_bytes)
 ensure(type(metadata['schema']) is int and metadata['schema'] == 1
-       and metadata['source_repo'] == 'theLucius7/sinan', '发布身份不匹配')
+       and metadata['source_repo'] == 'theLucius7/apsp', '发布身份不匹配')
 ensure(metadata['tag'] == 'agent-v' + version, '发布标签不匹配')
 matches = [item for item in metadata['artifacts'] if
            (item['name'], item['version'], item['arch']) == ('agent', version, target)]
 ensure(len(matches) == 1, '发布缺失或重复目标 Agent')
 item = matches[0]
 expected_name = 'agent-' + version + ('-linux-musl-' + arch if target == arch else '-' + target)
-ensure(item['format'] == 'raw' and item['binary_name'] == 'sinan-agent'
+ensure(item['format'] == 'raw' and item['binary_name'] == 'apsp-agent'
        and item['asset_name'] == expected_name, 'Agent 制品身份不匹配')
 expected_size = item['archive_size']
 ensure(type(expected_size) is int and 0 < expected_size <= 256 * 1024 * 1024
@@ -166,21 +166,21 @@ ensure(hashlib.sha256(payload).hexdigest() == item['binary_sha256'], 'Agent 摘�
 with asset.open('xb') as output:
     output.write(payload)
 PY
-install -d -m 0755 -o root -g root /opt/sinan /opt/sinan/core
-STAGE=$(mktemp -d /opt/sinan/core/.bootstrap.XXXXXX)
+install -d -m 0755 -o root -g root /opt/apsp /opt/apsp/core
+STAGE=$(mktemp -d /opt/apsp/core/.bootstrap.XXXXXX)
 install -d -m 0755 "$STAGE/$VERSION"
-install -m 0755 "$DOWNLOAD/sinan-agent" "$STAGE/$VERSION/sinan-agent"
+install -m 0755 "$DOWNLOAD/apsp-agent" "$STAGE/$VERSION/apsp-agent"
 for proof in release.json SHA256SUMS SHA256SUMS.minisig; do
   install -m 0644 "$BUNDLE/$proof" "$STAGE/$VERSION/$proof"
 done
 # Compiled Agent roots must accept the proof before enrollment or activation.
-"$STAGE/$VERSION/sinan-agent" verify-installed --binary "$STAGE/$VERSION/sinan-agent" --name agent --format raw
+"$STAGE/$VERSION/apsp-agent" verify-installed --binary "$STAGE/$VERSION/apsp-agent" --name agent --format raw
 # Reject unverifiable legacy caches before touching identity, units or current links.
-if [ -e /etc/sinan/agent.toml ] || [ -L /etc/sinan/agent.toml ]; then
-  [ -f /etc/sinan/agent.toml ] && [ ! -L /etc/sinan/agent.toml ] || {
+if [ -e /etc/apsp/agent.toml ] || [ -L /etc/apsp/agent.toml ]; then
+  [ -f /etc/apsp/agent.toml ] && [ ! -L /etc/apsp/agent.toml ] || {
     echo '已有 Agent 配置必须是普通文件，安装未切换' >&2; exit 1;
   }
-  "$STAGE/$VERSION/sinan-agent" --config /etc/sinan/agent.toml verify-cache || {
+  "$STAGE/$VERSION/apsp-agent" --config /etc/apsp/agent.toml verify-cache || {
     echo '已有运行时或未完成操作未通过签名预检，请按发布文档迁移；安装未切换' >&2
     exit 1
   }
@@ -188,9 +188,9 @@ else
   python3 -I - "$PANEL" <<'PY'
 import ipaddress, os, re, sys, urllib.parse
 from pathlib import Path
-paths = [Path('/var/lib/sinan/core/state.db' + suffix) for suffix in ('', '-wal', '-shm')]
-paths.append(Path('/opt/sinan/core/current'))
-plugins = Path('/opt/sinan/plugins')
+paths = [Path('/var/lib/apsp/core/state.db' + suffix) for suffix in ('', '-wal', '-shm')]
+paths.append(Path('/opt/apsp/core/current'))
+plugins = Path('/opt/apsp/plugins')
 if plugins.exists():
     paths.extend(plugins.glob('*/current'))
 for path in paths:
@@ -229,7 +229,7 @@ def origin(value):
         raise SystemExit('首次接入 HTTP 面板仅允许回环地址')
     return parsed.scheme, hostname, parsed.port or (443 if parsed.scheme == 'https' else 80)
 
-identity = Path('/etc/sinan/identity')
+identity = Path('/etc/apsp/identity')
 if identity.exists() or identity.is_symlink():
     protected(identity)
     if not identity.is_dir():
@@ -251,65 +251,65 @@ if identity.exists() or identity.is_symlink():
                 raise SystemExit('首次接入服务器身份无效')
 PY
 fi
-if [ -e "/opt/sinan/core/$VERSION" ]; then
-  [ -d "/opt/sinan/core/$VERSION" ] && [ ! -L "/opt/sinan/core/$VERSION" ] || exit 1
-  for file in sinan-agent release.json SHA256SUMS SHA256SUMS.minisig; do
-    cmp -- "$STAGE/$VERSION/$file" "/opt/sinan/core/$VERSION/$file"
+if [ -e "/opt/apsp/core/$VERSION" ]; then
+  [ -d "/opt/apsp/core/$VERSION" ] && [ ! -L "/opt/apsp/core/$VERSION" ] || exit 1
+  for file in apsp-agent release.json SHA256SUMS SHA256SUMS.minisig; do
+    cmp -- "$STAGE/$VERSION/$file" "/opt/apsp/core/$VERSION/$file"
   done
 else
-  mv --no-clobber --no-target-directory "$STAGE/$VERSION" "/opt/sinan/core/$VERSION"
+  mv --no-clobber --no-target-directory "$STAGE/$VERSION" "/opt/apsp/core/$VERSION"
   [ ! -d "$STAGE/$VERSION" ] || { echo '版本目录已被并发创建，请重新验证' >&2; exit 1; }
 fi
-if ! getent group sinan-singbox >/dev/null; then
-  if command -v groupadd >/dev/null; then groupadd --system sinan-singbox; else addgroup -S sinan-singbox; fi
+if ! getent group apsp-singbox >/dev/null; then
+  if command -v groupadd >/dev/null; then groupadd --system apsp-singbox; else addgroup -S apsp-singbox; fi
 fi
-if ! getent passwd sinan-singbox >/dev/null; then
+if ! getent passwd apsp-singbox >/dev/null; then
   NOLOGIN=$(command -v nologin)
-  if command -v useradd >/dev/null; then useradd --system --no-create-home --gid sinan-singbox --shell "$NOLOGIN" sinan-singbox
-  else adduser -S -D -H -G sinan-singbox -s "$NOLOGIN" sinan-singbox; fi
+  if command -v useradd >/dev/null; then useradd --system --no-create-home --gid apsp-singbox --shell "$NOLOGIN" apsp-singbox
+  else adduser -S -D -H -G apsp-singbox -s "$NOLOGIN" apsp-singbox; fi
 fi
-install -d -m 0755 -o root -g root /opt/sinan/plugins /opt/sinan/plugins/sing-box /var/lib/sinan
-install -d -m 0700 /etc/sinan /etc/sinan/identity /var/lib/sinan/core
-install -d -m 2750 -o root -g sinan-singbox /var/lib/sinan/plugins /var/lib/sinan/plugins/sing-box@main /var/lib/sinan/plugins/sing-box@main/revisions
-install -d -m 0750 -o sinan-singbox -g sinan-singbox /var/lib/sinan/plugins/sing-box@main/data
+install -d -m 0755 -o root -g root /opt/apsp/plugins /opt/apsp/plugins/sing-box /var/lib/apsp
+install -d -m 0700 /etc/apsp /etc/apsp/identity /var/lib/apsp/core
+install -d -m 2750 -o root -g apsp-singbox /var/lib/apsp/plugins /var/lib/apsp/plugins/sing-box@main /var/lib/apsp/plugins/sing-box@main/revisions
+install -d -m 0750 -o apsp-singbox -g apsp-singbox /var/lib/apsp/plugins/sing-box@main/data
 CONFIGURATION_CHANGED=1
-"/opt/sinan/core/$VERSION/sinan-agent" enroll --panel "$PANEL" --token="$TOKEN"
+"/opt/apsp/core/$VERSION/apsp-agent" enroll --panel "$PANEL" --token="$TOKEN"
 unset TOKEN
 python3 -I - "$VERSION" <<'PY'
 @@LEGACY_CHECKPOINT_PREFLIGHT@@
 PY
 ACTIVATING=1
-ln -s "$VERSION" "/opt/sinan/core/current.$$"
-mv -Tf "/opt/sinan/core/current.$$" /opt/sinan/core/current
-ln -sfn /opt/sinan/core/current/sinan-agent /usr/local/bin/sinan-agent
+ln -s "$VERSION" "/opt/apsp/core/current.$$"
+mv -Tf "/opt/apsp/core/current.$$" /opt/apsp/core/current
+ln -sfn /opt/apsp/core/current/apsp-agent /usr/local/bin/apsp-agent
 if [ "$INIT" = systemd ]; then
-cat > /etc/systemd/system/sinan-agent.service <<'UNIT_AGENT'
+cat > /etc/systemd/system/apsp-agent.service <<'UNIT_AGENT'
 @@AGENT_UNIT@@
 UNIT_AGENT
-cat > /etc/systemd/system/sinan-singbox@.service <<'UNIT_RUNTIME'
+cat > /etc/systemd/system/apsp-singbox@.service <<'UNIT_RUNTIME'
 @@RUNTIME_UNIT@@
 UNIT_RUNTIME
 systemctl daemon-reload
-systemctl enable sinan-singbox@main.service sinan-agent.service
-systemctl restart sinan-agent.service
+systemctl enable apsp-singbox@main.service apsp-agent.service
+systemctl restart apsp-agent.service
 else
-cat > /etc/init.d/sinan-agent <<'UNIT_AGENT_OPENRC'
+cat > /etc/init.d/apsp-agent <<'UNIT_AGENT_OPENRC'
 @@AGENT_OPENRC@@
 UNIT_AGENT_OPENRC
-cat > /etc/init.d/sinan-singbox@main <<'UNIT_RUNTIME_OPENRC'
+cat > /etc/init.d/apsp-singbox@main <<'UNIT_RUNTIME_OPENRC'
 @@RUNTIME_OPENRC@@
 UNIT_RUNTIME_OPENRC
-chmod 0755 /etc/init.d/sinan-agent /etc/init.d/sinan-singbox@main
+chmod 0755 /etc/init.d/apsp-agent /etc/init.d/apsp-singbox@main
 rc-update --update
-rc-update add sinan-agent default
-rc-update add sinan-singbox@main default
-rc-service sinan-agent restart
+rc-update add apsp-agent default
+rc-update add apsp-singbox@main default
+rc-service apsp-agent restart
 fi
 STARTED=0
 for attempt in $(seq 1 30); do
-  if /opt/sinan/core/current/sinan-agent --config /etc/sinan/agent.toml status >/dev/null 2>&1; then STARTED=1; break; fi
+  if /opt/apsp/core/current/apsp-agent --config /etc/apsp/agent.toml status >/dev/null 2>&1; then STARTED=1; break; fi
   sleep 1
 done
 [ "$STARTED" = 1 ] || { echo 'Agent 未通过启动检查' >&2; exit 1; }
 COMPLETED=1
-printf '%s\n' '已验证并安装 Agent，可运行 sinan-agent status 查看状态。'
+printf '%s\n' '已验证并安装 Agent，可运行 apsp-agent status 查看状态。'

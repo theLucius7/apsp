@@ -4,12 +4,12 @@ use crate::{
     state::StorageRetry,
 };
 use anyhow::{Context, Result};
+use apsp_protocol::{
+    AuthResponse, Envelope, Heartbeat, Hello, HelloAck, Message, PROTOCOL_VERSION,
+};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::Signer;
 use futures_util::{SinkExt, StreamExt};
-use sinan_protocol::{
-    AuthResponse, Envelope, Heartbeat, Hello, HelloAck, Message, PROTOCOL_VERSION,
-};
 use std::{
     sync::{Arc, atomic::Ordering},
     time::Duration,
@@ -62,7 +62,7 @@ pub(super) async fn run(
     let clock_offset = ack
         .server_time
         .saturating_mul(1000)
-        .saturating_sub(sinan_protocol::telemetry::now_millis());
+        .saturating_sub(apsp_protocol::telemetry::now_millis());
     let mut clock_pending = {
         let mut state = runtime
             .state
@@ -152,7 +152,7 @@ pub(super) async fn run(
                                 let retirement = runtime.retirement.as_ref().context("retirement worker missing")?;
                                 let request_id = request.request_id;
                                 if let Err(error) = retirement.request(identity, request) {
-                                    send(&mut socket, Envelope::new("retirement.result", sinan_protocol::RetirementResult {
+                                    send(&mut socket, Envelope::new("retirement.result", apsp_protocol::RetirementResult {
                                         request_id, success: false, error: Some(error.to_string()), receipt: None,
                                     })?).await?;
                                 }
@@ -177,7 +177,7 @@ pub(super) async fn run(
                 let retirement = runtime.retirement.as_ref().context("retirement worker missing")?;
                 let request_id = retirement.request_id()?.context("retirement request missing")?;
                 if let Err(error) = retirement.prepare().await {
-                    send(&mut socket, Envelope::new("retirement.result", sinan_protocol::RetirementResult {
+                    send(&mut socket, Envelope::new("retirement.result", apsp_protocol::RetirementResult {
                         request_id, success: false, error: Some(format!("{error:#}")), receipt: None,
                     })?).await?;
                     continue;
@@ -189,7 +189,7 @@ pub(super) async fn run(
                 let receipt = match retirement.complete(identity).await {
                     Ok(receipt) => receipt,
                     Err(error) => {
-                        send(&mut socket, Envelope::new("retirement.result", sinan_protocol::RetirementResult {
+                        send(&mut socket, Envelope::new("retirement.result", apsp_protocol::RetirementResult {
                             request_id, success: false, error: Some(format!("{error:#}")), receipt: None,
                         })?).await?;
                         // Completion may have removed the key before an I/O failure. Restart
@@ -199,7 +199,7 @@ pub(super) async fn run(
                 };
                 client_tx.send_replace(None);
                 runtime.connected.store(false, Ordering::Relaxed);
-                let _ = send(&mut socket, Envelope::new("retirement.result", sinan_protocol::RetirementResult {
+                let _ = send(&mut socket, Envelope::new("retirement.result", apsp_protocol::RetirementResult {
                     request_id, success: true, error: None, receipt: Some(receipt),
                 })?).await;
                 let _ = timeout(Duration::from_secs(2), socket.close(None)).await;

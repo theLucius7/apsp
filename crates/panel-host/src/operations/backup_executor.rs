@@ -3,10 +3,10 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use flate2::{Compression, write::GzEncoder};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sinan_protocol::now_timestamp;
 use sqlx::Row;
 use std::{
     io::{Read, Write},
@@ -33,7 +33,7 @@ fn image(name: &str) -> ApiResult<String> {
     Ok(value)
 }
 fn root(state: &AppState) -> PathBuf {
-    std::env::var_os("SINAN_BACKUP_DIR")
+    std::env::var_os("APSP_BACKUP_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| state.config.data_dir.join("backups"))
 }
@@ -202,9 +202,9 @@ async fn execute_in(
     base: &Path,
     stage: &Path,
 ) -> ApiResult<Uuid> {
-    let panel_image = image("SINAN_BACKUP_PANEL_IMAGE")?;
-    let postgres_image = image("SINAN_BACKUP_POSTGRES_IMAGE")?;
-    let dump_path = std::env::var_os("SINAN_BACKUP_PG_DUMP")
+    let panel_image = image("APSP_BACKUP_PANEL_IMAGE")?;
+    let postgres_image = image("APSP_BACKUP_POSTGRES_IMAGE")?;
+    let dump_path = std::env::var_os("APSP_BACKUP_PG_DUMP")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/usr/local/bin/pg_dump"));
     if !dump_path.is_absolute() {
@@ -244,7 +244,7 @@ async fn execute_in(
         sqlx::query_scalar("SELECT DISTINCT key_id FROM credential_entries ORDER BY key_id")
             .fetch_all(&mut *tx)
             .await?;
-    let key_reference = std::env::var("SINAN_BACKUP_KEYRING_REFERENCE").ok();
+    let key_reference = std::env::var("APSP_BACKUP_KEYRING_REFERENCE").ok();
     if !key_ids.is_empty() && key_reference.as_ref().is_none_or(|v| v.trim().is_empty()) {
         return Err(failure(
             "数据库含加密凭据，必须记录独立密钥环保管位置后才能完成恢复点",
@@ -254,7 +254,7 @@ async fn execute_in(
         return Err(failure("数据库地址不能写入受限备份环境格式"));
     }
     let environment = format!(
-        "SINAN_DATABASE_URL={}\nSINAN_PUBLIC_URL={}\n",
+        "APSP_DATABASE_URL={}\nAPSP_PUBLIC_URL={}\n",
         state.config.database_url, state.config.public_url
     );
     private_file(&stage.join("environment"))
@@ -296,7 +296,7 @@ async fn execute_in(
             .map_err(anyhow::Error::from)??;
         hashes.insert(filename.into(), json!(hash));
     }
-    let manifest = json!({"format":2,"complete":true,"created_at":iso_time(now_timestamp()),"project":"native-scheduled-backup","source_revision":option_env!("SINAN_SOURCE_REVISION"),"image":panel_image,"postgres_image":postgres_image,"postgres_version_num":server_version,"pg_dump_version":client.trim(),"age_version":age_version.trim(),"schema_migrations":migrations,"sha256":hashes,"restore_scope":["database","panel_environment","signed_release_artifacts"],"restore_database_authentication":"fresh_isolated_credential","excluded_transient_data":["network-acme-work","backups"],"node_data_included":false,"snapshot_consistency":"pg_export_snapshot + release_permits for immutable signed release storage","keyring_reference":key_reference,"required_key_ids":key_ids,"keyring_included":false,"dependency_manifest_sha256":[]});
+    let manifest = json!({"format":2,"complete":true,"created_at":iso_time(now_timestamp()),"project":"native-scheduled-backup","source_revision":option_env!("APSP_SOURCE_REVISION"),"image":panel_image,"postgres_image":postgres_image,"postgres_version_num":server_version,"pg_dump_version":client.trim(),"age_version":age_version.trim(),"schema_migrations":migrations,"sha256":hashes,"restore_scope":["database","panel_environment","signed_release_artifacts"],"restore_database_authentication":"fresh_isolated_credential","excluded_transient_data":["network-acme-work","backups"],"node_data_included":false,"snapshot_consistency":"pg_export_snapshot + release_permits for immutable signed release storage","keyring_reference":key_reference,"required_key_ids":key_ids,"keyring_included":false,"dependency_manifest_sha256":[]});
     let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(anyhow::Error::from)?;
     private_file(&stage.join("manifest.json"))
         .and_then(|mut f| f.write_all(&manifest_bytes))
@@ -493,10 +493,9 @@ mod tests {
     async fn complete_backups_do_not_overlap_or_follow_uncertain_execution(
         pool: PgPool,
     ) -> anyhow::Result<()> {
-        let directory = Directory(std::env::temp_dir().join(format!(
-            "sinan-backup-serialization-test-{}",
-            Uuid::new_v4()
-        )));
+        let directory = Directory(
+            std::env::temp_dir().join(format!("apsp-backup-serialization-test-{}", Uuid::new_v4())),
+        );
         std::fs::create_dir(&directory.0)?;
         let state = AppState::new(
             pool.clone(),

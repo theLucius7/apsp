@@ -31,7 +31,7 @@ pub(super) fn cached_job(directory: &Directory, id: Uuid) -> Result<DiagnosticJo
     let mut job = job(id);
     job.artifact.url = format!(
         "http://127.0.0.1:1/api/agent/v1/artifacts/diagnostic-fixture/v1/{}",
-        sinan_protocol::release::native_arch()?
+        apsp_protocol::release::native_arch()?
     );
     let artifact = directory
         .config()

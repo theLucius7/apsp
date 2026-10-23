@@ -2,10 +2,10 @@
 #![cfg(unix)]
 
 use anyhow::{Result, bail};
-use sinan_adapter_sdk::{
+use apsp_adapter_sdk::{
     BoxFuture, CommandOutput, JobStatus, Privileged, ServiceJob, ServiceManager,
 };
-use sinan_agent_core::system::{ServiceBackend, SystemServiceManager};
+use apsp_agent_core::system::{ServiceBackend, SystemServiceManager};
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -67,9 +67,9 @@ impl Privileged for RecordingOps {
                     self.allow_diagnostic_lock && *self.lock_preparations.lock().unwrap() > 0,
                     "unexpected diagnostic lock inspection"
                 );
-                assert_eq!(args, ["-c", "%f %u", "--", "/run/sinan-diagnostic"]);
+                assert_eq!(args, ["-c", "%f %u", "--", "/run/apsp-diagnostic"]);
                 assert!(self.directories.lock().unwrap().contains(&(
-                    PathBuf::from("/run/sinan-diagnostic"),
+                    PathBuf::from("/run/apsp-diagnostic"),
                     0o700,
                     Some("root".into()),
                 )));
@@ -111,7 +111,7 @@ impl Privileged for RecordingOps {
         group: Option<&'a str>,
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
-            if path == Path::new("/run/sinan-diagnostic") {
+            if path == Path::new("/run/apsp-diagnostic") {
                 anyhow::ensure!(
                     self.allow_diagnostic_lock && mode == 0o700 && group == Some("root"),
                     "unexpected diagnostic lock directory permissions"
@@ -306,7 +306,7 @@ async fn openrc_refuses_diagnostic_starts_without_equivalent_swap_protection() -
     let ops = RecordingOps::diagnostic(true);
     let services = SystemServiceManager::new(ops.clone(), ServiceBackend::OpenRc);
     let job = ServiceJob {
-        unit: format!("sinan-diagnostic-{}.service", uuid::Uuid::new_v4()),
+        unit: format!("apsp-diagnostic-{}.service", uuid::Uuid::new_v4()),
         program: "/bin/true".into(),
         args: Vec::new(),
         working_directory: "/tmp".into(),
@@ -337,7 +337,7 @@ async fn systemd_diagnostic_jobs_keep_independent_supervision_and_status() -> Re
     let ops = RecordingOps::diagnostic(false);
     let services = SystemServiceManager::new(ops.clone(), ServiceBackend::Systemd);
     let job = ServiceJob {
-        unit: format!("sinan-diagnostic-{}.service", uuid::Uuid::new_v4()),
+        unit: format!("apsp-diagnostic-{}.service", uuid::Uuid::new_v4()),
         program: "/bin/true".into(),
         args: Vec::new(),
         working_directory: "/tmp".into(),
@@ -377,7 +377,7 @@ async fn systemd_diagnostic_jobs_keep_independent_supervision_and_status() -> Re
             "--exclusive",
             "--nonblock",
             "--conflict-exit-code=75",
-            "/run/sinan-diagnostic/lock",
+            "/run/apsp-diagnostic/lock",
             "/bin/true",
         ]
     );

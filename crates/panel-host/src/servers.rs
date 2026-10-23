@@ -5,6 +5,7 @@ use crate::{
     server_assets::AssetSettings,
     server_traffic::{self, TrafficSummary},
 };
+use apsp_protocol::{AgentSettings, EnrollRequest, EnrollResponse, ProbeSpec, now_timestamp};
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -14,7 +15,6 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::VerifyingKey;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sinan_protocol::{AgentSettings, EnrollRequest, EnrollResponse, ProbeSpec, now_timestamp};
 use sqlx::{FromRow, PgPool, Row};
 use uuid::Uuid;
 
@@ -40,7 +40,7 @@ pub struct Server {
     #[sqlx(skip)]
     pub served_at: i64,
     #[sqlx(skip)]
-    pub telemetry_settings: Option<sinan_protocol::telemetry::TelemetrySettings>,
+    pub telemetry_settings: Option<apsp_protocol::telemetry::TelemetrySettings>,
     pub agent_settings: Value,
     #[sqlx(json)]
     pub asset_settings: AssetSettings,
@@ -63,7 +63,7 @@ impl Server {
             .last_seen
             .is_some_and(|seen| now.saturating_sub(seen) <= 60);
         let settings =
-            serde_json::from_value::<sinan_protocol::AgentSettings>(self.agent_settings.clone())
+            serde_json::from_value::<apsp_protocol::AgentSettings>(self.agent_settings.clone())
                 .unwrap_or_default();
         let allowance = settings
             .sample_interval_secs
@@ -71,7 +71,7 @@ impl Server {
             .saturating_add(settings.upload_interval_secs.saturating_mul(2))
             .max(15);
         self.metrics_stale = self.metrics_sampled_at.is_some_and(|sampled| {
-            sinan_protocol::telemetry::now_millis().saturating_sub(sampled)
+            apsp_protocol::telemetry::now_millis().saturating_sub(sampled)
                 > (allowance as i64).saturating_mul(1000)
         });
         self
@@ -91,7 +91,7 @@ pub struct CreateServerRequest {
     #[serde(default)]
     pub agent_settings: AgentSettings,
     #[serde(default)]
-    pub telemetry_settings: sinan_protocol::telemetry::TelemetrySettings,
+    pub telemetry_settings: apsp_protocol::telemetry::TelemetrySettings,
     #[serde(default)]
     pub probes: Vec<ProbeSpec>,
     #[serde(default)]

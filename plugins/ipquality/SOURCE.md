@@ -20,9 +20,9 @@
 
 开发树可以按既有固定 SHA256 从 `plugins/nodequality/` 读取九份纯源码转换策略。发布的源码包在 `plugins/ipquality/policies/` 保存它们的独立精确副本。运行根文件系统只需要已派生脚本和传输守卫，不需要 NodeQuality 的其他代码、固定来源包或商业工具。
 
-运行时固定路径为 `/usr/local/lib/sinan-ipquality/patched-ip.sh`、`transport.py`、`ip-iso3166.json`、`ip-dnsbl.list`。`/usr/local/bin/curl` 只调用这份固定 `transport.py`；真正 HTTP 客户端固定为 `/usr/bin/curl`，避免递归或宿主 PATH 注入。工具来自独立离线 Debian 12 闭包：Bash、Python 3、curl、jq、coreutils、grep、sed、gawk、bc、CA 证书及其依赖。不得在执行时安装依赖或降级到宿主工具。
+运行时固定路径为 `/usr/local/lib/apsp-ipquality/patched-ip.sh`、`transport.py`、`ip-iso3166.json`、`ip-dnsbl.list`。`/usr/local/bin/curl` 只调用这份固定 `transport.py`；真正 HTTP 客户端固定为 `/usr/bin/curl`，避免递归或宿主 PATH 注入。工具来自独立离线 Debian 12 闭包：Bash、Python 3、curl、jq、coreutils、grep、sed、gawk、bc、CA 证书及其依赖。不得在执行时安装依赖或降级到宿主工具。
 
-脚本 CLI 精确接受一个参数 `4` 或 `6`。包装器设置 `SINAN_IPQUALITY_FAMILY`、`SINAN_IPQUALITY_ATTEMPTS=/work/attempts.jsonl`、`SINAN_IPQUALITY_PARTIAL=/work/partial.json` 和任务 UUID；观测出口后设置 `SINAN_IPQUALITY_TARGET_IP`。输出 stdout 只有一个该地址族的真实上游 JSON 对象，包装器保存 `/work/upstream.json`。每个数据源完成后按相同上游字段映射原子保存阶段 JSON，取消或失败可以保留此前已完成章节；未完成源不伪造完成结果。
+脚本 CLI 精确接受一个参数 `4` 或 `6`。包装器设置 `APSP_IPQUALITY_FAMILY`、`APSP_IPQUALITY_ATTEMPTS=/work/attempts.jsonl`、`APSP_IPQUALITY_PARTIAL=/work/partial.json` 和任务 UUID；观测出口后设置 `APSP_IPQUALITY_TARGET_IP`。输出 stdout 只有一个该地址族的真实上游 JSON 对象，包装器保存 `/work/upstream.json`。每个数据源完成后按相同上游字段映射原子保存阶段 JSON，取消或失败可以保留此前已完成章节；未完成源不伪造完成结果。
 
 只对所选地址族查询 HTTPS 出口发现源。每个固定发现源最多请求一次；第二个不同源仅在第一个失败后用于独立发现，失败记录保留。观测地址必须符合面板相同的公网地址判定，并规范化后绑定所有后续目标。数据库请求和公开流媒体页面依照固定上游方法顺序执行；一次失败不导致跳过其他独立来源。聚合入口始终标明为 `check-place-aggregator`，其中七个数据库只是 `dataset`，不能宣传为七个独立供应商。
 

@@ -13,7 +13,7 @@ import stat
 import time
 import urllib.parse
 
-CONFIG = Path('/etc/sinan/node-ip-providers.json')
+CONFIG = Path('/etc/apsp/node-ip-providers.json')
 MAX_CONFIG = 8192
 MAX_RESPONSE = 256 * 1024
 QUERY_SECONDS = 3
@@ -230,7 +230,7 @@ def request_child(provider, key, family, sender):
         # http.client ignores proxy environment variables and never follows redirects.
         connection = http.client.HTTPSConnection(host, timeout=1, context=ssl.create_default_context())
         connection.request('GET', path, headers={'Accept': 'application/json',
-                                                'User-Agent': 'SinanNodeIp/1', 'Connection': 'close'})
+                                                'User-Agent': 'ApspNodeIp/1', 'Connection': 'close'})
         response = connection.getresponse()
         status = response.status
         if status != 200:

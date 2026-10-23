@@ -8,7 +8,7 @@ import struct
 import tarfile
 
 TOOL_VERSION = "0.3.0"
-BINARY = "sinan-tcp-probe"
+BINARY = "apsp-tcp-probe"
 FILES = {BINARY, "build-info.json", "LICENSE", "source.tar.gz", "Cargo.lock", "THIRD_PARTY_NOTICES.txt"}
 TARGETS = {"amd64": "x86_64-unknown-linux-musl", "arm64": "aarch64-unknown-linux-musl"}
 SOURCE_LIMIT = 16 * 1024 * 1024
@@ -107,7 +107,7 @@ def validate_files(files, version, arch):
     ensure(version == artifact_version(commit) and info["artifact_version"] == version,
            "TCP artifact version must include its exact source commit")
     ensure(type(info["schema"]) is int and info["schema"] == 1 and info["tool"] == BINARY
-           and info["tool_version"] == TOOL_VERSION and info["source_repo"] == "theLucius7/sinan"
+           and info["tool_version"] == TOOL_VERSION and info["source_repo"] == "theLucius7/apsp"
            and info["cargo_locked"] is True and arch in TARGETS and info["target"] == TARGETS[arch]
            and isinstance(info["rustc"], str) and info["rustc"].startswith("rustc ") and len(info["rustc"]) <= 4096,
            "wrong TCP build identity or unlocked build")

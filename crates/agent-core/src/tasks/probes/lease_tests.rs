@@ -341,7 +341,7 @@ async fn coalesced_connection_and_same_definition_lease_updates_cancel_the_old_m
 
 #[tokio::test]
 async fn persisted_sampling_period_survives_worker_restart_and_metadata_changes() -> Result<()> {
-    let directory = std::env::temp_dir().join(format!("sinan-probe-period-{}", Uuid::new_v4()));
+    let directory = std::env::temp_dir().join(format!("apsp-probe-period-{}", Uuid::new_v4()));
     std::fs::create_dir(&directory)?;
     let path = directory.join("state.sqlite");
     let fixture = Fixture::open(&path)?;
@@ -408,7 +408,7 @@ async fn persisted_sampling_period_survives_worker_restart_and_metadata_changes(
 
 #[tokio::test]
 async fn acceptance_persists_revision_and_definition_barriers_across_reopen() -> Result<()> {
-    let directory = std::env::temp_dir().join(format!("sinan-probe-lease-{}", Uuid::new_v4()));
+    let directory = std::env::temp_dir().join(format!("apsp-probe-lease-{}", Uuid::new_v4()));
     std::fs::create_dir(&directory)?;
     let path = directory.join("state.sqlite");
     let client = local_client()?;
@@ -752,7 +752,7 @@ struct Reply {
 }
 
 impl Reply {
-    fn lease(snapshot: &sinan_protocol::ProbeLease) -> Result<Self> {
+    fn lease(snapshot: &apsp_protocol::ProbeLease) -> Result<Self> {
         Ok(Self {
             status: 200,
             body: serde_json::to_string(snapshot)?,
@@ -1071,7 +1071,7 @@ async fn changing_connection_drops_the_old_request_and_late_responses_cannot_rev
 #[cfg(unix)]
 mod process_cleanup {
     use super::*;
-    use sinan_adapter_sdk::{BoxFuture, CommandOutput, Execution};
+    use apsp_adapter_sdk::{BoxFuture, CommandOutput, Execution};
     use std::{os::unix::fs::PermissionsExt, path::PathBuf};
 
     struct ProcessOps {
@@ -1172,8 +1172,7 @@ mod process_cleanup {
     #[tokio::test]
     async fn connection_revocation_kills_the_private_command_tree_and_releases_retirement()
     -> Result<()> {
-        let directory =
-            std::env::temp_dir().join(format!("sinan-probe-process-{}", Uuid::new_v4()));
+        let directory = std::env::temp_dir().join(format!("apsp-probe-process-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory)?;
         std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))?;
         let script = directory.join("fixture.sh");

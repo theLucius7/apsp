@@ -1,13 +1,13 @@
 #![forbid(unsafe_code)]
 #![allow(dead_code)]
 
+use apsp_protocol::release::{
+    ReleaseArtifact, ReleaseMetadata, ReleaseProof, TrustedKeys, canonical_asset_name, native_arch,
+};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use blake2::{Blake2b512, Digest};
 use ed25519_dalek::{Signer, SigningKey};
 use sha2::Sha256;
-use sinan_protocol::release::{
-    ReleaseArtifact, ReleaseMetadata, ReleaseProof, TrustedKeys, canonical_asset_name, native_arch,
-};
 use std::{collections::BTreeMap, path::Path};
 
 // This unencrypted key is deliberately public test material, never a production root.
@@ -50,7 +50,7 @@ pub fn rotation_sign(bytes: &[u8]) -> String {
 
 fn sign_with_key(bytes: &[u8], signing: &SigningKey, key_id: &[u8; 8]) -> String {
     let signature = signing.sign(&Blake2b512::digest(bytes));
-    let comment = "Sinan TEST ONLY fixture; never trust for official releases";
+    let comment = "Apsp TEST ONLY fixture; never trust for official releases";
     let mut record = b"ED".to_vec();
     record.extend_from_slice(key_id);
     record.extend_from_slice(&signature.to_bytes());
@@ -91,7 +91,7 @@ pub fn entry(
 pub fn signed_release(artifacts: Vec<(ReleaseArtifact, Vec<u8>)>) -> ReleaseProof {
     let metadata = ReleaseMetadata {
         schema: 1,
-        source_repo: "theLucius7/sinan".into(),
+        source_repo: "theLucius7/apsp".into(),
         tag: "agent-v0.3.0".into(),
         protocol_min: 1,
         protocol_max: 1,

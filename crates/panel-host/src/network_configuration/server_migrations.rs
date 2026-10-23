@@ -167,7 +167,7 @@ async fn preview(
     let snapshot = plan::build(&state, &headers, &mut tx, &input, &identity_map).await?;
     let snapshot_digest = digest(&snapshot)?;
     let id = Uuid::new_v4();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO network_server_migration_previews(id,requested_by,source_server_id,target_server_id,request,identity_map,snapshot,snapshot_digest,created_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
         .bind(id).bind(requested_by).bind(input.source_server_id).bind(input.target_server_id).bind(json!(input))
         .bind(json!(identity_map)).bind(&snapshot).bind(&snapshot_digest).bind(now).bind(now+300).execute(&mut *tx).await?;
@@ -240,7 +240,7 @@ async fn apply(
     if let Some(result) = row.get::<Option<Value>, _>("result") {
         return Ok(Json(result));
     }
-    if row.get::<i64, _>("expires_at") <= sinan_protocol::now_timestamp() {
+    if row.get::<i64, _>("expires_at") <= apsp_protocol::now_timestamp() {
         return Err(ApiError::Conflict("迁移预览已过期，请重新核对".into()));
     }
     let request: Request =
@@ -264,7 +264,7 @@ async fn apply(
     let changes = current["changes"]
         .as_array()
         .ok_or_else(|| ApiError::Conflict("迁移对象缺失".into()))?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let mut applied = Vec::new();
     for change in changes {
         let source_id: Uuid = parse(change, "document_id")?;

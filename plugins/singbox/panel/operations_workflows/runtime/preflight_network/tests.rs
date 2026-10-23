@@ -1,6 +1,6 @@
 use super::*;
+use apsp_compiler::{Access, AcmeChallenge, ProtocolConfig};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use sinan_compiler::{Access, AcmeChallenge, ProtocolConfig};
 use uuid::Uuid;
 
 fn ip_set(values: &[&str]) -> BTreeSet<IpAddr> {
@@ -41,7 +41,7 @@ fn automatic_node(udp: bool) -> Node {
 
 fn compiled(node: &Node) -> Value {
     serde_json::from_str(
-        &sinan_compiler::compile_server(std::slice::from_ref(node)).expect("fixture compile"),
+        &apsp_compiler::compile_server(std::slice::from_ref(node)).expect("fixture compile"),
     )
     .expect("compiled configuration")
 }

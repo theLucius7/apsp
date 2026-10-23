@@ -53,7 +53,7 @@ def manifest_fixture(root):
     """Actual private file shapes for pure binding checks, never live facts."""
     root.chmod(0o700)
     run_id = "ab12640c-270f-4a82-a506-41176e42e19f"
-    DRIVER.write_bytes(root / ".sinan-managed-test-run", (run_id + "\n").encode())
+    DRIVER.write_bytes(root / ".apsp-managed-test-run", (run_id + "\n").encode())
     source = {"head": "a" * 40, "file_count": 782, "frozen_inputs_sha256": "b" * 64,
               "functional_sha256": "c" * 64, "cargo_lock_sha256": "d" * 64}
     programs = {}
@@ -64,14 +64,14 @@ def manifest_fixture(root):
     roles = {}
     for index, role in enumerate(("A", "M", "B"), 2):
         config = root / ("agent-" + role + ".toml")
-        DRIVER.write_bytes(config, b'panel_url = "https://owned.test"\npanel_ca_file = "/etc/sinan/trust/panel-ca.pem"\n')
+        DRIVER.write_bytes(config, b'panel_url = "https://owned.test"\npanel_ca_file = "/etc/apsp/trust/panel-ca.pem"\n')
         roles[role] = {"address": "10.231.0." + str(index), "sni": "reality.test",
                        "agent_config_file": str(config)}
     ca, admin = root / "panel-ca.pem", root / "administrator.json"
     DRIVER.write_bytes(ca, b"TEST_ONLY CA file; not a cryptographic acceptance fixture\n")
     DRIVER.write_json(admin, {"password": "TEST_ONLY_private_password"})
     binaries = {}
-    for name in ("sinan-agent", "sinan-panel"):
+    for name in ("apsp-agent", "apsp-panel"):
         path = root / name
         DRIVER.write_bytes(path, b"TEST_ONLY immutable binary identity, not executable\n")
         binaries[name] = {"path": str(path), "sha256": DRIVER.digest(path.read_bytes()),
@@ -85,15 +85,15 @@ def manifest_fixture(root):
         "artifacts": {"test_only": True, "prepared_receipt_file": str(receipt), "binaries": binaries},
         "roles": {role: {"init_pid": index, "starttime": index, "netns_id": index,
             "mountns_id": index, "pidns_id": index, "systemd_id": str(index).zfill(32),
-            "filesystem_id": "1:" + str(index), "agent_config": "/etc/sinan/agent.toml",
-            "agent_binary": "/opt/sinan/core/current/sinan-agent"}
+            "filesystem_id": "1:" + str(index), "agent_config": "/etc/apsp/agent.toml",
+            "agent_binary": "/opt/apsp/core/current/apsp-agent"}
             for index, role in enumerate(("A", "M", "B"), 2)},
-        "panel": {"origin": "https://owned.test", "unit": "sinan-managed-panel-" + run_id + ".service",
-            "data_dir": str(root / "panel-data"), "ownership_file": str(root / ".sinan-managed-test-run"),
+        "panel": {"origin": "https://owned.test", "unit": "apsp-managed-panel-" + run_id + ".service",
+            "data_dir": str(root / "panel-data"), "ownership_file": str(root / ".apsp-managed-test-run"),
             "unit_file": str(root / "panel.service"), "unit_sha256": "e" * 64,
             "environment_file": str(root / "panel.env"), "environment_sha256": "f" * 64,
             "postgres": {"socket_dir": str(root / "pg"), "port": 55437,
-                         "username": "postgres", "database": "sinan_managed_" + run_id.replace("-", "")}}}
+                         "username": "postgres", "database": "apsp_managed_" + run_id.replace("-", "")}}}
     network_root = root / "network"
     network_root.mkdir(mode=0o700)
     tls = network_root / "tls"
@@ -190,7 +190,7 @@ class DriverContracts(unittest.TestCase):
             lambda p, c, f, r: c.update(run_id="ea681d39-1a63-4b48-b4f5-a9e48614ebd0"),
             lambda p, c, f, r: c["source_identity"].update(functional_sha256="e" * 64),
             lambda p, c, f, r: c["panel"].update(origin="https://other.test"),
-            lambda p, c, f, r: DRIVER.write_bytes(r / ".sinan-managed-test-run", b"different-owned-run\n"),
+            lambda p, c, f, r: DRIVER.write_bytes(r / ".apsp-managed-test-run", b"different-owned-run\n"),
         )
         for mutation in mutations:
             with self.subTest(mutation=mutation):

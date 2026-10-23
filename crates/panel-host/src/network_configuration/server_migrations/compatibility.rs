@@ -6,7 +6,7 @@ pub(super) fn checks(config: &Configuration, target: &Value) -> Vec<Value> {
     let mut blockers = Vec::new();
     let policy = &target["policy"];
     match config {
-        Configuration::Forwarding { owner, .. } if owner == "sinan" => require(
+        Configuration::Forwarding { owner, .. } if owner == "apsp" => require(
             &mut blockers,
             target,
             "port_forward",
@@ -120,7 +120,7 @@ fn require(blockers: &mut Vec<Value>, target: &Value, flag: &str, capability: &s
     if !capabilities.as_array().is_some_and(|items| {
         items
             .iter()
-            .any(|item| item.as_str() == Some(sinan_protocol::fleet::OPERATIONS_CAPABILITY))
+            .any(|item| item.as_str() == Some(apsp_protocol::fleet::OPERATIONS_CAPABILITY))
     }) {
         blockers.push(json!({"code":"target_fleet_operations_missing","server_id":target["id"]}));
     }
@@ -136,7 +136,7 @@ pub(super) fn listener_conflict(left: &Configuration, right: &Configuration) -> 
             owner,
             enabled: true,
             ..
-        } if owner == "sinan" => Some((
+        } if owner == "apsp" => Some((
             *server_id,
             listen_address.clone(),
             *listen_port,
@@ -154,7 +154,7 @@ pub(super) fn listener_conflict(left: &Configuration, right: &Configuration) -> 
             protocol,
             owner,
             ..
-        } if owner == "sinan" => Some((*server, listen_address.clone(), *port, protocol.clone())),
+        } if owner == "apsp" => Some((*server, listen_address.clone(), *port, protocol.clone())),
         _ => None,
     };
     match (listener(left), listener(right)) {

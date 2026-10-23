@@ -2,6 +2,7 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_compiler::Node;
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -10,7 +11,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sinan_compiler::Node;
 use sqlx::{Postgres, Row, Transaction};
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -91,8 +91,8 @@ impl Snapshot {
                     "此订阅包含外部节点，请使用 format=singbox 下载完整 sing-box JSON".into(),
                 ));
             }
-            sinan_compiler::subscription_links(&self.nodes, user_id).map_err(|error| match error {
-                sinan_compiler::CompileError::RequiresJson { .. } => ApiError::Conflict(
+            apsp_compiler::subscription_links(&self.nodes, user_id).map_err(|error| match error {
+                apsp_compiler::CompileError::RequiresJson { .. } => ApiError::Conflict(
                     "此订阅包含需要完整配置的协议，请使用 format=singbox 下载 sing-box JSON".into(),
                 ),
                 other => ApiError::Internal(anyhow::Error::from(other)),
@@ -102,7 +102,7 @@ impl Snapshot {
                 return Err(ApiError::Conflict(self.message().1));
             }
             super::operations_workflows::apply_definition(
-                sinan_compiler::client::compile_with_external(
+                apsp_compiler::client::compile_with_external(
                     &self.nodes,
                     user_id,
                     &self.external.nodes,
@@ -115,7 +115,7 @@ impl Snapshot {
 }
 
 async fn load(tx: &mut Transaction<'_, Postgres>, user_id: i64) -> ApiResult<Snapshot> {
-    let at = sinan_protocol::now_timestamp();
+    let at = apsp_protocol::now_timestamp();
     let entitlement: super::entitlements::Entitlement =
         sqlx::query_as("SELECT * FROM singbox_entitlements($1) WHERE user_id=$2")
             .bind(at)
@@ -267,7 +267,7 @@ fn content_type(format: &str) -> &'static str {
 }
 fn filename(user_id: i64, format: &str) -> String {
     format!(
-        "sinan-{user_id}.{}",
+        "apsp-{user_id}.{}",
         if format == "singbox" { "json" } else { "txt" }
     )
 }

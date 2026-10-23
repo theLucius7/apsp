@@ -28,13 +28,13 @@ def module(name, path):
 
 def inert_rootfs(runner, arch="amd64", provenance_edits=None):
     fixture = module("rootfs_artifact_inert_fixture", artifact.ROOT / "tools/test-nodequality-rootfs.py")
-    prefix = "usr/share/sinan-rootfs/"
+    prefix = "usr/share/apsp-rootfs/"
     builder = {"image_sha256": "1" * 64, "arch": arch, "tools": []}
     inventory = {"inputs-lock.json": (json.dumps({"schema": 1, "arch": arch, "source_epoch": 1,
                                                     "builder": builder, "TEST_ONLY": True}) + "\n").encode(),
                  "source-inventory.json": (json.dumps({"schema": 1, "arch": arch, "TEST_ONLY": True}) + "\n").encode(),
                  "license-inventory.json": b'{"schema":1,"reviewed":false,"TEST_ONLY":true}\n'}
-    provenance = {"schema": 1, "kind": "sinan-nodequality-debian12-preparation", "arch": arch,
+    provenance = {"schema": 1, "kind": "apsp-nodequality-debian12-preparation", "arch": arch,
                   "full_ready": False, "source_authenticated": True, "reproducibility_verified": False,
                   "source_epoch": 1, "builder": builder,
                   "inputs_lock_sha256": artifact.digest(inventory["inputs-lock.json"]),
@@ -45,7 +45,7 @@ def inert_rootfs(runner, arch="amd64", provenance_edits=None):
     inventory["provenance.json"] = (json.dumps(provenance, sort_keys=True) + "\n").encode()
     rows = fixture.inventory() + [
         {"path": "usr/share", "type": "dir", "mode": 0o755},
-        {"path": "usr/share/sinan-rootfs", "type": "dir", "mode": 0o755},
+        {"path": "usr/share/apsp-rootfs", "type": "dir", "mode": 0o755},
     ]
     for name, content in inventory.items():
         rows.append({"path": prefix + name, "type": "file", "mode": 0o644,
@@ -61,7 +61,7 @@ def inert_rootfs(runner, arch="amd64", provenance_edits=None):
 class DerivationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        path = os.environ.get("SINAN_NODEQUALITY_CANONICAL_SOURCES")
+        path = os.environ.get("APSP_NODEQUALITY_CANONICAL_SOURCES")
         if not path:
             raise unittest.SkipTest("requires offline canonical sources matching the committed source lock")
         specification = importlib.util.spec_from_file_location("rootfs_artifact_source", artifact.PLUGIN / "source-helper.py")
@@ -75,7 +75,7 @@ class DerivationTests(unittest.TestCase):
     def test_exact_canonical_sources_and_full_licenses_are_retained(self):
         self.assertEqual(artifact.embedded(self.legacy, "SINAN_NODEQUALITY_REPORT_HELPER"),
                          artifact.history.source("report.py"))
-        self.assertEqual(artifact.embedded(self.runner, "SINAN_NODEQUALITY_ROOTFS_HELPER"),
+        self.assertEqual(artifact.embedded(self.runner, "APSP_NODEQUALITY_ROOTFS_HELPER"),
                          artifact.history.source("rootfs.py"))
         self.assertEqual(artifact.embedded(self.runner, artifact.MARKERS["PINNED_CHAIN"]), self.bundle)
         self.assertEqual(artifact.embedded(self.runner, artifact.MARKERS["NODEQUALITY_LICENSE"]),
@@ -88,10 +88,10 @@ class DerivationTests(unittest.TestCase):
                          artifact.embedded(self.legacy, "SINAN_OFFICIAL_IP_HELPER"))
         self.assertIn(artifact.LOCAL_ROOTFS, self.runner)
         self.assertNotIn(artifact.LOAD_ROOTFS, self.runner)
-        self.assertNotIn(b'exec "$SINAN_REAL_CURL" --connect-timeout 15 --max-time 900', self.runner)
+        self.assertNotIn(b'exec "$APSP_REAL_CURL" --connect-timeout 15 --max-time 900', self.runner)
 
     def test_version_is_distinct_and_full_is_refused_before_any_prerequisite_or_io(self):
-        with tempfile.TemporaryDirectory(prefix="sinan-rootfs-wrapper-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="apsp-rootfs-wrapper-") as temporary:
             script = Path(temporary) / "nodequality"
             script.write_bytes(self.runner)
             environment = dict(os.environ, PATH="/nonexistent", BASH_ENV="", ENV="")
@@ -182,11 +182,11 @@ class DerivationTests(unittest.TestCase):
                                     output=root / "output")
         actual_module = artifact.module
         def load(name, path):
-            return builder if name == "sinan_rootfs_preparation" else actual_module(name, path)
+            return builder if name == "apsp_rootfs_preparation" else actual_module(name, path)
         return command, builder, arguments, mock.patch.object(artifact, "module", side_effect=load)
 
     def test_cli_rechecks_preparation_and_export_and_preserves_immutable_artifact(self):
-        with tempfile.TemporaryDirectory(prefix="sinan-rootfs-cli-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="apsp-rootfs-cli-") as temporary:
             root = Path(temporary).resolve()
             command, builder, arguments, loading = self.prepare_cli(root)
             with loading:
@@ -204,7 +204,7 @@ class DerivationTests(unittest.TestCase):
             self.assertEqual(artifact.archive_files(original)["nodequality"], self.runner)
 
     def test_cli_refuses_export_mutation_after_source_verification(self):
-        with tempfile.TemporaryDirectory(prefix="sinan-rootfs-cli-tamper-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="apsp-rootfs-cli-tamper-") as temporary:
             root = Path(temporary).resolve()
             command, builder, arguments, loading = self.prepare_cli(root)
             builder.verify_export.return_value["archive"]["sha256"] = "0" * 64
@@ -213,7 +213,7 @@ class DerivationTests(unittest.TestCase):
             self.assertFalse(arguments.output.exists())
 
     def test_cli_refuses_symlink_ancestors_and_never_writes_their_target(self):
-        with tempfile.TemporaryDirectory(prefix="sinan-rootfs-cli-path-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="apsp-rootfs-cli-path-") as temporary:
             root = Path(temporary).resolve()
             command, _, arguments, loading = self.prepare_cli(root)
             outside = root / "outside"
@@ -226,7 +226,7 @@ class DerivationTests(unittest.TestCase):
     @unittest.skipUnless(hasattr(signal, "pthread_sigmask"), "requires POSIX signal publication control")
     def test_cli_interruptions_do_not_leave_checksum_inventory_inconsistent(self):
         for phase in ("link", "replace"):
-            with self.subTest(phase=phase), tempfile.TemporaryDirectory(prefix="sinan-rootfs-cli-signal-") as temporary:
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory(prefix="apsp-rootfs-cli-signal-") as temporary:
                 root = Path(temporary).resolve()
                 command, _, arguments, loading = self.prepare_cli(root)
                 real = getattr(command.os, phase)
@@ -251,7 +251,7 @@ class DerivationTests(unittest.TestCase):
     @unittest.skipUnless(hasattr(signal, "pthread_sigmask"), "requires POSIX signal publication control")
     def test_cli_interruptions_during_lock_or_temporary_creation_remove_owned_paths(self):
         for phase in ("lock", "temporary"):
-            with self.subTest(phase=phase), tempfile.TemporaryDirectory(prefix="sinan-rootfs-cli-create-") as temporary:
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory(prefix="apsp-rootfs-cli-create-") as temporary:
                 root = Path(temporary).resolve()
                 command, _, arguments, loading = self.prepare_cli(root)
                 if phase == "lock":
@@ -278,7 +278,7 @@ class DerivationTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("minisign"), "requires actual minisign TEST_ONLY interoperability")
     def test_release_signs_exact_aux_inventory_and_refuses_an_incomplete_signed_identity(self):
-        with tempfile.TemporaryDirectory(prefix="sinan-rootfs-release-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="apsp-rootfs-release-") as temporary:
             root = Path(temporary).resolve()
             source = root / "source"
             for arch in ("amd64", "arm64"):
@@ -303,7 +303,7 @@ class DerivationTests(unittest.TestCase):
             fixtures = artifact.ROOT / "crates/protocol/tests/fixtures"
             def sign():
                 result = subprocess.run(["minisign", "-S", "-q", "-m", str(output / "SHA256SUMS"),
-                                         "-s", str(fixtures / "TEST_ONLY.key"), "-t", "Sinan TEST ONLY offline rootfs"],
+                                         "-s", str(fixtures / "TEST_ONLY.key"), "-t", "Apsp TEST ONLY offline rootfs"],
                                         capture_output=True, timeout=10)
                 self.assertEqual(result.returncode, 0, result.stderr)
             sign()

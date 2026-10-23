@@ -10,11 +10,11 @@ mod release_support;
 mod runtime;
 
 use anyhow::{Context, Result};
+use apsp_compiler::{Access, Node};
+use apsp_protocol::{UsageBatch, UsageRecord};
 use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_compiler::{Access, Node};
-use sinan_protocol::{UsageBatch, UsageRecord};
 use sqlx::{PgPool, migrate::Migrator};
 use std::{borrow::Cow, collections::BTreeMap};
 use uuid::Uuid;
@@ -47,12 +47,12 @@ async fn monitoring_server_requires_explicit_enablement_and_never_publishes_prox
         .bind(server)
         .execute(&pool)
         .await?;
-    sinan_panel::plugins::singbox::publisher::publish_due(&panel.state).await?;
+    apsp_panel::plugins::singbox::publisher::publish_due(&panel.state).await?;
     let mut connection = pool.acquire().await?;
-    let activity = sinan_panel::plugins::runtime_activity_on(
+    let activity = apsp_panel::plugins::runtime_activity_on(
         &mut connection,
         server,
-        sinan_protocol::now_timestamp(),
+        apsp_protocol::now_timestamp(),
     )
     .await?;
     assert!(!activity.configured);
@@ -180,11 +180,11 @@ async fn migration_preserves_imported_subscription_credentials_access_and_accoun
 }
 
 #[sqlx::test(migrations = false)]
-#[ignore = "Requires pinned real sing-box 1.14.2 and openssl on a dedicated test node; set SINAN_TEST_SINGBOX"]
+#[ignore = "Requires pinned real sing-box 1.14.2 and openssl on a dedicated test node; set APSP_TEST_SINGBOX"]
 async fn imported_subscription_keeps_real_connection_authorization_and_counters_after_migration(
     pool: PgPool,
 ) -> Result<()> {
-    let binary = std::env::var_os("SINAN_TEST_SINGBOX").context("set SINAN_TEST_SINGBOX")?;
+    let binary = std::env::var_os("APSP_TEST_SINGBOX").context("set APSP_TEST_SINGBOX")?;
     migration_case(pool, Some(binary.into())).await
 }
 
@@ -215,7 +215,7 @@ async fn migration_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Res
             .fetch_one(&pool)
             .await?;
     let (private_key, public_key) =
-        sinan_panel::plugins::singbox::business::generate_reality_keypair();
+        apsp_panel::plugins::singbox::business::generate_reality_keypair();
     let node_id: i64 = sqlx::query_scalar("INSERT INTO nodes(name,server_id,port,public_host,sni,private_key,public_key,short_id) VALUES('Imported node',$1,$2,$3,'www.example.com',$4,$5,'0123abcd') RETURNING id").bind(server).bind(i32::from(port)).bind(host).bind(&private_key).bind(&public_key).fetch_one(&pool).await?;
     let token = "imported-permanent-subscription-token";
     let user_id: i64 = sqlx::query_scalar(
@@ -252,11 +252,11 @@ async fn migration_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Res
             credential: String::new(),
         }],
     };
-    let expected_links = sinan_compiler::subscription_links(std::slice::from_ref(&node), user_id)?;
+    let expected_links = apsp_compiler::subscription_links(std::slice::from_ref(&node), user_id)?;
     let expected_client = runtime::legacy_client(&node, user_id);
     assert_eq!(
         expected_client,
-        serde_json::from_str::<Value>(&sinan_compiler::compile_client(
+        serde_json::from_str::<Value>(&apsp_compiler::compile_client(
             std::slice::from_ref(&node),
             user_id,
         )?)?
@@ -287,7 +287,7 @@ async fn migration_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Res
             downlink,
         }],
     };
-    let payload_hash = sinan_panel::auth::hash_token(&serde_json::to_string(&batch)?);
+    let payload_hash = apsp_panel::auth::hash_token(&serde_json::to_string(&batch)?);
     sqlx::query("INSERT INTO usage_batches(server_id,epoch,seq,payload_hash) VALUES($1,$2,1,$3)")
         .bind(server)
         .bind(epoch)
@@ -325,7 +325,7 @@ async fn migration_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Res
         legacy
     );
     let mut connection = pool.acquire().await?;
-    let activity = sinan_panel::plugins::runtime_activity_on(&mut connection, server, 20).await?;
+    let activity = apsp_panel::plugins::runtime_activity_on(&mut connection, server, 20).await?;
     assert!(activity.configured);
     assert_eq!(activity.last_positive_at, Some(20));
     drop(connection);
@@ -336,8 +336,8 @@ async fn migration_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Res
         batch_observation(&pool, server, epoch).await?,
         initial_observation
     );
-    let replay_started = sinan_protocol::now_timestamp();
-    sinan_panel::plugins::singbox::usage::ingest(&panel.state, server, batch.clone()).await?;
+    let replay_started = apsp_protocol::now_timestamp();
+    apsp_panel::plugins::singbox::usage::ingest(&panel.state, server, batch.clone()).await?;
     let replayed = batch_observation(&pool, server, epoch).await?;
     assert_eq!(
         replayed.0, None,
@@ -347,7 +347,7 @@ async fn migration_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Res
     assert!(
         replayed
             .1
-            .is_some_and(|at| (replay_started..=sinan_protocol::now_timestamp()).contains(&at)),
+            .is_some_and(|at| (replay_started..=apsp_protocol::now_timestamp()).contains(&at)),
         "replay observation must use the actual request interval"
     );
     assert_eq!(
@@ -357,7 +357,7 @@ async fn migration_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Res
     let mut altered = batch;
     altered.records[0].downlink += 1;
     assert!(
-        sinan_panel::plugins::singbox::usage::ingest(&panel.state, server, altered)
+        apsp_panel::plugins::singbox::usage::ingest(&panel.state, server, altered)
             .await
             .is_err()
     );
@@ -487,8 +487,8 @@ async fn migration_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Res
                 downlink: delta_down,
             }],
         };
-        sinan_panel::plugins::singbox::usage::ingest(&panel.state, server, actual.clone()).await?;
-        sinan_panel::plugins::singbox::usage::ingest(&panel.state, server, actual).await?;
+        apsp_panel::plugins::singbox::usage::ingest(&panel.state, server, actual.clone()).await?;
+        apsp_panel::plugins::singbox::usage::ingest(&panel.state, server, actual).await?;
         let totals: (i64, i64, i64) = sqlx::query_as("SELECT SUM(uplink)::bigint,SUM(downlink)::bigint,COUNT(*) FROM usage_records WHERE user_id=$1 AND node_id=$2 AND epoch=$3")
             .bind(user_id).bind(node_id).bind(epoch).fetch_one(&pool).await?;
         assert_eq!(

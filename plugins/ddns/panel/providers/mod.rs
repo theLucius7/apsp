@@ -197,7 +197,7 @@ fn choose<'a>(
     if !record.active || record.values.len() != 1 {
         return Err("record_conflict".into());
     }
-    let marker = format!("sinan-ddns:{}", rule.id);
+    let marker = format!("apsp-ddns:{}", rule.id);
     if rule.record_id.as_deref() != Some(&record.id)
         && record.marker.as_deref() != Some(&marker)
         && !rule.config.adopt_existing

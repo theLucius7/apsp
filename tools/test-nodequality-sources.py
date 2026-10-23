@@ -42,7 +42,7 @@ fixture = module('source_fixture_util', ROOT / 'tools/nodequality-source-fixture
 
 class SourceTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='sinan-pinned-sources-')
+        self.temporary = tempfile.TemporaryDirectory(prefix='apsp-pinned-sources-')
         self.root = Path(self.temporary.name)
         self.processes = OwnedProcesses(self.root)
         self.sources = self.root / 'inputs'
@@ -70,9 +70,9 @@ class SourceTests(unittest.TestCase):
         self.real_curl = self.root / 'real-curl'
         self.real_curl.write_text('#!/bin/sh\nprintf called > "' + str(self.called) + '"\nexit 0\n')
         self.real_curl.chmod(0o700)
-        self.environment = dict(os.environ, SINAN_REAL_CURL=str(self.real_curl),
-                                SINAN_CHAIN_HELPER=str(self.fixture_plugin / 'source-helper.py'),
-                                SINAN_CHAIN_DIRECTORY=str(self.materialized), NQ_SOURCE_EXECUTED=str(self.executed))
+        self.environment = dict(os.environ, APSP_REAL_CURL=str(self.real_curl),
+                                APSP_CHAIN_HELPER=str(self.fixture_plugin / 'source-helper.py'),
+                                APSP_CHAIN_DIRECTORY=str(self.materialized), NQ_SOURCE_EXECUTED=str(self.executed))
 
     def tearDown(self):
         self.processes.cleanup_temporary(self.temporary, self)
@@ -143,7 +143,7 @@ class SourceTests(unittest.TestCase):
         entry = '#!/usr/bin/env bash\nset -euo pipefail\n'
         for url, name in helper.ALIASES.items():
             flag = '-sL' if name == 'swap.sh' else '-Ls'
-            entry += 'curl ' + flag + ' ' + url + ' > "$SINAN_REPORT_WORKSPACE/captured-' + name + '"\n'
+            entry += 'curl ' + flag + ' ' + url + ' > "$APSP_REPORT_WORKSPACE/captured-' + name + '"\n'
         entry += 'exit 7\n'
         runner = (PLUGIN / 'runner.sh.tmpl').read_text()
         # Retained loader coverage uses only this private inert source copy.
@@ -469,7 +469,7 @@ sys.stdout.buffer.write((pathlib.Path(os.environ['NQ_INPUTS']) / matching[0]['na
         release = module('source_release', ROOT / 'tools/release.py')
         fixture = module('source_fixture', ROOT / 'tools/ci-release-fixture.py')
         with mock.patch.dict(os.environ):
-            os.environ.pop('SINAN_CI_FIXTURE_SIGNER', None)
+            os.environ.pop('APSP_CI_FIXTURE_SIGNER', None)
             proof = fixture.proof('nodequality', VERSION, 'nodequality', data, 'tar.gz', 'arm64')
         bundle = self.root / 'signed'
         bundle.mkdir()

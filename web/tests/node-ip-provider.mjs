@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 const now = Math.floor(Date.now() / 1000), at = now - 60, ip = '1.1.1.1'
 const id = '00000000-0000-4000-8000-000000000024'
@@ -59,7 +59,7 @@ const server = createServer(async (request,response) => {
 })
 await new Promise(resolve => server.listen(0,'127.0.0.1',resolve))
 const origin = `http://127.0.0.1:${server.address().port}`
-const browser = await chromium.launch({headless:true,...(process.env.SINAN_CHROME_PATH ? {executablePath:process.env.SINAN_CHROME_PATH} : {})})
+const browser = await chromium.launch({headless:true,...(process.env.APSP_CHROME_PATH ? {executablePath:process.env.APSP_CHROME_PATH} : {})})
 const receipt = []
 try {
   for (const width of [1440,390]) {

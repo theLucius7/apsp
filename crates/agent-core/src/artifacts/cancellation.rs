@@ -3,9 +3,9 @@ use super::*;
 impl PanelClient {
     pub async fn diagnostic_cancellations(
         &self,
-    ) -> Result<Vec<sinan_protocol::DiagnosticCancelRequest>> {
+    ) -> Result<Vec<apsp_protocol::DiagnosticCancelRequest>> {
         let url = self.panel.join("/api/agent/v1/diagnostics/cancellations")?;
-        let requests: Vec<sinan_protocol::DiagnosticCancelRequest> =
+        let requests: Vec<apsp_protocol::DiagnosticCancelRequest> =
             serde_json::from_slice(&self.download(url.as_str(), 1024 * 1024).await?)?;
         ensure!(
             requests.len() <= 64,
@@ -16,7 +16,7 @@ impl PanelClient {
 
     pub async fn diagnostic_cancel_result(
         &self,
-        result: &sinan_protocol::DiagnosticCancelResult,
+        result: &apsp_protocol::DiagnosticCancelResult,
     ) -> Result<()> {
         let response = self
             .client

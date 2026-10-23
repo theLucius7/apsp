@@ -42,7 +42,7 @@ class FixtureOwnershipContracts(unittest.TestCase):
                     operation(timeout)
 
     def test_group_signals_finish_before_reap_and_repeat_cleanup_does_not_signal(self):
-        with tempfile.TemporaryDirectory(prefix='sinan-native-owner-contract-') as directory:
+        with tempfile.TemporaryDirectory(prefix='apsp-native-owner-contract-') as directory:
             owner = object.__new__(fixture.OwnedProcess)
             process = SimpleNamespace(pid=9876, returncode=0, stdin=None, stdout=None, stderr=None, reaped=False)
             stages = []

@@ -17,7 +17,7 @@ pub(super) struct FetchResult {
     pub traffic: Option<serde_json::Value>,
 }
 
-pub(super) const DEFAULT_USER_AGENT: &str = "Sinan-subscription-import/1";
+pub(super) const DEFAULT_USER_AGENT: &str = "Apsp-subscription-import/1";
 
 fn code(failure: Failure) -> ImportError {
     ImportError(match failure.kind {

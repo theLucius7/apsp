@@ -33,7 +33,7 @@ async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Js
     crate::control_center::require_capability(&state, &headers, "dns:read").await?;
     let actor = crate::control_center::authenticate(&state, &headers).await?;
     let servers: Vec<Server> = sqlx::query_as("SELECT s.id,s.name,COALESCE(s.last_seen>=$1-60,false) AS online,COALESCE(p.enabled,false) AS enabled,ARRAY(SELECT jsonb_object_keys(CASE WHEN jsonb_typeof(s.static_info->'interface_addresses')='object' THEN s.static_info->'interface_addresses' ELSE '{}'::jsonb END)) AS interface_names,COALESCE(jsonb_typeof(s.static_info->'discovered_public_ips')='array',false) AS public_discovery_available FROM servers s LEFT JOIN server_plugins p ON p.server_id=s.id AND p.plugin='ddns' WHERE s.deleted_at IS NULL ORDER BY s.id")
-        .bind(sinan_protocol::now_timestamp()).fetch_all(&state.pool).await?;
+        .bind(apsp_protocol::now_timestamp()).fetch_all(&state.pool).await?;
     Ok(Json(
         servers
             .into_iter()
@@ -87,7 +87,7 @@ pub(super) async fn set_enabled(pool: &sqlx::PgPool, id: i64, enabled: bool) -> 
         "SELECT EXISTS(SELECT 1 FROM ddns_rules WHERE server_id=$1 AND lease_until>$2)",
     )
     .bind(id)
-    .bind(sinan_protocol::now_timestamp())
+    .bind(apsp_protocol::now_timestamp())
     .fetch_one(&mut *tx)
     .await?;
     if busy {
@@ -96,7 +96,7 @@ pub(super) async fn set_enabled(pool: &sqlx::PgPool, id: i64, enabled: bool) -> 
         ));
     }
     sqlx::query("INSERT INTO server_plugins(server_id,plugin,enabled,source,enabled_at) VALUES($1,'ddns',$2,'administrator',$3) ON CONFLICT(server_id,plugin) DO UPDATE SET enabled=EXCLUDED.enabled,source='administrator',enabled_at=EXCLUDED.enabled_at")
-        .bind(id).bind(enabled).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
+        .bind(id).bind(enabled).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(())
 }

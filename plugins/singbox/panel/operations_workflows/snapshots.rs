@@ -11,7 +11,7 @@ pub(super) async fn user_state(
         super::super::business::lock_user(tx, *id).await?;
     }
     let state: Value = sqlx::query_scalar("SELECT COALESCE(jsonb_agg(jsonb_build_object('id',u.id,'name',u.name,'token',u.subscription_token,'entitlement',to_jsonb(e),'assignment',to_jsonb(a),'groups',COALESCE((SELECT jsonb_agg(group_id ORDER BY group_id) FROM singbox_user_policies WHERE user_id=u.id),'[]'),'accesses',COALESCE((SELECT jsonb_agg(to_jsonb(x) ORDER BY node_id) FROM accesses x WHERE x.user_id=u.id),'[]')) ORDER BY u.id),'[]') FROM users u LEFT JOIN singbox_entitlements($2) e ON e.user_id=u.id LEFT JOIN singbox_user_packages p ON p.user_id=u.id LEFT JOIN singbox_package_assignments a ON a.id=p.assignment_id WHERE u.id=ANY($1)")
-        .bind(users).bind(sinan_protocol::now_timestamp()).fetch_one(&mut **tx).await?;
+        .bind(users).bind(apsp_protocol::now_timestamp()).fetch_one(&mut **tx).await?;
     Ok(state)
 }
 
@@ -34,7 +34,7 @@ async fn node(tx: &mut Transaction<'_, Postgres>, id: i64) -> ApiResult<Value> {
     super::super::business::lock_server(tx, server).await?;
     super::super::settings::require_enabled(tx, server).await?;
     sqlx::query_scalar("SELECT jsonb_build_object('node',to_jsonb(n),'status',to_jsonb(m)-'updated_at','online',s.last_seen IS NOT NULL AND s.last_seen>=$2-60,'recent_observation',m.updated_at IS NOT NULL AND m.updated_at>=$2-300,'dirty',s.dirty_at,'retiring',EXISTS(SELECT 1 FROM server_retirements WHERE server_id=n.server_id)) FROM nodes n JOIN servers s ON s.id=n.server_id LEFT JOIN server_module_status m ON m.server_id=n.server_id AND m.module='singbox' WHERE n.id=$1 AND n.deleted_at IS NULL FOR UPDATE OF n")
-        .bind(id).bind(sinan_protocol::now_timestamp()).fetch_optional(&mut **tx).await?.ok_or(ApiError::NotFound)
+        .bind(id).bind(apsp_protocol::now_timestamp()).fetch_optional(&mut **tx).await?.ok_or(ApiError::NotFound)
 }
 
 fn installed(value: &Value) -> bool {
@@ -85,7 +85,7 @@ pub(super) async fn snapshot(
         } => {
             let state = user_state(tx, &[*user_id]).await?;
             let plan: Value = sqlx::query_scalar("SELECT to_jsonb(p)||jsonb_build_object('monthly_bytes',p.monthly_bytes::text) FROM singbox_package_groups p WHERE id=$1 AND deleted_at IS NULL FOR UPDATE").bind(package_group_id).fetch_optional(&mut **tx).await?.ok_or(ApiError::NotFound)?;
-            let at = sinan_protocol::now_timestamp();
+            let at = apsp_protocol::now_timestamp();
             let cycle: Value = sqlx::query_scalar("SELECT jsonb_build_object('cycle_start',b.cycle_start,'next_reset',b.next_reset,'used_bytes',GREATEST(COALESCE((SELECT SUM(uplink+downlink) FROM usage_records WHERE user_id=$1 AND period_end>b.cycle_start AND period_end<=b.next_reset),0)-COALESCE((SELECT SUM(bytes) FROM singbox_quota_credits WHERE user_id=$1 AND cycle_start=b.cycle_start AND next_reset=b.next_reset),0),0)::text) FROM singbox_package_groups p CROSS JOIN LATERAL singbox_cycle_bounds($3,p.reset_day,p.reset_hour,p.reset_minute,p.timezone) b WHERE p.id=$2")
                 .bind(user_id).bind(package_group_id).bind(at).fetch_one(&mut **tx).await?;
             (

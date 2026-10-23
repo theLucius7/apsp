@@ -1,5 +1,5 @@
 use super::*;
-use sinan_protocol::{
+use apsp_protocol::{
     RuntimeCheckpoint, RuntimeCheckpointResult, RuntimeServiceState, RuntimeSnapshot,
 };
 use sqlx::PgPool;
@@ -90,7 +90,7 @@ async fn fixture(
     let now = now_timestamp();
     sqlx::query("INSERT INTO admins(id,password_hash) VALUES(1,'TEST_ONLY-not-a-login-password') ON CONFLICT DO NOTHING").execute(pool).await?;
     let server: i64 = sqlx::query_scalar("INSERT INTO servers(name,capabilities,last_seen) VALUES('TEST_ONLY automation deployment',$1,$2) RETURNING id")
-        .bind(json!([sinan_protocol::RUNTIME_OPERATIONS_CAPABILITY,sinan_protocol::RUNTIME_CHECKPOINT_CAPABILITY,sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY])).bind(now).fetch_one(pool).await?;
+        .bind(json!([apsp_protocol::RUNTIME_OPERATIONS_CAPABILITY,apsp_protocol::RUNTIME_CHECKPOINT_CAPABILITY,apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY])).bind(now).fetch_one(pool).await?;
     let hash = crate::auth::hash_token("{}");
     sqlx::query("INSERT INTO deployments(server_id,module,rev,bundle,bundle_sha256,source_json,created_at) VALUES($1,'singbox',1,'{}',$2,'[]',$3)").bind(server).bind(&hash).bind(now).execute(pool).await?;
     sqlx::query("INSERT INTO server_module_status(server_id,module,target_rev,applied_rev,last_result_rev,healthy,last_error,updated_at) VALUES($1,'singbox',1,0,1,false,'TEST_ONLY failed target',$2)").bind(server).bind(now).execute(pool).await?;

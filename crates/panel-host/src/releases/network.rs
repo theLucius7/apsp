@@ -1,10 +1,10 @@
 use anyhow::{Result, ensure};
-use reqwest::{Client, Url, redirect::Policy};
-use serde::Deserialize;
-use sinan_protocol::release::{
+use apsp_protocol::release::{
     MAX_CHECKSUMS_BYTES, MAX_METADATA_BYTES, MAX_SIGNATURE_BYTES, RELEASE_SOURCE_REPO,
     ReleaseProof, TrustedKeys, verify_release,
 };
+use reqwest::{Client, Url, redirect::Policy};
+use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::{net::IpAddr, time::Duration};
 
@@ -79,7 +79,7 @@ pub(super) async fn download(value: &str, maximum: usize) -> Result<Vec<u8>> {
             .resolve_to_addrs(host, &addresses)
             .connect_timeout(Duration::from_secs(20))
             .timeout(Duration::from_secs(300))
-            .user_agent("Sinan-release-import")
+            .user_agent("Apsp-release-import")
             .build()?;
         let mut response = client
             .get(url.clone())
@@ -174,7 +174,7 @@ struct RemoteRelease {
 pub(super) async fn asset(tag: &str, name: &str, maximum: usize) -> Result<Vec<u8>> {
     ensure!(super::valid_tag(tag), "invalid release tag");
     ensure!(
-        sinan_protocol::release::safe_component(name),
+        apsp_protocol::release::safe_component(name),
         "invalid release asset name"
     );
     download(

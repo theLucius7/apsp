@@ -15,7 +15,7 @@ export function usePreference<T>(key: string) {
     if (!ready) throw new Error('偏好尚未读取成功，请先重试。')
     const result = await api<{ revision: number }>(`/api/control-center/preferences/${encodeURIComponent(key)}`, 'PUT', { value, expected_revision: record.revision })
     setRecord({ value, revision: result.revision })
-    if (key === 'appearance') window.dispatchEvent(new Event('sinan:appearance-updated'))
+    if (key === 'appearance') window.dispatchEvent(new Event('apsp:appearance-updated'))
   }
   return { ...record, ready, error, save, reload: read }
 }

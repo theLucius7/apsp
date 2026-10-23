@@ -4,6 +4,7 @@ use crate::{
     error::{ApiError, ApiResult},
     passkeys as keys,
 };
+use apsp_protocol::now_timestamp;
 use axum::{
     Json,
     extract::{ConnectInfo, Path, State},
@@ -12,7 +13,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use sinan_protocol::now_timestamp;
 use sqlx::Row;
 use std::net::SocketAddr;
 use uuid::Uuid;

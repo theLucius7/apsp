@@ -9,9 +9,9 @@ mod targets;
 mod versions;
 
 use anyhow::{Context, Result, bail};
+use apsp_panel::{AppState, config::Config, error::ApiError, releases};
+use apsp_protocol::release::{ReleaseMetadata, ReleaseProof, native_arch};
 use release_support as signing;
-use sinan_panel::{AppState, config::Config, error::ApiError, releases};
-use sinan_protocol::release::{ReleaseMetadata, ReleaseProof, native_arch};
 use sqlx::postgres::PgPoolOptions;
 use std::{
     collections::BTreeMap,
@@ -30,17 +30,17 @@ impl Fixture {
     fn new() -> Result<Self> {
         let root = std::env::temp_dir()
             .canonicalize()?
-            .join(format!("sinan-release-test-{}", Uuid::new_v4()));
+            .join(format!("apsp-release-test-{}", Uuid::new_v4()));
         std::fs::create_dir(&root)?;
         let data = root.join("data");
         std::fs::create_dir(&data)?;
         let state = AppState {
-            started_at: sinan_protocol::now_timestamp(),
+            started_at: apsp_protocol::now_timestamp(),
             device_lifecycle: Default::default(),
             telemetry_live: Arc::default(),
             pool: PgPoolOptions::new().connect_lazy("postgres://fixture@127.0.0.1/unused")?,
             login_permits: Arc::new(Semaphore::new(4)),
-            passkeys: Arc::new(sinan_panel::passkeys::Service::new("http://127.0.0.1")),
+            passkeys: Arc::new(apsp_panel::passkeys::Service::new("http://127.0.0.1")),
             quality_permits: Arc::new(Semaphore::new(2)),
             quality_providers: Arc::default(),
             release_permits: Arc::new(Semaphore::new(1)),
@@ -82,7 +82,7 @@ fn bundle(
     runtime: Option<&[u8]>,
 ) -> Result<Bundle> {
     let mut artifacts = vec![(
-        signing::entry("agent", version, "sinan-agent", "raw", agent, agent),
+        signing::entry("agent", version, "apsp-agent", "raw", agent, agent),
         agent.to_vec(),
     )];
     if let Some(binary) = runtime {
@@ -468,16 +468,16 @@ fn native_runtime_archives_require_the_exact_signed_auxiliary_files() -> Result<
             binary,
         );
         entry.arch = "windows-amd64".into();
-        entry.asset_name = sinan_protocol::release::canonical_asset_name(&entry)?;
+        entry.asset_name = apsp_protocol::release::canonical_asset_name(&entry)?;
         entry.auxiliary_files.insert(
             "wintun.dll".into(),
-            sinan_protocol::release::ReleaseFile {
+            apsp_protocol::release::ReleaseFile {
                 sha256: signing::hash(dll),
                 size: dll.len() as u64,
             },
         );
         let proof = signing::signed_release(vec![(entry, bytes.clone())]);
-        let release = sinan_protocol::release::verify_release(&proof, &signing::trusted_keys())?;
+        let release = apsp_protocol::release::verify_release(&proof, &signing::trusted_keys())?;
         let artifact = release.artifact("sing-box", "1.14.2", "windows-amd64")?;
         assert_eq!(
             releases::verify_payload(&artifact, &bytes).is_ok(),
@@ -497,7 +497,7 @@ fn concatenated_gzip_cannot_hide_nonzero_archive_tail() -> Result<()> {
     bytes.extend(tail.finish()?);
     let entry = signing::entry("sing-box", "1.14.2", "sing-box", "tar.gz", &bytes, binary);
     let proof = signing::signed_release(vec![(entry, bytes.clone())]);
-    let release = sinan_protocol::release::verify_release(&proof, &signing::trusted_keys())?;
+    let release = apsp_protocol::release::verify_release(&proof, &signing::trusted_keys())?;
     let artifact = release.artifact("sing-box", "1.14.2", native_arch()?)?;
     assert!(releases::verify_payload(&artifact, &bytes).is_err());
     Ok(())

@@ -5,15 +5,15 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result};
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use business_support::{Socket, TestPanel, id, receive_envelope, send_envelope};
-use ed25519_dalek::{Signer, SigningKey};
-use reqwest::{Method, StatusCode, header};
-use sinan_protocol::{
+use apsp_protocol::{
     AuthChallenge, AuthResponse, Envelope, Hello, PROTOCOL_VERSION, RETIREMENT_CAPABILITY,
     RetirementReceipt, RetirementRequest, RetirementResult, UsageBatch, UsageRecord,
     retirement_receipt_message,
 };
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use business_support::{Socket, TestPanel, id, receive_envelope, send_envelope};
+use ed25519_dalek::{Signer, SigningKey};
+use reqwest::{Method, StatusCode, header};
 use sqlx::PgPool;
 use std::{collections::BTreeMap, time::Duration};
 use tokio::time::timeout;
@@ -96,7 +96,7 @@ async fn online_delete_waits_for_signed_receipt_and_preserves_usage(pool: PgPool
     let user = id(&panel.create_user(&cookie, "user").await?)?;
     panel.grant(&cookie, user, node).await?;
     panel.publish_now().await?;
-    sinan_panel::usage::ingest(
+    apsp_panel::usage::ingest(
         &panel.state,
         server,
         UsageBatch {

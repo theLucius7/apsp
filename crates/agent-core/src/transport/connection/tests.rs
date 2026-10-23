@@ -1,7 +1,7 @@
 use super::*;
 use crate::{State, usage::MAX_PENDING_USAGE_BYTES};
+use apsp_protocol::{AuthChallenge, UsageAck, UsageBatch, UsageRecord};
 use ed25519_dalek::SigningKey;
-use sinan_protocol::{AuthChallenge, UsageAck, UsageBatch, UsageRecord};
 use std::{collections::BTreeMap, path::PathBuf, sync::Mutex};
 use tokio::{net::TcpListener, task::JoinSet};
 use tokio_tungstenite::accept_async;
@@ -322,7 +322,7 @@ async fn blocked_collection_preserves_real_twenty_second_heartbeat_and_control()
         &mut peer,
         Envelope::new(
             "manifest.changed",
-            sinan_protocol::ManifestChanged { rev: 1 },
+            apsp_protocol::ManifestChanged { rev: 1 },
         )?,
     )
     .await?;
@@ -364,7 +364,7 @@ async fn blocked_collection_preserves_real_twenty_second_heartbeat_and_control()
 async fn cancellation_request_is_persisted_without_waiting_for_cleanup_or_delaying_heartbeats()
 -> Result<()> {
     use crate::transport::diagnostics::cancellation::CancellationControl;
-    use sinan_protocol::{Artifact, DiagnosticCancelRequest, DiagnosticJob};
+    use apsp_protocol::{Artifact, DiagnosticCancelRequest, DiagnosticJob};
     let directory =
         Directory(std::env::temp_dir().join(format!("sn-cancel-wire-{}", Uuid::new_v4())));
     let listener = TcpListener::bind("127.0.0.1:0").await?;
@@ -392,7 +392,7 @@ async fn cancellation_request_is_persisted_without_waiting_for_cleanup_or_delayi
     let runtime = Runtime {
         state: state.clone(),
         modules: Arc::new(vec![]),
-        capabilities: Arc::new(vec![sinan_protocol::DIAGNOSTIC_CANCEL_CAPABILITY.into()]),
+        capabilities: Arc::new(vec![apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY.into()]),
         connected: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         public_ips: Arc::new(vec![]),
         agent_version: "fixture-agent",

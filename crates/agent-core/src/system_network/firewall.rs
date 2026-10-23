@@ -1,8 +1,8 @@
 use anyhow::{Context, ensure};
+use apsp_adapter_sdk::Privileged;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sinan_adapter_sdk::Privileged;
 use std::{net::IpAddr, path::Path};
 
 #[derive(Deserialize)]
@@ -52,7 +52,7 @@ pub(super) async fn execute(
         );
     }
     let table = format!(
-        "sinan_{}",
+        "apsp_{}",
         id.chars()
             .filter(|character| *character != '-')
             .take(12)
@@ -60,7 +60,7 @@ pub(super) async fn execute(
     );
     let directory = state_dir.join("network-firewall").join(snapshot_id);
     let snapshot_path = directory.join("snapshot.json");
-    let timer = format!("sinan-firewall-recovery-{snapshot_id}");
+    let timer = format!("apsp-firewall-recovery-{snapshot_id}");
     match operation["action"].as_str() {
         Some("firewall_temporary") => {
             super::require_available_recovery(state_dir, "firewall").await?;
@@ -87,8 +87,8 @@ pub(super) async fn execute(
             ensure!(
                 previous
                     .as_ref()
-                    .is_none_or(|value| value.contains("comment \"Managed by Sinan\"")),
-                "existing firewall table is not owned by Sinan"
+                    .is_none_or(|value| value.contains("comment \"Managed by Apsp\"")),
+                "existing firewall table is not owned by Apsp"
             );
             privileged.create_dir(&directory, 0o700, None).await?;
             let content = render(&table, &rules, &management)?;
@@ -135,7 +135,7 @@ pub(super) async fn execute(
                 table: table.clone(),
                 previous,
                 observed_hash: String::new(),
-                restore_at: sinan_protocol::now_timestamp() + seconds as i64,
+                restore_at: apsp_protocol::now_timestamp() + seconds as i64,
                 confirmed: false,
                 persisted: false,
                 persistent_hash: None,
@@ -207,7 +207,7 @@ pub(super) async fn execute(
             let actual = table_text(privileged, &table).await?;
             if operation["action"] == "firewall_status" {
                 return Ok(
-                    json!({"table":table,"observed":actual,"snapshot_id":snapshot_id,"matches_applied":actual.as_ref().is_some_and(|value|hash(value)==snapshot.observed_hash),"sampled_at":sinan_protocol::now_timestamp()}),
+                    json!({"table":table,"observed":actual,"snapshot_id":snapshot_id,"matches_applied":actual.as_ref().is_some_and(|value|hash(value)==snapshot.observed_hash),"sampled_at":apsp_protocol::now_timestamp()}),
                 );
             }
             super::require_current_recovery(state_dir, "firewall", snapshot_id).await?;
@@ -219,9 +219,9 @@ pub(super) async fn execute(
             );
             if operation["action"] == "firewall_restore" {
                 if snapshot.persisted {
-                    let rule_path = Path::new("/etc/nftables.d").join(format!("sinan-{id}.nft"));
+                    let rule_path = Path::new("/etc/nftables.d").join(format!("apsp-{id}.nft"));
                     let unit_path = Path::new("/etc/systemd/system")
-                        .join(format!("sinan-firewall-{id}.service"));
+                        .join(format!("apsp-firewall-{id}.service"));
                     ensure!(
                         snapshot.persistent_hash.as_ref()
                             == Some(&hash(&tokio::fs::read_to_string(&rule_path).await?))
@@ -267,7 +267,7 @@ pub(super) async fn execute(
                 )
                 .await?;
                 if snapshot.persisted {
-                    let unit = format!("sinan-firewall-{id}.service");
+                    let unit = format!("apsp-firewall-{id}.service");
                     command(
                         privileged,
                         "/usr/bin/systemctl",
@@ -278,7 +278,7 @@ pub(super) async fn execute(
                         .remove_file(&Path::new("/etc/systemd/system").join(unit))
                         .await?;
                     privileged
-                        .remove_file(&Path::new("/etc/nftables.d").join(format!("sinan-{id}.nft")))
+                        .remove_file(&Path::new("/etc/nftables.d").join(format!("apsp-{id}.nft")))
                         .await?;
                     command(privileged, "/usr/bin/systemctl", &["daemon-reload".into()]).await?;
                 }
@@ -289,7 +289,7 @@ pub(super) async fn execute(
                 )
             } else if operation["action"] == "firewall_confirm" {
                 ensure!(
-                    sinan_protocol::now_timestamp() < snapshot.restore_at,
+                    apsp_protocol::now_timestamp() < snapshot.restore_at,
                     "firewall recovery window expired"
                 );
                 command(
@@ -321,7 +321,7 @@ pub(super) async fn execute(
                     snapshot.confirmed,
                     "confirm temporary firewall before persistence"
                 );
-                let path = Path::new("/etc/nftables.d").join(format!("sinan-{id}.nft"));
+                let path = Path::new("/etc/nftables.d").join(format!("apsp-{id}.nft"));
                 ensure!(
                     !path.try_exists()?,
                     "persistent rule file exists; restore before replacing"
@@ -331,9 +331,9 @@ pub(super) async fn execute(
                     .await?;
                 let content = tokio::fs::read(directory.join("desired.nft")).await?;
                 privileged.write_file(&path, &content, 0o600, None).await?;
-                let unit = format!("sinan-firewall-{id}.service");
+                let unit = format!("apsp-firewall-{id}.service");
                 let service = format!(
-                    "[Unit]\nDescription=Sinan managed firewall\nAfter=nftables.service\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/sbin/nft -f {}\nExecStop=/usr/sbin/nft delete table inet {table}\n[Install]\nWantedBy=multi-user.target\n",
+                    "[Unit]\nDescription=Apsp managed firewall\nAfter=nftables.service\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/sbin/nft -f {}\nExecStop=/usr/sbin/nft delete table inet {table}\n[Install]\nWantedBy=multi-user.target\n",
                     path.display()
                 );
                 privileged
@@ -366,7 +366,7 @@ fn render(table: &str, rules: &[Rule], management: &[u16]) -> anyhow::Result<Str
         .collect::<Vec<_>>()
         .join(", ");
     let mut content = format!(
-        "table inet {table} {{\n comment \"Managed by Sinan\";\n chain input {{\n  type filter hook input priority 0; policy accept;\n  iifname \"lo\" accept\n  ct state established,related accept\n  tcp dport {{ {ports} }} accept\n"
+        "table inet {table} {{\n comment \"Managed by Apsp\";\n chain input {{\n  type filter hook input priority 0; policy accept;\n  iifname \"lo\" accept\n  ct state established,related accept\n  tcp dport {{ {ports} }} accept\n"
     );
     for rule in rules {
         let (ip, prefix) = rule

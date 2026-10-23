@@ -5,7 +5,7 @@ use crate::{
     system::{ServiceBackend, SystemOps, SystemServiceManager},
 };
 use anyhow::{Context, Result, ensure};
-use sinan_adapter_sdk::{Descriptor, Privileged, ServiceManager};
+use apsp_adapter_sdk::{Descriptor, Privileged, ServiceManager};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -17,9 +17,9 @@ pub fn core_root(config: &Config) -> Result<PathBuf> {
 }
 pub fn executable_name() -> &'static str {
     if cfg!(windows) {
-        "sinan-agent.exe"
+        "apsp-agent.exe"
     } else {
-        "sinan-agent"
+        "apsp-agent"
     }
 }
 
@@ -30,7 +30,7 @@ pub async fn install_services(
     agent_version: &str,
 ) -> Result<()> {
     ensure!(
-        sinan_protocol::release_version(agent_version).is_some(),
+        apsp_protocol::release_version(agent_version).is_some(),
         "invalid Agent release version"
     );
     if descriptor.is_none() {
@@ -118,7 +118,7 @@ pub async fn install_services(
     let previous = reference(&root.join("current")).ok();
     let services = SystemServiceManager::new(ops.clone(), backend);
     let activate = async {
-        let _ = services.stop("sinan-agent.service").await;
+        let _ = services.stop("apsp-agent.service").await;
         ops.atomic_symlink(&root.join("current"), &directory)
             .await?;
         native::register(
@@ -130,7 +130,7 @@ pub async fn install_services(
             descriptor,
         )
         .await?;
-        services.restart("sinan-agent.service").await?;
+        services.restart("apsp-agent.service").await?;
         for _ in 0..30 {
             if let Ok(status) = crate::transport::status(&config.status_socket).await
                 && status["agent_version"] == agent_version
@@ -143,7 +143,7 @@ pub async fn install_services(
     }
     .await;
     if let Err(error) = activate {
-        let _ = services.stop("sinan-agent.service").await;
+        let _ = services.stop("apsp-agent.service").await;
         if let Some(previous) = previous {
             ops.atomic_symlink(&root.join("current"), &previous).await?;
             native::register(
@@ -155,7 +155,7 @@ pub async fn install_services(
                 descriptor,
             )
             .await?;
-            services.restart("sinan-agent.service").await?;
+            services.restart("apsp-agent.service").await?;
         } else {
             ops.remove_symlink(&root.join("current")).await?;
         }

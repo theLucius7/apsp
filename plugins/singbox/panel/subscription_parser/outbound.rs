@@ -10,10 +10,10 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
-use sinan_compiler::external::{
+use apsp_compiler::external::{
     Common, Ech, HysteriaObfs, Multiplex, Reality, Tls, UdpOverTcp, Utls,
 };
-pub use sinan_compiler::external::{ExternalProtocol, NormalizedOutbound, Transport};
+pub use apsp_compiler::external::{ExternalProtocol, NormalizedOutbound, Transport};
 
 pub(super) fn invalid() -> ParseReason {
     ParseReason::new("invalid_parameter", "节点参数无效或参数类型不正确")

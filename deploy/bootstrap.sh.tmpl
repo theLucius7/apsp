@@ -16,16 +16,16 @@ fi
 PLATFORM=$(uname -s)
 case "$PLATFORM" in
   Linux)
-    STAGING_BASE=/opt/sinan
+    STAGING_BASE=/opt/apsp
     if [ -d /run/systemd/system ] && command -v systemctl >/dev/null; then :
     elif [ -f /run/openrc/softlevel ] && command -v rc-service >/dev/null && command -v rc-update >/dev/null; then :
     else echo 'Linux 接入需要运行中的 systemd 或 OpenRC' >&2; exit 1; fi
     ;;
   Darwin)
     [ "$(uname -m)" = arm64 ] || { echo 'macOS Agent 仅支持 ARM64' >&2; exit 1; }
-    STAGING_BASE=/opt/sinan
+    STAGING_BASE=/opt/apsp
     ;;
-  FreeBSD) STAGING_BASE=/opt/sinan ;;
+  FreeBSD) STAGING_BASE=/opt/apsp ;;
   *) echo '此入口支持 Linux、macOS 和 FreeBSD；Windows 请使用 PowerShell 入口' >&2; exit 1 ;;
 esac
 case "$(uname -m)" in x86_64|amd64|aarch64|arm64) ;; *) echo '此接入入口仅支持 AMD64 和 ARM64' >&2; exit 1 ;; esac
@@ -52,7 +52,7 @@ while [ ! -e "$EXISTING_PARENT" ] && [ ! -L "$EXISTING_PARENT" ]; do EXISTING_PA
 protected_directory "$EXISTING_PARENT"
 (umask 022; mkdir -p "$STAGING_BASE")
 protected_directory "$STAGING_BASE"
-STAGING=$(mktemp -d "$STAGING_BASE/sinan-bootstrap.XXXXXX")
+STAGING=$(mktemp -d "$STAGING_BASE/apsp-bootstrap.XXXXXX")
 cleanup() { rm -rf "$STAGING"; }
 trap cleanup EXIT
 trap 'exit 130' INT

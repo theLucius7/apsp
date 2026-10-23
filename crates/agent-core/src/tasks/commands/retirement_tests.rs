@@ -2,8 +2,8 @@ use super::*;
 use crate::{
     Config, State, fake::FakeServiceManager, identity, retirement::Retirement, system::SystemOps,
 };
-use sinan_adapter_sdk::{BoxFuture, CommandOutput, ControlledExecution};
-use sinan_protocol::RetirementRequest;
+use apsp_adapter_sdk::{BoxFuture, CommandOutput, ControlledExecution};
+use apsp_protocol::RetirementRequest;
 use std::{
     fs,
     os::unix::fs::PermissionsExt,
@@ -105,7 +105,7 @@ impl Drop for LiveFixture {
 }
 impl LiveFixture {
     async fn start() -> Result<Self> {
-        let root = std::env::temp_dir().join(format!("sinan-retired-command-{}", Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("apsp-retired-command-{}", Uuid::new_v4()));
         fs::create_dir(&root)?;
         let root = fs::canonicalize(root)?;
         let config = Config {

@@ -1,7 +1,7 @@
 use super::Reconciler;
 use crate::state::runtime_control::ControlResult;
 use anyhow::{Context, Result, ensure};
-use sinan_protocol::{RuntimePathProbeRequest, RuntimePathProbeResult};
+use apsp_protocol::{RuntimePathProbeRequest, RuntimePathProbeResult};
 use std::time::Duration;
 use tokio::time::{Instant, timeout_at};
 

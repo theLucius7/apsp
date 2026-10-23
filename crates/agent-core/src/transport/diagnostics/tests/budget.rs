@@ -1,5 +1,5 @@
 use super::*;
-use sinan_protocol::DiagnosticResourceBudget;
+use apsp_protocol::DiagnosticResourceBudget;
 
 #[test]
 fn panel_budgets_only_tighten_adapter_limits_and_preserve_a_rejected_service() {

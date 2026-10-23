@@ -32,7 +32,7 @@ APPROVED = 'a' * 64
 
 class RootfsBuildTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='sinan-rootfs-build-test-')
+        self.temporary = tempfile.TemporaryDirectory(prefix='apsp-rootfs-build-test-')
         self.root = Path(self.temporary.name).resolve()
         self.cache = self.root / 'cache'
         self.cache.mkdir(mode=0o700)

@@ -1,7 +1,7 @@
 use super::cache::{Control, Snapshot};
 use crate::{Config, SharedState, state::StorageRetry};
 use anyhow::{Result, ensure};
-use sinan_protocol::{AgentSettings, telemetry::TelemetrySettings};
+use apsp_protocol::{AgentSettings, telemetry::TelemetrySettings};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -204,7 +204,7 @@ async fn deliver(
                         break;
                     }
                     match active
-                        .telemetry(&sinan_protocol::TelemetryBatch { samples })
+                        .telemetry(&apsp_protocol::TelemetryBatch { samples })
                         .await
                     {
                         Ok(ack) => {

@@ -1,6 +1,6 @@
 use super::*;
 use crate::telemetry::cache::Snapshot;
-use sinan_protocol::{Metrics, StaticInfo, TelemetrySample};
+use apsp_protocol::{Metrics, StaticInfo, TelemetrySample};
 
 #[tokio::test]
 async fn empty_cache_keeps_host_identity_until_a_real_snapshot_arrives() -> Result<()> {

@@ -1,12 +1,12 @@
 use super::Reconciler;
 use crate::state::runtime_control::{ControlRequest, ControlResult};
 use anyhow::{Context, Result, ensure};
-use serde::{Deserialize, Serialize};
-use sinan_adapter_sdk::{Prepared, RuntimeInstance};
-use sinan_protocol::{
+use apsp_adapter_sdk::{Prepared, RuntimeInstance};
+use apsp_protocol::{
     ApplyResult, ApplyStatus, RuntimeBinding, RuntimeCheckpoint, RuntimeCheckpointResult,
     RuntimeRecoveryBarrierResult,
 };
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -161,7 +161,7 @@ impl Reconciler {
             .map_err(|_| anyhow::anyhow!("state poisoned"))?
             .get_json::<i64>("clock_offset_ms")?
             .unwrap_or(0);
-        Ok(sinan_protocol::telemetry::now_millis()
+        Ok(apsp_protocol::telemetry::now_millis()
             .saturating_add(offset)
             .div_euclid(1000))
     }

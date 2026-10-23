@@ -309,7 +309,7 @@ def manifest_contract(value):
     require(isinstance(controller.get("panel"), dict) and
             controller["panel"].get("origin") == panel["origin"], "controller_panel_origin_mismatch")
     run_root = private_directory(controller["run_root"])
-    marker = secure_read(run_root / ".sinan-managed-test-run", 128, private=True)
+    marker = secure_read(run_root / ".apsp-managed-test-run", 128, private=True)
     require(marker.decode("utf-8").strip() == value["run_id"], "run_ownership_mismatch")
     evidence = Path(value["evidence_dir"])
     require(evidence.is_absolute() and ".." not in evidence.parts and

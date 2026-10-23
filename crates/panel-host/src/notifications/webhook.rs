@@ -160,7 +160,7 @@ pub(super) fn render(body: &str, message: &Message<'_>) -> Result<String, &'stat
             message.event,
             message.event_id,
             message.category,
-            "司南",
+            "apsp",
         ],
     )?;
     let result = body.to_string();

@@ -1,7 +1,7 @@
 use crate::Config;
 use anyhow::{Result, ensure};
+use apsp_adapter_sdk::{Descriptor, Privileged, ServiceManager};
 use serde_json::{Value, json};
-use sinan_adapter_sdk::{Descriptor, Privileged, ServiceManager};
 use std::path::Path;
 
 pub(super) async fn inspect(
@@ -48,7 +48,7 @@ pub(super) async fn inspect(
     );
     let mut value: Value = serde_json::from_str(&result.output.stdout)?;
     value["module"] = json!(module);
-    value["sampled_at"] = json!(sinan_protocol::now_timestamp());
+    value["sampled_at"] = json!(apsp_protocol::now_timestamp());
     value["service_manager"] = manager;
     value["secret_values_recorded"] = json!(false);
     Ok(value)
@@ -58,7 +58,7 @@ pub(super) async fn inspect(
 mod tests {
     use super::*;
     use crate::system::SystemOps;
-    use sinan_adapter_sdk::{BoxFuture, CommandOutput, Execution};
+    use apsp_adapter_sdk::{BoxFuture, CommandOutput, Execution};
     use std::sync::{Arc, Mutex};
 
     struct MetadataOps {
@@ -108,7 +108,7 @@ mod tests {
                         "unexpected service fixture query"
                     );
                     ensure!(
-                        args[3] == "sinan-example-runtime@main.service",
+                        args[3] == "apsp-example-runtime@main.service",
                         "runtime inspection queried a guessed unit instead of its descriptor"
                     );
                     *self.observed.lock().expect("observed native unit") = Some(args[3].clone());
@@ -203,13 +203,13 @@ mod tests {
     async fn registered_unit_is_used_and_missing_accounts_never_inherit_root_permissions()
     -> Result<()> {
         let root = std::env::temp_dir().join(format!(
-            "sinan-registered-permissions-{}",
+            "apsp-registered-permissions-{}",
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir(&root)?;
         let outcome=async {
             let config=Config{runtime_root:root.clone(),..Default::default()};
-            let descriptor=Descriptor{module:"example-wire".into(),plugin_name:"example-runtime".into(),binary_name:"example".into(),auxiliary_files:Vec::new(),service_unit:"sinan-example-runtime@main.service".into(),service_group:"example-runtime".into()};
+            let descriptor=Descriptor{module:"example-wire".into(),plugin_name:"example-runtime".into(),binary_name:"example".into(),auxiliary_files:Vec::new(),service_unit:"apsp-example-runtime@main.service".into(),service_group:"example-runtime".into()};
             let ops=Arc::new(MetadataOps{observed:Mutex::new(None),load:"not-found",account:""});
             let backend=crate::system::SystemServiceManager::new(ops.clone(),crate::system::ServiceBackend::Systemd);
             let receipt=inspect(&config,&descriptor,ops.as_ref(),&backend).await?;
@@ -221,7 +221,7 @@ mod tests {
             assert!(receipt["runtime_directory"]["runtime_readable"].is_null());
             assert!(!receipt["runtime_directory"]["runtime_error"].is_null());
             assert!(!root.join("example-runtime@main").exists());
-            let missing=probe_account(&root,json!({"known":true,"name":format!("sinan-account-{}",uuid::Uuid::new_v4()),"group":"","supplementary_groups":[]})).await?;
+            let missing=probe_account(&root,json!({"known":true,"name":format!("apsp-account-{}",uuid::Uuid::new_v4()),"group":"","supplementary_groups":[]})).await?;
             assert_eq!(missing["runtime_account"]["known"],false);
             assert!(missing["certificate_directory"]["runtime_writable"].is_null());
             Ok::<_,anyhow::Error>(())
@@ -242,7 +242,7 @@ mod tests {
             "requires root for actual runtime identity transition"
         );
         let root =
-            std::env::temp_dir().join(format!("sinan-runtime-account-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("apsp-runtime-account-{}", uuid::Uuid::new_v4()));
         let runtime = root.join("example-runtime@main");
         std::fs::create_dir_all(runtime.join("data/certificates"))?;
         for path in [&root, &runtime, &runtime.join("data")] {
@@ -280,10 +280,8 @@ mod tests {
 
     #[tokio::test]
     async fn directory_probe_does_not_create_targets_and_rejects_symlink_ancestors() -> Result<()> {
-        let root = std::env::temp_dir().join(format!(
-            "sinan-runtime-permissions-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("apsp-runtime-permissions-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&root)?;
         let probe = async |path: &Path| -> Result<Value> {
             let output = SystemOps

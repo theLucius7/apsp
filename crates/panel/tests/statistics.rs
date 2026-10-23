@@ -75,7 +75,7 @@ async fn network_statistics_use_selected_interfaces_and_raw_observations(
     let hidden = panel.create_server(&cookie, "hidden server").await?;
     panel.create_server(&cookie, "not enrolled").await?;
     let deleted = panel.create_server(&cookie, "deleted server").await?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let day = now / 86_400 * 86_400;
     sqlx::query("UPDATE servers SET device_public_key='fixture',last_seen=$2,asset_settings='{\"network_interface\":\"eth0\"}' WHERE id=$1")
         .bind(active).bind(now).execute(pool).await?;
@@ -98,7 +98,7 @@ async fn network_statistics_use_selected_interfaces_and_raw_observations(
         sqlx::query("INSERT INTO server_network_daily(server_id,day,interface,uploaded,downloaded,first_sample_at,last_sample_at,incomplete) VALUES($1,$2,$3,$4::text::numeric,$5::text::numeric,$6,$6,$7)")
             .bind(server).bind(at).bind(interface).bind(up).bind(down).bind(at*1000+1000).bind(incomplete).execute(pool).await?;
     }
-    sqlx::query("INSERT INTO server_traffic_corrections(server_id,cycle_start,reset_day,network_interface,uploaded_offset,downloaded_offset,reason,created_at) VALUES($1,sinan_traffic_cycle_start($2,1),1,'eth0',999,999,'fixture',$2)")
+    sqlx::query("INSERT INTO server_traffic_corrections(server_id,cycle_start,reset_day,network_interface,uploaded_offset,downloaded_offset,reason,created_at) VALUES($1,apsp_traffic_cycle_start($2,1),1,'eth0',999,999,'fixture',$2)")
         .bind(active).bind(now).execute(pool).await?;
     let summary = read(&panel, &cookie, "/api/statistics").await?;
     assert_eq!(
@@ -149,7 +149,7 @@ async fn proxy_statistics_keep_history_precision_and_bounded_rankings(pool: PgPo
     let pool = &panel.state.pool;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "proxy accounting").await?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let day = now / 86_400 * 86_400;
     let mut identities = Vec::new();
     for index in 0..10 {

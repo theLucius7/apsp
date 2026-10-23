@@ -4,17 +4,17 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result};
-use business_support::TestPanel;
-use reqwest::{Method, StatusCode};
-use serde_json::{Value, json};
-use sinan_panel::{
+use apsp_panel::{
     auth::{hash_token, random_token},
     operations,
 };
-use sinan_protocol::{
+use apsp_protocol::{
     fleet::{AccessPolicy, JobResult, OPERATIONS_CAPABILITY, Operation, Work},
     now_timestamp,
 };
+use business_support::TestPanel;
+use reqwest::{Method, StatusCode};
+use serde_json::{Value, json};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -271,7 +271,7 @@ async fn operations_only_grant_cannot_inspect_or_reconcile_service_work(
         .execute(&panel.state.pool)
         .await?;
     sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$2+300)").bind(hash).bind(now_timestamp()).execute(&panel.state.pool).await?;
-    let cookie = format!("sinan_session={token}");
+    let cookie = format!("apsp_session={token}");
     for (action, body) in [
         (
             "inspection",
@@ -420,7 +420,7 @@ async fn reconciliation_never_waits_through_an_auth_change_or_mutates_after_revo
     let (server, job, original, _) = fixture(&panel, &cookie).await?;
     let hash = hash_token(
         cookie
-            .strip_prefix("sinan_session=")
+            .strip_prefix("apsp_session=")
             .context("controlled admin cookie")?,
     );
     let original_body = json!({"server_id":server,"operation_id":original,"inspection_id":Uuid::new_v4(),"process_stopped":true,"cleanup_confirmed":true,"observed_at":now_timestamp(),"evidence":"TEST_ONLY current process and cleanup observation evidence"});

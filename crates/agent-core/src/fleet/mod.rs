@@ -4,8 +4,8 @@ mod terminals;
 
 use crate::{Config, SharedState, artifacts::PanelClient};
 use anyhow::{Result, ensure};
-use sinan_adapter_sdk::{Descriptor, Privileged, ServiceManager};
-use sinan_protocol::fleet::{AccessPolicy, JobResult, Work};
+use apsp_adapter_sdk::{Descriptor, Privileged, ServiceManager};
+use apsp_protocol::fleet::{AccessPolicy, JobResult, Work};
 use std::{path::Path, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, watch};
 
@@ -19,7 +19,7 @@ pub(crate) fn local_policy(config: &Config) -> Result<AccessPolicy> {
     let path = config
         .identity_dir
         .parent()
-        .unwrap_or(Path::new("/etc/sinan"))
+        .unwrap_or(Path::new("/etc/apsp"))
         .join("fleet-policy.json");
     match std::fs::symlink_metadata(&path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -49,17 +49,17 @@ pub(crate) fn local_policy(config: &Config) -> Result<AccessPolicy> {
 pub(crate) fn capabilities(config: &Config) -> Vec<String> {
     let mut result = Vec::new();
     if cfg!(target_os = "linux") {
-        result.push(sinan_protocol::fleet::OPERATIONS_CAPABILITY.into());
+        result.push(apsp_protocol::fleet::OPERATIONS_CAPABILITY.into());
         result.push("system:network:v1".into());
         if let Ok(policy) = local_policy(config) {
             if policy.runtime_inspection && Path::new("/usr/bin/python3").is_file() {
-                result.push(sinan_protocol::fleet::RUNTIME_PREFLIGHT_CAPABILITY.into());
+                result.push(apsp_protocol::fleet::RUNTIME_PREFLIGHT_CAPABILITY.into());
             }
             if !policy.terminal_accounts.is_empty()
                 && Path::new("/usr/bin/python3").is_file()
                 && Path::new("/run/systemd/system").is_dir()
             {
-                result.push(sinan_protocol::fleet::TERMINAL_CAPABILITY.into());
+                result.push(apsp_protocol::fleet::TERMINAL_CAPABILITY.into());
             }
             if (!policy.read_directories.is_empty() || !policy.write_directories.is_empty())
                 && Path::new("/usr/bin/python3").is_file()
@@ -234,41 +234,40 @@ async fn tick(
             let result = async {
                 let _exclusive = execution_lock.lock().await;
                 let _guard = retirement.gate.read().await;
-                let execution = if retirement.requested()
-                    || job.expires_at <= sinan_protocol::now_timestamp()
-                {
-                    Err(anyhow::anyhow!("operation expired before execution"))
-                } else {
-                    match local_policy(&config) {
-                        Ok(policy) => {
-                            operations::execute(
-                                &config,
-                                &policy,
-                                &job,
-                                ops.as_ref(),
-                                services.as_ref(),
-                                &client,
-                                &descriptors,
-                            )
-                            .await
+                let execution =
+                    if retirement.requested() || job.expires_at <= apsp_protocol::now_timestamp() {
+                        Err(anyhow::anyhow!("operation expired before execution"))
+                    } else {
+                        match local_policy(&config) {
+                            Ok(policy) => {
+                                operations::execute(
+                                    &config,
+                                    &policy,
+                                    &job,
+                                    ops.as_ref(),
+                                    services.as_ref(),
+                                    &client,
+                                    &descriptors,
+                                )
+                                .await
+                            }
+                            Err(error) => Err(error),
                         }
-                        Err(error) => Err(error),
-                    }
-                };
+                    };
                 let result = match execution {
                     Ok(result) => JobResult {
                         id: job.id,
                         succeeded: true,
                         result,
                         error: None,
-                        completed_at: sinan_protocol::now_timestamp(),
+                        completed_at: apsp_protocol::now_timestamp(),
                     },
                     Err(error) => JobResult {
                         id: job.id,
                         succeeded: false,
                         result: serde_json::Value::Null,
                         error: Some(error.to_string().chars().take(2048).collect()),
-                        completed_at: sinan_protocol::now_timestamp(),
+                        completed_at: apsp_protocol::now_timestamp(),
                     },
                 };
                 {

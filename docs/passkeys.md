@@ -4,7 +4,7 @@ Passkey 使用设备指纹、面容、PIN 或支持用户验证的安全密钥�
 
 ## 部署条件
 
-将 `SINAN_PUBLIC_URL` 设置为实际使用的 HTTPS 域名，例如 `https://panel.example.com`，并始终通过这个地址访问。本地开发允许 `http://localhost:8080`。HTTP 公网地址和 IP 字面地址会禁用 Passkey 并提示原因，原密码入口仍可用。浏览器必须支持 WebAuthn，并能够进行设备解锁或安全密钥用户验证。
+将 `APSP_PUBLIC_URL` 设置为实际使用的 HTTPS 域名，例如 `https://panel.example.com`，并始终通过这个地址访问。本地开发允许 `http://localhost:8080`。HTTP 公网地址和 IP 字面地址会禁用 Passkey 并提示原因，原密码入口仍可用。浏览器必须支持 WebAuthn，并能够进行设备解锁或安全密钥用户验证。
 
 服务端只接受配置地址对应的 Origin，不通过 `Host`、`Forwarded` 或 `X-Forwarded-*` 扩大认证范围。反向代理应保留浏览器的 Origin，并正确提供 HTTPS。改变域名/RP ID 后，原 Passkey 不能直接迁移：管理员使用原密码/TOTP 重新绑定，代理用户由管理员重新生成开通链接。端口受精确 Origin 限制，默认端口按 URL 标准规范化。
 
@@ -30,7 +30,7 @@ Passkey 使用设备指纹、面容、PIN 或支持用户验证的安全密钥�
 
 ## 会话与限制
 
-- 管理员使用 `sinan_session`；代理用户使用独立的 `sinan_proxy_session`。两者都是 HttpOnly、SameSite=Strict，HTTPS 下带 Secure，最长二十四小时；不会互相提升权限。
+- 管理员使用 `apsp_session`；代理用户使用独立的 `apsp_proxy_session`。两者都是 HttpOnly、SameSite=Strict，HTTPS 下带 Secure，最长二十四小时；不会互相提升权限。
 - 注册和登录挑战最多五分钟，存于 PostgreSQL，绑定账户、用途、发起会话/邀请和浏览器 Cookie。验证请求一次性消费；过期、重放、错误来源和错误账户均拒绝。服务重启不丢失挑战，但不会延长有效期。
 - 每个账户最多八个待完成挑战，全局最多二百五十六个；代理用户最多十个会话。注册/登录两阶段、密钥删除和开通操作共用既有认证限速：每实际连接 IP 每分钟八次、全局六十四次、并发四个；代理后按代理地址计数。遇到 429 请稍后重试。
 - 列表不返回凭据公钥材料、设备签名或开通秘密；数据库保存凭据公钥/验证状态及开通令牌摘要，仍须保护数据库和备份。更换设备是否可同步密钥由设备/密码管理器决定。

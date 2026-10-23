@@ -103,7 +103,7 @@ def checksums(directory):
 def build(args):
     artifact.ensure(re.fullmatch(r"[0-9a-f]{64}", args.approved_builder_image_sha256) is not None,
                     "an independently approved builder image SHA256 is required")
-    builder = artifact.module("sinan_rootfs_preparation", artifact.ROOT / "tools/nodequality-rootfs-build.py")
+    builder = artifact.module("apsp_rootfs_preparation", artifact.ROOT / "tools/nodequality-rootfs-build.py")
     prepared = builder.verify_prepared(args.prepared_directory, args.approved_builder_image_sha256)
     receipt = builder.verify_export(args.rootfs_directory, prepared, args.arch)
     legacy = release.binary_bytes(ordinary(args.legacy_artifact, artifact.MAX_RUNNER),

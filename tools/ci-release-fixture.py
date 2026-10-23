@@ -12,7 +12,7 @@ import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / 'crates/protocol/tests/fixtures'
-COMMENT = 'Sinan TEST ONLY CI fixture; never publish as an official release'
+COMMENT = 'Apsp TEST ONLY CI fixture; never publish as an official release'
 
 
 def digest(data):
@@ -21,7 +21,7 @@ def digest(data):
 
 def sign(data):
     # No configurable private key: production signing is deliberately impossible.
-    signer = os.environ.get('SINAN_CI_FIXTURE_SIGNER')
+    signer = os.environ.get('APSP_CI_FIXTURE_SIGNER')
     if signer:
         result = subprocess.run([signer], input=data, capture_output=True, check=True, timeout=30)
         return result.stdout.decode('utf-8')
@@ -33,7 +33,7 @@ def sign(data):
         verifier = shutil.which('minisign')
         if not verifier:
             raise RuntimeError('TEST_ONLY fixture signing needs cryptography or minisign') from None
-        with tempfile.TemporaryDirectory(prefix='sinan-test-sign-') as directory:
+        with tempfile.TemporaryDirectory(prefix='apsp-test-sign-') as directory:
             message = Path(directory) / 'checksums'
             message.write_bytes(data)
             subprocess.run([verifier, '-S', '-q', '-m', str(message), '-s', str(FIXTURES / 'TEST_ONLY.key'),
@@ -91,7 +91,7 @@ def proof(name, version, binary_name, data, format='raw', arch=None):
                  asset_name=asset_name(name, version, arch, format))
     if len(files) > 1:
         entry['auxiliary_files'] = {key: value for key, value in files.items() if key != binary_name}
-    metadata_json = json.dumps(dict(schema=1, source_repo='theLucius7/sinan', tag='agent-v' + (version if name == 'agent' else '0.2.0'),
+    metadata_json = json.dumps(dict(schema=1, source_repo='theLucius7/apsp', tag='agent-v' + (version if name == 'agent' else '0.2.0'),
                               protocol_min=1, protocol_max=1, artifacts=[entry]), separators=(',', ':'))
     sums = {'release.json': digest(metadata_json.encode()), 'install.sh': digest(b'#!/bin/sh\nexit 0\n'),
             f'{name}/{version}/{arch}': digest(data)}

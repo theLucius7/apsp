@@ -11,10 +11,10 @@ mod scheduling_tests;
 
 use crate::{SharedState, artifacts::PanelClient};
 use anyhow::{Context, Result, ensure};
-use sinan_adapter_sdk::Privileged;
+use apsp_adapter_sdk::Privileged;
 #[cfg(test)]
-use sinan_protocol::now_timestamp;
-use sinan_protocol::{
+use apsp_protocol::now_timestamp;
+use apsp_protocol::{
     ProbeBatch, ProbeKind, ProbeResult, ProbeSpec, TaskAck, telemetry::now_millis,
 };
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -124,7 +124,7 @@ async fn synchronize_with_cadence(
                     if changed.is_err() { return Ok(()); }
                     continue;
                 }
-                response = timeout(Duration::from_secs(5), client.get_json::<sinan_protocol::ProbeLease>("/api/agent/v1/probe-lease")) => response
+                response = timeout(Duration::from_secs(5), client.get_json::<apsp_protocol::ProbeLease>("/api/agent/v1/probe-lease")) => response
                     .context("probe lease refresh exceeded its deadline").and_then(|response| response),
             };
             let _guard = retirement.gate.read().await;
@@ -282,9 +282,9 @@ async fn measure(
         })
         .ok_or_else(|| anyhow::anyhow!("probe resolved no authorized-family unicast address"))?;
     result.address_family = Some(if address.is_ipv4() {
-        sinan_protocol::ProbeAddressFamily::Ipv4
+        apsp_protocol::ProbeAddressFamily::Ipv4
     } else {
-        sinan_protocol::ProbeAddressFamily::Ipv6
+        apsp_protocol::ProbeAddressFamily::Ipv6
     });
     match spec.kind {
         ProbeKind::Tcp => {
@@ -322,12 +322,12 @@ async fn measure(
 #[cfg(test)]
 fn authorize_fixture(spec: &mut ProbeSpec) {
     let identity = spec.identity();
-    spec.monitor = Some(sinan_protocol::ProbeMonitor {
-        network: sinan_protocol::ProbeNetwork::Other,
+    spec.monitor = Some(apsp_protocol::ProbeMonitor {
+        network: apsp_protocol::ProbeNetwork::Other,
         region: String::new(),
-        address_family: sinan_protocol::ProbeAddressFamily::Any,
-        authorization: Some(sinan_protocol::ProbeAuthorization {
-            kind: sinan_protocol::ProbeAuthorizationKind::Owned,
+        address_family: apsp_protocol::ProbeAddressFamily::Any,
+        authorization: Some(apsp_protocol::ProbeAuthorization {
+            kind: apsp_protocol::ProbeAuthorizationKind::Owned,
             source: "TEST_ONLY isolated loopback listener".into(),
             scope: "This fixture process owns the exact target and method".into(),
             enabled: true,
@@ -380,7 +380,7 @@ mod tests {
         assert_eq!(failed.attempts, Some(4));
         assert_eq!(
             failed.address_family,
-            Some(sinan_protocol::ProbeAddressFamily::Ipv4)
+            Some(apsp_protocol::ProbeAddressFamily::Ipv4)
         );
         assert!(
             failed
@@ -421,7 +421,7 @@ mod tests {
             serde_json::json!({"id":Uuid::new_v4(),"name":"TEST_ONLY owned IPv6 listener","kind":"tcp","target":"::1","port":listener.local_addr()?.port(),"interval_secs":10,"carrier":"","enabled":true}),
         )?;
         authorize_fixture(&mut spec);
-        spec.monitor.as_mut().unwrap().address_family = sinan_protocol::ProbeAddressFamily::Ipv6;
+        spec.monitor.as_mut().unwrap().address_family = apsp_protocol::ProbeAddressFamily::Ipv6;
         let identity = spec.identity();
         spec.monitor
             .as_mut()
@@ -433,13 +433,13 @@ mod tests {
         let measured = sample(&spec, &crate::system::SystemOps, 0).await;
         assert_eq!(
             measured.address_family,
-            Some(sinan_protocol::ProbeAddressFamily::Ipv6)
+            Some(apsp_protocol::ProbeAddressFamily::Ipv6)
         );
         assert_eq!(measured.attempts, Some(4));
         assert_eq!(measured.loss_percent, 0.0);
         assert!(measured.latency_ms.is_some());
         assert_eq!(measured.error, None);
-        spec.monitor.as_mut().unwrap().address_family = sinan_protocol::ProbeAddressFamily::Ipv4;
+        spec.monitor.as_mut().unwrap().address_family = apsp_protocol::ProbeAddressFamily::Ipv4;
         let identity = spec.identity();
         spec.monitor
             .as_mut()
@@ -476,7 +476,7 @@ mod tests {
             execution_authorized: None,
         };
         authorize_fixture(&mut spec);
-        spec.monitor.as_mut().unwrap().address_family = sinan_protocol::ProbeAddressFamily::Ipv6;
+        spec.monitor.as_mut().unwrap().address_family = apsp_protocol::ProbeAddressFamily::Ipv6;
         let identity = spec.identity();
         spec.monitor
             .as_mut()

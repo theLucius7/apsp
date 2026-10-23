@@ -8,6 +8,7 @@ use crate::{
         PendingAuthentication, PendingRegistration,
     },
 };
+use apsp_protocol::now_timestamp;
 use axum::{
     Json,
     extract::{ConnectInfo, Path, State},
@@ -16,7 +17,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use sinan_protocol::now_timestamp;
 use sqlx::{Postgres, Row, Transaction, postgres::PgRow};
 use std::net::SocketAddr;
 use uuid::Uuid;

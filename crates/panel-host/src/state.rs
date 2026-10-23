@@ -1,5 +1,5 @@
 use crate::{auth, config::Config, ip_quality, telemetry};
-use sinan_protocol::Envelope;
+use apsp_protocol::Envelope;
 use sqlx::PgPool;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, RwLock, Semaphore, mpsc};
@@ -20,7 +20,7 @@ pub struct AppState {
     pub quality_permits: Arc<Semaphore>,
     pub quality_providers: Arc<ip_quality::ProviderRegistry>,
     pub release_permits: Arc<Semaphore>,
-    pub release_keys: Option<Arc<sinan_protocol::release::TrustedKeys>>,
+    pub release_keys: Option<Arc<apsp_protocol::release::TrustedKeys>>,
     pub config: Arc<Config>,
     pub connections: Arc<RwLock<HashMap<i64, AgentConnection>>>,
     pub device_lifecycle: Arc<Mutex<()>>,
@@ -33,13 +33,13 @@ impl AppState {
         auth::ensure_admin(&pool, config.admin_password.as_deref()).await?;
         Ok(Self {
             pool,
-            started_at: sinan_protocol::now_timestamp(),
+            started_at: apsp_protocol::now_timestamp(),
             login_permits: Arc::new(Semaphore::new(4)),
             passkeys: Arc::new(crate::passkeys::Service::new(&config.public_url)),
             quality_permits: Arc::new(Semaphore::new(2)),
             quality_providers: Arc::new(ip_quality::ProviderRegistry::from_env()),
             release_permits: Arc::new(Semaphore::new(1)),
-            release_keys: sinan_protocol::release::TrustedKeys::compiled()
+            release_keys: apsp_protocol::release::TrustedKeys::compiled()
                 .ok()
                 .map(Arc::new),
             config: Arc::new(config),

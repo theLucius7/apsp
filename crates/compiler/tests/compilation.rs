@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
+use apsp_compiler::{Access, Node, compile_client, compile_server, stat_name, subscription_links};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::Value;
-use sinan_compiler::{Access, Node, compile_client, compile_server, stat_name, subscription_links};
 use std::{fs, path::PathBuf};
 use uuid::Uuid;
 
@@ -110,7 +110,7 @@ fn settings_preserve_old_snapshots_and_separate_public_from_listening_endpoint()
     model[0].settings.tcp_fast_open = true;
     model[0].settings.reality.handshake_server = Some("handshake.example.com".into());
     model[0].settings.reality.handshake_port = 8443;
-    model[0].settings.reality.fingerprint = sinan_compiler::Fingerprint::Firefox;
+    model[0].settings.reality.fingerprint = apsp_compiler::Fingerprint::Firefox;
     let native: Value = serde_json::from_str(&compile_server(&model).unwrap()).unwrap();
     assert_eq!(native["inbounds"][0]["listen"], "127.0.0.1");
     assert_eq!(native["inbounds"][0]["listen_port"], 20000);
@@ -140,7 +140,7 @@ fn settings_preserve_old_snapshots_and_separate_public_from_listening_endpoint()
     );
     assert!(matches!(
         compile_client(&model, 1),
-        Err(sinan_compiler::CompileError::NoAuthorizedNodes(1))
+        Err(apsp_compiler::CompileError::NoAuthorizedNodes(1))
     ));
     assert_eq!(subscription_links(&model, 1).unwrap(), "");
     assert_eq!(model[0].users.len(), 2);
@@ -269,10 +269,10 @@ fn invalid_or_ambiguous_models_are_rejected() {
 }
 
 #[test]
-#[ignore = "requires an upstream v1.14.2 binary with with_v2ray_api; set SINAN_TEST_SINGBOX"]
+#[ignore = "requires an upstream v1.14.2 binary with with_v2ray_api; set APSP_TEST_SINGBOX"]
 fn upstream_runtime_accepts_compiled_server_and_client() {
-    let binary = std::env::var("SINAN_TEST_SINGBOX").expect("set SINAN_TEST_SINGBOX");
-    let directory = std::env::temp_dir().join(format!("sinan-compiler-{}", Uuid::new_v4()));
+    let binary = std::env::var("APSP_TEST_SINGBOX").expect("set APSP_TEST_SINGBOX");
+    let directory = std::env::temp_dir().join(format!("apsp-compiler-{}", Uuid::new_v4()));
     fs::create_dir_all(&directory).unwrap();
     for (name, text) in [
         ("server", compile_server(&nodes()).unwrap()),

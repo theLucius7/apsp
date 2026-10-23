@@ -92,6 +92,331 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "apsp-adapter-ipquality"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-adapter-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "apsp-adapter-nodequality"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-adapter-sdk",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "apsp-adapter-sdk"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "apsp-adapter-singbox"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-adapter-sdk",
+ "blake2",
+ "prost",
+ "protoc-bin-vendored",
+ "quinn",
+ "rand 0.8.8",
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "tokio-rustls",
+ "tonic",
+ "tonic-build",
+ "uuid",
+ "webpki-roots 1.0.9",
+]
+
+[[package]]
+name = "apsp-adapter-tcpquality"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-adapter-sdk",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+]
+
+[[package]]
+name = "apsp-agent"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "apsp-adapter-ipquality",
+ "apsp-adapter-nodequality",
+ "apsp-adapter-sdk",
+ "apsp-adapter-singbox",
+ "apsp-adapter-tcpquality",
+ "apsp-agent-core",
+ "clap",
+ "serde_json",
+ "tokio",
+ "toml",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "apsp-agent-core"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-adapter-sdk",
+ "apsp-protocol",
+ "base64 0.22.1",
+ "blake2",
+ "ed25519-dalek",
+ "flate2",
+ "futures-util",
+ "libc",
+ "rand 0.8.8",
+ "reqwest",
+ "rusqlite",
+ "rusqlite_migration",
+ "rustls",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sysinfo",
+ "tar",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite 0.28.0",
+ "toml",
+ "tracing",
+ "uuid",
+ "webpki-roots 1.0.9",
+]
+
+[[package]]
+name = "apsp-cloud-api"
+version = "0.3.0"
+dependencies = [
+ "apsp-protocol",
+ "axum 0.8.9",
+ "base64 0.22.1",
+ "futures-util",
+ "hmac",
+ "httpdate",
+ "reqwest",
+ "serde_json",
+ "sha1",
+ "sha2 0.10.9",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "apsp-compiler"
+version = "0.3.0"
+dependencies = [
+ "base64 0.22.1",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
+name = "apsp-panel"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-adapter-nodequality",
+ "apsp-adapter-sdk",
+ "apsp-adapter-singbox",
+ "apsp-agent-core",
+ "apsp-cloud-api",
+ "apsp-compiler",
+ "apsp-panel-host",
+ "apsp-plugin-alicloud",
+ "apsp-plugin-ddns",
+ "apsp-plugin-singbox",
+ "apsp-protocol",
+ "argon2",
+ "axum 0.8.9",
+ "base64 0.22.1",
+ "blake2",
+ "data-encoding",
+ "ed25519-dalek",
+ "flate2",
+ "futures-util",
+ "hmac",
+ "rand 0.8.8",
+ "reqwest",
+ "ring",
+ "rusqlite",
+ "rust-embed",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2 0.10.9",
+ "sqlx",
+ "tar",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite 0.28.0",
+ "toml",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "webauthn-rs",
+ "webpki-roots 1.0.9",
+ "x25519-dalek",
+]
+
+[[package]]
+name = "apsp-panel-host"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-protocol",
+ "argon2",
+ "axum 0.8.9",
+ "base64 0.22.1",
+ "data-encoding",
+ "ed25519-dalek",
+ "flate2",
+ "futures-util",
+ "hmac",
+ "httpdate",
+ "rand 0.8.8",
+ "reqwest",
+ "ring",
+ "rust-embed",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2 0.10.9",
+ "sqlx",
+ "tar",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite 0.28.0",
+ "toml",
+ "tower-http",
+ "tracing",
+ "uuid",
+ "webauthn-rs",
+ "webpki-roots 1.0.9",
+]
+
+[[package]]
+name = "apsp-plugin-alicloud"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-cloud-api",
+ "apsp-panel-host",
+ "apsp-protocol",
+ "axum 0.8.9",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "apsp-plugin-ddns"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-cloud-api",
+ "apsp-panel-host",
+ "apsp-protocol",
+ "axum 0.8.9",
+ "futures-util",
+ "httpdate",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "apsp-plugin-singbox"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-compiler",
+ "apsp-panel-host",
+ "apsp-protocol",
+ "axum 0.8.9",
+ "base64 0.22.1",
+ "flate2",
+ "futures-util",
+ "rand 0.8.8",
+ "reqwest",
+ "rustls",
+ "saphyr-parser",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "uuid",
+ "x25519-dalek",
+]
+
+[[package]]
+name = "apsp-protocol"
+version = "0.3.0"
+dependencies = [
+ "base64 0.22.1",
+ "blake2",
+ "ed25519-dalek",
+ "minisign-verify",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
+name = "apsp-tcp-probe"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+]
+
+[[package]]
 name = "argon2"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2653,331 +2978,6 @@ name = "simd-adler32"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
-
-[[package]]
-name = "sinan-adapter-ipquality"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "sinan-adapter-sdk",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "sinan-adapter-nodequality"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "serde_json",
- "sinan-adapter-sdk",
- "tokio",
-]
-
-[[package]]
-name = "sinan-adapter-sdk"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "sinan-adapter-singbox"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "blake2",
- "prost",
- "protoc-bin-vendored",
- "quinn",
- "rand 0.8.8",
- "reqwest",
- "serde_json",
- "sinan-adapter-sdk",
- "tokio",
- "tokio-rustls",
- "tonic",
- "tonic-build",
- "uuid",
- "webpki-roots 1.0.9",
-]
-
-[[package]]
-name = "sinan-adapter-tcpquality"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "sinan-adapter-sdk",
- "tokio",
-]
-
-[[package]]
-name = "sinan-agent"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "clap",
- "serde_json",
- "sinan-adapter-ipquality",
- "sinan-adapter-nodequality",
- "sinan-adapter-sdk",
- "sinan-adapter-singbox",
- "sinan-adapter-tcpquality",
- "sinan-agent-core",
- "tokio",
- "toml",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "sinan-agent-core"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "blake2",
- "ed25519-dalek",
- "flate2",
- "futures-util",
- "libc",
- "rand 0.8.8",
- "reqwest",
- "rusqlite",
- "rusqlite_migration",
- "rustls",
- "rustls-pki-types",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "sinan-adapter-sdk",
- "sinan-protocol",
- "sysinfo",
- "tar",
- "thiserror 2.0.21",
- "tokio",
- "tokio-rustls",
- "tokio-tungstenite 0.28.0",
- "toml",
- "tracing",
- "uuid",
- "webpki-roots 1.0.9",
-]
-
-[[package]]
-name = "sinan-cloud-api"
-version = "0.3.0"
-dependencies = [
- "axum 0.8.9",
- "base64 0.22.1",
- "futures-util",
- "hmac",
- "httpdate",
- "reqwest",
- "serde_json",
- "sha1",
- "sha2 0.10.9",
- "sinan-protocol",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "sinan-compiler"
-version = "0.3.0"
-dependencies = [
- "base64 0.22.1",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "thiserror 2.0.21",
- "uuid",
-]
-
-[[package]]
-name = "sinan-panel"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "argon2",
- "axum 0.8.9",
- "base64 0.22.1",
- "blake2",
- "data-encoding",
- "ed25519-dalek",
- "flate2",
- "futures-util",
- "hmac",
- "rand 0.8.8",
- "reqwest",
- "ring",
- "rusqlite",
- "rust-embed",
- "rustls",
- "serde",
- "serde_json",
- "sha1",
- "sha2 0.10.9",
- "sinan-adapter-nodequality",
- "sinan-adapter-sdk",
- "sinan-adapter-singbox",
- "sinan-agent-core",
- "sinan-cloud-api",
- "sinan-compiler",
- "sinan-panel-host",
- "sinan-plugin-alicloud",
- "sinan-plugin-ddns",
- "sinan-plugin-singbox",
- "sinan-protocol",
- "sqlx",
- "tar",
- "tokio",
- "tokio-rustls",
- "tokio-tungstenite 0.28.0",
- "toml",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "webauthn-rs",
- "webpki-roots 1.0.9",
- "x25519-dalek",
-]
-
-[[package]]
-name = "sinan-panel-host"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "argon2",
- "axum 0.8.9",
- "base64 0.22.1",
- "data-encoding",
- "ed25519-dalek",
- "flate2",
- "futures-util",
- "hmac",
- "httpdate",
- "rand 0.8.8",
- "reqwest",
- "ring",
- "rust-embed",
- "rustls",
- "serde",
- "serde_json",
- "sha1",
- "sha2 0.10.9",
- "sinan-protocol",
- "sqlx",
- "tar",
- "thiserror 2.0.21",
- "tokio",
- "tokio-rustls",
- "tokio-tungstenite 0.28.0",
- "toml",
- "tower-http",
- "tracing",
- "uuid",
- "webauthn-rs",
- "webpki-roots 1.0.9",
-]
-
-[[package]]
-name = "sinan-plugin-alicloud"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "axum 0.8.9",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "sinan-cloud-api",
- "sinan-panel-host",
- "sinan-protocol",
- "sqlx",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "sinan-plugin-ddns"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "axum 0.8.9",
- "futures-util",
- "httpdate",
- "reqwest",
- "serde",
- "serde_json",
- "sinan-cloud-api",
- "sinan-panel-host",
- "sinan-protocol",
- "sqlx",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "sinan-plugin-singbox"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "axum 0.8.9",
- "base64 0.22.1",
- "flate2",
- "futures-util",
- "rand 0.8.8",
- "reqwest",
- "rustls",
- "saphyr-parser",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "sinan-compiler",
- "sinan-panel-host",
- "sinan-protocol",
- "sqlx",
- "thiserror 2.0.21",
- "tokio",
- "tracing",
- "uuid",
- "x25519-dalek",
-]
-
-[[package]]
-name = "sinan-protocol"
-version = "0.3.0"
-dependencies = [
- "base64 0.22.1",
- "blake2",
- "ed25519-dalek",
- "minisign-verify",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "thiserror 2.0.21",
- "uuid",
-]
-
-[[package]]
-name = "sinan-tcp-probe"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tokio",
-]
 
 [[package]]
 name = "slab"

@@ -4,10 +4,10 @@ use business_support::release_fixture;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::Result;
+use apsp_protocol::release::canonical_asset_name;
 use business_support::TestPanel;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
-use sinan_protocol::release::canonical_asset_name;
 use sqlx::PgPool;
 
 #[sqlx::test]
@@ -32,7 +32,7 @@ async fn updates_require_opt_in_matching_platform_and_newer_verified_stable_rele
         let mut entry = release_support::entry(
             "agent",
             version,
-            "sinan-agent",
+            "apsp-agent",
             "raw",
             b"fixture",
             b"fixture",
@@ -115,7 +115,7 @@ async fn updates_require_opt_in_matching_platform_and_newer_verified_stable_rele
         release["artifact"]["url"]
             .as_str()
             .unwrap()
-            .starts_with("https://github.com/theLucius7/sinan/releases/download/")
+            .starts_with("https://github.com/theLucius7/apsp/releases/download/")
     );
     assert!(
         !release["artifact"]["url"]
@@ -140,7 +140,7 @@ async fn update_download_capability_requires_exact_negotiation_after_authenticat
     let mut entry = release_support::entry(
         "agent",
         "0.9.0",
-        "sinan-agent",
+        "apsp-agent",
         "raw",
         b"fixture",
         b"fixture",
@@ -213,7 +213,7 @@ async fn update_download_capability_requires_exact_negotiation_after_authenticat
         release["artifact"]["url"]
             .as_str()
             .unwrap()
-            .starts_with("https://github.com/theLucius7/sinan/releases/download/")
+            .starts_with("https://github.com/theLucius7/apsp/releases/download/")
     );
     sqlx::query("UPDATE servers SET deleted_at=1 WHERE id=$1")
         .bind(server)

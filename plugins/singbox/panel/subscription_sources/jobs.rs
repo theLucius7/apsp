@@ -4,13 +4,13 @@ use crate::{
     error::{ApiError, ApiResult},
     subscription_parser::PARSER_VERSION,
 };
+use apsp_protocol::now_timestamp;
 use axum::{
     Json,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
 };
 use serde_json::json;
-use sinan_protocol::now_timestamp;
 use sqlx::PgConnection;
 use uuid::Uuid;
 

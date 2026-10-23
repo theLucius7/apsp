@@ -1,5 +1,5 @@
 use super::*;
-use sinan_protocol::{CommandClaim, CommandControl, CommandStarted};
+use apsp_protocol::{CommandClaim, CommandControl, CommandStarted};
 use sqlx::postgres::PgRow;
 
 fn snapshot(row: &PgRow) -> ApiResult<CommandControl> {
@@ -30,8 +30,8 @@ pub async fn cancel(
         .await?
         .ok_or(ApiError::NotFound)?;
     let current = snapshot(&row)?;
-    if !current.state.terminal() && current.state != sinan_protocol::CommandState::CancelRequested {
-        let queued = current.state == sinan_protocol::CommandState::Queued;
+    if !current.state.terminal() && current.state != apsp_protocol::CommandState::CancelRequested {
+        let queued = current.state == apsp_protocol::CommandState::Queued;
         if !queued && (row.get::<i32, _>("lifecycle_version") == 0 || !current.cancel_supported) {
             return Err(ApiError::Conflict(
                 "设备可能已领取命令，且不能确认运行中取消；请等待执行结果".into(),
@@ -95,11 +95,11 @@ pub async fn claim(
     let current = snapshot(&row)?;
     let previous: Option<Uuid> = row.get("claim_id");
     if previous.is_some_and(|claim| claim != request.claim_id)
-        || (current.state == sinan_protocol::CommandState::Claimed && previous.is_none())
+        || (current.state == apsp_protocol::CommandState::Claimed && previous.is_none())
     {
         return Err(ApiError::Conflict("命令已由其他执行记录领取".into()));
     }
-    if current.state == sinan_protocol::CommandState::Queued {
+    if current.state == apsp_protocol::CommandState::Queued {
         let spec: RemoteCommand =
             serde_json::from_value(row.get("spec")).map_err(anyhow::Error::from)?;
         if spec.expires_at <= now_timestamp() {

@@ -4,9 +4,9 @@ use crate::{
     error::ApiResult,
     ip_quality::{IpQuality, QualityDatabase, QueryErrorKind},
 };
+use apsp_protocol::DiagnosticSectionUpdate;
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
-use sinan_protocol::DiagnosticSectionUpdate;
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 

@@ -8,10 +8,10 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
+use apsp_panel::plugins::singbox::subscription_sources::worker;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::plugins::singbox::subscription_sources::worker;
 use sqlx::{PgPool, migrate::Migrator};
 use std::borrow::Cow;
 use uuid::Uuid;
@@ -406,10 +406,10 @@ async fn existing_ordered_sources_keep_their_behaviour_after_the_upgrade(
     let source: i64 = sqlx::query_scalar("INSERT INTO singbox_ordered_subscription_sources(name,kind,input_config,refresh_interval_secs,next_refresh_at,created_at,updated_at) VALUES('TEST_ONLY existing','url','{\"kind\":\"url\",\"url\":\"https://source.example.com/a\"}',86400,5,1,1) RETURNING id")
         .fetch_one(&pool).await?;
     let job = Uuid::new_v4();
-    sqlx::query("INSERT INTO singbox_subscription_source_jobs(id,source_id,settings_revision,identity_epoch,parser_version,status,stage,created_at,finished_at) VALUES($1,$2,1,1,'sinan-subscription-v1','succeeded','done',1,1)")
+    sqlx::query("INSERT INTO singbox_subscription_source_jobs(id,source_id,settings_revision,identity_epoch,parser_version,status,stage,created_at,finished_at) VALUES($1,$2,1,1,'apsp-subscription-v1','succeeded','done',1,1)")
         .bind(job).bind(source).execute(&pool).await?;
     let revision = Uuid::new_v4();
-    sqlx::query("INSERT INTO singbox_subscription_source_revisions(id,source_id,job_id,settings_revision,identity_epoch,parser_version,format,raw_digest,parsed_at,counts,warnings) VALUES($1,$2,$3,1,1,'sinan-subscription-v1','sing_box_json',repeat('0',64),1,'{}','[]')")
+    sqlx::query("INSERT INTO singbox_subscription_source_revisions(id,source_id,job_id,settings_revision,identity_epoch,parser_version,format,raw_digest,parsed_at,counts,warnings) VALUES($1,$2,$3,1,1,'apsp-subscription-v1','sing_box_json',repeat('0',64),1,'{}','[]')")
         .bind(revision).bind(source).bind(job).execute(&pool).await?;
     let node = Uuid::new_v4();
     sqlx::query("INSERT INTO singbox_ordered_external_nodes(id,source_id,identity_epoch,identity_key,identity_state,created_at) VALUES($1,$2,1,'fingerprint:TEST_ONLY',  'unique',1)")

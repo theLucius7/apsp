@@ -37,9 +37,9 @@ fn validate_pair(private: &str, public: &str) -> Result<()> {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-#[ignore = "Requires PostgreSQL and SINAN_TEST_SINGBOX pointing to an upstream runtime; run --ignored"]
+#[ignore = "Requires PostgreSQL and APSP_TEST_SINGBOX pointing to an upstream runtime; run --ignored"]
 async fn panel_reality_keys_match_upstream_generated_key_format(pool: PgPool) -> Result<()> {
-    let binary = std::env::var("SINAN_TEST_SINGBOX").context("set SINAN_TEST_SINGBOX")?;
+    let binary = std::env::var("APSP_TEST_SINGBOX").context("set APSP_TEST_SINGBOX")?;
     let output = tokio::time::timeout(
         Duration::from_secs(10),
         tokio::process::Command::new(&binary)
@@ -80,7 +80,7 @@ async fn panel_reality_keys_match_upstream_generated_key_format(pool: PgPool) ->
     panel.publish_now().await?;
     let bundle: String = sqlx::query_scalar("SELECT bundle FROM deployments WHERE server_id=$1 AND module='singbox' ORDER BY rev DESC LIMIT 1")
         .bind(server).fetch_one(&pool).await?;
-    let bundle: sinan_protocol::Bundle = serde_json::from_str(&bundle)?;
+    let bundle: apsp_protocol::Bundle = serde_json::from_str(&bundle)?;
     let path = panel.state.config.data_dir.join("reality-check.json");
     tokio::fs::write(
         &path,

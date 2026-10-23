@@ -18,7 +18,7 @@ pub(in super::super) async fn poll(pool: &PgPool, id: Uuid, cloud: &Cloud) -> Ap
     let mut tx = lock(pool, initial.account_id).await?;
     let account = account_on(&mut tx, initial.account_id).await?;
     let mut r = jobs::fresh(&mut tx, id).await?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     if r.kind != "ecs" || !account.enabled || r.next_power_at > now {
         return Ok(());
     }

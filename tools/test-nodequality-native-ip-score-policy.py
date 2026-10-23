@@ -72,7 +72,7 @@ class ScoreTests(unittest.TestCase):
     def value(self, response, path, kind):
         if shutil.which('jq') is None:
             self.skipTest('requires jq')
-        run = subprocess.run(['/bin/bash'], input=policy.HELPERS + b'\nsinan_ip_score_value "$VALUE" "$FIELD" "$KIND"\n',
+        run = subprocess.run(['/bin/bash'], input=policy.HELPERS + b'\napsp_ip_score_value "$VALUE" "$FIELD" "$KIND"\n',
                              env=dict(os.environ, VALUE=response, FIELD=path, KIND=kind), capture_output=True, timeout=3)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(run.stderr, b'')

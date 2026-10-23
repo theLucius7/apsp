@@ -21,8 +21,8 @@ use std::{net::SocketAddr, sync::Arc};
 use webauthn_rs::prelude::{Url, Webauthn, WebauthnBuilder};
 
 pub(crate) const ADMIN: uuid::Uuid = uuid::Uuid::from_u128(1);
-pub(crate) const ADMIN_BINDING: &str = "sinan_admin_passkey";
-pub const PORTAL_BINDING: &str = "sinan_proxy_passkey";
+pub(crate) const ADMIN_BINDING: &str = "apsp_admin_passkey";
+pub const PORTAL_BINDING: &str = "apsp_proxy_passkey";
 pub const TTL: i64 = 300;
 
 pub struct Service {
@@ -44,13 +44,13 @@ impl Service {
                 "secure DNS origin required"
             );
             Ok(WebauthnBuilder::new(host, &url)?
-                .rp_name("司南")
+                .rp_name("apsp")
                 .allow_subdomains(false)
                 .allow_any_port(false)
                 .build()?)
         };
         let engine = build().ok().map(Arc::new);
-        let reason = engine.is_none().then(|| "Passkey 需要将 SINAN_PUBLIC_URL 设置为 HTTPS 域名；本地调试可使用 http://localhost。".into());
+        let reason = engine.is_none().then(|| "Passkey 需要将 APSP_PUBLIC_URL 设置为 HTTPS 域名；本地调试可使用 http://localhost。".into());
         Self {
             engine,
             origin: Url::parse(origin)
@@ -267,17 +267,17 @@ mod tests {
         headers.append(
             header::COOKIE,
             HeaderValue::from_static(
-                "sinan_session=TEST_ONLY_ADMIN; sinan_proxy_session=TEST_ONLY_PROXY",
+                "apsp_session=TEST_ONLY_ADMIN; apsp_proxy_session=TEST_ONLY_PROXY",
             ),
         );
         assert_eq!(
-            cookie(&headers, "sinan_proxy_session"),
+            cookie(&headers, "apsp_proxy_session"),
             Some("TEST_ONLY_PROXY")
         );
         headers.append(
             header::COOKIE,
-            HeaderValue::from_static("sinan_proxy_session=TEST_ONLY_SECOND"),
+            HeaderValue::from_static("apsp_proxy_session=TEST_ONLY_SECOND"),
         );
-        assert!(cookie(&headers, "sinan_proxy_session").is_none());
+        assert!(cookie(&headers, "apsp_proxy_session").is_none());
     }
 }

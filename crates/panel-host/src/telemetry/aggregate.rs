@@ -1,6 +1,6 @@
+use apsp_protocol::{Metrics, TelemetrySample};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sinan_protocol::{Metrics, TelemetrySample};
 use std::collections::BTreeMap;
 
 pub fn network_metric_key(selector: &str, receive: bool) -> String {
@@ -273,14 +273,14 @@ mod tests {
                 network_interfaces: [
                     (
                         "fixture0".into(),
-                        sinan_protocol::NetworkMetrics {
+                        apsp_protocol::NetworkMetrics {
                             receive_bytes_per_sec: Some(first),
                             ..Default::default()
                         },
                     ),
                     (
                         "fixture1".into(),
-                        sinan_protocol::NetworkMetrics {
+                        apsp_protocol::NetworkMetrics {
                             receive_bytes_per_sec: Some(second),
                             ..Default::default()
                         },
@@ -333,7 +333,7 @@ mod tests {
         let mut first = sample(1000, Some(10.0));
         first.metrics.network_interfaces.insert(
             "eth0".into(),
-            sinan_protocol::NetworkMetrics {
+            apsp_protocol::NetworkMetrics {
                 received_bytes: Some(u64::MAX),
                 ..Default::default()
             },

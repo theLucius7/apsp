@@ -43,7 +43,7 @@ class Panel:
         # The selected file is authoritative; shell variables must not silently
         # replace passwords, volumes, build trust roots or the public origin.
         self.env = {key: value for key, value in os.environ.items()
-                    if not key.startswith(("SINAN_", "COMPOSE_")) and key != "RUST_LOG"}
+                    if not key.startswith(("APSP_", "COMPOSE_")) and key != "RUST_LOG"}
         self.command = ["docker", "compose", "--project-name", args.project,
                         "--env-file", str(self.env_file), "-f", str(ROOT / "deploy/docker-compose.yml")]
 
@@ -110,10 +110,10 @@ class Panel:
             if was_running:
                 self.compose("stop", "panel", quiet=True)
             environment_lines = self.env_file.read_text().splitlines(keepends=True)
-            protected = re.compile(r"^\s*(?:export\s+)?SINAN_CREDENTIAL_(?:KEYS|CURRENT_KEY)\s*=")
+            protected = re.compile(r"^\s*(?:export\s+)?APSP_CREDENTIAL_(?:KEYS|CURRENT_KEY)\s*=")
             self.private_write(destination / "environment", "".join(line for line in environment_lines if not protected.match(line)).encode())
             for filename, arguments in [
-                ("database.dump", ["exec", "-T", "postgres", "pg_dump", "-U", "sinan", "-d", "sinan", "-Fc"]),
+                ("database.dump", ["exec", "-T", "postgres", "pg_dump", "-U", "apsp", "-d", "apsp", "-Fc"]),
                 ("panel-data.tar.gz", ["run", "--rm", "--no-deps", "-T", "--pull", "never", "--entrypoint", "tar", "panel", "-C", "/data", "-czf", "-", "."]),
             ]:
                 with self.private_file(destination / filename) as output:
@@ -128,16 +128,16 @@ class Panel:
                         digest.update(chunk)
                 hashes[filename] = digest.hexdigest()
             revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True)
-            migrations = json.loads(self.compose("exec", "-T", "postgres", "psql", "-U", "sinan", "-d", "sinan", "-Atc",
+            migrations = json.loads(self.compose("exec", "-T", "postgres", "psql", "-U", "apsp", "-d", "apsp", "-Atc",
                 "SELECT COALESCE(json_agg(json_build_object('version',version,'checksum',encode(checksum,'hex')) ORDER BY version)::text,'[]') FROM _sqlx_migrations WHERE success", quiet=True))
-            database_version = self.compose("exec", "-T", "postgres", "psql", "-U", "sinan", "-d", "sinan", "-Atc", "SHOW server_version_num", quiet=True)
+            database_version = self.compose("exec", "-T", "postgres", "psql", "-U", "apsp", "-d", "apsp", "-Atc", "SHOW server_version_num", quiet=True)
             required_key_ids = []
             if any(item["version"] == 54 for item in migrations):
-                required_key_ids = json.loads(self.compose("exec", "-T", "postgres", "psql", "-U", "sinan", "-d", "sinan", "-Atc",
+                required_key_ids = json.loads(self.compose("exec", "-T", "postgres", "psql", "-U", "apsp", "-d", "apsp", "-Atc",
                     "SELECT COALESCE(json_agg(key_id)::text,'[]') FROM (SELECT DISTINCT key_id FROM credential_entries ORDER BY key_id) keys", quiet=True))
-            keyring_reference = next((line.partition("=")[2].strip().strip("\"'") for line in environment_lines if line.startswith("SINAN_BACKUP_KEYRING_REFERENCE=")), None)
+            keyring_reference = next((line.partition("=")[2].strip().strip("\"'") for line in environment_lines if line.startswith("APSP_BACKUP_KEYRING_REFERENCE=")), None)
             if required_key_ids and not keyring_reference:
-                raise Failure("数据库含加密凭据，需在环境文件中配置 SINAN_BACKUP_KEYRING_REFERENCE 记录独立密钥环保管位置；主密钥不会写入备份。")
+                raise Failure("数据库含加密凭据，需在环境文件中配置 APSP_BACKUP_KEYRING_REFERENCE 记录独立密钥环保管位置；主密钥不会写入备份。")
             manifest = {"format": 2, "complete": True, "created_at": datetime.now(timezone.utc).isoformat(),
                         "project": self.args.project, "source_revision": revision.stdout.strip() if revision.returncode == 0 else None,
                         "image": self.compose("images", "-q", "panel", quiet=True), "sha256": hashes,
@@ -209,16 +209,16 @@ class Panel:
             self.compose("logs", "--tail", str(self.args.tail), *( ["--follow"] if self.args.follow else []), "panel", "postgres")
         elif action == "doctor":
             self.compose("ps", "-a")
-            self.compose("exec", "-T", "postgres", "pg_isready", "-h", "127.0.0.1", "-U", "sinan", "-d", "sinan", quiet=True)
+            self.compose("exec", "-T", "postgres", "pg_isready", "-h", "127.0.0.1", "-U", "apsp", "-d", "apsp", quiet=True)
             self.compose("exec", "-T", "panel", "curl", "-fsS", "--max-time", "10", "http://127.0.0.1:8080/healthz", quiet=True)
             print("Compose、数据库与面板本机健康检查通过；公网 HTTPS 和 Agent 连接需从外部另行验证。")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Sinan 面板安装与运维（Docker Compose）")
+    parser = argparse.ArgumentParser(description="Apsp 面板安装与运维（Docker Compose）")
     parser.add_argument("action", choices=["init", "install", "start", "stop", "upgrade", "backup", "status", "logs", "doctor"])
     parser.add_argument("--env-file", type=Path, default=ROOT / ".env")
-    parser.add_argument("--project", default="sinan")
+    parser.add_argument("--project", default="apsp")
     parser.add_argument("--public-url")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--release-keys-file", type=Path, default=ROOT / "deploy/release-public-keys.json")

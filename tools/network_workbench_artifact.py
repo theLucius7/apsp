@@ -34,14 +34,14 @@ def main():
             raise ValueError('tool identity differs: ' + name)
         item['version_output_sha256'] = hashlib.sha256(version.stdout + version.stderr).hexdigest()
     root = Path(__file__).resolve().parents[1]
-    files = {'sinan-network-workbench': (root / 'tools/network-workbench.py').read_bytes(),
+    files = {'apsp-network-workbench': (root / 'tools/network-workbench.py').read_bytes(),
              'tools-manifest.json': json.dumps(inventory, separators=(',', ':')).encode(),
              'LICENSE': (root / 'LICENSE').read_bytes()}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(args.output, 'w:gz') as archive:
         for name, content in files.items():
             entry = tarfile.TarInfo(name)
-            entry.mode = 0o755 if name == 'sinan-network-workbench' else 0o644
+            entry.mode = 0o755 if name == 'apsp-network-workbench' else 0o644
             entry.size = len(content)
             entry.mtime = 0
             archive.addfile(entry, io.BytesIO(content))

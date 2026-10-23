@@ -1,12 +1,12 @@
 #![forbid(unsafe_code)]
 
 use anyhow::{Context, Result, ensure};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use sinan_adapter_sdk::{
+use apsp_adapter_sdk::{
     BoxFuture, DiagnosticAdapter, DiagnosticDescriptor, DiagnosticOutput, DiagnosticSection,
     DiagnosticSpec, Privileged, ServiceJob,
 };
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{
     collections::BTreeMap,
     path::{Component, Path},
@@ -410,7 +410,7 @@ impl DiagnosticAdapter for IpQualityAdapter {
                 "IPQuality execution identity publication mismatch or preparation deadline exceeded"
             );
             Ok(ServiceJob {
-                unit: format!("sinan-diagnostic-{}.service", spec.id),
+                unit: format!("apsp-diagnostic-{}.service", spec.id),
                 program: spec.binary_path.clone(),
                 args: vec![
                     "--workspace".into(),
@@ -424,12 +424,12 @@ impl DiagnosticAdapter for IpQualityAdapter {
                 ],
                 working_directory: spec.job_dir.clone(),
                 timeout_secs: spec.timeout_secs,
-                memory_max: sinan_adapter_sdk::MemoryMax::new(128 * 1024 * 1024)?,
-                tasks_max: sinan_adapter_sdk::TasksMax::new(64)?,
+                memory_max: apsp_adapter_sdk::MemoryMax::new(128 * 1024 * 1024)?,
+                tasks_max: apsp_adapter_sdk::TasksMax::new(64)?,
                 cpu_max_percent: Default::default(),
-                cpu_weight: sinan_adapter_sdk::CpuWeight::new(10)?,
-                io_weight: sinan_adapter_sdk::IoWeight::new(10)?,
-                oom_score_adjust: sinan_adapter_sdk::OomScoreAdjust::new(500)?,
+                cpu_weight: apsp_adapter_sdk::CpuWeight::new(10)?,
+                io_weight: apsp_adapter_sdk::IoWeight::new(10)?,
+                oom_score_adjust: apsp_adapter_sdk::OomScoreAdjust::new(500)?,
             })
         })
     }

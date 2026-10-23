@@ -3,8 +3,8 @@
 mod support;
 
 use anyhow::{Context, Result};
-use sinan_adapter_sdk::{Adapter, Counter, Plan, Prepared, UsageSource};
-use sinan_adapter_singbox::SingboxAdapter;
+use apsp_adapter_sdk::{Adapter, Counter, Plan, Prepared, UsageSource};
+use apsp_adapter_singbox::SingboxAdapter;
 use std::{path::PathBuf, process::Stdio, time::Duration};
 use support::{TempDir, TestOps, TestServices};
 use tokio::{
@@ -47,10 +47,10 @@ async fn transfer(proxy_port: u16) -> Result<()> {
 }
 
 #[tokio::test]
-#[ignore = "Requires exact upstream runtime built with with_v2ray_api; set SINAN_TEST_SINGBOX and run --ignored"]
+#[ignore = "Requires exact upstream runtime built with with_v2ray_api; set APSP_TEST_SINGBOX and run --ignored"]
 async fn real_check_stats_cumulative_reads_and_reload_generation() -> Result<()> {
     let binary =
-        PathBuf::from(std::env::var("SINAN_TEST_SINGBOX").context("set SINAN_TEST_SINGBOX")?);
+        PathBuf::from(std::env::var("APSP_TEST_SINGBOX").context("set APSP_TEST_SINGBOX")?);
     let directory = TempDir::new();
     let stats_reservation = TcpListener::bind("127.0.0.1:0").await?;
     let stats_port = stats_reservation.local_addr()?.port();

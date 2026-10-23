@@ -9,8 +9,8 @@ SOURCES = {
     },
 }
 
-HELPERS = r'''# Sinan modification (2026-10-01): a transport error is not an unlock result.
-sinan_netflix_response_error(){
+HELPERS = r'''# Apsp modification (2026-10-01): a transport error is not an unlock result.
+apsp_netflix_response_error(){
 local code="$1" response="$2" title="$3" status body LC_ALL=C
 status=${response##*$'\n'}
 body=${response%$'\n'*}
@@ -64,8 +64,8 @@ CHECKED_REQUESTS = r'''local result1 result2 code1=0 code2=0 reason1 reason2
 # These are two distinct title checks, not retries. Never parse stderr as HTML.
 result1=$(curl $CurlARG -$1 --user-agent "$UA_Browser" -fsL -X GET --max-time 10 --tlsv1.3 --max-filesize 2097152 --write-out $'\n%{http_code}' "https://www.netflix.com/title/81280792" 2>/dev/null) || code1=$?
 result2=$(curl $CurlARG -$1 --user-agent "$UA_Browser" -fsL -X GET --max-time 10 --tlsv1.3 --max-filesize 2097152 --write-out $'\n%{http_code}' "https://www.netflix.com/title/70143836" 2>/dev/null) || code2=$?
-reason1=$(sinan_netflix_response_error "$code1" "$result1" 81280792)
-reason2=$(sinan_netflix_response_error "$code2" "$result2" 70143836)
+reason1=$(apsp_netflix_response_error "$code1" "$result1" 81280792)
+reason2=$(apsp_netflix_response_error "$code2" "$result2" 70143836)
 if [[ -n $reason1 || -n $reason2 ]];then
 netflix[ustatus]="${smedia[bad]}"
 netflix[uregion]="${smedia[nodata]}"
@@ -90,7 +90,7 @@ JSON_TYPE = b'''media_updates+=".Media |= . * { Netflix: { Type: \\"$(clean_ansi
 REPLACEMENTS = [
     (b'function MediaUnlockTest_Netflix(){\n', HELPERS + b'function MediaUnlockTest_Netflix(){\n'),
     (REQUESTS, CHECKED_REQUESTS),
-    (REGION, REGION + b'[[ $region =~ ^[A-Za-z]{2}$ ]] || region="" # Sinan: do not serialize unchecked page data.\n'),
+    (REGION, REGION + b'[[ $region =~ ^[A-Za-z]{2}$ ]] || region="" # Apsp: do not serialize unchecked page data.\n'),
     (DISPLAY, DISPLAY + '[[ -z ${netflix[reason]} ]] || printf \'Netflix：%s\\n\' "${netflix[reason]}"\n'.encode()),
     (JSON_TYPE, JSON_TYPE + b'''media_updates+=".Media |= . * { Netflix: { Reason: $(jq -cn --arg value "${netflix[reason]:-}" '$value') } } | "
 '''),

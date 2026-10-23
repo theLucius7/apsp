@@ -1,7 +1,7 @@
 use crate::error::{ApiError, ApiResult};
+use apsp_compiler::external::{ExternalCapabilities, ExternalOutbound};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sinan_compiler::external::{ExternalCapabilities, ExternalOutbound};
 use sqlx::{FromRow, PgConnection, PgPool};
 use uuid::Uuid;
 
@@ -248,7 +248,7 @@ pub(super) async fn nodes_on(pool: &PgPool, id: i64) -> ApiResult<Vec<NodePrevie
                     .unwrap_or(
                         if caps.as_ref().is_some_and(|caps| {
                             caps.required_transport
-                                == sinan_compiler::external::ExternalTransport::Udp
+                                == apsp_compiler::external::ExternalTransport::Udp
                         }) {
                             "quic"
                         } else {

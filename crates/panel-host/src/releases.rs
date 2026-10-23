@@ -14,17 +14,17 @@ use crate::{
     error::{ApiError, ApiResult},
 };
 use anyhow::{Context, Result, ensure};
-use axum::{Json, extract::State, http::HeaderMap};
-use serde::Deserialize;
-use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
-use sinan_protocol::{
+use apsp_protocol::{
     PROTOCOL_MAX, PROTOCOL_MIN,
     release::{
         MAX_CHECKSUMS_BYTES, MAX_METADATA_BYTES, MAX_SIGNATURE_BYTES, ReleaseProof, TrustedKeys,
         VerifiedArtifact, VerifiedRelease, canonical_path, verify_release,
     },
 };
+use axum::{Json, extract::State, http::HeaderMap};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     future::Future,
@@ -371,7 +371,7 @@ pub async fn newer_agent(
     state: &AppState,
     targets: &[String],
     current: (u64, u64, u64),
-) -> ApiResult<Option<sinan_protocol::AgentRelease>> {
+) -> ApiResult<Option<apsp_protocol::AgentRelease>> {
     let releases = released(state).await?;
     // Agent bytes come from GitHub, so the full signed proof authorizes uncached targets.
     let inventory = inventory(&releases).map_err(invalid)?;
@@ -387,7 +387,7 @@ pub async fn newer_agent(
         let Some(priority) = targets.iter().position(|value| value == &target) else {
             continue;
         };
-        let Some(key) = sinan_protocol::release_version(&version).filter(|key| *key > current)
+        let Some(key) = apsp_protocol::release_version(&version).filter(|key| *key > current)
         else {
             continue;
         };
@@ -405,10 +405,10 @@ pub async fn newer_agent(
         return Ok(None);
     };
     let release = &releases[index];
-    Ok(Some(sinan_protocol::AgentRelease {
+    Ok(Some(apsp_protocol::AgentRelease {
         version: version.clone(),
         download_mirror: String::new(),
-        artifact: sinan_protocol::Artifact {
+        artifact: apsp_protocol::Artifact {
             url: format!(
                 "https://github.com/{}/releases/download/{}/{}",
                 release.verified.metadata().source_repo,
@@ -461,7 +461,7 @@ where
     F: FnMut(String, usize) -> Fut,
     Fut: Future<Output = Result<Vec<u8>>>,
 {
-    let targets = vec![sinan_protocol::release::native_target().map_err(invalid)?];
+    let targets = vec![apsp_protocol::release::native_target().map_err(invalid)?];
     import_bundle_for_targets(state, tag, proof, &targets, asset_bytes).await
 }
 
@@ -540,7 +540,7 @@ pub async fn target_options(
     auth::require_admin(&state, &headers).await?;
     Ok(Json(json!({
         "default_targets": selection::default_targets(&state).await?,
-        "supported_targets": sinan_protocol::platform::ARTIFACT_TARGETS,
+        "supported_targets": apsp_protocol::platform::ARTIFACT_TARGETS,
     })))
 }
 

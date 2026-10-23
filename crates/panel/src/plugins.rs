@@ -1,17 +1,14 @@
 //! Compiled plugin set: the only place that names concrete business plugins.
 
-pub use sinan_cloud_api as cloud_api;
-pub use sinan_panel_host::plugin_api::ActivityEvidence;
-pub use sinan_plugin_alicloud as alicloud;
-pub use sinan_plugin_ddns as ddns;
-pub use sinan_plugin_singbox as singbox;
+pub use apsp_cloud_api as cloud_api;
+pub use apsp_panel_host::plugin_api::ActivityEvidence;
+pub use apsp_plugin_alicloud as alicloud;
+pub use apsp_plugin_ddns as ddns;
+pub use apsp_plugin_singbox as singbox;
 
 use std::collections::BTreeMap;
 
-use axum::Router;
-use axum::http::Method;
-use serde_json::Value;
-use sinan_panel_host::{
+use apsp_panel_host::{
     AppState,
     error::ApiResult,
     plugin_api::{
@@ -19,7 +16,10 @@ use sinan_panel_host::{
         RuntimeStepPolicy, SearchSource,
     },
 };
-use sinan_protocol::{ModuleManifest, RuntimeCheckpointRequest, UsageBatch};
+use apsp_protocol::{ModuleManifest, RuntimeCheckpointRequest, UsageBatch};
+use axum::Router;
+use axum::http::Method;
+use serde_json::Value;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
@@ -83,7 +83,7 @@ impl PanelPlugins for Compiled {
     }
     fn signed_tool_packages(
         &self,
-        entries: &[sinan_panel_host::artifacts::ArtifactEntry],
+        entries: &[apsp_panel_host::artifacts::ArtifactEntry],
     ) -> Vec<Value> {
         crate::integration_policy::signed_tool_packages(entries)
     }
@@ -219,7 +219,7 @@ pub fn router() -> Router<AppState> {
 }
 
 pub async fn run(state: AppState) {
-    use sinan_panel_host::maintenance::supervise;
+    use apsp_panel_host::maintenance::supervise;
     install();
     // Supervise each plugin separately: one plugin's panic must not stop the others.
     let pool = state.pool.clone();

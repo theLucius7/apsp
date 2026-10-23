@@ -5,15 +5,15 @@ mod probe_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::Result;
+use apsp_panel::probes::ConfiguredProbe;
+use apsp_protocol::{
+    CommandResult, CommandStatus, ProbeBatch, ProbeKind, ProbeResult, ProbeSpec, RemoteCommand,
+    TaskAck, now_timestamp, telemetry::now_millis,
+};
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 use sha2::Digest;
-use sinan_panel::probes::ConfiguredProbe;
-use sinan_protocol::{
-    CommandResult, CommandStatus, ProbeBatch, ProbeKind, ProbeResult, ProbeSpec, RemoteCommand,
-    TaskAck, now_timestamp, telemetry::now_millis,
-};
 use sqlx::PgPool;
 use uuid::Uuid;
 

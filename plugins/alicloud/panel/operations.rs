@@ -46,7 +46,7 @@ pub(super) async fn prepare(
     target.validate(before)?;
     idle(tx, resource.id).await?;
     let id = Uuid::new_v4();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status='preview'")
         .bind(resource.id).bind(now).execute(&mut **tx).await?;
     sqlx::query("INSERT INTO alicloud_operations(id,resource_id,account_revision,resource_revision,before_state,target,source,billing_cycle,status,created_at,expires_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$10)")
@@ -65,7 +65,7 @@ pub(super) async fn snapshot_on(
     )
     .bind(resource)
     .bind(Json(snapshot))
-    .bind(sinan_protocol::now_timestamp())
+    .bind(apsp_protocol::now_timestamp())
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -117,7 +117,7 @@ pub(super) async fn confirm(pool: &PgPool, id: Uuid) -> ApiResult<Operation> {
     let account = account_on(&mut tx, resource.account_id).await?;
     let resource = fresh_resource(&mut tx, resource.id).await?;
     if current.status != "preview"
-        || current.expires_at <= sinan_protocol::now_timestamp()
+        || current.expires_at <= apsp_protocol::now_timestamp()
         || !account.enabled
         || account.revision != current.account_revision
         || resource.revision != current.resource_revision
@@ -129,7 +129,7 @@ pub(super) async fn confirm(pool: &PgPool, id: Uuid) -> ApiResult<Operation> {
     idle(&mut tx, resource.id).await?;
     sqlx::query("UPDATE alicloud_operations SET status='queued',updated_at=$2 WHERE id=$1")
         .bind(id)
-        .bind(sinan_protocol::now_timestamp())
+        .bind(apsp_protocol::now_timestamp())
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
@@ -153,9 +153,9 @@ pub(super) async fn cancel(pool: &PgPool, id: Uuid, dismiss: bool) -> ApiResult<
         .execute(&mut *tx)
         .await?;
         sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status IN ('preview','queued')")
-            .bind(resource.id).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
+            .bind(resource.id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
         sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status IN ('preview','queued')")
-            .bind(resource.id).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
+            .bind(resource.id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
         "dismissed"
     } else if !dismiss && matches!(current.status.as_str(), "preview" | "queued") {
         "cancelled"
@@ -167,7 +167,7 @@ pub(super) async fn cancel(pool: &PgPool, id: Uuid, dismiss: bool) -> ApiResult<
     sqlx::query("UPDATE alicloud_operations SET status=$2,updated_at=$3 WHERE id=$1")
         .bind(id)
         .bind(status)
-        .bind(sinan_protocol::now_timestamp())
+        .bind(apsp_protocol::now_timestamp())
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
@@ -194,7 +194,7 @@ async fn finish(
     status: &str,
     error: Option<&str>,
 ) -> ApiResult<()> {
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("UPDATE alicloud_operations SET status=$2,error_code=$3,updated_at=$4,next_check_at=$5 WHERE id=$1")
         .bind(id).bind(status).bind(error).bind(now).bind(now+60).execute(&mut **tx).await?;
     Ok(())
@@ -238,7 +238,7 @@ pub(super) async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult
         .await?;
     let account = account_on(&mut tx, resource.account_id).await?;
     let resource = fresh_resource(&mut tx, resource.id).await?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     if operation.next_check_at > now {
         return Ok(());
     }
@@ -290,7 +290,7 @@ pub(super) async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult
         &operation,
         &account,
         &resource,
-        sinan_protocol::now_timestamp(),
+        apsp_protocol::now_timestamp(),
     ) {
         finish(&mut tx, id, "cancelled", Some("policy_inactive")).await?;
     } else {

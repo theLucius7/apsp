@@ -1,10 +1,10 @@
 use crate::{AppState, agent_api};
-use serde_json::Value;
-use sinan_protocol::{
+use apsp_protocol::{
     ApplyResult, ApplyStatus, Envelope, RUNTIME_CHECKPOINT_CAPABILITY,
     RUNTIME_RECOVERY_BARRIER_CAPABILITY, RuntimeCheckpoint, RuntimeCheckpointRequest,
     RuntimeRecoveryBarrierRequest, now_timestamp, runtime_module_valid,
 };
+use serde_json::Value;
 use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 
@@ -312,7 +312,7 @@ pub async fn replay_pending(state: &AppState, server_id: i64) -> anyhow::Result<
             );
             Envelope::new("runtime.checkpoint.request", request)?
         } else if kind == "probe" {
-            let request: sinan_protocol::RuntimePathProbeRequest = serde_json::from_value(payload)?;
+            let request: apsp_protocol::RuntimePathProbeRequest = serde_json::from_value(payload)?;
             anyhow::ensure!(
                 request.valid_at(now)
                     && request.request_id == request_id

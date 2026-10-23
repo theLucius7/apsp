@@ -1,11 +1,11 @@
 use super::Reconciler;
 use anyhow::{Result, ensure};
-use serde::{Deserialize, Serialize};
-use sinan_adapter_sdk::Prepared;
-use sinan_protocol::{
+use apsp_adapter_sdk::Prepared;
+use apsp_protocol::{
     RuntimeValidationError, RuntimeValidationOperation, RuntimeValidationRequest,
     valid_runtime_scope,
 };
+use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, time::Duration};
 
 #[derive(Default, Serialize, Deserialize)]
@@ -121,7 +121,7 @@ impl Reconciler {
             .map_err(|_| RuntimeValidationError::ValidationFailed)?
             .unwrap_or(0)
             / 1000;
-        let now = || sinan_protocol::now_timestamp().saturating_add(offset);
+        let now = || apsp_protocol::now_timestamp().saturating_add(offset);
         if request.expires_at <= now() {
             return Err(RuntimeValidationError::Expired);
         }

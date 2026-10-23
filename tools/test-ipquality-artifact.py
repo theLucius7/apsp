@@ -85,9 +85,9 @@ class ArtifactTests(unittest.TestCase):
                 artifact.unpack(malformed, maximum=artifact.MAX_SOURCE_OFFER)
 
     def test_independent_profile_cannot_satisfy_full_hardware_factory(self):
-        profile = artifact.module('sinan_ipquality_profile_fixture', artifact.ROOT / 'tools/ipquality-rootfs.py')
+        profile = artifact.module('apsp_ipquality_profile_fixture', artifact.ROOT / 'tools/ipquality-rootfs.py')
         node = profile.factory()
-        original = artifact.module('sinan_original_nodequality_factory_fixture', artifact.ROOT / 'tools/nodequality-rootfs-build.py')
+        original = artifact.module('apsp_original_nodequality_factory_fixture', artifact.ROOT / 'tools/nodequality-rootfs-build.py')
         self.assertIn('python3', node.TOOL_PACKAGES)
         self.assertNotIn('fio', node.TOOL_PACKAGES)
         self.assertNotIn('iperf3', node.TOOL_PACKAGES)
@@ -101,7 +101,7 @@ class ArtifactTests(unittest.TestCase):
     def minimal_metadata(self):
         # Shape/replay admission is exercised by test-ipquality-profile.py.
         # These inert bytes isolate the signed archive/provenance connection.
-        prefix = 'usr/share/sinan-rootfs/'
+        prefix = 'usr/share/apsp-rootfs/'
         proof = {'schema': 1, 'scope': 'TEST_ONLY signed metadata propagation',
                  'implementations': {'tools/nodequality-rootfs-build.py': 'a' * 64}}
         content = artifact.canonical(proof)
@@ -112,7 +112,7 @@ class ArtifactTests(unittest.TestCase):
                     prefix + 'source-inventory.json': artifact.canonical(sources),
                     prefix + 'license-inventory.json': artifact.canonical({'packages': []}),
                     'var/lib/dpkg/status': b'TEST_ONLY inert status boundary'}
-        provenance = {'schema': 1, 'kind': 'sinan-ipquality-debian12-preparation',
+        provenance = {'schema': 1, 'kind': 'apsp-ipquality-debian12-preparation',
             'arch': 'amd64', 'full_ready': False, 'source_authenticated': True,
             'reproducibility_verified': False, 'source_epoch': 1, 'builder': lock['builder'],
             'build_tool_sha256': 'a' * 64, 'pending_capabilities': ['TEST_ONLY'],
@@ -145,7 +145,7 @@ class ArtifactTests(unittest.TestCase):
                 with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'runtime manifest'):
                     artifact.check_minimal_profile(metadata, changed)
             changed = dict(metadata)
-            changed['usr/share/sinan-rootfs/provenance.json'] = artifact.canonical({'profile_proof_sha256': 'f' * 64})
+            changed['usr/share/apsp-rootfs/provenance.json'] = artifact.canonical({'profile_proof_sha256': 'f' * 64})
             with self.assertRaisesRegex(ValueError, 'factory provenance'):
                 artifact.check_minimal_profile(changed, manifest)
 
@@ -153,7 +153,7 @@ class ArtifactTests(unittest.TestCase):
         metadata, manifest, validator = self.minimal_metadata()
         for private in ('ipquality-profile-private.json', 'input-ledger.json', 'tool-evidence.json',
                         'ipquality-profile-replay-host.json'):
-            changed = {'entries': manifest['entries'] + [{'path': 'usr/share/sinan-rootfs/' + private,
+            changed = {'entries': manifest['entries'] + [{'path': 'usr/share/apsp-rootfs/' + private,
                                                          'type': 'file', 'sha256': 'f' * 64, 'size': 1}]}
             with self.subTest(private=private), patch.object(artifact, 'factory', return_value=validator), \
                     self.assertRaisesRegex(ValueError, 'private factory evidence'):
@@ -172,22 +172,22 @@ class ArtifactTests(unittest.TestCase):
             artifact.check_license_review({'schema': 1, 'reviewed': True}, {}, {'entries': []})
 
     def test_paired_source_requires_complete_matching_bytes_not_just_urls(self):
-        source_files = {'sinan-source.tar.gz': b'inert fixture source', 'debian-sources/test.source': b'complete source fixture'}
+        source_files = {'apsp-source.tar.gz': b'inert fixture source', 'debian-sources/test.source': b'complete source fixture'}
         expected = {name: {'size': len(content), 'sha256': artifact.digest(content)} for name, content in source_files.items()}
         data = artifact.pack(source_files)
         offer = {'asset': f'ipquality-{artifact.VERSION}-linux-amd64-sources.tar.gz',
                  'sha256': artifact.digest(data), 'size': len(data)}
-        files = {'THIRD_PARTY_NOTICES.txt': b'Sinan IPQuality node self-query\n' + artifact.canonical({
+        files = {'THIRD_PARTY_NOTICES.txt': b'Apsp IPQuality node self-query\n' + artifact.canonical({
             'source_offer': offer, 'notice': 'TEST_ONLY complete byte-stream fixture; no approved build', 'license': 'AGPL-3.0-only'})}
         with patch.object(artifact, 'source_inventory', return_value=expected):
             artifact.validate_source_offer(data, files, artifact.VERSION, 'amd64')
-            for contents in ({'sinan-source.tar.gz': source_files['sinan-source.tar.gz']},
+            for contents in ({'apsp-source.tar.gz': source_files['apsp-source.tar.gz']},
                              {**source_files, 'debian-sources/test.source': b'altered source'},
                              {**source_files, 'unexpected.txt': b'extra'}):
                 changed = artifact.pack(contents)
                 notice = artifact.decode(files['THIRD_PARTY_NOTICES.txt'].split(b'\n', 1)[1])
                 notice['source_offer'].update(size=len(changed), sha256=artifact.digest(changed))
-                modified = {'THIRD_PARTY_NOTICES.txt': b'Sinan IPQuality node self-query\n' + artifact.canonical(notice)}
+                modified = {'THIRD_PARTY_NOTICES.txt': b'Apsp IPQuality node self-query\n' + artifact.canonical(notice)}
                 with self.assertRaises(ValueError):
                     artifact.validate_source_offer(changed, modified, artifact.VERSION, 'amd64')
             with self.assertRaises(ValueError):
@@ -195,14 +195,14 @@ class ArtifactTests(unittest.TestCase):
             trailing = data + gzip.compress(b'unlisted source bytes')
             notice = artifact.decode(files['THIRD_PARTY_NOTICES.txt'].split(b'\n', 1)[1])
             notice['source_offer'].update(size=len(trailing), sha256=artifact.digest(trailing))
-            modified = {'THIRD_PARTY_NOTICES.txt': b'Sinan IPQuality node self-query\n' + artifact.canonical(notice)}
+            modified = {'THIRD_PARTY_NOTICES.txt': b'Apsp IPQuality node self-query\n' + artifact.canonical(notice)}
             with self.assertRaisesRegex(ValueError, 'unlisted'):
                 artifact.validate_source_offer(trailing, modified, artifact.VERSION, 'amd64')
 
     def test_paired_source_cannot_name_external_or_another_architecture_asset(self):
         for asset_name in ('https://example.invalid/source.tar.gz', '../source.tar.gz',
                            f'ipquality-{artifact.VERSION}-linux-arm64-sources.tar.gz'):
-            files = {'THIRD_PARTY_NOTICES.txt': b'Sinan IPQuality node self-query\n' + artifact.canonical({
+            files = {'THIRD_PARTY_NOTICES.txt': b'Apsp IPQuality node self-query\n' + artifact.canonical({
                 'source_offer': {'asset': asset_name, 'size': 1, 'sha256': 'a' * 64},
                 'notice': 'TEST_ONLY', 'license': 'AGPL-3.0-only'})}
             with self.assertRaisesRegex(ValueError, 'source-offer descriptor'):
@@ -212,7 +212,7 @@ class ArtifactTests(unittest.TestCase):
 class ArchiveProfileTests(unittest.TestCase):
     """Real archive reads and exact public inventory checks; no native admission."""
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='sinan-ip-intake-inventory-')
+        self.temporary = tempfile.TemporaryDirectory(prefix='apsp-ip-intake-inventory-')
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
         self.factory = artifact.factory()
@@ -245,7 +245,7 @@ class ArchiveProfileTests(unittest.TestCase):
             'binding_inputs_lock_sha256': artifact.digest(artifact.canonical(self.lock)),
             'implementations': self.factory.INPUT_PROFILE.code(None),
             **{key: False for key in profile_contract.FALSE_FLAGS}}
-        prefix = 'usr/share/sinan-rootfs/'
+        prefix = 'usr/share/apsp-rootfs/'
         installed = [{'name': row['name'], 'version': row['version'], 'architecture': row['architecture']}
                      for row in materials['packages']]
         self.status = ''.join('Package: ' + row['name'] + '\nVersion: ' + row['version']
@@ -269,7 +269,7 @@ class ArchiveProfileTests(unittest.TestCase):
 
     def intake(self, metadata=None, provenance_edits=None, export_check=False):
         metadata = dict(self.metadata if metadata is None else metadata)
-        prefix = 'usr/share/sinan-rootfs/'
+        prefix = 'usr/share/apsp-rootfs/'
         provenance = dict(self.provenance,
                           profile_proof_sha256=artifact.digest(metadata[prefix + 'ipquality-profile.json']))
         for name in ('inputs-lock', 'source-inventory', 'license-inventory'):
@@ -335,7 +335,7 @@ class ArchiveProfileTests(unittest.TestCase):
                 self.intake(metadata)
 
     def test_rehashed_source_inventory_and_private_provenance_cannot_pass_exact_binding(self):
-        key = 'usr/share/sinan-rootfs/source-inventory.json'
+        key = 'usr/share/apsp-rootfs/source-inventory.json'
         for field in ('version', 'repository', 'directory'):
             sources = artifact.decode(self.metadata[key])
             sources['sources'][0][field] = 'TEST_ONLY changed source identity'

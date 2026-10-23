@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sinan runner for the original pinned NodeQuality script.
+# Apsp runner for the original pinned NodeQuality script.
 set -euo pipefail
 umask 077
 version=a92fca6c0067df29ddd03fdc2fee6f3000f64545-r22
@@ -26,9 +26,9 @@ die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 if [[ ${1:-} == --version && $# == 1 ]]; then printf 'nodequality %s\n' "$version"; exit 0; fi
 if [[ ${1:-} == --help && $# == 1 ]]; then usage; exit 0; fi
 if [[ ${1:-} == --execution-admission && $# == 1 ]]; then
-  cat <<'SINAN_NODEQUALITY_EXECUTION_ADMISSION'
+  cat <<'APSP_NODEQUALITY_EXECUTION_ADMISSION'
 @EXECUTION_ADMISSION@
-SINAN_NODEQUALITY_EXECUTION_ADMISSION
+APSP_NODEQUALITY_EXECUTION_ADMISSION
   exit 0
 fi
 workspace=
@@ -121,83 +121,83 @@ for output in result.txt report.zip report-url.txt log.txt upload.base64 upload-
   [[ ! -e $workspace/$output && ! -L $workspace/$output ]] || die 'workspace already contains diagnostic output'
 done
 if [[ $mode == daily ]]; then
-  cat > "$runtime/official-ip.py" <<'SINAN_OFFICIAL_IP_HELPER'
+  cat > "$runtime/official-ip.py" <<'APSP_OFFICIAL_IP_HELPER'
 @OFFICIAL_IP_HELPER@
-SINAN_OFFICIAL_IP_HELPER
-  cat > "$runtime/daily.py" <<'SINAN_DAILY_HELPER'
+APSP_OFFICIAL_IP_HELPER
+  cat > "$runtime/daily.py" <<'APSP_DAILY_HELPER'
 @DAILY_HELPER@
-SINAN_DAILY_HELPER
+APSP_DAILY_HELPER
   python3 "$runtime/daily.py" "$workspace" "$targets_file" "$ip_version"
   exit 0
 fi
 for tool in curl tar base64 mount umount mountpoint chroot; do
   command -v "$tool" >/dev/null || die "missing runtime prerequisite: $tool"
 done
-cat > "$runtime/NodeQuality.sh" <<'SINAN_NODEQUALITY_SOURCE_A92FCA6'
+cat > "$runtime/NodeQuality.sh" <<'APSP_NODEQUALITY_SOURCE_A92FCA6'
 @NODEQUALITY_SOURCE@
-SINAN_NODEQUALITY_SOURCE_A92FCA6
-cat > "$runtime/LICENSE" <<'SINAN_NODEQUALITY_LICENSE_A92FCA6'
+APSP_NODEQUALITY_SOURCE_A92FCA6
+cat > "$runtime/LICENSE" <<'APSP_NODEQUALITY_LICENSE_A92FCA6'
 @NODEQUALITY_LICENSE@
-SINAN_NODEQUALITY_LICENSE_A92FCA6
-cat > "$runtime/report.py" <<'SINAN_NODEQUALITY_REPORT_HELPER'
+APSP_NODEQUALITY_LICENSE_A92FCA6
+cat > "$runtime/report.py" <<'APSP_NODEQUALITY_REPORT_HELPER'
 @REPORT_HELPER@
-SINAN_NODEQUALITY_REPORT_HELPER
-cat > "$runtime/exit-observer.sh" <<'SINAN_NODEQUALITY_EXIT_OBSERVER'
+APSP_NODEQUALITY_REPORT_HELPER
+cat > "$runtime/exit-observer.sh" <<'APSP_NODEQUALITY_EXIT_OBSERVER'
 @EXIT_OBSERVER@
-SINAN_NODEQUALITY_EXIT_OBSERVER
-cat > "$runtime/source-helper.py" <<'SINAN_NODEQUALITY_SOURCE_HELPER'
+APSP_NODEQUALITY_EXIT_OBSERVER
+cat > "$runtime/source-helper.py" <<'APSP_NODEQUALITY_SOURCE_HELPER'
 @SOURCE_HELPER@
-SINAN_NODEQUALITY_SOURCE_HELPER
-cat > "$runtime/report-policy.py" <<'SINAN_NODEQUALITY_REPORT_POLICY'
+APSP_NODEQUALITY_SOURCE_HELPER
+cat > "$runtime/report-policy.py" <<'APSP_NODEQUALITY_REPORT_POLICY'
 @REPORT_POLICY_HELPER@
-SINAN_NODEQUALITY_REPORT_POLICY
-cat > "$runtime/swap-policy.py" <<'SINAN_NODEQUALITY_SWAP_POLICY'
+APSP_NODEQUALITY_REPORT_POLICY
+cat > "$runtime/swap-policy.py" <<'APSP_NODEQUALITY_SWAP_POLICY'
 @SWAP_POLICY_HELPER@
-SINAN_NODEQUALITY_SWAP_POLICY
-cat > "$runtime/dependency-policy.py" <<'SINAN_NODEQUALITY_DEPENDENCY_POLICY'
+APSP_NODEQUALITY_SWAP_POLICY
+cat > "$runtime/dependency-policy.py" <<'APSP_NODEQUALITY_DEPENDENCY_POLICY'
 @DEPENDENCY_POLICY_HELPER@
-SINAN_NODEQUALITY_DEPENDENCY_POLICY
-cat > "$runtime/data-policy.py" <<'SINAN_NODEQUALITY_DATA_POLICY'
+APSP_NODEQUALITY_DEPENDENCY_POLICY
+cat > "$runtime/data-policy.py" <<'APSP_NODEQUALITY_DATA_POLICY'
 @DATA_POLICY_HELPER@
-SINAN_NODEQUALITY_DATA_POLICY
-cat > "$runtime/loader-policy.py" <<'SINAN_NODEQUALITY_LOADER_POLICY'
+APSP_NODEQUALITY_DATA_POLICY
+cat > "$runtime/loader-policy.py" <<'APSP_NODEQUALITY_LOADER_POLICY'
 @LOADER_POLICY_HELPER@
-SINAN_NODEQUALITY_LOADER_POLICY
-cat > "$runtime/ranking-policy.py" <<'SINAN_NODEQUALITY_RANKING_POLICY'
+APSP_NODEQUALITY_LOADER_POLICY
+cat > "$runtime/ranking-policy.py" <<'APSP_NODEQUALITY_RANKING_POLICY'
 @RANKING_POLICY_HELPER@
-SINAN_NODEQUALITY_RANKING_POLICY
-cat > "$runtime/ip-score-policy.py" <<'SINAN_NODEQUALITY_IP_SCORE_POLICY'
+APSP_NODEQUALITY_RANKING_POLICY
+cat > "$runtime/ip-score-policy.py" <<'APSP_NODEQUALITY_IP_SCORE_POLICY'
 @IP_SCORE_POLICY_HELPER@
-SINAN_NODEQUALITY_IP_SCORE_POLICY
-cat > "$runtime/netflix-policy.py" <<'SINAN_NODEQUALITY_NETFLIX_POLICY'
+APSP_NODEQUALITY_IP_SCORE_POLICY
+cat > "$runtime/netflix-policy.py" <<'APSP_NODEQUALITY_NETFLIX_POLICY'
 @NETFLIX_POLICY_HELPER@
-SINAN_NODEQUALITY_NETFLIX_POLICY
-cat > "$runtime/browser-policy.py" <<'SINAN_NODEQUALITY_BROWSER_POLICY'
+APSP_NODEQUALITY_NETFLIX_POLICY
+cat > "$runtime/browser-policy.py" <<'APSP_NODEQUALITY_BROWSER_POLICY'
 @BROWSER_POLICY_HELPER@
-SINAN_NODEQUALITY_BROWSER_POLICY
-cat > "$runtime/public-access-policy.py" <<'SINAN_NODEQUALITY_PUBLIC_ACCESS_POLICY'
+APSP_NODEQUALITY_BROWSER_POLICY
+cat > "$runtime/public-access-policy.py" <<'APSP_NODEQUALITY_PUBLIC_ACCESS_POLICY'
 @PUBLIC_ACCESS_POLICY_HELPER@
-SINAN_NODEQUALITY_PUBLIC_ACCESS_POLICY
-cat > "$runtime/pinned-chain.json" <<'SINAN_NODEQUALITY_PINNED_CHAIN'
+APSP_NODEQUALITY_PUBLIC_ACCESS_POLICY
+cat > "$runtime/pinned-chain.json" <<'APSP_NODEQUALITY_PINNED_CHAIN'
 @PINNED_CHAIN@
-SINAN_NODEQUALITY_PINNED_CHAIN
+APSP_NODEQUALITY_PINNED_CHAIN
 python3 "$runtime/source-helper.py" materialize "$runtime/pinned-chain.json" "$runtime/sources"
-cat > "$runtime/bin/curl" <<'SINAN_NODEQUALITY_CURL_SHIM'
+cat > "$runtime/bin/curl" <<'APSP_NODEQUALITY_CURL_SHIM'
 @CURL_SHIM@
-SINAN_NODEQUALITY_CURL_SHIM
-cat > "$runtime/bin/chroot" <<'SINAN_NODEQUALITY_CHROOT_SHIM'
+APSP_NODEQUALITY_CURL_SHIM
+cat > "$runtime/bin/chroot" <<'APSP_NODEQUALITY_CHROOT_SHIM'
 @CHROOT_SHIM@
-SINAN_NODEQUALITY_CHROOT_SHIM
+APSP_NODEQUALITY_CHROOT_SHIM
 chmod 0700 "$runtime/bin/curl" "$runtime/bin/chroot"
-export SINAN_REAL_CURL SINAN_REAL_CHROOT
-SINAN_REAL_CURL=$(command -v curl)
-SINAN_REAL_CHROOT=$(command -v chroot)
-export SINAN_REPORT_WORKSPACE=$workspace
-export SINAN_REPORT_HELPER=$runtime/report.py
-export SINAN_REPORT_UPSTREAM=$runtime/NodeQuality.sh
-export SINAN_UPLOAD_REPORT=$upload_report
-export SINAN_CHAIN_HELPER=$runtime/source-helper.py
-export SINAN_CHAIN_DIRECTORY=$runtime/sources
+export APSP_REAL_CURL APSP_REAL_CHROOT
+APSP_REAL_CURL=$(command -v curl)
+APSP_REAL_CHROOT=$(command -v chroot)
+export APSP_REPORT_WORKSPACE=$workspace
+export APSP_REPORT_HELPER=$runtime/report.py
+export APSP_REPORT_UPSTREAM=$runtime/NodeQuality.sh
+export APSP_UPLOAD_REPORT=$upload_report
+export APSP_CHAIN_HELPER=$runtime/source-helper.py
+export APSP_CHAIN_DIRECTORY=$runtime/sources
 export PATH="$runtime/bin:$PATH"
 ip_arguments=()
 case "$ip_version" in ipv4) ip_arguments=(-4) ;; ipv6) ip_arguments=(-6) ;; esac

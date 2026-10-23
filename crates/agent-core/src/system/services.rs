@@ -1,6 +1,6 @@
 use super::{COMMAND_TIMEOUT, Privileged, ServiceManager};
 use anyhow::{Context, Result, ensure};
-use sinan_adapter_sdk::{BoxFuture, CommandOutput, JobStatus, ServiceJob};
+use apsp_adapter_sdk::{BoxFuture, CommandOutput, JobStatus, ServiceJob};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -61,7 +61,7 @@ impl SystemServiceManager {
         Self {
             privileged,
             backend,
-            job_root: "/var/lib/sinan/core/service-jobs".into(),
+            job_root: "/var/lib/apsp/core/service-jobs".into(),
         }
     }
 
@@ -130,7 +130,7 @@ impl SystemServiceManager {
                 ("service", vec![name, action.into()])
             }
             ServiceBackend::Launchd => {
-                let label = format!("system/org.sinan.{}", service.replace('@', "."));
+                let label = format!("system/org.apsp.{}", service.replace('@', "."));
                 if matches!(action, "restart" | "stop") {
                     let loaded = self
                         .privileged
@@ -145,7 +145,7 @@ impl SystemServiceManager {
                     }
                     if action == "restart" && !loaded.success {
                         let path = format!(
-                            "/Library/LaunchDaemons/org.sinan.{}.plist",
+                            "/Library/LaunchDaemons/org.apsp.{}.plist",
                             service.replace('@', ".")
                         );
                         let result = self
@@ -338,11 +338,11 @@ impl ServiceManager for SystemServiceManager {
     fn runtime_instance<'a>(
         &'a self,
         unit: &'a str,
-    ) -> BoxFuture<'a, sinan_adapter_sdk::RuntimeInstance> {
+    ) -> BoxFuture<'a, apsp_adapter_sdk::RuntimeInstance> {
         Box::pin(runtime::inspect(self, unit))
     }
 
-    fn recent_logs<'a>(&'a self, unit: &'a str) -> BoxFuture<'a, sinan_adapter_sdk::ServiceLogs> {
+    fn recent_logs<'a>(&'a self, unit: &'a str) -> BoxFuture<'a, apsp_adapter_sdk::ServiceLogs> {
         Box::pin(self.read_recent_logs(unit))
     }
     #[cfg(unix)]
@@ -531,7 +531,7 @@ mod tests {
 
     #[test]
     fn detects_active_init_and_prefers_systemd_over_openrc() {
-        let root = std::env::temp_dir().join(format!("sinan-init-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("apsp-init-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&root).unwrap();
         let systemd = root.join("systemd");
         let openrc = root.join("softlevel");

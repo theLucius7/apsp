@@ -1,5 +1,5 @@
 use super::*;
-use sinan_protocol::{DiagnosticCancelRequest, DiagnosticCancelResult, Envelope};
+use apsp_protocol::{DiagnosticCancelRequest, DiagnosticCancelResult, Envelope};
 use tokio::sync::mpsc;
 
 mod actions;

@@ -171,7 +171,7 @@ async fn history_completion_is_atomic_bounded_redacted_and_survives_rule_removal
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn rollback_rechecks_provider_and_pauses_automatic_reconciliation(pool: sqlx::PgPool) {
     use crate::{load, rollback, settings};
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let server: i64 = sqlx::query_scalar("INSERT INTO servers(name,static_info,last_seen,static_info_received_at) VALUES('TEST_ONLY rollback',$1,$2,$2) RETURNING id")
         .bind(json!({"ip_addresses":[public_ip(9)]})).bind(now).fetch_one(&pool).await.unwrap();
     settings::set_enabled(&pool, server, true).await.unwrap();
@@ -271,7 +271,7 @@ async fn unavailable_credential_reference_stops_before_provider_io_instead_of_us
     pool: sqlx::PgPool,
 ) {
     use crate::{load, settings};
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let server: i64 = sqlx::query_scalar("INSERT INTO servers(name,static_info,last_seen,static_info_received_at) VALUES('TEST_ONLY credential failure',$1,$2,$2) RETURNING id")
         .bind(json!({"ip_addresses":[public_ip(9)]})).bind(now).fetch_one(&pool).await.unwrap();
     settings::set_enabled(&pool, server, true).await.unwrap();

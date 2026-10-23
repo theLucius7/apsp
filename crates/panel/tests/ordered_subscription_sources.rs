@@ -5,11 +5,11 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
+use apsp_panel::plugins::singbox::subscription_sources::worker;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::plugins::singbox::subscription_sources::worker;
 use sqlx::PgPool;
 use uuid::Uuid;
 

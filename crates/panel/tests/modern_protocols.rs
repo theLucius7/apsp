@@ -5,10 +5,10 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result};
+use apsp_protocol::{ApplyResult, ApplyStatus};
 use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_protocol::{ApplyResult, ApplyStatus};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -91,7 +91,7 @@ async fn new_protocol_credentials_snapshots_and_revocation(pool: PgPool) -> Resu
             .bind(server)
             .fetch_one(&pool)
             .await?;
-    let model: Vec<sinan_compiler::Node> = serde_json::from_value(snapshot)?;
+    let model: Vec<apsp_compiler::Node> = serde_json::from_value(snapshot)?;
     assert_eq!(model.len(), 6);
     let sub = format!(
         "{}/sub/{}?format=singbox",
@@ -102,7 +102,7 @@ async fn new_protocol_credentials_snapshots_and_revocation(pool: PgPool) -> Resu
         panel.client.get(&sub).send().await?.status(),
         StatusCode::CONFLICT
     );
-    sinan_panel::agent_api::record_apply_result(
+    apsp_panel::agent_api::record_apply_result(
         &panel.state,
         server,
         ApplyResult {

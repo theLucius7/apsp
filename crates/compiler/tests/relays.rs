@@ -1,14 +1,14 @@
 #![forbid(unsafe_code)]
 
+use apsp_compiler::{
+    Access, AcmeChallenge, Node, ProtocolConfig, Relay, SsMethod, TlsConfig, compile_client,
+    compile_server, compile_server_with_relays,
+};
 use base64::{
     Engine,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use serde_json::Value;
-use sinan_compiler::{
-    Access, AcmeChallenge, Node, ProtocolConfig, Relay, SsMethod, TlsConfig, compile_client,
-    compile_server, compile_server_with_relays,
-};
 use uuid::Uuid;
 
 fn node(id: i64, users: Vec<Access>) -> Node {
@@ -189,22 +189,22 @@ fn relays_reject_non_reality_endpoints() {
         assert!(compile_server(std::slice::from_ref(&modern)).is_ok());
         assert!(matches!(
             compile_server_with_relays(&[modern], &[relay(1)]),
-            Err(sinan_compiler::CompileError::InvalidNode { .. })
+            Err(apsp_compiler::CompileError::InvalidNode { .. })
         ));
     }
 }
 
 #[test]
-#[ignore = "requires the pinned upstream binary in SINAN_GROUPS_RUNTIME"]
+#[ignore = "requires the pinned upstream binary in APSP_GROUPS_RUNTIME"]
 fn pinned_native_runtime_accepts_entry_exit_and_client_configs()
 -> Result<(), Box<dyn std::error::Error>> {
-    let runtime = std::env::var("SINAN_GROUPS_RUNTIME")?;
+    let runtime = std::env::var("APSP_GROUPS_RUNTIME")?;
     let version = std::process::Command::new(&runtime)
         .arg("version")
         .output()?;
     assert!(version.status.success());
     assert!(String::from_utf8_lossy(&version.stdout).contains("sing-box version 1.14.2"));
-    let directory = std::env::temp_dir().join(format!("sinan-relay-native-{}", Uuid::new_v4()));
+    let directory = std::env::temp_dir().join(format!("apsp-relay-native-{}", Uuid::new_v4()));
     std::fs::create_dir(&directory)?;
     struct Cleanup(std::path::PathBuf);
     impl Drop for Cleanup {

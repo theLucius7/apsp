@@ -92,7 +92,7 @@ pub async fn ensure_accepts_tasks_tx(
         return Err(ApiError::NotFound);
     }
     let blocked: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM fleet_profiles WHERE server_id=$1 AND (lifecycle IN ('draining','retired') OR (lifecycle='maintenance' AND COALESCE(maintenance_from,0)<=$2 AND (maintenance_until IS NULL OR maintenance_until>$2)))) OR EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) OR EXISTS(SELECT 1 FROM operations_server_locks WHERE server_id=$1) OR EXISTS(SELECT 1 FROM fleet_operations WHERE server_id=$1 AND ((status IN ('dispatched','unknown') AND reconciled_at IS NULL) OR (status='queued' AND expires_at>$2))) OR EXISTS(SELECT 1 FROM operations_maintenance WHERE $1=ANY(targets) AND block_new_tasks AND starts_at<=$2 AND ends_at>$2)")
-        .bind(server).bind(sinan_protocol::now_timestamp()).fetch_one(&mut **tx).await?;
+        .bind(server).bind(apsp_protocol::now_timestamp()).fetch_one(&mut **tx).await?;
     if blocked {
         return Err(ApiError::Conflict(
             "服务器处于维护、停止接收任务或互斥操作中，不能接收新任务".into(),
@@ -110,7 +110,7 @@ pub(super) async fn ensure_terminal_input_tx(
         .fetch_optional(&mut **tx)
         .await?
         .ok_or(ApiError::NotFound)?;
-    let blocked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM fleet_profiles WHERE server_id=$1 AND (lifecycle IN ('draining','retired') OR (lifecycle='maintenance' AND COALESCE(maintenance_from,0)<=$2 AND (maintenance_until IS NULL OR maintenance_until>$2)))) OR EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) OR EXISTS(SELECT 1 FROM operations_maintenance WHERE $1=ANY(targets) AND block_new_tasks AND starts_at<=$2 AND ends_at>$2)").bind(server).bind(sinan_protocol::now_timestamp()).fetch_one(&mut **tx).await?;
+    let blocked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM fleet_profiles WHERE server_id=$1 AND (lifecycle IN ('draining','retired') OR (lifecycle='maintenance' AND COALESCE(maintenance_from,0)<=$2 AND (maintenance_until IS NULL OR maintenance_until>$2)))) OR EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) OR EXISTS(SELECT 1 FROM operations_maintenance WHERE $1=ANY(targets) AND block_new_tasks AND starts_at<=$2 AND ends_at>$2)").bind(server).bind(apsp_protocol::now_timestamp()).fetch_one(&mut **tx).await?;
     if blocked {
         return Err(ApiError::Conflict(
             "终端所在设备已进入维护或退役；仍可请求强制关闭".into(),
@@ -124,7 +124,7 @@ pub(super) async fn ensure_accepts_fleet_tasks_tx(
     server: i64,
 ) -> ApiResult<()> {
     ensure_terminal_input_tx(tx, server).await?;
-    let blocked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM operations_server_locks WHERE server_id=$1) OR EXISTS(SELECT 1 FROM fleet_operations WHERE server_id=$1 AND (reconciled_at IS NULL AND (status='unknown' OR (status='dispatched' AND expires_at<=$2))))").bind(server).bind(sinan_protocol::now_timestamp()).fetch_one(&mut **tx).await?;
+    let blocked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM operations_server_locks WHERE server_id=$1) OR EXISTS(SELECT 1 FROM fleet_operations WHERE server_id=$1 AND (reconciled_at IS NULL AND (status='unknown' OR (status='dispatched' AND expires_at<=$2))))").bind(server).bind(apsp_protocol::now_timestamp()).fetch_one(&mut **tx).await?;
     if blocked {
         return Err(ApiError::Conflict(
             "设备存在互斥自动化作业或未知结果；核对后再创建日常操作".into(),
@@ -140,7 +140,7 @@ pub(crate) async fn record(
     detail: serde_json::Value,
 ) -> ApiResult<()> {
     sqlx::query("INSERT INTO fleet_events(id,server_id,kind,source,occurred_at,detail) VALUES($1,$2,$3,'panel',$4,$5)")
-        .bind(uuid::Uuid::new_v4()).bind(server).bind(kind).bind(sinan_protocol::now_timestamp()).bind(detail).execute(&mut **tx).await?;
+        .bind(uuid::Uuid::new_v4()).bind(server).bind(kind).bind(apsp_protocol::now_timestamp()).bind(detail).execute(&mut **tx).await?;
     Ok(())
 }
 
@@ -155,7 +155,7 @@ pub(crate) fn text(value: &str, maximum: usize) -> ApiResult<String> {
 pub(crate) async fn policy(
     tx: &mut Transaction<'_, Postgres>,
     id: i64,
-) -> ApiResult<sinan_protocol::fleet::AccessPolicy> {
+) -> ApiResult<apsp_protocol::fleet::AccessPolicy> {
     let value = sqlx::query("SELECT policy FROM fleet_profiles WHERE server_id=$1")
         .bind(id)
         .fetch_optional(&mut **tx)

@@ -31,7 +31,7 @@ import release
 
 class ReleaseTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="sinan-release-test-")
+        self.temporary = tempfile.TemporaryDirectory(prefix="apsp-release-test-")
         self.directory = Path(self.temporary.name)
         self.source = self.directory / "artifacts"
         for arch in ("amd64", "arm64"):
@@ -67,7 +67,7 @@ class ReleaseTests(unittest.TestCase):
         result = subprocess.run(["minisign", "-S", "-m", str(self.bundle / "SHA256SUMS"),
                                  "-s", str(FIXTURES / "TEST_ONLY.key"), "-x",
                                  str(self.bundle / "SHA256SUMS.minisig"), "-t",
-                                 "Sinan TEST ONLY automated fixture"], capture_output=True)
+                                 "Apsp TEST ONLY automated fixture"], capture_output=True)
         self.assertEqual(result.returncode, 0, "fixture signing failed")
 
     def verify(self):
@@ -170,13 +170,13 @@ class ReleaseTests(unittest.TestCase):
         import ipquality_artifact
         files = {name: b"TEST ONLY unapproved IPQuality profile " + name.encode()
                  for name in ipquality_artifact.FILES}
-        paired = b"TEST ONLY unapproved corresponding Debian and Sinan sources " + arch.encode()
+        paired = b"TEST ONLY unapproved corresponding Debian and Apsp sources " + arch.encode()
         asset = f"ipquality-{ipquality_artifact.VERSION}-linux-{arch}-sources.tar.gz"
         notice = {"source_offer": {"asset": asset, "size": len(paired), "sha256": release.digest(paired)},
                   "notice": "TEST ONLY unapproved source closure", "license": "AGPL-3.0-only"}
         if mutate_notice is not None:
             mutate_notice(notice)
-        files["THIRD_PARTY_NOTICES.txt"] = (b"Sinan IPQuality node self-query\n"
+        files["THIRD_PARTY_NOTICES.txt"] = (b"Apsp IPQuality node self-query\n"
             + (json.dumps(notice, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n").encode())
         (self.bundle / asset).write_bytes(paired)
         output = io.BytesIO()
@@ -603,8 +603,8 @@ class ReleaseTests(unittest.TestCase):
             (self.bundle / self.installer_asset).write_bytes(payload)
         # Execute the actual production path through its first Agent execution.
         # Render it exactly as a release does so embedded preflight markers are expanded.
-        text = release.installer_source(ROOT / "deploy/install.sh.tmpl", ROOT / "deploy/sinan-agent.service",
-                                        ROOT / "plugins/sing-box/sinan-singbox@.service", source_root=ROOT)
+        text = release.installer_source(ROOT / "deploy/install.sh.tmpl", ROOT / "deploy/apsp-agent.service",
+                                        ROOT / "plugins/sing-box/apsp-singbox@.service", source_root=ROOT)
         text = text.split("# Reject unverifiable legacy caches", 1)[0] + "\nexit 0\n"
         # Select systemd through a private marker instead of creating /run/systemd/system on the host.
         systemd_marker = self.directory / "run-systemd-system"
@@ -612,7 +612,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(text.count("[ -d /run/systemd/system ]"), 1)
         text = text.replace("[ -d /run/systemd/system ]", "[ -d " + shlex.quote(str(systemd_marker)) + " ]")
         if core_root:
-            text = text.replace("/opt/sinan/core", str(core_root))
+            text = text.replace("/opt/apsp/core", str(core_root))
         if forced_optimization:
             # Every embedded verifier, including the legacy preflight, must hold without assert statements.
             self.assertGreaterEqual(text.count("python3 -I - "), 2)
@@ -711,7 +711,7 @@ class ReleaseTests(unittest.TestCase):
     @unittest.skipUnless(os.getuid() == 0, "protected executable staging test requires root")
     def test_installer_refuses_writable_execution_parent_before_agent_execution(self):
         good, _, marker, _ = self.signed_executable_fixture()
-        with tempfile.TemporaryDirectory(prefix="sinan-installer-parent-", dir="/root") as directory:
+        with tempfile.TemporaryDirectory(prefix="apsp-installer-parent-", dir="/root") as directory:
             unsafe = Path(directory) / "unsafe-core"
             unsafe.mkdir(mode=0o777)
             unsafe.chmod(0o777)

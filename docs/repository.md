@@ -28,7 +28,7 @@
 | `compiler` | 从业务模型确定性地生成完整运行时配置包 |
 | `panel-host` | 面板宿主：HTTP 服务、管理员会话、服务器、遥测、通知、任务、共用诊断服务和插件接口；工作区依赖仅 `protocol`，不认识具体业务插件 |
 | `plugins/*/panel` | 业务插件 crate（sing-box、DDNS、阿里云）及云 API 公共库；工作区依赖仅宿主、`protocol`、`compiler` 和云 API 公共库，插件之间不互相依赖 |
-| `panel` | 组装：登记业务插件并启动服务；保存唯一的迁移序列，保留原有 `sinan_panel::*` Rust 路径 |
+| `panel` | 组装：登记业务插件并启动服务；保存唯一的迁移序列，保留原有 `apsp_panel::*` Rust 路径 |
 | `agent-core` | 设备身份、传输、对账、持久状态、遥测、计量与制品；工作区依赖仅 `protocol`、`adapter-sdk` |
 | `adapter-sdk` | 无状态适配器接口与共享模型 |
 | `adapter-singbox`、`adapter-nodequality`、`adapter-tcpquality` | 运行时或工具翻译；工作区依赖仅 `adapter-sdk` |
@@ -50,7 +50,7 @@
 | `routes/agent.rs` | Agent 认证接口、上报、待办、结果、配置包和运行时下载 |
 | `routes/artifacts.rs` | 管理员制品目录、导入、版本查询及公开安装入口 |
 
-路由文件只组合处理函数，鉴权和业务校验仍由原处理函数负责。`sinan_panel::router`、`AppState`、`AgentConnection` 及旧代理业务 Rust 导出继续可用。新增接口按职责归组，不再把所有接口堆入 crate 根文件。
+路由文件只组合处理函数，鉴权和业务校验仍由原处理函数负责。`apsp_panel::router`、`AppState`、`AgentConnection` 及旧代理业务 Rust 导出继续可用。新增接口按职责归组，不再把所有接口堆入 crate 根文件。
 
 插件接口：
 

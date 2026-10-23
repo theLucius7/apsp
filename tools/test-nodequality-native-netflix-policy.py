@@ -22,7 +22,7 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / 'plugins/nodequality'
 READONLY_SOURCES = None
-BASH = os.environ.get('SINAN_NODEQUALITY_TEST_BASH', '/bin/bash')
+BASH = os.environ.get('APSP_NODEQUALITY_TEST_BASH', '/bin/bash')
 TITLES = ('81280792', '70143836')
 HARD_CAP = 2097280
 MAX_SCENARIOS_FILE = 8 * 1024 * 1024
@@ -303,9 +303,9 @@ class NetflixTests(unittest.TestCase):
                 env.pop('SCENARIOS', None)
                 script = PRELUDE
                 if not canonical:
-                    script += 'SINAN_NATIVE_CURL=$(type -P curl)\n'
-                    for function in ('sinan_browser_header', 'curl', 'sinan_netflix_unknown',
-                                     'sinan_netflix_page_error', 'sinan_netflix_fetch'):
+                    script += 'APSP_NATIVE_CURL=$(type -P curl)\n'
+                    for function in ('apsp_browser_header', 'curl', 'apsp_netflix_unknown',
+                                     'apsp_netflix_page_error', 'apsp_netflix_fetch'):
                         if function + '(){\n' in text:
                             script += body(text, function)
                 script += body(text, 'MediaUnlockTest_Netflix') + '\n' + extra
@@ -647,7 +647,7 @@ class NetflixTests(unittest.TestCase):
         self.assertEqual(body(final.decode(), 'MediaUnlockTest_Netflix'),
                          body(new.decode(), 'MediaUnlockTest_Netflix'))
         for function in ('db_ipqs', 'db_ipregistry', 'MediaUnlockTest_YouTube_Premium',
-                         'sinan_netflix_unknown', 'show_media', 'save_json'):
+                         'apsp_netflix_unknown', 'show_media', 'save_json'):
             self.assertEqual(body(new.decode(), function), body(old.decode(), function))
         old_function = body(old.decode(), 'MediaUnlockTest_Netflix').encode()
         expected_function = old_function.replace(policy.CLASSIFIER, policy.CHECKED_CLASSIFIER, 1)

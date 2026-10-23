@@ -2,7 +2,7 @@
 # Run real OpenRC and the installer only inside a disposable test container.
 set -euo pipefail
 repository=$(cd "$(dirname "$0")/.." && pwd)
-image="sinan-openrc-smoke:${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$$"
+image="apsp-openrc-smoke:${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$$"
 cleanup() {
   result=$?
   trap - EXIT
@@ -11,4 +11,4 @@ cleanup() {
 }
 trap cleanup EXIT
 docker build --tag "$image" --file "$repository/tools/openrc-test.Dockerfile" "$repository/tools"
-docker run --rm --init --network none --cap-add SYS_ADMIN --security-opt apparmor=unconfined --env "SINAN_TEST_AGENT=${SINAN_TEST_AGENT:-}" --volume "$repository:/src:ro" "$image"
+docker run --rm --init --network none --cap-add SYS_ADMIN --security-opt apparmor=unconfined --env "APSP_TEST_AGENT=${APSP_TEST_AGENT:-}" --volume "$repository:/src:ro" "$image"

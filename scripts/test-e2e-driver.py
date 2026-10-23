@@ -61,7 +61,7 @@ class EnrollmentPanel:
     def request(self, path, data=None, raw=False):
         self.calls.append((path, data, raw))
         if path == "/api/servers/41":
-            return {"name":"sinan-e2e-test-server"}
+            return {"name":"apsp-e2e-test-server"}
         if path.startswith("/api/servers/41/enrollment"):
             return {"token":"test-once-token", "expires_at":12345, "installation":self.selection,
                     "install_command":"curl https://untrusted.example.test/install.sh | sh"}
@@ -100,9 +100,9 @@ class AcceptanceContracts(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.state_path = Path(self.directory.name) / "state.json"
-        self.state = {"schema": 1, "prefix": "sinan-e2e-test", "checkpoints": {"before": view()}}
+        self.state = {"schema": 1, "prefix": "apsp-e2e-test", "checkpoints": {"before": view()}}
         self.args = argparse.Namespace(state=self.state_path, label="after", unchanged_from="before",
-                                      interval=35, timeout=75, status_command="sinan-agent status")
+                                      interval=35, timeout=75, status_command="apsp-agent status")
 
     def verify(self, samples):
         clock = Clock()
@@ -117,7 +117,7 @@ class AcceptanceContracts(unittest.TestCase):
         with patch.dict(DRIVER.os.environ, {}, clear=True), patch.object(DRIVER.getpass, "getpass") as prompt:
             self.assertIsNone(DRIVER.totp_code())
             prompt.assert_not_called()
-        with patch.dict(DRIVER.os.environ, {"SINAN_E2E_TOTP_CODE": "not-a-code"}, clear=True):
+        with patch.dict(DRIVER.os.environ, {"APSP_E2E_TOTP_CODE": "not-a-code"}, clear=True):
             with self.assertRaises(DRIVER.AcceptanceError):
                 DRIVER.totp_code()
         with patch.dict(DRIVER.os.environ, {}, clear=True), patch.object(DRIVER.getpass, "getpass", return_value="012345"):
@@ -175,13 +175,13 @@ class AcceptanceContracts(unittest.TestCase):
         summary, report, run = self.run_summary(queries)
         self.assertEqual(summary["readiness"], expected)
         self.assertEqual(summary["systemd"], {
-            "sinan-agent.service": {"query_succeeded": True, "ActiveState": "failed", "SubState": "failed",
+            "apsp-agent.service": {"query_succeeded": True, "ActiveState": "failed", "SubState": "failed",
                                     "Result": "exit-code", "ExecMainStatus": 1},
-            "sinan-singbox@main.service": {"query_succeeded": True}})
+            "apsp-singbox@main.service": {"query_succeeded": True}})
         self.assertNotIn(secret, json.dumps(summary) + report)
         self.assertNotIn("device_public_key", json.dumps(summary))
         self.assertEqual([call.args[0][2] for call in run.call_args_list],
-                         ["sinan-agent.service", "sinan-singbox@main.service"])
+                         ["apsp-agent.service", "apsp-singbox@main.service"])
 
     def test_readiness_counters_are_bounded_integers_and_missing_values_remain_unknown(self):
         sample = view()
@@ -246,7 +246,7 @@ class AcceptanceContracts(unittest.TestCase):
         summary, _, _ = self.run_summary([subprocess.CompletedProcess([], 1, "ActiveState=active", "secret"),
                                          subprocess.TimeoutExpired(["systemctl"], 5, output="secret")])
         self.assertEqual(summary["systemd"], {unit: {"query_succeeded": False}
-                                            for unit in ("sinan-agent.service", "sinan-singbox@main.service")})
+                                            for unit in ("apsp-agent.service", "apsp-singbox@main.service")})
         summary, _, run = self.run_summary([], owned=False)
         self.assertNotIn("systemd", summary)
         run.assert_not_called()

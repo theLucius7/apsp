@@ -173,7 +173,7 @@ async fn create(
     control_center::require_recent_proof(&state, &headers).await?;
     normalize(&state, &headers, &mut input.config).await?;
     let id = Uuid::new_v4();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO dns_accounts(id,config,created_at,updated_at) VALUES($1,$2,$3,$3)")
         .bind(id)
         .bind(json!(input.config))
@@ -194,7 +194,7 @@ async fn update(
     authorize(&state, &headers, &before.config, "dns:write").await?;
     normalize(&state, &headers, &mut input.config).await?;
     if sqlx::query("UPDATE dns_accounts SET config=$2,revision=revision+1,updated_at=$3,checked_at=NULL,error_code=NULL WHERE id=$1 AND revision=$4")
-        .bind(id).bind(json!(input.config)).bind(sinan_protocol::now_timestamp()).bind(input.revision)
+        .bind(id).bind(json!(input.config)).bind(apsp_protocol::now_timestamp()).bind(input.revision)
         .execute(&state.pool).await?.rows_affected()!=1 { return Err(ApiError::Conflict("账号已修改，请刷新后重试".into())); }
     Ok(Json(json!(load(&state.pool, id).await?)))
 }
@@ -255,7 +255,7 @@ async fn check(
         result,
     )
     .await;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let (zones, error) = match result {
         Ok(Ok(zones)) => {
             let failed = zones.iter().any(|zone| zone["available"] != true);

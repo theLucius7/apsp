@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use sinan_agent_core::{Config, State};
+use apsp_agent_core::{Config, State};
 use std::{
     fs,
     path::PathBuf,
@@ -20,7 +20,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = std::env::temp_dir().join(format!(
-            "sinan-monitor-cli-{}-{}-{}",
+            "apsp-monitor-cli-{}-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -47,7 +47,7 @@ impl Fixture {
 
     fn reject_all_monitor_entrypoints(&self) {
         for command in ["run", "supervise", "install-service"] {
-            let output = Command::new(env!("CARGO_BIN_EXE_sinan-agent"))
+            let output = Command::new(env!("CARGO_BIN_EXE_apsp-agent"))
                 .arg("--config")
                 .arg(&self.path)
                 .args([command, "--monitor-only"])

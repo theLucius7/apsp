@@ -21,7 +21,7 @@ SPEC.loader.exec_module(RENDER)
 
 class StandaloneMetadataTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="sinan-bootstrap-artifact-TEST_ONLY-")
+        self.temporary = tempfile.TemporaryDirectory(prefix="apsp-bootstrap-artifact-TEST_ONLY-")
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
         self.stage = self.root / "standalone"
@@ -75,7 +75,7 @@ class StandaloneMetadataTests(unittest.TestCase):
         rootfs = {"rootfs.tar.gz", "rootfs-manifest.json"}
         vectors = [("nodequality", stem + suffix, auxiliary) for suffix, auxiliary in
                    (("-r19", set()), ("-r20", rootfs), ("-r21", set()), ("-r22", set()),
-                    ("-sinan-native-r1", set()), ("-sinan-native-r2", set()), ("-offline-rootfs-r1", rootfs))]
+                    ("-sinan-native-r1", set()), ("-apsp-native-r2", set()), ("-offline-rootfs-r1", rootfs))]
         vectors.append(("ipquality", "87397e2c3196ec796f5477c83343c2354df601ea-node-r1",
                         rootfs | {"build-info.json", "LICENSE", "source.tar.gz", "THIRD_PARTY_NOTICES.txt"}))
         for module, version, auxiliary in vectors:

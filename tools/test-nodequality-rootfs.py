@@ -325,7 +325,7 @@ class ArchiveTests(unittest.TestCase):
 class MetadataTests(unittest.TestCase):
     def fixture(self, name):
         rows = inventory() + [{'path': 'usr/share', 'type': 'dir', 'mode': 0o755},
-                              {'path': 'usr/share/sinan-rootfs', 'type': 'dir', 'mode': 0o700},
+                              {'path': 'usr/share/apsp-rootfs', 'type': 'dir', 'mode': 0o700},
                               {'path': 'var', 'type': 'dir', 'mode': 0o755},
                               {'path': 'var/lib', 'type': 'dir', 'mode': 0o755},
                               {'path': 'var/lib/dpkg', 'type': 'dir', 'mode': 0o755}]
@@ -349,7 +349,7 @@ class MetadataTests(unittest.TestCase):
     def test_config_unlisted_duplicate_and_oversized_metadata_selection_rejects(self):
         with tempfile.TemporaryDirectory() as name:
             fixture, contents = self.fixture(name)
-            first = 'usr/share/sinan-rootfs/provenance.json'
+            first = 'usr/share/apsp-rootfs/provenance.json'
             for selection in ([first, first], ['root/.config/tool.json'], ['usr/bin/probe'], [], first):
                 with self.subTest(selection=selection), self.assertRaises(ValueError):
                     rootfs.read_metadata(fixture.archive, fixture.loaded(), selection)
@@ -365,7 +365,7 @@ class MetadataTests(unittest.TestCase):
                                  {'var/lib/dpkg/status': contents['var/lib/dpkg/status']})
                 with self.assertRaises(ValueError):
                     rootfs.read_metadata(fixture.archive, fixture.loaded(),
-                                         ['usr/share/sinan-rootfs/ipquality-profile.json'])
+                                         ['usr/share/apsp-rootfs/ipquality-profile.json'])
             with mock.patch.object(rootfs, 'MAX_PACKAGE_STATUS', 1), self.assertRaises(ValueError):
                 rootfs.read_metadata(fixture.archive, fixture.loaded(), ['var/lib/dpkg/status'])
 

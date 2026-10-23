@@ -1,13 +1,13 @@
 use super::{ensure_ordinary_directory_if_present, verification};
 use crate::{Config, reconcile::ApplyIntent};
 use anyhow::{Context, Result, ensure};
-use rusqlite::{Connection, OpenFlags, OptionalExtension};
-use serde::Deserialize;
-use sinan_adapter_sdk::{DiagnosticSpec, Prepared, ServiceJob};
-use sinan_protocol::{
+use apsp_adapter_sdk::{DiagnosticSpec, Prepared, ServiceJob};
+use apsp_protocol::{
     DiagnosticJob,
     release::{TrustedKeys, safe_component},
 };
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
+use serde::Deserialize;
 use std::{
     path::{Component, PathBuf},
     time::Duration,

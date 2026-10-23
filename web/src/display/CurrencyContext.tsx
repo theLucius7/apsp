@@ -9,7 +9,7 @@ const Context = createContext<CurrencyState>({ currency: 'CNY', error: '', loadi
 export const useCurrency = () => useContext(Context)
 
 export function CurrencyProvider({ children }: { children: ReactNode }) {
-  const [currency] = useState(() => { try { return currencyCode(localStorage.getItem('sinan-display-currency')) } catch { return 'CNY' } })
+  const [currency] = useState(() => { try { return currencyCode(localStorage.getItem('apsp-display-currency')) } catch { return 'CNY' } })
   const rates = useDashboardPoll<ExchangeRates>('/api/dashboard/exchange-rates', 300_000, false)
   return <Context.Provider value={{ currency, quote: rates.data, error: rates.error, loading: rates.loading, reload: rates.reload }}>{children}</Context.Provider>
 }

@@ -6,7 +6,7 @@
 
 主线普通单文件r18与本分支de54084的离线双辅助文件r18是不同制品；数值r14–r17的策略链在两侧也有不同字节。保留历史提交、报告与收据，不以同名版本推断来源一致，不重签旧身份下的新内容。
 
-本分支最初原生策略身份为 `a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r1`，包含更严格的原生curl、逐源错误、有界YouTube和Netflix链，以及明确停止未授权OpenAI请求的新增层。主线当前默认身份为 r22；显式原生策略构建在2026-10-03章节目录保护和上传边界补修后使用独立 `sinan-native-r2`，不把新字节重标为 native-r1。
+本分支最初原生策略身份为 `a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r1`，包含更严格的原生curl、逐源错误、有界YouTube和Netflix链，以及明确停止未授权OpenAI请求的新增层。主线当前默认身份为 r22；显式原生策略构建在2026-10-03章节目录保护和上传边界补修后使用独立 `apsp-native-r2`，不把新字节重标为 native-r1。
 
 显式离线准备 `a92fca6c0067df29ddd03fdc2fee6f3000f64545-offline-rootfs-r1` 仍只从精确历史 native-r1 包装器受控派生，并要求已签 `rootfs.tar.gz` 与 `rootfs-manifest.json`。`historical-native-r1` 保存必要的原 runner/report，`historical-r19` 保存既有共享 rootfs 原字节；历史读取严格校验固定摘要，不随当前 helper 修改而改变旧签名身份。辅助文件的来源、摘要、字节和数量在Release与Agent分别核验。
 

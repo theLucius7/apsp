@@ -1,12 +1,12 @@
 use super::{TestPanel, release_fixture};
 use anyhow::{Context, Result, ensure};
-use reqwest::{Client, Method, Response, header};
-use serde_json::{Value, json};
-use sinan_panel::AppState;
-use sinan_protocol::{
+use apsp_panel::AppState;
+use apsp_protocol::{
     fleet::{JobResult, Operation, Work},
     now_timestamp,
 };
+use reqwest::{Client, Method, Response, header};
+use serde_json::{Value, json};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -110,9 +110,9 @@ async fn prepare_server(
     let mut capabilities: Vec<String> = serde_json::from_value(row.get("capabilities"))?;
     for capability in [
         "singbox",
-        sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
-        sinan_protocol::fleet::OPERATIONS_CAPABILITY,
-        sinan_protocol::fleet::RUNTIME_PREFLIGHT_CAPABILITY,
+        apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
+        apsp_protocol::fleet::OPERATIONS_CAPABILITY,
+        apsp_protocol::fleet::RUNTIME_PREFLIGHT_CAPABILITY,
     ] {
         if !capabilities.iter().any(|item| item == capability) {
             capabilities.push(capability.into());
@@ -124,7 +124,7 @@ async fn prepare_server(
     }
     for (key, value) in [
         ("os", "linux"),
-        ("arch", sinan_protocol::release::native_arch()?),
+        ("arch", apsp_protocol::release::native_arch()?),
         ("libc", "gnu"),
         ("runtime_libc", "gnu"),
     ] {
@@ -132,7 +132,7 @@ async fn prepare_server(
             info[key] = json!(value);
         }
     }
-    let target = sinan_protocol::platform::artifact_target(
+    let target = apsp_protocol::platform::artifact_target(
         info["os"].as_str().context("TEST_ONLY platform")?,
         info["runtime_libc"]
             .as_str()
@@ -218,7 +218,7 @@ async fn prepare_server(
     // be accepted. No operation status or confirmation is updated directly.
     let token = format!("TEST_ONLY-preflight-{}", Uuid::new_v4());
     sqlx::query("INSERT INTO sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
-        .bind(sinan_panel::auth::hash_token(&token))
+        .bind(apsp_panel::auth::hash_token(&token))
         .bind(server)
         .bind(now_timestamp() + 300)
         .execute(&panel.state.pool)
@@ -234,8 +234,8 @@ async fn prepare_server(
                 Operation::Ports {}=>json!({"stdout":"","stderr":"","truncated":false,"timed_out":false,"exit_code":0,"fixture":"TEST_ONLY controlled empty listening sockets"}),
                 Operation::RuntimePermissions{module}=>{
                     ensure!(module=="sing-box"&&job.policy.runtime_inspection,"TEST_ONLY runtime inspection requires the current allowed policy");
-                    let root="/var/lib/sinan/runtimes/sing-box@main";
-                    json!({"module":module,"sampled_at":now_timestamp(),"privileged_effective_uid":0,"runtime_account":{"known":true,"uid":65534,"gid":65534,"supplementary_gids":[65534],"source":"TEST_ONLY controlled installed runtime account"},"runtime_directory":directory(root),"data_directory":directory(&format!("{root}/data")),"certificate_directory":directory(&format!("{root}/data/certificates")),"service_manager":{"kind":"systemd","available":true,"management_authorized":true,"privileged_effective_uid":0,"managed_unit":"sinan-singbox@main.service","managed_pid":null,"load_state":"loaded","authorization_basis":"TEST_ONLY controlled privileged service backend"},"secret_values_recorded":false})
+                    let root="/var/lib/apsp/runtimes/sing-box@main";
+                    json!({"module":module,"sampled_at":now_timestamp(),"privileged_effective_uid":0,"runtime_account":{"known":true,"uid":65534,"gid":65534,"supplementary_gids":[65534],"source":"TEST_ONLY controlled installed runtime account"},"runtime_directory":directory(root),"data_directory":directory(&format!("{root}/data")),"certificate_directory":directory(&format!("{root}/data/certificates")),"service_manager":{"kind":"systemd","available":true,"management_authorized":true,"privileged_effective_uid":0,"managed_unit":"apsp-singbox@main.service","managed_pid":null,"load_state":"loaded","authorization_basis":"TEST_ONLY controlled privileged service backend"},"secret_values_recorded":false})
                 }
                 other=>anyhow::bail!("unexpected TEST_ONLY preflight operation: {other:?}"),
             };
@@ -252,7 +252,7 @@ async fn prepare_server(
         Ok::<_,anyhow::Error>(())
     }.await;
     sqlx::query("DELETE FROM sessions WHERE token_hash=$1")
-        .bind(sinan_panel::auth::hash_token(&token))
+        .bind(apsp_panel::auth::hash_token(&token))
         .execute(&panel.state.pool)
         .await?;
     outcome?;

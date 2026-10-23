@@ -76,7 +76,7 @@ async fn exchange_reads_follow_dashboard_access_and_manual_refresh_requires_admi
     // Model an already claimed worker so the real HTTP route exercises its
     // throttle without sending a request to an external exchange provider.
     sqlx::query("UPDATE exchange_rates SET attempted_at=$1,lease_until=$1+60 WHERE singleton")
-        .bind(sinan_protocol::now_timestamp())
+        .bind(apsp_protocol::now_timestamp())
         .execute(&panel.state.pool)
         .await?;
     assert_eq!(

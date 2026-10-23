@@ -109,7 +109,7 @@ async fn create(
     let mut tx = state.pool.begin().await?;
     super::entitlements::lock(&mut tx).await?;
     let id: i64 = sqlx::query_scalar("INSERT INTO singbox_subscription_sources(name,kind,secret_url,secret_authorization,secret_content,source_host,refresh_interval_seconds,created_at,user_agent,auto_refresh) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id")
-        .bind(name).bind(request.kind).bind(request.url).bind(request.authorization).bind(request.content).bind(host).bind(interval).bind(sinan_protocol::now_timestamp()).bind(user_agent).bind(request.auto_refresh.unwrap_or(true)).fetch_one(&mut *tx).await?;
+        .bind(name).bind(request.kind).bind(request.url).bind(request.authorization).bind(request.content).bind(host).bind(interval).bind(apsp_protocol::now_timestamp()).bind(user_agent).bind(request.auto_refresh.unwrap_or(true)).fetch_one(&mut *tx).await?;
     service::queue_on(&mut tx, id).await?;
     tx.commit().await?;
     service::kick(&state);
@@ -228,7 +228,7 @@ async fn update(
         .transpose()
         .map_err(import_error)?
         .and_then(|url| url.host_str().map(str::to_owned));
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("UPDATE singbox_subscription_sources SET name=$2,secret_url=$3,secret_authorization=$4,secret_content=$5,source_host=$6,settings_revision=$7,identity_epoch=$8,refresh_interval_seconds=$9,archived=$10,etag=NULL,last_modified=NULL,cache_settings_revision=NULL,cache_identity_epoch=NULL,next_refresh_at=CASE WHEN kind='url' AND NOT $10 AND $12 THEN $11 ELSE NULL END,auto_refresh=$12,user_agent=$13 WHERE id=$1")
         .bind(id).bind(settings.name).bind(settings.secret_url).bind(settings.secret_authorization).bind(settings.secret_content).bind(source_host).bind(settings.settings_revision).bind(settings.identity_epoch).bind(settings.refresh_interval_seconds).bind(settings.archived).bind(now).bind(settings.auto_refresh).bind(settings.user_agent).execute(&mut *tx).await?;
     let superseded = sqlx::query("UPDATE singbox_source_jobs SET state='superseded',phase='finished',finished_at=$2 WHERE source_id=$1 AND state IN ('queued','running')")
@@ -296,7 +296,7 @@ async fn cancel(
     let mut tx = state.pool.begin().await?;
     super::entitlements::lock(&mut tx).await?;
     let changed = sqlx::query("UPDATE singbox_source_jobs SET state='cancelled',phase='finished',finished_at=$2 WHERE id=$1 AND state IN ('queued','running')")
-        .bind(id).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?.rows_affected();
+        .bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?.rows_affected();
     if changed == 1 {
         sqlx::query("UPDATE singbox_subscription_sources s SET last_error='cancelled' FROM singbox_source_jobs j WHERE j.id=$1 AND s.id=j.source_id AND s.settings_revision=j.settings_revision AND s.identity_epoch=j.identity_epoch")
             .bind(id).execute(&mut *tx).await?;
@@ -350,7 +350,7 @@ async fn remove(
             "来源节点仍分配给代理用户，请先撤销分配；可先归档来源".into(),
         ));
     }
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("UPDATE singbox_subscription_sources SET archived=TRUE,deleted_at=$2,settings_revision=settings_revision+1,etag=NULL,last_modified=NULL,next_refresh_at=NULL WHERE id=$1").bind(id).bind(now).execute(&mut *tx).await?;
     sqlx::query("UPDATE singbox_source_jobs SET state='cancelled',phase='finished',finished_at=$2 WHERE source_id=$1 AND state IN ('queued','running')").bind(id).bind(now).execute(&mut *tx).await?;
     tx.commit().await?;

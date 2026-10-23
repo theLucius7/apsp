@@ -78,7 +78,7 @@ async fn compiled_embedded_frontend_matches_every_dist_file_for_get_and_head() -
         for uri in uris {
             for method in [Method::GET, Method::HEAD] {
                 let response =
-                    sinan_panel::frontend::serve(method.clone(), uri.parse::<Uri>()?).await;
+                    apsp_panel::frontend::serve(method.clone(), uri.parse::<Uri>()?).await;
                 assert_eq!(response.status(), StatusCode::OK, "{method} {uri}");
                 assert_eq!(
                     response.headers()[header::CONTENT_TYPE],
@@ -138,7 +138,7 @@ async fn embedded_frontend_serves_real_assets_without_masking_missing_endpoints(
     );
     let html = response.text().await?;
     assert!(html.to_ascii_lowercase().contains("<!doctype html>"));
-    assert!(html.contains("司南"));
+    assert!(html.contains("apsp"));
 
     for (extension, content_type) in [
         (".js", "text/javascript; charset=utf-8"),

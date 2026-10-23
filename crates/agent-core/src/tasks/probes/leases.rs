@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 #[derive(Clone)]
 pub(super) struct AcceptedLease {
-    pub(super) snapshot: sinan_protocol::ProbeLease,
+    pub(super) snapshot: apsp_protocol::ProbeLease,
     pub(super) received: Instant,
     pub(super) deadline: Instant,
     pub(super) session: Arc<PanelClient>,
@@ -46,7 +46,7 @@ pub(super) struct LeaseReceipts {
 impl LeaseReceipts {
     pub(super) fn accept(
         &mut self,
-        snapshot: sinan_protocol::ProbeLease,
+        snapshot: apsp_protocol::ProbeLease,
         server_id: i64,
         state: &SharedState,
         session: Arc<PanelClient>,
@@ -89,7 +89,7 @@ struct HighWater {
 }
 
 pub(super) fn accept_lease(
-    snapshot: sinan_protocol::ProbeLease,
+    snapshot: apsp_protocol::ProbeLease,
     server_id: i64,
     state: &SharedState,
     session: Arc<PanelClient>,

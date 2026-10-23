@@ -1,6 +1,6 @@
 use super::*;
 use crate::system::deploy::reference;
-use sinan_adapter_sdk::ManagedProcess;
+use apsp_adapter_sdk::ManagedProcess;
 
 async fn save(root: &Path, state: &UpgradeState, ops: &dyn Privileged) -> Result<()> {
     ops.write_file(
@@ -33,7 +33,7 @@ async fn spawn(
     crate::artifacts::verify_expected_agent(
         &root.join(version).join(executable_name()),
         version,
-        &sinan_protocol::release::TrustedKeys::compiled()?,
+        &apsp_protocol::release::TrustedKeys::compiled()?,
     )
     .await?;
     ops.spawn_managed(&root.join(version).join(executable_name()), &args)
@@ -177,7 +177,7 @@ pub async fn supervise(
                     .proof
                     .as_ref()
                     .context("pending Agent update has no signed proof")?,
-                &sinan_protocol::release::TrustedKeys::compiled()?,
+                &apsp_protocol::release::TrustedKeys::compiled()?,
                 ops.as_ref(),
             )
             .await?;

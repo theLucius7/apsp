@@ -52,12 +52,12 @@ export default function App() {
       setAccessRevision(value => value + 1)
     }
     const hash = () => setPath(window.location.hash.slice(1) || '/dashboard')
-    window.addEventListener('sinan:unauthorized', unauthorized)
+    window.addEventListener('apsp:unauthorized', unauthorized)
     window.addEventListener('hashchange', hash)
     return () => {
       active = false
       controller.abort()
-      window.removeEventListener('sinan:unauthorized', unauthorized)
+      window.removeEventListener('apsp:unauthorized', unauthorized)
       window.removeEventListener('hashchange', hash)
     }
   }, [accessRevision, t])
@@ -65,7 +65,7 @@ export default function App() {
   const route = resolveRoute(path)
   const current = currentNavigation(route)
   const title = t(current?.label ?? '控制面板')
-  useEffect(() => { document.title = `${title} · ${t('司南')}` }, [title, t])
+  useEffect(() => { document.title = `${title} · ${t('apsp')}` }, [title, t])
 
   if (route.page === 'proxy-portal') return <Suspense fallback={<div className="boot"><Brand /><Loading /></div>}><UserPortal key={route.account} account={route.account} activation={route.activation} /></Suspense>
   if (session === null) return <div className="boot"><Brand /><Loading /></div>

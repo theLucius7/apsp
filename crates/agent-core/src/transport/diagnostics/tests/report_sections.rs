@@ -19,7 +19,7 @@ impl DiagnosticAdapter for ChapterAdapter {
     fn collect_sections<'a>(
         &'a self,
         spec: &'a DiagnosticSpec,
-    ) -> BoxFuture<'a, Vec<sinan_adapter_sdk::DiagnosticSection>> {
+    ) -> BoxFuture<'a, Vec<apsp_adapter_sdk::DiagnosticSection>> {
         Box::pin(async move {
             match tokio::fs::read(spec.job_dir.join("fixture-sections.json")).await {
                 Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
@@ -64,7 +64,7 @@ async fn partial_chapters_survive_a_worker_restart_and_failed_service_without_re
     )?;
     first.save(&saved)?;
     first.tick(None).await?;
-    let pending: Vec<sinan_protocol::DiagnosticSectionUpdate> =
+    let pending: Vec<apsp_protocol::DiagnosticSectionUpdate> =
         first.read(sections::SECTIONS_OUTBOX)?.unwrap();
     assert_eq!(pending.len(), 2);
     drop(first);
@@ -74,7 +74,7 @@ async fn partial_chapters_survive_a_worker_restart_and_failed_service_without_re
     let recovered = chapter_worker(&directory, services.clone())?;
     recovered.tick(None).await?;
     assert!(recovered.active()?.is_none());
-    let pending: Vec<sinan_protocol::DiagnosticSectionUpdate> =
+    let pending: Vec<apsp_protocol::DiagnosticSectionUpdate> =
         recovered.read(sections::SECTIONS_OUTBOX)?.unwrap();
     assert_eq!(pending.len(), 2);
     assert_eq!(pending[0].text, "durable header");
@@ -148,7 +148,7 @@ async fn chapter_http_failure_does_not_hide_terminal_status_and_acknowledgment_i
     }));
     let first = chapter_worker(&directory, services.clone())?;
     let id = Uuid::new_v4();
-    let chapter = sinan_protocol::DiagnosticSectionUpdate {
+    let chapter = apsp_protocol::DiagnosticSectionUpdate {
         id,
         name: "header_info".into(),
         text: "saved during disconnect".into(),
@@ -172,7 +172,7 @@ async fn chapter_http_failure_does_not_hide_terminal_status_and_acknowledgment_i
     );
     assert_eq!(
         first
-            .read::<Vec<sinan_protocol::DiagnosticSectionUpdate>>(sections::SECTIONS_OUTBOX)?
+            .read::<Vec<apsp_protocol::DiagnosticSectionUpdate>>(sections::SECTIONS_OUTBOX)?
             .unwrap(),
         vec![chapter.clone()]
     );
@@ -183,7 +183,7 @@ async fn chapter_http_failure_does_not_hide_terminal_status_and_acknowledgment_i
     recovered.flush(&client).await?;
     assert!(
         recovered
-            .read::<Vec<sinan_protocol::DiagnosticSectionUpdate>>(sections::SECTIONS_OUTBOX)?
+            .read::<Vec<apsp_protocol::DiagnosticSectionUpdate>>(sections::SECTIONS_OUTBOX)?
             .unwrap()
             .is_empty()
     );
@@ -221,19 +221,19 @@ async fn confirmed_cancellation_captures_final_chapters_and_keeps_them_after_res
         ]))?,
     )?;
     worker.save(&checkpoint)?;
-    control.request(sinan_protocol::DiagnosticCancelRequest {
+    control.request(apsp_protocol::DiagnosticCancelRequest {
         server_id: 7,
         job: job(id),
     })?;
     worker.tick(None).await?;
     assert!(worker.active()?.is_none());
-    let results: Vec<sinan_protocol::DiagnosticCancelResult> =
+    let results: Vec<apsp_protocol::DiagnosticCancelResult> =
         worker.read("diagnostics:cancellation-results")?.unwrap();
     assert!(results[0].confirmed);
     drop(worker);
     drop(control);
     let recovered = chapter_worker(&directory, services.clone())?;
-    let chapters: Vec<sinan_protocol::DiagnosticSectionUpdate> =
+    let chapters: Vec<apsp_protocol::DiagnosticSectionUpdate> =
         recovered.read(sections::SECTIONS_OUTBOX)?.unwrap();
     assert_eq!(chapters.len(), 1);
     assert_eq!(chapters[0].text, "final cancelled chapter");

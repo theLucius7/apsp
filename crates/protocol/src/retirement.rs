@@ -28,7 +28,7 @@ pub struct RetirementResult {
 
 /// Domain-separated completion proof; it cannot authenticate a device session.
 pub fn retirement_receipt_message(server_id: ServerId, request_id: Uuid) -> Vec<u8> {
-    let mut message = b"sinan-retirement-v1\0".to_vec();
+    let mut message = b"apsp-retirement-v1\0".to_vec();
     message.extend_from_slice(&server_id.to_be_bytes());
     message.extend_from_slice(request_id.as_bytes());
     message

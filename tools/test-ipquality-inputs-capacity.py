@@ -91,7 +91,7 @@ def fixture(root, extension='.gz'):
 
 class SignedExpansionContracts(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='sinan-ip-input-capacity-')
+        self.temporary = tempfile.TemporaryDirectory(prefix='apsp-ip-input-capacity-')
         self.root = Path(self.temporary.name).resolve()
 
     def tearDown(self):
@@ -345,7 +345,7 @@ class SignedExpansionContracts(unittest.TestCase):
 
 class MemoryObservationContracts(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='sinan-ip-memory-observation-')
+        self.temporary = tempfile.TemporaryDirectory(prefix='apsp-ip-memory-observation-')
         self.root = Path(self.temporary.name).resolve()
         self.meminfo = self.root / 'meminfo'
         self.meminfo.write_text('MemTotal: 1048576 kB\nMemAvailable: 524288 kB\nDirectMap4k: 256 kB\n')

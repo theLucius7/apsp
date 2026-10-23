@@ -5,7 +5,7 @@ import { useAction, useResource } from '../hooks'
 import { previewWebhook, webhookPresets, type Preset } from './webhook-presets'
 
 type Summary = { enabled: boolean; preset: Preset; url_configured: boolean; headers_configured: boolean; body_configured: boolean }
-const changed = () => window.dispatchEvent(new Event('sinan:notifications-updated'))
+const changed = () => window.dispatchEvent(new Event('apsp:notifications-updated'))
 function Form({ initial }: { initial: Summary }) {
   const [saved, setSaved] = useState(initial), [enabled, setEnabled] = useState(initial.enabled), [preset, setPreset] = useState(initial.preset)
   const [url, setUrl] = useState(''), [headers, setHeaders] = useState(''), [body, setBody] = useState(initial.body_configured ? '' : webhookPresets[0].body), [clearHeaders, setClearHeaders] = useState(false)

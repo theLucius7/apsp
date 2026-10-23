@@ -3,16 +3,16 @@
 use crate::release_support;
 
 use anyhow::{Context, Result, bail};
+use apsp_panel::{AppState, config::Config, router};
+use apsp_protocol::{
+    AuthChallenge, AuthResponse, EnrollRequest, Envelope, Hello, HelloAck, PROTOCOL_VERSION,
+    StaticInfo,
+};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::{Signer, SigningKey};
 use futures_util::{SinkExt, StreamExt};
 use reqwest::{Client, Method, Response, StatusCode, header};
 use serde_json::{Value, json};
-use sinan_panel::{AppState, config::Config, router};
-use sinan_protocol::{
-    AuthChallenge, AuthResponse, EnrollRequest, Envelope, Hello, HelloAck, PROTOCOL_VERSION,
-    StaticInfo,
-};
 use sqlx::PgPool;
 use std::sync::Arc;
 use std::{collections::BTreeMap, path::PathBuf, time::Duration};
@@ -56,7 +56,7 @@ impl TestPanel {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let listen = listener.local_addr()?;
         let base = format!("http://{listen}");
-        let directory = std::env::temp_dir().join(format!("sinan-business-{}", Uuid::new_v4()));
+        let directory = std::env::temp_dir().join(format!("apsp-business-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&directory)?;
         let directory = directory.canonicalize()?;
         let mut state = AppState::new(
@@ -183,7 +183,7 @@ impl TestPanel {
                 .bind(node).fetch_one(&mut *tx).await?;
             let proposed = Uuid::new_v4();
             sqlx::query("INSERT INTO singbox_managed_endpoint_versions(id,node_id,server_id,snapshot,semantic_sha256,created_at) VALUES($1,$2,$3,$4,encode(sha256(convert_to($4::jsonb::text,'UTF8')),'hex'),$5) ON CONFLICT(node_id,semantic_sha256) DO NOTHING")
-                .bind(proposed).bind(node).bind(server).bind(&snapshot).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
+                .bind(proposed).bind(node).bind(server).bind(&snapshot).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
             let version:Uuid=sqlx::query_scalar("SELECT id FROM singbox_managed_endpoint_versions WHERE node_id=$1 AND semantic_sha256=encode(sha256(convert_to($2::jsonb::text,'UTF8')),'hex')")
                 .bind(node).bind(&snapshot).fetch_one(&mut *tx).await?;
             endpoints.push(json!({"version_id":version,"server_id":server,"node":snapshot}));
@@ -195,7 +195,7 @@ impl TestPanel {
             .as_i64()
             .context("legacy fixture exit server")?;
         sqlx::query("INSERT INTO singbox_ordered_chain_versions(chain_id,generation,legacy,entry_endpoint_version,semantic_sha256,capabilities,snapshot,created_at) VALUES($1,1,TRUE,$2,encode(sha256(convert_to($3::jsonb::text,'UTF8')),'hex'),'{\"tcp\":true,\"udp\":true}'::jsonb,$3,$4)")
-            .bind(chain).bind(entry_version).bind(frozen).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
+            .bind(chain).bind(entry_version).bind(frozen).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
         sqlx::query("INSERT INTO singbox_ordered_chain_hops(chain_id,generation,position,kind,endpoint_version_id,managed_node_id,managed_server_id,relay_uuid) VALUES($1,1,1,'managed',$2,$3,$4,$5)")
             .bind(chain).bind(exit_version).bind(exit).bind(exit_server).bind(relay).execute(&mut *tx).await?;
         let main_path = json!({"chain_id":chain,"generation":1,"entry_server_id":endpoints[0]["server_id"],"entry_node_id":entry,"active":true,"hops":[{"kind":"managed","server_id":exit_server,"identity":relay,"endpoint":endpoints[1]["node"]}]});
@@ -208,7 +208,7 @@ impl TestPanel {
             .execute(&mut *tx)
             .await?;
         sqlx::query("UPDATE servers SET dirty_at=$2 WHERE id IN (SELECT server_id FROM nodes WHERE id=ANY($1))")
-            .bind(vec![entry,exit]).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
+            .bind(vec![entry,exit]).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
         tx.commit().await?;
         let list: Value = self
             .admin(Method::GET, "/api/plugins/sing-box/chains", cookie, None)
@@ -272,7 +272,7 @@ impl TestPanel {
         sqlx::query("UPDATE servers SET dirty_at=0 WHERE dirty_at IS NOT NULL")
             .execute(&self.state.pool)
             .await?;
-        sinan_panel::publisher::publish_due(&self.state).await
+        apsp_panel::publisher::publish_due(&self.state).await
     }
 
     /// Complete the normal deployment gate with controlled TEST_ONLY observations.
@@ -354,7 +354,7 @@ impl TestPanel {
                     agent_version: "business-test".into(),
                     protocol_version: PROTOCOL_VERSION,
                     capabilities: vec![
-                        sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY.into(),
+                        apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY.into(),
                     ],
                     applied: BTreeMap::new(),
                 },

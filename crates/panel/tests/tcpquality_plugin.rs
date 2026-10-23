@@ -7,26 +7,26 @@ use business_support::release_fixture;
 mod release_support;
 
 use anyhow::Result;
+use apsp_panel::diagnostic_plugins::tcpquality::PLUGIN_VERSION;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sinan_panel::diagnostic_plugins::tcpquality::PLUGIN_VERSION;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 async fn ready(panel: &TestPanel, server: i64) -> Result<()> {
     sqlx::query("UPDATE servers SET static_info=static_info || '{\"os\":\"linux\"}'::jsonb,capabilities=$2,last_seen=$3 WHERE id=$1")
-        .bind(server).bind(json!(["diagnostic:nodequality","diagnostic:nodequality-modes","diagnostic:tcpquality","diagnostic:tcpquality-native-v1",sinan_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,sinan_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY,sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,sinan_protocol::DIAGNOSTIC_CANCEL_CAPABILITY,sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY]))
-        .bind(sinan_protocol::now_timestamp()).execute(&panel.state.pool).await?;
+        .bind(server).bind(json!(["diagnostic:nodequality","diagnostic:nodequality-modes","diagnostic:tcpquality","diagnostic:tcpquality-native-v1",apsp_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,apsp_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY,apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY,apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY]))
+        .bind(apsp_protocol::now_timestamp()).execute(&panel.state.pool).await?;
     let mut artifacts = Vec::new();
     for (name, version, binary_name) in [
         (
             "nodequality",
-            sinan_panel::diagnostics::PLUGIN_VERSION,
+            apsp_panel::diagnostics::PLUGIN_VERSION,
             "nodequality",
         ),
-        ("tcpquality", PLUGIN_VERSION, "sinan-tcp-probe"),
+        ("tcpquality", PLUGIN_VERSION, "apsp-tcp-probe"),
     ] {
         let binary = b"TEST_ONLY panel routing fixture; never executed";
         let archive = release_fixture::archive(binary_name, binary)?;
@@ -34,7 +34,7 @@ async fn ready(panel: &TestPanel, server: i64) -> Result<()> {
             let mut entry =
                 release_support::entry(name, version, binary_name, "tar.gz", &archive, binary);
             entry.arch = arch.into();
-            entry.asset_name = sinan_protocol::release::canonical_asset_name(&entry)?;
+            entry.asset_name = apsp_protocol::release::canonical_asset_name(&entry)?;
             artifacts.push((entry, archive.clone()));
         }
     }
@@ -65,7 +65,7 @@ async fn tcp_diagnostics_select_only_currently_authorized_targets(pool: PgPool) 
         .await?;
     ready(&panel, server).await?;
     let allowed = probe(&panel, &cookie, server, "allowed fixture").await?;
-    for expires_at in [None, Some(sinan_protocol::now_timestamp() - 1)] {
+    for expires_at in [None, Some(apsp_protocol::now_timestamp() - 1)] {
         let id = Uuid::new_v4();
         let mut spec = probe_support::authorized(
             json!({"id":id,"name":"unknown permission fixture","kind":"tcp","target":"unpermitted.example.test","port":443,"interval_secs":60,"carrier":"fixture","enabled":true}),
@@ -330,7 +330,7 @@ async fn tcp_and_nodequality_share_duplicates_cancel_confirmation_and_partial_hi
         "tcp_target_{}",
         Uuid::parse_str(target["id"].as_str().unwrap())?.simple()
     );
-    let section = json!({"id":id,"name":chapter_name,"text":"保存的独立 TCP 目标章节","complete":true,"revision":1,"collected_at":sinan_protocol::now_timestamp()});
+    let section = json!({"id":id,"name":chapter_name,"text":"保存的独立 TCP 目标章节","complete":true,"revision":1,"collected_at":apsp_protocol::now_timestamp()});
     assert_eq!(
         panel
             .client
@@ -355,7 +355,7 @@ async fn tcp_and_nodequality_share_duplicates_cancel_confirmation_and_partial_hi
     assert_eq!(requested["status"], "cancel_requested");
     sqlx::query("UPDATE diagnostic_jobs SET expires_at=$2 WHERE id=$1")
         .bind(Uuid::parse_str(id)?)
-        .bind(sinan_protocol::now_timestamp() - 1)
+        .bind(apsp_protocol::now_timestamp() - 1)
         .execute(&panel.state.pool)
         .await?;
     assert_eq!(

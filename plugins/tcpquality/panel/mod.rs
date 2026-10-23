@@ -3,6 +3,7 @@ use crate::{
     diagnostics::service::{DiagnosticPlugin, JobPlan, PlanFuture},
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::{DiagnosticResourceBudget, ProbeKind, ProbeSpec, now_timestamp};
 use axum::{
     Json,
     extract::{Path, State},
@@ -11,7 +12,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sinan_protocol::{DiagnosticResourceBudget, ProbeKind, ProbeSpec, now_timestamp};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
@@ -108,7 +108,7 @@ async fn targets(connection: &mut sqlx::PgConnection, server: i64) -> ApiResult<
                 ));
             }
             if !spec.runnable_at(now_timestamp())
-                || spec.address_family() != sinan_protocol::ProbeAddressFamily::Any
+                || spec.address_family() != apsp_protocol::ProbeAddressFamily::Any
                 || spec
                     .monitor
                     .as_ref()

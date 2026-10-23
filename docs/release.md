@@ -4,7 +4,7 @@ Agent 在 `crates/agent/Cargo.toml` 独立声明版本，当前源码为 `0.3.1`
 
 CI 为两种架构构建 musl Agent、固定上游运行时和当前 NodeQuality 包装器，生成六个平铺资产、静态 `install.sh`、`release.json` 与规范 `SHA256SUMS`，只建立 GitHub Release 草稿。运行时按固定版本、架构和构建脚本内容缓存；固定 Go 工具链在 amd64 构建机交叉编译 arm64。Agent 两种架构都使用对应原生 runner。NodeQuality 当前源码默认构建 r14：固定上游提交、原入口 SHA-256 和 AGPL-3.0 许可证不变，包装器新增能力需使用新的不可变组件版本。打包不运行基准测试；外部诊断下载继续遵循 ADR 0016。
 
-[agent-v0.3.0](https://github.com/theLucius7/sinan/releases/tag/agent-v0.3.0) 已从冻结源码 `75cd846` 正式发布，包含 r2 包装器；维护者本机签署、发布验证和真实面板导入的结果见 [执行进度](../PROGRESS.md)。该 Release 的制品保持不可变，不随当前源码重打包或替换。r14 及后续新增能力须完成各自前置验收后使用新 Release 发布。当前 CI 按用户要求临时暂停，全部任务完成后才统一恢复；暂停期间不执行下文的工作流触发步骤。
+[agent-v0.3.0](https://github.com/theLucius7/apsp/releases/tag/agent-v0.3.0) 已从冻结源码 `75cd846` 正式发布，包含 r2 包装器；维护者本机签署、发布验证和真实面板导入的结果见 [执行进度](../PROGRESS.md)。该 Release 的制品保持不可变，不随当前源码重打包或替换。r14 及后续新增能力须完成各自前置验收后使用新 Release 发布。当前 CI 按用户要求临时暂停，全部任务完成后才统一恢复；暂停期间不执行下文的工作流触发步骤。
 
 缓存命中和新构建都先经过 `tools/verify-release-runtime.py`：检查归档与 SHA256、单个普通二进制、ELF 架构，以及 `go version -m` 读取的 Go 版本、目标平台、构建标签、CGO 和固定源码 revision。这个步骤只读取缓存内容，不执行缓存二进制。源码 revision 与预期版本的关联用于发现错误构建；这些可写入二进制的 metadata 不构成独立构建证明，运行时版本的链接参数也不一定保留在 Go metadata 中。维护者仍需核对候选和构建证据后签名。
 
@@ -17,7 +17,7 @@ CI 为两种架构构建 musl Agent、固定上游运行时和当前 NodeQuality
 用户在自己的设备上生成带口令的 minisign 密钥，只向项目提供 `.pub`。例如在仓库外的受保护目录执行以下命令，并在 minisign 的交互提示中设置口令：
 
 ```sh
-minisign -G -p /受保护目录/sinan-release.pub -s /受保护目录/sinan-release.key
+minisign -G -p /受保护目录/apsp-release.pub -s /受保护目录/apsp-release.key
 ```
 
 不要使用取消口令保护的选项，也不要把私钥或口令写入仓库、面板、CI、命令参数或聊天。私钥及加密备份由用户自己保管；要实现离线签名，应在与网络隔离的设备或签名环境中使用它。仅在联网本机生成带口令私钥，不代表已经完成离线保管。
@@ -25,12 +25,12 @@ minisign -G -p /受保护目录/sinan-release.pub -s /受保护目录/sinan-rele
 首个正式公钥记录在 [`deploy/release-public-keys.json`](../deploy/release-public-keys.json)，minisign key ID 为 `44B019C8269669B8`。key ID 只便于辨认，建立信任时应核对完整公钥记录。该文件只有公开信息；生成时私钥保存在维护者本机的仓库外，未提交或上传。将已独立核对的公钥用于面板或 Agent 构建：
 
 ```sh
-export SINAN_RELEASE_PUBLIC_KEYS="$(cat deploy/release-public-keys.json)"
+export APSP_RELEASE_PUBLIC_KEYS="$(cat deploy/release-public-keys.json)"
 ```
 
 正式 Release 仍需完成候选构建、本地签署与发布校验；提供公钥本身不代表某个版本已发布。CI 集成测试继续使用明确标识的测试根。
 
-生产公钥 JSON 数组通过仓库变量 `SINAN_RELEASE_PUBLIC_KEYS` 固定在正式 Agent 编译时，每项可以是 minisign 公钥 base64 记录或完整 `.pub` 文本。公钥可公开；CI 不生成或读取正式私钥。Agent 使用 `minisign-verify` crate 验证签名，最多同时信任 8 个公钥。面板、安装器和运行期配置都不能给 Agent 追加或替换根；缺失、空、重复或无效的根集合会拒绝制品。自行构建的用户可以在编译时设置自己的 `SINAN_RELEASE_PUBLIC_KEYS`，其产物属于自己的信任域。
+生产公钥 JSON 数组通过仓库变量 `APSP_RELEASE_PUBLIC_KEYS` 固定在正式 Agent 编译时，每项可以是 minisign 公钥 base64 记录或完整 `.pub` 文本。公钥可公开；CI 不生成或读取正式私钥。Agent 使用 `minisign-verify` crate 验证签名，最多同时信任 8 个公钥。面板、安装器和运行期配置都不能给 Agent 追加或替换根；缺失、空、重复或无效的根集合会拒绝制品。自行构建的用户可以在编译时设置自己的 `APSP_RELEASE_PUBLIC_KEYS`，其产物属于自己的信任域。
 
 远程命令是单独的节点授权：本机顶层配置 `allow_remote_commands` 默认 `false`，面板设置不能将其开启。节点操作者设置为 `true` 并重启 Agent 后，等于授权绑定面板以 Agent 服务账号执行任意 shell；制品签名不能约束这些命令。具体启停步骤见 [部署文档](deploy.md#远程命令的本地授权)。
 
@@ -40,7 +40,7 @@ export SINAN_RELEASE_PUBLIC_KEYS="$(cat deploy/release-public-keys.json)"
 
 ```sh
 minisign -S -m SHA256SUMS -s /离线设备中的私钥路径 \
-  -x SHA256SUMS.minisig -t 'Sinan release agent-v0.3.0'
+  -x SHA256SUMS.minisig -t 'Apsp release agent-v0.3.0'
 ```
 
 签名前需确认全部资产、源码版本与清单来自本次构建。只上传完整 `SHA256SUMS.minisig`，不上传私钥。运行 `Signed release draft` 的手动校验，提供 tag；默认仅验证，显式选择 publish 才在完整签名、metadata、安装器及所有资产校验通过后公开草稿。未知资产、重复路径、缺模块或缺架构、旧式签名、篡改的可信注释或测试钥都会失败。
@@ -57,9 +57,9 @@ GitHub REST 没有把 tag、全部 assets 和 Release 发布合成一个条件�
 
 ## 首次安装
 
-首次信任必须来自面板之外。操作者通过自己信任的仓库源码取得 `tools/bootstrap.py` 与相邻 `tools/release.py`，预先安装 minisign、独立核对并渲染当前 Linux 静态执行器为相邻受保护的 `trusted-install.sh`，并将独立核对的公钥 JSON 放入 root 拥有且不可被组或其他用户修改的路径，例如 `/etc/sinan/trust/public-keys.json`；所有父目录同样受保护。不要从面板下载公钥后就把它视为根，也不要把面板返回的脚本文本直接管道交给 sudo。
+首次信任必须来自面板之外。操作者通过自己信任的仓库源码取得 `tools/bootstrap.py` 与相邻 `tools/release.py`，预先安装 minisign、独立核对并渲染当前 Linux 静态执行器为相邻受保护的 `trusted-install.sh`，并将独立核对的公钥 JSON 放入 root 拥有且不可被组或其他用户修改的路径，例如 `/etc/apsp/trust/public-keys.json`；所有父目录同样受保护。不要从面板下载公钥后就把它视为根，也不要把面板返回的脚本文本直接管道交给 sudo。
 
-自建根或离线部署若使用 `sudo sinan-bootstrap ...`，先按[部署文档](deploy.md#手动准备可信-bootstrap)把这两个可信源码文件安装到 root 控制的 `/usr/local/lib/sinan/`，并建立 `/usr/local/bin/sinan-bootstrap` 启动脚本；脚本和目录不得由普通用户修改。也可以直接使用下面的完整 Python 路径形式。这个预置步骤独立于面板与待安装的 Agent。
+自建根或离线部署若使用 `sudo apsp-bootstrap ...`，先按[部署文档](deploy.md#手动准备可信-bootstrap)把这两个可信源码文件安装到 root 控制的 `/usr/local/lib/apsp/`，并建立 `/usr/local/bin/apsp-bootstrap` 启动脚本；脚本和目录不得由普通用户修改。也可以直接使用下面的完整 Python 路径形式。这个预置步骤独立于面板与待安装的 Agent。
 
 面板只提供目标 tag、面板 origin 和一次性令牌，用已有的可信 bootstrap 执行：
 
@@ -67,7 +67,7 @@ GitHub REST 没有把 tag、全部 assets 和 Release 发布合成一个条件�
 sudo python3 /可信源码副本/tools/bootstrap.py \
   --tag agent-v0.3.0 --panel https://panel.example.com \
   --token='<一次性令牌>' \
-  --trusted-keys /etc/sinan/trust/public-keys.json
+  --trusted-keys /etc/apsp/trust/public-keys.json
 ```
 
 bootstrap 从固定官方 GitHub Release 取得完整 proof、静态安装器和 Agent 二进制，不使用环境代理。先验证完整 minisign、正式 Release 安装器摘要和 Agent 长度/摘要。官方单行 Linux 入口执行自身固定 blob 中嵌入的受信静态安装器；手动预置同一可信安装器后也可安装旧 0.3.0，不修改已发布安装器或签名。原生平台使用已签 Agent 的 install-service。首次请求和每一跳重定向都要求 HTTPS、443、无 URL 凭据；默认只允许 `github.com`、`release-assets.githubusercontent.com`、`objects.githubusercontent.com`，最多五跳。每个文件共享 300 秒绝对下载期限，单次连接/读取最多 20 秒，接近期限时缩短读取超时；持续慢流不能刷新总期限。可加 `--mirror https://mirror.example.com`，以镜像前缀加完整 GitHub URL 下载；只额外允许该镜像来源，不发送一次性令牌或设备凭据，失败不回退面板。
@@ -75,13 +75,13 @@ bootstrap 从固定官方 GitHub Release 取得完整 proof、静态安装器和
 安装器仅使用 bootstrap 已下载的本地签名包，再次按已签长度和 SHA256 核对 Agent；缺失或损坏立即拒绝，完全不向面板下载二进制。检查使用 `python3 -I` 和显式拒绝逻辑，不依赖可被优化模式移除的 `assert`。`--release-dir` 离线目录必须同时包含签名、清单、安装器和对应 Agent 的 GitHub asset 文件。面板地址通常必须是 HTTPS，HTTP 只允许字面回环地址或 `localhost`，仅用于注册和后续配置通信。新 Agent 内置根进一步验证：
 
 ```sh
-/暂存/0.3.0/sinan-agent verify-installed \
-  --binary /暂存/0.3.0/sinan-agent --name agent --format raw
+/暂存/0.3.0/apsp-agent verify-installed \
+  --binary /暂存/0.3.0/apsp-agent --name agent --format raw
 ```
 
-`--name` 和 `--format` 是调用方要求的制品身份，不能根据不可信缓存猜测。Agent unit 固定 `agent/raw`，运行时 unit 固定 `sing-box/tar.gz`，防止另一个合法签名制品被放到错误执行位置。已有配置还必须通过 `--config /etc/sinan/agent.toml verify-cache`：只读检查已应用运行时、未完成操作的前后版本及未完成诊断任务。全部通过后才注册、保留原身份与账本、切换版本链接和重启 Agent；运行时保持独立服务。
+`--name` 和 `--format` 是调用方要求的制品身份，不能根据不可信缓存猜测。Agent unit 固定 `agent/raw`，运行时 unit 固定 `sing-box/tar.gz`，防止另一个合法签名制品被放到错误执行位置。已有配置还必须通过 `--config /etc/apsp/agent.toml verify-cache`：只读检查已应用运行时、未完成操作的前后版本及未完成诊断任务。全部通过后才注册、保留原身份与账本、切换版本链接和重启 Agent；运行时保持独立服务。
 
-已有受信签名 Agent 升级时可增加 `--trusted-agent /opt/sinan/core/current/sinan-agent`，先验证旧 Agent 自身，再让它以编译根离线验证新 proof，不需要从面板取得新公钥。旧版 unsigned Agent 没有这个能力，必须按首次安装方式预置独立信任根。
+已有受信签名 Agent 升级时可增加 `--trusted-agent /opt/apsp/core/current/apsp-agent`，先验证旧 Agent 自身，再让它以编译根离线验证新 proof，不需要从面板取得新公钥。旧版 unsigned Agent 没有这个能力，必须按首次安装方式预置独立信任根。
 
 ## 无签名旧缓存迁移
 
@@ -92,7 +92,7 @@ bootstrap 从固定官方 GitHub Release 取得完整 proof、静态安装器和
 1. 独立核对生产根，下载包含对应旧版本与架构的完整已签发布；用 `tools/release.py verify --bundle <发布目录> --trusted-keys <独立公钥文件> --publication` 验证完整签名、所有资产与安装器。
 2. 按已签 metadata 的版本建立 root 拥有的私有暂存目录，将当前实际引用的旧二进制复制为 `<暂存>/<版本>/<binary_name>`，同时复制 `release.json`、`SHA256SUMS`、`SHA256SUMS.minisig`。用已通过首次信任检查的新 Agent 执行 `verify-installed --binary <暂存>/<版本>/<binary_name> --name <预期模块名> --format <预期格式>`；例如运行时必须是 `--name sing-box --format tar.gz`，Agent 必须是 `--name agent --format raw`。失败时停止迁移；不能用清空身份、账本或重装运行时绕过。
 3. 验证成功后，确认旧版本目录还没有任何 proof 文件，以不覆盖的方式将这三个原始 proof 文件补入原版本目录。任何现有 proof 或不同二进制都需要先查明原因。对已应用、未完成操作的 previous/target 和诊断缓存逐一执行这个步骤，而非仅检查 `current`。
-4. 使用新 Agent 对原配置执行 `--config /etc/sinan/agent.toml verify-cache`；只有完整检查通过才重复运行可信 bootstrap。没有能匹配旧二进制的正式签名发布时，升级保持阻塞，先通过 issue 记录所缺的发布证据。
+4. 使用新 Agent 对原配置执行 `--config /etc/apsp/agent.toml verify-cache`；只有完整检查通过才重复运行可信 bootstrap。没有能匹配旧二进制的正式签名发布时，升级保持阻塞，先通过 issue 记录所缺的发布证据。
 
 迁移期间应避免其他管理员同时修改缓存或安装版本。预检与人工补证明不构成覆盖旧 Agent 的跨版本事务锁。若启动恢复在连接面板之前发现无效 proof，Agent 在本地记录失败并停止启动；此时没有连接可发送 `ApplyResult`，应从本机日志和状态定位问题，不能把面板尚未收到失败报告当作恢复成功。
 

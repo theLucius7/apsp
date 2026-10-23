@@ -50,7 +50,7 @@ def main():
     output = args.artifact_root.resolve() / 'sing-box' / VERSION
     if (output / args.target).exists():
         parser.error('immutable artifact already exists')
-    with tempfile.TemporaryDirectory(prefix='sinan-runtime-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='apsp-runtime-') as temporary:
         root = Path(temporary)
         source = root / 'source'
         checkout(source, 'https://github.com/SagerNet/sing-box.git', COMMIT)

@@ -36,7 +36,7 @@ DISK_RESERVE = 64 * 1024 * 1024
 DIR_MODES = frozenset((0o700, 0o755))
 FILE_MODES = frozenset((0o600, 0o644, 0o755))
 SHA256 = re.compile(r'[0-9a-f]{64}\Z')
-METADATA_NAMES = frozenset('usr/share/sinan-rootfs/' + name for name in (
+METADATA_NAMES = frozenset('usr/share/apsp-rootfs/' + name for name in (
     'provenance.json', 'inputs-lock.json', 'source-inventory.json', 'license-inventory.json',
     'ipquality-profile.json')) | {'var/lib/dpkg/status'}
 MAX_METADATA = 1024 * 1024

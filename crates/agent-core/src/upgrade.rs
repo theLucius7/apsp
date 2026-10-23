@@ -7,10 +7,10 @@ use crate::{
     system::deploy::{core_root, executable_name},
 };
 use anyhow::{Context, Result, ensure};
+use apsp_adapter_sdk::Privileged;
+use apsp_protocol::{AgentRelease, AgentSettings, release_version};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sinan_adapter_sdk::Privileged;
-use sinan_protocol::{AgentRelease, AgentSettings, release_version};
 use std::{collections::BTreeSet, path::Path, sync::Arc, time::Duration};
 pub use supervisor::supervise;
 use tokio::{sync::watch, time::Instant};
@@ -20,7 +20,7 @@ pub struct PendingUpgrade {
     pub version: String,
     pub sha256: String,
     #[serde(default)]
-    pub proof: Option<sinan_protocol::release::ReleaseProof>,
+    pub proof: Option<apsp_protocol::release::ReleaseProof>,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct UpgradeState {
@@ -224,8 +224,8 @@ async fn verify(
     binary: &Path,
     version: &str,
     digest: &str,
-    proof: &sinan_protocol::release::ReleaseProof,
-    keys: &sinan_protocol::release::TrustedKeys,
+    proof: &apsp_protocol::release::ReleaseProof,
+    keys: &apsp_protocol::release::TrustedKeys,
     ops: &dyn Privileged,
 ) -> Result<()> {
     verify_guarded(binary, version, digest, proof, keys, ops, None).await
@@ -262,8 +262,8 @@ async fn verify_guarded(
     binary: &Path,
     version: &str,
     digest: &str,
-    proof: &sinan_protocol::release::ReleaseProof,
-    keys: &sinan_protocol::release::TrustedKeys,
+    proof: &apsp_protocol::release::ReleaseProof,
+    keys: &apsp_protocol::release::TrustedKeys,
     ops: &dyn Privileged,
     retirement: Option<&crate::retirement::Retirement>,
 ) -> Result<()> {
@@ -280,7 +280,7 @@ async fn verify_guarded(
         format!("{:x}", Sha256::digest(std::fs::read(binary)?)) == digest.to_ascii_lowercase(),
         "Agent update SHA256 mismatch"
     );
-    let release = sinan_protocol::release::verify_release(proof, keys)?;
+    let release = apsp_protocol::release::verify_release(proof, keys)?;
     let verified = release.native_artifact("agent", version)?;
     ensure!(
         verified.metadata().format == "raw"
@@ -300,7 +300,7 @@ async fn verify_guarded(
     ensure!(
         output.output.success
             && !output.timed_out
-            && output.output.stdout.trim() == format!("sinan-agent {version}"),
+            && output.output.stdout.trim() == format!("apsp-agent {version}"),
         "Agent update version check failed"
     );
     Ok(())

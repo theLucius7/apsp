@@ -75,7 +75,7 @@ async fn settle(panel: &TestPanel, cookie: &str, source: i64) -> Result<Value> {
             if source["active_job_id"].is_null() {
                 return Ok(source);
             }
-            sinan_panel::plugins::singbox::sources::refresh_due(&panel.state).await?;
+            apsp_panel::plugins::singbox::sources::refresh_due(&panel.state).await?;
             tokio::time::sleep(Duration::from_millis(30)).await;
         }
     })
@@ -272,7 +272,7 @@ async fn preview_selection_expiry_parser_and_auth_fail_without_partial_sources(
         None,
     )
     .await?;
-    sinan_panel::plugins::singbox::sources::refresh_due(&panel.state).await?;
+    apsp_panel::plugins::singbox::sources::refresh_due(&panel.state).await?;
     ensure!(
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM singbox_source_previews")
             .fetch_one(&pool)
@@ -559,7 +559,7 @@ async fn refresh_settings_keep_interval_and_failures_keep_successful_snapshot(
     ensure!(failed["traffic"] == json!({"upload":10,"total":100,"updated_at":1}));
     ensure!(!failed.to_string().contains("TEST_ONLY"));
     sqlx::query("UPDATE singbox_subscription_sources SET kind='url',secret_content=NULL,secret_url='https://source.example.com/test',next_refresh_at=0 WHERE id=$1").bind(source_id).execute(&pool).await?;
-    sinan_panel::plugins::singbox::sources::refresh_due(&panel.state).await?;
+    apsp_panel::plugins::singbox::sources::refresh_due(&panel.state).await?;
     ensure!(sqlx::query_scalar::<_,i64>("SELECT COUNT(*) FROM singbox_source_jobs WHERE source_id=$1 AND state IN ('queued','running')").bind(source_id).fetch_one(&pool).await?==0);
     Ok(())
 }

@@ -15,9 +15,9 @@ export default function Reauthentication() {
       requests.current = [...requests.current, (event as CustomEvent<ReauthenticationRequest>).detail]
       setPending(requests.current)
     }
-    window.addEventListener('sinan:reauthentication', request)
+    window.addEventListener('apsp:reauthentication', request)
     return () => {
-      window.removeEventListener('sinan:reauthentication', request)
+      window.removeEventListener('apsp:reauthentication', request)
       for (const item of requests.current) item.reject(new Error('管理员会话已结束，操作尚未提交。'))
       requests.current = []
     }

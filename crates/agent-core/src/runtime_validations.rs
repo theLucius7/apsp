@@ -1,10 +1,10 @@
 use crate::{SharedState, artifacts::PanelClient, reconcile::Reconciler};
 use anyhow::{Result, ensure};
-use serde::{Deserialize, Serialize};
-use sinan_protocol::{
+use apsp_protocol::{
     RuntimeValidationError, RuntimeValidationRequest, RuntimeValidationResult, TaskAck,
     now_timestamp,
 };
+use serde::{Deserialize, Serialize};
 
 const KEY: &str = "runtime_validations_v1";
 

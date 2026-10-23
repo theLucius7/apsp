@@ -1,7 +1,7 @@
 use super::Reconciler;
 use anyhow::{Context, Result, ensure};
-use sinan_adapter_sdk::{Plan, ServiceLogLine};
-use sinan_protocol::{
+use apsp_adapter_sdk::{Plan, ServiceLogLine};
+use apsp_protocol::{
     RUNTIME_LOG_LIMIT, RuntimeLogEntry, RuntimeLogKind, RuntimeLogLevel, RuntimeServiceState,
     RuntimeSnapshot, now_timestamp,
 };
@@ -10,7 +10,7 @@ use uuid::Uuid;
 impl Reconciler {
     pub(crate) async fn restart_current(
         &self,
-        target: &sinan_protocol::ModuleManifest,
+        target: &apsp_protocol::ModuleManifest,
         client: &crate::artifacts::PanelClient,
     ) -> Result<()> {
         let _guard = self.gate.lock().await;
@@ -42,7 +42,7 @@ impl Reconciler {
         self.restart_locked(previous).await
     }
 
-    async fn restart_locked(&self, previous: sinan_adapter_sdk::Prepared) -> Result<()> {
+    async fn restart_locked(&self, previous: apsp_adapter_sdk::Prepared) -> Result<()> {
         self.verify_applied_runtime(&previous).await?;
         let prepared = self
             .bounded(

@@ -9,19 +9,19 @@ license = "AGPL-3.0-only"
 rust-version = "1.88"
 
 [workspace.dependencies]
-sinan-protocol = { path = "crates/protocol" }
-sinan-compiler = { path = "crates/compiler" }
-sinan-agent-core = { path = "crates/agent-core" }
-sinan-adapter-sdk = { path = "crates/adapter-sdk" }
-sinan-adapter-singbox = { path = "crates/adapter-singbox" }
-sinan-adapter-nodequality = { path = "crates/adapter-nodequality" }
-sinan-adapter-tcpquality = { path = "crates/adapter-tcpquality" }
-sinan-adapter-ipquality = { path = "crates/adapter-ipquality" }
-sinan-panel-host = { path = "crates/panel-host" }
-sinan-cloud-api = { path = "plugins/cloud_api/panel" }
-sinan-plugin-singbox = { path = "plugins/singbox/panel" }
-sinan-plugin-ddns = { path = "plugins/ddns/panel" }
-sinan-plugin-alicloud = { path = "plugins/alicloud/panel" }
+apsp-protocol = { path = "crates/protocol" }
+apsp-compiler = { path = "crates/compiler" }
+apsp-agent-core = { path = "crates/agent-core" }
+apsp-adapter-sdk = { path = "crates/adapter-sdk" }
+apsp-adapter-singbox = { path = "crates/adapter-singbox" }
+apsp-adapter-nodequality = { path = "crates/adapter-nodequality" }
+apsp-adapter-tcpquality = { path = "crates/adapter-tcpquality" }
+apsp-adapter-ipquality = { path = "crates/adapter-ipquality" }
+apsp-panel-host = { path = "crates/panel-host" }
+apsp-cloud-api = { path = "plugins/cloud_api/panel" }
+apsp-plugin-singbox = { path = "plugins/singbox/panel" }
+apsp-plugin-ddns = { path = "plugins/ddns/panel" }
+apsp-plugin-alicloud = { path = "plugins/alicloud/panel" }
 anyhow = "1"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }

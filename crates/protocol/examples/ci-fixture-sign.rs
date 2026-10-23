@@ -4,7 +4,7 @@
 #[path = "../tests/support/release.rs"]
 mod test_release;
 
-use sinan_protocol::release::MAX_CHECKSUMS_BYTES;
+use apsp_protocol::release::MAX_CHECKSUMS_BYTES;
 use std::io::{Read, Write};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

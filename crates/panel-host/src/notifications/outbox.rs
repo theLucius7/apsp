@@ -20,7 +20,7 @@ pub async fn dispatch(pool: &PgPool, now: i64) -> anyhow::Result<()> {
                 .await
             }
         },
-        move || sinan_protocol::now_timestamp().max(now),
+        move || apsp_protocol::now_timestamp().max(now),
     )
     .await
 }

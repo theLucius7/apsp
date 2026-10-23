@@ -1,10 +1,10 @@
 use crate::{Config, artifacts::PanelClient};
 use anyhow::{Result, ensure};
+use apsp_adapter_sdk::{Descriptor, Privileged, ServiceManager};
+use apsp_protocol::fleet::{AccessPolicy, Job, Operation};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sinan_adapter_sdk::{Descriptor, Privileged, ServiceManager};
-use sinan_protocol::fleet::{AccessPolicy, Job, Operation};
 use std::path::Path;
 
 fn path_allowed(
@@ -159,7 +159,7 @@ pub(super) async fn execute(
                 .map(|line| json!({"at":line.timestamp,"priority":line.priority,"text":line.text}))
                 .collect();
             Ok(
-                json!({"lines":lines,"truncated":logs.truncated,"sampled_at":sinan_protocol::now_timestamp(),"bounded_recent_window":true}),
+                json!({"lines":lines,"truncated":logs.truncated,"sampled_at":apsp_protocol::now_timestamp(),"bounded_recent_window":true}),
             )
         }
         Operation::Ports {} => command(ops, "ss", vec!["-H".into(), "-lntup".into()]).await,
@@ -200,7 +200,7 @@ pub(super) async fn execute(
                 .min(256 * 1024);
             ensure!(maximum > 0, "file inspection budget has not been granted");
             Ok(
-                json!({"path":path,"observation":ops.inspect_managed_file(Path::new(path),maximum).await?,"sampled_at":sinan_protocol::now_timestamp()}),
+                json!({"path":path,"observation":ops.inspect_managed_file(Path::new(path),maximum).await?,"sampled_at":apsp_protocol::now_timestamp()}),
             )
         }
         Operation::FileUpload {
@@ -296,7 +296,7 @@ pub(super) async fn execute(
                 config
                     .state_db
                     .parent()
-                    .unwrap_or(Path::new("/var/lib/sinan/core")),
+                    .unwrap_or(Path::new("/var/lib/apsp/core")),
                 operation,
             )
             .await
@@ -386,7 +386,7 @@ mod tests {
     fn file_scope_requires_both_grants_and_protects_identity() {
         let config = Config::default();
         let allowed = AccessPolicy {
-            read_directories: vec!["/srv/example".into(), "/etc/sinan".into()],
+            read_directories: vec!["/srv/example".into(), "/etc/apsp".into()],
             write_directories: vec!["/srv/example".into()],
             maximum_file_bytes: 4096,
             ..AccessPolicy::default()
@@ -417,7 +417,7 @@ mod tests {
                 &config,
                 &allowed,
                 &allowed,
-                "/etc/sinan/identity/device.key",
+                "/etc/apsp/identity/device.key",
                 false
             )
             .is_err()

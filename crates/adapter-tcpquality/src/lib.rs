@@ -1,11 +1,11 @@
 #![forbid(unsafe_code)]
 
 use anyhow::{Context, Result, ensure};
-use serde::Deserialize;
-use sinan_adapter_sdk::{
+use apsp_adapter_sdk::{
     BoxFuture, DiagnosticAdapter, DiagnosticDescriptor, DiagnosticOutput, DiagnosticSection,
     DiagnosticSpec, Privileged, ServiceJob,
 };
+use serde::Deserialize;
 use std::time::Duration;
 use tokio::{
     fs,
@@ -75,7 +75,7 @@ async fn identity(
                 serde_json::from_str(&output).context("invalid TCP build identity")?;
             ensure!(
                 info.version == input::ENGINE_VERSION
-                    && info.source_repo == "theLucius7/sinan"
+                    && info.source_repo == "theLucius7/apsp"
                     && info.source_commit.as_deref() == Some(input.source),
                 "TCP binary source pin mismatch"
             );
@@ -182,7 +182,7 @@ impl DiagnosticAdapter for TcpQualityAdapter {
                 "TCP preparation exhausted its deadline"
             );
             Ok(ServiceJob {
-                unit: format!("sinan-diagnostic-{}.service", spec.id),
+                unit: format!("apsp-diagnostic-{}.service", spec.id),
                 program: spec.binary_path.clone(),
                 args: vec![
                     "--workspace".into(),
@@ -201,12 +201,12 @@ impl DiagnosticAdapter for TcpQualityAdapter {
                 ],
                 working_directory: spec.job_dir.clone(),
                 timeout_secs,
-                memory_max: sinan_adapter_sdk::MemoryMax::new(64 * 1024 * 1024)?,
-                tasks_max: sinan_adapter_sdk::TasksMax::new(32)?,
+                memory_max: apsp_adapter_sdk::MemoryMax::new(64 * 1024 * 1024)?,
+                tasks_max: apsp_adapter_sdk::TasksMax::new(32)?,
                 cpu_max_percent: Default::default(),
-                cpu_weight: sinan_adapter_sdk::CpuWeight::new(10)?,
-                io_weight: sinan_adapter_sdk::IoWeight::new(10)?,
-                oom_score_adjust: sinan_adapter_sdk::OomScoreAdjust::new(500)?,
+                cpu_weight: apsp_adapter_sdk::CpuWeight::new(10)?,
+                io_weight: apsp_adapter_sdk::IoWeight::new(10)?,
+                oom_score_adjust: apsp_adapter_sdk::OomScoreAdjust::new(500)?,
             })
         })
     }

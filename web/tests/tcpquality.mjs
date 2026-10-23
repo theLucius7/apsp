@@ -6,8 +6,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
 
 // Use the committed bundle with loopback-only API fixtures.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE
-  ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE
+  ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const server = createServer(async (request, response) => {
@@ -21,7 +21,7 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const origin = `http://127.0.0.1:${server.address().port}`;
 
 (async()=>{
- const browser=await chromium.launch({headless:true,...(process.env.SINAN_CHROME_PATH?{executablePath:process.env.SINAN_CHROME_PATH}:{})});
+ const browser=await chromium.launch({headless:true,...(process.env.APSP_CHROME_PATH?{executablePath:process.env.APSP_CHROME_PATH}:{})});
  try { const outputs=[];
  for(const width of [1280,390]) {
  const context=await browser.newContext({viewport:{width,height:900}}),page=await context.newPage(),errors=[],posts=[],regionWrites=[];
@@ -71,7 +71,7 @@ const origin = `http://127.0.0.1:${server.address().port}`;
  await page.getByRole('button',{name:'请求取消测试',exact:true}).click();await page.getByText('等待设备确认取消',{exact:true}).first().waitFor();
  if(!(await page.getByRole('button',{name:'开始 TCP 诊断',exact:true}).isDisabled()))throw Error('Cancel barrier invalid');
  if(!(await page.locator('.quality-options').evaluate(el=>el.getBoundingClientRect().right<=innerWidth)))throw Error('Mobile controls overflow');
- if(process.env.SINAN_UI_SCREENSHOT_DIR)await page.screenshot({path:resolve(process.env.SINAN_UI_SCREENSHOT_DIR,`sinan-tcp-ui-${width}.png`),fullPage:true});
+ if(process.env.APSP_UI_SCREENSHOT_DIR)await page.screenshot({path:resolve(process.env.APSP_UI_SCREENSHOT_DIR,`apsp-tcp-ui-${width}.png`),fullPage:true});
  if(cancelPosts!==1)throw Error('Unexpected duplicate cancel');
  reports=reports.filter(record=>record.id!=='new');
  await page.reload();await page.getByRole('button',{name:'开始 TCP 诊断',exact:true}).waitFor();

@@ -23,12 +23,12 @@ SPEC = importlib.util.spec_from_file_location("e2e_driver", Path(__file__).with_
 DRIVER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(DRIVER)
 ORIGIN = "http://127.0.0.1:18080"
-AGENT = Path("/usr/local/bin/sinan-agent")
-DATABASE = Path("/var/lib/sinan/core/state.db")
-IDENTITY = Path("/etc/sinan/identity")
-RUNTIME_DIRECTORY = Path("/var/lib/sinan/plugins/sing-box@main")
-AGENT_UNIT = "sinan-agent.service"
-RUNTIME_UNIT = "sinan-singbox@main.service"
+AGENT = Path("/usr/local/bin/apsp-agent")
+DATABASE = Path("/var/lib/apsp/core/state.db")
+IDENTITY = Path("/etc/apsp/identity")
+RUNTIME_DIRECTORY = Path("/var/lib/apsp/plugins/sing-box@main")
+AGENT_UNIT = "apsp-agent.service"
+RUNTIME_UNIT = "apsp-singbox@main.service"
 
 
 class Failure(Exception):
@@ -174,9 +174,9 @@ def http_status(panel, path, method):
 
 
 def preflight(args):
-    require(sys.platform == "linux" and os.geteuid() == 0 and os.environ.get("SINAN_E2E_DISPOSABLE_HOST") == "1",
+    require(sys.platform == "linux" and os.geteuid() == 0 and os.environ.get("APSP_E2E_DISPOSABLE_HOST") == "1",
             "retirement acceptance requires an explicitly disposable Linux host and root")
-    require(os.environ.get("SINAN_E2E_ADMIN_PASSWORD"), "CI administrator password must be supplied through the environment")
+    require(os.environ.get("APSP_E2E_ADMIN_PASSWORD"), "CI administrator password must be supplied through the environment")
     require(args.state.is_file() and not args.state.is_symlink() and not args.state.parent.is_symlink(),
             "acceptance state must be an ordinary private file")
     require(args.state.stat().st_mode & 0o077 == 0 and args.state.parent.stat().st_mode & 0o077 == 0,
@@ -186,11 +186,11 @@ def preflight(args):
             "retirement summary must be a new file in this acceptance directory")
     state = json.loads(args.state.read_text())
     require(state.get("schema") == 1 and state.get("origin") == ORIGIN
-            and re.fullmatch(r"sinan-e2e-[0-9a-f]{32}", state.get("prefix", "")),
+            and re.fullmatch(r"apsp-e2e-[0-9a-f]{32}", state.get("prefix", "")),
             "retirement is restricted to the isolated local CI panel")
     require(all(type(state.get(key)) is int and state[key] > 0 for key in ("server_id", "user_id", "node_id")),
             "acceptance resource identifiers are invalid")
-    config = tomllib.loads(Path("/etc/sinan/agent.toml").read_text())
+    config = tomllib.loads(Path("/etc/apsp/agent.toml").read_text())
     require(config.get("panel_url") == ORIGIN and config.get("state_db") == str(DATABASE)
             and config.get("identity_dir") == str(IDENTITY)
             and config.get("runtime_root") == str(RUNTIME_DIRECTORY.parent),
@@ -204,7 +204,7 @@ def preflight(args):
 
 def exercise(args):
     state, expected = preflight(args)
-    panel = LocalPanel(os.environ["SINAN_E2E_ADMIN_PASSWORD"])
+    panel = LocalPanel(os.environ["APSP_E2E_ADMIN_PASSWORD"])
     try:
         server_path = f"/api/servers/{state['server_id']}"
         server = panel.request(server_path)
@@ -213,7 +213,7 @@ def exercise(args):
         require("server:retire-v1" in server.get("capabilities", []), "online Agent does not advertise retirement support")
         version = state["installation"]["version"]
         version_output = command([str(AGENT), "--version"])
-        require(version_output.returncode == 0 and version_output.stdout.strip() == "sinan-agent " + version
+        require(version_output.returncode == 0 and version_output.stdout.strip() == "apsp-agent " + version
                 and server["static_info"].get("agent_version") == version,
                 "retirement target is not the currently installed CI Agent version")
         status_output = command([str(AGENT), "status"])

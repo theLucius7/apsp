@@ -2,9 +2,9 @@
 //! Panel assembly: the host crate plus the compiled business plugins.
 //!
 //! Host modules and the plugin paths are re-exported so the public Rust API
-//! (`sinan_panel::auth`, `sinan_panel::plugins::singbox`, ...) stays unchanged.
+//! (`apsp_panel::auth`, `apsp_panel::plugins::singbox`, ...) stays unchanged.
 
-pub use sinan_panel_host::{
+pub use apsp_panel_host::{
     AgentConnection, AppState, agent_api, agent_updates, artifacts, auth, commands, config,
     control_center, dashboard, diagnostic_plugins, diagnostics, error, exchange, fleet, frontend,
     installation, ip_quality, latency_tasks, maintenance, network_configuration, network_workbench,
@@ -23,5 +23,5 @@ pub use plugins::singbox::{accesses, business, deployments, nodes, subscriptions
 
 /// Builds the panel router with every compiled plugin registered.
 pub fn router(state: AppState) -> axum::Router {
-    sinan_panel_host::router(state, plugins::router())
+    apsp_panel_host::router(state, plugins::router())
 }

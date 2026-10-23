@@ -1,5 +1,5 @@
 use super::*;
-use sinan_protocol::{ProbeKind, ProbeSpec};
+use apsp_protocol::{ProbeKind, ProbeSpec};
 
 #[derive(Serialize)]
 pub struct ProxyActivity {
@@ -55,7 +55,7 @@ pub async fn daily_targets(connection: &mut sqlx::PgConnection, server: i64) -> 
         .filter_map(|value| serde_json::from_value::<ProbeSpec>(value).ok())
         .filter(|spec| {
             spec.runnable_at(now_timestamp())
-                && spec.address_family() == sinan_protocol::ProbeAddressFamily::Any
+                && spec.address_family() == apsp_protocol::ProbeAddressFamily::Any
                 && spec
                     .monitor
                     .as_ref()

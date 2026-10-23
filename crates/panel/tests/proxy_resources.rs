@@ -9,11 +9,11 @@ use business_support::release_fixture;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
+use apsp_panel::{AppState, agent_api, runtime_control};
+use apsp_protocol::*;
 use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::{AppState, agent_api, runtime_control};
-use sinan_protocol::*;
 use sqlx::PgPool;
 use std::collections::BTreeSet;
 use std::ops::Deref;
@@ -37,7 +37,7 @@ impl ControlledPanel {
         sqlx::query("UPDATE servers SET capabilities=$2,static_info=$3 WHERE id=$1")
             .bind(server)
             .bind(json!([RUNTIME_CHECKPOINT_CAPABILITY,RUNTIME_RECOVERY_BARRIER_CAPABILITY,RUNTIME_PATH_PROBE_CAPABILITY]))
-            .bind(json!({"os":"linux","arch":sinan_protocol::release::native_arch()?,"libc":"gnu","runtime_libc":"gnu"}))
+            .bind(json!({"os":"linux","arch":apsp_protocol::release::native_arch()?,"libc":"gnu","runtime_libc":"gnu"}))
             .execute(&self.state.pool).await?;
         Ok(server)
     }
@@ -73,9 +73,9 @@ async fn advance_phase(panel: &TestPanel, chain: i64, terminal: &str) -> Result<
         }
         panel.publish_now().await?;
         ordered_support::confirm_devices(&panel.state).await?;
-        sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&panel.state).await?;
+        apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&panel.state).await?;
         ordered_support::finish_controls(&panel.state, true).await?;
-        sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&panel.state).await?;
+        apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&panel.state).await?;
     }
     anyhow::bail!("controlled chain {chain} did not reach {terminal}; phases: {phases:?}")
 }

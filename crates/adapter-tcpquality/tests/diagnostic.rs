@@ -1,11 +1,11 @@
 #![forbid(unsafe_code)]
 #![cfg(unix)]
-use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
-use sinan_adapter_sdk::{
+use apsp_adapter_sdk::{
     BoxFuture, CommandOutput, DiagnosticAdapter, DiagnosticSpec, Execution, Privileged,
 };
-use sinan_adapter_tcpquality::{AUXILIARY_FILES, TcpQualityAdapter};
+use apsp_adapter_tcpquality::{AUXILIARY_FILES, TcpQualityAdapter};
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -36,16 +36,16 @@ async fn fixed_command_and_budget_use_only_bounded_identity_calls_and_private_fi
     let adapter = TcpQualityAdapter::new();
     assert_eq!(
         adapter.capabilities(),
-        vec![sinan_adapter_tcpquality::CAPABILITY]
+        vec![apsp_adapter_tcpquality::CAPABILITY]
     );
     assert_eq!(adapter.describe().plugin_name, "tcpquality");
-    assert_eq!(adapter.describe().binary_name, "sinan-tcp-probe");
+    assert_eq!(adapter.describe().binary_name, "apsp-tcp-probe");
     assert_eq!(
         adapter.auxiliary_files(),
         AUXILIARY_FILES.map(str::to_owned)
     );
     let job = adapter.prepare(&spec, &privileged).await.unwrap();
-    assert_eq!(job.unit, format!("sinan-diagnostic-{}.service", spec.id));
+    assert_eq!(job.unit, format!("apsp-diagnostic-{}.service", spec.id));
     assert_eq!(job.program, spec.binary_path);
     assert_eq!(job.working_directory, spec.job_dir);
     assert_eq!(job.timeout_secs, 30);

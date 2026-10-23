@@ -76,9 +76,9 @@ class BootstrapTests(unittest.TestCase):
     def test_signed_selection_requires_real_platform_version_and_protocol(self):
         metadata = {"tag": "agent-v0.3.0", "protocol_min": 1, "protocol_max": 2, "artifacts": [
             {"name": "agent", "version": "0.3.0", "arch": "linux-gnu-arm64", "format": "raw",
-             "binary_name": "sinan-agent", "archive_size": 1, "binary_size": 1},
+             "binary_name": "apsp-agent", "archive_size": 1, "binary_size": 1},
             {"name": "agent", "version": "0.3.0", "arch": "macos-arm64", "format": "raw",
-             "binary_name": "sinan-agent", "archive_size": 1, "binary_size": 1},
+             "binary_name": "apsp-agent", "archive_size": 1, "binary_size": 1},
         ]}
         self.assertEqual(bootstrap.select_artifact(metadata, "0.3.0", "macos-arm64")["arch"], "macos-arm64")
         with self.assertRaises(bootstrap.IncompatibleRelease):
@@ -94,7 +94,7 @@ class BootstrapTests(unittest.TestCase):
         for version in ("0.1.0", "0.2.0"):
             metadata = {"tag":"agent-v" + version, "protocol_min":1, "protocol_max":1,
                         "artifacts":[{"name":"agent", "version":version, "arch":"amd64", "format":"raw",
-                                      "binary_name":"sinan-agent", "archive_size":1, "binary_size":1}]}
+                                      "binary_name":"apsp-agent", "archive_size":1, "binary_size":1}]}
             with self.subTest(version=version), patch.object(bootstrap.subprocess, 'run') as execute, \
                     self.assertRaisesRegex(bootstrap.IncompatibleRelease, "历史 Agent 不支持当前标准安装与服务合同"):
                 bootstrap.select_artifact(metadata, version, "linux-gnu-amd64")
@@ -103,7 +103,7 @@ class BootstrapTests(unittest.TestCase):
         # panel package version. Execution still requires normal proof/CLI checks.
         metadata = {"tag":"agent-v0.4.0", "protocol_min":1, "protocol_max":1,
                     "artifacts":[{"name":"agent", "version":"0.4.0", "arch":"amd64", "format":"raw",
-                                  "binary_name":"sinan-agent", "archive_size":1, "binary_size":1}]}
+                                  "binary_name":"apsp-agent", "archive_size":1, "binary_size":1}]}
         self.assertEqual(bootstrap.select_artifact(metadata, "0.4.0", "linux-gnu-amd64")["version"], "0.4.0")
 
     def test_latest_catalog_is_data_only_and_uses_numeric_stable_order(self):
@@ -190,7 +190,7 @@ class BootstrapTests(unittest.TestCase):
         item = {"version": "0.3.0", "arch": "freebsd-arm64", "archive_size": 3,
                 "binary_size": 3, "format": "raw", "asset_name": "agent-0.3.0-freebsd-arm64",
                 "binary_sha256": release.digest(b"raw")}
-        url = "https://github.com/theLucius7/sinan/releases/download/agent-v0.3.0/agent-0.3.0-freebsd-arm64"
+        url = "https://github.com/theLucius7/apsp/releases/download/agent-v0.3.0/agent-0.3.0-freebsd-arm64"
         with tempfile.TemporaryDirectory() as directory:
             for data, response_url in ((b"evil", url), (b"ra", url), (b"bad", url), (b"raw", "https://panel.example.com/agent")):
                 target = Path(directory) / "agent"
@@ -243,12 +243,12 @@ class BootstrapTests(unittest.TestCase):
             configuration.parent.mkdir()
             previous = b'panel_url="https://old.example.com"\n'
             configuration.write_bytes(previous)
-            command = root / "bin/sinan-agent"
+            command = root / "bin/apsp-agent"
             command.parent.mkdir()
             agent_root = root / "core"
             old = agent_root / "0.2.0"
             old.mkdir(parents=True)
-            old_agent = old / "sinan-agent"
+            old_agent = old / "apsp-agent"
             old_agent.write_bytes(b"TEST ONLY old signed Agent")
             (agent_root / "current").symlink_to(old)
             calls = []
@@ -257,7 +257,7 @@ class BootstrapTests(unittest.TestCase):
                 calls.append((Path(agent), arguments))
                 if "enroll" in arguments:
                     configuration.write_bytes(b'panel_url="https://new.example.com"\n')
-                if "install-service" in arguments and Path(agent) == bundle / "sinan-agent":
+                if "install-service" in arguments and Path(agent) == bundle / "apsp-agent":
                     raise ValueError("TEST ONLY activation failure")
 
             def download(_item, target, _mirror, _release_dir):
@@ -284,7 +284,7 @@ class BootstrapTests(unittest.TestCase):
             configuration = root / "config/agent.toml"
             configuration.parent.mkdir()
             identity = configuration.parent / "identity"
-            command = root / "bin/sinan-agent"
+            command = root / "bin/apsp-agent"
             command.parent.mkdir()
             agent_root = root / "core"
             key = b"K" * 32
@@ -390,7 +390,7 @@ class BootstrapTests(unittest.TestCase):
                              "print(json.dumps(vars(parser.parse_args())))\n")
             agent.chmod(0o755)
             code = "PANEL=$1\nTOKEN=$2\nVERSION=0.3.0\n" + command.replace(
-                '"/opt/sinan/core/$VERSION/sinan-agent"', '"$3"')
+                '"/opt/apsp/core/$VERSION/apsp-agent"', '"$3"')
             result = subprocess.run(["/bin/sh", "-c", code, "linux-enrollment-fixture",
                                      "https://panel.example.com", "-TEST_ONLY_token", str(agent)],
                                     capture_output=True, text=True, check=False, timeout=10)
@@ -444,7 +444,7 @@ class BootstrapTests(unittest.TestCase):
                 target.unlink()
 
     def test_mirror_is_explicit_https_prefix_without_panel_credentials(self):
-        base = "https://github.com/theLucius7/sinan/releases/download/agent-v0.3.1"
+        base = "https://github.com/theLucius7/apsp/releases/download/agent-v0.3.1"
         mirror = "https://mirror.example.com"
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "agent"
@@ -525,7 +525,7 @@ class BootstrapTests(unittest.TestCase):
 
     @unittest.skipUnless(os.getuid() == 0, "root-owned trust file test requires container root")
     def test_protected_operator_root_is_accepted_and_symlink_refused(self):
-        with tempfile.TemporaryDirectory(prefix="sinan-trust-test-", dir="/root") as directory:
+        with tempfile.TemporaryDirectory(prefix="apsp-trust-test-", dir="/root") as directory:
             path = Path(directory) / "public-keys.json"
             path.write_text((FIXTURES / "public-keys.json").read_text())
             path.chmod(0o600)
@@ -549,7 +549,7 @@ class StandaloneBootstrapTests(unittest.TestCase):
                 raise unittest.SkipTest("standalone bootstrap needs root or passwordless sudo")
 
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="sinan-standalone-bootstrap-test-")
+        self.temporary = tempfile.TemporaryDirectory(prefix="apsp-standalone-bootstrap-test-")
         self.directory = Path(self.temporary.name)
         self.bundle = self.directory / "release"
         self.bundle.mkdir()
@@ -560,7 +560,7 @@ class StandaloneBootstrapTests(unittest.TestCase):
         metadata = dict(schema=1, source_repo=release.REPOSITORY, tag="agent-v0.3.0",
                         protocol_min=1, protocol_max=1, artifacts=[dict(
                             name="agent", version="0.3.0", arch=architecture, format="raw",
-                            binary_name="sinan-agent", archive_size=len(binary),
+                            binary_name="apsp-agent", archive_size=len(binary),
                             binary_size=len(binary), binary_sha256=release.digest(binary),
                             asset_name="agent-0.3.0-linux-musl-" + architecture)])
         (self.bundle / metadata["artifacts"][0]["asset_name"]).write_bytes(binary)
@@ -573,12 +573,12 @@ class StandaloneBootstrapTests(unittest.TestCase):
         result = subprocess.run(["minisign", "-S", "-m", str(self.bundle / "SHA256SUMS"),
                                  "-s", str(FIXTURES / "TEST_ONLY.key"), "-x",
                                  str(self.bundle / "SHA256SUMS.minisig"), "-t",
-                                 "Sinan TEST ONLY standalone fixture"], capture_output=True)
+                                 "Apsp TEST ONLY standalone fixture"], capture_output=True)
         self.assertEqual(result.returncode, 0, "fixture signing failed")
         self.script = self.directory / "bootstrap.sh"
         self.script.write_text(RENDER.render(
             trusted_keys=FIXTURES / "public-keys.json", publication=False,
-            test_installer="#!/bin/sh\n# SINAN_BOOTSTRAP_AGENT_SOURCE=preloaded-github-v1\nset -eu\nprintf '%s\\n' TRUSTED_INSTALLER_VERIFIED\n"))
+            test_installer="#!/bin/sh\n# APSP_BOOTSTRAP_AGENT_SOURCE=preloaded-github-v1\nset -eu\nprintf '%s\\n' TRUSTED_INSTALLER_VERIFIED\n"))
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -612,7 +612,7 @@ class StandaloneBootstrapTests(unittest.TestCase):
         unsafe.chmod(0o777)
         script = self.directory / "unsafe-bootstrap.sh"
         script.write_text(self.script.read_text().replace(
-            "STAGING_BASE=/opt/sinan", "STAGING_BASE=" + shlex.quote(str(unsafe))))
+            "STAGING_BASE=/opt/apsp", "STAGING_BASE=" + shlex.quote(str(unsafe))))
         result = self.run_bootstrap(script)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("root 保护".encode(), result.stderr)
@@ -642,12 +642,12 @@ class StandaloneBootstrapTests(unittest.TestCase):
         harness = r'''
 import os, pathlib, sys, tempfile
 source = sys.argv[1]
-with tempfile.TemporaryDirectory(prefix='sinan-partial-fixture-', dir='/root') as fixture:
+with tempfile.TemporaryDirectory(prefix='apsp-partial-fixture-', dir='/root') as fixture:
     root = pathlib.Path(fixture)
-    source = source.replace('/etc/sinan/identity', str(root / 'identity'))
-    source = source.replace('/var/lib/sinan/core/state.db', str(root / 'state.db'))
-    source = source.replace('/opt/sinan/core/current', str(root / 'current'))
-    source = source.replace('/opt/sinan/plugins', str(root / 'plugins'))
+    source = source.replace('/etc/apsp/identity', str(root / 'identity'))
+    source = source.replace('/var/lib/apsp/core/state.db', str(root / 'state.db'))
+    source = source.replace('/opt/apsp/core/current', str(root / 'current'))
+    source = source.replace('/opt/apsp/plugins', str(root / 'plugins'))
     sys.argv = ['trusted-preflight', 'https://panel.example.com']
     identity = root / 'identity'
     identity.mkdir(mode=0o700)

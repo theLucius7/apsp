@@ -18,7 +18,7 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / 'plugins/nodequality'
 READONLY_SOURCES = None
-BASH = os.environ.get('SINAN_NODEQUALITY_TEST_BASH', '/bin/bash')
+BASH = os.environ.get('APSP_NODEQUALITY_TEST_BASH', '/bin/bash')
 
 
 def module(name, path):
@@ -70,7 +70,7 @@ class OpenAIProfileTests(unittest.TestCase):
     def production(self, *, before=False):
         if READONLY_SOURCES is None:
             self.skipTest('requires the verified readonly 17-file upstream cache')
-        with tempfile.TemporaryDirectory(prefix='sinan-openai-source-') as temporary:
+        with tempfile.TemporaryDirectory(prefix='apsp-openai-source-') as temporary:
             directory = Path(temporary) / 'sources'
             lock = helper.decode((PLUGIN / 'source-lock.json').read_bytes())
             # The actual signed source loader checks every raw source and license;
@@ -82,7 +82,7 @@ class OpenAIProfileTests(unittest.TestCase):
             return helper.serve(directory, ['-Ls', 'https://IP.Check.Place'])
 
     def shell(self, script, *, strict=False, ip='192.0.2.1'):
-        with tempfile.TemporaryDirectory(prefix='sinan-openai-no-request-') as temporary:
+        with tempfile.TemporaryDirectory(prefix='apsp-openai-no-request-') as temporary:
             marker = Path(temporary) / 'external-request'
             options = 'set -e -o pipefail\nshopt -s inherit_errexit\n' if strict else ''
             environment = {'PATH': os.environ['PATH'], 'LC_ALL': 'C', 'MARKER': str(marker), 'IP': ip}
@@ -94,7 +94,7 @@ class OpenAIProfileTests(unittest.TestCase):
 
     def function(self):
         final = self.production().decode()
-        return definition(final, 'sinan_openai_not_attempted') + definition(final, 'OpenAITest')
+        return definition(final, 'apsp_openai_not_attempted') + definition(final, 'OpenAITest')
 
     def metadata(self, output):
         rows = [json.loads(line) for line in output.splitlines() if line.startswith('{')]
@@ -134,8 +134,8 @@ class OpenAIProfileTests(unittest.TestCase):
             self.assertEqual(expected.count(old), 1)
             expected = expected.replace(old, new, 1)
         self.assertTrue(expected == after, 'policy changed bytes outside the declared boundaries')
-        for name in ('MediaUnlockTest_YouTube_Premium', 'sinan_access_youtube_fetch',
-                     'MediaUnlockTest_Netflix', 'sinan_netflix_fetch', 'db_ipinfo',
+        for name in ('MediaUnlockTest_YouTube_Premium', 'apsp_access_youtube_fetch',
+                     'MediaUnlockTest_Netflix', 'apsp_netflix_fetch', 'db_ipinfo',
                      'db_ipqs', 'show_score', 'show_media'):
             self.assertTrue(definition(before.decode(), name) == definition(after.decode(), name),
                             'policy changed an unrelated function: ' + name)
@@ -237,7 +237,7 @@ printf '%s\n' "$ipjson"|jq -c
             policy.transform('hardware.sh', content)
 
     def test_helper_requires_the_exact_bounded_ordinary_file(self):
-        with tempfile.TemporaryDirectory(prefix='sinan-openai-helper-') as temporary:
+        with tempfile.TemporaryDirectory(prefix='apsp-openai-helper-') as temporary:
             path = Path(temporary) / 'openai-policy.py'
             original = (PLUGIN / path.name).read_bytes()
             with mock.patch.object(helper, '__file__', str(path.with_name('native-source-helper.py'))):

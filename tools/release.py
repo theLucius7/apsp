@@ -16,7 +16,7 @@ import subprocess
 import tarfile
 
 
-REPOSITORY = "theLucius7/sinan"
+REPOSITORY = "theLucius7/apsp"
 TEST_ONLY_PUBLIC_KEY = "RWS3NbDikg3VqWRlxJMUyaB1dTvErk0ptJ695xQ50Kyb+MmtynMhN/lq"
 TEST_ONLY_ROTATION_PUBLIC_KEY = "RWRURVNUUk9UMjMuvo0ny3Mjs6QBwcE7XdZLzMDhDs2hwrXRGgN3moXl"
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
@@ -186,12 +186,12 @@ def assemble(args):
     ensure(len(set(architectures)) == len(architectures)
            and set(architectures) <= {"amd64", "arm64"}, "invalid or duplicate architecture")
     modules = [
-        ("agent", args.agent_version, "raw", "sinan-agent"),
+        ("agent", args.agent_version, "raw", "apsp-agent"),
         ("sing-box", args.runtime_version, "tar.gz", "sing-box"),
         ("nodequality", getattr(args, "nodequality_version", NODEQUALITY_VERSION), "tar.gz", "nodequality"),
     ]
     if getattr(args, "tcp_probe_version", None) is not None:
-        modules.append(("tcpquality", args.tcp_probe_version, "tar.gz", "sinan-tcp-probe"))
+        modules.append(("tcpquality", args.tcp_probe_version, "tar.gz", "apsp-tcp-probe"))
     if getattr(args, "ipquality_version", None) is not None:
         modules.append(("ipquality", args.ipquality_version, "tar.gz", "ipquality"))
     for name, version, archive_format, binary_name in modules:
@@ -267,8 +267,8 @@ def installer_source(template, agent_unit, runtime_unit, source_root=SOURCE_ROOT
                              ("@@RUNTIME_UNIT@@", runtime_unit)):
         ensure(text.count(marker) == 1, "missing or duplicate installer unit marker")
         text = text.replace(marker, read_regular(Path(filename), 65536).decode("utf-8").rstrip())
-    for marker, filename in (("@@AGENT_OPENRC@@", source_root / "deploy/sinan-agent.openrc"),
-                             ("@@RUNTIME_OPENRC@@", source_root / "plugins/sing-box/sinan-singbox.openrc")):
+    for marker, filename in (("@@AGENT_OPENRC@@", source_root / "deploy/apsp-agent.openrc"),
+                             ("@@RUNTIME_OPENRC@@", source_root / "plugins/sing-box/apsp-singbox.openrc")):
         if marker in text:
             ensure(text.count(marker) == 1, "duplicate installer unit marker")
             text = text.replace(marker, read_regular(filename, 65536).decode("utf-8").rstrip())
@@ -431,7 +431,7 @@ def validate_manifest(bundle, expected_tag=None, protocol_version=1):
                    and not entry.get("auxiliary_files", {}),
                    "wrong official node-query artifact identity")
         if entry["name"] == "agent":
-            binary_name = "sinan-agent.exe" if entry["arch"].startswith("windows-") else "sinan-agent"
+            binary_name = "apsp-agent.exe" if entry["arch"].startswith("windows-") else "apsp-agent"
             ensure(metadata["tag"] == "agent-v" + entry["version"] and entry["format"] == "raw"
                    and entry["binary_name"] == binary_name, "wrong Agent release identity")
         if entry["format"] == "raw":

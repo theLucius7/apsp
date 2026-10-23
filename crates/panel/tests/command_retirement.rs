@@ -5,13 +5,13 @@ mod business_support;
 mod release_support;
 
 use anyhow::Result;
-use business_support::TestPanel;
-use reqwest::{Method, StatusCode, header};
-use serde_json::json;
-use sinan_protocol::{
+use apsp_protocol::{
     CommandClaim, CommandControl, CommandResult, CommandStarted, CommandState, CommandStatus,
     RemoteCommand, TaskAck, now_timestamp,
 };
+use business_support::TestPanel;
+use reqwest::{Method, StatusCode, header};
+use serde_json::json;
 use sqlx::PgPool;
 use std::time::Duration;
 use uuid::Uuid;

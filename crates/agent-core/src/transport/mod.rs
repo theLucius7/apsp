@@ -14,8 +14,8 @@ pub use status::status;
 
 use crate::{Config, SharedState, State, artifacts::PanelClient, identity, reconcile::Reconciler};
 use anyhow::{Context, Result};
-use sinan_adapter_sdk::{Adapter, DiagnosticAdapter, Prepared, Privileged, ServiceManager};
-use sinan_protocol::AppliedRevisions;
+use apsp_adapter_sdk::{Adapter, DiagnosticAdapter, Prepared, Privileged, ServiceManager};
+use apsp_protocol::AppliedRevisions;
 use std::{
     collections::BTreeMap,
     sync::{
@@ -45,7 +45,7 @@ struct Runtime {
 }
 
 impl Runtime {
-    fn static_info(&self) -> Result<Option<sinan_protocol::StaticInfo>> {
+    fn static_info(&self) -> Result<Option<apsp_protocol::StaticInfo>> {
         let mut info = {
             let snapshot = self.telemetry.borrow();
             // Keep enrollment metadata until the collector has identified the host.
@@ -70,7 +70,7 @@ impl Runtime {
             info.discovered_public_ips = crate::telemetry::normalized_addresses(
                 records
                     .iter()
-                    .filter(|(_, expires)| *expires > sinan_protocol::now_timestamp())
+                    .filter(|(_, expires)| *expires > apsp_protocol::now_timestamp())
                     .filter_map(|(address, _)| address.parse().ok()),
             );
             let discovered = info
@@ -183,25 +183,25 @@ pub async fn run_with_diagnostics(
     capabilities.extend(crate::fleet::capabilities(&config));
     let exact_runtime_supported = !reconcilers.is_empty() && services.supports_runtime_checkpoint();
     if exact_runtime_supported {
-        capabilities.push(sinan_protocol::RUNTIME_CHECKPOINT_CAPABILITY.into());
-        capabilities.push(sinan_protocol::RUNTIME_RECOVERY_BARRIER_CAPABILITY.into());
+        capabilities.push(apsp_protocol::RUNTIME_CHECKPOINT_CAPABILITY.into());
+        capabilities.push(apsp_protocol::RUNTIME_RECOVERY_BARRIER_CAPABILITY.into());
         if reconcilers
             .iter()
             .any(|(_, reconciler)| reconciler.supports_runtime_probe())
         {
-            capabilities.push(sinan_protocol::RUNTIME_PATH_PROBE_CAPABILITY.into());
+            capabilities.push(apsp_protocol::RUNTIME_PATH_PROBE_CAPABILITY.into());
         }
     }
 
     if supports_validation {
-        capabilities.push(sinan_protocol::RUNTIME_VALIDATION_CAPABILITY.into());
+        capabilities.push(apsp_protocol::RUNTIME_VALIDATION_CAPABILITY.into());
     }
     if !modules.is_empty() {
-        capabilities.push(sinan_protocol::RUNTIME_OPERATIONS_CAPABILITY.into());
+        capabilities.push(apsp_protocol::RUNTIME_OPERATIONS_CAPABILITY.into());
     }
-    capabilities.push(sinan_protocol::RETIREMENT_CAPABILITY.into());
-    capabilities.push(sinan_protocol::PROBE_LEASE_CAPABILITY.into());
-    capabilities.push(sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY.into());
+    capabilities.push(apsp_protocol::RETIREMENT_CAPABILITY.into());
+    capabilities.push(apsp_protocol::PROBE_LEASE_CAPABILITY.into());
+    capabilities.push(apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY.into());
     capabilities.extend(
         [
             "telemetry:batch",
@@ -222,8 +222,8 @@ pub async fn run_with_diagnostics(
         }
     }
     if !diagnostics.is_empty() {
-        capabilities.push(sinan_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY.into());
-        capabilities.push(sinan_protocol::DIAGNOSTIC_SERVICE_CAPABILITY.into());
+        capabilities.push(apsp_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY.into());
+        capabilities.push(apsp_protocol::DIAGNOSTIC_SERVICE_CAPABILITY.into());
     }
     capabilities.extend(
         diagnostics
@@ -240,10 +240,10 @@ pub async fn run_with_diagnostics(
     let (outgoing_tx, mut outgoing_rx) = mpsc::channel(64);
     let (runtime_control, control_receiver) = runtime_control::Control::channel();
     let cancellation = if !diagnostics.is_empty() && services.supports_confirmed_cancellation() {
-        capabilities.push(sinan_protocol::DIAGNOSTIC_CANCEL_CAPABILITY.into());
-        capabilities.push(sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY.into());
+        capabilities.push(apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY.into());
+        capabilities.push(apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY.into());
         if services.supports_diagnostic_cpu_ceiling() {
-            capabilities.push(sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY.into());
+            capabilities.push(apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY.into());
         }
         Some(Arc::new(
             diagnostics::cancellation::CancellationControl::new(
@@ -391,7 +391,7 @@ mod tests {
         state::IntentRecord,
         system::SystemOps,
     };
-    use sinan_adapter_sdk::{Plan, RuntimeSpec};
+    use apsp_adapter_sdk::{Plan, RuntimeSpec};
     use std::{os::unix::fs::PermissionsExt, path::PathBuf};
     use uuid::Uuid;
 
@@ -416,7 +416,7 @@ mod tests {
             Directory(PathBuf::from("/tmp").join(format!("sn-instance-{}", Uuid::new_v4())));
         let panel = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let config = Config {
-            settings: sinan_protocol::AgentSettings::default(),
+            settings: apsp_protocol::AgentSettings::default(),
             panel_url: format!("http://{}", panel.local_addr()?),
             panel_ca_file: None,
             identity_dir: directory.0.join("identity"),

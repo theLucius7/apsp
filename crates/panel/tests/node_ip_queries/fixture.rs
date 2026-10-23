@@ -1,12 +1,12 @@
 use super::*;
-use sinan_protocol::{Hello, Message, PROTOCOL_VERSION};
+use apsp_protocol::{Hello, Message, PROTOCOL_VERSION};
 use std::collections::BTreeMap;
 pub const VERSION: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r21";
 
 pub async fn prepare(panel: &TestPanel, server: i64) -> Result<()> {
     sqlx::query("UPDATE servers SET static_info=static_info || '{\"os\":\"linux\",\"ip_addresses\":[\"1.1.1.1\",\"127.0.0.1\"]}'::jsonb WHERE id=$1")
         .bind(server).execute(&panel.state.pool).await?;
-    sinan_panel::agent_api::process_message(
+    apsp_panel::agent_api::process_message(
         &panel.state,
         server,
         Message::Hello(Hello {
@@ -16,12 +16,12 @@ pub async fn prepare(panel: &TestPanel, server: i64) -> Result<()> {
                 "diagnostic:nodequality",
                 "diagnostic:nodequality-modes",
                 "diagnostic:nodequality-node-query",
-                sinan_protocol::DIAGNOSTIC_CANCEL_CAPABILITY,
-                sinan_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,
-                sinan_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,
-                sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY,
-                sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,
-                sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
+                apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY,
+                apsp_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,
+                apsp_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,
+                apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY,
+                apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,
+                apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
             ]
             .into_iter()
             .map(str::to_owned)
@@ -105,7 +105,7 @@ pub fn section(
                 } else {json!({"ipAddress":"1.1.1.1","latitude":0,"isProxy":false})},
                 "error":failure.map(|(kind,status)| json!({"kind":kind,"message":"TEST_ONLY 未完成正式查询，信息未知","http_status":status}))})
         }).collect();
-    let body = json!({"schema":"sinan.node-ip-quality.v1","job_id":id,"execution":"node","ip_version":"both",
+    let body = json!({"schema":"apsp.node-ip-quality.v1","job_id":id,"execution":"node","ip_version":"both",
         "started_at":at,"finished_at":at,"ips":["1.1.1.1"],"results":rows,
         "streaming":{"execution":"node","status":"unknown","reason":"TEST_ONLY 正式流媒体认证未配置，信息未知"}});
     json!({"id":id,"name":"ip_quality","text":body.to_string(),"complete":complete,"revision":revision,"collected_at":at})

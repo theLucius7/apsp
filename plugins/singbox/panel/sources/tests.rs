@@ -11,17 +11,17 @@ fn generated_reality_transport_links_roundtrip_without_dropping_parameters() {
         json!({"type":"httpupgrade","path":"/upgrade+a&b","host":"edge.example.com"}),
         json!({"type":"grpc","service_name":"test.service_v1-api"}),
     ] {
-        let node: sinan_compiler::Node = serde_json::from_value(json!({
+        let node: apsp_compiler::Node = serde_json::from_value(json!({
             "id":1,"name":"测试 + 节点","port":443,"public_host":"proxy.example.com","sni":"www.example.com",
             "private_key":private_key,"public_key":public_key,"short_id":"abcd1234",
             "settings":{"reality":{"flow":"none"},"transport":transport},
             "users":[{"user_id":1,"uuid":identity}]
         })).unwrap();
         let client: serde_json::Value = serde_json::from_str(
-            &sinan_compiler::compile_client(std::slice::from_ref(&node), 1).unwrap(),
+            &apsp_compiler::compile_client(std::slice::from_ref(&node), 1).unwrap(),
         )
         .unwrap();
-        let links = sinan_compiler::subscription_links(&[node], 1).unwrap();
+        let links = apsp_compiler::subscription_links(&[node], 1).unwrap();
         let parsed = parse(links.as_bytes()).unwrap();
         assert!(parsed.rejected.is_empty());
         assert_eq!(parsed.nodes.len(), 1);

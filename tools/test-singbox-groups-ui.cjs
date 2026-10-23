@@ -6,10 +6,10 @@ const { createServer } = require('node:http')
 const { pathToFileURL } = require('node:url')
 
 async function main() {
-  const dependency = process.env.SINAN_PLAYWRIGHT_MODULE || process.env.PLAYWRIGHT_MODULE || 'playwright'
+  const dependency = process.env.APSP_PLAYWRIGHT_MODULE || process.env.PLAYWRIGHT_MODULE || 'playwright'
   const { chromium } = await import(path.isAbsolute(dependency) ? pathToFileURL(dependency).href : dependency)
   const { flatResourceFixtures, proxyResourceFixtures, orderedResourceFixture, pathFixtureUuid } = await import('../web/tests/proxy-resource-fixtures.mjs')
-  const screenshots = process.env.SINAN_UI_SCREENSHOT_DIR || process.env.SINAN_GROUPS_SCREENSHOTS
+  const screenshots = process.env.APSP_UI_SCREENSHOT_DIR || process.env.APSP_GROUPS_SCREENSHOTS
   let server, browser
   try {
     let origin
@@ -31,7 +31,7 @@ async function main() {
     }
     assert(['http:', 'https:'].includes(origin.protocol) && ['127.0.0.1', 'localhost', '[::1]'].includes(origin.hostname))
     assert.equal(origin.username, ''); assert.equal(origin.password, '')
-    browser = await chromium.launch({ headless: true, executablePath: process.env.SINAN_CHROME_PATH || process.env.CHROMIUM_PATH || undefined })
+    browser = await chromium.launch({ headless: true, executablePath: process.env.APSP_CHROME_PATH || process.env.CHROMIUM_PATH || undefined })
     const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
     page.setDefaultTimeout(10000)
     const errors = [], writes = [], assignments = []

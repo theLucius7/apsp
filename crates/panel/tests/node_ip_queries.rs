@@ -186,7 +186,7 @@ async fn chapter_replay_repairs_postcommit_cache_failure_and_old_revisions_do_no
 async fn deferred_cache_writes_cannot_regress_same_second_revisions_or_jobs(
     pool: PgPool,
 ) -> Result<()> {
-    use sinan_panel::diagnostic_plugins::nodequality::node_queries::{
+    use apsp_panel::diagnostic_plugins::nodequality::node_queries::{
         parse_section, persist_section,
     };
     let panel = TestPanel::start(pool).await?;

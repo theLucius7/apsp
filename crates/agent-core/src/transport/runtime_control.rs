@@ -4,7 +4,7 @@ use crate::{
     state::runtime_control::{ControlRequest, ControlResult},
 };
 use anyhow::Result;
-use sinan_protocol::{
+use apsp_protocol::{
     Envelope, RuntimeCheckpointResult, RuntimeControlAck, RuntimePathProbeResult,
     RuntimeRecoveryBarrierResult,
 };

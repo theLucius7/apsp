@@ -3,11 +3,11 @@ use crate::Config;
 #[cfg(unix)]
 use crate::{artifacts::PanelClient, identity};
 #[cfg(unix)]
+use apsp_protocol::{Bundle, EnrollRequest};
+#[cfg(unix)]
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 #[cfg(unix)]
 use sha2::{Digest, Sha256};
-#[cfg(unix)]
-use sinan_protocol::{Bundle, EnrollRequest};
 #[cfg(unix)]
 use std::{collections::BTreeMap, time::Duration};
 #[cfg(unix)]

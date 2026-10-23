@@ -44,7 +44,7 @@ async fn keepalive_rejection_cools_down_from_response_not_old_creation(pool: PgP
     let stopped = state("Stopped", "KeepCharging");
     let id = prepare(&pool, r, &stopped, "start", "KeepCharging").await;
     api::confirm_on(&pool, id).await.unwrap();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("UPDATE alicloud_power_jobs SET source='keepalive',created_at=$2 WHERE id=$1")
         .bind(id)
         .bind(now - 240)
@@ -121,7 +121,7 @@ async fn dismissing_unknown_bandwidth_pauses_both_automations_and_old_power_prev
         a,
         r,
         &state("Stopped", "KeepCharging"),
-        sinan_protocol::now_timestamp(),
+        apsp_protocol::now_timestamp(),
     )
     .await;
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM alicloud_power_jobs")

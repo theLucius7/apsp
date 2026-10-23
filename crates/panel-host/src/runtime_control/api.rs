@@ -4,6 +4,7 @@ use crate::{
     auth::require_admin,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::{RuntimeCheckpoint, now_timestamp, runtime_module_valid};
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -12,7 +13,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sinan_protocol::{RuntimeCheckpoint, now_timestamp, runtime_module_valid};
 use sqlx::Row;
 
 pub fn routes() -> Router<AppState> {
@@ -110,7 +110,7 @@ async fn status(
         let barrier_current = current
             && super::supports(
                 &capabilities,
-                sinan_protocol::RUNTIME_RECOVERY_BARRIER_CAPABILITY,
+                apsp_protocol::RUNTIME_RECOVERY_BARRIER_CAPABILITY,
             )
             && barrier_result
                 .as_ref()

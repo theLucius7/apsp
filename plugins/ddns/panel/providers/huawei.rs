@@ -55,7 +55,7 @@ impl Huawei {
             url.query_pairs_mut()
                 .extend_pairs(query.iter().map(|(k, v)| (*k, v)));
         }
-        let date = signing::iso_time(sinan_protocol::now_timestamp()).replace(['-', ':'], "");
+        let date = signing::iso_time(apsp_protocol::now_timestamp()).replace(['-', ':'], "");
         let body = body.map(|v| v.to_string()).unwrap_or_default();
         let auth = signing::huawei(key, secret, method.as_str(), &url, &body, &date);
         let response = transport::json(
@@ -200,7 +200,7 @@ impl Huawei {
             // an administrator's later change while DDNS updates the address.
             (Method::PUT, format!("{path}/{}", record.id))
         } else {
-            body["description"] = format!("sinan-ddns:{}", rule.id).into();
+            body["description"] = format!("apsp-ddns:{}", rule.id).into();
             (Method::POST, path)
         };
         let _guard = check().await?;
@@ -211,7 +211,7 @@ impl Huawei {
         }
         let written = record(&result, &spec.zone_id)?;
         if existing.is_none()
-            && written.marker.as_deref() != Some(format!("sinan-ddns:{}", rule.id).as_str())
+            && written.marker.as_deref() != Some(format!("apsp-ddns:{}", rule.id).as_str())
         {
             return Err("invalid_response".into());
         }

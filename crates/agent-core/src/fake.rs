@@ -1,4 +1,4 @@
-use sinan_adapter_sdk::{
+use apsp_adapter_sdk::{
     Adapter, BoxFuture, Counter, Descriptor, Plan, Prepared, Privileged, RuntimeSpec,
     ServiceManager, UsageSource,
 };
@@ -10,15 +10,15 @@ use std::time::Duration;
 
 pub struct FakeResourceOps {
     pub inner: std::sync::Arc<dyn Privileged>,
-    pub resources: Mutex<Result<sinan_adapter_sdk::DiagnosticResources, String>>,
+    pub resources: Mutex<Result<apsp_adapter_sdk::DiagnosticResources, String>>,
 }
 
 impl FakeResourceOps {
     pub fn new(inner: std::sync::Arc<dyn Privileged>) -> Self {
         Self {
             inner,
-            resources: Mutex::new(Ok(sinan_adapter_sdk::DiagnosticResources {
-                memory: sinan_adapter_sdk::DiagnosticMemory {
+            resources: Mutex::new(Ok(apsp_adapter_sdk::DiagnosticResources {
+                memory: apsp_adapter_sdk::DiagnosticMemory {
                     host_available_bytes: 4 * 1024 * 1024 * 1024,
                     cgroup_available_bytes: None,
                 },
@@ -35,7 +35,7 @@ impl Privileged for FakeResourceOps {
         &'a self,
         program: &'a std::path::Path,
         args: &'a [String],
-    ) -> BoxFuture<'a, Box<dyn sinan_adapter_sdk::ManagedProcess>> {
+    ) -> BoxFuture<'a, Box<dyn apsp_adapter_sdk::ManagedProcess>> {
         self.inner.spawn_managed(program, args)
     }
     fn execute_bounded<'a>(
@@ -44,7 +44,7 @@ impl Privileged for FakeResourceOps {
         args: &'a [String],
         timeout_secs: u32,
         maximum: usize,
-    ) -> BoxFuture<'a, sinan_adapter_sdk::Execution> {
+    ) -> BoxFuture<'a, apsp_adapter_sdk::Execution> {
         self.inner
             .execute_bounded(program, args, timeout_secs, maximum)
     }
@@ -58,7 +58,7 @@ impl Privileged for FakeResourceOps {
         self.inner
             .install_archive_files(path, directory, binary_name, extras)
     }
-    fn diagnostic_memory(&self) -> BoxFuture<'_, sinan_adapter_sdk::DiagnosticMemory> {
+    fn diagnostic_memory(&self) -> BoxFuture<'_, apsp_adapter_sdk::DiagnosticMemory> {
         Box::pin(async {
             self.resources
                 .lock()
@@ -71,7 +71,7 @@ impl Privileged for FakeResourceOps {
     fn diagnostic_resources<'a>(
         &'a self,
         _: &'a std::path::Path,
-    ) -> BoxFuture<'a, sinan_adapter_sdk::DiagnosticResources> {
+    ) -> BoxFuture<'a, apsp_adapter_sdk::DiagnosticResources> {
         Box::pin(async {
             self.resources
                 .lock()
@@ -84,7 +84,7 @@ impl Privileged for FakeResourceOps {
         &'a self,
         path: &'a std::path::Path,
         args: &'a [String],
-    ) -> BoxFuture<'a, sinan_adapter_sdk::CommandOutput> {
+    ) -> BoxFuture<'a, apsp_adapter_sdk::CommandOutput> {
         self.inner.execute(path, args)
     }
     fn create_dir<'a>(
@@ -193,7 +193,7 @@ impl Adapter for FakeAdapter {
         &'a self,
         _runtime: &'a Prepared,
         id: &'a str,
-    ) -> BoxFuture<'a, sinan_adapter_sdk::RuntimeProbeMeasurement> {
+    ) -> BoxFuture<'a, apsp_adapter_sdk::RuntimeProbeMeasurement> {
         Box::pin(async move {
             self.probe_calls.lock().unwrap().push(id.into());
             self.probe_started.notify_one();
@@ -205,7 +205,7 @@ impl Adapter for FakeAdapter {
                 !self.fail_probe.load(Ordering::SeqCst),
                 "private fixture credential must never escape"
             );
-            Ok(sinan_adapter_sdk::RuntimeProbeMeasurement { elapsed_ms: 17 })
+            Ok(apsp_adapter_sdk::RuntimeProbeMeasurement { elapsed_ms: 17 })
         })
     }
     fn health_timeout(&self, _target: &Prepared) -> Duration {

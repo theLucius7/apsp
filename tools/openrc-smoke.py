@@ -20,14 +20,14 @@ import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_SERVICE = "sinan-singbox@main"
-AGENT_STATE = Path("/var/lib/sinan/core/test-agent.pid")
-RUNTIME_STATE = Path("/var/lib/sinan/plugins/sing-box@main/data/test-runtime.pid")
+RUNTIME_SERVICE = "apsp-singbox@main"
+AGENT_STATE = Path("/var/lib/apsp/core/test-agent.pid")
+RUNTIME_STATE = Path("/var/lib/apsp/plugins/sing-box@main/data/test-runtime.pid")
 RELOAD_STATE = RUNTIME_STATE.with_suffix(".reloads")
 TOKEN = "openrc-smoke-fixture-token"
 RELEASE = runpy.run_path(str(ROOT / "tools/ci-release-fixture.py"))
-BUNDLE = Path("/tmp/sinan-openrc-TEST_ONLY-release")
-TRUST_DIRECTORY = Path("/etc/sinan-openrc-TEST_ONLY-trust")
+BUNDLE = Path("/tmp/apsp-openrc-TEST_ONLY-release")
+TRUST_DIRECTORY = Path("/etc/apsp-openrc-TEST_ONLY-trust")
 TRUST_FILE = TRUST_DIRECTORY / "public-keys.json"
 AGENT_VERSION = tomllib.loads((ROOT / "crates/agent/Cargo.toml").read_text())["package"]["version"]
 
@@ -67,20 +67,20 @@ elif arguments[0] == "verify-cache":
     # Actual cache preflight is separately exercised by Rust and real-e2e checks.
     print("TEST_ONLY process fixture cache stub")
 elif arguments[0] == "--version":
-    print("sinan-agent @AGENT_VERSION@")
+    print("apsp-agent @AGENT_VERSION@")
 elif arguments[0] == "status":
-    if os.environ.get("SINAN_TEST_STATUS_FAIL") == "1":
+    if os.environ.get("APSP_TEST_STATUS_FAIL") == "1":
         raise SystemExit("fixture startup check failed")
     print('{"fixture":true,"connected":true,"pending_batches":0}')
 elif arguments[0] == "enroll":
-    if os.environ.get("SINAN_TEST_ENROLL_FAIL") == "1":
+    if os.environ.get("APSP_TEST_ENROLL_FAIL") == "1":
         raise SystemExit("fixture enrollment rejected")
-    config = Path("/etc/sinan/agent.toml")
+    config = Path("/etc/apsp/agent.toml")
     if not config.exists():
         config.write_text('panel_url = "http://panel.example.com"\\n')
     print("fixture enrollment accepted", flush=True)
 else:
-    Path("/var/lib/sinan/core/test-agent.pid").write_text(str(os.getpid()))
+    Path("/var/lib/apsp/core/test-agent.pid").write_text(str(os.getpid()))
     print("fixture agent started", flush=True)
     while True:
         time.sleep(0.1)
@@ -98,7 +98,7 @@ import time
 if sys.argv[1] == "version":
     print("sing-box version 1.14.2 (OpenRC process fixture)")
     raise SystemExit(0)
-root = Path("/var/lib/sinan/plugins/sing-box@main/data")
+root = Path("/var/lib/apsp/plugins/sing-box@main/data")
 listener = socket.socket()
 listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 listener.bind(("127.0.0.1", 80))
@@ -160,17 +160,17 @@ def provision_test_roots(directory=TRUST_DIRECTORY):
 
 
 def check_runtime_access(runtime):
-    account = pwd.getpwnam("sinan-singbox")
+    account = pwd.getpwnam("apsp-singbox")
     for path, mode, group in [
-        ("/opt/sinan", 0o755, 0),
-        ("/opt/sinan/core", 0o755, 0),
-        ("/opt/sinan/plugins", 0o755, 0),
-        ("/opt/sinan/plugins/sing-box", 0o755, 0),
-        ("/var/lib/sinan", 0o755, 0),
-        ("/var/lib/sinan/plugins", 0o2750, account.pw_gid),
-        ("/etc/sinan", 0o700, 0),
-        ("/etc/sinan/identity", 0o700, 0),
-        ("/var/lib/sinan/core", 0o700, 0),
+        ("/opt/apsp", 0o755, 0),
+        ("/opt/apsp/core", 0o755, 0),
+        ("/opt/apsp/plugins", 0o755, 0),
+        ("/opt/apsp/plugins/sing-box", 0o755, 0),
+        ("/var/lib/apsp", 0o755, 0),
+        ("/var/lib/apsp/plugins", 0o2750, account.pw_gid),
+        ("/etc/apsp", 0o700, 0),
+        ("/etc/apsp/identity", 0o700, 0),
+        ("/var/lib/apsp/core", 0o700, 0),
     ]:
         properties = Path(path).lstat()
         observed = properties.st_mode & 0o7777
@@ -182,10 +182,10 @@ def check_runtime_access(runtime):
     run(*unprivileged, "/usr/bin/python3", "-c", """
 import os
 assert os.geteuid() != 0
-assert os.access('/var/lib/sinan/plugins/sing-box@main/current/config.json', os.R_OK)
-assert os.access('/var/lib/sinan/plugins/sing-box@main/data', os.W_OK | os.X_OK)
-assert not os.access('/etc/sinan/identity', os.X_OK)
-assert not os.access('/var/lib/sinan/core', os.X_OK)
+assert os.access('/var/lib/apsp/plugins/sing-box@main/current/config.json', os.R_OK)
+assert os.access('/var/lib/apsp/plugins/sing-box@main/data', os.W_OK | os.X_OK)
+assert not os.access('/etc/apsp/identity', os.X_OK)
+assert not os.access('/var/lib/apsp/core', os.X_OK)
 """)
     print("Runtime account can execute the artifact and access its state; identity and ledger remain private", flush=True)
 
@@ -194,10 +194,10 @@ def install_script(origin):
     # Exercise the static signed installer after an independently trusted bootstrap.
     subprocess.run(["python3", str(ROOT / "tools/release.py"), "render-installer",
                     "--template", str(ROOT / "deploy/install.sh.tmpl"),
-                    "--agent-unit", str(ROOT / "deploy/sinan-agent.service"),
-                    "--runtime-unit", str(ROOT / "plugins/sing-box/sinan-singbox@.service"),
+                    "--agent-unit", str(ROOT / "deploy/apsp-agent.service"),
+                    "--runtime-unit", str(ROOT / "plugins/sing-box/apsp-singbox@.service"),
                     "--output", str(BUNDLE / "install.sh")], check=True)
-    proof = RELEASE["proof"]("agent", AGENT_VERSION, "sinan-agent", AGENT, arch=RELEASE["architecture"]())
+    proof = RELEASE["proof"]("agent", AGENT_VERSION, "apsp-agent", AGENT, arch=RELEASE["architecture"]())
     lines = dict(line.split("  ")[::-1] for line in proof["checksums"].splitlines())
     lines["install.sh"] = hashlib.sha256((BUNDLE / "install.sh").read_bytes()).hexdigest()
     proof["checksums"] = "".join(f"{lines[path]}  {path}\n" for path in sorted(lines))
@@ -216,7 +216,7 @@ def install_script(origin):
 def main():
     uid_map = Path("/proc/self/uid_map").read_text().split()
     isolated = Path("/.dockerenv").is_file() or uid_map[:2] != ["0", "0"]
-    if os.geteuid() != 0 or os.environ.get("SINAN_OPENRC_SMOKE") != "1" or not isolated:
+    if os.geteuid() != 0 or os.environ.get("APSP_OPENRC_SMOKE") != "1" or not isolated:
         raise SystemExit("Run this test in its disposable container or isolated root filesystem.")
 
     provision_test_roots()
@@ -248,24 +248,24 @@ def main():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     script = install_script(f"http://127.0.0.1:{server.server_port}")
-    environment = {**os.environ, "NO_PROXY": "127.0.0.1", "no_proxy": "127.0.0.1", "SINAN_ENROLLMENT_TOKEN": TOKEN}
+    environment = {**os.environ, "NO_PROXY": "127.0.0.1", "no_proxy": "127.0.0.1", "APSP_ENROLLMENT_TOKEN": TOKEN}
     try:
         run(*script, env=environment)
         agent_pid = wait_for(lambda: pid(AGENT_STATE), "Agent startup after installation")
         # BusyBox must not leave shared intermediate parents at the private umask.
-        for shared in ("/opt/sinan", "/opt/sinan/plugins", "/var/lib/sinan"):
+        for shared in ("/opt/apsp", "/opt/apsp/plugins", "/var/lib/apsp"):
             properties = Path(shared).stat()
             assert properties.st_uid == 0 and properties.st_gid == 0
             assert properties.st_mode & 0o777 == 0o755, shared
-        assert Path("/var/lib/sinan/core").stat().st_mode & 0o777 == 0o700
-        run("su", "-s", "/bin/sh", "sinan-singbox", "-c",
-            "test -x /opt/sinan && test -x /opt/sinan/plugins && test -x /var/lib/sinan")
-        for name in ["sinan-agent", RUNTIME_SERVICE]:
+        assert Path("/var/lib/apsp/core").stat().st_mode & 0o777 == 0o700
+        run("su", "-s", "/bin/sh", "apsp-singbox", "-c",
+            "test -x /opt/apsp && test -x /opt/apsp/plugins && test -x /var/lib/apsp")
+        for name in ["apsp-agent", RUNTIME_SERVICE]:
             assert f"_service='{name}'" in dependencies.read_text(), name
             assert Path(f"/etc/runlevels/default/{name}").is_symlink()
-        assert not Path("/etc/systemd/system/sinan-agent.service").exists()
+        assert not Path("/etc/systemd/system/apsp-agent.service").exists()
 
-        runtime = Path("/opt/sinan/plugins/sing-box/current/sing-box")
+        runtime = Path("/opt/apsp/plugins/sing-box/current/sing-box")
         runtime.parent.mkdir(parents=True)
         runtime.parent.chmod(0o755)
         runtime.write_bytes(RUNTIME)
@@ -277,7 +277,7 @@ def main():
             member.mode = 0o755
             archive.addfile(member, io.BytesIO(RUNTIME))
         RELEASE["install"](runtime.parent, RELEASE["proof"]("sing-box", "1.14.2", "sing-box", packed.getvalue(), "tar.gz", arch=RELEASE["architecture"]()))
-        current = Path("/var/lib/sinan/plugins/sing-box@main/current")
+        current = Path("/var/lib/apsp/plugins/sing-box@main/current")
         current.mkdir(mode=0o755)
         current.chmod(0o755)
         configuration = current / "config.json"
@@ -294,9 +294,9 @@ def main():
         assert fields["NoNewPrivs"].strip() == "1"
         assert int(Path(f"/run/{RUNTIME_SERVICE}.pid").read_text()) != runtime_pid
 
-        identity = Path("/etc/sinan/identity/fixture-existing-key")
+        identity = Path("/etc/apsp/identity/fixture-existing-key")
         identity.write_text("fixture identity must survive installation\n")
-        ledger = Path("/var/lib/sinan/core/fixture-existing-ledger")
+        ledger = Path("/var/lib/apsp/core/fixture-existing-ledger")
         ledger.write_text("fixture persisted accounting\n")
         run(*script, env=environment)
         agent_pid = wait_for(lambda: (number := pid(AGENT_STATE)) != agent_pid and number,
@@ -306,30 +306,30 @@ def main():
         assert ledger.read_text() == "fixture persisted accounting\n"
 
         failed = subprocess.run(script, text=True, capture_output=True, timeout=90,
-                                env={**environment, "SINAN_TEST_ENROLL_FAIL": "1"})
+                                env={**environment, "APSP_TEST_ENROLL_FAIL": "1"})
         assert failed.returncode != 0
         assert pid(AGENT_STATE) == agent_pid
         assert pid(RUNTIME_STATE) == runtime_pid
-        assert Path("/opt/sinan/core/current/sinan-agent").read_bytes() == AGENT
+        assert Path("/opt/apsp/core/current/apsp-agent").read_bytes() == AGENT
 
         service(RUNTIME_SERVICE, "reload")
         wait_for(lambda: int(RELOAD_STATE.read_text()) == 1, "HUP reaching the runtime child")
         assert pid(RUNTIME_STATE) == runtime_pid
-        service("sinan-agent", "stop")
+        service("apsp-agent", "stop")
         assert pid(RUNTIME_STATE) == runtime_pid
         service(RUNTIME_SERVICE, "status")
-        previous = Path("/opt/sinan/core/current").readlink()
+        previous = Path("/opt/apsp/core/current").readlink()
         before_recovery = pid(AGENT_STATE)
         failed = subprocess.run(
             script, capture_output=True, text=True, timeout=90,
-            env={**environment, "SINAN_TEST_STATUS_FAIL": "1"},
+            env={**environment, "APSP_TEST_STATUS_FAIL": "1"},
         )
         assert failed.returncode != 0 and "恢复上一版本" in failed.stderr
-        assert Path("/opt/sinan/core/current").readlink() == previous
+        assert Path("/opt/apsp/core/current").readlink() == previous
         wait_for(lambda: pid(AGENT_STATE) != before_recovery, "Agent recovery after failed startup")
         assert pid(RUNTIME_STATE) == runtime_pid
-        service("sinan-agent", "stop")
-        service("sinan-agent", "start")
+        service("apsp-agent", "stop")
+        service("apsp-agent", "start")
         agent_pid = wait_for(lambda: (number := pid(AGENT_STATE)) != agent_pid and number,
                              "Agent starting independently")
 
@@ -340,12 +340,12 @@ def main():
         wait_for(lambda: (number := pid(AGENT_STATE)) != agent_pid and number,
                  "Agent automatic recovery")
         assert pid(RUNTIME_STATE) == runtime_pid
-        service("sinan-agent", "status")
+        service("apsp-agent", "status")
         service(RUNTIME_SERVICE, "status")
-        assert "fixture agent started" in Path("/var/log/sinan/agent.log").read_text()
-        assert "fixture runtime reloaded" in Path("/var/log/sinan/runtime.log").read_text()
+        assert "fixture agent started" in Path("/var/log/apsp/agent.log").read_text()
+        assert "fixture runtime reloaded" in Path("/var/log/apsp/runtime.log").read_text()
 
-        with sqlite3.connect("/var/lib/sinan/core/state.db") as database:
+        with sqlite3.connect("/var/lib/apsp/core/state.db") as database:
             database.executescript('''
                 CREATE TABLE kv (key TEXT, value TEXT);
                 CREATE TABLE usage_outbox (epoch TEXT, seq TEXT, batch TEXT, acknowledged INTEGER);
@@ -359,7 +359,7 @@ def main():
         assert f"ChildPIDs={runtime_pid}" in (snapshot / "runtime-service.txt").read_text()
         assert f"SupervisorPID={Path(f'/run/{RUNTIME_SERVICE}.pid').read_text().strip()}" in (snapshot / "runtime-service.txt").read_text()
 
-        service("sinan-agent", "stop")
+        service("apsp-agent", "stop")
         service(RUNTIME_SERVICE, "stop")
         agent_pid = int(AGENT_STATE.read_text())
         runtime_pid = int(RUNTIME_STATE.read_text())
@@ -369,8 +369,8 @@ def main():
         wait_for(lambda: (number := pid(RUNTIME_STATE)) != runtime_pid and number,
                  "runtime starting from its last configuration")
 
-        if os.environ.get("SINAN_TEST_AGENT"):
-            print(run("python3", "tools/openrc-job-smoke.py", os.environ["SINAN_TEST_AGENT"]), flush=True)
+        if os.environ.get("APSP_TEST_AGENT"):
+            print(run("python3", "tools/openrc-job-smoke.py", os.environ["APSP_TEST_AGENT"]), flush=True)
 
         systemctl = Path("/usr/local/bin/systemctl")
         systemctl.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> /tmp/systemctl-calls\n')
@@ -380,15 +380,15 @@ def main():
         try:
             run(*script, env=environment)
             assert Path("/tmp/systemctl-calls").read_text().splitlines() == [
-                "daemon-reload", "enable sinan-singbox@main.service sinan-agent.service",
-                "restart sinan-agent.service",
+                "daemon-reload", "enable apsp-singbox@main.service apsp-agent.service",
+                "restart apsp-agent.service",
             ]
-            assert Path("/etc/systemd/system/sinan-agent.service").read_text() == (ROOT / "deploy/sinan-agent.service").read_text()
-            assert Path("/etc/systemd/system/sinan-singbox@.service").read_text() == (ROOT / "plugins/sing-box/sinan-singbox@.service").read_text()
+            assert Path("/etc/systemd/system/apsp-agent.service").read_text() == (ROOT / "deploy/apsp-agent.service").read_text()
+            assert Path("/etc/systemd/system/apsp-singbox@.service").read_text() == (ROOT / "plugins/sing-box/apsp-singbox@.service").read_text()
         finally:
             systemctl.unlink()
-            Path("/etc/systemd/system/sinan-agent.service").unlink(missing_ok=True)
-            Path("/etc/systemd/system/sinan-singbox@.service").unlink(missing_ok=True)
+            Path("/etc/systemd/system/apsp-agent.service").unlink(missing_ok=True)
+            Path("/etc/systemd/system/apsp-singbox@.service").unlink(missing_ok=True)
         print("OpenRC installer, repeated upgrade, failed enrollment, isolated runtime, HUP, "
               "unprivileged capabilities, logs, automatic recovery, default runlevel, "
               "read-only snapshot, and systemd installer command contract: passed")
@@ -397,12 +397,12 @@ def main():
             result = subprocess.run(command, capture_output=True, text=True, timeout=30)
             print(f"{command}:\n{result.stdout}\n{result.stderr}", flush=True)
         for name in ["agent", "runtime"]:
-            log = Path(f"/var/log/sinan/{name}.log")
+            log = Path(f"/var/log/apsp/{name}.log")
             if log.exists():
                 print(f"{log}:\n{log.read_text()}", flush=True)
         raise
     finally:
-        for name in ["sinan-agent", RUNTIME_SERVICE, "net"]:
+        for name in ["apsp-agent", RUNTIME_SERVICE, "net"]:
             subprocess.run(["rc-service", "--", name, "stop"], capture_output=True, timeout=30)
         server.shutdown()
         server.server_close()

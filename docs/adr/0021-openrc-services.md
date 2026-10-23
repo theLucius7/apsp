@@ -8,8 +8,8 @@
 
 - 安装脚本与 Agent 在启动时检测运行中的 init 系统：优先识别 `/run/systemd/system`，其次识别 `/run/openrc/softlevel`。不修改系统 init，不增加配置字段或依赖。
 - `SystemServiceManager` 在既有 `ServiceManager` 边界内选择 systemctl 或 rc-service，所有命令仍经过 `Privileged`。OpenRC 将通用服务标识末尾的 `.service` 移除，保留实例名；不在 core 中加入具体运行时名称。
-- OpenRC 安装两个独立的 init.d 脚本：`sinan-agent`、`sinan-singbox@main`，加入 default runlevel，并强制刷新依赖树，避免秒级时间戳使新服务未进入缓存。升级仅重启 Agent；运行时由对账首次启动，并可在已有配置时随系统启动。
-- 两个服务使用 OpenRC 自带 supervise-daemon，五秒延迟自动重启，日志写入 `/var/log/sinan/`。运行时保留专用非特权用户、绑定低端口的 ambient capability 和 no_new_privs。安装前检查 supervisor 是否提供所需能力选项。
+- OpenRC 安装两个独立的 init.d 脚本：`apsp-agent`、`apsp-singbox@main`，加入 default runlevel，并强制刷新依赖树，避免秒级时间戳使新服务未进入缓存。升级仅重启 Agent；运行时由对账首次启动，并可在已有配置时随系统启动。
+- 两个服务使用 OpenRC 自带 supervise-daemon，五秒延迟自动重启，日志写入 `/var/log/apsp/`。运行时保留专用非特权用户、绑定低端口的 ambient capability 和 no_new_privs。安装前检查 supervisor 是否提供所需能力选项。
 - 运行时 reload 使用 supervise-daemon 向被监督进程发送 HUP，保留已有统计连接的关闭屏障，不误向 supervisor PID 发送信号。PID 文件记录 supervisor，验收通过 Linux procfs 分别记录 supervisor 与实际运行时子进程。
 
 ## 验证与边界

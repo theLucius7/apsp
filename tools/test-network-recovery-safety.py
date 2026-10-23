@@ -83,21 +83,21 @@ class RecoveryTests(unittest.TestCase):
         self.assertTrue((self.root / "restored").exists())
 
     def test_external_firewall_change_is_retained_without_transaction(self):
-        applied = "table inet sinan_0123456789ab { comment \"Managed by Sinan\"; }\n"
+        applied = "table inet apsp_0123456789ab { comment \"Managed by Apsp\"; }\n"
         external = applied.replace("; }", "; # TEST_ONLY external rule\n }")
-        self.prepare({"table":"sinan_0123456789ab","previous":None,"observed_hash":hashlib.sha256(applied.encode()).hexdigest()}, kind="firewall")
+        self.prepare({"table":"apsp_0123456789ab","previous":None,"observed_hash":hashlib.sha256(applied.encode()).hexdigest()}, kind="firewall")
         def command(args):
-            return "table inet sinan_0123456789ab\n" if args[-1]=="tables" else external
+            return "table inet apsp_0123456789ab\n" if args[-1]=="tables" else external
         self.assertEqual(self.execute(command, "firewall", run=lambda *args,**kwargs:self.fail("external table overwritten")), "refused")
 
     def test_matching_firewall_uses_one_atomic_restore_batch(self):
-        applied = "table inet sinan_0123456789ab { comment \"Managed by Sinan\"; }\n"
-        previous = "table inet sinan_0123456789ab { comment \"Managed by Sinan\"; # TEST_ONLY prior\n }\n"
-        self.prepare({"table":"sinan_0123456789ab","previous":previous,"observed_hash":hashlib.sha256(applied.encode()).hexdigest()}, kind="firewall")
+        applied = "table inet apsp_0123456789ab { comment \"Managed by Apsp\"; }\n"
+        previous = "table inet apsp_0123456789ab { comment \"Managed by Apsp\"; # TEST_ONLY prior\n }\n"
+        self.prepare({"table":"apsp_0123456789ab","previous":previous,"observed_hash":hashlib.sha256(applied.encode()).hexdigest()}, kind="firewall")
         actual = [applied]
         transactions = []
         def command(args):
-            return "table inet sinan_0123456789ab\n" if args[-1]=="tables" else actual[0]
+            return "table inet apsp_0123456789ab\n" if args[-1]=="tables" else actual[0]
         def run(args, **kwargs):
             descriptor = kwargs["pass_fds"][0]
             os.lseek(descriptor,0,os.SEEK_SET)
@@ -105,7 +105,7 @@ class RecoveryTests(unittest.TestCase):
             actual[0] = previous
             return types.SimpleNamespace(returncode=0,stdout=b"",stderr=b"")
         self.assertEqual(self.execute(command,"firewall",run), "restored")
-        self.assertEqual(transactions, ["delete table inet sinan_0123456789ab\n"+previous])
+        self.assertEqual(transactions, ["delete table inet apsp_0123456789ab\n"+previous])
 
 class FileHelperTests(unittest.TestCase):
     def setUp(self):

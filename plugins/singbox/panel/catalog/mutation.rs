@@ -311,7 +311,7 @@ pub async fn batch_remove(
             "external" => {
                 super::super::source_migration::set_adopted(&mut tx, item.id, false).await?;
                 sqlx::query("INSERT INTO singbox_node_metadata(kind,id,deleted_at) VALUES('external',$1,$2) ON CONFLICT(kind,id) DO UPDATE SET deleted_at=$2,revision=singbox_node_metadata.revision+1")
-                    .bind(item.id).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
+                    .bind(item.id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
             }
             _ => unreachable!(),
         }

@@ -68,16 +68,16 @@ Hysteria2、TUIC、AnyTLS、Naive 的“证书域名”必须是证书覆盖的 
 Rust、Bun 常规检查外，可使用固定运行时执行实测：
 
 ```sh
-SINAN_TEST_SINGBOX=/tmp/sing-box SINAN_GROUPS_RUNTIME=/tmp/sing-box SINAN_TEST_UPSTREAM=/tmp/sing-box cargo test -p sinan-compiler -- --include-ignored
-SINAN_TEST_SINGBOX=/tmp/sing-box cargo test -p sinan-panel --test protocol_runtime -- --ignored --nocapture
+APSP_TEST_SINGBOX=/tmp/sing-box APSP_GROUPS_RUNTIME=/tmp/sing-box APSP_TEST_UPSTREAM=/tmp/sing-box cargo test -p apsp-compiler -- --include-ignored
+APSP_TEST_SINGBOX=/tmp/sing-box cargo test -p apsp-panel --test protocol_runtime -- --ignored --nocapture
 ```
 
 新增参数还可用官方 1.14.2 归档执行配置解析和混淆健康探测（纯 Go 归档需同时解出 `libcronet.so`，完整计量验收仍需上面的定制标签构建）：
 
 ```sh
-SINAN_TEST_UPSTREAM=/tmp/upstream/sing-box cargo test -p sinan-compiler --test modern_protocols official_runtime_accepts_protocol_settings -- --ignored
-SINAN_TEST_UPSTREAM=/tmp/upstream/sing-box cargo test -p sinan-compiler --test node_transports official_runtime_accepts_all_transports_and_both_relay_formats -- --ignored
-SINAN_TEST_UPSTREAM=/tmp/upstream/sing-box cargo test -p sinan-adapter-singbox obfuscated_quic_health_checks -- --ignored
+APSP_TEST_UPSTREAM=/tmp/upstream/sing-box cargo test -p apsp-compiler --test modern_protocols official_runtime_accepts_protocol_settings -- --ignored
+APSP_TEST_UPSTREAM=/tmp/upstream/sing-box cargo test -p apsp-compiler --test node_transports official_runtime_accepts_all_transports_and_both_relay_formats -- --ignored
+APSP_TEST_UPSTREAM=/tmp/upstream/sing-box cargo test -p apsp-adapter-singbox obfuscated_quic_health_checks -- --ignored
 ```
 
 运行时需包含 `with_quic,with_acme,with_v2ray_api,with_utls,with_naive_outbound`；本地环境需 OpenSSL 生成一次性证书。第二项通过实际客户端验证新协议的 TCP/UDP 流量、用户计量、证书域名拒绝及重载撤销。所有测试只使用临时凭据和回环端口。

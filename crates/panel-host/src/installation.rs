@@ -1,8 +1,8 @@
 use crate::{AppState, error::ApiResult};
+use apsp_protocol::release::RELEASE_SOURCE_REPO;
 use serde::Serialize;
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
-use sinan_protocol::release::RELEASE_SOURCE_REPO;
 
 mod windows;
 
@@ -51,7 +51,7 @@ pub async fn select_with_mirror(
             "请选择 Unix 或 Windows 安装入口".into(),
         ));
     }
-    if target != "auto" && !sinan_protocol::platform::ARTIFACT_TARGETS.contains(&target) {
+    if target != "auto" && !apsp_protocol::platform::ARTIFACT_TARGETS.contains(&target) {
         return Err(crate::error::ApiError::BadRequest(
             "请选择受支持的服务器平台".into(),
         ));
@@ -139,8 +139,8 @@ pub fn command_with_mirror(
         "set -eu; program=$1; shift; ",
         "if [ \"$(id -u)\" != 0 ]; then ",
         "command -v sudo >/dev/null || { echo '请以 root 执行安装命令' >&2; exit 1; }; ",
-        "exec sudo /bin/sh -c \"$program\" sinan-bootstrap \"$@\"; fi; ",
-        "exec /bin/sh -c \"$program\" sinan-bootstrap \"$@\""
+        "exec sudo /bin/sh -c \"$program\" apsp-bootstrap \"$@\"; fi; ",
+        "exec /bin/sh -c \"$program\" apsp-bootstrap \"$@\""
     );
     let program = concat!(
         "set -eu; umask 077; ",
@@ -167,7 +167,7 @@ pub fn command_with_mirror(
     );
     let checksum = format!("{:x}", Sha256::digest(BOOTSTRAP));
     format!(
-        "sh -c {} sinan-bootstrap {} {} {} {} {} {} {} {}",
+        "sh -c {} apsp-bootstrap {} {} {} {} {} {} {} {}",
         shell_quote(wrapper),
         shell_quote(program),
         shell_quote(&bootstrap_url()),
@@ -306,7 +306,7 @@ mod tests {
         use std::{fs, os::unix::fs::PermissionsExt};
 
         let directory =
-            std::env::temp_dir().join(format!("sinan-bootstrap-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("apsp-bootstrap-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&directory).unwrap();
         std::os::unix::fs::symlink(tool_path("sha256sum"), directory.join("sha256sum")).unwrap();
         let id = directory.join("id");
@@ -354,7 +354,7 @@ mod tests {
         for manager in ["apt-get", "apk", "dnf", "yum", "pkg"] {
             for uid in ["0", "1000"] {
                 let directory = std::env::temp_dir().join(format!(
-                    "sinan-bootstrap-prerequisite-{}",
+                    "apsp-bootstrap-prerequisite-{}",
                     uuid::Uuid::new_v4()
                 ));
                 fs::create_dir_all(&directory).unwrap();
@@ -381,7 +381,7 @@ mod tests {
                     ),
                     (
                         directory.join("id"),
-                        format!("#!/bin/sh\nprintf '%s\\n' \"${{SINAN_FIXTURE_UID:-{uid}}}\"\n"),
+                        format!("#!/bin/sh\nprintf '%s\\n' \"${{APSP_FIXTURE_UID:-{uid}}}\"\n"),
                     ),
                     (
                         directory.join(manager),
@@ -395,7 +395,7 @@ mod tests {
                     (
                         directory.join("sudo"),
                         format!(
-                            "#!/bin/sh\nprintf '%s\\n' invoked >> {}\nSINAN_FIXTURE_UID=0; export SINAN_FIXTURE_UID; exec \"$@\"\n",
+                            "#!/bin/sh\nprintf '%s\\n' invoked >> {}\nAPSP_FIXTURE_UID=0; export APSP_FIXTURE_UID; exec \"$@\"\n",
                             shell_quote(sudo_log.to_str().unwrap())
                         ),
                     ),

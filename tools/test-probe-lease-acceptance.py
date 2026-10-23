@@ -22,7 +22,7 @@ class ControllerBoundaries(unittest.TestCase):
     def test_changed_or_untrusted_helper_manifest_rejects_before_any_exec(self):
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
-            built = root / 'sinan-plugin-install-20261002-r1'
+            built = root / 'apsp-plugin-install-20261002-r1'
             built.mkdir()
             content = b'raise RuntimeError("helper must never execute in this fixture")\n'
             manifest = json.dumps({'script_sha256': {'common.py': hashlib.sha256(content).hexdigest(),

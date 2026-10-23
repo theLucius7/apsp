@@ -4,12 +4,12 @@ mod business_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::Result;
-use business_support::TestPanel;
-use reqwest::StatusCode;
-use sinan_protocol::{
+use apsp_protocol::{
     RuntimeValidationError, RuntimeValidationOperation, RuntimeValidationRequest,
     RuntimeValidationResult, TaskAck, now_timestamp,
 };
+use business_support::TestPanel;
+use reqwest::StatusCode;
 use sqlx::PgPool;
 use uuid::Uuid;
 

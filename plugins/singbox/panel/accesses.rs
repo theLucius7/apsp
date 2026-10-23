@@ -89,7 +89,7 @@ pub async fn grant(
             .fetch_optional(&mut *transaction)
             .await?
             .ok_or(ApiError::NotFound)?;
-    let config: sinan_compiler::ProtocolConfig =
+    let config: apsp_compiler::ProtocolConfig =
         serde_json::from_value(config).map_err(anyhow::Error::from)?;
     if let Some(access) = sqlx::query_as::<_, AccessView>(
         "UPDATE accesses SET direct_grant=TRUE WHERE user_id=$1 AND node_id=$2 RETURNING user_id,node_id,uuid,stat_name,direct_grant",
@@ -103,7 +103,7 @@ pub async fn grant(
         if reveal {super::secret_access::audit_read(&state,&headers,Some(id),"security_node_credentials_read",serde_json::json!({"source":"access_grant_response","node_ids":[request.node_id],"credential_values_recorded":false})).await?;}
         return Ok(Json(access.visibility(reveal)));
     }
-    let access = sqlx::query_as::<_, AccessView>("INSERT INTO accesses(user_id,node_id,uuid,stat_name,credential) VALUES($1,$2,$3,$4,$5) RETURNING user_id,node_id,uuid,stat_name,direct_grant").bind(id).bind(request.node_id).bind(Uuid::new_v4()).bind(sinan_compiler::stat_name(id, request.node_id)).bind(super::node_protocol::credential(config.credential_size())).fetch_one(&mut *transaction).await?;
+    let access = sqlx::query_as::<_, AccessView>("INSERT INTO accesses(user_id,node_id,uuid,stat_name,credential) VALUES($1,$2,$3,$4,$5) RETURNING user_id,node_id,uuid,stat_name,direct_grant").bind(id).bind(request.node_id).bind(Uuid::new_v4()).bind(apsp_compiler::stat_name(id, request.node_id)).bind(super::node_protocol::credential(config.credential_size())).fetch_one(&mut *transaction).await?;
     business::mark_dirty(&mut transaction, &[server_id]).await?;
     transaction.commit().await?;
     if reveal {

@@ -13,10 +13,10 @@ mod path_probe;
 mod release_support;
 
 use anyhow::Result;
+use apsp_panel::{AgentConnection, AppState, agent_api, runtime_control};
+use apsp_protocol::*;
 use business_support::TestPanel;
 use serde_json::{Value, json};
-use sinan_panel::{AgentConnection, AppState, agent_api, runtime_control};
-use sinan_protocol::*;
 use sqlx::PgPool;
 use std::collections::BTreeMap;
 use tokio::sync::mpsc;

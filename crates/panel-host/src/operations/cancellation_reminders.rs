@@ -2,10 +2,10 @@ use crate::{
     AppState, control_center,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use axum::{Json, extract::State, http::HeaderMap};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -152,7 +152,7 @@ mod tests {
         pool: PgPool,
     ) -> anyhow::Result<()> {
         let directory = Directory(std::env::temp_dir().join(format!(
-            "sinan-cancellation-reminder-test-{}",
+            "apsp-cancellation-reminder-test-{}",
             Uuid::new_v4()
         )));
         std::fs::create_dir(&directory.0)?;

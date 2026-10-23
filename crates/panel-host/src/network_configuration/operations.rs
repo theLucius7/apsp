@@ -3,6 +3,7 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::fleet::Operation;
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -11,7 +12,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sinan_protocol::fleet::Operation;
 use uuid::Uuid;
 
 pub(super) fn routes() -> Router<AppState> {
@@ -113,9 +113,9 @@ async fn execute(
             protocol,
             ..
         } => {
-            if owner != "sinan" {
+            if owner != "apsp" {
                 return Err(ApiError::Conflict(
-                    "外部映射仅维护台账，司南不部署或停止外部服务".into(),
+                    "外部映射仅维护台账，apsp不部署或停止外部服务".into(),
                 ));
             }
             if !["start", "stop", "status"].contains(&input.action.as_str())
@@ -308,7 +308,7 @@ async fn link(
     server: i64,
     request: &Value,
 ) -> ApiResult<()> {
-    sqlx::query("INSERT INTO network_operation_links(operation_id,document_id,revision,server_id,request,created_at) VALUES($1,$2,$3,$4,$5,$6)").bind(id).bind(document).bind(revision).bind(server).bind(request).bind(sinan_protocol::now_timestamp()).execute(&state.pool).await?;
+    sqlx::query("INSERT INTO network_operation_links(operation_id,document_id,revision,server_id,request,created_at) VALUES($1,$2,$3,$4,$5,$6)").bind(id).bind(document).bind(revision).bind(server).bind(request).bind(apsp_protocol::now_timestamp()).execute(&state.pool).await?;
     Ok(())
 }
 
@@ -326,7 +326,7 @@ async fn observations(
     )
     .await?;
     let measured:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'source',source,'server_id',server_id,'result',result,'observed_at',observed_at) FROM network_observations WHERE document_id=$1 ORDER BY observed_at DESC LIMIT 100").bind(id).fetch_all(&state.pool).await?;
-    let operations:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',l.operation_id,'revision',l.revision,'server_id',l.server_id,'request',l.request,'created_at',l.created_at,'status',CASE WHEN o.status='dispatched' AND o.expires_at<$2 THEN 'unknown' ELSE o.status END,'result',o.result) FROM network_operation_links l JOIN fleet_operations o ON o.id=l.operation_id WHERE l.document_id=$1 ORDER BY l.created_at DESC LIMIT 100").bind(id).bind(sinan_protocol::now_timestamp()).fetch_all(&state.pool).await?;
+    let operations:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',l.operation_id,'revision',l.revision,'server_id',l.server_id,'request',l.request,'created_at',l.created_at,'status',CASE WHEN o.status='dispatched' AND o.expires_at<$2 THEN 'unknown' ELSE o.status END,'result',o.result) FROM network_operation_links l JOIN fleet_operations o ON o.id=l.operation_id WHERE l.document_id=$1 ORDER BY l.created_at DESC LIMIT 100").bind(id).bind(apsp_protocol::now_timestamp()).fetch_all(&state.pool).await?;
     let mut visible_measured = Vec::new();
     for measurement in measured {
         let allowed = match measurement["server_id"].as_i64() {

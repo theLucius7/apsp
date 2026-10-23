@@ -1,5 +1,5 @@
 use super::*;
-use sinan_protocol::{platform::ARTIFACT_TARGETS, platform::artifact_target};
+use apsp_protocol::{platform::ARTIFACT_TARGETS, platform::artifact_target};
 
 pub(super) fn validate_targets(targets: &[String]) -> ApiResult<()> {
     if targets.is_empty()
@@ -52,7 +52,7 @@ pub(super) async fn default_targets(state: &AppState) -> ApiResult<Vec<String>> 
             .await?;
     let mut targets: BTreeSet<_> = infos.iter().flat_map(targets_from_info).collect();
     if targets.is_empty() {
-        targets.insert(sinan_protocol::release::native_target().map_err(invalid)?);
+        targets.insert(apsp_protocol::release::native_target().map_err(invalid)?);
     }
     Ok(targets.into_iter().collect())
 }

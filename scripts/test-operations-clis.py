@@ -48,7 +48,7 @@ class OperationsCliTests(unittest.TestCase):
     def backup(self, base):
         destination = base / "backup"
         destination.mkdir(mode=0o700)
-        (destination / "environment").write_text("SINAN_DB_PASSWORD=TEST_ONLY\n")
+        (destination / "environment").write_text("APSP_DB_PASSWORD=TEST_ONLY\n")
         (destination / "database.dump").write_bytes(b"TEST_ONLY database")
         with tarfile.open(destination / "panel-data.tar.gz", "w:gz") as archive:
             member = tarfile.TarInfo("artifacts/test")
@@ -136,7 +136,7 @@ class OperationsCliTests(unittest.TestCase):
                 with self.assertRaises(node.Failure):
                     node.capture(args)
                 args.origin = "https://panel.example.com"
-                args.session_file.write_text("sinan_api_" + "a" * 48)
+                args.session_file.write_text("apsp_api_" + "a" * 48)
                 with self.assertRaises(node.Failure):
                     node.capture(args)
                 api.assert_not_called()
@@ -165,7 +165,7 @@ class OperationsCliTests(unittest.TestCase):
                       {"current": "missing", "keys": valid["keys"]},
                       {"current": "fixture", "keys": {"fixture": "TEST_ONLY not base64"}},
                       {"current": "fixture", "keys": {"fixture": base64.b64encode(b"short").decode()}},
-                      {"current": "injected\nSINAN_LISTEN=x", "keys": {"injected\nSINAN_LISTEN=x": valid["keys"]["fixture"]}}]
+                      {"current": "injected\nAPSP_LISTEN=x", "keys": {"injected\nAPSP_LISTEN=x": valid["keys"]["fixture"]}}]
             for value in values:
                 with self.subTest(value=value):
                     path.write_text(json.dumps(value))
@@ -219,7 +219,7 @@ class OperationsCliTests(unittest.TestCase):
             self.assertEqual(marker.read_text(), "another active restore")
 
     def test_isolated_health_does_not_claim_host_reachability(self):
-        operation = recovery.Restore(argparse.Namespace(project="sinan-recovery-TEST_ONLY".lower(), port=18080), {})
+        operation = recovery.Restore(argparse.Namespace(project="apsp-recovery-TEST_ONLY".lower(), port=18080), {})
         with patch.object(recovery.urllib.request, "build_opener") as opener, \
                 patch.object(operation, "docker", return_value="ok") as docker:
             opener.return_value.open.side_effect = urllib.error.URLError("TEST_ONLY unreachable mapped port")
@@ -239,7 +239,7 @@ class OperationsCliTests(unittest.TestCase):
             def do_GET(self):
                 self.send_response(200)
                 if self.acknowledged:
-                    self.send_header("x-sinan-recovery-material-verified", "true")
+                    self.send_header("x-apsp-recovery-material-verified", "true")
                 self.end_headers()
                 self.wfile.write(b"ok")
 
@@ -249,7 +249,7 @@ class OperationsCliTests(unittest.TestCase):
         server = ThreadingHTTPServer(("127.0.0.1", 0), Health)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        operation = recovery.Restore(argparse.Namespace(project="sinan-recovery-key-auth", port=server.server_port),
+        operation = recovery.Restore(argparse.Namespace(project="apsp-recovery-key-auth", port=server.server_port),
                                      {"required_key_ids": ["same-ID-content-must-be-authenticated"]})
         try:
             with patch.object(operation, "docker", side_effect=recovery.Failure("TEST_ONLY unused fallback")):
@@ -263,7 +263,7 @@ class OperationsCliTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join(timeout=5)
-        fallback = recovery.Restore(argparse.Namespace(project="sinan-recovery-key-fallback", port=18080),
+        fallback = recovery.Restore(argparse.Namespace(project="apsp-recovery-key-fallback", port=18080),
                                     {"required_key_ids": ["fixture"]})
         with patch.object(recovery.urllib.request, "build_opener") as opener, \
                 patch.object(fallback, "docker", return_value="HTTP/1.1 200 OK\r\n\r\nok"):
@@ -271,7 +271,7 @@ class OperationsCliTests(unittest.TestCase):
             with self.assertRaises(recovery.Failure):
                 fallback.healthy()
         with patch.object(recovery.urllib.request, "build_opener") as opener, \
-                patch.object(fallback, "docker", return_value="HTTP/1.1 200 OK\r\nx-sinan-recovery-material-verified: true\r\n\r\nok"):
+                patch.object(fallback, "docker", return_value="HTTP/1.1 200 OK\r\nx-apsp-recovery-material-verified: true\r\n\r\nok"):
             opener.return_value.open.side_effect = urllib.error.URLError("TEST_ONLY host unavailable")
             self.assertTrue(fallback.healthy())
             self.assertTrue(fallback.checks["keyring_authenticated"])
@@ -280,7 +280,7 @@ class OperationsCliTests(unittest.TestCase):
     def test_created_panel_is_tracked_when_start_fails(self):
         with tempfile.TemporaryDirectory() as temp:
             backup = self.backup(Path(temp))
-            args = argparse.Namespace(project="sinan-recovery-start-failure", backup=backup,
+            args = argparse.Namespace(project="apsp-recovery-start-failure", backup=backup,
                                       keyring_file=None, port=18080)
             manifest = {"image": "sha256:" + "a" * 64, "schema_migrations": [], "postgres_version_num": 160015}
             operation = recovery.Restore(args, manifest)
@@ -314,7 +314,7 @@ class OperationsCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
             env_file = base / "environment"
-            env_file.write_text("SINAN_DB_PASSWORD=TEST_ONLY\nSINAN_CREDENTIAL_KEYS=TEST_ONLY_DO_NOT_BACKUP\nSINAN_CREDENTIAL_CURRENT_KEY=TEST_ONLY\n")
+            env_file.write_text("APSP_DB_PASSWORD=TEST_ONLY\nAPSP_CREDENTIAL_KEYS=TEST_ONLY_DO_NOT_BACKUP\nAPSP_CREDENTIAL_CURRENT_KEY=TEST_ONLY\n")
             args = argparse.Namespace(env_file=env_file, backup_dir=base / "backups", project="TEST_ONLY")
             operation = panel.Panel(args)
             calls = []
@@ -335,7 +335,7 @@ class OperationsCliTests(unittest.TestCase):
             self.assertIn(("stop", "panel"), calls)
             self.assertEqual(calls[-1], ("start", "panel"))
             backup = next(args.backup_dir.iterdir())
-            self.assertNotIn("SINAN_CREDENTIAL_", (backup / "environment").read_text())
+            self.assertNotIn("APSP_CREDENTIAL_", (backup / "environment").read_text())
             self.assertFalse((backup / "manifest.json").exists())
 
     def test_node_api_blocks_real_loopback_redirect(self):
@@ -357,7 +357,7 @@ class OperationsCliTests(unittest.TestCase):
         try:
             with self.assertRaises(node.Failure):
                 node.api(f"http://127.0.0.1:{server.server_port}", "TEST_ONLY", "/initial")
-            self.assertEqual(requests, [("/initial", "sinan_session=TEST_ONLY")])
+            self.assertEqual(requests, [("/initial", "apsp_session=TEST_ONLY")])
         finally:
             server.shutdown()
             server.server_close()
@@ -403,12 +403,12 @@ class OperationsCliTests(unittest.TestCase):
             server.socket = context.wrap_socket(server.socket, server_side=True)
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
-            token = "sinan_api_" + "a" * 48
+            token = "apsp_api_" + "a" * 48
             argv = ["observe-panel.py", "--panel-origin", f"https://127.0.0.1:{server.server_port}",
                     "--observer-name", "TEST_ONLY loopback TLS"]
             try:
                 with patch.dict(os.environ, {"SSL_CERT_FILE": str(certificate), "NO_PROXY": "127.0.0.1",
-                                             "SINAN_OBSERVER_API_TOKEN": token}), patch.object(sys, "argv", argv):
+                                             "APSP_OBSERVER_API_TOKEN": token}), patch.object(sys, "argv", argv):
                     output = io.StringIO()
                     with redirect_stdout(output):
                         observer.main()
@@ -502,7 +502,7 @@ class OperationsCliTests(unittest.TestCase):
                 self.assertEqual(len(requests), 2)
                 self.assertEqual(requests[0][2], {"kind": "file_read", "path": args.file[0]})
                 self.assertEqual(requests[0][3], args.origin)
-                self.assertEqual(requests[0][4], "sinan_session=" + args.session_file.read_text())
+                self.assertEqual(requests[0][4], "apsp_session=" + args.session_file.read_text())
                 plain = subprocess.run(["age", "--decrypt", "--identity", str(identity), str(args.output)],
                                        capture_output=True, check=True, timeout=30).stdout
                 with tarfile.open(fileobj=io.BytesIO(plain), mode="r:gz") as archive:

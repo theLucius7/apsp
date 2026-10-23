@@ -96,7 +96,7 @@ pub(super) async fn protect_ddns(
 ) -> ApiResult<()> {
     if before["comment"]
         .as_str()
-        .is_some_and(|comment| comment.starts_with("sinan-acme:"))
+        .is_some_and(|comment| comment.starts_with("apsp-acme:"))
     {
         return Err(ApiError::Conflict(
             "此记录由正在执行的证书挑战维护，不能通过普通 DNS 编辑覆盖".into(),
@@ -152,7 +152,7 @@ async fn list(
         .list(&input.zone_id, &zone_name, input.page)
         .await
         .map_err(dns_accounts::failure)?;
-    result["checked_at"] = sinan_protocol::now_timestamp().into();
+    result["checked_at"] = apsp_protocol::now_timestamp().into();
     result["provider"] = json!(account.config.provider);
     result["source"] = "provider_official_api".into();
     Ok(Json(result))
@@ -177,7 +177,7 @@ async fn preview(
     let before = current(&client, &input, &owner).await?;
     protect_ddns(&state.pool, account.config.provider, &input, &before).await?;
     let preview = Uuid::new_v4();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("DELETE FROM dns_record_previews WHERE expires_at<=$1")
         .bind(now)
         .execute(&state.pool)

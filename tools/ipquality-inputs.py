@@ -17,8 +17,8 @@ import time
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-PARENT_KIND = 'sinan-nodequality-debian-input-collection'
-KIND = 'sinan-ipquality-debian-input-derivation'
+PARENT_KIND = 'apsp-nodequality-debian-input-collection'
+KIND = 'apsp-ipquality-debian-input-derivation'
 PROFILE = 'ipquality-node-v1'
 RESERVE = 512 * 1024**2
 MEMORY_RESERVE = 256 * 1024**2
@@ -44,10 +44,10 @@ def modules():
         value = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(value)
         return value
-    profile = load('sinan_ipquality_input_profile', 'tools/ipquality-rootfs.py')
+    profile = load('apsp_ipquality_input_profile', 'tools/ipquality-rootfs.py')
     return {'profile': profile, 'build': profile.factory(), 'collect': profile.collector(),
-            'parent_build': load('sinan_nq_parent_authentication', 'tools/nodequality-rootfs-build.py'),
-            'capacity': load('sinan_ipquality_input_capacity', 'tools/ipquality-inputs-capacity.py')}
+            'parent_build': load('apsp_nq_parent_authentication', 'tools/nodequality-rootfs-build.py'),
+            'capacity': load('apsp_ipquality_input_capacity', 'tools/ipquality-inputs-capacity.py')}
 
 
 def directory(path):

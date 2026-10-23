@@ -28,10 +28,10 @@ mod worker;
 pub use api::routes;
 pub use worker::run;
 
-pub(crate) use sinan_cloud_api as cloud_api;
+pub(crate) use apsp_cloud_api as cloud_api;
 #[cfg(test)]
-pub(crate) use sinan_panel_host::config;
-pub(crate) use sinan_panel_host::{AppState, auth, control_center, error, ip_quality};
+pub(crate) use apsp_panel_host::config;
+pub(crate) use apsp_panel_host::{AppState, auth, control_center, error, ip_quality};
 
 use crate::error::{ApiError, ApiResult};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -57,7 +57,7 @@ async fn editable(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> ApiResult<Rul
         .fetch_optional(&mut **tx)
         .await?
         .ok_or(ApiError::NotFound)?;
-    if row.lease_until > sinan_protocol::now_timestamp() {
+    if row.lease_until > apsp_protocol::now_timestamp() {
         return Err(ApiError::Conflict("规则正在同步，请稍后操作".into()));
     }
     Ok(row)

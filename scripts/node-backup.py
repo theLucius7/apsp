@@ -30,7 +30,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 def api(origin, session, path, *, body=None):
     payload = json.dumps(body).encode() if body is not None else None
     request = urllib.request.Request(origin + path, data=payload,
-                                     headers={"Cookie": "sinan_session=" + session,
+                                     headers={"Cookie": "apsp_session=" + session,
                                               "Origin": origin,
                                               "Content-Type": "application/json"},
                                      method="POST" if body is not None else "GET")
@@ -63,7 +63,7 @@ def capture(args):
     if args.session_file.is_symlink() or not args.session_file.is_file() or (os.name == "posix" and args.session_file.stat().st_mode & 0o077):
         raise Failure("管理员会话文件必须为权限600的普通文件。")
     session = args.session_file.read_text().strip()
-    if not 32 <= len(session) <= 512 or not all(character.isascii() and (character.isalnum() or character in "-_") for character in session) or session.startswith("sinan_api_"):
+    if not 32 <= len(session) <= 512 or not all(character.isascii() and (character.isalnum() or character in "-_") for character in session) or session.startswith("apsp_api_"):
         raise Failure("会话文件内容无效；异步设备操作需要实际管理员会话。")
     if not shutil.which("age") or not args.recipient.startswith("age1"):
         raise Failure("节点备份需要官方 age 工具和明确独立加密公钥。")
@@ -75,7 +75,7 @@ def capture(args):
             raise Failure("文件路径无效。")
     output = args.output.absolute()
     files = []
-    with tempfile.TemporaryDirectory(prefix="sinan-node-backup-private-") as directory:
+    with tempfile.TemporaryDirectory(prefix="apsp-node-backup-private-") as directory:
         directory = Path(directory)
         total = 0
         for index, path in enumerate(paths):
@@ -106,7 +106,7 @@ def capture(args):
                 if status in ("failed", "expired", "cancelled", "unknown", "reconciled") or time.monotonic() >= deadline:
                     raise Failure(f"节点文件读取未完成，任务 {operation_id}；未自动重发。")
                 time.sleep(1)
-        manifest = {"tool": "sinan-node-backup", "format": 1, "complete": True,
+        manifest = {"tool": "apsp-node-backup", "format": 1, "complete": True,
                     "server_id": args.server, "created_at": int(time.time()), "scope": "explicit_managed_files",
                     "files": files, "agent_identity_auto_copied": False,
                     "consistency": "各文件独立读取时间与hash；不宣称多文件或运行数据具有事务快照"}
@@ -128,14 +128,14 @@ def capture(args):
             if created:
                 output.unlink(missing_ok=True)
             raise
-        return {"tool": "sinan-node-backup", "passed": True, "server_id": args.server,
+        return {"tool": "apsp-node-backup", "passed": True, "server_id": args.server,
                 "files": len(files), "bytes": total, "encrypted_output": str(output),
                 "storage_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
                 "created_at": int(time.time()), "multi_file_snapshot": False}
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Sinan 节点关键数据显式选择与加密备份")
+    parser = argparse.ArgumentParser(description="Apsp 节点关键数据显式选择与加密备份")
     parser.add_argument("--origin", required=True)
     parser.add_argument("--session-file", type=Path, required=True)
     parser.add_argument("--server", type=int, required=True)

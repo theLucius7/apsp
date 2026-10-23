@@ -16,6 +16,7 @@ use crate::{
         SubscriptionFormat,
     },
 };
+use apsp_protocol::now_timestamp;
 use axum::{
     Json,
     extract::{Path, State},
@@ -23,7 +24,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 use sqlx::FromRow;
 use std::{
     collections::BTreeSet,

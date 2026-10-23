@@ -1,12 +1,12 @@
 use super::State;
 use anyhow::{Context, Result, ensure};
-use rusqlite::{OptionalExtension, params};
-use serde::{Deserialize, Serialize};
-use sinan_protocol::{
+use apsp_protocol::{
     Envelope, RuntimeCheckpointRequest, RuntimeCheckpointResult, RuntimeControlAck,
     RuntimePathProbeRequest, RuntimePathProbeResult, RuntimeRecoveryBarrierRequest,
     RuntimeRecoveryBarrierResult,
 };
+use rusqlite::{OptionalExtension, params};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 const MAX_ROWS: u64 = 4096;

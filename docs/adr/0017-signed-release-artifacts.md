@@ -29,9 +29,9 @@ Agent 继续只从已配置面板同源下载；面板负责从固定 GitHub 仓
 
 ## 构建时固定多个公钥
 
-Agent/面板共享 `option_env!("SINAN_RELEASE_PUBLIC_KEYS")`，值为 JSON 字符串数组，每项包含公钥 base64 记录或完整两行 `.pub` 文本，最多 8 个。正式公钥是公开信息，可以进入仓库、编译日志和 Actions 配置；私钥与口令不可进入 Git、聊天、CI、面板或制品包。根公钥缺失、为空、非法或重复时 fail closed，不提供运行时开关关闭验签。
+Agent/面板共享 `option_env!("APSP_RELEASE_PUBLIC_KEYS")`，值为 JSON 字符串数组，每项包含公钥 base64 记录或完整两行 `.pub` 文本，最多 8 个。正式公钥是公开信息，可以进入仓库、编译日志和 Actions 配置；私钥与口令不可进入 Git、聊天、CI、面板或制品包。根公钥缺失、为空、非法或重复时 fail closed，不提供运行时开关关闭验签。
 
-Agent 的所有生产执行路径只使用编译好的根集合。面板响应、ReleaseProof、安装参数和 `/etc/sinan` 文件都不能向该集合新增公钥；也不能把面板返回的 key ID 当作受信根。面板和安装器不得以方便升级为由更改正在安装的 Agent 所信任的公钥。
+Agent 的所有生产执行路径只使用编译好的根集合。面板响应、ReleaseProof、安装参数和 `/etc/apsp` 文件都不能向该集合新增公钥；也不能把面板返回的 key ID 当作受信根。面板和安装器不得以方便升级为由更改正在安装的 Agent 所信任的公钥。
 
 用户自行构建时可明确把自己的公钥集合传给构建过程；这种 Agent 属于自建信任域，不冒称官方制品。普通发布不需要信任测试钥。测试可显式使用 fixture 公钥或构建测试根，不能通过生产 runtime 参数注入测试根；正式发布 workflow 检查批准的公开根集合，拒绝缺根或包含已知测试根的 Agent。
 
@@ -79,7 +79,7 @@ Agent 的根编在成品里，安装器不写 Agent 动态信任文件、不从�
 
 ## 面板从 Release 导入与原子可见
 
-选择固定仓库 `theLucius7/sinan`，管理员只输入规范 tag，不接受 URL/任意 repo。只导入正式已发布 Release；draft、错 tag、重复/未知 asset、未完成资产均拒绝。先获取 metadata/SUMS/minisig，compiled roots 验签，通过后才下载和核验所有制品。API 输出 proof，Agent 仍从面板 canonical 同源地址取得制品。
+选择固定仓库 `theLucius7/apsp`，管理员只输入规范 tag，不接受 URL/任意 repo。只导入正式已发布 Release；draft、错 tag、重复/未知 asset、未完成资产均拒绝。先获取 metadata/SUMS/minisig，compiled roots 验签，通过后才下载和核验所有制品。API 输出 proof，Agent 仍从面板 canonical 同源地址取得制品。
 
 GitHub 下载客户端单独禁环境代理、禁止自动跳转，显式检查 HTTPS/443、精确主机白名单、重定向次数与每跳域名。解析全部地址并拒绝非公网/私网/localhost/IPv4-mapped 私网，固定通过检查的地址用于连接而保留原 hostname 做 TLS 验证，防止 DNS 重绑定。流式硬大小限制和超时适用于每个 asset。GitHub 自身 digest 不能替代 minisign；库不执行下载物来“检查版本”。
 

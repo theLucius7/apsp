@@ -58,7 +58,7 @@ pub async fn get(
     .bind(id)
     .fetch_one(&mut *tx)
     .await?;
-    let authorized_nodes: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT n.id) FROM nodes n JOIN singbox_eligible_accesses($2) a ON a.node_id=n.id WHERE n.server_id=$1 AND n.deleted_at IS NULL").bind(id).bind(sinan_protocol::now_timestamp()).fetch_one(&mut *tx).await?;
+    let authorized_nodes: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT n.id) FROM nodes n JOIN singbox_eligible_accesses($2) a ON a.node_id=n.id WHERE n.server_id=$1 AND n.deleted_at IS NULL").bind(id).bind(apsp_protocol::now_timestamp()).fetch_one(&mut *tx).await?;
     let status = sqlx::query_as("SELECT module,target_rev,applied_rev,last_result_rev,healthy,last_error,updated_at FROM server_module_status WHERE server_id=$1 AND module='singbox'").bind(id).fetch_optional(&mut *tx).await?;
     let history = sqlx::query_as("SELECT module,rev,bundle_sha256,created_at FROM deployments WHERE server_id=$1 AND module='singbox' ORDER BY rev DESC LIMIT 100").bind(id).fetch_all(&mut *tx).await?;
     tx.commit().await?;
@@ -98,7 +98,7 @@ pub async fn check(
     let registered: bool = row.get("registered");
     let online = row
         .get::<Option<i64>, _>("last_seen")
-        .is_some_and(|at| sinan_protocol::now_timestamp().saturating_sub(at) <= 60);
+        .is_some_and(|at| apsp_protocol::now_timestamp().saturating_sub(at) <= 60);
     let supported = row
         .get::<Value, _>("capabilities")
         .as_array()
@@ -108,7 +108,7 @@ pub async fn check(
         .as_array()
         .is_some_and(|caps| {
             caps.iter().any(|cap| {
-                cap.as_str() == Some(sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY)
+                cap.as_str() == Some(apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY)
             })
         });
     let mut checks = vec![

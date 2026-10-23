@@ -1,10 +1,10 @@
 use crate::{Config, SharedState, State, artifacts::safe_component, identity::Identity};
 use anyhow::{Context, Result, ensure};
+use apsp_adapter_sdk::{Adapter, Prepared, Privileged, ServiceManager};
+use apsp_protocol::{RetirementReceipt, RetirementRequest, retirement_receipt_message};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::Signer;
 use serde::{Deserialize, Serialize};
-use sinan_adapter_sdk::{Adapter, Prepared, Privileged, ServiceManager};
-use sinan_protocol::{RetirementReceipt, RetirementRequest, retirement_receipt_message};
 use std::{
     sync::{
         Arc,
@@ -156,7 +156,7 @@ impl Retirement {
                                 .sample_usage(
                                     &descriptor.module,
                                     &counters,
-                                    sinan_protocol::now_timestamp(),
+                                    apsp_protocol::now_timestamp(),
                                 )?;
                         }
                         other => tracing::warn!(module=%descriptor.module, result=?other,

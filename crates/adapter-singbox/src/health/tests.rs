@@ -18,7 +18,7 @@ struct CertificateDirectory(std::path::PathBuf);
 impl CertificateDirectory {
     async fn new() -> Result<(Self, String, String)> {
         let path =
-            std::env::temp_dir().join(format!("sinan-health-TEST_ONLY-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("apsp-health-TEST_ONLY-{}", uuid::Uuid::new_v4()));
         let mut builder = std::fs::DirBuilder::new();
         #[cfg(unix)]
         {
@@ -130,7 +130,7 @@ async fn pure_quinn_loopback_validates_certificate_and_custom_alpn() -> Result<(
     .with_safe_default_protocol_versions()?
     .with_no_client_auth()
     .with_single_cert(chain, PrivateKeyDer::from_pem_slice(key.as_bytes())?)?;
-    tls.alpn_protocols = vec![b"sinan-TEST_ONLY-health".to_vec()];
+    tls.alpn_protocols = vec![b"apsp-TEST_ONLY-health".to_vec()];
     let config = quinn::ServerConfig::with_crypto(Arc::new(
         quinn::crypto::rustls::QuicServerConfig::try_from(tls)?,
     ));
@@ -162,7 +162,7 @@ async fn pure_quinn_loopback_validates_certificate_and_custom_alpn() -> Result<(
         obfuscation: None,
         tls: Some(
             json!({"server_name":"fixture.example.com", "certificate":certificate,
-            "alpn":["sinan-TEST_ONLY-health"]}),
+            "alpn":["apsp-TEST_ONLY-health"]}),
         ),
     };
     let result = async {
@@ -402,11 +402,11 @@ async fn driver_cleanup_waits_for_all_tasks_and_refuses_late_spawns() -> Result<
 }
 
 #[tokio::test]
-#[ignore = "requires OpenSSL and official sing-box 1.14.2 in SINAN_TEST_UPSTREAM; runs only on ephemeral loopback ports"]
+#[ignore = "requires OpenSSL and official sing-box 1.14.2 in APSP_TEST_UPSTREAM; runs only on ephemeral loopback ports"]
 async fn obfuscated_quic_health_checks_certificate_and_custom_alpn() -> Result<()> {
     let _exclusive_sockets = UDP_LIFECYCLE.lock().await;
-    let binary = std::env::var("SINAN_TEST_UPSTREAM")?;
-    let directory = std::env::temp_dir().join(format!("sinan-health-{}", uuid::Uuid::new_v4()));
+    let binary = std::env::var("APSP_TEST_UPSTREAM")?;
+    let directory = std::env::temp_dir().join(format!("apsp-health-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&directory)?;
     let certificate = directory.join("certificate.pem");
     let key = directory.join("key.pem");
@@ -441,7 +441,7 @@ async fn obfuscated_quic_health_checks_certificate_and_custom_alpn() -> Result<(
     let address = reserved.local_addr()?;
     drop(reserved);
     let password = "synthetic-test-obfuscation";
-    let tls = json!({"enabled":true,"server_name":"proxy.example.com","certificate":certificate,"key":key,"alpn":["sinan-test"]});
+    let tls = json!({"enabled":true,"server_name":"proxy.example.com","certificate":certificate,"key":key,"alpn":["apsp-test"]});
     let path = directory.join("config.json");
     std::fs::write(&path, json!({"log":{"disabled":true},"inbounds":[{
         "type":"hysteria2","listen":"127.0.0.1","listen_port":address.port(),"users":[{"name":"test","password":"synthetic-test-credential"}],

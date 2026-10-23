@@ -82,7 +82,7 @@ async fn existing_main_38_upgrades_without_redefining_numeric_or_immutable_histo
     let expected_defaults = serde_json::json!([{
         "id": source,
         "auto_refresh": true,
-        "user_agent": "Sinan-subscription-import/1",
+        "user_agent": "Apsp-subscription-import/1",
         "traffic": {},
         "changes": {"added": 0, "missing": 0, "unsupported": 0, "updated": 0}
     }]);

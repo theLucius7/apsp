@@ -1,16 +1,16 @@
 #![forbid(unsafe_code)]
 
-use base64::{
-    Engine,
-    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
-};
-use serde_json::{Value, json};
-use sinan_compiler::{
+use apsp_compiler::{
     Access, Node, NodeSettings, NodeTransport, RealityFlow, Relay, compile_client, compile_server,
     compile_server_with_relays,
     paths::{self, Control, Hop, Path},
     subscription_links,
 };
+use base64::{
+    Engine,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+};
+use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
@@ -236,10 +236,10 @@ fn managed_and_legacy_relays_use_the_same_transport_and_private_identity() {
 }
 
 #[test]
-#[ignore = "requires official sing-box 1.14.2 in SINAN_TEST_UPSTREAM; parses configs without connecting to external hosts"]
+#[ignore = "requires official sing-box 1.14.2 in APSP_TEST_UPSTREAM; parses configs without connecting to external hosts"]
 fn official_runtime_accepts_all_transports_and_both_relay_formats() {
-    let binary = std::env::var("SINAN_TEST_UPSTREAM").unwrap();
-    let directory = std::env::temp_dir().join(format!("sinan-transports-{}", Uuid::new_v4()));
+    let binary = std::env::var("APSP_TEST_UPSTREAM").unwrap();
+    let directory = std::env::temp_dir().join(format!("apsp-transports-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&directory).unwrap();
     for transport in transports() {
         let node = configured(transport);

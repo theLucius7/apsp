@@ -1,6 +1,6 @@
 use super::parse::{ImportError, provider_id};
+use apsp_compiler::external::ExternalOutbound;
 use serde_json::{Map, Value, json};
-use sinan_compiler::external::ExternalOutbound;
 
 pub(super) fn convert(value: Value) -> Result<(ExternalOutbound, Option<String>), ImportError> {
     let mut input = value

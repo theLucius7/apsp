@@ -48,10 +48,10 @@ async fn real_systemd_diagnostic_queued_start_stays_running_until_executed() -> 
         "requires root for isolated transient services"
     );
     let services = SystemServiceManager::new(privileged.clone(), ServiceBackend::Systemd);
-    let directory = std::env::temp_dir().join(format!("sinan-queued-test-{}", Uuid::new_v4()));
+    let directory = std::env::temp_dir().join(format!("apsp-queued-test-{}", Uuid::new_v4()));
     std::fs::create_dir(&directory)?;
-    let barrier = format!("sinan-diagnostic-{}.service", Uuid::new_v4());
-    let target = format!("sinan-diagnostic-{}.service", Uuid::new_v4());
+    let barrier = format!("apsp-diagnostic-{}.service", Uuid::new_v4());
+    let target = format!("apsp-diagnostic-{}.service", Uuid::new_v4());
     let mut owned_units = Vec::new();
     let result = async {
         std::fs::write(

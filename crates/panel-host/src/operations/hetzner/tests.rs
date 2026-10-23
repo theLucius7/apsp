@@ -167,9 +167,8 @@ async fn scoped_cloud_access_cannot_take_over_unlinked_or_move_resources_to_ungr
     pool: PgPool,
 ) -> anyhow::Result<()> {
     let account = account(&pool).await?;
-    let directory = Directory(
-        std::env::temp_dir().join(format!("sinan-hetzner-scope-test-{}", Uuid::new_v4())),
-    );
+    let directory =
+        Directory(std::env::temp_dir().join(format!("apsp-hetzner-scope-test-{}", Uuid::new_v4())));
     std::fs::create_dir(&directory.0)?;
     let state = AppState::new(
         pool.clone(),
@@ -212,7 +211,7 @@ async fn scoped_cloud_access_cannot_take_over_unlinked_or_move_resources_to_ungr
     let mut headers = HeaderMap::new();
     headers.insert(
         axum::http::header::COOKIE,
-        format!("sinan_session={session}").parse()?,
+        format!("apsp_session={session}").parse()?,
     );
     record(
         &pool,
@@ -308,7 +307,7 @@ async fn scoped_cloud_access_cannot_take_over_unlinked_or_move_resources_to_ungr
             .fetch_one(&pool)
             .await?;
     assert_eq!(unchanged, Some(permitted));
-    let api_token = "sinan_api_TEST_ONLY_hetzner_scope";
+    let api_token = "apsp_api_TEST_ONLY_hetzner_scope";
     sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,all_servers,expires_at,created_at) VALUES($1,1,$2,'TEST_ONLY scoped token','[\"cloud:read\",\"cloud:write\"]',$3,false,$4,0)")
         .bind(Uuid::new_v4()).bind(hash_token(api_token)).bind(json!([permitted])).bind(now_timestamp()+600).execute(&pool).await?;
     let mut token_headers = HeaderMap::new();

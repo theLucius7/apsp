@@ -1,9 +1,9 @@
 use anyhow::{Context, ensure};
+use apsp_adapter_sdk::Privileged;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sinan_adapter_sdk::Privileged;
 use std::{
     net::{IpAddr, SocketAddr},
     path::Path,
@@ -77,7 +77,7 @@ pub(super) async fn execute(
             let peers: Vec<Peer> = serde_json::from_value(operation["peers"].clone())?;
             ensure!(peers.len() <= 64, "too many mesh peers");
             let mut content = format!(
-                "# Managed by Sinan {id}\n[Interface]\nPrivateKey = {private}\nAddress = {address}\nListenPort = {port}\n"
+                "# Managed by Apsp {id}\n[Interface]\nPrivateKey = {private}\nAddress = {address}\nListenPort = {port}\n"
             );
             let mut seen = std::collections::BTreeSet::new();
             for peer in peers {
@@ -113,7 +113,7 @@ pub(super) async fn execute(
                 let bytes = tokio::fs::read(&config_path).await?;
                 ensure!(
                     bytes.len() <= 65536
-                        && bytes.starts_with(format!("# Managed by Sinan {id}\n").as_bytes()),
+                        && bytes.starts_with(format!("# Managed by Apsp {id}\n").as_bytes()),
                     "mesh configuration is not owned"
                 );
                 Some(bytes)
@@ -345,7 +345,7 @@ pub(super) async fn execute(
             )?;
             let previous = tokio::fs::read(directory.join("previous.conf")).await?;
             ensure!(
-                previous.starts_with(format!("# Managed by Sinan {id}\n").as_bytes())
+                previous.starts_with(format!("# Managed by Apsp {id}\n").as_bytes())
                     && previous.len() <= 65536,
                 "mesh recovery file invalid"
             );
@@ -585,7 +585,7 @@ async fn status(privileged: &dyn Privileged, id: &str, name: &str) -> anyhow::Re
     )
     .await?;
     Ok(
-        json!({"mesh_id":id,"interface":name,"public_key":public.trim(),"handshakes":handshakes,"transfer":transfer,"sampled_at":sinan_protocol::now_timestamp(),"reachability":"requires_peer_probe","private_key":"local_protected_file"}),
+        json!({"mesh_id":id,"interface":name,"public_key":public.trim(),"handshakes":handshakes,"transfer":transfer,"sampled_at":apsp_protocol::now_timestamp(),"reachability":"requires_peer_probe","private_key":"local_protected_file"}),
     )
 }
 fn key(value: &str) -> anyhow::Result<()> {

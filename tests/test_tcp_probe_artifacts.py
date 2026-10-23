@@ -87,7 +87,7 @@ def payload(repo, commit, arch):
 
 class FixedSourceTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="sinan-tcp-source-contract-")
+        self.temporary = tempfile.TemporaryDirectory(prefix="apsp-tcp-source-contract-")
         self.root = Path(self.temporary.name)
         self.repo = self.root / "repo"
         self.commit = repository(self.repo)
@@ -154,7 +154,7 @@ class FixedSourceTests(unittest.TestCase):
 
     def test_binary_provenance_without_a_pin_is_refused(self):
         with patch.object(builder, "capture", side_effect=[
-            b"sinan-tcp-probe 0.3.0\n", b"--workspace --no-rank-upload",
+            b"apsp-tcp-probe 0.3.0\n", b"--workspace --no-rank-upload",
             json.dumps(dict(version="0.3.0", source_repo=release.REPOSITORY, source_commit=None)).encode()
         ]):
             with self.assertRaisesRegex(ValueError, "provenance"):
@@ -172,7 +172,7 @@ class FixedSourceTests(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertEqual(command[:6], ["cargo", "build", "--locked", "--release", "--package", tcp.BINARY])
         self.assertEqual(command[command.index("--target") + 1], tcp.TARGETS["amd64"])
-        self.assertEqual(run.call_args.kwargs["env"]["SINAN_NATIVE_TCP_SOURCE_COMMIT"], self.commit)
+        self.assertEqual(run.call_args.kwargs["env"]["APSP_NATIVE_TCP_SOURCE_COMMIT"], self.commit)
         self.assertIn("+crt-static", run.call_args.kwargs["env"]["RUSTFLAGS"])
         self.assertIn("-Clink-self-contained=yes", run.call_args.kwargs["env"]["RUSTFLAGS"])
         self.assertEqual(run.call_args.kwargs["env"]["CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER"], "cc")

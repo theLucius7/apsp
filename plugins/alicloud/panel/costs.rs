@@ -263,7 +263,7 @@ pub(super) async fn refresh_bill(
     Ok(())
 }
 pub(super) async fn tick(pool: &PgPool, cloud: &Cloud) -> ApiResult<()> {
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let accounts:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM alicloud_accounts WHERE enabled AND NOT archived AND balance_next_at<=$1 ORDER BY balance_next_at,id LIMIT 1").bind(now).fetch_all(pool).await?;
     for id in accounts {
         refresh_balance(pool, id, cloud, now).await?;

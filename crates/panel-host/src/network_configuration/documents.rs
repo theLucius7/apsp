@@ -130,7 +130,7 @@ async fn create(
     let mut tx = state.pool.begin().await?;
     references(&mut tx, &input.config, None).await?;
     let id = Uuid::new_v4();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO network_documents(id,kind,config,created_at,updated_at) VALUES($1,$2,$3,$4,$4)")
         .bind(id).bind(input.config.kind()).bind(json!(input.config)).bind(now).execute(&mut *tx).await.map_err(unique)?;
     archive(&mut tx, id, "created").await?;
@@ -176,7 +176,7 @@ async fn update(
     )
     .bind(id)
     .bind(json!(input.config))
-    .bind(sinan_protocol::now_timestamp())
+    .bind(apsp_protocol::now_timestamp())
     .execute(&mut *tx)
     .await
     .map_err(unique)?;
@@ -205,7 +205,7 @@ async fn remove(
             "删除台账需要明确确认；实际服务不会因此停止".into(),
         ));
     }
-    if matches!(config,Configuration::Forwarding{owner,enabled:true,..} if owner=="sinan") {
+    if matches!(config,Configuration::Forwarding{owner,enabled:true,..} if owner=="apsp") {
         return Err(ApiError::Conflict(
             "请先停止受管转发并核对进程结果，再删除台账".into(),
         ));
@@ -281,15 +281,13 @@ pub(super) async fn references(
         enabled: true,
         ..
     } = config
-        && owner == "sinan"
+        && owner == "apsp"
     {
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
-            .bind(format!(
-                "sinan-forward:{server_id}:{protocol}:{listen_port}"
-            ))
+            .bind(format!("apsp-forward:{server_id}:{protocol}:{listen_port}"))
             .execute(&mut **tx)
             .await?;
-        let conflicts:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM network_documents WHERE kind='forwarding' AND ($1::UUID IS NULL OR id<>$1) AND (config->>'server_id')::bigint=$2 AND (config->>'listen_port')::integer=$3 AND config->>'protocol'=$4 AND config->>'owner'='sinan' AND config->>'enabled'='true' AND (config->>'listen_address'=$5 OR config->>'listen_address' IN ('0.0.0.0','::') OR $5 IN ('0.0.0.0','::')))").bind(own).bind(server_id).bind(i32::from(*listen_port)).bind(protocol).bind(listen_address).fetch_one(&mut **tx).await?;
+        let conflicts:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM network_documents WHERE kind='forwarding' AND ($1::UUID IS NULL OR id<>$1) AND (config->>'server_id')::bigint=$2 AND (config->>'listen_port')::integer=$3 AND config->>'protocol'=$4 AND config->>'owner'='apsp' AND config->>'enabled'='true' AND (config->>'listen_address'=$5 OR config->>'listen_address' IN ('0.0.0.0','::') OR $5 IN ('0.0.0.0','::')))").bind(own).bind(server_id).bind(i32::from(*listen_port)).bind(protocol).bind(listen_address).fetch_one(&mut **tx).await?;
         if conflicts {
             return Err(ApiError::Conflict(
                 "受管监听与已有或待部署转发冲突；通配监听也计入冲突".into(),
@@ -369,7 +367,7 @@ pub(super) async fn archive(
     action: &str,
 ) -> ApiResult<()> {
     sqlx::query("INSERT INTO network_document_history(id,document_id,kind,revision,config,action,occurred_at) SELECT $2,id,kind,revision,config,$3,$4 FROM network_documents WHERE id=$1")
-        .bind(id).bind(Uuid::new_v4()).bind(action).bind(sinan_protocol::now_timestamp()).execute(&mut **tx).await?;
+        .bind(id).bind(Uuid::new_v4()).bind(action).bind(apsp_protocol::now_timestamp()).execute(&mut **tx).await?;
     Ok(())
 }
 

@@ -28,15 +28,15 @@ async fn saved_preparing_full_is_refused_after_upgrade_without_starting_a_servic
     )
     .await?;
     // A resumed Preparing task verifies the signed host architecture before adapter preparation.
-    let artifact = sinan_panel::artifacts::descriptor(
+    let artifact = apsp_panel::artifacts::descriptor(
         &harness.state,
         "nodequality",
         VERSION,
-        sinan_protocol::release::native_arch()?,
+        apsp_protocol::release::native_arch()?,
     )
     .await?;
-    let now = sinan_protocol::now_timestamp();
-    let job = sinan_protocol::DiagnosticJob {
+    let now = apsp_protocol::now_timestamp();
+    let job = apsp_protocol::DiagnosticJob {
         id: uuid::Uuid::new_v4(),
         plugin: "nodequality".into(),
         version: VERSION.into(),
@@ -58,7 +58,7 @@ async fn saved_preparing_full_is_refused_after_upgrade_without_starting_a_servic
     sqlx::query("UPDATE servers SET capabilities=$2 WHERE id=$1")
         .bind(server_id)
         .bind(json!([
-            sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY
+            apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY
         ]))
         .execute(&harness.state.pool)
         .await?;

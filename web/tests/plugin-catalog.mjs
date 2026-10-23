@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
 
 // Exercise the shipped bundle against loopback fixtures, never production Agents.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const http = createServer(async (request, response) => {
@@ -18,7 +18,7 @@ const http = createServer(async (request, response) => {
 })
 await new Promise(resolve => http.listen(0, '127.0.0.1', resolve))
 const origin = `http://127.0.0.1:${http.address().port}`
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
 const packageFor = (name, version, arch) => ({ name, version, arch, bytes: 1024, sha256: 'a'.repeat(64) })
 const packages = [
   packageFor('sing-box', '1.14.2', 'arm64'), packageFor('sing-box', '1.14.2', 'amd64'), packageFor('sing-box', '1.13.0', 'amd64'),
@@ -93,7 +93,7 @@ try {
     await openCatalog('/artifacts')
     assert.equal(await cards.count(), 5)
     assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '插件目录', exact: true, includeHidden: true }).getAttribute('aria-current'), 'page')
-    assert.equal(await page.title(), '插件目录 · 司南')
+    assert.equal(await page.title(), '插件目录 · apsp')
     assert.equal(await page.getByRole('link', { name: '制品', exact: true }).count(), 0)
     assert.equal(await page.locator('.catalog-grid, .catalog-unknown').locator('form, input').count(), 0)
     assert.equal(await page.getByRole('button', { name: /导入|安装/ }).count(), 0)
@@ -110,7 +110,7 @@ try {
     assert.equal((await oldVersion.innerText()).includes('arm64'), false)
     assert.deepEqual(mutations, [])
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-    if (process.env.SINAN_UI_SCREENSHOT_DIR) await page.screenshot({ path: resolve(process.env.SINAN_UI_SCREENSHOT_DIR, `plugin-catalog-${width}.png`), fullPage: true })
+    if (process.env.APSP_UI_SCREENSHOT_DIR) await page.screenshot({ path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `plugin-catalog-${width}.png`), fullPage: true })
 
     // Failed refreshes retain historical version details but never imply readiness.
     artifactFailure = true

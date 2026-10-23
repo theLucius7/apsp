@@ -1,4 +1,6 @@
-# 司南 Sinan
+# apsp
+
+仓库与部署命名已统一为 `apsp`；既有安装迁移和历史签名制品边界见[改名说明](docs/apsp-renaming.md)。
 
 自托管的服务器与代理节点控制面板。面板保存期望配置；Agent 主动连接，负责对账、应用恢复、系统遥测和命令执行。代理运行时由独立系统服务管理，Agent 重启时继续提供服务。前端支持简体中文和 English，语言选择会保存在浏览器，管理员也可在「管理与安全」中保存界面语言偏好。
 
@@ -42,7 +44,7 @@ python3 scripts/panel.py install --public-url https://panel.example.com
 
 Agent 支持 Linux systemd/OpenRC、macOS launchd、FreeBSD rc.d 和 Windows 计划任务。各平台制品、服务、升级与验收范围见[设备平台与能力](docs/platforms.md)。
 
-Agent 二进制从 GitHub Release 或配置的独立 HTTPS 镜像下载，面板不提供 Agent 二进制。安装和自动更新独立验签，设备只应用内嵌公钥认可的制品；运行时和配置仍经面板分发。单行安装入口校验固定摘要、准备验证工具并核验签名，无需预装 `sinan-bootstrap`；其可信 Linux 执行器保留旧 `agent-v0.3.0` 制品安装兼容，其他平台仍需对应已签制品。
+Agent 二进制从 GitHub Release 或配置的独立 HTTPS 镜像下载，面板不提供 Agent 二进制。安装和自动更新独立验签，设备只应用内嵌公钥认可的制品；运行时和配置仍经面板分发。单行安装入口校验固定摘要、准备验证工具并核验签名，无需预装 `apsp-bootstrap`；其可信 Linux 执行器保留旧 `agent-v0.3.0` 制品安装兼容，其他平台仍需对应已签制品。
 
 运行时固定上游 sing-box 1.14.2，保留官方默认构建标签并启用统计 API。NodeQuality 完整验机仍暂停新任务，当前限制见[安全门禁](docs/acceptance/nodequality-full-start-gate.md)。
 

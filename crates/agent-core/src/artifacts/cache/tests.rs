@@ -13,7 +13,7 @@ struct Directory(PathBuf);
 
 impl Directory {
     fn new() -> Result<Self> {
-        let path = std::env::temp_dir().join(format!("sinan-cache-stream-{}", Uuid::new_v4()));
+        let path = std::env::temp_dir().join(format!("apsp-cache-stream-{}", Uuid::new_v4()));
         std::fs::create_dir(&path)?;
         let directory = Self(path);
         #[cfg(unix)]
@@ -233,7 +233,7 @@ fn fixture_artifact(base: &str, archive: &[u8]) -> Result<Artifact> {
     Ok(Artifact {
         url: format!(
             "{base}/api/agent/v1/artifacts/runtime-fixture/v1/{}",
-            sinan_protocol::release::native_arch()?
+            apsp_protocol::release::native_arch()?
         ),
         sha256: release_support::hash(archive),
         proof: Some(release_support::proof_for_archive(

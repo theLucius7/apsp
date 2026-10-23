@@ -4,13 +4,13 @@ import hashlib
 
 MAX_SOURCE = 2 * 1024 * 1024
 CHECK_CALL = b'[[ mode_no -eq 0 ]]&&install_dependencies 1>&2\n'
-REQUIRED_CALL = b'install_dependencies 1>&2 # Sinan: -n cannot bypass prerequisites.\n'
+REQUIRED_CALL = b'install_dependencies 1>&2 # Apsp: -n cannot bypass prerequisites.\n'
 ENTRY_REPLACEMENTS = [
     (b'    chroot_run wget https://github.com/nxtrace/NTrace-core/releases/download/v1.3.7/nexttrace_linux_amd64 -qO /usr/local/bin/nexttrace\n',
      b'    chroot_run test -x /usr/local/bin/nexttrace || { printf "%s\\n" "Error: missing offline dependency: nexttrace; runtime installation is disabled" >&2; return 70; }\n'),
     (b'    chroot_run chmod u+x /usr/local/bin/nexttrace\n',
-     b'    : # Sinan: the prepared trace executable must already be executable.\n'),
-    (b'    load_3rd_program\n', b'    load_3rd_program || exit $? # Sinan: reject missing offline tools.\n'),
+     b'    : # Apsp: the prepared trace executable must already be executable.\n'),
+    (b'    load_3rd_program\n', b'    load_3rd_program || exit $? # Apsp: reject missing offline tools.\n'),
 ]
 for function, filename in (
     ('run_ip_quality', 'ip_quality_filename'),
@@ -19,7 +19,7 @@ for function, filename in (
 ):
     command = function + ' | tee $result_directory/$' + filename
     ENTRY_REPLACEMENTS.append((('        ' + command + '\n').encode(),
-        ('        (set -o pipefail; ' + command + ') || exit $? # Sinan: preserve chapter failure.\n').encode()))
+        ('        (set -o pipefail; ' + command + ') || exit $? # Apsp: preserve chapter failure.\n').encode()))
 
 END_MARKERS = {
     'hardware.sh': b'adaptoslocale(){\n',
@@ -62,7 +62,7 @@ def installer_span(role, content):
 
 
 def checks(role):
-    text = '''# Sinan modification (2026-10-01): dependency installation is forbidden.
+    text = '''# Apsp modification (2026-10-01): dependency installation is forbidden.
 # Presence checks do not prove a tool's source, version, license or integrity.
 install_dependencies(){
 local missing=() tool
@@ -77,7 +77,7 @@ fi
 [[ ${mode_verbose:-0} -ne 1 ]] || required+=(update-ca-certificates)
 '''
     if role == 'net.sh':
-        text += 'usesudo="" # The Sinan Linux wrapper requires root.\n'
+        text += 'usesudo="" # The Apsp Linux wrapper requires root.\n'
     text += '''for tool in "${required[@]}";do
 command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
 done

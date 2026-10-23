@@ -35,7 +35,7 @@ def public_access_anchors(name):
     if name != 'ip.sh':
         return b''
     policy = module('fixture_public_access_policy', Path(__file__).resolve().parents[1] / 'plugins/nodequality/public-access-policy.py')
-    return b"fixture_unused_public_access(){\ncat <<'SINAN_FIXTURE_PUBLIC_ACCESS'\n" + b''.join(a for a, _ in policy.REPLACEMENTS) + b'SINAN_FIXTURE_PUBLIC_ACCESS\n}\n'
+    return b"fixture_unused_public_access(){\ncat <<'APSP_FIXTURE_PUBLIC_ACCESS'\n" + b''.join(a for a, _ in policy.REPLACEMENTS) + b'APSP_FIXTURE_PUBLIC_ACCESS\n}\n'
 
 
 def undo_access(role, patched):
@@ -54,7 +54,7 @@ def browser_anchors(name):
 
 
 def undo_browser(role, patched):
-    if role == 'ip.sh' and b'sinan_provider_access_json(){' in patched:
+    if role == 'ip.sh' and b'apsp_provider_access_json(){' in patched:
         patched = undo_access(role, patched)
     if role not in ('ip.sh', 'net.sh'):
         return patched
@@ -68,11 +68,11 @@ def netflix_anchors(name):
     if name != 'ip.sh':
         return b''
     policy = module('fixture_netflix_policy', Path(__file__).resolve().parents[1] / 'plugins/nodequality/netflix-policy.py')
-    return b"fixture_unused_netflix(){\ncat <<'SINAN_FIXTURE_NETFLIX'\n" + b''.join(a for a, _ in policy.REPLACEMENTS) + b'SINAN_FIXTURE_NETFLIX\n}\n'
+    return b"fixture_unused_netflix(){\ncat <<'APSP_FIXTURE_NETFLIX'\n" + b''.join(a for a, _ in policy.REPLACEMENTS) + b'APSP_FIXTURE_NETFLIX\n}\n'
 
 
 def undo_netflix(role, patched):
-    if role in ('ip.sh', 'net.sh') and b'SINAN_NATIVE_CURL=$(type -P curl)' in patched:
+    if role in ('ip.sh', 'net.sh') and b'APSP_NATIVE_CURL=$(type -P curl)' in patched:
         patched = undo_browser(role, patched)
     if role != 'ip.sh':
         return patched
@@ -86,7 +86,7 @@ def ip_score_anchors(name):
     if name != 'ip.sh':
         return b''
     policy = module('fixture_ip_score_policy', Path(__file__).resolve().parents[1] / 'plugins/nodequality/ip-score-policy.py')
-    return b"fixture_unused_ip_scores(){\ncat <<'SINAN_FIXTURE_IP_SCORES'\n" + b''.join(a for a, _ in policy.REPLACEMENTS) + b'SINAN_FIXTURE_IP_SCORES\n}\n'
+    return b"fixture_unused_ip_scores(){\ncat <<'APSP_FIXTURE_IP_SCORES'\n" + b''.join(a for a, _ in policy.REPLACEMENTS) + b'APSP_FIXTURE_IP_SCORES\n}\n'
 
 
 def undo_ip_scores(role, patched):
@@ -103,7 +103,7 @@ def ranking_anchors(name):
         return b''
     policy = module('fixture_ranking_policy', Path(__file__).resolve().parents[1] / 'plugins/nodequality/ranking-policy.py')
     # These anchors stay inside an uncalled heredoc; no script runs here.
-    return b"fixture_unused_ranking(){\ncat <<'SINAN_FIXTURE_RANKING'\n" + b''.join(a for a, _ in policy.REPLACEMENTS) + b'SINAN_FIXTURE_RANKING\n}\n'
+    return b"fixture_unused_ranking(){\ncat <<'APSP_FIXTURE_RANKING'\n" + b''.join(a for a, _ in policy.REPLACEMENTS) + b'APSP_FIXTURE_RANKING\n}\n'
 
 
 def undo_ranking(role, patched):

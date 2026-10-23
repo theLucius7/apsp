@@ -1,3 +1,4 @@
+use apsp_compiler::external::ExternalOutbound;
 use base64::{
     Engine,
     engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD},
@@ -5,7 +6,6 @@ use base64::{
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use sinan_compiler::external::ExternalOutbound;
 use std::{
     collections::BTreeMap,
     sync::{Arc, OnceLock},
@@ -16,7 +16,7 @@ pub const MAX_BODY: usize = 2 * 1024 * 1024;
 pub const MAX_NODES: usize = 5000;
 pub const MAX_DEPTH: usize = 64;
 pub const MAX_SCALAR: usize = 64 * 1024;
-pub const PARSER_VERSION: &str = "sinan-subscriptions-2";
+pub const PARSER_VERSION: &str = "apsp-subscriptions-2";
 
 const PARSER_CONCURRENCY: usize = 4;
 static PARSER_PERMITS: OnceLock<Arc<Semaphore>> = OnceLock::new();

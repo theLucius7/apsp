@@ -3,7 +3,7 @@
 //! its relay identity; a takeover keeps that generation and changes only the
 //! chain's bookkeeping, so devices and users keep receiving the same bytes.
 //!
-//! Nothing runs on its own: an operator runs `sinan-panel legacy-takeover
+//! Nothing runs on its own: an operator runs `apsp-panel legacy-takeover
 //! precheck|apply|rollback`. Every chain has its own transaction. A chain that
 //! fails a check, or whose bundles or user subscriptions would change, stays as
 //! it was and is reported with its reasons.
@@ -17,10 +17,10 @@ use crate::{
         storage,
     },
 };
+use apsp_compiler::Node;
+use apsp_protocol::now_timestamp;
 use serde::Serialize;
 use serde_json::Value;
-use sinan_compiler::Node;
-use sinan_protocol::now_timestamp;
 use sqlx::{FromRow, Postgres, Transaction};
 use std::collections::BTreeMap;
 use uuid::Uuid;

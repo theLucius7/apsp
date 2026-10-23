@@ -32,7 +32,7 @@ export default function Editor({ draft, change, servers, documents }: { draft: D
     {(draft.kind === 'endpoint' || draft.kind === 'forwarding') && <>{server}{text('listen_address', '本机监听地址', true)}{number(draft.kind === 'endpoint' ? 'port' : 'listen_port', '监听端口')}
       {draft.kind === 'endpoint' ? <>{text('public_address', '公开地址（可留空）')}{text('notes', '备注')}</> : <>{text('target_address', '实际目标地址', true)}{number('target_port', '目标端口')}{lines('dependency_ids', '依赖端点或转发标识')}<label><input type="checkbox" checked={Boolean(draft.enabled)} onChange={event => change({ enabled: event.target.checked })} />允许显式启动</label></>}
       <Field label="协议"><select value={str('protocol')} onChange={event => change({ protocol: event.target.value })}><option value="tcp">TCP</option><option value="udp">UDP</option></select></Field>
-      <Field label="规则维护方"><select value={str('owner')} onChange={event => change({ owner: event.target.value })}><option value="sinan">司南受管</option><option value="external">外部提供</option></select></Field>
+      <Field label="规则维护方"><select value={str('owner')} onChange={event => change({ owner: event.target.value })}><option value="apsp">apsp受管</option><option value="external">外部提供</option></select></Field>
       <p className="helper">配置关系与实际观测分别保存。受管执行需要 Linux、systemd、socat、ss 和本机授权，支持 IPv4／IPv6 临时转发。反向隧道与私有组网使用各自独立配置和授权。</p>
     </>}
     {draft.kind === 'tuning' && <>{server}{text('purpose', '用途及对照测试说明', true)}{number('restore_after_secs', '本机自动恢复等待（60–900 秒）', 900)}

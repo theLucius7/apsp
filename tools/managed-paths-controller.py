@@ -81,12 +81,12 @@ def validate_manifest(path):
             prepared["release"]["official_publication_rejected"] is True,
             "successful_frozen_native_preparation_required")
     for name, row in manifest["artifacts"]["binaries"].items():
-        require(name in {"sinan-agent", "sinan-panel"}, "unexpected_product_binary")
+        require(name in {"apsp-agent", "apsp-panel"}, "unexpected_product_binary")
         require(identity(within(root, row["path"])) == {"sha256": row["sha256"], "size": row["size"]},
                 "native_artifact_changed")
         require(prepared["binaries"][name] == {"sha256": row["sha256"], "size": row["size"]},
                 "binary_not_bound_to_prepared_receipt")
-    require(set(manifest["artifacts"]["binaries"]) == {"sinan-agent", "sinan-panel"},
+    require(set(manifest["artifacts"]["binaries"]) == {"apsp-agent", "apsp-panel"},
             "both_native_binaries_required")
     identities = []
     host = {"netns_id": Path("/proc/self/ns/net").stat().st_ino,
@@ -96,7 +96,7 @@ def validate_manifest(path):
         actual = proc_identity(row["init_pid"])
         require(actual == {key: row[key] for key in actual}, "namespace_identity_changed")
         require(all(actual[key] != host[key] for key in host), "host_namespace_refused")
-        marker = role_capture(row, ["/bin/cat", "/etc/sinan-managed-test-run"], timeout=5)
+        marker = role_capture(row, ["/bin/cat", "/etc/apsp-managed-test-run"], timeout=5)
         require(marker.decode().strip() == manifest["run_id"], "namespace_ownership_mismatch")
         machine_id = role_capture(row, ["/bin/cat", "/etc/machine-id"], timeout=5).decode().strip()
         require(re.fullmatch(r"[0-9a-f]{32}", machine_id) and machine_id == row["systemd_id"],
@@ -104,9 +104,9 @@ def validate_manifest(path):
         filesystem_id = role_capture(row, ["/usr/bin/stat", "-Lc", "%d:%i", "/"], timeout=5).decode().strip()
         require(re.fullmatch(r"[0-9]+:[0-9]+", filesystem_id) and filesystem_id == row["filesystem_id"],
                 "namespace_root_filesystem_identity_mismatch")
-        require(row["agent_config"] == "/etc/sinan/agent.toml" and
-                row["agent_binary"] == "/opt/sinan/core/current/sinan-agent", "standard_agent_paths_required")
-        artifact_hash = manifest["artifacts"]["binaries"]["sinan-agent"]["sha256"]
+        require(row["agent_config"] == "/etc/apsp/agent.toml" and
+                row["agent_binary"] == "/opt/apsp/core/current/apsp-agent", "standard_agent_paths_required")
+        artifact_hash = manifest["artifacts"]["binaries"]["apsp-agent"]["sha256"]
         copied_hash = role_capture(row, ["/usr/bin/sha256sum", row["agent_binary"]], timeout=10).decode().split()[0]
         require(copied_hash == artifact_hash, "namespace_agent_binary_changed")
         identities.append({"role": role, **actual, "systemd_id": machine_id,
@@ -114,10 +114,10 @@ def validate_manifest(path):
     for key in ("netns_id", "mountns_id", "pidns_id", "systemd_id", "filesystem_id"):
         require(len({row[key] for row in identities}) == 3, "roles_share_service_namespace")
     panel = manifest["panel"]
-    require(panel["unit"] == "sinan-managed-panel-" + manifest["run_id"] + ".service",
+    require(panel["unit"] == "apsp-managed-panel-" + manifest["run_id"] + ".service",
             "unowned_panel_unit_refused")
     pg = panel["postgres"]
-    require(pg["database"] == "sinan_managed_" + manifest["run_id"].replace("-", "") and
+    require(pg["database"] == "apsp_managed_" + manifest["run_id"].replace("-", "") and
             pg["username"] == "postgres" and 1024 <= pg["port"] <= 65535,
             "dedicated_database_required")
     within(root, pg["socket_dir"])
@@ -126,7 +126,7 @@ def validate_manifest(path):
     properties = capture(["/bin/systemctl", "show", panel["unit"], "--property=ExecStart",
                           "--property=FragmentPath", "--property=EnvironmentFiles", "--property=MainPID"],
                          timeout=5, env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}).decode()
-    require("path=" + manifest["artifacts"]["binaries"]["sinan-panel"]["path"] + " ;" in properties,
+    require("path=" + manifest["artifacts"]["binaries"]["apsp-panel"]["path"] + " ;" in properties,
             "panel_unit_executable_not_bound")
     fragment = next((line.partition("=")[2] for line in properties.splitlines()
                      if line.startswith("FragmentPath=")), "")
@@ -164,24 +164,24 @@ def validate_manifest(path):
 def validate_panel_environment(environment, panel, root):
     """Compare private values locally; never put URLs or credentials in facts."""
     pg = panel["postgres"]
-    url = urllib.parse.urlsplit(environment.get("SINAN_DATABASE_URL", ""))
+    url = urllib.parse.urlsplit(environment.get("APSP_DATABASE_URL", ""))
     require(url.scheme in {"postgres", "postgresql"} and url.hostname in {"127.0.0.1", "localhost"} and
             url.port == pg["port"] and urllib.parse.unquote(url.path) == "/" + pg["database"] and
             urllib.parse.unquote(url.username or "") == pg["username"] and not url.query and not url.fragment,
             "panel_database_environment_not_owned")
-    require(environment.get("SINAN_DATA_DIR") == panel["data_dir"], "panel_data_directory_not_bound")
+    require(environment.get("APSP_DATA_DIR") == panel["data_dir"], "panel_data_directory_not_bound")
     within(root, panel["data_dir"])
     origin = urllib.parse.urlsplit(panel["origin"])
     require(origin.scheme == "https" and origin.hostname and not origin.username and not origin.password and
             origin.path in {"", "/"} and not origin.query and not origin.fragment,
             "panel_https_origin_required")
-    require(environment.get("SINAN_PUBLIC_URL", "").rstrip("/") == panel["origin"].rstrip("/"),
+    require(environment.get("APSP_PUBLIC_URL", "").rstrip("/") == panel["origin"].rstrip("/"),
             "panel_public_origin_not_bound")
 
 
 DEVICE_SCRIPT = r'''
 import base64,json,pathlib,sqlite3,subprocess,tomllib,hashlib
-config=tomllib.loads(pathlib.Path('/etc/sinan/agent.toml').read_text())
+config=tomllib.loads(pathlib.Path('/etc/apsp/agent.toml').read_text())
 def unit(name):
     result=subprocess.run(['/bin/systemctl','show',name,'--property=ActiveState','--property=MainPID','--property=ControlGroup'],capture_output=True,text=True,check=True,timeout=5)
     return dict(line.split('=',1) for line in result.stdout.splitlines() if '=' in line)
@@ -195,8 +195,8 @@ def process(value):
     group=pathlib.Path('/sys/fs/cgroup')/result['cgroup'].lstrip('/') if result['cgroup'] else None
     result['populated']=bool(group and (group/'cgroup.events').exists() and 'populated 1' in (group/'cgroup.events').read_text().splitlines())
     return result
-agent=process(unit('sinan-agent.service'))
-runtime=process(unit('sinan-singbox@main.service'))
+agent=process(unit('apsp-agent.service'))
+runtime=process(unit('apsp-singbox@main.service'))
 uri=pathlib.Path(config['state_db']).as_uri()+'?mode=ro'
 db=sqlite3.connect(uri,uri=True,timeout=3)
 if sqlite3.sqlite_version_info<(3,43,0):
@@ -297,7 +297,7 @@ def host_pid(row, guest_pid, starttime):
 
 
 def service(row, action, runtime=False):
-    unit = "sinan-singbox@main.service" if runtime else "sinan-agent.service"
+    unit = "apsp-singbox@main.service" if runtime else "apsp-agent.service"
     require(action in {"stop", "start", "restart"}, "service_operation_not_allowed")
     role_capture(row, ["/bin/systemctl", action, unit], timeout=30)
 
@@ -372,7 +372,7 @@ def dispatch(manifest, identities, request):
     for row in manifest["roles"].values():
         service(row, "stop")
         service(row, "stop", runtime=True)
-        for unit in ("sinan-agent.service", "sinan-singbox@main.service"):
+        for unit in ("apsp-agent.service", "apsp-singbox@main.service"):
             state = role_capture(row, ["/bin/systemctl", "show", unit,
                             "--property=MainPID", "--property=ControlGroup"], timeout=10).decode()
             require("MainPID=0" in state.splitlines(), "product_cleanup_pid_not_confirmed")

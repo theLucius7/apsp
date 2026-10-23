@@ -14,7 +14,7 @@ const diagnosisFixture = user => ({ user_id: user.id, account: { user_id: user.i
   limitations: { credentials_read: { available: false, reason: 'TEST_ONLY 敏感内容未读取；此处仅为独立只读诊断快照。' } } })
 const templateFixture = { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY 完整模板未读取。', supported_client: 'singbox', supported_version: '1.14.2', schema_validation: true, runtime_validation: false, limitations: 'TEST_ONLY 没有保存的模板，未执行真实客户端验证。' }
 
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 
 // Narrow screens fold the main navigation behind the menu button.
 async function openNav(page, name) {
@@ -31,7 +31,7 @@ const server = createServer(async (request, response) => {
   try { const body = await readFile(file); response.writeHead(200, { 'Content-Type': ({ '.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml' })[extname(file)] ?? 'application/octet-stream' }); response.end(body) } catch { response.writeHead(404).end() }
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-const browser = await chromium.launch({ headless:true, ...(process.env.SINAN_CHROME_PATH ? {executablePath:process.env.SINAN_CHROME_PATH} : {}) })
+const browser = await chromium.launch({ headless:true, ...(process.env.APSP_CHROME_PATH ? {executablePath:process.env.APSP_CHROME_PATH} : {}) })
 try {
   for (const width of [1440,390,320]) {
     const page=await browser.newPage({viewport:{width,height:1000}})
@@ -125,7 +125,7 @@ try {
     await second.getByLabel('入口端口',{exact:false}).fill('24443')
     await second.getByLabel('添加受管代理段',{exact:true}).selectOption('3')
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
-    if(process.env.SINAN_UI_SCREENSHOT_DIR){await mkdir(process.env.SINAN_UI_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:resolve(process.env.SINAN_UI_SCREENSHOT_DIR,`mixed-chain-editor-${width}.png`),fullPage:true})}
+    if(process.env.APSP_UI_SCREENSHOT_DIR){await mkdir(process.env.APSP_UI_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:resolve(process.env.APSP_UI_SCREENSHOT_DIR,`mixed-chain-editor-${width}.png`),fullPage:true})}
     await editor.getByRole('button',{name:'保存 2 条链路'}).click()
     await editor.getByRole('alert').getByText('测试：保存响应未确认，请重试').waitFor()
     assert.equal(await first.getByLabel('链路名称',{exact:true}).inputValue(),'机场混合链路')
@@ -165,7 +165,7 @@ try {
     assert.equal(await start.isDisabled(),true)
     assert.equal(await converting.getByRole('button',{name:'检查转换条件'}).isDisabled(),true)
     assert.equal(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth),true)
-    if(process.env.SINAN_UI_SCREENSHOT_DIR){await dialog.evaluate(element=>{element.scrollTop=0});await page.screenshot({path:resolve(process.env.SINAN_UI_SCREENSHOT_DIR,`mixed-chain-detail-${width}.png`)})}
+    if(process.env.APSP_UI_SCREENSHOT_DIR){await dialog.evaluate(element=>{element.scrollTop=0});await page.screenshot({path:resolve(process.env.APSP_UI_SCREENSHOT_DIR,`mixed-chain-detail-${width}.png`)})}
     await dialog.getByRole('button',{name:'关闭',exact:true}).click()
     await page.getByLabel('按类型筛选').selectOption('chain')
     const catalogRows = page.locator(width < 768 ? '.catalog-card' : '.catalog-table tbody tr')

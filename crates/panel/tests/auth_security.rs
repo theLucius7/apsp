@@ -1,13 +1,13 @@
 #![forbid(unsafe_code)]
 
 use anyhow::{Context, Result};
+use apsp_panel::{AppState, config::Config, router};
+use apsp_protocol::now_timestamp;
 use data_encoding::BASE32_NOPAD;
 use hmac::{Hmac, Mac};
 use reqwest::{Client, Response, StatusCode, header};
 use serde_json::{Value, json};
 use sha1::Sha1;
-use sinan_panel::{AppState, config::Config, router};
-use sinan_protocol::now_timestamp;
 use sqlx::PgPool;
 use std::{net::SocketAddr, path::PathBuf, time::Duration};
 use tokio::{net::TcpListener, task::JoinHandle};
@@ -30,7 +30,7 @@ impl Panel {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let address = listener.local_addr()?;
         let base = format!("http://{address}");
-        let directory = std::env::temp_dir().join(format!("sinan-security-{}", Uuid::new_v4()));
+        let directory = std::env::temp_dir().join(format!("apsp-security-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory)?;
         let config = Config {
             database_url: String::new(),
@@ -160,7 +160,7 @@ async fn setup_confirm_disable_require_factors_and_revoke_other_sessions(
         setup["otpauth_uri"]
             .as_str()
             .context("URI")?
-            .starts_with("otpauth://totp/Sinan:admin?secret=")
+            .starts_with("otpauth://totp/Apsp:admin?secret=")
     );
     let status: Value = panel
         .get("/api/security/totp", &first)

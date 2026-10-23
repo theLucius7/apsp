@@ -32,7 +32,7 @@ MINISIGN_LINUX_BINARIES = {
 }
 PROOF_FILES = (("SHA256SUMS", 8192), ("SHA256SUMS.minisig", 16384),
                ("release.json", 32768), ("install.sh", 262144))
-PRELOADED_INSTALLER_MARKER = b"# SINAN_BOOTSTRAP_AGENT_SOURCE=preloaded-github-v1"
+PRELOADED_INSTALLER_MARKER = b"# APSP_BOOTSTRAP_AGENT_SOURCE=preloaded-github-v1"
 DOWNLOAD_BUDGET_SECONDS = 300
 DOWNLOAD_SOCKET_TIMEOUT = 20
 CATALOG_BUDGET_SECONDS = 30
@@ -335,7 +335,7 @@ def select_artifact(metadata, version, actual, requested="auto"):
         if matches:
             ensure(len(matches) == 1, "签名发布重复了本机 Agent 身份")
             item = matches[0]
-            ensure(item["format"] == "raw" and item["binary_name"] == "sinan-agent"
+            ensure(item["format"] == "raw" and item["binary_name"] == "apsp-agent"
                    and item["archive_size"] == item["binary_size"], "签名 Agent 格式不匹配")
             return item
     raise IncompatibleRelease(f"签名发布 {version} 没有本机 {actual} 可运行的 Agent")
@@ -393,9 +393,9 @@ def checked_agent(agent, arguments):
 
 
 def native_paths(actual):
-    configuration = Path("/private/etc/sinan/agent.toml" if actual == "macos-arm64" else "/etc/sinan/agent.toml")
+    configuration = Path("/private/etc/apsp/agent.toml" if actual == "macos-arm64" else "/etc/apsp/agent.toml")
     base = Path("/private/var" if actual == "macos-arm64" else "/var")
-    return configuration, Path("/usr/local/bin/sinan-agent"), base, Path("/opt/sinan/core")
+    return configuration, Path("/usr/local/bin/apsp-agent"), base, Path("/opt/apsp/core")
 
 
 def normalized_origin(value):
@@ -441,13 +441,13 @@ def validate_partial_identity(identity, panel):
 def install_native(bundle, panel, token, item, actual, mirror="", release_dir=None):
     import tomllib
 
-    agent = bundle / "sinan-agent"
+    agent = bundle / "apsp-agent"
     download_agent(item, agent, validate_mirror(mirror, panel), release_dir)
     agent.chmod(0o755)
     checked_agent(agent, ["verify-installed", "--binary", str(agent), "--name", "agent", "--format", "raw"])
     configuration, command, base, agent_root = native_paths(actual)
     if command.exists() or command.is_symlink():
-        ensure(command.is_symlink(), "已有 /usr/local/bin/sinan-agent 普通文件，请先核对安装来源")
+        ensure(command.is_symlink(), "已有 /usr/local/bin/apsp-agent 普通文件，请先核对安装来源")
     if command.parent.exists():
         require_protected_file(command.parent)
     previous_configuration = None
@@ -461,13 +461,13 @@ def install_native(bundle, panel, token, item, actual, mirror="", release_dir=No
             agent_root = Path(saved["agent_root"])
     else:
         identity = configuration.parent / "identity"
-        roots = [base / ("lib/sinan/core/state.db" + suffix) for suffix in ("", "-wal", "-shm")]
+        roots = [base / ("lib/apsp/core/state.db" + suffix) for suffix in ("", "-wal", "-shm")]
         roots.append(agent_root / "current")
-        roots.extend(Path("/opt/sinan/plugins").glob("*/current"))
+        roots.extend(Path("/opt/apsp/plugins").glob("*/current"))
         ensure(not any(path.exists() or path.is_symlink() for path in roots),
                "已有 Agent 状态但缺少配置，无法安全预检；请先修复已有安装")
         validate_partial_identity(identity, panel)
-    previous_agent = agent_root / "current/sinan-agent"
+    previous_agent = agent_root / "current/apsp-agent"
     if previous_agent.exists():
         previous_agent = previous_agent.resolve(strict=True)
         checked_agent(agent, ["verify-installed", "--binary", str(previous_agent), "--name", "agent", "--format", "raw"])
@@ -476,7 +476,7 @@ def install_native(bundle, panel, token, item, actual, mirror="", release_dir=No
         checked_agent(agent, ["--config", str(configuration), "install-service"])
     except (ValueError, OSError):
         if previous_configuration is not None:
-            with tempfile.NamedTemporaryFile(prefix=".sinan-config-rollback-", dir=configuration.parent, delete=False) as output:
+            with tempfile.NamedTemporaryFile(prefix=".apsp-config-rollback-", dir=configuration.parent, delete=False) as output:
                 restoration = Path(output.name)
                 output.write(previous_configuration)
                 output.flush()
@@ -489,8 +489,8 @@ def install_native(bundle, panel, token, item, actual, mirror="", release_dir=No
                 checked_agent(previous_agent, ["--config", str(configuration), "install-service"])
         raise
     command.parent.mkdir(parents=True, exist_ok=True)
-    temporary = command.with_name(".sinan-agent-" + str(os.getpid()))
-    temporary.symlink_to(agent_root / "current/sinan-agent")
+    temporary = command.with_name(".apsp-agent-" + str(os.getpid()))
+    temporary.symlink_to(agent_root / "current/apsp-agent")
     temporary.replace(command)
 
 
@@ -502,7 +502,7 @@ def main():
     parser.add_argument("--panel", required=True)
     parser.add_argument("--token")
     parser.add_argument("--mirror", default="", help="HTTPS prefix for GitHub downloads")
-    parser.add_argument("--trusted-keys", default="/etc/sinan/trust/public-keys.json",
+    parser.add_argument("--trusted-keys", default="/etc/apsp/trust/public-keys.json",
                         help="Operator-provisioned root-owned JSON key set, independent of panel")
     parser.add_argument("--minisign", default="minisign")
     parser.add_argument("--trusted-installer", help="Independent root-protected Linux installer; defaults to bundled trusted-install.sh")
@@ -519,8 +519,8 @@ def main():
     actual = host_target()
     compatible_targets(actual, args.target)
     mirror = validate_mirror(args.mirror, args.panel)
-    token = args.token or os.environ.pop("SINAN_ENROLLMENT_TOKEN", None)
-    ensure(token, "provide one-time token through SINAN_ENROLLMENT_TOKEN")
+    token = args.token or os.environ.pop("APSP_ENROLLMENT_TOKEN", None)
+    ensure(token, "provide one-time token through APSP_ENROLLMENT_TOKEN")
     roots = None if args.trusted_agent else load_roots(args.trusted_keys, require_protected=True)
     if args.release_dir:
         if version == "latest":
@@ -534,10 +534,10 @@ def main():
     else:
         candidates = catalog(args.panel, token, actual if args.target == "auto" else args.target, version)
     os.umask(0o077)
-    temporary_root = Path("/opt/sinan")
+    temporary_root = Path("/opt/apsp")
     temporary_root.mkdir(mode=0o755, parents=True, exist_ok=True)
     require_protected_file(temporary_root)
-    with tempfile.TemporaryDirectory(prefix="sinan-bootstrap-", dir=temporary_root) as temporary:
+    with tempfile.TemporaryDirectory(prefix="apsp-bootstrap-", dir=temporary_root) as temporary:
         bundle = None
         item = None
         for candidate in candidates:
@@ -553,7 +553,7 @@ def main():
             if args.trusted_agent:
                 trusted_agent = Path(args.trusted_agent).resolve(strict=True)
                 require_protected_file(trusted_agent)
-                ensure(trusted_agent.name == "sinan-agent", "trusted verifier must be the installed Agent")
+                ensure(trusted_agent.name == "apsp-agent", "trusted verifier must be the installed Agent")
                 for command in ([str(trusted_agent), "verify-installed", "--binary", str(trusted_agent),
                                  "--name", "agent", "--format", "raw"],
                                 [str(trusted_agent), "verify-release", "--proof-dir", str(selected)]):

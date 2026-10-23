@@ -1,7 +1,7 @@
 //! Preserve actual service status receipts without interpreting missing samples as exits.
 use crate::error::ApiResult;
+use apsp_protocol::fleet::{JobResult, Operation};
 use serde_json::{Value, json};
-use sinan_protocol::fleet::{JobResult, Operation};
 use sqlx::{Postgres, Row, Transaction};
 use std::collections::BTreeMap;
 use uuid::Uuid;

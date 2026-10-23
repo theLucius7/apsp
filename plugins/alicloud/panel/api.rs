@@ -206,8 +206,8 @@ async fn update_account(
     sqlx::query("UPDATE alicloud_accounts SET name=$2,site=$3,access_key_id=$4,access_key_secret=$5,enabled=$6,auto_enabled=$7,limit_gb=$8,credential_id=$9,revision=revision+1,bill=NULL,traffic=NULL,traffic_error=NULL,error_code=NULL,next_run_at=0,balance=NULL,balance_error=NULL,balance_next_at=0 WHERE id=$1")
         .bind(id).bind(input.name.trim()).bind(input.site).bind(key).bind(secret).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).bind(credential).execute(&mut *tx).await?;
     sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id IN (SELECT id FROM alicloud_resources WHERE account_id=$1) AND status IN ('preview','queued')")
-        .bind(id).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
-    sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id IN (SELECT id FROM alicloud_resources WHERE account_id=$1) AND status IN ('preview','queued')").bind(id).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
+        .bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id IN (SELECT id FROM alicloud_resources WHERE account_id=$1) AND status IN ('preview','queued')").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     sqlx::query("UPDATE alicloud_resources SET instance_bill=NULL,bill_error=NULL,bill_next_at=0,next_power_at=0 WHERE account_id=$1").bind(id).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
@@ -252,7 +252,7 @@ async fn refresh_account(
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     if last + 60 > now
         || (account.error_code.as_deref() == Some("rate_limited") && account.next_run_at > now)
     {
@@ -362,8 +362,8 @@ async fn update_resource(
         ));
     }
     sqlx::query("UPDATE alicloud_resources SET name=$2,auto_enabled=$3,cap_mbps=$4,revision=revision+1 WHERE id=$1").bind(id).bind(input.name.trim()).bind(input.auto_enabled).bind(input.cap_mbps).execute(&mut *tx).await?;
-    sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status IN ('preview','queued')").bind(id).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
-    sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status IN ('preview','queued')").bind(id).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status IN ('preview','queued')").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status IN ('preview','queued')").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -387,8 +387,8 @@ async fn remove_resource(
     }
     operations::idle(&mut tx, id).await?;
     sqlx::query("UPDATE alicloud_resources SET archived=true,auto_enabled=false,revision=revision+1 WHERE id=$1").bind(id).execute(&mut *tx).await?;
-    sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status='preview'").bind(id).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
-    sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status='preview'").bind(id).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status='preview'").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status='preview'").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

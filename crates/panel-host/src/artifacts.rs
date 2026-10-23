@@ -2,6 +2,7 @@ use crate::{
     AppState, auth,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::Artifact;
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -9,7 +10,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
-use sinan_protocol::Artifact;
 
 #[derive(Deserialize)]
 pub struct TokenQuery {
@@ -116,7 +116,7 @@ pub async fn require_signed_agent(state: &AppState, server_id: i64) -> ApiResult
     if !capabilities.as_array().is_some_and(|values| {
         values
             .iter()
-            .any(|v| v.as_str() == Some(sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY))
+            .any(|v| v.as_str() == Some(apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY))
     }) {
         return Err(ApiError::Conflict(
             "此 Agent 尚不支持制品验签，请先使用可信安装器升级；已运行配置和流量上报继续保留"

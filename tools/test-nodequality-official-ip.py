@@ -141,7 +141,7 @@ class OfficialNodeIpTests(unittest.TestCase):
             self.assertIn(FIXTURE_KEY, path)
             self.assertTrue(path.startswith('/?') if provider == 'ipregistry' else path.endswith('/self'))
             self.assertNotIn('Cookie', headers)
-            self.assertEqual(headers['User-Agent'], 'SinanNodeIp/1')
+            self.assertEqual(headers['User-Agent'], 'ApspNodeIp/1')
 
     def test_reflected_key_in_whitelisted_text_fails_without_reflection(self):
         payload = self.dbip() | {'countryName': FIXTURE_KEY}

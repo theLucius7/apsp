@@ -191,7 +191,7 @@ async fn save(state: &AppState, id: Uuid, mut input: Input, editing: bool) -> Ap
 
 async fn close_previous(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> anyhow::Result<()> {
     sqlx::query("UPDATE server_alert_events SET resolved_at=$2,resolution='changed' WHERE category='resource' AND details->>'rule_id'=$1 AND resolved_at IS NULL")
-        .bind(id.to_string()).bind(sinan_protocol::now_timestamp()).execute(&mut **tx).await?;
+        .bind(id.to_string()).bind(apsp_protocol::now_timestamp()).execute(&mut **tx).await?;
     sqlx::query("UPDATE notification_outbox o SET status='cancelled' FROM server_alert_events e WHERE o.event_id=e.id AND e.category='resource' AND e.details->>'rule_id'=$1 AND o.status='pending'")
         .bind(id.to_string()).execute(&mut **tx).await?;
     Ok(())

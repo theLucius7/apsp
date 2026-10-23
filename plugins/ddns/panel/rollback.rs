@@ -77,7 +77,7 @@ pub(super) async fn rollback_with(
     })
     .await
     .unwrap_or_else(|_| Err("request_timeout".into()));
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let (status, error, after) = match &result {
         Ok(outcome) => (
             if outcome.status == "submitted" {
@@ -147,7 +147,7 @@ async fn claim(
         ));
     }
     let active: i64 = sqlx::query_scalar("SELECT count(*) FROM ddns_rules WHERE lease_until>$1")
-        .bind(sinan_protocol::now_timestamp())
+        .bind(apsp_protocol::now_timestamp())
         .fetch_one(&mut *tx)
         .await?;
     if active >= 2 {
@@ -164,14 +164,14 @@ async fn claim(
     target.proxied = before.proxied;
     target.normalize()?;
     let info = model::locked_observation(&mut tx, rule.config.server_id).await?;
-    info.select(&target, None, sinan_protocol::now_timestamp())
+    info.select(&target, None, apsp_protocol::now_timestamp())
         .map_err(|_| ApiError::Conflict("服务器已退役或 DDNS 插件停用，不能回退".into()))?;
     let lease = Uuid::new_v4();
     rule.config.enabled = false;
     rule.revision += 1;
     sqlx::query("UPDATE ddns_rules SET config=$2,revision=$3,lease_id=$4,lease_until=$5,status='rollback_running',attempted_at=$6 WHERE id=$1")
         .bind(id).bind(json!(rule.config)).bind(rule.revision).bind(lease)
-        .bind(sinan_protocol::now_timestamp()+LEASE_SECS).bind(sinan_protocol::now_timestamp())
+        .bind(apsp_protocol::now_timestamp()+LEASE_SECS).bind(apsp_protocol::now_timestamp())
         .execute(&mut *tx).await?;
     target.enabled = false;
     rule.config = target;
@@ -193,7 +193,7 @@ async fn guard(
         .await
         .map_err(|_| super::cloudflare::Failure::from("storage_error"))?;
     let owned: Option<Uuid> = sqlx::query_scalar("SELECT id FROM ddns_rules WHERE id=$1 AND lease_id=$2 AND revision=$3 AND lease_until>$4 FOR SHARE")
-        .bind(rule.id).bind(lease).bind(rule.revision).bind(sinan_protocol::now_timestamp())
+        .bind(rule.id).bind(lease).bind(rule.revision).bind(apsp_protocol::now_timestamp())
         .fetch_optional(&mut *tx).await.map_err(|_| super::cloudflare::Failure::from("storage_error"))?;
     if owned.is_none() {
         return Err("lease_lost".into());
@@ -202,7 +202,7 @@ async fn guard(
     let info = model::locked_observation(&mut tx, rule.config.server_id)
         .await
         .map_err(|_| super::cloudflare::Failure::from("storage_error"))?;
-    info.select(&rule.config, None, sinan_protocol::now_timestamp())
+    info.select(&rule.config, None, apsp_protocol::now_timestamp())
         .map_err(super::cloudflare::Failure::from)?;
     Ok(tx)
 }

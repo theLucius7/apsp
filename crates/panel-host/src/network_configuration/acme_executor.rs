@@ -109,13 +109,13 @@ pub(super) async fn execute(
         .as_str()
         .filter(|value| !value.is_empty() && !value.contains(['\0', '\n', '\r']))
         .ok_or_else(|| ApiError::Conflict("cloudflare_dns_token_missing".into()))?;
-    let target = sinan_protocol::release::native_target()
+    let target = apsp_protocol::release::native_target()
         .map_err(|_| ApiError::Conflict("unsupported_issuer_platform".into()))?;
     let ((bytes, _, proof), artifact_arch) =
         match crate::releases::artifact(state, "lego", &plan.tool_version, &target).await {
             Ok(value) => (value, target),
             Err(ApiError::NotFound) => {
-                let arch = sinan_protocol::release::native_arch()
+                let arch = apsp_protocol::release::native_arch()
                     .map_err(|_| ApiError::Conflict("unsupported_issuer_platform".into()))?;
                 (
                     crate::releases::artifact(state, "lego", &plan.tool_version, arch).await?,
@@ -128,7 +128,7 @@ pub(super) async fn execute(
         .release_keys
         .as_ref()
         .ok_or_else(|| ApiError::Conflict("release_trust_root_missing".into()))?;
-    let verified = sinan_protocol::release::verify_release(&proof, keys)
+    let verified = apsp_protocol::release::verify_release(&proof, keys)
         .map_err(|_| ApiError::Conflict("issuer_signature_invalid".into()))?;
     let artifact = verified
         .artifact("lego", &plan.tool_version, &artifact_arch)
@@ -285,7 +285,7 @@ async fn execute_in(
         .map_err(|_| ApiError::Conflict("issued_certificate_material_invalid".into()))?;
     let parsed =
         x509::parse(&pem).map_err(|_| ApiError::Conflict("issued_certificate_invalid".into()))?;
-    if parsed.not_after <= sinan_protocol::now_timestamp() {
+    if parsed.not_after <= apsp_protocol::now_timestamp() {
         return Err(ApiError::Conflict("issued_certificate_expired".into()));
     }
     use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
@@ -304,7 +304,7 @@ async fn execute_in(
     )
     .await?;
     let version = Uuid::new_v4();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let mut tx = state.pool.begin().await?;
     let actual: i64 =
         sqlx::query_scalar("SELECT revision FROM network_documents WHERE id=$1 FOR UPDATE")
@@ -331,7 +331,7 @@ async fn execute_in(
 
 fn extract(
     bytes: &[u8],
-    artifact: &sinan_protocol::release::VerifiedArtifact,
+    artifact: &apsp_protocol::release::VerifiedArtifact,
 ) -> anyhow::Result<Vec<u8>> {
     crate::releases::verify_payload(artifact, bytes)?;
     if artifact.metadata().format == "raw" {

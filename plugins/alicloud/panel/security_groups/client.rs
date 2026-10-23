@@ -125,7 +125,7 @@ pub(super) async fn snapshot(
 ) -> Result<(Snapshot, i64), Failure> {
     tokio::time::timeout(Duration::from_secs(60), async {
         let (vpc, current) = instance(cloud, account, resource).await?;
-        let observed_at = sinan_protocol::now_timestamp();
+        let observed_at = apsp_protocol::now_timestamp();
         let union: BTreeSet<_> = current.iter().chain(target).cloned().collect();
         let mut groups = Vec::new();
         for id in union {

@@ -79,7 +79,7 @@ async fn resolve(
         .ok_or_else(|| ApiError::BadRequest("此 DNS 查询类型不可用".into()))?;
     let started = Instant::now();
     let result = tokio::time::timeout(Duration::from_secs(5), query(&input, kind)).await;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let result = match result {
         Ok(Ok(mut value)) => {
             let expected: BTreeSet<_> = input.expected.iter().cloned().collect();

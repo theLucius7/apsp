@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, ensure};
+use apsp_adapter_sdk::RuntimeInstance;
 use sha2::{Digest, Sha256};
-use sinan_adapter_sdk::RuntimeInstance;
 use std::{
     fs,
     io::Read,
@@ -170,7 +170,7 @@ fn inspect_at(proc_root: &Path, pid: u32, group: &str) -> Result<RuntimeInstance
     let instance_id = format!(
         "{:x}",
         Sha256::digest(
-            format!("sinan-process-instance-v1\0{boot}\0{pid}\0{start}\0{group}").as_bytes()
+            format!("apsp-process-instance-v1\0{boot}\0{pid}\0{start}\0{group}").as_bytes()
         )
     );
     Ok(RuntimeInstance {
@@ -268,7 +268,7 @@ mod tests {
     #[test]
     fn stable_command_path_survives_identical_revision_link_switch() -> Result<()> {
         let root = std::env::temp_dir().join(format!(
-            "sinan-process-noop-TEST_ONLY-{}",
+            "apsp-process-noop-TEST_ONLY-{}",
             uuid::Uuid::new_v4()
         ));
         let result: Result<()> = (|| {
@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn inspects_proc_bytes_and_rejects_wrong_instance_and_oversized_input() -> Result<()> {
         let root =
-            std::env::temp_dir().join(format!("sinan-process-TEST_ONLY-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("apsp-process-TEST_ONLY-{}", uuid::Uuid::new_v4()));
         let result: Result<()> = (|| {
             let process = root.join("proc/123");
             fs::create_dir_all(&process)?;

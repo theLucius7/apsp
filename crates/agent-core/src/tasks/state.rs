@@ -1,11 +1,11 @@
 use crate::State;
 use anyhow::{Result, ensure};
-use rusqlite::{OptionalExtension, params};
-use sinan_adapter_sdk::CommandProcessIdentity;
-use sinan_protocol::{
+use apsp_adapter_sdk::CommandProcessIdentity;
+use apsp_protocol::{
     CommandResult, CommandStarted, CommandStatus, ProbeResult, RemoteCommand, now_timestamp,
     telemetry::now_millis,
 };
+use rusqlite::{OptionalExtension, params};
 use uuid::Uuid;
 
 pub(super) struct CommandRecord {

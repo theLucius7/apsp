@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
 
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const server = createServer(async (request, response) => {
@@ -16,7 +16,7 @@ const server = createServer(async (request, response) => {
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const origin = `http://127.0.0.1:${server.address().port}`
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
 const results = []
 try {
   for (const width of [1280, 390]) {
@@ -62,7 +62,7 @@ try {
     await page.waitForFunction(() => document.querySelector('.panel-heading button')?.textContent.includes('刷新 IP 质量'))
     assert.equal(refreshes, 1)
     assert.notEqual(await group.getAttribute('open'), null)
-    if (process.env.SINAN_UI_SCREENSHOT_DIR) await page.screenshot({ path: resolve(process.env.SINAN_UI_SCREENSHOT_DIR, `ip-addresses-${width}.png`), fullPage: true })
+    if (process.env.APSP_UI_SCREENSHOT_DIR) await page.screenshot({ path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `ip-addresses-${width}.png`), fullPage: true })
     mode = 'private'
     await page.reload()
     await page.getByText('尚未识别到公网 IP 地址，暂不能查询公网 IP 质量。', { exact: true }).waitFor()

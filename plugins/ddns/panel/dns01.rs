@@ -21,7 +21,7 @@ pub async fn present(
     credential_id: Option<Uuid>,
 ) -> ApiResult<String> {
     let (client, path, token) = context(state, rule_id, name, credential_id).await?;
-    let marker = format!("sinan-acme:{challenge_id}");
+    let marker = format!("apsp-acme:{challenge_id}");
     let records = records(&client, &path, &token, name).await?;
     let owned: Vec<_> = records
         .iter()
@@ -79,7 +79,7 @@ pub async fn cleanup(
     credential_id: Option<Uuid>,
 ) -> ApiResult<()> {
     let (client, path, token) = context(state, rule_id, name, credential_id).await?;
-    let marker = format!("sinan-acme:{challenge_id}");
+    let marker = format!("apsp-acme:{challenge_id}");
     let records = records(&client, &path, &token, name).await?;
     for record in records.iter().filter(|record| record["comment"] == marker) {
         let id = record["id"]

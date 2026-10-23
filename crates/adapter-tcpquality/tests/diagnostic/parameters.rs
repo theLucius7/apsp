@@ -91,11 +91,11 @@ async fn wrong_build_identity_null_pin_extra_fields_and_truncation_never_prepare
     let fixture = Fixture::new(1);
     let adapter = TcpQualityAdapter::new();
     for bad in [
-        json!({"version":"0.3.0","source_repo":"theLucius7/sinan","source_commit":null}),
+        json!({"version":"0.3.0","source_repo":"theLucius7/apsp","source_commit":null}),
         json!({"version":"0.3.0","source_repo":"other/example","source_commit":fixture::SOURCE}),
-        json!({"version":"0.4.0","source_repo":"theLucius7/sinan","source_commit":fixture::SOURCE}),
-        json!({"version":"0.3.0","source_repo":"theLucius7/sinan","source_commit":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}),
-        json!({"version":"0.3.0","source_repo":"theLucius7/sinan","source_commit":fixture::SOURCE,"upload":true}),
+        json!({"version":"0.4.0","source_repo":"theLucius7/apsp","source_commit":fixture::SOURCE}),
+        json!({"version":"0.3.0","source_repo":"theLucius7/apsp","source_commit":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}),
+        json!({"version":"0.3.0","source_repo":"theLucius7/apsp","source_commit":fixture::SOURCE,"upload":true}),
     ] {
         let privileged = Recorder {
             bad: Some(bad),

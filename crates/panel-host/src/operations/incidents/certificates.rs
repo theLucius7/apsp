@@ -209,7 +209,7 @@ mod tests {
             }
         }
         let directory = Directory(
-            std::env::temp_dir().join(format!("sinan-certificate-scope-{}", Uuid::new_v4())),
+            std::env::temp_dir().join(format!("apsp-certificate-scope-{}", Uuid::new_v4())),
         );
         std::fs::create_dir(&directory.0)?;
         let state = AppState::new(
@@ -248,13 +248,13 @@ mod tests {
         sqlx::query("INSERT INTO sessions(token_hash,admin_id,expires_at) VALUES($1,$2,$3)")
             .bind(crate::auth::hash_token(&session))
             .bind(actor)
-            .bind(sinan_protocol::now_timestamp() + 3600)
+            .bind(apsp_protocol::now_timestamp() + 3600)
             .execute(&pool)
             .await?;
         let mut headers = HeaderMap::new();
         headers.insert(
             axum::http::header::COOKIE,
-            format!("sinan_session={session}").parse()?,
+            format!("apsp_session={session}").parse()?,
         );
         let historical = json!({"server_ids":servers});
         assert!(matches!(
@@ -269,9 +269,9 @@ mod tests {
             .await?;
         access(&state, &headers, id, &historical, true).await?;
         assert!(assignee(&state, actor, id, &historical).await?);
-        let token = format!("sinan_api_{}", crate::auth::random_token());
+        let token = format!("apsp_api_{}", crate::auth::random_token());
         sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,all_servers,expires_at,created_at) VALUES($1,1,$2,'TEST_ONLY certificate',$3,$4,false,$5,0)")
-            .bind(Uuid::new_v4()).bind(crate::auth::hash_token(&token)).bind(&caps).bind(json!([servers[0]])).bind(sinan_protocol::now_timestamp()+3600).execute(&pool).await?;
+            .bind(Uuid::new_v4()).bind(crate::auth::hash_token(&token)).bind(&caps).bind(json!([servers[0]])).bind(apsp_protocol::now_timestamp()+3600).execute(&pool).await?;
         let mut token_headers = HeaderMap::new();
         token_headers.insert(
             axum::http::header::AUTHORIZATION,

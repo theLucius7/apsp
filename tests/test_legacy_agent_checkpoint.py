@@ -30,18 +30,18 @@ def preparing(mode="full"):
 
 
 def started():
-    directory = "/opt/sinan/diagnostics/" + ID
-    binary = "/opt/sinan/plugins/nodequality/" + VERSION + "/nodequality"
+    directory = "/opt/apsp/diagnostics/" + ID
+    binary = "/opt/apsp/plugins/nodequality/" + VERSION + "/nodequality"
     return {"Started": {"spec": {"id": ID, "version": VERSION, "binary_path": binary, "job_dir": directory,
                                   "timeout_secs": 60, "options": {}},
-                        "service": {"unit": "sinan-diagnostic-" + ID + ".service", "program": binary,
+                        "service": {"unit": "apsp-diagnostic-" + ID + ".service", "program": binary,
                                     "args": [], "working_directory": directory, "timeout_secs": 60},
                         "plugin": "nodequality", "started_at": 1}}
 
 
 class LegacyCheckpointTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="sinan-private-legacy-checkpoint-")
+        self.temporary = tempfile.TemporaryDirectory(prefix="apsp-private-legacy-checkpoint-")
         self.root = Path(self.temporary.name)
         self.configuration = self.root / "agent.toml"
         self.database = self.root / "state.db"
@@ -150,7 +150,7 @@ class LegacyCheckpointTests(unittest.TestCase):
         self.checkpoint(json.dumps(preparing()))
         self.configuration.write_text('panel_url="https://panel.example.com"\n')
         real_path = Path
-        mapped = lambda value: self.database if str(value) == "/var/lib/sinan/core/state.db" else real_path(value)
+        mapped = lambda value: self.database if str(value) == "/var/lib/apsp/core/state.db" else real_path(value)
         with patch.object(guard, "Path", side_effect=mapped), patch.object(guard, "protected"), \
                 patch.object(guard, "quiescent"), self.assertRaisesRegex(ValueError, "完整验机"):
             guard.preflight("0.3.0", self.configuration)
@@ -232,11 +232,11 @@ class LegacyCheckpointTests(unittest.TestCase):
     def test_signed_linux_executor_runs_the_same_gate_before_enrollment_and_activation(self):
         template = (ROOT / "deploy/install.sh.tmpl").read_text()
         self.assertEqual(template.count("@@LEGACY_CHECKPOINT_PREFLIGHT@@"), 2)
-        rendered = release.installer_source(ROOT / "deploy/install.sh.tmpl", ROOT / "deploy/sinan-agent.service",
-                                           ROOT / "plugins/sing-box/sinan-singbox@.service", source_root=ROOT)
+        rendered = release.installer_source(ROOT / "deploy/install.sh.tmpl", ROOT / "deploy/apsp-agent.service",
+                                           ROOT / "plugins/sing-box/apsp-singbox@.service", source_root=ROOT)
         self.assertEqual(rendered.count((ROOT / "tools/legacy_agent_checkpoint.py").read_text().rstrip()), 2)
         first, last = rendered.index('python3 -I - "$VERSION"'), rendered.rindex('python3 -I - "$VERSION"')
-        enroll = rendered.index('"/opt/sinan/core/$VERSION/sinan-agent" enroll')
+        enroll = rendered.index('"/opt/apsp/core/$VERSION/apsp-agent" enroll')
         self.assertLess(first, enroll)
         self.assertLess(enroll, last)
         self.assertLess(last, rendered.index("ACTIVATING=1"))
@@ -250,7 +250,7 @@ class LegacyCheckpointTests(unittest.TestCase):
         (download / "agent.toml.previous").write_bytes(previous)
         configuration = self.root / "restored.toml"
         configuration.write_bytes(b'TEST_ONLY changed during enrollment\n')
-        cleanup = cleanup.replace("/etc/sinan/agent.toml", str(configuration))
+        cleanup = cleanup.replace("/etc/apsp/agent.toml", str(configuration))
         script = ("DOWNLOAD=" + shlex.quote(str(download)) + "; STAGE=; ACTIVATING=0; COMPLETED=0; CONFIGURATION_CHANGED=1;\n"
                   + "cleanup() {" + cleanup + "\ntrap cleanup EXIT\nexit 7\n")
         result = subprocess.run(["/bin/sh", "-c", script], capture_output=True, timeout=3)

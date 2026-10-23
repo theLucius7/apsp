@@ -1,11 +1,11 @@
 use super::*;
-use sinan_protocol::{RuntimeBinding, RuntimeCheckpoint};
+use apsp_protocol::{RuntimeBinding, RuntimeCheckpoint};
 
 fn request() -> ControlRequest {
     ControlRequest::Checkpoint(RuntimeCheckpointRequest {
         request_id: Uuid::new_v4(),
         expected: RuntimeBinding::new(Uuid::new_v4(), "demo".into(), 2, "a".repeat(64)),
-        expires_at: sinan_protocol::now_timestamp() + 60,
+        expires_at: apsp_protocol::now_timestamp() + 60,
     })
 }
 
@@ -23,7 +23,7 @@ fn probe_receipt_is_bound_durable_immutable_and_cannot_change_recovery_floor() {
             instance_id: "fixture-instance".into(),
             healthy: true,
         },
-        expires_at: sinan_protocol::now_timestamp() + 60,
+        expires_at: apsp_protocol::now_timestamp() + 60,
     });
     let ControlRequest::Probe(value) = &request else {
         unreachable!()
@@ -207,7 +207,7 @@ fn barrier_floor_and_result_commit_together_and_pending_intent_preserves_both() 
         request_id: Uuid::new_v4(),
         expected: expected.clone(),
         minimum_revision: 2,
-        expires_at: sinan_protocol::now_timestamp() + 60,
+        expires_at: apsp_protocol::now_timestamp() + 60,
     });
     state.enqueue_runtime_control(&request).unwrap();
     let result = ControlResult::Barrier(RuntimeRecoveryBarrierResult {

@@ -130,7 +130,7 @@ No existing source inventory or signature receipt format is changed.
     keyring = BUILD.checked_blob(cache, materials['keyring'], BUILD.MAX_LOCK, deadline)
     scratch_parent = deadline.capacity.output if deadline.capacity is not None else None
     result = {}
-    with tempfile.TemporaryDirectory(prefix='sinan-ip-expansion-', dir=scratch_parent) as name:
+    with tempfile.TemporaryDirectory(prefix='apsp-ip-expansion-', dir=scratch_parent) as name:
         scratch = Path(name)
         for repo in materials['repositories']:
             deadline.check()

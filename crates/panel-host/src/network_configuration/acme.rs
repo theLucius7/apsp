@@ -94,7 +94,7 @@ async fn save(
 ) -> ApiResult<Json<Value>> {
     permission(&state, &headers, id, true).await?;
     let actor = crate::control_center::require_capability(&state, &headers, "dns:write").await?;
-    if !sinan_protocol::release::safe_component(&input.config.tool_version)
+    if !apsp_protocol::release::safe_component(&input.config.tool_version)
         || input.config.tool_version == "latest"
         || input.config.email.len() > 254
         || !input.config.email.contains('@')
@@ -136,7 +136,7 @@ async fn save(
     if previous != input.revision {
         return Err(ApiError::Conflict("签发计划版本已改变".into()));
     }
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     if previous.is_some() {
         sqlx::query("UPDATE network_acme_plans SET config=$2,revision=revision+1,next_run_at=$3,status='pending',updated_at=$3,requested_by=$4 WHERE certificate_id=$1").bind(id).bind(json!(input.config)).bind(now).bind(actor).execute(&mut *tx).await?;
     } else {
@@ -176,7 +176,7 @@ async fn issue(
     .await?
     .ok_or(ApiError::NotFound)?;
     if input.remote_reconciled {
-        sqlx::query("UPDATE network_acme_jobs SET status='reconciled',completed_at=$2 WHERE certificate_id=$1 AND status='unknown'").bind(id).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
+        sqlx::query("UPDATE network_acme_jobs SET status='reconciled',completed_at=$2 WHERE certificate_id=$1 AND status='unknown'").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     }
     let job = queue(&mut tx, id, actor, plan.get("revision"), plan.get("config")).await?;
     tx.commit().await?;
@@ -216,7 +216,7 @@ async fn queue(
         let row=sqlx::query("SELECT revision,config->>'name' AS name FROM network_documents WHERE id=$1 AND kind='domain' FOR SHARE").bind(domain).fetch_one(&mut **tx).await?;
         domains.push(json!({"id":domain,"revision":row.get::<i64,_>("revision"),"name":row.get::<String,_>("name")}));
     }
-    let result=sqlx::query("INSERT INTO network_acme_jobs(id,certificate_id,requested_by,certificate_revision,domain_snapshot,plan_revision,request,status,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,'queued',$8)").bind(id).bind(certificate).bind(actor).bind(document.get::<i64,_>("revision")).bind(json!(domains)).bind(revision).bind(config).bind(sinan_protocol::now_timestamp()).execute(&mut **tx).await;
+    let result=sqlx::query("INSERT INTO network_acme_jobs(id,certificate_id,requested_by,certificate_revision,domain_snapshot,plan_revision,request,status,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,'queued',$8)").bind(id).bind(certificate).bind(actor).bind(document.get::<i64,_>("revision")).bind(json!(domains)).bind(revision).bind(config).bind(apsp_protocol::now_timestamp()).execute(&mut **tx).await;
     if result.as_ref().is_err_and(|error| {
         error
             .as_database_error()
@@ -252,7 +252,7 @@ pub(super) async fn run(state: AppState) {
     }
 }
 async fn iteration(state: &AppState) -> ApiResult<()> {
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("UPDATE network_acme_jobs SET status='unknown',result=jsonb_build_object('error_code','worker_interrupted','cleanup_required',true) WHERE status='running' AND started_at<$1").bind(now-900).execute(&state.pool).await?;
     let mut tx = state.pool.begin().await?;
     let plans=sqlx::query("SELECT certificate_id,requested_by,revision,config FROM network_acme_plans p WHERE (config->>'automatic_renewal')::boolean AND next_run_at<=$1 AND NOT EXISTS(SELECT 1 FROM network_acme_jobs j WHERE j.certificate_id=p.certificate_id AND j.status IN ('queued','running','unknown')) AND NOT EXISTS(SELECT 1 FROM network_documents d JOIN network_certificate_versions v ON v.id=d.active_version WHERE d.id=p.certificate_id AND v.not_after>$1+86400*(p.config->>'renew_before_days')::bigint) LIMIT 8 FOR UPDATE OF p SKIP LOCKED").bind(now).fetch_all(&mut *tx).await?;
@@ -322,7 +322,7 @@ async fn iteration(state: &AppState) -> ApiResult<()> {
             )
         }
     };
-    sqlx::query("UPDATE network_acme_jobs SET status=$2,result=$3,completed_at=$4 WHERE id=$1 AND status='running'").bind(id).bind(status).bind(value).bind(sinan_protocol::now_timestamp()).execute(&state.pool).await?;
+    sqlx::query("UPDATE network_acme_jobs SET status=$2,result=$3,completed_at=$4 WHERE id=$1 AND status='running'").bind(id).bind(status).bind(value).bind(apsp_protocol::now_timestamp()).execute(&state.pool).await?;
     sqlx::query("UPDATE network_acme_plans SET next_run_at=$2,status=$3,updated_at=$4 WHERE certificate_id=$1").bind(certificate).bind(now+86400).bind(status).bind(now).execute(&state.pool).await?;
     Ok(())
 }

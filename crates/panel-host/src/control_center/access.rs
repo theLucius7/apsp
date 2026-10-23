@@ -3,9 +3,9 @@ use crate::{
     auth::hash_token,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use axum::http::{HeaderMap, header};
 use serde::{Deserialize, Serialize};
-use sinan_protocol::now_timestamp;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -52,7 +52,7 @@ pub(crate) fn session_hash(headers: &HeaderMap) -> Option<String> {
     let cookie = headers.get(header::COOKIE)?.to_str().ok()?;
     let values: Vec<_> = cookie
         .split(';')
-        .filter_map(|part| part.trim().strip_prefix("sinan_session="))
+        .filter_map(|part| part.trim().strip_prefix("apsp_session="))
         .collect();
     (values.len() == 1 && !values[0].is_empty() && values[0].len() <= 512)
         .then(|| hash_token(values[0]))
@@ -64,7 +64,7 @@ fn management_token(headers: &HeaderMap) -> Option<&str> {
         .to_str()
         .ok()?
         .strip_prefix("Bearer ")
-        .filter(|token| token.starts_with("sinan_api_") && token.len() <= 512)
+        .filter(|token| token.starts_with("apsp_api_") && token.len() <= 512)
 }
 
 pub async fn authenticate(state: &AppState, headers: &HeaderMap) -> ApiResult<Principal> {
@@ -288,7 +288,7 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(
             header::COOKIE,
-            "sinan_session=a; sinan_session=b".parse().unwrap(),
+            "apsp_session=a; apsp_session=b".parse().unwrap(),
         );
         assert!(session_hash(&headers).is_none());
     }

@@ -4,8 +4,8 @@ import hashlib
 MAX_SOURCE = 2 * 1024 * 1024
 SOURCES = {'ip.sh': {'source_sha256': '00d6b1a19c74bcfd720796b56985db10175fc99860447ffc38b301e10246e1cb', 'patched_sha256': '66c7f3c662f24bdccbd142acf25d2a176fbe72ff417848ef977aa755d6d38c8e'}}
 
-HELPERS = r'''# Sinan modification (2026-10-01): a failed request is unknown, never unlocked.
-sinan_netflix_unknown(){
+HELPERS = r'''# Apsp modification (2026-10-01): a failed request is unknown, never unlocked.
+apsp_netflix_unknown(){
 netflix[ustatus]='未知'
 netflix[uregion]="${smedia[nodata]}"
 netflix[utype]="${smedia[nodata]}"
@@ -13,7 +13,7 @@ netflix[error_category]=$1
 netflix[error]=$2
 printf 'Netflix：未知（%s）\n' "$2"
 }
-sinan_netflix_fetch(){
+apsp_netflix_fetch(){
 local response code http elapsed body category='' reason='' attempted url
 url="https://www.netflix.com/title/$2"
 attempted=$(date +%s)
@@ -40,7 +40,7 @@ case "$code" in
 esac
 fi
 netflix[attempts]=$(jq -cn --argjson prior "${netflix[attempts]:-[]}" --arg target_ip "$IP" --arg url "$url" --arg attempted_at "$attempted" --arg elapsed_seconds "$elapsed" --arg http_status "$http" --argjson curl_exit "$code" --arg error "$category" '$prior + [{target_ip:$target_ip,url:$url,attempted_at:($attempted_at|tonumber),elapsed_seconds:(if $elapsed_seconds == "" then null else ($elapsed_seconds|tonumber) end),http_status:(if $http_status == "000" then null else ($http_status|tonumber) end),curl_exit:$curl_exit,error:(if $error == "" then null else $error end)}]')
-if [[ -n $category ]];then sinan_netflix_unknown "$category" "$reason";return 1;fi
+if [[ -n $category ]];then apsp_netflix_unknown "$category" "$reason";return 1;fi
 printf -v "$3" '%s' "$body"
 }
 '''.encode()
@@ -50,10 +50,10 @@ REPLACEMENTS = [
 '''.encode()),
     (r'''local result1=$(curl $CurlARG -$1 --user-agent "$UA_Browser" -fsL -X GET --max-time 10 --tlsv1.3 "https://www.netflix.com/title/81280792" 2>&1)
 '''.encode(), r'''local result1 result2
-sinan_netflix_fetch "$1" 81280792 result1 || return 0
+apsp_netflix_fetch "$1" 81280792 result1 || return 0
 '''.encode()),
     (r'''local result2=$(curl $CurlARG -$1 --user-agent "$UA_Browser" -fsL -X GET --max-time 10 --tlsv1.3 "https://www.netflix.com/title/70143836" 2>&1)
-'''.encode(), r'''sinan_netflix_fetch "$1" 70143836 result2 || return 0
+'''.encode(), r'''apsp_netflix_fetch "$1" 70143836 result2 || return 0
 '''.encode()),
     (r'''region=$(echo "$result1"|sed -n 's/.*"id":"\([^"]*\)".*"countryName":"[^"]*".*/\1/p'|head -n1)
 [[ -n $region ]]&&region=$(echo "$result2"|sed -n 's/.*"id":"\([^"]*\)".*"countryName":"[^"]*".*/\1/p'|head -n1)
@@ -61,7 +61,7 @@ sinan_netflix_fetch "$1" 81280792 result1 || return 0
 region1=$(printf '%s' "$result1"|sed -n 's/.*"id":"\([A-Z][A-Z]\)".*"countryName":"[^"]*".*/\1/p'|head -n1)
 region2=$(printf '%s' "$result2"|sed -n 's/.*"id":"\([A-Z][A-Z]\)".*"countryName":"[^"]*".*/\1/p'|head -n1)
 if [[ -z $region1 || -z $region2 || $region1 != "$region2" ]];then
-sinan_netflix_unknown schema_mismatch '页面地区字段缺失或不一致'
+apsp_netflix_unknown schema_mismatch '页面地区字段缺失或不一致'
 return
 fi
 local region=$region1

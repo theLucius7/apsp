@@ -3,7 +3,7 @@
 use crate::release_support as signing;
 
 use anyhow::Result;
-use sinan_protocol::release::{ReleaseArtifact, canonical_asset_name};
+use apsp_protocol::release::{ReleaseArtifact, canonical_asset_name};
 use std::path::{Path, PathBuf};
 
 pub fn write(
@@ -63,18 +63,18 @@ pub fn write_entries(root: &Path, artifacts: Vec<(ReleaseArtifact, Vec<u8>)>) ->
 }
 
 const MODERN_INSTALLER: &[u8] =
-    b"#!/bin/sh\n# SINAN_BOOTSTRAP_AGENT_SOURCE=preloaded-github-v1\nexit 0\n";
+    b"#!/bin/sh\n# APSP_BOOTSTRAP_AGENT_SOURCE=preloaded-github-v1\nexit 0\n";
 
 fn signed_with_installer(
     artifacts: Vec<(ReleaseArtifact, Vec<u8>)>,
     installer: &[u8],
-) -> sinan_protocol::release::ReleaseProof {
+) -> apsp_protocol::release::ReleaseProof {
     let mut proof = signing::signed_release(artifacts);
     update_installer_proof(&mut proof, installer);
     proof
 }
 
-fn update_installer_proof(proof: &mut sinan_protocol::release::ReleaseProof, installer: &[u8]) {
+fn update_installer_proof(proof: &mut apsp_protocol::release::ReleaseProof, installer: &[u8]) {
     proof.checksums = proof
         .checksums
         .lines()
@@ -90,7 +90,7 @@ fn update_installer_proof(proof: &mut sinan_protocol::release::ReleaseProof, ins
 }
 
 pub fn replace_signed_installer(directory: &Path, installer: &[u8]) -> Result<()> {
-    let mut proof = sinan_protocol::release::ReleaseProof {
+    let mut proof = apsp_protocol::release::ReleaseProof {
         metadata_json: std::fs::read_to_string(directory.join("release.json"))?,
         checksums: std::fs::read_to_string(directory.join("SHA256SUMS"))?,
         signature: std::fs::read_to_string(directory.join("SHA256SUMS.minisig"))?,

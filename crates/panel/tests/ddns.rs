@@ -13,11 +13,11 @@ const TOKEN: &str = "TEST_ONLY_CLOUDFLARE_TOKEN";
 
 async fn prove_cookie(pool: &PgPool, cookie: &str) -> Result<()> {
     let token = cookie
-        .strip_prefix("sinan_session=")
+        .strip_prefix("apsp_session=")
         .context("test session cookie")?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET verified_at=$2,expires_at=$3")
-        .bind(sinan_panel::auth::hash_token(token)).bind(now).bind(now + 300).execute(pool).await?;
+        .bind(apsp_panel::auth::hash_token(token)).bind(now).bind(now + 300).execute(pool).await?;
     Ok(())
 }
 
@@ -317,10 +317,10 @@ async fn administrator_crud_redacts_credentials_guards_revisions_and_never_delet
         "TEST_ONLY_REPLACEMENT_TOKEN"
     );
     let session_token = cookie
-        .strip_prefix("sinan_session=")
+        .strip_prefix("apsp_session=")
         .context("test session cookie")?;
     sqlx::query("DELETE FROM administrator_reauth WHERE session_hash=$1")
-        .bind(sinan_panel::auth::hash_token(session_token))
+        .bind(apsp_panel::auth::hash_token(session_token))
         .execute(&pool)
         .await?;
     assert_eq!(
@@ -332,7 +332,7 @@ async fn administrator_crud_redacts_credentials_guards_revisions_and_never_delet
     );
     prove_cookie(&pool, &cookie).await?;
     sqlx::query("UPDATE ddns_rules SET lease_until=$1")
-        .bind(sinan_protocol::now_timestamp() + 60)
+        .bind(apsp_protocol::now_timestamp() + 60)
         .execute(&pool)
         .await?;
     assert_eq!(
@@ -399,13 +399,13 @@ async fn only_new_static_reports_are_fresh_and_missing_public_ip_never_contacts_
         .await?;
     assert_eq!(response["error_code"], "server_offline");
     assert!(response["ip_received_at"].is_null());
-    let info: sinan_protocol::StaticInfo = serde_json::from_value(
+    let info: apsp_protocol::StaticInfo = serde_json::from_value(
         json!({"hostname":"test","os":"test","arch":"x86_64","cpu_model":"test","cpu_cores":1,"memory_total":1,"ip_addresses":["192.0.2.1"]}),
     )?;
-    sinan_panel::agent_api::process_message(
+    apsp_panel::agent_api::process_message(
         &panel.state,
         server,
-        sinan_protocol::Message::TelemetryStatic(info.clone()),
+        apsp_protocol::Message::TelemetryStatic(info.clone()),
     )
     .await?;
     let at: Option<i64> =
@@ -418,10 +418,10 @@ async fn only_new_static_reports_are_fresh_and_missing_public_ip_never_contacts_
         .bind(server)
         .execute(&pool)
         .await?;
-    sinan_panel::agent_api::process_message(
+    apsp_panel::agent_api::process_message(
         &panel.state,
         server,
-        sinan_protocol::Message::TelemetryStatic(info),
+        apsp_protocol::Message::TelemetryStatic(info),
     )
     .await?;
     assert!(

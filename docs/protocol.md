@@ -119,7 +119,7 @@ IP 地址来自网卡和可选的 Agent `public_ips` 配置。面板仅向固定
 
 Agent 收到请求后持久阻止新的受管操作，停止运行时与诊断，提交所有已持久用量，再清除本机身份、会话与受管运行配置；保留历史账本。相同请求可重试，不同请求不能覆盖未结束的退役。清理完成后进入终态，不再自动注册或恢复代理。
 
-回执为 `{server_id,request_id,signature}`；签名对象按顺序拼接 UTF-8 `sinan-retirement-v1`、一个零字节、8 字节大端有符号 server ID、16 字节请求 UUID。使用原设备 Ed25519 密钥，签名为 URL-safe base64，无填充。Agent 在删除私钥前持久保存回执，但只在清理完成后发送。面板使用保留的公钥和已存在请求验签。
+回执为 `{server_id,request_id,signature}`；签名对象按顺序拼接 UTF-8 `apsp-retirement-v1`、一个零字节、8 字节大端有符号 server ID、16 字节请求 UUID。使用原设备 Ed25519 密钥，签名为 URL-safe base64，无填充。Agent 在删除私钥前持久保存回执，但只在清理完成后发送。面板使用保留的公钥和已存在请求验签。
 
 完成后的 Agent 也可向原绑定面板的 `POST /api/agent/v1/retirement/receipt` 发送该回执。此接口不需要 Bearer session；签名本身只授权对应退役确认，不能恢复设备会话。重复合法回执返回 204，错误回执拒绝。确认响应丢失时仍可恢复；未清理完成就被离线软删除的设备不具备此保证，需人工处理。详细崩溃与离线边界见 [ADR 0019](adr/0019-server-retirement.md)。
 

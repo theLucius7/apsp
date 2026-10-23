@@ -127,7 +127,7 @@ pub(super) async fn locked_observation(
 }
 
 pub(super) async fn view(pool: &PgPool, rule: Rule) -> ApiResult<Value> {
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let info = observation(pool, rule.config.server_id).await?;
     let selected = info.select(&rule.config, rule.last_ip.as_deref(), now);
     let mut value = serde_json::to_value(&rule).map_err(anyhow::Error::from)?;

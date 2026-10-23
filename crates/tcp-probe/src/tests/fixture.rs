@@ -9,7 +9,7 @@ impl Directory {
         static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
         let root = fs::canonicalize(std::env::temp_dir()).unwrap();
         let path = root.join(format!(
-            "sinan-native-tcp-test-{}-{}-{}",
+            "apsp-native-tcp-test-{}-{}-{}",
             std::process::id(),
             crate::model::now_millis().unwrap(),
             SEQUENCE.fetch_add(1, Ordering::SeqCst)
@@ -71,7 +71,7 @@ impl Directory {
                 && body["finished_at_ms"].as_u64().unwrap() > 0
         );
         assert_eq!(body["target_digest"], report.target_digest);
-        assert_eq!(body["engine"]["name"], "sinan-native-tcp-connect-v1");
+        assert_eq!(body["engine"]["name"], "apsp-native-tcp-connect-v1");
         for entry in fs::read_dir(self.path.join("sections")).unwrap() {
             let path = entry.unwrap().path();
             assert!(

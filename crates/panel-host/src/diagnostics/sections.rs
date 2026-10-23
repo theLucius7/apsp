@@ -23,7 +23,7 @@ pub async fn upload_section(
     let row = sqlx::query("SELECT j.expected_sections,j.job,j.created_at,j.expires_at,j.generation FROM diagnostic_jobs j WHERE j.id=$1 AND j.server_id=$2 FOR UPDATE")
         .bind(id).bind(server_id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
     let expected: Vec<String> = row.get("expected_sections");
-    if expected.len() > sinan_protocol::DIAGNOSTIC_SECTION_COUNT || !expected.contains(&update.name)
+    if expected.len() > apsp_protocol::DIAGNOSTIC_SECTION_COUNT || !expected.contains(&update.name)
     {
         return Err(ApiError::BadRequest("任务没有登记此报告章节".into()));
     }

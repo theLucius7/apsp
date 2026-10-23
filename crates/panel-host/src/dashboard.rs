@@ -5,6 +5,7 @@ use crate::{
     servers::{SERVER_COLUMNS, Server},
     settings, telemetry,
 };
+use apsp_protocol::{ProbeResult, ProbeSpec, now_timestamp};
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
@@ -12,7 +13,6 @@ use axum::{
     routing::get,
 };
 use serde_json::{Value, json};
-use sinan_protocol::{ProbeResult, ProbeSpec, now_timestamp};
 use tower_http::set_header::SetResponseHeaderLayer;
 
 pub fn routes() -> Router<AppState> {
