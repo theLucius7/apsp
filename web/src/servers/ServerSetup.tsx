@@ -1,7 +1,7 @@
 import { useFormDraft } from '../control-center/preferences'
 import { useRef, useState } from 'react'
 import { api } from '../api'
-import { ErrorNotice, Field, Modal } from '../components'
+import { ErrorNotice, Field, Modal, SettingRow } from '../components'
 import { useAction } from '../hooks'
 import { emptyMonitoring, withMonitoring, initialProbePayloads } from '../probes'
 import type { Probe, ProbeMonitoring } from '../probes'
@@ -83,8 +83,8 @@ export default function ServerSetup({ onClose, onCreated }: { onClose: () => voi
               <Field className="mb-0" label="历史批量写入间隔（秒）" hint="15–3600 秒，默认 60 秒。新版 Agent 收到持久化确认后再清除本地缓存；旧 Agent 继续按原上传间隔写入。"><Input name="persist_interval_secs" type="number" min={15} max={3600} step={1} required value={persist} onChange={event => setPersist(event.target.value)} /></Field>
             </div>
             <div className="mt-5 border-t pt-1">
-              <label className="relative flex cursor-pointer items-center gap-4 border-b py-3.5 last:border-0 last:pb-0"><span className="min-w-0 flex-1"><strong className="block text-sm font-medium">自动识别公网地址</strong><small className="text-muted-foreground mt-1 block text-xs leading-relaxed">识别 IPv4 / IPv6；设备本地关闭时，以本地设置为准。</small></span><Switch name="discover_public_ips" checked={discover} onCheckedChange={checked => setDiscover(checked)} /></label>
-              <label className="relative flex cursor-pointer items-center gap-4 border-b py-3.5 last:border-0 last:pb-0"><span className="min-w-0 flex-1"><strong className="block text-sm font-medium">自动更新 Agent</strong><small className="text-muted-foreground mt-1 block text-xs leading-relaxed">从 GitHub 下载面板选定的兼容签名版本，保留设备身份与本地状态。</small></span><Switch name="auto_update" checked={autoUpdate} onCheckedChange={checked => setAutoUpdate(checked)} /></label>
+              <SettingRow title="自动识别公网地址" description="识别 IPv4 / IPv6；设备本地关闭时，以本地设置为准。"><Switch name="discover_public_ips" checked={discover} onCheckedChange={checked => setDiscover(checked)} /></SettingRow>
+              <SettingRow title="自动更新 Agent" description="从 GitHub 下载面板选定的兼容签名版本，保留设备身份与本地状态。"><Switch name="auto_update" checked={autoUpdate} onCheckedChange={checked => setAutoUpdate(checked)} /></SettingRow>
             </div>
           </section>
           <section className="bg-card mb-4 scroll-mt-16 rounded-xl border p-5 last:mb-0 max-sm:p-4" aria-labelledby="setup-probes">

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api'
-import { ErrorNotice, Loading, PageHeader } from '../components'
+import { ErrorNotice, Loading, PageHeader, SettingRow } from '../components'
 import { useAction, useResource } from '../hooks'
 import type { Preferences } from './panelSettings'
 import TelemetryPolicy from './TelemetryPolicy'
@@ -18,7 +18,7 @@ function DashboardAccess({ initial }: { initial: boolean }) {
   }, result => { setEnabled(result.public_dashboard); setSaved(true); setDirty(false) })
   return <form data-slot="monitoring-settings" className="bg-card text-card-foreground ring-foreground/10 mb-4 min-w-0 overflow-hidden rounded-xl ring-1" onSubmit={event => { event.preventDefault(); void save() }}><div className="p-4"><fieldset disabled={action.busy}>
     <h2 className="mb-3 text-base font-semibold">看板访问</h2>
-    <label className="relative flex cursor-pointer items-center gap-4 py-3.5"><span className="min-w-0 flex-1"><strong className="block text-sm font-medium">公开服务器看板</strong><small className="text-muted-foreground mt-1 block text-xs leading-relaxed">开启后，无需登录即可查看未隐藏服务器的运行状态和拨测数据。管理操作仍需登录。</small></span><Switch checked={enabled} onCheckedChange={checked => { setEnabled(checked); setSaved(false); setDirty(true) }} /></label>
+    <SettingRow title="公开服务器看板" description="开启后，无需登录即可查看未隐藏服务器的运行状态和拨测数据。管理操作仍需登录。"><Switch checked={enabled} onCheckedChange={checked => { setEnabled(checked); setSaved(false); setDirty(true) }} /></SettingRow>
   </fieldset><ErrorNotice message={action.error} />{saved && <p role="status" className="text-sm">设置已保存。</p>}<div className="mt-4 flex flex-wrap items-center gap-2.5"><Button disabled={action.busy || !dirty}>{action.busy ? '正在保存…' : '保存设置'}</Button></div></div></form>
 }
 

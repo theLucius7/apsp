@@ -35,6 +35,7 @@ try {
     const page = await context.newPage(), errors = [], unexpected = [], writes = []
     page.on('pageerror', error => errors.push(error.message))
     let tasks = [], rules = [], taskFailure = true, testFailure = true
+    let notificationsGate = Promise.resolve()
     const servers = [
       { id: 1, name: '东京服务器', online: true, asset_settings: { region: 'JP', group_name: '亚洲' } },
       { id: 2, name: '香港服务器', online: false, asset_settings: { region: 'HK', group_name: '亚洲' } },
@@ -86,7 +87,10 @@ try {
         rules[0] = { ...request.postDataJSON(), id: 'rule-1', revision: rules[0].revision + 1 }
         return respond(rules[0])
       }
-      if (path === '/api/notifications') return respond(['offline', 'resource', 'expiry', 'traffic'].map((category, index) => ({ id: index + 1, category, message: `测试事件 ${category}`, server_id: 1, server_name: '东京服务器', last_seen: second - 600, opened_at: second - 300, resolved_at: index === 1 ? second : null, resolution: index === 1 ? 'recovered' : null, deliveries: [{ kind: index === 0 ? 'offline' : 'alert', status: 'pending', attempts: 1, last_error: '测试：等待重试' }] })))
+      if (path === '/api/notifications') {
+        await notificationsGate
+        return respond(['offline', 'resource', 'expiry', 'traffic'].map((category, index) => ({ id: index + 1, category, message: `测试事件 ${category}`, server_id: 1, server_name: '东京服务器', last_seen: second - 600, opened_at: second - 300, resolved_at: index === 1 ? second : null, resolution: index === 1 ? 'recovered' : null, deliveries: [{ kind: index === 0 ? 'offline' : 'alert', status: 'pending', attempts: 1, last_error: '测试：等待重试' }] })))
+      }
       unexpected.push(`${method} ${path}`); return respond({ error: 'Unexpected request' }, 500)
     })
     await installControlCenterFixtures(page)
@@ -185,7 +189,16 @@ try {
     await page.getByRole('button', { name: '删除', exact: true }).click()
     await page.getByRole('alertdialog').getByRole('button', { name: '确认删除' }).click()
     await page.getByText('尚未配置资源规则。', { exact: false }).waitFor()
-    await openNav(page, '告警事件')
+    let releaseNotifications
+    notificationsGate = new Promise(resolve => { releaseNotifications = resolve })
+    try {
+      await openNav(page, '告警事件')
+      const loading = page.locator('[data-slot=loading][data-variant=table]')
+      await loading.waitFor()
+      assert.equal(await loading.getAttribute('role'), 'status')
+      assert.ok(await loading.locator('[data-slot=skeleton]').count() > 0)
+      assert.equal(await page.getByRole('heading', { name: '暂无符合条件的告警' }).count(), 0)
+    } finally { releaseNotifications() }
     await page.getByText(/^测试事件 offline/).waitFor()
     assert.equal(await page.locator('tbody tr').count(), 4)
     await page.getByLabel('事件类型').selectOption('resource')

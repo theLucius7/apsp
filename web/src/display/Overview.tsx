@@ -20,7 +20,7 @@ import { itemMotion, revealMotion } from '@/lib/motion'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
-import { Spinner } from '@/components/ui/spinner'
+import { Skeleton } from '@/components/ui/skeleton'
 import { SegmentedButton, SegmentedGroup } from '@/components/segmented'
 
 function Stat({ icon: Icon = ServerIcon, label, value, unit, children, tone, title }: { icon?: LucideIcon; label: string; value: ReactNode; unit?: string; children: ReactNode; tone?: string; title?: string }) {
@@ -145,12 +145,23 @@ export default function Overview({ now }: { now: number }) {
     {!error && unavailable && servers && <DisplayNotice role="status" onRetry={refresh}>连接中断，等待更新</DisplayNotice>}
     {error && <DisplayNotice tone="error" onRetry={refresh}>{error}</DisplayNotice>}
     {probes.error && <DisplayNotice tone="error" onRetry={probes.reload} retryLabel="重试拨测">拨测读取失败</DisplayNotice>}
-    {!servers ? !error && <div className="text-muted-foreground flex min-h-80 flex-col items-center justify-center gap-3 p-6 text-center text-sm" role="status">{loading ? <><Spinner role="presentation" aria-hidden="true" aria-label={undefined} />正在读取服务器…</> : '等待数据'}</div> : visible.length ? view === 'cards' ?
+    {!servers ? !error && (loading ? <CardsLoading /> : <div className="text-muted-foreground flex min-h-80 flex-col items-center justify-center gap-3 p-6 text-center text-sm" role="status">等待数据</div>) : visible.length ? view === 'cards' ?
       <section aria-label="服务器列表" className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] items-start gap-3 max-sm:grid-cols-1">
         {/* Filtering removes cards at once so results never mix with stale entries; kept cards glide into place. */}
         {visible.map(server => <m.div key={server.id} layout="position" {...itemMotion} className="min-w-0"><ServerCard server={server} unavailable={unavailable} probes={probes.data ? byServer.get(server.id) ?? [] : undefined} probeError={probeUnavailable} probeLoading={probes.loading} now={now} /></m.div>)}
       </section> :
       <ServerTable servers={visible} unavailable={unavailable} byServer={byServer} probesKnown={probes.data !== undefined} probeError={probeUnavailable} probeLoading={probes.loading} now={now} /> :
       !error && <div className="text-muted-foreground flex min-h-80 flex-col items-center justify-center gap-3 p-6 text-center"><ServerIcon className="size-8" aria-hidden="true" /><strong className="text-foreground text-sm font-medium">{entries.length ? '没有匹配的节点' : resource.hiddenOnly ? '节点已隐藏' : '尚未添加节点'}</strong>{entries.length ? <Button onClick={reset}>清除筛选</Button> : <a className={buttonVariants()} href="#/servers">前往服务器管理</a>}</div>}
+  </div>
+}
+
+/** First read of the dashboard: card outlines in the same grid as the servers to come. */
+function CardsLoading() {
+  return <div data-slot="loading" role="status" className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] items-start gap-3 max-sm:grid-cols-1">
+    <span className="sr-only">正在读取服务器…</span>
+    {[0, 1, 2].map(index => <div key={index} aria-hidden="true" className={cn(surface, 'grid gap-4 p-4')}>
+      <div className="flex items-center gap-3"><Skeleton className="size-9 rounded-lg" /><div className="grid flex-1 gap-1.5"><Skeleton className="h-4 w-1/2" /><Skeleton className="h-3 w-1/3" /></div></div>
+      <div className="grid grid-cols-2 gap-3">{[0, 1, 2, 3].map(metric => <div key={metric} className="grid gap-1.5"><Skeleton className="h-3 w-1/2" /><Skeleton className="h-1.5" /></div>)}</div>
+    </div>)}
   </div>
 }

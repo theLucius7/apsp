@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api'
-import { Badge, Confirm, ErrorNotice, Field, Loading, Modal } from '../components'
+import { Badge, Confirm, ErrorNotice, Field, Loading, Modal, SettingRow } from '../components'
 import { useAction, useResource } from '../hooks'
 import type { Server } from '../types'
 import ServerPicker from '../servers/ServerPicker'
@@ -24,8 +24,8 @@ function Editor({ rule, servers, onClose, onSaved }: { rule: Rule; servers: Serv
     <Field className="m-0" label="规则名称"><Input required pattern=".*\S.*" maxLength={80} value={spec.name} onChange={event => change({ name: event.target.value })} placeholder="例如：持续高负载" /></Field>
     <div className="mb-4 grid gap-4 sm:grid-cols-2"><Field className="m-0" label="监控指标"><NativeSelect className="w-full" value={spec.metric} onChange={event => change({ metric: event.target.value as Spec['metric'] })}>{Object.entries(labels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</NativeSelect></Field><Field className="m-0" label={`阈值（${unit}）`}><Input required type="number" min={0.01} max={unit === '%' ? 100 : 1000000} step={0.01} value={spec.threshold} onChange={event => change({ threshold: Number(event.target.value) })} /></Field><Field className="m-0" label="时间窗口（分钟）"><Input required type="number" min={1} max={1440} step={1} value={spec.duration_minutes} onChange={event => change({ duration_minutes: Number(event.target.value) })} /></Field><Field className="m-0" label="判断方式"><NativeSelect className="w-full" value={spec.aggregation} onChange={event => change({ aggregation: event.target.value as Spec['aggregation'] })}><option value="average">窗口平均值达到阈值</option><option value="continuous">窗口内样本均达到阈值</option></NativeSelect></Field></div>
     <p className="text-muted-foreground mt-3 text-xs leading-relaxed">按完整分钟内实际样本聚合判断：平均值按样本数加权，持续超限检查全部样本的最小值。未写完整、缺失、无效或离线时保持原告警；网速遵循服务器的网卡筛选，更改范围后等待新窗口。</p>
-    <label className="relative flex cursor-pointer items-center gap-4 border-b py-3.5 last:border-0 last:pb-0"><span className="min-w-0 flex-1"><strong className="block text-sm font-medium">启用规则</strong><small className="text-muted-foreground mt-1 block text-xs leading-relaxed">关闭或修改后结束旧事件，按新规则重新判断。</small></span><Switch checked={spec.enabled} onCheckedChange={checked => change({ enabled: checked })} /></label>
-    <label className="relative flex cursor-pointer items-center gap-4 border-b py-3.5 last:border-0 last:pb-0"><span className="min-w-0 flex-1"><strong className="block text-sm font-medium">全部服务器</strong><small className="text-muted-foreground mt-1 block text-xs leading-relaxed">包括之后新增的服务器；关闭后可指定范围。</small></span><Switch checked={spec.all_servers} onCheckedChange={checked => change({ all_servers: checked })} /></label>
+    <SettingRow title="启用规则" description="关闭或修改后结束旧事件，按新规则重新判断。"><Switch checked={spec.enabled} onCheckedChange={checked => change({ enabled: checked })} /></SettingRow>
+    <SettingRow title="全部服务器" description="包括之后新增的服务器；关闭后可指定范围。"><Switch checked={spec.all_servers} onCheckedChange={checked => change({ all_servers: checked })} /></SettingRow>
     {!spec.all_servers && <ServerPicker servers={servers} selected={spec.server_ids} onChange={server_ids => change({ server_ids })} />}
   </fieldset></div><footer><Button type="button" variant="outline" disabled={action.busy} onClick={onClose}>取消</Button><Button disabled={action.busy || (spec.enabled && !spec.all_servers && !spec.server_ids.length)}>{action.busy ? '正在保存…' : '保存规则'}</Button></footer></form></Modal>
 }

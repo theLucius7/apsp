@@ -45,6 +45,14 @@ export const popoverMotion = {
   transition: transition.fast,
 } as const
 
+/** Contextual action bars rise from the bottom edge while a selection exists. */
+export const barMotion = {
+  initial: { opacity: 0, y: 12 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: 12 },
+  transition: transition.fast,
+} as const
+
 /** Page content settles in after navigation. */
 export const pageMotion = {
   initial: { opacity: 0, y: 6 },

@@ -1,4 +1,4 @@
-import { Field } from '../components'
+import { Field, SettingRow } from '../components'
 import { trafficModes, trafficUnits } from '../server-assets'
 import type { AssetDraft, TrafficUnit } from '../server-assets'
 import { Input } from '@/components/ui/input'
@@ -23,7 +23,7 @@ export default function ServerAssetFields({ value, onChange }: { value: AssetDra
         <Field className="mb-0" label="展示分组"><Input maxLength={40} value={value.group_name} onChange={event => update({ group_name: event.target.value })} placeholder="例如：主力 / 备用" /></Field>
       </div>
       <div className="mt-4"><Field label="标签" hint="用逗号分隔，最多 16 个，每个最多 32 字。"><Input value={value.tags} maxLength={544} onChange={event => update({ tags: event.target.value })} placeholder="例如：主力, 线路:BGP" /></Field></div>
-      <label className="relative flex cursor-pointer items-center gap-4 border-b py-3.5 last:border-0 last:pb-0"><span className="min-w-0 flex-1"><strong className="block text-sm font-medium">在展示页隐藏</strong><small className="text-muted-foreground mt-1 block text-xs leading-relaxed">后台管理仍可查看和编辑。</small></span><Switch checked={value.hidden} onCheckedChange={checked => update({ hidden: checked })} /></label>
+      <SettingRow title="在展示页隐藏" description="后台管理仍可查看和编辑。"><Switch checked={value.hidden} onCheckedChange={checked => update({ hidden: checked })} /></SettingRow>
     </section>
     <section className="bg-card mb-4 scroll-mt-16 rounded-xl border p-5 last:mb-0 max-sm:p-4" aria-labelledby="setup-cost">
       <div className="mb-4 flex items-center justify-between gap-3.5 max-sm:flex-wrap"><div className="min-w-0"><h3 className="flex items-center gap-2 text-sm font-semibold" id="setup-cost">成本与到期</h3><p className="text-muted-foreground mt-1 text-xs leading-relaxed">记录服务器费用与下次到期日期。</p></div><span className="bg-muted text-muted-foreground inline-block rounded border px-1.5 text-xs font-normal whitespace-nowrap">可选</span></div>
@@ -33,7 +33,7 @@ export default function ServerAssetFields({ value, onChange }: { value: AssetDra
         <Field className="mb-0" label="费用周期（天）" hint="0 为一次性；可输入自定义天数。"><Input required type="number" min={0} max={3650} value={value.billing_cycle} onChange={event => update({ billing_cycle: event.target.value, ...(Number(event.target.value) === 0 ? { auto_renewal: false } : {}) })} list="server-billing-cycles" /><datalist id="server-billing-cycles"><option value="30">30 天</option><option value="90">90 天</option><option value="180">180 天</option><option value="365">365 天</option><option value="0">一次性</option></datalist></Field>
       </div>
       <div className="mt-4"><Field label="到期日期（UTC）" hint="到期时间按所选日期的 UTC 零点记录。"><Input type="date" min="1970-01-01" max="9999-12-31" value={value.expiry} onChange={event => update({ expiry: event.target.value, ...(!event.target.value ? { auto_renewal: false } : {}) })} /></Field></div>
-      <label className="relative flex cursor-pointer items-center gap-4 border-b py-3.5 last:border-0 last:pb-0"><span className="min-w-0 flex-1"><strong className="block text-sm font-medium">自动顺延到期记录</strong><small className="text-muted-foreground mt-1 block text-xs leading-relaxed">到期后按费用周期更新日期记录；不会向供应商付款。需先设置到期日期与非零周期。</small></span><Switch checked={value.auto_renewal} disabled={!value.expiry || Number(value.billing_cycle) <= 0} onCheckedChange={checked => update({ auto_renewal: checked })} /></label>
+      <SettingRow title="自动顺延到期记录" description="到期后按费用周期更新日期记录；不会向供应商付款。需先设置到期日期与非零周期。"><Switch checked={value.auto_renewal} disabled={!value.expiry || Number(value.billing_cycle) <= 0} onCheckedChange={checked => update({ auto_renewal: checked })} /></SettingRow>
     </section>
     <section className="bg-card mb-4 scroll-mt-16 rounded-xl border p-5 last:mb-0 max-sm:p-4" aria-labelledby="setup-traffic">
       <div className="mb-4 flex items-center justify-between gap-3.5 max-sm:flex-wrap"><div className="min-w-0"><h3 className="flex items-center gap-2 text-sm font-semibold" id="setup-traffic">流量额度</h3><p className="text-muted-foreground mt-1 text-xs leading-relaxed">按账单日汇总网卡观测流量，展示本期使用与剩余额度。</p></div><span className="bg-muted text-muted-foreground inline-block rounded border px-1.5 text-xs font-normal whitespace-nowrap">可选</span></div>
