@@ -3,6 +3,7 @@
 - 状态：已实现；本地构建、单元测试和受影响的浏览器回归见 [PROGRESS](../../PROGRESS.md) 本轮记录，未在真实设备或生产面板上验收。
 - 日期：2026-10-24。
 - 取代：[ADR 0084](0084-admin-layout-and-node-sections.md) 决定 1 中的五组导航；该 ADR 的其余决定（窄屏菜单、对话框挂载、节点页分区、同轮发布、按页拆分代码、离线时间）继续有效。
+- 后续：产品定位由 [ADR 0087](0087-narrow-positioning-proxy-network.md) 收窄为代理网络控制平面；本 ADR 的七个功能区与导航结构继续有效。
 - 关联：[功能地图](../product-map.md)、[ADR 0023](0023-proxy-business-boundary.md)、[ADR 0077](0077-fleet-operations.md)–[ADR 0082](0082-control-center.md)。
 
 ## 背景
