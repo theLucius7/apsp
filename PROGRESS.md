@@ -1,5 +1,14 @@
 # 执行进度
 
+## 2026-10-24：全局搜索结果打开对应功能分区
+
+- ADR 0086 拆分服务器详情与告警设置后，全局搜索仍把三类结果指向旧位置：旧地址仍可打开，但不是管理该对象的页面。远程命令由服务器概况改为「Agent 与任务」`/servers/{id}/agent`；周期拨测由「TCP 诊断」改为同一分页，与 TCP 诊断页“在「Agent 与任务」的周期拨测中添加、停用或修改目标”的说明一致；资源告警规则由「告警事件」改为「告警设置」`/monitoring/settings`。
+- 对照 `ServerNavigation.tsx` 与 `navigation.ts` 核对其余类别：服务器、IP、IP 质量、IP 来源观测、DNS 记录、网络台账、综合测试、节点、代理用户、设备操作、运维任务、维护窗口、事件和延迟任务指向的页面或工作区没有迁移，无需修改。另发现诊断任务中的 IPQuality 节点出口自查（插件 `ipquality`）落入默认分支打开网络检测，而其报告只在「IP 信息」列出；这不是 ADR 0086 造成的迁移，但属同一表达式中的错误目标，一并改为 `/servers/{id}/ip-info`。
+- `crates/panel/tests/control_center_search.rs` 新增 `result_paths_open_the_page_section_that_manages_each_object`，用真实数据库记录固定远程命令、周期拨测、告警规则和四种诊断插件结果的 `path`；`docs/control-center-search.md` 补充路径规则。
+- 集中验证：输入为 `3c92501` 加本提交的 Rust 改动，使用本机 PostgreSQL 16.15（`DATABASE_URL` 角色可建库）及取自 `crates/protocol/tests/fixtures/public-keys.json` 的 `APSP_RELEASE_PUBLIC_KEYS`。`cargo fmt --check` 通过；`cargo clippy -p apsp-panel-host --all-targets -- -D warnings` 与 `cargo clippy -p apsp-panel --test control_center_search -- -D warnings` 通过；`cargo test -p apsp-panel --test control_center_search` 8 项全部通过。首轮 `cargo fmt --check` 要求拆开新测试中的一行元组，改为先绑定路径后通过；随后 main 合入 PR #169（含嵌入面板的 `web/dist`），分支快进后在最终输入上重跑以上全部检查。
+- 已知问题：「告警设置」先读取需要所有者会话的 `/api/settings`，读取失败时不显示资源告警规则；具备 `monitoring:read` 与全服务器授权的非所有者管理员能搜到告警规则，打开后只看到权限错误。原目标「告警事件」同样不列出规则；本次未改页面与权限。
+- 未验证：其余 Rust 测试、前端测试与浏览器回归未运行（前端未改动）；GitHub Actions 继续暂停，未触发 CI。记录本摘要后停止本轮启动的 PostgreSQL 集群，删除测试数据库与角色、`target/` 及 Cargo 下载缓存。
+
 ## 2026-10-24：功能分区快捷入口与部署构建修正
 
 - 告警事件的“通知设置”指向独立告警设置页；服务概览的“查看部署”指向该服务器的插件分页。避免快捷入口仍停留在功能拆分前的面板设置或服务器概况。
