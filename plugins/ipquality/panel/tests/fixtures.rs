@@ -1,12 +1,12 @@
 use super::super::*;
 use crate::{AppState, auth, config::Config, diagnostics::upload_section};
+use apsp_protocol::{DiagnosticSectionUpdate, now_timestamp};
 use axum::{
     Json,
     extract::{Path, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
 };
 use serde_json::{Value, json};
-use sinan_protocol::{DiagnosticSectionUpdate, now_timestamp};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -73,7 +73,7 @@ pub(super) async fn state(pool: PgPool) -> anyhow::Result<AppState> {
             listen: "127.0.0.1:0".parse()?,
             public_url: "https://panel.example.test".into(),
             data_dir: std::env::temp_dir()
-                .join(format!("sinan-ipquality-no-artifacts-{}", Uuid::new_v4())),
+                .join(format!("apsp-ipquality-no-artifacts-{}", Uuid::new_v4())),
             admin_password: Some("TEST_ONLY initial administrator password".into()),
         },
     )
@@ -83,7 +83,7 @@ pub(super) async fn state(pool: PgPool) -> anyhow::Result<AppState> {
 pub(super) async fn server(state: &AppState, token: &str) -> anyhow::Result<i64> {
     let id: i64 = sqlx::query_scalar("INSERT INTO servers(name,static_info,last_seen,capabilities) VALUES('TEST_ONLY node IP fixture',$1,$2,$3) RETURNING id")
         .bind(json!({"os":"linux","arch":"amd64","ip_addresses":["192.0.2.1"]})).bind(now_timestamp())
-        .bind(json!([CAPABILITY,sinan_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,sinan_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY]))
+        .bind(json!([CAPABILITY,apsp_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,apsp_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY]))
         .fetch_one(&state.pool).await?;
     sqlx::query("INSERT INTO sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
         .bind(auth::hash_token(token))

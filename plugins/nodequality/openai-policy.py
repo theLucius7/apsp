@@ -11,8 +11,8 @@ SOURCES = {
     },
 }
 
-HELPERS = r'''# Sinan modification (2026-10-01): no borrowed OpenAI authorization.
-sinan_openai_not_attempted(){
+HELPERS = r'''# Apsp modification (2026-10-01): no borrowed OpenAI authorization.
+apsp_openai_not_attempted(){
 jq -cn --arg target_ip "$IP" --arg checked_at "$(date +%s)" '{provider:"openai",status:"unknown",target_ip:$target_ip,checked_at:($checked_at|tonumber),Attempted:false,last_attempt_at:null,elapsed_seconds:null,Error:{category:"credential_not_configured",phase:"not_attempted",message:"未配置经授权的节点认证适配；未查询该来源，ChatGPT 可用性未知"},Attempts:[]}'
 }
 '''.encode()
@@ -23,18 +23,18 @@ chatgpt=()
 chatgpt[ustatus]='未知'
 chatgpt[uregion]="${smedia[nodata]}"
 chatgpt[utype]="${smedia[nodata]}"
-if chatgpt[access]=$(sinan_openai_not_attempted);then :;else return 70;fi
+if chatgpt[access]=$(apsp_openai_not_attempted);then :;else return 70;fi
 printf '%s\n' 'ChatGPT：未知（未配置经授权的节点认证适配，未查询该来源）'
 }
 '''.encode(),
 }
 FUNCTIONS = tuple(FUNCTION_REPLACEMENTS)
 JSON_ANCHOR = b'ipjson=$(echo "$ipjson"|jq "$head_updates$basic_updates$type_updates$score_updates$factor_updates$media_updates$mail_updates.")\n'
-JSON_ADDITION = r'''local sinan_openai_json
+JSON_ADDITION = r'''local apsp_openai_json
 if [[ -n ${chatgpt[access]:-} ]];then
-sinan_openai_json=${chatgpt[access]}
-elif sinan_openai_json=$(sinan_openai_not_attempted);then :;else return 70;fi
-ipjson=$(printf '%s' "$ipjson"|jq --argjson openai "$sinan_openai_json" '.Sources=(.Sources//{}) | .Sources.OpenAI=$openai | .Media.ChatGPT=((.Media.ChatGPT//{}) + $openai + {Status:"未知",Region:null,Type:null})') || return 70
+apsp_openai_json=${chatgpt[access]}
+elif apsp_openai_json=$(apsp_openai_not_attempted);then :;else return 70;fi
+ipjson=$(printf '%s' "$ipjson"|jq --argjson openai "$apsp_openai_json" '.Sources=(.Sources//{}) | .Sources.OpenAI=$openai | .Media.ChatGPT=((.Media.ChatGPT//{}) + $openai + {Status:"未知",Region:null,Type:null})') || return 70
 '''.encode()
 METADATA_REPLACEMENTS = [(JSON_ANCHOR, JSON_ANCHOR + JSON_ADDITION)]
 

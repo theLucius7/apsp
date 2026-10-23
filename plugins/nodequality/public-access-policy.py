@@ -27,7 +27,7 @@ MEDIA = {'DisneyPlus': 'disney', 'Youtube': 'youtube', 'ChatGPT': 'chatgpt'}
 
 def refusal(array):
     lines = [
-        '# Sinan modification (2026-10-01): official node credentials are absent.',
+        '# Apsp modification (2026-10-01): official node credentials are absent.',
         '# Keep the source and result column; do not run the borrowed-material path.',
         array + '=()',
         array + '[reason]=' + "'" + REASONS[array] + "'",
@@ -43,12 +43,12 @@ def refusal(array):
     return ('\n'.join(lines) + '\nreturn 0\n').encode()
 
 
-READ_REF_GUARD = b'''# Sinan: no online public cookies, retry or inherited access material.
+READ_REF_GUARD = b'''# Apsp: no online public cookies, retry or inherited access material.
 Cookie=()
 return 0
 '''
-ACCESS_HELPER = r'''# Sinan: access failures are per-source metadata, never positive query results.
-sinan_provider_access_json(){
+ACCESS_HELPER = r'''# Apsp: access failures are per-source metadata, never positive query results.
+apsp_provider_access_json(){
 jq -cn \
   --arg ipregistry "${ipregistry[reason]:-}" \
   --arg dbip "${dbip[reason]:-}" \
@@ -70,9 +70,9 @@ for provider in MEDIA:
                       ' | .Media.' + provider + '.Type = null'
                       ' | .Media.' + provider + '.Reason = $access.' + provider + '.Reason')
 ACCESS_FILTER += ' | .Type.Usage.ipregistry = null | .Type.Company.ipregistry = null'
-JSON_ACCESS = r'''local sinan_access_json
-sinan_access_json=$(sinan_provider_access_json) || return 70
-ipjson=$(printf '%s' "$ipjson" | jq --argjson access "$sinan_access_json" '@ACCESS_FILTER@') || return 70
+JSON_ACCESS = r'''local apsp_access_json
+apsp_access_json=$(apsp_provider_access_json) || return 70
+ipjson=$(printf '%s' "$ipjson" | jq --argjson access "$apsp_access_json" '@ACCESS_FILTER@') || return 70
 '''.replace('@ACCESS_FILTER@', ACCESS_FILTER).encode()
 DISPLAY = ''.join("printf '%s：%s\\n' '" + label + "' \"${" + array + "[reason]}\"\n"
                   for label, array in [('ipregistry', 'ipregistry'), ('DB-IP', 'dbip'),

@@ -77,7 +77,7 @@ impl Aliyun {
             ("SignatureNonce".into(), uuid::Uuid::new_v4().to_string()),
             (
                 "Timestamp".into(),
-                signing::iso_time(sinan_protocol::now_timestamp()),
+                signing::iso_time(apsp_protocol::now_timestamp()),
             ),
         ]);
         let signature = signing::aliyun(secret, &values);

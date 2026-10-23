@@ -1,7 +1,7 @@
 use super::*;
 
 async fn saved_full(panel: &TestPanel, server: i64, version: &str, status: &str) -> Result<Uuid> {
-    let artifact = sinan_panel::artifacts::descriptor(
+    let artifact = apsp_panel::artifacts::descriptor(
         &panel.state,
         "nodequality",
         diagnostics::PLUGIN_VERSION,
@@ -9,8 +9,8 @@ async fn saved_full(panel: &TestPanel, server: i64, version: &str, status: &str)
     )
     .await?;
     let id = Uuid::new_v4();
-    let now = sinan_protocol::now_timestamp();
-    let job = sinan_protocol::DiagnosticJob {
+    let now = apsp_protocol::now_timestamp();
+    let job = apsp_protocol::DiagnosticJob {
         id,
         plugin: "nodequality".into(),
         version: version.into(),
@@ -110,7 +110,7 @@ async fn queued_full_is_failed_without_finalizing_a_device_and_blocks_until_conf
         "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r21",
         "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r22",
         "a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r1",
-        "a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r2",
+        "a92fca6c0067df29ddd03fdc2fee6f3000f64545-apsp-native-r2",
     ] {
         ids.push(saved_full(&panel, server, version, "queued").await?);
         if ids.len() == 1 {
@@ -150,7 +150,7 @@ async fn queued_full_is_failed_without_finalizing_a_device_and_blocks_until_conf
     .await?;
     let late_chapter = json!({
         "id": ids[1], "name": "hardware_quality", "text": "门禁前保存，断连后补报的硬件章节",
-        "complete": true, "revision": 1, "collected_at": sinan_protocol::now_timestamp(),
+        "complete": true, "revision": 1, "collected_at": apsp_protocol::now_timestamp(),
     });
     assert_eq!(
         panel

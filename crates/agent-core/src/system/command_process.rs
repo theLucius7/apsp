@@ -1,5 +1,5 @@
 use super::{Command, Context, Duration, Path, Result, ensure, execution};
-use sinan_adapter_sdk::{
+use apsp_adapter_sdk::{
     CommandObserver, CommandOutput, CommandProcessIdentity, ControlledExecution, Execution,
 };
 use std::process::Stdio;
@@ -183,7 +183,7 @@ fn gated_command(program: &Path, args: &[String], token: &str) -> Command {
     #[cfg(unix)]
     {
         let mut command = Command::new("/bin/sh");
-        command.args(["-c", "IFS= read -r gate || exit 125; [ \"$gate\" = \"$1\" ] || exit 125; shift; printf 'ready\\n'; exec \"$@\"", "sinan-command", token]);
+        command.args(["-c", "IFS= read -r gate || exit 125; [ \"$gate\" = \"$1\" ] || exit 125; shift; printf 'ready\\n'; exec \"$@\"", "apsp-command", token]);
         command.arg(program).args(args).process_group(0);
         command
     }

@@ -1,0 +1,18 @@
+[Unit]
+Description=Apsp Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+OOMScoreAdjust=-500
+CPUWeight=1000
+ExecStartPre=/opt/apsp/core/current/apsp-agent verify-installed --binary /opt/apsp/core/current/apsp-agent --name agent --format raw
+ExecStart=/opt/apsp/core/current/apsp-agent --config /etc/apsp/agent.toml supervise
+Restart=always
+RestartPreventExitStatus=78
+SuccessExitStatus=78
+RestartSec=5
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

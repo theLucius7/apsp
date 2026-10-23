@@ -3,7 +3,7 @@ use crate::{editable, load, worker};
 use sqlx::PgPool;
 
 async fn seed(pool: &PgPool) -> anyhow::Result<Uuid> {
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let server: i64 = sqlx::query_scalar("INSERT INTO servers(name,static_info,last_seen,static_info_received_at) VALUES('TEST_ONLY DDNS',$1,$2,$2) RETURNING id")
         .bind(json!({"ip_addresses":[public_ip(4)]})).bind(now).fetch_one(pool).await?;
     let mut rule = rule();
@@ -35,7 +35,7 @@ async fn plugin_disable_blocks_claims_preserves_rules_and_cannot_acknowledge_dur
     let rule = load(&pool, id).await?;
     let mock = Mock::start().await;
     sqlx::query("UPDATE ddns_rules SET lease_until=$1")
-        .bind(sinan_protocol::now_timestamp() + 60)
+        .bind(apsp_protocol::now_timestamp() + 60)
         .execute(&pool)
         .await?;
     assert!(
@@ -134,7 +134,7 @@ async fn leases_exclude_parallel_work_block_edits_and_recover_after_expiry(
     sqlx::query("UPDATE ddns_rules SET lease_id=$2,lease_until=$3,status='running' WHERE id=$1")
         .bind(id)
         .bind(Uuid::new_v4())
-        .bind(sinan_protocol::now_timestamp() + 60)
+        .bind(apsp_protocol::now_timestamp() + 60)
         .execute(&pool)
         .await?;
     let mut tx = pool.begin().await?;
@@ -175,7 +175,7 @@ async fn rate_limit_backoff_survives_retries_without_exposing_response_or_losing
     let current = load(&pool, id).await?;
     assert_eq!(current.error_code.as_deref(), Some("rate_limited"));
     assert_eq!(current.last_success_at, original.last_success_at);
-    assert!(current.next_run_at >= sinan_protocol::now_timestamp() + 899);
+    assert!(current.next_run_at >= apsp_protocol::now_timestamp() + 899);
     sqlx::query("UPDATE ddns_rules SET attempted_at=NULL")
         .execute(&pool)
         .await?;
@@ -272,7 +272,7 @@ async fn a_retirement_committing_while_the_write_guard_waits_is_observed(
         Ok::<(),sqlx::Error>(())
     }).await??;
     sqlx::query("INSERT INTO server_retirements(server_id,request_id,status,requested_at) VALUES($1,$2,'pending',$3)")
-        .bind(rule.config.server_id).bind(Uuid::new_v4()).bind(sinan_protocol::now_timestamp())
+        .bind(rule.config.server_id).bind(Uuid::new_v4()).bind(apsp_protocol::now_timestamp())
         .execute(&mut *retirement).await?;
     retirement.commit().await?;
     tokio::time::timeout(Duration::from_secs(2), task).await???;
@@ -382,7 +382,7 @@ async fn old_completion_never_overwrites_a_new_revision_after_an_expired_lease(
         let id = seed(&pool).await?;
         let old = load(&pool, id).await?;
         let lease = Uuid::new_v4();
-        let next = sinan_protocol::now_timestamp() + 600;
+        let next = apsp_protocol::now_timestamp() + 600;
         // A wall-clock jump can make the old lease editable while its request
         // has just released its shared locks. Keep UUID to prove revision is
         // an independent guard, rather than relying only on edit invalidation.

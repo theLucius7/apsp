@@ -230,7 +230,7 @@ async fn manual_refresh_cannot_bypass_provider_rate_limit(pool: PgPool) -> Resul
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let id = Uuid::new_v4();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret,error_code,last_attempt_at,next_run_at) VALUES($1,'TEST_ONLY throttled',$2,$3,'rate_limited',$4,$5)")
         .bind(id).bind(KEY).bind(SECRET).bind(now-61).bind(now+900).execute(&pool).await?;
     assert_eq!(
@@ -264,7 +264,7 @@ async fn power_policy_validates_revisions_and_power_jobs_are_admin_only_and_canc
     let account = Uuid::new_v4();
     let resource = Uuid::new_v4();
     let eip = Uuid::new_v4();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret,enabled) VALUES($1,'测试账号',$2,$3,false)").bind(account).bind(KEY).bind(SECRET).execute(&pool).await?;
     for (id, kind, cloud_id) in [
         (resource, "ecs", "i-testonly"),

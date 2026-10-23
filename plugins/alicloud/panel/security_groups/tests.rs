@@ -20,7 +20,7 @@ impl Drop for Fixture {
 impl Fixture {
     async fn new(pool: PgPool) -> anyhow::Result<Self> {
         let directory =
-            std::env::temp_dir().join(format!("sinan-security-groups-{}", Uuid::new_v4()));
+            std::env::temp_dir().join(format!("apsp-security-groups-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory)?;
         let state = AppState::new(
             pool.clone(),
@@ -54,7 +54,7 @@ impl Fixture {
         let mut headers = HeaderMap::new();
         headers.insert(
             axum::http::header::COOKIE,
-            format!("sinan_session={token}").parse()?,
+            format!("apsp_session={token}").parse()?,
         );
         Ok(Self {
             state,
@@ -349,14 +349,14 @@ async fn global_account_scope_creator_and_token_restrictions_are_enforced_before
     let mut headers = HeaderMap::new();
     headers.insert(
         axum::http::header::COOKIE,
-        format!("sinan_session={session}").parse()?,
+        format!("apsp_session={session}").parse()?,
     );
     assert!(matches!(
         permission(&fixture.state, &headers, fixture.resource, &[], false).await,
         Err(ApiError::Forbidden(_))
     ));
     for all_servers in [false, true] {
-        let token = format!("sinan_api_{}", random_token());
+        let token = format!("apsp_api_{}", random_token());
         sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,all_servers,expires_at,created_at) VALUES($1,1,$2,'TEST_ONLY SG',$3,$4,$5,$6,0)")
             .bind(Uuid::new_v4()).bind(hash_token(&token)).bind(json!(["cloud:read","cloud:write"])).bind(json!([fixture.server])).bind(all_servers).bind(now_timestamp()+3600).execute(&fixture.state.pool).await?;
         let mut token_headers = HeaderMap::new();

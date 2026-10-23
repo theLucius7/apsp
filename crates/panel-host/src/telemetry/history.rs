@@ -173,7 +173,7 @@ mod tests {
         let sample = TelemetrySample {
             id: uuid::Uuid::new_v4(),
             sampled_at: from + 1000,
-            metrics: sinan_protocol::Metrics {
+            metrics: apsp_protocol::Metrics {
                 cpu_percent: Some(20.0),
                 ..Default::default()
             },

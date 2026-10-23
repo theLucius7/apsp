@@ -41,7 +41,7 @@ fn recoverable(error: &anyhow::Error) -> bool {
 mod tests {
     use super::*;
     use crate::State;
-    use sinan_protocol::{Metrics, TelemetrySample, UsageBatch};
+    use apsp_protocol::{Metrics, TelemetrySample, UsageBatch};
     use std::path::Path;
     use uuid::Uuid;
 

@@ -156,7 +156,7 @@ pub(super) async fn reconcile(
         .await?;
         tx.commit().await?;
         return Ok(Json(
-            json!({"status":"blocked","observed":null,"checked_at":sinan_protocol::now_timestamp(),"source":"local_durable_intent","dns_written":false,"ownership_confirmed":false}),
+            json!({"status":"blocked","observed":null,"checked_at":apsp_protocol::now_timestamp(),"source":"local_durable_intent","dns_written":false,"ownership_confirmed":false}),
         ));
     }
     if entry.account_revision != account.revision {
@@ -193,6 +193,6 @@ pub(super) async fn reconcile(
     }
     tx.commit().await?;
     Ok(Json(
-        json!({"status":status,"observed":value,"checked_at":sinan_protocol::now_timestamp(),"source":"provider_official_api","dns_written":false,"ownership_confirmed":status=="applied"}),
+        json!({"status":status,"observed":value,"checked_at":apsp_protocol::now_timestamp(),"source":"provider_official_api","dns_written":false,"ownership_confirmed":status=="applied"}),
     ))
 }

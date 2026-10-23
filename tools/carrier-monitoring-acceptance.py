@@ -39,7 +39,7 @@ def sha(path):
 
 def private_helpers(built_root, output):
     manifest = json.loads((built_root / 'harness-identity.json').read_text())
-    require(re.fullmatch(r'sinan-plugin-install-20\d{6}-r[1-9]\d{0,2}', built_root.name), 'reviewed build namespace required')
+    require(re.fullmatch(r'apsp-plugin-install-20\d{6}-r[1-9]\d{0,2}', built_root.name), 'reviewed build namespace required')
     modules = {}
     for name in ('common', 'finish'):
         data = (built_root / (name + '.py')).read_bytes()
@@ -258,16 +258,16 @@ def traffic_loop(rows, stop, port):
 
 def main(args):
     require(__debug__ and sys.platform == 'linux' and os.geteuid() == 0, 'unoptimized root Linux controller required')
-    require(os.environ.get('SINAN_REMAINING_TEST_SIGNAL') == '1', 'explicit final-test signal required')
-    require(socket.gethostname() == 'lima-sinan-p0-debian12', 'dedicated Debian guest required')
+    require(os.environ.get('APSP_REMAINING_TEST_SIGNAL') == '1', 'explicit final-test signal required')
+    require(socket.gethostname() == 'lima-apsp-p0-debian12', 'dedicated Debian guest required')
     require(re.fullmatch(r'[0-9a-f]{40}', args.source_commit), 'explicit frozen source commit required')
-    require(re.fullmatch(r'sinan-carrier-monitor-20\d{6}-r[1-9]\d{0,2}', args.output.name), 'fresh owned carrier namespace required')
+    require(re.fullmatch(r'apsp-carrier-monitor-20\d{6}-r[1-9]\d{0,2}', args.output.name), 'fresh owned carrier namespace required')
     require(args.output.parent == Path('/home/l7.guest') and not args.output.exists(), 'fresh private guest output required')
     build = json.loads((args.built_root / 'build-v3-result.json').read_text())
     require(build['exit_code'] == 0 and build['reserve_stop'] is None and build['test_only'], 'successful current TEST_ONLY build required')
     require(build['source']['source_commit'] == args.source_commit, 'build does not match current source')
     require(sha(Path(__file__)) == build['source']['input_hashes']['tools/carrier-monitoring-acceptance.py'], 'controller differs from frozen source')
-    for name in ('sinan-agent', 'sinan-panel'):
+    for name in ('apsp-agent', 'apsp-panel'):
         require(sha(args.built_root / 'bin' / name) == build['binaries'][name]['sha256'], 'current frozen executable changed')
     runtime_receipt = json.loads(args.runtime_receipt.read_text())
     require(all(runtime_receipt[key] is True for key in ('trusted_signature_verified', 'archive_identity_verified', 'binary_identity_verified')), 'original runtime signature proofs required')
@@ -302,9 +302,9 @@ def main(args):
         common.command(['runuser', '-u', 'postgres', '--', '/usr/lib/postgresql/15/bin/createdb', '-h', str(common.PG), '-p', str(PG_PORT), common.DATABASE])
         password = secrets.token_urlsafe(32)
         (args.output / 'admin-password').write_text(password)
-        env = {'SINAN_DATABASE_URL': f'postgres://postgres@127.0.0.1:{PG_PORT}/{common.DATABASE}', 'SINAN_PUBLIC_URL': common.ORIGIN, 'SINAN_LISTEN': f'127.0.0.1:{PANEL_PORT}', 'SINAN_DATA_DIR': str(args.output / 'panel-data'), 'SINAN_ADMIN_PASSWORD': password, 'RUST_LOG': 'info', 'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'}
+        env = {'APSP_DATABASE_URL': f'postgres://postgres@127.0.0.1:{PG_PORT}/{common.DATABASE}', 'APSP_PUBLIC_URL': common.ORIGIN, 'APSP_LISTEN': f'127.0.0.1:{PANEL_PORT}', 'APSP_DATA_DIR': str(args.output / 'panel-data'), 'APSP_ADMIN_PASSWORD': password, 'RUST_LOG': 'info', 'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'}
         (args.output / 'panel.env').write_text(''.join(key + '=' + value + '\n' for key, value in env.items()))
-        common.start('panel', [str(args.built_root / 'bin/sinan-panel')], '256M', extra=['--property=EnvironmentFile=' + str(args.output / 'panel.env')])
+        common.start('panel', [str(args.built_root / 'bin/apsp-panel')], '256M', extra=['--property=EnvironmentFile=' + str(args.output / 'panel.env')])
         common.wait_for(lambda: common.port_open(PANEL_PORT), timeout=60)
         gate = Gate()
         api = common.API()
@@ -318,7 +318,7 @@ def main(args):
             spec = {'id': str(uuid.UUID(int=0)), 'name': 'TEST_ONLY slow loopback ' + str(index), 'kind': 'tcp', 'target': '127.0.0.1', 'port': port, 'interval_secs': 10, 'carrier': '', 'enabled': True, 'monitor': {'network': ['telecom', 'unicom', 'mobile', 'other'][index], 'region': 'TEST_ONLY owned loopback', 'address_family': 'ipv4', 'authorization': {'kind': 'owned', 'enabled': True, 'source': 'TEST_ONLY controller owns these listener sockets', 'scope': f'TEST_ONLY server {sid}, TCP to 127.0.0.1:{port}, four attempts every ten seconds', 'expires_at': None, 'identity': {'kind': 'tcp', 'target': '127.0.0.1', 'port': port, 'address_family': 'ipv4'}}}}
             specs.append(api.expect('POST', f'/api/servers/{sid}/probes', spec))
         state_dir.mkdir(mode=0o700)
-        common.command(['mount', '-t', 'tmpfs', '-o', 'size=16m,mode=0700,nodev,nosuid,noexec', 'sinan-carrier-test-only', str(state_dir)])
+        common.command(['mount', '-t', 'tmpfs', '-o', 'size=16m,mode=0700,nodev,nosuid,noexec', 'apsp-carrier-test-only', str(state_dir)])
         mounted = True
         db = state_dir / 'state.db'
         settings = {'sample_interval_secs': 1, 'upload_interval_secs': 3, 'auto_update': False, 'discover_public_ips': False}
@@ -326,13 +326,13 @@ def main(args):
         (args.output / 'agent.toml').write_text(''.join(key + '=' + json.dumps(value) + '\n' for key, value in config.items()) + '[settings]\n' + ''.join(key + '=' + json.dumps(value) + '\n' for key, value in settings.items()))
         enrollment = api.expect('POST', f'/api/servers/{sid}/enrollment', {})
         with (args.output / 'enroll.log').open('x') as output:
-            completed = subprocess.run([str(args.built_root / 'bin/sinan-agent'), '--config', str(args.output / 'agent.toml'), 'enroll', '--panel', common.ORIGIN, '--token', enrollment['token']], stdout=output, stderr=subprocess.STDOUT, timeout=30)
+            completed = subprocess.run([str(args.built_root / 'bin/apsp-agent'), '--config', str(args.output / 'agent.toml'), 'enroll', '--panel', common.ORIGIN, '--token', enrollment['token']], stdout=output, stderr=subprocess.STDOUT, timeout=30)
         del enrollment
         require(completed.returncode == 0, 'real current Agent enrollment failed')
         common.PUBLIC_ROOT.mkdir(mode=0o755)
         common.PUBLIC_ROOT.chmod(0o755)
         common.ownership(public_root=True)
-        (common.PUBLIC_ROOT / '.owned-by-sinan-plugin-install').write_bytes(str(args.output).encode() + b'\n')
+        (common.PUBLIC_ROOT / '.owned-by-apsp-plugin-install').write_bytes(str(args.output).encode() + b'\n')
         runtime = common.PUBLIC_ROOT / 'runtime'
         shutil.copyfile(args.runtime, runtime)
         runtime.chmod(0o555)
@@ -343,7 +343,7 @@ def main(args):
         runtime_config.write_text(json.dumps({'log': {'level': 'error'}, 'inbounds': [{'type': 'vless', 'tag': 'TEST_ONLY', 'listen': '127.0.0.1', 'listen_port': proxy_port, 'users': [{'uuid': str(uuid.UUID(int=1))}]}], 'outbounds': [{'type': 'direct', 'tag': 'direct'}], 'route': {'rules': [{'ip_cidr': ['127.0.0.0/8', '::1/128'], 'outbound': 'direct'}, {'action': 'reject'}], 'final': 'direct'}}))
         runtime_config.chmod(0o444)
         common.start('runtime', [str(runtime), 'run', '-c', str(runtime_config)], '96M', weight=200, oom=-500, extra=['--property=User=nobody'])
-        common.start('agent', [str(args.built_root / 'bin/sinan-agent'), '--config', str(args.output / 'agent.toml'), 'run', '--monitor-only'], '128M', weight=200, oom=-500)
+        common.start('agent', [str(args.built_root / 'bin/apsp-agent'), '--config', str(args.output / 'agent.toml'), 'run', '--monitor-only'], '128M', weight=200, oom=-500)
         common.wait_for(lambda: api.server().get('last_heartbeat_at'), timeout=60)
         original_runtime = common.fingerprint(common.unit('runtime'))
         agent_pid = common.fingerprint(common.unit('agent'))['pid']

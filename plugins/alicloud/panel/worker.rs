@@ -13,7 +13,7 @@ use uuid::Uuid;
 pub(super) async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
     let mut tx = lock(pool, id).await?;
     let mut account = account_on(&mut tx, id).await?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     if !account.enabled || account.next_run_at > now {
         return Ok(());
     }
@@ -62,7 +62,7 @@ pub(super) async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult
         // Poll at most eight resources per pass; rotate by last attempt, including failures.
         sqlx::query("UPDATE alicloud_resources SET last_attempt_at=$2 WHERE id=$1")
             .bind(resource.id)
-            .bind(sinan_protocol::now_timestamp())
+            .bind(apsp_protocol::now_timestamp())
             .execute(&mut *tx)
             .await?;
         let snapshot = match cloud.snapshot(&account, &resource).await {
@@ -78,7 +78,7 @@ pub(super) async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult
         };
         operations::snapshot_on(&mut tx, resource.id, &snapshot).await?;
         if !resource.auto_enabled
-            || !billing::exceeded(&account, sinan_protocol::now_timestamp())
+            || !billing::exceeded(&account, apsp_protocol::now_timestamp())
             || snapshot.charge_type != "PayByTraffic"
             || snapshot.bandwidth_mbps <= resource.cap_mbps
         {
@@ -180,7 +180,7 @@ async fn maintenance(pool: PgPool) {
 
 async fn tick(pool: &PgPool) -> ApiResult<()> {
     let cloud = Cloud::new(pool).map_err(super::failure)?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM alicloud_operations WHERE status IN ('queued','running','uncertain') AND next_check_at<=$1 ORDER BY next_check_at,created_at LIMIT 8")
         .bind(now).fetch_all(pool).await?;
     let mut first_error = None;

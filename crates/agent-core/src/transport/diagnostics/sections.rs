@@ -1,5 +1,5 @@
 use super::*;
-use sinan_protocol::{DIAGNOSTIC_SECTION_COUNT, DiagnosticSectionUpdate};
+use apsp_protocol::{DIAGNOSTIC_SECTION_COUNT, DiagnosticSectionUpdate};
 
 pub(super) const SECTIONS_OUTBOX: &str = "diagnostics:sections:outbox";
 const MAX_CHAPTER_BYTES: usize = 512 * 1024;

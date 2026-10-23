@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
 
-use sinan_adapter_nodequality::{
+use apsp_adapter_nodequality::{
     MAX_REPORT_BYTES, NodeQualityAdapter, OFFLINE_ROOTFS_VERSION, VERSION,
 };
-use sinan_adapter_sdk::{BoxFuture, CommandOutput, DiagnosticAdapter, DiagnosticSpec, Privileged};
+use apsp_adapter_sdk::{BoxFuture, CommandOutput, DiagnosticAdapter, DiagnosticSpec, Privileged};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -20,7 +20,7 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!(
-            "sinan-nodequality-adapter-{}-{}",
+            "apsp-nodequality-adapter-{}-{}",
             std::process::id(),
             NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
         ));
@@ -172,9 +172,9 @@ async fn daily_profile_is_bounded_and_persists_only_whitelisted_targets() {
     assert_eq!(
         adapter.capabilities(),
         vec![
-            sinan_adapter_nodequality::MODES_CAPABILITY,
-            sinan_adapter_nodequality::FULL_START_GATE_CAPABILITY,
-            sinan_adapter_nodequality::NODE_QUERY_CAPABILITY
+            apsp_adapter_nodequality::MODES_CAPABILITY,
+            apsp_adapter_nodequality::FULL_START_GATE_CAPABILITY,
+            apsp_adapter_nodequality::NODE_QUERY_CAPABILITY
         ]
     );
     let service = adapter.prepare(&spec, &privileged).await.unwrap();

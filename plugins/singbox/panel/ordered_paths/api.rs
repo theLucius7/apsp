@@ -9,6 +9,7 @@ use crate::{
     auth::require_admin,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use axum::{
     Json,
     extract::{Path, State},
@@ -16,7 +17,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 use sqlx::PgConnection;
 use std::collections::BTreeSet;
 use uuid::Uuid;
@@ -348,13 +348,13 @@ pub async fn create_batch(
             }
             let id:i64=sqlx::query_scalar("INSERT INTO singbox_chains(name,entry_node_id,path_kind,candidate_generation,phase,route_enabled) VALUES($1,$2,'ordered',1,'preparing_dependencies',FALSE) RETURNING id").bind(&item.name).bind(entry).fetch_one(&mut *tx).await?;
             let path = storage::compiler_path(id, 1, &frozen, false);
-            sinan_compiler::validate_path(&path).map_err(|error| {
+            apsp_compiler::validate_path(&path).map_err(|error| {
                 ApiError::BadRequest(format!(
                     "第 {} 条：路径结构或下层承载不兼容：{error}",
                     index + 1
                 ))
             })?;
-            let caps = sinan_compiler::path_capabilities(&path).map_err(|error| {
+            let caps = apsp_compiler::path_capabilities(&path).map_err(|error| {
                 ApiError::BadRequest(format!("第 {} 条：路径承载无法确认：{error}", index + 1))
             })?;
             if !caps.tcp {

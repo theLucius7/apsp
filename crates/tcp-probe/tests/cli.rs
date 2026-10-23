@@ -56,7 +56,7 @@ impl Fixture {
         let directory = fs::canonicalize(std::env::temp_dir())
             .unwrap()
             .join(format!(
-                "sinan-tcp-cli-test-{}-{}",
+                "apsp-tcp-cli-test-{}-{}",
                 std::process::id(),
                 SEQUENCE.fetch_add(1, Ordering::SeqCst)
             ));
@@ -88,7 +88,7 @@ impl Fixture {
         }
     }
     fn command(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_sinan-tcp-probe"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_apsp-tcp-probe"));
         command.args([
             "--workspace",
             self.directory.to_str().unwrap(),
@@ -141,14 +141,14 @@ fn actual_cli_enforces_contract_and_emits_bounded_local_json_only() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(output.stdout.len() <= sinan_tcp_probe::OUTPUT_LIMIT + 1);
+    assert!(output.stdout.len() <= apsp_tcp_probe::OUTPUT_LIMIT + 1);
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(Some(report.clone()), fixture.read());
     assert_eq!(report["complete"], true);
     assert_eq!(report["target_digest"], fixture.digest);
     assert_eq!(
         report["engine"]["source_commit"],
-        option_env!("SINAN_NATIVE_TCP_SOURCE_COMMIT")
+        option_env!("APSP_NATIVE_TCP_SOURCE_COMMIT")
             .map(Value::from)
             .unwrap_or(Value::Null)
     );
@@ -222,7 +222,7 @@ fn external_process_stop_preserves_readable_partial_reports_and_stops_connection
 #[test]
 fn build_information_is_available_without_a_workspace_or_network_probe() {
     let output = finish(
-        Command::new(env!("CARGO_BIN_EXE_sinan-tcp-probe"))
+        Command::new(env!("CARGO_BIN_EXE_apsp-tcp-probe"))
             .arg("--build-info")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -233,7 +233,7 @@ fn build_information_is_available_without_a_workspace_or_network_probe() {
     let info: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         info,
-        json!({"version":"0.3.0","source_repo":"theLucius7/sinan","source_commit":option_env!("SINAN_NATIVE_TCP_SOURCE_COMMIT")})
+        json!({"version":"0.3.0","source_repo":"theLucius7/apsp","source_commit":option_env!("APSP_NATIVE_TCP_SOURCE_COMMIT")})
     );
 }
 

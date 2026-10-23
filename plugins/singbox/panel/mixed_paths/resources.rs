@@ -185,7 +185,7 @@ pub(crate) async fn remove_on(tx: &mut Transaction<'_, Postgres>, id: i64) -> Ap
     super::super::proxy_resources::ensure_chain_entry_unreferenced_on(tx, id, entry).await?;
     sqlx::query("UPDATE nodes SET enabled=FALSE,deleted_at=$2 WHERE id=$1")
         .bind(entry)
-        .bind(sinan_protocol::now_timestamp())
+        .bind(apsp_protocol::now_timestamp())
         .execute(&mut **tx)
         .await?;
     sqlx::query("DELETE FROM accesses WHERE node_id=$1")
@@ -196,7 +196,7 @@ pub(crate) async fn remove_on(tx: &mut Transaction<'_, Postgres>, id: i64) -> Ap
     // local retirement without changing any saved snapshot or request receipt.
     sqlx::query("UPDATE singbox_chains SET deleted_at=$2,route_enabled=FALSE,phase=CASE WHEN path_kind='legacy' THEN 'retired' ELSE phase END,applied_generation=CASE WHEN path_kind='legacy' THEN NULL ELSE applied_generation END WHERE id=$1")
         .bind(id)
-        .bind(sinan_protocol::now_timestamp())
+        .bind(apsp_protocol::now_timestamp())
         .execute(&mut **tx)
         .await?;
     super::super::business::mark_dirty(tx, &hosts).await?;

@@ -27,7 +27,7 @@ class CiFixtureTests(unittest.TestCase):
                 kwargs["newline"] = "\r\n"
             return original_open(path, mode, *args, **kwargs)
 
-        with tempfile.TemporaryDirectory(prefix="sinan-ci-fixture-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="apsp-ci-fixture-") as temporary:
             directory = Path(temporary)
             with patch.object(Path, "open", windows_open):
                 HELPER["install"](directory, proof)

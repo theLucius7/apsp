@@ -6,7 +6,7 @@ use std::{fs, os::unix::fs::PermissionsExt};
 async fn real_systemd_swap_syscalls_are_denied_before_payload_and_inherited() -> Result<()> {
     ensure!(cfg!(target_os = "linux"), "requires Linux/systemd");
     ensure!(
-        std::env::var("SINAN_SWAP_TEST_DISPOSABLE_GUEST").as_deref() == Ok("1"),
+        std::env::var("APSP_SWAP_TEST_DISPOSABLE_GUEST").as_deref() == Ok("1"),
         "swap syscall test is restricted to an explicitly authorized disposable guest"
     );
     let ops: Arc<dyn Privileged> = Arc::new(SystemOps);
@@ -16,7 +16,7 @@ async fn real_systemd_swap_syscalls_are_denied_before_payload_and_inherited() ->
         "requires root"
     );
     let services = SystemServiceManager::new(ops.clone(), ServiceBackend::Systemd);
-    let directory = std::env::temp_dir().join(format!("sinan-swap-test-{}", Uuid::new_v4()));
+    let directory = std::env::temp_dir().join(format!("apsp-swap-test-{}", Uuid::new_v4()));
     fs::create_dir(&directory)?;
     fs::set_permissions(&directory, fs::Permissions::from_mode(0o700))?;
     let script = directory.join("probe.py");
@@ -35,7 +35,7 @@ async fn real_systemd_swap_syscalls_are_denied_before_payload_and_inherited() ->
         verify_report(&control_report, 2)?;
 
         let job: ServiceJob = serde_json::from_value(serde_json::json!({
-            "unit": format!("sinan-diagnostic-{}.service", Uuid::new_v4()),
+            "unit": format!("apsp-diagnostic-{}.service", Uuid::new_v4()),
             "program": "/usr/bin/python3",
             "args": [script, directory, "1", "filtered.json"],
             "working_directory": directory,
@@ -65,7 +65,7 @@ async fn real_systemd_swap_syscalls_are_denied_before_payload_and_inherited() ->
 
         // Model a skipped installation by omitting the filter. The production
         // ExecStartPre must refuse before touching the payload marker.
-        let unit = format!("sinan-diagnostic-{}.service", Uuid::new_v4());
+        let unit = format!("apsp-diagnostic-{}.service", Uuid::new_v4());
         units.push(unit.clone());
         let output = ops.execute(Path::new("systemd-run"), &[
             format!("--unit={unit}"), "--no-block".into(), "--property=Type=oneshot".into(),

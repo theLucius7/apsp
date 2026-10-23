@@ -1,8 +1,8 @@
 use anyhow::{Result, ensure};
-use sinan_adapter_sdk::{
+use apsp_adapter_sdk::{
     CpuMaxPercent, CpuWeight, IoWeight, MemoryMax, OomScoreAdjust, ServiceJob, TasksMax,
 };
-use sinan_protocol::DiagnosticResourceBudget;
+use apsp_protocol::DiagnosticResourceBudget;
 
 pub(super) fn apply(budget: &DiagnosticResourceBudget, service: &mut ServiceJob) -> Result<()> {
     ensure!(budget.valid(), "invalid diagnostic resource budget");

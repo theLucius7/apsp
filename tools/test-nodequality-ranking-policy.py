@@ -152,9 +152,9 @@ hwjson='{"CPU":{"retained":true},"Memory":{"fixture":123}}'
                                RECORDER=recorder.url, REAL_CURL=shutil.which('curl'),
                                REQUEST_ARGUMENTS=str(directory / 'request.json'),
                                PROBES=str(directory / 'probes'), DISPLAY=str(directory / 'display'))
-            environment.pop('SINAN_UPLOAD_REPORT', None)
+            environment.pop('APSP_UPLOAD_REPORT', None)
             if upload is not None:
-                environment['SINAN_UPLOAD_REPORT'] = upload
+                environment['APSP_UPLOAD_REPORT'] = upload
             run = subprocess.run(['/bin/bash'], input=script.encode(), env=environment, capture_output=True, timeout=15)
             return run, list(recorder.requests), {
                 key: (directory / filename).read_text() if (directory / filename).exists() else None
@@ -228,7 +228,7 @@ hwjson='{"CPU":{"retained":true},"Memory":{"fixture":123}}'
                 run, posts, details = self.run_mark(new, upload)
                 self.assertEqual(run.returncode, 2)
                 self.assertEqual(run.stdout, b'')
-                self.assertIn(b'SINAN_UPLOAD_REPORT must be true or false', run.stderr)
+                self.assertIn(b'APSP_UPLOAD_REPORT must be true or false', run.stderr)
                 self.assertEqual(posts, [])
                 self.assertIsNone(details['probes'])
 

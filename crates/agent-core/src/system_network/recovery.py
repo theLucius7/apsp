@@ -63,7 +63,7 @@ def recover(state_dir, kind, identity, snapshot_path):
             raise ValueError("recovery could not confirm original parameters")
     elif kind == "firewall":
         table = snapshot["table"]
-        if not table.startswith("sinan_") or not all(character in "0123456789abcdef" for character in table[6:]):
+        if not table.startswith("apsp_") or not all(character in "0123456789abcdef" for character in table[6:]):
             raise ValueError("recovery table identity invalid")
         tables = command(["/usr/sbin/nft","list","tables"])
         actual = command(["/usr/sbin/nft","list","table","inet",table]) if "table inet " + table in tables.splitlines() else None

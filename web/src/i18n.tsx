@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 
 export type Locale = 'zh-CN' | 'en-US'
 
-const STORAGE_KEY = 'sinan-locale'
+const STORAGE_KEY = 'apsp-locale'
 const translatedTextSources = new WeakMap<Node, string>()
 const translatedAttributeSources = new WeakMap<Element, Map<string, string>>()
 
@@ -11,7 +11,7 @@ const translatedAttributeSources = new WeakMap<Element, Map<string, string>>()
 // messages intentionally fall back to their source text when no translation is
 // available.
 const english: Record<string, string> = {
-  '司南': 'Sinan', '司南首页': 'Sinan home', '服务器与节点': 'Servers and nodes', '菜单': 'Menu', '主导航': 'Main navigation', '当前位置': 'Breadcrumb',
+  'apsp': 'apsp', 'apsp首页': 'apsp home', '服务器与节点': 'Servers and nodes', '菜单': 'Menu', '主导航': 'Main navigation', '当前位置': 'Breadcrumb',
   '概览': 'Overview', '服务器': 'Servers', '代理服务': 'Proxy service', '扩展插件': 'Extensions', '系统': 'System',
   '统计仪表盘': 'Statistics dashboard', '服务器看板': 'Server dashboard', '接入与日常运维': 'Enrollment and daily operations',
   '网络与验机': 'Network and diagnostics', '网络与证书': 'Network and certificates', '批量运维与恢复': 'Bulk operations and recovery',
@@ -43,7 +43,7 @@ const english: Record<string, string> = {
   '一处管理，始终有序': 'One place to manage everything', '掌握每一台': 'Know every', '服务器。': 'server.',
   '从设备接入到节点授权，': 'From device enrollment to node authorization,', '让网络的每一步都清晰可见。': 'keep every network step clear.',
   '设备主动连接': 'Devices connect out', '配置自动对账': 'Configurations reconcile automatically', '流量按用户统计': 'Traffic is measured per user',
-  '司南 · 自托管服务器与节点面板': 'Sinan · Self-hosted server and node panel', '你的服务器，你的控制权。': 'Your servers, your control.',
+  'apsp · 自托管服务器与节点面板': 'apsp · Self-hosted server and node panel', '你的服务器，你的控制权。': 'Your servers, your control.',
   '网络检测与验机': 'Network checks and diagnostics', '测试方案': 'Test plans', '授权目标': 'Authorized targets',
   '工具与许可': 'Tools and licenses', 'IP资料来源': 'IP data sources', '任务与报告': 'Jobs and reports',
   'DNS、证书与网络配置': 'DNS, certificates and network configuration', '域名台账': 'Domain inventory', '证书版本': 'Certificate versions',
@@ -77,7 +77,7 @@ const english: Record<string, string> = {
   '跟随所选节点更新': 'Follow selected node updates', '固定所选版本': 'Pin selected version', '其他客户端（当前未支持）': 'Other client (not supported)',
   '配置可生成': 'Configuration can be generated', '当前不可用': 'Currently unavailable', '检查协议与字段兼容': 'Check protocol and field compatibility',
   '全局搜索': 'Global search', '搜索服务器、域名、节点、任务…': 'Search servers, domains, nodes, tasks…', '搜索结果': 'Search results', '收藏与最近访问': 'Favorites and recent pages', '关闭搜索': 'Close search', '没有匹配的授权对象': 'No matching authorized objects', '输入搜索词或访问对象后添加收藏。': 'Enter a search term or visit an object to add it to favorites.', 'Ctrl / ⌘ + K 打开，Esc 关闭': 'Press Ctrl / ⌘ + K to open, Esc to close', '收藏': 'Favorite', '服务器地址': 'Server address', 'IP来源观测': 'IP source observation', 'IP质量资料': 'IP quality data', '节点': 'Node', '域名': 'Domain', '证书': 'Certificate', 'DNS规则': 'DNS rule', '网络规则': 'Network rule', '诊断任务': 'Diagnostic task', '测试运行': 'Test run', '远程命令': 'Remote command', '设备操作': 'Device operation', '运维任务': 'Operations task', '任务计划': 'Operations schedule', '自动处置规则': 'Remediation rule', '维护窗口': 'Maintenance window', '故障事件': 'Incident', '探测规则': 'Probe rule', '告警规则': 'Alert rule', '延迟监测': 'Latency monitor', '任务': 'Task', '规则': 'Rule',
-  '跳到服务器信息': 'Skip to server information', '司南服务器看板': 'Sinan server dashboard', '切换浅色主题': 'Switch to light theme', '切换深色主题': 'Switch to dark theme',
+  '跳到服务器信息': 'Skip to server information', 'apsp服务器看板': 'apsp server dashboard', '切换浅色主题': 'Switch to light theme', '切换深色主题': 'Switch to dark theme',
   '浅色主题': 'Light theme', '深色主题': 'Dark theme', '进入后台': 'Open administration',
   '服务器总览': 'Server overview', '服务器状态筛选': 'Server status filter', '搜索服务器': 'Search servers', '搜索节点': 'Search nodes',
   '刷新服务器': 'Refresh servers', '刷新服务器详情': 'Refresh server details', '查看详情': 'View details', '看板视图': 'Dashboard view', '卡片': 'Cards',

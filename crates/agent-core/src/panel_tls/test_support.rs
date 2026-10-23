@@ -53,7 +53,7 @@ async fn openssl(root: &Path, arguments: &[&str]) -> Result<()> {
 impl Material {
     pub async fn new() -> Result<Self> {
         let path =
-            std::env::temp_dir().join(format!("sinan-panel-CA-TEST_ONLY-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("apsp-panel-CA-TEST_ONLY-{}", uuid::Uuid::new_v4()));
         let mut builder = std::fs::DirBuilder::new();
         #[cfg(unix)]
         {
@@ -79,7 +79,7 @@ impl Material {
                 "-days",
                 "2",
                 "-subj",
-                "/CN=Sinan TEST_ONLY private panel CA",
+                "/CN=Apsp TEST_ONLY private panel CA",
                 "-addext",
                 "basicConstraints=critical,CA:TRUE",
                 "-addext",
@@ -102,7 +102,7 @@ impl Material {
                 "ec_paramgen_curve:prime256v1",
                 "-nodes",
                 "-subj",
-                "/CN=Sinan TEST_ONLY panel",
+                "/CN=Apsp TEST_ONLY panel",
                 "-keyout",
                 "leaf.key",
                 "-out",

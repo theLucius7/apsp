@@ -20,7 +20,7 @@ SPEC.loader.exec_module(ARTIFACT)
 
 class NetworkWorkbenchArtifactContracts(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='sinan-workbench-artifact-test-')
+        self.temporary = tempfile.TemporaryDirectory(prefix='apsp-workbench-artifact-test-')
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.output = self.root / 'artifact.tar.gz'
@@ -58,12 +58,12 @@ class NetworkWorkbenchArtifactContracts(unittest.TestCase):
         self.assertEqual(metadata['tool_count'], 0)
         self.assertEqual(metadata['sha256'], hashlib.sha256(self.output.read_bytes()).hexdigest())
         with tarfile.open(self.output, 'r:gz') as archive:
-            self.assertEqual(set(archive.getnames()), {'sinan-network-workbench', 'tools-manifest.json', 'LICENSE'})
-            self.assertEqual(archive.getmember('sinan-network-workbench').mode, 0o755)
+            self.assertEqual(set(archive.getnames()), {'apsp-network-workbench', 'tools-manifest.json', 'LICENSE'})
+            self.assertEqual(archive.getmember('apsp-network-workbench').mode, 0o755)
             self.assertTrue(all(member.mtime == 0 for member in archive.getmembers()))
             manifest = json.loads(archive.extractfile('tools-manifest.json').read())
             self.assertEqual(manifest['interpreter'], self.inventory['interpreter'])
-            self.assertEqual(archive.extractfile('sinan-network-workbench').read(),
+            self.assertEqual(archive.extractfile('apsp-network-workbench').read(),
                              (SCRIPT.parent / 'network-workbench.py').read_bytes())
 
     def test_invalid_schema_and_interpreter_digest_reject_before_tool_calls(self):

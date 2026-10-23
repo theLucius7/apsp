@@ -7,13 +7,13 @@ mod release_fixture;
 mod release_support;
 
 use anyhow::{Context, Result};
+use apsp_adapter_nodequality::{NodeQualityAdapter, VERSION};
+use apsp_adapter_sdk::{BoxFuture, JobStatus, ServiceJob, ServiceManager};
+use apsp_agent_core::{State, fake::FakeResourceOps, identity, system::SystemOps, transport};
 use e2e_support::{Harness, eventually};
 use flate2::{Compression, write::GzEncoder};
 use reqwest::Method;
 use serde_json::json;
-use sinan_adapter_nodequality::{NodeQualityAdapter, VERSION};
-use sinan_adapter_sdk::{BoxFuture, JobStatus, ServiceJob, ServiceManager};
-use sinan_agent_core::{State, fake::FakeResourceOps, identity, system::SystemOps, transport};
 use sqlx::PgPool;
 use std::{
     collections::BTreeMap,
@@ -210,7 +210,7 @@ async fn node_report_survives_agent_restart_and_is_started_only_once(pool: PgPoo
                 caps.iter().any(|cap| cap == "diagnostic:nodequality")
                     && caps
                         .iter()
-                        .any(|cap| cap == sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY)
+                        .any(|cap| cap == apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY)
             }) && row.1["ip_addresses"]
                 .as_array()
                 .is_some_and(|ips| ips.iter().any(|ip| ip == "192.0.2.10")))

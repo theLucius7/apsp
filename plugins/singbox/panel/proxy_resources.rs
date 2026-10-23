@@ -4,13 +4,13 @@ use crate::{
     auth::require_admin,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use axum::{
     Json,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
 };
 use serde::Serialize;
-use sinan_protocol::now_timestamp;
 use sqlx::{FromRow, PgConnection, Postgres, Transaction};
 use std::collections::BTreeMap;
 
@@ -124,12 +124,12 @@ async fn read_resources(state: &AppState) -> ApiResult<Vec<ProxyResource>> {
         .await?
         .into_iter()
         .map(|mut endpoint| {
-            let settings = serde_json::from_value::<sinan_compiler::NodeSettings>(std::mem::take(
+            let settings = serde_json::from_value::<apsp_compiler::NodeSettings>(std::mem::take(
                 &mut endpoint.settings,
             ));
-            let protocol = serde_json::from_value::<sinan_compiler::ProtocolConfig>(
-                std::mem::take(&mut endpoint.protocol_config),
-            );
+            let protocol = serde_json::from_value::<apsp_compiler::ProtocolConfig>(std::mem::take(
+                &mut endpoint.protocol_config,
+            ));
             endpoint.protocol_config_valid =
                 protocol.is_ok_and(|config| config.kind() == endpoint.protocol);
             endpoint.public_port = endpoint.port;
@@ -337,7 +337,7 @@ impl ProbeViewRow {
     }
 }
 fn frozen_endpoint(
-    frozen: &sinan_compiler::ManagedEndpointSnapshot,
+    frozen: &apsp_compiler::ManagedEndpointSnapshot,
     endpoints: &BTreeMap<i64, ResourceEndpoint>,
 ) -> ApiResult<ResourceEndpoint> {
     let mut endpoint = endpoints

@@ -234,7 +234,7 @@ def prepare(args):
         keys[role] = pair
     extensions = tls / "extensions.cnf"
     extensions.write_text("subjectAltName=DNS:reality.test,DNS:target.test,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n")
-    capture(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-sha256", "-days", "1", "-subj", "/CN=Sinan TEST ONLY CA",
+    capture(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-sha256", "-days", "1", "-subj", "/CN=Apsp TEST ONLY CA",
              "-keyout", str(tls / "ca.key"), "-out", str(tls / "ca.crt")], 20)
     capture(["openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=reality.test", "-keyout", str(tls / "server.key"), "-out", str(tls / "server.csr")], 20)
     capture(["openssl", "x509", "-req", "-in", str(tls / "server.csr"), "-CA", str(tls / "ca.crt"), "-CAkey", str(tls / "ca.key"), "-CAcreateserial",

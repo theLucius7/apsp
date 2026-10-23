@@ -1,12 +1,12 @@
-use axum::http::Method;
-use serde_json::Value;
-#[cfg(test)]
-use serde_json::json;
-use sinan_panel_host::{
+use apsp_panel_host::{
     AppState,
     error::ApiResult,
     plugin_api::{RoutePolicy, RuntimeStepPolicy, SearchSource},
 };
+use axum::http::Method;
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
 
 pub fn route_policy(path: &str, method: &Method) -> Option<RoutePolicy> {
     let feature = if path.starts_with("/api/plugins/sing-box/") {
@@ -46,7 +46,7 @@ pub fn route_policy(path: &str, method: &Method) -> Option<RoutePolicy> {
 }
 
 pub fn sensitive_key(key: &str) -> bool {
-    sinan_plugin_singbox::host_support::sensitive_key(key)
+    apsp_plugin_singbox::host_support::sensitive_key(key)
 }
 
 pub fn worker_names() -> &'static [&'static str] {
@@ -60,19 +60,19 @@ pub fn worker_names() -> &'static [&'static str] {
 }
 
 pub fn runtime_step_policy(kind: &str) -> Option<RuntimeStepPolicy> {
-    sinan_plugin_singbox::host_support::runtime_step_policy(kind)
+    apsp_plugin_singbox::host_support::runtime_step_policy(kind)
 }
 
 pub async fn audit_snapshot(state: &AppState, path: &str) -> ApiResult<Option<Value>> {
-    sinan_plugin_singbox::host_support::audit_snapshot(state, path).await
+    apsp_plugin_singbox::host_support::audit_snapshot(state, path).await
 }
 
-pub fn signed_tool_packages(entries: &[sinan_panel_host::artifacts::ArtifactEntry]) -> Vec<Value> {
-    sinan_plugin_singbox::host_support::signed_tool_packages(entries)
+pub fn signed_tool_packages(entries: &[apsp_panel_host::artifacts::ArtifactEntry]) -> Vec<Value> {
+    apsp_plugin_singbox::host_support::signed_tool_packages(entries)
 }
 
 pub fn search_sources() -> Vec<SearchSource> {
-    sinan_plugin_singbox::host_support::search_sources()
+    apsp_plugin_singbox::host_support::search_sources()
 }
 
 #[cfg(test)]
@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn runtime_step_is_registered_with_its_fixed_version() {
         crate::plugins::install();
-        let mut step: sinan_panel_host::operations::Step = serde_json::from_value(json!({
+        let mut step: apsp_panel_host::operations::Step = serde_json::from_value(json!({
             "kind":"singbox_retry_deployment", "service":null, "timeout_secs":300,
             "runtime_version":"1.14.2"
         }))

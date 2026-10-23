@@ -59,7 +59,7 @@ async fn exact_preparation_probes_switch_and_recovery_barrier_preserve_entry_cre
         (*fixture.panel.state.config).clone(),
     )
     .await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&restarted).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&restarted).await?;
     let after:Value=sqlx::query_scalar("SELECT jsonb_agg(jsonb_build_array(chain_id,generation,position,node_version_id) ORDER BY chain_id,generation,position) FROM singbox_ordered_chain_hops").fetch_one(&fixture.panel.state.pool).await?;
     assert_eq!(retained, after);
     assert_eq!(phase(&fixture, chain).await?, "applied");
@@ -76,7 +76,7 @@ async fn failed_candidate_cannot_open_an_initial_path_or_publish_user_subscripti
     for _ in 0..12 {
         fixture.panel.publish_now().await?;
         confirm_devices(&fixture.panel.state).await?;
-        sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state)
+        apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state)
             .await?;
         if phase(&fixture, chain).await? == "probing_candidate" {
             break;
@@ -85,9 +85,9 @@ async fn failed_candidate_cannot_open_an_initial_path_or_publish_user_subscripti
     assert_eq!(phase(&fixture, chain).await?, "probing_candidate");
     fixture.panel.publish_now().await?;
     confirm_devices(&fixture.panel.state).await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     finish_controls(&fixture.panel.state, false).await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     assert_eq!(phase(&fixture, chain).await?, "failed");
     assert!(subscription_nodes(&subscription(&fixture, &user).await?).is_empty());
     let (route,applied,minimum):(bool,Option<i64>,i64)=sqlx::query_as("SELECT route_enabled,applied_generation,minimum_generation FROM singbox_chains WHERE id=$1").bind(chain).fetch_one(&fixture.panel.state.pool).await?;
@@ -126,12 +126,12 @@ async fn coarse_apply_or_wrong_probe_receipt_cannot_replace_exact_path_confirmat
         }),
     )
     .await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     assert_eq!(phase(&fixture, chain).await?, "preparing_dependencies");
     for _ in 0..12 {
         fixture.panel.publish_now().await?;
         confirm_devices(&fixture.panel.state).await?;
-        sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state)
+        apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state)
             .await?;
         if phase(&fixture, chain).await? == "probing_candidate" {
             break;
@@ -139,7 +139,7 @@ async fn coarse_apply_or_wrong_probe_receipt_cannot_replace_exact_path_confirmat
     }
     fixture.panel.publish_now().await?;
     confirm_devices(&fixture.panel.state).await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     let (server,payload):(i64,Value)=sqlx::query_as("SELECT server_id,request_json FROM runtime_control_requests WHERE kind='probe' AND state='pending'").fetch_one(&fixture.panel.state.pool).await?;
     let request: RuntimePathProbeRequest = serde_json::from_value(payload)?;
     let mut wrong = request.expected.clone();
@@ -158,7 +158,7 @@ async fn coarse_apply_or_wrong_probe_receipt_cannot_replace_exact_path_confirmat
         },
     )
     .await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     assert_ne!(phase(&fixture, chain).await?, "switching_entry");
     assert!(
         !sqlx::query_scalar::<_, bool>("SELECT route_enabled FROM singbox_chains WHERE id=$1")
@@ -180,7 +180,7 @@ async fn late_committed_barrier_retains_semantic_floor_and_never_republishes_low
     api(&fixture.panel,&fixture.cookie,Method::PATCH,&format!("/ordered-subscription-sources/{}",fixture.source),Some(json!({
         "request_id":Uuid::new_v4(),"settings_revision":1,"input":{"kind":"inline","content":content("TEST_ONLY new pinned secret"),"identity_action":"update"}
     })),StatusCode::OK).await?;
-    sinan_panel::plugins::singbox::subscription_sources::worker::run_once(&fixture.panel.state)
+    apsp_panel::plugins::singbox::subscription_sources::worker::run_once(&fixture.panel.state)
         .await?;
     let nodes = api(
         &fixture.panel,
@@ -199,7 +199,7 @@ async fn late_committed_barrier_retains_semantic_floor_and_never_republishes_low
     advance(&fixture, chain, "fixing_barrier").await?;
     fixture.panel.publish_now().await?;
     confirm_devices(&fixture.panel.state).await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     let (server,payload):(i64,Value)=sqlx::query_as("SELECT server_id,request_json FROM runtime_control_requests WHERE kind='barrier' AND state='pending'").fetch_one(&fixture.panel.state.pool).await?;
     let mut request: RuntimeRecoveryBarrierRequest = serde_json::from_value(payload)?;
     // TEST_ONLY late receipt: no claim that an expired command was executed by a device.
@@ -228,7 +228,7 @@ async fn late_committed_barrier_retains_semantic_floor_and_never_republishes_low
     assert_eq!(outcome, "late");
     // Cover a panel crash after enqueue but before the local stage/request association.
     sqlx::query("UPDATE singbox_path_stage_deployments SET barrier_request_id=NULL WHERE chain_id=$1 AND generation=2").bind(chain).execute(&fixture.panel.state.pool).await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     let (minimum, phase, applied): (i64, String, Option<i64>) = sqlx::query_as(
         "SELECT minimum_generation,phase,applied_generation FROM singbox_chains WHERE id=$1",
     )
@@ -294,7 +294,7 @@ async fn a_new_managed_dependency_revision_requires_a_new_probe_even_when_entry_
         subscription_nodes(&subscription(&fixture, &user).await?).is_empty(),
         "the old entry probe cannot certify a new dependency vector"
     );
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     let payload: Value = sqlx::query_scalar(
         "SELECT request_json FROM runtime_control_requests WHERE kind='probe' AND state='pending'",
     )
@@ -304,7 +304,7 @@ async fn a_new_managed_dependency_revision_requires_a_new_probe_even_when_entry_
     assert_ne!(request.request_id, original);
     assert_eq!(json!(request.expected), entry_after);
     finish_controls(&fixture.panel.state, true).await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     assert_eq!(phase(&fixture, chain).await?, "applied");
     assert_eq!(
         subscription_nodes(&subscription(&fixture, &user).await?).len(),
@@ -359,7 +359,7 @@ async fn orphan_probe_request_cannot_be_reassociated_with_a_later_complete_vecto
         json!(orphan.expected),
         "entry activation stays fixed across both managed changes"
     );
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     let waiting:(Uuid,Value)=sqlx::query_as("SELECT request_id,dependency_vector FROM singbox_path_probes WHERE chain_id=$1 AND generation=1 AND stage='switched'")
         .bind(chain).fetch_one(&fixture.panel.state.pool).await?;
     assert_eq!(
@@ -398,7 +398,7 @@ async fn orphan_probe_request_cannot_be_reassociated_with_a_later_complete_vecto
         (*fixture.panel.state.config).clone(),
     )
     .await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&restarted).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&restarted).await?;
     let (fresh,fresh_vector,state):(Uuid,Value,String)=sqlx::query_as("SELECT request_id,dependency_vector,state FROM singbox_path_probes WHERE chain_id=$1 AND generation=1 AND stage='switched'")
         .bind(chain).fetch_one(&fixture.panel.state.pool).await?;
     assert_ne!(fresh, original);
@@ -410,7 +410,7 @@ async fn orphan_probe_request_cannot_be_reassociated_with_a_later_complete_vecto
         "an old verified receipt cannot certify V2"
     );
     finish_controls(&restarted, true).await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&restarted).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&restarted).await?;
     assert_eq!(
         subscription_nodes(&subscription(&fixture, &user).await?).len(),
         1
@@ -432,7 +432,7 @@ async fn orphan_barrier_and_later_vector_cannot_retire_old_identities_before_new
     api(&fixture.panel,&fixture.cookie,Method::PATCH,&format!("/ordered-subscription-sources/{}",fixture.source),Some(json!({
         "request_id":Uuid::new_v4(),"settings_revision":1,"input":{"kind":"inline","content":content("TEST_ONLY changed source secret"),"identity_action":"update"}
     })),StatusCode::OK).await?;
-    sinan_panel::plugins::singbox::subscription_sources::worker::run_once(&fixture.panel.state)
+    apsp_panel::plugins::singbox::subscription_sources::worker::run_once(&fixture.panel.state)
         .await?;
     let nodes = api(
         &fixture.panel,
@@ -471,7 +471,7 @@ async fn orphan_barrier_and_later_vector_cannot_retire_old_identities_before_new
     let later_vector = observed_vector(&fixture).await?;
     assert_ne!(later_vector, proved_vector);
     assert_eq!(later_vector[0][1], json!(orphan.expected));
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     assert_eq!(
         phase(&fixture, chain).await?,
         "probing_switched",
@@ -513,7 +513,7 @@ async fn orphan_barrier_and_later_vector_cannot_retire_old_identities_before_new
     assert_eq!(outcome, "verified");
     fixture.panel.publish_now().await?;
     confirm_devices(&fixture.panel.state).await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     let (minimum, applied): (i64, Option<i64>) = sqlx::query_as(
         "SELECT minimum_generation,applied_generation FROM singbox_chains WHERE id=$1",
     )
@@ -532,7 +532,7 @@ async fn orphan_barrier_and_later_vector_cannot_retire_old_identities_before_new
     assert_eq!(new_vector, later_vector);
     assert!(subscription_nodes(&subscription(&fixture, &user).await?).is_empty());
     finish_controls(&fixture.panel.state, true).await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     assert_eq!(phase(&fixture, chain).await?, "fixing_barrier");
     fixture.panel.publish_now().await?;
     confirm_devices(&fixture.panel.state).await?;
@@ -542,14 +542,14 @@ async fn orphan_barrier_and_later_vector_cannot_retire_old_identities_before_new
         "republishing the barrier phase must preserve the newly proved complete vector"
     );
     assert_eq!(barrier_vector[0][1], json!(orphan.expected));
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     let (fresh,fresh_vector):(Uuid,Value)=sqlx::query_as("SELECT barrier_request_id,barrier_vector FROM singbox_path_stage_deployments WHERE chain_id=$1 AND generation=2 AND stage='switching_entry' AND role='entry'")
         .bind(chain).fetch_one(&fixture.panel.state.pool).await?;
     assert_ne!(fresh, orphan.request_id);
     assert_eq!(fresh_vector, later_vector);
     assert_eq!(phase(&fixture, chain).await?, "fixing_barrier");
     finish_controls(&fixture.panel.state, true).await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     assert_eq!(
         phase(&fixture, chain).await?,
         "retiring_old",
@@ -574,7 +574,7 @@ async fn an_unknown_orphan_barrier_floor_blocks_rollback_after_a_new_vector_prob
     api(&fixture.panel,&fixture.cookie,Method::PATCH,&format!("/ordered-subscription-sources/{}",fixture.source),Some(json!({
         "request_id":Uuid::new_v4(),"settings_revision":1,"input":{"kind":"inline","content":content("TEST_ONLY unknown barrier source change"),"identity_action":"update"}
     })),StatusCode::OK).await?;
-    sinan_panel::plugins::singbox::subscription_sources::worker::run_once(&fixture.panel.state)
+    apsp_panel::plugins::singbox::subscription_sources::worker::run_once(&fixture.panel.state)
         .await?;
     let nodes = api(
         &fixture.panel,
@@ -605,11 +605,11 @@ async fn an_unknown_orphan_barrier_floor_blocks_rollback_after_a_new_vector_prob
     )
     .await?;
     change_middle_configuration(&fixture, "TEST_ONLY unconfirmed floor middle change").await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     assert_eq!(phase(&fixture, chain).await?, "probing_switched");
     fixture.panel.publish_now().await?;
     confirm_devices(&fixture.panel.state).await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     let request:Value=sqlx::query_scalar("SELECT q.request_json FROM singbox_path_probes p JOIN runtime_control_requests q ON q.request_id=p.request_id WHERE p.chain_id=$1 AND p.generation=2 AND p.stage='switched' AND p.state='pending'")
         .bind(chain).fetch_one(&fixture.panel.state.pool).await?;
     let request: RuntimePathProbeRequest = serde_json::from_value(request)?;
@@ -627,7 +627,7 @@ async fn an_unknown_orphan_barrier_floor_blocks_rollback_after_a_new_vector_prob
         },
     )
     .await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     let guarded:(String,i64,Option<i64>,Option<i64>,Option<i64>)=sqlx::query_as("SELECT phase,minimum_generation,applied_generation,candidate_generation,recovery_generation FROM singbox_chains WHERE id=$1")
         .bind(chain).fetch_one(&fixture.panel.state.pool).await?;
     assert_eq!(
@@ -671,7 +671,7 @@ async fn a_superseded_probe_keeps_its_history_and_requires_a_new_request_without
     advance(&fixture, chain, "applied").await?;
     change_middle_configuration(&fixture, "TEST_ONLY current vector refresh").await?;
     let current_vector = observed_vector(&fixture).await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     let raw:Value=sqlx::query_scalar("SELECT q.request_json FROM singbox_path_probes p JOIN runtime_control_requests q ON q.request_id=p.request_id WHERE p.chain_id=$1 AND p.generation=1 AND p.stage='switched' AND p.state='pending'")
         .bind(chain).fetch_one(&fixture.panel.state.pool).await?;
     let request: RuntimePathProbeRequest = serde_json::from_value(raw)?;
@@ -719,7 +719,7 @@ async fn a_superseded_probe_keeps_its_history_and_requires_a_new_request_without
         current_vector,
         "metadata-only dirtiness did not change the exact activation vector"
     );
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     assert_eq!(
         phase(&fixture, chain).await?,
         "applied",
@@ -732,14 +732,14 @@ async fn a_superseded_probe_keeps_its_history_and_requires_a_new_request_without
         subscription_nodes(&subscription(&fixture, &user).await?).is_empty(),
         "a superseded receipt cannot preserve current qualification"
     );
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     let (fresh,fresh_vector):(Uuid,Value)=sqlx::query_as("SELECT request_id,dependency_vector FROM singbox_path_probes WHERE chain_id=$1 AND generation=1 AND stage='switched'")
         .bind(chain).fetch_one(&fixture.panel.state.pool).await?;
     assert_ne!(fresh, request.request_id);
     assert_eq!(fresh_vector, current_vector);
     assert!(subscription_nodes(&subscription(&fixture, &user).await?).is_empty());
     finish_controls(&fixture.panel.state, true).await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     assert_eq!(phase(&fixture, chain).await?, "applied");
     assert_eq!(
         subscription_nodes(&subscription(&fixture, &user).await?).len(),

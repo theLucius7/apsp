@@ -15,8 +15,8 @@ const diagnosisFixture = user => ({ user_id: user.id, account: { user_id: user.i
   limitations: { credentials_read: { available: false, reason: 'TEST_ONLY 敏感内容未读取；此处仅为独立只读诊断快照。' } } })
 const templateFixture = { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY 完整模板未读取。', supported_client: 'singbox', supported_version: '1.14.2', schema_validation: true, runtime_validation: false, limitations: 'TEST_ONLY 没有保存的模板，未执行真实客户端验证。' }
 
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
-const dist = process.env.SINAN_WEB_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url))
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
+const dist = process.env.APSP_WEB_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url))
 const prefix = '/api/plugins/sing-box'
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const host = createServer(async (request, response) => {
@@ -37,7 +37,7 @@ const summary = []
 try {
   await new Promise(done => host.listen(0, '127.0.0.1', done))
   const origin = `http://127.0.0.1:${host.address().port}`
-  browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+  browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
   for (const width of [1440, 390]) for (const pageName of ['groups', 'users']) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } })
     const errors = [], writes = [], gates = new Map(), reads = new Map()

@@ -14,11 +14,11 @@ mod sources;
 mod support;
 
 use anyhow::{Context, Result, ensure};
+use apsp_panel::{AppState, agent_api, runtime_control};
+use apsp_protocol::*;
 use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::{AppState, agent_api, runtime_control};
-use sinan_protocol::*;
 use sqlx::PgPool;
 use support::*;
 use uuid::Uuid;

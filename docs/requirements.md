@@ -1,4 +1,4 @@
-# Sinan MVP：自主执行任务说明
+# Apsp MVP：自主执行任务说明
 
 > 本文件是一份完整的任务说明。执行者请从头读到尾，再开始动手。
 > 第 0 节是工作方式，第 2 节是验收标准，第 12 节是执行顺序。
@@ -7,7 +7,7 @@
 
 ## 0. 给执行者的指令（先读）
 
-**你的目标：** 在当前仓库（它将成为 `sinan` 主仓库）中，从零实现 Sinan 的最小可用版本（MVP），使第 2 节的验收场景可以跑通。按第 12 节的顺序推进，每一步都要有可运行的代码和通过的测试。
+**你的目标：** 在当前仓库（它将成为 `apsp` 主仓库）中，从零实现 Apsp 的最小可用版本（MVP），使第 2 节的验收场景可以跑通。按第 12 节的顺序推进，每一步都要有可运行的代码和通过的测试。
 
 **工作方式：**
 
@@ -28,7 +28,7 @@
 
 ## 1. 项目背景
 
-Sinan（司南）是一个自托管的服务器与代理网络控制平面：
+Apsp（apsp）是一个自托管的服务器与代理网络控制平面：
 
 - 一台主服务器部署**面板**（panel）。
 - 其他服务器安装 **Agent**，Agent 主动连接面板。
@@ -79,7 +79,7 @@ MVP 完成的标志是下面这条链路可以完整跑通：
 
 1. **声明式全量快照。** 面板为每台服务器编译完整配置，带单调递增的版本号（rev）。Agent 拉取、校验、应用、回报。心跳携带已应用版本，面板发现不一致就重新通知。Agent 本地保留最后一份可用配置，面板离线时节点照常运行。
 2. **Agent 三层结构。** `agent-core`（原生功能）只依赖 `adapter-sdk` 和 `protocol`；`adapter-*` 只依赖 `adapter-sdk`；只有 `agent` 二进制入口同时依赖全部 crate，负责把适配器注册进 core。`agent-core` 源码中不得出现 `singbox` 或 `sing-box` 字样（CI 用 grep 检查）。适配器是无状态的翻译层：不持久化任何东西，不连接面板。
-3. **sing-box 以独立的 systemd 或 OpenRC 服务运行**（分别为 `sinan-singbox@main.service`、`sinan-singbox@main`），不是 Agent 的子进程。Agent 重启不影响代理服务。
+3. **sing-box 以独立的 systemd 或 OpenRC 服务运行**（分别为 `apsp-singbox@main.service`、`apsp-singbox@main`），不是 Agent 的子进程。Agent 重启不影响代理服务。
 4. **计量只在用户认证的那一端计算一次。** 读取统计时 `reset=false`，累计读取，在本地计算差值并持久化，带序号上报；面板按 (server_id, epoch, seq) 去重后确认。
 5. **统计用户名按"成员 + 节点"生成**：`u{user_id}_n{node_id}`。原因见第 9 节。
 6. **特权操作经过 `Privileged` trait。** MVP 中 Agent 以 root 运行，trait 的实现直接在进程内执行；以后替换成独立 helper 进程时，调用方不用改。
@@ -104,22 +104,22 @@ MVP 完成的标志是下面这条链路可以完整跑通：
 ### 目录结构
 
 ```text
-sinan/
+apsp/
 ├── Cargo.toml                 workspace
 ├── crates/
-│   ├── protocol/              包名 sinan-protocol：面板↔Agent 消息定义
-│   ├── compiler/              包名 sinan-compiler：模型 → sing-box 配置
-│   ├── panel/                 包名 sinan-panel：面板后端，内嵌 web/dist
-│   ├── agent/                 包名 sinan-agent：Agent 二进制入口
-│   ├── agent-core/            包名 sinan-agent-core
-│   ├── adapter-sdk/           包名 sinan-adapter-sdk
-│   └── adapter-singbox/       包名 sinan-adapter-singbox
+│   ├── protocol/              包名 apsp-protocol：面板↔Agent 消息定义
+│   ├── compiler/              包名 apsp-compiler：模型 → sing-box 配置
+│   ├── panel/                 包名 apsp-panel：面板后端，内嵌 web/dist
+│   ├── agent/                 包名 apsp-agent：Agent 二进制入口
+│   ├── agent-core/            包名 apsp-agent-core
+│   ├── adapter-sdk/           包名 apsp-adapter-sdk
+│   └── adapter-singbox/       包名 apsp-adapter-singbox
 ├── web/                       前端
 ├── plugins/sing-box/          systemd 与 OpenRC 运行时服务模板
 ├── deploy/
 │   ├── install.sh.tmpl        安装脚本模板（由面板渲染）
-│   ├── sinan-agent.service
-│   ├── sinan-agent.openrc
+│   ├── apsp-agent.service
+│   ├── apsp-agent.openrc
 │   └── docker-compose.yml     面板 + PostgreSQL
 ├── tools/build-singbox.sh     从上游源码构建 sing-box
 ├── scripts/e2e-real.sh        真实服务器上的手动端到端验证步骤
@@ -202,7 +202,7 @@ sinan/
 
 ### 配置（环境变量）
 
-`SINAN_DATABASE_URL`、`SINAN_LISTEN`（默认 `0.0.0.0:8080`）、`SINAN_PUBLIC_URL`、`SINAN_DATA_DIR`（制品目录在其下的 `artifacts/`）、`SINAN_ADMIN_PASSWORD`（仅首次启动时用于创建管理员）。
+`APSP_DATABASE_URL`、`APSP_LISTEN`（默认 `0.0.0.0:8080`）、`APSP_PUBLIC_URL`、`APSP_DATA_DIR`（制品目录在其下的 `artifacts/`）、`APSP_ADMIN_PASSWORD`（仅首次启动时用于创建管理员）。
 
 ### 数据表（用 sqlx 迁移文件创建）
 
@@ -234,15 +234,15 @@ sinan/
 
 ### 命令行
 
-- `sinan-agent enroll --panel <URL> --token <T>`：生成设备密钥，完成注册。
-- `sinan-agent run`：常驻运行。
-- `sinan-agent status`：通过 root 可访问的 unix socket 查询运行中的 Agent，显示面板连接状态、各模块已应用版本、健康状态、待确认的流量批次数量。
+- `apsp-agent enroll --panel <URL> --token <T>`：生成设备密钥，完成注册。
+- `apsp-agent run`：常驻运行。
+- `apsp-agent status`：通过 root 可访问的 unix socket 查询运行中的 Agent，显示面板连接状态、各模块已应用版本、健康状态、待确认的流量批次数量。
 
 ### 文件位置
 
-- 配置：`/etc/sinan/agent.toml`（`panel_url`）。
-- 身份：`/etc/sinan/identity/device.key`（权限 0600）、`/etc/sinan/identity/server_id`。
-- 状态库：`/var/lib/sinan/core/state.db`，从第一天起使用迁移机制。表：`kv`、`intents`、`usage_baselines`、`usage_outbox`。
+- 配置：`/etc/apsp/agent.toml`（`panel_url`）。
+- 身份：`/etc/apsp/identity/device.key`（权限 0600）、`/etc/apsp/identity/server_id`。
+- 状态库：`/var/lib/apsp/core/state.db`，从第一天起使用迁移机制。表：`kv`、`intents`、`usage_baselines`、`usage_outbox`。
 - 所有路径都可以通过配置覆盖，以便测试时使用临时目录。
 
 ### 对账流程（sing-box 模块）
@@ -250,8 +250,8 @@ sinan/
 触发条件：收到 `manifest.changed`，或每 60 秒轮询一次。步骤如下：
 
 1. 拉取 manifest。
-2. 确认内核版本已安装。未安装则下载、校验 sha256、解压到 `/opt/sinan/plugins/sing-box/<版本>/`，执行 `sing-box version`，解析输出中的 `Tags:` 行，**必须包含 `with_v2ray_api`，否则拒绝并回报错误**。
-3. `config_rev` 与已应用版本不同时，拉取 bundle，校验哈希，写入 `/var/lib/sinan/plugins/sing-box@main/revisions/<rev>/config.json`。
+2. 确认内核版本已安装。未安装则下载、校验 sha256、解压到 `/opt/apsp/plugins/sing-box/<版本>/`，执行 `sing-box version`，解析输出中的 `Tags:` 行，**必须包含 `with_v2ray_api`，否则拒绝并回报错误**。
+3. `config_rev` 与已应用版本不同时，拉取 bundle，校验哈希，写入 `/var/lib/apsp/plugins/sing-box@main/revisions/<rev>/config.json`。
 4. 用目标版本的二进制执行 `sing-box check -c <文件>`。
 5. 计划：配置哈希相同为 noop；配置变化为 reload；内核版本变化为 restart。
 6. 写入意图记录。如果是 reload 或 restart，先读取一次流量计数作为当前周期的终值。
@@ -315,25 +315,25 @@ sinan/
 ## 10. 服务器上的路径与服务
 
 ```text
-/opt/sinan/core/<版本>/sinan-agent        current → <版本>
-/usr/local/bin/sinan-agent → /opt/sinan/core/current/sinan-agent
-/opt/sinan/plugins/sing-box/<版本>/sing-box   current → <版本>
-/etc/sinan/agent.toml
-/etc/sinan/identity/
-/var/lib/sinan/core/state.db
-/var/lib/sinan/plugins/sing-box@main/{revisions/, current, data/}
+/opt/apsp/core/<版本>/apsp-agent        current → <版本>
+/usr/local/bin/apsp-agent → /opt/apsp/core/current/apsp-agent
+/opt/apsp/plugins/sing-box/<版本>/sing-box   current → <版本>
+/etc/apsp/agent.toml
+/etc/apsp/identity/
+/var/lib/apsp/core/state.db
+/var/lib/apsp/plugins/sing-box@main/{revisions/, current, data/}
 ```
 
-`deploy/sinan-agent.service`：
+`deploy/apsp-agent.service`：
 
 ```ini
 [Unit]
-Description=Sinan Agent
+Description=Apsp Agent
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=/opt/sinan/core/current/sinan-agent run
+ExecStart=/opt/apsp/core/current/apsp-agent run
 Restart=always
 RestartSec=5
 
@@ -341,21 +341,21 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-`plugins/sing-box/sinan-singbox@.service`：
+`plugins/sing-box/apsp-singbox@.service`：
 
 ```ini
 [Unit]
-Description=Sinan sing-box runtime (%i)
+Description=Apsp sing-box runtime (%i)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=sinan-singbox
-Group=sinan-singbox
+User=apsp-singbox
+Group=apsp-singbox
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
-ExecStart=/opt/sinan/plugins/sing-box/current/sing-box run -c /var/lib/sinan/plugins/sing-box@%i/current/config.json -D /var/lib/sinan/plugins/sing-box@%i/data
+ExecStart=/opt/apsp/plugins/sing-box/current/sing-box run -c /var/lib/apsp/plugins/sing-box@%i/current/config.json -D /var/lib/apsp/plugins/sing-box@%i/data
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
@@ -364,9 +364,9 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-OpenRC 使用 `deploy/sinan-agent.openrc`、`plugins/sing-box/sinan-singbox.openrc`，安装为 `/etc/init.d/sinan-agent` 和 `/etc/init.d/sinan-singbox@main`。两个服务独立监督，runtime 使用专用用户、ambient capability 与 no_new_privs；日志保存在 `/var/log/sinan/`。运行时配置路径与 systemd 相同。
+OpenRC 使用 `deploy/apsp-agent.openrc`、`plugins/sing-box/apsp-singbox.openrc`，安装为 `/etc/init.d/apsp-agent` 和 `/etc/init.d/apsp-singbox@main`。两个服务独立监督，runtime 使用专用用户、ambient capability 与 no_new_privs；日志保存在 `/var/log/apsp/`。运行时配置路径与 systemd 相同。
 
-**安装脚本**（`deploy/install.sh.tmpl`）：检查 root、Linux 和运行中的 systemd/OpenRC；识别架构（x86_64 对应 amd64，aarch64 对应 arm64）；支持 shadow 或 BusyBox 创建系统用户与组 `sinan-singbox`（nologin）；创建目录并设置权限；从面板下载 Agent 二进制并校验 sha256；先执行暂存二进制 `enroll`，成功后安装到版本目录、更新 current 链接和对应服务文件；启用两个服务，重启 Agent。OpenRC 使用 default runlevel，首次发布前不启动尚无配置的运行时。脚本必须可以重复执行，重复执行就相当于升级 Agent，保留已有身份与账本。
+**安装脚本**（`deploy/install.sh.tmpl`）：检查 root、Linux 和运行中的 systemd/OpenRC；识别架构（x86_64 对应 amd64，aarch64 对应 arm64）；支持 shadow 或 BusyBox 创建系统用户与组 `apsp-singbox`（nologin）；创建目录并设置权限；从面板下载 Agent 二进制并校验 sha256；先执行暂存二进制 `enroll`，成功后安装到版本目录、更新 current 链接和对应服务文件；启用两个服务，重启 Agent。OpenRC 使用 default runlevel，首次发布前不启动尚无配置的运行时。脚本必须可以重复执行，重复执行就相当于升级 Agent，保留已有身份与账本。
 
 Agent 发布构建使用 musl 静态链接：`x86_64-unknown-linux-musl` 和 `aarch64-unknown-linux-musl`。
 

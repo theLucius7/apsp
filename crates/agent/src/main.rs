@@ -1,27 +1,27 @@
 #![forbid(unsafe_code)]
 
 use anyhow::Context;
-use clap::{Parser, Subcommand};
 #[cfg(target_os = "linux")]
-use sinan_adapter_ipquality::IpQualityAdapter;
+use apsp_adapter_ipquality::IpQualityAdapter;
 #[cfg(target_os = "linux")]
-use sinan_adapter_nodequality::NodeQualityAdapter;
-use sinan_adapter_sdk::{Adapter, DiagnosticAdapter, Privileged, ServiceManager};
-use sinan_adapter_singbox::SingboxAdapter;
+use apsp_adapter_nodequality::NodeQualityAdapter;
+use apsp_adapter_sdk::{Adapter, DiagnosticAdapter, Privileged, ServiceManager};
+use apsp_adapter_singbox::SingboxAdapter;
 #[cfg(target_os = "linux")]
-use sinan_adapter_tcpquality::{TcpQualityAdapter, WorkbenchAdapter};
-use sinan_agent_core::{
+use apsp_adapter_tcpquality::{TcpQualityAdapter, WorkbenchAdapter};
+use apsp_agent_core::{
     Config, identity,
     system::{ServiceBackend, SystemOps, SystemServiceManager},
     transport,
 };
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::{path::Path, sync::Arc};
 
 #[derive(Parser)]
-#[command(name = "sinan-agent", version, about = "Sinan 服务器代理")]
+#[command(name = "apsp-agent", version, about = "Apsp 服务器代理")]
 struct Cli {
-    #[arg(long, global = true, default_value_os_t = sinan_agent_core::config::default_path())]
+    #[arg(long, global = true, default_value_os_t = apsp_agent_core::config::default_path())]
     config: PathBuf,
     #[command(subcommand)]
     command: Command,
@@ -91,10 +91,10 @@ async fn main() -> anyhow::Result<()> {
     let result = run_cli(cli).await;
     if result.as_ref().is_err_and(|error| {
         error
-            .downcast_ref::<sinan_agent_core::retirement::Retired>()
+            .downcast_ref::<apsp_agent_core::retirement::Retired>()
             .is_some()
     }) {
-        std::process::exit(sinan_agent_core::retirement::RETIRED_EXIT_CODE);
+        std::process::exit(apsp_agent_core::retirement::RETIRED_EXIT_CODE);
     }
     result
 }
@@ -130,7 +130,7 @@ async fn run_cli(cli: Cli) -> anyhow::Result<()> {
         Command::Run { monitor_only } => {
             let config = Config::load(&path)?;
             if monitor_only {
-                sinan_agent_core::retirement::ensure_monitor_only_allowed(&config)?;
+                apsp_agent_core::retirement::ensure_monitor_only_allowed(&config)?;
             }
             let backend = if monitor_only {
                 ServiceBackend::Unmanaged
@@ -172,32 +172,32 @@ async fn run_cli(cli: Cli) -> anyhow::Result<()> {
         Command::Status => {
             let config = Config::load(&path)?;
             let mut status = transport::status(&config.status_socket).await?;
-            status["update"] = serde_json::to_value(sinan_agent_core::upgrade::state(&config)?)?;
+            status["update"] = serde_json::to_value(apsp_agent_core::upgrade::state(&config)?)?;
             println!("{}", serde_json::to_string_pretty(&status)?);
             Ok(())
         }
         Command::InstallService { monitor_only } => {
             let config = Config::load(&path)?;
             if monitor_only {
-                sinan_agent_core::retirement::ensure_monitor_only_allowed(&config)?;
+                apsp_agent_core::retirement::ensure_monitor_only_allowed(&config)?;
             }
             let descriptor = (!monitor_only).then(|| SingboxAdapter::new().describe());
-            sinan_agent_core::system::deploy::install_services(
+            apsp_agent_core::system::deploy::install_services(
                 &config,
                 &path,
                 descriptor.as_ref(),
                 env!("CARGO_PKG_VERSION"),
             )
             .await?;
-            println!("服务安装完成，可运行 sinan-agent status 查看状态。");
+            println!("服务安装完成，可运行 apsp-agent status 查看状态。");
             Ok(())
         }
         Command::Supervise { monitor_only } => {
             let config = Config::load(&path)?;
             if monitor_only {
-                sinan_agent_core::retirement::ensure_monitor_only_allowed(&config)?;
+                apsp_agent_core::retirement::ensure_monitor_only_allowed(&config)?;
             }
-            sinan_agent_core::upgrade::supervise(config, path, monitor_only, privileged).await
+            apsp_agent_core::upgrade::supervise(config, path, monitor_only, privileged).await
         }
         #[cfg(target_os = "linux")]
         Command::RunJob { spec } => {
@@ -207,7 +207,7 @@ async fn run_cli(cli: Cli) -> anyhow::Result<()> {
             tokio::select! {
                 biased;
                 _ = shutdown => Ok(()),
-                result = sinan_agent_core::system::run_job(&spec) => result,
+                result = apsp_agent_core::system::run_job(&spec) => result,
             }
             // Cancelling run_job synchronously drops CommandGuard and kills the payload
             // process group. The durable start remains observable as failed, with its
@@ -215,7 +215,7 @@ async fn run_cli(cli: Cli) -> anyhow::Result<()> {
         }
         #[cfg(target_os = "linux")]
         Command::ServiceJob { spec, status } => {
-            let job: sinan_adapter_sdk::ServiceJob = serde_json::from_slice(&std::fs::read(spec)?)?;
+            let job: apsp_adapter_sdk::ServiceJob = serde_json::from_slice(&std::fs::read(spec)?)?;
             let services = SystemServiceManager::new(privileged, ServiceBackend::detect()?);
             if status {
                 println!(
@@ -232,7 +232,7 @@ async fn run_cli(cli: Cli) -> anyhow::Result<()> {
             name,
             format,
         } => {
-            sinan_agent_core::artifacts::verify_installed_binary(
+            apsp_agent_core::artifacts::verify_installed_binary(
                 &absolute_path(&binary)?,
                 &name,
                 &format,
@@ -240,11 +240,11 @@ async fn run_cli(cli: Cli) -> anyhow::Result<()> {
             .await
         }
         Command::VerifyRelease { proof_dir } => {
-            sinan_agent_core::artifacts::verify_release_directory(&absolute_path(&proof_dir)?).await
+            apsp_agent_core::artifacts::verify_release_directory(&absolute_path(&proof_dir)?).await
         }
         Command::VerifyCache => {
             let config = Config::load(&path)?;
-            sinan_agent_core::artifacts::verify_cache(&config).await
+            apsp_agent_core::artifacts::verify_cache(&config).await
         }
     }
 }

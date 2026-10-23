@@ -143,7 +143,7 @@ class ParentFixture:
                                'evidence_scope': 'TEST_ONLY inert parent solver record'})
         (solver / 'selection.json').write_bytes(solver_body)
         capacity_body = encoded({'schema': 1,
-                                 'kind': 'sinan-nodequality-debian-input-collection-capacity-plan',
+                                 'kind': 'apsp-nodequality-debian-input-collection-capacity-plan',
                                  'arch': self.materials['arch'], 'source_epoch': self.materials['source_epoch'],
                                  'keyring': self.materials['keyring'], 'repositories': self.materials['repositories'],
                                  'packages': self.materials['packages'], 'sources': self.materials['sources'],
@@ -153,7 +153,7 @@ class ParentFixture:
                                  'evidence_scope': 'TEST_ONLY parent inventory binding; no live capacity admission'})
         (self.directory / 'capacity-plan.json').write_bytes(capacity_body)
         (self.directory / 'unbound-inputs.json').write_bytes(encoded({
-            'schema': 1, 'kind': 'sinan-nodequality-debian-input-collection',
+            'schema': 1, 'kind': 'apsp-nodequality-debian-input-collection',
             'materials_sha256': identity(raw)['sha256'], 'builder': None, 'lock_ready': False,
             'builder_approved': False, 'full_ready': False, 'reproducibility_verified': False}))
         imports = []
@@ -164,7 +164,7 @@ class ParentFixture:
             imports.append({'archive': archive, 'selected_timestamp': selected, 'response': descriptor,
                             'imports_in_response': [selected],
                             'authentication_scope': 'official HTTPS discovery, not package signature'})
-        self.receipt = {'schema': 1, 'kind': 'sinan-nodequality-debian-input-collection',
+        self.receipt = {'schema': 1, 'kind': 'apsp-nodequality-debian-input-collection',
                         'complete': True, 'arch': 'amd64', 'collected_at': '2026-10-02T00:00:00+00:00',
                         'materials_sha256': identity(raw)['sha256'], 'inputs_lock_sha256': None,
                         'lock_ready': False, 'builder': None, 'imports': imports,
@@ -216,13 +216,13 @@ class DerivedInputsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # Loaded only when the frozen test suite is executed by the final owner.
-        cls.inputs = module('sinan_ipquality_inputs_fixture', ROOT / 'tools/ipquality-inputs.py')
+        cls.inputs = module('apsp_ipquality_inputs_fixture', ROOT / 'tools/ipquality-inputs.py')
         cls.loaded = cls.inputs.modules()
         cls.parent_factory = cls.loaded['parent_build']
         cls.profile = cls.loaded['profile']
 
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='sinan-derived-inputs-fixture-')
+        self.temporary = tempfile.TemporaryDirectory(prefix='apsp-derived-inputs-fixture-')
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
         self.fixture = ParentFixture(self.root / 'parent', self.parent_factory, self.profile)
@@ -388,7 +388,7 @@ class DerivedInputsTests(unittest.TestCase):
 
     def test_parent_receipt_kind_arch_complete_material_digest_and_authentication_are_required(self):
         initial = copy.deepcopy(self.fixture.receipt)
-        for key, replacement in (('kind', 'sinan-ipquality-debian-input-collection'),
+        for key, replacement in (('kind', 'apsp-ipquality-debian-input-collection'),
                                  ('arch', 'arm64'), ('complete', False),
                                  ('source_authenticated', False), ('builder_approved', True),
                                  ('materials_sha256', '0' * 64)):
@@ -548,8 +548,8 @@ class DerivedInputsTests(unittest.TestCase):
         output = self.derive()
         verified = self.verify(output)
         receipt = verified['receipt']
-        self.assertEqual(receipt['kind'], 'sinan-ipquality-debian-input-derivation')
-        self.assertEqual(receipt['parent']['kind'], 'sinan-nodequality-debian-input-collection')
+        self.assertEqual(receipt['kind'], 'apsp-ipquality-debian-input-derivation')
+        self.assertEqual(receipt['parent']['kind'], 'apsp-nodequality-debian-input-collection')
         self.assertEqual(verified['child'], self.fixture.child())
         self.assertEqual(receipt['cache_directory'], str(self.fixture.cache))
         self.assertEqual(receipt['borrowed_new_allocated_bytes'], 0)
@@ -595,7 +595,7 @@ class DerivedInputsTests(unittest.TestCase):
     def test_derived_receipt_cannot_claim_collection_download_approval_installation_or_full_execution(self):
         output = self.derive()
         initial = json.loads((output / 'derivation.json').read_bytes())
-        changes = [('kind', 'sinan-ipquality-debian-input-collection'), ('source_authenticated', False)]
+        changes = [('kind', 'apsp-ipquality-debian-input-collection'), ('source_authenticated', False)]
         changes += [(key, True) for key in ('builder_approved', 'runtime_image_identity_verified',
                                           'keyring_trust_independently_verified', 'reproducibility_verified',
                                           'full_ready', 'installation', 'network_requests', 'payload_downloads')]
@@ -931,7 +931,7 @@ class DerivedInputsTests(unittest.TestCase):
         approve.assert_not_called()
         prepare.assert_not_called()
         self.assertEqual(self.solver.call_count, 2)
-        self.assertEqual(receipt['kind'], 'sinan-ipquality-debian-input-derivation-binding')
+        self.assertEqual(receipt['kind'], 'apsp-ipquality-debian-input-derivation-binding')
         self.assertTrue(receipt['lock_ready'])
         for key in ('builder_approved', 'runtime_image_identity_verified', 'reproducibility_verified',
                     'full_ready', 'installation', 'network_requests', 'payload_downloads'):

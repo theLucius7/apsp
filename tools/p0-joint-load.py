@@ -46,8 +46,8 @@ def properties(unit):
 
 def diagnostic_units():
     text = command(['systemctl', 'list-units', '--all', '--no-legend', '--plain',
-                    '--no-pager', 'sinan-diagnostic-*.service'])
-    pattern = r'sinan-diagnostic-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.service'
+                    '--no-pager', 'apsp-diagnostic-*.service'])
+    pattern = r'apsp-diagnostic-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.service'
     return [line.split()[0] for line in text.splitlines()
             if line.split() and re.fullmatch(pattern, line.split()[0])]
 
@@ -282,7 +282,7 @@ def classify_oom(kernel):
         match = re.search(r'Memory cgroup out of memory: Killed process (\d+) ', line)
         if match and start is not None:
             events = [entry for entry in lines[start:i + 1] if 'oom-kill:constraint=' in entry]
-            pattern = r'constraint=CONSTRAINT_MEMCG,.*oom_memcg=/system\.slice/sinan-diagnostic-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.service,.*pid=' + match[1] + r',uid='
+            pattern = r'constraint=CONSTRAINT_MEMCG,.*oom_memcg=/system\.slice/apsp-diagnostic-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.service,.*pid=' + match[1] + r',uid='
             if len(events) == 1 and re.search(pattern, events[0]):
                 covered.update(range(start, i + 1)); killed.add(match[1])
             start = None
@@ -334,7 +334,7 @@ def replay_only(args, inputs, boot_hash):
     args.output.mkdir(mode=0o700, exist_ok=False)
     os.umask(0o077)
     ledger, panel = Ledger(), None
-    unit = 'sinan-p0-replay-agent-' + uuid.uuid4().hex[:12] + '.service'
+    unit = 'apsp-p0-replay-agent-' + uuid.uuid4().hex[:12] + '.service'
     result = dict(source_commit=SOURCE, agent_sha256=inputs['agent_sha256'],
                   boot_id_sha256=boot_hash, started_at=time.time(), success=False,
                   scope='real monitor-only Agent restart and pre-ACK timestamp replay only')
@@ -400,7 +400,7 @@ def main():
     if sys.flags.optimize:
         raise ValueError('assertion checks must remain enabled')
     assert os.geteuid() == 0 and sys.platform == 'linux'
-    assert socket.gethostname() == 'lima-sinan-p0-debian12', 'dedicated guest required'
+    assert socket.gethostname() == 'lima-apsp-p0-debian12', 'dedicated guest required'
     assert os.environ.get('GITHUB_ACTIONS') != 'true', 'CI remains paused'
     assert Path('/sys/fs/cgroup/cgroup.controllers').is_file()
     assert os.statvfs('/').f_bavail * os.statvfs('/').f_frsize >= 3 * 1024**3
@@ -426,7 +426,7 @@ def main():
     stop = threading.Event()
     traffic_thread = observer = None
     run_id = uuid.uuid4().hex[:12]
-    public = Path(tempfile.mkdtemp(prefix='sinan-p0-echo-', dir='/var/tmp'))
+    public = Path(tempfile.mkdtemp(prefix='apsp-p0-echo-', dir='/var/tmp'))
     os.chmod(public, 0o755)
     result = dict(source_commit=SOURCE, agent_sha256=inputs['agent_sha256'],
                   core_test_sha256=inputs['core_test_sha256'], runtime_receipt=runtime,
@@ -459,7 +459,7 @@ def main():
         runtime_config.write_text(json.dumps(native)); runtime_config.chmod(0o644)
         data = public / 'data'; data.mkdir(mode=0o700)
         account = pwd.getpwnam('nobody'); os.chown(data, account.pw_uid, account.pw_gid)
-        runtime_unit, agent_unit = ('sinan-p0-joint-' + role + '-' + run_id + '.service' for role in ['runtime', 'agent'])
+        runtime_unit, agent_unit = ('apsp-p0-joint-' + role + '-' + run_id + '.service' for role in ['runtime', 'agent'])
         for unit, program, memory, extra in [
             (runtime_unit, [str(runtime_binary), 'run', '-c', str(runtime_config), '-D', str(data)], '192M',
              ['--property=User=nobody', '--property=NoNewPrivileges=yes', '--property=CapabilityBoundingSet=']),
@@ -578,7 +578,7 @@ def main():
             result['remaining_diagnostic_units'] = None; cleanup_errors.append(type(error).__name__)
         try:
             mounts = command(['findmnt', '--raw', '--noheadings', '--output', 'TARGET'])
-            result['remaining_fixture_mounts'] = [x for x in mounts.splitlines() if 'sinan-cancel-test-' in x or 'sinan-p0-echo-' in x]
+            result['remaining_fixture_mounts'] = [x for x in mounts.splitlines() if 'apsp-cancel-test-' in x or 'apsp-p0-echo-' in x]
         except Exception as error:
             result['remaining_fixture_mounts'] = None; cleanup_errors.append(type(error).__name__)
         fixture_pids = set()

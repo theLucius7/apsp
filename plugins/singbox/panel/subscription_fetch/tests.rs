@@ -288,7 +288,7 @@ fn url_and_auth_validation_are_write_only_and_do_not_allow_header_overrides() {
 #[test]
 fn user_agent_cannot_inject_headers_or_grow_unbounded() {
     for valid in [
-        "Sinan-subscription-import/1",
+        "Apsp-subscription-import/1",
         "sing-box/1.14.2",
         "Client (test; compat)",
     ] {

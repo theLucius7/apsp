@@ -224,7 +224,7 @@ class EvidenceContracts(unittest.TestCase):
         certificate, key = self.scratch / "fixture.crt", self.scratch / "fixture.key"
         subprocess.run(["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
                         "-nodes", "-days", "1", "-keyout", str(key), "-out", str(certificate),
-                        "-subj", "/CN=sinan-e2e.example.test", "-addext", "subjectAltName=DNS:sinan-e2e.example.test"],
+                        "-subj", "/CN=apsp-e2e.example.test", "-addext", "subjectAltName=DNS:apsp-e2e.example.test"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, check=True)
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.minimum_version = ssl.TLSVersion.TLSv1_3

@@ -5,17 +5,17 @@ mod release_fixture;
 mod release_support;
 
 use anyhow::{Context, Result, bail};
+use apsp_panel::{AppState, config::Config, router};
+use apsp_protocol::{
+    AuthChallenge, AuthResponse, EnrollRequest, EnrollResponse, Envelope, Hello, HelloAck,
+    Manifest, PROTOCOL_VERSION, StaticInfo, now_timestamp,
+};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::{Signer, SigningKey};
 use futures_util::{SinkExt, StreamExt};
 use reqwest::{Client, Response, StatusCode, header};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sinan_panel::{AppState, config::Config, router};
-use sinan_protocol::{
-    AuthChallenge, AuthResponse, EnrollRequest, EnrollResponse, Envelope, Hello, HelloAck,
-    Manifest, PROTOCOL_VERSION, StaticInfo, now_timestamp,
-};
 use sqlx::PgPool;
 use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 use tokio::{net::TcpListener, task::JoinHandle, time::timeout};
@@ -38,7 +38,7 @@ impl TestPanel {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let listen = listener.local_addr()?;
         let base = format!("http://{listen}");
-        let directory = std::env::temp_dir().join(format!("sinan-foundation-{}", Uuid::new_v4()));
+        let directory = std::env::temp_dir().join(format!("apsp-foundation-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&directory)?;
         let directory = directory.canonicalize()?;
         let config = Config {
@@ -109,7 +109,7 @@ impl TestPanel {
         assert!(response.status().is_success());
         let value: Value = response.json().await?;
         assert!(
-            value["expires_at"].as_i64().context("token expiry")? > sinan_protocol::now_timestamp()
+            value["expires_at"].as_i64().context("token expiry")? > apsp_protocol::now_timestamp()
         );
         let token = value["token"].as_str().context("enrollment token")?;
         Ok(token.to_string())
@@ -161,7 +161,7 @@ impl TestPanel {
                     agent_version: "foundation-test".into(),
                     protocol_version: PROTOCOL_VERSION,
                     capabilities: vec![
-                        sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY.into(),
+                        apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY.into(),
                     ],
                     applied: BTreeMap::new(),
                 },
@@ -181,9 +181,9 @@ impl TestPanel {
                         .fetch_one(&self.state.pool)
                         .await?;
                 if capabilities.as_array().is_some_and(|values| {
-                    values.iter().any(|value| {
-                        value == sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY
-                    })
+                    values
+                        .iter()
+                        .any(|value| value == apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY)
                 }) {
                     return Ok::<(), anyhow::Error>(());
                 }
@@ -503,7 +503,7 @@ async fn bundle_download_preserves_bytes_and_cannot_cross_server_identity(
     for (owner, rev) in [(server_id, 1_i64), (other_id, 99_i64)] {
         sqlx::query("INSERT INTO deployments(server_id,module,rev,bundle,bundle_sha256,created_at) VALUES($1,'singbox',$2,$3,$4,$5)")
             .bind(owner).bind(rev).bind(bundle).bind(&digest)
-            .bind(sinan_protocol::now_timestamp()).execute(&pool).await?;
+            .bind(apsp_protocol::now_timestamp()).execute(&pool).await?;
     }
     let own_url = format!("{}/api/agent/v1/bundles/1", panel.base);
     assert_eq!(
@@ -627,9 +627,9 @@ async fn websocket_challenges_are_connection_bound_and_sessions_expire(pool: PgP
     })
     .await
     .context("authentication INSERT did not wait on the test session lock")??;
-    let blocked_second = sinan_protocol::now_timestamp();
+    let blocked_second = apsp_protocol::now_timestamp();
     timeout(Duration::from_secs(3), async {
-        while sinan_protocol::now_timestamp() <= blocked_second {
+        while apsp_protocol::now_timestamp() <= blocked_second {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
@@ -648,7 +648,7 @@ async fn websocket_challenges_are_connection_bound_and_sessions_expire(pool: PgP
     let stored_expiry: i64 = sqlx::query_scalar(
         "SELECT expires_at FROM sessions WHERE token_hash = $1 AND server_id = $2",
     )
-    .bind(sinan_panel::auth::hash_token(&ack.session_token))
+    .bind(apsp_panel::auth::hash_token(&ack.session_token))
     .bind(server_id)
     .fetch_one(&pool)
     .await?;
@@ -670,7 +670,7 @@ async fn websocket_challenges_are_connection_bound_and_sessions_expire(pool: PgP
             Hello {
                 agent_version: "foundation-test".into(),
                 protocol_version: PROTOCOL_VERSION,
-                capabilities: vec![sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY.into()],
+                capabilities: vec![apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY.into()],
                 applied: BTreeMap::new(),
             },
         )?,
@@ -751,7 +751,7 @@ async fn panel_never_serves_agent_binaries_even_with_a_live_token(pool: PgPool) 
         &panel.directory,
         "agent",
         version,
-        "sinan-agent",
+        "apsp-agent",
         binary,
         binary,
         "raw",
@@ -800,13 +800,13 @@ async fn panel_never_serves_agent_binaries_even_with_a_live_token(pool: PgPool) 
     assert_eq!(installation["target"], "auto");
     assert_eq!(
         installation["bootstrap_url"],
-        sinan_panel::installation::bootstrap_url()
+        apsp_panel::installation::bootstrap_url()
     );
     let install_command = installation["install_command"].as_str().unwrap();
-    assert!(install_command.contains("https://api.github.com/repos/theLucius7/sinan/git/blobs/"));
+    assert!(install_command.contains("https://api.github.com/repos/theLucius7/apsp/git/blobs/"));
     assert!(install_command.contains("sha256sum -c"));
     assert!(install_command.contains("--version") && install_command.contains("latest"));
-    assert!(!install_command.contains("sudo sinan-bootstrap"));
+    assert!(!install_command.contains("sudo apsp-bootstrap"));
     assert_eq!(
         panel
             .client
@@ -967,15 +967,15 @@ async fn signed_agent_versions_require_admin_or_live_enrollment_and_match_platfo
         "freebsd-arm64",
     ] {
         let binary_name = if target.starts_with("windows-") {
-            "sinan-agent.exe"
+            "apsp-agent.exe"
         } else {
-            "sinan-agent"
+            "apsp-agent"
         };
         let bytes = format!("fixture Agent {target}").into_bytes();
         let mut entry =
             release_support::entry("agent", "0.3.0", binary_name, "raw", &bytes, &bytes);
         entry.arch = target.into();
-        entry.asset_name = sinan_protocol::release::canonical_asset_name(&entry)?;
+        entry.asset_name = apsp_protocol::release::canonical_asset_name(&entry)?;
         artifacts.push((entry, bytes));
     }
     let directory = release_fixture::write_entries(&panel.directory, artifacts)?;
@@ -1237,13 +1237,13 @@ async fn installation_uses_independent_trusted_contract_and_preserves_server_mir
         &panel.directory,
         "agent",
         "0.3.0",
-        "sinan-agent",
+        "apsp-agent",
         binary,
         binary,
         "raw",
     )?;
     let release = panel.directory.join("artifacts/releases/agent-v0.3.0");
-    let marker = b"# SINAN_BOOTSTRAP_AGENT_SOURCE=preloaded-github-v1";
+    let marker = b"# APSP_BOOTSTRAP_AGENT_SOURCE=preloaded-github-v1";
     // The pinned bootstrap runs its own trusted executor, so legacy release scripts
     // are signed evidence rather than the execution contract for new enrollment.
     for installer in [
@@ -1263,7 +1263,7 @@ async fn installation_uses_independent_trusted_contract_and_preserves_server_mir
         assert!(installation["tag"].is_null());
         assert_eq!(
             installation["bootstrap_url"],
-            sinan_panel::installation::bootstrap_url()
+            apsp_panel::installation::bootstrap_url()
         );
         let command = installation["install_command"].as_str().unwrap();
         assert!(command.contains(installation["bootstrap_url"].as_str().unwrap()));
@@ -1317,14 +1317,14 @@ async fn installation_uses_independent_trusted_contract_and_preserves_server_mir
     );
     // Signed but incompatible Agent identities must not produce a command.
     let wrong_version =
-        release_support::entry("agent", "0.3.1", "sinan-agent", "raw", binary, binary);
+        release_support::entry("agent", "0.3.1", "apsp-agent", "raw", binary, binary);
     let wrong_name =
         release_support::entry("agent", "0.3.0", "another-binary", "raw", binary, binary);
-    let archive = release_fixture::archive("sinan-agent", binary)?;
+    let archive = release_fixture::archive("apsp-agent", binary)?;
     let wrong_format =
-        release_support::entry("agent", "0.3.0", "sinan-agent", "tar.gz", &archive, binary);
+        release_support::entry("agent", "0.3.0", "apsp-agent", "tar.gz", &archive, binary);
     let mut oversized =
-        release_support::entry("agent", "0.3.0", "sinan-agent", "raw", binary, binary);
+        release_support::entry("agent", "0.3.0", "apsp-agent", "raw", binary, binary);
     oversized.archive_size = 128 * 1024 * 1024 + 1;
     oversized.binary_size = oversized.archive_size;
     for entry in [wrong_version, wrong_name, wrong_format, oversized] {

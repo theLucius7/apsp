@@ -93,20 +93,20 @@ class Panel:
 
 
 def password():
-    filename = os.environ.get("SINAN_E2E_ADMIN_PASSWORD_FILE")
+    filename = os.environ.get("APSP_E2E_ADMIN_PASSWORD_FILE")
     if filename:
         path = Path(filename)
         metadata = path.lstat()
         ensure(path.is_file() and not path.is_symlink(), "密码文件必须是普通文件")
         ensure(metadata.st_mode & 0o077 == 0, "密码文件需仅当前用户可读写")
         return path.read_text().rstrip("\r\n")
-    value = os.environ.get("SINAN_E2E_ADMIN_PASSWORD")
+    value = os.environ.get("APSP_E2E_ADMIN_PASSWORD")
     return value if value is not None else getpass.getpass("管理员密码（不保存）：")
 
 
 def totp_code(prompt=False):
-    value = os.environ.pop("SINAN_E2E_TOTP_CODE", None)
-    if value is None and (prompt or os.environ.get("SINAN_E2E_TOTP") == "1"):
+    value = os.environ.pop("APSP_E2E_TOTP_CODE", None)
+    if value is None and (prompt or os.environ.get("APSP_E2E_TOTP") == "1"):
         value = getpass.getpass("当前 TOTP 验证码（不保存，请用未使用的新码）：")
     ensure(value is None or re.fullmatch(r"[0-9]{6}", value), "TOTP 验证码需为六位数字")
     return value
@@ -173,7 +173,7 @@ def install(panel, state, state_path, refresh=False, agent_version=None):
         private_write(output, json.dumps(descriptor, ensure_ascii=False, indent=2) + "\n")
     state["installation"] = {key: descriptor[key] for key in ("version", "tag", "expires_at")}
     save(state_path, state)
-    print("私有 enrollment.json 已保存；请通过独立可信的 sinan-bootstrap 验证并安装")
+    print("私有 enrollment.json 已保存；请通过独立可信的 apsp-bootstrap 验证并安装")
 
 
 def prepare(panel, state, args):
@@ -385,7 +385,7 @@ def traffic(panel, state, args):
 
 def verify(panel, state, args):
     ensure(args.interval >= 30, "稳定采样间隔不能小于 Agent 的 30 秒采样周期")
-    command = args.status_command or os.environ.get("SINAN_E2E_STATUS_COMMAND")
+    command = args.status_command or os.environ.get("APSP_E2E_STATUS_COMMAND")
     ensure(command, "verify 需要显式提供只读 Agent status 命令以核对 outbox")
     baseline = checkpoint(state, args.unchanged_from) if args.unchanged_from else None
     expected = usage_totals(baseline["usage"]) if baseline else None
@@ -502,7 +502,7 @@ def main():
             requested = {"origin": origin(args.origin), "public_host": args.public_host, "sni": args.sni,
                          "requested_port": args.port}
             if state is None:
-                state = {"schema": 1, "prefix": "sinan-e2e-" + uuid.uuid4().hex,
+                state = {"schema": 1, "prefix": "apsp-e2e-" + uuid.uuid4().hex,
                          "checkpoints": {}, **requested}
                 save(args.state, state)
             ensure(all(state.get(key) == value for key, value in requested.items()),

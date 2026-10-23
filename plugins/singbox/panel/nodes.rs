@@ -203,7 +203,7 @@ pub async fn update(
     // Older rows omit settings added after their creation. Compare normalized
     // models so saving identical defaults neither changes frozen paths nor
     // schedules a needless publication.
-    let normalized: sinan_compiler::NodeSettings =
+    let normalized: apsp_compiler::NodeSettings =
         serde_json::from_value(node.settings).map_err(anyhow::Error::from)?;
     node.settings = serde_json::to_value(normalized).map_err(anyhow::Error::from)?;
     let previous_node = node.clone();
@@ -239,8 +239,8 @@ pub async fn update(
         let previous =
             serde_json::from_value(node.protocol_config.clone()).map_err(anyhow::Error::from)?;
         let next = input.build(Some(&previous))?;
-        if matches!(previous.tls(), Some(sinan_compiler::TlsConfig::Acme { .. }))
-            && let Some(sinan_compiler::TlsConfig::Acme { .. }) = next.tls()
+        if matches!(previous.tls(), Some(apsp_compiler::TlsConfig::Acme { .. }))
+            && let Some(apsp_compiler::TlsConfig::Acme { .. }) = next.tls()
         {
             // Challenge listeners belong to the service; update shared settings atomically.
             sqlx::query("UPDATE nodes SET protocol_config=jsonb_set(protocol_config,'{tls}',$2) WHERE server_id=$1 AND deleted_at IS NULL AND protocol_config->'tls'->>'mode'='acme'")
@@ -406,7 +406,7 @@ pub(crate) async fn validate_server_config(
         .map(|row| row.model(vec![]))
         .collect::<anyhow::Result<Vec<_>>>()?;
     nodes.push(node.model(vec![])?);
-    sinan_compiler::compile_server(&nodes)
+    apsp_compiler::compile_server(&nodes)
         .map_err(|error| ApiError::BadRequest(format!("服务器节点配置冲突：{error}")))?;
     Ok(())
 }

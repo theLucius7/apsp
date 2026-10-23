@@ -13,7 +13,7 @@ import nodequality_history as history
 
 class HistoryTests(unittest.TestCase):
     def setUp(self):
-        temporary = tempfile.TemporaryDirectory(prefix='sinan-nodequality-history-')
+        temporary = tempfile.TemporaryDirectory(prefix='apsp-nodequality-history-')
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.contents = {name: history.source(name) for name in history.IDENTITIES}
@@ -60,10 +60,22 @@ class HistoryTests(unittest.TestCase):
 
 
 class NativeHistoryTests(unittest.TestCase):
+    def test_legacy_readers_keep_the_boundaries_and_versions_of_frozen_sources(self):
+        import nodequality_rootfs_artifact as legacy
+        import nodequality_native_rootfs_artifact as native
+
+        sources = ((legacy, history.source('runner.sh.tmpl')),
+                   (native, history.native_source('native-runner.sh.tmpl')))
+        for artifact, template in sources:
+            with self.subTest(artifact=artifact.__name__):
+                self.assertIn(('version=' + artifact.CANONICAL_VERSION + '\n').encode(), template)
+                for marker in artifact.MARKERS.values():
+                    self.assertTrue(artifact.embedded(template, marker).strip())
+
     def test_current_native_runner_and_report_cannot_replace_native_r1_sources(self):
         current = history.NATIVE_DIRECTORY.parent
         originals = {name: history.native_source(name) for name in history.NATIVE_IDENTITIES}
-        with tempfile.TemporaryDirectory(prefix='sinan-native-history-') as temporary:
+        with tempfile.TemporaryDirectory(prefix='apsp-native-history-') as temporary:
             directory = Path(temporary)
             with mock.patch.object(history, 'NATIVE_DIRECTORY', directory):
                 for name, content in originals.items():
@@ -77,7 +89,7 @@ class NativeHistoryTests(unittest.TestCase):
                     history.native_source('../native-report.py')
         self.assertIn(b'version=a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r1\n',
                       originals['native-runner.sh.tmpl'])
-        self.assertIn(b'version=a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r2\n',
+        self.assertIn(b'version=a92fca6c0067df29ddd03fdc2fee6f3000f64545-apsp-native-r2\n',
                       (current / 'native-runner.sh.tmpl').read_bytes())
 
 

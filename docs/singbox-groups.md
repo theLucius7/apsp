@@ -76,14 +76,14 @@
 使用隔离 PostgreSQL，禁止使用生产数据库运行集成测试。测试根只使用仓库提供的公开 TEST_ONLY 根。
 
 ```sh
-export DATABASE_URL='postgres://sinan:sinan-test@127.0.0.1:5432/sinan_test'
-export SINAN_RELEASE_PUBLIC_KEYS="$(python3 scripts/ci-test-trust.py)"
+export DATABASE_URL='postgres://apsp:apsp-test@127.0.0.1:5432/apsp_test'
+export APSP_RELEASE_PUBLIC_KEYS="$(python3 scripts/ci-test-trust.py)"
 cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked -p sinan-panel --test singbox_groups
-cargo test --locked -p sinan-compiler
+cargo test --locked -p apsp-panel --test singbox_groups
+cargo test --locked -p apsp-compiler
 # 原生配置检查需显式提供仓库固定的上游 1.14.2 构建。
-SINAN_GROUPS_RUNTIME=/path/to/sing-box-1.14.2 cargo test --locked -p sinan-compiler \
+APSP_GROUPS_RUNTIME=/path/to/sing-box-1.14.2 cargo test --locked -p apsp-compiler \
   --test relays pinned_native_runtime_accepts_entry_exit_and_client_configs -- --ignored
 ```
 

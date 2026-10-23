@@ -1,6 +1,6 @@
 use super::*;
+use apsp_protocol::telemetry::TelemetrySettings;
 use serde_json::{Value, json};
-use sinan_protocol::telemetry::TelemetrySettings;
 use std::{collections::HashMap, sync::Mutex};
 
 const MAX_LIVE_BYTES: usize = 16 * 1024 * 1024;

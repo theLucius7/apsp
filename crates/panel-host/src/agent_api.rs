@@ -1,4 +1,8 @@
 use crate::{AgentConnection, AppState, artifacts, auth, error::ApiResult};
+use apsp_protocol::{
+    AppliedRevisions, ApplyResult, ApplyStatus, AuthChallenge, Envelope, HelloAck, Manifest,
+    ManifestChanged, Message, now_timestamp,
+};
 use axum::{
     Json,
     extract::{
@@ -11,10 +15,6 @@ use axum::{
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::{Signature, VerifyingKey};
 use futures_util::{SinkExt, StreamExt};
-use sinan_protocol::{
-    AppliedRevisions, ApplyResult, ApplyStatus, AuthChallenge, Envelope, HelloAck, Manifest,
-    ManifestChanged, Message, now_timestamp,
-};
 use sqlx::Row;
 use std::time::Duration;
 use tokio::{
@@ -131,7 +131,7 @@ async fn connection(mut socket: WebSocket, state: AppState) -> anyhow::Result<()
                             let message = envelope.decode()?;
                             if !introduced {
                                 let Message::Hello(hello) = &message else { anyhow::bail!("expected hello"); };
-                                anyhow::ensure!((sinan_protocol::PROTOCOL_MIN..=sinan_protocol::PROTOCOL_MAX).contains(&hello.protocol_version), "unsupported protocol version");
+                                anyhow::ensure!((apsp_protocol::PROTOCOL_MIN..=apsp_protocol::PROTOCOL_MAX).contains(&hello.protocol_version), "unsupported protocol version");
                                 introduced = true;
                             }
                             match message {

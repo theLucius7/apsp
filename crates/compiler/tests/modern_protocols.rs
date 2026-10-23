@@ -1,11 +1,11 @@
 #![forbid(unsafe_code)]
 
-use base64::{Engine, engine::general_purpose::STANDARD};
-use serde_json::{Value, json};
-use sinan_compiler::{
+use apsp_compiler::{
     Access, AcmeChallenge, Node, ProtocolConfig, SsMethod, TlsConfig, compile_client,
     compile_server, subscription_links,
 };
+use base64::{Engine, engine::general_purpose::STANDARD};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 #[path = "modern_protocols/advanced.rs"]
@@ -181,7 +181,7 @@ fn manual_certificate_private_key_never_enters_client_config() {
 
 fn configured_nodes() -> Vec<Node> {
     let mut model = nodes();
-    model[0].settings.hysteria2 = sinan_compiler::Hysteria2Settings {
+    model[0].settings.hysteria2 = apsp_compiler::Hysteria2Settings {
         up_mbps: Some(80),
         down_mbps: Some(40),
         ignore_client_bandwidth: false,
@@ -189,14 +189,14 @@ fn configured_nodes() -> Vec<Node> {
         ..Default::default()
     };
     model[0].settings.tls_alpn = vec!["h3".into()];
-    model[3].settings.tuic = sinan_compiler::TuicSettings {
-        congestion_control: sinan_compiler::CongestionControl::Bbr,
+    model[3].settings.tuic = apsp_compiler::TuicSettings {
+        congestion_control: apsp_compiler::CongestionControl::Bbr,
         auth_timeout_seconds: Some(5),
         heartbeat_seconds: Some(8),
         zero_rtt_handshake: true,
         ..Default::default()
     };
-    model[4].settings.anytls = sinan_compiler::AnyTlsSettings {
+    model[4].settings.anytls = apsp_compiler::AnyTlsSettings {
         idle_session_check_seconds: Some(10),
         idle_session_timeout_seconds: Some(20),
         min_idle_session: Some(2),
@@ -235,7 +235,7 @@ fn protocol_settings_match_endpoint_direction_and_client_server_boundaries() {
     assert!(client["outbounds"][6]["tls"].get("alpn").is_none());
     assert!(matches!(
         compile_client(&model, 99),
-        Err(sinan_compiler::CompileError::NoAuthorizedNodes(99))
+        Err(apsp_compiler::CompileError::NoAuthorizedNodes(99))
     ));
     let mut paused = model.clone();
     for node in &mut paused {
@@ -280,16 +280,14 @@ fn invalid_settings_and_cross_protocol_options_are_rejected() {
     let mut model = nodes();
     model[5].settings.tls_alpn = vec!["h3".into()];
     assert!(compile_server(&model).is_err());
-    assert!(
-        serde_json::from_value::<sinan_compiler::NodeSettings>(json!({"raw_json":{}})).is_err()
-    );
+    assert!(serde_json::from_value::<apsp_compiler::NodeSettings>(json!({"raw_json":{}})).is_err());
 }
 
 #[test]
-#[ignore = "requires the official v1.14.2 binary in SINAN_TEST_UPSTREAM; checks protocol fields without the optional accounting extension"]
+#[ignore = "requires the official v1.14.2 binary in APSP_TEST_UPSTREAM; checks protocol fields without the optional accounting extension"]
 fn official_runtime_accepts_protocol_settings() {
-    let binary = std::env::var("SINAN_TEST_UPSTREAM").unwrap();
-    let directory = std::env::temp_dir().join(format!("sinan-settings-check-{}", Uuid::new_v4()));
+    let binary = std::env::var("APSP_TEST_UPSTREAM").unwrap();
+    let directory = std::env::temp_dir().join(format!("apsp-settings-check-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&directory).unwrap();
     let mut model = advanced::configured_nodes();
     // The official archive omits with_v2ray_api. Its native parser still
@@ -302,23 +300,23 @@ fn official_runtime_accepts_protocol_settings() {
             model[0].settings.hysteria2.ignore_client_bandwidth = true;
         }
         if variant == 1 {
-            model[0].settings.hysteria2.bbr_profile = sinan_compiler::BbrProfile::Aggressive;
-            model[3].settings.tuic.udp_relay_mode = sinan_compiler::TuicUdpRelayMode::QuicStream;
-            model[6].settings.snell.mode = sinan_compiler::SnellMode::UnsafeRaw;
+            model[0].settings.hysteria2.bbr_profile = apsp_compiler::BbrProfile::Aggressive;
+            model[3].settings.tuic.udp_relay_mode = apsp_compiler::TuicUdpRelayMode::QuicStream;
+            model[6].settings.snell.mode = apsp_compiler::SnellMode::UnsafeRaw;
             let mux = &mut model[1].settings.shadowsocks.multiplex;
-            mux.protocol = sinan_compiler::MultiplexProtocol::Yamux;
+            mux.protocol = apsp_compiler::MultiplexProtocol::Yamux;
             mux.max_connections = None;
             mux.min_streams = None;
             mux.max_streams = Some(8);
         } else if variant == 2 {
-            model[0].settings.hysteria2.bbr_profile = sinan_compiler::BbrProfile::Standard;
-            model[3].settings.tuic.udp_relay_mode = sinan_compiler::TuicUdpRelayMode::Native;
-            model[6].settings.snell.mode = sinan_compiler::SnellMode::Default;
+            model[0].settings.hysteria2.bbr_profile = apsp_compiler::BbrProfile::Standard;
+            model[3].settings.tuic.udp_relay_mode = apsp_compiler::TuicUdpRelayMode::Native;
+            model[6].settings.snell.mode = apsp_compiler::SnellMode::Default;
             model[1].settings.shadowsocks.multiplex.protocol =
-                sinan_compiler::MultiplexProtocol::H2mux;
+                apsp_compiler::MultiplexProtocol::H2mux;
             model[4].settings.anytls.padding_scheme = vec!["stop=8".into()];
-            model[5].settings.tls_min_version = Some(sinan_compiler::TlsVersion::V12);
-            model[5].settings.tls_max_version = Some(sinan_compiler::TlsVersion::V12);
+            model[5].settings.tls_min_version = Some(apsp_compiler::TlsVersion::V12);
+            model[5].settings.tls_max_version = Some(apsp_compiler::TlsVersion::V12);
         } else if variant == 3 {
             model[6].settings.tcp_keep_alive_seconds = None;
             model[6].settings.tcp_keep_alive_interval_seconds = None;
@@ -351,10 +349,10 @@ fn official_runtime_accepts_protocol_settings() {
 }
 
 #[test]
-#[ignore = "requires upstream v1.14.2 with QUIC, ACME, Naive and V2Ray API; set SINAN_TEST_SINGBOX"]
+#[ignore = "requires upstream v1.14.2 with QUIC, ACME, Naive and V2Ray API; set APSP_TEST_SINGBOX"]
 fn upstream_accepts_every_protocol_and_acme_provider() {
-    let binary = std::env::var("SINAN_TEST_SINGBOX").unwrap();
-    let directory = std::env::temp_dir().join(format!("sinan-modern-check-{}", Uuid::new_v4()));
+    let binary = std::env::var("APSP_TEST_SINGBOX").unwrap();
+    let directory = std::env::temp_dir().join(format!("apsp-modern-check-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&directory).unwrap();
     for (name, content) in [
         ("server", compile_server(&nodes()).unwrap()),

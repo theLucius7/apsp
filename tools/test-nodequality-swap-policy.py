@@ -177,8 +177,8 @@ main
                 environment = {'PATH': os.environ['PATH'], 'LC_ALL': 'C',
                                'TEST_DIRECTORY': name, 'TEST_STATUS': str(status),
                                'BASH_ENV': str(PLUGIN / 'exit-observer.sh'),
-                               'SINAN_REPORT_UPSTREAM': str(path),
-                               'SINAN_REPORT_WORKSPACE': name}
+                               'APSP_REPORT_UPSTREAM': str(path),
+                               'APSP_REPORT_WORKSPACE': name}
                 run = subprocess.run(['bash', str(path)], env=environment,
                                      capture_output=True, timeout=4)
                 # The pinned EXIT cleanup ends with exit 1 for both paths.
@@ -205,8 +205,8 @@ main
             environment = {'PATH': os.environ['PATH'], 'LC_ALL': 'C',
                            'TEST_DIRECTORY': name,
                            'BASH_ENV': str(PLUGIN / 'exit-observer.sh'),
-                           'SINAN_REPORT_UPSTREAM': 'inert-fixture',
-                           'SINAN_REPORT_WORKSPACE': name}
+                           'APSP_REPORT_UPSTREAM': 'inert-fixture',
+                           'APSP_REPORT_WORKSPACE': name}
             run = subprocess.run(['bash'], input=script, env=environment,
                                  capture_output=True, timeout=4)
             self.assertEqual(run.returncode, 1, run.stderr)

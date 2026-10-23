@@ -1,6 +1,6 @@
 use crate::{server_assets::AssetSettings, servers::Server};
+use apsp_protocol::TelemetrySample;
 use serde::{Deserialize, Serialize};
-use sinan_protocol::TelemetrySample;
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder, Transaction};
 use std::collections::BTreeMap;
 
@@ -207,14 +207,14 @@ pub async fn attach(pool: &PgPool, servers: &mut [Server], now: i64) -> anyhow::
         .collect();
     let totals: Vec<Total> = sqlx::query_as(
         "WITH config AS (
-           SELECT id, reset_day, sinan_traffic_cycle_start($2,reset_day) AS cycle_start
+           SELECT id, reset_day, apsp_traffic_cycle_start($2,reset_day) AS cycle_start
            FROM unnest($1::bigint[],$3::integer[]) AS selected(id,reset_day)
-         ) SELECT c.id,c.cycle_start,sinan_traffic_cycle_start(c.cycle_start+32*86400,c.reset_day) AS cycle_end,
+         ) SELECT c.id,c.cycle_start,apsp_traffic_cycle_start(c.cycle_start+32*86400,c.reset_day) AS cycle_end,
            d.interface,SUM(d.uploaded)::text AS uploaded,SUM(d.downloaded)::text AS downloaded,
            MIN(d.first_sample_at) AS first_sample_at,MAX(d.last_sample_at) AS last_sample_at,
            BOOL_OR(d.incomplete) AS incomplete
          FROM config c LEFT JOIN server_network_daily d ON d.server_id=c.id
-           AND d.day>=c.cycle_start AND d.day<sinan_traffic_cycle_start(c.cycle_start+32*86400,c.reset_day)
+           AND d.day>=c.cycle_start AND d.day<apsp_traffic_cycle_start(c.cycle_start+32*86400,c.reset_day)
          GROUP BY c.id,c.cycle_start,c.reset_day,d.interface ORDER BY c.id,d.interface",
     ).bind(&ids).bind(now).bind(reset_days).fetch_all(pool).await?;
     let mut grouped: BTreeMap<i64, Vec<Total>> = BTreeMap::new();

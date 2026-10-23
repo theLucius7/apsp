@@ -72,7 +72,7 @@ pub(super) async fn status(
     }
     let mut checks = panel_checks(state, context).await?;
     checks.retain(|item| item["key"] != "configuration");
-    let compiled = sinan_compiler::compile_server(&[]).is_ok();
+    let compiled = apsp_compiler::compile_server(&[]).is_ok();
     checks.push(check(
         "bootstrap_configuration",
         "无业务凭据的初始配置",
@@ -172,8 +172,8 @@ pub(in super::super::super) async fn install(
     }
     let artifact =
         super::super::super::super::agent::runtime_artifact(&state, &context.info).await?;
-    let native = sinan_compiler::compile_server(&[]).map_err(anyhow::Error::from)?;
-    let bundle = serde_json::to_string(&sinan_protocol::Bundle {
+    let native = apsp_compiler::compile_server(&[]).map_err(anyhow::Error::from)?;
+    let bundle = serde_json::to_string(&apsp_protocol::Bundle {
         files: std::collections::BTreeMap::from([("config.json".into(), native)]),
     })
     .map_err(anyhow::Error::from)?;
@@ -203,9 +203,9 @@ pub(in super::super::super) async fn install(
     crate::agent_api::notify(
         &state,
         server,
-        sinan_protocol::Envelope::new(
+        apsp_protocol::Envelope::new(
             "manifest.changed",
-            sinan_protocol::ManifestChanged {
+            apsp_protocol::ManifestChanged {
                 rev: revision.try_into().map_err(anyhow::Error::from)?,
             },
         )

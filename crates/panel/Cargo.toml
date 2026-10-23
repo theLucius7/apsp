@@ -1,5 +1,5 @@
 [package]
-name = "sinan-panel"
+name = "apsp-panel"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,13 +8,13 @@ rust-version.workspace = true
 # The panel binary assembles the host with the compiled business plugins.
 # Migrations stay here as one linear sequence shared by the host and plugins.
 [dependencies]
-sinan-panel-host.workspace = true
-sinan-cloud-api.workspace = true
+apsp-panel-host.workspace = true
+apsp-cloud-api.workspace = true
 uuid.workspace = true
-sinan-plugin-singbox.workspace = true
-sinan-plugin-ddns.workspace = true
-sinan-plugin-alicloud.workspace = true
-sinan-protocol.workspace = true
+apsp-plugin-singbox.workspace = true
+apsp-plugin-ddns.workspace = true
+apsp-plugin-alicloud.workspace = true
+apsp-protocol.workspace = true
 axum.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
@@ -25,14 +25,14 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 serde.workspace = true
-sinan-compiler.workspace = true
-sinan-adapter-singbox.workspace = true
+apsp-compiler.workspace = true
+apsp-adapter-singbox.workspace = true
 blake2.workspace = true
-sinan-adapter-nodequality.workspace = true
+apsp-adapter-nodequality.workspace = true
 reqwest.workspace = true
 tokio-tungstenite.workspace = true
-sinan-agent-core.workspace = true
-sinan-adapter-sdk.workspace = true
+apsp-agent-core.workspace = true
+apsp-adapter-sdk.workspace = true
 rand.workspace = true
 sha2.workspace = true
 base64.workspace = true

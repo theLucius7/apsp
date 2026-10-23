@@ -22,7 +22,7 @@ class RecoveryTests(unittest.TestCase):
     def backup(self, base, name="latest", *, member="artifacts/releases/example", days=0):
         destination = base / name
         destination.mkdir(mode=0o700)
-        (destination / "environment").write_text("SINAN_DB_PASSWORD=example-only\n")
+        (destination / "environment").write_text("APSP_DB_PASSWORD=example-only\n")
         (destination / "database.dump").write_bytes(b"explicit-test-dump")
         with tarfile.open(destination / "panel-data.tar.gz", "w:gz") as archive:
             info = tarfile.TarInfo(member)
@@ -80,16 +80,16 @@ class RecoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             for source in [
-                "SINAN_DATABASE_URL=postgres://sinan:TEST_ONLY_userinfo@postgres/sinan?password=TEST_ONLY_query_override\n",
-                "SINAN_DATABASE_URL=postgres://sinan@postgres/sinan\n",
-                "SINAN_DB_PASSWORD=TEST_ONLY_explicit_legacy\n",
-                "SINAN_DATABASE_URL=postgres://sinan:TEST_ONLY_encoded%40password@postgres/sinan\n",
+                "APSP_DATABASE_URL=postgres://apsp:TEST_ONLY_userinfo@postgres/apsp?password=TEST_ONLY_query_override\n",
+                "APSP_DATABASE_URL=postgres://apsp@postgres/apsp\n",
+                "APSP_DB_PASSWORD=TEST_ONLY_explicit_legacy\n",
+                "APSP_DATABASE_URL=postgres://apsp:TEST_ONLY_encoded%40password@postgres/apsp\n",
             ]:
                 with self.subTest(source=source):
                     (base / "environment").write_text(source)
                     before = recovery.sha256(base / "environment")
-                    first = recovery.env_values(base)["SINAN_DB_PASSWORD"]
-                    second = recovery.env_values(base)["SINAN_DB_PASSWORD"]
+                    first = recovery.env_values(base)["APSP_DB_PASSWORD"]
+                    second = recovery.env_values(base)["APSP_DB_PASSWORD"]
                     self.assertRegex(first, r"^[A-Za-z0-9_-]{43}$")
                     self.assertNotEqual(first, second)
                     self.assertNotIn("TEST_ONLY", first)
@@ -126,7 +126,7 @@ class RecoveryTests(unittest.TestCase):
         self_test = self
         with tempfile.TemporaryDirectory() as directory:
             backup, manifest = self.backup(Path(directory))
-            source = "SINAN_DATABASE_URL=postgres://source:TEST_ONLY_old@source.example/panel?password=TEST_ONLY_actual\n"
+            source = "APSP_DATABASE_URL=postgres://source:TEST_ONLY_old@source.example/panel?password=TEST_ONLY_actual\n"
             (backup / "environment").write_text(source)
             args = argparse.Namespace(backup=backup, project=None, port=18080, keyring_file=None)
             controlled = ControlledRestore(args, manifest)
@@ -134,10 +134,10 @@ class RecoveryTests(unittest.TestCase):
             controlled.restore()
             password = controlled.environments[controlled.postgres]["POSTGRES_PASSWORD"]
             panel = controlled.environments[controlled.panel]
-            destination = urlsplit(panel["SINAN_DATABASE_URL"])
+            destination = urlsplit(panel["APSP_DATABASE_URL"])
             self.assertEqual(unquote(destination.password), password)
             self.assertEqual(destination.hostname, "postgres")
-            self.assertEqual(destination.path, "/sinan")
+            self.assertEqual(destination.path, "/apsp")
             self.assertNotIn("TEST_ONLY", password)
             self.assertFalse(any("TEST_ONLY_old" in str(arguments) or "TEST_ONLY_actual" in str(arguments) or password in str(arguments) for arguments in controlled.arguments))
             self.assertEqual(recovery.sha256(backup / "environment"), before)

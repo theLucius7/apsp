@@ -4,12 +4,12 @@ mod business_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::Result;
+use apsp_protocol::{
+    RuntimeOperationError, RuntimeOperationRequest, RuntimeOperationResult, TaskAck, now_timestamp,
+};
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::json;
-use sinan_protocol::{
-    RuntimeOperationError, RuntimeOperationRequest, RuntimeOperationResult, TaskAck, now_timestamp,
-};
 use sqlx::PgPool;
 
 #[sqlx::test]

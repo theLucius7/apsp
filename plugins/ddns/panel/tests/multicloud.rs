@@ -60,7 +60,7 @@ fn tencent_read(records: Vec<Value>) -> Vec<Reply> {
     ]
 }
 fn hw_record(rule: &Rule, status: &str) -> Value {
-    json!({"id":RECORD,"zone_id":ZONE,"name":"node.example.com.","type":"A","ttl":300,"records":[public_ip(9)],"status":status,"description":format!("sinan-ddns:{}",rule.id)})
+    json!({"id":RECORD,"zone_id":ZONE,"name":"node.example.com.","type":"A","ttl":300,"records":[public_ip(9)],"status":status,"description":format!("apsp-ddns:{}",rule.id)})
 }
 fn hw_read(records: Vec<Value>) -> Vec<Reply> {
     vec![

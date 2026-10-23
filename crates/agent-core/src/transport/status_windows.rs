@@ -1,9 +1,9 @@
 use super::{Runtime, status_snapshot::snapshot};
 use anyhow::{Context, Result, ensure};
+use apsp_adapter_sdk::Privileged;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use sinan_adapter_sdk::Privileged;
 use std::{
     path::{Path, PathBuf},
     time::Duration,
@@ -32,7 +32,7 @@ impl Drop for BoundSocket {
 
 fn pipe_name(path: &Path) -> String {
     format!(
-        r"\\.\pipe\sinan-{:x}",
+        r"\\.\pipe\apsp-{:x}",
         Sha256::digest(path.to_string_lossy().to_lowercase().as_bytes())
     )
 }

@@ -146,7 +146,7 @@ pub(super) async fn event(
     detail: Value,
 ) -> ApiResult<()> {
     sqlx::query("INSERT INTO singbox_operation_events(administrator_id,user_id,action,detail,created_at) VALUES($1,$2,$3,$4,$5)")
-        .bind(administrator).bind(user).bind(action).bind(detail).bind(sinan_protocol::now_timestamp()).execute(&mut **tx).await?;
+        .bind(administrator).bind(user).bind(action).bind(detail).bind(apsp_protocol::now_timestamp()).execute(&mut **tx).await?;
     Ok(())
 }
 
@@ -170,12 +170,12 @@ pub(super) async fn record_subscription(
 
 pub(super) async fn prune(tx: &mut Transaction<'_, Postgres>) -> ApiResult<()> {
     sqlx::query("DELETE FROM singbox_operation_previews WHERE expires_at<$1 AND receipt IS NULL")
-        .bind(sinan_protocol::now_timestamp())
+        .bind(apsp_protocol::now_timestamp())
         .execute(&mut **tx)
         .await?;
-    sqlx::query("DELETE FROM singbox_operation_previews q USING singbox_operation_privacy p WHERE q.receipt IS NOT NULL AND q.created_at<$1-86400::bigint*LEAST(p.administrator_days,COALESCE((SELECT days FROM record_retention_policy WHERE kind='audit'),p.administrator_days))").bind(sinan_protocol::now_timestamp()).execute(&mut **tx).await?;
-    sqlx::query("DELETE FROM singbox_deployment_preflights q USING singbox_operation_privacy p WHERE q.created_at<$1-86400::bigint*LEAST(p.administrator_days,COALESCE((SELECT days FROM record_retention_policy WHERE kind='audit'),p.administrator_days))").bind(sinan_protocol::now_timestamp()).execute(&mut **tx).await?;
-    sqlx::query("DELETE FROM singbox_operation_events e USING singbox_operation_privacy p WHERE e.created_at<$1-86400::bigint*CASE WHEN e.action='subscription_fetch' THEN LEAST(p.subscription_days,COALESCE((SELECT days FROM record_retention_policy WHERE kind='proxy-access'),p.subscription_days)) WHEN e.action LIKE 'security_%' THEN LEAST(p.security_days,COALESCE((SELECT days FROM record_retention_policy WHERE kind='audit'),p.security_days)) ELSE LEAST(p.administrator_days,COALESCE((SELECT days FROM record_retention_policy WHERE kind='audit'),p.administrator_days)) END").bind(sinan_protocol::now_timestamp()).execute(&mut **tx).await?;
+    sqlx::query("DELETE FROM singbox_operation_previews q USING singbox_operation_privacy p WHERE q.receipt IS NOT NULL AND q.created_at<$1-86400::bigint*LEAST(p.administrator_days,COALESCE((SELECT days FROM record_retention_policy WHERE kind='audit'),p.administrator_days))").bind(apsp_protocol::now_timestamp()).execute(&mut **tx).await?;
+    sqlx::query("DELETE FROM singbox_deployment_preflights q USING singbox_operation_privacy p WHERE q.created_at<$1-86400::bigint*LEAST(p.administrator_days,COALESCE((SELECT days FROM record_retention_policy WHERE kind='audit'),p.administrator_days))").bind(apsp_protocol::now_timestamp()).execute(&mut **tx).await?;
+    sqlx::query("DELETE FROM singbox_operation_events e USING singbox_operation_privacy p WHERE e.created_at<$1-86400::bigint*CASE WHEN e.action='subscription_fetch' THEN LEAST(p.subscription_days,COALESCE((SELECT days FROM record_retention_policy WHERE kind='proxy-access'),p.subscription_days)) WHEN e.action LIKE 'security_%' THEN LEAST(p.security_days,COALESCE((SELECT days FROM record_retention_policy WHERE kind='audit'),p.security_days)) ELSE LEAST(p.administrator_days,COALESCE((SELECT days FROM record_retention_policy WHERE kind='audit'),p.administrator_days)) END").bind(apsp_protocol::now_timestamp()).execute(&mut **tx).await?;
     Ok(())
 }
 
@@ -191,7 +191,7 @@ async fn preview(
     super::entitlements::lock(&mut tx).await?;
     let (fingerprint, summary) = snapshots::snapshot(&mut tx, &request).await?;
     let id = Uuid::new_v4();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     prune(&mut tx).await?;
     sqlx::query("INSERT INTO singbox_operation_previews(id,administrator_id,request,fingerprint,summary,created_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7)")
         .bind(id).bind(administrator).bind(serde_json::to_value(&request).map_err(anyhow::Error::from)?).bind(fingerprint).bind(&summary).bind(now).bind(now+600).execute(&mut *tx).await?;
@@ -227,7 +227,7 @@ async fn apply(
         tx.commit().await?;
         return Ok(Json(receipt));
     }
-    if row.get::<i64, _>("expires_at") <= sinan_protocol::now_timestamp() {
+    if row.get::<i64, _>("expires_at") <= apsp_protocol::now_timestamp() {
         return Err(ApiError::Conflict("预览已过期，请重新预览".into()));
     }
     let operation: Operation =

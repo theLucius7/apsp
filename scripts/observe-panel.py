@@ -26,15 +26,15 @@ def main():
         parser.error("panel origin must be an HTTPS origin without credentials or path")
     if not 1 <= args.timeout <= 60 or not 1 <= len(args.observer_name) <= 200:
         parser.error("invalid timeout or observer name")
-    token = os.environ.get("SINAN_OBSERVER_API_TOKEN", "")
-    if not token.startswith("sinan_api_") or not 32 <= len(token) <= 512 or not all(character.isascii() and (character.isalnum() or character in "-_") for character in token):
-        parser.error("SINAN_OBSERVER_API_TOKEN must contain a monitoring:write scoped management token")
+    token = os.environ.get("APSP_OBSERVER_API_TOKEN", "")
+    if not token.startswith("apsp_api_") or not 32 <= len(token) <= 512 or not all(character.isascii() and (character.isalnum() or character in "-_") for character in token):
+        parser.error("APSP_OBSERVER_API_TOKEN must contain a monitoring:write scoped management token")
     opener = urllib.request.build_opener(NoRedirect())
     started = time.monotonic()
     available = None
     evidence = {"probe": "HTTPS GET /healthz", "tls_verification": True}
     try:
-        request = urllib.request.Request(origin + "/healthz", headers={"User-Agent": "Sinan-Independent-Observer/1"})
+        request = urllib.request.Request(origin + "/healthz", headers={"User-Agent": "Apsp-Independent-Observer/1"})
         with opener.open(request, timeout=args.timeout) as response:
             payload = response.read(1024)
             available = response.status == 200 and payload.strip() == b"ok"

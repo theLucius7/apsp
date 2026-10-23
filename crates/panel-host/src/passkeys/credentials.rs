@@ -1,7 +1,7 @@
 use super::{Ceremony, PendingAuthentication, PendingRegistration, decode, invalid, json_value};
 use crate::error::{ApiError, ApiResult};
+use apsp_protocol::now_timestamp;
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 use webauthn_rs::prelude::{AuthenticationResult, Passkey};

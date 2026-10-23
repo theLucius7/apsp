@@ -1,12 +1,12 @@
 #![forbid(unsafe_code)]
 
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use serde_json::{Value, json};
-use sinan_compiler::{
+use apsp_compiler::{
     Access, Node, ProtocolConfig, Relay, compile_client, compile_server_with_relays,
     external::ExternalOutbound,
     paths::{self, Control, Hop, Networks, Path},
 };
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
@@ -344,10 +344,10 @@ fn input_order_is_deterministic_and_legacy_bytes_remain_unchanged() {
 }
 
 #[test]
-#[ignore = "requires the official v1.14.2 binary in SINAN_TEST_UPSTREAM; native structure checks do not prove a working mixed path"]
+#[ignore = "requires the official v1.14.2 binary in APSP_TEST_UPSTREAM; native structure checks do not prove a working mixed path"]
 fn official_runtime_checks_imported_protocols_and_nested_paths() {
-    let binary = std::env::var("SINAN_TEST_UPSTREAM").unwrap();
-    let directory = std::env::temp_dir().join(format!("sinan-path-check-{}", Uuid::new_v4()));
+    let binary = std::env::var("APSP_TEST_UPSTREAM").unwrap();
+    let directory = std::env::temp_dir().join(format!("apsp-path-check-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&directory).unwrap();
     let mut models = vec![
         path(vec![external(10, "http"), managed(2)]),

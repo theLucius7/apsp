@@ -1,11 +1,11 @@
 use super::{MARKER, ensure_ordinary_directory_if_present};
 use anyhow::{Context, Result, ensure};
-use sha2::{Digest, Sha256};
-use sinan_adapter_sdk::Descriptor;
-use sinan_protocol::release::{
+use apsp_adapter_sdk::Descriptor;
+use apsp_protocol::release::{
     MAX_CHECKSUMS_BYTES, MAX_METADATA_BYTES, MAX_SIGNATURE_BYTES, ReleaseProof, TrustedKeys,
     VerifiedArtifact, VerifiedRelease, verify_release,
 };
+use sha2::{Digest, Sha256};
 use std::path::Path;
 use tokio::io::AsyncReadExt;
 
@@ -106,8 +106,8 @@ pub(super) async fn verify_file(binary: &Path, verified: &VerifiedArtifact) -> R
 pub(super) fn signed_release(proof: &ReleaseProof, keys: &TrustedKeys) -> Result<VerifiedRelease> {
     let release = verify_release(proof, keys)?;
     ensure!(
-        release.metadata().protocol_min <= sinan_protocol::PROTOCOL_MAX
-            && release.metadata().protocol_max >= sinan_protocol::PROTOCOL_MIN,
+        release.metadata().protocol_min <= apsp_protocol::PROTOCOL_MAX
+            && release.metadata().protocol_max >= apsp_protocol::PROTOCOL_MIN,
         "signed release protocol range is incompatible with this Agent"
     );
     Ok(release)

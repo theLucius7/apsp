@@ -5,7 +5,7 @@ import { readFile, mkdir } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const server = createServer(async (request, response) => {
@@ -17,13 +17,13 @@ const server = createServer(async (request, response) => {
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const origin = `http://127.0.0.1:${server.address().port}`
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
-const screenshots = process.env.SINAN_UI_SCREENSHOT_DIR
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
+const screenshots = process.env.APSP_UI_SCREENSHOT_DIR
 if (screenshots) await mkdir(screenshots, { recursive: true })
 const results = []
 const installCommand = (version, platform = 'unix', target = 'auto') => platform === 'windows'
   ? `& { param($Version,$Panel,$Token,$Target) Write-Output "TEST_ONLY: $Version $Panel $Token $Target" } '${version}' 'https://panel.example.com' 'TEST_ONLY' '${target}'`
-  : `sh -c 'set -eu; d=$(mktemp -d); curl -fsSL "$1" -o "$d/bootstrap.sh"; printf "%s  %s\\n" "$2" "$d/bootstrap.sh" | sha256sum -c -; /bin/sh "$d/bootstrap.sh" --version "$3" --panel "$4" --token "$5" --target "$6"' sinan-bootstrap 'https://api.github.com/repos/theLucius7/sinan/git/blobs/${'1'.repeat(40)}' '${'a'.repeat(64)}' '${version}' 'https://panel.example.com' 'TEST_ONLY' '${target}'`
+  : `sh -c 'set -eu; d=$(mktemp -d); curl -fsSL "$1" -o "$d/bootstrap.sh"; printf "%s  %s\\n" "$2" "$d/bootstrap.sh" | sha256sum -c -; /bin/sh "$d/bootstrap.sh" --version "$3" --panel "$4" --token "$5" --target "$6"' apsp-bootstrap 'https://api.github.com/repos/theLucius7/apsp/git/blobs/${'1'.repeat(40)}' '${'a'.repeat(64)}' '${version}' 'https://panel.example.com' 'TEST_ONLY' '${target}'`
 const signedVersion = (version, targets, cached_targets = targets) => ({ version, tag: `agent-v${version}`, targets, cached_targets, protocol_min: 1, protocol_max: 1 })
 const catalogue = [signedVersion('0.3.1', ['windows-amd64', 'windows-arm64', 'macos-arm64', 'freebsd-amd64']), signedVersion('0.3.0', ['linux-musl-arm64', 'linux-gnu-amd64'], ['linux-musl-arm64']), signedVersion('0.2.9', ['arm64']), signedVersion('0.2.8', ['linux-gnu-amd64'])]
 const matchesTarget = (entry, target) => {

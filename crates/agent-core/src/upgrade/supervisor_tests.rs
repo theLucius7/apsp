@@ -3,7 +3,7 @@ use crate::{
     release_test_support::{entry, hash, install_proof, signed_release},
     system::SystemOps,
 };
-use sinan_adapter_sdk::{BoxFuture, CommandOutput};
+use apsp_adapter_sdk::{BoxFuture, CommandOutput};
 use std::{
     path::PathBuf,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -82,7 +82,7 @@ impl Privileged for Ops {
     fn execute<'a>(&'a self, _: &'a Path, args: &'a [String]) -> BoxFuture<'a, CommandOutput> {
         Box::pin(async move {
             let stdout = if args == ["--version"] {
-                "sinan-agent 99.0.0\n".into()
+                "apsp-agent 99.0.0\n".into()
             } else {
                 assert_eq!(args.last().map(String::as_str), Some("verify-cache"));
                 if matches!(self.at, RetireAt::CachePreflight) {
@@ -135,7 +135,7 @@ impl Drop for Fixture {
 
 async fn assert_terminal_retirement(at: RetireAt, expected_spawns: usize) -> Result<()> {
     let temporary =
-        std::env::temp_dir().join(format!("sinan-supervisor-retired-{}", uuid::Uuid::new_v4()));
+        std::env::temp_dir().join(format!("apsp-supervisor-retired-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&temporary)?;
     let fixture = Fixture(std::fs::canonicalize(temporary)?);
     let config = Config {

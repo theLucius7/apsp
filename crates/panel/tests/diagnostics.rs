@@ -14,11 +14,11 @@ use business_support::release_fixture;
 mod release_support;
 
 use anyhow::Result;
+use apsp_panel::{agent_api, diagnostics, ip_quality};
+use apsp_protocol::{Hello, HelloAck, Message, PROTOCOL_VERSION};
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::{agent_api, diagnostics, ip_quality};
-use sinan_protocol::{Hello, HelloAck, Message, PROTOCOL_VERSION};
 use sqlx::PgPool;
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -39,11 +39,11 @@ async fn capable(panel: &TestPanel, server_id: i64) -> Result<()> {
             capabilities: vec![
                 "diagnostic:nodequality".into(),
                 "diagnostic:nodequality-modes".into(),
-                sinan_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY.into(),
-                sinan_protocol::DIAGNOSTIC_SERVICE_CAPABILITY.into(),
-                sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY.into(),
-                sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY.into(),
-                sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY.into(),
+                apsp_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY.into(),
+                apsp_protocol::DIAGNOSTIC_SERVICE_CAPABILITY.into(),
+                apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY.into(),
+                apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY.into(),
+                apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY.into(),
             ],
             applied: BTreeMap::new(),
         }),
@@ -193,7 +193,7 @@ async fn diagnostic_queue_is_durable_deduplicated_and_device_scoped(pool: PgPool
         .await?;
     assert_eq!(count, 1);
     let fresh_state =
-        sinan_panel::AppState::new(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
+        apsp_panel::AppState::new(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
     let persisted: Value =
         sqlx::query_scalar("SELECT report FROM diagnostic_jobs WHERE server_id=$1")
             .bind(server_id)
@@ -535,7 +535,7 @@ async fn ip_and_nodequality_views_are_independent_and_legacy_routes_preserve_sha
         .execute(&panel.state.pool)
         .await?;
     let report_id = Uuid::new_v4();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let old_job = json!({"options":{"ip_version":"ipv4","network_mode":"low"}});
     let old_report = json!({"text":"拆分前的历史报告","report_url":null});
     sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,job,status,report,created_at,updated_at,expires_at) VALUES($1,$2,$3,'succeeded',$4,$5,$5,$5+60)")

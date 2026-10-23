@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn mirror_cannot_redirect_downloads_to_panel_or_embed_credentials() {
         let panel = Url::parse("https://panel.example.com").unwrap();
-        let release = "https://github.com/theLucius7/sinan/releases/download/agent-v0.3.1/agent-0.3.1-linux-musl-amd64";
+        let release = "https://github.com/theLucius7/apsp/releases/download/agent-v0.3.1/agent-0.3.1-linux-musl-amd64";
         assert_eq!(download_url(release, "", &panel).unwrap().as_str(), release);
         assert_eq!(
             download_url(release, "https://mirror.example.com/", &panel)

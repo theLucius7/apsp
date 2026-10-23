@@ -1,5 +1,5 @@
 use anyhow::{Context, bail};
-use sinan_adapter_sdk::{BoxFuture, CommandOutput, Privileged, RuntimeSpec, ServiceManager};
+use apsp_adapter_sdk::{BoxFuture, CommandOutput, Privileged, RuntimeSpec, ServiceManager};
 use std::{
     path::{Path, PathBuf},
     sync::Mutex,
@@ -10,7 +10,7 @@ pub struct TempDir(pub PathBuf);
 
 impl TempDir {
     pub fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("sinan-adapter-{}", uuid::Uuid::new_v4()));
+        let path = std::env::temp_dir().join(format!("apsp-adapter-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&path).unwrap();
         Self(path)
     }
@@ -150,7 +150,7 @@ impl Default for TestServices {
 impl ServiceManager for TestServices {
     fn reload<'a>(&'a self, unit: &'a str) -> BoxFuture<'a, ()> {
         Box::pin(async move {
-            assert_eq!(unit, "sinan-singbox@main.service");
+            assert_eq!(unit, "apsp-singbox@main.service");
             self.calls.lock().unwrap().push("reload".into());
             if let Some(pid) = self.pid {
                 let status = tokio::time::timeout(
@@ -168,7 +168,7 @@ impl ServiceManager for TestServices {
     }
     fn restart<'a>(&'a self, unit: &'a str) -> BoxFuture<'a, ()> {
         Box::pin(async move {
-            assert_eq!(unit, "sinan-singbox@main.service");
+            assert_eq!(unit, "apsp-singbox@main.service");
             self.calls.lock().unwrap().push("restart".into());
             Ok(())
         })
@@ -181,7 +181,7 @@ impl ServiceManager for TestServices {
     }
     fn is_active<'a>(&'a self, unit: &'a str) -> BoxFuture<'a, bool> {
         Box::pin(async move {
-            assert_eq!(unit, "sinan-singbox@main.service");
+            assert_eq!(unit, "apsp-singbox@main.service");
             Ok(self.active)
         })
     }

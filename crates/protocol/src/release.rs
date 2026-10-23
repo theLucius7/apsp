@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 pub const RELEASE_SCHEMA: u32 = 1;
-pub const RELEASE_SOURCE_REPO: &str = "theLucius7/sinan";
+pub const RELEASE_SOURCE_REPO: &str = "theLucius7/apsp";
 pub const ARTIFACT_SIGNATURE_CAPABILITY: &str = "artifact:minisign-v1";
 pub const MAX_CHECKSUMS_BYTES: usize = 8 * 1024;
 pub const MAX_METADATA_BYTES: usize = 32 * 1024;
@@ -86,7 +86,7 @@ pub struct TrustedKeys {
 impl TrustedKeys {
     pub fn compiled() -> Result<Self, ReleaseError> {
         Self::from_json(
-            option_env!("SINAN_RELEASE_PUBLIC_KEYS").ok_or(ReleaseError::MissingTrustRoot)?,
+            option_env!("APSP_RELEASE_PUBLIC_KEYS").ok_or(ReleaseError::MissingTrustRoot)?,
         )
     }
 

@@ -41,7 +41,7 @@ def verify_binary(binary, commit):
     help_text = capture([str(binary), "--help"]).decode()
     ensure("--workspace" in help_text and "--no-rank-upload" in help_text, "TCP executable help mismatch")
     info = json.loads(capture([str(binary), "--build-info"]))
-    ensure(info == {"version": TOOL_VERSION, "source_repo": "theLucius7/sinan", "source_commit": commit},
+    ensure(info == {"version": TOOL_VERSION, "source_repo": "theLucius7/apsp", "source_commit": commit},
            "TCP executable is missing or has different source provenance")
 
 
@@ -49,7 +49,7 @@ def build(repository, arch, commit):
     target = TARGETS[arch]
     env = dict(os.environ)
     ensure(not env.get("CARGO_ENCODED_RUSTFLAGS"), "unset CARGO_ENCODED_RUSTFLAGS")
-    env["SINAN_NATIVE_TCP_SOURCE_COMMIT"] = commit
+    env["APSP_NATIVE_TCP_SOURCE_COMMIT"] = commit
     env["RUSTFLAGS"] = env.get("RUSTFLAGS", "") + " -Ctarget-feature=+crt-static -Clink-self-contained=yes"
     key = target.replace("-", "_")
     env[f"CARGO_TARGET_{key.upper()}_LINKER"] = "cc"
@@ -75,7 +75,7 @@ def main():
     version, source = pinned_source(args.source_repository, args.source_commit)
     if args.snapshot_archive is None:
         # Execute the recipe in the fixed source, including when invoked by a newer Release tree.
-        with tempfile.TemporaryDirectory(prefix="sinan-tcp-source-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="apsp-tcp-source-") as temporary:
             snapshot = Path(temporary) / "source"
             snapshot.mkdir(mode=0o700)
             for name, data in source_files(source, args.source_commit).items():
@@ -117,7 +117,7 @@ def main():
         files = {BINARY: binary.read_bytes(), "source.tar.gz": source,
                  "Cargo.lock": (ROOT / "Cargo.lock").read_bytes(), "LICENSE": (ROOT / "LICENSE").read_bytes(), "THIRD_PARTY_NOTICES.txt": notices}
         info = {"schema": 1, "tool": BINARY, "tool_version": TOOL_VERSION, "artifact_version": version,
-                "source_repo": "theLucius7/sinan", "source_commit": args.source_commit,
+                "source_repo": "theLucius7/apsp", "source_commit": args.source_commit,
                 "target": TARGETS[args.arch], "rustc": compiler, "cargo_locked": True,
                 "source_sha256": digest(source), "lock_sha256": digest(files["Cargo.lock"]),
                 "license_sha256": digest(files["LICENSE"]), "binary_sha256": digest(files[BINARY]),

@@ -1,7 +1,7 @@
 use anyhow::{Context, bail, ensure};
+use apsp_adapter_sdk::Privileged;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sinan_adapter_sdk::Privileged;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -110,7 +110,7 @@ pub async fn execute(
                 );
             }
             privileged.create_dir(&directory, 0o700, None).await?;
-            let now = sinan_protocol::now_timestamp();
+            let now = apsp_protocol::now_timestamp();
             let snapshot = Snapshot {
                 id: id.into(),
                 before,
@@ -142,7 +142,7 @@ pub async fn execute(
                 privileged,
                 "/usr/bin/systemd-run",
                 &[
-                    format!("--unit=sinan-network-recovery-{id}"),
+                    format!("--unit=apsp-network-recovery-{id}"),
                     format!("--on-active={seconds}s"),
                     "--property=Type=oneshot".into(),
                     "--property=MemoryMax=64M".into(),
@@ -189,13 +189,13 @@ pub async fn execute(
                     "/usr/bin/systemctl",
                     &[
                         "stop".into(),
-                        format!("sinan-network-recovery-{id}.timer"),
-                        format!("sinan-network-recovery-{id}.service"),
+                        format!("apsp-network-recovery-{id}.timer"),
+                        format!("apsp-network-recovery-{id}.service"),
                     ],
                 )
                 .await?;
                 if snapshot.persisted {
-                    let path = Path::new("/etc/sysctl.d/95-sinan-network.conf");
+                    let path = Path::new("/etc/sysctl.d/95-apsp-network.conf");
                     ensure!(
                         tokio::fs::read_to_string(path).await?
                             == snapshot
@@ -227,7 +227,7 @@ pub async fn execute(
                 return Ok(json!({"snapshot_id":id,"status":"restored","observed":observed}));
             }
             ensure!(
-                sinan_protocol::now_timestamp() < snapshot.restore_at
+                apsp_protocol::now_timestamp() < snapshot.restore_at
                     && !directory.join("restored").try_exists()?,
                 "recovery window expired; take a new snapshot"
             );
@@ -241,13 +241,13 @@ pub async fn execute(
                     !snapshot.persisted,
                     "snapshot is already persisted; inspect its saved result"
                 );
-                let path = Path::new("/etc/sysctl.d/95-sinan-network.conf");
+                let path = Path::new("/etc/sysctl.d/95-apsp-network.conf");
                 let mut parameters = BTreeMap::new();
                 if path.try_exists()? {
                     let previous = tokio::fs::read(path).await?;
                     ensure!(
-                        previous.len() <= 32768 && previous.starts_with(b"# Managed by Sinan\n"),
-                        "existing sysctl file is not owned by Sinan"
+                        previous.len() <= 32768 && previous.starts_with(b"# Managed by Apsp\n"),
+                        "existing sysctl file is not owned by Apsp"
                     );
                     parameters = parse_persistent(std::str::from_utf8(&previous)?)?;
                     privileged
@@ -273,7 +273,7 @@ pub async fn execute(
                     .write_file(&snapshot_path, &serde_json::to_vec(&snapshot)?, 0o600, None)
                     .await?;
                 return Ok(
-                    json!({"snapshot_id":id,"status":"persisted","observed":observed,"path":"/etc/sysctl.d/95-sinan-network.conf"}),
+                    json!({"snapshot_id":id,"status":"persisted","observed":observed,"path":"/etc/sysctl.d/95-apsp-network.conf"}),
                 );
             }
             command(
@@ -281,15 +281,15 @@ pub async fn execute(
                 "/usr/bin/systemctl",
                 &[
                     "stop".into(),
-                    format!("sinan-network-recovery-{id}.timer"),
-                    format!("sinan-network-recovery-{id}.service"),
+                    format!("apsp-network-recovery-{id}.timer"),
+                    format!("apsp-network-recovery-{id}.service"),
                 ],
             )
             .await?;
             // Recheck after the stop to detect a timer that already started its restore service.
             matching(privileged, &snapshot.desired).await?;
             snapshot.confirmed = true;
-            snapshot.restore_at = sinan_protocol::now_timestamp() + 900;
+            snapshot.restore_at = apsp_protocol::now_timestamp() + 900;
             privileged
                 .write_file(&snapshot_path, &serde_json::to_vec(&snapshot)?, 0o600, None)
                 .await?;
@@ -305,7 +305,7 @@ pub async fn execute(
 async fn recovery_lock(
     privileged: &dyn Privileged,
     state_dir: &Path,
-) -> anyhow::Result<Box<dyn sinan_adapter_sdk::ManagedStateLock>> {
+) -> anyhow::Result<Box<dyn apsp_adapter_sdk::ManagedStateLock>> {
     ensure!(
         Path::new("/usr/bin/python3").is_file() && Path::new("/usr/bin/flock").is_file(),
         "network recovery requires installed Python and flock"
@@ -418,7 +418,7 @@ async fn inventory(privileged: &dyn Privileged) -> anyhow::Result<Value> {
         }
     }
     Ok(
-        json!({"sampled_at":sinan_protocol::now_timestamp(),"parameters":values,"errors":errors,"firewall":"separate_authorized_capability","temporary_recovery":"systemd_timer_required","tools":{"sysctl":Path::new("/sbin/sysctl").is_file(),"systemd_run":Path::new("/usr/bin/systemd-run").is_file(),"nft":Path::new("/usr/sbin/nft").is_file(),"wireguard":Path::new("/usr/bin/wg").is_file(),"ssh":Path::new("/usr/bin/ssh").is_file()}}),
+        json!({"sampled_at":apsp_protocol::now_timestamp(),"parameters":values,"errors":errors,"firewall":"separate_authorized_capability","temporary_recovery":"systemd_timer_required","tools":{"sysctl":Path::new("/sbin/sysctl").is_file(),"systemd_run":Path::new("/usr/bin/systemd-run").is_file(),"nft":Path::new("/usr/sbin/nft").is_file(),"wireguard":Path::new("/usr/bin/wg").is_file(),"ssh":Path::new("/usr/bin/ssh").is_file()}}),
     )
 }
 
@@ -479,7 +479,7 @@ fn valid_id(id: &str) -> bool {
 }
 
 fn persistent_content(parameters: &BTreeMap<String, String>) -> String {
-    let mut content = String::from("# Managed by Sinan\n");
+    let mut content = String::from("# Managed by Apsp\n");
     for (key, value) in parameters {
         content.push_str(&format!("{key} = {value}\n"));
     }
@@ -488,7 +488,7 @@ fn persistent_content(parameters: &BTreeMap<String, String>) -> String {
 
 fn parse_persistent(content: &str) -> anyhow::Result<BTreeMap<String, String>> {
     ensure!(
-        content.starts_with("# Managed by Sinan\n"),
+        content.starts_with("# Managed by Apsp\n"),
         "persistent file is outside managed scope"
     );
     let mut parameters = BTreeMap::new();
@@ -566,10 +566,10 @@ mod tests {
     fn recovery_script_uses_shared_inode_lock_and_source_bound_helper() {
         let id = "00000000-0000-0000-0000-000000000001";
         let script = recovery_script(
-            Path::new("/var/lib/sinan/core"),
+            Path::new("/var/lib/apsp/core"),
             "sysctl",
             id,
-            Path::new("/var/lib/sinan/core/network-snapshots/example/snapshot.json"),
+            Path::new("/var/lib/apsp/core/network-snapshots/example/snapshot.json"),
         )
         .unwrap();
         assert!(script.contains("/usr/bin/flock --exclusive --wait 10"));
@@ -578,19 +578,19 @@ mod tests {
         assert!(script.contains("refused"));
         assert!(
             recovery_script(
-                Path::new("/var/lib/sinan/\"unsafe"),
+                Path::new("/var/lib/apsp/\"unsafe"),
                 "sysctl",
                 id,
-                Path::new("/var/lib/sinan/snapshot.json")
+                Path::new("/var/lib/apsp/snapshot.json")
             )
             .is_err()
         );
         assert!(
             recovery_script(
-                Path::new("/var/lib/sinan"),
+                Path::new("/var/lib/apsp"),
                 "foreign",
                 id,
-                Path::new("/var/lib/sinan/snapshot.json")
+                Path::new("/var/lib/apsp/snapshot.json")
             )
             .is_err()
         );
@@ -598,7 +598,7 @@ mod tests {
     #[tokio::test]
     async fn current_snapshot_binding_rejects_stale_confirm_or_restore() {
         let directory =
-            std::env::temp_dir().join(format!("sinan-network-slot-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("apsp-network-slot-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir_all(directory.join("network-recovery"))
             .await
             .unwrap();

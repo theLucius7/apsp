@@ -103,10 +103,10 @@ CORES = {
 }
 
 # Workspace crates each layer may depend on (all dependency tables).
-AGENT_CORE_DEPENDENCIES = {"sinan-adapter-sdk", "sinan-protocol"}
-ADAPTER_DEPENDENCIES = {"sinan-adapter-sdk"}
-HOST_DEPENDENCIES = {"sinan-protocol"}
-PLUGIN_DEPENDENCIES = {"sinan-panel-host", "sinan-protocol", "sinan-compiler", "sinan-cloud-api"}
+AGENT_CORE_DEPENDENCIES = {"apsp-adapter-sdk", "apsp-protocol"}
+ADAPTER_DEPENDENCIES = {"apsp-adapter-sdk"}
+HOST_DEPENDENCIES = {"apsp-protocol"}
+PLUGIN_DEPENDENCIES = {"apsp-panel-host", "apsp-protocol", "apsp-compiler", "apsp-cloud-api"}
 
 
 def violations(relative, source, exceptions=None):
@@ -149,12 +149,12 @@ def check(directory, exceptions=None):
 
 
 def workspace_dependencies(manifest):
-    """Returns every `sinan-*` crate named in any dependency table."""
+    """Returns every `apsp-*` crate named in any dependency table."""
     data = tomllib.loads(manifest)
     tables = [data.get(key, {}) for key in ("dependencies", "dev-dependencies", "build-dependencies")]
     for target in data.get("target", {}).values():
         tables += [target.get(key, {}) for key in ("dependencies", "dev-dependencies", "build-dependencies")]
-    return {name for table in tables for name in table if name.startswith("sinan-")}
+    return {name for table in tables for name in table if name.startswith("apsp-")}
 
 
 def layer_rules(root):

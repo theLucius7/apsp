@@ -26,7 +26,7 @@ def main():
     source = args.pebble_source.resolve()
     root = Path(__file__).resolve().parents[1]
     processes = []
-    with tempfile.TemporaryDirectory(prefix="sinan-acme-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="apsp-acme-") as temporary:
         directory = Path(temporary)
         api, management, dns, dns_management, http, tls = [port() for _ in range(6)]
         config = json.loads((source / "test/config/pebble-config.json").read_text())
@@ -67,11 +67,11 @@ def main():
                     time.sleep(0.1)
             issuer_path = directory / "issuer.pem"
             issuer_path.write_bytes(issuer)
-            env.update(SINAN_TEST_SINGBOX=str(args.runtime.resolve()),
-                       SINAN_TEST_ACME_URL=f"https://127.0.0.1:{api}/dir",
-                       SINAN_TEST_ACME_CA=str(bootstrap), SINAN_TEST_ACME_ISSUER=str(issuer_path),
-                       SINAN_TEST_ACME_HTTP_PORT=str(http), SINAN_TEST_ACME_TLS_PORT=str(tls))
-            subprocess.run(["cargo", "test", "-p", "sinan-panel", "--test", "acme_runtime", "--", "--ignored", "--nocapture"],
+            env.update(APSP_TEST_SINGBOX=str(args.runtime.resolve()),
+                       APSP_TEST_ACME_URL=f"https://127.0.0.1:{api}/dir",
+                       APSP_TEST_ACME_CA=str(bootstrap), APSP_TEST_ACME_ISSUER=str(issuer_path),
+                       APSP_TEST_ACME_HTTP_PORT=str(http), APSP_TEST_ACME_TLS_PORT=str(tls))
+            subprocess.run(["cargo", "test", "-p", "apsp-panel", "--test", "acme_runtime", "--", "--ignored", "--nocapture"],
                            cwd=root, env=env, check=True, timeout=240)
         except Exception:
             print(log_path.read_text(errors="replace"))

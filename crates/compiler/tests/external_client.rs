@@ -1,11 +1,11 @@
 #![forbid(unsafe_code)]
-use serde_json::{Value, json};
-use sinan_compiler::{
+use apsp_compiler::{
     Access, Node,
     client::{ExternalClientNode, compile_with_external},
     compile_client,
     external::ExternalOutbound,
 };
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 fn managed() -> Node {

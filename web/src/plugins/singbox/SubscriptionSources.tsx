@@ -126,7 +126,7 @@ function SourceEditor({ source, writeError, onClose, onSaved }: { source?: Subsc
     if (source) body.settings_revision = source.settings_revision
     else body.kind = kind
     if (kind === 'url') {
-      body.refresh_interval_seconds = Number(form.get('refresh_minutes')) * 60; body.auto_refresh = autoRefresh; body.user_agent = String(form.get('user_agent') ?? 'Sinan-subscription-import/1')
+      body.refresh_interval_seconds = Number(form.get('refresh_minutes')) * 60; body.auto_refresh = autoRefresh; body.user_agent = String(form.get('user_agent') ?? 'Apsp-subscription-import/1')
       if (url.trim()) body.url = url.trim()
       if (authorization) body.authorization = authorization
       if (clearAuthorization) body.clear_authorization = true
@@ -140,7 +140,7 @@ function SourceEditor({ source, writeError, onClose, onSaved }: { source?: Subsc
       <Field label={source ? '替换订阅地址' : 'HTTPS 订阅地址'} hint={source ? '已配置的完整地址不会回显。留空保留；更换地址会建立新来源身份，原链路不会自动换机场。' : '仅接受公网 HTTPS 地址。地址中的路径和查询可能包含令牌。'}><input type="password" name="subscription_url" autoComplete="new-password" spellCheck={false} required={!source} maxLength={8192} placeholder={source?.url_configured ? '已配置，留空保留' : 'https://…'} value={url} onChange={event => setUrl(event.target.value)} /></Field>
       <Field label="获取认证（可选）" hint="需要时填写完整 Authorization 值。留空保留已配置的认证。"><input type="password" autoComplete="new-password" spellCheck={false} maxLength={8192} disabled={clearAuthorization} placeholder={source?.authorization_configured ? '已配置，留空保留' : '按来源要求填写'} value={authorization} onChange={event => setAuthorization(event.target.value)} /></Field>
       {source?.authorization_configured && <label className="source-checkbox"><input type="checkbox" checked={clearAuthorization} onChange={event => { setClearAuthorization(event.target.checked); if (event.target.checked) setAuthorization('') }} />清除已配置的获取认证</label>}
-      <Field label="请求标识"><input name="user_agent" required maxLength={256} defaultValue={source?.user_agent ?? 'Sinan-subscription-import/1'} /></Field>
+      <Field label="请求标识"><input name="user_agent" required maxLength={256} defaultValue={source?.user_agent ?? 'Apsp-subscription-import/1'} /></Field>
       <label className="source-checkbox"><input type="checkbox" checked={autoRefresh} onChange={event => setAutoRefresh(event.target.checked)} />自动更新来源</label>
       <Field label="自动刷新间隔（分钟）" hint="默认每天一次；允许 5 分钟至 30 天。"><input name="refresh_minutes" type="number" min={5} max={43200} step={1} required defaultValue={source ? source.refresh_interval_seconds / 60 : 1440} /></Field>
     </> : <>

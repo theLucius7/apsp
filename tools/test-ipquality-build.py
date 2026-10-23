@@ -14,7 +14,7 @@ from unittest.mock import patch
 import ipquality_artifact as artifact
 import release
 
-build = artifact.module('sinan_ipquality_builder_tests', artifact.ROOT / 'tools/build-ipquality.py')
+build = artifact.module('apsp_ipquality_builder_tests', artifact.ROOT / 'tools/build-ipquality.py')
 
 
 class FixtureGuard:
@@ -32,7 +32,7 @@ class FixtureGuard:
 
 class BuildTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='sinan-ipquality-build-fixture-')
+        self.temporary = tempfile.TemporaryDirectory(prefix='apsp-ipquality-build-fixture-')
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
         self.guard = FixtureGuard()
@@ -119,7 +119,7 @@ class BuildTests(unittest.TestCase):
 
     def test_corresponding_source_includes_exact_minimal_profile_implementation(self):
         # Only upstream bundle conversion is replaced at its separate boundary;
-        # the packaging list and local Sinan source bytes are the real inputs.
+        # the packaging list and local Apsp source bytes are the real inputs.
         bundle, review = self.root / 'bundle.json', self.root / 'license-review.json'
         bundle.write_bytes(b'TEST_ONLY upstream bundle boundary')
         review.write_bytes(b'{"scope":"TEST_ONLY no license approval"}')
@@ -131,7 +131,7 @@ class BuildTests(unittest.TestCase):
         def source_module(name, path):
             # Keep runtime()._ordinary backed by the real rootfs verifier;
             # only the declared upstream conversion boundary is substituted.
-            return helper if name == 'sinan_node_ip_source' else actual_module(name, path)
+            return helper if name == 'apsp_node_ip_source' else actual_module(name, path)
         with patch.object(artifact, 'module', side_effect=source_module):
             sources, _ = build.source_files(bundle, review, self.guard)
         for name in ('tools/ipquality-profile.py', 'tools/ipquality-inputs.py',
@@ -145,8 +145,8 @@ class BuildTests(unittest.TestCase):
         cache = self.root / 'input-cache'
         (cache / 'source').mkdir(parents=True, mode=0o700)
         (cache / 'source/sample.tar.xz').write_bytes(body)
-        mini = b'TEST_ONLY Sinan source bytes'
-        expected = {'sinan-source.tar.gz': {'size': len(mini), 'sha256': artifact.digest(mini)},
+        mini = b'TEST_ONLY Apsp source bytes'
+        expected = {'apsp-source.tar.gz': {'size': len(mini), 'sha256': artifact.digest(mini)},
                     'debian-sources/source/sample.tar.xz': {'size': len(body), 'sha256': artifact.digest(body)}}
         return cache, mini, expected
 
@@ -155,14 +155,14 @@ class BuildTests(unittest.TestCase):
         cache, mini, expected = self.paired_fixture(body)
         output = self.root / 'amd64.sources.tar.gz'
         result = build.pack_sources(output, mini, expected, cache, self.factory, self.guard)
-        files = {'THIRD_PARTY_NOTICES.txt': b'Sinan IPQuality node self-query\n' + artifact.canonical({
+        files = {'THIRD_PARTY_NOTICES.txt': b'Apsp IPQuality node self-query\n' + artifact.canonical({
             'source_offer': {'asset': f'ipquality-{artifact.VERSION}-linux-amd64-sources.tar.gz', **result},
             'license': 'AGPL-3.0-only', 'notice': 'TEST_ONLY inert source fixtures; no build approval'})}
         with patch.object(artifact, 'source_inventory', return_value=expected):
             artifact.validate_source_offer(output, files, artifact.VERSION, 'amd64')
         self.assertGreaterEqual(self.guard.chunks, 3)
         self.assertEqual(artifact.unpack(output.read_bytes(), maximum=artifact.MAX_SOURCE_OFFER),
-                         {'sinan-source.tar.gz': mini, 'debian-sources/source/sample.tar.xz': body})
+                         {'apsp-source.tar.gz': mini, 'debian-sources/source/sample.tar.xz': body})
 
     def test_missing_and_changed_corresponding_source_bytes_abort_packaging(self):
         cache, mini, expected = self.paired_fixture()

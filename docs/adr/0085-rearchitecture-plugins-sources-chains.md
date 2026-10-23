@@ -12,7 +12,7 @@
 
 ### 插件边界
 
-- 7 个面板插件共约 3.5 万行 Rust：sing-box、DDNS、阿里云、云 API 公共库、IP 质量、NodeQuality、TCP 质量。它们通过 `#[path]` 直接编进 `sinan-panel`，没有独立 crate。
+- 7 个面板插件共约 3.5 万行 Rust：sing-box、DDNS、阿里云、云 API 公共库、IP 质量、NodeQuality、TCP 质量。它们通过 `#[path]` 直接编进 `apsp-panel`，没有独立 crate。
 - 插件直接使用面板内部的 `AppState`、`auth::require_admin`、错误类型、诊断服务、IP 质量、运行控制、通行密钥、通知等模块。
 - 面板核心也反向直接调用插件内部，例如 Agent 通道调用用量入账和配置包，诊断与 IP 质量模块读取诊断插件的内部结构。
 - 插件之间也有直接引用：阿里云、DDNS 引用云 API 库；NodeQuality 引用 sing-box 的运行活动。
@@ -60,7 +60,7 @@
 
 1. 新增面板宿主库 crate，放面板通用能力：`AppState`、配置、鉴权、错误类型、诊断服务、IP 质量、运行控制、通知、通行密钥等。同时定义插件接口，覆盖路由、后台任务、Agent 消息钩子（用量入账、manifest、配置包）、运行活动查询和诊断插件登记。
 2. 各插件改为独立 crate，只依赖宿主库和明确声明的共享库：云 API 公共库成为普通库 crate；NodeQuality 改为通过宿主接口查询运行活动，不再直接引用 sing-box。
-3. `sinan-panel` 只负责组装：二进制登记插件；库继续再导出 `sinan_panel::plugins::singbox` 等原有路径，集成测试不用改路径。
+3. `apsp-panel` 只负责组装：二进制登记插件；库继续再导出 `apsp_panel::plugins::singbox` 等原有路径，集成测试不用改路径。
 4. 迁移仍是一条线性序列，留在面板中；`sqlx` 要求单一序列，不拆分。
 5. 分层检查扩展到宿主库：与 `agent-core` 一样，不得出现 sing-box 名称和代理业务词汇，例外表达式由检查器逐条列出。
 
@@ -96,10 +96,10 @@
 ## 阶段一实施说明
 
 - **crate 划分：**
-  - 宿主 `crates/panel-host`（`sinan-panel-host`）：原 `crates/panel/src` 中除入口与插件桥之外的全部模块，含共用诊断服务。
-  - 业务插件：`plugins/singbox/panel`（`sinan-plugin-singbox`）、`plugins/ddns/panel`（`sinan-plugin-ddns`）、`plugins/alicloud/panel`（`sinan-plugin-alicloud`）。
-  - 云 API 公共库：`plugins/cloud_api/panel`（`sinan-cloud-api`）。它的本地模拟服务只在测试或 `test-support` 特性下编译，供两个云插件的测试使用。
-  - 组装：`crates/panel`（`sinan-panel`）。
+  - 宿主 `crates/panel-host`（`apsp-panel-host`）：原 `crates/panel/src` 中除入口与插件桥之外的全部模块，含共用诊断服务。
+  - 业务插件：`plugins/singbox/panel`（`apsp-plugin-singbox`）、`plugins/ddns/panel`（`apsp-plugin-ddns`）、`plugins/alicloud/panel`（`apsp-plugin-alicloud`）。
+  - 云 API 公共库：`plugins/cloud_api/panel`（`apsp-cloud-api`）。它的本地模拟服务只在测试或 `test-support` 特性下编译，供两个云插件的测试使用。
+  - 组装：`crates/panel`（`apsp-panel`）。
   - 各插件目录保持原位置。`[lib] path = "mod.rs"` 让原有模块树不变；关闭自动发现目标，避免把作为子模块的 `tests/` 目录当成集成测试。
 - **插件接口：**
   - 宿主的 `plugin_api::PanelPlugins` 覆盖用量入账、模块清单、配置包和运行活动查询。NodeQuality 也改为通过这个接口查询运行活动，不再直接引用 sing-box。
@@ -109,7 +109,7 @@
   - 没有放进 `AppState`，是因为测试和嵌入方直接调用 `AppState::new(pool, config)`。为保持这个公共签名，不给它增加参数。
   - 未登记时，宿主采用保守默认：用量入账报错并保持未确认、模块清单为空、配置包不存在、运行活动为“未配置”。
 - **迁移：** 迁移仍是一条序列，留在 `crates/panel/migrations`。宿主用相对路径嵌入它；插件 crate 内的数据库单元测试也显式指向它。
-- **公共路径：** 组装 crate 再导出宿主模块和插件，原有 `sinan_panel::*` 路径（含 `sinan_panel::plugins::singbox`、`sinan_panel::usage` 等）保持可用，集成测试不改路径。
+- **公共路径：** 组装 crate 再导出宿主模块和插件，原有 `apsp_panel::*` 路径（含 `apsp_panel::plugins::singbox`、`apsp_panel::usage` 等）保持可用，集成测试不改路径。
 - **分层检查：** `tools/check-core-boundary.py` 现在同时检查：
   - `agent-core` 与 `panel-host` 两个目录的禁用词；宿主的例外表达式逐条列出，如 HTTP `User-Agent` 和 URL 用户信息测试夹具。
   - Agent 核心、适配器、面板宿主和业务插件 `Cargo.toml` 中的工作区依赖方向。

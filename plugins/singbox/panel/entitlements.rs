@@ -37,7 +37,7 @@ pub async fn get(
 ) -> ApiResult<Json<Entitlement>> {
     require_admin(&state, &headers).await?;
     let value = sqlx::query_as("SELECT * FROM singbox_entitlements($1) WHERE user_id=$2")
-        .bind(sinan_protocol::now_timestamp())
+        .bind(apsp_protocol::now_timestamp())
         .bind(id)
         .fetch_optional(&state.pool)
         .await?

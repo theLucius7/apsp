@@ -2,7 +2,7 @@ use super::receipts::{preliminary_outcome, request_for_result, save_receipt};
 use super::storage::{PendingRequest, current_binding, enqueue};
 use super::{confirmed_is_current, lock_server, supports, target_is_current};
 use crate::{AppState, agent_api};
-use sinan_protocol::{
+use apsp_protocol::{
     Bundle, Envelope, RUNTIME_PATH_PROBE_CAPABILITY, RuntimeCheckpoint, RuntimeControlAck,
     RuntimePathProbeRequest, RuntimePathProbeResult, now_timestamp,
 };

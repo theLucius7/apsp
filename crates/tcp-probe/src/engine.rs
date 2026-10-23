@@ -139,7 +139,7 @@ pub(crate) async fn run_with_deadline(
     let mut report = Report {
         schema: 1, method: "tcp_connect".into(),
         semantics: "连接成功率和 TCP 建连耗时；不是包丢失率、吞吐测速或上游 TcpQuality 兼容评分。地区与运营商是管理员配置标签，未指定地区不推断。".into(),
-        engine: Engine { name: "sinan-native-tcp-connect-v1".into(), version: VERSION.into(), source_commit: SOURCE_COMMIT.map(str::to_owned) },
+        engine: Engine { name: "apsp-native-tcp-connect-v1".into(), version: VERSION.into(), source_commit: SOURCE_COMMIT.map(str::to_owned) },
         started_at_ms: now_millis()?, finished_at_ms: None,
         parameters: Parameters { ip_version: options.ip_version, count: options.count, concurrency: options.concurrency, dns_timeout_ms: limits.dns.as_millis() as u64, connect_timeout_ms: limits.connect.as_millis() as u64, interval_ms: limits.interval.as_millis() as u64, total_timeout_ms: limits.total.as_millis() as u64 },
         target_digest: options.target_digest.clone(), targets: snapshot.targets.into_iter().map(TargetResult::queued).collect(),

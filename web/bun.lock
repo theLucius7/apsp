@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "sinan-web",
+      "name": "apsp-web",
       "dependencies": {
         "react": "^19.2.0",
         "react-dom": "^19.2.0",

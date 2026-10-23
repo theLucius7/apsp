@@ -42,7 +42,7 @@ def quiescent(saved, allow_missing=False):
     environment["LC_ALL"] = "C"
     try:
         if Path("/run/systemd/system").is_dir():
-            result = subprocess.run(["systemctl", "show", "sinan-agent.service", "--property=LoadState",
+            result = subprocess.run(["systemctl", "show", "apsp-agent.service", "--property=LoadState",
                                      "--property=ActiveState", "--property=SubState", "--property=MainPID"],
                                     capture_output=True, env=environment, check=False, timeout=3)
             ensure(result.returncode == 0 and len(result.stdout) <= 4096,
@@ -57,9 +57,9 @@ def quiescent(saved, allow_missing=False):
                    and properties["ActiveState"] == "inactive" and properties["SubState"] == "dead"
                    and properties["MainPID"] == "0", "旧 Agent 仍可能运行，请先执行受控维护，安装未切换")
         elif Path("/run/openrc/softlevel").is_file():
-            exists = subprocess.run(["rc-service", "--exists", "sinan-agent"], capture_output=True,
+            exists = subprocess.run(["rc-service", "--exists", "apsp-agent"], capture_output=True,
                                     env=environment, check=False, timeout=3)
-            status = subprocess.run(["rc-service", "sinan-agent", "status"], capture_output=True,
+            status = subprocess.run(["rc-service", "apsp-agent", "status"], capture_output=True,
                                     env=environment, check=False, timeout=3)
             ensure((exists.returncode == 0 and status.returncode == 3)
                    or (allow_missing and exists.returncode == 1 and status.returncode == 1),
@@ -68,7 +68,7 @@ def quiescent(saved, allow_missing=False):
             raise ValueError("无法确认旧 Agent 服务状态，请先执行受控维护，安装未切换")
     except (OSError, subprocess.TimeoutExpired, UnicodeError):
         raise ValueError("无法确认旧 Agent 服务停止，请先执行受控维护，安装未切换") from None
-    endpoint = saved.get("status_socket", "/run/sinan/agent.sock")
+    endpoint = saved.get("status_socket", "/run/apsp/agent.sock")
     ensure(isinstance(endpoint, str) and Path(endpoint).is_absolute()
            and ".." not in Path(endpoint).parts and not any(ord(character) < 32 for character in endpoint),
            "旧 Agent 状态端点无效，安装未切换")
@@ -144,7 +144,7 @@ def checkpoint_safe(encoded):
                and all(isinstance(argument, str) and len(argument) <= 4096 for argument in service["args"])
                and service.get("working_directory") == spec["job_dir"]
                and service.get("program") == spec["binary_path"]
-               and service.get("unit") == "sinan-diagnostic-" + spec["id"] + ".service",
+               and service.get("unit") == "apsp-diagnostic-" + spec["id"] + ".service",
                "旧已启动检查点版本或执行身份无效，安装未切换")
         ensure(all(type(service[key]) is int for key in
                    {"memory_max", "tasks_max", "cpu_weight", "io_weight", "oom_score_adjust"} & set(service)),
@@ -202,7 +202,7 @@ def _preflight(version, configuration):
     if tuple(int(part) for part in version.split("-")[0].split("+")[0].split(".")) > (0, 3, 0):
         return
     configuration = Path(configuration)
-    database, saved = Path("/var/lib/sinan/core/state.db"), {}
+    database, saved = Path("/var/lib/apsp/core/state.db"), {}
     if configuration.exists() or configuration.is_symlink():
         try:
             import tomllib
@@ -259,7 +259,7 @@ def _preflight(version, configuration):
         checkpoint_safe(encoded)
 
 
-def preflight(version, configuration=Path("/etc/sinan/agent.toml")):
+def preflight(version, configuration=Path("/etc/apsp/agent.toml")):
     try:
         _preflight(version, configuration)
     except OSError:

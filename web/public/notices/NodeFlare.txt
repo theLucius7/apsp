@@ -1,4 +1,4 @@
-服务器展示界面与添加服务器流程参考 NodeFlare；配置保存、设备接入和管理业务由 Sinan 实现。
+服务器展示界面与添加服务器流程参考 NodeFlare；配置保存、设备接入和管理业务由 Apsp 实现。
 参考源码：https://github.com/elysia62/NodeFlare
 参考提交：42eff9e07e12d6ec83e003238c1072cc5afdd39e
 展示布局、主题样式与系统图标保留以下许可。

@@ -28,7 +28,7 @@ def report_data():
 
 class UploadBoundaryTests(unittest.TestCase):
     def setUp(self):
-        temporary = tempfile.TemporaryDirectory(prefix='sinan-upload-boundary-')
+        temporary = tempfile.TemporaryDirectory(prefix='apsp-upload-boundary-')
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.curl_trace = self.root / 'curl.json'
@@ -36,20 +36,20 @@ class UploadBoundaryTests(unittest.TestCase):
         real.write_text('''#!/usr/bin/env python3
 import json, os, pathlib, sys
 pathlib.Path(os.environ['FIXTURE_CURL_TRACE']).write_text(json.dumps(sys.argv[1:]))
-sys.stdout.write('https://nodequality.com/r/private-fixture\\nSINAN_RESPONSE_STATUS:200')
+sys.stdout.write('https://nodequality.com/r/private-fixture\\nAPSP_RESPONSE_STATUS:200')
 raise SystemExit(int(os.environ.get('FIXTURE_CURL_STATUS', '0')))
 ''')
         real.chmod(0o700)
-        self.environment = dict(os.environ, SINAN_REPORT_WORKSPACE=str(self.root),
-                                SINAN_REPORT_HELPER=str(PLUGIN / 'report.py'),
-                                SINAN_REAL_CURL=str(real), FIXTURE_CURL_TRACE=str(self.curl_trace))
-        self.environment.pop('SINAN_UPLOAD_REPORT', None)
+        self.environment = dict(os.environ, APSP_REPORT_WORKSPACE=str(self.root),
+                                APSP_REPORT_HELPER=str(PLUGIN / 'report.py'),
+                                APSP_REAL_CURL=str(real), FIXTURE_CURL_TRACE=str(self.curl_trace))
+        self.environment.pop('APSP_UPLOAD_REPORT', None)
         self.data = report_data()
 
     def shim(self, arguments=POST, permission=None, status=0):
         environment = dict(self.environment, FIXTURE_CURL_STATUS=str(status))
         if permission is not None:
-            environment['SINAN_UPLOAD_REPORT'] = permission
+            environment['APSP_UPLOAD_REPORT'] = permission
         return subprocess.run(['bash', str(PLUGIN / 'runtime-curl.sh'), *arguments],
                               env=environment, input=self.data, capture_output=True, timeout=4)
 

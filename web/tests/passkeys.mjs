@@ -5,8 +5,8 @@ import { SQL } from 'bun'
 import { createHmac } from 'node:crypto'
 
 // Run only through the ignored Rust test, which owns a temporary PostgreSQL database and HTTP server.
-const origin = process.env.SINAN_PASSKEY_TEST_ORIGIN
-const database = process.env.SINAN_PASSKEY_TEST_DATABASE_URL
+const origin = process.env.APSP_PASSKEY_TEST_ORIGIN
+const database = process.env.APSP_PASSKEY_TEST_DATABASE_URL
 assert.equal(new URL(origin).hostname, 'localhost')
 assert.match(new URL(database).pathname, /^\/_sqlx_test/)
 const databaseUrl = new URL(database)
@@ -14,8 +14,8 @@ assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(databaseUrl.hostname), 'B
 // sqlx's driver options are not PostgreSQL startup parameters. The isolated fixture has no TLS.
 databaseUrl.search = '?sslmode=disable'
 const sql = new SQL({ url: databaseUrl.href, connectionTimeout: 5 })
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
 const password = 'business-test-password'
 const errors = [], results = []
 const contexts = []
@@ -112,7 +112,7 @@ try {
       await sql`UPDATE passkey_ceremonies SET expires_at=0 WHERE id=${challenge.challenge_id}`
     } else if (mutation === 'browser_binding') {
       const cookies = await admin.context.cookies()
-      const binding = cookies.find(c => c.name === 'sinan_admin_passkey')
+      const binding = cookies.find(c => c.name === 'apsp_admin_passkey')
       await admin.context.addCookies([{ ...binding, value: 'TEST_ONLY_WRONG_BINDING' }])
     }
     const path = mutation === 'wrong_purpose' ? '/api/security/passkeys/register/finish' : '/api/login/passkey/finish'
@@ -159,8 +159,8 @@ try {
   assert.equal(own.subscription_url, `${user.subscription_url}?format=singbox`)
   assert.deepEqual(own.usage, { uplink: '0', downlink: '0' })
   const userCookies = await userClient.context.cookies()
-  assert.ok(userCookies.some(c => c.name === 'sinan_proxy_session' && c.httpOnly && c.sameSite === 'Strict'))
-  assert.equal(userCookies.some(c => c.name === 'sinan_session'), false)
+  assert.ok(userCookies.some(c => c.name === 'apsp_proxy_session' && c.httpOnly && c.sameSite === 'Strict'))
+  assert.equal(userCookies.some(c => c.name === 'apsp_session'), false)
   for (const path of ['/api/me', '/api/security/passkeys', '/api/plugins/sing-box/users', '/api/plugins/ddns/rules']) {
     assert.equal((await request(userPage, path, undefined, 'GET')).status, 401)
   }
@@ -179,9 +179,9 @@ try {
   await userPage.getByRole('heading', { name: user.name, exact: true }).waitFor()
   assert.equal(await userPage.getByRole('navigation', { name: '主导航' }).count(), 0)
   assert.ok(await userPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
-  if (process.env.SINAN_UI_SCREENSHOT_DIR) {
-    await mkdir(process.env.SINAN_UI_SCREENSHOT_DIR, { recursive: true })
-    await userPage.screenshot({ path: `${process.env.SINAN_UI_SCREENSHOT_DIR}/passkey-proxy-390.png`, fullPage: true })
+  if (process.env.APSP_UI_SCREENSHOT_DIR) {
+    await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true })
+    await userPage.screenshot({ path: `${process.env.APSP_UI_SCREENSHOT_DIR}/passkey-proxy-390.png`, fullPage: true })
   }
   results.push('proxy passwordless login, one-time invitation and last-key guard')
 
@@ -227,8 +227,8 @@ try {
   await userDialog.waitFor({ state: 'hidden' })
   await userPage.getByText('Passkey 已删除，其他用户会话已退出。', { exact: true }).waitFor()
   assert.equal((await ok(userPage, userPath, undefined, 'GET')).keys.length, 1)
-  const oldSession = beforeDelete.find(c => c.name === 'sinan_proxy_session').value
-  const oldSessionView = await admin.context.request.get(`${origin}${userPath}`, { headers: { Cookie: `sinan_proxy_session=${oldSession}` } })
+  const oldSession = beforeDelete.find(c => c.name === 'apsp_proxy_session').value
+  const oldSessionView = await admin.context.request.get(`${origin}${userPath}`, { headers: { Cookie: `apsp_proxy_session=${oldSession}` } })
   assert.equal((await oldSessionView.json()).authenticated, false)
   results.push('proxy add/remove UI, fresh verification and revocation of other sessions')
 

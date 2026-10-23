@@ -18,10 +18,10 @@ function Stat({ icon, label, value, unit, children, tone, title }: { icon?: stri
 }
 
 function readPreference(key: string): string | null {
-  try { return localStorage.getItem(`sinan-dashboard-${key}`) } catch { return null }
+  try { return localStorage.getItem(`apsp-dashboard-${key}`) } catch { return null }
 }
 function savePreference(key: string, value: string) {
-  try { localStorage.setItem(`sinan-dashboard-${key}`, value) } catch { /* Keep the in-memory choice when storage is disabled. */ }
+  try { localStorage.setItem(`apsp-dashboard-${key}`, value) } catch { /* Keep the in-memory choice when storage is disabled. */ }
 }
 const filters: [DashboardFilter, string][] = [['all', '全部'], ['online', '在线'], ['offline', '离线'], ['pending', '待接入'], ['stale', '指标待更新']]
 

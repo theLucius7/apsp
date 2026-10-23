@@ -18,7 +18,7 @@
 
 签名清单覆盖 `ipquality` 和六个附属文件：rootfs、rootfs 清单、build-info、LICENSE、source.tar.gz、THIRD_PARTY_NOTICES。打包必须先验证真实 prepare/export 和独立许可审查记录，审查逐个绑定原库存、包、对应源和许可证文本。审查文件中的 reviewer/evidence 是声明，非空字段不是自动审批证明；真实审阅和实机签收必须另有证据。发行校验重新比对固定源码派生、完整清单与参考资料。source 包携带九个原策略的精确副本，脱离完整 NodeQuality 也能复导出。制品 intake 不执行诊断，不下载运行时依赖。
 
-同架构另附 `ipquality-<固定版本>-linux-<架构>-sources.tar.gz`，其中包含完整 Sinan/上游对应源包及每个 Debian 对应源的真实文件；只列 URLs、库存或哈希不能通过。机器可读 THIRD_PARTY_NOTICES 记录其固定名称、大小与 SHA256，外层附属文件签名覆盖这份声明，不修改既有协议 ReleaseArtifact。assemble、完整 bundle 校验和 draft 发布都必须取得对应文件并流式检查完整成员和源闭包；正式源下载地址由同一已签 release 的仓库、tag 和固定 asset 派生。缺少配套源包不能正式发布。
+同架构另附 `ipquality-<固定版本>-linux-<架构>-sources.tar.gz`，其中包含完整 Apsp/上游对应源包及每个 Debian 对应源的真实文件；只列 URLs、库存或哈希不能通过。机器可读 THIRD_PARTY_NOTICES 记录其固定名称、大小与 SHA256，外层附属文件签名覆盖这份声明，不修改既有协议 ReleaseArtifact。assemble、完整 bundle 校验和 draft 发布都必须取得对应文件并流式检查完整成员和源闭包；正式源下载地址由同一已签 release 的仓库、tag 和固定 asset 派生。缺少配套源包不能正式发布。
 
 设备经 core 验证外层签名与每个文件后，适配器从已核对的 release.json 获取当前归档哈希，并固定任务执行上下文。包装器再次验证 rootfs 清单及全流，在独立挂载命名空间内解包和只读挂载；工作目录单独可写，只提供必要只读设备、只读 proc 和本机 DNS 配置副本，不挂宿主 sys，也不安装宿主软件。整个进程组和挂载都须清理确认。设备重启后读取原结果并清理，绝不因为缺少结果重新运行旧工作目录。
 

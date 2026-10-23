@@ -2,11 +2,11 @@ use crate::{
     AppState, control_center,
     error::{ApiError, ApiResult},
 };
-use serde_json::{Value, json};
-use sinan_protocol::{
+use apsp_protocol::{
     Artifact, RuntimeBinding, RuntimeCheckpointRequest, RuntimeOperation, RuntimeOperationError,
     RuntimeOperationRequest, RuntimeOperationResult, now_timestamp,
 };
+use serde_json::{Value, json};
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
@@ -53,7 +53,7 @@ fn artifact_identity(state: &AppState, artifact: &Artifact) -> ApiResult<Value> 
         .release_keys
         .as_deref()
         .ok_or_else(|| conflict("面板缺少可信发布公钥"))?;
-    let verified = sinan_protocol::release::verify_release(proof, keys)
+    let verified = apsp_protocol::release::verify_release(proof, keys)
         .map_err(|_| conflict("运行时签名证明校验失败"))?;
     let arch = artifact
         .url
@@ -83,9 +83,9 @@ pub async fn automation_candidate(
     let now = now_timestamp();
     let caps: Value = row.get("capabilities");
     let required = [
-        sinan_protocol::RUNTIME_OPERATIONS_CAPABILITY,
-        sinan_protocol::RUNTIME_CHECKPOINT_CAPABILITY,
-        sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
+        apsp_protocol::RUNTIME_OPERATIONS_CAPABILITY,
+        apsp_protocol::RUNTIME_CHECKPOINT_CAPABILITY,
+        apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
     ];
     if !caps.as_array().is_some_and(|values| {
         required
@@ -226,9 +226,9 @@ pub async fn automation_dispatch_matches_tx(
             .fetch_one(&mut **tx)
             .await?;
     let required = [
-        sinan_protocol::RUNTIME_OPERATIONS_CAPABILITY,
-        sinan_protocol::RUNTIME_CHECKPOINT_CAPABILITY,
-        sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
+        apsp_protocol::RUNTIME_OPERATIONS_CAPABILITY,
+        apsp_protocol::RUNTIME_CHECKPOINT_CAPABILITY,
+        apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
     ];
     if !caps.as_array().is_some_and(|values| {
         required

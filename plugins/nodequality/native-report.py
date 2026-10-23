@@ -215,7 +215,7 @@ def capture_response(root, *, publication_fd=None):
             break
         first = (first + block)[:65536]
         tail = (tail + block)[-64:]
-    status = re.search(rb"\nSINAN_RESPONSE_STATUS:(\d{3})$", tail)
+    status = re.search(rb"\nAPSP_RESPONSE_STATUS:(\d{3})$", tail)
     if status and first.endswith(status[0]):
         first = first[:-len(status[0])]
     write_atomic(root / "upload-response.txt", first, publication_fd=publication_fd)

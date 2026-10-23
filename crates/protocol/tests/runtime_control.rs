@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
+use apsp_protocol::*;
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use sinan_protocol::*;
 use uuid::Uuid;
 
 fn binding() -> RuntimeBinding {
@@ -192,11 +192,11 @@ fn request_digest_binds_kind_and_every_checkpoint_input() {
     let digest = original.digest().unwrap();
     assert_eq!(digest, original.clone().digest().unwrap());
     let mut expected = Sha256::new();
-    expected.update(b"sinan-runtime-control-v1\0runtime.checkpoint.request\0");
+    expected.update(b"apsp-runtime-control-v1\0runtime.checkpoint.request\0");
     expected.update(serde_json::to_vec(&original).unwrap());
     assert_eq!(digest, format!("{:x}", expected.finalize()));
     let mut other_kind = Sha256::new();
-    other_kind.update(b"sinan-runtime-control-v1\0runtime.barrier.request\0");
+    other_kind.update(b"apsp-runtime-control-v1\0runtime.barrier.request\0");
     other_kind.update(serde_json::to_vec(&original).unwrap());
     assert_ne!(digest, format!("{:x}", other_kind.finalize()));
     let mut changed = original.clone();

@@ -2,6 +2,7 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
@@ -17,7 +18,6 @@ use rand::{RngCore, rngs::OsRng};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sinan_protocol::now_timestamp;
 use sqlx::{PgPool, Row};
 use std::net::SocketAddr;
 
@@ -52,7 +52,7 @@ pub async fn ensure_admin(pool: &PgPool, password: Option<&str>) -> anyhow::Resu
     let password = password
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
-            anyhow::anyhow!("SINAN_ADMIN_PASSWORD is required for the initial administrator")
+            anyhow::anyhow!("APSP_ADMIN_PASSWORD is required for the initial administrator")
         })?
         .to_owned();
     if password.len() > 1024 {
@@ -285,7 +285,7 @@ fn session_cookie(state: &AppState, token: &str, lifetime: i64) -> ApiResult<Hea
         ""
     };
     HeaderValue::from_str(&format!(
-        "sinan_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={lifetime}{secure}"
+        "apsp_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={lifetime}{secure}"
     ))
     .map_err(|error| ApiError::Internal(anyhow::Error::from(error)))
 }
@@ -297,7 +297,7 @@ fn cookie_token(headers: &HeaderMap) -> Option<&str> {
             let Some((name, value)) = cookie.trim().split_once('=') else {
                 continue;
             };
-            if name == "sinan_session" {
+            if name == "apsp_session" {
                 if token.is_some() || value.is_empty() || value.len() > 512 {
                     return None;
                 }

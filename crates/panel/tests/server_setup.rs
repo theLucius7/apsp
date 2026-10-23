@@ -7,11 +7,11 @@ mod probe_support;
 mod release_support;
 
 use anyhow::Result;
+use apsp_panel::probes::ConfiguredProbe;
+use apsp_protocol::AgentSettings;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::probes::ConfiguredProbe;
-use sinan_protocol::AgentSettings;
 use sqlx::PgPool;
 use uuid::Uuid;
 

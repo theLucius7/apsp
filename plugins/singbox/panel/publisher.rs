@@ -2,8 +2,8 @@ use crate::{
     AppState, agent_api,
     business::{NODE_COLUMNS, NodeRow},
 };
-use sinan_compiler::{Access, Node};
-use sinan_protocol::{Bundle, Envelope, ManifestChanged, now_timestamp};
+use apsp_compiler::{Access, Node};
+use apsp_protocol::{Bundle, Envelope, ManifestChanged, now_timestamp};
 use sqlx::{Postgres, Row, Transaction};
 use std::{collections::BTreeMap, time::Duration};
 
@@ -171,7 +171,7 @@ async fn compile(
     }
     let source = super::ordered_paths::publication::source(&plan)?;
     let prepared = super::mixed_paths::compile_on(tx, server_id, &plan.nodes, &plan.legacy).await?;
-    let native = sinan_compiler::compile_server_with_paths_on_config(
+    let native = apsp_compiler::compile_server_with_paths_on_config(
         &plan.nodes,
         &plan.legacy,
         &plan.paths,

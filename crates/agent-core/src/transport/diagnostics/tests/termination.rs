@@ -1,6 +1,6 @@
 use super::*;
 use crate::transport::diagnostics::cancellation::CancellationControl;
-use sinan_protocol::{DiagnosticCancelRequest, DiagnosticCancelResult};
+use apsp_protocol::{DiagnosticCancelRequest, DiagnosticCancelResult};
 
 struct CollectedReport {
     calls: AtomicUsize,
@@ -108,7 +108,7 @@ async fn natural_terminal_results_wait_for_cleanup_and_survive_restart_without_r
         let resources = Arc::new(FakeResourceOps::new(Arc::new(SystemOps)));
         let id = Uuid::new_v4();
         let next = Uuid::new_v4();
-        let chapter = sinan_protocol::DiagnosticSectionUpdate {
+        let chapter = apsp_protocol::DiagnosticSectionUpdate {
             id,
             name: "hardware_quality".into(),
             text: "saved partial chapter".into(),
@@ -158,7 +158,7 @@ async fn natural_terminal_results_wait_for_cleanup_and_survive_restart_without_r
         assert_unfinished(&recovered, id, next)?;
         assert_eq!(
             recovered
-                .read::<Vec<sinan_protocol::DiagnosticSectionUpdate>>(sections::SECTIONS_OUTBOX)?
+                .read::<Vec<apsp_protocol::DiagnosticSectionUpdate>>(sections::SECTIONS_OUTBOX)?
                 .unwrap(),
             vec![chapter.clone()]
         );
@@ -169,7 +169,7 @@ async fn natural_terminal_results_wait_for_cleanup_and_survive_restart_without_r
         assert!(recovered.active()?.is_none());
         assert_eq!(
             recovered
-                .read::<Vec<sinan_protocol::DiagnosticSectionUpdate>>(sections::SECTIONS_OUTBOX)?
+                .read::<Vec<apsp_protocol::DiagnosticSectionUpdate>>(sections::SECTIONS_OUTBOX)?
                 .unwrap(),
             vec![chapter]
         );
@@ -442,11 +442,11 @@ async fn corrupted_saved_target_never_reaches_status_stop_or_cleanup_operations(
                     spec.binary_path = first.config.install_root.join("../outside");
                     service.program = spec.binary_path.clone();
                 }
-                8 => service.unit = format!("sinan-diagnostic-{}.service", Uuid::new_v4()),
+                8 => service.unit = format!("apsp-diagnostic-{}.service", Uuid::new_v4()),
                 9 => {
                     spec.id = Uuid::nil().to_string();
                     spec.job_dir = first.config.runtime_root.join("diagnostics").join(&spec.id);
-                    service.unit = format!("sinan-diagnostic-{}.service", spec.id);
+                    service.unit = format!("apsp-diagnostic-{}.service", spec.id);
                     service.working_directory = spec.job_dir.clone();
                     terminal_update.as_mut().unwrap().id = Uuid::nil();
                 }
@@ -766,8 +766,8 @@ async fn unrelated_hung_cancellation_waits_for_the_active_diagnostic_protection_
         let first = first.with_cancellations(control.clone());
         let active_id = Uuid::new_v4();
         let other_id = Uuid::new_v4();
-        let active_unit = format!("sinan-diagnostic-{active_id}.service");
-        let other_unit = format!("sinan-diagnostic-{other_id}.service");
+        let active_unit = format!("apsp-diagnostic-{active_id}.service");
+        let other_unit = format!("apsp-diagnostic-{other_id}.service");
         *services.hung_cleanup_unit.lock().unwrap() = Some(other_unit.clone());
         let mut saved = checkpoint(&first.config, active_id);
         if !memory_pressure && let Checkpoint::Started { expires_at, .. } = &mut saved {
@@ -869,7 +869,7 @@ async fn an_existing_started_task_is_stopped_when_cleanup_capability_is_unavaila
     assert!(first.tick(None).await.is_err());
     assert_eq!(
         *services.stopped_units.lock().unwrap(),
-        vec![format!("sinan-diagnostic-{id}.service")]
+        vec![format!("apsp-diagnostic-{id}.service")]
     );
     assert_eq!(*services.status.lock().unwrap(), JobStatus::Missing);
     assert_eq!(services.cleanup_queries.load(Ordering::Relaxed), 0);

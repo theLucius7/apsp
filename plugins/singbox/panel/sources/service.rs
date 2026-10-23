@@ -28,7 +28,7 @@ pub(super) async fn queue_on(connection: &mut PgConnection, source_id: i64) -> A
     if archived {
         return Err(ApiError::Conflict("来源已归档，请先恢复来源".into()));
     }
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("UPDATE singbox_source_jobs SET state='superseded',phase='finished',finished_at=$2 WHERE source_id=$1 AND state IN ('queued','running') AND (settings_revision<>$3 OR identity_epoch<>$4 OR parser_version<>$5)")
         .bind(source_id).bind(now).bind(revision).bind(epoch).bind(PARSER_VERSION).execute(&mut *connection).await?;
     if let Some(job) = sqlx::query_as::<_, Job>(&format!("SELECT {JOB_COLUMNS} FROM singbox_source_jobs WHERE source_id=$1 AND state IN ('queued','running')"))
@@ -54,7 +54,7 @@ pub async fn refresh_due(state: &AppState) -> anyhow::Result<()> {
     if super::super::source_migration::migrated(&mut *state.pool.acquire().await?).await? {
         return Ok(());
     }
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("DELETE FROM singbox_source_previews WHERE expires_at <= $1")
         .bind(now)
         .execute(&state.pool)
@@ -114,7 +114,7 @@ async fn claim(pool: &PgPool) -> ApiResult<Option<Input>> {
     let input: Option<Input> = sqlx::query_as("SELECT j.id,j.source_id,j.settings_revision,j.identity_epoch,s.kind,s.secret_url,s.secret_authorization,s.secret_content,s.user_agent,s.current_revision_id,s.etag,s.last_modified,COALESCE(s.cache_settings_revision=j.settings_revision AND s.cache_identity_epoch=j.identity_epoch AND r.parser_version=j.parser_version,FALSE) AS cache_valid FROM singbox_source_jobs j JOIN singbox_subscription_sources s ON s.id=j.source_id LEFT JOIN singbox_source_revisions r ON r.id=s.current_revision_id WHERE j.state='queued' AND NOT s.archived AND s.deleted_at IS NULL AND j.settings_revision=s.settings_revision AND j.identity_epoch=s.identity_epoch AND j.parser_version=$1 ORDER BY j.created_at,j.id LIMIT 1 FOR UPDATE OF j,s SKIP LOCKED")
         .bind(PARSER_VERSION).fetch_optional(&mut *tx).await?;
     if let Some(input) = &input {
-        let now = sinan_protocol::now_timestamp();
+        let now = apsp_protocol::now_timestamp();
         sqlx::query("UPDATE singbox_source_jobs SET state='running',phase=$2,started_at=$3,lease_expires_at=$3+90 WHERE id=$1")
             .bind(input.id).bind(if input.kind == "url" { "downloading" } else { "parsing" }).bind(now).execute(&mut *tx).await?;
         sqlx::query("UPDATE singbox_subscription_sources SET last_attempt_at=$2,next_refresh_at=CASE WHEN kind='url' AND auto_refresh THEN $2+refresh_interval_seconds ELSE NULL END WHERE id=$1")
@@ -285,7 +285,7 @@ async fn commit_result(
     }
     // Source writes use the same topology lock, so the predicate remains true
     // until the transaction commits, including cancellation and archival.
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let not_modified = parsed.is_none();
     let revision_id = if let Some((body_sha256, batch)) = parsed {
         super::revisions::save_on(
@@ -323,7 +323,7 @@ async fn fail(pool: &PgPool, input: &Input, code: &str) -> ApiResult<()> {
     let mut tx = pool.begin().await?;
     super::super::entitlements::lock(&mut tx).await?;
     let result = sqlx::query("UPDATE singbox_source_jobs SET state='failed',phase='finished',error_code=$2,finished_at=$3 WHERE id=$1 AND state='running'")
-        .bind(input.id).bind(code).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
+        .bind(input.id).bind(code).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     if result.rows_affected() == 1 {
         sqlx::query("UPDATE singbox_subscription_sources SET last_error=$2 WHERE id=$1 AND settings_revision=$3 AND identity_epoch=$4")
             .bind(input.source_id).bind(code).bind(input.settings_revision).bind(input.identity_epoch).execute(&mut *tx).await?;
@@ -562,7 +562,7 @@ mod tests {
         for state in ["queued", "running"] {
             let source = fixture(&pool).await?;
             let old_job = Uuid::new_v4();
-            sqlx::query("INSERT INTO singbox_source_jobs(id,source_id,settings_revision,identity_epoch,parser_version,state,phase,created_at) VALUES($1,$2,1,1,'sinan-subscriptions-1',$3,'parsing',0)")
+            sqlx::query("INSERT INTO singbox_source_jobs(id,source_id,settings_revision,identity_epoch,parser_version,state,phase,created_at) VALUES($1,$2,1,1,'apsp-subscriptions-1',$3,'parsing',0)")
                 .bind(old_job).bind(source).bind(state).execute(&pool).await?;
             let new_job = queue(&pool, source).await?;
             ensure!(new_job.id != old_job);
@@ -598,17 +598,17 @@ mod tests {
             "transport":{"type":"http"}
         });
         let hash = parse::digest(&serde_json::to_vec(&config)?);
-        let outbound = sinan_compiler::external::ExternalOutbound(config.clone());
+        let outbound = apsp_compiler::external::ExternalOutbound(config.clone());
         let capabilities = serde_json::to_value(outbound.capabilities()?)?;
         let identity = format!(
             "endpoint:{}",
             parse::digest(&serde_json::to_vec(&outbound.identity_value())?)
         );
-        let revision: i64 = sqlx::query_scalar("INSERT INTO singbox_source_revisions(source_id,settings_revision,identity_epoch,parser_version,body_sha256,format,supported_count,unsupported_count,fetched_at) VALUES($1,1,1,'sinan-subscriptions-1',$2,'clash_yaml',1,0,12) RETURNING id")
+        let revision: i64 = sqlx::query_scalar("INSERT INTO singbox_source_revisions(source_id,settings_revision,identity_epoch,parser_version,body_sha256,format,supported_count,unsupported_count,fetched_at) VALUES($1,1,1,'apsp-subscriptions-1',$2,'clash_yaml',1,0,12) RETURNING id")
             .bind(source).bind(parse::digest(body)).fetch_one(&pool).await?;
         let node: i64 = sqlx::query_scalar("INSERT INTO singbox_external_nodes(source_id,identity_epoch,identity_key,name,last_seen_revision_id) VALUES($1,1,$2,'fixture',$3) RETURNING id")
             .bind(source).bind(identity).bind(revision).fetch_one(&pool).await?;
-        let version: i64 = sqlx::query_scalar("INSERT INTO singbox_external_node_versions(external_node_id,source_id,source_revision_id,identity_epoch,parser_version,name,config_json,config_sha256,capabilities_json,created_at) VALUES($1,$2,$3,1,'sinan-subscriptions-1','fixture',$4,$5,$6,12) RETURNING id")
+        let version: i64 = sqlx::query_scalar("INSERT INTO singbox_external_node_versions(external_node_id,source_id,source_revision_id,identity_epoch,parser_version,name,config_json,config_sha256,capabilities_json,created_at) VALUES($1,$2,$3,1,'apsp-subscriptions-1','fixture',$4,$5,$6,12) RETURNING id")
             .bind(node).bind(source).bind(revision).bind(&config).bind(&hash).bind(capabilities).fetch_one(&pool).await?;
         sqlx::query("UPDATE singbox_external_nodes SET current_version_id=$2 WHERE id=$1")
             .bind(node)
@@ -654,14 +654,14 @@ mod tests {
         .map_err(|_| anyhow::anyhow!("fresh parser commit"))?;
         let old: (Value, String, String) = sqlx::query_as("SELECT config_json,config_sha256,parser_version FROM singbox_external_node_versions WHERE id=$1")
             .bind(version).fetch_one(&pool).await?;
-        ensure!(old == (config, hash, "sinan-subscriptions-1".into()));
+        ensure!(old == (config, hash, "apsp-subscriptions-1".into()));
         let old_revision: (String, i32) = sqlx::query_as(
             "SELECT parser_version,supported_count FROM singbox_source_revisions WHERE id=$1",
         )
         .bind(revision)
         .fetch_one(&pool)
         .await?;
-        ensure!(old_revision == ("sinan-subscriptions-1".into(), 1));
+        ensure!(old_revision == ("apsp-subscriptions-1".into(), 1));
         let latest: (i64, String, i32, i32) = sqlx::query_as("SELECT r.id,r.parser_version,r.supported_count,r.unsupported_count FROM singbox_source_revisions r JOIN singbox_subscription_sources s ON s.current_revision_id=r.id WHERE s.id=$1")
             .bind(source).fetch_one(&pool).await?;
         ensure!(

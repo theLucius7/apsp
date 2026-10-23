@@ -2,6 +2,7 @@ use crate::{
     AppState, auth,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use axum::{
     Json,
     extract::{Path, State},
@@ -9,7 +10,6 @@ use axum::{
 };
 use serde::Serialize;
 use serde_json::Value;
-use sinan_protocol::now_timestamp;
 use sqlx::{FromRow, Postgres, Transaction};
 
 // Enablement requires an administrator choice or preserved legacy configuration.
@@ -92,7 +92,7 @@ impl PluginServer {
             && self.capabilities.as_array().is_some_and(|capabilities| {
                 capabilities.iter().any(|capability| {
                     capability.as_str()
-                        == Some(sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY)
+                        == Some(apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY)
                 })
             });
         let (state, reason) = if !self.enabled {

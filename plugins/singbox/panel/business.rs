@@ -1,8 +1,8 @@
 use crate::error::{ApiError, ApiResult};
+use apsp_compiler::{Access, Node};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rand::{RngCore, rngs::OsRng};
 use serde::Serialize;
-use sinan_compiler::{Access, Node};
 use sqlx::{FromRow, Postgres, Transaction};
 use x25519_dalek::{PublicKey, StaticSecret};
 
@@ -71,7 +71,7 @@ impl NodeRow {
     }
 
     pub(crate) fn view(self) -> ApiResult<NodeView> {
-        let config: sinan_compiler::ProtocolConfig =
+        let config: apsp_compiler::ProtocolConfig =
             serde_json::from_value(self.protocol_config).map_err(anyhow::Error::from)?;
         Ok(NodeView {
             configuration_locked: false,
@@ -118,7 +118,7 @@ pub(crate) fn name(value: &str) -> ApiResult<String> {
 }
 
 pub(crate) fn validate_node(node: &NodeRow) -> ApiResult<()> {
-    sinan_compiler::compile_server(&[node.model(vec![])?])
+    apsp_compiler::compile_server(&[node.model(vec![])?])
         .map_err(|error| ApiError::BadRequest(format!("节点配置无效：{error}")))?;
     Ok(())
 }

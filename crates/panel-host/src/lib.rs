@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 //! Panel host: shared services, the device channel and the plugin interface.
 //!
-//! The host never names a business plugin; the `sinan-panel` binary assembles
+//! The host never names a business plugin; the `apsp-panel` binary assembles
 //! plugins through [`plugin_api`] and the router passed to [`router`].
 
 pub mod agent_api;

@@ -99,7 +99,7 @@ show_progress_bar(){ printf called >> "$MARKER"; return 99; }
         for function, array in policy.FUNCTIONS.items():
             prelude += function + '(){\n' + policy.refusal(array).decode() + '}\n'
             prelude += function.removeprefix('function ') + ' 4\n'
-        values = self.shell(prelude + policy.ACCESS_HELPER.decode() + '\nsinan_provider_access_json\n')
+        values = self.shell(prelude + policy.ACCESS_HELPER.decode() + '\napsp_provider_access_json\n')
         access = json.loads(values)
         self.assertEqual(set(access), {'ipregistry', 'DBIP', 'DisneyPlus', 'Youtube', 'ChatGPT'})
         for row in access.values():

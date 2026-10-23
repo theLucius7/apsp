@@ -198,7 +198,7 @@ fn all_supported_protocols_preserve_their_semantic_parameters() {
     // subscriptions through the numbered-source validator. Only options that
     // numbered sources never accepted (here Hysteria2 port hopping) are left out.
     let client = |outbound: &NormalizedOutbound| {
-        sinan_compiler::external::ExternalOutbound::from_normalized(outbound).is_ok()
+        apsp_compiler::external::ExternalOutbound::from_normalized(outbound).is_ok()
     };
     let rejected: Vec<_> = batch
         .nodes

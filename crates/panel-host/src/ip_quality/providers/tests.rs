@@ -343,7 +343,7 @@ async fn official_cache_is_independent_and_disabled_history_survives_restart(
     .bind(json!({"ip_addresses":ips}))
     .fetch_one(&pool)
     .await?;
-    let at = sinan_protocol::now_timestamp() - 360;
+    let at = apsp_protocol::now_timestamp() - 360;
     cache::persist(&pool, id, &query(&source, true, &ips, at).await).await?;
     let initial = cache::read(&pool, id, &ips).await?;
     assert_eq!(initial.len(), 4);

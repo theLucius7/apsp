@@ -1,7 +1,7 @@
 use crate::{SharedState, artifacts::PanelClient};
 use anyhow::{Result, ensure};
-use sinan_adapter_sdk::{CommandObserver, CommandProcessIdentity, Privileged};
-use sinan_protocol::{
+use apsp_adapter_sdk::{CommandObserver, CommandProcessIdentity, Privileged};
+use apsp_protocol::{
     CommandClaim, CommandControl, CommandResult, CommandStarted, CommandState, CommandStatus,
     RemoteCommand, TaskAck, now_timestamp,
 };
@@ -255,7 +255,7 @@ mod tests {
     async fn started_execution_survives_reopen_as_interrupted_and_is_never_reexecuted() -> Result<()>
     {
         let directory =
-            std::env::temp_dir().join(format!("sinan-command-restart-{}", Uuid::new_v4()));
+            std::env::temp_dir().join(format!("apsp-command-restart-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory)?;
         let root = std::fs::canonicalize(&directory)?;
         let config = Config {
@@ -323,7 +323,7 @@ mod tests {
     #[tokio::test]
     async fn disabled_commands_do_not_contact_panel_or_touch_pending_execution() -> Result<()> {
         let directory =
-            std::env::temp_dir().join(format!("sinan-command-opt-in-{}", Uuid::new_v4()));
+            std::env::temp_dir().join(format!("apsp-command-opt-in-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory)?;
         let root = std::fs::canonicalize(&directory)?;
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;

@@ -1,6 +1,6 @@
 use super::models::{Check, Target};
 use crate::error::{ApiError, ApiResult};
-use sinan_protocol::now_timestamp;
+use apsp_protocol::now_timestamp;
 use sqlx::{PgPool, Row};
 
 pub(super) async fn latency_target(pool: &PgPool, check: &Check) -> ApiResult<Option<Target>> {

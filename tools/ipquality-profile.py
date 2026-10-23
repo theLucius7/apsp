@@ -12,7 +12,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = 'ipquality-node-v1'
-KIND = 'sinan-ipquality-minimal-profile'
+KIND = 'apsp-ipquality-minimal-profile'
 PUBLIC_NAME = 'ipquality-profile.json'
 PRIVATE_NAME = 'ipquality-profile-private.json'
 CODE_FILES = ('tools/ipquality-profile.py', 'tools/ipquality-rootfs.py',
@@ -24,7 +24,7 @@ FALSE_FLAGS = ('builder_approved', 'runtime_image_identity_verified',
 
 
 def inputs():
-    specification = importlib.util.spec_from_file_location('sinan_ipquality_profile_inputs',
+    specification = importlib.util.spec_from_file_location('apsp_ipquality_profile_inputs',
                                                          ROOT / 'tools/ipquality-inputs.py')
     result = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(result)
@@ -371,7 +371,7 @@ class Profile:
     def verify_export(self, directory, manifest, prepared, deadline):
         """Read actual archived status and metadata after fresh prepared admission."""
         build = self.build
-        specification = importlib.util.spec_from_file_location('sinan_ipquality_export_runtime',
+        specification = importlib.util.spec_from_file_location('apsp_ipquality_export_runtime',
                                                                ROOT / 'plugins/nodequality/rootfs.py')
         helper = importlib.util.module_from_spec(specification)
         specification.loader.exec_module(helper)

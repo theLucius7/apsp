@@ -53,7 +53,7 @@ async fn external(panel: &TestPanel, cookie: &str, pool: &PgPool) -> Result<(i64
         loop {
             let value:Option<(i64,i64)>=sqlx::query_as("SELECT id,current_version_id FROM singbox_external_nodes WHERE source_id=$1 AND current_version_id IS NOT NULL").bind(source).fetch_optional(pool).await?;
             if let Some(value)=value { return Ok::<_,anyhow::Error>(value); }
-            sinan_panel::plugins::singbox::sources::refresh_due(&panel.state).await?;
+            apsp_panel::plugins::singbox::sources::refresh_due(&panel.state).await?;
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     }).await??;
@@ -374,7 +374,7 @@ async fn external_distribution_toggle_preserves_frozen_paths_and_dependency_guar
     )
     .await?;
     let mut connection = pool.acquire().await?;
-    let frozen = sinan_panel::plugins::singbox::sources::load_version_on(
+    let frozen = apsp_panel::plugins::singbox::sources::load_version_on(
         &mut connection,
         source,
         node,

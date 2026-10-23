@@ -5,12 +5,12 @@ import hashlib
 import sys
 
 MAX_SOURCE = 2 * 1024 * 1024
-POLICY = b'''# Sinan modification (2026-10-01): gate only public report POSTs.
+POLICY = b'''# Apsp modification (2026-10-01): gate only public report POSTs.
 # Original upstream copyright and AGPL-3.0 license remain applicable.
 # Privacy mode, benchmarks, report serialization and local output are unchanged.
-case "${SINAN_UPLOAD_REPORT-false}" in
-true|false) readonly sinan_public_report_upload="${SINAN_UPLOAD_REPORT-false}" ;;
-*) printf '%s\\n' 'Error: SINAN_UPLOAD_REPORT must be true or false' >&2; exit 2 ;;
+case "${APSP_UPLOAD_REPORT-false}" in
+true|false) readonly apsp_public_report_upload="${APSP_UPLOAD_REPORT-false}" ;;
+*) printf '%s\\n' 'Error: APSP_UPLOAD_REPORT must be true or false' >&2; exit 2 ;;
 esac
 '''
 SOURCES = {
@@ -18,19 +18,19 @@ SOURCES = {
         'source_sha256': '73e032ef5409e014cca411a71c677a76db19a94ef0a96a73827b41b2059cd86c',
         'patched_sha256': 'f7413e8a19eaacce2df70b1ae6c63bab89334bca0d07846badacde5ef6afcb0c',
         'original_guard': b'[[ mode_privacy -eq 0 ]]&&report_link=$(curl -$2 -s -X POST http://upload.check.place -d "type=hardware" --data-urlencode "json=$hwjson" --data-urlencode "content=$hw_report")\n',
-        'patched_guard': b'[[ $sinan_public_report_upload == true && mode_privacy -eq 0 ]]&&report_link=$(curl -$2 -s -X POST http://upload.check.place -d "type=hardware" --data-urlencode "json=$hwjson" --data-urlencode "content=$hw_report")\n',
+        'patched_guard': b'[[ $apsp_public_report_upload == true && mode_privacy -eq 0 ]]&&report_link=$(curl -$2 -s -X POST http://upload.check.place -d "type=hardware" --data-urlencode "json=$hwjson" --data-urlencode "content=$hw_report")\n',
     },
     'ip.sh': {
         'source_sha256': 'b30df5a3c2204276c54e99dcc5080b46f8a627667730aee7de63b109b8ecaecf',
         'patched_sha256': '176295d6bc9803d19c1794b73f5c801fe8325f076c60f2114cc943a4b62e68dc',
         'original_guard': b'[[ $mode_lite -eq 0 && mode_privacy -eq 0 ]]&&report_link=$(curl -$2 -s -X POST https://upload.check.place -d "type=ip" --data-urlencode "json=$ipjson" --data-urlencode "content=$ip_report")\n',
-        'patched_guard': b'[[ $sinan_public_report_upload == true && $mode_lite -eq 0 && mode_privacy -eq 0 ]]&&report_link=$(curl -$2 -s -X POST https://upload.check.place -d "type=ip" --data-urlencode "json=$ipjson" --data-urlencode "content=$ip_report")\n',
+        'patched_guard': b'[[ $apsp_public_report_upload == true && $mode_lite -eq 0 && mode_privacy -eq 0 ]]&&report_link=$(curl -$2 -s -X POST https://upload.check.place -d "type=ip" --data-urlencode "json=$ipjson" --data-urlencode "content=$ip_report")\n',
     },
     'net.sh': {
         'source_sha256': '6c40fe1ae40d969255cb63075c94882733b82ba43831341eb1aadeea7b1fbfcd',
         'patched_sha256': 'f35836caa8e598f443c7b718daa71211cee393534b03f2f3b3d3062a6a3a90b2',
         'original_guard': b'[[ mode_privacy -eq 0 ]]&&report_link=$(curl -$2 -s -X POST https://upload.check.place -d "type=net" --data-urlencode "json=$netdata" --data-urlencode "content=$net_report")\n',
-        'patched_guard': b'[[ $sinan_public_report_upload == true && mode_privacy -eq 0 ]]&&report_link=$(curl -$2 -s -X POST https://upload.check.place -d "type=net" --data-urlencode "json=$netdata" --data-urlencode "content=$net_report")\n',
+        'patched_guard': b'[[ $apsp_public_report_upload == true && mode_privacy -eq 0 ]]&&report_link=$(curl -$2 -s -X POST https://upload.check.place -d "type=net" --data-urlencode "json=$netdata" --data-urlencode "content=$net_report")\n',
     },
 }
 NET_OUTPUT = b'[[ mode_json -eq 1 || mode_output -eq 1 || mode_privacy -eq 0 ]]&&save_json $2\n'

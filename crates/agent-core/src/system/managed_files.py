@@ -104,7 +104,7 @@ try:
     parent = os.fstat(directory)
     if parent.st_mode & 0o022:
         raise ValueError("write directory cannot be group or world writable")
-    temporary = ".sinan-" + str(uuid.uuid4())
+    temporary = ".apsp-" + str(uuid.uuid4())
     output = os.open(temporary, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                      stat.S_IMODE(metadata.st_mode) if metadata else 0o600, dir_fd=directory)
     try:

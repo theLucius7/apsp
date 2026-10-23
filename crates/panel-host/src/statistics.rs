@@ -31,7 +31,7 @@ impl StatisticsQuery {
                 "统计范围仅支持最近 7 天或 30 天".into(),
             ));
         }
-        let now = sinan_protocol::now_timestamp();
+        let now = apsp_protocol::now_timestamp();
         Ok(Window {
             days,
             from: now / 86_400 * 86_400 - (i64::from(days) - 1) * 86_400,

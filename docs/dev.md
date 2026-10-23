@@ -12,7 +12,7 @@
 
 需要 Rust stable、PostgreSQL 16。仓库提交了 `web/dist`，不修改前端时可直接编译面板；修改前端时使用固定版本 **Bun 1.4.2** 管理依赖和运行构建，并同步构建产物。CI 与 Docker 前端构建使用相同版本。
 
-Passkey 验证使用 `webauthn-rs`，源码构建面板还需 OpenSSL 开发库和 `pkg-config`（Debian/Ubuntu：`libssl-dev pkg-config`）。Dockerfile 已安装构建及运行库；Agent 无此新增依赖。默认 Rust 测试覆盖来源、权限、挑战、邀请和速率约束；完整虚拟认证器回归需设置 `SINAN_PLAYWRIGHT_MODULE`、`SINAN_CHROME_PATH` 后执行 `cargo test -p sinan-panel --test passkeys virtual_authenticator_browser_roundtrip -- --ignored --nocapture`。它使用 sqlx 创建的隔离数据库和回环 HTTP 服务，不启用后台插件，不访问真实云 API。该用例默认忽略，不能将默认 cargo test 结果作为浏览器/硬件认证验收。
+Passkey 验证使用 `webauthn-rs`，源码构建面板还需 OpenSSL 开发库和 `pkg-config`（Debian/Ubuntu：`libssl-dev pkg-config`）。Dockerfile 已安装构建及运行库；Agent 无此新增依赖。默认 Rust 测试覆盖来源、权限、挑战、邀请和速率约束；完整虚拟认证器回归需设置 `APSP_PLAYWRIGHT_MODULE`、`APSP_CHROME_PATH` 后执行 `cargo test -p apsp-panel --test passkeys virtual_authenticator_browser_roundtrip -- --ignored --nocapture`。它使用 sqlx 创建的隔离数据库和回环 HTTP 服务，不启用后台插件，不访问真实云 API。该用例默认忽略，不能将默认 cargo test 结果作为浏览器/硬件认证验收。
 
 尚未安装 Bun 时，按[官方安装说明](https://bun.com/docs/installation)安装指定版本，并确认当前终端可调用：
 
@@ -30,21 +30,21 @@ set -a
 . ./.env
 set +a
 
-docker run -d --name sinan-dev-postgres \
+docker run -d --name apsp-dev-postgres \
   -p 127.0.0.1:5432:5432 \
-  -e POSTGRES_DB=sinan -e POSTGRES_USER=sinan \
-  -e POSTGRES_PASSWORD="$SINAN_DB_PASSWORD" \
-  -v sinan-dev-postgres-data:/var/lib/postgresql/data postgres:16
-until docker exec sinan-dev-postgres pg_isready -U sinan -d sinan; do sleep 1; done
+  -e POSTGRES_DB=apsp -e POSTGRES_USER=apsp \
+  -e POSTGRES_PASSWORD="$APSP_DB_PASSWORD" \
+  -v apsp-dev-postgres-data:/var/lib/postgresql/data postgres:16
+until docker exec apsp-dev-postgres pg_isready -U apsp -d apsp; do sleep 1; done
 
-export SINAN_DATABASE_URL="postgres://sinan:$SINAN_DB_PASSWORD@127.0.0.1:5432/sinan"
-export DATABASE_URL="$SINAN_DATABASE_URL"
-export SINAN_LISTEN=127.0.0.1:8080
-export SINAN_DATA_DIR="$PWD/data"
-cargo run --locked -p sinan-panel
+export APSP_DATABASE_URL="postgres://apsp:$APSP_DB_PASSWORD@127.0.0.1:5432/apsp"
+export DATABASE_URL="$APSP_DATABASE_URL"
+export APSP_LISTEN=127.0.0.1:8080
+export APSP_DATA_DIR="$PWD/data"
+cargo run --locked -p apsp-panel
 ```
 
-数据库名、用户和卷在首次执行时创建，面板启动时自动迁移。重用该容器时运行 `docker start sinan-dev-postgres`，继续使用最初的数据库密码。只使用本地原生 PostgreSQL 时，也可以先创建具有建库权限的开发角色和数据库，再把 `SINAN_DATABASE_URL` 与测试用 `DATABASE_URL` 指向它；sqlx 集成测试会创建独立测试数据库。
+数据库名、用户和卷在首次执行时创建，面板启动时自动迁移。重用该容器时运行 `docker start apsp-dev-postgres`，继续使用最初的数据库密码。只使用本地原生 PostgreSQL 时，也可以先创建具有建库权限的开发角色和数据库，再把 `APSP_DATABASE_URL` 与测试用 `DATABASE_URL` 指向它；sqlx 集成测试会创建独立测试数据库。
 
 另开终端开发前端，Vite 将 API 请求代理到 `127.0.0.1:8080`：
 
@@ -63,7 +63,7 @@ bun run build
 ```bash
 # DATABASE_URL must allow creating isolated test databases on PostgreSQL 16.
 # This public TEST_ONLY root is for tests, never production.
-export SINAN_RELEASE_PUBLIC_KEYS="$(cat crates/protocol/tests/fixtures/public-keys.json)"
+export APSP_RELEASE_PUBLIC_KEYS="$(cat crates/protocol/tests/fixtures/public-keys.json)"
 python3 tools/check-core-boundary.py
 cargo fmt --check
 (cd web && bun install --frozen-lockfile && bun test && bun run build)
@@ -75,15 +75,15 @@ git diff --stat -- web/dist
 
 前端构建放在 Rust 检查之前，因为面板嵌入 `web/dist`。前端有修改时，检查并一并提交生成产物；已提交产物的重建一致性可用 `git diff --exit-code -- web/dist` 检查，不把本次正常生成的差异误判为失败。
 
-`bun test` 运行 `web/tests/*.test.ts` 的数据与协议逻辑回归；`web/tests/*.mjs` 是使用本地 API 夹具的浏览器回归。修改登录/导航/路由时可选择已有的 `dashboard.mjs`、`server-operations.mjs`、`plugin-catalog.mjs` 和 `node-routes.mjs`，修改插件时再加对应插件场景。它们读取构建后的 `web/dist`，需要本地 Playwright/Chromium；可通过 `SINAN_PLAYWRIGHT_MODULE` 与 `SINAN_CHROME_PATH` 指定已安装位置，然后用 `bun web/tests/<场景>.mjs` 执行。浏览器测试不需要连接生产面板。
+`bun test` 运行 `web/tests/*.test.ts` 的数据与协议逻辑回归；`web/tests/*.mjs` 是使用本地 API 夹具的浏览器回归。修改登录/导航/路由时可选择已有的 `dashboard.mjs`、`server-operations.mjs`、`plugin-catalog.mjs` 和 `node-routes.mjs`，修改插件时再加对应插件场景。它们读取构建后的 `web/dist`，需要本地 Playwright/Chromium；可通过 `APSP_PLAYWRIGHT_MODULE` 与 `APSP_CHROME_PATH` 指定已安装位置，然后用 `bun web/tests/<场景>.mjs` 执行。浏览器测试不需要连接生产面板。
 
-依赖真实上游二进制的测试默认标记为 ignored，设置 `SINAN_TEST_SINGBOX` 后显式执行，不能把默认 `cargo test` 当作这些专项检查已经通过：
+依赖真实上游二进制的测试默认标记为 ignored，设置 `APSP_TEST_SINGBOX` 后显式执行，不能把默认 `cargo test` 当作这些专项检查已经通过：
 
 ```bash
-export SINAN_TEST_SINGBOX=/绝对路径/sing-box
-cargo test -p sinan-compiler --test compilation -- --ignored
-cargo test -p sinan-adapter-singbox --test runtime -- --ignored
-cargo test -p sinan-panel --test reality -- --ignored
+export APSP_TEST_SINGBOX=/绝对路径/sing-box
+cargo test -p apsp-compiler --test compilation -- --ignored
+cargo test -p apsp-adapter-singbox --test runtime -- --ignored
+cargo test -p apsp-panel --test reality -- --ignored
 ```
 
 CI 另外检查分层禁用词、Linux 构建与 Compose 启动持久化。CI 的通过状态需要以远端实际运行结果为准。
@@ -95,14 +95,14 @@ CI 另外检查分层禁用词、Linux 构建与 Compose 启动持久化。CI �
 使用上面的独立测试数据库与 TEST_ONLY 公钥，可以定向执行：
 
 ```bash
-cargo test --locked -p sinan-panel \
+cargo test --locked -p apsp-panel \
   --test auth_security --test node_ports --test subscription_reset --test retirement
-cargo test --locked -p sinan-agent-core --lib retirement::tests
+cargo test --locked -p apsp-agent-core --lib retirement::tests
 ```
 
 面板测试通过真实 PostgreSQL 和 HTTP/WebSocket 检查 TOTP 会话绑定、过期和并发重放、限速与伪造转发头、443/默认端口分配和冲突、订阅旧链接失效，以及在线退役、离线软删除和回执验签。Agent 退役单元测试使用受控系统接口，检查操作互斥、待确认用量阻止清理、停服务失败、崩溃恢复和历史数据保留；它们不代替 Linux 上实际 systemd 停服验证。
 
-私有面板 CA 回归在 Unix 上使用 OpenSSL 和 `mkfifo` 生成隔离 TEST_ONLY 素材，实际服务由已锁定的 tokio-rustls 0.26.6 承载 HTTPS 与 WSS，不关闭 TLS 验证。定向命令为 `cargo test --locked -p sinan-agent-core --lib panel_tls::tests` 和 `cargo test --locked -p sinan-agent-core --lib private_panel_ca`；它们覆盖旧配置、CA 文件预算及 FIFO 替换、真实注册／下载／设备签名认证／退役，以及未知 CA、错误主机名和过期证书。素材和进程只由测试拥有，不导入宿主信任库。单元测试不能代替专用 Linux 上真实 Agent 服务的整条连接与清理验收。
+私有面板 CA 回归在 Unix 上使用 OpenSSL 和 `mkfifo` 生成隔离 TEST_ONLY 素材，实际服务由已锁定的 tokio-rustls 0.26.6 承载 HTTPS 与 WSS，不关闭 TLS 验证。定向命令为 `cargo test --locked -p apsp-agent-core --lib panel_tls::tests` 和 `cargo test --locked -p apsp-agent-core --lib private_panel_ca`；它们覆盖旧配置、CA 文件预算及 FIFO 替换、真实注册／下载／设备签名认证／退役，以及未知 CA、错误主机名和过期证书。素材和进程只由测试拥有，不导入宿主信任库。单元测试不能代替专用 Linux 上真实 Agent 服务的整条连接与清理验收。
 
 开发时不要把真实验证器秘密或设备凭据加入夹具。TOTP 确认与登录会消费验证码；自动化脚本需等待新的时间步，不能靠清空生产数据库的防重放状态重试。具体操作与部署所有者恢复步骤见[部署文档](deploy.md#管理员登录与二步验证)，API、状态码与订阅重置边界见 [API 文档](api.md)。
 
@@ -112,11 +112,11 @@ cargo test --locked -p sinan-agent-core --lib retirement::tests
 
 本地客户端经非 root 运行时的 Reality 443 端口向回环夹具下载 2 MiB、上传 1 MiB，检查文件内容、上传响应与真实用户节点用量增量。暂停后连续 70 秒采样稳定、outbox 清空，再验证 Agent 重启不更换运行时 PID、运行时重载不重复入账；恢复同量流量时将面板新增量与只读账本新周期基准逐字节比较。同版本重装核对身份与用量连续性，缓存二进制、签名证明或缺少签名时必须被预检拒绝。端到端流程及私有 state 驱动见 [真实验收文档](e2e.md)。
 
-人工验收已启用 TOTP 的面板时，在 `scripts/e2e-driver.py` 的子命令前加全局参数 `--totp`，或设置 `SINAN_E2E_TOTP=1`，隐藏输入本次验证码；`scripts/e2e-real.sh snapshot` 的可选面板查询也支持该环境变量。非交互调用可一次性提供 `SINAN_E2E_TOTP_CODE`，每次登录使用新码，脚本不保存种子、验证码或会话。TOTP 未启用时保持原调用即可；CI 的测试面板并不因此自动启用 TOTP。
+人工验收已启用 TOTP 的面板时，在 `scripts/e2e-driver.py` 的子命令前加全局参数 `--totp`，或设置 `APSP_E2E_TOTP=1`，隐藏输入本次验证码；`scripts/e2e-real.sh snapshot` 的可选面板查询也支持该环境变量。非交互调用可一次性提供 `APSP_E2E_TOTP_CODE`，每次登录使用新码，脚本不保存种子、验证码或会话。TOTP 未启用时保持原调用即可；CI 的测试面板并不因此自动启用 TOTP。
 
 CI 公开制品仅包含版本、阶段和精确用量摘要；完整配置、订阅凭据、设备身份、安装令牌和日志不上传。此 job 使用回环 HTTP 路径和本地 TLS 伪装目标，不覆盖外部 CDN、DNS、证书部署或云防火墙配置。
 
-新 job 的实际执行结果见对应提交的 [Actions](https://github.com/theLucius7/sinan/actions)，验收范围只在该 job 通过后成立。运行 0.1.0 到 0.2.0 升级属于真机专项，不能由同版本重装测试推断。
+新 job 的实际执行结果见对应提交的 [Actions](https://github.com/theLucius7/apsp/actions)，验收范围只在该 job 通过后成立。运行 0.1.0 到 0.2.0 升级属于真机专项，不能由同版本重装测试推断。
 
 ## 原生平台与 OpenRC 检查
 

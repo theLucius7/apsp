@@ -44,7 +44,7 @@ async fn extending_alerts_preserves_old_events_settings_and_pending_deliveries(
     let value: Value = sqlx::query_scalar("SELECT settings FROM panel_settings")
         .fetch_one(&pool)
         .await?;
-    let settings: sinan_panel::settings::Settings = serde_json::from_value(value)?;
+    let settings: apsp_panel::settings::Settings = serde_json::from_value(value)?;
     assert!(settings.public_dashboard);
     assert!(!settings.offline_alerts);
     assert_eq!(settings.expiry_alert_days, 0);

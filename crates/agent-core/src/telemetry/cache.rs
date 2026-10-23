@@ -2,9 +2,9 @@ mod cancellation;
 
 use super::{Collector, hardware};
 use anyhow::{Context, Result};
+use apsp_adapter_sdk::Privileged;
+use apsp_protocol::{Metrics, StaticInfo, TelemetrySample, telemetry::now_millis};
 use cancellation::Cancellation;
-use sinan_adapter_sdk::Privileged;
-use sinan_protocol::{Metrics, StaticInfo, TelemetrySample, telemetry::now_millis};
 use std::{
     collections::BTreeMap,
     sync::{Arc, mpsc},
@@ -147,7 +147,7 @@ impl Sampling {
         // Exactly one thread owns the collector for this Agent process. A timeout
         // reports stale data; it never starts another possibly blocked collector.
         std::thread::Builder::new()
-            .name("sinan-telemetry".into())
+            .name("apsp-telemetry".into())
             .spawn(move || {
                 let mut cached = Snapshot {
                     started_at: Some(Instant::now()),

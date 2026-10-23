@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
+use apsp_protocol::*;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
-use sinan_protocol::*;
 use std::{collections::BTreeMap, fmt::Debug};
 use uuid::Uuid;
 
@@ -349,7 +349,7 @@ fn diagnostic_http_payloads_roundtrip_and_accept_additive_fields() {
             .is_none()
     );
     let mut budgeted = job.clone();
-    budgeted.resource_budget = Some(sinan_protocol::DiagnosticResourceBudget {
+    budgeted.resource_budget = Some(apsp_protocol::DiagnosticResourceBudget {
         memory_max: 64 * 1024 * 1024,
         tasks_max: 32,
         cpu_max_percent: None,
@@ -433,7 +433,7 @@ fn cleaning_wire_retains_report_and_reason_without_claiming_completion() {
     assert!(DiagnosticStatus::Succeeded.is_terminal());
     assert!(DiagnosticStatus::Failed.is_terminal());
     assert_eq!(
-        sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,
+        apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,
         "diagnostic:confirmed-completion"
     );
     for status in ["queued", "cancel_requested", "cancelled"] {

@@ -5,10 +5,10 @@ mod probe_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::Result;
+use apsp_protocol::ProbeSpec;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_protocol::ProbeSpec;
 use sqlx::PgPool;
 
 fn spec() -> Value {
@@ -68,7 +68,7 @@ async fn assignment_defaults_keep_wire_compatibility_and_preserve_measurement_id
         .await?;
     assert_eq!(legacy[0].as_object().unwrap().len(), 8);
     assert_eq!(legacy[0]["enabled"], false);
-    assert!(!probes[0].runnable(sinan_protocol::now_timestamp()));
+    assert!(!probes[0].runnable(apsp_protocol::now_timestamp()));
     assert_eq!(probes.len(), 1);
     let probe_id = probes[0].id;
     assert_ne!(probe_id.to_string(), task["id"].as_str().unwrap());
@@ -154,7 +154,7 @@ async fn assignment_defaults_keep_wire_compatibility_and_preserve_measurement_id
         0
     );
     // An offline Agent can finish an old task after removal; acknowledge and discard it.
-    let sample = json!({"results":[{"id":uuid::Uuid::new_v4(),"probe_id":probe_id,"sampled_at":sinan_protocol::telemetry::now_millis(),"latency_ms":1.0,"loss_percent":0.0,"error":null}]});
+    let sample = json!({"results":[{"id":uuid::Uuid::new_v4(),"probe_id":probe_id,"sampled_at":apsp_protocol::telemetry::now_millis(),"latency_ms":1.0,"loss_percent":0.0,"error":null}]});
     panel
         .client
         .post(format!("{}/api/agent/v1/probe-results", panel.base))
@@ -303,7 +303,7 @@ async fn authorization_metadata_is_scoped_immutable_and_revocation_preserves_his
     let probe = &probes[0];
     assert_eq!(
         probe.monitor.as_ref().unwrap().network,
-        sinan_protocol::ProbeNetwork::Telecom
+        apsp_protocol::ProbeNetwork::Telecom
     );
     let issued = probe_support::issued(
         &panel.state.pool,
@@ -317,7 +317,7 @@ async fn authorization_metadata_is_scoped_immutable_and_revocation_preserves_his
     let execution = probe_support::execution(&issued, probe.id)?;
     assert!(execution.valid());
     let result = json!({"id":uuid::Uuid::new_v4(),"probe_id":probe.id,
-        "sampled_at":sinan_protocol::telemetry::now_millis(),"latency_ms":null,
+        "sampled_at":apsp_protocol::telemetry::now_millis(),"latency_ms":null,
         "loss_percent":100.0,"error":"TEST_ONLY TCP connection refused","address_family":"ipv4","attempts":4,
         "execution":execution});
     let endpoint = format!("{}/api/agent/v1/probe-results", panel.base);
@@ -375,7 +375,7 @@ async fn authorization_metadata_is_scoped_immutable_and_revocation_preserves_his
         .json()
         .await?;
     assert_eq!(paused[0].id, probe.id);
-    assert!(!paused[0].runnable(sinan_protocol::now_timestamp()));
+    assert!(!paused[0].runnable(apsp_protocol::now_timestamp()));
     let history: Vec<Value> = panel
         .admin(
             Method::GET,

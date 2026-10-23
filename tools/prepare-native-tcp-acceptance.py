@@ -31,7 +31,7 @@ RUNNER = r'''#!/bin/sh
 # Run only inside a new private Debian 12 amd64 container after source freeze.
 set -eu
 umask 077
-[ "${SINAN_REMAINING_TEST_SIGNAL:-}" = 1 ] || exit 2
+[ "${APSP_REMAINING_TEST_SIGNAL:-}" = 1 ] || exit 2
 [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] || exit 2
 [ -f /inputs/source.bundle ] && [ -f /inputs/plan.json ] || exit 2
 [ -d /output ] && [ ! -e /output/source ] && [ ! -e /output/receipt.json ] || exit 2
@@ -75,12 +75,12 @@ test -z "$(git status --porcelain --untracked-files=normal)"
 rustc -vV > /output/rustc-version.log
 cargo -V > /output/cargo-version.log
 rustc --print sysroot > /output/rust-sysroot.log
-SINAN_RELEASE_PUBLIC_KEYS=$(python3 scripts/ci-test-trust.py)
-export SINAN_RELEASE_PUBLIC_KEYS
-export SINAN_NATIVE_TCP_SOURCE_COMMIT="$commit"
+APSP_RELEASE_PUBLIC_KEYS=$(python3 scripts/ci-test-trust.py)
+export APSP_RELEASE_PUBLIC_KEYS
+export APSP_NATIVE_TCP_SOURCE_COMMIT="$commit"
 cargo fmt --all --check
 python3 tools/check-core-boundary.py
-cargo test --locked --offline -p sinan-tcp-probe -- --test-threads=1 > /output/tcp-tests.log 2>&1
+cargo test --locked --offline -p apsp-tcp-probe -- --test-threads=1 > /output/tcp-tests.log 2>&1
 python3 - <<'PY'
 import json,re
 from pathlib import Path
@@ -89,7 +89,7 @@ assert rows and sum(int(row[1]) for row in rows)>0, 'native Rust package tests w
 assert all(row[0]=='ok' and all(int(value)==0 for value in row[2:]) for row in rows), 'incomplete native Rust test result'
 Path('/output/tcp-tests.json').write_text(json.dumps({'tests':sum(int(row[1]) for row in rows), 'failures':0,'ignored':0,'filtered_out':0,'groups':len(rows)},indent=2)+'\n')
 PY
-cargo clippy --locked --offline -p sinan-tcp-probe --all-targets -- -D warnings
+cargo clippy --locked --offline -p apsp-tcp-probe --all-targets -- -D warnings
 run_python_suite() {
   python3 - "$1" "$2" <<'PY'
 import json,sys,unittest
@@ -104,7 +104,7 @@ PY
 }
 run_python_suite test_tcp_probe_artifacts.py tcp-artifact-tests
 python3 tools/build-tcp-probe.py amd64 /output/artifacts --source-commit "$commit"
-export SINAN_TCP_ARCH=amd64 SINAN_TCP_SOURCE_COMMIT="$commit" SINAN_TCP_ARTIFACT_ROOT=/output/artifacts
+export APSP_TCP_ARCH=amd64 APSP_TCP_SOURCE_COMMIT="$commit" APSP_TCP_ARTIFACT_ROOT=/output/artifacts
 run_python_suite test_tcp_probe_native_bundle.py tcp-native-bundle-tests
 test -z "$(git status --porcelain --untracked-files=normal)"
 '''

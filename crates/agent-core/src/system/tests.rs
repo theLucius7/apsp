@@ -8,8 +8,8 @@ mod queued;
 
 #[test]
 fn activity_listing_includes_other_workers_and_excludes_completed_units() -> Result<()> {
-    let first = format!("sinan-diagnostic-{}.service", Uuid::new_v4());
-    let second = format!("sinan-diagnostic-{}.service", Uuid::new_v4());
+    let first = format!("apsp-diagnostic-{}.service", Uuid::new_v4());
+    let second = format!("apsp-diagnostic-{}.service", Uuid::new_v4());
     assert_eq!(
         parse_running_units(&format!(
             "{first} loaded activating start Diagnostic\n{second} loaded active exited Complete\n"
@@ -18,7 +18,7 @@ fn activity_listing_includes_other_workers_and_excludes_completed_units() -> Res
     );
     for text in [
         "unrelated.service loaded active running",
-        "sinan-diagnostic-bad.service loaded active running",
+        "apsp-diagnostic-bad.service loaded active running",
         "malformed row",
     ] {
         assert!(parse_running_units(text).is_err());
@@ -35,10 +35,10 @@ async fn real_systemd_diagnostic_preflight_reads_resources_and_enforces_exclusiv
     ensure!(cfg!(target_os = "linux"), "requires Linux/systemd");
     let ops: Arc<dyn Privileged> = Arc::new(SystemOps);
     let services = SystemServiceManager::new(ops.clone(), ServiceBackend::Systemd);
-    let directory = std::env::temp_dir().join(format!("sinan-preflight-test-{}", Uuid::new_v4()));
+    let directory = std::env::temp_dir().join(format!("apsp-preflight-test-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&directory)?;
     let job = |program: &str, args: Vec<String>| ServiceJob {
-        unit: format!("sinan-diagnostic-{}.service", Uuid::new_v4()),
+        unit: format!("apsp-diagnostic-{}.service", Uuid::new_v4()),
         program: program.into(),
         args,
         working_directory: directory.clone(),
@@ -257,7 +257,7 @@ fn job_status_waits_for_a_proven_pending_job_without_accepting_unstarted_success
 async fn unsafe_unit_and_expansion_arguments_are_rejected_before_execution() -> Result<()> {
     let services = SystemServiceManager::new(Arc::new(SystemOps), ServiceBackend::Systemd);
     let mut job = ServiceJob {
-        unit: format!("sinan-diagnostic-{}.service", Uuid::new_v4()),
+        unit: format!("apsp-diagnostic-{}.service", Uuid::new_v4()),
         program: "/usr/bin/true".into(),
         args: vec!["$HOME".into()],
         working_directory: "/tmp".into(),
@@ -301,7 +301,7 @@ async fn real_systemd_diagnostic_jobs_survive_manager_recreation_and_enforce_tim
     );
     let privileged: Arc<dyn Privileged> = Arc::new(SystemOps);
     let services = SystemServiceManager::new(privileged.clone(), ServiceBackend::Systemd);
-    let directory = std::env::temp_dir().join(format!("sinan-service-test-{}", Uuid::new_v4()));
+    let directory = std::env::temp_dir().join(format!("apsp-service-test-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&directory)?;
     let mut units = Vec::new();
     let result = async {
@@ -316,7 +316,7 @@ async fn real_systemd_diagnostic_jobs_survive_manager_recreation_and_enforce_tim
             ),
         ] {
             let job = ServiceJob {
-                unit: format!("sinan-diagnostic-{}.service", Uuid::new_v4()),
+                unit: format!("apsp-diagnostic-{}.service", Uuid::new_v4()),
                 program: program.into(),
                 args,
                 working_directory: directory.clone(),

@@ -12,7 +12,7 @@ import ipquality_artifact as artifact
 
 
 def runner():
-    namespace = {'__name__': 'sinan_ipquality_runner_fixture'}
+    namespace = {'__name__': 'apsp_ipquality_runner_fixture'}
     exec(compile(artifact.runner(), '<packaged-IPQuality-fixture>', 'exec'), namespace)
     return SimpleNamespace(**namespace)
 
@@ -20,7 +20,7 @@ def runner():
 class RunnerTests(unittest.TestCase):
     def setUp(self):
         self.runner = runner()
-        self.temporary = tempfile.TemporaryDirectory(prefix='sinan-ipquality-runner-test-')
+        self.temporary = tempfile.TemporaryDirectory(prefix='apsp-ipquality-runner-test-')
         self.workspace = Path(self.temporary.name).resolve()
         self.args = SimpleNamespace(job_id='00000000-0000-4000-8000-000000000001',
                                     ip_version='4', artifact_sha256='a' * 64)

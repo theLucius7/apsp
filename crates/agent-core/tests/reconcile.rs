@@ -1,15 +1,15 @@
 #![forbid(unsafe_code)]
 #![cfg(unix)]
 
-use sinan_adapter_sdk::{Counter, Plan, Prepared, Privileged, RuntimeSpec};
-use sinan_agent_core::{
+use apsp_adapter_sdk::{Counter, Plan, Prepared, Privileged, RuntimeSpec};
+use apsp_agent_core::{
     config::Config,
     fake::{FakeAdapter, FakeServiceManager},
     reconcile::{ApplyIntent, Reconciler},
     state::{IntentRecord, SharedState, State},
     system::SystemOps,
 };
-use sinan_protocol::ApplyStatus;
+use apsp_protocol::ApplyStatus;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use std::{
@@ -32,10 +32,10 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let directory = std::env::temp_dir().join(format!("sinan-reconcile-{}", Uuid::new_v4()));
+        let directory = std::env::temp_dir().join(format!("apsp-reconcile-{}", Uuid::new_v4()));
         fs::create_dir_all(&directory).unwrap();
         let config = Config {
-            settings: sinan_protocol::AgentSettings::default(),
+            settings: apsp_protocol::AgentSettings::default(),
             panel_url: "http://127.0.0.1:8080".into(),
             panel_ca_file: None,
             identity_dir: directory.join("identity"),
@@ -554,7 +554,7 @@ async fn explicit_restart_checks_revision_signature_counters_and_recovers_failed
 
 #[tokio::test]
 async fn dependency_barrier_survives_reopen_and_blocks_apply_restart_and_recovery_regression() {
-    use sinan_protocol::{
+    use apsp_protocol::{
         RuntimeValidationError, RuntimeValidationOperation, RuntimeValidationRequest,
     };
     let test = Fixture::new();
@@ -584,7 +584,7 @@ async fn dependency_barrier_survives_reopen_and_blocks_apply_restart_and_recover
         operation: RuntimeValidationOperation::Barrier,
         revision: 2,
         config_hash: "b".repeat(64),
-        expires_at: sinan_protocol::now_timestamp() + 60,
+        expires_at: apsp_protocol::now_timestamp() + 60,
     };
     request.config_hash = "c".repeat(64);
     assert_eq!(
@@ -592,12 +592,12 @@ async fn dependency_barrier_survives_reopen_and_blocks_apply_restart_and_recover
         Err(RuntimeValidationError::RevisionChanged)
     );
     request.config_hash = "b".repeat(64);
-    request.expires_at = sinan_protocol::now_timestamp() - 1;
+    request.expires_at = apsp_protocol::now_timestamp() - 1;
     assert_eq!(
         test.reconciler.validate_runtime_dependency(&request).await,
         Err(RuntimeValidationError::Expired)
     );
-    request.expires_at = sinan_protocol::now_timestamp() + 60;
+    request.expires_at = apsp_protocol::now_timestamp() + 60;
     let unfinished = Uuid::new_v4();
     test.state
         .lock()

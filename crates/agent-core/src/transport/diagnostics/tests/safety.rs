@@ -52,7 +52,7 @@ async fn refused_memory_disk_load_conflict_and_probe_errors_never_start_a_servic
                 }
                 6 => {
                     *services.conflicts.lock().unwrap() =
-                        Ok(vec![format!("sinan-diagnostic-{}.service", Uuid::new_v4())]);
+                        Ok(vec![format!("apsp-diagnostic-{}.service", Uuid::new_v4())]);
                     "同机已有诊断"
                 }
                 7 => {
@@ -99,7 +99,7 @@ async fn exact_thresholds_accept_and_own_unit_does_not_conflict() -> Result<()> 
         resources.load_one = 3.0;
     }
     let job = super::deadline::cached_job(&directory, Uuid::new_v4())?;
-    *services.conflicts.lock().unwrap() = Ok(vec![format!("sinan-diagnostic-{}.service", job.id)]);
+    *services.conflicts.lock().unwrap() = Ok(vec![format!("apsp-diagnostic-{}.service", job.id)]);
     let worker = controlled_worker(&directory, services.clone(), ops)?;
     worker.save(&Checkpoint::Preparing(job))?;
     let client = PanelClient::new("http://127.0.0.1:1", "test-session")?

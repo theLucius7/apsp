@@ -7,16 +7,16 @@ mod preflight;
 mod tests;
 mod verification;
 use anyhow::{Context, Result, ensure};
+use apsp_adapter_sdk::{Descriptor, Privileged};
+use apsp_protocol::release::{ReleaseError, ReleaseProof, TrustedKeys, VerifiedArtifact};
+use apsp_protocol::{
+    Artifact, Bundle, DiagnosticJob, DiagnosticSectionUpdate, DiagnosticUpdate, Manifest,
+};
 use futures_util::StreamExt;
 pub use preflight::verify_cache;
 use reqwest::{Client, Url, redirect::Policy};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sinan_adapter_sdk::{Descriptor, Privileged};
-use sinan_protocol::release::{ReleaseError, ReleaseProof, TrustedKeys, VerifiedArtifact};
-use sinan_protocol::{
-    Artifact, Bundle, DiagnosticJob, DiagnosticSectionUpdate, DiagnosticUpdate, Manifest,
-};
 use std::{
     path::{Component, Path, PathBuf},
     time::Duration,
@@ -312,9 +312,9 @@ impl PanelClient {
         Ok(jobs)
     }
 
-    pub async fn agent_settings(&self) -> Result<sinan_protocol::AgentSettings> {
+    pub async fn agent_settings(&self) -> Result<apsp_protocol::AgentSettings> {
         let url = self.panel.join("/api/agent/v1/settings")?;
-        let settings: sinan_protocol::AgentSettings =
+        let settings: apsp_protocol::AgentSettings =
             serde_json::from_slice(&self.download(url.as_str(), 16 * 1024).await?)?;
         ensure!(settings.valid(), "panel provided invalid Agent settings");
         Ok(settings)
@@ -322,8 +322,8 @@ impl PanelClient {
 
     pub async fn telemetry(
         &self,
-        batch: &sinan_protocol::TelemetryBatch,
-    ) -> Result<sinan_protocol::TelemetryAck> {
+        batch: &apsp_protocol::TelemetryBatch,
+    ) -> Result<apsp_protocol::TelemetryAck> {
         use std::io::Write;
         let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
         encoder.write_all(&serde_json::to_vec(batch)?)?;
@@ -346,7 +346,7 @@ impl PanelClient {
             body.len() <= 16 * 1024,
             "telemetry acknowledgment exceeds size limit"
         );
-        let ack: sinan_protocol::TelemetryAck = serde_json::from_slice(&body)?;
+        let ack: apsp_protocol::TelemetryAck = serde_json::from_slice(&body)?;
         ensure!(
             ack.ids.len() <= 64
                 && ack

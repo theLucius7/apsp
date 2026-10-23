@@ -92,7 +92,7 @@ fn deadline_valid(expires_at: i64, now: i64) -> bool {
 
 fn request_digest<T: Serialize>(kind: &str, request: &T) -> serde_json::Result<String> {
     let mut digest = Sha256::new();
-    digest.update(b"sinan-runtime-control-v1\0");
+    digest.update(b"apsp-runtime-control-v1\0");
     digest.update(kind.as_bytes());
     digest.update([0]);
     digest.update(serde_json::to_vec(request)?);
@@ -125,7 +125,7 @@ impl RuntimeBinding {
     /// Identifies this deployment; it is neither a signature nor path verification.
     pub fn computed_binding_digest(&self) -> String {
         let mut digest = Sha256::new();
-        digest.update(b"sinan-runtime-binding-v1\0");
+        digest.update(b"apsp-runtime-binding-v1\0");
         digest.update(self.deployment_id.as_bytes());
         digest.update((self.module.len() as u64).to_be_bytes());
         digest.update(self.module.as_bytes());

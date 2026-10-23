@@ -4,10 +4,10 @@ use crate::{
     auth::{hash_token, random_token},
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use axum::{http::HeaderMap, response::Response};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 use webauthn_rs::prelude::*;
@@ -118,7 +118,7 @@ pub async fn start_registration(
     let (options, registration) = state
         .passkeys
         .engine()?
-        .start_passkey_registration(account, &account.to_string(), "司南账户", Some(excluded))
+        .start_passkey_registration(account, &account.to_string(), "apsp账户", Some(excluded))
         .map_err(|_| invalid())?;
     save(
         state,

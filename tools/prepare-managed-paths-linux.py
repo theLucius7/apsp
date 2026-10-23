@@ -43,7 +43,7 @@ def verify_frozen(source, frozen_file, frozen_sha):
     require(frozen.get("schema") == 1 and isinstance(rows, dict) and 1 <= len(rows) <= 3000,
             "frozen_manifest_shape_invalid")
     require({"Cargo.toml", "Cargo.lock", "AGENTS.md", "crates/agent-core/src/config.rs",
-             "deploy/sinan-agent.service", "plugins/sing-box/sinan-singbox@.service"} <= rows.keys(),
+             "deploy/apsp-agent.service", "plugins/sing-box/apsp-singbox@.service"} <= rows.keys(),
             "frozen_manifest_missing_build_inputs")
     for relative, expected in rows.items():
         path = Path(relative)
@@ -153,13 +153,13 @@ def stage_release(source, output, target, runtime, runtime_sha, version):
                  if line.startswith("Tags:")), [])
     require({"with_clash_api", "with_v2ray_api", "with_utls", "with_quic"} <= set(tags),
             "runtime_capabilities_missing")
-    agent_bytes = native_header(output / "bin/sinan-agent", target)
+    agent_bytes = native_header(output / "bin/apsp-agent", target)
     artifacts = []
     bundle = output / "test-only-release"
     bundle.mkdir(mode=0o700)
     archive = archive_runtime(runtime_bytes)
     for name, artifact_version, format_, binary, data in (
-            ("agent", version, "raw", "sinan-agent", agent_bytes),
+            ("agent", version, "raw", "apsp-agent", agent_bytes),
             ("sing-box", "1.14.2", "tar.gz", "sing-box", archive)):
         actual_binary = agent_bytes if name == "agent" else runtime_bytes
         entry = {"name": name, "version": artifact_version, "arch": TARGETS[target][1],
@@ -168,7 +168,7 @@ def stage_release(source, output, target, runtime, runtime_sha, version):
         entry["asset_name"] = tools.asset_name(entry)
         store(bundle / entry["asset_name"], data)
         artifacts.append(entry)
-    metadata = {"schema": 1, "source_repo": "theLucius7/sinan", "tag": "agent-v" + version,
+    metadata = {"schema": 1, "source_repo": "theLucius7/apsp", "tag": "agent-v" + version,
                 "protocol_min": 1, "protocol_max": 1, "artifacts": artifacts}
     encoded = (json.dumps(metadata, sort_keys=True, separators=(",", ":")) + "\n").encode()
     installer = b"#!/bin/sh\n# TEST_ONLY inert acceptance asset; not a production installer.\nexit 1\n"
@@ -180,11 +180,11 @@ def stage_release(source, output, target, runtime, runtime_sha, version):
     store(bundle / "SHA256SUMS", "".join(rows[name] + "  " + name + "\n" for name in sorted(rows)).encode())
     capture(["minisign", "-S", "-q", "-m", str(bundle / "SHA256SUMS"), "-s",
              str(source / "crates/protocol/tests/fixtures/TEST_ONLY.key"), "-x",
-             str(bundle / "SHA256SUMS.minisig"), "-t", "Sinan TEST_ONLY managed acceptance; never publish"])
+             str(bundle / "SHA256SUMS.minisig"), "-t", "Apsp TEST_ONLY managed acceptance; never publish"])
     confirmed = verify_bounded_bundle(tools, bundle, roots, metadata["tag"])
     require(confirmed == metadata, "independent_release_verification_mismatch")
     signer.panel_tree(bundle, output / "panel-artifacts", metadata, tools)
-    capture([str(output / "bin/sinan-agent"), "verify-release", "--proof-dir", str(bundle)])
+    capture([str(output / "bin/apsp-agent"), "verify-release", "--proof-dir", str(bundle)])
     return {"test_only": True, "official_publication_rejected": True, "metadata": metadata,
             "metadata_sha256": digest(encoded), "checksums_sha256": identity(bundle / "SHA256SUMS")["sha256"],
             "signature_sha256": identity(bundle / "SHA256SUMS.minisig")["sha256"], "runtime_tags": tags}
@@ -203,7 +203,7 @@ def prepare(args):
     require(runtime_identity["sha256"] == args.runtime_sha256, "runtime_identity_mismatch")
     run_id = str(uuid.uuid4())
     output.mkdir(mode=0o700)
-    store(output / ".sinan-managed-test-run", (run_id + "\n").encode())
+    store(output / ".apsp-managed-test-run", (run_id + "\n").encode())
     before = {"source_identity": frozen_identity, "test_only": True, "run_id": run_id,
               "capacity": {"output_free_bytes": shutil.disk_usage(output).free,
                            "target_free_bytes": shutil.disk_usage(target_dir.parent).free,
@@ -227,18 +227,18 @@ def prepare(args):
         env = {"PATH": str(toolchain / "bin") + ":/usr/bin:/bin", "LANG": "C.UTF-8", "TZ": "UTC",
                "CARGO_HOME": str(cargo_home), "CARGO_TARGET_DIR": str(target_dir),
                "CARGO_BUILD_JOBS": "1", "CARGO_INCREMENTAL": "0", "CARGO_PROFILE_DEV_DEBUG": "0",
-               "SINAN_RELEASE_PUBLIC_KEYS": trust}
-        unit = "sinan-managed-build-" + run_id
+               "APSP_RELEASE_PUBLIC_KEYS": trust}
+        unit = "apsp-managed-build-" + run_id
         command = ["systemd-run", "--quiet", "--pipe", "--wait", "--collect", "--unit=" + unit,
                    "--property=MemoryMax=1G", "--property=MemorySwapMax=0", "--property=TasksMax=128",
                    "--property=PrivateNetwork=yes", "--property=KillMode=control-group",
                    "--property=RuntimeMaxSec=900", "--property=TimeoutStopSec=5",
                    "--property=WorkingDirectory=" + str(source),
-                   "--property=UnsetEnvironment=RUSTFLAGS RUSTDOCFLAGS RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTC CARGO_ENCODED_RUSTFLAGS CARGO_BUILD_TARGET RUSTUP_TOOLCHAIN SINAN_CI_FIXTURE_SIGNER"]
+                   "--property=UnsetEnvironment=RUSTFLAGS RUSTDOCFLAGS RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER RUSTC CARGO_ENCODED_RUSTFLAGS CARGO_BUILD_TARGET RUSTUP_TOOLCHAIN APSP_CI_FIXTURE_SIGNER"]
         command.extend("--setenv=" + key + "=" + value for key, value in env.items())
         command.extend(["/usr/bin/env", "-i", *[key + "=" + value for key, value in env.items()],
                         str(toolchain / "bin/cargo"), "build", "--locked", "--offline", "-p",
-                        "sinan-agent", "-p", "sinan-panel"])
+                        "apsp-agent", "-p", "apsp-panel"])
         try:
             capture(command, timeout=910, log=output / "native-build-log.json",
                     guard=lambda: capacity([output, target_dir.parent]))
@@ -257,17 +257,17 @@ def prepare(args):
                 "source_changed_during_build")
         binaries = output / "bin"
         binaries.mkdir(mode=0o700)
-        for name in ("sinan-agent", "sinan-panel"):
+        for name in ("apsp-agent", "apsp-panel"):
             store(binaries / name, native_header(target_dir / "debug" / name, args.target), 0o755)
         version = tomllib.loads(regular(source / "crates/agent/Cargo.toml").decode())["package"]["version"]
         require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?", version), "invalid_agent_version")
         builder = module("managed_native_agent", source / "tools/build-agent.py")
-        builder.verify_binary(binaries / "sinan-agent", args.target, version)
+        builder.verify_binary(binaries / "apsp-agent", args.target, version)
         # The panel has no CLI parser: invoking --help would start its database
         # and migration path. Inspect ELF/linkage without executing that daemon.
-        headers = capture(["readelf", "-lW", str(binaries / "sinan-panel")]).decode()
-        dynamic = capture(["readelf", "-dW", str(binaries / "sinan-panel")]).decode()
-        libraries = capture(["ldd", str(binaries / "sinan-panel")]).decode()
+        headers = capture(["readelf", "-lW", str(binaries / "apsp-panel")]).decode()
+        dynamic = capture(["readelf", "-dW", str(binaries / "apsp-panel")]).decode()
+        libraries = capture(["ldd", str(binaries / "apsp-panel")]).decode()
         require("INTERP" in headers and "[libc.so.6]" in dynamic and "not found" not in libraries,
                 "panel_native_glibc_linkage_invalid")
         release = stage_release(source, output, args.target, args.runtime_binary, args.runtime_sha256, version)
@@ -275,7 +275,7 @@ def prepare(args):
                 "source_changed_during_release_preparation")
         result = {**before, "status": "prepared", "native_target": args.target,
                   "toolchain": host.splitlines(), "release": release,
-                  "binaries": {name: identity(binaries / name) for name in ("sinan-agent", "sinan-panel")},
+                  "binaries": {name: identity(binaries / name) for name in ("apsp-agent", "apsp-panel")},
                   "finished_at": int(time.time()), "managed_acceptance": "not_run"}
         write(output / "prepared-artifacts.json", result)
         return result

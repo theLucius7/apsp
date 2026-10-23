@@ -1,5 +1,5 @@
 use super::*;
-use sinan_adapter_sdk::{CpuMaxPercent, CpuWeight, IoWeight, MemoryMax, OomScoreAdjust, TasksMax};
+use apsp_adapter_sdk::{CpuMaxPercent, CpuWeight, IoWeight, MemoryMax, OomScoreAdjust, TasksMax};
 use std::{path::PathBuf, sync::Mutex};
 
 #[derive(Default)]
@@ -22,7 +22,7 @@ async fn conflict_probe_is_a_read_only_systemctl_query() -> Result<()> {
             "--no-legend",
             "--plain",
             "--no-pager",
-            "sinan-diagnostic-*.service"
+            "apsp-diagnostic-*.service"
         ]
     );
     Ok(())
@@ -59,7 +59,7 @@ impl Privileged for RecordingOps {
         group: Option<&'a str>,
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
-            assert_eq!(path, Path::new("/run/sinan-diagnostic"));
+            assert_eq!(path, Path::new("/run/apsp-diagnostic"));
             assert_eq!(mode, 0o700);
             assert_eq!(group, Some("root"));
             Ok(())
@@ -87,7 +87,7 @@ impl Privileged for RecordingOps {
 
 fn legacy_service() -> serde_json::Value {
     serde_json::json!({
-        "unit": "sinan-diagnostic-12345678-1234-1234-1234-123456789abc.service",
+        "unit": "apsp-diagnostic-12345678-1234-1234-1234-123456789abc.service",
         "program": "/usr/bin/true",
         "args": [],
         "working_directory": "/tmp",
@@ -129,7 +129,7 @@ async fn service_command_applies_every_budget_before_the_program_separator() -> 
                 "--exclusive",
                 "--nonblock",
                 "--conflict-exit-code=75",
-                "/run/sinan-diagnostic/lock",
+                "/run/apsp-diagnostic/lock",
                 "/usr/bin/true",
                 "--property=MemoryMax=infinity"
             ]
@@ -219,7 +219,7 @@ async fn real_systemd_diagnostic_resource_budget_restricts_memory_and_children()
     );
     let ops: Arc<dyn Privileged> = Arc::new(SystemOps);
     let services = SystemServiceManager::new(ops.clone(), ServiceBackend::Systemd);
-    let directory = std::env::temp_dir().join(format!("sinan-budget-test-{}", Uuid::new_v4()));
+    let directory = std::env::temp_dir().join(format!("apsp-budget-test-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&directory)?;
     let script = directory.join("children.py");
     std::fs::write(
@@ -257,7 +257,7 @@ finally:
     let result = async {
         for memory_test in [true, false] {
             let mut job: ServiceJob = serde_json::from_value(legacy_service())?;
-            job.unit = format!("sinan-diagnostic-{}.service", Uuid::new_v4());
+            job.unit = format!("apsp-diagnostic-{}.service", Uuid::new_v4());
             job.program = "/usr/bin/python3".into();
             job.args = if memory_test {
                 vec!["-c".into(), "bytearray(256 * 1024 * 1024)".into()]

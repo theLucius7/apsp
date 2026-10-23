@@ -16,7 +16,7 @@ FIXTURES = ROOT / "crates/protocol/tests/fixtures"
 
 
 def release_tools(directory):
-    specification = importlib.util.spec_from_file_location("sinan_ci_release_tools", Path(directory) / "release.py")
+    specification = importlib.util.spec_from_file_location("apsp_ci_release_tools", Path(directory) / "release.py")
     module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(module)
     return module
@@ -81,8 +81,8 @@ def main():
     installer = args.bundle.with_name(args.bundle.name + "-install.sh")
     command([sys.executable, str(args.release_tools / "release.py"), "render-installer",
              "--template", str(ROOT / "deploy/install.sh.tmpl"),
-             "--agent-unit", str(ROOT / "deploy/sinan-agent.service"),
-             "--runtime-unit", str(ROOT / "plugins/sing-box/sinan-singbox@.service"),
+             "--agent-unit", str(ROOT / "deploy/apsp-agent.service"),
+             "--runtime-unit", str(ROOT / "plugins/sing-box/apsp-singbox@.service"),
              "--output", str(installer)])
     command([sys.executable, str(args.release_tools / "release.py"), "assemble",
              "--source", str(args.source), "--output", str(args.bundle),
@@ -90,7 +90,7 @@ def main():
              "--runtime-version", args.runtime_version, "--installer", str(installer), "--arch", args.arch])
     command([args.minisign, "-S", "-q", "-m", str(args.bundle / "SHA256SUMS"),
              "-s", str(FIXTURES / "TEST_ONLY.key"), "-x", str(args.bundle / "SHA256SUMS.minisig"),
-             "-t", "Sinan TEST ONLY CI fixture; never publish as an official release"])
+             "-t", "Apsp TEST ONLY CI fixture; never publish as an official release"])
     metadata = tools.verify_bundle(args.bundle, roots, args.minisign, "agent-v" + args.agent_version)
     panel_tree(args.bundle, args.panel_root, metadata, tools)
     print("Independently verified TEST_ONLY signed CI Release prepared; official publication is prohibited.")

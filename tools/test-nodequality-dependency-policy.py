@@ -152,7 +152,7 @@ L(){ printf cleanup; }
                     prelude += b"trap 'sig_cleanup' INT TERM SIGHUP EXIT\n"
                     path.write_bytes(cleanup + prelude + (before if old else after) + b'printf next > "$TEST_DIRECTORY/next"\npost_cleanup\n}\nmain\n')
                     run = subprocess.run(['/bin/bash', str(path)], env={'PATH':os.environ['PATH'], 'TEST_DIRECTORY':name,
-                        'BASH_ENV':str(PLUGIN/'exit-observer.sh'), 'SINAN_REPORT_UPSTREAM':str(path), 'SINAN_REPORT_WORKSPACE':name},
+                        'BASH_ENV':str(PLUGIN/'exit-observer.sh'), 'APSP_REPORT_UPSTREAM':str(path), 'APSP_REPORT_WORKSPACE':name},
                         capture_output=True, timeout=4)
                     self.assertEqual(run.returncode, 1, run.stderr)
                     completed = old or status == 0

@@ -14,20 +14,20 @@ guide 仅打印完整人工流程；snapshot 只读收集本机状态，不安�
 分阶段的真实面板驱动见 docs/e2e.md；由操作者控制专用设备与独立客户端。
 
 snapshot 可选环境变量（前三项须同时提供）：
-  SINAN_PANEL_URL=https://panel.example.com
-  SINAN_USER_ID=1
-  SINAN_NODE_ID=1
-  SINAN_STATE_DB=/var/lib/sinan/core/state.db
+  APSP_PANEL_URL=https://panel.example.com
+  APSP_USER_ID=1
+  APSP_NODE_ID=1
+  APSP_STATE_DB=/var/lib/apsp/core/state.db
 
 提供面板参数后会隐藏输入管理员密码，将按用户+节点筛选的用量和部署状态
 保存到本次证据目录；不会保存密码、会话、私钥或完整配置包。
-使用 sudo 时按需 --preserve-env=SINAN_PANEL_URL,SINAN_USER_ID,SINAN_NODE_ID。
+使用 sudo 时按需 --preserve-env=APSP_PANEL_URL,APSP_USER_ID,APSP_NODE_ID。
 TEXT
 }
 
 guide() {
   cat <<'TEXT'
-司南 Linux systemd / OpenRC 人工端到端验收
+apsp Linux systemd / OpenRC 人工端到端验收
 =========================================
 本脚本不是自动验收结果。请记录每一步的时间、版本、结果及失败日志。
 准备一台全新 Linux amd64/arm64 服务器、一台独立客户端和可访问的面板。
@@ -45,15 +45,15 @@ systemd 基线使用 Debian 12；OpenRC 使用已启动 OpenRC 的专用 Linux �
    OpenRC 设备用本机包管理器安装 curl、CA、基础文件/账号工具、bash、iproute2、
    python3、minisign 和 unshare；supervise-daemon 必须支持 capabilities/no_new_privs。
    Agent 与运行时的架构、libc 必须匹配；glibc 运行时不能直接用于 Alpine musl。
-3. 按 docs/deploy.md 在设备独立准备可信 sinan-bootstrap 与发布公钥。
+3. 按 docs/deploy.md 在设备独立准备可信 apsp-bootstrap 与发布公钥。
    在面板添加服务器并选择已导入的兼容 Agent 版本，以 root 执行生成的命令。
    使用验收驱动时，按 docs/e2e.md 传入私有 enrollment.json 中的接入信息。
    令牌只使用一次；不得把另一个设备的身份复制过来。
 4. 30 秒内确认服务器在线，记录设备架构、Agent 版本、CPU/内存和更新时间。
    在设备运行：
-     sinan-agent status
-     systemctl status sinan-agent.service --no-pager
-   OpenRC 对应命令：rc-service sinan-agent status。
+     apsp-agent status
+     systemctl status apsp-agent.service --no-pager
+   OpenRC 对应命令：rc-service apsp-agent status。
    此时尚未发布配置，代理运行时可以尚未启动。
 
 二、节点、用户、客户端与流量
@@ -62,10 +62,10 @@ systemd 基线使用 Debian 12；OpenRC 使用已启动 OpenRC 的专用 Linux �
 6. 创建一个专用验收用户，仅授权此节点。等待 5 秒合并发布及设备应用完成。
    服务器详情：目标版本=已应用版本、健康=true、无本次部署错误。
    设备：
-     systemctl is-active sinan-singbox@main.service
-     /opt/sinan/plugins/sing-box/current/sing-box version
+     systemctl is-active apsp-singbox@main.service
+     /opt/apsp/plugins/sing-box/current/sing-box version
      ss -lnt 'sport = :18085'
-   OpenRC 的服务状态命令为：rc-service sinan-singbox@main status。
+   OpenRC 的服务状态命令为：rc-service apsp-singbox@main status。
    版本应为 1.14.2，包含 with_v2ray_api；18085 必须只在 127.0.0.1 监听。
 7. 在独立客户端导入此用户的订阅，不要在服务器内使用直连代替代理链路。
    使用 sing-box JSON 时，本地混合入口是 127.0.0.1:2080。示例：
@@ -79,16 +79,16 @@ systemd 基线使用 Debian 12；OpenRC 使用已启动 OpenRC 的专用 Linux �
 9. 暂停验收客户端，关闭其他使用本验收用户的连接。
    等待至少两次采样，确认面板该用户该节点用量稳定且 pending_batches=0。
    可先设置以下环境（将示例改为本次实际值）：
-     export SINAN_PANEL_URL=https://panel.example.com
-     export SINAN_USER_ID=1
-     export SINAN_NODE_ID=1
+     export APSP_PANEL_URL=https://panel.example.com
+     export APSP_USER_ID=1
+     export APSP_NODE_ID=1
      bash scripts/e2e-real.sh snapshot before ./evidence
 10. 记录运行时进程，再重启 Agent。systemd：
-      systemctl show sinan-singbox@main.service -p MainPID
-      systemctl restart sinan-agent.service
+      systemctl show apsp-singbox@main.service -p MainPID
+      systemctl restart apsp-agent.service
     等待 Agent 恢复连接后再次查询运行时 MainPID，应保持不变；代理为独立服务。
     OpenRC：先收集一次 snapshot，记录 runtime-service.txt 的 ChildPIDs，执行
-      rc-service sinan-agent restart
+      rc-service apsp-agent restart
     再收集快照，实际运行时 ChildPIDs 应保持不变。/run/*.pid 是 supervisor PID，
     不能用它代替实际运行时 PID；快照通过 Linux procfs 读取子进程。
     等待两次采样并收集：
@@ -97,14 +97,14 @@ systemd 基线使用 Debian 12；OpenRC 使用已启动 OpenRC 的专用 Linux �
 
 四、运行时重载与再次使用
 11. 保持客户端暂停并确认待确认批次清零后，执行一次显式运行时重载：
-      systemctl reload sinan-singbox@main.service
+      systemctl reload apsp-singbox@main.service
     等待本地统计接口恢复；检查日志中有无重载失败、统计重置/缺失窗口告警：
-      journalctl -u sinan-agent.service --since '-5 minutes' --no-pager
-      journalctl -u sinan-singbox@main.service --since '-5 minutes' --no-pager
+      journalctl -u apsp-agent.service --since '-5 minutes' --no-pager
+      journalctl -u apsp-singbox@main.service --since '-5 minutes' --no-pager
     OpenRC 对应命令：
-      rc-service sinan-singbox@main reload
-      tail -n 80 /var/log/sinan/agent.log
-      tail -n 80 /var/log/sinan/runtime.log
+      rc-service apsp-singbox@main reload
+      tail -n 80 /var/log/apsp/agent.log
+      tail -n 80 /var/log/apsp/runtime.log
     再收集：
       bash scripts/e2e-real.sh snapshot after-runtime ./evidence
     外部 HUP 不经过 Agent 的终值采样；若重载时仍有流量，可能存在无法观测的
@@ -119,7 +119,7 @@ systemd 基线使用 Debian 12；OpenRC 使用已启动 OpenRC 的专用 Linux �
 五、升级、身份和结论
 14. 验证升级时先导入目标已签版本，在原服务器签发新的接入令牌并重新安装。
     旧未签缓存按 docs/release.md 完成迁移验证，不能跳过签名预检。
-    保留 /etc/sinan/identity 和 /var/lib/sinan/core/state.db；注册服务器 ID 不变，
+    保留 /etc/apsp/identity 和 /var/lib/apsp/core/state.db；注册服务器 ID 不变，
     已消费的旧令牌不能再用。完成后再次核对版本、部署健康、流量与待确认数。
 15. 整理 before、after-agent、after-runtime、after-new-traffic 中的：
     - Agent connected/applied/healthy/pending_batches；
@@ -130,7 +130,7 @@ systemd 基线使用 Debian 12；OpenRC 使用已启动 OpenRC 的专用 Linux �
     只有全部相应步骤实际执行才写“实机验收通过”。未执行项目保持“待验证”。
 16. 在专用验收机整机重启后确认 Agent 与最后一份运行时配置自动恢复，再次验证
     身份、已确认用量、待确认批次及新流量。OpenRC 检查 default runlevel 已启用
-    sinan-agent 与 sinan-singbox@main；记录版本、libc 与启动日志。
+    apsp-agent 与 apsp-singbox@main；记录版本、libc 与启动日志。
 
 脚本不修改 outbox 来模拟丢失 ACK；批次重放去重与恢复另由自动集成测试覆盖。
 证据可能包含主机名、内部编号和用量，保存在私有目录，不要提交真实环境证据。
@@ -142,27 +142,27 @@ snapshot() {
   local label=$1 output=$2 evidence
   [[ $label =~ ^[A-Za-z0-9_-]+$ ]] || { echo '标签只能包含字母、数字、下划线和连字符' >&2; exit 2; }
   [[ $(uname -s) == Linux && $(id -u) == 0 ]] || { echo '请在已安装 Agent 的 Linux 设备上以 root 收集快照' >&2; exit 1; }
-  for tool in sinan-agent ss python3; do
+  for tool in apsp-agent ss python3; do
     command -v "$tool" >/dev/null || { printf '缺少工具：%s\n' "$tool" >&2; exit 1; }
   done
   mkdir -p -- "$output"
   evidence=$(mktemp -d "$output/$label.XXXXXX")
   date -u +'%Y-%m-%dT%H:%M:%SZ' > "$evidence/time.txt"
   uname -srmo > "$evidence/system.txt"
-  sinan-agent --version > "$evidence/agent-version.txt"
-  sinan-agent status > "$evidence/agent-status.json"
+  apsp-agent --version > "$evidence/agent-version.txt"
+  apsp-agent status > "$evidence/agent-status.json"
   if [[ -d /run/systemd/system ]] && command -v systemctl >/dev/null; then
     printf 'systemd\n' > "$evidence/init-system.txt"
-    systemctl show sinan-agent.service -p ActiveState -p SubState -p MainPID -p NRestarts -p ActiveEnterTimestamp > "$evidence/agent-service.txt"
-    systemctl show sinan-singbox@main.service -p ActiveState -p SubState -p MainPID -p NRestarts -p ActiveEnterTimestamp > "$evidence/runtime-service.txt"
+    systemctl show apsp-agent.service -p ActiveState -p SubState -p MainPID -p NRestarts -p ActiveEnterTimestamp > "$evidence/agent-service.txt"
+    systemctl show apsp-singbox@main.service -p ActiveState -p SubState -p MainPID -p NRestarts -p ActiveEnterTimestamp > "$evidence/runtime-service.txt"
   elif [[ -f /run/openrc/softlevel ]] && command -v rc-service >/dev/null; then
     printf 'openrc\n' > "$evidence/init-system.txt"
-    openrc_snapshot sinan-agent > "$evidence/agent-service.txt"
-    openrc_snapshot sinan-singbox@main > "$evidence/runtime-service.txt"
+    openrc_snapshot apsp-agent > "$evidence/agent-service.txt"
+    openrc_snapshot apsp-singbox@main > "$evidence/runtime-service.txt"
   else
     echo '需要运行中的 systemd 或 OpenRC' >&2; exit 1
   fi
-  /opt/sinan/plugins/sing-box/current/sing-box version > "$evidence/runtime-version.txt"
+  /opt/apsp/plugins/sing-box/current/sing-box version > "$evidence/runtime-version.txt"
   ss -lnt 'sport = :18085' > "$evidence/stats-listener.txt"
   python3 - "$evidence" <<'PY'
 import getpass
@@ -177,9 +177,9 @@ import urllib.parse
 import urllib.request
 
 output = Path(sys.argv[1])
-database = Path(os.environ.get('SINAN_STATE_DB', '/var/lib/sinan/core/state.db'))
+database = Path(os.environ.get('APSP_STATE_DB', '/var/lib/apsp/core/state.db'))
 if not database.is_file():
-    raise SystemExit('找不到账本；自定义路径请设置 SINAN_STATE_DB')
+    raise SystemExit('找不到账本；自定义路径请设置 APSP_STATE_DB')
 with sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True, timeout=5) as connection:
     connection.execute('BEGIN')
     sequence = connection.execute("SELECT value FROM kv WHERE key='usage:last_seq'").fetchone()
@@ -199,7 +199,7 @@ with sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True, timeout
     }
 (output / 'ledger.json').write_text(json.dumps(ledger, ensure_ascii=False, indent=2) + '\n')
 
-names = ['SINAN_PANEL_URL', 'SINAN_USER_ID', 'SINAN_NODE_ID']
+names = ['APSP_PANEL_URL', 'APSP_USER_ID', 'APSP_NODE_ID']
 values = [os.environ.get(name) for name in names]
 if any(values) and not all(values):
     raise SystemExit('面板摘要需要同时设置 ' + '、'.join(names))
@@ -207,7 +207,7 @@ if all(values):
     origin, user, node = values
     parsed = urllib.parse.urlsplit(origin)
     if parsed.scheme not in ('https', 'http') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in ('', '/'):
-        raise SystemExit('SINAN_PANEL_URL 必须是 HTTP(S) origin')
+        raise SystemExit('APSP_PANEL_URL 必须是 HTTP(S) origin')
     if not user.isdecimal() or not node.isdecimal() or int(user) <= 0 or int(node) <= 0:
         raise SystemExit('用户和节点编号必须是正整数')
     origin = origin.rstrip('/')
@@ -218,8 +218,8 @@ if all(values):
         headers = {} if body is None else {'Content-Type': 'application/json'}
         with client.open(urllib.request.Request(origin + path, data=body, headers=headers), timeout=20) as response:
             return json.load(response)
-    code = os.environ.pop('SINAN_E2E_TOTP_CODE', None)
-    if code is None and os.environ.get('SINAN_E2E_TOTP') == '1':
+    code = os.environ.pop('APSP_E2E_TOTP_CODE', None)
+    if code is None and os.environ.get('APSP_E2E_TOTP') == '1':
         code = getpass.getpass('当前 TOTP 验证码（不保存，请用未使用的新码）：')
     if code is not None and (len(code) != 6 or not code.isascii() or not code.isdecimal()):
         raise SystemExit('TOTP 验证码需为六位数字')

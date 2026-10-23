@@ -9,13 +9,13 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
+use apsp_panel::plugins::singbox::{
+    source_migration as migration, sources::refresh_due, subscription_sources::worker,
+};
+use apsp_protocol::now_timestamp;
 use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::plugins::singbox::{
-    source_migration as migration, sources::refresh_due, subscription_sources::worker,
-};
-use sinan_protocol::now_timestamp;
 use sqlx::PgPool;
 use std::time::Duration;
 use uuid::Uuid;
@@ -446,7 +446,7 @@ async fn source_settings_errors_and_deletions_carry_over(pool: PgPool) -> Result
         .fetch_one(&pool).await?;
     let deleted: i64 = sqlx::query_scalar("INSERT INTO singbox_subscription_sources(name,kind,secret_content,deleted_at,archived,created_at) VALUES('旧来源','inline','TEST_ONLY content',9,TRUE,8) RETURNING id")
         .fetch_one(&pool).await?;
-    sqlx::query("INSERT INTO singbox_source_jobs(id,source_id,settings_revision,identity_epoch,parser_version,state,phase,created_at) VALUES($1,$2,1,1,'sinan-subscriptions-2','queued','queued',10)")
+    sqlx::query("INSERT INTO singbox_source_jobs(id,source_id,settings_revision,identity_epoch,parser_version,state,phase,created_at) VALUES($1,$2,1,1,'apsp-subscriptions-2','queued','queued',10)")
         .bind(Uuid::new_v4()).bind(url).execute(&pool).await?;
     let report = migration::precheck(&pool).await?;
     ensure!(report.ready() && report.active_numbered_jobs == 1);
@@ -472,7 +472,7 @@ async fn source_settings_errors_and_deletions_carry_over(pool: PgPool) -> Result
     );
     ensure!(row.error_kind.as_deref() == Some("http_status"));
     ensure!(
-        row.user_agent.as_deref() == Some("Sinan-subscription-import/1")
+        row.user_agent.as_deref() == Some("Apsp-subscription-import/1")
             && row.deleted_at.is_none()
             && row.created_at == 7
     );

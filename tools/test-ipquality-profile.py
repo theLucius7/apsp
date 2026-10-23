@@ -29,16 +29,16 @@ class MinimalProfileTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # Imports happen only when the frozen final suite is explicitly run.
-        cls.fixtures = module('sinan_ipquality_profile_parent_fixtures',
+        cls.fixtures = module('apsp_ipquality_profile_parent_fixtures',
                               ROOT / 'tools/test-ipquality-inputs.py')
-        cls.inputs = module('sinan_ipquality_profile_fixture_inputs',
+        cls.inputs = module('apsp_ipquality_profile_fixture_inputs',
                             ROOT / 'tools/ipquality-inputs.py')
         cls.loaded = cls.inputs.modules()
-        cls.profile_module = module('sinan_ipquality_profile_contract',
+        cls.profile_module = module('apsp_ipquality_profile_contract',
                                     ROOT / 'tools/ipquality-profile.py')
 
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='sinan-ip-profile-fixture-')
+        self.temporary = tempfile.TemporaryDirectory(prefix='apsp-ip-profile-fixture-')
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
         self.build = self.loaded['build']

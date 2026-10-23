@@ -24,7 +24,7 @@ MAX_SOURCE = 8 * 1024 * 1024
 MAX_RUNNER = 128 * 1024
 MAX_SOURCE_OFFER = 2 * 1024 * 1024 * 1024
 READ_CHUNK = 1024 * 1024
-LIB = 'usr/local/lib/sinan-ipquality/'
+LIB = 'usr/local/lib/apsp-ipquality/'
 
 
 def ensure(condition, message):
@@ -40,11 +40,11 @@ def module(name, path):
 
 
 def runtime():
-    return module('sinan_ipquality_rootfs_runtime', ROOT / 'plugins/nodequality/rootfs.py')
+    return module('apsp_ipquality_rootfs_runtime', ROOT / 'plugins/nodequality/rootfs.py')
 
 
 def factory():
-    return module('sinan_ipquality_profile', ROOT / 'tools/ipquality-rootfs.py').factory()
+    return module('apsp_ipquality_profile', ROOT / 'tools/ipquality-rootfs.py').factory()
 
 
 def digest(content):
@@ -133,7 +133,7 @@ def archive_files(data):
 
 def source_offer(files, version, arch):
     ensure(version == VERSION and arch in ('amd64', 'arm64'), 'invalid IPQuality source-offer identity')
-    prefix = b'Sinan IPQuality node self-query\n'
+    prefix = b'Apsp IPQuality node self-query\n'
     content = files['THIRD_PARTY_NOTICES.txt']
     ensure(content.startswith(prefix) and len(content) <= 16 * 1024, 'source-offer notice is absent or oversized')
     notice = decode(content[len(prefix):])
@@ -176,7 +176,7 @@ def source_inventory(files):
     sources = unpack(files['source.tar.gz'], maximum=MAX_SOURCE)
     lock = decode(sources['debian/inputs-lock.json'])
     factory().validate_lock(lock)
-    expected = {'sinan-source.tar.gz': {'size': len(files['source.tar.gz']), 'sha256': digest(files['source.tar.gz'])}}
+    expected = {'apsp-source.tar.gz': {'size': len(files['source.tar.gz']), 'sha256': digest(files['source.tar.gz'])}}
     for row in lock['sources']:
         for item in row['files']:
             name = 'debian-sources/' + item['blob']
@@ -236,9 +236,9 @@ def validate_source_offer(value, files, version, arch, progress=None):
 
 def check_license_review(review, metadata, manifest):
     check_minimal_profile(metadata, manifest)
-    licenses = decode(metadata['usr/share/sinan-rootfs/license-inventory.json'])
-    sources = decode(metadata['usr/share/sinan-rootfs/source-inventory.json'])
-    inputs = decode(metadata['usr/share/sinan-rootfs/inputs-lock.json'])
+    licenses = decode(metadata['usr/share/apsp-rootfs/license-inventory.json'])
+    sources = decode(metadata['usr/share/apsp-rootfs/source-inventory.json'])
+    inputs = decode(metadata['usr/share/apsp-rootfs/inputs-lock.json'])
     ensure(isinstance(review, dict) and set(review) == {'schema', 'profile', 'reviewer', 'evidence',
            'source_commit', 'source_sha256', 'license_inventory_sha256', 'source_inventory_sha256',
            'inputs_lock_sha256', 'packages', 'upstream_license'}, 'invalid IPQuality license review')
@@ -250,7 +250,7 @@ def check_license_review(review, metadata, manifest):
         ensure(isinstance(review[key], str) and 0 < len(review[key]) <= 2048
                and not any(ord(value) < 32 for value in review[key]), 'license review evidence is absent')
     for key in ('license_inventory', 'source_inventory', 'inputs_lock'):
-        ensure(review[key + '_sha256'] == digest(metadata['usr/share/sinan-rootfs/' + key.replace('_', '-') + '.json']),
+        ensure(review[key + '_sha256'] == digest(metadata['usr/share/apsp-rootfs/' + key.replace('_', '-') + '.json']),
                'license review differs from the actual complete inventory')
     build = factory()
     build.validate_lock(inputs)
@@ -265,7 +265,7 @@ def check_license_review(review, metadata, manifest):
         entry = paths.get(license_file['path'], {})
         ensure(entry.get('type') == 'file' and entry.get('sha256') == license_file['sha256']
                and entry.get('size') == license_file['size'], 'preserved license text differs')
-    profile = module('sinan_ipquality_tools', ROOT / 'tools/ipquality-rootfs.py')
+    profile = module('apsp_ipquality_tools', ROOT / 'tools/ipquality-rootfs.py')
     ensure({item['command'] for item in licenses.get('tools', [])} == set(profile.TOOLS),
            'rootfs contains another diagnostic tool profile')
 
@@ -273,7 +273,7 @@ def check_license_review(review, metadata, manifest):
 def check_minimal_profile(metadata, manifest):
     """Require the signed exact selection; host replay remains a factory gate."""
     build = factory()
-    prefix = 'usr/share/sinan-rootfs/'
+    prefix = 'usr/share/apsp-rootfs/'
     name = prefix + 'ipquality-profile.json'
     ensure(name in metadata, 'minimal IPQuality profile proof is absent')
     content = metadata[name]
@@ -349,7 +349,7 @@ def validate_files(files, version, arch, intake_parent=None, progress=None):
             original_deadline(end)
         helper._deadline = checked_deadline
     manifest = helper.load_manifest(files['rootfs-manifest.json'], arch)
-    with tempfile.TemporaryDirectory(prefix='sinan-ipquality-intake-', dir=intake_parent) as temporary:
+    with tempfile.TemporaryDirectory(prefix='apsp-ipquality-intake-', dir=intake_parent) as temporary:
         path = Path(temporary).resolve() / 'rootfs.tar.gz'
         with path.open('xb') as destination:
             content = files['rootfs.tar.gz']
@@ -358,19 +358,19 @@ def validate_files(files, version, arch, intake_parent=None, progress=None):
                     progress()
                 destination.write(content[offset:offset + 1024 * 1024])
         helper.verify_archive(path, manifest)
-        names = ['usr/share/sinan-rootfs/' + name for name in
+        names = ['usr/share/apsp-rootfs/' + name for name in
                  ('provenance.json', 'inputs-lock.json', 'source-inventory.json', 'license-inventory.json',
                   'ipquality-profile.json')]
         names.append('var/lib/dpkg/status')
         metadata = helper.read_metadata(path, manifest, names)
-    provenance = decode(metadata['usr/share/sinan-rootfs/provenance.json'])
-    ensure(provenance.get('kind') == 'sinan-ipquality-debian12-preparation'
+    provenance = decode(metadata['usr/share/apsp-rootfs/provenance.json'])
+    ensure(provenance.get('kind') == 'apsp-ipquality-debian12-preparation'
            and provenance.get('arch') == arch and provenance.get('source_authenticated') is True
            and provenance.get('full_ready') is False and provenance.get('reproducibility_verified') is False
-           and info.get('factory_provenance_sha256') == digest(metadata['usr/share/sinan-rootfs/provenance.json']),
+           and info.get('factory_provenance_sha256') == digest(metadata['usr/share/apsp-rootfs/provenance.json']),
            'rootfs does not identify independent authenticated IPQuality preparation')
     for key in ('inputs_lock', 'source_inventory', 'license_inventory'):
-        ensure(provenance.get(key + '_sha256') == digest(metadata['usr/share/sinan-rootfs/' + key.replace('_', '-') + '.json']),
+        ensure(provenance.get(key + '_sha256') == digest(metadata['usr/share/apsp-rootfs/' + key.replace('_', '-') + '.json']),
                'factory provenance does not bind its complete inventories')
     check_minimal_profile(metadata, manifest)
     sources = unpack(files['source.tar.gz'], maximum=MAX_SOURCE)
@@ -386,9 +386,9 @@ def validate_files(files, version, arch, intake_parent=None, progress=None):
                  'tools/ipquality-inputs.py', 'tools/ipquality-inputs-capacity.py',
                  'tools/ipquality-profile.py', 'LICENSE'):
         ensure(sources.get(name) == runtime().ordinary(ROOT / name, MAX_SOURCE),
-               'complete corresponding Sinan source differs or is absent: ' + name)
+               'complete corresponding Apsp source differs or is absent: ' + name)
     for name in ('inputs-lock.json', 'source-inventory.json', 'license-inventory.json', 'ipquality-profile.json'):
-        ensure(sources.get('debian/' + name) == metadata['usr/share/sinan-rootfs/' + name],
+        ensure(sources.get('debian/' + name) == metadata['usr/share/apsp-rootfs/' + name],
                'corresponding Debian source-offer metadata differs')
     ensure('debian/ipquality-profile-private.json' not in sources
            and not any(name.startswith(('debian/input-ledger', 'debian/tool-evidence',
@@ -397,7 +397,7 @@ def validate_files(files, version, arch, intake_parent=None, progress=None):
     lock = runtime().ordinary(PLUGIN / 'source-lock.json', MAX_SOURCE)
     ensure(sources.get('plugins/ipquality/source-lock.json') == lock and info.get('source_lock_sha256') == digest(lock),
            'fixed upstream source lock differs')
-    source_helper = module('sinan_ipquality_sources', PLUGIN / 'source-helper.py')
+    source_helper = module('apsp_ipquality_sources', PLUGIN / 'source-helper.py')
     for name, content in source_helper.policy_bytes().items():
         ensure(sources.get('plugins/ipquality/policies/' + name + '-policy.py') == content,
                'corresponding controlled policy source is incomplete')
@@ -411,7 +411,7 @@ def validate_files(files, version, arch, intake_parent=None, progress=None):
         entry = paths.get(LIB + name, {})
         ensure(entry.get('type') == 'file' and entry.get('sha256') == digest(content)
                and entry.get('size') == len(content), 'rootfs script differs from the controlled fixed source')
-    shim = b'#!/bin/sh\nexec /usr/bin/python3 /usr/local/lib/sinan-ipquality/transport.py "$@"\n'
+    shim = b'#!/bin/sh\nexec /usr/bin/python3 /usr/local/lib/apsp-ipquality/transport.py "$@"\n'
     ensure(paths.get('usr/local/bin/curl', {}).get('sha256') == digest(shim),
            'rootfs transport wrapper differs from its controlled derivation')
     for key, name in (('policy_sha256', 'source-policy.py'), ('transport_sha256', 'transport.py')):

@@ -27,11 +27,11 @@ class InitEnvironmentTests(unittest.TestCase):
             content = destination.read_bytes()
             values = dict(line.split("=", 1) for line in content.decode().splitlines())
             self.assertEqual(len(values), 7)
-            self.assertEqual(values["SINAN_RELEASE_PUBLIC_KEYS"], "[]")
-            self.assertEqual(values["SINAN_PUBLIC_URL"], "https://panel.example.com")
-            self.assertEqual(values["SINAN_PORT"], "18080")
-            self.assertNotEqual(values["SINAN_DB_PASSWORD"], values["SINAN_ADMIN_PASSWORD"])
-            for key in ("SINAN_DB_PASSWORD", "SINAN_ADMIN_PASSWORD"):
+            self.assertEqual(values["APSP_RELEASE_PUBLIC_KEYS"], "[]")
+            self.assertEqual(values["APSP_PUBLIC_URL"], "https://panel.example.com")
+            self.assertEqual(values["APSP_PORT"], "18080")
+            self.assertNotEqual(values["APSP_DB_PASSWORD"], values["APSP_ADMIN_PASSWORD"])
+            for key in ("APSP_DB_PASSWORD", "APSP_ADMIN_PASSWORD"):
                 self.assertRegex(values[key], r"^[0-9a-f]{64}$")
                 self.assertNotIn(values[key], result.stdout + result.stderr)
             if os.name == "posix":

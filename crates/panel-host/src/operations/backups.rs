@@ -3,6 +3,7 @@ use crate::{
     AppState, control_center,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use axum::{
     Json,
     extract::{Path, State},
@@ -10,7 +11,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -33,7 +33,7 @@ pub async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResul
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(
-        json!({"schedules":rows,"executor":"面板本机 pg_dump 与 age；数据库导出快照和签名制品写锁","storage_configured":std::env::var_os("SINAN_BACKUP_DIR").is_some(),"immutable_images_configured":std::env::var_os("SINAN_BACKUP_PANEL_IMAGE").is_some()&&std::env::var_os("SINAN_BACKUP_POSTGRES_IMAGE").is_some(),"keyring_material":"仅备份外部保管位置和所需密钥ID，不打包解密主密钥"}),
+        json!({"schedules":rows,"executor":"面板本机 pg_dump 与 age；数据库导出快照和签名制品写锁","storage_configured":std::env::var_os("APSP_BACKUP_DIR").is_some(),"immutable_images_configured":std::env::var_os("APSP_BACKUP_PANEL_IMAGE").is_some()&&std::env::var_os("APSP_BACKUP_POSTGRES_IMAGE").is_some(),"keyring_material":"仅备份外部保管位置和所需密钥ID，不打包解密主密钥"}),
     ))
 }
 
@@ -65,7 +65,7 @@ pub async fn create(
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO operations_backup_schedules(id,name,requested_by,interval_secs,next_run_at,recipient,retention_count,retention_days,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)").bind(id).bind(request.name).bind(actor).bind(request.interval_secs).bind(request.next_run_at).bind(request.recipient).bind(request.retention_count).bind(request.retention_days).bind(now).execute(&state.pool).await?;
     Ok(Json(
-        json!({"id":id,"status":"scheduled","storage":"进程配置的SINAN_BACKUP_DIR；未配置时使用私有本机目录，不宣称异地存储"}),
+        json!({"id":id,"status":"scheduled","storage":"进程配置的APSP_BACKUP_DIR；未配置时使用私有本机目录，不宣称异地存储"}),
     ))
 }
 

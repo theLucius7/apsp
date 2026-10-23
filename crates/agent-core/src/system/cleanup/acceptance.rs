@@ -7,8 +7,8 @@ async fn real_systemd_diagnostic_cancellation_confirms_process_and_private_mount
 -> Result<()> {
     let privileged: Arc<dyn Privileged> = Arc::new(SystemOps);
     let services = SystemServiceManager::new(privileged.clone(), ServiceBackend::Systemd);
-    let unit = format!("sinan-diagnostic-{}.service", Uuid::new_v4());
-    let directory = std::env::temp_dir().join(format!("sinan-cancel-test-{}", Uuid::new_v4()));
+    let unit = format!("apsp-diagnostic-{}.service", Uuid::new_v4());
+    let directory = std::env::temp_dir().join(format!("apsp-cancel-test-{}", Uuid::new_v4()));
     std::fs::create_dir(&directory)?;
     let result = async {
         ensure!(services.diagnostic_cleanup_confirmed(&unit, &directory).await?, "unstarted unit cannot be confirmed clean");

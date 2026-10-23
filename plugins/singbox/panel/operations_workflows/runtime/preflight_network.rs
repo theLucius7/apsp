@@ -3,10 +3,10 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_compiler::{Node, TlsConfig};
+use apsp_protocol::now_timestamp;
 use futures_util::{StreamExt, TryStreamExt, stream};
 use serde_json::{Value, json};
-use sinan_compiler::{Node, TlsConfig};
-use sinan_protocol::now_timestamp;
 use sqlx::Row;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -246,7 +246,7 @@ pub(super) fn refresh(
             observed["name"] = json!("自动证书验证域名 DNS");
             checks.push(observed);
         }
-        let compiled = sinan_compiler::compile_server(&nodes)
+        let compiled = apsp_compiler::compile_server(&nodes)
             .ok()
             .and_then(|value| serde_json::from_str::<Value>(&value).ok());
         for node in active {

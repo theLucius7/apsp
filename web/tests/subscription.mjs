@@ -14,7 +14,7 @@ const diagnosisFixture = user => ({ user_id: user.id, account: { user_id: user.i
   limitations: { credentials_read: { available: false, reason: 'TEST_ONLY 敏感内容未读取；此处仅为独立只读诊断快照。' } } })
 const templateFixture = { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY 完整模板未读取。', supported_client: 'singbox', supported_version: '1.14.2', schema_validation: true, runtime_validation: false, limitations: 'TEST_ONLY 没有保存的模板，未执行真实客户端验证。' }
 
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname
@@ -25,8 +25,8 @@ const server = createServer(async (request, response) => {
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const origin = `http://127.0.0.1:${server.address().port}`
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
-const screenshots = process.env.SINAN_UI_SCREENSHOT_DIR
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
+const screenshots = process.env.APSP_UI_SCREENSHOT_DIR
 if (screenshots) await mkdir(screenshots, { recursive: true })
 const results = []
 
@@ -104,7 +104,7 @@ try {
     previous = subscriptionRequests
     await dialog.getByRole('button', { name: '下载文件', exact: true }).click()
     const download = await downloadPromise
-    assert.equal(download.suggestedFilename(), 'sinan-subscription.json')
+    assert.equal(download.suggestedFilename(), 'apsp-subscription.json')
     assert.equal(await readFile(await download.path(), 'utf8'), lastContent)
     assert.equal(subscriptionRequests, previous + 1)
     assert.equal(await dialog.evaluate(element => element.scrollWidth > element.clientWidth + 1), false)
@@ -119,7 +119,7 @@ try {
     const linksDownloadPromise = page.waitForEvent('download')
     await dialog.getByRole('button', { name: '下载文件', exact: true }).click()
     const linksDownload = await linksDownloadPromise
-    assert.equal(linksDownload.suggestedFilename(), 'sinan-subscription.txt')
+    assert.equal(linksDownload.suggestedFilename(), 'apsp-subscription.txt')
     assert.equal(await readFile(await linksDownload.path(), 'utf8'), lastContent)
     assert.match(lastContent, /^vless:\/\//)
     await dialog.getByLabel('订阅格式').selectOption('singbox')

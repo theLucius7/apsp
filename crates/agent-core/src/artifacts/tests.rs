@@ -1,7 +1,7 @@
 use super::{preflight::verify_cache_with_keys, verification::verify_binary_with_keys};
 use crate::release_test_support as release_support;
 use crate::{Config, State, reconcile::ApplyIntent, state::IntentRecord};
-use sinan_adapter_sdk::{Plan, Prepared, RuntimeSpec};
+use apsp_adapter_sdk::{Plan, Prepared, RuntimeSpec};
 use std::{collections::BTreeMap, fs, path::PathBuf};
 use uuid::Uuid;
 
@@ -40,7 +40,7 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
-        let directory = std::env::temp_dir().join(format!("sinan-proof-{}", Uuid::new_v4()));
+        let directory = std::env::temp_dir().join(format!("apsp-proof-{}", Uuid::new_v4()));
         fs::create_dir_all(&directory).unwrap();
         let config = Config {
             state_db: directory.join("state.db"),
@@ -259,11 +259,11 @@ async fn migration_preflight_checks_resumable_diagnostic_jobs() {
         b"cached-archive",
         b"fixture-runtime",
     );
-    let mut job = sinan_protocol::DiagnosticJob {
+    let mut job = apsp_protocol::DiagnosticJob {
         id: Uuid::new_v4(),
         plugin: "runtime".into(),
         version: "1".into(),
-        artifact: sinan_protocol::Artifact {
+        artifact: apsp_protocol::Artifact {
             url: "http://127.0.0.1:1/unused".into(),
             sha256: release_support::hash(b"cached-archive"),
             proof: Some(proof),
@@ -282,7 +282,7 @@ async fn migration_preflight_checks_resumable_diagnostic_jobs() {
         .set_json("diagnostics:active", &serde_json::json!({"Preparing":job}))
         .unwrap();
     assert!(verify_cache_with_keys(&test.config, &keys).await.is_err());
-    let spec = sinan_adapter_sdk::DiagnosticSpec {
+    let spec = apsp_adapter_sdk::DiagnosticSpec {
         id: job.id.to_string(),
         version: "1".into(),
         binary_path: runtime.spec.binary_path.clone(),
@@ -290,8 +290,8 @@ async fn migration_preflight_checks_resumable_diagnostic_jobs() {
         timeout_secs: 30,
         options: BTreeMap::new(),
     };
-    let mut service = sinan_adapter_sdk::ServiceJob {
-        unit: format!("sinan-diagnostic-{}.service", job.id),
+    let mut service = apsp_adapter_sdk::ServiceJob {
+        unit: format!("apsp-diagnostic-{}.service", job.id),
         program: spec.binary_path.clone(),
         args: vec![],
         working_directory: spec.job_dir.clone(),

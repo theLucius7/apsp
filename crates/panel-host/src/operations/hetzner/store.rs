@@ -1,7 +1,7 @@
 use super::client::Inventory;
 use crate::error::{ApiError, ApiResult};
+use apsp_protocol::now_timestamp;
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 

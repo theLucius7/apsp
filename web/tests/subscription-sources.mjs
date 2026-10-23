@@ -9,7 +9,7 @@ import { flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fi
 import { sourceJobFixture, sourceNodeFixture, sourceNodePageFixture, sourcePreviewFixture, sourceRevisionFixture, sourceUuid, subscriptionSourceFixture } from './subscription-source-fixtures.mjs'
 
 // Exercise the built UI, with strict owned fixtures. No upstream requests or parser execution.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 const server = createServer(async (request, response) => {
   const pathname = new URL(request.url, 'http://127.0.0.1').pathname
@@ -21,7 +21,7 @@ const server = createServer(async (request, response) => {
 let browser
 try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-  browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+  browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
   const origin = `http://127.0.0.1:${server.address().port}`, prefix = '/api/plugins/sing-box', sourceRoot = `${prefix}/ordered-subscription-sources`, jobRoot = `${prefix}/ordered-subscription-source-jobs`, previewRoot = `${prefix}/ordered-subscription-source-previews`
   for (const width of [1440, 390, 320]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } })
@@ -146,7 +146,7 @@ try {
     const reloadList = async () => { const response = page.waitForResponse(response => new URL(response.url()).pathname === sourceRoot && response.request().method() === 'GET'); await manager.getByRole('button', { name: '刷新来源列表', exact: true }).click(); await response }
     const force = async label => page.evaluate(label => { const region = document.querySelector('[aria-label="订阅来源管理"]'); const button = [...region.querySelectorAll('button')].find(button => button.textContent.trim() === label); assertButton(button); function assertButton(button) { if (!button) throw new Error('Missing force target'); const key = Object.keys(button).find(key => key.startsWith('__reactProps')); if (!key || typeof button[key].onClick !== 'function') throw new Error('Missing actual click handler'); button[key].onClick() } }, label)
     const shot = async name => {
-      if (!process.env.SINAN_UI_SCREENSHOT_DIR) return
+      if (!process.env.APSP_UI_SCREENSHOT_DIR) return
       if (await dialog.count()) {
         // Finish this finite entrance animation without advancing the mocked job/request clocks.
         const appearance = await dialog.evaluate(element => {
@@ -162,8 +162,8 @@ try {
         assert.equal(appearance.background, 'rgb(255, 255, 255)', 'capture must retain the shipped opaque dialog background')
         console.log(`SCREENSHOT: ${name} ${width} dialog=${appearance.opacity} shade=${appearance.shadeOpacity} background=${appearance.background}`)
       }
-      await mkdir(process.env.SINAN_UI_SCREENSHOT_DIR, { recursive: true })
-      await page.screenshot({ animations: 'disabled', path: resolve(process.env.SINAN_UI_SCREENSHOT_DIR, `sources-${name}-${width}.png`) })
+      await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true })
+      await page.screenshot({ animations: 'disabled', path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `sources-${name}-${width}.png`) })
     }
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes?view=sources`)

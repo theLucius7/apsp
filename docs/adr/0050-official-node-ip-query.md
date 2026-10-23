@@ -12,9 +12,9 @@
 
 ## 配置和凭证边界
 
-仅读取节点固定文件 `/etc/sinan/nodequality-providers.json`。父目录必须为 root 管理且其他用户不可写，文件必须是 root 的 0600 或 0400 普通文件，不跟随符号链接，最多 8 KiB。顶层字段恰为 `schema`、`providers`，schema 为 `sinan.node-ip-quality-config.v1`。providers 仅允许上述两个 provider id；每项恰为 `api_key`、`authorized`，授权必须明确为 true。未提供某来源、授权未确认、格式错误或文件不安全时，该来源为未知，任务不读取网页材料或自动补凭证。
+仅读取节点固定文件 `/etc/apsp/nodequality-providers.json`。父目录必须为 root 管理且其他用户不可写，文件必须是 root 的 0600 或 0400 普通文件，不跟随符号链接，最多 8 KiB。顶层字段恰为 `schema`、`providers`，schema 为 `apsp.node-ip-quality-config.v1`。providers 仅允许上述两个 provider id；每项恰为 `api_key`、`authorized`，授权必须明确为 true。未提供某来源、授权未确认、格式错误或文件不安全时，该来源为未知，任务不读取网页材料或自动补凭证。
 
-管理员通过自己的凭证管理流程写入配置；产品 API 不接收 key、自由 endpoint、命令或任意 JSON 适配器。私有 key 不出现在诊断任务、argv、环境变量、临时请求文件、日志、章节或最终报告。请求配置只通过 `/usr/bin/curl --disable --config -` 的 stdin 传入；`--disable` 必须是首选项，阻止继承 curlrc。清除代理和 SINAN 环境变量，使用空 proxy、noproxy 全匹配，不覆盖 UA，不跟随重定向，不重试，不忽略 TLS 验证。每次最多 6 秒、响应最多 64 KiB，helper 总时限 75 秒。
+管理员通过自己的凭证管理流程写入配置；产品 API 不接收 key、自由 endpoint、命令或任意 JSON 适配器。私有 key 不出现在诊断任务、argv、环境变量、临时请求文件、日志、章节或最终报告。请求配置只通过 `/usr/bin/curl --disable --config -` 的 stdin 传入；`--disable` 必须是首选项，阻止继承 curlrc。清除代理和 APSP 环境变量，使用空 proxy、noproxy 全匹配，不覆盖 UA，不跟随重定向，不重试，不忽略 TLS 验证。每次最多 6 秒、响应最多 64 KiB，helper 总时限 75 秒。
 
 ## 节点出口、任务和翻译
 
@@ -22,7 +22,7 @@
 
 专用 NodeQuality r21 和 `diagnostic:nodequality-node-query` capability 才能启动此模式；主线默认 r19 包装器保留完整执行准入与日常正式 IP 自查，r18 历史制品契约不改；r20 是另一离线准备制品。r20/r21 从完整的主线 r19 严格派生，保留其准入记录、来源 helper 与日常接口，使用独立签名身份，不改写 r19 字节。任务仍由公共诊断服务负责排队、90 秒截止、64 MiB / 32 tasks 预算、设备隔离、重复提交、报告历史和确认式取消。Agent adapter 只调用 SDK，不增加插件持久化。完整验机门禁继续保持。
 
-插件解释 `sinan.node-ip-quality.v1` 的独立 `ip_quality` 章节：固定 job UUID、来源、数据库、节点执行标识、冻结 IP 列表、观察出口、时间及 schema。只能接收登记字段；零数值和 false 保留。已提供字段类型错误或没有可信字段时，该来源为 schema_mismatch，不用其他有效字段掩盖错误。未配置、401/403/429、超时、响应不符均保持逐来源未知；错误展示由登记错误类别生成，不能回显上游错误的含凭证 URL。
+插件解释 `apsp.node-ip-quality.v1` 的独立 `ip_quality` 章节：固定 job UUID、来源、数据库、节点执行标识、冻结 IP 列表、观察出口、时间及 schema。只能接收登记字段；零数值和 false 保留。已提供字段类型错误或没有可信字段时，该来源为 schema_mismatch，不用其他有效字段掩盖错误。未配置、401/403/429、超时、响应不符均保持逐来源未知；错误展示由登记错误类别生成，不能回显上游错误的含凭证 URL。
 
 独立章节先持久化，然后释放 job 锁再写 IP 缓存，避免 job/server 锁倒序。相同章节版本与相同内容的 Agent outbox 重放再次写缓存，能修复章节已经提交、缓存写入失败的情况；旧版本、同版本冲突和 complete 回退不覆盖新结果。缓存沿用 `(server, ip, provider, database)` 的上次成功、时间和有效期，失败、凭证删除及面板重建不清掉历史。
 

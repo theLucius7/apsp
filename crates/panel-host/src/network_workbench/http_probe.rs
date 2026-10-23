@@ -1,8 +1,8 @@
 //! Bounded HTTP/1.1 observations measured on the connection serving the request.
 use super::models::{Check, Execution, Family};
 use crate::error::{ApiError, ApiResult};
+use apsp_protocol::now_timestamp;
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 use std::{
     net::IpAddr,
     sync::Arc,
@@ -181,7 +181,7 @@ where
         path.push_str(query);
     }
     let message = format!(
-        "GET {path} HTTP/1.1\r\nHost: {authority}\r\n{agent_header}: sinan-panel/{}\r\nAccept: */*\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n",
+        "GET {path} HTTP/1.1\r\nHost: {authority}\r\n{agent_header}: apsp-panel/{}\r\nAccept: */*\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n",
         env!("CARGO_PKG_VERSION"),
         agent_header = reqwest::header::USER_AGENT.as_str(),
     );

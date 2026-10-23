@@ -1,7 +1,7 @@
 //! Official node IP translation; diagnostic service owns execution and history.
 use super::*;
+use apsp_protocol::DiagnosticSectionUpdate;
 use sha2::{Digest, Sha256};
-use sinan_protocol::DiagnosticSectionUpdate;
 
 mod parsing;
 #[cfg(test)]
@@ -9,7 +9,7 @@ mod tests;
 
 pub const NODE_QUERY_VERSION: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r21";
 pub const NODE_QUERY_CAPABILITY: &str = "diagnostic:nodequality-node-query";
-const SCHEMA: &str = "sinan.node-ip-quality.v1";
+const SCHEMA: &str = "apsp.node-ip-quality.v1";
 
 fn public_node_ip(ip: std::net::IpAddr) -> bool {
     if !ip_quality::public_ip(ip) {

@@ -12,20 +12,20 @@ import sys
 
 MAX_FILE = 2 * 1024 * 1024
 MAX_BUNDLE = 8 * 1024 * 1024
-OFFICIAL_IP_SHA256 = '59f3e49dd9e736db0cadb573c4c9c3a590ae745f95c9b8d7f7b89a952603dd43'
-OPENAI_POLICY_SHA256 = '1def74828e5414ad41f184f45e821fb686ed9898b3ed665663acc978ed191928'
-NETFLIX_POLICY_SHA256 = 'b928c6d4ac92b26f72207914d269b5154f09441bad3ca9eb5f036654f20f5eb7'
-ACCESS_POLICY_SHA256 = '83db5e84f2c2c793eb4eff0d43ba0e439b196ab7a940a2a293d9b513860985b9'
-QUERY_POLICY_SHA256 = 'e4ec8e34c9264b25b64d5ec6252f419762493be9b928d96beaba7addffe3aa00'
-BROWSER_POLICY_SHA256 = '04de9983ccbe2a7651011e3b05b1092cd0a25af950ff3a97f583536f4c693ef1'
-IP_SCORE_POLICY_SHA256 = 'f5ae90c823d6b6d993c9254369220f6128ac7169f41b557c603ab00f184f245f'
-RANKING_POLICY_SHA256 = '6f46038c22267108b4572b1f1382a5deb779ecd51d90b0910c2a90f3ef122d59'
-LOADER_POLICY_SHA256 = '189fda7f90cd91df37ddfecf206c15137d823128a75e7b22c850abb2e2a2fe92'
+OFFICIAL_IP_SHA256 = 'b0de7a19cbe01a3cd6a1f4c00902bf97f36e99fce63933c95064eb44b2867be8'
+OPENAI_POLICY_SHA256 = 'b7390471a552dee857414214dec3d5c5f5870caab27a357ef4b66780474ded7b'
+NETFLIX_POLICY_SHA256 = '9b1a56cd71af3370d990d89be5c1a937a8de6f788f1e2da2e86738e42db0cd22'
+ACCESS_POLICY_SHA256 = '7520a325667855eaa9ab3535a3d65045e9a6ee006b6eae39e1cf2653908c4b2b'
+QUERY_POLICY_SHA256 = 'fe459061e903f815369f637a42e5197661f160c0ec2a1b24915317a37e68453b'
+BROWSER_POLICY_SHA256 = '0b4ad0d200bae6b6919f5ae3d2b69b1c46c7f388dc29f4d4f25e95d6ec3c9723'
+IP_SCORE_POLICY_SHA256 = '9ef1a5cf9a6c442d5abdf8ee91f2b42458c940a49f74c6d13a649cc5fb2ce303'
+RANKING_POLICY_SHA256 = '4b6bdcfb8f03268479fd5eb70a00cdebb25b8fcab513dfc62bff226dd450d6c8'
+LOADER_POLICY_SHA256 = '4a5c75b5756df7f3959229fbcfc61c467adc46bec2f232d911bf8e09a1173cab'
 DATA_POLICY_SHA256 = '0115f90f8ce521eab1472d8426b8f8dfbf1fefca427ae0fdfd557b346a8fdab3'
-DEPENDENCY_POLICY_SHA256 = '9424dded5fd6c74ff9888fa6e2e3d9482fe8db144fa4c572682fca3f8cf5b5de'
-REPORT_POLICY_SHA256 = '0c66e702084820e399a16b18b51ba331cd8edd406dd96ede7c2ee84f78c30245'
+DEPENDENCY_POLICY_SHA256 = '15e9ead93061a7bd2da3bf54a7244123ec6b4e1161695317a5fb9b539399d2b6'
+REPORT_POLICY_SHA256 = '468311a213e820f920a9f556dfaaf6883002232d459c9e36d2622db2d7b43b26'
 REPORT_ROLES = frozenset({'hardware.sh', 'ip.sh', 'net.sh'})
-SWAP_POLICY_SHA256 = '1d6acda7821d013773b273d77db12973d7075631b0309614dadb9c5cfc09ff24'
+SWAP_POLICY_SHA256 = '63518145aa8e15d7778c6d2a26f54e6d7349d718b4cff244ec1d81c32b8d8187'
 FILES = {
     'NodeQuality.sh': ('LloydAsp/NodeQuality', 'NodeQuality.sh', 'LICENSE.nodequality'),
     'header.sh': ('LloydAsp/NodeQuality', 'part/header.sh', 'LICENSE.nodequality'),
@@ -179,7 +179,7 @@ def report_policy():
     content = ordinary(path, 65536)
     if hashlib.sha256(content).hexdigest() != REPORT_POLICY_SHA256:
         raise ValueError('signed report policy helper SHA256 mismatch')
-    namespace = {'__name__': 'sinan_report_policy', '__file__': str(path)}
+    namespace = {'__name__': 'apsp_report_policy', '__file__': str(path)}
     # Execute only the exact verified helper bytes, never a second path lookup.
     # Its bounded transform does not execute upstream code or perform I/O.
     exec(compile(content, str(path), 'exec'), namespace)
@@ -191,7 +191,7 @@ def swap_policy():
     content = ordinary(path, 65536)
     if hashlib.sha256(content).hexdigest() != SWAP_POLICY_SHA256:
         raise ValueError('signed swap policy helper SHA256 mismatch')
-    namespace = {'__name__': 'sinan_swap_policy', '__file__': str(path)}
+    namespace = {'__name__': 'apsp_swap_policy', '__file__': str(path)}
     exec(compile(content, str(path), 'exec'), namespace)
     return namespace
 
@@ -210,7 +210,7 @@ def dependency_policy():
     content = ordinary(path, 65536)
     if hashlib.sha256(content).hexdigest() != DEPENDENCY_POLICY_SHA256:
         raise ValueError('signed dependency policy helper SHA256 mismatch')
-    namespace = {'__name__': 'sinan_dependency_policy', '__file__': str(path)}
+    namespace = {'__name__': 'apsp_dependency_policy', '__file__': str(path)}
     exec(compile(content, str(path), 'exec'), namespace)
     return namespace
 
@@ -241,7 +241,7 @@ def loader_policy():
     content = ordinary(path, 65536)
     if hashlib.sha256(content).hexdigest() != LOADER_POLICY_SHA256:
         raise ValueError('signed loader policy helper SHA256 mismatch')
-    namespace = {'__name__': 'sinan_loader_policy', '__file__': str(path)}
+    namespace = {'__name__': 'apsp_loader_policy', '__file__': str(path)}
     exec(compile(content, str(path), 'exec'), namespace)
     return namespace
 
@@ -251,7 +251,7 @@ def data_policy():
     content = ordinary(path, 65536)
     if hashlib.sha256(content).hexdigest() != DATA_POLICY_SHA256:
         raise ValueError('signed static data policy helper SHA256 mismatch')
-    namespace = {'__name__': 'sinan_data_policy', '__file__': str(path)}
+    namespace = {'__name__': 'apsp_data_policy', '__file__': str(path)}
     exec(compile(content, str(path), 'exec'), namespace)
     return namespace
 
@@ -261,7 +261,7 @@ def ranking_policy():
     content = ordinary(path, 65536)
     if hashlib.sha256(content).hexdigest() != RANKING_POLICY_SHA256:
         raise ValueError('signed ranking policy helper SHA256 mismatch')
-    namespace = {'__name__': 'sinan_ranking_policy', '__file__': str(path)}
+    namespace = {'__name__': 'apsp_ranking_policy', '__file__': str(path)}
     exec(compile(content, str(path), 'exec'), namespace)
     return namespace
 
@@ -271,7 +271,7 @@ def query_policy():
     content = ordinary(path, 65536)
     if hashlib.sha256(content).hexdigest() != QUERY_POLICY_SHA256:
         raise ValueError('signed query policy helper SHA256 mismatch')
-    namespace = {'__name__': 'sinan_query_policy', '__file__': str(path)}
+    namespace = {'__name__': 'apsp_query_policy', '__file__': str(path)}
     exec(compile(content, str(path), 'exec'), namespace)
     return namespace
 
@@ -281,7 +281,7 @@ def access_policy():
     content = ordinary(path, 65536)
     if hashlib.sha256(content).hexdigest() != ACCESS_POLICY_SHA256:
         raise ValueError('signed provider access policy helper SHA256 mismatch')
-    namespace = {'__name__': 'sinan_access_policy', '__file__': str(path)}
+    namespace = {'__name__': 'apsp_access_policy', '__file__': str(path)}
     exec(compile(content, str(path), 'exec'), namespace)
     return namespace
 
@@ -313,7 +313,7 @@ def browser_policy():
     content = ordinary(path, 65536)
     if hashlib.sha256(content).hexdigest() != BROWSER_POLICY_SHA256:
         raise ValueError('signed browser policy helper SHA256 mismatch')
-    namespace = {'__name__': 'sinan_browser_policy', '__file__': str(path)}
+    namespace = {'__name__': 'apsp_browser_policy', '__file__': str(path)}
     exec(compile(content, str(path), 'exec'), namespace)
     return namespace
 
@@ -334,7 +334,7 @@ def ip_score_policy():
     content = ordinary(path, 65536)
     if hashlib.sha256(content).hexdigest() != IP_SCORE_POLICY_SHA256:
         raise ValueError('signed IP score policy helper SHA256 mismatch')
-    namespace = {'__name__': 'sinan_ip_score_policy', '__file__': str(path)}
+    namespace = {'__name__': 'apsp_ip_score_policy', '__file__': str(path)}
     exec(compile(content, str(path), 'exec'), namespace)
     return namespace
 
@@ -355,7 +355,7 @@ def netflix_policy():
     content = ordinary(path, 65536)
     if hashlib.sha256(content).hexdigest() != NETFLIX_POLICY_SHA256:
         raise ValueError('signed Netflix policy helper SHA256 mismatch')
-    namespace = {'__name__': 'sinan_netflix_policy', '__file__': str(path)}
+    namespace = {'__name__': 'apsp_netflix_policy', '__file__': str(path)}
     exec(compile(content, str(path), 'exec'), namespace)
     return namespace
 
@@ -376,7 +376,7 @@ def openai_policy():
     content = ordinary(path, 65536)
     if hashlib.sha256(content).hexdigest() != OPENAI_POLICY_SHA256:
         raise ValueError('signed OpenAI policy helper SHA256 mismatch')
-    namespace = {'__name__': 'sinan_openai_policy', '__file__': str(path)}
+    namespace = {'__name__': 'apsp_openai_policy', '__file__': str(path)}
     exec(compile(content, str(path), 'exec'), namespace)
     return namespace
 

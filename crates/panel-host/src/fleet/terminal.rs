@@ -2,6 +2,10 @@ use crate::{
     AppState, auth,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::{
+    fleet::{TERMINAL_CAPABILITY, TerminalControl, TerminalEvent, TerminalInput},
+    now_timestamp,
+};
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -10,10 +14,6 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sinan_protocol::{
-    fleet::{TERMINAL_CAPABILITY, TerminalControl, TerminalEvent, TerminalInput},
-    now_timestamp,
-};
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
@@ -254,7 +254,7 @@ pub async fn input(
     let row=sqlx::query("SELECT account,policy FROM fleet_terminal_sessions WHERE id=$1 AND admin_id=$2 AND admin_session_hash=$3 AND NOT close_requested AND status IN ('queued','running') AND expires_at>$4 FOR UPDATE")
         .bind(id).bind(admin).bind(&hash).bind(now_timestamp()).fetch_optional(&mut *tx).await?.ok_or_else(||ApiError::Conflict("终端已关闭或超时".into()))?;
     let account: String = row.get("account");
-    let original: sinan_protocol::fleet::AccessPolicy =
+    let original: apsp_protocol::fleet::AccessPolicy =
         serde_json::from_value(row.get("policy")).map_err(anyhow::Error::from)?;
     let current = super::policy(&mut tx, server).await?;
     if !original.terminal_accounts.contains(&account)

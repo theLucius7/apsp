@@ -7,10 +7,10 @@ mod path_probe;
 
 use crate::{artifacts::PanelClient, config::Config, state::SharedState};
 use anyhow::{Context, Result};
+use apsp_adapter_sdk::{Adapter, Plan, Prepared, Privileged, RuntimeSpec, ServiceManager};
+use apsp_protocol::release::{ReleaseError, TrustedKeys};
+use apsp_protocol::{ApplyResult, ApplyStatus, ModuleManifest};
 use serde::{Deserialize, Serialize};
-use sinan_adapter_sdk::{Adapter, Plan, Prepared, Privileged, RuntimeSpec, ServiceManager};
-use sinan_protocol::release::{ReleaseError, TrustedKeys};
-use sinan_protocol::{ApplyResult, ApplyStatus, ModuleManifest};
 use std::{future::Future, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::timeout};
 use uuid::Uuid;

@@ -425,7 +425,7 @@ def http_request(check, url, websocket=False):
         if parsed.query:
             path += "?" + parsed.query
         key = base64.b64encode(secrets.token_bytes(16)).decode()
-        headers = "Host: " + parsed.netloc + "\r\nUser-Agent: Sinan-Workbench/" + VERSION + "\r\n"
+        headers = "Host: " + parsed.netloc + "\r\nUser-Agent: Apsp-Workbench/" + VERSION + "\r\n"
         if websocket:
             headers += "Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: " + key + "\r\nSec-WebSocket-Version: 13\r\n"
         else:
@@ -654,12 +654,12 @@ def external(check):
         require(any(directory == p or p in directory.parents for p in allowed), "disk test outside configured allowlist")
         free = os.statvfs(directory).f_bavail * os.statvfs(directory).f_frsize
         require(free > check["file_bytes"] + 2 * 1024 * 1024 * 1024, "disk reserve insufficient")
-        descriptor, filename = tempfile.mkstemp(prefix="sinan-fio-", dir=directory)
+        descriptor, filename = tempfile.mkstemp(prefix="apsp-fio-", dir=directory)
         FILE_FDS.append(descriptor)
         CREATED.append(Path(filename))
         os.unlink(filename)
         os.ftruncate(descriptor, check["file_bytes"])
-        args = [program, "--name=sinan-acceptance", "--filename=/proc/self/fd/" + str(descriptor), "--size=" + str(check["file_bytes"]), "--bs=" + str(check["block_bytes"]), "--iodepth=" + str(check["queue_depth"]), "--rw=" + check["mode"], "--rwmixread=" + str(check["read_percent"]), "--runtime=" + str(check["duration_secs"]), "--time_based", "--direct=1", "--ioengine=libaio", "--output-format=json", "--group_reporting"]
+        args = [program, "--name=apsp-acceptance", "--filename=/proc/self/fd/" + str(descriptor), "--size=" + str(check["file_bytes"]), "--bs=" + str(check["block_bytes"]), "--iodepth=" + str(check["queue_depth"]), "--rw=" + check["mode"], "--rwmixread=" + str(check["read_percent"]), "--runtime=" + str(check["duration_secs"]), "--time_based", "--direct=1", "--ioengine=libaio", "--output-format=json", "--group_reporting"]
     elif kind == "stability":
         args = [program, "--timeout", str(check["duration_secs"]) + "s", "--metrics-brief"]
         if check["cpu_workers"]:
@@ -866,7 +866,7 @@ def main():
     parser.add_argument("--preflight", action="store_true")
     args = parser.parse_args()
     if args.version:
-        print("sinan-network-workbench " + VERSION)
+        print("apsp-network-workbench " + VERSION)
         return 0
     EXECUTION = json.loads(Path(args.input).read_text())
     MANIFEST = json.loads(Path(args.manifest).read_text())
@@ -890,7 +890,7 @@ def main():
     section("workbench_scope", {"execution": EXECUTION, "listener_ready": False}, True)
     check = EXECUTION["check"]
     report = {"schema": 1, "source": EXECUTION["source_label"], "target": (EXECUTION.get("target") or {}).get("host", check.get("receiver_host", "")),
-              "method": check["kind"], "tool": tool_name(check) or "sinan-network-workbench", "tool_version": check.get("tool_version", MANIFEST.get("tools", {}).get(tool_name(check), {}).get("version", VERSION)),
+              "method": check["kind"], "tool": tool_name(check) or "apsp-network-workbench", "tool_version": check.get("tool_version", MANIFEST.get("tools", {}).get(tool_name(check), {}).get("version", VERSION)),
               "parameters": check, "collected_at": int(time.time()), "status": "failed", "data": {}, "raw_output": "", "error": None,
               "cleanup": {"process_stopped": False, "files_removed": False, "listeners_closed": False}}
     try:

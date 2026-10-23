@@ -1,6 +1,6 @@
 use anyhow::Result;
-use sinan_adapter_sdk::Privileged;
-use sinan_protocol::{DiskMetrics, GpuMetrics, Metrics};
+use apsp_adapter_sdk::Privileged;
+use apsp_protocol::{DiskMetrics, GpuMetrics, Metrics};
 use std::{
     collections::BTreeMap,
     path::Path,

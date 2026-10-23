@@ -59,7 +59,7 @@ mod tests {
 
     #[tokio::test]
     async fn payload_guard_rejects_unlimited_missing_and_relaxed_cpu_ceilings() -> Result<()> {
-        let directory = std::env::temp_dir().join(format!("sinan-cpu-guard-{}", Uuid::new_v4()));
+        let directory = std::env::temp_dir().join(format!("apsp-cpu-guard-{}", Uuid::new_v4()));
         fs::create_dir_all(directory.join("bounded"))?;
         let cgroup = directory.join("membership");
         let status = directory.join("status");

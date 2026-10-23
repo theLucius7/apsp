@@ -1,15 +1,15 @@
 #![forbid(unsafe_code)]
 
-use serde_json::{Value, json};
-use sinan_protocol::{
+use apsp_protocol::{
     ProbeAddressFamily, ProbeAuthorization, ProbeAuthorizationKind, ProbeMonitor, ProbeSpec,
 };
+use serde_json::{Value, json};
 
 #[allow(dead_code)]
 pub fn authorize(spec: &mut ProbeSpec) {
     let identity = spec.identity();
     spec.monitor = Some(ProbeMonitor {
-        network: sinan_protocol::ProbeNetwork::Other,
+        network: apsp_protocol::ProbeNetwork::Other,
         region: String::new(),
         address_family: ProbeAddressFamily::Any,
         authorization: Some(ProbeAuthorization {
@@ -37,10 +37,10 @@ pub async fn issued(
     base: &str,
     server: i64,
     token: &str,
-) -> anyhow::Result<sinan_protocol::ProbeLease> {
+) -> anyhow::Result<apsp_protocol::ProbeLease> {
     sqlx::query("UPDATE servers SET capabilities=capabilities || $2 WHERE id=$1")
         .bind(server)
-        .bind(json!([sinan_protocol::PROBE_LEASE_CAPABILITY]))
+        .bind(json!([apsp_protocol::PROBE_LEASE_CAPABILITY]))
         .execute(pool)
         .await?;
     Ok(client
@@ -55,10 +55,10 @@ pub async fn issued(
 
 #[allow(dead_code)]
 pub fn execution(
-    lease: &sinan_protocol::ProbeLease,
+    lease: &apsp_protocol::ProbeLease,
     id: uuid::Uuid,
-) -> anyhow::Result<sinan_protocol::ProbeExecution> {
-    Ok(sinan_protocol::ProbeExecution {
+) -> anyhow::Result<apsp_protocol::ProbeExecution> {
+    Ok(apsp_protocol::ProbeExecution {
         lease_id: lease.id,
         revision: lease.revision,
         issued_at: lease.issued_at,

@@ -1,5 +1,5 @@
 use super::*;
-use sinan_adapter_sdk::{DiagnosticMemory, DiagnosticResources};
+use apsp_adapter_sdk::{DiagnosticMemory, DiagnosticResources};
 use std::path::{Component, PathBuf};
 use tokio::io::AsyncReadExt;
 

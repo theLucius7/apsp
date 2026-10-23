@@ -4,7 +4,7 @@ use crate::{
     diagnostics::service::SectionContext,
     error::ApiResult,
 };
-use sinan_protocol::DiagnosticSectionUpdate;
+use apsp_protocol::DiagnosticSectionUpdate;
 
 pub(super) fn validate(
     context: &SectionContext<'_>,

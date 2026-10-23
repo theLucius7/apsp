@@ -53,17 +53,14 @@ pub(super) fn preparation(node: &Node, compiled: Option<&Value>, now: i64) -> Va
         "acme_storage".to_owned(),
         "service_manager".to_owned(),
         "capability:singbox".to_owned(),
+        format!("capability:{}", apsp_protocol::fleet::OPERATIONS_CAPABILITY),
         format!(
             "capability:{}",
-            sinan_protocol::fleet::OPERATIONS_CAPABILITY
+            apsp_protocol::fleet::RUNTIME_PREFLIGHT_CAPABILITY
         ),
         format!(
             "capability:{}",
-            sinan_protocol::fleet::RUNTIME_PREFLIGHT_CAPABILITY
-        ),
-        format!(
-            "capability:{}",
-            sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY
+            apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY
         ),
         format!("dns:{}", node.id),
     ];

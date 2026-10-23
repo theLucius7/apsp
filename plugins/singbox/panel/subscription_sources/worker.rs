@@ -9,7 +9,7 @@ use crate::{
     error::ApiResult,
     subscription_parser::{self, FormatHint, PARSER_VERSION},
 };
-use sinan_protocol::now_timestamp;
+use apsp_protocol::now_timestamp;
 use sqlx::{FromRow, PgConnection};
 use std::{
     collections::{BTreeSet, HashMap},

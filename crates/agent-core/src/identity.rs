@@ -1,8 +1,8 @@
 use crate::{Config, config::validate_panel_url, telemetry::Collector};
 use anyhow::Context;
+use apsp_protocol::{EnrollRequest, EnrollResponse};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::SigningKey;
-use sinan_protocol::{EnrollRequest, EnrollResponse};
 use std::{
     fs::{self, OpenOptions},
     io::Write,
@@ -40,7 +40,7 @@ pub async fn enroll(config: &Config, token: &str) -> anyhow::Result<i64> {
     );
     #[cfg(windows)]
     {
-        use sinan_adapter_sdk::Privileged;
+        use apsp_adapter_sdk::Privileged;
         crate::system::SystemOps
             .create_dir(&config.identity_dir, 0o700, None)
             .await?;

@@ -27,7 +27,7 @@ fn row(amount: &str, currency: &str) -> Value {
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn balance_cache_avoids_repeat_calls_and_retains_stale_value_on_error(pool: PgPool) {
     let (a, _) = seed(&pool).await;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let mock = Mock::start(vec![
         balance(json!({"AvailableAmount":"1,234.5600","Currency":"USD"})),
         balance(json!({"AvailableAmount":"0"})),
@@ -102,7 +102,7 @@ async fn incomplete_bills_wrong_resource_and_repeated_pages_never_replace_valid_
     pool: PgPool,
 ) {
     let (_, r) = seed(&pool).await;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let month = billing::month(now);
     let mut wrong = row("1.00", "CNY");
     wrong["InstanceID"] = "i-other-test".into();

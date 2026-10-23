@@ -1,5 +1,5 @@
 use super::*;
-use sinan_protocol::release::canonical_asset_name;
+use apsp_protocol::release::canonical_asset_name;
 use std::sync::Mutex;
 
 pub(super) fn multi_arch_bundle() -> Result<Bundle> {
@@ -8,7 +8,7 @@ pub(super) fn multi_arch_bundle() -> Result<Bundle> {
         ("arm64", b"arm agent".as_slice(), b"arm runtime".as_slice()),
         ("amd64", b"amd agent".as_slice(), b"amd runtime".as_slice()),
     ] {
-        let mut entry = signing::entry("agent", "0.3.0", "sinan-agent", "raw", agent, agent);
+        let mut entry = signing::entry("agent", "0.3.0", "apsp-agent", "raw", agent, agent);
         entry.arch = arch.into();
         entry.asset_name = canonical_asset_name(&entry)?;
         artifacts.push((entry, agent.to_vec()));
@@ -94,7 +94,7 @@ async fn arm_import_downloads_only_arm_and_can_append_amd_without_redownloading(
     assert_eq!(update.version, "0.3.0");
     assert_eq!(
         update.artifact.url,
-        "https://github.com/theLucius7/sinan/releases/download/agent-v0.3.0/agent-0.3.0-linux-musl-amd64"
+        "https://github.com/theLucius7/apsp/releases/download/agent-v0.3.0/agent-0.3.0-linux-musl-amd64"
     );
     assert_eq!(update.artifact.sha256, signing::hash(b"amd agent"));
     assert_eq!(update.artifact.proof, Some(bundle.proof.clone()));

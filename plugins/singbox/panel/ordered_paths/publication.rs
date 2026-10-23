@@ -3,9 +3,9 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_compiler::{ManagedAcceptance, Node, OrderedPath, ProbeControl, Relay};
+use apsp_protocol::RuntimeBinding;
 use serde_json::{Value, json};
-use sinan_compiler::{ManagedAcceptance, Node, OrderedPath, ProbeControl, Relay};
-use sinan_protocol::RuntimeBinding;
 use sqlx::{Postgres, Transaction};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -94,7 +94,7 @@ pub(crate) async fn validate_candidate(
             listen_port: 18086,
             secret: "0".repeat(64),
         });
-        sinan_compiler::compile_server_with_paths(&nodes, &[], &paths, &local, control.as_ref())
+        apsp_compiler::compile_server_with_paths(&nodes, &[], &paths, &local, control.as_ref())
             .map_err(|error| ApiError::BadRequest(format!("候选配置无法编译：{error}")))?;
     }
     Ok(())
@@ -236,7 +236,7 @@ pub(crate) async fn plan(
                 } else {
                     let path =
                         storage::compiler_path(chain.id, *generation, &version.snapshot, active);
-                    tags.extend(sinan_compiler::required_build_tags(&path));
+                    tags.extend(apsp_compiler::required_build_tags(&path));
                     let probes:Vec<(Uuid,String)>=sqlx::query_as("SELECT probe_id,stage FROM singbox_path_probes WHERE chain_id=$1 AND generation=$2 ORDER BY stage").bind(chain.id).bind(generation).fetch_all(&mut **tx).await?;
                     for (probe_id, _) in probes {
                         bindings.push(json!({"id":probe_id.to_string(),"selector":path.final_tag(),"target":storage::probe_target(state)?}));
@@ -423,7 +423,7 @@ pub(crate) fn source(plan: &Plan) -> ApiResult<Value> {
             node.users.iter().map(move |access| AccountingUser {
                 user_id: access.user_id,
                 node_id: node.id,
-                stat_name: sinan_compiler::stat_name(access.user_id, node.id),
+                stat_name: apsp_compiler::stat_name(access.user_id, node.id),
             })
         })
         .collect();

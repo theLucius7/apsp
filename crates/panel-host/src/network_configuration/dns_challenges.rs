@@ -65,7 +65,7 @@ async fn create(
     if !domain_ids.contains(&input.domain_id) {
         return Err(ApiError::BadRequest("域名不属于该证书".into()));
     }
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     if input.value.len() != 43
         || !input
             .value
@@ -133,7 +133,7 @@ async fn run(
     let config = documents::configuration(&documents::load(&state, certificate_id).await?)?;
     documents::access(&state, &headers, &config, true).await?;
     let expires_at: i64 = row.get("expires_at");
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     if !cleanup && expires_at <= now {
         return Err(ApiError::Conflict("验证挑战已过期，仅允许清理".into()));
     }

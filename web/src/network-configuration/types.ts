@@ -12,7 +12,7 @@ export function template(kind: Kind, server = 0): Draft {
     case 'domain': return { kind, name: '', server_ids: server ? [server] : [], ddns_rule_ids: [], applications: [], maintainer: '', notes: '' }
     case 'certificate': return { kind, name: '', domain_ids: [], maintainer: '', issuer: '', targets: [], renewal: { mode: 'external', responsibility: '' } }
     case 'endpoint': return { kind, name: '', server_id: server || null, listen_address: '127.0.0.1', public_address: null, port: 443, protocol: 'tcp', owner: 'external', notes: '' }
-    case 'forwarding': return { kind, name: '', server_id: server, listen_address: '127.0.0.1', listen_port: 8080, target_address: '127.0.0.1', target_port: 80, protocol: 'tcp', owner: 'sinan', enabled: false, dependency_ids: [] }
+    case 'forwarding': return { kind, name: '', server_id: server, listen_address: '127.0.0.1', listen_port: 8080, target_address: '127.0.0.1', target_port: 80, protocol: 'tcp', owner: 'apsp', enabled: false, dependency_ids: [] }
     case 'tuning': return { kind, name: '', server_id: server, parameters: { 'net.ipv4.tcp_congestion_control': 'cubic' }, restore_after_secs: 180, purpose: '' }
     case 'tunnel': return { kind, name: '', server_id: server, relay_address: '', relay_port: 22, relay_account: '', relay_host_key: '', listen_address: '127.0.0.1', listen_port: 8080, target_address: '127.0.0.1', target_port: 80, enabled: false }
     case 'mesh': return { kind, name: '', server_id: server, address: '10.17.0.1/24', listen_port: 51820, peers: [] }

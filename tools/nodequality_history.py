@@ -44,7 +44,7 @@ def native_source(name):
 def rootfs_module():
     path = DIRECTORY / 'rootfs.py'
     content = source('rootfs.py')
-    namespace = {'__name__': 'sinan_historical_rootfs', '__file__': str(path)}
+    namespace = {'__name__': 'apsp_historical_rootfs', '__file__': str(path)}
     # Compile the verified bytes directly; do not reload a mutable path.
     exec(compile(content, str(path), 'exec'), namespace)
     return SimpleNamespace(**namespace)

@@ -82,7 +82,7 @@ impl Privileged for RecordingOps {
 
 fn job() -> Result<ServiceJob> {
     Ok(serde_json::from_value(serde_json::json!({
-        "unit": format!("sinan-diagnostic-{}.service", Uuid::new_v4()),
+        "unit": format!("apsp-diagnostic-{}.service", Uuid::new_v4()),
         "program": "/usr/bin/true",
         "args": [],
         "working_directory": "/tmp",
@@ -106,7 +106,7 @@ async fn unsafe_lock_directory_metadata_prevents_service_start() -> Result<()> {
             calls: Mutex::new(Vec::new()),
         });
         let services = SystemServiceManager::new(ops.clone(), backend)
-            .with_job_root(std::env::temp_dir().join(format!("sinan-lock-{}", Uuid::new_v4())));
+            .with_job_root(std::env::temp_dir().join(format!("apsp-lock-{}", Uuid::new_v4())));
         assert!(
             services.start_job(&job()?).await.is_err(),
             "{backend:?}: {metadata}"
@@ -133,7 +133,7 @@ async fn service_starts_prepare_private_lock_and_private_umask() -> Result<()> {
         calls: Mutex::new(Vec::new()),
     });
     let services = SystemServiceManager::new(ops.clone(), backend)
-        .with_job_root(std::env::temp_dir().join(format!("sinan-lock-{}", Uuid::new_v4())));
+        .with_job_root(std::env::temp_dir().join(format!("apsp-lock-{}", Uuid::new_v4())));
     services.start_job(&job()?).await?;
     let calls = ops.calls.lock().unwrap();
     assert!(
@@ -164,7 +164,7 @@ async fn real_systemd_diagnostic_lock_blocks_unprivileged_open_and_preserves_hel
     ensure!(cfg!(target_os = "linux"), "requires Linux");
     let ops = SystemOps;
     prepare_diagnostic_lock(&ops).await?;
-    let directory = std::env::temp_dir().join(format!("sinan-lock-test-{}", Uuid::new_v4()));
+    let directory = std::env::temp_dir().join(format!("apsp-lock-test-{}", Uuid::new_v4()));
     fs::create_dir(&directory)?;
     let ready = directory.join("ready");
     let mut holder = ops.spawn_managed(Path::new("python3"), &[

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, ensure};
-use sinan_adapter_sdk::{BoxFuture, TerminalProcess};
+use apsp_adapter_sdk::{BoxFuture, TerminalProcess};
 use std::process::Stdio;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines},
@@ -30,7 +30,7 @@ pub(super) async fn open(
         std::path::Path::new("/run/systemd/system").is_dir(),
         "PTY process cleanup requires Linux systemd"
     );
-    let unit = format!("sinan-fleet-terminal-{}.service", uuid::Uuid::new_v4());
+    let unit = format!("apsp-fleet-terminal-{}.service", uuid::Uuid::new_v4());
     let mut child = Command::new("systemd-run")
         .args([
             "--quiet",

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use sinan_adapter_sdk::RuntimeSpec;
+use apsp_adapter_sdk::RuntimeSpec;
 use std::{
     collections::BTreeSet,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},

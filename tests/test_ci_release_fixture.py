@@ -25,9 +25,9 @@ def windows_open(path, mode="r", buffering=-1, encoding=None, errors=None, newli
 
 class SignedFixtureTests(unittest.TestCase):
     def test_installed_proof_preserves_signed_bytes_under_windows_text_mode(self):
-        proof = FIXTURE["proof"]("agent", "0.3.0", "sinan-agent.exe", b"TEST ONLY Agent",
+        proof = FIXTURE["proof"]("agent", "0.3.0", "apsp-agent.exe", b"TEST ONLY Agent",
                                  arch="windows-arm64")
-        with tempfile.TemporaryDirectory(prefix="sinan-proof-bytes-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="apsp-proof-bytes-") as temporary:
             root = Path(temporary)
             with patch.object(Path, "open", windows_open):
                 FIXTURE["install"](root, proof)

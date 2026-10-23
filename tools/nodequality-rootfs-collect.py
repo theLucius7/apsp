@@ -28,7 +28,7 @@ import urllib.request
 
 
 HERE = Path(__file__).resolve()
-spec = importlib.util.spec_from_file_location('sinan_rootfs_build', HERE.with_name('nodequality-rootfs-build.py'))
+spec = importlib.util.spec_from_file_location('apsp_rootfs_build', HERE.with_name('nodequality-rootfs-build.py'))
 BUILD = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(BUILD)
 
@@ -40,7 +40,7 @@ MIN_FREE = 512 * 1024**2
 FAILURE_EVIDENCE_SECONDS = 2
 REQUEST_FIELDS = {'schema', 'arch', 'source_epoch', 'repositories'}
 REPOSITORY_FIELDS = {'id', 'archive', 'timestamp', 'suite'}
-COLLECTION_KIND = 'sinan-nodequality-debian-input-collection'
+COLLECTION_KIND = 'apsp-nodequality-debian-input-collection'
 BASE_ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C', 'LC_ALL': 'C'}
 APTPATH = '/usr/bin/apt-get'
 

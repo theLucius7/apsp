@@ -5,11 +5,11 @@ mod business_support;
 mod release_support;
 
 use anyhow::Result;
+use apsp_panel::usage;
+use apsp_protocol::{Envelope, UsageAck, UsageBatch, UsageRecord};
 use business_support::{TestPanel, id, receive_envelope, send_envelope};
 use reqwest::{Method, StatusCode};
 use serde_json::Value;
-use sinan_panel::usage;
-use sinan_protocol::{Envelope, UsageAck, UsageBatch, UsageRecord};
 use sqlx::PgPool;
 use uuid::Uuid;
 

@@ -261,7 +261,7 @@ def pack_files(path, files, maximum, guard, runner=False):
 
 
 def source_files(bundle_path, review_path, guard):
-    helper = artifact.module('sinan_node_ip_source', artifact.PLUGIN / 'source-helper.py')
+    helper = artifact.module('apsp_node_ip_source', artifact.PLUGIN / 'source-helper.py')
     bundle = helper.decode_bundle(read(bundle_path, artifact.MAX_SOURCE, guard))
     original = helper.bundle_files(bundle)
     transformed = helper.transform_files(original)
@@ -298,7 +298,7 @@ def augment(archive_path, manifest_bytes, transformed, arch, directory, guard):
     added = {artifact.LIB + name: content for name, content in transformed.items()
              if name in ('patched-ip.sh', 'transport.py', 'ip-iso3166.json', 'ip-dnsbl.list')}
     artifact.ensure(len(added) == 4, 'fixed four-role IPQuality overlay is incomplete')
-    added['usr/local/bin/curl'] = b'#!/bin/sh\nexec /usr/bin/python3 /usr/local/lib/sinan-ipquality/transport.py "$@"\n'
+    added['usr/local/bin/curl'] = b'#!/bin/sh\nexec /usr/bin/python3 /usr/local/lib/apsp-ipquality/transport.py "$@"\n'
     for name, content in added.items():
         artifact.ensure(name not in entries, 'factory base contains an uncontrolled script')
         parent = Path(name).parent
@@ -346,7 +346,7 @@ def augment(archive_path, manifest_bytes, transformed, arch, directory, guard):
                'entries_sha256': artifact.digest(artifact.canonical(rows).rstrip(b'\n')), 'entries': rows}
     changed_bytes = artifact.canonical(changed)
     helper.verify_archive(output, helper.load_manifest(changed_bytes, arch))
-    metadata = helper.read_metadata(output, changed, ['usr/share/sinan-rootfs/' + name for name in
+    metadata = helper.read_metadata(output, changed, ['usr/share/apsp-rootfs/' + name for name in
                                     ('provenance.json', 'inputs-lock.json', 'source-inventory.json', 'license-inventory.json',
                                      'ipquality-profile.json')] + ['var/lib/dpkg/status'])
     return output, changed_bytes, metadata
@@ -359,7 +359,7 @@ def pack_sources(path, mini_source, expected, cache, factory, guard):
         for name, value in sorted(expected.items()):
             member = tarfile.TarInfo(name)
             member.size, member.mode = value['size'], 0o644
-            if name == 'sinan-source.tar.gz':
+            if name == 'apsp-source.tar.gz':
                 source_context = contextlib.nullcontext((io.BytesIO(mini_source), None))
             else:
                 blob = name.removeprefix('debian-sources/')
@@ -532,7 +532,7 @@ def build(args):
                                 for key in ('reviewer', 'evidence')), 'license review declaration is empty')
         artifact.check_license_review(review_value, metadata, artifact.decode(changed))
         for name in ('inputs-lock.json', 'source-inventory.json', 'license-inventory.json', 'ipquality-profile.json'):
-            sources['debian/' + name] = metadata['usr/share/sinan-rootfs/' + name]
+            sources['debian/' + name] = metadata['usr/share/apsp-rootfs/' + name]
         mini_path = directory / 'source.tar.gz'
         pack_files(mini_path, sources, artifact.MAX_SOURCE, guard)
         source_archive = read(mini_path, artifact.MAX_SOURCE, guard)
@@ -549,10 +549,10 @@ def build(args):
                 'transport_sha256': artifact.digest(sources['plugins/ipquality/transport.py']),
                 'rootfs_sha256': artifact.digest(rootfs), 'rootfs_manifest_sha256': artifact.digest(changed),
                 'license_review_sha256': artifact.digest(review), 'source_archive_sha256': artifact.digest(source_archive),
-                'factory_provenance_sha256': artifact.digest(metadata['usr/share/sinan-rootfs/provenance.json'])}
+                'factory_provenance_sha256': artifact.digest(metadata['usr/share/apsp-rootfs/provenance.json'])}
         notice = {'source_offer': {'asset': f'ipquality-{artifact.VERSION}-linux-{args.arch}-sources.tar.gz',
                                    **paired_identity}, 'license': 'AGPL-3.0-only',
-                  'notice': 'Fixed xykt/IPQuality source and controlled modifications are included in sinan-source.tar.gz; '
+                  'notice': 'Fixed xykt/IPQuality source and controlled modifications are included in apsp-source.tar.gz; '
                             'the paired archive includes every authenticated Debian corresponding source byte. '
                             'Copyright inventories and texts remain in the runtime. License-review declarations are '
                             'attestations, not independently verified approval. No commercial hardware tools, report '
@@ -560,7 +560,7 @@ def build(args):
         files = {'ipquality': artifact.runner(), 'rootfs.tar.gz': rootfs, 'rootfs-manifest.json': changed,
                  'build-info.json': artifact.canonical(info), 'LICENSE': sources['upstream/LICENSE.ip'],
                  'source.tar.gz': source_archive,
-                 'THIRD_PARTY_NOTICES.txt': b'Sinan IPQuality node self-query\n' + artifact.canonical(notice)}
+                 'THIRD_PARTY_NOTICES.txt': b'Apsp IPQuality node self-query\n' + artifact.canonical(notice)}
         artifact.validate_files(files, artifact.VERSION, args.arch, intake_parent=directory, progress=guard.progress)
         artifact.validate_source_offer(paired_path, files, artifact.VERSION, args.arch, progress=guard.progress)
         outer = directory / args.arch

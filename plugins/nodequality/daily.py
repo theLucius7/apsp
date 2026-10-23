@@ -125,7 +125,7 @@ def run(workspace, targets_path, ip_version):
     for target in targets:
         parts.append("\n" + measure(target, ip_version))
     helper_path = pathlib.Path(__file__).with_name('official-ip.py')
-    helper_spec = importlib.util.spec_from_file_location('sinan_official_node_ip', helper_path)
+    helper_spec = importlib.util.spec_from_file_location('apsp_official_node_ip', helper_path)
     helper = importlib.util.module_from_spec(helper_spec)
     helper_spec.loader.exec_module(helper)
     node_sources = helper.collect(ip_version)

@@ -28,7 +28,7 @@ TRUST = load("ci_test_trust", "ci-test-trust.py")
 RELEASE = load("ci_signed_release", "ci-signed-release.py")
 BOOTSTRAP = load("ci_bootstrap_install_contract", "ci-bootstrap-install.py")
 PREFLIGHT = load("ci_signed_preflight", "ci-signed-preflight.py")
-TOOLS = RELEASE.release_tools(Path(os.environ.get("SINAN_CI_RELEASE_TOOLS", ROOT / "tools")))
+TOOLS = RELEASE.release_tools(Path(os.environ.get("APSP_CI_RELEASE_TOOLS", ROOT / "tools")))
 
 
 def packed(name, contents):
@@ -126,7 +126,7 @@ class SignedCiContracts(unittest.TestCase):
         self.assertIn(str(trust / "public-keys.json"), arguments)
         self.assertNotIn("--token", arguments)
         self.assertNotIn("public-test-token", " ".join(arguments))
-        self.assertEqual(run.call_args.kwargs["env"]["SINAN_ENROLLMENT_TOKEN"], "public-test-token")
+        self.assertEqual(run.call_args.kwargs["env"]["APSP_ENROLLMENT_TOKEN"], "public-test-token")
 
     def test_bootstrap_refuses_public_or_cross_origin_private_descriptors(self):
         descriptor = self.descriptor()
@@ -153,10 +153,10 @@ class SignedCiContracts(unittest.TestCase):
 
     def test_systemd_probe_binds_role_and_does_not_claim_failed_gate_executed_payload(self):
         with patch.object(PREFLIGHT.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)) as run:
-            PREFLIGHT.probe(Path("/opt/sinan/plugins/sing-box/1.14.2/sing-box"), self.directory, False)
+            PREFLIGHT.probe(Path("/opt/apsp/plugins/sing-box/1.14.2/sing-box"), self.directory, False)
         gate = next(argument for argument in run.call_args.args[0] if argument.startswith("--property=ExecStartPre="))
         self.assertIn("--name sing-box --format tar.gz", gate)
-        self.assertIn("--binary /opt/sinan/plugins/sing-box/1.14.2/sing-box", gate)
+        self.assertIn("--binary /opt/apsp/plugins/sing-box/1.14.2/sing-box", gate)
         self.assertEqual(list(self.directory.glob("systemd-marker-*")), [])
 
 

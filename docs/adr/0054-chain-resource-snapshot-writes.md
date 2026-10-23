@@ -4,7 +4,7 @@
 
 ## 当前入口与问题
 
-[#142](https://github.com/theLucius7/sinan/issues/142) 最初记录的是旧 `Chains.tsx` 两跳链路弹窗。当前主线已按 [ADR 0040](0040-mixed-chains-and-subscriptions.md) 将链路统一放在代理节点页，通过 `Nodes.tsx`、`ChainEditor.tsx` 和代理资源列表管理有序混合路径。原两跳链路仍作为历史资源展示，保留原 ID、入口、授权和版本证据。
+[#142](https://github.com/theLucius7/apsp/issues/142) 最初记录的是旧 `Chains.tsx` 两跳链路弹窗。当前主线已按 [ADR 0040](0040-mixed-chains-and-subscriptions.md) 将链路统一放在代理节点页，通过 `Nodes.tsx`、`ChainEditor.tsx` 和代理资源列表管理有序混合路径。原两跳链路仍作为历史资源展示，保留原 ID、入口、授权和版本证据。
 
 当前入口已有 `useResource` 同步快照门禁：相关节点、代理资源或服务器 GET 开始刷新时立即失效，失败后保留旧展示数据，只有成功响应才能恢复写入。节点编辑、链路创建和删除处理器都在发送请求前调用该门禁，#139 的策略组、授权和套餐保护继续保持。
 

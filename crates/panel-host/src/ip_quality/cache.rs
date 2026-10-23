@@ -2,10 +2,10 @@ use super::{
     CACHE_SECS, IpQuality, NodeResultIdentity, QualityDatabase, QueryFailure, reported_ips,
 };
 use crate::error::{ApiError, ApiResult};
+use apsp_protocol::now_timestamp;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use sinan_protocol::now_timestamp;
 use sqlx::{PgPool, Row};
 use std::collections::BTreeMap;
 

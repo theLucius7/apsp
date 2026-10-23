@@ -511,7 +511,7 @@ pub(super) async fn save(
         .checked_add(1)
         .ok_or_else(|| ApiError::Conflict("模板版本达到上限".into()))?;
     sqlx::query("INSERT INTO singbox_client_templates(user_id,revision,client,client_version,definition,updated_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(user_id) DO UPDATE SET revision=EXCLUDED.revision,client=EXCLUDED.client,client_version=EXCLUDED.client_version,definition=EXCLUDED.definition,updated_at=EXCLUDED.updated_at")
-        .bind(id).bind(revision).bind(request.client).bind(request.client_version).bind(&definition).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
+        .bind(id).bind(revision).bind(request.client).bind(request.client_version).bind(&definition).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     event(&mut tx,Some(administrator),Some(id),"client_template_update",json!({"revision":revision,"selection_groups":request.definition.selection_groups.len(),"dns_configured":request.definition.dns.is_some(),"route_configured":request.definition.route.is_some()})).await?;
     tx.commit().await?;
     Ok(Json(

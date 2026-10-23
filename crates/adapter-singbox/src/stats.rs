@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use sinan_adapter_sdk::{Counter, RuntimeSpec};
+use apsp_adapter_sdk::{Counter, RuntimeSpec};
 use std::{
     collections::{BTreeMap, BTreeSet},
     time::Duration,

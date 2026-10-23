@@ -12,7 +12,7 @@
 
 保留 `check-place` 作为一个明确标记的旧聚合入口，七种响应视图归属于该入口。新增 `abuseipdb-api` 正式接口，依据 [AbuseIPDB 官方 API v2 CHECK 文档](https://docs.abuseipdb.com/#check-endpoint)：固定 HTTPS GET `/api/v2/check`，`ipAddress` 使用 URL 编码，`maxAgeInDays=30`，通过 `Key` 请求头传凭据，并请求 JSON。不请求 verbose、用户报告或写入端点，不设置 UA、不重试、不跟随重定向。
 
-`SINAN_ABUSEIPDB_API_KEY` 只在面板启动时读取。缺失、空白或不适合作为请求头的值使该入口不可用，并返回不含凭据的中文原因；凭据不进入 URL、日志、序列化、数据库或前端。凭据只保存在不实现 Debug/Serialize 的适配器内，请求头标记 sensitive。固定生产 endpoint 不允许管理员传任意 URL；回环 URL 仅存在测试构造路径。
+`APSP_ABUSEIPDB_API_KEY` 只在面板启动时读取。缺失、空白或不适合作为请求头的值使该入口不可用，并返回不含凭据的中文原因；凭据不进入 URL、日志、序列化、数据库或前端。凭据只保存在不实现 Debug/Serialize 的适配器内，请求头标记 sensitive。固定生产 endpoint 不允许管理员传任意 URL；回环 URL 仅存在测试构造路径。
 
 官方返回的目标 IP、公网标记和 IP 版本必须与本次查询一致；明确失败、错误或身份不匹配保持未知。只展示经验证的用途、国家代码、ISP、Tor 标记和 0–100 的原始滥用置信度，不把评分、白名单或缺失布尔推导为“干净”。`isWhitelisted` 可空且官方不建议用作行动依据，此项不展示它。聚合入口和正式 API 分别持久化，失败不覆盖各自历史；入口被禁用后，已有成功数据标为历史并显示不可用原因。没有凭据不是一次网络请求，不编造尝试时间。
 

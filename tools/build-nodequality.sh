@@ -81,7 +81,7 @@ for arch in ("amd64", "arm64"):
     elif arch in expected:
         raise SystemExit(f"SHA256SUMS refers to missing {arch}")
 PY
-scratch=$(mktemp -d "${TMPDIR:-/tmp}/sinan-nodequality-build.XXXXXX")
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/apsp-nodequality-build.XXXXXX")
 script_dir=$(cd "$(dirname "$0")" && pwd -P)
 plugin_dir=$script_dir/../plugins/nodequality
 python3 "$plugin_dir/source-helper.py" admission "$plugin_dir/execution-admission.json" >/dev/null

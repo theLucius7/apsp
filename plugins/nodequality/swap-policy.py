@@ -5,11 +5,11 @@ import hashlib
 MAX_SOURCE = 2 * 1024 * 1024
 ENTRY_REPLACEMENTS = [
     (b'    swapoff $work_dir/swap 2>/dev/null\n',
-     b'    : # Sinan modification (2026-10-01): never change host swap.\n'),
+     b'    : # Apsp modification (2026-10-01): never change host swap.\n'),
     (b'    . <(curl -sL "$raw_file_prefix/part/swap.sh")\n',
-     b'    : # Sinan modification (2026-10-01): do not load the unused swap helper.\n'),
+     b'    : # Apsp modification (2026-10-01): do not load the unused swap helper.\n'),
     (b'        run_HardwareQuality | tee $result_directory/$hardware_quality_filename\n',
-     b'        (set -o pipefail; run_HardwareQuality | tee $result_directory/$hardware_quality_filename) || exit $? # Sinan: stop after hardware refusal.\n'),
+     b'        (set -o pipefail; run_HardwareQuality | tee $result_directory/$hardware_quality_filename) || exit $? # Apsp: stop after hardware refusal.\n'),
 ]
 HARDWARE_PREFIX = rb'''test_cpu_gb5(){
 local mem_avail_mb swap_free_mb
@@ -42,7 +42,7 @@ fi
 fi
 '''
 MEMORY_GUARD = rb'''test_cpu_gb5(){
-# Sinan modification (2026-10-01): refuse low memory without creating swap.
+# Apsp modification (2026-10-01): refuse low memory without creating swap.
 # Preserve the upstream 950 MiB host-memory guard; this is not a GB5 budget.
 local mem_avail_mb
 mem_avail_mb=$(awk '/MemAvailable:/ {print int($2/1024)}' /proc/meminfo 2>/dev/null)
@@ -56,7 +56,7 @@ swapoff "$swap_file" 2>/dev/null
 [[ -n $swap_file ]]&&rm -f "$swap_file"
 }
 '''
-NO_SWAP_CLEANUP = rb'''# Sinan: no swap was created, so cleanup must not change host swap.
+NO_SWAP_CLEANUP = rb'''# Apsp: no swap was created, so cleanup must not change host swap.
 '''
 SOURCES = {
     'NodeQuality.sh': {

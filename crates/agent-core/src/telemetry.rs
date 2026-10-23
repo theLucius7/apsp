@@ -5,7 +5,7 @@ mod outbox;
 mod resources;
 pub mod worker;
 
-use sinan_protocol::{DiskMetrics, Metrics, NetworkMetrics, StaticInfo};
+use apsp_protocol::{DiskMetrics, Metrics, NetworkMetrics, StaticInfo};
 use std::{
     collections::{BTreeMap, BTreeSet},
     net::IpAddr,

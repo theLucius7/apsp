@@ -9,8 +9,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 // This offline DOM consumes the actual entry CSS and lazy dashboard CSS in their
 // application order. It never starts the application, calls an API, or reads CSS
 // from src. Environment overrides match the existing browser suites.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE
-  ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE
+  ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 const entry = await readFile(resolve(dist, 'index.html'), 'utf8')
 const entryStyles = [...entry.matchAll(/<link\b[^>]*>/gi)].flatMap(([tag]) => {
@@ -165,7 +165,7 @@ async function run() {
   const origin = `http://127.0.0.1:${server.address().port}`
   let browser
   try {
-    browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+    browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
     for (const width of [1440, 390, 340]) for (const theme of ['light', 'dark']) {
       const context = await browser.newContext({ viewport: { width, height: 1200 }, colorScheme: theme, serviceWorkers: 'block' })
       ++totals.contexts

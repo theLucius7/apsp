@@ -1,6 +1,6 @@
 use super::{ServiceBackend, SystemServiceManager};
 use anyhow::{Result, ensure};
-use sinan_adapter_sdk::ServiceManager;
+use apsp_adapter_sdk::ServiceManager;
 use std::path::Path;
 
 pub(super) async fn retire(manager: &SystemServiceManager) -> Result<()> {
@@ -12,7 +12,7 @@ pub(super) async fn retire(manager: &SystemServiceManager) -> Result<()> {
         "--all".into(),
         "--no-legend".into(),
         "--plain".into(),
-        "sinan-fleet-terminal-*.service".into(),
+        "apsp-fleet-terminal-*.service".into(),
     ];
     let units = manager
         .privileged
@@ -29,7 +29,7 @@ pub(super) async fn retire(manager: &SystemServiceManager) -> Result<()> {
         .filter_map(|line| line.split_whitespace().next())
     {
         let id = unit
-            .strip_prefix("sinan-fleet-terminal-")
+            .strip_prefix("apsp-fleet-terminal-")
             .and_then(|value| value.strip_suffix(".service"));
         ensure!(
             id.is_some_and(|id| uuid::Uuid::parse_str(id).is_ok()),

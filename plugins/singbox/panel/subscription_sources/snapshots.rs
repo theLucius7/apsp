@@ -4,9 +4,9 @@ use crate::{
     error::{ApiError, ApiResult},
     subscription_parser::{ParseStatus, ParsedSubscription},
 };
+use apsp_protocol::now_timestamp;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sinan_protocol::now_timestamp;
 use sqlx::{FromRow, PgConnection, Postgres, QueryBuilder, Transaction};
 use std::collections::BTreeMap;
 use uuid::Uuid;

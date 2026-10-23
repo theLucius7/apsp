@@ -1,6 +1,6 @@
 use super::*;
-use sinan_adapter_sdk::Execution;
-use sinan_adapter_sdk::ManagedProcess;
+use apsp_adapter_sdk::Execution;
+use apsp_adapter_sdk::ManagedProcess;
 use std::process::Stdio;
 use tokio::{io::AsyncReadExt, time::timeout};
 
@@ -54,7 +54,7 @@ impl ManagedProcess for ManagedChild {
     fn exit_code(&self) -> Option<i32> {
         self.exit_code
     }
-    fn terminate(&mut self) -> sinan_adapter_sdk::BoxFuture<'_, ()> {
+    fn terminate(&mut self) -> apsp_adapter_sdk::BoxFuture<'_, ()> {
         Box::pin(async move {
             #[cfg(unix)]
             {

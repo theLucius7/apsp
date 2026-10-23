@@ -74,7 +74,7 @@ where
         {
             continue;
         }
-        let now = sinan_protocol::now_timestamp();
+        let now = apsp_protocol::now_timestamp();
         let row:Option<(i64,String,i32)>=sqlx::query_as("SELECT d.id,d.payload,d.attempts FROM alicloud_deliveries d WHERE d.status='pending' AND d.channel=$1 AND d.next_attempt_at<=$2 ORDER BY d.next_attempt_at,d.id LIMIT 1 FOR UPDATE OF d SKIP LOCKED").bind(channel).bind(now).fetch_optional(&mut *tx).await?;
         let Some((id, payload, attempts)) = row else {
             continue;
@@ -89,7 +89,7 @@ where
                     .clamp(1, 86400),
             ),
         };
-        let completed = sinan_protocol::now_timestamp();
+        let completed = apsp_protocol::now_timestamp();
         sqlx::query("UPDATE alicloud_deliveries SET status=$2,last_error=$3,attempts=attempts+1,next_attempt_at=$4,delivered_at=CASE WHEN $2='sent' THEN $5 ELSE NULL END WHERE id=$1").bind(id).bind(status).bind(error).bind(completed+delay).bind(completed).execute(&mut *tx).await?;
         tx.commit().await?;
     }

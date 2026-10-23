@@ -102,7 +102,7 @@ def checksums(directory):
 
 
 def build(args):
-    helper = canonical.module("sinan_official_query_source", canonical.PLUGIN / "source-helper.py")
+    helper = canonical.module("apsp_official_query_source", canonical.PLUGIN / "source-helper.py")
     lock = helper.decode(ordinary(canonical.PLUGIN / "source-lock.json", 65536))
     bundle = helper.pack(lock, args.sources)
     files = {artifact.BINARY: artifact.runner(canonical.canonical_runner(bundle))}

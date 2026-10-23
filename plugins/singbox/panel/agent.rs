@@ -2,8 +2,8 @@ use crate::{
     AppState, artifacts,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::ModuleManifest;
 use serde_json::Value;
-use sinan_protocol::ModuleManifest;
 use sqlx::Row;
 
 const MANIFEST_ERROR_PREFIX: &str = "清单准备失败：";
@@ -22,7 +22,7 @@ async fn preparation_result(
     if current == Some(revision) {
         if let Some(error) = error {
             sqlx::query("INSERT INTO singbox_installation(server_id,target_rev,error,checked_at) VALUES($1,$2,$3,$4) ON CONFLICT(server_id) DO UPDATE SET target_rev=EXCLUDED.target_rev,error=EXCLUDED.error,checked_at=EXCLUDED.checked_at")
-                .bind(server_id).bind(revision).bind(error).bind(sinan_protocol::now_timestamp())
+                .bind(server_id).bind(revision).bind(error).bind(apsp_protocol::now_timestamp())
                 .execute(&mut *tx).await?;
         } else {
             sqlx::query("DELETE FROM singbox_installation WHERE server_id=$1 AND target_rev=$2")
@@ -163,7 +163,7 @@ async fn prepare_manifest(
 pub(super) async fn runtime_artifact(
     state: &AppState,
     info: &Value,
-) -> ApiResult<sinan_protocol::Artifact> {
+) -> ApiResult<apsp_protocol::Artifact> {
     let arch = match info["arch"].as_str() {
         Some("aarch64" | "arm64") => "arm64",
         Some("x86_64" | "amd64") => "amd64",
@@ -184,7 +184,7 @@ pub(super) async fn runtime_artifact(
     };
     let target = info["os"]
         .as_str()
-        .and_then(|os| sinan_protocol::platform::artifact_target(os, runtime_libc, arch));
+        .and_then(|os| apsp_protocol::platform::artifact_target(os, runtime_libc, arch));
     if info["os"].is_string() && target.is_none() {
         return Err(ApiError::BadRequest("设备平台或 libc 未受支持".into()));
     }
@@ -192,7 +192,7 @@ pub(super) async fn runtime_artifact(
     if let Some(target) = target {
         let gnu_host = info["os"] == "linux" && matches!(runtime_libc, Some("gnu" | "glibc"));
         let compiled_target = info["os"].as_str().and_then(|os| {
-            sinan_protocol::platform::artifact_target(os, info["libc"].as_str(), arch)
+            apsp_protocol::platform::artifact_target(os, info["libc"].as_str(), arch)
         });
         let preserve_legacy =
             info["os"] == "linux" && compiled_target.as_ref().is_some_and(|old| old != &target);

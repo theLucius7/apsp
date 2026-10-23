@@ -234,12 +234,12 @@ class ControllerContracts(unittest.TestCase):
             root = Path(temporary).resolve()
             root.chmod(0o700)
             run_id = "8eabca26-702f-4fde-890b-60594eaf528d"
-            marker = root / ".sinan-managed-test-run"
+            marker = root / ".apsp-managed-test-run"
             marker.write_text(run_id + "\n")
             marker.chmod(0o600)
             path = root / "enrollment.json"
-            row = {"agent_binary": "/opt/sinan/core/current/sinan-agent",
-                   "agent_config": "/etc/sinan/agent.toml"}
+            row = {"agent_binary": "/opt/apsp/core/current/apsp-agent",
+                   "agent_config": "/etc/apsp/agent.toml"}
             origin = "https://owned-panel.example.invalid:3443"
             manifest = {"run_id": run_id, "run_root": str(root),
                         "roles": {"A": row}, "panel": {"origin": origin}}
@@ -291,20 +291,20 @@ class ControllerContracts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             panel = {"origin": "https://panel.example.invalid:3443", "data_dir": str(root / "panel-data"),
-                     "postgres": {"database": "sinan_managed_TEST_ONLY", "username": "postgres", "port": 55437}}
-            valid = {"SINAN_PUBLIC_URL": panel["origin"], "SINAN_DATA_DIR": panel["data_dir"],
-                     "SINAN_DATABASE_URL": "postgresql://postgres@127.0.0.1:55437/sinan_managed_TEST_ONLY"}
+                     "postgres": {"database": "apsp_managed_TEST_ONLY", "username": "postgres", "port": 55437}}
+            valid = {"APSP_PUBLIC_URL": panel["origin"], "APSP_DATA_DIR": panel["data_dir"],
+                     "APSP_DATABASE_URL": "postgresql://postgres@127.0.0.1:55437/apsp_managed_TEST_ONLY"}
             CONTROL.validate_panel_environment(valid, panel, root)
             for key, value in (
-                    ("SINAN_DATABASE_URL", "postgresql://postgres@127.0.0.1:55437/other_database"),
-                    ("SINAN_DATABASE_URL", "postgresql://postgres@127.0.0.1:55438/sinan_managed_TEST_ONLY"),
-                    ("SINAN_DATABASE_URL", "postgresql://postgres@192.0.2.10:55437/sinan_managed_TEST_ONLY"),
-                    ("SINAN_DATA_DIR", str(root.parent / "unowned")),
-                    ("SINAN_PUBLIC_URL", "https://other.example.invalid:3443")):
+                    ("APSP_DATABASE_URL", "postgresql://postgres@127.0.0.1:55437/other_database"),
+                    ("APSP_DATABASE_URL", "postgresql://postgres@127.0.0.1:55438/apsp_managed_TEST_ONLY"),
+                    ("APSP_DATABASE_URL", "postgresql://postgres@192.0.2.10:55437/apsp_managed_TEST_ONLY"),
+                    ("APSP_DATA_DIR", str(root.parent / "unowned")),
+                    ("APSP_PUBLIC_URL", "https://other.example.invalid:3443")):
                 with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                     CONTROL.validate_panel_environment({**valid, key: value}, panel, root)
             with self.assertRaises(ValueError):
-                CONTROL.validate_panel_environment({**valid, "SINAN_DATA_DIR": str(root.parent / "unowned")},
+                CONTROL.validate_panel_environment({**valid, "APSP_DATA_DIR": str(root.parent / "unowned")},
                                                    {**panel, "data_dir": str(root.parent / "unowned")}, root)
 
     def test_id_filter_refuses_injection_duplicates_booleans_and_unbounded_lists(self):

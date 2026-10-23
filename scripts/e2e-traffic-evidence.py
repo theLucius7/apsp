@@ -329,7 +329,7 @@ def tls_probe(address, certificate, port=443):
     context.set_ecdh_curve("X25519")
     with socket.create_connection((address, port), timeout=max(0.001, deadline - time.monotonic())) as stream:
         stream.settimeout(max(0.001, deadline - time.monotonic()))
-        with context.wrap_socket(stream, server_hostname="sinan-e2e.example.test"):
+        with context.wrap_socket(stream, server_hostname="apsp-e2e.example.test"):
             return {}
 
 

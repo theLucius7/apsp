@@ -1,6 +1,6 @@
 use crate::{AppState, error::ApiResult};
-use sinan_compiler::paths::{PATH_CAPABILITY, Path, scope};
-use sinan_protocol::now_timestamp;
+use apsp_compiler::paths::{PATH_CAPABILITY, Path, scope};
+use apsp_protocol::now_timestamp;
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 

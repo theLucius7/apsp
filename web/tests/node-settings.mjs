@@ -8,7 +8,7 @@ import { resolve, extname, sep } from 'node:path'
 import { proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
 
 // Shipped dist with controlled API responses; PostgreSQL verifies migration/data.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 // TEST_ONLY independent read-only view; no actual preflight or device evidence.
@@ -25,7 +25,7 @@ const server = createServer(async (request, response) => {
   try { const body = await readFile(file); response.writeHead(200, { 'Content-Type': mime[extname(file)] ?? 'application/octet-stream' }); response.end(body) } catch { response.writeHead(404).end() }
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
 try {
   for (const width of [1440, 390, 320]) {
     const page = await browser.newPage({ viewport:{ width, height:950 } })
@@ -81,9 +81,9 @@ try {
     assert.equal(await dialog.locator('[name=tcp_fast_open]').count(),0)
     assert.equal(await dialog.locator('[name=obfs_password]').inputValue(),'')
     assert.equal(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth),true)
-    if (process.env.SINAN_UI_SCREENSHOT_DIR) {
-      await mkdir(process.env.SINAN_UI_SCREENSHOT_DIR,{recursive:true})
-      await page.screenshot({path:resolve(process.env.SINAN_UI_SCREENSHOT_DIR,`node-settings-${width}.png`)})
+    if (process.env.APSP_UI_SCREENSHOT_DIR) {
+      await mkdir(process.env.APSP_UI_SCREENSHOT_DIR,{recursive:true})
+      await page.screenshot({path:resolve(process.env.APSP_UI_SCREENSHOT_DIR,`node-settings-${width}.png`)})
     }
     await dialog.getByRole('button',{name:'创建目标节点',exact:true}).click()
     await dialog.waitFor({state:'hidden'})
@@ -115,7 +115,7 @@ try {
     assert.equal(writes.at(-1).enabled,false)
     assert.equal(writes.at(-1).settings.public_port,null)
     await currentRow.getByText('已停用',{exact:true}).waitFor()
-    if (process.env.SINAN_UI_SCREENSHOT_DIR) await page.screenshot({path:resolve(process.env.SINAN_UI_SCREENSHOT_DIR,`node-list-${width}.png`)})
+    if (process.env.APSP_UI_SCREENSHOT_DIR) await page.screenshot({path:resolve(process.env.APSP_UI_SCREENSHOT_DIR,`node-list-${width}.png`)})
     const layout = await page.evaluate(() => ({width:innerWidth, scroll:document.documentElement.scrollWidth, overflow:[...document.querySelectorAll('main *')].filter(el => el.getBoundingClientRect().right > innerWidth + 1).slice(0,8).map(el => ({tag:el.tagName,class:el.className,right:el.getBoundingClientRect().right}))}))
     assert.equal(layout.scroll <= layout.width,true,JSON.stringify(layout))
     assert.deepEqual(errors,[])

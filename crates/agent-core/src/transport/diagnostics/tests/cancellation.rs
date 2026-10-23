@@ -1,6 +1,6 @@
 use super::*;
 use crate::transport::diagnostics::cancellation::CancellationControl;
-use sinan_protocol::{DiagnosticCancelRequest, DiagnosticCancelResult};
+use apsp_protocol::{DiagnosticCancelRequest, DiagnosticCancelResult};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
@@ -96,7 +96,7 @@ async fn stop_failure_live_processes_and_remaining_mounts_require_confirmation_a
                 .lock()
                 .unwrap()
                 .iter()
-                .all(|unit| unit == &format!("sinan-diagnostic-{id}.service"))
+                .all(|unit| unit == &format!("apsp-diagnostic-{id}.service"))
         );
     }
     Ok(())
@@ -320,7 +320,7 @@ async fn retirement_during_cancellation_http_cannot_restore_cleared_state() -> R
                 server_id: 7,
                 signing_key: ed25519_dalek::SigningKey::from_bytes(&[17; 32]),
             },
-            sinan_protocol::RetirementRequest {
+            apsp_protocol::RetirementRequest {
                 request_id: Uuid::new_v4(),
             },
         )?;

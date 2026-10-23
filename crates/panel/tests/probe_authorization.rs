@@ -6,10 +6,10 @@ mod probe_support;
 mod release_support;
 
 use anyhow::Result;
+use apsp_protocol::now_timestamp;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -107,7 +107,7 @@ async fn expiry_revocation_and_retargeting_preserve_history_and_discard_late_sam
         &ack.session_token,
     )
     .await?;
-    let mut sample = json!({"id":Uuid::new_v4(),"probe_id":id,"sampled_at":sinan_protocol::telemetry::now_millis(),"latency_ms":0.0,"loss_percent":0.0,"error":null,"address_family":"ipv4"});
+    let mut sample = json!({"id":Uuid::new_v4(),"probe_id":id,"sampled_at":apsp_protocol::telemetry::now_millis(),"latency_ms":0.0,"loss_percent":0.0,"error":null,"address_family":"ipv4"});
     sample["execution"] = json!(probe_support::execution(&issued, Uuid::parse_str(&id)?)?);
     panel
         .client

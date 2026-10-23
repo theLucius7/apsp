@@ -38,8 +38,8 @@ PAIRINGS = {
 DISABLED = {provider for provider in PAIRINGS if provider.endswith('-not-configured') or provider.endswith('-disabled')}
 DB_NAMES = {'scamalytics': 'SCAMALYTICS', 'ipapi': 'ipapi', 'abuseipdb': 'AbuseIPDB',
             'ip2location': 'IP2LOCATION', 'ipdata': 'ipdata', 'ipqualityscore': 'IPQS'}
-MARKER = b'\nSINAN_IPQUALITY_TRANSPORT:'
-WRITE_OUT = '\nSINAN_IPQUALITY_TRANSPORT:%{http_code}|%{time_total}|%{content_type}|%{redirect_url}\n'
+MARKER = b'\nAPSP_IPQUALITY_TRANSPORT:'
+WRITE_OUT = '\nAPSP_IPQUALITY_TRANSPORT:%{http_code}|%{time_total}|%{content_type}|%{redirect_url}\n'
 
 
 def require(condition, message):
@@ -117,7 +117,7 @@ def atomic(path, content, limit):
 
 
 def receipts_path():
-    value = os.environ.get('SINAN_IPQUALITY_ATTEMPTS', '')
+    value = os.environ.get('APSP_IPQUALITY_ATTEMPTS', '')
     require(value.startswith('/') and len(value) <= 4096, 'absolute receipt workspace path required')
     return Path(value)
 
@@ -164,8 +164,8 @@ def append_receipt(row):
 
 
 def target_ip():
-    value = os.environ.get('SINAN_IPQUALITY_TARGET_IP', '')
-    return canonical_ip(value, os.environ['SINAN_IPQUALITY_FAMILY']) if value else None
+    value = os.environ.get('APSP_IPQUALITY_TARGET_IP', '')
+    return canonical_ip(value, os.environ['APSP_IPQUALITY_FAMILY']) if value else None
 
 
 def identify(url, expected_ip, *, redirect_from=None):
@@ -216,7 +216,7 @@ def parse_arguments(arguments):
     write_out = ''
     output = None
     follow = False
-    family = os.environ.get('SINAN_IPQUALITY_FAMILY')
+    family = os.environ.get('APSP_IPQUALITY_FAMILY')
     require(family in ('4', '6'), 'one fixed IP family is required')
     native = ['-' + family]
     index = 0
@@ -561,7 +561,7 @@ def request(arguments):
                 category = 'http_other'
         category = classify_exit(code, status, category)
         if category is None:
-            category, observed = validate_body(provider, dataset, body, expected_ip, os.environ['SINAN_IPQUALITY_FAMILY'])
+            category, observed = validate_body(provider, dataset, body, expected_ip, os.environ['APSP_IPQUALITY_FAMILY'])
         break
     elapsed = max(0, int((time.monotonic() - started) * 1000))
     messages = {'dns': 'DNS 解析失败', 'connect': '连接失败', 'tls': 'TLS 校验或握手失败', 'timeout': '请求超时',
@@ -587,8 +587,8 @@ def request(arguments):
 
 
 def discover(family):
-    require(family in ('4', '6') and os.environ.get('SINAN_IPQUALITY_FAMILY') == family, 'discovery family mismatch')
-    require(not os.environ.get('SINAN_IPQUALITY_TARGET_IP'), 'discovery must precede the bound query target')
+    require(family in ('4', '6') and os.environ.get('APSP_IPQUALITY_FAMILY') == family, 'discovery family mismatch')
+    require(not os.environ.get('APSP_IPQUALITY_TARGET_IP'), 'discovery must precede the bound query target')
     # Two distinct public discovery providers; never retry the same endpoint.
     for url in ('https://api64.ipify.org/', 'https://ident.me/'):
         code = request(['-' + family, '--silent', '--max-time', '10', url])
@@ -632,9 +632,9 @@ def snapshot(stream):
     require(0 < len(content) <= MAX_SNAPSHOT, 'bounded upstream partial object required')
     data = decode(content)
     require(isinstance(data, dict) and isinstance(data.get('Head'), dict)
-            and canonical_ip(data['Head'].get('IP'), os.environ['SINAN_IPQUALITY_FAMILY']) == target_ip(),
+            and canonical_ip(data['Head'].get('IP'), os.environ['APSP_IPQUALITY_FAMILY']) == target_ip(),
             'upstream partial object target differs from observed node egress')
-    path = Path(os.environ.get('SINAN_IPQUALITY_PARTIAL', ''))
+    path = Path(os.environ.get('APSP_IPQUALITY_PARTIAL', ''))
     require(path.is_absolute(), 'absolute partial workspace path required')
     atomic(path, content, MAX_SNAPSHOT)
 

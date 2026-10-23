@@ -1,5 +1,5 @@
 [package]
-name = "sinan-cloud-api"
+name = "apsp-cloud-api"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -18,7 +18,7 @@ path = "mod.rs"
 test-support = []
 
 [dependencies]
-sinan-protocol.workspace = true
+apsp-protocol.workspace = true
 axum.workspace = true
 base64.workspace = true
 futures-util.workspace = true

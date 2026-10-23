@@ -77,7 +77,7 @@ def verify_binary(binary, target, version):
             raise ValueError("GNU/Linux Agent has unresolved shared libraries")
         print(libraries, end="")
     actual_version = capture([str(binary), "--version"]).strip()
-    if actual_version != f"sinan-agent {version}":
+    if actual_version != f"apsp-agent {version}":
         raise ValueError(f"unexpected Agent version: {actual_version}")
     capture([str(binary), "--help"])
     help_text = capture([str(binary), "run", "--help"])
@@ -89,7 +89,7 @@ def package_binary(binary, target, version, artifact_root):
     output = artifact_root / "agent" / version / target
     output.mkdir(parents=True)
     try:
-        name = "sinan-agent.exe" if "windows" in target else "sinan-agent"
+        name = "apsp-agent.exe" if "windows" in target else "apsp-agent"
         destination = output / name
         shutil.copy2(binary, destination)
         digest = hashlib.sha256(destination.read_bytes()).hexdigest()
@@ -136,7 +136,7 @@ def main():
         version = next(
             package["version"]
             for package in metadata["packages"]
-            if package["name"] == "sinan-agent"
+            if package["name"] == "apsp-agent"
         )
     if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", version):
         parser.error("invalid Agent package version")
@@ -148,12 +148,12 @@ def main():
     else:
         subprocess.run(
             [
-                "cargo", "build", "--locked", "--release", "--package", "sinan-agent",
+                "cargo", "build", "--locked", "--release", "--package", "apsp-agent",
                 "--target", args.target, "--manifest-path", str(REPOSITORY / "Cargo.toml"),
             ],
             check=True,
         )
-        name = "sinan-agent.exe" if "windows" in args.target else "sinan-agent"
+        name = "apsp-agent.exe" if "windows" in args.target else "apsp-agent"
         binary = pathlib.Path(metadata["target_directory"]) / args.target / "release" / name
     verify_binary(binary, args.target, version)
     print(f"Artifact: {package_binary(binary, args.target, version, args.artifact_root)}")

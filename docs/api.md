@@ -1,6 +1,6 @@
 # 面板 HTTP API
 
-本页记录面板管理接口，供中文前端和集成测试使用。所有路径都相对于 `SINAN_PUBLIC_URL`。管理接口使用同源 Cookie；请求 JSON 时发送 `Content-Type: application/json`。应用错误返回 `{"error":"中文说明"}`，常见状态码为 400（输入无效）、401（未登录）、404（资源不存在）、409（冲突）、429（请求过多）、500（内部错误）。框架对无法解析的 JSON 或路径参数也可能返回文本错误。
+本页记录面板管理接口，供中文前端和集成测试使用。所有路径都相对于 `APSP_PUBLIC_URL`。管理接口使用同源 Cookie；请求 JSON 时发送 `Content-Type: application/json`。应用错误返回 `{"error":"中文说明"}`，常见状态码为 400（输入无效）、401（未登录）、404（资源不存在）、409（冲突）、429（请求过多）、500（内部错误）。框架对无法解析的 JSON 或路径参数也可能返回文本错误。
 
 策略组、套餐组、两跳链路与代理用户分配接口见 [sing-box 策略与套餐 API](singbox-groups.md#api)。这些业务仅属于 `/api/plugins/sing-box`；管理会话和错误约定沿用本页。
 
@@ -13,7 +13,7 @@
 | `POST /api/logout` | 无 | `200 {"ok":true}`，清除会话 |
 | `GET /healthz` | 无 | `200 ok`，无需登录 |
 
-会话 Cookie 名为 `sinan_session`，带 `HttpOnly; SameSite=Strict; Path=/`，有效期 24 小时；公开地址使用 HTTPS 时同时带 `Secure`。管理员密码只在首次初始化时设定，后续启动不会用环境变量覆盖已有密码。
+会话 Cookie 名为 `apsp_session`，带 `HttpOnly; SameSite=Strict; Path=/`，有效期 24 小时；公开地址使用 HTTPS 时同时带 `Secure`。管理员密码只在首次初始化时设定，后续启动不会用环境变量覆盖已有密码。
 
 已启用 TOTP 时，密码和验证码必须在同一次请求中验证成功才会创建会话；缺失、错误、过期或重放的验证码统一返回 401。验证码为 6 位 ASCII 数字，30 秒更新一次，允许前后各一个时间步；已成功消费的步号不能再次使用。启用确认也消费验证码，随后登录或关闭需等待新的验证码。
 
@@ -36,7 +36,7 @@
 
 ### Passkey
 
-所有 Passkey 写请求必须带与 `SINAN_PUBLIC_URL` 规范化后完全相同的 `Origin`，请求体最大 64 KiB，沿用认证限速。挑战成功响应为 `{challenge_id,options}`；只把 `options.publicKey` 传给浏览器原生 WebAuthn API，完成时提交 `{challenge_id,credential}`，`credential` 使用 WebAuthn JSON 格式。绑定 Cookie 为 HttpOnly，调用方须同源发送。挑战五分钟有效，一次性消费；不向客户端返回验证状态。
+所有 Passkey 写请求必须带与 `APSP_PUBLIC_URL` 规范化后完全相同的 `Origin`，请求体最大 64 KiB，沿用认证限速。挑战成功响应为 `{challenge_id,options}`；只把 `options.publicKey` 传给浏览器原生 WebAuthn API，完成时提交 `{challenge_id,credential}`，`credential` 使用 WebAuthn JSON 格式。绑定 Cookie 为 HttpOnly，调用方须同源发送。挑战五分钟有效，一次性消费；不向客户端返回验证状态。
 
 | 方法与路径 | 请求 / 作用 |
 | --- | --- |
@@ -45,12 +45,12 @@
 | `POST /api/security/passkeys/register/finish` | 同一管理员会话；完成注册 |
 | `POST /api/security/passkeys/{id}/remove` | 管理员；`{password,totp_code?}`，删除密钥，撤销其他会话和待完成挑战 |
 | `POST /api/login/passkey/start` | 无需登录；开始管理员认证，无请求体 |
-| `POST /api/login/passkey/finish` | 完成管理员认证，签发原 `sinan_session`，返回 `{id:1}` |
+| `POST /api/login/passkey/finish` | 完成管理员认证，签发原 `apsp_session`，返回 `{id:1}` |
 | `GET /api/plugins/sing-box/users/{id}/portal` | 管理员；开通状态、密钥数量、账户登录 URL、开通链接过期时间，不返回开通秘密 |
 | `POST /api/plugins/sing-box/users/{id}/portal/invitation` | 管理员；`{password,totp_code?,reset:false}`；返回 `{url,expires_at}`，十五分钟、一次性。已有密钥时必须明确 `reset:true` |
 | `GET /api/plugins/sing-box/portal/{account}` | 插件 UUID 入口；未认证返回 `{authenticated:false,configuration}`，已认证额外返回自身 `name,subscription_url,usage:{uplink,downlink},keys` |
 | `POST /api/plugins/sing-box/portal/{account}/login/start` | 开始该代理账户的认证，无请求体 |
-| `POST /api/plugins/sing-box/portal/{account}/login/finish` | 完成认证，签发独立 `sinan_proxy_session`，返回 `{ok:true}` |
+| `POST /api/plugins/sing-box/portal/{account}/login/finish` | 完成认证，签发独立 `apsp_proxy_session`，返回 `{ok:true}` |
 | `POST /api/plugins/sing-box/portal/{account}/register/start` | 初次开通 `{name,activation_token}`；已认证添加 `{name}`，需五分钟内的 Passkey 验证 |
 | `POST /api/plugins/sing-box/portal/{account}/register/finish` | 完成注册；初次开通同时消费邀请并签发用户会话 |
 | `POST /api/plugins/sing-box/portal/{account}/keys/{id}/remove` | 五分钟内已验证的用户会话；无请求体，保留至少一把密钥，撤销其他用户会话与挑战 |
@@ -242,7 +242,7 @@
 
 ### 来源迁移（ADR 0085 阶段三 S1b）
 
-数字编号来源迁入有序来源只能由运维显式执行 `sinan-panel source-migration`，见[迁移方案](rearchitecture-phase3-plan.md#11-s1b来源迁移工具与使用方切换)。迁移前后接口变化：
+数字编号来源迁入有序来源只能由运维显式执行 `apsp-panel source-migration`，见[迁移方案](rearchitecture-phase3-plan.md#11-s1b来源迁移工具与使用方切换)。迁移前后接口变化：
 
 - 节点库、用户外部授权和用户订阅迁移前读数字编号来源，迁移后读有序来源。节点和版本编号不变；授权中的 `source_id` 变为对应有序来源的编号。
 - 迁移后数字编号来源的接口只读：`/subscription-sources` 的创建、修改、刷新、取消、删除、预览和节点采用返回 409，读取接口保留一个版本；来源详情新增 `migrated_to`，为对应的有序来源编号，迁移前为 null。
@@ -383,7 +383,7 @@
 
 - `GET /sub/{token}` 或 `?format=links`：标准 base64 编码的多行 `vless://` 分享链接，`text/plain`。
 - `GET /sub/{token}?format=singbox`：可导入的 sing-box JSON，包含本地混合代理入口、选择器及用户有权使用的节点。
-- 两种格式可附加 `download=true`，以固定 `sinan-用户ID.json` / `.txt` 文件名下载；响应含 `Referrer-Policy: no-referrer`。
+- 两种格式可附加 `download=true`，以固定 `apsp-用户ID.json` / `.txt` 文件名下载；响应含 `Referrer-Policy: no-referrer`。
 
 响应带 `Cache-Control: no-store`。订阅从服务器已应用且健康的版本快照生成，再与当前有效用户、节点和授权 UUID 取交集。待应用的新配置、其他用户 UUID、服务端私钥不会出现在订阅中。撤销授权立即从订阅移除；重新授权的新 UUID 要等相应版本成功应用后出现。只修改名称或公开地址且原生包不变时，合并窗口后无需等待一次空部署即可更新订阅元数据。
 
@@ -441,7 +441,7 @@
 
 每个质量对象是 `{ip,checked_at,expires_at,status,databases,provider,last_attempt_at,last_success_at,fresh_until,last_error}`，status 为最近查询批次的 `succeeded`、`partial`、`failed`。每个数据库是 `{database,label,status,fields:[{label,value,kind}],error,provider,target_ip,attempted_at,elapsed_ms,error_kind,http_status,last_attempt_at,last_success_at,fresh_until,last_error,historical,available,unavailable_reason}`；数字零和布尔 false 保持原值，缺失字段省略。`provider` 标识真实入口：`check-place` 是旧聚合入口，七个 `database` 是该入口的响应形状（MaxMind 地理/ASN、IPAPI、Scamalytics、AbuseIPDB、IP2Location、IPData、IPQualityScore）。接口参数依据上游 IPQuality 源码，不假造 NodeQuality 的按 IP 查询接口。每种响应分别展示，不推导统一评分。正式来源 `abuseipdb-api` 仅有 `abuseipdb-v2` 响应视图，固定只读 CHECK、30 天窗口，展示文档定义的用途、国家代码、ISP、Tor 与 0–100 原始滥用置信度；必须确认目标 IP/版本/公网状态一致。正式响应中的该 score 仅接受 JSON 整数 0–100，缺失/空值/错误类型不推导为零分或 false。
 
-`providers` 是入口描述列表，字段为 `{provider,label,kind,execution,enabled,reason,databases:[{database,label}]}`。kind 为 aggregator/credential_api/node_self，execution 为 panel/node；enabled 仅表示可执行或已配置，不证明凭据授权/额度或最新查询成功。缺失/无效 `SINAN_ABUSEIPDB_API_KEY` 不发正式接口请求，原因不含凭据，`ipquality-node` 目前明确未启用。没有请求就没有新缓存行或尝试时间。所有入口共用四并发/40 秒批次/单请求 3 秒连接与 6 秒总超时/64 KiB 上限，403/429 不重试或更改 UA。流媒体解锁保持未知，面板查询不冒充节点出口自查。
+`providers` 是入口描述列表，字段为 `{provider,label,kind,execution,enabled,reason,databases:[{database,label}]}`。kind 为 aggregator/credential_api/node_self，execution 为 panel/node；enabled 仅表示可执行或已配置，不证明凭据授权/额度或最新查询成功。缺失/无效 `APSP_ABUSEIPDB_API_KEY` 不发正式接口请求，原因不含凭据，`ipquality-node` 目前明确未启用。没有请求就没有新缓存行或尝试时间。所有入口共用四并发/40 秒批次/单请求 3 秒连接与 6 秒总超时/64 KiB 上限，403/429 不重试或更改 UA。流媒体解锁保持未知，面板查询不冒充节点出口自查。
 
 `available` 表示缓存所属入口目前是否已启用，`unavailable_reason` 提供中文原因。已关闭或未注册入口的成功快照保留并标记 historical，不影响原尝试/成功时间、字段或当前错误；没有发生失败请求时不编造错误类别。旧接口仍可读取省略新增字段的旧 payload。
 

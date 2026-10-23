@@ -136,7 +136,7 @@
 - 分配新 UUID；`generation` 取 B 的序列。
 - `format` 映射：`uri` → `uri_list`，`base64_uri` → `base64_uri_list`，另外两种同名。
 - `raw_digest` 取 `body_sha256`，`parsed_at` 取 `fetched_at`。
-- `parser_version` 保留 A 的 `sinan-subscriptions-2`。B 的任务会因解析器版本不同，不使用条件缓存，下次刷新整篇重新解析。
+- `parser_version` 保留 A 的 `apsp-subscriptions-2`。B 的任务会因解析器版本不同，不使用条件缓存，下次刷新整篇重新解析。
 - B 要求每个修订对应一个任务。每个导入修订配一行合成任务：状态为成功，阶段为完成，时间取 `fetched_at`。
 
 **节点：**
@@ -347,7 +347,7 @@ S1 拆成四个大步骤，各自集中修改、统一验证、单独提交。�
 
 ### 11.1 后端（2026-10-04）
 
-命令：`sinan-panel source-migration <子命令>`，使用与面板服务相同的环境变量，结果以 JSON 输出到标准输出，日志输出到标准错误。只有显式执行才会运行，面板服务本身不会触发。
+命令：`apsp-panel source-migration <子命令>`，使用与面板服务相同的环境变量，结果以 JSON 输出到标准输出，日志输出到标准错误。只有显式执行才会运行，面板服务本身不会触发。
 
 | 子命令 | 作用 | 退出码为 0 的条件 |
 | --- | --- | --- |
@@ -407,7 +407,7 @@ S1 拆成四个大步骤，各自集中修改、统一验证、单独提交。�
 
 ### 12.2 接管命令
 
-`sinan-panel legacy-takeover precheck | apply | rollback [--chain <id>]...`，与面板服务使用相同的环境变量，结果以 JSON 输出。不指定链路时，预检和接管处理全部未删除的旧两跳，回滚处理全部已接管的链路。每条链路一个事务，加与发布相同的锁和隔离级别。
+`apsp-panel legacy-takeover precheck | apply | rollback [--chain <id>]...`，与面板服务使用相同的环境变量，结果以 JSON 输出。不指定链路时，预检和接管处理全部未删除的旧两跳，回滚处理全部已接管的链路。每条链路一个事务，加与发布相同的锁和隔离级别。
 
 链路满足以下条件才会接管，否则跳过并在报告中给出原因代码：
 

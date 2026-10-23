@@ -1,6 +1,6 @@
 use super::*;
 use crate::diagnostic_plugins;
-use sinan_protocol::{DIAGNOSTIC_SERVICE_CAPABILITY, DiagnosticResourceBudget};
+use apsp_protocol::{DIAGNOSTIC_SERVICE_CAPABILITY, DiagnosticResourceBudget};
 use std::{collections::BTreeMap, future::Future, pin::Pin};
 
 pub type PlanFuture<'a> = Pin<Box<dyn Future<Output = ApiResult<JobPlan>> + Send + 'a>>;
@@ -98,11 +98,11 @@ pub fn ready(
     }
     let capabilities: Value = row.get("capabilities");
     for required in [
-        sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
-        sinan_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,
+        apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
+        apsp_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,
         DIAGNOSTIC_SERVICE_CAPABILITY,
-        sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,
-        sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY,
+        apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,
+        apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY,
     ]
     .into_iter()
     .chain(plugin.required_capabilities().iter().copied())
@@ -111,7 +111,7 @@ pub fn ready(
             .as_array()
             .is_some_and(|values| values.iter().any(|value| value.as_str() == Some(required)))
         {
-            if required == sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY {
+            if required == apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY {
                 return Err(ApiError::Conflict(
                     "此 Agent 尚不支持诊断 CPU 百分比硬上限，请升级并使用支持 systemd/cgroup v2 CPU 控制器的设备".into(),
                 ));
@@ -234,7 +234,7 @@ fn validate_plan(plugin: &dyn DiagnosticPlugin, plan: &JobPlan) -> ApiResult<()>
         || !(1..=3600).contains(&plan.timeout_secs)
         || !plan.budget.valid()
         || names.is_empty()
-        || names.len() > sinan_protocol::DIAGNOSTIC_SECTION_COUNT
+        || names.len() > apsp_protocol::DIAGNOSTIC_SECTION_COUNT
         || names.iter().any(|name| {
             name.is_empty()
                 || name.len() > 64

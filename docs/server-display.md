@@ -4,7 +4,7 @@
 
 登录后的默认首页为 `/#/dashboard`，点击卡片或表格中的服务器名称进入 `/#/dashboard/<服务器 ID>`。后台侧栏的“服务器看板”可跳转过去；看板右上角“进入后台”返回原管理页面。详情页返回看板，或直接进入该服务器的管理详情。旧 `/#/overview`、`/#/overview/<服务器 ID>` 书签继续可用。默认需要登录，管理员可在「看板与通知」开放匿名查看。
 
-这是 Sinan 内独立的全宽监控页面，与管理后台分开展示，不需要再安装 Komari 或 Nezha，也没有将两者嵌入 iframe。沿用现有 NodeFlare 来源的主题、资源卡片和曲线，并保留许可说明。首页采用紧凑总览、搜索分组和节点卡片；状态筛选、地区、排序及表格收进“筛选与视图”。公开开关仅影响专用看板只读接口，不开放管理操作。
+这是 Apsp 内独立的全宽监控页面，与管理后台分开展示，不需要再安装 Komari 或 Nezha，也没有将两者嵌入 iframe。沿用现有 NodeFlare 来源的主题、资源卡片和曲线，并保留许可说明。首页采用紧凑总览、搜索分组和节点卡片；状态筛选、地区、排序及表格收进“筛选与视图”。公开开关仅影响专用看板只读接口，不开放管理操作。
 
 ## 展示内容
 
@@ -75,7 +75,7 @@ Unix 需要系统 `env` 和 `ping`，macOS IPv6 使用 `ping6`；精简 Debian/U
 
 当前界面与相关修复的本地验证见 [2026-10-03 看板重新对齐](acceptance/dashboard-nodeflare-refresh.md)。
 
-最初参考本地 NodeFlare 工作树 `42eff9e07e12d6ec83e003238c1072cc5afdd39e` 的展示组件和样式，本轮上报、历史与通知对齐参考 `7a7fc0ffe29dddaa21ef11c86e2990d84f3a6cc8`，适配 Sinan 既有接口与权限。2026-10-03 重新对照当前 `88c8a43` 的 App、StatsBar、NodeCard 和样式，并核对 `d954927` 剩余价值、`c0aa1d6` 延迟及 `7a7fc0f` 磁盘修复。保留 [NodeFlare MIT 许可](../web/public/notices/NodeFlare.txt) 并随 `web/dist` 内嵌发布；移除看板页脚不移除许可文件。
+最初参考本地 NodeFlare 工作树 `42eff9e07e12d6ec83e003238c1072cc5afdd39e` 的展示组件和样式，本轮上报、历史与通知对齐参考 `7a7fc0ffe29dddaa21ef11c86e2990d84f3a6cc8`，适配 Apsp 既有接口与权限。2026-10-03 重新对照当前 `88c8a43` 的 App、StatsBar、NodeCard 和样式，并核对 `d954927` 剩余价值、`c0aa1d6` 延迟及 `7a7fc0f` 磁盘修复。保留 [NodeFlare MIT 许可](../web/public/notices/NodeFlare.txt) 并随 `web/dist` 内嵌发布；移除看板页脚不移除许可文件。
 
 本地验证入口：
 
@@ -85,7 +85,7 @@ bun run build
 bun test tests
 ```
 
-`web/tests/server-display.mjs` 使用提交的真实构建产物、本机静态服务及拦截 API 夹具，检查三种宽度、两种主题、数据状态、曲线交互、搜索、后台返回和权限错误；通过 `SINAN_PLAYWRIGHT_MODULE`、`SINAN_CHROME_PATH` 指定本机浏览器工具，可用 `SINAN_UI_SCREENSHOT_DIR` 保存截图。夹具测试不代表生产 Agent 或公网实机验收。CI 按当前安排保持暂停。
+`web/tests/server-display.mjs` 使用提交的真实构建产物、本机静态服务及拦截 API 夹具，检查三种宽度、两种主题、数据状态、曲线交互、搜索、后台返回和权限错误；通过 `APSP_PLAYWRIGHT_MODULE`、`APSP_CHROME_PATH` 指定本机浏览器工具，可用 `APSP_UI_SCREENSHOT_DIR` 保存截图。夹具测试不代表生产 Agent 或公网实机验收。CI 按当前安排保持暂停。
 
 `web/tests/server-assets.mjs` 另检查桌面/手机的资产新增、编辑、失败重试、清空、精确字节保存、地区/分组筛选、标签搜索和展示隐藏。
 
@@ -95,7 +95,7 @@ bun test tests
 拨测回归包含解析夹具、真实 TCP 监听/拒绝、慢任务并发及取消、SQLite 重启/部分确认/时钟偏移、PostgreSQL 权限和逐目标完整历史。以下条件测试需在安装好系统工具、允许回环 ICMP 的测试机上单独执行：
 
 ```sh
-cargo test -p sinan-agent-core icmp_measures_real_ipv4_and_ipv6_loopback -- --ignored --nocapture
+cargo test -p apsp-agent-core icmp_measures_real_ipv4_and_ipv6_loopback -- --ignored --nocapture
 ```
 
 既有拨测阶段仅在本机 Linux 实测 IPv4/IPv6 回环，不代表 macOS、FreeBSD、Windows、公网丢包或长期驻留已经验收；这些平台的参数与结果解析由本地夹具覆盖，仍需各平台专用测试机验证。早期仅前端的看板交付见 [独立验收](acceptance/server-dashboard.md)；本轮包含 Agent、PostgreSQL、汇率与通知的验证结果单独记录在 [PROGRESS](../PROGRESS.md)，不能用旧前端收据替代。

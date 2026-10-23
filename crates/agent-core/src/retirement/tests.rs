@@ -4,8 +4,8 @@ use crate::{
     state::IntentRecord,
     system::{SystemOps, SystemServiceManager},
 };
+use apsp_adapter_sdk::{BoxFuture, CommandOutput, Counter, RuntimeSpec};
 use ed25519_dalek::{Signature, Verifier};
-use sinan_adapter_sdk::{BoxFuture, CommandOutput, Counter, RuntimeSpec};
 use std::{
     collections::BTreeMap,
     fs,
@@ -30,7 +30,7 @@ impl Drop for Fixture {
 }
 impl Fixture {
     fn new() -> Result<Self> {
-        let root = std::env::temp_dir().join(format!("sinan-retirement-{}", Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("apsp-retirement-{}", Uuid::new_v4()));
         fs::create_dir(&root)?;
         let root = fs::canonicalize(root)?;
         let config = Config {
@@ -288,7 +288,7 @@ async fn pure_monitor_can_retire_without_managed_history() -> Result<()> {
     fs::create_dir(&config.runtime_root)?;
     fs::create_dir(&config.install_root)?;
     let mut state = State::open(&config.state_db)?;
-    state.set_json("agent_settings", &sinan_protocol::AgentSettings::default())?;
+    state.set_json("agent_settings", &apsp_protocol::AgentSettings::default())?;
     // A previously rejected diagnostic is not an active managed service.
     state.set_json("diagnostics:active", &serde_json::Value::Null)?;
     state.set_json("diagnostics:done:fixture", &true)?;
@@ -379,26 +379,26 @@ async fn acknowledged_usage_is_preserved_while_keys_and_configuration_are_remove
     let fixture = Fixture::new()?;
     {
         let mut state = fixture.state.lock().unwrap();
-        let command = sinan_protocol::RemoteCommand {
+        let command = apsp_protocol::RemoteCommand {
             id: Uuid::new_v4(),
             command: "TEST_ONLY_command_secret".into(),
             timeout_secs: 1,
-            expires_at: sinan_protocol::now_timestamp() + 600,
+            expires_at: apsp_protocol::now_timestamp() + 600,
         };
         state.begin_command(&command)?;
-        state.finish_command(&sinan_protocol::CommandResult {
+        state.finish_command(&apsp_protocol::CommandResult {
             id: command.id,
-            status: sinan_protocol::CommandStatus::Succeeded,
-            finished_at: sinan_protocol::now_timestamp(),
+            status: apsp_protocol::CommandStatus::Succeeded,
+            finished_at: apsp_protocol::now_timestamp(),
             stdout: "TEST_ONLY_command_output".into(),
             stderr: String::new(),
             timed_out: false,
             truncated: false,
         })?;
-        state.save_probe_result(&sinan_protocol::ProbeResult {
+        state.save_probe_result(&apsp_protocol::ProbeResult {
             id: Uuid::new_v4(),
             probe_id: Uuid::new_v4(),
-            sampled_at: sinan_protocol::telemetry::now_millis(),
+            sampled_at: apsp_protocol::telemetry::now_millis(),
             latency_ms: None,
             loss_percent: 100.0,
             address_family: None,
@@ -406,10 +406,10 @@ async fn acknowledged_usage_is_preserved_while_keys_and_configuration_are_remove
             attempts: None,
             execution: None,
         })?;
-        state.save_telemetry(&sinan_protocol::TelemetrySample {
+        state.save_telemetry(&apsp_protocol::TelemetrySample {
             id: Uuid::new_v4(),
-            sampled_at: sinan_protocol::telemetry::now_millis(),
-            metrics: sinan_protocol::Metrics::default(),
+            sampled_at: apsp_protocol::telemetry::now_millis(),
+            metrics: apsp_protocol::Metrics::default(),
         })?;
         for table in ["command_journal", "probe_outbox", "telemetry_outbox"] {
             assert_eq!(
@@ -434,7 +434,7 @@ async fn acknowledged_usage_is_preserved_while_keys_and_configuration_are_remove
                 uplink: 31,
                 downlink: 73,
             }],
-            sinan_protocol::now_timestamp(),
+            apsp_protocol::now_timestamp(),
         )?
         .unwrap();
     fixture.retirement.prepare().await?;
@@ -615,18 +615,18 @@ impl ServiceManager for DiagnosticServices {
                 && !self.job_running.load(Ordering::SeqCst))
         })
     }
-    fn reload<'a>(&'a self, unit: &'a str) -> sinan_adapter_sdk::BoxFuture<'a, ()> {
+    fn reload<'a>(&'a self, unit: &'a str) -> apsp_adapter_sdk::BoxFuture<'a, ()> {
         self.runtime.reload(unit)
     }
-    fn restart<'a>(&'a self, unit: &'a str) -> sinan_adapter_sdk::BoxFuture<'a, ()> {
+    fn restart<'a>(&'a self, unit: &'a str) -> apsp_adapter_sdk::BoxFuture<'a, ()> {
         self.runtime.restart(unit)
     }
-    fn is_active<'a>(&'a self, unit: &'a str) -> sinan_adapter_sdk::BoxFuture<'a, bool> {
+    fn is_active<'a>(&'a self, unit: &'a str) -> apsp_adapter_sdk::BoxFuture<'a, bool> {
         self.runtime.is_active(unit)
     }
-    fn stop<'a>(&'a self, unit: &'a str) -> sinan_adapter_sdk::BoxFuture<'a, ()> {
+    fn stop<'a>(&'a self, unit: &'a str) -> apsp_adapter_sdk::BoxFuture<'a, ()> {
         Box::pin(async move {
-            if unit.starts_with("sinan-diagnostic-") {
+            if unit.starts_with("apsp-diagnostic-") {
                 self.stopped_units.lock().unwrap().push(unit.into());
                 ensure!(
                     !self.fail_stop.swap(false, Ordering::SeqCst),
@@ -642,12 +642,12 @@ impl ServiceManager for DiagnosticServices {
     fn job_status<'a>(
         &'a self,
         _: &'a str,
-    ) -> sinan_adapter_sdk::BoxFuture<'a, sinan_adapter_sdk::JobStatus> {
+    ) -> apsp_adapter_sdk::BoxFuture<'a, apsp_adapter_sdk::JobStatus> {
         Box::pin(async move {
             Ok(if self.job_running.load(Ordering::SeqCst) {
-                sinan_adapter_sdk::JobStatus::Running
+                apsp_adapter_sdk::JobStatus::Running
             } else {
-                sinan_adapter_sdk::JobStatus::Missing
+                apsp_adapter_sdk::JobStatus::Missing
             })
         })
     }
@@ -657,7 +657,7 @@ impl ServiceManager for DiagnosticServices {
 async fn diagnostic_shutdown_failure_prevents_success_and_can_be_retried() -> Result<()> {
     let fixture = Fixture::new()?;
     let job_id = Uuid::new_v4();
-    let spec = sinan_adapter_sdk::DiagnosticSpec {
+    let spec = apsp_adapter_sdk::DiagnosticSpec {
         id: job_id.to_string(),
         version: "test".into(),
         binary_path: fixture.config.install_root.join("diagnostic/test/tool"),
@@ -669,8 +669,8 @@ async fn diagnostic_shutdown_failure_prevents_success_and_can_be_retried() -> Re
         timeout_secs: 60,
         options: BTreeMap::new(),
     };
-    let service = sinan_adapter_sdk::ServiceJob {
-        unit: format!("sinan-diagnostic-{job_id}.service"),
+    let service = apsp_adapter_sdk::ServiceJob {
+        unit: format!("apsp-diagnostic-{job_id}.service"),
         program: spec.binary_path.clone(),
         args: vec![],
         working_directory: spec.job_dir.clone(),
@@ -724,7 +724,7 @@ fn saved_diagnostic(fixture: &Fixture, id: Uuid) -> serde_json::Value {
                 "job_dir": directory, "timeout_secs": 60, "options": {}
             },
             "service": {
-                "unit": format!("sinan-diagnostic-{id}.service"), "program": binary,
+                "unit": format!("apsp-diagnostic-{id}.service"), "program": binary,
                 "args": [], "working_directory": directory, "timeout_secs": 60
             },
             "started_at": 0, "plugin": "test", "start_error": null, "expires_at": null,
@@ -785,7 +785,7 @@ async fn inactive_diagnostic_without_cleanup_proof_blocks_retirement_and_preserv
                 assert!(!services.job_running.load(Ordering::SeqCst));
                 assert_eq!(
                     *services.stopped_units.lock().unwrap(),
-                    vec![format!("sinan-diagnostic-{id}.service")]
+                    vec![format!("apsp-diagnostic-{id}.service")]
                 );
                 assert!(services.cleanup_targets.lock().unwrap().is_empty());
             }
@@ -828,7 +828,7 @@ async fn inactive_diagnostic_without_cleanup_proof_blocks_retirement_and_preserv
                 .unwrap()
                 .iter()
                 .all(|(unit, directory)| {
-                    unit == &format!("sinan-diagnostic-{id}.service")
+                    unit == &format!("apsp-diagnostic-{id}.service")
                         && directory
                             == &fixture
                                 .config
@@ -1015,8 +1015,7 @@ impl Privileged for ControlledSystemctl {
             ensure!(program == Path::new("systemctl"), "unexpected program");
             match args.first().map(String::as_str) {
                 Some("list-units")
-                    if args.last().map(String::as_str)
-                        == Some("sinan-fleet-terminal-*.service") =>
+                    if args.last().map(String::as_str) == Some("apsp-fleet-terminal-*.service") =>
                 {
                     Ok(CommandOutput {
                         success: !self.query_fails.load(Ordering::SeqCst),
@@ -1150,7 +1149,7 @@ async fn systemd_query_failure_cannot_clear_credentials_or_confirm_retirement() 
 #[tokio::test]
 async fn requested_retirement_quiesces_task_update_and_telemetry_workers() -> Result<()> {
     use crate::artifacts::PanelClient;
-    use sinan_protocol::{RemoteCommand, now_timestamp};
+    use apsp_protocol::{RemoteCommand, now_timestamp};
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
@@ -1302,7 +1301,7 @@ async fn blocked_sampling_does_not_hold_retirement_gate_or_offline_uploads() -> 
             let (status, body) = if request.starts_with("GET /api/agent/v1/settings ") {
                 (
                     "200 OK",
-                    serde_json::to_vec(&sinan_protocol::AgentSettings::default()).unwrap(),
+                    serde_json::to_vec(&apsp_protocol::AgentSettings::default()).unwrap(),
                 )
             } else if request.starts_with("POST /api/agent/v1/telemetry ") {
                 if captured.fetch_add(1, Ordering::SeqCst) == 0 {
@@ -1310,7 +1309,7 @@ async fn blocked_sampling_does_not_hold_retirement_gate_or_offline_uploads() -> 
                 } else {
                     (
                         "200 OK",
-                        serde_json::to_vec(&sinan_protocol::TelemetryAck {
+                        serde_json::to_vec(&apsp_protocol::TelemetryAck {
                             ids: vec![sample_id],
                         })
                         .unwrap(),

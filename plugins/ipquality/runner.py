@@ -52,7 +52,7 @@ def canonical(value):
 
 
 def runtime():
-    scope = {'__name__': 'sinan_ipquality_rootfs'}
+    scope = {'__name__': 'apsp_ipquality_rootfs'}
     require(ROOTFS_SOURCE != '@ROOTFS_HELPER@', 'runner must be packaged with the fixed rootfs verifier')
     exec(compile(ROOTFS_SOURCE, '<signed-rootfs-verifier>', 'exec'), scope)
     return type('Rootfs', (), scope)
@@ -250,13 +250,13 @@ def execute(args, directory):
         require(not interrupted, 'IPQuality was cancelled before execution')
         environment = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
                        'HOME': '/work', 'TMPDIR': '/work/tmp',
-                       'SINAN_IPQUALITY_ATTEMPTS': '/work/attempts.jsonl',
-                       'SINAN_IPQUALITY_PARTIAL': '/work/partial.json',
-                       'SINAN_IPQUALITY_FAMILY': args.ip_version,
-                       'SINAN_IPQUALITY_JOB_UUID': args.job_id}
+                       'APSP_IPQUALITY_ATTEMPTS': '/work/attempts.jsonl',
+                       'APSP_IPQUALITY_PARTIAL': '/work/partial.json',
+                       'APSP_IPQUALITY_FAMILY': args.ip_version,
+                       'APSP_IPQUALITY_JOB_UUID': args.job_id}
         with (workspace / 'upstream.json').open('xb') as output, (workspace / 'log.txt').open('xb') as log:
             child = subprocess.Popen(['/usr/sbin/chroot', str(root), '/bin/bash',
-                                      '/usr/local/lib/sinan-ipquality/patched-ip.sh', args.ip_version],
+                                      '/usr/local/lib/apsp-ipquality/patched-ip.sh', args.ip_version],
                                      stdin=subprocess.DEVNULL, stdout=output, stderr=log,
                                      env=environment, start_new_session=True, preexec_fn=child_limits)
             published = time.monotonic()

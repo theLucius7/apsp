@@ -34,7 +34,7 @@ pub(super) async fn account(ops: &dyn Privileged, name: &str) -> Result<()> {
 $account=Get-LocalUser -Name $name -ErrorAction SilentlyContinue
 if(-not $account) {{ $account=New-LocalUser -Name $name -Disabled -NoPassword -AccountNeverExpires -UserMayNotChangePassword }}
 if(-not (Get-LocalGroupMember -SID 'S-1-5-32-545' | Where-Object {{ $_.SID -eq $account.SID }})) {{ Add-LocalGroupMember -SID 'S-1-5-32-545' -Member $account }}
-$temporary=[IO.Path]::Combine([IO.Path]::GetTempPath(),'sinan-policy-'+[Guid]::NewGuid().ToString('N'))
+$temporary=[IO.Path]::Combine([IO.Path]::GetTempPath(),'apsp-policy-'+[Guid]::NewGuid().ToString('N'))
 $owner=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $acl=[Security.AccessControl.DirectorySecurity]::new()
 $acl.SetSecurityDescriptorSddlForm("D:P(A;OICI;FA;;;$owner)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
@@ -150,7 +150,7 @@ pub(super) async fn register(
             ""
         }
     );
-    task(ops, "sinan-agent", binary, &args, None, &root).await?;
+    task(ops, "apsp-agent", binary, &args, None, &root).await?;
     if let Some(descriptor) = descriptor {
         let runtime = config
             .runtime_root
@@ -206,12 +206,12 @@ while ($true) {{
     if ((Test-Path -LiteralPath $kernel) -and (Test-Path -LiteralPath $configuration)) {{
         $k=Get-Content -LiteralPath $kernel -Raw | ConvertFrom-Json
         $c=Get-Content -LiteralPath $configuration -Raw | ConvertFrom-Json
-        if (-not $k.sinan_directory_reference -or -not $c.sinan_directory_reference) {{ throw 'Invalid runtime reference' }}
+        if (-not $k.apsp_directory_reference -or -not $c.apsp_directory_reference) {{ throw 'Invalid runtime reference' }}
         $binary=Join-Path $k.target {}
         $config=Join-Path $c.target 'config.json'
         $a=Get-Content -LiteralPath $agentReference -Raw | ConvertFrom-Json
-        if (-not $a.sinan_directory_reference) {{ throw 'Invalid Agent reference' }}
-        $verifier=Join-Path $a.target 'sinan-agent.exe'
+        if (-not $a.apsp_directory_reference) {{ throw 'Invalid Agent reference' }}
+        $verifier=Join-Path $a.target 'apsp-agent.exe'
         & $verifier verify-installed --binary $binary --name {} --format tar.gz
         if ($LASTEXITCODE -ne 0) {{ throw 'Runtime signature verification failed' }}
         & $binary run -c $config -D {}

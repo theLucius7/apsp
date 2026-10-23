@@ -5,13 +5,13 @@ use crate::{
     artifacts::{PanelClient, safe_component},
 };
 use anyhow::{Context, Result, ensure};
-use serde::{Deserialize, Serialize};
-use sinan_adapter_sdk::{
+use apsp_adapter_sdk::{
     Descriptor, DiagnosticAdapter, DiagnosticSpec, JobStatus, Privileged, ServiceJob,
     ServiceManager,
 };
-use sinan_protocol::release::{ReleaseError, TrustedKeys};
-use sinan_protocol::{DiagnosticJob, DiagnosticReport, DiagnosticStatus, DiagnosticUpdate};
+use apsp_protocol::release::{ReleaseError, TrustedKeys};
+use apsp_protocol::{DiagnosticJob, DiagnosticReport, DiagnosticStatus, DiagnosticUpdate};
+use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     future::Future,
@@ -216,7 +216,7 @@ impl DiagnosticWorker {
             );
         }
         if self.cancellations.is_some() {
-            let requests: Vec<sinan_protocol::DiagnosticCancelRequest> =
+            let requests: Vec<apsp_protocol::DiagnosticCancelRequest> =
                 state.get_json(cancellation::PENDING)?.unwrap_or_default();
             if requests.iter().any(|request| request.job.id == update.id) {
                 // The same SQLite lock serializes this decision with cancellation.
@@ -314,7 +314,7 @@ impl DiagnosticWorker {
                 timeout_secs: execution_timeout(job.timeout_secs, job.expires_at, unix_time())?, options: job.options,
             };
             let mut service = self.bounded(adapter.prepare(&spec, self.privileged.as_ref())).await?;
-            ensure!(service.unit == format!("sinan-diagnostic-{id}.service")
+            ensure!(service.unit == format!("apsp-diagnostic-{id}.service")
                 && service.timeout_secs == spec.timeout_secs
                 && service.working_directory == spec.job_dir && service.program == spec.binary_path, "invalid prepared diagnostic service");
             if let Some(budget)=&job.resource_budget { budget::apply(budget,&mut service)?; }

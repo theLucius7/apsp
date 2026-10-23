@@ -3,10 +3,10 @@ mod business_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::Result;
+use apsp_panel::{notifications, settings::Settings};
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::{notifications, settings::Settings};
 use sqlx::PgPool;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -97,7 +97,7 @@ async fn webhook_settings_require_admin_hide_secrets_preserve_blanks_and_test_on
         assert!(!text.contains("TEST_ONLY"));
         assert!(text.contains("url_configured"));
     }
-    let saved = sinan_panel::settings::read(&panel.state.pool)
+    let saved = apsp_panel::settings::read(&panel.state.pool)
         .await?
         .webhook
         .unwrap();
@@ -168,7 +168,7 @@ async fn webhook_settings_require_admin_hide_secrets_preserve_blanks_and_test_on
         .await?
         .error_for_status()?;
     assert!(
-        sinan_panel::settings::read(&panel.state.pool)
+        apsp_panel::settings::read(&panel.state.pool)
             .await?
             .webhook
             .unwrap()
@@ -180,7 +180,7 @@ async fn webhook_settings_require_admin_hide_secrets_preserve_blanks_and_test_on
         .await?
         .error_for_status()?;
     assert!(
-        sinan_panel::settings::read(&panel.state.pool)
+        apsp_panel::settings::read(&panel.state.pool)
             .await?
             .webhook
             .is_none()
@@ -215,7 +215,7 @@ async fn changing_one_channel_only_cancels_its_pending_messages(pool: PgPool) ->
     let id = panel
         .create_server(&cookie, "channel settings fixture")
         .await?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("UPDATE servers SET last_seen=$2 WHERE id=$1")
         .bind(id)
         .bind(now - 600)
@@ -243,7 +243,7 @@ async fn changing_one_channel_only_cancels_its_pending_messages(pool: PgPool) ->
             ("webhook".into(), "pending".into())
         ]
     );
-    assert!(sinan_panel::settings::read(pool).await?.webhook.is_some());
+    assert!(apsp_panel::settings::read(pool).await?.webhook.is_some());
     // Change the Webhook destination, retaining the other channel's new event.
     sqlx::query("UPDATE notification_outbox SET status='pending' WHERE channel='telegram'")
         .execute(pool)
@@ -329,7 +329,7 @@ async fn automatic_webhook_delivers_offline_and_recovery_with_event_metadata(
     let server = panel
         .create_server(&cookie, "automatic webhook fixture")
         .await?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     for (recovery, expected) in [(false, "offline"), (true, "online")] {
         let (url, worker) = receiver().await?;
         panel

@@ -1,8 +1,8 @@
 use super::Runtime;
 use crate::Config;
 use anyhow::Result;
+use apsp_protocol::{AgentSettings, Envelope, now_timestamp};
 use futures_util::StreamExt;
-use sinan_protocol::{AgentSettings, Envelope, now_timestamp};
 use std::{net::IpAddr, time::Duration};
 use tokio::sync::mpsc;
 

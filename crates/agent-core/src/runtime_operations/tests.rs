@@ -94,7 +94,7 @@ fn request() -> RuntimeOperationRequest {
 
 #[tokio::test]
 async fn result_delivery_failure_reopens_durable_result_without_reexecuting() {
-    let path = std::env::temp_dir().join(format!("sinan-runtime-{}.db", uuid::Uuid::new_v4()));
+    let path = std::env::temp_dir().join(format!("apsp-runtime-{}.db", uuid::Uuid::new_v4()));
     let state = Arc::new(Mutex::new(State::open(&path).unwrap()));
     let services = Arc::new(FakeServiceManager::default());
     let reconciler = Reconciler::new(
@@ -122,7 +122,7 @@ async fn result_delivery_failure_reopens_durable_result_without_reexecuting() {
     assert_eq!(results[0], results[1]);
     assert_eq!(
         results[0].snapshot.as_ref().unwrap().service,
-        sinan_protocol::RuntimeServiceState::Inactive
+        apsp_protocol::RuntimeServiceState::Inactive
     );
     assert!(records(&reopened).unwrap()[0].acknowledged);
     drop(reopened);

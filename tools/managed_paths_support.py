@@ -77,7 +77,7 @@ def owned_root(root, run_id):
             and root.stat().st_mode & 0o077 == 0,
             "private_owned_run_root_required")
     require(str(uuid.UUID(run_id)) == run_id and uuid.UUID(run_id).int != 0, "canonical_run_uuid_required")
-    require(regular(root / ".sinan-managed-test-run", 128).decode().strip() == run_id,
+    require(regular(root / ".apsp-managed-test-run", 128).decode().strip() == run_id,
             "run_ownership_mismatch")
     return root
 

@@ -20,10 +20,10 @@ pub(super) async fn latest() -> Result<FetchedRates, &'static str> {
         .redirect(Policy::none())
         .connect_timeout(Duration::from_secs(3))
         .timeout(Duration::from_secs(8))
-        .user_agent("Sinan-exchange-rates/1")
+        .user_agent("Apsp-exchange-rates/1")
         .build()
         .map_err(|_| "download_failed")?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     if let Ok(body) = download(&client, PRIMARY).await
         && let Ok(value) = parse(&body, now, true)
     {

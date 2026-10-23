@@ -1,5 +1,5 @@
 [package]
-name = "sinan-plugin-alicloud"
+name = "apsp-plugin-alicloud"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,9 +14,9 @@ autobenches = false
 path = "mod.rs"
 
 [dependencies]
-sinan-panel-host.workspace = true
-sinan-cloud-api.workspace = true
-sinan-protocol.workspace = true
+apsp-panel-host.workspace = true
+apsp-cloud-api.workspace = true
+apsp-protocol.workspace = true
 axum.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
@@ -28,4 +28,4 @@ tracing.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
-sinan-cloud-api = { workspace = true, features = ["test-support"] }
+apsp-cloud-api = { workspace = true, features = ["test-support"] }

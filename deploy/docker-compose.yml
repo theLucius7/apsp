@@ -1,17 +1,17 @@
-name: sinan
+name: apsp
 
 services:
   postgres:
     image: postgres:16
     restart: unless-stopped
     environment:
-      POSTGRES_DB: sinan
-      POSTGRES_USER: sinan
-      POSTGRES_PASSWORD: ${SINAN_DB_PASSWORD:?Set SINAN_DB_PASSWORD in .env}
+      POSTGRES_DB: apsp
+      POSTGRES_USER: apsp
+      POSTGRES_PASSWORD: ${APSP_DB_PASSWORD:?Set APSP_DB_PASSWORD in .env}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U sinan -d sinan"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U apsp -d apsp"]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -21,22 +21,22 @@ services:
       context: ..
       dockerfile: Dockerfile
       args:
-        SINAN_RELEASE_PUBLIC_KEYS: ${SINAN_RELEASE_PUBLIC_KEYS:-}
-    image: sinan-panel:local
+        APSP_RELEASE_PUBLIC_KEYS: ${APSP_RELEASE_PUBLIC_KEYS:-}
+    image: apsp-panel:local
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      SINAN_DATABASE_URL: postgres://sinan:${SINAN_DB_PASSWORD:?Set SINAN_DB_PASSWORD in .env}@postgres:5432/sinan
-      SINAN_PUBLIC_URL: ${SINAN_PUBLIC_URL:?Set SINAN_PUBLIC_URL in .env}
-      SINAN_ADMIN_PASSWORD: ${SINAN_ADMIN_PASSWORD:?Set SINAN_ADMIN_PASSWORD in .env}
-      SINAN_LISTEN: 0.0.0.0:8080
-      SINAN_DATA_DIR: /data
-      SINAN_ABUSEIPDB_API_KEY: ${SINAN_ABUSEIPDB_API_KEY:-}
+      APSP_DATABASE_URL: postgres://apsp:${APSP_DB_PASSWORD:?Set APSP_DB_PASSWORD in .env}@postgres:5432/apsp
+      APSP_PUBLIC_URL: ${APSP_PUBLIC_URL:?Set APSP_PUBLIC_URL in .env}
+      APSP_ADMIN_PASSWORD: ${APSP_ADMIN_PASSWORD:?Set APSP_ADMIN_PASSWORD in .env}
+      APSP_LISTEN: 0.0.0.0:8080
+      APSP_DATA_DIR: /data
+      APSP_ABUSEIPDB_API_KEY: ${APSP_ABUSEIPDB_API_KEY:-}
       RUST_LOG: ${RUST_LOG:-info}
     ports:
-      - "${SINAN_BIND_ADDRESS:-127.0.0.1}:${SINAN_PORT:-8080}:8080"
+      - "${APSP_BIND_ADDRESS:-127.0.0.1}:${APSP_PORT:-8080}:8080"
     volumes:
       - panel-data:/data
 

@@ -5,12 +5,12 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
+use apsp_panel::plugins::singbox::sources::{
+    latest_follow_version_on, load_version_on, refresh_due,
+};
 use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::plugins::singbox::sources::{
-    latest_follow_version_on, load_version_on, refresh_due,
-};
 use sqlx::PgPool;
 use std::time::Duration;
 

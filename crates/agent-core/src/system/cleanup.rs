@@ -179,7 +179,7 @@ mod tests {
     #[test]
     fn confirmation_capability_rejects_missing_v2_evidence_and_other_backends() -> Result<()> {
         let directory =
-            std::env::temp_dir().join(format!("sinan-cleanup-capability-{}", Uuid::new_v4()));
+            std::env::temp_dir().join(format!("apsp-cleanup-capability-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory)?;
         let controllers = directory.join("cgroup.controllers");
         assert!(!supported_at(ServiceBackend::Systemd, &controllers));

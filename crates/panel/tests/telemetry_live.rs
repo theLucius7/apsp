@@ -4,12 +4,12 @@ mod business_support;
 mod release_support;
 
 use anyhow::Result;
+use apsp_protocol::{
+    Metrics, NetworkMetrics, TelemetryBatch, TelemetrySample, telemetry::now_millis,
+};
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_protocol::{
-    Metrics, NetworkMetrics, TelemetryBatch, TelemetrySample, telemetry::now_millis,
-};
 use sqlx::PgPool;
 use uuid::Uuid;
 

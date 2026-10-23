@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { extname, resolve, sep } from 'node:path'
 
 // TEST_ONLY: shipping UI and owned loopback API snapshots, without cloud calls.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url)), path = '/api/plugins/alicloud'
 const server = createServer(async (request, response) => {
   const name = new URL(request.url, 'http://127.0.0.1').pathname, file = resolve(dist, name === '/' ? 'index.html' : `.${name}`)
@@ -16,7 +16,7 @@ const server = createServer(async (request, response) => {
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const origin = `http://127.0.0.1:${server.address().port}`, totals = { scenarios: 0, blocked: 0, errors: [], external: [], unexpected: [] }
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
 const wait = async (condition, label) => { const until = Date.now() + 12000; while (!await condition()) { assert(Date.now() < until, label); await new Promise(resolve => setTimeout(resolve, 20)) } }
 try {
   for (const width of [1440, 390]) for (const kind of ['account', 'resource', 'bandwidth', 'policy', 'power']) {

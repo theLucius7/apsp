@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
 
-use serde_json::json;
-use sinan_protocol::{
+use apsp_protocol::{
     ProbeAddressFamily, ProbeAuthorization, ProbeAuthorizationKind, ProbeMonitor, ProbeSpec,
 };
+use serde_json::json;
 
 fn legacy() -> ProbeSpec {
     serde_json::from_value(json!({"id":uuid::Uuid::nil(),"name":"owned endpoint","kind":"tcp","target":"probe.example.com","port":443,"interval_secs":30,"carrier":"telecom","enabled":true})).unwrap()
@@ -13,7 +13,7 @@ fn granted() -> ProbeSpec {
     let mut spec = legacy();
     let identity = spec.identity();
     spec.monitor = Some(ProbeMonitor {
-        network: sinan_protocol::ProbeNetwork::Other,
+        network: apsp_protocol::ProbeNetwork::Other,
         region: "fixture region".into(),
         address_family: ProbeAddressFamily::Any,
         authorization: Some(ProbeAuthorization {
@@ -107,7 +107,7 @@ fn family_and_metadata_identity_never_relabel_existing_samples() {
     changed.monitor.as_mut().unwrap().region = "other region".into();
     assert!(!changed.same_measurement_identity(&original));
     changed = original.clone();
-    changed.monitor.as_mut().unwrap().network = sinan_protocol::ProbeNetwork::Mobile;
+    changed.monitor.as_mut().unwrap().network = apsp_protocol::ProbeNetwork::Mobile;
     assert!(!changed.same_measurement_identity(&original));
     changed = original.clone();
     changed.interval_secs = 60;
@@ -121,7 +121,7 @@ fn family_and_metadata_identity_never_relabel_existing_samples() {
 #[test]
 fn legacy_results_omit_new_attempts_and_family_fields_without_changing_digest_input() {
     let input = json!({"id":uuid::Uuid::nil(),"probe_id":uuid::Uuid::nil(),"sampled_at":1000,"latency_ms":null,"loss_percent":100.0,"error":"TEST_ONLY old unavailable result"});
-    let result: sinan_protocol::ProbeResult = serde_json::from_value(input.clone()).unwrap();
+    let result: apsp_protocol::ProbeResult = serde_json::from_value(input.clone()).unwrap();
     assert_eq!(result.attempts, None);
     assert_eq!(result.address_family, None);
     assert_eq!(serde_json::to_value(result).unwrap(), input);

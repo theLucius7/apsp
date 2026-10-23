@@ -24,7 +24,7 @@ test('a proxy authentication error never ends an administrator session', async (
     await expect(api('/api/login/passkey/finish', 'POST', {})).rejects.toThrow('请登录')
     expect(events).toEqual([])
     await expect(api('/api/security/passkeys')).rejects.toThrow('请登录')
-    expect(events).toEqual(['sinan:unauthorized'])
+    expect(events).toEqual(['apsp:unauthorized'])
   } finally {
     globalThis.fetch = originalFetch
     if (descriptor) Object.defineProperty(globalThis, 'window', descriptor)

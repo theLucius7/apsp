@@ -11,16 +11,16 @@
 ```sh
 E2E_PRIVATE=$(mktemp -d)
 chmod 700 "$E2E_PRIVATE"
-export SINAN_E2E_ADMIN_PASSWORD_FILE="$E2E_PRIVATE/admin-password"
-# 使用安全编辑器写入管理员密码，再执行 chmod 600 "$SINAN_E2E_ADMIN_PASSWORD_FILE"。
+export APSP_E2E_ADMIN_PASSWORD_FILE="$E2E_PRIVATE/admin-password"
+# 使用安全编辑器写入管理员密码，再执行 chmod 600 "$APSP_E2E_ADMIN_PASSWORD_FILE"。
 # 设置 PANEL_ORIGIN、NODE_PUBLIC_HOST、REALITY_SNI 为本次环境值。
 python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" prepare \
   --origin "$PANEL_ORIGIN" --public-host "$NODE_PUBLIC_HOST" --sni "$REALITY_SNI"
 ```
 
-密码也可通过 `SINAN_E2E_ADMIN_PASSWORD` 提供，缺省则隐藏输入。密码和 Cookie 不写入 state、不打印；state、安装描述、客户端凭据和阶段证据以 0600 保存，所在目录必须是仓库外的 0700 私有目录。
+密码也可通过 `APSP_E2E_ADMIN_PASSWORD` 提供，缺省则隐藏输入。密码和 Cookie 不写入 state、不打印；state、安装描述、客户端凭据和阶段证据以 0600 保存，所在目录必须是仓库外的 0700 私有目录。
 
-管理员已启用 TOTP 时，在驱动命令的阶段名之前加 `--totp`，例如 `python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" --totp ready`，登录时会隐藏输入一次性验证码。非交互单次认证可通过 `SINAN_E2E_TOTP_CODE` 提供验证码；`e2e-real.sh snapshot` 可设置 `SINAN_E2E_TOTP=1` 隐藏输入，也支持同一验证码环境变量。每个命令都会重新登录，必须使用新时间步的验证码；同一 30 秒时间步不能重放，连续命令需等待下一步。验证码和种子不保存到 state 或证据中，验收无需关闭 TOTP；默认 CI 使用新建管理员，不启用 TOTP。
+管理员已启用 TOTP 时，在驱动命令的阶段名之前加 `--totp`，例如 `python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" --totp ready`，登录时会隐藏输入一次性验证码。非交互单次认证可通过 `APSP_E2E_TOTP_CODE` 提供验证码；`e2e-real.sh snapshot` 可设置 `APSP_E2E_TOTP=1` 隐藏输入，也支持同一验证码环境变量。每个命令都会重新登录，必须使用新时间步的验证码；同一 30 秒时间步不能重放，连续命令需等待下一步。验证码和种子不保存到 state 或证据中，验收无需关闭 TOTP；默认 CI 使用新建管理员，不启用 TOTP。
 
 `prepare --port 443` 可显式指定节点监听端口，范围为 1–65535，保留统计接口 18085；省略时由面板在 20000–29999 分配。选择会在创建资源前保存，重试必须使用相同参数，旧版未记录显式端口的 state 仍可按自动分配模式恢复。已创建节点若被改端口，驱动会拒绝继续，避免把另一个配置当成本次验收。
 
@@ -36,8 +36,8 @@ python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" install --refres
 sudo python3 - "$E2E_PRIVATE/enrollment.json" <<'PY'
 import json, os, pathlib, subprocess, sys
 descriptor = json.loads(pathlib.Path(sys.argv[1]).read_text())
-environment = dict(os.environ, SINAN_ENROLLMENT_TOKEN=descriptor["token"])
-subprocess.run(["/usr/local/bin/sinan-bootstrap", "--version", descriptor["version"],
+environment = dict(os.environ, APSP_ENROLLMENT_TOKEN=descriptor["token"])
+subprocess.run(["/usr/local/bin/apsp-bootstrap", "--version", descriptor["version"],
                 "--panel", descriptor["origin"]], env=environment, check=True)
 PY
 ```
@@ -81,16 +81,16 @@ python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" traffic \
 
 `scripts/e2e-traffic-evidence.py` 在隔离 CI 中保存固定字段白名单；失败时自动探测本次回环 HTTP、SOCKS 和运行时 TCP，以及本次私有 TLS 夹具并保留原退出码。它不会导出配置、凭据、完整响应或日志，不能用于任意公网地址。公网排查的地址、TLS 验证结果和私有日志由操作者保存在仓库外；不关闭 TLS 验证，不把生产节点用作负载夹具。
 
-[Issue #6](https://github.com/theLucius7/sinan/issues/6) 还包含固定 90 秒下的间歇失败和同源码一次重跑成功，根因尚未确定。现有取证和本节步骤没有修复其根因；回环 CI 的某次成功也不证明公网持续传输全部通过。
+[Issue #6](https://github.com/theLucius7/apsp/issues/6) 还包含固定 90 秒下的间歇失败和同源码一次重跑成功，根因尚未确定。现有取证和本节步骤没有修复其根因；回环 CI 的某次成功也不证明公网持续传输全部通过。
 
 ## 暂停、重启和重载
 
 停止独立客户端，关闭本次用户的全部连接。显式设置只读 Agent 状态命令；命令按 `shlex` 分词后直接执行，不经过驱动端 shell。操作者负责命令仅进行只读查询，下面使用本机设备示例：
 
 ```sh
-export SINAN_E2E_STATUS_COMMAND='sudo sinan-agent status'
-# 容器示例：docker exec sinan-acceptance-agent sinan-agent status
-# SSH 示例：ssh acceptance-host sudo sinan-agent status
+export APSP_E2E_STATUS_COMMAND='sudo apsp-agent status'
+# 容器示例：docker exec apsp-acceptance-agent apsp-agent status
+# SSH 示例：ssh acceptance-host sudo apsp-agent status
 python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" verify \
   --label before --interval 35 --timeout 240
 ```
@@ -100,10 +100,10 @@ python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" verify \
 由操作者记录运行时 MainPID、设备公钥及本地身份文件摘要，重启 Agent，再检查 MainPID 未变。分别在 Agent 恢复和显式重载运行时后执行：
 
 ```sh
-# 设备：systemctl restart sinan-agent.service
+# 设备：systemctl restart apsp-agent.service
 python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" verify \
   --label after-agent --unchanged-from before
-# 设备：systemctl reload sinan-singbox@main.service
+# 设备：systemctl reload apsp-singbox@main.service
 python3 scripts/e2e-driver.py --state "$E2E_PRIVATE/state.json" verify \
   --label after-runtime --unchanged-from before
 ```

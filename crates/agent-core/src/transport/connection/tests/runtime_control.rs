@@ -1,6 +1,6 @@
 use super::*;
 use crate::state::runtime_control::ControlRequest;
-use sinan_protocol::{RuntimeBinding, RuntimeCheckpointRequest, RuntimeControlAck};
+use apsp_protocol::{RuntimeBinding, RuntimeCheckpointRequest, RuntimeControlAck};
 
 #[tokio::test]
 async fn checkpoint_enqueue_does_not_wait_for_the_control_worker_or_delay_heartbeats() -> Result<()>
@@ -28,7 +28,7 @@ async fn checkpoint_enqueue_does_not_wait_for_the_control_worker_or_delay_heartb
     let runtime = Runtime {
         state: state.clone(),
         modules: Arc::new(vec![]),
-        capabilities: Arc::new(vec![sinan_protocol::RUNTIME_CHECKPOINT_CAPABILITY.into()]),
+        capabilities: Arc::new(vec![apsp_protocol::RUNTIME_CHECKPOINT_CAPABILITY.into()]),
         connected: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         public_ips: Arc::new(vec![]),
         agent_version: "fixture-agent",
@@ -54,7 +54,7 @@ async fn checkpoint_enqueue_does_not_wait_for_the_control_worker_or_delay_heartb
     let request = RuntimeCheckpointRequest {
         request_id: Uuid::new_v4(),
         expected: RuntimeBinding::new(Uuid::new_v4(), "demo".into(), 1, "a".repeat(64)),
-        expires_at: sinan_protocol::now_timestamp() + 60,
+        expires_at: apsp_protocol::now_timestamp() + 60,
     };
     send_peer(
         &mut peer,
@@ -111,7 +111,7 @@ async fn recovery_floor_refusal_keeps_heartbeat_and_durable_control_failure_avai
         state::IntentRecord,
         system::SystemOps,
     };
-    use sinan_adapter_sdk::{Plan, Prepared, RuntimeSpec};
+    use apsp_adapter_sdk::{Plan, Prepared, RuntimeSpec};
     let directory =
         Directory(std::env::temp_dir().join(format!("sn-floor-wire-{}", Uuid::new_v4())));
     let listener = TcpListener::bind("127.0.0.1:0").await?;

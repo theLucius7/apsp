@@ -20,7 +20,7 @@ pub(super) async fn execute(
     preview_id: Uuid,
     operation: &Operation,
 ) -> ApiResult<Value> {
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let receipt = match operation {
         Operation::PolicyBatch {
             user_ids,
@@ -73,7 +73,7 @@ pub(super) async fn execute(
                     .fetch_all(&mut **tx)
                     .await?;
             for (node, config) in configs {
-                let config: sinan_compiler::ProtocolConfig =
+                let config: apsp_compiler::ProtocolConfig =
                     serde_json::from_value(config).map_err(anyhow::Error::from)?;
                 sqlx::query(
                     "UPDATE accesses SET uuid=$3,credential=$4 WHERE user_id=$1 AND node_id=$2",
@@ -132,11 +132,11 @@ pub(super) async fn execute(
                 .bind(candidate_node_id)
                 .fetch_one(&mut **tx)
                 .await?;
-            let config: sinan_compiler::ProtocolConfig =
+            let config: apsp_compiler::ProtocolConfig =
                 serde_json::from_value(config).map_err(anyhow::Error::from)?;
             for user in directs {
                 sqlx::query("INSERT INTO accesses(user_id,node_id,uuid,stat_name,direct_grant,credential) VALUES($1,$2,$3,$4,TRUE,$5) ON CONFLICT(user_id,node_id) DO UPDATE SET direct_grant=TRUE")
-                    .bind(user).bind(candidate_node_id).bind(Uuid::new_v4()).bind(sinan_compiler::stat_name(user,*candidate_node_id)).bind(super::super::node_protocol::credential(config.credential_size())).execute(&mut **tx).await?;
+                    .bind(user).bind(candidate_node_id).bind(Uuid::new_v4()).bind(apsp_compiler::stat_name(user,*candidate_node_id)).bind(super::super::node_protocol::credential(config.credential_size())).execute(&mut **tx).await?;
             }
             sqlx::query("UPDATE accesses SET direct_grant=FALSE WHERE node_id=$1")
                 .bind(source_node_id)

@@ -56,7 +56,7 @@ export default function AdminShell({ current, busy, error, onLogout, children }:
     <Reauthentication /><Appearance />
     <aside ref={sidebar} className={menuOpen ? 'sidebar menu-open' : 'sidebar'}>
       <div className="sidebar-header">
-        <a href="#/servers" className="brand-link" aria-label={t('司南首页')}><Brand /></a>
+        <a href="#/servers" className="brand-link" aria-label={t('apsp首页')}><Brand /></a>
         <button ref={toggle} type="button" className="menu-toggle" aria-expanded={menuOpen}
           aria-controls="admin-navigation" onClick={() => setMenuOpen(open => !open)}>
           <Icon name={menuOpen ? 'close' : 'menu'} size={18} /><span>{t('菜单')}</span>
@@ -90,7 +90,7 @@ export default function AdminShell({ current, busy, error, onLogout, children }:
         <span className="topbar-status"><span className="status-dot" />{t('管理员会话已登录')}</span>
       </div>
       <main className="content"><ErrorNotice message={error} />{children}</main>
-      <footer className="app-footer"><span>{t('司南')}</span><span>{t('清晰掌握，自在连接。')}</span></footer>
+      <footer className="app-footer"><span>{t('apsp')}</span><span>{t('清晰掌握，自在连接。')}</span></footer>
     </div>
   </div>
 }

@@ -135,12 +135,12 @@ def env_values(directory):
         if not line or line.startswith("#"):
             continue
         key, separator, value = line.partition("=")
-        if separator and key.startswith("SINAN_"):
+        if separator and key.startswith("APSP_"):
             values[key] = value.strip().strip("\"'")
     # The target is a fresh, owned database. Its login must not depend on the
     # source pool's userinfo, query-password override, pgpass or process env.
     # SQL dump ownership is deliberately stripped during isolated restore.
-    values["SINAN_DB_PASSWORD"] = secrets.token_urlsafe(32)
+    values["APSP_DB_PASSWORD"] = secrets.token_urlsafe(32)
     return values
 
 
@@ -170,12 +170,12 @@ class Restore:
     def __init__(self, args, manifest):
         self.args = args
         self.manifest = manifest
-        self.project = args.project or "sinan-recovery-" + uuid.uuid4().hex[:12]
-        if not re.fullmatch(r"sinan-recovery-[a-z0-9][a-z0-9_-]{0,40}", self.project):
-            raise Failure("恢复项目名须以 sinan-recovery- 开头。")
+        self.project = args.project or "apsp-recovery-" + uuid.uuid4().hex[:12]
+        if not re.fullmatch(r"apsp-recovery-[a-z0-9][a-z0-9_-]{0,40}", self.project):
+            raise Failure("恢复项目名须以 apsp-recovery- 开头。")
         if self.project == manifest.get("project"):
             raise Failure("不能覆盖原面板项目。")
-        self.label = f"sinan.recovery.project={self.project}"
+        self.label = f"apsp.recovery.project={self.project}"
         self.network = self.project + "-network"
         self.postgres = self.project + "-postgres"
         self.panel = self.project + "-panel"
@@ -222,10 +222,10 @@ class Restore:
         for volume in self.volumes:
             self.docker("volume", "create", "--label", self.label, volume)
             self.created["volumes"].append(volume)
-        with tempfile.TemporaryDirectory(prefix="sinan-recovery-private-") as temp:
+        with tempfile.TemporaryDirectory(prefix="apsp-recovery-private-") as temp:
             temp = Path(temp)
             postgres_env = temp / "postgres.env"
-            private_write(postgres_env, ("POSTGRES_DB=sinan\nPOSTGRES_USER=sinan\nPOSTGRES_PASSWORD=" + values["SINAN_DB_PASSWORD"] + "\n").encode())
+            private_write(postgres_env, ("POSTGRES_DB=apsp\nPOSTGRES_USER=apsp\nPOSTGRES_PASSWORD=" + values["APSP_DB_PASSWORD"] + "\n").encode())
             self.docker("create", "--pull", "never", "--name", self.postgres, "--label", self.label,
                         "--network", self.network, "--network-alias", "postgres", "--env-file", str(postgres_env),
                         "-v", self.volumes[0] + ":/var/lib/postgresql/data", postgres_image)
@@ -234,7 +234,7 @@ class Restore:
             deadline = time.monotonic() + 180
             while True:
                 try:
-                    self.docker("exec", self.postgres, "pg_isready", "-U", "sinan", "-d", "sinan")
+                    self.docker("exec", self.postgres, "pg_isready", "-U", "apsp", "-d", "apsp")
                     break
                 except Failure:
                     if time.monotonic() >= deadline:
@@ -242,9 +242,9 @@ class Restore:
                     time.sleep(1)
             with (self.args.backup / "database.dump").open("rb") as source:
                 self.docker("exec", "-i", self.postgres, "pg_restore", "--exit-on-error", "--no-owner",
-                            "--no-privileges", "-U", "sinan", "-d", "sinan", input_file=source)
+                            "--no-privileges", "-U", "apsp", "-d", "apsp", input_file=source)
             self.checks["database_restore"] = True
-            actual = self.docker("exec", self.postgres, "psql", "-U", "sinan", "-d", "sinan", "-Atc",
+            actual = self.docker("exec", self.postgres, "psql", "-U", "apsp", "-d", "apsp", "-Atc",
                                  "SELECT COALESCE(json_agg(json_build_object('version',version,'checksum',encode(checksum,'hex')) ORDER BY version)::text,'[]') FROM _sqlx_migrations WHERE success")
             migrations = json.loads(actual)
             expected = self.manifest.get("schema_migrations")
@@ -252,11 +252,11 @@ class Restore:
                 raise Failure("数据库迁移身份与恢复清单不一致。")
             self.checks["schema_pairing"] = expected is not None
             if any(migration["version"] >= 54 for migration in migrations):
-                actual_keys = json.loads(self.docker("exec", self.postgres, "psql", "-U", "sinan", "-d", "sinan", "-Atc",
+                actual_keys = json.loads(self.docker("exec", self.postgres, "psql", "-U", "apsp", "-d", "apsp", "-Atc",
                                                     "SELECT COALESCE(json_agg(DISTINCT key_id ORDER BY key_id)::text,'[]') FROM credential_entries"))
                 if sorted(actual_keys) != sorted(self.manifest.get("required_key_ids", [])):
                     raise Failure("数据库所需解密密钥版本与恢复清单不一致，不能忽略必要材料。")
-            actual_version = int(self.docker("exec", self.postgres, "psql", "-U", "sinan", "-d", "sinan", "-Atc", "SHOW server_version_num"))
+            actual_version = int(self.docker("exec", self.postgres, "psql", "-U", "apsp", "-d", "apsp", "-Atc", "SHOW server_version_num"))
             if self.manifest.get("postgres_version_num", actual_version) // 10000 != actual_version // 10000:
                 raise Failure("数据库恢复目标与源数据库大版本不一致。")
             self.docker("create", "--pull", "never", "--network", "none", "--user", "0:0",
@@ -270,17 +270,17 @@ class Restore:
             self.created["containers"].remove(self.data_restore)
             # Internal Docker networking prevents restored schedules, DNS and cloud
             # integrations from reaching any production service or notification API.
-            self.docker("exec", self.postgres, "psql", "-v", "ON_ERROR_STOP=1", "-U", "sinan", "-d", "sinan", "-c", isolation_sql(migrations))
+            self.docker("exec", self.postgres, "psql", "-v", "ON_ERROR_STOP=1", "-U", "apsp", "-d", "apsp", "-c", isolation_sql(migrations))
             panel_env = temp / "panel.env"
-            selected = {"SINAN_DATABASE_URL": "postgres://sinan:" + quote(values["SINAN_DB_PASSWORD"], safe="") + "@postgres:5432/sinan",
-                        "SINAN_PUBLIC_URL": f"http://127.0.0.1:{self.args.port}", "SINAN_LISTEN": "0.0.0.0:8080",
-                        "SINAN_DATA_DIR": "/data", "RUST_LOG": "warn",
-                        "SINAN_RECOVERY_VERIFY_CREDENTIALS": "true"}
+            selected = {"APSP_DATABASE_URL": "postgres://apsp:" + quote(values["APSP_DB_PASSWORD"], safe="") + "@postgres:5432/apsp",
+                        "APSP_PUBLIC_URL": f"http://127.0.0.1:{self.args.port}", "APSP_LISTEN": "0.0.0.0:8080",
+                        "APSP_DATA_DIR": "/data", "RUST_LOG": "warn",
+                        "APSP_RECOVERY_VERIFY_CREDENTIALS": "true"}
             if self.manifest.get("required_key_ids"):
                 keyring = recovery_keyring(self.args.keyring_file, self.manifest["required_key_ids"])
                 keys = keyring["keys"]
-                selected["SINAN_CREDENTIAL_KEYS"] = json.dumps(keys, separators=(",", ":"))
-                selected["SINAN_CREDENTIAL_CURRENT_KEY"] = keyring["current"]
+                selected["APSP_CREDENTIAL_KEYS"] = json.dumps(keys, separators=(",", ":"))
+                selected["APSP_CREDENTIAL_CURRENT_KEY"] = keyring["current"]
                 self.checks["keyring_material"] = True
             private_write(panel_env, ("\n".join(key + "=" + value for key, value in selected.items()) + "\n").encode())
             self.docker("create", "--pull", "never", "--name", self.panel, "--label", self.label,
@@ -307,7 +307,7 @@ class Restore:
                     self.checks["host_loopback_reachable"] = True
                     self.health_source = "host_loopback"
                     if self.manifest.get("required_key_ids"):
-                        if response.headers.get("x-sinan-recovery-material-verified") != "true":
+                        if response.headers.get("x-apsp-recovery-material-verified") != "true":
                             raise Failure("恢复镜像未确认凭据内容认证，不能将本次恢复标为通过。")
                         self.checks["keyring_authenticated"] = True
                     return True
@@ -327,7 +327,7 @@ class Restore:
             header_text, separator, body = result.replace("\r\n", "\n").partition("\n\n")
             if body != "ok" or not separator:
                 return False
-            verified = any(line.partition(":")[0].lower() == "x-sinan-recovery-material-verified" and line.partition(":")[2].strip() == "true" for line in header_text.splitlines())
+            verified = any(line.partition(":")[0].lower() == "x-apsp-recovery-material-verified" and line.partition(":")[2].strip() == "true" for line in header_text.splitlines())
             if not verified:
                 raise Failure("恢复镜像未确认凭据内容认证，不能将本次恢复标为通过。")
             self.checks["keyring_authenticated"] = True
@@ -342,7 +342,7 @@ class Restore:
         clean = True
         for container in reversed(self.created["containers"]):
             try:
-                owner = self.docker("inspect", "--format", '{{index .Config.Labels "sinan.recovery.project"}}', container)
+                owner = self.docker("inspect", "--format", '{{index .Config.Labels "apsp.recovery.project"}}', container)
                 if owner != self.project:
                     raise Failure("容器所有权与恢复项目不符。")
                 self.docker("rm", "-f", container)
@@ -350,7 +350,7 @@ class Restore:
                 clean = False
         for volume in reversed(self.created["volumes"]):
             try:
-                owner = self.docker("volume", "inspect", "--format", '{{index .Labels "sinan.recovery.project"}}', volume)
+                owner = self.docker("volume", "inspect", "--format", '{{index .Labels "apsp.recovery.project"}}', volume)
                 if owner != self.project:
                     raise Failure("数据卷所有权与恢复项目不符。")
                 self.docker("volume", "rm", volume)
@@ -358,7 +358,7 @@ class Restore:
                 clean = False
         if self.created["network"]:
             try:
-                owner = self.docker("network", "inspect", "--format", '{{index .Labels "sinan.recovery.project"}}', self.network)
+                owner = self.docker("network", "inspect", "--format", '{{index .Labels "apsp.recovery.project"}}', self.network)
                 if owner != self.project:
                     raise Failure("网络所有权与恢复项目不符。")
                 self.docker("network", "rm", self.network)
@@ -473,7 +473,7 @@ def retention(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Sinan 独立备份校验、隔离恢复、演练和加密导出")
+    parser = argparse.ArgumentParser(description="Apsp 独立备份校验、隔离恢复、演练和加密导出")
     parser.add_argument("action", choices=["verify", "restore", "drill", "encrypt", "decrypt", "retention"])
     parser.add_argument("--backup", required=True, type=Path)
     parser.add_argument("--project")
@@ -490,7 +490,7 @@ def main():
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535:
         parser.error("隔离面板端口须为 1024–65535。")
-    report = {"tool": "sinan-recovery", "format": 1, "action": args.action, "passed": False,
+    report = {"tool": "apsp-recovery", "format": 1, "action": args.action, "passed": False,
               "isolated": args.action in ("drill", "restore"), "checks": {"integrity": False}}
     restore = None
     marker = None

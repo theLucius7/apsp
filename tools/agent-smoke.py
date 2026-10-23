@@ -56,7 +56,7 @@ class Panel(ThreadingHTTPServer):
         self.command_results = []
         self.probe_results = []
         self.requests = []
-        self.command = dict(id=str(uuid.uuid4()), command='echo sinan-command-fixture',
+        self.command = dict(id=str(uuid.uuid4()), command='echo apsp-command-fixture',
                             timeout_secs=60 if os.name == 'nt' else 5, expires_at=int(time.time()) + 600)
         self.probe = dict(id=str(uuid.uuid4()), name='loopback fixture', kind='tcp',
                           target='127.0.0.1', port=self.server_port, interval_secs=10,
@@ -235,7 +235,7 @@ def status(binary, config):
 
 def reference(path, target):
     if os.name == 'nt':
-        path.write_text(json.dumps(dict(sinan_directory_reference=True, target=str(target))), encoding='utf-8')
+        path.write_text(json.dumps(dict(apsp_directory_reference=True, target=str(target))), encoding='utf-8')
     else:
         path.symlink_to(target)
 
@@ -345,13 +345,13 @@ def supervise_smoke(binary, config, root, log):
             if os.name == 'nt':
                 source = failed / 'fixture.rs'
                 source.write_text('#![forbid(unsafe_code)]\nfn main(){let args:Vec<_>=std::env::args().skip(1).collect();'
-                    f'if args==["--version"]{{println!("sinan-agent {candidate_version}")}}'
+                    f'if args==["--version"]{{println!("apsp-agent {candidate_version}")}}'
                     f'else if args.len()==3 && args[0]=="--config" && args[2]=="verify-cache"{{std::process::exit({cache_exit})}}'
                     'else{std::process::exit(1)}}')
                 subprocess.run(['rustc', '--edition=2024', str(source), '-o', str(fixture)], check=True)
             else:
                 fixture.write_text('#!/bin/sh\n'
-                    f'if [ "$1" = --version ]; then echo "sinan-agent {candidate_version}"; '
+                    f'if [ "$1" = --version ]; then echo "apsp-agent {candidate_version}"; '
                     f'elif [ "$#" = 3 ] && [ "$1" = --config ] && [ "$3" = verify-cache ]; then exit {cache_exit}; '
                     'else exit 1; fi\n')
                 fixture.chmod(0o755)
@@ -444,7 +444,7 @@ def main():
                 wait_for(lambda: len(panel.samples) >= 3, 'compressed telemetry with ACK')
                 wait_for(lambda: panel.command_results, 'remote command completion', 90)
                 assert panel.command_results[0]['status'] == 'succeeded', panel.command_results[0]
-                assert 'sinan-command-fixture' in panel.command_results[0]['stdout']
+                assert 'apsp-command-fixture' in panel.command_results[0]['stdout']
                 for probe in (panel.probe, panel.icmp_probe):
                     result = wait_for(lambda: next((r for r in panel.probe_results if r['probe_id'] == probe['id']), None),
                                       'continuous ' + probe['kind'] + ' probe')
@@ -461,7 +461,7 @@ def main():
                 sample = list(panel.samples.values())[-1]['metrics']
                 assert sample['processes'] > 0 and sample['memory_used'] > 0
                 static = next(m['payload'] for m in panel.messages if m['type'] == 'telemetry.static')
-                if expected_libc := os.environ.get('SINAN_EXPECT_RUNTIME_LIBC'):
+                if expected_libc := os.environ.get('APSP_EXPECT_RUNTIME_LIBC'):
                     assert static.get('runtime_libc') == expected_libc, static.get('runtime_libc')
                 if sys.platform.startswith('freebsd'):
                     # Repeated startup overlaps static inventories with one-second sampling.
@@ -486,7 +486,7 @@ def main():
             print('Agent exit code:', process.poll())
         if 'windows_timings' in locals() and windows_timings:
             print('Windows command timings:', windows_timings)
-        core_directory = os.environ.get('SINAN_SMOKE_CORE_DIR')
+        core_directory = os.environ.get('APSP_SMOKE_CORE_DIR')
         if core_directory and shutil.which('lldb'):
             for core in Path(core_directory).glob('*.core'):
                 try:

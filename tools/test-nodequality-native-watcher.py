@@ -243,13 +243,13 @@ def owner_main(workspace, evidence, ignored_signals):
                      "watcher ownership requires Linux/Darwin nonreaping observation, signals and flock")
 class WatcherLifecycle(unittest.TestCase):
     def setUp(self):
-        parent = os.environ.get("SINAN_WATCHER_TEST_EVIDENCE")
+        parent = os.environ.get("APSP_WATCHER_TEST_EVIDENCE")
         if parent is not None:
             candidate = Path(parent)
             if not candidate.is_absolute() or candidate.is_symlink() or not candidate.is_dir():
                 raise ValueError("evidence parent must be an existing absolute ordinary directory")
             parent = str(candidate.resolve())
-        self.evidence = Path(tempfile.mkdtemp(prefix="sinan-watcher-test-", dir=parent)).resolve()
+        self.evidence = Path(tempfile.mkdtemp(prefix="apsp-watcher-test-", dir=parent)).resolve()
         self.evidence.chmod(0o700)
         self.groups = []
         self.handles = []
@@ -550,7 +550,7 @@ class PublicationDirectoryContracts(unittest.TestCase):
                                   ("source_read", "watcher"), ("atomic_rename", "watcher"),
                                   ("directory_open", "snapshot"), ("source_open", "snapshot"),
                                   ("source_read", "snapshot"), ("atomic_rename", "snapshot")):
-            with self.subTest(stage=stage, invocation=invocation), tempfile.TemporaryDirectory(prefix="sinan-watcher-publication-") as name:
+            with self.subTest(stage=stage, invocation=invocation), tempfile.TemporaryDirectory(prefix="apsp-watcher-publication-") as name:
                 root = Path(name)
                 workspace = root / "workspace"
                 workspace.mkdir(mode=0o700)
@@ -667,7 +667,7 @@ class SourceReadContracts(unittest.TestCase):
         for filename, invocation in (("header_info.log", "snapshot"), ("upload.base64", "snapshot"),
                                      ("header_info.log", "watcher"), ("upload.base64", "watcher")):
             with self.subTest(filename=filename, invocation=invocation), \
-                    tempfile.TemporaryDirectory(prefix="sinan-watcher-source-swap-") as temporary:
+                    tempfile.TemporaryDirectory(prefix="apsp-watcher-source-swap-") as temporary:
                 workspace = Path(temporary) / "workspace"
                 workspace.mkdir(mode=0o700)
                 (workspace / ".runner").mkdir(mode=0o700)
@@ -710,7 +710,7 @@ class SourceReadContracts(unittest.TestCase):
 
     def test_read_source_rejects_links_size_writable_mode_and_nonregular_files(self):
         report = self.report()
-        with tempfile.TemporaryDirectory(prefix="sinan-watcher-source-contract-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="apsp-watcher-source-contract-") as temporary:
             workspace = Path(temporary)
             path = workspace / "source"
             descriptor = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -740,7 +740,7 @@ class SourceReadContracts(unittest.TestCase):
 
     def test_non_directory_components_never_harvest_logs_from_their_ancestors(self):
         for component in (".nodequality-owned", "BenchOs", "result"):
-            with self.subTest(component=component), tempfile.TemporaryDirectory(prefix="sinan-watcher-nondirectory-") as temporary:
+            with self.subTest(component=component), tempfile.TemporaryDirectory(prefix="apsp-watcher-nondirectory-") as temporary:
                 workspace = Path(temporary)
                 parent = workspace
                 for name in (".nodequality-owned", "BenchOs", "result"):
@@ -756,7 +756,7 @@ class SourceReadContracts(unittest.TestCase):
 
     def test_nested_result_directory_replacement_before_open_rejects_new_inode(self):
         for component in (".nodequality-owned", "BenchOs", "result"):
-            with self.subTest(component=component), tempfile.TemporaryDirectory(prefix="sinan-watcher-nested-swap-") as temporary:
+            with self.subTest(component=component), tempfile.TemporaryDirectory(prefix="apsp-watcher-nested-swap-") as temporary:
                 workspace = Path(temporary)
                 result = workspace / ".nodequality-owned" / "BenchOs" / "result"
                 result.mkdir(parents=True)
@@ -788,7 +788,7 @@ class SourceReadContracts(unittest.TestCase):
 
     def test_each_read_chunk_checks_owner_and_deadline_before_more_bytes(self):
         report = self.report()
-        with tempfile.TemporaryDirectory(prefix="sinan-watcher-chunk-cancel-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="apsp-watcher-chunk-cancel-") as temporary:
             workspace = Path(temporary)
             (workspace / "source").write_bytes(b"x" * (128 * 1024))
             descriptor = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -809,7 +809,7 @@ class SourceReadContracts(unittest.TestCase):
     def test_cancellation_and_deadline_during_source_reads_drop_unpublished_bytes_and_close_fds(self):
         for interruption in ("owner_loss", "deadline"):
             with self.subTest(interruption=interruption), \
-                    tempfile.TemporaryDirectory(prefix="sinan-watcher-read-cancel-") as temporary:
+                    tempfile.TemporaryDirectory(prefix="apsp-watcher-read-cancel-") as temporary:
                 workspace = Path(temporary)
                 result = workspace / ".nodequality-owned" / "BenchOs" / "result"
                 result.mkdir(parents=True)
@@ -871,7 +871,7 @@ class CollectorDirectoryContracts(unittest.TestCase):
 
     def test_capture_response_stream_and_render_keep_original_directory_after_input_read(self):
         for operation in ("capture", "response", "stream", "render"):
-            with self.subTest(operation=operation), tempfile.TemporaryDirectory(prefix="sinan-collector-directory-") as temporary:
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory(prefix="apsp-collector-directory-") as temporary:
                 workspace = Path(temporary) / "workspace"
                 workspace.mkdir(mode=0o700)
                 displaced = workspace.with_name("original-retained")
@@ -901,7 +901,7 @@ class CollectorDirectoryContracts(unittest.TestCase):
                         replace_workspace()
                         return value
 
-                source = encoded if operation == "capture" else b"TEST_ONLY streamed bytes\nSINAN_RESPONSE_STATUS:200"
+                source = encoded if operation == "capture" else b"TEST_ONLY streamed bytes\nAPSP_RESPONSE_STATUS:200"
                 stdin = mock.Mock(buffer=Input(source))
                 stdout = mock.Mock(buffer=io.BytesIO())
                 archive_files = report.archive_files
@@ -934,7 +934,7 @@ class CollectorDirectoryContracts(unittest.TestCase):
                     self.assertEqual(path.read_bytes(), replacement_bytes)
 
     def test_serialized_chapter_lock_wait_is_bounded_and_keeps_saved_bytes(self):
-        with tempfile.TemporaryDirectory(prefix="sinan-collector-lock-deadline-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="apsp-collector-lock-deadline-") as temporary:
             workspace = Path(temporary)
             report = self.report()
             saved = {"name": "header_info", "text": "TEST_ONLY complete saved chapter",
@@ -957,7 +957,7 @@ class CollectorDirectoryContracts(unittest.TestCase):
 
 class ReadinessContracts(unittest.TestCase):
     def test_framework_interpreter_image_comes_only_from_trusted_local_metadata(self):
-        with tempfile.TemporaryDirectory(prefix='sinan-watcher-interpreter-contract-') as name:
+        with tempfile.TemporaryDirectory(prefix='apsp-watcher-interpreter-contract-') as name:
             version = Path(name).resolve() / 'Python.framework' / 'Versions' / '3.14'
             launcher = version / 'bin' / 'python3.14'
             image = version / 'Resources' / 'Python.app' / 'Contents' / 'MacOS' / 'Python'
@@ -999,7 +999,7 @@ class ReadinessContracts(unittest.TestCase):
             'text': 'TEST_ONLY header snapshot', 'complete': True, 'revision': revision, 'collected_at': 1})
 
     def test_preexec_identity_is_not_bound_until_exact_exec_and_fresh_snapshot(self):
-        with tempfile.TemporaryDirectory(prefix='sinan-watcher-ready-contract-') as name:
+        with tempfile.TemporaryDirectory(prefix='apsp-watcher-ready-contract-') as name:
             workspace, row, ids, command, observed = self.fixture(Path(name))
             preexec = dict(observed, identity=('TEST_ONLY start', 'TEST_ONLY inherited owner argv', 1234, 1234))
             with mock.patch(__name__ + '.pid_observation', side_effect=(preexec, observed, observed)):
@@ -1015,7 +1015,7 @@ class ReadinessContracts(unittest.TestCase):
 
     def test_foreign_interpreter_and_start_identity_drift_cannot_bind_readiness(self):
         for case in ('foreign_interpreter', 'changed_start'):
-            with self.subTest(case=case), tempfile.TemporaryDirectory(prefix='sinan-watcher-image-refusal-') as name:
+            with self.subTest(case=case), tempfile.TemporaryDirectory(prefix='apsp-watcher-image-refusal-') as name:
                 workspace, row, ids, command, observed = self.fixture(Path(name))
                 if case == 'foreign_interpreter':
                     foreign = 'TEST_ONLY_FOREIGN_INTERPRETER ' + command.split(' ', 1)[1]
@@ -1036,7 +1036,7 @@ class ReadinessContracts(unittest.TestCase):
 
     def test_unbound_watcher_cleanup_requires_actual_zero_live_observation(self):
         for live in (False, True):
-            with self.subTest(live=live), tempfile.TemporaryDirectory(prefix='sinan-watcher-cleanup-contract-') as name:
+            with self.subTest(live=live), tempfile.TemporaryDirectory(prefix='apsp-watcher-cleanup-contract-') as name:
                 case = WatcherLifecycle('test_busy_chapter_lock_cannot_keep_an_orphan_alive')
                 case.evidence, case.handles, case.logs = Path(name), [], []
                 process = mock.Mock(pid=1234, stdin=None, reaped=False)
@@ -1111,7 +1111,7 @@ class ReadinessContracts(unittest.TestCase):
 
     def test_exited_child_foreign_parent_and_changed_private_runtime_never_become_ready(self):
         for case in ('owner_exit', 'watcher_exit', 'exit_receipt', 'foreign_parent', 'foreign_group', 'changed_runtime'):
-            with self.subTest(case=case), tempfile.TemporaryDirectory(prefix='sinan-watcher-ready-refusal-') as name:
+            with self.subTest(case=case), tempfile.TemporaryDirectory(prefix='apsp-watcher-ready-refusal-') as name:
                 workspace, row, ids, command, observed = self.fixture(Path(name))
                 self.snapshot(workspace)
                 if case == 'owner_exit':
@@ -1133,7 +1133,7 @@ class ReadinessContracts(unittest.TestCase):
                 self.assertNotEqual(row['readiness_samples'][-1]['reason'], 'pending')
 
     def test_historical_snapshot_and_sample_overflow_are_refused(self):
-        with tempfile.TemporaryDirectory(prefix='sinan-watcher-ready-bounds-') as name:
+        with tempfile.TemporaryDirectory(prefix='apsp-watcher-ready-bounds-') as name:
             workspace, row, ids, command, observed = self.fixture(Path(name))
             self.snapshot(workspace, revision=9)
             with mock.patch(__name__ + '.pid_observation', return_value=observed):

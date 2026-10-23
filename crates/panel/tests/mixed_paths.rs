@@ -4,11 +4,11 @@ mod business_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::{Context, Result, ensure};
+use apsp_panel::plugins::singbox::mixed_paths;
+use apsp_protocol::{Bundle, now_timestamp};
 use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::plugins::singbox::mixed_paths;
-use sinan_protocol::{Bundle, now_timestamp};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -833,7 +833,7 @@ async fn names_do_not_mutate_evidence_and_retired_entry_can_still_be_inspected_a
         .bind(now_timestamp())
         .execute(&pool)
         .await?;
-    sinan_panel::plugins::singbox::entitlements::refresh(&pool, now_timestamp()).await?;
+    apsp_panel::plugins::singbox::entitlements::refresh(&pool, now_timestamp()).await?;
     let detail = call(
         &panel,
         &cookie,

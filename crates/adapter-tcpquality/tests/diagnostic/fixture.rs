@@ -17,7 +17,7 @@ impl Fixture {
         let number = NEXT.fetch_add(1, Ordering::SeqCst);
         let root = fs::canonicalize(std::env::temp_dir())
             .unwrap()
-            .join(format!("sinan-tcp-adapter-{}-{number}", std::process::id()));
+            .join(format!("apsp-tcp-adapter-{}-{number}", std::process::id()));
         fs::DirBuilder::new().mode(0o700).create(&root).unwrap();
         let id = format!("00000000-0000-4000-8000-{number:012x}");
         let scope = json!({"schema":1,"targets":(0..count).map(|index| json!({
@@ -27,12 +27,12 @@ impl Fixture {
         let version = format!("0.3.0-{SOURCE}-r1");
         fs::create_dir(root.join(&version)).unwrap();
         fs::write(
-            root.join(&version).join("sinan-tcp-probe"),
+            root.join(&version).join("apsp-tcp-probe"),
             b"fixture; never executed",
         )
         .unwrap();
         fs::set_permissions(
-            root.join(&version).join("sinan-tcp-probe"),
+            root.join(&version).join("apsp-tcp-probe"),
             fs::Permissions::from_mode(0o755),
         )
         .unwrap();
@@ -44,7 +44,7 @@ impl Fixture {
         DiagnosticSpec {
             id: self.id.clone(),
             version: version.clone(),
-            binary_path: self.root.join(version).join("sinan-tcp-probe"),
+            binary_path: self.root.join(version).join("apsp-tcp-probe"),
             job_dir: self.root.join(&self.id),
             timeout_secs: 60,
             options: BTreeMap::from([
@@ -116,8 +116,8 @@ impl Privileged for Recorder {
                 std::future::pending::<()>().await;
             }
             let stdout=match args[0].as_str() {
-                "--version"=> if self.bad_version { "wrong version\n".into() } else { "sinan-tcp-probe 0.3.0\n".into() },
-                "--build-info"=> self.bad.clone().unwrap_or_else(||json!({"version":"0.3.0","source_repo":"theLucius7/sinan","source_commit":SOURCE})).to_string(),
+                "--version"=> if self.bad_version { "wrong version\n".into() } else { "apsp-tcp-probe 0.3.0\n".into() },
+                "--build-info"=> self.bad.clone().unwrap_or_else(||json!({"version":"0.3.0","source_repo":"theLucius7/apsp","source_commit":SOURCE})).to_string(),
                 _=>anyhow::bail!("unexpected execution"),
             };
             Ok(Execution {
@@ -179,7 +179,7 @@ pub(super) fn report(spec: &DiagnosticSpec, scope: &Value) -> Value {
         .unwrap()
         .as_millis() as u64;
     json!({"schema":1,"method":"tcp_connect","semantics":"连接成功率和 TCP 建连耗时；不是包丢失率、吞吐测速或上游 TcpQuality 兼容评分。地区与运营商是管理员配置标签，未指定地区不推断。",
-        "engine":{"name":"sinan-native-tcp-connect-v1","version":"0.3.0","source_commit":SOURCE},
+        "engine":{"name":"apsp-native-tcp-connect-v1","version":"0.3.0","source_commit":SOURCE},
         "started_at_ms":now,"finished_at_ms":null,
         "parameters":{"ip_version":"4","count":4,"concurrency":1,"dns_timeout_ms":2000,"connect_timeout_ms":1000,"interval_ms":250,"total_timeout_ms":60000},
         "target_digest":spec.options["target_digest"],"targets":scope["targets"].as_array().unwrap().iter().map(|target|json!({

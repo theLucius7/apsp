@@ -32,7 +32,7 @@ pub struct ExchangeView {
 }
 
 pub async fn current(pool: &PgPool) -> ApiResult<ExchangeView> {
-    current_at(pool, sinan_protocol::now_timestamp()).await
+    current_at(pool, apsp_protocol::now_timestamp()).await
 }
 
 async fn current_at(pool: &PgPool, now: i64) -> ApiResult<ExchangeView> {
@@ -126,13 +126,13 @@ where
     F: FnOnce() -> Fut,
     Fut: Future<Output = Result<fetch::FetchedRates, &'static str>>,
 {
-    let Some(id) = claim(pool, sinan_protocol::now_timestamp(), force).await? else {
+    let Some(id) = claim(pool, apsp_protocol::now_timestamp(), force).await? else {
         return if force { Err(ApiError::Busy) } else { Ok(()) };
     };
     let result = tokio::time::timeout(Duration::from_secs(20), fetch())
         .await
         .unwrap_or(Err("download_timeout"));
-    complete(pool, id, sinan_protocol::now_timestamp(), result).await
+    complete(pool, id, apsp_protocol::now_timestamp(), result).await
 }
 
 pub async fn run(pool: PgPool) {

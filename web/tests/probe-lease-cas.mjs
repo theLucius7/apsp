@@ -7,7 +7,7 @@ import { extname, resolve, sep } from 'node:path'
 
 // TEST_ONLY: revision/CAS and lease explanation are exercised on the actual built UI.
 // The API and targets belong to a private loopback fixture; no real probes are sent.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url)), base = '/api/servers/1'
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname, file = resolve(dist, path === '/' ? 'index.html' : `.${path}`)
@@ -17,7 +17,7 @@ const server = createServer(async (request, response) => {
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const origin = `http://127.0.0.1:${server.address().port}`, totals = { widths: [], writes: 0, conflicts: 0, blocked: 0, requests: 0, external: [], unexpected: [], errors: [] }
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
 const wait = async (condition, message) => { const deadline = Date.now() + 12000; while (!await condition()) { assert(Date.now() < deadline, message); await new Promise(resolve => setTimeout(resolve, 20)) } }
 const forceForm = form => form.evaluate(element => element.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
 const forceClick = button => button.evaluate(element => { element.disabled = false; element.click() })
@@ -96,7 +96,7 @@ try {
       await forceAll(); assert.equal(writes.length, blockedWrites); assert.equal(await form.getByLabel('名称', { exact: true }).inputValue(), 'TEST_ONLY 读取故障草稿')
       await row().getByRole('button', { name: configured.name, exact: true }).click()
       await panel.getByRole('heading', { name: '最近 60 次测量', exact: true }).waitFor(); await panel.getByText('TEST_ONLY 历史 TCP 连接失败', { exact: true }).last().waitFor()
-      if (process.env.SINAN_UI_SCREENSHOT_DIR) { await mkdir(process.env.SINAN_UI_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: resolve(process.env.SINAN_UI_SCREENSHOT_DIR, `probe-lease-cas-failure-${width}.png`), fullPage: true }) }
+      if (process.env.APSP_UI_SCREENSHOT_DIR) { await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `probe-lease-cas-failure-${width}.png`), fullPage: true }) }
       failed = false; await wait(() => form.getByRole('button', { name: '保存拨测', exact: true }).isEnabled(), 'Only a successful probe read restores the draft')
       await form.getByRole('button', { name: '保存拨测', exact: true }).click(); await wait(() => configured.revision === 7 && row().getByRole('button', { name: '暂停', exact: true }).isEnabled(), 'Recovered draft writes once with revision 6')
       assert.equal(writes.length, blockedWrites + 1); assert.equal(writes.at(-1).body.revision, 6); assert.equal(writes.at(-1).body.name, 'TEST_ONLY 读取故障草稿')

@@ -1,6 +1,6 @@
 # sing-box 插件安装与控制流程
 
-Sinan 的 sing-box 面板插件管理代理业务；服务器上的 Agent 和 sing-box 适配器将配置应用到本机独立的运行时服务。服务器只需要接入一个 Sinan Agent。代理用户、节点、链路、订阅和套餐都在 **sing-box 插件** 中管理；系统管理员和服务器监控仍在原有系统/服务器页面。
+Apsp 的 sing-box 面板插件管理代理业务；服务器上的 Agent 和 sing-box 适配器将配置应用到本机独立的运行时服务。服务器只需要接入一个 Apsp Agent。代理用户、节点、链路、订阅和套餐都在 **sing-box 插件** 中管理；系统管理员和服务器监控仍在原有系统/服务器页面。
 
 ```mermaid
 flowchart LR

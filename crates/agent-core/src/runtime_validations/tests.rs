@@ -8,14 +8,14 @@ use tokio::{
 
 #[tokio::test]
 async fn committed_barrier_result_is_replayed_after_expiry_and_database_reopen() {
-    let path = std::env::temp_dir().join(format!("sinan-validation-{}.db", uuid::Uuid::new_v4()));
+    let path = std::env::temp_dir().join(format!("apsp-validation-{}.db", uuid::Uuid::new_v4()));
     let state = Arc::new(Mutex::new(State::open(&path).unwrap()));
     let request = RuntimeValidationRequest {
         id: uuid::Uuid::new_v4(),
         module: "demo".into(),
         scope: "scope:1".into(),
         generation: 2,
-        operation: sinan_protocol::RuntimeValidationOperation::Barrier,
+        operation: apsp_protocol::RuntimeValidationOperation::Barrier,
         revision: 3,
         config_hash: "a".repeat(64),
         expires_at: now_timestamp() - 1,

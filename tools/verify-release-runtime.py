@@ -69,7 +69,7 @@ def verify(root, arch, reader=None):
     with archive.open("rb") as source:
         digest = hashlib.file_digest(source, "sha256").hexdigest()
     require(entries.get(arch) == digest, "runtime archive checksum mismatch")
-    with tempfile.TemporaryDirectory(prefix="sinan-release-inspection-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="apsp-release-inspection-") as temporary:
         binary = Path(temporary) / "runtime"
         with tarfile.open(archive, "r|gz") as package:
             member = package.next()

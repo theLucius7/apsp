@@ -2,7 +2,7 @@ use super::*;
 fn bill(page: i64, count: i64, rows: Vec<Value>) -> Reply {
     Reply::ok(
         "QueryInstanceBill",
-        json!({"RequestId":"bill-request","Code":"Success","Success":true,"Data":{"BillingCycle":billing::month(sinan_protocol::now_timestamp()),"PageNum":page,"TotalCount":count,"Items":{"Item":rows}}}),
+        json!({"RequestId":"bill-request","Code":"Success","Success":true,"Data":{"BillingCycle":billing::month(apsp_protocol::now_timestamp()),"PageNum":page,"TotalCount":count,"Items":{"Item":rows}}}),
     )
 }
 fn row(usage: &str, instance: &str) -> Value {
@@ -40,7 +40,7 @@ async fn bill_collects_all_pages_exactly_and_rejects_unknown_units_and_paginatio
 ) {
     let (id, _) = seed(&pool, "ecs").await;
     let account = account(&pool, id).await;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let mock = Mock::start(vec![
         bill(1, 2, vec![row("99.9999999", "first")]),
         bill(2, 2, vec![row("0.000001", "second")]),
@@ -111,7 +111,7 @@ async fn auto_control_requires_opt_in_fresh_current_bill_and_only_lowers_once_pe
         .unwrap();
     mock.exhausted();
     let mut current = account(&pool, account_id).await;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     assert!(billing::exceeded(&current, now));
     let operation: Uuid =
         sqlx::query_scalar("SELECT id FROM alicloud_operations WHERE source='automatic'")
@@ -185,10 +185,7 @@ async fn missing_or_unreadable_bill_preserves_history_and_cannot_trigger_with_st
     mock.exhausted();
     let current = account(&pool, account_id).await;
     assert!(current.traffic.is_some());
-    assert!(!billing::exceeded(
-        &current,
-        sinan_protocol::now_timestamp()
-    ));
+    assert!(!billing::exceeded(&current, apsp_protocol::now_timestamp()));
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM alicloud_operations")
             .fetch_one(&pool)
@@ -291,10 +288,7 @@ async fn bill_errors_preserve_old_display_but_revoke_control_authority(pool: PgP
         current.bill.as_ref().unwrap().usage_micro_gb,
         Some(101_000_000)
     );
-    assert!(!billing::exceeded(
-        &current,
-        sinan_protocol::now_timestamp()
-    ));
+    assert!(!billing::exceeded(&current, apsp_protocol::now_timestamp()));
     assert_eq!(current.error_code.as_deref(), Some("rate_limited"));
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM alicloud_operations")
@@ -312,7 +306,7 @@ async fn refund_adjustment_and_missing_bill_identity_keep_rows_without_control_a
     let (id, _) = seed(&pool, "ecs").await;
     let mut account = account(&pool, id).await;
     account.auto_enabled = true;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     for kind in [
         Some("Refund"),
         Some("Adjustment"),
@@ -368,7 +362,7 @@ async fn refund_adjustment_and_missing_bill_identity_keep_rows_without_control_a
 async fn repeated_billing_dimensions_with_changed_values_are_not_additional_usage(pool: PgPool) {
     let (id, _) = seed(&pool, "ecs").await;
     let account = account(&pool, id).await;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let mut changed = row("200", "same-instance");
     changed["NickName"] = "different display metadata".into();
     changed["PretaxAmount"] = "2.00".into();

@@ -174,7 +174,7 @@ class JointAcceptanceTests(unittest.TestCase):
                 self.assertEqual(result['lines'], [kernel])
 
     def test_only_complete_identity_matched_diagnostic_oom_is_allowed(self):
-        unit = 'sinan-diagnostic-11111111-1111-4111-8111-111111111111.service'
+        unit = 'apsp-diagnostic-11111111-1111-4111-8111-111111111111.service'
         kernel = ('python3 invoked oom-killer: oom_score_adj=500\n'
                   'oom_kill_process+0x2ec/0x2f0\n'
                   f'oom-kill:constraint=CONSTRAINT_MEMCG,oom_memcg=/system.slice/{unit},task_memcg=/system.slice/{unit},task=python3,pid=42,uid=0\n'

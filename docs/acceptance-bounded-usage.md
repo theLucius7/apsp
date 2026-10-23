@@ -1,6 +1,6 @@
 # 流量 outbox 有界读取独立验收
 
-对应第 1 步 P0「有界读取」与 [Issue #18](https://github.com/theLucius7/sinan/issues/18)。本次只处理 Agent 的流量账本读取、批次大小和传输调度；独立提交、独立 PR。
+对应第 1 步 P0「有界读取」与 [Issue #18](https://github.com/theLucius7/apsp/issues/18)。本次只处理 Agent 的流量账本读取、批次大小和传输调度；独立提交、独立 PR。
 
 ## 行为与预算
 
@@ -8,7 +8,7 @@
 - SQLite 使用 `octet_length(batch)` 读取字节元数据，不把超限正文读进 Rust。待确认序号排序和字节索引采用可重复执行的增量索引创建，保留 `user_version=1`，让试运行失败后的旧 Agent 能重新打开账本；原有批次、身份、ACK 和累计基准不改写。
 - 新样本按 **128 KiB** 消息预算切批，并保持每批不超过 10,000 条记录。所有切批、全局序号和累计基准在同一事务中落盘；其中一批失败就整体回滚。`sample_usage()` 返回第一批，完整样本始终由持久 outbox 重放。
 - 仍按 15 秒周期启动发送轮次，每轮允许连续调度最多 1 秒。每条 usage 消息发送后主动让出执行权，输入、心跳和控制消息在下一轮 `select` 中优先处理；尚未发送的窗口留到下一发送轮。正在进行的一次 socket 写入保留原有 10 秒超时，所以 1 秒是批次调度预算，不是整个连接循环的硬截止时间。
-- 旧超限批次保留原文和 `(epoch, seq)`，不伪造 ACK、不阻塞后续可发送批次，也不令连接因消息过大而反复断开。日志明确报错；本地 `sinan-agent status` 中 `oversized_usage_batches` 和 `usage_outbox_error` 可见。待确认总数仍包含它们，退役流程会继续等待实际对账。
+- 旧超限批次保留原文和 `(epoch, seq)`，不伪造 ACK、不阻塞后续可发送批次，也不令连接因消息过大而反复断开。日志明确报错；本地 `apsp-agent status` 中 `oversized_usage_batches` 和 `usage_outbox_error` 可见。待确认总数仍包含它们，退役流程会继续等待实际对账。
 
 面板按 `(server_id, epoch, seq)` 及正文摘要幂等入账，没有连续序号要求，因此跳过无法传输的旧超限批次后，后续批次仍能准确入账。旧超限批次的恢复必须另行核对面板账本；直接改写相同身份、删除或手动确认可能破坏已入账数据，本 PR 不宣称恢复了这部分历史账本。
 
@@ -17,7 +17,7 @@
 在仓库根目录执行；数据库地址使用自己的隔离 PostgreSQL 测试库，角色需可创建测试数据库。
 
 ```sh
-export SINAN_RELEASE_PUBLIC_KEYS="$(cat crates/protocol/tests/fixtures/public-keys.json)"
+export APSP_RELEASE_PUBLIC_KEYS="$(cat crates/protocol/tests/fixtures/public-keys.json)"
 cargo fmt --all --check
 cargo clippy --locked --all-targets -- -D warnings
 DATABASE_URL='<测试数据库地址>' cargo test --locked
@@ -26,8 +26,8 @@ DATABASE_URL='<测试数据库地址>' cargo test --locked
 专项入口：
 
 ```sh
-cargo test --locked -p sinan-agent-core --test usage --test usage_bounds
-cargo test --locked -p sinan-agent-core \
+cargo test --locked -p apsp-agent-core --test usage --test usage_bounds
+cargo test --locked -p apsp-agent-core \
   backlog_and_legacy_giant_preserve_heartbeat_control_ack_and_restart_replay
 ```
 

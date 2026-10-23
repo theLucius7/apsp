@@ -72,12 +72,12 @@ PENDING = [
     'curl-impersonate: browser impersonation conflicts with native-identity policy',
     'nvidia-smi: optional device driver and its license are not supplied by the base',
 ]
-META_DIR = 'usr/share/sinan-rootfs'
-PROVENANCE_KIND = 'sinan-nodequality-debian12-preparation'
+META_DIR = 'usr/share/apsp-rootfs'
+PROVENANCE_KIND = 'apsp-nodequality-debian12-preparation'
 # Independent profiles may require a fresh admission and public inventory proof.
 # The default preserves the original NodeQuality API and every receipt schema.
 INPUT_PROFILE = None
-CAPACITY_KIND = 'sinan-nodequality-factory-capacity'
+CAPACITY_KIND = 'apsp-nodequality-factory-capacity'
 DEFAULT_MAX_OUTPUT = 4 * 1024 * 1024 * 1024
 DEFAULT_RESERVE_FREE = 512 * 1024 * 1024
 DEFAULT_RESERVE_INODES = 1024
@@ -818,7 +818,7 @@ def verify_authenticated_sources(materials, cache, deadline):
                        for item in lock['packages']}
     wanted_sources = {(item['repository'], item['name'], item['version']) for item in lock['sources']}
     scratch_parent = deadline.capacity.output if deadline.capacity is not None else None
-    with tempfile.TemporaryDirectory(prefix='sinan-rootfs-signatures-', dir=scratch_parent) as name:
+    with tempfile.TemporaryDirectory(prefix='apsp-rootfs-signatures-', dir=scratch_parent) as name:
         scratch = Path(name)
         for repo in lock['repositories']:
             deadline.check()
@@ -1283,7 +1283,7 @@ def normalize_created_tree(tree):
                 else:
                     child.unlink()
     for name, content in (('etc/machine-id', b''), ('etc/resolv.conf', b''),
-                          ('etc/hostname', b'sinan-diagnostic\n'),
+                          ('etc/hostname', b'apsp-diagnostic\n'),
                           ('etc/hosts', b'127.0.0.1 localhost\n::1 localhost\n')):
         path = input_path(tree, name)
         if path.is_symlink():

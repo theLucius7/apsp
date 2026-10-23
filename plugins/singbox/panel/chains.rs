@@ -3,13 +3,13 @@ use crate::{
     auth::require_admin,
     error::{ApiError, ApiResult},
 };
+use apsp_compiler::Relay;
 use axum::{
     Json,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
 };
 use serde::{Deserialize, Serialize};
-use sinan_compiler::Relay;
 use sqlx::{FromRow, Postgres, Transaction};
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -182,7 +182,7 @@ pub(crate) async fn load(
         .bind(server).bind(at).fetch_all(&mut **tx).await?;
     rows.into_iter()
         .map(|r| {
-            let settings: sinan_compiler::NodeSettings = serde_json::from_value(r.exit_settings)?;
+            let settings: apsp_compiler::NodeSettings = serde_json::from_value(r.exit_settings)?;
             anyhow::ensure!(
                 r.entry_protocol == "vless-reality" && r.exit_protocol == "vless-reality",
                 "two-hop relays require VLESS + Reality at both ends"
@@ -227,10 +227,10 @@ async fn seed_legacy_projection_on(tx: &mut Transaction<'_, Postgres>, id: i64) 
         let node = row.model(vec![])?;
         let hash = storage::sha(&node)?;
         sqlx::query("INSERT INTO singbox_managed_endpoint_versions(id,node_id,server_id,snapshot,semantic_sha256,created_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(node_id,semantic_sha256) DO NOTHING")
-            .bind(Uuid::new_v4()).bind(node_id).bind(row.server_id).bind(serde_json::to_value(&node).map_err(anyhow::Error::from)?).bind(&hash).bind(sinan_protocol::now_timestamp()).execute(&mut **tx).await?;
+            .bind(Uuid::new_v4()).bind(node_id).bind(row.server_id).bind(serde_json::to_value(&node).map_err(anyhow::Error::from)?).bind(&hash).bind(apsp_protocol::now_timestamp()).execute(&mut **tx).await?;
         let version_id = sqlx::query_scalar("SELECT id FROM singbox_managed_endpoint_versions WHERE node_id=$1 AND semantic_sha256=$2")
             .bind(node_id).bind(hash).fetch_one(&mut **tx).await?;
-        endpoints.push(sinan_compiler::ManagedEndpointSnapshot {
+        endpoints.push(apsp_compiler::ManagedEndpointSnapshot {
             version_id,
             server_id: row.server_id,
             node,

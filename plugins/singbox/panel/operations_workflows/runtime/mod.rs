@@ -20,14 +20,14 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_compiler::{Access, Node};
+use apsp_protocol::now_timestamp;
 use axum::{
     Json,
     extract::{Path, State},
     http::HeaderMap,
 };
 use serde_json::{Value, json};
-use sinan_compiler::{Access, Node};
-use sinan_protocol::now_timestamp;
 use sqlx::{Postgres, Row, Transaction};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -155,7 +155,7 @@ pub(super) async fn view(
         "revision_aligned"
     };
     Ok(Json(
-        json!({"server_id":server,"runtime":{"supported_versions":["1.14.2"],"selected_version":"1.14.2","other_versions_available":false,"compatibility_metadata":{"version":"1.14.2","upstream_repository":"https://github.com/SagerNet/sing-box","upstream_release":"https://github.com/SagerNet/sing-box/releases/tag/v1.14.2","upstream_commit":"af6e64c3b69e6132ebaee0e1a3d24e93903f6709","source_material":"tools/build-singbox.sh","protocols":["vless-reality","hysteria2","shadowsocks2022","tuic","anytls","naive","snell-v6"],"acceptance_scope":"仓库固定编译器与构建输入，平台制品另需签名匹配，不代表实时获取了所有官方版本"},"reason":"当前编译器、路径快照与签名制品固定版本，其他版本尚未完成兼容支持"},"preflight":preflight,"drift":{"state":drift,"target_revision":target,"applied_revision":applied_revision,"last_observed_at":row.get::<Option<i64>,_>("updated_at"),"checkpoint":checkpoint,"checkpoint_supported":capability(sinan_protocol::RUNTIME_CHECKPOINT_CAPABILITY),"live_config_hash_available":false,"reason":"主动核对实际文件、受管进程和签名执行文件；成功仅代表核对时匹配，五分钟后证据过期。目标包摘要不是原始运行文件摘要"},"changes":changes,"history":history,"paths":paths,"hop_observations":hop_observations,"path_diagnosis":"资源、部署、路径探测分别作为证据；外部跳资源不可观测时保持未知，不据单点指标自动断言瓶颈"}),
+        json!({"server_id":server,"runtime":{"supported_versions":["1.14.2"],"selected_version":"1.14.2","other_versions_available":false,"compatibility_metadata":{"version":"1.14.2","upstream_repository":"https://github.com/SagerNet/sing-box","upstream_release":"https://github.com/SagerNet/sing-box/releases/tag/v1.14.2","upstream_commit":"af6e64c3b69e6132ebaee0e1a3d24e93903f6709","source_material":"tools/build-singbox.sh","protocols":["vless-reality","hysteria2","shadowsocks2022","tuic","anytls","naive","snell-v6"],"acceptance_scope":"仓库固定编译器与构建输入，平台制品另需签名匹配，不代表实时获取了所有官方版本"},"reason":"当前编译器、路径快照与签名制品固定版本，其他版本尚未完成兼容支持"},"preflight":preflight,"drift":{"state":drift,"target_revision":target,"applied_revision":applied_revision,"last_observed_at":row.get::<Option<i64>,_>("updated_at"),"checkpoint":checkpoint,"checkpoint_supported":capability(apsp_protocol::RUNTIME_CHECKPOINT_CAPABILITY),"live_config_hash_available":false,"reason":"主动核对实际文件、受管进程和签名执行文件；成功仅代表核对时匹配，五分钟后证据过期。目标包摘要不是原始运行文件摘要"},"changes":changes,"history":history,"paths":paths,"hop_observations":hop_observations,"path_diagnosis":"资源、部署、路径探测分别作为证据；外部跳资源不可观测时保持未知，不据单点指标自动断言瓶颈"}),
     ))
 }
 
@@ -214,7 +214,7 @@ async fn configuration_observation(
         return Ok(json!({"state":"unknown","reason":"当前目标尚无实际文件与进程核对结果"}));
     };
     let outcome: Option<String> = request.get("outcome");
-    let result: Option<sinan_protocol::RuntimeCheckpointResult> = request
+    let result: Option<apsp_protocol::RuntimeCheckpointResult> = request
         .get::<Option<Value>, _>("result_json")
         .map(serde_json::from_value)
         .transpose()
@@ -272,7 +272,7 @@ pub(super) async fn checkpoint(
     let caps: Value = row.get("capabilities");
     if !caps.as_array().is_some_and(|v| {
         v.iter()
-            .any(|c| c == sinan_protocol::RUNTIME_CHECKPOINT_CAPABILITY)
+            .any(|c| c == apsp_protocol::RUNTIME_CHECKPOINT_CAPABILITY)
     }) {
         return Err(ApiError::Conflict(
             "Agent 不支持实际配置与进程核对，请先升级；不能仅用版本号确认一致".into(),

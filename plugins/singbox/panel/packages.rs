@@ -150,7 +150,7 @@ pub async fn remove(
         "UPDATE singbox_package_groups SET deleted_at=$2 WHERE id=$1 AND deleted_at IS NULL",
     )
     .bind(id)
-    .bind(sinan_protocol::now_timestamp())
+    .bind(apsp_protocol::now_timestamp())
     .execute(&mut *tx)
     .await?;
     if result.rows_affected() == 0 {
@@ -196,7 +196,7 @@ pub async fn assign(
     }
     let servers = super::business::lock_user_servers(&mut tx, id).await?;
     let value = sqlx::query_as::<_, Assignment>("INSERT INTO singbox_package_assignments(user_id,request_id,package_group_id,package_name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,starts_at,expires_at) SELECT $1,$2,id,name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,$4,$4+duration_days::bigint*86400 FROM singbox_package_groups WHERE id=$3 AND deleted_at IS NULL RETURNING id,user_id,package_group_id,starts_at,expires_at")
-        .bind(id).bind(request.request_id).bind(request.package_group_id).bind(sinan_protocol::now_timestamp())
+        .bind(id).bind(request.request_id).bind(request.package_group_id).bind(apsp_protocol::now_timestamp())
         .fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
     sqlx::query("INSERT INTO singbox_user_packages(user_id,assignment_id) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET assignment_id=EXCLUDED.assignment_id")
         .bind(id).bind(value.id).execute(&mut *tx).await?;

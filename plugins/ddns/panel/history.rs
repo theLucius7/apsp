@@ -45,7 +45,7 @@ pub(super) fn observed(
             rule.config.provider,
             Provider::Cloudflare | Provider::Huawei
         )
-        .then(|| format!("sinan-ddns:{}", rule.id))
+        .then(|| format!("apsp-ddns:{}", rule.id))
     };
     value
 }

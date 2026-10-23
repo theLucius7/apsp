@@ -67,7 +67,7 @@ async fn update_policy(
     Ok(StatusCode::NO_CONTENT)
 }
 async fn cancel_queued(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, id: Uuid) -> ApiResult<()> {
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status IN ('preview','queued')").bind(id).bind(now).execute(&mut **tx).await?;
     sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status IN ('preview','queued')").bind(id).bind(now).execute(&mut **tx).await?;
     Ok(())
@@ -95,7 +95,7 @@ async fn preview(
     let mut tx = lock(&state.pool, initial.account_id).await?;
     let account = account_on(&mut tx, initial.account_id).await?;
     let r = jobs::fresh(&mut tx, id).await?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     if r.kind != "ecs" || !account.enabled || r.revision != input.revision {
         return Err(ApiError::Conflict(
             "仅支持已启用账号的 ECS，请刷新配置后重试".into(),
@@ -163,7 +163,7 @@ pub(super) async fn confirm_on(pool: &sqlx::PgPool, id: Uuid) -> ApiResult<()> {
     let r = jobs::fresh(&mut tx, initial_r.id).await?;
     if job.source != "manual"
         || job.status != "preview"
-        || !jobs::allowed(&job, &account, &r, sinan_protocol::now_timestamp())
+        || !jobs::allowed(&job, &account, &r, apsp_protocol::now_timestamp())
     {
         return Err(ApiError::Conflict(
             "预览已过期、配置变化或流量保护生效，请重新预览".into(),
@@ -172,7 +172,7 @@ pub(super) async fn confirm_on(pool: &sqlx::PgPool, id: Uuid) -> ApiResult<()> {
     operations::idle(&mut tx, r.id).await?;
     sqlx::query("UPDATE alicloud_power_jobs SET status='queued',updated_at=$2 WHERE id=$1")
         .bind(id)
-        .bind(sinan_protocol::now_timestamp())
+        .bind(apsp_protocol::now_timestamp())
         .execute(&mut *tx)
         .await?;
     sqlx::query("UPDATE alicloud_resources SET manual_hold=$2 WHERE id=$1")
@@ -261,7 +261,7 @@ pub(super) async fn close(pool: &sqlx::PgPool, id: Uuid, dismiss: bool) -> ApiRe
     sqlx::query("UPDATE alicloud_power_jobs SET status=$2,updated_at=$3 WHERE id=$1")
         .bind(id)
         .bind(status)
-        .bind(sinan_protocol::now_timestamp())
+        .bind(apsp_protocol::now_timestamp())
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;

@@ -7,6 +7,7 @@ use crate::{
     error::{ApiError, ApiResult},
     ip_quality::{self, ServerIpInfoView},
 };
+use apsp_protocol::{DiagnosticResourceBudget, now_timestamp};
 use axum::{
     Json,
     extract::{Path, State},
@@ -14,7 +15,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sinan_protocol::{DiagnosticResourceBudget, now_timestamp};
 use sqlx::Row;
 use std::collections::BTreeMap;
 mod modes;

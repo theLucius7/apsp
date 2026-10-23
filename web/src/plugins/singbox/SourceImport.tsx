@@ -10,7 +10,7 @@ const root = '/api/plugins/sing-box/subscription-source-previews'
 
 export default function SourceImport({ writeError, onClose, onSaved }: { writeError: () => string; onClose: () => void; onSaved: (source: SubscriptionSource) => void }) {
   const [kind, setKind] = useState('url'), [name, setName] = useState(''), [url, setUrl] = useState(''), [authorization, setAuthorization] = useState(''), [content, setContent] = useState('')
-  const [agent, setAgent] = useState('Sinan-subscription-import/1'), [auto, setAuto] = useState(true), [interval, setInterval] = useState(1440)
+  const [agent, setAgent] = useState('Apsp-subscription-import/1'), [auto, setAuto] = useState(true), [interval, setInterval] = useState(1440)
   const [preview, setPreview] = useState<Preview | null>(null), [selected, setSelected] = useState<string[]>([])
   const [expired, setExpired] = useState(false)
   const [query, setQuery] = useState(''), [page, setPage] = useState(1), [error, setError] = useState(''), [busy, setBusy] = useState(false)

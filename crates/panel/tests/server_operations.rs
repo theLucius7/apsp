@@ -3,11 +3,11 @@ mod business_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::Result;
+use apsp_panel::{notifications, server_traffic, servers::Server};
+use apsp_protocol::now_timestamp;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::{notifications, server_traffic, servers::Server};
-use sinan_protocol::now_timestamp;
 use sqlx::PgPool;
 
 fn preferences(public: bool) -> Value {
@@ -49,7 +49,7 @@ async fn fleet_asset_and_access_changes_reject_concurrent_stale_forms(pool: PgPo
         .await?;
     assert_eq!(current["asset"]["provider"], "TEST_ONLY provider first");
     assert_ne!(current["digest"], original["digest"]);
-    let policy: sinan_protocol::fleet::AccessPolicy =
+    let policy: apsp_protocol::fleet::AccessPolicy =
         serde_json::from_value(current["policy"].clone())?;
     assert!(!policy.runtime_inspection);
     Ok(())
@@ -376,7 +376,7 @@ async fn traffic_correction_preserves_new_samples_and_expires_with_cycle_or_sele
     let cookie = panel.admin_cookie().await?;
     let id = panel.create_server(&cookie, "矫正").await?;
     let now = now_timestamp();
-    let start: i64 = sqlx::query_scalar("SELECT sinan_traffic_cycle_start($1,1)")
+    let start: i64 = sqlx::query_scalar("SELECT apsp_traffic_cycle_start($1,1)")
         .bind(now)
         .fetch_one(&panel.state.pool)
         .await?;
@@ -474,9 +474,9 @@ async fn monitoring_only_sessions_and_tokens_keep_private_server_fields_hidden(
             .bind(json!({"cpu_percent":10,"process_resources":{"private":"TEST_ONLY_PROCESS_DETAIL"},"network_interfaces":{"TEST_ONLY_PRIVATE_INTERFACE":{"transmitted_bytes":123}}}))
             .execute(&panel.state.pool).await?;
     }
-    let token = "sinan_api_TEST_ONLY_MONITORING";
+    let token = "apsp_api_TEST_ONLY_MONITORING";
     sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,all_servers,expires_at,created_at) VALUES($1,1,$2,'test-monitoring',$3,'[]',true,$4,$5)")
-        .bind(uuid::Uuid::new_v4()).bind(sinan_panel::auth::hash_token(token)).bind(json!(["monitoring:read"]))
+        .bind(uuid::Uuid::new_v4()).bind(apsp_panel::auth::hash_token(token)).bind(json!(["monitoring:read"]))
         .bind(now_timestamp()+3600).bind(now_timestamp()).execute(&panel.state.pool).await?;
     for suffix in ["/servers", "/live"] {
         let response = panel

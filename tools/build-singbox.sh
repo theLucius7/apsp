@@ -114,7 +114,7 @@ for arch in ("amd64", "arm64", "linux-gnu-amd64", "linux-gnu-arm64", "linux-musl
         raise SystemExit(f"SHA256SUMS refers to missing {arch}")
 PY
 
-scratch=$(mktemp -d "${TMPDIR:-/tmp}/sinan-runtime.XXXXXX")
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/apsp-runtime.XXXXXX")
 source_dir=$scratch/source
 cronet_dir=$scratch/cronet-go
 git clone --depth=1 --branch "v$version" https://github.com/SagerNet/sing-box.git "$source_dir"

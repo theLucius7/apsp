@@ -6,10 +6,10 @@ use business_support::release_fixture;
 mod release_support;
 
 use anyhow::Result;
+use apsp_protocol::release::canonical_asset_name;
 use business_support::{TestPanel, id};
 use reqwest::StatusCode;
 use serde_json::json;
-use sinan_protocol::release::canonical_asset_name;
 use sqlx::PgPool;
 
 #[sqlx::test]

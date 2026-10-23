@@ -122,7 +122,7 @@ async fn settings_preserve_secrets_validate_atomically_and_pause_without_revokin
     .bind(server)
     .fetch_one(&pool)
     .await?;
-    let bundle: sinan_protocol::Bundle = serde_json::from_str(&bundle)?;
+    let bundle: apsp_protocol::Bundle = serde_json::from_str(&bundle)?;
     let native: Value = serde_json::from_str(&bundle.files["config.json"])?;
     assert!(native["inbounds"].as_array().unwrap().is_empty());
     patch(
@@ -216,7 +216,7 @@ async fn deployment_checks_distinguish_pending_unenrolled_and_missing_artifacts(
             .iter()
             .all(|item| item["passed"] == false)
     );
-    sqlx::query("UPDATE servers SET device_public_key='fixture',last_seen=$2,capabilities='[\"singbox\"]',static_info='{\"arch\":\"amd64\",\"os\":\"linux\",\"libc\":\"musl\"}' WHERE id=$1").bind(server).bind(sinan_protocol::now_timestamp()).execute(&pool).await?;
+    sqlx::query("UPDATE servers SET device_public_key='fixture',last_seen=$2,capabilities='[\"singbox\"]',static_info='{\"arch\":\"amd64\",\"os\":\"linux\",\"libc\":\"musl\"}' WHERE id=$1").bind(server).bind(apsp_protocol::now_timestamp()).execute(&pool).await?;
     let result: Value = panel
         .admin(Method::POST, &check, &cookie, None)
         .await?
@@ -279,7 +279,7 @@ async fn signed_runtime_cannot_make_an_agent_without_signature_support_ready(
         (
             json!([
                 "singbox",
-                sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY
+                apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY
             ]),
             true,
         ),
@@ -287,7 +287,7 @@ async fn signed_runtime_cannot_make_an_agent_without_signature_support_ready(
         sqlx::query("UPDATE servers SET capabilities=$2,last_seen=$3 WHERE id=$1")
             .bind(server)
             .bind(capabilities)
-            .bind(sinan_protocol::now_timestamp())
+            .bind(apsp_protocol::now_timestamp())
             .execute(&pool)
             .await?;
         let result: Value = panel

@@ -194,7 +194,7 @@ pub(super) async fn build(
                         blockers.push(json!({"document_id":document.id,"issue":{"code":"certificate_san_mismatch","domain":target.domain}}));
                     }
                 }
-                if parsed.not_after <= sinan_protocol::now_timestamp() {
+                if parsed.not_after <= apsp_protocol::now_timestamp() {
                     blockers.push(
                         json!({"document_id":document.id,"issue":{"code":"certificate_expired"}}),
                     );
@@ -228,7 +228,7 @@ pub(super) async fn build(
         changes.push(json!({"document_id":document.id,"destination_document_id":destination,"kind":document.kind,"revision":document.revision,"old_expected_digest":super::digest(&document.config)?,"before":config,"after":after,"changes":transform::values_differ(&config,&after)?,"active_version":document.active_version,"certificate_version":active,"acme_plan":acme,"independent_identity":independent_identity,"source_retained":independent_identity,"notes":notes,"deployment":"not_started","reachability":"not_verified","actual_listener_check":"requires_separate_agent_observation"}));
     }
     let outstanding:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',pending.id,'document_id',pending.document_id,'status',pending.status) FROM (SELECT o.id,l.document_id,o.status FROM network_operation_links l JOIN fleet_operations o ON o.id=l.operation_id WHERE l.document_id=ANY($1) AND ((o.status='queued' AND o.expires_at>$2) OR (o.status IN ('dispatched','unknown') AND o.reconciled_at IS NULL)) UNION SELECT o.id,d.certificate_id AS document_id,o.status FROM network_certificate_deployments d JOIN fleet_operations o ON o.id=d.operation_id WHERE d.certificate_id=ANY($1) AND ((o.status='queued' AND o.expires_at>$2) OR (o.status IN ('dispatched','unknown') AND o.reconciled_at IS NULL))) pending ORDER BY pending.id")
-        .bind(&ids).bind(sinan_protocol::now_timestamp()).fetch_all(&mut **tx).await?;
+        .bind(&ids).bind(apsp_protocol::now_timestamp()).fetch_all(&mut **tx).await?;
     if !outstanding.is_empty() {
         blockers.push(json!({"code":"source_operations_outstanding","operations":outstanding}));
     }
@@ -246,9 +246,7 @@ pub(super) async fn build(
             ..
         } = after
         {
-            listener_locks.insert(format!(
-                "sinan-forward:{server_id}:{protocol}:{listen_port}"
-            ));
+            listener_locks.insert(format!("apsp-forward:{server_id}:{protocol}:{listen_port}"));
         }
     }
     for listener in listener_locks {
@@ -343,7 +341,7 @@ async fn server(tx: &mut Transaction<'_, Postgres>, id: i64) -> ApiResult<Value>
         )
     } else {
         (
-            json!(sinan_protocol::fleet::AccessPolicy::default()),
+            json!(apsp_protocol::fleet::AccessPolicy::default()),
             "active".into(),
             None,
             None,

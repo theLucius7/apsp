@@ -20,8 +20,8 @@ COMMANDS = {
     "oom": "journalctl -k --no-pager --since '10 minutes ago' --grep='[Oo][Oo][Mm]|[Oo]ut of memory|Killed process'",
     "disk": "df -h",
     "memory": "cat /proc/meminfo; cat /proc/loadavg",
-    "services": "systemctl show sinan-agent.service sinan-singbox@main.service --property=ActiveState,SubState,MainPID,NRestarts,OOMScoreAdjust,CPUWeight",
-    "diagnostics": "systemctl list-units 'sinan-diagnostic-*' --all --no-pager",
+    "services": "systemctl show apsp-agent.service apsp-singbox@main.service --property=ActiveState,SubState,MainPID,NRestarts,OOMScoreAdjust,CPUWeight",
+    "diagnostics": "systemctl list-units 'apsp-diagnostic-*' --all --no-pager",
     "mounts": "findmnt --list --output TARGET,SOURCE,FSTYPE",
 }
 

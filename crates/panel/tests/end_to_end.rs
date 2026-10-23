@@ -9,13 +9,13 @@ use business_support::release_fixture;
 mod release_support;
 
 use anyhow::{Context, Result};
+use apsp_adapter_sdk::{Counter, Prepared};
+use apsp_agent_core::{fake::FakeServiceManager, identity, state::State, transport};
+use apsp_protocol::{UsageBatch, UsageRecord};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use e2e_support::{AgentTask, Harness, PanelAdapter, eventually};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_adapter_sdk::{Counter, Prepared};
-use sinan_agent_core::{fake::FakeServiceManager, identity, state::State, transport};
-use sinan_protocol::{UsageBatch, UsageRecord};
 use sqlx::{PgPool, Row};
 use std::{fs, os::unix::fs::PermissionsExt, sync::Arc};
 
@@ -52,7 +52,7 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
         .join("fleet-policy.json");
     fs::write(
         &policy_path,
-        serde_json::to_vec(&sinan_protocol::fleet::AccessPolicy {
+        serde_json::to_vec(&apsp_protocol::fleet::AccessPolicy {
             runtime_inspection: true,
             ..Default::default()
         })?,
@@ -198,8 +198,8 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
         assert!(actual["static_info"].get("runtime_libc").is_none());
         assert!(actual["static_info"].get("libc").is_none());
         for capability in [
-            sinan_protocol::fleet::OPERATIONS_CAPABILITY,
-            sinan_protocol::fleet::RUNTIME_PREFLIGHT_CAPABILITY,
+            apsp_protocol::fleet::OPERATIONS_CAPABILITY,
+            apsp_protocol::fleet::RUNTIME_PREFLIGHT_CAPABILITY,
         ] {
             assert!(
                 !actual["capabilities"]

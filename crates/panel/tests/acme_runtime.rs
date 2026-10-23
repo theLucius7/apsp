@@ -5,11 +5,11 @@
 mod support;
 
 use anyhow::{Context, Result, ensure};
+use apsp_adapter_sdk::{Adapter, Plan, RuntimeSpec};
+use apsp_adapter_singbox::SingboxAdapter;
+use apsp_compiler::{Access, AcmeChallenge, Node, ProtocolConfig, TlsConfig, compile_server};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use sinan_adapter_sdk::{Adapter, Plan, RuntimeSpec};
-use sinan_adapter_singbox::SingboxAdapter;
-use sinan_compiler::{Access, AcmeChallenge, Node, ProtocolConfig, TlsConfig, compile_server};
 use std::{
     path::{Path, PathBuf},
     process::Stdio,
@@ -44,14 +44,14 @@ fn certificates(directory: &Path) -> Result<Vec<String>> {
 #[tokio::test]
 #[ignore = "requires local Pebble and fixed runtime; run tools/acme-smoke.py"]
 async fn actual_challenges_persistence_and_expired_certificate_renewal() -> Result<()> {
-    let binary = PathBuf::from(std::env::var("SINAN_TEST_SINGBOX")?);
-    let provider = std::env::var("SINAN_TEST_ACME_URL")?;
+    let binary = PathBuf::from(std::env::var("APSP_TEST_SINGBOX")?);
+    let provider = std::env::var("APSP_TEST_ACME_URL")?;
     ensure!(
         provider.starts_with("https://127.0.0.1:"),
         "test CA must be loopback"
     );
-    let bootstrap = std::fs::read_to_string(std::env::var("SINAN_TEST_ACME_CA")?)?;
-    let issuer = std::fs::read_to_string(std::env::var("SINAN_TEST_ACME_ISSUER")?)?;
+    let bootstrap = std::fs::read_to_string(std::env::var("APSP_TEST_ACME_CA")?)?;
+    let issuer = std::fs::read_to_string(std::env::var("APSP_TEST_ACME_ISSUER")?)?;
     for challenge in [AcmeChallenge::Http01, AcmeChallenge::TlsAlpn01] {
         let directory = TempDir::new();
         let data = directory.0.join("data");
@@ -103,11 +103,11 @@ async fn actual_challenges_persistence_and_expired_certificate_renewal() -> Resu
         config["certificate"] = json!({"certificate": bootstrap});
         config["certificate_providers"][0]["provider"] = provider.clone().into();
         config["certificate_providers"][0]["alternative_http_port"] =
-            std::env::var("SINAN_TEST_ACME_HTTP_PORT")?
+            std::env::var("APSP_TEST_ACME_HTTP_PORT")?
                 .parse::<u16>()?
                 .into();
         config["certificate_providers"][0]["alternative_tls_port"] =
-            std::env::var("SINAN_TEST_ACME_TLS_PORT")?
+            std::env::var("APSP_TEST_ACME_TLS_PORT")?
                 .parse::<u16>()?
                 .into();
         let content = config.to_string();

@@ -208,7 +208,7 @@ mod tests {
         let root = fs::canonicalize(std::env::temp_dir())
             .unwrap()
             .join(format!(
-                "sinan-tcp-owner-{}-{}",
+                "apsp-tcp-owner-{}-{}",
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::SeqCst)
             ));

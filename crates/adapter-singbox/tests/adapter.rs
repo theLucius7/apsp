@@ -2,8 +2,8 @@
 
 mod support;
 
-use sinan_adapter_sdk::{Adapter, Plan, Prepared};
-use sinan_adapter_singbox::SingboxAdapter;
+use apsp_adapter_sdk::{Adapter, Plan, Prepared};
+use apsp_adapter_singbox::SingboxAdapter;
 use support::{TempDir, TestOps, TestServices};
 
 #[tokio::test]
@@ -76,7 +76,7 @@ async fn prepares_only_checked_native_configuration() {
         ]
     );
     assert_eq!(adapter.describe().module, "singbox");
-    assert_eq!(adapter.describe().service_group, "sinan-singbox");
+    assert_eq!(adapter.describe().service_group, "apsp-singbox");
     assert!(adapter.usage_source().is_some());
 }
 

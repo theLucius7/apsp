@@ -4,12 +4,12 @@ mod business_support;
 mod release_support;
 
 use anyhow::Result;
+use apsp_protocol::{
+    Metrics, NetworkMetrics, TelemetryBatch, TelemetrySample, telemetry::now_millis,
+};
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_protocol::{
-    Metrics, NetworkMetrics, TelemetryBatch, TelemetrySample, telemetry::now_millis,
-};
 use sqlx::PgPool;
 use std::time::Duration;
 use uuid::Uuid;
@@ -73,7 +73,7 @@ async fn replay_identity_outlives_raw_rows_and_aggregates_only_observed_values(
         .error_for_status()?;
     let before:Value=sqlx::query_scalar("SELECT jsonb_build_object('up',SUM(uploaded)::text,'down',SUM(downloaded)::text) FROM server_network_daily WHERE server_id=$1").bind(server).fetch_one(&panel.state.pool).await?;
     assert_eq!(before, json!({"up":"200","down":"200"}));
-    sinan_panel::telemetry::maintain(&panel.state.pool).await?;
+    apsp_panel::telemetry::maintain(&panel.state.pool).await?;
     for _ in 0..2 {
         post(
             &panel,
@@ -90,7 +90,7 @@ async fn replay_identity_outlives_raw_rows_and_aggregates_only_observed_values(
             .await?;
     assert_eq!(count, 0);
     let points =
-        sinan_panel::telemetry::read_window(&panel.state.pool, server, at, at + 120_000, 300_000)
+        apsp_panel::telemetry::read_window(&panel.state.pool, server, at, at + 120_000, 300_000)
             .await?;
     assert_eq!(
         points.iter().map(|point| point.sample_count).sum::<u64>(),
@@ -172,7 +172,7 @@ async fn rollups_are_atomic_weighted_and_repeatable_and_retention_runs_without_i
         }
     }
     for _ in 0..3 {
-        sinan_panel::telemetry::maintain_at(&panel.state.pool, now, Duration::from_secs(6)).await?;
+        apsp_panel::telemetry::maintain_at(&panel.state.pool, now, Duration::from_secs(6)).await?;
     }
     let rows:Vec<(i32,Value)>=sqlx::query_as("SELECT resolution_secs,summary FROM telemetry_history WHERE server_id=$1 ORDER BY bucket_at").bind(server).fetch_all(&panel.state.pool).await?;
     assert_eq!(rows.len(), 2);
@@ -194,7 +194,7 @@ async fn rollups_are_atomic_weighted_and_repeatable_and_retention_runs_without_i
         )
         .await?
         .error_for_status()?;
-    sinan_panel::telemetry::maintain_at(&panel.state.pool, now, Duration::from_secs(6)).await?;
+    apsp_panel::telemetry::maintain_at(&panel.state.pool, now, Duration::from_secs(6)).await?;
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM telemetry_history WHERE server_id=$1")
             .bind(server)
@@ -220,7 +220,7 @@ async fn bootstrap_preserves_uninitialized_raw_and_busy_servers_do_not_block_mai
         let sample = sample(at, Some(30.0), 100);
         sqlx::query("INSERT INTO telemetry_samples(server_id,id,sampled_at,digest,metrics) VALUES($1,$2,$3,'TEST_ONLY',$4)").bind(id).bind(sample.id).bind(at).bind(json!(sample.metrics)).execute(&panel.state.pool).await?;
     }
-    sinan_panel::telemetry::maintain_at(&panel.state.pool, now_millis(), Duration::from_secs(6))
+    apsp_panel::telemetry::maintain_at(&panel.state.pool, now_millis(), Duration::from_secs(6))
         .await?;
     let remaining: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM telemetry_samples WHERE server_id=$1")
@@ -235,7 +235,7 @@ async fn bootstrap_preserves_uninitialized_raw_and_busy_servers_do_not_block_mai
         .await?;
     tokio::time::timeout(
         Duration::from_secs(1),
-        sinan_panel::telemetry::maintain_at(
+        apsp_panel::telemetry::maintain_at(
             &panel.state.pool,
             now_millis(),
             Duration::from_millis(150),
@@ -243,7 +243,7 @@ async fn bootstrap_preserves_uninitialized_raw_and_busy_servers_do_not_block_mai
     )
     .await??;
     tx.rollback().await?;
-    sinan_panel::telemetry::maintain_at(&panel.state.pool, now_millis(), Duration::from_secs(6))
+    apsp_panel::telemetry::maintain_at(&panel.state.pool, now_millis(), Duration::from_secs(6))
         .await?;
     let summaries: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM telemetry_history WHERE server_id=ANY($1)")
@@ -307,7 +307,7 @@ async fn independent_telemetry_settings_validate_create_and_keep_legacy_settings
         .json()
         .await?;
     assert_eq!(default["persist_interval_secs"], 60);
-    let legacy: sinan_protocol::AgentSettings = panel
+    let legacy: apsp_protocol::AgentSettings = panel
         .admin(
             Method::GET,
             &format!("/api/servers/{id}/agent-settings"),
@@ -355,7 +355,7 @@ async fn locked_bootstrap_prefix_does_not_starve_other_servers(pool: PgPool) -> 
         .bind(&ids[..8])
         .fetch_all(&mut *locked)
         .await?;
-    sinan_panel::telemetry::maintain_at(&panel.state.pool, now_millis(), Duration::from_secs(6))
+    apsp_panel::telemetry::maintain_at(&panel.state.pool, now_millis(), Duration::from_secs(6))
         .await?;
     let initialized: Vec<i64> = sqlx::query_scalar(
         "SELECT server_id FROM telemetry_history_initialized ORDER BY server_id",

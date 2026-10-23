@@ -6,7 +6,7 @@ use tokio::{
     time::timeout,
 };
 
-const PING: &[u8; 8] = b"sinanHUP";
+const PING: &[u8; 8] = b"apsp-HUP";
 const SETTINGS: u8 = 4;
 const PING_TYPE: u8 = 6;
 const ACK: u8 = 1;

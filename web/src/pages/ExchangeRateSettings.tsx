@@ -5,7 +5,7 @@ import { useAction, useResource } from '../hooks'
 import { currencyCode, displayCurrencies } from '../display/currency'
 import type { ExchangeRates } from '../display/currency'
 
-const preferenceKey = 'sinan-display-currency'
+const preferenceKey = 'apsp-display-currency'
 const currencyNames: Record<string, string> = { CNY: '人民币', USD: '美元', EUR: '欧元', HKD: '港币', JPY: '日元', GBP: '英镑', SGD: '新加坡元', CAD: '加元', AUD: '澳元', CHF: '瑞士法郎', KRW: '韩元', RUB: '俄罗斯卢布', VND: '越南盾' }
 const dateTime = (value: number | null | undefined) => value && Number.isFinite(value) ? new Date(value * 1000).toLocaleString('zh-CN', { hour12: false }) : '—'
 

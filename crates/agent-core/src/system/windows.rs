@@ -1,4 +1,4 @@
-pub use sinan_adapter_sdk::{Privileged, ServiceManager};
+pub use apsp_adapter_sdk::{Privileged, ServiceManager};
 #[path = "command_process.rs"]
 mod command_process;
 #[path = "execution.rs"]
@@ -15,7 +15,7 @@ pub mod deploy;
 
 use crate::artifacts::safe_component;
 use anyhow::{Context, Result, ensure};
-use sinan_adapter_sdk::{BoxFuture, CommandOutput, Execution, JobStatus, ServiceJob};
+use apsp_adapter_sdk::{BoxFuture, CommandOutput, Execution, JobStatus, ServiceJob};
 use std::{
     fs,
     io::Write,
@@ -132,15 +132,15 @@ impl Privileged for SystemOps {
         args: &'a [String],
         seconds: u32,
         maximum: usize,
-        observer: &'a dyn sinan_adapter_sdk::CommandObserver,
-    ) -> BoxFuture<'a, sinan_adapter_sdk::ControlledExecution> {
+        observer: &'a dyn apsp_adapter_sdk::CommandObserver,
+    ) -> BoxFuture<'a, apsp_adapter_sdk::ControlledExecution> {
         Box::pin(command_process::execute(
             program, args, seconds, maximum, observer,
         ))
     }
     fn recover_command<'a>(
         &'a self,
-        process: &'a sinan_adapter_sdk::CommandProcessIdentity,
+        process: &'a apsp_adapter_sdk::CommandProcessIdentity,
     ) -> BoxFuture<'a, ()> {
         Box::pin(command_process::recover(process))
     }
@@ -148,7 +148,7 @@ impl Privileged for SystemOps {
         &'a self,
         program: &'a Path,
         args: &'a [String],
-    ) -> BoxFuture<'a, Box<dyn sinan_adapter_sdk::ManagedProcess>> {
+    ) -> BoxFuture<'a, Box<dyn apsp_adapter_sdk::ManagedProcess>> {
         Box::pin(async move { execution::spawn(program, args) })
     }
     fn execute<'a>(
@@ -243,7 +243,7 @@ impl Privileged for SystemOps {
             self.write_file(
                 link,
                 &serde_json::to_vec(
-                    &serde_json::json!({"sinan_directory_reference":true,"target":target}),
+                    &serde_json::json!({"apsp_directory_reference":true,"target":target}),
                 )?,
                 0o644,
                 None,
@@ -330,7 +330,7 @@ pub fn read_reference(path: &Path) -> Result<PathBuf> {
     );
     let value: serde_json::Value = serde_json::from_slice(&fs::read(path)?)?;
     ensure!(
-        value["sinan_directory_reference"] == true,
+        value["apsp_directory_reference"] == true,
         "refusing to replace an ordinary file"
     );
     Ok(PathBuf::from(

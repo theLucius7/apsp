@@ -6,4 +6,4 @@
 # refusal branch and signal/EXIT cleanup are separate execution paths.
 unset BASH_ENV
 set -o functrace
-trap 'if [[ $BASH_COMMAND == "exit 1" && ${BASH_SOURCE[0]} == "$SINAN_REPORT_UPSTREAM" && ${FUNCNAME[0]:-} == post_cleanup && ${FUNCNAME[1]:-} == main && $LINENO == 455 ]]; then printf "%s\n" "pinned-normal-cleanup" > "$SINAN_REPORT_WORKSPACE/.runner/upstream-completed"; fi' DEBUG
+trap 'if [[ $BASH_COMMAND == "exit 1" && ${BASH_SOURCE[0]} == "$APSP_REPORT_UPSTREAM" && ${FUNCNAME[0]:-} == post_cleanup && ${FUNCNAME[1]:-} == main && $LINENO == 455 ]]; then printf "%s\n" "pinned-normal-cleanup" > "$APSP_REPORT_WORKSPACE/.runner/upstream-completed"; fi' DEBUG

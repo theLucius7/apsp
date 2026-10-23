@@ -28,7 +28,7 @@ export default function UserPortal({ account, activation }: { account: string; a
   const action = useAction()
   const reload = () => setRevision(value => value + 1)
   useEffect(() => {
-    document.title = `${t('代理用户')} · ${t('司南')}`
+    document.title = `${t('代理用户')} · ${t('apsp')}`
     if (activation) window.history.replaceState(null, '', `#/plugins/sing-box/account/${account}`)
   }, [account, activation, t])
   useEffect(() => {

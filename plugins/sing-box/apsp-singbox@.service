@@ -1,0 +1,24 @@
+[Unit]
+Description=Apsp sing-box runtime (%i)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/apsp/plugins/sing-box/current/sing-box
+ConditionPathExists=/var/lib/apsp/plugins/sing-box@%i/current/config.json
+
+[Service]
+OOMScoreAdjust=-500
+CPUWeight=1000
+User=apsp-singbox
+Group=apsp-singbox
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+ExecStartPre=/usr/bin/test -f /var/lib/apsp/plugins/sing-box@%i/current/config.json
+ExecStartPre=/opt/apsp/core/current/apsp-agent verify-installed --binary /opt/apsp/plugins/sing-box/current/sing-box --name sing-box --format tar.gz
+ExecStart=/opt/apsp/plugins/sing-box/current/sing-box run -c /var/lib/apsp/plugins/sing-box@%i/current/config.json -D /var/lib/apsp/plugins/sing-box@%i/data
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

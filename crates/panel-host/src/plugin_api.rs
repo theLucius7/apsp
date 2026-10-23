@@ -7,9 +7,9 @@
 
 use std::{collections::BTreeMap, future::Future, pin::Pin, sync::OnceLock};
 
+use apsp_protocol::{ModuleManifest, RuntimeCheckpointRequest, UsageBatch};
 use axum::http::Method;
 use serde_json::Value;
-use sinan_protocol::{ModuleManifest, RuntimeCheckpointRequest, UsageBatch};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 

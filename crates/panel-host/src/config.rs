@@ -12,20 +12,19 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
-        let public_url =
-            std::env::var("SINAN_PUBLIC_URL").context("SINAN_PUBLIC_URL is required")?;
+        let public_url = std::env::var("APSP_PUBLIC_URL").context("APSP_PUBLIC_URL is required")?;
         let parsed = validate_public_url(&public_url)?;
         Ok(Self {
-            database_url: std::env::var("SINAN_DATABASE_URL")
-                .context("SINAN_DATABASE_URL is required")?,
-            listen: std::env::var("SINAN_LISTEN")
+            database_url: std::env::var("APSP_DATABASE_URL")
+                .context("APSP_DATABASE_URL is required")?,
+            listen: std::env::var("APSP_LISTEN")
                 .unwrap_or_else(|_| "0.0.0.0:8080".into())
                 .parse()?,
             public_url: parsed,
-            data_dir: std::env::var_os("SINAN_DATA_DIR")
+            data_dir: std::env::var_os("APSP_DATA_DIR")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("./data")),
-            admin_password: std::env::var("SINAN_ADMIN_PASSWORD").ok(),
+            admin_password: std::env::var("APSP_ADMIN_PASSWORD").ok(),
         })
     }
 }
@@ -40,7 +39,7 @@ fn validate_public_url(value: &str) -> anyhow::Result<String> {
         || value.contains(['@', '"', '\\', '#'])
         || value.chars().any(char::is_control)
     {
-        bail!("SINAN_PUBLIC_URL must be an HTTP(S) origin without credentials or path");
+        bail!("APSP_PUBLIC_URL must be an HTTP(S) origin without credentials or path");
     }
     let authority = uri.authority().context("missing panel authority")?;
     let host = authority.host();

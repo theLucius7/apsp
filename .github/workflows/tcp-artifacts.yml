@@ -44,7 +44,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends musl-tools build-essential minisign python3
       - name: Reject an unknown compile-time source pin
         run: |
-          if SINAN_NATIVE_TCP_SOURCE_COMMIT=unknown cargo check --locked --package sinan-tcp-probe > "$RUNNER_TEMP/tcp-invalid-pin.log" 2>&1; then
+          if APSP_NATIVE_TCP_SOURCE_COMMIT=unknown cargo check --locked --package apsp-tcp-probe > "$RUNNER_TEMP/tcp-invalid-pin.log" 2>&1; then
             echo 'invalid source pin unexpectedly compiled'
             exit 1
           fi
@@ -54,10 +54,10 @@ jobs:
           python3 tools/build-tcp-probe.py '${{ matrix.arch }}' "$RUNNER_TEMP/tcp-artifacts" --source-commit "$TCP_SOURCE_COMMIT"
       - name: Verify real CLI, static ELF, provenance and TEST_ONLY signed Release
         env:
-          SINAN_TCP_ARCH: ${{ matrix.arch }}
-          SINAN_TCP_ARTIFACT_ROOT: ${{ runner.temp }}/tcp-artifacts
+          APSP_TCP_ARCH: ${{ matrix.arch }}
+          APSP_TCP_ARTIFACT_ROOT: ${{ runner.temp }}/tcp-artifacts
         run: |
-          export SINAN_TCP_SOURCE_COMMIT="$TCP_SOURCE_COMMIT"
+          export APSP_TCP_SOURCE_COMMIT="$TCP_SOURCE_COMMIT"
           python3 -m unittest discover -s tests -p test_tcp_probe_artifacts.py
           python3 -m unittest discover -s tests -p test_tcp_probe_native_bundle.py
       - uses: actions/upload-artifact@v7.0.1
@@ -89,9 +89,9 @@ jobs:
           python3 tools/build-tcp-probe.py amd64 "$RUNNER_TEMP/tcp-artifacts" --source-commit "$TCP_SOURCE_COMMIT"
       - name: Verify all source, license and TEST_ONLY signature contracts
         env:
-          SINAN_TCP_ARCH: amd64
+          APSP_TCP_ARCH: amd64
         run: |
-          export SINAN_TCP_SOURCE_COMMIT="$TCP_SOURCE_COMMIT"
-          export SINAN_TCP_ARTIFACT_ROOT="$RUNNER_TEMP/tcp-artifacts"
+          export APSP_TCP_SOURCE_COMMIT="$TCP_SOURCE_COMMIT"
+          export APSP_TCP_ARTIFACT_ROOT="$RUNNER_TEMP/tcp-artifacts"
           python3 -m unittest discover -s tests -p test_tcp_probe_artifacts.py
           python3 -m unittest discover -s tests -p test_tcp_probe_native_bundle.py

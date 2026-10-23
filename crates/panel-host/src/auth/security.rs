@@ -3,6 +3,7 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use axum::{
     Json,
     extract::{ConnectInfo, State},
@@ -13,7 +14,6 @@ use data_encoding::BASE32_NOPAD;
 use rand::{RngCore, rngs::OsRng};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 use sqlx::{Postgres, Row, Transaction, postgres::PgRow};
 use std::net::SocketAddr;
 
@@ -133,7 +133,7 @@ pub async fn totp_setup(
     tx.commit().await?;
     let secret = BASE32_NOPAD.encode(&secret);
     Ok(reply(
-        json!({"secret": secret, "otpauth_uri": format!("otpauth://totp/Sinan:admin?secret={secret}&issuer=Sinan&algorithm=SHA1&digits=6&period=30"), "expires_at": expires}),
+        json!({"secret": secret, "otpauth_uri": format!("otpauth://totp/Apsp:admin?secret={secret}&issuer=Apsp&algorithm=SHA1&digits=6&period=30"), "expires_at": expires}),
     ))
 }
 

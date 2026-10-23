@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, ensure};
+use apsp_adapter_sdk::Prepared;
 use reqwest::{Url, redirect::Policy};
 use serde_json::Value;
-use sinan_adapter_sdk::Prepared;
 use std::time::Duration;
 
 const MAX_RESPONSE: usize = 16 * 1024;
@@ -147,7 +147,7 @@ async fn query_delay(url: Url, secret: String) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sinan_adapter_sdk::RuntimeSpec;
+    use apsp_adapter_sdk::RuntimeSpec;
     use std::collections::BTreeMap;
     fn prepared() -> Prepared {
         Prepared { spec: RuntimeSpec { revision:1,kernel_version:"1.14.2".into(),config_hash:"a".repeat(64),binary_path:"/tmp/runtime".into(),revision_dir:"/tmp/config".into(),stats_listen:"127.0.0.1:18085".into(),files:BTreeMap::from([

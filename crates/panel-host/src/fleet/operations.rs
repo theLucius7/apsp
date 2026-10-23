@@ -2,6 +2,10 @@ use crate::{
     AppState, auth,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::{
+    fleet::{Job, JobResult, OPERATIONS_CAPABILITY, Operation, Work},
+    now_timestamp,
+};
 use axum::{
     Json,
     extract::{Path, State},
@@ -10,17 +14,13 @@ use axum::{
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sinan_protocol::{
-    fleet::{Job, JobResult, OPERATIONS_CAPABILITY, Operation, Work},
-    now_timestamp,
-};
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
 fn restrict_policy(
-    mut original: sinan_protocol::fleet::AccessPolicy,
-    current: &sinan_protocol::fleet::AccessPolicy,
-) -> sinan_protocol::fleet::AccessPolicy {
+    mut original: apsp_protocol::fleet::AccessPolicy,
+    current: &apsp_protocol::fleet::AccessPolicy,
+) -> apsp_protocol::fleet::AccessPolicy {
     original
         .terminal_accounts
         .retain(|account| current.terminal_accounts.contains(account));
@@ -227,7 +227,7 @@ async fn enqueue_tx(
             if !policy.runtime_inspection
                 || !capabilities.as_array().is_some_and(|items| {
                     items.iter().any(|item| {
-                        item.as_str() == Some(sinan_protocol::fleet::RUNTIME_PREFLIGHT_CAPABILITY)
+                        item.as_str() == Some(apsp_protocol::fleet::RUNTIME_PREFLIGHT_CAPABILITY)
                     })
                 })
             {
@@ -597,7 +597,7 @@ pub async fn get(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sinan_protocol::fleet::AccessPolicy;
+    use apsp_protocol::fleet::AccessPolicy;
     #[test]
     fn dispatch_policy_cannot_expand_a_queued_grant() {
         let previous = AccessPolicy {

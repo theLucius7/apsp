@@ -1,11 +1,11 @@
 #![forbid(unsafe_code)]
 
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use serde_json::json;
-use sinan_compiler::{
+use apsp_compiler::{
     Access, ManagedAcceptance, ManagedEndpointSnapshot, Node, OrderedPath, PathHop, ProbeControl,
     ProtocolConfig, Relay, compile_server_with_paths, compile_server_with_relays,
 };
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use serde_json::json;
 use std::{
     fs,
     io::Read,
@@ -138,10 +138,10 @@ fn accept(generation: u64, position: u8, id: i64, identity: u128) -> ManagedAcce
 #[test]
 #[ignore = "requires exact sing-box 1.14.2 with full observed feature tags and a private evidence directory"]
 fn exact_native_checks_three_and_four_hops_acceptances_and_legacy_bytes() {
-    let binary = absolute_input("SINAN_ORDERED_NATIVE_BINARY");
+    let binary = absolute_input("APSP_ORDERED_NATIVE_BINARY");
     assert!(binary.is_file(), "native binary input must be a file");
     native_version(&binary);
-    let parent = absolute_input("SINAN_ORDERED_NATIVE_EVIDENCE_DIR");
+    let parent = absolute_input("APSP_ORDERED_NATIVE_EVIDENCE_DIR");
     assert!(
         parent.is_dir(),
         "native evidence parent must be a directory"

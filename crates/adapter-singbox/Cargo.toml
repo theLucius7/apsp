@@ -1,12 +1,12 @@
 [package]
-name = "sinan-adapter-singbox"
+name = "apsp-adapter-singbox"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-sinan-adapter-sdk.workspace = true
+apsp-adapter-sdk.workspace = true
 anyhow.workspace = true
 blake2.workspace = true
 rand.workspace = true

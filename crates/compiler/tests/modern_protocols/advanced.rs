@@ -1,5 +1,5 @@
 use super::*;
-use sinan_compiler::{
+use apsp_compiler::{
     BbrProfile, Hysteria2Masquerade, MultiplexProtocol, SnellMode, TlsVersion, TuicUdpRelayMode,
 };
 

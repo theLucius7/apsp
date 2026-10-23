@@ -36,7 +36,7 @@ async fn fixture(pool: sqlx::PgPool) -> Fixture {
     .unwrap();
     let token = format!("TEST_ONLY_{}", Uuid::new_v4());
     let hash = crate::auth::hash_token(&token);
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO sessions(token_hash,admin_id,expires_at) VALUES($1,1,$2)")
         .bind(&hash)
         .bind(now + 600)
@@ -55,7 +55,7 @@ async fn fixture(pool: sqlx::PgPool) -> Fixture {
     let mut headers = HeaderMap::new();
     headers.insert(
         axum::http::header::COOKIE,
-        format!("sinan_session={token}").parse().unwrap(),
+        format!("apsp_session={token}").parse().unwrap(),
     );
     Fixture {
         state,
@@ -66,7 +66,7 @@ async fn fixture(pool: sqlx::PgPool) -> Fixture {
 
 async fn intent(fixture: &Fixture) -> (Uuid, Uuid) {
     let preview = Uuid::new_v4();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let request = tests::request();
     let mut tx = fixture.state.pool.begin().await.unwrap();
     lock(&mut tx).await.unwrap();
@@ -416,7 +416,7 @@ async fn revoked_actor_changed_account_or_rotated_credential_blocks_before_any_p
             .await
             .unwrap();
         sqlx::query("UPDATE administrator_reauth SET expires_at=$1")
-            .bind(sinan_protocol::now_timestamp() + 300)
+            .bind(apsp_protocol::now_timestamp() + 300)
             .execute(&fixture.state.pool)
             .await
             .unwrap();
@@ -518,7 +518,7 @@ async fn history_requires_both_original_and_current_scope_and_missing_legacy_sco
         .await
         .unwrap();
     let hash = crate::auth::hash_token("TEST_ONLY_operator_session");
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO sessions(token_hash,admin_id,expires_at) VALUES($1,$2,$3)")
         .bind(&hash)
         .bind(operator)
@@ -538,7 +538,7 @@ async fn history_requires_both_original_and_current_scope_and_missing_legacy_sco
     let mut headers = HeaderMap::new();
     headers.insert(
         axum::http::header::COOKIE,
-        "sinan_session=TEST_ONLY_operator_session".parse().unwrap(),
+        "apsp_session=TEST_ONLY_operator_session".parse().unwrap(),
     );
     let visible = super::super::dns_records::history(
         State(fixture.state.clone()),

@@ -15,9 +15,9 @@ import uuid
 SPEC = importlib.util.spec_from_file_location("ci_bootstrap_install", Path(__file__).with_name("ci-bootstrap-install.py"))
 BOOTSTRAP = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(BOOTSTRAP)
-AGENT = Path("/usr/local/bin/sinan-agent")
-RUNTIME = Path("/opt/sinan/plugins/sing-box/current/sing-box")
-DATABASE = Path("/var/lib/sinan/core/state.db")
+AGENT = Path("/usr/local/bin/apsp-agent")
+RUNTIME = Path("/opt/apsp/plugins/sing-box/current/sing-box")
+DATABASE = Path("/var/lib/apsp/core/state.db")
 
 
 def ensure(condition, message):
@@ -31,15 +31,15 @@ def digest(path):
 
 
 def snapshot():
-    files = [Path("/etc/sinan/agent.toml"), Path("/etc/systemd/system/sinan-agent.service"),
-             Path("/etc/systemd/system/sinan-singbox@.service")]
-    identity = Path("/etc/sinan/identity")
+    files = [Path("/etc/apsp/agent.toml"), Path("/etc/systemd/system/apsp-agent.service"),
+             Path("/etc/systemd/system/apsp-singbox@.service")]
+    identity = Path("/etc/apsp/identity")
     ensure(identity.is_dir() and not identity.is_symlink(), "identity directory is not ordinary")
     files.extend(sorted(identity.iterdir()))
     ensure(all(path.is_file() and not path.is_symlink() for path in files), "preserved installation files must be ordinary")
-    links = [Path("/opt/sinan/core/current"), Path("/opt/sinan/plugins/sing-box/current"),
-             Path("/var/lib/sinan/plugins/sing-box@main/current")]
-    units = ("sinan-agent.service", "sinan-singbox@main.service")
+    links = [Path("/opt/apsp/core/current"), Path("/opt/apsp/plugins/sing-box/current"),
+             Path("/var/lib/apsp/plugins/sing-box@main/current")]
+    units = ("apsp-agent.service", "apsp-singbox@main.service")
     processes = {}
     for unit in units:
         process = subprocess.run(["systemctl", "show", unit, "-p", "MainPID", "--value"],
@@ -77,7 +77,7 @@ def atomic_replace(path, contents, mode):
 
 def probe(binary, directory, must_pass):
     marker = Path(directory) / ("systemd-marker-" + uuid.uuid4().hex)
-    unit = "sinan-ci-proof-" + uuid.uuid4().hex
+    unit = "apsp-ci-proof-" + uuid.uuid4().hex
     result = subprocess.run(["systemd-run", "--quiet", "--wait", "--collect", "--unit", unit,
                              "--property=Type=oneshot", f"--property=ExecStartPre={AGENT.resolve()} verify-installed --binary {binary} --name sing-box --format tar.gz",
                              "--", "/usr/bin/touch", str(marker)], check=False,
@@ -144,7 +144,7 @@ def main():
     for argument in ("enrollment", "trust-directory", "bundle", "log-directory", "summary"):
         parser.add_argument("--" + argument, type=Path, required=True)
     args = parser.parse_args()
-    ensure(os.getuid() == 0 and os.environ.get("SINAN_E2E_DISPOSABLE_HOST") == "1", "cache mutation requires an explicitly disposable root-run CI host")
+    ensure(os.getuid() == 0 and os.environ.get("APSP_E2E_DISPOSABLE_HOST") == "1", "cache mutation requires an explicitly disposable root-run CI host")
     args.log_directory.mkdir(mode=0o700)
     exercise(args)
 

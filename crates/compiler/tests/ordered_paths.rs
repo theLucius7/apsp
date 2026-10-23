@@ -1,13 +1,13 @@
 #![forbid(unsafe_code)]
 
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use serde_json::{Value, json};
-use sinan_compiler::{
+use apsp_compiler::{
     Access, ManagedAcceptance, ManagedEndpointSnapshot, Node, OrderedPath, PathCapabilities,
     PathHop, ProbeControl, ProtocolConfig, Relay, compile_client, compile_server,
     compile_server_with_paths, compile_server_with_relays, external::NormalizedOutbound,
     path_capabilities, required_build_tags, validate_path,
 };
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 fn node(id: i64, user: bool) -> Node {
@@ -569,7 +569,7 @@ fn all_normalized_protocols_round_trip_and_versions_do_not_change_tags() {
 
 #[test]
 fn numeric_and_uuid_paths_share_one_configuration_without_losing_routes_or_dns() {
-    use sinan_compiler::{compile_server_with_paths_on_config, paths as numeric};
+    use apsp_compiler::{compile_server_with_paths_on_config, paths as numeric};
     let ordered_entry = node(1, true);
     let mut numeric_entry = node(5, true);
     numeric_entry.port = 8443;
@@ -583,7 +583,7 @@ fn numeric_and_uuid_paths_share_one_configuration_without_losing_routes_or_dns()
         hops: vec![numeric::Hop::External {
             node_id: 51,
             version_id: 52,
-            outbound: sinan_compiler::external::ExternalOutbound(
+            outbound: apsp_compiler::external::ExternalOutbound(
                 json!({"type":"http","server":"numeric.example.com","server_port":8080}),
             ),
         }],
@@ -661,7 +661,7 @@ fn numeric_and_uuid_paths_share_one_configuration_without_losing_routes_or_dns()
 
 #[test]
 fn combined_pipelines_reject_competing_public_entry_and_frozen_listener_parameters() {
-    use sinan_compiler::{compile_server_with_paths_on_config, paths as numeric};
+    use apsp_compiler::{compile_server_with_paths_on_config, paths as numeric};
     let entry = node(1, true);
     let old = numeric::Path {
         chain_id: 22,
@@ -672,7 +672,7 @@ fn combined_pipelines_reject_competing_public_entry_and_frozen_listener_paramete
         hops: vec![numeric::Hop::External {
             node_id: 51,
             version_id: 52,
-            outbound: sinan_compiler::external::ExternalOutbound(
+            outbound: apsp_compiler::external::ExternalOutbound(
                 json!({"type":"http","server":"numeric.example.com","server_port":8080}),
             ),
         }],
@@ -714,7 +714,7 @@ fn combined_pipelines_reject_competing_public_entry_and_frozen_listener_paramete
 
 #[test]
 fn converting_chain_keeps_its_mixed_route_while_its_ordered_candidate_is_probed() {
-    use sinan_compiler::{compile_server_with_paths_on_config, paths as numeric};
+    use apsp_compiler::{compile_server_with_paths_on_config, paths as numeric};
     use std::collections::BTreeMap;
     let mut entry = node(5, true);
     entry.port = 8443;
@@ -728,7 +728,7 @@ fn converting_chain_keeps_its_mixed_route_while_its_ordered_candidate_is_probed(
         hops: vec![numeric::Hop::External {
             node_id: 51,
             version_id: 52,
-            outbound: sinan_compiler::external::ExternalOutbound(
+            outbound: apsp_compiler::external::ExternalOutbound(
                 json!({"type":"http","server":"numeric.example.com","server_port":8080}),
             ),
         }],

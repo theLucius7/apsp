@@ -4,7 +4,7 @@ async fn replace(fixture: &Fixture, revision: i64, content: &str, action: &str) 
     api(&fixture.panel,&fixture.cookie,Method::PATCH,&format!("/ordered-subscription-sources/{}",fixture.source),Some(json!({
         "request_id":Uuid::new_v4(),"settings_revision":revision,"input":{"kind":"inline","content":content,"identity_action":action}
     })),StatusCode::OK).await?;
-    sinan_panel::plugins::singbox::subscription_sources::worker::run_once(&fixture.panel.state)
+    apsp_panel::plugins::singbox::subscription_sources::worker::run_once(&fixture.panel.state)
         .await?;
     Ok(())
 }
@@ -33,7 +33,7 @@ async fn source_refresh_stages_only_same_identity_followed_node_while_pinned_kee
         "update",
     )
     .await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     let changed = resource(&fixture, followed).await?;
     let unchanged = resource(&fixture, pinned).await?;
     assert_eq!(changed["path_state"]["desired_generation"], 2);
@@ -76,7 +76,7 @@ async fn failed_or_archived_source_preserves_applied_frozen_identity_and_no_fall
     .fetch_one(&fixture.panel.state.pool)
     .await?;
     replace(&fixture, 1, "not supported proxy data", "update").await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     let view = resource(&fixture, chain).await?;
     assert_eq!(view["path_state"]["desired_generation"], 1);
     assert_eq!(view["path_state"]["applied_generation"], 1);
@@ -90,7 +90,7 @@ async fn failed_or_archived_source_preserves_applied_frozen_identity_and_no_fall
         StatusCode::OK,
     )
     .await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     assert_eq!(
         resource(&fixture, chain).await?["hops"][0]["source_archived"],
         true
@@ -125,7 +125,7 @@ async fn replacing_source_identity_cannot_rebind_an_applied_following_path(
         "replace",
     )
     .await?;
-    sinan_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
+    apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&fixture.panel.state).await?;
     let view = resource(&fixture, chain).await?;
     assert_eq!(view["path_state"]["desired_generation"], 1);
     assert_eq!(view["path_state"]["applied_generation"], 1);

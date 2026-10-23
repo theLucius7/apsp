@@ -3,6 +3,8 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_compiler::{Access, Node};
+use apsp_protocol::{fleet::Operation, now_timestamp};
 use axum::{
     Json,
     extract::{Path, State},
@@ -11,8 +13,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::Digest;
-use sinan_compiler::{Access, Node};
-use sinan_protocol::{fleet::Operation, now_timestamp};
 use sqlx::{Postgres, Row, Transaction};
 use std::{collections::BTreeSet, net::IpAddr};
 use uuid::Uuid;
@@ -20,7 +20,7 @@ mod bootstrap;
 pub(in super::super) use bootstrap::install as bootstrap_install;
 
 const PERMISSIONS_MODULE: &str = "sing-box";
-const PREFLIGHT_CAPABILITY: &str = sinan_protocol::fleet::RUNTIME_PREFLIGHT_CAPABILITY;
+const PREFLIGHT_CAPABILITY: &str = apsp_protocol::fleet::RUNTIME_PREFLIGHT_CAPABILITY;
 
 pub(super) fn check(
     key: &str,
@@ -155,8 +155,7 @@ fn listeners(nodes: &[Node]) -> Vec<Listener> {
                 format!("节点 #{} UDP", node.id),
             ));
         }
-        if let Some(sinan_compiler::TlsConfig::Acme { challenge, .. }) = node.protocol_config.tls()
-        {
+        if let Some(apsp_compiler::TlsConfig::Acme { challenge, .. }) = node.protocol_config.tls() {
             entries.insert((
                 "tcp".into(),
                 "::".into(),
@@ -219,9 +218,9 @@ fn panel_checks(
     ];
     for capability in [
         "singbox",
-        sinan_protocol::fleet::OPERATIONS_CAPABILITY,
+        apsp_protocol::fleet::OPERATIONS_CAPABILITY,
         PREFLIGHT_CAPABILITY,
-        sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
+        apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
     ] {
         checks.push(check(
             &format!("capability:{capability}"),
@@ -237,7 +236,7 @@ fn panel_checks(
             "使用设备实际声明的独立能力；旧 Agent 不自动开放新权限。",
         ));
     }
-    let compiled = sinan_compiler::compile_server(&context.nodes);
+    let compiled = apsp_compiler::compile_server(&context.nodes);
     checks.push(check("configuration","普通节点配置",if compiled.is_ok(){"passed"}else{"failed"},Some(now),"fixed_compiler_1.14.2",json!({"node_ids":context.nodes.iter().map(|node|node.id).collect::<Vec<_>>(),"compiled":compiled.is_ok(),"configuration_sha256":compiled.ok().map(|value|format!("{:x}",sha2::Sha256::digest(value.as_bytes()))),"secret_values_returned":false}),"确定性编译当前有效授权与普通节点；预检不复制凭据，也不替代 Agent 的原生配置检查。"));
     let state = state.clone();
     let info = context.info.clone();
@@ -589,7 +588,7 @@ fn ports_check(
     let manager = &permissions["result"]["service_manager"];
     let owned = if fresh(permissions, requested_at, now)
         && permissions["succeeded"] == true
-        && manager["managed_unit"] == "sinan-singbox@main.service"
+        && manager["managed_unit"] == "apsp-singbox@main.service"
         && checkpoint_verified
     {
         manager["managed_pid"]
@@ -725,7 +724,7 @@ async fn aggregate_tx(
                 && !node.users.is_empty()
                 && matches!(
                     node.protocol_config.tls(),
-                    Some(sinan_compiler::TlsConfig::Acme { .. })
+                    Some(apsp_compiler::TlsConfig::Acme { .. })
                 )
         }) {
             checks.push(storage_check(&permissions, started, now));
@@ -1010,7 +1009,7 @@ mod tests {
             purpose: "TEST_ONLY".into(),
         }];
         let mut receipt = json!({"succeeded":true,"completed_at":100,"result":{"stdout":"tcp LISTEN 0 128 0.0.0.0:443 0.0.0.0:* users:((\"sing-box\",pid=12,fd=3))","truncated":false}});
-        let permissions = json!({"succeeded":true,"completed_at":100,"result":{"service_manager":{"managed_unit":"sinan-singbox@main.service","managed_pid":13}}});
+        let permissions = json!({"succeeded":true,"completed_at":100,"result":{"service_manager":{"managed_unit":"apsp-singbox@main.service","managed_pid":13}}});
         assert_eq!(
             ports_check(&receipt, &permissions, &required, 90, 101, true)["state"],
             "failed"

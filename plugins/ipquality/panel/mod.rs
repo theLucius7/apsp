@@ -3,9 +3,9 @@ use crate::{
     error::ApiError,
     ip_quality,
 };
+use apsp_protocol::{DiagnosticResourceBudget, DiagnosticSectionUpdate};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sinan_protocol::{DiagnosticResourceBudget, DiagnosticSectionUpdate};
 use std::collections::BTreeMap;
 
 mod result;

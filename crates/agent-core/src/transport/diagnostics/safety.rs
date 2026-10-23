@@ -10,7 +10,7 @@ impl DiagnosticWorker {
     pub(super) async fn preflight(
         &self,
         service: &ServiceJob,
-    ) -> Result<sinan_adapter_sdk::DiagnosticResources> {
+    ) -> Result<apsp_adapter_sdk::DiagnosticResources> {
         ensure!(
             self.services.supports_confirmed_cancellation(),
             "当前服务后端无法确认诊断进程和挂载清理，请升级或更换支持 systemd/cgroup v2 的测试节点"

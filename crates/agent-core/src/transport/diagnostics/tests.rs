@@ -9,8 +9,8 @@ use crate::{
     fake::{FakeResourceOps, FakeServiceManager},
     system::SystemOps,
 };
-use sinan_adapter_sdk::{BoxFuture, DiagnosticDescriptor, DiagnosticOutput};
-use sinan_protocol::Artifact;
+use apsp_adapter_sdk::{BoxFuture, DiagnosticDescriptor, DiagnosticOutput};
+use apsp_protocol::Artifact;
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -22,7 +22,7 @@ use std::{
 struct Directory(PathBuf);
 impl Directory {
     fn new() -> Self {
-        Self(std::env::temp_dir().join(format!("sinan-diagnostic-{}", Uuid::new_v4())))
+        Self(std::env::temp_dir().join(format!("apsp-diagnostic-{}", Uuid::new_v4())))
     }
     fn config(&self) -> Config {
         Config {
@@ -58,7 +58,7 @@ impl DiagnosticAdapter for TestAdapter {
         Box::pin(async move {
             privileged.create_dir(&spec.job_dir, 0o700, None).await?;
             Ok(ServiceJob {
-                unit: format!("sinan-diagnostic-{}.service", spec.id),
+                unit: format!("apsp-diagnostic-{}.service", spec.id),
                 program: spec.binary_path.clone(),
                 args: vec![],
                 working_directory: spec.job_dir.clone(),
@@ -254,7 +254,7 @@ fn checkpoint(config: &Config, id: Uuid) -> Checkpoint {
             options: BTreeMap::new(),
         },
         service: ServiceJob {
-            unit: format!("sinan-diagnostic-{id}.service"),
+            unit: format!("apsp-diagnostic-{id}.service"),
             program: config.install_root.join("runner"),
             args: vec![],
             working_directory: directory,
@@ -434,7 +434,7 @@ fn unknown_plugins_and_invalid_timeouts_never_become_services() -> Result<()> {
 async fn existing_service_implementations_default_to_unsupported_jobs() -> Result<()> {
     let services = FakeServiceManager::default();
     let job = ServiceJob {
-        unit: format!("sinan-diagnostic-{}.service", Uuid::new_v4()),
+        unit: format!("apsp-diagnostic-{}.service", Uuid::new_v4()),
         program: Path::new("/usr/bin/true").into(),
         args: vec![],
         working_directory: Path::new("/tmp").into(),

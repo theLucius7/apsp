@@ -39,7 +39,7 @@ export default function Login({ onLogin, notice }: { onLogin: () => void; notice
           <span><Icon name="activity" size={19} />{t('流量按用户统计')}</span>
         </div>
       </div>
-      <div className="login-bottom">{t('司南 · 自托管服务器与节点面板')}</div>
+      <div className="login-bottom">{t('apsp · 自托管服务器与节点面板')}</div>
     </div>
     <div className="login-form-side">
       <LanguageSelect className="login-language" />

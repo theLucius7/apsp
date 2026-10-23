@@ -1,10 +1,10 @@
 #![forbid(unsafe_code)]
 
-use serde_json::json;
-use sinan_protocol::{
+use apsp_protocol::{
     AuthorizedProbe, ProbeAddressFamily, ProbeAuthorization, ProbeAuthorizationKind,
     ProbeExecution, ProbeLease, ProbeMonitor, ProbeNetwork, ProbeResult, ProbeSpec,
 };
+use serde_json::json;
 use uuid::Uuid;
 
 const LEGACY_SPEC: &str = r#"{"id":"00000000-0000-0000-0000-000000000003","name":"fixture","kind":"tcp","target":"127.0.0.1","port":443,"interval_secs":10,"carrier":"","enabled":true}"#;
@@ -57,7 +57,7 @@ fn legacy_probe_vector_and_results_keep_their_exact_wire_bytes() {
 fn lease_lifetime_device_identity_and_revision_limits_are_checked() {
     let original = lease();
     assert!(original.valid());
-    assert_eq!(sinan_protocol::MAX_PROBE_LEASE_SECS, 90);
+    assert_eq!(apsp_protocol::MAX_PROBE_LEASE_SECS, 90);
     for seconds in [1, 90] {
         let mut changed = original.clone();
         changed.expires_at = changed.issued_at + seconds;
@@ -257,7 +257,7 @@ fn execution_records_round_trip_the_exact_bound_authorization_and_measurement_me
     assert_eq!(wire["execution"]["probe"]["authorization"]["kind"], "owned");
     assert_eq!(serde_json::from_value::<ProbeResult>(wire).unwrap(), result);
     let mut changed = execution;
-    changed.probe.spec.kind = sinan_protocol::ProbeKind::Icmp;
+    changed.probe.spec.kind = apsp_protocol::ProbeKind::Icmp;
     assert!(
         !changed.valid(),
         "a TCP port and identity must never authorize ICMP"

@@ -1,4 +1,4 @@
-# Sinan MVP 执行计划
+# Apsp MVP 执行计划
 
 以任务说明为验收基准，顺序推进 G1–G9。每阶段完成 fmt、clippy（-D warnings）、test，更新 PROGRESS 并提交 Conventional Commit。
 

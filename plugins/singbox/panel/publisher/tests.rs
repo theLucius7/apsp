@@ -76,7 +76,7 @@ async fn stale_candidate_cannot_publish_after_enablement_is_withdrawn(
             database_url: String::new(),
             listen: "127.0.0.1:0".parse()?,
             public_url: "http://127.0.0.1".into(),
-            data_dir: std::env::temp_dir().join(format!("sinan-publish-{}", uuid::Uuid::new_v4())),
+            data_dir: std::env::temp_dir().join(format!("apsp-publish-{}", uuid::Uuid::new_v4())),
             admin_password: Some("test-only-plugin-publisher".into()),
         },
     )

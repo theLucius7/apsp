@@ -18,7 +18,7 @@ async fn claim(pool: &PgPool, id: Uuid, force: bool) -> ApiResult<Option<(Uuid, 
     sqlx::query("SELECT pg_advisory_xact_lock(739104824)")
         .execute(&mut *tx)
         .await?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let active: i64 = sqlx::query_scalar("SELECT count(*) FROM ddns_rules WHERE lease_until>$1")
         .bind(now)
         .fetch_one(&mut *tx)
@@ -87,7 +87,7 @@ async fn complete_with_history(
     previous: Option<Snapshot>,
     desired: Option<IpAddr>,
 ) -> ApiResult<()> {
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let mut tx = pool.begin().await?;
     let (status, error, observed) = match &result {
         Ok((ip, outcome)) => (
@@ -173,7 +173,7 @@ async fn write_guard(
         .execute(&mut *tx)
         .await
         .map_err(|_| Failure::from("storage_error"))?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let current: Option<Uuid> = sqlx::query_scalar("SELECT id FROM ddns_rules WHERE id=$1 AND lease_id=$2 AND revision=$3 AND lease_until>$4 AND config->>'enabled'='true' FOR SHARE")
         .bind(rule.id).bind(lease).bind(rule.revision).bind(now)
         .fetch_optional(&mut *tx).await.map_err(|_| Failure::from("storage_error"))?;
@@ -191,7 +191,7 @@ async fn write_guard(
         .select(
             &rule.config,
             Some(&preferred),
-            sinan_protocol::now_timestamp(),
+            apsp_protocol::now_timestamp(),
         )
         .map_err(Failure::from)?;
     if selected != ip {
@@ -222,7 +222,7 @@ pub(super) async fn sync_with(
             .select(
                 &rule.config,
                 rule.last_ip.as_deref(),
-                sinan_protocol::now_timestamp(),
+                apsp_protocol::now_timestamp(),
             )
             .map_err(Failure::from)?;
         desired = Some(ip);
@@ -270,7 +270,7 @@ pub async fn run(pool: PgPool) {
 }
 
 async fn tick(pool: &PgPool) -> ApiResult<serde_json::Value> {
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM ddns_rules d WHERE config->>'enabled'='true' AND next_run_at<=$1 AND lease_until<=$1 AND EXISTS(SELECT 1 FROM server_plugins p WHERE p.server_id=d.server_id AND p.plugin='ddns' AND p.enabled) ORDER BY next_run_at,id LIMIT 8")
         .bind(now).fetch_all(pool).await?;
     let dispatched = ids.len();
@@ -285,6 +285,6 @@ async fn tick(pool: &PgPool) -> ApiResult<serde_json::Value> {
         result?;
     }
     Ok(
-        serde_json::json!({"source":"ddns_dispatcher_tick","scope":"dispatcher","dispatched_rules":dispatched,"rule_results_source":"ddns_rules_and_history","dns_success":null,"sampled_at":sinan_protocol::now_timestamp()}),
+        serde_json::json!({"source":"ddns_dispatcher_tick","scope":"dispatcher","dispatched_rules":dispatched,"rule_results_source":"ddns_rules_and_history","dns_success":null,"sampled_at":apsp_protocol::now_timestamp()}),
     )
 }

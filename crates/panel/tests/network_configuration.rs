@@ -4,11 +4,11 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result};
+use apsp_panel::auth::{hash_token, random_token};
+use apsp_protocol::now_timestamp;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode, header};
 use serde_json::{Value, json};
-use sinan_panel::auth::{hash_token, random_token};
-use sinan_protocol::now_timestamp;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -16,7 +16,7 @@ fn domain(server: i64) -> Value {
     json!({"kind":"domain","name":"network.example.com","server_ids":[server],"ddns_rule_ids":[],"applications":[],"maintainer":"TEST_ONLY","notes":""})
 }
 fn forwarding(server: i64, address: &str) -> Value {
-    json!({"kind":"forwarding","name":"TEST_ONLY forwarding","server_id":server,"listen_address":address,"listen_port":18080,"target_address":"127.0.0.1","target_port":8080,"protocol":"tcp","owner":"sinan","enabled":true,"dependency_ids":[]})
+    json!({"kind":"forwarding","name":"TEST_ONLY forwarding","server_id":server,"listen_address":address,"listen_port":18080,"target_address":"127.0.0.1","target_port":8080,"protocol":"tcp","owner":"apsp","enabled":true,"dependency_ids":[]})
 }
 
 #[sqlx::test]
@@ -124,7 +124,7 @@ async fn old_server_history_is_hidden_after_scope_changes(pool: PgPool) -> Resul
         .bind(now_timestamp() + 3600)
         .execute(&pool)
         .await?;
-    let cookie = format!("sinan_session={token}");
+    let cookie = format!("apsp_session={token}");
     let history: Vec<Value> = panel
         .admin(
             Method::GET,
@@ -151,7 +151,7 @@ async fn api_tokens_cannot_leave_server_operations_without_token_identity(
     let server = panel
         .create_server(&cookie, "TEST_ONLY token scope")
         .await?;
-    let token = format!("sinan_api_{}", random_token());
+    let token = format!("apsp_api_{}", random_token());
     sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,all_servers,expires_at,created_at) VALUES($1,1,$2,'TEST_ONLY network token','[\"network:read\"]',$3,false,$4,0)").bind(Uuid::new_v4()).bind(hash_token(&token)).bind(json!([server])).bind(now_timestamp()+3600).execute(&pool).await?;
     let response = panel
         .client

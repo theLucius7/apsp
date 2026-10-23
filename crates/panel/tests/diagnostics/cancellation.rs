@@ -1,6 +1,6 @@
 use super::*;
+use apsp_protocol::{DiagnosticCancelResult, Envelope, now_timestamp};
 use business_support::{receive_envelope, send_envelope};
-use sinan_protocol::{DiagnosticCancelResult, Envelope, now_timestamp};
 use uuid::Uuid;
 
 async fn wait_for_cancel_error(panel: &TestPanel, id: Uuid) -> Result<()> {
@@ -63,7 +63,7 @@ async fn cancellation_waits_for_device_confirmation_and_preserves_late_reports(
     assert!(unsupported.text().await?.contains("不支持确认式取消"));
     sqlx::query("UPDATE servers SET capabilities=capabilities || $2 WHERE id=$1")
         .bind(server_id)
-        .bind(json!([sinan_protocol::DIAGNOSTIC_CANCEL_CAPABILITY]))
+        .bind(json!([apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY]))
         .execute(&panel.state.pool)
         .await?;
     let response = panel.admin(Method::POST, &path, &cookie, None).await?;
@@ -185,7 +185,7 @@ async fn cancellation_waits_for_device_confirmation_and_preserves_late_reports(
     let confirmation = DiagnosticCancelResult {
         confirmed: true,
         error: None,
-        report: Some(sinan_protocol::DiagnosticReport {
+        report: Some(apsp_protocol::DiagnosticReport {
             text: "较晚的不同片段不得覆盖已有报告".into(),
             report_url: None,
         }),
@@ -307,7 +307,7 @@ async fn natural_completion_rejects_cancellation_and_requested_cleanup_blocks_ne
     capable(&panel, server_id).await?;
     sqlx::query("UPDATE servers SET capabilities=capabilities || $2 WHERE id=$1")
         .bind(server_id)
-        .bind(json!([sinan_protocol::DIAGNOSTIC_CANCEL_CAPABILITY]))
+        .bind(json!([apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY]))
         .execute(&panel.state.pool)
         .await?;
     fixture(&panel).await?;

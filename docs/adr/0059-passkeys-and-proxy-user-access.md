@@ -9,7 +9,7 @@
 - 使用 `webauthn-rs` 0.5.5 的高层 Passkey 注册与认证流程，要求认证器进行用户验证。协议验证不自行实现；前端使用浏览器原生 WebAuthn API，不引入前端认证 SDK。
 - 必须新增该 Rust 依赖，因为现有依赖没有完整的 WebAuthn 注册、认证器数据和签名验证实现。手写协议需要承担 CBOR/COSE、来源校验及认证器兼容责任；外部身份服务会改变自托管部署和账户边界，均不采用。库依赖系统 OpenSSL，面板容器声明其构建和运行库；不影响 Agent 依赖和制品。
 - 开启库的服务端状态序列化特性，仅将仪式状态存入 PostgreSQL。浏览器只持有随机挑战标识和 HttpOnly 绑定 Cookie，不接收完整验证状态。挑战五分钟到期，绑定用途、主体和浏览器，验证请求一次性消费；失败不得重放。
-- RP ID 和精确 Origin 从现有 `SINAN_PUBLIC_URL` 派生，不信任 Host 或转发头来扩大来源。生产使用 HTTPS 域名，本地支持 `http://localhost`；不适用的配置禁用 Passkey 并给出原因，不影响现有密码入口。
+- RP ID 和精确 Origin 从现有 `APSP_PUBLIC_URL` 派生，不信任 Host 或转发头来扩大来源。生产使用 HTTPS 域名，本地支持 `http://localhost`；不适用的配置禁用 Passkey 并给出原因，不影响现有密码入口。
 - 通用验证、凭据和挑战放在面板共用模块；管理员适配在 `auth`，代理用户业务在 `plugins/singbox/panel/`。每个主体最多十把密钥，公开列表仅含管理 ID、名称和时间，私钥永不上传。
 
 ## 管理员与用户开通

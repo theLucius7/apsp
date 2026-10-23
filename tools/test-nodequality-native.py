@@ -171,7 +171,7 @@ class ReportTests(unittest.TestCase):
     def test_chunked_upload_response_cannot_grow_the_output_file(self):
         with tempfile.TemporaryDirectory() as directory:
             subprocess.run([sys.executable, str(PLUGIN / "native-report.py"), "response", directory],
-                           input=b"x" * 100000 + b"\nSINAN_RESPONSE_STATUS:403", stdout=subprocess.DEVNULL, check=True)
+                           input=b"x" * 100000 + b"\nAPSP_RESPONSE_STATUS:403", stdout=subprocess.DEVNULL, check=True)
             root = pathlib.Path(directory)
             self.assertEqual((root / "upload-response.txt").stat().st_size, 65536)
             self.assertEqual((root / "upload-status.txt").read_text(), "403")
@@ -417,17 +417,17 @@ class UploadPolicyTests(unittest.TestCase):
                     real = root / "real-curl"
                     real.write_text('''#!/usr/bin/env python3
 import os, pathlib, sys
-root = pathlib.Path(os.environ["SINAN_REPORT_WORKSPACE"])
+root = pathlib.Path(os.environ["APSP_REPORT_WORKSPACE"])
 (root / "curl-called.txt").write_text("called")
-sys.stdout.write("https://nodequality.com/r/fixture\\nSINAN_RESPONSE_STATUS:200")
+sys.stdout.write("https://nodequality.com/r/fixture\\nAPSP_RESPONSE_STATUS:200")
 ''')
                     real.chmod(0o755)
                     environment = dict(os.environ)
-                    environment.update(SINAN_REAL_CURL=str(real), SINAN_REPORT_WORKSPACE=directory,
-                                       SINAN_REPORT_HELPER=str(PLUGIN / "native-report.py"))
-                    environment.pop("SINAN_UPLOAD_REPORT", None)
+                    environment.update(APSP_REAL_CURL=str(real), APSP_REPORT_WORKSPACE=directory,
+                                       APSP_REPORT_HELPER=str(PLUGIN / "native-report.py"))
+                    environment.pop("APSP_UPLOAD_REPORT", None)
                     if option is not None:
-                        environment["SINAN_UPLOAD_REPORT"] = option
+                        environment["APSP_UPLOAD_REPORT"] = option
                     data = make_archive()
                     subprocess.run(["bash", str(PLUGIN / "curl-shim.sh"), "-X", "POST", "--data-binary", "@-",
                                     "https://api.nodequality.com/api/v1/record"],
@@ -442,7 +442,7 @@ sys.stdout.write("https://nodequality.com/r/fixture\\nSINAN_RESPONSE_STATUS:200"
 
 class BuildTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="sinan-nodequality-build-fixture-")
+        self.temporary = tempfile.TemporaryDirectory(prefix="apsp-nodequality-build-fixture-")
         self.root = pathlib.Path(self.temporary.name)
         self.processes = OwnedProcesses(self.root)
 
@@ -463,7 +463,7 @@ class BuildTests(unittest.TestCase):
                     tool.write_text("#!/bin/sh\nprintf 'Linux\\n'\n" if name == "uname" else "#!/bin/sh\nexit 0\n")
                     tool.chmod(0o700)
                 archive = make_archive()
-                upstream = ('python3 "$SINAN_REPORT_HELPER" capture "$SINAN_REPORT_WORKSPACE" <<\'ARCHIVE\'\n'
+                upstream = ('python3 "$APSP_REPORT_HELPER" capture "$APSP_REPORT_WORKSPACE" <<\'ARCHIVE\'\n'
                             + base64.b64encode(archive).decode() + '\nARCHIVE\nexit ' + str(exit_code) + '\n')
                 runner = (PLUGIN / "native-runner.sh.tmpl").read_text()
                 # This private inert collector fixture retains old recovery
@@ -513,7 +513,7 @@ class BuildTests(unittest.TestCase):
 
     def test_repeated_build_refuses_to_modify_the_existing_artifact_and_checksum(self):
         with tempfile.TemporaryDirectory() as directory:
-            version = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r2"
+            version = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-apsp-native-r2"
             root = pathlib.Path(directory) / "nodequality" / version
             root.mkdir(parents=True)
             artifact = root / "amd64"
@@ -540,7 +540,7 @@ class BuildTests(unittest.TestCase):
             for arch in ("x86_64", "aarch64", "arm64"):
                 fake_uname.write_text("#!/bin/sh\nprintf '%s\\n' '" + arch + "'\n")
                 fake_uname.chmod(0o755)
-                environment = dict(os.environ, PATH=str(root) + ":" + os.environ["PATH"], SINAN_REAL_CHROOT=str(real))
+                environment = dict(os.environ, PATH=str(root) + ":" + os.environ["PATH"], APSP_REAL_CHROOT=str(real))
                 for command in (fixed, fixed.replace('nexttrace_linux_amd64', 'nexttrace_linux_arm64'), "printf ordinary-command"):
                     with self.subTest(arch=arch, command=command):
                         result = subprocess.run(["bash", str(PLUGIN / "chroot-shim.sh"), "/fixture/BenchOs", "/bin/bash", "-c", command],
@@ -595,7 +595,7 @@ class BuildTests(unittest.TestCase):
             subprocess.run(["bash", "-n", str(script)], check=True)
         result = subprocess.run(["bash", str(PLUGIN / "native-runner.sh.tmpl"), "--version"],
                                 capture_output=True, text=True, check=True)
-        self.assertEqual(result.stdout.strip(), "nodequality a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r2")
+        self.assertEqual(result.stdout.strip(), "nodequality a92fca6c0067df29ddd03fdc2fee6f3000f64545-apsp-native-r2")
 
     def test_existing_architecture_checksums_are_not_replaced(self):
         script = (PLUGIN.parents[1] / "tools/build-nodequality-native.sh").read_text()
@@ -629,7 +629,7 @@ class BuildTests(unittest.TestCase):
 
 class RunnerFixtureTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="sinan-nodequality-runner-fixture-")
+        self.temporary = tempfile.TemporaryDirectory(prefix="apsp-nodequality-runner-fixture-")
         self.root = pathlib.Path(self.temporary.name)
         self.processes = OwnedProcesses(self.root)
         self.workspace = self.root / "workspace"
@@ -646,7 +646,7 @@ class RunnerFixtureTests(unittest.TestCase):
         self.stub("curl", '''#!/usr/bin/env python3
 import os, pathlib, sys
 (pathlib.Path(os.environ["NQ_FIXTURE_ROOT"]) / "curl-called.txt").write_text("called")
-sys.stdout.write(os.environ["NQ_FIXTURE_RESPONSE"] + "\\nSINAN_RESPONSE_STATUS:" + os.environ["NQ_FIXTURE_STATUS"])
+sys.stdout.write(os.environ["NQ_FIXTURE_RESPONSE"] + "\\nAPSP_RESPONSE_STATUS:" + os.environ["NQ_FIXTURE_STATUS"])
 raise SystemExit(int(os.environ.get("NQ_FIXTURE_CURL_EXIT", "0")))
 ''')
         self.environment = dict(os.environ)
@@ -921,7 +921,7 @@ work_dir=$workspace/.nodequalityfixture
 
 class OwnedFixtureProcessTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="sinan-owned-fixture-process-")
+        self.temporary = tempfile.TemporaryDirectory(prefix="apsp-owned-fixture-process-")
         self.root = pathlib.Path(self.temporary.name)
         self.processes = OwnedProcesses(self.root)
 

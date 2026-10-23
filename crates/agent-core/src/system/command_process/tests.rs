@@ -74,7 +74,7 @@ async fn cancellation_confirms_the_entire_managed_group_and_reaps_the_parent() -
 #[tokio::test]
 async fn a_cancelled_or_unjournaled_gate_never_executes_the_payload() -> Result<()> {
     for fail_registration in [false, true] {
-        let marker = std::env::temp_dir().join(format!("sinan-gate-{}", Uuid::new_v4()));
+        let marker = std::env::temp_dir().join(format!("apsp-gate-{}", Uuid::new_v4()));
         let observer = Observer {
             fail_registration,
             ..Observer::default()

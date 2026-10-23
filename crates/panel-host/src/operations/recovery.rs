@@ -3,6 +3,7 @@ use crate::{
     AppState, control_center,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use axum::{
     Json,
     extract::{Path, State},
@@ -10,7 +11,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -102,7 +102,7 @@ pub async fn import_drill(
     let actor = super::require_global(&state, &headers, "recovery:write").await?;
     control_center::require_recent_proof(&state, &headers).await?;
     let report = &request.report;
-    if report["tool"] != "sinan-recovery"
+    if report["tool"] != "apsp-recovery"
         || report["format"] != 1
         || report["manifest_sha256"]
             .as_str()

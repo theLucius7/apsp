@@ -17,7 +17,7 @@ async fn fixture(pool: PgPool) -> (AppState, HeaderMap, i64, i64, Vec<Selection>
     .await
     .unwrap();
     let token = format!("TEST_ONLY_{}", Uuid::new_v4());
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO sessions(token_hash,admin_id,expires_at) VALUES($1,1,$2)")
         .bind(auth::hash_token(&token))
         .bind(now + 600)
@@ -27,7 +27,7 @@ async fn fixture(pool: PgPool) -> (AppState, HeaderMap, i64, i64, Vec<Selection>
     let mut headers = HeaderMap::new();
     headers.insert(
         header::COOKIE,
-        format!("sinan_session={token}").parse().unwrap(),
+        format!("apsp_session={token}").parse().unwrap(),
     );
     let source: i64 = sqlx::query_scalar("INSERT INTO servers(name,last_seen,static_info_received_at) VALUES('TEST_ONLY source',$1,$1) RETURNING id")
         .bind(now).fetch_one(&pool).await.unwrap();
@@ -60,9 +60,9 @@ async fn prove(state: &AppState, headers: &HeaderMap) {
     let token = headers[header::COOKIE]
         .to_str()
         .unwrap()
-        .strip_prefix("sinan_session=")
+        .strip_prefix("apsp_session=")
         .unwrap();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET expires_at=$3")
         .bind(auth::hash_token(token)).bind(now).bind(now+300).execute(&state.pool).await.unwrap();
 }

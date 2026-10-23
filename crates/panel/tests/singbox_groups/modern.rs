@@ -53,7 +53,7 @@ async fn group_credentials_and_quota_cover_all_modern_protocols_without_losing_m
     assert_eq!(rows.len(), 12);
     let mut secrets = std::collections::BTreeSet::new();
     for row in &rows {
-        let config: sinan_compiler::ProtocolConfig =
+        let config: apsp_compiler::ProtocolConfig =
             serde_json::from_value(row.get("protocol_config"))?;
         let secret: String = row.get("credential");
         assert_eq!(STANDARD.decode(&secret)?.len(), config.credential_size());
@@ -145,7 +145,7 @@ async fn group_credentials_and_quota_cover_all_modern_protocols_without_losing_m
         StatusCode::CONFLICT
     );
     for node in &nodes {
-        sinan_panel::usage::ingest(
+        apsp_panel::usage::ingest(
             &panel.state,
             server,
             usage(uid, *node, now_timestamp(), 1, 0),

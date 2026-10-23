@@ -1,10 +1,10 @@
 use anyhow::{Context, ensure};
+use apsp_adapter_sdk::{Privileged, ServiceManager};
+use apsp_protocol::fleet::AccessPolicy;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sinan_adapter_sdk::{Privileged, ServiceManager};
-use sinan_protocol::fleet::AccessPolicy;
 use std::{
     collections::BTreeSet,
     path::{Component, Path, PathBuf},
@@ -80,7 +80,7 @@ pub async fn inspect_certificate(
         .filter(|(name, _)| ["ActiveState", "SubState", "Result", "MainPID"].contains(name))
         .collect();
     Ok(
-        json!({"deployment_id":material.deployment_id,"certificate_id":material.certificate_id,"version_id":material.version_id,"fingerprint":fingerprint,"matches_expected":fingerprint==material.fingerprint,"service":material.service,"service_state":fields,"handshake_verified":false,"sampled_at":sinan_protocol::now_timestamp(),"source":"agent_public_certificate_file"}),
+        json!({"deployment_id":material.deployment_id,"certificate_id":material.certificate_id,"version_id":material.version_id,"fingerprint":fingerprint,"matches_expected":fingerprint==material.fingerprint,"service":material.service,"service_state":fields,"handshake_verified":false,"sampled_at":apsp_protocol::now_timestamp(),"source":"agent_public_certificate_file"}),
     )
 }
 
@@ -135,7 +135,7 @@ pub async fn deploy_certificate(
         local,
         remote,
         &public
-            .with_extension("sinan-certificate.json")
+            .with_extension("apsp-certificate.json")
             .to_string_lossy(),
     )?;
     let old_public = existing(privileged, &public, 65536).await?;
@@ -216,7 +216,7 @@ pub async fn deploy_certificate(
                 remote,
                 &public
                     .with_extension(format!(
-                        "sinan-previous-{}.crt",
+                        "apsp-previous-{}.crt",
                         uuid::Uuid::parse_str(&material.deployment_id)?
                     ))
                     .to_string_lossy(),
@@ -229,7 +229,7 @@ pub async fn deploy_certificate(
                 remote,
                 &private
                     .with_extension(format!(
-                        "sinan-previous-{}.key",
+                        "apsp-previous-{}.key",
                         uuid::Uuid::parse_str(&material.deployment_id)?
                     ))
                     .to_string_lossy(),
@@ -328,7 +328,7 @@ pub async fn deploy_certificate(
         );
     }
     Ok(
-        json!({"deployment_id":material.deployment_id,"certificate_id":material.certificate_id,"version_id":material.version_id,"fingerprint":material.fingerprint,"deployed":true,"service_reloaded":true,"service":material.service,"handshake_verified":false,"completed_at":sinan_protocol::now_timestamp(),"private_key":"protected_local_file","key_mode":format!("{key_mode:o}"),"previous_files":"protected_local_recovery"}),
+        json!({"deployment_id":material.deployment_id,"certificate_id":material.certificate_id,"version_id":material.version_id,"fingerprint":material.fingerprint,"deployed":true,"service_reloaded":true,"service":material.service,"handshake_verified":false,"completed_at":apsp_protocol::now_timestamp(),"private_key":"protected_local_file","key_mode":format!("{key_mode:o}"),"previous_files":"protected_local_recovery"}),
     )
 }
 async fn reconcile(

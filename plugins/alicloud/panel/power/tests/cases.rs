@@ -6,7 +6,7 @@ async fn active_power_job_does_not_roll_back_fresh_billing_or_queue_bandwidth_ch
     pool: PgPool,
 ) {
     let (a, r) = seed(&pool).await;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true WHERE id=$1")
         .bind(a)
         .execute(&pool)
@@ -87,7 +87,7 @@ use crate::settings::Settings;
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn new_threshold_cancels_queued_start_before_any_write(pool: PgPool) {
     let (a, r) = seed(&pool).await;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let mut p = policy();
     p.schedule_enabled = false;
     sqlx::query("UPDATE alicloud_resources SET power_policy=$2 WHERE id=$1")
@@ -188,7 +188,7 @@ async fn cloud_identity_is_checked_and_prepaid_economical_stop_is_rejected(pool:
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn cloud_notices_deduplicate_and_retry_without_real_delivery(pool: PgPool) {
     let (a, r) = seed(&pool).await;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let settings = Settings {
         telegram_enabled: true,
         telegram_chat_id: "-100000".into(),

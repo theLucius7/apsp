@@ -39,7 +39,7 @@ function defaults(kind: string, target: string): Check {
   case 'throughput': return { kind, client_mode: 'managed', receiver_server: 0, receiver_host: '', port: 5201, family: 'ipv4', direction: 'forward', protocol: 'tcp', streams: 1, duration_secs: 10, rate_bps: 20_000_000, tool_version: '', latency_target: null }
   case 'cpu': return { kind, tool_version: '', threads: 1, duration_secs: 10 }
   case 'memory': return { kind, tool_version: '', block_bytes: 1024 * 1024, total_bytes: 1024 * 1024 * 1024, operation: 'write' }
-  case 'disk': return { kind, tool_version: '', directory: '/var/lib/sinan/diagnostic-tests', file_bytes: 64 * 1024 * 1024, block_bytes: 4096, queue_depth: 1, mode: 'randread', read_percent: 70, duration_secs: 10 }
+  case 'disk': return { kind, tool_version: '', directory: '/var/lib/apsp/diagnostic-tests', file_bytes: 64 * 1024 * 1024, block_bytes: 4096, queue_depth: 1, mode: 'randread', read_percent: 70, duration_secs: 10 }
   case 'stability': return { kind, tool_version: '', cpu_workers: 1, memory_bytes: 16 * 1024 * 1024, io_workers: 0, duration_secs: 15 }
   case 'hardware_info': return { kind, tool_version: '', device: '/dev/sda' }
   case 'exit': return { kind, family: 'ipv4', discovery_url: 'https://example.com/authorized-ip', route_kind: 'nat_public', proxy_url: null }

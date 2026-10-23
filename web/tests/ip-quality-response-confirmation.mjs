@@ -6,13 +6,13 @@ import { readFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 const now = Math.floor(Date.now() / 1000), successAt = now - 120, freshUntil = successAt + 86400
 // Documentation addresses represent the server-classified public group; no provider is contacted.
 const ip = '192.0.2.1', scoreLabel = '欺诈评分（上游原值）', proxyLabel = '代理'
 const schemaError = '质量查询响应没有可信的有效字段或未确认成功，此数据库信息未知'
-const officialReason = '未配置 SINAN_ABUSEIPDB_API_KEY，正式接口未启用，信息未知'
+const officialReason = '未配置 APSP_ABUSEIPDB_API_KEY，正式接口未启用，信息未知'
 const nodeReason = '正式节点认证适配与完整工具链授权、验收尚未就绪，节点出口和流媒体信息未知；面板正式接口凭证仅用于面板查询'
 const databases = [['maxmind', 'MaxMind 地理与 ASN'], ['ipapi', 'IPAPI'], ['scamalytics', 'Scamalytics'], ['abuseipdb', 'AbuseIPDB'], ['ip2location', 'IP2Location'], ['ipdata', 'IPData'], ['ipqualityscore', 'IPQualityScore']]
 const zeroFields = [{ label: scoreLabel, kind: 'score', value: 0 }, { label: proxyLabel, kind: 'boolean', value: false }]
@@ -104,7 +104,7 @@ const server = createServer(async (request, response) => {
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const origin = `http://127.0.0.1:${server.address().port}`
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
 const results = []
 
 try {

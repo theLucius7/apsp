@@ -421,7 +421,7 @@ fn address(value: &mut String) -> ApiResult<()> {
     Ok(())
 }
 fn network(port: u16, protocol: &str, owner: &str) -> ApiResult<()> {
-    if port == 0 || !matches!(protocol, "tcp" | "udp") || !matches!(owner, "sinan" | "external") {
+    if port == 0 || !matches!(protocol, "tcp" | "udp") || !matches!(owner, "apsp" | "external") {
         return invalid("端口、协议或维护方无效");
     }
     Ok(())

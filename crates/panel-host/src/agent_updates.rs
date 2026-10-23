@@ -2,13 +2,13 @@ use crate::{
     AppState, artifacts, auth,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::{
+    AgentRelease, AgentSettings, StaticInfo, platform::artifact_target, release_version,
+};
 use axum::{
     Json,
     extract::{Query, State, rejection::QueryRejection},
     http::HeaderMap,
-};
-use sinan_protocol::{
-    AgentRelease, AgentSettings, StaticInfo, platform::artifact_target, release_version,
 };
 use sqlx::Row;
 

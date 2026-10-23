@@ -1,11 +1,11 @@
 use super::{lock_server, target_is_current};
 use crate::AppState;
-use serde_json::Value;
-use sha2::{Digest, Sha256};
-use sinan_protocol::{
+use apsp_protocol::{
     RuntimeCheckpoint, RuntimeCheckpointRequest, RuntimeCheckpointResult, RuntimeControlAck,
     RuntimeRecoveryBarrierRequest, RuntimeRecoveryBarrierResult, now_timestamp,
 };
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 
@@ -184,7 +184,7 @@ pub async fn record_barrier_result(
         let current =
             super::supports(
                 &capabilities,
-                sinan_protocol::RUNTIME_RECOVERY_BARRIER_CAPABILITY,
+                apsp_protocol::RUNTIME_RECOVERY_BARRIER_CAPABILITY,
             ) && super::confirmed_is_current(&mut tx, server_id, &request.expected.binding).await?
                 && current_checkpoint.as_ref() == Some(&request.expected);
         let outcome = preliminary_outcome(&stored, result.success, matches, now)

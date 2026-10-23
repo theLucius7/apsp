@@ -1,15 +1,15 @@
-//! `sinan-panel source-migration`: the manual move of numbered subscription
+//! `apsp-panel source-migration`: the manual move of numbered subscription
 //! sources into ordered sources (ADR 0079 phase 3, step S1b). Nothing runs
 //! unless an operator invokes it. Results are JSON on standard output; logs go
 //! to standard error. The exit code is 0 only when the step succeeded, the
 //! precheck found no blocker, or two records are equal.
 
 use anyhow::{Context, Result, bail};
+use apsp_panel::{AppState, config::Config, plugins::singbox::source_migration};
 use serde_json::{Value, json};
-use sinan_panel::{AppState, config::Config, plugins::singbox::source_migration};
 use sqlx::postgres::PgPoolOptions;
 
-const USAGE: &str = "usage: sinan-panel source-migration precheck | apply | rollback | snapshot [--at <unix-seconds>] | compare <before.json> <after.json>";
+const USAGE: &str = "usage: apsp-panel source-migration precheck | apply | rollback | snapshot [--at <unix-seconds>] | compare <before.json> <after.json>";
 
 fn read(path: &str) -> Result<Value> {
     let bytes = std::fs::read(path).with_context(|| format!("cannot read {path}"))?;
@@ -53,7 +53,7 @@ pub async fn run(args: &[String]) -> Result<i32> {
         .connect(&config.database_url)
         .await?;
     let state = AppState::new(pool, config).await?;
-    sinan_panel::plugins::install();
+    apsp_panel::plugins::install();
     let (value, succeeded) = match command {
         "precheck" => {
             let report = source_migration::precheck(&state.pool).await?;
@@ -69,7 +69,7 @@ pub async fn run(args: &[String]) -> Result<i32> {
             (json!(outcome), succeeded)
         }
         _ => {
-            let at = at.unwrap_or_else(sinan_protocol::now_timestamp);
+            let at = at.unwrap_or_else(apsp_protocol::now_timestamp);
             (source_migration::snapshot(&state, at).await?, true)
         }
     };

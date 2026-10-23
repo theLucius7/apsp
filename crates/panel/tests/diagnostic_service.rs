@@ -12,14 +12,14 @@ use uuid::Uuid;
 
 async fn ready(panel: &TestPanel, server: i64) -> Result<()> {
     sqlx::query("UPDATE servers SET static_info=static_info || '{\"os\":\"linux\"}'::jsonb,capabilities=$2,last_seen=$3 WHERE id=$1")
-        .bind(server).bind(json!(["diagnostic:nodequality","diagnostic:nodequality-modes",sinan_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,sinan_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY,sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY]))
-        .bind(sinan_protocol::now_timestamp()).execute(&panel.state.pool).await?;
+        .bind(server).bind(json!(["diagnostic:nodequality","diagnostic:nodequality-modes",apsp_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,apsp_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,apsp_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY,apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY]))
+        .bind(apsp_protocol::now_timestamp()).execute(&panel.state.pool).await?;
     let binary = b"TEST_ONLY fixed diagnostic service fixture";
     let archive = release_fixture::archive("nodequality", binary)?;
     release_fixture::write(
         &panel.state.config.data_dir,
         "nodequality",
-        sinan_panel::diagnostics::PLUGIN_VERSION,
+        apsp_panel::diagnostics::PLUGIN_VERSION,
         "nodequality",
         &archive,
         binary,
@@ -51,7 +51,7 @@ async fn throughput_enqueue_freezes_the_same_exact_latency_identity_for_source_a
     .fetch_one(&panel.state.pool)
     .await?;
     let target = Uuid::new_v4();
-    let end = sinan_protocol::now_timestamp() + 3600;
+    let end = apsp_protocol::now_timestamp() + 3600;
     sqlx::query("INSERT INTO network_workbench_targets(id,name,host,purpose,authorization_snapshot,authorized_until,created_at,updated_at) VALUES($1,'TEST_ONLY latency','latency.example.test','isolated','original authorization',$2,0,0)")
         .bind(target).bind(end).execute(&panel.state.pool).await?;
     sqlx::query("INSERT INTO network_workbench_tools(id,version,license,source_url,licensed,updated_at) VALUES('iperf3','TEST_ONLY','TEST_ONLY','https://tools.example.test/iperf3',TRUE,0)")
@@ -134,7 +134,7 @@ async fn revoked_workbench_delivery_blocks_the_entire_same_server_mixed_response
         .bind(server)
         .bind(json!([
             "diagnostic:network-workbench-v1",
-            sinan_protocol::DIAGNOSTIC_CANCEL_CAPABILITY
+            apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY
         ]))
         .execute(&panel.state.pool)
         .await?;
@@ -144,7 +144,7 @@ async fn revoked_workbench_delivery_blocks_the_entire_same_server_mixed_response
     for (name, version, binary) in [
         (
             "nodequality",
-            sinan_panel::diagnostics::PLUGIN_VERSION,
+            apsp_panel::diagnostics::PLUGIN_VERSION,
             &b"TEST_ONLY fixed diagnostic service fixture"[..],
         ),
         (
@@ -157,16 +157,16 @@ async fn revoked_workbench_delivery_blocks_the_entire_same_server_mixed_response
         for arch in ["amd64", "arm64"] {
             let mut entry = release_support::entry(name, version, name, "tar.gz", &archive, binary);
             entry.arch = arch.into();
-            entry.asset_name = sinan_protocol::release::canonical_asset_name(&entry)?;
+            entry.asset_name = apsp_protocol::release::canonical_asset_name(&entry)?;
             artifacts.push((entry, archive.clone()));
         }
     }
     release_fixture::write_entries(&panel.state.config.data_dir, artifacts)?;
-    let entries = sinan_panel::releases::entries(&panel.state).await?;
+    let entries = apsp_panel::releases::entries(&panel.state).await?;
     assert_eq!(entries.len(), 4);
     for name in ["nodequality", "network-workbench"] {
         let version = if name == "nodequality" {
-            sinan_panel::diagnostics::PLUGIN_VERSION
+            apsp_panel::diagnostics::PLUGIN_VERSION
         } else {
             "1.0.0"
         };
@@ -234,7 +234,7 @@ async fn revoked_workbench_delivery_blocks_the_entire_same_server_mixed_response
     let last = Uuid::new_v4();
     let mut last_job = nodequality["job"].clone();
     last_job["id"] = json!(last);
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,status,job,created_at,updated_at,expires_at) VALUES($1,$2,'queued',$3,$4,$4,$5)")
         .bind(last).bind(server).bind(&last_job).bind(now).bind(now+300).execute(&panel.state.pool).await?;
     let preserved = json!({"text":"TEST_ONLY original unknown partial report"});
@@ -365,7 +365,7 @@ async fn queued_jobs_wait_for_completion_capability_without_erasing_history(
         .await?;
     sqlx::query("UPDATE servers SET capabilities=capabilities-$2 WHERE id=$1")
         .bind(server)
-        .bind(sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY)
+        .bind(apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY)
         .execute(&panel.state.pool)
         .await?;
     let pending: Value = panel
@@ -433,7 +433,7 @@ async fn shared_service_keeps_legacy_history_and_serializes_both_creation_routes
         json!(["net_quality", "environment"])
     );
     let id = record["id"].as_str().unwrap();
-    let response=panel.client.post(format!("{}/api/agent/v1/diagnostics/{id}/sections",panel.base)).bearer_auth(&ack.session_token).json(&json!({"id":id,"name":"net_quality","text":"已保存的网络章节","complete":true,"revision":1,"collected_at":sinan_protocol::now_timestamp()})).send().await?;
+    let response=panel.client.post(format!("{}/api/agent/v1/diagnostics/{id}/sections",panel.base)).bearer_auth(&ack.session_token).json(&json!({"id":id,"name":"net_quality","text":"已保存的网络章节","complete":true,"revision":1,"collected_at":apsp_protocol::now_timestamp()})).send().await?;
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     let response = panel
         .client
@@ -451,11 +451,11 @@ async fn shared_service_keeps_legacy_history_and_serializes_both_creation_routes
     old_job.as_object_mut().unwrap().remove("plugin");
     let historical_job = old_job.clone();
     sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,status,job,report,created_at,updated_at,expires_at,agent_completed,report_completeness) VALUES($1,$2,'succeeded',$3,$4,$5,$5,$5+300,TRUE,'legacy')")
-        .bind(old_id).bind(server).bind(old_job.clone()).bind(json!({"text":"迁移前的完整历史原文"})).bind(sinan_protocol::now_timestamp()-1).execute(&panel.state.pool).await?;
+        .bind(old_id).bind(server).bind(old_job.clone()).bind(json!({"text":"迁移前的完整历史原文"})).bind(apsp_protocol::now_timestamp()-1).execute(&panel.state.pool).await?;
     let other_id = Uuid::new_v4();
     old_job["id"] = json!(other_id);
     old_job["plugin"] = json!("other-registered-history");
-    sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,status,job,created_at,updated_at,expires_at) VALUES($1,$2,'failed',$3,$4,$4,$4)").bind(other_id).bind(server).bind(old_job).bind(sinan_protocol::now_timestamp()).execute(&panel.state.pool).await?;
+    sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,status,job,created_at,updated_at,expires_at) VALUES($1,$2,'failed',$3,$4,$4,$4)").bind(other_id).bind(server).bind(old_job).bind(apsp_protocol::now_timestamp()).execute(&panel.state.pool).await?;
     let view: Value = panel
         .admin(
             Method::GET,
@@ -553,7 +553,7 @@ async fn registered_plugins_use_one_server_mutex_and_require_budget_aware_agents
     );
     sqlx::query("UPDATE servers SET capabilities=capabilities-$2 WHERE id=$1")
         .bind(server)
-        .bind(sinan_protocol::DIAGNOSTIC_SERVICE_CAPABILITY)
+        .bind(apsp_protocol::DIAGNOSTIC_SERVICE_CAPABILITY)
         .execute(&panel.state.pool)
         .await?;
     assert_eq!(
@@ -566,7 +566,7 @@ async fn registered_plugins_use_one_server_mutex_and_require_budget_aware_agents
     ready(&panel, server).await?;
     sqlx::query("UPDATE servers SET capabilities=capabilities-$2 WHERE id=$1")
         .bind(server)
-        .bind(sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY)
+        .bind(apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY)
         .execute(&panel.state.pool)
         .await?;
     assert_eq!(
@@ -578,7 +578,7 @@ async fn registered_plugins_use_one_server_mutex_and_require_budget_aware_agents
     );
     ready(&panel, server).await?;
     let existing = Uuid::new_v4();
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,job,created_at,updated_at,expires_at) VALUES($1,$2,$3,$4,$4,$4+300)").bind(existing).bind(server).bind(json!({"plugin":"different-diagnostic-plugin"})).bind(now).execute(&panel.state.pool).await?;
     for status in ["queued", "running", "cleaning", "cancel_requested"] {
         let expiry = if matches!(status, "cleaning" | "cancel_requested") {

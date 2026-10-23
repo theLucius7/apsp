@@ -11,17 +11,17 @@ import uuid
 
 
 def main():
-    assert os.environ.get("SINAN_OPENRC_SMOKE") == "1", "requires a disposable OpenRC environment"
+    assert os.environ.get("APSP_OPENRC_SMOKE") == "1", "requires a disposable OpenRC environment"
     binary = str(Path(sys.argv[1]).resolve())
     host_namespace = os.readlink("/proc/self/ns/mnt")
-    with tempfile.TemporaryDirectory(prefix="sinan-openrc-jobs-") as directory:
+    with tempfile.TemporaryDirectory(prefix="apsp-openrc-jobs-") as directory:
         root = Path(directory)
         for program, args, seconds, succeeds in [
             ("/bin/sh", ["-c", f"readlink /proc/self/ns/mnt > {root}/namespace"], 10, True),
             ("/bin/false", [], 10, False),
             ("/bin/sh", ["-c", "sleep 30 & wait"], 1, False),
         ]:
-            unit = f"sinan-diagnostic-{uuid.uuid4()}.service"
+            unit = f"apsp-diagnostic-{uuid.uuid4()}.service"
             job = dict(unit=unit, program=program, args=args, working_directory=directory, timeout_secs=seconds)
             spec = root / f"{unit}.json"
             spec.write_text(json.dumps(job))
@@ -46,7 +46,7 @@ def main():
 
         # Stopping the runner must also stop the independently grouped payload and
         # its descendants, releasing the shared exclusion lock for the next job.
-        unit = f"sinan-diagnostic-{uuid.uuid4()}.service"
+        unit = f"apsp-diagnostic-{uuid.uuid4()}.service"
         service = unit.removesuffix(".service")
         parent_pid = root / "stop-parent.pid"
         child_pid = root / "stop-child.pid"
@@ -69,7 +69,7 @@ def main():
             assert payload_group != os.getpgrp(), "diagnostic payload shares the smoke process group"
             subprocess.run(["rc-service", "--", service, "stop"], check=True, timeout=15)
             release.touch()
-            subprocess.run(["flock", "--exclusive", "--nonblock", "/run/sinan-diagnostic/lock", "true"], check=True, timeout=5)
+            subprocess.run(["flock", "--exclusive", "--nonblock", "/run/apsp-diagnostic/lock", "true"], check=True, timeout=5)
             for pid_file in [parent_pid, child_pid]:
                 pid = int(pid_file.read_text())
                 status_file = Path(f"/proc/{pid}/stat")

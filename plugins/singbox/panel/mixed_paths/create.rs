@@ -3,12 +3,12 @@ use crate::{
     AppState, auth,
     error::{ApiError, ApiResult},
 };
+use apsp_compiler::paths::{Hop, Path};
 use axum::{
     Json,
     extract::State,
     http::{HeaderMap, StatusCode},
 };
-use sinan_compiler::paths::{Hop, Path};
 use sqlx::{Postgres, Transaction};
 use std::collections::BTreeSet;
 use uuid::Uuid;
@@ -133,7 +133,7 @@ pub async fn batch(
     }
     validate_frozen_on(&mut tx, &previews).await?;
     sqlx::query("INSERT INTO singbox_chain_creation_requests(request_id,request_hash,receipt,created_at) VALUES($1,$2,$3,$4)")
-        .bind(request.request_id).bind(hash).bind(serde_json::to_value(&receipt).map_err(anyhow::Error::from)?).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
+        .bind(request.request_id).bind(hash).bind(serde_json::to_value(&receipt).map_err(anyhow::Error::from)?).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     super::super::business::mark_dirty(&mut tx, &server_ids.into_iter().collect::<Vec<_>>())
         .await?;
     tx.commit().await?;
@@ -201,7 +201,7 @@ pub(crate) async fn build_path_on(
         active: false,
         hops,
     };
-    sinan_compiler::paths::validate(&path).map_err(path_error)?;
+    apsp_compiler::paths::validate(&path).map_err(path_error)?;
     Ok(path)
 }
 
@@ -243,7 +243,7 @@ async fn entry_on(
                 .bind(public)
                 .bind(super::super::business::short_id())
                 .bind(
-                    serde_json::to_value(sinan_compiler::ProtocolConfig::default())
+                    serde_json::to_value(apsp_compiler::ProtocolConfig::default())
                         .map_err(anyhow::Error::from)?,
                 )
                 .fetch_one(&mut **tx)

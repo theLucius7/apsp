@@ -125,7 +125,7 @@ pub(super) async fn rollback(
     .await?;
     sqlx::query("UPDATE dns_record_history SET rollback_started_at=$2 WHERE id=$1")
         .bind(history_id)
-        .bind(sinan_protocol::now_timestamp())
+        .bind(apsp_protocol::now_timestamp())
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;

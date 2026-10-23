@@ -19,34 +19,34 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n $agent_root && -n $runtime_root && -n $summary ]] || { usage >&2; exit 2; }
 [[ $(uname -s) == Linux && $(uname -m) == x86_64 && -d /run/systemd/system ]] || die 'requires Linux amd64 with real systemd'
-[[ ${GITHUB_ACTIONS:-} == true || ${SINAN_E2E_DISPOSABLE_HOST:-} == 1 ]] || die 'use a disposable runner; manual reproduction requires SINAN_E2E_DISPOSABLE_HOST=1'
+[[ ${GITHUB_ACTIONS:-} == true || ${APSP_E2E_DISPOSABLE_HOST:-} == 1 ]] || die 'use a disposable runner; manual reproduction requires APSP_E2E_DISPOSABLE_HOST=1'
 for tool in docker python3 sudo systemctl systemd-run openssl curl readelf go sha256sum minisign install; do
   command -v "$tool" >/dev/null || die "missing tool: $tool"
 done
 sudo -n true || die 'noninteractive sudo is required'
 [[ $(/bin/mv --version) == *'GNU coreutils'* ]] || die 'real artifact publication requires GNU mv'
-for path in /etc/sinan /opt/sinan /var/lib/sinan /run/sinan /usr/local/bin/sinan-agent \
-  /etc/systemd/system/sinan-agent.service /etc/systemd/system/sinan-singbox@.service; do
-  if sudo test -e "$path" || sudo test -L "$path"; then die 'existing Sinan installation detected; leaving it untouched'; fi
+for path in /etc/apsp /opt/apsp /var/lib/apsp /run/apsp /usr/local/bin/apsp-agent \
+  /etc/systemd/system/apsp-agent.service /etc/systemd/system/apsp-singbox@.service; do
+  if sudo test -e "$path" || sudo test -L "$path"; then die 'existing Apsp installation detected; leaving it untouched'; fi
 done
-if getent passwd sinan-singbox >/dev/null || getent group sinan-singbox >/dev/null; then
+if getent passwd apsp-singbox >/dev/null || getent group apsp-singbox >/dev/null; then
   die 'existing runtime identity detected; leaving it untouched'
 fi
 repository=$(cd "$(dirname "$0")/.." && pwd -P)
 cd "$repository"
-scratch=$(mktemp -d "${RUNNER_TEMP:-/tmp}/sinan-real-e2e.XXXXXX")
+scratch=$(mktemp -d "${RUNNER_TEMP:-/tmp}/apsp-real-e2e.XXXXXX")
 trust_directory=
-SINAN_RELEASE_PUBLIC_KEYS=$(python3 scripts/ci-test-trust.py)
-export SINAN_RELEASE_PUBLIC_KEYS
-export COMPOSE_PROJECT_NAME="sinan-real-e2e-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$$"
-export SINAN_BIND_ADDRESS=127.0.0.1
-export SINAN_PORT=18080
-export SINAN_PUBLIC_URL=http://127.0.0.1:18080
-export SINAN_DB_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
-export SINAN_ADMIN_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
-export SINAN_E2E_ADMIN_PASSWORD="$SINAN_ADMIN_PASSWORD"
-export SINAN_E2E_STATUS_COMMAND='sudo /usr/local/bin/sinan-agent status'
-export SINAN_E2E_ARTIFACT_ROOT=$scratch/artifacts
+APSP_RELEASE_PUBLIC_KEYS=$(python3 scripts/ci-test-trust.py)
+export APSP_RELEASE_PUBLIC_KEYS
+export COMPOSE_PROJECT_NAME="apsp-real-e2e-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$$"
+export APSP_BIND_ADDRESS=127.0.0.1
+export APSP_PORT=18080
+export APSP_PUBLIC_URL=http://127.0.0.1:18080
+export APSP_DB_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+export APSP_ADMIN_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+export APSP_E2E_ADMIN_PASSWORD="$APSP_ADMIN_PASSWORD"
+export APSP_E2E_STATUS_COMMAND='sudo /usr/local/bin/apsp-agent status'
+export APSP_E2E_ARTIFACT_ROOT=$scratch/artifacts
 phase=preflight owned_installation=0 hosts_entry=0 fixture_pid= client_pid= tls_container=
 passed=0 failure_line=
 marker=$COMPOSE_PROJECT_NAME
@@ -81,7 +81,7 @@ if readiness.is_file():
     summary["readiness"] = driver.readiness_status(last["snapshot"], last.get("expected_agent_version"))
 if passed != "1" and owned_installation == "1":
     summary["systemd"] = {}
-    for unit in ("sinan-agent.service", "sinan-singbox@main.service"):
+    for unit in ("apsp-agent.service", "apsp-singbox@main.service"):
         try:
             query = subprocess.run(["systemctl", "show", unit,
                                     "--property=ActiveState,SubState,Result,ExecMainStatus"],
@@ -155,13 +155,13 @@ cleanup() {
   [[ -z $fixture_pid ]] || { kill "$fixture_pid" 2>/dev/null || true; wait "$fixture_pid" 2>/dev/null || true; }
   [[ -z $tls_container ]] || docker rm --force -- "$tls_container" >/dev/null 2>&1 || true
   if [[ $owned_installation == 1 ]]; then
-    sudo systemctl disable --now sinan-agent.service sinan-singbox@main.service >/dev/null 2>&1 || true
-    sudo rm -f /etc/systemd/system/sinan-agent.service /etc/systemd/system/sinan-singbox@.service /usr/local/bin/sinan-agent
-    sudo rm -rf /etc/sinan /opt/sinan /var/lib/sinan /run/sinan
+    sudo systemctl disable --now apsp-agent.service apsp-singbox@main.service >/dev/null 2>&1 || true
+    sudo rm -f /etc/systemd/system/apsp-agent.service /etc/systemd/system/apsp-singbox@.service /usr/local/bin/apsp-agent
+    sudo rm -rf /etc/apsp /opt/apsp /var/lib/apsp /run/apsp
     sudo systemctl daemon-reload
-    sudo systemctl reset-failed sinan-agent.service sinan-singbox@main.service >/dev/null 2>&1 || true
-    if getent passwd sinan-singbox >/dev/null; then sudo userdel sinan-singbox; fi
-    if getent group sinan-singbox >/dev/null; then sudo groupdel sinan-singbox; fi
+    sudo systemctl reset-failed apsp-agent.service apsp-singbox@main.service >/dev/null 2>&1 || true
+    if getent passwd apsp-singbox >/dev/null; then sudo userdel apsp-singbox; fi
+    if getent group apsp-singbox >/dev/null; then sudo groupdel apsp-singbox; fi
   fi
   if [[ $hosts_entry == 1 ]]; then
     sudo python3 - "$marker" <<'PY'
@@ -220,7 +220,7 @@ if 'Advanced Micro Devices X86-64' not in header: raise SystemExit('Agent archit
 program = subprocess.check_output(['readelf', '-lW', str(binary)], text=True)
 dynamic = subprocess.check_output(['readelf', '-dW', str(binary)], text=True)
 if 'INTERP' in program or 'NEEDED' in dynamic: raise SystemExit('Agent must be static musl')
-if subprocess.check_output([str(binary), '--version'], text=True).strip() != 'sinan-agent ' + version:
+if subprocess.check_output([str(binary), '--version'], text=True).strip() != 'apsp-agent ' + version:
     raise SystemExit('Agent version mismatch')
 print(version)
 PY
@@ -234,7 +234,7 @@ python3 scripts/ci-signed-release.py --source "$scratch/source" --bundle "$scrat
 chmod -R a+rX "$scratch/artifacts"
 # Provision the verifier and trust independently from the checked-out operator tools,
 # before receiving any panel installation data. No panel-provided shell is executed.
-trust_directory=$(sudo mktemp -d /root/sinan-ci-trust.XXXXXX)
+trust_directory=$(sudo mktemp -d /root/apsp-ci-trust.XXXXXX)
 sudo install -m 0400 crates/protocol/tests/fixtures/public-keys.json "$trust_directory/public-keys.json"
 sudo install -m 0500 tools/bootstrap.py "$trust_directory/bootstrap.py"
 sudo install -m 0400 tools/release.py "$trust_directory/release.py"
@@ -243,7 +243,7 @@ services:
   panel:
     image: ${COMPOSE_PROJECT_NAME}-panel:local
     volumes:
-      - ${SINAN_E2E_ARTIFACT_ROOT}:/data/artifacts:ro
+      - ${APSP_E2E_ARTIFACT_ROOT}:/data/artifacts:ro
 YAML
 
 phase=compose
@@ -252,7 +252,7 @@ phase=compose
 phase=fixtures
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 1 \
   -keyout "$scratch/camouflage.key" -out "$scratch/camouflage.crt" \
-  -subj '/CN=sinan-e2e.example.test' -addext 'subjectAltName=DNS:sinan-e2e.example.test' \
+  -subj '/CN=apsp-e2e.example.test' -addext 'subjectAltName=DNS:apsp-e2e.example.test' \
   > "$scratch/certificate.log" 2>&1
 # Keep the TLS camouflage endpoint in a separate network namespace so the real
 # unprivileged runtime, with CAP_NET_BIND_SERVICE, can listen on host port 443.
@@ -294,7 +294,7 @@ while True:
             raise SystemExit('TLS fixture did not become reachable on its private port 443') from None
         time.sleep(0.2)
 with Path('/etc/hosts').open('a') as output:
-    output.write('\n' + str(address) + ' sinan-e2e.example.test # ' + sys.argv[1] + '\n')
+    output.write('\n' + str(address) + ' apsp-e2e.example.test # ' + sys.argv[1] + '\n')
 PY
 hosts_entry=1
 python3 scripts/e2e-http-fixture.py --listen 127.0.0.1 --port 18081 > "$scratch/fixture.log" 2>&1 &
@@ -302,7 +302,7 @@ fixture_pid=$!
 
 phase=prepare
 driver=(python3 scripts/e2e-driver.py --state "$scratch/state.json")
-"${driver[@]}" prepare --origin "$SINAN_PUBLIC_URL" --public-host 127.0.0.1 --sni sinan-e2e.example.test --port 443
+"${driver[@]}" prepare --origin "$APSP_PUBLIC_URL" --public-host 127.0.0.1 --sni apsp-e2e.example.test --port 443
 phase=install
 owned_installation=1
 sudo python3 scripts/ci-bootstrap-install.py --enrollment "$scratch/enrollment.json" \
@@ -317,7 +317,7 @@ ports = [outbound['server_port'] for outbound in client['outbounds'] if outbound
 if state.get('requested_port') != 443 or state.get('port') != 443 or ports != [443]:
     raise SystemExit('Reality must use explicitly requested privileged port 443')
 PY
-runtime_pid=$(sudo systemctl show sinan-singbox@main.service -p MainPID --value)
+runtime_pid=$(sudo systemctl show apsp-singbox@main.service -p MainPID --value)
 [[ $runtime_pid =~ ^[1-9][0-9]*$ ]] || die 'independent runtime is not active'
 
 wait_agent() {
@@ -328,7 +328,7 @@ import time
 deadline = time.monotonic() + 120
 while time.monotonic() < deadline:
     try:
-        process = subprocess.run(['sudo', '/usr/local/bin/sinan-agent', 'status'],
+        process = subprocess.run(['sudo', '/usr/local/bin/apsp-agent', 'status'],
                                  check=True, capture_output=True, text=True, timeout=10)
         value = json.loads(process.stdout)
         if (value.get('connected') is True and value.get('healthy', {}).get('singbox') is True
@@ -353,7 +353,7 @@ import sys
 state_path, label, previous = sys.argv[1:]
 state = json.loads(Path(state_path).read_text())
 name = f"u{state['user_id']}_n{state['node_id']}"
-with sqlite3.connect('file:/var/lib/sinan/core/state.db?mode=ro', uri=True, timeout=5) as connection:
+with sqlite3.connect('file:/var/lib/apsp/core/state.db?mode=ro', uri=True, timeout=5) as connection:
     connection.execute('BEGIN')
     rows = connection.execute('SELECT uplink,downlink FROM usage_baselines WHERE module=? AND stat_name=?', ('singbox', name)).fetchall()
     pending = connection.execute('SELECT COUNT(*) FROM usage_outbox WHERE acknowledged=0').fetchone()[0]
@@ -423,13 +423,13 @@ phase=stable-before
 "${driver[@]}" verify --label before --interval 35 --timeout 240
 assert_ledger before
 phase=agent-restart
-sudo systemctl restart sinan-agent.service
+sudo systemctl restart apsp-agent.service
 wait_agent
 "${driver[@]}" verify --label after-agent --unchanged-from before --interval 35 --timeout 240
 assert_ledger after-agent
-[[ $(sudo systemctl show sinan-singbox@main.service -p MainPID --value) == "$runtime_pid" ]] || die 'Agent restart changed independent runtime PID'
+[[ $(sudo systemctl show apsp-singbox@main.service -p MainPID --value) == "$runtime_pid" ]] || die 'Agent restart changed independent runtime PID'
 phase=runtime-reload
-sudo systemctl reload sinan-singbox@main.service
+sudo systemctl reload apsp-singbox@main.service
 wait_agent
 "${driver[@]}" verify --label after-runtime --unchanged-from before --interval 35 --timeout 240
 assert_ledger after-runtime zero
@@ -442,12 +442,12 @@ stop_client
 assert_ledger before-reinstall after-runtime
 phase=signed-preflight-rejections
 "${driver[@]}" install --refresh --agent-version "$agent_version"
-sudo env SINAN_E2E_DISPOSABLE_HOST=1 python3 scripts/ci-signed-preflight.py \
+sudo env APSP_E2E_DISPOSABLE_HOST=1 python3 scripts/ci-signed-preflight.py \
   --enrollment "$scratch/enrollment.json" --trust-directory "$trust_directory" \
   --bundle "$scratch/release" --log-directory "$scratch/signature-logs" \
   --summary "$scratch/signature-checks.json"
 phase=reinstall
-sudo find /etc/sinan/identity -maxdepth 1 -type f -exec sha256sum {} + | sort > "$scratch/identity-before.txt"
+sudo find /etc/apsp/identity -maxdepth 1 -type f -exec sha256sum {} + | sort > "$scratch/identity-before.txt"
 # The same token remains unconsumed after every rejected preflight.
 sudo python3 scripts/ci-bootstrap-install.py --enrollment "$scratch/enrollment.json" \
   --trust-directory "$trust_directory" --bundle "$scratch/release" --log "$scratch/reinstall.log"
@@ -455,11 +455,11 @@ wait_agent
 "${driver[@]}" ready --agent-version "$agent_version" --timeout 600
 "${driver[@]}" verify --label after-reinstall --unchanged-from before-reinstall --interval 35 --timeout 240
 assert_ledger after-reinstall after-runtime
-sudo find /etc/sinan/identity -maxdepth 1 -type f -exec sha256sum {} + | sort > "$scratch/identity-after.txt"
+sudo find /etc/apsp/identity -maxdepth 1 -type f -exec sha256sum {} + | sort > "$scratch/identity-after.txt"
 cmp "$scratch/identity-before.txt" "$scratch/identity-after.txt" || die 'reinstallation changed device identity files'
-[[ $(sudo systemctl show sinan-singbox@main.service -p MainPID --value) == "$runtime_pid" ]] || die 'same-version reinstallation changed runtime PID'
+[[ $(sudo systemctl show apsp-singbox@main.service -p MainPID --value) == "$runtime_pid" ]] || die 'same-version reinstallation changed runtime PID'
 phase=online-retirement
-sudo --preserve-env=SINAN_E2E_ADMIN_PASSWORD env SINAN_E2E_DISPOSABLE_HOST=1 \
+sudo --preserve-env=APSP_E2E_ADMIN_PASSWORD env APSP_E2E_DISPOSABLE_HOST=1 \
   python3 scripts/ci-retirement.py --state "$scratch/state.json" --summary "$scratch/retirement.json"
 # The root helper writes a private summary; let the runner read only this redacted file.
 sudo chown -- "$(id -u):$(id -g)" "$scratch/retirement.json"

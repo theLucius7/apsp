@@ -3,6 +3,7 @@ use crate::{
     error::{ApiError, ApiResult},
 };
 use anyhow::{Context, ensure};
+use apsp_protocol::{Envelope, UsageAck, UsageBatch};
 use axum::{
     Json,
     extract::{Query, State},
@@ -11,7 +12,6 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sinan_protocol::{Envelope, UsageAck, UsageBatch};
 use sqlx::Row;
 
 /// Commits an immutable batch before sending its acknowledgement.
@@ -45,7 +45,7 @@ pub async fn ingest(state: &AppState, server_id: i64, mut batch: UsageBatch) -> 
     .await?;
     ensure!(active, "unknown usage server");
     let inserted = sqlx::query("INSERT INTO usage_batches(server_id,epoch,seq,payload_hash,received_at) VALUES($1,$2,$3::text::numeric,$4,$5) ON CONFLICT DO NOTHING")
-        .bind(server_id).bind(batch.epoch).bind(&seq).bind(&hash).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?.rows_affected() != 0;
+        .bind(server_id).bind(batch.epoch).bind(&seq).bind(&hash).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?.rows_affected() != 0;
     if inserted {
         for (record, (user_id, node_id)) in batch.records.iter().zip(identities) {
             // Revoked identities remain valid for terminal samples and offline outbox replay.
@@ -69,7 +69,7 @@ pub async fn ingest(state: &AppState, server_id: i64, mut batch: UsageBatch) -> 
             .bind(server_id).bind(batch.epoch).bind(&seq).fetch_one(&mut *tx).await?;
         ensure!(previous == hash, "usage batch identity changed payload");
         sqlx::query("UPDATE usage_batches SET last_replayed_at=$4,replay_count=LEAST(replay_count,9223372036854775806)+1 WHERE server_id=$1 AND epoch=$2 AND seq=$3::text::numeric")
-            .bind(server_id).bind(batch.epoch).bind(&seq).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
+            .bind(server_id).bind(batch.epoch).bind(&seq).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     }
     tx.commit().await?;
     agent_api::notify(

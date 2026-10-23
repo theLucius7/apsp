@@ -10,22 +10,22 @@ SOURCES = {
     },
 }
 
-HELPERS = r'''# Sinan modification (2026-10-01): do not borrow provider credentials.
-sinan_access_not_attempted(){
+HELPERS = r'''# Apsp modification (2026-10-01): do not borrow provider credentials.
+apsp_access_not_attempted(){
 jq -cn --arg provider "$1" --arg target_ip "$IP" --arg checked_at "$(date +%s)" --arg message "$2" '{provider:$provider,status:"unknown",target_ip:$target_ip,checked_at:($checked_at|tonumber),Attempted:false,last_attempt_at:null,elapsed_seconds:null,Error:{category:"credential_not_configured",phase:"not_attempted",message:$message},Attempts:[]}'
 }
-sinan_access_youtube_metadata(){
+apsp_access_youtube_metadata(){
 jq -cn --arg target_ip "$IP" --arg checked_at "$(date +%s)" --arg status "$1" --arg category "$2" --arg message "$3" --argjson attempts "${youtube[attempts]:-[]}" '{provider:"youtube-public-page",status:$status,target_ip:$target_ip,checked_at:($checked_at|tonumber),Attempted:($attempts|length>0),last_attempt_at:($attempts[-1].attempted_at//null),elapsed_seconds:($attempts[-1].elapsed_seconds//null),Error:(if $category=="" then null else {category:$category,message:$message} end),Attempts:$attempts}'
 }
-sinan_access_youtube_unknown(){
+apsp_access_youtube_unknown(){
 youtube[ustatus]='未知'
 youtube[uregion]="${smedia[nodata]}"
 youtube[utype]="${smedia[nodata]}"
 youtube[attempts]=$(jq -cn --argjson attempts "${youtube[attempts]:-[]}" --arg category "$1" '$attempts|map(.error=$category)')
-youtube[access]=$(sinan_access_youtube_metadata unknown "$1" "$2")
+youtube[access]=$(apsp_access_youtube_metadata unknown "$1" "$2")
 printf 'YouTube：未知（%s）\n' "$2"
 }
-sinan_access_youtube_fetch(){
+apsp_access_youtube_fetch(){
 local capture encoded reader response code='' http='' elapsed='' body='' category='' reason='' attempted url size nonzero body_size
 local producer_status head_status encoding_status exit_line http_line time_line
 url='https://www.youtube.com/premium'
@@ -36,18 +36,18 @@ attempted=$(date +%s)
 # deadline. Reaching the cap never invents a completed curl result.
 capture=$(
 if {
-if curl $CurlARG -$1 -fsSL --max-time 10 --max-filesize 2097152 -H 'Accept-Language: en' --write-out $'\nSINAN_HTTP:%{http_code}\nSINAN_TIME:%{time_total}' "$url" 2>/dev/null;then producer_code=0;else producer_code=$?;fi
-printf '\nSINAN_CURL_EXIT:%s\n' "$producer_code" 2>/dev/null
+if curl $CurlARG -$1 -fsSL --max-time 10 --max-filesize 2097152 -H 'Accept-Language: en' --write-out $'\nAPSP_HTTP:%{http_code}\nAPSP_TIME:%{time_total}' "$url" 2>/dev/null;then producer_code=0;else producer_code=$?;fi
+printf '\nAPSP_CURL_EXIT:%s\n' "$producer_code" 2>/dev/null
 } 2>/dev/null | head -c 2097280 | base64;then
 pipeline_status=("${PIPESTATUS[@]}")
 else
 pipeline_status=("${PIPESTATUS[@]}")
 fi
-printf '\nSINAN_READER:%s:%s:%s' "${pipeline_status[0]}" "${pipeline_status[1]}" "${pipeline_status[2]}"
+printf '\nAPSP_READER:%s:%s:%s' "${pipeline_status[0]}" "${pipeline_status[1]}" "${pipeline_status[2]}"
 )
 reader=${capture##*$'\n'}
 encoded=${capture%$'\n'*}
-if [[ $reader =~ ^SINAN_READER:([0-9]+):([0-9]+):([0-9]+)$ ]];then
+if [[ $reader =~ ^APSP_READER:([0-9]+):([0-9]+):([0-9]+)$ ]];then
 producer_status=${BASH_REMATCH[1]}
 head_status=${BASH_REMATCH[2]}
 encoding_status=${BASH_REMATCH[3]}
@@ -75,9 +75,9 @@ time_line=${response##*$'\n'}
 response=${response%$'\n'*}
 http_line=${response##*$'\n'}
 body=${response%$'\n'*}
-if [[ $exit_line =~ ^SINAN_CURL_EXIT:([0-9]+)$ ]];then code=${BASH_REMATCH[1]};fi
-if [[ $time_line =~ ^SINAN_TIME:([0-9]+([.][0-9]+)?)$ ]];then elapsed=${BASH_REMATCH[1]};fi
-if [[ $http_line =~ ^SINAN_HTTP:([0-9]{3})$ ]];then http=${BASH_REMATCH[1]};fi
+if [[ $exit_line =~ ^APSP_CURL_EXIT:([0-9]+)$ ]];then code=${BASH_REMATCH[1]};fi
+if [[ $time_line =~ ^APSP_TIME:([0-9]+([.][0-9]+)?)$ ]];then elapsed=${BASH_REMATCH[1]};fi
+if [[ $http_line =~ ^APSP_HTTP:([0-9]{3})$ ]];then http=${BASH_REMATCH[1]};fi
 if [[ -z $code || -z $http || -z $elapsed || $code -gt 255 ]];then
 code='';http='';elapsed='';category=incomplete_response;reason='响应未取得完整的传输确认'
 fi
@@ -112,7 +112,7 @@ case "$code" in
 esac
 fi
 youtube[attempts]=$(jq -cn --arg target_ip "$IP" --arg url "$url" --arg attempted_at "$attempted" --arg elapsed_seconds "$elapsed" --arg http_status "$http" --arg captured_bytes "${size:-}" --argjson curl_exit "${code:-null}" --arg error "$category" '[{target_ip:$target_ip,url:$url,attempted_at:($attempted_at|tonumber),elapsed_seconds:(if $elapsed_seconds=="" then null else ($elapsed_seconds|tonumber) end),http_status:(if $http_status=="" or $http_status=="000" then null else ($http_status|tonumber) end),curl_exit:$curl_exit,captured_bytes:(if $captured_bytes=="" then null else ($captured_bytes|tonumber) end),reader_limit_bytes:2097280,producer_deadline_seconds:10,error:(if $error=="" then null else $error end)}]')
-if [[ -n $category ]];then sinan_access_youtube_unknown "$category" "$reason";return 1;fi
+if [[ -n $category ]];then apsp_access_youtube_unknown "$category" "$reason";return 1;fi
 printf -v "$2" '%s' "$body"
 }
 '''.encode()
@@ -122,7 +122,7 @@ FUNCTION_REPLACEMENTS = {
 ipregistry=()
 ipregistry[susetype]='未知'
 ipregistry[scomtype]='未知'
-ipregistry[access]=$(sinan_access_not_attempted ipregistry '未配置经授权的正式接口；未查询该来源，信息未知')
+ipregistry[access]=$(apsp_access_not_attempted ipregistry '未配置经授权的正式接口；未查询该来源，信息未知')
 printf '%s\n' 'ipregistry：未知（未配置经授权的正式接口，未查询该来源）'
 }
 '''.encode(),
@@ -130,7 +130,7 @@ printf '%s\n' 'ipregistry：未知（未配置经授权的正式接口，未查�
 dbip=()
 dbip[risk]='未知'
 dbip[score]=''
-dbip[access]=$(sinan_access_not_attempted DBIP '未配置经授权的正式接口；未查询该来源，信息未知')
+dbip[access]=$(apsp_access_not_attempted DBIP '未配置经授权的正式接口；未查询该来源，信息未知')
 printf '%s\n' 'DB-IP：未知（未配置经授权的正式接口，未查询该来源）'
 }
 '''.encode(),
@@ -139,26 +139,26 @@ disney=()
 disney[ustatus]='未知'
 disney[uregion]="${smedia[nodata]}"
 disney[utype]="${smedia[nodata]}"
-disney[access]=$(sinan_access_not_attempted disney-plus '未配置经授权的查询方式；未查询该来源，流媒体可用性未知')
+disney[access]=$(apsp_access_not_attempted disney-plus '未配置经授权的查询方式；未查询该来源，流媒体可用性未知')
 printf '%s\n' 'Disney+：未知（未配置经授权的查询方式，未查询该来源）'
 }
 '''.encode(),
     'MediaUnlockTest_YouTube_Premium': r'''function MediaUnlockTest_YouTube_Premium(){
 youtube=()
 local result region lower title
-sinan_access_youtube_fetch "$1" result || return 0
+apsp_access_youtube_fetch "$1" result || return 0
 lower=${result,,}
 if title=$(printf '%s' "$lower"|grep -oE '<title>[^<]*</title>');then :;else title='';fi
 if [[ $lower != *'<html'* || $lower != *'</html>'* || $lower != *'<head'* || $lower != *'</head>'* || $lower != *'<body'* || $lower != *'</body>'* ||
       ( $title != '<title>youtube premium</title>' && $title != '<title>youtube premium - youtube</title>' && $title != '<title>premium - youtube</title>' ) ||
       ( $lower == *'<form'* && ( $lower == *'accounts.google.com'* || $lower == *'consent.google.com'* || $lower == *'consent.youtube.com'* ) ) ||
       $lower == *'id="challenge-form"'* || $lower == *'id="captcha-form"'* || $lower == *'class="g-recaptcha"'* ]];then
-sinan_access_youtube_unknown schema_mismatch '响应不是可确认的 Premium 页面，登录或挑战页面信息未知'
+apsp_access_youtube_unknown schema_mismatch '响应不是可确认的 Premium 页面，登录或挑战页面信息未知'
 return 0
 fi
 if region=$(printf '%s' "$result"|grep -oE '"contentRegion"[[:space:]]*:[[:space:]]*"[A-Z][A-Z]"'|sed -E 's/.*"([A-Z][A-Z])"/\1/'|sort -u);then :;else region='';fi
 if [[ ! $region =~ ^[A-Z][A-Z]$ ]];then
-sinan_access_youtube_unknown schema_mismatch '页面地区字段缺失或不一致'
+apsp_access_youtube_unknown schema_mismatch '页面地区字段缺失或不一致'
 return 0
 fi
 if [[ $region == CN && $result == *'www.google.cn'* ]];then
@@ -178,15 +178,15 @@ youtube[ustatus]="${smedia[yes]}"
 youtube[uregion]="  [$region]   "
 youtube[utype]="$resultunlocktype"
 else
-sinan_access_youtube_unknown schema_mismatch '页面未确认 Premium 可用性'
+apsp_access_youtube_unknown schema_mismatch '页面未确认 Premium 可用性'
 return 0
 fi
 # This preserves the public-page heuristic; it is not a playback proof.
-youtube[access]=$(sinan_access_youtube_metadata succeeded '' '')
+youtube[access]=$(apsp_access_youtube_metadata succeeded '' '')
 }
 '''.encode(),
     'read_ref': r'''read_ref(){
-Media_Cookie='' # Sinan: public cookies are not fetched or used.
+Media_Cookie='' # Apsp: public cookies are not fetched or used.
 IATA_Database="${rawgithub}main/ref/iata-icao.csv"
 }
 '''.encode(),

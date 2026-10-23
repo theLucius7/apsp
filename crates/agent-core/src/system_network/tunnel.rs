@@ -1,6 +1,6 @@
 use anyhow::{Context, ensure};
+use apsp_adapter_sdk::Privileged;
 use serde_json::{Value, json};
-use sinan_adapter_sdk::Privileged;
 use std::{net::Ipv4Addr, path::Path};
 
 pub(super) async fn execute(
@@ -26,7 +26,7 @@ pub(super) async fn execute(
     );
     let directory = state_dir.join("network-tunnels").join(id);
     let key_path = directory.join("key");
-    let unit = format!("sinan-tunnel-{id}.service");
+    let unit = format!("apsp-tunnel-{id}.service");
     if operation["action"] == "tunnel_key" {
         privileged.create_dir(&directory, 0o700, None).await?;
         if !key_path.try_exists()? {
@@ -42,7 +42,7 @@ pub(super) async fn execute(
                     "-f".into(),
                     key_path.to_string_lossy().into_owned(),
                     "-C".into(),
-                    format!("sinan-tunnel:{id}"),
+                    format!("apsp-tunnel:{id}"),
                 ],
             )
             .await?;
@@ -180,7 +180,7 @@ async fn status(privileged: &dyn Privileged, id: &str, unit: &str) -> anyhow::Re
     )
     .await?;
     Ok(
-        json!({"tunnel_id":id,"service_observation":value,"reachability":"requires_external_source_probe","relay_gateway_ports":"controlled_by_relay_ssh_configuration","persistent":false,"sampled_at":sinan_protocol::now_timestamp()}),
+        json!({"tunnel_id":id,"service_observation":value,"reachability":"requires_external_source_probe","relay_gateway_ports":"controlled_by_relay_ssh_configuration","persistent":false,"sampled_at":apsp_protocol::now_timestamp()}),
     )
 }
 fn port(value: &Value) -> anyhow::Result<u16> {

@@ -4,11 +4,11 @@
 use anyhow::Result;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
+use apsp_adapter_sdk::{Descriptor, Privileged};
+use apsp_agent_core::{artifacts::PanelClient, system::SystemOps};
+use apsp_protocol::{Artifact, Bundle};
 use flate2::{Compression, write::GzEncoder};
 use sha2::{Digest, Sha256};
-use sinan_adapter_sdk::{Descriptor, Privileged};
-use sinan_agent_core::{artifacts::PanelClient, system::SystemOps};
-use sinan_protocol::{Artifact, Bundle};
 use std::{
     collections::BTreeMap,
     io::Write,
@@ -28,7 +28,7 @@ struct Temporary(PathBuf);
 
 impl Temporary {
     fn new() -> Result<Self> {
-        let path = std::env::temp_dir().join(format!("sinan-artifacts-{}", Uuid::new_v4()));
+        let path = std::env::temp_dir().join(format!("apsp-artifacts-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&path)?;
         Ok(Self(path))
     }
@@ -226,7 +226,7 @@ async fn artifact_cache_checks_contents_and_never_replaces_existing_versions() -
         url: format!(
             "{}/api/agent/v1/artifacts/runtime/1.2.3/{}",
             panel.origin,
-            sinan_protocol::release::native_arch()?
+            apsp_protocol::release::native_arch()?
         ),
         sha256: checksum(&packed),
         proof: Some(release_support::proof_for_archive(
@@ -303,7 +303,7 @@ async fn artifact_checksum_failure_leaves_no_version_and_symlink_paths_are_rejec
         url: format!(
             "{}/api/agent/v1/artifacts/runtime/1.0/{}",
             panel.origin,
-            sinan_protocol::release::native_arch()?
+            apsp_protocol::release::native_arch()?
         ),
         sha256: "0".repeat(64),
     };
@@ -525,7 +525,7 @@ async fn unsigned_artifacts_and_signed_binary_mismatches_never_publish() -> Resu
         url: format!(
             "{}/api/agent/v1/artifacts/runtime/1.0/{}",
             panel.origin,
-            sinan_protocol::release::native_arch()?
+            apsp_protocol::release::native_arch()?
         ),
         sha256: checksum(&packed),
     };
@@ -578,7 +578,7 @@ async fn legacy_local_hashes_cannot_authorize_a_changed_cached_binary() -> Resul
         url: format!(
             "{}/api/agent/v1/artifacts/runtime/1.0/{}",
             panel.origin,
-            sinan_protocol::release::native_arch()?
+            apsp_protocol::release::native_arch()?
         ),
         sha256: checksum(&packed),
     };
@@ -639,7 +639,7 @@ async fn auxiliary_artifacts_require_signed_file_hashes_and_reject_tampering() -
         release_support::entry("runtime", "1.0", "runtime", "tar.gz", &packed, b"binary");
     entry.auxiliary_files.insert(
         "helper.dll".into(),
-        sinan_protocol::release::ReleaseFile {
+        apsp_protocol::release::ReleaseFile {
             sha256: checksum(b"library"),
             size: 7,
         },
@@ -652,7 +652,7 @@ async fn auxiliary_artifacts_require_signed_file_hashes_and_reject_tampering() -
         url: format!(
             "{}/api/agent/v1/artifacts/runtime/1.0/{}",
             panel.origin,
-            sinan_protocol::release::native_arch()?
+            apsp_protocol::release::native_arch()?
         ),
         sha256: checksum(&packed),
     };
@@ -715,7 +715,7 @@ async fn signed_five_file_provenance_is_installed_and_cache_tampering_is_rejecte
     for (name, content) in auxiliary {
         entry.auxiliary_files.insert(
             name.into(),
-            sinan_protocol::release::ReleaseFile {
+            apsp_protocol::release::ReleaseFile {
                 sha256: checksum(content),
                 size: content.len() as u64,
             },
@@ -729,7 +729,7 @@ async fn signed_five_file_provenance_is_installed_and_cache_tampering_is_rejecte
         url: format!(
             "{}/api/agent/v1/artifacts/runtime/1.0/{}",
             panel.origin,
-            sinan_protocol::release::native_arch()?
+            apsp_protocol::release::native_arch()?
         ),
         sha256: checksum(&packed),
     };

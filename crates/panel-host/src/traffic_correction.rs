@@ -4,6 +4,7 @@ use crate::{
     server_traffic,
     servers::{SERVER_COLUMNS, Server},
 };
+use apsp_protocol::now_timestamp;
 use axum::{
     Json,
     extract::{Path, State},
@@ -11,7 +12,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -121,7 +121,7 @@ pub(crate) async fn current(
     Ok(sqlx::query_as("SELECT correction.id,selected.id AS server_id,correction.uploaded_offset::text,correction.downloaded_offset::text
         FROM unnest($1::bigint[],$2::integer[],$3::text[]) AS selected(id,reset_day,network_interface)
         CROSS JOIN LATERAL (SELECT id,uploaded_offset,downloaded_offset FROM server_traffic_corrections
-          WHERE server_id=selected.id AND cycle_start=sinan_traffic_cycle_start($4,selected.reset_day)
+          WHERE server_id=selected.id AND cycle_start=apsp_traffic_cycle_start($4,selected.reset_day)
             AND reset_day=selected.reset_day AND network_interface=selected.network_interface AND invalidated_at IS NULL ORDER BY id DESC LIMIT 1) correction")
         .bind(ids).bind(days).bind(interfaces).bind(now).fetch_all(pool).await?)
 }

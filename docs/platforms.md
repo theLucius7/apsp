@@ -24,11 +24,11 @@ GNU 宿主上的 musl Agent 按 `linux-musl-{arch}`、旧 `{arch}`、`linux-gnu-
 
 原生生产安装先独立验证签名、metadata 和待执行 Agent 的实际内容，将 proof 三文件保存在版本目录后再注册服务；`install-service` 在任何账户或服务修改前以编译根复验自身，并验证安装后的副本。缺少匹配 proof 的生产接入保持拒绝。
 
-Unix 默认配置 `/etc/sinan/agent.toml`、Agent `/opt/sinan/core`、状态 `/var/lib/sinan/core`；macOS/FreeBSD 状态套接字 `/var/run/sinan/agent.sock`。Windows 默认根目录 `%ProgramData%\Sinan`，本机状态使用受保护命名管道。`agent_root` 与代理 `install_root` 分开配置，`run --monitor-only` 用于监控设备。
+Unix 默认配置 `/etc/apsp/agent.toml`、Agent `/opt/apsp/core`、状态 `/var/lib/apsp/core`；macOS/FreeBSD 状态套接字 `/var/run/apsp/agent.sock`。Windows 默认根目录 `%ProgramData%\Apsp`，本机状态使用受保护命名管道。`agent_root` 与代理 `install_root` 分开配置，`run --monitor-only` 用于监控设备。
 
 ## OpenRC
 
-OpenRC 安装要求 `supervise-daemon` 支持 capabilities/no_new_privs，并安装 CA、curl、基础账号/文件工具与 `unshare`。安装后将两个服务加入 default runlevel，刷新依赖树。Agent 与代理分别监督，日志在 `/var/log/sinan/`；更新只重启 Agent，reload 将 HUP 发送到实际代理子进程。
+OpenRC 安装要求 `supervise-daemon` 支持 capabilities/no_new_privs，并安装 CA、curl、基础账号/文件工具与 `unshare`。安装后将两个服务加入 default runlevel，刷新依赖树。Agent 与代理分别监督，日志在 `/var/log/apsp/`；更新只重启 Agent，reload 将 HUP 发送到实际代理子进程。
 
 NodeQuality 使用独立一次性服务、独立挂载命名空间、超时与持久终态；Agent 重启不重启已开始的诊断。OpenRC CI 同时执行进程夹具及真实 Agent 诊断服务检查；公网 NodeQuality 性能结果仍须独立验收。详见 [ADR 0021](adr/0021-openrc-services.md)、[ADR 0022](adr/0022-agent-capability-alignment.md)。
 

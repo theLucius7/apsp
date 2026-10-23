@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { extname, resolve, sep } from 'node:path'
 
 // TEST_ONLY: owned loopback fixtures exercise actual built UI; no provider or production writes.
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url)), prefix = '/api/plugins/sing-box'
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname, file = resolve(dist, path === '/' ? 'index.html' : `.${path}`)
@@ -18,7 +18,7 @@ const server = createServer(async (request, response) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const origin = `http://127.0.0.1:${server.address().port}`
 const totals = { scenarios: 0, blocked: 0, recovered: 0, requests: 0, external: [], unexpected: [], errors: [] }
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
 const wait = async (condition, description) => { const deadline = Date.now() + 10000; while (!await condition()) { assert(Date.now() < deadline, description); await new Promise(resolve => setTimeout(resolve, 20)) } }
 const refresh = page => page.locator('.page-header button').filter({ hasText: /^刷新$/ }).evaluate(button => button.click())
 const refreshReads = async page => {
@@ -161,7 +161,7 @@ try {
       else { await editor.getByRole('alert').getByText(/已选/).waitFor(); assert.equal(await save.isDisabled(), true); await forceForm(editor.locator('form')) }
       await assertDraft(editor, 'existing'); assert.equal(control.writes.length, 0); ++totals.blocked
       if (mutation.startsWith('entry')) assert.match(await editor.getByLabel('已有入口', { exact: true }).locator('option:checked').innerText(), /原选择保留/)
-      if (process.env.SINAN_UI_SCREENSHOT_DIR && ['entry-missing', 'hop-server-disabled'].includes(mutation)) { await mkdir(process.env.SINAN_UI_SCREENSHOT_DIR, { recursive: true }); await control.page.screenshot({ path: resolve(process.env.SINAN_UI_SCREENSHOT_DIR, `chain-snapshot-${mutation}-${width}.png`), fullPage: true }) }
+      if (process.env.APSP_UI_SCREENSHOT_DIR && ['entry-missing', 'hop-server-disabled'].includes(mutation)) { await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true }); await control.page.screenshot({ path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `chain-snapshot-${mutation}-${width}.png`), fullPage: true }) }
       control.nodes.splice(0, control.nodes.length, ...savedNodes); control.resources.splice(0, control.resources.length, ...savedResources); control.hosts.splice(0, control.hosts.length, ...savedHosts)
       await refreshReads(control.page); await save.click(); await wait(() => control.writes.length === 1, 'Restoring the exact original choice permits one write'); ++totals.recovered
       assert.deepEqual(control.writes[0].body.items[0].entry, { mode: 'existing', node_id: 1 }); assert.deepEqual(control.writes[0].body.items[0].hops, [{ kind: 'managed', node_id: 2 }])

@@ -1,5 +1,5 @@
 use super::*;
-use sinan_adapter_sdk::Execution;
+use apsp_adapter_sdk::Execution;
 use std::sync::{Arc, Mutex};
 
 struct Probe {
@@ -56,7 +56,7 @@ impl Privileged for Probe {
         group: Option<&'a str>,
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
-            assert_eq!(path, Path::new("/run/sinan-diagnostic"));
+            assert_eq!(path, Path::new("/run/apsp-diagnostic"));
             assert_eq!((mode, group), (0o700, Some("root")));
             Ok(())
         })
@@ -84,7 +84,7 @@ impl Privileged for Probe {
 #[tokio::test]
 async fn support_probe_is_bounded_and_fails_closed_at_every_step() -> Result<()> {
     let job: ServiceJob = serde_json::from_value(serde_json::json!({
-        "unit": format!("sinan-diagnostic-{}.service", Uuid::new_v4()),
+        "unit": format!("apsp-diagnostic-{}.service", Uuid::new_v4()),
         "program": "/usr/bin/true", "args": [], "working_directory": "/tmp", "timeout_secs": 5,
     }))?;
     for fail_at in 1..=4 {
@@ -141,7 +141,7 @@ async fn pre_command_rejects_missing_single_filter_and_missing_privilege_guard()
         .and_then(|value| value.strip_suffix("' /proc/self/status"))
         .expect("fixed pre-command must have one quoted awk expression and one input path");
     assert!(!expression.contains(['$', '%', '\'']));
-    let file = std::env::temp_dir().join(format!("sinan-seccomp-status-{}", Uuid::new_v4()));
+    let file = std::env::temp_dir().join(format!("apsp-seccomp-status-{}", Uuid::new_v4()));
     let result = async {
         for (nnp, mode, count, allowed) in [
             (1, 2, 2, true),
@@ -181,7 +181,7 @@ async fn unsupported_backend_cannot_start_or_fall_back() -> Result<()> {
         calls: Mutex::new(0),
     });
     let job: ServiceJob = serde_json::from_value(serde_json::json!({
-        "unit": format!("sinan-diagnostic-{}.service", Uuid::new_v4()),
+        "unit": format!("apsp-diagnostic-{}.service", Uuid::new_v4()),
         "program": "/usr/bin/true", "args": [], "working_directory": "/tmp", "timeout_secs": 5,
     }))?;
     for backend in [ServiceBackend::OpenRc, ServiceBackend::Unmanaged] {

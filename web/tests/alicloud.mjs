@@ -5,7 +5,7 @@ import { readFile, mkdir } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname
@@ -16,8 +16,8 @@ const server = createServer(async (request, response) => {
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const origin = `http://127.0.0.1:${server.address().port}`
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
-const screenshots = process.env.SINAN_UI_SCREENSHOT_DIR
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
+const screenshots = process.env.APSP_UI_SCREENSHOT_DIR
 if (screenshots) await mkdir(screenshots, { recursive: true })
 const results = []
 try {
@@ -203,7 +203,7 @@ try {
   assert.equal(overview.resources[0].manual_hold, false)
   assert.equal(await page.getByText('1234.5600 USD', { exact: true }).count(), 1)
   const overflow = await page.evaluate(() => ({ viewport: innerWidth, width: document.documentElement.scrollWidth, elements: [...document.querySelectorAll('body *')].map(el => ({ tag: el.tagName, class: el.className, width: el.getBoundingClientRect().width, right: el.getBoundingClientRect().right })).filter(el => el.right > innerWidth + 1).slice(0, 15) }))
-  if (overflow.width > width) { console.log(JSON.stringify(overflow)); await page.screenshot({ path: `/tmp/sinan-alicloud-overflow-${width}.png`, fullPage: true }) }
+  if (overflow.width > width) { console.log(JSON.stringify(overflow)); await page.screenshot({ path: `/tmp/apsp-alicloud-overflow-${width}.png`, fullPage: true }) }
   assert.equal(overflow.width <= width, true)
   if (screenshots) await page.screenshot({ path: `${screenshots}/alicloud-${width}.png`, fullPage: true })
   failRead = true; await page.getByRole('button', { name: '刷新', exact: true }).click()

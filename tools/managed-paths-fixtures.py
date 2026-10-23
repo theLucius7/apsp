@@ -251,7 +251,7 @@ def prepare(args):
         "subjectAltName=DNS:reality.test,DNS:target.test,IP:" + plan["addresses"]["fixture"]
         + "\nextendedKeyUsage=serverAuth\n").encode())
     capture(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-sha256", "-days", "1",
-             "-subj", "/CN=Sinan TEST ONLY fixture CA", "-keyout", str(tls / "ca.key"),
+             "-subj", "/CN=Apsp TEST ONLY fixture CA", "-keyout", str(tls / "ca.key"),
              "-out", str(tls / "ca.crt")], root, "ca.private.log")
     capture(["openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=target.test",
              "-keyout", str(tls / "server.key"), "-out", str(tls / "server.csr")], root, "csr.private.log")

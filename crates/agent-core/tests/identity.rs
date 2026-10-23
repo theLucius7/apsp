@@ -2,9 +2,9 @@
 #![cfg(unix)]
 
 use anyhow::{Context, Result};
+use apsp_agent_core::{Config, config::validate_panel_url, identity};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
-use sinan_agent_core::{Config, config::validate_panel_url, identity};
 use std::{path::PathBuf, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -18,13 +18,13 @@ use uuid::Uuid;
 struct Directory(PathBuf);
 impl Directory {
     fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("sinan-identity-{}", Uuid::new_v4()));
+        let path = std::env::temp_dir().join(format!("apsp-identity-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&path).unwrap();
         Self(path)
     }
     fn config(&self, origin: &str) -> Config {
         Config {
-            settings: sinan_protocol::AgentSettings::default(),
+            settings: apsp_protocol::AgentSettings::default(),
             panel_url: origin.into(),
             panel_ca_file: None,
             identity_dir: self.0.join("identity"),
@@ -247,9 +247,9 @@ fn minimal_configuration_has_defaults_and_rejects_ambiguous_panel_origins() -> R
     let config = Config::load(&path)?;
     assert_eq!(config.operation_timeout_secs, 30);
     let identity_dir = if cfg!(target_os = "macos") {
-        "/private/etc/sinan/identity"
+        "/private/etc/apsp/identity"
     } else {
-        "/etc/sinan/identity"
+        "/etc/apsp/identity"
     };
     assert_eq!(config.identity_dir, PathBuf::from(identity_dir));
     for invalid in [

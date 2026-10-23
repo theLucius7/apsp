@@ -1,11 +1,11 @@
 use super::*;
-use sinan_protocol::{DiagnosticCancelRequest, DiagnosticCancelResult, Envelope};
+use apsp_protocol::{DiagnosticCancelRequest, DiagnosticCancelResult, Envelope};
 
 pub(super) fn supported(capabilities: &Value) -> bool {
     capabilities.as_array().is_some_and(|values| {
         values
             .iter()
-            .any(|value| value.as_str() == Some(sinan_protocol::DIAGNOSTIC_CANCEL_CAPABILITY))
+            .any(|value| value.as_str() == Some(apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY))
     })
 }
 

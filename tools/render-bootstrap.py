@@ -36,7 +36,7 @@ PLUGIN_SOURCES = tuple("plugins/nodequality/" + name for name in sorted(
 ))
 MAX_PAYLOAD = 2 * 1024 * 1024
 MAX_BOOTSTRAP = 256 * 1024
-PAYLOAD_BEGIN = "SINAN_BOOTSTRAP_FILES_PY"
+PAYLOAD_BEGIN = "APSP_BOOTSTRAP_FILES_PY"
 
 
 def ordinary_source(path):
@@ -135,8 +135,8 @@ def render(root=ROOT, trusted_keys=None, publication=True, test_installer=None):
     load_roots(trusted_keys, publication=publication)
     ensure(test_installer is None or not publication, "test installer cannot be published")
     installer = test_installer if test_installer is not None else installer_source(
-        root / "deploy/install.sh.tmpl", root / "deploy/sinan-agent.service",
-        root / "plugins/sing-box/sinan-singbox@.service", source_root=root)
+        root / "deploy/install.sh.tmpl", root / "deploy/apsp-agent.service",
+        root / "plugins/sing-box/apsp-singbox@.service", source_root=root)
     if not installer.endswith("\n"):
         installer += "\n"
     program = materializer(source_files(root, trusted_keys, installer))

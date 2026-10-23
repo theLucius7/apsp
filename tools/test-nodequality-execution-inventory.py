@@ -26,7 +26,7 @@ def elf(machine=62):
 
 class InventoryTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='sinan-executable-inventory-')
+        self.temporary = tempfile.TemporaryDirectory(prefix='apsp-executable-inventory-')
         self.root = Path(self.temporary.name)
         self.addCleanup(self.temporary.cleanup)
 

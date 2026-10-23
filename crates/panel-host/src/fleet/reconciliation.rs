@@ -2,6 +2,7 @@ use crate::{
     AppState, control_center,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::{fleet::Operation, now_timestamp};
 use axum::{
     Json,
     extract::{Path, State},
@@ -9,7 +10,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sinan_protocol::{fleet::Operation, now_timestamp};
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
@@ -258,7 +258,7 @@ pub(crate) async fn enqueue_inspection(
     let required = match &operation {
         Operation::FileInspect { .. } => "fleet:files:transfer:v1",
         Operation::CertificateInspect { .. } => "system:certificate-deploy:v1",
-        _ => sinan_protocol::fleet::OPERATIONS_CAPABILITY,
+        _ => apsp_protocol::fleet::OPERATIONS_CAPABILITY,
     };
     if !capabilities
         .as_array()

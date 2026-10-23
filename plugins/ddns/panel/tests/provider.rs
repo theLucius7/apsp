@@ -158,10 +158,7 @@ async fn create_recovers_lost_receipt_then_updates_only_owned_fields() {
     let data = mock.data.lock().unwrap();
     assert_eq!(data.records.len(), 1);
     assert_eq!(data.records[0]["tags"], json!(["owner:test"]));
-    assert_eq!(
-        data.records[0]["comment"],
-        format!("sinan-ddns:{}", rule.id)
-    );
+    assert_eq!(data.records[0]["comment"], format!("apsp-ddns:{}", rule.id));
 }
 
 #[tokio::test]

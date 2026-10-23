@@ -1,9 +1,9 @@
 use super::metadata;
 use crate::business_support::{TestPanel, id, receive_envelope, release_fixture, send_envelope};
 use anyhow::{Context, Result};
+use apsp_protocol::{ApplyResult, ApplyStatus, Envelope, Heartbeat, now_timestamp};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_protocol::{ApplyResult, ApplyStatus, Envelope, Heartbeat, now_timestamp};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -12,7 +12,7 @@ async fn supported_online(pool: &PgPool, server: i64) -> Result<()> {
         .bind(server)
         .bind(json!([
             "singbox",
-            sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY
+            apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY
         ]))
         .bind(now_timestamp())
         .execute(pool)
@@ -64,7 +64,7 @@ async fn explicit_enable_queues_once_and_first_publication_has_no_public_listene
             .await?,
         due
     );
-    sinan_panel::plugins::singbox::publisher::publish_due(&panel.state).await?;
+    apsp_panel::plugins::singbox::publisher::publish_due(&panel.state).await?;
     let bundle: String = sqlx::query_scalar(
         "SELECT bundle FROM deployments WHERE server_id=$1 AND module='singbox'",
     )
@@ -177,7 +177,7 @@ async fn missing_signed_runtime_is_visible_and_preparation_never_confirms_applic
         healthy: false,
         error: Some("TEST_ONLY runtime did not start".into()),
     };
-    sinan_panel::agent_api::record_apply_result(&panel.state, server, failure).await?;
+    apsp_panel::agent_api::record_apply_result(&panel.state, server, failure).await?;
     panel
         .client
         .get(&manifest_url)
@@ -198,7 +198,7 @@ async fn missing_signed_runtime_is_visible_and_preparation_never_confirms_applic
         metadata(&panel, &cookie, server).await?["installation"]["state"],
         "failed"
     );
-    sinan_panel::agent_api::record_apply_result(
+    apsp_panel::agent_api::record_apply_result(
         &panel.state,
         server,
         ApplyResult {
@@ -246,7 +246,7 @@ async fn installation_distinguishes_mode_offline_and_stale_preparation_error(
         .bind(server)
         .bind(json!([
             "singbox",
-            sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY
+            apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY
         ]))
         .execute(&pool)
         .await?;
@@ -255,7 +255,7 @@ async fn installation_distinguishes_mode_offline_and_stale_preparation_error(
         "offline"
     );
     supported_online(&pool, server).await?;
-    sinan_panel::agent_api::record_apply_result(
+    apsp_panel::agent_api::record_apply_result(
         &panel.state,
         server,
         ApplyResult {
@@ -292,7 +292,7 @@ async fn installation_distinguishes_mode_offline_and_stale_preparation_error(
     supported_online(&pool, server).await?;
     let info = json!({"arch":"unknown"});
     assert!(
-        sinan_panel::plugins::singbox::agent::manifest_module(&panel.state, server, &info)
+        apsp_panel::plugins::singbox::agent::manifest_module(&panel.state, server, &info)
             .await
             .is_err()
     );
@@ -300,7 +300,7 @@ async fn installation_distinguishes_mode_offline_and_stale_preparation_error(
         metadata(&panel, &cookie, server).await?["installation"]["state"],
         "failed"
     );
-    sinan_panel::agent_api::record_apply_result(
+    apsp_panel::agent_api::record_apply_result(
         &panel.state,
         server,
         ApplyResult {
@@ -332,7 +332,7 @@ async fn installation_distinguishes_mode_offline_and_stale_preparation_error(
         .contains("目标版本 1：")
     );
     assert!(
-        sinan_panel::plugins::singbox::agent::manifest_module(&panel.state, server, &info)
+        apsp_panel::plugins::singbox::agent::manifest_module(&panel.state, server, &info)
             .await
             .is_err()
     );
@@ -374,7 +374,7 @@ async fn authenticated_heartbeat_recovers_installation_after_lost_result_and_old
             "manifest.changed"
         );
         if prior_failure {
-            sinan_panel::agent_api::record_apply_result(
+            apsp_panel::agent_api::record_apply_result(
                 &panel.state,
                 server,
                 ApplyResult {

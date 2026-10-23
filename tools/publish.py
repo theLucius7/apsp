@@ -203,7 +203,7 @@ def checked_publication(github, tag, roots, minisign, publish=False):
     before = release_snapshot(github, tag)
     ensure(before["draft"] is True, "only a draft can enter final publication verification")
     ensure(before["build_commit"] == identity["commit"], "tag differs from the draft build commit")
-    with tempfile.TemporaryDirectory(prefix="sinan-publication-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="apsp-publication-") as temporary:
         bundle = Path(temporary)
         ensure(shutil.disk_usage(bundle).free >= sum(asset["size"] for asset in before["assets"])
                + 32 * 1024 * 1024, "insufficient space for publication assets")

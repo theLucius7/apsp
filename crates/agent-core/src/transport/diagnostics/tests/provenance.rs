@@ -65,7 +65,7 @@ fn cached_provenance(directory: &Directory, id: Uuid) -> Result<DiagnosticJob> {
         std::fs::write(artifact.join(name), content.as_bytes())?;
         entry.auxiliary_files.insert(
             name.into(),
-            sinan_protocol::release::ReleaseFile {
+            apsp_protocol::release::ReleaseFile {
                 sha256: release_support::hash(content.as_bytes()),
                 size: content.len() as u64,
             },
@@ -166,7 +166,7 @@ fn cached_versioned_provenance(
     job.version = version.into();
     job.artifact.url = format!(
         "http://127.0.0.1:1/api/agent/v1/artifacts/diagnostic-fixture/{version}/{}",
-        sinan_protocol::release::native_arch()?
+        apsp_protocol::release::native_arch()?
     );
     let artifact = directory
         .config()
@@ -191,7 +191,7 @@ fn cached_versioned_provenance(
             std::fs::write(artifact.join(name), content.as_bytes())?;
             entry.auxiliary_files.insert(
                 name.into(),
-                sinan_protocol::release::ReleaseFile {
+                apsp_protocol::release::ReleaseFile {
                     sha256: release_support::hash(content.as_bytes()),
                     size: content.len() as u64,
                 },

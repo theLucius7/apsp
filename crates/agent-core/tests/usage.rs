@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
-use sinan_adapter_sdk::Counter;
-use sinan_agent_core::state::{IntentRecord, State};
+use apsp_adapter_sdk::Counter;
+use apsp_agent_core::state::{IntentRecord, State};
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -10,7 +10,7 @@ impl Database {
     fn new() -> Self {
         Self(
             std::env::temp_dir()
-                .join(format!("sinan-ledger-{}", Uuid::new_v4()))
+                .join(format!("apsp-ledger-{}", Uuid::new_v4()))
                 .join("state.db"),
         )
     }

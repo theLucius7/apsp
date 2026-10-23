@@ -70,7 +70,7 @@ async fn test(state: &AppState, channel: &str) -> ApiResult<Json<Value>> {
         }
         _ => {}
     }
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let previous: Option<i64> = sqlx::query_scalar(
         "SELECT attempted_at FROM notification_channel_tests WHERE channel=$1 FOR UPDATE",
     )

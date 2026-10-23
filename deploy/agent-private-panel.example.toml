@@ -1,7 +1,7 @@
 # Copy the panel CA through an independently trusted channel. This file extends
 # the normal public certificate roots; it never disables certificate validation.
 panel_url = "https://panel.example.invalid"
-panel_ca_file = "/etc/sinan/trust/panel-ca.pem"
+panel_ca_file = "/etc/apsp/trust/panel-ca.pem"
 
 # Leave panel_ca_file absent for a panel using the normal public CA roots.
 # Store the CA outside directories erased during device retirement.

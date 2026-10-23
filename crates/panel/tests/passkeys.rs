@@ -204,7 +204,7 @@ async fn proxy_invitations_are_scoped_hashed_rotatable_and_removed_with_the_owne
             .bind(id)
             .fetch_one(&pool)
             .await?;
-    assert_eq!(saved, sinan_panel::auth::hash_token(token));
+    assert_eq!(saved, apsp_panel::auth::hash_token(token));
     let view: Value = panel
         .admin(Method::GET, &path, &cookie, None)
         .await?
@@ -351,9 +351,9 @@ async fn virtual_authenticator_browser_roundtrip(pool: PgPool) -> Result<()> {
     command
         .arg("web/tests/passkeys.mjs")
         .current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
-        .env("SINAN_PASSKEY_TEST_ORIGIN", &panel.state.config.public_url)
+        .env("APSP_PASSKEY_TEST_ORIGIN", &panel.state.config.public_url)
         .env(
-            "SINAN_PASSKEY_TEST_DATABASE_URL",
+            "APSP_PASSKEY_TEST_DATABASE_URL",
             pool.connect_options().to_url_lossy().as_str(),
         )
         .kill_on_drop(true);

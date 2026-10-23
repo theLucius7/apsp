@@ -21,7 +21,7 @@ impl SystemServiceManager {
                 .file_name()
                 .into_string()
                 .map_err(|_| anyhow::anyhow!("invalid diagnostic service name"))?;
-            if !unit.starts_with("sinan-diagnostic-") {
+            if !unit.starts_with("apsp-diagnostic-") {
                 continue;
             }
             ensure!(

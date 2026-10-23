@@ -21,7 +21,7 @@ def bootstrap(enrollment, trust_directory, bundle, log):
     parsed = urllib.parse.urlsplit(panel)
     if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or parsed.path or parsed.query or parsed.fragment or parsed.username or parsed.password:
         raise ValueError("CI bootstrap requires this run's loopback panel origin")
-    environment = dict(os.environ, SINAN_ENROLLMENT_TOKEN=token)
+    environment = dict(os.environ, APSP_ENROLLMENT_TOKEN=token)
     arguments = ["/usr/bin/python3", str(trust_directory / "bootstrap.py"), "--tag", tag,
                  "--panel", panel, "--trusted-keys", str(trust_directory / "public-keys.json"),
                  "--minisign", "/usr/bin/minisign", "--release-dir", str(bundle)]

@@ -1,7 +1,7 @@
 use super::Runtime;
 use crate::{artifacts::PanelClient, reconcile::Reconciler, state::StorageRetry};
 use anyhow::Result;
-use sinan_protocol::{ApplyResult, ApplyStatus, Envelope};
+use apsp_protocol::{ApplyResult, ApplyStatus, Envelope};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
@@ -19,7 +19,7 @@ pub(super) async fn run(
     operations.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     sample.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut reported = sinan_protocol::AppliedRevisions::new();
+    let mut reported = apsp_protocol::AppliedRevisions::new();
     let mut cleanup_storage = StorageRetry::default();
     loop {
         tokio::select! {
@@ -34,7 +34,7 @@ pub(super) async fn run(
                     if let Err(error) = crate::runtime_operations::poll(&reconcilers, &runtime.state, &active_client, &outgoing).await {
                         tracing::debug!(%error, "runtime operations poll failed");
                     }
-                    if runtime.capabilities.iter().any(|capability| capability == sinan_protocol::RUNTIME_VALIDATION_CAPABILITY)
+                    if runtime.capabilities.iter().any(|capability| capability == apsp_protocol::RUNTIME_VALIDATION_CAPABILITY)
                         && !runtime.retirement.as_ref().is_some_and(|retirement| retirement.requested())
                         && let Err(error) = crate::runtime_validations::poll(&reconcilers, &runtime.state, &active_client).await {
                         tracing::debug!(%error, "runtime validations poll failed");

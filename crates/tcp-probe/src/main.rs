@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use anyhow::{Context, ensure};
-use sinan_tcp_probe::{Command, Journal, SOURCE_COMMIT, VERSION, parse, run_until};
+use apsp_tcp_probe::{Command, Journal, SOURCE_COMMIT, VERSION, parse, run_until};
 use std::time::Duration;
 use tokio::{
     io::AsyncWriteExt,
@@ -19,13 +19,13 @@ fn main() {
     match command {
         Command::Help => {
             println!(
-                "原生 TCP 连接诊断（无排名、上传或测速）\n用法：sinan-tcp-probe --workspace <绝对私有目录> --targets <目录内快照文件名> --target-digest <SHA256> --ip-version <4|6> --count <4|8> --concurrency <1|2> --no-rank-upload\n默认 count=4、concurrency=1；最多8目标，总60秒含排队，预留2秒保存。只建立并关闭TCP连接，不发送应用数据。地区/运营商为配置标签；结果不是包丢失率。--version 查看版本。\n不接受宿主改动、raw socket、测速或任意选项。"
+                "原生 TCP 连接诊断（无排名、上传或测速）\n用法：apsp-tcp-probe --workspace <绝对私有目录> --targets <目录内快照文件名> --target-digest <SHA256> --ip-version <4|6> --count <4|8> --concurrency <1|2> --no-rank-upload\n默认 count=4、concurrency=1；最多8目标，总60秒含排队，预留2秒保存。只建立并关闭TCP连接，不发送应用数据。地区/运营商为配置标签；结果不是包丢失率。--version 查看版本。\n不接受宿主改动、raw socket、测速或任意选项。"
             );
         }
-        Command::Version => println!("sinan-tcp-probe {VERSION}"),
+        Command::Version => println!("apsp-tcp-probe {VERSION}"),
         Command::BuildInfo => println!(
             "{}",
-            serde_json::json!({"version":VERSION,"source_repo":"theLucius7/sinan","source_commit":SOURCE_COMMIT})
+            serde_json::json!({"version":VERSION,"source_repo":"theLucius7/apsp","source_commit":SOURCE_COMMIT})
         ),
         Command::Run(options) => {
             let runtime = tokio::runtime::Builder::new_current_thread()
@@ -43,7 +43,7 @@ fn main() {
                             .await?;
                     let mut bytes = serde_json::to_vec(&report)?;
                     ensure!(
-                        bytes.len() <= sinan_tcp_probe::OUTPUT_LIMIT,
+                        bytes.len() <= apsp_tcp_probe::OUTPUT_LIMIT,
                         "report exceeds output limit"
                     );
                     bytes.push(b'\n');

@@ -1,7 +1,7 @@
 use super::*;
 use crate::transport::diagnostics::environment::ExecutionEnvironment;
-use sinan_adapter_sdk::{DiagnosticMemory, DiagnosticResources};
-use sinan_protocol::DiagnosticSectionUpdate;
+use apsp_adapter_sdk::{DiagnosticMemory, DiagnosticResources};
+use apsp_protocol::DiagnosticSectionUpdate;
 
 #[tokio::test]
 async fn environment_checkpoint_survives_restart_and_replays_the_same_section() -> Result<()> {

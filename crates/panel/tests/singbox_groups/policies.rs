@@ -328,7 +328,7 @@ async fn modern_group_credentials_survive_direct_overlap_and_obey_quota(
         .await?;
     assert!(client.contains(&before.1));
     assert!(!client.contains(&other_secret));
-    sinan_panel::usage::ingest(
+    apsp_panel::usage::ingest(
         &panel.state,
         server,
         usage(uid, node, now_timestamp(), 40, 60),

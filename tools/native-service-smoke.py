@@ -59,7 +59,7 @@ def assert_windows_rights(root, expected):
 
 def service(name, action):
     if SYSTEM == 'Darwin':
-        label = 'system/org.sinan.' + name.replace('@', '.')
+        label = 'system/org.apsp.' + name.replace('@', '.')
         args = ['launchctl', 'kickstart', '-k', label] if action == 'restart' else ['launchctl', 'bootout', label]
     elif SYSTEM == 'FreeBSD':
         args = ['service', name.replace('-', '_').replace('@', '_'), action]
@@ -113,7 +113,7 @@ def main():
     binary = args.binary.resolve()
     archive = args.runtime_archive.read_bytes()
     version = subprocess.check_output([str(binary), '--version'], text=True).strip().split()[-1]
-    root = (Path(os.environ['ProgramData']) if SYSTEM == 'Windows' else Path('/opt')) / ('sinan-test-' + uuid.uuid4().hex[:8])
+    root = (Path(os.environ['ProgramData']) if SYSTEM == 'Windows' else Path('/opt')) / ('apsp-test-' + uuid.uuid4().hex[:8])
     root.mkdir(mode=0o755, parents=True)
     source = root / 'verified-source' / version
     source.mkdir(mode=0o755, parents=True)
@@ -145,7 +145,7 @@ def main():
         # Publish after services are registered so launchd's eager startup cannot race the fixture.
         print(invoke(binary, config, 'install-service'))
         if SYSTEM == 'Windows':
-            account = powershell("$user=Get-LocalUser -Name 'sinan-singbox'; if (-not (Get-LocalGroupMember -SID 'S-1-5-32-545' | Where-Object { $_.SID -eq $user.SID })) { throw 'Runtime is not an ordinary Users member' }; if (Get-LocalGroupMember -SID 'S-1-5-32-544' | Where-Object { $_.SID -eq $user.SID }) { throw 'Runtime must not be an administrator' }; $user.SID.Value").stdout.strip()
+            account = powershell("$user=Get-LocalUser -Name 'apsp-singbox'; if (-not (Get-LocalGroupMember -SID 'S-1-5-32-545' | Where-Object { $_.SID -eq $user.SID })) { throw 'Runtime is not an ordinary Users member' }; if (Get-LocalGroupMember -SID 'S-1-5-32-544' | Where-Object { $_.SID -eq $user.SID }) { throw 'Runtime must not be an administrator' }; $user.SID.Value").stdout.strip()
             expected_rights = dict(original_rights)
             expected_rights['SeBatchLogonRight'] = original_rights.get('SeBatchLogonRight', set()) | {account}
             assert_windows_rights(root, expected_rights)
@@ -176,7 +176,7 @@ def main():
             closed.settimeout(5)
             assert closed.connect_ex(('127.0.0.1', previous_port)) != 0, 'old runtime listener survived reload'
         old = status(binary, config)['pid']
-        service('sinan-agent', 'restart')
+        service('apsp-agent', 'restart')
         wait_for(lambda: (s := status(binary, config)) and s['pid'] != old and s['connected'], 'Agent service restart', 90)
         transfer(proxy_port)
         # Reinstalling must preserve identity, service independence and immutable artifacts.
@@ -186,16 +186,16 @@ def main():
         if SYSTEM == 'Windows':
             assert_windows_rights(root, expected_rights)
         transfer(proxy_port)
-        service('sinan-agent', 'stop')
+        service('apsp-agent', 'stop')
         wait_for(lambda: status(binary, config) is None, 'Agent service shutdown', 30)
         transfer(proxy_port)
         if SYSTEM == 'Darwin':
-            data = command(['launchctl', 'print', 'system/org.sinan.sinan-singbox.main']).stdout
-            assert 'sinan-singbox' in data
+            data = command(['launchctl', 'print', 'system/org.apsp.apsp-singbox.main']).stdout
+            assert 'apsp-singbox' in data
         elif SYSTEM == 'FreeBSD':
-            assert command(['sysrc', '-n', 'sinan_agent_enable']).stdout.strip() == 'YES'
+            assert command(['sysrc', '-n', 'apsp_agent_enable']).stdout.strip() == 'YES'
         else:
-            powershell("$t=Get-ScheduledTask -TaskName 'sinan-singbox@main'; if ($t.Principal.UserId -notmatch 'sinan-singbox') { throw 'Runtime account mismatch' }; if ($t.Triggers.Count -ne 1) { throw 'Missing startup trigger' }")
+            powershell("$t=Get-ScheduledTask -TaskName 'apsp-singbox@main'; if ($t.Principal.UserId -notmatch 'apsp-singbox') { throw 'Runtime account mismatch' }; if ($t.Triggers.Count -ne 1) { throw 'Missing startup trigger' }")
         # The independent OS service must recheck cached proof without a running
         # Agent worker. A valid initial installation must not authorize later bytes.
         proof_path = root / 'plugins/sing-box/1.14.2/release.json'
@@ -207,7 +207,7 @@ def main():
         try:
             proof_path.write_bytes(original_proof + b' ')
             try:
-                service('sinan-singbox@main', 'restart')
+                service('apsp-singbox@main', 'restart')
             except RuntimeError:
                 # Some service managers report the expected startup rejection.
                 pass
@@ -217,30 +217,30 @@ def main():
                 assert not listening(), 'native runtime restarted without verifying its signed proof'
         finally:
             proof_path.write_bytes(original_proof)
-        service('sinan-singbox@main', 'restart')
+        service('apsp-singbox@main', 'restart')
         wait_for(listening, 'runtime accepts restored signed proof', 90)
         transfer(proxy_port)
         print('Native services: startup registration, privilege separation, runtime artifact/configuration, reload, traffic, Agent restart/reinstall, independent runtime and cache signature rejection passed')
     except BaseException as error:
         if isinstance(error, subprocess.CalledProcessError):
             print(error.stdout, error.stderr)
-        for path in [root / 'core/update-state.json', Path('/var/log/sinan-agent.log'), Path('/var/log/sinan-singbox@main.log')]:
+        for path in [root / 'core/update-state.json', Path('/var/log/apsp-agent.log'), Path('/var/log/apsp-singbox@main.log')]:
             if path.exists():
                 print(path, path.read_text(errors='replace')[-12000:])
         if SYSTEM == 'Darwin':
-            print(command(['launchctl', 'print', 'system/org.sinan.sinan-singbox.main'], False).stdout)
-            print(command(['id', 'sinan-singbox'], False).stdout)
+            print(command(['launchctl', 'print', 'system/org.apsp.apsp-singbox.main'], False).stdout)
+            print(command(['id', 'apsp-singbox'], False).stdout)
             print(command(['ls', '-lde', str(root), str(root / 'runtime'), str(root / 'runtime/sing-box@main/data'), str(root / 'core/runtime-launcher.sh')], False).stdout)
         if SYSTEM == 'FreeBSD':
-            print(command(['service', 'sinan_agent', 'onestatus'], False).stdout)
-            print(command(['service', 'sinan_singbox_main', 'onestatus'], False).stdout)
+            print(command(['service', 'apsp_agent', 'onestatus'], False).stdout)
+            print(command(['service', 'apsp_singbox_main', 'onestatus'], False).stdout)
             messages = Path('/var/log/messages')
             if messages.exists():
                 print(messages.read_text(errors='replace')[-6000:])
         if SYSTEM == 'Windows':
-            print(powershell("Get-ScheduledTaskInfo -TaskName 'sinan-agent'; Get-ScheduledTaskInfo -TaskName 'sinan-singbox@main'", False).stdout)
-            print(powershell("$scheduler=New-Object -ComObject Schedule.Service; $scheduler.Connect(); $task=$scheduler.GetFolder('\\').GetTask('sinan-singbox@main'); $task.GetSecurityDescriptor(7); Get-LocalUser -Name 'sinan-singbox'; Get-LocalGroupMember -SID 'S-1-5-32-545'; Get-WinEvent -LogName 'Microsoft-Windows-TaskScheduler/Operational' -MaxEvents 100 | Where-Object { $_.Message -match 'sinan-' } | Select-Object -First 6 TimeCreated,Id,Message | ConvertTo-Json -Compress", False).stdout)
-            print(powershell("Get-CimInstance Win32_Process -Filter \"Name='sinan-agent.exe' OR Name='sing-box.exe'\" | Select-Object ProcessId,ParentProcessId,CreationDate,CommandLine | ConvertTo-Json -Compress", False).stdout)
+            print(powershell("Get-ScheduledTaskInfo -TaskName 'apsp-agent'; Get-ScheduledTaskInfo -TaskName 'apsp-singbox@main'", False).stdout)
+            print(powershell("$scheduler=New-Object -ComObject Schedule.Service; $scheduler.Connect(); $task=$scheduler.GetFolder('\\').GetTask('apsp-singbox@main'); $task.GetSecurityDescriptor(7); Get-LocalUser -Name 'apsp-singbox'; Get-LocalGroupMember -SID 'S-1-5-32-545'; Get-WinEvent -LogName 'Microsoft-Windows-TaskScheduler/Operational' -MaxEvents 100 | Where-Object { $_.Message -match 'apsp-' } | Select-Object -First 6 TimeCreated,Id,Message | ConvertTo-Json -Compress", False).stdout)
+            print(powershell("Get-CimInstance Win32_Process -Filter \"Name='apsp-agent.exe' OR Name='sing-box.exe'\" | Select-Object ProcessId,ParentProcessId,CreationDate,CommandLine | ConvertTo-Json -Compress", False).stdout)
             transcript = root / 'runtime/sing-box@main/data/runtime-transcript.log'
             if transcript.exists():
                 print('Runtime transcript:', transcript.read_text(encoding='utf-8-sig', errors='replace')[-8000:])
@@ -252,7 +252,7 @@ def main():
             print('Agent status unavailable:', status_error)
         raise
     finally:
-        for name in ('sinan-agent', 'sinan-singbox@main'):
+        for name in ('apsp-agent', 'apsp-singbox@main'):
             try:
                 service(name, 'stop')
             except (RuntimeError, subprocess.TimeoutExpired):
@@ -260,7 +260,7 @@ def main():
             if SYSTEM == 'Windows':
                 powershell(f"Unregister-ScheduledTask -TaskName '{name}' -Confirm:$false", False)
             elif SYSTEM == 'Darwin':
-                Path('/Library/LaunchDaemons', 'org.sinan.' + name.replace('@', '.') + '.plist').unlink(missing_ok=True)
+                Path('/Library/LaunchDaemons', 'org.apsp.' + name.replace('@', '.') + '.plist').unlink(missing_ok=True)
             else:
                 Path('/usr/local/etc/rc.d', name.replace('-', '_').replace('@', '_')).unlink(missing_ok=True)
         panel.shutdown()

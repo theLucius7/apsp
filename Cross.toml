@@ -6,4 +6,4 @@ image = "ghcr.io/cross-rs/x86_64-unknown-freebsd@sha256:d1ecbeb055803f5316607acc
 image = "ghcr.io/cross-rs/aarch64-unknown-freebsd@sha256:317107ff710735ba2ab91d71185e32a5781870238aa93d9c2e0399b986668fb1"
 
 [build.env]
-passthrough = ["SINAN_RELEASE_PUBLIC_KEYS"]
+passthrough = ["APSP_RELEASE_PUBLIC_KEYS"]

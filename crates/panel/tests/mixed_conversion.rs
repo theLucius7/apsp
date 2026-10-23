@@ -11,12 +11,12 @@ mod release_support;
 mod support;
 
 use anyhow::{Context, Result, ensure};
+use apsp_panel::plugins::singbox::{mixed_paths, ordered_paths};
+use apsp_panel::{AppState, agent_api, runtime_control};
+use apsp_protocol::*;
 use business_support::{TestPanel, id, release_fixture};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sinan_panel::plugins::singbox::{mixed_paths, ordered_paths};
-use sinan_panel::{AppState, agent_api, runtime_control};
-use sinan_protocol::*;
 use sqlx::PgPool;
 use std::collections::BTreeMap;
 use support::*;
@@ -44,7 +44,7 @@ async fn mixed_fixture(pool: PgPool) -> Result<(Fixture, i64, i64)> {
         sqlx::query("UPDATE servers SET capabilities=$2,static_info=$3,last_seen=$4 WHERE id=$1")
             .bind(server)
             .bind(json!(["singbox","runtime:dependency-validation:v1",RUNTIME_CHECKPOINT_CAPABILITY,RUNTIME_RECOVERY_BARRIER_CAPABILITY,RUNTIME_PATH_PROBE_CAPABILITY]))
-            .bind(json!({"os":"linux","arch":sinan_protocol::release::native_arch()?,"libc":"gnu","runtime_libc":"gnu"}))
+            .bind(json!({"os":"linux","arch":apsp_protocol::release::native_arch()?,"libc":"gnu","runtime_libc":"gnu"}))
             .bind(now_timestamp())
             .execute(&panel.state.pool).await?;
         servers.push(server);
@@ -546,7 +546,7 @@ async fn subscription_hops_convert_to_the_migrated_nodes_by_public_id(pool: PgPo
             ensure!(value["last_error"].is_null(), "{value}");
             break;
         }
-        sinan_panel::plugins::singbox::sources::refresh_due(&panel.state).await?;
+        apsp_panel::plugins::singbox::sources::refresh_due(&panel.state).await?;
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
     let nodes = send(
@@ -569,7 +569,7 @@ async fn subscription_hops_convert_to_the_migrated_nodes_by_public_id(pool: PgPo
         "{blocked}"
     );
 
-    let report = sinan_panel::plugins::singbox::source_migration::apply(&panel.state.pool).await?;
+    let report = apsp_panel::plugins::singbox::source_migration::apply(&panel.state.pool).await?;
     ensure!(report.migrated);
     panel.publish_now().await?;
     confirm_devices(&panel.state).await?;

@@ -3,10 +3,10 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_compiler::{ManagedEndpointSnapshot, OrderedPath};
+use apsp_protocol::now_timestamp;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sinan_compiler::{ManagedEndpointSnapshot, OrderedPath};
-use sinan_protocol::now_timestamp;
 use sqlx::{PgConnection, Postgres, Transaction};
 use std::collections::BTreeSet;
 use uuid::Uuid;
@@ -169,9 +169,8 @@ pub(crate) async fn external_hop(
         return Err(ApiError::BadRequest("请选择跟随节点或固定当前版本".into()));
     }
     let raw = config.ok_or_else(|| ApiError::BadRequest("订阅节点没有有效的规范化配置".into()))?;
-    let outbound: sinan_compiler::external::NormalizedOutbound =
-        serde_json::from_value(raw.clone())
-            .map_err(|_| ApiError::BadRequest("订阅节点版本无法解析".into()))?;
+    let outbound: apsp_compiler::external::NormalizedOutbound = serde_json::from_value(raw.clone())
+        .map_err(|_| ApiError::BadRequest("订阅节点版本无法解析".into()))?;
     if serde_json::to_value(&outbound).map_err(anyhow::Error::from)? != raw {
         return Err(ApiError::BadRequest(
             "订阅节点版本包含未识别或丢失的必要参数".into(),

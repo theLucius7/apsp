@@ -24,7 +24,7 @@ that statement does not cover any downloaded rootfs, bundled binary or tool.
 The first-level host curl calls receive only the five locally verified scripts.
 Unknown source URLs fail without an online main-branch fallback. The exact
 existing BenchOS v0.0.2 download and report-upload call remain separate paths.
-The runner and its bounded report collector are maintained by Sinan.
+The runner and its bounded report collector are maintained by Apsp.
 The legacy chroot command shim retains the fixed AMD64-to-ARM64 trace download
 mapping. The r9 served entrypoint replaces that download with an executable
 presence check, so that mapping is no longer used by this entrypoint.
@@ -36,7 +36,7 @@ execute the embedded upstream sources.
 Linux runtime prerequisites: Bash >= 4, Python 3, curl, tar, base64, mount,
 umount, chroot, coreutils, and systemd with private mount namespaces.
 
-Sinan r9 modifications (2026-10-01): dependency-policy.py replaces the exact
+Apsp r9 modifications (2026-10-01): dependency-policy.py replaces the exact
 dependency installer functions in HardwareQuality, IPQuality and NetQuality
 with prerequisite checks. Explicit installer calls fail with exit code 70;
 the upstream -n option cannot bypass checks. Missing tools are named without
@@ -54,7 +54,7 @@ browser impersonation, provider access rules or uploads initiated by third-party
 binaries. The full-start gate stays closed; r9 is not a signed release or an
 approval to execute the full upstream toolchain.
 
-Sinan r10 modifications (2026-10-01): source-lock.json additionally retains
+Apsp r10 modifications (2026-10-01): source-lock.json additionally retains
 seven reference files from the same pinned IPQuality and NetQuality commits:
 IP iso3166/dnsbl and Net iso3166/province/AS_Mapping/iperf/speedtest_cn. Their
 repository LICENSE files remain in the bundle. Reference bytes are checked by
@@ -71,7 +71,7 @@ does not grant permission to probe those targets or establish provider access.
 The reference repository license record does not certify the entire toolchain
 or third-party services; all full-start gates and unresolved audits remain.
 
-Sinan r11 modifications (2026-10-01): loader-policy.py changes the five exact
+Apsp r11 modifications (2026-10-01): loader-policy.py changes the five exact
 header/hardware/IP/network/route loading calls to collect the entire bounded
 source first and require a successful producer exit. Empty successful output
 also fails. A trailing sentinel preserves all original trailing newlines in
@@ -86,7 +86,7 @@ checks. The original bundle is retained unmodified. These changes address
 source failures hidden by process substitution or partial streamed execution;
 they do not complete the separate full-toolchain audit or open full-start.
 
-Sinan r12 modifications (2026-10-01): ranking-policy.py gates HardwareQuality's
+Apsp r12 modifications (2026-10-01): ranking-policy.py gates HardwareQuality's
 mark.check.place score submission with the existing validated upload setting.
 The default/false path retains all local score computations and then returns
 before constructing or sending a percentile request. The true path preserves
@@ -102,7 +102,7 @@ canonical sources/licenses remain intact. Geekbench and other tool traffic,
 rootfs provenance/licenses and full execution remain unresolved. This is not
 an approval to execute the complete toolchain or a claim of zero total upload.
 
-Sinan r14 modifications (2026-10-01): netflix-policy.py verifies each Netflix
+Apsp r14 modifications (2026-10-01): netflix-policy.py verifies each Netflix
 transfer's exit status, final HTTP status and a conservative title-page shape
 before invoking the existing classification. Error text is never used as HTML.
 Per-title failure reasons are retained in text and JSON; other media fields and
@@ -112,7 +112,7 @@ r13 tasks/reports remain supported. No live provider or playback validation is
 claimed. UA, cookies, credentials, secondary dependencies and full-run gates
 remain separate work; this change does not enable full diagnostics.
 
-Sinan r13 modifications (2026-10-01): ip-score-policy.py validates the four
+Apsp r13 modifications (2026-10-01): ip-score-policy.py validates the four
 numeric IP scores as JSON integers within 0..100, the ipapi formatted fraction
 as 0..1 with a known label, and DB-IP's categorical level as low/medium/high.
 Malformed, missing, wrong-type or explicitly failed responses leave scores
@@ -129,7 +129,7 @@ Those provider-access audits and the full-toolchain license/provenance work
 remain open. All full-start gates remain closed; this is not a full run or a
 formal signed release.
 
-Sinan r19 modifications (2026-10-01): the packaged runner now refuses explicit
+Apsp r19 modifications (2026-10-01): the packaged runner now refuses explicit
 and default new full executions before external prerequisites or workspace
 changes. It exposes a signed execution-admission record that retains unknown
 rootfs/tool provenance and rights; packaging refuses changed approval claims.
@@ -146,14 +146,14 @@ Both architectures have historical static observations, but complete source,
 reproducible recipes, tool permissions, tool uploads and host side-effect
 acceptance remain unresolved. No proprietary license is accepted or inferred.
 
-Sinan r16 modifications (2026-10-01): report.py independently attempts every
+Apsp r16 modifications (2026-10-01): report.py independently attempts every
 available chapter publication before reporting damaged saved metadata or a
 chapter-specific filesystem failure. Invalid sidecars remain untouched; valid
 chapter snapshots and the original local ZIP remain readable and can retry.
 The panel/adapter/package identity is new and r14 history remains supported.
 No upstream source, license, Netflix policy or complete-toolchain gate changes.
 
-Sinan r17 modifications (2026-10-01): browser-policy.py runs after the existing
+Apsp r17 modifications (2026-10-01): browser-policy.py runs after the existing
 main r14 Netflix transformation. Inside each fixed IP/Net Bash shell it resolves
 native curl once, removes browser User-Agent and Sec-CH-UA/Sec-Fetch identity
 headers/options, disables the random browser generator call and exports the
@@ -173,7 +173,7 @@ operator must supply auditable tool rights and the missing execution evidence
 before the complete toolchain can be restored. Source preparation is not that
 approval or acceptance.
 
-Sinan r18 modifications (2026-10-01): public-access-policy.py adds explicit
+Apsp r18 modifications (2026-10-01): public-access-policy.py adds explicit
 unconfigured-access returns to the fixed IP source after r17 native curl.
 read_ref clears inherited Cookie data and returns before downloading/retrying
 public cookies. ipregistry/DB-IP and Disney+/YouTube Premium/ChatGPT keep their
@@ -193,7 +193,7 @@ input and output hashes are fixed; this new identity never replaces a signed
 historical artifact. Full starts remain gated; old report collection, cancel
 and daily modes retain compatibility with the supported r14/r15/r16/r17 jobs.
 
-Sinan r19 daily node-IP helper: optional operator-owned credentials are read
+Apsp r19 daily node-IP helper: optional operator-owned credentials are read
 from a root-owned private local file only. Ipregistry and DB-IP use their fixed
 official HTTPS self endpoints, family validation, bounded requests and explicit
 source/error records. No public cookies, temporary web keys or panel credential
@@ -207,7 +207,7 @@ runner. Exact historical r19 runner/report/rootfs source snapshots are retained
 solely for strict r20/r21 and native offline identity validation. The
 explicit build-nodequality-native.sh binds native-source-helper.py,
 native-runner.sh.tmpl and native browser/Netflix/report helpers to the distinct
-sinan-native-r2 identity. The historical native-r1 runner/report snapshots remain
+apsp-native-r2 identity. The historical native-r1 runner/report snapshots remain
 the exact source used by build-nodequality-native-offline.py to bind its
 independently validated runtime archive to offline-rootfs-r1. These new
 bytes never reuse main-line r14-r21 labels or certify their historical receipts.
@@ -219,7 +219,7 @@ before external prerequisites or workspace changes. Canonical source retention,
 synthetic fixtures, signed preparation and native device acceptance are separate
 records; neither toolchain rights nor a formal release is granted here.
 
-Sinan r22 modifications (2026-10-03): the default host curl payload is now
+Apsp r22 modifications (2026-10-03): the default host curl payload is now
 runtime-curl.sh. It accepts only the exact canonical report POST argument shape
 before capturing stdin. A permitted report URL cannot authorize extra URLs,
 configuration files, input files, methods, redirects or additional transfers.
@@ -227,7 +227,7 @@ With explicit uploads enabled, native curl receives --disable first and fixed
 HTTPS protocol limits. The same bounded local capture and response collector
 remain. The original curl-shim.sh is retained for historical/native-r1 identities;
 native-r2 uses the same runtime-curl.sh boundary as default r22. New policy
-bytes never reuse a signed r19 or sinan-native-r1 identity. This
+bytes never reuse a signed r19 or apsp-native-r1 identity. This
 boundary does not authorize third-party binary traffic or proprietary tooling.
 
 The default r22 runner also binds its chapter watcher to the original owner

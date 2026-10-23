@@ -52,7 +52,7 @@ async fn create(panel: &TestPanel, cookie: &str, config: Value) -> Result<Value>
         .await?)
 }
 fn forward(server: i64, name: &str) -> Value {
-    json!({"kind":"forwarding","name":name,"server_id":server,"listen_address":"0.0.0.0","listen_port":18080,"target_address":"127.0.0.1","target_port":8080,"protocol":"tcp","owner":"sinan","enabled":true,"dependency_ids":[]})
+    json!({"kind":"forwarding","name":name,"server_id":server,"listen_address":"0.0.0.0","listen_port":18080,"target_address":"127.0.0.1","target_port":8080,"protocol":"tcp","owner":"apsp","enabled":true,"dependency_ids":[]})
 }
 async fn preview(
     panel: &TestPanel,
@@ -258,10 +258,10 @@ async fn configured_target_collision_and_expired_session_proof_block_apply(
         StatusCode::CONFLICT
     );
     let token = cookie
-        .strip_prefix("sinan_session=")
+        .strip_prefix("apsp_session=")
         .context("test cookie")?;
     sqlx::query("DELETE FROM administrator_reauth WHERE session_hash=$1")
-        .bind(sinan_panel::auth::hash_token(token))
+        .bind(apsp_panel::auth::hash_token(token))
         .execute(&pool)
         .await?;
     assert_eq!(
@@ -340,14 +340,14 @@ async fn target_only_scope_cannot_read_source_candidates_or_migration_history(
         .bind(target)
         .execute(&pool)
         .await?;
-    let token = sinan_panel::auth::random_token();
+    let token = apsp_panel::auth::random_token();
     sqlx::query("INSERT INTO sessions(token_hash,admin_id,expires_at) VALUES($1,$2,$3)")
-        .bind(sinan_panel::auth::hash_token(&token))
+        .bind(apsp_panel::auth::hash_token(&token))
         .bind(actor)
-        .bind(sinan_protocol::now_timestamp() + 3600)
+        .bind(apsp_protocol::now_timestamp() + 3600)
         .execute(&pool)
         .await?;
-    let scoped = format!("sinan_session={token}");
+    let scoped = format!("apsp_session={token}");
     let candidates = format!(
         "/api/network-configuration/server-migrations/candidates?source_server_id={source}&target_server_id={target}"
     );

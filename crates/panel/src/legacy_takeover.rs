@@ -1,14 +1,14 @@
-//! `sinan-panel legacy-takeover`: the manual takeover of legacy two-hop
+//! `apsp-panel legacy-takeover`: the manual takeover of legacy two-hop
 //! chains as ordered chains (ADR 0079 phase 3, step S1c). Nothing runs unless
 //! an operator invokes it. Results are JSON on standard output; logs go to
 //! standard error. The exit code is 0 only when every selected chain passed.
 
 use anyhow::{Context, Result, bail};
-use sinan_panel::{AppState, config::Config, plugins::singbox::legacy_takeover};
+use apsp_panel::{AppState, config::Config, plugins::singbox::legacy_takeover};
 use sqlx::postgres::PgPoolOptions;
 
 const USAGE: &str =
-    "usage: sinan-panel legacy-takeover precheck | apply | rollback [--chain <id>]...";
+    "usage: apsp-panel legacy-takeover precheck | apply | rollback [--chain <id>]...";
 
 fn chains(args: &[String]) -> Result<Option<Vec<i64>>> {
     let mut chains = Vec::new();
@@ -41,7 +41,7 @@ pub async fn run(args: &[String]) -> Result<i32> {
         .connect(&config.database_url)
         .await?;
     let state = AppState::new(pool, config).await?;
-    sinan_panel::plugins::install();
+    apsp_panel::plugins::install();
     let report = match command {
         "precheck" => legacy_takeover::precheck(&state, selected).await?,
         "apply" => legacy_takeover::apply(&state, selected).await?,

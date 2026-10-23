@@ -1,0 +1,35 @@
+#!/sbin/openrc-run
+
+description="Apsp 代理运行时"
+supervisor="supervise-daemon"
+command="/opt/apsp/plugins/sing-box/current/sing-box"
+command_args="run -c /var/lib/apsp/plugins/sing-box@main/current/config.json -D /var/lib/apsp/plugins/sing-box@main/data"
+command_user="apsp-singbox:apsp-singbox"
+pidfile="/run/${RC_SVCNAME}.pid"
+required_files="$command /var/lib/apsp/plugins/sing-box@main/current/config.json"
+capabilities="^cap_net_bind_service"
+no_new_privs="yes"
+respawn_delay=5
+respawn_max=0
+retry="TERM/5/KILL/5"
+umask="0027"
+output_log="/var/log/apsp/runtime.log"
+error_log="$output_log"
+extra_started_commands="reload"
+description_reload="重载代理配置"
+
+depend() {
+    need net
+}
+
+start_pre() {
+    /opt/apsp/core/current/apsp-agent verify-installed --binary /opt/apsp/plugins/sing-box/current/sing-box --name sing-box --format tar.gz || return 1
+    checkpath --directory --mode 0750 --owner root:apsp-singbox /var/log/apsp
+    checkpath --file --mode 0640 --owner apsp-singbox:apsp-singbox "$output_log"
+}
+
+reload() {
+    ebegin "重载代理配置"
+    supervise-daemon "$RC_SVCNAME" --signal HUP
+    eend $?
+}

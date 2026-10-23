@@ -205,7 +205,7 @@ pub(in super::super) async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) ->
         .await?;
     let account = account_on(&mut tx, r.account_id).await?;
     let r = fresh(&mut tx, r.id).await?;
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     if job.next_check_at > now {
         return Ok(());
     }
@@ -278,7 +278,7 @@ pub(in super::super) async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) ->
     if job.status != "running" {
         return Ok(());
     }
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     if !allowed(&job, &account, &r, now) {
         finish(&mut tx, &job, &r, "cancelled", Some("policy_inactive"), now).await?;
     } else {
@@ -298,12 +298,12 @@ pub(in super::super) async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) ->
                     &account,
                     &r,
                     cloud,
-                    sinan_protocol::now_timestamp(),
+                    apsp_protocol::now_timestamp(),
                 )
                 .await?;
             }
             Err(error) => {
-                let observed_at = sinan_protocol::now_timestamp();
+                let observed_at = apsp_protocol::now_timestamp();
                 let rejected = matches!(
                     error.code,
                     "capacity_unavailable"
@@ -340,7 +340,7 @@ pub(in super::super) async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) ->
     Ok(())
 }
 pub(in super::super) async fn tick(pool: &PgPool, cloud: &Cloud) -> ApiResult<()> {
-    let now = sinan_protocol::now_timestamp();
+    let now = apsp_protocol::now_timestamp();
     let jobs: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM alicloud_power_jobs WHERE status IN ('queued','running','uncertain') AND next_check_at<=$1 ORDER BY next_check_at,created_at LIMIT 8").bind(now).fetch_all(pool).await?;
     for id in jobs {
         process(pool, id, cloud).await?;

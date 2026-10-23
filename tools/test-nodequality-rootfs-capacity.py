@@ -75,7 +75,7 @@ def materials():
 
 class FactoryCapacityTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='sinan-factory-capacity-test-')
+        self.temporary = tempfile.TemporaryDirectory(prefix='apsp-factory-capacity-test-')
         self.root = Path(self.temporary.name).resolve()
         self.inputs = materials()
 
@@ -807,8 +807,8 @@ class OwnedLoopFilesystemTests(unittest.TestCase):
         self.root = self.image = self.mountpoint = self.loop = None
         self.loop_started = False
         self.evidence = None
-        if os.environ.get('SINAN_FACTORY_LOOP_FIXTURE') != '1':
-            self.skipTest('real owned filesystem fixture requires SINAN_FACTORY_LOOP_FIXTURE=1')
+        if os.environ.get('APSP_FACTORY_LOOP_FIXTURE') != '1':
+            self.skipTest('real owned filesystem fixture requires APSP_FACTORY_LOOP_FIXTURE=1')
         if sys.platform != 'linux' or os.geteuid() != 0:
             self.skipTest('real owned filesystem fixture requires Linux root')
         if not hasattr(os, 'waitid') or not hasattr(os, 'WNOWAIT'):
@@ -822,7 +822,7 @@ class OwnedLoopFilesystemTests(unittest.TestCase):
             self.skipTest('real filesystem fixture missing tools: ' + ','.join(missing))
         if not Path('/dev/loop-control').exists():
             self.skipTest('real filesystem fixture has no existing loop-control device')
-        self.root = Path(tempfile.mkdtemp(prefix='sinan-owned-factory-fs-')).resolve()
+        self.root = Path(tempfile.mkdtemp(prefix='apsp-owned-factory-fs-')).resolve()
         self.root_identity = BUILD.FactoryCapacity.identity(self.root)
         self.addCleanup(self.cleanup_fixture)
         observed = os.statvfs(self.root)

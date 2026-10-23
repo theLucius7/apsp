@@ -14,8 +14,8 @@ const wait = async (condition, description) => {
   while (!await condition()) { assert(Date.now() < deadline, description); await new Promise(done => setTimeout(done, 25)) }
 }
 const forceSubmit = dialog => dialog.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
-const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
-const dist = process.env.SINAN_WEB_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url))
+const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
+const dist = process.env.APSP_WEB_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url))
 const apiRoot = '/api/plugins/sing-box', catalogPath = `${apiRoot}/node-catalog`, sourcePath = `${apiRoot}/subscription-sources`
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const server = createServer(async (request, response) => {
@@ -26,7 +26,7 @@ const server = createServer(async (request, response) => {
 })
 await new Promise(done => server.listen(0, '127.0.0.1', done))
 const origin = `http://127.0.0.1:${server.address().port}`
-const browser = await chromium.launch({ headless: true, ...(process.env.SINAN_CHROME_PATH ? { executablePath: process.env.SINAN_CHROME_PATH } : {}) })
+const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
 try {
   for (const width of [1440, 390, 340]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } }), errors = [], writes = []
@@ -212,7 +212,7 @@ try {
       assert.equal(sources.length, 1); assert.equal(await page.evaluate(() => Object.values(localStorage).some(value => value.includes('TEST_ONLY'))), false)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `overflow at ${width}`)
       assert.deepEqual(errors, [])
-      if (process.env.SINAN_UI_SCREENSHOT_DIR) { await mkdir(process.env.SINAN_UI_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: resolve(process.env.SINAN_UI_SCREENSHOT_DIR, `node-catalog-${width}.png`), fullPage: true }) }
+      if (process.env.APSP_UI_SCREENSHOT_DIR) { await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `node-catalog-${width}.png`), fullPage: true }) }
       console.log(`node catalog ${width}: current-read/identity/filter/delete zero-write matrix, CAS recovery, preview expiry/privacy and adoption metadata confirmed`)
     } finally { gate?.release(); await page.close() }
   }

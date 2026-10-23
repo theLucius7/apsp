@@ -3,6 +3,7 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::now_timestamp;
 use axum::{
     Json,
     body::{Body, to_bytes},
@@ -13,7 +14,6 @@ use axum::{
 };
 use futures_util::StreamExt;
 use serde_json::{Value, json};
-use sinan_protocol::now_timestamp;
 
 pub fn redact(value: &Value) -> Value {
     fn walk(value: &Value, depth: usize) -> Value {

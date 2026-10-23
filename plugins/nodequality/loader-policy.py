@@ -27,11 +27,11 @@ CALLS = (
 def guarded_call(role, request, original):
     # The source helper bounds and verifies its complete output before writing.
     # A trailing sentinel preserves every newline across command substitution.
-    prefix = ('local sinan_source; sinan_source=$(curl -Ls ' + request
+    prefix = ('local apsp_source; apsp_source=$(curl -Ls ' + request
               + ' && printf .) || return $?; '
-              + '[[ $sinan_source != . ]] || { printf "%s\\n" "Error: empty diagnostic source: '
-              + role + '" >&2; return 70; }; sinan_source=${sinan_source%.}; ')
-    call = original.replace('curl -Ls ' + request, 'printf \'%s\' "$sinan_source"', 1)
+              + '[[ $apsp_source != . ]] || { printf "%s\\n" "Error: empty diagnostic source: '
+              + role + '" >&2; return 70; }; apsp_source=${apsp_source%.}; ')
+    call = original.replace('curl -Ls ' + request, 'printf \'%s\' "$apsp_source"', 1)
     return prefix + call
 
 
@@ -42,7 +42,7 @@ REPLACEMENTS = [
 ]
 REPLACEMENTS.append((
     b'    run_header > $result_directory/$header_info_filename\n',
-    b'    run_header > $result_directory/$header_info_filename || exit $? # Sinan: stop after source refusal.\n',
+    b'    run_header > $result_directory/$header_info_filename || exit $? # Apsp: stop after source refusal.\n',
 ))
 
 

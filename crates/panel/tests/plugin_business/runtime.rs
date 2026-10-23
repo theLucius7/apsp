@@ -1,9 +1,9 @@
 //! Private loopback Reality fixture for a subscription imported before migration.
 use anyhow::{Context, Result, ensure};
+use apsp_adapter_sdk::{Counter, Prepared, RuntimeSpec, UsageSource};
+use apsp_adapter_singbox::SingboxAdapter;
+use apsp_compiler::Node;
 use serde_json::Value;
-use sinan_adapter_sdk::{Counter, Prepared, RuntimeSpec, UsageSource};
-use sinan_adapter_singbox::SingboxAdapter;
-use sinan_compiler::Node;
 use std::{path::PathBuf, process::Stdio, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -66,7 +66,7 @@ impl Runtime {
             "requires pinned statistics-enabled sing-box 1.14.2"
         );
         let directory =
-            std::env::temp_dir().join(format!("sinan-imported-runtime-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("apsp-imported-runtime-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&directory)?;
         #[cfg(unix)]
         {
@@ -77,7 +77,7 @@ impl Runtime {
         let stats_port = port().await?;
         let client_port = port().await?;
         let mut config: Value =
-            serde_json::from_str(&sinan_compiler::compile_server(std::slice::from_ref(node))?)?;
+            serde_json::from_str(&apsp_compiler::compile_server(std::slice::from_ref(node))?)?;
         // Only transport endpoints change: credentials and authorization remain compiled.
         config["inbounds"][0]["listen"] = "127.0.0.1".into();
         config["inbounds"][0]["tls"]["reality"]["handshake"]["server"] = "127.0.0.1".into();

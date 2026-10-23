@@ -1,7 +1,7 @@
 use super::{ServiceBackend, SystemServiceManager};
 use anyhow::{Context, Result, ensure};
+use apsp_adapter_sdk::RuntimeInstance;
 use sha2::{Digest, Sha256};
-use sinan_adapter_sdk::RuntimeInstance;
 use std::{collections::BTreeMap, path::Path};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -121,7 +121,7 @@ pub(super) async fn inspect(manager: &SystemServiceManager, unit: &str) -> Resul
         "{:x}",
         Sha256::digest(
             format!(
-                "sinan-service-instance-v1\0{}\0{}",
+                "apsp-service-instance-v1\0{}\0{}",
                 service.invocation_id, first.instance_id
             )
             .as_bytes()
@@ -176,12 +176,12 @@ mod tests {
             ServiceBackend::Unmanaged,
         ] {
             let manager = SystemServiceManager::new(operations.clone(), backend);
-            assert!(!sinan_adapter_sdk::ServiceManager::supports_runtime_checkpoint(&manager));
+            assert!(!apsp_adapter_sdk::ServiceManager::supports_runtime_checkpoint(&manager));
             assert!(inspect(&manager, "example-runtime.service").await.is_err());
         }
         if !cfg!(target_os = "linux") {
             let manager = SystemServiceManager::new(operations, ServiceBackend::Systemd);
-            assert!(!sinan_adapter_sdk::ServiceManager::supports_runtime_checkpoint(&manager));
+            assert!(!apsp_adapter_sdk::ServiceManager::supports_runtime_checkpoint(&manager));
             assert!(inspect(&manager, "example-runtime.service").await.is_err());
         }
     }
