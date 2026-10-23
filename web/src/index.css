@@ -1,4 +1,6 @@
-@import "tailwindcss";
+/* Scan application sources, not previously generated bundles or test fixtures. */
+@import "tailwindcss" source(".");
+@source "../index.html";
 
 /*
  * Design parameters for every entry point: the administrator console, the public
