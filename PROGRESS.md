@@ -1,10 +1,26 @@
 # 执行进度
 
+## 2026-10-24：每小时维护整合告警入口修正（PR #170）
+
+- 将当前 main `17f89f48d80f312e4031b08ffe03dddec086426e` 合入既有 PR #170 的源分支 `91337728a35513419e49a5839735a814ae5f2a60`；唯一冲突是本文件顶部的两份独立进度记录，逐段保留告警入口与全局搜索两份记录，原因见 `docs/open-questions.md`。产品源码、搜索回归与前端产物均无需改写。
+- 集中验证：使用预配置 Playwright 1.63.0 与 Chrome for Testing 151.0.7922.34、本机回环夹具，`monitoring.mjs`（1440/390/320）、`server-operations.mjs`（1440/390）及 `notification-channels.mjs` 全部通过。对比 main 与 PR 的 70 个前端产物，归一化哈希引用后 69 个完全一致，仅告警页 chunk 有两处预期文案变化；两树各 379 个本地资源引用均完整。`git diff --check` 与暂存差异检查通过；整合后的搜索源码及回归与 main 一致，前端与 PR 原 head 一致。
+- 清理：三个本轮浏览器测试均已正常退出，未启用截图、安装依赖或生成编译缓存；复用环境预配置工具并保留当前源码和已提交前端产物。
+- 未验证：本轮不重跑未改动的 Rust、全量前端构建与单元测试；GitHub Actions 继续暂停，不触发或重跑；生产部署由独立部署器跟随 main 处理，本维护不重复启动部署。
+
 ## 2026-10-24：告警事件快捷入口改名为「告警设置」
 
 - 告警事件页的页头按钮已在上一轮指向 `/#/monitoring/settings`，但名称仍为“通知设置”，空状态也仍提示“可在通知设置中配置……”，与 ADR 0086 拆分后的页面名称不一致。按钮改为与侧栏入口及面板设置页按钮同名的「告警设置」，空状态改为“可在「告警设置」中配置离线、资源、到期和流量提醒。”。英文词典没有这两条旧文案，无需修改；新按钮名沿用已有的 `Alert settings`。`monitoring.mjs` 补充断言：空状态提示写明「告警设置」，页头按钮地址为 `#/monitoring/settings`，点击后进入告警设置页。
 - 集中验证（Bun 1.4.2，与 `packageManager` 和 CI 固定版本一致）：`bun install --frozen-lockfile`、`tsc -b` 与 Vite 生产构建通过并同步 `web/dist`；`bun test` 191 通过、0 失败、2463 个断言；`git diff --check` 通过。新旧 `web/dist` 均为 70 个文件，将内容哈希文件名归一化后只有告警事件页 chunk 的这两处文案不同；另外 48 个 chunk 与 `index.html` 只因引用的哈希文件名变化而改名或更新。浏览器回归（Playwright 1.63.0、Chromium 1243、本机回环夹具）`monitoring.mjs`（1440/390/320）、`server-operations.mjs`（1440/390）与 `notification-channels.mjs` 全部通过；更新后的 `monitoring.mjs` 在旧产物上于新的空状态断言处超时失败，确认断言能发现原问题。
 - 未验证：未修改 Rust，未运行 cargo；其余浏览器场景只受哈希文件名变化影响，未重跑；CI 继续暂停，未运行远端 CI；未做真实设备、生产面板或英文界面的人工验收。本轮临时安装的 `web/node_modules`，以及会话临时目录中的 Bun 1.4.2、安装缓存、旧产物副本、比较脚本与浏览器日志，在记录本摘要后删除。
+
+## 2026-10-24：全局搜索结果打开对应功能分区
+
+- ADR 0086 拆分服务器详情与告警设置后，全局搜索仍把三类结果指向旧位置：旧地址仍可打开，但不是管理该对象的页面。远程命令由服务器概况改为「Agent 与任务」`/servers/{id}/agent`；周期拨测由「TCP 诊断」改为同一分页，与 TCP 诊断页“在「Agent 与任务」的周期拨测中添加、停用或修改目标”的说明一致；资源告警规则由「告警事件」改为「告警设置」`/monitoring/settings`。
+- 对照 `ServerNavigation.tsx` 与 `navigation.ts` 核对其余类别：服务器、IP、IP 质量、IP 来源观测、DNS 记录、网络台账、综合测试、节点、代理用户、设备操作、运维任务、维护窗口、事件和延迟任务指向的页面或工作区没有迁移，无需修改。另发现诊断任务中的 IPQuality 节点出口自查（插件 `ipquality`）落入默认分支打开网络检测，而其报告只在「IP 信息」列出；这不是 ADR 0086 造成的迁移，但属同一表达式中的错误目标，一并改为 `/servers/{id}/ip-info`。
+- `crates/panel/tests/control_center_search.rs` 新增 `result_paths_open_the_page_section_that_manages_each_object`，用真实数据库记录固定远程命令、周期拨测、告警规则和四种诊断插件结果的 `path`；`docs/control-center-search.md` 补充路径规则。
+- 集中验证：输入为 `3c92501` 加本提交的 Rust 改动，使用本机 PostgreSQL 16.15（`DATABASE_URL` 角色可建库）及取自 `crates/protocol/tests/fixtures/public-keys.json` 的 `APSP_RELEASE_PUBLIC_KEYS`。`cargo fmt --check` 通过；`cargo clippy -p apsp-panel-host --all-targets -- -D warnings` 与 `cargo clippy -p apsp-panel --test control_center_search -- -D warnings` 通过；`cargo test -p apsp-panel --test control_center_search` 8 项全部通过。首轮 `cargo fmt --check` 要求拆开新测试中的一行元组，改为先绑定路径后通过；随后 main 合入 PR #169（含嵌入面板的 `web/dist`），分支快进后在最终输入上重跑以上全部检查。
+- 已知问题：「告警设置」先读取需要所有者会话的 `/api/settings`，读取失败时不显示资源告警规则；具备 `monitoring:read` 与全服务器授权的非所有者管理员能搜到告警规则，打开后只看到权限错误。原目标「告警事件」同样不列出规则；本次未改页面与权限。
+- 未验证：其余 Rust 测试、前端测试与浏览器回归未运行（前端未改动）；GitHub Actions 继续暂停，未触发 CI。记录本摘要后停止本轮启动的 PostgreSQL 集群，删除测试数据库与角色、`target/` 及 Cargo 下载缓存。
 
 ## 2026-10-24：功能分区快捷入口与部署构建修正
 

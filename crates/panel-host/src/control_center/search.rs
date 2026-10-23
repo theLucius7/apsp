@@ -284,7 +284,7 @@ visible_servers AS (
         output.append(&state, &scope, &pattern, "diagnostic-task", "", r#"
  SELECT jsonb_build_object('kind','diagnostic-task','id',j.id,
    'label',COALESCE(j.job->>'plugin','诊断')||' · '||j.status||' · '||j.id,
-   'path','/servers/'||j.server_id||CASE j.job->>'plugin' WHEN 'nodequality' THEN '/node-quality' WHEN 'tcpquality' THEN '/tcp-quality' ELSE '/network-workbench' END,
+   'path','/servers/'||j.server_id||CASE j.job->>'plugin' WHEN 'nodequality' THEN '/node-quality' WHEN 'tcpquality' THEN '/tcp-quality' WHEN 'ipquality' THEN '/ip-info' ELSE '/network-workbench' END,
    'server_id',j.server_id,'status',j.status,'updated_at',j.updated_at,'sampled_at',NULL)
  FROM diagnostic_jobs j CROSS JOIN visibility v
  WHERE (v.unrestricted OR j.server_id=ANY(v.server_ids))
@@ -361,7 +361,7 @@ visible_servers AS (
     if actor.allows("terminal:read") {
         output.append(&state, &scope, &pattern, "command-task", "", r#"
  SELECT jsonb_build_object('kind','command-task','id',c.id,
-   'label','远程命令 · '||c.state||' · '||c.id,'path','/servers/'||c.server_id,
+   'label','远程命令 · '||c.state||' · '||c.id,'path','/servers/'||c.server_id||'/agent',
    'server_id',c.server_id,'status',c.state,'updated_at',COALESCE(c.finished_at,c.started_at,c.requested_at),'sampled_at',NULL)
  FROM remote_commands c CROSS JOIN visibility v
  WHERE (v.unrestricted OR c.server_id=ANY(v.server_ids)) AND (c.id::text ILIKE $1 OR c.state ILIKE $1)
@@ -446,7 +446,7 @@ visible_servers AS (
         output.append(&state, &scope, &pattern, "probe-rule", "", r#"
  SELECT jsonb_build_object('kind','probe-rule','id',p.id,
    'label',COALESCE(p.spec->>'name',p.spec->>'target','网络探测')||' · '||p.id,
-   'path','/servers/'||p.server_id||'/tcp-quality','server_id',p.server_id,
+   'path','/servers/'||p.server_id||'/agent','server_id',p.server_id,
    'sampled_at',(SELECT MAX(r.sampled_at) FROM probe_results r WHERE r.probe_id=p.id AND r.server_id=p.server_id),
    'sampled_at_unit','milliseconds')
  FROM network_probes p CROSS JOIN visibility v
@@ -464,7 +464,7 @@ visible_servers AS (
                     r#"
  SELECT jsonb_build_object('kind','alert-rule','id',a.id,
    'label',COALESCE(a.spec->>'name','告警规则')||' · '||a.id,
-   'path','/system/notifications','sampled_at',NULL)
+   'path','/monitoring/settings','sampled_at',NULL)
  FROM alert_rules a CROSS JOIN visibility v WHERE v.unrestricted
    AND (a.spec->>'name' ILIKE $1 OR a.id::text ILIKE $1) ORDER BY a.id"#,
                 )
