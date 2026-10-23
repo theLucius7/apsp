@@ -192,6 +192,12 @@ try {
     assert.equal(await page.locator('tbody tr').count(), 1)
     await page.getByLabel('事件状态').selectOption('active')
     await page.getByRole('heading', { name: '暂无符合条件的告警' }).waitFor()
+    await page.getByText('可在「告警设置」中配置离线、资源、到期和流量提醒。', { exact: true }).waitFor()
+    // The header shortcut shares its name with the sidebar entry, so scope it to the page actions.
+    const alertSettings = page.locator('[data-slot=page-actions]').getByRole('link', { name: '告警设置', exact: true })
+    assert.equal(await alertSettings.getAttribute('href'), '#/monitoring/settings')
+    await alertSettings.click()
+    await page.getByRole('heading', { name: '告警设置', exact: true }).waitFor()
     assert.deepEqual(errors, []); assert.deepEqual(unexpected, [])
     results.push({ width, assignment: 'passed', notificationConfig: 'passed', rules: 'passed', history: 'passed' })
     await context.close()
