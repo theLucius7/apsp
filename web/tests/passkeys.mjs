@@ -77,7 +77,7 @@ try {
   const adminKey = management.keys[0]
   assert.deepEqual(Object.keys(adminKey).sort(), ['created_at', 'id', 'last_used_at', 'name'])
   results.push('administrator registration through shipped UI with required user verification')
-  await page.locator('.logout-button').click()
+  await page.locator('[data-slot=logout-button]').click()
   await page.getByRole('heading', { name: '欢迎回来', exact: true }).waitFor()
   await page.getByRole('button', { name: '使用初始所有者 Passkey 登录', exact: true }).click()
   await page.getByRole('heading', { name: '系统管理员', exact: true }).waitFor()
@@ -143,7 +143,7 @@ try {
   await dialog.getByLabel('管理员密码', { exact: true }).fill(password)
   await dialog.getByRole('button', { name: '验证并生成', exact: true }).click()
   await dialog.getByRole('heading', { name: '用户开通链接', exact: true }).waitFor()
-  const inviteUrl = await dialog.locator('.copy-field code').innerText()
+  const inviteUrl = await dialog.locator('[data-slot=copy-field] code').innerText()
   const invite = { url: inviteUrl }, userPath = portalPath(invite)
   const saved = await sql`SELECT activation_hash FROM singbox_portal_accounts WHERE user_id=${user.id}`
   assert.notEqual(saved[0].activation_hash, activation(invite))

@@ -76,7 +76,7 @@ try {
     await page.getByRole('heading', { name: '节点出口自查', exact: true }).waitFor()
     const results = page.locator('[aria-label="节点观察出口"]')
     assert.match(await results.innerText(), /最近查询出口/)
-    const chapter = results.locator('details.quality-database')
+    const chapter = results.locator('details[data-slot=quality-database]')
     await chapter.locator('summary').click()
     assert.match(await chapter.innerText(), /历史结果/)
     assert.match(await chapter.innerText(), /HTTP 403/)
@@ -90,7 +90,7 @@ try {
     await page.getByRole('button', { name: '请求取消节点自查', exact: true }).click()
     await page.getByText('等待设备确认取消', { exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: '请求取消节点自查', exact: true }).count(), 0)
-    assert.match(await page.locator('.node-ip-quality').innerText(), /部分结果/)
+    assert.match(await page.locator('[data-slot=node-ip-quality]').innerText(), /部分结果/)
     view.node_quality.ready = false
     view.node_quality.reason = '匹配的签名制品尚未准备'
     view.node_quality.reports = []

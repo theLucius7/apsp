@@ -50,7 +50,7 @@ try {
     })
     await installControlCenterFixtures(page)
     await page.goto(`http://127.0.0.1:${server.address().port}/#/servers/1`)
-    const panel=page.locator('section.panel').filter({has:page.getByRole('heading',{name:'远程命令',exact:true})})
+    const panel=page.locator('section[data-slot=panel]').filter({has:page.getByRole('heading',{name:'远程命令',exact:true})})
     const record=id=>panel.locator('details').filter({has:page.locator('pre',{hasText:`echo fixture-${id}`})})
     for(const id of [1,2,3,4,5])await record(id).locator('summary').click()
     await record(1).getByRole('button',{name:'取消排队',exact:true}).click()

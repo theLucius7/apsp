@@ -77,15 +77,16 @@ try {
       await route.fulfill({ json: value })
     })
 
-    const createButton = page.getByRole('button', { name: '创建两跳链路', exact: true })
+    const createButton = page.getByRole('button', { name: '创建两跳链路', exact: true, includeHidden: true })
     // The server filter lives in the catalog section; chain creation lives in the chain section.
     const showView = name => page.getByRole('navigation', { name: '节点视图', exact: true }).getByRole('link', { name, exact: true }).click()
     const scope = async server => { await showView('节点库'); await page.getByRole('combobox', { name: '按服务器筛选', exact: true }).selectOption(server); await showView('链路') }
-    const refreshButton = page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true })
-    const oldRow = page.getByRole('row').filter({ has: page.getByText(previous.name, { exact: true }) })
+    const refreshButton = page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true })
+    // Rows stay addressable behind an open modal, which hides them from the accessibility tree.
+    const oldRow = page.getByRole('row', { includeHidden: true }).filter({ has: page.getByText(previous.name, { exact: true }) })
     const refreshLists = async () => {
       // An open modal covers the page Refresh button; exercise the real polling loader.
-      if (await page.getByRole('dialog').count()) await page.clock.fastForward(5000)
+      if (await page.locator('[role=dialog], [role=alertdialog]').count()) await page.clock.fastForward(5000)
       else await refreshButton.click()
     }
     const enabled = async locator => {
@@ -260,7 +261,7 @@ try {
     assert.deepEqual(writes[0], { pathname: `${prefix}/chains/ordered-batch`, method: 'POST', payload: { request_id:writes[0].payload.request_id,items:[{name:'完整保留的创建草稿',entry:{mode:'existing',node_id:1},hops:[{kind:'managed',node_id:2}]}] } })
     await enabled(oldRow.getByRole('button', { name: '删除', exact: true }))
     await oldRow.getByRole('button', { name: '删除', exact: true }).click()
-    const deleting = page.getByRole('dialog')
+    const deleting = page.getByRole('alertdialog')
     for (const pathname of [`${prefix}/ordered-proxy-resources`]) {
       await failedRead(pathname); await blockedDelete(deleting)
       await recover(pathname, deleting, () => blockedDelete(deleting))
@@ -278,7 +279,7 @@ try {
     await enabled(deleting.getByRole('button', { name: '确认删除', exact: true }))
     await oldRow.getByText('资源已不可用', { exact: true }).waitFor()
     await deleting.getByRole('button', { name: '确认删除', exact: true }).click()
-    await page.getByRole('dialog').waitFor({ state: 'hidden' })
+    await deleting.waitFor({ state: 'hidden' })
     await oldRow.waitFor({ state: 'hidden' })
     assert.deepEqual(writes.at(-1), { pathname: `${prefix}/ordered-proxy-resources/chain/100`, method: 'DELETE', payload: null })
     assert.equal(writes.length, 2)

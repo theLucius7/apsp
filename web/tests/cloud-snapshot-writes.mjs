@@ -51,7 +51,7 @@ try {
       })()
       pending.push(task); return task
     })
-    const refresh = page.getByRole('button', { name: '刷新', exact: true })
+    const refresh = page.getByRole('button', { name: '刷新', exact: true, includeHidden: true })
     const reread = async () => {
       const response = page.waitForResponse(response => new URL(response.url()).pathname === path)
       await refresh.evaluate(element => element.click()); await response
@@ -62,7 +62,7 @@ try {
       const names = { account: '编辑账号与策略', resource: '编辑策略', bandwidth: '调整带宽与计费', policy: '配置自动启停', power: '停机' }
       const opener = page.getByRole('button', { name: names[kind], exact: true })
       await wait(() => opener.isEnabled(), 'Initial owned cloud snapshot is current'); await opener.click()
-      const dialog = page.getByRole('dialog'), form = dialog.locator('form'), submit = form.locator('footer button.button-primary')
+      const dialog = page.getByRole('dialog'), form = dialog.locator('form'), submit = form.locator('footer button[data-variant=default]')
       if (kind === 'account') await dialog.getByLabel('账号名称', { exact: true }).fill('TEST_ONLY 保留账号草稿')
       if (kind === 'resource') await dialog.getByLabel('资源名称', { exact: true }).fill('TEST_ONLY 保留资源草稿')
       if (kind === 'bandwidth') await dialog.getByRole('spinbutton', { name: /^公网出带宽/ }).fill('7')
@@ -94,8 +94,8 @@ try {
       await page.evaluate(() => window.TEST_ONLY_submit()); assert.equal(writes.length, 0); ++totals.blocked
       await dialog.getByRole('button', { name: '取消', exact: true }).click()
       if (['bandwidth', 'power'].includes(kind)) {
-        await opener.click(); await page.getByRole('dialog').locator('footer button.button-primary').click()
-        const confirmation = page.getByRole('dialog'), confirm = confirmation.locator('footer button.button-primary')
+        await opener.click(); await page.getByRole('dialog').locator('footer button[data-variant=default]').click()
+        const confirmation = page.getByRole('dialog'), confirm = confirmation.locator('footer button[data-variant=default]')
         await confirmation.getByRole('checkbox').check(); await wait(() => confirm.isEnabled(), 'Current matching preview becomes confirmable')
         assert.equal(writes.length, 1, 'Only the read-only preview was requested')
         if (kind === 'bandwidth') overview.operations[0].target = { ...overview.operations[0].target, bandwidth_mbps: 9 }

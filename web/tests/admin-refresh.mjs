@@ -96,16 +96,16 @@ try {
     try {
       await installControlCenterFixtures(page)
       await page.goto(`${origin}/#/plugins/sing-box/${pageName}`)
-      const edit = pageName === 'groups' ? page.getByRole('row').filter({ hasText: row.name }).getByRole('button', { name: '编辑', exact: true }) : page.locator('.user-heading').getByRole('button', { name: '编辑', exact: true })
+      const edit = pageName === 'groups' ? page.getByRole('row').filter({ hasText: row.name }).getByRole('button', { name: '编辑', exact: true }) : page.locator('[data-slot=user-heading]').getByRole('button', { name: '编辑', exact: true })
       await wait(() => edit.isEnabled(), 'Initial snapshots must finish')
       await edit.click()
       const dialog = page.getByRole('dialog'), input = dialog.locator('input[name="name"]'), save = dialog.getByRole('button', { name: pageName === 'groups' ? '保存' : '保存修改', exact: true })
       await input.fill('TEST_ONLY 未保存草稿')
       await input.evaluate(input => {
-        window.testInput = input; window.testShell = document.querySelector('.app-shell'); window.testNotices = []
+        window.testInput = input; window.testShell = document.querySelector('[data-slot=app-shell]'); window.testNotices = []
         window.testObserver = new MutationObserver(records => {
           for (const record of records) for (const added of record.addedNodes) if (added instanceof Element) {
-            for (const notice of [added, ...added.querySelectorAll('.notice-error, .loading')]) if (notice.matches('.notice-error, .loading')) window.testNotices.push(notice.textContent)
+            for (const notice of [added, ...added.querySelectorAll('[data-slot=alert][role=alert], [data-slot=loading]')]) if (notice.matches('[data-slot=alert][role=alert], [data-slot=loading]')) window.testNotices.push(notice.textContent)
           }
         })
         // Dialogs render at the document root, so observe the whole body for inserted notices.
@@ -119,12 +119,12 @@ try {
       assert.equal(writes.length, 0, 'A short background request blocks writes before any delayed presentation')
       await page.clock.runFor(100)
       assert.equal(await dialog.getByRole('alert').count(), 0, 'A brief concurrent read must not flash an alert')
-      assert.equal(await page.locator('.content .loading').count(), 0, `A background read must keep existing content: ${pageName}/${width}; ${await page.locator('.content .loading').evaluateAll(items => items.map(item => item.parentElement?.outerHTML).join('\n'))}`)
+      assert.equal(await page.locator('main [data-slot=loading]').count(), 0, `A background read must keep existing content: ${pageName}/${width}; ${await page.locator('main [data-slot=loading]').evaluateAll(items => items.map(item => item.parentElement?.outerHTML).join('\n'))}`)
       finish(readPath)
       await wait(() => save.isEnabled(), 'Completed equal snapshots must restore write readiness')
       await page.clock.runFor(300)
       assert.deepEqual(await page.evaluate(() => window.testNotices), [], 'Short polling must not insert transient notices or loading panels')
-      assert(await input.evaluate(input => input === window.testInput && document.querySelector('.app-shell') === window.testShell), 'Polling must not remount the draft or shell')
+      assert(await input.evaluate(input => input === window.testInput && document.querySelector('[data-slot=app-shell]') === window.testShell), 'Polling must not remount the draft or shell')
       assert.equal(await input.inputValue(), 'TEST_ONLY 未保存草稿')
 
       let extraDependencies = 0
@@ -148,7 +148,7 @@ try {
       await page.clock.runFor(600); await settle()
       assert.equal(await dialog.getByRole('alert').count(), 1, 'A slow dependency must eventually show its warning despite fast sibling responses')
       assert(await save.isDisabled())
-      assert.equal(await page.locator('.content .loading').count(), 0, 'Slow background reads retain existing data instead of skeletons')
+      assert.equal(await page.locator('main [data-slot=loading]').count(), 0, 'Slow background reads retain existing data instead of skeletons')
       await forceSubmit(dialog); assert.equal(writes.length, 0)
       finish(readPath, true)
       await page.getByText('TEST_ONLY 后台刷新失败', { exact: true }).waitFor()
@@ -159,18 +159,19 @@ try {
       const portalPath = `${prefix}/users/1/portal`
       const portal = pageName === 'users' ? hold(portalPath) : undefined
       await dialog.locator('form').evaluate(form => {
-        document.querySelector('.page-header button').click()
+        document.querySelector('[data-slot=page-header] button').click()
         form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
       })
       await wait(() => manual.reached > 0, 'Manual reload must start immediately')
       assert.equal(writes.length, 0, 'Same-event manual reload must invalidate old form callbacks')
       if (portal) {
         await wait(() => portal.reached > 0, 'Manual reload must include the selected user access panel')
-        const panel = page.locator('.panel').filter({ has: page.getByRole('heading', { name: '用户 Passkey 入口' }) })
-        assert.equal(await panel.locator('.loading').count(), 0, 'A known portal snapshot remains visible during its explicit refresh')
+        // The open modal dialog hides the page behind it from the accessibility tree.
+        const panel = page.locator('[data-slot=panel]').filter({ has: page.getByRole('heading', { name: '用户 Passkey 入口', includeHidden: true }) })
+        assert.equal(await panel.locator('[data-slot=loading]').count(), 0, 'A known portal snapshot remains visible during its explicit refresh')
         assert.equal(await panel.getByText('尚未开通用户入口。', { exact: true }).count(), 1, 'The original access state is retained while its current read is held')
         assert.equal(await panel.getByText('TEST_ONLY 尚未启用', { exact: true }).count(), 1, 'The disabled configuration reason remains readable')
-        assert(await panel.getByRole('button', { name: '生成开通链接', exact: true }).isDisabled(), 'Retained access data must not enable a current write')
+        assert(await panel.getByRole('button', { name: '生成开通链接', exact: true, includeHidden: true }).isDisabled(), 'Retained access data must not enable a current write')
         assert.equal(await input.inputValue(), 'TEST_ONLY 未保存草稿')
         finish(portalPath)
       }

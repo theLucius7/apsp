@@ -68,7 +68,7 @@ try {
     })
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1`)
-    const panel = page.locator('section.panel').filter({ has: page.getByRole('heading', { name: '持续网络拨测', exact: true }) })
+    const panel = page.locator('section[data-slot=panel]').filter({ has: page.getByRole('heading', { name: '持续网络拨测', exact: true }) })
     await panel.getByText('未取得执行授权', { exact: false }).waitFor()
     const oldRow = panel.getByRole('row').filter({ hasText: '旧回环目标' })
     assert.equal(await oldRow.getByRole('cell').nth(2).innerText(), '—', 'Legacy successful zero measurement is historical, not current authorization')

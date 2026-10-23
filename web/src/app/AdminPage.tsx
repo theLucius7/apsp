@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ComponentType, ReactNode } from 'react'
 import { ErrorNotice, Loading } from '../components'
 import type { AppRoute } from './routes'
-import './page-styles'
+import { buttonVariants } from '@/components/ui/button'
 
 /**
  * Loads a page on its first visit. Unlike React.lazy with Suspense, completion
@@ -98,10 +98,10 @@ function page(route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' }>):
     case 'settings': return <Settings />
     case 'notifications': return <Notifications />
     case 'security': return <Security />
-    case 'not-found': return <div className="not-found">
-      <h1>这个页面不存在</h1>
-      <p>从左侧导航选择一个页面，或回到服务器列表。</p>
-      <a className="button button-primary" href="#/servers">返回服务器</a>
+    case 'not-found': return <div className="grid justify-items-center gap-4 px-5 py-16 text-center">
+      <h1 className="text-xl font-semibold tracking-tight">这个页面不存在</h1>
+      <p className="text-muted-foreground text-sm">从左侧导航选择一个页面，或回到服务器列表。</p>
+      <a className={buttonVariants()} href="#/servers">返回服务器</a>
     </div>
   }
 }

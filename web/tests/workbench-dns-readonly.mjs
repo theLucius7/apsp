@@ -81,7 +81,7 @@ try {
       await route.fulfill({ json: value })
     })
     await page.goto(`${origin}/#/network-workbench`)
-    const workbench = page.locator('section.network-workbench')
+    const workbench = page.locator('section[data-slot=network-workbench]')
     await workbench.getByRole('heading', { name: '网络检测与验机', exact: true }).waitFor()
     await workbench.getByText('当前权限不包含服务器列表读取；可使用面板来源或当前服务器详情上下文。', { exact: true }).waitFor()
     assert.equal(await workbench.getByRole('button', { name: '预览后提交执行', exact: true }).isDisabled(), true)
@@ -109,7 +109,7 @@ try {
     await page.getByRole('button', { name: '记录、传播观测与历史', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'DNS 记录 · TEST_ONLY 私有DNS账号', exact: true })
     await dialog.getByRole('heading', { name: '记录变更历史', exact: true }).waitFor()
-    const history = dialog.locator('article.ddns-rule').filter({ has: page.getByRole('button', { name: '只读核对远端结果', exact: true }) })
+    const history = dialog.locator('article[data-slot=ddns-rule]').filter({ has: page.getByRole('button', { name: '只读核对远端结果', exact: true }) })
     await history.getByText('结果未知', { exact: true }).waitFor()
     for (const expected of [1, 2]) {
       const response = page.waitForResponse(response => response.request().method() === 'POST'

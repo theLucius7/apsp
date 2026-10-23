@@ -9,7 +9,7 @@ const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFil
 
 // Narrow screens fold the main navigation behind the menu button.
 async function openNav(page, name) {
-  await page.locator('.sidebar').waitFor()
+  await page.locator('[data-slot=sidebar]').waitFor()
   const menu = page.getByRole('button', { name: '菜单', exact: true })
   if (await menu.isVisible() && await menu.getAttribute('aria-expanded') !== 'true') await menu.click()
   await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name, exact: true }).click()
@@ -81,7 +81,7 @@ try {
     })
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/dashboard`)
-    await page.locator('.d-card').first().waitFor()
+    await page.locator('[data-slot=server-card]').first().waitFor()
     assert.equal(await page.getByRole('heading', { name: '欢迎回来' }).count(), 0)
     await page.getByRole('link', { name: /演示服务器/ }).first().click()
     await page.getByRole('heading', { name: /演示服务器/ }).waitFor()
@@ -90,17 +90,17 @@ try {
     publicDashboard = false
     await page.getByRole('button', { name: '刷新服务器详情' }).click()
     await page.getByRole('heading', { name: '欢迎回来' }).waitFor()
-    assert.equal(await page.locator('.d-detail').count(), 0)
+    assert.equal(await page.locator('[data-slot=server-detail]').count(), 0)
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/system/settings`)
     await page.getByRole('heading', { name: '欢迎回来' }).waitFor()
-    assert.equal(await page.locator('.sidebar').count(), 0)
+    assert.equal(await page.locator('[data-slot=sidebar]').count(), 0)
     rejectLogin = true
     await page.getByLabel('管理员密码', { exact: true }).fill('TEST_ONLY')
     await page.getByLabel(/^二步验证码/).fill('123456')
     await page.getByRole('button', { name: '登录面板' }).click()
     await page.getByText('密码或验证码不正确、已过期或已使用，请重新输入。', { exact: true }).waitFor()
-    assert.equal(await page.locator('.sidebar').count(), 0)
+    assert.equal(await page.locator('[data-slot=sidebar]').count(), 0)
     rejectLogin = false
     await page.getByRole('button', { name: '登录面板' }).click()
     await page.getByRole('heading', { name: '看板与通知', exact: true }).waitFor()
@@ -142,7 +142,7 @@ try {
     await page.getByText('模拟网络失败', { exact: true }).waitFor()
     await page.getByRole('button', { name: /退出登录/ }).click()
     await page.getByRole('heading', { name: '欢迎回来' }).waitFor()
-    assert.equal(await page.locator('.sidebar').count(), 0)
+    assert.equal(await page.locator('[data-slot=sidebar]').count(), 0)
     assert.equal(sessions.filter(session => session.path === '/api/logout').length, 1)
     await page.getByLabel('管理员密码', { exact: true }).fill('TEST_ONLY')
     await page.getByRole('button', { name: '登录面板' }).click()

@@ -30,7 +30,7 @@ try {
   for (const [width, height] of [[1280, 900], [1280, 600], [390, 900]]) {
     const page = await browser.newPage({ viewport: { width, height } })
     const errors = [], requests = [], mutations = [], now = Math.floor(Date.now() / 1000)
-    const refreshPage = () => page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true }).click()
+    const refreshPage = () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).click()
     const showResourceDetail = async id => {
       await page.locator(`[data-resource-key="chain:${id}"]`).getByRole('button', { name: '路径与引用', exact: true }).click()
       const dialog = page.getByRole('dialog')
@@ -40,7 +40,7 @@ try {
     const closeResourceDetail = () => page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
     // Narrow screens fold the main navigation behind the menu button.
     const navigate = async name => {
-      await page.locator('.sidebar').waitFor()
+      await page.locator('[data-slot=sidebar]').waitFor()
       const toggle = page.getByRole('button', { name: '菜单', exact: true })
       if (await toggle.isVisible() && await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click()
       await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name, exact: true }).click()
@@ -229,12 +229,12 @@ try {
     await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click()
     // Main's node settings survive the unified listener/chain category merge.
     const nodeMutationStart = mutations.length
-    const editedCatalogNode = page.locator(`${width < 768 ? '.catalog-card' : '.catalog-table tbody tr'}[data-resource-key="direct:2"]`)
+    const editedCatalogNode = page.locator(`${width < 768 ? '[data-slot=catalog-card]' : '[data-slot=catalog-table] tbody tr'}[data-resource-key="direct:2"]`)
     await editedCatalogNode.getByRole('button', { name: '编辑', exact: true }).click()
     const nodeEditor = page.getByRole('dialog')
     await nodeEditor.locator('input[name="listen"]').fill('0.0.0.0')
     await nodeEditor.locator('input[name="public_port"]').fill('8443')
-    await nodeEditor.locator('input[name="enabled"]').uncheck()
+    await nodeEditor.locator('[role=checkbox]:has(+ input[name="enabled"])').uncheck()
     await nodeEditor.getByText('协议高级设置', { exact: true }).click()
     await nodeEditor.locator('input[name="handshake_server"]').fill('handshake.example.com')
     await nodeEditor.locator('select[name="fingerprint"]').selectOption('firefox')
@@ -249,7 +249,7 @@ try {
     assert.equal(await persistedNodeEditor.locator('input[name="listen"]').inputValue(), '0.0.0.0')
     assert.equal(await persistedNodeEditor.locator('input[name="port"]').inputValue(), '443')
     assert.equal(await persistedNodeEditor.locator('input[name="public_port"]').inputValue(), '8443')
-    assert.equal(await persistedNodeEditor.locator('input[name="enabled"]').isChecked(), false)
+    assert.equal(await persistedNodeEditor.locator('[role=checkbox]:has(+ input[name="enabled"])').isChecked(), false)
     await persistedNodeEditor.getByRole('button', { name: '取消', exact: true }).click()
     assert.deepEqual(mutations.slice(nodeMutationStart), [{ path: '/api/plugins/sing-box/nodes/2', method: 'PATCH' }])
     await page.getByRole('button', { name: '查看差异、完整预检与发布状态', exact: true }).click()
@@ -258,12 +258,12 @@ try {
     assert.equal(await deploymentDialog.getByText('目标配置已应用', { exact: true }).count(), 0)
     await deploymentDialog.getByText('链路出口可能凭内部连接凭据监听。', { exact: false }).waitFor()
     metadata.installation = { state: 'ready', reason: '设备已确认目标配置，健康检查通过。', target_rev: 2, applied_rev: 2 }
-    await deploymentDialog.locator('.node-deployment > .node-deployment-heading').getByRole('button', { name: '刷新', exact: true }).click()
+    await deploymentDialog.locator('[data-slot=node-deployment-heading]').getByRole('button', { name: '刷新', exact: true }).click()
     await deploymentDialog.getByText('目标配置已应用', { exact: true }).waitFor()
     // A failed GET retains a historical snapshot in the resource hook, but the
     // deployment dialog must withhold the current application confirmation.
     deploymentFailure = true
-    await deploymentDialog.locator('.node-deployment > .node-deployment-heading').getByRole('button', { name: '刷新', exact: true }).click()
+    await deploymentDialog.locator('[data-slot=node-deployment-heading]').getByRole('button', { name: '刷新', exact: true }).click()
     await deploymentDialog.getByText('部署夹具读取失败', { exact: true }).waitFor()
     await deploymentDialog.getByText('应用状态待确认', { exact: true }).waitFor()
     assert.equal(await deploymentDialog.getByText('目标配置已应用', { exact: true }).count(), 0)
@@ -290,6 +290,8 @@ try {
     await chainDialog.locator('select[name="entry_node_id"]').selectOption('2')
     await chainDialog.locator('select[name="exit_node_id"]').selectOption('3')
     await chainDialog.getByRole('button', { name: '创建未授权链路', exact: true }).click()
+    // The dialog's batch preview also shows the name, so wait for it to close first.
+    await chainDialog.waitFor({ state: 'hidden' })
     await page.getByText('未授权验收链路', { exact: true }).waitFor()
     assert.deepEqual(mutations.slice(chainMutationStart), [{ path: '/api/plugins/sing-box/chains/ordered-batch', method: 'POST' }])
     // The server query includes any managed segment and never shows unrelated chains.
@@ -330,7 +332,7 @@ try {
     await page.waitForFunction(() => document.querySelector('select[aria-label="按服务器筛选"]')?.value === '2')
     await page.getByText('未授权验收链路', { exact: true }).waitFor()
     assert.equal(new URL(page.url()).hash, '#/plugins/sing-box/nodes?server=2&view=chains')
-    assert.equal(await page.locator('.proxy-resource-table').getByRole('row').count(), 2)
+    assert.equal(await page.locator('[data-slot=proxy-resource-table]').getByRole('row').count(), 2)
     assert.equal(await reverseRow.count(), 0, 'The unrelated reverse chain is absent in the server=2 scope')
     await createdRow.locator('small').filter({ hasText: /^本服务器作为出口$/ }).waitFor()
     assert.equal(await page.getByText('无关服务器链路', { exact: true }).count(), 0)
@@ -365,7 +367,7 @@ try {
     await page.getByRole('link', { name: '查看全部链路', exact: true }).click()
     await page.getByText('筛选范围：全部服务器的链路。', { exact: true }).waitFor()
     await page.getByText('未授权验收链路', { exact: true }).waitFor()
-    assert.equal(await page.locator('.proxy-resource-table').getByRole('row').count(), 4)
+    assert.equal(await page.locator('[data-slot=proxy-resource-table]').getByRole('row').count(), 4)
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes?kind=chains&server=999`)
     await page.getByText('此服务器暂无已确认关联的链路', { exact: true }).waitFor()
@@ -401,7 +403,7 @@ try {
     const recoveredResources = page.waitForResponse(response => new URL(response.url()).pathname === '/api/plugins/sing-box/proxy-resources' && response.request().method() === 'GET' && response.status() === 200)
     await refreshPage()
     await recoveredResources
-    const catalogSelector = width < 768 ? '.catalog-card' : '.catalog-table tbody tr'
+    const catalogSelector = width < 768 ? '[data-slot=catalog-card]' : '[data-slot=catalog-table] tbody tr'
     const currentCatalog = page.locator(catalogSelector)
     // All node page reads publish together, so wait for the refreshed snapshot as a whole.
     await page.waitForFunction(selector => document.querySelectorAll(selector).length === 1, catalogSelector)
@@ -417,7 +419,7 @@ try {
     chainsFailure = true
     await page.reload()
     // Flat and ordered projections report their own failed reads in separate panels.
-    await page.locator('.nodes-page > [role="alert"]').getByText('链路夹具读取失败', { exact: true }).waitFor()
+    await page.locator('[data-slot=nodes-page] > div > [role="alert"]').getByText('链路夹具读取失败', { exact: true }).waitFor()
     await page.locator('section[aria-label="有序链路与资源引用"]').getByText('链路夹具读取失败', { exact: true }).waitFor()
     assert.equal(await page.getByRole('button',{name:'创建节点',exact:true}).first().isDisabled(),true)
     assert.equal(await page.getByRole('button',{name:'创建两跳链路',exact:true}).isDisabled(),true)

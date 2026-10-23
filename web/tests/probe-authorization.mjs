@@ -133,7 +133,7 @@ try {
     assert.equal(await dialog.getByLabel('任务名称').inputValue(), '版本变化后仍保留')
     await page.keyboard.press('Escape')
     await page.getByRole('row').filter({ hasText: '保留的目标草稿' }).getByRole('button', { name: '删除', exact: true }).click()
-    dialog = page.getByRole('dialog')
+    dialog = page.getByRole('alertdialog')
     tasks[1] = { ...tasks[1], revision: 3 }
     const revisionReadback = page.waitForResponse(async response => new URL(response.url()).pathname === '/api/latency-tasks'
       && response.request().method() === 'GET' && response.status() === 200

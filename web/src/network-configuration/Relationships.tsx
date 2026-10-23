@@ -1,5 +1,7 @@
 import type { Document } from './types'
 import { labels } from './types'
+import { Button } from '@/components/ui/button'
+import { Panel } from '@/components/panel'
 
 type Relation = { from: string; to: string; label: string; document?: Document }
 export default function Relationships({ document, documents, select }: { document: Document; documents: Document[]; select: (item: Document) => void }) {
@@ -13,5 +15,5 @@ export default function Relationships({ document, documents, select }: { documen
   if (document.kind === 'forwarding') relations.push({ from: `${config.listen_address}:${config.listen_port}`, to: `${config.target_address}:${config.target_port}`, label: String(config.protocol).toUpperCase() + ' 转发配置' })
   if (document.kind === 'tunnel') relations.push({ from: `中转 ${config.relay_address}:${config.relay_port} · ${config.listen_address}:${config.listen_port}`, to: `${config.target_address}:${config.target_port}`, label: '授权 SSH 反向隧道' })
   if (document.kind === 'mesh') for (const peer of config.peers as { public_key: string; allowed_ips: string[] }[] ?? []) relations.push({ from: String(config.address), to: `${peer.public_key} · ${peer.allowed_ips.join('、')}`, label: '允许访问的组网成员' })
-  return <section className="panel network-details"><h3>配置关系图</h3><p className="helper">箭头表示已保存的配置关系；实际连接与握手证据在独立观测中显示。当前没有可达性证据时保持“未验证”。</p>{relations.length === 0 ? <p>尚无明确关联。</p> : relations.map((relation, index) => <div className="network-relation" key={index}><span>{relation.from}</span><span aria-label="配置关联">→</span><span>{relation.document ? <button className="text-button" onClick={() => select(relation.document!)}>{relation.to}</button> : relation.to}</span><small>{relation.label} · 连通性未验证</small></div>)}</section>
+  return <Panel className="grid gap-3 p-5"><h3 className="text-sm font-semibold">配置关系图</h3><p className="text-muted-foreground mt-3 text-xs leading-relaxed">箭头表示已保存的配置关系；实际连接与握手证据在独立观测中显示。当前没有可达性证据时保持“未验证”。</p>{relations.length === 0 ? <p>尚无明确关联。</p> : relations.map((relation, index) => <div className="flex flex-wrap items-center gap-3.5 rounded-xl border p-3 wrap-anywhere" key={index}><span>{relation.from}</span><span aria-label="配置关联">→</span><span>{relation.document ? <Button variant="ghost" size="sm" onClick={() => select(relation.document!)}>{relation.to}</Button> : relation.to}</span><small className="text-muted-foreground">{relation.label} · 连通性未验证</small></div>)}</Panel>
 }

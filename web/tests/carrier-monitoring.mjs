@@ -109,7 +109,7 @@ try {
     await page.getByLabel('观测服务器', { exact: true }).selectOption('2')
     for (const label of ['电信', '联通', '移动']) await network(label).getByText('未配置', { exact: true }).waitFor()
     await page.getByLabel('观测服务器', { exact: true }).selectOption('0')
-    const taskTable = page.locator('section.panel').filter({ has: page.getByRole('heading', { name: '延迟任务', exact: true }) })
+    const taskTable = page.locator('section[data-slot=panel]').filter({ has: page.getByRole('heading', { name: '延迟任务', exact: true }) })
     const row = taskTable.locator('tbody tr').filter({ hasText: 'TEST_ONLY 电信周期' })
     await row.getByRole('button', { name: '编辑', exact: true }).click()
     dialog = page.getByRole('dialog')

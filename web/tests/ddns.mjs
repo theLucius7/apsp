@@ -128,7 +128,7 @@ try {
     failSync = false
     await page.getByRole('button', { name: '立即同步', exact: true }).click()
     await page.getByText('已更新解析', { exact: true }).waitFor()
-    const details = page.locator('.ddns-rule').first()
+    const details = page.locator('[data-slot=ddns-rule]').first()
     Object.assign(rules[0], { candidate_ip: null, ip_status: 'no_public_ip', last_success_at: 0, ip_received_at: 0 })
     await advance(5000)
     await details.getByText('等待有效地址', { exact: true }).waitFor()
@@ -142,7 +142,7 @@ try {
     failRules = true
     await advance(5000)
     await page.getByRole('alert').getByText('测试：规则状态不可用', { exact: true }).waitFor()
-    assert.match(await page.locator('.panel-heading').last().innerText(), /— \/ 32 条/)
+    assert.match(await page.locator('[data-slot=panel-header]').last().innerText(), /— \/ 32 条/)
     for (const label of ['立即同步', '编辑', '暂停', '删除']) assert.equal(await page.getByRole('button', { name: label, exact: true }).isDisabled(), true)
     assert.equal(await page.getByRole('button', { name: '添加规则' }).isDisabled(), true)
     assert.equal(await details.getByText('状态未知', { exact: true }).count(), 1)
@@ -174,8 +174,9 @@ try {
     assert.equal(await page.getByRole('button', { name: '立即同步', exact: true }).isDisabled(), true)
     assert.equal(await page.getByRole('button', { name: '启用', exact: true }).isDisabled(), true, 'A disabled server plugin cannot re-enable its rule')
     await page.getByRole('button', { name: '删除', exact: true }).click()
-    await dialog.getByText(/云服务中的 DNS 记录会保留/).waitFor()
-    await dialog.getByRole('button', { name: '确认删除' }).click()
+    const confirmation = page.getByRole('alertdialog')
+    await confirmation.getByText(/云服务中的 DNS 记录会保留/).waitFor()
+    await confirmation.getByRole('button', { name: '确认删除' }).click()
     await page.getByRole('heading', { name: '尚未配置动态解析' }).waitFor()
     await page.getByRole('button', { name: '启用 DDNS 插件', exact: true }).click()
     await page.getByRole('button', { name: '添加规则' }).click()
@@ -190,7 +191,7 @@ try {
       held = { path: `/api/plugins/ddns/${dependency}`, reached: 0, promise: new Promise(resolve => { release = resolve }) }
       const baseline = writes.length
       await dialog.locator('form').evaluate(form => {
-        document.querySelector('header.page-header button').click()
+        document.querySelector('header[data-slot=page-header] button').click()
         form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
       })
       const deadline = Date.now() + 5000
@@ -205,21 +206,21 @@ try {
       assert.equal(await dialog.getByLabel('IP 类型').inputValue(), 'dual')
       assert.equal(await dialog.getByLabel('API Token', { exact: false }).inputValue(), 'TEST_ONLY_CLOUDFLARE_TOKEN')
       if (dependency === 'rules') failRules = false; else failServers = false
-      await page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true }).evaluate(button => button.click())
-      await page.waitForFunction(() => !document.querySelector('[role="dialog"] footer .button-primary')?.disabled)
+      await page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click())
+      await page.waitForFunction(() => !document.querySelector('[role="dialog"] footer [data-variant=default]')?.disabled)
     }
     const capacityRules = Array.from({ length: 31 }, (_, index) => ({ id: `capacity-${index}`, config: { name: `TEST_ONLY capacity ${index}`, server_id: 1, record_name: `capacity${index}.example.com`, record_type: 'A', enabled: false, ttl: 1, interval_secs: 300 }, revision: 1, token_configured: true, busy: false, plugin_enabled: true, server_name: '测试服务器', candidate_ip: null, ip_status: 'no_public_ip', ip_received_at: null, last_ip: null, last_success_at: null, next_run_at: null, status: 'pending', error_code: null, failures: 0 }))
     rules = capacityRules
     const beforeCapacity = writes.length
-    await page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true }).evaluate(button => button.click())
-    await page.locator('.panel-heading').last().getByText('31 / 32 条', { exact: true }).waitFor()
+    await page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click())
+    await page.locator('[data-slot=panel-header]').last().getByText('31 / 32 条', { exact: true }).waitFor()
     await dialog.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
     await dialog.getByRole('alert').filter({ hasText: '两条规则名额' }).waitFor()
     assert.equal(writes.length, beforeCapacity, 'One available slot cannot create a dual-stack pair')
     assert.equal(await dialog.getByLabel('规则名称', { exact: true }).inputValue(), '家庭双栈')
     rules = []
-    await page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true }).evaluate(button => button.click())
-    await page.waitForFunction(() => !document.querySelector('[role="dialog"] footer .button-primary')?.disabled)
+    await page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click())
+    await page.waitForFunction(() => !document.querySelector('[role="dialog"] footer [data-variant=default]')?.disabled)
     failSave = true
     await dialog.getByRole('button', { name: '保存规则' }).click()
     await dialog.getByRole('alert').filter({ hasText: '测试：双栈其中一种记录已存在' }).waitFor()
@@ -246,7 +247,7 @@ try {
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/ddns`)
     await page.getByRole('heading', { name: '规则状态暂不可用', exact: true }).waitFor()
-    assert.match(await page.locator('.panel-heading').last().innerText(), /— \/ 32 条/)
+    assert.match(await page.locator('[data-slot=panel-header]').last().innerText(), /— \/ 32 条/)
     assert.equal(await page.getByRole('heading', { name: '尚未配置动态解析' }).count(), 0)
     const publicReads = reads.length, publicWrites = writes.length
     authenticated = false

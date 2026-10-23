@@ -61,8 +61,8 @@ try {
       else { errors.push(`Unexpected API: ${method} ${path}`); await route.fulfill({ status: 404, json: { error: '夹具拒绝未知接口' } }); return }
       await route.fulfill({ json: value })
     })
-    const manager = page.getByRole('region', { name: '订阅来源管理', exact: true }), archive = page.locator('details.source-archive')
-    const numberedPanel = page.locator('section.subscription-sources')
+    const manager = page.getByRole('region', { name: '订阅来源管理', exact: true }), archive = page.locator('details[data-slot=source-archive]')
+    const numberedPanel = page.locator('section[data-slot=subscription-sources]')
 
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes?view=sources`)
@@ -80,7 +80,7 @@ try {
 
     // After the migration the page header opens the ordered chain form in the
     // chain view; the mixed editor stays closed.
-    const header = page.locator('header.page-header').getByRole('button', { name: '创建链路', exact: true })
+    const header = page.locator('header[data-slot=page-header]').getByRole('button', { name: '创建链路', exact: true })
     await header.click()
     const orderedForm = page.getByRole('dialog', { name: '创建有序链路', exact: true })
     await orderedForm.waitFor()

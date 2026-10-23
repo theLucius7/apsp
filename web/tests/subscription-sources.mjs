@@ -139,7 +139,7 @@ try {
       if (method === 'GET' && path.startsWith(sourceRoot)) assert(!JSON.stringify(value).includes('TEST_ONLY'))
       await route.fulfill({ json: value })
     })
-    const manager = page.getByRole('region', { name: '订阅来源管理', exact: true }), dialog = page.getByRole('dialog')
+    const manager = page.getByRole('region', { name: '订阅来源管理', exact: true, includeHidden: true }), dialog = page.getByRole('dialog')
     // Sources and chain creation live in separate node page sections.
     const view = name => page.getByRole('navigation', { name: '节点视图', exact: true }).getByRole('link', { name, exact: true }).click()
     const enable = async locator => { await locator.waitFor(); const deadline = Date.now() + 8000; while (await locator.isDisabled() && Date.now() < deadline) await page.waitForTimeout(20); assert.equal(await locator.isDisabled(), false) }
@@ -150,7 +150,7 @@ try {
       if (await dialog.count()) {
         // Finish this finite entrance animation without advancing the mocked job/request clocks.
         const appearance = await dialog.evaluate(element => {
-          const shade = element.closest('.modal-shade')
+          const shade = element.ownerDocument.querySelector('[data-slot=dialog-overlay]')
           for (const animation of shade?.getAnimations() ?? []) {
             if (Number.isFinite(animation.effect?.getComputedTiming().endTime) && animation.playbackRate > 0) animation.finish()
           }
@@ -169,7 +169,7 @@ try {
     await page.goto(`${origin}/#/plugins/sing-box/nodes?view=sources`)
     await enable(manager.getByRole('button', { name: '添加订阅来源', exact: true }))
     assert.equal(await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '订阅来源', exact: true }).count(), 0)
-    assert.equal(await page.locator('.stat').filter({ hasText: '代理资源' }).locator('strong').innerText(), '2')
+    assert.equal(await page.locator('[data-slot=stat]').filter({ hasText: '代理资源' }).locator('strong').innerText(), '2')
     await view('链路'); await page.getByRole('button', { name: '创建两跳链路', exact: true }).click(); await dialog.locator('[name=name]').fill('必须保留的两跳草稿'); await dialog.getByRole('button', { name: '取消', exact: true }).click()
     await view('订阅来源')
     await manager.locator('[data-source-id="1"]').getByRole('button', { name: '查看来源', exact: true }).click()
@@ -207,13 +207,13 @@ try {
     listMode = 'held'; await manager.getByRole('button', { name: '刷新来源列表', exact: true }).click(); await heldStarted
     const beforeHeld = writes.length; await force('添加订阅来源'); await force('删除来源'); assert.equal(writes.length, beforeHeld)
     listMode = 'ok'; heldRelease(); await enable(manager.getByRole('button', { name: '添加订阅来源', exact: true }))
-    oldNodesFailure = true; await page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true }).click()
+    oldNodesFailure = true; await page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).click()
     await page.getByText('旧节点元数据损坏', { exact: true }).waitFor()
     await manager.getByRole('button', { name: '添加订阅来源', exact: true }).click()
     await dialog.locator('[name=source_name]').fill('URL 新来源')
     await dialog.locator('[name=source_url]').fill('https://subscription.example.com/private?token=TEST_ONLY')
     await dialog.locator('[name=source_authorization]').fill('Bearer TEST_ONLY'); await dialog.locator('[name=source_cookie]').fill('session=TEST_ONLY'); await dialog.locator('[name=source_apiKey]').fill('TEST_ONLY')
-    await dialog.locator('[name=source_user_agent]').fill('TEST-agent/1'); await dialog.locator('[name=source_auto_refresh]').uncheck()
+    await dialog.locator('[name=source_user_agent]').fill('TEST-agent/1'); await dialog.locator('[role=checkbox]:has(+ [name=source_auto_refresh])').uncheck()
     await shot('url-editor')
     await dialog.getByRole('button', { name: '保存来源', exact: true }).click(); await dialog.getByRole('alert').filter({ hasText: '无法连接面板' }).waitFor()
     const firstCreate = writes.find(write => write.path === sourceRoot && write.method === 'POST')
@@ -283,9 +283,9 @@ try {
     await manager.locator('[data-source-id="1"]').waitFor({ state: 'hidden' }); await manager.getByRole('checkbox', { name: '显示已归档来源', exact: true }).check()
     assert.equal(await manager.locator('[data-source-id="1"]').getByRole('button', { name: '抓取并解析', exact: true }).isDisabled(), true)
     await manager.locator('[data-source-id="1"]').getByRole('button', { name: '查看来源', exact: true }).click(); await enable(dialog.getByRole('button', { name: '恢复来源', exact: true })); await dialog.getByRole('button', { name: '恢复来源', exact: true }).click(); await dialog.getByRole('button', { name: '确认恢复', exact: true }).click(); await dialog.waitFor({ state: 'hidden' })
-    await enable(manager.locator('[data-source-id="1"]').getByRole('button', { name: '删除来源', exact: true })); await manager.locator('[data-source-id="1"]').getByRole('button', { name: '删除来源', exact: true }).click(); await dialog.getByRole('button', { name: '确认删除', exact: true }).click(); await dialog.getByRole('alert').filter({ hasText: '#7' }).waitFor()
+    await enable(manager.locator('[data-source-id="1"]').getByRole('button', { name: '删除来源', exact: true })); await manager.locator('[data-source-id="1"]').getByRole('button', { name: '删除来源', exact: true }).click(); await page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true }).click(); await page.getByRole('alertdialog').getByRole('alert').filter({ hasText: '#7' }).waitFor()
     assert.equal(await manager.locator('[data-source-id="1"]').count(), 1)
-    deleteConflict = false; await dialog.getByRole('button', { name: '确认删除', exact: true }).click(); await dialog.waitFor({ state: 'hidden' }); await manager.locator('[data-source-id="1"]').waitFor({ state: 'hidden' })
+    deleteConflict = false; await page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true }).click(); await page.getByRole('alertdialog').waitFor({ state: 'hidden' }); await manager.locator('[data-source-id="1"]').waitFor({ state: 'hidden' })
     await enable(manager.getByRole('button', { name: '导入并选择节点', exact: true })); await manager.getByRole('button', { name: '导入并选择节点', exact: true }).click()
     await dialog.locator('[name=import_name]').fill('预览来源'); await dialog.locator('[name=import_url]').fill('https://subscription.example.com/private?token=TEST_ONLY')
     await dialog.getByText('认证头与请求标识（可选）', { exact: true }).click(); await dialog.locator('[name=import_user_agent]').fill('TEST-agent/1')
@@ -297,11 +297,11 @@ try {
     await dialog.getByRole('button', { name: '保存来源并加入节点库（1）', exact: true }).click(); await dialog.waitFor({ state: 'hidden' })
     await manager.getByText('预览来源', { exact: true }).waitFor()
     assert.equal(writes.filter(write => write.path.startsWith(previewRoot)).length, 2)
-    oldNodesFailure = false; await page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true }).click(); await view('链路'); await enable(page.getByRole('button', { name: '创建两跳链路', exact: true })); await page.getByRole('button', { name: '创建两跳链路', exact: true }).click()
+    oldNodesFailure = false; await page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).click(); await view('链路'); await enable(page.getByRole('button', { name: '创建两跳链路', exact: true })); await page.getByRole('button', { name: '创建两跳链路', exact: true }).click()
     assert.equal(await dialog.locator('[name=name]').inputValue(), '必须保留的两跳草稿')
     assert.equal(await dialog.locator('[name=exit_node_id] option').filter({ hasText: '外部示例节点' }).count(), 0)
     await dialog.getByRole('button', { name: '取消', exact: true }).click()
-    assert.equal(await page.locator('.stat').filter({ hasText: '代理资源' }).locator('strong').innerText(), '2')
+    assert.equal(await page.locator('[data-slot=stat]').filter({ hasText: '代理资源' }).locator('strong').innerText(), '2')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true)
     assert.deepEqual(errors, [])
     await page.close()

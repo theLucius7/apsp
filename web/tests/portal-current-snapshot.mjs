@@ -74,16 +74,17 @@ try {
       })()
       pending.push(task); return task
     })
-    const portalPanel = page.locator('section.panel').filter({ has: page.getByRole('heading', { name: '用户 Passkey 入口', exact: true }) })
-    const pageRefresh = page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true })
-    const portalRefresh = portalPanel.getByRole('button', { name: '刷新', exact: true })
+    // Open modal dialogs hide the page behind them from the accessibility tree.
+    const portalPanel = page.locator('section[data-slot=panel]').filter({ has: page.getByRole('heading', { name: '用户 Passkey 入口', exact: true, includeHidden: true }) })
+    const pageRefresh = page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true })
+    const portalRefresh = portalPanel.getByRole('button', { name: '刷新', exact: true, includeHidden: true })
     const reread = async (path = portalPath) => {
       const response = page.waitForResponse(response => new URL(response.url()).pathname === path && response.request().method() === 'GET')
       await (path === portalPath ? portalRefresh : pageRefresh).evaluate(button => button.click()); await response
     }
     const dialog = page.getByRole('dialog')
     const capture = async () => {
-      await wait(() => dialog.locator('footer .button-primary').isEnabled(), 'capture an actually enabled invitation callback')
+      await wait(() => dialog.locator('footer [data-variant=default]').isEnabled(), 'capture an actually enabled invitation callback')
       await dialog.locator('form').evaluate(form => {
         const key = Object.keys(form).find(key => key.startsWith('__reactProps$')), handler = key && form[key]?.onSubmit
         if (typeof handler !== 'function') throw new Error('actual invitation form callback missing')
@@ -158,7 +159,7 @@ try {
       }
       notFound = true; await reread(); await refuse(); notFound = false; await reread()
       users.shift(); await reread(`${prefix}/users`); await refuse()
-      assert.equal(await page.getByRole('button', { name: '清除已删除的用户选择', exact: true }).isVisible(), true)
+      assert.equal(await page.getByRole('button', { name: '清除已删除的用户选择', exact: true, includeHidden: true }).isVisible(), true)
       users.unshift({ id: 1, name: 'TEST_ONLY 用户 1', subscription_token: 'TEST_ONLY_1', subscription_url: `${origin}/s/TEST_ONLY_1` })
       await reread(`${prefix}/users`)
       await wait(() => dialog.getByRole('button', { name: '验证并生成', exact: true }).isEnabled(), 'restoring user 1 and its exact portal enables the preserved draft')
@@ -172,13 +173,13 @@ try {
       await reset.click(); await dialog.getByLabel('管理员密码', { exact: true }).fill('TEST_ONLY_DRAFT_PASSWORD'); await dialog.getByLabel('二步验证码', { exact: false }).fill('123456'); await capture()
       access = { ...access, keys: 2 }; await reread(); await refuse()
       access = { ...access, keys: 1 }; await reread()
-      await page.locator('.user-row').filter({ hasText: 'TEST_ONLY 用户 2' }).evaluate(button => { button.click(); window.TEST_ONLY_submit() })
+      await page.locator('[data-slot=user-roster] button').filter({ hasText: 'TEST_ONLY 用户 2' }).evaluate(button => { button.click(); window.TEST_ONLY_submit() })
       await page.waitForTimeout(50); assert.equal(writes.length, 1, 'a synchronous user switch cannot redirect the retained old reset callback')
       await wait(() => portalPanel.getByRole('button', { name: '生成开通链接', exact: true }).isEnabled(), 'user 2 has an independent portal snapshot')
       await portalPanel.getByRole('button', { name: '生成开通链接', exact: true }).click()
       assert.equal(await dialog.getByLabel('管理员密码', { exact: true }).inputValue(), '', 'new user editors never inherit another user password')
       await dialog.getByRole('button', { name: '取消', exact: true }).click()
-      await page.locator('.user-row').filter({ hasText: 'TEST_ONLY 用户 1' }).click()
+      await page.locator('[data-slot=user-roster] button').filter({ hasText: 'TEST_ONLY 用户 1' }).click()
       await wait(() => reset.isEnabled(), 'explicit selection restores user 1 only')
       await reset.click(); await dialog.getByLabel('管理员密码', { exact: true }).fill('TEST_ONLY_RESET_PASSWORD')
       await dialog.getByRole('button', { name: '确认重置并生成', exact: true }).click()

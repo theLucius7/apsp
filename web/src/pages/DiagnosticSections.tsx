@@ -14,12 +14,12 @@ export default function DiagnosticSections({ record }: { record: DiagnosticRecor
   const expected = record.expected_sections ?? []
   const complete = chapters.filter(chapter => chapter.complete).length
   const completeness = record.report_completeness ?? (record.report ? 'legacy' : 'empty')
-  return <div className="diagnostic-sections">
-    <p className="helper">报告完整度：{completeness === 'legacy' ? '历史报告，章节完整度未知' : completeness === 'complete' ? `完整 · ${complete} / ${expected.length} 章完成` : chapters.length ? `部分结果 · ${complete} / ${expected.length} 章完成` : '尚无章节结果'}。已保存的章节可以独立查看。</p>
-    {chapters.map(chapter => <details key={chapter.name} className="quality-report-text">
-      <summary>{titles[chapter.name] ?? chapter.name} <Badge tone={chapter.complete ? 'good' : 'warm'}>{chapter.complete ? '章节已完成' : '章节尚未完成'}</Badge></summary>
-      <p className="helper">采集于 {time(chapter.collected_at)}</p><pre>{chapter.text}</pre>
+  return <div>
+    <p className="text-muted-foreground mt-3 text-xs leading-relaxed">报告完整度：{completeness === 'legacy' ? '历史报告，章节完整度未知' : completeness === 'complete' ? `完整 · ${complete} / ${expected.length} 章完成` : chapters.length ? `部分结果 · ${complete} / ${expected.length} 章完成` : '尚无章节结果'}。已保存的章节可以独立查看。</p>
+    {chapters.map(chapter => <details data-slot="quality-report-text" key={chapter.name} className="mt-4">
+      <summary className="text-primary cursor-pointer text-sm">{titles[chapter.name] ?? chapter.name} <Badge tone={chapter.complete ? 'good' : 'warm'}>{chapter.complete ? '章节已完成' : '章节尚未完成'}</Badge></summary>
+      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">采集于 {time(chapter.collected_at)}</p><pre className="bg-card mt-3 max-h-[460px] overflow-auto rounded-lg border p-4 leading-relaxed whitespace-pre-wrap wrap-anywhere max-sm:p-2.5">{chapter.text}</pre>
     </details>)}
-    {expected.filter(name => !chapters.some(chapter => chapter.name === name)).length > 0 && <p className="helper">尚无结果：{expected.filter(name => !chapters.some(chapter => chapter.name === name)).map(name => titles[name] ?? name).join('、')}。</p>}
+    {expected.filter(name => !chapters.some(chapter => chapter.name === name)).length > 0 && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">尚无结果：{expected.filter(name => !chapters.some(chapter => chapter.name === name)).map(name => titles[name] ?? name).join('、')}。</p>}
   </div>
 }

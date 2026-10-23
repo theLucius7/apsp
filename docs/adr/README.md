@@ -54,6 +54,7 @@
 - [ADR 0083：代理流量按天汇总与数据保留](0083-usage-daily-rollup-and-retention.md)
 - [ADR 0084：管理界面重排、节点页分区与离线时间](0084-admin-layout-and-node-sections.md)
 - [ADR 0085：重新架构：插件边界、订阅来源与链路模型（已接受，分阶段实施）](0085-rearchitecture-plugins-sources-chains.md)
+- [ADR 0086：界面重构：shadcn/ui Nova、Tailwind CSS v4 与统一交互库](0086-ui-component-system.md)
 
 ## 诊断、IP 查询与执行保护
 

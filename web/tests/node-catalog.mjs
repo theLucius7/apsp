@@ -101,9 +101,10 @@ try {
       else { errors.push(`Unexpected ${method} ${path}`); return route.fulfill({ status: 404, json: {} }) }
       return route.fulfill({ json: structuredClone(value) })
     })
-    const refresh = () => page.locator('header.page-header').getByRole('button', { name: '刷新', exact: true }).evaluate(button => button.click())
-    const library = page.getByRole('region', { name: '节点库' }), dialog = page.getByRole('dialog')
-    const row = name => width < 768 ? library.locator('.catalog-card').filter({ has: page.getByText(name, { exact: true }) }) : library.getByRole('row').filter({ has: page.getByText(name, { exact: true }) })
+    // Open modal dialogs hide the page behind them from the accessibility tree.
+    const refresh = () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click())
+    const library = page.getByRole('region', { name: '节点库', includeHidden: true }), dialog = page.getByRole('dialog')
+    const row = name => width < 768 ? library.locator('[data-slot=catalog-card]').filter({ has: page.getByText(name, { exact: true }) }) : library.getByRole('row').filter({ has: page.getByText(name, { exact: true }) })
     try {
       await installControlCenterFixtures(page)
       await page.goto(`${origin}/#/plugins/sing-box/nodes`)
@@ -117,7 +118,7 @@ try {
       await row('外部 03').getByRole('button', { name: '上移 外部 03', exact: true }).click(); await moved
       assert.equal(catalog.find(node => node.kind === 'external' && node.id === 3).sort_order, 1); assert.equal(catalog.find(node => node.kind === 'external' && node.id === 2).sort_order, 2); assert.equal(catalog.find(node => node.kind === 'external' && node.id === 1).sort_order, 3)
       await library.getByLabel('按协议筛选').selectOption(''); await library.getByLabel('按标签筛选').selectOption('常用')
-      assert.equal(await library.locator(width < 768 ? '.catalog-card' : '.catalog-table tbody tr').count(), 1)
+      assert.equal(await library.locator(width < 768 ? '[data-slot=catalog-card]' : '[data-slot=catalog-table] tbody tr').count(), 1)
       await row('外部 01').getByRole('checkbox').check(); await library.getByRole('button', { name: '批量改名', exact: true }).click(); await dialog.getByLabel('添加文本').fill('香港 ')
       assert.ok((await dialog.innerText()).includes('香港 外部 01')); rejectBatch = true
       await dialog.getByRole('button', { name: '确认保存', exact: true }).click(); await dialog.getByText('节点已更新，请重新确认').waitFor()
@@ -160,11 +161,11 @@ try {
       assert.equal('name' in writes.at(-1).body.items[0], false)
       // An enabled confirmation captured before a stale read still calls its real guard.
       await row('香港 外部 01').getByRole('button', { name: '删除', exact: true }).click()
-      const remove = dialog.getByRole('button', { name: '确认删除节点', exact: true }), beforeDelete = writes.length
+      const confirmation = page.getByRole('alertdialog'), remove = confirmation.getByRole('button', { name: '确认删除节点', exact: true }), beforeDelete = writes.length
       await remove.evaluate(button => { const props = button[Object.keys(button).find(key => key.startsWith('__reactProps'))]; window.TEST_ONLY_catalog_delete = props.onClick })
       const originalDelete = structuredClone(catalog); catalog = catalog.filter(value => !(value.kind === 'external' && value.id === 1)); await refresh(); await wait(() => remove.isDisabled(), 'Deleted target cannot be confirmed from its old token')
       await page.evaluate(() => window.TEST_ONLY_catalog_delete()); assert.equal(writes.length, beforeDelete, 'Captured actual stale deletion callback issues zero POST')
-      catalog = originalDelete; await refresh(); await wait(() => remove.isEnabled(), 'The original current target restores delete confirmation'); await dialog.getByRole('button', { name: '取消', exact: true }).click()
+      catalog = originalDelete; await refresh(); await wait(() => remove.isEnabled(), 'The original current target restores delete confirmation'); await confirmation.getByRole('button', { name: '取消', exact: true }).click()
       // A missing clone target retains its ID instead of selecting another server.
       await library.getByLabel('按标签筛选').selectOption(''); await library.getByLabel('按类型筛选').selectOption('')
       await row('受管节点').getByRole('button', { name: '复制', exact: true }).click()
@@ -187,7 +188,7 @@ try {
       await dialog.getByRole('button', { name: '解析并预览', exact: true }).click(); await dialog.getByRole('checkbox', { name: '导入 导入乙' }).uncheck()
       assert.equal(sources.length, 0); assert.equal(await dialog.getByRole('checkbox', { name: '导入 不支持节点' }).isDisabled(), true); assert.equal(await dialog.locator('textarea').count(), 0)
       const beforePreview = writes.length, importing = hold(sourcePath)
-      await page.getByRole('region', { name: '订阅来源', exact: true }).getByRole('button', { name: '刷新', exact: true }).evaluate(button => button.click()); await wait(() => importing.reached > 0, 'The current source list GET is truly pending')
+      await page.getByRole('region', { name: '订阅来源', exact: true, includeHidden: true }).getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click()); await wait(() => importing.reached > 0, 'The current source list GET is truly pending')
       await forceSubmit(dialog); assert.equal(writes.length, beforePreview, 'Pending source GET cannot commit the retained preview')
       release(false); await wait(() => dialog.getByRole('button', { name: '加入节点库（1）', exact: true }).isEnabled(), 'Source list recovery permits the retained selection')
       await page.clock.fastForward(601000)

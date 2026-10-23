@@ -100,11 +100,11 @@ try {
     const row = page.getByRole('row').filter({ hasText: 'TEST_ONLY 未确认设备操作' })
     await row.getByRole('button', { name: '详情', exact: true }).click()
     await page.getByRole('button', { name: '核对日常操作进程停止', exact: true }).click()
-    const review = page.locator('section.operations-review').filter({ has: page.getByRole('heading', { name: '核对服务器 7 的原日常操作', exact: true }) })
+    const review = page.locator('section[data-slot=operations-review]').filter({ has: page.getByRole('heading', { name: '核对服务器 7 的原日常操作', exact: true }) })
     const final = review.getByRole('button', { name: '验证身份并记录人工核对，停止后续步骤', exact: true })
     const create = review.getByRole('button', { name: '验证身份并发起新的只读核对', exact: true })
     const read = review.getByRole('button', { name: '读取实际只读回执', exact: true })
-    const idle = () => page.waitForFunction(() => document.querySelector('.operations-page')?.getAttribute('aria-busy') === 'false')
+    const idle = () => page.waitForFunction(() => document.querySelector('[data-slot=operations-page]')?.getAttribute('aria-busy') === 'false')
     const proof = async password => {
       const dialog = page.getByRole('dialog', { name: '再次验证管理员身份', exact: true })
       await dialog.getByLabel('管理员密码', { exact: true }).fill(password)

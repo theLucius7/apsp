@@ -92,7 +92,7 @@ try {
       await page.getByText('TEST_ONLY 诊断刷新失败', { exact: true }).first().waitFor()
       await forceClick(button); assert.equal(writes.length, baseline, 'Failed snapshot sends zero writes'); ++totals.blocked
       assert.equal(await version.inputValue(), plugin === 'nodequality' ? 'ipv6' : '6')
-      assert.equal(await page.locator('details.quality-report-text pre').textContent(), 'TEST_ONLY 已保存报告')
+      assert.equal(await page.locator('details[data-slot=quality-report-text] pre').textContent(), 'TEST_ONLY 已保存报告')
       failures.delete(path); await refreshFailed()
       await wait(() => button.isEnabled(), 'A successful snapshot restores the original action')
     }
@@ -130,7 +130,7 @@ try {
         function assertFunction(value) { if (typeof value !== 'function') throw new Error('TEST_ONLY actual cancellation handler missing') }
         window.TEST_ONLY_cancel = element[key].onClick
       })
-      reports.splice(0, 1); await poll(() => page.locator('article.quality-report').count().then(count => count === 0))
+      reports.splice(0, 1); await poll(() => page.locator('article[data-slot=quality-report]').count().then(count => count === 0))
       await page.evaluate(() => window.TEST_ONLY_cancel())
       assert.equal(writes.length, 1, 'A removed entity never receives a cancellation POST'); ++totals.blocked
       reports.push(record); await poll()

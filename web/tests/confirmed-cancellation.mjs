@@ -59,7 +59,7 @@ try {
   await page.getByText(record.error, { exact: true }).waitFor()
   assert.equal(await page.getByText('报告已完成', { exact: true }).count(), 0)
   assert.equal(await page.getByRole('button', { name: '日常检查', exact: true }).isDisabled(), true)
-  if (!(await page.locator('details.quality-report-text').evaluate(element => element.open))) await page.getByText('查看报告文本', { exact: true }).click()
+  if (!(await page.locator('details[data-slot=quality-report-text]').evaluate(element => element.open))) await page.getByText('查看报告文本', { exact: true }).click()
   assert.equal(await page.getByText(report, { exact: true }).isVisible(), true)
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true)
@@ -68,7 +68,7 @@ try {
   await page.getByText('等待设备确认取消', { exact: true }).waitFor()
   assert.equal(cancelPosts, 1)
   assert.equal(await page.getByText('设备已确认取消', { exact: true }).count(), 0)
-  if (!(await page.locator('details.quality-report-text').evaluate(element => element.open))) await page.getByText('查看报告文本', { exact: true }).click()
+  if (!(await page.locator('details[data-slot=quality-report-text]').evaluate(element => element.open))) await page.getByText('查看报告文本', { exact: true }).click()
   assert.equal(await page.getByText(report, { exact: true }).isVisible(), true)
   record.cancel_error = '设备仍有活动进程或挂载，将继续重试'
   await page.reload()
@@ -77,7 +77,7 @@ try {
   record.status = 'cancelled'; record.agent_completed = true; record.cancel_error = null; record.error = null
   // The existing page must pick up confirmation through its normal poll.
   await page.getByText('设备已确认取消', { exact: true }).waitFor({ timeout: 10_000 })
-  if (!(await page.locator('details.quality-report-text').evaluate(element => element.open))) await page.getByText('查看报告文本', { exact: true }).click()
+  if (!(await page.locator('details[data-slot=quality-report-text]').evaluate(element => element.open))) await page.getByText('查看报告文本', { exact: true }).click()
   assert.equal(await page.getByText(report, { exact: true }).isVisible(), true)
   record.status = 'running'; record.agent_completed = false; supported = false
   await page.reload()

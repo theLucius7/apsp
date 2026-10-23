@@ -70,11 +70,11 @@ try {
     for (const secret of ['TEST_ONLY_URL_SECRET', 'TEST_ONLY_HEADER_SECRET', 'TEST_ONLY_BODY_SECRET']) assert.equal(savedText.includes(secret), false, 'Saved notification secrets never appear in rendered text')
     await panel.getByRole('button',{name:'测试 Webhook',exact:true}).click()
     await panel.getByRole('alert').filter({hasText:'HTTP 429'}).waitFor()
-    await page.locator('.notification-channel-grid').getByText(/最近测试：.*未成功/).waitFor()
+    await page.locator('[data-slot=notification-channel-grid]').getByText(/最近测试：.*未成功/).waitFor()
     failure=false
     await panel.getByRole('button',{name:'测试 Webhook',exact:true}).click()
     await panel.getByRole('status').filter({hasText:'服务已接受测试消息'}).waitFor()
-    await page.locator('.notification-channel-grid').getByText(/最近测试：.*服务已接受/).waitFor()
+    await page.locator('[data-slot=notification-channel-grid]').getByText(/最近测试：.*服务已接受/).waitFor()
     await panel.getByLabel('清除已保存的请求头').check()
     assert.equal(await panel.getByRole('button',{name:'测试 Webhook',exact:true}).isDisabled(),true)
     await panel.getByRole('button',{name:'保存 Webhook',exact:true}).click()

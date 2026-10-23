@@ -6,6 +6,9 @@ import { resourceWriteError, useAction, useResource } from '../../hooks'
 import { validatedSnapshot } from './groupTypes'
 import { portalAccessError, validPortalAccess } from './portalAccess'
 import type { PortalAccess } from './portalAccess'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
 type Invitation = { url: string; expires_at: number }
 
@@ -33,23 +36,23 @@ export default function UserPasskeyAccess({ id, userError, refreshRevision }: { 
       password: String(form.get('password') ?? ''), totp_code: String(form.get('totp_code') ?? ''), reset: editing.reset,
     }), value => { setEditing(undefined); setInvitation(value); resource.reload() })
   }
-  return <section className="panel">
-    <div className="panel-heading"><h2>用户 Passkey 入口</h2><Refresh onClick={resource.reload} /></div>
-    <div className="panel-body">
+  return <Panel>
+    <PanelHeader><PanelTitle>用户 Passkey 入口</PanelTitle><Refresh onClick={resource.reload} /></PanelHeader>
+    <div className="p-4">
       <p>用户通过专属入口登录，查看自己的订阅与流量，并管理通行密钥。</p>
       <ErrorNotice message={snapshot.error} retry={resource.reload} />
       {resource.loading && !access ? <Loading /> : access && <>
         <p>{reset ? `已绑定 ${access.keys} 把 Passkey。` : access.activation_expires_at !== null ? `等待开通，当前链接有效至 ${time(access.activation_expires_at)}。` : '尚未开通用户入口。'}</p>
-        {access.url && <div className="field"><span>用户登录地址</span><CopyField text={access.url} label="复制用户登录地址" /></div>}
-        {access.configuration.reason && <p className="helper">{access.configuration.reason}</p>}
-        <button className={`button ${reset ? 'button-danger' : 'button-primary'} button-small`} disabled={action.busy || Boolean(writeError())} onClick={choose}>{reset ? '重置用户 Passkey' : '生成开通链接'}</button>
+        {access.url && <div data-slot="field" className="mb-4 grid min-w-0 gap-1.5 last:mb-0"><span className="text-sm leading-snug font-medium">用户登录地址</span><CopyField text={access.url} label="复制用户登录地址" /></div>}
+        {access.configuration.reason && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{access.configuration.reason}</p>}
+        <Button variant={reset ? 'destructive' : 'default'} size="sm" disabled={action.busy || Boolean(writeError())} onClick={choose}>{reset ? '重置用户 Passkey' : '生成开通链接'}</Button>
       </>}
     </div>
     {editing && <FormDialog title={editing.reset ? '重置用户 Passkey？' : '生成用户开通链接'} busy={action.busy} submitDisabled={Boolean(writeError(editing.access))} error={writeError(editing.access) || action.error} onClose={() => setEditing(undefined)} onSubmit={submit} submitLabel={editing.reset ? '确认重置并生成' : '验证并生成'}>
       <p>{editing.reset ? '原有 Passkey 和用户登录会话将立即失效，用户需要通过新链接重新开通。订阅、授权和流量保持不变。' : '开通链接十五分钟内有效，只能使用一次；重新生成会使之前的链接失效。请仅发送给该代理用户。'}</p>
-      <Field label="管理员密码"><input name="password" type="password" required maxLength={1024} autoComplete="current-password" /></Field>
-      <Field label="二步验证码" hint="已启用时必填，请使用尚未用于登录的验证码。"><input name="totp_code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" placeholder="未启用时留空" /></Field>
+      <Field label="管理员密码"><Input name="password" type="password" required maxLength={1024} autoComplete="current-password" /></Field>
+      <Field label="二步验证码" hint="已启用时必填，请使用尚未用于登录的验证码。"><Input name="totp_code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" placeholder="未启用时留空" /></Field>
     </FormDialog>}
-    {invitation && <Modal title="用户开通链接" onClose={() => setInvitation(undefined)}><div className="modal-body"><p>有效至 {time(invitation.expires_at)}，只能使用一次。关闭后不会再次显示完整链接。</p><CopyField text={invitation.url} label="复制开通链接" /><p className="helper">请将此链接私下交给该用户。它用于绑定 Passkey，不是代理订阅地址。</p></div></Modal>}
-  </section>
+    {invitation && <Modal title="用户开通链接" onClose={() => setInvitation(undefined)}><div data-slot="modal-body" className="p-4"><p>有效至 {time(invitation.expires_at)}，只能使用一次。关闭后不会再次显示完整链接。</p><CopyField text={invitation.url} label="复制开通链接" /><p className="text-muted-foreground mt-3 text-xs leading-relaxed">请将此链接私下交给该用户。它用于绑定 Passkey，不是代理订阅地址。</p></div></Modal>}
+  </Panel>
 }

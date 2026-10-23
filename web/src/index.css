@@ -1,0 +1,257 @@
+@import "tailwindcss";
+
+/*
+ * Design parameters for every entry point: the administrator console, the public
+ * dashboard and the proxy-user portal. Components read these tokens through the
+ * Tailwind theme below; no stylesheet declares its own colours, radii or sizes.
+ * Neutral grey carries the surfaces, teal-green is the single accent, and
+ * success / warning / destructive / info keep fixed meanings in both themes.
+ */
+
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/* State variants used by the shadcn/ui Nova components (from shadcn/tailwind.css). */
+@custom-variant data-open {
+  &:where([data-state="open"]),
+  &:where([data-open]:not([data-open="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-closed {
+  &:where([data-state="closed"]),
+  &:where([data-closed]:not([data-closed="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-checked {
+  &:where([data-state="checked"]),
+  &:where([data-checked]:not([data-checked="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-unchecked {
+  &:where([data-state="unchecked"]),
+  &:where([data-unchecked]:not([data-unchecked="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-selected {
+  &:where([data-selected="true"]) {
+    @slot;
+  }
+}
+@custom-variant data-disabled {
+  &:where([data-disabled="true"]),
+  &:where([data-disabled]:not([data-disabled="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-active {
+  &:where([data-state="active"]),
+  &:where([data-active]:not([data-active="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-horizontal {
+  &:where([data-orientation="horizontal"]) {
+    @slot;
+  }
+}
+@custom-variant data-vertical {
+  &:where([data-orientation="vertical"]) {
+    @slot;
+  }
+}
+
+:root {
+  color-scheme: light;
+  --radius: 0.625rem;
+
+  --background: oklch(0.975 0 0);
+  --foreground: oklch(0.17 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.17 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.17 0 0);
+  --primary: oklch(0.5 0.095 183);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.955 0 0);
+  --secondary-foreground: oklch(0.22 0 0);
+  --muted: oklch(0.955 0 0);
+  --muted-foreground: oklch(0.47 0 0);
+  --accent: oklch(0.95 0.025 183);
+  --accent-foreground: oklch(0.3 0.06 183);
+  --destructive: oklch(0.48 0.19 27);
+  --destructive-foreground: oklch(0.985 0 0);
+  --success: oklch(0.49 0.12 152);
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.53 0.12 65);
+  --warning-foreground: oklch(0.985 0 0);
+  --info: oklch(0.5 0.15 255);
+  --info-foreground: oklch(0.985 0 0);
+  --border: oklch(0.91 0 0);
+  --input: oklch(0.88 0 0);
+  --ring: oklch(0.62 0.09 183);
+
+  --chart-1: oklch(0.56 0.1 183);
+  --chart-2: oklch(0.58 0.15 255);
+  --chart-3: oklch(0.7 0.14 70);
+  --chart-4: oklch(0.56 0.17 300);
+  --chart-5: oklch(0.62 0.18 20);
+
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.25 0 0);
+  --sidebar-primary: oklch(0.5 0.095 183);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.945 0.02 183);
+  --sidebar-accent-foreground: oklch(0.28 0.06 183);
+  --sidebar-border: oklch(0.91 0 0);
+  --sidebar-ring: oklch(0.62 0.09 183);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --background: oklch(0.155 0 0);
+  --foreground: oklch(0.96 0 0);
+  --card: oklch(0.2 0 0);
+  --card-foreground: oklch(0.96 0 0);
+  --popover: oklch(0.22 0 0);
+  --popover-foreground: oklch(0.96 0 0);
+  --primary: oklch(0.74 0.11 183);
+  --primary-foreground: oklch(0.2 0.035 183);
+  --secondary: oklch(0.27 0 0);
+  --secondary-foreground: oklch(0.96 0 0);
+  --muted: oklch(0.26 0 0);
+  --muted-foreground: oklch(0.72 0 0);
+  --accent: oklch(0.3 0.04 183);
+  --accent-foreground: oklch(0.9 0.05 183);
+  --destructive: oklch(0.76 0.14 22);
+  --destructive-foreground: oklch(0.2 0.05 22);
+  --success: oklch(0.76 0.14 152);
+  --success-foreground: oklch(0.2 0.05 152);
+  --warning: oklch(0.8 0.13 75);
+  --warning-foreground: oklch(0.22 0.05 75);
+  --info: oklch(0.74 0.12 255);
+  --info-foreground: oklch(0.2 0.05 255);
+  --border: oklch(1 0 0 / 11%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.6 0.09 183);
+
+  --chart-1: oklch(0.72 0.11 183);
+  --chart-2: oklch(0.7 0.13 255);
+  --chart-3: oklch(0.8 0.13 75);
+  --chart-4: oklch(0.7 0.15 300);
+  --chart-5: oklch(0.72 0.16 20);
+
+  --sidebar: oklch(0.18 0 0);
+  --sidebar-foreground: oklch(0.9 0 0);
+  --sidebar-primary: oklch(0.74 0.11 183);
+  --sidebar-primary-foreground: oklch(0.2 0.035 183);
+  --sidebar-accent: oklch(0.27 0.03 183);
+  --sidebar-accent-foreground: oklch(0.92 0.04 183);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.6 0.09 183);
+}
+
+/* Compact density shrinks every spacing step at once. */
+[data-density="compact"] {
+  --spacing: 0.225rem;
+}
+
+@theme inline {
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground min-w-[320px] font-sans text-sm antialiased;
+    font-synthesis: none;
+  }
+  code, kbd, pre, samp {
+    @apply font-mono text-xs;
+  }
+  code {
+    overflow-wrap: anywhere;
+  }
+  ::selection {
+    @apply bg-primary/20;
+  }
+  button:not(:disabled), [role="button"]:not(:disabled), summary {
+    cursor: pointer;
+  }
+  fieldset {
+    @apply m-0 min-w-0 border-0 p-0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after {
+      transition-duration: 0s !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@utility no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+}
