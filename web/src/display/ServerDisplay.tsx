@@ -6,6 +6,7 @@ import Overview from './Overview'
 import ServerView from './ServerView'
 import { dashboardHome } from './dashboard'
 import { CurrencyProvider } from './CurrencyContext'
+import { useDocumentAppearance } from '@/lib/document-appearance'
 import { Button, buttonVariants } from '@/components/ui/button'
 
 function useTheme() {
@@ -24,6 +25,9 @@ function useTheme() {
 export default function ServerDisplay({ serverId }: { serverId?: number }) {
   const { t } = useI18n()
   const { theme, toggle } = useTheme()
+  // The dashboard's own light/dark choice applies to the whole document, not only
+  // this wrapper, so a dark console theme left on <html> cannot bleed into it.
+  useDocumentAppearance(theme)
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
     const timer = window.setInterval(() => { if (document.visibilityState === 'visible') setNow(Date.now()) }, 5000)
@@ -31,7 +35,7 @@ export default function ServerDisplay({ serverId }: { serverId?: number }) {
     document.addEventListener('visibilitychange', visible)
     return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', visible) }
   }, [])
-  return <CurrencyProvider><div data-slot="server-display" data-theme={theme} className="bg-background text-foreground flex min-h-dvh flex-col">
+  return <CurrencyProvider><div data-slot="server-display" className="bg-background text-foreground flex min-h-dvh flex-col">
     <a className="bg-card text-foreground sr-only z-30 rounded-md p-2.5 focus:not-sr-only focus:absolute focus:top-2 focus:left-2" href="#display-main" onClick={event => { event.preventDefault(); document.getElementById('display-main')?.focus() }}>{t('跳到服务器信息')}</a>
     <header className="bg-background/80 supports-backdrop-filter:backdrop-blur-md sticky top-0 z-20 border-b">
       <div className="mx-auto flex min-h-16 w-full max-w-[1440px] items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
-import { Badge, ErrorNotice, Field, FormDialog, Loading } from '../../components'
+import { Badge, ErrorNotice, Field, FormDialog, Loading, DialogPresence } from '../../components'
 import { resourceWriteError, useAction, useResource } from '../../hooks'
 
 import { eligibleExternalSelection, externalDraftError, externalReference as reference, validExternalAccessView } from './externalAccessTypes'
@@ -60,7 +60,7 @@ export default function ExternalUserAccess({ userId, userError, refreshRevision,
       {saved === userId && <p role="status" className="text-muted-foreground mt-3 text-xs leading-relaxed">外部节点分配已保存，后续订阅按新分配生成。</p>}
       <p className="text-muted-foreground mt-3 text-xs leading-relaxed">外部运行和流量由提供方控制，本面板不计量外部用量；取消分配不会让已下载的外部凭据失效。</p>
     </div>
-    {currentDraft && <FormDialog title="分配外部节点" wide onClose={() => setDraft(null)} onSubmit={submit} busy={action.busy} submitDisabled={Boolean(error())} error={error() || action.error} submitLabel="保存分配">
+    <DialogPresence>{currentDraft && <FormDialog title="分配外部节点" wide onClose={() => setDraft(null)} onSubmit={submit} busy={action.busy} submitDisabled={Boolean(error())} error={error() || action.error} submitLabel="保存分配">
       <div className="flex flex-wrap items-center justify-end gap-2"><strong>已选 {currentDraft.accesses.length} 个</strong><Button variant="ghost" size="sm" type="button" disabled={action.busy || readDraft !== null || Boolean(userError())} onClick={() => { if (userError()) return; setReadDraft(userId); resource.reload() }}>重新读取授权</Button></div>
       <fieldset data-slot="group-choices" className="my-3 mb-4 grid gap-2.5 border-0 p-0"><legend className="mb-2.5 text-sm font-semibold">已分配节点</legend>{currentDraft.accesses.map(value => {
         const candidate = available.find(entry => entry.external_node_id === value.external_node_id)
@@ -70,6 +70,6 @@ export default function ExternalUserAccess({ userId, userError, refreshRevision,
       <Field label="搜索外部节点"><Input value={search} onChange={event => setSearch(event.target.value)} placeholder="名称、来源、协议或地址" autoComplete="off" /></Field>
       <fieldset data-slot="group-choices" className="my-3 mb-4 grid gap-2.5 border-0 p-0"><legend className="mb-2.5 text-sm font-semibold">可选节点</legend>{candidates.map(entry => <label className="flex cursor-pointer items-center gap-3 py-2.5 text-sm" key={entry.external_node_id}><Checkbox checked={false} disabled={action.busy || Boolean(writeError()) || !eligibleExternalSelection(entry)} onCheckedChange={() => { if (writeError()) return; const current = resource.getCurrent?.()?.available_nodes.find(value => value.external_node_id === entry.external_node_id && value.source_id === entry.source_id && value.identity_epoch === entry.identity_epoch && value.node_version_id === entry.node_version_id && value.metadata_revision === entry.metadata_revision); if (current && eligibleExternalSelection(current) && !currentDraft.accesses.some(value => value.external_node_id === current.external_node_id)) update([...currentDraft.accesses, reference(current)]) }} /><span>{entry.name}<small className="text-muted-foreground mt-0.5 block text-xs">{entry.source_name} · {entry.protocol} · {entry.server}:{entry.port}{!entry.available ? ` · ${reasons[entry.reason ?? ''] ?? '当前不可用'}` : entry.source_last_error ? ' · 保留上次成功版本' : ''}</small></span></label>)}{!candidates.length && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">没有符合条件的未选节点。请先在节点管理中采用并启用外部节点。</p>}</fieldset>
       <p className="text-muted-foreground mt-3 text-xs leading-relaxed">生成订阅仍检查用户套餐状态；外部节点使用提供方现有凭据，用量未知。</p>
-    </FormDialog>}
+    </FormDialog>}</DialogPresence>
   </Panel>
 }

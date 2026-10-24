@@ -12,7 +12,9 @@ const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFil
 async function openNav(page, name) {
   await page.locator('[data-slot=sidebar]').waitFor()
   const menu = page.getByRole('button', { name: '菜单', exact: true })
-  if (await menu.isVisible() && await menu.getAttribute('aria-expanded') !== 'true') await menu.click()
+  // The viewport decides whether the menu button is in use: a visibility check does
+  // not wait, and a closing dialog briefly hides the page from assistive technology.
+  if (page.viewportSize().width < 768 && await menu.getAttribute('aria-expanded') !== 'true') await menu.click()
   await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name, exact: true }).click()
 }
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
@@ -115,7 +117,8 @@ try {
     await page.locator('[data-slot=fleet] tbody tr').first().waitFor()
     await page.getByRole('button', { name: '筛选与视图', exact: true }).click()
     assert.equal(await page.getByLabel('排序', { exact: true }).inputValue(), 'cpu')
-    assert.equal(await page.locator('[data-slot=server-display]').getAttribute('data-theme'), 'dark')
+    // The dashboard theme applies to the whole document, so console styles never mix in.
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark')
     await page.getByRole('link', { name: '查看 东京 · 入口 详情', exact: true }).click()
     assert(page.url().endsWith('/#/dashboard/1'))
     await page.getByRole('link', { name: '返回服务器看板', exact: true }).click()

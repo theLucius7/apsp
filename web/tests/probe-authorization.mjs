@@ -34,6 +34,8 @@ try {
     const page = await context.newPage(), errors = [], writes = [], unexpected = []
     page.on('pageerror', error => errors.push(error.message))
     await page.clock.install()
+    // Dialogs finish closing on animation frames, which the page clock holds here; with reduced motion they close at once.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     const servers = [{ id: 1, name: '测试离线服务器', online: false, asset_settings: { region: 'TEST', group_name: '' } }]
     const legacy = { id: 'legacy-task', spec: { id: 'legacy-task', name: '旧未登记目标', kind: 'tcp', target: '127.0.0.1', port: 443, interval_secs: 30, carrier: '', enabled: true }, default_enabled: false, server_ids: [1], revision: 1 }
     let tasks = [legacy], taskMode = 'ready', serverMode = 'ready', releasePending, targetPending = null

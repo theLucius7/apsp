@@ -143,6 +143,13 @@ const english: Record<string, string> = {
   '表格': 'Table', '资源趋势': 'Resource trends', '网络接口': 'Network interfaces', '图形处理器': 'GPU',
   '设备状态': 'Device status', '采样信息': 'Sampling details', '系统信息': 'System information', '资产与流量额度': 'Assets and traffic quota',
   '连接中断，等待更新': 'Connection interrupted, waiting for updates',
+  '全部服务器': 'All servers', '筛选结果': 'Filtered servers', '筛选名称、标签或地区': 'Filter by name, tag or region', '搜索名称、标签或地区': 'Search names, tags or regions',
+  '状态': 'Status', '全部状态': 'All statuses', '离线或未接入': 'Offline or not enrolled', '更多筛选': 'More filters', '分组': 'Group', '全部分组': 'All groups',
+  '视图': 'View', '视图设置': 'View settings', '列表分组方式': 'Group the list by', '不分组': 'No grouping', '按服务器分组': 'By server group', '按地区分组': 'By region',
+  '接入顺序': 'Enrollment order', 'CPU 使用率': 'CPU usage', '到期时间': 'Expiry', '表格列': 'Table columns', '卡片显示': 'Card fields', '成本与到期': 'Cost and expiry',
+  '设备版本': 'Agent version', '列表密度': 'List density', '完成': 'Done', '已启用的筛选条件': 'Active filters', '清除全部筛选': 'Clear all filters',
+  '没有符合条件的服务器': 'No servers match', '无法读取服务器列表': 'Could not read the server list', '从第一台服务器开始': 'Start with your first server',
+  '批量操作': 'Bulk actions', '正在提交…': 'Submitting…', '上移': 'Move up', '下移': 'Move down', '上传': 'Upload', '下载': 'Download',
 }
 
 export function translate(value: string, locale: Locale): string {
@@ -150,17 +157,31 @@ export function translate(value: string, locale: Locale): string {
 }
 
 
+/** English text for a phrase in the static catalog, keeping its surrounding whitespace. */
+function englishText(source: string) {
+  const value = source.trim()
+  const translated = english[value]
+  return translated === undefined ? undefined : `${source.match(/^\s*/)?.[0] ?? ''}${translated}${source.match(/\s*$/)?.[0] ?? ''}`
+}
+
+// The remembered Chinese source only stands while the node still shows its English
+// text. React writes new values into the same text nodes and attributes (a server
+// going offline); anything else on screen is that new value, which replaces the
+// source instead of being overwritten with the old translation.
+function currentSource(known: string | undefined, shown: string) {
+  return known !== undefined && shown === englishText(known) ? known : shown
+}
+
 function translateStaticDom(locale: Locale) {
   if (typeof document === 'undefined' || !document.body) return
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
   let node: Node | null
   while ((node = walker.nextNode())) {
     if (node.parentElement?.closest('code, pre, textarea, input, [data-i18n-ignore]')) continue
-    const raw = node.nodeValue ?? ''
-    const source = translatedTextSources.get(node) ?? raw
-    const leading = source.match(/^\s*/)?.[0] ?? '', trailing = source.match(/\s*$/)?.[0] ?? '', value = source.trim()
-    if (!value || !english[value]) continue
-    const translated = locale === 'en-US' ? `${leading}${english[value]}${trailing}` : source
+    const source = currentSource(translatedTextSources.get(node), node.nodeValue ?? '')
+    const inEnglish = englishText(source)
+    if (inEnglish === undefined) { translatedTextSources.delete(node); continue }
+    const translated = locale === 'en-US' ? inEnglish : source
     if (node.nodeValue !== translated) node.nodeValue = translated
     if (locale === 'en-US') translatedTextSources.set(node, source)
     else translatedTextSources.delete(node)
@@ -171,7 +192,9 @@ function translateStaticDom(locale: Locale) {
     for (const attribute of ['aria-label', 'title', 'placeholder']) {
       const current = element.getAttribute(attribute)
       if (!current) continue
-      const source = sources?.get(attribute) ?? current
+      const known = sources?.get(attribute)
+      const source = known !== undefined && current === english[known] ? known : current
+      if (source !== known) sources?.delete(attribute)
       const translated = english[source]
       if (!translated) continue
       const next = locale === 'en-US' ? translated : source
@@ -207,12 +230,12 @@ export function useI18n() {
   return { locale, setLocale, t }
 }
 
-export function LanguageSelect({ className = '' }: { className?: string }) {
+export function LanguageSelect({ className = '', onChoose }: { className?: string; onChoose?: (locale: Locale) => void }) {
   const { locale, setLocale, t } = useI18n()
   return <label className={cn('relative inline-flex min-w-0 items-center', className)}>
     <span className="sr-only">{t('界面语言')}</span>
     <LanguagesIcon className="text-muted-foreground pointer-events-none absolute left-2.5 z-10 size-4" aria-hidden="true" />
-    <NativeSelect aria-label={t('界面语言')} value={locale} onChange={event => setLocale(event.target.value as Locale)} className="min-w-32 *:data-[slot=native-select]:pl-8">
+    <NativeSelect aria-label={t('界面语言')} value={locale} onChange={event => { const next = event.target.value as Locale; setLocale(next); onChoose?.(next) }} className="min-w-32 *:data-[slot=native-select]:pl-8">
       <option value="zh-CN">简体中文</option>
       <option value="en-US">English</option>
     </NativeSelect>

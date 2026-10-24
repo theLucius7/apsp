@@ -33,13 +33,13 @@ export default function OperationsPage({ selectedServerId }: { selectedServerId?
   const execute = async (action: () => Promise<void>) => { setBusy(true); setError(''); try { await action() } catch (value) { setError(errorMessage(value)) } finally { setBusy(false) } }
   const run = (action: () => Promise<void>, proof = false) => { if (proof) { setPendingAction(() => action); setPassword(''); setCode('') } else { void execute(action) } }
   return <div data-slot="operations-page" className="grid min-w-0 grid-cols-1 gap-4 *:min-w-0" aria-busy={busy}><PageHeader eyebrow="服务器" title="自动化与恢复" description="跨服务器的批量任务与定时计划、故障事件、面板备份与恢复，以及云资源与费用账本。批量操作固定目标并保留每一步的结果。"><Button variant="outline" disabled={busy || !actor} onClick={() => setVersion(value => value + 1)}>刷新状态</Button></PageHeader><SegmentedNav aria-label="运维功能">{tabs.map(([key, name]) => <SegmentedButton type="button" key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{name}</SegmentedButton>)}</SegmentedNav>{error && !pendingAction && <Alert variant="destructive" className="wrap-anywhere">{error}</Alert>}{!actor && !error && <p role="status" className="text-muted-foreground text-sm">正在读取当前授权。</p>}{actor && !tabs.length && <p className="text-muted-foreground text-sm">当前账号没有运维、云资源或全局恢复的读取授权。</p>}{actor && !canChooseServers && ['jobs', 'cloud'].includes(tab) && <p className="text-muted-foreground text-sm">当前账号没有服务器列表读取授权，无法选择新目标；已有授权任务和资源仍可查看。</p>}{busy && <p role="status" className="text-muted-foreground text-sm">正在处理，请等待结果。</p>}{tab === 'jobs' && <JobsTab servers={servers} selectedServerId={selectedServerId} allowTargetSelection={canChooseServers} run={run} version={version} />}{tab === 'incidents' && <IncidentsTab servers={servers} run={run} version={version} />}{tab === 'recovery' && <RecoveryTab run={run} version={version} />}{tab === 'cloud' && <CloudTab servers={servers} run={run} version={version} />}
-    {pendingAction && <Dialog open onOpenChange={open => { if (!open && !busy) { setPendingAction(null); setPassword(''); setCode('') } }}>
+    <Dialog open={Boolean(pendingAction)} onOpenChange={open => { if (!open && !busy) { setPendingAction(null); setPassword(''); setCode('') } }}>
       <DialogContent showCloseButton={false} className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>再次验证管理员身份</DialogTitle>
           <DialogDescription>执行确认绑定当前管理会话，验证后继续已预览的操作。</DialogDescription>
         </DialogHeader>
-        <form className="grid" onSubmit={event => { event.preventDefault(); const action = pendingAction; void execute(async () => { await api('/api/control-center/reauth', 'POST', { password, totp_code: code || null }); setPassword(''); setCode(''); setPendingAction(null); await action() }) }}>
+        <form className="grid" onSubmit={event => { event.preventDefault(); const action = pendingAction; if (!action) return; void execute(async () => { await api('/api/control-center/reauth', 'POST', { password, totp_code: code || null }); setPassword(''); setCode(''); setPendingAction(null); await action() }) }}>
           <Field label="管理员密码"><Input autoFocus type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required /></Field>
           <Field label="动态验证码（如已启用）"><Input inputMode="numeric" autoComplete="one-time-code" value={code} onChange={event => setCode(event.target.value)} /></Field>
           {error && <Alert variant="destructive" className="mb-3 wrap-anywhere">{error}</Alert>}
@@ -49,6 +49,6 @@ export default function OperationsPage({ selectedServerId }: { selectedServerId?
           </DialogFooter>
         </form>
       </DialogContent>
-    </Dialog>}
+    </Dialog>
   </div>
 }

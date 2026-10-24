@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Badge, Confirm, ErrorNotice, Loading } from '../../components'
+import { Badge, Confirm, ErrorNotice, Loading, DialogPresence } from '../../components'
 import { useAction, useResource } from '../../hooks'
 import { dateText, validatedSnapshot } from './groupTypes'
 import SourceDetailDrawer from './SourceDetailDrawer'
@@ -76,8 +76,8 @@ export default function Sources({ createRequest = 0, migrated, onCatalogChange }
       <p className="text-muted-foreground text-xs leading-relaxed mt-2">解析成功表示格式支持，不表示外部节点在线。外部节点作为有序链路中的明确版本引用，来源本身不计入上方代理资源数，也不直接授予用户。</p>
     </div>
     <SourceEditor session={session} open={editorOpen} snapshot={snapshot} refresh={refresh} onClose={() => setEditorOpen(false)} onSaved={saved} onReset={resetEditor} />
-    {detail && !editorOpen && !importing && <SourceDetailDrawer key={detail.id} selected={detail} snapshot={snapshot} refresh={refresh} onClose={() => setDetail(null)} edit={edit} remove={remove} onCatalogChange={onCatalogChange} />}
-    {importing && <OrderedSourceImport snapshot={snapshot} onClose={() => setImporting(false)} onSaved={imported} />}
-    {deleting && <Confirm title="删除订阅来源" busy={action.busy} disabled={Boolean(sourceWriteError(snapshot, deleting.id, deleting.settings_revision, true))} error={sourceWriteError(snapshot, deleting.id, deleting.settings_revision, true) || action.error} retry={refresh} onClose={() => setDeleting(null)} onConfirm={() => { if (action.busy || sourceWriteError(snapshot, deleting.id, deleting.settings_revision, true)) return; void action.run(() => deleteSource(snapshot, deleting), () => { setDeleting(null); setNotice('来源已删除，历史版本和依赖证据按面板规则保留。'); refresh() }) }}>删除「{deleting.name}」会停止后续抓取，保留已有历史证据。若当前、待发布或恢复路径仍引用该来源，面板会拒绝删除并列出引用。</Confirm>}
+    <DialogPresence>{detail && !editorOpen && !importing && <SourceDetailDrawer key={detail.id} selected={detail} snapshot={snapshot} refresh={refresh} onClose={() => setDetail(null)} edit={edit} remove={remove} onCatalogChange={onCatalogChange} />}</DialogPresence>
+    <DialogPresence>{importing && <OrderedSourceImport snapshot={snapshot} onClose={() => setImporting(false)} onSaved={imported} />}</DialogPresence>
+    <DialogPresence>{deleting && <Confirm title="删除订阅来源" busy={action.busy} disabled={Boolean(sourceWriteError(snapshot, deleting.id, deleting.settings_revision, true))} error={sourceWriteError(snapshot, deleting.id, deleting.settings_revision, true) || action.error} retry={refresh} onClose={() => setDeleting(null)} onConfirm={() => { if (action.busy || sourceWriteError(snapshot, deleting.id, deleting.settings_revision, true)) return; void action.run(() => deleteSource(snapshot, deleting), () => { setDeleting(null); setNotice('来源已删除，历史版本和依赖证据按面板规则保留。'); refresh() }) }}>删除「{deleting.name}」会停止后续抓取，保留已有历史证据。若当前、待发布或恢复路径仍引用该来源，面板会拒绝删除并列出引用。</Confirm>}</DialogPresence>
   </Panel>
 }

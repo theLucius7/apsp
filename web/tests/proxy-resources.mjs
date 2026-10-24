@@ -26,6 +26,8 @@ try {
     const page = await browser.newPage({viewport:{width,height:1000}})
     page.setDefaultTimeout(7000)
     await page.clock.install()
+    // Dialogs finish closing on animation frames, which the page clock holds here; with reduced motion they close at once.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     const prefix = '/api/plugins/sing-box', errors = [], writes = [], receipts = new Map()
     const servers = [1,2].map(id => ({id,name:`服务器 ${id}`,enabled:true,online:false,read_only:false,agent_supported:true,source:'administrator',installation:{state:'pending',reason:'等待设备应用，尚未确认连通。',target_rev:1,applied_rev:0}}))
     let nodes = [1,2,3,4].map(id => ({id,name:id === 2 ? '共享出口' : `监听 ${id}`,server_id:id === 2 ? 2 : 1,protocol:'vless-reality',enabled:true,port:20000+id,public_host:id === 2 ? 'exit.example.com' : 'entry.example.com',sni:'www.example.com',public_key:'TEST_ONLY',short_id:'abcd',...(id === 3 ? {settings:{public_port:8443}} : {})}))

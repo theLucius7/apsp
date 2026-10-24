@@ -18,7 +18,7 @@ export function uptime(value?: number) {
   const days = Math.floor(value / 86400), hours = Math.floor(value % 86400 / 3600), minutes = Math.floor(value % 3600 / 60)
   return days ? `${days} 天 ${hours} 小时` : `${hours} 小时 ${minutes} 分钟`
 }
-export function navigate(path: string) { window.location.hash = path }
+export { navigate } from '@/lib/leave-guard'
 
 /** Coarse relative time for status lines, such as "12 分钟前"; the exact time belongs in a tooltip. */
 export function ago(seconds?: number | null, now = Date.now() / 1000) {

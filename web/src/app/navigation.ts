@@ -15,7 +15,18 @@ type NavigationGroup = { label: string; items: readonly Omit<NavigationItem, 'gr
 // Groups follow what the administrator is doing, not how a feature is built:
 // a plugin's pages sit in the group of the task they serve, and "扩展" only holds
 // plugin management and plugins without a better home. See docs/product-map.md.
+// The proxy network comes first, in the order its tasks build on each other
+// (overview, nodes and chains, users, policies and packages); servers,
+// monitoring, network tools and costs support it. Addresses never change with
+// the order, and the page shown after sign-in is a separate decision (D6).
 const groups: readonly NavigationGroup[] = [
+  { label: '代理服务', items: [
+    { page: 'singbox-overview', path: '/plugins/sing-box', label: '服务概览', icon: BoxesIcon },
+    { page: 'nodes', path: '/plugins/sing-box/nodes', label: '代理节点', icon: WaypointsIcon },
+    { page: 'proxy-users', path: '/plugins/sing-box/users', label: '代理用户', icon: UsersIcon },
+    { page: 'groups', path: '/plugins/sing-box/groups', label: '策略与套餐', icon: LayersIcon },
+    { page: 'commerce', path: '/plugins/sing-box/commerce', label: '成员运营', icon: UsersIcon },
+  ] },
   { label: '总览', items: [
     { page: 'dashboard', path: '/dashboard', label: '服务器看板', icon: LayoutDashboardIcon },
     { page: 'statistics', path: '/statistics', label: '统计报表', icon: ChartColumnIcon },
@@ -34,13 +45,6 @@ const groups: readonly NavigationGroup[] = [
     { page: 'network-workbench', path: '/network-workbench', label: '网络检测', icon: GaugeIcon },
     { page: 'network-configuration', path: '/network-configuration', label: '网络配置', icon: NetworkIcon },
     { page: 'ddns', path: '/plugins/ddns', label: '动态域名解析', icon: GlobeIcon },
-  ] },
-  { label: '代理服务', items: [
-    { page: 'singbox-overview', path: '/plugins/sing-box', label: '服务概览', icon: BoxesIcon },
-    { page: 'nodes', path: '/plugins/sing-box/nodes', label: '代理节点', icon: WaypointsIcon },
-    { page: 'commerce', path: '/plugins/sing-box/commerce', label: '成员运营', icon: UsersIcon },
-    { page: 'proxy-users', path: '/plugins/sing-box/users', label: '代理用户', icon: UsersIcon },
-    { page: 'groups', path: '/plugins/sing-box/groups', label: '策略与套餐', icon: LayersIcon },
   ] },
   { label: '扩展', items: [
     { page: 'expenses', path: '/plugins/expenses', label: '订阅费用', icon: LayersIcon },

@@ -11,7 +11,9 @@ const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFil
 async function openNav(page, name) {
   await page.locator('[data-slot=sidebar]').waitFor()
   const menu = page.getByRole('button', { name: '菜单', exact: true })
-  if (await menu.isVisible() && await menu.getAttribute('aria-expanded') !== 'true') await menu.click()
+  // The viewport decides whether the menu button is in use: a visibility check does
+  // not wait, and a closing dialog briefly hides the page from assistive technology.
+  if (page.viewportSize().width < 768 && await menu.getAttribute('aria-expanded') !== 'true') await menu.click()
   await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name, exact: true }).click()
 }
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
@@ -113,7 +115,8 @@ try {
     if (screenshots) await page.screenshot({ path: resolve(screenshots, `display-dark-${width}.png`), fullPage: true, animations: 'disabled' })
     await page.reload()
     await page.locator('[data-slot=server-card]').first().waitFor()
-    assert.equal(await page.locator('[data-slot=server-display]').getAttribute('data-theme'), 'dark')
+    // The dashboard theme applies to the whole document, so console styles never mix in.
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark')
     await page.getByRole('link', { name: '东京 · 主节点，在线，查看详情', exact: true }).click()
     await page.getByRole('heading', { name: /^东京 · 主节点/ }).waitFor()
     await page.locator('[data-slot=chart] svg[role="img"]').first().waitFor()
@@ -159,7 +162,7 @@ try {
     await page.locator('[data-slot=sidebar]').waitFor()
     assert.equal(await page.locator('[data-slot=server-display]').count(), 0)
     assert.equal(await page.evaluate(() => document.body.classList.contains('has-server-display')), false)
-    // The dashboard theme is scoped to the dashboard; the console keeps its own light tokens.
+    // Leaving the dashboard hands the document back to the console's own (light) theme.
     assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'light')
     assert.equal(await page.locator('[data-slot=sidebar]').evaluate(element => {
       const probe = document.createElement('div'); probe.style.background = 'var(--sidebar)'; document.body.append(probe)

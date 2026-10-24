@@ -2,7 +2,7 @@ import MemberCommerce from './commerce/MemberCommerce'
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api, errorMessage } from '../../api'
-import { Brand, CopyField, ErrorNotice, Field, FormDialog, Loading } from '../../components'
+import { Brand, CopyField, ErrorNotice, Field, FormDialog, Loading, DialogPresence } from '../../components'
 import { bytes, time } from '../../format'
 import { useAction } from '../../hooks'
 import { loginPasskey, passkeySupport, registerPasskey } from '../../passkeys'
@@ -98,8 +98,8 @@ export default function UserPortal({ account, activation }: { account: string; a
         <p className="text-muted-foreground mt-3 text-xs leading-relaxed">尚未开通或丢失密钥时，请联系管理员获取新的开通链接。</p>
       </>}
     </div></Panel> : null}
-    {editing && <FormDialog title={editing === 'new' ? '添加备用 Passkey' : `删除「${editing.name}」？`} onClose={() => setEditing(null)} onSubmit={manage} busy={action.busy} error={action.error} submitLabel={editing === 'new' ? '验证并添加' : '验证并删除'}>
+    <DialogPresence>{editing && <FormDialog title={editing === 'new' ? '添加备用 Passkey' : `删除「${editing.name}」？`} onClose={() => setEditing(null)} onSubmit={manage} busy={action.busy} error={action.error} submitLabel={editing === 'new' ? '验证并添加' : '验证并删除'}>
       {editing === 'new' ? <><p>先验证已有密钥，再选择新设备或另一把安全密钥。</p><Field label="新密钥名称"><Input name="name" required maxLength={64} /></Field></> : <p>该密钥将无法再登录，其他用户会话将退出。当前会话保留。</p>}
-    </FormDialog>}
+    </FormDialog>}</DialogPresence>
   </main>
 }

@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { BellRingIcon, ClipboardListIcon, FileTextIcon, GlobeIcon, LayoutGridIcon, SearchIcon, ServerIcon, ShieldCheckIcon, StarIcon, UsersIcon, WaypointsIcon } from 'lucide-react'
@@ -7,6 +7,7 @@ import { usePreference } from './preferences'
 import { useI18n } from '../i18n'
 import type { NavigationItem } from '../app/navigation'
 import { cn } from '@/lib/utils'
+import { navigate } from '@/lib/leave-guard'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Kbd } from '@/components/ui/kbd'
@@ -20,8 +21,11 @@ const kinds: Record<string, string> = { page: '页面', server: '服务器', ip:
 const kindIcons: Record<string, LucideIcon> = { server: ServerIcon, ip: ServerIcon, node: WaypointsIcon, 'proxy-user': UsersIcon, domain: GlobeIcon, 'dns-rule': GlobeIcon, certificate: ShieldCheckIcon, incident: BellRingIcon, 'alert-rule': BellRingIcon }
 const taskKinds = new Set(['diagnostic-task', 'test-plan', 'test-run', 'command-task', 'fleet-task', 'operation-task', 'operation-schedule', 'task'])
 
-// Field where typing "/" must stay text instead of opening the palette.
-const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+// Widgets that take text, including the remote terminal: typing "/" there stays input.
+const typing = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || Boolean(target.closest('[role=textbox], [role=searchbox], [role=combobox]')))
+// Another dialog owns the keyboard, and opening over it could leave its form behind.
+// A dialog that is animating closed is inert and no longer counts as open.
+const otherDialogOpen = () => Boolean(document.querySelector('[role=dialog]:not([data-slot=command-palette]):not([inert]), [role=alertdialog]:not([inert])'))
 
 /**
  * Keyboard-first jump list for the administrator console: permitted pages,
@@ -30,6 +34,24 @@ const editable = (target: EventTarget | null) => target instanceof HTMLElement &
 export default function CommandPalette({ pages }: { pages: readonly NavigationItem[] }) {
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
+  const opened = useRef(open)
+  opened.current = open
+  // Focus goes back to whatever opened the palette (its button or the element a
+  // shortcut was pressed in); after a jump removed that element, or when it can no
+  // longer take focus, to the button.
+  const trigger = useRef<HTMLButtonElement>(null)
+  const returnTo = useRef<HTMLElement | null>(null)
+  const show = () => {
+    const active = document.activeElement
+    returnTo.current = active instanceof HTMLElement && active !== document.body ? active : null
+    setOpen(true)
+  }
+  const restoreFocus = (event: Event) => {
+    event.preventDefault()
+    const target = returnTo.current?.isConnected ? returnTo.current : trigger.current
+    target?.focus()
+    if (document.activeElement !== target) trigger.current?.focus()
+  }
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Item[]>([])
   const [searching, setSearching] = useState(false)
@@ -43,8 +65,12 @@ export default function CommandPalette({ pages }: { pages: readonly NavigationIt
 
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); setOpen(value => !value) }
-      else if (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey && !editable(event.target)) { event.preventDefault(); setOpen(true) }
+      // Keys the focused widget already handled (the terminal sends them to the server) stay there.
+      if (event.defaultPrevented) return
+      const opening = !opened.current
+      if (opening && otherDialogOpen()) return
+      if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); if (opening) show(); else setOpen(false) }
+      else if (opening && event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey && !typing(event.target)) { event.preventDefault(); show() }
     }
     window.addEventListener('keydown', keyboard)
     return () => window.removeEventListener('keydown', keyboard)
@@ -102,8 +128,10 @@ export default function CommandPalette({ pages }: { pages: readonly NavigationIt
 
   const close = (next: boolean) => { setOpen(next); if (!next) { setQuery(''); setError(''); setActiveKey(undefined) } }
   const visit = (entry: Entry) => {
-    window.location.hash = entry.item.path
+    // Unsaved input elsewhere may keep the user on this page; then nothing is recorded.
+    const left = navigate(entry.item.path)
     close(false)
+    if (!left) return
     if (recent.ready) void recent.save([entry.item, ...(recent.value ?? []).filter(value => value.path !== entry.item.path)].slice(0, 20)).catch(reason => setError(errorMessage(reason)))
   }
   const pinned = (item?: Item) => Boolean(item && (favorite.value ?? []).some(value => value.path === item.path))
@@ -124,13 +152,13 @@ export default function CommandPalette({ pages }: { pages: readonly NavigationIt
   }
 
   return <>
-    <Button data-slot="global-search" variant="outline" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K /" aria-label={t('全局搜索')} onClick={() => setOpen(true)}
+    <Button ref={trigger} data-slot="global-search" variant="outline" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K /" aria-label={t('全局搜索')} onClick={show}
       className="text-muted-foreground hover:text-foreground w-full min-w-0 justify-start font-normal sm:w-auto sm:min-w-40 sm:max-w-72 sm:flex-1 lg:max-w-80 max-sm:w-auto">
       <SearchIcon aria-hidden="true" /><span className="truncate max-sm:sr-only">{t('搜索或跳转…')}</span>
       <Kbd className="ml-auto max-sm:hidden">⌘K</Kbd>
     </Button>
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent data-slot="command-palette" showCloseButton={false} className="top-[12vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl">
+      <DialogContent data-slot="command-palette" showCloseButton={false} onCloseAutoFocus={restoreFocus} className="top-[12vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl">
         <DialogTitle className="sr-only">{t('搜索或跳转')}</DialogTitle>
         <DialogDescription className="sr-only">{t('输入页面名称或服务器、域名、节点等对象，用方向键选择，回车打开。')}</DialogDescription>
         <div className="flex items-center gap-2 border-b px-3">

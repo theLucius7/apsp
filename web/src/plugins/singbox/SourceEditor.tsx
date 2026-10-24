@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../../api'
-import { ErrorNotice, Field, Modal } from '../../components'
+import { DialogPresence, ErrorNotice, Field, Modal } from '../../components'
 import { useAction } from '../../hooks'
 import { emptySourceDraft, prepareSourceMutation, sourceCommand, SourceFileReader, sourceCommandError, sourceMetadataError, sourceMutationReplay, sourceWriteError, submitSourceMutation } from './sourceRequests'
 import type { PendingSourceMutation, SourceDraft, SourceEditorMode, SourceSnapshot } from './sourceRequests'
@@ -65,11 +65,11 @@ export default function SourceEditor({ session, open, snapshot, refresh, onClose
       onSaved(receipt)
     })
   }
-  if (!open) return null
   const input = mode === 'create' || mode === 'replace' || mode === 'update'
   const confirm = mode === 'archive' || mode === 'unarchive'
   const submitLabel = replay ? '重试原请求' : mode === 'archive' ? '确认归档' : mode === 'unarchive' ? '确认恢复' : '保存来源'
-  return <Modal wide  title={titles[mode]} onClose={onClose} busy={action.busy}><form onSubmit={event => { event.preventDefault(); if (!action.busy && !writeError && !fileBusy) submit() }}><div data-slot="modal-body" className="p-4"><ErrorNotice message={writeError || action.error} retry={refresh} /><fieldset disabled={action.busy || Boolean(writeError)}>
+  // Closing keeps the dialog on screen for its exit animation.
+  return <DialogPresence>{open && <Modal wide  title={titles[mode]} onClose={onClose} busy={action.busy}><form onSubmit={event => { event.preventDefault(); if (!action.busy && !writeError && !fileBusy) submit() }}><div data-slot="modal-body" className="p-4"><ErrorNotice message={writeError || action.error} retry={refresh} /><fieldset disabled={action.busy || Boolean(writeError)}>
     {confirm ? <p>{mode === 'archive' ? `归档「${source?.name}」后停止抓取与新引用；已保存版本和历史依赖仍保留。` : `恢复「${source?.name}」后可以再次更新；请查看抓取与解析结果。`}</p> : <>
       <Field label="来源名称"><Input name="source_name" required maxLength={128} value={draft.name} onChange={event => set('name', event.target.value)} autoComplete="off" /></Field>
       {input && <>
@@ -96,5 +96,5 @@ export default function SourceEditor({ session, open, snapshot, refresh, onClose
       <p className="text-muted-foreground mt-3 text-xs leading-relaxed">输入和未确认的原请求仅保存在当前页面内存。保存后会清空敏感输入；抓取或解析失败不抹掉上次成功版本。离开此页面会丢失未确认请求。</p>
       {pending.current?.attempted && !replay && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">草稿已修改，下次保存将使用新的请求标识；请先确认上次保存结果。</p>}
     </>}
-  </fieldset>{(pending.current?.attempted || writeError) && <Button type="button" variant="ghost" size="sm" disabled={action.busy || Boolean(sourceMetadataError(snapshot))} onClick={() => { if (!action.busy && !sourceMetadataError(snapshot)) onReset() }}>丢弃原请求和草稿，重新读取设置</Button>}</div><footer><Button type="button" variant="outline" onClick={onClose} disabled={action.busy}>取消</Button><Button disabled={action.busy || Boolean(writeError) || fileBusy}>{action.busy ? '正在保存…' : submitLabel}</Button></footer></form></Modal>
+  </fieldset>{(pending.current?.attempted || writeError) && <Button type="button" variant="ghost" size="sm" disabled={action.busy || Boolean(sourceMetadataError(snapshot))} onClick={() => { if (!action.busy && !sourceMetadataError(snapshot)) onReset() }}>丢弃原请求和草稿，重新读取设置</Button>}</div><footer><Button type="button" variant="outline" onClick={onClose} disabled={action.busy}>取消</Button><Button disabled={action.busy || Boolean(writeError) || fileBusy}>{action.busy ? '正在保存…' : submitLabel}</Button></footer></form></Modal>}</DialogPresence>
 }

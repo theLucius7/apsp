@@ -5,8 +5,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
 
 // TEST_ONLY: after rebuilding web/dist, run `node web/tests/server-list-selection.mjs`.
-// Covers the server list's select-all checkbox, the contextual bulk action bar,
-// threshold-coloured usage meters and the offline "last contact" hint.
+// Covers the server list's select-all checkbox, the contextual bulk action bar and
+// its confirmation, selections hidden by the filter, threshold-coloured usage
+// meters and the offline "last contact" hint.
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webp': 'image/webp' }
@@ -72,11 +73,36 @@ try {
       assert.equal(await all.getAttribute('aria-checked'), 'mixed')
       await bar.getByText('已选择 2 台', { exact: true }).waitFor()
 
-      // Bulk actions apply to the selection only; clearing hides the bar again.
+      // Bulk actions ask first, naming the servers and what the change stops; they
+      // apply to the selection only.
+      const waitFor = async count => { const deadline = Date.now() + 5000; while (lifecycle.length < count && Date.now() < deadline) await page.waitForTimeout(25) }
       await bar.getByRole('button', { name: '进入维护', exact: true }).click()
-      const deadline = Date.now() + 5000
-      while (lifecycle.length < 2 && Date.now() < deadline) await page.waitForTimeout(25)
+      const confirm = page.getByRole('alertdialog', { name: '进入维护：2 台服务器' })
+      await confirm.getByText(/TEST_ONLY 高负载、TEST_ONLY 离线/).waitFor()
+      await confirm.getByText(/不再向这些服务器派发运维任务、终端会话、远程命令和运行时操作/).waitFor()
+      await page.waitForTimeout(100)
+      assert.equal(lifecycle.length, 0, 'Nothing changes before the confirmation')
+      await confirm.getByRole('button', { name: '进入维护', exact: true }).click()
+      await waitFor(2)
+      await confirm.waitFor({ state: 'hidden' })
       assert.deepEqual(lifecycle.map(item => [item.id, item.lifecycle]), [[1, 'maintenance'], [3, 'maintenance']])
+
+      // A selection the filter hides is named but never changed (E32).
+      await page.getByRole('searchbox', { name: '筛选名称、标签或地区' }).fill('离线')
+      await bar.getByText('已选择 1 台', { exact: true }).waitFor()
+      await bar.getByText('另有 1 台不在当前筛选中，不会被操作', { exact: true }).waitFor()
+      await bar.getByRole('button', { name: '停止接收新任务', exact: true }).click()
+      const hidden = page.getByRole('alertdialog', { name: '停止接收新任务：1 台服务器' })
+      await hidden.getByText(/另有 1 台已选服务器被当前筛选隐藏，不会被修改。/).waitFor()
+      assert.equal(await hidden.getByText(/TEST_ONLY 高负载/).count(), 0, 'The hidden server is not listed as a target')
+      await hidden.getByRole('button', { name: '停止接收新任务', exact: true }).click()
+      await waitFor(3)
+      await hidden.waitFor({ state: 'hidden' })
+      assert.deepEqual(lifecycle.slice(2).map(item => [item.id, item.lifecycle]), [[3, 'draining']])
+      await page.getByRole('searchbox', { name: '筛选名称、标签或地区' }).fill('')
+
+      // Clearing hides the bar again.
+      await bar.getByText('已选择 2 台', { exact: true }).waitFor()
       await bar.getByRole('button', { name: '清空选择', exact: true }).click()
       await bar.waitFor({ state: 'hidden' })
       assert.equal(await all.getAttribute('aria-checked'), 'false')

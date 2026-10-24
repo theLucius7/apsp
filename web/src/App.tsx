@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { api, errorMessage } from './api'
 import { Brand, Loading } from './components'
 import { useAction } from './hooks'
@@ -9,6 +9,7 @@ import { currentNavigation } from './app/navigation'
 import { resolveRoute } from './app/routes'
 import { useI18n } from './i18n'
 import { useSessionStore } from './stores/session'
+import { acceptHashChange, guardLinks } from '@/lib/leave-guard'
 
 const ServerDisplay = lazy(() => import('./display/ServerDisplay'))
 const MemberLogin = lazy(() => import('./plugins/singbox/commerce/MemberLogin'))
@@ -26,7 +27,11 @@ export default function App() {
   const notice = useSessionStore(state => state.notice)
   const accessRevision = useSessionStore(state => state.revision)
   const [path, setPath] = useState(window.location.hash.slice(1) || '/dashboard')
+  const shown = useRef(path)
+  shown.current = path
   const action = useAction()
+
+  useEffect(() => guardLinks(), [])
 
   useEffect(() => {
     const store = useSessionStore.getState()
@@ -49,7 +54,8 @@ export default function App() {
     const unauthorized = () => {
       useSessionStore.getState().signedOut(useSessionStore.getState().authenticated ? t('登录已过期，请重新登录。') : undefined)
     }
-    const hash = () => setPath(window.location.hash.slice(1) || '/dashboard')
+    // Back, forward and direct hash writes reach the router here; unsaved input decides.
+    const hash = () => { if (acceptHashChange(`#${shown.current}`)) setPath(window.location.hash.slice(1) || '/dashboard') }
     window.addEventListener('apsp:unauthorized', unauthorized)
     window.addEventListener('hashchange', hash)
     return () => {

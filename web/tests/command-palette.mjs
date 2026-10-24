@@ -53,7 +53,8 @@ try {
         answered.push(q)
         return
       }
-      if (path === '/api/servers') return json([])
+      // One server, so the server list shows its search field (an empty fleet shows only the first-run prompt).
+      if (path === '/api/servers') return json([{ id: 7, name: 'TEST_ONLY 东京 · 主节点', online: true, device_public_key: 'TEST_ONLY', metrics_stale: false, registered: true, manifest_rev: 0, last_seen: Date.now() / 1000, static_info: {}, latest_metrics: {} }])
       // Pages opened from the palette may read more data; an empty error keeps them inert.
       return json({ error: 'TEST_ONLY 此夹具未提供该数据。' }, 404)
     })

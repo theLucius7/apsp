@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../../api'
-import { Badge, Confirm, Empty, ErrorNotice, Loading, Modal } from '../../components'
+import { Badge, Confirm, Empty, ErrorNotice, Loading, Modal, DialogPresence } from '../../components'
 import { useAction, useResource } from '../../hooks'
 import { ddnsMessage } from './types'
 import type { DdnsRule } from './types'
@@ -39,10 +39,10 @@ export default function Lifecycle({ rule, close, changed }: { rule: DdnsRule; cl
         {entry.operation === 'sync' && entry.status === 'updated' && entry.previous && entry.observed && <Button variant="ghost" size="sm" disabled={action.busy || rule.busy} onClick={() => setRollback(entry)}>回退到此次修改前的值</Button>}
       </article>)}</div>}
     </div><footer><Button variant="outline" disabled={action.busy} onClick={close}>关闭</Button></footer>
-    {rollback && <Confirm title="回退 DNS 记录并暂停同步" busy={action.busy} error={action.error} onClose={() => setRollback(null)} onConfirm={() => void action.run(async () => {
+    <DialogPresence>{rollback && <Confirm title="回退 DNS 记录并暂停同步" busy={action.busy} error={action.error} onClose={() => setRollback(null)} onConfirm={() => void action.run(async () => {
       const result = await api<{ error_code: string | null }>(`/api/plugins/ddns/rules/${rule.id}/rollback`, 'POST', { revision: rule.revision, history_id: rollback.id, confirmed: true })
       refresh(); setPreview(null)
       if (result.error_code) throw new Error(ddnsMessage(result.error_code))
-    }, () => setRollback(null))}>将恢复为 {detail(rollback.previous)}。远端当前值必须仍为 {detail(rollback.observed)}；回退后请先核对，再手工决定是否恢复自动同步。</Confirm>}
+    }, () => setRollback(null))}>将恢复为 {detail(rollback.previous)}。远端当前值必须仍为 {detail(rollback.observed)}；回退后请先核对，再手工决定是否恢复自动同步。</Confirm>}</DialogPresence>
   </Modal>
 }

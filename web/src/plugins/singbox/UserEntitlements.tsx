@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Badge, ErrorNotice, Field, FormDialog, Loading } from '../../components'
+import { Badge, ErrorNotice, Field, FormDialog, Loading, DialogPresence } from '../../components'
 import { bytes } from '../../format'
 import { resourceWriteError, useAction, useResource } from '../../hooks'
 import type { ResourceState } from '../../hooks'
@@ -57,12 +57,12 @@ export default function UserEntitlements({ id, entitlement, userError, refreshRe
         <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{e.package_group_id === null ? '未分配套餐时保留兼容模式，不限制流量或有效期。分配套餐后，所有策略组与单独授权共享此用户的套餐额度。' : '到期或用完流量后立即停止提供可用订阅，设备应用新配置后停止服务。设备离线或流量尚未上报时，限制不会瞬间生效。'}</p>
       </>}
     </div>
-    {assignment && <FormDialog title="分配套餐" onClose={() => setAssignment(null)} onSubmit={assign} busy={action.busy} submitDisabled={Boolean(packageError())} error={packageError() || action.error} submitLabel="确认分配">
+    <DialogPresence>{assignment && <FormDialog title="分配套餐" onClose={() => setAssignment(null)} onSubmit={assign} busy={action.busy} submitDisabled={Boolean(packageError())} error={packageError() || action.error} submitLabel="确认分配">
       <Field label="套餐组"><NativeSelect className="w-full" name="package_group_id" required value={packageChoice} onChange={event => setPackageChoice(event.target.value)}><option value="" disabled>选择套餐</option>{packageChoice && !packages.data?.some(value => String(value.id) === packageChoice) && <option value={packageChoice}>套餐组 #{packageChoice}（已不存在，原选择保留）</option>}{packages.data?.map(p => <option key={p.id} value={p.id}>{p.name} · {p.monthly_bytes === null ? '不限量' : bytes(p.monthly_bytes)} / 月 · {p.duration_days} 天</option>)}</NativeSelect></Field>
       {packages.data?.map(p => <p className="text-muted-foreground mt-3 text-xs leading-relaxed" key={p.id}>{p.name}：{scheduleText(p)}</p>)}
       <p>此操作替换当前套餐，使用期限从现在重新计算，不是在原到期日上续加。本月已记录的流量不会清空。变更月度重置规则会重新按新规则统计当前周期。</p>
       <p className="text-muted-foreground mt-3 text-xs leading-relaxed">套餐与节点权限分别分配；仅分配套餐不会自动授予节点。</p>
-    </FormDialog>}
-    {operation && <OperationReview request={operation} onClose={() => setOperation(null)} onApplied={() => { setOperation(null); setAssignment(null); dirty.current = false; assigned.reload(); entitlement.reload(); onChange(); setNotice('变更已确认保存；历史账本保留，请继续查看设备应用与订阅状态。') }} />}
+    </FormDialog>}</DialogPresence>
+    <DialogPresence>{operation && <OperationReview request={operation} onClose={() => setOperation(null)} onApplied={() => { setOperation(null); setAssignment(null); dirty.current = false; assigned.reload(); entitlement.reload(); onChange(); setNotice('变更已确认保存；历史账本保留，请继续查看设备应用与订阅状态。') }} />}</DialogPresence>
   </Panel>
 }

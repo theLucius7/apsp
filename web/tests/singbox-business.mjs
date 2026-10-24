@@ -37,12 +37,17 @@ try {
       await dialog.getByText('资源存在', { exact: true }).waitFor()
       return dialog
     }
-    const closeResourceDetail = () => page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
+    // Dialogs animate closed; wait until the detail has left the page before reading it.
+    const closeResourceDetail = async () => {
+      await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
+      await page.getByRole('dialog').waitFor({ state: 'hidden' })
+    }
     // Narrow screens fold the main navigation behind the menu button.
     const navigate = async name => {
       await page.locator('[data-slot=sidebar]').waitFor()
       const toggle = page.getByRole('button', { name: '菜单', exact: true })
-      if (await toggle.isVisible() && await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click()
+      // The viewport decides: a visibility check does not wait for a closing dialog.
+      if (page.viewportSize().width < 768 && await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click()
       await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name, exact: true }).click()
     }
     // Server plugins are a tab of the server page; the sidebar has no per-server plugin entry.

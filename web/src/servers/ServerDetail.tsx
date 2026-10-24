@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { AgentSettings } from './AgentSettings'
 import AgentTasks from './AgentTasks'
-import { Badge, ErrorNotice, Loading, PageHeader, Refresh, Stat } from '../components'
+import { Badge, ErrorNotice, Loading, PageHeader, Refresh, Stat, DialogPresence } from '../components'
 import { bytes, navigate, percent, time, uptime } from '../format'
+import { useI18n } from '../i18n'
 import { useResource } from '../hooks'
 import type { Server } from '../types'
 import ServerNavigation from './ServerNavigation'
@@ -28,6 +29,7 @@ const detailRow = 'flex items-center justify-between gap-3'
 const empty = 'text-muted-foreground px-4 py-6 text-sm'
 
 export default function ServerDetail({ id, section = 'overview' }: { id: number; section?: ServerDetailSection }) {
+  const { t } = useI18n()
   const server = useResource<Server>(`/api/servers/${id}`)
   const [pluginRevision, setPluginRevision] = useState(0)
   const [installing, setInstalling] = useState(false)
@@ -45,7 +47,7 @@ export default function ServerDetail({ id, section = 'overview' }: { id: number;
   return <>
     {back}
     <PageHeader eyebrow={`服务器 #${entry.id}`} title={entry.name} description={descriptions[section]}>
-      <Badge tone={entry.online ? 'good' : 'neutral'}>{entry.online ? '在线' : entry.device_public_key ? '离线' : '待接入'}</Badge>
+      <Badge tone={entry.online ? 'good' : 'neutral'}>{t(entry.online ? '在线' : entry.device_public_key ? '离线' : '待接入')}</Badge>
       {entry.metrics_stale && <Badge tone="warm">指标过期</Badge>}
       <Refresh onClick={refresh} />
       <Button onClick={() => setInstalling(true)}><PlusIcon aria-hidden="true" />接入 / 升级</Button>
@@ -65,8 +67,8 @@ export default function ServerDetail({ id, section = 'overview' }: { id: number;
       <PluginSettings key={`${id}-${pluginRevision}`} serverId={id} />
       <ServerPlugins key={`business-${id}-${pluginRevision}`} server={entry} />
     </>}
-    {editing && <ServerEdit key={id} server={entry} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); server.reload() }} />}
-    {installing && <ServerEnrollment key={id} server={entry} onClose={() => { setInstalling(false); server.reload() }} />}
+    <DialogPresence>{editing && <ServerEdit key={id} server={entry} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); server.reload() }} />}</DialogPresence>
+    <DialogPresence>{installing && <ServerEnrollment key={id} server={entry} onClose={() => { setInstalling(false); server.reload() }} />}</DialogPresence>
   </>
 }
 
