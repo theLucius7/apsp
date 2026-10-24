@@ -137,7 +137,11 @@ class PreflightPanel:
             current = {"id": self.preflights[-1], "device_checks_pending": self.polls < 2,
                        "ready": not first, "checks": [{"key": "ports", "blocking": False}],
                        "bootstrap": {"available": first, "ready": first}}
-            return {"server_id": 41, "id": None, "preflight": current}
+            observed = self.bootstrapped and self.polls > 1
+            checkpoint = {"state": "stale", "outcome": "superseded", "observed_at": 120 if observed else None}
+            return {"server_id": 41, "id": None, "preflight": current,
+                    "drift": {"state": "needs_preflight", "target_revision": 1 if self.bootstrapped else None,
+                              "checkpoint": checkpoint}}
         raise AssertionError(path)
 
 
@@ -535,9 +539,11 @@ class AcceptanceContracts(unittest.TestCase):
         state = {"schema": 1, "prefix": "apsp-e2e-test", "server_id": 41, "checkpoints": {}}
         args = argparse.Namespace(state=self.state_path, timeout=600, totp=False)
         clock = Clock()
-        deployments = [view(), view()]
-        deployments[0]["deployment"] = {"target_rev": 1, "applied_rev": None, "healthy": None}
-        with patch.object(DRIVER, "snapshot", side_effect=deployments), \
+        # Saved business nodes keep the server dirty, so the empty revision is
+        # never certified as applied; the answered checkpoint is the signal.
+        pending = view()
+        pending["deployment"] = {"target_rev": 1, "applied_rev": 0, "healthy": False}
+        with patch.object(DRIVER, "snapshot", return_value=pending), \
              patch.object(DRIVER, "password", return_value="test-password"), \
              patch.object(DRIVER.time, "monotonic", clock.monotonic), \
              patch.object(DRIVER.time, "sleep", clock.sleep), \
@@ -598,6 +604,18 @@ class AcceptanceContracts(unittest.TestCase):
                                    "checkpoint_outcome": None, "checkpoint_failure_kind": None})
         self.assertNotIn("TEST_ONLY-secret", json.dumps(summary))
         self.assertEqual(DRIVER.install_status(None, None)["error_categories"], [])
+
+
+    def test_bootstrap_install_needs_an_applied_revision_or_an_answered_checkpoint_for_it(self):
+        applied = {"target_rev": 1, "applied_rev": 1, "healthy": True}
+        waiting = {"target_rev": 1, "applied_rev": 0, "healthy": False}
+        answered = {"target_revision": 1, "checkpoint": {"outcome": "superseded", "observed_at": 120}}
+        self.assertTrue(DRIVER.bootstrap_installed(applied, {}))
+        self.assertTrue(DRIVER.bootstrap_installed(waiting, answered))
+        self.assertFalse(DRIVER.bootstrap_installed(waiting, {"target_revision": 1, "checkpoint": {"outcome": None, "observed_at": None}}))
+        self.assertFalse(DRIVER.bootstrap_installed(waiting, {**answered, "target_revision": 2}))
+        self.assertFalse(DRIVER.bootstrap_installed(waiting, {"target_revision": 1, "checkpoint": {"outcome": "failed", "observed_at": 120}}))
+        self.assertFalse(DRIVER.bootstrap_installed({"target_rev": None}, answered))
 
     def test_totals_preserve_large_integer_precision_and_reject_inconsistent_ledger(self):
         amount = 2 ** 64 + 17

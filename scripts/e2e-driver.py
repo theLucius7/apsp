@@ -402,6 +402,19 @@ def install_status(status, drift):
     return result
 
 
+def bootstrap_installed(status, drift):
+    status = status if isinstance(status, dict) else {}
+    target = status.get("target_rev")
+    if type(target) is not int or target <= 0:
+        return False
+    if status.get("applied_rev") == target and status.get("healthy") is True:
+        return True
+    checkpoint = drift.get("checkpoint") if isinstance(drift, dict) else None
+    return (isinstance(checkpoint, dict) and drift.get("target_revision") == target
+            and type(checkpoint.get("observed_at")) is int
+            and checkpoint.get("outcome") in ("verified", "superseded"))
+
+
 def reauthenticate(panel, args):
     # Bootstrap and confirmation require a proof younger than five minutes;
     # device sampling and the first runtime install can outlast the login one.
@@ -435,14 +448,19 @@ def preflight(panel, state, args):
                "首次空运行时安装预检未通过；阻塞项=" + ",".join(blocking_checks(bootstrap)))
         reauthenticate(panel, args)
         panel.request(base + "/preflight/bootstrap", {"id": view["id"], "confirm": True})
+        # While saved business nodes await confirmation the server stays dirty,
+        # so the panel does not certify the empty revision as applied. The
+        # Agent answering the checkpoint for that revision shows it applied
+        # and reported healthy; the second preflight then reads the runtime
+        # account it created.
         while True:
             status = snapshot(panel, state)["deployment"]
-            if (status and (status.get("target_rev") or 0) > 0
-                    and status.get("applied_rev") == status.get("target_rev") and status.get("healthy") is True):
+            drift = panel.request(base).get("drift") or {}
+            if bootstrap_installed(status, drift):
                 break
             if time.monotonic() >= deadline:
                 raise AcceptanceError("超时：空运行时首次安装未完成；状态=" + json.dumps(
-                    install_status(status, panel.request(base).get("drift")), ensure_ascii=False))
+                    install_status(status, drift), ensure_ascii=False))
             time.sleep(2)
         view = collect_preflight(panel, base, deadline)
     ensure(view.get("ready") is True, "部署预检未通过；阻塞项=" + ",".join(blocking_checks(view)))
