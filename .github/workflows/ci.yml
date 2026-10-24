@@ -346,7 +346,10 @@ jobs:
           retention-days: 7
 
   agent-freebsd:
-    name: Agent FreeBSD 13+ (${{ matrix.arch }})
+    # One VM per job: vmactions keeps earlier VMs running and its SSH alias keeps
+    # pointing at the first one, so several releases in one job silently run on
+    # the first release only.
+    name: Agent FreeBSD ${{ matrix.release }} (${{ matrix.arch }})
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -354,6 +357,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        arch: [amd64, arm64]
+        release: ['13.5', '14', '15']
         include:
           - arch: amd64
             vm_arch: x86_64
@@ -361,6 +366,8 @@ jobs:
           - arch: arm64
             vm_arch: aarch64
             target: aarch64-unknown-freebsd
+          - release: '15'
+            package: true
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Compile only the deliberately public CI test trust root
@@ -401,12 +408,13 @@ jobs:
           cache: false
       - name: Build the pinned upstream FreeBSD runtime
         run: python3 tools/ci-run.py python3 tools/build-runtime-native.py 'freebsd-${{ matrix.arch }}' .ci-artifacts
-      - name: Verify the binary on FreeBSD 13.5
+      - name: Verify the binary on FreeBSD ${{ matrix.release }}
         uses: vmactions/freebsd-vm@v1.5.8
         with:
-          release: '13.5'
+          release: ${{ matrix.release }}
           arch: ${{ matrix.vm_arch }}
-          copyback: false
+          copyback: ${{ matrix.package == true }}
+          prepare: ${{ matrix.package && 'pkg install -y python311 py311-sqlite3 py311-cryptography' || '' }}
           run: |
             set -eu
             chmod 755 .ci-binaries/apsp-agent
@@ -415,28 +423,9 @@ jobs:
             mkdir -p /tmp/apsp-runtime
             tar -xzf .ci-artifacts/sing-box/1.14.2/freebsd-${{ matrix.arch }} -C /tmp/apsp-runtime
             /tmp/apsp-runtime/sing-box version
-      - name: Verify the same binary on FreeBSD 14
-        uses: vmactions/freebsd-vm@v1.5.8
-        with:
-          release: '14'
-          arch: ${{ matrix.vm_arch }}
-          copyback: false
-          run: |
-            set -eu
-            test "$(.ci-binaries/apsp-agent --version)" = 'apsp-agent ${{ steps.build.outputs.version }}'
-            .ci-binaries/apsp-agent --help
-            mkdir -p /tmp/apsp-runtime
-            tar -xzf .ci-artifacts/sing-box/1.14.2/freebsd-${{ matrix.arch }} -C /tmp/apsp-runtime
-            /tmp/apsp-runtime/sing-box version
-      - name: Verify and package the same binary on FreeBSD 15
-        uses: vmactions/freebsd-vm@v1.5.8
-        with:
-          release: '15'
-          arch: ${{ matrix.vm_arch }}
-          copyback: true
-          prepare: pkg install -y python311 py311-sqlite3 py311-cryptography
-          run: |
-            set -eu
+            if [ '${{ matrix.package }}' != true ]; then exit 0; fi
+            # The newest supported release also packages the binary and runs the
+            # Agent and native service smoke tests.
             python3.11 tools/build-agent.py '${{ matrix.target }}' .ci-artifacts --binary .ci-binaries/apsp-agent
             mkdir -p /tmp/apsp-cores
             sysctl kern.corefile=/tmp/apsp-cores/%N.%P.core
@@ -446,12 +435,14 @@ jobs:
             env CI=true GITHUB_ACTIONS=true python3.11 tools/ci-run.py python3.11 tools/native-service-smoke.py .ci-binaries/apsp-agent .ci-artifacts/sing-box/1.14.2/freebsd-${{ matrix.arch }} || result=1
             exit "$result"
       - uses: actions/upload-artifact@v7.0.1
+        if: matrix.package
         with:
           name: apsp-TEST_ONLY-runtime-freebsd-${{ matrix.arch }}
           path: .ci-artifacts/sing-box/
           if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@v7.0.1
+        if: matrix.package
         with:
           name: apsp-TEST_ONLY-agent-freebsd-${{ matrix.arch }}
           path: .ci-artifacts/agent/

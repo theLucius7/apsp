@@ -551,6 +551,13 @@ class StandaloneBootstrapTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="apsp-standalone-bootstrap-test-")
         self.directory = Path(self.temporary.name)
+        # The entry refuses to stage below any directory another account can
+        # write. Hosted CI runners do not guarantee that for /opt, so each test
+        # stages below a fresh root-owned directory with root-owned parents.
+        created = subprocess.run(self.root_command + ["mktemp", "-d", "/var/lib/apsp-bootstrap-test.XXXXXX"],
+                                 capture_output=True, text=True, check=True)
+        self.staging_base = created.stdout.strip()
+        subprocess.run(self.root_command + ["chmod", "755", self.staging_base], check=True)
         self.bundle = self.directory / "release"
         self.bundle.mkdir()
         installer = b"#!/bin/sh\nset -eu\nprintf '%s\\n' RELEASE_INSTALLER_MUST_NOT_EXECUTE\n"
@@ -581,10 +588,15 @@ class StandaloneBootstrapTests(unittest.TestCase):
             test_installer="#!/bin/sh\n# APSP_BOOTSTRAP_AGENT_SOURCE=preloaded-github-v1\nset -eu\nprintf '%s\\n' TRUSTED_INSTALLER_VERIFIED\n"))
 
     def tearDown(self):
+        subprocess.run(self.root_command + ["rm", "-rf", "--", self.staging_base], check=False)
         self.temporary.cleanup()
 
     def run_bootstrap(self, script=None):
-        return subprocess.run(self.root_command + ["/bin/sh", str(script or self.script),
+        source = Path(script or self.script)
+        staged = self.directory / ("staged-" + source.name)
+        staged.write_text(source.read_text().replace(
+            "STAGING_BASE=/opt/apsp", "STAGING_BASE=" + shlex.quote(self.staging_base)))
+        return subprocess.run(self.root_command + ["/bin/sh", str(staged),
                               "--tag", "agent-v0.3.0", "--panel", "http://127.0.0.1:8000",
                               "--token=-TEST_ONLY_token", "--release-dir", str(self.bundle)],
                               capture_output=True, check=False, timeout=30)

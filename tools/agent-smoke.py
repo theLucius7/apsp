@@ -54,6 +54,8 @@ class Panel(ThreadingHTTPServer):
         self.manifest = dict(rev=0, modules={})
         self.downloads = {}
         self.command_results = []
+        self.command_control = dict(state='queued', claimed_at=None, started_at=None,
+                                    cancel_requested_at=None, finished_at=None, cancel_supported=True)
         self.probe_results = []
         self.requests = []
         self.command = dict(id=str(uuid.uuid4()), command='echo apsp-command-fixture',
@@ -87,6 +89,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def control(self):
+        return dict(id=self.server.command['id'], **self.server.command_control)
+
     def authorized(self):
         if self.headers.get('Authorization') != 'Bearer ' + SESSION:
             self.reply({'error': 'unauthorized'}, 401)
@@ -107,12 +112,28 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
         suffix = self.path.partition('?')[0].removeprefix('/api/agent/v1/')
+        now = int(time.time())
+        # Probes run only under a short panel lease that repeats each probe's
+        # own authorization. Like the real panel, every renewal is a new lease
+        # identity for the same configuration revision.
+        lease = dict(id=str(uuid.uuid4()), server_id=1, revision=1, issued_at=now, expires_at=now + 60,
+                     probes=[dict(spec=spec, authorization=spec['monitor']['authorization'])
+                             for spec in (self.server.probe, self.server.icmp_probe)])
         values = {
             'settings': dict(sample_interval_secs=1, upload_interval_secs=1,
                              auto_update=False, discover_public_ips=False),
             'manifest': self.server.manifest, 'diagnostics': [],
             'commands': [self.server.command], 'probes': [self.server.probe, self.server.icmp_probe], 'update': None,
+            'probe-lease': lease, 'fleet/work': dict(jobs=[], terminals=[]),
+            # The panel lists a command until its terminal result is acknowledged.
+            'commands/lifecycle': [] if self.server.command_results else [self.server.command],
+            f"commands/{self.server.command['id']}/control": self.control(),
         }
+        if suffix == 'telemetry-settings':
+            # Without this endpoint the Agent keeps the durable one-second upload
+            # schedule this smoke measures; live samples are covered by the
+            # panel telemetry_live tests.
+            return self.reply({'error': 'not found'}, 404)
         self.reply(values.get(suffix, []))
 
     def do_POST(self):
@@ -134,8 +155,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply({'error': 'fixture outage'}, 503)
             self.server.samples.update((v['id'], v) for v in samples)
             return self.reply({'ids': [v['id'] for v in samples]})
-        if '/commands/' in self.path:
+        command = '/api/agent/v1/commands/' + self.server.command['id']
+        control = self.server.command_control
+        if self.path == command + '/claim':
+            if control['state'] == 'queued':
+                control.update(state='claimed', claimed_at=int(time.time()))
+            return self.reply(self.control())
+        if self.path == command + '/started':
+            control.update(state='running', started_at=value['started_at'])
+            return self.reply({'ids': [self.server.command['id']]})
+        if self.path == command:
             self.server.command_results.append(value)
+            control.update(state=value['status'], finished_at=value['finished_at'])
             return self.reply({'ids': [value['id']]})
         if self.path.endswith('/probe-results'):
             self.server.probe_results.extend(value['results'])
