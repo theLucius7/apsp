@@ -96,9 +96,10 @@ async fn group_live(pid: u32) -> Result<bool> {
     let output = timeout(
         Duration::from_secs(3),
         Command::new("ps")
-            // `-A` lists every process on Linux, macOS and FreeBSD; BSD `-e`
-            // instead appends each process environment to the output.
-            .args(["-A", "-o", "pid=,pgid=,stat="])
+            // POSIX form: `-A` lists every process (BSD `-e` appends each
+            // environment instead) and one `-o` per column, because BSD ps
+            // treats everything after the first `=` as that column's header.
+            .args(["-A", "-o", "pid=", "-o", "pgid=", "-o", "stat="])
             .kill_on_drop(true)
             .output(),
     )
