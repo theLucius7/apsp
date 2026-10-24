@@ -31,7 +31,10 @@ try {
   for (const width of [1440, 390, 340]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } }), errors = [], writes = []
     page.setDefaultTimeout(8000)
-    await page.clock.install(); await page.clock.pauseAt(new Date())
+    // Pause at a fixed future instant before loading the app; wall-clock drift
+    // between the two calls must not ask the browser to move back in time.
+    await page.clock.install({ time: new Date('2026-10-24T00:00:00Z') })
+    await page.clock.pauseAt(new Date('2026-10-24T00:01:00Z'))
     page.on('pageerror', error => errors.push(error.message))
     const pluginServers = [{ id: 1, name: '服务器', enabled: true, online: true, agent_supported: true, read_only: false }]
     const node = { id: 1, name: '受管节点', server_id: 1, port: 443, public_host: 'managed.example.com', sni: 'www.example.com', protocol: 'vless-reality', enabled: true, protocol_config: { type: 'vless-reality' }, settings: { public_port: 8443 } }

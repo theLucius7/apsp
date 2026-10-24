@@ -122,7 +122,8 @@ async function run() {
           } else {
             await page.getByRole('heading', { name: '全部服务器' }).waitFor()
             if (scenario === 'dialog') {
-              await page.getByRole('row').filter({ hasText: '法兰克福' }).getByRole('button', { name: '删除', exact: true }).click()
+              // Phones list servers as cards instead of table rows.
+              await (width < 768 ? page.locator('[data-slot=server-list-card]') : page.getByRole('row')).filter({ hasText: '法兰克福' }).getByRole('button', { name: '删除', exact: true }).click()
               await page.getByRole('alertdialog').waitFor()
             }
           }

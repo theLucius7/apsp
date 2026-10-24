@@ -50,7 +50,8 @@ try {
     })
     try {
       await page.goto(`${origin}/#/servers`)
-      const row = name => page.getByRole('row').filter({ has: page.getByText(name, { exact: true }) })
+      // Desktop lists servers in a table; phones show one card per server.
+      const row = name => (width < 768 ? page.locator('[data-slot=server-list-card]') : page.getByRole('row')).filter({ has: page.getByText(name, { exact: true }) })
       await row('TEST_ONLY 高负载').waitFor()
       const all = page.getByRole('checkbox', { name: '选择当前筛选的全部服务器' })
       const bar = page.getByRole('region', { name: '批量操作' })
@@ -80,6 +81,12 @@ try {
       await bar.waitFor({ state: 'hidden' })
       assert.equal(await all.getAttribute('aria-checked'), 'false')
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `No horizontal scroll at ${width}px`)
+      if (width < 768) {
+        // The phone layout never scrolls the list sideways.
+        const list = page.locator('[data-slot=server-list-cards]')
+        assert.equal(await list.evaluate(element => element.scrollWidth <= element.clientWidth), true, 'Server cards fit the phone width')
+        assert.equal(await page.locator('[data-slot=server-list-card]').count(), 3)
+      }
       assert.deepEqual(errors, [])
       summary.push({ width, lifecycle: lifecycle.length })
     } finally { await page.close() }
