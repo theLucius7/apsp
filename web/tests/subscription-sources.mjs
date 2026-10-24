@@ -155,11 +155,14 @@ try {
             if (Number.isFinite(animation.effect?.getComputedTiming().endTime) && animation.playbackRate > 0) animation.finish()
           }
           const modalStyle = getComputedStyle(element)
-          return { opacity: Number(modalStyle.opacity), background: modalStyle.backgroundColor, shadeOpacity: shade ? Number(getComputedStyle(shade).opacity) : null }
+          // Colour tokens compute as oklch(); paint one pixel to compare the actual sRGB value.
+          const canvas = element.ownerDocument.createElement('canvas'); canvas.width = canvas.height = 1
+          const context = canvas.getContext('2d'); context.fillStyle = modalStyle.backgroundColor; context.fillRect(0, 0, 1, 1)
+          return { opacity: Number(modalStyle.opacity), background: `rgba(${[...context.getImageData(0, 0, 1, 1).data].join(', ')})`, shadeOpacity: shade ? Number(getComputedStyle(shade).opacity) : null }
         })
         assert.equal(appearance.opacity, 1, 'the actual dialog must be opaque before capture')
         assert.equal(appearance.shadeOpacity, 1, 'the modal entrance animation must finish before capture')
-        assert.equal(appearance.background, 'rgb(255, 255, 255)', 'capture must retain the shipped opaque dialog background')
+        assert.equal(appearance.background, 'rgba(255, 255, 255, 255)', 'capture must retain the shipped opaque dialog background')
         console.log(`SCREENSHOT: ${name} ${width} dialog=${appearance.opacity} shade=${appearance.shadeOpacity} background=${appearance.background}`)
       }
       await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true })

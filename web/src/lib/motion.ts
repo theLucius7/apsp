@@ -53,14 +53,25 @@ export const barMotion = {
   transition: transition.fast,
 } as const
 
+// Content that must be readable (pages, list items, notices) only moves into
+// place; it never starts transparent, so a stalled animation leaves it visible.
+// Opacity fades are reserved for overlays that open on demand.
+
 /** Page content settles in after navigation. */
 export const pageMotion = {
-  initial: { opacity: 0, y: 6 },
-  animate: { opacity: 1, y: 0 },
+  initial: { y: 6 },
+  animate: { y: 0 },
   transition: transition.base,
 } as const
 
-/** Inline notices and expanding sections reveal their height. */
+/** Inline notices, such as errors, appear at once and settle into place. */
+export const noticeMotion = {
+  initial: { y: -4 },
+  animate: { y: 0 },
+  transition: transition.fast,
+} as const
+
+/** Sections the user expands reveal their height. */
 export const revealMotion = {
   initial: { opacity: 0, height: 0 },
   animate: { opacity: 1, height: 'auto' },
@@ -70,7 +81,7 @@ export const revealMotion = {
 
 /** List items that join a list; filtered-out items leave at once. */
 export const itemMotion = {
-  initial: { opacity: 0, y: 4 },
-  animate: { opacity: 1, y: 0 },
+  initial: { y: 4 },
+  animate: { y: 0 },
   transition: transition.fast,
 } as const

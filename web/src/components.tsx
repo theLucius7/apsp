@@ -7,7 +7,7 @@ import { errorMessage } from './api'
 import { resourceRefreshingMessage } from './hooks'
 import { useI18n } from './i18n'
 import { cn } from '@/lib/utils'
-import { revealMotion } from '@/lib/motion'
+import { noticeMotion } from '@/lib/motion'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Badge as UiBadge } from '@/components/ui/badge'
@@ -60,7 +60,7 @@ export function ErrorNotice({ message, retry }: { message?: string; retry?: () =
   }, [message, transient])
   const visible = Boolean(message) && (!transient || showRefresh)
   // A resolved error leaves at once so it never lingers beside recovered data.
-  return visible && <m.div key="error" initial={revealMotion.initial} animate={revealMotion.animate} transition={revealMotion.transition} className="overflow-hidden">
+  return visible && <m.div key="error" {...noticeMotion}>
     <Alert variant="destructive" className="mb-4 flex items-start justify-between gap-3">
       <span className="flex min-w-0 items-start gap-2"><CircleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><span className="min-w-0 break-words">{message}</span></span>
       {retry && <Button variant="outline" size="xs" type="button" onClick={retry}>{t('重试')}</Button>}

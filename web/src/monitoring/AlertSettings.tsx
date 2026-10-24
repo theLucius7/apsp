@@ -47,6 +47,8 @@ export default function AlertSettings() {
       <a className={buttonVariants({ variant: 'outline' })} href="#/system/notifications">查看告警事件</a>
     </PageHeader>
     <ErrorNotice message={resource.error} retry={resource.reload} />
-    {resource.data ? <><Form initial={resource.data} /><AlertRules /><WebhookSettings /><NotificationChannels /></> : resource.loading ? <Loading /> : null}
+    {resource.data ? <Form initial={resource.data} /> : resource.loading ? <Loading /> : null}
+    {/* Panel settings need an owner session; rules, Webhook and channel status only need monitoring access, so they stay usable when that read fails. */}
+    <AlertRules /><WebhookSettings /><NotificationChannels />
   </>
 }
