@@ -50,7 +50,11 @@ protected_directory() {
 EXISTING_PARENT=$STAGING_BASE
 while [ ! -e "$EXISTING_PARENT" ] && [ ! -L "$EXISTING_PARENT" ]; do EXISTING_PARENT=$(dirname "$EXISTING_PARENT"); done
 protected_directory "$EXISTING_PARENT"
-(umask 022; mkdir -p "$STAGING_BASE")
+if [ ! -e "$STAGING_BASE" ] && [ ! -L "$STAGING_BASE" ]; then
+  (umask 022; mkdir -p "$STAGING_BASE")
+  # An inherited default ACL ignores the umask; tighten only what was just created.
+  chmod 755 "$STAGING_BASE"
+fi
 protected_directory "$STAGING_BASE"
 STAGING=$(mktemp -d "$STAGING_BASE/apsp-bootstrap.XXXXXX")
 cleanup() { rm -rf "$STAGING"; }
