@@ -617,6 +617,38 @@ class AcceptanceContracts(unittest.TestCase):
         self.assertFalse(DRIVER.bootstrap_installed(waiting, {"target_revision": 1, "checkpoint": {"outcome": "failed", "observed_at": 120}}))
         self.assertFalse(DRIVER.bootstrap_installed({"target_rev": None}, answered))
 
+
+    def test_preflight_collection_retries_only_a_fingerprint_change_during_sampling(self):
+        clock = Clock()
+        calls = []
+
+        class Changing:
+            def request(self, path, data=None, raw=False, method=None):
+                calls.append(path)
+                if path.endswith("/preflight") and len(calls) < 3:
+                    raise DRIVER.AcceptanceError("面板请求失败，HTTP 409 /api/x：业务、授权、入口或制品在采集期间发生变化，请重新预检")
+                if path.endswith("/preflight"):
+                    return {"id": "preflight-1"}
+                return {"preflight": {"id": "preflight-1", "device_checks_pending": False}}
+
+        with patch.object(DRIVER.time, "monotonic", clock.monotonic), \
+             patch.object(DRIVER.time, "sleep", clock.sleep):
+            view = DRIVER.collect_preflight(Changing(), "/base", 600)
+        self.assertEqual(view["id"], "preflight-1")
+        self.assertEqual(calls.count("/base/preflight"), 3)
+
+        class Refused:
+            def request(self, path, data=None, raw=False, method=None):
+                calls.append(path)
+                raise DRIVER.AcceptanceError("面板请求失败，HTTP 409 /api/x：设备、能力、授权、制品或配置条件未满足")
+
+        calls.clear()
+        with patch.object(DRIVER.time, "monotonic", clock.monotonic), \
+             patch.object(DRIVER.time, "sleep", clock.sleep):
+            with self.assertRaisesRegex(DRIVER.AcceptanceError, "条件未满足"):
+                DRIVER.collect_preflight(Refused(), "/base", 600)
+        self.assertEqual(calls, ["/base/preflight"])
+
     def test_totals_preserve_large_integer_precision_and_reject_inconsistent_ledger(self):
         amount = 2 ** 64 + 17
         self.assertEqual(DRIVER.usage_totals(view(amount, amount)["usage"]), (amount, amount, 2 * amount))

@@ -360,8 +360,21 @@ def blocking_checks(view):
                    if isinstance(check, dict) and check.get("blocking") is True})
 
 
+PREFLIGHT_CHANGED = "采集期间发生变化"
+
+
 def collect_preflight(panel, base, deadline):
-    request = panel.request(base + "/preflight", {})
+    # The panel refuses a collection whose fingerprint changed while it
+    # sampled DNS and certificates, for example while a restarted Agent still
+    # reports its platform; the operator retries, and so does the driver.
+    for attempt in range(5):
+        try:
+            request = panel.request(base + "/preflight", {})
+            break
+        except AcceptanceError as error:
+            if PREFLIGHT_CHANGED not in str(error) or attempt == 4 or time.monotonic() >= deadline:
+                raise
+            time.sleep(5)
     ensure(isinstance(request.get("id"), str), "预检请求未返回编号")
     while True:
         view = panel.request(base).get("preflight") or {}
