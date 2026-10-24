@@ -163,6 +163,37 @@ try {
       summary.push({ width, options: total, searches: searches.length, writes: writes.length })
     } finally { await page.close() }
   }
+
+  // With the sidebar open, tablet widths leave the top bar little room; its controls
+  // must stay on one row inside the bar instead of spilling over the page below.
+  for (const width of [768, 900, 1024, 1100]) {
+    const page = await browser.newPage({ viewport: { width, height: 800 } })
+    const errors = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.route('**/api/**', route => {
+      const path = new URL(route.request().url()).pathname
+      const json = (body, status = 200) => route.fulfill({ status, json: body })
+      if (path === '/api/dashboard/access') return json({ authenticated: true, public_dashboard: false })
+      if (path === '/api/control-center/me') return json({ id: 1, role: 'owner', display_name: 'TEST_ONLY 所有者', all_servers: true, capabilities: [], token_capabilities: null, token_servers: null })
+      if (path.startsWith('/api/control-center/preferences/')) return json({ value: /recent|favorite/.test(path) ? [] : null, revision: 0, updated_at: 0 })
+      if (path === '/api/servers') return json([])
+      return json({ error: 'TEST_ONLY 此夹具未提供该数据。' }, 404)
+    })
+    try {
+      await page.goto(`${origin}/#/servers`)
+      await page.getByRole('heading', { name: '服务器列表', exact: true }).waitFor()
+      const bar = await page.locator('[data-slot=topbar]').evaluate(element => {
+        const box = element.getBoundingClientRect()
+        const outside = [...element.children].filter(child => { const rect = child.getBoundingClientRect(); return rect.height > 0 && (rect.top < box.top || rect.bottom > box.bottom) })
+        return { height: box.height, outside: outside.length }
+      })
+      assert.equal(bar.outside, 0, `Top bar controls stay inside the bar at ${width}px`)
+      assert.equal(bar.height <= 56.5, true, `The top bar keeps a single row at ${width}px`)
+      assert.equal(await page.getByRole('button', { name: '全局搜索', exact: true }).isVisible(), true)
+      assert.deepEqual(errors, [])
+      summary.push({ width, topbar: bar.height })
+    } finally { await page.close() }
+  }
   console.log(JSON.stringify({ passed: true, scenarios: summary }, null, 2))
 } finally {
   await browser.close()

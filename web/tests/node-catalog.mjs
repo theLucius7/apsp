@@ -28,8 +28,11 @@ await new Promise(done => server.listen(0, '127.0.0.1', done))
 const origin = `http://127.0.0.1:${server.address().port}`
 const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
 try {
-  for (const width of [1440, 390, 340]) {
+  for (const width of [1440, 1100, 390, 340]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } }), errors = [], writes = []
+    // The catalog lists cards whenever its panel is narrower than the table needs (56rem),
+    // which with the sidebar open includes tablet and small laptop widths.
+    const cards = width < 1200
     page.setDefaultTimeout(8000)
     // Pause at a fixed future instant before loading the app; wall-clock drift
     // between the two calls must not ask the browser to move back in time.
@@ -107,11 +110,14 @@ try {
     // Open modal dialogs hide the page behind them from the accessibility tree.
     const refresh = () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click())
     const library = page.getByRole('region', { name: '节点库', includeHidden: true }), dialog = page.getByRole('dialog')
-    const row = name => width < 768 ? library.locator('[data-slot=catalog-card]').filter({ has: page.getByText(name, { exact: true }) }) : library.getByRole('row').filter({ has: page.getByText(name, { exact: true }) })
+    const row = name => cards ? library.locator('[data-slot=catalog-card]').filter({ has: page.getByText(name, { exact: true }) }) : library.getByRole('row').filter({ has: page.getByText(name, { exact: true }) })
+    // Deployment, metadata and cloning sit behind each row's “更多操作” menu.
+    const rowAction = async (name, action) => { await row(name).getByRole('button', { name: '更多操作', exact: true }).click(); await page.getByRole('menu').getByRole('menuitem', { name: action, exact: true }).click() }
     try {
       await installControlCenterFixtures(page)
       await page.goto(`${origin}/#/plugins/sing-box/nodes`)
       await row('外部 01').waitFor(); await row('受管节点').getByText('managed.example.com:8443', { exact: true }).waitFor()
+      assert.equal(await library.locator('[data-slot=catalog-table]').isVisible(), !cards, `The catalog shows ${cards ? 'cards' : 'a table'} at ${width}px`)
       assert.equal(await row('受管节点').getByText('0 B', { exact: true }).count(), 1)
       assert.equal(await row('外部 01').getByText('提供方计量', { exact: true }).count(), 1)
       await library.getByRole('button', { name: '下一页', exact: true }).click(); await row('外部 22').waitFor()
@@ -121,14 +127,14 @@ try {
       await row('外部 03').getByRole('button', { name: '上移 外部 03', exact: true }).click(); await moved
       assert.equal(catalog.find(node => node.kind === 'external' && node.id === 3).sort_order, 1); assert.equal(catalog.find(node => node.kind === 'external' && node.id === 2).sort_order, 2); assert.equal(catalog.find(node => node.kind === 'external' && node.id === 1).sort_order, 3)
       await library.getByLabel('按协议筛选').selectOption(''); await library.getByLabel('按标签筛选').selectOption('常用')
-      assert.equal(await library.locator(width < 768 ? '[data-slot=catalog-card]' : '[data-slot=catalog-table] tbody tr').count(), 1)
+      assert.equal(await library.locator(cards ? '[data-slot=catalog-card]' : '[data-slot=catalog-table] tbody tr').count(), 1)
       await row('外部 01').getByRole('checkbox').check(); await library.getByRole('button', { name: '批量改名', exact: true }).click(); await dialog.getByLabel('添加文本').fill('香港 ')
       assert.ok((await dialog.innerText()).includes('香港 外部 01')); rejectBatch = true
       await dialog.getByRole('button', { name: '确认保存', exact: true }).click(); await dialog.getByText('节点已更新，请重新确认').waitFor()
       assert.equal(await dialog.getByLabel('添加文本').inputValue(), '香港 ')
       rejectBatch = false; await dialog.getByRole('button', { name: '确认保存', exact: true }).click(); await dialog.waitFor({ state: 'hidden' }); await row('香港 外部 01').waitFor()
       assert.equal(writes.filter(write => write.body?.items?.[0]?.name).at(-1).body.items[0].kind, 'external'); assert.equal(managed.name, '受管节点')
-      await row('香港 外部 01').getByRole('button', { name: '整理', exact: true }).click()
+      await rowAction('香港 外部 01', '整理')
       await dialog.getByLabel('备注').fill('整理后的备注'); await dialog.getByLabel(/^标签/).fill('常用, 高速')
       const save = dialog.getByRole('button', { name: '确认保存', exact: true })
       await wait(() => save.isEnabled(), 'Current metadata draft is initially writable')
@@ -171,7 +177,7 @@ try {
       catalog = originalDelete; await refresh(); await wait(() => remove.isEnabled(), 'The original current target restores delete confirmation'); await confirmation.getByRole('button', { name: '取消', exact: true }).click()
       // A missing clone target retains its ID instead of selecting another server.
       await library.getByLabel('按标签筛选').selectOption(''); await library.getByLabel('按类型筛选').selectOption('')
-      await row('受管节点').getByRole('button', { name: '复制', exact: true }).click()
+      await rowAction('受管节点', '复制')
       await dialog.getByLabel('副本名称').fill('TEST_ONLY 保留副本草稿'); await dialog.getByLabel('公开地址', { exact: true }).fill('clone.example.com')
       const cloneSave = dialog.getByRole('button', { name: '创建副本', exact: true }), cloneBefore = writes.length, restoredServers = structuredClone(pluginServers)
       const cloning = hold(`${apiRoot}/servers`); await refresh(); await wait(() => cloning.reached > 0, 'Clone target GET is held before real submit')

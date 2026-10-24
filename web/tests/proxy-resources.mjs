@@ -133,7 +133,7 @@ try {
     assert.equal(await page.locator('[data-slot=stat]').filter({hasText:'代理资源'}).locator('strong').innerText(),'4')
     assert.equal(await page.locator('[data-slot=stat]').filter({hasText:'物理监听数'}).locator('strong').innerText(),'4')
     await screenshot('resources')
-    await page.locator('[data-resource-key="chain:1"]').getByRole('button',{name:'路径与引用',exact:true}).click()
+    await page.locator('[data-resource-key="chain:1"]').getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'路径与引用',exact:true}).click()
     let dialog = page.getByRole('dialog')
     await dialog.getByText('entry.example.com:8443',{exact:true}).waitFor()
     await dialog.getByText('受管两跳链路',{exact:true}).waitFor()

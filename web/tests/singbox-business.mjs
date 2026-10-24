@@ -32,7 +32,7 @@ try {
     const errors = [], requests = [], mutations = [], now = Math.floor(Date.now() / 1000)
     const refreshPage = () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).click()
     const showResourceDetail = async id => {
-      await page.locator(`[data-resource-key="chain:${id}"]`).getByRole('button', { name: '路径与引用', exact: true }).click()
+      await page.locator(`[data-resource-key="chain:${id}"]`).getByRole('button', { name: '详情', exact: true }).click()
       const dialog = page.getByRole('dialog')
       await dialog.getByText('资源存在', { exact: true }).waitFor()
       return dialog
