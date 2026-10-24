@@ -1,0 +1,28 @@
+[package]
+name = "apsp-plugin-expenses"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+path = "mod.rs"
+
+[dependencies]
+apsp-panel-host.workspace = true
+apsp-protocol.workspace = true
+axum.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+reqwest.workspace = true
+tracing.workspace = true
+time = "=0.3.55"

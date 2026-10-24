@@ -38,10 +38,12 @@ const groups: readonly NavigationGroup[] = [
   { label: '代理服务', items: [
     { page: 'singbox-overview', path: '/plugins/sing-box', label: '服务概览', icon: BoxesIcon },
     { page: 'nodes', path: '/plugins/sing-box/nodes', label: '代理节点', icon: WaypointsIcon },
+    { page: 'commerce', path: '/plugins/sing-box/commerce', label: '成员运营', icon: UsersIcon },
     { page: 'proxy-users', path: '/plugins/sing-box/users', label: '代理用户', icon: UsersIcon },
     { page: 'groups', path: '/plugins/sing-box/groups', label: '策略与套餐', icon: LayersIcon },
   ] },
   { label: '扩展', items: [
+    { page: 'expenses', path: '/plugins/expenses', label: '订阅费用', icon: LayersIcon },
     { page: 'catalog', path: '/plugins/catalog', label: '插件中心', icon: BlocksIcon },
     { page: 'alicloud', path: '/plugins/alicloud', label: '阿里云 CDT', icon: CloudCogIcon },
   ] },

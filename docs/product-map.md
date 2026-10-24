@@ -177,3 +177,5 @@
 | 系统 | `system/`、`control-center/` | `panel-host` 的 `settings`、`control_center`、`auth`、`passkeys`、`exchange` |
 
 后端的宿主、插件与组装分层不随功能分级改变，见[仓库目录与维护约定](repository.md)。
+
+成员运营归「代理服务」，入口 `/#/plugins/sing-box/commerce`；成员自助入口为 `/#/plugins/sing-box/member`。Wallos 订阅费用归「扩展插件」，入口 `/#/plugins/expenses`。详见 [迁移说明](nexus-migration.md)。

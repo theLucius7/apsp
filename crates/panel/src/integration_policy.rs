@@ -13,31 +13,39 @@ pub fn route_policy(path: &str, method: &Method) -> Option<RoutePolicy> {
         "proxy"
     } else if path.starts_with("/api/plugins/ddns/") {
         "dns"
-    } else if path == "/api/plugins/alicloud" || path.starts_with("/api/plugins/alicloud/") {
+    } else if path == "/api/plugins/alicloud"
+        || path.starts_with("/api/plugins/alicloud/")
+        || path.starts_with("/api/plugins/expenses/")
+    {
         "cloud"
     } else {
         return None;
     };
     let mutation = *method != Method::GET && *method != Method::HEAD && *method != Method::OPTIONS;
     let high_risk = mutation
-        && ((path.starts_with("/api/plugins/alicloud/")
-            && !path.ends_with("/preview")
-            && !path.ends_with("/refresh"))
+        && (path == "/api/plugins/expenses/import"
+            || (path.starts_with("/api/plugins/alicloud/")
+                && !path.ends_with("/preview")
+                && !path.ends_with("/cdt-check")
+                && !path.ends_with("/refresh"))
             || (path.starts_with("/api/plugins/sing-box/")
                 && !path.ends_with("/preview")
-                && (path.contains("/nodes")
+                && (path.contains("/commerce/")
+                    || path.contains("/nodes")
                     || path.contains("/accesses")
                     || path.contains("/external-accesses")
                     || path.contains("/subscription/reset"))));
-    let read = feature == "dns"
-        && ((path.starts_with("/api/plugins/ddns/rules/") && path.ends_with("/preview"))
-            || path.ends_with("/check")
-            || path.ends_with("/resolve")
-            || (path.starts_with("/api/plugins/ddns/accounts/")
-                && path.contains("/records/")
-                && path.ends_with("/reconcile")));
+    let read = (feature == "cloud" && *method == Method::POST && path.ends_with("/cdt-check"))
+        || feature == "dns"
+            && ((path.starts_with("/api/plugins/ddns/rules/") && path.ends_with("/preview"))
+                || path.ends_with("/check")
+                || path.ends_with("/resolve")
+                || (path.starts_with("/api/plugins/ddns/accounts/")
+                    && path.contains("/records/")
+                    && path.ends_with("/reconcile")));
     Some(RoutePolicy {
-        independent_identity: path.starts_with("/api/plugins/sing-box/portal/"),
+        independent_identity: path.starts_with("/api/plugins/sing-box/portal/")
+            || path.starts_with("/api/plugins/sing-box/commerce-public/"),
         feature: Some(feature),
         high_risk,
         read,
@@ -52,6 +60,7 @@ pub fn sensitive_key(key: &str) -> bool {
 pub fn worker_names() -> &'static [&'static str] {
     &[
         "ddns",
+        "expenses",
         "alicloud",
         "alicloud-cost-cache",
         "alicloud-power",
@@ -128,6 +137,14 @@ mod tests {
                 .high_risk
         );
         assert!(route_policy("/api/plugins/unknown/jobs", &Method::POST).is_none());
+        let cdt_check =
+            route_policy("/api/plugins/alicloud/resources/1/cdt-check", &Method::POST).unwrap();
+        assert!(cdt_check.read && !cdt_check.high_risk);
+        assert!(
+            route_policy("/api/plugins/alicloud/resources/1/cdt-state", &Method::POST)
+                .unwrap()
+                .high_risk
+        );
     }
     #[test]
     fn runtime_step_is_registered_with_its_fixed_version() {

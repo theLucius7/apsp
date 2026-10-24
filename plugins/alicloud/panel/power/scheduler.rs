@@ -30,7 +30,11 @@ pub(in super::super) async fn poll(pool: &PgPool, id: Uuid, cloud: &Cloud) -> Ap
     match cloud.power_state(&account, &r).await {
         Ok(state) => {
             jobs::state_on(&mut tx, id, &state, now).await?;
-            evaluate(&mut tx, &account, &mut r, &state, now).await?;
+            if r.power_policy.cdt_guard.is_some() {
+                super::guard::poll(&mut tx, &account, &mut r, &state, cloud, now).await?;
+            } else {
+                evaluate(&mut tx, &account, &mut r, &state, now).await?;
+            }
         }
         Err(error) => {
             sqlx::query(

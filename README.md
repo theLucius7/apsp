@@ -82,3 +82,5 @@ apsp 不是通用探针、通用运维面板或机场售卖系统：不做公开
 GitHub Actions 当前按协作安排暂停，只做本地验证。未运行或取消的 CI 不代表通过，恢复条件见 [AGENTS.md](AGENTS.md#临时-ci-暂停2026-10-01-用户要求)。
 
 许可证：[AGPL-3.0-only](LICENSE)。
+
+成员运营、Wallos 订阅费用、私密导出工具及兼容切换见 [Nexus 与 Wallos 迁移](docs/nexus-migration.md)。

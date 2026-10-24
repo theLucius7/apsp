@@ -17,13 +17,13 @@ use uuid::Uuid;
 pub(super) const COOKIE: &str = "apsp_proxy_session";
 const SESSION_SECONDS: i64 = 86400;
 
-pub(super) fn session_hash(headers: &HeaderMap) -> ApiResult<String> {
+pub(crate) fn session_hash(headers: &HeaderMap) -> ApiResult<String> {
     keys::cookie(headers, COOKIE)
         .map(hash_token)
         .ok_or(ApiError::Unauthorized)
 }
 
-pub(super) async fn lock(tx: &mut Transaction<'_, Postgres>, account: Uuid) -> ApiResult<PgRow> {
+pub(crate) async fn lock(tx: &mut Transaction<'_, Postgres>, account: Uuid) -> ApiResult<PgRow> {
     let id: i64 =
         sqlx::query_scalar("SELECT user_id FROM singbox_portal_accounts WHERE account_id=$1")
             .bind(account)
@@ -31,6 +31,10 @@ pub(super) async fn lock(tx: &mut Transaction<'_, Postgres>, account: Uuid) -> A
             .await?
             .ok_or(ApiError::NotFound)?;
     super::super::business::lock_user(tx, id).await?;
+    let denied:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_members WHERE user_id=$1 AND state NOT IN('active','pending'))").bind(id).fetch_one(&mut **tx).await?;
+    if denied {
+        return Err(ApiError::Forbidden("此成员账户暂不可用".into()));
+    }
     sqlx::query("SELECT * FROM singbox_portal_accounts WHERE account_id=$1 FOR UPDATE")
         .bind(account)
         .fetch_optional(&mut **tx)
@@ -38,7 +42,7 @@ pub(super) async fn lock(tx: &mut Transaction<'_, Postgres>, account: Uuid) -> A
         .ok_or(ApiError::NotFound)
 }
 
-pub(super) async fn session(
+pub(crate) async fn session(
     tx: &mut Transaction<'_, Postgres>,
     account: Uuid,
     hash: &str,
@@ -55,7 +59,7 @@ pub(super) async fn session(
     Ok(())
 }
 
-pub(super) async fn issue(tx: &mut Transaction<'_, Postgres>, account: Uuid) -> ApiResult<String> {
+pub(crate) async fn issue(tx: &mut Transaction<'_, Postgres>, account: Uuid) -> ApiResult<String> {
     let now = now_timestamp();
     let token = random_token();
     sqlx::query("DELETE FROM singbox_portal_sessions WHERE account_id=$1 AND expires_at <= $2")
@@ -70,7 +74,7 @@ pub(super) async fn issue(tx: &mut Transaction<'_, Postgres>, account: Uuid) -> 
     Ok(token)
 }
 
-pub(super) fn logged_in(state: &AppState, token: &str) -> ApiResult<Response> {
+pub(crate) fn logged_in(state: &AppState, token: &str) -> ApiResult<Response> {
     let mut response = keys::reply(json!({"ok":true}));
     keys::set_cookie(state, &mut response, COOKIE, token, SESSION_SECONDS)?;
     keys::set_cookie(state, &mut response, keys::PORTAL_BINDING, "", 0)?;
@@ -104,10 +108,38 @@ pub(super) async fn view(
     let credentials = sqlx::query("SELECT id,name,created_at,last_used_at FROM passkey_credentials WHERE account_id=$1 ORDER BY created_at,id")
         .bind(account).fetch_all(&mut *tx).await?;
     let credentials = credentials.iter().map(|r| Ok(json!({"id":r.try_get::<Uuid,_>("id")?,"name":r.try_get::<String,_>("name")?,"created_at":r.try_get::<i64,_>("created_at")?,"last_used_at":r.try_get::<Option<i64>,_>("last_used_at")?}))).collect::<ApiResult<Vec<_>>>()?;
-    let subscription_status = super::super::subscriptions::diagnostic_on(&mut tx, id).await?;
+    let mut subscription_status = super::super::subscriptions::diagnostic_on(&mut tx, id).await?;
+    let mut subscription_url = format!(
+        "{}/sub/{}?format=singbox",
+        state.config.public_url,
+        row.try_get::<String, _>("subscription_token")?
+    );
+    let mut upload = usage.try_get::<String, _>("uplink")?;
+    let mut download = usage.try_get::<String, _>("downlink")?;
+    let legacy=sqlx::query("SELECT b.subscription_base,b.last_sync_at,m.upload::text,m.download::text FROM singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id AND b.enabled LEFT JOIN singbox_nexus_metering m ON m.user_id=i.user_id WHERE i.user_id=$1").bind(id).fetch_optional(&mut *tx).await?;
+    let compatibility = if let Some(legacy) = legacy {
+        subscription_url = format!(
+            "{}{}",
+            legacy.try_get::<String, _>("subscription_base")?,
+            row.try_get::<String, _>("subscription_token")?
+        );
+        upload = legacy
+            .try_get::<Option<String>, _>("upload")?
+            .unwrap_or_else(|| "0".into());
+        download = legacy
+            .try_get::<Option<String>, _>("download")?
+            .unwrap_or_else(|| "0".into());
+        if subscription_status["entitlement"]["allowed"].as_bool() == Some(true) {
+            subscription_status["status"] = json!("ready");
+            subscription_status["message"] = json!("原订阅地址继续可用");
+        }
+        Some(json!({"last_sync_at":legacy.try_get::<Option<i64>,_>("last_sync_at")?}))
+    } else {
+        None
+    };
     let result = json!({"authenticated":true,"configuration":state.passkeys.info(),"name":row.try_get::<String,_>("name")?,
-        "subscription_url":format!("{}/sub/{}?format=singbox",state.config.public_url,row.try_get::<String,_>("subscription_token")?),
-        "usage":{"uplink":usage.try_get::<String,_>("uplink")?,"downlink":usage.try_get::<String,_>("downlink")?},"keys":credentials,"subscription_status":subscription_status});
+        "subscription_url":subscription_url,"legacy_compatibility":compatibility,
+        "usage":{"uplink":upload,"downlink":download},"keys":credentials,"subscription_status":subscription_status});
     tx.commit().await?;
     Ok(keys::reply(result))
 }

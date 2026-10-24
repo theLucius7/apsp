@@ -194,6 +194,12 @@ pub async fn assign(
         tx.commit().await?;
         return Ok(Json(previous));
     }
+    let unmapped: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_nexus_bridge b WHERE b.enabled AND NOT EXISTS(SELECT 1 FROM singbox_nexus_plan_mappings p WHERE p.import_id=b.import_id AND p.package_group_id=$1 AND p.legacy_group_id IS NOT NULL))").bind(request.package_group_id).fetch_one(&mut *tx).await?;
+    if unmapped {
+        return Err(ApiError::Conflict(
+            "原订阅兼容期间只能分配已映射的套餐".into(),
+        ));
+    }
     let servers = super::business::lock_user_servers(&mut tx, id).await?;
     let value = sqlx::query_as::<_, Assignment>("INSERT INTO singbox_package_assignments(user_id,request_id,package_group_id,package_name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,starts_at,expires_at) SELECT $1,$2,id,name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,$4,$4+duration_days::bigint*86400 FROM singbox_package_groups WHERE id=$3 AND deleted_at IS NULL RETURNING id,user_id,package_group_id,starts_at,expires_at")
         .bind(id).bind(request.request_id).bind(request.package_group_id).bind(apsp_protocol::now_timestamp())

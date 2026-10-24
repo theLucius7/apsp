@@ -54,7 +54,7 @@ test('node page sections are addressable and malformed sections are refused', ()
 
 test('navigation groups follow administrator tasks and keep every destination', () => {
   expect([...new Set(navigation.map(item => item.group))]).toEqual(['总览', '服务器', '监控告警', '网络', '代理服务', '扩展', '系统'])
-  expect(navigation).toHaveLength(20)
+  expect(navigation).toHaveLength(22)
   // A group never repeats its own name as an entry, so the breadcrumb is never "服务器 / 服务器".
   for (const item of navigation) expect(item.label).not.toBe(item.group)
   expect(new Set(navigation.map(item => item.path)).size).toBe(navigation.length)
@@ -89,4 +89,11 @@ test('server sections, plugin centre views and split settings resolve to one sid
   expect(currentNavigation(resolveRoute('/system/notifications'))?.group).toBe('监控告警')
   expect(currentNavigation(resolveRoute('/plugins/ddns'))?.group).toBe('网络')
   for (const path of ['/servers/42/overview', '/servers/42/assets/extra', '/monitoring/settings/extra']) expect(resolveRoute(path)).toEqual({ page: 'not-found' })
+})
+
+test('member and expense destinations preserve public and administrator boundaries', () => {
+  expect(resolveRoute('/plugins/sing-box/member')).toEqual({ page: 'member-login' })
+  expect(resolveRoute('/plugins/sing-box/commerce')).toEqual({ page: 'commerce' })
+  expect(resolveRoute('/plugins/expenses')).toEqual({ page: 'expenses' })
+  expect(currentNavigation(resolveRoute('/plugins/expenses'))?.group).toBe('扩展')
 })

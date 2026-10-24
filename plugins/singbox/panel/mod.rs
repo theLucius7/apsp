@@ -9,6 +9,7 @@ pub mod agent;
 pub mod business;
 pub mod catalog;
 pub mod chains;
+mod commerce;
 pub mod deployments;
 pub mod entitlements;
 pub mod external_access;
@@ -55,6 +56,7 @@ use axum::{
 pub async fn run(state: AppState) {
     tokio::join!(
         publisher::run(state.clone()),
+        commerce::run(state.clone()),
         subscription_sources::worker::run(state)
     );
 }
@@ -142,6 +144,7 @@ pub fn router() -> Router<AppState> {
         .merge(sources::router())
         .route("/source-migration", get(source_migration::state))
         .merge(portal::router())
+        .merge(commerce::router())
         .merge(mixed_paths::router());
     let management = management.merge(operations_workflows::router());
     Router::new()
