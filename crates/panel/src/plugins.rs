@@ -4,6 +4,7 @@ pub use apsp_cloud_api as cloud_api;
 pub use apsp_panel_host::plugin_api::ActivityEvidence;
 pub use apsp_plugin_alicloud as alicloud;
 pub use apsp_plugin_ddns as ddns;
+pub use apsp_plugin_expenses as expenses;
 pub use apsp_plugin_singbox as singbox;
 
 use std::collections::BTreeMap;
@@ -214,6 +215,7 @@ pub fn router() -> Router<AppState> {
     install();
     singbox::router()
         .merge(ddns::routes())
+        .merge(expenses::routes())
         .merge(alicloud::routes())
         .merge(alicloud::security_groups_routes())
 }
@@ -223,13 +225,15 @@ pub async fn run(state: AppState) {
     install();
     // Supervise each plugin separately: one plugin's panic must not stop the others.
     let pool = state.pool.clone();
+    let expense_state = state.clone();
     tokio::join!(
         supervise("sing-box", move || singbox::run(state.clone())),
         supervise("ddns", {
             let pool = pool.clone();
             move || ddns::run(pool.clone())
         }),
-        supervise("alicloud", move || alicloud::run(pool.clone()))
+        supervise("alicloud", move || alicloud::run(pool.clone())),
+        supervise("expenses", move || expenses::run(expense_state.clone()))
     );
 }
 

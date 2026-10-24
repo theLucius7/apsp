@@ -14,6 +14,7 @@ uuid.workspace = true
 apsp-plugin-singbox.workspace = true
 apsp-plugin-ddns.workspace = true
 apsp-plugin-alicloud.workspace = true
+apsp-plugin-expenses.workspace = true
 apsp-protocol.workspace = true
 axum.workspace = true
 sqlx.workspace = true
@@ -24,6 +25,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+md-5 = "=0.10.6"
 serde.workspace = true
 apsp-compiler.workspace = true
 apsp-adapter-singbox.workspace = true

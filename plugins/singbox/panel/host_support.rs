@@ -11,6 +11,18 @@ use serde_json::{Value, json};
 
 pub fn sensitive_key(key: &str) -> bool {
     key.contains("subscription")
+        || matches!(
+            key,
+            "email"
+                | "notes"
+                | "body"
+                | "records"
+                | "members"
+                | "gateway"
+                | "merchant"
+                | "sign"
+                | "activation"
+        )
 }
 
 pub fn worker_names() -> &'static [&'static str] {

@@ -223,11 +223,13 @@ pub async fn user_set(
         .bind(id)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("INSERT INTO singbox_user_policies SELECT $1,unnest($2::bigint[])")
-        .bind(id)
-        .bind(&groups)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "INSERT INTO singbox_user_policies(user_id,group_id) SELECT $1,unnest($2::bigint[])",
+    )
+    .bind(id)
+    .bind(&groups)
+    .execute(&mut *tx)
+    .await?;
     sync_users(&mut tx, &[id]).await?;
     tx.commit().await?;
     Ok(Json(UserPolicies { group_ids: groups }))
