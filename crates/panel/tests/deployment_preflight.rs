@@ -586,6 +586,21 @@ async fn bootstrapped_runtime_listener_is_owned_once_its_checkpoint_is_answered(
     let status: (i64, bool) = sqlx::query_as("SELECT applied_rev,healthy FROM server_module_status WHERE server_id=$1 AND module='singbox'")
         .bind(server).fetch_one(&pool).await?;
     assert_eq!(status, (0, false));
+    let installation: Value = panel
+        .admin(
+            Method::GET,
+            &format!("{ROOT}/servers/{server}"),
+            &cookie,
+            None,
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(
+        installation["installation"]["state"], "pending",
+        "an applied revision awaiting certification is not a failed installation"
+    );
     observe_runtime(
         &panel,
         &cookie,
