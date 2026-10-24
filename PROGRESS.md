@@ -2517,3 +2517,9 @@ r2–r7精确历史回收、r4–r8 daily及全部full门禁保持。只移除�
 - 快照改由旧节点自身的 `buildConfig` 生成（`tools/nexus-legacy-export` 与 `tools/nexus_runtime_snapshot.py`），并新增候选用户与旧节点可用用户逐节点比对。原手工候选的 Reality 握手端口为字符串，面板会拒绝，已弃用。
 - 本地验证：编译器保留运行时 6 项、Nexus 库存/接管 PostgreSQL 集成 4 项、Python 快照/计量 10 项通过；正式 0.3.0 Release 中经生产公钥验签的 sing-box 1.14.2 实测旧 Xboard 订阅格式的 SS 客户端在重写前后 TCP/UDP 均可用、撤销用户被拒、客户端配置不变。私有现场材料离线复核：14 台主机中 10 台、31 个节点中 19 个的旧节点生效配置经快照、编译和 `sing-box check` 全部通过；Hysteria2 所在 1 台和未取得主机文件的 3 台继续阻止。CI 继续暂停。
 - 未执行：生产准备、Agent 安装与任何节点切换；生产用户比对需要读取旧面板成员数据，本会话未获授权运行。正式签名的 Agent 0.3.1 仍是启动接管的前置条件。
+
+## 2026-10-24：新增 VPS 发布签名根
+
+- 按用户决定，在部署 VPS 上生成第二把带口令 minisign 密钥 `4D645C2885298F58`（minisign 0.12 由 apt 校验下载），签名、验证与篡改拒绝自检通过；私钥与口令分目录保存在仓库外，不提交、不上传。
+- 根集合更新为原 Mac 根加 VPS 根：`deploy/release-public-keys.json`、重新生成的 `deploy/bootstrap.sh` 与 `deploy/bootstrap.ps1`、仓库变量 `APSP_RELEASE_PUBLIC_KEYS`（已用 `gh variable set` 更新）。生产面板环境同步后随本次部署重新编译。
+- 本地验证：两个安装入口 `--check`、安装器制品契约、面板管理器、环境初始化、bootstrap 与发布 Python 测试通过（minisign 已可用）；面板安装命令单元测试见 PR。CI 继续暂停；Agent 0.3.1 尚未构建、签署或发布。
