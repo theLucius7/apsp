@@ -36,6 +36,25 @@ pub struct RoutePolicy {
     pub scoped_objects: bool,
 }
 
+/// An external service whose expiry a plugin observes, listed in the costs and
+/// renewals ledger for reference only: it has no price and is never renewed.
+#[derive(Clone, serde::Serialize)]
+pub struct RenewalReference {
+    /// Kind of reference, stable for clients (for example `proxy_source`).
+    pub kind: &'static str,
+    pub id: i64,
+    pub name: String,
+    pub expires_at: Option<i64>,
+    pub used_bytes: Option<i64>,
+    pub total_bytes: Option<i64>,
+    pub reported_at: Option<i64>,
+    /// Hash path of the page that manages the referenced object.
+    pub path: String,
+    /// Capability the caller needs before the reference is shown.
+    #[serde(skip)]
+    pub capability: &'static str,
+}
+
 /// One category whose SQL is owned by a plugin; the host binds visibility first.
 pub struct SearchSource {
     pub category: &'static str,
@@ -113,6 +132,15 @@ pub trait PanelPlugins: Send + Sync {
         path: &'a str,
     ) -> HookFuture<'a, ApiResult<Option<Value>>>;
     fn runtime_step_policy(&self, kind: &str) -> Option<RuntimeStepPolicy>;
+
+    /// Expiries observed by plugins for the costs and renewals ledger.
+    fn renewal_references<'a>(
+        &'a self,
+        state: &'a AppState,
+    ) -> HookFuture<'a, ApiResult<Vec<RenewalReference>>> {
+        let _ = state;
+        Box::pin(async { Ok(Vec::new()) })
+    }
 
     fn dns_present<'a>(
         &'a self,
@@ -250,6 +278,12 @@ pub fn signed_tool_packages(entries: &[crate::artifacts::ArtifactEntry]) -> Vec<
     installed()
         .map(|plugins| plugins.signed_tool_packages(entries))
         .unwrap_or_default()
+}
+pub async fn renewal_references(state: &AppState) -> ApiResult<Vec<RenewalReference>> {
+    match installed() {
+        Some(plugins) => plugins.renewal_references(state).await,
+        None => Ok(Vec::new()),
+    }
 }
 pub async fn audit_snapshot(state: &AppState, path: &str) -> ApiResult<Option<Value>> {
     match installed() {

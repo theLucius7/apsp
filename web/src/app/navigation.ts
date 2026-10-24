@@ -1,4 +1,4 @@
-import { BellRingIcon, BlocksIcon, BoxesIcon, ChartColumnIcon, CloudCogIcon, GaugeIcon, GlobeIcon, KeyRoundIcon, LayersIcon, LayoutDashboardIcon, NetworkIcon, ServerIcon, Settings2Icon, ShieldCheckIcon, SlidersHorizontalIcon, SquareTerminalIcon, TimerIcon, UsersIcon, WaypointsIcon, WorkflowIcon } from 'lucide-react'
+import { BellRingIcon, BlocksIcon, BoxesIcon, CalendarClockIcon, ChartColumnIcon, CloudCogIcon, GaugeIcon, GlobeIcon, KeyRoundIcon, LayersIcon, LayoutDashboardIcon, NetworkIcon, ServerIcon, Settings2Icon, ShieldCheckIcon, SlidersHorizontalIcon, SquareTerminalIcon, TimerIcon, UsersIcon, WaypointsIcon, WorkflowIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AppRoute } from './routes'
 
@@ -30,6 +30,8 @@ const groups: readonly NavigationGroup[] = [
   { label: '总览', items: [
     { page: 'dashboard', path: '/dashboard', label: '服务器看板', icon: LayoutDashboardIcon },
     { page: 'statistics', path: '/statistics', label: '统计报表', icon: ChartColumnIcon },
+    // ADR 0087: costs and renewals sit with the overview; the published path is kept.
+    { page: 'expenses', path: '/plugins/expenses', label: '费用与续费', icon: CalendarClockIcon },
   ] },
   { label: '服务器', items: [
     { page: 'servers', path: '/servers', label: '服务器列表', icon: ServerIcon },
@@ -47,7 +49,6 @@ const groups: readonly NavigationGroup[] = [
     { page: 'ddns', path: '/plugins/ddns', label: '动态域名解析', icon: GlobeIcon },
   ] },
   { label: '扩展', items: [
-    { page: 'expenses', path: '/plugins/expenses', label: '订阅费用', icon: LayersIcon },
     { page: 'catalog', path: '/plugins/catalog', label: '插件中心', icon: BlocksIcon },
     { page: 'alicloud', path: '/plugins/alicloud', label: '阿里云 CDT', icon: CloudCogIcon },
   ] },

@@ -133,3 +133,5 @@
 - [ADR 0093：原 CDT 脚本行为的原生守护模式](0093-cdt-script-guard.md)
 - [ADR 0094：Nexus 节点信息导入与运行时接管分开](0094-nexus-node-inventory.md)
 - [ADR 0095：保留客户端身份的 Nexus 运行接管](0095-nexus-runtime-takeover.md)：按主机准备、候选、启动、暂停与撤销准备；SS 2022 重写保留原密钥，旧倍率计量回执
+- [ADR 0096：费用与续费：服务器项目、付款记录与总览入口](0096-costs-and-renewals-ledger.md)：在已部署的订阅费用插件上增量扩展，服务器按资产设置只读列入，续期记录付款，入口移到总览、地址不变
+- [ADR 0097：费用与续费并入服务器费用记录、退订提醒与机场订阅到期](0097-ledger-server-records-and-source-references.md)：服务器费用记录与退订提醒统一在账本编辑（数据与接口不变），付款记录分页，宿主钩子提供机场订阅到期引用

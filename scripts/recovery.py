@@ -163,6 +163,13 @@ def isolation_sql(migrations):
         statements.append("UPDATE management_api_tokens SET revoked_at=floor(extract(epoch FROM clock_timestamp()))::bigint WHERE revoked_at IS NULL;")
     if 57 in available:
         statements.append("UPDATE alicloud_security_group_operations SET status='unknown',original_result='unknown' WHERE status='running';")
+    # A restored copy must not send member mail, reminders or payment requests.
+    if 66 in available:
+        statements.append("UPDATE singbox_payment_channels SET enabled=false;")
+    if 67 in available:
+        statements.append("UPDATE expense_settings SET reminders_enabled=false;UPDATE expense_deliveries SET state='cancelled' WHERE state IN ('pending','sending','failed');")
+    if 68 in available:
+        statements.append("UPDATE singbox_mail_settings SET enabled=false,reminders_enabled=false;UPDATE singbox_member_messages SET mail_state='cancelled' WHERE mail_state IN ('pending','sending','failed');")
     return "".join(statements)
 
 

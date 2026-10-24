@@ -97,5 +97,5 @@ test('member and expense destinations preserve public and administrator boundari
   expect(resolveRoute('/plugins/sing-box/member')).toEqual({ page: 'member-login' })
   expect(resolveRoute('/plugins/sing-box/commerce')).toEqual({ page: 'commerce' })
   expect(resolveRoute('/plugins/expenses')).toEqual({ page: 'expenses' })
-  expect(currentNavigation(resolveRoute('/plugins/expenses'))?.group).toBe('扩展')
+  expect(currentNavigation(resolveRoute('/plugins/expenses'))?.group).toBe('总览')
 })

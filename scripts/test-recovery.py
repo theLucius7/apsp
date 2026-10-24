@@ -145,5 +145,15 @@ class RecoveryTests(unittest.TestCase):
             self.assertTrue(controlled.checks["panel_health"])
 
 
+    def test_isolated_restore_silences_member_mail_payments_and_expense_reminders(self):
+        self.assertNotIn("expense_settings", recovery.isolation_sql([{"version": v} for v in range(1, 67)]))
+        statements = recovery.isolation_sql([{"version": v} for v in range(1, 74)])
+        for expected in ["UPDATE singbox_payment_channels SET enabled=false;",
+                         "UPDATE expense_settings SET reminders_enabled=false;",
+                         "UPDATE singbox_mail_settings SET enabled=false,reminders_enabled=false;"]:
+            self.assertIn(expected, statements)
+        # The Nexus compatibility bridge keeps serving legacy links; restores leave it alone.
+        self.assertNotIn("singbox_nexus_bridge", statements)
+
 if __name__ == "__main__":
     unittest.main()

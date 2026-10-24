@@ -24,3 +24,19 @@ export async function download(path: string, filename: string) {
   const url = URL.createObjectURL(await response.blob()), anchor = document.createElement('a')
   anchor.href = url; anchor.download = filename; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
+
+// Server cost records (fleet_cost_records) keep amounts in the currency's minor
+// unit; Intl knows how many decimals each currency uses (JPY has none).
+export function currencyDigits(code: string): number {
+  try { return Math.min(4, new Intl.NumberFormat('en', { style: 'currency', currency: code }).resolvedOptions().maximumFractionDigits ?? 2) } catch { return 2 }
+}
+export function minorToUnits(minor: string, code: string): string {
+  return (BigInt(minor) * 10n ** BigInt(4 - currencyDigits(code))).toString()
+}
+export function parseMinor(value: FormDataEntryValue | null, code: string): number {
+  const raw = String(value ?? '').trim(), digits = currencyDigits(code)
+  const pattern = digits ? new RegExp(`^\\d{1,12}(?:\\.\\d{1,${digits}})?$`) : /^\d{1,12}$/
+  if (!pattern.test(raw)) throw new Error(digits ? `金额最多保留 ${digits} 位小数，且不能为负数。` : '此币种的金额只能是整数。')
+  const [whole, fraction = ''] = raw.split('.')
+  return Number(BigInt(whole) * 10n ** BigInt(digits) + BigInt(fraction.padEnd(digits, '0') || '0'))
+}
