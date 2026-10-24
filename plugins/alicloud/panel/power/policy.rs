@@ -18,9 +18,23 @@ pub(in super::super) struct Policy {
     pub stop_time: String,
     pub utc_offset_minutes: i64,
     pub keepalive: bool,
+    #[serde(default)]
+    pub cdt_guard: Option<super::guard::Config>,
 }
 impl Policy {
     pub fn validate(&self) -> ApiResult<()> {
+        if let Some(guard) = &self.cdt_guard {
+            guard.validate()?;
+            if self.stop_mode != "StopCharging"
+                || self.threshold_action != "off"
+                || self.schedule_enabled
+                || self.keepalive
+            {
+                return Err(ApiError::BadRequest(
+                    "CDT 脚本守护使用节省停机，不能同时启用账单阈值、每日计划或抢占式保活".into(),
+                ));
+            }
+        }
         if !valid_mode(&self.stop_mode)
             || !matches!(self.threshold_action.as_str(), "off" | "notify" | "stop")
             || !(1..=1_000_000_000).contains(&self.limit_gb)
@@ -52,6 +66,9 @@ impl Policy {
         )
     }
     pub fn blocks_start(&self, account: &Account, resource: &Resource, now: i64) -> bool {
+        if self.enabled && self.cdt_guard.is_some() {
+            return super::guard::exceeded(account, resource, now) != Some(false);
+        }
         self.enabled
             && self.threshold_action == "stop"
             && (resource.threshold_hold || self.exceeded(account, now) != Some(false))

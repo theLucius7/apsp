@@ -82,6 +82,17 @@ pub(super) fn allowed(job: &Job, account: &Account, resource: &Resource, now: i6
     if !policy.enabled || (job.action == "start" && resource.manual_hold) {
         return false;
     }
+    if policy.cdt_guard.is_some() {
+        return job.source == "cdt_guard"
+            && match job.action.as_str() {
+                "stop" => super::guard::exceeded(account, resource, now) == Some(true),
+                "start" => {
+                    policy.cdt_guard.as_ref().is_some_and(|g| g.auto_start)
+                        && super::guard::exceeded(account, resource, now) == Some(false)
+                }
+                _ => false,
+            };
+    }
     match job.source.as_str() {
         "threshold" => {
             policy.threshold_action == "stop" && policy.exceeded(account, now) == Some(true)

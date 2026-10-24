@@ -1,4 +1,5 @@
 mod api;
+mod guard;
 mod jobs;
 mod policy;
 mod scheduler;
@@ -7,6 +8,7 @@ mod state;
 mod tests;
 
 pub(super) use api::routes;
+pub(super) use guard::Observation as GuardState;
 pub(super) use jobs::idle;
 pub(super) use policy::Policy;
 pub(super) use state::State;
