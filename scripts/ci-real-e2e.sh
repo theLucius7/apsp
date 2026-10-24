@@ -336,25 +336,35 @@ runtime_pid=$(sudo systemctl show apsp-singbox@main.service -p MainPID --value)
 [[ $runtime_pid =~ ^[1-9][0-9]*$ ]] || die 'independent runtime is not active'
 
 wait_agent() {
-  python3 - <<'PY'
+  if python3 - <<'PY'
 import json
 import subprocess
 import time
 deadline = time.monotonic() + 120
+last = {'status_readable': False}
 while time.monotonic() < deadline:
     try:
         process = subprocess.run(['sudo', '/usr/local/bin/apsp-agent', 'status'],
                                  check=True, capture_output=True, text=True, timeout=10)
         value = json.loads(process.stdout)
-        if (value.get('connected') is True and value.get('healthy', {}).get('singbox') is True
-                and value.get('applied', {}).get('singbox', 0) > 0):
+        applied = value.get('applied', {}).get('singbox', 0)
+        last = {'status_readable': True, 'connected': value.get('connected') is True,
+                'healthy': value.get('healthy', {}).get('singbox') is True,
+                'applied_positive': type(applied) is int and applied > 0}
+        if all(last.values()):
             break
-    except (subprocess.SubprocessError, ValueError):
-        pass
+    except (subprocess.SubprocessError, ValueError, AttributeError):
+        last = {'status_readable': False}
     time.sleep(2)
 else:
-    raise SystemExit('Agent did not restore its live status connection')
+    raise SystemExit('Agent did not restore its live status connection: ' + json.dumps(last))
 PY
+  then
+    return 0
+  fi
+  # Only fixed-vocabulary deployment and checkpoint state, never device output.
+  "${driver[@]}" diagnose >&2 || true
+  return 1
 }
 
 # Read only this run's configured user/node baseline, never identity material.

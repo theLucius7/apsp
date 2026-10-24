@@ -415,6 +415,13 @@ def bootstrap_installed(status, drift):
             and checkpoint.get("outcome") in ("verified", "superseded"))
 
 
+def diagnose(panel, state, args):
+    """Print the deployment and checkpoint state in fixed vocabulary only."""
+    base = f"/api/plugins/sing-box/servers/{state['server_id']}/operations-view"
+    print("运行时状态=" + json.dumps(install_status(snapshot(panel, state)["deployment"],
+                                                  panel.request(base).get("drift")), ensure_ascii=False))
+
+
 def reauthenticate(panel, args):
     # Bootstrap and confirmation require a proof younger than five minutes;
     # device sampling and the first runtime install can outlast the login one.
@@ -607,6 +614,7 @@ def parser():
     growth.add_argument("--min-uplink", type=int, default=1)
     growth.add_argument("--min-downlink", type=int, default=1)
     growth.add_argument("--timeout", type=int, default=180)
+    stages.add_parser("diagnose", help="只用固定词汇报告部署与核对状态，不输出错误文本")
     stable = stages.add_parser("verify", help="暂停流量后检查稳定、outbox 与历史用量")
     stable.add_argument("--label", required=True)
     stable.add_argument("--unchanged-from", help="必须保持原封不动的稳定基线标签")
