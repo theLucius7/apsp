@@ -62,6 +62,7 @@ const english: Record<string, string> = {
   '服务器在线情况、网卡流量与代理流量的趋势和排行，用来回顾一段时间内的整体运行。': 'Trends and rankings for server availability, network traffic and proxy traffic over a period.',
   '供应商与订单、采购配置、续费与年度成本账本，以及维护状态在「运维工具 → 资产与生命周期」中记录；带有效期的续费记录会更新这里的到期日期。': 'Provider and order details, purchased specs, the renewal and annual cost ledger, and maintenance state are recorded under Operations tools → Assets and lifecycle. Renewals with a validity date update the expiry date here.',
   '打开运维工具': 'Open operations tools',
+  '费用与续费': 'Costs and renewals', '续费项目': 'Renewal items',
   '退出登录': 'Sign out', '只读 · ': 'Read-only · ', '运维 · ': 'Operations · ', '页面不存在': 'Page not found',
   '界面语言': 'Interface language', '简体中文': 'Simplified Chinese', 'English': 'English',
   '刷新': 'Refresh', '保存': 'Save', '取消': 'Cancel', '关闭': 'Close', '确认': 'Confirm', '删除': 'Delete',

@@ -1,5 +1,13 @@
 # 执行进度
 
+## 2026-10-25：费用与续费在已部署的订阅费用插件上增量整合
+
+- 用户要求继续整合本地会话的工作，并保证之前的节点配置可用、不直接废弃之前的配置。主线已合入 #177（成员运营与 Wallos 订阅费用，已导入真实数据并部署）、#178 与 #181（Nexus 节点清单与保留客户端身份的运行时接管）。本地分支中另起的续费账本、Xboard 迁移预览与门户公告与这些功能重复，未合入，保留在本地分支 `archive/renewals-parallel-v2`；理由记入[待决问题](docs/open-questions.md)。
+- 按 [ADR 0096](docs/adr/0096-costs-and-renewals-ledger.md) 只把主线缺少的部分增量加到已部署的 `plugins/expenses/panel/`：资产设置中有到期日期的服务器只读列入续费项目、日历、30 天内续费与预计支出（按服务器范围过滤，账本不写服务器数据，服务器到期提醒仍在「告警设置」）；续期记录付款（新增迁移 `0073_expense_payments.sql`，只加一张表）；入口按 ADR 0087 移到「总览 → 费用与续费」，地址 `/#/plugins/expenses` 与接口不变，“订阅”改称“续费项目”，手动项目的 iCalendar `UID` 保持原格式。不改表名，不迁移或删除已有数据，不触碰成员运营、Nexus 兼容桥、节点清单与接管代码。
+- 隔离恢复脚本补上 #177 新增表的静默处理：恢复副本关闭费用提醒、成员邮件与支付渠道并取消待投递消息，Nexus 兼容桥保持原状。功能地图、Nexus 与 Wallos 迁移说明、ADR 0090 与 ADR 索引同步更新。
+- 集中验证：`cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings`、核心边界检查通过；本地 PostgreSQL 16 容器中 `cargo test --locked --workspace --no-fail-fast` 1326 通过、8 失败、26 忽略。8 项失败为 `apsp-agent-core` 的升级退役与运行时互斥单元测试 4 项、`diagnostic_end_to_end` 3 项与 `end_to_end` 1 项（Agent 重启与诊断服务启动超时、`invalid release trust roots`），在未改动的 `origin/main`（`79bc3904`）上用独立编译目录重跑同样失败、计数一致，属本机环境既有问题；新增与受影响的 `expense_subscriptions` 测试全部通过；`tsc -b` 通过，`bun test` 203 通过、0 失败（2531 个断言），Vite 生产构建通过并同步 `web/dist`（连续两次构建结果一致）；根 Python 测试 217 项通过、25 项跳过（使用本机 `minisign`），`scripts/test-recovery.py` 通过，`git diff --check` 通过。
+- 未验证：未运行浏览器回归；未在生产面板上操作。CI 继续暂停，未运行远端 CI。
+
 ## 2026-10-24：界面第五轮：按评审修复可用性、交互一致性与视觉层级
 
 - 用户转来针对 `56a0d84` 的界面评审，要求按建议完成三个步骤并交付一个 PR；主线缺陷扫描中同组件的界面缺陷一并处理。三个步骤分别验证、单独提交，详见[验收记录](docs/acceptance/ui-review-followup-20261024.md)。

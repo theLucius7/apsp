@@ -80,7 +80,7 @@
 | 三网延迟检测 | 监控告警 › 延迟检测 |
 | IP 质量与流媒体、AI 服务解锁；TCP 连接诊断 | 服务器详情 › IP 信息、TCP 诊断 |
 | 网络检测中的基础探测（TCP、ICMP、HTTP、DNS、TLS 等）、路由追踪与多来源 IP，计划并入线路质量中心 | 网络检测 |
-| **费用与续费账本**（规划，Wallos 式）：服务器、域名、机场订阅、AI 与其他服务的周期费用、下次续费、提醒与付款记录，按显示币种汇总 | 总览 › 费用与续费（新入口） |
+| **费用与续费账本**（Wallos 式，首批已实现）：手动添加的域名、AI 与其他服务，以及按资产设置自动列出的服务器；周期费用、下次续费、30 天内续费、续费日历与 iCalendar、续期付款记录与提醒，按显示币种汇总，可从 Wallos 导入。机场订阅来源与运维资产档案的续费记录尚未接入，见 [ADR 0096](adr/0096-costs-and-renewals-ledger.md) | 总览 › 费用与续费 `/#/plugins/expenses` |
 | 面板设置、账号安全；管理员权限、API 令牌、审计与自检 | 系统 |
 | 面板备份与恢复 | 自动化与恢复 › 备份与恢复 |
 
@@ -125,7 +125,7 @@
 | 服务器 | 服务器列表 | `/#/servers` | 核心与支撑 |
 | 服务器 | 运维工具 | `/#/fleet` | 降级 |
 | 服务器 | 自动化与恢复 | `/#/operations` | 备份与恢复为支撑，其余降级或冻结 |
-| 总览 | 服务器看板、统计报表；费用与续费（规划） | `/#/dashboard`、`/#/statistics`；新地址待实现时确定 | 支撑 |
+| 总览 | 服务器看板、统计报表、费用与续费 | `/#/dashboard`、`/#/statistics`、`/#/plugins/expenses` | 支撑 |
 | 监控告警 | 告警事件、延迟检测、告警设置 | `/#/system/notifications`、`/#/latency`、`/#/monitoring/settings` | 支撑 |
 | 网络 | 网络检测 | `/#/network-workbench` | 基础探测与路由为支撑，其余降级或冻结 |
 | 网络 | 网络配置 | `/#/network-configuration` | 降级与冻结 |
@@ -170,7 +170,7 @@
 | 应用外框、路由、侧栏 | `app/` | `crates/panel-host/src/frontend.rs` |
 | 代理服务 | `plugins/singbox/` | `plugins/singbox/panel/`、`crates/compiler/`、`crates/adapter-singbox/` |
 | 服务器 | `servers/`、`server-diagnostics/`、`fleet/`、`operations/` | `panel-host` 的 `servers`、`telemetry`、`fleet`、`operations`、`diagnostics`；Agent 在 `crates/agent-core/` |
-| 总览 | `display/`（看板）、`statistics/` | `panel-host` 的 `dashboard`、`statistics` |
+| 总览 | `display/`（看板）、`statistics/`、`plugins/expenses/` | `panel-host` 的 `dashboard`、`statistics`；`plugins/expenses/panel/`（费用与续费） |
 | 监控告警 | `monitoring/` | `panel-host` 的 `notifications`、`probes`、`latency_tasks` |
 | 网络 | `network-workbench/`、`network-configuration/`、`plugins/ddns/` | `panel-host` 的 `network_workbench`、`network_configuration`；`plugins/ddns/panel/` |
 | 扩展 | `plugins/`（插件中心）、`plugins/alicloud/` | `panel-host` 的 `artifacts`；`plugins/alicloud/panel/` |
@@ -178,4 +178,4 @@
 
 后端的宿主、插件与组装分层不随功能分级改变，见[仓库目录与维护约定](repository.md)。
 
-成员运营归「代理服务」，入口 `/#/plugins/sing-box/commerce`；成员自助入口为 `/#/plugins/sing-box/member`。Wallos 订阅费用归「扩展插件」，入口 `/#/plugins/expenses`。详见 [迁移说明](nexus-migration.md)。
+成员运营归「代理服务」，入口 `/#/plugins/sing-box/commerce`；成员自助入口为 `/#/plugins/sing-box/member`。Wallos 订阅费用按 ADR 0087 改为「总览 → 费用与续费」，入口仍为 `/#/plugins/expenses`。详见 [迁移说明](nexus-migration.md)。

@@ -4,6 +4,7 @@ mod api;
 mod calendar;
 mod migration;
 pub mod schedule;
+mod servers;
 mod worker;
 pub use worker::tick;
 
@@ -40,6 +41,8 @@ pub fn routes() -> Router<AppState> {
             )
             .route("/subscriptions/{id}/clone", post(api::clone_entry))
             .route("/subscriptions/{id}/renew", post(api::renew))
+            .route("/subscriptions/{id}/payments", get(api::payments))
+            .route("/servers", get(servers::list))
             .route("/calendar", get(calendar::calendar))
             .route("/calendar.ics", get(calendar::ical))
             .route("/summary", get(calendar::summary))
@@ -73,6 +76,20 @@ async fn actor(state: &AppState, headers: &HeaderMap, write: bool) -> ApiResult<
         if write { "cloud:write" } else { "cloud:read" },
     )
     .await
+}
+/// Like `actor`, but keeps the principal so server items follow its server scope.
+async fn principal(
+    state: &AppState,
+    headers: &HeaderMap,
+    write: bool,
+) -> ApiResult<control_center::Principal> {
+    let principal = control_center::authenticate(state, headers).await?;
+    if !principal.allows(if write { "cloud:write" } else { "cloud:read" }) {
+        return Err(ApiError::Forbidden(
+            "当前管理员或 API 令牌没有此操作权限".into(),
+        ));
+    }
+    Ok(principal)
 }
 async fn lock(tx: &mut Tx<'_>) -> ApiResult<()> {
     sqlx::query("SELECT pg_advisory_xact_lock(73201067)")

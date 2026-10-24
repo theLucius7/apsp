@@ -15,10 +15,12 @@ pub(super) struct Range {
 }
 #[derive(Serialize)]
 struct Due {
+    /// `item` for manually added entries, `server` for servers from asset settings.
+    kind: &'static str,
     id: i64,
     name: String,
     date: String,
-    amount_units: String,
+    amount_units: Option<String>,
     currency: String,
     auto_renew: bool,
 }
@@ -61,7 +63,11 @@ pub(super) fn dates(entry: &Subscription, from: Date, to: Date) -> ApiResult<Vec
     }
     Ok(result)
 }
-async fn collect(state: &AppState, range: &Range) -> ApiResult<Vec<Due>> {
+async fn collect(
+    state: &AppState,
+    principal: &control_center::Principal,
+    range: &Range,
+) -> ApiResult<Vec<Due>> {
     let from = schedule::parse(&range.from)?;
     let to = schedule::parse(&range.to)?;
     if to < from || (to - from).whole_days() > 366 {
@@ -76,10 +82,11 @@ async fn collect(state: &AppState, range: &Range) -> ApiResult<Vec<Due>> {
     for row in rows {
         for date in dates(&row, from, to)? {
             events.push(Due {
+                kind: "item",
                 id: row.id,
                 name: row.name.clone(),
                 date: schedule::format(date),
-                amount_units: row.amount_units.clone(),
+                amount_units: Some(row.amount_units.clone()),
                 currency: row.currency.clone(),
                 auto_renew: row.auto_renew,
             });
@@ -88,7 +95,23 @@ async fn collect(state: &AppState, range: &Range) -> ApiResult<Vec<Due>> {
             }
         }
     }
-    events.sort_by(|a, b| (&a.date, a.id).cmp(&(&b.date, b.id)));
+    for server in servers::load(state, principal).await? {
+        for date in servers::dates(&server, from, to)? {
+            events.push(Due {
+                kind: "server",
+                id: server.id,
+                name: server.name.clone(),
+                date: schedule::format(date),
+                amount_units: server.amount_units.clone(),
+                currency: server.currency.clone(),
+                auto_renew: server.auto_renewal,
+            });
+            if events.len() > 20000 {
+                return Err(bad("事件过多，请缩小日历范围"));
+            }
+        }
+    }
+    events.sort_by(|a, b| (&a.date, a.kind, a.id).cmp(&(&b.date, b.kind, b.id)));
     Ok(events)
 }
 pub(super) async fn calendar(
@@ -96,8 +119,10 @@ pub(super) async fn calendar(
     headers: HeaderMap,
     Query(range): Query<Range>,
 ) -> ApiResult<Json<Value>> {
-    actor(&state, &headers, false).await?;
-    Ok(Json(json!({"entries":collect(&state,&range).await?})))
+    let principal = principal(&state, &headers, false).await?;
+    Ok(Json(
+        json!({"entries":collect(&state,&principal,&range).await?}),
+    ))
 }
 fn escape(value: &str) -> String {
     value
@@ -126,8 +151,8 @@ pub(super) async fn ical(
     headers: HeaderMap,
     Query(range): Query<Range>,
 ) -> ApiResult<impl IntoResponse> {
-    actor(&state, &headers, false).await?;
-    let events = collect(&state, &range).await?;
+    let principal = principal(&state, &headers, false).await?;
+    let events = collect(&state, &principal, &range).await?;
     let mut output="BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//apsp//Expense Calendar//EN\r\nCALSCALE:GREGORIAN\r\n".to_owned();
     for event in events {
         let date = event.date.replace('-', "");
@@ -135,10 +160,13 @@ pub(super) async fn ical(
             .next_day()
             .ok_or_else(|| bad("日历日期超出范围"))?;
         output.push_str("BEGIN:VEVENT\r\n");
-        output.push_str(&fold(&format!(
-            "UID:expense-{}-{}@apsp.invalid",
-            event.id, date
-        )));
+        // Item UIDs keep their published form so re-imported calendars update in place.
+        let uid = if event.kind == "server" {
+            format!("UID:expense-server-{}-{}@apsp.invalid", event.id, date)
+        } else {
+            format!("UID:expense-{}-{}@apsp.invalid", event.id, date)
+        };
+        output.push_str(&fold(&uid));
         output.push_str(&fold(&format!("DTSTAMP:{date}T000000Z")));
         output.push_str(&fold(&format!("DTSTART;VALUE=DATE:{date}")));
         output.push_str(&fold(&format!(
@@ -146,12 +174,15 @@ pub(super) async fn ical(
             schedule::format(tomorrow).replace('-', "")
         )));
         output.push_str(&fold(&format!("SUMMARY:{}", escape(&event.name))));
-        let units = units(&event.amount_units)?;
+        let amount = match &event.amount_units {
+            Some(value) => {
+                let units = units(value)?;
+                format!("{} {}.{:04}", event.currency, units / 10000, units % 10000)
+            }
+            None => "未填写金额".into(),
+        };
         output.push_str(&fold(&format!(
-            "DESCRIPTION:{} {}.{:04}\\n{}",
-            event.currency,
-            units / 10000,
-            units % 10000,
+            "DESCRIPTION:{amount}\\n{}",
             if event.auto_renew {
                 "自动续费计划；并非付款凭证"
             } else {
@@ -177,7 +208,7 @@ pub(super) async fn summary(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Value>> {
-    actor(&state, &headers, false).await?;
+    let principal = principal(&state, &headers, false).await?;
     let settings=sqlx::query("SELECT base_currency,budget_units::text,(to_timestamp($1) AT TIME ZONE timezone)::date::text AS today FROM expense_settings WHERE singleton").bind(now_timestamp()).fetch_one(&state.pool).await?;
     let today: String = settings.try_get("today")?;
     let start = schedule::parse(&today)?;
@@ -201,6 +232,32 @@ pub(super) async fn summary(
             .entry(row.currency.clone())
             .or_default() += value;
     }
+    // Servers count toward the totals but keep their own subtotal: they have no
+    // category, and some have no recorded price.
+    let servers = servers::load(&state, &principal).await?;
+    let mut server_totals: BTreeMap<String, i128> = BTreeMap::new();
+    let mut unpriced_servers = 0;
+    for server in &servers {
+        let Some(amount) = &server.amount_units else {
+            unpriced_servers += 1;
+            continue;
+        };
+        let value = i128::from(units(amount)?) * servers::dates(server, start, end)?.len() as i128;
+        *totals.entry(server.currency.clone()).or_default() += value;
+        *server_totals.entry(server.currency.clone()).or_default() += value;
+    }
+    let upcoming_end = start
+        .checked_add(Duration::days(30))
+        .ok_or_else(|| bad("日期超出范围"))?;
+    let upcoming = collect(
+        &state,
+        &principal,
+        &Range {
+            from: today.clone(),
+            to: schedule::format(upcoming_end),
+        },
+    )
+    .await?;
     let exchange = serde_json::to_value(apsp_panel_host::exchange::current(&state.pool).await?)
         .map_err(anyhow::Error::from)?;
     let base: String = settings.try_get("base_currency")?;
@@ -227,9 +284,13 @@ pub(super) async fn summary(
         .iter()
         .map(|(k, v)| (k.clone(), v.to_string()))
         .collect();
+    let server_totals: BTreeMap<_, _> = server_totals
+        .iter()
+        .map(|(k, v)| (k.clone(), v.to_string()))
+        .collect();
     let categories:Vec<Value>=categories.into_iter().map(|(id,values)|json!({"category_id":id,"totals":values.into_iter().map(|(k,v)|(k,v.to_string())).collect::<BTreeMap<_,_>>()})).collect();
     Ok(Json(
-        json!({"from":today,"to":schedule::format(end),"active":rows.iter().filter(|r|!r.inactive).count(),"inactive":rows.iter().filter(|r|r.inactive).count(),"totals_units":totals,"categories":categories,"base_currency":base,"budget_units":settings.try_get::<Option<String>,_>("budget_units")?,"converted_yearly":if missing.is_empty(){Some(converted)}else{None},"missing_currencies":missing,"exchange":exchange,"estimate":true}),
+        json!({"from":today,"to":schedule::format(end),"active":rows.iter().filter(|r|!r.inactive).count(),"inactive":rows.iter().filter(|r|r.inactive).count(),"totals_units":totals,"categories":categories,"servers":{"count":servers.len(),"unpriced":unpriced_servers,"totals_units":server_totals},"upcoming":upcoming,"base_currency":base,"budget_units":settings.try_get::<Option<String>,_>("budget_units")?,"converted_yearly":if missing.is_empty(){Some(converted)}else{None},"missing_currencies":missing,"exchange":exchange,"estimate":true}),
     ))
 }
 

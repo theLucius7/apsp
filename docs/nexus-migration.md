@@ -1,6 +1,6 @@
 # Nexus 与 Wallos 迁移
 
-成员运营位于「代理服务 → 成员运营」，成员入口为 `/#/plugins/sing-box/member`。订阅费用位于「扩展插件 → 订阅费用」。两者使用 apsp 原有管理会话、权限和组件，成员采用独立会话。
+成员运营位于「代理服务 → 成员运营」，成员入口为 `/#/plugins/sing-box/member`。订阅费用位于「总览 → 费用与续费」（地址仍为 `/#/plugins/expenses`），服务器按资产设置自动列入，续期会记录付款，见 [ADR 0096](adr/0096-costs-and-renewals-ledger.md)。两者使用 apsp 原有管理会话、权限和组件，成员采用独立会话。
 
 ## 功能与资料
 

@@ -172,6 +172,18 @@ async fn operate(
         {
             return Err(conflict("下次付款超过取消日期，请先调整取消计划"));
         }
+        // A confirmed renewal records the payment for the period it covers.
+        sqlx::query("INSERT INTO expense_payments(subscription_id,request_id,period_start,paid_on,amount_units,currency,administrator_id,created_at) VALUES($1,$2,$3::text::date,$4::text::date,$5,$6,$7,$8)")
+            .bind(id)
+            .bind(input.request_id)
+            .bind(&original.next_payment)
+            .bind(&today)
+            .bind(units(&original.amount_units)?)
+            .bind(&original.currency)
+            .bind(administrator)
+            .bind(now_timestamp())
+            .execute(&mut *tx)
+            .await?;
         let value:Subscription=sqlx::query_as(&format!("UPDATE expense_subscriptions SET next_payment=$2::text::date,inactive=FALSE,version=version+1,updated_at=$3 WHERE id=$1 RETURNING {COLUMNS}")).bind(id).bind(schedule::format(next)).bind(now_timestamp()).fetch_one(&mut *tx).await?;
         serde_json::to_value(value).map_err(anyhow::Error::from)?
     } else {
@@ -201,6 +213,20 @@ async fn operate(
     sqlx::query("INSERT INTO expense_events(id,subscription_id,event_key,kind,detail,created_at) VALUES($1,$2,$3,$4,$5,$6)").bind(Uuid::new_v4()).bind(id).bind(key).bind(if renew{"manual_renewal"}else{"cloned"}).bind(json!({"request":identity,"result":result,"administrator_id":administrator})).bind(now_timestamp()).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(result))
+}
+pub(super) async fn payments(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<Value>> {
+    actor(&state, &headers, false).await?;
+    let rows: Vec<Value> = sqlx::query_scalar(
+        "SELECT jsonb_build_object('id',id,'period_start',period_start::text,'paid_on',paid_on::text,'amount_units',amount_units::text,'currency',currency,'created_at',created_at) FROM expense_payments WHERE subscription_id=$1 ORDER BY paid_on DESC,id DESC LIMIT 200",
+    )
+    .bind(id)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(json!({"entries":rows})))
 }
 pub(super) async fn labels(
     State(state): State<AppState>,
