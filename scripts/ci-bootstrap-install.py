@@ -5,7 +5,9 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
+import sys
 import urllib.parse
 
 
@@ -16,7 +18,15 @@ def bootstrap(enrollment, trust_directory, bundle, log):
         raise ValueError("enrollment must be an ordinary private file")
     descriptor = json.loads(enrollment.read_text())
     version, tag, token, panel = (descriptor[key] for key in ("version", "tag", "token", "origin"))
-    if tag != "agent-v" + version or not isinstance(token, str) or not token or any(ord(c) < 32 or ord(c) == 127 for c in token):
+    if version == "latest" and tag is None:
+        # The panel offers "latest" without a tag; this offline run installs
+        # the one bundled release, whose signed metadata bootstrap verifies.
+        tag = json.loads((bundle / "release.json").read_text()).get("tag")
+        if not isinstance(tag, str) or not re.fullmatch(r"agent-v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?", tag):
+            raise ValueError("bundled release has no valid Agent tag")
+    elif tag != "agent-v" + version:
+        raise ValueError("invalid private enrollment descriptor")
+    if not isinstance(token, str) or not token or any(ord(c) < 32 or ord(c) == 127 for c in token):
         raise ValueError("invalid private enrollment descriptor")
     parsed = urllib.parse.urlsplit(panel)
     if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or parsed.path or parsed.query or parsed.fragment or parsed.username or parsed.password:
@@ -26,8 +36,14 @@ def bootstrap(enrollment, trust_directory, bundle, log):
                  "--panel", panel, "--trusted-keys", str(trust_directory / "public-keys.json"),
                  "--minisign", "/usr/bin/minisign", "--release-dir", str(bundle)]
     with log.open("wb") as output:
-        return subprocess.run(arguments, env=environment, stdout=output, stderr=subprocess.STDOUT,
+        code = subprocess.run(arguments, env=environment, stdout=output, stderr=subprocess.STDOUT,
                               check=False, timeout=600).returncode
+    if code:
+        # The run log stays private; surface only its last lines, without the
+        # enrollment token, so a refused TEST_ONLY installation is diagnosable.
+        tail = log.read_bytes()[-2048:].decode("utf-8", "replace").replace(token, "<token>")
+        print("CI bootstrap exited " + str(code) + ":\n" + "\n".join(tail.splitlines()[-6:]), file=sys.stderr)
+    return code
 
 
 def main():

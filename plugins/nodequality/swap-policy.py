@@ -61,7 +61,7 @@ NO_SWAP_CLEANUP = rb'''# Apsp: no swap was created, so cleanup must not change h
 SOURCES = {
     'NodeQuality.sh': {
         'source_sha256': '4e1b25894cadf908ef61fb0d9ce874a75524c6dafc2ea26f0477107288e0c018',
-        'patched_sha256': 'a68a42e8f508fdc1ed5a7170fda4b114ab81afc184a9c035b48613407a1fdc93',
+        'patched_sha256': 'f7355a4ca5f4042a535e7a73ac337dc427e8f6ca5bdd7e9fb96181fc3162d91b',
     },
     'hardware.sh': {
         'source_sha256': 'f7413e8a19eaacce2df70b1ae6c63bab89334bca0d07846badacde5ef6afcb0c',

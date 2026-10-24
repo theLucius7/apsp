@@ -238,6 +238,13 @@ trust_directory=$(sudo mktemp -d /root/apsp-ci-trust.XXXXXX)
 sudo install -m 0400 crates/protocol/tests/fixtures/public-keys.json "$trust_directory/public-keys.json"
 sudo install -m 0500 tools/bootstrap.py "$trust_directory/bootstrap.py"
 sudo install -m 0400 tools/release.py "$trust_directory/release.py"
+# The bootstrap imports the legacy checkpoint guard and executes only a
+# preloaded trusted installer next to it, as the official entry provides.
+sudo install -m 0400 tools/legacy_agent_checkpoint.py "$trust_directory/legacy_agent_checkpoint.py"
+python3 tools/release.py render-installer --template deploy/install.sh.tmpl \
+  --agent-unit deploy/apsp-agent.service --runtime-unit plugins/sing-box/apsp-singbox@.service \
+  --output "$scratch/trusted-install.sh"
+sudo install -m 0500 "$scratch/trusted-install.sh" "$trust_directory/trusted-install.sh"
 cat > "$scratch/compose.override.yml" <<'YAML'
 services:
   panel:
@@ -307,6 +314,14 @@ phase=install
 owned_installation=1
 sudo python3 scripts/ci-bootstrap-install.py --enrollment "$scratch/enrollment.json" \
   --trust-directory "$trust_directory" --bundle "$scratch/release" --log "$scratch/install.log"
+# The panel publishes business nodes only after a confirmed read-only runtime
+# preflight. Allow it locally, restart so the Agent advertises it, then run the
+# operator flow (first empty runtime install, collect again, confirm).
+sudo sh -c "umask 077; printf '%s\\n' '{\"runtime_inspection\":true}' > /etc/apsp/fleet-policy.json"
+sudo systemctl restart apsp-agent.service
+phase=preflight
+"${driver[@]}" preflight --timeout 600
+phase=install
 "${driver[@]}" ready --agent-version "$agent_version" --timeout 600
 python3 - "$scratch/state.json" "$scratch/client.json" <<'PY'
 import json

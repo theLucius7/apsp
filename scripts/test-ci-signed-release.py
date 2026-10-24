@@ -128,6 +128,21 @@ class SignedCiContracts(unittest.TestCase):
         self.assertNotIn("public-test-token", " ".join(arguments))
         self.assertEqual(run.call_args.kwargs["env"]["APSP_ENROLLMENT_TOKEN"], "public-test-token")
 
+    def test_latest_enrollment_installs_the_bundled_signed_tag(self):
+        descriptor = self.descriptor()
+        value = json.loads(descriptor.read_text())
+        descriptor.write_text(json.dumps({**value, "version": "latest", "tag": None}))
+        release = self.directory / "release"
+        release.mkdir()
+        (release / "release.json").write_text(json.dumps({"tag": "agent-v0.3.1"}))
+        with patch.object(BOOTSTRAP.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+            self.assertEqual(BOOTSTRAP.bootstrap(descriptor, self.directory / "operator", release, self.directory / "log"), 0)
+        arguments = run.call_args.args[0]
+        self.assertEqual(arguments[arguments.index("--tag") + 1], "agent-v0.3.1")
+        (release / "release.json").write_text(json.dumps({"tag": "agent-vlatest"}))
+        with self.assertRaises(ValueError):
+            BOOTSTRAP.bootstrap(descriptor, self.directory / "operator", release, self.directory / "log")
+
     def test_bootstrap_refuses_public_or_cross_origin_private_descriptors(self):
         descriptor = self.descriptor()
         descriptor.chmod(0o644)

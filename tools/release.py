@@ -329,8 +329,10 @@ def require_protected_file(path):
     path = Path(path)
     for part in (path,) + tuple(path.parents):
         stat = part.lstat()
+        # Name the offending directory so operators can fix the right one.
         ensure(not part.is_symlink() and stat.st_uid == 0 and stat.st_mode & 0o022 == 0,
-               "trusted file and parents must be root-owned and protected")
+               f"trusted file and parents must be root-owned and protected: {part} "
+               f"(owner {stat.st_uid}, mode {stat.st_mode & 0o7777:o})")
 
 
 def verify_signature(bundle, roots, minisign):

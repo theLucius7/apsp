@@ -10,6 +10,21 @@ use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 
+fn json_values<'a>(value: &'a Value, key: &str, found: &mut Vec<&'a Value>) {
+    match value {
+        Value::Object(fields) => {
+            for (name, item) in fields {
+                if name == key {
+                    found.push(item);
+                }
+                json_values(item, key, found);
+            }
+        }
+        Value::Array(items) => items.iter().for_each(|item| json_values(item, key, found)),
+        _ => {}
+    }
+}
+
 fn preferences(public: bool) -> Value {
     json!({"public_dashboard":public,"offline_alerts":true,"offline_minutes":2,"telegram_enabled":false,"telegram_chat_id":""})
 }
@@ -165,7 +180,14 @@ async fn public_dashboard_is_opt_in_and_never_exposes_hidden_servers_or_private_
             .text()
             .await?;
         assert!(!text.contains("private.example.com"));
-        assert!(!text.contains("443"));
+        // Random IDs and timestamps may contain the digits 443; check the
+        // redacted probe fields themselves.
+        let value: Value = serde_json::from_str(&text)?;
+        let (mut ports, mut targets) = (Vec::new(), Vec::new());
+        json_values(&value, "port", &mut ports);
+        json_values(&value, "target", &mut targets);
+        assert!(ports.iter().all(|port| port.is_null()));
+        assert!(targets.iter().all(|target| target.as_str() == Some("")));
     }
     for path in ["/api/servers", "/api/settings", "/api/notifications"] {
         assert_eq!(

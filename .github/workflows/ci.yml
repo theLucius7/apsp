@@ -21,6 +21,9 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgres://apsp:apsp-test@127.0.0.1:5432/apsp_test
+      # Deliberately public TEST_ONLY keyring for encrypted credential tests.
+      APSP_CREDENTIAL_KEYS: '{"TEST_ONLY":"VEVTVF9PTkxZIGNpIGNyZWRlbnRpYWwga2V5cmluZyE="}'
+      APSP_CREDENTIAL_CURRENT_KEY: TEST_ONLY
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Compile only the deliberately public CI test trust root
@@ -50,6 +53,18 @@ jobs:
         run: python3 tools/test-build-scripts.py
       - name: Verify deployment environment initialization
         run: python3 tools/test-init-env.py
+      - name: Protect /opt like a production host
+        # Bootstrap refuses to stage under directories another account can
+        # write; the hosted image does not guarantee that for /opt.
+        run: |
+          stat -c 'before: %U:%G %a %n' /opt
+          getfacl -p /opt 2>/dev/null || true
+          sudo chown root:root /opt
+          # The image also sets a default ACL (default:other::rwx) that every
+          # new subdirectory inherits regardless of umask.
+          sudo setfacl -b -k /opt
+          sudo chmod go-w /opt
+          stat -c 'after: %U:%G %a %n' /opt / /opt/apsp 2>/dev/null || true
       - name: Verify real acceptance driver and runtime cache contracts
         run: |
           python3 scripts/test-e2e-driver.py
@@ -346,7 +361,10 @@ jobs:
           retention-days: 7
 
   agent-freebsd:
-    name: Agent FreeBSD 13+ (${{ matrix.arch }})
+    # One VM per job: vmactions keeps earlier VMs running and its SSH alias keeps
+    # pointing at the first one, so several releases in one job silently run on
+    # the first release only.
+    name: Agent FreeBSD ${{ matrix.release }} (${{ matrix.arch }})
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -354,6 +372,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        arch: [amd64, arm64]
+        release: ['13.5', '14', '15']
         include:
           - arch: amd64
             vm_arch: x86_64
@@ -361,6 +381,8 @@ jobs:
           - arch: arm64
             vm_arch: aarch64
             target: aarch64-unknown-freebsd
+          - release: '15'
+            package: true
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Compile only the deliberately public CI test trust root
@@ -401,12 +423,13 @@ jobs:
           cache: false
       - name: Build the pinned upstream FreeBSD runtime
         run: python3 tools/ci-run.py python3 tools/build-runtime-native.py 'freebsd-${{ matrix.arch }}' .ci-artifacts
-      - name: Verify the binary on FreeBSD 13.5
+      - name: Verify the binary on FreeBSD ${{ matrix.release }}
         uses: vmactions/freebsd-vm@v1.5.8
         with:
-          release: '13.5'
+          release: ${{ matrix.release }}
           arch: ${{ matrix.vm_arch }}
-          copyback: false
+          copyback: ${{ matrix.package == true }}
+          prepare: ${{ matrix.package && 'sh tools/freebsd-ci-prepare.sh' || '' }}
           run: |
             set -eu
             chmod 755 .ci-binaries/apsp-agent
@@ -415,43 +438,30 @@ jobs:
             mkdir -p /tmp/apsp-runtime
             tar -xzf .ci-artifacts/sing-box/1.14.2/freebsd-${{ matrix.arch }} -C /tmp/apsp-runtime
             /tmp/apsp-runtime/sing-box version
-      - name: Verify the same binary on FreeBSD 14
-        uses: vmactions/freebsd-vm@v1.5.8
-        with:
-          release: '14'
-          arch: ${{ matrix.vm_arch }}
-          copyback: false
-          run: |
-            set -eu
-            test "$(.ci-binaries/apsp-agent --version)" = 'apsp-agent ${{ steps.build.outputs.version }}'
-            .ci-binaries/apsp-agent --help
-            mkdir -p /tmp/apsp-runtime
-            tar -xzf .ci-artifacts/sing-box/1.14.2/freebsd-${{ matrix.arch }} -C /tmp/apsp-runtime
-            /tmp/apsp-runtime/sing-box version
-      - name: Verify and package the same binary on FreeBSD 15
-        uses: vmactions/freebsd-vm@v1.5.8
-        with:
-          release: '15'
-          arch: ${{ matrix.vm_arch }}
-          copyback: true
-          prepare: pkg install -y python311 py311-sqlite3 py311-cryptography
-          run: |
-            set -eu
-            python3.11 tools/build-agent.py '${{ matrix.target }}' .ci-artifacts --binary .ci-binaries/apsp-agent
+            if [ '${{ matrix.package }}' != true ]; then exit 0; fi
+            # The newest supported release also packages the binary and runs the
+            # Agent and native service smoke tests.
+            apsp-ci-python tools/build-agent.py '${{ matrix.target }}' .ci-artifacts --binary .ci-binaries/apsp-agent
             mkdir -p /tmp/apsp-cores
             sysctl kern.corefile=/tmp/apsp-cores/%N.%P.core
             ulimit -c unlimited
             result=0
-            env GITHUB_ACTIONS=true APSP_SMOKE_CORE_DIR=/tmp/apsp-cores python3.11 tools/ci-run.py python3.11 tools/agent-smoke.py .ci-binaries/apsp-agent || result=1
-            env CI=true GITHUB_ACTIONS=true python3.11 tools/ci-run.py python3.11 tools/native-service-smoke.py .ci-binaries/apsp-agent .ci-artifacts/sing-box/1.14.2/freebsd-${{ matrix.arch }} || result=1
+            env GITHUB_ACTIONS=true APSP_SMOKE_CORE_DIR=/tmp/apsp-cores apsp-ci-python tools/ci-run.py apsp-ci-python tools/agent-smoke.py .ci-binaries/apsp-agent || result=1
+            # The arm64 VM is fully emulated on an x86 runner; sing-box cannot meet
+            # the production 8 s health budget there. amd64 covers the runtime.
+            if [ '${{ matrix.arch }}' = amd64 ]; then
+              env CI=true GITHUB_ACTIONS=true apsp-ci-python tools/ci-run.py apsp-ci-python tools/native-service-smoke.py .ci-binaries/apsp-agent .ci-artifacts/sing-box/1.14.2/freebsd-${{ matrix.arch }} || result=1
+            fi
             exit "$result"
       - uses: actions/upload-artifact@v7.0.1
+        if: matrix.package
         with:
           name: apsp-TEST_ONLY-runtime-freebsd-${{ matrix.arch }}
           path: .ci-artifacts/sing-box/
           if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@v7.0.1
+        if: matrix.package
         with:
           name: apsp-TEST_ONLY-agent-freebsd-${{ matrix.arch }}
           path: .ci-artifacts/agent/
@@ -467,6 +477,18 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7.0.1
+      - name: Protect /opt like a production host
+        # Bootstrap refuses to stage under directories another account can
+        # write; the hosted image does not guarantee that for /opt.
+        run: |
+          stat -c 'before: %U:%G %a %n' /opt
+          getfacl -p /opt 2>/dev/null || true
+          sudo chown root:root /opt
+          # The image also sets a default ACL (default:other::rwx) that every
+          # new subdirectory inherits regardless of umask.
+          sudo setfacl -b -k /opt
+          sudo chmod go-w /opt
+          stat -c 'after: %U:%G %a %n' /opt / /opt/apsp 2>/dev/null || true
       - name: Compile only the deliberately public CI test trust root
         run: python3 scripts/ci-test-trust.py --github-env "$GITHUB_ENV"
       - uses: actions/download-artifact@v8.0.1

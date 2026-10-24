@@ -5,9 +5,17 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
-use apsp_panel::{plugins::singbox::entitlements, publisher};
-use apsp_protocol::{Bundle, UsageBatch, UsageRecord, now_timestamp};
-use business_support::{TestPanel, deployment::observe, id};
+use apsp_panel::{agent_api, plugins::singbox::entitlements, publisher, runtime_control};
+use apsp_protocol::{
+    ApplyResult, ApplyStatus, Bundle, Heartbeat, Hello, Message, PROTOCOL_VERSION,
+    RUNTIME_CHECKPOINT_CAPABILITY, RuntimeCheckpoint, RuntimeCheckpointRequest,
+    RuntimeCheckpointResult, UsageBatch, UsageRecord, now_timestamp,
+};
+use business_support::{
+    TestPanel,
+    deployment::{RuntimeObservation, observe, observe_runtime},
+    id,
+};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -477,5 +485,144 @@ async fn first_bootstrap_publishes_only_empty_business_and_requires_fresh_busine
             .len(),
         1
     );
+    Ok(())
+}
+
+async fn ports(panel: &TestPanel, cookie: &str, server: i64) -> Result<Value> {
+    let view: Value = panel
+        .admin(
+            Method::GET,
+            &format!("{ROOT}/servers/{server}/operations-view"),
+            cookie,
+            None,
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    view["preflight"]["checks"]
+        .as_array()
+        .and_then(|checks| checks.iter().find(|check| check["key"] == "ports"))
+        .cloned()
+        .context("ports check")
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn bootstrapped_runtime_listener_is_owned_once_its_checkpoint_is_answered(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, _, _) = scenario(&panel, &cookie).await?;
+    let evidence = observe(&panel, &cookie, server).await?;
+    panel
+        .admin(
+            Method::POST,
+            &format!("{ROOT}/servers/{server}/operations-view/preflight/bootstrap"),
+            &cookie,
+            Some(json!({"id":evidence,"confirm":true})),
+        )
+        .await?
+        .error_for_status()?;
+    // The Agent certifies exact runtime instances, so the empty revision is
+    // applied only through a checkpoint. Its statistics listener now occupies
+    // a port every business preflight requires.
+    agent_api::process_message(
+        &panel.state,
+        server,
+        Message::Hello(Hello {
+            agent_version: "TEST_ONLY".into(),
+            protocol_version: PROTOCOL_VERSION,
+            capabilities: vec![RUNTIME_CHECKPOINT_CAPABILITY.into()],
+            applied: Default::default(),
+        }),
+    )
+    .await?;
+    let running = || RuntimeObservation {
+        listener_pid: 4242,
+        managed_pid: 4242,
+    };
+    let unanswered = observe_runtime(&panel, &cookie, server, running()).await?;
+    assert_eq!(ports(&panel, &cookie, server).await?["state"], "failed");
+    assert_eq!(
+        confirm(&panel, &cookie, server, unanswered).await?.status(),
+        StatusCode::CONFLICT,
+        "a listener is not the managed runtime's before a checkpoint proves its deployment"
+    );
+    agent_api::record_apply_result(
+        &panel.state,
+        server,
+        ApplyResult {
+            module: "singbox".into(),
+            rev: 1,
+            op_id: Uuid::new_v4(),
+            status: ApplyStatus::Applied,
+            healthy: true,
+            error: None,
+        },
+    )
+    .await?;
+    let payload: Value = sqlx::query_scalar("SELECT request_json FROM runtime_control_requests WHERE server_id=$1 AND kind='checkpoint' AND state='pending'")
+        .bind(server).fetch_one(&pool).await?;
+    let request: RuntimeCheckpointRequest = serde_json::from_value(payload)?;
+    runtime_control::record_checkpoint_result(
+        &panel.state,
+        server,
+        RuntimeCheckpointResult {
+            request_id: request.request_id,
+            request_digest: request.digest()?,
+            observed: Some(RuntimeCheckpoint {
+                binding: request.expected.clone(),
+                activation_id: Uuid::from_u128(100),
+                instance_id: "backend:TEST_ONLY-instance".into(),
+                healthy: true,
+            }),
+            success: true,
+            error: None,
+        },
+    )
+    .await?;
+    // Saved business nodes keep the empty target from being certified current.
+    let status: (i64, bool) = sqlx::query_as("SELECT applied_rev,healthy FROM server_module_status WHERE server_id=$1 AND module='singbox'")
+        .bind(server).fetch_one(&pool).await?;
+    assert_eq!(status, (0, false));
+    observe_runtime(
+        &panel,
+        &cookie,
+        server,
+        RuntimeObservation {
+            listener_pid: 5151,
+            managed_pid: 4242,
+        },
+    )
+    .await?;
+    assert_eq!(
+        ports(&panel, &cookie, server).await?["state"],
+        "failed",
+        "another process on the runtime port is still a conflict"
+    );
+    // Each heartbeat requests another checkpoint for the uncertified target. A
+    // newer unanswered request must not hide the latest answer.
+    agent_api::process_message(
+        &panel.state,
+        server,
+        Message::Heartbeat(Heartbeat {
+            applied: [("singbox".to_string(), 1)].into(),
+            uptime_secs: 60,
+        }),
+    )
+    .await?;
+    let requests: i64 = sqlx::query_scalar("SELECT count(*) FROM runtime_control_requests WHERE server_id=$1 AND kind='checkpoint' AND state='pending'")
+        .bind(server).fetch_one(&pool).await?;
+    assert_eq!(requests, 1, "the heartbeat requests a new checkpoint");
+    let answered = observe_runtime(&panel, &cookie, server, running()).await?;
+    let check = ports(&panel, &cookie, server).await?;
+    assert_eq!(check["state"], "passed");
+    assert_eq!(check["evidence"]["verified_managed_pid"], 4242);
+    confirm(&panel, &cookie, server, answered)
+        .await?
+        .error_for_status()?;
+    due(&panel, server).await?;
+    assert_eq!(revision(&pool, server).await?, 2);
     Ok(())
 }

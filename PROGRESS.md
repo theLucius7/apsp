@@ -2539,3 +2539,8 @@ r2–r7精确历史回收、r4–r8 daily及全部full门禁保持。只移除�
 - 按用户决定，在部署 VPS 上生成第二把带口令 minisign 密钥 `4D645C2885298F58`（minisign 0.12 由 apt 校验下载），签名、验证与篡改拒绝自检通过；私钥与口令分目录保存在仓库外，不提交、不上传。
 - 根集合更新为原 Mac 根加 VPS 根：`deploy/release-public-keys.json`、重新生成的 `deploy/bootstrap.sh` 与 `deploy/bootstrap.ps1`、仓库变量 `APSP_RELEASE_PUBLIC_KEYS`（已用 `gh variable set` 更新）。生产面板环境同步后随本次部署重新编译。
 - 本地验证：两个安装入口 `--check`、安装器制品契约、面板管理器、环境初始化、bootstrap 与发布 Python 测试通过（minisign 已可用）；面板安装命令单元测试见 PR。CI 继续暂停；Agent 0.3.1 尚未构建、签署或发布。
+
+## 2026-10-24：发布 agent-v0.3.1
+
+- 用户为 Nexus 运行接管所需的正式 Agent 授权临时启用 `CI` 与 `Signed release draft` 工作流，签名在部署 VPS 上用第二把根 `4D645C2885298F58` 完成。本节在 CI、草稿、签名与公开发布各步完成后补记结果；发布结束后两个工作流重新停用。
+

@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 
@@ -93,6 +94,55 @@ class PreparationPanel:
             return item
         base, identifier = path.rsplit("/", 1)
         return next(item for item in self.resources[base] if item["id"] == int(identifier))
+
+
+class PreflightPanel:
+    """Operations view with the preflight nested, as the panel serves it."""
+
+    def __init__(self, capability_after=1):
+        self.calls = []
+        self.capability_after = capability_after
+        self.fleet_reads = 0
+        self.preflights = []
+        self.polls = 0
+        self.bootstrapped = False
+
+    def request(self, path, data=None, raw=False, method=None):
+        self.calls.append((path, method or ("POST" if data is not None else "GET")))
+        base = "/api/plugins/sing-box/servers/41/operations-view"
+        if path == "/api/servers/41/fleet" and method == "PUT":
+            assert data["policy"]["runtime_inspection"] is True and data["expected_digest"] == "digest-1"
+            return {}
+        if path == "/api/servers/41/fleet":
+            self.fleet_reads += 1
+            capabilities = [DRIVER.RUNTIME_PREFLIGHT_CAPABILITY] if self.fleet_reads > self.capability_after else []
+            return {"asset": {}, "policy": {"runtime_inspection": False}, "digest": "digest-1",
+                    "capabilities": capabilities}
+        if path == "/api/control-center/reauth":
+            return {"verified_at": 1, "expires_at": 301}
+        if path == base + "/preflight":
+            self.preflights.append(f"preflight-{len(self.preflights) + 1}")
+            self.polls = 0
+            return {"id": self.preflights[-1], "status": "queued"}
+        if path == base + "/preflight/bootstrap":
+            assert data == {"id": "preflight-1", "confirm": True}
+            self.bootstrapped = True
+            return {}
+        if path == base + "/preflight/confirm":
+            assert data == {"id": "preflight-2", "confirm": True}
+            return {"id": data["id"], "confirmed": True}
+        if path == base:
+            self.polls += 1
+            first = len(self.preflights) == 1
+            current = {"id": self.preflights[-1], "device_checks_pending": self.polls < 2,
+                       "ready": not first, "checks": [{"key": "ports", "blocking": False}],
+                       "bootstrap": {"available": first, "ready": first}}
+            observed = self.bootstrapped and self.polls > 1
+            checkpoint = {"state": "stale", "outcome": "superseded", "observed_at": 120 if observed else None}
+            return {"server_id": 41, "id": None, "preflight": current,
+                    "drift": {"state": "needs_preflight", "target_revision": 1 if self.bootstrapped else None,
+                              "checkpoint": checkpoint}}
+        raise AssertionError(path)
 
 
 class AcceptanceContracts(unittest.TestCase):
@@ -482,6 +532,90 @@ class AcceptanceContracts(unittest.TestCase):
              patch.object(DRIVER.time, "sleep", clock.sleep):
             with self.assertRaisesRegex(DRIVER.AcceptanceError, "双向代理用量"):
                 DRIVER.traffic(None, self.state, args)
+
+
+    def test_preflight_reads_the_nested_view_bootstraps_once_and_reauthenticates_before_confirming(self):
+        panel = PreflightPanel()
+        state = {"schema": 1, "prefix": "apsp-e2e-test", "server_id": 41, "checkpoints": {}}
+        args = argparse.Namespace(state=self.state_path, timeout=600, totp=False)
+        clock = Clock()
+        # Saved business nodes keep the server dirty, so the empty revision is
+        # never certified as applied; the answered checkpoint is the signal.
+        pending = view()
+        pending["deployment"] = {"target_rev": 1, "applied_rev": 0, "healthy": False}
+        with patch.object(DRIVER, "snapshot", return_value=pending), \
+             patch.object(DRIVER, "password", return_value="test-password"), \
+             patch.object(DRIVER.time, "monotonic", clock.monotonic), \
+             patch.object(DRIVER.time, "sleep", clock.sleep), \
+             contextlib.redirect_stdout(io.StringIO()):
+            DRIVER.preflight(panel, state, args)
+        self.assertTrue(panel.bootstrapped)
+        self.assertEqual(panel.preflights, ["preflight-1", "preflight-2"])
+        paths = [path for path, _ in panel.calls]
+        for action in ("/preflight/bootstrap", "/preflight/confirm"):
+            index = next(i for i, path in enumerate(paths) if path.endswith(action))
+            self.assertEqual(paths[index - 1], "/api/control-center/reauth")
+        self.assertEqual(state["checkpoints"]["preflight"]["id"], "preflight-2")
+        self.assertEqual(json.loads(self.state_path.read_text())["checkpoints"]["preflight"]["id"], "preflight-2")
+
+    def test_preflight_timeout_reports_operation_states_without_values(self):
+        panel = PreflightPanel(capability_after=0)
+        panel.request = (lambda original: lambda path, data=None, raw=False, method=None: (
+            {"preflight": {"id": "preflight-1", "device_checks_pending": True,
+                           "operations": [{"status": "queued"}, {"status": "running"}]}}
+            if path.endswith("/operations-view") else original(path, data, raw, method)))(panel.request)
+        state = {"schema": 1, "prefix": "apsp-e2e-test", "server_id": 41, "checkpoints": {}}
+        args = argparse.Namespace(state=self.state_path, timeout=10, totp=False)
+        clock = Clock()
+        with patch.object(DRIVER.time, "monotonic", clock.monotonic), \
+             patch.object(DRIVER.time, "sleep", clock.sleep):
+            with self.assertRaisesRegex(DRIVER.AcceptanceError, "匹配请求=True 操作状态=queued,running"):
+                DRIVER.preflight(panel, state, args)
+
+
+    def test_origin_header_matches_the_panel_canonical_public_origin(self):
+        self.assertEqual(DRIVER.origin_header("http://127.0.0.1:18080"), "http://127.0.0.1:18080")
+        self.assertEqual(DRIVER.origin_header("HTTPS://Panel.Example.Test:443"), "https://panel.example.test")
+        self.assertEqual(DRIVER.origin_header("https://panel.example.test:8443"), "https://panel.example.test:8443")
+        self.assertEqual(DRIVER.origin_header("http://[::1]:18080"), "http://[::1]:18080")
+
+
+    def test_http_failures_name_token_free_routes_and_the_panel_message_only(self):
+        def failure(body):
+            return urllib.error.HTTPError("http://panel.test", 400, "Bad Request", {}, io.BytesIO(body))
+        message = json.dumps({"error": "访问地址与面板配置不一致"}).encode()
+        self.assertEqual(DRIVER.failure_detail("/api/control-center/reauth", failure(message)),
+                         " /api/control-center/reauth：访问地址与面板配置不一致")
+        self.assertEqual(DRIVER.failure_detail("/api/servers/41/fleet?x=1", failure(b"not json")), " /api/servers/{id}/fleet")
+        for path in ("/sub/secret-token?format=singbox", "/api/servers/41/enrollment", "/api/tokens/7"):
+            self.assertEqual(DRIVER.failure_detail(path, failure(message)), "")
+
+
+    def test_stalled_install_reports_fixed_vocabulary_but_never_error_text(self):
+        status = {"target_rev": 1, "applied_rev": 0, "healthy": False,
+                  "last_error": "runtime health check timed out at /var/lib/apsp/plugins/TEST_ONLY-secret"}
+        drift = {"state": "revision_mismatch", "checkpoint_supported": True,
+                 "checkpoint": {"state": "pending", "outcome": None, "failure_kind": "free text not allowed",
+                                "reason": "实际运行时健康检查未通过"}}
+        summary = DRIVER.install_status(status, drift)
+        self.assertEqual(summary, {"target_rev": 1, "applied_rev": 0, "healthy": False,
+                                   "error_categories": ["health", "timeout"], "drift": "revision_mismatch",
+                                   "checkpoint_supported": True, "checkpoint_state": "pending",
+                                   "checkpoint_outcome": None, "checkpoint_failure_kind": None})
+        self.assertNotIn("TEST_ONLY-secret", json.dumps(summary))
+        self.assertEqual(DRIVER.install_status(None, None)["error_categories"], [])
+
+
+    def test_bootstrap_install_needs_an_applied_revision_or_an_answered_checkpoint_for_it(self):
+        applied = {"target_rev": 1, "applied_rev": 1, "healthy": True}
+        waiting = {"target_rev": 1, "applied_rev": 0, "healthy": False}
+        answered = {"target_revision": 1, "checkpoint": {"outcome": "superseded", "observed_at": 120}}
+        self.assertTrue(DRIVER.bootstrap_installed(applied, {}))
+        self.assertTrue(DRIVER.bootstrap_installed(waiting, answered))
+        self.assertFalse(DRIVER.bootstrap_installed(waiting, {"target_revision": 1, "checkpoint": {"outcome": None, "observed_at": None}}))
+        self.assertFalse(DRIVER.bootstrap_installed(waiting, {**answered, "target_revision": 2}))
+        self.assertFalse(DRIVER.bootstrap_installed(waiting, {"target_revision": 1, "checkpoint": {"outcome": "failed", "observed_at": 120}}))
+        self.assertFalse(DRIVER.bootstrap_installed({"target_rev": None}, answered))
 
     def test_totals_preserve_large_integer_precision_and_reject_inconsistent_ledger(self):
         amount = 2 ** 64 + 17
