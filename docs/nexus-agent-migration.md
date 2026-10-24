@@ -52,3 +52,17 @@ python3 tools/nexus_node_inventory.py import /private/nodes.json /private/node-r
 完整切换顺序：冻结该机器配置 → 保存可恢复配置及计量 → 验签接入兼容 Agent → 准备完整候选运行时 → 停止该机旧发布/计量 → 最终计量交接 → 应用并确认新运行时 → 验证旧客户端协议和订阅 → 记录接管结果。任一步失败保留原身份与服务恢复能力，不以页面“保存成功”代替节点可用。
 
 生产发布继续遵守 [签名发布规则](release.md) 和 [临时 CI 暂停](../AGENTS.md)。新签名 Agent、前置能力验收与发布流程未准备完成前，资产导入结果不能标记为 Agent/节点迁移完成。测试与现场状态见[本轮验收](acceptance/nexus-agent-migration.md)。
+# 运行接管（ADR 0095）
+
+库存导入后，通过 `tools/nexus_runtime_takeover.py` 的 `preview`、`prepare`、`candidate`、`activate`、`pause` 操作完成运行接管。所有操作使用面板管理员 API；正文配置和候选只写入指定的 0600 文件，不打印密钥。示例地址使用 `https://panel.example.invalid`。
+
+运行快照为 `{source_id, server_id, nodes:[{legacy_node_id, preserved:{node, configuration}}]}`。`node` 为编译器节点模型，初始 ID 为原节点编号，`users` 为空。`configuration` 为完整单节点原生配置，包括实际使用的本地覆盖、TLS 证书及出站；必须先与旧服务和旧订阅逐字段核对。SS 服务端密钥须从旧面板 `buildNodeConfig` 导出，不能调用新建节点随机生成；用户密钥由发布器按原 UUID 派生。
+
+1. 获取完整当前配置和回退备份，验证同机所有实例和监听；逐一处理不能合并的配置，不能删掉冲突字段后继续。
+2. 使用正式签名 Agent 接入主机，先保持监控模式。原服务继续运行，准备操作不发布。
+3. `candidate --server <ID>` 导出私有候选，使用已独立验签的同版本 sing-box 执行配置检查；使用原客户端凭据验证候选的隔离实例。保留摘要和结果。
+4. 确认兼容桥已更新到支持原子流量投递的版本并健康。原订阅读取、SS/Reality/Hysteria 握手和相关出口必须有切换前基线。
+5. 停旧发布器并排空终末计量，确认旧监听释放。`activate` 输入 `{expected_digest, config_sha256, backup_sha256, stopped_at, stopped_services}`；三个摘要分别对应准备收据、当前候选和主机备份，停用时间为 Unix 秒。配置或授权变化导致摘要不一致时先恢复旧服务，再重做候选。
+6. 等待 Agent 应用健康回执，再使用同一旧客户端验证实际入口、出口及订阅。任何失败先停新运行时，提交 `pause` 并恢复旧配置；不能仅依据 API 接受就标记成功。
+
+旧订阅兼容后端及重置调度继续运行。未经正式签名发布、网络不可达、证书续期未承接的主机保持原运行状态。

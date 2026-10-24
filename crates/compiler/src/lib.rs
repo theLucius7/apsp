@@ -25,6 +25,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 mod certificates;
+pub mod preserved;
 mod protocols;
 pub use protocols::{AcmeChallenge, ProtocolConfig, SsMethod, TlsConfig};
 mod settings;

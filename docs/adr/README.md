@@ -123,3 +123,5 @@
 - [ADR 0086：产品定位、功能分区与管理界面导航](0086-product-map-and-navigation.md)：七个功能区、服务器详情分页、设置拆分与前端目录；定位与归类规则见[功能地图](../product-map.md)
 - [ADR 0087：收窄定位为代理网络控制平面：功能分级、用户门户与费用续费账本](0087-narrow-positioning-proxy-network.md)：核心、支撑、可选插件、降级与冻结清单，Xboard 迁移边界，新功能准入规则
 - [ADR 0088：界面重构：shadcn/ui Nova、Tailwind CSS v4 与统一交互库](0088-ui-component-system.md)：组件、设计变量、图标、动画、分栏、拖拽与界面状态的统一约定
+
+- [0095：Nexus 运行接管与保留凭据](0095-nexus-runtime-takeover.md)

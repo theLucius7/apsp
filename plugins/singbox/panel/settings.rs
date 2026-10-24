@@ -14,7 +14,7 @@ use sqlx::{FromRow, Postgres, Transaction};
 
 // Enablement requires an administrator choice or preserved legacy configuration.
 // A device capability only establishes support, never installation or enablement.
-pub(super) const SOURCE_SQL: &str = "CASE WHEN p.enabled AND p.source <> 'agent_capability' THEN p.source WHEN EXISTS(SELECT 1 FROM nodes n WHERE n.server_id=s.id) THEN 'legacy_nodes' WHEN EXISTS(SELECT 1 FROM deployments d WHERE d.server_id=s.id AND d.module='singbox') THEN 'legacy_deployments' END";
+pub(super) const SOURCE_SQL: &str = "CASE WHEN EXISTS(SELECT 1 FROM singbox_nexus_runtime_hosts h WHERE h.server_id=s.id AND h.state<>'active') THEN NULL WHEN p.enabled AND p.source <> 'agent_capability' THEN p.source WHEN EXISTS(SELECT 1 FROM nodes n WHERE n.server_id=s.id) THEN 'legacy_nodes' WHEN EXISTS(SELECT 1 FROM deployments d WHERE d.server_id=s.id AND d.module='singbox') THEN 'legacy_deployments' END";
 
 #[derive(Default, Serialize)]
 #[serde(rename_all = "snake_case")]

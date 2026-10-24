@@ -1,5 +1,8 @@
 //! Credential-preserving inventory import. No runtime or grant mutation occurs.
 mod model;
+mod runtime;
+mod runtime_model;
+pub(crate) mod runtime_publish;
 
 use crate::{
     AppState, control_center,
@@ -22,12 +25,13 @@ pub(super) fn router() -> Router<AppState> {
         .route("/nexus-nodes", get(list))
         .route("/nexus-nodes/preview", post(preview))
         .route("/nexus-nodes/import", post(import))
+        .merge(runtime::router())
         .layer(DefaultBodyLimit::max(3 * 1024 * 1024))
 }
 
 async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Vec<Value>>> {
     control_center::require_owner(&state, &headers).await?;
-    let rows = sqlx::query("SELECT n.id,n.source_id,n.legacy_node_id,n.legacy_machine_id,n.legacy_host_id,n.server_id,n.display,s.name AS server_name,i.exported_at,i.imported_at FROM singbox_nexus_nodes n JOIN servers s ON s.id=n.server_id JOIN singbox_nexus_node_imports i ON i.source_id=n.source_id ORDER BY (n.display->>'sort_order')::bigint,n.source_id,n.legacy_node_id")
+    let rows = sqlx::query("SELECT n.id,n.source_id,n.legacy_node_id,n.legacy_machine_id,n.legacy_host_id,n.server_id,n.display,s.name AS server_name,i.exported_at,i.imported_at, h.state AS runtime_state, r.node_id AS native_node_id, COALESCE(m.healthy AND m.applied_rev=m.target_rev AND m.applied_rev>0,FALSE) AS runtime_healthy FROM singbox_nexus_nodes n JOIN servers s ON s.id=n.server_id JOIN singbox_nexus_node_imports i ON i.source_id=n.source_id LEFT JOIN singbox_nexus_runtime_hosts h ON h.server_id=n.server_id LEFT JOIN singbox_nexus_runtime_nodes r ON r.inventory_id=n.id LEFT JOIN server_module_status m ON m.server_id=n.server_id AND m.module='singbox' ORDER BY (n.display->>'sort_order')::bigint,n.source_id,n.legacy_node_id")
         .fetch_all(&state.pool).await?;
     let nodes = rows
         .iter()
@@ -44,6 +48,16 @@ async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Js
             ] {
                 value[field] = json!(row.get::<i64, _>(field));
             }
+            value["state"] = json!(
+                match row.get::<Option<String>, _>("runtime_state").as_deref() {
+                    Some("active") if row.get::<bool, _>("runtime_healthy") => "applied",
+                    Some("active") => "applying",
+                    Some("prepared") => "prepared",
+                    Some("paused") => "paused",
+                    _ => "pending_agent",
+                }
+            );
+            value["native_node_id"] = json!(row.get::<Option<i64>, _>("native_node_id"));
             value["source_id"] = json!(row.get::<String, _>("source_id"));
             value["server_name"] = json!(row.get::<String, _>("server_name"));
             value

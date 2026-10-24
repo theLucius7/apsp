@@ -56,6 +56,12 @@ pub async fn list(
         .map(NodeRow::view)
         .collect::<ApiResult<Vec<_>>>()?;
     populate_references(&state.pool, &mut views).await?;
+    let imported: Vec<i64> = sqlx::query_scalar("SELECT node_id FROM singbox_nexus_runtime_nodes")
+        .fetch_all(&state.pool)
+        .await?;
+    for view in &mut views {
+        view.configuration_locked |= imported.contains(&view.id);
+    }
     Ok(Json(views))
 }
 
@@ -75,6 +81,12 @@ pub async fn get(
         .ok_or(ApiError::NotFound)?;
     let mut view = node.view()?;
     populate_references(&state.pool, std::slice::from_mut(&mut view)).await?;
+    view.configuration_locked |= sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM singbox_nexus_runtime_nodes WHERE node_id=$1)",
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
     Ok(Json(view))
 }
 
@@ -295,6 +307,12 @@ pub async fn update(
     transaction.commit().await?;
     let mut view = node.view()?;
     populate_references(&state.pool, std::slice::from_mut(&mut view)).await?;
+    view.configuration_locked |= sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM singbox_nexus_runtime_nodes WHERE node_id=$1)",
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
     Ok(Json(view))
 }
 
