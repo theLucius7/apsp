@@ -1,3 +1,4 @@
+import MemberCommerce from './commerce/MemberCommerce'
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api, errorMessage } from '../../api'
@@ -15,7 +16,7 @@ import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
 import { useSystemTheme } from '@/lib/use-system-theme'
 
 type View = { configuration: PasskeyInfo } & ({ authenticated: false } | {
-  authenticated: true; name: string; subscription_url: string; usage: { uplink: string; downlink: string }; keys: PasskeyEntry[];
+  authenticated: true; legacy_compatibility?: { last_sync_at: number | null } | null; name: string; subscription_url: string; usage: { uplink: string; downlink: string }; keys: PasskeyEntry[];
   subscription_status: { status: string; message: string; entitlement: { package_name: string | null; used_bytes: string; monthly_bytes: string | null; expires_at: number | null; next_reset: number | null } }
 })
 
@@ -75,13 +76,14 @@ export default function UserPortal({ account, activation }: { account: string; a
     {notice && <Notice tone="success" role="status">{notice}</Notice>}
     {loading && !data ? <Loading /> : data?.authenticated ? <>
       <Panel className="mb-5"><PanelHeader><h1 className="m-0 text-xl font-semibold">{data.name}</h1><Button variant="ghost" size="sm" onClick={reload}>刷新</Button></PanelHeader><div className="p-4">
-        <div data-slot="user-usage" className="mb-6 grid grid-cols-2 gap-3"><div className="bg-muted/50 min-w-0 rounded-lg p-3"><span className="text-muted-foreground block text-xs">受管节点累计上传</span><strong className="mt-1.5 block text-xl font-semibold tabular-nums wrap-anywhere">{bytes(data.usage.uplink)}</strong></div><div className="bg-muted/50 min-w-0 rounded-lg p-3"><span className="text-muted-foreground block text-xs">受管节点累计下载</span><strong className="mt-1.5 block text-xl font-semibold tabular-nums wrap-anywhere">{bytes(data.usage.downlink)}</strong></div></div>
-        <Field label="我的 sing-box 订阅"><CopyField text={data.subscription_url} label="复制我的订阅" /></Field>
-        {data.subscription_status.status === 'ready' ? <a className={buttonVariants({ size: 'sm' })} href={`${data.subscription_url}&download=true`}>下载订阅配置</a> : <Notice role="status">{data.subscription_status.message}</Notice>}
-        <dl className="my-5 grid gap-5 sm:grid-cols-2"><div><dt className="text-muted-foreground text-sm">套餐</dt><dd className="mt-1.5 font-semibold wrap-anywhere">{data.subscription_status.entitlement.package_name ?? '未设置套餐限制'}</dd></div><div><dt className="text-muted-foreground text-sm">本期已用 / 额度</dt><dd className="mt-1.5 font-semibold wrap-anywhere">{bytes(data.subscription_status.entitlement.used_bytes)} / {data.subscription_status.entitlement.monthly_bytes === null ? '不限量' : bytes(data.subscription_status.entitlement.monthly_bytes)}</dd></div><div><dt className="text-muted-foreground text-sm">到期</dt><dd className="mt-1.5 font-semibold wrap-anywhere">{data.subscription_status.entitlement.expires_at ? time(data.subscription_status.entitlement.expires_at) : '不限期'}</dd></div><div><dt className="text-muted-foreground text-sm">下次额度重置</dt><dd className="mt-1.5 font-semibold wrap-anywhere">{data.subscription_status.entitlement.next_reset ? time(data.subscription_status.entitlement.next_reset) : '不适用'}</dd></div></dl>
+        <div data-slot="user-usage" className="mb-6 grid grid-cols-2 gap-3"><div className="bg-muted/50 min-w-0 rounded-lg p-3"><span className="text-muted-foreground block text-xs">{data.legacy_compatibility ? '本期上传' : '受管节点累计上传'}</span><strong className="mt-1.5 block text-xl font-semibold tabular-nums wrap-anywhere">{bytes(data.usage.uplink)}</strong></div><div className="bg-muted/50 min-w-0 rounded-lg p-3"><span className="text-muted-foreground block text-xs">{data.legacy_compatibility ? '本期下载' : '受管节点累计下载'}</span><strong className="mt-1.5 block text-xl font-semibold tabular-nums wrap-anywhere">{bytes(data.usage.downlink)}</strong></div></div>
+        <Field label="我的订阅"><CopyField text={data.subscription_url} label="复制我的订阅" /></Field>
+        {data.subscription_status.status === 'ready' ? <a className={buttonVariants({ size: 'sm' })} href={`${data.subscription_url}${data.subscription_url.includes('?') ? '&' : '?'}download=true`}>下载订阅配置</a> : <Notice role="status">{data.subscription_status.message}</Notice>}
+        <dl className="my-5 grid gap-5 sm:grid-cols-2"><div><dt className="text-muted-foreground text-sm">套餐</dt><dd className="mt-1.5 font-semibold wrap-anywhere">{data.subscription_status.entitlement.package_name ?? '未设置套餐限制'}</dd></div><div><dt className="text-muted-foreground text-sm">本期已用 / 额度</dt><dd className="mt-1.5 font-semibold wrap-anywhere">{bytes(data.subscription_status.entitlement.used_bytes)} / {data.subscription_status.entitlement.monthly_bytes === null ? '不限量' : bytes(data.subscription_status.entitlement.monthly_bytes)}</dd></div><div><dt className="text-muted-foreground text-sm">到期</dt><dd className="mt-1.5 font-semibold wrap-anywhere">{data.subscription_status.entitlement.expires_at ? time(data.subscription_status.entitlement.expires_at) : '不限期'}</dd></div><div><dt className="text-muted-foreground text-sm">下次额度重置</dt><dd className="mt-1.5 font-semibold wrap-anywhere">{data.subscription_status.entitlement.next_reset && data.subscription_status.entitlement.next_reset < 253402300799 ? time(data.subscription_status.entitlement.next_reset) : '不适用'}</dd></div></dl>
         <p className="text-muted-foreground mt-3 text-xs leading-relaxed">订阅检查当前授权与套餐状态。受管流量约每三十秒刷新；外部节点用量由提供方计量，已下载的外部凭据也由提供方控制。</p>
         <Field label="我的登录地址"><CopyField text={bookmark} label="复制我的登录地址" /></Field>
       </div></Panel>
+      <MemberCommerce key={account} account={account} />
       <Panel className="mb-5"><PanelHeader><PanelTitle>我的 Passkey</PanelTitle><Button size="sm" disabled={action.busy || Boolean(disabled) || data.keys.length >= 10} onClick={() => { action.clearError(); setEditing('new') }}>添加 Passkey</Button></PanelHeader><div className="p-4">
         {disabled && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{disabled}</p>}
         <p>可添加备用密钥；丢失全部密钥时，请联系管理员重置。管理密钥前需要重新验证。</p>
@@ -91,7 +93,7 @@ export default function UserPortal({ account, activation }: { account: string; a
     </> : data ? <Panel className="mb-5"><PanelHeader><h1 className="m-0 text-xl font-semibold">{token ? '开通代理用户入口' : '代理用户登录'}</h1></PanelHeader><div className="p-4">
       {disabled && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{disabled}</p>}
       {token ? <form onSubmit={activate}><p>为此账户绑定 Passkey，之后可查看自己的订阅和流量。开通链接只能使用一次。</p><Field label="密钥名称"><Input name="name" required maxLength={64} placeholder="例如：我的手机" disabled={action.busy} /></Field><Button disabled={action.busy || Boolean(disabled)}>绑定 Passkey 并开通</Button></form> : <>
-        <p>使用已绑定的设备或安全密钥验证身份。</p>
+        <p>使用已绑定的设备或安全密钥验证身份。</p><p><a className="underline text-primary" href="#/plugins/sing-box/member">邮箱密码登录 / 恢复密码</a></p>
         <Button disabled={action.busy || Boolean(disabled)} onClick={() => void action.run(() => loginPasskey(`${base}/login`, false), () => { setNotice(''); reload() })}>{action.busy ? '正在验证…' : '使用 Passkey 登录'}</Button>
         <p className="text-muted-foreground mt-3 text-xs leading-relaxed">尚未开通或丢失密钥时，请联系管理员获取新的开通链接。</p>
       </>}

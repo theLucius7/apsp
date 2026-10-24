@@ -9,10 +9,12 @@ import type { NodeView } from '../plugins/singbox/nodeRoute'
 // opened with this server preselected.
 type ServerSection = 'assets' | 'agent' | 'ip-info' | 'node-quality' | 'tcp-quality' | 'plugins' | 'ddns' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations'
 type SimplePage = 'singbox-overview' | 'servers' | 'statistics' | 'latency' | 'alicloud' | 'ddns'
-  | 'proxy-users' | 'groups' | 'plugins' | 'catalog' | 'settings' | 'alert-settings' | 'notifications' | 'security' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations' | 'control-center' | 'not-found'
+  | 'expenses' | 'commerce' | 'proxy-users' | 'groups' | 'plugins' | 'catalog' | 'settings' | 'alert-settings' | 'notifications' | 'security' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations' | 'control-center' | 'not-found'
 
 export type AppRoute =
   | { page: 'dashboard'; serverId?: number }
+  | { page: 'member-login' }
+  | { page: 'member-join'; token: string }
   | { page: 'proxy-portal'; account: string; activation?: string }
   | { page: 'server'; serverId: number; section?: ServerSection }
   | { page: 'nodes'; serverId?: number; chains?: boolean; selected?: ResourceKey; kind?: 'direct'; serverRole?: 'any' | 'entry' | 'middle' | 'exit'; view?: NodeView }
@@ -31,6 +33,8 @@ const pages: Readonly<Record<string, SimplePage>> = {
   '/monitoring/settings': 'alert-settings',
   '/plugins/alicloud': 'alicloud',
   '/plugins/ddns': 'ddns',
+  '/plugins/expenses': 'expenses',
+  '/plugins/sing-box/commerce': 'commerce',
   '/plugins/sing-box/users': 'proxy-users',
   '/plugins/sing-box/groups': 'groups',
   '/system/plugins': 'plugins',
@@ -40,6 +44,9 @@ const pages: Readonly<Record<string, SimplePage>> = {
 }
 
 export function resolveRoute(path: string): AppRoute {
+  if (path === '/plugins/sing-box/member') return { page: 'member-login' }
+  const join = path.match(/^\/plugins\/sing-box\/join\/([A-Za-z0-9_-]{43})$/)
+  if (join) return { page: 'member-join', token: join[1] }
   const portal = path.match(/^\/plugins\/sing-box\/account\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\?activate=([A-Za-z0-9_-]{43}))?$/)
   if (portal) return { page: 'proxy-portal', account: portal[1], activation: portal[2] }
   const display = dashboardRoute(path)

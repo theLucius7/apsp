@@ -30,7 +30,7 @@ pub(super) async fn execute(
                 .bind(user_ids)
                 .execute(&mut **tx)
                 .await?;
-            sqlx::query("INSERT INTO singbox_user_policies SELECT u,g FROM unnest($1::bigint[]) u CROSS JOIN unnest($2::bigint[]) g").bind(user_ids).bind(group_ids).execute(&mut **tx).await?;
+            sqlx::query("INSERT INTO singbox_user_policies(user_id,group_id) SELECT u,g FROM unnest($1::bigint[]) u CROSS JOIN unnest($2::bigint[]) g").bind(user_ids).bind(group_ids).execute(&mut **tx).await?;
             super::super::policies::sync_users(tx, user_ids).await?;
             json!({"status":"queued","user_ids":user_ids,"group_ids":group_ids,"deployment_confirmation_required":true})
         }
