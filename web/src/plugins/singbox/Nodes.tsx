@@ -47,7 +47,7 @@ type Props = {
   initialKind?: ProxyResourceFilter
   initialServerRole?: ProxyResourceServerRole
 }
-type Reads = { nodes: Node[]; resources: ProxyResource[]; ordered: unknown; servers: PluginServer[]; usage: Usage; catalog: unknown; nexus: unknown }
+type Reads = { nodes: Node[]; resources: ProxyResource[]; ordered: unknown; servers: PluginServer[]; usage: Usage; catalog: unknown }
 
 export default function Nodes({ serverId, chainsOnly = false, view, selected, initialKind, initialServerRole }: Props) {
   // All sections share one read round, so a refresh never shows one section's new
@@ -59,9 +59,12 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     servers: `${root}/servers`,
     usage: `${root}/usage`,
     catalog: `${root}/node-catalog`,
-    nexus: `${root}/nexus-nodes`,
   })
-  const { nodes, resources, servers, usage, catalog, nexus } = reads
+  const { nodes, resources, servers, usage, catalog } = reads
+  // The imported Nexus inventory is owner-only; other administrators never request it.
+  const actor = useResource<{ role: string }>('/api/control-center/me', 0)
+  const owner = actor.data?.role === 'owner'
+  const nexus = useResource<unknown>(owner ? `${root}/nexus-nodes` : null)
   // Undefined until confirmed; numbered sources stay read-only while unknown.
   const migrationQuery = useResource<unknown>(sourceMigrationPath, 0)
   const migrated = !migrationQuery.error && validSourceMigration(migrationQuery.data) ? migrationQuery.data.migrated : undefined
@@ -108,10 +111,12 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
   const inventoryCount = all.length + orderedOnly
   const chainCount = ordered.data?.filter(resource => resource.kind === 'chain').length
   const importedNodes = validNexusNodes(nexus.data) ? nexus.data : undefined
-  const catalogCount = validCatalog(catalog.data) && importedNodes ? catalog.data.length + importedNodes.length : undefined
+  // Non-owners count the catalog alone; an owner's count waits for the inventory.
+  const importedKnown = actor.data !== undefined && (!owner || importedNodes !== undefined)
+  const catalogCount = validCatalog(catalog.data) && importedKnown ? catalog.data.length + (importedNodes?.length ?? 0) : undefined
   // The header form depends on the source migration, so it waits for that state.
   const canCreateChain = canCreate && migrated !== undefined && Boolean(nodes.data && resources.data && !nodes.error && !resources.error)
-  const refresh = () => { reads.nodes.reload(); migrationQuery.reload() }
+  const refresh = () => { reads.nodes.reload(); migrationQuery.reload(); if (owner) nexus.reload() }
   // Section links keep the current server scope; the catalog type filter stays local.
   const routeHash = (target: NodeView) => nodeHash({ server: filter || undefined, role: initialServerRole, view: target })
 
@@ -228,7 +233,7 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
       </SegmentedLink>)}
     </SegmentedNav>
     <div hidden={activeView !== 'catalog'}>
-      <NexusNodes query={nexus} server={filter} onReload={refresh} />
+      {owner && <NexusNodes query={nexus} server={filter} onReload={refresh} />}
       <NodeCatalog query={catalog} nodes={nodes.data ?? []} servers={enabledServers} getServers={() => servers.getCurrent()} usage={usage.data ?? undefined}
         server={filter} getServer={() => currentFilter.current} onServer={value => { currentFilter.current = value; setFilter(value) }}
         kind={kind} onKind={setKind}

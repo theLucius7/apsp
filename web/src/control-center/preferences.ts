@@ -19,22 +19,31 @@ export function usePreference<T>(key: string) {
   }
   return { ...record, ready, error, save, reload: read }
 }
+const leaveMessage = '表单有未保存内容。确定离开此页面吗？'
+let dirtyForms = 0
+
+/** Navigation that does not go through a link (such as the command palette) asks here. */
+export function confirmLeave(): boolean {
+  return dirtyForms === 0 || window.confirm(leaveMessage)
+}
+
 export function useFormDraft<T>(key: string, dirty: boolean) {
   const preference = usePreference<T>(`draft:${key}`)
   useEffect(() => {
     if (!dirty) return
+    dirtyForms += 1
     const leave = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
     const navigate = (event: MouseEvent) => {
       if (!(event.target instanceof Element)) return
       const link = event.target.closest<HTMLAnchorElement>('a[href^="#"]')
-      if (link && link.hash !== window.location.hash && !window.confirm('表单有未保存内容。确定离开此页面吗？')) {
+      if (link && link.hash !== window.location.hash && !window.confirm(leaveMessage)) {
         event.preventDefault()
         event.stopImmediatePropagation()
       }
     }
     window.addEventListener('beforeunload', leave)
     document.addEventListener('click', navigate, true)
-    return () => { window.removeEventListener('beforeunload', leave); document.removeEventListener('click', navigate, true) }
+    return () => { dirtyForms -= 1; window.removeEventListener('beforeunload', leave); document.removeEventListener('click', navigate, true) }
   }, [dirty])
   return preference
 }

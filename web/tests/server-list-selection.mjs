@@ -72,8 +72,14 @@ try {
       assert.equal(await all.getAttribute('aria-checked'), 'mixed')
       await bar.getByText('已选择 2 台', { exact: true }).waitFor()
 
-      // Bulk actions apply to the selection only; clearing hides the bar again.
+      // Bulk actions apply to the selection only, after a confirmation that lists it;
+      // clearing hides the bar again.
       await bar.getByRole('button', { name: '进入维护', exact: true }).click()
+      const confirm = page.getByRole('alertdialog')
+      await confirm.getByText(/将对当前筛选中已选择的 2 台服务器执行“进入维护”/).waitFor()
+      assert.equal(lifecycle.length, 0, 'Nothing is sent before confirmation')
+      await confirm.getByRole('button', { name: '进入维护', exact: true }).click()
+      await confirm.waitFor({ state: 'hidden' })
       const deadline = Date.now() + 5000
       while (lifecycle.length < 2 && Date.now() < deadline) await page.waitForTimeout(25)
       assert.deepEqual(lifecycle.map(item => [item.id, item.lifecycle]), [[1, 'maintenance'], [3, 'maintenance']])

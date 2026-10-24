@@ -43,8 +43,14 @@ export default function Servers() {
   const visibleIds = servers.map(server => server.id)
   const visibleSelected = visibleIds.filter(id => selected.includes(id)).length
   const allVisible = visibleSelected === 0 ? false : visibleSelected === visibleIds.length ? true : 'indeterminate'
+  // Bulk actions touch only the selected servers the current filter shows, and only
+  // after the administrator confirms that list.
+  const actionable = availableSelected.filter(id => visibleIds.includes(id))
+  const hiddenSelected = availableSelected.length - actionable.length
+  const lifecycleNames: Record<string, string> = { maintenance: '进入维护', draining: '停止接收新任务', active: '恢复接收任务' }
+  const [pendingLifecycle, setPendingLifecycle] = useState<string>()
   const batchLifecycle = (lifecycle: string) => void action.run(async () => {
-    const snapshot = [...availableSelected]
+    const snapshot = [...actionable]
     const results: Array<{ id: number; status: string }> = []
     for (const id of snapshot) {
       try { await api(`/api/servers/${id}/fleet/lifecycle`, 'POST', { lifecycle, from: null, until: null, reason: '管理员列表批量操作' }); results.push({ id, status: '已保存' }) }
@@ -52,6 +58,7 @@ export default function Servers() {
       setBatchResults([...results])
     }
     resource.reload()
+    setPendingLifecycle(undefined)
   })
   const edit = (value: Server | 'new') => { action.clearError(); setEditor(value) }
   const startsGroup = (index: number) => view.groupBy !== 'none' && (index === 0 || groupKey(servers[index - 1]) !== groupKey(servers[index]))
@@ -112,11 +119,14 @@ export default function Servers() {
     </Panel>
     <AnimatePresence>{availableSelected.length > 0 && <m.div key="bulk" {...barMotion} role="region" aria-label="批量操作" data-slot="bulk-bar"
       className="bg-popover text-popover-foreground ring-foreground/10 sticky bottom-4 z-30 mx-auto mb-4 flex w-fit max-w-full flex-wrap items-center gap-2 rounded-xl px-3 py-2 shadow-lg ring-1">
-      <span className="text-sm font-medium tabular-nums">已选择 {availableSelected.length} 台</span><span className="text-muted-foreground text-xs tabular-nums">当前筛选 {servers.length} 台</span>
+      <span className="text-sm font-medium tabular-nums">已选择 {availableSelected.length} 台</span><span className="text-muted-foreground text-xs tabular-nums">当前筛选 {servers.length} 台{hiddenSelected > 0 ? `，其中 ${hiddenSelected} 台已选服务器不在当前筛选中，不会被操作` : ''}</span>
       <Separator orientation="vertical" className="mx-1 h-5 max-sm:hidden" />
-      <Button variant="outline" size="sm" disabled={!canWrite || action.busy || Boolean(resource.error)} onClick={() => batchLifecycle('maintenance')}>进入维护</Button><Button variant="outline" size="sm" disabled={!canWrite || action.busy || Boolean(resource.error)} onClick={() => batchLifecycle('draining')}>停止接收新任务</Button><Button variant="outline" size="sm" disabled={!canWrite || action.busy || Boolean(resource.error)} onClick={() => batchLifecycle('active')}>恢复接收任务</Button>
+      {(['maintenance', 'draining', 'active'] as const).map(lifecycle => <Button key={lifecycle} variant="outline" size="sm" disabled={!canWrite || action.busy || Boolean(resource.error) || actionable.length === 0} onClick={() => { action.clearError(); setPendingLifecycle(lifecycle) }}>{lifecycleNames[lifecycle]}</Button>)}
       <Button variant="ghost" size="sm" onClick={() => setSelected([])}>清空选择</Button>
     </m.div>}</AnimatePresence>
+    {pendingLifecycle && <Confirm title={`${lifecycleNames[pendingLifecycle]}？`} confirmLabel={lifecycleNames[pendingLifecycle]} busyLabel="正在提交…" busy={action.busy} error={action.error} confirmDisabled={actionable.length === 0} onClose={() => setPendingLifecycle(undefined)} onConfirm={() => batchLifecycle(pendingLifecycle)}>
+      将对当前筛选中已选择的 {actionable.length} 台服务器执行“{lifecycleNames[pendingLifecycle]}”：{servers.filter(server => actionable.includes(server.id)).map(server => server.name).join('、')}。{hiddenSelected > 0 ? `另有 ${hiddenSelected} 台已选服务器不在当前筛选中，不会被操作。` : ''}
+    </Confirm>}
     <div className="text-muted-foreground my-5 flex items-center justify-center gap-2 text-center text-xs leading-relaxed"><LockIcon className="size-3.5" aria-hidden="true" />设备主动连接面板；面板离线时，已应用的节点配置继续运行。</div>
     {editor === 'new' && <ServerSetup onClose={() => setEditor(null)} onCreated={server => { setEditor(null); setInstallation(server); resource.reload() }} />}
     {editor && editor !== 'new' && <ServerEdit key={editor.id} server={editor} onClose={() => setEditor(null)} onSaved={() => { setEditor(null); resource.reload() }} />}

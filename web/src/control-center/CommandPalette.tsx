@@ -3,7 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { BellRingIcon, ClipboardListIcon, FileTextIcon, GlobeIcon, LayoutGridIcon, SearchIcon, ServerIcon, ShieldCheckIcon, StarIcon, UsersIcon, WaypointsIcon } from 'lucide-react'
 import { api, errorMessage } from '../api'
-import { usePreference } from './preferences'
+import { confirmLeave, usePreference } from './preferences'
 import { useI18n } from '../i18n'
 import type { NavigationItem } from '../app/navigation'
 import { cn } from '@/lib/utils'
@@ -20,8 +20,9 @@ const kinds: Record<string, string> = { page: '页面', server: '服务器', ip:
 const kindIcons: Record<string, LucideIcon> = { server: ServerIcon, ip: ServerIcon, node: WaypointsIcon, 'proxy-user': UsersIcon, domain: GlobeIcon, 'dns-rule': GlobeIcon, certificate: ShieldCheckIcon, incident: BellRingIcon, 'alert-rule': BellRingIcon }
 const taskKinds = new Set(['diagnostic-task', 'test-plan', 'test-run', 'command-task', 'fleet-task', 'operation-task', 'operation-schedule', 'task'])
 
-// Field where typing "/" must stay text instead of opening the palette.
-const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+// Field where typing "/" must stay text instead of opening the palette, including
+// custom text surfaces such as the remote terminal.
+const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.closest('[role="textbox"]') !== null)
 
 /**
  * Keyboard-first jump list for the administrator console: permitted pages,
@@ -42,9 +43,11 @@ export default function CommandPalette({ pages }: { pages: readonly NavigationIt
   const term = query.trim().toLowerCase()
 
   useEffect(() => {
+    // The palette does not open over another dialog, where a draft may be in progress.
+    const covered = () => document.querySelector('[role="dialog"], [role="alertdialog"]') !== null
     const keyboard = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); setOpen(value => !value) }
-      else if (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey && !editable(event.target)) { event.preventDefault(); setOpen(true) }
+      if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); setOpen(value => value ? false : !covered()) }
+      else if (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey && !editable(event.target) && !covered()) { event.preventDefault(); setOpen(true) }
     }
     window.addEventListener('keydown', keyboard)
     return () => window.removeEventListener('keydown', keyboard)
@@ -102,6 +105,7 @@ export default function CommandPalette({ pages }: { pages: readonly NavigationIt
 
   const close = (next: boolean) => { setOpen(next); if (!next) { setQuery(''); setError(''); setActiveKey(undefined) } }
   const visit = (entry: Entry) => {
+    if (!confirmLeave()) return
     window.location.hash = entry.item.path
     close(false)
     if (recent.ready) void recent.save([entry.item, ...(recent.value ?? []).filter(value => value.path !== entry.item.path)].slice(0, 20)).catch(reason => setError(errorMessage(reason)))

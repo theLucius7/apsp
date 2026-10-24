@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import { m } from 'motion/react'
 import { LogOutIcon, MenuIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, XIcon } from 'lucide-react'
@@ -46,12 +47,30 @@ export default function AdminShell({ current, busy, error, onLogout, children }:
   const sidebarPanel = usePanelRef()
   const layout = useDefaultLayout({ id: 'apsp-admin-shell', storage: layoutStorage, onlySaveAfterUserInteractions: true })
 
-  // The compact menu closes after navigation and on Escape.
+  const mobileHeader = useRef<HTMLElement>(null)
+  // The page renders once into a detached host that each layout mounts, so crossing
+  // the tablet breakpoint keeps open dialogs, drafts and pending request identities.
+  const [pageHost] = useState(() => {
+    const host = document.createElement('div')
+    host.dataset.slot = 'page'
+    host.style.display = 'contents'
+    return host
+  })
+
+  // The compact menu closes after navigation, on Escape and on a press outside it.
   useEffect(() => {
     const close = () => setMobileOpen(false)
     window.addEventListener('hashchange', close)
     return () => window.removeEventListener('hashchange', close)
   }, [setMobileOpen])
+  useEffect(() => {
+    if (!mobileOpen) return
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setMobileOpen(false) }
+    const press = (event: PointerEvent) => { if (!mobileHeader.current?.contains(event.target as Node)) setMobileOpen(false) }
+    document.addEventListener('keydown', key)
+    document.addEventListener('pointerdown', press)
+    return () => { document.removeEventListener('keydown', key); document.removeEventListener('pointerdown', press) }
+  }, [mobileOpen, setMobileOpen])
   // The sidebar panel follows the remembered collapsed state.
   useEffect(() => {
     const panel = sidebarPanel.current
@@ -62,11 +81,11 @@ export default function AdminShell({ current, busy, error, onLogout, children }:
 
   const navigationList = <Navigation items={visibleNavigation} current={current} collapsed={desktop && collapsed} />
   const account = <AccountButton actor={actor.data} busy={busy} onLogout={onLogout} collapsed={desktop && collapsed} />
-  const main = <MainColumn current={current} pages={visibleNavigation} error={error} mobile={!desktop}>{children}</MainColumn>
+  const main = <MainColumn current={current} pages={visibleNavigation} error={error} mobile={!desktop}><PageSlot host={pageHost} /></MainColumn>
 
   return <TooltipProvider delayDuration={200}>
     <div data-slot="app-shell" className="bg-background text-foreground flex h-dvh min-h-0 flex-col overflow-hidden md:flex-row">
-      <Reauthentication /><Appearance />
+      <Reauthentication /><Appearance />{createPortal(children, pageHost)}
       {desktop ? <ResizablePanelGroup id="apsp-admin-shell" orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
         <ResizablePanel id="sidebar" panelRef={sidebarPanel} defaultSize={248} minSize={208} maxSize={360} collapsible collapsedSize={60}
           onResize={size => { const folded = size.inPixels < 120; if (folded !== useShellStore.getState().collapsed) setCollapsed(folded) }}>
@@ -84,7 +103,7 @@ export default function AdminShell({ current, busy, error, onLogout, children }:
         <ResizableHandle withHandle aria-label={t('调整侧栏宽度')} />
         <ResizablePanel id="main" minSize="50">{main}</ResizablePanel>
       </ResizablePanelGroup> : <>
-        <aside data-slot="sidebar" className="bg-sidebar text-sidebar-foreground shrink-0 border-b">
+        <aside ref={mobileHeader} data-slot="sidebar" className="bg-sidebar text-sidebar-foreground shrink-0 border-b">
           <div className="flex h-14 items-center gap-2 px-4">
             <a href="#/servers" aria-label={t('apsp首页')} className="mr-auto min-w-0 rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"><Brand /></a>
             <AccountButton actor={actor.data} busy={busy} onLogout={onLogout} collapsed={false} compact />
@@ -152,12 +171,25 @@ function AccountButton({ actor, busy, onLogout, collapsed, compact = false }: { 
   </button>
 }
 
+/** Mounts the shared page host; moving it between layouts does not remount the page. */
+function PageSlot({ host }: { host: HTMLElement }) {
+  const slot = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const element = slot.current
+    if (!element) return
+    element.appendChild(host)
+    return () => { if (host.parentElement === element) element.removeChild(host) }
+  }, [host])
+  return <div ref={slot} className="contents" />
+}
+
 function MainColumn({ current, pages, error, mobile, children }: { current?: NavigationItem; pages: readonly NavigationItem[]; error: string; mobile: boolean; children: ReactNode }) {
   const { t } = useI18n()
   const scroller = useRef<HTMLDivElement>(null)
   // A new page starts at the top of the scrolling column.
   useEffect(() => { scroller.current?.scrollTo({ top: 0 }) }, [current?.path])
-  return <div ref={scroller} className={cn('flex min-h-0 min-w-0 flex-1 flex-col', !mobile && 'h-full overflow-y-auto')}>
+  // The shell is one viewport high at every width, so the column scrolls on phones too.
+  return <div ref={scroller} className={cn('flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto', !mobile && 'h-full')}>
     {/* The bar sits in a fixed-height scrolling column, so it must not shrink below
         its content. At tablet widths the breadcrumb drops the group (the sidebar shows
         it) and the search button narrows, so the controls stay on one row. */}

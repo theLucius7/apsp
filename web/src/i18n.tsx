@@ -7,8 +7,11 @@ import { useLocaleStore } from './stores/locale'
 import type { Locale } from './stores/locale'
 
 export type { Locale }
-const translatedTextSources = new WeakMap<Node, string>()
-const translatedAttributeSources = new WeakMap<Element, Map<string, string>>()
+// Each entry keeps the original Chinese text and the value this module wrote. A node
+// whose current value differs from the written one was updated by React since, so its
+// current value is the new source (for example a server going from online to offline).
+const translatedTextSources = new WeakMap<Node, { source: string; written: string }>()
+const translatedAttributeSources = new WeakMap<Element, Map<string, { source: string; written: string }>>()
 
 // Static interface phrases live here. Runtime data, user input and API error
 // messages intentionally fall back to their source text when no translation is
@@ -157,12 +160,13 @@ function translateStaticDom(locale: Locale) {
   while ((node = walker.nextNode())) {
     if (node.parentElement?.closest('code, pre, textarea, input, [data-i18n-ignore]')) continue
     const raw = node.nodeValue ?? ''
-    const source = translatedTextSources.get(node) ?? raw
+    const known = translatedTextSources.get(node)
+    const source = known && known.written === raw ? known.source : raw
     const leading = source.match(/^\s*/)?.[0] ?? '', trailing = source.match(/\s*$/)?.[0] ?? '', value = source.trim()
-    if (!value || !english[value]) continue
+    if (!value || !english[value]) { translatedTextSources.delete(node); continue }
     const translated = locale === 'en-US' ? `${leading}${english[value]}${trailing}` : source
     if (node.nodeValue !== translated) node.nodeValue = translated
-    if (locale === 'en-US') translatedTextSources.set(node, source)
+    if (locale === 'en-US') translatedTextSources.set(node, { source, written: translated })
     else translatedTextSources.delete(node)
   }
   document.querySelectorAll<HTMLElement>('[aria-label], [title], [placeholder]').forEach(element => {
@@ -171,14 +175,15 @@ function translateStaticDom(locale: Locale) {
     for (const attribute of ['aria-label', 'title', 'placeholder']) {
       const current = element.getAttribute(attribute)
       if (!current) continue
-      const source = sources?.get(attribute) ?? current
+      const known = sources?.get(attribute)
+      const source = known && known.written === current ? known.source : current
       const translated = english[source]
-      if (!translated) continue
+      if (!translated) { sources?.delete(attribute); continue }
       const next = locale === 'en-US' ? translated : source
       if (current !== next) element.setAttribute(attribute, next)
       if (locale === 'en-US') {
         if (!sources) { sources = new Map(); translatedAttributeSources.set(element, sources) }
-        sources.set(attribute, source)
+        sources.set(attribute, { source, written: next })
       } else {
         sources?.delete(attribute)
       }
