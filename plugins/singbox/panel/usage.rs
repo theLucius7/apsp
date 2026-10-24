@@ -71,6 +71,7 @@ pub async fn ingest(state: &AppState, server_id: i64, mut batch: UsageBatch) -> 
         sqlx::query("UPDATE usage_batches SET last_replayed_at=$4,replay_count=LEAST(replay_count,9223372036854775806)+1 WHERE server_id=$1 AND epoch=$2 AND seq=$3::text::numeric")
             .bind(server_id).bind(batch.epoch).bind(&seq).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     }
+    super::nexus_nodes::runtime_publish::enqueue_usage(&mut tx, server_id, &batch).await?;
     tx.commit().await?;
     agent_api::notify(
         state,

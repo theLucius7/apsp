@@ -52,3 +52,48 @@ python3 tools/nexus_node_inventory.py import /private/nodes.json /private/node-r
 完整切换顺序：冻结该机器配置 → 保存可恢复配置及计量 → 验签接入兼容 Agent → 准备完整候选运行时 → 停止该机旧发布/计量 → 最终计量交接 → 应用并确认新运行时 → 验证旧客户端协议和订阅 → 记录接管结果。任一步失败保留原身份与服务恢复能力，不以页面“保存成功”代替节点可用。
 
 生产发布继续遵守 [签名发布规则](release.md) 和 [临时 CI 暂停](../AGENTS.md)。新签名 Agent、前置能力验收与发布流程未准备完成前，资产导入结果不能标记为 Agent/节点迁移完成。测试与现场状态见[本轮验收](acceptance/nexus-agent-migration.md)。
+## 运行接管（ADR 0095）
+
+库存导入后，通过 `tools/nexus_runtime_takeover.py` 的 `preview`、`prepare`、`candidate`、`activate`、`pause`、`discard` 操作完成运行接管。所有操作使用面板管理员 API，除 `preview` 外都在调用前自动完成管理员再次验证；正文配置和候选只写入指定的 0600 文件，不打印密钥。示例地址使用 `https://panel.example.invalid`。
+
+```sh
+python3 tools/nexus_runtime_takeover.py preview --panel http://127.0.0.1:8080 --environment /private/apsp.env \
+  --input /private/runtime/host-<ID>.json --output /private/runtime/host-<ID>-preview.json
+python3 tools/nexus_runtime_takeover.py prepare ...同上... --output /private/runtime/host-<ID>-prepared.json
+python3 tools/nexus_runtime_takeover.py candidate --server <apsp 服务器 ID> ... --output /private/runtime/host-<ID>-candidate.json
+python3 tools/nexus_runtime_takeover.py activate --server <apsp 服务器 ID> --input /private/runtime/host-<ID>-cutover.json ...
+```
+
+运行快照为 `{source_id, server_id, nodes:[{legacy_node_id, preserved:{node, configuration}}]}`。`node` 为编译器节点模型，初始 ID 为原节点编号，`users` 为空。`configuration` 为完整单节点原生配置，包括实际使用的本地覆盖、TLS 证书及出站。SS 服务端密钥来自旧面板 `buildNodeConfig`，不能调用新建节点随机生成；用户密钥由发布器按原 UUID 派生。
+
+### 由旧节点自身生成快照
+
+不要手写或模拟旧节点的配置。旧节点（xboard-node）在内存中生成 sing-box 配置，不落盘；`tools/nexus-legacy-export/` 的导出测试直接调用它自己的 `buildConfig`、弱类型解码和本地 `custom_config` 合并，得到与线上完全一致的生效配置。手工推导容易出错：例如旧面板把 Reality 握手端口存成字符串 `"443"`，旧节点会弱类型转换，手写候选则会被面板拒绝或让新运行时启动失败。
+
+```sh
+# 1. 在旧面板容器内只读导出每个节点的发布配置和当前可用用户（含成员 UUID，保存为 0600）
+python3 tools/nexus_runtime_snapshot.py export-legacy --container <旧面板容器> /private/runtime/legacy.json
+# 2. 按物理主机生成导出请求
+python3 tools/nexus_runtime_snapshot.py request /private/nodes.json /private/runtime/legacy.json /private/runtime
+# 3. 每台主机：只读取回 /etc/xboard-node（或 /etc/nexus-agent）后，在断网容器中按原路径只读挂载，
+#    用该主机实际运行版本的 xboard-node 源码执行导出测试（用法见 apsp_export_test.go 文件头）
+# 4. 生成快照与汇总；只有整台主机全部节点可转换才写出 host-<ID>-snapshot.json
+python3 tools/nexus_runtime_snapshot.py build /private/nodes.json /private/runtime
+```
+
+导出时机器令牌不读取，`token_env` 引用一律填占位值；`custom_config` 指向的文件缺失时直接报错，不像旧节点那样静默跳过。汇总只写原因代码：`protocol_requires_conversion`（Hysteria2 等需要证书文件与跳端口规则）、`transport_requires_conversion`、`external_files`、`global_settings_require_reconciliation`、`reality_short_id_count`、`brutal_requires_review`、`effective_configuration_missing`（未取得主机文件）等。被阻止的主机继续由旧服务运行。
+
+### 切换步骤
+
+1. 获取完整当前配置和回退备份，验证同机所有实例和监听；按上节由旧节点生成快照，逐一处理不能合并的配置，不能删掉冲突字段后继续。
+2. 使用正式签名 Agent 接入主机，先保持监控模式。原服务继续运行，准备操作不发布。
+3. `candidate --server <ID>` 导出私有候选，使用已独立验签的同版本 sing-box 执行配置检查；使用原客户端凭据验证候选的隔离实例。再用 `nexus_runtime_snapshot.py compare-users <快照> <候选> <legacy.json> <报告>` 按监听端口逐节点比对候选用户与旧节点当前可用用户：缺少或多出任何用户都以退出码 2 停止，报告同时统计带限速/设备数限制的用户（apsp Agent 不执行这两项限制）。保留摘要和结果。
+4. 确认兼容桥已更新到支持原子流量投递的版本并健康。原订阅读取、SS/Reality/Hysteria 握手和相关出口必须有切换前基线。
+5. 停旧发布器并排空终末计量，确认旧监听释放。`activate` 输入 `{expected_digest, config_sha256, backup_sha256, stopped_at, stopped_services}`；三个摘要分别对应准备收据、当前候选和主机备份，停用时间为 Unix 秒。配置或授权变化导致摘要不一致时先恢复旧服务，再重做候选。
+6. 等待 Agent 应用健康回执，再使用同一旧客户端验证实际入口、出口及订阅。任何失败先停新运行时，提交 `pause` 并恢复旧配置；不能仅依据 API 接受就标记成功。
+
+旧订阅兼容后端及重置调度继续运行。未经正式签名发布、网络不可达、证书续期未承接的主机保持原运行状态。
+
+准备之后发现快照需要修正（例如补齐旧服务的实际生效字段），且该主机从未启动、没有任何部署时，用 `discard --server <ID> --input <{"expected_digest":…}>` 撤销准备，再重新预览和准备。启动过的主机不能撤销，只能暂停；暂停后旧服务的恢复见上文第 6 步。
+
+迁移节点的用户授权只来自套餐与原权限组映射。策略组和直接授权会生成新 UUID 与新密钥，对迁移节点直接拒绝；需要调整谁能用哪个节点时，修改套餐映射或原权限组。

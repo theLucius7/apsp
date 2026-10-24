@@ -1,0 +1,211 @@
+{
+ "nodes": [
+  {
+   "legacy_node_id": 43,
+   "preserved": {
+    "configuration": {
+     "inbounds": [
+      {
+       "listen": "::",
+       "listen_port": 51002,
+       "method": "2022-blake3-aes-128-gcm",
+       "password": "MDEyMzQ1Njc4OWFiY2RlZg==",
+       "reuse_addr": true,
+       "tag": "shadowsocks-in",
+       "type": "shadowsocks",
+       "users": [
+        {
+         "name": "00000000-0000-4000-8000-000000000001",
+         "password": "MDAwMDAwMDAtMDAwMC00MA=="
+        }
+       ]
+      }
+     ],
+     "log": {
+      "level": "warn",
+      "timestamp": true
+     },
+     "outbounds": [
+      {
+       "tag": "direct",
+       "type": "direct"
+      },
+      {
+       "tag": "block",
+       "type": "block"
+      }
+     ],
+     "route": {
+      "final": "direct",
+      "rules": [
+       {
+        "ip_cidr": [
+         "10.0.0.0/8",
+         "100.64.0.0/10",
+         "127.0.0.0/8",
+         "169.254.0.0/16",
+         "172.16.0.0/12",
+         "192.0.0.0/24",
+         "192.168.0.0/16",
+         "198.18.0.0/15"
+        ],
+        "outbound": "block"
+       },
+       {
+        "ip_cidr": [
+         "fc00::/7",
+         "fe80::/10",
+         "::1/128"
+        ],
+        "outbound": "block"
+       }
+      ]
+     }
+    },
+    "node": {
+     "enabled": true,
+     "id": 43,
+     "name": "TEST_ONLY SS",
+     "port": 51002,
+     "private_key": "",
+     "protocol_config": {
+      "method": "2022-blake3-aes-128-gcm",
+      "password": "MDEyMzQ1Njc4OWFiY2RlZg==",
+      "type": "shadowsocks2022"
+     },
+     "public_host": "ss.example.invalid",
+     "public_key": "",
+     "settings": {
+      "listen": "::",
+      "public_port": 51002
+     },
+     "short_id": "",
+     "sni": "",
+     "users": []
+    }
+   }
+  },
+  {
+   "legacy_node_id": 44,
+   "preserved": {
+    "configuration": {
+     "inbounds": [
+      {
+       "listen": "::",
+       "listen_port": 11452,
+       "multiplex": {
+        "enabled": true,
+        "padding": true
+       },
+       "reuse_addr": true,
+       "tag": "vless-in",
+       "tls": {
+        "enabled": true,
+        "reality": {
+         "enabled": true,
+         "handshake": {
+          "server": "handshake.example.invalid",
+          "server_port": 443
+         },
+         "private_key": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+         "short_id": [
+          "aabbccddeeff"
+         ]
+        },
+        "server_name": "handshake.example.invalid"
+       },
+       "type": "vless",
+       "users": [
+        {
+         "flow": "xtls-rprx-vision",
+         "name": "00000000-0000-4000-8000-000000000001",
+         "uuid": "00000000-0000-4000-8000-000000000001"
+        }
+       ]
+      }
+     ],
+     "log": {
+      "level": "warn",
+      "timestamp": true
+     },
+     "outbounds": [
+      {
+       "tag": "direct",
+       "type": "direct"
+      },
+      {
+       "method": "2022-blake3-aes-128-gcm",
+       "password": "ZmVkY2JhOTg3NjU0MzIxMA==",
+       "server": "landing.example.invalid",
+       "server_port": 443,
+       "tag": "landing",
+       "type": "shadowsocks"
+      },
+      {
+       "tag": "block",
+       "type": "block"
+      }
+     ],
+     "route": {
+      "final": "direct",
+      "rules": [
+       {
+        "domain_suffix": [
+         "landing.example.invalid"
+        ],
+        "outbound": "landing"
+       },
+       {
+        "ip_cidr": [
+         "10.0.0.0/8",
+         "100.64.0.0/10",
+         "127.0.0.0/8",
+         "169.254.0.0/16",
+         "172.16.0.0/12",
+         "192.0.0.0/24",
+         "192.168.0.0/16",
+         "198.18.0.0/15"
+        ],
+        "outbound": "block"
+       },
+       {
+        "ip_cidr": [
+         "fc00::/7",
+         "fe80::/10",
+         "::1/128"
+        ],
+        "outbound": "block"
+       }
+      ]
+     }
+    },
+    "node": {
+     "enabled": true,
+     "id": 44,
+     "name": "TEST_ONLY VLESS",
+     "port": 11452,
+     "private_key": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+     "protocol_config": {
+      "type": "vless-reality"
+     },
+     "public_host": "vless.example.invalid",
+     "public_key": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI",
+     "settings": {
+      "listen": "::",
+      "public_port": 443,
+      "reality": {
+       "flow": "vision",
+       "handshake_port": 443,
+       "handshake_server": "handshake.example.invalid"
+      }
+     },
+     "short_id": "aabbccddeeff",
+     "sni": "handshake.example.invalid",
+     "users": []
+    }
+   }
+  }
+ ],
+ "server_id": 20,
+ "source_id": "fixture"
+}

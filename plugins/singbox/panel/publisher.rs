@@ -65,6 +65,7 @@ pub async fn publish_due(state: &AppState) -> anyhow::Result<()> {
         super::settings::SOURCE_SQL
     );
     let ids: Vec<i64> = sqlx::query_scalar(&query).fetch_all(&state.pool).await?;
+    super::nexus_nodes::runtime_publish::membership(state).await?;
     let mut first_error = None;
     for server_id in ids {
         if let Err(error) = publish_server(state, server_id).await {
@@ -241,6 +242,18 @@ pub(crate) async fn bundle_digest_on(
         savepoint.rollback().await?;
         return Ok(None);
     }
+    let preserved: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM singbox_nexus_runtime_hosts WHERE server_id=$1)",
+    )
+    .bind(server_id)
+    .fetch_one(&mut *savepoint)
+    .await?;
+    if preserved {
+        let candidate =
+            super::nexus_nodes::runtime_publish::compile(state, &mut savepoint, server_id).await?;
+        savepoint.rollback().await?;
+        return Ok(Some(candidate.hash));
+    }
     let compiled = compile(state, &mut savepoint, server_id, at).await?;
     savepoint.rollback().await?;
     Ok(Some(compiled.hash))
@@ -274,6 +287,13 @@ async fn publish_server_transaction(
     if !super::settings::is_enabled(&mut tx, server_id).await? {
         tx.commit().await?;
         return Ok(None);
+    }
+    if let Some(result) =
+        super::nexus_nodes::runtime_publish::publish(state, &mut tx, server_id, manifest_rev)
+            .await?
+    {
+        tx.commit().await?;
+        return Ok(result);
     }
     let Compiled {
         plan,
