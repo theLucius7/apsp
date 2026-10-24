@@ -26,6 +26,8 @@ try {
     const page = await context.newPage(), errors = [], unexpected = [], writes = [], reads = []
     page.on('pageerror', error => errors.push(error.message))
     await page.clock.install()
+    // Dialogs finish closing on animation frames, which the page clock holds here; with reduced motion they close at once.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     const settle = () => new Promise(done => setTimeout(done, 100))
     const advance = async milliseconds => { await page.clock.runFor(milliseconds); await settle() }
     let rules = [], failSave = true, failSync = true, failRules = false, failServers = false, authenticated = true

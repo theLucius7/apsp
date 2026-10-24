@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
-import { Field, FormDialog, RefreshNotice } from '../../components'
+import { Field, FormDialog, RefreshNotice, DialogPresence } from '../../components'
 import { resourceWriteError, useAction, useRefreshNotice, useResource } from '../../hooks'
 import type { Node, PluginServer } from '../../types'
 import { assignmentRequestId, proxyResourceKey, validatedSnapshot, validProxyResources } from './groupTypes'
@@ -339,7 +339,7 @@ export default function Chains({ snapshot, serverId, getServerId, refresh, onCre
     <Button disabled={action.busy || Boolean(writeError)} onClick={open}>创建两跳链路</Button>
     <Button variant="outline" disabled={action.busy || Boolean(writeError)} onClick={openOrdered}>创建有序链路</Button>
     {refreshNotice.visible && <RefreshNotice />}
-    {creating && <FormDialog wide  title={draft.hops ? '创建有序链路' : '创建两跳链路'} onClose={() => setCreating(false)} onSubmit={submit} busy={action.busy} disabled={Boolean(writeError)} submitDisabled={Boolean(selectionError)} error={writeError || selectionError || action.error} retry={writeError || selectionError ? refresh : undefined} submitLabel={lastRequestId && unchanged ? '重试原批次' : '创建未授权链路'}>
+    <DialogPresence>{creating && <FormDialog wide  title={draft.hops ? '创建有序链路' : '创建两跳链路'} onClose={() => setCreating(false)} onSubmit={submit} busy={action.busy} disabled={Boolean(writeError)} submitDisabled={Boolean(selectionError)} error={writeError || selectionError || action.error} retry={writeError || selectionError ? refresh : undefined} submitLabel={lastRequestId && unchanged ? '重试原批次' : '创建未授权链路'}>
       <p className="text-muted-foreground mt-3 text-xs leading-relaxed">入口固定为受管 Reality；入口后可按顺序选择 1–8 个受管或订阅节点，最后一跳为出口。一次批量提交全部创建或全部拒绝。完整路径承载与运行时能力由面板在提交时校验，不以解析或 TCP/UDP 字段推断连通。</p>
       <Field label="入口方式"><NativeSelect className="w-full" name="entry_mode" value={draft.mode} onChange={event => update({ mode: event.target.value as 'new' | 'existing', rows: event.target.value === 'existing' ? draft.rows.slice(0, 1) : draft.rows })}><option value="new">新建 Reality 专用入口</option><option value="existing">使用现有未授权入口（单条）</option></NativeSelect></Field>
       <div className="grid gap-x-5 sm:grid-cols-2">
@@ -357,7 +357,7 @@ export default function Chains({ snapshot, serverId, getServerId, refresh, onCre
       <div className="my-5 rounded-lg border p-4" aria-label="批次预览"><h3 className="mt-3 mb-4 text-sm font-semibold">批次预览</h3><p className="text-sm leading-relaxed wrap-anywhere">{draft.rows.length} 条链路，共享入口服务器；{draft.mode === 'new' ? '每条新建独立入口监听，自动端口由面板分别分配。' : '所选现有监听将成为专用入口，不能再单独授权。'}</p><ol className="list-decimal pl-5">{draft.rows.map((row, index) => <li className="text-sm leading-relaxed wrap-anywhere" key={index}><strong>{row.name.trim() || `链路 ${index + 1}`}</strong><span>客户端 → {draft.mode === 'new' ? `${draft.public_host || '待填写地址'}:${row.port || '提交时自动分配'}` : `入口节点 #${draft.entry_node_id || '待选择'}`} → {(row.hops ?? draft.hops ?? [{ kind: 'managed' as const, node_id: draft.exit_node_id }]).map(hop => hop.kind === 'managed' ? `受管 #${hop.node_id || '待选择'}` : `${sources.data?.find(source => source.id === hop.source_id)?.name ?? `来源 #${hop.source_id}`} / ${hop.node?.name ?? '待选择'}（${hop.update_mode === 'pinned' ? '固定版本' : '跟随所选节点'} · ${hop.node?.version_id ?? '无版本'}）`).join(' → ')} → 互联网</span></li>)}</ol></div>
       {lastRequestId && <p className="text-muted-foreground mt-3 text-xs leading-relaxed" role="status">批次编号：<code className="wrap-anywhere">{lastRequestId}</code>。{unchanged ? '请求内容已保留；失败或超时后，目标与依赖仍符合当前资格时可复用同一编号和内容。依赖已消失或身份变化时请先确认原结果，草稿不会自动替换。' : '草稿已修改，下次提交会使用新批次编号；可先刷新列表确认原批次结果。'}关闭窗口后仍可重新打开继续，离开此页面前请先确认提交结果。</p>}
       <p className="text-muted-foreground mt-3 text-xs leading-relaxed">创建成功不会自动授权给用户。有序路径先准备全部受管依赖，并验证指定出站后才切用户入口；配置应用、路径探测和第三方持续健康分别记录，失败不会跳过任何一段或改直连。</p>
-    </FormDialog>}
+    </FormDialog>}</DialogPresence>
   </>
 }
 

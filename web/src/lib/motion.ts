@@ -37,6 +37,14 @@ export const dialogMotion = {
   transition: transition.base,
 } as const
 
+/** Phone drawers rise a little from the bottom edge. */
+export const sheetMotion = {
+  initial: { opacity: 0, y: 24 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: 24 },
+  transition: transition.base,
+} as const
+
 /** Menus, popovers and tooltips scale from their trigger side. */
 export const popoverMotion = {
   initial: { opacity: 0, scale: 0.96 },

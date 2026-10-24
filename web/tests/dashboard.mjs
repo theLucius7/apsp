@@ -12,7 +12,9 @@ const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFil
 async function openNav(page, name) {
   await page.locator('[data-slot=sidebar]').waitFor()
   const menu = page.getByRole('button', { name: '菜单', exact: true })
-  if (await menu.isVisible() && await menu.getAttribute('aria-expanded') !== 'true') await menu.click()
+  // The viewport decides whether the menu button is in use: a visibility check does
+  // not wait, and a closing dialog briefly hides the page from assistive technology.
+  if (page.viewportSize().width < 768 && await menu.getAttribute('aria-expanded') !== 'true') await menu.click()
   await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name, exact: true }).click()
 }
 const root = fileURLToPath(new URL('../dist/', import.meta.url))

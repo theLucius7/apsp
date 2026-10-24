@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../../api'
-import { Badge, Confirm, ErrorNotice, Field, Modal } from '../../components'
+import { Badge, Confirm, ErrorNotice, Field, Modal, DialogPresence } from '../../components'
 import { useAction, useResource } from '../../hooks'
 import type { DnsAccount } from './DnsAccounts'
 import DnsResolver from './DnsResolver'
@@ -52,8 +52,8 @@ export default function DnsRecords({ account, close }: { account: DnsAccount; cl
     {result && <p className="text-muted-foreground mt-3 text-xs leading-relaxed" role="status">{result}</p>}
     <DnsResolver account={account} zoneId={zone} initialName={name || record?.name || ''} />
     <h3 className="text-sm font-semibold">记录变更历史</h3>{history.data?.map(entry => <article data-slot="ddns-rule" className="border-t py-5 first:border-t-0" key={entry.id}><strong>{new Date(entry.occurred_at * 1000).toLocaleString('zh-CN')} · {entry.request.operation}</strong><Badge>{entry.status === 'applied' ? '提供方已确认' : entry.status === 'blocked' ? '条件变化，已阻止' : entry.status === 'submitted' ? '已提交，等待提供方生效' : entry.status === 'observed' ? '期望值已观测，归属未确认' : '结果未知'}</Badge><pre className="bg-muted/50 max-h-[28rem] overflow-auto rounded-lg border p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap wrap-anywhere">{JSON.stringify({ previous: entry.previous, observed: entry.observed }, null, 2)}</pre>{['unknown', 'submitted', 'observed'].includes(entry.status) && <Button variant="ghost" size="sm" disabled={action.busy} onClick={() => void action.run(async () => { const result = await api<{ status: string }>(`/api/plugins/ddns/accounts/${account.id}/records/${entry.id}/reconcile`, 'POST'); setResult(result.status === 'applied' ? '远端状态已核对，提供方已完成。' : result.status === 'observed' ? '远端符合期望，但新建记录的归属无法确认，禁止自动回退删除。' : '远端仍未确认期望状态；未重新提交任何修改。'); refresh() })}>只读核对远端结果</Button>}{entry.status === 'applied' && <Button variant="ghost" size="sm" disabled={action.busy} onClick={() => setRollback(entry)}>核对远端并回退此变更</Button>}</article>)}
-  </div><footer><Button variant="outline" disabled={action.busy} onClick={close}>关闭</Button></footer>{rollback && <Confirm title="回退 DNS 记录变更" busy={action.busy} error={action.error} onClose={() => setRollback(null)} onConfirm={() => void action.run(async () => {
+  </div><footer><Button variant="outline" disabled={action.busy} onClick={close}>关闭</Button></footer><DialogPresence>{rollback && <Confirm title="回退 DNS 记录变更" busy={action.busy} error={action.error} onClose={() => setRollback(null)} onConfirm={() => void action.run(async () => {
     const result = await api<{ status: string }>(`/api/plugins/ddns/accounts/${account.id}/records/${rollback.id}/rollback`, 'POST', { confirmed: true })
     setResult(result.status === 'applied' ? '回退已由提供方确认。' : '回退未完成，请重新读取远端核对，禁止自动重放。'); refresh()
-  }, () => setRollback(null))}>修改记录恢复旧值；此前新建的记录将删除，此前删除的记录将重新建立。当前远端值必须与此条历史的结果相同，否则拒绝覆盖。此操作需要管理员再次验证。</Confirm>}</Modal>
+  }, () => setRollback(null))}>修改记录恢复旧值；此前新建的记录将删除，此前删除的记录将重新建立。当前远端值必须与此条历史的结果相同，否则拒绝覆盖。此操作需要管理员再次验证。</Confirm>}</DialogPresence></Modal>
 }

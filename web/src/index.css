@@ -155,9 +155,15 @@
   --sidebar-ring: oklch(0.6 0.09 183);
 }
 
-/* Compact density shrinks every spacing step at once. */
+/* Compact density tightens content: table rows, panel padding and the gaps
+   between sections follow a smaller spacing step. Controls keep the comfortable
+   step, so buttons, fields, checkboxes, menu items and navigation links keep
+   their size and touch targets never shrink. */
 [data-density="compact"] {
   --spacing: 0.225rem;
+}
+[data-density="compact"] :where(button, input, select, textarea, [role="checkbox"], [role="switch"], [role="radio"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [data-slot="button"], [data-slot="native-select-wrapper"], [data-slot="sidebar"] nav a) {
+  --spacing: 0.25rem;
 }
 
 @theme inline {

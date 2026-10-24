@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Badge, Empty, ErrorNotice, Loading, Modal } from '../../components'
+import { Badge, Empty, ErrorNotice, Loading, Modal, DialogPresence } from '../../components'
 import { time } from '../../format'
 import type { ResourceState } from '../../hooks'
 import { validatedSnapshot } from './groupTypes'
@@ -47,7 +47,7 @@ export default function NexusNodes({ query, server, onReload }: { query: Resourc
       </Table>
       <div className="flex flex-wrap items-center justify-between gap-2 border-t px-5 py-3 text-sm"><span className="text-muted-foreground">共 {filtered.length} 个 · 第 {current} / {pages} 页</span><div className="flex gap-2"><Button variant="outline" size="sm" disabled={current <= 1} onClick={() => setPage(current - 1)}>上一页</Button><Button variant="outline" size="sm" disabled={current >= pages} onClick={() => setPage(current + 1)}>下一页</Button></div></div>
     </>}
-    {node && <Modal title={node.name} onClose={() => setSelected(null)} wide>
+    <DialogPresence>{node && <Modal title={node.name} onClose={() => setSelected(null)} wide>
       <Badge tone="warm">节点信息已迁入 · 待 Agent 接管</Badge>
       <dl className="my-4 grid gap-4 sm:grid-cols-2 [&_dt]:text-xs [&_dt]:text-muted-foreground [&_dd]:mt-1 [&_dd]:wrap-anywhere">
         {Object.entries({ '原节点编号': node.legacy_node_id, '来源': node.source_id, '协议': nexusProtocol(node), '主机': `${node.server_name}（原主机 #${node.legacy_host_id}）`, '原实例': `${node.machine_name}（#${node.legacy_machine_id}）`, '原实例设置': node.machine_active ? '启用' : '停用', '公开入口': nexusEndpoint(node), '监听端口': node.listen_port, '流量倍率': `${node.rate}×`, '分时倍率': node.timed_rate_enabled ? `${node.timed_rate_count} 条` : '关闭', '权限组': node.groups.map(g => `${g.name}（#${g.id}）`).join('、') || '无', '原父节点编号': node.parent_id ?? '无', '路由组': node.routes.map(r => `${r.name}（#${r.id}）`).join('、') || '无', '自定义路由': `${node.custom_route_count} 条`, '自定义出口': `${node.custom_outbound_count} 个`, '证书配置': node.certificate_saved ? '已保存' : '未设置', '快照时间': time(node.exported_at), '导入时间': time(node.imported_at) }).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
@@ -55,6 +55,6 @@ export default function NexusNodes({ query, server, onReload }: { query: Resourc
       <h3 className="border-t pt-4 font-medium">协议参数</h3>
       <dl className="my-3 grid gap-3 sm:grid-cols-2 [&_dt]:text-xs [&_dt]:text-muted-foreground [&_dd]:mt-1 [&_dd]:wrap-anywhere">{Object.entries(node.protocol_summary).filter(([key]) => key in fields).map(([key, value]) => <div key={key}><dt>{fields[key]}</dt><dd>{typeof value === 'boolean' ? value ? '启用' : '关闭' : String(value)}</dd></div>)}</dl>
       <p className="text-sm text-muted-foreground">原始密钥、证书及完整路由配置已加密保存。此处展示导入时的信息，实时状态在 Agent 接管后更新。</p>
-    </Modal>}
+    </Modal>}</DialogPresence>
   </Panel>
 }

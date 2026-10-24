@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useIsPresent } from 'motion/react'
 
 // One place decides whether the console may leave the current page while a form
 // holds unsaved input: in-app links, the command palette, code that navigates and
@@ -67,12 +68,16 @@ export function guardLinks() {
 
 /** Keeps the page from being left, reloaded or closed silently while `active`. */
 export function useLeaveGuard(active: boolean) {
+  // A dialog that was closed stays on screen for its exit animation; its unsaved
+  // input was already given up, so it no longer holds the page.
+  const present = useIsPresent()
+  const guarding = active && present
   useEffect(() => {
-    if (!active) return
+    if (!guarding) return
     const token = Symbol('unsaved form')
     blockers.add(token)
     const unload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
     window.addEventListener('beforeunload', unload)
     return () => { blockers.delete(token); window.removeEventListener('beforeunload', unload) }
-  }, [active])
+  }, [guarding])
 }

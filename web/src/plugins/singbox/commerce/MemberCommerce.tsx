@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { useEffect, useRef, useState } from 'react'
 import { api, errorMessage } from '../../../api'
-import { CopyField, ErrorNotice, Field, FormDialog } from '../../../components'
+import { CopyField, ErrorNotice, Field, FormDialog, DialogPresence } from '../../../components'
 import { useAction } from '../../../hooks'
 import { money, parseMoney, paymentFee, RequestIdentity } from './types'
 import type { Channel, Content, History, Offer } from './types'
@@ -75,12 +75,12 @@ export default function MemberCommerce({ account }: { account: string }) {
       </>}
       {tab === '账户' && <AccountServices account={account} profile={data.profile} reload={reload} />}{tab === '通知' && <MemberMessages account={account} />}
       {tab === '公告与指南' && <Panel><div className="p-4 space-y-3"><Input aria-label="搜索公告指南" placeholder="搜索标题、分类或内容" value={guideQuery} onChange={e => setGuideQuery(e.target.value)} />{data.content.filter(c => `${c.title} ${c.category} ${c.body}`.toLowerCase().includes(guideQuery.toLowerCase())).map(c => <details key={c.id}><summary>{c.kind === 'notice' ? '公告' : c.category || '指南'} · {c.title}</summary><GuideBody body={c.body} /></details>)}{!data.content.length && <p>暂无内容</p>}</div></Panel>}
-      {dialog && <FormDialog title={dialog.kind === 'purchase' ? '确认购买套餐' : dialog.kind === 'invite' ? '购买邀请' : dialog.kind === 'topup' ? '账户充值' : '撤销邀请'} onClose={() => setDialog(null)} onSubmit={submit} busy={action.busy} error={action.error} submitDisabled={Boolean(error)} submitLabel="确认">
+      <DialogPresence>{dialog && <FormDialog title={dialog.kind === 'purchase' ? '确认购买套餐' : dialog.kind === 'invite' ? '购买邀请' : dialog.kind === 'topup' ? '账户充值' : '撤销邀请'} onClose={() => setDialog(null)} onSubmit={submit} busy={action.busy} error={action.error} submitDisabled={Boolean(error)} submitLabel="确认">
         {dialog.kind === 'purchase' && <><p>{dialog.offer.name} · {money(dialog.offer.price_cents)}</p><p>{dialog.beneficiary ? `为成员 #${dialog.beneficiary} 首次开通` : '同套餐续费延长有效期；更换套餐从现在开始，不折抵旧套餐。'}。余额支付后立即交付。历史流量不会清除。</p></>}
         {dialog.kind === 'invite' && <><p>每份准入费 {money(data.invite_settings.price_cents)}。普通邀请的准入费不退。</p><Field label="购买数量"><Input name="quantity" type="number" min={1} max={20} defaultValue={1} required /></Field><Field label="预付套餐"><NativeSelect name="offer"><option value="">普通邀请（朋友注册后由你购买首单）</option>{data.offers.map(o => <option key={o.id} value={o.id}>{o.name} · 另付 {money(o.price_cents)}</option>)}</NativeSelect></Field><p>预付套餐会保留购买时的条件与名额。尚未领取的预付邀请撤销后全额退款，包含准入费。</p></>}
         {dialog.kind === 'topup' && <><Field label="充值金额（元）"><Input name="amount" required inputMode="decimal" defaultValue="100.00" /></Field><Field label="支付渠道"><NativeSelect name="channel">{data.channels.map(c => <option key={c.id} value={c.id}>{c.name} · 手续费 {money(c.fixed_fee_cents)} + {(c.fee_basis_points / 100).toFixed(2)}%</option>)}</NativeSelect></Field><p>页面将跳转至支付渠道。付款结果以已核验的回调为准。</p></>}
         {dialog.kind === 'revoke' && <p>邀请链接将失效。退回 {money(dialog.prepaid)}。未领取的预付邀请包含准入费；普通邀请仅撤销链接。</p>}
-      </FormDialog>}
+      </FormDialog>}</DialogPresence>
     </>}
   </section>
 }

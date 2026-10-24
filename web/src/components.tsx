@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { m } from 'motion/react'
+import { AnimatePresence, m, usePresence } from 'motion/react'
 import { BoxIcon, CheckIcon, CircleAlertIcon, CompassIcon, CopyIcon, InfoIcon, RefreshCwIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { errorMessage } from './api'
@@ -137,18 +137,56 @@ export function Meter({ value, label, warning = 75, danger = 90, className }: { 
   return <Progress value={level} aria-label={label} indicatorClassName={tone} className={cn('mt-1.5 h-1 max-w-28', className)} />
 }
 
+/**
+ * Pages show dialogs conditionally (`{editing && <Modal …/>}`). Wrapped in
+ * DialogPresence, a dialog the page removes first closes and plays its exit
+ * animation, then leaves the document; unwrapped, it disappears at once.
+ */
+export function DialogPresence({ children }: { children: ReactNode }) {
+  return <AnimatePresence>{children}</AnimatePresence>
+}
+
+// Page dialogs still playing their exit animation. A dialog that opens finishes
+// them at once, so two dialogs never overlap.
+const exiting = new Set<() => void>()
+
+/** Whether the page still shows this dialog, and how it reports the end of its exit. */
+function useDialogPresence() {
+  const [present, safeToRemove] = usePresence()
+  const finished = useRef(false)
+  const done = useCallback(() => {
+    if (finished.current) return
+    finished.current = true
+    safeToRemove?.()
+  }, [safeToRemove])
+  useEffect(() => {
+    if (present) {
+      finished.current = false
+      for (const finish of [...exiting]) finish()
+      return
+    }
+    exiting.add(done)
+    return () => { exiting.delete(done) }
+  }, [present, done])
+  return { present, done }
+}
+
 export function Modal({ title, children, onClose, busy = false, wide = false, className = '', slot }: { title: string; children: ReactNode; onClose: () => void; busy?: boolean; wide?: boolean; className?: string; slot?: string }) {
   const { t } = useI18n()
+  // False once the page has removed this dialog inside DialogPresence; it then
+  // closes and reports when its exit animation is done.
+  const { present, done } = useDialogPresence()
   const guard = (event: Event) => { if (busy) event.preventDefault() }
   // Dialogs render at the document root so hidden page sections, such as inactive
   // tabs, never hide a dialog that one of their components opened.
-  return <Dialog open onOpenChange={open => { if (!open && !busy) onClose() }}>
+  return <Dialog open={present} onOpenChange={open => { if (!open && !busy && present) onClose() }}>
     <DialogContent
       data-dialog={slot}
       aria-describedby={undefined}
       closeLabel={t('关闭对话框')}
       onEscapeKeyDown={guard}
       onInteractOutside={guard}
+      onExitComplete={done}
       className={cn(
         'flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-y-auto p-0 sm:max-w-md',
         wide && 'sm:max-w-2xl',
@@ -183,8 +221,9 @@ export function FormDialog({ title, children, onClose, onSubmit, busy, disabled 
 
 export function Confirm({ title, children, busy, disabled = false, confirmDisabled = false, confirmLabel = '确认删除', busyLabel = '正在删除…', tone = 'destructive', error, retry, onClose, onConfirm }: { title: string; children: ReactNode; busy: boolean; disabled?: boolean; confirmDisabled?: boolean; confirmLabel?: string; busyLabel?: string; tone?: 'destructive' | 'default'; error?: string; retry?: () => void; onClose: () => void; onConfirm: () => void }) {
   const { t } = useI18n()
-  return <AlertDialog open onOpenChange={open => { if (!open && !busy) onClose() }}>
-    <AlertDialogContent aria-describedby={undefined} onEscapeKeyDown={event => { if (busy) event.preventDefault() }} className="sm:max-w-md">
+  const { present, done } = useDialogPresence()
+  return <AlertDialog open={present} onOpenChange={open => { if (!open && !busy && present) onClose() }}>
+    <AlertDialogContent aria-describedby={undefined} onEscapeKeyDown={event => { if (busy) event.preventDefault() }} onExitComplete={done} className="sm:max-w-md">
       <AlertDialogHeader className="place-items-start text-left">
         <AlertDialogTitle>{t(title)}</AlertDialogTitle>
       </AlertDialogHeader>

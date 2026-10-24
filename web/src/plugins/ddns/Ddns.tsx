@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../../api'
-import { Badge, Confirm, Empty, ErrorNotice, Field, Loading, Modal, PageHeader, Refresh } from '../../components'
+import { Badge, Confirm, Empty, ErrorNotice, Field, Loading, Modal, PageHeader, Refresh, DialogPresence } from '../../components'
 import { ddnsMessage, ddnsWrite, providers } from './types'
 import type { DdnsConfig, DdnsRule } from './types'
 import { resourceWriteError, useAction, useResource } from '../../hooks'
@@ -91,9 +91,9 @@ export default function Ddns({ serverId }: { serverId?: number }) {
         {(rule.error_code || rule.ip_status !== 'ready') && <p className="bg-muted mt-4 rounded-lg p-3 text-sm wrap-anywhere" role="status">{ddnsMessage(rule.error_code) || ddnsMessage(rule.ip_status)}</p>}
       </article>)}</div>}
     </Panel><p className="text-muted-foreground mt-3 text-xs leading-relaxed">同步状态区分已提交和已核对；提供方已接收不代表各地解析已生效；各地 DNS 缓存生效仍受 TTL 影响。手动同步有 60 秒冷却，限流或失败时等待页面显示的重试时间。</p>
-    {migrating && rules.data && servers.data && <Migration rules={visibleRules ?? []} servers={servers.data} close={() => setMigrating(false)} saved={() => { setMigrating(false); refresh() }} />}
-    {lifecycle && <Lifecycle rule={rules.data?.find(rule => rule.id === lifecycle.id) ?? lifecycle} close={() => setLifecycle(null)} changed={refresh} />}
-    {editing && servers.data && <Editor key={editing === 'new' ? 'new' : editing.id} rule={editing === 'new' ? undefined : editing} servers={enabledServers} current={current} close={() => setEditing(null)} saved={() => { setEditing(null); refresh() }} />}
-    {removing && <Confirm title="删除动态解析规则" busy={action.busy} error={action.error} confirmDisabled={Boolean(ruleError(current, removing))} onClose={() => setRemoving(null)} onConfirm={() => perform(() => ruleError(current, removing), () => api(`/api/plugins/ddns/rules/${removing.id}`, 'DELETE'), () => { setRemoving(null); rules.reload() })}>确认删除“{removing.config.name}”？云服务中的 DNS 记录会保留，之后不再自动更新。</Confirm>}
+    <DialogPresence>{migrating && rules.data && servers.data && <Migration rules={visibleRules ?? []} servers={servers.data} close={() => setMigrating(false)} saved={() => { setMigrating(false); refresh() }} />}</DialogPresence>
+    <DialogPresence>{lifecycle && <Lifecycle rule={rules.data?.find(rule => rule.id === lifecycle.id) ?? lifecycle} close={() => setLifecycle(null)} changed={refresh} />}</DialogPresence>
+    <DialogPresence>{editing && servers.data && <Editor key={editing === 'new' ? 'new' : editing.id} rule={editing === 'new' ? undefined : editing} servers={enabledServers} current={current} close={() => setEditing(null)} saved={() => { setEditing(null); refresh() }} />}</DialogPresence>
+    <DialogPresence>{removing && <Confirm title="删除动态解析规则" busy={action.busy} error={action.error} confirmDisabled={Boolean(ruleError(current, removing))} onClose={() => setRemoving(null)} onConfirm={() => perform(() => ruleError(current, removing), () => api(`/api/plugins/ddns/rules/${removing.id}`, 'DELETE'), () => { setRemoving(null); rules.reload() })}>确认删除“{removing.config.name}”？云服务中的 DNS 记录会保留，之后不再自动更新。</Confirm>}</DialogPresence>
   </div>
 }

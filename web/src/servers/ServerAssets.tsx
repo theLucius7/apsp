@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import TrafficCorrection from './TrafficCorrection'
-import { Badge, Meter } from '../components'
+import { Badge, Meter, DialogPresence } from '../components'
 import { time } from '../format'
 import { assetDate, assetPrice, defaultAssets, expiryState, trafficModes, trafficSize } from '../server-assets'
 import type { Server } from '../types'
@@ -25,5 +25,5 @@ export default function ServerAssets({ server, onEdit, onReload }: { server: Ser
     </dl>
     {traffic?.percent != null && <div className="my-4 flex items-center gap-3 text-sm"><Meter value={traffic.percent} label="本期流量用量" warning={80} danger={100} /><span>{traffic.percent.toFixed(1)}%</span></div>}
     <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{observed ? `本期观测始于 ${time(traffic?.observed_from ? traffic.observed_from / 1000 : undefined)}，最新计数 ${time(traffic?.last_sample_at ? traffic.last_sample_at / 1000 : undefined)}。` : '等待具有采样时间的完整网卡计数，首个采样仅建立基线。'}{traffic?.incomplete ? ' 检测到采样缺失、网卡变化或计数重置，本期观测可能不完整。' : ''} 超额与到期仅提示状态；观测流量可能与供应商账单不同。</p>
-  </div></Panel>{correcting && <TrafficCorrection server={correcting} onClose={() => setCorrecting(null)} onSaved={() => { setCorrecting(null); onReload() }} />}</>
+  </div></Panel><DialogPresence>{correcting && <TrafficCorrection server={correcting} onClose={() => setCorrecting(null)} onSaved={() => { setCorrecting(null); onReload() }} />}</DialogPresence></>
 }

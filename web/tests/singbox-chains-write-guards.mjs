@@ -29,6 +29,8 @@ try {
     const page = await browser.newPage({ viewport: { width, height: 1000 } })
     page.setDefaultTimeout(5000)
     await page.clock.install()
+    // Dialogs finish closing on animation frames, which the page clock holds here; with reduced motion they close at once.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     const errors = [], writes = [], failures = new Set(), heldReads = new Map()
     const prefix = '/api/plugins/sing-box'
     const paths = ['ordered-proxy-resources', 'nodes', 'servers'].map(name => `${prefix}/${name}`)

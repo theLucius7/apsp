@@ -1,9 +1,9 @@
-import ServerListView, { defaultServerView } from '../control-center/ServerListView'
-import type { ServerView } from '../control-center/ServerListView'
+import ServerToolbar, { clearServerFilters, defaultServerView, serverFilters } from './ServerToolbar'
+import type { ServerView } from './ServerToolbar'
 import { Fragment, useState } from 'react'
 import { AnimatePresence, m } from 'motion/react'
 import { api } from '../api'
-import { Badge, Confirm, Empty, ErrorNotice, Loading, Meter, PageHeader, Refresh, Stat } from '../components'
+import { Badge, Confirm, Empty, ErrorNotice, Loading, Meter, PageHeader, Refresh, Stat, DialogPresence } from '../components'
 import { ago, bytes, navigate, percent, time } from '../format'
 import { useI18n } from '../i18n'
 import { useAction, useResource } from '../hooks'
@@ -19,6 +19,7 @@ import { ActivityIcon, CheckIcon, FilterXIcon, LockIcon, PlusIcon, ServerCrashIc
 import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
 import { Separator } from '@/components/ui/separator'
 import { barMotion } from '@/lib/motion'
+import { useMediaQuery } from '@/lib/use-media-query'
 
 type Lifecycle = 'maintenance' | 'draining' | 'active'
 // What each state means for the panel: maintenance (open-ended from this list) and
@@ -48,11 +49,16 @@ export default function Servers() {
     const asset = { ...defaultAssets, ...server.asset_settings }
     return (view.online === 'all' || (view.online === 'online' ? server.online : !server.online))
       && (!view.group || asset.group_name === view.group)
+      && (!view.region || asset.region === view.region)
       && `${server.name} ${asset.region} ${asset.tags.join(' ')}`.toLocaleLowerCase().includes(view.query.toLocaleLowerCase())
   }).sort((left, right) => groupKey(left).localeCompare(groupKey(right), 'zh-CN') || (view.sort === 'name' ? left.name.localeCompare(right.name, 'zh-CN') : view.sort === 'cpu' ? (right.latest_metrics.cpu_percent ?? -1) - (left.latest_metrics.cpu_percent ?? -1) : view.sort === 'expiry' ? (left.asset_settings?.expires_at ?? Number.MAX_SAFE_INTEGER) - (right.asset_settings?.expires_at ?? Number.MAX_SAFE_INTEGER) : left.id - right.id))
   const column = (key: string) => view.columns.includes(key)
-  const filtered = Boolean(view.query) || view.online !== 'all' || Boolean(view.group)
-  const clearFilters = () => setView({ ...view, query: '', online: 'all', group: '' })
+  // Phones show cards with their own, shorter set of fields.
+  const phone = !useMediaQuery('(min-width: 768px)')
+  const cardColumn = (key: string) => view.cardColumns.includes(key)
+  const active = serverFilters(view)
+  const filtered = active.query || active.online || active.more > 0
+  const clearFilters = () => setView(clearServerFilters(view))
   const availableSelected = selected.filter(id => allServers.some(server => server.id === id))
   const visibleIds = servers.map(server => server.id)
   // Bulk actions only touch selected servers the current filter shows; the rest are named, not changed.
@@ -99,10 +105,12 @@ export default function Servers() {
     <PageHeader eyebrow="服务器" title="服务器列表" description="添加并接入服务器，按状态、地区和分组查看运行情况；点开一台服务器查看详情、资产和诊断。"><Refresh onClick={resource.reload} /><Button disabled={!canWrite} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />添加服务器</Button></PageHeader>
     {/* Totals describe every server; the list below says how many the filter shows. */}
     <div className="mb-6 grid grid-cols-3 gap-3 max-sm:gap-2"><Stat icon={ServerIcon} label="服务器总数" value={resource.data ? allServers.length : '—'} note="已添加到面板的服务器" /><Stat icon={ActivityIcon} label="当前在线" value={resource.data ? allServers.filter(server => server.online).length : '—'} note="最近 60 秒内收到设备消息" /><Stat icon={CheckIcon} label="已发布配置" value={resource.data ? allServers.filter(server => server.manifest_rev > 0).length : '—'} note="部署结果可在服务器详情查看" /></div>
-    <ServerListView value={view} onChange={setView} groups={[...new Set(allServers.map(server => server.asset_settings?.group_name ?? '').filter(Boolean))]} />
     {batchResults.length > 0 && <Notice><div>{batchResults.map(result => <p key={result.id}>服务器 #{result.id}：{result.status}</p>)}</div></Notice>}
     <ErrorNotice message={resource.error || action.error || actor.error} retry={resource.reload} />{actor.data && !canWrite && <p className="text-muted-foreground text-xs">当前账号只有服务器读取权限；修改、接入和维护操作需要服务器写入授权。</p>}
     <Panel><PanelHeader><PanelTitle>{filtered ? '筛选结果' : '全部服务器'} <span data-slot="server-count" className="bg-muted text-muted-foreground min-w-5 rounded px-1.5 text-center text-xs font-medium tabular-nums">{filtered ? `${servers.length} / ${allServers.length}` : servers.length}</span></PanelTitle><span className="text-muted-foreground flex items-center gap-1.5 text-xs"><span className="bg-success size-1.5 rounded-full" />每 5 秒刷新</span></PanelHeader>
+      {allServers.length > 0 && <ServerToolbar value={view} onChange={setView} phone={phone}
+        groups={[...new Set(allServers.map(server => server.asset_settings?.group_name ?? '').filter(Boolean))]}
+        regions={[...new Set(allServers.map(server => server.asset_settings?.region ?? '').filter(Boolean))]} />}
       {resource.error && resource.data && <p role="status" className="text-muted-foreground border-b px-4 py-2.5 text-xs">最近一次刷新失败，下面是上次成功读取的数据，状态和用量可能已过期。</p>}
       {resource.loading && !resource.data ? <Loading variant="table" rows={5} />
         : !resource.data ? <Empty icon={ServerCrashIcon} title="无法读取服务器列表" description={resource.error ? '读取失败，尚未取得任何服务器数据。检查网络或面板状态后重试。' : '尚未取得服务器数据。'}><Button variant="outline" onClick={resource.reload}>重试</Button></Empty>
@@ -119,11 +127,11 @@ export default function Servers() {
             {startsGroup(index) && <div className="bg-accent text-accent-foreground border-b px-4 py-1.5 text-xs font-medium">{groupKey(server)}</div>}
             <article data-slot="server-list-card" data-server-id={server.id} className="grid gap-3 border-b p-4 last:border-b-0">
               <div className="flex items-start gap-3"><span className="pt-2.5">{selectOne(server)}</span><div className="min-w-0 flex-1">{identity(server)}</div><div className="shrink-0 text-right">{status(server)}</div></div>
-              {(column('cpu') || column('memory')) && <div className="grid grid-cols-2 gap-3 pl-7">{column('cpu') && <div><small className="text-muted-foreground block text-xs">处理器</small>{cpuUsage(server)}</div>}{column('memory') && <div><small className="text-muted-foreground block text-xs">内存</small>{memoryUsage(server)}</div>}</div>}
-              {(column('cost') || column('traffic') || column('version')) && <dl className="m-0 grid gap-1.5 pl-7 text-sm">
-                {column('cost') && <div className="flex justify-between gap-3"><dt className="text-muted-foreground text-xs">成本 / 到期</dt><dd className="m-0 text-right">{cost(server)}</dd></div>}
-                {column('traffic') && <div className="flex justify-between gap-3"><dt className="text-muted-foreground text-xs">本期观测 / 额度</dt><dd className="m-0 text-right">{traffic(server)}</dd></div>}
-                {column('version') && <div className="flex justify-between gap-3"><dt className="text-muted-foreground text-xs">设备版本</dt><dd className="m-0 font-mono text-xs">{server.static_info.agent_version ?? '尚未上报'}</dd></div>}
+              {(cardColumn('cpu') || cardColumn('memory')) && <div className="grid grid-cols-2 gap-3 pl-7">{cardColumn('cpu') && <div><small className="text-muted-foreground block text-xs">处理器</small>{cpuUsage(server)}</div>}{cardColumn('memory') && <div><small className="text-muted-foreground block text-xs">内存</small>{memoryUsage(server)}</div>}</div>}
+              {(cardColumn('cost') || cardColumn('traffic') || cardColumn('version')) && <dl className="m-0 grid gap-1.5 pl-7 text-sm">
+                {cardColumn('cost') && <div className="flex justify-between gap-3"><dt className="text-muted-foreground text-xs">成本 / 到期</dt><dd className="m-0 text-right">{cost(server)}</dd></div>}
+                {cardColumn('traffic') && <div className="flex justify-between gap-3"><dt className="text-muted-foreground text-xs">本期观测 / 额度</dt><dd className="m-0 text-right">{traffic(server)}</dd></div>}
+                {cardColumn('version') && <div className="flex justify-between gap-3"><dt className="text-muted-foreground text-xs">设备版本</dt><dd className="m-0 font-mono text-xs">{server.static_info.agent_version ?? '尚未上报'}</dd></div>}
               </dl>}
               {actions(server, 'pl-5')}
             </article>
@@ -138,13 +146,13 @@ export default function Servers() {
       {(Object.keys(lifecycles) as Lifecycle[]).map(key => <Button key={key} variant="outline" size="sm" disabled={!canWrite || action.busy || Boolean(resource.error) || !targets.length} onClick={() => { action.clearError(); setPendingLifecycle(key) }}>{lifecycles[key].label}</Button>)}
       <Button variant="ghost" size="sm" onClick={() => setSelected([])}>清空选择</Button>
     </m.div>}</AnimatePresence>
-    {pendingLifecycle && <Confirm title={`${lifecycles[pendingLifecycle].label}：${targets.length} 台服务器`} tone={pendingLifecycle === 'active' ? 'default' : 'destructive'} confirmLabel={lifecycles[pendingLifecycle].label} busyLabel="正在提交…" busy={action.busy} confirmDisabled={!targets.length} error={action.error} onClose={() => setPendingLifecycle(null)} onConfirm={() => batchLifecycle(pendingLifecycle, targets.map(server => server.id))}>
+    <DialogPresence>{pendingLifecycle && <Confirm title={`${lifecycles[pendingLifecycle].label}：${targets.length} 台服务器`} tone={pendingLifecycle === 'active' ? 'default' : 'destructive'} confirmLabel={lifecycles[pendingLifecycle].label} busyLabel="正在提交…" busy={action.busy} confirmDisabled={!targets.length} error={action.error} onClose={() => setPendingLifecycle(null)} onConfirm={() => batchLifecycle(pendingLifecycle, targets.map(server => server.id))}>
       {targets.map(server => server.name).join('、')}<br />{lifecycles[pendingLifecycle].effect}{hiddenSelected > 0 && <><br />另有 {hiddenSelected} 台已选服务器被当前筛选隐藏，不会被修改。</>}
-    </Confirm>}
+    </Confirm>}</DialogPresence>
     <div className="text-muted-foreground my-5 flex items-center justify-center gap-2 text-center text-xs leading-relaxed"><LockIcon className="size-3.5" aria-hidden="true" />设备主动连接面板；面板离线时，已应用的节点配置继续运行。</div>
-    {editor === 'new' && <ServerSetup onClose={() => setEditor(null)} onCreated={server => { setEditor(null); setInstallation(server); resource.reload() }} />}
-    {editor && editor !== 'new' && <ServerEdit key={editor.id} server={editor} onClose={() => setEditor(null)} onSaved={() => { setEditor(null); resource.reload() }} />}
-    {deleting && <Confirm title={`删除「${deleting.name}」？`} busy={action.busy} error={action.error} onClose={() => setDeleting(null)} onConfirm={() => void action.run(() => api(`/api/servers/${deleting.id}`, 'DELETE'), () => { setDeleting(null); resource.reload() })}>此服务器将从面板和订阅中移除，历史流量仍会保留。设备在线时会先停止代理与诊断服务、清除本机凭证，确认后再删除；过程可能需要片刻。设备离线时仅移除面板记录，本地服务仍需手动停用。</Confirm>}
-    {installation && <ServerEnrollment key={installation.id} server={installation} created onClose={() => setInstallation(null)} />}
+    <DialogPresence>{editor === 'new' && <ServerSetup onClose={() => setEditor(null)} onCreated={server => { setEditor(null); setInstallation(server); resource.reload() }} />}</DialogPresence>
+    <DialogPresence>{editor && editor !== 'new' && <ServerEdit key={editor.id} server={editor} onClose={() => setEditor(null)} onSaved={() => { setEditor(null); resource.reload() }} />}</DialogPresence>
+    <DialogPresence>{deleting && <Confirm title={`删除「${deleting.name}」？`} busy={action.busy} error={action.error} onClose={() => setDeleting(null)} onConfirm={() => void action.run(() => api(`/api/servers/${deleting.id}`, 'DELETE'), () => { setDeleting(null); resource.reload() })}>此服务器将从面板和订阅中移除，历史流量仍会保留。设备在线时会先停止代理与诊断服务、清除本机凭证，确认后再删除；过程可能需要片刻。设备离线时仅移除面板记录，本地服务仍需手动停用。</Confirm>}</DialogPresence>
+    <DialogPresence>{installation && <ServerEnrollment key={installation.id} server={installation} created onClose={() => setInstallation(null)} />}</DialogPresence>
   </>
 }

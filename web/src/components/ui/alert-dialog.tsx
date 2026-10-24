@@ -1,7 +1,7 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 import { AlertDialog as AlertDialogPrimitive } from "radix-ui"
-import { AnimatePresence, m } from "motion/react"
+import { AnimatePresence, m, useReducedMotion } from "motion/react"
 
 import { dialogMotion, fadeMotion } from "@/lib/motion"
 import { createPresence } from "@/components/ui/presence"
@@ -41,18 +41,30 @@ function AlertDialogPortal({
   )
 }
 
+// A closing backdrop lets clicks through while it fades. Radix keeps an inline
+// `pointer-events: auto` on it, so the closed state overrides with !important.
 function AlertDialogOverlay({
   className,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Overlay>) {
+  const reduce = useReducedMotion()
   return (
     <AlertDialogPrimitive.Overlay data-slot="alert-dialog-overlay" forceMount asChild {...props}>
       <m.div
         {...fadeMotion}
-        className={cn("bg-black/10 supports-backdrop-filter:backdrop-blur-xs fixed inset-0 z-50", className)}
+        exit={reduce ? undefined : fadeMotion.exit}
+        className={cn("bg-black/10 supports-backdrop-filter:backdrop-blur-xs fixed inset-0 z-50 data-[state=closed]:pointer-events-none!", className)}
       />
     </AlertDialogPrimitive.Overlay>
   )
+}
+
+// See DialogBox: a closing alert dialog is inert while its exit animation plays.
+function AlertDialogBox(props: React.ComponentProps<typeof m.div>) {
+  const open = presence.useOpen()
+  // Visitors who ask for reduced motion see the dialog close at once.
+  const reduce = useReducedMotion()
+  return <m.div {...props} exit={reduce ? undefined : props.exit} inert={!open} />
 }
 
 function AlertDialogContent({
@@ -60,14 +72,17 @@ function AlertDialogContent({
   size = "default",
   children,
   onCloseAutoFocus,
+  onExitComplete,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Content> & {
   size?: "default" | "sm"
+  /** Called once the closing animation has finished and the dialog has left the page. */
+  onExitComplete?: () => void
 }) {
   const open = presence.useOpen()
   const returnFocus = useReturnFocus(open, onCloseAutoFocus)
   return (
-    <AnimatePresence>
+    <AnimatePresence onExitComplete={onExitComplete}>
       {open && (
         <AlertDialogPortal forceMount>
           <AlertDialogOverlay />
@@ -79,7 +94,7 @@ function AlertDialogContent({
             onCloseAutoFocus={returnFocus}
             {...props}
           >
-            <m.div
+            <AlertDialogBox
               {...dialogMotion}
               className={cn(
                 "bg-popover text-popover-foreground ring-foreground/10 gap-4 rounded-xl p-4 ring-1 shadow-lg data-[size=default]:max-w-xs data-[size=sm]:max-w-xs data-[size=default]:sm:max-w-sm group/alert-dialog-content fixed top-1/2 left-1/2 z-50 grid w-full -translate-x-1/2 -translate-y-1/2 outline-none",
@@ -87,7 +102,7 @@ function AlertDialogContent({
               )}
             >
               {children}
-            </m.div>
+            </AlertDialogBox>
           </AlertDialogPrimitive.Content>
         </AlertDialogPortal>
       )}

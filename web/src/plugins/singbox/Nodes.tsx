@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
-import { Confirm, ErrorNotice, Field, FormDialog, PageHeader, Refresh, RefreshNotice, Stat } from '../../components'
+import { Confirm, ErrorNotice, Field, FormDialog, PageHeader, Refresh, RefreshNotice, Stat, DialogPresence } from '../../components'
 import { bytes } from '../../format'
 import { resourceWriteError, useAction, useRefreshNotice, useResource, useResourceGroup } from '../../hooks'
 import type { Node, PluginServer, Usage } from '../../types'
@@ -255,11 +255,11 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
         <Sources createRequest={sourceCreate} migrated={migrated} onCatalogChange={refresh} />
       </>}
     </div>
-    {showFlatDetail && selected && <ProxyResourceDetail key={`${selected.kind}-${selected.id}`} selected={selected} onClose={closeDetail} onChanged={refresh}
+    <DialogPresence>{showFlatDetail && selected && <ProxyResourceDetail key={`${selected.kind}-${selected.id}`} selected={selected} onClose={closeDetail} onChanged={refresh}
       onEdit={node => { closeDetail(); edit(node) }}
       onDelete={resource => { if (!refreshNotice.allows(writeError(resource))) return; closeDetail(); confirmDelete(resource) }}
-      onDeployment={id => { closeDetail(); setDeployment(id) }} />}
-    {editor && <FormDialog wide slot="node-editor" title={editor === 'new' ? '创建节点' : '编辑节点'} onClose={() => setEditor(null)} onSubmit={submit}
+      onDeployment={id => { closeDetail(); setDeployment(id) }} />}</DialogPresence>
+    <DialogPresence>{editor && <FormDialog wide slot="node-editor" title={editor === 'new' ? '创建节点' : '编辑节点'} onClose={() => setEditor(null)} onSubmit={submit}
       busy={action.busy} submitDisabled={Boolean(editorError)} error={editorError || action.error} submitLabel={editor === 'new' ? '创建目标节点' : '保存目标配置'}>
       <h3 className="mt-1.5 mb-4 text-sm font-semibold">基本信息</h3>
       <div className="grid gap-x-5 sm:grid-cols-2">
@@ -288,13 +288,13 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
         <h3 className="mt-1.5 mb-4 text-sm font-semibold">协议与安全</h3>
         <ProtocolFields key={editor === 'new' ? 'new' : editor.id} node={editor} />
       </fieldset>
-    </FormDialog>}
-    {deployment !== null && <NodeDeployment serverId={deployment} server={servers.data?.find(server => server.id === deployment)} onClose={() => setDeployment(null)} />}
-    {deleting && <Confirm title={`删除「${deleting.name}」？`} busy={action.busy} confirmDisabled={Boolean(deletingError)} error={deletingError || action.error}
+    </FormDialog>}</DialogPresence>
+    <DialogPresence>{deployment !== null && <NodeDeployment serverId={deployment} server={servers.data?.find(server => server.id === deployment)} onClose={() => setDeployment(null)} />}</DialogPresence>
+    <DialogPresence>{deleting && <Confirm title={`删除「${deleting.name}」？`} busy={action.busy} confirmDisabled={Boolean(deletingError)} error={deletingError || action.error}
       onClose={() => setDeleting(null)} onConfirm={remove}>
       {deleting.kind === 'chain'
         ? '请先从策略组移除此链路。删除会同时停用专用入口和内部连接，保留历史流量与版本证据；设备应用新配置后停止监听。'
         : '此节点及其授权将从订阅中移除，历史流量会保留。被链路引用的节点不能直接删除。设备应用新配置后，代理入口停止监听。'}
-    </Confirm>}
+    </Confirm>}</DialogPresence>
   </div>
 }

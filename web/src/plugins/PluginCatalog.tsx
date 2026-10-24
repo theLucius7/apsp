@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Badge, CopyButton, Empty, ErrorNotice, Field, Loading, Modal, PageHeader, Refresh } from '../components'
+import { Badge, CopyButton, Empty, ErrorNotice, Field, Loading, Modal, PageHeader, Refresh, DialogPresence } from '../components'
 import { bytes, navigate } from '../format'
 import { useResource } from '../hooks'
 import { pluginCatalog, pluginServerPath } from './catalog'
@@ -73,6 +73,6 @@ export default function PluginCatalog() {
     </div>
     <Panel aria-label="基础组件"><PanelHeader><PanelTitle>服务器 Agent</PanelTitle><Badge>基础组件，不是插件</Badge></PanelHeader><div className="p-4"><p className="text-foreground text-sm leading-relaxed">采集服务器状态，接收面板配置，并管理服务器上的插件。接入或升级请在具体服务器页面操作。</p><Packages item={catalog.agent} unavailable={unavailable} /><a className={buttonVariants({ variant: 'ghost', size: 'sm' })} href="#/servers">管理服务器接入 <ArrowRightIcon className="size-3.5" aria-hidden="true" /></a></div></Panel>
     {!!catalog.others.length && <Panel><PanelHeader><PanelTitle>其他分发组件</PanelTitle></PanelHeader><div className="p-4"><p className="text-muted-foreground mt-3 text-xs leading-relaxed">这些组件尚未登记插件介绍，仅展示下载包信息，不提供启用或执行入口。</p>{catalog.others.map(item => <div data-slot="catalog-unknown" key={item.id} className="mt-5 wrap-anywhere"><h3 className="text-sm font-semibold">{item.id}</h3><Packages item={item} unavailable={unavailable} /></div>)}</div></Panel>}
-    {selected && <SelectServer key={selected.id} plugin={selected} onClose={() => setSelected(null)} />}
+    <DialogPresence>{selected && <SelectServer key={selected.id} plugin={selected} onClose={() => setSelected(null)} />}</DialogPresence>
   </>
 }

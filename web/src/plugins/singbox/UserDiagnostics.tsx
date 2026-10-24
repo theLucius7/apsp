@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../api'
-import { Badge, ErrorNotice, Field, Loading, Refresh } from '../../components'
+import { Badge, ErrorNotice, Field, Loading, Refresh, DialogPresence } from '../../components'
 import { bytes, time } from '../../format'
 import { resourceWriteError, useAction, useResource } from '../../hooks'
 import OperationReview from './OperationReview'
@@ -68,5 +68,5 @@ export default function UserDiagnostics({ userId, userError, onChanged }: { user
       {template.data?.definition_redacted && revealedRevision === null && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">模板敏感字段已脱敏。{template.data.credential_access_reason} <Button variant="ghost" size="sm" disabled={action.busy || Boolean(userError())} onClick={() => void action.run(() => api<Template>(`/api/plugins/sing-box/users/${userId}/client-template?reveal=true`), value => { setDefinition(JSON.stringify(value.template?.definition ?? {selection_groups: [], dns: null, route: null}, null, 2)); setRevealedRevision(value.template?.revision ?? 0); setDraftDirty(true) })}>再次验证并读取完整模板</Button></p>}
       <Field label="sing-box 1.14.2 模板"><Textarea rows={12} value={definition} disabled={Boolean(template.data?.definition_redacted && revealedRevision === null)} onChange={event => { setDraftDirty(true); setDefinition(event.target.value) }} spellCheck={false} /></Field><p className="text-muted-foreground mt-3 text-xs leading-relaxed">配置 selection_groups、dns 与 route。选择组成员使用授权出站标签，例如 node-节点编号；保存核对授权引用。订阅生成还会重新核对套餐、部署及当前可用节点，失败保留草稿与原字段。</p><Button variant="outline" disabled={action.busy || Boolean(userError() || resourceWriteError(template)) || Boolean(template.data?.definition_redacted && revealedRevision === null)} onClick={saveTemplate}>保存模板并核对授权引用</Button>
     </details>
-  </div>{operation && <OperationReview request={operation} onClose={() => setOperation(null)} onApplied={changed} />}</Panel>
+  </div><DialogPresence>{operation && <OperationReview request={operation} onClose={() => setOperation(null)} onApplied={changed} />}</DialogPresence></Panel>
 }

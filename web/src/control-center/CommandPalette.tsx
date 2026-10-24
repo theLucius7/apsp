@@ -24,7 +24,8 @@ const taskKinds = new Set(['diagnostic-task', 'test-plan', 'test-run', 'command-
 // Widgets that take text, including the remote terminal: typing "/" there stays input.
 const typing = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || Boolean(target.closest('[role=textbox], [role=searchbox], [role=combobox]')))
 // Another dialog owns the keyboard, and opening over it could leave its form behind.
-const otherDialogOpen = () => Boolean(document.querySelector('[role=dialog]:not([data-slot=command-palette]), [role=alertdialog]'))
+// A dialog that is animating closed is inert and no longer counts as open.
+const otherDialogOpen = () => Boolean(document.querySelector('[role=dialog]:not([data-slot=command-palette]):not([inert]), [role=alertdialog]:not([inert])'))
 
 /**
  * Keyboard-first jump list for the administrator console: permitted pages,

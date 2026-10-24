@@ -25,13 +25,13 @@ export default function Reauthentication() {
       requests.current = []
     }
   }, [])
-  if (!pending.length) return null
   const close = () => {
     for (const item of requests.current) item.reject(new Error('已取消再次验证，操作尚未提交。'))
     requests.current = []
     setPending([]); setPassword(''); setCode(''); setError('')
   }
-  return <Dialog open onOpenChange={open => { if (!open && !busy) close() }}>
+  // Stays mounted so the dialog can animate closed once the requests are settled.
+  return <Dialog open={pending.length > 0} onOpenChange={open => { if (!open && !busy) close() }}>
     <DialogContent showCloseButton={false} onInteractOutside={event => event.preventDefault()} onEscapeKeyDown={event => { if (busy) event.preventDefault() }} className="z-[60] sm:max-w-md">
       <DialogHeader>
         <DialogTitle>再次验证身份</DialogTitle>

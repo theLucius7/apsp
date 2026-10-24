@@ -27,6 +27,8 @@ try {
     const page = await browser.newPage({ viewport: { width, height: 1000 } })
     page.setDefaultTimeout(8000)
     await page.clock.install()
+    // Dialogs finish closing on animation frames, which the page clock holds here; with reduced motion they close at once.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     const errors = [], writes = [], receipts = new Map(), jobs = new Map()
     const servers = [1, 2].map(id => ({ id, name: `受管服务器 ${id}`, enabled: true, online: false, agent_supported: true, read_only: false }))
     const nodes = [1, 2].map(id => ({ id, name: `受管监听 ${id}`, server_id: id, protocol: 'vless-reality', enabled: true, public_host: `managed${id}.example.com`, sni: 'www.example.com', port: 20000 + id }))

@@ -8,7 +8,7 @@ import SubscriptionDialog from './SubscriptionDialog'
 import type { SubscriptionFormat } from './SubscriptionDialog'
 import type { ProxyResource } from './resourceTypes'
 import { api } from '../../api'
-import { Badge, Confirm, Empty, ErrorNotice, Field, FormDialog, Loading, Modal, PageHeader, Refresh, Stat } from '../../components'
+import { Badge, Confirm, Empty, ErrorNotice, Field, FormDialog, Loading, Modal, PageHeader, Refresh, Stat, DialogPresence } from '../../components'
 import { bytes, totalBytes } from '../../format'
 import { resourceWriteError, useAction, useResource } from '../../hooks'
 import type { Access, Node, Usage, ProxyUser } from '../../types'
@@ -193,15 +193,15 @@ export default function ProxyUsers() {
         </TableRow>)}</TableBody>
       </Table></div>
     </Panel>}
-    {editor && <FormDialog title={editor === 'new' ? '创建代理用户' : '编辑代理用户'} onClose={() => setEditor(null)} onSubmit={submit} busy={action.busy}
+    <DialogPresence>{editor && <FormDialog title={editor === 'new' ? '创建代理用户' : '编辑代理用户'} onClose={() => setEditor(null)} onSubmit={submit} busy={action.busy}
       submitDisabled={Boolean(editorError)} error={editorError || action.error} submitLabel={editor === 'new' ? '创建代理用户' : '保存修改'}>
       <Field label="代理用户名称"><Input name="name" required maxLength={128} defaultValue={editor === 'new' ? '' : editor.name} placeholder="为使用者设置一个名称" autoComplete="off" /></Field>
-    </FormDialog>}
-    {deleting && <Confirm title={`删除「${deleting.name}」？`} busy={action.busy} confirmDisabled={Boolean(deletingError)} error={deletingError || action.error}
+    </FormDialog>}</DialogPresence>
+    <DialogPresence>{deleting && <Confirm title={`删除「${deleting.name}」？`} busy={action.busy} confirmDisabled={Boolean(deletingError)} error={deletingError || action.error}
       onClose={() => setDeleting(null)} onConfirm={remove}>
       此代理用户的订阅链接将失效，全部节点授权会被撤销。历史用量保留，受管设备应用新配置后停止旧授权；已下载的外部凭据由提供方控制。
-    </Confirm>}
-    {resetting && <Modal title={`重置「${resetting.name}」的订阅链接？`} busy={action.busy} onClose={() => setResetting(null)}>
+    </Confirm>}</DialogPresence>
+    <DialogPresence>{resetting && <Modal title={`重置「${resetting.name}」的订阅链接？`} busy={action.busy} onClose={() => setResetting(null)}>
       <div data-slot="modal-body" className="p-4">
         <ErrorNotice message={resettingError || action.error} />
         <p className="text-muted-foreground text-sm leading-relaxed">旧链接将立即失效，代理用户需要在客户端换成新链接。现有节点连接凭据和授权保持不变，已下载的配置仍可使用。</p>
@@ -210,8 +210,8 @@ export default function ProxyUsers() {
         <Button variant="outline" disabled={action.busy} onClick={() => setResetting(null)}>取消</Button>
         <Button variant="destructive" disabled={action.busy || Boolean(resettingError)} onClick={reset}>{action.busy ? '正在重置…' : '确认重置'}</Button>
       </footer>
-    </Modal>}
-    {subscription && <SubscriptionDialog user={subscription} format={format} onFormatChange={setFormat} onClose={() => setSubscription(null)}
-      onReset={() => { if (userError(subscription.id)) return; action.clearError(); setResetting(subscription); setSubscription(null) }} />}
+    </Modal>}</DialogPresence>
+    <DialogPresence>{subscription && <SubscriptionDialog user={subscription} format={format} onFormatChange={setFormat} onClose={() => setSubscription(null)}
+      onReset={() => { if (userError(subscription.id)) return; action.clearError(); setResetting(subscription); setSubscription(null) }} />}</DialogPresence>
   </>
 }

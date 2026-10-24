@@ -57,6 +57,8 @@ try {
     const finish = (path, fail = false) => { const gate = gates.get(path); gates.delete(path); gate.fail = fail; gate.release() }
     page.on('pageerror', error => errors.push(error.message))
     await page.clock.install({ time: new Date('2026-10-03T00:00:00Z') })
+    // Dialogs finish closing on animation frames, which the page clock holds here; with reduced motion they close at once.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.clock.pauseAt(new Date('2026-10-03T00:00:00Z'))
     await page.route('**/*', async route => {
       const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method()

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
-import { CopyField, ErrorNotice, Field, FormDialog, Loading, Modal, Refresh } from '../../components'
+import { CopyField, ErrorNotice, Field, FormDialog, Loading, Modal, Refresh, DialogPresence } from '../../components'
 import { time } from '../../format'
 import { resourceWriteError, useAction, useResource } from '../../hooks'
 import { validatedSnapshot } from './groupTypes'
@@ -48,11 +48,11 @@ export default function UserPasskeyAccess({ id, userError, refreshRevision }: { 
         <Button variant={reset ? 'destructive' : 'default'} size="sm" disabled={action.busy || Boolean(writeError())} onClick={choose}>{reset ? '重置用户 Passkey' : '生成开通链接'}</Button>
       </>}
     </div>
-    {editing && <FormDialog title={editing.reset ? '重置用户 Passkey？' : '生成用户开通链接'} busy={action.busy} submitDisabled={Boolean(writeError(editing.access))} error={writeError(editing.access) || action.error} onClose={() => setEditing(undefined)} onSubmit={submit} submitLabel={editing.reset ? '确认重置并生成' : '验证并生成'}>
+    <DialogPresence>{editing && <FormDialog title={editing.reset ? '重置用户 Passkey？' : '生成用户开通链接'} busy={action.busy} submitDisabled={Boolean(writeError(editing.access))} error={writeError(editing.access) || action.error} onClose={() => setEditing(undefined)} onSubmit={submit} submitLabel={editing.reset ? '确认重置并生成' : '验证并生成'}>
       <p>{editing.reset ? '原有 Passkey 和用户登录会话将立即失效，用户需要通过新链接重新开通。订阅、授权和流量保持不变。' : '开通链接十五分钟内有效，只能使用一次；重新生成会使之前的链接失效。请仅发送给该代理用户。'}</p>
       <Field label="管理员密码"><Input name="password" type="password" required maxLength={1024} autoComplete="current-password" /></Field>
       <Field label="二步验证码" hint="已启用时必填，请使用尚未用于登录的验证码。"><Input name="totp_code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" placeholder="未启用时留空" /></Field>
-    </FormDialog>}
-    {invitation && <Modal title="用户开通链接" onClose={() => setInvitation(undefined)}><div data-slot="modal-body" className="p-4"><p>有效至 {time(invitation.expires_at)}，只能使用一次。关闭后不会再次显示完整链接。</p><CopyField text={invitation.url} label="复制开通链接" /><p className="text-muted-foreground mt-3 text-xs leading-relaxed">请将此链接私下交给该用户。它用于绑定 Passkey，不是代理订阅地址。</p></div></Modal>}
+    </FormDialog>}</DialogPresence>
+    <DialogPresence>{invitation && <Modal title="用户开通链接" onClose={() => setInvitation(undefined)}><div data-slot="modal-body" className="p-4"><p>有效至 {time(invitation.expires_at)}，只能使用一次。关闭后不会再次显示完整链接。</p><CopyField text={invitation.url} label="复制开通链接" /><p className="text-muted-foreground mt-3 text-xs leading-relaxed">请将此链接私下交给该用户。它用于绑定 Passkey，不是代理订阅地址。</p></div></Modal>}</DialogPresence>
   </Panel>
 }

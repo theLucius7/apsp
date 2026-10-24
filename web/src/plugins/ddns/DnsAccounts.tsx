@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../../api'
-import { Badge, ErrorNotice, Field, Modal } from '../../components'
+import { Badge, ErrorNotice, Field, Modal, DialogPresence } from '../../components'
 import { useAction, useResource } from '../../hooks'
 import type { DdnsServer } from './guards'
 import { providers } from './types'
@@ -41,5 +41,5 @@ export default function DnsAccounts({ servers }: { servers: DdnsServer[] }) {
     {accounts.data?.map(account => <article data-slot="ddns-rule" className="border-t py-5 first:border-t-0" key={account.id}><div className="flex flex-wrap items-center justify-between gap-4"><strong>{account.config.name} · {providers[account.config.provider]}</strong><Badge>{account.config.enabled ? '已启用' : '已停用'}</Badge></div><p className="text-muted-foreground mt-3 text-xs leading-relaxed">账号标识 {account.id} · {account.config.zone_ids.length} 个授权区域 · {account.config.server_ids.length ? `${account.config.server_ids.length} 台服务器范围` : '全服务器权限范围'} · {account.record_management_available ? '官方记录管理已接入' : account.unavailable_reason}</p><div className="flex flex-wrap gap-4"><Button variant="ghost" size="sm" disabled={action.busy || !account.config.enabled || !account.record_management_available} onClick={() => void action.run(async () => { setCheck(await api(`/api/plugins/ddns/accounts/${account.id}/check`, 'POST')); accounts.reload() })}>检查连接与区域</Button><Button variant="ghost" size="sm" disabled={!account.config.enabled || !account.record_management_available} onClick={() => setRecords(account)}>记录、传播观测与历史</Button><Button variant="ghost" size="sm" onClick={() => setEditing(account)}>编辑授权与启停</Button></div></article>)}
     {!accounts.data?.length && !accounts.loading && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">尚未登记 DNS 账号。</p>}
     {check && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{new Date(check.checked_at * 1000).toLocaleString('zh-CN')} · {check.zones.length ? check.zones.map(zone => `${zone.name ?? zone.id}：${zone.available ? '官方接口已确认' : `未确认（${zone.error_code ?? '未知'}）`}`).join('；') : '连接或授权未确认，请检查凭据与区域范围。'}</p>}
-  </div>{editing && <Editor account={editing === 'new' ? undefined : editing} servers={servers} close={() => setEditing(null)} saved={() => { setEditing(null); accounts.reload() }} />}{records && <DnsRecords account={records} close={() => setRecords(null)} />}</Panel>
+  </div><DialogPresence>{editing && <Editor account={editing === 'new' ? undefined : editing} servers={servers} close={() => setEditing(null)} saved={() => { setEditing(null); accounts.reload() }} />}</DialogPresence><DialogPresence>{records && <DnsRecords account={records} close={() => setRecords(null)} />}</DialogPresence></Panel>
 }

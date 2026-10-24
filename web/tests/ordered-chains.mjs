@@ -24,6 +24,8 @@ try {
   const origin = `http://127.0.0.1:${server.address().port}`, prefix = '/api/plugins/sing-box'
   for (const width of [1440, 390, 320]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } }); page.setDefaultTimeout(7000); await page.clock.install()
+    // Dialogs finish closing on animation frames, which the page clock holds here; with reduced motion they close at once.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     const errors = [], writes = [], receipts = new Map(), mutations = new Map()
     page.on('pageerror', error => errors.push(error.message))
     const servers = [1, 2, 3].map(id => ({ id, name: `服务器 ${id}`, enabled: true, online: false, read_only: false, source: 'administrator', agent_supported: true }))

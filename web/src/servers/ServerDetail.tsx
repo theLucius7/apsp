@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { AgentSettings } from './AgentSettings'
 import AgentTasks from './AgentTasks'
-import { Badge, ErrorNotice, Loading, PageHeader, Refresh, Stat } from '../components'
+import { Badge, ErrorNotice, Loading, PageHeader, Refresh, Stat, DialogPresence } from '../components'
 import { bytes, navigate, percent, time, uptime } from '../format'
 import { useI18n } from '../i18n'
 import { useResource } from '../hooks'
@@ -67,8 +67,8 @@ export default function ServerDetail({ id, section = 'overview' }: { id: number;
       <PluginSettings key={`${id}-${pluginRevision}`} serverId={id} />
       <ServerPlugins key={`business-${id}-${pluginRevision}`} server={entry} />
     </>}
-    {editing && <ServerEdit key={id} server={entry} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); server.reload() }} />}
-    {installing && <ServerEnrollment key={id} server={entry} onClose={() => { setInstalling(false); server.reload() }} />}
+    <DialogPresence>{editing && <ServerEdit key={id} server={entry} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); server.reload() }} />}</DialogPresence>
+    <DialogPresence>{installing && <ServerEnrollment key={id} server={entry} onClose={() => { setInstalling(false); server.reload() }} />}</DialogPresence>
   </>
 }
 
