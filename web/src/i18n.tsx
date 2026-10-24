@@ -31,6 +31,7 @@ const english: Record<string, string> = {
   '节点验机': 'Node check', 'TCP 诊断': 'TCP diagnostics', '服务器导航': 'Server navigation', '带此服务器打开': 'Open with this server',
   '返回服务器列表': 'Back to server list', '服务器启用': 'Server enablement', '看板访问': 'Dashboard access',
   '告警开关与阈值': 'Alert switches and thresholds', '查看告警事件': 'View alert events', '启用插件': 'Enable plugins',
+  '告警开关、阈值和 Telegram 通知只有所有者可以查看和修改。': 'Only the owner can view and change alert switches, thresholds and Telegram notifications.',
   '各服务器的 sing-box 状态': 'sing-box status by server', '前往代理服务': 'Go to proxy service', '下一步：按需启用插件': 'Next: enable plugins as needed',
   '这个页面不存在': 'This page does not exist', '链接可能已失效。从左侧导航选择一个页面，或回到服务器列表。': 'The link may be out of date. Pick a page from the navigation or go back to the server list.',
   '这台服务器的运行指标、系统信息和网络接口。': 'Runtime metrics, system information and network interfaces of this server.',
