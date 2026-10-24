@@ -124,4 +124,12 @@
 - [ADR 0087：收窄定位为代理网络控制平面：功能分级、用户门户与费用续费账本](0087-narrow-positioning-proxy-network.md)：核心、支撑、可选插件、降级与冻结清单，Xboard 迁移边界，新功能准入规则
 - [ADR 0088：界面重构：shadcn/ui Nova、Tailwind CSS v4 与统一交互库](0088-ui-component-system.md)：组件、设计变量、图标、动画、分栏、拖拽与界面状态的统一约定
 
-- [0095：Nexus 运行接管与保留凭据](0095-nexus-runtime-takeover.md)
+## Nexus 与 CDT 迁移（2026-10-24）
+
+- [ADR 0089：Nexus 成员业务原生接入](0089-nexus-member-commerce.md)
+- [ADR 0090：Wallos 费用订阅配置原生接入](0090-recurring-expense-subscriptions.md)
+- [ADR 0091：成员账号与邮件](0091-member-account-and-mail.md)
+- [ADR 0092：Nexus 实际迁移与旧订阅兼容](0092-nexus-live-cutover.md)
+- [ADR 0093：原 CDT 脚本行为的原生守护模式](0093-cdt-script-guard.md)
+- [ADR 0094：Nexus 节点信息导入与运行时接管分开](0094-nexus-node-inventory.md)
+- [ADR 0095：保留客户端身份的 Nexus 运行接管](0095-nexus-runtime-takeover.md)：按主机准备、候选、启动、暂停与撤销准备；SS 2022 重写保留原密钥，旧倍率计量回执

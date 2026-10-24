@@ -134,3 +134,113 @@ fn old_reality_short_ids_and_hysteria_uuid_are_accepted_without_rotation() {
     node.users = vec![access];
     assert!(compile_server(&[node]).is_ok());
 }
+
+#[test]
+fn preserved_vless_flow_must_match_the_model_that_regenerates_users() {
+    let mut node = fixture(1).node;
+    node.protocol_config = ProtocolConfig::VlessReality;
+    node.sni = "handshake.example.invalid".into();
+    node.private_key = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE".into();
+    node.public_key = "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI".into();
+    node.short_id = "aabbccddeeff".into();
+    node.users = vec![nexus_access(7, Uuid::from_u128(7), &node.protocol_config)];
+    let mut configuration: Value =
+        serde_json::from_str(&compile_server(std::slice::from_ref(&node)).unwrap()).unwrap();
+    configuration
+        .as_object_mut()
+        .unwrap()
+        .remove("experimental");
+    configuration["outbounds"] = json!([{"tag":"direct","type":"direct"}]);
+    configuration["route"] = json!({"final":"direct"});
+    assert_eq!(
+        configuration["inbounds"][0]["users"][0]["flow"],
+        "xtls-rprx-vision"
+    );
+    let preserved = PreservedNode {
+        node: node.clone(),
+        configuration: configuration.clone(),
+    };
+    assert!(compile_preserved_server(std::slice::from_ref(&preserved)).is_ok());
+    // A legacy listener without Vision must not be published with Vision users.
+    let mut plain = preserved;
+    plain.configuration["inbounds"][0]["users"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("flow");
+    assert!(compile_preserved_server(std::slice::from_ref(&plain)).is_err());
+    plain.node.settings.reality.flow = apsp_compiler::RealityFlow::None;
+    let text = compile_preserved_server(&[plain]).unwrap();
+    let result: Value = serde_json::from_str(&text).unwrap();
+    assert!(result["inbounds"][0]["users"][0].get("flow").is_none());
+}
+
+/// The snapshot `tools/nexus_runtime_snapshot.py` builds from the legacy
+/// builder's own TEST_ONLY output must compile without rotating any identity.
+#[test]
+fn legacy_builder_snapshot_compiles_with_original_identities() {
+    let text = include_str!("../../../tools/nexus-legacy-export/fixture-snapshot.json");
+    let snapshot: Value = serde_json::from_str(text).unwrap();
+    let identity = Uuid::parse_str("12345678-1234-4234-8234-123456789abc").unwrap();
+    let mut inputs = Vec::new();
+    for entry in snapshot["nodes"].as_array().unwrap() {
+        let mut preserved: PreservedNode =
+            serde_json::from_value(entry["preserved"].clone()).unwrap();
+        let access = nexus_access(9, identity, &preserved.node.protocol_config);
+        preserved.node.users.push(access);
+        inputs.push(preserved);
+    }
+    let result: Value = serde_json::from_str(&compile_preserved_server(&inputs).unwrap()).unwrap();
+    let ss = &result["inbounds"][0];
+    assert_eq!(ss["listen_port"], 51002);
+    assert_eq!(ss["password"], STANDARD.encode(b"0123456789abcdef"));
+    assert_eq!(
+        ss["users"],
+        json!([{"name":"u9_n43","password":STANDARD.encode(b"12345678-1234-42")}])
+    );
+    let vless = &result["inbounds"][1];
+    assert_eq!(
+        vless["users"],
+        json!([{"name":"u9_n44","uuid":identity,"flow":"xtls-rprx-vision"}])
+    );
+    assert_eq!(vless["tls"]["reality"]["short_id"], json!(["aabbccddeeff"]));
+    assert_eq!(vless["multiplex"], json!({"enabled":true,"padding":true}));
+    let outbounds: Vec<_> = result["outbounds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|outbound| outbound["tag"].as_str().unwrap())
+        .collect();
+    assert_eq!(outbounds, ["n43-direct", "n44-direct", "n44-landing"]);
+    let rules = result["route"]["rules"].as_array().unwrap();
+    assert!(
+        rules
+            .iter()
+            .all(|rule| rule.get("outbound") != Some(&json!("block")))
+    );
+    assert!(rules.iter().any(|rule| rule["outbound"] == "n44-landing"
+        && rule["rules"][1]["domain_suffix"] == json!(["landing.example.invalid"])));
+}
+
+#[test]
+fn identical_host_route_options_are_kept_and_differences_refused() {
+    let mut first = fixture(1);
+    let mut second = fixture(2);
+    for input in [&mut first, &mut second] {
+        input.configuration["route"]["default_interface"] = json!("eth0");
+        input.configuration["route"]["default_domain_resolver"] = json!("local");
+        input.configuration["dns"] = json!({"servers":[{"type":"local","tag":"local"}]});
+    }
+    let result: Value =
+        serde_json::from_str(&compile_preserved_server(&[first.clone(), second.clone()]).unwrap())
+            .unwrap();
+    assert_eq!(result["route"]["default_interface"], "eth0");
+    assert_eq!(result["route"]["default_domain_resolver"], "local");
+    assert!(result["route"].get("final").is_none());
+    second.configuration["route"]
+        .as_object_mut()
+        .unwrap()
+        .remove("default_interface");
+    assert!(compile_preserved_server(&[first.clone(), second]).is_err());
+    first.configuration["route"]["domain_strategy"] = json!("ipv4_only");
+    assert!(compile_preserved_server(&[first]).is_err());
+}

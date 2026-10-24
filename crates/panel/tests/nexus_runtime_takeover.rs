@@ -256,3 +256,84 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     assert!(!diff.contains(&STANDARD.encode(b"0123456789abcdef")));
     Ok(())
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn unactivated_preparation_can_be_discarded_and_generic_grants_are_refused(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, payload, _) = fixture(&panel).await?;
+    let preview = ok(post(&panel, &cookie, "/preview", json!({"payload":payload})).await?).await?;
+    let digest = preview["digest"].clone();
+    ok(post(
+        &panel,
+        &cookie,
+        "/prepare",
+        json!({"payload":payload,"expected_digest":digest}),
+    )
+    .await?)
+    .await?;
+    let native: i64 = sqlx::query_scalar("SELECT node_id FROM singbox_nexus_runtime_nodes")
+        .fetch_one(&pool)
+        .await?;
+    // Policy groups would mint new UUIDs; access stays on the legacy groups.
+    let policy = panel
+        .admin(
+            Method::POST,
+            "/api/plugins/sing-box/policy-groups",
+            &cookie,
+            Some(json!({"name":"TEST_ONLY policy","node_ids":[native],"chain_ids":[]})),
+        )
+        .await?;
+    assert_eq!(policy.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        post(
+            &panel,
+            &cookie,
+            &format!("/{server}/discard"),
+            json!({"expected_digest":"c".repeat(64)})
+        )
+        .await?
+        .status(),
+        StatusCode::CONFLICT
+    );
+    let discarded = ok(post(
+        &panel,
+        &cookie,
+        &format!("/{server}/discard"),
+        json!({"expected_digest":digest}),
+    )
+    .await?)
+    .await?;
+    assert_eq!(discarded["discarded_nodes"], 1);
+    let remaining: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT COUNT(*) FROM nodes),(SELECT COUNT(*) FROM singbox_nexus_runtime_hosts),(SELECT COUNT(*) FROM credential_entries WHERE name LIKE 'Nexus runtime %' AND enabled)")
+        .fetch_one(&pool).await?;
+    assert_eq!(remaining, (0, 0, 0));
+    // The same reviewed snapshot can be prepared again after the discard.
+    let again = ok(post(
+        &panel,
+        &cookie,
+        "/prepare",
+        json!({"payload":payload,"expected_digest":digest}),
+    )
+    .await?)
+    .await?;
+    assert_eq!(again["state"], "prepared");
+    // Once a host has published, its history stays and only pause applies.
+    sqlx::query("UPDATE singbox_nexus_runtime_hosts SET activated_at=1")
+        .execute(&pool)
+        .await?;
+    assert_eq!(
+        post(
+            &panel,
+            &cookie,
+            &format!("/{server}/discard"),
+            json!({"expected_digest":digest})
+        )
+        .await?
+        .status(),
+        StatusCode::CONFLICT
+    );
+    Ok(())
+}

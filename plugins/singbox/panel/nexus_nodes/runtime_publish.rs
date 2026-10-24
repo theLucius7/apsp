@@ -113,6 +113,16 @@ pub(crate) async fn publish(
 
 /// Group changes must also dirty migrated hosts even when eligibility stays true.
 pub(crate) async fn membership(state: &AppState) -> anyhow::Result<()> {
+    // Every publisher tick calls this; avoid the entitlement lock until a host
+    // has actually been handed over.
+    let active: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM singbox_nexus_runtime_hosts WHERE state='active')",
+    )
+    .fetch_one(&state.pool)
+    .await?;
+    if !active {
+        return Ok(());
+    }
     let mut tx = state.pool.begin().await?;
     crate::entitlements::lock(&mut tx).await?;
     let hosts: Vec<i64> = sqlx::query_scalar(

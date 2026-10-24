@@ -81,6 +81,14 @@ fn rewrite(value: &mut Value, tags: &BTreeMap<String, String>) {
     }
 }
 
+/// Route options that describe the host rather than one listener. Their values
+/// may reference DNS server tags, which are kept unchanged with the shared DNS.
+const HOST_ROUTE_OPTIONS: [&str; 3] = [
+    "default_domain_resolver",
+    "default_interface",
+    "auto_detect_interface",
+];
+
 /// Compilation never rotates credentials or falls back to a direct outbound.
 pub fn compile_preserved_server(inputs: &[PreservedNode]) -> Result<String, CompileError> {
     let models: Vec<_> = inputs.iter().map(|input| input.node.clone()).collect();
@@ -92,6 +100,9 @@ pub fn compile_preserved_server(inputs: &[PreservedNode]) -> Result<String, Comp
     let mut rules = Vec::new();
     let mut stats = BTreeSet::new();
     let mut common_dns: Option<Value> = None;
+    // Host-wide route options (outbound interface and default resolver) apply
+    // to every listener, so all merged nodes must carry the same values.
+    let mut common_route: Option<serde_json::Map<String, Value>> = None;
     for input in inputs {
         let node = &input.node;
         let config = input
@@ -154,20 +165,48 @@ pub fn compile_preserved_server(inputs: &[PreservedNode]) -> Result<String, Comp
                     ));
                 }
             }
+            // Users are regenerated from the model, so a flow mismatch would
+            // silently break every issued client link.
+            let flow = node.settings.reality.flow.native();
+            if inbound["users"].as_array().is_some_and(|users| {
+                users
+                    .iter()
+                    .any(|user| user["flow"].as_str().unwrap_or_default() != flow)
+            }) {
+                return Err(fail(
+                    node,
+                    "preserved VLESS flow differs from the node model",
+                ));
+            }
         }
         let route = config
             .get("route")
             .and_then(Value::as_object)
             .ok_or_else(|| fail(node, "missing route"))?;
-        if route
-            .keys()
-            .any(|key| !matches!(key.as_str(), "rules" | "final"))
-        {
+        if route.keys().any(|key| {
+            !matches!(key.as_str(), "rules" | "final")
+                && !HOST_ROUTE_OPTIONS.contains(&key.as_str())
+        }) {
             return Err(fail(
                 node,
                 "global route settings need explicit reconciliation",
             ));
         }
+        let options: serde_json::Map<_, _> = route
+            .iter()
+            .filter(|(key, _)| HOST_ROUTE_OPTIONS.contains(&key.as_str()))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        if common_route
+            .as_ref()
+            .is_some_and(|previous| previous != &options)
+        {
+            return Err(fail(
+                node,
+                "different host route options require explicit reconciliation before merging",
+            ));
+        }
+        common_route = Some(options);
         let original = config
             .get("outbounds")
             .and_then(Value::as_array)
@@ -286,7 +325,9 @@ pub fn compile_preserved_server(inputs: &[PreservedNode]) -> Result<String, Comp
             json!({"inbound":[inbound_tag],"action":"route","outbound":tags[final_tag]})
         });
     }
-    let mut result = json!({"log":{"level":"warn","timestamp":true},"inbounds":inbounds,"outbounds":outbounds,"route":{"rules":rules},
+    let mut route = common_route.unwrap_or_default();
+    route.insert("rules".into(), json!(rules));
+    let mut result = json!({"log":{"level":"warn","timestamp":true},"inbounds":inbounds,"outbounds":outbounds,"route":route,
         "experimental":{"v2ray_api":{"listen":"127.0.0.1:18085","stats":{"enabled":true,"users":stats}}}});
     if let Some(dns) = common_dns {
         result["dns"] = dns;

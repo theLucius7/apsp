@@ -24,6 +24,7 @@ pub(super) fn router() -> Router<AppState> {
         .route("/nexus-nodes/runtime/{id}/candidate", post(candidate))
         .route("/nexus-nodes/runtime/{id}/activate", post(activate))
         .route("/nexus-nodes/runtime/{id}/pause", post(pause))
+        .route("/nexus-nodes/runtime/{id}/discard", post(discard))
 }
 
 #[derive(Deserialize)]
@@ -248,5 +249,73 @@ async fn pause(
     tx.commit().await?;
     Ok(Json(
         json!({"server_id":server,"state":"paused","restart_legacy_only_after_agent_stopped":true}),
+    ))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Discard {
+    expected_digest: String,
+}
+
+/// Remove a reviewed but never activated preparation so a corrected snapshot
+/// can be prepared. Hosts that ever published keep their history and can only
+/// be paused.
+async fn discard(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server): Path<i64>,
+    Json(input): Json<Discard>,
+) -> ApiResult<Json<Value>> {
+    control_center::require_owner(&state, &headers).await?;
+    control_center::require_recent_proof(&state, &headers).await?;
+    let mut tx = state.pool.begin().await?;
+    crate::entitlements::lock(&mut tx).await?;
+    crate::business::lock_server(&mut tx, server).await?;
+    let host = sqlx::query("SELECT digest,state,activated_at,credential_id FROM singbox_nexus_runtime_hosts WHERE server_id=$1 FOR UPDATE")
+        .bind(server).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
+    if host.get::<String, _>("digest") != input.expected_digest {
+        return Err(ApiError::Conflict("运行快照已改变".into()));
+    }
+    let published: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM deployments WHERE server_id=$1 AND module='singbox')",
+    )
+    .bind(server)
+    .fetch_one(&mut *tx)
+    .await?;
+    if host.get::<String, _>("state") != "prepared"
+        || host.get::<Option<i64>, _>("activated_at").is_some()
+        || published
+    {
+        return Err(ApiError::Conflict(
+            "已启动过的接管保留发布与流量记录，只能暂停".into(),
+        ));
+    }
+    sqlx::query("SELECT set_config('apsp.nexus_runtime_write','yes',TRUE)")
+        .execute(&mut *tx)
+        .await?;
+    let nodes: Vec<i64> = sqlx::query_scalar(
+        "DELETE FROM singbox_nexus_runtime_nodes WHERE server_id=$1 RETURNING node_id",
+    )
+    .bind(server)
+    .fetch_all(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM nodes WHERE id=ANY($1)")
+        .bind(&nodes)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM singbox_nexus_runtime_hosts WHERE server_id=$1")
+        .bind(server)
+        .execute(&mut *tx)
+        .await?;
+    // The encrypted snapshot is retired, not reused by a later preparation.
+    sqlx::query("UPDATE credential_entries SET enabled=FALSE,updated_at=$2 WHERE id=$1")
+        .bind(host.get::<uuid::Uuid, _>("credential_id"))
+        .bind(now_timestamp())
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(Json(
+        json!({"server_id":server,"state":"pending_agent","discarded_nodes":nodes.len()}),
     ))
 }
