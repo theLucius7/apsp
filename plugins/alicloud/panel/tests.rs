@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+mod attached_eip;
 mod billing_cases;
 
 const KEY: &str = "TEST_ONLY_CLOUD_ID";

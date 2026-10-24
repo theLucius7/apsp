@@ -32,6 +32,7 @@ pub fn route_policy(path: &str, method: &Method) -> Option<RoutePolicy> {
                 && !path.ends_with("/preview")
                 && (path.contains("/commerce/")
                     || path.contains("/nodes")
+                    || path.contains("/nexus-nodes")
                     || path.contains("/accesses")
                     || path.contains("/external-accesses")
                     || path.contains("/subscription/reset"))));

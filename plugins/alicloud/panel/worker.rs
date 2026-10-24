@@ -78,6 +78,7 @@ pub(super) async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult
         };
         operations::snapshot_on(&mut tx, resource.id, &snapshot).await?;
         if !resource.auto_enabled
+            || snapshot.attached_eip_id.is_some()
             || !billing::exceeded(&account, apsp_protocol::now_timestamp())
             || snapshot.charge_type != "PayByTraffic"
             || snapshot.bandwidth_mbps <= resource.cap_mbps

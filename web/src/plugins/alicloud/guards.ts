@@ -1,5 +1,5 @@
 import type { Account, Operation, Overview, PowerJob, Resource } from './types'
-import { billUsable } from './types'
+import { billUsable, message } from './types'
 import { cdtGuardExceeded } from './guardUsage'
 
 export type CurrentCloud = () => Overview | undefined
@@ -38,6 +38,12 @@ export function registrationError(current: CurrentCloud, accountId: string, acco
   return !account || !revisionMatches(accountRevision, account.revision) ? changed : data.resources.length >= 32 ? '最多登记 32 个云资源。' : ''
 }
 
+export function bandwidthError(current: CurrentCloud, draft: Resource) {
+  const reason = resourceError(current, draft, { managed: true, idle: true })
+  if (reason) return reason
+  return current()!.resources.find(item => item.id === draft.id)!.snapshot?.attached_eip_id != null ? message('attached_eip_read_only') : ''
+}
+
 export function powerError(current: CurrentCloud, draft: Resource, action?: 'start' | 'stop', accountRevision?: number) {
   const reason = resourceError(current, draft, { managed: true, idle: true, power: true, accountRevision })
   if (reason || action !== 'start') return reason
@@ -57,6 +63,7 @@ export function operationError(current: CurrentCloud, draft: Operation | PowerJo
   const resource = data.resources.find(item => item.id === draft.resource_id)
   if (!latest || !resource || latest.resource_id !== draft.resource_id || latest.status !== draft.status || !states.includes(latest.status)) return changed
   if (!confirm) return ''
+  if (!power && (resource.snapshot?.attached_eip_id != null || ('target' in latest && latest.before_state.attached_eip_id != null))) return message('attached_eip_read_only')
   const account = data.accounts.find(item => item.id === resource.account_id)
   if (!account?.enabled || !revisionMatches(latest.resource_revision, resource.revision) ||
     !revisionMatches(latest.account_revision, account.revision) || latest.resource_revision !== draft.resource_revision ||

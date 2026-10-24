@@ -37,6 +37,11 @@ try {
     if (path === '/api/dashboard/access') return respond({ authenticated: true, public_dashboard: false })
     if (path === '/api/plugins/alicloud' && method === 'GET') return failRead ? respond({ error: '测试：云状态不可用' }, 503) : respond(overview)
     if (method !== 'GET') writes.push({ path, method, body })
+    if (/^\/api\/plugins\/alicloud\/resources\/resource[12]\/refresh$/.test(path) && method === 'POST') {
+      const resource = overview.resources.find(r => path.includes(`/${r.id}/`))
+      assert(resource?.snapshot.attached_eip_id)
+      return respond(resource.snapshot)
+    }
     if (path === '/api/plugins/alicloud/accounts' && method === 'POST') {
       assert.equal(body.auto_enabled, false)
       assert.equal(body.credential_id, credentialId)
@@ -225,8 +230,31 @@ try {
   assert.equal(await page.getByRole('button', { name: '调整带宽与计费' }).isDisabled(), true)
   assert.equal(await page.getByRole('button', { name: '开机', exact: true }).isDisabled(), true)
   assert.equal(await page.getByRole('button', { name: '配置自动启停' }).isDisabled(), true)
+  // Both migrated accounts can query attached EIP configuration independently.
+  failRead = false
+  const template = structuredClone(overview.resources[0]), accountTemplate = structuredClone(overview.accounts[0])
+  overview.accounts = [1, 2].map(n => ({ ...accountTemplate, id: `account${n}`, name: `测试 CDT 账号 ${n}` }))
+  overview.resources = [2000, 500].map((bandwidth, index) => ({ ...structuredClone(template), id: `resource${index + 1}`, account_id: `account${index + 1}`, name: `测试 CDT 实例 ${index + 1}`, cloud_id: `i-testonly${index + 1}`, error_code: null, snapshot: { ...snap, cloud_id: `i-testonly${index + 1}`, bandwidth_mbps: bandwidth, charge_type: 'PayByDominantTraffic', attached_eip_id: `eip-testonly${index + 1}` } }))
+  overview.operations = []; overview.power_jobs = []
+  await page.reload()
+  await page.getByText('2000 Mbps · 按主流量计费', { exact: true }).waitFor()
+  await page.getByText('500 Mbps · 按主流量计费', { exact: true }).waitFor()
+  assert.equal(await page.getByText('查询异常', { exact: true }).count(), 0)
+  const articles = page.locator('article').filter({ has: page.getByRole('button', { name: '查询当前配置', exact: true }) })
+  assert.equal(await articles.count(), 2)
+  const previousWrites = writes.length
+  for (let index = 0; index < 2; ++index) {
+    const article = articles.nth(index)
+    assert((await article.innerText()).includes(`eip-testonly${index + 1}`))
+    assert.equal(await article.getByRole('button', { name: '调整带宽与计费' }).isDisabled(), true)
+    assert.equal(await article.getByRole('button', { name: '开机', exact: true }).isEnabled(), true)
+    await Promise.all([page.waitForResponse(response => response.url().endsWith(`/resource${index + 1}/refresh`)), article.getByRole('button', { name: '查询当前配置' }).click()])
+  }
+  assert.deepEqual(writes.slice(previousWrites).map(w => w.path), ['/api/plugins/alicloud/resources/resource1/refresh', '/api/plugins/alicloud/resources/resource2/refresh'])
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  if (screenshots) await page.screenshot({ path: `${screenshots}/alicloud-eip-${width}.png`, fullPage: true })
   assert.deepEqual(errors, []); assert.deepEqual(unexpected, [])
-  results.push({ width, writes: writes.length, passed: true })
+  results.push({ width, writes: writes.length, attached_eip_accounts: 2, passed: true })
   await context.close()
  }
  console.log(JSON.stringify(results))

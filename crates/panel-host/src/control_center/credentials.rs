@@ -303,6 +303,16 @@ pub async fn store_generated(
     kind: &str,
     secret: Value,
 ) -> ApiResult<Uuid> {
+    store_generated_on(&mut *pool.acquire().await?, name, kind, secret).await
+}
+
+/// Store a credential in the caller's transaction together with its reference.
+pub async fn store_generated_on(
+    connection: &mut sqlx::PgConnection,
+    name: &str,
+    kind: &str,
+    secret: Value,
+) -> ApiResult<Uuid> {
     if name.trim().is_empty()
         || name.len() > 200
         || !["dns", "cloud", "backup", "external-api", "certificate"].contains(&kind)
@@ -313,7 +323,7 @@ pub async fn store_generated(
     let id = Uuid::new_v4();
     let (nonce, payload) = seal(&keys[&current], id, kind, 1, &secret)?;
     sqlx::query("INSERT INTO credential_entries(id,name,kind,key_id,nonce,ciphertext,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$7)")
-        .bind(id).bind(name).bind(kind).bind(current).bind(nonce.as_slice()).bind(payload).bind(now_timestamp()).execute(pool).await?;
+        .bind(id).bind(name).bind(kind).bind(current).bind(nonce.as_slice()).bind(payload).bind(now_timestamp()).execute(connection).await?;
     Ok(id)
 }
 

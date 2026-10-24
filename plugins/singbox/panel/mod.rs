@@ -17,6 +17,7 @@ pub mod host_support;
 pub mod legacy_takeover;
 pub mod mixed_conversion;
 pub mod mixed_paths;
+mod nexus_nodes;
 mod node_protocol;
 mod node_settings;
 pub mod nodes;
@@ -141,6 +142,7 @@ pub fn router() -> Router<AppState> {
         )
         .route("/usage", get(usage::summary))
         .merge(catalog::router())
+        .merge(nexus_nodes::router())
         .merge(sources::router())
         .route("/source-migration", get(source_migration::state))
         .merge(portal::router())
