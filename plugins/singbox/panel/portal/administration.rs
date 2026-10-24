@@ -103,11 +103,20 @@ pub(super) async fn invitation(
         .bind(account)
         .execute(&mut *tx)
         .await?;
+    // Recovering lost or compromised keys also retires the member password, which may be
+    // how the keys were compromised; the member sets a new one through email verification.
+    let password_cleared = input.reset
+        && sqlx::query("UPDATE singbox_members SET password_hash=NULL,legacy_login_email=NULL,version=version+1 WHERE user_id=$1 AND password_hash IS NOT NULL")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected()
+            > 0;
     let token = random_token();
     let expiry = now_timestamp() + 900;
     sqlx::query("UPDATE singbox_portal_accounts SET activation_hash=$2,activation_expires_at=$3 WHERE account_id=$1")
         .bind(account).bind(hash_token(&token)).bind(expiry).execute(&mut *tx).await?;
-    super::super::operations_workflows::event(&mut tx,Some(administrator),Some(id),"security_portal_invitation",json!({"reset_existing_keys":input.reset,"expires_at":expiry,"subscription_token_used":false})).await?;
+    super::super::operations_workflows::event(&mut tx,Some(administrator),Some(id),"security_portal_invitation",json!({"reset_existing_keys":input.reset,"password_cleared":password_cleared,"expires_at":expiry,"subscription_token_used":false})).await?;
     tx.commit().await?;
     Ok(keys::reply(
         json!({"url":format!("{}/#/plugins/sing-box/account/{account}?activate={token}",state.config.public_url),"expires_at":expiry}),

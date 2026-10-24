@@ -52,12 +52,31 @@ pub(super) async fn authorize_reference(
     state: &crate::AppState,
     headers: &axum::http::HeaderMap,
     config: &Config,
+    previous: Option<&Config>,
 ) -> ApiResult<()> {
     if let Some(id) = config.account_id {
         let account = super::dns_accounts::load(&state.pool, id).await?;
         super::dns_accounts::authorize(state, headers, &account.config, "dns:write").await?;
     }
+    // A direct credential is not bounded by a DNS account's zones and servers, so only
+    // the owner may choose one or point an existing one at another record.
+    if config.credential_id.is_some() {
+        crate::control_center::require_credential_choice(
+            state,
+            headers,
+            !previous.is_some_and(|previous| same_direct_binding(config, previous)),
+        )
+        .await?;
+    }
     Ok(())
+}
+
+fn same_direct_binding(config: &Config, previous: &Config) -> bool {
+    previous.account_id.is_none()
+        && previous.credential_id == config.credential_id
+        && previous.provider == config.provider
+        && previous.zone_id == config.zone_id
+        && previous.record_name == config.record_name
 }
 
 pub(super) fn populate(rule: &mut Rule, value: &Value) -> ApiResult<()> {
@@ -142,4 +161,55 @@ pub(super) async fn guard_reference(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(credential: Option<&str>, zone: &str, record: &str) -> Config {
+        serde_json::from_value(serde_json::json!({
+            "name": "fixture",
+            "server_id": 1,
+            "zone_id": zone,
+            "record_name": record,
+            "record_type": "A",
+            "ttl": 60,
+            "proxied": false,
+            "interval_secs": 300,
+            "enabled": true,
+            "credential_id": credential,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn direct_credential_binding_is_kept_only_for_the_same_record() {
+        let id = "00000000-0000-4000-8000-000000000001";
+        let previous = config(Some(id), "zone-a", "node.example.com");
+        assert!(same_direct_binding(
+            &config(Some(id), "zone-a", "node.example.com"),
+            &previous
+        ));
+        assert!(!same_direct_binding(
+            &config(Some(id), "zone-b", "node.example.com"),
+            &previous
+        ));
+        assert!(!same_direct_binding(
+            &config(Some(id), "zone-a", "other.example.com"),
+            &previous
+        ));
+        assert!(!same_direct_binding(
+            &config(
+                Some("00000000-0000-4000-8000-000000000002"),
+                "zone-a",
+                "node.example.com"
+            ),
+            &previous
+        ));
+        assert!(!same_direct_binding(
+            &config(Some(id), "zone-a", "node.example.com"),
+            &config(None, "zone-a", "node.example.com")
+        ));
+    }
 }

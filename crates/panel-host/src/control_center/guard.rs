@@ -357,6 +357,9 @@ pub async fn guard(State(state): State<AppState>, request: Request, next: Next) 
     if high_risk(&path, &method)
         && let Err(error) = require_recent_proof(&state, &headers).await
     {
+        // Repeated attempts from a stolen session must leave a trace.
+        let _ = sqlx::query("INSERT INTO management_audit(admin_id,token_id,action,object_path,request_diff,result,occurred_at) VALUES($1,$2,$3,$4,$5,$6,$7)")
+            .bind(actor.admin_id).bind(actor.token_id).bind(method.as_str()).bind(&path).bind(json!({"body":"[拒绝请求未读取]"})).bind(json!({"phase":"reauth-denied","success":false})).bind(now_timestamp()).execute(&state.pool).await;
         return error.into_response();
     }
     let mutation = method != Method::GET && method != Method::HEAD && method != Method::OPTIONS;

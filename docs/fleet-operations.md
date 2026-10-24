@@ -14,7 +14,7 @@
 
 ## Agent 本机授权
 
-在 `agent.toml` 所在目录创建 `fleet-policy.json`，权限设为 0600。例如允许例示服务与受管配置目录：
+在 `agent.toml` 所在目录创建 `fleet-policy.json`，属主为 root，权限设为 0600；符号链接、其他属主或组/其他用户可访问的文件会被拒绝。例如允许例示服务与受管配置目录：
 
 ```json
 {

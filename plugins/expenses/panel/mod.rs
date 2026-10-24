@@ -66,8 +66,9 @@ fn bad(message: &str) -> ApiError {
 fn conflict(message: &str) -> ApiError {
     ApiError::Conflict(message.into())
 }
+// Expense records are panel-wide, so a server-scoped administrator or token cannot use them.
 async fn actor(state: &AppState, headers: &HeaderMap, write: bool) -> ApiResult<i64> {
-    control_center::require_capability(
+    control_center::require_global(
         state,
         headers,
         if write { "cloud:write" } else { "cloud:read" },

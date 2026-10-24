@@ -118,7 +118,8 @@ async fn preview(
                 "目标域名或提供方记录已由未选择的规则维护".into(),
             ));
         }
-        super::credentials::authorize_reference(&state, &headers, &config).await?;
+        super::credentials::authorize_reference(&state, &headers, &config, Some(&rule.config))
+            .await?;
         super::credentials::validate_reference(&state.pool, &config).await?;
         let candidate = target.select(&config, rule.last_ip.as_deref(), now);
         items.push(json!({"id":rule.id,"name":rule.config.name,"revision":rule.revision,
@@ -195,7 +196,8 @@ async fn apply(
             .unwrap_or_else(|| rule.config.clone());
         destination.server_id = target_id;
         destination.normalize()?;
-        super::credentials::authorize_reference(&state, &headers, &destination).await?;
+        super::credentials::authorize_reference(&state, &headers, &destination, Some(&rule.config))
+            .await?;
         rules.push((rule, destination));
     }
     let now = apsp_protocol::now_timestamp();

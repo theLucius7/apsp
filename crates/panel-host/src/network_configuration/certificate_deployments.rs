@@ -73,6 +73,9 @@ async fn preview(
         return Err(ApiError::Conflict("目标证书已到期".into()));
     }
     let secret = if let Some(secret) = input.key_credential_id {
+        // Any certificate credential that matches the chain would pass validation,
+        // so pointing a deployment at a stored key is reserved for the owner.
+        crate::control_center::require_credential_choice(&state, &headers, true).await?;
         secret
     } else {
         sqlx::query_scalar::<_,Uuid>("SELECT key_secret_ref FROM network_acme_jobs WHERE version_id=$1 AND key_secret_ref IS NOT NULL ORDER BY created_at DESC LIMIT 1").bind(input.version_id).fetch_optional(&state.pool).await?.ok_or_else(||ApiError::Conflict("手工证书需选择凭据中心的私钥引用".into()))?

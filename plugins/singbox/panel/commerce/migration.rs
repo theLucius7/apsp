@@ -354,11 +354,14 @@ pub(super) async fn import(
         .execute(&mut *tx)
         .await?;
         if let Some(hash) = &m.legacy_password_hash {
-            sqlx::query("UPDATE singbox_members SET password_hash=$2 WHERE user_id=$1")
-                .bind(m.id)
-                .bind(hash)
-                .execute(&mut *tx)
-                .await?;
+            // The original login address stays usable for password login until changed.
+            sqlx::query(
+                "UPDATE singbox_members SET password_hash=$2,legacy_login_email=email WHERE user_id=$1",
+            )
+            .bind(m.id)
+            .bind(hash)
+            .execute(&mut *tx)
+            .await?;
         }
         sqlx::query("INSERT INTO singbox_nexus_identities(user_id,import_id,legacy_uuid,original_state,original_plan_id,quota_bytes,used_upload,used_download,expires_at,reset_at) VALUES($1,$2,$3,$4,$5,$6::text::numeric,$7::text::numeric,$8::text::numeric,$9,$10)").bind(m.id).bind(import_id).bind(m.legacy_uuid).bind(&m.state).bind(m.plan_id).bind(&m.quota_bytes).bind(&m.used_upload).bind(&m.used_download).bind(m.expires_at).bind(m.reset_at).execute(&mut *tx).await?;
         sqlx::query("INSERT INTO singbox_nexus_metering(user_id,upload,download,last_reset_at,next_reset_at,observed_at) VALUES($1,$2::text::numeric,$3::text::numeric,$4,$5,$6)").bind(m.id).bind(&m.used_upload).bind(&m.used_download).bind(m.last_reset_at).bind(m.reset_at).bind(snapshot.exported_at).execute(&mut *tx).await?;

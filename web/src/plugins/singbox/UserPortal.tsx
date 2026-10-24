@@ -65,7 +65,8 @@ export default function UserPortal({ account, activation }: { account: string; a
   const manage = (form: FormData) => {
     if (!editing) return
     void action.run(async () => {
-      await loginPasskey(`${base}/login`, false)
+      // Without any passkey yet, the recent password login is the proof for adding the first one.
+      if (data?.authenticated && data.keys.length > 0) await loginPasskey(`${base}/login`, false)
       if (editing === 'new') await registerPasskey(base, { name: String(form.get('name') ?? '') }, false)
       else await api(`${base}/keys/${editing.id}/remove`, 'POST', undefined, undefined, false)
     }, () => { setEditing(null); setNotice(editing === 'new' ? '新 Passkey 已绑定。' : 'Passkey 已删除，其他用户会话已退出。'); reload() })

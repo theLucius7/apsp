@@ -21,29 +21,54 @@ pub(crate) fn local_policy(config: &Config) -> Result<AccessPolicy> {
         .parent()
         .unwrap_or(Path::new("/etc/apsp"))
         .join("fleet-policy.json");
-    match std::fs::symlink_metadata(&path) {
+    // Checks run on the opened handle, so the file cannot be swapped between the
+    // check and the read.
+    let file = match open_policy(&path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Ok(AccessPolicy::default());
         }
-        Err(error) => return Err(error.into()),
-        Ok(metadata) => {
-            ensure!(
-                metadata.is_file()
-                    && !metadata.file_type().is_symlink()
-                    && metadata.len() <= 32 * 1024,
-                "fleet policy must be a bounded regular file"
-            );
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                ensure!(
-                    metadata.permissions().mode() & 0o077 == 0,
-                    "fleet policy must be private to its owner"
-                );
-            }
-        }
+        result => result?,
+    };
+    let metadata = file.metadata()?;
+    ensure!(
+        metadata.is_file() && metadata.len() <= 32 * 1024,
+        "fleet policy must be a bounded regular file"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        ensure!(
+            metadata.permissions().mode() & 0o077 == 0,
+            "fleet policy must be private to its owner"
+        );
+        // The policy can grant root terminals, so only root may own it.
+        ensure!(metadata.uid() == 0, "fleet policy must be owned by root");
     }
-    Ok(serde_json::from_slice(&std::fs::read(path)?)?)
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut std::io::Read::take(file, 32 * 1024 + 1), &mut bytes)?;
+    ensure!(
+        bytes.len() <= 32 * 1024,
+        "fleet policy must be a bounded regular file"
+    );
+    Ok(serde_json::from_slice(&bytes)?)
+}
+
+#[cfg(unix)]
+fn open_policy(path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    // A symbolic link fails to open and a FIFO cannot block the read.
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn open_policy(path: &Path) -> std::io::Result<std::fs::File> {
+    if std::fs::symlink_metadata(path)?.file_type().is_symlink() {
+        return Err(std::io::Error::other("fleet policy must not be a link"));
+    }
+    std::fs::File::open(path)
 }
 
 pub(crate) fn capabilities(config: &Config) -> Vec<String> {

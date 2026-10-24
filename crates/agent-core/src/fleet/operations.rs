@@ -23,15 +23,22 @@ fn path_allowed(
             )),
         "invalid file path"
     );
+    // The whole state directory is protected: it holds the database journal, network
+    // snapshot restore scripts run by root and tunnel private keys.
     let protected = [
-        config.identity_dir.clone(),
-        config.state_db.clone(),
-        config.agent_root.clone(),
-        config.install_root.clone(),
+        Some(config.identity_dir.as_path()),
+        config.identity_dir.parent(),
+        config.state_db.parent(),
+        Some(config.state_db.as_path()),
+        Some(config.runtime_root.as_path()),
+        Some(config.agent_root.as_path()),
+        Some(config.install_root.as_path()),
     ];
     ensure!(
         !protected
             .iter()
+            .flatten()
+            .filter(|protected| grantable(protected))
             .any(|protected| path.starts_with(protected))
             && !["/proc", "/sys", "/dev"]
                 .iter()
@@ -63,14 +70,23 @@ fn path_allowed(
         (&local.read_directories, &remote.read_directories)
     };
     ensure!(
-        [left, right]
+        [left, right].iter().all(|scopes| scopes
             .iter()
-            .all(|scopes| scopes.iter().any(|scope| scope != "/"
-                && Path::new(scope).is_absolute()
-                && path.starts_with(scope))),
+            .any(|scope| grantable(Path::new(scope)) && path.starts_with(scope))),
         "file is outside permitted directories"
     );
     Ok(())
+}
+/// A directory that may be granted: absolute, without `..`, and below the root.
+/// Component comparison makes spellings such as `//` or `/.` count as the root.
+fn grantable(scope: &Path) -> bool {
+    scope.is_absolute()
+        && !scope
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+        && scope
+            .components()
+            .any(|part| matches!(part, std::path::Component::Normal(_)))
 }
 fn service_allowed(local: &AccessPolicy, remote: &AccessPolicy, unit: &str) -> Result<()> {
     ensure!(
@@ -245,13 +261,14 @@ pub(super) async fn execute(
             syntax,
         } => {
             path_allowed(config, local, remote, path, true)?;
+            let maximum = local
+                .maximum_file_bytes
+                .min(remote.maximum_file_bytes)
+                .min(256 * 1024);
             let bytes = STANDARD.decode(content)?;
+            // A zero budget means no grant, which must not allow truncating a file.
             ensure!(
-                bytes.len()
-                    <= local
-                        .maximum_file_bytes
-                        .min(remote.maximum_file_bytes)
-                        .min(256 * 1024),
+                maximum > 0 && bytes.len() <= maximum,
                 "file exceeds access budget"
             );
             ensure!(
@@ -442,6 +459,33 @@ mod tests {
             )
             .is_err()
         );
+    }
+    #[test]
+    fn root_spellings_and_state_directory_are_never_granted() {
+        let config = Config::default();
+        for root in ["/", "//", "/.", "/./"] {
+            let policy = AccessPolicy {
+                read_directories: vec![root.into()],
+                maximum_file_bytes: 4096,
+                ..AccessPolicy::default()
+            };
+            assert!(
+                path_allowed(&config, &policy, &policy, "/srv/example/app.json", false).is_err()
+            );
+        }
+        let broad = AccessPolicy {
+            write_directories: vec!["/var/lib".into()],
+            maximum_file_bytes: 4096,
+            ..AccessPolicy::default()
+        };
+        let state = config.state_db.parent().unwrap();
+        for file in ["state.db-wal", "network-snapshots/example/restore.sh"] {
+            let path = state.join(file);
+            assert!(
+                path_allowed(&config, &broad, &broad, path.to_str().unwrap(), true).is_err(),
+                "{file}"
+            );
+        }
     }
     #[test]
     fn service_scope_is_an_intersection() {

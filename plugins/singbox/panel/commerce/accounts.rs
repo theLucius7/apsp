@@ -63,7 +63,7 @@ pub(super) async fn login(
     if input.password.len() > 1024 {
         return Err(ApiError::Unauthorized);
     }
-    let row:Option<(i64,String)>=sqlx::query_as("SELECT user_id,password_hash FROM singbox_members WHERE email=$1 AND password_hash IS NOT NULL AND state IN('active','pending') AND (SELECT enabled FROM singbox_commerce_settings WHERE singleton)").bind(&address).fetch_optional(&state.pool).await?;
+    let row:Option<(i64,String)>=sqlx::query_as("SELECT user_id,password_hash FROM singbox_members WHERE email=$1 AND password_hash IS NOT NULL AND (email_verified_at IS NOT NULL OR email=legacy_login_email) AND state IN('active','pending') AND (SELECT enabled FROM singbox_commerce_settings WHERE singleton)").bind(&address).fetch_optional(&state.pool).await?;
     let exists = row.is_some();
     let (id,hash)=row.unwrap_or((-1,"$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHRmb3JhcHNw$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".into()));
     let permit = state
@@ -103,7 +103,7 @@ pub(super) async fn login(
     let mut tx = state.pool.begin().await?;
     enabled(&mut tx).await?;
     ensure_member(&mut tx, id).await?;
-    let unchanged:bool=sqlx::query_scalar("SELECT email=$2 AND password_hash=$3 AND state IN('active','pending') FROM singbox_members WHERE user_id=$1").bind(id).bind(address).bind(hash).fetch_one(&mut *tx).await?;
+    let unchanged:bool=sqlx::query_scalar("SELECT email=$2 AND password_hash=$3 AND (email_verified_at IS NOT NULL OR email=legacy_login_email) AND state IN('active','pending') FROM singbox_members WHERE user_id=$1").bind(id).bind(address).bind(hash).fetch_one(&mut *tx).await?;
     if !unchanged {
         return Err(ApiError::Unauthorized);
     }
@@ -115,7 +115,9 @@ pub(super) async fn login(
             .await?;
     }
     let account = account(&mut tx, id).await?;
-    let token = crate::portal::access::issue(&mut tx, account).await?;
+    let token =
+        crate::portal::access::issue(&mut tx, account, crate::portal::access::Proof::Password)
+            .await?;
     event(
         &mut tx,
         Some(id),
@@ -188,17 +190,37 @@ pub(super) async fn reset(
         return Err(ApiError::Unauthorized);
     }
     consume(&mut tx, &challenge).await?;
+    let recovered: bool = sqlx::query_scalar(
+        "SELECT password_hash IS NOT NULL FROM singbox_members WHERE user_id=$1",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
     sqlx::query("UPDATE singbox_members SET password_hash=$2,email_verified_at=$3,version=version+1 WHERE user_id=$1").bind(id).bind(hash).bind(now_timestamp()).execute(&mut *tx).await?;
     super::admin::revoke_on(&mut tx, id).await?;
     let account = account(&mut tx, id).await?;
-    let token = crate::portal::access::issue(&mut tx, account).await?;
+    // Recovering an existing password assumes it may have leaked, so passkeys that could
+    // have been added with it stop working too; new ones can be added afterwards. Setting
+    // a first password leaves passkeys alone, and a password session cannot remove them.
+    let mut keys_removed = 0;
+    if recovered {
+        crate::passkeys::revoke(&mut tx, account).await?;
+        keys_removed = sqlx::query("DELETE FROM passkey_credentials WHERE account_id=$1")
+            .bind(account)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+    }
+    let token =
+        crate::portal::access::issue(&mut tx, account, crate::portal::access::Proof::Password)
+            .await?;
     event(
         &mut tx,
         Some(id),
         "member",
         "password_recovered",
         &id.to_string(),
-        json!({}),
+        json!({"passkeys_removed":keys_removed}),
     )
     .await?;
     tx.commit().await?;
@@ -218,7 +240,7 @@ pub(super) async fn password_change(
     let mut tx = state.pool.begin().await?;
     crate::entitlements::lock(&mut tx).await?;
     let id = member_session(&mut tx, &state, &headers, account, true).await?;
-    crate::portal::access::session(
+    let proof = crate::portal::access::session(
         &mut tx,
         account,
         &crate::portal::access::session_hash(&headers)?,
@@ -236,7 +258,7 @@ pub(super) async fn password_change(
         .execute(&mut *tx)
         .await?;
     super::admin::revoke_on(&mut tx, id).await?;
-    let token = crate::portal::access::issue(&mut tx, account).await?;
+    let token = crate::portal::access::issue(&mut tx, account, proof).await?;
     event(
         &mut tx,
         Some(id),
@@ -326,7 +348,7 @@ pub(super) async fn email_finish(
     let mut tx = state.pool.begin().await?;
     crate::entitlements::lock(&mut tx).await?;
     let id = member_session(&mut tx, &state, &headers, account, true).await?;
-    crate::portal::access::session(
+    let proof = crate::portal::access::session(
         &mut tx,
         account,
         &crate::portal::access::session_hash(&headers)?,
@@ -357,7 +379,7 @@ pub(super) async fn email_finish(
     consume(&mut tx, &challenge).await?;
     sqlx::query("UPDATE singbox_members SET email=$2,email_verified_at=$3,version=version+1 WHERE user_id=$1").bind(id).bind(&challenge.address).bind(now_timestamp()).execute(&mut *tx).await?;
     super::admin::revoke_on(&mut tx, id).await?;
-    let token = crate::portal::access::issue(&mut tx, account).await?;
+    let token = crate::portal::access::issue(&mut tx, account, proof).await?;
     event(
         &mut tx,
         Some(id),

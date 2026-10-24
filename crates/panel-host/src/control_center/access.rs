@@ -177,6 +177,43 @@ pub async fn require_server(
     Ok(actor.admin_id)
 }
 
+/// Settings shared by every server, and objects bound to no server, belong to
+/// administrators whose scope covers all servers, through an unrestricted token
+/// if one is used.
+pub async fn require_global(
+    state: &AppState,
+    headers: &HeaderMap,
+    capability: &str,
+) -> ApiResult<i64> {
+    let actor = authenticate(state, headers).await?;
+    if !actor.allows(capability) || !actor.global_servers() {
+        return Err(ApiError::Forbidden(
+            "此操作涉及全部服务器共享的设置或未关联服务器的对象，需要全局授权".into(),
+        ));
+    }
+    Ok(actor.admin_id)
+}
+
+/// Stored credentials are managed by the owner, so choosing one for a consumer,
+/// or redirecting a consumer that already holds one, is the owner's decision as
+/// well. Edits that keep the same reference and destination stay with the
+/// caller's ordinary permissions.
+pub async fn require_credential_choice(
+    state: &AppState,
+    headers: &HeaderMap,
+    changed: bool,
+) -> ApiResult<()> {
+    if changed {
+        let actor = authenticate(state, headers).await?;
+        if actor.role != "owner" || actor.token_id.is_some() {
+            return Err(ApiError::Forbidden(
+                "选择或改指凭据中心的凭据需要所有者会话".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub async fn require_owner(state: &AppState, headers: &HeaderMap) -> ApiResult<i64> {
     let actor = authenticate(state, headers).await?;
     if actor.role != "owner" || actor.token_id.is_some() {

@@ -82,7 +82,7 @@ async fn create(
     auth::require_admin(&state, &headers).await?;
     crate::control_center::require_server(&state, &headers, input.config.server_id, "dns:write")
         .await?;
-    super::credentials::authorize_reference(&state, &headers, &input.config).await?;
+    super::credentials::authorize_reference(&state, &headers, &input.config, None).await?;
     let record_types = [input.config.record_type.clone()];
     let mut rules = create_rules(&state, input, &record_types).await?;
     Ok((StatusCode::CREATED, Json(rules.remove(0))))
@@ -96,7 +96,7 @@ async fn create_dual_stack(
     auth::require_admin(&state, &headers).await?;
     crate::control_center::require_server(&state, &headers, input.config.server_id, "dns:write")
         .await?;
-    super::credentials::authorize_reference(&state, &headers, &input.config).await?;
+    super::credentials::authorize_reference(&state, &headers, &input.config, None).await?;
     let rules = create_rules(&state, input, &["A".into(), "AAAA".into()]).await?;
     Ok((StatusCode::CREATED, Json(json!({"rules": rules}))))
 }
@@ -170,7 +170,13 @@ async fn update(
         .await?;
     crate::control_center::require_server(&state, &headers, input.config.server_id, "dns:write")
         .await?;
-    super::credentials::authorize_reference(&state, &headers, &input.config).await?;
+    super::credentials::authorize_reference(
+        &state,
+        &headers,
+        &input.config,
+        Some(&previous.config),
+    )
+    .await?;
     if input.revision != Some(previous.revision) {
         return Err(ApiError::Conflict("规则已被修改，请刷新后重试".into()));
     }

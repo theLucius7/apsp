@@ -49,7 +49,7 @@ export default function UserPasskeyAccess({ id, userError, refreshRevision }: { 
       </>}
     </div>
     {editing && <FormDialog title={editing.reset ? '重置用户 Passkey？' : '生成用户开通链接'} busy={action.busy} submitDisabled={Boolean(writeError(editing.access))} error={writeError(editing.access) || action.error} onClose={() => setEditing(undefined)} onSubmit={submit} submitLabel={editing.reset ? '确认重置并生成' : '验证并生成'}>
-      <p>{editing.reset ? '原有 Passkey 和用户登录会话将立即失效，用户需要通过新链接重新开通。订阅、授权和流量保持不变。' : '开通链接十五分钟内有效，只能使用一次；重新生成会使之前的链接失效。请仅发送给该代理用户。'}</p>
+      <p>{editing.reset ? '原有 Passkey、会员登录密码和用户登录会话将立即失效，用户需要通过新链接重新开通，之后可经邮箱验证重新设置密码。订阅、授权和流量保持不变。' : '开通链接十五分钟内有效，只能使用一次；重新生成会使之前的链接失效。请仅发送给该代理用户。'}</p>
       <Field label="管理员密码"><Input name="password" type="password" required maxLength={1024} autoComplete="current-password" /></Field>
       <Field label="二步验证码" hint="已启用时必填，请使用尚未用于登录的验证码。"><Input name="totp_code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" placeholder="未启用时留空" /></Field>
     </FormDialog>}

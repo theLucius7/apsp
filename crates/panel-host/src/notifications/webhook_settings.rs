@@ -58,6 +58,10 @@ pub async fn update(
             .or_else(|| old.cloned())
             .unwrap_or_default()
     };
+    let headers_supplied = update
+        .headers
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty());
     let config = Config {
         enabled: update.enabled,
         preset: update.preset,
@@ -72,6 +76,16 @@ pub async fn update(
         },
         body: pick(update.body, previous.map(|value| &value.body)),
     };
+    // Stored headers usually carry credentials; they never follow the URL to another host.
+    if !headers_supplied
+        && !update.clear_headers
+        && previous
+            .is_some_and(|value| !value.headers.is_empty() && !same_origin(&value.url, &config.url))
+    {
+        return Err(ApiError::BadRequest(
+            "更换到其他主机时须重新填写或清除请求头，已保存的请求头不会发往新地址".into(),
+        ));
+    }
     webhook::validate(&config).map_err(|message| ApiError::BadRequest(message.into()))?;
     if !config.enabled || settings.webhook.as_ref() != Some(&config) {
         sqlx::query("UPDATE notification_outbox SET status='cancelled' WHERE channel='webhook' AND status='pending'")
@@ -90,6 +104,13 @@ pub async fn update(
         .await?;
     tx.commit().await?;
     Ok(Json(result))
+}
+
+fn same_origin(left: &str, right: &str) -> bool {
+    match (reqwest::Url::parse(left), reqwest::Url::parse(right)) {
+        (Ok(left), Ok(right)) => left.origin() == right.origin(),
+        _ => false,
+    }
 }
 
 pub async fn remove(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {

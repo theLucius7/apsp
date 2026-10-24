@@ -231,10 +231,21 @@ pub async fn update(
                     }
                     SourceInput::Inline { .. } => (None, BTreeMap::new()),
                 };
+                let moved = previous_url.as_deref().is_some_and(|previous| {
+                    url.as_deref().is_some_and(|url| {
+                        !crate::subscription_fetch::same_stored_origin(previous, url)
+                    })
+                });
                 let new_url = url.clone().or(previous_url).ok_or_else(|| {
                     ApiError::BadRequest("更换为 URL 来源时必须填写订阅地址".into())
                 })?;
                 let new_headers = match auth_headers {
+                    None if moved && !previous_headers.is_empty() => {
+                        return Err(ApiError::BadRequest(
+                            "更换到其他主机时须重新填写或清除认证请求头，已保存的请求头不会发往新地址"
+                                .into(),
+                        ));
+                    }
                     None => previous_headers,
                     Some(HeaderUpdate::Clear) => BTreeMap::new(),
                     Some(HeaderUpdate::Replace { value }) => value.clone(),
