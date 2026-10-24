@@ -1,0 +1,76 @@
+{
+ "nodes": [
+  {
+   "legacy_node_id": 43,
+   "machine_id": 30,
+   "node_config": {
+    "cipher": "2022-blake3-aes-128-gcm",
+    "custom_outbounds": [],
+    "custom_route_rules": [],
+    "custom_routes": [],
+    "default_outbound": "",
+    "listen_ip": "0.0.0.0",
+    "plugin": null,
+    "plugin_opts": null,
+    "protocol": "shadowsocks",
+    "routes": [],
+    "routing_kernel": "",
+    "routing_revision": "",
+    "server_key": "MDEyMzQ1Njc4OWFiY2RlZg==",
+    "server_port": "51002"
+   },
+   "type": "shadowsocks"
+  },
+  {
+   "legacy_node_id": 44,
+   "machine_id": 30,
+   "node_config": {
+    "custom_outbounds": [
+     {
+      "protocol": "shadowsocks",
+      "settings": {
+       "method": "2022-blake3-aes-128-gcm",
+       "password": "ZmVkY2JhOTg3NjU0MzIxMA==",
+       "server": "landing.example.invalid",
+       "server_port": 443
+      },
+      "tag": "landing"
+     }
+    ],
+    "custom_route_rules": [],
+    "custom_routes": [
+     {
+      "domain_suffix": [
+       "landing.example.invalid"
+      ],
+      "outbound": "landing"
+     }
+    ],
+    "decryption": null,
+    "default_outbound": "",
+    "flow": "xtls-rprx-vision",
+    "listen_ip": "0.0.0.0",
+    "multiplex": {
+     "enabled": true,
+     "padding": true
+    },
+    "network": "tcp",
+    "networkSettings": null,
+    "protocol": "vless",
+    "routes": [],
+    "routing_kernel": "",
+    "routing_revision": "",
+    "server_port": 11452,
+    "tls": 2,
+    "tls_settings": {
+     "private_key": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+     "public_key": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI",
+     "server_name": "handshake.example.invalid",
+     "server_port": "443",
+     "short_id": "aabbccddeeff"
+    }
+   },
+   "type": "vless"
+  }
+ ]
+}

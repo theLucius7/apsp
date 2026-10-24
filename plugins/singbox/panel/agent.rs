@@ -41,6 +41,10 @@ pub async fn manifest_module(
     server_id: i64,
     info: &Value,
 ) -> ApiResult<Option<ModuleManifest>> {
+    let held: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_nexus_runtime_hosts WHERE server_id=$1 AND state<>'active')").bind(server_id).fetch_one(&state.pool).await?;
+    if held {
+        return Ok(None);
+    }
     let deployment=sqlx::query("SELECT rev,bundle_sha256 FROM deployments WHERE server_id=$1 AND module='singbox' ORDER BY rev DESC LIMIT 1").bind(server_id).fetch_optional(&state.pool).await?;
     let Some(deployment) = deployment else {
         return Ok(None);

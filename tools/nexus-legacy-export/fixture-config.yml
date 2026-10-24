@@ -1,0 +1,10 @@
+instances:
+  - panel:
+      url: https://panel.example.invalid
+    machine:
+      machine_id: 30
+      token: TEST_ONLY_machine_token
+    kernel:
+      type: singbox
+      config_dir: /etc/xboard-node
+      log_level: warn

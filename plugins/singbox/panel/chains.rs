@@ -143,6 +143,17 @@ pub async fn remove(
 }
 
 pub(crate) async fn ensure_direct(tx: &mut Transaction<'_, Postgres>, node: i64) -> ApiResult<()> {
+    let preserved: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM singbox_nexus_runtime_nodes WHERE node_id=$1)",
+    )
+    .bind(node)
+    .fetch_one(&mut **tx)
+    .await?;
+    if preserved {
+        return Err(ApiError::Conflict(
+            "此迁移节点沿用原权限组，请修改套餐与原权限组映射".into(),
+        ));
+    }
     let entry: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM singbox_chains WHERE entry_node_id=$1 AND (deleted_at IS NULL OR (path_kind='ordered' AND phase<>'retired')))",
     )

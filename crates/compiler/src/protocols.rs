@@ -133,11 +133,13 @@ pub(crate) fn validate(node: &Node) -> Result<(), CompileError> {
                     "Reality keys must encode 32 bytes as unpadded URL-safe base64",
                 ));
             }
-            if node.short_id.len() != 8
+            if node.short_id.is_empty()
+                || node.short_id.len() > 16
+                || !node.short_id.len().is_multiple_of(2)
                 || !node.short_id.bytes().all(|byte| byte.is_ascii_hexdigit())
             {
                 return Err(fail(
-                    "short_id must contain exactly eight hexadecimal digits",
+                    "short_id must contain an even number of hexadecimal digits between 2 and 16",
                 ));
             }
         }
@@ -192,6 +194,10 @@ pub(crate) fn validate(node: &Node) -> Result<(), CompileError> {
             return Err(fail("authorization UUIDs must be unique within a node"));
         }
         if !node.protocol_config.is_reality()
+            && !(matches!(node.protocol_config, ProtocolConfig::Hysteria2 { .. })
+                && !access.credential.is_empty()
+                && access.credential.len() <= 256
+                && !access.credential.chars().any(char::is_control))
             && !valid_secret(&access.credential, node.protocol_config.credential_size())
         {
             return Err(fail("invalid access credential length or encoding"));

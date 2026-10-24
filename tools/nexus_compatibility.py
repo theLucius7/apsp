@@ -5,6 +5,7 @@ Run locally with a mode-0600 JSON configuration. No credentials or member data
 are written to stdout. Stop the old business writers before enabling this job.
 """
 import argparse
+from decimal import Decimal, ROUND_DOWN
 import fcntl
 import json
 import os
@@ -50,6 +51,71 @@ def observe(connection, import_id):
     except Exception:
         connection.rollback()
         raise
+
+
+def apply_usage(connection, import_id, deliveries):
+    """Commit native deltas and replay receipts in the same legacy transaction.
+
+    Billing dates are read under the write lock, so a reset cannot race a
+    delivery. A batch spanning a reset is prorated to the current cycle; the
+    original complete counters remain in the native immutable ledger.
+    """
+    if not isinstance(deliveries, list) or len(deliveries) > 500:
+        raise BridgeError('Invalid native usage delivery list')
+    connection.execute('BEGIN IMMEDIATE')
+    ids = []
+    try:
+        connection.execute('CREATE TABLE IF NOT EXISTS apsp_usage_receipts (import_id TEXT NOT NULL, delivery_id INTEGER NOT NULL, payload TEXT NOT NULL, applied_at INTEGER NOT NULL, PRIMARY KEY(import_id,delivery_id))')
+        for entry in deliveries:
+            delivery = entry['id']
+            user = entry['user_id']
+            if type(delivery) is not int or delivery <= 0 or type(user) is not int or user <= 0 or delivery in ids:
+                raise BridgeError('Invalid native usage identity')
+            payload = json.dumps(entry, sort_keys=True, separators=(',', ':'))
+            old = connection.execute('SELECT payload FROM apsp_usage_receipts WHERE import_id=? AND delivery_id=?', (import_id, delivery)).fetchone()
+            if old:
+                if old[0] != payload:
+                    raise BridgeError('Native usage replay changed payload')
+                ids.append(delivery)
+                continue
+            current = connection.execute('SELECT last_reset_at,next_reset_at,u,d FROM v2_user WHERE id=?', (user,)).fetchone()
+            if current is None:
+                raise BridgeError('Native usage member is missing from compatibility storage')
+            start, end = entry['period_start'], entry['period_end']
+            if type(start) is not int or type(end) is not int or not 0 <= start <= end:
+                raise BridgeError('Invalid native usage period')
+            lower, upper = current[0] or 0, current[1] or 253402300799
+            fraction = (Decimal(max(0, min(end, upper) - max(start, lower))) / Decimal(end - start)) if end > start else Decimal(int(lower <= end < upper))
+            rate = Decimal(entry['rate'])
+            if not rate.is_finite() or rate < 0 or rate > 999999:
+                raise BridgeError('Invalid native usage multiplier')
+            amounts = []
+            for field, existing in [('uplink', current[2]), ('downlink', current[3])]:
+                amount = Decimal(entry[field])
+                if not amount.is_finite() or amount < 0 or amount != amount.to_integral_value():
+                    raise BridgeError('Invalid native usage counter')
+                delta = int((amount * rate * fraction).to_integral_value(rounding=ROUND_DOWN))
+                if existing + delta > 9_000_000_000_000_000_000:
+                    raise BridgeError('Native usage would exceed the legacy counter range')
+                amounts.append(delta)
+            connection.execute('UPDATE v2_user SET u=u+?,d=d+? WHERE id=?', (*amounts, user))
+            connection.execute('INSERT INTO apsp_usage_receipts VALUES(?,?,?,?)', (import_id, delivery, payload, int(time.time())))
+            ids.append(delivery)
+        connection.commit()
+        return ids
+    except Exception:
+        connection.rollback()
+        raise
+
+
+def deliver_usage(config, connection):
+    deliveries = database(config, "SELECT COALESCE(jsonb_agg(to_jsonb(p)),'[]'::jsonb) FROM (SELECT id,user_id,uplink::text,downlink::text,rate::text,period_start,period_end FROM singbox_nexus_usage_deliveries WHERE delivered_at IS NULL ORDER BY id LIMIT 500) p;")
+    ids = apply_usage(connection, config['import_id'], deliveries)
+    if ids:
+        # A crash here is harmless: SQLite receipts make the next delivery a
+        # no-op, and the acknowledgement can be repeated independently.
+        database(config, 'WITH acknowledged AS (UPDATE singbox_nexus_usage_deliveries SET delivered_at=FLOOR(EXTRACT(EPOCH FROM now()))::bigint WHERE id=ANY(ARRAY[' + ','.join(map(str, ids)) + ']::bigint[]) AND delivered_at IS NULL RETURNING id) SELECT jsonb_build_object(\'acknowledged\',COUNT(*)) FROM acknowledged;')
+    return len(ids)
 
 
 def apply_members(connection, members):
@@ -125,6 +191,7 @@ def synchronize(config):
     path = Path(config['legacy_database']).resolve(strict=True)
     connection = sqlite3.connect(f'{path.as_uri()}?mode=rw', uri=True, timeout=20, isolation_level=None)
     try:
+        deliver_usage(config, connection)
         sample = observe(connection, str(uuid.UUID(config['import_id'])))
         desired = database(config, f'SELECT singbox_nexus_bridge_exchange({json_sql(sample)});')
         generation = str(uuid.UUID(desired['generation']))
