@@ -55,6 +55,8 @@ python3 tools/nexus_compatibility.py --config /private/bridge.json
 
 ## 回退与验收
 
+服务器及代理运行时向 Agent 接管的条件、资产准备工具与当前差异见 [Nexus Agent 迁移](nexus-agent-migration.md)。服务器资产迁入不代表已接管代理进程。
+
 开放新写入之前可恢复备份和旧网页路由；一旦 apsp 产生新订单、付款或邀请，不能直接恢复旧数据库而丢弃新流水，须冻结新写入、保留现库并对账。回退不得改变客户端原链接、UUID 或流量。
 
 隔离验收使用 `cargo test -p apsp-panel --test member_commerce --test expense_subscriptions`、费用插件单元测试、`python3 -m unittest discover -s tools -p test_migration.py`、Bun 单元测试及 `web/tests/member-commerce.mjs`。EPay 用例须显式提供测试密钥环并以 `--ignored` 运行，仅读取本机夹具，不请求真实网关、不发送通知。完整范围与实际结果记在 [验收记录](acceptance/nexus-migration.md)。
