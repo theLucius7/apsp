@@ -238,6 +238,13 @@ trust_directory=$(sudo mktemp -d /root/apsp-ci-trust.XXXXXX)
 sudo install -m 0400 crates/protocol/tests/fixtures/public-keys.json "$trust_directory/public-keys.json"
 sudo install -m 0500 tools/bootstrap.py "$trust_directory/bootstrap.py"
 sudo install -m 0400 tools/release.py "$trust_directory/release.py"
+# The bootstrap imports the legacy checkpoint guard and executes only a
+# preloaded trusted installer next to it, as the official entry provides.
+sudo install -m 0400 tools/legacy_agent_checkpoint.py "$trust_directory/legacy_agent_checkpoint.py"
+python3 tools/release.py render-installer --template deploy/install.sh.tmpl \
+  --agent-unit deploy/apsp-agent.service --runtime-unit plugins/sing-box/apsp-singbox@.service \
+  --output "$scratch/trusted-install.sh"
+sudo install -m 0500 "$scratch/trusted-install.sh" "$trust_directory/trusted-install.sh"
 cat > "$scratch/compose.override.yml" <<'YAML'
 services:
   panel:
