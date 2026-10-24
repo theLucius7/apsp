@@ -129,7 +129,12 @@ pub fn validate(snapshot: &Snapshot) -> ApiResult<Value> {
     {
         return Err(bad("迁移文件格式或数量超出范围"));
     }
+    // A future export time would hold the legacy meter's observations frozen.
+    if snapshot.exported_at <= 0 || snapshot.exported_at > now_timestamp() + 300 {
+        return Err(bad("导出时间无效或晚于当前时间"));
+    }
     let mut ids = BTreeSet::new();
+    let mut legacy_uuids = BTreeSet::new();
     let mut emails = BTreeSet::new();
     let mut tokens = BTreeSet::new();
     let mut plans = BTreeSet::new();
@@ -169,6 +174,8 @@ pub fn validate(snapshot: &Snapshot) -> ApiResult<Value> {
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
             || !tokens.insert(&m.subscription_token)
+            // Two members with one legacy UUID would share node credentials.
+            || !legacy_uuids.insert(m.legacy_uuid)
             || !canonical_bytes(&m.used_upload)
             || !canonical_bytes(&m.used_download)
             || m.quota_bytes.as_ref().is_some_and(|v| !canonical_bytes(v))

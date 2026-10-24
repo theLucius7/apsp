@@ -39,6 +39,7 @@ pub(super) async fn execute(
             package_group_id,
         } => {
             let servers = super::super::business::lock_user_servers(tx, *user_id).await?;
+            crate::commerce::require_compatible_package(tx, *user_id, *package_group_id).await?;
             let assignment:i64=sqlx::query_scalar("INSERT INTO singbox_package_assignments(user_id,request_id,package_group_id,package_name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,starts_at,expires_at) SELECT $1,$2,id,name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,$4,$4+duration_days::bigint*86400 FROM singbox_package_groups WHERE id=$3 AND deleted_at IS NULL RETURNING id")
                 .bind(user_id).bind(preview_id).bind(package_group_id).bind(now).fetch_one(&mut **tx).await?;
             sqlx::query("INSERT INTO singbox_user_packages(user_id,assignment_id) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET assignment_id=EXCLUDED.assignment_id").bind(user_id).bind(assignment).execute(&mut **tx).await?;

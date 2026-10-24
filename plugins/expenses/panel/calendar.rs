@@ -8,6 +8,8 @@ use axum::{
 use std::collections::BTreeMap;
 use time::{Date, Duration};
 
+const RATE_SCALE: i128 = 100_000_000;
+
 #[derive(Deserialize)]
 pub(super) struct Range {
     from: String,
@@ -205,31 +207,40 @@ pub(super) async fn summary(
         .map_err(anyhow::Error::from)?;
     let base: String = settings.try_get("base_currency")?;
     let rates = &exchange["rates"];
-    let rate = |code: &str| {
+    // Rates are fixed to eight decimals and amounts stay in integer units, so the
+    // summary does not accumulate floating-point error across currencies.
+    let rate = |code: &str| -> Option<i128> {
         if code == "CNY" {
-            Some(1.0)
+            Some(RATE_SCALE)
         } else {
-            rates[code].as_f64().filter(|r| r.is_finite() && *r > 0.0)
+            rates[code]
+                .as_f64()
+                .filter(|r| r.is_finite() && *r > 0.0 && *r < 1e9)
+                .map(|r| (r * RATE_SCALE as f64).round() as i128)
+                .filter(|r| *r > 0)
         }
     };
-    let mut converted = 0.0;
+    let mut converted: i128 = 0;
     let mut missing = Vec::new();
+    let mut foreign = false;
     for (code, value) in &totals {
         if code == &base {
-            converted += *value as f64 / 10000.0;
+            converted += *value;
         } else if let Some((source, target)) = rate(code).zip(rate(&base)) {
-            converted += *value as f64 / 10000.0 / source * target;
+            foreign = true;
+            converted += (*value * target + source / 2) / source;
         } else {
             missing.push(code.clone());
         }
     }
+    let conversion_stale = foreign && exchange["stale"].as_bool() != Some(false);
     let totals: BTreeMap<_, _> = totals
         .iter()
         .map(|(k, v)| (k.clone(), v.to_string()))
         .collect();
     let categories:Vec<Value>=categories.into_iter().map(|(id,values)|json!({"category_id":id,"totals":values.into_iter().map(|(k,v)|(k,v.to_string())).collect::<BTreeMap<_,_>>()})).collect();
     Ok(Json(
-        json!({"from":today,"to":schedule::format(end),"active":rows.iter().filter(|r|!r.inactive).count(),"inactive":rows.iter().filter(|r|r.inactive).count(),"totals_units":totals,"categories":categories,"base_currency":base,"budget_units":settings.try_get::<Option<String>,_>("budget_units")?,"converted_yearly":if missing.is_empty(){Some(converted)}else{None},"missing_currencies":missing,"exchange":exchange,"estimate":true}),
+        json!({"from":today,"to":schedule::format(end),"active":rows.iter().filter(|r|!r.inactive).count(),"inactive":rows.iter().filter(|r|r.inactive).count(),"totals_units":totals,"categories":categories,"base_currency":base,"budget_units":settings.try_get::<Option<String>,_>("budget_units")?,"converted_yearly":if missing.is_empty(){Some(converted as f64/10000.0)}else{None},"converted_yearly_units":if missing.is_empty(){Some(converted.to_string())}else{None},"conversion_stale":conversion_stale,"missing_currencies":missing,"exchange":exchange,"estimate":true}),
     ))
 }
 

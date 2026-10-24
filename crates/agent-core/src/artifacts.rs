@@ -170,6 +170,28 @@ impl PanelClient {
         )?)
     }
 
+    /// Like `post_json`, but returns the panel's refusal status instead of an error,
+    /// so callers can tell a permanent rejection from an unreachable panel.
+    pub(crate) async fn post_json_status<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        value: &impl Serialize,
+    ) -> Result<std::result::Result<T, reqwest::StatusCode>> {
+        let response = self
+            .client
+            .post(self.panel.join(path)?)
+            .bearer_auth(&self.session_token)
+            .json(value)
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            return Ok(Err(response.status()));
+        }
+        Ok(Ok(serde_json::from_slice(
+            &Self::response_bytes(response, 16 * 1024).await?,
+        )?))
+    }
+
     async fn response_bytes(response: reqwest::Response, maximum: usize) -> Result<Vec<u8>> {
         let mut bytes = Vec::new();
         let mut stream = response.bytes_stream();

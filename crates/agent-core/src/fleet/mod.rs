@@ -212,11 +212,20 @@ async fn tick(
         .get_json::<Vec<JobResult>>("fleet_results")?
         .unwrap_or_default();
     for result in &pending {
-        tokio::time::timeout(
+        let delivered = tokio::time::timeout(
             Duration::from_secs(2),
-            client.post_json::<serde_json::Value>("/api/agent/v1/fleet/results", result),
+            client.post_json_status::<serde_json::Value>("/api/agent/v1/fleet/results", result),
         )
         .await??;
+        match delivered {
+            Ok(_) => {}
+            // A result the panel refuses outright is dropped, so it cannot block every
+            // later result and the work fetch below; the panel reconciles the job.
+            Err(status) if permanently_rejected(status) => {
+                tracing::error!(%status, job = %result.id, "panel rejected a fleet result; dropping it");
+            }
+            Err(status) => anyhow::bail!("panel did not accept fleet results: HTTP {status}"),
+        }
         let mut durable = state
             .lock()
             .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
@@ -226,25 +235,35 @@ async fn tick(
         records.retain(|record| record.id != result.id);
         durable.set_json("fleet_results", &records)?;
     }
-    let work: Work = tokio::time::timeout(
+    let work: serde_json::Value = tokio::time::timeout(
         Duration::from_secs(2),
         client.get_json("/api/agent/v1/fleet/work"),
     )
     .await??;
-    let policy = local_policy(config)?;
-    terminals
+    let work = parse_work(&work, state)?;
+    // The panel has already marked fetched jobs dispatched. A broken local policy or
+    // terminal update must not drop them: each job reads the policy again and reports
+    // its own failure, and terminals fall back to a policy that grants nothing.
+    let policy = local_policy(config).unwrap_or_else(|error| {
+        tracing::error!(%error, "fleet policy unavailable; terminals are closed");
+        AccessPolicy::default()
+    });
+    if let Err(error) = terminals
         .tick(&work.terminals, &policy, ops.as_ref(), state, client)
-        .await?;
+        .await
+    {
+        tracing::error!(%error, "fleet terminal update failed");
+    }
     for job in work.jobs {
         let key = format!("fleet_intent:{}", job.id);
         {
             let mut durable = state
                 .lock()
                 .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
-            ensure!(
-                durable.get_json::<bool>(&key)?.is_none(),
-                "operation already attempted; remote state must be reconciled"
-            );
+            if durable.get_json::<bool>(&key)?.is_some() {
+                tracing::error!(job = %job.id, "operation already attempted; remote state must be reconciled");
+                continue;
+            }
             durable.set_json(&key, &true)?;
         }
         let config = config.clone();
@@ -259,40 +278,39 @@ async fn tick(
             let result = async {
                 let _exclusive = execution_lock.lock().await;
                 let _guard = retirement.gate.read().await;
-                let execution =
-                    if retirement.requested() || job.expires_at <= apsp_protocol::now_timestamp() {
-                        Err(anyhow::anyhow!("operation expired before execution"))
-                    } else {
-                        match local_policy(&config) {
-                            Ok(policy) => {
-                                operations::execute(
-                                    &config,
-                                    &policy,
-                                    &job,
-                                    ops.as_ref(),
-                                    services.as_ref(),
-                                    &client,
-                                    &descriptors,
-                                )
-                                .await
-                            }
-                            Err(error) => Err(error),
+                let execution = if retirement.requested() || job.expires_at <= panel_now(&state) {
+                    Err(anyhow::anyhow!("operation expired before execution"))
+                } else {
+                    match local_policy(&config) {
+                        Ok(policy) => {
+                            operations::execute(
+                                &config,
+                                &policy,
+                                &job,
+                                ops.as_ref(),
+                                services.as_ref(),
+                                &client,
+                                &descriptors,
+                            )
+                            .await
                         }
-                    };
+                        Err(error) => Err(error),
+                    }
+                };
                 let result = match execution {
                     Ok(result) => JobResult {
                         id: job.id,
                         succeeded: true,
                         result,
                         error: None,
-                        completed_at: apsp_protocol::now_timestamp(),
+                        completed_at: panel_now(&state),
                     },
                     Err(error) => JobResult {
                         id: job.id,
                         succeeded: false,
                         result: serde_json::Value::Null,
                         error: Some(error.to_string().chars().take(2048).collect()),
-                        completed_at: apsp_protocol::now_timestamp(),
+                        completed_at: panel_now(&state),
                     },
                 };
                 {
@@ -316,4 +334,130 @@ async fn tick(
         });
     }
     Ok(())
+}
+
+/// Seconds on the panel clock; device clocks may drift and the panel rejects
+/// results that claim to finish in its future.
+fn panel_now(state: &SharedState) -> i64 {
+    let offset = state
+        .lock()
+        .ok()
+        .and_then(|state| state.get_json::<i64>("clock_offset_ms").ok().flatten())
+        .unwrap_or(0);
+    apsp_protocol::now_timestamp().saturating_add(offset / 1000)
+}
+
+fn permanently_rejected(status: reqwest::StatusCode) -> bool {
+    status.is_client_error()
+        && !matches!(
+            status,
+            reqwest::StatusCode::UNAUTHORIZED
+                | reqwest::StatusCode::REQUEST_TIMEOUT
+                | reqwest::StatusCode::TOO_MANY_REQUESTS
+        )
+}
+
+/// Parses each job and terminal separately, so a job an older Agent cannot read
+/// fails on its own instead of losing the whole batch.
+fn parse_work(value: &serde_json::Value, state: &SharedState) -> Result<Work> {
+    let mut work = Work::default();
+    for control in value["terminals"].as_array().into_iter().flatten() {
+        match serde_json::from_value(control.clone()) {
+            Ok(control) => work.terminals.push(control),
+            Err(error) => tracing::error!(%error, "unsupported terminal control ignored"),
+        }
+    }
+    for job in value["jobs"].as_array().into_iter().flatten() {
+        match serde_json::from_value(job.clone()) {
+            Ok(job) => work.jobs.push(job),
+            Err(error) => {
+                let Some(id) = job["id"].as_str().and_then(|id| id.parse().ok()) else {
+                    tracing::error!(%error, "unreadable fleet job ignored");
+                    continue;
+                };
+                // Read the panel clock before taking the state lock; it is not reentrant.
+                let completed_at = panel_now(state);
+                let mut durable = state
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+                let mut records = durable
+                    .get_json::<Vec<JobResult>>("fleet_results")?
+                    .unwrap_or_default();
+                if records.len() < 32 && !records.iter().any(|record| record.id == id) {
+                    records.push(JobResult {
+                        id,
+                        succeeded: false,
+                        result: serde_json::Value::Null,
+                        error: Some(format!(
+                            "this Agent version cannot read the operation and did not run it: {error}"
+                        )
+                        .chars()
+                        .take(2048)
+                        .collect()),
+                        completed_at,
+                    });
+                    durable.set_json("fleet_results", &records)?;
+                }
+            }
+        }
+    }
+    Ok(work)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::State;
+    use std::sync::Mutex;
+
+    #[test]
+    fn unreadable_jobs_fail_alone_and_readable_ones_still_run() -> Result<()> {
+        let state = Arc::new(Mutex::new(State::open(Path::new(":memory:"))?));
+        let readable = uuid::Uuid::new_v4();
+        let unreadable = uuid::Uuid::new_v4();
+        let work = serde_json::json!({
+            "jobs": [
+                {"id": readable, "operation": {"kind": "snapshot"},
+                 "policy": AccessPolicy::default(), "expires_at": 1},
+                {"id": unreadable, "operation": {"kind": "operation_from_a_newer_panel"},
+                 "policy": AccessPolicy::default(), "expires_at": 1},
+                {"operation": {"kind": "snapshot"}}
+            ],
+            "terminals": [{"unexpected": true}]
+        });
+        let parsed = parse_work(&work, &state)?;
+        assert_eq!(parsed.jobs.len(), 1);
+        assert_eq!(parsed.jobs[0].id, readable);
+        assert!(parsed.terminals.is_empty());
+        let outbox = state
+            .lock()
+            .unwrap()
+            .get_json::<Vec<JobResult>>("fleet_results")?
+            .unwrap_or_default();
+        assert_eq!(outbox.len(), 1);
+        assert_eq!(outbox[0].id, unreadable);
+        assert!(!outbox[0].succeeded);
+        // Reading the same batch again does not queue a second result.
+        parse_work(&work, &state)?;
+        let outbox = state
+            .lock()
+            .unwrap()
+            .get_json::<Vec<JobResult>>("fleet_results")?
+            .unwrap_or_default();
+        assert_eq!(outbox.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn only_definite_refusals_drop_a_queued_result() {
+        assert!(permanently_rejected(reqwest::StatusCode::BAD_REQUEST));
+        assert!(permanently_rejected(reqwest::StatusCode::CONFLICT));
+        assert!(!permanently_rejected(reqwest::StatusCode::UNAUTHORIZED));
+        assert!(!permanently_rejected(
+            reqwest::StatusCode::TOO_MANY_REQUESTS
+        ));
+        assert!(!permanently_rejected(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR
+        ));
+    }
 }

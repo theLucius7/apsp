@@ -244,8 +244,10 @@ pub async fn require_recent_proof(state: &AppState, headers: &HeaderMap) -> ApiR
     Ok(())
 }
 
-pub async fn actor_server_allowed(
-    pool: &sqlx::PgPool,
+/// Accepts the pool or the caller's transaction connection; callers that hold row
+/// locks pass their own connection so the check never waits for a second one.
+pub async fn actor_server_allowed<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
     actor: i64,
     server: i64,
     capability: &str,
@@ -254,7 +256,7 @@ pub async fn actor_server_allowed(
         return Ok(false);
     }
     sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM administrator_profiles p WHERE p.admin_id=$1 AND p.enabled AND (p.role='owner' OR p.capabilities ? $3) AND (p.role<>'viewer' OR $3 NOT LIKE '%:write') AND (p.all_servers OR EXISTS(SELECT 1 FROM administrator_server_grants g WHERE g.admin_id=p.admin_id AND g.server_id=$2)))")
-        .bind(actor).bind(server).bind(capability).fetch_one(pool).await
+        .bind(actor).bind(server).bind(capability).fetch_one(executor).await
 }
 
 pub async fn require_actor_server(

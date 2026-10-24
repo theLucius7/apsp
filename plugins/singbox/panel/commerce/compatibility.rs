@@ -61,6 +61,14 @@ pub(super) async fn activate(
     if unmapped {
         return Err(conflict("原套餐缺少权限组映射，不能激活"));
     }
+    // Native members are enrolled too; an active one on an unmapped package would make
+    // every later synchronization fail.
+    let native_unmapped:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_members m JOIN users u ON u.id=m.user_id JOIN singbox_user_packages up ON up.user_id=m.user_id JOIN singbox_package_assignments a ON a.id=up.assignment_id WHERE m.state='active' AND u.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM singbox_nexus_plan_mappings p WHERE p.import_id=$1 AND p.package_group_id=a.package_group_id AND p.legacy_group_id IS NOT NULL))").bind(input.import_id).fetch_one(&mut *tx).await?;
+    if native_unmapped {
+        return Err(conflict(
+            "已有活跃成员使用未映射原权限组的套餐，请先补充映射或调整套餐后再激活",
+        ));
+    }
     let members=sqlx::query("SELECT *,quota_bytes::text AS quota_text FROM singbox_nexus_identities WHERE import_id=$1 ORDER BY user_id").bind(input.import_id).fetch_all(&mut *tx).await?;
     for row in members {
         let user: i64 = row.try_get("user_id")?;

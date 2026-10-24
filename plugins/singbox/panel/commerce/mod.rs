@@ -210,6 +210,27 @@ async fn enabled(tx: &mut Tx<'_>) -> ApiResult<()> {
     }
     Ok(())
 }
+/// A package assigned outside the member store must still be translatable by an
+/// enabled compatibility bridge, or every later synchronization would fail.
+pub(crate) async fn require_compatible_package(
+    tx: &mut Tx<'_>,
+    user: i64,
+    package: i64,
+) -> ApiResult<()> {
+    let enrolled: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM singbox_members WHERE user_id=$1 AND state<>'staged')",
+    )
+    .bind(user)
+    .fetch_one(&mut **tx)
+    .await?;
+    let missing:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_nexus_bridge b WHERE b.enabled AND NOT EXISTS(SELECT 1 FROM singbox_nexus_plan_mappings p WHERE p.import_id=b.import_id AND p.package_group_id=$1 AND p.legacy_group_id IS NOT NULL))").bind(package).fetch_one(&mut **tx).await?;
+    if enrolled && missing {
+        return Err(conflict(
+            "此套餐尚未配置原节点权限映射，不能分配给兼容通道中的成员",
+        ));
+    }
+    Ok(())
+}
 async fn ensure_member(tx: &mut Tx<'_>, id: i64) -> ApiResult<()> {
     crate::business::lock_user(tx, id).await?;
     sqlx::query(
@@ -245,11 +266,17 @@ async fn member_session(
     )
     .await?;
     let id: i64 = owner.try_get("user_id")?;
-    ensure_member(tx, id).await?;
-    let status: String = sqlx::query_scalar("SELECT state FROM singbox_members WHERE user_id=$1")
-        .bind(id)
-        .fetch_one(&mut **tx)
-        .await?;
+    // Only a member action creates the member row. Merely viewing the portal must not
+    // enroll an ordinary proxy user into the compatibility bridge and its packages.
+    if write {
+        ensure_member(tx, id).await?;
+    }
+    let status: Option<String> =
+        sqlx::query_scalar("SELECT state FROM singbox_members WHERE user_id=$1")
+            .bind(id)
+            .fetch_optional(&mut **tx)
+            .await?;
+    let status = status.unwrap_or_else(|| "active".into());
     if !["active", "pending"].contains(&status.as_str()) {
         return Err(ApiError::Forbidden("此成员账户暂不可用".into()));
     }

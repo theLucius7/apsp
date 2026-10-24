@@ -76,7 +76,9 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
         {
             continue;
         }
-        let key = format!("due:{}:{}:{}", entry.id, entry.version, entry.next_payment);
+        // One reminder per record and due date; editing the record inside the
+        // reminder window must not send it again.
+        let key = format!("due:{}:{}", entry.id, entry.next_payment);
         let id = Uuid::new_v4();
         let timestamp = now_timestamp();
         let amount = units(&entry.amount_units)?;
@@ -110,7 +112,8 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
         if payloads.is_empty() {
             continue;
         }
-        let added=sqlx::query("INSERT INTO expense_events(id,subscription_id,event_key,kind,detail,created_at) VALUES($1,$2,$3,'renewal_reminder',$4,$5) ON CONFLICT(event_key) DO NOTHING").bind(id).bind(entry.id).bind(key).bind(json!({"name":entry.name,"due":entry.next_payment,"amount_units":entry.amount_units,"currency":entry.currency})).bind(timestamp).execute(&mut *tx).await?.rows_affected();
+        // Reminders recorded under the earlier versioned key also count for this due date.
+        let added=sqlx::query("INSERT INTO expense_events(id,subscription_id,event_key,kind,detail,created_at) SELECT $1,$2,$3,'renewal_reminder',$4,$5 WHERE NOT EXISTS(SELECT 1 FROM expense_events WHERE subscription_id=$2 AND kind='renewal_reminder' AND detail->>'due'=$6) ON CONFLICT(event_key) DO NOTHING").bind(id).bind(entry.id).bind(key).bind(json!({"name":entry.name,"due":entry.next_payment,"amount_units":entry.amount_units,"currency":entry.currency})).bind(timestamp).bind(&entry.next_payment).execute(&mut *tx).await?.rows_affected();
         if added == 0 {
             continue;
         }

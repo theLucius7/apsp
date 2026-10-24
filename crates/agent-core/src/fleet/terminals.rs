@@ -21,23 +21,26 @@ struct Session {
 }
 
 impl Session {
-    async fn stop(&mut self, id: Uuid) {
+    /// Closes the PTY. `failure` carries an earlier PTY error so the session is
+    /// reported as failed rather than as a clean close.
+    async fn stop(&mut self, id: Uuid, failure: Option<String>) {
         self.closing = true;
         let Some(process) = self.process.as_mut() else {
             return;
         };
         let result = tokio::time::timeout(Duration::from_secs(8), process.close()).await;
-        let error = match result {
+        let cleanup = match result {
             Ok(Ok(())) => None,
             Ok(Err(error)) => Some(error.to_string()),
             Err(_) => {
                 Some("terminal cleanup deadline exceeded; identity retained for recovery".into())
             }
         };
-        if error.is_none() {
+        if cleanup.is_none() {
             self.process = None;
             self.finished = true;
         }
+        let error = cleanup.or(failure);
         let outcome = (
             if error.is_none() { "closed" } else { "failed" }.to_owned(),
             error,
@@ -86,7 +89,7 @@ impl Sessions {
         futures_util::future::join_all(
             self.active
                 .iter_mut()
-                .map(|(id, session)| session.stop(*id)),
+                .map(|(id, session)| session.stop(*id, None)),
         )
         .await;
     }
@@ -99,7 +102,7 @@ impl Sessions {
                         || session.expires_at <= apsp_protocol::now_timestamp()
                         || !local.terminal_accounts.contains(&session.account)
                 })
-                .map(|(id, session)| session.stop(*id)),
+                .map(|(id, session)| session.stop(*id, None)),
         )
         .await;
     }
@@ -113,7 +116,7 @@ impl Sessions {
                         .find(|control| control.id == **id)
                         .is_none_or(|control| session.revoked(control, local))
                 })
-                .map(|(id, session)| session.stop(*id)),
+                .map(|(id, session)| session.stop(*id, None)),
         )
         .await;
         self.active.retain(|id, session| {
@@ -272,10 +275,7 @@ impl Sessions {
             }
             ensure!(output.len() <= 32768, "PTY output exceeded per-frame limit");
             if ended {
-                session.stop(control.id).await;
-                if error.is_some() {
-                    session.final_state = Some(("failed".into(), error));
-                }
+                session.stop(control.id, error).await;
                 continue;
             }
             session.pending = Some(TerminalEvent {

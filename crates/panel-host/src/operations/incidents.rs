@@ -16,6 +16,9 @@ use serde_json::{Value, json};
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
+/// How long a published revision may stay unapplied before it is an incident.
+const APPLY_GRACE_SECS: i64 = 300;
+
 pub async fn list(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -411,7 +414,7 @@ pub(super) async fn observe(state: &AppState) -> ApiResult<()> {
             recover(&mut tx, &key, evidence["recovery"].clone(), resolved, false).await?;
         }
     }
-    let services=sqlx::query("SELECT m.*,s.last_seen FROM server_module_status m JOIN servers s ON s.id=m.server_id WHERE s.deleted_at IS NULL AND m.updated_at>0 LIMIT 500").fetch_all(&mut *tx).await?;
+    let services=sqlx::query("SELECT m.*,s.last_seen,d.created_at AS target_created_at FROM server_module_status m JOIN servers s ON s.id=m.server_id LEFT JOIN deployments d ON d.server_id=m.server_id AND d.module=m.module AND d.rev=m.target_rev WHERE s.deleted_at IS NULL AND m.updated_at>0 LIMIT 500").fetch_all(&mut *tx).await?;
     for service in services {
         let server: i64 = service.get("server_id");
         let module: String = service.get("module");
@@ -426,10 +429,17 @@ pub(super) async fn observe(state: &AppState) -> ApiResult<()> {
             continue;
         }
         let evidence = json!({"module":module,"observed_at":sampled,"target_rev":service.get::<i64,_>("target_rev"),"applied_rev":service.get::<i64,_>("applied_rev"),"healthy":service.get::<bool,_>("healthy"),"error":service.get::<Option<String>,_>("last_error")});
-        if service.get::<bool, _>("healthy")
-            && service.get::<i64, _>("target_rev") == service.get::<i64, _>("applied_rev")
-        {
+        let healthy = service.get::<bool, _>("healthy");
+        let applied = service.get::<i64, _>("target_rev") == service.get::<i64, _>("applied_rev");
+        // Every publication leaves the target ahead of the applied revision until the
+        // device applies it; only a revision still unapplied after the grace is a fault.
+        let overdue = service
+            .get::<Option<i64>, _>("target_created_at")
+            .is_none_or(|created| now - created > APPLY_GRACE_SECS);
+        if healthy && applied {
             recover(&mut tx, &key, evidence, sampled, true).await?;
+        } else if healthy && !overdue {
+            continue;
         } else {
             open(
                 &mut tx,
@@ -600,6 +610,7 @@ async fn dispatch(state: &AppState, now: i64) -> ApiResult<()> {
         return Ok(());
     }
     let rows=sqlx::query("SELECT d.*,i.server_id,i.status AS incident_status,i.source_key,i.evidence FROM operations_incident_deliveries d JOIN operations_incidents i ON i.id=d.incident_id WHERE d.status='pending' AND d.next_attempt_at<=$1 ORDER BY d.id LIMIT 4 FOR UPDATE OF d SKIP LOCKED").bind(now).fetch_all(&mut *tx).await?;
+    let mut claimed = Vec::new();
     for row in rows {
         let id: i64 = row.get("id");
         let server: Option<i64> = row.get("server_id");
@@ -628,18 +639,30 @@ async fn dispatch(state: &AppState, now: i64) -> ApiResult<()> {
                 .await?;
             continue;
         }
-        let channel: String = row.get("channel");
-        let payload: String = row.get("payload");
-        let attempts: i32 = row.get("attempts");
+        // Lease the delivery and commit before sending, so a failed commit after a
+        // successful send cannot deliver it again; a crash retries after the lease.
+        sqlx::query("UPDATE operations_incident_deliveries SET attempts=attempts+1,next_attempt_at=$2 WHERE id=$1")
+            .bind(id)
+            .bind(now + 300)
+            .execute(&mut *tx)
+            .await?;
+        claimed.push((
+            id,
+            row.get::<String, _>("channel"),
+            row.get::<String, _>("payload"),
+            row.get::<i32, _>("attempts"),
+        ));
+    }
+    tx.commit().await?;
+    for (id, channel, payload, attempts) in claimed {
         match crate::notifications::plugin::send(&settings, &channel, &payload).await {
             Ok(()) => {
-                sqlx::query("UPDATE operations_incident_deliveries SET status='sent',attempts=attempts+1,delivered_at=$2,last_error=NULL WHERE id=$1").bind(id).bind(now).execute(&mut *tx).await?;
+                sqlx::query("UPDATE operations_incident_deliveries SET status='sent',delivered_at=$2,last_error=NULL WHERE id=$1").bind(id).bind(now).execute(&state.pool).await?;
             }
             Err((error, retry)) => {
-                sqlx::query("UPDATE operations_incident_deliveries SET status=CASE WHEN attempts>=4 THEN 'failed' ELSE 'pending' END,attempts=attempts+1,last_error=$2,next_attempt_at=$3 WHERE id=$1").bind(id).bind(error).bind(now+retry.unwrap_or(30*(1_i64<<attempts.min(5)))).execute(&mut *tx).await?;
+                sqlx::query("UPDATE operations_incident_deliveries SET status=CASE WHEN attempts>=5 THEN 'failed' ELSE 'pending' END,last_error=$2,next_attempt_at=$3 WHERE id=$1").bind(id).bind(error).bind(now+retry.unwrap_or(30*(1_i64<<attempts.min(5)))).execute(&state.pool).await?;
             }
         }
     }
-    tx.commit().await?;
     Ok(())
 }
