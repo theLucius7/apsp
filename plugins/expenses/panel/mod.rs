@@ -2,6 +2,7 @@
 //! Recurring service expenses, independent of proxy member commerce.
 mod api;
 mod calendar;
+mod history;
 mod migration;
 pub mod schedule;
 mod servers;
@@ -43,6 +44,8 @@ pub fn routes() -> Router<AppState> {
             .route("/subscriptions/{id}/renew", post(api::renew))
             .route("/subscriptions/{id}/payments", get(api::payments))
             .route("/servers", get(servers::list))
+            .route("/references", get(servers::reference_list))
+            .route("/payments", get(history::payments))
             .route("/calendar", get(calendar::calendar))
             .route("/calendar.ics", get(calendar::ical))
             .route("/summary", get(calendar::summary))

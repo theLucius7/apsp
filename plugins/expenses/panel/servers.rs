@@ -162,3 +162,47 @@ mod tests {
         assert!(dates(&server("2025-02-01", 0)).is_empty());
     }
 }
+
+/// A plugin-observed expiry (for example a proxy subscription source) shown
+/// for reference only: it has no price and the ledger never renews it.
+#[derive(Clone, Serialize)]
+pub(crate) struct Reference {
+    #[serde(flatten)]
+    pub source: apsp_panel_host::plugin_api::RenewalReference,
+    /// The expiry as a date in the ledger time zone.
+    pub expires_on: Option<String>,
+}
+
+pub(crate) async fn references(
+    state: &AppState,
+    principal: &Principal,
+) -> ApiResult<Vec<Reference>> {
+    let sources: Vec<_> = apsp_panel_host::plugin_api::renewal_references(state)
+        .await?
+        .into_iter()
+        .filter(|r| principal.allows(r.capability))
+        .collect();
+    let at: Vec<Option<i64>> = sources.iter().map(|r| r.expires_at).collect();
+    let dates: Vec<Option<String>> = sqlx::query_scalar(
+        "SELECT CASE WHEN e IS NULL THEN NULL ELSE (to_timestamp(e) AT TIME ZONE r.timezone)::date::text END \
+         FROM unnest($1::bigint[]) WITH ORDINALITY AS t(e,n) CROSS JOIN expense_settings r WHERE r.singleton ORDER BY n",
+    )
+    .bind(&at)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(sources
+        .into_iter()
+        .zip(dates)
+        .map(|(source, expires_on)| Reference { source, expires_on })
+        .collect())
+}
+
+pub(super) async fn reference_list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<Json<Value>> {
+    let principal = principal(&state, &headers, false).await?;
+    Ok(Json(
+        json!({"entries":references(&state,&principal).await?}),
+    ))
+}

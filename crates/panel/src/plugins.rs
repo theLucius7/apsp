@@ -13,8 +13,8 @@ use apsp_panel_host::{
     AppState,
     error::ApiResult,
     plugin_api::{
-        self, DeploymentIntent, DnsChallenge, HookFuture, PanelPlugins, RoutePolicy,
-        RuntimeStepPolicy, SearchSource,
+        self, DeploymentIntent, DnsChallenge, HookFuture, PanelPlugins, RenewalReference,
+        RoutePolicy, RuntimeStepPolicy, SearchSource,
     },
 };
 use apsp_protocol::{ModuleManifest, RuntimeCheckpointRequest, UsageBatch};
@@ -97,6 +97,12 @@ impl PanelPlugins for Compiled {
     }
     fn runtime_step_policy(&self, kind: &str) -> Option<RuntimeStepPolicy> {
         crate::integration_policy::runtime_step_policy(kind)
+    }
+    fn renewal_references<'a>(
+        &'a self,
+        state: &'a AppState,
+    ) -> HookFuture<'a, ApiResult<Vec<RenewalReference>>> {
+        Box::pin(singbox::subscription_sources::renewal_references(state))
     }
     fn dns_present<'a>(
         &'a self,

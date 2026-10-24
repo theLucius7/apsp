@@ -2,6 +2,7 @@
 
 - 状态：已实现；本地编译、静态检查与 PostgreSQL 集成测试见 [PROGRESS](../../PROGRESS.md) 本轮记录，未在生产面板上操作。
 - 日期：2026-10-25。
+- 后续：机场订阅来源的到期引用、服务器费用记录与退订提醒并入账本见 [ADR 0097](0097-ledger-server-records-and-source-references.md)。
 - 落实：[ADR 0087](0087-narrow-positioning-proxy-network.md) 决定 4 的第一部分；在 [ADR 0090](0090-recurring-expense-subscriptions.md) 已部署的订阅费用插件上增量扩展。
 - 关联：[功能地图](../product-map.md)、[Nexus 与 Wallos 迁移](../nexus-migration.md)、[待决问题](../open-questions.md)。
 

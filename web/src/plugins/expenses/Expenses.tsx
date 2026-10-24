@@ -14,11 +14,12 @@ import type { Expense, Label } from './types'
 import ExpenseForm from './ExpenseForm'
 import Configuration from './Configuration'
 import Migration from './Migration'
+import { Cancellations, Payments, References, ServerCostDialog } from './ServerLedger'
 
-const tabs = ['续费项目', '统计', '日历', '提醒记录', '配置', '导入导出'] as const
+const tabs = ['续费项目', '统计', '日历', '付款记录', '退订提醒', '提醒记录', '配置', '导入导出'] as const
 export default function Expenses() {
   const [tab, setTab] = useState<typeof tabs[number]>('续费项目')
-  return <><PageHeader eyebrow="总览" title="费用与续费" description="一处查看服务器、域名和其他服务的周期费用、下次续费日与预计支出。服务器按资产设置自动列出，其他项目在这里添加。只记账和提醒，不付款，也不自动续费或退订。" /><SegmentedNav aria-label="费用与续费">{tabs.map(t => <SegmentedButton key={t} aria-pressed={tab === t} onClick={() => setTab(t)}>{t}</SegmentedButton>)}</SegmentedNav><div className="mt-5 grid min-w-0 gap-4">{tab === '续费项目' && <><Subscriptions /><ServerRenewals /></>}{tab === '统计' && <Summary />}{tab === '日历' && <Calendar />}{tab === '提醒记录' && <Notifications />}{tab === '配置' && <Configuration />}{tab === '导入导出' && <Migration />}</div></>
+  return <><PageHeader eyebrow="总览" title="费用与续费" description="一处查看服务器、域名和其他服务的周期费用、下次续费日与预计支出。服务器按资产设置自动列出，其他项目在这里添加。只记账和提醒，不付款，也不自动续费或退订。" /><SegmentedNav aria-label="费用与续费">{tabs.map(t => <SegmentedButton key={t} aria-pressed={tab === t} onClick={() => setTab(t)}>{t}</SegmentedButton>)}</SegmentedNav><div className="mt-5 grid min-w-0 gap-4">{tab === '续费项目' && <><Subscriptions /><ServerRenewals /><References /></>}{tab === '付款记录' && <Payments />}{tab === '退订提醒' && <Cancellations />}{tab === '统计' && <Summary />}{tab === '日历' && <Calendar />}{tab === '提醒记录' && <Notifications />}{tab === '配置' && <Configuration />}{tab === '导入导出' && <Migration />}</div></>
 }
 function Subscriptions() {
   const data = useResourceGroup<{ entries: Expense[]; labels: { entries: Label[] } }>({ entries: `${root}/subscriptions`, labels: `${root}/labels` }, 30000), action = useAction()
@@ -47,7 +48,7 @@ function Subscriptions() {
     }}><p>{({ renew: '确认已经续费后，将下次续费推进到今天之后的下一个周期，标记为使用中，并记录一笔付款。', clone: '复制配置后默认停用且关闭提醒，方便核对后再启用。', delete: '将删除此项目及其付款记录，并取消尚未发送的提醒。' })[operation.kind]}</p></FormDialog>}</DialogPresence>
   </Panel>
 }
-type Due = { kind: 'item' | 'server'; id: number; name: string; date: string; amount_units: string | null; currency: string; auto_renew: boolean }
+type Due = { kind: 'item' | 'server' | 'reference'; id: number; name: string; date: string; amount_units: string | null; currency: string; auto_renew: boolean; path?: string }
 type SummaryView = { from: string; to: string; active: number; inactive: number; totals_units: Record<string, string>; servers: { count: number; unpriced: number; totals_units: Record<string, string> }; upcoming: Due[]; categories: { category_id: number | null; totals: Record<string, string> }[]; base_currency: string; budget_units: string | null; converted_yearly: number | null; missing_currencies: string[]; exchange: { source: string; rate_date?: string; stale: boolean } }
 function Summary() {
   const data = useResource<SummaryView>(`${root}/summary`, 30000), labels = useResource<{ entries: Label[] }>(`${root}/labels`, 30000), view = data.data
@@ -58,24 +59,26 @@ const link = 'text-primary underline-offset-4 hover:underline'
 function DueTable({ entries }: { entries: Due[] }) {
   return <div className="min-w-0 max-w-full"><Table><TableHeader><TableRow><TableHead>日期</TableHead><TableHead>项目</TableHead><TableHead>预计金额</TableHead><TableHead>续费方式</TableHead></TableRow></TableHeader><TableBody>{entries.map(e => <TableRow key={`${e.kind}/${e.id}/${e.date}`}>
     <TableCell className="whitespace-nowrap">{e.date}</TableCell>
-    <TableCell className="max-w-[280px] wrap-anywhere">{e.kind === 'server' ? <><a className={link} href={`#/servers/${e.id}/assets`}>{e.name}</a><p className={sub}>服务器</p></> : e.name}</TableCell>
-    <TableCell>{e.amount_units === null ? '未填写' : amount(e.amount_units, e.currency)}</TableCell>
-    <TableCell>{e.kind === 'server' ? (e.auto_renew ? '自动顺延到期记录' : '按到期日') : e.auto_renew ? '自动续费' : '手动续费'}</TableCell>
+    <TableCell className="max-w-[280px] wrap-anywhere">{e.kind === 'server' ? <><a className={link} href={`#/servers/${e.id}/assets`}>{e.name}</a><p className={sub}>服务器</p></> : e.kind === 'reference' ? <><a className={link} href={`#${e.path ?? ''}`}>{e.name}</a><p className={sub}>机场订阅</p></> : e.name}</TableCell>
+    <TableCell>{e.kind === 'reference' ? '—' : e.amount_units === null ? '未填写' : amount(e.amount_units, e.currency)}</TableCell>
+    <TableCell>{e.kind === 'reference' ? '服务商报告的到期日' : e.kind === 'server' ? (e.auto_renew ? '自动顺延到期记录' : '按到期日') : e.auto_renew ? '自动续费' : '手动续费'}</TableCell>
   </TableRow>)}</TableBody></Table></div>
 }
 type ServerRenewal = { id: number; name: string; amount_units: string | null; currency: string; cycle_days: number; next_renewal: string; auto_renewal: boolean }
 // Servers come from their asset settings and are edited there; expiry reminders stay in alert settings.
 function ServerRenewals() {
-  const data = useResource<{ entries: ServerRenewal[] }>(`${root}/servers`, 30000)
+  const data = useResource<{ entries: ServerRenewal[] }>(`${root}/servers`, 30000), [costs, setCosts] = useState<ServerRenewal | null>(null)
   return <Panel><div className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><PanelTitle>服务器</PanelTitle><span className="text-muted-foreground text-xs">来自资产设置，只读</span></div>
-    <p className="text-muted-foreground border-b px-4 py-3 text-xs leading-relaxed">已设置到期日期的服务器自动列在这里。价格、周期与到期在服务器详情的「资产与流量」中修改，到期提醒在「告警设置」中配置。</p>
+    <p className="text-muted-foreground border-b px-4 py-3 text-xs leading-relaxed">已设置到期日期的服务器自动列在这里。价格、周期与到期在服务器详情的「资产与流量」中修改，到期提醒在「告警设置」中配置；购买、续费、退款与退订在「费用记录」中登记，带有效期的续费会更新服务器到期日期。</p>
     <ErrorNotice message={data.error} retry={data.reload} />
-    {data.data && (data.data.entries.length === 0 ? <p className="text-muted-foreground p-4 text-sm">还没有设置到期日期的服务器。</p> : <div className="min-w-0 max-w-full"><Table><TableHeader><TableRow><TableHead>服务器</TableHead><TableHead>费用 / 周期</TableHead><TableHead>到期</TableHead><TableHead>续费方式</TableHead></TableRow></TableHeader><TableBody>{data.data.entries.map(s => <TableRow key={s.id}>
+    {data.data && (data.data.entries.length === 0 ? <p className="text-muted-foreground p-4 text-sm">还没有设置到期日期的服务器。</p> : <div className="min-w-0 max-w-full"><Table><TableHeader><TableRow><TableHead>服务器</TableHead><TableHead>费用 / 周期</TableHead><TableHead>到期</TableHead><TableHead>续费方式</TableHead><TableHead>操作</TableHead></TableRow></TableHeader><TableBody>{data.data.entries.map(s => <TableRow key={s.id}>
       <TableCell className="max-w-[280px] wrap-anywhere"><a className={link} href={`#/servers/${s.id}/assets`}>{s.name}</a></TableCell>
       <TableCell>{s.amount_units === null ? '未填写价格' : amount(s.amount_units, s.currency)}<p className={sub}>{s.cycle_days > 0 ? `每 ${s.cycle_days} 天` : '一次性'}</p></TableCell>
       <TableCell className="whitespace-nowrap">{s.next_renewal}</TableCell>
       <TableCell>{s.auto_renewal ? '自动顺延到期记录' : '手动'}</TableCell>
+      <TableCell><Button variant="ghost" size="sm" onClick={() => setCosts(s)}>费用记录</Button></TableCell>
     </TableRow>)}</TableBody></Table></div>)}
+    <DialogPresence>{costs && <ServerCostDialog server={costs} onClose={() => setCosts(null)} onChanged={data.reload} />}</DialogPresence>
   </Panel>
 }
 function Calendar() {

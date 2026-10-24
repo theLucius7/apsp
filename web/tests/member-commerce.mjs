@@ -32,6 +32,13 @@ try {
         if (method === 'POST') { const body = request.postDataJSON(); assert.equal(body.amount_units, '123456'); assert.equal(body.cycle, 'month'); assert.equal(body.auto_renew, true); entries = [{ ...body, id: 1, version: 1, anchor_payment: body.next_payment }] }
         value = method === 'GET' ? entries : entries[0]
       } else if (path === '/api/plugins/expenses/labels') value = { entries: [] }
+      else if (path === '/api/plugins/expenses/servers') value = { entries: [{ id: 7, name: '测试服务器', amount_units: '125000', currency: 'USD', cycle_days: 30, next_renewal: '2027-01-01', auto_renewal: false }] }
+      else if (path === '/api/plugins/expenses/references') value = { entries: [{ kind: 'proxy_source', id: 3, name: '测试机场', expires_at: 1798761600, expires_on: '2027-01-01', used_bytes: 3221225472, total_bytes: 10737418240, reported_at: 1790000000, path: '/plugins/sing-box/nodes?view=sources' }] }
+      else if (path === '/api/plugins/expenses/payments') value = { items: [], servers: [{ kind: 'server', id: 'r1', server_id: 7, name: '测试服务器', record_kind: 'renewal', paid_on: '2026-10-01', valid_until: null, amount_minor: '1250', currency: 'USD', reference: 'order-1' }] }
+      else if (path === '/api/servers/7/fleet/costs') {
+        if (method === 'POST') { const body = request.postDataJSON(); assert.equal(body.amount_minor, 1250); assert.equal(body.currency, 'USD'); assert.equal(body.kind, 'renewal'); value = { id: 'r2' } }
+        else value = { records: [{ id: 'r1', kind: 'renewal', amount_minor: 1250, currency: 'USD', occurred_at: 1790000000, valid_until: null, reference: 'order-1' }], annual: [{ year: 2026, currency: 'USD', amount_minor: '1250' }] }
+      }
       else if (path === '/api/plugins/expenses/settings') value = { base_currency: 'CNY', budget_units: null, timezone: 'Asia/Shanghai', reminders_enabled: false, version: 1 }
       else if (path.endsWith('/commerce/overview')) value = { members: 43, pending_members: 0, balance_cents: '1234', orders: 3, sales_cents: '2500', open_exceptions: 0, invitations: 1, ledger_entries: 3 }
       else if (path.endsWith('/commerce/offers') || path.endsWith('/package-groups') || path.endsWith('/policy-groups')) value = []
@@ -45,14 +52,30 @@ try {
     })
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/expenses`)
-    await page.getByRole('button', { name: '添加订阅', exact: true }).click()
+    await page.getByRole('button', { name: '添加续费项目', exact: true }).click()
     const dialog = page.getByRole('dialog')
     await dialog.getByLabel('名称', { exact: true }).fill('测试线路服务')
     await dialog.getByLabel('每期金额', { exact: true }).fill('12.3456')
-    await dialog.getByLabel('下次付款', { exact: true }).fill('2027-01-31')
+    await dialog.getByLabel('下次续费', { exact: true }).fill('2027-01-31')
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     await dialog.waitFor({ state: 'hidden' })
     await page.getByRole('cell', { name: '测试线路服务', exact: true }).waitFor()
+    // Servers come from asset settings; their cost records are edited here (ADR 0097).
+    await page.getByRole('link', { name: '测试机场', exact: true }).waitFor()
+    await page.getByRole('button', { name: '费用记录', exact: true }).click()
+    const costs = page.getByRole('dialog')
+    await costs.getByRole('cell', { name: 'order-1', exact: true }).waitFor()
+    await costs.getByLabel('币种', { exact: true }).fill('USD')
+    await costs.getByLabel(/^金额/).fill('12.5')
+    await costs.getByRole('button', { name: '记录费用', exact: true }).click()
+    for (let attempt = 0; attempt < 50 && !writes.some(write => write.path === '/api/servers/7/fleet/costs'); attempt++) await page.waitForTimeout(100)
+    await costs.getByRole('button', { name: '关闭', exact: true }).click()
+    await costs.waitFor({ state: 'hidden' })
+    assert.ok(writes.some(write => write.path === '/api/servers/7/fleet/costs'), 'cost record posted')
+    await page.getByRole('button', { name: '付款记录', exact: true }).click()
+    await page.getByText('2026 年 · USD 12.5', { exact: true }).waitFor()
+    await page.getByRole('button', { name: '退订提醒', exact: true }).click()
+    await page.getByRole('heading', { name: '计划退订日期提醒' }).waitFor()
     await page.getByRole('button', { name: '配置', exact: true }).click()
     await page.getByRole('heading', { name: '统计与提醒设置' }).waitFor()
     await page.goto(`${origin}/#/plugins/sing-box/commerce`)

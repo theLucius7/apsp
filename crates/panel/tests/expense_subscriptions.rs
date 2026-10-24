@@ -296,3 +296,122 @@ async fn servers_join_the_ledger_read_only_and_renewals_record_payments(
     ensure!(unchanged == 2);
     Ok(())
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn ledger_shows_server_cost_records_and_source_expiries(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let hash = hash_token(cookie.split_once('=').context("cookie")?.1);
+    sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT DO NOTHING").bind(hash).bind(now_timestamp()).bind(now_timestamp()+3600).execute(&pool).await?;
+    let response = panel
+        .admin(
+            Method::POST,
+            "/api/servers",
+            &cookie,
+            Some(json!({"name":"vps","asset_settings":{"price":"10","currency":"USD","billing_cycle":30,"expires_at":now_timestamp()+86400,"traffic_limit":"0","reset_day":1}})),
+        )
+        .await?;
+    ensure!(
+        response.status() == StatusCode::CREATED,
+        "{}",
+        response.text().await?
+    );
+    let server = response.json::<Value>().await?["id"]
+        .as_i64()
+        .context("server id")?;
+    // Cost records keep their host API; a renewal with a validity date moves the expiry.
+    let until = now_timestamp() + 40 * 86400;
+    for (kind, minor) in [("renewal", 1250), ("refund", 250)] {
+        let response = panel
+            .admin(
+                Method::POST,
+                &format!("/api/servers/{server}/fleet/costs"),
+                &cookie,
+                Some(json!({"kind":kind,"amount_minor":minor,"currency":"USD","occurred_at":now_timestamp(),"valid_until":if kind == "renewal" { Some(until) } else { None },"reference":"order-1"})),
+            )
+            .await?;
+        ensure!(
+            response.status().is_success(),
+            "{kind}: {}",
+            response.text().await?
+        );
+    }
+    let mut value = input();
+    value["next_payment"] = json!("2099-01-31");
+    value["start_date"] = Value::Null;
+    let created = ok(call(&panel, &cookie, Method::POST, "/subscriptions", value).await?).await?;
+    let id = created["id"].as_i64().context("id")?;
+    ok(call(
+        &panel,
+        &cookie,
+        Method::POST,
+        &format!("/subscriptions/{id}/renew"),
+        json!({"request_id":Uuid::new_v4(),"version":created["version"]}),
+    )
+    .await?)
+    .await?;
+
+    let history = ok(call(&panel, &cookie, Method::GET, "/payments", Value::Null).await?).await?;
+    ensure!(
+        history["items"].as_array().map(Vec::len) == Some(1),
+        "{history}"
+    );
+    let records = history["servers"].as_array().cloned().unwrap_or_default();
+    ensure!(records.len() == 2, "{history}");
+    ensure!(
+        records.iter().any(|r| r["record_kind"] == "renewal"
+            && r["amount_minor"] == "1250"
+            && r["valid_until"] == until),
+        "{history}"
+    );
+    let servers = ok(call(&panel, &cookie, Method::GET, "/servers", Value::Null).await?).await?;
+    let expires_on: String = sqlx::query_scalar(
+        "SELECT (to_timestamp($1) AT TIME ZONE timezone)::date::text FROM expense_settings",
+    )
+    .bind(until)
+    .fetch_one(&pool)
+    .await?;
+    ensure!(
+        servers["entries"][0]["next_renewal"] == expires_on.as_str(),
+        "{servers}"
+    );
+
+    // Provider-reported expiries of proxy subscription sources are references only.
+    let expire = now_timestamp() + 5 * 86400;
+    for (name, archived) in [("Airport", false), ("Retired", true)] {
+        sqlx::query("INSERT INTO singbox_ordered_subscription_sources(name,kind,input_config,refresh_interval_secs,archived,traffic,created_at,updated_at) VALUES($1,'inline','{}',0,$2,$3,0,0)")
+            .bind(name)
+            .bind(archived)
+            .bind(json!({"upload":1,"download":2,"total":10,"expire":expire,"updated_at":1}))
+            .execute(&pool)
+            .await?;
+    }
+    let references =
+        ok(call(&panel, &cookie, Method::GET, "/references", Value::Null).await?).await?;
+    let entries = references["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    ensure!(
+        entries.len() == 1 && entries[0]["name"] == "Airport",
+        "{references}"
+    );
+    ensure!(
+        entries[0]["used_bytes"] == 3 && entries[0]["total_bytes"] == 10,
+        "{references}"
+    );
+    ensure!(entries[0].get("capability").is_none(), "{references}");
+    let summary = ok(call(&panel, &cookie, Method::GET, "/summary", Value::Null).await?).await?;
+    let upcoming = summary["upcoming"].as_array().cloned().unwrap_or_default();
+    ensure!(
+        upcoming.iter().any(|e| e["kind"] == "reference"
+            && e["name"] == "Airport"
+            && e["path"] == "/plugins/sing-box/nodes?view=sources"),
+        "{summary}"
+    );
+    ensure!(
+        summary["totals_units"].get("").is_none(),
+        "references never add to the totals"
+    );
+    Ok(())
+}

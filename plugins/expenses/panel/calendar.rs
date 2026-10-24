@@ -15,7 +15,8 @@ pub(super) struct Range {
 }
 #[derive(Serialize)]
 struct Due {
-    /// `item` for manually added entries, `server` for servers from asset settings.
+    /// `item` for manually added entries, `server` for servers from asset
+    /// settings, `reference` for plugin-observed expiries without a price.
     kind: &'static str,
     id: i64,
     name: String,
@@ -23,6 +24,9 @@ struct Due {
     amount_units: Option<String>,
     currency: String,
     auto_renew: bool,
+    /// Page that manages a reference; items and servers link by kind and id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
 }
 pub(super) fn dates(entry: &Subscription, from: Date, to: Date) -> ApiResult<Vec<Date>> {
     if entry.inactive {
@@ -89,6 +93,7 @@ async fn collect(
                 amount_units: Some(row.amount_units.clone()),
                 currency: row.currency.clone(),
                 auto_renew: row.auto_renew,
+                path: None,
             });
             if events.len() > 20000 {
                 return Err(bad("事件过多，请缩小日历范围"));
@@ -105,10 +110,33 @@ async fn collect(
                 amount_units: server.amount_units.clone(),
                 currency: server.currency.clone(),
                 auto_renew: server.auto_renewal,
+                path: None,
             });
             if events.len() > 20000 {
                 return Err(bad("事件过多，请缩小日历范围"));
             }
+        }
+    }
+    for reference in servers::references(state, principal).await? {
+        let Some(date) = reference
+            .expires_on
+            .as_deref()
+            .map(schedule::parse)
+            .transpose()?
+        else {
+            continue;
+        };
+        if date >= from && date <= to {
+            events.push(Due {
+                kind: "reference",
+                id: reference.source.id,
+                name: reference.source.name.clone(),
+                date: schedule::format(date),
+                amount_units: None,
+                currency: String::new(),
+                auto_renew: false,
+                path: Some(reference.source.path.clone()),
+            });
         }
     }
     events.sort_by(|a, b| (&a.date, a.kind, a.id).cmp(&(&b.date, b.kind, b.id)));
@@ -163,6 +191,8 @@ pub(super) async fn ical(
         // Item UIDs keep their published form so re-imported calendars update in place.
         let uid = if event.kind == "server" {
             format!("UID:expense-server-{}-{}@apsp.invalid", event.id, date)
+        } else if event.kind == "reference" {
+            format!("UID:expense-reference-{}-{}@apsp.invalid", event.id, date)
         } else {
             format!("UID:expense-{}-{}@apsp.invalid", event.id, date)
         };
@@ -179,11 +209,14 @@ pub(super) async fn ical(
                 let units = units(value)?;
                 format!("{} {}.{:04}", event.currency, units / 10000, units % 10000)
             }
+            None if event.kind == "reference" => "服务商报告的到期日，仅供参考".into(),
             None => "未填写金额".into(),
         };
         output.push_str(&fold(&format!(
             "DESCRIPTION:{amount}\\n{}",
-            if event.auto_renew {
+            if event.kind == "reference" {
+                "代理订阅来源"
+            } else if event.auto_renew {
                 "自动续费计划；并非付款凭证"
             } else {
                 "手动续费"
