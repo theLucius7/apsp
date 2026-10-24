@@ -7,6 +7,7 @@ import tailwindcss from '@tailwindcss/vite'
 const vendor = (id: string) => {
   if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'react'
   if (/node_modules\/(radix-ui|@radix-ui|@floating-ui|react-remove-scroll|react-remove-scroll-bar|react-style-singleton|use-callback-ref|use-sidecar|aria-hidden|get-nonce|tslib)\//.test(id)) return 'radix'
+  if (/node_modules\/(motion|motion-dom|motion-utils|framer-motion)\//.test(id)) return 'motion'
 }
 
 export default defineConfig({

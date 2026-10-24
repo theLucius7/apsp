@@ -87,7 +87,7 @@ export default function AdminShell({ current, busy, error, onLogout, children }:
         <aside data-slot="sidebar" className="bg-sidebar text-sidebar-foreground shrink-0 border-b">
           <div className="flex h-14 items-center gap-2 px-4">
             <a href="#/servers" aria-label={t('apsp首页')} className="mr-auto min-w-0 rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"><Brand /></a>
-            <div className="max-w-32 min-w-0">{account}</div>
+            <AccountButton actor={actor.data} busy={busy} onLogout={onLogout} collapsed={false} compact />
             <Button variant="outline" aria-expanded={mobileOpen} aria-controls="admin-navigation" onClick={() => setMobileOpen(!mobileOpen)}>
               {mobileOpen ? <XIcon /> : <MenuIcon />}<span>{t('菜单')}</span>
             </Button>
@@ -95,7 +95,10 @@ export default function AdminShell({ current, busy, error, onLogout, children }:
           <m.div id="admin-navigation" initial={false}
             animate={mobileOpen ? { height: 'auto', opacity: 1, display: 'block' } : { height: 0, opacity: 0, transitionEnd: { display: 'none' } }}
             transition={transition.base} className="overflow-hidden">
-            <div className="max-h-[70dvh] overflow-y-auto border-t px-3 py-3">{navigationList}</div>
+            <div className="max-h-[70dvh] overflow-y-auto border-t px-3 py-3">
+              {navigationList}
+              <p className="text-muted-foreground mt-3 border-t px-2 pt-3 text-xs">{t('当前账号')}：{actor.data?.display_name ?? t('管理员')}</p>
+            </div>
           </m.div>
         </aside>
         {main}
@@ -130,9 +133,14 @@ function Navigation({ items, current, collapsed }: { items: readonly NavigationI
   </nav>
 }
 
-function AccountButton({ actor, busy, onLogout, collapsed }: { actor?: Actor; busy: boolean; onLogout: () => void; collapsed: boolean }) {
+function AccountButton({ actor, busy, onLogout, collapsed, compact = false }: { actor?: Actor; busy: boolean; onLogout: () => void; collapsed: boolean; compact?: boolean }) {
   const { t } = useI18n()
   const role = actor?.role === 'viewer' ? t('只读 · ') : actor?.role === 'operator' ? t('运维 · ') : ''
+  const name = actor?.display_name ?? t('管理员')
+  // Phones keep logout one tap away without spending header width on the name.
+  if (compact) return <Button data-slot="logout-button" variant="ghost" size="icon" disabled={busy} onClick={onLogout} title={`${name} · ${t('退出登录')}`}>
+    <LogOutIcon aria-hidden="true" /><span className="sr-only">{role}{name} · {t('退出登录')}</span>
+  </Button>
   return <button type="button" data-slot="logout-button" disabled={busy} onClick={onLogout}
     className={cn('hover:bg-sidebar-accent focus-visible:ring-sidebar-ring/50 flex w-full min-w-0 items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors outline-none focus-visible:ring-3 disabled:opacity-50', collapsed && 'justify-center')}>
     <span className="bg-primary/10 text-primary grid size-8 shrink-0 place-items-center rounded-full text-xs font-semibold max-md:hidden" aria-hidden="true">管</span>
