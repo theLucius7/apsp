@@ -535,7 +535,10 @@ def main():
         candidates = catalog(args.panel, token, actual if args.target == "auto" else args.target, version)
     os.umask(0o077)
     temporary_root = Path("/opt/apsp")
-    temporary_root.mkdir(mode=0o755, parents=True, exist_ok=True)
+    if not temporary_root.exists() and not temporary_root.is_symlink():
+        temporary_root.mkdir(mode=0o755, parents=True)
+        # An inherited default ACL ignores the umask; tighten only what was just created.
+        temporary_root.chmod(0o755)
     require_protected_file(temporary_root)
     with tempfile.TemporaryDirectory(prefix="apsp-bootstrap-", dir=temporary_root) as temporary:
         bundle = None

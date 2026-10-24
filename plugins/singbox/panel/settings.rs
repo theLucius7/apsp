@@ -68,6 +68,8 @@ pub struct PluginServer {
     pub last_error: Option<String>,
     #[serde(skip)]
     pub manifest_error: Option<String>,
+    #[serde(skip)]
+    pub checkpoint_required: bool,
     #[sqlx(skip)]
     pub installation: Installation,
 }
@@ -130,6 +132,22 @@ impl PluginServer {
             !error.is_empty() && self.last_result_rev.unwrap_or(0) >= target.unwrap_or(0)
         }) {
             (InstallationState::Failed, format!("设备应用失败：{error}"))
+        } else if self.checkpoint_required
+            && self.last_result_rev.unwrap_or(0) >= target.unwrap_or(0)
+            && self.healthy == Some(false)
+        {
+            // Exact devices report a successful apply without an error and stay
+            // unhealthy until a checkpoint certifies the target. Certification
+            // waits for publication while saved business changes are pending.
+            (
+                InstallationState::Pending,
+                if self.dirty_at.is_some() {
+                    "设备已回报应用；业务待完整预检确认并发布后，才会核对实际配置与进程并确认安装完成"
+                } else {
+                    "设备已回报应用，等待核对实际配置文件、受管进程与签名运行时后确认安装完成"
+                }
+                .into(),
+            )
         } else if self.last_result_rev.unwrap_or(0) >= target.unwrap_or(0)
             && self.healthy == Some(false)
         {
@@ -153,7 +171,7 @@ impl PluginServer {
 }
 fn query() -> String {
     format!(
-        "SELECT s.id,s.name,s.last_seen,s.capabilities,s.dirty_at,{SOURCE_SQL} AS source,m.target_rev,m.applied_rev,m.last_result_rev,m.healthy,m.last_error,e.error AS manifest_error FROM servers s LEFT JOIN server_plugins p ON p.server_id=s.id AND p.plugin='sing-box' LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' LEFT JOIN singbox_installation e ON e.server_id=s.id AND e.target_rev=m.target_rev WHERE s.deleted_at IS NULL"
+        "SELECT s.id,s.name,s.last_seen,s.capabilities,s.dirty_at,{SOURCE_SQL} AS source,m.target_rev,m.applied_rev,m.last_result_rev,m.healthy,m.last_error,e.error AS manifest_error,COALESCE(r.checkpoint_required,false) AS checkpoint_required FROM servers s LEFT JOIN server_plugins p ON p.server_id=s.id AND p.plugin='sing-box' LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' LEFT JOIN singbox_installation e ON e.server_id=s.id AND e.target_rev=m.target_rev LEFT JOIN runtime_control_devices r ON r.server_id=s.id WHERE s.deleted_at IS NULL"
     )
 }
 

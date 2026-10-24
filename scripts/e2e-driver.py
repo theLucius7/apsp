@@ -59,6 +59,30 @@ def origin(value):
     return value.rstrip("/")
 
 
+def origin_header(base):
+    # The panel compares Origin with the canonical serialization of its public
+    # URL: lowercase scheme and host, default port omitted.
+    parsed = urllib.parse.urlsplit(base)
+    host = parsed.hostname if ":" not in parsed.hostname else f"[{parsed.hostname}]"
+    default = {"http": 80, "https": 443}[parsed.scheme.lower()]
+    port = "" if parsed.port in (None, default) else f":{parsed.port}"
+    return f"{parsed.scheme.lower()}://{host}{port}"
+
+
+def failure_detail(path, error):
+    route = urllib.parse.urlsplit(path).path
+    if not route.startswith("/api/") or "enrollment" in route or "token" in route:
+        return ""
+    try:
+        message = json.loads(error.read(4096)).get("error")
+    except Exception:
+        message = None
+    detail = " " + re.sub(r"/[0-9]+(?=/|$)", "/{id}", route)
+    if isinstance(message, str):
+        detail += "：" + message[:160]
+    return detail
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, fp, code, message, headers, new_url):
         raise AcceptanceError("验收接口出现重定向；请直接使用最终面板 origin")
@@ -72,16 +96,19 @@ class Panel:
         )
         self.request("/api/login", {"password": password, "totp_code": totp_code})
 
-    def request(self, path, data=None, raw=False):
+    def request(self, path, data=None, raw=False, method=None):
         body = None if data is None else json.dumps(data).encode()
-        headers = {} if body is None else {"Content-Type": "application/json"}
-        request = urllib.request.Request(self.base + path, data=body, headers=headers)
+        # Send Origin on writes like a browser; password reauthentication
+        # refuses requests whose Origin is not the panel's public origin.
+        headers = {} if body is None else {"Content-Type": "application/json", "Origin": origin_header(self.base)}
+        request = urllib.request.Request(self.base + path, data=body, headers=headers, method=method)
         try:
             with self.client.open(request, timeout=20) as response:
                 content = response.read(2 * 1024 * 1024 + 1)
         except urllib.error.HTTPError as error:
-            # Do not expose enrollment or subscription tokens from request URLs.
-            raise AcceptanceError(f"面板请求失败，HTTP {error.code}") from None
+            # Do not expose enrollment or subscription tokens from request URLs:
+            # report only token-free API paths and the panel's fixed message.
+            raise AcceptanceError(f"面板请求失败，HTTP {error.code}" + failure_detail(path, error)) from None
         except urllib.error.URLError:
             raise AcceptanceError("无法连接面板，请检查 origin、TLS 与网络") from None
         ensure(len(content) <= 2 * 1024 * 1024, "面板响应超过验收脚本上限")
@@ -325,6 +352,146 @@ def record(state, args, view):
     print(f"阶段 {args.label} 通过：上传={up} 下载={down} 字节")
 
 
+RUNTIME_PREFLIGHT_CAPABILITY = "fleet:runtime-preflight:v1"
+
+
+def blocking_checks(view):
+    return sorted({check.get("key", "?") for check in view.get("checks") or []
+                   if isinstance(check, dict) and check.get("blocking") is True})
+
+
+PREFLIGHT_CHANGED = "采集期间发生变化"
+
+
+def collect_preflight(panel, base, deadline):
+    # The panel refuses a collection whose fingerprint changed while it
+    # sampled DNS and certificates, for example while a restarted Agent still
+    # reports its platform; the operator retries, and so does the driver.
+    for attempt in range(5):
+        try:
+            request = panel.request(base + "/preflight", {})
+            break
+        except AcceptanceError as error:
+            if PREFLIGHT_CHANGED not in str(error) or attempt == 4 or time.monotonic() >= deadline:
+                raise
+            time.sleep(5)
+    ensure(isinstance(request.get("id"), str), "预检请求未返回编号")
+    while True:
+        view = panel.request(base).get("preflight") or {}
+        if view.get("id") == request["id"] and view.get("device_checks_pending") is False:
+            return view
+        if time.monotonic() >= deadline:
+            states = [item.get("status") for item in view.get("operations") or [] if isinstance(item, dict)]
+            raise AcceptanceError("超时：设备未完成只读运行时预检；匹配请求=" + str(view.get("id") == request["id"])
+                                  + " 操作状态=" + ",".join(map(str, states)))
+        time.sleep(2)
+
+
+ERROR_CATEGORIES = (
+    ("health", ("health", "unhealthy")),
+    ("activation", ("activation", "certif")),
+    ("runtime_identity", ("instance", "binary", "executable", "signed runtime")),
+    ("configuration", ("configuration", "bundle", "revision")),
+    ("timeout", ("timed out", "timeout")),
+)
+
+
+def install_status(status, drift):
+    """Summarize a stalled install with fixed vocabulary only, never error text."""
+    status = status if isinstance(status, dict) else {}
+    drift = drift if isinstance(drift, dict) else {}
+    checkpoint = drift.get("checkpoint") if isinstance(drift.get("checkpoint"), dict) else {}
+    error = status.get("last_error")
+    error = error.lower() if isinstance(error, str) else ""
+    result = {key: status.get(key) if type(status.get(key)) in (int, bool) else None
+              for key in ("target_rev", "applied_rev", "healthy")}
+    result["error_categories"] = [name for name, words in ERROR_CATEGORIES
+                                  if any(word in error for word in words)] or (["other"] if error else [])
+    result["drift"] = drift.get("state") if isinstance(drift.get("state"), str) else None
+    result["checkpoint_supported"] = drift.get("checkpoint_supported") if type(drift.get("checkpoint_supported")) is bool else None
+    for key in ("state", "outcome", "failure_kind"):
+        value = checkpoint.get(key)
+        result["checkpoint_" + key] = value if isinstance(value, str) and re.fullmatch(r"[a-z_]{1,40}", value) else None
+    return result
+
+
+def bootstrap_installed(status, drift):
+    status = status if isinstance(status, dict) else {}
+    target = status.get("target_rev")
+    if type(target) is not int or target <= 0:
+        return False
+    if status.get("applied_rev") == target and status.get("healthy") is True:
+        return True
+    checkpoint = drift.get("checkpoint") if isinstance(drift, dict) else None
+    return (isinstance(checkpoint, dict) and drift.get("target_revision") == target
+            and type(checkpoint.get("observed_at")) is int
+            and checkpoint.get("outcome") in ("verified", "superseded"))
+
+
+def diagnose(panel, state, args):
+    """Print the deployment and checkpoint state in fixed vocabulary only."""
+    base = f"/api/plugins/sing-box/servers/{state['server_id']}/operations-view"
+    print("运行时状态=" + json.dumps(install_status(snapshot(panel, state)["deployment"],
+                                                  panel.request(base).get("drift")), ensure_ascii=False))
+
+
+def reauthenticate(panel, args):
+    # Bootstrap and confirmation require a proof younger than five minutes;
+    # device sampling and the first runtime install can outlast the login one.
+    panel.request("/api/control-center/reauth", {"password": password(), "totp_code": totp_code(args.totp)})
+
+
+def preflight(panel, state, args):
+    """Run the operator flow the panel requires before publishing business nodes.
+
+    Enable read-only runtime inspection for this server, collect the device
+    preflight, install the empty runtime first when no deployment exists yet,
+    then collect again and confirm. Only check keys are reported, never values.
+    """
+    deadline = time.monotonic() + args.timeout
+    server = state["server_id"]
+    profile = panel.request(f"/api/servers/{server}/fleet")
+    if profile["policy"].get("runtime_inspection") is not True:
+        panel.request(f"/api/servers/{server}/fleet", {
+            "asset": profile["asset"], "policy": {**profile["policy"], "runtime_inspection": True},
+            "expected_digest": profile["digest"]}, method="PUT")
+    # The Agent advertises the capability only after it reloads the local
+    # policy; requesting earlier is refused by the panel.
+    while RUNTIME_PREFLIGHT_CAPABILITY not in (panel.request(f"/api/servers/{server}/fleet").get("capabilities") or []):
+        ensure(time.monotonic() < deadline, "超时：Agent 未声明只读运行时预检能力，请检查本机 fleet-policy.json")
+        time.sleep(2)
+    base = f"/api/plugins/sing-box/servers/{server}/operations-view"
+    view = collect_preflight(panel, base, deadline)
+    bootstrap = view.get("bootstrap") or {}
+    if bootstrap.get("available") is True:
+        ensure(bootstrap.get("ready") is True,
+               "首次空运行时安装预检未通过；阻塞项=" + ",".join(blocking_checks(bootstrap)))
+        reauthenticate(panel, args)
+        panel.request(base + "/preflight/bootstrap", {"id": view["id"], "confirm": True})
+        # While saved business nodes await confirmation the server stays dirty,
+        # so the panel does not certify the empty revision as applied. The
+        # Agent answering the checkpoint for that revision shows it applied
+        # and reported healthy; the second preflight then reads the runtime
+        # account it created.
+        while True:
+            status = snapshot(panel, state)["deployment"]
+            drift = panel.request(base).get("drift") or {}
+            if bootstrap_installed(status, drift):
+                break
+            if time.monotonic() >= deadline:
+                raise AcceptanceError("超时：空运行时首次安装未完成；状态=" + json.dumps(
+                    install_status(status, drift), ensure_ascii=False))
+            time.sleep(2)
+        view = collect_preflight(panel, base, deadline)
+    ensure(view.get("ready") is True, "部署预检未通过；阻塞项=" + ",".join(blocking_checks(view)))
+    reauthenticate(panel, args)
+    confirmed = panel.request(base + "/preflight/confirm", {"id": view["id"], "confirm": True})
+    ensure(confirmed.get("confirmed") is True, "部署预检确认未生效")
+    state.setdefault("checkpoints", {})["preflight"] = {"id": view["id"], "confirmed_at": int(time.time())}
+    save(args.state, state)
+    print("部署预检已确认：" + str(len(view.get("checks") or [])) + " 项检查")
+
+
 def ready(panel, state, args):
     last_snapshot = args.state.with_name("ready-timeout.json")
     ensure(not last_snapshot.is_symlink(), "私有输出不能是符号链接")
@@ -448,6 +615,8 @@ def parser():
     installation = stages.add_parser("install", help="取得私有安装描述，不在本机执行")
     installation.add_argument("--agent-version", help="选择已导入且协议兼容的 Agent 版本")
     installation.add_argument("--refresh", action="store_true", help="签发新令牌，用于过期重试或升级")
+    checks = stages.add_parser("preflight", help="开启只读运行时预检，完成首次空安装并确认部署预检")
+    checks.add_argument("--timeout", type=int, default=600)
     active = stages.add_parser("ready", help="等待健康应用，保存独立客户端 JSON")
     active.add_argument("--agent-version", help="同时检查面板上报的 Agent 版本")
     active.add_argument("--client-port", type=int, help="本次容器端口映射的客户端目标端口")
@@ -458,6 +627,7 @@ def parser():
     growth.add_argument("--min-uplink", type=int, default=1)
     growth.add_argument("--min-downlink", type=int, default=1)
     growth.add_argument("--timeout", type=int, default=180)
+    stages.add_parser("diagnose", help="只用固定词汇报告部署与核对状态，不输出错误文本")
     stable = stages.add_parser("verify", help="暂停流量后检查稳定、outbox 与历史用量")
     stable.add_argument("--label", required=True)
     stable.add_argument("--unchanged-from", help="必须保持原封不动的稳定基线标签")

@@ -238,6 +238,13 @@ trust_directory=$(sudo mktemp -d /root/apsp-ci-trust.XXXXXX)
 sudo install -m 0400 crates/protocol/tests/fixtures/public-keys.json "$trust_directory/public-keys.json"
 sudo install -m 0500 tools/bootstrap.py "$trust_directory/bootstrap.py"
 sudo install -m 0400 tools/release.py "$trust_directory/release.py"
+# The bootstrap imports the legacy checkpoint guard and executes only a
+# preloaded trusted installer next to it, as the official entry provides.
+sudo install -m 0400 tools/legacy_agent_checkpoint.py "$trust_directory/legacy_agent_checkpoint.py"
+python3 tools/release.py render-installer --template deploy/install.sh.tmpl \
+  --agent-unit deploy/apsp-agent.service --runtime-unit plugins/sing-box/apsp-singbox@.service \
+  --output "$scratch/trusted-install.sh"
+sudo install -m 0500 "$scratch/trusted-install.sh" "$trust_directory/trusted-install.sh"
 cat > "$scratch/compose.override.yml" <<'YAML'
 services:
   panel:
@@ -307,6 +314,14 @@ phase=install
 owned_installation=1
 sudo python3 scripts/ci-bootstrap-install.py --enrollment "$scratch/enrollment.json" \
   --trust-directory "$trust_directory" --bundle "$scratch/release" --log "$scratch/install.log"
+# The panel publishes business nodes only after a confirmed read-only runtime
+# preflight. Allow it locally, restart so the Agent advertises it, then run the
+# operator flow (first empty runtime install, collect again, confirm).
+sudo sh -c "umask 077; printf '%s\\n' '{\"runtime_inspection\":true}' > /etc/apsp/fleet-policy.json"
+sudo systemctl restart apsp-agent.service
+phase=preflight
+"${driver[@]}" preflight --timeout 600
+phase=install
 "${driver[@]}" ready --agent-version "$agent_version" --timeout 600
 python3 - "$scratch/state.json" "$scratch/client.json" <<'PY'
 import json
@@ -321,25 +336,35 @@ runtime_pid=$(sudo systemctl show apsp-singbox@main.service -p MainPID --value)
 [[ $runtime_pid =~ ^[1-9][0-9]*$ ]] || die 'independent runtime is not active'
 
 wait_agent() {
-  python3 - <<'PY'
+  if python3 - <<'PY'
 import json
 import subprocess
 import time
 deadline = time.monotonic() + 120
+last = {'status_readable': False}
 while time.monotonic() < deadline:
     try:
         process = subprocess.run(['sudo', '/usr/local/bin/apsp-agent', 'status'],
                                  check=True, capture_output=True, text=True, timeout=10)
         value = json.loads(process.stdout)
-        if (value.get('connected') is True and value.get('healthy', {}).get('singbox') is True
-                and value.get('applied', {}).get('singbox', 0) > 0):
+        applied = value.get('applied', {}).get('singbox', 0)
+        last = {'status_readable': True, 'connected': value.get('connected') is True,
+                'healthy': value.get('healthy', {}).get('singbox') is True,
+                'applied_positive': type(applied) is int and applied > 0}
+        if all(last.values()):
             break
-    except (subprocess.SubprocessError, ValueError):
-        pass
+    except (subprocess.SubprocessError, ValueError, AttributeError):
+        last = {'status_readable': False}
     time.sleep(2)
 else:
-    raise SystemExit('Agent did not restore its live status connection')
+    raise SystemExit('Agent did not restore its live status connection: ' + json.dumps(last))
 PY
+  then
+    return 0
+  fi
+  # Only fixed-vocabulary deployment and checkpoint state, never device output.
+  "${driver[@]}" diagnose >&2 || true
+  return 1
 }
 
 # Read only this run's configured user/node baseline, never identity material.

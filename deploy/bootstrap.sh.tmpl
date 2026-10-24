@@ -42,7 +42,7 @@ protected_directory() {
       PROTECTED_OWNER=$(/usr/bin/stat -f '%u' "$PROTECTED_CHECK")
       PROTECTED_MODE=$(/usr/bin/stat -f '%Lp' "$PROTECTED_CHECK")
     fi
-    [ "$PROTECTED_OWNER" = 0 ] && [ "$((0$PROTECTED_MODE & 022))" = 0 ] || { echo '安装临时目录与父目录必须由 root 保护，不能由其他账户写入' >&2; exit 1; }
+    [ "$PROTECTED_OWNER" = 0 ] && [ "$((0$PROTECTED_MODE & 022))" = 0 ] || { echo "安装临时目录与父目录必须由 root 保护，不能由其他账户写入：$PROTECTED_CHECK（属主 $PROTECTED_OWNER，权限 $PROTECTED_MODE）" >&2; exit 1; }
     [ "$PROTECTED_CHECK" != / ] || break
     PROTECTED_CHECK=$(dirname "$PROTECTED_CHECK")
   done
@@ -50,7 +50,11 @@ protected_directory() {
 EXISTING_PARENT=$STAGING_BASE
 while [ ! -e "$EXISTING_PARENT" ] && [ ! -L "$EXISTING_PARENT" ]; do EXISTING_PARENT=$(dirname "$EXISTING_PARENT"); done
 protected_directory "$EXISTING_PARENT"
-(umask 022; mkdir -p "$STAGING_BASE")
+if [ ! -e "$STAGING_BASE" ] && [ ! -L "$STAGING_BASE" ]; then
+  (umask 022; mkdir -p "$STAGING_BASE")
+  # An inherited default ACL ignores the umask; tighten only what was just created.
+  chmod 755 "$STAGING_BASE"
+fi
 protected_directory "$STAGING_BASE"
 STAGING=$(mktemp -d "$STAGING_BASE/apsp-bootstrap.XXXXXX")
 cleanup() { rm -rf "$STAGING"; }

@@ -13,6 +13,11 @@ use std::time::Duration;
 
 const ROOT: &str = "/api/plugins/sing-box";
 
+// Source parsing admits a fixed number of concurrent parses per process and
+// answers 409 when they are taken. Tests in this binary would otherwise
+// compete for those permits and observe "busy" instead of their own outcome.
+static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 async fn call(
     panel: &TestPanel,
     cookie: &str,
@@ -85,6 +90,7 @@ async fn settle(panel: &TestPanel, cookie: &str, source: i64) -> Result<Value> {
 
 #[sqlx::test(migrations = "./migrations")]
 async fn preview_is_private_then_commits_exactly_selected_nodes_once(pool: PgPool) -> Result<()> {
+    let _serial = SERIAL.lock().await;
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let result = preview(&panel, &cookie).await?;
@@ -159,6 +165,7 @@ async fn preview_is_private_then_commits_exactly_selected_nodes_once(pool: PgPoo
 async fn url_preview_commit_uses_captured_body_and_upstream_information_without_refetch(
     pool: PgPool,
 ) -> Result<()> {
+    let _serial = SERIAL.lock().await;
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let result = preview(&panel, &cookie).await?;
@@ -193,6 +200,7 @@ async fn url_preview_commit_uses_captured_body_and_upstream_information_without_
 async fn preview_selection_expiry_parser_and_auth_fail_without_partial_sources(
     pool: PgPool,
 ) -> Result<()> {
+    let _serial = SERIAL.lock().await;
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let unauthorized = panel
@@ -286,6 +294,7 @@ async fn preview_selection_expiry_parser_and_auth_fail_without_partial_sources(
 async fn preview_limits_and_fetch_validation_never_contact_private_hosts(
     pool: PgPool,
 ) -> Result<()> {
+    let _serial = SERIAL.lock().await;
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     for body in [
@@ -333,6 +342,7 @@ async fn preview_limits_and_fetch_validation_never_contact_private_hosts(
 async fn adoption_is_explicit_and_refresh_preserves_metadata_and_reports_changes(
     pool: PgPool,
 ) -> Result<()> {
+    let _serial = SERIAL.lock().await;
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let result = preview(&panel, &cookie).await?;
@@ -479,6 +489,7 @@ async fn adoption_is_explicit_and_refresh_preserves_metadata_and_reports_changes
 async fn refresh_settings_keep_interval_and_failures_keep_successful_snapshot(
     pool: PgPool,
 ) -> Result<()> {
+    let _serial = SERIAL.lock().await;
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let source=call(&panel,&cookie,Method::POST,"/subscription-sources",Some(json!({"name":"旧API兼容","kind":"inline","content":content(),"auto_refresh":false,"refresh_interval_seconds":3600,"user_agent":"sing-box/1.14.2"}))).await?;
@@ -568,6 +579,7 @@ async fn refresh_settings_keep_interval_and_failures_keep_successful_snapshot(
 async fn source_revision_and_identity_limits_reject_without_replacing_cached_history(
     pool: PgPool,
 ) -> Result<()> {
+    let _serial = SERIAL.lock().await;
     const MAX: i64 = 9_007_199_254_740_991;
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
@@ -677,6 +689,7 @@ async fn source_revision_and_identity_limits_reject_without_replacing_cached_his
 async fn adoption_metadata_cas_prevents_stale_catalog_resurrection_and_preserves_explicit_zero(
     pool: PgPool,
 ) -> Result<()> {
+    let _serial = SERIAL.lock().await;
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let parsed = preview(&panel, &cookie).await?;

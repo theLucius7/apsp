@@ -4,8 +4,8 @@ import hashlib
 MAX_SOURCE = 2 * 1024 * 1024
 SOURCES = {
     'NodeQuality.sh': {
-        'source_sha256': '34be83427844aba67e4677f1dead79812d5699fbbab08be0a4f074c332efb6fa',
-        'patched_sha256': '728d15d923ae030b9caf83cfe38b9bdb690800c9e11feb57c75ce99a7623a182',
+        'source_sha256': '4ead63717f9860999017197e5b4e7e4a066d4f8b54f34d15895690e22c7ec15a',
+        'patched_sha256': '44b5ac2402b860e5394ef37df8fa79e195e08e9ccaaef2f15686978b4a48ee8d',
     },
 }
 REQUESTS = (

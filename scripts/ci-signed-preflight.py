@@ -87,11 +87,38 @@ def probe(binary, directory, must_pass):
     marker.unlink(missing_ok=True)
 
 
+def running_runtime_executable():
+    process = subprocess.run(["systemctl", "show", "apsp-singbox@main.service", "-p", "MainPID", "--value"],
+                             check=True, capture_output=True, text=True, timeout=15).stdout.strip()
+    ensure(process.isdigit() and int(process) > 0, "runtime service has no PID")
+    return os.readlink(f"/proc/{process}/exe")
+
+
 def exercise(args):
     binary = RUNTIME.resolve(strict=True)
     directory = binary.parent
     paths = [binary, *(directory / name for name in ("release.json", "SHA256SUMS", "SHA256SUMS.minisig", ".artifact.json"))]
     original = {path: (path.read_bytes(), path.stat().st_mode & 0o777) if path.exists() else None for path in paths}
+    executable = running_runtime_executable()
+    ensure(not executable.endswith(" (deleted)"), "runtime must run from its installed executable")
+    # Move originals aside and back by rename instead of rewriting their bytes.
+    # Replacing the path under the running runtime leaves its executable
+    # deleted, which the Agent's exact inspection rightly refuses; a rename
+    # moves the same entry, so the process follows it back. Keep the originals
+    # outside the artifact tree, on the same filesystem.
+    aside = Path(tempfile.mkdtemp(prefix=".apsp-ci-originals-", dir="/opt"))
+    moved = {}
+
+    def move_aside(path):
+        moved[path] = aside / path.name
+        os.rename(path, moved[path])
+
+    def restore():
+        for path, saved in original.items():
+            if path in moved:
+                os.replace(moved.pop(path), path)
+            elif saved is None:
+                path.unlink(missing_ok=True)
     metadata = json.loads(original[directory / "release.json"][0])
     entry = next(item for item in metadata["artifacts"] if item["name"] == "sing-box" and item["version"] == directory.name and item["arch"] == "amd64")
     rows = dict((path, checksum) for checksum, path in (line.split("  ") for line in original[directory / "SHA256SUMS"][0].decode().splitlines()))
@@ -102,15 +129,18 @@ def exercise(args):
         for case in ("cached-binary", "cached-proof", "legacy-unsigned-cache"):
             if case == "cached-binary":
                 contents, mode = original[binary]
-                changed = bytes([contents[0] ^ 1]) + contents[1:]
-                atomic_replace(binary, changed, mode)
+                move_aside(binary)
+                atomic_replace(binary, bytes([contents[0] ^ 1]) + contents[1:], mode)
             elif case == "cached-proof":
                 proof = directory / "SHA256SUMS"
                 contents, mode = original[proof]
+                move_aside(proof)
                 atomic_replace(proof, (b"0" if contents[:1] != b"0" else b"1") + contents[1:], mode)
             else:
                 for name in ("release.json", "SHA256SUMS", "SHA256SUMS.minisig"):
-                    (directory / name).unlink()
+                    move_aside(directory / name)
+                if original[directory / ".artifact.json"] is not None:
+                    move_aside(directory / ".artifact.json")
                 atomic_replace(directory / ".artifact.json", json.dumps({"archive_sha256":archive_hash,
                     "binary_sha256":digest(binary)}).encode(), 0o644)
             result = subprocess.run([str(AGENT), "verify-cache"], check=False, capture_output=True, timeout=60)
@@ -120,22 +150,20 @@ def exercise(args):
                                          args.log_directory / (case + ".log"))
             ensure(result != 0, "untrusted cache passed installer migration preflight")
             ensure(snapshot() == baseline, "rejected installation changed identity, configuration, ledger, links, or process IDs")
-            for path, saved in original.items():
-                if saved is None:
-                    path.unlink(missing_ok=True)
-                else:
-                    atomic_replace(path, *saved)
+            restore()
+            ensure(running_runtime_executable() == executable,
+                   "restored cache must keep the running runtime on its original executable")
+            ensure(all(path.read_bytes() == saved[0] for path, saved in original.items() if saved is not None),
+                   "restored cache differs from the original files")
             subprocess.run([str(AGENT), "verify-cache"], check=True, capture_output=True, timeout=60)
             probe(binary, args.log_directory, True)
             ensure(snapshot() == baseline, "restored proof changed the running installation")
             results.append(case)
             print("Signed installation rejection and unchanged running state verified:", case)
     finally:
-        for path, saved in original.items():
-            if saved is None:
-                path.unlink(missing_ok=True)
-            else:
-                atomic_replace(path, *saved)
+        restore()
+        aside.rmdir()
+    ensure(running_runtime_executable() == executable, "runtime executable changed during cache rejection checks")
     args.summary.write_text(json.dumps({"passed":True,"checks":results + ["restored-systemd-verifier"]}) + "\n")
 
 

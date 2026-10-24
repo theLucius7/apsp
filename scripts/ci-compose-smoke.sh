@@ -63,15 +63,21 @@ for path in assets:
             assert response.headers.get_content_type() == 'text/javascript'
         elif path.endswith('.css'):
             assert response.headers.get_content_type() == 'text/css'
-for path in ['/api/does-not-exist', '/assets/missing.js']:
+def expect(path, code):
     try:
         request(path)
     except urllib.error.HTTPError as error:
-        assert error.code == 404
+        assert error.code == code, (path, error.code)
     else:
-        raise AssertionError(path + ' must return 404')
+        raise AssertionError(path + ' must return ' + str(code))
+
+# Unauthenticated API requests are refused before routing, so they cannot
+# probe which administrative endpoints exist.
+expect('/api/does-not-exist', 401)
+expect('/assets/missing.js', 404)
 with request('/api/login', {'password': os.environ['APSP_ADMIN_PASSWORD']}) as response:
     assert 'HttpOnly' in response.headers['Set-Cookie']
+expect('/api/does-not-exist', 404)
 if phase == 'create':
     with request('/api/servers', {'name': 'CI 持久化检查'}) as response:
         assert response.status == 201

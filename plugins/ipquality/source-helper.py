@@ -20,7 +20,7 @@ EXPECTED = {
 }
 POLICIES = {
     'report': '468311a213e820f920a9f556dfaaf6883002232d459c9e36d2622db2d7b43b26',
-    'dependency': '15e9ead93061a7bd2da3bf54a7244123ec6b4e1161695317a5fb9b539399d2b6',
+    'dependency': 'e8828b3929aaeabd7b0fc615205998f9e21a6403fa96a9400bc81fe06e02f9f2',
     'data': '0115f90f8ce521eab1472d8426b8f8dfbf1fefca427ae0fdfd557b346a8fdab3',
     'ip-score': '9ef1a5cf9a6c442d5abdf8ee91f2b42458c940a49f74c6d13a649cc5fb2ce303',
     'browser': '0b4ad0d200bae6b6919f5ae3d2b69b1c46c7f388dc29f4d4f25e95d6ec3c9723',

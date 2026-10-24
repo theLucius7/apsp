@@ -7,9 +7,13 @@ use std::{
 };
 use tokio::time::timeout;
 
+// Explicit paths: on Windows this file is itself loaded through `#[path]`
+// from system/windows.rs, which changes where implicit child modules resolve.
+#[path = "services/logs.rs"]
 mod logs;
 #[path = "services/runtime.rs"]
 mod runtime;
+#[path = "services/terminals.rs"]
 mod terminals;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -349,6 +353,7 @@ impl ServiceManager for SystemServiceManager {
     fn supports_confirmed_cancellation(&self) -> bool {
         super::cleanup::supported(self.backend)
     }
+    #[cfg(unix)]
     fn supports_diagnostic_cpu_ceiling(&self) -> bool {
         self.backend == ServiceBackend::Systemd && super::diagnostic_cpu_ceiling_supported()
     }

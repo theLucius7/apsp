@@ -62,11 +62,15 @@ async fn identity(pid: u32) -> Result<Option<String>> {
     }
     #[cfg(windows)]
     {
+        // Use .NET directly: cmdlet module autoloading can take many seconds on
+        // a cold Windows ARM64 host. A process that exits before its start time
+        // is read is "gone", not an unreadable identity; only an existing
+        // process whose start time cannot be read is an error.
         let script = format!(
-            "$p=Get-Process -Id {pid} -ErrorAction SilentlyContinue; if ($p) {{ $p.StartTime.ToUniversalTime().Ticks }}"
+            "try {{ $p=[System.Diagnostics.Process]::GetProcessById({pid}) }} catch [System.ArgumentException] {{ exit 0 }}; try {{ $p.StartTime.ToUniversalTime().Ticks }} catch {{ $m=$_.Exception.Message; try {{ [void][System.Diagnostics.Process]::GetProcessById({pid}) }} catch [System.ArgumentException] {{ exit 0 }}; [Console]::Error.WriteLine($m); exit 2 }}; exit 0"
         );
         let output = timeout(
-            Duration::from_secs(5),
+            Duration::from_secs(20),
             Command::new("powershell.exe")
                 .args(["-NoProfile", "-NonInteractive", "-Command", &script])
                 .kill_on_drop(true)
@@ -75,7 +79,12 @@ async fn identity(pid: u32) -> Result<Option<String>> {
         .await??;
         ensure!(
             output.status.success(),
-            "process identity inspection failed"
+            "process identity inspection failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+                .trim()
+                .chars()
+                .take(300)
+                .collect::<String>()
         );
         let value = String::from_utf8(output.stdout)?;
         Ok((!value.trim().is_empty()).then(|| value.trim().to_owned()))
@@ -87,7 +96,10 @@ async fn group_live(pid: u32) -> Result<bool> {
     let output = timeout(
         Duration::from_secs(3),
         Command::new("ps")
-            .args(["-e", "-o", "pid=,pgid=,stat="])
+            // POSIX form: `-A` lists every process (BSD `-e` appends each
+            // environment instead) and one `-o` per column, because BSD ps
+            // treats everything after the first `=` as that column's header.
+            .args(["-A", "-o", "pid=", "-o", "pgid=", "-o", "stat="])
             .kill_on_drop(true)
             .output(),
     )
