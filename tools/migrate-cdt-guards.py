@@ -135,7 +135,7 @@ class Panel:
         self.request("/api/login", "POST", {"password": password})
 
     def request(self, path, method="GET", body=None):
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "apsp-cdt-migration/1.0"}
         if self.cookie:
             headers["Cookie"] = self.cookie
         request = urllib.request.Request(self.origin + path, method=method, headers=headers,
