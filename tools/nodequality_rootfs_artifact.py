@@ -19,7 +19,7 @@ FILES = {BINARY, "rootfs.tar.gz", "rootfs-manifest.json"}
 MAX_OUTER_STREAM = 256 * 1024 * 1024
 MAX_RUNNER = 4 * 1024 * 1024
 MAX_MANIFEST = 8 * 1024 * 1024
-ENTRY_SHA256 = "728d15d923ae030b9caf83cfe38b9bdb690800c9e11feb57c75ce99a7623a182"
+ENTRY_SHA256 = "44b5ac2402b860e5394ef37df8fa79e195e08e9ccaaef2f15686978b4a48ee8d"
 LOAD_ROOTFS = b'''function load_bench_os(){
     cd $work_dir
     rm -rf BenchOs

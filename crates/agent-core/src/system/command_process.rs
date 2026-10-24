@@ -62,8 +62,11 @@ async fn identity(pid: u32) -> Result<Option<String>> {
     }
     #[cfg(windows)]
     {
+        // A process that exits between Get-Process and StartTime makes the
+        // property read fail. That is "gone", not an unreadable identity; only
+        // fail when the process still exists and its start time cannot be read.
         let script = format!(
-            "$p=Get-Process -Id {pid} -ErrorAction SilentlyContinue; if ($p) {{ $p.StartTime.ToUniversalTime().Ticks }}"
+            "$p=Get-Process -Id {pid} -ErrorAction SilentlyContinue; if ($p) {{ try {{ $p.StartTime.ToUniversalTime().Ticks }} catch {{ if (Get-Process -Id {pid} -ErrorAction SilentlyContinue) {{ [Console]::Error.WriteLine($_.Exception.Message); exit 2 }} }} }}; exit 0"
         );
         let output = timeout(
             Duration::from_secs(5),
@@ -75,7 +78,12 @@ async fn identity(pid: u32) -> Result<Option<String>> {
         .await??;
         ensure!(
             output.status.success(),
-            "process identity inspection failed"
+            "process identity inspection failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+                .trim()
+                .chars()
+                .take(300)
+                .collect::<String>()
         );
         let value = String::from_utf8(output.stdout)?;
         Ok((!value.trim().is_empty()).then(|| value.trim().to_owned()))

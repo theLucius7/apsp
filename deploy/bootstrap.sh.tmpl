@@ -42,7 +42,7 @@ protected_directory() {
       PROTECTED_OWNER=$(/usr/bin/stat -f '%u' "$PROTECTED_CHECK")
       PROTECTED_MODE=$(/usr/bin/stat -f '%Lp' "$PROTECTED_CHECK")
     fi
-    [ "$PROTECTED_OWNER" = 0 ] && [ "$((0$PROTECTED_MODE & 022))" = 0 ] || { echo '安装临时目录与父目录必须由 root 保护，不能由其他账户写入' >&2; exit 1; }
+    [ "$PROTECTED_OWNER" = 0 ] && [ "$((0$PROTECTED_MODE & 022))" = 0 ] || { echo "安装临时目录与父目录必须由 root 保护，不能由其他账户写入：$PROTECTED_CHECK（属主 $PROTECTED_OWNER，权限 $PROTECTED_MODE）" >&2; exit 1; }
     [ "$PROTECTED_CHECK" != / ] || break
     PROTECTED_CHECK=$(dirname "$PROTECTED_CHECK")
   done

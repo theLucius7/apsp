@@ -57,7 +57,7 @@ jobs:
           stat -c 'before: %U:%G %a %n' /opt
           sudo chown root:root /opt
           sudo chmod go-w /opt
-          stat -c 'after: %U:%G %a %n' /opt
+          stat -c 'after: %U:%G %a %n' /opt / /opt/apsp 2>/dev/null || true
       - name: Verify real acceptance driver and runtime cache contracts
         run: |
           python3 scripts/test-e2e-driver.py
@@ -422,7 +422,7 @@ jobs:
           release: ${{ matrix.release }}
           arch: ${{ matrix.vm_arch }}
           copyback: ${{ matrix.package == true }}
-          prepare: ${{ matrix.package && 'pkg install -y python311 py311-sqlite3 py311-cryptography' || '' }}
+          prepare: ${{ matrix.package && 'sh tools/freebsd-ci-prepare.sh' || '' }}
           run: |
             set -eu
             chmod 755 .ci-binaries/apsp-agent
@@ -434,13 +434,13 @@ jobs:
             if [ '${{ matrix.package }}' != true ]; then exit 0; fi
             # The newest supported release also packages the binary and runs the
             # Agent and native service smoke tests.
-            python3.11 tools/build-agent.py '${{ matrix.target }}' .ci-artifacts --binary .ci-binaries/apsp-agent
+            apsp-ci-python tools/build-agent.py '${{ matrix.target }}' .ci-artifacts --binary .ci-binaries/apsp-agent
             mkdir -p /tmp/apsp-cores
             sysctl kern.corefile=/tmp/apsp-cores/%N.%P.core
             ulimit -c unlimited
             result=0
-            env GITHUB_ACTIONS=true APSP_SMOKE_CORE_DIR=/tmp/apsp-cores python3.11 tools/ci-run.py python3.11 tools/agent-smoke.py .ci-binaries/apsp-agent || result=1
-            env CI=true GITHUB_ACTIONS=true python3.11 tools/ci-run.py python3.11 tools/native-service-smoke.py .ci-binaries/apsp-agent .ci-artifacts/sing-box/1.14.2/freebsd-${{ matrix.arch }} || result=1
+            env GITHUB_ACTIONS=true APSP_SMOKE_CORE_DIR=/tmp/apsp-cores apsp-ci-python tools/ci-run.py apsp-ci-python tools/agent-smoke.py .ci-binaries/apsp-agent || result=1
+            env CI=true GITHUB_ACTIONS=true apsp-ci-python tools/ci-run.py apsp-ci-python tools/native-service-smoke.py .ci-binaries/apsp-agent .ci-artifacts/sing-box/1.14.2/freebsd-${{ matrix.arch }} || result=1
             exit "$result"
       - uses: actions/upload-artifact@v7.0.1
         if: matrix.package
@@ -473,7 +473,7 @@ jobs:
           stat -c 'before: %U:%G %a %n' /opt
           sudo chown root:root /opt
           sudo chmod go-w /opt
-          stat -c 'after: %U:%G %a %n' /opt
+          stat -c 'after: %U:%G %a %n' /opt / /opt/apsp 2>/dev/null || true
       - name: Compile only the deliberately public CI test trust root
         run: python3 scripts/ci-test-trust.py --github-env "$GITHUB_ENV"
       - uses: actions/download-artifact@v8.0.1
