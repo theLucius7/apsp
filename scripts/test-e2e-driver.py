@@ -95,6 +95,51 @@ class PreparationPanel:
         return next(item for item in self.resources[base] if item["id"] == int(identifier))
 
 
+class PreflightPanel:
+    """Operations view with the preflight nested, as the panel serves it."""
+
+    def __init__(self, capability_after=1):
+        self.calls = []
+        self.capability_after = capability_after
+        self.fleet_reads = 0
+        self.preflights = []
+        self.polls = 0
+        self.bootstrapped = False
+
+    def request(self, path, data=None, raw=False, method=None):
+        self.calls.append((path, method or ("POST" if data is not None else "GET")))
+        base = "/api/plugins/sing-box/servers/41/operations-view"
+        if path == "/api/servers/41/fleet" and method == "PUT":
+            assert data["policy"]["runtime_inspection"] is True and data["expected_digest"] == "digest-1"
+            return {}
+        if path == "/api/servers/41/fleet":
+            self.fleet_reads += 1
+            capabilities = [DRIVER.RUNTIME_PREFLIGHT_CAPABILITY] if self.fleet_reads > self.capability_after else []
+            return {"asset": {}, "policy": {"runtime_inspection": False}, "digest": "digest-1",
+                    "capabilities": capabilities}
+        if path == "/api/control-center/reauth":
+            return {"verified_at": 1, "expires_at": 301}
+        if path == base + "/preflight":
+            self.preflights.append(f"preflight-{len(self.preflights) + 1}")
+            self.polls = 0
+            return {"id": self.preflights[-1], "status": "queued"}
+        if path == base + "/preflight/bootstrap":
+            assert data == {"id": "preflight-1", "confirm": True}
+            self.bootstrapped = True
+            return {}
+        if path == base + "/preflight/confirm":
+            assert data == {"id": "preflight-2", "confirm": True}
+            return {"id": data["id"], "confirmed": True}
+        if path == base:
+            self.polls += 1
+            first = len(self.preflights) == 1
+            current = {"id": self.preflights[-1], "device_checks_pending": self.polls < 2,
+                       "ready": not first, "checks": [{"key": "ports", "blocking": False}],
+                       "bootstrap": {"available": first, "ready": first}}
+            return {"server_id": 41, "id": None, "preflight": current}
+        raise AssertionError(path)
+
+
 class AcceptanceContracts(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -482,6 +527,43 @@ class AcceptanceContracts(unittest.TestCase):
              patch.object(DRIVER.time, "sleep", clock.sleep):
             with self.assertRaisesRegex(DRIVER.AcceptanceError, "双向代理用量"):
                 DRIVER.traffic(None, self.state, args)
+
+
+    def test_preflight_reads_the_nested_view_bootstraps_once_and_reauthenticates_before_confirming(self):
+        panel = PreflightPanel()
+        state = {"schema": 1, "prefix": "apsp-e2e-test", "server_id": 41, "checkpoints": {}}
+        args = argparse.Namespace(state=self.state_path, timeout=600, totp=False)
+        clock = Clock()
+        deployments = [view(), view()]
+        deployments[0]["deployment"] = {"target_rev": 1, "applied_rev": None, "healthy": None}
+        with patch.object(DRIVER, "snapshot", side_effect=deployments), \
+             patch.object(DRIVER, "password", return_value="test-password"), \
+             patch.object(DRIVER.time, "monotonic", clock.monotonic), \
+             patch.object(DRIVER.time, "sleep", clock.sleep), \
+             contextlib.redirect_stdout(io.StringIO()):
+            DRIVER.preflight(panel, state, args)
+        self.assertTrue(panel.bootstrapped)
+        self.assertEqual(panel.preflights, ["preflight-1", "preflight-2"])
+        paths = [path for path, _ in panel.calls]
+        for action in ("/preflight/bootstrap", "/preflight/confirm"):
+            index = next(i for i, path in enumerate(paths) if path.endswith(action))
+            self.assertEqual(paths[index - 1], "/api/control-center/reauth")
+        self.assertEqual(state["checkpoints"]["preflight"]["id"], "preflight-2")
+        self.assertEqual(json.loads(self.state_path.read_text())["checkpoints"]["preflight"]["id"], "preflight-2")
+
+    def test_preflight_timeout_reports_operation_states_without_values(self):
+        panel = PreflightPanel(capability_after=0)
+        panel.request = (lambda original: lambda path, data=None, raw=False, method=None: (
+            {"preflight": {"id": "preflight-1", "device_checks_pending": True,
+                           "operations": [{"status": "queued"}, {"status": "running"}]}}
+            if path.endswith("/operations-view") else original(path, data, raw, method)))(panel.request)
+        state = {"schema": 1, "prefix": "apsp-e2e-test", "server_id": 41, "checkpoints": {}}
+        args = argparse.Namespace(state=self.state_path, timeout=10, totp=False)
+        clock = Clock()
+        with patch.object(DRIVER.time, "monotonic", clock.monotonic), \
+             patch.object(DRIVER.time, "sleep", clock.sleep):
+            with self.assertRaisesRegex(DRIVER.AcceptanceError, "匹配请求=True 操作状态=queued,running"):
+                DRIVER.preflight(panel, state, args)
 
     def test_totals_preserve_large_integer_precision_and_reject_inconsistent_ledger(self):
         amount = 2 ** 64 + 17

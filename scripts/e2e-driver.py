@@ -325,6 +325,9 @@ def record(state, args, view):
     print(f"阶段 {args.label} 通过：上传={up} 下载={down} 字节")
 
 
+RUNTIME_PREFLIGHT_CAPABILITY = "fleet:runtime-preflight:v1"
+
+
 def blocking_checks(view):
     return sorted({check.get("key", "?") for check in view.get("checks") or []
                    if isinstance(check, dict) and check.get("blocking") is True})
@@ -334,11 +337,20 @@ def collect_preflight(panel, base, deadline):
     request = panel.request(base + "/preflight", {})
     ensure(isinstance(request.get("id"), str), "预检请求未返回编号")
     while True:
-        view = panel.request(base)
+        view = panel.request(base).get("preflight") or {}
         if view.get("id") == request["id"] and view.get("device_checks_pending") is False:
             return view
-        ensure(time.monotonic() < deadline, "超时：设备未完成只读运行时预检")
+        if time.monotonic() >= deadline:
+            states = [item.get("status") for item in view.get("operations") or [] if isinstance(item, dict)]
+            raise AcceptanceError("超时：设备未完成只读运行时预检；匹配请求=" + str(view.get("id") == request["id"])
+                                  + " 操作状态=" + ",".join(map(str, states)))
         time.sleep(2)
+
+
+def reauthenticate(panel, args):
+    # Bootstrap and confirmation require a proof younger than five minutes;
+    # device sampling and the first runtime install can outlast the login one.
+    panel.request("/api/control-center/reauth", {"password": password(), "totp_code": totp_code(args.totp)})
 
 
 def preflight(panel, state, args):
@@ -355,21 +367,30 @@ def preflight(panel, state, args):
         panel.request(f"/api/servers/{server}/fleet", {
             "asset": profile["asset"], "policy": {**profile["policy"], "runtime_inspection": True},
             "expected_digest": profile["digest"]}, method="PUT")
+    # The Agent advertises the capability only after it reloads the local
+    # policy; requesting earlier is refused by the panel.
+    while RUNTIME_PREFLIGHT_CAPABILITY not in (panel.request(f"/api/servers/{server}/fleet").get("capabilities") or []):
+        ensure(time.monotonic() < deadline, "超时：Agent 未声明只读运行时预检能力，请检查本机 fleet-policy.json")
+        time.sleep(2)
     base = f"/api/plugins/sing-box/servers/{server}/operations-view"
     view = collect_preflight(panel, base, deadline)
     bootstrap = view.get("bootstrap") or {}
     if bootstrap.get("available") is True:
         ensure(bootstrap.get("ready") is True,
                "首次空运行时安装预检未通过；阻塞项=" + ",".join(blocking_checks(bootstrap)))
+        reauthenticate(panel, args)
         panel.request(base + "/preflight/bootstrap", {"id": view["id"], "confirm": True})
         while True:
             status = snapshot(panel, state)["deployment"]
-            if status and status.get("target_rev", 0) > 0 and status.get("applied_rev") == status.get("target_rev"):
+            if (status and (status.get("target_rev") or 0) > 0
+                    and status.get("applied_rev") == status.get("target_rev") and status.get("healthy") is True):
                 break
-            ensure(time.monotonic() < deadline, "超时：空运行时首次安装未完成")
+            ensure(time.monotonic() < deadline, "超时：空运行时首次安装未完成；状态=" + json.dumps(
+                {key: (status or {}).get(key) for key in ("target_rev", "applied_rev", "healthy")}))
             time.sleep(2)
         view = collect_preflight(panel, base, deadline)
     ensure(view.get("ready") is True, "部署预检未通过；阻塞项=" + ",".join(blocking_checks(view)))
+    reauthenticate(panel, args)
     confirmed = panel.request(base + "/preflight/confirm", {"id": view["id"], "confirm": True})
     ensure(confirmed.get("confirmed") is True, "部署预检确认未生效")
     state.setdefault("checkpoints", {})["preflight"] = {"id": view["id"], "confirmed_at": int(time.time())}
