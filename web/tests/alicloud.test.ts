@@ -1,6 +1,14 @@
 import { expect, test } from 'bun:test'
-import { accountWrite, billUsable, message, status } from '../src/plugins/alicloud/types'
+import { accountWrite, billUsable, charge, message, status } from '../src/plugins/alicloud/types'
 import type { Account } from '../src/plugins/alicloud/types'
+
+test('attached EIP billing is displayed without relabelling dominant traffic as ordinary traffic', () => {
+  expect(charge('PayByDominantTraffic')).toBe('按主流量计费')
+  expect(charge('PayByTraffic')).toBe('按流量计费')
+  expect(charge('PayByBandwidth')).toBe('按带宽计费')
+  expect(charge('PayBy95')).toBe('按增强 95 计费')
+  expect(charge('TEST_ONLY_UNKNOWN')).toBe('其他计费方式')
+})
 
 test('cloud edits do not copy cached billing or write-only credentials back into requests', () => {
   const input = { name: ' 云账号 ', site: 'china' as const, enabled: true, auto_enabled: false, limit_gb: 100, bill: { sensitive: 'cached' } }

@@ -90,6 +90,13 @@ try {
       if (kind === 'bandwidth') assert.equal(await dialog.getByRole('spinbutton', { name: /^公网出带宽/ }).inputValue(), '7')
       if (kind === 'policy') assert.equal(await dialog.getByLabel('抢占式实例保活', { exact: true }).isChecked(), true)
       if (kind === 'power') assert.equal(await dialog.getByRole('combobox', { name: '本次停机模式', exact: true }).inputValue(), 'StopCharging')
+      if (kind === 'bandwidth') {
+        resource.snapshot = { ...snapshot, attached_eip_id: 'eip-testonly', charge_type: 'PayByDominantTraffic' }
+        await reread(); await wait(() => submit.isDisabled(), 'Attached EIP invalidates an open bandwidth draft without a revision change')
+        await page.evaluate(() => window.TEST_ONLY_submit()); assert.equal(writes.length, 0); ++totals.blocked
+        resource.snapshot = snapshot
+        await reread(); await wait(() => submit.isEnabled(), 'A fixed IP restores the original draft')
+      }
       account.revision++; await reread(); await wait(() => submit.isDisabled(), 'Account revision alone invalidates the original draft')
       await page.evaluate(() => window.TEST_ONLY_submit()); assert.equal(writes.length, 0); ++totals.blocked
       await dialog.getByRole('button', { name: '取消', exact: true }).click()

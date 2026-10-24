@@ -4,7 +4,7 @@ import { ErrorNotice, Field, FormDialog, Modal } from '../../components'
 import { useAction } from '../../hooks'
 import { accountWrite, charge, time } from './types'
 import type { Account, Operation, Resource, Target } from './types'
-import { accountError, checked, credentialError, operationError, registrationError, resourceError } from './guards'
+import { accountError, bandwidthError, checked, credentialError, operationError, registrationError, resourceError } from './guards'
 import type { CurrentCloud } from './guards'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -37,18 +37,18 @@ export function ResourceEditor({ resource, accounts, close, saved, current }: Ev
   return <FormDialog title={resource ? '编辑云资源策略' : '登记云资源'} busy={action.busy} error={action.error || writeError()} onClose={close} submitDisabled={Boolean(writeError())} onSubmit={() => void action.run(() => checked(writeError, () => api(resource ? `/api/plugins/alicloud/resources/${resource.id}` : '/api/plugins/alicloud/resources', resource ? 'PATCH' : 'POST', { ...draft, ...(resource ? { revision: resource.revision } : {}) })), saved)}>
     <Field label="资源名称"><Input required maxLength={128} value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} /></Field>
     <Field label="云账号"><NativeSelect className="w-full" disabled={!!resource} required value={draft.account_id} onChange={e => { setDraft({ ...draft, account_id: e.target.value }); setAccountRevision(current()?.accounts.find(a => a.id === e.target.value)?.revision) }}>{!accounts.some(a => a.id === draft.account_id) && <option value={draft.account_id}>原云账号（不可用）</option>}{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</NativeSelect></Field>
-    <div className="grid gap-x-4 sm:grid-cols-2"><Field label="资源类型"><NativeSelect className="w-full" disabled={!!resource} value={draft.kind} onChange={e => setDraft({ ...draft, kind: e.target.value as Resource['kind'], cloud_id: '' })}><option value="ecs">ECS 固定公网 IP</option><option value="eip">独立 EIP</option></NativeSelect></Field><Field label="地域标识" hint="填写云控制台中的地域代码。"><Input disabled={!!resource} required maxLength={80} pattern="[a-z0-9-]{3,80}" placeholder="例如 cn-hangzhou" value={draft.region} onChange={e => setDraft({ ...draft, region: e.target.value })} /></Field></div>
+    <div className="grid gap-x-4 sm:grid-cols-2"><Field label="资源类型"><NativeSelect className="w-full" disabled={!!resource} value={draft.kind} onChange={e => setDraft({ ...draft, kind: e.target.value as Resource['kind'], cloud_id: '' })}><option value="ecs">ECS 实例</option><option value="eip">独立 EIP</option></NativeSelect></Field><Field label="地域标识" hint="填写云控制台中的地域代码。"><Input disabled={!!resource} required maxLength={80} pattern="[a-z0-9-]{3,80}" placeholder="例如 cn-hangzhou" value={draft.region} onChange={e => setDraft({ ...draft, region: e.target.value })} /></Field></div>
     <Field label={draft.kind === 'ecs' ? 'ECS 实例 ID' : 'EIP 分配 ID'}><Input disabled={!!resource} required maxLength={80} pattern={draft.kind === 'ecs' ? 'i-[a-z0-9-]+' : 'eip-[a-z0-9-]+'} placeholder={draft.kind === 'ecs' ? 'i-…' : 'eip-…'} value={draft.cloud_id} onChange={e => setDraft({ ...draft, cloud_id: e.target.value })} /></Field>
     <Field label="自动降速目标（Mbps）"><Input required type="number" min={1} max={100} step={1} value={draft.cap_mbps} onChange={e => setDraft({ ...draft, cap_mbps: Number(e.target.value) })} /></Field>
-    <label className="my-4 flex items-start gap-2.5 text-sm leading-relaxed"><Checkbox checked={draft.auto_enabled} onCheckedChange={checked => setDraft({ ...draft, auto_enabled: checked === true })} className="mt-0.5" />将此资源纳入该账号的自动降速策略</label>
-    <p className="text-muted-foreground mt-3 text-xs leading-relaxed">登记不会创建、释放或绑定公网 IP。共享带宽包和包年包月 EIP 不支持。自动控制需要同时启用账号策略和资源策略；每组配置每月最多触发一次，失败后请核对并重新保存策略。</p>
+    <label className="my-4 flex items-start gap-2.5 text-sm leading-relaxed"><Checkbox disabled={Boolean(resource && current()?.resources.find(item => item.id === resource.id)?.snapshot?.attached_eip_id != null)} checked={draft.auto_enabled} onCheckedChange={checked => setDraft({ ...draft, auto_enabled: checked === true })} className="mt-0.5" />将此资源纳入该账号的自动降速策略</label>
+    <p className="text-muted-foreground mt-3 text-xs leading-relaxed">登记不会创建、释放或绑定公网 IP。绑定 EIP 的 ECS 支持查询和启停，公网带宽请在 EIP 控制台管理。带宽变配不支持共享带宽包和包年包月 EIP。自动控制需要同时启用账号策略和资源策略；每组配置每月最多触发一次，失败后请核对并重新保存策略。</p>
   </FormDialog>
 }
 export function BandwidthEditor({ resource, close, saved, current, refresh }: Events & { resource: Resource }) {
-  const [target, setTarget] = useState<Target>({ bandwidth_mbps: Math.max(1, Math.min(100, resource.snapshot?.bandwidth_mbps ?? 10)), charge_type: resource.snapshot?.charge_type ?? 'PayByTraffic' })
+  const [target, setTarget] = useState<Target>({ bandwidth_mbps: Math.max(1, Math.min(100, resource.snapshot?.bandwidth_mbps ?? 10)), charge_type: resource.snapshot?.charge_type === 'PayByBandwidth' ? 'PayByBandwidth' : 'PayByTraffic' })
   const [preview, setPreview] = useState<Operation | null>(null), [confirmed, setConfirmed] = useState(false), action = useAction()
   const [accountRevision] = useState(() => current()?.accounts.find(a => a.id === resource.account_id)?.revision)
-  const writeError = () => resourceError(current, resource, { managed: true, idle: true, accountRevision }) || (preview ? operationError(current, preview, false, ['preview'], true) : '')
+  const writeError = () => resourceError(current, resource, { managed: true, idle: true, accountRevision }) || bandwidthError(current, resource) || (preview ? operationError(current, preview, false, ['preview'], true) : '')
   return <Modal title={`调整公网带宽 · ${resource.name}`} onClose={close} busy={action.busy}><form onSubmit={e => {
     e.preventDefault()
     if (preview) { if (confirmed) void action.run(() => checked(writeError, () => api(`/api/plugins/alicloud/operations/${preview.id}/confirm`, 'POST')), saved) }
