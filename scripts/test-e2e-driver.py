@@ -584,6 +584,21 @@ class AcceptanceContracts(unittest.TestCase):
         for path in ("/sub/secret-token?format=singbox", "/api/servers/41/enrollment", "/api/tokens/7"):
             self.assertEqual(DRIVER.failure_detail(path, failure(message)), "")
 
+
+    def test_stalled_install_reports_fixed_vocabulary_but_never_error_text(self):
+        status = {"target_rev": 1, "applied_rev": 0, "healthy": False,
+                  "last_error": "runtime health check timed out at /var/lib/apsp/plugins/TEST_ONLY-secret"}
+        drift = {"state": "revision_mismatch", "checkpoint_supported": True,
+                 "checkpoint": {"state": "pending", "outcome": None, "failure_kind": "free text not allowed",
+                                "reason": "实际运行时健康检查未通过"}}
+        summary = DRIVER.install_status(status, drift)
+        self.assertEqual(summary, {"target_rev": 1, "applied_rev": 0, "healthy": False,
+                                   "error_categories": ["health", "timeout"], "drift": "revision_mismatch",
+                                   "checkpoint_supported": True, "checkpoint_state": "pending",
+                                   "checkpoint_outcome": None, "checkpoint_failure_kind": None})
+        self.assertNotIn("TEST_ONLY-secret", json.dumps(summary))
+        self.assertEqual(DRIVER.install_status(None, None)["error_categories"], [])
+
     def test_totals_preserve_large_integer_precision_and_reject_inconsistent_ledger(self):
         amount = 2 ** 64 + 17
         self.assertEqual(DRIVER.usage_totals(view(amount, amount)["usage"]), (amount, amount, 2 * amount))

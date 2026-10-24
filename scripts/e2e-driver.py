@@ -374,6 +374,34 @@ def collect_preflight(panel, base, deadline):
         time.sleep(2)
 
 
+ERROR_CATEGORIES = (
+    ("health", ("health", "unhealthy")),
+    ("activation", ("activation", "certif")),
+    ("runtime_identity", ("instance", "binary", "executable", "signed runtime")),
+    ("configuration", ("configuration", "bundle", "revision")),
+    ("timeout", ("timed out", "timeout")),
+)
+
+
+def install_status(status, drift):
+    """Summarize a stalled install with fixed vocabulary only, never error text."""
+    status = status if isinstance(status, dict) else {}
+    drift = drift if isinstance(drift, dict) else {}
+    checkpoint = drift.get("checkpoint") if isinstance(drift.get("checkpoint"), dict) else {}
+    error = status.get("last_error")
+    error = error.lower() if isinstance(error, str) else ""
+    result = {key: status.get(key) if type(status.get(key)) in (int, bool) else None
+              for key in ("target_rev", "applied_rev", "healthy")}
+    result["error_categories"] = [name for name, words in ERROR_CATEGORIES
+                                  if any(word in error for word in words)] or (["other"] if error else [])
+    result["drift"] = drift.get("state") if isinstance(drift.get("state"), str) else None
+    result["checkpoint_supported"] = drift.get("checkpoint_supported") if type(drift.get("checkpoint_supported")) is bool else None
+    for key in ("state", "outcome", "failure_kind"):
+        value = checkpoint.get(key)
+        result["checkpoint_" + key] = value if isinstance(value, str) and re.fullmatch(r"[a-z_]{1,40}", value) else None
+    return result
+
+
 def reauthenticate(panel, args):
     # Bootstrap and confirmation require a proof younger than five minutes;
     # device sampling and the first runtime install can outlast the login one.
@@ -412,8 +440,9 @@ def preflight(panel, state, args):
             if (status and (status.get("target_rev") or 0) > 0
                     and status.get("applied_rev") == status.get("target_rev") and status.get("healthy") is True):
                 break
-            ensure(time.monotonic() < deadline, "超时：空运行时首次安装未完成；状态=" + json.dumps(
-                {key: (status or {}).get(key) for key in ("target_rev", "applied_rev", "healthy")}))
+            if time.monotonic() >= deadline:
+                raise AcceptanceError("超时：空运行时首次安装未完成；状态=" + json.dumps(
+                    install_status(status, panel.request(base).get("drift")), ensure_ascii=False))
             time.sleep(2)
         view = collect_preflight(panel, base, deadline)
     ensure(view.get("ready") is True, "部署预检未通过；阻塞项=" + ",".join(blocking_checks(view)))
