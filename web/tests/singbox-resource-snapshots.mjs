@@ -164,7 +164,8 @@ try {
     })
     await fixture('/plugins/sing-box/nodes', async control => {
       const { page, writes, status } = control
-      await page.locator(width < 768 ? '[data-slot=catalog-card]' : '[data-slot=catalog-table] tbody tr').filter({ hasText: 'TEST_ONLY 节点 1' }).getByRole('button', { name: '部署', exact: true }).click()
+      await page.locator(width < 768 ? '[data-slot=catalog-card]' : '[data-slot=catalog-table] tbody tr').filter({ hasText: 'TEST_ONLY 节点 1' }).getByRole('button', { name: '更多操作', exact: true }).click()
+      await page.getByRole('menuitem', { name: '部署', exact: true }).click()
       const dialog = page.getByRole('dialog'), runtime = dialog.locator('[data-slot=runtime-operations]')
       const refresh = () => dialog.locator('[data-slot=node-deployment-heading] button').filter({ hasText: /^刷新$/ }).evaluate(button => button.click())
       const inspect = runtime.getByRole('button', { name: '读取状态与日志', exact: true })

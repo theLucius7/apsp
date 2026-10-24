@@ -99,6 +99,11 @@ try {
     const enabled = async locator => { await locator.waitFor(); const until = Date.now() + 6500; while (await locator.isDisabled() && Date.now() < until) await page.waitForTimeout(20); assert.equal(await locator.isDisabled(), false) }
     // Wrapping Field labels also contain option text; require the exact visible label span.
     const fieldSelect = (scope, label) => scope.locator('label[data-slot=field]').filter({ has: page.getByText(label, { exact: true }) }).locator('select')
+    // Less frequent row actions sit behind the row's “更多操作” menu.
+    const rowMenu = key => page.locator(`[data-resource-key="${key}"]`).getByRole('button', { name: '更多操作', exact: true })
+    const rowAction = async (key, name) => { await rowMenu(key).click(); const item = page.getByRole('menu').getByRole('menuitem', { name, exact: true }); await item.waitFor(); return item }
+    // Radix moves focus back in a zero-delay timer after a dialog or menu closes.
+    const focused = async locator => { const until = Date.now() + 3000; while (!await locator.evaluate(element => element === document.activeElement) && Date.now() < until) await page.waitForTimeout(20); return locator.evaluate(element => element === document.activeElement) }
     const poll = () => page.clock.fastForward(5000)
     const shot = async name => { if (!process.env.APSP_UI_SCREENSHOT_DIR) return; await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true }); await page.locator('[role=dialog]').evaluateAll(dialogs => { for (const dialog of dialogs) for (const animation of (dialog.parentElement ?? dialog).getAnimations({ subtree: true })) if (animation.effect?.getComputedTiming().iterations !== Infinity) animation.finish() }); await page.screenshot({ animations: 'disabled', path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `ordered-${name}-${width}.png`) }) }
     // The server filter lives in the catalog section; chains and sources have their own sections.
@@ -111,10 +116,30 @@ try {
     await scope('3')
     await page.locator('[data-resource-key="chain:11"]').waitFor(); await page.getByLabel('链路中的服务器角色', { exact: false }).selectOption('middle'); await page.locator('[data-resource-key="chain:11"]').waitFor()
     await scope('')
-    await page.locator('[data-resource-key="chain:11"]').getByRole('button', { name: '详情', exact: true }).click()
+    // A narrow panel stacks each resource into a card; no width needs sideways scrolling,
+    // and long paths wrap inside their own cell instead of running into the next one.
+    const resourceRow = page.locator('[data-resource-key="chain:11"]')
+    assert.equal(await resourceRow.evaluate(row => getComputedStyle(row).display), width < 900 ? 'grid' : 'table-row', `Resource rows ${width < 900 ? 'stack' : 'stay a table'} at ${width}px`)
+    assert.equal(await page.locator('[data-slot=table-container]').filter({ has: page.locator('[data-slot=proxy-resource-table]') }).evaluate(container => container.scrollWidth <= container.clientWidth), true, `The resource table fits at ${width}px`)
+    assert.deepEqual(await resourceRow.locator('td').evaluateAll(cells => cells.filter(cell => cell.scrollWidth > cell.clientWidth + 1).length), 0, 'Cell content stays inside its cell')
+    if (width < 900) assert.notEqual(await resourceRow.locator('td[data-label="出口"]').evaluate(cell => getComputedStyle(cell, '::before').content), 'none', 'Stacked cells name their column')
+    assert.equal(await page.getByRole('columnheader', { name: '入口或直连监听', exact: true }).count(), 1, 'Column headers stay available to assistive technology')
+    // Frequent actions stay visible; the menu opens from the keyboard and Escape returns to its button.
+    for (const name of ['详情', '编辑公开信息', '删除']) await resourceRow.getByRole('button', { name, exact: true }).waitFor()
+    await rowMenu('chain:11').focus(); await page.keyboard.press('Enter')
+    const menu = page.getByRole('menu'); await menu.waitFor()
+    assert.equal(await rowMenu('chain:11').getAttribute('aria-expanded'), 'true')
+    assert.deepEqual(await menu.getByRole('menuitem').allTextContents(), ['部署', '应用节点新版本', '创建替代链路'], 'Ordered chains open path and references from 详情, so the menu does not repeat it')
+    assert.equal(await focused(menu.getByRole('menuitem', { name: '部署', exact: true })), true, 'Opening from the keyboard focuses the first item')
+    await page.keyboard.press('ArrowDown'); assert.equal(await focused(menu.getByRole('menuitem', { name: '应用节点新版本', exact: true })), true)
+    const box = await menu.boundingBox(); assert.equal(box.x >= 0 && box.x + box.width <= width, true, 'The menu fits the viewport')
+    await page.keyboard.press('Escape'); await menu.waitFor({ state: 'hidden' })
+    assert.equal(await focused(rowMenu('chain:11')), true, 'Escape returns focus to the menu button')
+    await resourceRow.getByRole('button', { name: '详情', exact: true }).click()
     let dialog = page.getByRole('dialog'); await dialog.getByText('已应用代 1', { exact: true }).waitFor(); await dialog.getByText('候选代 2', { exact: true }).waitFor()
     assert.match(await dialog.innerText(), new RegExp(sourceUuid(401))); assert.match(await dialog.innerText(), new RegExp(sourceUuid(405))); assert.equal(await dialog.getByText('指定目标验证成功', { exact: true }).count(), 0)
     await shot('versions'); await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+    await dialog.waitFor({ state: 'hidden' }); assert.equal(await focused(resourceRow.getByRole('button', { name: '详情', exact: true })), true, 'Closing a dialog returns focus to the button that opened it')
     await showView('订阅来源')
     await page.locator('[data-source-id="1"]').getByRole('button', { name: '查看来源', exact: true }).click(); dialog = page.getByRole('dialog')
     const refs = dialog.getByRole('region', { name: '来源路径引用', exact: true }); await refs.getByText(/候选代 2/).waitFor(); await refs.getByRole('link', { name: '「已有四段路径」#11', exact: true }).first().click()
@@ -132,7 +157,7 @@ try {
     await dialog.getByRole('button', { name: '单独编辑第 2 条路径', exact: true }).click(); await fieldSelect(dialog.getByRole('group', { name: '第 2 条独立路径', exact: true }), '第 2 跳更新方式').selectOption('pinned')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true); await shot('batch')
     await enabled(dialog.getByRole('button', { name: '创建未授权链路', exact: true })); await dialog.getByRole('button', { name: '创建未授权链路', exact: true }).click(); await dialog.getByRole('alert').waitFor()
-    await dialog.getByRole('button', { name: '取消', exact: true }).click(); await page.locator('[data-resource-key="chain:11"]').getByRole('button', { name: '创建替代链路', exact: true }).click(); dialog = page.getByRole('dialog')
+    await dialog.getByRole('button', { name: '取消', exact: true }).click(); await (await rowAction('chain:11', '创建替代链路')).click(); dialog = page.getByRole('dialog')
     await dialog.getByText('先确认已发送批次的结果，原草稿和精确请求已保留。确认后再选择创建替代链路。', { exact: true }).waitFor(); assert.equal(await dialog.locator('[name=name]').inputValue(), '新四段甲')
     await poll()
     const retry = dialog.getByRole('button', { name: '重试原批次', exact: true }), priorWrites = writes.length
@@ -145,11 +170,12 @@ try {
     await page.waitForTimeout(50); assert.equal(writes.length, priorWrites)
     source = subscriptionSourceFixture(); sourceNodes = [sourceNodeFixture({ version_id: sourceUuid(405) })]
     await poll(); await enabled(retry); await retry.click(); await dialog.waitFor({ state: 'hidden' })
+    assert.equal(await focused(rowMenu('chain:11')), true, 'A dialog opened from the menu returns focus to the menu button')
     const batchWrites = writes.filter(write => write.path.endsWith('/chains/ordered-batch')); assert.equal(batchWrites.length, 2); assert.equal(batchWrites[0].serialized, batchWrites[1].serialized); assert.equal(receipts.size, 1); assert.equal(ordered.filter(resource => resource.id >= 30).length, 2)
     assert.equal(await page.locator('[data-resource-key="direct:20"]').count(), 0); assert.equal(await page.locator('[data-resource-key="chain:31"]').count(), 1)
     source = subscriptionSourceFixture(); sourceNodes = [sourceNodeFixture({ version_id: sourceUuid(406) })]
     const existing = ordered.find(resource => resource.id === 11); existing.path_state = { ...existing.path_state, candidate_generation: null, applied_generation: 2, recovery_generation: null, phase: 'applied', generations: [{ state: 'desired', generation: 2, hops: existing.hops }, { state: 'applied', generation: 2, hops: existing.hops }] }
-    await poll(); await page.locator('[data-resource-key="chain:11"]').getByRole('button', { name: '应用节点新版本', exact: true }).click(); dialog = page.getByRole('dialog')
+    await poll(); await (await rowAction('chain:11', '应用节点新版本')).click(); dialog = page.getByRole('dialog')
     const versions = dialog.getByLabel('第 2 跳：外部示例节点', { exact: false }); await enabled(versions); await versions.selectOption(sourceUuid(406)); await enabled(dialog.getByRole('button', { name: '创建版本候选', exact: true })); await dialog.getByRole('button', { name: '创建版本候选', exact: true }).click(); await dialog.waitFor({ state: 'hidden' })
     await page.locator('[data-resource-key="chain:11"]').getByRole('button', { name: '编辑公开信息', exact: true }).click(); dialog = page.getByRole('dialog'); await dialog.getByLabel('链路显示名称', { exact: true }).fill('显示名可独立修改'); await dialog.getByRole('button', { name: '保存公开信息', exact: true }).click(); await dialog.getByRole('alert').waitFor()
     await dialog.getByRole('button', { name: '取消', exact: true }).click(); await dialog.waitFor({ state: 'hidden' })

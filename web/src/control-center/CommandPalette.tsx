@@ -125,7 +125,7 @@ export default function CommandPalette({ pages }: { pages: readonly NavigationIt
 
   return <>
     <Button data-slot="global-search" variant="outline" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K /" aria-label={t('全局搜索')} onClick={() => setOpen(true)}
-      className="text-muted-foreground hover:text-foreground w-full min-w-0 justify-start font-normal sm:w-72 lg:w-80 max-sm:w-auto">
+      className="text-muted-foreground hover:text-foreground w-full min-w-0 justify-start font-normal sm:w-auto sm:min-w-40 sm:max-w-72 sm:flex-1 lg:max-w-80 max-sm:w-auto">
       <SearchIcon aria-hidden="true" /><span className="truncate max-sm:sr-only">{t('搜索或跳转…')}</span>
       <Kbd className="ml-auto max-sm:hidden">⌘K</Kbd>
     </Button>

@@ -158,14 +158,17 @@ function MainColumn({ current, pages, error, mobile, children }: { current?: Nav
   // A new page starts at the top of the scrolling column.
   useEffect(() => { scroller.current?.scrollTo({ top: 0 }) }, [current?.path])
   return <div ref={scroller} className={cn('flex min-h-0 min-w-0 flex-1 flex-col', !mobile && 'h-full overflow-y-auto')}>
-    <div data-slot="topbar" className="bg-background/85 supports-backdrop-filter:backdrop-blur-sm sticky top-0 z-20 flex min-h-14 flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-2 md:px-8">
+    {/* The bar sits in a fixed-height scrolling column, so it must not shrink below
+        its content. At tablet widths the breadcrumb drops the group (the sidebar shows
+        it) and the search button narrows, so the controls stay on one row. */}
+    <div data-slot="topbar" className="bg-background/85 supports-backdrop-filter:backdrop-blur-sm sticky top-0 z-20 flex min-h-14 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-2 md:px-8">
       <nav aria-label={t('当前位置')} className="text-muted-foreground mr-auto flex min-w-0 items-center gap-2 text-sm">
-        {current && <><span className="truncate max-sm:hidden">{t(current.group)}</span><span aria-hidden="true" className="max-sm:hidden">/</span></>}
+        {current && <><span className="truncate max-lg:hidden">{t(current.group)}</span><span aria-hidden="true" className="max-lg:hidden">/</span></>}
         <strong aria-current="page" className="text-foreground truncate font-medium">{t(current?.label ?? '页面不存在')}</strong>
       </nav>
       <CommandPalette pages={pages} />
-      <LanguageSelect />
-      <Badge variant="success" className="max-lg:hidden"><span className="size-1.5 rounded-full bg-current" aria-hidden="true" />{t('管理员会话已登录')}</Badge>
+      <LanguageSelect className="shrink-0" />
+      <Badge variant="success" className="max-xl:hidden"><span className="size-1.5 rounded-full bg-current" aria-hidden="true" />{t('管理员会话已登录')}</Badge>
     </div>
     <m.main key={current?.path ?? 'missing'} {...pageMotion} className="mx-auto w-full max-w-[1480px] flex-1 px-4 py-6 md:px-8 md:py-8">
       <ErrorNotice message={error} />{children}
