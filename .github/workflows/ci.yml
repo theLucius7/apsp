@@ -64,7 +64,12 @@ jobs:
           python3 scripts/test-e2e-traffic-evidence.py
           python3 scripts/test-e2e-runtime.py
           python3 scripts/test-ci-signed-release.py
-          python3 -m unittest discover -s tests -p 'test_*.py'
+          # Diagnostics while the bootstrap staging directory is investigated.
+          if [ -e /opt/apsp ]; then sudo find /opt/apsp -maxdepth 3 -printf 'pre-discover %u:%g %m %p\n' | head -40; fi
+          python3 -m unittest discover -v -s tests -p 'test_*.py' 2>&1 | tee /tmp/apsp-unittest.log | grep -E '^(test_|FAIL|ERROR|Ran|OK|FAILED)' || true
+          if [ -e /opt/apsp ]; then sudo find /opt/apsp -maxdepth 3 -printf 'post-discover %u:%g %m %p\n' | head -40; fi
+          tail -n 60 /tmp/apsp-unittest.log
+          grep -q '^OK' /tmp/apsp-unittest.log
       - name: Verify NodeQuality wrapper and artifact contracts
         run: |
           sudo python3 tools/test-nodequality.py
