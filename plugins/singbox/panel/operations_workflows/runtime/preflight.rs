@@ -562,7 +562,7 @@ fn ports_check(
     required: &[Listener],
     requested_at: i64,
     now: i64,
-    checkpoint_verified: bool,
+    runtime_checkpoint_matched: bool,
 ) -> Value {
     let at = receipt["completed_at"].as_i64();
     let result = &receipt["result"];
@@ -589,7 +589,7 @@ fn ports_check(
     let owned = if fresh(permissions, requested_at, now)
         && permissions["succeeded"] == true
         && manager["managed_unit"] == "apsp-singbox@main.service"
-        && checkpoint_verified
+        && runtime_checkpoint_matched
     {
         manager["managed_pid"]
             .as_u64()
@@ -736,7 +736,7 @@ async fn aggregate_tx(
             &listeners(&context.nodes),
             started,
             now,
-            checkpoint["state"] == "verified",
+            checkpoint["state"] == "verified" || checkpoint["current_binding_answered"] == true,
         ));
     } else {
         checks.push(check(

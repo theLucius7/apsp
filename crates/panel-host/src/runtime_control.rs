@@ -18,7 +18,7 @@ pub use path_probe::{path_probe_fact, record_path_probe_result, request_path_pro
 pub use receipts::{record_barrier_result, record_checkpoint_result};
 pub(crate) use storage::lock_server;
 use storage::{PendingRequest, current_binding, enqueue};
-pub use storage::{confirmed_is_current, target_is_current};
+pub use storage::{binding_is_target, confirmed_is_current, target_is_current};
 
 pub async fn checkpoint_required(state: &AppState, server_id: i64) -> anyhow::Result<bool> {
     Ok(sqlx::query_scalar("SELECT COALESCE((SELECT checkpoint_required FROM runtime_control_devices WHERE server_id=$1),false)")

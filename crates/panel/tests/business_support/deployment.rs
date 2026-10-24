@@ -25,7 +25,7 @@ pub(super) async fn prepare(panel: &TestPanel) -> Result<()> {
         base: &panel.base,
     };
     for server in servers {
-        prepare_server(&fixture, &cookie, server, true).await?;
+        prepare_server(&fixture, &cookie, server, true, None).await?;
     }
     Ok(())
 }
@@ -45,7 +45,7 @@ pub async fn prepare_with(
         base,
     };
     for server in selected(&state.pool).await? {
-        prepare_server(&fixture, cookie, server, true).await?;
+        prepare_server(&fixture, cookie, server, true, None).await?;
     }
     Ok(())
 }
@@ -61,6 +61,35 @@ pub async fn observe(panel: &TestPanel, cookie: &str, server: i64) -> Result<Uui
         cookie,
         server,
         false,
+        None,
+    )
+    .await
+}
+
+/// A running managed runtime: the device reports the runtime statistics
+/// listener held by `listener_pid` and the managed unit's MainPID.
+pub struct RuntimeObservation {
+    pub listener_pid: u32,
+    pub managed_pid: u32,
+}
+
+/// Observe as `observe`, with a running runtime on the device.
+pub async fn observe_runtime(
+    panel: &TestPanel,
+    cookie: &str,
+    server: i64,
+    runtime: RuntimeObservation,
+) -> Result<Uuid> {
+    prepare_server(
+        &Fixture {
+            state: &panel.state,
+            client: &panel.client,
+            base: &panel.base,
+        },
+        cookie,
+        server,
+        false,
+        Some(runtime),
     )
     .await
 }
@@ -102,6 +131,7 @@ async fn prepare_server(
     cookie: &str,
     server: i64,
     confirm: bool,
+    running: Option<RuntimeObservation>,
 ) -> Result<Uuid> {
     let row = sqlx::query("SELECT capabilities,static_info FROM servers WHERE id=$1")
         .bind(server)
@@ -231,11 +261,11 @@ async fn prepare_server(
             let job=&work.jobs[0];
             ensure!(expected.contains(&job.id)&&completed.insert(job.id),"TEST_ONLY preflight dispatched an unrelated or duplicate job");
             let result=match &job.operation {
-                Operation::Ports {}=>json!({"stdout":"","stderr":"","truncated":false,"timed_out":false,"exit_code":0,"fixture":"TEST_ONLY controlled empty listening sockets"}),
+                Operation::Ports {}=>json!({"stdout":running.as_ref().map(|runtime|format!("tcp LISTEN 0 4096 127.0.0.1:18085 0.0.0.0:* users:((\"sing-box\",pid={},fd=3))\n",runtime.listener_pid)).unwrap_or_default(),"stderr":"","truncated":false,"timed_out":false,"exit_code":0,"fixture":"TEST_ONLY controlled listening sockets"}),
                 Operation::RuntimePermissions{module}=>{
                     ensure!(module=="sing-box"&&job.policy.runtime_inspection,"TEST_ONLY runtime inspection requires the current allowed policy");
                     let root="/var/lib/apsp/runtimes/sing-box@main";
-                    json!({"module":module,"sampled_at":now_timestamp(),"privileged_effective_uid":0,"runtime_account":{"known":true,"uid":65534,"gid":65534,"supplementary_gids":[65534],"source":"TEST_ONLY controlled installed runtime account"},"runtime_directory":directory(root),"data_directory":directory(&format!("{root}/data")),"certificate_directory":directory(&format!("{root}/data/certificates")),"service_manager":{"kind":"systemd","available":true,"management_authorized":true,"privileged_effective_uid":0,"managed_unit":"apsp-singbox@main.service","managed_pid":null,"load_state":"loaded","authorization_basis":"TEST_ONLY controlled privileged service backend"},"secret_values_recorded":false})
+                    json!({"module":module,"sampled_at":now_timestamp(),"privileged_effective_uid":0,"runtime_account":{"known":true,"uid":65534,"gid":65534,"supplementary_gids":[65534],"source":"TEST_ONLY controlled installed runtime account"},"runtime_directory":directory(root),"data_directory":directory(&format!("{root}/data")),"certificate_directory":directory(&format!("{root}/data/certificates")),"service_manager":{"kind":"systemd","available":true,"management_authorized":true,"privileged_effective_uid":0,"managed_unit":"apsp-singbox@main.service","managed_pid":running.as_ref().map(|runtime|runtime.managed_pid),"load_state":"loaded","authorization_basis":"TEST_ONLY controlled privileged service backend"},"secret_values_recorded":false})
                 }
                 other=>anyhow::bail!("unexpected TEST_ONLY preflight operation: {other:?}"),
             };

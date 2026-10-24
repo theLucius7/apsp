@@ -103,14 +103,35 @@ pub(super) async fn enqueue(
     Ok(payload)
 }
 
+/// The binding is the published target and no newer business change is pending.
 pub async fn target_is_current(
     connection: &mut PgConnection,
     server_id: i64,
     binding: &RuntimeBinding,
 ) -> anyhow::Result<bool> {
-    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM server_module_status s JOIN deployments d ON d.server_id=s.server_id AND d.module=s.module AND d.rev=s.target_rev JOIN runtime_deployment_bindings b ON b.server_id=d.server_id AND b.module=d.module AND b.rev=d.rev JOIN servers v ON v.id=s.server_id WHERE s.server_id=$1 AND s.module=$2 AND s.target_rev=$3 AND d.bundle_sha256=$4 AND b.deployment_id=$5 AND b.binding_digest=$6 AND v.deleted_at IS NULL AND v.dirty_at IS NULL AND v.capabilities @> '[\"runtime:checkpoint-v1\"]'::jsonb)")
+    binding_matches_target(connection, server_id, binding, true).await
+}
+
+/// The binding is the published target, even while saved business changes
+/// await publication. Proves which deployment a device runs, not that the
+/// desired configuration is applied.
+pub async fn binding_is_target(
+    connection: &mut PgConnection,
+    server_id: i64,
+    binding: &RuntimeBinding,
+) -> anyhow::Result<bool> {
+    binding_matches_target(connection, server_id, binding, false).await
+}
+
+async fn binding_matches_target(
+    connection: &mut PgConnection,
+    server_id: i64,
+    binding: &RuntimeBinding,
+    without_pending_changes: bool,
+) -> anyhow::Result<bool> {
+    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM server_module_status s JOIN deployments d ON d.server_id=s.server_id AND d.module=s.module AND d.rev=s.target_rev JOIN runtime_deployment_bindings b ON b.server_id=d.server_id AND b.module=d.module AND b.rev=d.rev JOIN servers v ON v.id=s.server_id WHERE s.server_id=$1 AND s.module=$2 AND s.target_rev=$3 AND d.bundle_sha256=$4 AND b.deployment_id=$5 AND b.binding_digest=$6 AND v.deleted_at IS NULL AND (NOT $7 OR v.dirty_at IS NULL) AND v.capabilities @> '[\"runtime:checkpoint-v1\"]'::jsonb)")
         .bind(server_id).bind(&binding.module).bind(binding.revision as i64).bind(&binding.bundle_sha256)
-        .bind(binding.deployment_id).bind(&binding.binding_digest).fetch_one(connection).await?)
+        .bind(binding.deployment_id).bind(&binding.binding_digest).bind(without_pending_changes).fetch_one(connection).await?)
 }
 
 pub async fn confirmed_is_current(
