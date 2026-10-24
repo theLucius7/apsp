@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import urllib.parse
 
 
@@ -35,8 +36,14 @@ def bootstrap(enrollment, trust_directory, bundle, log):
                  "--panel", panel, "--trusted-keys", str(trust_directory / "public-keys.json"),
                  "--minisign", "/usr/bin/minisign", "--release-dir", str(bundle)]
     with log.open("wb") as output:
-        return subprocess.run(arguments, env=environment, stdout=output, stderr=subprocess.STDOUT,
+        code = subprocess.run(arguments, env=environment, stdout=output, stderr=subprocess.STDOUT,
                               check=False, timeout=600).returncode
+    if code:
+        # The run log stays private; surface only its last lines, without the
+        # enrollment token, so a refused TEST_ONLY installation is diagnosable.
+        tail = log.read_bytes()[-2048:].decode("utf-8", "replace").replace(token, "<token>")
+        print("CI bootstrap exited " + str(code) + ":\n" + "\n".join(tail.splitlines()[-6:]), file=sys.stderr)
+    return code
 
 
 def main():
