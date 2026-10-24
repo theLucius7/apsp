@@ -1,6 +1,6 @@
 # Nexus 服务器向 apsp Agent 迁移
 
-本轮已授权实际服务器迁移。主机资产迁入、Agent 接入、代理运行时接管是三个独立状态。`nexus_agent_migration.py` 完成只读快照、主机合并、兼容差异预览和可续跑的主机资产导入；它不安装 Agent、不停止旧服务、不签收节点切换。
+本轮已授权实际服务器迁移。主机资产迁入、节点信息迁入、Agent 接入、代理运行时接管分别记录状态。`nexus_agent_migration.py` 完成只读快照、主机合并、兼容差异预览和可续跑的主机资产导入；`nexus_node_inventory.py` 将原节点信息保存到 apsp 并展示在节点页。两者均不安装 Agent、不停止旧服务、不签收节点切换。
 
 ## 保存现状与迁入资产
 
@@ -20,6 +20,22 @@ python3 tools/nexus_agent_migration.py stage-hosts /private/infrastructure.json 
 导入复用正常管理员 API；密码从既有私有环境文件读取，不能通过外部 HTTP 明文发送，不跟随携带认证的重定向。按来源与原主机 ID 保存稳定标签，保存逐台收据。请求成功但响应丢失时，重跑从面板标签识别已创建服务器，不重复创建。重复标签、失踪的已导入主机和快照变化均停止，不覆盖管理员后续修改。只运行一个维护任务，并在恢复时使用同一份收据。
 
 费用保留原金额、币种及周期，不四舍五入；日期按原日期映射为 UTC 当日零时，不自动续费。来源没有说明 GB 换算口径和流量重置日时，将原值保留在私有快照，不推测有效限额。停用备注、供应商、NAT、端口映射等原始资产字段也保留在快照；目标支持的字段才写入资产设置。新资产暂时关闭离线通知和自动升级；真实静态信息、在线状态和遥测由设备接入后上报。
+
+## 导入节点信息
+
+部署包含迁移 0071 的面板后，使用同一份基础设施快照和已完成的主机收据。导出时重读源库，若基础设施摘要已变化则停止，先核对来源修改。输出同时包含原权限组和路由记录；不转换原节点 JSON，不生成新密钥。
+
+```sh
+python3 tools/nexus_node_inventory.py export /private/nexus.sqlite /private/infrastructure.json /private/host-receipt.json /private/nodes.json
+python3 tools/nexus_node_inventory.py preview /private/nodes.json /private/node-preview.json \
+  --env-file /private/apsp.env --panel-api http://127.0.0.1:8080
+python3 tools/nexus_node_inventory.py import /private/nodes.json /private/node-receipt.json \
+  --confirmed-digest '<节点预览返回的摘要>' --env-file /private/apsp.env --panel-api http://127.0.0.1:8080
+```
+
+在“代理服务 → 代理节点 → 节点库”的 Nexus 节点区域查看、搜索和按协议/服务器筛选。原编号、主机、实例、端口范围、流量倍率、启用和隐藏状态保持；详情展示权限组及白名单协议参数。原始密钥、证书和自定义路由一起加密保存在现有凭据库，随面板数据库备份；备份仍依赖独立保存的原凭据密钥环。不能仅备份数据库而丢弃密钥环。
+
+导入需要所有者登录及近期验证。API 检查稳定来源标签，不信任单独传入的服务器编号。同快照重复提交不重复创建，不同快照拒绝覆盖。导入和加密凭据在一个事务中提交，响应丢失时使用原文件和摘要重试。节点明确显示“待 Agent 接管”，不会自动写入运行时或使新订阅出现尚未接管的节点。设计见 [ADR 0094](adr/0094-nexus-node-inventory.md)。
 
 ## 正式切换前的缺口
 
