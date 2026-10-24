@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 pub(in super::super) fn routes() -> Router<AppState> {
     Router::new()
+        .merge(super::guard::seed::routes())
         .route(
             "/api/plugins/alicloud/resources/{id}/power-policy",
             patch(update_policy),

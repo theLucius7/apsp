@@ -12,7 +12,7 @@ pub(super) struct Cloud {
     vpc: Aliyun,
     pub(super) bss: Aliyun,
     pub(super) bss_international: Aliyun,
-    cdt: Aliyun,
+    pub(super) cdt: Aliyun,
 }
 impl Cloud {
     pub fn new(pool: &sqlx::PgPool) -> Result<Self, Failure> {

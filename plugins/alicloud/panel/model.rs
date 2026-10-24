@@ -51,6 +51,8 @@ pub(super) struct Resource {
     pub next_power_at: i64,
     pub manual_hold: bool,
     pub threshold_hold: bool,
+    pub cdt_guard_state: Option<Json<super::power::GuardState>>,
+    pub cdt_guard_error: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -131,6 +133,11 @@ pub(super) fn identifier(value: &str, prefix: &str) -> bool {
 
 pub(super) fn message(code: &str) -> &'static str {
     match code {
+        "cdt_state_mismatch" => "CDT 历史状态与账号、资源或账期不符，守护已暂停操作",
+        "cdt_reset_pending" => "已进入新账期，等待 CDT 用量重置后恢复守护",
+        "cdt_month_changed" => "查询跨越月界，等待下一轮重新读取 CDT",
+        "cdt_not_enabled" => "零用量无法确认已启用 CDT 公网计费，保持实例原状",
+        "cdt_unsupported_isp" => "额度池存在非 BGP 流量，请核对适用范围",
         "authentication_failed" => "访问密钥无效或缺少权限",
         "credential_unavailable" => "集中云凭据已停用、用途不符或解密密钥缺失，请在凭据中心核对",
         "credential_invalid" => {

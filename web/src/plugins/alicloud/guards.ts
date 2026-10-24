@@ -1,5 +1,6 @@
 import type { Account, Operation, Overview, PowerJob, Resource } from './types'
 import { billUsable } from './types'
+import { cdtGuardExceeded } from './guardUsage'
 
 export type CurrentCloud = () => Overview | undefined
 const stale = '云服务信息正在刷新或刷新失败，请成功刷新后再提交；当前草稿已保留。'
@@ -42,6 +43,8 @@ export function powerError(current: CurrentCloud, draft: Resource, action?: 'sta
   if (reason || action !== 'start') return reason
   const data = current()!, resource = data.resources.find(item => item.id === draft.id)!, policy = resource.power_policy
   const account = data.accounts.find(item => item.id === resource.account_id)!
+  if (policy?.enabled && policy.cdt_guard) return cdtGuardExceeded(account, resource) !== false
+    ? 'CDT 用量保护生效，或当前用量无法核对；请先核对月度状态与守护策略。' : ''
   return policy?.enabled && policy.threshold_action === 'stop' && (resource.threshold_hold || !billUsable(account) ||
     account.bill!.usage_micro_gb! * 100 >= policy.limit_gb * 1e6 * policy.threshold_percent)
     ? '流量停机保护生效，或当前账单无法核对；请先核对用量与阈值策略。' : ''
