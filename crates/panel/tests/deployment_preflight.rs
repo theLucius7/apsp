@@ -7,7 +7,7 @@ mod release_support;
 use anyhow::{Context, Result, ensure};
 use apsp_panel::{agent_api, plugins::singbox::entitlements, publisher, runtime_control};
 use apsp_protocol::{
-    ApplyResult, ApplyStatus, Bundle, Hello, Message, PROTOCOL_VERSION,
+    ApplyResult, ApplyStatus, Bundle, Heartbeat, Hello, Message, PROTOCOL_VERSION,
     RUNTIME_CHECKPOINT_CAPABILITY, RuntimeCheckpoint, RuntimeCheckpointRequest,
     RuntimeCheckpointResult, UsageBatch, UsageRecord, now_timestamp,
 };
@@ -601,6 +601,20 @@ async fn bootstrapped_runtime_listener_is_owned_once_its_checkpoint_is_answered(
         "failed",
         "another process on the runtime port is still a conflict"
     );
+    // Each heartbeat requests another checkpoint for the uncertified target. A
+    // newer unanswered request must not hide the latest answer.
+    agent_api::process_message(
+        &panel.state,
+        server,
+        Message::Heartbeat(Heartbeat {
+            applied: [("singbox".to_string(), 1)].into(),
+            uptime_secs: 60,
+        }),
+    )
+    .await?;
+    let requests: i64 = sqlx::query_scalar("SELECT count(*) FROM runtime_control_requests WHERE server_id=$1 AND kind='checkpoint' AND state='pending'")
+        .bind(server).fetch_one(&pool).await?;
+    assert_eq!(requests, 1, "the heartbeat requests a new checkpoint");
     let answered = observe_runtime(&panel, &cookie, server, running()).await?;
     let check = ports(&panel, &cookie, server).await?;
     assert_eq!(check["state"], "passed");

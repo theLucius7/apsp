@@ -229,29 +229,7 @@ async fn configuration_observation(
     } else {
         false
     };
-    // A recent successful answer for the published target binding proves which
-    // deployment the managed process runs, even while saved business changes
-    // keep the target from being certified as current.
-    let expected: Option<apsp_protocol::RuntimeBinding> = request
-        .get::<Value, _>("request_json")
-        .get("expected")
-        .cloned()
-        .map(serde_json::from_value)
-        .transpose()
-        .map_err(anyhow::Error::from)?;
-    let answered = match (result.as_ref(), expected.as_ref()) {
-        (Some(result), Some(expected))
-            if result.success
-                && age.is_some_and(|age| age <= 300)
-                && result
-                    .observed
-                    .as_ref()
-                    .is_some_and(|observed| observed.healthy && observed.binding == *expected) =>
-        {
-            crate::runtime_control::binding_is_target(tx, server, expected).await?
-        }
-        _ => false,
-    };
+    let answered = current_binding_answered(tx, server, target).await?;
     let reason = result
         .as_ref()
         .and_then(|r| r.error.as_deref())
@@ -281,6 +259,40 @@ async fn configuration_observation(
     Ok(
         json!({"state":state,"current_binding_answered":answered,"request_id":request.get::<Uuid,_>("request_id"),"requested_at":request.get::<i64,_>("created_at"),"observed_at":request.get::<Option<i64>,_>("received_at"),"outcome":outcome,"failure_kind":reason.map(|(code,_)|code),"reason":reason.map(|(_,message)|message).unwrap_or(if state=="verified"{"目标 Agent 已逐文件核对配置并确认受管进程与签名运行时身份"}else if state=="stale"{"核对证据已过期或目标已变化，请主动重新核对"}else if state=="pending"{"等待设备实际核对结果"}else{"无法确认当前运行文件匹配，请重新核对"})}),
     )
+}
+
+/// A recent successful answer for the published target binding proves which
+/// deployment the managed process runs, even while saved business changes keep
+/// the target from being certified as current. Heartbeats keep requesting a
+/// checkpoint for an uncertified target, so a newer unanswered request must not
+/// hide the latest answer.
+async fn current_binding_answered(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    target: Option<i64>,
+) -> ApiResult<bool> {
+    let Some(row) = sqlx::query("SELECT q.request_json,r.received_at,r.result_json FROM runtime_control_requests q JOIN runtime_control_receipts r USING(request_id) WHERE q.server_id=$1 AND q.module='singbox' AND q.kind='checkpoint' AND (q.request_json->'expected'->>'revision')::bigint=$2 ORDER BY r.received_at DESC,q.created_at DESC,q.request_id DESC LIMIT 1")
+        .bind(server).bind(target).fetch_optional(&mut **tx).await?
+    else {
+        return Ok(false);
+    };
+    if now_timestamp().saturating_sub(row.get::<i64, _>("received_at")) > 300 {
+        return Ok(false);
+    }
+    let expected: apsp_protocol::RuntimeBinding =
+        serde_json::from_value(row.get::<Value, _>("request_json")["expected"].clone())
+            .map_err(anyhow::Error::from)?;
+    let result: apsp_protocol::RuntimeCheckpointResult =
+        serde_json::from_value(row.get("result_json")).map_err(anyhow::Error::from)?;
+    if !result.success
+        || !result
+            .observed
+            .as_ref()
+            .is_some_and(|observed| observed.healthy && observed.binding == expected)
+    {
+        return Ok(false);
+    }
+    Ok(crate::runtime_control::binding_is_target(tx, server, &expected).await?)
 }
 
 pub(super) async fn checkpoint(
