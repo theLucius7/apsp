@@ -52,23 +52,37 @@ export default function AdminShell({ current, busy, error, onLogout, children }:
     window.addEventListener('hashchange', close)
     return () => window.removeEventListener('hashchange', close)
   }, [setMobileOpen])
-  // The sidebar panel follows the remembered collapsed state.
+  // The sidebar panel follows the remembered collapsed state. A panel added back
+  // after the phone layout joins the group's layout a frame later; until then its
+  // imperative API throws, so try again on the next few frames.
   useEffect(() => {
-    const panel = sidebarPanel.current
-    if (!desktop || !panel) return
-    if (collapsed && !panel.isCollapsed()) panel.collapse()
-    if (!collapsed && panel.isCollapsed()) panel.expand()
+    if (!desktop) return
+    let frame = 0, attempts = 0
+    const sync = () => {
+      const panel = sidebarPanel.current
+      if (!panel) return
+      try {
+        if (collapsed && !panel.isCollapsed()) panel.collapse()
+        if (!collapsed && panel.isCollapsed()) panel.expand()
+      } catch {
+        if (++attempts < 10) frame = requestAnimationFrame(sync)
+      }
+    }
+    sync()
+    return () => cancelAnimationFrame(frame)
   }, [collapsed, desktop, sidebarPanel])
 
   const navigationList = <Navigation items={visibleNavigation} current={current} collapsed={desktop && collapsed} />
   const account = <AccountButton actor={actor.data} busy={busy} onLogout={onLogout} collapsed={desktop && collapsed} />
-  const main = <MainColumn current={current} pages={visibleNavigation} error={error} mobile={!desktop}>{children}</MainColumn>
 
+  // One layout tree for every width. Crossing the breakpoint only adds or removes the
+  // sidebar panel and the phone header, so the page, its open dialogs and unsaved
+  // input stay mounted when a tablet rotates or a window is resized.
   return <TooltipProvider delayDuration={200}>
-    <div data-slot="app-shell" className="bg-background text-foreground flex h-dvh min-h-0 flex-col overflow-hidden md:flex-row">
+    <div data-slot="app-shell" className="bg-background text-foreground flex h-dvh min-h-0 overflow-hidden">
       <Reauthentication /><Appearance />
-      {desktop ? <ResizablePanelGroup id="apsp-admin-shell" orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
-        <ResizablePanel id="sidebar" panelRef={sidebarPanel} defaultSize={248} minSize={208} maxSize={360} collapsible collapsedSize={60}
+      <ResizablePanelGroup id="apsp-admin-shell" orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
+        {desktop && <ResizablePanel key="sidebar" id="sidebar" panelRef={sidebarPanel} defaultSize={248} minSize={208} maxSize={360} collapsible collapsedSize={60}
           onResize={size => { const folded = size.inPixels < 120; if (folded !== useShellStore.getState().collapsed) setCollapsed(folded) }}>
           <aside data-slot="sidebar" data-collapsed={collapsed} className="bg-sidebar text-sidebar-foreground flex h-full min-h-0 flex-col border-r">
             <div className={cn('flex h-14 shrink-0 items-center gap-2 border-b px-3', collapsed ? 'justify-center px-2' : 'justify-between')}>
@@ -80,29 +94,31 @@ export default function AdminShell({ current, busy, error, onLogout, children }:
             <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3 scrollbar-thin">{navigationList}</div>
             <div className="shrink-0 border-t p-2">{account}</div>
           </aside>
-        </ResizablePanel>
-        <ResizableHandle withHandle aria-label={t('调整侧栏宽度')} />
-        <ResizablePanel id="main" minSize="50">{main}</ResizablePanel>
-      </ResizablePanelGroup> : <>
-        <aside data-slot="sidebar" className="bg-sidebar text-sidebar-foreground shrink-0 border-b">
-          <div className="flex h-14 items-center gap-2 px-4">
-            <a href="#/servers" aria-label={t('apsp首页')} className="mr-auto min-w-0 rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"><Brand /></a>
-            <AccountButton actor={actor.data} busy={busy} onLogout={onLogout} collapsed={false} compact />
-            <Button variant="outline" aria-expanded={mobileOpen} aria-controls="admin-navigation" onClick={() => setMobileOpen(!mobileOpen)}>
-              {mobileOpen ? <XIcon /> : <MenuIcon />}<span>{t('菜单')}</span>
-            </Button>
+        </ResizablePanel>}
+        {desktop && <ResizableHandle key="handle" withHandle aria-label={t('调整侧栏宽度')} />}
+        <ResizablePanel key="main" id="main" minSize="50">
+          <div className="flex h-full min-h-0 flex-col">
+            {!desktop && <aside data-slot="sidebar" className="bg-sidebar text-sidebar-foreground shrink-0 border-b">
+              <div className="flex h-14 items-center gap-2 px-4">
+                <a href="#/servers" aria-label={t('apsp首页')} className="mr-auto min-w-0 rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"><Brand /></a>
+                <AccountButton actor={actor.data} busy={busy} onLogout={onLogout} collapsed={false} compact />
+                <Button variant="outline" aria-expanded={mobileOpen} aria-controls="admin-navigation" onClick={() => setMobileOpen(!mobileOpen)}>
+                  {mobileOpen ? <XIcon /> : <MenuIcon />}<span>{t('菜单')}</span>
+                </Button>
+              </div>
+              <m.div id="admin-navigation" initial={false}
+                animate={mobileOpen ? { height: 'auto', opacity: 1, display: 'block' } : { height: 0, opacity: 0, transitionEnd: { display: 'none' } }}
+                transition={transition.base} className="overflow-hidden">
+                <div className="max-h-[70dvh] overflow-y-auto border-t px-3 py-3">
+                  {navigationList}
+                  <p className="text-muted-foreground mt-3 border-t px-2 pt-3 text-xs">{t('当前账号')}：{actor.data?.display_name ?? t('管理员')}</p>
+                </div>
+              </m.div>
+            </aside>}
+            <MainColumn current={current} pages={visibleNavigation} error={error}>{children}</MainColumn>
           </div>
-          <m.div id="admin-navigation" initial={false}
-            animate={mobileOpen ? { height: 'auto', opacity: 1, display: 'block' } : { height: 0, opacity: 0, transitionEnd: { display: 'none' } }}
-            transition={transition.base} className="overflow-hidden">
-            <div className="max-h-[70dvh] overflow-y-auto border-t px-3 py-3">
-              {navigationList}
-              <p className="text-muted-foreground mt-3 border-t px-2 pt-3 text-xs">{t('当前账号')}：{actor.data?.display_name ?? t('管理员')}</p>
-            </div>
-          </m.div>
-        </aside>
-        {main}
-      </>}
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   </TooltipProvider>
 }
@@ -152,12 +168,14 @@ function AccountButton({ actor, busy, onLogout, collapsed, compact = false }: { 
   </button>
 }
 
-function MainColumn({ current, pages, error, mobile, children }: { current?: NavigationItem; pages: readonly NavigationItem[]; error: string; mobile: boolean; children: ReactNode }) {
+function MainColumn({ current, pages, error, children }: { current?: NavigationItem; pages: readonly NavigationItem[]; error: string; children: ReactNode }) {
   const { t } = useI18n()
   const scroller = useRef<HTMLDivElement>(null)
   // A new page starts at the top of the scrolling column.
   useEffect(() => { scroller.current?.scrollTo({ top: 0 }) }, [current?.path])
-  return <div ref={scroller} className={cn('flex min-h-0 min-w-0 flex-1 flex-col', !mobile && 'h-full overflow-y-auto')}>
+  // The shell is one screen tall at every width, so this column owns vertical
+  // scrolling on phones as well as on desktops.
+  return <div ref={scroller} data-slot="main-scroller" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
     {/* The bar sits in a fixed-height scrolling column, so it must not shrink below
         its content. At tablet widths the breadcrumb drops the group (the sidebar shows
         it) and the search button narrows, so the controls stay on one row. */}

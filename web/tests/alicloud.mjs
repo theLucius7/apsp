@@ -246,8 +246,12 @@ try {
   for (let index = 0; index < 2; ++index) {
     const article = articles.nth(index)
     assert((await article.innerText()).includes(`eip-testonly${index + 1}`))
+    // Resource text renders before the overview is marked ready; wait for the power
+    // control to become usable so the bandwidth check below runs against a ready page.
+    const start = article.getByRole('button', { name: '开机', exact: true })
+    for (const deadline = Date.now() + 5000; !await start.isEnabled() && Date.now() < deadline;) await page.waitForTimeout(25)
+    assert.equal(await start.isEnabled(), true)
     assert.equal(await article.getByRole('button', { name: '调整带宽与计费' }).isDisabled(), true)
-    assert.equal(await article.getByRole('button', { name: '开机', exact: true }).isEnabled(), true)
     await Promise.all([page.waitForResponse(response => response.url().endsWith(`/resource${index + 1}/refresh`)), article.getByRole('button', { name: '查询当前配置' }).click()])
   }
   assert.deepEqual(writes.slice(previousWrites).map(w => w.path), ['/api/plugins/alicloud/resources/resource1/refresh', '/api/plugins/alicloud/resources/resource2/refresh'])

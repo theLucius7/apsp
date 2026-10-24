@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, errorMessage } from '../api'
+import { useLeaveGuard } from '@/lib/leave-guard'
 export type Preference<T> = { value: T | null; revision: number; updated_at?: number }
 export function usePreference<T>(key: string) {
   const [record, setRecord] = useState<Preference<T>>({ value: null, revision: 0 })
@@ -21,20 +22,6 @@ export function usePreference<T>(key: string) {
 }
 export function useFormDraft<T>(key: string, dirty: boolean) {
   const preference = usePreference<T>(`draft:${key}`)
-  useEffect(() => {
-    if (!dirty) return
-    const leave = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
-    const navigate = (event: MouseEvent) => {
-      if (!(event.target instanceof Element)) return
-      const link = event.target.closest<HTMLAnchorElement>('a[href^="#"]')
-      if (link && link.hash !== window.location.hash && !window.confirm('表单有未保存内容。确定离开此页面吗？')) {
-        event.preventDefault()
-        event.stopImmediatePropagation()
-      }
-    }
-    window.addEventListener('beforeunload', leave)
-    document.addEventListener('click', navigate, true)
-    return () => { window.removeEventListener('beforeunload', leave); document.removeEventListener('click', navigate, true) }
-  }, [dirty])
+  useLeaveGuard(dirty)
   return preference
 }

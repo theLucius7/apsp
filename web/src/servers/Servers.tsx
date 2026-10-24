@@ -5,6 +5,7 @@ import { AnimatePresence, m } from 'motion/react'
 import { api } from '../api'
 import { Badge, Confirm, Empty, ErrorNotice, Loading, Meter, PageHeader, Refresh, Stat } from '../components'
 import { ago, bytes, navigate, percent, time } from '../format'
+import { useI18n } from '../i18n'
 import { useAction, useResource } from '../hooks'
 import type { Server } from '../types'
 import ServerSetup from './ServerSetup'
@@ -20,6 +21,7 @@ import { Separator } from '@/components/ui/separator'
 import { barMotion } from '@/lib/motion'
 
 export default function Servers() {
+  const { t } = useI18n()
   const resource = useResource<Server[]>('/api/servers')
   const actor = useResource<{ role: string; capabilities: string[] }>('/api/control-center/me')
   const canWrite = actor.data?.role === 'owner' || Boolean(actor.data?.capabilities.includes('servers:write'))
@@ -61,7 +63,7 @@ export default function Servers() {
     const asset = { ...defaultAssets, ...server.asset_settings }
     return <button className="group/entity focus-visible:ring-ring/50 flex max-w-full min-w-0 items-center gap-3 rounded-md border-0 bg-transparent p-0 text-left outline-none focus-visible:ring-3" onClick={() => navigate(`/servers/${server.id}`)}><span className="bg-muted text-muted-foreground grid size-9 shrink-0 place-items-center rounded-lg border"><ServerIcon className="size-4" aria-hidden="true" /></span><span className="min-w-0"><strong className="group-hover/entity:text-primary block text-sm font-medium wrap-anywhere transition-colors">{server.name}</strong><small className="text-muted-foreground mt-0.5 block max-w-52 truncate text-xs">{[asset.region, asset.group_name, server.static_info.hostname ?? `服务器 #${server.id}`].filter(Boolean).join(' · ')}{asset.hidden ? ' · 展示隐藏' : ''}</small>{asset.tags.length > 0 && <small className="text-muted-foreground mt-0.5 block max-w-52 truncate text-xs">{asset.tags.join(' · ')}</small>}</span></button>
   }
-  const status = (server: Server) => <><Badge tone={server.online ? 'good' : 'neutral'}>{server.online ? '在线' : server.device_public_key ? '离线' : '待接入'}</Badge>{!server.online && server.device_public_key && server.last_seen ? <small className="text-muted-foreground mt-1 block text-xs whitespace-nowrap" title={time(server.last_seen)}>最后联络 {ago(server.last_seen)}</small> : null}</>
+  const status = (server: Server) => <><Badge tone={server.online ? 'good' : 'neutral'}>{t(server.online ? '在线' : server.device_public_key ? '离线' : '待接入')}</Badge>{!server.online && server.device_public_key && server.last_seen ? <small className="text-muted-foreground mt-1 block text-xs whitespace-nowrap" title={time(server.last_seen)}>最后联络 {ago(server.last_seen)}</small> : null}</>
   const cpuUsage = (server: Server) => {
     const cpu = server.latest_metrics.cpu_percent
     return <div className="min-w-28 text-sm"><span>{percent(cpu)}</span>{cpu !== undefined && <Meter value={cpu} label={`${server.name} 处理器使用率`} />}</div>

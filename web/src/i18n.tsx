@@ -150,17 +150,31 @@ export function translate(value: string, locale: Locale): string {
 }
 
 
+/** English text for a phrase in the static catalog, keeping its surrounding whitespace. */
+function englishText(source: string) {
+  const value = source.trim()
+  const translated = english[value]
+  return translated === undefined ? undefined : `${source.match(/^\s*/)?.[0] ?? ''}${translated}${source.match(/\s*$/)?.[0] ?? ''}`
+}
+
+// The remembered Chinese source only stands while the node still shows its English
+// text. React writes new values into the same text nodes and attributes (a server
+// going offline); anything else on screen is that new value, which replaces the
+// source instead of being overwritten with the old translation.
+function currentSource(known: string | undefined, shown: string) {
+  return known !== undefined && shown === englishText(known) ? known : shown
+}
+
 function translateStaticDom(locale: Locale) {
   if (typeof document === 'undefined' || !document.body) return
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
   let node: Node | null
   while ((node = walker.nextNode())) {
     if (node.parentElement?.closest('code, pre, textarea, input, [data-i18n-ignore]')) continue
-    const raw = node.nodeValue ?? ''
-    const source = translatedTextSources.get(node) ?? raw
-    const leading = source.match(/^\s*/)?.[0] ?? '', trailing = source.match(/\s*$/)?.[0] ?? '', value = source.trim()
-    if (!value || !english[value]) continue
-    const translated = locale === 'en-US' ? `${leading}${english[value]}${trailing}` : source
+    const source = currentSource(translatedTextSources.get(node), node.nodeValue ?? '')
+    const inEnglish = englishText(source)
+    if (inEnglish === undefined) { translatedTextSources.delete(node); continue }
+    const translated = locale === 'en-US' ? inEnglish : source
     if (node.nodeValue !== translated) node.nodeValue = translated
     if (locale === 'en-US') translatedTextSources.set(node, source)
     else translatedTextSources.delete(node)
@@ -171,7 +185,9 @@ function translateStaticDom(locale: Locale) {
     for (const attribute of ['aria-label', 'title', 'placeholder']) {
       const current = element.getAttribute(attribute)
       if (!current) continue
-      const source = sources?.get(attribute) ?? current
+      const known = sources?.get(attribute)
+      const source = known !== undefined && current === english[known] ? known : current
+      if (source !== known) sources?.delete(attribute)
       const translated = english[source]
       if (!translated) continue
       const next = locale === 'en-US' ? translated : source
