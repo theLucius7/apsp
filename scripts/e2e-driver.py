@@ -59,6 +59,30 @@ def origin(value):
     return value.rstrip("/")
 
 
+def origin_header(base):
+    # The panel compares Origin with the canonical serialization of its public
+    # URL: lowercase scheme and host, default port omitted.
+    parsed = urllib.parse.urlsplit(base)
+    host = parsed.hostname if ":" not in parsed.hostname else f"[{parsed.hostname}]"
+    default = {"http": 80, "https": 443}[parsed.scheme.lower()]
+    port = "" if parsed.port in (None, default) else f":{parsed.port}"
+    return f"{parsed.scheme.lower()}://{host}{port}"
+
+
+def failure_detail(path, error):
+    route = urllib.parse.urlsplit(path).path
+    if not route.startswith("/api/") or "enrollment" in route or "token" in route:
+        return ""
+    try:
+        message = json.loads(error.read(4096)).get("error")
+    except Exception:
+        message = None
+    detail = " " + re.sub(r"/[0-9]+(?=/|$)", "/{id}", route)
+    if isinstance(message, str):
+        detail += "：" + message[:160]
+    return detail
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, fp, code, message, headers, new_url):
         raise AcceptanceError("验收接口出现重定向；请直接使用最终面板 origin")
@@ -74,14 +98,17 @@ class Panel:
 
     def request(self, path, data=None, raw=False, method=None):
         body = None if data is None else json.dumps(data).encode()
-        headers = {} if body is None else {"Content-Type": "application/json"}
+        # Send Origin on writes like a browser; password reauthentication
+        # refuses requests whose Origin is not the panel's public origin.
+        headers = {} if body is None else {"Content-Type": "application/json", "Origin": origin_header(self.base)}
         request = urllib.request.Request(self.base + path, data=body, headers=headers, method=method)
         try:
             with self.client.open(request, timeout=20) as response:
                 content = response.read(2 * 1024 * 1024 + 1)
         except urllib.error.HTTPError as error:
-            # Do not expose enrollment or subscription tokens from request URLs.
-            raise AcceptanceError(f"面板请求失败，HTTP {error.code}") from None
+            # Do not expose enrollment or subscription tokens from request URLs:
+            # report only token-free API paths and the panel's fixed message.
+            raise AcceptanceError(f"面板请求失败，HTTP {error.code}" + failure_detail(path, error)) from None
         except urllib.error.URLError:
             raise AcceptanceError("无法连接面板，请检查 origin、TLS 与网络") from None
         ensure(len(content) <= 2 * 1024 * 1024, "面板响应超过验收脚本上限")

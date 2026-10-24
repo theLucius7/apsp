@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 
@@ -564,6 +565,24 @@ class AcceptanceContracts(unittest.TestCase):
              patch.object(DRIVER.time, "sleep", clock.sleep):
             with self.assertRaisesRegex(DRIVER.AcceptanceError, "匹配请求=True 操作状态=queued,running"):
                 DRIVER.preflight(panel, state, args)
+
+
+    def test_origin_header_matches_the_panel_canonical_public_origin(self):
+        self.assertEqual(DRIVER.origin_header("http://127.0.0.1:18080"), "http://127.0.0.1:18080")
+        self.assertEqual(DRIVER.origin_header("HTTPS://Panel.Example.Test:443"), "https://panel.example.test")
+        self.assertEqual(DRIVER.origin_header("https://panel.example.test:8443"), "https://panel.example.test:8443")
+        self.assertEqual(DRIVER.origin_header("http://[::1]:18080"), "http://[::1]:18080")
+
+
+    def test_http_failures_name_token_free_routes_and_the_panel_message_only(self):
+        def failure(body):
+            return urllib.error.HTTPError("http://panel.test", 400, "Bad Request", {}, io.BytesIO(body))
+        message = json.dumps({"error": "访问地址与面板配置不一致"}).encode()
+        self.assertEqual(DRIVER.failure_detail("/api/control-center/reauth", failure(message)),
+                         " /api/control-center/reauth：访问地址与面板配置不一致")
+        self.assertEqual(DRIVER.failure_detail("/api/servers/41/fleet?x=1", failure(b"not json")), " /api/servers/{id}/fleet")
+        for path in ("/sub/secret-token?format=singbox", "/api/servers/41/enrollment", "/api/tokens/7"):
+            self.assertEqual(DRIVER.failure_detail(path, failure(message)), "")
 
     def test_totals_preserve_large_integer_precision_and_reject_inconsistent_ledger(self):
         amount = 2 ** 64 + 17
