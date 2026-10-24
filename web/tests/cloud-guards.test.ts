@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { accountError, checked, credentialError, operationError, powerError, registrationError, resourceError } from '../src/plugins/alicloud/guards'
+import { accountError, bandwidthError, checked, credentialError, operationError, powerError, registrationError, resourceError } from '../src/plugins/alicloud/guards'
 import { billUsable, defaultPowerPolicy, exactUsage } from '../src/plugins/alicloud/types'
 import type { Account, Operation, Overview, PowerJob, Resource } from '../src/plugins/alicloud/types'
 import { editorError, ruleError } from '../src/plugins/ddns/guards'
@@ -55,6 +55,19 @@ test('unknown capabilities and current traffic protection block power starts', (
   data.resources[0].threshold_hold = true
   expect(powerError(() => data, resource, 'start', 2)).not.toBe('')
   expect(powerError(() => data, resource, 'stop', 2)).toBe('')
+})
+
+test('a newly attached EIP invalidates bandwidth drafts and confirmations without blocking ECS power', () => {
+  const data = base(), current = () => data
+  data.operations = [structuredClone(operation)]
+  expect(bandwidthError(current, resource)).toBe('')
+  expect(operationError(current, operation, false, ['preview'], true, now)).toBe('')
+  data.resources[0].snapshot = { ...operation.before_state, attached_eip_id: 'eip-testonly', bandwidth_mbps: 2000, charge_type: 'PayByDominantTraffic' }
+  let writes = 0
+  expect(() => checked(() => bandwidthError(current, resource), async () => ++writes)).toThrow('绑定 EIP')
+  expect(operationError(current, operation, false, ['preview'], true, now)).toContain('绑定 EIP')
+  expect(powerError(current, resource, 'start', 2)).toBe('')
+  expect(writes).toBe(0)
 })
 
 test('billing display preserves exact zero and never rounds unsafe, negative or unknown authority', () => {

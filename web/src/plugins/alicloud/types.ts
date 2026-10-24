@@ -1,5 +1,5 @@
 export type Target = { bandwidth_mbps: number; charge_type: 'PayByTraffic' | 'PayByBandwidth' }
-export type Snapshot = Target & { kind: string; cloud_id: string; region: string; public_ip: string; resource_charge_type: string; status: string }
+export type Snapshot = { bandwidth_mbps: number; charge_type: string; kind: string; cloud_id: string; region: string; public_ip: string; resource_charge_type: string; status: string; attached_eip_id?: string | null }
 export type Bill = { month: string; queried_at: number; usage_micro_gb: number | null; rows: { instance_id: string; region: string; product_type: string; billing_item: string; usage: string; unit: string; amount: string; currency: string }[] }
 export type Account = { credential_id?: string | null; id: string; name: string; site: 'china' | 'international'; enabled: boolean; auto_enabled: boolean; limit_gb: number; revision: number; next_run_at: number; error_code: string | null; bill: Bill | null; traffic_error: string | null; traffic: { queried_at: number; mainland_bytes: string; overseas_bytes: string; regions: { region: string; bytes: string }[] } | null; balance?: { available: string; currency: string; queried_at: number } | null; balance_error?: string | null; balance_next_at?: number }
 export type CdtGuardConfig = { threshold_bytes: number; jump_bytes: number; auto_start: boolean }
@@ -18,7 +18,7 @@ export const powerStatus = (value?: string) => value && Object.hasOwn(powerState
 const powerSources: Record<string, string> = { manual: '手动', cdt_guard: 'CDT 脚本守护', threshold: '流量阈值', schedule: '每日计划', keepalive: '抢占式保活' }
 export const powerSource = (value: string) => Object.hasOwn(powerSources, value) ? powerSources[value] : '未知来源'
 export const utcOffset = (minutes: number) => `UTC${minutes < 0 ? '−' : '+'}${String(Math.floor(Math.abs(minutes) / 60)).padStart(2, '0')}:${String(Math.abs(minutes) % 60).padStart(2, '0')}`
-export const charge = (value: string) => value === 'PayByTraffic' ? '按流量计费' : value === 'PayByBandwidth' ? '按带宽计费' : '未知计费方式'
+export const charge = (value: string) => value === 'PayByTraffic' ? '按流量计费' : value === 'PayByBandwidth' ? '按带宽计费' : value === 'PayByDominantTraffic' ? '按主流量计费' : value === 'PayBy95' ? '按增强 95 计费' : '其他计费方式'
 export const time = (value: number | null) => value ? new Date(value * 1000).toLocaleString('zh-CN', { hour12: false }) : '尚未查询'
 const states: Record<string, string> = { preview: '等待确认', queued: '等待执行', running: '执行中', uncertain: '结果待核对', succeeded: '已核对完成', failed: '未执行', cancelled: '已取消', dismissed: '已人工结束跟踪' }
 const messages: Record<string, string> = {
@@ -27,6 +27,7 @@ const messages: Record<string, string> = {
   cdt_not_enabled: '零用量无法确认已启用 CDT 公网计费', cdt_unsupported_isp: '额度池存在非 BGP 流量，请核对适用范围',
   credential_unavailable: '集中云凭据停用、用途不符或解密密钥缺失', credential_invalid: '集中云凭据字段或提供方不符',
   authentication_failed: '访问密钥无效或缺少权限', rate_limited: '云服务限流，稍后重试', resource_not_found: '未找到指定地域和标识的资源',
+  attached_eip_read_only: '实例公网来自绑定 EIP，此处只读；请在 EIP 控制台管理带宽与计费',
   capacity_unavailable: '库存或抢占价格条件不足，保活冷却后再尝试', insufficient_balance: '账号余额不足或资源欠费，请在云端核对', resource_locked: '云端已锁定实例', request_rejected: '云端明确拒绝请求，请核对状态与权限',
   stop_mode_unsupported: '节省停机需要按量付费 VPC 实例', stop_mode_mismatch: '实例已停止，但停机模式与请求不符，请核对收费', stop_mode_unknown: '实例已停止，但无法核实实际停机模式',
   unsupported_resource: '仅支持 ECS 固定公网 IP 与按量付费的独立 EIP；不操作共享带宽包', resource_busy: '云资源正在变更或状态不支持调整',

@@ -11,6 +11,7 @@ fn snapshot() -> Snapshot {
         charge_type: "PayByTraffic".into(),
         resource_charge_type: "PostPaid".into(),
         status: "Running".into(),
+        attached_eip_id: None,
     }
 }
 

@@ -176,6 +176,7 @@ pub(super) async fn cancel(pool: &PgPool, id: Uuid, dismiss: bool) -> ApiResult<
 
 fn eligible(operation: &Operation, account: &Account, resource: &Resource, now: i64) -> bool {
     account.enabled
+        && operation.before_state.attached_eip_id.is_none()
         && account.revision == operation.account_revision
         && resource.revision == operation.resource_revision
         && operation.expires_at > now
@@ -209,6 +210,7 @@ async fn readback(
     match cloud.snapshot(account, resource).await {
         Ok(snapshot) => {
             let matches = operation.target.matches(&snapshot)
+                && snapshot.attached_eip_id == operation.before_state.attached_eip_id
                 && snapshot.public_ip == operation.before_state.public_ip;
             snapshot_on(tx, resource.id, &snapshot).await?;
             finish(

@@ -72,10 +72,17 @@ pub(super) struct Snapshot {
     pub charge_type: String,
     pub resource_charge_type: String,
     pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attached_eip_id: Option<String>,
 }
 
 impl Target {
     pub fn validate(&self, before: &Snapshot) -> ApiResult<()> {
+        if before.attached_eip_id.is_some() {
+            return Err(ApiError::BadRequest(
+                message("attached_eip_read_only").into(),
+            ));
+        }
         if !(1..=100).contains(&self.bandwidth_mbps)
             || !matches!(self.charge_type.as_str(), "PayByTraffic" | "PayByBandwidth")
         {
@@ -152,6 +159,7 @@ pub(super) fn message(code: &str) -> &'static str {
         "stop_mode_unknown" => "实例已停止，但云端未提供可核实的停机模式",
         "rate_limited" => "云服务限流，请稍后重试",
         "resource_not_found" => "未找到指定地域和标识的资源",
+        "attached_eip_read_only" => "实例公网来自绑定 EIP，此处只读；请在 EIP 控制台管理带宽与计费",
         "unsupported_resource" => "仅支持 ECS 固定公网 IP 和按量付费的独立 EIP；不操作共享带宽包",
         "resource_busy" => "云资源正在变更或状态不支持调整",
         "billing_incomplete" => "账单分页、单位或响应不完整，自动控制暂停",

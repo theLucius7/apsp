@@ -1,14 +1,14 @@
 use super::*;
-fn bill(page: i64, count: i64, rows: Vec<Value>) -> Reply {
+pub(super) fn bill(page: i64, count: i64, rows: Vec<Value>) -> Reply {
     Reply::ok(
         "QueryInstanceBill",
         json!({"RequestId":"bill-request","Code":"Success","Success":true,"Data":{"BillingCycle":billing::month(apsp_protocol::now_timestamp()),"PageNum":page,"TotalCount":count,"Items":{"Item":rows}}}),
     )
 }
-fn row(usage: &str, instance: &str) -> Value {
+pub(super) fn row(usage: &str, instance: &str) -> Value {
     json!({"Item":"PayAsYouGoBill","InstanceID":instance,"ProductCode":"cdt","ProductType":"cdt_DataTransfer_public_cn","BillingItem":"internet_traffic","Region":"测试地域","Usage":usage,"UsageUnit":"GB","PretaxAmount":"0.00","Currency":"CNY"})
 }
-fn traffic() -> Reply {
+pub(super) fn traffic() -> Reply {
     Reply::ok(
         "ListCdtInternetTraffic",
         json!({"RequestId":"traffic","TrafficDetails":[{"BusinessRegionId":"cn-hangzhou","Traffic":"1073741824"},{"BusinessRegionId":"cn-hongkong","Traffic":2147483648_u64}]}),

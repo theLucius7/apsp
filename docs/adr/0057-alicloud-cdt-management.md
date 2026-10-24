@@ -24,3 +24,14 @@
 未复制启停机、抢占式保活、定时恢复、余额或通知系统。手动变配通过明确确认授权相应的云端扣款；自动流程只降低原本按流量计费资源的上限。配置每月最多触发一次，结果待核实时禁止同资源新变配；人工结束跟踪会关闭该资源自动策略。
 
 用户随后明确补齐 ECS 启停、阈值停机、每日计划、抢占式保活与费用缓存，上述暂不实施项由 [ADR 0058](0058-alicloud-power-and-billing-cache.md) 扩展。兼容 CDT 读数只展示及真实云操作不属于开发验证的约束保持。
+
+## 2026-10-24：绑定 EIP 的 ECS 查询兼容
+
+迁移的 CDT 实例绑定 EIP，`DescribeInstances` 的顶层 `InternetChargeType` 为空、`InternetMaxBandwidthOut` 为零；真实网络配置在 `EipAddress`，其中计费方式为 `PayByDominantTraffic`。按固定公网 IP 解析会误报查询异常。
+
+- 保留 ECS 资源身份，读取同一响应的 `EipAddress.AllocationId/IpAddress/Bandwidth/InternetChargeType`，无需额外 VPC 请求或权限。校验实例/地域、唯一结果、EIP 标识、IPv4 和整数带宽；绑定信息缺失或同时存在固定公网地址时拒绝猜测。
+- 快照增加可选 `attached_eip_id`，旧 JSON 默认没有绑定，不增加数据库迁移。绑定 EIP 的计费方式独立展示，允许保留未来非空类型，不把主流量计费降格成普通流量计费。
+- 读取能力与写入范围分开：手动预览、执行入口、后台自动降速均拒绝将绑定 EIP 当作 ECS 固定公网网络写入；运行中的旧变配不能因 EIP 的地址和目标值恰好一致而误判成功。界面提供 EIP 控制台入口，并保留独立 EIP 原有写入边界。
+- CDT 月度状态、150/20 GiB 配置与 ECS 启停逻辑不变。回归覆盖两个真实响应形状、异常字段、自动刷新事务、预览后绑定变化、未知结果读回及桌面/手机查询。
+
+依据：[DescribeInstances 的 EipAddress 字段](https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-describeinstances)、[阿里云对 PayByDominantTraffic 的定义](https://www.alibabacloud.com/help/en/ros/developer-reference/datasource-vpc-commonbandwidthpackages)。真实验证仅查询两个已迁移账号，不执行带宽、计费或绑定变更。

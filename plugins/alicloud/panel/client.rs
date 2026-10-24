@@ -151,6 +151,9 @@ impl Cloud {
         target: &Target,
         operation_id: Uuid,
     ) -> Result<String, Failure> {
+        if before.attached_eip_id.is_some() {
+            return Err("attached_eip_read_only".into());
+        }
         let resolved = self.resolved_account(account).await?;
         let account = &resolved;
         let (service, action, mut params) = if resource.kind == "ecs" {
@@ -224,10 +227,6 @@ fn parse_snapshot(result: &Value, resource: &Resource) -> Result<Snapshot, Failu
     {
         return Err("resource_not_found".into());
     }
-    let charge_type = text(row, "InternetChargeType")?;
-    if !matches!(charge_type.as_str(), "PayByTraffic" | "PayByBandwidth") {
-        return Err("unsupported_resource".into());
-    }
     let status = text(row, "Status")?;
     if (ecs && !matches!(status.as_str(), "Running" | "Stopped"))
         || (!ecs && !matches!(status.as_str(), "Available" | "InUse"))
@@ -242,23 +241,52 @@ fn parse_snapshot(result: &Value, resource: &Resource) -> Result<Snapshot, Failu
             "ChargeType"
         },
     )?;
+    let attached_eip_id = if ecs && !blank(&row["EipAddress"]["AllocationId"]) {
+        let id = text(&row["EipAddress"], "AllocationId")?;
+        if !super::model::identifier(&id, "eip-") {
+            return Err("invalid_response".into());
+        }
+        Some(id)
+    } else {
+        None
+    };
+    // An attached EIP has its own bandwidth and billing fields. The enclosing
+    // ECS network fields can be zero/empty and must never be used as a fallback.
+    let network = if attached_eip_id.is_some() {
+        &row["EipAddress"]
+    } else {
+        row
+    };
+    let charge_type = text(network, "InternetChargeType")?;
+    if attached_eip_id.is_none()
+        && !matches!(charge_type.as_str(), "PayByTraffic" | "PayByBandwidth")
+    {
+        return Err("unsupported_resource".into());
+    }
     let (public_ip, bandwidth_mbps) = if ecs {
-        if !blank(&row["EipAddress"]["AllocationId"])
-            || !matches!(resource_charge_type.as_str(), "PrePaid" | "PostPaid")
-        {
+        if !matches!(resource_charge_type.as_str(), "PrePaid" | "PostPaid") {
             return Err("unsupported_resource".into());
         }
         let ips = row["PublicIpAddress"]["IpAddress"]
             .as_array()
-            .filter(|v| v.len() == 1)
             .ok_or(Failure::from("unsupported_resource"))?;
-        (
-            ips[0]
-                .as_str()
-                .ok_or(Failure::from("invalid_response"))?
-                .to_owned(),
-            row["InternetMaxBandwidthOut"].as_i64(),
-        )
+        if attached_eip_id.is_some() {
+            if !ips.is_empty() {
+                return Err("unsupported_resource".into());
+            }
+            (text(network, "IpAddress")?, network["Bandwidth"].as_i64())
+        } else {
+            if ips.len() != 1 {
+                return Err("unsupported_resource".into());
+            }
+            (
+                ips[0]
+                    .as_str()
+                    .ok_or(Failure::from("invalid_response"))?
+                    .to_owned(),
+                row["InternetMaxBandwidthOut"].as_i64(),
+            )
+        }
     } else {
         if resource_charge_type != "PostPaid"
             || !blank(&row["BandwidthPackageId"])
@@ -288,5 +316,6 @@ fn parse_snapshot(result: &Value, resource: &Resource) -> Result<Snapshot, Failu
         charge_type,
         resource_charge_type,
         status,
+        attached_eip_id,
     })
 }
