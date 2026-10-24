@@ -47,6 +47,8 @@ const SingboxOverview = lazyPage(() => import('../plugins/singbox/Overview'))
 const Nodes = lazyPage(() => import('../plugins/singbox/Nodes'))
 const ProxyUsers = lazyPage(() => import('../plugins/singbox/ProxyUsers'))
 const Groups = lazyPage(() => import('../plugins/singbox/Groups'))
+const Commerce = lazyPage(() => import('../plugins/singbox/commerce/Commerce'))
+const Expenses = lazyPage(() => import('../plugins/expenses/Expenses'))
 const Ddns = lazyPage(() => import('../plugins/ddns/Ddns'))
 const Alicloud = lazyPage(() => import('../plugins/alicloud/Alicloud'))
 const FleetOperations = lazyPage(() => import('../fleet/FleetOperations'))
@@ -55,11 +57,11 @@ const NetworkConfiguration = lazyPage(() => import('../network-configuration/Net
 const OperationsPage = lazyPage(() => import('../operations/OperationsPage'))
 const ControlCenter = lazyPage(() => import('../control-center/ControlCenter'))
 
-export default function AdminPage({ route }: { route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' }> }) {
+export default function AdminPage({ route }: { route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' | 'member-join' | 'member-login' }> }) {
   return page(route)
 }
 
-function page(route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' }>): ReactNode {
+function page(route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' | 'member-join' | 'member-login' }>): ReactNode {
   switch (route.page) {
     case 'server': {
       const { serverId, section } = route
@@ -91,6 +93,8 @@ function page(route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' }>):
       initialKind={route.kind}
       initialServerRole={route.serverRole}
     />
+    case 'expenses': return <Expenses />
+    case 'commerce': return <Commerce />
     case 'proxy-users': return <ProxyUsers />
     case 'groups': return <Groups />
     case 'plugins': return <PluginEnablement />

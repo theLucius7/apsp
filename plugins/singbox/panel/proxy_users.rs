@@ -174,7 +174,14 @@ pub async fn reset_subscription(
         crate::control_center::require_capability(&state, &headers, "proxy:write").await?;
     crate::control_center::require_recent_proof(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
+    super::entitlements::lock(&mut tx).await?;
     super::business::lock_user(&mut tx, id).await?;
+    let legacy: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_nexus_bridge b JOIN singbox_nexus_identities i ON i.import_id=b.import_id WHERE b.enabled AND i.user_id=$1)").bind(id).fetch_one(&mut *tx).await?;
+    if legacy {
+        return Err(ApiError::Conflict(
+            "原订阅兼容期间保留现有链接，请在节点接管后再重置".into(),
+        ));
+    }
     let user = sqlx::query_as::<_, ProxyUserRow>(
         "UPDATE users SET subscription_token=$2 WHERE id=$1 AND deleted_at IS NULL RETURNING id,name,subscription_token",
     )

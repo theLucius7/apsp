@@ -11,6 +11,8 @@ import { useI18n } from './i18n'
 import { useSessionStore } from './stores/session'
 
 const ServerDisplay = lazy(() => import('./display/ServerDisplay'))
+const MemberLogin = lazy(() => import('./plugins/singbox/commerce/MemberLogin'))
+const MemberJoin = lazy(() => import('./plugins/singbox/commerce/Join'))
 const UserPortal = lazy(() => import('./plugins/singbox/UserPortal'))
 
 function Boot() {
@@ -63,6 +65,8 @@ export default function App() {
   const title = t(current?.label ?? '控制面板')
   useEffect(() => { document.title = `${title} · ${t('apsp')}` }, [title, t])
 
+  if (route.page === 'member-login') return <Suspense fallback={<Boot />}><MemberLogin /></Suspense>
+  if (route.page === 'member-join') return <Suspense fallback={<Boot />}><MemberJoin key={route.token} token={route.token} /></Suspense>
   if (route.page === 'proxy-portal') return <Suspense fallback={<Boot />}><UserPortal key={route.account} account={route.account} activation={route.activation} /></Suspense>
   if (session === null) return <Boot />
   if (!session && !(route.page === 'dashboard' && publicDashboard)) {
