@@ -9,7 +9,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$script:Roots = @('RWS4aZYmyBmwROpGKjfADJqNedYCNRhlg0+UoIBjQHxXZxYL7XMlkGJN')
+$script:Roots = @('RWS4aZYmyBmwROpGKjfADJqNedYCNRhlg0+UoIBjQHxXZxYL7XMlkGJN', 'RWRYjymFKFxkTS6NSC2Y00CbqNTatTFOMgfx4lt/0xm2EEzqHN/72uCA')
 $script:VersionPattern = '^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$'
 $script:Targets = @('amd64', 'arm64', 'linux-gnu-amd64', 'linux-gnu-arm64', 'linux-musl-amd64', 'linux-musl-arm64', 'macos-arm64', 'freebsd-amd64', 'freebsd-arm64', 'windows-amd64', 'windows-arm64')
 

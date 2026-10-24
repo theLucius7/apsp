@@ -28,6 +28,10 @@ minisign -G -p /受保护目录/apsp-release.pub -s /受保护目录/apsp-releas
 export APSP_RELEASE_PUBLIC_KEYS="$(cat deploy/release-public-keys.json)"
 ```
 
+2026-10-24 用户决定在部署面板的 VPS 上签署发布，新增第二把正式公钥，key ID `4D645C2885298F58`，与原公钥并列记录在同一文件、仓库变量 `APSP_RELEASE_PUBLIC_KEYS` 和生产面板环境中。私钥带口令加密，保存在 VPS 的仓库外受保护目录，口令另存于该机的独立受保护文件，以便无人值守签署；它不进入仓库、CI、面板数据或聊天。这把密钥所在机器联网并运行公网服务，保护等级低于维护者 Mac 上的原密钥：该机被攻破即可签出受信任的 Agent，应按下文 ADR 0017 的泄漏流程处理。
+
+只信任原公钥的已安装 Agent（`agent-v0.3.0` 及更早）不认识第二把公钥，无法验证仅由 VPS 密钥签署的 Release；这类设备升级时仍需由原 Mac 密钥签署过渡版本。自 0.3.1 起编译进 Agent 的根集合与重新生成的安装入口都包含两把公钥。
+
 正式 Release 仍需完成候选构建、本地签署与发布校验；提供公钥本身不代表某个版本已发布。CI 集成测试继续使用明确标识的测试根。
 
 生产公钥 JSON 数组通过仓库变量 `APSP_RELEASE_PUBLIC_KEYS` 固定在正式 Agent 编译时，每项可以是 minisign 公钥 base64 记录或完整 `.pub` 文本。公钥可公开；CI 不生成或读取正式私钥。Agent 使用 `minisign-verify` crate 验证签名，最多同时信任 8 个公钥。面板、安装器和运行期配置都不能给 Agent 追加或替换根；缺失、空、重复或无效的根集合会拒绝制品。自行构建的用户可以在编译时设置自己的 `APSP_RELEASE_PUBLIC_KEYS`，其产物属于自己的信任域。
