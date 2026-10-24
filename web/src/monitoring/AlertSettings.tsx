@@ -11,6 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { Panel } from '@/components/panel'
 
 const defaultTemplate = 'apsp · {{title}}\n服务器：{{server}}\n{{message}}\n时间：{{time}}\n事件：{{event}}'
 const examples: Record<string, string> = { title: '资源超限告警', server: '示例服务器', message: '处理器使用率达到设定阈值。', time: '示例时间（UTC）', event: '示例事件' }
@@ -41,14 +42,20 @@ function Form({ initial }: { initial: Preferences }) {
 }
 
 export default function AlertSettings() {
-  const resource = useResource<Preferences>('/api/settings', 0)
+  const actor = useResource<{ role: string }>('/api/control-center/me', 0)
+  const owner = actor.data?.role === 'owner'
+  // Switches, thresholds and Telegram are panel settings, which only an owner session may read.
+  // Other administrators skip the read instead of leaving a denied request in the audit log on every visit.
+  const resource = useResource<Preferences>(owner ? '/api/settings' : null, 0)
   return <>
     <PageHeader eyebrow="监控告警" title="告警设置" description="决定哪些情况会产生告警，以及告警通过 Telegram 或 Webhook 发给谁。">
       <a className={buttonVariants({ variant: 'outline' })} href="#/system/notifications">查看告警事件</a>
     </PageHeader>
-    <ErrorNotice message={resource.error} retry={resource.reload} />
-    {resource.data ? <Form initial={resource.data} /> : resource.loading ? <Loading /> : null}
-    {/* Panel settings need an owner session; rules, Webhook and channel status only need monitoring access, so they stay usable when that read fails. */}
+    <ErrorNotice message={actor.error || resource.error} retry={actor.error ? actor.reload : resource.reload} />
+    {resource.data ? <Form initial={resource.data} />
+      : actor.data && !owner ? <Panel><div className="p-4"><h2 className="mb-3 text-base font-semibold">告警开关与阈值</h2><p className="text-muted-foreground text-sm">告警开关、阈值和 Telegram 通知只有所有者可以查看和修改。</p></div></Panel>
+      : actor.error || resource.error ? null : <Loading />}
+    {/* Rules, Webhook and channel status only need monitoring access, so they load independently of the panel settings. */}
     <AlertRules /><WebhookSettings /><NotificationChannels />
   </>
 }

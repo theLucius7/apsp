@@ -34,7 +34,7 @@ try {
     const context = await browser.newContext({ viewport: { width, height: 1000 } })
     const page = await context.newPage(), errors = [], unexpected = [], writes = []
     page.on('pageerror', error => errors.push(error.message))
-    let tasks = [], rules = [], taskFailure = true, testFailure = true, settingsDenied = false
+    let tasks = [], rules = [], taskFailure = true, testFailure = true, settingsFailure = false, settingsReads = 0
     let notificationsGate = Promise.resolve()
     const servers = [
       { id: 1, name: '东京服务器', online: true, asset_settings: { region: 'JP', group_name: '亚洲' } },
@@ -65,7 +65,8 @@ try {
       }
       if (path === '/api/exchange-rates') return respond({base:'CNY',rates:{CNY:1},rate_dates:{},rate_date:null,source:null,source_url:null,fetched_at:null,attempted_at:null,next_refresh_at:0,stale:true,status:'unavailable',error_code:null})
       if (path === '/api/settings') {
-        if (settingsDenied) return respond({ error: '全局安全设置需要所有者会话' }, 403)
+        if (method === 'GET') settingsReads++
+        if (settingsFailure) return respond({ error: '测试：面板设置暂时不可用' }, 503)
         if (method === 'PATCH') {
           const body = request.postDataJSON()
           if (body.telegram_template.includes('{{unknown}}')) return respond({ error: '测试：模板变量无效' }, 400)
@@ -212,17 +213,33 @@ try {
     assert.equal(await alertSettings.getAttribute('href'), '#/monitoring/settings')
     await alertSettings.click()
     await page.getByRole('heading', { name: '告警设置', exact: true }).waitFor()
-    // Only an owner session reads the panel settings; administrators with monitoring access still get rules, Webhook and channel status.
-    settingsDenied = true
+    // Rules, Webhook and channel status do not wait for the panel settings, even when the owner's read fails.
+    settingsFailure = true
     rules = [{ id: 'rule-1', revision: 1, spec: { name: '只读可见规则', metric: 'cpu', threshold: 90, duration_minutes: 5, aggregation: 'average', all_servers: true, enabled: true, server_ids: [] } }]
     await page.reload()
-    await page.getByRole('alert').filter({ hasText: '全局安全设置需要所有者会话' }).waitFor()
+    await page.getByRole('alert').filter({ hasText: '面板设置暂时不可用' }).waitFor()
     await page.getByRole('cell', { name: '只读可见规则', exact: true }).waitFor()
     await page.getByRole('heading', { name: /^Webhook 通知/ }).waitFor()
     await page.getByRole('heading', { name: '渠道投递状态', exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: '保存设置' }).count(), 0)
+    // Other administrators with monitoring access and all servers find the entry, never request the owner-only panel settings and see why the form is absent.
+    settingsFailure = false
+    const ownerReads = settingsReads
+    await page.route('**/api/control-center/me', route => route.fulfill({ json: { id: 2, role: 'operator', display_name: 'TEST_ONLY 监控管理员', all_servers: true, capabilities: ['monitoring:read', 'monitoring:write', 'servers:read'], token_capabilities: null, token_servers: null } }))
+    await page.reload()
+    await page.getByText('告警开关、阈值和 Telegram 通知只有所有者可以查看和修改。', { exact: true }).waitFor()
+    await page.getByRole('cell', { name: '只读可见规则', exact: true }).waitFor()
+    await page.getByRole('heading', { name: /^Webhook 通知/ }).waitFor()
+    await page.getByRole('heading', { name: '渠道投递状态', exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '保存设置' }).count(), 0)
+    assert.equal(await page.getByRole('alert').count(), 0)
+    assert.equal(settingsReads, ownerReads)
+    // The entry only appears once the shell has read this administrator, so wait for it before counting.
+    const navigation = page.getByRole('navigation', { name: '主导航', includeHidden: true })
+    await navigation.getByRole('link', { name: '告警设置', exact: true, includeHidden: true }).waitFor({ state: 'attached' })
+    for (const [name, count] of [['告警事件', 1], ['延迟检测', 1], ['告警设置', 1], ['面板设置', 0]]) assert.equal(await navigation.getByRole('link', { name, exact: true, includeHidden: true }).count(), count, name)
     assert.deepEqual(errors, []); assert.deepEqual(unexpected, [])
-    results.push({ width, assignment: 'passed', notificationConfig: 'passed', rules: 'passed', history: 'passed', settingsDenied: 'passed' })
+    results.push({ width, assignment: 'passed', notificationConfig: 'passed', rules: 'passed', history: 'passed', settingsFailure: 'passed', otherAdministrators: 'passed' })
     await context.close()
   }
   console.log(JSON.stringify(results))
