@@ -1,4 +1,5 @@
 import { Panel } from '@/components/panel'
+import { useSystemTheme } from '@/lib/use-system-theme'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useState } from 'react'
@@ -8,6 +9,7 @@ import { useAction } from '../../../hooks'
 
 const root = '/api/plugins/sing-box/commerce-public/account'
 export default function MemberLogin() {
+  useSystemTheme()
   const [recover, setRecover] = useState(false), [email, setEmail] = useState(''), [challenge, setChallenge] = useState(''), [notice, setNotice] = useState(''), action = useAction()
   const navigate = (result: { account_id: string }) => { if (!/^[0-9a-f-]{36}$/.test(result.account_id)) throw new Error('返回的账户入口无效。'); window.location.hash = `/plugins/sing-box/account/${result.account_id}` }
   return <main className="mx-auto max-w-[880px] px-6 pt-7 pb-16 max-sm:px-3 max-sm:py-5 [&>header]:mb-7 [&>header]:flex [&>header]:items-center [&>header]:gap-4"><header><Brand /><span>成员登录</span></header><Panel><div className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><h1>{recover ? '设置或恢复密码' : '邮箱密码登录'}</h1></div><div className="p-4 space-y-3"><ErrorNotice message={action.error} />{notice && <p role="status">{notice}</p>}<form onSubmit={e => {

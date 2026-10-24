@@ -1,4 +1,5 @@
 import { Panel } from '@/components/panel'
+import { useSystemTheme } from '@/lib/use-system-theme'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useEffect, useRef, useState } from 'react'
@@ -8,6 +9,7 @@ import { useAction } from '../../../hooks'
 import { RequestIdentity } from './types'
 
 export default function Join({ token }: { token: string }) {
+  useSystemTheme()
   const [data, setData] = useState<{ available: boolean; prepaid: boolean; package_name: string | null; email_verification_required: boolean; configuration: { enabled: boolean; reason?: string } }>(), [error, setError] = useState('')
   const [email, setEmail] = useState(''), [challenge, setChallenge] = useState(''), [notice, setNotice] = useState('')
   const action = useAction(), identity = useRef(new RequestIdentity())

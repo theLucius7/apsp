@@ -137,19 +137,8 @@ export function Meter({ value, label, warning = 75, danger = 90, className }: { 
   return <Progress value={level} aria-label={label} indicatorClassName={tone} className={cn('mt-1.5 h-1 max-w-28', className)} />
 }
 
-/**
- * Dialogs here open from state rather than from a Radix trigger, so Radix has no
- * element to refocus on close and focus would fall back to the page body. Keep
- * whatever had focus when the dialog opened and return to it if it still exists.
- */
-function useReturnFocus() {
-  const [opener] = useState(() => document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null)
-  return (event: Event) => { if (opener?.isConnected) { event.preventDefault(); opener.focus() } }
-}
-
 export function Modal({ title, children, onClose, busy = false, wide = false, className = '', slot }: { title: string; children: ReactNode; onClose: () => void; busy?: boolean; wide?: boolean; className?: string; slot?: string }) {
   const { t } = useI18n()
-  const returnFocus = useReturnFocus()
   const guard = (event: Event) => { if (busy) event.preventDefault() }
   // Dialogs render at the document root so hidden page sections, such as inactive
   // tabs, never hide a dialog that one of their components opened.
@@ -160,7 +149,6 @@ export function Modal({ title, children, onClose, busy = false, wide = false, cl
       closeLabel={t('关闭对话框')}
       onEscapeKeyDown={guard}
       onInteractOutside={guard}
-      onCloseAutoFocus={returnFocus}
       className={cn(
         'flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-y-auto p-0 sm:max-w-md',
         wide && 'sm:max-w-2xl',
@@ -193,11 +181,10 @@ export function FormDialog({ title, children, onClose, onSubmit, busy, disabled 
   </Modal>
 }
 
-export function Confirm({ title, children, busy, disabled = false, confirmDisabled = false, confirmLabel = '确认删除', busyLabel = '正在删除…', error, retry, onClose, onConfirm }: { title: string; children: ReactNode; busy: boolean; disabled?: boolean; confirmDisabled?: boolean; confirmLabel?: string; busyLabel?: string; error?: string; retry?: () => void; onClose: () => void; onConfirm: () => void }) {
+export function Confirm({ title, children, busy, disabled = false, confirmDisabled = false, confirmLabel = '确认删除', busyLabel = '正在删除…', tone = 'destructive', error, retry, onClose, onConfirm }: { title: string; children: ReactNode; busy: boolean; disabled?: boolean; confirmDisabled?: boolean; confirmLabel?: string; busyLabel?: string; tone?: 'destructive' | 'default'; error?: string; retry?: () => void; onClose: () => void; onConfirm: () => void }) {
   const { t } = useI18n()
-  const returnFocus = useReturnFocus()
   return <AlertDialog open onOpenChange={open => { if (!open && !busy) onClose() }}>
-    <AlertDialogContent aria-describedby={undefined} onEscapeKeyDown={event => { if (busy) event.preventDefault() }} onCloseAutoFocus={returnFocus} className="sm:max-w-md">
+    <AlertDialogContent aria-describedby={undefined} onEscapeKeyDown={event => { if (busy) event.preventDefault() }} className="sm:max-w-md">
       <AlertDialogHeader className="place-items-start text-left">
         <AlertDialogTitle>{t(title)}</AlertDialogTitle>
       </AlertDialogHeader>
@@ -207,7 +194,7 @@ export function Confirm({ title, children, busy, disabled = false, confirmDisabl
       </div>
       <AlertDialogFooter>
         <AlertDialogCancel disabled={busy}>{t('取消')}</AlertDialogCancel>
-        <Button variant="destructive" disabled={busy || disabled || confirmDisabled} onClick={() => { if (!busy && !disabled && !confirmDisabled) onConfirm() }}>
+        <Button variant={tone} disabled={busy || disabled || confirmDisabled} onClick={() => { if (!busy && !disabled && !confirmDisabled) onConfirm() }}>
           {busy && <Spinner role="presentation" aria-hidden="true" aria-label={undefined} />}{busy ? t(busyLabel) : t(confirmLabel)}
         </Button>
       </AlertDialogFooter>

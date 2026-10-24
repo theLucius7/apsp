@@ -5,6 +5,7 @@ import { AnimatePresence, m } from "motion/react"
 
 import { dialogMotion, fadeMotion } from "@/lib/motion"
 import { createPresence } from "@/components/ui/presence"
+import { useReturnFocus } from "@/components/ui/return-focus"
 
 import { Button } from "@/components/ui/button"
 
@@ -58,11 +59,13 @@ function AlertDialogContent({
   className,
   size = "default",
   children,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Content> & {
   size?: "default" | "sm"
 }) {
   const open = presence.useOpen()
+  const returnFocus = useReturnFocus(open, onCloseAutoFocus)
   return (
     <AnimatePresence>
       {open && (
@@ -73,6 +76,7 @@ function AlertDialogContent({
             data-size={size}
             forceMount
             asChild
+            onCloseAutoFocus={returnFocus}
             {...props}
           >
             <m.div

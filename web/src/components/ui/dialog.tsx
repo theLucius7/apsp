@@ -5,6 +5,7 @@ import { AnimatePresence, m } from "motion/react"
 
 import { dialogMotion, fadeMotion } from "@/lib/motion"
 import { createPresence } from "@/components/ui/presence"
+import { useReturnFocus } from "@/components/ui/return-focus"
 
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
@@ -63,6 +64,7 @@ function DialogContent({
   showCloseButton = true,
   closeLabel = "关闭",
   overlayClassName,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
@@ -70,12 +72,13 @@ function DialogContent({
   overlayClassName?: string
 }) {
   const open = presence.useOpen()
+  const returnFocus = useReturnFocus(open, onCloseAutoFocus)
   return (
     <AnimatePresence>
       {open && (
         <DialogPortal forceMount>
           <DialogOverlay className={overlayClassName} />
-          <DialogPrimitive.Content data-slot="dialog-content" forceMount asChild {...props}>
+          <DialogPrimitive.Content data-slot="dialog-content" forceMount asChild onCloseAutoFocus={returnFocus} {...props}>
             <m.div
               {...dialogMotion}
               className={cn(

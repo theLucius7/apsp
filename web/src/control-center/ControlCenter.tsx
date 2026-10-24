@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { ErrorNotice, Loading, PageHeader, Refresh } from '../components'
 import { useAction, useResource } from '../hooks'
@@ -31,6 +31,8 @@ const emptyAdmin = { login_name: '', display_name: '', role: 'viewer', enabled: 
 
 function Appearance() {
   const preference = usePreference<{ theme: string; density: string; locale?: Locale }>('appearance')
+  // The header language picker saves through the shell; show what is stored now.
+  useEffect(() => { const update = () => { void preference.reload() }; window.addEventListener('apsp:appearance-updated', update); return () => window.removeEventListener('apsp:appearance-updated', update) }, [preference.reload])
   const action = useAction()
   const { locale, setLocale, t } = useI18n()
   const value = preference.value ?? { theme: 'system', density: 'comfortable', locale }

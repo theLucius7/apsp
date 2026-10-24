@@ -223,12 +223,12 @@ export function useI18n() {
   return { locale, setLocale, t }
 }
 
-export function LanguageSelect({ className = '' }: { className?: string }) {
+export function LanguageSelect({ className = '', onChoose }: { className?: string; onChoose?: (locale: Locale) => void }) {
   const { locale, setLocale, t } = useI18n()
   return <label className={cn('relative inline-flex min-w-0 items-center', className)}>
     <span className="sr-only">{t('界面语言')}</span>
     <LanguagesIcon className="text-muted-foreground pointer-events-none absolute left-2.5 z-10 size-4" aria-hidden="true" />
-    <NativeSelect aria-label={t('界面语言')} value={locale} onChange={event => setLocale(event.target.value as Locale)} className="min-w-32 *:data-[slot=native-select]:pl-8">
+    <NativeSelect aria-label={t('界面语言')} value={locale} onChange={event => { const next = event.target.value as Locale; setLocale(next); onChoose?.(next) }} className="min-w-32 *:data-[slot=native-select]:pl-8">
       <option value="zh-CN">简体中文</option>
       <option value="en-US">English</option>
     </NativeSelect>

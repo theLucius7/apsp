@@ -6,7 +6,7 @@ import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { useResource } from '../hooks'
 import CommandPalette from '../control-center/CommandPalette'
 import Reauthentication from '../control-center/Reauthentication'
-import Appearance from '../control-center/Appearance'
+import Appearance, { localeChosenEvent } from '../control-center/Appearance'
 import { Brand, ErrorNotice } from '../components'
 import { LanguageSelect, useI18n } from '../i18n'
 import { navigation } from './navigation'
@@ -46,12 +46,31 @@ export default function AdminShell({ current, busy, error, onLogout, children }:
   const sidebarPanel = usePanelRef()
   const layout = useDefaultLayout({ id: 'apsp-admin-shell', storage: layoutStorage, onlySaveAfterUserInteractions: true })
 
-  // The compact menu closes after navigation and on Escape.
+  // The compact menu closes after navigation, on Escape and on a press outside the
+  // phone header. Escape returns focus to the menu button when focus was in the menu;
+  // an Escape a dialog already handled leaves the menu alone.
+  const phoneHeader = useRef<HTMLElement>(null)
+  const menuButton = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     const close = () => setMobileOpen(false)
     window.addEventListener('hashchange', close)
     return () => window.removeEventListener('hashchange', close)
   }, [setMobileOpen])
+  useEffect(() => {
+    if (desktop || !mobileOpen) return
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      const inMenu = phoneHeader.current?.contains(document.activeElement)
+      setMobileOpen(false)
+      if (inMenu) menuButton.current?.focus()
+    }
+    const pointerdown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node) || !phoneHeader.current?.contains(event.target)) setMobileOpen(false)
+    }
+    window.addEventListener('keydown', keydown)
+    document.addEventListener('pointerdown', pointerdown)
+    return () => { window.removeEventListener('keydown', keydown); document.removeEventListener('pointerdown', pointerdown) }
+  }, [desktop, mobileOpen, setMobileOpen])
   // The sidebar panel follows the remembered collapsed state. A panel added back
   // after the phone layout joins the group's layout a frame later; until then its
   // imperative API throws, so try again on the next few frames.
@@ -98,11 +117,11 @@ export default function AdminShell({ current, busy, error, onLogout, children }:
         {desktop && <ResizableHandle key="handle" withHandle aria-label={t('调整侧栏宽度')} />}
         <ResizablePanel key="main" id="main" minSize="50">
           <div className="flex h-full min-h-0 flex-col">
-            {!desktop && <aside data-slot="sidebar" className="bg-sidebar text-sidebar-foreground shrink-0 border-b">
+            {!desktop && <aside ref={phoneHeader} data-slot="sidebar" className="bg-sidebar text-sidebar-foreground shrink-0 border-b">
               <div className="flex h-14 items-center gap-2 px-4">
                 <a href="#/servers" aria-label={t('apsp首页')} className="mr-auto min-w-0 rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"><Brand /></a>
                 <AccountButton actor={actor.data} busy={busy} onLogout={onLogout} collapsed={false} compact />
-                <Button variant="outline" aria-expanded={mobileOpen} aria-controls="admin-navigation" onClick={() => setMobileOpen(!mobileOpen)}>
+                <Button ref={menuButton} variant="outline" aria-expanded={mobileOpen} aria-controls="admin-navigation" onClick={() => setMobileOpen(!mobileOpen)}>
                   {mobileOpen ? <XIcon /> : <MenuIcon />}<span>{t('菜单')}</span>
                 </Button>
               </div>
@@ -185,10 +204,12 @@ function MainColumn({ current, pages, error, children }: { current?: NavigationI
         <strong aria-current="page" className="text-foreground truncate font-medium">{t(current?.label ?? '页面不存在')}</strong>
       </nav>
       <CommandPalette pages={pages} />
-      <LanguageSelect className="shrink-0" />
+      {/* A language picked here becomes the administrator's saved preference. */}
+      <LanguageSelect className="shrink-0" onChoose={locale => window.dispatchEvent(new CustomEvent(localeChosenEvent, { detail: locale }))} />
       <Badge variant="success" className="max-xl:hidden"><span className="size-1.5 rounded-full bg-current" aria-hidden="true" />{t('管理员会话已登录')}</Badge>
     </div>
-    <m.main key={current?.path ?? 'missing'} {...pageMotion} className="mx-auto w-full max-w-[1480px] flex-1 px-4 py-6 md:px-8 md:py-8">
+    {/* Focusable so a dialog whose opener has gone can hand focus back to the page. */}
+    <m.main key={current?.path ?? 'missing'} {...pageMotion} tabIndex={-1} className="mx-auto w-full max-w-[1480px] flex-1 px-4 py-6 outline-none md:px-8 md:py-8">
       <ErrorNotice message={error} />{children}
     </m.main>
     <footer className="text-muted-foreground mx-4 flex justify-between gap-4 border-t py-4 text-xs md:mx-8">

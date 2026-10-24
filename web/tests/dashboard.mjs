@@ -115,7 +115,8 @@ try {
     await page.locator('[data-slot=fleet] tbody tr').first().waitFor()
     await page.getByRole('button', { name: '筛选与视图', exact: true }).click()
     assert.equal(await page.getByLabel('排序', { exact: true }).inputValue(), 'cpu')
-    assert.equal(await page.locator('[data-slot=server-display]').getAttribute('data-theme'), 'dark')
+    // The dashboard theme applies to the whole document, so console styles never mix in.
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark')
     await page.getByRole('link', { name: '查看 东京 · 入口 详情', exact: true }).click()
     assert(page.url().endsWith('/#/dashboard/1'))
     await page.getByRole('link', { name: '返回服务器看板', exact: true }).click()

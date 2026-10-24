@@ -35,6 +35,22 @@ export default function CommandPalette({ pages }: { pages: readonly NavigationIt
   const [open, setOpen] = useState(false)
   const opened = useRef(open)
   opened.current = open
+  // Focus goes back to whatever opened the palette (its button or the element a
+  // shortcut was pressed in); after a jump removed that element, or when it can no
+  // longer take focus, to the button.
+  const trigger = useRef<HTMLButtonElement>(null)
+  const returnTo = useRef<HTMLElement | null>(null)
+  const show = () => {
+    const active = document.activeElement
+    returnTo.current = active instanceof HTMLElement && active !== document.body ? active : null
+    setOpen(true)
+  }
+  const restoreFocus = (event: Event) => {
+    event.preventDefault()
+    const target = returnTo.current?.isConnected ? returnTo.current : trigger.current
+    target?.focus()
+    if (document.activeElement !== target) trigger.current?.focus()
+  }
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Item[]>([])
   const [searching, setSearching] = useState(false)
@@ -52,8 +68,8 @@ export default function CommandPalette({ pages }: { pages: readonly NavigationIt
       if (event.defaultPrevented) return
       const opening = !opened.current
       if (opening && otherDialogOpen()) return
-      if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); setOpen(opening) }
-      else if (opening && event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey && !typing(event.target)) { event.preventDefault(); setOpen(true) }
+      if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); if (opening) show(); else setOpen(false) }
+      else if (opening && event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey && !typing(event.target)) { event.preventDefault(); show() }
     }
     window.addEventListener('keydown', keyboard)
     return () => window.removeEventListener('keydown', keyboard)
@@ -135,13 +151,13 @@ export default function CommandPalette({ pages }: { pages: readonly NavigationIt
   }
 
   return <>
-    <Button data-slot="global-search" variant="outline" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K /" aria-label={t('全局搜索')} onClick={() => setOpen(true)}
+    <Button ref={trigger} data-slot="global-search" variant="outline" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K /" aria-label={t('全局搜索')} onClick={show}
       className="text-muted-foreground hover:text-foreground w-full min-w-0 justify-start font-normal sm:w-auto sm:min-w-40 sm:max-w-72 sm:flex-1 lg:max-w-80 max-sm:w-auto">
       <SearchIcon aria-hidden="true" /><span className="truncate max-sm:sr-only">{t('搜索或跳转…')}</span>
       <Kbd className="ml-auto max-sm:hidden">⌘K</Kbd>
     </Button>
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent data-slot="command-palette" showCloseButton={false} className="top-[12vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl">
+      <DialogContent data-slot="command-palette" showCloseButton={false} onCloseAutoFocus={restoreFocus} className="top-[12vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl">
         <DialogTitle className="sr-only">{t('搜索或跳转')}</DialogTitle>
         <DialogDescription className="sr-only">{t('输入页面名称或服务器、域名、节点等对象，用方向键选择，回车打开。')}</DialogDescription>
         <div className="flex items-center gap-2 border-b px-3">

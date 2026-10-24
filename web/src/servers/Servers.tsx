@@ -15,10 +15,19 @@ import { assetDate, assetPrice, defaultAssets, expiryState, trafficSize } from '
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ActivityIcon, CheckIcon, LockIcon, PlusIcon, ServerIcon } from 'lucide-react'
+import { ActivityIcon, CheckIcon, FilterXIcon, LockIcon, PlusIcon, ServerCrashIcon, ServerIcon } from 'lucide-react'
 import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
 import { Separator } from '@/components/ui/separator'
 import { barMotion } from '@/lib/motion'
+
+type Lifecycle = 'maintenance' | 'draining' | 'active'
+// What each state means for the panel: maintenance (open-ended from this list) and
+// draining both stop new fleet tasks, terminals, remote commands and runtime operations.
+const lifecycles: Record<Lifecycle, { label: string; effect: string }> = {
+  maintenance: { label: '进入维护', effect: '维护期间，面板不再向这些服务器派发运维任务、终端会话、远程命令和运行时操作，直到恢复接收任务。' },
+  draining: { label: '停止接收新任务', effect: '面板不再向这些服务器派发新的运维任务、终端会话、远程命令和运行时操作，用于准备下线。' },
+  active: { label: '恢复接收任务', effect: '这些服务器重新接收运维任务、终端会话、远程命令和运行时操作。' },
+}
 
 export default function Servers() {
   const { t } = useI18n()
@@ -32,6 +41,7 @@ export default function Servers() {
   const [view, setView] = useState<ServerView>(defaultServerView)
   const [selected, setSelected] = useState<number[]>([])
   const [batchResults, setBatchResults] = useState<Array<{ id: number; status: string }>>([])
+  const [pendingLifecycle, setPendingLifecycle] = useState<Lifecycle | null>(null)
   const allServers = resource.data ?? []
   const groupKey = (server: Server) => view.groupBy === 'group' ? server.asset_settings?.group_name || '未分组' : view.groupBy === 'region' ? server.asset_settings?.region || '地区未知' : ''
   const servers = allServers.filter(server => {
@@ -41,18 +51,22 @@ export default function Servers() {
       && `${server.name} ${asset.region} ${asset.tags.join(' ')}`.toLocaleLowerCase().includes(view.query.toLocaleLowerCase())
   }).sort((left, right) => groupKey(left).localeCompare(groupKey(right), 'zh-CN') || (view.sort === 'name' ? left.name.localeCompare(right.name, 'zh-CN') : view.sort === 'cpu' ? (right.latest_metrics.cpu_percent ?? -1) - (left.latest_metrics.cpu_percent ?? -1) : view.sort === 'expiry' ? (left.asset_settings?.expires_at ?? Number.MAX_SAFE_INTEGER) - (right.asset_settings?.expires_at ?? Number.MAX_SAFE_INTEGER) : left.id - right.id))
   const column = (key: string) => view.columns.includes(key)
+  const filtered = Boolean(view.query) || view.online !== 'all' || Boolean(view.group)
+  const clearFilters = () => setView({ ...view, query: '', online: 'all', group: '' })
   const availableSelected = selected.filter(id => allServers.some(server => server.id === id))
   const visibleIds = servers.map(server => server.id)
-  const visibleSelected = visibleIds.filter(id => selected.includes(id)).length
-  const allVisible = visibleSelected === 0 ? false : visibleSelected === visibleIds.length ? true : 'indeterminate'
-  const batchLifecycle = (lifecycle: string) => void action.run(async () => {
-    const snapshot = [...availableSelected]
+  // Bulk actions only touch selected servers the current filter shows; the rest are named, not changed.
+  const targets = servers.filter(server => selected.includes(server.id))
+  const hiddenSelected = availableSelected.length - targets.length
+  const allVisible = targets.length === 0 ? false : targets.length === visibleIds.length ? true : 'indeterminate'
+  const batchLifecycle = (lifecycle: Lifecycle, snapshot: number[]) => void action.run(async () => {
     const results: Array<{ id: number; status: string }> = []
     for (const id of snapshot) {
       try { await api(`/api/servers/${id}/fleet/lifecycle`, 'POST', { lifecycle, from: null, until: null, reason: '管理员列表批量操作' }); results.push({ id, status: '已保存' }) }
       catch (error) { results.push({ id, status: error instanceof Error ? error.message : '操作失败' }) }
       setBatchResults([...results])
     }
+    setPendingLifecycle(null)
     resource.reload()
   })
   const edit = (value: Server | 'new') => { action.clearError(); setEditor(value) }
@@ -83,12 +97,17 @@ export default function Servers() {
   const actions = (server: Server, className: string) => <div className={`flex flex-wrap items-center gap-2 ${className}`}><Button variant="ghost" size="sm" onClick={() => navigate(`/servers/${server.id}`)}>详情</Button><Button variant="ghost" size="sm" disabled={!canWrite} onClick={() => edit(server)}>编辑</Button><Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20" disabled={!canWrite} onClick={() => { action.clearError(); setDeleting(server) }}>删除</Button></div>
   return <>
     <PageHeader eyebrow="服务器" title="服务器列表" description="添加并接入服务器，按状态、地区和分组查看运行情况；点开一台服务器查看详情、资产和诊断。"><Refresh onClick={resource.reload} /><Button disabled={!canWrite} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />添加服务器</Button></PageHeader>
-    <div className="mb-6 grid grid-cols-3 gap-3 max-sm:gap-2"><Stat icon={ServerIcon} label="服务器总数" value={resource.data ? servers.length : '—'} note="已添加到面板的服务器" /><Stat icon={ActivityIcon} label="当前在线" value={resource.data ? servers.filter(server => server.online).length : '—'} note="最近 60 秒内收到设备消息" /><Stat icon={CheckIcon} label="已发布配置" value={resource.data ? servers.filter(server => server.manifest_rev > 0).length : '—'} note="部署结果可在服务器详情查看" /></div>
+    {/* Totals describe every server; the list below says how many the filter shows. */}
+    <div className="mb-6 grid grid-cols-3 gap-3 max-sm:gap-2"><Stat icon={ServerIcon} label="服务器总数" value={resource.data ? allServers.length : '—'} note="已添加到面板的服务器" /><Stat icon={ActivityIcon} label="当前在线" value={resource.data ? allServers.filter(server => server.online).length : '—'} note="最近 60 秒内收到设备消息" /><Stat icon={CheckIcon} label="已发布配置" value={resource.data ? allServers.filter(server => server.manifest_rev > 0).length : '—'} note="部署结果可在服务器详情查看" /></div>
     <ServerListView value={view} onChange={setView} groups={[...new Set(allServers.map(server => server.asset_settings?.group_name ?? '').filter(Boolean))]} />
     {batchResults.length > 0 && <Notice><div>{batchResults.map(result => <p key={result.id}>服务器 #{result.id}：{result.status}</p>)}</div></Notice>}
     <ErrorNotice message={resource.error || action.error || actor.error} retry={resource.reload} />{actor.data && !canWrite && <p className="text-muted-foreground text-xs">当前账号只有服务器读取权限；修改、接入和维护操作需要服务器写入授权。</p>}
-    <Panel><PanelHeader><PanelTitle>全部服务器 <span className="bg-muted text-muted-foreground min-w-5 rounded px-1.5 text-center text-xs font-medium tabular-nums">{servers.length}</span></PanelTitle><span className="text-muted-foreground flex items-center gap-1.5 text-xs"><span className="bg-success size-1.5 rounded-full" />每 5 秒刷新</span></PanelHeader>
-      {resource.loading && !resource.data ? <Loading variant="table" rows={5} /> : !servers.length ? <Empty icon={ServerIcon} title="从第一台服务器开始" description="添加服务器后，在服务器上执行安装命令，即可自动接入。"><Button disabled={!canWrite} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />添加服务器</Button></Empty> : <>
+    <Panel><PanelHeader><PanelTitle>{filtered ? '筛选结果' : '全部服务器'} <span data-slot="server-count" className="bg-muted text-muted-foreground min-w-5 rounded px-1.5 text-center text-xs font-medium tabular-nums">{filtered ? `${servers.length} / ${allServers.length}` : servers.length}</span></PanelTitle><span className="text-muted-foreground flex items-center gap-1.5 text-xs"><span className="bg-success size-1.5 rounded-full" />每 5 秒刷新</span></PanelHeader>
+      {resource.error && resource.data && <p role="status" className="text-muted-foreground border-b px-4 py-2.5 text-xs">最近一次刷新失败，下面是上次成功读取的数据，状态和用量可能已过期。</p>}
+      {resource.loading && !resource.data ? <Loading variant="table" rows={5} />
+        : !resource.data ? <Empty icon={ServerCrashIcon} title="无法读取服务器列表" description={resource.error ? '读取失败，尚未取得任何服务器数据。检查网络或面板状态后重试。' : '尚未取得服务器数据。'}><Button variant="outline" onClick={resource.reload}>重试</Button></Empty>
+        : !allServers.length ? <Empty icon={ServerIcon} title="从第一台服务器开始" description="添加服务器后，在服务器上执行安装命令，即可自动接入。"><Button disabled={!canWrite} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />添加服务器</Button></Empty>
+        : !servers.length ? <Empty icon={FilterXIcon} title="没有符合条件的服务器" description={`已有 ${allServers.length} 台服务器，当前筛选条件下没有匹配项。`}><Button variant="outline" onClick={clearFilters}>清除筛选</Button></Empty> : <>
         <div className={`max-w-full min-w-0 max-md:hidden ${view.density === 'compact' ? '[&_td]:py-1.5' : ''}`}><Table><TableHeader><TableRow><TableHead className="w-10">{selectAll}</TableHead><TableHead>服务器</TableHead><TableHead>状态</TableHead>{column('cpu') && <TableHead>处理器</TableHead>}{column('memory') && <TableHead>内存</TableHead>}{column('cost') && <TableHead>成本 / 到期</TableHead>}{column('traffic') && <TableHead>本期观测 / 额度</TableHead>}{column('version') && <TableHead>设备版本</TableHead>}<TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{servers.map((server, index) => <Fragment key={server.id}>
           {startsGroup(index) && <TableRow><TableHead className="bg-accent text-accent-foreground text-left" colSpan={4 + view.columns.length}>{groupKey(server)}</TableHead></TableRow>}
           <TableRow><TableCell>{selectOne(server)}</TableCell><TableCell>{identity(server)}</TableCell><TableCell>{status(server)}</TableCell>{column('cpu') && <TableCell>{cpuUsage(server)}</TableCell>}{column('memory') && <TableCell>{memoryUsage(server)}</TableCell>}{column('cost') && <TableCell>{cost(server)}</TableCell>}{column('traffic') && <TableCell>{traffic(server)}</TableCell>}{column('version') && <TableCell><span className="font-mono text-xs">{server.static_info.agent_version ?? '尚未上报'}</span></TableCell>}<TableCell>{actions(server, 'justify-end')}</TableCell></TableRow>
@@ -114,11 +133,14 @@ export default function Servers() {
     </Panel>
     <AnimatePresence>{availableSelected.length > 0 && <m.div key="bulk" {...barMotion} role="region" aria-label="批量操作" data-slot="bulk-bar"
       className="bg-popover text-popover-foreground ring-foreground/10 sticky bottom-4 z-30 mx-auto mb-4 flex w-fit max-w-full flex-wrap items-center gap-2 rounded-xl px-3 py-2 shadow-lg ring-1">
-      <span className="text-sm font-medium tabular-nums">已选择 {availableSelected.length} 台</span><span className="text-muted-foreground text-xs tabular-nums">当前筛选 {servers.length} 台</span>
+      <span className="text-sm font-medium tabular-nums">已选择 {targets.length} 台</span><span className="text-muted-foreground text-xs tabular-nums">{hiddenSelected > 0 ? `另有 ${hiddenSelected} 台不在当前筛选中，不会被操作` : `当前筛选 ${servers.length} 台`}</span>
       <Separator orientation="vertical" className="mx-1 h-5 max-sm:hidden" />
-      <Button variant="outline" size="sm" disabled={!canWrite || action.busy || Boolean(resource.error)} onClick={() => batchLifecycle('maintenance')}>进入维护</Button><Button variant="outline" size="sm" disabled={!canWrite || action.busy || Boolean(resource.error)} onClick={() => batchLifecycle('draining')}>停止接收新任务</Button><Button variant="outline" size="sm" disabled={!canWrite || action.busy || Boolean(resource.error)} onClick={() => batchLifecycle('active')}>恢复接收任务</Button>
+      {(Object.keys(lifecycles) as Lifecycle[]).map(key => <Button key={key} variant="outline" size="sm" disabled={!canWrite || action.busy || Boolean(resource.error) || !targets.length} onClick={() => { action.clearError(); setPendingLifecycle(key) }}>{lifecycles[key].label}</Button>)}
       <Button variant="ghost" size="sm" onClick={() => setSelected([])}>清空选择</Button>
     </m.div>}</AnimatePresence>
+    {pendingLifecycle && <Confirm title={`${lifecycles[pendingLifecycle].label}：${targets.length} 台服务器`} tone={pendingLifecycle === 'active' ? 'default' : 'destructive'} confirmLabel={lifecycles[pendingLifecycle].label} busyLabel="正在提交…" busy={action.busy} confirmDisabled={!targets.length} error={action.error} onClose={() => setPendingLifecycle(null)} onConfirm={() => batchLifecycle(pendingLifecycle, targets.map(server => server.id))}>
+      {targets.map(server => server.name).join('、')}<br />{lifecycles[pendingLifecycle].effect}{hiddenSelected > 0 && <><br />另有 {hiddenSelected} 台已选服务器被当前筛选隐藏，不会被修改。</>}
+    </Confirm>}
     <div className="text-muted-foreground my-5 flex items-center justify-center gap-2 text-center text-xs leading-relaxed"><LockIcon className="size-3.5" aria-hidden="true" />设备主动连接面板；面板离线时，已应用的节点配置继续运行。</div>
     {editor === 'new' && <ServerSetup onClose={() => setEditor(null)} onCreated={server => { setEditor(null); setInstallation(server); resource.reload() }} />}
     {editor && editor !== 'new' && <ServerEdit key={editor.id} server={editor} onClose={() => setEditor(null)} onSaved={() => { setEditor(null); resource.reload() }} />}
