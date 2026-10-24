@@ -314,6 +314,14 @@ phase=install
 owned_installation=1
 sudo python3 scripts/ci-bootstrap-install.py --enrollment "$scratch/enrollment.json" \
   --trust-directory "$trust_directory" --bundle "$scratch/release" --log "$scratch/install.log"
+# The panel publishes business nodes only after a confirmed read-only runtime
+# preflight. Allow it locally, restart so the Agent advertises it, then run the
+# operator flow (first empty runtime install, collect again, confirm).
+sudo sh -c "umask 077; printf '%s\\n' '{\"runtime_inspection\":true}' > /etc/apsp/fleet-policy.json"
+sudo systemctl restart apsp-agent.service
+phase=preflight
+"${driver[@]}" preflight --timeout 600
+phase=install
 "${driver[@]}" ready --agent-version "$agent_version" --timeout 600
 python3 - "$scratch/state.json" "$scratch/client.json" <<'PY'
 import json

@@ -72,10 +72,10 @@ class Panel:
         )
         self.request("/api/login", {"password": password, "totp_code": totp_code})
 
-    def request(self, path, data=None, raw=False):
+    def request(self, path, data=None, raw=False, method=None):
         body = None if data is None else json.dumps(data).encode()
         headers = {} if body is None else {"Content-Type": "application/json"}
-        request = urllib.request.Request(self.base + path, data=body, headers=headers)
+        request = urllib.request.Request(self.base + path, data=body, headers=headers, method=method)
         try:
             with self.client.open(request, timeout=20) as response:
                 content = response.read(2 * 1024 * 1024 + 1)
@@ -325,6 +325,58 @@ def record(state, args, view):
     print(f"阶段 {args.label} 通过：上传={up} 下载={down} 字节")
 
 
+def blocking_checks(view):
+    return sorted({check.get("key", "?") for check in view.get("checks") or []
+                   if isinstance(check, dict) and check.get("blocking") is True})
+
+
+def collect_preflight(panel, base, deadline):
+    request = panel.request(base + "/preflight", {})
+    ensure(isinstance(request.get("id"), str), "预检请求未返回编号")
+    while True:
+        view = panel.request(base)
+        if view.get("id") == request["id"] and view.get("device_checks_pending") is False:
+            return view
+        ensure(time.monotonic() < deadline, "超时：设备未完成只读运行时预检")
+        time.sleep(2)
+
+
+def preflight(panel, state, args):
+    """Run the operator flow the panel requires before publishing business nodes.
+
+    Enable read-only runtime inspection for this server, collect the device
+    preflight, install the empty runtime first when no deployment exists yet,
+    then collect again and confirm. Only check keys are reported, never values.
+    """
+    deadline = time.monotonic() + args.timeout
+    server = state["server_id"]
+    profile = panel.request(f"/api/servers/{server}/fleet")
+    if profile["policy"].get("runtime_inspection") is not True:
+        panel.request(f"/api/servers/{server}/fleet", {
+            "asset": profile["asset"], "policy": {**profile["policy"], "runtime_inspection": True},
+            "expected_digest": profile["digest"]}, method="PUT")
+    base = f"/api/plugins/sing-box/servers/{server}/operations-view"
+    view = collect_preflight(panel, base, deadline)
+    bootstrap = view.get("bootstrap") or {}
+    if bootstrap.get("available") is True:
+        ensure(bootstrap.get("ready") is True,
+               "首次空运行时安装预检未通过；阻塞项=" + ",".join(blocking_checks(bootstrap)))
+        panel.request(base + "/preflight/bootstrap", {"id": view["id"], "confirm": True})
+        while True:
+            status = snapshot(panel, state)["deployment"]
+            if status and status.get("target_rev", 0) > 0 and status.get("applied_rev") == status.get("target_rev"):
+                break
+            ensure(time.monotonic() < deadline, "超时：空运行时首次安装未完成")
+            time.sleep(2)
+        view = collect_preflight(panel, base, deadline)
+    ensure(view.get("ready") is True, "部署预检未通过；阻塞项=" + ",".join(blocking_checks(view)))
+    confirmed = panel.request(base + "/preflight/confirm", {"id": view["id"], "confirm": True})
+    ensure(confirmed.get("confirmed") is True, "部署预检确认未生效")
+    state.setdefault("checkpoints", {})["preflight"] = {"id": view["id"], "confirmed_at": int(time.time())}
+    save(args.state, state)
+    print("部署预检已确认：" + str(len(view.get("checks") or [])) + " 项检查")
+
+
 def ready(panel, state, args):
     last_snapshot = args.state.with_name("ready-timeout.json")
     ensure(not last_snapshot.is_symlink(), "私有输出不能是符号链接")
@@ -448,6 +500,8 @@ def parser():
     installation = stages.add_parser("install", help="取得私有安装描述，不在本机执行")
     installation.add_argument("--agent-version", help="选择已导入且协议兼容的 Agent 版本")
     installation.add_argument("--refresh", action="store_true", help="签发新令牌，用于过期重试或升级")
+    checks = stages.add_parser("preflight", help="开启只读运行时预检，完成首次空安装并确认部署预检")
+    checks.add_argument("--timeout", type=int, default=600)
     active = stages.add_parser("ready", help="等待健康应用，保存独立客户端 JSON")
     active.add_argument("--agent-version", help="同时检查面板上报的 Agent 版本")
     active.add_argument("--client-port", type=int, help="本次容器端口映射的客户端目标端口")
