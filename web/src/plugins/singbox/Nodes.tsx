@@ -12,6 +12,8 @@ import Sources from './Sources'
 import ChainEditor from './ChainEditor'
 import ProxyResourceDetail from './ProxyResourceDetail'
 import NodeCatalog from './NodeCatalog'
+import NexusNodes from './NexusNodes'
+import { validNexusNodes } from './nexusNodeTypes'
 import type { ProxyResource, ResourceKey } from './resourceTypes'
 import { resourceLink } from './resourceTypes'
 import OrderedResources from './OrderedResources'
@@ -45,7 +47,7 @@ type Props = {
   initialKind?: ProxyResourceFilter
   initialServerRole?: ProxyResourceServerRole
 }
-type Reads = { nodes: Node[]; resources: ProxyResource[]; ordered: unknown; servers: PluginServer[]; usage: Usage; catalog: unknown }
+type Reads = { nodes: Node[]; resources: ProxyResource[]; ordered: unknown; servers: PluginServer[]; usage: Usage; catalog: unknown; nexus: unknown }
 
 export default function Nodes({ serverId, chainsOnly = false, view, selected, initialKind, initialServerRole }: Props) {
   // All sections share one read round, so a refresh never shows one section's new
@@ -57,8 +59,9 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     servers: `${root}/servers`,
     usage: `${root}/usage`,
     catalog: `${root}/node-catalog`,
+    nexus: `${root}/nexus-nodes`,
   })
-  const { nodes, resources, servers, usage, catalog } = reads
+  const { nodes, resources, servers, usage, catalog, nexus } = reads
   // Undefined until confirmed; numbered sources stay read-only while unknown.
   const migrationQuery = useResource<unknown>(sourceMigrationPath, 0)
   const migrated = !migrationQuery.error && validSourceMigration(migrationQuery.data) ? migrationQuery.data.migrated : undefined
@@ -104,7 +107,8 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     && !all.some(flat => flat.kind === resource.kind && flat.id === resource.id)).length ?? 0
   const inventoryCount = all.length + orderedOnly
   const chainCount = ordered.data?.filter(resource => resource.kind === 'chain').length
-  const catalogCount = validCatalog(catalog.data) ? catalog.data.length : undefined
+  const importedNodes = validNexusNodes(nexus.data) ? nexus.data : undefined
+  const catalogCount = validCatalog(catalog.data) && importedNodes ? catalog.data.length + importedNodes.length : undefined
   // The header form depends on the source migration, so it waits for that state.
   const canCreateChain = canCreate && migrated !== undefined && Boolean(nodes.data && resources.data && !nodes.error && !resources.error)
   const refresh = () => { reads.nodes.reload(); migrationQuery.reload() }
@@ -203,8 +207,8 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
       <Button variant="outline" disabled={!canCreateChain || creatingChain} onClick={openChainEditor}>创建链路</Button>
     </PageHeader>
     <div className="mb-6 grid gap-3 max-sm:gap-2 grid-cols-2 lg:grid-cols-4">
-      <Stat icon={WaypointsIcon} label="代理资源" value={resources.data && ordered.data ? inventoryCount : '—'} note="直连节点与独立链路入口" />
-      <Stat icon={ServerIcon} label="所在服务器" value={resources.data ? new Set(all.map(node => node.server_id)).size : '—'} note="每台服务器运行一份完整配置" />
+      <Stat icon={WaypointsIcon} label="代理资源" value={resources.data && ordered.data && importedNodes ? inventoryCount + importedNodes.length : '—'} note={importedNodes?.length ? `受管 ${inventoryCount} · 待接管 ${importedNodes.length}` : '直连节点与独立链路入口'} />
+      <Stat icon={ServerIcon} label="所在服务器" value={resources.data && importedNodes ? new Set([...all, ...importedNodes].map(node => node.server_id)).size : '—'} note={importedNodes?.length ? '含已导入的 Nexus 节点主机' : '每台服务器运行一份完整配置'} />
       <Stat icon={WaypointsIcon} label="物理监听数" value={nodes.data ? nodes.data.length : '—'} note="受管节点监听，不重复计算链路引用" />
       <Stat icon={ActivityIcon} label="累计代理流量" value={usage.data ? bytes(usage.data.total) : '—'} note="含已删除节点的历史用量" />
     </div>
@@ -224,6 +228,7 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
       </SegmentedLink>)}
     </SegmentedNav>
     <div hidden={activeView !== 'catalog'}>
+      <NexusNodes query={nexus} server={filter} onReload={refresh} />
       <NodeCatalog query={catalog} nodes={nodes.data ?? []} servers={enabledServers} getServers={() => servers.getCurrent()} usage={usage.data ?? undefined}
         server={filter} getServer={() => currentFilter.current} onServer={value => { currentFilter.current = value; setFilter(value) }}
         kind={kind} onKind={setKind}
