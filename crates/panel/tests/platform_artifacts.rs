@@ -58,7 +58,7 @@ async fn musl_agent_on_gnu_host_receives_legacy_gnu_runtime(pool: PgPool) -> Res
     release_fixture::write_entries(
         &panel.state.config.data_dir,
         vec![
-            (entry, archive.clone()),
+            (entry.clone(), archive.clone()),
             (explicit_gnu.clone(), archive.clone()),
         ],
     )?;
@@ -100,7 +100,7 @@ async fn musl_agent_on_gnu_host_receives_legacy_gnu_runtime(pool: PgPool) -> Res
         );
     }
     // A GNU Agent already running through a musl compatibility layer keeps its
-    // previous GNU identity ahead of the legacy and newly detected host target.
+    // previous architecture-only GNU identity ahead of newly added targets.
     sqlx::query("UPDATE servers SET static_info=$2 WHERE id=$1")
         .bind(server)
         .bind(json!({"os":"linux","arch":"amd64","libc":"gnu","runtime_libc":"musl"}))
@@ -118,10 +118,13 @@ async fn musl_agent_on_gnu_host_receives_legacy_gnu_runtime(pool: PgPool) -> Res
         manifest["modules"]["singbox"]["artifact"]["url"]
             .as_str()
             .unwrap()
-            .ends_with("/sing-box/1.14.2/linux-gnu-amd64")
+            .ends_with("/sing-box/1.14.2/amd64")
     );
     // With neither musl nor a signed legacy entry, the GNU host can use GNU.
-    release_fixture::write_entries(&panel.state.config.data_dir, vec![(explicit_gnu, archive)])?;
+    release_fixture::write_entries(
+        &panel.state.config.data_dir,
+        vec![(explicit_gnu, archive.clone())],
+    )?;
     sqlx::query("UPDATE servers SET static_info=$2 WHERE id=$1")
         .bind(server)
         .bind(json!({"os":"linux","arch":"amd64","libc":"musl","runtime_libc":"gnu"}))
@@ -141,6 +144,35 @@ async fn musl_agent_on_gnu_host_receives_legacy_gnu_runtime(pool: PgPool) -> Res
             .unwrap()
             .ends_with("/sing-box/1.14.2/linux-gnu-amd64")
     );
+    // Importing the first musl release must not retarget existing GNU hosts.
+    let mut musl = entry.clone();
+    musl.arch = "linux-musl-amd64".into();
+    musl.asset_name = canonical_asset_name(&musl)?;
+    release_fixture::write_entries(
+        &panel.state.config.data_dir,
+        vec![(entry, archive.clone()), (musl, archive)],
+    )?;
+    for (host_libc, expected) in [("gnu", "amd64"), ("musl", "linux-musl-amd64")] {
+        sqlx::query("UPDATE servers SET static_info=$2 WHERE id=$1")
+            .bind(server)
+            .bind(json!({"os":"linux","arch":"amd64","libc":"musl","runtime_libc":host_libc}))
+            .execute(&panel.state.pool)
+            .await?;
+        let response = panel
+            .client
+            .get(format!("{}/api/agent/v1/manifest", panel.base))
+            .bearer_auth(&ack.session_token)
+            .send()
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let manifest: serde_json::Value = response.json().await?;
+        assert!(
+            manifest["modules"]["singbox"]["artifact"]["url"]
+                .as_str()
+                .unwrap()
+                .ends_with(&format!("/sing-box/1.14.2/{expected}"))
+        );
+    }
     Ok(())
 }
 
@@ -177,19 +209,19 @@ async fn runtime_selection_matches_abi_and_preserves_legacy_devices(pool: PgPool
         ),
         (
             json!({"arch":"amd64","os":"linux","libc":"musl","runtime_libc":"gnu"}),
-            Some("linux-musl-amd64"),
+            Some("amd64"),
         ),
         (
             json!({"arch":"amd64","os":"linux","libc":"musl","runtime_libc":"glibc"}),
-            Some("linux-musl-amd64"),
+            Some("amd64"),
         ),
         (
             json!({"arch":"amd64","os":"linux","libc":"gnu","runtime_libc":"musl"}),
-            Some("linux-gnu-amd64"),
+            Some("amd64"),
         ),
         (
             json!({"arch":"amd64","os":"linux","libc":"glibc","runtime_libc":"musl"}),
-            Some("linux-gnu-amd64"),
+            Some("amd64"),
         ),
         (
             json!({"arch":"amd64","os":"linux","libc":"musl"}),
@@ -273,7 +305,7 @@ async fn runtime_selection_matches_abi_and_preserves_legacy_devices(pool: PgPool
         .send()
         .await?;
     assert_eq!(response.status(), StatusCode::CONFLICT);
-    std::fs::remove_file(root.join("sing-box/1.14.2/linux-gnu-amd64"))?;
+    std::fs::remove_file(root.join("sing-box/1.14.2/amd64"))?;
     sqlx::query("UPDATE servers SET static_info=$2 WHERE id=$1")
         .bind(server)
         .bind(json!({"arch":"amd64","os":"linux","libc":"gnu","runtime_libc":"musl"}))
@@ -285,8 +317,8 @@ async fn runtime_selection_matches_abi_and_preserves_legacy_devices(pool: PgPool
         .bearer_auth(&ack.session_token)
         .send()
         .await?;
-    // Missing content for the signed preferred GNU identity must not fall back
-    // to the remaining valid architecture-only artifact.
+    // Missing content for the preferred legacy identity must not fall back
+    // to the remaining valid explicit GNU artifact.
     assert_eq!(response.status(), StatusCode::CONFLICT);
     Ok(())
 }

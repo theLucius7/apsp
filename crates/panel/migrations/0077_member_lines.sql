@@ -1,4 +1,4 @@
--- Member line catalogue and probe panel (ADR 0100). While a Nexus node is
+-- Member line catalogue and probe panel (ADR 0101). While a Nexus node is
 -- still served by the old node software, its online state, load and carrier
 -- latency come from the legacy panel through the compatibility bridge. No
 -- endpoint address, monitor identifier or member data is stored here.

@@ -1,6 +1,6 @@
 import type { QualityField } from '../../../types'
 
-// Member line catalogue and probe panel (ADR 0100).
+// Member line catalogue and probe panel (ADR 0101).
 export type Carrier = 'telecom' | 'unicom' | 'mobile'
 export type CarrierLatency = { latest?: number | null; average?: number | null; loss?: number | null }
 export type Latency = {

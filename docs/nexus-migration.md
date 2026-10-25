@@ -21,7 +21,7 @@ python3 tools/export_wallos.py /private/wallos.db /private/wallos.json --source-
 
 在迁移工作台先预览再确认导入。编号、邮箱、订阅令牌或来源冲突拒绝覆盖，同一摘要重复导入不会重记余额。成员先为待迁移状态，销售套餐和指南先保存为草稿。Wallos 文件在订阅费用的导入导出页处理。导入提醒默认关闭，核对后再开启。
 
-成员登录门户后，可在「线路与探针」查看原 Nexus「节点」页的内容，见 [ADR 0100](adr/0100-member-lines-and-probes.md)：
+成员登录门户后，可在「线路与探针」查看原 Nexus「节点」页的内容，见 [ADR 0101](adr/0101-member-lines-and-probes.md)：
 
 - **线路：** 入口与落地地区、直连/转发/分流/家宽类型、在线状态、倍率、套餐归属和三网延迟。
 - **探针：** 每台主机的负载，以及测得的 ASN、网络组织、用途类型与风险标记。

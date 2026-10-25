@@ -120,6 +120,53 @@ class SnapshotTests(unittest.TestCase):
         built = json.loads((self.root / 'host-15-snapshot.json').read_text())
         self.assertEqual(built['nodes'][1]['preserved']['node']['settings']['reality']['flow'], 'none')
 
+    def test_explicitly_disabled_hysteria_keeps_material_without_enabling_it(self):
+        source = inventory()
+        source['nodes'].append({'id': 45, 'machine_id': 30, 'type': 'hysteria',
+                                'name': 'TEST_ONLY disabled HY2', 'host': 'hy.example.invalid',
+                                'port': '22000-22020', 'enabled': 1, 'protocol_settings': {'version': 2}})
+        native = copy.deepcopy(effective()[0]['configuration'])
+        native['inbounds'] = [{'type': 'hysteria2', 'listen': '::', 'listen_port': 22000,
+                               'users': [{'name': snapshot.PLACEHOLDER_UUID, 'password': snapshot.PLACEHOLDER_UUID}],
+                               'tls': {'enabled': True, 'server_name': 'hy.example.invalid',
+                                       'certificate': ['-----BEGIN CERTIFICATE-----\nTEST_ONLY\n-----END CERTIFICATE-----\n'],
+                                       'key': ['-----BEGIN PRIVATE KEY-----\nTEST_ONLY\n-----END PRIVATE KEY-----\n']}}]
+        self.write_effective(effective() + [{'legacy_node_id': 45, 'configuration': native}])
+        self.assertEqual(snapshot.build(source, self.root)['ready'], 0)
+        self.assertEqual(snapshot.build(source, self.root, [45])['ready'], 1)
+        built = json.loads((self.root / 'host-15-snapshot.json').read_text())
+        preserved = built['nodes'][-1]['preserved']
+        self.assertFalse(preserved['node']['enabled'])
+        self.assertNotIn('public_port', preserved['node']['settings'])
+        self.assertEqual(preserved['configuration'], native)
+        self.assertEqual(preserved['node']['protocol_config']['tls']['key'], native['inbounds'][0]['tls']['key'][0])
+        self.assertTrue(built['nodes'][0]['preserved']['node']['enabled'])
+        summary = json.loads((self.root / 'snapshot-summary.json').read_text())
+        self.assertEqual(summary['hosts'][0]['explicitly_disabled_nodes'], [45])
+        self.assertEqual(summary['hosts'][0]['inactive_public_port_ranges'], {'45': '22000-22020'})
+        candidate = self.candidate([], [])
+        legacy = {'nodes': [{'id': item['id'], 'users': []} for item in source['nodes']]}
+        self.assertTrue(snapshot.compare_users(built, candidate, legacy, self.root / 'compare.json')['equal'])
+        bundle = json.loads(candidate['payload']['bundle'])
+        config = json.loads(bundle['files']['config.json'])
+        config['inbounds'].append({'type': 'hysteria2', 'listen_port': 22000, 'users': []})
+        bundle['files']['config.json'] = json.dumps(config)
+        candidate['payload']['bundle'] = json.dumps(bundle)
+        self.assertFalse(snapshot.compare_users(built, candidate, legacy, self.root / 'compare.json')['equal'])
+        self.assertTrue(source['nodes'][-1]['enabled'], 'explicit disabling must not mutate the source inventory')
+        source['nodes'][-1]['port'] = '22020-22000'
+        with self.assertRaisesRegex(snapshot.SnapshotError, 'port_range_invalid'):
+            snapshot.preserved(source['nodes'][-1], native, disable=True)
+
+    def test_disabled_nodes_still_require_complete_material_and_known_identity(self):
+        with self.assertRaisesRegex(snapshot.SnapshotError, 'disabled_node_unknown'):
+            snapshot.build(inventory(), self.root, [999])
+        raw = inventory()['nodes'][0]
+        native = copy.deepcopy(effective()[0]['configuration'])
+        native['inbounds'][0]['type'] = 'hysteria2'
+        with self.assertRaisesRegex(snapshot.SnapshotError, 'hysteria2_certificate_material_missing'):
+            snapshot.preserved(raw, native, disable=True)
+
     def candidate(self, ss_users, vless_users):
         inbounds = [{'type': 'vless', 'listen_port': 11452,
                      'users': [{'name': f'u{i}_n2', 'uuid': u} for i, u in enumerate(vless_users)]}]

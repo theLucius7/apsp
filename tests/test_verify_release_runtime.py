@@ -18,11 +18,12 @@ runtime = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runtime)
 
 
-def metadata(arch):
+def metadata(arch, libc="gnu"):
     settings = {
         "GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "1", "-trimpath": "true",
         "vcs": "git", "vcs.revision": runtime.REVISION, "vcs.modified": "false",
-        "-buildmode": "exe", "-compiler": "gc", "-tags": ",".join(sorted(runtime.TAGS)),
+        "-buildmode": "exe", "-compiler": "gc",
+        "-tags": ",".join(sorted(runtime.TAGS | ({"with_musl"} if libc == "musl" else set()))),
     }
     return "runtime: go1.26.8\n" + "\n".join("\tbuild\t" + k + "=" + v for k, v in settings.items())
 
@@ -37,7 +38,7 @@ class RuntimeInspectionTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def archive(self, arch, member_name="sing-box", member_type=tarfile.REGTYPE, extra=False):
+    def archive(self, arch, member_name="sing-box", member_type=tarfile.REGTYPE, extra=False, libc=None):
         binary = bytearray(64)
         binary[:7] = b"\x7fELF\x02\x01\x01"
         struct.pack_into("<H", binary, 18, {"amd64": 62, "arm64": 183}[arch])
@@ -51,8 +52,35 @@ class RuntimeInspectionTests(unittest.TestCase):
             if extra:
                 package.addfile(tarfile.TarInfo("extra"))
         archive = gzip.compress(contents.getvalue(), mtime=0)
-        (self.directory / arch).write_bytes(archive)
-        (self.directory / "SHA256SUMS").write_text(hashlib.sha256(archive).hexdigest() + "  " + arch + "\n")
+        target = arch if libc is None else f"linux-{libc}-{arch}"
+        (self.directory / target).write_bytes(archive)
+        (self.directory / "SHA256SUMS").write_text(hashlib.sha256(archive).hexdigest() + "  " + target + "\n")
+
+    def test_musl_cache_requires_its_build_tag_and_static_elf_on_both_architectures(self):
+        for arch in ("amd64", "arm64"):
+            self.archive(arch, libc="musl")
+            for headers, dynamic, valid in (("LOAD", "No dynamic section", True),
+                                             ("INTERP", "No dynamic section", False),
+                                             ("LOAD", "(NEEDED) libc.so.6", False)):
+                with self.subTest(arch=arch, headers=headers, dynamic=dynamic), \
+                        patch.object(runtime.subprocess, "check_output", side_effect=[headers, dynamic]) as reader:
+                    if valid:
+                        runtime.verify(self.root, arch, lambda _: metadata(arch, "musl"), libc="musl")
+                    else:
+                        with self.assertRaisesRegex(ValueError, "statically linked"):
+                            runtime.verify(self.root, arch, lambda _: metadata(arch, "musl"), libc="musl")
+                    self.assertEqual([call.args[0][:2] for call in reader.call_args_list],
+                                     [["readelf", "-lW"], ["readelf", "-dW"]])
+            with self.assertRaisesRegex(ValueError, "build tags"):
+                runtime.verify(self.root, arch, lambda _: metadata(arch), libc="musl")
+            with self.assertRaisesRegex(ValueError, "build tags"):
+                runtime.verify_metadata(metadata(arch, "musl"), arch)
+
+    def test_musl_archive_cannot_borrow_a_legacy_checksum_identity(self):
+        self.archive("amd64")
+        (self.directory / "amd64").rename(self.directory / "linux-musl-amd64")
+        with self.assertRaisesRegex(ValueError, "checksum mismatch"):
+            runtime.verify(self.root, "amd64", libc="musl")
 
     def test_both_architectures_read_metadata_without_executing_runtime(self):
         for arch in ("amd64", "arm64"):

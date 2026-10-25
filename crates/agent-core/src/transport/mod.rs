@@ -447,6 +447,8 @@ mod tests {
             allow_remote_commands: false,
         };
         std::fs::create_dir_all(&config.identity_dir)?;
+        // Exercise instance exclusion independently of the runner's umask.
+        std::fs::set_permissions(&directory.0, std::fs::Permissions::from_mode(0o700))?;
         std::fs::write(config.identity_dir.join("device.key"), [7_u8; 32])?;
         std::fs::set_permissions(
             config.identity_dir.join("device.key"),

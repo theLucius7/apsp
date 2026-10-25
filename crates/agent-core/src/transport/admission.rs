@@ -33,7 +33,8 @@ pub(super) async fn supported(
     #[cfg(target_os = "linux")]
     for (module, reconciler) in reconcilers {
         if reconciler.session_source().is_some()
-            && crate::admission::journal::available(&reconciler.descriptor().service_unit).await
+            && (crate::admission::journal::available(&reconciler.descriptor().service_unit).await
+                || crate::runtime_logs::available(&reconciler.descriptor().service_unit))
         {
             return Some((module.clone(), reconciler.clone()));
         }
@@ -128,7 +129,11 @@ pub(super) async fn run(
             let sender = line_sender.clone();
             let (unit, start) = (unit.clone(), since.to_owned());
             follower = Some(tokio::spawn(async move {
-                journal::follow(&unit, &start, sender).await
+                if crate::runtime_logs::available(&unit) {
+                    crate::runtime_logs::follow(&unit, &start, sender).await
+                } else {
+                    journal::follow(&unit, &start, sender).await
+                }
             }));
             since = "-2min";
         }

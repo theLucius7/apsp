@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import pwd
 import signal
+import socket
+import struct
 import json
 import runpy
 import tempfile
@@ -68,6 +70,15 @@ elif arguments[0] == "verify-cache":
     print("TEST_ONLY process fixture cache stub")
 elif arguments[0] == "--version":
     print("apsp-agent @AGENT_VERSION@")
+elif arguments[0] == "runtime-log":
+    if os.environ.get("APSP_TEST_NO_MEMORY_LOG") == "1":
+        raise SystemExit(2)
+    binary = os.environ.get("APSP_TEST_AGENT") or @TEST_ONLY_REAL_AGENT@
+    if binary:
+        os.execv(binary, [binary, *arguments])
+    if "--help" not in arguments:
+        while sys.stdin.buffer.read(4096):
+            pass
 elif arguments[0] == "status":
     if os.environ.get("APSP_TEST_STATUS_FAIL") == "1":
         raise SystemExit("fixture startup check failed")
@@ -85,7 +96,8 @@ else:
     while True:
         time.sleep(0.1)
 '''.replace(b"@AGENT_VERSION@", AGENT_VERSION.encode()).replace(
-    b"@TEST_ONLY_TRUST_FILE@", str(TRUST_FILE).encode())
+    b"@TEST_ONLY_TRUST_FILE@", str(TRUST_FILE).encode()).replace(
+    b"@TEST_ONLY_REAL_AGENT@", repr(os.environ.get("APSP_TEST_AGENT", "")).encode())
 
 RUNTIME = b'''#!/usr/bin/python3
 from pathlib import Path
@@ -145,6 +157,49 @@ def pid(path):
 
 def service(name, action):
     return run("rc-service", "--", name, action)
+
+
+def memory_logs():
+    """Read the actual collector IPC, including its nonprivileged peer identity."""
+    lines, processes = [], []
+    account = pwd.getpwnam("apsp-singbox")
+    directory = Path(f"/run/apsp/runtime-logs/{RUNTIME_SERVICE}.service")
+    assert directory.stat().st_mode & 0o777 == 0o700
+    assert directory.stat().st_uid == account.pw_uid
+    for stream in ("stdout", "stderr"):
+        path = directory / f"{stream}.sock"
+        assert path.stat().st_mode & 0o777 == 0o600
+        with socket.socket(socket.AF_UNIX) as peer:
+            peer.settimeout(5)
+            peer.connect(str(path))
+            process, uid, _ = struct.unpack("3i", peer.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+            assert uid == account.pw_uid and uid != 0
+            limits = Path(f"/proc/{process}/limits").read_text().splitlines()
+            core, = [line for line in limits if line.startswith("Max core file size")]
+            assert core.split()[4:6] == ["0", "0"]
+            processes.append(process)
+            peer.sendall(b'{"since":0,"follow":false}\n')
+            with peer.makefile("rb") as reader:
+                assert reader.readline(64) == b"APSP_RUNTIME_LOG_V1\n"
+                while wire := reader.readline(100_000):
+                    assert wire.endswith(b"\n") and len(wire) < 100_000
+                    lines.append(json.loads(wire)["text"])
+    assert not Path("/var/log/apsp/runtime.log").exists()
+    assert {entry.name for entry in directory.iterdir()} == {"stdout.sock", "stderr.sock"}
+    return lines, processes
+
+
+def expect_memory_log(message, processes=None):
+    if not os.environ.get("APSP_TEST_AGENT"):
+        return None
+    def ready():
+        result = memory_logs()
+        return result if message in result[0] else None
+    lines, observed = wait_for(ready, "memory log replay")
+    assert message in lines
+    if processes is not None:
+        assert observed == processes, "Agent changes must preserve the independent collectors"
+    return observed
 
 
 def provision_test_roots(directory=TRUST_DIRECTORY):
@@ -293,6 +348,7 @@ def main():
         assert int(fields["CapAmb"].strip(), 16) == 1 << 10, fields["CapAmb"]
         assert fields["NoNewPrivs"].strip() == "1"
         assert int(Path(f"/run/{RUNTIME_SERVICE}.pid").read_text()) != runtime_pid
+        collectors = expect_memory_log("fixture runtime started")
 
         identity = Path("/etc/apsp/identity/fixture-existing-key")
         identity.write_text("fixture identity must survive installation\n")
@@ -304,6 +360,19 @@ def main():
         assert pid(RUNTIME_STATE) == runtime_pid
         assert identity.read_text() == "fixture identity must survive installation\n"
         assert ledger.read_text() == "fixture persisted accounting\n"
+        expect_memory_log("fixture runtime started", collectors)
+
+        # A current bootstrap can still install an older independently verified
+        # Agent. Its service must never call a command that binary does not have.
+        unit = Path(f"/etc/init.d/{RUNTIME_SERVICE}")
+        run(*script, env={**environment, "APSP_TEST_NO_MEMORY_LOG": "1"})
+        assert unit.read_bytes() == (ROOT / "plugins/sing-box/apsp-singbox-legacy.openrc").read_bytes()
+        assert pid(RUNTIME_STATE) == runtime_pid
+        run(*script, env=environment)
+        assert unit.read_bytes() == (ROOT / "plugins/sing-box/apsp-singbox.openrc").read_bytes()
+        assert pid(RUNTIME_STATE) == runtime_pid
+        agent_pid = wait_for(lambda: pid(AGENT_STATE), "Agent after compatibility installation")
+        expect_memory_log("fixture runtime started", collectors)
 
         failed = subprocess.run(script, text=True, capture_output=True, timeout=90,
                                 env={**environment, "APSP_TEST_ENROLL_FAIL": "1"})
@@ -315,19 +384,26 @@ def main():
         service(RUNTIME_SERVICE, "reload")
         wait_for(lambda: int(RELOAD_STATE.read_text()) == 1, "HUP reaching the runtime child")
         assert pid(RUNTIME_STATE) == runtime_pid
+        expect_memory_log("fixture runtime reloaded", collectors)
         service("apsp-agent", "stop")
         assert pid(RUNTIME_STATE) == runtime_pid
+        expect_memory_log("fixture runtime reloaded", collectors)
         service(RUNTIME_SERVICE, "status")
         previous = Path("/opt/apsp/core/current").readlink()
         before_recovery = pid(AGENT_STATE)
+        with unit.open("a") as output:
+            output.write("\n# fixture: preserve the previous service on rollback\n")
+        previous_unit = unit.read_bytes()
         failed = subprocess.run(
             script, capture_output=True, text=True, timeout=90,
             env={**environment, "APSP_TEST_STATUS_FAIL": "1"},
         )
         assert failed.returncode != 0 and "恢复上一版本" in failed.stderr
         assert Path("/opt/apsp/core/current").readlink() == previous
+        assert unit.read_bytes() == previous_unit
         wait_for(lambda: pid(AGENT_STATE) != before_recovery, "Agent recovery after failed startup")
         assert pid(RUNTIME_STATE) == runtime_pid
+        expect_memory_log("fixture runtime reloaded", collectors)
         service("apsp-agent", "stop")
         service("apsp-agent", "start")
         agent_pid = wait_for(lambda: (number := pid(AGENT_STATE)) != agent_pid and number,
@@ -343,7 +419,8 @@ def main():
         service("apsp-agent", "status")
         service(RUNTIME_SERVICE, "status")
         assert "fixture agent started" in Path("/var/log/apsp/agent.log").read_text()
-        assert "fixture runtime reloaded" in Path("/var/log/apsp/runtime.log").read_text()
+        assert not Path("/var/log/apsp/runtime.log").exists()
+        expect_memory_log("fixture runtime started")
 
         with sqlite3.connect("/var/lib/apsp/core/state.db") as database:
             database.executescript('''
@@ -393,6 +470,10 @@ def main():
               "unprivileged capabilities, logs, automatic recovery, default runlevel, "
               "read-only snapshot, and systemd installer command contract: passed")
     except Exception:
+        directory = Path(f"/run/apsp/runtime-logs/{RUNTIME_SERVICE}.service")
+        print("Memory socket paths:", [str(path) for path in directory.glob("*")], flush=True)
+        result = subprocess.run(["ps", "-o", "pid,ppid,user,comm"], capture_output=True, text=True, timeout=5)
+        print(result.stdout, flush=True)
         for command in [("rc-status", "--all"), ("rc-update", "show")]:
             result = subprocess.run(command, capture_output=True, text=True, timeout=30)
             print(f"{command}:\n{result.stdout}\n{result.stderr}", flush=True)

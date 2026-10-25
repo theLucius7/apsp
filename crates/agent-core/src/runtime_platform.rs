@@ -116,7 +116,9 @@ fn artifact_for_targets(
         && runtime_target.starts_with("linux-gnu-"))
         || (compiled_target.starts_with("linux-gnu-") && runtime_target.starts_with("linux-musl-"));
     if different_linux_abis {
-        for target in [compiled_target, native_arch()?] {
+        // New ABI-specific assets must not replace the existing architecture-only
+        // identity in a mixed release used by already installed runtimes.
+        for target in [native_arch()?, compiled_target] {
             match release.artifact(name, version, target) {
                 Ok(artifact) => return Ok(artifact),
                 Err(ReleaseError::MissingArtifact) => {}
@@ -191,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn runtime_selection_preserves_musl_caches_and_agent_and_legacy_identities() {
+    fn runtime_selection_preserves_legacy_identity_when_new_targets_are_added() {
         let arch = native_arch().unwrap();
         let gnu = format!("linux-gnu-{arch}");
         let musl = format!("linux-musl-{arch}");
@@ -270,22 +272,22 @@ mod tests {
                 .arch,
             musl
         );
-        for (name, expected) in [("gnu-and-legacy", arch), ("musl-and-legacy", musl.as_str())] {
+        for name in ["gnu-and-legacy", "musl-and-legacy"] {
             assert_eq!(
                 artifact_for_targets(&release, name, "0.3.0", &gnu, &musl)
                     .unwrap()
                     .metadata()
                     .arch,
-                expected
+                arch
             );
         }
-        for (name, expected) in [("gnu-and-legacy", gnu.as_str()), ("musl-and-legacy", arch)] {
+        for name in ["gnu-and-legacy", "musl-and-legacy"] {
             assert_eq!(
                 artifact_for_targets(&release, name, "0.3.0", &musl, &gnu)
                     .unwrap()
                     .metadata()
                     .arch,
-                expected
+                arch
             );
         }
     }

@@ -73,6 +73,31 @@ class ReleaseTests(unittest.TestCase):
     def verify(self):
         return release.verify_bundle(self.bundle, self.roots, "minisign", "agent-v0.3.0")
 
+    def test_musl_runtime_has_a_separate_signed_identity_and_tampering_is_rejected(self):
+        runtime = self.source / "sing-box" / "1.14.2"
+        for arch in ("amd64", "arm64"):
+            (runtime / ("linux-musl-" + arch)).write_bytes((runtime / arch).read_bytes())
+        self.bundle = self.directory / "release-musl"
+        self.arguments.output = str(self.bundle)
+        self.arguments.include_musl_runtime = True
+        release.assemble(self.arguments)
+        self.sign()
+        metadata = self.verify()
+        entries = [entry for entry in metadata["artifacts"] if entry["name"] == "sing-box"]
+        self.assertEqual({entry["arch"] for entry in entries},
+                         {"amd64", "arm64", "linux-musl-amd64", "linux-musl-arm64"})
+        self.assertEqual(len(metadata["artifacts"]), 8)
+        entry = next(entry for entry in entries if entry["arch"] == "linux-musl-amd64")
+        (self.bundle / entry["asset_name"]).write_bytes(b"tampered musl runtime")
+        with self.assertRaises(ValueError):
+            self.verify()
+
+    def test_requested_musl_runtime_cannot_be_silently_omitted(self):
+        self.arguments.output = str(self.directory / "release-missing-musl")
+        self.arguments.include_musl_runtime = True
+        with self.assertRaisesRegex(ValueError, "ordinary file"):
+            release.assemble(self.arguments)
+
     def rewrite_metadata(self, operation):
         path = self.bundle / "release.json"
         data = json.loads(path.read_text())

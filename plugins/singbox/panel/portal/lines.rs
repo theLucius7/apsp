@@ -1,4 +1,4 @@
-//! Member line catalogue and probe panel (ADR 0100).
+//! Member line catalogue and probe panel (ADR 0101).
 //!
 //! A signed-in member sees the lines of the migrated Nexus catalogue: how each
 //! route is built, whether it is in their package, its status, multiplier and

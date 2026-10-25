@@ -12,6 +12,12 @@ the legacy user lists before any activation.
 
 All outputs contain node keys or member identities: they are written with
 mode 0600 and only counts and fixed reason codes are printed.
+
+Only after an operator explicitly decides to stop a node, use `build
+--disable-node ID` to retain it as disabled in the complete host snapshot.
+This never omits an inventory entry, opens its listener, or approves a new
+TLS identity. Static TLS material must be in the read-only builder snapshot;
+active Hysteria2 remains blocked pending renewal and port-hopping review.
 """
 import argparse
 import base64
@@ -123,7 +129,7 @@ def protocol_settings(raw):
     return value or {}
 
 
-def preserved(raw, effective):
+def preserved(raw, effective, disable=False):
     """Convert one legacy effective configuration into a PreservedNode."""
     configuration = copy.deepcopy(effective)
     if set(configuration) - TOP_LEVEL:
@@ -135,8 +141,10 @@ def preserved(raw, effective):
         raise SnapshotError('listener_count')
     inbound = inbounds[0]
     kind = inbound.get('type')
-    if kind not in ('vless', 'shadowsocks'):
-        # Hysteria2 also needs its certificate files and port-hopping rules.
+    enabled = bool(raw.get('enabled', 1)) and not disable
+    if kind not in ('vless', 'shadowsocks') and not (kind == 'hysteria2' and not enabled):
+        # Active Hysteria2 still requires reviewed certificate renewal and
+        # port-hopping ownership. An explicitly disabled entry opens no port.
         raise SnapshotError('protocol_requires_conversion')
     users = inbound.get('users') or []
     if len(users) != 1 or users[0].get('name') != PLACEHOLDER_UUID:
@@ -148,8 +156,18 @@ def preserved(raw, effective):
     port = as_port(inbound.get('listen_port'))
     node = {'id': raw['id'], 'name': raw['name'], 'port': port, 'public_host': raw['host'],
             'sni': '', 'private_key': '', 'public_key': '', 'short_id': '', 'users': [],
-            'enabled': bool(raw.get('enabled', 1)),
-            'settings': {'listen': inbound.get('listen'), 'public_port': as_port(raw.get('port'))}}
+            'enabled': enabled,
+            'settings': {'listen': inbound.get('listen')}}
+    public_port = raw.get('port')
+    if kind == 'hysteria2' and not enabled and isinstance(public_port, str) and '-' in public_port:
+        # The encrypted source inventory retains the complete hopping range.
+        # A disabled node exposes no endpoint; do not convert its range to a
+        # single advertised port or claim that hopping was migrated.
+        bounds = public_port.split('-')
+        if len(bounds) != 2 or as_port(bounds[0]) > as_port(bounds[1]):
+            raise SnapshotError('port_range_invalid')
+    else:
+        node['settings']['public_port'] = as_port(public_port)
     if kind == 'vless':
         tls = inbound.get('tls') or {}
         reality = tls.get('reality') or {}
@@ -170,7 +188,7 @@ def preserved(raw, effective):
         node['settings']['reality'] = {'handshake_server': handshake.get('server'),
                                        'handshake_port': as_port(handshake.get('server_port', 443)),
                                        'flow': 'vision' if flow else 'none'}
-    else:
+    elif kind == 'shadowsocks':
         method = inbound.get('method')
         if method not in SS_METHODS:
             raise SnapshotError('shadowsocks_method_unsupported')
@@ -178,10 +196,26 @@ def preserved(raw, effective):
         if users[0].get('password') != expected:
             raise SnapshotError('shadowsocks_user_key_derivation')
         node['protocol_config'] = {'type': 'shadowsocks2022', 'method': method, 'password': inbound.get('password')}
+    else:
+        tls = inbound.get('tls') or {}
+        certificate, key = tls.get('certificate'), tls.get('key')
+        if (not tls.get('enabled') or not isinstance(certificate, list) or not certificate
+                or not all(isinstance(part, str) for part in certificate)
+                or not isinstance(key, list) or len(key) != 1 or not isinstance(key[0], str)
+                or '-----BEGIN CERTIFICATE-----' not in ''.join(certificate)
+                or 'PRIVATE KEY-----' not in key[0]):
+            raise SnapshotError('hysteria2_certificate_material_missing')
+        if users[0].get('password') != PLACEHOLDER_UUID:
+            raise SnapshotError('hysteria2_identity_changed')
+        node.update(sni=tls.get('server_name') or '', protocol_config={
+            'type': 'hysteria2', 'tls': {'mode': 'manual', 'certificate': ''.join(certificate), 'key': key[0]}})
     return {'legacy_node_id': raw['id'], 'preserved': {'node': node, 'configuration': configuration}}
 
 
-def build(inventory, directory):
+def build(inventory, directory, disabled_nodes=()):
+    disabled_nodes = set(disabled_nodes)
+    if disabled_nodes - {node['id'] for node in inventory['nodes']}:
+        raise SnapshotError('disabled_node_unknown')
     servers = {host['legacy_id']: host['server_id'] for host in inventory['hosts']}
     summary = []
     for host, nodes in sorted(host_nodes(inventory).items()):
@@ -198,7 +232,7 @@ def build(inventory, directory):
                     report['blocked'].append({'id': raw['id'], 'reason': 'legacy_builder_refused'})
                     continue
                 try:
-                    prepared.append(preserved(raw, entry['configuration']))
+                    prepared.append(preserved(raw, entry['configuration'], raw['id'] in disabled_nodes))
                 except SnapshotError as error:
                     report['blocked'].append({'id': raw['id'], 'reason': str(error)})
             if report['server_id'] is None:
@@ -209,6 +243,13 @@ def build(inventory, directory):
                 report['snapshot_sha256'] = hashlib.sha256(encoded).hexdigest()
                 private_write(Path(directory) / f'host-{host}-snapshot.json', snapshot)
         report['ready'] = not report['blocked']
+        if explicit := sorted(disabled_nodes & {node['id'] for node in nodes}):
+            report['explicitly_disabled_nodes'] = explicit
+        ranges = {str(raw['id']): raw['port'] for raw in nodes
+                  if isinstance(raw.get('port'), str) and '-' in raw['port']
+                  and (raw['id'] in disabled_nodes or not raw.get('enabled', 1))}
+        if ranges:
+            report['inactive_public_port_ranges'] = ranges
         summary.append(report)
     private_write(Path(directory) / 'snapshot-summary.json', {'built_at': int(time.time()), 'hosts': summary})
     return {'hosts': len(summary), 'ready': sum(r['ready'] for r in summary),
@@ -231,7 +272,7 @@ def compare_users(snapshot, candidate, legacy, output):
     for entry in snapshot['nodes']:
         node = entry['preserved']['node']
         inbound = listeners.get(node['port'])
-        protocol = 'shadowsocks' if node['protocol_config'].get('type') == 'shadowsocks2022' else 'vless'
+        protocol = {'shadowsocks2022': 'shadowsocks', 'hysteria2': 'hysteria2'}.get(node['protocol_config'].get('type'), 'vless')
         method = node['protocol_config'].get('method')
         enabled = node.get('enabled', True)
         # A disabled legacy instance serves nobody; the candidate must not
@@ -271,6 +312,8 @@ def main():
     command = commands.add_parser('build')
     command.add_argument('inventory')
     command.add_argument('directory')
+    command.add_argument('--disable-node', action='append', type=int, default=[],
+                         help='Explicitly preserve this node as disabled; the candidate must omit its listener')
     command = commands.add_parser('compare-users')
     command.add_argument('snapshot')
     command.add_argument('candidate')
@@ -282,7 +325,7 @@ def main():
     elif args.command == 'request':
         result = requests(load(args.inventory), load(args.legacy), args.directory)
     elif args.command == 'build':
-        result = build(load(args.inventory), args.directory)
+        result = build(load(args.inventory), args.directory, args.disable_node)
     else:
         result = compare_users(load(args.snapshot), load(args.candidate), load(args.legacy), args.output)
     print(json.dumps({'command': args.command, **result}))

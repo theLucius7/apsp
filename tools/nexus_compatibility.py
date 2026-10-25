@@ -239,7 +239,7 @@ $legacy = [];
 foreach ($seen as $uid => $ips) {
     $legacy[(string) $uid] = array_slice(array_keys($ips), 0, 64);
 }
-// Status of visible nodes for the member line catalogue (ADR 0100): online
+// Status of visible nodes for the member line catalogue (ADR 0101): online
 // state, load percentages and the three carrier pings the legacy member page
 // shows. No endpoint address or monitor identifier is returned. A failure here
 // never blocks the device exchange above; the catalogue then lets the status lapse.
@@ -310,6 +310,53 @@ def legacy_devices(config, managed, status=False):
     return result, nodes
 
 
+def refresh_machine_heartbeats(connection, managed, observed_at, now=None):
+    """Keep legacy availability tied to fresh, complete native machine health.
+
+    Per-node cache entries are insufficient: the legacy availability policy
+    reads machine heartbeats and otherwise hides subscriptions after takeover.
+    Only a fresh database response may advance them, never the cached device
+    list used on the next exchange. Do not change policy, visibility or tokens.
+    """
+    now = int(time.time()) if now is None else now
+    if type(observed_at) is not int or not now - 60 <= observed_at <= now + 5:
+        return 0
+    if not isinstance(managed, list) or len(managed) > 20000:
+        raise BridgeError('Invalid managed health list')
+    identities, healthy = set(), set()
+    for node in managed:
+        if (not isinstance(node, dict) or type(node.get('legacy_node_id')) is not int
+                or node['legacy_node_id'] <= 0 or node['legacy_node_id'] in identities
+                or type(node.get('healthy', False)) is not bool):
+            raise BridgeError('Invalid managed health identity')
+        identities.add(node['legacy_node_id'])
+        if node.get('healthy', False):
+            healthy.add(node['legacy_node_id'])
+    if not healthy:
+        return 0
+    connection.execute('BEGIN IMMEDIATE')
+    try:
+        rows = connection.execute('SELECT id,machine_id,enabled FROM v2_server ORDER BY id LIMIT 20001').fetchall()
+        if len(rows) > 20000 or healthy - {row[0] for row in rows}:
+            raise BridgeError('Managed health differs from legacy inventory')
+        enabled = {}
+        for node, machine, active in rows:
+            if machine is not None and active:
+                enabled.setdefault(machine, set()).add(node)
+        updated = 0
+        for machine, nodes in sorted(enabled.items()):
+            if nodes <= healthy:
+                updated += connection.execute(
+                    'UPDATE v2_server_machine SET last_seen_at=? WHERE id=? AND is_active=1 '
+                    'AND (last_seen_at IS NULL OR last_seen_at<?)',
+                    (observed_at, machine, observed_at)).rowcount
+        connection.commit()
+        return updated
+    except Exception:
+        connection.rollback()
+        raise
+
+
 def exchange_devices(config, connection):
     """Share device limits and live client addresses with apsp (ADR 0099)."""
     rows = connection.execute('SELECT id,device_limit FROM v2_user ORDER BY id LIMIT 20001').fetchall()
@@ -319,7 +366,7 @@ def exchange_devices(config, connection):
     managed = config.get('_device_managed', [])
     # One legacy call publishes apsp-admitted addresses and reads the legacy
     # nodes' devices; every 30 s it also reads the status the member line
-    # catalogue shows (ADR 0100).
+    # catalogue shows (ADR 0101).
     status_due = time.monotonic() - config.get('_last_node_status', float('-inf')) >= 30
     legacy, nodes, failure = {}, None, None
     if managed or status_due:
@@ -339,6 +386,7 @@ def exchange_devices(config, connection):
     import_id = str(uuid.UUID(config['import_id']))
     sample = {'import_id': import_id, 'observed_at': observed, 'limits': limits, 'legacy': legacy}
     result = database(config, f'SELECT singbox_nexus_device_exchange({json_sql(sample)});')
+    config['_machine_heartbeats'] = refresh_machine_heartbeats(connection, result['managed'], sample['observed_at'])
     config['_device_managed'] = result['managed']
     if nodes is not None:
         status = {'import_id': import_id, 'observed_at': observed, 'nodes': nodes[:5000]}
@@ -368,6 +416,7 @@ def synchronize(config):
             raise BridgeError('Generation acknowledgment failed; check for another bridge process')
         try:
             result['device_nodes'] = exchange_devices(config, connection)
+            result['machine_heartbeats'] = config['_machine_heartbeats']
         except (BridgeError, KeyError, TypeError, ValueError, subprocess.TimeoutExpired) as error:
             # Device limits never block member, quota or traffic compatibility.
             result['device_error'] = type(error).__name__

@@ -12,7 +12,7 @@ const server = createServer(async (request, response) => {
   try { response.writeHead(200, { 'Content-Type': ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' })[extname(file)] ?? 'application/octet-stream' }).end(await readFile(file)) } catch { response.writeHead(404).end() }
 })
 
-// Member line catalogue and probe panel (ADR 0100). The fixture carries the
+// Member line catalogue and probe panel (ADR 0101). The fixture carries the
 // fields the panel returns; addresses never reach the member portal.
 const now = Math.floor(Date.now() / 1000)
 const entry = (region, provider, node) => ({ id: 'entry', role: 'entry', region, provider, node_id: node })
