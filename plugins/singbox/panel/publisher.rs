@@ -15,6 +15,7 @@ pub async fn run(state: AppState) {
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut next_maintenance = 0;
     let mut maintenance_healthy = false;
+    let mut next_admission = 0;
     loop {
         interval.tick().await;
         let mut failed = Vec::new();
@@ -54,6 +55,13 @@ pub async fn run(state: AppState) {
         }
         if !maintenance_healthy {
             failed.push("operation-retention");
+        }
+        if now_timestamp() >= next_admission {
+            if let Err(error) = super::nexus_nodes::sessions::push_policies(&state).await {
+                tracing::warn!(%error, "device limit policies were not sent; will retry");
+                failed.push("device-limits");
+            }
+            next_admission = now_timestamp() + 10;
         }
         if let Err(error)=crate::control_center::system::heartbeat(&state.pool,"sing-box",if failed.is_empty(){"healthy"}else{"failed"},serde_json::json!({"source":"plugin-publisher-cycle","failed_steps":failed,"checked_steps":["entitlements","ordered-path-lifecycle","source-refresh","path-follow","path-publication","configuration-publication"],"retention_checked_every_seconds":30})).await { tracing::warn!(%error,"proxy publisher heartbeat unavailable"); }
     }

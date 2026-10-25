@@ -35,6 +35,7 @@ async fn checkpoint_enqueue_does_not_wait_for_the_control_worker_or_delay_heartb
         retirement: None,
         cancellation: None,
         runtime_control: Some(control),
+        admission: None,
         telemetry: watch::channel(Arc::new(crate::telemetry::cache::Snapshot::default())).1,
     };
     let mut tasks = JoinSet::new();
@@ -187,6 +188,7 @@ async fn recovery_floor_refusal_keeps_heartbeat_and_durable_control_failure_avai
         retirement: None,
         cancellation: None,
         runtime_control: Some(control),
+        admission: None,
         telemetry: watch::channel(Arc::new(crate::telemetry::cache::Snapshot::default())).1,
     };
     let mut tasks = JoinSet::new();

@@ -100,7 +100,7 @@ systemd 基线使用 Debian 12；OpenRC 使用已启动 OpenRC 的专用 Linux �
       systemctl reload apsp-singbox@main.service
     等待本地统计接口恢复；检查日志中有无重载失败、统计重置/缺失窗口告警：
       journalctl -u apsp-agent.service --since '-5 minutes' --no-pager
-      journalctl -u apsp-singbox@main.service --since '-5 minutes' --no-pager
+      journalctl --namespace=apsp-runtime -u apsp-singbox@main.service --since '-5 minutes' --no-pager
     OpenRC 对应命令：
       rc-service apsp-singbox@main reload
       tail -n 80 /var/log/apsp/agent.log

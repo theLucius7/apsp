@@ -5,6 +5,7 @@ mod native;
 mod obfuscation;
 mod path_probe;
 mod sentinel;
+mod sessions;
 mod stats;
 mod validation;
 mod version;
@@ -238,6 +239,9 @@ impl Adapter for SingboxAdapter {
 
     fn usage_source(&self) -> Option<&dyn UsageSource> {
         Some(self)
+    }
+    fn session_source(&self) -> Option<&dyn apsp_adapter_sdk::SessionSource> {
+        Some(&sessions::SESSIONS)
     }
 }
 

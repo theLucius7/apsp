@@ -3,6 +3,7 @@ mod model;
 mod runtime;
 mod runtime_model;
 pub(crate) mod runtime_publish;
+pub(crate) mod sessions;
 
 use crate::{
     AppState, control_center,

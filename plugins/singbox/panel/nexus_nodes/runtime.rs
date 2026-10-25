@@ -194,6 +194,23 @@ async fn activate(
             "请先以正式签名的 apsp Agent 0.3.1 或更新版本接入主机并保持在线".into(),
         ));
     }
+    let (limited, synchronized) =
+        super::sessions::limits_on_host(&mut tx, server, now_timestamp()).await?;
+    if !synchronized {
+        return Err(ApiError::Conflict(
+            "兼容桥尚未同步旧面板的设备数限制，保留原服务".into(),
+        ));
+    }
+    let controls_sessions = caps.as_array().is_some_and(|values| {
+        values
+            .iter()
+            .any(|v| v == apsp_protocol::RUNTIME_ADMISSION_CAPABILITY)
+    });
+    if limited > 0 && !controls_sessions {
+        return Err(ApiError::Conflict(format!(
+            "该主机有 {limited} 名设定设备数限制的成员；需要提供会话控制能力的 Agent 并安装运行时日志命名空间，保留原服务"
+        )));
+    }
     crate::agent::runtime_artifact(&state, &info).await?;
     let candidate = runtime_publish::compile(&state, &mut tx, server).await?;
     if candidate.config_hash != input.config_sha256 {

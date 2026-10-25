@@ -17,9 +17,11 @@ pub use telemetry::{
 
 mod diagnostics;
 mod retirement;
+pub mod runtime_admission;
 pub mod runtime_control;
 pub use diagnostics::*;
 pub use retirement::*;
+pub use runtime_admission::*;
 pub use runtime_control::*;
 pub mod release;
 
@@ -108,6 +110,8 @@ impl Envelope {
             "retirement.request" => self.to_payload().map(Message::RetirementRequest),
             "retirement.result" => self.to_payload().map(Message::RetirementResult),
             "usage.ack" => self.to_payload().map(Message::UsageAck),
+            "runtime.admission.policy" => self.to_payload().map(Message::RuntimeAdmissionPolicy),
+            "runtime.sessions.report" => self.to_payload().map(Message::RuntimeSessionReport),
             _ => Ok(Message::Unknown {
                 message_type: self.message_type.clone(),
                 payload: self.payload.clone(),
@@ -142,6 +146,8 @@ pub enum Message {
     RetirementRequest(RetirementRequest),
     RetirementResult(RetirementResult),
     UsageAck(UsageAck),
+    RuntimeAdmissionPolicy(RuntimeAdmissionPolicy),
+    RuntimeSessionReport(RuntimeSessionReport),
     Unknown {
         message_type: String,
         payload: Value,
@@ -175,6 +181,8 @@ impl Message {
             Self::RetirementRequest(_) => "retirement.request",
             Self::RetirementResult(_) => "retirement.result",
             Self::UsageAck(_) => "usage.ack",
+            Self::RuntimeAdmissionPolicy(_) => RUNTIME_ADMISSION_POLICY_KIND,
+            Self::RuntimeSessionReport(_) => RUNTIME_SESSION_REPORT_KIND,
             Self::Unknown { message_type, .. } => message_type,
         }
     }
@@ -205,6 +213,8 @@ impl Message {
             Self::RetirementRequest(value) => serde_json::to_value(value)?,
             Self::RetirementResult(value) => serde_json::to_value(value)?,
             Self::UsageAck(value) => serde_json::to_value(value)?,
+            Self::RuntimeAdmissionPolicy(value) => serde_json::to_value(value)?,
+            Self::RuntimeSessionReport(value) => serde_json::to_value(value)?,
             Self::Unknown { payload, .. } => payload.clone(),
         };
         Envelope::new(self.message_type(), payload)

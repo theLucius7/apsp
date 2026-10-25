@@ -36,6 +36,15 @@ impl PanelPlugins for Compiled {
         Box::pin(singbox::usage::ingest(state, server_id, batch))
     }
 
+    fn ingest_runtime_sessions<'a>(
+        &'a self,
+        state: &'a AppState,
+        server_id: i64,
+        report: apsp_protocol::RuntimeSessionReport,
+    ) -> HookFuture<'a, anyhow::Result<()>> {
+        Box::pin(singbox::ingest_runtime_sessions(state, server_id, report))
+    }
+
     fn manifest_modules<'a>(
         &'a self,
         state: &'a AppState,

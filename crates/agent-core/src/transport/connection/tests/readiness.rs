@@ -33,6 +33,7 @@ async fn empty_cache_keeps_host_identity_until_a_real_snapshot_arrives() -> Resu
         retirement: None,
         cancellation: None,
         runtime_control: None,
+        admission: None,
         telemetry: cache,
     };
     assert!(runtime.static_info()?.is_none());

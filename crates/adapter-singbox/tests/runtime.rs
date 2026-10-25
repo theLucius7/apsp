@@ -7,6 +7,7 @@ use apsp_adapter_sdk::{Adapter, Counter, Plan, Prepared, UsageSource};
 use apsp_adapter_singbox::SingboxAdapter;
 use std::{path::PathBuf, process::Stdio, time::Duration};
 use support::{TempDir, TestOps, TestServices};
+use tokio::io::AsyncBufReadExt;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -121,6 +122,128 @@ async fn real_check_stats_cumulative_reads_and_reload_generation() -> Result<()>
     anyhow::ensure!(
         adapter.read_counters(&prepared).await? == first,
         "new generation did not start counters from zero"
+    );
+    child.kill().await?;
+    child.wait().await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "Requires exact upstream runtime; set APSP_TEST_SINGBOX and run --ignored"]
+async fn real_session_lines_attribute_list_and_close_sessions() -> Result<()> {
+    let binary =
+        PathBuf::from(std::env::var("APSP_TEST_SINGBOX").context("set APSP_TEST_SINGBOX")?);
+    let directory = TempDir::new();
+    let reservations = [
+        TcpListener::bind("127.0.0.1:0").await?,
+        TcpListener::bind("127.0.0.1:0").await?,
+        TcpListener::bind("127.0.0.1:0").await?,
+    ];
+    let [stats_port, inbound_port, control_port] =
+        [0, 1, 2].map(|index| reservations[index].local_addr().unwrap().port());
+    let mut spec = directory.spec(
+        stats_port,
+        serde_json::json!([{
+            "type":"vless", "tag":"test-node", "listen":"127.0.0.1", "listen_port":inbound_port,
+            "users":[{"name":"u1_n3", "uuid":"00000000-0000-0000-0000-000000000001"}]
+        }]),
+    );
+    // The session control settings the compiler emits, on reserved test ports.
+    let mut config: serde_json::Value = serde_json::from_str(&spec.files["config.json"])?;
+    config["log"] = serde_json::json!({"level":"info","timestamp":true});
+    config["experimental"]["clash_api"] = serde_json::json!({
+        "external_controller": format!("127.0.0.1:{control_port}"), "secret": "ab".repeat(32)});
+    let config = config.to_string();
+    std::fs::write(directory.0.join("config.json"), &config)?;
+    spec.files.insert("config.json".into(), config);
+    spec.binary_path = binary.clone();
+    let adapter = SingboxAdapter::new();
+    let prepared = adapter
+        .prepare(
+            spec,
+            &TestOps {
+                version: None,
+                ..TestOps::default()
+            },
+        )
+        .await?;
+    drop(reservations);
+    let source = adapter.session_source().context("session source")?;
+    anyhow::ensure!(
+        source.enabled(&prepared),
+        "compiled session control is not detected"
+    );
+    let mut child = tokio::process::Command::new(&binary)
+        .args(["run", "-c"])
+        .arg(directory.0.join("config.json"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()?;
+    let mut log = tokio::io::BufReader::new(child.stderr.take().context("stderr")?).lines();
+    let services = TestServices {
+        pid: child.id(),
+        ..TestServices::default()
+    };
+    anyhow::ensure!(
+        adapter.health(&prepared, &services).await?,
+        "real runtime is unhealthy"
+    );
+    // Hold one proxied session open to a local listener.
+    let echo = TcpListener::bind("127.0.0.1:0").await?;
+    let target = echo.local_addr()?.port();
+    let mut client = TcpStream::connect(("127.0.0.1", inbound_port)).await?;
+    let local = client.local_addr()?;
+    let mut request = vec![0];
+    request.extend_from_slice(uuid::Uuid::from_u128(1).as_bytes());
+    request.extend_from_slice(&[0, 1]);
+    request.extend_from_slice(&target.to_be_bytes());
+    request.extend_from_slice(&[1, 127, 0, 0, 1, 7]);
+    client.write_all(&request).await?;
+    let (mut accepted, _) = tokio::time::timeout(Duration::from_secs(5), echo.accept()).await??;
+    let mut byte = [0; 1];
+    accepted.read_exact(&mut byte).await?;
+    // Real log lines name the client address and the accounting name.
+    let (mut source_seen, mut principal_seen) = (None, None);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while let Some(line) = log.next_line().await? {
+            if let Some(evidence) = source.parse_log_line(&line) {
+                if evidence.source == Some(local) {
+                    source_seen = Some(evidence.log_id.clone());
+                }
+                if evidence.principal.as_deref() == Some("u1_n3") {
+                    principal_seen = Some(evidence.log_id.clone());
+                }
+            }
+            if source_seen.is_some() && source_seen == principal_seen {
+                break;
+            }
+        }
+        Ok::<_, anyhow::Error>(())
+    })
+    .await
+    .context("runtime did not log the session")??;
+    anyhow::ensure!(
+        source_seen.is_some() && source_seen == principal_seen,
+        "address and name lines do not share one log identifier"
+    );
+    let sessions = source.active_sessions(&prepared).await?;
+    let session = sessions
+        .iter()
+        .find(|session| session.source == local)
+        .context("the control interface does not list the session")?;
+    anyhow::ensure!(
+        source
+            .close_sessions(&prepared, std::slice::from_ref(&session.id))
+            .await?
+            == 1,
+        "the session was not closed"
+    );
+    let mut rest = [0; 16];
+    let closed = tokio::time::timeout(Duration::from_secs(5), client.read(&mut rest)).await;
+    anyhow::ensure!(
+        matches!(closed, Ok(Ok(0)) | Ok(Err(_))),
+        "the closed session still carries traffic"
     );
     child.kill().await?;
     child.wait().await?;

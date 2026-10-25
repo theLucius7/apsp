@@ -289,6 +289,21 @@ UNIT_AGENT
 cat > /etc/systemd/system/apsp-singbox@.service <<'UNIT_RUNTIME'
 @@RUNTIME_UNIT@@
 UNIT_RUNTIME
+# Runtime session lines name client and destination addresses: memory only,
+# bounded, never forwarded. The Agent keeps addresses and accounting names.
+cat > /etc/systemd/journald@apsp-runtime.conf <<'JOURNALD_RUNTIME'
+[Journal]
+Storage=volatile
+RuntimeMaxUse=64M
+RuntimeMaxFileSize=8M
+MaxRetentionSec=1h
+RateLimitBurst=0
+ForwardToSyslog=no
+ForwardToKMsg=no
+ForwardToConsole=no
+ForwardToWall=no
+JOURNALD_RUNTIME
+chmod 0644 /etc/systemd/journald@apsp-runtime.conf
 systemctl daemon-reload
 systemctl enable apsp-singbox@main.service apsp-agent.service
 systemctl restart apsp-agent.service

@@ -18,6 +18,27 @@ pub mod legacy_takeover;
 pub mod mixed_conversion;
 pub mod mixed_paths;
 mod nexus_nodes;
+
+/// Records a device's admitted session addresses for Nexus device limits.
+pub async fn ingest_runtime_sessions(
+    state: &AppState,
+    server_id: i64,
+    report: apsp_protocol::RuntimeSessionReport,
+) -> anyhow::Result<()> {
+    nexus_nodes::sessions::ingest(state, server_id, report).await
+}
+
+/// The device limit policy the publisher would send to this host now.
+pub async fn nexus_admission_policy(
+    state: &AppState,
+    server_id: i64,
+) -> anyhow::Result<Option<apsp_protocol::RuntimeAdmissionPolicy>> {
+    let mut tx = state.pool.begin().await?;
+    let policy =
+        nexus_nodes::sessions::policy(&mut tx, server_id, apsp_protocol::now_timestamp()).await?;
+    tx.commit().await?;
+    Ok(policy)
+}
 mod node_protocol;
 mod node_settings;
 pub mod nodes;

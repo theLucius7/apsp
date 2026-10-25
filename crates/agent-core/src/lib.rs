@@ -4,6 +4,7 @@
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_test_support;
 
+mod admission;
 pub mod artifacts;
 pub mod config;
 pub mod fake;

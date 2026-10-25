@@ -1,3 +1,4 @@
+mod admission;
 mod connection;
 pub mod diagnostics;
 mod public_ips;
@@ -41,6 +42,7 @@ struct Runtime {
     retirement: Option<Arc<crate::retirement::Retirement>>,
     cancellation: Option<Arc<diagnostics::cancellation::CancellationControl>>,
     runtime_control: Option<runtime_control::Control>,
+    admission: Option<admission::Admission>,
     telemetry: watch::Receiver<Arc<crate::telemetry::cache::Snapshot>>,
 }
 
@@ -196,6 +198,10 @@ pub async fn run_with_diagnostics(
     if supports_validation {
         capabilities.push(apsp_protocol::RUNTIME_VALIDATION_CAPABILITY.into());
     }
+    let admission_target = admission::supported(&reconcilers).await;
+    if admission_target.is_some() {
+        capabilities.push(apsp_protocol::RUNTIME_ADMISSION_CAPABILITY.into());
+    }
     if !modules.is_empty() {
         capabilities.push(apsp_protocol::RUNTIME_OPERATIONS_CAPABILITY.into());
     }
@@ -239,6 +245,7 @@ pub async fn run_with_diagnostics(
     let (trigger_tx, trigger_rx) = mpsc::channel(1);
     let (outgoing_tx, mut outgoing_rx) = mpsc::channel(64);
     let (runtime_control, control_receiver) = runtime_control::Control::channel();
+    let (admission_control, admission_receiver) = admission::Admission::channel();
     let cancellation = if !diagnostics.is_empty() && services.supports_confirmed_cancellation() {
         capabilities.push(apsp_protocol::DIAGNOSTIC_CANCEL_CAPABILITY.into());
         capabilities.push(apsp_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY.into());
@@ -273,6 +280,7 @@ pub async fn run_with_diagnostics(
         retirement: Some(retirement.clone()),
         cancellation: cancellation.clone(),
         runtime_control: Some(runtime_control),
+        admission: admission_target.as_ref().map(|_| admission_control),
         telemetry: sampling.snapshots.clone(),
     };
     let mut tasks = JoinSet::new();
@@ -282,6 +290,15 @@ pub async fn run_with_diagnostics(
         control_receiver,
         outgoing_tx.clone(),
     ));
+    if let Some((module, reconciler)) = admission_target {
+        tasks.spawn(admission::run(
+            module,
+            reconciler,
+            runtime.clone(),
+            admission_receiver,
+            outgoing_tx.clone(),
+        ));
+    }
     tasks.spawn(crate::upgrade::run(
         config.clone(),
         state.clone(),
