@@ -42,6 +42,34 @@ class Response(io.BytesIO):
 
 
 class BootstrapTests(unittest.TestCase):
+    def test_network_requests_identify_the_bootstrap_client(self):
+        class Gateway(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                accepted = self.headers.get("User-Agent") == "apsp-bootstrap/1"
+                self.send_response(200 if accepted else 403)
+                self.end_headers()
+                self.wfile.write(b"accepted" if accepted else b"generic client refused")
+
+            def log_message(self, *_args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Gateway)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_port}/"
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                urllib.request.urlopen(url, timeout=5)
+            self.assertEqual(error.exception.code, 403)
+            error.exception.close()
+            for opener in (bootstrap.panel_opener(), bootstrap.github_opener()):
+                with self.subTest(opener=type(opener).__name__), opener.open(url, timeout=5) as response:
+                    self.assertEqual(response.read(), b"accepted")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
     def test_actual_platform_detection_uses_cpu_os_and_libc(self):
         for system, machine, libc, target in (
                 ("Linux", "x86_64", "glibc", "linux-gnu-amd64"),
