@@ -268,7 +268,8 @@ def installer_source(template, agent_unit, runtime_unit, source_root=SOURCE_ROOT
         ensure(text.count(marker) == 1, "missing or duplicate installer unit marker")
         text = text.replace(marker, read_regular(Path(filename), 65536).decode("utf-8").rstrip())
     for marker, filename in (("@@AGENT_OPENRC@@", source_root / "deploy/apsp-agent.openrc"),
-                             ("@@RUNTIME_OPENRC@@", source_root / "plugins/sing-box/apsp-singbox.openrc")):
+                             ("@@RUNTIME_OPENRC@@", source_root / "plugins/sing-box/apsp-singbox.openrc"),
+                             ("@@RUNTIME_OPENRC_LEGACY@@", source_root / "plugins/sing-box/apsp-singbox-legacy.openrc")):
         if marker in text:
             ensure(text.count(marker) == 1, "duplicate installer unit marker")
             text = text.replace(marker, read_regular(filename, 65536).decode("utf-8").rstrip())

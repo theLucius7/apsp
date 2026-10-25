@@ -337,10 +337,20 @@ class BootstrapTests(unittest.TestCase):
             def download(_item, target, _mirror, _release_dir):
                 target.write_bytes(b"TEST ONLY already independently validated new Agent")
 
+            real_glob = Path.glob
+
+            def isolated_glob(path, pattern):
+                # Keep this simulated first installation independent of the
+                # runner's own installed runtime artifacts.
+                if path == Path("/opt/apsp/plugins"):
+                    path = root / "plugins"
+                return real_glob(path, pattern)
+
             with patch.object(bootstrap, "download_agent", side_effect=download), \
                     patch.object(bootstrap, "checked_agent", side_effect=execute), \
                     patch.object(bootstrap, "require_protected_file"), \
-                    patch.object(bootstrap, "native_paths", return_value=(configuration, command, root / "var", agent_root)):
+                    patch.object(bootstrap, "native_paths", return_value=(configuration, command, root / "var", agent_root)), \
+                    patch.object(Path, "glob", isolated_glob):
                 with self.assertRaisesRegex(ValueError, "HTTP failure"):
                     bootstrap.install_native(bundle, "https://panel.example.com", "-TEST_ONLY_1", {}, "macos-arm64")
                 self.assertFalse(configuration.exists())

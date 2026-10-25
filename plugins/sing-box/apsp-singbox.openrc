@@ -13,8 +13,10 @@ respawn_delay=5
 respawn_max=0
 retry="TERM/5/KILL/5"
 umask="0027"
-output_log="/var/log/apsp/runtime.log"
-error_log="$output_log"
+rc_ulimit="-c 0"
+# APSP_RUNTIME_LOG_V1=memory-socket
+output_logger="/opt/apsp/core/current/apsp-agent runtime-log --unit ${RC_SVCNAME}.service --stream stdout"
+error_logger="/opt/apsp/core/current/apsp-agent runtime-log --unit ${RC_SVCNAME}.service --stream stderr"
 extra_started_commands="reload"
 description_reload="重载代理配置"
 
@@ -24,8 +26,9 @@ depend() {
 
 start_pre() {
     /opt/apsp/core/current/apsp-agent verify-installed --binary /opt/apsp/plugins/sing-box/current/sing-box --name sing-box --format tar.gz || return 1
-    checkpath --directory --mode 0750 --owner root:apsp-singbox /var/log/apsp
-    checkpath --file --mode 0640 --owner apsp-singbox:apsp-singbox "$output_log"
+    /opt/apsp/core/current/apsp-agent verify-installed --binary /opt/apsp/core/current/apsp-agent --name agent --format raw || return 1
+    checkpath --directory --mode 0755 --owner root:root /run/apsp /run/apsp/runtime-logs
+    checkpath --directory --mode 0700 --owner apsp-singbox:apsp-singbox "/run/apsp/runtime-logs/${RC_SVCNAME}.service"
 }
 
 reload() {

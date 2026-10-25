@@ -13,6 +13,8 @@ pub mod identity;
 mod panel_tls;
 pub mod reconcile;
 pub mod retirement;
+#[cfg(target_os = "linux")]
+pub mod runtime_logs;
 pub mod runtime_operations;
 mod runtime_platform;
 pub mod runtime_validations;
