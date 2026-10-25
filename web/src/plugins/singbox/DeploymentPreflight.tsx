@@ -22,12 +22,36 @@ export type DeploymentPreflightState = {
 const names: Record<string, string> = { passed: '通过', failed: '不满足', unknown: '未知', not_applicable: '不适用' }
 const phases: Record<string, string> = { queued: '排队', dispatched: '已分发，等待 Agent', succeeded: '收到成功回执', failed: '收到失败回执', unknown: '执行结果未知', cancelled: '已取消', reconciled: '人工核对结束' }
 
+type FleetProfile = { digest: string; asset: Record<string, unknown>; policy: Record<string, unknown> & { runtime_inspection?: boolean } }
+
+// The deployment gate needs the read-only runtime preflight grant on both
+// sides. The panel half used to live only in the experimental 运维工具 page,
+// so the preflight offers it in place; the Agent half stays a local file.
+function RuntimeInspectionGrant({ serverId, reload }: { serverId: number; reload: () => void }) {
+  const action = useAction()
+  const grant = () => action.run(async () => {
+    const profile = await api<FleetProfile>(`/api/servers/${serverId}/fleet`)
+    if (profile.policy.runtime_inspection) return
+    await api(`/api/servers/${serverId}/fleet`, 'PUT', { asset: profile.asset, policy: { ...profile.policy, runtime_inspection: true }, expected_digest: profile.digest })
+  }, reload)
+  return <Notice><div className="grid gap-2">
+    <strong className="font-medium">先允许只读运行时预检</strong>
+    <p>面板策略还没有允许这台服务器的只读运行时预检，部署无法确认。允许后只读取运行时目录、服务权限和监听证据，不修改服务器。</p>
+    <p className="text-muted-foreground text-xs leading-relaxed">服务器本机也需要同样的授权：在 <code>agent.toml</code> 同目录的 <code>fleet-policy.json</code>（权限 0600）中加入 <code>"runtime_inspection": true</code>，再重启 Agent。</p>
+    <ErrorNotice message={action.error} />
+    <div><Button variant="outline" size="sm" disabled={action.busy} onClick={() => void grant()}>{action.busy ? '正在保存…' : '在面板策略中允许'}</Button></div>
+  </div></Notice>
+}
+
 export default function DeploymentPreflight({ serverId, current, unavailable, reload }: { serverId: number; current: DeploymentPreflightState; unavailable: boolean; reload: () => void }) {
   const action = useAction()
   const [notice, setNotice] = useState('')
   const expired = current.expires_at !== undefined && current.expires_at <= Math.floor(Date.now() / 1000)
-  return <details className="min-w-0 wrap-anywhere"><summary className="cursor-pointer text-sm font-medium">完整部署预检与确认</summary>
+  const policyMissing = current.checks.some(check => check.key === 'policy' && check.state === 'failed')
+  // The gate opens by itself when a new listener waits for it.
+  return <details className="min-w-0 wrap-anywhere" open={Boolean(current.application?.requires_preflight) || undefined}><summary className="cursor-pointer text-sm font-medium">完整部署预检与确认</summary>
     <ErrorNotice message={action.error} />
+    {policyMissing && <RuntimeInspectionGrant serverId={serverId} reload={reload} />}
     {current.application?.requires_preflight && <p role="status">普通节点 {current.application.changed_node_ids.map(id => `#${id}`).join('、')} 的新增监听或部署配置尚未发布，须完整预检确认；保存目标不等于设备应用。确认后自动继续重新核对并发布。</p>}
     <p>从面板实际解析入口域名，逐一核对返回的 IPv4／IPv6 地址，向目标 Agent 请求只读目录、系统服务权限与监听证据。记录当前有效授权、入口及签名制品；采集只读证据。确认后会继续已保存节点配置的正常发布，实际设备应用可能重启运行时。</p>
     <p>首次自动证书部署须满足真实签发准备条件；“已签发”和“已部署握手”另列状态。外部 CA 能否访问挑战端口尚未实测，签发仍可能失败。实际部署后，目标运行时必须完成 TLS 或 QUIC 信任链及域名握手健康检查。</p>

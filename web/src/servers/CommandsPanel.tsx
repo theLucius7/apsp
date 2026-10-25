@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api'
-import { ErrorNotice, Loading } from '../components'
+import { ErrorNotice, Loading, TierBadge } from '../components'
 import { time } from '../format'
 import { useAction, useResource } from '../hooks'
 import { Button } from '@/components/ui/button'
@@ -24,15 +24,19 @@ export default function CommandsPanel({ serverId, enabled }: { serverId: number;
   const action = useAction(), cancellation = useAction()
   const [command, setCommand] = useState(''), [seconds, setSeconds] = useState(30), [ttl, setTtl] = useState(300)
   const [submitted, setSubmitted] = useState<Record<string, Control>>({})
-  return <Panel><PanelHeader><PanelTitle>远程命令</PanelTitle><span className="text-muted-foreground text-xs">设备服务账号执行</span></PanelHeader>
+  // Remote commands are a local grant on the server: until its operator turns
+  // them on, the panel explains how instead of offering a disabled form.
+  return <Panel><PanelHeader><PanelTitle className="flex items-center gap-1.5">远程命令<TierBadge tier="experimental" /></PanelTitle><span className="text-muted-foreground text-xs">{enabled ? '本机已开启 · 设备服务账号执行' : '本机未开启'}</span></PanelHeader>
     <div className="p-4"><ErrorNotice message={commands.error || action.error || cancellation.error} />
-      {!enabled && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">远程命令默认关闭。需要在节点本机的 Agent 配置中启用 allow_remote_commands 并重启后才能使用。</p>}
-      <form onSubmit={event => { event.preventDefault(); if (!enabled) return; void action.run(() => api(base, 'POST', { command, timeout_secs: seconds, ttl_secs: ttl }), () => { setCommand(''); commands.reload() }) }}>
+      {!enabled ? <div data-slot="remote-commands-disabled" className="grid gap-2 text-sm">
+        <p><strong>这台服务器没有开启远程命令。</strong>默认关闭，面板不能替服务器开启。</p>
+        <p className="text-muted-foreground text-xs leading-relaxed">需要时由服务器操作者在本机 Agent 配置的顶层设置 <code>allow_remote_commands = true</code>（Linux 为 <code>/etc/apsp/agent.toml</code>）并重启 Agent。开启等于授权面板以 Agent 服务账号执行任意命令，Unix 通常为 root；日常运维更适合使用 SSH 工具。</p>
+      </div> : <form onSubmit={event => { event.preventDefault(); if (!enabled) return; void action.run(() => api(base, 'POST', { command, timeout_secs: seconds, ttl_secs: ttl }), () => { setCommand(''); commands.reload() }) }}>
         <label className="grid min-w-0 gap-1.5 text-sm">命令<Textarea required maxLength={16384} rows={4} value={command} onChange={event => setCommand(event.target.value)} placeholder="输入要在设备上执行的命令" /></label>
         <p className="text-muted-foreground mt-3 text-xs leading-relaxed">Unix 使用系统 Shell，Windows 使用 PowerShell。命令可能修改设备；执行中断后不会自动重试。</p>
         <div className="grid gap-x-4 sm:grid-cols-2"><label className="grid min-w-0 gap-1.5 text-sm">执行超时（秒）<Input required type="number" min={1} max={600} value={seconds} onChange={event => setSeconds(Number(event.target.value))} /></label><label className="grid min-w-0 gap-1.5 text-sm">设备领取期限（秒）<Input required type="number" min={1} max={86400} value={ttl} onChange={event => setTtl(Number(event.target.value))} /></label></div>
         <Button type="submit" disabled={action.busy || !enabled}>提交命令</Button>
-      </form>
+      </form>}
     </div>
     <div className="p-4">{commands.loading && !commands.data ? <Loading /> : commands.data?.length ? commands.data.map(item => {
       const current = terminal(item.state) ? item : submitted[item.spec.id] ?? item

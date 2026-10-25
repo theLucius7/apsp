@@ -79,7 +79,8 @@ try {
       throw Error(`Unexpected API ${path}`)
     })
     await installControlCenterFixtures(page)
-    await page.goto(origin)
+    // Signed-in administrators land on the overview; the board keeps its own address.
+    await page.goto(`${origin}/#/dashboard`)
     await page.getByRole('region', { name: '服务器总览', exact: true }).waitFor()
     await page.locator('[data-slot=server-card]').first().waitFor()
     assert.equal(await page.locator('[data-slot=server-card]').count(), 6)
@@ -205,7 +206,7 @@ try {
     entries = []
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/overview`)
-    await page.getByText('尚未添加节点', { exact: true }).waitFor()
+    await page.getByText('尚未添加服务器', { exact: true }).waitFor()
     entries = savedEntries
     failure = 401
     await page.getByRole('button', { name: '刷新服务器', exact: true }).click()

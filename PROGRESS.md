@@ -1,5 +1,22 @@
 # 执行进度
 
+## 2026-10-25：全功能审查、需求调研与按使用逻辑重组
+
+- 用户要求逐项扫描功能与交互体验、并行验证、研究论坛需求，并“无需审核，按最佳决定来”完成分类、重新布局、插件合并拆分与方向统一。四个并行审查（代理网络与部署、代理用户与门户、服务器与运维、监控/网络/系统）加一次中文论坛与竞品 issue 调研，并运行面板逐页截图核对；结论与决定见 [ADR 0098](docs/adr/0098-usage-driven-navigation-and-tiers.md)，取舍见[待决问题](docs/open-questions.md)，路线图第五节 D1–D11 定案。审查与调研原文在本机工作目录，未提交（含截图与外部帖子摘要）。
+- 界面：
+  - **侧栏。** 六组 22 个入口：总览、代理服务、服务器、监控告警、系统、实验功能。原服务概览改为「概览」并作为登录后的首页，显示需要处理的事项与开始使用步骤。备份与恢复移到「系统」`/#/system/backup`。运维工具并入服务器详情的「运维（实验）」，批量接入移到 `/#/servers/batch`。线路诊断合并 IP 信息、TCP 诊断与节点验机三个分页，旧地址全部保留。
+  - **分级标记。** 降级功能标“实验”。冻结功能（网络配置四类、云资源与费用、硬件测试与 Speedtest 等检查项）默认隐藏，由「面板设置 › 功能显示」开启。远程命令未在本机开启时只说明开启方法。部署预检可就地允许只读运行时预检。
+  - **代理节点页。** 只有一个“创建链路”（有序链路模板），订阅来源显示迁移状态与命令，节点库默认四个筛选，插件中心把三个诊断合为“线路诊断”。
+- 修复：
+  - **代理用户批量操作。** 预览指纹排除实时用量，在线用户的批量操作不再被误判已变化；已到期用户延期从现在起算。
+  - **受限用户的订阅。** 两种格式一致返回带原因的拒绝，订阅响应带 `Subscription-Userinfo`、`Profile-Title`、`Profile-Update-Interval`。
+  - **近期验证规则。** 批量登记补上近期验证；取消命令、关闭终端不再要求重新验证。
+  - **单一编辑位置与部分更新。** 监控历史保存期限只在面板设置修改，缩短需近期验证；`PATCH /api/settings` 改为部分更新。
+  - **其他界面修正。** 批量维护必须选择结束时间；看板把服务器称为“服务器”；运维工具在没有服务器时显示空状态。
+- 新增：管理员可在「账号安全」修改自己的密码（`POST /api/security/password`）。修改后撤销其他会话与所有者 Passkey，审计中不出现密码。
+- 集中验证：`cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings`、核心边界检查与 `git diff --check` 通过；本地 PostgreSQL 16 容器中 `cargo test --locked --workspace --no-fail-fast` 1345 通过、1 失败、26 忽略，唯一失败 `apsp-agent-core` 的 `second_runtime_cannot_recover_an_active_instances_intent`（`deadline has elapsed`）在未改动的 `origin/main`（`551b0c20`）上用独立编译目录重跑同样失败，本分支未改 `crates/agent-core`；新增的改密、保存期限验证、批量操作指纹与订阅头测试全部通过。`tsc -b` 与 Vite 生产构建通过，`bun test` 206 通过、0 失败，`web/dist` 连续两次构建一致。浏览器夹具（Playwright 1.62.1、Chromium 1234）60 个中 59 个直接运行通过，移除混合链路编辑器后相应夹具改为验证有序链路表单；`passkeys.mjs` 由忽略的 Rust 测试 `virtual_authenticator_browser_roundtrip` 以 Bun 1.4.2 运行并通过。根 Python 测试与恢复脚本未运行（本轮未改 Python 与恢复脚本）。
+- 未验证：未在生产面板上操作。CI 继续暂停，未运行远端 CI。
+
 ## 2026-10-25：签名发布 Agent 0.3.1
 
 - 按用户要求在部署 VPS 上签名发布 [agent-v0.3.1](https://github.com/theLucius7/apsp/releases/tag/agent-v0.3.1)，作为 Nexus 运行接管的前提。#183 将 VPS 密钥 `4D645C2885298F58` 加为第二把根；#184 按 AGENTS.md 的例外临时启用 `CI` 与 `Signed release draft`。

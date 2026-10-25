@@ -124,6 +124,8 @@ try {
       assert.equal(await row('外部 01').getByText('提供方计量', { exact: true }).count(), 1)
       await library.getByRole('button', { name: '下一页', exact: true }).click(); await row('外部 22').waitFor()
       await library.getByRole('button', { name: '上一页', exact: true }).click()
+      // Protocol, tag, source, role and sort sit behind 更多筛选 by default.
+      const more = library.getByRole('button', { name: /^更多筛选/ }); if (await more.getAttribute('aria-expanded') !== 'true') await more.click()
       await library.getByLabel('按类型筛选').selectOption('external'); await library.getByLabel('按协议筛选').selectOption('shadowsocks')
       const moved = page.waitForResponse(response => new URL(response.url()).pathname === `${catalogPath}/batch` && response.status() === 200)
       await row('外部 03').getByRole('button', { name: '上移 外部 03', exact: true }).click(); await moved

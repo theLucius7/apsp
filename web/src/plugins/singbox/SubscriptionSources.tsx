@@ -8,6 +8,7 @@ import SourceImport from './SourceImport'
 import { validatedSnapshot } from './groupTypes'
 import { bytes } from '../../format'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -15,7 +16,7 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
-import { PlusIcon, WaypointsIcon } from 'lucide-react'
+import { PlusIcon, TriangleAlertIcon, WaypointsIcon } from 'lucide-react'
 import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
 const root = '/api/plugins/sing-box'
@@ -86,8 +87,18 @@ export default function SubscriptionSources({ onSelect, onChange, migrated }: { 
     if (!current || !source || current.id !== source.active_job_id || current.source_id !== source.id || current.settings_revision !== source.settings_revision || current.identity_epoch !== source.identity_epoch || !['queued', 'running'].includes(current.state)) return
     void action.run(() => api(`${root}/subscription-source-jobs/${current.id}/cancel`, 'POST', {}), reload)
   }
-  return <Panel data-slot="subscription-sources" className="mt-6" aria-labelledby="subscription-sources-title">
-    <PanelHeader><div><PanelTitle id="subscription-sources-title">{migrated ? '数字编号来源（已迁移，只读）' : '订阅来源'}</PanelTitle><p className="text-muted-foreground mt-3 text-xs leading-relaxed">{migrated ? '这些来源已迁移到上方的订阅来源，节点编号、节点库设置和用户授权保持不变；此处仅保留迁移时的记录供查看，以后的版本会移除。' : '导入、更新来源，将选定节点加入节点库或用于链路。'}</p></div><div className="flex flex-wrap items-center justify-end gap-2"><Refresh onClick={reload} />{!migrated && <Button size="sm" disabled={Boolean(writeError())} onClick={() => open()}><PlusIcon aria-hidden="true" />添加来源</Button>}</div></PanelHeader>
+  // Before the migration the page explains that this list is the old model; the embedded picker (onSelect) stays plain.
+  const legacyGuidance = migrated === false && !onSelect
+  return <>
+    {legacyGuidance && <Alert variant="warning" role="status" data-slot="source-migration-notice" className="mt-6 flex items-start gap-2">
+      <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+      <AlertDescription className="text-foreground [&_p:not(:last-child)]:mb-1.5">
+        <p><strong className="font-medium">订阅来源尚未合并。</strong>{sources.data ? `这里有 ${sources.data.length} 个数字编号来源，` : ''}迁移前它们供节点库与代理用户的外部节点使用；下方的有序来源供链路中的订阅段使用。合并后只保留有序来源，这里转为只读存档，节点编号与授权保持不变。</p>
+        <p>一次性迁移由运维人员在面板主机上执行，界面不提供迁移按钮：先运行 <code>apsp-panel source-migration precheck</code> 检查阻断项，再运行 <code>apsp-panel source-migration apply</code> 完成迁移。</p>
+      </AlertDescription>
+    </Alert>}
+    <Panel data-slot="subscription-sources" className="mt-6" aria-labelledby="subscription-sources-title">
+    <PanelHeader><div><PanelTitle id="subscription-sources-title">{migrated ? '旧版数字编号来源（只读保留）' : '订阅来源'}</PanelTitle><p className="text-muted-foreground mt-3 text-xs leading-relaxed">{migrated ? '这些来源已迁移到上方的订阅来源，节点编号、节点库设置和用户授权保持不变；此处仅保留迁移时的记录供查看，以后的版本会移除。' : '迁移前仍可导入、更新来源，并将选定节点加入节点库；新来源请使用有序订阅来源。'}</p></div><div className="flex flex-wrap items-center justify-end gap-2"><Refresh onClick={reload} />{!migrated && <Button size="sm" disabled={Boolean(writeError())} onClick={() => open()}><PlusIcon aria-hidden="true" />添加来源</Button>}</div></PanelHeader>
     <div className="p-4"><ErrorNotice message={sources.error || (!editor && !deleting ? action.error : '')} retry={reload} /></div>
     {sources.loading && !sources.data ? <Loading variant="table" rows={3} /> : !sources.data?.length && migrated ? <div className="p-4"><p className="text-muted-foreground mt-3 text-xs leading-relaxed">迁移时没有数字编号来源。</p></div> : !sources.data?.length ? <Empty icon={WaypointsIcon} title="添加第一个订阅来源" description="支持订阅地址、分享链接、sing-box 配置和 Clash 节点配置。导入只保留代理节点。"><Button variant="outline" disabled={Boolean(writeError())} onClick={() => open()}>添加来源</Button></Empty> : <div className="m-0 grid list-none gap-3 p-0 px-5 pb-5 max-md:px-3.5 max-md:pb-4">{sources.data.map(source => <article key={source.id} className={`rounded-xl border p-4 transition-colors max-md:p-3.5 ${source.id === selectedId ? 'border-primary/50 bg-primary/[0.04] ring-primary/15 ring-1' : ''}`}>
       <div className="flex flex-wrap items-center justify-between gap-2.5 max-md:flex-col max-md:items-start"><Button variant="ghost" size="sm" className="-ml-2.5 h-auto text-left text-base font-semibold whitespace-normal wrap-anywhere aria-expanded:bg-transparent aria-expanded:text-primary" onClick={() => chooseSource(source.id)} aria-expanded={source.id === selectedId}>{source.name}</Button><Badge tone={source.archived ? 'neutral' : source.last_error ? 'warm' : source.supported_count ? 'good' : 'neutral'}>{sourceStatus(source)}</Badge></div>
@@ -110,7 +121,8 @@ export default function SubscriptionSources({ onSelect, onChange, migrated }: { 
     <DialogPresence>{editor && !editor.source && <SourceImport writeError={() => writeError()} onClose={() => setEditor(null)} onSaved={source => { setEditor(null); chooseSource(source.id); reload(); onChange?.() }} />}</DialogPresence>
     <DialogPresence>{editor?.source && <SourceEditor source={editor.source} writeError={() => writeError(editor.source)} onClose={() => setEditor(null)} onSaved={source => { setEditor(null); chooseSource(source.id); reload(); onChange?.() }} />}</DialogPresence>
     <DialogPresence>{deleting && <Confirm title={`删除「${deleting.name}」？`} busy={action.busy} confirmDisabled={Boolean(writeError(deleting))} error={writeError(deleting) || action.error} onClose={() => setDeleting(null)} onConfirm={() => { if (writeError(deleting)) return; void action.run(() => api(`${root}/subscription-sources/${deleting.id}`, 'DELETE'), () => { if (selectedIdRef.current === deleting.id) { selectedIdRef.current = null; setSelectedId(null) } setDeleting(null); reload(); onChange?.() }) }}>仍被链路或代理用户引用的来源不能删除。归档可以停止刷新和新引用，已有链路继续使用保存的版本；历史版本和发布记录会保留。</Confirm>}</DialogPresence>
-  </Panel>
+    </Panel>
+  </>
 }
 
 function SourceEditor({ source, writeError, onClose, onSaved }: { source?: SubscriptionSource; writeError: () => string; onClose: () => void; onSaved: (source: SubscriptionSource) => void }) {

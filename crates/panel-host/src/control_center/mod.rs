@@ -92,7 +92,15 @@ pub fn router() -> Router<AppState> {
         .route("/api/control-center/observers", post(system::observe))
 }
 async fn me(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
-    Ok(Json(json!(authenticate(&state, &headers).await?)))
+    let mut actor = json!(authenticate(&state, &headers).await?);
+    // The shell reads the panel-wide feature visibility with the actor, so every
+    // administrator sees frozen features hidden unless 面板设置 shows them.
+    actor["show_frozen_features"] = json!(
+        crate::settings::read(&state.pool)
+            .await?
+            .show_frozen_features
+    );
+    Ok(Json(actor))
 }
 async fn reauthenticate(
     State(state): State<AppState>,

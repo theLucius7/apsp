@@ -432,3 +432,67 @@ async fn global_budget_and_hashing_concurrency_are_enforced(pool: PgPool) -> Res
     assert_eq!(panel.login(PASSWORD, None).await?.status(), StatusCode::OK);
     Ok(())
 }
+
+#[sqlx::test]
+async fn password_change_needs_the_current_password_and_ends_other_sessions(
+    pool: PgPool,
+) -> Result<()> {
+    const REPLACEMENT: &str = "security-fixture-replacement";
+    let panel = Panel::start(pool).await?;
+    let first = cookie(&panel.login(PASSWORD, None).await?)?;
+    let second = cookie(&panel.login(PASSWORD, None).await?)?;
+    let change =
+        |current: &str, new: &str| json!({"current_password": current, "new_password": new});
+    for body in [
+        change(PASSWORD, "short"),
+        change(PASSWORD, PASSWORD),
+        change("wrong-password", REPLACEMENT),
+    ] {
+        assert_eq!(
+            panel
+                .post("/api/security/password", &first, body)
+                .await?
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    assert_eq!(
+        panel
+            .post("/api/security/password", "", change(PASSWORD, REPLACEMENT))
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        panel
+            .post(
+                "/api/security/password",
+                &first,
+                change(PASSWORD, REPLACEMENT)
+            )
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        panel.get("/api/me", &second).await?.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(panel.get("/api/me", &first).await?.status(), StatusCode::OK);
+    assert_eq!(
+        panel.login(PASSWORD, None).await?.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    panel.expire_rate_window().await?;
+    assert_eq!(
+        panel.login(REPLACEMENT, None).await?.status(),
+        StatusCode::OK
+    );
+    let audited: String = sqlx::query_scalar(
+        "SELECT request_diff::text FROM management_audit WHERE object_path='/api/security/password' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&panel.pool)
+    .await?;
+    assert!(!audited.contains(REPLACEMENT) && !audited.contains(PASSWORD));
+    Ok(())
+}

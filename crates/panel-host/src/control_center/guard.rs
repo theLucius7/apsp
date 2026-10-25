@@ -184,6 +184,7 @@ fn server_path(path: &str) -> Option<i64> {
 
 fn own_account_path(path: &str) -> bool {
     path.starts_with("/api/security/totp")
+        || path == "/api/security/password"
         || path == "/api/me"
         || path == "/api/control-center/me"
         || path == "/api/control-center/reauth"
@@ -208,8 +209,16 @@ fn high_risk(path: &str, method: &Method) -> bool {
     {
         return false;
     }
+    // Stopping work that was already authorised must never wait for a fresh
+    // proof: cancelling a remote command and closing a terminal session.
+    if (*method == Method::POST && path.contains("/commands/") && path.ends_with("/cancel"))
+        || (*method == Method::DELETE && path.starts_with("/api/fleet/terminals/"))
+    {
+        return false;
+    }
     *method == Method::DELETE
         || path.contains("/enrollment")
+        || path.ends_with("/batch-enrollment")
         || path.contains("/commands")
         || path.contains("/terminal")
         || path.contains("/credentials")
@@ -489,5 +498,17 @@ mod tests {
         );
         assert_eq!(server_path("/api/plugins/demo/accounts/3"), None);
         assert!(high_risk("/api/servers/3/commands", &Method::POST));
+    }
+    #[test]
+    fn enrollment_needs_proof_while_stopping_work_does_not() {
+        assert!(high_risk("/api/fleet/batch-enrollment", &Method::POST));
+        assert!(high_risk("/api/servers/3/enrollment", &Method::POST));
+        assert!(!high_risk(
+            "/api/servers/3/commands/0b6f/cancel",
+            &Method::POST
+        ));
+        assert!(!high_risk("/api/fleet/terminals/0b6f", &Method::DELETE));
+        assert!(high_risk("/api/servers/3/fleet/terminals", &Method::POST));
+        assert!(high_risk("/api/servers/3", &Method::DELETE));
     }
 }

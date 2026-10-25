@@ -146,6 +146,10 @@ try {
       }
       else if (['/api/plugins/sing-box/policy-groups', '/api/plugins/sing-box/package-groups'].includes(path)) value = []
       else if (path === '/api/plugins/sing-box/usage') value = { uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] }
+      // The overview (landing page) also reads servers, open alerts and upcoming renewals.
+      else if (path === '/api/servers') value = []
+      else if (path === '/api/notifications') value = []
+      else if (path === '/api/plugins/expenses/summary') value = { upcoming: [] }
       else if (path === '/api/servers/1/agent-settings') value = { sample_interval_secs: 1, upload_interval_secs: 3, discover_public_ips: false, auto_update: false }
       else if (path === '/api/servers/1/telemetry-settings') value = { persist_interval_secs: 60 }
       else if (path === '/api/servers/1/node-quality') value = { ip_addresses: [], quality: [], plugin_ready: false, plugin_reason: '夹具未启用诊断', reports: [] }
@@ -224,13 +228,14 @@ try {
     await page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }).waitFor()
     await page.getByText('安装状态待确认', { exact: true }).waitFor()
     assert.equal(await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '插件', exact: true }).getAttribute('aria-current'), 'page')
-    assert.equal(await page.getByRole('navigation', { name: '带此服务器打开' }).getByRole('link', { name: '运维工具', exact: true }).getAttribute('href'), '#/servers/1/fleet')
+    // The operations tools are now the experimental 运维 tab of the server itself.
+    assert.equal(await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '运维', exact: true }).getAttribute('href'), '#/servers/1/fleet')
     assert.equal(requests.slice(scopedStart).includes('/api/plugins/sing-box/servers/1'), true)
     assert.equal(requests.slice(scopedStart).includes('/api/plugins/sing-box/servers'), false)
     assert.equal(await page.getByText('已安装并运行', { exact: true }).count(), 0)
 
-    await navigate('服务概览')
-    await page.getByRole('heading', { name: '服务概览', exact: true }).waitFor()
+    await navigate('概览')
+    await page.getByRole('heading', { name: '概览', exact: true }).waitFor()
     await page.getByText('安装状态待确认', { exact: true }).waitFor()
     await page.getByRole('link', { name: '管理此服务器节点', exact: true }).click()
     await page.getByRole('heading', { name: '代理节点', exact: true }).waitFor()
@@ -251,7 +256,8 @@ try {
     await nodeEditor.locator('input[name="handshake_server"]').fill('handshake.example.com')
     await nodeEditor.locator('select[name="fingerprint"]').selectOption('firefox')
     await nodeEditor.getByRole('button', { name: '保存目标配置', exact: true }).click()
-    await page.getByText('目标已保存；新增有效监听或部署配置变化须完整预检确认，实际应用等待设备回执。', { exact: true }).waitFor()
+    // The saved notice points to authorisation while nobody can use the node yet; preflight is mentioned only once users are authorised.
+    await page.getByText(/^目标已保存/).waitFor()
     await editedCatalogNode.getByText('已停用', { exact: true }).waitFor()
     await editedCatalogNode.getByText('proxy.example.com:8443', { exact: true }).waitFor()
     // The catalog shows the public endpoint. Reopen the persisted node rather
@@ -264,7 +270,7 @@ try {
     assert.equal(await persistedNodeEditor.locator('[role=checkbox]:has(+ input[name="enabled"])').isChecked(), false)
     await persistedNodeEditor.getByRole('button', { name: '取消', exact: true }).click()
     assert.deepEqual(mutations.slice(nodeMutationStart), [{ path: '/api/plugins/sing-box/nodes/2', method: 'PATCH' }])
-    await page.getByRole('button', { name: '查看差异、完整预检与发布状态', exact: true }).click()
+    await page.getByRole('button', { name: /^查看(差异、完整预检与发布状态|部署状态)$/ }).click()
     const deploymentDialog = page.getByRole('dialog')
     await deploymentDialog.getByText('目标配置待发布', { exact: true }).waitFor()
     assert.equal(await deploymentDialog.getByText('目标配置已应用', { exact: true }).count(), 0)
@@ -295,12 +301,13 @@ try {
     assert.equal(await page.getByRole('navigation', { name: '节点视图', exact: true }).getByRole('link', { name: '链路', exact: true }).getAttribute('aria-current'), 'page')
     assert.equal(await page.locator('nav[aria-label="主导航"]').getByRole('link', { name: '两跳链路', exact: true }).count(), 0)
     const chainMutationStart = mutations.length
-    await page.getByRole('button', { name: '创建两跳链路', exact: true }).click()
-    const chainDialog = page.getByRole('dialog')
+    // The single create entry opens the ordered form; the two-hop template takes the exit as its first hop.
+    await page.locator('header[data-slot=page-header]').getByRole('button', { name: '创建链路', exact: true }).click()
+    const chainDialog = page.getByRole('dialog', { name: '创建链路', exact: true })
     await chainDialog.locator('select[name="entry_mode"]').selectOption('existing')
     await chainDialog.locator('input[name="name"]').fill('未授权验收链路')
     await chainDialog.locator('select[name="entry_node_id"]').selectOption('2')
-    await chainDialog.locator('select[name="exit_node_id"]').selectOption('3')
+    await chainDialog.locator('label[data-slot=field]').filter({ has: page.getByText('第 1 跳受管节点', { exact: true }) }).locator('select').selectOption('3')
     await chainDialog.getByRole('button', { name: '创建未授权链路', exact: true }).click()
     // The dialog's batch preview also shows the name, so wait for it to close first.
     await chainDialog.waitFor({ state: 'hidden' })
@@ -434,12 +441,12 @@ try {
     await page.locator('[data-slot=nodes-page] > div > [role="alert"]').getByText('链路夹具读取失败', { exact: true }).waitFor()
     await page.locator('section[aria-label="有序链路与资源引用"]').getByText('链路夹具读取失败', { exact: true }).waitFor()
     assert.equal(await page.getByRole('button',{name:'创建节点',exact:true}).first().isDisabled(),true)
-    assert.equal(await page.getByRole('button',{name:'创建两跳链路',exact:true}).isDisabled(),true)
+    assert.equal(await page.locator('header[data-slot=page-header]').getByRole('button',{name:'创建链路',exact:true}).isDisabled(),true)
     assert.equal(await page.getByText('目标配置已应用',{exact:true}).count(),0)
     chainsFailure = false
     nodesEmpty = true
     await page.reload()
-    await page.getByText('填写端口或使用自动分配。为代理用户授权后，等待设备成功应用配置，再连接节点。', { exact: true }).waitFor()
+    await page.getByText('选择一个模板，从入口依次连到落地节点。创建后加入策略组并授权给代理用户，等待设备成功应用配置，才能连接。', { exact: true }).waitFor()
     assert.equal(await page.getByText('为代理用户授权后，节点会自动启用。', { exact: false }).count(), 0)
     nodesEmpty = false
 
@@ -450,7 +457,7 @@ try {
     await enrollment.getByRole('link', { name: '前往代理服务', exact: true }).waitFor()
     assert.equal(await enrollment.getByRole('link', { name: '前往代理服务', exact: true }).getAttribute('href'), '#/plugins/sing-box')
     await enrollment.getByRole('link', { name: '前往代理服务', exact: true }).click()
-    await page.getByRole('heading', { name: '服务概览', exact: true }).waitFor()
+    await page.getByRole('heading', { name: '概览', exact: true }).waitFor()
 
     await navigate('代理用户')
     await page.getByRole('heading', { name: '代理用户', exact: true }).waitFor()
