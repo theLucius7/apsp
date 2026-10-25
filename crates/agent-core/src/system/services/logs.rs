@@ -16,6 +16,10 @@ impl SystemServiceManager {
                     || matches!(byte, b'.' | b'_' | b'-' | b'@')),
             "invalid service unit"
         );
+        #[cfg(target_os = "linux")]
+        if self.backend == ServiceBackend::OpenRc && crate::runtime_logs::available(unit) {
+            return crate::runtime_logs::recent(unit).await;
+        }
         // Runtime units log per-session lines into a volatile namespace; read
         // it, but show only warnings and errors as before.
         let namespace_query = [

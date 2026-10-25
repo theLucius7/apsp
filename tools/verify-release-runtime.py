@@ -33,7 +33,8 @@ def ordinary(path, maximum):
     require(0 < path.stat().st_size <= maximum, "file size exceeds the allowed bound")
 
 
-def verify_metadata(metadata, arch):
+def verify_metadata(metadata, arch, libc="gnu"):
+    require(libc in ("gnu", "musl"), "unsupported libc")
     lines = metadata.splitlines()
     require(lines and lines[0].endswith(": go1.26.8"), "unexpected Go toolchain")
     values = {}
@@ -50,25 +51,29 @@ def verify_metadata(metadata, arch):
     }.items():
         require(values.get(key) == expected, "unexpected build setting: " + key)
     tags = values.get("-tags", "").split(",")
-    require(len(tags) == len(TAGS) and set(tags) == TAGS, "unexpected runtime build tags")
+    expected_tags = TAGS | ({"with_musl"} if libc == "musl" else set())
+    require(len(tags) == len(expected_tags) and set(tags) == expected_tags,
+            "unexpected runtime build tags")
     # Trimmed Go metadata does not preserve the Version linker override.
     # The pinned source revision binds the expected release; this is no attestation.
 
 
-def verify(root, arch, reader=None):
+def verify(root, arch, reader=None, *, libc=None):
     require(arch in ("amd64", "arm64"), "unsupported architecture")
+    require(libc in (None, "gnu", "musl"), "unsupported libc")
+    target = arch if libc is None else f"linux-{libc}-{arch}"
     directory = Path(root) / "sing-box" / VERSION
-    archive, sums = directory / arch, directory / "SHA256SUMS"
+    archive, sums = directory / target, directory / "SHA256SUMS"
     ordinary(archive, MAX_ARCHIVE)
     ordinary(sums, 1024)
     entries = {}
     for line in sums.read_text(encoding="ascii").splitlines():
-        match = re.fullmatch(r"([0-9a-fA-F]{64}) [ *](amd64|arm64)", line)
+        match = re.fullmatch(r"([0-9a-fA-F]{64}) [ *]((?:linux-(?:gnu|musl)-)?(?:amd64|arm64))", line)
         require(match and match[2] not in entries, "invalid or duplicate runtime checksum")
         entries[match[2]] = match[1].lower()
     with archive.open("rb") as source:
         digest = hashlib.file_digest(source, "sha256").hexdigest()
-    require(entries.get(arch) == digest, "runtime archive checksum mismatch")
+    require(entries.get(target) == digest, "runtime archive checksum mismatch")
     with tempfile.TemporaryDirectory(prefix="apsp-release-inspection-") as temporary:
         binary = Path(temporary) / "runtime"
         with tarfile.open(archive, "r|gz") as package:
@@ -91,7 +96,14 @@ def verify(root, arch, reader=None):
                                                text=True, timeout=30)
         else:
             metadata = reader(binary)
-        verify_metadata(metadata, arch)
+        verify_metadata(metadata, arch, libc or "gnu")
+        if libc == "musl":
+            headers = subprocess.check_output(["readelf", "-lW", str(binary)],
+                                               text=True, timeout=30)
+            dynamic = subprocess.check_output(["readelf", "-dW", str(binary)],
+                                               text=True, timeout=30)
+            require("INTERP" not in headers and "NEEDED" not in dynamic,
+                    "musl runtime must be statically linked")
     return digest
 
 
@@ -99,9 +111,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--arch", choices=("amd64", "arm64"), required=True)
+    parser.add_argument("--libc", choices=("gnu", "musl"))
     args = parser.parse_args()
     try:
-        verify(args.root, args.arch)
+        verify(args.root, args.arch, libc=args.libc)
     except (OSError, ValueError, UnicodeError, subprocess.SubprocessError, tarfile.TarError) as error:
         raise SystemExit("Runtime inspection failed: " + str(error)) from None
     print(f"Pinned runtime cache inspected: {VERSION}, {args.arch}, Go metadata and SHA-256")

@@ -48,9 +48,11 @@ PREVIOUS=$(readlink /opt/apsp/core/current 2>/dev/null || true)
 ACTIVATING=0
 COMPLETED=0
 CONFIGURATION_CHANGED=0
+VOLATILE_LOGS=0
 if [ -f /etc/apsp/agent.toml ]; then cp -p /etc/apsp/agent.toml "$DOWNLOAD/agent.toml.previous"; fi
 if [ "$INIT" = systemd ] && [ -f /etc/systemd/system/apsp-agent.service ]; then cp -p /etc/systemd/system/apsp-agent.service "$DOWNLOAD/agent.service.previous"; fi
 if [ "$INIT" = openrc ] && [ -f /etc/init.d/apsp-agent ]; then cp -p /etc/init.d/apsp-agent "$DOWNLOAD/agent.openrc.previous"; fi
+if [ "$INIT" = openrc ] && [ -f /etc/init.d/apsp-singbox@main ]; then cp -p /etc/init.d/apsp-singbox@main "$DOWNLOAD/runtime.openrc.previous"; fi
 cleanup() {
   result=$?
   trap - EXIT HUP INT TERM
@@ -64,6 +66,7 @@ cleanup() {
     if [ -f "$DOWNLOAD/agent.toml.previous" ]; then cp -p "$DOWNLOAD/agent.toml.previous" /etc/apsp/agent.toml; fi
     if [ -f "$DOWNLOAD/agent.service.previous" ]; then cp -p "$DOWNLOAD/agent.service.previous" /etc/systemd/system/apsp-agent.service; systemctl daemon-reload; fi
     if [ -f "$DOWNLOAD/agent.openrc.previous" ]; then cp -p "$DOWNLOAD/agent.openrc.previous" /etc/init.d/apsp-agent; rc-update --update; fi
+    if [ -f "$DOWNLOAD/runtime.openrc.previous" ]; then cp -p "$DOWNLOAD/runtime.openrc.previous" /etc/init.d/apsp-singbox@main; rc-update --update; fi
     if [ -n "$PREVIOUS" ]; then
       ln -s "$PREVIOUS" "/opt/apsp/core/recover.$$"
       mv -Tf "/opt/apsp/core/recover.$$" /opt/apsp/core/current
@@ -175,6 +178,11 @@ for proof in release.json SHA256SUMS SHA256SUMS.minisig; do
 done
 # Compiled Agent roots must accept the proof before enrollment or activation.
 "$STAGE/$VERSION/apsp-agent" verify-installed --binary "$STAGE/$VERSION/apsp-agent" --name agent --format raw
+if [ "$INIT" = openrc ] && "$STAGE/$VERSION/apsp-agent" runtime-log --help >/dev/null 2>&1; then
+  case "$SUPERVISOR_HELP" in *--stdout-logger*) ;; *) echo 'OpenRC 缺少标准输出日志进程支持' >&2; exit 1 ;; esac
+  case "$SUPERVISOR_HELP" in *--stderr-logger*) ;; *) echo 'OpenRC 缺少标准错误日志进程支持' >&2; exit 1 ;; esac
+  VOLATILE_LOGS=1
+fi
 # Reject unverifiable legacy caches before touching identity, units or current links.
 if [ -e /etc/apsp/agent.toml ] || [ -L /etc/apsp/agent.toml ]; then
   [ -f /etc/apsp/agent.toml ] && [ ! -L /etc/apsp/agent.toml ] || {
@@ -311,9 +319,15 @@ else
 cat > /etc/init.d/apsp-agent <<'UNIT_AGENT_OPENRC'
 @@AGENT_OPENRC@@
 UNIT_AGENT_OPENRC
+if [ "$VOLATILE_LOGS" = 1 ]; then
 cat > /etc/init.d/apsp-singbox@main <<'UNIT_RUNTIME_OPENRC'
 @@RUNTIME_OPENRC@@
 UNIT_RUNTIME_OPENRC
+else
+cat > /etc/init.d/apsp-singbox@main <<'UNIT_RUNTIME_OPENRC_LEGACY'
+@@RUNTIME_OPENRC_LEGACY@@
+UNIT_RUNTIME_OPENRC_LEGACY
+fi
 chmod 0755 /etc/init.d/apsp-agent /etc/init.d/apsp-singbox@main
 rc-update --update
 rc-update add apsp-agent default

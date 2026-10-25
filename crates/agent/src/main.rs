@@ -83,12 +83,34 @@ enum Command {
     },
     /// Check every installed or pending executable before replacing the Agent.
     VerifyCache,
+    /// Receive one runtime output stream into a private memory buffer.
+    #[cfg(target_os = "linux")]
+    #[command(hide = true)]
+    RuntimeLog {
+        #[arg(long)]
+        unit: String,
+        #[arg(long, value_parser = ["stdout", "stderr"])]
+        stream: String,
+    },
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let result = run_cli(cli).await;
+    #[cfg(target_os = "linux")]
+    let collector = matches!(&cli.command, Command::RuntimeLog { .. });
+    #[cfg(not(target_os = "linux"))]
+    let collector = false;
+    let mut builder = if collector {
+        tokio::runtime::Builder::new_current_thread()
+    } else {
+        tokio::runtime::Builder::new_multi_thread()
+    };
+    let runtime = builder.enable_all().build()?;
+    let result = runtime.block_on(run_cli(cli));
+    if collector {
+        // A cancelled stdin read must not keep an otherwise stopped collector alive.
+        runtime.shutdown_timeout(std::time::Duration::from_millis(100));
+    }
     if result.as_ref().is_err_and(|error| {
         error
             .downcast_ref::<apsp_agent_core::retirement::Retired>()
@@ -245,6 +267,13 @@ async fn run_cli(cli: Cli) -> anyhow::Result<()> {
         Command::VerifyCache => {
             let config = Config::load(&path)?;
             apsp_agent_core::artifacts::verify_cache(&config).await
+        }
+        #[cfg(target_os = "linux")]
+        Command::RuntimeLog { unit, stream } => {
+            tokio::select! {
+                result = apsp_agent_core::runtime_logs::collect(&unit, &stream) => result,
+                result = shutdown() => result,
+            }
         }
     }
 }
