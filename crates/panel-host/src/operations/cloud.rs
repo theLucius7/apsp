@@ -239,6 +239,14 @@ pub(super) async fn observe(pool: &PgPool) -> ApiResult<()> {
             && let (Some(currency), Some(budget), Some(entries)) =
                 (currency, budget, snapshot["bill"]["rows"].as_array())
         {
+            // Bills in another currency are not converted; say so instead of
+            // silently treating the budget as never reached.
+            if entries
+                .iter()
+                .any(|v| v["currency"].as_str() != Some(currency.as_str()))
+            {
+                super::incidents::open(&mut tx,&format!("cloud:budget-currency:{id}:{}",snapshot["bill"]["month"].as_str().unwrap_or("unknown")),row.get("server_id"),&format!("云资源 {} 的账单含预算币种以外的金额，未计入预算比较",row.get::<String,_>("name")),"info",json!({"provider":"alicloud","resource_id":id,"queried_at":queried,"budget_currency":currency,"bill":snapshot["bill"],"converted":false}),queried.unwrap(),None).await?;
+            }
             let actual = entries
                 .iter()
                 .filter(|v| v["currency"].as_str() == Some(currency.as_str()))

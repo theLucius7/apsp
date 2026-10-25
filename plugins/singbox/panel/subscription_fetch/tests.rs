@@ -858,3 +858,26 @@ fn subscription_traffic_is_partial_bounded_and_never_guesses_missing_fields() {
     }
     assert!(parse_traffic(&" ".repeat(4097)).is_none());
 }
+
+#[test]
+fn secrets_follow_only_same_origin_address_changes() {
+    assert!(same_stored_origin(
+        "https://sub.example.com/a?token=1",
+        "https://sub.example.com/b"
+    ));
+    assert!(same_stored_origin(
+        "https://sub.example.com/a",
+        "https://sub.example.com:443/a"
+    ));
+    for other in [
+        "https://other.example.com/a",
+        "https://sub.example.com:8443/a",
+        "http://sub.example.com/a",
+        "not a url",
+    ] {
+        assert!(
+            !same_stored_origin("https://sub.example.com/a", other),
+            "{other}"
+        );
+    }
+}

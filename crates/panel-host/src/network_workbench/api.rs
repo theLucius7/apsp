@@ -48,6 +48,11 @@ pub(super) async fn authorize(
     }
     ids.sort();
     ids.dedup();
+    if write && ids.is_empty() {
+        // Panel-only plans are shared: every reader sees them, only a global writer
+        // may change or start them.
+        control_center::require_global(state, headers, scope).await?;
+    }
     for id in ids {
         control_center::require_server(state, headers, id, scope).await?;
     }
@@ -103,7 +108,7 @@ pub async fn save_target(
     headers: HeaderMap,
     Json(target): Json<Target>,
 ) -> ApiResult<(StatusCode, Json<Target>)> {
-    control_center::require_capability(&state, &headers, "diagnostics:write").await?;
+    control_center::require_global(&state, &headers, "diagnostics:write").await?;
     valid_target(&target)?;
     sqlx::query("INSERT INTO network_workbench_targets(id,name,host,region,carrier,purpose,authorization_snapshot,authorized_until,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)").bind(target.id).bind(&target.name).bind(&target.host).bind(&target.region).bind(&target.carrier).bind(&target.purpose).bind(&target.authorization).bind(target.authorized_until).bind(now_timestamp()).execute(&state.pool).await?;
     Ok((StatusCode::CREATED, Json(target)))
@@ -114,7 +119,7 @@ pub async fn update_target(
     Path(id): Path<Uuid>,
     Json(target): Json<Target>,
 ) -> ApiResult<Json<Target>> {
-    control_center::require_capability(&state, &headers, "diagnostics:write").await?;
+    control_center::require_global(&state, &headers, "diagnostics:write").await?;
     valid_target(&target)?;
     if id != target.id {
         return Err(ApiError::BadRequest("目标ID不匹配".into()));
@@ -130,7 +135,7 @@ pub async fn delete_target(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
-    control_center::require_capability(&state, &headers, "diagnostics:write").await?;
+    control_center::require_global(&state, &headers, "diagnostics:write").await?;
     sqlx::query("DELETE FROM network_workbench_targets WHERE id=$1")
         .bind(id)
         .execute(&state.pool)
@@ -173,7 +178,7 @@ pub async fn save_tool(
     headers: HeaderMap,
     Json(tool): Json<Tool>,
 ) -> ApiResult<Json<Tool>> {
-    control_center::require_capability(&state, &headers, "diagnostics:write").await?;
+    control_center::require_global(&state, &headers, "diagnostics:write").await?;
     if ![
         "nexttrace",
         "traceroute",
@@ -244,6 +249,17 @@ pub async fn update_plan(
     Json(input): Json<PlanUpdate>,
 ) -> ApiResult<Json<Value>> {
     input.plan.validate()?;
+    // The stored plan must be in scope too, otherwise a scoped administrator
+    // could overwrite another administrator's plan by its identifier.
+    let stored: Value =
+        sqlx::query_scalar("SELECT definition FROM network_workbench_plans WHERE id=$1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    let stored: Plan =
+        serde_json::from_value(stored["plan"].clone()).map_err(anyhow::Error::from)?;
+    authorize(&state, &headers, &stored, true).await?;
     let actor = authorize(&state, &headers, &input.plan, true).await?;
     let row=sqlx::query("UPDATE network_workbench_plans SET name=$2,definition=$3,enabled=$4,interval_secs=$5,next_run_at=$6,revision=revision+1,updated_at=$7 WHERE id=$1 AND revision=$8 RETURNING revision").bind(id).bind(&input.plan.name).bind(json!({"plan":input.plan,"actor":actor})).bind(input.enabled&&input.plan.schedule.is_some()).bind(input.plan.schedule.as_ref().map(|s|i64::from(s.interval_secs))).bind(input.plan.schedule.as_ref().map(|s|s.first_run_at)).bind(now_timestamp()).bind(input.expected_revision).fetch_optional(&state.pool).await?.ok_or_else(||ApiError::Conflict("方案已被修改，请重新读取并核对差异".into()))?;
     Ok(Json(

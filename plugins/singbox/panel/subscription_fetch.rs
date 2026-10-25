@@ -133,6 +133,15 @@ pub(crate) fn parse_traffic(value: &str) -> Option<serde_json::Value> {
     (!fields.is_empty()).then_some(serde_json::Value::Object(fields))
 }
 
+/// Whether two stored URLs share scheme, host and port. Secrets bound to one
+/// origin must not follow an address change to another.
+pub(crate) fn same_stored_origin(left: &str, right: &str) -> bool {
+    match (Url::parse(left), Url::parse(right)) {
+        (Ok(left), Ok(right)) => left.origin() == right.origin(),
+        _ => false,
+    }
+}
+
 pub(crate) fn validate_url(input: &str) -> Result<Url, Failure> {
     if input.is_empty()
         || input.len() > MAX_URL_BYTES

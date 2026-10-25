@@ -180,6 +180,17 @@ async fn update(
             return Err(bad("内容来源不能设置订阅地址"));
         }
         fetch::validate_url(&value).map_err(import_error)?;
+        if settings.secret_authorization.is_some()
+            && request.authorization.is_none()
+            && !request.clear_authorization
+            && !settings.secret_url.as_deref().is_some_and(|previous| {
+                crate::subscription_fetch::same_stored_origin(previous, &value)
+            })
+        {
+            return Err(bad(
+                "更换到其他主机时须重新填写或清除获取认证，已保存的认证不会发往新地址",
+            ));
+        }
         identity_changed |= settings.secret_url.as_ref() != Some(&value);
         content_changed = true;
         settings.secret_url = Some(value);

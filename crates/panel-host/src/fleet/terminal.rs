@@ -309,7 +309,6 @@ pub async fn close(
 }
 
 pub(super) async fn controls(
-    state: &AppState,
     tx: &mut Transaction<'_, Postgres>,
     server: i64,
     allowed: bool,
@@ -321,7 +320,7 @@ pub(super) async fn controls(
     for row in rows {
         let id: Uuid = row.get("id");
         let actor_allowed = crate::control_center::actor_server_allowed(
-            &state.pool,
+            &mut **tx,
             row.get("admin_id"),
             server,
             "terminal:write",

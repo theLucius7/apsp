@@ -68,7 +68,7 @@ pub(super) async fn login_finish(
     let mut tx = state.pool.begin().await?;
     let owner = access::lock(&mut tx, account).await?;
     keys::authenticate(&mut tx, &pending, result).await?;
-    let token = access::issue(&mut tx, account).await?;
+    let token = access::issue(&mut tx, account, access::Proof::Passkey).await?;
     super::super::operations_workflows::event(
         &mut tx,
         None,
@@ -155,7 +155,7 @@ pub(super) async fn register_start(
         format!("invite:{hash}")
     } else {
         let hash = access::session_hash(&headers)?;
-        access::session(&mut tx, account, &hash, true).await?;
+        access::key_session(&mut tx, account, &hash).await?;
         format!("session:{hash}")
     };
     let response = keys::start_registration(
@@ -201,7 +201,7 @@ pub(super) async fn register_finish(
         if access::session_hash(&headers)? != hash {
             return Err(keys::invalid());
         }
-        access::session(&mut tx, account, hash, true).await?;
+        access::key_session(&mut tx, account, hash).await?;
         false
     } else {
         return Err(keys::invalid());
@@ -209,7 +209,7 @@ pub(super) async fn register_finish(
     keys::insert(&mut tx, &pending, key).await?;
     let token = if activate {
         sqlx::query("UPDATE singbox_portal_accounts SET activation_hash=NULL,activation_expires_at=NULL WHERE account_id=$1").bind(account).execute(&mut *tx).await?;
-        Some(access::issue(&mut tx, account).await?)
+        Some(access::issue(&mut tx, account, access::Proof::Passkey).await?)
     } else {
         None
     };
@@ -238,7 +238,7 @@ pub(super) async fn remove(
     let hash = access::session_hash(&headers)?;
     let mut tx = state.pool.begin().await?;
     let owner = access::lock(&mut tx, account).await?;
-    access::session(&mut tx, account, &hash, true).await?;
+    access::key_session(&mut tx, account, &hash).await?;
     keys::lock(&mut tx, account).await?;
     let count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM passkey_credentials WHERE account_id=$1")

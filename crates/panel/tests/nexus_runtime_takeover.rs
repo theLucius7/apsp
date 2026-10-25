@@ -248,6 +248,54 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     .fetch_one(&pool)
     .await?;
     assert_eq!(delivery, (1, "10".into(), "2.500000".into()));
+    // Raw taken-over traffic goes through the legacy multiplier once. The
+    // entitlement must not add those same records on top of the legacy meter.
+    let now = now_timestamp();
+    let mut meter_tx = pool.begin().await?;
+    sqlx::query("INSERT INTO singbox_nexus_metering(user_id,upload,download,last_reset_at,next_reset_at,observed_at) VALUES($1,0,0,$2,$3,$4)")
+        .bind(user).bind(now-86400).bind(now+86400).bind(now).execute(&mut *meter_tx).await?;
+    for (delivered, metered, expected) in [(false, 0_i64, "0"), (true, 75, "75")] {
+        sqlx::query("UPDATE singbox_nexus_metering SET upload=$2 WHERE user_id=$1")
+            .bind(user)
+            .bind(metered)
+            .execute(&mut *meter_tx)
+            .await?;
+        if delivered {
+            sqlx::query("UPDATE singbox_nexus_usage_deliveries SET delivered_at=$1")
+                .bind(now)
+                .execute(&mut *meter_tx)
+                .await?;
+        }
+        let used: String =
+            sqlx::query_scalar("SELECT used_bytes FROM singbox_entitlements($1) WHERE user_id=$2")
+                .bind(now)
+                .bind(user)
+                .fetch_one(&mut *meter_tx)
+                .await?;
+        assert_eq!(used, expected);
+    }
+    // Ordinary native-node traffic has no delivery queue entry and still counts.
+    let direct_server: i64 = sqlx::query_scalar(
+        "INSERT INTO servers(name) VALUES('TEST_ONLY direct host') RETURNING id",
+    )
+    .fetch_one(&mut *meter_tx)
+    .await?;
+    let direct: i64 = sqlx::query_scalar("INSERT INTO nodes(server_id,name,port,public_host,sni,private_key,public_key,short_id) VALUES($1,'TEST_ONLY native',23457,'native.example.invalid','','','','') RETURNING id")
+        .bind(direct_server).fetch_one(&mut *meter_tx).await?;
+    let epoch = Uuid::new_v4();
+    sqlx::query("INSERT INTO usage_batches(server_id,epoch,seq,payload_hash) VALUES($1,$2,1,repeat('a',64))")
+        .bind(direct_server).bind(epoch).execute(&mut *meter_tx).await?;
+    sqlx::query("INSERT INTO usage_records(server_id,epoch,seq,stat_name,user_id,node_id,uplink,downlink,period_start,period_end) VALUES($1,$2,1,$3,$4,$5,3,4,$6,$7)")
+        .bind(direct_server).bind(epoch).bind(format!("u{user}_n{direct}")).bind(user).bind(direct).bind(now-10).bind(now).execute(&mut *meter_tx).await?;
+    let used: String =
+        sqlx::query_scalar("SELECT used_bytes FROM singbox_entitlements($1) WHERE user_id=$2")
+            .bind(now)
+            .bind(user)
+            .fetch_one(&mut *meter_tx)
+            .await?;
+    assert_eq!(used, "82");
+    meter_tx.rollback().await?;
+
     let token: String = sqlx::query_scalar("SELECT subscription_token FROM users WHERE id=$1")
         .bind(user)
         .fetch_one(&pool)

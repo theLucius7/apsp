@@ -172,6 +172,8 @@ async fn create(
 ) -> ApiResult<Json<Value>> {
     control_center::require_recent_proof(&state, &headers).await?;
     normalize(&state, &headers, &mut input.config).await?;
+    // An account grants its credential over the listed zones; binding one is owner-only.
+    control_center::require_credential_choice(&state, &headers, true).await?;
     let id = Uuid::new_v4();
     let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO dns_accounts(id,config,created_at,updated_at) VALUES($1,$2,$3,$3)")
@@ -193,6 +195,14 @@ async fn update(
     let before = load(&state.pool, id).await?;
     authorize(&state, &headers, &before.config, "dns:write").await?;
     normalize(&state, &headers, &mut input.config).await?;
+    let widened = before.config.credential_id != input.config.credential_id
+        || before.config.provider != input.config.provider
+        || input
+            .config
+            .zone_ids
+            .iter()
+            .any(|zone| !before.config.zone_ids.contains(zone));
+    control_center::require_credential_choice(&state, &headers, widened).await?;
     if sqlx::query("UPDATE dns_accounts SET config=$2,revision=revision+1,updated_at=$3,checked_at=NULL,error_code=NULL WHERE id=$1 AND revision=$4")
         .bind(id).bind(json!(input.config)).bind(apsp_protocol::now_timestamp()).bind(input.revision)
         .execute(&state.pool).await?.rows_affected()!=1 { return Err(ApiError::Conflict("账号已修改，请刷新后重试".into())); }

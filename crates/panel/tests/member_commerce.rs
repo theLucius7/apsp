@@ -358,7 +358,7 @@ async fn migration_preserves_identity_balance_login_and_legacy_meter(pool: PgPoo
             "{}/api/plugins/sing-box/portal/{account}",
             panel.base
         ))
-        .header("Cookie", cookie)
+        .header("Cookie", &cookie)
         .send()
         .await?)
     .await?;
@@ -384,6 +384,55 @@ async fn migration_preserves_identity_balance_login_and_legacy_meter(pool: PgPoo
     .await?)
     .await?;
     assert!(details["profile"].get("password_hash").is_none());
+    // A password session cannot remove existing passkeys; a passkey session can.
+    let portal_account: Uuid = account.parse()?;
+    let mut keys = Vec::new();
+    for index in 1u8..=2 {
+        let key = Uuid::new_v4();
+        sqlx::query("INSERT INTO passkey_credentials(id,account_id,credential_id,payload,name,created_at) VALUES($1,$2,$3,'{}'::jsonb,'Fixture key',$4)")
+            .bind(key).bind(portal_account).bind(vec![index]).bind(now_timestamp()).execute(&pool).await?;
+        keys.push(key);
+    }
+    let remove = format!(
+        "/api/plugins/sing-box/portal/{account}/keys/{}/remove",
+        keys[0]
+    );
+    assert_eq!(
+        request(&panel, Method::POST, &remove, &cookie, json!({}))
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    sqlx::query("UPDATE singbox_portal_sessions SET proof='passkey' WHERE account_id=$1")
+        .bind(portal_account)
+        .execute(&pool)
+        .await?;
+    ok(request(&panel, Method::POST, &remove, &cookie, json!({})).await?).await?;
+    // An administrator-changed address is unverified, so the password stops working there.
+    ok(request(
+        &panel,
+        Method::PUT,
+        &format!("{ROOT}/members/41"),
+        &admin,
+        json!({"name":"Original","email":"moved@example.com","state":details["profile"]["state"],
+            "notes":"","version":details["profile"]["version"],"reason":"fixture address change"}),
+    )
+    .await?)
+    .await?;
+    for email in ["original@example.com", "moved@example.com"] {
+        assert_eq!(
+            request(
+                &panel,
+                Method::POST,
+                login_path,
+                "",
+                json!({"email":email,"password":"fixture-password-123"})
+            )
+            .await?
+            .status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
     // A legacy lifetime subscription stays permanent until an explicit native assignment.
     sqlx::query("UPDATE singbox_nexus_identities SET expires_at=NULL WHERE user_id=41")
         .execute(&pool)

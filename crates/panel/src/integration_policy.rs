@@ -24,6 +24,7 @@ pub fn route_policy(path: &str, method: &Method) -> Option<RoutePolicy> {
     let mutation = *method != Method::GET && *method != Method::HEAD && *method != Method::OPTIONS;
     let high_risk = mutation
         && (path == "/api/plugins/expenses/import"
+            || path == "/api/plugins/expenses/settings"
             || (path.starts_with("/api/plugins/alicloud/")
                 && !path.ends_with("/preview")
                 && !path.ends_with("/cdt-check")
@@ -40,7 +41,6 @@ pub fn route_policy(path: &str, method: &Method) -> Option<RoutePolicy> {
         || feature == "dns"
             && ((path.starts_with("/api/plugins/ddns/rules/") && path.ends_with("/preview"))
                 || path.ends_with("/check")
-                || path.ends_with("/resolve")
                 || (path.starts_with("/api/plugins/ddns/accounts/")
                     && path.contains("/records/")
                     && path.ends_with("/reconcile")));
@@ -50,7 +50,9 @@ pub fn route_policy(path: &str, method: &Method) -> Option<RoutePolicy> {
         feature: Some(feature),
         high_risk,
         read,
-        scoped_objects: feature == "dns",
+        scoped_objects: feature == "dns"
+            || (path == "/api/plugins/expenses/servers"
+                && (*method == Method::GET || *method == Method::HEAD)),
     })
 }
 
@@ -145,6 +147,17 @@ mod tests {
             route_policy("/api/plugins/alicloud/resources/1/cdt-state", &Method::POST)
                 .unwrap()
                 .high_risk
+        );
+        assert!(
+            route_policy("/api/plugins/expenses/settings", &Method::PUT)
+                .unwrap()
+                .high_risk
+        );
+        // A resolver test sends traffic from the panel and stores the result.
+        assert!(
+            !route_policy("/api/plugins/ddns/accounts/1/resolve", &Method::POST)
+                .unwrap()
+                .read
         );
     }
     #[test]

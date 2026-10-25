@@ -64,6 +64,15 @@ pub(super) async fn save(
             return Err(bad("限制域名格式无效"));
         }
     }
+    let stored = config(&state).await?;
+    // The credential is sent as a password to the configured host, so choosing it or
+    // redirecting it to another server is reserved for the owner.
+    let redirected = input.credential_id.is_some()
+        && (input.credential_id != stored.credential_id
+            || input.host != stored.host
+            || input.port != stored.port
+            || input.security != stored.security);
+    crate::control_center::require_credential_choice(&state, &headers, redirected).await?;
     if input.enabled && !input.username.is_empty() {
         let id = input
             .credential_id

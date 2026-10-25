@@ -177,6 +177,43 @@ pub async fn require_server(
     Ok(actor.admin_id)
 }
 
+/// Settings shared by every server, and objects bound to no server, belong to
+/// administrators whose scope covers all servers, through an unrestricted token
+/// if one is used.
+pub async fn require_global(
+    state: &AppState,
+    headers: &HeaderMap,
+    capability: &str,
+) -> ApiResult<i64> {
+    let actor = authenticate(state, headers).await?;
+    if !actor.allows(capability) || !actor.global_servers() {
+        return Err(ApiError::Forbidden(
+            "此操作涉及全部服务器共享的设置或未关联服务器的对象，需要全局授权".into(),
+        ));
+    }
+    Ok(actor.admin_id)
+}
+
+/// Stored credentials are managed by the owner, so choosing one for a consumer,
+/// or redirecting a consumer that already holds one, is the owner's decision as
+/// well. Edits that keep the same reference and destination stay with the
+/// caller's ordinary permissions.
+pub async fn require_credential_choice(
+    state: &AppState,
+    headers: &HeaderMap,
+    changed: bool,
+) -> ApiResult<()> {
+    if changed {
+        let actor = authenticate(state, headers).await?;
+        if actor.role != "owner" || actor.token_id.is_some() {
+            return Err(ApiError::Forbidden(
+                "选择或改指凭据中心的凭据需要所有者会话".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub async fn require_owner(state: &AppState, headers: &HeaderMap) -> ApiResult<i64> {
     let actor = authenticate(state, headers).await?;
     if actor.role != "owner" || actor.token_id.is_some() {
@@ -207,8 +244,10 @@ pub async fn require_recent_proof(state: &AppState, headers: &HeaderMap) -> ApiR
     Ok(())
 }
 
-pub async fn actor_server_allowed(
-    pool: &sqlx::PgPool,
+/// Accepts the pool or the caller's transaction connection; callers that hold row
+/// locks pass their own connection so the check never waits for a second one.
+pub async fn actor_server_allowed<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
     actor: i64,
     server: i64,
     capability: &str,
@@ -217,7 +256,7 @@ pub async fn actor_server_allowed(
         return Ok(false);
     }
     sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM administrator_profiles p WHERE p.admin_id=$1 AND p.enabled AND (p.role='owner' OR p.capabilities ? $3) AND (p.role<>'viewer' OR $3 NOT LIKE '%:write') AND (p.all_servers OR EXISTS(SELECT 1 FROM administrator_server_grants g WHERE g.admin_id=p.admin_id AND g.server_id=$2)))")
-        .bind(actor).bind(server).bind(capability).fetch_one(pool).await
+        .bind(actor).bind(server).bind(capability).fetch_one(executor).await
 }
 
 pub async fn require_actor_server(

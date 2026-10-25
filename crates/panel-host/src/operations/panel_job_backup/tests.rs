@@ -142,3 +142,23 @@ async fn changed_backup_settings_fail_without_executing_or_selecting_a_new_key(
     assert_eq!(records, 0);
     Ok(())
 }
+
+#[sqlx::test(migrations = "../panel/migrations")]
+async fn a_running_full_backup_leaves_the_step_queued_without_a_start_record(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let (state, _directory, job, _schedule) = setup(pool.clone()).await?;
+    let mut scheduled = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(530118)")
+        .execute(&mut *scheduled)
+        .await?;
+    assert!(claim(&state).await?.is_none());
+    let (step, starts): (String, i64) = sqlx::query_as("SELECT (SELECT state FROM operations_panel_steps WHERE job_id=$1),(SELECT count(*) FROM operations_history WHERE job_id=$1 AND action='panel_backup_started')")
+        .bind(job)
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!((step.as_str(), starts), ("queued", 0));
+    scheduled.rollback().await?;
+    assert!(claim(&state).await?.is_some());
+    Ok(())
+}

@@ -203,7 +203,7 @@ function translateStaticDom(locale: Locale) {
       const source = known !== undefined && current === english[known] ? known : current
       if (source !== known) sources?.delete(attribute)
       const translated = english[source]
-      if (!translated) continue
+      if (!translated) { sources?.delete(attribute); continue }
       const next = locale === 'en-US' ? translated : source
       if (current !== next) element.setAttribute(attribute, next)
       if (locale === 'en-US') {

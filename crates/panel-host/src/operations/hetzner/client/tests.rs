@@ -160,7 +160,7 @@ fn page(current: u64, total: u64) -> Value {
     json!({
         "servers": servers,
         "meta": {"pagination": {
-            "current_page": current,
+            "page": current,
             "per_page": PAGE_SIZE,
             "previous_page": if current == 1 { None } else { Some(current - 1) },
             "next_page": if current < last_page { Some(current + 1) } else { None },

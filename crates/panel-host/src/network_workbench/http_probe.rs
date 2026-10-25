@@ -46,13 +46,41 @@ fn authorized(execution: &Execution, url: &reqwest::Url) -> ApiResult<()> {
     Ok(())
 }
 
+/// The panel connects only to public addresses: loopback, private, link-local
+/// and metadata addresses are reachable from the panel host alone, so checks of
+/// such targets run on a server instead.
+pub(super) fn panel_destination(address: IpAddr) -> bool {
+    crate::ip_quality::public_ip(address)
+}
+fn refuse_private(
+    addresses: &[std::net::SocketAddr],
+    destination: fn(IpAddr) -> bool,
+) -> ApiResult<()> {
+    if addresses.iter().any(|address| !destination(address.ip())) {
+        return Err(conflict(
+            "目标解析到回环、内网或保留地址，面板不会从自身连接；请改由服务器执行此检测",
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 async fn probe(execution: &Execution) -> ApiResult<(Value, String)> {
-    probe_authorized(execution, || std::future::ready(Ok(()))).await
+    probe_with(execution, || std::future::ready(Ok(())), |_| true).await
 }
 pub(super) async fn probe_authorized<F>(
     execution: &Execution,
+    authorize: impl FnMut() -> F,
+) -> ApiResult<(Value, String)>
+where
+    F: std::future::Future<Output = ApiResult<()>>,
+{
+    probe_with(execution, authorize, panel_destination).await
+}
+async fn probe_with<F>(
+    execution: &Execution,
     mut authorize: impl FnMut() -> F,
+    destination: fn(IpAddr) -> bool,
 ) -> ApiResult<(Value, String)>
 where
     F: std::future::Future<Output = ApiResult<()>>,
@@ -88,7 +116,7 @@ where
         loop {
             authorized(execution, &current)?;
             authorize().await?;
-            let response = tokio::time::timeout(Duration::from_secs(10), request(execution, &current, *family, &mut authorize))
+            let response = tokio::time::timeout(Duration::from_secs(10), request(execution, &current, *family, &mut authorize, destination))
                 .await.map_err(|_| conflict("HTTP请求超过10秒阶段截止"))??;
             requests.push(response.timings.clone());
             if *follow_redirects && matches!(response.status, 301 | 302 | 303 | 307 | 308) {
@@ -123,6 +151,7 @@ async fn request<F>(
     url: &reqwest::Url,
     family: Family,
     authorize: &mut impl FnMut() -> F,
+    destination: fn(IpAddr) -> bool,
 ) -> ApiResult<Response>
 where
     F: std::future::Future<Output = ApiResult<()>>,
@@ -148,6 +177,8 @@ where
     if addresses.is_empty() {
         return Err(conflict("HTTP目标没有选定地址族"));
     }
+    // Every request, including each redirect, is resolved and checked again.
+    refuse_private(&addresses, destination)?;
     let connecting = Instant::now();
     let mut connected = None;
     let mut last_error = None;
@@ -505,14 +536,18 @@ mod tests {
         let url = format!("http://{}/fixture", listener.local_addr().unwrap());
         for allowed in [1, 2] {
             let checks = std::cell::Cell::new(0);
-            let error = probe_authorized(&execution(url.clone()), || {
-                checks.set(checks.get() + 1);
-                std::future::ready(if checks.get() <= allowed {
-                    Ok(())
-                } else {
-                    Err(conflict("TEST_ONLY revoked"))
-                })
-            })
+            let error = probe_with(
+                &execution(url.clone()),
+                || {
+                    checks.set(checks.get() + 1);
+                    std::future::ready(if checks.get() <= allowed {
+                        Ok(())
+                    } else {
+                        Err(conflict("TEST_ONLY revoked"))
+                    })
+                },
+                |_| true,
+            )
             .await
             .unwrap_err();
             assert!(error.to_string().contains("revoked"));
@@ -528,6 +563,25 @@ mod tests {
                     .is_err()
             );
         }
+    }
+
+    #[tokio::test]
+    async fn panel_refuses_loopback_targets_before_connecting() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/fixture", listener.local_addr().unwrap());
+        let error = probe_authorized(&execution(url), || std::future::ready(Ok(())))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("回环、内网或保留地址"));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), listener.accept())
+                .await
+                .is_err()
+        );
+        for address in ["127.0.0.1", "10.0.0.1", "169.254.169.254", "::1", "fd00::1"] {
+            assert!(!panel_destination(address.parse().unwrap()), "{address}");
+        }
+        assert!(panel_destination("8.8.8.8".parse().unwrap()));
     }
 
     #[tokio::test]

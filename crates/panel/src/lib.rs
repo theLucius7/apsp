@@ -16,6 +16,7 @@ pub use apsp_panel_host::{
 mod integration_policy;
 pub mod plugins;
 pub mod publisher;
+pub mod schema;
 
 // Compatibility exports preserve the public Rust embedding API.
 pub use plugins::singbox::proxy_users as users;

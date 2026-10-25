@@ -42,16 +42,59 @@ pub(crate) async fn lock(tx: &mut Transaction<'_, Postgres>, account: Uuid) -> A
         .ok_or(ApiError::NotFound)
 }
 
+/// How a portal session was established.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Proof {
+    Passkey,
+    Password,
+}
+
+impl Proof {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Passkey => "passkey",
+            Self::Password => "password",
+        }
+    }
+}
+
 pub(crate) async fn session(
     tx: &mut Transaction<'_, Postgres>,
     account: Uuid,
     hash: &str,
     recent: bool,
-) -> ApiResult<()> {
-    let verified: Option<i64> = sqlx::query_scalar("SELECT verified_at FROM singbox_portal_sessions WHERE token_hash=$1 AND account_id=$2 AND expires_at>$3 FOR UPDATE")
+) -> ApiResult<Proof> {
+    let row: Option<(i64, String)> = sqlx::query_as("SELECT verified_at,proof FROM singbox_portal_sessions WHERE token_hash=$1 AND account_id=$2 AND expires_at>$3 FOR UPDATE")
         .bind(hash).bind(account).bind(now_timestamp()).fetch_optional(&mut **tx).await?;
-    let verified = verified.ok_or(ApiError::Unauthorized)?;
+    let (verified, proof) = row.ok_or(ApiError::Unauthorized)?;
     if recent && verified <= now_timestamp() - keys::TTL {
+        return Err(ApiError::Conflict(
+            "请先重新验证登录，再执行此操作。".into(),
+        ));
+    }
+    Ok(if proof == "passkey" {
+        Proof::Passkey
+    } else {
+        Proof::Password
+    })
+}
+
+/// A recent session that may manage passkeys. Once a passkey exists, a password
+/// alone cannot add or remove one, so a stolen password cannot take over the keys.
+pub(crate) async fn key_session(
+    tx: &mut Transaction<'_, Postgres>,
+    account: Uuid,
+    hash: &str,
+) -> ApiResult<()> {
+    if session(tx, account, hash, true).await? == Proof::Passkey {
+        return Ok(());
+    }
+    let keys: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM passkey_credentials WHERE account_id=$1)")
+            .bind(account)
+            .fetch_one(&mut **tx)
+            .await?;
+    if keys {
         return Err(ApiError::Conflict(
             "请先使用 Passkey 重新验证，再管理密钥。".into(),
         ));
@@ -59,7 +102,11 @@ pub(crate) async fn session(
     Ok(())
 }
 
-pub(crate) async fn issue(tx: &mut Transaction<'_, Postgres>, account: Uuid) -> ApiResult<String> {
+pub(crate) async fn issue(
+    tx: &mut Transaction<'_, Postgres>,
+    account: Uuid,
+    proof: Proof,
+) -> ApiResult<String> {
     let now = now_timestamp();
     let token = random_token();
     sqlx::query("DELETE FROM singbox_portal_sessions WHERE account_id=$1 AND expires_at <= $2")
@@ -69,8 +116,8 @@ pub(crate) async fn issue(tx: &mut Transaction<'_, Postgres>, account: Uuid) -> 
         .await?;
     sqlx::query("DELETE FROM singbox_portal_sessions WHERE account_id=$1 AND token_hash NOT IN (SELECT token_hash FROM singbox_portal_sessions WHERE account_id=$1 ORDER BY verified_at DESC,token_hash LIMIT 9)")
         .bind(account).execute(&mut **tx).await?;
-    sqlx::query("INSERT INTO singbox_portal_sessions(token_hash,account_id,expires_at,verified_at) VALUES($1,$2,$3,$4)")
-        .bind(hash_token(&token)).bind(account).bind(now+SESSION_SECONDS).bind(now).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO singbox_portal_sessions(token_hash,account_id,expires_at,verified_at,proof) VALUES($1,$2,$3,$4,$5)")
+        .bind(hash_token(&token)).bind(account).bind(now+SESSION_SECONDS).bind(now).bind(proof.as_str()).execute(&mut **tx).await?;
     Ok(token)
 }
 

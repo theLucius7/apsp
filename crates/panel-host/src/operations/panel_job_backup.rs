@@ -110,6 +110,14 @@ async fn claim(state: &AppState) -> ApiResult<Option<Execution>> {
     if unknown {
         return Ok(None);
     }
+    // While another full backup holds the backup lock, leave the step queued without
+    // recording a start; the transaction-scoped probe is released at commit.
+    let free: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(530118)")
+        .fetch_one(&mut *tx)
+        .await?;
+    if !free {
+        return Ok(None);
+    }
     let row=sqlx::query("SELECT p.execution_id,p.spec AS step_spec,j.id,j.requested_by,j.name,j.targets,j.spec AS job_spec,j.expires_at,j.status,j.cancel_requested_at FROM operations_panel_steps p JOIN operations_jobs j ON j.id=p.job_id WHERE p.state='queued' ORDER BY j.created_at,j.id LIMIT 1 FOR UPDATE OF p SKIP LOCKED")
         .fetch_optional(&mut *tx).await?;
     let Some(row) = row else {
@@ -215,6 +223,27 @@ pub(super) async fn tick(state: &AppState) -> ApiResult<()> {
         ),
     )
     .await;
+    if matches!(outcome, Ok(Err(ApiError::Busy))) {
+        // A scheduled backup holds the lock and nothing ran: wait instead of failing
+        // the whole job. The job's own budget still bounds the wait.
+        let mut tx = state.pool.begin().await?;
+        sqlx::query("UPDATE operations_panel_steps SET state='queued',claimed_at=NULL WHERE job_id=$1 AND execution_id=$2 AND state='running'")
+            .bind(execution.job)
+            .bind(execution.id)
+            .execute(&mut *tx)
+            .await?;
+        history(
+            &mut tx,
+            execution.job,
+            None,
+            "panel_backup_waiting",
+            json!({"execution_id":execution.id,"executed":false,"reason":"已有完整备份执行中，稍后重试"}),
+            now_timestamp(),
+        )
+        .await?;
+        tx.commit().await?;
+        return Ok(());
+    }
     let (phase, result) = match outcome {
         Ok(Ok(backup)) => {
             let receipt:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('backup_id',id,'verification',verification,'encrypted',encrypted,'manifest_sha256',manifest_sha256,'storage_sha256',storage_sha256) FROM operations_backup_records WHERE id=$1 AND encrypted AND verification='integrity_verified' AND manifest->>'complete'='true' AND storage_sha256 IS NOT NULL")

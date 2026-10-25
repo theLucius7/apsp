@@ -131,6 +131,7 @@ pub(super) async fn tick(state: &AppState) -> ApiResult<()> {
     .await;
     let error = result.as_ref().err().map(|error| match error {
         ApiError::Conflict(message) | ApiError::BadRequest(message) => message.clone(),
+        ApiError::Busy => "已有完整备份执行中，本次未执行；请核对既有任务结果".into(),
         _ => "备份执行失败，请检查工具、数据库或受限存储".into(),
     });
     sqlx::query("UPDATE operations_backup_schedules SET claimed_id=NULL,last_finished_at=$2,last_error=$3,updated_at=$2 WHERE id=$1 AND claimed_id=$4").bind(id).bind(now_timestamp()).bind(&error).bind(execution).execute(&state.pool).await?;
