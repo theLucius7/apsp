@@ -74,7 +74,7 @@ fn addresses(values: impl IntoIterator<Item = String>) -> BTreeSet<IpAddr> {
         .collect()
 }
 
-/// The policy for one host; None when no member there has a limit.
+/// A complete replacement policy, including an empty one to clear old limits.
 pub(crate) async fn policy(
     tx: &mut Transaction<'_, Postgres>,
     server: i64,
@@ -123,9 +123,6 @@ pub(crate) async fn policy(
                 .collect(),
         });
     }
-    if groups.is_empty() {
-        return Ok(None);
-    }
     let policy = RuntimeAdmissionPolicy {
         module: MODULE.into(),
         issued_at: now,
@@ -137,6 +134,17 @@ pub(crate) async fn policy(
 
 /// Sends the current policy to every active host whose Agent controls sessions.
 pub(crate) async fn push_policies(state: &AppState) -> anyhow::Result<()> {
+    // Expire personal data even when every device is offline and no more
+    // reports arrive. Keep configured limits, but not stale client addresses.
+    let cutoff = now_timestamp() - RETAIN_SECS;
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("DELETE FROM singbox_runtime_session_addresses WHERE observed_at<$1")
+        .bind(cutoff)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("UPDATE singbox_nexus_device_state SET legacy_addresses='[]'::jsonb WHERE observed_at<$1 AND legacy_addresses<>'[]'::jsonb")
+        .bind(cutoff).execute(&mut *tx).await?;
+    tx.commit().await?;
     let hosts: Vec<i64> = sqlx::query_scalar("SELECT h.server_id FROM singbox_nexus_runtime_hosts h JOIN servers s ON s.id=h.server_id WHERE h.state='active' AND s.deleted_at IS NULL AND s.capabilities @> jsonb_build_array($1::text) ORDER BY h.server_id")
         .bind(RUNTIME_ADMISSION_CAPABILITY).fetch_all(&state.pool).await?;
     for server in hosts {

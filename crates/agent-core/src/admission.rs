@@ -55,7 +55,7 @@ const EVIDENCE_LIMIT: usize = 65_536;
 const PENDING_TTL: Duration = Duration::from_secs(60);
 const ATTRIBUTION_TTL: Duration = Duration::from_secs(300);
 /// A session whose log evidence has not arrived yet waits this long before it
-/// is admitted without attribution; it then never counts against a group.
+/// is admitted without attribution; late evidence still makes it count.
 const ATTRIBUTION_GRACE: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
@@ -449,6 +449,28 @@ mod tests {
         attribute(&mut engine, "b", "192.0.2.99:1", "u1_n1", later);
         active.push(session("b", "192.0.2.99:1"));
         assert_eq!(engine.tick(&active, later).close, vec!["b".to_string()]);
+    }
+
+    #[test]
+    fn empty_replacement_policy_removes_the_last_device_limit() {
+        let now = Instant::now();
+        let mut engine = running(&limited(1, &["192.0.2.1"]), now);
+        attribute(&mut engine, "a", "192.0.2.9:1", "u1_n1", now);
+        assert_eq!(
+            engine.tick(&[session("a", "192.0.2.9:1")], now).close,
+            vec!["a"]
+        );
+        engine.tick(&[], now);
+        let mut cleared = limited(1, &[]);
+        cleared.groups.clear();
+        assert!(engine.set_policy(&cleared, now));
+        attribute(&mut engine, "b", "192.0.2.9:2", "u1_n1", now);
+        assert!(
+            engine
+                .tick(&[session("b", "192.0.2.9:2")], now)
+                .close
+                .is_empty()
+        );
     }
 
     #[test]

@@ -481,6 +481,14 @@ async fn device_limits_need_session_control_and_are_shared_with_legacy_nodes(
         policy.groups[0].remote,
         vec!["198.51.100.1".parse::<std::net::IpAddr>()?]
     );
+    // Removing the last limit must send a replacement, not leave the old
+    // policy in the Agent forever because there are no groups left to send.
+    bridge_devices(&pool, json!({user.to_string(): 0}), json!({})).await?;
+    let cleared = apsp_panel::plugins::singbox::nexus_admission_policy(&panel.state, server)
+        .await?
+        .expect("empty policy explicitly clears the previous limit");
+    assert!(cleared.valid());
+    assert!(cleared.groups.is_empty());
     // Malformed bridge samples are refused outright.
     for (limits, legacy) in [
         (json!({user.to_string(): 2000}), json!({})),
@@ -489,6 +497,38 @@ async fn device_limits_need_session_control_and_are_shared_with_legacy_nodes(
     ] {
         assert!(bridge_devices(&pool, limits, legacy).await.is_err());
     }
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn expired_device_addresses_are_purged_without_new_reports(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let (server, _, user) = fixture(&panel).await?;
+    let old = now_timestamp() - 301;
+    sqlx::query("INSERT INTO singbox_runtime_session_addresses(server_id,stat_name,user_id,node_id,address,observed_at) VALUES($1,'u1_n1',$2,1,'192.0.2.1',$3)")
+        .bind(server).bind(user).bind(old).execute(&pool).await?;
+    sqlx::query("INSERT INTO singbox_nexus_device_state(user_id,device_limit,legacy_addresses,observed_at) VALUES($1,3,'[\"192.0.2.2\"]',$2)")
+        .bind(user).bind(old).execute(&pool).await?;
+    // No active runtime or session reports: the regular publisher cycle must
+    // still enforce the retention limit on both kinds of address evidence.
+    let publisher = tokio::spawn(publisher::run(panel.state.clone()));
+    let expired = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let count: i64 = sqlx::query_scalar("SELECT (SELECT COUNT(*) FROM singbox_runtime_session_addresses)+(SELECT COUNT(*) FROM singbox_nexus_device_state WHERE legacy_addresses<>'[]'::jsonb)")
+                .fetch_one(&pool).await?;
+            if count == 0 { return Ok::<_, sqlx::Error>(()); }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    }).await;
+    publisher.abort();
+    let _ = publisher.await;
+    expired??;
+    let limit: i32 =
+        sqlx::query_scalar("SELECT device_limit FROM singbox_nexus_device_state WHERE user_id=$1")
+            .bind(user)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(limit, 3, "expiry removes evidence, not configured limits");
     Ok(())
 }
 
