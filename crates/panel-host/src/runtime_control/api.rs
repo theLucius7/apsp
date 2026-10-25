@@ -80,6 +80,10 @@ async fn barrier(
     Json(input): Json<BarrierInput>,
 ) -> ApiResult<Json<Value>> {
     require_admin(&state, &headers).await?;
+    // A barrier blocks the owning plugin's own barrier requests for that module, so the
+    // generic host entry is limited to a freshly verified owner session.
+    crate::control_center::require_owner(&state, &headers).await?;
+    crate::control_center::require_recent_proof(&state, &headers).await?;
     live_server(&state, id).await?;
     module_valid(&input.module)?;
     let request = request_barrier(&state, id, &input.module, input.minimum_revision)

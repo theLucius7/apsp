@@ -61,7 +61,13 @@ pub(super) async fn access(
         "network:read"
     };
     crate::control_center::require_capability(state, headers, capability).await?;
-    for server in config.servers() {
+    let servers = config.servers();
+    if write && servers.is_empty() {
+        // A document without servers stays readable to every reader, as in search,
+        // but changing it would let a scoped administrator take over shared material.
+        crate::control_center::require_global(state, headers, capability).await?;
+    }
+    for server in servers {
         crate::control_center::require_server(state, headers, server, capability).await?;
     }
     if let Configuration::Certificate { domain_ids, .. } = config {
@@ -70,6 +76,9 @@ pub(super) async fn access(
             let domain_config = configuration(&domain)?;
             if !matches!(domain_config, Configuration::Domain { .. }) {
                 return Err(ApiError::Conflict("证书引用必须为域名台账".into()));
+            }
+            if write && domain_config.servers().is_empty() {
+                crate::control_center::require_global(state, headers, capability).await?;
             }
             for server in domain_config.servers() {
                 crate::control_center::require_server(state, headers, server, capability).await?;

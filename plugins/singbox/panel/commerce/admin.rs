@@ -78,8 +78,8 @@ pub(super) async fn member(
 ) -> ApiResult<Json<Value>> {
     administrator(&state, &headers, false).await?;
     let mut tx = state.pool.begin().await?;
-    ensure_member(&mut tx, id).await?;
-    let profile:Value=sqlx::query_scalar("SELECT (to_jsonb(m)-'password_hash')||jsonb_build_object('name',u.name,'balance_cents',w.balance_cents) FROM singbox_members m JOIN users u ON u.id=m.user_id JOIN singbox_wallets w ON w.user_id=m.user_id WHERE m.user_id=$1").bind(id).fetch_one(&mut *tx).await?;
+    // Viewing must not create the member row; saving the profile does.
+    let profile:Value=sqlx::query_scalar("SELECT COALESCE(to_jsonb(m)-'password_hash',jsonb_build_object('user_id',u.id,'email',NULL,'state','active','notes','','version',1,'inviter_id',NULL,'sponsor_required',FALSE,'first_purchase_at',NULL))||jsonb_build_object('name',u.name,'balance_cents',COALESCE(w.balance_cents,0)) FROM users u LEFT JOIN singbox_members m ON m.user_id=u.id LEFT JOIN singbox_wallets w ON w.user_id=u.id WHERE u.id=$1 AND u.deleted_at IS NULL").bind(id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
     let history = history(&mut tx, id).await?;
     let events=list_json(&mut tx,"SELECT to_jsonb(e) FROM singbox_commerce_events e WHERE user_id=$1 ORDER BY id DESC LIMIT 100",id).await?;
     tx.commit().await?;
@@ -96,6 +96,10 @@ pub(super) struct Profile {
     notes: String,
     version: i64,
     reason: String,
+    /// Ends the wait for the inviter's first purchase, for example when the inviter
+    /// was suspended or removed.
+    #[serde(default)]
+    release_sponsor: bool,
 }
 pub(super) async fn member_save(
     State(state): State<AppState>,
@@ -137,7 +141,18 @@ pub(super) async fn member_save(
             "待迁移成员须完成独立接管演练，不能通过编辑资料跳过迁移核对",
         ));
     }
-    let changed=sqlx::query("UPDATE singbox_members SET email_verified_at=CASE WHEN email IS DISTINCT FROM $2 THEN NULL ELSE email_verified_at END,email=$2,state=$3,notes=$4,version=version+1 WHERE user_id=$1 AND version=$5").bind(id).bind(contact).bind(&input.state).bind(notes).bind(input.version).execute(&mut *tx).await?.rows_affected();
+    let (stored, awaiting): (String, bool) = sqlx::query_as("SELECT state,sponsor_required AND first_purchase_at IS NULL FROM singbox_members WHERE user_id=$1")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+    // Activating an invitee who still waits for the inviter would block both the
+    // invitee and the inviter's purchase; the wait has to be released explicitly.
+    if awaiting && stored != "active" && input.state == "active" && !input.release_sponsor {
+        return Err(conflict(
+            "该成员仍在等待邀请人首购；如需直接启用，请同时解除等待",
+        ));
+    }
+    let changed=sqlx::query("UPDATE singbox_members SET email_verified_at=CASE WHEN email IS DISTINCT FROM $2 THEN NULL ELSE email_verified_at END,email=$2,state=$3,notes=$4,sponsor_required=sponsor_required AND NOT $6,version=version+1 WHERE user_id=$1 AND version=$5").bind(id).bind(contact).bind(&input.state).bind(notes).bind(input.version).bind(input.release_sponsor).execute(&mut *tx).await?.rows_affected();
     if changed != 1 {
         return Err(conflict("成员资料已变化，请刷新后再保存"));
     }
@@ -280,7 +295,8 @@ pub(super) async fn portal(
     }
     let mut tx = state.pool.begin().await?;
     let user = member_session(&mut tx, &state, &headers, account, false).await?;
-    let profile:Value=sqlx::query_scalar("SELECT jsonb_build_object('user_id',m.user_id,'email',m.email,'email_verified',m.email_verified_at IS NOT NULL,'has_password',m.password_hash IS NOT NULL,'remind_expire',m.remind_expire,'remind_traffic',m.remind_traffic,'remind_invitation',m.remind_invitation,'state',m.state,'sponsor_required',m.sponsor_required AND m.first_purchase_at IS NULL,'balance_cents',w.balance_cents) FROM singbox_members m JOIN singbox_wallets w ON w.user_id=m.user_id WHERE m.user_id=$1").bind(user).fetch_one(&mut *tx).await?;
+    // A proxy user who has not acted as a member yet has no member row; show defaults.
+    let profile:Value=sqlx::query_scalar("SELECT jsonb_build_object('user_id',u.id,'email',m.email,'email_verified',COALESCE(m.email_verified_at IS NOT NULL,FALSE),'has_password',COALESCE(m.password_hash IS NOT NULL,FALSE),'remind_expire',COALESCE(m.remind_expire,TRUE),'remind_traffic',COALESCE(m.remind_traffic,TRUE),'remind_invitation',COALESCE(m.remind_invitation,TRUE),'state',COALESCE(m.state,'active'),'sponsor_required',COALESCE(m.sponsor_required AND m.first_purchase_at IS NULL,FALSE),'balance_cents',COALESCE(w.balance_cents,0)) FROM users u LEFT JOIN singbox_members m ON m.user_id=u.id LEFT JOIN singbox_wallets w ON w.user_id=u.id WHERE u.id=$1").bind(user).fetch_one(&mut *tx).await?;
     let offers: Vec<catalog::Offer> =
         sqlx::query_as("SELECT * FROM singbox_commerce_offers WHERE enabled ORDER BY id")
             .fetch_all(&mut *tx)

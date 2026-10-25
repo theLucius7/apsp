@@ -544,9 +544,15 @@ async fn panel(
                             .collect::<Vec<_>>()
                     })
             };
-            tcp_probe(execution, *port, *family, *samples, lookup, || {
-                authorize_panel(state, snapshot, index, actor, execution)
-            })
+            tcp_probe(
+                execution,
+                *port,
+                *family,
+                *samples,
+                lookup,
+                || authorize_panel(state, snapshot, index, actor, execution),
+                super::http_probe::panel_destination,
+            )
             .await?
         }
         Check::Http { .. } => {
@@ -603,6 +609,7 @@ async fn tcp_probe<F>(
     samples: u8,
     lookup: impl std::future::Future<Output = std::io::Result<Vec<std::net::SocketAddr>>>,
     mut authorize: impl FnMut() -> F,
+    destination: fn(std::net::IpAddr) -> bool,
 ) -> ApiResult<Value>
 where
     F: std::future::Future<Output = ApiResult<()>>,
@@ -622,6 +629,11 @@ where
         let addresses = lookup.await.map_err(anyhow::Error::from)?;
         if addresses.is_empty() {
             return Err(ApiError::Conflict("目标没有选定地址族".into()));
+        }
+        if addresses.iter().any(|address| !destination(address.ip())) {
+            return Err(ApiError::Conflict(
+                "目标解析到回环、内网或保留地址，面板不会从自身连接；请改由服务器执行此检测".into(),
+            ));
         }
         if target.authorized_until.is_some_and(|end| end <= now_timestamp()) {
             return Err(ApiError::Conflict("探测目标授权已到期".into()));
@@ -708,6 +720,7 @@ mod tests {
             1,
             std::future::pending::<std::io::Result<Vec<std::net::SocketAddr>>>(),
             || std::future::ready(Ok(())),
+            |_| true,
         )
         .await
         .unwrap_err();
@@ -729,6 +742,7 @@ mod tests {
                 Ok(vec![])
             },
             || std::future::ready(Ok(())),
+            |_| true,
         )
         .await
         .unwrap_err();
@@ -745,6 +759,7 @@ mod tests {
             2,
             std::future::ready(Ok(vec![address])),
             || std::future::ready(Ok(())),
+            |_| true,
         )
         .await
         .unwrap();
@@ -772,6 +787,7 @@ mod tests {
                         Err(ApiError::Conflict("TEST_ONLY revoked".into()))
                     })
                 },
+                |_| true,
             )
             .await
             .unwrap_err();

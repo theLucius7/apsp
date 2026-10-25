@@ -40,6 +40,7 @@ pub async fn run(args: &[String]) -> Result<i32> {
         .max_connections(4)
         .connect(&config.database_url)
         .await?;
+    apsp_panel::schema::prepare(&pool).await?;
     let state = AppState::new(pool, config).await?;
     apsp_panel::plugins::install();
     let report = match command {

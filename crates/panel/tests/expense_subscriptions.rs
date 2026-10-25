@@ -219,6 +219,15 @@ async fn servers_join_the_ledger_read_only_and_renewals_record_payments(
     ensure!(entries[0]["amount_units"] == "125000" && entries[0]["currency"] == "USD");
     ensure!(entries[1]["amount_units"].is_null());
 
+    // The merged summary includes server renewals in exact converted units too.
+    sqlx::query("UPDATE expense_settings SET base_currency='CNY' WHERE singleton")
+        .execute(&pool)
+        .await?;
+    sqlx::query(
+        "UPDATE exchange_rates SET rates='{\"USD\":0.125}'::jsonb,fetched_at=0 WHERE singleton",
+    )
+    .execute(&pool)
+    .await?;
     let summary = ok(call(&panel, &cookie, Method::GET, "/summary", Value::Null).await?).await?;
     ensure!(
         summary["servers"]["count"] == 2 && summary["servers"]["unpriced"] == 1,
@@ -230,6 +239,9 @@ async fn servers_join_the_ledger_read_only_and_renewals_record_payments(
         "{summary}"
     );
     ensure!(summary["totals_units"]["USD"] == "1500000", "{summary}");
+    ensure!(summary["converted_yearly_units"] == "12000000", "{summary}");
+    ensure!(summary["converted_yearly"] == 1200.0, "{summary}");
+    ensure!(summary["conversion_stale"] == true, "{summary}");
     let upcoming = summary["upcoming"].as_array().cloned().unwrap_or_default();
     ensure!(
         upcoming.iter().filter(|e| e["kind"] == "server").count() == 2,

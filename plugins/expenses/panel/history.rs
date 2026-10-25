@@ -9,6 +9,8 @@ pub(super) async fn payments(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Value>> {
+    // These views also expose manual, panel-wide expense records.
+    actor(&state, &headers, false).await?;
     let principal = principal(&state, &headers, false).await?;
     let items: Vec<Value> = sqlx::query_scalar(
         "SELECT jsonb_build_object('kind','item','id',p.id::text,'subscription_id',p.subscription_id,'name',s.name,\

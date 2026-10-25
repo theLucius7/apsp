@@ -31,6 +31,9 @@ pub async fn providers(
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<Provider>>> {
     control_center::require_capability(&state, &headers, "diagnostics:read").await?;
+    let actor = control_center::authenticate(&state, &headers).await?;
+    // Only the owner, who manages stored credentials, sees which one a source uses.
+    let owner = actor.role == "owner" && actor.token_id.is_none();
     let rows = sqlx::query("SELECT * FROM network_workbench_providers ORDER BY name")
         .fetch_all(&state.pool)
         .await?;
@@ -40,7 +43,7 @@ pub async fn providers(
                 id: r.get("id"),
                 name: r.get("name"),
                 endpoint: r.get("endpoint"),
-                credential_ref: r.get("credential_ref"),
+                credential_ref: if owner { r.get("credential_ref") } else { None },
                 daily_request_limit: r.get("daily_quota"),
                 cache_seconds: r.get("cache_seconds"),
                 disabled: r.get("disabled"),
@@ -54,6 +57,9 @@ pub async fn save_provider(
     Json(provider): Json<Provider>,
 ) -> ApiResult<Json<Provider>> {
     control_center::require_capability(&state, &headers, "diagnostics:write").await?;
+    // A source is shared by every server and may hold a stored credential that is
+    // sent to its endpoint, so the owner alone defines or redirects one.
+    control_center::require_owner(&state, &headers).await?;
     if provider.name.is_empty()
         || provider.name.len() > 128
         || !provider.endpoint.contains("{ip}")

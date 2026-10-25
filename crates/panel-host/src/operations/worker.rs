@@ -75,89 +75,133 @@ async fn run_backups(state: AppState) {
     }
 }
 
+// Every schedule, job and observer runs even when another one fails, so a single
+// broken plan cannot stop incidents, notifications, remediation or cloud checks.
+// The cycle still reports the failures it collected.
 pub async fn tick(state: &AppState) -> ApiResult<()> {
-    schedules(state).await?;
+    let mut failures = Vec::new();
+    let mut record = |scope: String, result: ApiResult<()>| {
+        if let Err(error) = result {
+            tracing::error!(%error, scope, "operations cycle step failed");
+            failures.push(format!("{scope}: {error}"));
+        }
+    };
+    record("schedules".into(), schedules(state).await);
     let ids:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM operations_jobs WHERE status IN ('queued','running','paused','cancel_requested','uncertain') ORDER BY CASE WHEN status='uncertain' THEN 1 ELSE 0 END,updated_at,id LIMIT 32").fetch_all(&state.pool).await?;
     for id in ids {
-        advance(state, id).await?;
+        record(format!("job {id}"), advance(state, id).await);
     }
-    super::incidents::observe(state).await?;
-    super::remediation::tick(state).await?;
-    super::cloud::observe(&state.pool).await?;
-    super::cancellation_reminders::tick(state).await?;
-    Ok(())
+    record("incidents".into(), super::incidents::observe(state).await);
+    record("remediation".into(), super::remediation::tick(state).await);
+    record("cloud".into(), super::cloud::observe(&state.pool).await);
+    record(
+        "cancellation reminders".into(),
+        super::cancellation_reminders::tick(state).await,
+    );
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(ApiError::Conflict(failures.join("；")))
+    }
 }
 
 async fn schedules(state: &AppState) -> ApiResult<()> {
     let now = now_timestamp();
     let mut tx = state.pool.begin().await?;
     let rows=sqlx::query("SELECT * FROM operations_schedules WHERE NOT paused AND next_run_at<=$1 AND run_count<max_runs ORDER BY next_run_at LIMIT 8 FOR UPDATE SKIP LOCKED").bind(now).fetch_all(&mut *tx).await?;
+    let mut failures = Vec::new();
     for row in rows {
         let id: Uuid = row.get("id");
-        let due: i64 = row.get("next_run_at");
-        let interval: i64 = row.get("interval_secs");
-        let actor: i64 = row.get("requested_by");
-        let targets: Vec<i64> = row.get("targets");
-        let spec: Value = row.get("spec");
-        let plan: Plan =
-            serde_json::from_value(spec["plan"].clone()).map_err(anyhow::Error::from)?;
-        plan.validate(&targets)?;
-        let mut authorized = super::typed_steps::actor_authorized(state, actor, &plan).await?;
-        for server in &targets {
+        let mut savepoint = sqlx::Acquire::begin(&mut *tx).await?;
+        match schedule(state, &mut savepoint, &row, now).await {
+            Ok(()) => savepoint.commit().await?,
+            Err(error) => {
+                savepoint.rollback().await?;
+                // A schedule that can no longer be planned (for example a pinned version
+                // without a signed artifact) is paused instead of failing every cycle.
+                sqlx::query(
+                    "UPDATE operations_schedules SET paused=true,updated_at=$2 WHERE id=$1",
+                )
+                .bind(id)
+                .bind(now)
+                .execute(&mut *tx)
+                .await?;
+                failures.push(format!("计划 {id} 无法生成任务，已暂停：{error}"));
+            }
+        }
+    }
+    tx.commit().await?;
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(ApiError::Conflict(failures.join("；")))
+    }
+}
+
+async fn schedule(
+    state: &AppState,
+    tx: &mut Transaction<'_, Postgres>,
+    row: &sqlx::postgres::PgRow,
+    now: i64,
+) -> ApiResult<()> {
+    let id: Uuid = row.get("id");
+    let due: i64 = row.get("next_run_at");
+    let interval: i64 = row.get("interval_secs");
+    let actor: i64 = row.get("requested_by");
+    let targets: Vec<i64> = row.get("targets");
+    let spec: Value = row.get("spec");
+    let plan: Plan = serde_json::from_value(spec["plan"].clone()).map_err(anyhow::Error::from)?;
+    plan.validate(&targets)?;
+    let mut authorized = super::typed_steps::actor_authorized(state, actor, &plan).await?;
+    for server in &targets {
+        authorized &=
+            control_center::actor_server_allowed(&state.pool, actor, *server, "operations:write")
+                .await?;
+        for step in &plan.steps {
             authorized &= control_center::actor_server_allowed(
                 &state.pool,
                 actor,
                 *server,
-                "operations:write",
+                step.permission(),
             )
             .await?;
-            for step in &plan.steps {
-                authorized &= control_center::actor_server_allowed(
-                    &state.pool,
-                    actor,
-                    *server,
-                    step.permission(),
-                )
-                .await?;
-            }
         }
-        let previous_live:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM operations_jobs WHERE source_schedule=$1 AND status IN ('queued','running','paused','cancel_requested','uncertain'))").bind(id).fetch_one(&mut *tx).await?;
-        let missed = row.get::<String, _>("missed_policy") == "skip" && now - due > 60;
-        let next = due + ((now - due) / interval + 1) * interval;
-        if !authorized {
-            sqlx::query("UPDATE operations_schedules SET paused=true,updated_at=$2 WHERE id=$1")
-                .bind(id)
-                .bind(now)
-                .execute(&mut *tx)
-                .await?;
-            continue;
-        }
-        if previous_live || missed {
-            sqlx::query("UPDATE operations_schedules SET next_run_at=$2,updated_at=$3 WHERE id=$1")
-                .bind(id)
-                .bind(next)
-                .bind(now)
-                .execute(&mut *tx)
-                .await?;
-            continue;
-        }
-        let job = Uuid::new_v4();
-        let inserted=sqlx::query("INSERT INTO operations_jobs(id,name,requested_by,spec,targets,status,created_at,updated_at,expires_at,preview_digest,source_schedule,source_window) VALUES($1,$2,$3,$4,$5,'queued',$6,$6,$7,$8,$9,$10) ON CONFLICT(source_schedule,source_window) DO NOTHING")
-            .bind(job).bind(&plan.name).bind(actor).bind(&spec).bind(&targets).bind(now).bind(now+plan.max_duration_secs).bind(digest(&spec)?).bind(id).bind(due).execute(&mut *tx).await?.rows_affected();
-        if inserted == 0 {
-            sqlx::query("UPDATE operations_schedules SET next_run_at=$2,updated_at=$3 WHERE id=$1")
-                .bind(id)
-                .bind(next)
-                .bind(now)
-                .execute(&mut *tx)
-                .await?;
-            continue;
-        }
-        materialize(&mut tx, job, &targets, &plan, &spec).await?;
-        history(&mut tx,job,None,"scheduled",json!({"schedule":id,"window":due,"missed_policy":row.get::<String,_>("missed_policy"),"targets":targets}),now).await?;
-        sqlx::query("UPDATE operations_schedules SET next_run_at=$2,run_count=run_count+1,last_job=$3,updated_at=$4 WHERE id=$1").bind(id).bind(next).bind(job).bind(now).execute(&mut *tx).await?;
     }
-    tx.commit().await?;
+    let previous_live:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM operations_jobs WHERE source_schedule=$1 AND status IN ('queued','running','paused','cancel_requested','uncertain'))").bind(id).fetch_one(&mut **tx).await?;
+    let missed = row.get::<String, _>("missed_policy") == "skip" && now - due > 60;
+    let next = due + ((now - due) / interval + 1) * interval;
+    if !authorized {
+        sqlx::query("UPDATE operations_schedules SET paused=true,updated_at=$2 WHERE id=$1")
+            .bind(id)
+            .bind(now)
+            .execute(&mut **tx)
+            .await?;
+        return Ok(());
+    }
+    if previous_live || missed {
+        sqlx::query("UPDATE operations_schedules SET next_run_at=$2,updated_at=$3 WHERE id=$1")
+            .bind(id)
+            .bind(next)
+            .bind(now)
+            .execute(&mut **tx)
+            .await?;
+        return Ok(());
+    }
+    let job = Uuid::new_v4();
+    let inserted=sqlx::query("INSERT INTO operations_jobs(id,name,requested_by,spec,targets,status,created_at,updated_at,expires_at,preview_digest,source_schedule,source_window) VALUES($1,$2,$3,$4,$5,'queued',$6,$6,$7,$8,$9,$10) ON CONFLICT(source_schedule,source_window) DO NOTHING")
+        .bind(job).bind(&plan.name).bind(actor).bind(&spec).bind(&targets).bind(now).bind(now+plan.max_duration_secs).bind(digest(&spec)?).bind(id).bind(due).execute(&mut **tx).await?.rows_affected();
+    if inserted == 0 {
+        sqlx::query("UPDATE operations_schedules SET next_run_at=$2,updated_at=$3 WHERE id=$1")
+            .bind(id)
+            .bind(next)
+            .bind(now)
+            .execute(&mut **tx)
+            .await?;
+        return Ok(());
+    }
+    materialize(tx, job, &targets, &plan, &spec).await?;
+    history(tx,job,None,"scheduled",json!({"schedule":id,"window":due,"missed_policy":row.get::<String,_>("missed_policy"),"targets":targets}),now).await?;
+    sqlx::query("UPDATE operations_schedules SET next_run_at=$2,run_count=run_count+1,last_job=$3,updated_at=$4 WHERE id=$1").bind(id).bind(next).bind(job).bind(now).execute(&mut **tx).await?;
     Ok(())
 }
 
@@ -230,7 +274,9 @@ async fn advance(state: &AppState, id: Uuid) -> ApiResult<()> {
     .bind(id)
     .fetch_one(&mut *tx)
     .await?;
-    if remaining == 0 && row.get::<Option<i64>, _>("cancel_requested_at").is_none() && !expired {
+    // Every step confirmed success: the actual outcome wins over a total budget that
+    // ran out during the last confirmation or a cancellation that arrived too late.
+    if remaining == 0 {
         sqlx::query("UPDATE operations_jobs SET status='succeeded',updated_at=$2 WHERE id=$1")
             .bind(id)
             .bind(now)
@@ -422,6 +468,11 @@ async fn enqueue(
                 sqlx::query("UPDATE operations_target_steps SET state='failed',finished_at=$4,result=$5 WHERE job_id=$1 AND server_id=$2 AND position=$3").bind(id).bind(server).bind(position).bind(now).bind(json!({"error":error,"executed":false})).execute(&mut **tx).await?;
                 return Ok(());
             }
+            // A missing artifact or object fails this step instead of blocking the cycle.
+            Err(ApiError::NotFound) => {
+                sqlx::query("UPDATE operations_target_steps SET state='failed',finished_at=$4,result=$5 WHERE job_id=$1 AND server_id=$2 AND position=$3").bind(id).bind(server).bind(position).bind(now).bind(json!({"error":"所需制品或对象不存在","executed":false})).execute(&mut **tx).await?;
+                return Ok(());
+            }
             Err(error) => return Err(error),
         }
     }
@@ -436,6 +487,10 @@ async fn enqueue(
         Ok(id) => id,
         Err(ApiError::BadRequest(error) | ApiError::Conflict(error)) => {
             sqlx::query("UPDATE operations_target_steps SET state='failed',finished_at=$4,result=$5 WHERE job_id=$1 AND server_id=$2 AND position=$3").bind(id).bind(server).bind(position).bind(now).bind(json!({"error":error})).execute(&mut **tx).await?;
+            return Ok(());
+        }
+        Err(ApiError::NotFound) => {
+            sqlx::query("UPDATE operations_target_steps SET state='failed',finished_at=$4,result=$5 WHERE job_id=$1 AND server_id=$2 AND position=$3").bind(id).bind(server).bind(position).bind(now).bind(json!({"error":"所需制品或对象不存在"})).execute(&mut **tx).await?;
             return Ok(());
         }
         Err(error) => return Err(error),

@@ -160,9 +160,8 @@ pub(super) async fn execute(
         .fetch_one(&mut *serialization)
         .await?;
     if !acquired {
-        return Err(failure(
-            "已有完整备份执行中，本次未执行；请核对既有任务结果",
-        ));
+        // Nothing ran; callers decide whether to wait for the running backup.
+        return Err(ApiError::Busy);
     }
     let uncertain: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM operations_panel_steps WHERE state='uncertain')",
@@ -176,10 +175,14 @@ pub(super) async fn execute(
     }
     let base = root(state);
     private_directory(&base).await?;
+    // The backup lock is held, so any staging directory left here belongs to an
+    // execution that crashed or was dropped; it may hold a plain dump and credentials.
+    sweep_staging(&base).await?;
     let stage = base.join(format!("staging-{id}"));
     tokio::fs::create_dir(&stage)
         .await
         .map_err(anyhow::Error::from)?;
+    let _guard = Staging(stage.clone());
     private_directory(&stage).await?;
     let result = execute_in(state, id, schedule, recipient, actor, name, &base, &stage).await;
     // Only this execution owns this exact directory; durable encrypted output
@@ -189,6 +192,39 @@ pub(super) async fn execute(
     }
     serialization.commit().await?;
     result
+}
+
+/// Removes a staging directory when its execution is dropped, for example by a
+/// timeout; the explicit removal in `execute` still confirms normal cleanup.
+struct Staging(PathBuf);
+
+impl Drop for Staging {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+async fn sweep_staging(base: &Path) -> ApiResult<()> {
+    let mut entries = tokio::fs::read_dir(base)
+        .await
+        .map_err(anyhow::Error::from)?;
+    while let Some(entry) = entries.next_entry().await.map_err(anyhow::Error::from)? {
+        let leftover = entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with("staging-"));
+        let directory = entry
+            .file_type()
+            .await
+            .map_err(anyhow::Error::from)?
+            .is_dir();
+        if leftover && directory {
+            tokio::fs::remove_dir_all(entry.path())
+                .await
+                .map_err(|_| failure("上次中断的备份暂存材料未能清理，本次未执行"))?;
+        }
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -390,12 +426,25 @@ pub(super) async fn retention(
         }
         let path = PathBuf::from(row.get::<String, _>("location"));
         if path.file_name().and_then(|v| v.to_str()) != Some(format!("snapshot-{id}.age").as_str())
-            || tokio::fs::canonicalize(&path)
-                .await
-                .map_err(anyhow::Error::from)?
-                .parent()
-                != Some(base.as_path())
         {
+            continue;
+        }
+        let canonical = match tokio::fs::canonicalize(&path).await {
+            Ok(canonical) => canonical,
+            // The file is already gone; retiring the record keeps later cleanups working.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if path.parent() == Some(base.as_path()) {
+                    sqlx::query("UPDATE operations_backup_records SET retired_at=$2 WHERE id=$1")
+                        .bind(id)
+                        .bind(now_timestamp())
+                        .execute(&mut *tx)
+                        .await?;
+                }
+                continue;
+            }
+            Err(error) => return Err(anyhow::Error::from(error).into()),
+        };
+        if canonical.parent() != Some(base.as_path()) {
             continue;
         }
         if tokio::fs::symlink_metadata(&path)
@@ -417,17 +466,20 @@ pub(super) async fn retention(
     // A retired record cannot gain new restore dependencies. Remove storage
     // only after its durable retirement; database rollback must not lose a file.
     for path in retired {
-        if tokio::fs::symlink_metadata(&path)
-            .await
-            .map_err(anyhow::Error::from)?
-            .file_type()
-            .is_symlink()
-        {
+        let metadata = match tokio::fs::symlink_metadata(&path).await {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(anyhow::Error::from(error).into()),
+        };
+        if metadata.file_type().is_symlink() {
             return Err(failure("保留清理发现存储路径改变，未继续删除"));
         }
-        tokio::fs::remove_file(path)
-            .await
-            .map_err(anyhow::Error::from)?;
+        match tokio::fs::remove_file(path).await {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                return Err(anyhow::Error::from(error).into());
+            }
+            _ => {}
+        }
     }
     Ok(())
 }
@@ -489,6 +541,26 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn sweep_removes_only_leftover_staging_directories() -> anyhow::Result<()> {
+        let directory = Directory(
+            std::env::temp_dir().join(format!("apsp-backup-sweep-test-{}", Uuid::new_v4())),
+        );
+        std::fs::create_dir(&directory.0)?;
+        let leftover = directory
+            .0
+            .join("staging-00000000-0000-0000-0000-000000000001");
+        std::fs::create_dir(&leftover)?;
+        std::fs::write(leftover.join("dump.sql"), "TEST_ONLY plain dump")?;
+        std::fs::write(directory.0.join("staging-note"), "TEST_ONLY file")?;
+        std::fs::write(directory.0.join("snapshot-kept.age"), "TEST_ONLY")?;
+        sweep_staging(&directory.0).await?;
+        assert!(!leftover.exists());
+        assert!(directory.0.join("staging-note").exists());
+        assert!(directory.0.join("snapshot-kept.age").exists());
+        Ok(())
+    }
+
     #[sqlx::test(migrations = "../panel/migrations")]
     async fn complete_backups_do_not_overlap_or_follow_uncertain_execution(
         pool: PgPool,
@@ -517,9 +589,7 @@ mod tests {
         let error = execute(&state, Uuid::new_v4(), schedule, &recipient, 1, "TEST_ONLY")
             .await
             .unwrap_err();
-        assert!(
-            matches!(error, ApiError::Conflict(message) if message.contains("已有完整备份执行中"))
-        );
+        assert!(matches!(error, ApiError::Busy));
         existing.rollback().await?;
         let server: i64 = sqlx::query_scalar(
             "INSERT INTO servers(name) VALUES('TEST_ONLY backup serialization') RETURNING id",

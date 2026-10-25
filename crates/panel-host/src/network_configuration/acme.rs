@@ -107,6 +107,18 @@ async fn save(
             "请选择固定工具版本、有效邮箱，确认签发条款与MIT许可；续期阈值为7–60天".into(),
         ));
     }
+    let stored: Option<(i64, Value)> =
+        sqlx::query_as("SELECT revision,config FROM network_acme_plans WHERE certificate_id=$1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
+    // The revision check in the transaction below rejects a plan changed after this read.
+    let kept = stored.is_some_and(|(revision, config)| {
+        Some(revision) == input.revision
+            && config["credential_id"].as_str()
+                == Some(input.config.credential_id.to_string().as_str())
+    });
+    crate::control_center::require_credential_choice(&state, &headers, !kept).await?;
     // Resolve once before saving so a disabled or undecryptable credential cannot be scheduled.
     let secret = crate::control_center::credentials::resolve_reference(
         &state,

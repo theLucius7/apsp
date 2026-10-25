@@ -188,7 +188,8 @@ fn pagination(
             .ok_or("pagination_inconsistent")?,
     )?;
     let next = optional_page(value.get("next_page").ok_or("pagination_inconsistent")?)?;
-    if value["current_page"].as_u64() != Some(page)
+    // The Hetzner Cloud API names the current page `page` in `meta.pagination`.
+    if value["page"].as_u64() != Some(page)
         || value["per_page"].as_u64() != Some(PAGE_SIZE)
         || value["last_page"].as_u64() != Some(last)
         || expected_total.is_some_and(|expected| expected != total)

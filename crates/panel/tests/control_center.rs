@@ -335,6 +335,147 @@ async fn owner_api_token_retains_capability_and_server_limits(pool: PgPool) -> R
 }
 
 #[sqlx::test]
+async fn scoped_operator_cannot_change_shared_settings_and_denied_reauth_is_audited(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = Panel::start(pool).await?;
+    let first = panel.server("allowed").await?;
+    let second = panel.server("unassigned").await?;
+    sqlx::query("UPDATE servers SET asset_settings=$1 WHERE id=ANY($2)")
+        .bind(json!({"price":"1.00","expires_at":1790812800}))
+        .bind(vec![first, second])
+        .execute(&panel.pool)
+        .await?;
+    let operator = panel.viewer(first).await?;
+    sqlx::query("UPDATE administrator_profiles SET role='operator',capabilities='[\"servers:read\",\"servers:write\",\"diagnostics:read\",\"diagnostics:write\",\"cloud:read\",\"cloud:write\",\"network:read\",\"network:write\"]' WHERE admin_id=$1")
+        .bind(operator)
+        .execute(&panel.pool)
+        .await?;
+    let scoped = panel.session(operator, true).await?;
+    let owner = panel.session(1, true).await?;
+    let send = |method: reqwest::Method, path: &str, cookie: &str, body: Value| {
+        panel
+            .client
+            .request(method, format!("{}{path}", panel.base))
+            .header(header::COOKIE, cookie)
+            .header(header::ORIGIN, &panel.base)
+            .json(&body)
+            .send()
+    };
+    // Tool licences and targets are shared by every administrator.
+    let tool = json!({"id":"curl","version":"8.0.0","license":"MIT","source_url":"https://example.com/curl","licensed":true,"platforms":["linux-amd64"]});
+    assert_eq!(
+        send(
+            reqwest::Method::POST,
+            "/api/network-workbench/tools",
+            &scoped,
+            tool.clone()
+        )
+        .await?
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert!(
+        send(
+            reqwest::Method::POST,
+            "/api/network-workbench/tools",
+            &owner,
+            tool
+        )
+        .await?
+        .status()
+        .is_success()
+    );
+    // A document without servers stays readable but only a global writer may change it.
+    let endpoint = json!({"kind":"endpoint","name":"shared endpoint","server_id":null,
+        "listen_address":"127.0.0.1","public_address":null,"port":8080,"protocol":"tcp",
+        "owner":"external","notes":""});
+    let document = Uuid::new_v4();
+    sqlx::query("INSERT INTO network_documents(id,kind,config,created_at,updated_at) VALUES($1,'endpoint',$2,0,0)")
+        .bind(document)
+        .bind(&endpoint)
+        .execute(&panel.pool)
+        .await?;
+    let path = format!("/api/network-configuration/documents/{document}");
+    assert_eq!(
+        send(reqwest::Method::GET, &path, &scoped, Value::Null)
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(
+            reqwest::Method::PUT,
+            &path,
+            &scoped,
+            json!({"config":endpoint,"revision":1})
+        )
+        .await?
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    // Every combined ledger view exposes panel-wide records, while the dedicated
+    // server projection remains available and filters by the actor's server scope.
+    for path in [
+        "/api/plugins/expenses/subscriptions",
+        "/api/plugins/expenses/summary",
+        "/api/plugins/expenses/payments",
+        "/api/plugins/expenses/calendar?from=2026-10-01&to=2026-10-31",
+        "/api/plugins/expenses/calendar.ics?from=2026-10-01&to=2026-10-31",
+    ] {
+        assert_eq!(
+            send(reqwest::Method::GET, path, &scoped, Value::Null)
+                .await?
+                .status(),
+            StatusCode::FORBIDDEN,
+            "{path}"
+        );
+    }
+    let server_expenses: Value = send(
+        reqwest::Method::GET,
+        "/api/plugins/expenses/servers",
+        &scoped,
+        Value::Null,
+    )
+    .await?
+    .error_for_status()?
+    .json()
+    .await?;
+    assert_eq!(server_expenses["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(server_expenses["entries"][0]["id"], first);
+    // The generic runtime barrier is owner-only.
+    let barrier = format!("/api/servers/{first}/runtime-control/barrier");
+    let input = json!({"module":"example","minimum_revision":1});
+    assert_eq!(
+        send(reqwest::Method::POST, &barrier, &scoped, input.clone())
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_ne!(
+        send(reqwest::Method::POST, &barrier, &owner, input)
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    // A high-risk request refused for a missing re-verification leaves an audit row.
+    let stale = panel.session(1, false).await?;
+    let target = format!("/api/network-workbench/targets/{}", Uuid::new_v4());
+    assert_eq!(
+        send(reqwest::Method::DELETE, &target, &stale, Value::Null)
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    let denied: i64 = sqlx::query_scalar("SELECT count(*) FROM management_audit WHERE object_path=$1 AND result->>'phase'='reauth-denied'")
+        .bind(&target)
+        .fetch_one(&panel.pool)
+        .await?;
+    assert_eq!(denied, 1);
+    Ok(())
+}
+
+#[sqlx::test]
 async fn proof_is_session_bound_and_preference_conflicts_preserve_values(
     pool: PgPool,
 ) -> Result<()> {

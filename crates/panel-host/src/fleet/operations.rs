@@ -406,7 +406,7 @@ pub async fn work(State(state): State<AppState>, headers: HeaderMap) -> ApiResul
             let parent_allowed = if let Some(parent) = parent {
                 parent.get::<String, _>("status") == "running"
                     && crate::control_center::actor_server_allowed(
-                        &state.pool,
+                        &mut *tx,
                         parent.get("requested_by"),
                         id,
                         "operations:write",
@@ -425,7 +425,7 @@ pub async fn work(State(state): State<AppState>, headers: HeaderMap) -> ApiResul
         }
         if let Some(actor) = row.get::<Option<i64>, _>("requested_by")
             && !crate::control_center::actor_server_allowed(
-                &state.pool,
+                &mut *tx,
                 actor,
                 id,
                 permission(&operation),
@@ -450,15 +450,10 @@ pub async fn work(State(state): State<AppState>, headers: HeaderMap) -> ApiResul
             let source_operation: Operation =
                 serde_json::from_value(source.get("operation")).map_err(anyhow::Error::from)?;
             let authorized = if let Some(actor) = row.get::<Option<i64>, _>("requested_by") {
-                crate::control_center::actor_server_allowed(
-                    &state.pool,
-                    actor,
-                    id,
-                    "operations:write",
-                )
-                .await?
+                crate::control_center::actor_server_allowed(&mut *tx, actor, id, "operations:write")
+                    .await?
                     && crate::control_center::actor_server_allowed(
-                        &state.pool,
+                        &mut *tx,
                         actor,
                         id,
                         permission(&source_operation),
@@ -485,7 +480,7 @@ pub async fn work(State(state): State<AppState>, headers: HeaderMap) -> ApiResul
             expires_at: row.get("expires_at"),
         });
     }
-    let terminals = super::terminal::controls(&state, &mut tx, id, !lifecycle_blocked).await?;
+    let terminals = super::terminal::controls(&mut tx, id, !lifecycle_blocked).await?;
     tx.commit().await?;
     Ok(Json(Work { jobs, terminals }))
 }

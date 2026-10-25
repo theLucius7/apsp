@@ -51,7 +51,8 @@ async fn resolve(
     Json(mut input): Json<Request>,
 ) -> ApiResult<Json<Value>> {
     let account = dns_accounts::load(&state.pool, id).await?;
-    dns_accounts::authorize(&state, &headers, &account.config, "dns:read").await?;
+    // The panel sends the query itself and stores the observation, so this is a write.
+    dns_accounts::authorize(&state, &headers, &account.config, "dns:write").await?;
     let _permit = state
         .quality_permits
         .clone()
@@ -66,6 +67,11 @@ async fn resolve(
         .ok_or_else(|| ApiError::BadRequest("DNS 查询名称无效".into()))?;
     if input.name != zone && !input.name.ends_with(&format!(".{zone}")) {
         return Err(ApiError::BadRequest("查询名称不属于授权区域".into()));
+    }
+    if !crate::ip_quality::public_ip(input.resolver_ip) {
+        return Err(ApiError::BadRequest(
+            "解析器须为公网地址，面板不会向回环、内网或保留地址发送查询".into(),
+        ));
     }
     if input.resolver_port == 0
         || input.resolver_ip.is_unspecified()
