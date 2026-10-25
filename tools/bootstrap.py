@@ -25,6 +25,7 @@ from release import (REPOSITORY, VERSION, digest, ensure, load_roots, read_regul
 GITHUB_DOWNLOAD_HOSTS = frozenset(("github.com", "release-assets.githubusercontent.com",
                                     "objects.githubusercontent.com"))
 PROTOCOL_VERSION = 1
+USER_AGENT = "apsp-bootstrap/1"
 MINISIGN_LINUX_ARCHIVE_SHA256 = "9a599b48ba6eb7b1e80f12f36b94ceca7c00b7a5173c95c3efc88d9822957e73"
 MINISIGN_LINUX_BINARIES = {
     "x86_64": (288200, "2c74dffcc1c9a5ee55957c60971998ace2b89f22585631594ec2152c588af8db"),
@@ -125,7 +126,9 @@ class GithubRedirect(urllib.request.HTTPRedirectHandler):
 
 def github_opener(mirror=""):
     # Bootstrap proof downloads never inherit HTTP_PROXY/HTTPS_PROXY/ALL_PROXY.
-    return urllib.request.build_opener(urllib.request.ProxyHandler({}), GithubRedirect(mirror))
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), GithubRedirect(mirror))
+    opener.addheaders = [("User-Agent", USER_AGENT)]
+    return opener
 
 
 def download(base, name, destination, limit, mirror=""):
@@ -183,7 +186,9 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def panel_opener():
-    return urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    opener.addheaders = [("User-Agent", USER_AGENT)]
+    return opener
 
 
 def host_target():
