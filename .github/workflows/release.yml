@@ -98,7 +98,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            target: amd64
+            libc: gnu
+          - arch: arm64
+            target: arm64
+            libc: gnu
+          - arch: amd64
+            target: linux-musl-amd64
+            libc: musl
+          - arch: arm64
+            target: linux-musl-arm64
+            libc: musl
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-go@v7.0.0
@@ -109,18 +121,23 @@ jobs:
         id: runtime-cache
         with:
           path: ${{ runner.temp }}/artifacts/sing-box/1.14.2
-          key: runtime-ubuntu24-1.14.2-${{ matrix.arch }}-${{ hashFiles('tools/build-singbox.sh', 'tools/singbox-builder.Dockerfile') }}
+          key: runtime-ubuntu24-1.14.2-${{ matrix.target }}-${{ hashFiles('tools/build-singbox.sh', 'tools/singbox-builder.Dockerfile') }}
       - name: Build pinned runtime on cache miss
         if: steps.runtime-cache.outputs.cache-hit != 'true'
         run: |
           docker build --platform=linux/amd64 -f tools/singbox-builder.Dockerfile -t apsp-release-runtime:1.14.2 .
           mkdir -p '${{ runner.temp }}/artifacts'
-          docker run --rm --platform=linux/amd64 -v '${{ runner.temp }}/artifacts:/artifacts' apsp-release-runtime:1.14.2 '${{ matrix.arch }}' /artifacts
+          libc_args=()
+          if [[ '${{ matrix.libc }}' == musl ]]; then libc_args+=(--libc=musl); fi
+          docker run --rm --platform=linux/amd64 -v '${{ runner.temp }}/artifacts:/artifacts' apsp-release-runtime:1.14.2 '${{ matrix.arch }}' /artifacts "${libc_args[@]}"
       - name: Inspect cached or fresh runtime without executing it
-        run: python3 tools/verify-release-runtime.py --root '${{ runner.temp }}/artifacts' --arch '${{ matrix.arch }}'
+        run: |
+          libc_args=()
+          if [[ '${{ matrix.libc }}' == musl ]]; then libc_args+=(--libc=musl); fi
+          python3 tools/verify-release-runtime.py --root '${{ runner.temp }}/artifacts' --arch '${{ matrix.arch }}' "${libc_args[@]}"
       - uses: actions/upload-artifact@v7.0.1
         with:
-          name: release-runtime-${{ matrix.arch }}
+          name: release-runtime-${{ matrix.target }}
           path: ${{ runner.temp }}/artifacts/
           if-no-files-found: error
 
@@ -145,7 +162,7 @@ jobs:
       - name: Render immutable installer and canonical manifests
         run: |
           python3 tools/release.py render-installer --template deploy/install.sh.tmpl --agent-unit deploy/apsp-agent.service --runtime-unit plugins/sing-box/apsp-singbox@.service --output '${{ runner.temp }}/install.sh'
-          python3 tools/release.py assemble --source '${{ runner.temp }}/artifacts' --output '${{ runner.temp }}/release' --agent-version "$AGENT_VERSION" --runtime-version 1.14.2 --tag "$RELEASE_TAG" --installer '${{ runner.temp }}/install.sh'
+          python3 tools/release.py assemble --source '${{ runner.temp }}/artifacts' --output '${{ runner.temp }}/release' --agent-version "$AGENT_VERSION" --runtime-version 1.14.2 --include-musl-runtime --tag "$RELEASE_TAG" --installer '${{ runner.temp }}/install.sh'
       - name: Create draft without any signing secret
         run: |
           python3 - <<'PY'

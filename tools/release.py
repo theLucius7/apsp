@@ -195,7 +195,10 @@ def assemble(args):
     if getattr(args, "ipquality_version", None) is not None:
         modules.append(("ipquality", args.ipquality_version, "tar.gz", "ipquality"))
     for name, version, archive_format, binary_name in modules:
-        for arch in architectures:
+        targets = list(architectures)
+        if name == "sing-box" and getattr(args, "include_musl_runtime", False):
+            targets += ["linux-musl-" + arch for arch in architectures]
+        for arch in targets:
             entry = {"name": name, "version": version, "arch": arch,
                      "format": archive_format, "binary_name": binary_name}
             path = canonical_path(entry)
@@ -492,6 +495,8 @@ def main():
     for argument in ("source", "output", "tag", "agent-version", "runtime-version", "installer"):
         build.add_argument("--" + argument, required=True)
     build.add_argument("--nodequality-version", default=NODEQUALITY_VERSION)
+    build.add_argument("--include-musl-runtime", action="store_true",
+                       help="include the separate static musl runtime for every selected architecture")
     build.add_argument("--tcp-probe-version", help="opt-in native TCP version with its full source SHA")
     build.add_argument("--ipquality-version", help="opt-in fixed standalone IPQuality version with its complete signed offline profile")
     build.add_argument("--arch", action="append", choices=("amd64", "arm64"),

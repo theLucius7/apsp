@@ -117,6 +117,28 @@ class PublicationTests(unittest.TestCase):
         return publish.checked_publication(self.github, TAG, self.fixture.roots,
                                            "minisign", publish_release)
 
+    def test_openrc_release_requires_complete_musl_pair_without_reclassifying_gnu(self):
+        metadata = json.loads((self.fixture.bundle / "release.json").read_text())
+        publish.require_components(metadata)
+        metadata["tag"] = "agent-v0.3.3"
+        for arch in ("linux-musl-amd64", "linux-musl-arm64"):
+            with self.assertRaisesRegex(ValueError, "every selected module"):
+                publish.require_components(metadata)
+            metadata["artifacts"].append({"name": "sing-box", "arch": arch})
+        publish.require_components(metadata)
+        metadata["artifacts"] = [entry for entry in metadata["artifacts"]
+                                 if (entry["name"], entry["arch"]) != ("sing-box", "amd64")]
+        with self.assertRaisesRegex(ValueError, "every selected module"):
+            publish.require_components(metadata)
+
+    def test_old_release_with_optional_musl_still_requires_both_architectures(self):
+        metadata = json.loads((self.fixture.bundle / "release.json").read_text())
+        metadata["artifacts"].append({"name": "sing-box", "arch": "linux-musl-amd64"})
+        with self.assertRaisesRegex(ValueError, "every selected module"):
+            publish.require_components(metadata)
+        metadata["artifacts"].append({"name": "sing-box", "arch": "linux-musl-arm64"})
+        publish.require_components(metadata)
+
     def test_optional_ipquality_publication_requires_both_architectures_and_exact_component_count(self):
         metadata = json.loads((self.fixture.bundle / "release.json").read_text())
         metadata["artifacts"].append({"name": "ipquality", "arch": "amd64"})

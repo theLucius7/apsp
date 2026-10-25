@@ -190,6 +190,12 @@ def require_components(metadata):
     identities = {(entry["name"], entry["arch"]) for entry in metadata["artifacts"]}
     required = {(name, arch) for name in ("agent", "sing-box", "nodequality")
                 for arch in ("amd64", "arm64")}
+    version = re.fullmatch(r"agent-v(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?",
+                           metadata.get("tag", ""))
+    musl_required = version is not None and tuple(map(int, version.groups())) >= (0, 3, 3)
+    if musl_required or any(name == "sing-box" and arch.startswith("linux-musl-")
+                            for name, arch in identities):
+        required |= {("sing-box", "linux-musl-" + arch) for arch in ("amd64", "arm64")}
     for optional in ("tcpquality", "ipquality"):
         if any(name == optional for name, _ in identities):
             required |= {(optional, arch) for arch in ("amd64", "arm64")}

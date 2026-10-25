@@ -201,9 +201,9 @@ pub(super) async fn runtime_artifact(
         let preserve_legacy =
             info["os"] == "linux" && compiled_target.as_ref().is_some_and(|old| old != &target);
         if preserve_legacy {
-            // Preserve caches from either Linux ABI compatibility direction.
-            targets.push(compiled_target.expect("checked compiled target"));
+            // Adding a target must not replace an existing architecture-only cache.
             targets.push(arch.into());
+            targets.push(compiled_target.expect("checked compiled target"));
         }
         targets.push(target);
         if gnu_host && !preserve_legacy {
