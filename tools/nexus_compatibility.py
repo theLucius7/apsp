@@ -239,20 +239,63 @@ $legacy = [];
 foreach ($seen as $uid => $ips) {
     $legacy[(string) $uid] = array_slice(array_keys($ips), 0, 64);
 }
-echo json_encode(['legacy' => (object) $legacy], JSON_THROW_ON_ERROR);
+// Status of visible nodes for the member line catalogue (ADR 0100): online
+// state, load percentages and the three carrier pings the legacy member page
+// shows. No endpoint address or monitor identifier is returned. A failure here
+// never blocks the device exchange above; the catalogue then lets the status lapse.
+$nodes = null;
+if (($input['status'] ?? false) === true) try {
+    $nodes = [];
+    $monitors = app(App\Services\InfrastructureStore::class)->nodeMonitorMap();
+    $snapshot = app(App\Services\InfrastructureStatus::class)->read(array_values(array_unique(array_values($monitors))));
+    $raw = $snapshot['raw'] ?? [];
+    $tasks = ['NX China Telecom Guangdong' => 'telecom', 'NX China Unicom Guangdong' => 'unicom', 'NX China Mobile Guangdong' => 'mobile'];
+    $percent = static function ($usage) {
+        $total = (int) ($usage['total'] ?? 0);
+        return $total > 0 ? round(min(100, max(0, ((int) ($usage['used'] ?? 0) / $total) * 100)), 1) : null;
+    };
+    foreach (App\Models\Server::query()->where('show', true)->orderBy('id')->limit(5000)->get()->append(['last_check_at', 'is_online', 'load_status']) as $server) {
+        $uuid = $monitors[(int) $server->id] ?? null;
+        $status = $uuid ? ($raw[$uuid] ?? null) : null;
+        $carriers = [];
+        foreach (($status['ping'] ?? []) as $ping) {
+            $carrier = $tasks[$ping['name'] ?? ''] ?? null;
+            if (!$carrier) continue;
+            $carriers[$carrier] = [
+                'latest' => isset($ping['latest']) && (int) $ping['latest'] >= 0 ? (int) $ping['latest'] : null,
+                'average' => isset($ping['avg']) && (int) $ping['avg'] >= 0 ? (int) $ping['avg'] : null,
+                'loss' => isset($ping['loss']) && is_numeric($ping['loss']) ? round(min(100, max(0, (float) $ping['loss'])), 1) : null,
+            ];
+        }
+        $time = $status['time'] ?? null;
+        $load = $server->load_status ?? [];
+        $nodes[] = [
+            'id' => (int) $server->id,
+            'online' => (bool) $server->enabled && (int) $server->is_online === 1,
+            'checked_at' => $server->last_check_at ? (int) $server->last_check_at : null,
+            'load' => ['cpu' => isset($load['cpu']) ? round(min(100, max(0, (float) $load['cpu'])), 1) : null, 'memory' => $percent($load['mem'] ?? null), 'disk' => $percent($load['disk'] ?? null)],
+            'latency' => ['monitored' => $status !== null, 'updated_at' => is_numeric($time) ? (int) $time : (($time && strtotime((string) $time)) ? strtotime((string) $time) : null), 'carriers' => (object) $carriers],
+        ];
+    }
+} catch (Throwable) {
+    $nodes = null;
+}
+echo json_encode(['legacy' => (object) $legacy, 'nodes' => $nodes], JSON_THROW_ON_ERROR);
 """
 
 
-def legacy_devices(config, managed):
-    """Write apsp-admitted addresses to the legacy device store; read the rest."""
-    payload = base64.b64encode(json.dumps({'managed': managed}, separators=(',', ':')).encode()).decode()
+def legacy_devices(config, managed, status=False):
+    """Write apsp-admitted addresses to the legacy device store; read the rest,
+    and with ``status`` the legacy node status for the member catalogue."""
+    payload = base64.b64encode(json.dumps({'managed': managed, 'status': status}, separators=(',', ':')).encode()).decode()
     result = subprocess.run(['docker', 'exec', '-i', config['legacy_container'], 'php'],
                             input=DEVICE_EXCHANGE.replace('@INPUT@', payload), text=True,
                             capture_output=True, timeout=45, check=False)
     if result.returncode or len(result.stdout) > 8 * 1024 * 1024:
         raise BridgeError('Legacy device exchange failed; no private error detail logged')
-    legacy = json.loads(result.stdout)['legacy']
-    if not isinstance(legacy, dict):
+    exported = json.loads(result.stdout)
+    legacy, nodes = exported['legacy'], exported.get('nodes')
+    if not isinstance(legacy, dict) or not isinstance(nodes, (list, type(None))):
         raise BridgeError('Legacy device exchange returned an invalid result')
     result = {}
     for uid, ips in legacy.items():
@@ -264,7 +307,7 @@ def legacy_devices(config, managed):
                 continue
         if valid:
             result[str(int(uid))] = sorted(set(valid))[:64]
-    return result
+    return result, nodes
 
 
 def exchange_devices(config, connection):
@@ -274,12 +317,34 @@ def exchange_devices(config, connection):
         raise BridgeError('Legacy member count exceeded the safety bound')
     limits = {str(r[0]): max(0, min(int(r[1] or 0), 1024)) for r in rows}
     managed = config.get('_device_managed', [])
-    # Live addresses matter only once apsp serves taken-over nodes.
-    legacy = legacy_devices(config, managed) if managed else {}
-    sample = {'import_id': str(uuid.UUID(config['import_id'])), 'observed_at': int(time.time()),
-              'limits': limits, 'legacy': legacy}
+    # One legacy call publishes apsp-admitted addresses and reads the legacy
+    # nodes' devices; every 30 s it also reads the status the member line
+    # catalogue shows (ADR 0100).
+    status_due = time.monotonic() - config.get('_last_node_status', float('-inf')) >= 30
+    legacy, nodes, failure = {}, None, None
+    if managed or status_due:
+        if status_due:
+            config['_last_node_status'] = time.monotonic()
+        try:
+            legacy, nodes = legacy_devices(config, managed, status_due)
+        except (BridgeError, KeyError, TypeError, ValueError, subprocess.TimeoutExpired) as error:
+            if managed:
+                raise
+            # Before any takeover, limits still flow; the error is reported below.
+            failure = error
+    if not managed:
+        # Live addresses matter only once apsp serves taken-over nodes.
+        legacy = {}
+    observed = int(time.time())
+    import_id = str(uuid.UUID(config['import_id']))
+    sample = {'import_id': import_id, 'observed_at': observed, 'limits': limits, 'legacy': legacy}
     result = database(config, f'SELECT singbox_nexus_device_exchange({json_sql(sample)});')
     config['_device_managed'] = result['managed']
+    if nodes is not None:
+        status = {'import_id': import_id, 'observed_at': observed, 'nodes': nodes[:5000]}
+        database(config, f'SELECT singbox_nexus_node_status_exchange({json_sql(status)});')
+    if failure:
+        raise failure
     return len(result['managed'])
 
 

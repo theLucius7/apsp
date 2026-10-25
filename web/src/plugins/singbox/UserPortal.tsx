@@ -1,4 +1,5 @@
 import MemberCommerce from './commerce/MemberCommerce'
+import MemberLines from './lines/MemberLines'
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api, errorMessage } from '../../api'
@@ -84,6 +85,7 @@ export default function UserPortal({ account, activation }: { account: string; a
         <p className="text-muted-foreground mt-3 text-xs leading-relaxed">订阅检查当前授权与套餐状态。受管流量约每三十秒刷新；外部节点用量由提供方计量，已下载的外部凭据也由提供方控制。</p>
         <Field label="我的登录地址"><CopyField text={bookmark} label="复制我的登录地址" /></Field>
       </div></Panel>
+      <MemberLines key={`lines:${account}`} account={account} />
       <MemberCommerce key={account} account={account} />
       <Panel className="mb-5"><PanelHeader><PanelTitle>我的 Passkey</PanelTitle><Button size="sm" disabled={action.busy || Boolean(disabled) || data.keys.length >= 10} onClick={() => { action.clearError(); setEditing('new') }}>添加 Passkey</Button></PanelHeader><div className="p-4">
         {disabled && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{disabled}</p>}

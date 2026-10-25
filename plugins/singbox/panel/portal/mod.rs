@@ -1,6 +1,7 @@
 pub(crate) mod access;
 mod administration;
 mod ceremonies;
+mod lines;
 
 use crate::AppState;
 use axum::{
@@ -18,6 +19,7 @@ pub(super) fn router() -> Router<AppState> {
         )
         .route("/portal/{account}", get(access::view))
         .route("/portal/{account}/logout", post(access::logout))
+        .route("/portal/{account}/lines", get(lines::view))
         .route(
             "/portal/{account}/login/start",
             post(ceremonies::login_start),
