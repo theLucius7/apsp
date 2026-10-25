@@ -204,7 +204,7 @@ Agent 资产缺失或缺少对应架构时，由维护者检查可信 GitHub Rel
 
 手动安装的验证器和根公钥必须先从面板以外的可信渠道获得，并由操作者独立核对。不能执行面板提供的 `curl … | sh` 来建立信任，也不能先执行未知的新 Agent 让它验证自己。
 
-在已核对来源的本地仓库中，检查 `tools/bootstrap.py`、`tools/release.py` 和发布公钥，再在目标 Linux 节点安装可信 bootstrap。以下命令仅安装已经由操作者核对的本地文件：
+在已核对来源的本地仓库中，检查 `tools/bootstrap.py`、`tools/release.py`、`tools/legacy_agent_checkpoint.py`（bootstrap 从同一目录导入）和发布公钥，再在目标 Linux 节点安装可信 bootstrap。以下命令仅安装已经由操作者核对的本地文件：
 
 ```bash
 sudo apt-get update
@@ -214,6 +214,7 @@ python3 tools/release.py render-installer --template deploy/install.sh.tmpl --ag
 sudo install -m 644 /临时目录/trusted-install.sh /usr/local/lib/apsp/trusted-install.sh
 sudo install -m 755 tools/bootstrap.py /usr/local/lib/apsp/bootstrap.py
 sudo install -m 644 tools/release.py /usr/local/lib/apsp/release.py
+sudo install -m 644 tools/legacy_agent_checkpoint.py /usr/local/lib/apsp/legacy_agent_checkpoint.py
 sudo install -m 644 /已独立核对的路径/public-keys.json /etc/apsp/trust/public-keys.json
 sudo tee /usr/local/bin/apsp-bootstrap >/dev/null <<'SH'
 #!/bin/sh
