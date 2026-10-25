@@ -79,6 +79,27 @@ export type ChainBatchRequest = { request_id: string; items: { name: string; ent
 export type PendingChainBatch = { draft: string; source_draft: string; serialized: string; request_id: string; attempted: boolean }
 export type ChainBatchResult = { request_id: string; chain_ids: number[]; entry_node_ids: number[] }
 
+/** Path shapes the creation form offers. A template only prefills the shared hops; every hop stays editable, up to 8. */
+export type ChainTemplate = 'two-hop' | 'relay' | 'subscription'
+const blankManagedHop = (): ChainDraftHop => ({ kind: 'managed', node_id: '' })
+const blankSubscriptionHop = (): ChainDraftHop => ({ kind: 'subscription', source_id: 0, node: null, update_mode: 'follow_node' })
+/** The template a shared path currently matches; longer managed-only paths are custom. */
+export function chainTemplateOf(hops: ChainDraftHop[]): ChainTemplate | 'custom' {
+  if (hops.some(hop => hop.kind === 'subscription')) return 'subscription'
+  return hops.length === 1 ? 'two-hop' : hops.length === 2 ? 'relay' : 'custom'
+}
+/** Re-shapes the shared path for a template and keeps the chosen hops that still fit it. */
+export function chainTemplateHops(template: ChainTemplate, hops: ChainDraftHop[]): ChainDraftHop[] {
+  const managed = hops.filter(hop => hop.kind === 'managed')
+  const exit = hops.at(-1)
+  if (template === 'two-hop') return [exit?.kind === 'managed' ? exit : blankManagedHop()]
+  if (template === 'relay') return [managed.length > 1 ? managed[0] : blankManagedHop(), exit?.kind === 'managed' ? exit : blankManagedHop()]
+  // A path that already has a subscription hop keeps it; otherwise the last hop becomes the subscription node.
+  return hops.some(hop => hop.kind === 'subscription') ? hops : [...hops.slice(0, -1), blankSubscriptionHop()]
+}
+/** A new form starts from the two-hop template: the entry plus one exit. */
+const blankDraft = (): ChainBatchDraft => ({ mode: 'new', server_id: '', public_host: '', sni: '', entry_node_id: '', exit_node_id: '', hops: chainTemplateHops('two-hop', []), rows: [{ name: '', port: '' }] })
+
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 function validSettings(value: unknown) {
   if (value === undefined) return true
@@ -262,7 +283,7 @@ export async function deleteProxyResource(resource: Pick<ProxyResource, 'kind' |
 export default function Chains({ snapshot, serverId, getServerId, refresh, onCreated, onAddSource, replacement, openRequest }: { snapshot: ProxyWriteSnapshot; serverId?: number; getServerId?: () => number | undefined; refresh: () => void; onCreated: (result: ChainBatchResult) => void; onAddSource?: () => void; replacement?: { generation: number; resource: ProxyResource }; openRequest?: number }) {
   const action = useAction()
   const [creating, setCreating] = useState(false)
-  const [draft, setDraft] = useState<ChainBatchDraft>({ mode: 'new', server_id: '', public_host: '', sni: '', entry_node_id: '', exit_node_id: '', rows: [{ name: '', port: '' }] })
+  const [draft, setDraft] = useState<ChainBatchDraft>(blankDraft)
   const pending = useRef<PendingChainBatch | undefined>(undefined)
   const [submittedDraft, setSubmittedDraft] = useState('')
   const [lastRequestId, setLastRequestId] = useState('')
@@ -289,6 +310,9 @@ export default function Chains({ snapshot, serverId, getServerId, refresh, onCre
   const enabledServers = snapshot.servers.data?.filter(server => server.enabled) ?? []
   const choices = snapshot.nodes.data?.filter(node => node.protocol === 'vless-reality' && node.enabled !== false && enabledServers.some(server => server.id === node.server_id)
     && snapshot.resources.data?.some(resource => resource.kind === 'direct' && resource.id === node.id && resource.available)) ?? []
+  // Managed segments must be VLESS + Reality nodes, so enabled nodes of other protocols never appear in the selectors.
+  const otherProtocolNodes = snapshot.nodes.data?.filter(node => node.protocol !== 'vless-reality' && node.enabled !== false && enabledServers.some(server => server.id === node.server_id)).length ?? 0
+  const template = chainTemplateOf(draft.hops ?? [])
   const filterError = () => {
     const selected = getServerId ? getServerId() : serverId
     if (selected === undefined) return ''
@@ -303,23 +327,20 @@ export default function Chains({ snapshot, serverId, getServerId, refresh, onCre
   const rowUpdate = (index: number, value: Partial<ChainBatchDraft['rows'][number]>) => update({ rows: draft.rows.map((row, i) => i === index ? { ...row, ...value } : row) })
   // A click made before a refresh visibly disables the buttons is reported, not ignored.
   const refreshNotice = useRefreshNotice()
+  // A stale or malformed snapshot blocks opening; a draft that conflicts with the server filter opens with its
+  // reason shown and submission disabled, so the administrator can re-select instead of seeing nothing happen.
   const open = () => {
-    if (action.busy || !refreshNotice.allows(proxyWriteError(snapshot) || filterError())) return
+    if (action.busy || !refreshNotice.allows(proxyWriteError(snapshot))) return
     action.clearError()
     if (!draft.server_id) { const selected = getServerId ? getServerId() : serverId; setDraft(current => ({ ...current, server_id: (selected === undefined ? enabledServers[0] : enabledServers.find(server => server.id === selected))?.id.toString() ?? '' })) }
     setCreating(true)
   }
-  const openOrdered = () => {
-    if (action.busy || !refreshNotice.allows(proxyWriteError(snapshot))) return
-    if (!draft.hops) update({ hops: [{ kind: 'managed', node_id: draft.exit_node_id }] })
-    open()
-  }
-  // A new request from the page header opens the ordered form once.
+  // The page header and the empty chain list each raise the request counter; every increment opens the form once.
   const openedRequest = useRef(openRequest ?? 0)
   useEffect(() => {
     if (!openRequest || openRequest === openedRequest.current) return
     openedRequest.current = openRequest
-    openOrdered()
+    open()
   })
   const submit = () => {
     if (!creating || action.busy || proxyWriteError(snapshot) || filterError() || chainBatchSelectionError(draft, writeSnapshot)) return
@@ -332,20 +353,19 @@ export default function Chains({ snapshot, serverId, getServerId, refresh, onCre
       const ids = (value: unknown): value is number[] => Array.isArray(value) && value.length === draft.rows.length && value.every(id => Number.isSafeInteger(id) && id > 0) && new Set(value).size === value.length
       if (!result || result.request_id !== submission.request_id || !ids(result.chain_ids) || !ids(result.entry_node_ids)) throw new Error('面板返回的批次结果不完整，请刷新确认或重试原批次；原请求已保留。')
       return result
-    }, result => { pending.current = undefined; setSubmittedDraft(''); setLastRequestId(''); setReplacementBlocked(false); setReplacementDraft(false); setCreating(false); setDraft({ mode: 'new', server_id: '', public_host: '', sni: '', entry_node_id: '', exit_node_id: '', rows: [{ name: '', port: '' }] }); onCreated(result); refresh() })
+    }, result => { pending.current = undefined; setSubmittedDraft(''); setLastRequestId(''); setReplacementBlocked(false); setReplacementDraft(false); setCreating(false); setDraft(blankDraft()); onCreated(result); refresh() })
   }
   return <>
     {creating && selectedSources.map(id => <SourceObservation key={id} id={id} observe={observe} />)}
-    <Button disabled={action.busy || Boolean(writeError)} onClick={open}>创建两跳链路</Button>
-    <Button variant="outline" disabled={action.busy || Boolean(writeError)} onClick={openOrdered}>创建有序链路</Button>
     {refreshNotice.visible && <RefreshNotice />}
-    <DialogPresence>{creating && <FormDialog wide  title={draft.hops ? '创建有序链路' : '创建两跳链路'} onClose={() => setCreating(false)} onSubmit={submit} busy={action.busy} disabled={Boolean(writeError)} submitDisabled={Boolean(selectionError)} error={writeError || selectionError || action.error} retry={writeError || selectionError ? refresh : undefined} submitLabel={lastRequestId && unchanged ? '重试原批次' : '创建未授权链路'}>
+    <DialogPresence>{creating && <FormDialog wide title="创建链路" onClose={() => setCreating(false)} onSubmit={submit} busy={action.busy} disabled={Boolean(writeError)} submitDisabled={Boolean(selectionError)} error={writeError || selectionError || action.error} retry={writeError || selectionError ? refresh : undefined} submitLabel={lastRequestId && unchanged ? '重试原批次' : '创建未授权链路'}>
       <p className="text-muted-foreground mt-3 text-xs leading-relaxed">入口固定为受管 Reality；入口后可按顺序选择 1–8 个受管或订阅节点，最后一跳为出口。一次批量提交全部创建或全部拒绝。完整路径承载与运行时能力由面板在提交时校验，不以解析或 TCP/UDP 字段推断连通。</p>
+      <Field label="链路模板" hint={`模板只预填入口之后的跳数，之后仍可增删、调整顺序，最多 8 跳。${draft.rows.some(row => row.hops) ? '已单独编辑的路径不随模板变化。' : ''}`}><NativeSelect className="w-full" value={template} onChange={event => { const next = event.target.value; if (next === 'two-hop' || next === 'relay' || next === 'subscription') update({ hops: chainTemplateHops(next, draft.hops ?? []) }) }}><option value="two-hop">入口 → 落地（两跳）</option><option value="relay">入口 → 中转 → 落地</option><option value="subscription">含订阅来源节点</option>{template === 'custom' && <option value="custom" disabled>自定义路径（{draft.hops?.length ?? 0} 跳）</option>}</NativeSelect></Field>
       <Field label="入口方式"><NativeSelect className="w-full" name="entry_mode" value={draft.mode} onChange={event => update({ mode: event.target.value as 'new' | 'existing', rows: event.target.value === 'existing' ? draft.rows.slice(0, 1) : draft.rows })}><option value="new">新建 Reality 专用入口</option><option value="existing">使用现有未授权入口（单条）</option></NativeSelect></Field>
       <div className="grid gap-x-5 sm:grid-cols-2">
         {draft.mode === 'new' ? <><Field label="入口服务器"><NativeSelect className="w-full" name="server_id" required value={draft.server_id} onChange={event => update({ server_id: event.target.value })}><option value="" disabled>选择入口服务器</option>{draft.server_id && !enabledServers.some(server => String(server.id) === draft.server_id) && <option value={draft.server_id}>服务器 #{draft.server_id}（已不可用）</option>}{enabledServers.map(server => <option key={server.id} value={server.id}>{server.name}{server.online ? ' · 在线' : ' · 离线，等待应用'}</option>)}</NativeSelect></Field><Field label="入口公开地址" hint="同批次共享客户端连接域名或 IP，不含协议、端口和路径。"><Input name="public_host" required value={draft.public_host} onChange={event => update({ public_host: event.target.value })} placeholder="entry.example.com" autoComplete="off" /></Field><Field label="Reality 协议域名" hint="同批次共享 SNI。"><Input name="sni" required value={draft.sni} onChange={event => update({ sni: event.target.value })} placeholder="www.example.com" autoComplete="off" /></Field></> : <Field label="入口节点" hint="只能选择未授权、无链路引用的独立 Reality 节点。"><NativeSelect className="w-full" name="entry_node_id" required value={draft.entry_node_id} onChange={event => update({ entry_node_id: event.target.value })}><option value="" disabled>选择入口</option>{draft.entry_node_id && !choices.some(node => String(node.id) === draft.entry_node_id) && <option value={draft.entry_node_id}>节点 #{draft.entry_node_id}（已不可用，请重新选择）</option>}{choices.map(node => <option key={node.id} value={node.id}>{node.name}（服务器 #{node.server_id}）</option>)}</NativeSelect></Field>}
-        {!draft.hops && <Field label="出口节点" hint="必须与入口分属不同服务器，同一现有出口可被多条链路共享。"><NativeSelect className="w-full" name="exit_node_id" required value={draft.exit_node_id} onChange={event => update({ exit_node_id: event.target.value })}><option value="" disabled>选择出口</option>{draft.exit_node_id && !choices.some(node => String(node.id) === draft.exit_node_id) && <option value={draft.exit_node_id}>节点 #{draft.exit_node_id}（已不可用，请重新选择）</option>}{choices.map(node => <option key={node.id} value={node.id}>{node.name}（服务器 #{node.server_id}）</option>)}</NativeSelect></Field>}
       </div>
+      {draft.hops && <p data-slot="reality-hint" className="text-muted-foreground mt-3 text-xs leading-relaxed">链路中的受管段只能使用 VLESS + Reality 节点；其他协议的节点不会出现在这里。{otherProtocolNodes > 0 && `另有 ${otherProtocolNodes} 个已启用的其他协议节点未列出。`}</p>}
       {draft.hops && <ChainPathEditor label="共享有序路径" hops={draft.hops} onChange={hops => update({ hops })} snapshot={writeSnapshot} />}
       {draft.hops && <ChainExitExpansion draft={draft} snapshot={writeSnapshot} onChange={value => update(value)} />}
       {draft.hops && onAddSource && <Button variant="ghost" size="sm" type="button" onClick={() => { setCreating(false); onAddSource() }}>添加订阅来源并保留链路草稿</Button>}

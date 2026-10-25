@@ -49,7 +49,7 @@ export default function Login({ onLogin, notice }: { onLogin: () => void; notice
           <li className="flex items-center gap-2.5"><ActivityIcon className="text-primary size-4" aria-hidden="true" />{t('流量按用户统计')}</li>
         </ul>
       </div>
-      <div className="text-muted-foreground text-xs tracking-wide max-lg:hidden">{t('apsp · 自托管服务器与节点面板')}</div>
+      <div className="text-muted-foreground text-xs tracking-wide max-lg:hidden">{t('apsp · 自托管的代理网络控制平面')}</div>
     </div>
     <div className="relative flex flex-col items-center justify-center gap-8 px-6 py-10 sm:px-10">
       <LanguageSelect className="absolute top-4 right-4 sm:top-6 sm:right-8" />

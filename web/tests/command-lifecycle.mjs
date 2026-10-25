@@ -72,8 +72,10 @@ try {
     assert.equal(writes.length,2)
     enabled=false
     await page.reload()
-    await panel.getByText(/远程命令默认关闭/).waitFor()
-    assert.equal(await panel.getByRole('button',{name:'提交命令',exact:true}).isDisabled(),true)
+    // Without the local grant the panel explains how to enable it instead of offering a disabled form.
+    await panel.getByText(/这台服务器没有开启远程命令/).waitFor()
+    await panel.getByText(/allow_remote_commands = true/).waitFor()
+    assert.equal(await panel.getByRole('button',{name:'提交命令',exact:true}).count(),0)
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
     assert.deepEqual(errors,[])
     await page.close()

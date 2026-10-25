@@ -114,7 +114,7 @@ try {
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes`)
     await showView('链路')
-    const create = page.getByRole('button', { name: '创建有序链路', exact: true }); await enabled(create)
+    const create = page.locator('header[data-slot=page-header]').getByRole('button', { name: '创建链路', exact: true }); await enabled(create)
     await scope('3')
     await page.locator('[data-resource-key="chain:11"]').waitFor(); await page.getByLabel('链路中的服务器角色', { exact: false }).selectOption('middle'); await page.locator('[data-resource-key="chain:11"]').waitFor()
     await scope('')

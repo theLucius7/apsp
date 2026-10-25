@@ -83,26 +83,14 @@ try {
       try {
         await installControlCenterFixtures(page)
         await page.goto(`${origin}/#${routeHash}`)
-        await wait(() => page.getByRole('button', { name: '创建链路', exact: true }).isEnabled(), 'Initial chain snapshots')
+        await wait(() => page.locator('header[data-slot=page-header]').getByRole('button', { name: '创建链路', exact: true }).isEnabled(), 'Initial chain snapshots')
         await callback(control)
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
         ++totals.scenarios
       } finally { for (const gate of gates.values()) gate.release(); await Promise.all(pending); await page.close() }
     }
-    const openDraft = async (page, mode = 'new') => {
-      await page.getByRole('button', { name: '创建链路', exact: true }).click()
-      const editor = page.getByRole('region', { name: '创建链路', exact: true })
-      await editor.getByLabel('链路名称', { exact: true }).fill('TEST_ONLY 原选择草稿')
-      if (mode === 'existing') { await editor.getByLabel('入口方式').selectOption('existing'); await editor.getByLabel('已有入口', { exact: true }).selectOption('1') }
-      else { await editor.getByLabel('入口公开地址').fill('127.0.0.1'); await editor.getByLabel('入口握手域名').fill('localhost') }
-      await editor.getByLabel('添加受管代理段').selectOption('2')
-      return editor
-    }
-    const assertDraft = async (editor, mode) => {
-      assert.equal(await editor.getByLabel('链路名称', { exact: true }).inputValue(), 'TEST_ONLY 原选择草稿')
-      assert.equal(await editor.getByLabel(mode === 'existing' ? '已有入口' : '入口服务器', { exact: true }).inputValue(), '1')
-      await editor.getByText('第 1 段 · 最终出口：TEST_ONLY 节点 2', { exact: true }).waitFor()
-    }
+    // The mixed chain editor left the interface (ADR 0098). Guards of the ordered chain form are covered by
+    // singbox-chains-write-guards.mjs and ordered-chains.mjs; this file keeps the guards that do not depend on it.
     const block = async (control, dependency, attempt, restored, draft = async () => {}) => {
       const baseline = control.writes.length, path = `${prefix}/${dependency}`, gate = control.hold(path)
       // Reload and force the old handler in one browser event, before React's disabled render.
@@ -113,24 +101,9 @@ try {
       await attempt(); await draft(); assert.equal(control.writes.length, baseline, 'Failed-read writes must be zero'); ++totals.blocked
       control.recover(path); await refreshReads(control.page); await restored(); await wait(() => control.writes.length === baseline + 1, 'One explicitly recovered write'); ++totals.recovered
     }
-    for (const dependency of ['nodes', 'proxy-resources', 'servers']) await fixture('/plugins/sing-box/nodes', async control => {
-      const path = `${prefix}/${dependency}`, gate = control.hold(path), button = control.page.getByRole('button', { name: '创建链路', exact: true })
-      await forceClick(button, true); await wait(() => gate.reached > 0, 'Creation gate uses a real held request')
-      assert.equal(await control.page.getByRole('region', { name: '创建链路', exact: true }).count(), 0); assert.equal(control.writes.length, 0); ++totals.blocked
-      control.fail(path); await control.page.getByText('TEST_ONLY 链路相关读取失败', { exact: true }).first().waitFor(); await forceClick(button)
-      assert.equal(await control.page.getByRole('region', { name: '创建链路', exact: true }).count(), 0); assert.equal(control.writes.length, 0); ++totals.blocked
-      await originalChain(control.page).getByText('TEST_ONLY 原链路', { exact: true }).waitFor()
-      control.recover(path); await refreshReads(control.page); await button.click()
-      await control.page.getByRole('region', { name: '创建链路', exact: true }).waitFor(); assert.equal(control.writes.length, 0)
-    })
     // The chains filter opens the chain section by default; these scenarios act on catalog rows.
     for (const hash of ['/plugins/sing-box/nodes', '/plugins/sing-box/nodes?kind=chains&view=catalog']) {
       for (const dependency of ['nodes', 'proxy-resources', 'servers']) {
-        for (const mode of ['new', 'existing']) await fixture(hash, async control => {
-          const editor = await openDraft(control.page, mode)
-          await block(control, dependency, reload => forceForm(editor.locator('form'), reload), () => editor.getByRole('button', { name: '保存 1 条链路', exact: true }).click(), () => assertDraft(editor, mode))
-          assert.deepEqual(control.writes[0].body.items, [{ name: 'TEST_ONLY 原选择草稿', entry: mode === 'new' ? { mode: 'new', server_id: 1, public_host: '127.0.0.1', sni: 'localhost', port: null } : { mode: 'existing', node_id: 1 }, hops: [{ kind: 'managed', node_id: 2 }] }])
-        })
         await fixture(hash, async control => {
           await originalChain(control.page).getByRole('button', { name: '删除', exact: true }).click()
           const button = control.page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true })
@@ -139,43 +112,7 @@ try {
         })
       }
     }
-    for (const mutation of ['entry-missing', 'entry-disabled', 'entry-referenced', 'entry-authorization-added', 'entry-eligibility-unknown', 'entry-server-disabled', 'hop-missing', 'hop-resource-missing', 'hop-resource-disabled', 'hop-resource-unavailable', 'hop-resource-protocol-changed', 'hop-server-disabled', 'hop-rebound-to-entry']) await fixture('/plugins/sing-box/nodes', async control => {
-      const editor = await openDraft(control.page, 'existing')
-      const savedNodes = structuredClone(control.nodes), savedResources = structuredClone(control.resources), savedHosts = structuredClone(control.hosts)
-      if (mutation === 'entry-missing') control.nodes.splice(0, 1)
-      if (mutation === 'entry-disabled') control.nodes[0].enabled = false
-      if (mutation === 'entry-referenced') control.resources[0].reference_count = 1
-      if (mutation === 'entry-authorization-added') control.resources[0].entry_eligible = false
-      if (mutation === 'entry-eligibility-unknown') delete control.resources[0].entry_eligible
-      if (mutation === 'entry-server-disabled') control.hosts[0].enabled = false
-      if (mutation === 'hop-missing') control.nodes.splice(1, 1)
-      if (mutation === 'hop-resource-missing') control.resources.splice(1, 1)
-      if (mutation === 'hop-resource-disabled') control.resources[1].enabled = false
-      if (mutation === 'hop-resource-unavailable') control.resources[1].available = false
-      if (mutation === 'hop-resource-protocol-changed') control.resources[1].protocol = 'naive'
-      if (mutation === 'hop-server-disabled') control.hosts[1].enabled = false
-      if (mutation === 'hop-rebound-to-entry') { control.nodes[1].server_id = 1; control.resources[1].server_id = 1 }
-      await refreshReads(control.page)
-      const save = editor.getByRole('button', { name: '保存 1 条链路', exact: true })
-      if (mutation === 'hop-rebound-to-entry') { await wait(() => save.isEnabled(), 'Fresh but cyclic candidate'); await forceForm(editor.locator('form')); await editor.getByText('第 1 条链路重复使用了同一台受管服务器，请调整代理段。', { exact: true }).waitFor() }
-      else { await editor.getByRole('alert').getByText(/已选/).waitFor(); assert.equal(await save.isDisabled(), true); await forceForm(editor.locator('form')) }
-      await assertDraft(editor, 'existing'); assert.equal(control.writes.length, 0); ++totals.blocked
-      if (mutation.startsWith('entry')) assert.match(await editor.getByLabel('已有入口', { exact: true }).locator('option:checked').innerText(), /原选择保留/)
-      if (process.env.APSP_UI_SCREENSHOT_DIR && ['entry-missing', 'hop-server-disabled'].includes(mutation)) { await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true }); await control.page.screenshot({ path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `chain-snapshot-${mutation}-${width}.png`), fullPage: true }) }
-      control.nodes.splice(0, control.nodes.length, ...savedNodes); control.resources.splice(0, control.resources.length, ...savedResources); control.hosts.splice(0, control.hosts.length, ...savedHosts)
-      await refreshReads(control.page); await save.click(); await wait(() => control.writes.length === 1, 'Restoring the exact original choice permits one write'); ++totals.recovered
-      assert.deepEqual(control.writes[0].body.items[0].entry, { mode: 'existing', node_id: 1 }); assert.deepEqual(control.writes[0].body.items[0].hops, [{ kind: 'managed', node_id: 2 }])
-    })
-    for (const mode of ['new', 'existing']) await fixture('/plugins/sing-box/nodes', async control => {
-      const editor = await openDraft(control.page, mode)
-      // Change filter and submit in one event; the current filter ref must gate the old draft.
-      await editor.locator('form').evaluate(form => { const filter = document.querySelector('select[aria-label="按服务器筛选"]'); filter.value = '2'; filter.dispatchEvent(new Event('change', { bubbles: true })); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
-      await editor.getByRole('alert').getByText(/不在当前筛选中/).waitFor(); await assertDraft(editor, mode)
-      assert.equal(control.writes.length, 0); ++totals.blocked
-      assert.match(await editor.getByLabel(mode === 'existing' ? '已有入口' : '入口服务器', { exact: true }).locator('option:checked').innerText(), /原选择保留/)
-      await control.page.getByLabel('按服务器筛选').selectOption(''); await editor.getByRole('button', { name: '保存 1 条链路', exact: true }).click(); await wait(() => control.writes.length === 1, 'Explicit filter restoration'); ++totals.recovered
-    })
-    for (const label of ['创建节点', '创建链路']) await fixture('/plugins/sing-box/nodes', async control => {
+    for (const label of ['创建节点']) await fixture('/plugins/sing-box/nodes', async control => {
       const button = control.page.getByRole('button', { name: label, exact: true }).first()
       await button.evaluate(button => {
         const filter = document.querySelector('select[aria-label="按服务器筛选"]')
@@ -187,15 +124,9 @@ try {
       assert.equal(await control.page.getByRole('region', { name: '创建链路', exact: true }).count(), 0)
       assert.equal(control.writes.length, 0); ++totals.blocked
       await control.page.getByLabel('按服务器筛选').selectOption('2'); await button.click()
-      const selected = label === '创建节点' ? control.page.getByRole('dialog').locator('[name=server_id]') : control.page.getByRole('region', { name: '创建链路', exact: true }).getByLabel('入口服务器', { exact: true })
+      const selected = control.page.getByRole('dialog').locator('[name=server_id]')
       assert.equal(await selected.inputValue(), '2', 'Creation uses the explicitly restored current filter')
       assert.equal(control.writes.length, 0)
-    })
-    await fixture('/plugins/sing-box/nodes?server=1', async control => {
-      const editor = await openDraft(control.page, 'existing')
-      assert.equal(await editor.getByLabel('已有入口', { exact: true }).locator('option[value="2"]').count(), 0)
-      await editor.getByRole('button', { name: '保存 1 条链路', exact: true }).click(); await wait(() => control.writes.length === 1, 'Managed segment on another server remains valid under entrance filtering'); ++totals.recovered
-      assert.deepEqual(control.writes[0].body.items[0].hops, [{ kind: 'managed', node_id: 2 }])
     })
     await fixture('/plugins/sing-box/nodes', async control => {
       await originalChain(control.page).getByRole('button', { name: '删除', exact: true }).click()
@@ -203,12 +134,6 @@ try {
       const dialog = control.page.getByRole('alertdialog'); await dialog.getByText('此代理资源已不存在，请重新选择；当前草稿已保留。', { exact: true }).waitFor()
       await forceClick(dialog.getByRole('button', { name: '确认删除', exact: true })); assert.equal(control.writes.length, 0); ++totals.blocked
       await dialog.getByRole('button', { name: '取消', exact: true }).click(); await dialog.waitFor({ state: 'hidden' })
-    })
-    await fixture('/plugins/sing-box/nodes', async control => {
-      const editor = await openDraft(control.page)
-      control.fail(`${prefix}/servers`); await refresh(control.page); await control.page.getByText('TEST_ONLY 链路相关读取失败', { exact: true }).first().waitFor()
-      await editor.getByRole('button', { name: '收起编辑器', exact: true }).click(); await editor.waitFor({ state: 'hidden' })
-      assert.equal(control.writes.length, 0); ++totals.blocked
     })
   }
   assert.deepEqual(totals.external, []); assert.deepEqual(totals.unexpected, []); assert.deepEqual(totals.errors, [])

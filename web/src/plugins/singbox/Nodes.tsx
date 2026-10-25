@@ -9,7 +9,6 @@ import { ConnectionFields, nodeSettingsRequest } from './NodeSettingsFields'
 import NodeDeployment from './NodeDeployment'
 import SubscriptionSources from './SubscriptionSources'
 import Sources from './Sources'
-import ChainEditor from './ChainEditor'
 import ProxyResourceDetail from './ProxyResourceDetail'
 import NodeCatalog from './NodeCatalog'
 import NexusNodes from './NexusNodes'
@@ -24,7 +23,7 @@ import { sourceMigrationPath, validSourceMigration } from './orderedSourceTypes'
 import { nodeHash } from './nodeRoute'
 import type { NodeView } from './nodeRoute'
 
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
@@ -48,6 +47,8 @@ type Props = {
   initialServerRole?: ProxyResourceServerRole
 }
 type Reads = { nodes: Node[]; resources: ProxyResource[]; ordered: unknown; servers: PluginServer[]; usage: Usage; catalog: unknown; nexus: unknown }
+// The node a save just reached; `node` is null when the response did not name it.
+type SavedNode = { server: number; node: number | null; created: boolean }
 
 export default function Nodes({ serverId, chainsOnly = false, view, selected, initialKind, initialServerRole }: Props) {
   // All sections share one read round, so a refresh never shows one section's new
@@ -88,14 +89,17 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
   const [kind, setKind] = useState(initialKind === 'direct' ? 'direct' : chainsOnly ? 'chain' : '')
   const [catalogMetadata, setCatalogMetadata] = useState<ResourceKey | null>(null)
   useEffect(() => { setKind(initialKind === 'direct' ? 'direct' : chainsOnly ? 'chain' : '') }, [initialKind, chainsOnly])
-  const [creatingChain, setCreatingChain] = useState(false)
-  const [createdChains, setCreatedChains] = useState<number[]>([])
   const [deployment, setDeployment] = useState<number | null>(null)
-  const [saved, setSaved] = useState<number | null>(null)
+  const [saved, setSaved] = useState<SavedNode | null>(null)
   const [sourceCreate, setSourceCreate] = useState(0)
   const [orderedCreate, setOrderedCreate] = useState(0)
 
   const enabledServers = servers.data?.filter(server => server.enabled) ?? []
+  // Why creation is unavailable is only stated once the server list is confirmed.
+  const serversKnown = servers.data !== undefined && !servers.error
+  const noEnabledServer = serversKnown && enabledServers.length === 0
+  const filteredServerDisabled = serversKnown && !noEnabledServer && Boolean(filter) && !enabledServers.some(server => server.id === Number(filter))
+  const createBlocked = noEnabledServer || filteredServerDisabled
   const pageGuard = resourceWriteError(nodes, resources, servers)
   // Buttons disable during a refresh only after a short delay that keeps brief polls
   // from flashing; a click in that window is reported rather than silently ignored.
@@ -109,8 +113,15 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
   const chainCount = ordered.data?.filter(resource => resource.kind === 'chain').length
   const importedNodes = validNexusNodes(nexus.data) ? nexus.data : undefined
   const catalogCount = validCatalog(catalog.data) && importedNodes ? catalog.data.length + importedNodes.length : undefined
-  // The header form depends on the source migration, so it waits for that state.
-  const canCreateChain = canCreate && migrated !== undefined && Boolean(nodes.data && resources.data && !nodes.error && !resources.error)
+  // The ordered chain form is the only creation path, so the source migration state does not gate it.
+  // The chain form writes against the ordered resource snapshot; the button follows the form's own guard, so a
+  // refreshing, failed or malformed read keeps it closed.
+  const canCreateChain = canCreate && !resourceWriteError(nodes, orderedQuery, servers) && validProxyResources(orderedQuery.data)
+  // A node can only need a preflight once users are authorised to it, so a saved node
+  // that nobody can use yet points to authorisation instead.
+  const savedNodeId = saved?.node ?? null
+  const savedAuthorised = savedNodeId !== null
+    && (ordered.data?.find(resource => resource.kind === 'direct' && resource.id === savedNodeId)?.user_count ?? 0) > 0
   const refresh = () => { reads.nodes.reload(); migrationQuery.reload() }
   // Section links keep the current server scope; the catalog type filter stays local.
   const routeHash = (target: NodeView) => nodeHash({ server: filter || undefined, role: initialServerRole, view: target })
@@ -146,17 +157,12 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     setDraftServer(currentFilter.current || String(servers.getCurrent()?.find(server => server.enabled)?.id ?? ''))
     setEditor(node)
   }
-  const openChainEditor = () => {
+  // The one chain entry: it opens the ordered chain form in the chain view, before and after the source migration.
+  const openChainCreate = () => {
     if (!refreshNotice.allows(creationError())) return
     action.clearError()
-    setCreatedChains([])
-    // After the source migration new chains are ordered: open that form in the chain view.
-    if (migrated) {
-      setOrderedCreate(value => value + 1)
-      if (activeView !== 'chains') window.location.hash = routeHash('chains').slice(1)
-      return
-    }
-    setCreatingChain(true)
+    setOrderedCreate(value => value + 1)
+    if (activeView !== 'chains') window.location.hash = routeHash('chains').slice(1)
   }
   const confirmDelete = (resource: ProxyResource) => {
     if (!refreshNotice.allows(writeError(resource))) return
@@ -181,20 +187,20 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
       ? { ...fields, ...selectedPort, server_id: Number(draftServer) }
       : locked ? { name: fields.name, enabled: fields.enabled } : { ...fields, ...selectedPort }
     const targetServer = editor === 'new' ? Number(draftServer) : editor.server_id
+    const created = editor === 'new'
+    const editedId = editor === 'new' ? null : editor.id
     const path = editor === 'new' ? `${root}/nodes` : `${root}/nodes/${editor.id}`
-    void action.run(() => api(path, editor === 'new' ? 'POST' : 'PATCH', request), () => { setEditor(null); setSaved(targetServer); refresh() })
+    void action.run(() => api<{ id?: unknown } | null>(path, editor === 'new' ? 'POST' : 'PATCH', request), receipt => {
+      // A new node is named by the response; an edited one keeps its own id.
+      const createdId = receipt && typeof receipt.id === 'number' && Number.isSafeInteger(receipt.id) ? receipt.id : null
+      setEditor(null); setSaved({ server: targetServer, node: created ? createdId : editedId, created }); refresh()
+    })
   }
   const remove = () => {
     if (!deleting || writeError(deleting)) return
     const path = deleting.kind === 'chain' ? `${root}/proxy-resources/chain/${deleting.id}` : `${root}/nodes/${deleting.id}`
     void action.run(() => api(path, 'DELETE'), () => { setDeleting(null); refresh() })
   }
-  const chainCurrent = () => ({
-    nodes: nodes.getCurrent() ?? [],
-    resources: resources.getCurrent() ?? [],
-    servers: servers.getCurrent()?.filter(server => server.enabled) ?? [],
-    entryServerIds: servers.getCurrent()?.filter(server => server.enabled && (!currentFilter.current || server.id === Number(currentFilter.current))).map(server => server.id) ?? [],
-  })
 
   return <div data-slot="nodes-page" className="min-w-0" onInvalidCapture={event => {
     if (!(event.target instanceof HTMLElement)) return
@@ -203,22 +209,31 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
   }}>
     <PageHeader eyebrow="代理服务" title="代理节点" description="管理你服务器上的节点、由多段组成的链路，以及从订阅来源导入的外部节点。">
       <Refresh onClick={refresh} />
-      <Button disabled={!canCreate} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />创建节点</Button>
-      <Button variant="outline" disabled={!canCreateChain || creatingChain} onClick={openChainEditor}>创建链路</Button>
+      <Button disabled={!canCreate} aria-describedby={createBlocked ? 'create-blocked-reason' : undefined} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />创建节点</Button>
+      <Button variant="outline" disabled={!canCreateChain} aria-describedby={createBlocked ? 'create-blocked-reason' : undefined} onClick={openChainCreate}>创建链路</Button>
     </PageHeader>
+    {createBlocked && <Notice id="create-blocked-reason" role="status"><span>{noEnabledServer ? '还没有服务器启用 sing-box，所以暂时不能创建节点或链路。' : '当前筛选的服务器尚未启用 sing-box，所以暂时不能创建节点或链路。'}</span>
+      <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={noEnabledServer ? '#/system/plugins' : `#/servers/${filter}/plugins`}>为服务器启用 sing-box</a></Notice>}
     <div className="mb-6 grid gap-3 max-sm:gap-2 grid-cols-2 lg:grid-cols-4">
       <Stat icon={WaypointsIcon} label="代理资源" value={resources.data && ordered.data && importedNodes ? inventoryCount + importedNodes.length : '—'} note={importedNodes?.length ? `受管 ${inventoryCount} · 待接管 ${importedNodes.length}` : '直连节点与独立链路入口'} />
       <Stat icon={ServerIcon} label="所在服务器" value={resources.data && importedNodes ? new Set([...all, ...importedNodes].map(node => node.server_id)).size : '—'} note={importedNodes?.length ? '含已导入的 Nexus 节点主机' : '每台服务器运行一份完整配置'} />
       <Stat icon={WaypointsIcon} label="物理监听数" value={nodes.data ? nodes.data.length : '—'} note="受管节点监听，不重复计算链路引用" />
       <Stat icon={ActivityIcon} label="累计代理流量" value={usage.data ? bytes(usage.data.total) : '—'} note="含已删除节点的历史用量" />
     </div>
-    <ErrorNotice message={resources.error || nodes.error || servers.error || usage.error} retry={refresh} />
+    <ErrorNotice message={resources.error || nodes.error || servers.error || usage.error || (migrationQuery.error ? `订阅来源迁移状态读取失败：${migrationQuery.error}` : '')} retry={refresh} />
     {refreshNotice.visible && <RefreshNotice />}
-    {saved !== null && <Notice role="status"><span>目标已保存；新增有效监听或部署配置变化须完整预检确认，实际应用等待设备回执。</span><Button variant="ghost" size="sm" onClick={() => setDeployment(saved)}>查看差异、完整预检与发布状态</Button></Notice>}
-    {!!createdChains.length && <Notice role="status"><span>已保存 {createdChains.length} 条链路，正在等待依赖与路径验证。</span><a className="text-primary underline-offset-4 hover:underline" href={resourceLink({ kind: 'chain', id: createdChains[0] })}>查看链路详情</a></Notice>}
-    {creatingChain && <ChainEditor writeError={() => writeError()} getCurrent={chainCurrent} nodes={nodes.data ?? []} resources={all} sourcesMigrated={migrated}
-      servers={enabledServers.filter(server => !filter || server.id === Number(filter))} availableServers={enabledServers}
-      onClose={() => setCreatingChain(false)} onSaved={receipt => { setCreatingChain(false); setCreatedChains(receipt.chain_ids); refresh() }} />}
+    {saved && <Notice role="status"><span>{savedAuthorised
+      ? '目标已保存。该节点已有授权用户：新增监听或协议、TLS 等设置变化须先完整预检确认才会发布，实际应用等待设备回执。'
+      : saved.created
+        ? '节点已保存为目标配置，尚未授权给任何代理用户，所以暂不会监听端口。先把它加入策略组，或直接授权给代理用户；设备应用配置后才开始监听。'
+        : '目标已保存；该节点尚未授权给任何代理用户，暂不会监听端口，实际应用等待设备回执。'}</span>
+      <div className="flex flex-wrap items-center justify-end gap-1">
+        {!savedAuthorised && <>
+          <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href="#/plugins/sing-box/groups">加入策略组</a>
+          <a className={buttonVariants({ variant: 'ghost', size: 'sm' })} href="#/plugins/sing-box/users">授权给代理用户</a>
+        </>}
+        <Button variant="ghost" size="sm" onClick={() => setDeployment(saved.server)}>{savedAuthorised ? '查看差异、完整预检与发布状态' : '查看部署状态'}</Button>
+      </div></Notice>}
     <SegmentedNav className="mt-1 mb-5" aria-label="节点视图">
       {views.map(item => <SegmentedLink key={item.key} href={routeHash(item.key)}
         aria-current={activeView === item.key ? 'page' : undefined}>
@@ -246,12 +261,11 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
         onEdit={edit} onChanged={refresh} onAddSource={() => { setSourceCreate(value => value + 1); window.location.hash = routeHash('sources').slice(1) }} createRequest={orderedCreate} />
     </div>
     <div hidden={activeView !== 'sources'}>
-      {migrationQuery.error && <ErrorNotice message={`订阅来源迁移状态读取失败：${migrationQuery.error}`} retry={migrationQuery.reload} />}
       {migrated ? <>
         <Sources createRequest={sourceCreate} migrated onCatalogChange={refresh} />
-        <details data-slot="source-archive" className="mt-6"><summary className="text-muted-foreground cursor-pointer py-3 font-semibold">数字编号来源（已迁移，只读）</summary>{!creatingChain && <SubscriptionSources migrated onChange={refresh} />}</details>
+        <details data-slot="source-archive" className="mt-6"><summary className="text-muted-foreground cursor-pointer py-3 font-semibold">旧版数字编号来源（只读保留）</summary><SubscriptionSources migrated onChange={refresh} /></details>
       </> : <>
-        {!creatingChain && <SubscriptionSources migrated={migrated} onChange={refresh} />}
+        <SubscriptionSources migrated={migrated} onChange={refresh} />
         <Sources createRequest={sourceCreate} migrated={migrated} onCatalogChange={refresh} />
       </>}
     </div>

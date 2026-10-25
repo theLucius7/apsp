@@ -1,4 +1,4 @@
-//! Concurrent client address limits for taken-over Nexus nodes (ADR 0098).
+//! Concurrent client address limits for taken-over Nexus nodes (ADR 0099).
 //!
 //! Devices report the client addresses of the sessions they admitted; the
 //! legacy panel's per-user device limits and the addresses its own nodes see

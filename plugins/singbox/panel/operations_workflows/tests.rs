@@ -235,36 +235,141 @@ async fn extension_creates_snapshot_without_resetting_cycle_or_used_bytes(
     Ok(())
 }
 
+async fn preview_of(pool: &PgPool, operation: &Operation) -> Result<(String, Value)> {
+    let mut tx = pool.begin().await?;
+    let preview = snapshots::snapshot(&mut tx, operation).await?;
+    tx.commit().await?;
+    Ok(preview)
+}
+
+async fn used(pool: &PgPool, user: i64, at: i64) -> Result<String> {
+    Ok(
+        sqlx::query_scalar("SELECT used_bytes FROM singbox_entitlements($1) WHERE user_id=$2")
+            .bind(at)
+            .bind(user)
+            .fetch_one(pool)
+            .await?,
+    )
+}
+
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
-async fn preview_fingerprint_changes_after_late_usage_and_group_changes(
+async fn preview_fingerprint_ignores_late_usage_but_follows_group_and_assignment_changes(
     pool: PgPool,
 ) -> Result<()> {
-    let (server, user, node, _) = fixture(&pool).await?;
+    let (server, user, node, assignment) = fixture(&pool).await?;
     let group: i64 = sqlx::query_scalar(
         "INSERT INTO singbox_policy_groups(name) VALUES('Initial group') RETURNING id",
     )
     .fetch_one(&pool)
     .await?;
-    let operation = Operation::PolicyBatch {
+    let package: i64 =
+        sqlx::query_scalar("SELECT package_group_id FROM singbox_package_assignments WHERE id=$1")
+            .bind(assignment)
+            .fetch_one(&pool)
+            .await?;
+    let policy = Operation::PolicyBatch {
         user_ids: vec![user],
         group_ids: vec![group],
     };
-    let mut tx = pool.begin().await?;
-    let (first, _) = snapshots::snapshot(&mut tx, &operation).await?;
-    tx.commit().await?;
+    let operations = [
+        policy.clone(),
+        Operation::ReplacePackage {
+            user_id: user,
+            package_group_id: package,
+        },
+        Operation::ExtendValidity {
+            user_id: user,
+            days: 30,
+        },
+        Operation::ResetQuota { user_id: user },
+    ];
+    let mut previews = Vec::new();
+    for operation in &operations {
+        previews.push(preview_of(&pool, operation).await?.0);
+    }
+    // Traffic keeps arriving while an administrator reads a preview: it is no change of the
+    // object, so no preview may be invalidated by it.
     usage(&pool, server, user, node, 1, apsp_protocol::now_timestamp()).await?;
-    let mut tx = pool.begin().await?;
-    let (second, _) = snapshots::snapshot(&mut tx, &operation).await?;
-    tx.commit().await?;
-    assert_ne!(first, second);
+    for (operation, fingerprint) in operations.iter().zip(&previews) {
+        assert_eq!(&preview_of(&pool, operation).await?.0, fingerprint);
+    }
+    // A real change of a group still invalidates the previews that depend on it.
     sqlx::query("UPDATE singbox_policy_groups SET name='Changed group' WHERE id=$1")
         .bind(group)
         .execute(&pool)
         .await?;
+    assert_ne!(preview_of(&pool, &policy).await?.0, previews[0]);
+    // So does a new assignment: after an extension the old quota reset is stale.
     let mut tx = pool.begin().await?;
-    let (third, _) = snapshots::snapshot(&mut tx, &operation).await?;
+    mutations::execute(&mut tx, 1, Uuid::new_v4(), &operations[2]).await?;
     tx.commit().await?;
-    assert_ne!(second, third);
+    assert_ne!(preview_of(&pool, &operations[3]).await?.0, previews[3]);
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+async fn quota_reset_credits_the_usage_found_at_apply_not_the_previewed_figure(
+    pool: PgPool,
+) -> Result<()> {
+    let (server, user, node, _) = fixture(&pool).await?;
+    let at = apsp_protocol::now_timestamp();
+    usage(&pool, server, user, node, 300, at).await?;
+    let operation = Operation::ResetQuota { user_id: user };
+    let (previewed, summary) = preview_of(&pool, &operation).await?;
+    assert_eq!(summary["credit_bytes"], "300");
+    // 450 more bytes arrive between preview and apply.
+    usage(&pool, server, user, node, 450, at).await?;
+    let mut tx = pool.begin().await?;
+    let (current, _) = snapshots::snapshot(&mut tx, &operation).await?;
+    assert_eq!(
+        current, previewed,
+        "late usage must not fail the apply check"
+    );
+    let receipt = mutations::execute(&mut tx, 1, Uuid::new_v4(), &operation).await?;
+    tx.commit().await?;
+    assert_eq!(receipt["credit_bytes"], "750");
+    assert_eq!(used(&pool, user, at).await?, "0");
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+async fn extending_an_expired_user_renews_from_now_instead_of_the_old_expiry(
+    pool: PgPool,
+) -> Result<()> {
+    let (_, user, _, _) = fixture(&pool).await?;
+    let now = apsp_protocol::now_timestamp();
+    sqlx::query(
+        "UPDATE singbox_package_assignments SET starts_at=$2-172800,expires_at=$2-86400 WHERE user_id=$1",
+    )
+    .bind(user)
+    .bind(now)
+    .execute(&pool)
+    .await?;
+    let operation = Operation::ExtendValidity {
+        user_id: user,
+        days: 30,
+    };
+    let (_, summary) = preview_of(&pool, &operation).await?;
+    assert_eq!(summary["extends_from_now"], true);
+    assert_eq!(summary["previous_expires_at"], now - 86400);
+    let previewed = summary["new_expires_at"]
+        .as_i64()
+        .expect("previewed expiry");
+    assert!(previewed >= now + 30 * 86400, "{summary}");
+    let mut tx = pool.begin().await?;
+    let receipt = mutations::execute(&mut tx, 1, Uuid::new_v4(), &operation).await?;
+    tx.commit().await?;
+    let applied = receipt["expires_at"].as_i64().expect("applied expiry");
+    assert!(applied >= now + 30 * 86400);
+    assert!(applied <= apsp_protocol::now_timestamp() + 30 * 86400);
+    assert_eq!(receipt["extended_from_now"], true);
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM singbox_entitlements($1) WHERE user_id=$2")
+            .bind(apsp_protocol::now_timestamp())
+            .bind(user)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(status, "active");
     Ok(())
 }
 

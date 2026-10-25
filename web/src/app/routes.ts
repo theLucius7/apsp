@@ -9,7 +9,7 @@ import type { NodeView } from '../plugins/singbox/nodeRoute'
 // opened with this server preselected.
 type ServerSection = 'assets' | 'agent' | 'ip-info' | 'node-quality' | 'tcp-quality' | 'plugins' | 'ddns' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations'
 type SimplePage = 'singbox-overview' | 'servers' | 'statistics' | 'latency' | 'alicloud' | 'ddns'
-  | 'expenses' | 'commerce' | 'proxy-users' | 'groups' | 'plugins' | 'catalog' | 'settings' | 'alert-settings' | 'notifications' | 'security' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations' | 'control-center' | 'not-found'
+  | 'expenses' | 'commerce' | 'proxy-users' | 'groups' | 'plugins' | 'catalog' | 'settings' | 'backup' | 'batch-enrollment' | 'alert-settings' | 'notifications' | 'security' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations' | 'control-center' | 'not-found'
 
 export type AppRoute =
   | { page: 'dashboard'; serverId?: number }
@@ -22,6 +22,7 @@ export type AppRoute =
 
 const pages: Readonly<Record<string, SimplePage>> = {
   '/servers': 'servers',
+  '/servers/batch': 'batch-enrollment',
   '/fleet': 'fleet',
   '/network-workbench': 'network-workbench',
   '/network-configuration': 'network-configuration',
@@ -39,6 +40,7 @@ const pages: Readonly<Record<string, SimplePage>> = {
   '/plugins/sing-box/groups': 'groups',
   '/system/plugins': 'plugins',
   '/system/settings': 'settings',
+  '/system/backup': 'backup',
   '/system/notifications': 'notifications',
   '/system/administrator': 'security',
 }

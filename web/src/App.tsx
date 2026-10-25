@@ -5,7 +5,7 @@ import { useAction } from './hooks'
 import AdminPage from './app/AdminPage'
 import AdminShell from './app/AdminShell'
 import Login from './app/Login'
-import { currentNavigation } from './app/navigation'
+import { currentNavigation, homePath } from './app/navigation'
 import { resolveRoute } from './app/routes'
 import { useI18n } from './i18n'
 import { useSessionStore } from './stores/session'
@@ -42,10 +42,18 @@ export default function App() {
     ).then(access => {
       if (active) {
         store.setAccess({ authenticated: access.authenticated, publicDashboard: access.public_dashboard })
-        if (access.authenticated && (window.location.hash === '' || window.location.hash === '#/dashboard')) {
+        // Signed-in administrators land on the overview of the proxy network;
+        // without access to it they start at the servers or their own settings.
+        // An explicit #/dashboard keeps the server board for those who may see it.
+        const landing = window.location.hash === '' || window.location.hash === '#/'
+        if (access.authenticated && (landing || window.location.hash === '#/dashboard')) {
           void api<{ role: string; all_servers: boolean; capabilities: string[] }>('/api/control-center/me').then(actor => {
-            if (active && actor.role !== 'owner' && (!actor.all_servers || !actor.capabilities.includes('monitoring:read'))) window.location.hash = actor.capabilities.includes('servers:read') ? '/servers' : '/system/control-center'
-          }).catch(() => {})
+            if (!active) return
+            const owner = actor.role === 'owner'
+            const fallback = actor.capabilities.includes('servers:read') ? '/servers' : '/system/control-center'
+            if (landing) window.location.hash = owner || (actor.all_servers && actor.capabilities.includes('proxy:read')) ? homePath : fallback
+            else if (!owner && (!actor.all_servers || !actor.capabilities.includes('monitoring:read'))) window.location.hash = fallback
+          }).catch(() => { if (active && landing) window.location.hash = homePath })
         }
       }
     }).catch(error => {
@@ -78,6 +86,8 @@ export default function App() {
   if (!session && !(route.page === 'dashboard' && publicDashboard)) {
     return <Login notice={notice} onLogin={() => useSessionStore.getState().signedIn()} />
   }
+  // The overview replaces the bare landing path as soon as the actor is known.
+  if (session && route.page === 'dashboard' && (window.location.hash === '' || window.location.hash === '#/')) return <Boot />
   if (route.page === 'dashboard') {
     return <Suspense fallback={<Boot />}>
       <ServerDisplay key={session ? 'admin' : 'public'} serverId={route.serverId} />

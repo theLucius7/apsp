@@ -93,7 +93,7 @@ try {
     assert.equal(Object.hasOwn(writes[0].settings.hysteria2,'obfs_password'),false)
     const currentRow = page.locator(width < 768 ? '[data-slot=catalog-card][data-resource-key="direct:1"]' : '[data-slot=catalog-table] [data-resource-key="direct:1"]')
     await currentRow.getByText('proxy.example.com:443',{exact:true}).waitFor()
-    await page.getByRole('button',{name:'查看差异、完整预检与发布状态',exact:true}).click()
+    await page.getByRole('button',{name:/^查看(差异、完整预检与发布状态|部署状态)$/}).click()
     await dialog.getByText('目标配置待发布',{exact:true}).waitFor()
     await dialog.getByRole('button',{name:'检查基础安装条件',exact:true}).click()
     await dialog.getByText('设备离线，配置将在重新连接后下发',{exact:true}).waitFor()

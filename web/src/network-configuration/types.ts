@@ -6,6 +6,8 @@ export type Version = { id: string; fingerprint: string; not_before: number; not
 export type Renewal = { mode: 'external' | 'dns01'; responsibility: string; ddns_rule_id?: string }
 export type Target = { server_id: number; service: string; domain: string; port: number; certificate_path?: string | null; private_key_path?: string | null }
 export const labels: Record<Kind, string> = { domain: '域名台账', certificate: '证书版本', endpoint: '端点台账', forwarding: '端口转发', tuning: '系统网络参数', tunnel: '反向隧道', mesh: '私有组网', firewall: '受管防火墙' }
+// General network operations with high change risk; frozen per docs/product-map.md.
+export const frozenKinds: ReadonlySet<Kind> = new Set<Kind>(['tuning', 'tunnel', 'mesh', 'firewall'])
 export const time = (value: number) => new Date(value * 1000).toLocaleString('zh-CN', { hour12: false })
 export function template(kind: Kind, server = 0): Draft {
   switch (kind) {

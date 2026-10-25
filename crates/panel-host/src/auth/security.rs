@@ -1,4 +1,7 @@
-use super::{cookie_token, hash_token, rate_limit, require_admin, totp, verified_admin_password};
+use super::{
+    cookie_token, hash_password, hash_token, rate_limit, require_admin, totp,
+    verified_admin_password,
+};
 use crate::{
     AppState,
     error::{ApiError, ApiResult},
@@ -80,6 +83,76 @@ pub(super) async fn revoke_other_sessions(
         .execute(&mut **tx)
         .await?;
     Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PasswordRequest {
+    current_password: String,
+    #[serde(default)]
+    totp_code: Option<String>,
+    new_password: String,
+}
+
+/// Changes the signed-in administrator's own password. The current password,
+/// and the authenticator code when two-step verification is on, prove the
+/// request; like the other credential changes it ends every other session.
+pub async fn password_change(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(request): Json<PasswordRequest>,
+) -> ApiResult<Response> {
+    let admin_id = require_admin(&state, &headers).await?;
+    let session = session_hash(&headers)?;
+    if request.new_password.len() < 12 || request.new_password.len() > 1024 {
+        return Err(ApiError::BadRequest("新密码须为12至1024字节".into()));
+    }
+    if request.new_password == request.current_password {
+        return Err(ApiError::BadRequest("新密码不能与当前密码相同".into()));
+    }
+    let permit = state
+        .login_permits
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| ApiError::Busy)?;
+    rate_limit::consume(&state.pool, peer).await?;
+    let (hash, permit) =
+        verified_admin_password(&state, admin_id, request.current_password, permit).await?;
+    let hash = hash.ok_or_else(|| ApiError::BadRequest("当前密码或验证码不正确".into()))?;
+    let replacement = hash_password(request.new_password)
+        .await
+        .map_err(ApiError::Internal)?;
+    drop(permit);
+    let mut tx = state.pool.begin().await?;
+    let row = locked_admin(&mut tx, &session).await?;
+    if row.try_get::<i64, _>("id")? != admin_id
+        || row.try_get::<String, _>("password_hash")? != hash
+    {
+        return Err(ApiError::Unauthorized);
+    }
+    if let Some(secret) = row.try_get::<Option<Vec<u8>>, _>("totp_secret")? {
+        let step = totp::verify(
+            &secret,
+            request.totp_code.as_deref().unwrap_or(""),
+            now_timestamp(),
+            row.try_get("totp_last_step")?,
+        )
+        .ok_or_else(|| ApiError::BadRequest("当前密码或验证码不正确、已过期或已使用".into()))?;
+        sqlx::query("UPDATE admins SET totp_last_step = $2 WHERE id = $1")
+            .bind(admin_id)
+            .bind(step)
+            .execute(&mut *tx)
+            .await?;
+    }
+    sqlx::query("UPDATE admins SET password_hash = $2 WHERE id = $1")
+        .bind(admin_id)
+        .bind(replacement)
+        .execute(&mut *tx)
+        .await?;
+    revoke_other_sessions(&mut tx, &session).await?;
+    tx.commit().await?;
+    Ok(reply(json!({"changed": true})))
 }
 
 pub async fn totp_status(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {

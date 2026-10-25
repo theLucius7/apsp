@@ -268,7 +268,7 @@ def legacy_devices(config, managed):
 
 
 def exchange_devices(config, connection):
-    """Share device limits and live client addresses with apsp (ADR 0098)."""
+    """Share device limits and live client addresses with apsp (ADR 0099)."""
     rows = connection.execute('SELECT id,device_limit FROM v2_user ORDER BY id LIMIT 20001').fetchall()
     if len(rows) > 20000:
         raise BridgeError('Legacy member count exceeded the safety bound')

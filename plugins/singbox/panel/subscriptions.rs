@@ -6,9 +6,10 @@ use apsp_compiler::Node;
 use axum::{
     Json,
     extract::{Path, Query, State},
-    http::{HeaderMap, header},
+    http::{HeaderMap, HeaderName, HeaderValue, header},
     response::{IntoResponse, Response},
 };
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::{Postgres, Row, Transaction};
@@ -79,7 +80,9 @@ impl Snapshot {
     }
 
     fn content(&self, user_id: i64, format: &str) -> ApiResult<String> {
-        if self.external.granted > 0 && !self.entitlement.allowed {
+        // A restricted entitlement is refused with the same reason in every format: an empty
+        // 200 response would make clients silently drop all of the user's nodes.
+        if !self.entitlement.allowed {
             return Err(ApiError::Conflict(self.message().1));
         }
         if format == "links" {
@@ -272,6 +275,90 @@ fn filename(user_id: i64, format: &str) -> String {
     )
 }
 
+/// Uplink and downlink of one user inside `(after, until]`. This is the split twin of the SQL
+/// function `singbox_usage_window`: whole UTC days come from the daily rollup and at most one
+/// partial day at each end from the ledger, so both sums add up to the cycle usage that quota
+/// enforcement reads. Keep the two in step.
+const CYCLE_USAGE: &str = "WITH bounds AS (SELECT (ceil(($2::bigint+1)::numeric/86400)*86400)::bigint AS lo,(floor(($3::bigint+1)::numeric/86400)*86400)::bigint AS hi) \
+    SELECT COALESCE(SUM(p.uplink),0)::text AS uplink,COALESCE(SUM(p.downlink),0)::text AS downlink FROM (\
+    SELECT d.uplink,d.downlink FROM singbox_usage_daily d,bounds b WHERE d.user_id=$1 AND d.day>=b.lo AND d.day<b.hi \
+    UNION ALL SELECT r.uplink,r.downlink FROM usage_records r,bounds b WHERE r.user_id=$1 AND r.period_end>$2::bigint AND r.period_end<LEAST(b.lo,$3::bigint+1) \
+    UNION ALL SELECT r.uplink,r.downlink FROM usage_records r,bounds b WHERE r.user_id=$1 AND r.period_end>=GREATEST(b.lo,b.hi) AND r.period_end<=$3::bigint) p";
+
+/// Cumulative usage of a user without a package, the same figures the portal shows.
+const TOTAL_USAGE: &str = "SELECT COALESCE(SUM(uplink),0)::text AS uplink,COALESCE(SUM(downlink),0)::text AS downlink FROM singbox_usage_daily WHERE user_id=$1";
+
+fn amount(row: &sqlx::postgres::PgRow, column: &str) -> ApiResult<u128> {
+    row.try_get::<String, _>(column)?
+        .parse::<u128>()
+        .map_err(|error| ApiError::Internal(anyhow::Error::from(error)))
+}
+
+/// Splits the usage that quota enforcement sees between upload and download. A manual quota
+/// reset credits part of the raw ledger, so the raw split is scaled down to keep
+/// upload + download equal to the enforced usage.
+fn enforced_split(used: u128, upload: u128, download: u128) -> (u128, u128) {
+    let raw = upload.saturating_add(download);
+    if used >= raw {
+        return (upload, download);
+    }
+    match used.checked_mul(upload) {
+        Some(product) => {
+            let scaled = product / raw;
+            (scaled, used - scaled)
+        }
+        None => (upload, download),
+    }
+}
+
+fn userinfo_value(upload: u128, download: u128, total: &str, expire: Option<i64>) -> String {
+    match expire {
+        Some(expire) => {
+            format!("upload={upload}; download={download}; total={total}; expire={expire}")
+        }
+        None => format!("upload={upload}; download={download}; total={total}"),
+    }
+}
+
+/// Value of the `Subscription-Userinfo` header that clients use to show remaining traffic and
+/// expiry. A user with a package reports the current cycle and its quota; a user without one
+/// has no cycle or quota, so total is 0 and usage is cumulative. Expiry is left out when the
+/// package has none. All values are digits, so the header stays ASCII.
+async fn subscription_userinfo(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: i64,
+    entitlement: &super::entitlements::Entitlement,
+) -> ApiResult<String> {
+    let (upload, download) = match (entitlement.cycle_start, entitlement.next_reset) {
+        (Some(start), Some(end)) => {
+            let row = sqlx::query(CYCLE_USAGE)
+                .bind(user_id)
+                .bind(start)
+                .bind(end)
+                .fetch_one(&mut **tx)
+                .await?;
+            let (upload, download) = (amount(&row, "uplink")?, amount(&row, "downlink")?);
+            match entitlement.used_bytes.parse::<u128>() {
+                Ok(used) => enforced_split(used, upload, download),
+                Err(_) => (upload, download),
+            }
+        }
+        _ => {
+            let row = sqlx::query(TOTAL_USAGE)
+                .bind(user_id)
+                .fetch_one(&mut **tx)
+                .await?;
+            (amount(&row, "uplink")?, amount(&row, "downlink")?)
+        }
+    };
+    Ok(userinfo_value(
+        upload,
+        download,
+        entitlement.monthly_bytes.as_deref().unwrap_or("0"),
+        entitlement.expires_at,
+    ))
+}
+
 pub async fn get(
     State(state): State<AppState>,
     Path(token): Path<String>,
@@ -290,16 +377,22 @@ pub async fn get(
     sqlx::query("SET LOCAL statement_timeout='5s'")
         .execute(&mut *tx)
         .await?;
-    let user_id = sqlx::query_scalar(
-        "SELECT id FROM users WHERE subscription_token=$1 AND deleted_at IS NULL",
+    let (user_id, user_name) = sqlx::query_as::<_, (i64, String)>(
+        "SELECT id,name FROM users WHERE subscription_token=$1 AND deleted_at IS NULL",
     )
     .bind(token)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(ApiError::NotFound)?;
     let snapshot = load(&mut tx, user_id).await?;
-    tx.commit().await?;
     let body = snapshot.content(user_id, format);
+    // Usage headers only accompany a subscription that is actually served.
+    let userinfo = if body.is_ok() {
+        Some(subscription_userinfo(&mut tx, user_id, &snapshot.entitlement).await?)
+    } else {
+        None
+    };
+    tx.commit().await?;
     let mut audit = state.pool.begin().await?;
     let record: bool = sqlx::query_scalar("SELECT subscription_days>0 AND COALESCE((SELECT days>0 FROM record_retention_policy WHERE kind='proxy-access'),TRUE) FROM singbox_operation_privacy WHERE singleton").fetch_one(&mut *audit).await?;
     if record {
@@ -311,8 +404,10 @@ pub async fn get(
             snapshot.external.nodes.len(),
             if body.is_ok() {
                 "generated"
-            } else {
+            } else if snapshot.entitlement.allowed {
                 "unavailable"
+            } else {
+                "restricted"
             },
         )
         .await?;
@@ -329,8 +424,29 @@ pub async fn get(
         body,
     )
         .into_response();
+    let headers = response.headers_mut();
+    if let Some(userinfo) = userinfo {
+        headers.insert(
+            HeaderName::from_static("subscription-userinfo"),
+            userinfo.parse().map_err(anyhow::Error::from)?,
+        );
+    }
+    // Clients refresh the subscription every 24 hours. The title is base64 text, so the header
+    // stays ASCII whatever characters the user's name contains.
+    headers.insert(
+        HeaderName::from_static("profile-update-interval"),
+        HeaderValue::from_static("24"),
+    );
+    let title = user_name.trim();
+    let title = if title.is_empty() { "apsp" } else { title };
+    headers.insert(
+        HeaderName::from_static("profile-title"),
+        format!("base64:{}", STANDARD.encode(title))
+            .parse()
+            .map_err(anyhow::Error::from)?,
+    );
     if query.download == Some(true) {
-        response.headers_mut().insert(
+        headers.insert(
             header::CONTENT_DISPOSITION,
             format!("attachment; filename=\"{}\"", filename(user_id, format))
                 .parse()
@@ -415,4 +531,33 @@ pub async fn preview(
         "content":content,"filename":filename(id,format),"content_type":content_type(format),
         "entitlement":snapshot.entitlement,"subscription_url":format!("{}/sub/{token}",state.config.public_url)
     }))).into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn enforced_usage_keeps_the_raw_split_until_a_credit_reduces_it() {
+        assert_eq!(enforced_split(100, 40, 60), (40, 60));
+        // Half of the raw usage was credited: the split shrinks proportionally.
+        assert_eq!(enforced_split(50, 40, 60), (20, 30));
+        assert_eq!(enforced_split(0, 40, 60), (0, 0));
+        assert_eq!(enforced_split(0, 0, 0), (0, 0));
+        // Values too large to scale fall back to the raw split instead of overflowing.
+        let big = 1u128 << 100;
+        assert_eq!(enforced_split(big, big, big), (big, big));
+    }
+
+    #[test]
+    fn userinfo_header_lists_usage_quota_and_optional_expiry() {
+        assert_eq!(
+            userinfo_value(1, 2, "3", Some(4)),
+            "upload=1; download=2; total=3; expire=4"
+        );
+        assert_eq!(
+            userinfo_value(1, 2, "0", None),
+            "upload=1; download=2; total=0"
+        );
+    }
 }

@@ -5,6 +5,8 @@ import { BoxIcon, CheckIcon, CircleAlertIcon, CompassIcon, CopyIcon, InfoIcon, R
 import type { LucideIcon } from 'lucide-react'
 import { errorMessage } from './api'
 import { resourceRefreshingMessage } from './hooks'
+import { tierDescriptions, tierLabels } from './app/tiers'
+import type { Tier } from './app/tiers'
 import { useI18n } from './i18n'
 import { cn } from '@/lib/utils'
 import { noticeMotion } from '@/lib/motion'
@@ -26,7 +28,7 @@ export function Brand({ className }: { className?: string }) {
     <span className="bg-primary text-primary-foreground grid size-8 shrink-0 place-items-center rounded-lg"><CompassIcon className="size-4.5" aria-hidden="true" /></span>
     <span className="grid min-w-0 leading-tight">
       <strong className="truncate text-base font-semibold tracking-wide">{t('apsp')}</strong>
-      <small className="text-muted-foreground truncate text-xs">{t('服务器与节点')}</small>
+      <small className="text-muted-foreground truncate text-xs">{t('代理网络控制平面')}</small>
     </span>
   </div>}
 
@@ -34,6 +36,25 @@ export function Badge({ children, tone = 'neutral', className }: { children: Rea
   return <UiBadge data-tone={tone} variant={toneVariant[tone]} className={className}>
     <span className="size-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />{children}
   </UiBadge>
+}
+
+/**
+ * Marks an experimental or frozen feature; the tooltip explains the tier. The
+ * badge is decorative so headings, tabs and links keep their names; pages state
+ * their tier in text with TierNotice.
+ */
+export function TierBadge({ tier, className }: { tier: Tier; className?: string }) {
+  const { t } = useI18n()
+  return <UiBadge aria-hidden="true" data-slot="tier-badge" data-tier={tier} variant={tier === 'frozen' ? 'secondary' : 'warning'} title={t(tierDescriptions[tier])} className={cn('px-1.5 text-[11px] font-medium', className)}>{t(tierLabels[tier])}</UiBadge>
+}
+
+/** States at the top of a page what its tier means for the administrator. */
+export function TierNotice({ tier, children }: { tier: Tier; children?: ReactNode }) {
+  const { t } = useI18n()
+  return <Alert data-slot="tier-notice" data-tier={tier} variant={tier === 'frozen' ? 'default' : 'warning'} className="mb-4 flex items-start gap-2">
+    <InfoIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+    <AlertDescription className="text-foreground">{t(tierDescriptions[tier])}{children && <> {children}</>}</AlertDescription>
+  </Alert>
 }
 
 export function PageHeader({ eyebrow, title, description, children }: { eyebrow: string; title: string; description: string; children?: ReactNode }) {

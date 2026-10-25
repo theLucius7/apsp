@@ -185,6 +185,30 @@ async fn rollups_are_atomic_weighted_and_repeatable_and_retention_runs_without_i
             json!({"count":5,"avg":50.0,"min":10.0,"max":90.0})
         );
     }
+    // Shortening the history needs a recent proof, like other retention changes.
+    // Signing in counts as one, so drop it first to see the refusal.
+    let token = cookie
+        .strip_prefix("apsp_session=")
+        .expect("test session cookie");
+    let session = apsp_panel::auth::hash_token(token);
+    sqlx::query("DELETE FROM administrator_reauth WHERE session_hash=$1")
+        .bind(&session)
+        .execute(&panel.state.pool)
+        .await?;
+    let shortened = panel
+        .admin(
+            Method::PATCH,
+            "/api/telemetry/policy",
+            &cookie,
+            Some(json!({"history_retention_days":1})),
+        )
+        .await?;
+    assert_eq!(shortened.status(), StatusCode::FORBIDDEN);
+    sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$2+300)")
+        .bind(&session)
+        .bind(apsp_protocol::now_timestamp())
+        .execute(&panel.state.pool)
+        .await?;
     panel
         .admin(
             Method::PATCH,
@@ -195,6 +219,11 @@ async fn rollups_are_atomic_weighted_and_repeatable_and_retention_runs_without_i
         .await?
         .error_for_status()?;
     apsp_panel::telemetry::maintain_at(&panel.state.pool, now, Duration::from_secs(6)).await?;
+    let mirrored: i32 =
+        sqlx::query_scalar("SELECT days FROM record_retention_policy WHERE kind='monitoring'")
+            .fetch_one(&panel.state.pool)
+            .await?;
+    assert_eq!(mirrored, 1);
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM telemetry_history WHERE server_id=$1")
             .bind(server)

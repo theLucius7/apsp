@@ -43,4 +43,5 @@ pub(super) fn routes() -> Router<AppState> {
         .route("/api/security/totp/setup", post(auth::totp_setup))
         .route("/api/security/totp/confirm", post(auth::totp_confirm))
         .route("/api/security/totp/disable", post(auth::totp_disable))
+        .route("/api/security/password", post(auth::password_change))
 }

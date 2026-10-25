@@ -12,6 +12,35 @@ import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
 type TotpStatus = { enabled: boolean; pending_expires_at: number | null }
 type Setup = { secret: string; otpauth_uri: string; expires_at: number }
 
+// The administrator's own password; previously only a database procedure could change it.
+function PasswordChange({ totp }: { totp: boolean }) {
+  const action = useAction()
+  const [done, setDone] = useState(false)
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget, data = new FormData(form)
+    const next = String(data.get('new_password') ?? '')
+    setDone(false)
+    void action.run(async () => {
+      if (next !== String(data.get('repeat_password') ?? '')) throw new Error('两次输入的新密码不一致。')
+      await api('/api/security/password', 'POST', { current_password: String(data.get('current_password') ?? ''), new_password: next, ...(totp ? { totp_code: String(data.get('code') ?? '') } : {}) })
+    }, () => { form.reset(); setDone(true) })
+  }
+  return <Panel>
+    <PanelHeader><PanelTitle>登录密码</PanelTitle></PanelHeader>
+    <form className="p-4" onSubmit={submit}>
+      <Field label="当前密码"><Input name="current_password" type="password" autoComplete="current-password" required maxLength={1024} disabled={action.busy} /></Field>
+      <Field label="新密码" hint="至少 12 个字符，不能与当前密码相同。"><Input name="new_password" type="password" autoComplete="new-password" required minLength={12} maxLength={1024} disabled={action.busy} /></Field>
+      <Field label="再次输入新密码"><Input name="repeat_password" type="password" autoComplete="new-password" required minLength={12} maxLength={1024} disabled={action.busy} /></Field>
+      {totp && <Field label="当前验证码"><Input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" minLength={6} maxLength={6} required disabled={action.busy} /></Field>}
+      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">修改后，其他设备上的管理员会话会退出，当前会话保留；所有者的管理员 Passkey 也会撤销，需要重新登记。</p>
+      <ErrorNotice message={action.error} />
+      {done && <p role="status" className="text-sm">密码已修改。</p>}
+      <Button disabled={action.busy}>{action.busy ? '正在验证…' : '修改密码'}</Button>
+    </form>
+  </Panel>
+}
+
 export default function Security() {
   const resource = useResource<TotpStatus>('/api/security/totp')
   const action = useAction()
@@ -52,7 +81,8 @@ export default function Security() {
     }), () => { form.reset(); setSetup(undefined); setNotice('二步验证已关闭，其他设备的管理员会话已退出。'); resource.reload() })
   }
   return <>
-    <PageHeader eyebrow="系统" title="账号安全" description="管理当前管理员的 Passkey 和二步验证。其他管理员、会话与 API 令牌在「管理与安全」中管理。"><Refresh onClick={resource.reload} /></PageHeader>
+    <PageHeader eyebrow="系统" title="账号安全" description="管理当前管理员的登录密码、Passkey 和二步验证。其他管理员、会话与 API 令牌在「管理与安全」中管理。"><Refresh onClick={resource.reload} /></PageHeader>
+    {resource.data && <PasswordChange totp={resource.data.enabled} />}
     <AdminPasskeys />
     <ErrorNotice message={resource.error} retry={resource.reload} />
     <ErrorNotice message={action.error} />

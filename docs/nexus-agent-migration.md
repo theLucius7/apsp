@@ -89,7 +89,7 @@ python3 tools/nexus_runtime_snapshot.py build /private/nodes.json /private/runti
 2. 使用正式签名 Agent 接入主机，先保持监控模式。原服务继续运行，准备操作不发布。
 3. `candidate --server <ID>` 导出私有候选，使用已独立验签的同版本 sing-box 执行配置检查；使用原客户端凭据验证候选的隔离实例。再用 `nexus_runtime_snapshot.py compare-users <快照> <候选> <legacy.json> <报告>` 按监听端口逐节点比对候选用户与旧节点当前可用用户：缺少或多出任何用户都以退出码 2 停止，报告同时统计带限速/设备数限制的用户（apsp Agent 不执行这两项限制）。保留摘要和结果。
 4. 确认兼容桥已更新到支持原子流量投递的版本并健康。原订阅读取、SS/Reality/Hysteria 握手和相关出口必须有切换前基线。
-4a. 设备数限制（[ADR 0098](adr/0098-nexus-device-limits.md)）：兼容桥须在 120 秒内同步过旧面板的设备数限制；主机有设定限制的成员时，Agent 须声明会话控制能力（0.3.2 起、systemd 245 起，运行时服务单元写入 `apsp-runtime` 命名空间）。具备该能力的主机，候选配置包含 info 级运行时日志和回环 `127.0.0.1:18086` 控制接口；先确认该端口未被占用。`compare-users` 报告中的设备数限制由此执行，速度限制仍不执行。
+4a. 设备数限制（[ADR 0099](adr/0099-nexus-device-limits.md)）：兼容桥须在 120 秒内同步过旧面板的设备数限制；主机有设定限制的成员时，Agent 须声明会话控制能力（0.3.2 起、systemd 245 起，运行时服务单元写入 `apsp-runtime` 命名空间）。具备该能力的主机，候选配置包含 info 级运行时日志和回环 `127.0.0.1:18086` 控制接口；先确认该端口未被占用。`compare-users` 报告中的设备数限制由此执行，速度限制仍不执行。
 5. 停旧发布器并排空终末计量，确认旧监听释放。`activate` 输入 `{expected_digest, config_sha256, backup_sha256, stopped_at, stopped_services}`；三个摘要分别对应准备收据、当前候选和主机备份，停用时间为 Unix 秒。配置或授权变化导致摘要不一致时先恢复旧服务，再重做候选。
 6. 等待 Agent 应用健康回执，再使用同一旧客户端验证实际入口、出口及订阅。任何失败先停新运行时，提交 `pause` 并恢复旧配置；不能仅依据 API 接受就标记成功。
 

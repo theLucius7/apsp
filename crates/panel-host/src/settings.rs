@@ -22,6 +22,8 @@ pub struct Settings {
     pub telegram_thread_id: Option<i32>,
     pub telegram_template: String,
     pub webhook: Option<crate::notifications::webhook::Config>,
+    /// Shows frozen features (security fixes only) in the interface; they stay hidden by default.
+    pub show_frozen_features: bool,
 }
 
 impl Default for Settings {
@@ -41,6 +43,7 @@ impl Default for Settings {
                 "apsp · {{title}}\n服务器：{{server}}\n{{message}}\n时间：{{time}}\n事件：{{event}}"
                     .into(),
             webhook: None,
+            show_frozen_features: false,
         }
     }
 }
@@ -51,7 +54,8 @@ impl Settings {
             "expiry_alert_days":self.expiry_alert_days,"traffic_alert_percentage":self.traffic_alert_percentage,
             "offline_minutes":self.offline_minutes,"telegram_enabled":self.telegram_enabled,
             "telegram_thread_id":self.telegram_thread_id,"telegram_template":self.telegram_template,
-            "telegram_chat_id":self.telegram_chat_id,"telegram_token_configured":!self.telegram_token.is_empty()})
+            "telegram_chat_id":self.telegram_chat_id,"telegram_token_configured":!self.telegram_token.is_empty(),
+            "show_frozen_features":self.show_frozen_features})
     }
     pub fn telegram_ready(&self) -> bool {
         self.notification_enabled
@@ -76,14 +80,16 @@ pub async fn get(State(state): State<AppState>, headers: HeaderMap) -> ApiResult
     Ok(Json(read(&state.pool).await?.view()))
 }
 
+// Every field is optional: a page sends only what it shows and the rest keeps
+// its stored value, so the settings and alert pages cannot overwrite each other.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Update {
-    public_dashboard: bool,
-    offline_alerts: bool,
-    offline_minutes: u16,
-    telegram_enabled: bool,
-    telegram_chat_id: String,
+    public_dashboard: Option<bool>,
+    offline_alerts: Option<bool>,
+    offline_minutes: Option<u16>,
+    telegram_enabled: Option<bool>,
+    telegram_chat_id: Option<String>,
     telegram_token: Option<String>,
     notification_enabled: Option<bool>,
     expiry_alert_days: Option<u16>,
@@ -91,6 +97,7 @@ pub struct Update {
     // Missing preserves the topic; zero clears it without ambiguous JSON null handling.
     telegram_thread_id: Option<i32>,
     telegram_template: Option<String>,
+    show_frozen_features: Option<bool>,
 }
 
 pub async fn update(
@@ -106,18 +113,21 @@ pub async fn update(
             .await?;
     let old: Settings = serde_json::from_value(value).map_err(anyhow::Error::from)?;
     let settings = Settings {
-        public_dashboard: update.public_dashboard,
+        public_dashboard: update.public_dashboard.unwrap_or(old.public_dashboard),
         notification_enabled: update
             .notification_enabled
             .unwrap_or(old.notification_enabled),
-        offline_alerts: update.offline_alerts,
-        offline_minutes: update.offline_minutes,
+        offline_alerts: update.offline_alerts.unwrap_or(old.offline_alerts),
+        offline_minutes: update.offline_minutes.unwrap_or(old.offline_minutes),
         expiry_alert_days: update.expiry_alert_days.unwrap_or(old.expiry_alert_days),
         traffic_alert_percentage: update
             .traffic_alert_percentage
             .unwrap_or(old.traffic_alert_percentage),
-        telegram_enabled: update.telegram_enabled,
-        telegram_chat_id: update.telegram_chat_id.trim().into(),
+        telegram_enabled: update.telegram_enabled.unwrap_or(old.telegram_enabled),
+        telegram_chat_id: update
+            .telegram_chat_id
+            .map(|chat| chat.trim().into())
+            .unwrap_or_else(|| old.telegram_chat_id.clone()),
         telegram_token: update
             .telegram_token
             .map(|token| token.trim().into())
@@ -130,6 +140,9 @@ pub async fn update(
             .telegram_template
             .unwrap_or_else(|| old.telegram_template.clone()),
         webhook: old.webhook.clone(),
+        show_frozen_features: update
+            .show_frozen_features
+            .unwrap_or(old.show_frozen_features),
     };
     let valid_token = settings.telegram_token.is_empty()
         || settings

@@ -6,11 +6,11 @@
 
 | 清单 | 入口与实现记录 |
 | --- | --- |
-| 1–3 服务器接入、监控与日常操作 | [运维工具](fleet-operations.md)，`/#/fleet`；从服务器详情“带此服务器打开”保留上下文 |
+| 1–3 服务器接入、监控与日常操作 | [服务器详情 › 运维](fleet-operations.md)，`/#/servers/{id}/fleet`；批量接入在「服务器列表 → 批量接入」；旧地址 `/#/fleet` 保留 |
 | 4–9 网络、路径、吞吐、硬件、IP 与综合报告 | [网络检测](network-workbench.md)，`/#/network-workbench`，复用共用诊断生命周期 |
 | 10–13 DNS、证书、NAT、私有组网与调优 | [网络配置](network-configuration.md)、[DDNS](ddns.md)，`/#/network-configuration` |
 | 14–15 sing-box 运维与代理用户业务 | [代理业务流程](singbox-operations-workflows.md)，现有节点、运行时和代理用户入口 |
-| 16–19 批量任务、故障事件、备份恢复与云费用 | [自动化与恢复](operations-recovery.md)，`/#/operations` |
+| 16–19 批量任务、故障事件、备份恢复与云费用 | [自动化与维护](operations-recovery.md)，`/#/operations`；备份与恢复在「系统 → 备份与恢复」`/#/system/backup`；云资源与费用已冻结，默认隐藏 |
 | 20–21 权限安全、工作区效率与开放接口 | [管理与安全](control-center.md)，`/#/system/control-center` |
 
 NodeQuality 完整验机仍按[原门禁](acceptance/nodequality-full-start-gate.md)拒绝新执行，工作台不能绕过。Geekbench 和 Speedtest 按许可及可证明预算处理执行或外部原始结果导入；缺少有效工具、未知结果、过期采样及未回收资源分别展示。真实云资源变更、DNS 写入、外部证书签发、服务部署及高负载实机测试未在开发阶段执行。

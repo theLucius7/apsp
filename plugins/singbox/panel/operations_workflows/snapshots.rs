@@ -15,6 +15,26 @@ pub(super) async fn user_state(
     Ok(state)
 }
 
+/// Entitlement fields that follow live traffic or the clock. Previews display them, but they
+/// must not decide whether a preview is still current: every user with traffic would
+/// otherwise fail the fingerprint check between preview and apply.
+const LIVE_ENTITLEMENT_FIELDS: [&str; 3] = ["used_bytes", "status", "allowed"];
+
+/// `user_state` reduced to what an operation depends on or changes: assignment, expiry,
+/// quota, reset settings, token, accesses and groups. The cycle boundaries stay because they
+/// identify the billing period; the usage inside the period does not.
+fn stable(users: &Value) -> Value {
+    let mut users = users.clone();
+    for user in users.as_array_mut().into_iter().flatten() {
+        if let Some(entitlement) = user.get_mut("entitlement").and_then(Value::as_object_mut) {
+            for field in LIVE_ENTITLEMENT_FIELDS {
+                entitlement.remove(field);
+            }
+        }
+    }
+    users
+}
+
 async fn groups(tx: &mut Transaction<'_, Postgres>, groups: &[i64]) -> ApiResult<Value> {
     let rows: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',g.id,'name',g.name,'nodes',COALESCE((SELECT jsonb_agg(node_id ORDER BY node_id) FROM singbox_policy_nodes WHERE group_id=g.id),'[]'),'chains',COALESCE((SELECT jsonb_agg(chain_id ORDER BY chain_id) FROM singbox_policy_chains WHERE group_id=g.id),'[]')) FROM singbox_policy_groups g WHERE id=ANY($1) ORDER BY id FOR UPDATE")
         .bind(groups).fetch_all(&mut **tx).await?;
@@ -75,7 +95,7 @@ pub(super) async fn snapshot(
                 differences.push(json!({"user_id":user,"added_nodes":desired.iter().filter(|n|!current.contains(n)).collect::<Vec<_>>(),"removed_nodes":current.iter().filter(|n|!desired.contains(n)).collect::<Vec<_>>(),"effective_nodes":desired}));
             }
             (
-                json!({"users":users_state,"groups":group_state}),
+                json!({"users":stable(&users_state),"groups":group_state}),
                 json!({"operation":"policy_batch","users":users_state.as_array().into_iter().flatten().map(safe_user).collect::<Vec<_>>(),"groups":group_state,"differences":differences,"effect":"替换所选用户的策略组集合；单独授权保留，重叠授权保留原凭据，设备确认应用后撤销最终移除的权限"}),
             )
         }
@@ -88,9 +108,11 @@ pub(super) async fn snapshot(
             let at = apsp_protocol::now_timestamp();
             let cycle: Value = sqlx::query_scalar("SELECT jsonb_build_object('cycle_start',b.cycle_start,'next_reset',b.next_reset,'used_bytes',GREATEST(COALESCE((SELECT SUM(uplink+downlink) FROM usage_records WHERE user_id=$1 AND period_end>b.cycle_start AND period_end<=b.next_reset),0)-COALESCE((SELECT SUM(bytes) FROM singbox_quota_credits WHERE user_id=$1 AND cycle_start=b.cycle_start AND next_reset=b.next_reset),0),0)::text) FROM singbox_package_groups p CROSS JOIN LATERAL singbox_cycle_bounds($3,p.reset_day,p.reset_hour,p.reset_minute,p.timezone) b WHERE p.id=$2")
                 .bind(user_id).bind(package_group_id).bind(at).fetch_one(&mut **tx).await?;
+            // The new cycle's usage is shown for reference only; its boundaries are enough to
+            // detect a rollover between preview and apply.
             (
-                json!({"user":state,"plan":plan,"cycle":cycle}),
-                json!({"operation":"replace_package","user":safe_user(&state[0]),"plan":plan,"new_cycle":cycle,"effective_at":"确认时立即生效","duration_days":plan["duration_days"],"effect":"更换不可变套餐快照；有效期从确认时重新计算，历史账本保留，按新周期重新归集，不自动延长原到期日"}),
+                json!({"user":stable(&state),"plan":plan,"cycle":{"cycle_start":cycle["cycle_start"],"next_reset":cycle["next_reset"]}}),
+                json!({"operation":"replace_package","user":safe_user(&state[0]),"plan":plan,"new_cycle":cycle,"effective_at":"确认时立即生效","duration_days":plan["duration_days"],"effect":"更换不可变套餐快照；有效期从确认时重新计算，历史账本保留，按新周期重新归集，不自动延长原到期日；新账期已用量为预览时的数值"}),
             )
         }
         Operation::ExtendValidity { user_id, days } => {
@@ -101,12 +123,28 @@ pub(super) async fn snapshot(
             let expiry = state[0]["entitlement"]["expires_at"]
                 .as_i64()
                 .ok_or_else(|| ApiError::Conflict("用户未分配套餐，不能延期".into()))?;
+            let now = apsp_protocol::now_timestamp();
+            let expired = expiry <= now;
+            // Renewal counts from the later of now and the current expiry, so an expired user
+            // gets the full period from the moment the operation is applied.
             let new_expiry = expiry
+                .max(now)
                 .checked_add(i64::from(*days) * 86400)
                 .ok_or_else(|| ApiError::BadRequest("到期时间超出范围".into()))?;
+            // Safeguard: an extension must never leave the user expired.
+            if new_expiry <= now {
+                return Err(ApiError::BadRequest(
+                    "延期后的到期时间仍不晚于当前时间，请增加延期天数".into(),
+                ));
+            }
+            let effect = if expired {
+                "该用户的套餐已到期：新到期时间从确认应用的时刻起算，而不是从已过期的原到期日累加；原套餐、开始时间、月度周期及本期用量保留，不重置额度（本期流量已用尽时需另行重置）"
+            } else {
+                "在原到期日基础上延长；原套餐、开始时间、月度周期及本期用量保留，不重置额度"
+            };
             (
-                state.clone(),
-                json!({"operation":"extend_validity","user":safe_user(&state[0]),"previous_expires_at":expiry,"new_expires_at":new_expiry,"effect":"只延长原到期日，原套餐、开始时间、月度周期及本期用量保留；已到期用户不会自动获得从今天起完整的新期限"}),
+                stable(&state),
+                json!({"operation":"extend_validity","user":safe_user(&state[0]),"previous_expires_at":expiry,"new_expires_at":new_expiry,"extends_from_now":expired,"effect":effect}),
             )
         }
         Operation::ResetQuota { user_id } => {
@@ -118,9 +156,11 @@ pub(super) async fn snapshot(
                     "用户没有有限月度额度，不能重置额度".into(),
                 ));
             }
+            // The credit shown here is only the usage at preview time. Apply credits the usage it
+            // finds then, and its receipt carries the figure that was actually credited.
             (
-                state.clone(),
-                json!({"operation":"reset_quota","user":safe_user(&state[0]),"credit_bytes":state[0]["entitlement"]["used_bytes"],"effect":"为当前账期增加与当前已用量相等的补偿额度；不延长有效期，不删除历史批次，不重置设备 epoch；迟到批次仍按原账期计入"}),
+                stable(&state),
+                json!({"operation":"reset_quota","user":safe_user(&state[0]),"credit_bytes":state[0]["entitlement"]["used_bytes"],"effect":"为当前账期增加与应用时实际已用量相等的补偿额度（此处的补偿量是预览时已用量的估计，实际值见回执与审计记录）；不延长有效期，不删除历史批次，不重置设备 epoch；迟到批次仍按原账期计入"}),
             )
         }
         Operation::RotateNodeCredentials { user_id, node_ids } => {
@@ -140,7 +180,7 @@ pub(super) async fn snapshot(
                 return Err(ApiError::Conflict("服务器正在退役，不能轮换凭据".into()));
             }
             (
-                json!({"user":state,"nodes":node_states}),
+                json!({"user":stable(&state),"nodes":node_states}),
                 json!({"operation":"rotate_node_credentials","user":safe_user(&state[0]),"node_ids":nodes,"effect":"重新生成所选节点连接身份，订阅地址保留；旧凭据只有在设备确认应用新配置后才可确认已撤销；无法保证强制断开现存连接"}),
             )
         }
@@ -180,7 +220,7 @@ pub(super) async fn snapshot(
             .await?;
             let groups_state = groups(tx, &policy_groups).await?;
             (
-                json!({"source":source,"candidate":candidate,"users":users_state,"groups":groups_state}),
+                json!({"source":source,"candidate":candidate,"users":stable(&users_state),"groups":groups_state}),
                 json!({"operation":"migrate_node","source_node_id":source_node_id,"candidate_node_id":candidate_node_id,"source_server_id":source["node"]["server_id"],"candidate_server_id":candidate["node"]["server_id"],"candidate_endpoint":{"host":candidate["node"]["public_host"],"port":candidate["node"]["port"],"sni":candidate["node"]["sni"]},"affected_users":users_state.as_array().into_iter().flatten().map(safe_user).collect::<Vec<_>>(),"affected_groups":policy_groups,"effect":"迁移单独授权与策略组关系，候选使用独立凭据；保留旧节点与历史用量，发布两端配置后等待设备应用，入口公网可达仍需单独检测"}),
             )
         }
@@ -232,7 +272,7 @@ pub(super) async fn snapshot(
             let users:Vec<i64>=sqlx::query_scalar("SELECT DISTINCT user_id FROM singbox_user_policies WHERE group_id=ANY($1) ORDER BY user_id").bind(&selected).fetch_all(&mut **tx).await?;
             let users_state = user_state(tx, &users).await?;
             (
-                json!({"chains":rows,"groups":group_state,"users":users_state,"qualified":qualified}),
+                json!({"chains":rows,"groups":group_state,"users":stable(&users_state),"qualified":qualified}),
                 json!({"operation":"failover","source_chain_id":source_chain_id,"source_chain_name":rows.iter().find(|c|c["id"]==*source_chain_id).map(|c|c["name"].clone()),"alternate_chain_id":alternate_chain_id,"alternate_chain_name":alternate["name"],"reason":reason,"group_ids":selected,"affected_users":users,"effect":"仅将显式选中的策略组转到已验证备选链路；不会创建自动出口池或绕过链路直连，旧链路保留，可另行确认恢复与清理"}),
             )
         }

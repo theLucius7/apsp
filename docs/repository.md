@@ -67,17 +67,17 @@
 | --- | --- |
 | `web/src/App.tsx` | 会话读取、失效处理、公开看板访问控制与顶层页面组合 |
 | `web/src/app/routes.ts` | 解析 URL，复用看板/插件的严格路径解析及旧链接兼容 |
-| `web/src/app/navigation.ts` | 后台侧栏的七个功能区、入口名称与当前页面归属，分组规则见[功能地图](product-map.md) |
+| `web/src/app/navigation.ts`、`tiers.ts` | 后台侧栏的六个分组、入口名称、当前页面归属与功能分级标记，分组规则见[功能地图](product-map.md) |
 | `web/src/app/AdminPage.tsx` | 按解析结果选择页面，保留服务器筛选和组件重挂载边界 |
 | `web/src/app/AdminShell.tsx`、`Login.tsx` | 后台布局与登录表单 |
 | `web/src/display/`、`statistics/` | 总览：服务器看板与统计报表 |
-| `web/src/servers/` | 服务器列表、接入与编辑、服务器详情分页（概况、资产与流量、Agent 与任务、插件）及其组成部分 |
-| `web/src/server-diagnostics/` | 服务器详情中的 IP 信息、节点验机与 TCP 诊断 |
-| `web/src/fleet/`、`operations/` | 运维工具；自动化与恢复 |
+| `web/src/servers/` | 服务器列表、接入与编辑、服务器详情分页（概况、资产与流量、Agent 与任务、插件、线路诊断、运维）及其组成部分 |
+| `web/src/server-diagnostics/` | 服务器详情「线路诊断」中的 IP 信息、TCP 诊断与节点验机 |
+| `web/src/fleet/`、`operations/` | 服务器详情「运维」与批量接入；实验功能「自动化与维护」 |
 | `web/src/monitoring/` | 告警事件、延迟检测、告警设置及其规则、Webhook 和渠道状态 |
-| `web/src/network-workbench/`、`network-configuration/` | 网络检测；网络配置 |
+| `web/src/network-workbench/`、`network-configuration/` | 监控告警「网络检测」；实验功能「网络配置」 |
 | `web/src/plugins/` | 插件中心（目录与服务器启用）及 sing-box、DDNS、阿里云业务界面 |
-| `web/src/system/`、`control-center/` | 面板设置、账号安全；管理与安全及全局搜索、外观偏好 |
+| `web/src/system/`、`control-center/` | 面板设置（含功能显示）、备份与恢复、账号安全；管理与安全及全局搜索、外观偏好 |
 | `web/src/api.ts`、`hooks.ts`、`components.tsx` | 共享请求、状态钩子和通用组件（页头、通知、弹窗、确认框、字段、复制） |
 | `web/src/index.css` | Tailwind CSS v4 入口与全部设计参数：浅色/暗色颜色、圆角、密度、基础样式 |
 | `web/src/components/ui/` | shadcn/ui Nova 组件源码（Radix UI 底层），按普通源码维护 |
