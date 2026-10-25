@@ -212,6 +212,15 @@ foreach ($input['managed'] as $node) {
     foreach ($new as $uid => $ips) {
         $service->setDevices($uid, $nodeId, $ips);
     }
+    // The old node software no longer reports this node; keep its status
+    // truthful while apsp confirms the node healthy, and let it lapse otherwise.
+    $server = App\Models\Server::find($nodeId);
+    if (($node['healthy'] ?? false) === true && $server) {
+        $type = strtoupper($server->type);
+        Illuminate\Support\Facades\Cache::put(App\Utils\CacheKey::get("SERVER_{$type}_LAST_CHECK_AT", $nodeId), time(), 3600);
+        Illuminate\Support\Facades\Cache::put(App\Utils\CacheKey::get("SERVER_{$type}_LAST_PUSH_AT", $nodeId), time(), 3600);
+        Illuminate\Support\Facades\Cache::put(App\Utils\CacheKey::get("SERVER_{$type}_ONLINE_USER", $nodeId), count($new), 3600);
+    }
 }
 $prefix = config('database.redis.options.prefix', '');
 $now = time();

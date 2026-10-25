@@ -445,10 +445,31 @@ async fn device_limits_need_session_control_and_are_shared_with_legacy_nodes(
         json!({user.to_string(): ["198.51.100.1"]}),
     )
     .await?;
+    assert_eq!(shared["managed"][0]["legacy_node_id"], 43);
     assert_eq!(
-        shared["managed"],
-        json!([{"legacy_node_id":43,"users":{user.to_string():["203.0.113.5"]}}])
+        shared["managed"][0]["users"],
+        json!({user.to_string():["203.0.113.5"]})
     );
+    // No certified runtime yet: the legacy node status must not be refreshed.
+    assert_eq!(shared["managed"][0]["healthy"], false);
+    sqlx::query(
+        "UPDATE server_module_status SET healthy=TRUE,applied_rev=target_rev WHERE server_id=$1",
+    )
+    .bind(server)
+    .execute(&pool)
+    .await?;
+    sqlx::query("UPDATE servers SET last_seen=$2 WHERE id=$1")
+        .bind(server)
+        .bind(now_timestamp())
+        .execute(&pool)
+        .await?;
+    let healthy = bridge_devices(
+        &pool,
+        json!({user.to_string(): 3}),
+        json!({user.to_string(): ["198.51.100.1"]}),
+    )
+    .await?;
+    assert_eq!(healthy["managed"][0]["healthy"], true);
     // The device's policy counts the legacy address but not its own sessions.
     let policy = apsp_panel::plugins::singbox::nexus_admission_policy(&panel.state, server)
         .await?

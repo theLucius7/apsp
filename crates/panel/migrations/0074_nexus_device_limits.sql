@@ -71,11 +71,17 @@ BEGIN
         legacy_addresses=EXCLUDED.legacy_addresses, observed_at=EXCLUDED.observed_at
         WHERE EXCLUDED.observed_at>=singbox_nexus_device_state.observed_at;
     -- Admitted addresses on taken-over nodes, keyed by their legacy node so the
-    -- legacy panel counts them like its own nodes' devices.
-    SELECT COALESCE(jsonb_agg(jsonb_build_object('legacy_node_id',n.legacy_node_id,'users',n.users)
+    -- legacy panel counts them like its own nodes' devices. A node is healthy
+    -- while its device is online and its applied runtime is certified, which
+    -- keeps the legacy node status truthful after its old software stopped.
+    SELECT COALESCE(jsonb_agg(jsonb_build_object('legacy_node_id',n.legacy_node_id,'users',n.users,'healthy',n.healthy)
         ORDER BY n.legacy_node_id),'[]'::JSONB) INTO result
     FROM (
-        SELECT i.legacy_node_id, COALESCE((
+        SELECT i.legacy_node_id, EXISTS(
+            SELECT 1 FROM server_module_status m JOIN servers v ON v.id=m.server_id
+            WHERE m.server_id=r.server_id AND m.module='singbox' AND m.healthy
+              AND m.applied_rev=m.target_rev AND v.deleted_at IS NULL AND v.last_seen>=now_s-60) AS healthy,
+            COALESCE((
             SELECT jsonb_object_agg(a.user_id::TEXT, a.addresses)
             FROM (SELECT user_id, jsonb_agg(DISTINCT address) AS addresses
                   FROM singbox_runtime_session_addresses
