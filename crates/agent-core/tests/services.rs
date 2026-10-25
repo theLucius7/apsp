@@ -21,6 +21,8 @@ struct RecordingOps {
     allow_files: bool,
     allow_diagnostic_lock: bool,
     lock_preparations: Mutex<usize>,
+    /// Answer for `systemctl show --property=LogNamespace`, when set.
+    log_namespace: Mutex<Option<String>>,
 }
 
 impl RecordingOps {
@@ -61,6 +63,16 @@ impl Privileged for RecordingOps {
                 .push((program.into(), args.into()));
             if *self.unavailable.lock().unwrap() {
                 bail!("service command unavailable");
+            }
+            if program == Path::new("systemctl")
+                && args.iter().any(|value| value == "--property=LogNamespace")
+                && let Some(namespace) = self.log_namespace.lock().unwrap().clone()
+            {
+                return Ok(CommandOutput {
+                    success: true,
+                    stdout: format!("{namespace}\n"),
+                    ..Default::default()
+                });
             }
             if program == Path::new("stat") {
                 anyhow::ensure!(
@@ -402,15 +414,46 @@ async fn recent_runtime_logs_are_unit_scoped_bounded_and_do_not_accept_paths() -
     assert!(!logs.truncated);
     assert!(services.recent_logs("../../private").await.is_err());
     let calls = ops.calls.lock().unwrap();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].0, Path::new("journalctl"));
+    assert_eq!(calls.len(), 2, "namespace query, then the journal read");
+    assert_eq!(calls[0].0, Path::new("systemctl"));
+    assert_eq!(calls[1].0, Path::new("journalctl"));
     for argument in [
         "--unit=demo@main.service",
         "--lines=100",
         "--since=-1h",
         "--reverse",
     ] {
-        assert!(calls[0].1.iter().any(|value| value == argument));
+        assert!(calls[1].1.iter().any(|value| value == argument));
     }
+    assert!(
+        !calls[1]
+            .1
+            .iter()
+            .any(|value| value.starts_with("--namespace"))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn runtime_namespace_logs_hide_per_session_lines_from_administrators() -> Result<()> {
+    let ops = RecordingOps::successful();
+    *ops.log_namespace.lock().unwrap() = Some("apsp-runtime".into());
+    ops.output.lock().unwrap().stdout = concat!(
+        "{\"MESSAGE\":\"+0000 2026-10-25 01:00:02 INFO [7 0ms] inbound/vless[in]: inbound connection from 192.0.2.1:5\",\"PRIORITY\":\"6\",\"__REALTIME_TIMESTAMP\":\"3000000\"}\n",
+        "{\"MESSAGE\":\"+0000 2026-10-25 01:00:01 WARN router: rule set missing\",\"PRIORITY\":\"6\",\"__REALTIME_TIMESTAMP\":\"2000000\"}\n"
+    )
+    .into();
+    let services = SystemServiceManager::new(ops.clone(), ServiceBackend::Systemd);
+    let logs = services.recent_logs("demo@main.service").await?;
+    assert_eq!(logs.lines.len(), 1);
+    assert!(logs.lines[0].text.contains("WARN"));
+    assert!(!format!("{:?}", logs.lines).contains("192.0.2.1"));
+    let calls = ops.calls.lock().unwrap();
+    assert!(
+        calls[1]
+            .1
+            .iter()
+            .any(|value| value == "--namespace=apsp-runtime")
+    );
     Ok(())
 }

@@ -44,6 +44,20 @@ impl std::fmt::Display for RecoveryBlocked {
 impl std::error::Error for RecoveryBlocked {}
 
 impl Reconciler {
+    /// Session observation for concurrent client address limits, if supported.
+    pub fn session_source(&self) -> Option<&dyn apsp_adapter_sdk::SessionSource> {
+        self.adapter.session_source()
+    }
+
+    /// The runtime currently applied, without taking the apply gate.
+    pub fn applied_runtime(&self) -> Result<Option<Prepared>> {
+        self.previous()
+    }
+
+    pub fn descriptor(&self) -> apsp_adapter_sdk::Descriptor {
+        self.adapter.describe()
+    }
+
     pub fn supports_runtime_probe(&self) -> bool {
         self.services.supports_runtime_checkpoint() && self.adapter.supports_runtime_probe()
     }

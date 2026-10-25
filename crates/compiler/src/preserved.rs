@@ -89,8 +89,33 @@ const HOST_ROUTE_OPTIONS: [&str; 3] = [
     "auto_detect_interface",
 ];
 
+/// Loopback control interface the Agent uses to close sessions beyond a
+/// concurrent client address limit; never published beyond the device.
+pub const SESSION_CONTROL_LISTEN: &str = "127.0.0.1:18086";
+
+/// Runtime facilities for concurrent client address limits: per-session log
+/// lines (read only from the volatile runtime log) and the local control API.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SessionControl {
+    pub secret: String,
+}
+
 /// Compilation never rotates credentials or falls back to a direct outbound.
 pub fn compile_preserved_server(inputs: &[PreservedNode]) -> Result<String, CompileError> {
+    compile_preserved_server_with(inputs, None)
+}
+
+/// As `compile_preserved_server`, optionally enabling session control.
+pub fn compile_preserved_server_with(
+    inputs: &[PreservedNode],
+    control: Option<&SessionControl>,
+) -> Result<String, CompileError> {
+    if let Some(control) = control
+        && (!(32..=128).contains(&control.secret.len())
+            || !control.secret.bytes().all(|byte| byte.is_ascii_hexdigit()))
+    {
+        return Err(CompileError::InvalidSessionControl);
+    }
     let models: Vec<_> = inputs.iter().map(|input| input.node.clone()).collect();
     crate::sorted_validated(&models, true)?;
     let mut inputs: Vec<_> = inputs.iter().collect();
@@ -331,6 +356,13 @@ pub fn compile_preserved_server(inputs: &[PreservedNode]) -> Result<String, Comp
         "experimental":{"v2ray_api":{"listen":"127.0.0.1:18085","stats":{"enabled":true,"users":stats}}}});
     if let Some(dns) = common_dns {
         result["dns"] = dns;
+    }
+    if let Some(control) = control {
+        // Session lines carry client and destination addresses; they reach only
+        // the volatile runtime log namespace the Agent reads, never disk.
+        result["log"] = json!({"level":"info","timestamp":true});
+        result["experimental"]["clash_api"] =
+            json!({"external_controller":SESSION_CONTROL_LISTEN,"secret":control.secret});
     }
     crate::pretty(result)
 }

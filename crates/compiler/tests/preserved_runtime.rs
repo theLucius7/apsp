@@ -1,7 +1,10 @@
 #![forbid(unsafe_code)]
 use apsp_compiler::{
     Node, ProtocolConfig, SsMethod, compile_server,
-    preserved::{PreservedNode, compile_preserved_server, nexus_access},
+    preserved::{
+        PreservedNode, SESSION_CONTROL_LISTEN, SessionControl, compile_preserved_server,
+        compile_preserved_server_with, nexus_access,
+    },
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -243,4 +246,45 @@ fn identical_host_route_options_are_kept_and_differences_refused() {
     assert!(compile_preserved_server(&[first.clone(), second]).is_err());
     first.configuration["route"]["domain_strategy"] = json!("ipv4_only");
     assert!(compile_preserved_server(&[first]).is_err());
+}
+
+#[test]
+fn session_control_adds_session_logs_and_a_loopback_controller_only_when_requested() {
+    let input = fixture(1);
+    let plain: Value =
+        serde_json::from_str(&compile_preserved_server(std::slice::from_ref(&input)).unwrap())
+            .unwrap();
+    assert_eq!(plain["log"]["level"], "warn");
+    assert!(plain["experimental"].get("clash_api").is_none());
+    let control = SessionControl {
+        secret: "ab".repeat(32),
+    };
+    let text = compile_preserved_server_with(std::slice::from_ref(&input), Some(&control)).unwrap();
+    let controlled: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(controlled["log"], json!({"level":"info","timestamp":true}));
+    assert_eq!(
+        controlled["experimental"]["clash_api"],
+        json!({"external_controller":SESSION_CONTROL_LISTEN,"secret":control.secret})
+    );
+    assert!(
+        SESSION_CONTROL_LISTEN.starts_with("127.0.0.1:"),
+        "the controller is never published beyond the device"
+    );
+    // Identities, listeners and routes are unchanged; only logging and control differ.
+    for key in ["inbounds", "outbounds", "route"] {
+        assert_eq!(plain[key], controlled[key], "{key}");
+    }
+    assert_eq!(
+        plain["experimental"]["v2ray_api"],
+        controlled["experimental"]["v2ray_api"]
+    );
+    for secret in ["short".to_string(), "zz".repeat(32), "a".repeat(129)] {
+        assert!(
+            compile_preserved_server_with(
+                std::slice::from_ref(&input),
+                Some(&SessionControl { secret })
+            )
+            .is_err()
+        );
+    }
 }

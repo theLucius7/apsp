@@ -159,6 +159,11 @@ pub(super) async fn run(
                                 retirement_poll.reset_immediately();
                             }
                             Message::ManifestChanged(_) => { let _ = trigger.try_send(()); }
+                            Message::RuntimeAdmissionPolicy(policy) => {
+                                if let Some(admission) = &runtime.admission {
+                                    admission.enqueue(policy);
+                                }
+                            }
                             Message::UsageAck(ack) => {
                                 let mut state = runtime.state.lock().map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
                                 acknowledgment_storage.finish("persist usage acknowledgment", state.acknowledge_usage(ack.epoch, ack.seq))?;

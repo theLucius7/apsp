@@ -89,6 +89,22 @@ async fn fixture(panel: &TestPanel) -> Result<(i64, Value, i64)> {
     Ok((server, payload, user))
 }
 
+/// What the compatibility bridge delivers each cycle: legacy device limits and
+/// the addresses legacy nodes see; returns apsp-admitted addresses per node.
+async fn bridge_devices(pool: &PgPool, limits: Value, legacy: Value) -> Result<Value> {
+    let import: Uuid = sqlx::query_scalar("SELECT import_id FROM singbox_nexus_bridge")
+        .fetch_one(pool)
+        .await?;
+    let sample =
+        json!({"import_id":import,"observed_at":now_timestamp(),"limits":limits,"legacy":legacy});
+    Ok(
+        sqlx::query_scalar("SELECT singbox_nexus_device_exchange($1)")
+            .bind(sample)
+            .fetch_one(pool)
+            .await?,
+    )
+}
+
 #[sqlx::test(migrations = "./migrations")]
 async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     pool: PgPool,
@@ -161,6 +177,19 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     )?;
     sqlx::query("UPDATE servers SET device_public_key='TEST_ONLY',last_seen=$2,static_info=$3,capabilities=$4 WHERE id=$1").bind(server).bind(now_timestamp())
         .bind(json!({"arch":"amd64","os":"linux","libc":"gnu","agent_version":"0.3.1"})).bind(json!(["singbox",apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY])).execute(&pool).await?;
+    // Without device limits from the bridge the handoff waits.
+    assert_eq!(
+        post(
+            &panel,
+            &cookie,
+            &format!("/{server}/activate"),
+            body.clone()
+        )
+        .await?
+        .status(),
+        StatusCode::CONFLICT
+    );
+    bridge_devices(&pool, json!({}), json!({})).await?;
     let mut stale = body.clone();
     stale["config_sha256"] = json!("b".repeat(64));
     assert_eq!(
@@ -254,6 +283,252 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
             .fetch_one(&pool)
             .await?;
     assert!(!diff.contains(&STANDARD.encode(b"0123456789abcdef")));
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn device_limits_need_session_control_and_are_shared_with_legacy_nodes(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, payload, user) = fixture(&panel).await?;
+    let preview = ok(post(&panel, &cookie, "/preview", json!({"payload":payload})).await?).await?;
+    ok(post(
+        &panel,
+        &cookie,
+        "/prepare",
+        json!({"payload":payload,"expected_digest":preview["digest"]}),
+    )
+    .await?)
+    .await?;
+    let binary = b"TEST_ONLY signed runtime";
+    let archive = release_fixture::archive("sing-box", binary)?;
+    release_fixture::write(
+        &panel.state.config.data_dir,
+        "sing-box",
+        "1.14.2",
+        "sing-box",
+        &archive,
+        binary,
+        "tar.gz",
+    )?;
+    let online = |capabilities: Value| {
+        sqlx::query("UPDATE servers SET device_public_key='TEST_ONLY',last_seen=$2,static_info=$3,capabilities=$4 WHERE id=$1")
+            .bind(server).bind(now_timestamp())
+            .bind(json!({"arch":"amd64","os":"linux","libc":"gnu","agent_version":"0.3.2"}))
+            .bind(capabilities)
+            .execute(&pool)
+    };
+    let basic = json!([
+        "singbox",
+        apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY
+    ]);
+    online(basic.clone()).await?;
+    // The legacy panel limits this member to three devices; legacy nodes
+    // currently see it on one address.
+    let empty = bridge_devices(
+        &pool,
+        json!({user.to_string(): 3}),
+        json!({user.to_string(): ["198.51.100.1"]}),
+    )
+    .await?;
+    assert_eq!(empty["managed"], json!([]), "nothing is taken over yet");
+    let switch = |config: &Value| json!({"expected_digest":preview["digest"],"config_sha256":config["config_sha256"],"backup_sha256":"a".repeat(64),"stopped_at":now_timestamp(),"stopped_services":["TEST_ONLY-old.service"]});
+    let plain = ok(post(
+        &panel,
+        &cookie,
+        &format!("/{server}/candidate"),
+        Value::Null,
+    )
+    .await?)
+    .await?;
+    let refused = post(
+        &panel,
+        &cookie,
+        &format!("/{server}/activate"),
+        switch(&plain),
+    )
+    .await?;
+    assert_eq!(
+        refused.status(),
+        StatusCode::CONFLICT,
+        "limited members need session control"
+    );
+    let mut capable = basic.as_array().unwrap().clone();
+    capable.push(json!(apsp_protocol::RUNTIME_ADMISSION_CAPABILITY));
+    online(json!(capable)).await?;
+    let controlled = ok(post(
+        &panel,
+        &cookie,
+        &format!("/{server}/candidate"),
+        Value::Null,
+    )
+    .await?)
+    .await?;
+    assert_ne!(controlled["config_sha256"], plain["config_sha256"]);
+    let secret: String = sqlx::query_scalar(
+        "SELECT session_secret FROM singbox_nexus_runtime_hosts WHERE server_id=$1",
+    )
+    .bind(server)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(secret.len(), 64);
+    assert_eq!(
+        ok(post(
+            &panel,
+            &cookie,
+            &format!("/{server}/candidate"),
+            Value::Null
+        )
+        .await?)
+        .await?["config_sha256"],
+        controlled["config_sha256"],
+        "the session secret is stable, so the candidate digest is too"
+    );
+    ok(post(
+        &panel,
+        &cookie,
+        &format!("/{server}/activate"),
+        switch(&controlled),
+    )
+    .await?)
+    .await?;
+    publisher::publish_due(&panel.state).await?;
+    sqlx::query("UPDATE servers SET dirty_at=0")
+        .execute(&pool)
+        .await?;
+    publisher::publish_due(&panel.state).await?;
+    let bundle: String =
+        sqlx::query_scalar("SELECT bundle FROM deployments ORDER BY rev DESC LIMIT 1")
+            .fetch_one(&pool)
+            .await?;
+    let bundle: apsp_protocol::Bundle = serde_json::from_str(&bundle)?;
+    let config: Value = serde_json::from_str(&bundle.files["config.json"])?;
+    assert_eq!(config["log"]["level"], "info");
+    assert_eq!(
+        config["experimental"]["clash_api"]["external_controller"],
+        "127.0.0.1:18086"
+    );
+    assert_eq!(config["experimental"]["clash_api"]["secret"], secret);
+    let native: i64 = sqlx::query_scalar("SELECT node_id FROM singbox_nexus_runtime_nodes")
+        .fetch_one(&pool)
+        .await?;
+    let principal = format!("u{user}_n{native}");
+    // The device reports one admitted address; names of other nodes are ignored.
+    apsp_panel::plugins::singbox::ingest_runtime_sessions(
+        &panel.state,
+        server,
+        apsp_protocol::RuntimeSessionReport {
+            module: "singbox".into(),
+            observed_at: now_timestamp(),
+            principals: [
+                (principal.clone(), vec!["203.0.113.5".parse()?]),
+                (
+                    format!("u{user}_n{}", native + 1000),
+                    vec!["203.0.113.6".parse()?],
+                ),
+            ]
+            .into(),
+        },
+    )
+    .await?;
+    let stored: Vec<String> =
+        sqlx::query_scalar("SELECT address FROM singbox_runtime_session_addresses")
+            .fetch_all(&pool)
+            .await?;
+    assert_eq!(stored, vec!["203.0.113.5".to_string()]);
+    // The bridge publishes apsp-admitted addresses under the legacy node id.
+    let shared = bridge_devices(
+        &pool,
+        json!({user.to_string(): 3}),
+        json!({user.to_string(): ["198.51.100.1"]}),
+    )
+    .await?;
+    assert_eq!(shared["managed"][0]["legacy_node_id"], 43);
+    assert_eq!(
+        shared["managed"][0]["users"],
+        json!({user.to_string():["203.0.113.5"]})
+    );
+    // No certified runtime yet: the legacy node status must not be refreshed.
+    assert_eq!(shared["managed"][0]["healthy"], false);
+    sqlx::query(
+        "UPDATE server_module_status SET healthy=TRUE,applied_rev=target_rev WHERE server_id=$1",
+    )
+    .bind(server)
+    .execute(&pool)
+    .await?;
+    sqlx::query("UPDATE servers SET last_seen=$2 WHERE id=$1")
+        .bind(server)
+        .bind(now_timestamp())
+        .execute(&pool)
+        .await?;
+    let healthy = bridge_devices(
+        &pool,
+        json!({user.to_string(): 3}),
+        json!({user.to_string(): ["198.51.100.1"]}),
+    )
+    .await?;
+    assert_eq!(healthy["managed"][0]["healthy"], true);
+    // The device's policy counts the legacy address but not its own sessions.
+    let policy = apsp_panel::plugins::singbox::nexus_admission_policy(&panel.state, server)
+        .await?
+        .expect("limited member has a policy");
+    assert_eq!(policy.groups.len(), 1);
+    assert_eq!(policy.groups[0].principals, vec![principal]);
+    assert_eq!(policy.groups[0].limit, 3);
+    assert_eq!(
+        policy.groups[0].remote,
+        vec!["198.51.100.1".parse::<std::net::IpAddr>()?]
+    );
+    // Removing the last limit must send a replacement, not leave the old
+    // policy in the Agent forever because there are no groups left to send.
+    bridge_devices(&pool, json!({user.to_string(): 0}), json!({})).await?;
+    let cleared = apsp_panel::plugins::singbox::nexus_admission_policy(&panel.state, server)
+        .await?
+        .expect("empty policy explicitly clears the previous limit");
+    assert!(cleared.valid());
+    assert!(cleared.groups.is_empty());
+    // Malformed bridge samples are refused outright.
+    for (limits, legacy) in [
+        (json!({user.to_string(): 2000}), json!({})),
+        (json!({}), json!({user.to_string(): ["198.51.100.0/24"]})),
+        (json!({"0": 3}), json!({})),
+    ] {
+        assert!(bridge_devices(&pool, limits, legacy).await.is_err());
+    }
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn expired_device_addresses_are_purged_without_new_reports(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let (server, _, user) = fixture(&panel).await?;
+    let old = now_timestamp() - 301;
+    sqlx::query("INSERT INTO singbox_runtime_session_addresses(server_id,stat_name,user_id,node_id,address,observed_at) VALUES($1,'u1_n1',$2,1,'192.0.2.1',$3)")
+        .bind(server).bind(user).bind(old).execute(&pool).await?;
+    sqlx::query("INSERT INTO singbox_nexus_device_state(user_id,device_limit,legacy_addresses,observed_at) VALUES($1,3,'[\"192.0.2.2\"]',$2)")
+        .bind(user).bind(old).execute(&pool).await?;
+    // No active runtime or session reports: the regular publisher cycle must
+    // still enforce the retention limit on both kinds of address evidence.
+    let publisher = tokio::spawn(publisher::run(panel.state.clone()));
+    let expired = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let count: i64 = sqlx::query_scalar("SELECT (SELECT COUNT(*) FROM singbox_runtime_session_addresses)+(SELECT COUNT(*) FROM singbox_nexus_device_state WHERE legacy_addresses<>'[]'::jsonb)")
+                .fetch_one(&pool).await?;
+            if count == 0 { return Ok::<_, sqlx::Error>(()); }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    }).await;
+    publisher.abort();
+    let _ = publisher.await;
+    expired??;
+    let limit: i32 =
+        sqlx::query_scalar("SELECT device_limit FROM singbox_nexus_device_state WHERE user_id=$1")
+            .bind(user)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(limit, 3, "expiry removes evidence, not configured limits");
     Ok(())
 }
 

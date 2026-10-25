@@ -45,6 +45,7 @@ async fn full_storage_retains_clock_and_unacked_usage_without_interrupting_authe
         retirement: None,
         cancellation: None,
         runtime_control: None,
+        admission: None,
         telemetry: watch::channel(Arc::new(crate::telemetry::cache::Snapshot::default())).1,
     };
     let mut tasks = JoinSet::new();

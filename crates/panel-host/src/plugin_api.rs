@@ -133,6 +133,18 @@ pub trait PanelPlugins: Send + Sync {
     ) -> HookFuture<'a, ApiResult<Option<Value>>>;
     fn runtime_step_policy(&self, kind: &str) -> Option<RuntimeStepPolicy>;
 
+    /// Records a device's admitted runtime session addresses. Devices report
+    /// only when a plugin enabled session control in their configuration.
+    fn ingest_runtime_sessions<'a>(
+        &'a self,
+        state: &'a AppState,
+        server_id: i64,
+        report: apsp_protocol::RuntimeSessionReport,
+    ) -> HookFuture<'a, anyhow::Result<()>> {
+        let _ = (state, server_id, report);
+        Box::pin(async { Ok(()) })
+    }
+
     /// Expiries observed by plugins for the costs and renewals ledger.
     fn renewal_references<'a>(
         &'a self,
@@ -215,6 +227,22 @@ pub async fn ingest_usage(
     match installed() {
         Some(plugins) => plugins.ingest_usage(state, server_id, batch).await,
         None => anyhow::bail!("no plugin accepts usage batches"),
+    }
+}
+
+pub async fn ingest_runtime_sessions(
+    state: &AppState,
+    server_id: i64,
+    report: apsp_protocol::RuntimeSessionReport,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(report.valid(), "invalid runtime session report");
+    match installed() {
+        Some(plugins) => {
+            plugins
+                .ingest_runtime_sessions(state, server_id, report)
+                .await
+        }
+        None => Ok(()),
     }
 }
 

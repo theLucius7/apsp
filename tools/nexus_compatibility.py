@@ -5,8 +5,10 @@ Run locally with a mode-0600 JSON configuration. No credentials or member data
 are written to stdout. Stop the old business writers before enabling this job.
 """
 import argparse
+import base64
 from decimal import Decimal, ROUND_DOWN
 import fcntl
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -187,6 +189,100 @@ def initialize_cycles(config, members, refresh_nodes=False):
         raise BridgeError('Legacy billing schedule initialization failed')
 
 
+DEVICE_EXCHANGE = r"""<?php
+require '/www/vendor/autoload.php';
+$app = require '/www/bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+$input = json_decode(base64_decode('@INPUT@', true), true, 16, JSON_THROW_ON_ERROR);
+$service = app(App\Services\DeviceStateService::class);
+$managed = [];
+// Publish apsp-admitted addresses under each taken-over legacy node, exactly
+// as that node's own device report would, so legacy nodes count them.
+foreach ($input['managed'] as $node) {
+    $nodeId = (int) $node['legacy_node_id'];
+    $managed[] = $nodeId;
+    $new = [];
+    foreach ($node['users'] as $uid => $ips) {
+        $new[(int) $uid] = array_values(array_map('strval', $ips));
+    }
+    foreach (array_diff_key($service->getNodeDevices($nodeId), $new) as $uid => $ips) {
+        $service->removeNodeDevices($nodeId, (int) $uid);
+        $service->notifyUpdate((int) $uid);
+    }
+    foreach ($new as $uid => $ips) {
+        $service->setDevices($uid, $nodeId, $ips);
+    }
+    // The old node software no longer reports this node; keep its status
+    // truthful while apsp confirms the node healthy, and let it lapse otherwise.
+    $server = App\Models\Server::find($nodeId);
+    if (($node['healthy'] ?? false) === true && $server) {
+        $type = strtoupper($server->type);
+        Illuminate\Support\Facades\Cache::put(App\Utils\CacheKey::get("SERVER_{$type}_LAST_CHECK_AT", $nodeId), time(), 3600);
+        Illuminate\Support\Facades\Cache::put(App\Utils\CacheKey::get("SERVER_{$type}_LAST_PUSH_AT", $nodeId), time(), 3600);
+        Illuminate\Support\Facades\Cache::put(App\Utils\CacheKey::get("SERVER_{$type}_ONLINE_USER", $nodeId), count($new), 3600);
+    }
+}
+$prefix = config('database.redis.options.prefix', '');
+$now = time();
+$seen = [];
+foreach (Illuminate\Support\Facades\Redis::keys('user_devices:*') as $key) {
+    $actual = ($prefix && str_starts_with($key, $prefix)) ? substr($key, strlen($prefix)) : $key;
+    $uid = (int) substr($actual, strlen('user_devices:'));
+    foreach (Illuminate\Support\Facades\Redis::hgetall($actual) as $field => $at) {
+        $split = strpos($field, ':');
+        if ($uid <= 0 || $split === false || $now - (int) $at > 300) continue;
+        if (in_array((int) substr($field, 0, $split), $managed, true)) continue;
+        $seen[$uid][substr($field, $split + 1)] = true;
+    }
+}
+$legacy = [];
+foreach ($seen as $uid => $ips) {
+    $legacy[(string) $uid] = array_slice(array_keys($ips), 0, 64);
+}
+echo json_encode(['legacy' => (object) $legacy], JSON_THROW_ON_ERROR);
+"""
+
+
+def legacy_devices(config, managed):
+    """Write apsp-admitted addresses to the legacy device store; read the rest."""
+    payload = base64.b64encode(json.dumps({'managed': managed}, separators=(',', ':')).encode()).decode()
+    result = subprocess.run(['docker', 'exec', '-i', config['legacy_container'], 'php'],
+                            input=DEVICE_EXCHANGE.replace('@INPUT@', payload), text=True,
+                            capture_output=True, timeout=45, check=False)
+    if result.returncode or len(result.stdout) > 8 * 1024 * 1024:
+        raise BridgeError('Legacy device exchange failed; no private error detail logged')
+    legacy = json.loads(result.stdout)['legacy']
+    if not isinstance(legacy, dict):
+        raise BridgeError('Legacy device exchange returned an invalid result')
+    result = {}
+    for uid, ips in legacy.items():
+        valid = []
+        for ip in ips if isinstance(ips, list) else []:
+            try:
+                valid.append(str(ipaddress.ip_address(ip)))
+            except ValueError:
+                continue
+        if valid:
+            result[str(int(uid))] = sorted(set(valid))[:64]
+    return result
+
+
+def exchange_devices(config, connection):
+    """Share device limits and live client addresses with apsp (ADR 0099)."""
+    rows = connection.execute('SELECT id,device_limit FROM v2_user ORDER BY id LIMIT 20001').fetchall()
+    if len(rows) > 20000:
+        raise BridgeError('Legacy member count exceeded the safety bound')
+    limits = {str(r[0]): max(0, min(int(r[1] or 0), 1024)) for r in rows}
+    managed = config.get('_device_managed', [])
+    # Live addresses matter only once apsp serves taken-over nodes.
+    legacy = legacy_devices(config, managed) if managed else {}
+    sample = {'import_id': str(uuid.UUID(config['import_id'])), 'observed_at': int(time.time()),
+              'limits': limits, 'legacy': legacy}
+    result = database(config, f'SELECT singbox_nexus_device_exchange({json_sql(sample)});')
+    config['_device_managed'] = result['managed']
+    return len(result['managed'])
+
+
 def synchronize(config):
     path = Path(config['legacy_database']).resolve(strict=True)
     connection = sqlite3.connect(f'{path.as_uri()}?mode=rw', uri=True, timeout=20, isolation_level=None)
@@ -205,6 +301,11 @@ def synchronize(config):
         ack = database(config, f"WITH acknowledged AS (UPDATE singbox_nexus_bridge SET last_sync_at=EXTRACT(EPOCH FROM clock_timestamp())::bigint,pending_generation=NULL WHERE singleton AND enabled AND pending_generation='{generation}'::uuid RETURNING 1) SELECT jsonb_build_object('acknowledged',EXISTS(SELECT 1 FROM acknowledged));")
         if not ack.get('acknowledged'):
             raise BridgeError('Generation acknowledgment failed; check for another bridge process')
+        try:
+            result['device_nodes'] = exchange_devices(config, connection)
+        except (BridgeError, KeyError, TypeError, ValueError, subprocess.TimeoutExpired) as error:
+            # Device limits never block member, quota or traffic compatibility.
+            result['device_error'] = type(error).__name__
         return result
     finally:
         connection.close()

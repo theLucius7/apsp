@@ -16,19 +16,48 @@ impl SystemServiceManager {
                     || matches!(byte, b'.' | b'_' | b'-' | b'@')),
             "invalid service unit"
         );
+        // Runtime units log per-session lines into a volatile namespace; read
+        // it, but show only warnings and errors as before.
+        let namespace_query = [
+            "show".to_owned(),
+            unit.to_owned(),
+            "--property=LogNamespace".to_owned(),
+            "--value".to_owned(),
+        ];
+        let namespaced = self.backend == ServiceBackend::Systemd && {
+            let query =
+                self.privileged
+                    .execute_bounded(Path::new("systemctl"), &namespace_query, 5, 1024);
+            matches!(
+                tokio::time::timeout(Duration::from_secs(6), query).await,
+                Ok(Ok(output)) if output.output.success
+                    && output.output.stdout.trim() == crate::admission::RUNTIME_LOG_NAMESPACE
+            )
+        };
+        let (scan_lines, scan_bytes) = if namespaced {
+            (5000, 4 * 1024 * 1024)
+        } else {
+            (MAX_LINES, MAX_BYTES)
+        };
         let (program, args) = match self.backend {
-            ServiceBackend::Systemd => (
-                "journalctl",
-                vec![
+            ServiceBackend::Systemd => {
+                let mut args = vec![
                     "--no-pager".into(),
                     "--output=json".into(),
                     "--reverse".into(),
                     "--since=-1h".into(),
-                    format!("--lines={MAX_LINES}"),
+                    format!("--lines={scan_lines}"),
                     format!("--unit={unit}"),
                     "--output-fields=MESSAGE,PRIORITY,__REALTIME_TIMESTAMP".into(),
-                ],
-            ),
+                ];
+                if namespaced {
+                    args.push(format!(
+                        "--namespace={}",
+                        crate::admission::RUNTIME_LOG_NAMESPACE
+                    ));
+                }
+                ("journalctl", args)
+            }
             ServiceBackend::Launchd => (
                 "tail",
                 vec![
@@ -76,7 +105,7 @@ impl SystemServiceManager {
         let output = tokio::time::timeout(
             Duration::from_secs(12),
             self.privileged
-                .execute_bounded(Path::new(program), &args, 10, MAX_BYTES),
+                .execute_bounded(Path::new(program), &args, 10, scan_bytes),
         )
         .await??;
         ensure!(
@@ -92,7 +121,10 @@ impl SystemServiceManager {
             self.backend,
             ServiceBackend::Systemd | ServiceBackend::WindowsTask
         ) {
-            for line in output.output.stdout.lines().take(MAX_LINES) {
+            for line in output.output.stdout.lines().take(scan_lines) {
+                if logs.lines.len() == MAX_LINES {
+                    break;
+                }
                 let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
                     logs.truncated = true;
                     continue;
@@ -100,6 +132,9 @@ impl SystemServiceManager {
                 let Some(text) = value["MESSAGE"].as_str() else {
                     continue;
                 };
+                if namespaced && crate::admission::session_level(text) {
+                    continue;
+                }
                 logs.lines.push(ServiceLogLine {
                     text: text.to_owned(),
                     priority: value["PRIORITY"]
@@ -129,7 +164,7 @@ impl SystemServiceManager {
                 .collect();
             logs.lines.reverse();
         }
-        logs.truncated |= logs.lines.len() == MAX_LINES || output.output.stdout.len() >= MAX_BYTES;
+        logs.truncated |= logs.lines.len() == MAX_LINES || output.output.stdout.len() >= scan_bytes;
         Ok(logs)
     }
 }

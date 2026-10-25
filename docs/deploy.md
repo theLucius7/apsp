@@ -206,7 +206,7 @@ Agent 资产缺失或缺少对应架构时，由维护者检查可信 GitHub Rel
 
 手动安装的验证器和根公钥必须先从面板以外的可信渠道获得，并由操作者独立核对。不能执行面板提供的 `curl … | sh` 来建立信任，也不能先执行未知的新 Agent 让它验证自己。
 
-在已核对来源的本地仓库中，检查 `tools/bootstrap.py`、`tools/release.py` 和发布公钥，再在目标 Linux 节点安装可信 bootstrap。以下命令仅安装已经由操作者核对的本地文件：
+在已核对来源的本地仓库中，检查 `tools/bootstrap.py`、`tools/release.py`、`tools/legacy_agent_checkpoint.py`（bootstrap 从同一目录导入）和发布公钥，再在目标 Linux 节点安装可信 bootstrap。以下命令仅安装已经由操作者核对的本地文件：
 
 ```bash
 sudo apt-get update
@@ -216,6 +216,7 @@ python3 tools/release.py render-installer --template deploy/install.sh.tmpl --ag
 sudo install -m 644 /临时目录/trusted-install.sh /usr/local/lib/apsp/trusted-install.sh
 sudo install -m 755 tools/bootstrap.py /usr/local/lib/apsp/bootstrap.py
 sudo install -m 644 tools/release.py /usr/local/lib/apsp/release.py
+sudo install -m 644 tools/legacy_agent_checkpoint.py /usr/local/lib/apsp/legacy_agent_checkpoint.py
 sudo install -m 644 /已独立核对的路径/public-keys.json /etc/apsp/trust/public-keys.json
 sudo tee /usr/local/bin/apsp-bootstrap >/dev/null <<'SH'
 #!/bin/sh
@@ -247,7 +248,9 @@ bootstrap 的公钥文件仅用于独立确认安装起点；它不会写进 Age
    sudo journalctl -u apsp-agent.service -n 80 --no-pager
    ```
 
-4. 在此服务器上创建节点，填写客户端可达的公开地址及可访问、支持 TLS 的伪装域名。监听端口留空时自动分配 20000–29999 中的空闲端口，也可指定 443 等 1–65535 内的端口；18085 保留给统计接口。面板拒绝同一服务器上其他有效节点占用的端口；Caddy 等主机程序是否占用、云防火墙是否放行仍需自行检查。面板自动生成节点密钥，无用户授权的节点不开放入站端口。
+   运行时服务写入仅内存的 journald 命名空间 `apsp-runtime`（`/etc/systemd/journald@apsp-runtime.conf`，最多 64 MB、保留 1 小时、不转发），重启主机后不保留。查看时加命名空间：`sudo journalctl --namespace=apsp-runtime -u apsp-singbox@main.service -n 80 --no-pager`。为 Nexus 设备数限制开启会话控制的主机会在其中写入逐连接的客户端与目标地址；Agent 只读取客户端地址与统计名，面板的服务日志页只显示警告及以上级别，持有 root 权限的主机操作者仍可直接读取这些内存日志。
+
+4. 在此服务器上创建节点，填写客户端可达的公开地址及可访问、支持 TLS 的伪装域名。监听端口留空时自动分配 20000–29999 中的空闲端口，也可指定 443 等 1–65535 内的端口；18085 保留给统计接口，18086 保留给会话控制接口。面板拒绝同一服务器上其他有效节点占用的端口；Caddy 等主机程序是否占用、云防火墙是否放行仍需自行检查。面板自动生成节点密钥，无用户授权的节点不开放入站端口。
 5. 创建用户并授权节点；连续变更合并 5 秒后自动发布。服务器详情应显示目标版本等于已应用版本、当前配置健康。失败后的健康回滚和最近错误会分别显示，不应把旧配置仍健康视为新版本已成功。
 6. 在用户页复制订阅，导入支持该配置的客户端。通用格式为 base64 多行 VLESS 分享链接；`singbox` 格式为 sing-box JSON，提供 `127.0.0.1:2080` 混合代理入口。订阅只包含此用户当前有效、已应用且健康的节点。
 7. 通过代理产生可控下载/上传，1–2 分钟后检查用户页“该用户的节点流量”。服务器网卡计数与代理用户流量是不同口径。

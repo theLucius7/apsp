@@ -565,6 +565,40 @@ pub trait UsageSource: Send + Sync {
     fn read_counters<'a>(&'a self, runtime: &'a Prepared) -> BoxFuture<'a, Vec<Counter>>;
 }
 
+/// One runtime log line translated into session evidence. A runtime logs the
+/// client address and the authenticated principal of one session on separate
+/// lines that share `log_id`; the core joins them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SessionEvidence {
+    pub log_id: String,
+    pub source: Option<std::net::SocketAddr>,
+    pub principal: Option<String>,
+}
+
+/// A session currently held open by the runtime.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ActiveSession {
+    pub id: String,
+    pub source: std::net::SocketAddr,
+}
+
+/// Observes and closes runtime sessions for concurrent address limits. Session
+/// state and admission decisions stay in the core; adapters only translate the
+/// runtime's log lines and use its local control interface.
+pub trait SessionSource: Send + Sync {
+    /// Whether this applied configuration enables session control.
+    fn enabled(&self, runtime: &Prepared) -> bool;
+    /// Pure translation; lines that carry no session evidence yield nothing.
+    fn parse_log_line(&self, line: &str) -> Option<SessionEvidence>;
+    fn active_sessions<'a>(&'a self, runtime: &'a Prepared) -> BoxFuture<'a, Vec<ActiveSession>>;
+    /// Returns how many sessions the runtime actually closed.
+    fn close_sessions<'a>(
+        &'a self,
+        runtime: &'a Prepared,
+        ids: &'a [String],
+    ) -> BoxFuture<'a, usize>;
+}
+
 pub trait Adapter: Send + Sync {
     fn supports_dependency_validation(&self) -> bool {
         false
@@ -615,6 +649,9 @@ pub trait Adapter: Send + Sync {
         services: &'a dyn ServiceManager,
     ) -> BoxFuture<'a, bool>;
     fn usage_source(&self) -> Option<&dyn UsageSource> {
+        None
+    }
+    fn session_source(&self) -> Option<&dyn SessionSource> {
         None
     }
 }

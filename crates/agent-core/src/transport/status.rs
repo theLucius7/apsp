@@ -107,6 +107,7 @@ mod tests {
             retirement: None,
             cancellation: None,
             runtime_control: None,
+            admission: None,
             telemetry: tokio::sync::watch::channel(Arc::new(
                 crate::telemetry::cache::Snapshot::default(),
             ))

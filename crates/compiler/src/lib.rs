@@ -88,6 +88,8 @@ pub enum CompileError {
     DuplicateUser { node_id: i64, user_id: i64 },
     #[error("user id must be positive: {0}")]
     InvalidUserId(i64),
+    #[error("session control secret must be 32 to 128 hexadecimal characters")]
+    InvalidSessionControl,
     #[error("user {0} has no authorized nodes")]
     NoAuthorizedNodes(i64),
     #[error("node {node_id}: protocol {protocol} requires the singbox JSON subscription format")]

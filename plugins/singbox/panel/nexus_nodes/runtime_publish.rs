@@ -1,6 +1,6 @@
 use super::runtime_model::RuntimeSnapshot;
 use crate::{AppState, control_center, error::ApiResult};
-use apsp_compiler::preserved::{compile_preserved_server, nexus_access};
+use apsp_compiler::preserved::{SessionControl, compile_preserved_server_with, nexus_access};
 use apsp_protocol::{Bundle, now_timestamp};
 use serde_json::{Value, json};
 use sqlx::{Postgres, Transaction};
@@ -54,7 +54,23 @@ pub(crate) async fn compile(
         }
         prepared.push(entry.preserved);
     }
-    let config = compile_preserved_server(&prepared).map_err(anyhow::Error::from)?;
+    // Agents that control sessions get the runtime facilities for device limits.
+    let capable: bool = sqlx::query_scalar(
+        "SELECT COALESCE(capabilities @> jsonb_build_array($2::text),false) FROM servers WHERE id=$1",
+    )
+    .bind(server)
+    .bind(apsp_protocol::RUNTIME_ADMISSION_CAPABILITY)
+    .fetch_one(&mut **tx)
+    .await?;
+    let control = if capable {
+        Some(SessionControl {
+            secret: super::sessions::secret(tx, server).await?,
+        })
+    } else {
+        None
+    };
+    let config =
+        compile_preserved_server_with(&prepared, control.as_ref()).map_err(anyhow::Error::from)?;
     let config_hash = crate::auth::hash_token(&config);
     let bundle = serde_json::to_string(&Bundle {
         files: BTreeMap::from([("config.json".into(), config)]),

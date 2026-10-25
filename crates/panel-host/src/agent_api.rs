@@ -363,6 +363,9 @@ pub async fn process_message(
         Message::UsageBatch(batch) => {
             crate::plugin_api::ingest_usage(state, server_id, batch).await?
         }
+        Message::RuntimeSessionReport(report) => {
+            crate::plugin_api::ingest_runtime_sessions(state, server_id, report).await?
+        }
         Message::RetirementResult(result) => {
             crate::retirement::record_result(state, server_id, result).await?
         }

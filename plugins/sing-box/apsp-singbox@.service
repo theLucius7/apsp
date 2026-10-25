@@ -13,6 +13,9 @@ Group=apsp-singbox
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
+# Session lines name client and destination addresses; journald@apsp-runtime
+# keeps them in memory only, bounded, for the Agent's address limits.
+LogNamespace=apsp-runtime
 ExecStartPre=/usr/bin/test -f /var/lib/apsp/plugins/sing-box@%i/current/config.json
 ExecStartPre=/opt/apsp/core/current/apsp-agent verify-installed --binary /opt/apsp/plugins/sing-box/current/sing-box --name sing-box --format tar.gz
 ExecStart=/opt/apsp/plugins/sing-box/current/sing-box run -c /var/lib/apsp/plugins/sing-box@%i/current/config.json -D /var/lib/apsp/plugins/sing-box@%i/data
