@@ -112,7 +112,9 @@ try {
       } else {errors.push(`Unexpected API: ${method} ${path}`);await route.fulfill({status:404,json:{error:'夹具拒绝未知接口'}});return}
       await route.fulfill({json:value})
     })
-    const create = page.getByRole('button',{name:'创建两跳链路',exact:true})
+    // One create entry (ADR 0098): the ordered form, whose two-hop template asks for the exit as its first hop.
+    const create = page.locator('header[data-slot=page-header]').getByRole('button',{name:'创建链路',exact:true})
+    const firstHop = scope => scope.locator('label[data-slot=field]').filter({ has: page.getByText('第 1 跳受管节点', { exact: true }) }).locator('select')
     const poll = async () => {await page.clock.fastForward(5000)}
     const enabled = async locator => {await locator.waitFor();const end=Date.now()+7000;while(await locator.isDisabled() && Date.now()<end) await page.waitForTimeout(20);assert.equal(await locator.isDisabled(),false)}
     // Catalog and chains are separate sections; both stay mounted, so counts include either.
@@ -164,7 +166,7 @@ try {
     await dialog.locator('[name=server_id]').selectOption('1')
     await dialog.locator('[name=public_host]').fill('entry.example.com')
     await dialog.locator('[name=sni]').fill('www.example.com')
-    await dialog.locator('[name=exit_node_id]').selectOption('2')
+    await firstHop(dialog).selectOption('2')
     await dialog.locator('[name=name]').fill('批量甲')
     await dialog.getByRole('button',{name:'添加一条链路',exact:true}).click()
     await dialog.locator('[name=name_1]').fill('批量乙')
@@ -189,7 +191,7 @@ try {
     await dialog.locator('[name=entry_mode]').selectOption('existing')
     await dialog.locator('[name=name]').fill('失响应链路')
     await dialog.locator('[name=entry_node_id]').selectOption('1')
-    await dialog.locator('[name=exit_node_id]').selectOption('2')
+    await firstHop(dialog).selectOption('2')
     await dialog.getByRole('button',{name:'创建未授权链路',exact:true}).click()
     await dialog.getByRole('alert').filter({hasText:'无法连接面板'}).waitFor()
     const committed = chains.length, beforeAllocations = allocations, original=writes.at(-1)
@@ -217,7 +219,7 @@ try {
     await dialog.locator('[name=server_id]').selectOption('1')
     await dialog.locator('[name=public_host]').fill('entry.example.com')
     await dialog.locator('[name=sni]').fill('www.example.com')
-    await dialog.locator('[name=exit_node_id]').selectOption('2')
+    await firstHop(dialog).selectOption('2')
     await dialog.locator('[name=name]').fill('修改前')
     await dialog.getByRole('button',{name:'创建未授权链路',exact:true}).click()
     await dialog.getByRole('alert').filter({hasText:'本批次未创建'}).waitFor()
@@ -233,7 +235,7 @@ try {
     await dialog.locator('[name=server_id]').selectOption('1')
     await dialog.locator('[name=public_host]').fill('entry.example.com')
     await dialog.locator('[name=sni]').fill('www.example.com')
-    await dialog.locator('[name=exit_node_id]').selectOption('2')
+    await firstHop(dialog).selectOption('2')
     await dialog.locator('[name=name]').fill('超时链路')
     await dialog.getByRole('button',{name:'创建未授权链路',exact:true}).click()
     let timeoutWait

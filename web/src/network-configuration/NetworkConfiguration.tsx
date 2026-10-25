@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react'
 import { api, errorMessage } from '../api'
-import { ErrorNotice, Field, PageHeader, Refresh } from '../components'
+import { ErrorNotice, Field, PageHeader, Refresh, TierBadge, TierNotice } from '../components'
+import { useFeatureStore } from '@/stores/features'
 import { resourceWriteError, useResource } from '../hooks'
 import Certificates from './Certificates'
 import Editor from './Editor'
 import Relationships from './Relationships'
 import ServerMigrations from './ServerMigrations'
-import { labels, template, time } from './types'
+import { frozenKinds, labels, template, time } from './types'
 import type { Document, Draft, Kind, Server } from './types'
 
 import { Button } from '@/components/ui/button'
@@ -20,6 +21,8 @@ export default function NetworkConfiguration({ serverId }: { serverId?: number }
   const documents = useResource<Document[]>('/api/network-configuration/documents')
   const servers = useResource<Server[]>('/api/servers')
   const [kind, setKind] = useState<Kind>('domain'), [selectedId, setSelectedId] = useState<string | null>(null)
+  const showFrozen = useFeatureStore(state => state.showFrozen)
+  const kinds = (Object.keys(labels) as Kind[]).filter(value => showFrozen || !frozenKinds.has(value))
   const [draft, setDraft] = useState<Draft>(template('domain', serverId)), [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [preview, setPreview] = useState<unknown>(null)
   const [evidence, setEvidence] = useState<unknown>(null), [confirmed, setConfirmed] = useState(false), [snapshot, setSnapshot] = useState(''), [operation, setOperation] = useState('')
@@ -35,10 +38,10 @@ export default function NetworkConfiguration({ serverId }: { serverId?: number }
   const readOnly = (action: string) => ['status', 'tunnel_status', 'mesh_status', 'firewall_status'].includes(action)
   const actions: Partial<Record<Kind, string[][]>> = { forwarding: [['start', '启动临时转发'], ['stop', '停止转发'], ['status', '核对服务状态']], tuning: [['temporary', '临时应用并安排恢复'], ['confirm', '确认结果并解除恢复'], ['persist', '保存长期配置'], ['restore', '恢复原始参数']], tunnel: [['tunnel_key', '生成或读取独立隧道公钥'], ['tunnel_start', '启动反向隧道'], ['tunnel_stop', '停止反向隧道'], ['tunnel_status', '查看隧道服务状态']], mesh: [['mesh_apply', '应用私有组网'], ['mesh_status', '读取握手及传输观测'], ['mesh_stop', '停止接口'], ['mesh_restore', '回退前一配置'], ['mesh_persist', '启用开机组网']], firewall: [['firewall_temporary', '临时应用并安排恢复'], ['firewall_confirm', '确认结果并解除恢复'], ['firewall_persist', '持久化受管防火墙'], ['firewall_restore', '恢复前一受管表'], ['firewall_status', '核对实际规则']] }
   const scope = servers.data?.filter(server => !serverId || server.id === serverId) ?? []
-  return <div className="grid gap-4"><PageHeader eyebrow="网络" title="网络配置" description="维护域名、证书、端点、端口转发、系统网络参数、隧道、组网与防火墙。保存配置不会改动服务器，执行变更需要单独确认。"><Refresh onClick={refresh} /></PageHeader>
+  return <div className="grid gap-4"><PageHeader eyebrow="实验功能" title="网络配置" description="维护域名、证书、端点与端口转发的台账，并按需下发到服务器。保存配置不会改动服务器，执行变更需要单独确认。节点证书在「代理节点」中管理。"><Refresh onClick={refresh} /></PageHeader><TierNotice tier="experimental">系统网络参数、反向隧道、私有组网与受管防火墙已冻结，默认隐藏。</TierNotice>
     <ErrorNotice message={error || documents.error || servers.error} retry={refresh} />
     <ServerMigrations servers={servers.data ?? []} initialServerId={serverId} busy={busy} run={run} changed={refresh} />
-    <SegmentedNav aria-label="网络配置分类">{(Object.keys(labels) as Kind[]).map(value => <SegmentedButton type="button" key={value} aria-pressed={kind === value} onClick={() => pick(null, value)}>{labels[value]}</SegmentedButton>)}<SegmentedLink href="#/plugins/ddns">DNS 与 DDNS 插件</SegmentedLink></SegmentedNav>
+    <SegmentedNav aria-label="网络配置分类">{kinds.map(value => <SegmentedButton type="button" key={value} aria-pressed={kind === value} onClick={() => pick(null, value)}>{labels[value]}{frozenKinds.has(value) && <TierBadge tier="frozen" />}</SegmentedButton>)}<SegmentedLink href="#/plugins/ddns">DNS 与 DDNS 插件</SegmentedLink></SegmentedNav>
     <ListDetailLayout id="apsp-network-configuration" label="调整台账列表宽度" listSize={260} minListSize={200} maxListSize={400}
       list={<aside data-slot="panel" aria-label={`${labels[kind]}台账`} className="bg-card text-card-foreground ring-foreground/10 min-w-0 overflow-hidden rounded-xl p-4 ring-1 max-md:flex max-md:flex-wrap max-md:gap-2"><Button variant="outline" disabled={busy} onClick={() => pick(null)}>新增{labels[kind]}</Button>{documents.data?.filter(item => item.kind === kind).map(item => <button className="aria-[current=true]:border-primary hover:bg-muted/50 focus-visible:ring-ring/50 mt-2.5 flex w-full flex-col gap-1.5 rounded-xl border bg-transparent p-3.5 text-left outline-none focus-visible:ring-3 max-md:m-0 max-md:w-auto max-md:flex-[1_1_180px] [&_span]:text-muted-foreground [&_span]:text-xs" aria-current={selectedId === item.id ? 'true' : undefined} key={item.id} onClick={() => pick(item)}><strong>{String(item.config.name)}</strong><span>版本 {item.revision} · {time(item.updated_at)}</span></button>)}</aside>}
       detail={<Panel className="mb-0 p-5">{selected && baseRevision !== selected.revision && <p className="text-destructive text-sm" role="alert">台账已被并发修改，当前草稿保留；请重新选择并核对最新配置。</p>}<form onSubmit={event => { event.preventDefault(); void run(async () => { const error = resourceWriteError(documents, servers); if (error) throw new Error(error); const saved = await api<Document>(selected ? `/api/network-configuration/documents/${selected.id}` : '/api/network-configuration/documents', selected ? 'PUT' : 'POST', { config: draft, revision: baseRevision }); setSelectedId(saved.id); setBaseRevision(saved.revision); setDraft(saved.config); setDirty(false); setPreview(null); documents.reload(); return { status: '已保存配置台账，执行需单独确认', revision: saved.revision } }) }}><fieldset disabled={busy}><Editor key={`${selectedId ?? 'new'}:${kind}`} draft={draft} change={change} servers={scope} documents={documents.data ?? []} /><div className="my-3.5 flex flex-wrap items-center gap-2.5"><Button type="button" variant="outline" disabled={!documents.fresh || !servers.fresh} onClick={() => void run(async () => { const error = resourceWriteError(documents, servers); if (error) throw new Error(error); setPreview(await api('/api/network-configuration/documents/preview', 'POST', { config: draft, revision: baseRevision })) })}>预览关联与影响</Button><Button disabled={!preview || !documents.fresh || !servers.fresh || (selected !== undefined && baseRevision !== selected.revision)}>确认预览并保存台账</Button></div></fieldset></form>

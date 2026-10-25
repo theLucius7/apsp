@@ -99,7 +99,7 @@ export default function Overview({ now }: { now: number }) {
   const chooseSort = (value: string) => { const next = savedSort(value); setSort(next); savePreference('sort', next) }
   return <div data-slot="dashboard-home" className="flex flex-col gap-4">
     <section aria-label="服务器总览" className={cn(surface, 'grid overflow-hidden [&>*]:border-border max-lg:grid-cols-2 max-lg:[&>*:nth-child(even)]:border-l max-lg:[&>*:not(:nth-last-child(-n+2))]:border-b max-lg:[&>*:last-child:nth-child(odd)]:col-span-full lg:[&>*+*]:border-l', showCosts ? 'lg:grid-cols-5' : 'lg:grid-cols-4')}>
-      <Stat icon={ServerIcon} label="在线节点" value={!servers || unavailable ? '—' : counts.online} unit={servers ? `/ ${entries.length} 台` : undefined} tone="good">{unavailable ? '等待更新' : !entries.length ? '等待接入' : counts.online === counts.all ? '全部运行正常' : `${counts.offline} 台离线${counts.pending ? ` · ${counts.pending} 台待接入` : ''}`}</Stat>
+      <Stat icon={ServerIcon} label="在线服务器" value={!servers || unavailable ? '—' : counts.online} unit={servers ? `/ ${entries.length} 台` : undefined} tone="good">{unavailable ? '等待更新' : !entries.length ? '等待接入' : counts.online === counts.all ? '全部运行正常' : `${counts.offline} 台离线${counts.pending ? ` · ${counts.pending} 台待接入` : ''}`}</Stat>
       {showCosts && <Stat icon={WalletIcon} label="资产" value={money(costs.total, currency)} title={`${costs.converted} 台可折算 · ${costs.missingPrices} 台未填写费用；每 30 天约 ${money(costs.recurring, currency)}`}><span>剩余价值 {money(costs.remaining, currency)}</span>{costs.missingRates > 0 ? <span className="text-warning" title={`${costs.missingRates} 台缺少汇率，未计入合计`}>汇率缺失</span> : staleCosts ? <span className="text-warning" title={referenceState === 'read-error' ? '汇率读取失败，使用上次有效汇率' : referenceState === 'stale' ? '使用上次有效汇率' : '无法确认参考汇率状态'}>{referenceState === 'read-error' ? '汇率读取失败' : referenceState === 'stale' ? '旧汇率' : '汇率状态未知'}</span> : null}</Stat>}
       <Stat icon={DatabaseIcon} label="累计流量" value={size(total)} title={`网卡累计 · ${completeCounters.length} / ${entries.length} 台有完整计数`}><span className="text-success">上传 {size(sent.value)}</span><span className="text-info">下载 {size(received.value)}</span></Stat>
       <Stat icon={ArrowUpIcon} label="实时上行" value={uploadValue} unit={uploadUnit} tone="good" title={`${upload.count} / ${entries.length} 台有有效采样`}>{peak(topUpload, 'transmit_bytes_per_sec')}</Stat>
@@ -109,14 +109,14 @@ export default function Overview({ now }: { now: number }) {
       <div className="flex min-h-9 items-center gap-3 max-lg:flex-wrap max-lg:gap-2">
         <label className="relative flex min-w-44 flex-[0_1_300px] items-center max-lg:flex-[1_1_180px] max-sm:min-w-24 max-sm:flex-[1_1_100px]">
           <SearchIcon className="text-muted-foreground pointer-events-none absolute left-2.5 size-4" aria-hidden="true" />
-          <Input type="search" aria-label="搜索服务器" placeholder="搜索节点" value={query} onChange={event => setQuery(event.target.value)} className="pl-8" />
+          <Input type="search" aria-label="搜索服务器" placeholder="搜索服务器" value={query} onChange={event => setQuery(event.target.value)} className="pl-8" />
         </label>
         <SegmentedGroup aria-label="服务器分组" className="no-scrollbar max-w-full flex-nowrap overflow-x-auto max-lg:order-3 max-lg:flex-[1_1_100%]">
           <SegmentedButton aria-pressed={!group} onClick={() => setGroup('')}>全部</SegmentedButton>
           {groups.map(name => <SegmentedButton key={name} aria-pressed={group === name} onClick={() => setGroup(name)}>{name}</SegmentedButton>)}
         </SegmentedGroup>
         <div className="ml-auto flex flex-none items-center gap-1">
-          <span className="text-muted-foreground mr-1.5 text-xs whitespace-nowrap">{servers ? `${visible.length} 个节点` : '等待数据'}</span>
+          <span className="text-muted-foreground mr-1.5 text-xs whitespace-nowrap">{servers ? `${visible.length} 台服务器` : '等待数据'}</span>
           <Button variant="ghost" size="icon" className={cn(customised && 'bg-primary/10 text-primary')} aria-label="筛选与视图" title="筛选与视图" aria-expanded={optionsOpen} aria-controls="dashboard-options" onClick={() => setOptionsOpen(value => !value)}><ListFilterIcon /></Button>
           <Button variant="ghost" size="icon" aria-label="刷新服务器" title="刷新服务器" onClick={refresh} disabled={loading && probes.loading}><RefreshCwIcon /></Button>
         </div>
@@ -151,7 +151,7 @@ export default function Overview({ now }: { now: number }) {
         {visible.map(server => <m.div key={server.id} layout="position" {...itemMotion} className="min-w-0"><ServerCard server={server} unavailable={unavailable} probes={probes.data ? byServer.get(server.id) ?? [] : undefined} probeError={probeUnavailable} probeLoading={probes.loading} now={now} /></m.div>)}
       </section> :
       <ServerTable servers={visible} unavailable={unavailable} byServer={byServer} probesKnown={probes.data !== undefined} probeError={probeUnavailable} probeLoading={probes.loading} now={now} /> :
-      !error && <div className="text-muted-foreground flex min-h-80 flex-col items-center justify-center gap-3 p-6 text-center"><ServerIcon className="size-8" aria-hidden="true" /><strong className="text-foreground text-sm font-medium">{entries.length ? '没有匹配的节点' : resource.hiddenOnly ? '节点已隐藏' : '尚未添加节点'}</strong>{entries.length ? <Button onClick={reset}>清除筛选</Button> : <a className={buttonVariants()} href="#/servers">前往服务器管理</a>}</div>}
+      !error && <div className="text-muted-foreground flex min-h-80 flex-col items-center justify-center gap-3 p-6 text-center"><ServerIcon className="size-8" aria-hidden="true" /><strong className="text-foreground text-sm font-medium">{entries.length ? '没有匹配的节点' : resource.hiddenOnly ? '节点已隐藏' : '尚未添加服务器'}</strong>{entries.length ? <Button onClick={reset}>清除筛选</Button> : <a className={buttonVariants()} href="#/servers">前往服务器管理</a>}</div>}
   </div>
 }
 

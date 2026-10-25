@@ -66,12 +66,16 @@ try {
     await page.getByLabel('按类型筛选').waitFor({ state: 'attached' })
     assert.equal(await page.getByLabel('按类型筛选').inputValue(), 'chain')
     assert.equal(await catalogRows.count(), 0)
-    await page.getByRole('button', { name:'创建链路', exact:true }).click()
-    const chain = page.getByRole('region', { name:'创建链路', exact:true })
-    await chain.getByRole('heading', { name:'创建链路', exact:true }).waitFor()
-    await chain.getByLabel('入口方式', { exact:true }).selectOption('existing')
-    assert.equal(await chain.getByLabel('已有入口', { exact:true }).locator('option').count(), 3)
-    await chain.getByRole('button', { name:'收起编辑器', exact:true }).click()
+    // The single create entry in the page header opens the ordered chain form.
+    // A click during a refresh is reported instead of acting, so retry until the form opens.
+    const create = page.locator('header[data-slot=page-header]').getByRole('button', { name:'创建链路', exact:true })
+    const chain = page.getByRole('dialog', { name:'创建链路', exact:true })
+    for (let attempt = 0; attempt < 5 && !(await chain.isVisible()); attempt++) { await create.click(); await chain.waitFor({ timeout: 1500 }).catch(() => {}) }
+    await chain.waitFor()
+    await chain.locator('[name=entry_mode]').selectOption('existing')
+    assert.equal(await chain.locator('[name=entry_node_id]').locator('option').count(), 3)
+    await chain.getByRole('button', { name:'取消', exact:true }).click()
+    await chain.waitFor({ state:'detached' })
     for (const query of ['server=0','server=1&server=2','server=9007199254740992','server=1e2','kind=unknown','view=unknown','view=chains&view=sources','other=1']) {
       await page.evaluate(query => { location.hash = '/plugins/sing-box/nodes?' + query }, query)
       await page.getByRole('heading', { name:'这个页面不存在', exact:true }).waitFor()
@@ -81,5 +85,5 @@ try {
     assert.deepEqual(errors, [])
     await page.close()
   }
-  console.log('PASS: selected-server node route and create default, live route change, legacy chain route opens unified resources and ordered editor, invalid/duplicate routes refuse without writes')
+  console.log('PASS: selected-server node route and create default, live route change, legacy chain route opens unified resources and the ordered chain form, invalid/duplicate routes refuse without writes')
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)) }

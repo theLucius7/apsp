@@ -79,7 +79,9 @@ try {
       await route.fulfill({ json: value })
     })
 
-    const createButton = page.getByRole('button', { name: '创建两跳链路', exact: true, includeHidden: true })
+    // One create entry (ADR 0098) that follows the ordered form's write guard; the two-hop template takes the exit as its first hop.
+    const createButton = page.locator('header[data-slot=page-header]').getByRole('button', { name: '创建链路', exact: true, includeHidden: true })
+    const firstHop = scope => scope.locator('label[data-slot=field]').filter({ has: page.getByText('第 1 跳受管节点', { exact: true }) }).locator('select')
     // The server filter lives in the catalog section; chain creation lives in the chain section.
     const showView = name => page.getByRole('navigation', { name: '节点视图', exact: true }).getByRole('link', { name, exact: true }).click()
     const scope = async server => { await showView('节点库'); await page.getByRole('combobox', { name: '按服务器筛选', exact: true }).selectOption(server); await showView('链路') }
@@ -133,7 +135,7 @@ try {
         await trigger()
         await Promise.race([arrived, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('owned pending read did not arrive')), 5000) })])
         clearTimeout(timer)
-        await page.waitForFunction(() => [...document.querySelectorAll('button')].find(button => button.textContent === '创建两跳链路')?.disabled === true)
+        await page.waitForFunction(() => [...document.querySelectorAll('header[data-slot=page-header] button')].find(button => button.textContent === '创建链路')?.disabled === true)
         await during()
       } finally { clearTimeout(timer); release(); await response }
     }
@@ -145,7 +147,7 @@ try {
     const inspectDraft = async dialog => {
       assert.equal(await dialog.locator('[name="name"]').inputValue(), '完整保留的创建草稿')
       assert.equal(await dialog.locator('[name="entry_node_id"]').inputValue(), '1')
-      assert.equal(await dialog.locator('[name="exit_node_id"]').inputValue(), '2')
+      assert.equal(await firstHop(dialog).inputValue(), '2')
       assert.equal(await dialog.getByRole('button', { name: '取消', exact: true }).isDisabled(), false)
     }
     const forceCreate = async dialog => {
@@ -161,9 +163,9 @@ try {
         while (pending.length && visited++ < 20000) {
           fiber = pending.pop()
           const props = fiber.memoizedProps
-          if (props?.title === '创建两跳链路' && props.submitLabel === '创建未授权链路' && typeof props.onSubmit === 'function') {
+          if (props?.title === '创建链路' && props.submitLabel === '创建未授权链路' && typeof props.onSubmit === 'function') {
             const data = new FormData()
-            for (const name of ['name', 'entry_node_id', 'exit_node_id']) data.set(name, form.querySelector(`[name="${name}"]`).value)
+            for (const name of ['name', 'entry_node_id']) data.set(name, form.querySelector(`[name="${name}"]`).value)
             props.onSubmit(data); return
           }
           if (fiber.sibling) pending.push(fiber.sibling)
@@ -228,7 +230,7 @@ try {
     await creating.locator('[name="entry_mode"]').selectOption('existing')
     await creating.locator('[name="name"]').fill('完整保留的创建草稿')
     await creating.locator('[name="entry_node_id"]').selectOption('1')
-    await creating.locator('[name="exit_node_id"]').selectOption('2')
+    await firstHop(creating).selectOption('2')
     for (const pathname of paths) {
       await failedRead(pathname); await blockedCreate(creating)
       await recover(pathname, creating, () => blockedCreate(creating))
@@ -298,9 +300,13 @@ try {
     await page.waitForFunction(() => document.querySelector('select[aria-label="按服务器筛选"]')?.value === '2')
     // The cancelled server=1 draft survives this route change and must not silently retarget server=2.
     await scope('2')
-    assert.equal(await createButton.isDisabled(), true)
+    // The header entry stays available; the form opens with the conflict explained and submission disabled.
+    await enabled(createButton)
     await noWrites(() => forceOpeners(false), 'The preserved entry draft conflicts with the current server filter')
-    assert.equal(await page.getByRole('dialog').count(), 0)
+    await creating.getByText('原入口不属于当前服务器筛选，请明确重新选择；草稿已保留。', { exact: false }).first().waitFor()
+    assert.equal(await creating.getByRole('button', { name: '创建未授权链路', exact: true }).isDisabled(), true)
+    await creating.getByRole('button', { name: '取消', exact: true }).click()
+    await creating.waitFor({ state: 'hidden' })
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes`)
     await page.waitForFunction(() => document.querySelector('select[aria-label="按服务器筛选"]')?.value === '')

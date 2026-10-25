@@ -72,6 +72,8 @@ try {
         else if (path === '/api/servers/2/node-quality/reports') value = { plugin_ready: false, plugin_reason: '测试安全门禁', full_ready: false, full_reason: '测试安全门禁', cancel_supported: false, reports: [] }
         else if (path === '/api/servers/2/diagnostics') value = { cancel_supported: false, plugins: [{ plugin: 'tcpquality', title: 'TCP 连接诊断', version: 'TEST_ONLY', ready: false, reason: '测试安全门禁' }], reports: [] }
         else if (path === '/api/plugins/tcpquality/servers/2/targets') value = []
+        // The 线路诊断 tab opens on IP 信息 first.
+        else if (path === '/api/servers/2/ip-quality') value = { ip_addresses: [], public_ip_addresses: [], private_ip_addresses: [], quality: [], providers: [] }
         else { errors.push(`Unexpected read: ${path}`); await route.fulfill({ status: 404, json: {} }); return }
       }
       await route.fulfill({ json: value })
@@ -95,7 +97,7 @@ try {
     await page.getByRole('button', { name: '启用 DDNS 插件', exact: true }).waitFor()
     assert.deepEqual(mutations, [])
     await openCatalog('/artifacts')
-    assert.equal(await cards.count(), 5)
+    assert.equal(await cards.count(), 6)
     assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '插件中心', exact: true, includeHidden: true }).getAttribute('aria-current'), 'page')
     assert.equal(await page.getByRole('navigation', { name: '插件中心' }).getByRole('link', { name: '插件目录', exact: true }).getAttribute('aria-current'), 'page')
     assert.equal(await page.title(), '插件中心 · apsp')
@@ -121,7 +123,7 @@ try {
     artifactFailure = true
     await page.getByRole('button', { name: '刷新', exact: true }).click()
     await page.getByText('CATALOG_READ_FAILED', { exact: true }).waitFor()
-    assert.equal(await page.getByText('版本状态未知', { exact: true }).count(), 3)
+    assert.equal(await page.getByText('版本状态未知', { exact: true }).count(), 4)
     assert.equal(await page.getByText('有已验证下载包', { exact: true }).count(), 0)
     assert.equal(await singbox.locator('[data-slot=catalog-version]').count(), 2)
     artifactFailure = false
@@ -132,7 +134,7 @@ try {
     inventory = []
     await page.getByRole('button', { name: '刷新', exact: true }).click()
     await page.getByText('暂无下载包', { exact: true }).first().waitFor()
-    assert.equal(await cards.count(), 5)
+    assert.equal(await cards.count(), 6)
     assert.equal(await page.locator('[data-catalog-plugin="ddns"]').getByText('面板插件', { exact: true }).count(), 1)
     assert.equal(await cards.locator('summary').count(), 0)
     inventory = packages
@@ -152,8 +154,9 @@ try {
     await dialog.getByRole('button', { name: '取消', exact: true }).click()
     noServers = false
 
-    for (const [plugin, destination] of [['nodequality', '/node-quality'], ['tcpquality', '/tcp-quality'], ['sing-box', '/plugins']]) {
-      await page.locator(`[data-catalog-plugin="${plugin}"]`).getByRole('button', { name: '选择服务器' }).click()
+    // The three line diagnostics share one card that opens the server's 线路诊断 tab.
+    for (const [plugin, destination] of [['diagnostics', '/ip-info'], ['sing-box', '/plugins']]) {
+      await page.locator(plugin === 'diagnostics' ? '[data-catalog-group="diagnostics"]' : `[data-catalog-plugin="${plugin}"]`).getByRole('button', { name: '选择服务器' }).click()
       dialog = page.getByRole('dialog')
       await dialog.getByLabel('目标服务器').waitFor()
       assert.equal(await dialog.getByRole('button', { name: '前往服务器管理' }).isDisabled(), true)
@@ -166,9 +169,10 @@ try {
         assert.equal(await page.locator('tbody tr').count(), 1)
         assert.equal(await page.getByRole('link', { name: metadata.name, exact: true }).count(), 1)
       } else {
-        await page.getByText('测试安全门禁', { exact: false }).first().waitFor()
-        for (const name of plugin === 'nodequality' ? ['日常检查', '完整验机'] : ['开始 TCP 诊断']) {
-          assert.equal(await page.getByRole('button', { name, exact: true }).isDisabled(), true)
+        for (const [view, buttons] of [['节点验机', ['日常检查', '完整验机']], ['TCP 诊断', ['开始 TCP 诊断']]]) {
+          await page.getByRole('navigation', { name: '线路诊断' }).getByRole('link', { name: view, exact: true }).click()
+          await page.getByText('测试安全门禁', { exact: false }).first().waitFor()
+          for (const name of buttons) assert.equal(await page.getByRole('button', { name, exact: true }).isDisabled(), true)
         }
         await openCatalog()
       }

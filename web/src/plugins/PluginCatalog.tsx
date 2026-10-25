@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { Badge, CopyButton, Empty, ErrorNotice, Field, Loading, Modal, PageHeader, Refresh, DialogPresence } from '../components'
+import { Badge, CopyButton, Empty, ErrorNotice, Field, Loading, Modal, PageHeader, Refresh, DialogPresence, TierBadge } from '../components'
 import { bytes, navigate } from '../format'
 import { useResource } from '../hooks'
-import { pluginCatalog, pluginServerPath } from './catalog'
+import { diagnosticsEntry, pluginCatalog, pluginServerPath } from './catalog'
 import type { CatalogDefinition, CatalogItem } from './catalog'
 import type { Artifact, Server } from '../types'
 import PluginCenterTabs from './PluginCenterTabs'
@@ -55,14 +55,16 @@ export default function PluginCatalog() {
   const [selected, setSelected] = useState<CatalogDefinition | null>(null)
   const catalog = pluginCatalog(resource.data ?? [])
   const unavailable = !!resource.error || !resource.data
+  // The line diagnostics share one entry; every other plugin keeps its own card.
+  const diagnostics = catalog.plugins.filter(plugin => plugin.group === 'diagnostics')
   return <>
-    <PageHeader eyebrow="扩展" title="插件中心" description="先了解每个插件做什么、在哪里执行，再进入云账号或服务器管理。同一插件的各版本与架构集中展示。"><Refresh onClick={resource.reload} /></PageHeader>
+    <PageHeader eyebrow="服务器" title="插件中心" description="先了解每个插件做什么、在哪里执行，再进入云账号或服务器管理。同一插件的各版本与架构集中展示。"><Refresh onClick={resource.reload} /></PageHeader>
     <PluginCenterTabs active="catalog" />
     <Notice tone="quiet"><ServerIcon className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden="true" /><div><strong className="font-medium">按插件说明管理云账号或服务器</strong><p className="text-muted-foreground">设备插件由 Agent 下载、校验和执行；面板插件使用已上报的数据处理任务。下载包已验证，不代表服务器已安装或已就绪。</p></div></Notice>
     <ErrorNotice message={resource.error} retry={resource.reload} />
     {resource.loading && !resource.data && <Loading variant="cards" rows={3} />}
     <div data-slot="catalog-grid" className="mb-6 grid items-start gap-5 xl:grid-cols-2" aria-label="插件目录">
-      {catalog.plugins.map(plugin => <article data-slot="panel" className="bg-card text-card-foreground ring-foreground/10 overflow-hidden rounded-xl ring-1 mb-0 min-w-0" key={plugin.id} data-catalog-plugin={plugin.id}>
+      {catalog.plugins.filter(plugin => !plugin.group).map(plugin => <article data-slot="panel" className="bg-card text-card-foreground ring-foreground/10 overflow-hidden rounded-xl ring-1 mb-0 min-w-0" key={plugin.id} data-catalog-plugin={plugin.id}>
         <PanelHeader><div className="flex min-w-0 items-center gap-2.5"><plugin.icon className="text-muted-foreground size-4" aria-hidden="true" /><PanelTitle className="wrap-anywhere">{plugin.title}</PanelTitle></div><Badge>{plugin.execution === 'panel' ? '面板插件' : unavailable ? '版本状态未知' : plugin.versions.length ? '有已验证下载包' : '暂无下载包'}</Badge></PanelHeader>
         <div className="p-4"><p className="text-foreground text-sm leading-relaxed">{plugin.description}</p><p className="text-muted-foreground mt-3 text-xs leading-relaxed">{plugin.usage}</p>
           {!!plugin.architectures.length && <div data-slot="catalog-architectures" className="my-4 flex flex-wrap items-center gap-2"><span className="text-muted-foreground text-xs">已收录架构</span>{plugin.architectures.map(arch => <Badge key={arch}>{arch}</Badge>)}</div>}
@@ -70,6 +72,19 @@ export default function PluginCatalog() {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t px-5 py-4"><span className="text-muted-foreground text-xs">执行位置：{plugin.execution === 'panel' ? '面板' : '服务器 Agent'}</span><Button variant="outline" onClick={() => plugin.panelPath ? navigate(plugin.panelPath) : setSelected(plugin)}>{plugin.panelPath ? '进入云服务管理' : '选择服务器'}<ArrowRightIcon aria-hidden="true" /></Button></div>
       </article>)}
+      <article data-slot="panel" data-catalog-group={diagnosticsEntry.id} className="bg-card text-card-foreground ring-foreground/10 overflow-hidden rounded-xl ring-1 mb-0 min-w-0">
+        <PanelHeader><div className="flex min-w-0 items-center gap-2.5"><diagnosticsEntry.icon className="text-muted-foreground size-4" aria-hidden="true" /><PanelTitle className="wrap-anywhere">{diagnosticsEntry.title}</PanelTitle></div><Badge>{diagnostics.length} 项诊断</Badge></PanelHeader>
+        <div className="p-4"><p className="text-foreground text-sm leading-relaxed">{diagnosticsEntry.description}</p>
+          <ul className="m-0 mt-4 list-none p-0">
+            {diagnostics.map(plugin => <li data-slot="catalog-diagnostic" data-catalog-plugin={plugin.id} key={plugin.id} className="min-w-0 border-b py-4 first:pt-0 last:border-b-0 last:pb-0">
+              <div className="flex flex-wrap items-center justify-between gap-2"><span className="flex min-w-0 items-center gap-2 text-sm font-medium"><plugin.icon className="text-muted-foreground size-4 shrink-0" aria-hidden="true" /><span className="wrap-anywhere">{plugin.title}</span>{plugin.tier && <TierBadge tier={plugin.tier} />}</span><Badge>{unavailable ? '版本状态未知' : plugin.versions.length ? '有已验证下载包' : '暂无下载包'}</Badge></div>
+              <p className="text-foreground mt-2 text-sm leading-relaxed">{plugin.description}</p><p className="text-muted-foreground mt-1.5 text-xs leading-relaxed">{plugin.usage}</p>
+              {!!plugin.versions.length && <Packages item={plugin} unavailable={unavailable} />}
+            </li>)}
+          </ul>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t px-5 py-4"><span className="text-muted-foreground text-xs">执行位置：服务器 Agent</span><Button variant="outline" onClick={() => setSelected(diagnosticsEntry)}>选择服务器<ArrowRightIcon aria-hidden="true" /></Button></div>
+      </article>
     </div>
     <Panel aria-label="基础组件"><PanelHeader><PanelTitle>服务器 Agent</PanelTitle><Badge>基础组件，不是插件</Badge></PanelHeader><div className="p-4"><p className="text-foreground text-sm leading-relaxed">采集服务器状态，接收面板配置，并管理服务器上的插件。接入或升级请在具体服务器页面操作。</p><Packages item={catalog.agent} unavailable={unavailable} /><a className={buttonVariants({ variant: 'ghost', size: 'sm' })} href="#/servers">管理服务器接入 <ArrowRightIcon className="size-3.5" aria-hidden="true" /></a></div></Panel>
     {!!catalog.others.length && <Panel><PanelHeader><PanelTitle>其他分发组件</PanelTitle></PanelHeader><div className="p-4"><p className="text-muted-foreground mt-3 text-xs leading-relaxed">这些组件尚未登记插件介绍，仅展示下载包信息，不提供启用或执行入口。</p>{catalog.others.map(item => <div data-slot="catalog-unknown" key={item.id} className="mt-5 wrap-anywhere"><h3 className="text-sm font-semibold">{item.id}</h3><Packages item={item} unavailable={unavailable} /></div>)}</div></Panel>}

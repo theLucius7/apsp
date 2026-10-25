@@ -47,8 +47,12 @@ pub(super) async fn execute(
         }
         Operation::ExtendValidity { user_id, days } => {
             let servers = super::super::business::lock_user_servers(tx, *user_id).await?;
-            let row=sqlx::query("INSERT INTO singbox_package_assignments(user_id,request_id,package_group_id,package_name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,starts_at,expires_at) SELECT a.user_id,$2,a.package_group_id,a.package_name,a.monthly_bytes,a.reset_day,a.reset_hour,a.reset_minute,a.timezone,a.starts_at,a.expires_at+$3::bigint*86400 FROM singbox_user_packages p JOIN singbox_package_assignments a ON a.id=p.assignment_id WHERE p.user_id=$1 RETURNING id,expires_at")
-                .bind(user_id).bind(preview_id).bind(days).fetch_one(&mut **tx).await?;
+            let previous: i64 = sqlx::query_scalar("SELECT a.expires_at FROM singbox_user_packages p JOIN singbox_package_assignments a ON a.id=p.assignment_id WHERE p.user_id=$1")
+                .bind(user_id).fetch_one(&mut **tx).await?;
+            // The period is added to the later of now and the current expiry, so an expired
+            // user is renewed from this moment instead of staying expired.
+            let row=sqlx::query("INSERT INTO singbox_package_assignments(user_id,request_id,package_group_id,package_name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,starts_at,expires_at) SELECT a.user_id,$2,a.package_group_id,a.package_name,a.monthly_bytes,a.reset_day,a.reset_hour,a.reset_minute,a.timezone,a.starts_at,GREATEST(a.expires_at,$4::bigint)+$3::bigint*86400 FROM singbox_user_packages p JOIN singbox_package_assignments a ON a.id=p.assignment_id WHERE p.user_id=$1 RETURNING id,expires_at")
+                .bind(user_id).bind(preview_id).bind(days).bind(now).fetch_one(&mut **tx).await?;
             let assignment: i64 = row.get("id");
             sqlx::query("UPDATE singbox_user_packages SET assignment_id=$2 WHERE user_id=$1")
                 .bind(user_id)
@@ -56,10 +60,14 @@ pub(super) async fn execute(
                 .execute(&mut **tx)
                 .await?;
             super::super::business::mark_dirty(tx, &servers).await?;
-            json!({"status":"saved","assignment_id":assignment,"expires_at":row.get::<i64,_>("expires_at"),"quota_reset":false})
+            let from_now = previous <= now;
+            json!({"status":"saved","assignment_id":assignment,"previous_expires_at":previous,"expires_at":row.get::<i64,_>("expires_at"),"extended_from_now":from_now,"quota_reset":false})
         }
         Operation::ResetQuota { user_id } => {
             let servers = super::super::business::lock_user_servers(tx, *user_id).await?;
+            // The credit is the usage found at apply time, never the figure shown by the
+            // preview, so traffic that arrived in between is cleared as well. The receipt
+            // reports the bytes actually credited.
             let credit:String=sqlx::query_scalar("INSERT INTO singbox_quota_credits(id,user_id,cycle_start,next_reset,bytes,created_at,administrator_id) SELECT $1,user_id,cycle_start,next_reset,used_bytes::numeric,$3,$4 FROM singbox_entitlements($3) WHERE user_id=$2 RETURNING bytes::text")
                 .bind(preview_id).bind(user_id).bind(now).bind(administrator).fetch_one(&mut **tx).await?;
             super::super::business::mark_dirty(tx, &servers).await?;

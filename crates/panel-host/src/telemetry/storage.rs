@@ -35,10 +35,24 @@ pub async fn update_policy(
     if !(1..=3650).contains(&policy.history_retention_days) {
         return Err(ApiError::BadRequest("历史保存期限须为 1–3650 天".into()));
     }
+    // Shortening the history removes samples at the next cleanup, so it needs
+    // the same fresh proof as the other record retention changes.
+    if policy.history_retention_days < read_policy(&state.pool).await?.history_retention_days {
+        crate::control_center::require_recent_proof(&state, &headers).await?;
+    }
+    // This page is the only editor of the monitoring history; the record
+    // retention table mirrors it so the self-check reports the same value.
+    let mut tx = state.pool.begin().await?;
     sqlx::query("UPDATE telemetry_policy SET history_retention_days=$1 WHERE singleton")
         .bind(policy.history_retention_days)
-        .execute(&state.pool)
+        .execute(&mut *tx)
         .await?;
+    sqlx::query("UPDATE record_retention_policy SET days=$1,updated_at=$2 WHERE kind='monitoring'")
+        .bind(policy.history_retention_days)
+        .bind(apsp_protocol::now_timestamp())
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
     Ok(Json(policy))
 }
 

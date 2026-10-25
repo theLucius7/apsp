@@ -12,20 +12,21 @@ import ServerSetup from './ServerSetup'
 import ServerEnrollment from './ServerEnrollment'
 import ServerEdit from './ServerEdit'
 import { assetDate, assetPrice, defaultAssets, expiryState, trafficSize } from '../server-assets'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ActivityIcon, CheckIcon, FilterXIcon, LockIcon, PlusIcon, ServerCrashIcon, ServerIcon } from 'lucide-react'
 import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
+import { NativeSelect } from '@/components/ui/native-select'
 import { Separator } from '@/components/ui/separator'
 import { barMotion } from '@/lib/motion'
 import { useMediaQuery } from '@/lib/use-media-query'
 
 type Lifecycle = 'maintenance' | 'draining' | 'active'
-// What each state means for the panel: maintenance (open-ended from this list) and
+// What each state means for the panel: maintenance (bounded by the chosen duration) and
 // draining both stop new fleet tasks, terminals, remote commands and runtime operations.
 const lifecycles: Record<Lifecycle, { label: string; effect: string }> = {
-  maintenance: { label: '进入维护', effect: '维护期间，面板不再向这些服务器派发运维任务、终端会话、远程命令和运行时操作，直到恢复接收任务。' },
+  maintenance: { label: '进入维护', effect: '维护期间，面板不再向这些服务器派发运维任务、终端会话、远程命令和运行时操作，离线告警也暂停；到所选时长自动结束，也可提前恢复接收任务。' },
   draining: { label: '停止接收新任务', effect: '面板不再向这些服务器派发新的运维任务、终端会话、远程命令和运行时操作，用于准备下线。' },
   active: { label: '恢复接收任务', effect: '这些服务器重新接收运维任务、终端会话、远程命令和运行时操作。' },
 }
@@ -43,6 +44,8 @@ export default function Servers() {
   const [selected, setSelected] = useState<number[]>([])
   const [batchResults, setBatchResults] = useState<Array<{ id: number; status: string }>>([])
   const [pendingLifecycle, setPendingLifecycle] = useState<Lifecycle | null>(null)
+  // Bulk maintenance always ends: an open-ended window would mute offline alerts indefinitely.
+  const [maintenanceHours, setMaintenanceHours] = useState(4)
   const allServers = resource.data ?? []
   const groupKey = (server: Server) => view.groupBy === 'group' ? server.asset_settings?.group_name || '未分组' : view.groupBy === 'region' ? server.asset_settings?.region || '地区未知' : ''
   const servers = allServers.filter(server => {
@@ -68,7 +71,8 @@ export default function Servers() {
   const batchLifecycle = (lifecycle: Lifecycle, snapshot: number[]) => void action.run(async () => {
     const results: Array<{ id: number; status: string }> = []
     for (const id of snapshot) {
-      try { await api(`/api/servers/${id}/fleet/lifecycle`, 'POST', { lifecycle, from: null, until: null, reason: '管理员列表批量操作' }); results.push({ id, status: '已保存' }) }
+      const until = lifecycle === 'maintenance' ? Math.floor(Date.now() / 1000) + maintenanceHours * 3600 : null
+      try { await api(`/api/servers/${id}/fleet/lifecycle`, 'POST', { lifecycle, from: null, until, reason: '管理员列表批量操作' }); results.push({ id, status: lifecycle === 'maintenance' ? `已进入维护，${maintenanceHours} 小时后自动结束` : '已保存' }) }
       catch (error) { results.push({ id, status: error instanceof Error ? error.message : '操作失败' }) }
       setBatchResults([...results])
     }
@@ -102,7 +106,7 @@ export default function Servers() {
   }
   const actions = (server: Server, className: string) => <div className={`flex flex-wrap items-center gap-2 ${className}`}><Button variant="ghost" size="sm" onClick={() => navigate(`/servers/${server.id}`)}>详情</Button><Button variant="ghost" size="sm" disabled={!canWrite} onClick={() => edit(server)}>编辑</Button><Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20" disabled={!canWrite} onClick={() => { action.clearError(); setDeleting(server) }}>删除</Button></div>
   return <>
-    <PageHeader eyebrow="服务器" title="服务器列表" description="添加并接入服务器，按状态、地区和分组查看运行情况；点开一台服务器查看详情、资产和诊断。"><Refresh onClick={resource.reload} /><Button disabled={!canWrite} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />添加服务器</Button></PageHeader>
+    <PageHeader eyebrow="服务器" title="服务器列表" description="添加并接入服务器，按状态、地区和分组查看运行情况；点开一台服务器查看详情、资产和诊断。"><Refresh onClick={resource.reload} /><a className={buttonVariants({ variant: 'outline' })} href="#/servers/batch">批量接入</a><Button disabled={!canWrite} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />添加服务器</Button></PageHeader>
     {/* Totals describe every server; the list below says how many the filter shows. */}
     <div className="mb-6 grid grid-cols-3 gap-3 max-sm:gap-2"><Stat icon={ServerIcon} label="服务器总数" value={resource.data ? allServers.length : '—'} note="已添加到面板的服务器" /><Stat icon={ActivityIcon} label="当前在线" value={resource.data ? allServers.filter(server => server.online).length : '—'} note="最近 60 秒内收到设备消息" /><Stat icon={CheckIcon} label="已发布配置" value={resource.data ? allServers.filter(server => server.manifest_rev > 0).length : '—'} note="部署结果可在服务器详情查看" /></div>
     {batchResults.length > 0 && <Notice><div>{batchResults.map(result => <p key={result.id}>服务器 #{result.id}：{result.status}</p>)}</div></Notice>}
@@ -148,6 +152,7 @@ export default function Servers() {
     </m.div>}</AnimatePresence>
     <DialogPresence>{pendingLifecycle && <Confirm title={`${lifecycles[pendingLifecycle].label}：${targets.length} 台服务器`} tone={pendingLifecycle === 'active' ? 'default' : 'destructive'} confirmLabel={lifecycles[pendingLifecycle].label} busyLabel="正在提交…" busy={action.busy} confirmDisabled={!targets.length} error={action.error} onClose={() => setPendingLifecycle(null)} onConfirm={() => batchLifecycle(pendingLifecycle, targets.map(server => server.id))}>
       {targets.map(server => server.name).join('、')}<br />{lifecycles[pendingLifecycle].effect}{hiddenSelected > 0 && <><br />另有 {hiddenSelected} 台已选服务器被当前筛选隐藏，不会被修改。</>}
+      {pendingLifecycle === 'maintenance' && <label className="mt-3 flex items-center gap-2 text-sm">维护时长<NativeSelect aria-label="维护时长" className="h-8 w-auto" value={maintenanceHours} onChange={event => setMaintenanceHours(Number(event.target.value))}>{[1, 4, 12, 24, 72].map(hours => <option key={hours} value={hours}>{hours} 小时</option>)}</NativeSelect></label>}
     </Confirm>}</DialogPresence>
     <div className="text-muted-foreground my-5 flex items-center justify-center gap-2 text-center text-xs leading-relaxed"><LockIcon className="size-3.5" aria-hidden="true" />设备主动连接面板；面板离线时，已应用的节点配置继续运行。</div>
     <DialogPresence>{editor === 'new' && <ServerSetup onClose={() => setEditor(null)} onCreated={server => { setEditor(null); setInstallation(server); resource.reload() }} />}</DialogPresence>

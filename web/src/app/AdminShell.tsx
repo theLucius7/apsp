@@ -7,7 +7,7 @@ import { useResource } from '../hooks'
 import CommandPalette from '../control-center/CommandPalette'
 import Reauthentication from '../control-center/Reauthentication'
 import Appearance, { localeChosenEvent } from '../control-center/Appearance'
-import { Brand, ErrorNotice } from '../components'
+import { Brand, ErrorNotice, TierBadge } from '../components'
 import { LanguageSelect, useI18n } from '../i18n'
 import { navigation } from './navigation'
 import type { NavigationItem } from './navigation'
@@ -16,12 +16,13 @@ import { pageMotion, transition } from '@/lib/motion'
 import { layoutStorage } from '@/lib/layout-storage'
 import { useMediaQuery } from '@/lib/use-media-query'
 import { useShellStore } from '@/stores/shell'
+import { useFeatureStore } from '@/stores/features'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
-type Actor = { role: string; display_name: string; all_servers: boolean; capabilities: string[] }
+type Actor = { role: string; display_name: string; all_servers: boolean; capabilities: string[]; show_frozen_features?: boolean }
 
 type Props = {
   current?: NavigationItem
@@ -31,8 +32,8 @@ type Props = {
   children: ReactNode
 }
 
-const features: Record<string, string[]> = { servers: ['servers'], fleet: ['servers'], statistics: ['monitoring'], dashboard: ['monitoring'], latency: ['monitoring'], notifications: ['monitoring'], 'alert-settings': ['monitoring'], 'network-workbench': ['diagnostics'], 'network-configuration': ['network'], operations: ['operations', 'recovery', 'cloud'], expenses: ['cloud'], commerce: ['proxy'], alicloud: ['cloud'], ddns: ['dns'], 'singbox-overview': ['proxy'], nodes: ['proxy'], 'proxy-users': ['proxy'], groups: ['proxy'] }
-const globalPages = new Set(['statistics', 'dashboard', 'latency', 'notifications', 'alert-settings', 'expenses', 'commerce', 'alicloud', 'singbox-overview', 'nodes', 'proxy-users', 'groups'])
+const features: Record<string, string[]> = { servers: ['servers'], fleet: ['servers'], 'batch-enrollment': ['servers'], statistics: ['monitoring'], dashboard: ['monitoring'], latency: ['monitoring'], notifications: ['monitoring'], 'alert-settings': ['monitoring'], 'network-workbench': ['diagnostics'], 'network-configuration': ['network'], operations: ['operations', 'cloud'], backup: ['recovery'], expenses: ['cloud'], commerce: ['proxy'], alicloud: ['cloud'], ddns: ['dns'], 'singbox-overview': ['proxy'], nodes: ['proxy'], 'proxy-users': ['proxy'], groups: ['proxy'] }
+const globalPages = new Set(['backup', 'statistics', 'dashboard', 'latency', 'notifications', 'alert-settings', 'expenses', 'commerce', 'alicloud', 'singbox-overview', 'nodes', 'proxy-users', 'groups'])
 
 export default function AdminShell({ current, busy, error, onLogout, children }: Props) {
   const { t } = useI18n()
@@ -45,6 +46,13 @@ export default function AdminShell({ current, busy, error, onLogout, children }:
   const setMobileOpen = useShellStore(state => state.setMobileOpen)
   const sidebarPanel = usePanelRef()
   const layout = useDefaultLayout({ id: 'apsp-admin-shell', storage: layoutStorage, onlySaveAfterUserInteractions: true })
+  // The brand returns to the first page this administrator may open.
+  const home = `#${visibleNavigation[0]?.path ?? '/system/control-center'}`
+
+  // Frozen features stay hidden unless the panel settings show them; the actor
+  // response carries that panel-wide choice.
+  const showFrozen = actor.data?.show_frozen_features
+  useEffect(() => { if (showFrozen !== undefined) useFeatureStore.getState().setShowFrozen(showFrozen) }, [showFrozen])
 
   // The compact menu closes after navigation, on Escape and on a press outside the
   // phone header. Escape returns focus to the menu button when focus was in the menu;
@@ -105,7 +113,7 @@ export default function AdminShell({ current, busy, error, onLogout, children }:
           onResize={size => { const folded = size.inPixels < 120; if (folded !== useShellStore.getState().collapsed) setCollapsed(folded) }}>
           <aside data-slot="sidebar" data-collapsed={collapsed} className="bg-sidebar text-sidebar-foreground flex h-full min-h-0 flex-col border-r">
             <div className={cn('flex h-14 shrink-0 items-center gap-2 border-b px-3', collapsed ? 'justify-center px-2' : 'justify-between')}>
-              {!collapsed && <a href="#/servers" aria-label={t('apsp首页')} className="min-w-0 rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"><Brand /></a>}
+              {!collapsed && <a href={home} aria-label={t('apsp首页')} className="min-w-0 rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"><Brand /></a>}
               <Button variant="ghost" size="icon-sm" aria-label={collapsed ? t('展开侧栏') : t('折叠侧栏')} onClick={() => setCollapsed(!collapsed)}>
                 {collapsed ? <PanelLeftOpenIcon /> : <PanelLeftCloseIcon />}
               </Button>
@@ -119,7 +127,7 @@ export default function AdminShell({ current, busy, error, onLogout, children }:
           <div className="flex h-full min-h-0 flex-col">
             {!desktop && <aside ref={phoneHeader} data-slot="sidebar" className="bg-sidebar text-sidebar-foreground shrink-0 border-b">
               <div className="flex h-14 items-center gap-2 px-4">
-                <a href="#/servers" aria-label={t('apsp首页')} className="mr-auto min-w-0 rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"><Brand /></a>
+                <a href={home} aria-label={t('apsp首页')} className="mr-auto min-w-0 rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"><Brand /></a>
                 <AccountButton actor={actor.data} busy={busy} onLogout={onLogout} collapsed={false} compact />
                 <Button ref={menuButton} variant="outline" aria-expanded={mobileOpen} aria-controls="admin-navigation" onClick={() => setMobileOpen(!mobileOpen)}>
                   {mobileOpen ? <XIcon /> : <MenuIcon />}<span>{t('菜单')}</span>
@@ -161,8 +169,8 @@ function Navigation({ items, current, collapsed }: { items: readonly NavigationI
       return <div key={item.path} className="contents">
         {items[index - 1]?.group !== item.group && (collapsed
           ? index > 0 && <div className="bg-sidebar-border mx-2 my-2 h-px" aria-hidden="true" />
-          : <div className="text-muted-foreground px-2.5 pt-4 pb-1 text-xs font-medium first:pt-1 max-md:col-span-full">{t(item.group)}</div>)}
-        {collapsed ? <Tooltip><TooltipTrigger asChild>{link}</TooltipTrigger><TooltipContent side="right">{t(item.label)}</TooltipContent></Tooltip> : link}
+          : <div className="text-muted-foreground flex items-center gap-1.5 px-2.5 pt-4 pb-1 text-xs font-medium first:pt-1 max-md:col-span-full">{t(item.group)}{item.tier && <TierBadge tier={item.tier} />}</div>)}
+        {collapsed ? <Tooltip><TooltipTrigger asChild>{link}</TooltipTrigger><TooltipContent side="right">{t(item.label)}{item.tier && ` · ${t('实验')}`}</TooltipContent></Tooltip> : link}
       </div>
     })}
   </nav>

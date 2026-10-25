@@ -70,7 +70,7 @@ try {
     assert.equal(await manager.getByRole('heading', { level: 2 }).filter({ hasText: '有序链路' }).count(), 0)
     assert.equal(await archive.getAttribute('open'), null, 'the archive starts collapsed')
     await archive.locator('summary').click()
-    await numberedPanel.getByRole('heading', { name: '数字编号来源（已迁移，只读）', exact: true }).waitFor()
+    await numberedPanel.getByRole('heading', { name: '旧版数字编号来源（只读保留）', exact: true }).waitFor()
     await numberedPanel.getByText('已迁移为订阅来源 #1', { exact: true }).waitFor()
     for (const name of ['添加来源', '设置与更新', '立即更新', '归档', '删除']) assert.equal(await numberedPanel.getByRole('button', { name, exact: true }).count(), 0, name)
     await numberedPanel.getByRole('button', { name: '查看节点', exact: true }).click()
@@ -82,7 +82,7 @@ try {
     // chain view; the mixed editor stays closed.
     const header = page.locator('header[data-slot=page-header]').getByRole('button', { name: '创建链路', exact: true })
     await header.click()
-    const orderedForm = page.getByRole('dialog', { name: '创建有序链路', exact: true })
+    const orderedForm = page.getByRole('dialog', { name: '创建链路', exact: true })
     await orderedForm.waitFor()
     assert.match(page.url(), /view=chains/)
     assert.equal(await page.getByRole('region', { name: '创建链路', exact: true }).count(), 0)
@@ -98,7 +98,7 @@ try {
     await numberedPanel.getByRole('heading', { name: '订阅来源', exact: true }).waitFor()
     assert.equal(await numberedPanel.getByRole('button', { name: '添加来源', exact: true }).isDisabled(), true)
     assert.equal(await archive.count(), 0)
-    assert.equal(await header.isDisabled(), true, 'the header form waits for the migration state')
+    assert.equal(await header.isDisabled(), false, 'the ordered chain form does not depend on the migration state')
 
     // Before the migration both panels are writable as before.
     migration = sourceMigrationFixture(false)
@@ -108,17 +108,21 @@ try {
     while (await add.isDisabled() && Date.now() < deadline) await page.waitForTimeout(20)
     assert.equal(await add.isDisabled(), false)
     await manager.getByRole('heading', { level: 2 }).filter({ hasText: '有序链路订阅来源' }).waitFor()
-    // Before the migration the header still opens the mixed editor.
+    // Before the migration the panel explains what each source list feeds, and the
+    // header opens the same ordered form as after it (ADR 0098); no mixed editor remains.
+    await numberedPanel.locator('xpath=..').getByText('订阅来源尚未合并。', { exact: false }).first().waitFor()
     while (await header.isDisabled() && Date.now() < deadline) await page.waitForTimeout(20)
-    await header.click()
-    const editor = page.getByRole('region', { name: '创建链路', exact: true })
-    await editor.getByRole('button', { name: '从订阅来源添加一段', exact: true }).waitFor()
-    await editor.getByRole('button', { name: '收起编辑器', exact: true }).click()
+    const preForm = page.getByRole('dialog', { name: '创建链路', exact: true })
+    for (let attempt = 0; attempt < 5 && !(await preForm.isVisible()); attempt++) { await header.click(); await preForm.waitFor({ timeout: 1500 }).catch(() => {}) }
+    await preForm.waitFor()
+    assert.equal(await page.getByRole('region', { name: '创建链路', exact: true }).count(), 0)
+    await preForm.getByRole('button', { name: '取消', exact: true }).click()
+    await preForm.waitFor({ state: 'detached' })
 
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true)
     assert.deepEqual(writes, [])
     assert.deepEqual(errors, [])
     await page.close()
   }
-  console.log('PASS: migrated numbered sources are a read-only archive, the header opens the ordered form after the migration, unknown migration state blocks numbered writes and the header form, pre-migration panels stay writable, desktop/mobile')
+  console.log('PASS: migrated numbered sources are a read-only archive, the header always opens the ordered form, unknown migration state blocks numbered writes but not the ordered form, pre-migration panels stay writable and explain their roles, desktop/mobile')
 } finally { if (browser) await browser.close(); await new Promise(resolve => server.close(resolve)) }

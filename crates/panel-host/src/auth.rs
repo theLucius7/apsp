@@ -27,7 +27,7 @@ pub(crate) mod rate_limit;
 pub(crate) mod security;
 mod totp;
 
-pub use security::{totp_confirm, totp_disable, totp_setup, totp_status};
+pub use security::{password_change, totp_confirm, totp_disable, totp_setup, totp_status};
 
 const ADMIN_SESSION_SECONDS: i64 = 86_400;
 
@@ -58,17 +58,7 @@ pub async fn ensure_admin(pool: &PgPool, password: Option<&str>) -> anyhow::Resu
     if password.len() > 1024 {
         anyhow::bail!("initial administrator password exceeds 1024 bytes");
     }
-    let hash = tokio::task::spawn_blocking(move || {
-        let mut salt = [0_u8; 16];
-        OsRng.fill_bytes(&mut salt);
-        let salt =
-            SaltString::encode_b64(&salt).map_err(|error| anyhow::anyhow!(error.to_string()))?;
-        Argon2::default()
-            .hash_password(password.as_bytes(), &salt)
-            .map(|hash| hash.to_string())
-            .map_err(|error| anyhow::anyhow!(error.to_string()))
-    })
-    .await??;
+    let hash = hash_password(password).await?;
     sqlx::query(
         "INSERT INTO admins (id, password_hash) VALUES (1, $1) ON CONFLICT (id) DO NOTHING",
     )
@@ -78,6 +68,21 @@ pub async fn ensure_admin(pool: &PgPool, password: Option<&str>) -> anyhow::Resu
     sqlx::query("INSERT INTO administrator_profiles(admin_id,login_name,display_name,role,all_servers,created_at,updated_at) VALUES(1,'admin','所有者','owner',true,$1,$1) ON CONFLICT(admin_id) DO NOTHING")
         .bind(now_timestamp()).execute(pool).await?;
     Ok(())
+}
+
+/// Hashes an administrator password with Argon2 and a fresh random salt.
+pub(crate) async fn hash_password(password: String) -> anyhow::Result<String> {
+    tokio::task::spawn_blocking(move || {
+        let mut salt = [0_u8; 16];
+        OsRng.fill_bytes(&mut salt);
+        let salt =
+            SaltString::encode_b64(&salt).map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        Argon2::default()
+            .hash_password(password.as_bytes(), &salt)
+            .map(|hash| hash.to_string())
+            .map_err(|error| anyhow::anyhow!(error.to_string()))
+    })
+    .await?
 }
 
 /// Device sessions are reissued on every reconnect; expired rows must not wait

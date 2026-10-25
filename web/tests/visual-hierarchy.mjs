@@ -200,15 +200,16 @@ try {
     try {
       await page.goto(`${origin}/#/servers`)
       const nav = page.getByRole('navigation', { name: '主导航' })
-      await nav.getByRole('link', { name: '服务概览', exact: true }).waitFor()
+      await nav.getByRole('link', { name: '概览', exact: true }).waitFor()
       const links = await nav.getByRole('link').evaluateAll(items => items.map(item => [item.textContent.trim(), item.getAttribute('href')]))
-      assert.deepEqual(links.slice(0, 5), [['服务概览', '#/plugins/sing-box'], ['代理节点', '#/plugins/sing-box/nodes'], ['代理用户', '#/plugins/sing-box/users'], ['策略与套餐', '#/plugins/sing-box/groups'], ['成员运营', '#/plugins/sing-box/commerce']])
-      assert.equal(await nav.locator(':scope > div').first().locator(':scope > div').first().textContent(), '代理服务', 'The proxy group comes first')
+      // ADR 0098: the overview group leads with the landing page, then the proxy service.
+      assert.deepEqual(links.slice(0, 8), [['概览', '#/plugins/sing-box'], ['服务器看板', '#/dashboard'], ['统计报表', '#/statistics'], ['费用与续费', '#/plugins/expenses'], ['代理节点', '#/plugins/sing-box/nodes'], ['代理用户', '#/plugins/sing-box/users'], ['策略与套餐', '#/plugins/sing-box/groups'], ['成员运营', '#/plugins/sing-box/commerce']])
+      assert.equal(await nav.locator(':scope > div').first().locator(':scope > div').first().textContent(), '总览', 'The overview group comes first')
       assert.deepEqual(links.find(([label]) => label === '服务器列表'), ['服务器列表', '#/servers'])
-      // The page after sign-in is still the server dashboard (decision D6 pending).
+      // Decision D6: signing in without an address lands on the overview, not the server board.
       await page.goto(`${origin}/`)
-      await page.locator('[data-slot=server-display]').waitFor()
-      assert.equal(await page.evaluate(() => location.hash), '')
+      await page.waitForFunction(() => location.hash === '#/plugins/sing-box')
+      await page.getByRole('heading', { name: '概览', exact: true }).waitFor()
       assert.deepEqual(errors, [])
       summary.push({ scenario: 'navigation' })
     } finally { await page.close() }

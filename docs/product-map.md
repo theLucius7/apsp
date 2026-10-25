@@ -1,6 +1,6 @@
 # 产品定位与功能地图
 
-本文定义 apsp 是什么、不是什么、每项功能处于哪个投入级别，以及新功能放在哪里。界面分组、页面命名、文档目录和新增功能都以本文为准；架构分层与授权范围仍以 [AGENTS.md](../AGENTS.md) 和[各项 ADR](adr/README.md) 为准。定位收窄的决定见 [ADR 0087](adr/0087-narrow-positioning-proxy-network.md)，界面分区见 [ADR 0086](adr/0086-product-map-and-navigation.md)。
+本文定义 apsp 是什么、不是什么、每项功能处于哪个投入级别，以及新功能放在哪里。界面分组、页面命名、文档目录和新增功能都以本文为准；架构分层与授权范围仍以 [AGENTS.md](../AGENTS.md) 和[各项 ADR](adr/README.md) 为准。定位收窄的决定见 [ADR 0087](adr/0087-narrow-positioning-proxy-network.md)，界面分区见 [ADR 0086](adr/0086-product-map-and-navigation.md)，按使用逻辑的重组与功能分级的界面处理见 [ADR 0098](adr/0098-usage-driven-navigation-and-tiers.md)。
 
 ## 一句话定位
 
@@ -64,10 +64,11 @@
 | 代理节点与七种协议，节点 TLS 证书的手动上传与自动申请、续期 | 代理节点 |
 | 链路：入口 / 中转 / 落地，订阅来源中的节点作为链路段 | 代理节点 › 链路、订阅来源 |
 | 代理用户、策略组与套餐（额度、有效期、重置周期） | 代理用户；策略与套餐 |
-| 订阅生成、预览与重置；逐用户代理流量账本 | 代理用户 |
+| 订阅生成、预览与重置；逐用户代理流量账本；订阅响应头 `Subscription-Userinfo` 让客户端显示用量与到期 | 代理用户 |
 | 代理用户自助门户：Passkey 登录，查看自己的订阅、用量、套餐与到期；规划补充多客户端订阅、节点状态、使用说明与到期提醒 | 代理用户 › 用户 Passkey 入口；用户门户 `/#/plugins/sing-box/account/{id}` |
 | 从 Xboard 一类面板迁移（规划）：导入用户、套餐与用量，保留客户端凭据 | 代理用户（新功能） |
 | sing-box 配置部署、预检、运行时运维与部署历史 | 服务器详情 › 插件 |
+| 登录后的首页：需要处理的事项、关键数字、开始使用步骤、各服务器 sing-box 状态 | 总览 › 概览 `/#/plugins/sing-box` |
 
 ### 支撑
 
@@ -78,74 +79,77 @@
 | Agent 采集与上报设置、周期拨测 | 服务器详情 › Agent 与任务 |
 | 离线、资源、到期、流量告警；Telegram 与 Webhook | 监控告警 |
 | 三网延迟检测 | 监控告警 › 延迟检测 |
-| IP 质量与流媒体、AI 服务解锁；TCP 连接诊断 | 服务器详情 › IP 信息、TCP 诊断 |
-| 网络检测中的基础探测（TCP、ICMP、HTTP、DNS、TLS 等）、路由追踪与多来源 IP，计划并入线路质量中心 | 网络检测 |
+| IP 质量与流媒体、AI 服务解锁；TCP 连接诊断 | 服务器详情 › 线路诊断 › IP 信息、TCP 诊断 |
+| 网络检测中的基础探测（TCP、ICMP、HTTP、DNS、TLS 等）、路由追踪与多来源 IP，计划并入线路质量中心 | 监控告警 › 网络检测 |
 | **费用与续费账本**（Wallos 式，首批已实现）：手动添加的域名、AI 与其他服务，以及按资产设置自动列出的服务器；周期费用、下次续费、30 天内续费、续费日历与 iCalendar、续期付款记录与提醒，服务器的购买、续费、退款与退订记录及退订提醒，机场订阅来源报告的到期（仅供参考），按显示币种汇总，可从 Wallos 导入，见 [ADR 0096](adr/0096-costs-and-renewals-ledger.md)、[ADR 0097](adr/0097-ledger-server-records-and-source-references.md) | 总览 › 费用与续费 `/#/plugins/expenses` |
-| 面板设置、账号安全；管理员权限、API 令牌、审计与自检 | 系统 |
-| 面板备份与恢复 | 自动化与恢复 › 备份与恢复 |
+| 插件中心：插件说明、服务器启用与签名制品 | 服务器 › 插件中心 |
+| 面板设置（含功能显示）、账号安全；管理员权限、API 令牌、审计与自检 | 系统 |
+| 面板备份与恢复 | 系统 › 备份与恢复 `/#/system/backup` |
 
 ### 可选插件
 
 | 功能 | 位置 | 说明 |
 | --- | --- | --- |
-| 动态域名解析（DDNS） | 网络 | 入口机换 IP 时常用 |
-| 阿里云 CDT | 扩展 | 只适用于阿里云的流量与带宽方案 |
+| 动态域名解析（DDNS） | 服务器 | 入口机换 IP 时常用 |
+| 阿里云 CDT | 服务器 | 只适用于阿里云的流量与带宽方案 |
 
 ### 降级
 
+降级功能在界面上标“实验”：侧栏放在「实验功能」组，页面顶部说明级别，分页与链接带“实验”标记。
+
 | 功能 | 位置 | 原因与去向 |
 | --- | --- | --- |
-| 远程命令 | 服务器详情 › Agent 与任务 | 通用运维；默认关闭，由 SSH 工具和 AI Agent 承担 |
-| 交互式终端、服务日志与文件 | 运维工具 | 同上；默认关闭 |
-| 资源与能力、历史与比较 | 运维工具 | 只读诊断信息，保留不扩展 |
-| 资产与生命周期（采购配置、维护状态） | 运维工具 | 续费与年度成本、退订提醒已并入「费用与续费」（[ADR 0097](adr/0097-ledger-server-records-and-source-references.md)），这里只留链接；采购配置与「资产与流量」合并为一份资产记录待 3.2 |
-| 模板与批量接入；面板健康 | 运维工具 | 批量接入保留可用；面板健康与系统自检重复，计划合并 |
-| 批量任务、定时计划、维护窗口、有界自动处置 | 自动化与恢复 › 自动化与维护 | 固定步骤的跨服务器运维，非主线 |
-| 故障事件 | 自动化与恢复 | 告警事件已覆盖主要需要 |
-| 吞吐测试（双端 iperf3）、测试方案与综合报告；工具与依赖 | 网络检测；管理与安全 | 验机与运维方向，保留不扩展 |
-| 域名台账、证书版本、端点台账、端口转发、采集配置迁移 | 网络配置 | 节点证书已在代理服务内；端口转发计划改造为中转规则（待用户决定） |
-| NodeQuality 日常检查 | 服务器详情 › 节点验机 | IP 与解锁由「IP 信息」覆盖 |
+| 远程命令 | 服务器详情 › Agent 与任务 | 通用运维；本机默认关闭，未开启时界面只说明开启方法；由 SSH 工具和 AI Agent 承担 |
+| 交互式终端、服务日志与文件 | 服务器详情 › 运维 | 同上；需本机运维策略授权 |
+| 资源与能力、历史与比较 | 服务器详情 › 运维 | 只读诊断信息，保留不扩展 |
+| 资产与生命周期（采购配置、维护状态） | 服务器详情 › 运维 | 续费与年度成本、退订提醒已并入「费用与续费」（[ADR 0097](adr/0097-ledger-server-records-and-source-references.md)），这里只留链接；采购配置与「资产与流量」合并为一份资产记录待 3.2 |
+| 模板与批量接入 | 服务器列表 › 批量接入 `/#/servers/batch` | 保留可用 |
+| 批量任务、定时计划、维护窗口、有界自动处置 | 实验功能 › 自动化与维护 › 批量与计划 | 固定步骤的跨服务器运维，非主线 |
+| 故障事件 | 实验功能 › 自动化与维护 › 故障事件 | 告警事件已覆盖主要需要，合并需要统一两套事件模型 |
+| 吞吐测试（双端 iperf3）、测试方案与综合报告；工具与依赖 | 监控告警 › 网络检测；管理与安全 | 验机与运维方向，保留不扩展 |
+| 域名台账、证书版本、端点台账、端口转发、采集配置迁移 | 实验功能 › 网络配置 | 节点证书已在代理服务内；端口转发计划改造为中转规则 |
+| NodeQuality 日常检查 | 服务器详情 › 线路诊断 › 节点验机 | IP 与解锁由「IP 信息」覆盖 |
 
 ### 冻结
 
+冻结功能默认隐藏；「面板设置 › 功能显示 › 显示冻结功能」开启后在原位置显示并标“冻结”。数据与接口保留。
+
 | 功能 | 位置 | 原因 |
 | --- | --- | --- |
-| 系统网络参数调优、反向隧道、私有组网、受管防火墙 | 网络配置 | 通用网络运维，改动风险高，与代理网络主线无关 |
-| 云资源与费用（费用对照、Hetzner 资源、安全组、供应商对比） | 自动化与恢复 › 云资源与费用 | 云厂商控制台方向 |
-| 硬件测试（CPU、磁盘等）与 Speedtest | 网络检测 | 验机方向 |
-| NodeQuality 完整验机（已暂停） | 服务器详情 › 节点验机 | 安全门禁未解除 |
+| 系统网络参数调优、反向隧道、私有组网、受管防火墙 | 实验功能 › 网络配置 | 通用网络运维，改动风险高，与代理网络主线无关 |
+| 云资源与费用（费用对照、Hetzner 资源、安全组、供应商对比） | 实验功能 › 自动化与维护 › 云资源与费用 | 云厂商控制台方向 |
+| 硬件测试（CPU、内存、磁盘、持续稳定性、Geekbench）与 Speedtest | 监控告警 › 网络检测（新增步骤时） | 验机方向 |
+| NodeQuality 完整验机（已暂停） | 服务器详情 › 线路诊断 › 节点验机；网络检测 | 安全门禁未解除 |
 
-## 七个功能区
+## 侧栏与功能区
 
-侧栏按任务分为七组（[ADR 0086](adr/0086-product-map-and-navigation.md)），代理服务在第一组，其余分组作为支撑入口排在其后（2026-10-24 调整）。下表说明各入口当前的地址与主要级别；“实验”标记与默认首页的调整计划见[路线图](roadmap.md)。
+侧栏按使用顺序分为六组、22 个入口（[ADR 0098](adr/0098-usage-driven-navigation-and-tiers.md)）：先看全局，再运营代理服务，然后管理服务器、监控告警与线路，最后是面板本身；降级功能集中在最后的「实验功能」组。
 
 | 分组 | 入口 | 地址 | 主要级别 |
 | --- | --- | --- | --- |
-| 代理服务 | 服务概览、代理节点、代理用户、策略与套餐 | `/#/plugins/sing-box`、`/#/plugins/sing-box/nodes`、`/#/plugins/sing-box/users`、`/#/plugins/sing-box/groups` | 核心 |
-| 服务器 | 服务器列表 | `/#/servers` | 核心与支撑 |
-| 服务器 | 运维工具 | `/#/fleet` | 降级 |
-| 服务器 | 自动化与恢复 | `/#/operations` | 备份与恢复为支撑，其余降级或冻结 |
-| 总览 | 服务器看板、统计报表、费用与续费 | `/#/dashboard`、`/#/statistics`、`/#/plugins/expenses` | 支撑 |
-| 监控告警 | 告警事件、延迟检测、告警设置 | `/#/system/notifications`、`/#/latency`、`/#/monitoring/settings` | 支撑 |
-| 网络 | 网络检测 | `/#/network-workbench` | 基础探测与路由为支撑，其余降级或冻结 |
-| 网络 | 网络配置 | `/#/network-configuration` | 降级与冻结 |
-| 网络 | 动态域名解析 | `/#/plugins/ddns` | 可选插件 |
-| 扩展 | 插件中心、阿里云 CDT | `/#/plugins/catalog`、`/#/system/plugins`、`/#/plugins/alicloud` | 支撑；可选插件 |
-| 系统 | 面板设置、管理与安全、账号安全 | `/#/system/settings`、`/#/system/control-center`、`/#/system/administrator` | 支撑 |
+| 总览 | 概览（首页）、服务器看板、统计报表、费用与续费 | `/#/plugins/sing-box`、`/#/dashboard`、`/#/statistics`、`/#/plugins/expenses` | 核心；支撑 |
+| 代理服务 | 代理节点、代理用户、策略与套餐、成员运营 | `/#/plugins/sing-box/nodes`、`/#/plugins/sing-box/users`、`/#/plugins/sing-box/groups`、`/#/plugins/sing-box/commerce` | 核心 |
+| 服务器 | 服务器列表、插件中心、动态域名解析、阿里云 CDT | `/#/servers`、`/#/plugins/catalog`、`/#/plugins/ddns`、`/#/plugins/alicloud` | 核心与支撑；可选插件 |
+| 监控告警 | 告警事件、告警设置、延迟检测、网络检测 | `/#/system/notifications`、`/#/monitoring/settings`、`/#/latency`、`/#/network-workbench` | 支撑（网络检测的吞吐与测试方案为降级，硬件测试冻结） |
+| 系统 | 面板设置、备份与恢复、管理与安全、账号安全 | `/#/system/settings`、`/#/system/backup`、`/#/system/control-center`、`/#/system/administrator` | 支撑 |
+| 实验功能 | 自动化与维护、网络配置 | `/#/operations`、`/#/network-configuration` | 降级；部分冻结 |
 
-**服务器详情**按“这台服务器”分为七个分页：概况（`/#/servers/{id}`）、资产与流量（`/assets`）、Agent 与任务（`/agent`）、插件（`/plugins`）、IP 信息（`/ip-info`）、节点验机（`/node-quality`）、TCP 诊断（`/tcp-quality`）。分页下方的「带此服务器打开」进入运维工具、网络检测、网络配置和自动化与恢复，并预先选中这台服务器。
+**服务器详情**按“这台服务器”分为六个分页：概况（`/#/servers/{id}`）、资产与流量（`/assets`）、Agent 与任务（`/agent`）、插件（`/plugins`）、线路诊断（IP 信息 `/ip-info`、TCP 诊断 `/tcp-quality`、节点验机 `/node-quality` 三个子视图）、运维（实验，`/fleet`）。分页下方的「带此服务器打开」进入网络检测、网络配置和自动化与维护，并预先选中这台服务器。
+
+**不在侧栏但仍可用的地址：** `/#/fleet`（原运维工具，显示服务器选择与迁移说明）、`/#/servers/batch`（批量接入，从服务器列表进入）、`/#/system/plugins`（插件中心的服务器启用视图）、`/#/artifacts`（插件中心别名）、`/#/plugins/sing-box/chains`（链路视图）、`/#/overview` 与 `/` （服务器看板别名；登录后无指定地址时进入概览）。
 
 ## 归类规则
 
 新增或调整功能时按下面的顺序判断：
 
-1. **先问是否服务代理网络。** 新功能必须直接服务节点、链路、用户与订阅，或者是运营这张网络所需的服务器与线路感知。都不是，就进入[路线图](roadmap.md)的候选池，不直接实现。
-2. **降级和冻结的功能不加新能力。** 只修缺陷和安全问题；需要扩展时，先申请调整级别。
-3. **按任务归组，不按实现方式。** 插件提供的页面放进它服务的任务分组：DDNS 属于“网络”，sing-box 属于“代理服务”。
-4. **一台服务器的事放服务器详情，跨服务器的事放工作区。** 工作区页面支持从服务器详情“带此服务器打开”。
-5. **同一设置只有一个编辑位置。** 例如告警阈值只在「告警设置」，公开看板只在「面板设置」。
+1. **先问是否服务代理网络。** 新功能必须直接服务节点、链路、用户与订阅，或者是运营这张网络所需的服务器、线路与费用感知。都不是，就进入[路线图](roadmap.md)的候选池，不直接实现。
+2. **降级和冻结的功能不加新能力。** 只修缺陷和安全问题；需要扩展时，先申请调整级别。降级功能标“实验”并放在「实验功能」组或页面内的实验标记下；冻结功能默认隐藏。
+3. **按任务归组，不按实现方式。** 插件提供的页面放进它服务的任务分组：DDNS 与阿里云 CDT 作用于服务器，属于“服务器”；sing-box 属于“代理服务”。
+4. **一台服务器的事放服务器详情，跨服务器的事放工作区。** 先选服务器再操作的页面属于服务器详情；工作区页面支持从服务器详情“带此服务器打开”。
+5. **同一设置只有一个编辑位置。** 例如告警阈值只在「告警设置」，公开看板与监控历史保存期限只在「面板设置」；其他页面只读显示并链接到编辑位置。
 6. **每组两到四个入口，入口名不与分组同名。** 页面标题与侧栏名称一致，眉题使用分组名；说明文字先讲“在这里做什么”，再补最重要的限制。
-7. **旧地址永久可用。** 改名只改显示文字，不改已发布的 Hash 路径。
+7. **核心旅程不依赖降级页面。** 核心功能需要的授权或设置，在使用它的位置就地提供。
+8. **旧地址永久可用。** 改名只改显示文字，不改已发布的 Hash 路径；页面搬家时旧地址打开新位置或保留说明页。
 
 ## 界面用语
 
@@ -156,10 +160,12 @@
 | 管理员 | 登录面板的人，分所有者、运维和只读 | 代理用户：使用订阅的人，只能进入自己的门户 |
 | 策略组 | 用户能用哪些节点和链路 | 套餐：流量额度、有效期和重置周期 |
 | 续费项目 | 「费用与续费」中需要按周期付款的一项：服务器、域名、机场订阅或其他服务 | 订阅：代理用户使用的订阅链接，或作为节点来源的订阅来源 |
+| 概览 | 登录后的首页：需要处理的事项与整体状态 | 服务器看板：服务器实时状态，可公开 |
 | 服务器看板 | 实时状态，可公开 | 统计报表：历史趋势，仅管理员 |
-| 告警事件 | 自动检测产生的单条告警及恢复 | 故障事件：聚合、指派与处置记录（降级） |
-| 网络检测 | 只测量，不改动 | 网络配置：会改变服务器网络状态，需要确认 |
+| 告警事件 | 自动检测产生的单条告警及恢复 | 故障事件：聚合、指派与处置记录（实验） |
+| 网络检测 | 只测量，不改动 | 网络配置：会改变服务器网络状态，需要确认（实验） |
 | 启用插件 | 管理员允许在这台服务器上使用插件 | 安装完成：Agent 下载、校验、应用并回报健康 |
+| 实验 | 降级功能：保留可用，只修缺陷和安全问题 | 冻结：只修安全问题，默认隐藏 |
 
 对外文案使用“代理网络”“网络连接管理”等中性措辞，与上游 sing-box 保持一致。其余技术术语见[术语表](glossary.md)。
 
@@ -167,14 +173,13 @@
 
 | 功能区 | 前端目录（`web/src/`） | 后端位置 |
 | --- | --- | --- |
-| 应用外框、路由、侧栏 | `app/` | `crates/panel-host/src/frontend.rs` |
+| 应用外框、路由、侧栏、功能分级 | `app/`（`navigation.ts`、`routes.ts`、`tiers.ts`）、`stores/features.ts` | `crates/panel-host/src/frontend.rs`；分级开关在 `panel-host` 的 `settings` |
+| 总览 | `plugins/singbox/Overview.tsx`（概览）、`display/`（看板）、`statistics/`、`plugins/expenses/` | `panel-host` 的 `dashboard`、`statistics`；`plugins/expenses/panel/`（费用与续费） |
 | 代理服务 | `plugins/singbox/` | `plugins/singbox/panel/`、`crates/compiler/`、`crates/adapter-singbox/` |
-| 服务器 | `servers/`、`server-diagnostics/`、`fleet/`、`operations/` | `panel-host` 的 `servers`、`telemetry`、`fleet`、`operations`、`diagnostics`；Agent 在 `crates/agent-core/` |
-| 总览 | `display/`（看板）、`statistics/`、`plugins/expenses/` | `panel-host` 的 `dashboard`、`statistics`；`plugins/expenses/panel/`（费用与续费） |
-| 监控告警 | `monitoring/` | `panel-host` 的 `notifications`、`probes`、`latency_tasks` |
-| 网络 | `network-workbench/`、`network-configuration/`、`plugins/ddns/` | `panel-host` 的 `network_workbench`、`network_configuration`；`plugins/ddns/panel/` |
-| 扩展 | `plugins/`（插件中心）、`plugins/alicloud/` | `panel-host` 的 `artifacts`；`plugins/alicloud/panel/` |
-| 系统 | `system/`、`control-center/` | `panel-host` 的 `settings`、`control_center`、`auth`、`passkeys`、`exchange` |
+| 服务器 | `servers/`、`server-diagnostics/`、`fleet/`（服务器详情 › 运维与批量接入）、`plugins/`（插件中心）、`plugins/ddns/`、`plugins/alicloud/` | `panel-host` 的 `servers`、`telemetry`、`fleet`、`diagnostics`、`artifacts`；`plugins/ddns/panel/`、`plugins/alicloud/panel/`；Agent 在 `crates/agent-core/` |
+| 监控告警 | `monitoring/`、`network-workbench/` | `panel-host` 的 `notifications`、`probes`、`latency_tasks`、`network_workbench` |
+| 系统 | `system/`（面板设置、备份与恢复、账号安全）、`control-center/` | `panel-host` 的 `settings`、`control_center`、`auth`、`passkeys`、`exchange`、`operations` 中的备份 |
+| 实验功能 | `operations/`、`network-configuration/` | `panel-host` 的 `operations`、`network_configuration` |
 
 后端的宿主、插件与组装分层不随功能分级改变，见[仓库目录与维护约定](repository.md)。
 

@@ -1,5 +1,6 @@
-import { CloudCogIcon, GaugeIcon, GlobeIcon, NetworkIcon, WaypointsIcon } from 'lucide-react'
+import { ActivityIcon, CloudCogIcon, GaugeIcon, GlobeIcon, NetworkIcon, ShieldCheckIcon, WaypointsIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import type { Tier } from '../app/tiers'
 import type { Artifact } from '../types'
 
 export type CatalogDefinition = {
@@ -8,9 +9,13 @@ export type CatalogDefinition = {
   description: string
   usage: string
   icon: LucideIcon
-  serverSection?: '/plugins' | '/node-quality' | '/tcp-quality' | '/ddns'
+  serverSection?: '/plugins' | '/ip-info' | '/ddns'
   execution?: 'panel'
   panelPath?: string
+  /** Plugins of one group share a single catalog entry, such as the three line diagnostics. */
+  group?: 'diagnostics'
+  /** Experimental features stay listed and carry the tier label. */
+  tier?: Tier
 }
 
 // Product identities are independent of release versions and platform packages.
@@ -31,16 +36,28 @@ export const pluginDefinitions: readonly CatalogDefinition[] = [
     usage: '先为目标服务器启用并安装插件，等待 Agent 确认安装与运行状态，再创建节点和分配代理用户。',
   },
   {
-    id: 'nodequality', title: 'NodeQuality', icon: GaugeIcon, serverSection: '/node-quality',
-    description: '从目标服务器检查网络与系统状况，查看分段报告和历史诊断结果。',
-    usage: '在服务器的节点诊断页面选择检查项目。完整验机仍受安全门禁限制，是否可执行以该服务器显示的状态为准。',
+    id: 'ipquality', title: 'IP 质量', icon: ShieldCheckIcon, serverSection: '/ip-info', group: 'diagnostics',
+    description: '从服务器自身的网络出口执行固定版本的 IPQuality，逐源查询出口 IP 的质量和流媒体可达性。',
+    usage: '在服务器详情的「线路诊断 › IP 信息」中使用，单次选择一个 IP 版本。结果只代表本次查询的出口；执行前仍需通过设备能力与安全检查。',
   },
   {
-    id: 'tcpquality', title: 'TCP 连接诊断', icon: NetworkIcon, serverSection: '/tcp-quality',
+    id: 'tcpquality', title: 'TCP 连接诊断', icon: NetworkIcon, serverSection: '/ip-info', group: 'diagnostics',
     description: '从目标服务器向自有或获准使用的目标发起 TCP 连接，比较连接成功率和耗时。',
-    usage: '在服务器上配置拨测目标后使用。这不是带宽测速，也不把连接失败率解释为网络丢包率；执行前仍需通过设备能力和安全检查。',
+    usage: '在服务器详情的「线路诊断 › TCP 诊断」中配置拨测目标后使用。这不是带宽测速，也不把连接失败率解释为网络丢包率；执行前仍需通过设备能力和安全检查。',
+  },
+  {
+    id: 'nodequality', title: 'NodeQuality', icon: GaugeIcon, serverSection: '/ip-info', group: 'diagnostics', tier: 'experimental',
+    description: '从目标服务器检查网络与系统状况，查看分段报告和历史诊断结果。',
+    usage: '在服务器详情的「线路诊断 › 节点验机」中选择检查项目。完整验机仍受安全门禁限制，暂不接收新任务；日常检查是否可执行以该服务器显示的状态为准。',
   },
 ]
+
+// The three diagnostics share one tab of the server page, so the catalog presents them as one entry with a row each.
+export const diagnosticsEntry: CatalogDefinition = {
+  id: 'diagnostics', title: '线路诊断', icon: ActivityIcon, serverSection: '/ip-info',
+  description: 'IP 质量、TCP 连接诊断和 NodeQuality 都在服务器详情的「线路诊断」中使用，由该服务器的 Agent 执行。',
+  usage: '选择服务器后进入它的线路诊断页；浏览目录不会安装、启用或运行任何诊断。',
+}
 
 export type CatalogVersion = { version: string; packages: Artifact[] }
 export type CatalogItem = { id: string; versions: CatalogVersion[]; architectures: string[] }

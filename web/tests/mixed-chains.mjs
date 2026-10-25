@@ -45,6 +45,8 @@ try {
     const direct=node=>({...node,kind:'direct',server_name:`测试服务器 ${node.server_id}`,role:'direct',entry_node_id:null,tcp:true,udp:true,available:true,legacy:false,active_generation:null,pending_generation:null,minimum_generation:0,stage:'direct',last_error:null,reference_count:0, entry_eligible:true})
     const resources=nodes.slice(0,3).map(direct)
     resources.push({...direct(nodes[3]),id:7,kind:'chain',name:'原两跳链路',role:'chain_entry',entry_node_id:4,legacy:true,active_generation:1,stage:'active'})
+    // Mixed chains created before the unified entry; the interface no longer creates new ones.
+    for (const [index, name] of ['机场混合链路', '第二条独立链路'].entries()) { const node=host(20+index,name,1); node.public_host=index?'second.example.com':'entry.example.com'; node.port=index?24443:22000; nodes.push(node); resources.push({...direct(node),id:8+index,kind:'chain',name,role:'chain_entry',entry_node_id:node.id,active_generation:1,stage:'active',udp:false}) }
     const source={id:10,name:'测试机场',kind:'inline',source_host:null,archived:false,settings_revision:1,identity_epoch:1,current_revision_id:100,last_success_at:1,supported_count:1,unsupported_count:0,dependency_ids:[],active_job_id:null,refresh_interval_seconds:86400}
     const external={id:101,source_id:10,node_version_id:201,source_revision_id:100,identity_epoch:1,name:'机场中间节点',protocol:'trojan',server:'transit.example.com',port:443,transport:'tcp',tcp:true,udp:false,selectable:true,present:true,identity_unique:true,reason:null}
     let created=false, generation=1, stage='active', renamed='机场混合链路', writes=[]
@@ -107,34 +109,11 @@ try {
     })
     await installControlCenterFixtures(page)
     await page.goto(`http://127.0.0.1:${server.address().port}/#/plugins/sing-box/nodes`)
-    await page.getByRole('button',{name:'创建链路',exact:true}).click()
-    const editor=page.getByRole('region',{name:'创建链路'})
-    const first=editor.locator('[data-slot=chain-draft]').first()
-    await first.getByLabel('链路名称',{exact:true}).fill('机场混合链路')
-    await first.getByLabel('入口公开地址',{exact:true}).fill('entry.example.com')
-    await first.getByLabel('入口握手域名',{exact:true}).fill('www.example.com')
-    await first.getByLabel('添加受管代理段',{exact:true}).selectOption('2')
-    await first.getByRole('button',{name:'从订阅来源添加一段'}).click()
-    await editor.getByRole('button',{name:'测试机场',exact:true}).click()
-    await editor.getByLabel('选中节点后的更新方式').selectOption('pinned')
-    await editor.getByRole('button',{name:'加入此段'}).click()
-    await first.getByRole('button',{name:'第 2 段上移'}).click()
-    await editor.getByRole('button',{name:'添加一条独立链路'}).click()
-    const second=editor.locator('[data-slot=chain-draft]').nth(1)
-    await second.getByLabel('链路名称',{exact:true}).fill('第二条独立链路')
-    await second.getByLabel('入口公开地址',{exact:true}).fill('second.example.com')
-    await second.getByLabel('入口握手域名',{exact:true}).fill('www.example.com')
-    await second.getByLabel('入口端口',{exact:false}).fill('24443')
-    await second.getByLabel('添加受管代理段',{exact:true}).selectOption('3')
-    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
-    if(process.env.APSP_UI_SCREENSHOT_DIR){await mkdir(process.env.APSP_UI_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:resolve(process.env.APSP_UI_SCREENSHOT_DIR,`mixed-chain-editor-${width}.png`),fullPage:true})}
-    await editor.getByRole('button',{name:'保存 2 条链路'}).click()
-    await editor.getByRole('alert').getByText('测试：保存响应未确认，请重试').waitFor()
-    assert.equal(await first.getByLabel('链路名称',{exact:true}).inputValue(),'机场混合链路')
-    await editor.getByRole('button',{name:'保存 2 条链路'}).click()
-    await editor.waitFor({state:'hidden'})
-    assert.equal(batches.length,2);assert.equal(batches[0].request_id,batches[1].request_id)
-    await page.getByRole('link',{name:'查看链路详情'}).click()
+    // The single create entry opens the ordered form (covered by ordered-chains.mjs); the mixed editor is gone.
+    await page.locator('header[data-slot=page-header]').getByRole('button',{name:'创建链路',exact:true}).waitFor()
+    assert.equal(await page.getByRole('region',{name:'创建链路'}).count(),0)
+    // Existing mixed chains stay readable, updatable, renamable and convertible.
+    await page.goto(`http://127.0.0.1:${server.address().port}/#/plugins/sing-box/nodes/chain/8`)
     const dialog=page.getByRole('dialog')
     await dialog.getByRole('heading',{name:'有序路径'}).waitFor()
     assert.match(page.url(),/\/nodes\/chain\/8$/)
@@ -187,8 +166,9 @@ try {
     assert.equal(await page.getByLabel('授权 原链路专用入口').count(),0)
     assert.equal(await page.getByLabel('授权 同步名称链路').count(),0)
     assert.equal(requests.some(path=>/\/chains$/.test(path)),false)
+    assert.equal(batches.length,0)
     assert.deepEqual(errors,[])
     await page.close()
   }
-  console.log('PASS: mixed resources, ordered subscription intermediate, independent batch entries, request retry, version apply, conversion check and start, deep link, policy grants and responsive layouts')
+  console.log('PASS: mixed resources stay readable, the single create entry opens the ordered form, version apply, rename, conversion check and start, deep link, policy grants and responsive layouts')
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}

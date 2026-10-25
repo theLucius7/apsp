@@ -152,6 +152,12 @@ pub async fn update_retention(
     if !(1..=3650).contains(&input.days) {
         return Err(ApiError::BadRequest("保留期限须为1至3650天".into()));
     }
+    // One setting, one editor: the monitoring history is kept as set in 面板设置.
+    if kind == "monitoring" {
+        return Err(ApiError::Conflict(
+            "监控历史的保存期限在「面板设置 › 监控历史保存」中修改".into(),
+        ));
+    }
     let mut tx = state.pool.begin().await?;
     if sqlx::query("UPDATE record_retention_policy SET days=$2,updated_at=$3 WHERE kind=$1")
         .bind(&kind)
@@ -163,12 +169,6 @@ pub async fn update_retention(
         != 1
     {
         return Err(ApiError::NotFound);
-    }
-    if kind == "monitoring" {
-        sqlx::query("UPDATE telemetry_policy SET history_retention_days=$1 WHERE singleton")
-            .bind(input.days)
-            .execute(&mut *tx)
-            .await?;
     }
     tx.commit().await?;
     Ok(Json(

@@ -170,14 +170,14 @@ try {
     await page.getByText('节点已隐藏', { exact: true }).waitFor()
     hiddenOnly = false; empty = true
     await page.getByRole('button', { name: '刷新服务器', exact: true }).click()
-    await page.getByText('尚未添加节点', { exact: true }).waitFor()
+    await page.getByText('尚未添加服务器', { exact: true }).waitFor()
     if (width === 1440) {
       empty = false; hold = true
       await page.reload()
       await page.getByRole('region', { name: '服务器总览', exact: true }).waitFor()
       await settle()
       await visibility('hidden'); await settle()
-      assert.equal(await page.getByText('尚未添加节点', { exact: true }).count(), 0)
+      assert.equal(await page.getByText('尚未添加服务器', { exact: true }).count(), 0)
       const cancelled = serversRead
       hold = false; release?.(); await settle()
       // A late response to the cancelled first read cannot restore a snapshot.

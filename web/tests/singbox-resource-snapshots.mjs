@@ -126,13 +126,7 @@ try {
       const button = page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true })
       await block(control, `${prefix}/proxy-resources`, () => nodesRefresh(page), () => forceClick(button), () => button.click())
     })
-    await fixture('/plugins/sing-box/nodes', async control => {
-      const { page, writes } = control
-      await page.getByRole('button', { name: '创建链路', exact: true }).click()
-      const editor = page.getByRole('region', { name: '创建链路', exact: true }); await editor.getByLabel('链路名称', { exact: true }).fill('TEST_ONLY 链路草稿'); await editor.getByLabel('入口公开地址').fill('127.0.0.1'); await editor.getByLabel('入口握手域名').fill('localhost'); await editor.getByLabel('添加受管代理段').selectOption('2')
-      await block(control, `${prefix}/nodes`, () => nodesRefresh(page), () => forceForm(editor.locator('form')), () => editor.getByRole('button', { name: '保存 1 条链路', exact: true }).click(), async () => assert.equal(await editor.getByLabel('链路名称', { exact: true }).inputValue(), 'TEST_ONLY 链路草稿'))
-      assert.deepEqual(writes[0].body.items[0].hops, [{ kind: 'managed', node_id: 2 }])
-    })
+    // Chain creation now goes through the ordered chain form (ADR 0098); its snapshot guards live in singbox-chains-write-guards.mjs.
     for (const creating of [false, true]) await fixture('/plugins/sing-box/nodes?view=sources', async control => {
       const { page, writes } = control, sourcePanel = page.locator('[data-slot=subscription-sources]')
       await sourcePanel.getByRole('button', { name: creating ? '添加来源' : '设置与更新', exact: true }).first().click()

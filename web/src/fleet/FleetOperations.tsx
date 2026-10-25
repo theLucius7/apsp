@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, errorMessage } from '../api'
-import { Badge, ErrorNotice, Field, Loading, PageHeader, Refresh } from '../components'
+import { Badge, ErrorNotice, Field, Loading, PageHeader, Refresh, Empty, TierNotice } from '../components'
 import { bytes } from '../format'
 import { interfaceSelected } from '../display/data'
 import { useResource } from '../hooks'
@@ -26,19 +26,22 @@ const list = (value: FormDataEntryValue | null) => String(value ?? '').split(/[\
 const when = (value: number | null | undefined, millis = false) => value ? new Date(value * (millis ? 1 : 1000)).toLocaleString() : '未知'
 const value = (entry: unknown) => entry === null || entry === undefined ? '未知' : typeof entry === 'object' ? JSON.stringify(entry) : String(entry)
 
-export default function FleetOperations({serverId}: {serverId?: number}) {
+// Per-server operations tools. Server detail embeds them as its experimental
+// 运维 tab; the old /fleet address keeps the server picker for saved links.
+export default function FleetOperations({serverId, embedded = false}: {serverId?: number; embedded?: boolean}) {
   const actor = useResource<FleetActor>('/api/control-center/me')
   const permissions = fleetPermissions(actor)
   const servers = useResource<Server[]>('/api/servers'), [selected, setSelected] = useState(serverId ?? 0), [tab, setTab] = useState('overview')
   useEffect(() => setSelected(serverId ?? 0), [serverId])
   const current = selected || servers.data?.[0]?.id || 0
-  const profile = useResource<FleetProfile>(current ? `/api/servers/${current}/fleet` : '/api/fleet/health')
+  const profile = useResource<FleetProfile>(current ? `/api/servers/${current}/fleet` : null)
   return <FleetPermissionsContext.Provider value={permissions}>
-    <PageHeader eyebrow="服务器" title="运维工具" description="选择一台服务器，使用终端、服务日志与文件、资产与生命周期等日常工具；也可以用模板批量登记新服务器。"><Refresh onClick={() => {actor.reload();servers.reload(); profile.reload()}} /></PageHeader>
+    {!embedded && <><PageHeader eyebrow="服务器" title="运维工具" description="运维工具已并入服务器详情的「运维」分页；这里保留旧地址，可选择服务器后使用。批量接入在「服务器列表」中。"><Refresh onClick={() => {actor.reload();servers.reload(); profile.reload()}} /><a className={buttonVariants({ variant: 'outline' })} href="#/servers/batch">批量接入</a></PageHeader>
+    <TierNotice tier="experimental">终端、文件和服务操作还需要服务器本机的运维策略允许；通用运维更适合交给 SSH 工具。</TierNotice></>}
     <ErrorNotice message={actor.error || servers.error || profile.error} />
-    <div className="my-3 flex flex-wrap items-end gap-2 max-sm:flex-col max-sm:items-stretch"><Field className="mb-0 min-w-36 flex-1" label="当前服务器"><NativeSelect className="w-full" value={current} onChange={event => {setSelected(Number(event.target.value)); setTab('overview')}}>{servers.data?.map(server => <option key={server.id} value={server.id}>{server.name}</option>)}</NativeSelect></Field></div>
-    <SegmentedNav className="my-4" aria-label="服务器运维功能">{[['overview','资源与能力'],['assets','资产与生命周期'],['tools','服务日志与文件'],['terminal','交互式终端'],['history','历史与比较'],['enrollment','模板与批量接入'],['health','面板健康']].map(([key,label]) => <SegmentedButton type="button" key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</SegmentedButton>)}</SegmentedNav>
-    {tab === 'enrollment' ? <Enrollment /> : tab === 'health' ? <Health /> : profile.loading || !profile.data || !current ? <Loading /> : <div key={current}>
+    {!embedded && <div className="my-3 flex flex-wrap items-end gap-2 max-sm:flex-col max-sm:items-stretch"><Field className="mb-0 min-w-36 flex-1" label="当前服务器"><NativeSelect className="w-full" value={current} onChange={event => {setSelected(Number(event.target.value)); setTab('overview')}}>{servers.data?.map(server => <option key={server.id} value={server.id}>{server.name}</option>)}</NativeSelect></Field></div>}
+    <SegmentedNav className="my-4" aria-label="服务器运维功能">{[['overview','资源与能力'],['assets','资产与生命周期'],['tools','服务日志与文件'],['terminal','交互式终端'],['history','历史与比较']].map(([key,label]) => <SegmentedButton type="button" key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</SegmentedButton>)}</SegmentedNav>
+    {servers.data && !servers.data.length ? <Empty title="还没有服务器" description="运维工具作用于已接入的服务器。先在「服务器列表」添加服务器，或用「批量接入」按模板登记多台。"><a className={buttonVariants()} href="#/servers/batch">批量接入</a></Empty> : profile.loading || !profile.data || !current ? <Loading /> : <div key={current}>
       {tab === 'overview' && <Overview profile={profile.data} server={servers.data?.find(server => server.id === current)} />}
       {tab === 'assets' && <Assets profile={profile.data} servers={servers.data ?? []} reload={profile.reload} />}
       {tab === 'tools' && <FleetTools profile={profile.data} />}
@@ -85,6 +88,16 @@ function Assets({profile,servers,reload}: {profile:FleetProfile;servers:Server[]
     </div></>
 }
 
+/** Template-based batch enrollment, opened from the server list. */
+export function BatchEnrollment() {
+  const actor = useResource<FleetActor>('/api/control-center/me')
+  return <FleetPermissionsContext.Provider value={fleetPermissions(actor)}>
+    <PageHeader eyebrow="服务器" title="批量接入" description="用接入模板一次登记多台服务器：分组、标签、采集、拨测与告警按模板写入，再分别在各服务器上执行安装命令。"><a className={buttonVariants({ variant: 'outline' })} href="#/servers">返回服务器列表</a></PageHeader>
+    <ErrorNotice message={actor.error} />
+    <Enrollment />
+  </FleetPermissionsContext.Provider>
+}
+
 function Enrollment() {
   const permissions=useFleetPermissions(), canWrite=permissions.allows('servers:write','global')
   const templates=useResource<Array<{id:string;name:string;config:unknown}>>(permissions.allows('servers:read','global')?'/api/fleet/templates':null)
@@ -99,4 +112,3 @@ function History({server,servers}: {server:number;servers:Server[]}) {
   const [other,setOther]=useState(server),[metric,setMetric]=useState('cpu_percent'),[comparison,setComparison]=useState<unknown>(null),[error,setError]=useState('')
   return <><ErrorNotice message={error||events.error||operations.error}/><div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(300px,1fr))] max-sm:grid-cols-1"><Panel className="p-5"><h2 className="mb-3 text-base font-semibold">昨日与今日 / 服务器比较</h2><Field label="对照服务器"><NativeSelect className="w-full" value={other} onChange={event=>setOther(Number(event.target.value))}>{servers.map(server=><option key={server.id} value={server.id}>{server.name}</option>)}</NativeSelect></Field><Field label="同指标"><NativeSelect className="w-full" value={metric} onChange={event=>setMetric(event.target.value)}>{[['cpu_percent','CPU'],['memory_used','内存'],['disk_used','磁盘'],['swap_used','交换空间'],['load_1','系统负载']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</NativeSelect></Field><Button variant="outline" disabled={!permissions.allows('monitoring:read',server)||!permissions.allows('monitoring:read',other)} onClick={()=>{if(!permissions.allows('monitoring:read',server)||!permissions.allows('monitoring:read',other))return;const until=Math.floor(Date.now()/1000),from=until-86400;void api(`/api/servers/${server}/fleet/compare?server_id=${other}&from=${from}&until=${until}&metric=${metric}`).then(setComparison).catch(failure=>setError(errorMessage(failure)))}}>比较最近 24 小时与此前 24 小时</Button><pre className="bg-muted max-h-[360px] overflow-auto rounded-lg p-3 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">{JSON.stringify(comparison??{missing:'缺失时间段不补零'},null,2)}</pre></Panel><Panel className="p-5"><h2 className="mb-3 text-base font-semibold">异常与变更时间线</h2><pre className="bg-muted max-h-[360px] overflow-auto rounded-lg p-3 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">{JSON.stringify(events.data??[],null,2)}</pre></Panel><Panel className="p-5"><h2 className="mb-3 text-base font-semibold">操作历史</h2>{!permissions.allows('operations:read',server)&&<p className="text-muted-foreground my-3 rounded-lg border p-3">{permissions.reason('operations:read',server)}</p>}<div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>项目</TableHead><TableHead>状态</TableHead><TableHead>发起时间</TableHead></TableRow></TableHeader><TableBody>{operations.data?.map(operation=><TableRow key={operation.id}><TableCell>{operation.operation?.kind}</TableCell><TableCell>{operation.status}</TableCell><TableCell>{when(operation.requested_at)}</TableCell></TableRow>)}</TableBody></Table></div><p className="text-muted-foreground text-xs">请求已交付后发生超时会保留未知结果，不能自动重复副作用动作。</p><details><summary className="cursor-pointer text-sm font-medium">人工核对记录</summary><pre className="bg-muted max-h-[360px] overflow-auto rounded-lg p-3 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">{JSON.stringify(operations.data?.filter(operation=>operation.reconciliation)??[],null,2)}</pre></details></Panel><FleetReconciliation server={server} operations={operations.data??[]} reload={operations.reload}/></div></>
 }
-function Health(){const resource=useResource<unknown>('/api/fleet/health');return <Panel><h2 className="text-base font-semibold">面板自身监控</h2><ErrorNotice message={resource.error}/><p className="text-muted-foreground text-xs">数据库、任务积压和通知投递可核对。宿主磁盘容量、实际执行器心跳、备份和签名制品状态在系统自检页集中查看；独立观察点可提交健康证据。</p><a className={buttonVariants({ variant: 'outline' })} href="#/system/control-center">打开系统自检与安全中心</a><pre className="bg-muted max-h-[360px] overflow-auto rounded-lg p-3 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">{JSON.stringify(resource.data??{},null,2)}</pre></Panel>}
