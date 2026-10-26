@@ -15,7 +15,6 @@ pub use access::{
 };
 
 use crate::{AppState, auth, error::ApiResult};
-use apsp_protocol::now_timestamp;
 use axum::{
     Json, Router,
     extract::{ConnectInfo, State},
@@ -112,11 +111,9 @@ async fn reauthenticate(
     let proof = auth::proof::prepare(&state, &headers, peer, input).await?;
     let mut tx = state.pool.begin().await?;
     proof.lock(&mut tx).await?;
-    let now = now_timestamp();
-    sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET verified_at=EXCLUDED.verified_at,expires_at=EXCLUDED.expires_at")
-        .bind(proof.session).bind(now).bind(now+300).execute(&mut *tx).await?;
+    let proof = auth::proof::record_recent(&mut tx, &proof.session).await?;
     tx.commit().await?;
-    Ok(Json(json!({"verified_at":now,"expires_at":now+300})))
+    Ok(Json(proof))
 }
 pub async fn run(state: AppState) {
     let mut timer = tokio::time::interval(std::time::Duration::from_secs(60));
