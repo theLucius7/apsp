@@ -1,5 +1,23 @@
 # 执行进度
 
+## 2026-10-26：订阅支持 Clash Meta 格式
+
+- 用户要求订阅链接与订阅格式支持 Clash。按 [ADR 0101](docs/adr/0101-clash-subscription-format.md) 实现，覆盖原「Clash 订阅」排除项，授权记录在 AGENTS.md。
+- 编译器新增 `clash` 模块：
+  - 把 sing-box 订阅所用的同一组客户端出站转换为 Clash Meta（mihomo）代理；
+  - 支持 VLESS（Reality、Vision）、VMess、Trojan、SS2022、Hysteria2、TUIC v5、AnyTLS、SOCKS5 和 HTTP，以及 ws、httpupgrade、grpc、h2 传输与多路复用；
+  - 无法等价表达的节点（Snell v6、Naive、前置跳板、仅 UDP、未知参数）不写入，在文件注释中列出；
+  - YAML 由自写输出器生成，不新增依赖。
+- 订阅接口：
+  - 新增 `format=clash`（`text/yaml`、`.yaml` 下载）；
+  - 不带格式参数时，User-Agent 含 clash、mihomo 或 stash 的客户端自动得到 Clash 格式，其他客户端不变；
+  - 管理端预览的 `available_formats` 增加 `clash`。
+- 界面：
+  - 管理端订阅对话框新增「Clash Meta（mihomo）配置」；
+  - 成员门户显示「Clash 订阅」地址，Nexus 兼容成员用原订阅地址加 `?flag=meta`。
+- 本地验证：边界检查、格式、严格 Clippy、`git diff --check` 通过。前端 206 项单测与构建通过，浏览器回归 subscription、external-access、singbox-entitlement-draft、singbox-snapshot-writes、member-commerce、dashboard 通过。Rust 全量 1388 通过、27 条件忽略；唯一失败是外部节点预览对可用格式列表的旧断言（现含 clash），修正后该测试单独补验通过。编译器新增 6 项 Clash 单测，订阅接口新增 User-Agent 识别单测，modern_protocols 与 subscription_preview 集成测试覆盖 Clash 内容、不可表达节点的注释、凭据隔离和自动识别。样例配置（9 种协议）经 mihomo 1.19.29 `-t` 校验通过；用真实节点出站转换后，mihomo 经 3 个节点测速成功，并通过「节点选择」访问 HTTPS。
+- 未验证：生产部署后的成员客户端实测、Stash 与传统 Clash 核心（不支持 VLESS 等协议，本格式面向 Clash Meta）；远端 CI 按暂停约定未运行。
+
 ## 2026-10-25：Nexus 接管进展与 OpenRC 会话支持
 
 - 生产已用签名 Agent 0.3.2 接管 10 台主机、15 个启用节点，另保留 1 个显式停用的 Hysteria2 条目。13 个原本可用节点验证通过，另 2 个节点的外部出口故障在迁移前已经存在。会话归属、新旧设备状态共享和新增正流量投递均已验收；已接管主机的旧发布器停止，原配置和回滚备份保留。

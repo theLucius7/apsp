@@ -383,7 +383,9 @@
 
 - `GET /sub/{token}` 或 `?format=links`：标准 base64 编码的多行 `vless://` 分享链接，`text/plain`。
 - `GET /sub/{token}?format=singbox`：可导入的 sing-box JSON，包含本地混合代理入口、选择器及用户有权使用的节点。
-- 两种格式可附加 `download=true`，以固定 `apsp-用户ID.json` / `.txt` 文件名下载；响应含 `Referrer-Policy: no-referrer`。
+- `GET /sub/{token}?format=clash`：Clash Meta（mihomo）YAML，`text/yaml`，见 [ADR 0101](adr/0101-clash-subscription-format.md)。内容与 sing-box 格式使用同一组节点，含「节点选择」手动组、「自动选择」测速组和最终规则；Clash 无法等价表达的节点（如 Snell v6、Naive、前置跳板）不写入，并在文件开头的注释中列出。所有节点都无法表达时返回 409。
+- 不带 `format` 时，User-Agent 含 `clash`、`mihomo` 或 `stash` 的客户端（Clash Verge、FlClash、Clash Meta for Android、Stash 等）得到 Clash 格式，其他客户端仍得到分享链接；显式的 `format` 始终优先。
+- 各格式可附加 `download=true`，以固定 `apsp-用户ID.json` / `.yaml` / `.txt` 文件名下载；响应含 `Referrer-Policy: no-referrer`。
 
 响应带 `Cache-Control: no-store`。订阅从服务器已应用且健康的版本快照生成，再与当前有效用户、节点和授权 UUID 取交集。待应用的新配置、其他用户 UUID、服务端私钥不会出现在订阅中。撤销授权立即从订阅移除；重新授权的新 UUID 要等相应版本成功应用后出现。只修改名称或公开地址且原生包不变时，合并窗口后无需等待一次空部署即可更新订阅元数据。
 
@@ -394,6 +396,7 @@
 - `status` 为 `ready`、`empty`、`blocked` 或 `format_unavailable`；后三种仍返回 200 以供界面解释状态，`content` 为 null。
 - `granted_nodes` 是当前未删除的授权投影数量；`eligible_nodes` 是套餐/启停资格有效且链路依赖符合条件的数量；`ready_nodes` 为最终快照交集的 `{id,name,protocol}`，不含内部链路秘密或其他用户凭据。
 - `entitlement` 复用套餐状态，额度/用量以十进制字符串返回。`subscription_url` 是本次事务读取的当前令牌地址，重置后重新获取即可更新。
+- `available_formats` 在节点能以 Clash 格式表达时包含 `clash`；`format=clash` 的 `content` 为上述 YAML。
 - `content` 在成功时为完整配置或 base64 分享链接字符串。禁止缓存，界面仅显式预览，复制/下载重新读取；不调用第三方转换服务。
 
 ## 后台统计

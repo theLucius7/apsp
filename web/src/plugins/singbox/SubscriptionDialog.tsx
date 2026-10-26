@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ArrowDownIcon, CopyIcon, LockIcon, RefreshCwIcon } from 'lucide-react'
 import { Notice } from '@/components/panel'
 
-export type SubscriptionFormat = 'singbox' | 'links'
+export type SubscriptionFormat = 'singbox' | 'clash' | 'links'
 type Subscription = {
   format: SubscriptionFormat; status: 'ready' | 'empty' | 'blocked' | 'format_unavailable'; message: string
   subscription_url: string; available_formats: string[]; granted_nodes: number; eligible_nodes: number
@@ -22,7 +22,8 @@ type Subscription = {
   entitlement: { status: string; allowed: boolean; monthly_bytes: string | null; used_bytes: string; expires_at: number | null }
 }
 type Action = 'address' | 'preview' | 'copy' | 'download'
-const formatNames = { singbox: 'sing-box 完整配置', links: '分享链接（仅 Reality）' }
+const formatNames = { singbox: 'sing-box 完整配置', clash: 'Clash Meta（mihomo）配置', links: '分享链接（仅 Reality）' }
+const fileTypes = { singbox: ['application/json;charset=utf-8', 'apsp-subscription.json'], clash: ['text/yaml;charset=utf-8', 'apsp-subscription.yaml'], links: ['text/plain;charset=utf-8', 'apsp-subscription.txt'] } as const
 const statusNames = { ready: '可以获取', empty: '等待可用节点', blocked: '套餐受限', format_unavailable: '格式不可用' }
 
 function address(subscription: Subscription): string {
@@ -75,7 +76,7 @@ export default function SubscriptionDialog({ user, format, onFormatChange, onClo
   }, [load])
   const current = data?.format === format ? data : null
   useEffect(() => {
-    if (data?.external_granted_nodes && format !== 'singbox') { setPreview(false); onFormatChange('singbox') }
+    if (data?.external_granted_nodes && format === 'links') { setPreview(false); onFormatChange('singbox') }
   }, [data?.external_granted_nodes, format, onFormatChange])
   const ready = current?.status === 'ready' && current.content !== null
   const busy = loading || working !== null
@@ -98,9 +99,9 @@ export default function SubscriptionDialog({ user, format, onFormatChange, onClo
           catch { if (alive.current) { setPreview(true); setError('复制失败，请在配置预览中手动选择并复制。') } }
         }
         if (action === 'download') {
-          const url = URL.createObjectURL(new Blob([value.content], { type: format === 'singbox' ? 'application/json;charset=utf-8' : 'text/plain;charset=utf-8' }))
+          const url = URL.createObjectURL(new Blob([value.content], { type: fileTypes[format][0] }))
           const anchor = document.createElement('a')
-          anchor.href = url; anchor.download = format === 'singbox' ? 'apsp-subscription.json' : 'apsp-subscription.txt'
+          anchor.href = url; anchor.download = fileTypes[format][1]
           try { document.body.append(anchor); anchor.click(); setNotice('已请求浏览器保存订阅文件。') }
           finally { anchor.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000) }
         }

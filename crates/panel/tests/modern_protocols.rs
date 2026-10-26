@@ -147,6 +147,63 @@ async fn new_protocol_credentials_snapshots_and_revocation(pool: PgPool) -> Resu
             .status(),
         StatusCode::CONFLICT
     );
+    // Clash Meta carries the protocols it can express and names the others.
+    let clash = panel
+        .client
+        .get(sub.replace("format=singbox", "format=clash"))
+        .send()
+        .await?
+        .error_for_status()?;
+    assert_eq!(clash.headers()["content-type"], "text/yaml; charset=utf-8");
+    let clash = clash.text().await?;
+    for kind in ["hysteria2", "shadowsocks2022", "tuic", "anytls"] {
+        assert!(
+            clash.contains(&format!("  - name: \"{kind}\"\n")),
+            "{kind} missing"
+        );
+    }
+    for kind in ["naive", "snell-v6"] {
+        assert!(
+            clash.contains(&format!("#   {kind}：")),
+            "{kind} not reported"
+        );
+        assert!(
+            !clash.contains(&format!("name: \"{kind}\"")),
+            "{kind} included"
+        );
+    }
+    for node in &model {
+        let other = &node
+            .users
+            .iter()
+            .find(|access| access.user_id == second_id)
+            .unwrap()
+            .credential;
+        assert!(!clash.contains(other.as_str()));
+    }
+    // The same token URL serves Clash clients a Clash profile by default.
+    let token_only = sub.replace("?format=singbox", "");
+    let detected = panel
+        .client
+        .get(&token_only)
+        .header("User-Agent", "clash-verge/v2.2.3")
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    assert!(detected.starts_with("# apsp 订阅（Clash Meta / mihomo 格式）\n"));
+    assert_eq!(
+        panel
+            .client
+            .get(&token_only)
+            .header("User-Agent", "sing-box 1.14.2")
+            .send()
+            .await?
+            .status(),
+        StatusCode::CONFLICT,
+        "other clients keep the links default"
+    );
     let node = nodes[5];
     panel
         .admin(
