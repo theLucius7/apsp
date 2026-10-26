@@ -1,0 +1,1 @@
+import{d as t}from"./index-h8yp1tJ-.js";const e={name:"list-filter",size:24,node:[["path",{d:"M2 5h20",key:"1fs1ex"}],["path",{d:"M6 12h12",key:"8npq4p"}],["path",{d:"M9 19h6",key:"456am0"}]]};e.node;const o=t(e);export{o as L};

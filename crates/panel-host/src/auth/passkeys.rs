@@ -1,3 +1,5 @@
+mod reauthentication;
+
 use super::{
     ADMIN_SESSION_SECONDS, LoginRequest, hash_token, proof, random_token, require_admin, security,
     session_cookie,
@@ -37,6 +39,14 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/api/security/passkeys/{id}/remove", post(remove))
         .route("/api/login/passkey/start", post(login_start))
         .route("/api/login/passkey/finish", post(login_finish))
+        .route(
+            "/api/control-center/reauth/passkey/start",
+            post(reauthentication::start),
+        )
+        .route(
+            "/api/control-center/reauth/passkey/finish",
+            post(reauthentication::finish),
+        )
         .layer(DefaultBodyLimit::max(65536))
 }
 
@@ -208,14 +218,7 @@ async fn login_finish_inner(
         .bind(now + ADMIN_SESSION_SECONDS)
         .execute(&mut *tx)
         .await?;
-    sqlx::query(
-        "INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3)",
-    )
-    .bind(hash_token(&token))
-    .bind(now)
-    .bind(now + 300)
-    .execute(&mut *tx)
-    .await?;
+    proof::record_recent(&mut tx, &hash_token(&token)).await?;
     sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES(1,'login','/api/login/passkey/finish',$1,$2,$3)")
         .bind(json!({"factor":"passkey"})).bind(json!({"phase":"authenticated","success":true})).bind(now).execute(&mut *tx).await?;
     tx.commit().await?;

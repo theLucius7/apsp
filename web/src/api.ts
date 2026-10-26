@@ -17,7 +17,7 @@ export async function api<T>(path: string, method = 'GET', body?: unknown, signa
     const text = await response.text()
     let message = `请求未完成（${response.status}），请稍后重试。`
     try { const value = JSON.parse(text); if (typeof value.error === 'string') message = value.error } catch { /* Framework responses may be plain text. */ }
-    if (response.status === 403 && adminSession && !attemptedReauthentication && message.includes('请先再次验证管理员密码')) {
+    if (response.status === 403 && adminSession && !attemptedReauthentication && message.includes('请先再次验证管理员')) {
       await requestReauthentication()
       return api<T>(path, method, body, signal, adminSession, true)
     }

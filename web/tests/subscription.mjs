@@ -67,11 +67,11 @@ try {
         if (mode === 'unauthorized') return route.fulfill({ status: 401, json: { error: '登录已过期' } })
         if (mode === 'failure') return route.fulfill({ status: 500, json: { error: '测试：当前订阅读取失败' } })
         const format = url.searchParams.get('format'), status = mode === 'ready' && format === 'links' && modern ? 'format_unavailable' : mode
-        lastContent = status === 'ready' ? (format === 'links' ? `vless://fixture-${subscriptionRequests}@proxy.example.com:443#测试节点` : JSON.stringify({ outbounds: [{ tag: '当前用户节点', password: `fixture-secret-${subscriptionRequests}` }] }, null, 2)) : null
+        lastContent = status === 'ready' ? (format === 'links' ? `vless://fixture-${subscriptionRequests}@proxy.example.com:443#测试节点` : format === 'clash' ? `# TEST_ONLY Clash profile\nproxies:\n  - name: fixture-secret-${subscriptionRequests}\n` : JSON.stringify({ outbounds: [{ tag: '当前用户节点', password: `fixture-secret-${subscriptionRequests}` }] }, null, 2)) : null
         lastAddress = `https://panel.example.com/sub/fresh-fixture-${subscriptionRequests}?format=${format}`
         return respond({ format, status, message: ({ ready: '可获取已应用节点的完整配置。', empty: '设备尚未完成配置应用，请稍后刷新。', blocked: '本期流量已用完。', format_unavailable: '现代协议需要完整配置，请选择 sing-box 格式。' })[status], subscription_url: lastAddress,
-          available_formats: status === 'ready' || status === 'format_unavailable' ? (modern ? ['singbox'] : ['singbox', 'links']) : [], granted_nodes: 2, eligible_nodes: status === 'blocked' ? 0 : 2,
-          ready_nodes: status === 'ready' || status === 'format_unavailable' ? nodes.map(node => ({ ...node, protocol: modern ? 'hysteria2' : 'vless-reality' })) : [], content: lastContent, filename: '../../untrusted.html', content_type: 'text/html',
+          available_formats: status === 'ready' || status === 'format_unavailable' ? (modern ? ['singbox', 'clash'] : ['singbox', 'clash', 'links']) : [], granted_nodes: 2, eligible_nodes: status === 'blocked' ? 0 : 2,
+          ready_nodes: status === 'ready' || status === 'format_unavailable' ? nodes.map(node => ({ ...node, protocol: modern ? 'hysteria2' : 'vless-reality' })) : [], external_granted_nodes: format === 'clash' ? 1 : 0, content: lastContent, filename: '../../untrusted.html', content_type: 'text/html',
           entitlement: status === 'blocked' ? { ...entitlement, allowed: false, status: 'exhausted', monthly_bytes: '4096' } : entitlement })
       }
       unexpected.push(path); return route.fulfill({ status: 500, json: { error: 'Unexpected API' } })
@@ -109,6 +109,23 @@ try {
     assert.equal(subscriptionRequests, previous + 1)
     assert.equal(await dialog.evaluate(element => element.scrollWidth > element.clientWidth + 1), false)
     if (screenshots) { await dialog.evaluate(element => { element.scrollTop = 0 }); await page.screenshot({ path: resolve(screenshots, `subscription-${width}.png`), animations: 'disabled' }) }
+    await dialog.getByLabel('订阅格式').selectOption('clash')
+    await dialog.getByText('可以获取', { exact: true }).waitFor()
+    assert.equal(await dialog.getByLabel('订阅格式').inputValue(), 'clash')
+    assert.equal(await dialog.getByLabel('配置预览').count(), 0)
+    await dialog.getByRole('button', { name: '预览配置', exact: true }).click()
+    await dialog.getByLabel('配置预览').waitFor()
+    assert.equal(await dialog.getByLabel('配置预览').inputValue(), lastContent)
+    assert.match(lastContent, /^# TEST_ONLY Clash profile/)
+    const clashDownloadPromise = page.waitForEvent('download')
+    await dialog.getByRole('button', { name: '下载文件', exact: true }).click()
+    const clashDownload = await clashDownloadPromise
+    assert.equal(clashDownload.suggestedFilename(), 'apsp-subscription.yaml')
+    assert.equal(await readFile(await clashDownload.path(), 'utf8'), lastContent)
+    assert.equal(await dialog.getByLabel('订阅格式').inputValue(), 'clash')
+    // Return to a snapshot without external nodes before testing Reality links.
+    await dialog.getByLabel('订阅格式').selectOption('singbox')
+    await dialog.getByText('可以获取', { exact: true }).waitFor()
     await dialog.getByLabel('订阅格式').selectOption('links')
     await dialog.getByText('格式不可用', { exact: true }).waitFor()
     assert.equal(await dialog.getByLabel('配置预览').count(), 0)

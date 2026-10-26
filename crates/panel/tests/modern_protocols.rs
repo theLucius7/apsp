@@ -193,6 +193,19 @@ async fn new_protocol_credentials_snapshots_and_revocation(pool: PgPool) -> Resu
         .text()
         .await?;
     assert!(detected.starts_with("# apsp 订阅（Clash Meta / mihomo 格式）\n"));
+    // An explicit format keeps its meaning even for auto-detected Clash clients.
+    let explicit = panel
+        .client
+        .get(&sub)
+        .header("User-Agent", "clash-verge/v2.2.3")
+        .send()
+        .await?
+        .error_for_status()?;
+    assert_eq!(
+        explicit.headers()["content-type"],
+        "application/json; charset=utf-8"
+    );
+    assert_eq!(explicit.text().await?, client);
     assert_eq!(
         panel
             .client

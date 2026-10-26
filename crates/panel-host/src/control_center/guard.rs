@@ -188,6 +188,8 @@ fn own_account_path(path: &str) -> bool {
         || path == "/api/me"
         || path == "/api/control-center/me"
         || path == "/api/control-center/reauth"
+        || path == "/api/control-center/reauth/passkey/start"
+        || path == "/api/control-center/reauth/passkey/finish"
         || path == "/api/control-center/events"
         || path == "/api/control-center/export/servers"
         || path == "/api/control-center/search"

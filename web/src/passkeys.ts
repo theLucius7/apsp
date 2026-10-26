@@ -58,7 +58,7 @@ export async function registerPasskey(base: string, body: unknown, admin = true)
   } }, undefined, admin)
 }
 
-export async function loginPasskey(base: string, admin = true): Promise<void> {
+export async function authenticatePasskey(base: string, admin = true): Promise<void> {
   const support = passkeySupport()
   if (support) throw new Error(support)
   const challenge = await api<Challenge<Request>>(`${base}/start`, 'POST', undefined, undefined, admin)
@@ -72,3 +72,5 @@ export async function loginPasskey(base: string, admin = true): Promise<void> {
     response: { authenticatorData: encode(response.authenticatorData), clientDataJSON: encode(response.clientDataJSON), signature: encode(response.signature), userHandle: response.userHandle ? encode(response.userHandle) : null },
   } }, undefined, admin)
 }
+
+export { authenticatePasskey as loginPasskey }
