@@ -13,7 +13,7 @@ import { NativeSelect } from '@/components/ui/native-select'
 type Events = { close: () => void; saved: () => void; available: boolean; current: CurrentCloud; refresh: () => void }
 
 export function AccountEditor({ account, close, saved, current }: Events & { account?: Account }) {
-  const [draft, setDraft] = useState<Pick<Account, 'name' | 'site' | 'enabled' | 'auto_enabled' | 'limit_gb'>>(account ?? { name: '', site: 'china' as const, enabled: true, auto_enabled: false, limit_gb: 100 })
+  const [draft, setDraft] = useState<Pick<Account, 'name' | 'site' | 'enabled' | 'auto_enabled' | 'limit_gb' | 'billing_enabled' | 'balance_enabled'>>(account ?? { name: '', site: 'china' as const, enabled: true, auto_enabled: false, billing_enabled: false, balance_enabled: false, limit_gb: 100 })
   const [key, setKey] = useState(''), [secret, setSecret] = useState(''), action = useAction()
   const [credentialId, setCredentialId] = useState(account?.credential_id ?? '')
   const [legacy, setLegacy] = useState(Boolean(account && !account.credential_id))
@@ -24,8 +24,11 @@ export function AccountEditor({ account, close, saved, current }: Events & { acc
     <Field label="凭据来源"><NativeSelect className="w-full" value={legacy ? 'legacy' : 'center'} onChange={e => { setLegacy(e.target.value === 'legacy'); setKey(''); setSecret('') }}><option value="center">集中加密云凭据</option>{account && <option value="legacy">明确保留或替换旧兼容密钥</option>}</NativeSelect></Field>
     {!legacy ? <Field label="云凭据标识" hint="在凭据中心创建用途为云资源的凭据，包含 provider=alicloud、access_key_id 和 access_key_secret。这里只保存引用；停用或缺少解密密钥会停止请求。"><Input required maxLength={36} spellCheck={false} value={credentialId} onChange={e => setCredentialId(e.target.value.trim())} placeholder="集中云凭据的 UUID" /></Field> : <div className="grid gap-x-4 sm:grid-cols-2"><Field label="旧兼容访问密钥 ID" hint="既有旧账号两项同时留空保留。建议迁入集中凭据；旧模式继续保留原有数据库存储。"><Input type="password" autoComplete="new-password" minLength={8} maxLength={256} required={Boolean(account?.credential_id) || Boolean(secret)} value={key} onChange={e => setKey(e.target.value)} /></Field><Field label="旧兼容访问密钥 Secret"><Input type="password" autoComplete="new-password" minLength={8} maxLength={256} required={Boolean(account?.credential_id) || Boolean(key)} value={secret} onChange={e => setSecret(e.target.value)} /></Field></div>}
     <label className="my-4 flex items-start gap-2.5 text-sm leading-relaxed"><Checkbox checked={draft.enabled} onCheckedChange={checked => setDraft({ ...draft, enabled: checked === true })} className="mt-0.5" />启用账号查询与手动管理</label>
+    <p className="text-muted-foreground mt-3 text-xs leading-relaxed">CDT 守护只需流量查询、ECS 查询及目标实例的启停权限；余额和账单按需授权。启停策略中的地域、主账号 UID 和实例 ID 均填写实际值，实例 ARN 必须包含 instance/。</p>
+    <label className="my-4 flex items-start gap-2.5 text-sm leading-relaxed"><Checkbox checked={draft.balance_enabled ?? false} onCheckedChange={checked => setDraft({ ...draft, balance_enabled: checked === true })} className="mt-0.5" />查询账户余额（可选，需要 bssapi:QueryAccountBalance）</label>
+    <label className="my-4 flex items-start gap-2.5 text-sm leading-relaxed"><Checkbox checked={draft.billing_enabled ?? false} onCheckedChange={checked => setDraft({ ...draft, billing_enabled: checked === true, auto_enabled: checked === true && draft.auto_enabled })} className="mt-0.5" />查询 CDT 与实例账单（扩展权限，需要 bssapi:QueryInstanceBill、bssapi:DescribeInstanceBill）</label>
     <Field label="当月已出账 CDT 流量阈值（GB）" hint="账号全部 CDT 账单项目合计，不是某台服务器或剩余免费额度。仅完整的 GB 单位后付账单参与自动控制；退款、调账和缺少实例标识的数据只展示。"><Input required type="number" min={1} max={1000000000} step={1} value={draft.limit_gb} onChange={e => setDraft({ ...draft, limit_gb: Number(e.target.value) })} /></Field>
-    <label className="my-4 flex items-start gap-2.5 text-sm leading-relaxed"><Checkbox checked={draft.auto_enabled} onCheckedChange={checked => setDraft({ ...draft, auto_enabled: checked === true })} className="mt-0.5" />达到阈值时，降低已勾选资源的带宽</label>
+    <label className="my-4 flex items-start gap-2.5 text-sm leading-relaxed"><Checkbox disabled={!draft.billing_enabled} checked={draft.auto_enabled} onCheckedChange={checked => setDraft({ ...draft, auto_enabled: checked === true })} className="mt-0.5" />达到阈值时，降低已勾选资源的带宽</label>
     <p className="text-muted-foreground mt-3 text-xs leading-relaxed">仅降低按流量计费资源的带宽，不自动切换计费或恢复。账单存在延迟，降速后仍产生流量和费用；请留足阈值余量。修改账号配置会取消未开始的操作并重新查询账单。</p>
   </FormDialog>
 }

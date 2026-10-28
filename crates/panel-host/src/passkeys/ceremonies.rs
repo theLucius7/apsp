@@ -145,6 +145,27 @@ pub async fn start_authentication(
     account: Uuid,
     binding: &str,
 ) -> ApiResult<Response> {
+    start_assertion(state, tx, account, binding, "authenticate", String::new()).await
+}
+
+pub(crate) async fn start_reauthentication(
+    state: &AppState,
+    tx: &mut Transaction<'_, Postgres>,
+    account: Uuid,
+    binding: &str,
+    session: String,
+) -> ApiResult<Response> {
+    start_assertion(state, tx, account, binding, "reauthenticate", session).await
+}
+
+async fn start_assertion(
+    state: &AppState,
+    tx: &mut Transaction<'_, Postgres>,
+    account: Uuid,
+    binding: &str,
+    purpose: &'static str,
+    authorization: String,
+) -> ApiResult<Response> {
     let generation = lock(tx, account).await?;
     let keys = credentials::keys(tx, account).await?;
     if keys.is_empty() {
@@ -161,8 +182,8 @@ pub async fn start_authentication(
         Pending {
             account,
             generation,
-            purpose: "authenticate",
-            authorization: String::new(),
+            purpose,
+            authorization,
             state: json_value(PendingAuthentication {
                 keys: keys.into_iter().map(|(id, _)| id).collect(),
                 authentication,

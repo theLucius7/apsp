@@ -177,7 +177,7 @@ async fn buffered_threshold_stops_once_using_existing_durable_jobs_without_bills
         power("Running"),
         traffic(110 * GIB),
         power("Running"),
-        Reply::ok("StopInstances", json!({"RequestId":"stop", "InstanceResponses":{"InstanceResponse":[{"InstanceId":"i-guardtest","Code":"200"}]}})),
+        Reply::ok("StopInstance", json!({"RequestId":"stop"})),
         power("Stopped"),
     ])
     .await;
@@ -194,29 +194,34 @@ async fn buffered_threshold_stops_once_using_existing_durable_jobs_without_bills
     assert!(!requests[1].params.contains_key("BusinessRegionId"));
     assert_eq!(requests[3].params["ForceStop"], "false");
     assert_eq!(requests[3].params["StoppedMode"], "StopCharging");
-    assert_eq!(requests[3].params["InstanceId.1"], "i-guardtest");
-    assert_eq!(requests[3].params["BatchOptimization"], "AllTogether");
-    assert!(!requests[3].params.contains_key("InstanceId"));
+    assert_eq!(requests[3].params["InstanceId"], "i-guardtest");
+    assert!(!requests[3].params.contains_key("BatchOptimization"));
+    assert!(!requests[3].params.contains_key("InstanceId.1"));
     assert_eq!(
         requests
             .iter()
-            .filter(|r| r.action == "StopInstances")
+            .filter(|r| r.action == "StopInstance")
             .count(),
         1
     );
     mock.exhausted();
 }
 
-async fn batch_start(pool: &PgPool, code: &str, expected: &str) {
+async fn single_start(pool: &PgPool, code: &str, expected: &str) {
     let (_, r) = seed(pool).await;
     let mut replies = vec![
         power("Stopped"),
         traffic(10 * GIB),
         power("Stopped"),
-        Reply::ok(
-            "StartInstances",
-            json!({"RequestId":"start", "InstanceResponses":{"InstanceResponse":[{"InstanceId":"i-guardtest","Code":code}]}}),
-        ),
+        if code == "200" {
+            Reply::ok("StartInstance", json!({"RequestId":"start"}))
+        } else {
+            Reply {
+                action: "StartInstance".into(),
+                status: 400,
+                value: json!({"RequestId":"start", "Code":code}),
+            }
+        },
     ];
     if code == "200" {
         replies.push(power("Running"));
@@ -228,24 +233,24 @@ async fn batch_start(pool: &PgPool, code: &str, expected: &str) {
     jobs::process(pool, id, &cloud).await.unwrap();
     jobs::process(pool, id, &cloud).await.unwrap();
     assert_eq!(jobs::load(pool, id).await.unwrap().status, expected);
-    assert_eq!(mock.requests()[3].params["InstanceId.1"], "i-guardtest");
-    assert!(!mock.requests()[3].params.contains_key("InitLocalDisk"));
+    assert_eq!(mock.requests()[3].params["InstanceId"], "i-guardtest");
+    assert_eq!(mock.requests()[3].params["InitLocalDisk"], "false");
     mock.exhausted();
 }
 
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
-async fn batch_start_success_uses_original_api_and_reads_back(pool: PgPool) {
-    batch_start(&pool, "200", "succeeded").await;
+async fn single_start_success_uses_minimum_permission_api_and_reads_back(pool: PgPool) {
+    single_start(&pool, "200", "succeeded").await;
 }
 
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
-async fn batch_start_rejection_checks_instance_result(pool: PgPool) {
-    batch_start(&pool, "OperationDenied.NoStock", "failed").await;
+async fn single_start_rejection_is_terminal(pool: PgPool) {
+    single_start(&pool, "OperationDenied.NoStock", "failed").await;
 }
 
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
-async fn batch_start_unknown_result_never_replays_write(pool: PgPool) {
-    batch_start(&pool, "UnknownResult", "uncertain").await;
+async fn single_start_unknown_result_never_replays_write(pool: PgPool) {
+    single_start(&pool, "UnknownResult", "uncertain").await;
 }
 
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
@@ -311,7 +316,7 @@ async fn invalid_meter_cancels_start_and_retains_history(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
-async fn zero_requires_confirmed_cdt_and_cannot_clear_exhausted_history(pool: PgPool) {
+async fn zero_uses_no_extra_permission_and_cannot_clear_exhausted_history(pool: PgPool) {
     let (a, r) = seed(&pool).await;
     save_observation(
         &pool,
@@ -319,8 +324,7 @@ async fn zero_requires_confirmed_cdt_and_cannot_clear_exhausted_history(pool: Pg
         &observation(&a, &r, 198 * GIB, 71 * GIB, apsp_protocol::now_timestamp()),
     )
     .await;
-    let mock = Mock::start(vec![power("Stopped"), traffic(0), Reply::ok("ListSwitchedCdtProducts",
-        json!({"RequestId":"products","CdtProducts":[{"BusinessRegionId":"cn-hongkong","CdtType":"INTERNET","BillingType":"PayByDominantTraffic"}]}))]).await;
+    let mock = Mock::start(vec![power("Stopped"), traffic(0)]).await;
     scheduler::poll(&pool, r.id, &Cloud::local(&mock.endpoint))
         .await
         .unwrap();
@@ -331,21 +335,22 @@ async fn zero_requires_confirmed_cdt_and_cannot_clear_exhausted_history(pool: Pg
         198 * GIB
     );
     assert_eq!(exceeded(&a, &r, apsp_protocol::now_timestamp()), Some(true));
+    assert!(r.cdt_guard_error.is_none());
     mock.exhausted();
-    let mock = Mock::start(vec![
-        traffic(0),
-        Reply::ok(
-            "ListSwitchedCdtProducts",
-            json!({"RequestId":"products","CdtProducts":[]}),
-        ),
-    ])
-    .await;
+    let mock = Mock::start(vec![traffic(0)]).await;
     assert_eq!(
-        Cloud::local(&mock.endpoint)
-            .guard_usage(&a, &r.region)
-            .await
-            .unwrap_err()
-            .code,
+        read(
+            &a,
+            &Resource {
+                cdt_guard_state: None,
+                ..r
+            },
+            &Cloud::local(&mock.endpoint),
+            apsp_protocol::now_timestamp()
+        )
+        .await
+        .unwrap_err()
+        .code,
         "cdt_not_enabled"
     );
     mock.exhausted();
@@ -390,4 +395,54 @@ async fn import_is_monotonic_paused_and_never_fresh_authorization(pool: PgPool) 
     r.power_policy.enabled = true;
     assert!(r.power_policy.blocks_start(&a, &r, now));
     assert!(queued(&pool, r.id).await.is_empty());
+}
+
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+async fn confirmed_cdt_accepts_zero_month_reset_without_additional_permissions(pool: PgPool) {
+    let (a, r) = seed(&pool).await;
+    let now = apsp_protocol::now_timestamp();
+    let mut previous = observation(&a, &r, 200 * GIB, 20 * GIB, now - 60);
+    previous.billing_cycle = "2020-01".into();
+    // Older persisted state lacks the new field but has a positive live reading.
+    let mut legacy = serde_json::to_value(&previous).unwrap();
+    legacy.as_object_mut().unwrap().remove("cdt_observed");
+    previous = serde_json::from_value(legacy).unwrap();
+    save_observation(&pool, r.id, &previous).await;
+    let mock = Mock::start(vec![power("Stopped"), traffic(0)]).await;
+    scheduler::poll(&pool, r.id, &Cloud::local(&mock.endpoint))
+        .await
+        .unwrap();
+    let saved = resource(&pool, r.id).await.unwrap();
+    let reset = saved.cdt_guard_state.as_ref().unwrap();
+    assert_eq!(reset.max_usage_bytes, 0);
+    assert!(reset.cdt_observed);
+    assert_eq!(queued(&pool, r.id).await[0].action, "start");
+    let repeated = observe(Some(reset), 0, &a, &saved, &key_digest(KEY), now + 1).unwrap();
+    assert!(repeated.cdt_observed);
+    // A restored controller retains proof without needing a product-list query.
+    let restored: Observation =
+        serde_json::from_str(&serde_json::to_string(&repeated).unwrap()).unwrap();
+    assert!(observe(Some(&restored), 0, &a, &saved, &key_digest(KEY), now + 2).is_ok());
+    assert!(observe(Some(&restored), 0, &a, &saved, "changed-key", now + 2).is_err());
+    let mut imported = previous;
+    imported.queried_at = 0;
+    assert_eq!(
+        observe(Some(&imported), 0, &a, &saved, &key_digest(KEY), now + 2)
+            .unwrap_err()
+            .code,
+        "cdt_not_enabled"
+    );
+    mock.exhausted();
+}
+
+#[test]
+fn empty_or_missing_pool_is_not_a_zero_counter() {
+    assert!(meter::traffic(&json!({"TrafficDetails":[]}), "cn-hongkong").is_err());
+    assert!(
+        meter::traffic(
+            &json!({"TrafficDetails":[row("cn-hangzhou", 0)]}),
+            "cn-hongkong"
+        )
+        .is_err()
+    );
 }

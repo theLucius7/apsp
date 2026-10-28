@@ -1,6 +1,7 @@
 mod ceremonies;
 mod credentials;
 
+pub(crate) use ceremonies::start_reauthentication;
 pub use ceremonies::{
     Ceremony, FinishAuthentication, FinishRegistration, PendingAuthentication, PendingRegistration,
     consume, start_authentication, start_registration,
@@ -22,6 +23,7 @@ use webauthn_rs::prelude::{Url, Webauthn, WebauthnBuilder};
 
 pub(crate) const ADMIN: uuid::Uuid = uuid::Uuid::from_u128(1);
 pub(crate) const ADMIN_BINDING: &str = "apsp_admin_passkey";
+pub(crate) const ADMIN_REAUTH_BINDING: &str = "apsp_admin_reauth";
 pub const PORTAL_BINDING: &str = "apsp_proxy_passkey";
 pub const TTL: i64 = 300;
 

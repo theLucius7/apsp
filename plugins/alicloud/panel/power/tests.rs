@@ -10,7 +10,7 @@ mod regressions;
 async fn seed(pool: &PgPool) -> (Uuid, Uuid) {
     let a = Uuid::new_v4();
     let r = Uuid::new_v4();
-    sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret) VALUES($1,'测试账号','TEST_ONLY_KEY','TEST_ONLY_SECRET')").bind(a).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret,billing_enabled,balance_enabled) VALUES($1,'测试账号','TEST_ONLY_KEY','TEST_ONLY_SECRET',true,true)").bind(a).execute(pool).await.unwrap();
     sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id) VALUES($1,$2,'测试实例','ecs','cn-hangzhou','i-testonly')").bind(r).bind(a).execute(pool).await.unwrap();
     (a, r)
 }
