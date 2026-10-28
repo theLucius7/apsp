@@ -185,8 +185,26 @@ fn tls(
     Ok(true)
 }
 
+/// Clash represents HTTP request headers as single strings. Multiple values
+/// cannot be joined without changing their meaning for arbitrary headers.
+fn header_value(value: &Value) -> Converted {
+    match value {
+        Value::String(_) => Ok(value.clone()),
+        Value::Array(values) if values.len() == 1 && values[0].is_string() => Ok(values[0].clone()),
+        _ => Err("Clash 不能等价表达多值或空 HTTP 请求头"),
+    }
+}
+
+fn headers(value: &Value) -> Result<Map<String, Value>, &'static str> {
+    object(value)?
+        .iter()
+        .map(|(name, value)| Ok((name.clone(), header_value(value)?)))
+        .collect()
+}
+
 fn transport(
     outbound: &Map<String, Value>,
+    kind: &str,
     proxy: &mut Map<String, Value>,
 ) -> Result<(), &'static str> {
     let Some(transport) = outbound.get("transport") else {
@@ -209,8 +227,8 @@ fn transport(
             if let Some(path) = transport.get("path") {
                 options.insert("path".into(), path.clone());
             }
-            if let Some(headers) = transport.get("headers") {
-                options.insert("headers".into(), headers.clone());
+            if let Some(value) = transport.get("headers") {
+                options.insert("headers".into(), Value::Object(headers(value)?));
             }
             if let Some(early) = transport.get("max_early_data") {
                 options.insert("max-early-data".into(), early.clone());
@@ -225,11 +243,11 @@ fn transport(
             only(transport, &["type", "path", "host", "headers"])?;
             let mut headers = transport
                 .get("headers")
-                .and_then(Value::as_object)
-                .cloned()
+                .map(headers)
+                .transpose()?
                 .unwrap_or_default();
             if let Some(host) = transport.get("host") {
-                headers.insert("Host".into(), host.clone());
+                headers.insert("Host".into(), header_value(host)?);
             }
             let mut options = json!({"v2ray-http-upgrade": true});
             if let Some(path) = transport.get("path") {
@@ -260,6 +278,16 @@ fn transport(
             );
         }
         Some("http") => {
+            if kind == "trojan" {
+                return Err("Clash 的 Trojan 不支持 HTTP/2 传输");
+            }
+            if !outbound
+                .get("tls")
+                .and_then(Value::as_object)
+                .is_some_and(|tls| flag(tls, "enabled"))
+            {
+                return Err("Clash 不能将未启用 TLS 的 HTTP 传输等价转换为 HTTP/2");
+            }
             only(
                 transport,
                 &["type", "host", "path", "idle_timeout", "ping_timeout"],
@@ -469,7 +497,7 @@ pub fn proxy(outbound: &Value, name: &str) -> Converted {
             if let Some(encoding) = text(outbound, "packet_encoding").filter(|e| !e.is_empty()) {
                 proxy.insert("packet-encoding".into(), json!(encoding));
             }
-            transport(outbound, &mut proxy)?;
+            transport(outbound, kind, &mut proxy)?;
             multiplex(outbound, &mut proxy)?;
         }
         "trojan" => {
@@ -480,7 +508,7 @@ pub fn proxy(outbound: &Value, name: &str) -> Converted {
                 "password".into(),
                 outbound.get("password").ok_or("缺少密码")?.clone(),
             );
-            transport(outbound, &mut proxy)?;
+            transport(outbound, kind, &mut proxy)?;
             multiplex(outbound, &mut proxy)?;
         }
         "shadowsocks" => {
@@ -602,10 +630,13 @@ pub fn proxy(outbound: &Value, name: &str) -> Converted {
             if secured {
                 proxy.insert("tls".into(), json!(true));
             }
-            for key in ["username", "password", "headers"] {
+            for key in ["username", "password"] {
                 if let Some(value) = outbound.get(key) {
                     proxy.insert(key.into(), value.clone());
                 }
+            }
+            if let Some(value) = outbound.get("headers") {
+                proxy.insert("headers".into(), Value::Object(headers(value)?));
             }
         }
         _ => return Err(unsupported_protocol()),
@@ -620,7 +651,18 @@ fn unique(name: &str, used: &mut BTreeSet<String>) -> String {
     let mut candidate = base.to_string();
     let mut counter = 2;
     while used.contains(&candidate)
-        || [SELECT_GROUP, AUTO_GROUP, "DIRECT", "REJECT", "GLOBAL"].contains(&candidate.as_str())
+        || [
+            SELECT_GROUP,
+            AUTO_GROUP,
+            "DIRECT",
+            "REJECT",
+            "REJECT-DROP",
+            "COMPATIBLE",
+            "PASS",
+            "PASS-RULE",
+            "GLOBAL",
+        ]
+        .contains(&candidate.as_str())
     {
         candidate = format!("{base} ({counter})");
         counter += 1;
@@ -712,7 +754,13 @@ fn proxies_len(profile: &Value) -> usize {
 /// Comment text cannot break out of its line.
 fn comment(text: &str) -> String {
     text.chars()
-        .map(|c| if c.is_control() { ' ' } else { c })
+        .map(|c| {
+            if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}' | '\u{feff}') {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect()
 }
 
@@ -826,6 +874,9 @@ fn yaml(value: &Value, indent: usize, out: &mut String) {
 }
 
 #[cfg(test)]
+mod regression_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -929,7 +980,16 @@ mod tests {
                 Ok(
                     json!({"type":"vmess","tag":"b","server":"v.example.invalid","server_port":443,
                 "uuid":"00000000-0000-4000-8000-000000000002","security":"auto","tls":tls("v.example.invalid"),
-                "transport":{"type":"ws","path":"/ws","headers":{"Host":"v.example.invalid"}}}),
+                "transport":{"type":"ws","path":"/ws","headers":{"Host":["v.example.invalid"]}}}),
+                ),
+            ),
+            (
+                "VMess HTTPUpgrade".to_string(),
+                Ok(
+                    json!({"type":"vmess","tag":"b-upgrade","server":"v.example.invalid","server_port":443,
+                "uuid":"00000000-0000-4000-8000-000000000002","security":"auto","tls":tls("v.example.invalid"),
+                "transport":{"type":"httpupgrade","path":"/upgrade","host":"v.example.invalid",
+                             "headers":{"X-Test":["TEST_ONLY"]}}}),
                 ),
             ),
             (
@@ -977,9 +1037,10 @@ mod tests {
                 ),
             ),
             (
-                "HTTP".to_string(),
+                "PASS".to_string(),
                 Ok(
-                    json!({"type":"http","tag":"i","server":"p.example.invalid","server_port":8080,"username":"u","password":"p"}),
+                    json!({"type":"http","tag":"i","server":"p.example.invalid","server_port":8080,"username":"u","password":"p",
+                "headers":{"X-Test":["TEST_ONLY"]}}),
                 ),
             ),
             (
@@ -988,10 +1049,14 @@ mod tests {
                     json!({"type":"snell","tag":"j","server":"n.example.invalid","server_port":1,"version":6}),
                 ),
             ),
-            ("Broken external".to_string(), Err("外部节点定义无效")),
+            (
+                "Broken external\u{2028}external-controller: 127.0.0.1:19090\u{2029}#\u{feff}"
+                    .to_string(),
+                Err("外部节点定义无效"),
+            ),
         ];
         let profile = render(sources);
-        assert_eq!(profile.included, 9);
+        assert_eq!(profile.included, 10);
         assert_eq!(profile.skipped.len(), 2);
         assert!(
             profile
@@ -1000,6 +1065,15 @@ mod tests {
         );
         assert!(profile.content.contains("#   Snell：Clash 不支持该协议\n"));
         assert!(profile.content.contains("rules:\n  - \"MATCH,节点选择\"\n"));
+        assert!(profile.content.contains("  - name: \"PASS (2)\"\n"));
+        assert!(profile.content.contains("Host: \"v.example.invalid\"\n"));
+        assert!(profile.content.contains("X-Test: \"TEST_ONLY\"\n"));
+        assert!(
+            !profile
+                .content
+                .contains(['\u{2028}', '\u{2029}', '\u{feff}'])
+        );
+        assert!(!profile.content.contains("\nexternal-controller:"));
         // A real client can check this sample: `mihomo -t -f <path>`.
         if let Ok(path) = std::env::var("APSP_CLASH_SAMPLE") {
             std::fs::write(path, &profile.content).unwrap();

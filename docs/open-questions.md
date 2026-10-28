@@ -1,5 +1,12 @@
 # 执行中的问题与选择
 
+## 2026-10-28：Clash 订阅合并前的格式与传输边界修复
+
+- 问题：#194 已包含当前 main，但审查发现合法外部节点的数组请求头、内置策略同名可能使整份 YAML 导入失败；Trojan HTTP/2 及无 TLS HTTP 不能沿用原有的统一 H2 映射；跳过节点名称中的 Unicode 换行会突破 YAML 注释。
+- 选择：沿用同一授权快照和外部节点渲染入口，只修转换边界。请求头字符串和单元素数组转为单字符串，多值/空数组与不能等价表达的传输跳过并说明；完整避让内置策略名；注释替换控制字符及 U+2028、U+2029、U+FEFF。保留 sing-box 格式与可转换节点，不引入第三方转换服务或新依赖。
+- 依据：mihomo v1.19.29 的 [WSOptions](https://github.com/MetaCubeX/mihomo/blob/v1.19.29/adapter/outbound/vmess.go)、[Trojan 传输](https://github.com/MetaCubeX/mihomo/blob/v1.19.29/adapter/outbound/trojan.go)、[内置策略](https://github.com/MetaCubeX/mihomo/blob/v1.19.29/config/config.go)，以及 [YAML 换行识别](https://github.com/yaml/go-yaml/blob/v3/yamlprivateh.go)；HTTP 的 TLS 分界与仓库现有导入器和回归保持一致。
+- 回归通过 `compile_clash`、`ExternalOutbound` 和 typed normalized 输入覆盖这些边界，并扩充既有离线样例。复用 #194 集中交付，#190 保持草稿；完整验证结果见本轮验收记录。
+
 ## 2026-10-28：Clash 订阅与 CDT 主线的前端产物冲突
 
 - 问题：#195 已合入 main，#194 的前端产物基于包含 Passkey、尚未包含 CDT 最小权限的源码；主线产物包含 CDT 与 Passkey，尚未包含 Clash。共同祖先为 `4ccf5108`，双方生成文件的名称和引用均已变化。
