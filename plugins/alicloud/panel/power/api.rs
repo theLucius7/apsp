@@ -55,6 +55,12 @@ async fn update_policy(
     input.policy.validate()?;
     let initial = resource(&state.pool, id).await?;
     let mut tx = lock(&state.pool, initial.account_id).await?;
+    let account = account_on(&mut tx, initial.account_id).await?;
+    if input.policy.enabled && input.policy.threshold_action != "off" && !account.billing_enabled {
+        return Err(ApiError::BadRequest(
+            "账单阈值策略需要先在云账号中启用账单查询".into(),
+        ));
+    }
     let r = jobs::fresh(&mut tx, id).await?;
     if r.kind != "ecs" || r.revision != input.revision {
         return Err(ApiError::Conflict(

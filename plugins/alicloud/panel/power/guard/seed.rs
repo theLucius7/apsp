@@ -159,6 +159,7 @@ pub(super) async fn import_on(pool: &PgPool, id: Uuid, input: Input) -> ApiResul
         max_jump_bytes: jump,
         // Imported history preserves protection but is never fresh authorization.
         queried_at: 0,
+        cdt_observed: false,
     };
     if let Some(old) = r.cdt_guard_state {
         if old.billing_cycle > imported.billing_cycle {

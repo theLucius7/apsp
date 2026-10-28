@@ -27,3 +27,12 @@ test('billing status rejects previous month, stale, future and incomplete eviden
   expect(billUsable({ ...account, error_code: 'network_error' }, now)).toBeFalse()
   expect(billUsable({ ...account, enabled: false }, now)).toBeFalse()
 })
+
+
+test('BSS opt-ins are independent and disabled billing cannot authorize control from cached values', () => {
+  const input = { name: '云账号', site: 'china' as const, enabled: true, auto_enabled: false, limit_gb: 100, billing_enabled: false, balance_enabled: true }
+  expect(accountWrite(input, '', '')).toMatchObject({ billing_enabled: false, balance_enabled: true })
+  const now = Date.parse('2026-10-01T00:00:00Z') / 1000
+  const account = { ...input, bill: { month: '2026-10', queried_at: now, usage_micro_gb: 100, rows: [] } } as unknown as Account
+  expect(billUsable(account, now)).toBeFalse()
+})

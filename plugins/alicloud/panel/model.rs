@@ -15,6 +15,8 @@ pub(super) struct Account {
     pub credential_id: Option<Uuid>,
     pub enabled: bool,
     pub auto_enabled: bool,
+    pub billing_enabled: bool,
+    pub balance_enabled: bool,
     pub limit_gb: i64,
     pub revision: i64,
     pub bill: Option<Json<super::billing::Bill>>,
