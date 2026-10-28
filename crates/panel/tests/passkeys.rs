@@ -11,6 +11,54 @@ use sqlx::PgPool;
 
 const PASSWORD: &str = "business-test-password";
 
+#[sqlx::test]
+async fn reauthentication_requires_a_session_exact_origin_and_existing_keys(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    sqlx::query("DELETE FROM administrator_reauth")
+        .execute(&pool)
+        .await?;
+    let path = "/api/control-center/reauth/passkey/start";
+    assert_eq!(
+        post(&panel, "", path, json!({})).await?.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        panel
+            .admin(Method::POST, path, &cookie, None)
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    let response = post(&panel, &cookie, path, json!({})).await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let error: Value = response.json().await?;
+    assert_eq!(error["error"], "此账户尚未绑定 Passkey。");
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM administrator_reauth")
+            .fetch_one(&pool)
+            .await?,
+        0
+    );
+    sqlx::query(
+        "INSERT INTO admins(id,password_hash) SELECT 2,password_hash FROM admins WHERE id=1",
+    )
+    .execute(&pool)
+    .await?;
+    sqlx::query("INSERT INTO administrator_profiles(admin_id,login_name,display_name,role,all_servers,created_at,updated_at) VALUES(2,'other-owner','其他所有者','owner',true,0,0)")
+        .execute(&pool).await?;
+    sqlx::query("UPDATE sessions SET admin_id=2 WHERE admin_id=1")
+        .execute(&pool)
+        .await?;
+    assert_eq!(
+        post(&panel, &cookie, path, json!({})).await?.status(),
+        StatusCode::FORBIDDEN
+    );
+    Ok(())
+}
+
 async fn post(
     panel: &TestPanel,
     cookie: &str,

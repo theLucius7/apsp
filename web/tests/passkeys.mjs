@@ -3,6 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { SQL } from 'bun'
 import { createHmac } from 'node:crypto'
+import { reauthentication } from './passkey-reauthentication.mjs'
 
 // Run only through the ignored Rust test, which owns a temporary PostgreSQL database and HTTP server.
 const origin = process.env.APSP_PASSKEY_TEST_ORIGIN
@@ -83,6 +84,8 @@ try {
   await page.getByRole('heading', { name: '账号安全', exact: true }).waitFor()
   assert.equal((await request(page, '/api/me', undefined, 'GET')).status, 200)
   results.push('administrator passwordless login and admin cookie')
+
+  await reauthentication({ admin, sql, clearLimit, native, request, ok, password, origin, results })
 
   await clearLimit()
   const replayChallenge = await ok(page, '/api/login/passkey/start')

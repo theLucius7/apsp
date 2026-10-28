@@ -238,7 +238,7 @@ pub async fn require_recent_proof(state: &AppState, headers: &HeaderMap) -> ApiR
     .await?;
     if !valid {
         return Err(ApiError::Forbidden(
-            "请先再次验证管理员密码及二步验证码，证明有效期为五分钟".into(),
+            "请先再次验证管理员身份，证明有效期为五分钟".into(),
         ));
     }
     Ok(())

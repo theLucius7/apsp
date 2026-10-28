@@ -6,8 +6,22 @@ use crate::{
 };
 use apsp_protocol::now_timestamp;
 use axum::http::HeaderMap;
+use serde_json::{Value, json};
 use sqlx::{Postgres, Row, Transaction};
 use std::net::SocketAddr;
+
+// Call only after authenticating and locking the current administrator session,
+// or inserting a new authenticated session in this transaction.
+pub(crate) async fn record_recent(
+    tx: &mut Transaction<'_, Postgres>,
+    session: &str,
+) -> ApiResult<Value> {
+    let now = now_timestamp();
+    let expires_at = now + 300;
+    sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET verified_at=EXCLUDED.verified_at,expires_at=EXCLUDED.expires_at")
+        .bind(session).bind(now).bind(expires_at).execute(&mut **tx).await?;
+    Ok(json!({"verified_at":now,"expires_at":expires_at}))
+}
 
 pub struct Proof {
     pub session: String,

@@ -31,3 +31,29 @@ test('a proxy authentication error never ends an administrator session', async (
     else Reflect.deleteProperty(globalThis, 'window')
   }
 })
+
+test('both reauthentication messages resume a protected request at most once', async () => {
+  const originalFetch = globalThis.fetch
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'window')
+  let prompts = 0
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: { dispatchEvent: (event: CustomEvent) => {
+    expect(event.type).toBe('apsp:reauthentication')
+    prompts++; event.detail.resolve()
+  } } })
+  try {
+    for (const message of ['请先再次验证管理员身份，证明有效期为五分钟', '请先再次验证管理员密码及二步验证码，证明有效期为五分钟']) {
+      let attempts = 0
+      globalThis.fetch = (async () => {
+        attempts++
+        return new Response(JSON.stringify({ error: message }), { status: 403 })
+      }) as typeof fetch
+      await expect(api('/api/control-center/tokens', 'POST', {})).rejects.toThrow(message)
+      expect(attempts).toBe(2)
+    }
+    expect(prompts).toBe(2)
+  } finally {
+    globalThis.fetch = originalFetch
+    if (descriptor) Object.defineProperty(globalThis, 'window', descriptor)
+    else Reflect.deleteProperty(globalThis, 'window')
+  }
+})
