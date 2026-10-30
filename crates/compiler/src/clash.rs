@@ -290,8 +290,28 @@ fn transport(
             }
             only(
                 transport,
-                &["type", "host", "path", "idle_timeout", "ping_timeout"],
+                &[
+                    "type",
+                    "host",
+                    "path",
+                    "method",
+                    "headers",
+                    "idle_timeout",
+                    "ping_timeout",
+                ],
             )?;
+            // sing-box defaults to PUT; mihomo's H2 transport always uses PUT.
+            if transport
+                .get("method")
+                .is_some_and(|method| !matches!(method.as_str(), Some("" | "PUT")))
+            {
+                return Err("Clash 的 HTTP/2 传输只支持 PUT 请求方法");
+            }
+            if let Some(headers) = transport.get("headers")
+                && !object(headers)?.is_empty()
+            {
+                return Err("Clash 的 HTTP/2 传输不能保留自定义请求头");
+            }
             let mut options = Map::new();
             if let Some(host) = transport.get("host") {
                 let host = match host {
@@ -429,7 +449,7 @@ pub fn proxy(outbound: &Value, name: &str) -> Converted {
             "tls",
         ],
         "socks" => &["version", "username", "password"],
-        "http" => &["username", "password", "headers", "tls"],
+        "http" => &["username", "password", "path", "headers", "tls"],
         _ => return Err(unsupported_protocol()),
     };
     let allowed: Vec<&str> = common.iter().chain(extra).copied().collect();
@@ -627,6 +647,13 @@ pub fn proxy(outbound: &Value, name: &str) -> Converted {
             }
         }
         "http" => {
+            // Normalized HTTP outbounds retain an empty path for ordinary CONNECT.
+            if outbound
+                .get("path")
+                .is_some_and(|path| path.as_str() != Some(""))
+            {
+                return Err("Clash 的 HTTP 代理不能保留自定义请求路径");
+            }
             if secured {
                 proxy.insert("tls".into(), json!(true));
             }
@@ -875,6 +902,9 @@ fn yaml(value: &Value, indent: usize, out: &mut String) {
 
 #[cfg(test)]
 mod regression_tests;
+
+#[cfg(test)]
+mod normalized_tests;
 
 #[cfg(test)]
 mod tests {

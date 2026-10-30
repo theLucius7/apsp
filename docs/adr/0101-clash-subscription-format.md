@@ -13,6 +13,7 @@ apsp 的订阅此前只有 sing-box JSON 和 Reality 分享链接两种格式。
 - **支持转换的协议：** VLESS（含 Reality、Vision）、VMess、Trojan、Shadowsocks（含 2022）、Hysteria2、TUIC v5、AnyTLS、SOCKS5 和 HTTP。
 - **传输层与多路复用：** WebSocket、HTTPUpgrade、gRPC、HTTP/2 和多路复用都按对应字段转换。
 - **传输兼容边界：** WebSocket、HTTPUpgrade 与 HTTP 代理的请求头仅转换字符串或单元素字符串数组，多值或空数组跳过；Trojan 的 HTTP/2、VMess/VLESS 未启用 TLS 的 HTTP 传输均跳过，不能把后者的 HTTP/1.1 语义改成 HTTP/2。
+- **标准化默认字段：** HTTP 代理的空路径保持普通 CONNECT，非空路径跳过；HTTP/2 仅接受缺省、空或 `PUT` 方法及空请求头，不能忽略 GET 等其他方法或自定义请求头。有序来源标准化时保留的这些字段与稀疏配置遵循同一边界。
 
 **不能等价表达的节点不写入，也不做近似。** 这类节点包括 Snell v6、Naive、前置跳板、仅 UDP、未知参数，以及非 QUIC 协议内联自签证书。它们会在文件开头的注释中列出名称与原因，提示改用 sing-box 格式。所有节点都无法表达时返回 409。
 

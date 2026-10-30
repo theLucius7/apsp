@@ -1,5 +1,12 @@
 # 执行中的问题与选择
 
+## 2026-10-30：Clash 转换与有序来源标准化字段的兼容
+
+- 问题：#194 的 HTTP 测试使用稀疏 JSON，但有序来源实际经过 `NormalizedOutbound` 与 `ExternalOutbound::from_normalized`，普通 HTTP 代理会带上 `path:""`、`headers:{}`；Clash 白名单不接受 `path`，导致这些节点全部被跳过，只有此类节点时订阅返回 409。HTTP/2 传输同样总是带上 `method` 与 `headers`，即使能等价表达也被直接拒绝。
+- 选择：只修 Clash 转换边界。HTTP 代理允许缺省或空路径，保留原有凭据及请求头转换；自定义路径继续跳过。HTTP/2 仅接受缺省、空或 `PUT` 方法及缺省或空请求头，其他方法、自定义请求头、无 TLS 和 Trojan HTTP/2 仍跳过并说明。不开新功能、不改变来源解析、节点身份、存储格式或 sing-box 配置。
+- 依据：[mihomo v1.19.29 HTTP 代理](https://github.com/MetaCubeX/mihomo/blob/v1.19.29/adapter/outbound/http.go) 使用普通 CONNECT；[H2 传输](https://github.com/MetaCubeX/mihomo/blob/v1.19.29/transport/vmess/h2.go) 固定使用 PUT，且没有自定义请求头字段；[sing-box v1.14.0 HTTP 传输](https://github.com/SagerNet/sing-box/blob/v1.14.0/transport/v2rayhttp/client.go) 在方法为空时使用 PUT。有序来源解析器填充的 GET 不能当作 PUT 静默丢弃。
+- 回归通过真实 `NormalizedOutbound → ExternalOutbound → compile_clash` 路径覆盖默认字段及不能等价表达的边界。复用 #194；#190 仍为草稿，不纳入。已有验收源码摘要核对一致，修复后只补验编译器受影响范围，结果见本轮验收记录。
+
 ## 2026-10-28：Clash 订阅合并前的格式与传输边界修复
 
 - 问题：#194 已包含当前 main，但审查发现合法外部节点的数组请求头、内置策略同名可能使整份 YAML 导入失败；Trojan HTTP/2 及无 TLS HTTP 不能沿用原有的统一 H2 映射；跳过节点名称中的 Unicode 换行会突破 YAML 注释。
