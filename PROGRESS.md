@@ -1,5 +1,47 @@
 # 执行进度
 
+## 2026-10-30：每小时维护修复 Clash 标准化 HTTP 输入兼容
+
+- 复用就绪 PR #194，保留 main `318fc3ab` 与全部已集成提交；#190 保持草稿。独立审查确认已有集中验收摘要与 `b699921f` 一致，但发现有序来源自动填充的 HTTP 空路径被误判为不可转换参数。
+- 仅修编译器：允许普通 HTTP 代理空路径；HTTP/2 按上游固定 PUT 行为接受等价方法及空请求头，不能等价表达的字段继续跳过。回归经过实际标准化类型和外部出站转换，不改变来源、授权、凭据、前端或依赖。
+- 本轮集中验证通过：编译器 78 项测试（含 7 项新增回归，另有 7 项运行时条件忽略）、格式、架构边界、编译器全目标严格 Clippy，以及 mihomo 的既有 10 节点与新增 5 节点离线样例。已保存源码摘要并清理本轮测试材料，详见[验收记录](docs/acceptance/hourly-maintenance-20261030-1400.md)。CI 保持暂停；面板部署由独立定时器在 main 更新后接续。
+
+## 2026-10-28：每小时维护补验并修复 Clash 订阅转换边界
+
+- 复用 #194，保留已集成的 main `318fc3ab` 与 Clash 分支历史；#190 仍为草稿，不纳入。非登录 shell 可使用 PATH 中的 Rust/Cargo 1.99.1，上一轮缺失的 Rust 验证得以补跑。
+- 合并前审查修复数组请求头、Trojan HTTP/2 与无 TLS HTTP 映射、内置策略重名及跳过节点名称的 Unicode 注释边界。新增 8 项真实外部编译入口回归，扩展既有 mihomo 离线配置样例；不改变 sing-box 订阅、授权或凭据。
+- 集中验证通过：编译器 71 项（另有 7 项运行时条件忽略）、sing-box 插件 116 项、面板集成 37 项、Passkey 虚拟认证器 29 场景；宿主 184 项与阿里云插件 64 项基线验证保留。格式、边界、相关 crate 全目标严格 Clippy 与 mihomo 10 节点离线样例通过，已清理本轮测试环境，详见[本轮记录](docs/acceptance/hourly-maintenance-20261028-1900.md)。CI 保持暂停；面板上线由独立部署器接续，本任务不重复启动部署。
+
+## 2026-10-28：每小时维护将 Clash 订阅同步到 CDT 主线
+
+- main 已通过 #195 合入 CDT 最小权限及 #193 Passkey；本轮确认两个源分支的最新 SHA 均为远端 main 祖先后，使用 SHA lease 删除源分支。
+- 复用 #194，基于共同祖先 `4ccf5108` 合并主线 `318fc3ab`；源码自动合并，生成的前端存在重命名与内容冲突，按完整合并源码统一重建。#190 保持草稿。
+- 前端生产构建、208 项单元测试、架构边界及 Clash 订阅/外部节点/成员门户/阿里云四组多视口浏览器回归通过；验证结果与限制见[本轮记录](docs/acceptance/hourly-maintenance-20261028-1500.md)。当前 PATH 缺少 Rust/Cargo，新集成的 Rust 验证待补，不据旧结果签收或自动合入 main。
+
+## 2026-10-26：每小时维护集中集成 Passkey 与 Clash 订阅
+
+- 复用就绪 PR #194 合入 #193，保留双方功能与祖先关系；#190 草稿保留。进度文档逐段合并，内嵌前端从完整源码重新构建。
+- 新增 Clash 切换、预览、YAML 下载、外部节点格式保持与显式格式优先的回归；集中验证通过：308 项 Rust 单元、30 项数据库集成、1 项虚拟认证器测试（29 场景）、207 项前端单元及三组多视口浏览器回归，格式、边界和相关 crate 全目标严格 Clippy 通过。
+- 已保存源码身份并清理本轮容器、临时数据库、编译与依赖缓存和原始日志；旧暂存工作保留。CI、完整工作区、真实设备与生产部署未在本轮验收。详见[验收记录](docs/acceptance/hourly-maintenance-20261026-2100.md)。
+
+## 2026-10-26：订阅支持 Clash Meta 格式
+
+- 用户要求订阅链接与订阅格式支持 Clash。按 [ADR 0101](docs/adr/0101-clash-subscription-format.md) 实现，覆盖原「Clash 订阅」排除项，授权记录在 AGENTS.md。
+- 编译器新增 `clash` 模块：
+  - 把 sing-box 订阅所用的同一组客户端出站转换为 Clash Meta（mihomo）代理；
+  - 支持 VLESS（Reality、Vision）、VMess、Trojan、SS2022、Hysteria2、TUIC v5、AnyTLS、SOCKS5 和 HTTP，以及 ws、httpupgrade、grpc、h2 传输与多路复用；
+  - 无法等价表达的节点（Snell v6、Naive、前置跳板、仅 UDP、未知参数）不写入，在文件注释中列出；
+  - YAML 由自写输出器生成，不新增依赖。
+- 订阅接口：
+  - 新增 `format=clash`（`text/yaml`、`.yaml` 下载）；
+  - 不带格式参数时，User-Agent 含 clash、mihomo 或 stash 的客户端自动得到 Clash 格式，其他客户端不变；
+  - 管理端预览的 `available_formats` 增加 `clash`。
+- 界面：
+  - 管理端订阅对话框新增「Clash Meta（mihomo）配置」；
+  - 成员门户显示「Clash 订阅」地址，Nexus 兼容成员用原订阅地址加 `?flag=meta`。
+- 本地验证：边界检查、格式、严格 Clippy、`git diff --check` 通过。前端 206 项单测与构建通过，浏览器回归 subscription、external-access、singbox-entitlement-draft、singbox-snapshot-writes、member-commerce、dashboard 通过。Rust 全量 1388 通过、27 条件忽略；唯一失败是外部节点预览对可用格式列表的旧断言（现含 clash），修正后该测试单独补验通过。编译器新增 6 项 Clash 单测，订阅接口新增 User-Agent 识别单测，modern_protocols 与 subscription_preview 集成测试覆盖 Clash 内容、不可表达节点的注释、凭据隔离和自动识别。样例配置（9 种协议）经 mihomo 1.19.29 `-t` 校验通过；用真实节点出站转换后，mihomo 经 3 个节点测速成功，并通过「节点选择」访问 HTTPS。
+- 未验证：生产部署后的成员客户端实测、Stash 与传统 Clash 核心（不支持 VLESS 等协议，本格式面向 Clash Meta）；远端 CI 按暂停约定未运行。
+
 ## 2026-10-26：Passkey 再次验证当前管理员身份
 
 - 「再次验证身份」支持已绑定初始所有者 Passkey，验证成功后继续被暂缓的操作；取消时可改用密码/TOTP。与现有密码证明共享五分钟有效期，保持当前登录会话及其到期时间。

@@ -156,20 +156,18 @@ pub(super) async fn view(
         .bind(account).fetch_all(&mut *tx).await?;
     let credentials = credentials.iter().map(|r| Ok(json!({"id":r.try_get::<Uuid,_>("id")?,"name":r.try_get::<String,_>("name")?,"created_at":r.try_get::<i64,_>("created_at")?,"last_used_at":r.try_get::<Option<i64>,_>("last_used_at")?}))).collect::<ApiResult<Vec<_>>>()?;
     let mut subscription_status = super::super::subscriptions::diagnostic_on(&mut tx, id).await?;
-    let mut subscription_url = format!(
-        "{}/sub/{}?format=singbox",
-        state.config.public_url,
-        row.try_get::<String, _>("subscription_token")?
-    );
+    let token = row.try_get::<String, _>("subscription_token")?;
+    let mut subscription_url = format!("{}/sub/{token}?format=singbox", state.config.public_url);
+    let mut clash_subscription_url =
+        format!("{}/sub/{token}?format=clash", state.config.public_url);
     let mut upload = usage.try_get::<String, _>("uplink")?;
     let mut download = usage.try_get::<String, _>("downlink")?;
     let legacy=sqlx::query("SELECT b.subscription_base,b.last_sync_at,m.upload::text,m.download::text FROM singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id AND b.enabled LEFT JOIN singbox_nexus_metering m ON m.user_id=i.user_id WHERE i.user_id=$1").bind(id).fetch_optional(&mut *tx).await?;
     let compatibility = if let Some(legacy) = legacy {
-        subscription_url = format!(
-            "{}{}",
-            legacy.try_get::<String, _>("subscription_base")?,
-            row.try_get::<String, _>("subscription_token")?
-        );
+        let base = legacy.try_get::<String, _>("subscription_base")?;
+        subscription_url = format!("{base}{token}");
+        // The retained renderer selects Clash Meta with this flag.
+        clash_subscription_url = format!("{base}{token}?flag=meta");
         upload = legacy
             .try_get::<Option<String>, _>("upload")?
             .unwrap_or_else(|| "0".into());
@@ -185,7 +183,7 @@ pub(super) async fn view(
         None
     };
     let result = json!({"authenticated":true,"configuration":state.passkeys.info(),"name":row.try_get::<String,_>("name")?,
-        "subscription_url":subscription_url,"legacy_compatibility":compatibility,
+        "subscription_url":subscription_url,"clash_subscription_url":clash_subscription_url,"legacy_compatibility":compatibility,
         "usage":{"uplink":upload,"downlink":download},"keys":credentials,"subscription_status":subscription_status});
     tx.commit().await?;
     Ok(keys::reply(result))

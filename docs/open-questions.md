@@ -1,5 +1,31 @@
 # 执行中的问题与选择
 
+## 2026-10-30：Clash 转换与有序来源标准化字段的兼容
+
+- 问题：#194 的 HTTP 测试使用稀疏 JSON，但有序来源实际经过 `NormalizedOutbound` 与 `ExternalOutbound::from_normalized`，普通 HTTP 代理会带上 `path:""`、`headers:{}`；Clash 白名单不接受 `path`，导致这些节点全部被跳过，只有此类节点时订阅返回 409。HTTP/2 传输同样总是带上 `method` 与 `headers`，即使能等价表达也被直接拒绝。
+- 选择：只修 Clash 转换边界。HTTP 代理允许缺省或空路径，保留原有凭据及请求头转换；自定义路径继续跳过。HTTP/2 仅接受缺省、空或 `PUT` 方法及缺省或空请求头，其他方法、自定义请求头、无 TLS 和 Trojan HTTP/2 仍跳过并说明。不开新功能、不改变来源解析、节点身份、存储格式或 sing-box 配置。
+- 依据：[mihomo v1.19.29 HTTP 代理](https://github.com/MetaCubeX/mihomo/blob/v1.19.29/adapter/outbound/http.go) 使用普通 CONNECT；[H2 传输](https://github.com/MetaCubeX/mihomo/blob/v1.19.29/transport/vmess/h2.go) 固定使用 PUT，且没有自定义请求头字段；[sing-box v1.14.0 HTTP 传输](https://github.com/SagerNet/sing-box/blob/v1.14.0/transport/v2rayhttp/client.go) 在方法为空时使用 PUT。有序来源解析器填充的 GET 不能当作 PUT 静默丢弃。
+- 回归通过真实 `NormalizedOutbound → ExternalOutbound → compile_clash` 路径覆盖默认字段及不能等价表达的边界。复用 #194；#190 仍为草稿，不纳入。已有验收源码摘要核对一致，修复后只补验编译器受影响范围，结果见本轮验收记录。
+
+## 2026-10-28：Clash 订阅合并前的格式与传输边界修复
+
+- 问题：#194 已包含当前 main，但审查发现合法外部节点的数组请求头、内置策略同名可能使整份 YAML 导入失败；Trojan HTTP/2 及无 TLS HTTP 不能沿用原有的统一 H2 映射；跳过节点名称中的 Unicode 换行会突破 YAML 注释。
+- 选择：沿用同一授权快照和外部节点渲染入口，只修转换边界。请求头字符串和单元素数组转为单字符串，多值/空数组与不能等价表达的传输跳过并说明；完整避让内置策略名；注释替换控制字符及 U+2028、U+2029、U+FEFF。保留 sing-box 格式与可转换节点，不引入第三方转换服务或新依赖。
+- 依据：mihomo v1.19.29 的 [WSOptions](https://github.com/MetaCubeX/mihomo/blob/v1.19.29/adapter/outbound/vmess.go)、[Trojan 传输](https://github.com/MetaCubeX/mihomo/blob/v1.19.29/adapter/outbound/trojan.go)、[内置策略](https://github.com/MetaCubeX/mihomo/blob/v1.19.29/config/config.go)，以及 [YAML 换行识别](https://github.com/yaml/go-yaml/blob/v3/yamlprivateh.go)；HTTP 的 TLS 分界与仓库现有导入器和回归保持一致。
+- 回归通过 `compile_clash`、`ExternalOutbound` 和 typed normalized 输入覆盖这些边界，并扩充既有离线样例。复用 #194 集中交付，#190 保持草稿；完整验证结果见本轮验收记录。
+
+## 2026-10-28：Clash 订阅与 CDT 主线的前端产物冲突
+
+- 问题：#195 已合入 main，#194 的前端产物基于包含 Passkey、尚未包含 CDT 最小权限的源码；主线产物包含 CDT 与 Passkey，尚未包含 Clash。共同祖先为 `4ccf5108`，双方生成文件的名称和引用均已变化。
+- 选择：保持双方源码、迁移与测试，重新生成唯一一套 `web/dist`；不能选择任何一方的旧 bundle，避免回退 CDT、Passkey 或 Clash 功能。源码没有实质冲突，既有浏览器用例覆盖这些页面，因此不新增仅检查文件名或重复实现的测试。
+- 验证边界：前端使用仓库声明的 Bun 1.4.2，临时工具及缓存仅写本轮目录。Rust 仅使用 PATH 中工具链；当前缺少 cargo/rustc，保留分支并将新集成 Rust 检查记为待验。旧验收记录仍只证明其原源码身份，不替代此次集成验证。
+
+## 2026-10-26：每小时维护合并 Passkey 与 Clash 订阅
+
+- 以 main `f6e362ca` 为共同祖先，复用就绪 PR #194 的分支集中合入 PR #193；草稿 PR #190 保留，不纳入交付。两个就绪 PR 无审查阻塞。
+- 源码和接口文档自动合并；进度文档保留双方完整记录。两边的内嵌前端来自不同源码，不能选一边覆盖，因此从合并后的源码统一重建，只保留本次产物。
+- 增补 Clash 格式切换、预览与 YAML 下载的浏览器回归，验证存在外部节点时不会退回 sing-box；接口回归验证显式格式参数优先于客户端自动识别。与 Passkey 虚拟认证器场景一起验证最终整合产物。
+
 ## 2026-10-26：管理员 Passkey 再次验证
 
 - 复用已有初始所有者 Passkey，不扩大为其他管理员共用该密钥；其他管理员继续验证自己的密码/TOTP。初始所有者已有 Passkey 登录是独立认证方式，再次验证保持同一语义，不额外索取 TOTP。
@@ -628,3 +654,17 @@ macOS 27 的动态库加载器暴露了 Rust/LLVM 删除调试信息后的 LINKE
 - 计量交互：main 的接管流量已在同一事务进入旧计量投递队列；直接把全部原生账本再加到旧计量会重复计费。0076 只补计未进入投递队列的原生记录，接管记录无论待投递还是已确认均由兼容桥按倍率及旧周期计入一次。回归覆盖投递前、倍率投递后和普通原生节点混合使用。
 
 - 费用权限交互：main 新增的汇总、日历与付款历史通过独立 principal 读取，会绕过扫描分支对全局费用的保护；这些混合视图补上同一全局门禁，纯服务器投影仍按服务器授权范围读取。集中测试发现外层守卫也会拦截该投影，组装层仅将其 GET/HEAD 标记为由处理函数检查对象范围；回归覆盖所有混合视图拒绝，并确认纯服务器视图只返回已授权服务器。
+
+## 2026-10-26：订阅支持 Clash 格式
+
+- 问题：用户要求订阅链接与订阅格式支持 Clash。仓库约定原把 Clash 订阅列为排除项；传统 Clash 核心不支持 VLESS、Reality 等成员实际使用的协议，Clash Meta 也不支持 Snell v6 与 Naive。
+- 选择：按 [ADR 0101](adr/0101-clash-subscription-format.md) 实现。
+  - 输出 Clash Meta（mihomo）格式，由 sing-box 订阅的同一组客户端出站转换。
+  - 不能等价表达的节点不写入，并在文件注释中说明。
+  - 同一订阅地址按 User-Agent 识别 Clash 客户端，显式格式参数优先。
+  - 规则只保留最终规则，与 sing-box 订阅一致。
+- 未选：
+  - 传统 Clash 格式：会丢掉主要节点。
+  - 第三方订阅转换服务：会把凭据发给外部。
+  - 为 Clash 单独维护节点模型：会出现两种格式不一致的风险。
+  - 内置国内直连规则：需要依赖规则集或 GeoIP 数据，与 sing-box 订阅的语义不一致。

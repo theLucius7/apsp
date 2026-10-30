@@ -23,12 +23,27 @@ pub struct SubscriptionQuery {
 }
 
 fn validate_format(format: &str) -> ApiResult<()> {
-    if !matches!(format, "links" | "singbox") {
+    if !matches!(format, "links" | "singbox" | "clash") {
         return Err(ApiError::BadRequest(
-            "订阅格式仅支持 links 或 singbox".into(),
+            "订阅格式仅支持 links、singbox 或 clash".into(),
         ));
     }
     Ok(())
+}
+
+/// Clash family clients (Clash, Clash Meta/mihomo, Clash Verge, FlClash, Stash)
+/// fetch the plain subscription URL and expect a Clash profile. Other clients
+/// keep the original default.
+fn client_format(headers: &HeaderMap) -> Option<&'static str> {
+    let agent = headers
+        .get(header::USER_AGENT)?
+        .to_str()
+        .ok()?
+        .to_ascii_lowercase();
+    ["clash", "mihomo", "stash"]
+        .iter()
+        .any(|family| agent.contains(family))
+        .then_some("clash")
 }
 
 struct Snapshot {
@@ -84,6 +99,22 @@ impl Snapshot {
         // 200 response would make clients silently drop all of the user's nodes.
         if !self.entitlement.allowed {
             return Err(ApiError::Conflict(self.message().1));
+        }
+        if format == "clash" {
+            if self.nodes.is_empty() && self.external.nodes.is_empty() {
+                return Err(ApiError::Conflict(self.message().1));
+            }
+            // A sing-box client template describes sing-box routing; the Clash profile
+            // carries the same nodes with its own selection groups.
+            let profile =
+                apsp_compiler::clash::compile_clash(&self.nodes, user_id, &self.external.nodes)
+                    .map_err(anyhow::Error::from)?;
+            if profile.included == 0 {
+                return Err(ApiError::Conflict(
+                    "订阅中的节点均无法以 Clash 格式等价表达，请使用 format=singbox 下载 sing-box JSON".into(),
+                ));
+            }
+            return Ok(profile.content);
         }
         if format == "links" {
             if self.template.is_some() {
@@ -262,16 +293,20 @@ pub(crate) async fn content_digest(
 }
 
 fn content_type(format: &str) -> &'static str {
-    if format == "singbox" {
-        "application/json; charset=utf-8"
-    } else {
-        "text/plain; charset=utf-8"
+    match format {
+        "singbox" => "application/json; charset=utf-8",
+        "clash" => "text/yaml; charset=utf-8",
+        _ => "text/plain; charset=utf-8",
     }
 }
 fn filename(user_id: i64, format: &str) -> String {
     format!(
         "apsp-{user_id}.{}",
-        if format == "singbox" { "json" } else { "txt" }
+        match format {
+            "singbox" => "json",
+            "clash" => "yaml",
+            _ => "txt",
+        }
     )
 }
 
@@ -361,11 +396,17 @@ async fn subscription_userinfo(
 
 pub async fn get(
     State(state): State<AppState>,
+    request_headers: HeaderMap,
     Path(token): Path<String>,
     Query(query): Query<SubscriptionQuery>,
 ) -> ApiResult<Response> {
-    // Existing token-only URLs retain their original Reality links format.
-    let format = query.format.as_deref().unwrap_or("links");
+    // Token-only URLs keep their original Reality links format, except for Clash
+    // family clients, which cannot read links.
+    let format = query
+        .format
+        .as_deref()
+        .or_else(|| client_format(&request_headers))
+        .unwrap_or("links");
     validate_format(format)?;
     if token.is_empty() || token.len() > 512 {
         return Err(ApiError::NotFound);
@@ -485,6 +526,9 @@ pub async fn preview(
     super::operations_workflows::event(&mut audit,Some(administrator),Some(id),"security_subscription_credentials_read",json!({"format":format,"managed_nodes":snapshot.nodes.len(),"external_nodes":snapshot.external.nodes.len(),"credential_values_recorded":false})).await?;
     audit.commit().await?;
     let mut formats = vec!["singbox"];
+    if snapshot.entitlement.allowed && snapshot.content(id, "clash").is_ok() {
+        formats.push("clash");
+    }
     if snapshot.template.is_none()
         && snapshot.external.granted == 0
         && snapshot
@@ -547,6 +591,34 @@ mod tests {
         // Values too large to scale fall back to the raw split instead of overflowing.
         let big = 1u128 << 100;
         assert_eq!(enforced_split(big, big, big), (big, big));
+    }
+
+    #[test]
+    fn clash_family_clients_get_the_clash_profile_by_default() {
+        let agent = |value: &str| {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::USER_AGENT, value.parse().unwrap());
+            client_format(&headers)
+        };
+        for clash in [
+            "clash-verge/v2.2.3",
+            "ClashforWindows/0.20.39",
+            "mihomo/1.19.29",
+            "Clash.Meta",
+            "FlClash/0.8.80",
+            "ClashMetaForAndroid/2.11.5",
+            "Stash/2.7.6 Clash/1.11.0",
+        ] {
+            assert_eq!(agent(clash), Some("clash"), "{clash}");
+        }
+        for other in ["sing-box 1.14.2", "SFA/1.11", "curl/8.5.0", "v2rayN/7.0"] {
+            assert_eq!(agent(other), None, "{other}");
+        }
+        assert_eq!(client_format(&HeaderMap::new()), None);
+        assert!(validate_format("clash").is_ok());
+        assert!(validate_format("yaml").is_err());
+        assert_eq!(filename(7, "clash"), "apsp-7.yaml");
+        assert_eq!(content_type("clash"), "text/yaml; charset=utf-8");
     }
 
     #[test]
