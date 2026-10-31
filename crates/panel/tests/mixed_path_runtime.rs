@@ -363,7 +363,7 @@ server.serve_forever()
 }
 
 #[tokio::test]
-#[ignore = "requires APSP_TEST_UPSTREAM=official v1.14.2, OpenSSL and isolated loopback ports; excludes unavailable official accounting extension"]
+#[ignore = "requires APSP_TEST_UPSTREAM=official v1.14.2-apsp.1, OpenSSL and isolated loopback ports; excludes unavailable official accounting extension"]
 async fn external_middle_hop_carries_tcp_udp_and_never_bypasses_a_stopped_hop() -> Result<()> {
     let binary = PathBuf::from(std::env::var("APSP_TEST_UPSTREAM")?);
     let directory =
@@ -501,7 +501,7 @@ async fn external_middle_hop_carries_tcp_udp_and_never_bypasses_a_stopped_hop() 
 }
 
 #[tokio::test]
-#[ignore = "requires official v1.14.2, OpenSSL, Python and exclusive loopback port 18086; proves native Clash path validation, not distributed Agent acceptance"]
+#[ignore = "requires official v1.14.2-apsp.1, OpenSSL, Python and exclusive loopback port 18086; proves native Clash path validation, not distributed Agent acceptance"]
 async fn clash_delay_checks_the_compiled_path_and_fails_when_external_middle_stops() -> Result<()> {
     let binary = PathBuf::from(std::env::var("APSP_TEST_UPSTREAM")?);
     let directory =
@@ -598,7 +598,7 @@ async fn clash_delay_checks_the_compiled_path_and_fails_when_external_middle_sto
         .json()
         .await?;
     ensure!(
-        version["version"] == "sing-box 1.14.2",
+        version["version"] == "sing-box 1.14.2-apsp.1",
         "fixture requires the fixed official runtime version"
     );
     let mut url = reqwest::Url::parse(&format!(

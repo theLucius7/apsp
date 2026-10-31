@@ -9,12 +9,17 @@ import platform
 import shutil
 import subprocess
 import tarfile
+import sys
 import tempfile
 import time
 
 from artifact_manifest import publish
 
-VERSION = '1.14.2'
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'singbox-runtime'))
+import apply as runtime_patches
+
+VERSION = '1.14.2-apsp.1'
+PATCHED_COMMIT = 'e2288134223b5b9e3a272f9fb4abb717bf7647f3'
 COMMIT = 'af6e64c3b69e6132ebaee0e1a3d24e93903f6709'
 CRONET = '0d28acc44093df24b2526dea3d6ffefd6b0a54f0'
 TARGETS = ('macos-arm64', 'freebsd-amd64', 'freebsd-arm64', 'windows-amd64', 'windows-arm64')
@@ -54,6 +59,8 @@ def main():
         root = Path(temporary)
         source = root / 'source'
         checkout(source, 'https://github.com/SagerNet/sing-box.git', COMMIT)
+        if runtime_patches.apply(source) != PATCHED_COMMIT:
+            raise ValueError('patch queue produced an unexpected commit')
         tags_file = 'DEFAULT_BUILD_TAGS' if system == 'macos' else 'DEFAULT_BUILD_TAGS_WINDOWS' if system == 'windows' else 'DEFAULT_BUILD_TAGS_OTHERS'
         tags = (source / 'release' / tags_file).read_text().strip() + ',with_v2ray_api'
         ldflags = (source / 'release/LDFLAGS').read_text().strip()

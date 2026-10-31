@@ -15,7 +15,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sqlx::Row;
+use sqlx::{Postgres, Row, Transaction};
 
 pub(super) fn router() -> Router<AppState> {
     Router::new()
@@ -122,6 +122,9 @@ struct Switch {
     backup_sha256: String,
     stopped_at: i64,
     stopped_services: Vec<String>,
+    /// Skips the one-host-per-day pacing on activation. Ignored when pausing.
+    #[serde(default)]
+    ignore_stagger: bool,
 }
 
 fn evidence(input: &Switch) -> ApiResult<Value> {
@@ -154,6 +157,30 @@ fn evidence(input: &Switch) -> ApiResult<Value> {
     )
 }
 
+/// Moving a whole fleet at once leaves nothing to compare against and nothing
+/// to fall back on if a change is detected: on 2026-10-26 eleven hosts cut over
+/// within hours were blocked together.
+const CUTOVER_SPACING_SECS: i64 = 24 * 3600;
+
+async fn stagger(tx: &mut Transaction<'_, Postgres>, server: i64, now: i64) -> ApiResult<()> {
+    let recent: Option<i64> = sqlx::query_scalar(
+        "SELECT MAX(last_activated_at) FROM singbox_nexus_runtime_hosts WHERE server_id<>$1 AND state='active'",
+    )
+    .bind(server)
+    .fetch_one(&mut **tx)
+    .await?;
+    if let Some(remaining) = recent
+        .map(|at| at + CUTOVER_SPACING_SECS - now)
+        .filter(|remaining| *remaining > 0)
+    {
+        return Err(ApiError::Conflict(format!(
+            "上一台主机切换未满 24 小时，还需等待约 {} 小时；观察国内可达性后再继续，确需提前可明确选择跳过间隔",
+            remaining / 3600 + 1
+        )));
+    }
+    Ok(())
+}
+
 async fn activate(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -175,7 +202,7 @@ async fn activate(
     let caps: Value = host.get("capabilities");
     let version = info["agent_version"].as_str().unwrap_or_default();
     let parts: Option<Vec<u32>> = version.split('.').map(|v| v.parse().ok()).collect();
-    let current = parts.is_some_and(|v| v.len() == 3 && v.as_slice() >= [0, 3, 1].as_slice());
+    let current = parts.is_some_and(|v| v.len() == 3 && v.as_slice() >= [0, 3, 4].as_slice());
     let online = host
         .get::<Option<i64>, _>("last_seen")
         .is_some_and(|at| (0..=60).contains(&now_timestamp().saturating_sub(at)));
@@ -191,7 +218,7 @@ async fn activate(
         || host.get::<Option<String>, _>("device_public_key").is_none()
     {
         return Err(ApiError::Conflict(
-            "请先以正式签名的 apsp Agent 0.3.1 或更新版本接入主机并保持在线".into(),
+            "请先以正式签名的 apsp Agent 0.3.4 或更新版本接入主机并保持在线（旧版不接受自维护运行时）".into(),
         ));
     }
     let (limited, synchronized) =
@@ -211,6 +238,9 @@ async fn activate(
             "该主机有 {limited} 名设定设备数限制的成员；需要提供会话控制能力的 Agent 并安装运行时日志命名空间，保留原服务"
         )));
     }
+    if !input.ignore_stagger {
+        stagger(&mut tx, server, now_timestamp()).await?;
+    }
     crate::agent::runtime_artifact(&state, &info).await?;
     let candidate = runtime_publish::compile(&state, &mut tx, server).await?;
     if candidate.config_hash != input.config_sha256 {
@@ -229,7 +259,7 @@ async fn activate(
             "订阅与流量兼容桥未就绪，保留原服务".into(),
         ));
     }
-    sqlx::query("UPDATE singbox_nexus_runtime_hosts SET state='active',activated_at=COALESCE(activated_at,$2),evidence=$3 WHERE server_id=$1")
+    sqlx::query("UPDATE singbox_nexus_runtime_hosts SET state='active',activated_at=COALESCE(activated_at,$2),last_activated_at=$2,evidence=$3 WHERE server_id=$1")
         .bind(server).bind(now_timestamp()).bind(proof).execute(&mut *tx).await?;
     sqlx::query("UPDATE server_plugins SET enabled=TRUE WHERE server_id=$1 AND plugin='sing-box'")
         .bind(server)

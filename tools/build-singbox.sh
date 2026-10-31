@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the pinned upstream release without modifying its source or default tags.
+# Build the pinned upstream release plus the Apsp patch queue in tools/singbox-runtime.
 set -euo pipefail
 umask 022
 
@@ -10,8 +10,8 @@ Usage: tools/build-singbox.sh <amd64|arm64> <ARTIFACT_ROOT> [--libc=gnu|--libc=m
 Run on Linux/amd64 with Go 1.26.8. Both targets use the upstream Chromium
 clang/sysroot toolchain. GNU uses glibc >= 2.31; musl is statically linked.
 
-Output: ARTIFACT_ROOT/sing-box/1.14.2/<arch> (a gzip archive with one binary)
-        ARTIFACT_ROOT/sing-box/1.14.2/SHA256SUMS
+Output: ARTIFACT_ROOT/sing-box/1.14.2-apsp.1/<arch> (a gzip archive with one binary)
+        ARTIFACT_ROOT/sing-box/1.14.2-apsp.1/SHA256SUMS
 With --libc, the artifact filename is linux-<libc>-<arch>. The legacy default
 remains GNU under <arch>. musl retains all upstream default tags.
 
@@ -52,7 +52,9 @@ if [[ $arch == arm64 ]]; then
   command -v aarch64-linux-gnu-objcopy >/dev/null || die 'install binutils-aarch64-linux-gnu'
 fi
 
-version=1.14.2
+upstream_version=1.14.2
+version=$upstream_version-apsp.1
+patched_commit=e2288134223b5b9e3a272f9fb4abb717bf7647f3
 upstream_commit=af6e64c3b69e6132ebaee0e1a3d24e93903f6709
 cronet_commit=0d28acc44093df24b2526dea3d6ffefd6b0a54f0
 naive_commit=72a06c9fca0e2d228588c7f3074bf7efff3ff686
@@ -114,12 +116,15 @@ for arch in ("amd64", "arm64", "linux-gnu-amd64", "linux-gnu-arm64", "linux-musl
         raise SystemExit(f"SHA256SUMS refers to missing {arch}")
 PY
 
+patch_queue=${APSP_SINGBOX_PATCHES:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/singbox-runtime}
+[[ -f $patch_queue/apply.py ]] || die "missing runtime patch queue: $patch_queue"
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/apsp-runtime.XXXXXX")
 source_dir=$scratch/source
 cronet_dir=$scratch/cronet-go
-git clone --depth=1 --branch "v$version" https://github.com/SagerNet/sing-box.git "$source_dir"
+git clone --depth=1 --branch "v$upstream_version" https://github.com/SagerNet/sing-box.git "$source_dir"
 [[ $(git -C "$source_dir" rev-parse HEAD) == "$upstream_commit" ]] || die 'upstream tag resolved to an unexpected commit'
 [[ $(cat "$source_dir/.github/CRONET_GO_VERSION") == "$cronet_commit" ]] || die 'unexpected upstream toolchain revision'
+[[ $(python3 "$patch_queue/apply.py" "$source_dir") == "$patched_commit" ]] || die 'patch queue produced an unexpected commit'
 git init "$cronet_dir"
 git -C "$cronet_dir" remote add origin https://github.com/SagerNet/cronet-go.git
 git -C "$cronet_dir" sparse-checkout set --no-cone '/*' '!/lib'

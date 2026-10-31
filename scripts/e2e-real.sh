@@ -66,7 +66,7 @@ systemd 基线使用 Debian 12；OpenRC 使用已启动 OpenRC 的专用 Linux �
      /opt/apsp/plugins/sing-box/current/sing-box version
      ss -lnt 'sport = :18085'
    OpenRC 的服务状态命令为：rc-service apsp-singbox@main status。
-   版本应为 1.14.2，包含 with_v2ray_api；18085 必须只在 127.0.0.1 监听。
+   版本应为 1.14.2-apsp.1，包含 with_v2ray_api；18085 必须只在 127.0.0.1 监听。
 7. 在独立客户端导入此用户的订阅，不要在服务器内使用直连代替代理链路。
    使用 sing-box JSON 时，本地混合入口是 127.0.0.1:2080。示例：
      curl --fail --proxy socks5h://127.0.0.1:2080 https://example.com/

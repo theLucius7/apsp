@@ -136,8 +136,14 @@ impl Harness {
         header.set_cksum();
         archive.append_data(&mut header, "demo", binary.as_slice())?;
         let archive = archive.into_inner()?.finish()?;
-        let mut entry =
-            release_support::entry("sing-box", "1.14.2", "demo", "tar.gz", &archive, binary);
+        let mut entry = release_support::entry(
+            "sing-box",
+            "1.14.2-apsp.1",
+            "demo",
+            "tar.gz",
+            &archive,
+            binary,
+        );
         // Real telemetry reports the host ABI; this fake runtime must use that signed identity.
         entry.arch = apsp_protocol::release::native_target()?;
         entry.asset_name = apsp_protocol::release::canonical_asset_name(&entry)?;

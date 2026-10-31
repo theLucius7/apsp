@@ -38,7 +38,7 @@ class ReleaseTests(unittest.TestCase):
             agent = self.source / "agent" / "0.3.0"
             agent.mkdir(parents=True, exist_ok=True)
             (agent / arch).write_bytes(b"TEST ONLY Agent " + arch.encode())
-            for name, version in (("sing-box", "1.14.2"),
+            for name, version in (("sing-box", "1.14.2-apsp.1"),
                                   ("nodequality", release.NODEQUALITY_VERSION)):
                 runtime = self.source / name / version
                 runtime.mkdir(parents=True, exist_ok=True)
@@ -54,7 +54,7 @@ class ReleaseTests(unittest.TestCase):
         self.installer.write_text("#!/bin/sh\nexit 0\n")
         self.bundle = self.directory / "release"
         self.arguments = argparse.Namespace(source=str(self.source), output=str(self.bundle),
-                                             agent_version="0.3.0", runtime_version="1.14.2",
+                                             agent_version="0.3.0", runtime_version="1.14.2-apsp.1",
                                              tag="agent-v0.3.0", installer=str(self.installer))
         release.assemble(self.arguments)
         self.roots = release.load_roots(FIXTURES / "public-keys.json")
@@ -74,7 +74,7 @@ class ReleaseTests(unittest.TestCase):
         return release.verify_bundle(self.bundle, self.roots, "minisign", "agent-v0.3.0")
 
     def test_musl_runtime_has_a_separate_signed_identity_and_tampering_is_rejected(self):
-        runtime = self.source / "sing-box" / "1.14.2"
+        runtime = self.source / "sing-box" / "1.14.2-apsp.1"
         for arch in ("amd64", "arm64"):
             (runtime / ("linux-musl-" + arch)).write_bytes((runtime / arch).read_bytes())
         self.bundle = self.directory / "release-musl"
@@ -467,7 +467,7 @@ class ReleaseTests(unittest.TestCase):
             self.verify()
 
     def test_modified_archive(self):
-        path = self.bundle / "sing-box-1.14.2-linux-amd64.tar.gz"
+        path = self.bundle / "sing-box-1.14.2-apsp.1-linux-amd64.tar.gz"
         path.write_bytes(path.read_bytes() + b"modified")
         with self.assertRaises(ValueError):
             self.verify()

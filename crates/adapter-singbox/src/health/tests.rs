@@ -157,6 +157,7 @@ async fn pure_quinn_loopback_validates_certificate_and_custom_alpn() -> Result<(
         }
     }));
     let mut listener = Listener {
+        reality: false,
         address,
         transport: Transport::Udp,
         obfuscation: None,
@@ -456,6 +457,7 @@ async fn obfuscated_quic_health_checks_certificate_and_custom_alpn() -> Result<(
         .stderr(std::process::Stdio::null())
         .spawn()?;
     let mut listener = Listener {
+        reality: false,
         address,
         transport: Transport::Udp,
         tls: Some(tls),
@@ -491,4 +493,45 @@ async fn obfuscated_quic_health_checks_certificate_and_custom_alpn() -> Result<(
     child.wait().await?;
     std::fs::remove_dir_all(directory)?;
     result
+}
+
+#[test]
+fn socket_table_only_matches_listening_sockets_on_the_exact_port() {
+    let table = "  sl  local_address rem_address   st tx_queue rx_queue\n\
+                 0: 00000000:20FB 00000000:0000 0A 00000000:00000000 00:00000000\n\
+                 1: 0100007F:1F90 0100007F:D2D8 01 00000000:00000000 00:00000000\n";
+    assert!(table_has_listener(table, 8443));
+    assert!(
+        !table_has_listener(table, 8080),
+        "an established socket is not a listener"
+    );
+    assert!(!table_has_listener(table, 443));
+    assert!(!table_has_listener("header only\n", 8443));
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn reality_probe_never_connects_to_the_listener() {
+    let socket = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let address = socket.local_addr().unwrap();
+    let mut listener = Listener {
+        reality: true,
+        address,
+        transport: Transport::Tcp,
+        tls: None,
+        obfuscation: None,
+    };
+    assert!(probe(&listener).await);
+    assert!(
+        timeout(Duration::from_millis(200), socket.accept())
+            .await
+            .is_err(),
+        "a health check must not reach the REALITY inbound"
+    );
+    drop(socket);
+    assert!(!probe(&listener).await);
+    listener.reality = false;
+    assert!(!probe(&listener).await);
 }

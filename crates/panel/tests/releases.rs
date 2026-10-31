@@ -88,7 +88,14 @@ fn bundle(
     if let Some(binary) = runtime {
         let archive = release_fixture::archive("sing-box", binary)?;
         artifacts.push((
-            signing::entry("sing-box", "1.14.2", "sing-box", "tar.gz", &archive, binary),
+            signing::entry(
+                "sing-box",
+                "1.14.2-apsp.1",
+                "sing-box",
+                "tar.gz",
+                &archive,
+                binary,
+            ),
             archive,
         ));
     }
@@ -293,7 +300,7 @@ async fn immutable_component_hash_conflicts_reject_new_tags() -> Result<()> {
     .await?;
     assert_eq!(releases::entries(&fixture.state).await?.len(), 3);
     let (runtime, _, _) =
-        releases::artifact(&fixture.state, "sing-box", "1.14.2", native_arch()?).await?;
+        releases::artifact(&fixture.state, "sing-box", "1.14.2-apsp.1", native_arch()?).await?;
     assert!(!runtime.is_empty());
     Ok(())
 }
@@ -461,7 +468,7 @@ fn native_runtime_archives_require_the_exact_signed_auxiliary_files() -> Result<
         let bytes = archive.into_inner()?.finish()?;
         let mut entry = signing::entry(
             "sing-box",
-            "1.14.2",
+            "1.14.2-apsp.1",
             "sing-box.exe",
             "tar.gz",
             &bytes,
@@ -478,7 +485,7 @@ fn native_runtime_archives_require_the_exact_signed_auxiliary_files() -> Result<
         );
         let proof = signing::signed_release(vec![(entry, bytes.clone())]);
         let release = apsp_protocol::release::verify_release(&proof, &signing::trusted_keys())?;
-        let artifact = release.artifact("sing-box", "1.14.2", "windows-amd64")?;
+        let artifact = release.artifact("sing-box", "1.14.2-apsp.1", "windows-amd64")?;
         assert_eq!(
             releases::verify_payload(&artifact, &bytes).is_ok(),
             accepted
@@ -495,10 +502,17 @@ fn concatenated_gzip_cannot_hide_nonzero_archive_tail() -> Result<()> {
     let mut tail = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     tail.write_all(b"unlisted trailing payload")?;
     bytes.extend(tail.finish()?);
-    let entry = signing::entry("sing-box", "1.14.2", "sing-box", "tar.gz", &bytes, binary);
+    let entry = signing::entry(
+        "sing-box",
+        "1.14.2-apsp.1",
+        "sing-box",
+        "tar.gz",
+        &bytes,
+        binary,
+    );
     let proof = signing::signed_release(vec![(entry, bytes.clone())]);
     let release = apsp_protocol::release::verify_release(&proof, &signing::trusted_keys())?;
-    let artifact = release.artifact("sing-box", "1.14.2", native_arch()?)?;
+    let artifact = release.artifact("sing-box", "1.14.2-apsp.1", native_arch()?)?;
     assert!(releases::verify_payload(&artifact, &bytes).is_err());
     Ok(())
 }

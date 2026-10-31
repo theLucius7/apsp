@@ -75,7 +75,7 @@ pub(super) fn preparation(node: &Node, compiled: Option<&Value>, now: i64) -> Va
         "compiled_runtime_acme_provider",
         json!({
             "node_id":node.id,"server_name":node.sni,"configuration_verified":valid,
-            "runtime_version":"1.14.2","provider":"letsencrypt","provider_tag":"managed-tls",
+            "runtime_version":crate::RUNTIME_VERSION,"provider":"letsencrypt","provider_tag":"managed-tls",
             "challenge":challenge,"challenge_protocol":"tcp","challenge_port":challenge.port(),
             "runtime_data_directory":"data","certificate_directory":"data/certificates",
             "domain_in_compiled_provider":valid,"inbound_uses_compiled_provider":valid,

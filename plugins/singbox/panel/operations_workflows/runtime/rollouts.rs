@@ -45,9 +45,10 @@ pub(crate) async fn create_rollout(
     for server in &targets {
         crate::control_center::require_server(&state, &headers, *server, "proxy:write").await?;
     }
-    if request.runtime_version != "1.14.2" || !(1..=20).contains(&request.batch_size) {
+    if request.runtime_version != crate::RUNTIME_VERSION || !(1..=20).contains(&request.batch_size)
+    {
         return Err(ApiError::BadRequest(
-            "当前仅支持固定可信版本 1.14.2，批次大小 1–20".into(),
+            "当前仅支持固定可信版本 1.14.2-apsp.1，批次大小 1–20".into(),
         ));
     }
     super::inventory::require_version(&state, &request.runtime_version).await?;
@@ -80,7 +81,7 @@ pub(crate) async fn create_rollout(
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO singbox_runtime_rollouts(id,administrator_id,runtime_version,targets,batch_size,created_at,updated_at,artifact_snapshot) VALUES($1,$2,$3,$4,$5,$6,$6,$7)").bind(id).bind(administrator).bind(request.runtime_version).bind(&targets).bind(request.batch_size).bind(now_timestamp()).bind(json!(artifacts)).execute(&mut *tx).await?;
     dispatch(&state, &headers, &mut tx, id).await?;
-    event(&mut tx,Some(administrator),None,"runtime_rollout_create",json!({"id":id,"targets":targets,"batch_size":request.batch_size,"canary_size":1,"runtime_version":"1.14.2"})).await?;
+    event(&mut tx,Some(administrator),None,"runtime_rollout_create",json!({"id":id,"targets":targets,"batch_size":request.batch_size,"canary_size":1,"runtime_version":crate::RUNTIME_VERSION})).await?;
     tx.commit().await?;
     Ok(Json(
         json!({"id":id,"state":"canary_dispatched","targets":targets}),
@@ -111,7 +112,8 @@ async fn members(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> ApiResult<Vec<
             && row.get::<Option<bool>, _>("healthy") == Some(true)
             && row.get::<Option<i64>, _>("target_rev") == row.get::<Option<i64>, _>("applied_rev")
             && row.get::<Option<i64>, _>("dirty_at").is_none()
-            && row.get::<Option<String>, _>("runtime_version").as_deref() == Some("1.14.2")
+            && row.get::<Option<String>, _>("runtime_version").as_deref()
+                == Some(crate::RUNTIME_VERSION)
             && row
                 .get::<Option<String>, _>("observed_artifact_sha256")
                 .as_deref()

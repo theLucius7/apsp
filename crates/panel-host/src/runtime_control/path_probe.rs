@@ -74,7 +74,7 @@ pub async fn enqueue_path_probe(
     let id = probe_id.to_string();
     anyhow::ensure!(
         plan["schema"] == 1
-            && plan["runtime_version"] == "1.14.2"
+            && plan["runtime_version"].as_str().is_some()
             && bindings.len() <= 256
             && bindings
                 .iter()

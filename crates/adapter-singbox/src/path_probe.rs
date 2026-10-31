@@ -81,7 +81,7 @@ pub(crate) fn configuration(spec: &RuntimeSpec) -> Result<Option<Configuration>>
         .map_err(|_| anyhow::anyhow!("invalid signed verification plan"))?;
     ensure!(
         plan.schema == 1
-            && plan.runtime_version == "1.14.2"
+            && crate::version::validate_requested(&plan.runtime_version).is_ok()
             && spec.kernel_version == plan.runtime_version
             && !plan.bindings.is_empty()
             && plan.bindings.len() <= 256,

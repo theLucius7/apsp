@@ -31,7 +31,7 @@ pub fn worker_names() -> &'static [&'static str] {
 
 pub fn runtime_step_policy(kind: &str) -> Option<RuntimeStepPolicy> {
     (kind == "singbox_retry_deployment").then_some(RuntimeStepPolicy {
-        version: "1.14.2",
+        version: crate::RUNTIME_VERSION,
         capability: "proxy:write",
     })
 }

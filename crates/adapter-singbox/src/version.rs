@@ -1,19 +1,29 @@
 use anyhow::{Context, Result, bail};
 
+/// Accepts an upstream stable `1.14.N` or our patched build `1.14.N-apsp.M`.
 pub(crate) fn validate_requested(version: &str) -> Result<()> {
-    let patch = version
+    let rest = version
         .strip_prefix("1.14.")
         .context("only stable 1.14.x runtimes are supported")?;
-    if patch.is_empty()
-        || !patch.bytes().all(|byte| byte.is_ascii_digit())
-        || (patch.len() > 1 && patch.starts_with('0'))
-    {
-        bail!("invalid stable 1.14.x runtime version");
+    let (patch, build) = match rest.split_once("-apsp.") {
+        Some((patch, build)) => (patch, Some(build)),
+        None => (rest, None),
+    };
+    number(patch).context("invalid stable 1.14.x runtime version")?;
+    if let Some(build) = build {
+        number(build).context("invalid patched runtime build number")?;
     }
-    patch
-        .parse::<u32>()
-        .context("invalid runtime patch version")?;
     Ok(())
+}
+
+fn number(value: &str) -> Result<u32> {
+    if value.is_empty()
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+        || (value.len() > 1 && value.starts_with('0'))
+    {
+        bail!("not a canonical decimal number");
+    }
+    Ok(value.parse()?)
 }
 
 pub(crate) fn validate_output(output: &str, expected: &str) -> Result<()> {
@@ -90,7 +100,23 @@ mod tests {
         ] {
             assert!(validate_output(&output, "1.14.2").is_err());
         }
-        for version in ["1.14.", "1.14.02", "v1.14.2", "1.14.2+dirty", "1.15.0"] {
+        assert!(validate_requested("1.14.2-apsp.1").is_ok());
+        assert!(
+            validate_output(&valid.replace("1.14.2", "1.14.2-apsp.1"), "1.14.2-apsp.1").is_ok()
+        );
+        assert!(validate_output(valid, "1.14.2-apsp.1").is_err());
+        for version in [
+            "1.14.",
+            "1.14.02",
+            "v1.14.2",
+            "1.14.2+dirty",
+            "1.15.0",
+            "1.14.2-apsp.",
+            "1.14.2-apsp.01",
+            "1.14.2-apsp.x",
+            "1.14.2-apsp.1.2",
+            "1.14.2-other.1",
+        ] {
             assert!(validate_requested(version).is_err());
         }
     }

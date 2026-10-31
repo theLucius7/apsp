@@ -61,7 +61,7 @@
 - Rust stable、edition 2024；每个 crate 根文件（含二进制根、测试 crate 和构建脚本）使用 `#![forbid(unsafe_code)]`，禁止引入 `unsafe` 代码。
 - 代码标识符、代码注释使用英文；`docs/`、README、PROGRESS 使用中文。界面只使用中文。
 - 只使用任务说明列出的依赖；确需新增依赖时先在 `docs/adr/` 说明必要性和替代方案。
-- 不修改 sing-box 上游源码；不得提交真实密钥、令牌、域名、IP 或其他环境凭证。示例使用占位符、保留示例域名以及明确要求的回环或监听地址。
+- sing-box 只通过 `tools/singbox-runtime/` 的补丁修改（2026-11-01 用户要求维护自己的构建版本，见 ADR 0102），不直接改上游 checkout；不得提交真实密钥、令牌、域名、IP 或其他环境凭证。示例使用占位符、保留示例域名以及明确要求的回环或监听地址。
 - 不在核心路径留下仅有 TODO 的实现，不为范围外功能创建空目录或空模块。
 - 按 `docs/PLAN.md` 中 G1–G9 顺序推进。每阶段结束必须通过 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`；G1 另需 `cargo build`。
 - 测试必须覆盖协议兼容、编译确定性、账本事务与恢复、对账合并与回滚。需要 PostgreSQL 或真实运行时而环境不可用的测试使用带原因的 `#[ignore]`，在 `PROGRESS.md` 记录未验证范围与人工步骤，不得宣称已通过实机验收。

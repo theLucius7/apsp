@@ -140,7 +140,7 @@ async fn missing_signed_runtime_is_visible_and_preparation_never_confirms_applic
     release_fixture::write(
         &panel.state.config.data_dir,
         "sing-box",
-        "1.14.2",
+        "1.14.2-apsp.1",
         "sing-box",
         &archive,
         binary,
