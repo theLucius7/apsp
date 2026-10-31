@@ -79,6 +79,7 @@
 | Agent 采集与上报设置、周期拨测 | 服务器详情 › Agent 与任务 |
 | 离线、资源、到期、流量告警；Telegram 与 Webhook | 监控告警 |
 | 三网延迟检测 | 监控告警 › 延迟检测 |
+| 中国可达性：经第三方探测点比较中国与海外的 TCP 连接，区分端口封锁、IP 封锁与服务故障，默认关闭，仅所有者可用，见 [ADR 0103](adr/0103-china-reachability-monitor.md) | 监控告警 › 延迟检测 › 中国可达性 `/#/latency/reachability` |
 | IP 质量与流媒体、AI 服务解锁；TCP 连接诊断 | 服务器详情 › 线路诊断 › IP 信息、TCP 诊断 |
 | 网络检测中的基础探测（TCP、ICMP、HTTP、DNS、TLS 等）、路由追踪与多来源 IP，计划并入线路质量中心 | 监控告警 › 网络检测 |
 | **费用与续费账本**（Wallos 式，首批已实现）：手动添加的域名、AI 与其他服务，以及按资产设置自动列出的服务器；周期费用、下次续费、30 天内续费、续费日历与 iCalendar、续期付款记录与提醒，服务器的购买、续费、退款与退订记录及退订提醒，机场订阅来源报告的到期（仅供参考），按显示币种汇总，可从 Wallos 导入，见 [ADR 0096](adr/0096-costs-and-renewals-ledger.md)、[ADR 0097](adr/0097-ledger-server-records-and-source-references.md) | 总览 › 费用与续费 `/#/plugins/expenses` |
@@ -136,7 +137,7 @@
 
 **服务器详情**按“这台服务器”分为六个分页：概况（`/#/servers/{id}`）、资产与流量（`/assets`）、Agent 与任务（`/agent`）、插件（`/plugins`）、线路诊断（IP 信息 `/ip-info`、TCP 诊断 `/tcp-quality`、节点验机 `/node-quality` 三个子视图）、运维（实验，`/fleet`）。分页下方的「带此服务器打开」进入网络检测、网络配置和自动化与维护，并预先选中这台服务器。
 
-**不在侧栏但仍可用的地址：** `/#/fleet`（原运维工具，显示服务器选择与迁移说明）、`/#/servers/batch`（批量接入，从服务器列表进入）、`/#/system/plugins`（插件中心的服务器启用视图）、`/#/artifacts`（插件中心别名）、`/#/plugins/sing-box/chains`（链路视图）、`/#/overview` 与 `/` （服务器看板别名；登录后无指定地址时进入概览）。
+**不在侧栏但仍可用的地址：** `/#/fleet`（原运维工具，显示服务器选择与迁移说明）、`/#/servers/batch`（批量接入，从服务器列表进入）、`/#/system/plugins`（插件中心的服务器启用视图）、`/#/artifacts`（插件中心别名）、`/#/plugins/sing-box/chains`（链路视图）、`/#/latency/reachability`（延迟检测的中国可达性视图）、`/#/overview` 与 `/` （服务器看板别名；登录后无指定地址时进入概览）。
 
 ## 归类规则
 
