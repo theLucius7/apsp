@@ -125,6 +125,10 @@ struct Switch {
     /// Skips the one-host-per-day pacing on activation. Ignored when pausing.
     #[serde(default)]
     ignore_stagger: bool,
+    /// Activates even though the host's address is measured as blocked from
+    /// China. Ignored when pausing.
+    #[serde(default)]
+    ignore_reachability: bool,
 }
 
 fn evidence(input: &Switch) -> ApiResult<Value> {
@@ -177,6 +181,44 @@ async fn stagger(tx: &mut Transaction<'_, Postgres>, server: i64, now: i64) -> A
             "上一台主机切换未满 24 小时，还需等待约 {} 小时；观察国内可达性后再继续，确需提前可明确选择跳过间隔",
             remaining / 3600 + 1
         )));
+    }
+    Ok(())
+}
+
+/// A measurement older than this says nothing: the monitor may be off or deferring.
+const REACHABILITY_FRESH_SECS: i64 = 6 * 3600;
+
+/// Cutting over a host that is already blocked from China would fail for
+/// members and read as a runtime fault. An unknown or stale state does not stop
+/// the cutover, because the monitor is opt-in.
+async fn reachable(
+    state: &AppState,
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    now: i64,
+) -> ApiResult<()> {
+    let nodes: Vec<i64> = sqlx::query_scalar(
+        "SELECT inventory_id FROM singbox_nexus_runtime_nodes WHERE server_id=$1 ORDER BY inventory_id",
+    )
+    .bind(server)
+    .fetch_all(&mut **tx)
+    .await?;
+    for node in nodes {
+        let latest = crate::reachability::latest_node_state(
+            &state.pool,
+            crate::reachability::NodeReference::Nexus(node),
+        )
+        .await?;
+        if latest.is_some_and(|latest| {
+            latest.blocked
+                && latest
+                    .checked_at
+                    .is_some_and(|at| now.saturating_sub(at) <= REACHABILITY_FRESH_SECS)
+        }) {
+            return Err(ApiError::Conflict(
+                "该主机的公网地址最近测得国内不可达，切换后成员仍无法连接；请先更换地址，确需继续可明确选择跳过检查".into(),
+            ));
+        }
     }
     Ok(())
 }
@@ -240,6 +282,9 @@ async fn activate(
     }
     if !input.ignore_stagger {
         stagger(&mut tx, server, now_timestamp()).await?;
+    }
+    if !input.ignore_reachability {
+        reachable(&state, &mut tx, server, now_timestamp()).await?;
     }
     crate::agent::runtime_artifact(&state, &info).await?;
     let candidate = runtime_publish::compile(&state, &mut tx, server).await?;

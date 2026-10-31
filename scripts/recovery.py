@@ -170,6 +170,9 @@ def isolation_sql(migrations):
         statements.append("UPDATE expense_settings SET reminders_enabled=false;UPDATE expense_deliveries SET state='cancelled' WHERE state IN ('pending','sending','failed');")
     if 68 in available:
         statements.append("UPDATE singbox_mail_settings SET enabled=false,reminders_enabled=false;UPDATE singbox_member_messages SET mail_state='cancelled' WHERE mail_state IN ('pending','sending','failed');")
+    # Nor may it send node addresses to the measurement provider or repeat its alerts.
+    if 79 in available:
+        statements.append("UPDATE singbox_reachability_settings SET enabled=false,run_requested_at=NULL,lease_until=NULL;UPDATE singbox_reachability_deliveries SET state='cancelled' WHERE state IN ('pending','sending','failed');")
     return "".join(statements)
 
 

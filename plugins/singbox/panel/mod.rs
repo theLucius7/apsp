@@ -54,6 +54,7 @@ mod portal;
 pub mod proxy_resources;
 pub mod proxy_users;
 pub mod publisher;
+pub mod reachability;
 pub mod runtime_operations;
 mod secret_access;
 pub mod settings;
@@ -83,6 +84,7 @@ pub async fn run(state: AppState) {
     tokio::join!(
         publisher::run(state.clone()),
         commerce::run(state.clone()),
+        reachability::run(state.clone()),
         subscription_sources::worker::run(state)
     );
 }
@@ -168,6 +170,7 @@ pub fn router() -> Router<AppState> {
         .route("/usage", get(usage::summary))
         .merge(catalog::router())
         .merge(nexus_nodes::router())
+        .merge(reachability::router())
         .merge(sources::router())
         .route("/source-migration", get(source_migration::state))
         .merge(portal::router())

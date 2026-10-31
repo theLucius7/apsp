@@ -250,6 +250,27 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     );
     let mut paced = body.clone();
     paced["ignore_stagger"] = json!(true);
+    // A fresh blocked measurement holds the cutover. A stale one says nothing.
+    sqlx::query("UPDATE singbox_nexus_nodes SET display=display||'{\"public_host\":\"blocked.example.invalid\",\"public_port\":\"443\"}' WHERE server_id=$1")
+        .bind(server)
+        .execute(&pool)
+        .await?;
+    sqlx::query("INSERT INTO singbox_reachability_targets(host,port,state,checked_at,seen_at) VALUES('blocked.example.invalid',443,'ip_blocked',$1,$1)")
+        .bind(now_timestamp())
+        .execute(&pool)
+        .await?;
+    assert_eq!(
+        post(&panel, &cookie, &format!("/{server}/activate"), paced.clone())
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    let mut forced = paced.clone();
+    forced["ignore_reachability"] = json!(true);
+    ok(post(&panel, &cookie, &format!("/{server}/activate"), forced).await?).await?;
+    sqlx::query("UPDATE singbox_reachability_targets SET checked_at=1")
+        .execute(&pool)
+        .await?;
     ok(post(&panel, &cookie, &format!("/{server}/activate"), paced).await?).await?;
     let recorded: Option<i64> = sqlx::query_scalar(
         "SELECT last_activated_at FROM singbox_nexus_runtime_hosts WHERE server_id=$1",
