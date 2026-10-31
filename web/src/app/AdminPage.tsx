@@ -46,6 +46,7 @@ const Backup = lazyPage(() => import('../system/Backup'))
 const AlertSettings = lazyPage(() => import('../monitoring/AlertSettings'))
 const Notifications = lazyPage(() => import('../monitoring/Notifications'))
 const LatencyTasks = lazyPage(() => import('../monitoring/LatencyTasks'))
+const ChinaReachability = lazyPage(() => import('../monitoring/ChinaReachability'))
 const Statistics = lazyPage(() => import('../statistics/Statistics'))
 const SingboxOverview = lazyPage(() => import('../plugins/singbox/Overview'))
 const Nodes = lazyPage(() => import('../plugins/singbox/Nodes'))
@@ -87,6 +88,7 @@ function page(route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' | 'm
     case 'singbox-overview': return <SingboxOverview />
     case 'statistics': return <Statistics />
     case 'latency': return <LatencyTasks />
+    case 'latency-reachability': return <ChinaReachability />
     case 'alicloud': return <Alicloud />
     case 'ddns': return <Ddns />
     case 'nodes': return <Nodes
