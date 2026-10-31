@@ -552,4 +552,33 @@ mod tests {
             MeasureError::Malformed
         );
     }
+
+    /// Checks the real client against the real service. Point
+    /// `APSP_GLOBALPING_SMOKE_TARGET=<ip>:<port>` at an address you may probe.
+    #[tokio::test]
+    #[ignore = "calls the real Globalping API and spends its quota"]
+    async fn real_service_answers_in_the_expected_shape() {
+        let target: std::net::SocketAddr = std::env::var("APSP_GLOBALPING_SMOKE_TARGET")
+            .expect("set APSP_GLOBALPING_SMOKE_TARGET")
+            .parse()
+            .unwrap();
+        let transport = ReqwestTransport::new().unwrap();
+        let client = Client::new(&transport, None);
+        assert!(client.limits().await.unwrap().limit > 0);
+        let china = client
+            .tcp_ping(target.ip(), target.port(), china_locations())
+            .await
+            .unwrap();
+        assert!(!china.is_empty());
+        assert!(
+            china
+                .iter()
+                .any(|probe| probe.country.as_deref() == Some("CN"))
+        );
+        let overseas = client
+            .tcp_ping(target.ip(), target.port(), overseas_locations(2))
+            .await
+            .unwrap();
+        assert!(overseas.iter().any(|probe| probe.received > 0.0));
+    }
 }

@@ -260,9 +260,14 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
         .execute(&pool)
         .await?;
     assert_eq!(
-        post(&panel, &cookie, &format!("/{server}/activate"), paced.clone())
-            .await?
-            .status(),
+        post(
+            &panel,
+            &cookie,
+            &format!("/{server}/activate"),
+            paced.clone()
+        )
+        .await?
+        .status(),
         StatusCode::CONFLICT
     );
     let mut forced = paced.clone();
