@@ -36,7 +36,8 @@ pub fn route_policy(path: &str, method: &Method) -> Option<RoutePolicy> {
                     || path.contains("/nexus-nodes")
                     || path.contains("/accesses")
                     || path.contains("/external-accesses")
-                    || path.contains("/subscription/reset"))));
+                    || path.contains("/subscription/reset")
+                    || path.ends_with("/reachability/settings"))));
     let read = (feature == "cloud" && *method == Method::POST && path.ends_with("/cdt-check"))
         || feature == "dns"
             && ((path.starts_with("/api/plugins/ddns/rules/") && path.ends_with("/preview"))
@@ -100,6 +101,15 @@ mod tests {
         )
         .unwrap();
         assert!(reset.high_risk);
+        // Opting in sends node addresses to a third party; a run stays within that choice.
+        let opt_in =
+            route_policy("/api/plugins/sing-box/reachability/settings", &Method::PUT).unwrap();
+        assert!(opt_in.high_risk && !opt_in.independent_identity);
+        assert!(
+            !route_policy("/api/plugins/sing-box/reachability/run", &Method::POST)
+                .unwrap()
+                .high_risk
+        );
         assert!(
             !route_policy("/api/plugins/sing-box/nodes/preview", &Method::POST)
                 .unwrap()
