@@ -17,8 +17,8 @@ export const toneFill: Record<string, string> = { good: 'bg-success', warning: '
 export const qualityText: Record<string, string> = { good: 'text-success', fair: 'text-info', warning: 'text-warning', poor: 'text-chart-5', danger: 'text-destructive', empty: 'text-muted-foreground' }
 export const qualityFill: Record<string, string> = { good: 'bg-success', fair: 'bg-info', warning: 'bg-warning', poor: 'bg-chart-5', danger: 'bg-destructive', empty: 'bg-muted-foreground/20' }
 
-/** Translucent card surface used for every dashboard section. */
-export const surface = 'bg-card/90 text-card-foreground ring-foreground/10 rounded-xl ring-1 shadow-xs supports-backdrop-filter:backdrop-blur-md'
+/** Card surface used for every dashboard section; the same as the console's panels. */
+export const surface = 'bg-card text-card-foreground rounded-lg border'
 
 export function SectionHeading({ icon: Icon, title, children }: { icon: LucideIcon; title: string; children?: ReactNode }) {
   return <div className="flex items-center justify-between gap-3 max-sm:flex-col max-sm:items-stretch">

@@ -36,7 +36,7 @@ export default function FleetOperations({serverId, embedded = false}: {serverId?
   const current = selected || servers.data?.[0]?.id || 0
   const profile = useResource<FleetProfile>(current ? `/api/servers/${current}/fleet` : null)
   return <FleetPermissionsContext.Provider value={permissions}>
-    {!embedded && <><PageHeader eyebrow="服务器" title="运维工具" description="运维工具已并入服务器详情的「运维」分页；这里保留旧地址，可选择服务器后使用。批量接入在「服务器列表」中。"><Refresh onClick={() => {actor.reload();servers.reload(); profile.reload()}} /><a className={buttonVariants({ variant: 'outline' })} href="#/servers/batch">批量接入</a></PageHeader>
+    {!embedded && <><PageHeader title="运维工具" description="运维工具已并入服务器详情的「运维」分页；这里保留旧地址，可选择服务器后使用。批量接入在「服务器列表」中。"><Refresh onClick={() => {actor.reload();servers.reload(); profile.reload()}} /><a className={buttonVariants({ variant: 'outline' })} href="#/servers/batch">批量接入</a></PageHeader>
     <TierNotice tier="experimental">终端、文件和服务操作还需要服务器本机的运维策略允许；通用运维更适合交给 SSH 工具。</TierNotice></>}
     <ErrorNotice message={actor.error || servers.error || profile.error} />
     {!embedded && <div className="my-3 flex flex-wrap items-end gap-2 max-sm:flex-col max-sm:items-stretch"><Field className="mb-0 min-w-36 flex-1" label="当前服务器"><NativeSelect className="w-full" value={current} onChange={event => {setSelected(Number(event.target.value)); setTab('overview')}}>{servers.data?.map(server => <option key={server.id} value={server.id}>{server.name}</option>)}</NativeSelect></Field></div>}
@@ -92,7 +92,7 @@ function Assets({profile,servers,reload}: {profile:FleetProfile;servers:Server[]
 export function BatchEnrollment() {
   const actor = useResource<FleetActor>('/api/control-center/me')
   return <FleetPermissionsContext.Provider value={fleetPermissions(actor)}>
-    <PageHeader eyebrow="服务器" title="批量接入" description="用接入模板一次登记多台服务器：分组、标签、采集、拨测与告警按模板写入，再分别在各服务器上执行安装命令。"><a className={buttonVariants({ variant: 'outline' })} href="#/servers">返回服务器列表</a></PageHeader>
+    <PageHeader title="批量接入" description="用接入模板一次登记多台服务器：分组、标签、采集、拨测与告警按模板写入，再分别在各服务器上执行安装命令。"><a className={buttonVariants({ variant: 'outline' })} href="#/servers">返回服务器列表</a></PageHeader>
     <ErrorNotice message={actor.error} />
     <Enrollment />
   </FleetPermissionsContext.Provider>

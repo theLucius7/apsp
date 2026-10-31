@@ -4,6 +4,7 @@ import { Badge, ErrorNotice, Field, Loading, Modal } from '../../components'
 import { bytes, time } from '../../format'
 import type { ProxyUser } from '../../types'
 import { statusText } from './groupTypes'
+import { copyText as copy } from '@/lib/clipboard'
 import { protocolNames } from './ProtocolFields'
 
 import { Button } from '@/components/ui/button'
@@ -33,14 +34,6 @@ function address(subscription: Subscription): string {
     url.searchParams.set('format', subscription.format)
     return url.toString()
   } catch { return '' }
-}
-
-async function copy(text: string) {
-  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text)
-  const input = document.createElement('textarea')
-  input.value = text; input.style.position = 'fixed'; input.style.opacity = '0'; document.body.append(input)
-  try { input.select(); if (!document.execCommand('copy')) throw new Error('clipboard unavailable') }
-  finally { input.remove() }
 }
 
 export default function SubscriptionDialog({ user, format, onFormatChange, onClose, onReset }: {

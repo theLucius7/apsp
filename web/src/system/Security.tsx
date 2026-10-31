@@ -81,7 +81,7 @@ export default function Security() {
     }), () => { form.reset(); setSetup(undefined); setNotice('二步验证已关闭，其他设备的管理员会话已退出。'); resource.reload() })
   }
   return <>
-    <PageHeader eyebrow="系统" title="账号安全" description="管理当前管理员的登录密码、Passkey 和二步验证。其他管理员、会话与 API 令牌在「管理与安全」中管理。"><Refresh onClick={resource.reload} /></PageHeader>
+    <PageHeader title="账号安全" description="管理当前管理员的登录密码、Passkey 和二步验证。其他管理员、会话与 API 令牌在「管理与安全」中管理。"><Refresh onClick={resource.reload} /></PageHeader>
     {resource.data && <PasswordChange totp={resource.data.enabled} />}
     <AdminPasskeys />
     <ErrorNotice message={resource.error} retry={resource.reload} />

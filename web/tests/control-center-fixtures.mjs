@@ -11,6 +11,8 @@ export async function installControlCenterFixtures(page, { nexusNodes = [] } = {
     if (request.method() !== 'GET' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) return route.fallback()
     return route.fulfill({ json: nexusNodes })
   })
+  // The user list's summary line; suites that care about it register their own route later.
+  await page.route('**/api/plugins/sing-box/users/overview', route => route.request().method() === 'GET' ? route.fulfill({ json: [] }) : route.fallback())
   await page.route('**/api/control-center/**', async route => {
     const request = route.request()
     if (request.method() !== 'GET') return route.fallback()

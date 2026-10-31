@@ -6,7 +6,7 @@ import type { Preferences } from '../system/panelSettings'
 import AlertRules from './AlertRules'
 import WebhookSettings from './WebhookSettings'
 import NotificationChannels from './NotificationChannels'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -48,8 +48,8 @@ export default function AlertSettings() {
   // Other administrators skip the read instead of leaving a denied request in the audit log on every visit.
   const resource = useResource<Preferences>(owner ? '/api/settings' : null, 0)
   return <>
-    <PageHeader eyebrow="监控告警" title="告警设置" description="决定哪些情况会产生告警，以及告警通过 Telegram 或 Webhook 发给谁。">
-      <a className={buttonVariants({ variant: 'outline' })} href="#/system/notifications">查看告警事件</a>
+    <PageHeader title="告警设置" description="决定哪些情况会产生告警，以及告警通过 Telegram 或 Webhook 发给谁。">
+      
     </PageHeader>
     <ErrorNotice message={actor.error || resource.error} retry={actor.error ? actor.reload : resource.reload} />
     {resource.data ? <Form initial={resource.data} />

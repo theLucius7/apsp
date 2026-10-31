@@ -4,6 +4,7 @@ import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { openPage } from './shell-navigation.mjs'
 
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 
@@ -14,7 +15,7 @@ async function openNav(page, name) {
   // The viewport decides whether the menu button is in use: a visibility check does
   // not wait, and a closing dialog briefly hides the page from assistive technology.
   if (page.viewportSize().width < 768 && await menu.getAttribute('aria-expanded') !== 'true') await menu.click()
-  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name, exact: true }).click()
+  await openPage(page, name)
 }
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const server = createServer(async (request, response) => {
@@ -211,7 +212,7 @@ try {
     await page.getByRole('heading', { name: '暂无符合条件的告警' }).waitFor()
     await page.getByText('可在「告警设置」中配置离线、资源、到期和流量提醒。', { exact: true }).waitFor()
     // The header shortcut shares its name with the sidebar entry, so scope it to the page actions.
-    const alertSettings = page.locator('[data-slot=page-actions]').getByRole('link', { name: '告警设置', exact: true })
+    const alertSettings = page.getByRole('navigation', { name: '本节页面' }).getByRole('link', { name: '告警设置', exact: true })
     assert.equal(await alertSettings.getAttribute('href'), '#/monitoring/settings')
     await alertSettings.click()
     await page.getByRole('heading', { name: '告警设置', exact: true }).waitFor()
@@ -238,8 +239,8 @@ try {
     assert.equal(settingsReads, ownerReads)
     // The entry only appears once the shell has read this administrator, so wait for it before counting.
     const navigation = page.getByRole('navigation', { name: '主导航', includeHidden: true })
-    await navigation.getByRole('link', { name: '告警设置', exact: true, includeHidden: true }).waitFor({ state: 'attached' })
-    for (const [name, count] of [['告警事件', 1], ['延迟检测', 1], ['告警设置', 1], ['面板设置', 0]]) assert.equal(await navigation.getByRole('link', { name, exact: true, includeHidden: true }).count(), count, name)
+    await navigation.getByRole('link', { name: '告警', exact: true, includeHidden: true }).waitFor({ state: 'attached' })
+    for (const [name, count] of [['告警', 1], ['线路检测', 1], ['设置', 1]]) assert.equal(await navigation.getByRole('link', { name, exact: true, includeHidden: true }).count(), count, name)
     assert.deepEqual(errors, []); assert.deepEqual(unexpected, [])
     results.push({ width, assignment: 'passed', notificationConfig: 'passed', rules: 'passed', history: 'passed', settingsFailure: 'passed', otherAdministrators: 'passed' })
     await context.close()

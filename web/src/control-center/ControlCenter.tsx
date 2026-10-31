@@ -1,10 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { api } from '../api'
 import { ErrorNotice, Loading, PageHeader, Refresh } from '../components'
 import { useAction, useResource } from '../hooks'
-import { usePreference } from './preferences'
-import type { Locale } from '../i18n'
-import { useI18n } from '../i18n'
 import SystemHealth from './SystemHealth'
 import ToolSecurity from './ToolSecurity'
 
@@ -29,20 +26,6 @@ const time = (value: number | null) => value ? new Date(value * 1000).toLocaleSt
 const ids = (value: string) => value.split(/[,，\s]+/).filter(Boolean).map(Number)
 const emptyAdmin = { login_name: '', display_name: '', role: 'viewer', enabled: true, all_servers: false, capabilities: [] as string[], server_ids: [] as number[], password: '', expected_revision: 0 }
 
-function Appearance() {
-  const preference = usePreference<{ theme: string; density: string; locale?: Locale }>('appearance')
-  // The header language picker saves through the shell; show what is stored now.
-  useEffect(() => { const update = () => { void preference.reload() }; window.addEventListener('apsp:appearance-updated', update); return () => window.removeEventListener('apsp:appearance-updated', update) }, [preference.reload])
-  const action = useAction()
-  const { locale, setLocale, t } = useI18n()
-  const value = preference.value ?? { theme: 'system', density: 'comfortable', locale }
-  const save = (next: Partial<typeof value>) => void action.run(() => preference.save({ ...value, ...next }))
-  return <Panel><PanelHeader><PanelTitle>{t('主题与密度')}</PanelTitle></PanelHeader><div className="p-4"><ErrorNotice message={action.error || preference.error} retry={preference.reload} /><div className="grid gap-4 sm:grid-cols-2">
-    <label data-slot="field" className="mb-4 grid min-w-0 gap-1.5 last:mb-0"><span className="text-sm leading-snug font-medium">{t('主题')}</span><NativeSelect className="w-full" disabled={!preference.ready || action.busy} value={value.theme} onChange={event => save({ theme: event.target.value })}><option value="system">{t('跟随系统')}</option><option value="light">{t('浅色')}</option><option value="dark">{t('深色')}</option></NativeSelect></label>
-    <label data-slot="field" className="mb-4 grid min-w-0 gap-1.5 last:mb-0"><span className="text-sm leading-snug font-medium">{t('密度')}</span><NativeSelect className="w-full" disabled={!preference.ready || action.busy} value={value.density} onChange={event => save({ density: event.target.value })}><option value="comfortable">{t('舒适')}</option><option value="compact">{t('紧凑')}</option></NativeSelect></label>
-    <label data-slot="field" className="mb-4 grid min-w-0 gap-1.5 last:mb-0"><span className="text-sm leading-snug font-medium">{t('界面语言')}</span><NativeSelect className="w-full" disabled={!preference.ready || action.busy} value={value.locale ?? locale} onChange={event => { const next = event.target.value as Locale; setLocale(next); save({ locale: next }) }}><option value="zh-CN">{t('简体中文')}</option><option value="en-US">{t('English')}</option></NativeSelect></label>
-  </div><p>{t('偏好按管理员保存。搜索快捷键为 Ctrl / ⌘ + K，收藏与最近访问可在全局搜索中直接进入。')}</p></div></Panel>
-}
 function Administrators() {
   const resource = useResource<{ administrators: Administrator[]; features: string[] }>('/api/control-center/administrators')
   const action = useAction()
@@ -93,7 +76,7 @@ function AuditLog() {
 }
 export default function ControlCenter() {
   const actor = useResource<Actor>('/api/control-center/me')
-  const [tab, setTab] = useState('workspace')
-  const tabs = [{ id: 'workspace', name: '我的工作区' }, { id: 'sessions', name: '会话' }, ...(actor.data?.role === 'owner' ? [{ id: 'administrators', name: '管理员授权' }, { id: 'credentials', name: '凭据' }, { id: 'tokens', name: 'API 令牌' }, { id: 'audit', name: '审计' }, { id: 'health', name: '系统自检' }, { id: 'tool-security', name: '工具与依赖' }] : [])]
-  return <><PageHeader eyebrow="系统" title="管理与安全" description="管理员与权限、凭据、API 令牌、会话和操作审计，以及面板自检和工具依赖。" /><ErrorNotice message={actor.error} retry={actor.reload} />{actor.data && <p>{actor.data.display_name} · {roleNames[actor.data.role]} · {actor.data.all_servers ? '所有服务器' : `授权服务器 ${actor.data.server_ids.join('、') || '无'}`}</p>}<SegmentedNav className="my-4" aria-label="管理与安全功能">{tabs.map(item => <SegmentedButton type="button" aria-pressed={tab === item.id} key={item.id} onClick={() => setTab(item.id)}>{item.name}</SegmentedButton>)}</SegmentedNav>{tab === 'workspace' && <Appearance />}{tab === 'sessions' && <Sessions />}{actor.data?.role === 'owner' && <>{tab === 'administrators' && <Administrators />}{tab === 'credentials' && <Credentials />}{tab === 'tokens' && <Tokens />}{tab === 'audit' && <AuditLog />}{tab === 'health' && <SystemHealth />}{tab === 'tool-security' && <ToolSecurity />}</>}</>
+  const [tab, setTab] = useState('sessions')
+  const tabs = [{ id: 'sessions', name: '会话' }, ...(actor.data?.role === 'owner' ? [{ id: 'administrators', name: '管理员授权' }, { id: 'credentials', name: '凭据' }, { id: 'tokens', name: 'API 令牌' }, { id: 'audit', name: '审计' }, { id: 'health', name: '系统自检' }, { id: 'tool-security', name: '工具与依赖' }] : [])]
+  return <><PageHeader title="管理与安全" description="管理员与权限、凭据、API 令牌、会话和操作审计，以及面板自检和工具依赖。" /><ErrorNotice message={actor.error} retry={actor.reload} />{actor.data && <p>{actor.data.display_name} · {roleNames[actor.data.role]} · {actor.data.all_servers ? '所有服务器' : `授权服务器 ${actor.data.server_ids.join('、') || '无'}`}</p>}<SegmentedNav className="my-4" aria-label="管理与安全功能">{tabs.map(item => <SegmentedButton type="button" aria-pressed={tab === item.id} key={item.id} onClick={() => setTab(item.id)}>{item.name}</SegmentedButton>)}</SegmentedNav>{tab === 'sessions' && <Sessions />}{actor.data?.role === 'owner' && <>{tab === 'administrators' && <Administrators />}{tab === 'credentials' && <Credentials />}{tab === 'tokens' && <Tokens />}{tab === 'audit' && <AuditLog />}{tab === 'health' && <SystemHealth />}{tab === 'tool-security' && <ToolSecurity />}</>}</>
 }

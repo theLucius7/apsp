@@ -16,7 +16,7 @@ import { useCurrency } from './CurrencyContext'
 import { costSummary, money, quoteState } from './currency'
 import { DisplayNotice, surface, toneText } from './ui'
 import { cn } from '@/lib/utils'
-import { itemMotion, revealMotion } from '@/lib/motion'
+import { revealMotion } from '@/lib/motion'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
@@ -24,16 +24,16 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { SegmentedButton, SegmentedGroup } from '@/components/segmented'
 
 function Stat({ icon: Icon = ServerIcon, label, value, unit, children, tone, title }: { icon?: LucideIcon; label: string; value: ReactNode; unit?: string; children: ReactNode; tone?: string; title?: string }) {
-  return <div data-slot="overview-item" className="min-w-0 border-border px-5 py-4 max-sm:min-h-24 max-sm:px-3.5 max-sm:py-3" title={title}>
-    <div data-slot="overview-label" className="text-muted-foreground mb-2 flex items-center justify-between gap-2 text-sm font-medium">
+  return <div data-slot="overview-item" className="min-w-0 border-border px-4 py-2.5 max-sm:px-3" title={title}>
+    <div data-slot="overview-label" className="text-muted-foreground mb-0.5 flex items-center justify-between gap-2 text-xs">
       <span>{label}</span>
-      <span className={cn('bg-primary/10 text-primary grid size-7 place-items-center rounded-md', tone && toneText[tone])}><Icon className="size-4" aria-hidden="true" /></span>
+      <Icon className="size-3.5 opacity-70" aria-hidden="true" />
     </div>
     <div data-slot="overview-value" className="flex min-w-0 items-baseline gap-1.5">
-      <strong className={cn('truncate text-[1.75rem] leading-tight font-semibold tracking-tight tabular-nums max-sm:text-2xl', tone && toneText[tone])}>{value}</strong>
-      {unit && <b className="text-muted-foreground shrink-0 text-sm font-medium">{unit}</b>}
+      <strong className={cn('truncate text-xl leading-tight font-semibold tabular-nums', tone && toneText[tone])}>{value}</strong>
+      {unit && <b className="text-muted-foreground shrink-0 text-xs font-medium">{unit}</b>}
     </div>
-    <div className="text-muted-foreground mt-1.5 flex min-h-4 items-center gap-2 overflow-hidden text-xs whitespace-nowrap *:truncate">{children}</div>
+    <div className="text-muted-foreground mt-0.5 flex min-h-4 items-center gap-2 overflow-hidden text-xs whitespace-nowrap *:truncate">{children}</div>
   </div>
 }
 
@@ -97,7 +97,7 @@ export default function Overview({ now }: { now: number }) {
   const customised = filter !== 'all' || Boolean(region) || sort !== 'default' || view !== 'cards'
   const chooseView = (value: DashboardView) => { setView(value); savePreference('view', value) }
   const chooseSort = (value: string) => { const next = savedSort(value); setSort(next); savePreference('sort', next) }
-  return <div data-slot="dashboard-home" className="flex flex-col gap-4">
+  return <div data-slot="dashboard-home" className="flex flex-col gap-3">
     <section aria-label="服务器总览" className={cn(surface, 'grid overflow-hidden [&>*]:border-border max-lg:grid-cols-2 max-lg:[&>*:nth-child(even)]:border-l max-lg:[&>*:not(:nth-last-child(-n+2))]:border-b max-lg:[&>*:last-child:nth-child(odd)]:col-span-full lg:[&>*+*]:border-l', showCosts ? 'lg:grid-cols-5' : 'lg:grid-cols-4')}>
       <Stat icon={ServerIcon} label="在线服务器" value={!servers || unavailable ? '—' : counts.online} unit={servers ? `/ ${entries.length} 台` : undefined} tone="good">{unavailable ? '等待更新' : !entries.length ? '等待接入' : counts.online === counts.all ? '全部运行正常' : `${counts.offline} 台离线${counts.pending ? ` · ${counts.pending} 台待接入` : ''}`}</Stat>
       {showCosts && <Stat icon={WalletIcon} label="资产" value={money(costs.total, currency)} title={`${costs.converted} 台可折算 · ${costs.missingPrices} 台未填写费用；每 30 天约 ${money(costs.recurring, currency)}`}><span>剩余价值 {money(costs.remaining, currency)}</span>{costs.missingRates > 0 ? <span className="text-warning" title={`${costs.missingRates} 台缺少汇率，未计入合计`}>汇率缺失</span> : staleCosts ? <span className="text-warning" title={referenceState === 'read-error' ? '汇率读取失败，使用上次有效汇率' : referenceState === 'stale' ? '使用上次有效汇率' : '无法确认参考汇率状态'}>{referenceState === 'read-error' ? '汇率读取失败' : referenceState === 'stale' ? '旧汇率' : '汇率状态未知'}</span> : null}</Stat>}
@@ -146,9 +146,9 @@ export default function Overview({ now }: { now: number }) {
     {error && <DisplayNotice tone="error" onRetry={refresh}>{error}</DisplayNotice>}
     {probes.error && <DisplayNotice tone="error" onRetry={probes.reload} retryLabel="重试拨测">拨测读取失败</DisplayNotice>}
     {!servers ? !error && (loading ? <CardsLoading /> : <div className="text-muted-foreground flex min-h-80 flex-col items-center justify-center gap-3 p-6 text-center text-sm" role="status">等待数据</div>) : visible.length ? view === 'cards' ?
-      <section aria-label="服务器列表" className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] items-start gap-3 max-sm:grid-cols-1">
-        {/* Filtering removes cards at once so results never mix with stale entries; kept cards glide into place. */}
-        {visible.map(server => <m.div key={server.id} layout="position" {...itemMotion} className="min-w-0"><ServerCard server={server} unavailable={unavailable} probes={probes.data ? byServer.get(server.id) ?? [] : undefined} probeError={probeUnavailable} probeLoading={probes.loading} now={now} /></m.div>)}
+      <section aria-label="服务器列表" className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start gap-3 max-sm:grid-cols-1">
+        {/* Polling and filtering change cards in place; nothing moves unless the order really changed. */}
+        {visible.map(server => <div key={server.id} className="min-w-0"><ServerCard server={server} unavailable={unavailable} probes={probes.data ? byServer.get(server.id) ?? [] : undefined} probeError={probeUnavailable} probeLoading={probes.loading} now={now} /></div>)}
       </section> :
       <ServerTable servers={visible} unavailable={unavailable} byServer={byServer} probesKnown={probes.data !== undefined} probeError={probeUnavailable} probeLoading={probes.loading} now={now} /> :
       !error && <div className="text-muted-foreground flex min-h-80 flex-col items-center justify-center gap-3 p-6 text-center"><ServerIcon className="size-8" aria-hidden="true" /><strong className="text-foreground text-sm font-medium">{entries.length ? '没有匹配的节点' : resource.hiddenOnly ? '节点已隐藏' : '尚未添加服务器'}</strong>{entries.length ? <Button onClick={reset}>清除筛选</Button> : <a className={buttonVariants()} href="#/servers">前往服务器管理</a>}</div>}
@@ -157,7 +157,7 @@ export default function Overview({ now }: { now: number }) {
 
 /** First read of the dashboard: card outlines in the same grid as the servers to come. */
 function CardsLoading() {
-  return <div data-slot="loading" role="status" className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] items-start gap-3 max-sm:grid-cols-1">
+  return <div data-slot="loading" role="status" className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start gap-3 max-sm:grid-cols-1">
     <span className="sr-only">正在读取服务器…</span>
     {[0, 1, 2].map(index => <div key={index} aria-hidden="true" className={cn(surface, 'grid gap-4 p-4')}>
       <div className="flex items-center gap-3"><Skeleton className="size-9 rounded-lg" /><div className="grid flex-1 gap-1.5"><Skeleton className="h-4 w-1/2" /><Skeleton className="h-3 w-1/3" /></div></div>

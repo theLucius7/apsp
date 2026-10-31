@@ -57,6 +57,7 @@ pub mod source_migration;
 pub mod sources;
 pub mod statistics;
 mod subscription_fetch;
+pub mod subscription_hosts;
 pub mod subscription_parser;
 pub mod subscription_sources;
 pub mod subscriptions;
@@ -79,6 +80,7 @@ pub async fn run(state: AppState) {
     tokio::join!(
         publisher::run(state.clone()),
         commerce::run(state.clone()),
+        subscription_hosts::run(state.clone()),
         subscription_sources::worker::run(state)
     );
 }
@@ -138,6 +140,11 @@ pub fn router() -> Router<AppState> {
             get(nodes::get).patch(nodes::update).delete(nodes::remove),
         )
         .route("/users", get(proxy_users::list).post(proxy_users::create))
+        .route("/users/overview", get(proxy_users::overview))
+        .route(
+            "/subscription-domain",
+            get(subscription_hosts::get_settings).put(subscription_hosts::put_settings),
+        )
         .route(
             "/users/{id}",
             get(proxy_users::get)

@@ -16,7 +16,7 @@ use sqlx::{Postgres, Row, Transaction};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 pub struct SubscriptionQuery {
     pub format: Option<String>,
     pub download: Option<bool>,
@@ -400,12 +400,25 @@ pub async fn get(
     Path(token): Path<String>,
     Query(query): Query<SubscriptionQuery>,
 ) -> ApiResult<Response> {
+    if super::subscription_hosts::legacy_paths_closed(&state.pool).await? {
+        return Err(ApiError::NotFound);
+    }
+    serve(&state, &request_headers, token, query).await
+}
+
+/// Answers one subscription fetch, from the panel path or a user's own hostname.
+pub async fn serve(
+    state: &AppState,
+    request_headers: &HeaderMap,
+    token: String,
+    query: SubscriptionQuery,
+) -> ApiResult<Response> {
     // Token-only URLs keep their original Reality links format, except for Clash
     // family clients, which cannot read links.
     let format = query
         .format
         .as_deref()
-        .or_else(|| client_format(&request_headers))
+        .or_else(|| client_format(request_headers))
         .unwrap_or("links");
     validate_format(format)?;
     if token.is_empty() || token.len() > 512 {
@@ -573,7 +586,7 @@ pub async fn preview(
         "managed_nodes":snapshot.nodes.len(),"external_nodes":snapshot.external.nodes.len(),
         "external_granted_nodes":snapshot.external.granted,"external_metering":"provider",
         "content":content,"filename":filename(id,format),"content_type":content_type(format),
-        "entitlement":snapshot.entitlement,"subscription_url":format!("{}/sub/{token}",state.config.public_url)
+        "entitlement":snapshot.entitlement,"subscription_url":super::subscription_hosts::address(&state.pool,id).await?.unwrap_or_else(||format!("{}/sub/{token}",state.config.public_url))
     }))).into_response())
 }
 

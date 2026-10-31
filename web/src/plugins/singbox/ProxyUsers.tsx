@@ -5,48 +5,91 @@ import UserPasskeyAccess from './UserPasskeyAccess'
 import UserDiagnostics from './UserDiagnostics'
 import BatchProxyAssignments from './BatchProxyAssignments'
 import SubscriptionDialog from './SubscriptionDialog'
+import SubscriptionDomain from './SubscriptionDomain'
 import type { SubscriptionFormat } from './SubscriptionDialog'
 import type { ProxyResource } from './resourceTypes'
-import { api } from '../../api'
-import { Badge, Confirm, Empty, ErrorNotice, Field, FormDialog, Loading, Modal, PageHeader, Refresh, Stat, DialogPresence } from '../../components'
+import { api, errorMessage } from '../../api'
+import { Badge, Confirm, Empty, ErrorNotice, Field, FormDialog, Loading, Modal, PageHeader, Refresh, DialogPresence } from '../../components'
 import { bytes, totalBytes } from '../../format'
 import { resourceWriteError, useAction, useResource } from '../../hooks'
 import type { Access, Node, Usage, ProxyUser } from '../../types'
-import type { Entitlement } from './groupTypes'
+import { statusText } from './groupTypes'
+import type { Entitlement, PolicyGroup } from './groupTypes'
+import { copyText } from '@/lib/clipboard'
+import { cn } from '@/lib/utils'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ArrowDownIcon, ArrowUpIcon, ChevronRightIcon, CopyIcon, PlusIcon, UsersIcon, WaypointsIcon } from 'lucide-react'
-import { ListDetailLayout } from '@/components/list-detail'
+import { CheckIcon, CopyIcon, GlobeIcon, PlusIcon, UsersIcon, WaypointsIcon } from 'lucide-react'
 import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
+import { SegmentedButton, SegmentedNav } from '@/components/segmented'
+
+/** A line of the user list from /users/overview; contains no credentials. */
+type UserLine = {
+  id: number; status: Entitlement['status']; allowed: boolean; package_name: string | null; monthly_bytes: string | null; used_bytes: string
+  expires_at: number | null; group_ids: number[]; direct_nodes: number; external_nodes: number; portal_created: boolean; portal_keys: number; activation_expires_at: number | null
+}
+type Section = 'grants' | 'usage' | 'diagnosis'
+const sections: readonly { key: Section; label: string }[] = [{ key: 'grants', label: '单独授权' }, { key: 'usage', label: '流量明细' }, { key: 'diagnosis', label: '诊断与安全' }]
+const root = '/api/plugins/sing-box'
+
+const lineTone = (line?: UserLine) => !line ? 'bg-muted-foreground/40' : !line.allowed ? 'bg-destructive' : line.status === 'not_started' ? 'bg-info' : quotaUsed(line) >= 90 ? 'bg-warning' : line.status === 'active' ? 'bg-success' : 'bg-muted-foreground/40'
+const quotaUsed = (line: UserLine) => line.monthly_bytes ? Number(line.used_bytes) / Number(line.monthly_bytes) * 100 : 0
+const dayText = (seconds: number) => new Date(seconds * 1000).toLocaleDateString('zh-CN')
+
+/** The list answers "who is this and can they use it" without opening anyone. */
+function lineSummary(line?: UserLine) {
+  if (!line) return ''
+  if (line.status === 'expired' || line.status === 'exhausted' || line.status === 'not_started') return statusText[line.status]
+  if (!line.package_name) return '未设套餐'
+  return `${line.package_name} · ${bytes(line.used_bytes)} / ${line.monthly_bytes ? bytes(line.monthly_bytes) : '不限量'}`
+}
+
+function portalText(line?: UserLine) {
+  if (!line) return ''
+  if (line.portal_keys > 0) return '已开通登录'
+  return line.activation_expires_at ? '等待对方开通' : '未开通登录'
+}
 
 export default function ProxyUsers() {
-  const users = useResource<ProxyUser[]>('/api/plugins/sing-box/users')
-  const nodes = useResource<Node[]>('/api/plugins/sing-box/nodes')
-  const resources = useResource<ProxyResource[]>('/api/plugins/sing-box/proxy-resources')
-  const usage = useResource<Usage>('/api/plugins/sing-box/usage')
+  const users = useResource<ProxyUser[]>(`${root}/users`, 5000, { keep: true })
+  const lines = useResource<UserLine[]>(`${root}/users/overview`, 15_000, { keep: true })
+  const nodes = useResource<Node[]>(`${root}/nodes`, 5000, { keep: true })
+  const resources = useResource<ProxyResource[]>(`${root}/proxy-resources`, 5000, { keep: true })
+  const usage = useResource<Usage>(`${root}/usage`, 5000, { keep: true })
+  const groups = useResource<PolicyGroup[]>(`${root}/policy-groups`, 30_000, { keep: true })
+  const actor = useResource<{ role: string }>('/api/control-center/me', 30_000, { keep: true })
   const action = useAction()
+  const linkAction = useAction()
   const [selected, setSelected] = useState<number | null>(null)
   const selectedRef = useRef<number | null>(null)
   const selectUser = (id: number | null) => { selectedRef.current = id; setSelected(id) }
   const [editor, setEditor] = useState<ProxyUser | 'new' | null>(null)
   const [deleting, setDeleting] = useState<ProxyUser | null>(null)
   const [subscription, setSubscription] = useState<ProxyUser | null>(null)
+  const [domainOpen, setDomainOpen] = useState(false)
   const [resetting, setResetting] = useState<ProxyUser | null>(null)
   const [format, setFormat] = useState<SubscriptionFormat>('singbox')
   const [notice, setNotice] = useState('')
   const [search, setSearch] = useState('')
+  const [section, setSection] = useState<Section>('grants')
   const [refreshRevision, setRefreshRevision] = useState(0)
+  // Addresses stay hidden until the administrator proved themselves recently; what
+  // a reveal returned is kept for this page so copying again asks nothing more.
+  const [revealed, setRevealed] = useState<Record<number, string>>({})
+  const [copied, setCopied] = useState<number | null>(null)
+  useEffect(() => { if (copied === null) return; const timer = window.setTimeout(() => setCopied(null), 2000); return () => window.clearTimeout(timer) }, [copied])
   useEffect(() => {
     if (users.data && selectedRef.current === null) selectUser(users.data[0]?.id ?? null)
   }, [users.data])
-  const accesses = useResource<Access[]>(selected ? `/api/plugins/sing-box/users/${selected}/accesses` : null)
-  const entitlement = useResource<Entitlement>(selected ? `/api/plugins/sing-box/users/${selected}/entitlement` : null)
-  const selectedUsage = useResource<Usage>(selected ? `/api/plugins/sing-box/usage?user_id=${selected}` : null)
+  const accesses = useResource<Access[]>(selected ? `${root}/users/${selected}/accesses` : null)
+  const entitlement = useResource<Entitlement>(selected ? `${root}/users/${selected}/entitlement` : null)
+  const selectedUsage = useResource<Usage>(selected ? `${root}/usage?user_id=${selected}` : null)
   const user = users.data?.find(user => user.id === selected)
+  const line = lines.data?.find(line => line.id === selected)
   const record = usage.data?.by_user.find(record => record.user_id === selected)
-  const refresh = () => { users.reload(); nodes.reload(); resources.reload(); usage.reload(); accesses.reload(); entitlement.reload(); selectedUsage.reload(); setRefreshRevision(value => value + 1) }
+  const refresh = () => { users.reload(); lines.reload(); nodes.reload(); resources.reload(); usage.reload(); groups.reload(); accesses.reload(); entitlement.reload(); selectedUsage.reload(); setRefreshRevision(value => value + 1) }
   const userError = (id?: number) => {
     if (selected !== selectedRef.current) return '当前选择的代理用户已改变，请等待相关信息刷新后再操作；当前草稿已保留。'
     if (id !== undefined && users.isCurrent() && !users.getCurrent()?.some(value => value.id === id)) return '此代理用户已不存在，请重新选择；当前草稿已保留。'
@@ -61,16 +104,16 @@ export default function ProxyUsers() {
   const edit = (value: ProxyUser | 'new') => { if (userError(value === 'new' ? undefined : value.id)) return; action.clearError(); setEditor(value) }
   const submit = (form: FormData) => {
     if (!editor || userError(editor === 'new' ? undefined : editor.id)) return
-    void action.run(() => api<ProxyUser>(editor === 'new' ? '/api/plugins/sing-box/users' : `/api/plugins/sing-box/users/${editor?.id}`, editor === 'new' ? 'POST' : 'PATCH', { name: String(form.get('name')).trim() }), value => { setEditor(null); selectUser(value.id); users.reload() })
+    void action.run(() => api<ProxyUser>(editor === 'new' ? `${root}/users` : `${root}/users/${editor?.id}`, editor === 'new' ? 'POST' : 'PATCH', { name: String(form.get('name')).trim() }), value => { setEditor(null); selectUser(value.id); users.reload(); lines.reload() })
   }
   const grant = (node: Node, checked: boolean) => {
     if (!selected || userError(selected) || !nodes.getCurrent()?.some(value => value.id === node.id) || !resources.getCurrent()?.some(value => value.kind === 'direct' && value.id === node.id)) return
     setNotice('')
     const request = () => checked
-      ? api(`/api/plugins/sing-box/users/${selected}/accesses`, 'POST', { node_id: node.id })
-      : api(`/api/plugins/sing-box/users/${selected}/accesses/${node.id}`, 'DELETE')
+      ? api(`${root}/users/${selected}/accesses`, 'POST', { node_id: node.id })
+      : api(`${root}/users/${selected}/accesses/${node.id}`, 'DELETE')
     void action.run(request, () => {
-      accesses.reload()
+      accesses.reload(); lines.reload()
       setNotice(checked ? '授权已保存，设备应用新配置后会出现在订阅中。' : '授权已撤销，已从订阅移除；运行时将在新配置应用后更新。')
     })
   }
@@ -80,119 +123,148 @@ export default function ProxyUsers() {
   }
   const remove = () => {
     if (!deleting || userError(deleting.id)) return
-    void action.run(() => api(`/api/plugins/sing-box/users/${deleting.id}`, 'DELETE'), () => { setDeleting(null); selectUser(null); refresh() })
+    void action.run(() => api(`${root}/users/${deleting.id}`, 'DELETE'), () => { setDeleting(null); selectUser(null); refresh() })
   }
   const reset = () => {
     if (!resetting || userError(resetting.id)) return
-    void action.run(() => api<ProxyUser>(`/api/plugins/sing-box/users/${resetting.id}/subscription/reset`, 'POST'), value => {
-      setResetting(null); setSubscription(value); users.reload(); setNotice('订阅链接已重置，请将新链接提供给代理用户。')
+    void action.run(() => api<ProxyUser>(`${root}/users/${resetting.id}/subscription/reset`, 'POST'), value => {
+      setResetting(null); setSubscription(value); setRevealed(current => ({ ...current, [value.id]: value.subscription_url })); users.reload(); setNotice('订阅链接已重置，请将新链接提供给代理用户。')
     })
   }
+  // One action from anywhere in the list: asks for the recent proof only when the
+  // panel requires it, then the address is on the clipboard.
+  const copySubscription = (target: ProxyUser) => void linkAction.run(async () => {
+    let address = target.subscription_url || revealed[target.id]
+    if (!address) {
+      address = (await api<{ subscription_url: string }>(`${root}/users/${target.id}/subscription?format=singbox`)).subscription_url
+      setRevealed(current => ({ ...current, [target.id]: address }))
+      users.reload()
+    }
+    // A browser may refuse after the wait for proof: the address is on screen by then.
+    try { await copyText(address) } catch (reason) { throw new Error(`复制失败，请选中订阅链接手动复制。${errorMessage(reason)}`) }
+    setCopied(target.id)
+  })
   const missingSelection = selected ? `代理用户 #${selected} 已不存在，请从列表重新选择。原选择没有自动切换。` : undefined
-  const roster = users.data && <Panel>
-    <PanelHeader><PanelTitle>代理用户列表 <span className="bg-muted text-muted-foreground min-w-5 rounded px-1.5 text-center text-xs font-medium tabular-nums">{users.data.length}</span></PanelTitle></PanelHeader>
-    <div className="p-3"><Input aria-label="搜索代理用户" placeholder="搜索代理用户名称…" value={search} onChange={event => setSearch(event.target.value)} /></div>
-    <div data-slot="user-roster" className="max-h-[580px] overflow-auto px-2 pb-2 max-md:flex max-md:max-h-none max-md:gap-1.5 max-md:px-3 max-md:pb-3">
-      {visible.map(entry => {
-        const total = usage.data?.by_user.find(record => record.user_id === entry.id)
-        return <button key={entry.id} className="hover:bg-muted aria-pressed:bg-accent aria-pressed:text-accent-foreground focus-visible:ring-ring/50 mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-3 disabled:opacity-60 max-md:mb-0 max-md:w-auto max-md:max-w-56 max-md:min-w-36 max-md:shrink-0 max-md:p-2.5" disabled={action.busy} aria-pressed={selected === entry.id}
-          onClick={() => { selectUser(entry.id); setNotice(''); action.clearError() }}>
-          <span className="bg-muted text-muted-foreground grid size-9 shrink-0 place-items-center rounded-lg border text-sm font-medium" aria-hidden="true">{entry.name.slice(0, 1)}</span>
-          <span className="min-w-0 flex-1"><strong className="block truncate text-sm font-medium">{entry.name}</strong><small className="text-muted-foreground mt-0.5 block truncate text-xs">{total ? bytes(totalBytes(total.uplink, total.downlink)) : usage.data ? '尚无流量记录' : '流量加载中…'}</small></span>
-          <ChevronRightIcon className="text-muted-foreground size-4 shrink-0 max-md:hidden" aria-hidden="true" />
-        </button>
-      })}
-      {!visible.length && <p className="text-muted-foreground px-4 py-6 text-sm">没有匹配的代理用户。</p>}
-    </div>
-  </Panel>
+  const address = user ? user.subscription_url || revealed[user.id] || '' : ''
   const grantableNodes = nodes.data?.filter(node => resources.data?.some(resource => resource.kind === 'direct' && resource.id === node.id)) ?? []
-  const details = user && <>
-    <Panel>
-      <div data-slot="user-heading" className="flex items-center justify-between gap-4 p-4 max-md:flex-wrap">
-        <div className="flex items-center gap-3 text-left"><span className="bg-muted text-muted-foreground grid shrink-0 place-items-center rounded-lg border font-medium size-11 text-lg">{user.name.slice(0, 1)}</span><div><h2 className="mb-0.5 text-lg font-semibold wrap-anywhere">{user.name}</h2><span className="text-muted-foreground text-xs">代理用户 #{user.id}</span></div></div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button variant="ghost" size="sm" disabled={Boolean(userError(user.id))} onClick={() => edit(user)}>编辑</Button>
-          <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20" disabled={Boolean(userError(user.id))} onClick={() => { if (userError(user.id)) return; action.clearError(); setDeleting(user) }}>删除</Button>
-        </div>
-      </div>
-      <div className="grid grid-cols-3 px-4 pb-4">
-        <div className="min-w-0 border-r px-4 first:pl-0 last:border-0"><span className="text-muted-foreground block text-xs">上传</span><strong className="mt-1.5 block text-xl font-semibold wrap-anywhere">{record ? bytes(record.uplink) : usage.data ? '0 B' : '暂无数据'}</strong></div>
-        <div className="min-w-0 border-r px-4 first:pl-0 last:border-0"><span className="text-muted-foreground block text-xs">下载</span><strong className="mt-1.5 block text-xl font-semibold wrap-anywhere">{record ? bytes(record.downlink) : usage.data ? '0 B' : '暂无数据'}</strong></div>
-        <div className="min-w-0 border-r px-4 first:pl-0 last:border-0"><span className="text-muted-foreground block text-xs">已授权节点</span><strong className="mt-1.5 block text-xl font-semibold wrap-anywhere">{accesses.data?.length ?? '—'}</strong></div>
-      </div>
-      <div className="bg-muted/40 flex items-center justify-between gap-5 border-t px-4 py-4 max-md:flex-wrap">
-        <div><strong className="text-sm font-medium">代理用户专属订阅</strong><p className="text-muted-foreground mt-1 text-xs">仅包含已应用且健康的授权节点。</p></div>
-        <Button size="sm" onClick={() => { setFormat('singbox'); setSubscription(user) }}><CopyIcon aria-hidden="true" />订阅链接</Button>
-      </div>
-    </Panel>
-    <UserEntitlements key={user.id} id={user.id} entitlement={entitlement} userError={() => userError(user.id)} refreshRevision={refreshRevision} onChange={refresh} />
-    <Panel>
-      <PanelHeader><PanelTitle>单独节点授权</PanelTitle><span className="text-muted-foreground text-xs">更改后自动发布</span></PanelHeader>
-      <div className="p-4">
-        <ErrorNotice message={accesses.error || entitlement.error || userError(selected ?? undefined) || (!editor && !deleting && !resetting ? action.error : '')} retry={accesses.error ? accesses.reload : undefined} />
-        {notice && <Notice tone="success" role="status">{notice}</Notice>}
-        {accesses.loading && !accesses.data ? <Loading variant="table" rows={3} /> : !nodes.data?.length
-          ? <Empty icon={WaypointsIcon} title="还没有可授权的节点" description="先创建节点，再为代理用户开启访问权限。"><a className={buttonVariants({ variant: 'outline' })} href="#/plugins/sing-box/nodes">前往节点</a></Empty>
-          : <div className="grid gap-2.5">{grantableNodes.map(node => {
-            const access = accesses.data?.find(access => access.node_id === node.id)
-            return <label className="hover:bg-muted/40 relative flex cursor-pointer items-center gap-3 rounded-lg border p-3" key={node.id}>
-              <span className="bg-muted text-muted-foreground grid size-9 shrink-0 place-items-center rounded-lg border"><WaypointsIcon className="size-4" aria-hidden="true" /></span>
-              <span className="min-w-0 flex-1"><strong className="block text-sm font-medium wrap-anywhere">{node.name}</strong><small className="text-muted-foreground mt-0.5 block text-xs wrap-anywhere">{node.public_host}:{node.port}</small></span>
-              {access && <Badge tone="good">{access.direct_grant ? '单独授权' : '来自策略组'}</Badge>}
-              <Switch checked={Boolean(access?.direct_grant)} disabled={action.busy || Boolean(userError(user.id))} onCheckedChange={checked => grant(node, checked)} aria-label={`授权 ${node.name}`} />
-            </label>
-          })}</div>}
-        <p className="text-muted-foreground mt-3 text-xs leading-relaxed">此开关只管理单独授权，不取消策略组授予的权限。只有全部授权来源移除后才撤销凭据；再次授权需要更新订阅。链路只能通过策略组分配。设备离线时等待重连应用。</p>
-      </div>
-    </Panel>
-    <Panel>
-      <PanelHeader><PanelTitle>该代理用户的节点流量</PanelTitle><span className="text-muted-foreground text-xs">包含历史记录</span></PanelHeader>
-      <ErrorNotice message={selectedUsage.error} retry={selectedUsage.reload} />
-      {selectedUsage.loading && !selectedUsage.data ? <Loading /> : selectedUsage.data?.by_node.length
-        ? <div className="max-w-full min-w-0"><Table>
-          <TableHeader><TableRow><TableHead>节点</TableHead><TableHead>上传</TableHead><TableHead>下载</TableHead><TableHead>合计</TableHead></TableRow></TableHeader>
-          <TableBody>{selectedUsage.data.by_node.map(record => <TableRow key={record.node_id}>
-            <TableCell>{record.name}{record.deleted && <span className="bg-muted text-muted-foreground ml-2 inline-block rounded px-1.5 py-0.5 align-middle text-xs">已删除</span>}</TableCell>
-            <TableCell>{bytes(record.uplink)}</TableCell><TableCell>{bytes(record.downlink)}</TableCell><TableCell>{bytes(totalBytes(record.uplink, record.downlink))}</TableCell>
-          </TableRow>)}</TableBody>
-        </Table></div>
-        : <div className="text-muted-foreground px-4 py-6 text-sm">此代理用户尚无节点流量记录。使用代理后，通常在 1 至 2 分钟内更新。</div>}
-    </Panel>
-  </>
+  const groupNames = (line?.group_ids ?? []).map(id => groups.data?.find(group => group.id === id)?.name).filter(Boolean)
+  const empty = Boolean(users.data && !users.data.length)
   return <>
-    <PageHeader eyebrow="代理服务" title="代理用户" description="为代理用户分配策略组（能用哪些节点）和套餐（流量与有效期），管理订阅链接并查看实际代理流量。">
+    <PageHeader title="代理用户" description="选一个人，就能复制订阅链接、发登录地址、修改能用的节点和套餐。">
       <Refresh onClick={refresh} />
+      {actor.data?.role === 'owner' && <Button variant="outline" onClick={() => setDomainOpen(true)}><GlobeIcon aria-hidden="true" />专属地址</Button>}
       <Button disabled={Boolean(userError())} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />创建代理用户</Button>
     </PageHeader>
-    <div className="mb-6 grid grid-cols-3 gap-3 max-sm:gap-2">
-      <Stat icon={UsersIcon} label="代理用户总数" value={users.data?.length ?? '—'} note="每个代理用户拥有独立订阅" />
-      <Stat icon={ArrowUpIcon} label="累计上传" value={usage.data ? bytes(usage.data.uplink) : '—'} note="认证端实际统计的上传流量" />
-      <Stat icon={ArrowDownIcon} label="累计下载" value={usage.data ? bytes(usage.data.downlink) : '—'} note="含已删除代理用户的历史用量" />
-    </div>
-    {users.data?.length ? <BatchProxyAssignments users={users.data} userError={() => userError()} onChanged={refresh} /> : null}
     <ErrorNotice message={users.error || nodes.error || resources.error || usage.error} retry={refresh} />
-    <ErrorNotice message={users.ready && selected && !user ? missingSelection : undefined} />
-    {users.ready && selected && !user && <Button variant="outline" size="sm" disabled={action.busy} onClick={clearDeletedSelection}>清除已删除的用户选择</Button>}
-    {users.loading && !users.data ? <Panel><Loading variant="table" /></Panel> : !users.data?.length
-      ? <Panel><Empty icon={UsersIcon} title="创建代理用户，开始分配节点" description="每个代理用户在每个节点上的凭据相互独立，流量按代理用户和节点统计。">
-        <Button disabled={Boolean(userError())} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />创建代理用户</Button>
-      </Empty></Panel>
-      : <ListDetailLayout id="apsp-proxy-users" label="调整代理用户列表宽度" list={roster} detail={<div className="min-w-0">
-          {details || <Panel><div className="p-4"><ErrorNotice message={missingSelection} /></div></Panel>}
-        </div>} />}
-    {/* Kept outside the list layout: retained drafts must survive an emptied or failed user list. */}
-    {selected !== null && <UserPasskeyAccess key={`portal-${selected}`} id={selected} userError={() => userError(selected)} refreshRevision={refreshRevision} />}
-    {selected !== null && <UserDiagnostics key={`diagnosis-${selected}`} userId={selected} userError={() => userError(selected)} onChanged={refresh} />}
-    {selected !== null && <ExternalUserAccess key="external-selected" userId={selected} userError={() => userError(selected)} refreshRevision={refreshRevision} onChanged={refresh} />}
-    {usage.data?.by_user.some(record => record.deleted) && <Panel>
-      <PanelHeader><PanelTitle>历史代理用户流量</PanelTitle><span className="text-muted-foreground text-xs">已删除代理用户的数据仍保留</span></PanelHeader>
-      <div className="max-w-full min-w-0"><Table>
-        <TableHeader><TableRow><TableHead>代理用户</TableHead><TableHead>上传</TableHead><TableHead>下载</TableHead></TableRow></TableHeader>
-        <TableBody>{usage.data.by_user.filter(record => record.deleted).map(record => <TableRow key={record.user_id}>
-          <TableCell>{record.name} <span className="bg-muted text-muted-foreground ml-2 inline-block rounded px-1.5 py-0.5 align-middle text-xs">已删除</span></TableCell><TableCell>{bytes(record.uplink)}</TableCell><TableCell>{bytes(record.downlink)}</TableCell>
-        </TableRow>)}</TableBody>
-      </Table></div>
-    </Panel>}
+    <ErrorNotice message={linkAction.error} retry={linkAction.clearError} />
+    {users.ready && selected && !user && <div className="mb-4 flex flex-wrap items-center gap-2"><ErrorNotice message={missingSelection} /><Button variant="outline" size="sm" disabled={action.busy} onClick={clearDeletedSelection}>清除已删除的用户选择</Button></div>}
+    {/* One tree at every width and for every list state: retained drafts and open dialogs survive a failed or emptied list. */}
+    <div data-slot="list-detail" className="grid min-w-0 items-start gap-4 md:grid-cols-[17.5rem_minmax(0,1fr)]">
+      <Panel className={cn('mb-0 md:sticky md:top-[4.25rem]', empty && selected === null && 'md:col-span-2')}>
+        {users.loading && !users.data ? <Loading variant="table" /> : empty ? <Empty icon={UsersIcon} title="创建代理用户，开始分配节点" description="每个代理用户在每个节点上的凭据相互独立，流量按代理用户和节点统计。">
+          <Button disabled={Boolean(userError())} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />创建代理用户</Button>
+        </Empty> : users.data && <>
+          <div className="border-b p-2"><Input aria-label="搜索代理用户" placeholder={`搜索 ${users.data.length} 个代理用户…`} value={search} onChange={event => setSearch(event.target.value)} /></div>
+          <div data-slot="user-roster" className="scrollbar-thin max-h-[calc(100dvh-13rem)] overflow-auto p-1 max-md:max-h-64">
+            {visible.map(entry => {
+              const entryLine = lines.data?.find(value => value.id === entry.id)
+              const total = usage.data?.by_user.find(record => record.user_id === entry.id)
+              const active = selected === entry.id
+              return <div key={entry.id} data-user-id={entry.id} className={cn('hover:bg-muted flex items-center gap-0.5 rounded-md pr-1', active && 'bg-accent text-accent-foreground hover:bg-accent')}>
+                <button type="button" className="focus-visible:ring-ring/50 flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-1.5 text-left outline-none focus-visible:ring-3 disabled:opacity-60" disabled={action.busy} aria-pressed={active}
+                  onClick={() => { selectUser(entry.id); setNotice(''); action.clearError(); linkAction.clearError() }}>
+                  <span title={entryLine ? statusText[entryLine.status] : undefined} className={cn('size-2 shrink-0 rounded-full', lineTone(entryLine))} aria-hidden="true" />
+                  <span className="min-w-0 flex-1"><strong className="block truncate text-[13px] font-medium">{entry.name}</strong><small className={cn('text-muted-foreground block truncate text-xs', active && 'text-accent-foreground/75')}>{lineSummary(entryLine) || (total ? bytes(totalBytes(total.uplink, total.downlink)) : usage.data ? '尚无流量记录' : '')}</small></span>
+                </button>
+                <Button variant="ghost" size="icon-sm" className="shrink-0" aria-label={`复制 ${entry.name} 的订阅链接`} title="复制订阅链接" disabled={linkAction.busy} onClick={() => copySubscription(entry)}>{copied === entry.id ? <CheckIcon className="text-success" aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}</Button>
+              </div>
+            })}
+            {!visible.length && <p className="text-muted-foreground px-3 py-5 text-[13px]">没有匹配的代理用户。</p>}
+          </div>
+          {usage.data && <div className="text-muted-foreground border-t px-3 py-2 text-xs tabular-nums">累计 ↑ {bytes(usage.data.uplink)} · ↓ {bytes(usage.data.downlink)}</div>}
+        </>}
+      </Panel>
+      {selected !== null && <div className="min-w-0">
+        {user && <div data-slot="user-heading" className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h2 className="text-base font-semibold wrap-anywhere">{user.name}</h2>
+          {line && <Badge tone={!line.allowed ? 'bad' : line.status === 'active' ? 'good' : 'neutral'}>{line.status === 'unmetered' ? '不限流量' : statusText[line.status]}</Badge>}
+          <span className="text-muted-foreground min-w-0 text-xs">#{user.id}{line ? ` · ${portalText(line)}` : ''}{groupNames.length ? ` · ${groupNames.join('、')}` : ''}{line?.expires_at ? ` · 到 ${dayText(line.expires_at)}` : ''}</span>
+          <div className="ml-auto flex items-center gap-1">
+            <Button variant="ghost" size="sm" disabled={Boolean(userError(user.id))} onClick={() => edit(user)}>编辑</Button>
+            <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20" disabled={Boolean(userError(user.id))} onClick={() => { if (userError(user.id)) return; action.clearError(); setDeleting(user) }}>删除</Button>
+          </div>
+        </div>}
+        {!user && !users.ready && !users.data?.length && users.error ? null : !user && <Panel><div className="p-4"><ErrorNotice message={missingSelection} /></div></Panel>}
+        <div className="mb-4 grid items-stretch gap-3 lg:grid-cols-2">
+          {user && <Panel aria-label="订阅链接" className="mb-0 flex flex-col">
+            <PanelHeader className="min-h-10 py-1.5"><PanelTitle>订阅链接</PanelTitle><Button variant="ghost" size="xs" onClick={() => { linkAction.clearError(); setFormat('singbox'); setSubscription(user) }}>订阅详情</Button></PanelHeader>
+            <div className="flex flex-1 flex-col gap-2.5 p-3.5">
+              {address ? <code data-slot="subscription-address" tabIndex={0} className="bg-muted/50 focus-visible:ring-ring/50 scrollbar-thin block overflow-x-auto rounded-md border px-2.5 py-2 text-xs break-normal whitespace-pre focus-visible:ring-3 focus-visible:outline-none">{address}</code>
+                : <p className="bg-muted/50 text-muted-foreground rounded-md border px-2.5 py-2 text-xs">链接包含连接凭据，复制时会先确认管理员身份。</p>}
+              <p className="text-muted-foreground text-xs leading-relaxed">sing-box 和 Clash 用同一个地址，客户端会自动拿到对应格式。重置后旧地址立即失效。</p>
+              <div className="mt-auto flex flex-wrap items-center gap-2">
+                <Button size="sm" disabled={linkAction.busy} onClick={() => copySubscription(user)}>{copied === user.id ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}{copied === user.id ? '已复制' : linkAction.busy ? '正在获取…' : '复制订阅链接'}</Button>
+              </div>
+            </div>
+          </Panel>}
+          <UserPasskeyAccess key={`portal-${selected}`} id={selected} userError={() => userError(selected)} refreshRevision={refreshRevision} />
+        </div>
+        {user && <UserEntitlements key={user.id} id={user.id} entitlement={entitlement} userError={() => userError(user.id)} refreshRevision={refreshRevision} onChange={refresh} />}
+        <SegmentedNav aria-label="更多用户信息" className="mb-3">
+          {sections.map(entry => <SegmentedButton key={entry.key} aria-pressed={section === entry.key} onClick={() => setSection(entry.key)}>{entry.label}</SegmentedButton>)}
+        </SegmentedNav>
+        {/* Hidden, not removed: a draft in one section survives looking at another. */}
+        <div hidden={section !== 'grants'}>
+          {user && <Panel>
+            <PanelHeader className="min-h-10 py-1.5"><PanelTitle>单独节点授权</PanelTitle><span className="text-muted-foreground text-xs">更改后自动发布；链路只能通过策略组分配</span></PanelHeader>
+            <div className="p-3.5">
+              <ErrorNotice message={accesses.error || entitlement.error || userError(selected) || (!editor && !deleting && !resetting ? action.error : '')} retry={accesses.error ? accesses.reload : undefined} />
+              {notice && <Notice tone="success" role="status">{notice}</Notice>}
+              {accesses.loading && !accesses.data ? <Loading variant="table" rows={3} /> : !nodes.data?.length
+                ? <Empty icon={WaypointsIcon} title="还没有可授权的节点" description="先创建节点，再为代理用户开启访问权限。"><a className={buttonVariants({ variant: 'outline' })} href="#/plugins/sing-box/nodes">前往节点</a></Empty>
+                : <div className="grid gap-1.5 sm:grid-cols-2 2xl:grid-cols-3">{grantableNodes.map(node => {
+                  const access = accesses.data?.find(access => access.node_id === node.id)
+                  return <label className="hover:bg-muted/60 relative flex cursor-pointer items-center gap-2.5 rounded-md border px-2.5 py-2" key={node.id}>
+                    <span className="min-w-0 flex-1"><strong className="block truncate text-[13px] font-medium">{node.name}</strong><small className="text-muted-foreground block truncate text-xs">{node.public_host}:{node.port}</small></span>
+                    {access && <Badge tone="good">{access.direct_grant ? '单独授权' : '来自策略组'}</Badge>}
+                    <Switch checked={Boolean(access?.direct_grant)} disabled={action.busy || Boolean(userError(user.id))} onCheckedChange={checked => grant(node, checked)} aria-label={`授权 ${node.name}`} />
+                  </label>
+                })}</div>}
+              <p className="text-muted-foreground mt-2.5 text-xs leading-relaxed">这里只管单独授权，不取消策略组授予的权限。全部授权来源移除后才撤销凭据；设备离线时等重连后应用。</p>
+            </div>
+          </Panel>}
+          <ExternalUserAccess key="external-selected" userId={selected} userError={() => userError(selected)} refreshRevision={refreshRevision} onChanged={refresh} />
+        </div>
+        <div hidden={section !== 'usage'}>
+          {user && <Panel>
+            <PanelHeader className="min-h-10 py-1.5"><PanelTitle>该代理用户的节点流量</PanelTitle><span className="text-muted-foreground text-xs tabular-nums">↑ {record ? bytes(record.uplink) : '0 B'} · ↓ {record ? bytes(record.downlink) : '0 B'}，含历史记录</span></PanelHeader>
+            <ErrorNotice message={selectedUsage.error} retry={selectedUsage.reload} />
+            {selectedUsage.loading && !selectedUsage.data ? <Loading /> : selectedUsage.data?.by_node.length
+              ? <div className="max-w-full min-w-0"><Table>
+                <TableHeader><TableRow><TableHead>节点</TableHead><TableHead>上传</TableHead><TableHead>下载</TableHead><TableHead>合计</TableHead></TableRow></TableHeader>
+                <TableBody>{selectedUsage.data.by_node.map(record => <TableRow key={record.node_id}>
+                  <TableCell>{record.name}{record.deleted && <span className="bg-muted text-muted-foreground ml-2 inline-block rounded px-1.5 py-0.5 align-middle text-xs">已删除</span>}</TableCell>
+                  <TableCell>{bytes(record.uplink)}</TableCell><TableCell>{bytes(record.downlink)}</TableCell><TableCell>{bytes(totalBytes(record.uplink, record.downlink))}</TableCell>
+                </TableRow>)}</TableBody>
+              </Table></div>
+              : <div className="text-muted-foreground px-4 py-6 text-[13px]">此代理用户尚无节点流量记录。使用代理后，通常在 1 至 2 分钟内更新。</div>}
+          </Panel>}
+          {usage.data?.by_user.some(record => record.deleted) && <Panel>
+            <PanelHeader className="min-h-10 py-1.5"><PanelTitle>历史代理用户流量</PanelTitle><span className="text-muted-foreground text-xs">已删除代理用户的数据仍保留</span></PanelHeader>
+            <div className="max-w-full min-w-0"><Table>
+              <TableHeader><TableRow><TableHead>代理用户</TableHead><TableHead>上传</TableHead><TableHead>下载</TableHead></TableRow></TableHeader>
+              <TableBody>{usage.data.by_user.filter(record => record.deleted).map(record => <TableRow key={record.user_id}>
+                <TableCell>{record.name} <span className="bg-muted text-muted-foreground ml-2 inline-block rounded px-1.5 py-0.5 align-middle text-xs">已删除</span></TableCell><TableCell>{bytes(record.uplink)}</TableCell><TableCell>{bytes(record.downlink)}</TableCell>
+              </TableRow>)}</TableBody>
+            </Table></div>
+          </Panel>}
+        </div>
+        <div hidden={section !== 'diagnosis'}>
+          <UserDiagnostics key={`diagnosis-${selected}`} userId={selected} userError={() => userError(selected)} onChanged={refresh} />
+        </div>
+      </div>}
+    </div>
+    {users.data?.length ? <div className="mt-4"><BatchProxyAssignments users={users.data} userError={() => userError()} onChanged={refresh} /></div> : null}
     <DialogPresence>{editor && <FormDialog title={editor === 'new' ? '创建代理用户' : '编辑代理用户'} onClose={() => setEditor(null)} onSubmit={submit} busy={action.busy}
       submitDisabled={Boolean(editorError)} error={editorError || action.error} submitLabel={editor === 'new' ? '创建代理用户' : '保存修改'}>
       <Field label="代理用户名称"><Input name="name" required maxLength={128} defaultValue={editor === 'new' ? '' : editor.name} placeholder="为使用者设置一个名称" autoComplete="off" /></Field>
@@ -211,6 +283,7 @@ export default function ProxyUsers() {
         <Button variant="destructive" disabled={action.busy || Boolean(resettingError)} onClick={reset}>{action.busy ? '正在重置…' : '确认重置'}</Button>
       </footer>
     </Modal>}</DialogPresence>
+    <DialogPresence>{domainOpen && <SubscriptionDomain onClose={() => setDomainOpen(false)} onSaved={() => { setDomainOpen(false); setRevealed({}); refresh() }} />}</DialogPresence>
     <DialogPresence>{subscription && <SubscriptionDialog user={subscription} format={format} onFormatChange={setFormat} onClose={() => setSubscription(null)}
       onReset={() => { if (userError(subscription.id)) return; action.clearError(); setResetting(subscription); setSubscription(null) }} />}</DialogPresence>
   </>

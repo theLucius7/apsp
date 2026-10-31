@@ -154,7 +154,15 @@ try {
       const { page } = control, dialog = page.getByRole('dialog')
       await dialog.getByRole('button', { name: '修改名称', exact: true }).click(); await dialog.getByLabel('链路名称', { exact: true }).fill('TEST_ONLY 链路名称草稿')
       // The detail has its own poll, so wait for that real request rather than reload the document.
-      await block(control, `${prefix}/proxy-resources/chain/7`, async () => { if (await dialog.getByRole('button', { name: '重试', exact: true }).count()) await dialog.getByRole('button', { name: '重试', exact: true }).click(); else await wait(() => control.page.getByRole('button', { name: '保存名称', exact: true }).isDisabled(), 'Detail poll starts') }, () => forceForm(dialog.locator('form')), () => dialog.getByRole('button', { name: '保存名称', exact: true }).click(), async () => assert.equal(await dialog.getByLabel('链路名称', { exact: true }).inputValue(), 'TEST_ONLY 链路名称草稿'))
+      // The detail has no manual refresh: a poll in flight changes nothing (ADR 0102), a failed one blocks.
+      const baseline = control.writes.length, gate = control.hold(`${prefix}/proxy-resources/chain/7`)
+      await wait(() => gate.reached > 0, 'Detail poll starts')
+      assert.equal(await dialog.getByRole('button', { name: '保存名称', exact: true }).isEnabled(), true)
+      control.fail(`${prefix}/proxy-resources/chain/7`); await page.getByText('TEST_ONLY 资源刷新失败', { exact: true }).first().waitFor()
+      await forceForm(dialog.locator('form')); assert.equal(control.writes.length, baseline, 'Failed refresh sends zero writes'); ++totals.blocked
+      control.recover(`${prefix}/proxy-resources/chain/7`); await dialog.getByRole('button', { name: '重试', exact: true }).first().click()
+      assert.equal(await dialog.getByLabel('链路名称', { exact: true }).inputValue(), 'TEST_ONLY 链路名称草稿')
+      await dialog.getByRole('button', { name: '保存名称', exact: true }).click(); await wait(() => control.writes.length === baseline + 1, 'Exactly one recovered write'); ++totals.recovered
     })
     await fixture('/plugins/sing-box/nodes', async control => {
       const { page, writes, status } = control

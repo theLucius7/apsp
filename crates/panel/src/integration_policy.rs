@@ -36,7 +36,8 @@ pub fn route_policy(path: &str, method: &Method) -> Option<RoutePolicy> {
                     || path.contains("/nexus-nodes")
                     || path.contains("/accesses")
                     || path.contains("/external-accesses")
-                    || path.contains("/subscription/reset"))));
+                    || path.contains("/subscription/reset")
+                    || path.ends_with("/subscription-domain"))));
     let read = (feature == "cloud" && *method == Method::POST && path.ends_with("/cdt-check"))
         || feature == "dns"
             && ((path.starts_with("/api/plugins/ddns/rules/") && path.ends_with("/preview"))

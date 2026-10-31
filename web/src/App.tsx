@@ -3,6 +3,7 @@ import { api, errorMessage } from './api'
 import { Brand, Loading } from './components'
 import { useAction } from './hooks'
 import AdminPage from './app/AdminPage'
+import PageBoundary from './app/PageBoundary'
 import AdminShell from './app/AdminShell'
 import Login from './app/Login'
 import { currentNavigation, homePath } from './app/navigation'
@@ -10,14 +11,24 @@ import { resolveRoute } from './app/routes'
 import { useI18n } from './i18n'
 import { useSessionStore } from './stores/session'
 import { acceptHashChange, guardLinks } from '@/lib/leave-guard'
+import { Button } from '@/components/ui/button'
 
 const ServerDisplay = lazy(() => import('./display/ServerDisplay'))
 const MemberLogin = lazy(() => import('./plugins/singbox/commerce/MemberLogin'))
 const MemberJoin = lazy(() => import('./plugins/singbox/commerce/Join'))
 const UserPortal = lazy(() => import('./plugins/singbox/UserPortal'))
 
-function Boot() {
-  return <div className="flex min-h-dvh flex-col items-center justify-center gap-2"><Brand /><Loading /></div>
+/** The first screen. A lost connection stays here and keeps trying: it says nothing about the session. */
+function Boot({ message, onRetry }: { message?: string; onRetry?: () => void }) {
+  const { t } = useI18n()
+  return <div data-slot="boot" className="flex min-h-dvh flex-col items-center justify-center gap-4 px-6 text-center">
+    <Brand />
+    {message ? <div role="status" className="grid max-w-sm justify-items-center gap-3 text-sm">
+      <p className="text-foreground font-medium">{t('暂时连不上面板')}</p>
+      <p className="text-muted-foreground">{message} {t('正在自动重试，恢复后会直接进入。')}</p>
+      {onRetry && <Button variant="outline" size="sm" onClick={onRetry}>{t('立即重试')}</Button>}
+    </div> : <Loading />}
+  </div>
 }
 
 export default function App() {
@@ -26,18 +37,40 @@ export default function App() {
   const publicDashboard = useSessionStore(state => state.publicDashboard)
   const notice = useSessionStore(state => state.notice)
   const accessRevision = useSessionStore(state => state.revision)
+  const bootError = useSessionStore(state => state.bootError)
+  const [bootAttempt, setBootAttempt] = useState(0)
   const [path, setPath] = useState(window.location.hash.slice(1) || '/dashboard')
   const shown = useRef(path)
   shown.current = path
   const action = useAction()
+  const translate = useRef(t)
+  translate.current = t
+  const bindRouter = () => {
+    const unauthorized = () => {
+      useSessionStore.getState().signedOut(useSessionStore.getState().authenticated ? translate.current('登录已过期，请重新登录。') : undefined)
+    }
+    // Back, forward and direct hash writes reach the router here; unsaved input decides.
+    const hash = () => { if (acceptHashChange(`#${shown.current}`)) setPath(window.location.hash.slice(1) || '/dashboard') }
+    window.addEventListener('apsp:unauthorized', unauthorized)
+    window.addEventListener('hashchange', hash)
+    return () => {
+      window.removeEventListener('apsp:unauthorized', unauthorized)
+      window.removeEventListener('hashchange', hash)
+    }
+  }
 
   useEffect(() => guardLinks(), [])
 
   useEffect(() => {
+    // Proxy users and members have their own sign-in; on a user's own hostname the
+    // administrator's endpoints do not exist at all.
+    if (['proxy-portal', 'member-login', 'member-join'].includes(resolveRoute(shown.current).page)) return bindRouter()
     const store = useSessionStore.getState()
     const controller = new AbortController()
     let active = true
-    void api<{ authenticated: boolean; public_dashboard: boolean }>(
+    let attempts = 0
+    let retry: number | undefined
+    const check = () => void api<{ authenticated: boolean; public_dashboard: boolean }>(
       '/api/dashboard/access', 'GET', undefined, controller.signal,
     ).then(access => {
       if (active) {
@@ -57,45 +90,48 @@ export default function App() {
         }
       }
     }).catch(error => {
-      if (active) store.failed(errorMessage(error))
+      // No answer says nothing about the session: never send anyone to sign-in for it.
+      if (!active || (error instanceof DOMException && error.name === 'AbortError')) return
+      store.failed(errorMessage(error))
+      retry = window.setTimeout(check, Math.min(1500 * 2 ** attempts++, 15_000))
     })
-    const unauthorized = () => {
-      useSessionStore.getState().signedOut(useSessionStore.getState().authenticated ? t('登录已过期，请重新登录。') : undefined)
-    }
-    // Back, forward and direct hash writes reach the router here; unsaved input decides.
-    const hash = () => { if (acceptHashChange(`#${shown.current}`)) setPath(window.location.hash.slice(1) || '/dashboard') }
-    window.addEventListener('apsp:unauthorized', unauthorized)
-    window.addEventListener('hashchange', hash)
+    check()
+    const unbind = bindRouter()
     return () => {
       active = false
       controller.abort()
-      window.removeEventListener('apsp:unauthorized', unauthorized)
-      window.removeEventListener('hashchange', hash)
+      window.clearTimeout(retry)
+      unbind()
     }
-  }, [accessRevision, t])
+  }, [accessRevision, bootAttempt])
 
   const route = resolveRoute(path)
   const current = currentNavigation(route)
   const title = t(current?.label ?? '控制面板')
   useEffect(() => { document.title = `${title} · ${t('apsp')}` }, [title, t])
 
-  if (route.page === 'member-login') return <Suspense fallback={<Boot />}><MemberLogin /></Suspense>
-  if (route.page === 'member-join') return <Suspense fallback={<Boot />}><MemberJoin key={route.token} token={route.token} /></Suspense>
-  if (route.page === 'proxy-portal') return <Suspense fallback={<Boot />}><UserPortal key={route.account} account={route.account} activation={route.activation} /></Suspense>
-  if (session === null) return <Boot />
+  if (route.page === 'member-login') return <PageBoundary resetKey={path}><Suspense fallback={<Boot />}><MemberLogin /></Suspense></PageBoundary>
+  if (route.page === 'member-join') return <PageBoundary resetKey={path}><Suspense fallback={<Boot />}><MemberJoin key={route.token} token={route.token} /></Suspense></PageBoundary>
+  if (route.page === 'proxy-portal') return <PageBoundary resetKey={path}><Suspense fallback={<Boot />}><UserPortal key={route.account} account={route.account} activation={route.activation} /></Suspense></PageBoundary>
+  if (session === null) return <Boot message={bootError || undefined} onRetry={bootError ? () => setBootAttempt(value => value + 1) : undefined} />
   if (!session && !(route.page === 'dashboard' && publicDashboard)) {
     return <Login notice={notice} onLogin={() => useSessionStore.getState().signedIn()} />
   }
   // The overview replaces the bare landing path as soon as the actor is known.
   if (session && route.page === 'dashboard' && (window.location.hash === '' || window.location.hash === '#/')) return <Boot />
-  if (route.page === 'dashboard') {
-    return <Suspense fallback={<Boot />}>
-      <ServerDisplay key={session ? 'admin' : 'public'} serverId={route.serverId} />
-    </Suspense>
+  // Without a session the board stands alone; signed in, it is one more console page.
+  if (route.page === 'dashboard' && !session) {
+    return <PageBoundary resetKey={path}><Suspense fallback={<Boot />}>
+      <ServerDisplay key="public" serverId={route.serverId} />
+    </Suspense></PageBoundary>
   }
 
   const logout = () => void action.run(() => api('/api/logout', 'POST'), () => useSessionStore.getState().signedOut(''))
-  return <AdminShell current={current} busy={action.busy} error={action.error} onLogout={logout}>
-    <AdminPage route={route} />
+  return <AdminShell current={current} exact={route.page === current?.page && !(route.page === 'dashboard' && route.serverId)} busy={action.busy} error={action.error} onLogout={logout}>
+    <PageBoundary resetKey={path}>
+      {route.page === 'dashboard'
+        ? <Suspense fallback={<Loading />}><ServerDisplay key="admin" embedded serverId={route.serverId} /></Suspense>
+        : <AdminPage route={route} />}
+    </PageBoundary>
   </AdminShell>
 }

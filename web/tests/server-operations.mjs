@@ -4,6 +4,7 @@ import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { openPage, signOut } from './shell-navigation.mjs'
 
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 
@@ -14,7 +15,7 @@ async function openNav(page, name) {
   // The viewport decides whether the menu button is in use: a visibility check does
   // not wait, and a closing dialog briefly hides the page from assistive technology.
   if (page.viewportSize().width < 768 && await menu.getAttribute('aria-expanded') !== 'true') await menu.click()
-  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name, exact: true }).click()
+  await openPage(page, name)
 }
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const server = createServer(async (request, response) => {
@@ -155,14 +156,14 @@ try {
     await openNav(page, '告警事件')
     await page.getByText('持续离线', { exact: true }).waitFor()
     await page.getByText('模拟网络失败', { exact: true }).waitFor()
-    await page.getByRole('button', { name: /退出登录/ }).click()
+    await signOut(page)
     await page.getByRole('heading', { name: '欢迎回来' }).waitFor()
     assert.equal(await page.locator('[data-slot=sidebar]').count(), 0)
     assert.equal(sessions.filter(session => session.path === '/api/logout').length, 1)
     await page.getByLabel('管理员密码', { exact: true }).fill('TEST_ONLY')
     await page.getByRole('button', { name: '登录面板' }).click()
     await page.getByText('持续离线', { exact: true }).waitFor()
-    assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '告警事件', exact: true, includeHidden: true }).getAttribute('aria-current'), 'page')
+    assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '告警', exact: true, includeHidden: true }).getAttribute('aria-current'), 'page')
     assert.deepEqual(errors, [])
     results.push({ width, publicAccess: 'passed', revocation: 'passed', sessions: 'passed', settings: 'passed', operations: 'passed' })
     await context.close()

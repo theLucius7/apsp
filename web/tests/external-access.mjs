@@ -50,7 +50,7 @@ try {
     await page.clock.install({ time: new Date('2026-10-03T00:00:00Z') })
     // Dialogs finish closing on animation frames, which the page clock holds here; with reduced motion they close at once.
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await page.clock.pauseAt(new Date('2026-10-03T00:00:00Z'))
+    await page.clock.pauseAt(new Date('2026-10-03T00:10:00Z'))
     await page.route('**/*', async route => {
       const request = route.request(), url = new URL(request.url()), path = url.pathname
       assert.equal(url.origin, origin, 'Provider/external requests must never leave the browser fixture')
@@ -105,7 +105,7 @@ try {
       assert.equal(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth), true, 'Assignment editor fits viewport')
       const pending = hold()
       await page.clock.runFor(5000); await wait(() => pending.reached > 0, 'Background assignment request starts')
-      await forceSubmit(dialog); assert.equal(writes.length, 0, 'Pending read cannot submit old authorization')
+      assert.equal(await save.isEnabled(), true, 'A poll in flight leaves the draft submittable (ADR 0102)')
       finish(true)
       await section.getByText('TEST_ONLY 外部分配读取失败', { exact: true }).waitFor()
       await forceSubmit(dialog); assert.equal(writes.length, 0, 'Failed read cannot submit old authorization')
@@ -156,7 +156,7 @@ try {
       await page.evaluate(() => { const form = document.querySelector('[role="dialog"] form'); const choice = [...document.querySelectorAll('[data-slot=user-roster] button')].find(button => button.textContent.includes('TEST_ONLY 第二用户')); choice.click(); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
       assert.equal(writes.length, 0, 'Same-event user switch never redirects the original draft to the new user')
       await dialog.waitFor({ state: 'hidden' })
-      await page.getByRole('button', { name: /TEST_ONLY 用户/ }).click()
+      await page.locator('[data-slot=user-roster] button[aria-pressed]').filter({ hasText: 'TEST_ONLY 用户' }).first().click()
       await wait(() => save.isEnabled(), 'Original user selection restores its preserved draft')
       assert.equal(await dialog.getByLabel('搜索外部节点').inputValue(), 'TEST_ONLY 保留草稿')
       await save.click()
@@ -179,7 +179,7 @@ try {
       await section.getByText('外部节点分配已保存，后续订阅按新分配生成。', { exact: true }).waitFor()
       const overflow = await page.evaluate(() => [...document.querySelectorAll('body *')].filter(element => element.getBoundingClientRect().right > innerWidth + 1).map(element => ({ tag: element.tagName, class: element.className, text: element.textContent?.slice(0, 70), width: element.getBoundingClientRect().width })))
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Page fits viewport: ${JSON.stringify(overflow.slice(0, 12))}`)
-      await page.getByRole('button', { name: '订阅链接', exact: true }).click()
+      await page.getByRole('button', { name: '订阅详情', exact: true }).click()
       const subscription = page.getByRole('dialog')
       await subscription.getByText('TEST_ONLY 外部入口', { exact: true }).waitFor()
       await subscription.getByText('TEST_ONLY 受管入口', { exact: true }).waitFor()

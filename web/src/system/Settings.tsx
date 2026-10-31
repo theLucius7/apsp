@@ -28,14 +28,14 @@ function FeatureVisibility({ initial }: { initial: boolean }) {
   const save = () => action.run(() => api<Preferences>('/api/settings', 'PATCH', { show_frozen_features: enabled }), result => { const shown = Boolean(result.show_frozen_features); setEnabled(shown); useFeatureStore.getState().setShowFrozen(shown); setSaved(true); setDirty(false) })
   return <form data-slot="feature-visibility" className="bg-card text-card-foreground ring-foreground/10 mb-4 min-w-0 overflow-hidden rounded-xl ring-1" onSubmit={event => { event.preventDefault(); void save() }}><div className="p-4"><fieldset disabled={action.busy}>
     <h2 className="mb-3 text-base font-semibold">功能显示</h2>
-    <label className="relative flex cursor-pointer items-center gap-4 py-3.5"><span className="min-w-0 flex-1"><strong className="block text-sm font-medium">显示冻结功能</strong><small className="text-muted-foreground mt-1 block text-xs leading-relaxed">冻结功能不再投入，只修安全问题，默认隐藏：系统网络参数、反向隧道、私有组网、受管防火墙、云资源与费用，以及硬件测试与 Speedtest。开启后在原页面显示并标注“冻结”；已有数据和接口不受影响。标注“实验”的功能始终显示。</small></span><Switch checked={enabled} onCheckedChange={checked => { setEnabled(checked); setSaved(false); setDirty(true) }} /></label>
+    <label className="relative flex cursor-pointer items-center gap-4 py-3.5"><span className="min-w-0 flex-1"><strong className="block text-sm font-medium">显示实验与冻结功能</strong><small className="text-muted-foreground mt-1 block text-xs leading-relaxed">默认隐藏，界面更简单。开启后显示实验功能（自动化与维护、网络配置）和冻结功能（系统网络参数、反向隧道、私有组网、受管防火墙、云资源与费用、硬件测试）。数据与地址一直保留。</small></span><Switch checked={enabled} onCheckedChange={checked => { setEnabled(checked); setSaved(false); setDirty(true) }} /></label>
   </fieldset><ErrorNotice message={action.error} />{saved && <p role="status" className="text-sm">设置已保存。</p>}<div className="mt-4 flex flex-wrap items-center gap-2.5"><Button disabled={action.busy || !dirty}>{action.busy ? '正在保存…' : '保存功能显示'}</Button></div></div></form>
 }
 
 export default function Settings() {
   const resource = useResource<Preferences>('/api/settings', 0)
   return <>
-    <PageHeader eyebrow="系统" title="面板设置" description="面板本身的全局设置：看板是否公开、显示哪些功能、金额按哪种币种显示、监控历史保存多久。">
+    <PageHeader title="面板设置" description="面板本身的全局设置：看板是否公开、显示哪些功能、金额按哪种币种显示、监控历史保存多久。">
       <a className={buttonVariants({ variant: 'outline' })} href="#/monitoring/settings">告警设置</a>
     </PageHeader>
     <ErrorNotice message={resource.error} retry={resource.reload} />

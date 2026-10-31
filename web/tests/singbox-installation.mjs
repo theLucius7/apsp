@@ -91,7 +91,7 @@ try {
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/system/plugins`)
     await page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }).waitFor()
-    assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '插件中心', exact: true, includeHidden: true }).getAttribute('aria-current'), 'page')
+    assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '设置', exact: true, includeHidden: true }).getAttribute('aria-current'), 'page')
     assert.equal(await page.getByRole('navigation', { name: '插件中心' }).getByRole('link', { name: '服务器启用', exact: true }).getAttribute('aria-current'), 'page')
     assert.equal(await page.title(), '插件中心 · apsp')
     const row = page.locator('tbody tr').filter({ has: page.getByRole('link', { name, exact: true }) })
