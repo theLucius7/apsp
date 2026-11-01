@@ -10,6 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY tools/build-singbox.sh /usr/local/bin/build-singbox
 RUN chmod 0755 /usr/local/bin/build-singbox
+COPY tools/singbox-runtime /usr/local/share/apsp-singbox-runtime
+ENV APSP_SINGBOX_PATCHES=/usr/local/share/apsp-singbox-runtime
 
 WORKDIR /build
 ENTRYPOINT ["/usr/local/bin/build-singbox"]

@@ -1,8 +1,8 @@
 # 签名发布与信任根
 
-Agent 在 `crates/agent/Cargo.toml` 独立声明版本，当前源码为 `0.3.2` 候选（增加会话准入，见 ADR 0098），尚未签名发布；`0.3.1` 已签名发布；面板仍使用根 `Cargo.toml` 的 workspace 版本 `0.3.0`。Agent 标签使用 `agent-v<Agent版本>`。当前 wire 协议兼容范围为 `1..1`，记录在已签 `release.json`，不以面板产品版本代替协议兼容判断。
+Agent 在 `crates/agent/Cargo.toml` 独立声明版本，当前源码为 `0.3.4` 候选（接受自维护运行时并改进 REALITY 健康检查，见 ADR 0104），尚未签名发布；`0.3.1` 已签名发布；面板仍使用根 `Cargo.toml` 的 workspace 版本 `0.3.0`。Agent 标签使用 `agent-v<Agent版本>`。当前 wire 协议兼容范围为 `1..1`，记录在已签 `release.json`，不以面板产品版本代替协议兼容判断。
 
-CI 为两种架构构建 musl Agent、固定上游运行时和当前 NodeQuality 包装器，生成六个平铺资产、静态 `install.sh`、`release.json` 与规范 `SHA256SUMS`，只建立 GitHub Release 草稿。运行时按固定版本、架构和构建脚本内容缓存；固定 Go 工具链在 amd64 构建机交叉编译 arm64。Agent 两种架构都使用对应原生 runner。NodeQuality 当前源码默认构建 r14：固定上游提交、原入口 SHA-256 和 AGPL-3.0 许可证不变，包装器新增能力需使用新的不可变组件版本。打包不运行基准测试；外部诊断下载继续遵循 ADR 0016。
+CI 为两种架构构建 musl Agent、固定上游版本加 `tools/singbox-runtime/` 补丁的运行时和当前 NodeQuality 包装器，生成六个平铺资产、静态 `install.sh`、`release.json` 与规范 `SHA256SUMS`，只建立 GitHub Release 草稿。运行时按固定版本、架构和构建脚本内容缓存；固定 Go 工具链在 amd64 构建机交叉编译 arm64。Agent 两种架构都使用对应原生 runner。NodeQuality 当前源码默认构建 r14：固定上游提交、原入口 SHA-256 和 AGPL-3.0 许可证不变，包装器新增能力需使用新的不可变组件版本。打包不运行基准测试；外部诊断下载继续遵循 ADR 0016。
 
 [agent-v0.3.0](https://github.com/theLucius7/apsp/releases/tag/agent-v0.3.0) 已从冻结源码 `75cd846` 正式发布，包含 r2 包装器；维护者本机签署、发布验证和真实面板导入的结果见 [执行进度](../PROGRESS.md)。该 Release 的制品保持不可变，不随当前源码重打包或替换。r14 及后续新增能力须完成各自前置验收后使用新 Release 发布。[agent-v0.3.1](https://github.com/theLucius7/apsp/releases/tag/agent-v0.3.1) 从 `5a436e3a` 发布，由部署 VPS 上的第二把根 `4D645C2885298F58` 签署，Agent 与安装入口同时信任两把根；构建、签署与发布校验见 [执行进度](../PROGRESS.md)。当前 CI 按用户要求临时暂停，全部任务完成后才统一恢复；暂停期间不执行下文的工作流触发步骤。
 

@@ -30,7 +30,7 @@ impl TempDir {
         std::fs::write(self.0.join("config.json"), &config).unwrap();
         RuntimeSpec {
             revision: 1,
-            kernel_version: "1.14.2".into(),
+            kernel_version: "1.14.2-apsp.1".into(),
             config_hash: "a".repeat(64),
             binary_path: self.0.join("sing-box"),
             revision_dir: self.0.clone(),
@@ -55,7 +55,9 @@ pub struct TestOps {
 impl Default for TestOps {
     fn default() -> Self {
         Self {
-            version: Some("sing-box version 1.14.2\nTags: with_quic,with_v2ray_api\n".into()),
+            version: Some(
+                "sing-box version 1.14.2-apsp.1\nTags: with_quic,with_v2ray_api\n".into(),
+            ),
             check_ok: true,
             commands: Mutex::new(Vec::new()),
         }

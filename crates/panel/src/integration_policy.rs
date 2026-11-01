@@ -37,6 +37,7 @@ pub fn route_policy(path: &str, method: &Method) -> Option<RoutePolicy> {
                     || path.contains("/accesses")
                     || path.contains("/external-accesses")
                     || path.contains("/subscription/reset")
+                    || path.ends_with("/reachability/settings")
                     || path.ends_with("/subscription-domain"))));
     let read = (feature == "cloud" && *method == Method::POST && path.ends_with("/cdt-check"))
         || feature == "dns"
@@ -101,6 +102,15 @@ mod tests {
         )
         .unwrap();
         assert!(reset.high_risk);
+        // Opting in sends node addresses to a third party; a run stays within that choice.
+        let opt_in =
+            route_policy("/api/plugins/sing-box/reachability/settings", &Method::PUT).unwrap();
+        assert!(opt_in.high_risk && !opt_in.independent_identity);
+        assert!(
+            !route_policy("/api/plugins/sing-box/reachability/run", &Method::POST)
+                .unwrap()
+                .high_risk
+        );
         assert!(
             !route_policy("/api/plugins/sing-box/nodes/preview", &Method::POST)
                 .unwrap()
@@ -166,13 +176,13 @@ mod tests {
         crate::plugins::install();
         let mut step: apsp_panel_host::operations::Step = serde_json::from_value(json!({
             "kind":"singbox_retry_deployment", "service":null, "timeout_secs":300,
-            "runtime_version":"1.14.2"
+            "runtime_version":"1.14.2-apsp.1"
         }))
         .unwrap();
         assert!(step.validate().is_ok());
         step.runtime_version = Some("latest".into());
         assert!(step.validate().is_err());
-        step.runtime_version = Some("1.14.2".into());
+        step.runtime_version = Some("1.14.2-apsp.1".into());
         step.service = Some("other.service".into());
         assert!(step.validate().is_err());
     }

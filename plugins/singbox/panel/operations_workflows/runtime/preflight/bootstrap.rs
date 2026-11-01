@@ -78,7 +78,7 @@ pub(super) async fn status(
         "无业务凭据的初始配置",
         if compiled { "passed" } else { "failed" },
         Some(now_timestamp()),
-        "fixed_compiler_1.14.2",
+        "fixed_compiler_1.14.2-apsp.1",
         json!({"business_inbounds":0,"business_credentials":0}),
         "固定编译器只生成空业务监听与本机统计接口，不修改保存的普通节点目标。",
     ));
@@ -186,7 +186,7 @@ pub(in super::super::super) async fn install(
         .checked_add(1)
         .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("revision overflow")))?;
     sqlx::query("INSERT INTO deployments(server_id,module,rev,bundle,bundle_sha256,source_json,created_at) VALUES($1,'singbox',$2,$3,$4,'[]'::jsonb,$5)").bind(server).bind(revision).bind(bundle).bind(hash).bind(now).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO singbox_runtime_manifest_facts(server_id,module,revision,runtime_version,artifact_sha256,artifact) VALUES($1,'singbox',$2,'1.14.2',$3,$4)").bind(server).bind(revision).bind(&artifact.sha256).bind(serde_json::to_value(&artifact).map_err(anyhow::Error::from)?).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO singbox_runtime_manifest_facts(server_id,module,revision,runtime_version,artifact_sha256,artifact) VALUES($1,'singbox',$2,'1.14.2-apsp.1',$3,$4)").bind(server).bind(revision).bind(&artifact.sha256).bind(serde_json::to_value(&artifact).map_err(anyhow::Error::from)?).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO server_module_status(server_id,module,target_rev,updated_at) VALUES($1,'singbox',$2,$3) ON CONFLICT(server_id,module) DO UPDATE SET target_rev=EXCLUDED.target_rev,updated_at=EXCLUDED.updated_at").bind(server).bind(revision).bind(now).execute(&mut *tx).await?;
     sqlx::query("UPDATE servers SET manifest_rev=$2 WHERE id=$1")
         .bind(server)

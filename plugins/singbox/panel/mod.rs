@@ -3,6 +3,10 @@
 //!
 //! The plugin reaches panel services only through the `apsp-panel-host` API.
 
+/// The signed runtime every new deployment uses: upstream 1.14.2 plus the
+/// patch queue in `tools/singbox-runtime` (ADR 0104).
+pub const RUNTIME_VERSION: &str = "1.14.2-apsp.1";
+
 pub mod accesses;
 mod activity;
 pub mod agent;
@@ -50,6 +54,7 @@ mod portal;
 pub mod proxy_resources;
 pub mod proxy_users;
 pub mod publisher;
+pub mod reachability;
 pub mod runtime_operations;
 mod secret_access;
 pub mod settings;
@@ -80,6 +85,7 @@ pub async fn run(state: AppState) {
     tokio::join!(
         publisher::run(state.clone()),
         commerce::run(state.clone()),
+        reachability::run(state.clone()),
         subscription_hosts::run(state.clone()),
         subscription_sources::worker::run(state)
     );
@@ -171,6 +177,7 @@ pub fn router() -> Router<AppState> {
         .route("/usage", get(usage::summary))
         .merge(catalog::router())
         .merge(nexus_nodes::router())
+        .merge(reachability::router())
         .merge(sources::router())
         .route("/source-migration", get(source_migration::state))
         .merge(portal::router())

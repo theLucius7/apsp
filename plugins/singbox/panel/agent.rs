@@ -69,7 +69,7 @@ pub async fn manifest_module(
             // Explicit fixed candidates bind ordinary node revisions as well.
             // Their artifact must remain the exact previewed platform payload.
             if path_deployment || explicit_rollout {
-                sqlx::query("INSERT INTO singbox_runtime_manifest_facts(server_id,module,revision,runtime_version,artifact_sha256,artifact) VALUES($1,'singbox',$2,'1.14.2',$3,$4) ON CONFLICT DO NOTHING").bind(server_id).bind(revision).bind(&module.artifact.sha256).bind(serde_json::to_value(&module.artifact).map_err(anyhow::Error::from)?).execute(&mut *tx).await?;
+                sqlx::query("INSERT INTO singbox_runtime_manifest_facts(server_id,module,revision,runtime_version,artifact_sha256,artifact) VALUES($1,'singbox',$2,'1.14.2-apsp.1',$3,$4) ON CONFLICT DO NOTHING").bind(server_id).bind(revision).bind(&module.artifact.sha256).bind(serde_json::to_value(&module.artifact).map_err(anyhow::Error::from)?).execute(&mut *tx).await?;
                 let same:bool=sqlx::query_scalar("SELECT artifact_sha256=$3 FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2").bind(server_id).bind(revision).bind(&module.artifact.sha256).fetch_one(&mut *tx).await?;
                 if !same {
                     return Err(ApiError::Conflict(
@@ -87,7 +87,10 @@ pub async fn manifest_module(
             let reason = match &error {
                 ApiError::BadRequest(message) => message.clone(),
                 ApiError::NotFound => {
-                    "缺少此平台的已验签 sing-box 1.14.2 制品，请先导入可信发布制品".into()
+                    format!(
+                        "缺少此平台的已验签 sing-box {} 制品，请先导入可信发布制品",
+                        crate::RUNTIME_VERSION
+                    )
                 }
                 ApiError::Conflict(_) => {
                     "sing-box 制品验签或完整性检查失败，请检查已导入的发布制品".into()
@@ -152,7 +155,7 @@ async fn prepare_manifest(
         ));
     }
     Ok(ModuleManifest {
-        kernel_version: "1.14.2".into(),
+        kernel_version: crate::RUNTIME_VERSION.into(),
         artifact,
         config_rev: config_rev as u64,
         bundle_url: format!(
@@ -214,7 +217,7 @@ pub(super) async fn runtime_artifact(
     }
     let mut artifact = None;
     for target in targets {
-        match artifacts::descriptor(state, "sing-box", "1.14.2", &target).await {
+        match artifacts::descriptor(state, "sing-box", crate::RUNTIME_VERSION, &target).await {
             Ok(found) => {
                 artifact = Some(found);
                 break;

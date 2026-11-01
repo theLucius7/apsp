@@ -17,6 +17,9 @@ pub(crate) struct Listener {
     pub transport: Transport,
     pub tls: Option<serde_json::Value>,
     pub obfuscation: Option<String>,
+    /// Connecting would make the runtime dial its REALITY target, so health
+    /// checks read the socket table instead.
+    pub reality: bool,
 }
 
 pub(crate) fn stats_address(address: &str) -> Result<SocketAddr> {
@@ -100,6 +103,7 @@ pub(crate) fn listen_addresses(spec: &RuntimeSpec) -> Result<Vec<Listener>> {
         } else {
             None
         };
+        let reality = inbound["tls"]["reality"]["enabled"] == true;
         let port: u16 = inbound["listen_port"]
             .as_u64()
             .context("inbound has no listen port")?
@@ -122,6 +126,7 @@ pub(crate) fn listen_addresses(spec: &RuntimeSpec) -> Result<Vec<Listener>> {
                 transport: *transport,
                 tls: tls.clone(),
                 obfuscation: obfuscation.clone(),
+                reality,
             });
         }
     }

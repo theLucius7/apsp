@@ -261,7 +261,7 @@ fn execute() -> Result<()> {
     let input: Input = serde_json::from_slice(&bytes)?;
     if input.schema != 1
         || !input.test_only
-        || input.runtime_version != "1.14.2"
+        || input.runtime_version != "1.14.2-apsp.1"
         || input.native_binary_sha256.len() != 64
         || !input
             .native_binary_sha256
@@ -399,7 +399,7 @@ fn execute() -> Result<()> {
         .into_iter()
         .map(|(name, bytes)| (name, sha(bytes)))
         .collect();
-    let manifest = json!({"schema":1,"test_only":true,"runtime_version":"1.14.2","native_binary_sha256":input.native_binary_sha256,"compiler_input_sha256":sha(&bytes),
+    let manifest = json!({"schema":1,"test_only":true,"runtime_version":"1.14.2-apsp.1","native_binary_sha256":input.native_binary_sha256,"compiler_input_sha256":sha(&bytes),
         "generator_source_sha256":sha(include_bytes!("ordered_native_fixture.rs")),"compiler_sources":sources,"cases":cases,
         "scope":"product routing graph with explicitly relocated fixture statistics and mixed listener ports; not production bundle or Agent deployment acceptance"});
     private_write(

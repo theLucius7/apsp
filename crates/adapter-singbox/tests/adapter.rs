@@ -16,14 +16,16 @@ async fn signed_path_plan_requires_matching_staged_bytes_native_features_and_pri
     native["experimental"]["clash_api"] =
         serde_json::json!({"external_controller":"127.0.0.1:18086","secret":"a".repeat(64)});
     spec.files.insert("config.json".into(), native.to_string());
-    let plan = serde_json::json!({"schema":1,"runtime_version":"1.14.2","required_build_tags":["with_clash_api","with_v2ray_api"],
+    let plan = serde_json::json!({"schema":1,"runtime_version":"1.14.2-apsp.1","required_build_tags":["with_clash_api","with_v2ray_api"],
         "bindings":[{"id":"00000000-0000-0000-0000-000000000002","selector":"chain-1-g2-h1","target":"https://panel.example/health"}]}).to_string();
     spec.files
         .insert("runtime-probes.json".into(), plan.clone());
     std::fs::write(directory.0.join("config.json"), &spec.files["config.json"]).unwrap();
     std::fs::write(directory.0.join("runtime-probes.json"), &plan).unwrap();
     let complete = TestOps {
-        version: Some("sing-box version 1.14.2\nTags: with_v2ray_api,with_clash_api\n".into()),
+        version: Some(
+            "sing-box version 1.14.2-apsp.1\nTags: with_v2ray_api,with_clash_api\n".into(),
+        ),
         ..TestOps::default()
     };
     assert!(
@@ -86,7 +88,7 @@ async fn rejects_wrong_version_missing_tags_and_failed_native_check() {
     let spec = directory.spec(18085, serde_json::json!([]));
     for version in [
         "sing-box version 1.14.1\nTags: with_v2ray_api\n",
-        "sing-box version 1.14.2\nTags: with_quic\n",
+        "sing-box version 1.14.2-apsp.1\nTags: with_quic\n",
     ] {
         let ops = TestOps {
             version: Some(version.into()),

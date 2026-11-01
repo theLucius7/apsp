@@ -1,2 +1,4 @@
 # Keep the exact upstream patch text and its audited SHA256.
 tools/licenses/rust-1.98.1-musl-recipe.txt -whitespace
+# Patches must match upstream byte for byte on every platform.
+tools/singbox-runtime/*.patch -text

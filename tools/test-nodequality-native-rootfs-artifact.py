@@ -283,7 +283,7 @@ class DerivationTests(unittest.TestCase):
                 directory = source / "agent" / "0.3.0"
                 directory.mkdir(parents=True, exist_ok=True)
                 (directory / arch).write_bytes(b"TEST_ONLY nonexecutable Agent")
-                directory = source / "sing-box" / "1.14.2"
+                directory = source / "sing-box" / "1.14.2-apsp.1"
                 directory.mkdir(parents=True, exist_ok=True)
                 fixture = module("rootfs_signing_fixture", artifact.ROOT / "tools/test-nodequality-rootfs.py")
                 payload, _ = fixture.pack([{"path": "sing-box", "type": "file", "mode": 0o755,
@@ -293,7 +293,7 @@ class DerivationTests(unittest.TestCase):
             installer.write_bytes(b"#!/bin/sh\nexit 0\n")
             output = root / "release"
             release.assemble(SimpleNamespace(source=source, output=output, agent_version="0.3.0",
-                runtime_version="1.14.2", nodequality_version=artifact.VERSION, arch=None,
+                runtime_version="1.14.2-apsp.1", nodequality_version=artifact.VERSION, arch=None,
                 tag="agent-v0.3.0", installer=installer))
             fixtures = artifact.ROOT / "crates/protocol/tests/fixtures"
             def sign():

@@ -14,7 +14,12 @@ pub(super) fn multi_arch_bundle() -> Result<Bundle> {
         artifacts.push((entry, agent.to_vec()));
         let archive = release_fixture::archive("sing-box", runtime)?;
         let mut entry = signing::entry(
-            "sing-box", "1.14.2", "sing-box", "tar.gz", &archive, runtime,
+            "sing-box",
+            "1.14.2-apsp.1",
+            "sing-box",
+            "tar.gz",
+            &archive,
+            runtime,
         );
         entry.arch = arch.into();
         entry.asset_name = canonical_asset_name(&entry)?;

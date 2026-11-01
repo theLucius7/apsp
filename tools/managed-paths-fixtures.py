@@ -231,7 +231,7 @@ def verify_native(manifest, directory):
     binary = regular_file(manifest["native_binary"], 512 * 1024 * 1024)
     require(digest_file(binary, 512 * 1024 * 1024) == manifest["native_sha256"], "native_binary_hash_mismatch")
     output = capture([str(binary), "version"], directory, "native-version.private.log").decode("utf-8")
-    require("sing-box version 1.14.2" in [line.strip() for line in output.splitlines()],
+    require("sing-box version 1.14.2-apsp.1" in [line.strip() for line in output.splitlines()],
             "exact_native_version_required")
 
 

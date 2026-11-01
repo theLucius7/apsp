@@ -42,9 +42,46 @@ pub(crate) async fn probe(listener: &Listener) -> bool {
         .is_ok()
 }
 
+/// A REALITY server opens a connection to its public target for every accepted
+/// connection, so connecting here would make each host contact that target on
+/// a fixed timer, a pattern real clients never produce.
+async fn tcp_listening(port: u16) -> Result<bool> {
+    let mut read_any = false;
+    for table in ["/proc/net/tcp", "/proc/net/tcp6"] {
+        if let Ok(contents) = tokio::fs::read_to_string(table).await {
+            read_any = true;
+            if table_has_listener(&contents, port) {
+                return Ok(true);
+            }
+        }
+    }
+    anyhow::ensure!(read_any, "socket tables are unavailable");
+    Ok(false)
+}
+
+fn table_has_listener(contents: &str, port: u16) -> bool {
+    const LISTEN: &str = "0A";
+    contents.lines().skip(1).any(|line| {
+        let mut fields = line.split_whitespace();
+        let local = fields.nth(1);
+        let state = fields.nth(1);
+        state == Some(LISTEN)
+            && local
+                .and_then(|address| address.rsplit_once(':'))
+                .and_then(|(_, hex)| u16::from_str_radix(hex, 16).ok())
+                == Some(port)
+    })
+}
+
 async fn probe_inner(listener: &Listener, deadline: Instant) -> Result<()> {
     let Some(tls) = &listener.tls else {
         match listener.transport {
+            Transport::Tcp if listener.reality && cfg!(target_os = "linux") => {
+                anyhow::ensure!(
+                    tcp_listening(listener.address.port()).await?,
+                    "REALITY listener is not bound"
+                );
+            }
             Transport::Tcp => {
                 timeout_at(deadline, TcpStream::connect(listener.address)).await??;
             }

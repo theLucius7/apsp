@@ -155,5 +155,11 @@ class RecoveryTests(unittest.TestCase):
         # The Nexus compatibility bridge keeps serving legacy links; restores leave it alone.
         self.assertNotIn("singbox_nexus_bridge", statements)
 
+    def test_isolated_restore_stops_reachability_measurements_and_alerts(self):
+        self.assertNotIn("singbox_reachability", recovery.isolation_sql([{"version": v} for v in range(1, 78)]))
+        statements = recovery.isolation_sql([{"version": v} for v in [*range(1, 78), 79]])
+        self.assertIn("UPDATE singbox_reachability_settings SET enabled=false,", statements)
+        self.assertIn("UPDATE singbox_reachability_deliveries SET state='cancelled'", statements)
+
 if __name__ == "__main__":
     unittest.main()

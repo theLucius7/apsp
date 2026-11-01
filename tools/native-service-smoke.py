@@ -132,10 +132,10 @@ def main():
                   outbounds=[dict(type='direct', tag='direct')], route=dict(final='direct'),
                   experimental=dict(v2ray_api=dict(listen=f'127.0.0.1:{stats_port}', stats=dict(enabled=True, users=['u1_n1']))))
     bundle = json.dumps(dict(files={'config.json': json.dumps(native)}), separators=(',', ':')).encode()
-    runtime_path = '/api/agent/v1/artifacts/sing-box/1.14.2/' + RELEASE['target']()
+    runtime_path = '/api/agent/v1/artifacts/sing-box/1.14.2-apsp.1/' + RELEASE['target']()
     panel.downloads = {runtime_path: archive, '/fixture/bundle': bundle}
-    module = dict(kernel_version='1.14.2', artifact=dict(url=panel.origin + runtime_path, sha256=hashlib.sha256(archive).hexdigest(),
-                  proof=RELEASE['proof']('sing-box', '1.14.2', 'sing-box.exe' if SYSTEM == 'Windows' else 'sing-box', archive, 'tar.gz')),
+    module = dict(kernel_version='1.14.2-apsp.1', artifact=dict(url=panel.origin + runtime_path, sha256=hashlib.sha256(archive).hexdigest(),
+                  proof=RELEASE['proof']('sing-box', '1.14.2-apsp.1', 'sing-box.exe' if SYSTEM == 'Windows' else 'sing-box', archive, 'tar.gz')),
                   config_rev=1, bundle_url=panel.origin + '/fixture/bundle', bundle_sha256=hashlib.sha256(bundle).hexdigest(), stats_listen=f'127.0.0.1:{stats_port}')
     try:
         if SYSTEM == 'Windows':
@@ -198,7 +198,7 @@ def main():
             powershell("$t=Get-ScheduledTask -TaskName 'apsp-singbox@main'; if ($t.Principal.UserId -notmatch 'apsp-singbox') { throw 'Runtime account mismatch' }; if ($t.Triggers.Count -ne 1) { throw 'Missing startup trigger' }")
         # The independent OS service must recheck cached proof without a running
         # Agent worker. A valid initial installation must not authorize later bytes.
-        proof_path = root / 'plugins/sing-box/1.14.2/release.json'
+        proof_path = root / 'plugins/sing-box/1.14.2-apsp.1/release.json'
         original_proof = proof_path.read_bytes()
         def listening():
             with socket.socket() as connection:

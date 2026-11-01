@@ -387,7 +387,7 @@ pub(crate) async fn plan(
     } else {
         None
     };
-    let probe_plan=probe_control.as_ref().map(|_|json!({"schema":1,"runtime_version":"1.14.2","required_build_tags":tags.into_iter().collect::<Vec<_>>(),"bindings":bindings}));
+    let probe_plan=probe_control.as_ref().map(|_|json!({"schema":1,"runtime_version":crate::RUNTIME_VERSION,"required_build_tags":tags.into_iter().collect::<Vec<_>>(),"bindings":bindings}));
     if let Some(plan) = &probe_plan
         && (plan["bindings"]
             .as_array()

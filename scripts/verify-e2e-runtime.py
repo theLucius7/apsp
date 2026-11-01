@@ -9,8 +9,8 @@ import sys
 import tarfile
 
 
-VERSION = "1.14.2"
-REVISION = "af6e64c3b69e6132ebaee0e1a3d24e93903f6709"
+VERSION = "1.14.2-apsp.1"
+REVISION = "e2288134223b5b9e3a272f9fb4abb717bf7647f3"
 # release/DEFAULT_BUILD_TAGS at the pinned upstream revision, plus the statistics API.
 TAGS = {
     "with_gvisor", "with_quic", "with_dhcp", "with_wireguard", "with_utls",

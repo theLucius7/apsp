@@ -23,6 +23,13 @@ test('old device DDNS, catalog alias and unified node selection retain their des
   expect(currentNavigation(resolveRoute('/plugins/alicloud'))?.path).toBe('/plugins/alicloud')
 })
 
+test('china reachability is a view of the latency entry, not another sidebar entry', () => {
+  expect(resolveRoute('/latency/reachability')).toEqual({ page: 'latency-reachability' })
+  expect(currentNavigation(resolveRoute('/latency/reachability'))?.path).toBe('/latency')
+  expect(resolveRoute('/latency')).toEqual({ page: 'latency' })
+  expect(sectionTabs(currentNavigation(resolveRoute('/latency/reachability')), navigation).map(item => item.label)).toEqual(['网络检测', '延迟检测'])
+})
+
 test('unsafe resource IDs and ambiguous filtered paths never fall through into management routes', () => {
   for (const path of ['/servers/0', '/servers/9007199254740992/plugins', '/dashboard/9007199254740992',
     '/plugins/sing-box/nodes/direct/9007199254740992', '/plugins/sing-box/nodes?role=unknown',

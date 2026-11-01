@@ -8,6 +8,7 @@ import { time } from '../format'
 import ProbeMonitoringFields from '../servers/ProbeMonitoringFields'
 import type { Server } from '../types'
 import ServerPicker from '../servers/ServerPicker'
+import LatencyTabs from './LatencyTabs'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -48,7 +49,7 @@ export default function LatencyTasks() {
     return latencyDraftError({ tasks, servers }, task?.id ? task : null, serverIds ?? [])
   }
   const toggle = (task: Task) => { if (writeError(task)) return; void action.run(() => saveLatencyTask({ tasks, servers }, task, { ...task, spec: { ...task.spec, enabled: !task.spec.enabled } }, body => api(`/api/latency-tasks/${task.id}`, 'PATCH', body)), tasks.reload) }
-  return <><PageHeader title="延迟检测" description="让服务器周期性地用 TCP / ICMP 测量到电信、联通、移动等已授权目标的延迟与丢包，结果显示在看板中。"><Refresh onClick={refresh} /><Button disabled={Boolean(writeError()) || (tasks.data?.length ?? 32) >= 32} onClick={() => { if (!writeError()) setEditing(empty) }}><PlusIcon aria-hidden="true" />添加任务</Button></PageHeader><ErrorNotice message={tasks.error || servers.error || overview.error || action.error} retry={refresh} />
+  return <><PageHeader title="延迟检测" description="让服务器周期性地用 TCP / ICMP 测量到电信、联通、移动等已授权目标的延迟与丢包，结果显示在看板中。"><Refresh onClick={refresh} /><Button disabled={Boolean(writeError()) || (tasks.data?.length ?? 32) >= 32} onClick={() => { if (!writeError()) setEditing(empty) }}><PlusIcon aria-hidden="true" />添加任务</Button></PageHeader><LatencyTabs active="latency" /><ErrorNotice message={tasks.error || servers.error || overview.error || action.error} retry={refresh} />
     <Panel><div className="p-4"><label className="grid min-w-0 gap-1.5 text-sm">观测服务器<NativeSelect className="w-full" aria-label="观测服务器" value={serverId} onChange={event => setServerId(Number(event.target.value))}><option value={0}>全部服务器</option>{servers.data?.map(server => <option key={server.id} value={server.id}>{server.name}</option>)}</NativeSelect></label><p className="text-muted-foreground mt-3 text-xs leading-relaxed">按目标所属运营商与地区查看每台服务器的观测。时间为实际采样时间；历史值不代表当前连通性，也不用于完整三网排名。</p></div></Panel>
     {networks.slice(0, 3).map(([network, label]) => {
       const rows = overview.data?.filter(row => row.probe.monitor?.network === network && (!serverId || row.server_id === serverId)) ?? []

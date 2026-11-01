@@ -127,7 +127,7 @@ fn spec(directory: &Path, binary: &Path, node: &Node, stats_port: u16) -> Result
     std::fs::write(directory.join("config.json"), &content)?;
     Ok(RuntimeSpec {
         revision: 1,
-        kernel_version: "1.14.2".into(),
+        kernel_version: "1.14.2-apsp.1".into(),
         config_hash: "a".repeat(64),
         binary_path: binary.into(),
         revision_dir: directory.into(),
@@ -153,7 +153,7 @@ fn start(
 }
 
 #[tokio::test]
-#[ignore = "requires openssl and upstream v1.14.2 with Naive, QUIC, ACME and V2Ray API; set APSP_TEST_SINGBOX"]
+#[ignore = "requires openssl and upstream v1.14.2-apsp.1 with Naive, QUIC, ACME and V2Ray API; set APSP_TEST_SINGBOX"]
 async fn all_protocols_authenticate_account_and_revoke_with_real_runtime() -> Result<()> {
     let binary = std::path::PathBuf::from(std::env::var("APSP_TEST_SINGBOX")?);
     let directory = TempDir::new();

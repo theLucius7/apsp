@@ -169,14 +169,14 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     release_fixture::write(
         &panel.state.config.data_dir,
         "sing-box",
-        "1.14.2",
+        "1.14.2-apsp.1",
         "sing-box",
         &archive,
         binary,
         "tar.gz",
     )?;
     sqlx::query("UPDATE servers SET device_public_key='TEST_ONLY',last_seen=$2,static_info=$3,capabilities=$4 WHERE id=$1").bind(server).bind(now_timestamp())
-        .bind(json!({"arch":"amd64","os":"linux","libc":"gnu","agent_version":"0.3.1"})).bind(json!(["singbox",apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY])).execute(&pool).await?;
+        .bind(json!({"arch":"amd64","os":"linux","libc":"gnu","agent_version":"0.3.4"})).bind(json!(["singbox",apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY])).execute(&pool).await?;
     // Without device limits from the bridge the handoff waits.
     assert_eq!(
         post(
@@ -198,14 +198,138 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
             .status(),
         StatusCode::CONFLICT
     );
-    ok(post(
-        &panel,
-        &cookie,
-        &format!("/{server}/activate"),
-        body.clone(),
+    // An old Agent cannot accept the patched runtime, so the handoff waits.
+    sqlx::query(
+        "UPDATE servers SET static_info=static_info||'{\"agent_version\":\"0.3.3\"}' WHERE id=$1",
     )
-    .await?)
+    .bind(server)
+    .execute(&pool)
     .await?;
+    assert_eq!(
+        post(
+            &panel,
+            &cookie,
+            &format!("/{server}/activate"),
+            body.clone()
+        )
+        .await?
+        .status(),
+        StatusCode::CONFLICT
+    );
+    sqlx::query(
+        "UPDATE servers SET static_info=static_info||'{\"agent_version\":\"0.3.4\"}' WHERE id=$1",
+    )
+    .bind(server)
+    .execute(&pool)
+    .await?;
+    // Another host cut over recently: pacing holds this one back until the
+    // operator explicitly overrides it.
+    let neighbour: i64 =
+        sqlx::query_scalar("INSERT INTO servers(name) VALUES('TEST_ONLY neighbour') RETURNING id")
+            .fetch_one(&pool)
+            .await?;
+    let credential =
+        credentials::store_generated(&pool, "TEST_ONLY neighbour", "backup", json!({"node":{}}))
+            .await?;
+    sqlx::query("INSERT INTO singbox_nexus_runtime_hosts(server_id,source_id,credential_id,digest,state,created_at,last_activated_at) VALUES($1,'fixture',$2,repeat('c',64),'active',1,$3)")
+        .bind(neighbour)
+        .bind(credential)
+        .bind(now_timestamp() - 3600)
+        .execute(&pool)
+        .await?;
+    assert_eq!(
+        post(
+            &panel,
+            &cookie,
+            &format!("/{server}/activate"),
+            body.clone()
+        )
+        .await?
+        .status(),
+        StatusCode::CONFLICT
+    );
+    let mut paced = body.clone();
+    paced["ignore_stagger"] = json!(true);
+    // A fresh blocked measurement holds the cutover. A stale one says nothing.
+    sqlx::query("UPDATE singbox_nexus_nodes SET display=display||'{\"protocol\":\"shadowsocks\",\"public_host\":\"blocked.example.invalid\",\"public_port\":\"443\"}' WHERE server_id=$1")
+        .bind(server)
+        .execute(&pool)
+        .await?;
+    sqlx::query("INSERT INTO singbox_reachability_targets(host,port,state,checked_at,seen_at) VALUES('blocked.example.invalid',443,'ip_blocked',$1,$1)")
+        .bind(now_timestamp())
+        .execute(&pool)
+        .await?;
+    assert_eq!(
+        post(
+            &panel,
+            &cookie,
+            &format!("/{server}/activate"),
+            paced.clone()
+        )
+        .await?
+        .status(),
+        StatusCode::CONFLICT
+    );
+    let mut forced = paced.clone();
+    forced["ignore_reachability"] = json!(true);
+    ok(post(&panel, &cookie, &format!("/{server}/activate"), forced).await?).await?;
+    sqlx::query("UPDATE singbox_reachability_targets SET checked_at=1")
+        .execute(&pool)
+        .await?;
+    ok(post(&panel, &cookie, &format!("/{server}/activate"), paced).await?).await?;
+    let recorded: Option<i64> = sqlx::query_scalar(
+        "SELECT last_activated_at FROM singbox_nexus_runtime_hosts WHERE server_id=$1",
+    )
+    .bind(server)
+    .fetch_one(&pool)
+    .await?;
+    assert!(recorded.is_some());
+    sqlx::query("DELETE FROM singbox_nexus_runtime_hosts WHERE server_id=$1")
+        .bind(neighbour)
+        .execute(&pool)
+        .await?;
+    // The catalog can follow a moved host without touching the preserved runtime.
+    let inventory: i64 = sqlx::query_scalar(
+        "SELECT inventory_id FROM singbox_nexus_runtime_nodes WHERE server_id=$1",
+    )
+    .bind(server)
+    .fetch_one(&pool)
+    .await?;
+    let endpoint = format!("/api/plugins/sing-box/nexus-nodes/{inventory}/public-endpoint");
+    let moved = json!({"public_host":"moved.example.invalid","public_port":443});
+    let response = panel
+        .admin(Method::PATCH, &endpoint, &cookie, Some(moved))
+        .await?;
+    assert_eq!(ok(response).await?["public_port"], "443");
+    let (display, public_host): (Value, String) = sqlx::query_as(
+        "SELECT d.display,n.public_host FROM singbox_nexus_nodes d JOIN singbox_nexus_runtime_nodes r ON r.inventory_id=d.id JOIN nodes n ON n.id=r.node_id WHERE d.id=$1",
+    )
+    .bind(inventory)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(display["public_host"], "moved.example.invalid");
+    assert_eq!(display["public_port"], "443");
+    assert_eq!(public_host, "moved.example.invalid");
+    for invalid in [
+        json!({"public_host":"https://bad","public_port":443}),
+        json!({"public_host":"ok.example.invalid","public_port":0}),
+    ] {
+        assert_eq!(
+            panel
+                .admin(Method::PATCH, &endpoint, &cookie, Some(invalid))
+                .await?
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    // The generic write path stays closed once the bypass transaction ended.
+    assert!(
+        sqlx::query("UPDATE nodes SET public_host='x.example.invalid' WHERE server_id=$1")
+            .bind(server)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
     // Establish membership before forcing the test debounce deadline.
     publisher::publish_due(&panel.state).await?;
     sqlx::query("UPDATE servers SET dirty_at=0")
@@ -355,7 +479,7 @@ async fn device_limits_need_session_control_and_are_shared_with_legacy_nodes(
     release_fixture::write(
         &panel.state.config.data_dir,
         "sing-box",
-        "1.14.2",
+        "1.14.2-apsp.1",
         "sing-box",
         &archive,
         binary,
@@ -364,7 +488,7 @@ async fn device_limits_need_session_control_and_are_shared_with_legacy_nodes(
     let online = |capabilities: Value| {
         sqlx::query("UPDATE servers SET device_public_key='TEST_ONLY',last_seen=$2,static_info=$3,capabilities=$4 WHERE id=$1")
             .bind(server).bind(now_timestamp())
-            .bind(json!({"arch":"amd64","os":"linux","libc":"gnu","agent_version":"0.3.2"}))
+            .bind(json!({"arch":"amd64","os":"linux","libc":"gnu","agent_version":"0.3.4"}))
             .bind(capabilities)
             .execute(&pool)
     };

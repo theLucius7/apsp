@@ -101,7 +101,7 @@ async fn prepare_server(
         .state
         .config
         .data_dir
-        .join("artifacts/releases/agent-v0.3.0/sing-box/1.14.2");
+        .join("artifacts/releases/agent-v0.3.0/sing-box/1.14.2-apsp.1");
     ensure!(
         runtime.join(&target).is_file(),
         "TEST_ONLY dedicated signed runtime fixture must match the real Agent ABI"

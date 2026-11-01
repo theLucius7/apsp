@@ -97,6 +97,8 @@ export function currentNavigation(route: AppRoute): NavigationItem | undefined {
   const page = route.page === 'server' ? (serverWorkspaces.has(route.section ?? '') ? route.section : 'servers')
     // Plugin enablement is the second view of the plugin centre.
     : route.page === 'plugins' ? 'catalog'
+      // China reachability is the second view of the recurring line checks.
+      : route.page === 'latency-reachability' ? 'latency'
       : serverPages.has(route.page) ? 'servers'
         : route.page
   return navigation.find(item => item.page === page)

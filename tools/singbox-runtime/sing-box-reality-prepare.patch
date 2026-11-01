@@ -1,0 +1,11 @@
+diff --git a/common/tls/reality_server.go b/common/tls/reality_server.go
+--- a/common/tls/reality_server.go
++++ b/common/tls/reality_server.go
+@@ -192,6 +192,7 @@ func (c *RealityServerConfig) Client(conn net.Conn) (Conn, error) {
+ }
+ 
+ func (c *RealityServerConfig) Start() error {
++	utls.RealityPrepare(c.config)
+ 	return nil
+ }
+ 

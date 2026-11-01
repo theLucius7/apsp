@@ -13,9 +13,9 @@ use crate::{
 use apsp_protocol::now_timestamp;
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, State},
+    extract::{DefaultBodyLimit, Path, State},
     http::HeaderMap,
-    routing::{get, post},
+    routing::{get, patch, post},
 };
 use model::{Snapshot, digest, prepare, source_tag};
 use serde::Deserialize;
@@ -27,8 +27,88 @@ pub(super) fn router() -> Router<AppState> {
         .route("/nexus-nodes", get(list))
         .route("/nexus-nodes/preview", post(preview))
         .route("/nexus-nodes/import", post(import))
+        .route("/nexus-nodes/{id}/public-endpoint", patch(public_endpoint))
         .merge(runtime::router())
         .layer(DefaultBodyLimit::max(3 * 1024 * 1024))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PublicEndpoint {
+    public_host: String,
+    public_port: u16,
+}
+
+fn valid_public_host(host: &str) -> bool {
+    host.parse::<std::net::IpAddr>().is_ok()
+        || (!host.is_empty()
+            && host.len() <= 253
+            && host.split('.').all(|label| {
+                !label.is_empty()
+                    && label.len() <= 63
+                    && !label.starts_with('-')
+                    && !label.ends_with('-')
+                    && label
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            }))
+}
+
+/// Records where clients reach an imported node after its IP or public port
+/// moved. Only the catalog changes: the listener, keys and client identities
+/// stay preserved, so a port-forward in front of the host keeps working.
+async fn public_endpoint(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    Json(input): Json<PublicEndpoint>,
+) -> ApiResult<Json<Value>> {
+    let actor = control_center::require_owner(&state, &headers).await?;
+    control_center::require_recent_proof(&state, &headers).await?;
+    if !valid_public_host(&input.public_host) || input.public_port == 0 {
+        return Err(ApiError::BadRequest("公网地址或端口无效".into()));
+    }
+    let mut tx = state.pool.begin().await?;
+    let before: Value =
+        sqlx::query_scalar("SELECT display FROM singbox_nexus_nodes WHERE id=$1 FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    let port = input.public_port.to_string();
+    sqlx::query(
+        "UPDATE singbox_nexus_nodes SET display=display||jsonb_build_object('public_host',$2::text,'public_port',$3::text) WHERE id=$1",
+    )
+    .bind(id)
+    .bind(&input.public_host)
+    .bind(&port)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("SELECT set_config('apsp.nexus_runtime_write','yes',TRUE)")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "UPDATE nodes SET public_host=$2 WHERE id=(SELECT node_id FROM singbox_nexus_runtime_nodes WHERE inventory_id=$1)",
+    )
+    .bind(id)
+    .bind(&input.public_host)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("SELECT set_config('apsp.nexus_runtime_write','',TRUE)")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus.nodes.public_endpoint',$2,$3,$4,$5)")
+        .bind(actor)
+        .bind(format!("/api/plugins/sing-box/nexus-nodes/{id}/public-endpoint"))
+        .bind(json!({"from":{"public_host":before["public_host"],"public_port":before["public_port"]},"to":{"public_host":input.public_host,"public_port":port}}))
+        .bind(json!({"state":"recorded"}))
+        .bind(apsp_protocol::now_timestamp())
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(Json(
+        json!({"id":id,"public_host":input.public_host,"public_port":port}),
+    ))
 }
 
 async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Vec<Value>>> {

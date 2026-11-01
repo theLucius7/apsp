@@ -4,6 +4,8 @@
 
 策略组、套餐组、两跳链路与代理用户分配接口见 [sing-box 策略与套餐 API](singbox-groups.md#api)。这些业务仅属于 `/api/plugins/sing-box`；管理会话和错误约定沿用本页。
 
+中国可达性接口（`/api/plugins/sing-box/reachability`，仅所有者会话）见[监控文档](monitoring.md#中国可达性)。
+
 ## 登录
 
 | 方法与路径 | 请求 | 成功响应 |

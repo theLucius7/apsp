@@ -1,1 +1,0 @@
-import{l as e}from"./index-DmJ0mMAZ.js";const t={name:"chevron-right",size:24,node:[["path",{d:"m9 18 6-6-6-6",key:"mthhwq"}]]};t.node;const a=e(t);const n={name:"list-filter",size:24,node:[["path",{d:"M2 5h20",key:"1fs1ex"}],["path",{d:"M6 12h12",key:"8npq4p"}],["path",{d:"M9 19h6",key:"456am0"}]]};n.node;const h=e(n);export{a as C,h as L};

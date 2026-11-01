@@ -15,7 +15,7 @@ pub(crate) async fn inventory(
 }
 
 pub(super) fn compatibility(version: &str) -> (bool, &'static str) {
-    if version == "1.14.2" {
+    if version == crate::RUNTIME_VERSION {
         (
             true,
             "固定编译器模型、签名制品清单和有序链路门禁采用此版本；仍需目标平台制品与实际设备确认",
@@ -23,7 +23,7 @@ pub(super) fn compatibility(version: &str) -> (bool, &'static str) {
     } else {
         (
             false,
-            "当前有序链路运行时依赖及部署事实受数据库 1.14.2 不变式约束，探测计划、清单和原生验收也绑定 1.14.2；仅有官方签名制品不证明协议与计量兼容，不能部署此版本",
+            "当前有序链路运行时依赖及部署事实受数据库 1.14.2-apsp.1 不变式约束，探测计划、清单和原生验收也绑定 1.14.2-apsp.1；仅有官方签名制品不证明协议与计量兼容，不能部署此版本",
         )
     }
 }
@@ -37,7 +37,7 @@ pub(super) async fn signed_inventory(state: &AppState) -> ApiResult<Value> {
         versions.entry(entry.version).or_default().push(json!({"platform":entry.arch,"sha256":entry.sha256,"bytes":entry.bytes.to_string(),"signature_verified":true,"payload_verified":true}));
     }
     Ok(
-        json!({"source":"本地已导入的签名发布及真实制品","versions":versions.into_iter().map(|(version,artifacts)|{ let (compatible,reason)=compatibility(&version);json!({"version":version,"compatible":compatible,"reason":reason,"upstream_release":format!("https://github.com/SagerNet/sing-box/releases/tag/v{version}"),"artifacts":artifacts}) }).collect::<Vec<_>>(),"remote_versions_fetched":false,"compatibility_model":"固定 1.14.2 协议、路径与计量门禁"}),
+        json!({"source":"本地已导入的签名发布及真实制品","versions":versions.into_iter().map(|(version,artifacts)|{ let (compatible,reason)=compatibility(&version);json!({"version":version,"compatible":compatible,"reason":reason,"upstream_release":format!("https://github.com/SagerNet/sing-box/releases/tag/v{version}"),"artifacts":artifacts}) }).collect::<Vec<_>>(),"remote_versions_fetched":false,"compatibility_model":"固定 1.14.2-apsp.1 协议、路径与计量门禁"}),
     )
 }
 

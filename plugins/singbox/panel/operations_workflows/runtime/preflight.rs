@@ -104,7 +104,7 @@ fn fingerprint(
 ) -> impl std::future::Future<Output = ApiResult<String>> + Send + use<> {
     let state = state.clone();
     let info = context.info.clone();
-    let mut snapshot = json!({"nodes":context.nodes,"platform":context.info,"capabilities":context.capabilities,"policy":context.policy,"network_references":context.network_references,"runtime_version":"1.14.2"});
+    let mut snapshot = json!({"nodes":context.nodes,"platform":context.info,"capabilities":context.capabilities,"policy":context.policy,"network_references":context.network_references,"runtime_version":crate::RUNTIME_VERSION});
     async move {
         let artifact = match super::super::super::agent::runtime_artifact(&state, &info).await {
             Ok(value) => Some(value.sha256),
@@ -237,7 +237,7 @@ fn panel_checks(
         ));
     }
     let compiled = apsp_compiler::compile_server(&context.nodes);
-    checks.push(check("configuration","普通节点配置",if compiled.is_ok(){"passed"}else{"failed"},Some(now),"fixed_compiler_1.14.2",json!({"node_ids":context.nodes.iter().map(|node|node.id).collect::<Vec<_>>(),"compiled":compiled.is_ok(),"configuration_sha256":compiled.ok().map(|value|format!("{:x}",sha2::Sha256::digest(value.as_bytes()))),"secret_values_returned":false}),"确定性编译当前有效授权与普通节点；预检不复制凭据，也不替代 Agent 的原生配置检查。"));
+    checks.push(check("configuration","普通节点配置",if compiled.is_ok(){"passed"}else{"failed"},Some(now),"fixed_compiler_1.14.2-apsp.1",json!({"node_ids":context.nodes.iter().map(|node|node.id).collect::<Vec<_>>(),"compiled":compiled.is_ok(),"configuration_sha256":compiled.ok().map(|value|format!("{:x}",sha2::Sha256::digest(value.as_bytes()))),"secret_values_returned":false}),"确定性编译当前有效授权与普通节点；预检不复制凭据，也不替代 Agent 的原生配置检查。"));
     let state = state.clone();
     let info = context.info.clone();
     async move {
@@ -248,7 +248,7 @@ fn panel_checks(
                 "passed",
                 Some(now),
                 "verified_local_release_inventory",
-                json!({"version":"1.14.2","sha256":value.sha256,"signature_verified":true,"payload_verified":true}),
+                json!({"version":crate::RUNTIME_VERSION,"sha256":value.sha256,"signature_verified":true,"payload_verified":true}),
                 "核对目标平台与当前真正可用的签名制品，确认时重新核对摘要。",
             ),
             Err(ApiError::BadRequest(_) | ApiError::NotFound) => check(
@@ -257,7 +257,7 @@ fn panel_checks(
                 "failed",
                 Some(now),
                 "verified_local_release_inventory",
-                json!({"version":"1.14.2","artifact_available":false}),
+                json!({"version":crate::RUNTIME_VERSION,"artifact_available":false}),
                 "没有目标平台匹配且验签完整的固定版本制品。",
             ),
             Err(error) => return Err(error),

@@ -138,6 +138,7 @@
 - [ADR 0099：接管后的 Nexus 节点继续执行设备数限制](0099-nexus-device-limits.md)：与旧节点相同的按客户端 IP 判定，归属来自仅内存的运行时日志命名空间，回环控制接口关闭超额会话，设备计数经兼容桥与旧节点共享
 - [ADR 0100：OpenRC 的会话日志仅保存在内存](0100-openrc-volatile-session-logs.md)：独立采集进程、受保护的本机读取接口、重连重放及旧签名 Agent 安装兼容
 - [ADR 0101：订阅支持 Clash Meta（mihomo）格式](0101-clash-subscription-format.md)：`format=clash` 由与 sing-box 订阅相同的客户端出站转换，无法等价表达的节点列在文件注释中；同一订阅地址按 User-Agent 识别 Clash 客户端
+- [ADR 0105：中国可达性监控](0105-china-reachability-monitor.md)：默认关闭，经 Globalping 比较中国与海外的 TCP 连接，用对照端口区分端口封锁与 IP 封锁，连续两轮失败才判定封锁，用量不超过额度的 80%
 
 - [ADR 0106：成员门户的线路目录与探针](0106-member-lines-and-probes.md)：代理用户登录后查看 Nexus 线路的入口、落地、类型、状态与三网延迟；探针按主机显示测得的 ASN、用途类型与风险标记，家宽标为运营方声明，不显示地址、城市与坐标
 
@@ -150,3 +151,7 @@
 
 - [ADR 0102：连接韧性与控制台重新设计](0102-connection-resilience-and-console-redesign.md)：连接失败统一报告、读取超时、后台轮询不再使写入快照失效、错误边界、发版后自动恢复、单一页面顶栏、代理用户页三件事同屏与用户概况接口。
 - [ADR 0103：用户专属地址与 Cloudflare 账号保存](0103-per-user-subscription-hosts.md)：每个用户独立的订阅与登录主机名、重置即释放、一步保存 Cloudflare 令牌。
+
+## 自维护运行时（2026-11-01）
+
+- [ADR 0104：自维护 sing-box 运行时，修复 REALITY 可被区分的行为](0104-self-maintained-singbox-runtime.md)
