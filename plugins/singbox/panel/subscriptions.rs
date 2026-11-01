@@ -586,7 +586,7 @@ pub async fn preview(
         "managed_nodes":snapshot.nodes.len(),"external_nodes":snapshot.external.nodes.len(),
         "external_granted_nodes":snapshot.external.granted,"external_metering":"provider",
         "content":content,"filename":filename(id,format),"content_type":content_type(format),
-        "entitlement":snapshot.entitlement,"subscription_url":super::subscription_hosts::address(&state.pool,id).await?.unwrap_or_else(||format!("{}/sub/{token}",state.config.public_url))
+        "entitlement":snapshot.entitlement,"legacy_bridge":super::subscription_hosts::is_bridged(&state.pool,id).await?,"subscription_url":super::subscription_hosts::address(&state.pool,id).await?.unwrap_or_else(||format!("{}/sub/{token}",state.config.public_url))
     }))).into_response())
 }
 
