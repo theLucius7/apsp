@@ -67,7 +67,7 @@ apsp 不是通用探针、通用运维面板或机场售卖系统：不做公开
 
 - Agent 支持 Linux systemd/OpenRC、macOS launchd、FreeBSD rc.d 和 Windows 计划任务，各平台制品与升级范围见[设备平台与能力](docs/platforms.md)。
 - Agent 二进制只从 GitHub Release 或配置的独立 HTTPS 镜像下载，面板不提供 Agent 二进制。安装和自动更新独立验签，设备只应用内嵌公钥认可的制品；运行时和配置仍经面板分发。
-- 运行时固定上游 sing-box 1.14.2，保留官方默认构建标签并启用统计 API，不修改上游源码。
+- 运行时为上游 sing-box 1.14.2 加 `tools/singbox-runtime/` 的补丁（ADR 0104），保留官方默认构建标签并启用统计 API。
 - 管理员登录支持限速、TOTP 二步验证和 Passkey；代理用户与管理员使用独立会话。
 - 删除在线服务器时先停止服务、清除设备凭据；离线服务器只删除面板记录，本地服务需手动停用。
 - NodeQuality 完整验机暂停新任务，限制见[安全门禁](docs/acceptance/nodequality-full-start-gate.md)。生产迁移、正式发布与实机验收按各功能文档的边界单独执行。
