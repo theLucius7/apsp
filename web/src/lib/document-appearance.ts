@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useLayoutEffect } from 'react'
 import type { Density } from '@/stores/appearance'
 
 /**
@@ -9,7 +9,7 @@ import type { Density } from '@/stores/appearance'
  * over into the next.
  */
 export function useDocumentAppearance(theme: 'light' | 'dark', density: Density = 'comfortable') {
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme
     document.documentElement.dataset.density = density
   }, [theme, density])

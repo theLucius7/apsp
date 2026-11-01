@@ -24,7 +24,7 @@ export default function ServerToolPage({ id, section }: { id: number; section: T
     <a className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'mb-4 -ml-2')} href="#/servers"><ArrowLeftIcon className="size-4" aria-hidden="true" />返回服务器列表</a>
     <ErrorNotice message={server.error} retry={server.reload} />
     {!entry ? server.loading && <Loading /> : <>
-      <PageHeader eyebrow={`服务器 #${entry.id}`} title={entry.name} description={descriptions[section]} />
+      <PageHeader title={entry.name} description={descriptions[section]} />
       <ServerNavigation id={id} active={section} />
       {section === 'node-quality' && <TierNotice tier="experimental">IP 质量与解锁以「IP 信息」为准；完整验机受安全门禁限制，暂不接收新任务。</TierNotice>}
       {section === 'ip-info' ? <ServerIpInfo serverId={id} /> : section === 'tcp-quality' ? <TcpQuality serverId={id} /> : <NodeQuality serverId={id} />}

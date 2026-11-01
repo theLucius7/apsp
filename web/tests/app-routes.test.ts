@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { resolveRoute } from '../src/app/routes'
-import { currentNavigation, homePath, navigation } from '../src/app/navigation'
+import { currentNavigation, homePath, navigation, sectionTabs, sidebarEntries } from '../src/app/navigation'
 import { visibleByTier } from '../src/app/tiers'
 import { nodeHash } from '../src/plugins/singbox/nodeRoute'
 
@@ -27,7 +27,7 @@ test('china reachability is a view of the latency entry, not another sidebar ent
   expect(resolveRoute('/latency/reachability')).toEqual({ page: 'latency-reachability' })
   expect(currentNavigation(resolveRoute('/latency/reachability'))?.path).toBe('/latency')
   expect(resolveRoute('/latency')).toEqual({ page: 'latency' })
-  expect(navigation.filter(item => item.group === '监控告警')).toHaveLength(4)
+  expect(sectionTabs(currentNavigation(resolveRoute('/latency/reachability')), navigation).map(item => item.label)).toEqual(['网络检测', '延迟检测'])
 })
 
 test('unsafe resource IDs and ambiguous filtered paths never fall through into management routes', () => {
@@ -61,18 +61,23 @@ test('node page sections are addressable and malformed sections are refused', ()
 })
 
 test('navigation groups follow administrator tasks and keep every destination', () => {
-  expect([...new Set(navigation.map(item => item.group))]).toEqual(['总览', '代理服务', '服务器', '监控告警', '系统', '实验功能'])
+  expect([...new Set(navigation.map(item => item.group))]).toEqual(['总览', '代理服务', '服务器', '监控与设置', '实验功能'])
+  // Every destination stays; pages about the same thing are tabs of one sidebar entry (ADR 0102).
   expect(navigation).toHaveLength(22)
+  const everyday = sidebarEntries(navigation.filter(item => !item.tier))
+  expect(everyday.map(entry => entry.root.navLabel ?? entry.root.label)).toEqual(['概览', '费用与续费', '代理节点', '代理用户', '策略与套餐', '成员运营', '服务器', '域名解析', '阿里云 CDT', '告警', '线路检测', '设置'])
   expect(navigation.filter(item => item.group === '代理服务').map(item => item.label)).toEqual(['代理节点', '代理用户', '策略与套餐', '成员运营'])
-  // Every group keeps two to four entries; only the last group holds experimental features.
-  for (const group of new Set(navigation.map(item => item.group))) {
-    const size = navigation.filter(item => item.group === group).length
-    expect(size).toBeGreaterThanOrEqual(2)
-    expect(size).toBeLessThanOrEqual(4)
-  }
+  expect(sectionTabs(currentNavigation(resolveRoute('/dashboard')), navigation).map(item => item.label)).toEqual(['服务器列表', '服务器看板'])
+  expect(sectionTabs(currentNavigation(resolveRoute('/latency')), navigation).map(item => item.label)).toEqual(['网络检测', '延迟检测'])
+  expect(sectionTabs(currentNavigation(resolveRoute('/plugins/sing-box/nodes')), navigation)).toEqual([])
+  // Someone who may only open some tabs of an entry goes to the first of those.
+  const limited = navigation.filter(item => item.page === 'control-center' || item.page === 'security')
+  expect(sidebarEntries(limited)).toHaveLength(1)
+  expect(sidebarEntries(limited)[0].href).toBe('/system/control-center')
+  expect(sidebarEntries(limited)[0].root.navLabel).toBe('设置')
   expect(navigation.filter(item => item.tier === 'experimental').map(item => item.page)).toEqual(['operations', 'network-configuration'])
   expect(navigation[0]).toMatchObject({ page: 'singbox-overview', label: '概览', path: homePath })
-  // A group never repeats its own name as an entry, so the breadcrumb is never "服务器 / 服务器".
+  // A group never repeats its own name as a page.
   for (const item of navigation) expect(item.label).not.toBe(item.group)
   expect(new Set(navigation.map(item => item.path)).size).toBe(navigation.length)
   expect(currentNavigation(resolveRoute('/plugins/sing-box/nodes?view=sources'))?.label).toBe('代理节点')
@@ -94,9 +99,9 @@ test('platform management pages preserve selected server context alongside the n
   expect(resolveRoute('/servers/batch')).toEqual({ page: 'batch-enrollment' })
   expect(currentNavigation(resolveRoute('/servers/batch'))?.path).toBe('/servers')
   expect(resolveRoute('/system/backup')).toEqual({ page: 'backup' })
-  expect(currentNavigation(resolveRoute('/system/backup'))?.group).toBe('系统')
+  expect(currentNavigation(resolveRoute('/system/backup'))?.group).toBe('监控与设置')
   expect(resolveRoute('/system/control-center')).toEqual({ page: 'control-center' })
-  expect(currentNavigation(resolveRoute('/system/control-center'))?.group).toBe('系统')
+  expect(currentNavigation(resolveRoute('/system/control-center'))?.group).toBe('监控与设置')
   for (const path of ['/servers/0/fleet', '/servers/9007199254740992/network-workbench', '/servers/42/operations/extra']) {
     expect(resolveRoute(path)).toEqual({ page: 'not-found' })
   }
@@ -111,13 +116,13 @@ test('server sections, plugin centre views and split settings resolve to one sid
   expect(currentNavigation(resolveRoute('/system/plugins'))?.label).toBe('插件中心')
   expect(currentNavigation(resolveRoute('/plugins/catalog'))?.label).toBe('插件中心')
   expect(resolveRoute('/monitoring/settings')).toEqual({ page: 'alert-settings' })
-  expect(currentNavigation(resolveRoute('/monitoring/settings'))?.group).toBe('监控告警')
+  expect(currentNavigation(resolveRoute('/monitoring/settings'))?.group).toBe('监控与设置')
   expect(currentNavigation(resolveRoute('/system/settings'))?.label).toBe('面板设置')
-  expect(currentNavigation(resolveRoute('/system/notifications'))?.group).toBe('监控告警')
+  expect(currentNavigation(resolveRoute('/system/notifications'))?.group).toBe('监控与设置')
   expect(currentNavigation(resolveRoute('/plugins/ddns'))?.group).toBe('服务器')
   expect(currentNavigation(resolveRoute('/plugins/alicloud'))?.group).toBe('服务器')
-  expect(currentNavigation(resolveRoute('/plugins/catalog'))?.group).toBe('服务器')
-  expect(currentNavigation(resolveRoute('/network-workbench'))?.group).toBe('监控告警')
+  expect(currentNavigation(resolveRoute('/plugins/catalog'))?.group).toBe('监控与设置')
+  expect(currentNavigation(resolveRoute('/network-workbench'))?.group).toBe('监控与设置')
   for (const path of ['/servers/42/overview', '/servers/42/assets/extra', '/monitoring/settings/extra']) expect(resolveRoute(path)).toEqual({ page: 'not-found' })
 })
 

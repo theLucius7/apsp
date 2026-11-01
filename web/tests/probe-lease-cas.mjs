@@ -91,7 +91,6 @@ try {
       const gate = hold(); await wait(() => gate.reached > 0, 'The actual five-second probe poll starts the held GET')
       const blockedWrites = writes.length
       const forceAll = async () => { await forceForm(form); await forceClick(row().getByRole('button', { name: '暂停', exact: true })); await forceClick(row().getByRole('button', { name: '删除', exact: true })); totals.blocked += 3 }
-      await forceAll(); assert.equal(writes.length, blockedWrites); assert.equal(await form.getByLabel('名称', { exact: true }).inputValue(), 'TEST_ONLY 读取故障草稿')
       failed = true; gate.release(); gates.delete('probes'); await panel.getByText('TEST_ONLY 拨测读取失败，原快照保留', { exact: true }).waitFor()
       await forceAll(); assert.equal(writes.length, blockedWrites); assert.equal(await form.getByLabel('名称', { exact: true }).inputValue(), 'TEST_ONLY 读取故障草稿')
       await row().getByRole('button', { name: configured.name, exact: true }).click()

@@ -76,14 +76,15 @@ try {
     })
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/ddns`)
-    await page.getByRole('heading', { name: '动态域名解析', exact: true }).waitFor()
+    await page.getByRole('heading', { name: '域名解析', exact: true }).waitFor()
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1/ddns`)
-    await page.getByRole('heading', { name: '动态域名解析', exact: true }).waitFor()
+    await page.getByRole('heading', { name: '域名解析', exact: true }).waitFor()
     assert.equal(await page.getByText('另一台服务器', { exact: false }).count(), 0)
     await page.getByRole('button', { name: '启用 DDNS 插件', exact: true }).click()
     await page.getByRole('button', { name: '添加规则' }).click()
     const providerForm = page.getByRole('dialog')
+    await providerForm.getByLabel('凭据来源').selectOption('legacy')
     for (const provider of ['tencent', 'aliyun', 'huawei']) {
       await providerForm.getByLabel('DNS 提供方').selectOption(provider)
       assert.equal(await providerForm.getByLabel('访问密钥 Secret').count(), 1)
@@ -97,6 +98,7 @@ try {
     await dialog.getByLabel('规则名称', { exact: true }).fill('家庭 IPv6')
     await dialog.getByLabel('完整域名', { exact: false }).fill('node.example.com')
     await dialog.getByLabel('Zone ID', { exact: false }).fill('00000000000000000000000000000001')
+    await dialog.getByLabel('凭据来源').selectOption('legacy')
     await dialog.getByLabel('API Token', { exact: false }).fill('TEST_ONLY_CLOUDFLARE_TOKEN')
     await dialog.getByLabel('IP 类型', { exact: false }).selectOption('AAAA')
     await settle()
@@ -187,6 +189,7 @@ try {
     await dialog.getByLabel('规则名称', { exact: true }).fill('家庭双栈')
     await dialog.getByLabel('完整域名', { exact: false }).fill('dual.example.com')
     await dialog.getByLabel('Zone ID', { exact: false }).fill('00000000000000000000000000000001')
+    await dialog.getByLabel('凭据来源').selectOption('legacy')
     await dialog.getByLabel('API Token', { exact: false }).fill('TEST_ONLY_CLOUDFLARE_TOKEN')
     for (const dependency of ['rules', 'servers']) {
       let release

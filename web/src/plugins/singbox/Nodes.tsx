@@ -212,17 +212,17 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     const details = event.target.closest('details')
     if (details) details.open = true
   }}>
-    <PageHeader eyebrow="代理服务" title="代理节点" description="管理你服务器上的节点、由多段组成的链路，以及从订阅来源导入的外部节点。">
+    <PageHeader title="代理节点" description="管理你服务器上的节点、由多段组成的链路，以及从订阅来源导入的外部节点。">
       <Refresh onClick={refresh} />
       <Button disabled={!canCreate} aria-describedby={createBlocked ? 'create-blocked-reason' : undefined} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />创建节点</Button>
       <Button variant="outline" disabled={!canCreateChain} aria-describedby={createBlocked ? 'create-blocked-reason' : undefined} onClick={openChainCreate}>创建链路</Button>
     </PageHeader>
     {createBlocked && <Notice id="create-blocked-reason" role="status"><span>{noEnabledServer ? '还没有服务器启用 sing-box，所以暂时不能创建节点或链路。' : '当前筛选的服务器尚未启用 sing-box，所以暂时不能创建节点或链路。'}</span>
       <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={noEnabledServer ? '#/system/plugins' : `#/servers/${filter}/plugins`}>为服务器启用 sing-box</a></Notice>}
-    <div className="mb-6 grid gap-3 max-sm:gap-2 grid-cols-2 lg:grid-cols-4">
+    <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
       <Stat icon={WaypointsIcon} label="代理资源" value={resources.data && ordered.data && importedNodes ? inventoryCount + importedNodes.length : '—'} note={importedNodes?.length ? `受管 ${inventoryCount} · 待接管 ${importedNodes.length}` : '直连节点与独立链路入口'} />
       <Stat icon={ServerIcon} label="所在服务器" value={resources.data && importedNodes ? new Set([...all, ...importedNodes].map(node => node.server_id)).size : '—'} note={importedNodes?.length ? '含已导入的 Nexus 节点主机' : '每台服务器运行一份完整配置'} />
-      <Stat icon={WaypointsIcon} label="物理监听数" value={nodes.data ? nodes.data.length : '—'} note="受管节点监听，不重复计算链路引用" />
+      <Stat label="物理监听数" value={nodes.data ? nodes.data.length : '—'} note="受管节点监听，不重复计算链路引用" />
       <Stat icon={ActivityIcon} label="累计代理流量" value={usage.data ? bytes(usage.data.total) : '—'} note="含已删除节点的历史用量" />
     </div>
     <ErrorNotice message={resources.error || nodes.error || servers.error || usage.error || (migrationQuery.error ? `订阅来源迁移状态读取失败：${migrationQuery.error}` : '')} retry={refresh} />

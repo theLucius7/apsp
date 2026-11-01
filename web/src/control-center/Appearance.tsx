@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { usePreference } from './preferences'
 import type { Locale } from '../i18n'
 import { useI18n } from '../i18n'
@@ -46,7 +46,8 @@ export default function Appearance() {
     window.addEventListener(localeChosenEvent, chosen)
     return () => window.removeEventListener(localeChosenEvent, chosen)
   }, [])
-  useEffect(() => {
+  // Before paint, so a page entered from sign-in or a public view starts in its theme.
+  useLayoutEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)')
     const apply = () => {
       document.documentElement.dataset.theme = resolvedTheme(theme)

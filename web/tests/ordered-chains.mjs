@@ -186,7 +186,7 @@ try {
     const editWrites = writes.filter(write => write.method === 'PATCH'); assert.equal(editWrites.length, 2); assert.equal(editWrites[0].serialized, editWrites[1].serialized)
     const broken = ordered.find(resource => resource.id === 30); broken.available = false; broken.unavailable_reasons = ['受管段缺失，等待清理']; oldNodesFailure = true; sourceFailure = true
     await poll(); const brokenRow = page.locator('[data-resource-key="chain:30"]'); await brokenRow.getByText('资源已不可用', { exact: true }).waitFor(); await enabled(brokenRow.getByRole('button', { name: '删除', exact: true })); await brokenRow.getByRole('button', { name: '删除', exact: true }).click(); await page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true }).click(); await page.locator('[data-resource-key="chain:30"]').waitFor({ state: 'hidden' })
-    assert.equal(ordered.some(resource => resource.id === 31), true); assert.equal(await page.evaluate(() => Object.keys(localStorage).length), 0); assert.deepEqual(errors, [])
+    assert.equal(ordered.some(resource => resource.id === 31), true); assert.equal(await page.evaluate(() => Object.keys(localStorage).filter(key => !['apsp-shell-actor', 'apsp-appearance'].includes(key)).length), 0); assert.deepEqual(errors, [])
     await shot('broken-cleanup'); console.log(`ordered chains actual-dist contracts passed ${width}`); await page.close()
   }
 } finally { if (browser) await browser.close(); await new Promise(resolve => server.close(resolve)) }

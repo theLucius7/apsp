@@ -4,37 +4,52 @@ import { ErrorNotice, Loading } from '../components'
 import type { AppRoute } from './routes'
 import { homePath } from './navigation'
 import { buttonVariants } from '@/components/ui/button'
+import { reloadForNewRelease } from '@/lib/new-release'
+
+const preloads: (() => void)[] = []
 
 /**
  * Loads a page on its first visit. Unlike React.lazy with Suspense, completion
  * is a plain state update, so revealing the page never waits on timers; a
- * page loaded once renders synchronously afterwards.
+ * page loaded once renders synchronously afterwards. A failed load usually
+ * means a new release replaced the old files, so it recovers by itself.
  */
-function lazyPage<P extends object>(load: () => Promise<{ default: ComponentType<P> }>) {
+function lazyPage<P extends object>(load: () => Promise<{ default: ComponentType<P> }>, preload = false) {
   let loaded: ComponentType<P> | undefined
   let pending: Promise<ComponentType<P>> | undefined
+  const start = () => (pending ??= load().then(module => (loaded = module.default)))
+  if (preload) preloads.push(() => { void start().catch(() => { pending = undefined }) })
   return function LazyPage(props: P) {
     const [page, setPage] = useState<ComponentType<P> | undefined>(() => loaded)
     const [failed, setFailed] = useState(false)
     useEffect(() => {
       if (page) return
       let active = true
-      pending ??= load().then(module => (loaded = module.default))
-      pending.then(component => { if (active) setPage(() => component) }, () => {
+      start().then(component => { if (active) setPage(() => component) }, () => {
         pending = undefined
-        if (active) setFailed(true)
+        if (!active) return
+        void reloadForNewRelease().then(reloading => { if (active && !reloading) setFailed(true) })
       })
       return () => { active = false }
     }, [page])
     const Page = page
     if (Page) return <Page {...props} />
-    return failed ? <ErrorNotice message="页面加载失败，请检查网络后刷新重试。" /> : <Loading />
+    return failed ? <ErrorNotice message="页面加载失败，请检查网络后刷新重试。" retry={() => window.location.reload()} /> : <Loading />
   }
 }
 
+/** Fetches the everyday pages while idle, so moving between them never waits on the network. */
+export function preloadPages() {
+  const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
+  if (connection?.saveData) return
+  const run = () => { for (const page of preloads) page() }
+  if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 4000 })
+  else setTimeout(run, 1500)
+}
+
 // Each administrator page loads on first visit, keeping the initial bundle small.
-const Servers = lazyPage(() => import('../servers/Servers'))
-const ServerDetail = lazyPage(() => import('../servers/ServerDetail'))
+const Servers = lazyPage(() => import('../servers/Servers'), true)
+const ServerDetail = lazyPage(() => import('../servers/ServerDetail'), true)
 const ServerToolPage = lazyPage(() => import('../servers/ServerToolPage'))
 const ServerOperations = lazyPage(() => import('../servers/ServerOperations'))
 const BatchEnrollment = lazyPage(() => import('../servers/BatchEnrollmentPage'))
@@ -44,16 +59,16 @@ const Security = lazyPage(() => import('../system/Security'))
 const Settings = lazyPage(() => import('../system/Settings'))
 const Backup = lazyPage(() => import('../system/Backup'))
 const AlertSettings = lazyPage(() => import('../monitoring/AlertSettings'))
-const Notifications = lazyPage(() => import('../monitoring/Notifications'))
+const Notifications = lazyPage(() => import('../monitoring/Notifications'), true)
 const LatencyTasks = lazyPage(() => import('../monitoring/LatencyTasks'))
 const ChinaReachability = lazyPage(() => import('../monitoring/ChinaReachability'))
-const Statistics = lazyPage(() => import('../statistics/Statistics'))
-const SingboxOverview = lazyPage(() => import('../plugins/singbox/Overview'))
-const Nodes = lazyPage(() => import('../plugins/singbox/Nodes'))
-const ProxyUsers = lazyPage(() => import('../plugins/singbox/ProxyUsers'))
-const Groups = lazyPage(() => import('../plugins/singbox/Groups'))
+const Statistics = lazyPage(() => import('../statistics/Statistics'), true)
+const SingboxOverview = lazyPage(() => import('../plugins/singbox/Overview'), true)
+const Nodes = lazyPage(() => import('../plugins/singbox/Nodes'), true)
+const ProxyUsers = lazyPage(() => import('../plugins/singbox/ProxyUsers'), true)
+const Groups = lazyPage(() => import('../plugins/singbox/Groups'), true)
 const Commerce = lazyPage(() => import('../plugins/singbox/commerce/Commerce'))
-const Expenses = lazyPage(() => import('../plugins/expenses/Expenses'))
+const Expenses = lazyPage(() => import('../plugins/expenses/Expenses'), true)
 const Ddns = lazyPage(() => import('../plugins/ddns/Ddns'))
 const Alicloud = lazyPage(() => import('../plugins/alicloud/Alicloud'))
 const FleetOperations = lazyPage(() => import('../fleet/FleetOperations'))
@@ -112,7 +127,7 @@ function page(route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' | 'm
     case 'notifications': return <Notifications />
     case 'security': return <Security />
     case 'not-found': return <div className="grid justify-items-center gap-4 px-5 py-16 text-center">
-      <h1 className="text-xl font-semibold tracking-tight">这个页面不存在</h1>
+      <h1 className="text-base font-semibold">这个页面不存在</h1>
       <p className="text-muted-foreground text-sm">链接可能已失效。从左侧导航选择一个页面，或回到概览。</p>
       <a className={buttonVariants()} href={`#${homePath}`}>返回概览</a>
     </div>

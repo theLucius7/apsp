@@ -64,7 +64,7 @@
 - `GET/PUT /api/plugins/sing-box/reachability/settings`：修改体为 `{ "enabled": true, "interval_minutes": 30, "revision": 读取到的版本, "api_token": "可选", "clear_token": false }`。
 - `POST /api/plugins/sing-box/reachability/run`：加入一轮检测，未启用时返回 409。
 
-设计与取舍见 [ADR 0103](adr/0103-china-reachability-monitor.md)。
+设计与取舍见 [ADR 0105](adr/0105-china-reachability-monitor.md)。
 
 ## 配置通知
 

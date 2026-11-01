@@ -24,5 +24,9 @@ pub use plugins::singbox::{accesses, business, deployments, nodes, subscriptions
 
 /// Builds the panel router with every compiled plugin registered.
 pub fn router(state: AppState) -> axum::Router {
-    apsp_panel_host::router(state, plugins::router())
+    let gate = axum::middleware::from_fn_with_state(
+        state.clone(),
+        plugins::singbox::subscription_hosts::gate,
+    );
+    apsp_panel_host::router(state, plugins::router()).layer(gate)
 }

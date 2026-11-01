@@ -61,7 +61,7 @@
 - Rust stable、edition 2024；每个 crate 根文件（含二进制根、测试 crate 和构建脚本）使用 `#![forbid(unsafe_code)]`，禁止引入 `unsafe` 代码。
 - 代码标识符、代码注释使用英文；`docs/`、README、PROGRESS 使用中文。界面只使用中文。
 - 只使用任务说明列出的依赖；确需新增依赖时先在 `docs/adr/` 说明必要性和替代方案。
-- sing-box 只通过 `tools/singbox-runtime/` 的补丁修改（2026-11-01 用户要求维护自己的构建版本，见 ADR 0102），不直接改上游 checkout；不得提交真实密钥、令牌、域名、IP 或其他环境凭证。示例使用占位符、保留示例域名以及明确要求的回环或监听地址。
+- sing-box 只通过 `tools/singbox-runtime/` 的补丁修改（2026-11-01 用户要求维护自己的构建版本，见 ADR 0104），不直接改上游 checkout；不得提交真实密钥、令牌、域名、IP 或其他环境凭证。示例使用占位符、保留示例域名以及明确要求的回环或监听地址。
 - 不在核心路径留下仅有 TODO 的实现，不为范围外功能创建空目录或空模块。
 - 按 `docs/PLAN.md` 中 G1–G9 顺序推进。每阶段结束必须通过 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`；G1 另需 `cargo build`。
 - 测试必须覆盖协议兼容、编译确定性、账本事务与恢复、对账合并与回滚。需要 PostgreSQL 或真实运行时而环境不可用的测试使用带原因的 `#[ignore]`，在 `PROGRESS.md` 记录未验证范围与人工步骤，不得宣称已通过实机验收。
@@ -101,3 +101,5 @@
 2026-10-03 用户授权参考 miaomiaowu 完善节点管理，并确认外部节点独立管理、直接分配给代理用户及生成 sing-box 订阅，按 ADR 0076 实施。保持 sing-box 单运行时与现有受管部署；外部节点沿用提供方凭据、独立身份版本和授权，不伪造 Agent 流量或配额执行能力。来源导入先预览再采用，新增节点不自动授权；CI 暂停与诊断实机门禁保持。
 
 2026-10-26 用户要求订阅链接与订阅格式支持 Clash，覆盖上述「Clash 订阅」排除项。按 [ADR 0101](docs/adr/0101-clash-subscription-format.md) 实现：Clash Meta（mihomo）YAML 由与 sing-box 订阅相同的客户端出站转换，不能等价表达的节点不写入并在文件中说明；同一订阅地址按 User-Agent 识别 Clash 客户端，显式格式参数优先；不调用第三方转换服务。
+
+2026-11-01 用户要求订阅和登录地址支持每个用户独立、可重置的随机主机名与路径（如 `apsp-<随机>.example.com/<随机>`），并能保存 Cloudflare 令牌。按 [ADR 0103](docs/adr/0103-per-user-subscription-hosts.md) 实现：默认关闭，旧 `/sub/{token}` 由管理员决定何时关闭；真实令牌只进入面板的加密凭据，不得写入仓库。

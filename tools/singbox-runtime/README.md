@@ -1,6 +1,6 @@
 # 自维护 sing-box 运行时
 
-运行时 = 固定上游版本 + 本目录的补丁。决策与证据见 [ADR 0102](../../docs/adr/0102-self-maintained-singbox-runtime.md)。
+运行时 = 固定上游版本 + 本目录的补丁。决策与证据见 [ADR 0104](../../docs/adr/0104-self-maintained-singbox-runtime.md)。
 
 | 文件 | 作用 |
 | --- | --- |

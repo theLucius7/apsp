@@ -114,12 +114,10 @@ try {
       await view.getByRole('group', { name: '表格列' }).waitFor()
       await view.getByRole('checkbox', { name: '设备版本' }).uncheck()
       await until(async () => await page.getByRole('columnheader', { name: '设备版本' }).count() === 0, 'Hiding a column removes it from the table')
-      await view.getByRole('button', { name: '紧凑', exact: true }).click()
-      assert.equal(await view.getByRole('button', { name: '紧凑', exact: true }).getAttribute('aria-pressed'), 'true')
       await view.getByRole('button', { name: '保存当前视图', exact: true }).click()
       await until(() => writes.some(write => write.path === 'preference:view:servers'), 'The view is saved')
       const saved = writes.find(write => write.path === 'preference:view:servers').body.value
-      assert.deepEqual({ columns: saved.columns, cardColumns: saved.cardColumns, density: saved.density, region: saved.region }, { columns: ['cpu', 'memory', 'cost', 'traffic'], cardColumns: ['cpu', 'memory'], density: 'compact', region: '' })
+      assert.deepEqual({ columns: saved.columns, cardColumns: saved.cardColumns, region: saved.region }, { columns: ['cpu', 'memory', 'cost', 'traffic'], cardColumns: ['cpu', 'memory'], region: '' })
       await page.keyboard.press('Escape')
       assert.deepEqual(errors, [])
       summary.push({ scenario: 'toolbar-desktop', firstRowTop: Math.round(top) })
@@ -203,9 +201,7 @@ try {
       await nav.getByRole('link', { name: '概览', exact: true }).waitFor()
       const links = await nav.getByRole('link').evaluateAll(items => items.map(item => [item.textContent.trim(), item.getAttribute('href')]))
       // ADR 0098: the overview group leads with the landing page, then the proxy service.
-      assert.deepEqual(links.slice(0, 8), [['概览', '#/plugins/sing-box'], ['服务器看板', '#/dashboard'], ['统计报表', '#/statistics'], ['费用与续费', '#/plugins/expenses'], ['代理节点', '#/plugins/sing-box/nodes'], ['代理用户', '#/plugins/sing-box/users'], ['策略与套餐', '#/plugins/sing-box/groups'], ['成员运营', '#/plugins/sing-box/commerce']])
-      assert.equal(await nav.locator(':scope > div').first().locator(':scope > div').first().textContent(), '总览', 'The overview group comes first')
-      assert.deepEqual(links.find(([label]) => label === '服务器列表'), ['服务器列表', '#/servers'])
+      assert.deepEqual(links, [['概览', '#/plugins/sing-box'], ['费用与续费', '#/plugins/expenses'], ['代理节点', '#/plugins/sing-box/nodes'], ['代理用户', '#/plugins/sing-box/users'], ['策略与套餐', '#/plugins/sing-box/groups'], ['成员运营', '#/plugins/sing-box/commerce'], ['服务器', '#/servers'], ['域名解析', '#/plugins/ddns'], ['阿里云 CDT', '#/plugins/alicloud'], ['告警', '#/system/notifications'], ['线路检测', '#/network-workbench'], ['设置', '#/system/settings']])
       // Decision D6: signing in without an address lands on the overview, not the server board.
       await page.goto(`${origin}/`)
       await page.waitForFunction(() => location.hash === '#/plugins/sing-box')

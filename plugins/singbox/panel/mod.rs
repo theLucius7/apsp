@@ -4,7 +4,7 @@
 //! The plugin reaches panel services only through the `apsp-panel-host` API.
 
 /// The signed runtime every new deployment uses: upstream 1.14.2 plus the
-/// patch queue in `tools/singbox-runtime` (ADR 0102).
+/// patch queue in `tools/singbox-runtime` (ADR 0104).
 pub const RUNTIME_VERSION: &str = "1.14.2-apsp.1";
 
 pub mod accesses;
@@ -62,6 +62,7 @@ pub mod source_migration;
 pub mod sources;
 pub mod statistics;
 mod subscription_fetch;
+pub mod subscription_hosts;
 pub mod subscription_parser;
 pub mod subscription_sources;
 pub mod subscriptions;
@@ -85,6 +86,7 @@ pub async fn run(state: AppState) {
         publisher::run(state.clone()),
         commerce::run(state.clone()),
         reachability::run(state.clone()),
+        subscription_hosts::run(state.clone()),
         subscription_sources::worker::run(state)
     );
 }
@@ -144,6 +146,11 @@ pub fn router() -> Router<AppState> {
             get(nodes::get).patch(nodes::update).delete(nodes::remove),
         )
         .route("/users", get(proxy_users::list).post(proxy_users::create))
+        .route("/users/overview", get(proxy_users::overview))
+        .route(
+            "/subscription-domain",
+            get(subscription_hosts::get_settings).put(subscription_hosts::put_settings),
+        )
         .route(
             "/users/{id}",
             get(proxy_users::get)

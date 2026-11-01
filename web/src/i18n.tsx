@@ -14,6 +14,13 @@ const translatedAttributeSources = new WeakMap<Element, Map<string, string>>()
 // messages intentionally fall back to their source text when no translation is
 // available.
 const english: Record<string, string> = {
+  // Connection state, account menu and the sign-in page (ADR 0102).
+  '专属地址': 'Own address', '用户专属地址': 'Personal addresses', '登录地址': 'Sign-in address', '订阅链接': 'Subscription link', '订阅详情': 'Subscription details', '复制订阅链接': 'Copy subscription link', '权限与套餐': 'Permissions and package', '单独授权': 'Direct grants', '流量明细': 'Traffic details', '诊断与安全': 'Diagnostics and security', '添加 Cloudflare 账号': 'Add Cloudflare account', '验证并保存': 'Verify and save', '其他提供方': 'Other providers', 'DNS 账号': 'DNS accounts', '这个页面显示时出错了': 'This page failed to display',
+  '监控与设置': 'Monitoring and settings', '告警': 'Alerts', '线路检测': 'Line tests', '设置': 'Settings', '域名解析': 'DNS', '本节页面': 'Pages in this section', '显示实验与冻结功能': 'Show experimental and frozen features',
+  '暂时连不上面板': 'Cannot reach the panel right now', '正在自动重试，恢复后会直接进入。': 'Retrying automatically; you will go straight in once it is back.', '立即重试': 'Retry now',
+  '已连接面板': 'Connected to panel', '网络已断开': 'Network disconnected', '正在重新连接': 'Reconnecting', '已恢复连接': 'Connection restored', '与面板的连接中断，正在重试': 'Connection to the panel was lost, retrying',
+  '显示的是': 'Showing data from', '的数据': '', '账号选项': 'Account options', '当前项': 'Current', '或': 'or', '代理用户请使用管理员发给你的登录地址。': 'Proxy users: use the sign-in address your administrator sent you.',
+  '正在同步最新信息，完成后可以提交；当前草稿已保留。': 'Syncing the latest information; you can submit when it finishes. Your draft is kept.',
   'apsp': 'apsp', 'apsp首页': 'apsp home', '服务器与节点': 'Servers and nodes', '菜单': 'Menu', '主导航': 'Main navigation', '当前位置': 'Breadcrumb',
   '概览': 'Overview', '服务器': 'Servers', '代理服务': 'Proxy service', '扩展插件': 'Extensions', '系统': 'System',
   '统计仪表盘': 'Statistics dashboard', '服务器看板': 'Server dashboard', '接入与日常运维': 'Enrollment and daily operations',
@@ -80,7 +87,7 @@ const english: Record<string, string> = {
   '浏览器禁止自动复制，请选中文字手动复制。': 'The browser blocked automatic copying. Select and copy the text manually.',
   '复制失败，请手动选择并复制。': 'Copy failed. Select and copy the text manually.',
   '主题与密度': 'Theme and density', '主题': 'Theme', '跟随系统': 'System', '浅色': 'Light', '深色': 'Dark',
-  '密度': 'Density', '舒适': 'Comfortable', '紧凑': 'Compact', '语言': 'Language',
+  '语言': 'Language',
   '偏好按管理员保存。搜索快捷键为 Ctrl / ⌘ + K，收藏与最近访问可在全局搜索中直接进入。': 'Preferences are saved per administrator. Use Ctrl / ⌘ + K to search, or open favorites and recent pages from global search.',
   '登录已过期，请重新登录。': 'Your session expired. Please sign in again.',
   '登录': 'Sign in', '登录名': 'Login name', '管理员登录名': 'Administrator login name', '管理员密码': 'Administrator password', '清晰掌握，自在连接。': 'Clear oversight, effortless connections.',

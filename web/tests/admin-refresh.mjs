@@ -59,7 +59,7 @@ try {
     await page.clock.install({ time: new Date('2026-10-03T00:00:00Z') })
     // Dialogs finish closing on animation frames, which the page clock holds here; with reduced motion they close at once.
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await page.clock.pauseAt(new Date('2026-10-03T00:00:00Z'))
+    await page.clock.pauseAt(new Date('2026-10-03T00:10:00Z'))
     await page.route('**/*', async route => {
       const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method()
       assert.equal(url.origin, origin, 'No external requests are permitted')
@@ -117,8 +117,6 @@ try {
       const brief = hold(readPath)
       await page.clock.runFor(5000); await wait(() => brief.reached > 0, 'Automatic poll must start')
       await settle()
-      await forceSubmit(dialog)
-      assert.equal(writes.length, 0, 'A short background request blocks writes before any delayed presentation')
       await page.clock.runFor(100)
       assert.equal(await dialog.getByRole('alert').count(), 0, 'A brief concurrent read must not flash an alert')
       assert.equal(await page.locator('main [data-slot=loading]').count(), 0, `A background read must keep existing content: ${pageName}/${width}; ${await page.locator('main [data-slot=loading]').evaluateAll(items => items.map(item => item.parentElement?.outerHTML).join('\n'))}`)
@@ -135,8 +133,6 @@ try {
         // Start this read on the next poll boundary before measuring its 100ms hold.
         await page.clock.runFor(5000 - (await page.evaluate(() => Date.now())) % 5000)
         await wait(() => dependency.reached > 0, `Current dependency must be read: ${path}`)
-        await forceSubmit(dialog)
-        assert.equal(writes.length, 0, `Every shared dependency blocks the original submit callback immediately: ${path}`)
         await page.clock.runFor(100)
         assert.equal(await dialog.getByRole('alert').count(), 0, `A short dependency read retains the presentation: ${path}`)
         finish(path)
@@ -148,12 +144,10 @@ try {
       const slow = hold(readPath)
       await page.clock.runFor(5000); await wait(() => slow.reached > 0, 'Next automatic poll must run')
       // Advance the paused clock only after the pending read has rendered, so its delayed warning timer exists.
-      await wait(() => save.isDisabled(), 'The pending read blocks the draft before time advances'); await settle()
-      await page.clock.runFor(600); await settle()
-      assert.equal(await dialog.getByRole('alert').count(), 1, 'A slow dependency must eventually show its warning despite fast sibling responses')
-      assert(await save.isDisabled())
+      await settle(); await page.clock.runFor(600); await settle()
+      assert.equal(await dialog.getByRole('alert').count(), 0, 'A slow poll shows nothing and takes nothing away (ADR 0102)')
+      assert.equal(await save.isEnabled(), true)
       assert.equal(await page.locator('main [data-slot=loading]').count(), 0, 'Slow background reads retain existing data instead of skeletons')
-      await forceSubmit(dialog); assert.equal(writes.length, 0)
       finish(readPath, true)
       await page.getByText('TEST_ONLY 后台刷新失败', { exact: true }).waitFor()
       await forceSubmit(dialog); assert.equal(writes.length, 0, 'Failed reads remain write-blocked')
@@ -171,9 +165,9 @@ try {
       if (portal) {
         await wait(() => portal.reached > 0, 'Manual reload must include the selected user access panel')
         // The open modal dialog hides the page behind it from the accessibility tree.
-        const panel = page.locator('[data-slot=panel]').filter({ has: page.getByRole('heading', { name: '用户 Passkey 入口', includeHidden: true }) })
+        const panel = page.locator('[data-slot=panel]').filter({ has: page.getByRole('heading', { name: '登录地址', includeHidden: true }) })
         assert.equal(await panel.locator('[data-slot=loading]').count(), 0, 'A known portal snapshot remains visible during its explicit refresh')
-        assert.equal(await panel.getByText('尚未开通用户入口。', { exact: true }).count(), 1, 'The original access state is retained while its current read is held')
+        assert.equal(await panel.getByText(/还没有开通/).count(), 1, 'The original access state is retained while its current read is held')
         assert.equal(await panel.getByText('TEST_ONLY 尚未启用', { exact: true }).count(), 1, 'The disabled configuration reason remains readable')
         assert(await panel.getByRole('button', { name: '生成开通链接', exact: true, includeHidden: true }).isDisabled(), 'Retained access data must not enable a current write')
         assert.equal(await input.inputValue(), 'TEST_ONLY 未保存草稿')

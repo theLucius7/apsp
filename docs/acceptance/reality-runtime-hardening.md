@@ -1,6 +1,6 @@
 # 自维护运行时 REALITY 行为验收
 
-对应 [ADR 0102](../adr/0102-self-maintained-singbox-runtime.md)。2026-11-01 在隔离的 Docker 网络中执行，使用一次性密钥，只连接真实目标站和测试入站，不涉及生产主机。
+对应 [ADR 0104](../adr/0104-self-maintained-singbox-runtime.md)。2026-11-01 在隔离的 Docker 网络中执行，使用一次性密钥，只连接真实目标站和测试入站，不涉及生产主机。
 
 ## 对比对象
 
