@@ -251,7 +251,7 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     let mut paced = body.clone();
     paced["ignore_stagger"] = json!(true);
     // A fresh blocked measurement holds the cutover. A stale one says nothing.
-    sqlx::query("UPDATE singbox_nexus_nodes SET display=display||'{\"public_host\":\"blocked.example.invalid\",\"public_port\":\"443\"}' WHERE server_id=$1")
+    sqlx::query("UPDATE singbox_nexus_nodes SET display=display||'{\"protocol\":\"shadowsocks\",\"public_host\":\"blocked.example.invalid\",\"public_port\":\"443\"}' WHERE server_id=$1")
         .bind(server)
         .execute(&pool)
         .await?;
