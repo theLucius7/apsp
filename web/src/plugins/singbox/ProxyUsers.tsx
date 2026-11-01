@@ -28,7 +28,7 @@ import { SegmentedButton, SegmentedNav } from '@/components/segmented'
 /** A line of the user list from /users/overview; contains no credentials. */
 type UserLine = {
   id: number; status: Entitlement['status']; allowed: boolean; package_name: string | null; monthly_bytes: string | null; used_bytes: string
-  expires_at: number | null; group_ids: number[]; direct_nodes: number; external_nodes: number; portal_created: boolean; portal_keys: number; activation_expires_at: number | null
+  expires_at: number | null; group_ids: number[]; direct_nodes: number; external_nodes: number; bridged?: boolean; portal_created: boolean; portal_keys: number; activation_expires_at: number | null
 }
 type Section = 'grants' | 'usage' | 'diagnosis'
 const sections: readonly { key: Section; label: string }[] = [{ key: 'grants', label: '单独授权' }, { key: 'usage', label: '流量明细' }, { key: 'diagnosis', label: '诊断与安全' }]
@@ -201,7 +201,7 @@ export default function ProxyUsers() {
             <div className="flex flex-1 flex-col gap-2.5 p-3.5">
               {address ? <code data-slot="subscription-address" tabIndex={0} className="bg-muted/50 focus-visible:ring-ring/50 scrollbar-thin block overflow-x-auto rounded-md border px-2.5 py-2 text-xs break-normal whitespace-pre focus-visible:ring-3 focus-visible:outline-none">{address}</code>
                 : <p className="bg-muted/50 text-muted-foreground rounded-md border px-2.5 py-2 text-xs">链接包含连接凭据，复制时会先确认管理员身份。</p>}
-              <p className="text-muted-foreground text-xs leading-relaxed">sing-box 和 Clash 用同一个地址，客户端会自动拿到对应格式。重置后旧地址立即失效。</p>
+              <p className="text-muted-foreground text-xs leading-relaxed">sing-box 和 Clash 用同一个地址，客户端会自动拿到对应格式。重置后旧专属地址立即失效。</p>
               <div className="mt-auto flex flex-wrap items-center gap-2">
                 <Button size="sm" disabled={linkAction.busy} onClick={() => copySubscription(user)}>{copied === user.id ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}{copied === user.id ? '已复制' : linkAction.busy ? '正在获取…' : '复制订阅链接'}</Button>
               </div>
@@ -209,6 +209,7 @@ export default function ProxyUsers() {
           </Panel>}
           <UserPasskeyAccess key={`portal-${selected}`} id={selected} userError={() => userError(selected)} refreshRevision={refreshRevision} />
         </div>
+        {line?.bridged && <Notice role="status">这是从原系统迁移的用户：节点和订阅内容仍由原系统提供，这里的策略组和单独授权暂时不影响他的订阅。</Notice>}
         {user && <UserEntitlements key={user.id} id={user.id} entitlement={entitlement} userError={() => userError(user.id)} refreshRevision={refreshRevision} onChange={refresh} />}
         <SegmentedNav aria-label="更多用户信息" className="mb-3">
           {sections.map(entry => <SegmentedButton key={entry.key} aria-pressed={section === entry.key} onClick={() => setSection(entry.key)}>{entry.label}</SegmentedButton>)}

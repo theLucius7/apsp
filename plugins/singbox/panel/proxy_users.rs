@@ -64,6 +64,8 @@ pub struct ProxyUserOverview {
     pub group_ids: Vec<i64>,
     pub direct_nodes: i64,
     pub external_nodes: i64,
+    /// The retained legacy renderer still decides this user's nodes.
+    pub bridged: bool,
     pub portal_created: bool,
     pub portal_keys: i64,
     pub activation_expires_at: Option<i64>,
@@ -115,6 +117,7 @@ pub async fn overview(
          COALESCE((SELECT array_agg(p.group_id ORDER BY p.group_id) FROM singbox_user_policies p WHERE p.user_id=e.user_id),'{}'::BIGINT[]) AS group_ids,\
          (SELECT count(*) FROM accesses a WHERE a.user_id=e.user_id AND a.direct_grant) AS direct_nodes,\
          (SELECT count(*) FROM singbox_external_accesses x WHERE x.user_id=e.user_id) AS external_nodes,\
+         EXISTS(SELECT 1 FROM singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id WHERE b.enabled AND i.user_id=e.user_id) AS bridged,\
          portal.account_id IS NOT NULL AS portal_created,\
          (SELECT count(*) FROM passkey_credentials c WHERE c.account_id=portal.account_id) AS portal_keys,\
          CASE WHEN portal.activation_expires_at>$1 THEN portal.activation_expires_at END AS activation_expires_at \
@@ -242,9 +245,37 @@ pub async fn reset_subscription(
     super::business::lock_user(&mut tx, id).await?;
     let legacy: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_nexus_bridge b JOIN singbox_nexus_identities i ON i.import_id=b.import_id WHERE b.enabled AND i.user_id=$1)").bind(id).fetch_one(&mut *tx).await?;
     if legacy {
-        return Err(ApiError::Conflict(
-            "原订阅兼容期间保留现有链接，请在节点接管后再重置".into(),
-        ));
+        // The token stays with the retained renderer; the user's own address still rotates.
+        let enabled: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM singbox_subscription_domain WHERE enabled)",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if !enabled {
+            return Err(ApiError::Conflict(
+                "原订阅兼容期间保留现有链接，请在节点接管后再重置".into(),
+            ));
+        }
+        let user = sqlx::query_as::<_, ProxyUserRow>(
+            "SELECT id,name,subscription_token FROM users WHERE id=$1 AND deleted_at IS NULL",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+        super::subscription_hosts::rotate(&mut tx, id).await?;
+        super::operations_workflows::event(
+            &mut tx,
+            Some(administrator),
+            Some(id),
+            "security_subscription_reset",
+            serde_json::json!({"own_address_only":true}),
+        )
+        .await?;
+        tx.commit().await?;
+        super::subscription_hosts::settle(&state.pool).await;
+        let host = super::subscription_hosts::address(&state.pool, id).await?;
+        return Ok(Json(user.view(&state.config.public_url, true, host)));
     }
     let user = sqlx::query_as::<_, ProxyUserRow>(
         "UPDATE users SET subscription_token=$2 WHERE id=$1 AND deleted_at IS NULL RETURNING id,name,subscription_token",

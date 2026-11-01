@@ -8,7 +8,7 @@ use anyhow::Result;
 use apsp_panel::plugins::singbox::subscription_hosts::{DnsApi, reconcile};
 use axum::{
     Json, Router,
-    extract::Path,
+    extract::{Path, RawQuery},
     routing::{delete, post},
 };
 use business_support::{TestPanel, id};
@@ -257,6 +257,144 @@ async fn closing_old_paths_leaves_only_the_users_host(pool: PgPool) -> Result<()
         fetch(&panel, &host, &format!("/{path}")).await?.status(),
         StatusCode::OK
     );
+    Ok(())
+}
+
+/// A stand-in for the retained renderer that still serves migrated users.
+async fn fake_renderer() -> Result<(String, Arc<Mutex<Vec<String>>>)> {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let log = seen.clone();
+    let app = Router::new().route(
+        "/assets/{token}",
+        axum::routing::get(
+            move |Path(token): Path<String>,
+                  RawQuery(query): RawQuery,
+                  headers: axum::http::HeaderMap| {
+                let log = log.clone();
+                async move {
+                    log.lock().unwrap().push(format!(
+                        "{token} {} {}",
+                        query.unwrap_or_default(),
+                        headers
+                            .get("user-agent")
+                            .and_then(|agent| agent.to_str().ok())
+                            .unwrap_or_default()
+                    ));
+                    (
+                        [
+                            ("subscription-userinfo", "upload=1; download=2; total=3"),
+                            ("content-type", "text/yaml"),
+                        ],
+                        "TEST_ONLY retained nodes",
+                    )
+                }
+            },
+        ),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let address = listener.local_addr()?;
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    Ok((format!("http://{address}/assets/"), seen))
+}
+
+async fn bridge(pool: &PgPool, user: i64, base: &str) -> Result<()> {
+    let import = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO singbox_nexus_imports VALUES($1,'fixture',repeat('a',64),'{}',1,1)")
+        .bind(import)
+        .execute(pool)
+        .await?;
+    sqlx::query("INSERT INTO singbox_nexus_identities(user_id,import_id,legacy_uuid,original_state,used_upload,used_download) VALUES($1,$2,$3,'active',0,0)")
+        .bind(user)
+        .bind(import)
+        .bind(uuid::Uuid::new_v4())
+        .execute(pool)
+        .await?;
+    sqlx::query("INSERT INTO singbox_nexus_bridge(singleton,import_id,subscription_base,enabled,last_sync_at,activated_at) VALUES(TRUE,$1,$2,TRUE,1,1)")
+        .bind(import)
+        .bind(base)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+#[sqlx::test]
+async fn a_migrated_user_gets_the_working_link_and_their_own_address(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let user = id(&panel.create_user(&cookie, "Migrated").await?)?;
+    let token: String = sqlx::query_scalar("SELECT subscription_token FROM users WHERE id=$1")
+        .bind(user)
+        .fetch_one(&pool)
+        .await?;
+    let (renderer, seen) = fake_renderer().await?;
+    bridge(&pool, user, &renderer).await?;
+    // The panel's own path has no nodes for them, so it must not be what people are given.
+    let listed: Vec<Value> = panel
+        .admin(Method::GET, &format!("{ROOT}/users"), &cookie, None)
+        .await?
+        .json()
+        .await?;
+    assert_eq!(listed[0]["subscription_url"], format!("{renderer}{token}"));
+
+    enable(&pool, true).await?;
+    let (dns, _) = fake_cloudflare().await?;
+    reconcile(&pool, &DnsApi::new(&dns)).await?;
+    let (host, path) = host_of(&pool, user).await?;
+    let listed: Vec<Value> = panel
+        .admin(Method::GET, &format!("{ROOT}/users"), &cookie, None)
+        .await?
+        .json()
+        .await?;
+    assert_eq!(
+        listed[0]["subscription_url"],
+        format!("https://{host}/{path}")
+    );
+
+    let answer = panel
+        .client
+        .get(format!("{}/{path}?flag=meta", panel.base))
+        .header(header::HOST, &host)
+        .header(header::USER_AGENT, "clash-verge/2.0")
+        .send()
+        .await?;
+    assert_eq!(answer.status(), StatusCode::OK);
+    assert_eq!(
+        answer.headers()["subscription-userinfo"],
+        "upload=1; download=2; total=3"
+    );
+    assert_eq!(answer.text().await?, "TEST_ONLY retained nodes");
+    assert_eq!(
+        seen.lock().unwrap().as_slice(),
+        [format!("{token} flag=meta clash-verge/2.0")],
+        "the renderer still decides the format"
+    );
+
+    // Reset releases their own address; the token stays with the renderer.
+    panel
+        .admin(
+            Method::POST,
+            &format!("{ROOT}/users/{user}/subscription/reset"),
+            &cookie,
+            None,
+        )
+        .await?;
+    let (new_host, new_path) = host_of(&pool, user).await?;
+    assert_ne!(host, new_host);
+    assert_eq!(
+        fetch(&panel, &host, &format!("/{path}")).await?.status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        fetch(&panel, &new_host, &format!("/{new_path}"))
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    let after: String = sqlx::query_scalar("SELECT subscription_token FROM users WHERE id=$1")
+        .bind(user)
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(after, token);
     Ok(())
 }
 

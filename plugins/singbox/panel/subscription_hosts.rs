@@ -73,33 +73,61 @@ fn address_of(domain: &Domain, slug: &str, path: &str) -> String {
     format!("https://{}/{path}", host_name(domain, slug))
 }
 
-/// Users still served by the retained legacy renderer keep their published links.
-const NOT_BRIDGED: &str = "NOT EXISTS(SELECT 1 FROM singbox_nexus_bridge b JOIN singbox_nexus_identities i ON i.import_id=b.import_id WHERE b.enabled AND i.user_id=u.id)";
+const BRIDGED: &str = "EXISTS(SELECT 1 FROM singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id WHERE b.enabled AND i.user_id=u.id)";
 
-/// Where this user's subscription lives now, when it is not the panel's own `/sub/{token}`.
-/// A host whose DNS record is not ready falls back while the old path still works.
+/// Whether the retained legacy renderer still serves this user's subscription.
+pub async fn is_bridged(pool: &PgPool, user: i64) -> ApiResult<bool> {
+    Ok(
+        sqlx::query_scalar(&format!("SELECT {BRIDGED} FROM users u WHERE u.id=$1"))
+            .bind(user)
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or(false),
+    )
+}
+
+/// Hostnames that can be handed out now. A host whose DNS record is not ready falls
+/// back while another address still works; a bridged user always has one that does.
+pub async fn own_addresses(pool: &PgPool) -> ApiResult<HashMap<i64, String>> {
+    let Some(domain) = domain(pool).await?.filter(|domain| domain.enabled) else {
+        return Ok(HashMap::new());
+    };
+    let rows: Vec<(i64, String, String, String, bool)> = sqlx::query_as(&format!(
+        "SELECT h.user_id,h.slug,h.path_token,h.state,{BRIDGED} FROM singbox_subscription_hosts h JOIN users u ON u.id=h.user_id"
+    ))
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .filter(|(_, _, _, state, bridged)| state == "ready" || (!domain.legacy_paths && !bridged))
+        .map(|(user, slug, path, _, _)| (user, address_of(&domain, &slug, &path)))
+        .collect())
+}
+
+pub async fn own_address(pool: &PgPool, user: i64) -> ApiResult<Option<String>> {
+    Ok(own_addresses(pool).await?.remove(&user))
+}
+
+/// Where each user's subscription can really be fetched, when that is not the panel's
+/// own `/sub/{token}`: their hostname, or else the retained renderer that serves them.
+pub async fn addresses(pool: &PgPool) -> ApiResult<HashMap<i64, String>> {
+    let bridged: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT i.user_id,b.subscription_base||u.subscription_token FROM singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id JOIN users u ON u.id=i.user_id WHERE b.enabled AND u.deleted_at IS NULL",
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut addresses: HashMap<i64, String> = bridged.into_iter().collect();
+    addresses.extend(own_addresses(pool).await?);
+    Ok(addresses)
+}
+
 pub async fn address(pool: &PgPool, user: i64) -> ApiResult<Option<String>> {
     Ok(addresses(pool).await?.remove(&user))
 }
 
-pub async fn addresses(pool: &PgPool) -> ApiResult<HashMap<i64, String>> {
-    let Some(domain) = domain(pool).await?.filter(|domain| domain.enabled) else {
-        return Ok(HashMap::new());
-    };
-    let rows: Vec<(i64, String, String, String)> =
-        sqlx::query_as("SELECT user_id,slug,path_token,state FROM singbox_subscription_hosts")
-            .fetch_all(pool)
-            .await?;
-    Ok(rows
-        .into_iter()
-        .filter(|(_, _, _, state)| state == "ready" || !domain.legacy_paths)
-        .map(|(user, slug, path, _)| (user, address_of(&domain, &slug, &path)))
-        .collect())
-}
-
 /// Where this user signs in when they have their own hostname.
 pub async fn login_base(pool: &PgPool, user: i64) -> ApiResult<Option<String>> {
-    Ok(address(pool, user)
+    Ok(own_address(pool, user)
         .await?
         .map(|address| format!("{address}/login")))
 }
@@ -158,18 +186,25 @@ struct OwnHost {
     user: i64,
     token: String,
     path: String,
+    /// Set while the retained legacy renderer still serves this user.
+    renderer: Option<String>,
 }
 
 async fn own_host(pool: &PgPool, slug: &str) -> Option<OwnHost> {
-    let row: Option<(i64, String, String)> = sqlx::query_as(
-        "SELECT h.user_id,u.subscription_token,h.path_token FROM singbox_subscription_hosts h JOIN users u ON u.id=h.user_id WHERE h.slug=$1 AND u.deleted_at IS NULL",
+    let row: Option<(i64, String, String, Option<String>)> = sqlx::query_as(
+        "SELECT h.user_id,u.subscription_token,h.path_token,(SELECT b.subscription_base FROM singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id WHERE b.enabled AND i.user_id=u.id) FROM singbox_subscription_hosts h JOIN users u ON u.id=h.user_id WHERE h.slug=$1 AND u.deleted_at IS NULL",
     )
     .bind(slug)
     .fetch_optional(pool)
     .await
     .ok()
     .flatten();
-    row.map(|(user, token, path)| OwnHost { user, token, path })
+    row.map(|(user, token, path, renderer)| OwnHost {
+        user,
+        token,
+        path,
+        renderer,
+    })
 }
 
 const PORTAL_API: &str = "/api/plugins/sing-box/portal/";
@@ -243,6 +278,15 @@ pub async fn gate(State(state): State<AppState>, mut request: Request, next: Nex
     if !reading || requested != owner.path {
         return plain_not_found();
     }
+    if let Some(renderer) = owner.renderer {
+        return relay(
+            &renderer,
+            &owner.token,
+            request.uri().query(),
+            request.headers(),
+        )
+        .await;
+    }
     let query = query_of(request.uri());
     let headers = request.headers().clone();
     match super::subscriptions::serve(&state, &headers, owner.token, query).await {
@@ -274,6 +318,69 @@ pub async fn scoped_state(state: AppState, headers: &HeaderMap) -> AppState {
         &domain.zone_name,
     ));
     scoped
+}
+
+const RELAYED_HEADERS: [&str; 6] = [
+    "content-type",
+    "content-disposition",
+    "subscription-userinfo",
+    "profile-update-interval",
+    "profile-web-page-url",
+    "profile-title",
+];
+const RELAY_LIMIT: usize = 16 * 1024 * 1024;
+static RELAY: LazyLock<Client> = LazyLock::new(|| {
+    Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .unwrap_or_default()
+});
+
+/// Answers from the retained renderer, which still holds this user's nodes. The client
+/// sees only its own address; the client's User-Agent still picks the format there.
+async fn relay(renderer: &str, token: &str, query: Option<&str>, headers: &HeaderMap) -> Response {
+    let mut url = format!("{renderer}{token}");
+    if let Some(query) = query {
+        url.push(if url.contains('?') { '&' } else { '?' });
+        url.push_str(query);
+    }
+    let mut upstream = RELAY.get(url);
+    if let Some(agent) = headers.get(header::USER_AGENT) {
+        upstream = upstream.header(header::USER_AGENT, agent);
+    }
+    let unavailable = || {
+        (
+            StatusCode::BAD_GATEWAY,
+            [(header::CACHE_CONTROL, "no-store")],
+            Body::empty(),
+        )
+            .into_response()
+    };
+    let Ok(mut answer) = upstream.send().await else {
+        return unavailable();
+    };
+    let mut response = Response::builder()
+        .status(answer.status())
+        .header(header::CACHE_CONTROL, "no-store")
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff");
+    for name in RELAYED_HEADERS {
+        if let Some(value) = answer.headers().get(name) {
+            response = response.header(name, value);
+        }
+    }
+    let mut body = Vec::new();
+    loop {
+        match answer.chunk().await {
+            Ok(Some(chunk)) if body.len() + chunk.len() <= RELAY_LIMIT => {
+                body.extend_from_slice(&chunk)
+            }
+            Ok(None) => break,
+            _ => return unavailable(),
+        }
+    }
+    response
+        .body(Body::from(body))
+        .unwrap_or_else(|_| unavailable())
 }
 
 fn query_of(uri: &Uri) -> super::subscriptions::SubscriptionQuery {
@@ -443,12 +550,12 @@ impl DnsApi {
     }
 }
 
-/// One pass: give users hosts, create missing records and delete retired ones.
+/// One pass of at most one batch; the worker calls this until nothing is left.
 pub async fn reconcile(pool: &PgPool, dns: &DnsApi) -> ApiResult<()> {
     let Some(domain) = domain(pool).await?.filter(|domain| domain.enabled) else {
         return Ok(());
     };
-    let users: Vec<i64> = sqlx::query_scalar(&format!("SELECT u.id FROM users u WHERE u.deleted_at IS NULL AND {NOT_BRIDGED} AND NOT EXISTS(SELECT 1 FROM singbox_subscription_hosts h WHERE h.user_id=u.id) ORDER BY u.id LIMIT $1"))
+    let users: Vec<i64> = sqlx::query_scalar("SELECT u.id FROM users u WHERE u.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM singbox_subscription_hosts h WHERE h.user_id=u.id) ORDER BY u.id LIMIT $1")
         .bind(BATCH)
         .fetch_all(pool)
         .await?;

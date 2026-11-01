@@ -21,6 +21,8 @@ type Subscription = {
   managed_nodes?: number; external_nodes?: number; external_granted_nodes?: number
   content: string | null; filename: string; content_type: string
   entitlement: { status: string; allowed: boolean; monthly_bytes: string | null; used_bytes: string; expires_at: number | null }
+  /** The retained renderer serves this user, so the address is theirs and the rest below is not. */
+  legacy_bridge?: boolean
 }
 type Action = 'address' | 'preview' | 'copy' | 'download'
 const formatNames = { singbox: 'sing-box 完整配置', clash: 'Clash Meta（mihomo）配置', links: '分享链接（仅 Reality）' }
@@ -28,6 +30,7 @@ const fileTypes = { singbox: ['application/json;charset=utf-8', 'apsp-subscripti
 const statusNames = { ready: '可以获取', empty: '等待可用节点', blocked: '套餐受限', format_unavailable: '格式不可用' }
 
 function address(subscription: Subscription): string {
+  if (subscription.legacy_bridge) return subscription.subscription_url
   try {
     const url = new URL(subscription.subscription_url)
     if (!['https:', 'http:'].includes(url.protocol)) return ''
@@ -108,6 +111,7 @@ export default function SubscriptionDialog({ user, format, onFormatChange, onClo
       <ErrorNotice message={error} retry={busy ? undefined : () => void load()} />
       {notice && <Notice tone="success" role="status">{notice}</Notice>}
       {loading && <Loading />}
+      {current?.legacy_bridge && <Notice role="status">这是迁移用户：订阅由原系统提供，下面的节点数和配置预览不代表实际内容。复制订阅地址即可。</Notice>}
       {current && <>
         <div className="mb-4 flex items-start gap-2.5 max-sm:flex-wrap"><Badge tone={current.status === 'ready' ? 'good' : current.status === 'blocked' ? 'bad' : 'warm'}>{statusNames[current.status]}</Badge><p className="text-muted-foreground text-sm leading-relaxed">{current.message}</p></div>
         <dl className="bg-muted/50 m-0 grid gap-x-5 gap-y-4 rounded-lg p-4 sm:grid-cols-2"><div><dt className="text-muted-foreground text-xs">已授权 / 符合套餐条件 / 可用节点</dt><dd className="mt-1.5 text-sm wrap-anywhere">{current.granted_nodes} / {current.eligible_nodes} / {current.ready_nodes.length}</dd></div><div><dt className="text-muted-foreground text-xs">套餐状态</dt><dd className="mt-1.5 text-sm wrap-anywhere">{statusText[current.entitlement.status as keyof typeof statusText] ?? '未知状态'}</dd></div><div><dt className="text-muted-foreground text-xs">本期已用 / 每月额度</dt><dd className="mt-1.5 text-sm wrap-anywhere">{bytes(current.entitlement.used_bytes)} / {current.entitlement.monthly_bytes === null ? '不限量' : bytes(current.entitlement.monthly_bytes)}</dd></div><div><dt className="text-muted-foreground text-xs">到期时间</dt><dd className="mt-1.5 text-sm wrap-anywhere">{current.entitlement.expires_at === null ? '不限期' : time(current.entitlement.expires_at)}</dd></div></dl>

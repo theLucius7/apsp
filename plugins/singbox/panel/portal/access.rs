@@ -161,10 +161,6 @@ pub(super) async fn view(
     let mut subscription_url = format!("{}/sub/{token}?format=singbox", state.config.public_url);
     let mut clash_subscription_url =
         format!("{}/sub/{token}?format=clash", state.config.public_url);
-    if let Some(host) = super::super::subscription_hosts::address(&state.pool, id).await? {
-        subscription_url = format!("{host}?format=singbox");
-        clash_subscription_url = format!("{host}?format=clash");
-    }
     let mut upload = usage.try_get::<String, _>("uplink")?;
     let mut download = usage.try_get::<String, _>("downlink")?;
     let legacy=sqlx::query("SELECT b.subscription_base,b.last_sync_at,m.upload::text,m.download::text FROM singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id AND b.enabled LEFT JOIN singbox_nexus_metering m ON m.user_id=i.user_id WHERE i.user_id=$1").bind(id).fetch_optional(&mut *tx).await?;
@@ -187,6 +183,22 @@ pub(super) async fn view(
     } else {
         None
     };
+    if let Some(host) = super::super::subscription_hosts::own_address(&state.pool, id).await? {
+        // Each renderer has its own way of being asked for Clash.
+        subscription_url = if compatibility.is_some() {
+            host.clone()
+        } else {
+            format!("{host}?format=singbox")
+        };
+        clash_subscription_url = format!(
+            "{host}?{}",
+            if compatibility.is_some() {
+                "flag=meta"
+            } else {
+                "format=clash"
+            }
+        );
+    }
     let result = json!({"authenticated":true,"configuration":state.passkeys.info(),"name":row.try_get::<String,_>("name")?,
         "subscription_url":subscription_url,"clash_subscription_url":clash_subscription_url,"legacy_compatibility":compatibility,
         "usage":{"uplink":upload,"downlink":download},"keys":credentials,"subscription_status":subscription_status});
