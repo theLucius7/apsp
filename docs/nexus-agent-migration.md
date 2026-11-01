@@ -105,6 +105,7 @@ python3 tools/nexus_runtime_snapshot.py build /private/nodes.json /private/runti
 
 1. 发布并导入包含运行时 `1.14.2-apsp.1` 的签名版本，把 Agent 升级到 0.3.4。
 2. 用公网端点接口更新换过 IP 或端口的节点，否则目录和可达性检测看到的都是旧地址。
+   导入后在旧面板新增的权限组用 `PATCH /api/plugins/sing-box/nexus-nodes/{id}/groups` 补上，并用 `compare-users` 确认没有缺用户。
 3. 开启国内可达性检测（ADR 0105），记录每台主机切换前的状态。已被封的主机先换 IP。
 4. 每次只切一台，默认间隔 24 小时；观察国内可达性和真实流量后再继续。先切没有历史包袱的主机。
 5. 优先把 REALITY 入口放到 443 端口，并换掉命中风险提示的目标。这会改变客户端配置，需要单独安排。
@@ -119,5 +120,7 @@ python3 tools/nexus_runtime_snapshot.py build /private/nodes.json /private/runti
 - 面板把 3 台主机标记为已接管，实际却运行旧发布器时，不能先启动 Agent，否则新运行时会和旧服务抢端口。先核对面板状态。
 - 1 台 OpenRC 小盘主机可用空间约 109 MB，放不下 92 MB 运行时、15 MB Agent 和 32 MB 压缩包，还要留 64 MB 余量，迁移前要先腾空间。这台主机排在最后。
 - 多台主机的 80、443 等端口由其他服务占用，还有独立运行的 sing-box 和中转服务。Agent 只接管面板记录的入站，切换时不能动这些服务。
+
+`pause`、`activate` 的 `stopped_at` 用面板所在机器的时钟取值。个别主机时钟不准，主机时间比面板快时会被判定为未来时间而拒绝。
 
 切换顺序：先切有真实国内流量、没有其他服务、出事损失可控的主机，不先切流量最大的主机。切换时不改目标站和端口，出问题才分得清原因；目标站和端口之后单独调整。
