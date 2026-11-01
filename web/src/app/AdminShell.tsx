@@ -1,31 +1,32 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { m } from 'motion/react'
 import { LogOutIcon, MenuIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, XIcon } from 'lucide-react'
-import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { useResource } from '../hooks'
 import CommandPalette from '../control-center/CommandPalette'
 import Reauthentication from '../control-center/Reauthentication'
-import Appearance, { localeChosenEvent } from '../control-center/Appearance'
+import Appearance from '../control-center/Appearance'
 import { Brand, ErrorNotice, TierBadge } from '../components'
-import { LanguageSelect, useI18n } from '../i18n'
-import { navigation } from './navigation'
+import { useI18n } from '../i18n'
+import { navigation, sectionTabs, sidebarEntries } from './navigation'
 import type { NavigationItem } from './navigation'
+import AccountMenu from './AccountMenu'
+import { preloadPages } from './AdminPage'
+import { ConnectionNotice, ConnectionStatus } from './ConnectionStatus'
+import { SectionContext } from './section'
 import { cn } from '@/lib/utils'
-import { pageMotion, transition } from '@/lib/motion'
-import { layoutStorage } from '@/lib/layout-storage'
+import { readShellActor, writeShellActor } from '@/lib/shell-actor'
+import type { ShellActor } from '@/lib/shell-actor'
 import { useMediaQuery } from '@/lib/use-media-query'
 import { useShellStore } from '@/stores/shell'
 import { useFeatureStore } from '@/stores/features'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-
-type Actor = { role: string; display_name: string; all_servers: boolean; capabilities: string[]; show_frozen_features?: boolean }
 
 type Props = {
   current?: NavigationItem
+  /** Whether the route is this page itself rather than something inside it, such as one server. */
+  exact?: boolean
   busy: boolean
   error: string
   onLogout: () => void
@@ -35,23 +36,27 @@ type Props = {
 const features: Record<string, string[]> = { servers: ['servers'], fleet: ['servers'], 'batch-enrollment': ['servers'], statistics: ['monitoring'], dashboard: ['monitoring'], latency: ['monitoring'], notifications: ['monitoring'], 'alert-settings': ['monitoring'], 'network-workbench': ['diagnostics'], 'network-configuration': ['network'], operations: ['operations', 'cloud'], backup: ['recovery'], expenses: ['cloud'], commerce: ['proxy'], alicloud: ['cloud'], ddns: ['dns'], 'singbox-overview': ['proxy'], nodes: ['proxy'], 'proxy-users': ['proxy'], groups: ['proxy'] }
 const globalPages = new Set(['backup', 'statistics', 'dashboard', 'latency', 'notifications', 'alert-settings', 'expenses', 'commerce', 'alicloud', 'singbox-overview', 'nodes', 'proxy-users', 'groups'])
 
-export default function AdminShell({ current, busy, error, onLogout, children }: Props) {
+export default function AdminShell({ current, exact = true, busy, error, onLogout, children }: Props) {
   const { t } = useI18n()
-  const actor = useResource<Actor>('/api/control-center/me')
-  const visibleNavigation = navigation.filter(item => item.page === 'control-center' || item.page === 'security' || actor.data?.role === 'owner' || ((!globalPages.has(item.page) || actor.data?.all_servers) && features[item.page]?.some(feature => actor.data?.capabilities.includes(`${feature}:read`))))
+  const resource = useResource<ShellActor>('/api/control-center/me', 30_000)
+  const [remembered] = useState(readShellActor)
+  // The navigation is drawn from the remembered actor until the panel confirms it,
+  // so it never grows from two links to all of them after a reload.
+  const actor = resource.data ?? remembered
+  useEffect(() => { if (resource.data) writeShellActor(resource.data) }, [resource.data])
+  useEffect(preloadPages, [])
+  const visibleNavigation = navigation.filter(item => item.page === 'control-center' || item.page === 'security' || actor?.role === 'owner' || ((!globalPages.has(item.page) || actor?.all_servers) && features[item.page]?.some(feature => actor?.capabilities.includes(`${feature}:read`))))
   const desktop = useMediaQuery('(min-width: 768px)')
   const collapsed = useShellStore(state => state.collapsed)
   const setCollapsed = useShellStore(state => state.setCollapsed)
   const mobileOpen = useShellStore(state => state.mobileOpen)
   const setMobileOpen = useShellStore(state => state.setMobileOpen)
-  const sidebarPanel = usePanelRef()
-  const layout = useDefaultLayout({ id: 'apsp-admin-shell', storage: layoutStorage, onlySaveAfterUserInteractions: true })
   // The brand returns to the first page this administrator may open.
   const home = `#${visibleNavigation[0]?.path ?? '/system/control-center'}`
 
   // Frozen features stay hidden unless the panel settings show them; the actor
   // response carries that panel-wide choice.
-  const showFrozen = actor.data?.show_frozen_features
+  const showFrozen = actor?.show_frozen_features
   useEffect(() => { if (showFrozen !== undefined) useFeatureStore.getState().setShowFrozen(showFrozen) }, [showFrozen])
 
   // The compact menu closes after navigation, on Escape and on a press outside the
@@ -79,149 +84,118 @@ export default function AdminShell({ current, busy, error, onLogout, children }:
     document.addEventListener('pointerdown', pointerdown)
     return () => { window.removeEventListener('keydown', keydown); document.removeEventListener('pointerdown', pointerdown) }
   }, [desktop, mobileOpen, setMobileOpen])
-  // The sidebar panel follows the remembered collapsed state. A panel added back
-  // after the phone layout joins the group's layout a frame later; until then its
-  // imperative API throws, so try again on the next few frames.
-  useEffect(() => {
-    if (!desktop) return
-    let frame = 0, attempts = 0
-    const sync = () => {
-      const panel = sidebarPanel.current
-      if (!panel) return
-      try {
-        if (collapsed && !panel.isCollapsed()) panel.collapse()
-        if (!collapsed && panel.isCollapsed()) panel.expand()
-      } catch {
-        if (++attempts < 10) frame = requestAnimationFrame(sync)
-      }
-    }
-    sync()
-    return () => cancelAnimationFrame(frame)
-  }, [collapsed, desktop, sidebarPanel])
 
-  const navigationList = <Navigation items={visibleNavigation} current={current} collapsed={desktop && collapsed} />
-  const account = <AccountButton actor={actor.data} busy={busy} onLogout={onLogout} collapsed={desktop && collapsed} />
+  const folded = desktop && collapsed
+  const navigationList = actor
+    ? <Navigation items={visibleNavigation} current={current} collapsed={folded} />
+    : <NavigationSkeleton collapsed={folded} />
 
   // One layout tree for every width. Crossing the breakpoint only adds or removes the
-  // sidebar panel and the phone header, so the page, its open dialogs and unsaved
-  // input stay mounted when a tablet rotates or a window is resized.
+  // sidebar and the phone header, so the page, its open dialogs and unsaved input stay
+  // mounted when a tablet rotates or a window is resized.
   return <TooltipProvider delayDuration={200}>
     <div data-slot="app-shell" className="bg-background text-foreground flex h-dvh min-h-0 overflow-hidden">
       <Reauthentication /><Appearance />
-      <ResizablePanelGroup id="apsp-admin-shell" orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
-        {desktop && <ResizablePanel key="sidebar" id="sidebar" panelRef={sidebarPanel} defaultSize={248} minSize={208} maxSize={360} collapsible collapsedSize={60}
-          onResize={size => { const folded = size.inPixels < 120; if (folded !== useShellStore.getState().collapsed) setCollapsed(folded) }}>
-          <aside data-slot="sidebar" data-collapsed={collapsed} className="bg-sidebar text-sidebar-foreground flex h-full min-h-0 flex-col border-r">
-            <div className={cn('flex h-14 shrink-0 items-center gap-2 border-b px-3', collapsed ? 'justify-center px-2' : 'justify-between')}>
-              {!collapsed && <a href={home} aria-label={t('apsp首页')} className="min-w-0 rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"><Brand /></a>}
-              <Button variant="ghost" size="icon-sm" aria-label={collapsed ? t('展开侧栏') : t('折叠侧栏')} onClick={() => setCollapsed(!collapsed)}>
-                {collapsed ? <PanelLeftOpenIcon /> : <PanelLeftCloseIcon />}
-              </Button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3 scrollbar-thin">{navigationList}</div>
-            <div className="shrink-0 border-t p-2">{account}</div>
-          </aside>
-        </ResizablePanel>}
-        {desktop && <ResizableHandle key="handle" withHandle aria-label={t('调整侧栏宽度')} />}
-        <ResizablePanel key="main" id="main" minSize="50">
-          <div className="flex h-full min-h-0 flex-col">
-            {!desktop && <aside ref={phoneHeader} data-slot="sidebar" className="bg-sidebar text-sidebar-foreground shrink-0 border-b">
-              <div className="flex h-14 items-center gap-2 px-4">
-                <a href={home} aria-label={t('apsp首页')} className="mr-auto min-w-0 rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"><Brand /></a>
-                <AccountButton actor={actor.data} busy={busy} onLogout={onLogout} collapsed={false} compact />
-                <Button ref={menuButton} variant="outline" aria-expanded={mobileOpen} aria-controls="admin-navigation" onClick={() => setMobileOpen(!mobileOpen)}>
-                  {mobileOpen ? <XIcon /> : <MenuIcon />}<span>{t('菜单')}</span>
-                </Button>
-              </div>
-              <m.div id="admin-navigation" initial={false}
-                animate={mobileOpen ? { height: 'auto', opacity: 1, display: 'block' } : { height: 0, opacity: 0, transitionEnd: { display: 'none' } }}
-                transition={transition.base} className="overflow-hidden">
-                <div className="max-h-[70dvh] overflow-y-auto border-t px-3 py-3">
-                  {navigationList}
-                  <p className="text-muted-foreground mt-3 border-t px-2 pt-3 text-xs">{t('当前账号')}：{actor.data?.display_name ?? t('管理员')}</p>
-                </div>
-              </m.div>
-            </aside>}
-            <MainColumn current={current} pages={visibleNavigation} error={error}>{children}</MainColumn>
+      {desktop && <aside data-slot="sidebar" data-collapsed={collapsed} className={cn('bg-sidebar text-sidebar-foreground flex h-full min-h-0 shrink-0 flex-col border-r transition-[width] duration-150', collapsed ? 'w-14' : 'w-56')}>
+        <div className={cn('flex h-12 shrink-0 items-center gap-2 px-3', collapsed ? 'justify-center px-2' : 'justify-between')}>
+          {!collapsed && <a href={home} aria-label={t('apsp首页')} className="min-w-0 rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"><Brand compact /></a>}
+          <Button variant="ghost" size="icon-sm" aria-label={collapsed ? t('展开侧栏') : t('折叠侧栏')} onClick={() => setCollapsed(!collapsed)}>
+            {collapsed ? <PanelLeftOpenIcon /> : <PanelLeftCloseIcon />}
+          </Button>
+        </div>
+        <div className={cn('shrink-0 pb-2', collapsed ? 'px-2' : 'px-3')}><CommandPalette pages={visibleNavigation} compact={collapsed} /></div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2 scrollbar-thin">{navigationList}</div>
+        <div className="shrink-0 border-t p-2">
+          <ConnectionStatus compact={collapsed} />
+          <AccountMenu actor={actor} busy={busy} onLogout={onLogout} collapsed={collapsed} />
+        </div>
+      </aside>}
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        {!desktop && <aside ref={phoneHeader} data-slot="sidebar" className="bg-sidebar text-sidebar-foreground relative z-30 shrink-0 border-b">
+          <div className="flex h-12 items-center gap-1.5 px-3">
+            <Button ref={menuButton} variant="ghost" size="icon" aria-label={t('菜单')} aria-expanded={mobileOpen} aria-controls="admin-navigation" onClick={() => setMobileOpen(!mobileOpen)}>
+              {mobileOpen ? <XIcon aria-hidden="true" /> : <MenuIcon aria-hidden="true" />}
+            </Button>
+            <a href={home} aria-label={t('apsp首页')} className="mr-auto min-w-0 rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"><Brand compact /></a>
+            <ConnectionStatus compact />
+            <CommandPalette pages={visibleNavigation} compact />
           </div>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+          {/* The menu covers the page instead of pushing it, so opening it moves nothing. */}
+          <div id="admin-navigation" hidden={!mobileOpen} className="bg-sidebar absolute inset-x-0 top-full border-b shadow-lg">
+            <div className="max-h-[calc(100dvh-3rem)] overflow-y-auto px-3 pt-1 pb-3">
+              {navigationList}
+              <div className="mt-2 border-t pt-2">
+                <AccountMenu actor={actor} busy={busy} onLogout={onLogout} collapsed={false} />
+                <Button data-slot="logout-button" variant="ghost" className="text-muted-foreground mt-1 w-full justify-start" disabled={busy} onClick={onLogout}><LogOutIcon aria-hidden="true" />{t('退出登录')}</Button>
+              </div>
+            </div>
+          </div>
+        </aside>}
+        <ConnectionNotice />
+        <SectionContext.Provider value={exact ? sectionTabs(current, visibleNavigation) : []}>
+          <MainColumn current={current} error={error}>{children}</MainColumn>
+        </SectionContext.Provider>
+      </div>
     </div>
   </TooltipProvider>
 }
 
 function Navigation({ items, current, collapsed }: { items: readonly NavigationItem[]; current?: NavigationItem; collapsed: boolean }) {
   const { t } = useI18n()
-  return <nav aria-label={t('主导航')} className="grid gap-0.5 max-md:grid-cols-2 max-[360px]:grid-cols-1">
-    {items.map((item, index) => {
-      const active = current?.path === item.path
-      const Icon = item.icon
-      const link = <a href={`#${item.path}`} aria-current={active ? 'page' : undefined}
-        className={cn(
-          'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring/50 relative flex h-9 min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-sm font-medium transition-colors outline-none focus-visible:ring-3 pointer-coarse:h-10',
-          active && 'bg-sidebar-accent text-sidebar-accent-foreground',
-          collapsed && 'justify-center px-0',
-        )}>
-        {active && <m.span layoutId="sidebar-active" transition={transition.spring} className="bg-sidebar-primary absolute inset-y-1.5 left-0 w-0.5 rounded-full" aria-hidden="true" />}
-        <Icon className="size-4 shrink-0" aria-hidden="true" />
-        <span className={cn('truncate', collapsed && 'sr-only')}>{t(item.label)}</span>
-      </a>
-      return <div key={item.path} className="contents">
-        {items[index - 1]?.group !== item.group && (collapsed
-          ? index > 0 && <div className="bg-sidebar-border mx-2 my-2 h-px" aria-hidden="true" />
-          : <div className="text-muted-foreground flex items-center gap-1.5 px-2.5 pt-4 pb-1 text-xs font-medium first:pt-1 max-md:col-span-full">{t(item.group)}{item.tier && <TierBadge tier={item.tier} />}</div>)}
-        {collapsed ? <Tooltip><TooltipTrigger asChild>{link}</TooltipTrigger><TooltipContent side="right">{t(item.label)}{item.tier && ` · ${t('实验')}`}</TooltipContent></Tooltip> : link}
-      </div>
-    })}
+  const showExperimental = useFeatureStore(state => state.showFrozen)
+  // Experimental workspaces stay out of the way until the panel settings show them;
+  // anyone already on one still sees where they are.
+  const shown = items.filter(item => !item.tier || showExperimental || current?.page === item.page)
+  const entries = sidebarEntries(shown)
+  const activePath = current?.parent ?? current?.path
+  const groups = [...new Set(entries.map(entry => entry.root.group))]
+  return <nav aria-label={t('主导航')} className="grid gap-px">
+    {groups.map((group, index) => <div key={group} className="contents">
+      {collapsed
+        ? index > 0 && <div className="bg-sidebar-border mx-2 my-1.5 h-px" aria-hidden="true" />
+        : <div className="text-muted-foreground flex items-center gap-1.5 px-2 pt-3 pb-1 text-xs font-medium first:pt-1"><span className="truncate">{t(group)}</span>{entries.find(entry => entry.root.group === group)?.root.tier && <TierBadge tier="experimental" className="ml-auto" />}</div>}
+      {entries.filter(entry => entry.root.group === group).map(({ root, href, path }) => {
+        const active = activePath === path
+        const Icon = root.icon
+        const label = t(root.navLabel ?? root.label)
+        const link = <a href={`#${href}`} aria-current={active ? 'page' : undefined}
+          className={cn(
+            'text-sidebar-foreground/85 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring/50 relative flex h-8 min-w-0 items-center gap-2.5 rounded-md px-2 text-[13px] outline-none focus-visible:ring-3 pointer-coarse:h-10',
+            active && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
+            collapsed && 'justify-center px-0',
+          )}>
+          {active && <span className="bg-sidebar-primary absolute inset-y-1.5 left-0 w-0.5 rounded-full" aria-hidden="true" />}
+          <Icon className="size-4 shrink-0" aria-hidden="true" />
+          <span className={cn('truncate', collapsed && 'sr-only')}>{label}</span>
+        </a>
+        return <div key={path} className="contents">
+          {collapsed ? <Tooltip><TooltipTrigger asChild>{link}</TooltipTrigger><TooltipContent side="right">{label}{root.tier && ` · ${t('实验')}`}</TooltipContent></Tooltip> : link}
+        </div>
+      })}
+    </div>)}
   </nav>
 }
 
-function AccountButton({ actor, busy, onLogout, collapsed, compact = false }: { actor?: Actor; busy: boolean; onLogout: () => void; collapsed: boolean; compact?: boolean }) {
-  const { t } = useI18n()
-  const role = actor?.role === 'viewer' ? t('只读 · ') : actor?.role === 'operator' ? t('运维 · ') : ''
-  const name = actor?.display_name ?? t('管理员')
-  // Phones keep logout one tap away without spending header width on the name.
-  if (compact) return <Button data-slot="logout-button" variant="ghost" size="icon" disabled={busy} onClick={onLogout} title={`${name} · ${t('退出登录')}`}>
-    <LogOutIcon aria-hidden="true" /><span className="sr-only">{role}{name} · {t('退出登录')}</span>
-  </Button>
-  return <button type="button" data-slot="logout-button" disabled={busy} onClick={onLogout}
-    className={cn('hover:bg-sidebar-accent focus-visible:ring-sidebar-ring/50 flex w-full min-w-0 items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors outline-none focus-visible:ring-3 disabled:opacity-50', collapsed && 'justify-center')}>
-    <span className="bg-primary/10 text-primary grid size-8 shrink-0 place-items-center rounded-full text-xs font-semibold max-md:hidden" aria-hidden="true">管</span>
-    <span className={cn('grid min-w-0 flex-1 leading-tight', collapsed && 'sr-only')}>
-      <strong className="truncate text-sm font-medium">{actor?.display_name ?? t('管理员')}</strong>
-      <small className="text-muted-foreground truncate text-xs">{role}{t('退出登录')}</small>
-    </span>
-    <LogOutIcon className={cn('text-muted-foreground size-4 shrink-0', collapsed && 'hidden')} aria-hidden="true" />
-  </button>
+/** First sign-in on this browser: the navigation's shape until the actor is known. */
+function NavigationSkeleton({ collapsed }: { collapsed: boolean }) {
+  return <div aria-hidden="true" className="grid gap-px">
+    {Array.from({ length: 12 }, (_, index) => <div key={index} className="flex h-8 items-center gap-2.5 px-2">
+      <Skeleton className="size-4 shrink-0 rounded" />{!collapsed && <Skeleton className="h-3 flex-1" style={{ maxWidth: `${50 + (index * 13) % 40}%` }} />}
+    </div>)}
+  </div>
 }
 
-function MainColumn({ current, pages, error, children }: { current?: NavigationItem; pages: readonly NavigationItem[]; error: string; children: ReactNode }) {
-  const { t } = useI18n()
+function MainColumn({ current, error, children }: { current?: NavigationItem; error: string; children: ReactNode }) {
   const scroller = useRef<HTMLDivElement>(null)
   // A new page starts at the top of the scrolling column.
   useEffect(() => { scroller.current?.scrollTo({ top: 0 }) }, [current?.path])
   // The shell is one screen tall at every width, so this column owns vertical
-  // scrolling on phones as well as on desktops.
+  // scrolling on phones as well as on desktops. Each page's own header is the only
+  // bar at the top of it and stays there while the page scrolls.
   return <div ref={scroller} data-slot="main-scroller" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-    {/* The bar sits in a fixed-height scrolling column, so it must not shrink below
-        its content. At tablet widths the breadcrumb drops the group (the sidebar shows
-        it) and the search button narrows, so the controls stay on one row. */}
-    <div data-slot="topbar" className="bg-background/85 supports-backdrop-filter:backdrop-blur-sm sticky top-0 z-20 flex min-h-14 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-2 md:px-8">
-      <nav aria-label={t('当前位置')} className="text-muted-foreground mr-auto flex min-w-0 items-center gap-2 text-sm">
-        {current && <><span className="truncate max-lg:hidden">{t(current.group)}</span><span aria-hidden="true" className="max-lg:hidden">/</span></>}
-        <strong aria-current="page" className="text-foreground truncate font-medium">{t(current?.label ?? '页面不存在')}</strong>
-      </nav>
-      <CommandPalette pages={pages} />
-      {/* A language picked here becomes the administrator's saved preference. */}
-      <LanguageSelect className="shrink-0" onChoose={locale => window.dispatchEvent(new CustomEvent(localeChosenEvent, { detail: locale }))} />
-      <Badge variant="success" className="max-xl:hidden"><span className="size-1.5 rounded-full bg-current" aria-hidden="true" />{t('管理员会话已登录')}</Badge>
-    </div>
     {/* Focusable so a dialog whose opener has gone can hand focus back to the page. */}
-    <m.main key={current?.path ?? 'missing'} {...pageMotion} tabIndex={-1} className="mx-auto w-full max-w-[1480px] flex-1 px-4 py-6 outline-none md:px-8 md:py-8">
+    <main key={current?.path ?? 'missing'} tabIndex={-1} className="mx-auto w-full max-w-[1600px] flex-1 px-4 pt-4 pb-10 outline-none md:px-6">
       <ErrorNotice message={error} />{children}
-    </m.main>
-    <footer className="text-muted-foreground mx-4 flex justify-between gap-4 border-t py-4 text-xs md:mx-8">
-      <span className="tracking-[0.2em]">{t('apsp')}</span><span>{t('清晰掌握，自在连接。')}</span>
-    </footer>
+    </main>
   </div>
 }

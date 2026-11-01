@@ -16,14 +16,14 @@ export default function Statistics() {
   const proxy = useResource<ProxyStatistics>(`/api/plugins/sing-box/statistics?days=${days}`, 30_000)
   const data = servers.data, business = proxy.data
   return <div data-slot="statistics-page" className="min-w-0">
-    <PageHeader eyebrow="总览" title="统计报表" description="服务器在线情况、网卡流量与代理流量的趋势和排行，用来回顾一段时间内的整体运行。">
+    <PageHeader title="统计报表" description="服务器在线情况、网卡流量与代理流量的趋势和排行，用来回顾一段时间内的整体运行。">
       <SegmentedGroup role="group" aria-label="统计时间范围">{[7, 30].map(value => <SegmentedButton key={value} type="button" aria-pressed={days === value} onClick={() => setDays(value)}>近 {value} 天</SegmentedButton>)}</SegmentedGroup>
       <Refresh onClick={() => { servers.reload(); proxy.reload() }} />
     </PageHeader>
     <ErrorNotice message={servers.error} retry={servers.reload} />
     {servers.loading && !data ? <Loading variant="cards" /> : data && <>
       <div data-slot="statistics-status-line" className="text-muted-foreground mb-3.5 flex flex-wrap justify-between gap-x-5 gap-y-1.5 text-xs"><span>当前服务器 · 含 {data.servers.hidden} 台展示隐藏节点</span><span>{servers.error ? '显示上次成功读取的数据' : '每 30 秒更新'} · {time(data.generated_at)}</span></div>
-      <div className="mb-6 grid gap-3 max-sm:gap-2 grid-cols-2 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
         <Stat label="服务器总数" value={data.servers.total} note="全部未删除服务器" icon={ServerIcon} />
         <Stat label="在线服务器" value={data.servers.online} note="最近 60 秒有通信" icon={ActivityIcon} />
         <Stat label="离线服务器" value={data.servers.offline} note="已接入，等待重新上线" icon={ServerIcon} />
@@ -41,7 +41,7 @@ export default function Statistics() {
     <div className="mt-7 mb-4 flex items-center justify-between gap-4 max-sm:items-start"><div><h2 className="text-base font-semibold">代理业务统计</h2><p className="text-muted-foreground mt-1 text-xs">独立汇总代理用户账本，不能与服务器网卡流量相加。</p></div><a href="#/plugins/sing-box/nodes" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>管理代理节点</a></div>
     <ErrorNotice message={proxy.error} retry={proxy.reload} />
     {proxy.loading && !business ? <Loading variant="cards" /> : business && <>
-      <div className="mb-6 grid gap-3 max-sm:gap-2 grid-cols-2 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
         <Stat label="代理节点" value={business.nodes} note="未删除服务器上的节点" icon={WaypointsIcon} />
         <Stat label="代理用户" value={business.users} note="当前未删除用户" icon={UsersIcon} />
         <Stat label={`近 ${days} 天代理流量`} value={bytes(business.traffic.total)} note={`${business.traffic.recorded_users} 位用户有账本记录`} icon={ActivityIcon} />

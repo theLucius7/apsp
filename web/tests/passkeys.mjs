@@ -78,7 +78,7 @@ try {
   const adminKey = management.keys[0]
   assert.deepEqual(Object.keys(adminKey).sort(), ['created_at', 'id', 'last_used_at', 'name'])
   results.push('administrator registration through shipped UI with required user verification')
-  await page.locator('[data-slot=logout-button]').click()
+  await page.locator('[data-slot=account-menu]').first().click(); await page.getByRole('menuitem', { name: '退出登录' }).click()
   await page.getByRole('heading', { name: '欢迎回来', exact: true }).waitFor()
   await page.getByRole('button', { name: '使用初始所有者 Passkey 登录', exact: true }).click()
   await page.getByRole('heading', { name: '账号安全', exact: true }).waitFor()

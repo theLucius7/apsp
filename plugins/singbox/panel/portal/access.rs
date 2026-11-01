@@ -133,6 +133,7 @@ pub(super) async fn view(
     headers: HeaderMap,
     Path(account): Path<Uuid>,
 ) -> ApiResult<Response> {
+    let state = super::super::subscription_hosts::scoped_state(state, &headers).await;
     let mut tx = state.pool.begin().await?;
     // Owner locking makes deletion and recovery immediately revoke this view.
     let owner = lock(&mut tx, account).await?;
@@ -160,6 +161,10 @@ pub(super) async fn view(
     let mut subscription_url = format!("{}/sub/{token}?format=singbox", state.config.public_url);
     let mut clash_subscription_url =
         format!("{}/sub/{token}?format=clash", state.config.public_url);
+    if let Some(host) = super::super::subscription_hosts::address(&state.pool, id).await? {
+        subscription_url = format!("{host}?format=singbox");
+        clash_subscription_url = format!("{host}?format=clash");
+    }
     let mut upload = usage.try_get::<String, _>("uplink")?;
     let mut download = usage.try_get::<String, _>("downlink")?;
     let legacy=sqlx::query("SELECT b.subscription_base,b.last_sync_at,m.upload::text,m.download::text FROM singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id AND b.enabled LEFT JOIN singbox_nexus_metering m ON m.user_id=i.user_id WHERE i.user_id=$1").bind(id).fetch_optional(&mut *tx).await?;
@@ -194,6 +199,7 @@ pub(super) async fn logout(
     headers: HeaderMap,
     Path(account): Path<Uuid>,
 ) -> ApiResult<Response> {
+    let state = super::super::subscription_hosts::scoped_state(state, &headers).await;
     state.passkeys.check_origin(&headers)?;
     if let Ok(hash) = session_hash(&headers) {
         let mut tx = state.pool.begin().await?;

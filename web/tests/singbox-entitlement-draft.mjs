@@ -225,7 +225,7 @@ try {
 
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/users`)
-    await page.getByRole('heading', { name: '可用范围与套餐', exact: true }).waitFor()
+    await page.getByRole('heading', { name: '权限与套餐', exact: true }).waitFor()
     const previous = page.getByRole('checkbox', { name: /原策略/ })
     const next = page.getByRole('checkbox', { name: /新策略/ })
     await previous.waitFor()
@@ -357,7 +357,7 @@ try {
     assert.deepEqual(writes[1].request, { operation: 'replace_package', user_id: 1, package_group_id: 2 })
     assert.equal(writes.filter(w => w.request.operation === 'replace_package').length, 1)
     assert.equal(JSON.stringify(usage), ledger)
-    await page.getByRole('button', { name: '订阅链接', exact: true }).click()
+    await page.getByRole('button', { name: '订阅详情', exact: true }).click()
     assert.equal(await page.getByRole('combobox', { name: '订阅格式', exact: true }).inputValue(), 'singbox')
     await page.getByRole('dialog').getByText('可以获取', { exact: true }).waitFor()
     await page.getByRole('region', { name: '订阅地址', exact: true }).locator('code').waitFor()
@@ -430,7 +430,8 @@ try {
     assert.equal(failures.size, 0)
     await enabled(dialog.getByRole('button', { name: '保存', exact: true }))
     await recoverRead(`${prefix}/proxy-resources`, null, async () => {
-      await blockedForm(dialog, '保存')
+      // A poll in flight leaves the draft submittable (ADR 0102); only a failed read blocks it.
+      await enabled(dialog.getByRole('button', { name: '保存', exact: true }))
       assert.equal(await dialog.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '已保留的策略草稿')
       assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="2"])').isChecked(), true)
     })

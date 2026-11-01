@@ -104,7 +104,7 @@ try {
     assert.equal(requests.some(request => request.method !== 'GET'), false)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.goto(`${origin}/#/plugins/ddns`)
-    await page.getByRole('heading', { name: 'DNS 账号与普通记录', exact: true }).waitFor()
+    await page.getByRole('heading', { name: 'DNS 账号', exact: true }).waitFor()
     await page.getByText('TEST_ONLY 私有DNS账号 · Cloudflare', { exact: true }).waitFor()
     await page.getByRole('button', { name: '记录、传播观测与历史', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'DNS 记录 · TEST_ONLY 私有DNS账号', exact: true })

@@ -48,7 +48,7 @@ try {
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.clock.install({ time: new Date('2026-10-03T00:00:00Z') })
-    await page.clock.pauseAt(new Date('2026-10-03T00:00:00Z'))
+    await page.clock.pauseAt(new Date('2026-10-03T00:10:00Z'))
     await page.route('**/api/**', route => {
       const path = new URL(route.request().url()).pathname
       const json = (body, status = 200) => route.fulfill({ status, json: body })

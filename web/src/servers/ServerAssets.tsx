@@ -12,7 +12,7 @@ export default function ServerAssets({ server, onEdit, onReload }: { server: Ser
   const asset = { ...defaultAssets, ...server.asset_settings }, traffic = server.traffic
   const expiry = expiryState(asset), observed = traffic?.observed_from != null || traffic?.corrected
   return <><Panel><PanelHeader><PanelTitle>资产与流量额度</PanelTitle><div className="flex flex-wrap items-center justify-end gap-2"><Button variant="ghost" size="sm" disabled={!traffic} onClick={() => setCorrecting(server)}>流量矫正</Button><Button variant="ghost" size="sm" onClick={onEdit}>编辑资产配置</Button></div></PanelHeader><div className="p-4">
-    <dl className="m-0 grid gap-4 p-0">
+    <dl className="m-0 grid gap-x-8 gap-y-2.5 p-0 lg:grid-cols-2">
       <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground text-sm">地区 / 分组</dt><dd className="m-0 text-sm">{asset.region || '未设置地区'} / {asset.group_name || '未分组'}{asset.hidden && ' · 展示页已隐藏'}</dd></div>
       <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground text-sm">标签</dt><dd className="m-0 text-sm">{asset.tags.length ? asset.tags.join(' · ') : '未设置'}</dd></div>
       <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground text-sm">成本</dt><dd className="m-0 text-sm">{assetPrice(asset)}</dd></div>

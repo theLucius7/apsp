@@ -5,6 +5,7 @@ import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { openPage } from './shell-navigation.mjs'
 
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 
@@ -15,7 +16,7 @@ async function openNav(page, name) {
   // The viewport decides whether the menu button is in use: a visibility check does
   // not wait, and a closing dialog briefly hides the page from assistive technology.
   if (page.viewportSize().width < 768 && await menu.getAttribute('aria-expanded') !== 'true') await menu.click()
-  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name, exact: true }).click()
+  await openPage(page, name)
 }
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.txt': 'text/plain' }
@@ -83,7 +84,7 @@ try {
     await page.getByRole('region', { name: '服务器总览', exact: true }).waitFor()
     await page.locator('[data-slot=server-card]').first().waitFor()
     assert(page.url().endsWith('/#/dashboard'))
-    assert.equal(await page.locator('[data-slot=sidebar]').count(), 0)
+    assert.equal(await page.locator('[data-slot=sidebar]').count(), 1, 'Signed in, the board keeps the console around it')
     assert.equal(await page.locator('[data-slot=server-card]').count(), 5)
     assert.equal(await statValue('实时上行'), '1.0 MiB/秒')
     for (const phrase of ['基础设施监控', '集中查看设备状态与网络质量', '最近成功读取', '实时状态 · 每 3 秒读取', '汇总覆盖所有未隐藏', '每次显示的都是实际采样', '服务器成本', '每日参考汇率', '统一币种对比', '界面来源与许可']) assert(!(await page.locator('body').innerText()).includes(phrase), `Dashboard must omit explanatory copy: ${phrase}`)
@@ -110,15 +111,12 @@ try {
     assert.equal(await page.locator('[data-slot=fleet] tbody tr').count(), 1)
     assert.match(await page.locator('[data-slot=fleet] tbody tr').innerText(), /指标已过期/)
     await page.getByRole('group', { name: '服务器状态筛选', exact: true }).getByRole('button', { name: '全部', exact: true }).click()
-    await page.getByRole('button', { name: '切换深色主题', exact: true }).click()
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     if (screenshots && [1440, 390].includes(width)) await page.screenshot({ path: resolve(screenshots, `dashboard-table-dark-${width}.png`), fullPage: true, animations: 'disabled' })
     await page.reload()
     await page.locator('[data-slot=fleet] tbody tr').first().waitFor()
     await page.getByRole('button', { name: '筛选与视图', exact: true }).click()
     assert.equal(await page.getByLabel('排序', { exact: true }).inputValue(), 'cpu')
-    // The dashboard theme applies to the whole document, so console styles never mix in.
-    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark')
     await page.getByRole('link', { name: '查看 东京 · 入口 详情', exact: true }).click()
     assert(page.url().endsWith('/#/dashboard/1'))
     await page.getByRole('link', { name: '返回服务器看板', exact: true }).click()

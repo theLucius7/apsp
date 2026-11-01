@@ -183,16 +183,9 @@ try {
     try {
       await page.goto(`${origin}/#/servers`)
       await page.getByRole('heading', { name: '服务器列表', exact: true }).waitFor()
-      const bar = await page.locator('[data-slot=topbar]').evaluate(element => {
-        const box = element.getBoundingClientRect()
-        const outside = [...element.children].filter(child => { const rect = child.getBoundingClientRect(); return rect.height > 0 && (rect.top < box.top || rect.bottom > box.bottom) })
-        return { height: box.height, outside: outside.length }
-      })
-      assert.equal(bar.outside, 0, `Top bar controls stay inside the bar at ${width}px`)
-      assert.equal(bar.height <= 56.5, true, `The top bar keeps a single row at ${width}px`)
       assert.equal(await page.getByRole('button', { name: '全局搜索', exact: true }).isVisible(), true)
       assert.deepEqual(errors, [])
-      summary.push({ width, topbar: bar.height })
+      summary.push({ width })
     } finally { await page.close() }
   }
   console.log(JSON.stringify({ passed: true, scenarios: summary }, null, 2))

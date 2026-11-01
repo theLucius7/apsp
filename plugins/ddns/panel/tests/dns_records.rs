@@ -83,6 +83,7 @@ pub(super) fn account() -> Account {
             provider: Provider::Cloudflare,
             credential_id: Uuid::new_v4(),
             zone_ids: vec![ZONE.into()],
+            zone_names: Default::default(),
             server_ids: vec![],
             enabled: true,
         },

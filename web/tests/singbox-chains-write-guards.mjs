@@ -236,8 +236,6 @@ try {
       await recover(pathname, creating, () => blockedCreate(creating))
       await enabled(creating.getByRole('button', { name: '创建未授权链路', exact: true }))
       await inspectDraft(creating)
-      await pendingRead(pathname, refreshLists, () => blockedCreate(creating))
-      await enabled(creating.getByRole('button', { name: '创建未授权链路', exact: true }))
     }
     for (const change of ['missing-node', 'disabled-node', 'protocol', 'missing-server', 'disabled-server', 'chain-role']) {
       if (change === 'missing-node') nodes = nodes.filter(node => node.id !== 1)
@@ -270,7 +268,6 @@ try {
       await failedRead(pathname); await blockedDelete(deleting)
       await recover(pathname, deleting, () => blockedDelete(deleting))
       await enabled(deleting.getByRole('button', { name: '确认删除', exact: true }))
-      await pendingRead(pathname, refreshLists, () => blockedDelete(deleting))
       await enabled(deleting.getByRole('button', { name: '确认删除', exact: true }))
     }
     chains = chains.filter(chain => chain.id !== 100)

@@ -309,8 +309,10 @@ pub(super) async fn portal(
             .fetch_one(&mut *tx)
             .await?;
     let (token,base):(String,Option<String>)=sqlx::query_as("SELECT u.subscription_token,b.subscription_base FROM users u LEFT JOIN singbox_nexus_identities i ON i.user_id=u.id LEFT JOIN singbox_nexus_bridge b ON b.import_id=i.import_id AND b.enabled WHERE u.id=$1").bind(user).fetch_one(&mut *tx).await?;
+    let own_host = super::super::subscription_hosts::address(&state.pool, user).await?;
     let url = base
         .map(|base| format!("{base}{token}"))
+        .or_else(|| own_host.map(|host| format!("{host}?format=singbox")))
         .unwrap_or_else(|| format!("{}/sub/{token}?format=singbox", state.config.public_url));
     for entry in &mut content {
         if let Some(body) = entry["body"].as_str() {

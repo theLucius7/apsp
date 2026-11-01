@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
 import { flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { openPage } from './shell-navigation.mjs'
 
 // Shipped dist with controlled API responses; PostgreSQL verifies migration/data.
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
@@ -48,7 +49,7 @@ try {
       const toggle = page.getByRole('button', { name: '菜单', exact: true })
       // The viewport decides: a visibility check does not wait for a closing dialog.
       if (page.viewportSize().width < 768 && await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click()
-      await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name, exact: true }).click()
+      await openPage(page, name)
     }
     // Server plugins are a tab of the server page; the sidebar has no per-server plugin entry.
     const openServerPlugins = () => page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '插件', exact: true }).click()
@@ -438,7 +439,7 @@ try {
     chainsFailure = true
     await page.reload()
     // Flat and ordered projections report their own failed reads in separate panels.
-    await page.locator('[data-slot=nodes-page] > div > [role="alert"]').getByText('链路夹具读取失败', { exact: true }).waitFor()
+    await page.locator('[data-slot=nodes-page] > [role="alert"]').getByText('链路夹具读取失败', { exact: true }).waitFor()
     await page.locator('section[aria-label="有序链路与资源引用"]').getByText('链路夹具读取失败', { exact: true }).waitFor()
     assert.equal(await page.getByRole('button',{name:'创建节点',exact:true}).first().isDisabled(),true)
     assert.equal(await page.locator('header[data-slot=page-header]').getByRole('button',{name:'创建链路',exact:true}).isDisabled(),true)
@@ -466,7 +467,7 @@ try {
     await navigate('账号安全')
     await page.getByRole('heading', { name: '账号安全', exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: '创建代理用户', exact: true }).count(), 0)
-    assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '统计报表', exact: true, includeHidden: true }).getAttribute('href'), '#/statistics')
+    assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '概览', exact: true, includeHidden: true }).getAttribute('href'), '#/plugins/sing-box')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     assert.deepEqual(errors, [])
     assert.equal(requests.some(path => ['/api/nodes', '/api/users', '/api/usage'].includes(path)), false)

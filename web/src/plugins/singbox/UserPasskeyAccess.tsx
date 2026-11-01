@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
-import { CopyField, ErrorNotice, Field, FormDialog, Loading, Modal, Refresh, DialogPresence } from '../../components'
+import { CopyButton, CopyField, ErrorNotice, Field, FormDialog, Loading, Modal, Refresh, DialogPresence } from '../../components'
 import { time } from '../../format'
 import { resourceWriteError, useAction, useResource } from '../../hooks'
 import { validatedSnapshot } from './groupTypes'
@@ -36,16 +36,22 @@ export default function UserPasskeyAccess({ id, userError, refreshRevision }: { 
       password: String(form.get('password') ?? ''), totp_code: String(form.get('totp_code') ?? ''), reset: editing.reset,
     }), value => { setEditing(undefined); setInvitation(value); resource.reload() })
   }
-  return <Panel>
-    <PanelHeader><PanelTitle>用户 Passkey 入口</PanelTitle><Refresh onClick={resource.reload} /></PanelHeader>
-    <div className="p-4">
-      <p>用户通过专属入口登录，查看自己的订阅与流量，并管理通行密钥。</p>
+  const state = !access ? '' : reset ? `对方已绑定 ${access.keys} 把 Passkey，可以直接用这个地址登录。`
+    : access.activation_expires_at !== null ? `开通链接有效至 ${time(access.activation_expires_at)}，对方绑定后即可登录。`
+      : '还没有开通。生成开通链接发给对方，绑定 Passkey 后就能自己看订阅、用量和到期。'
+  // Each read carries the panel's own state; the address only helps once a Passkey is bound.
+  return <Panel aria-label="登录地址" className="mb-0 flex flex-col">
+    <PanelHeader className="min-h-10 py-1.5"><PanelTitle>登录地址</PanelTitle><Refresh onClick={resource.reload} /></PanelHeader>
+    <div className="flex flex-1 flex-col gap-2.5 p-3.5">
       <ErrorNotice message={snapshot.error} retry={resource.reload} />
-      {resource.loading && !access ? <Loading /> : access && <>
-        <p>{reset ? `已绑定 ${access.keys} 把 Passkey。` : access.activation_expires_at !== null ? `等待开通，当前链接有效至 ${time(access.activation_expires_at)}。` : '尚未开通用户入口。'}</p>
-        {access.url && <div data-slot="field" className="mb-4 grid min-w-0 gap-1.5 last:mb-0"><span className="text-sm leading-snug font-medium">用户登录地址</span><CopyField text={access.url} label="复制用户登录地址" /></div>}
-        {access.configuration.reason && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{access.configuration.reason}</p>}
-        <Button variant={reset ? 'destructive' : 'default'} size="sm" disabled={action.busy || Boolean(writeError())} onClick={choose}>{reset ? '重置用户 Passkey' : '生成开通链接'}</Button>
+      {resource.loading && !access ? <Loading variant="panel" rows={1} /> : access && <>
+        {access.url && reset && <code data-slot="portal-address" tabIndex={0} aria-label="用户登录地址" className="bg-muted/50 focus-visible:ring-ring/50 scrollbar-thin block min-w-0 overflow-x-auto rounded-md border px-2.5 py-2 text-xs break-normal whitespace-pre focus-visible:ring-3 focus-visible:outline-none">{access.url}</code>}
+        <p className="text-muted-foreground text-xs leading-relaxed">{state}</p>
+        {access.configuration.reason && <p className="text-muted-foreground text-xs leading-relaxed">{access.configuration.reason}</p>}
+        <div className="mt-auto flex flex-wrap items-center gap-2">
+          {access.url && reset && <CopyButton text={access.url} label="复制用户登录地址" primary />}
+          <Button variant={reset ? 'ghost' : 'default'} size="sm" className={reset ? 'text-destructive hover:bg-destructive/10 hover:text-destructive' : undefined} disabled={action.busy || Boolean(writeError())} onClick={choose}>{reset ? '重置用户 Passkey' : '生成开通链接'}</Button>
+        </div>
       </>}
     </div>
     <DialogPresence>{editing && <FormDialog title={editing.reset ? '重置用户 Passkey？' : '生成用户开通链接'} busy={action.busy} submitDisabled={Boolean(writeError(editing.access))} error={writeError(editing.access) || action.error} onClose={() => setEditing(undefined)} onSubmit={submit} submitLabel={editing.reset ? '确认重置并生成' : '验证并生成'}>

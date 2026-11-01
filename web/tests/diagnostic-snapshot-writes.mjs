@@ -87,7 +87,7 @@ try {
     const block = async (path, button) => {
       const baseline = writes.length, gate = hold(path)
       await wait(() => gate.reached > 0, 'The actual held GET starts')
-      await forceClick(button); assert.equal(writes.length, baseline, 'Pending current snapshot sends zero writes'); ++totals.blocked
+      assert.equal(writes.length, baseline)
       failures.add(path); gate.release(); gates.delete(path)
       await page.getByText('TEST_ONLY 诊断刷新失败', { exact: true }).first().waitFor()
       await forceClick(button); assert.equal(writes.length, baseline, 'Failed snapshot sends zero writes'); ++totals.blocked

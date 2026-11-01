@@ -3,6 +3,7 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
+import { chooseLanguage } from './shell-navigation.mjs'
 
 // TEST_ONLY: after rebuilding web/dist, run `node web/tests/shell-language.mjs`.
 // Covers the 2026-10-24 shell and language fixes: phone pages scroll, crossing the
@@ -60,7 +61,7 @@ try {
   {
     const { page, errors } = await open(390, { servers: () => servers(30, () => true) })
     await page.locator('[data-slot=server-list-card]').filter({ has: page.getByText('TEST_ONLY 服务器 30', { exact: true }) }).waitFor()
-    const column = page.locator('[data-slot=topbar]').locator('xpath=..')
+    const column = page.locator('[data-slot=main-scroller]')
     const scrolled = await column.evaluate(element => { element.scrollTop = element.scrollHeight; return element.scrollTop })
     assert.ok(scrolled > 0, 'The phone page column scrolls')
     const menu = page.getByRole('button', { name: '菜单' })
@@ -101,13 +102,13 @@ try {
     const { page, errors } = await open(1440, { servers: () => servers(1, () => online) })
     const first = page.getByRole('row').filter({ has: page.getByText('TEST_ONLY 服务器 1', { exact: true }) })
     await first.getByText('在线', { exact: true }).waitFor()
-    await page.getByRole('combobox', { name: '界面语言' }).selectOption('en-US')
+    await chooseLanguage(page, 'English')
     await first.getByText('Online', { exact: true }).waitFor()
     online = false
     await first.getByText('Offline', { exact: true }).waitFor({ timeout: 15000 })
     await page.waitForTimeout(1000)
     assert.equal(await page.evaluate(() => document.documentElement.lang), 'en-US', 'The saved Chinese preference does not revert the header switch')
-    await page.getByRole('combobox', { name: 'Interface language' }).selectOption('zh-CN')
+    await chooseLanguage(page, /简体中文|Chinese/)
     await first.getByText('离线', { exact: true }).waitFor()
     assert.deepEqual(errors, [])
     results.language = 'passed'

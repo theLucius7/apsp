@@ -31,7 +31,7 @@ const otherDialogOpen = () => Boolean(document.querySelector('[role=dialog]:not(
  * Keyboard-first jump list for the administrator console: permitted pages,
  * favourites, recent visits and server-side search results in one listbox.
  */
-export default function CommandPalette({ pages }: { pages: readonly NavigationItem[] }) {
+export default function CommandPalette({ pages, compact = false }: { pages: readonly NavigationItem[]; compact?: boolean }) {
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const opened = useRef(open)
@@ -152,10 +152,9 @@ export default function CommandPalette({ pages }: { pages: readonly NavigationIt
   }
 
   return <>
-    <Button ref={trigger} data-slot="global-search" variant="outline" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K /" aria-label={t('全局搜索')} onClick={show}
-      className="text-muted-foreground hover:text-foreground w-full min-w-0 justify-start font-normal sm:w-auto sm:min-w-40 sm:max-w-72 sm:flex-1 lg:max-w-80 max-sm:w-auto">
-      <SearchIcon aria-hidden="true" /><span className="truncate max-sm:sr-only">{t('搜索或跳转…')}</span>
-      <Kbd className="ml-auto max-sm:hidden">⌘K</Kbd>
+    <Button ref={trigger} data-slot="global-search" variant={compact ? 'ghost' : 'outline'} size={compact ? 'icon' : 'default'} aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K /" aria-label={t('全局搜索')} title={compact ? t('搜索或跳转…') : undefined} onClick={show}
+      className={compact ? undefined : 'text-muted-foreground hover:text-foreground dark:bg-transparent w-full min-w-0 justify-start bg-transparent font-normal'}>
+      <SearchIcon aria-hidden="true" />{!compact && <><span className="truncate">{t('搜索或跳转…')}</span><Kbd className="ml-auto">⌘K</Kbd></>}
     </Button>
     <Dialog open={open} onOpenChange={close}>
       <DialogContent data-slot="command-palette" showCloseButton={false} onCloseAutoFocus={restoreFocus} className="top-[12vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl">
