@@ -34,6 +34,8 @@ def checkout(directory, url, commit, sparse=None):
     run(['git', '-C', str(directory), 'remote', 'add', 'origin', url])
     if sparse:
         run(['git', '-C', str(directory), 'sparse-checkout', 'set', '--no-cone', '/' + sparse])
+    # The patch queue and its pinned commit need upstream's exact bytes on Windows too.
+    run(['git', '-C', str(directory), 'config', 'core.autocrlf', 'false'])
     run(['git', '-C', str(directory), 'fetch', '--depth=1', '--filter=blob:none', 'origin', commit])
     run(['git', '-C', str(directory), 'checkout', '--detach', 'FETCH_HEAD'])
     actual = run(['git', '-C', str(directory), 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
