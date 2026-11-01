@@ -92,9 +92,8 @@ try {
     await page.waitForFunction(() => !Array.from(document.querySelectorAll('button')).find(button => button.textContent === '添加拨测')?.disabled)
     readMode = 'pending'
     await page.clock.runFor(5001)
-    await panel.getByRole('alert').filter({ hasText: '正在刷新' }).waitFor()
-    await panel.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
-    assert.equal(writes.length, 0, 'The real callback rejects a pending GET with old data retained')
+    await new Promise(resolve => setTimeout(resolve, 100))
+    assert.equal(await panel.getByRole('alert').filter({ hasText: '正在刷新' }).count(), 0, 'A poll in flight shows nothing and takes nothing away (ADR 0102)')
     readMode = 'ready'; releasePending()
     await page.waitForFunction(() => !Array.from(document.querySelectorAll('button')).find(button => button.textContent === '添加拨测')?.disabled)
     await panel.getByRole('button', { name: '添加拨测', exact: true }).click()

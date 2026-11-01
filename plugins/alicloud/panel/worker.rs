@@ -23,20 +23,22 @@ pub(super) async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult
         .bind(now + 300)
         .execute(&mut *tx)
         .await?;
-    match cloud.bill(&account, now).await {
-        Ok(bill) => {
-            sqlx::query("UPDATE alicloud_accounts SET bill=$2,error_code=NULL WHERE id=$1")
-                .bind(id)
-                .bind(Json(&bill))
-                .execute(&mut *tx)
-                .await?;
-            account.bill = Some(Json(bill));
-            account.error_code = None;
-        }
-        Err(error) => {
-            sqlx::query("UPDATE alicloud_accounts SET error_code=$2,next_run_at=GREATEST(next_run_at,$3) WHERE id=$1")
+    if account.billing_enabled {
+        match cloud.bill(&account, now).await {
+            Ok(bill) => {
+                sqlx::query("UPDATE alicloud_accounts SET bill=$2,error_code=NULL WHERE id=$1")
+                    .bind(id)
+                    .bind(Json(&bill))
+                    .execute(&mut *tx)
+                    .await?;
+                account.bill = Some(Json(bill));
+                account.error_code = None;
+            }
+            Err(error) => {
+                sqlx::query("UPDATE alicloud_accounts SET error_code=$2,next_run_at=GREATEST(next_run_at,$3) WHERE id=$1")
                 .bind(id).bind(error.code).bind(now+error.retry_after.max(300)).execute(&mut *tx).await?;
-            account.error_code = Some(error.code.into());
+                account.error_code = Some(error.code.into());
+            }
         }
     }
     // Compatibility counters are display-only: no trustworthy period field is supplied.

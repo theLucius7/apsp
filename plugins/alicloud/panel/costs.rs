@@ -204,7 +204,7 @@ pub(super) async fn refresh_balance(
 ) -> ApiResult<()> {
     let mut tx = lock(pool, id).await?;
     let a = account_on(&mut tx, id).await?;
-    if !a.enabled || a.balance_next_at > now {
+    if !a.enabled || !a.balance_enabled || a.balance_next_at > now {
         return Ok(());
     }
     match cloud.balance(&a, now).await {
@@ -243,7 +243,10 @@ pub(super) async fn refresh_bill(
         .instance_bill
         .as_ref()
         .is_some_and(|b| b.month != billing::month(now));
-    if !a.enabled || (r.bill_next_at > now && !(stale_month && r.bill_error.is_none())) {
+    if !a.enabled
+        || !a.billing_enabled
+        || (r.bill_next_at > now && !(stale_month && r.bill_error.is_none()))
+    {
         return Ok(());
     }
     match cloud.instance_bill(&a, &r, now).await {
@@ -264,11 +267,11 @@ pub(super) async fn refresh_bill(
 }
 pub(super) async fn tick(pool: &PgPool, cloud: &Cloud) -> ApiResult<()> {
     let now = apsp_protocol::now_timestamp();
-    let accounts:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM alicloud_accounts WHERE enabled AND NOT archived AND balance_next_at<=$1 ORDER BY balance_next_at,id LIMIT 1").bind(now).fetch_all(pool).await?;
+    let accounts:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM alicloud_accounts WHERE enabled AND balance_enabled AND NOT archived AND balance_next_at<=$1 ORDER BY balance_next_at,id LIMIT 1").bind(now).fetch_all(pool).await?;
     for id in accounts {
         refresh_balance(pool, id, cloud, now).await?;
     }
-    let resources:Vec<Uuid>=sqlx::query_scalar("SELECT r.id FROM alicloud_resources r JOIN alicloud_accounts a ON a.id=r.account_id WHERE a.enabled AND NOT a.archived AND NOT r.archived AND (r.bill_next_at<=$1 OR (r.instance_bill->>'month'<>$2 AND r.bill_error IS NULL)) ORDER BY r.bill_next_at,r.id LIMIT 1").bind(now).bind(billing::month(now)).fetch_all(pool).await?;
+    let resources:Vec<Uuid>=sqlx::query_scalar("SELECT r.id FROM alicloud_resources r JOIN alicloud_accounts a ON a.id=r.account_id WHERE a.enabled AND a.billing_enabled AND NOT a.archived AND NOT r.archived AND (r.bill_next_at<=$1 OR (r.instance_bill->>'month'<>$2 AND r.bill_error IS NULL)) ORDER BY r.bill_next_at,r.id LIMIT 1").bind(now).bind(billing::month(now)).fetch_all(pool).await?;
     for id in resources {
         refresh_bill(pool, id, cloud, now).await?;
     }

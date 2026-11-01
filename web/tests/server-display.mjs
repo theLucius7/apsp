@@ -4,6 +4,7 @@ import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { openPage } from './shell-navigation.mjs'
 
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 
@@ -14,7 +15,7 @@ async function openNav(page, name) {
   // The viewport decides whether the menu button is in use: a visibility check does
   // not wait, and a closing dialog briefly hides the page from assistive technology.
   if (page.viewportSize().width < 768 && await menu.getAttribute('aria-expanded') !== 'true') await menu.click()
-  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name, exact: true }).click()
+  await openPage(page, name)
 }
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.txt': 'text/plain' }
@@ -99,7 +100,7 @@ try {
     assert.equal(await page.locator('[data-slot=server-card]').first().locator('[data-slot=metric]').count(), 4)
     assert.equal(await page.locator('[data-slot=server-card]').first().locator('[data-slot=metric]').last().locator('div > span').innerText(), '流量')
     assert.equal(await page.getByRole('button', { name: /全屏看板|暂停自动刷新|更新汇率/ }).count(), 0)
-    assert(!await page.locator('[data-slot=sidebar]').count())
+    assert.equal(await page.locator('[data-slot=sidebar]').count(), 1, 'Signed in, the board keeps the console around it')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     if (screenshots) await page.screenshot({ path: resolve(screenshots, `display-light-${width}.png`), fullPage: true, animations: 'disabled' })
     await page.getByLabel('搜索服务器', { exact: true }).fill('  deBIan ')
@@ -112,12 +113,9 @@ try {
     assert.equal(await page.locator('[data-slot=server-card]').count(), 1)
     await page.getByRole('group', { name: '服务器状态筛选', exact: true }).getByRole('button', { name: '全部', exact: true }).click()
     await page.getByRole('button', { name: '筛选与视图', exact: true }).click()
-    await page.getByRole('button', { name: '切换深色主题' }).click()
     if (screenshots) await page.screenshot({ path: resolve(screenshots, `display-dark-${width}.png`), fullPage: true, animations: 'disabled' })
     await page.reload()
     await page.locator('[data-slot=server-card]').first().waitFor()
-    // The dashboard theme applies to the whole document, so console styles never mix in.
-    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark')
     await page.getByRole('link', { name: '东京 · 主节点，在线，查看详情', exact: true }).click()
     await page.getByRole('heading', { name: /^东京 · 主节点/ }).waitFor()
     await page.locator('[data-slot=chart] svg[role="img"]').first().waitFor()
@@ -156,10 +154,9 @@ try {
     const scale = await page.locator('[data-slot=chart] svg[role="img"]').first().evaluate(element => element.getBoundingClientRect().width / element.viewBox.baseVal.width)
     assert(scale > .95 && scale < 1.05, 'Chart labels must retain their readable font size on mobile')
     if (screenshots) await page.screenshot({ path: resolve(screenshots, `detail-dark-${width}.png`), fullPage: true, animations: 'disabled' })
-    await page.getByRole('button', { name: '切换浅色主题' }).click()
     if (screenshots) await page.screenshot({ path: resolve(screenshots, `detail-light-${width}.png`), fullPage: true, animations: 'disabled' })
     await page.getByRole('link', { name: '返回服务器看板', exact: true }).click()
-    await page.getByRole('link', { name: '进入后台', exact: true }).click()
+    await openNav(page, '服务器')
     await page.locator('[data-slot=sidebar]').waitFor()
     assert.equal(await page.locator('[data-slot=server-display]').count(), 0)
     assert.equal(await page.evaluate(() => document.body.classList.contains('has-server-display')), false)

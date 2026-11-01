@@ -7,11 +7,21 @@
     <meta name="theme-color" content="#0c0c0c" media="(prefers-color-scheme: dark)" />
     <meta name="description" content="apsp，自托管服务器与节点控制面板。" />
     <title>apsp · 服务器与节点</title>
-    <script type="module" crossorigin src="/assets/index-Bjgt_QSk.js"></script>
+    <script>
+      // Theme before first paint; the same key is kept by stores/appearance.ts.
+      (function () {
+        var root = document.documentElement, saved = {}
+        try { saved = JSON.parse(localStorage.getItem('apsp-appearance')) || {} } catch (error) {}
+        var theme = saved.theme === 'light' || saved.theme === 'dark' ? saved.theme : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        root.dataset.theme = theme
+        if (saved.density === 'compact') root.dataset.density = 'compact'
+      })()
+    </script>
+    <script type="module" crossorigin src="/assets/index-DmJ0mMAZ.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/react-BMK6nnAR.js">
     <link rel="modulepreload" crossorigin href="/assets/motion-C_g5O6TH.js">
-    <link rel="modulepreload" crossorigin href="/assets/radix-D48E8NQB.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-BeS9lLQn.css">
+    <link rel="modulepreload" crossorigin href="/assets/radix-CS3VYdAc.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-DDzJk1DB.css">
   </head>
   <body><div id="root"></div></body>
 </html>

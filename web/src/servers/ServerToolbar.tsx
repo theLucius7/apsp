@@ -1,9 +1,9 @@
+import type { ReactNode } from 'react'
 import { ListFilterIcon, SearchIcon, Settings2Icon, XIcon } from 'lucide-react'
 import { usePreference } from '../control-center/preferences'
 import { useAction } from '../hooks'
 import { ErrorNotice, Field } from '../components'
 import { ToolbarPanel } from '@/components/toolbar-panel'
-import { SegmentedButton, SegmentedGroup } from '@/components/segmented'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -17,9 +17,9 @@ import { NativeSelect } from '@/components/ui/native-select'
 export type ServerView = {
   query: string; online: 'all' | 'online' | 'offline'; group: string; region: string
   groupBy: 'none' | 'group' | 'region'; sort: 'id' | 'name' | 'cpu' | 'expiry'
-  columns: string[]; cardColumns: string[]; density: 'comfortable' | 'compact'
+  columns: string[]; cardColumns: string[]
 }
-export const defaultServerView: ServerView = { query: '', online: 'all', group: '', region: '', groupBy: 'none', sort: 'id', columns: ['cpu', 'memory', 'cost', 'traffic', 'version'], cardColumns: ['cpu', 'memory'], density: 'comfortable' }
+export const defaultServerView: ServerView = { query: '', online: 'all', group: '', region: '', groupBy: 'none', sort: 'id', columns: ['cpu', 'memory', 'cost', 'traffic', 'version'], cardColumns: ['cpu', 'memory'] }
 export const serverFilters = (view: ServerView) => ({ query: Boolean(view.query), online: view.online !== 'all', more: Number(Boolean(view.group)) + Number(Boolean(view.region)) })
 export const clearServerFilters = (view: ServerView): ServerView => ({ ...view, query: '', online: 'all', group: '', region: '' })
 
@@ -37,7 +37,7 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
  * removable chips once in use; and view settings (sort, grouping, fields, row
  * density, saved views). `phone` says whether the list currently shows cards.
  */
-export default function ServerToolbar({ value, onChange, groups, regions, phone }: { value: ServerView; onChange: (value: ServerView) => void; groups: string[]; regions: string[]; phone: boolean }) {
+export default function ServerToolbar({ title, value, onChange, groups, regions, phone }: { title?: ReactNode; value: ServerView; onChange: (value: ServerView) => void; groups: string[]; regions: string[]; phone: boolean }) {
   const saved = usePreference<ServerView>('view:servers')
   const action = useAction()
   const set = (patch: Partial<ServerView>) => onChange({ ...value, ...patch })
@@ -47,10 +47,11 @@ export default function ServerToolbar({ value, onChange, groups, regions, phone 
     const next = on ? [...shown, key] : shown.filter(item => item !== key)
     set(phone ? { cardColumns: next } : { columns: next })
   }
-  return <div data-slot="server-toolbar" className="grid gap-2 border-b px-4 py-3">
+  return <div data-slot="server-toolbar" className="grid gap-2 border-b px-4 py-2">
     <div className="flex flex-wrap items-center gap-2">
+      {title}
       {/* Phones give the search its own row; status and the two buttons share the next. */}
-      <div className="relative min-w-0 flex-[1_1_14rem] max-sm:basis-full">
+      <div className="relative ml-auto min-w-0 flex-[0_1_22rem] max-sm:flex-[1_1_100%]">
         <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" aria-hidden="true" />
         <Input type="search" aria-label="筛选名称、标签或地区" placeholder="搜索名称、标签或地区" className="pl-8" value={value.query} onChange={event => set({ query: event.target.value })} />
       </div>
@@ -67,9 +68,6 @@ export default function ServerToolbar({ value, onChange, groups, regions, phone 
         <fieldset className="grid gap-2"><legend className="mb-2 text-sm font-medium">{phone ? '卡片显示' : '表格列'}</legend>
           <div className="grid grid-cols-2 gap-x-3 gap-y-2">{fields.map(([key, label]) => <label className="flex items-center gap-2 text-sm" key={key}><Checkbox checked={shown.includes(key)} onCheckedChange={checked => toggle(key, checked === true)} />{label}</label>)}</div>
         </fieldset>
-        <div className="grid gap-1.5"><span className="text-sm font-medium" id="server-density-label">列表密度</span>
-          <SegmentedGroup aria-labelledby="server-density-label" className="w-fit">{([['comfortable', '舒适'], ['compact', '紧凑']] as const).map(([density, label]) => <SegmentedButton key={density} aria-pressed={value.density === density} onClick={() => set({ density })}>{label}</SegmentedButton>)}</SegmentedGroup>
-        </div>
         <ErrorNotice message={saved.error || action.error} retry={saved.reload} />
         <div className="flex flex-wrap items-center gap-2 border-t pt-3">
           <Button variant="outline" size="sm" disabled={!saved.ready || action.busy} onClick={() => void action.run(() => saved.save(value))}>保存当前视图</Button>

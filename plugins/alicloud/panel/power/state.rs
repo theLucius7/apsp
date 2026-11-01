@@ -77,50 +77,30 @@ impl Cloud {
     ) -> Result<String, Failure> {
         let resolved = self.resolved_account(account).await?;
         let account = &resolved;
-        // Script mode keeps the batch API and its existing RAM permissions.
-        let batch = resource.power_policy.cdt_guard.is_some();
         let mut params = vec![
             ("RegionId", resource.region.clone()),
-            (
-                if batch { "InstanceId.1" } else { "InstanceId" },
-                resource.cloud_id.clone(),
-            ),
+            ("InstanceId", resource.cloud_id.clone()),
         ];
-        if batch {
-            params.push(("BatchOptimization", "AllTogether".into()));
-        }
-        if action == "stop" {
-            params.extend([("ForceStop", "false".into()), ("StoppedMode", mode.into())]);
-        } else if !batch {
-            params.push(("InitLocalDisk", "false".into()));
-        }
+        let api_action = match action {
+            "stop" => {
+                params.extend([("ForceStop", "false".into()), ("StoppedMode", mode.into())]);
+                "StopInstance"
+            }
+            "start" => {
+                params.push(("InitLocalDisk", "false".into()));
+                "StartInstance"
+            }
+            _ => return Err("invalid_response".into()),
+        };
         let value = self
             .ecs
             .power_call(
                 &account.access_key_id,
                 &account.access_key_secret,
-                match (action == "stop", batch) {
-                    (true, true) => "StopInstances",
-                    (false, true) => "StartInstances",
-                    (true, false) => "StopInstance",
-                    (false, false) => "StartInstance",
-                },
+                api_action,
                 &params,
             )
             .await?;
-        if batch {
-            let rows = value["InstanceResponses"]["InstanceResponse"]
-                .as_array()
-                .ok_or(Failure::from("invalid_response"))?;
-            if rows.len() != 1 || rows[0]["InstanceId"] != resource.cloud_id {
-                return Err("invalid_response".into());
-            }
-            if rows[0]["Code"] != "200" && rows[0]["Code"] != 200 {
-                return Err(crate::cloud_api::transport::power_rejection(&rows[0])
-                    .unwrap_or("invalid_response")
-                    .into());
-            }
-        }
         value["RequestId"]
             .as_str()
             .filter(|s| !s.is_empty() && s.len() <= 256)

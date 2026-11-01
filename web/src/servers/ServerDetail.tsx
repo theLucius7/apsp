@@ -13,7 +13,7 @@ import ServerAssets from './ServerAssets'
 import { PluginSettings, ServerPlugins } from '../plugins'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ActivityIcon, ArrowLeftIcon, BoxIcon, CheckIcon, PlusIcon, ServerIcon } from 'lucide-react'
+import { ArrowLeftIcon, PlusIcon } from 'lucide-react'
 import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
 export type ServerDetailSection = 'overview' | 'assets' | 'agent' | 'plugins'
@@ -25,8 +25,8 @@ const descriptions: Record<ServerDetailSection, string> = {
   plugins: '在这台服务器上启用插件，并查看已启用插件的部署与运行状态。',
 }
 
-const detailRow = 'flex items-center justify-between gap-3'
-const empty = 'text-muted-foreground px-4 py-6 text-sm'
+const detailRow = 'flex items-baseline justify-between gap-3'
+const empty = 'text-muted-foreground px-4 py-4 text-[13px]'
 
 export default function ServerDetail({ id, section = 'overview' }: { id: number; section?: ServerDetailSection }) {
   const { t } = useI18n()
@@ -36,17 +36,16 @@ export default function ServerDetail({ id, section = 'overview' }: { id: number;
   const [editing, setEditing] = useState(false)
   const refresh = () => { server.reload(); setPluginRevision(value => value + 1) }
   const entry = server.data
-  const back = <Button variant="ghost" size="sm" className="mb-4 -ml-2" onClick={() => navigate('/servers')}><ArrowLeftIcon aria-hidden="true" />返回服务器列表</Button>
+  const back = <Button variant="ghost" size="icon-sm" className="-ml-1" aria-label="返回服务器列表" title="返回服务器列表" onClick={() => navigate('/servers')}><ArrowLeftIcon aria-hidden="true" /></Button>
   if (!entry) return <>
-    {back}
+    <PageHeader leading={back} title={`服务器 #${id}`} />
     <ErrorNotice message={server.error} retry={server.reload} />
     {server.loading && <Loading variant="panel" rows={5} />}
     {/* Plugin enablement only needs the server ID, so it stays usable while the server read fails. */}
     {section === 'plugins' && !server.loading && <PluginSettings key={`${id}-${pluginRevision}`} serverId={id} />}
   </>
   return <>
-    {back}
-    <PageHeader eyebrow={`服务器 #${entry.id}`} title={entry.name} description={descriptions[section]}>
+    <PageHeader leading={back} title={entry.name} description={descriptions[section]}>
       <Badge tone={entry.online ? 'good' : 'neutral'}>{t(entry.online ? '在线' : entry.device_public_key ? '离线' : '待接入')}</Badge>
       {entry.metrics_stale && <Badge tone="warm">指标过期</Badge>}
       <Refresh onClick={refresh} />
@@ -79,20 +78,24 @@ function Overview({ entry }: { entry: Server }) {
   return <>
     {!entry.online && <Notice>{entry.device_public_key ? '设备当前离线，以下指标是最近一次上报的数据。' : '设备尚未接入。点击“接入 / 升级”获取安装命令。'}</Notice>}
     {entry.metrics_stale && <Notice>指标过期，以下保留的是最后一次采集的历史数据。最后指标时间：{entry.metrics_sampled_at ? time(entry.metrics_sampled_at / 1000) : '未知'}。心跳独立更新，在线状态不代表指标仍在采集。</Notice>}
-    <div className="mb-6 grid grid-cols-2 gap-3 max-sm:gap-2 lg:grid-cols-4">
-      <Stat icon={ActivityIcon} label="处理器使用率" value={percent(metrics.cpu_percent)} note={metrics.load_1 === undefined ? '负载尚未上报' : `1 分钟负载 ${metrics.load_1.toFixed(2)}`} />
-      <Stat icon={ServerIcon} label="已用内存" value={bytes(metrics.memory_used)} note={info.memory_total === undefined ? '总量尚未上报' : `总计 ${bytes(info.memory_total)}`} />
-      <Stat icon={BoxIcon} label="已用磁盘" value={bytes(metrics.disk_used)} note={info.disk_total === undefined ? '总量尚未上报' : `总计 ${bytes(info.disk_total)}`} />
-      <Stat icon={CheckIcon} label="运行时间" value={uptime(metrics.uptime_secs)} note="自系统最近一次启动" />
+    <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+      <Stat label="处理器使用率" value={percent(metrics.cpu_percent)} note={metrics.load_1 === undefined ? '负载尚未上报' : `1 分钟负载 ${metrics.load_1.toFixed(2)}`} />
+      <Stat label="已用内存" value={bytes(metrics.memory_used)} note={info.memory_total === undefined ? '总量尚未上报' : `总计 ${bytes(info.memory_total)}`} />
+      <Stat label="已用磁盘" value={bytes(metrics.disk_used)} note={info.disk_total === undefined ? '总量尚未上报' : `总计 ${bytes(info.disk_total)}`} />
+      <Stat label="运行时间" value={uptime(metrics.uptime_secs)} />
     </div>
-    <Panel><PanelHeader><PanelTitle>连接概况</PanelTitle><ActivityIcon className="text-muted-foreground size-4" aria-hidden="true" /></PanelHeader><div className="p-4"><dl className="m-0 grid gap-4 p-0">
-      <div className={detailRow}><dt className="text-muted-foreground text-sm">TCP 连接数</dt><dd className="m-0 text-sm">{metrics.tcp_connections ?? '暂无数据'}</dd></div>
-      <div className={detailRow}><dt className="text-muted-foreground text-sm">UDP 连接数</dt><dd className="m-0 text-sm">{metrics.udp_connections ?? '暂无数据'}</dd></div>
-      <div className={detailRow}><dt className="text-muted-foreground text-sm">系统负载（1 / 5 / 15 分钟）</dt><dd className="m-0 text-sm">{[metrics.load_1, metrics.load_5, metrics.load_15].map(value => value?.toFixed(2) ?? '—').join(' / ')}</dd></div>
-      <div className={detailRow}><dt className="text-muted-foreground text-sm">面板期望版本</dt><dd className="m-0 text-sm">{entry.manifest_rev || '尚未发布'}</dd></div>
-    </dl></div></Panel>
-    <Panel><PanelHeader><PanelTitle>扩展系统指标</PanelTitle></PanelHeader>
-      <div className="p-4"><dl className="m-0 grid gap-4 p-0"><div className={detailRow}><dt className="text-muted-foreground text-sm">SWAP</dt><dd className="m-0 text-sm">{bytes(metrics.swap_used)} / {bytes(metrics.swap_total)}</dd></div><div className={detailRow}><dt className="text-muted-foreground text-sm">进程数</dt><dd className="m-0 text-sm">{metrics.processes ?? '暂无数据'}</dd></div></dl></div>
+    <div className="mb-4 grid min-w-0 items-start gap-4 xl:grid-cols-2">
+      <Panel className="mb-0"><PanelHeader className="min-h-10 py-1.5"><PanelTitle>连接概况</PanelTitle></PanelHeader><dl className="m-0 grid gap-2 p-3.5 text-[13px]">
+        <div className={detailRow}><dt className="text-muted-foreground">TCP 连接数</dt><dd className="m-0 tabular-nums">{metrics.tcp_connections ?? '暂无数据'}</dd></div>
+        <div className={detailRow}><dt className="text-muted-foreground">UDP 连接数</dt><dd className="m-0 tabular-nums">{metrics.udp_connections ?? '暂无数据'}</dd></div>
+        <div className={detailRow}><dt className="text-muted-foreground">系统负载（1 / 5 / 15 分钟）</dt><dd className="m-0 tabular-nums">{[metrics.load_1, metrics.load_5, metrics.load_15].map(value => value?.toFixed(2) ?? '—').join(' / ')}</dd></div>
+        <div className={detailRow}><dt className="text-muted-foreground">SWAP</dt><dd className="m-0 tabular-nums">{bytes(metrics.swap_used)} / {bytes(metrics.swap_total)}</dd></div>
+        <div className={detailRow}><dt className="text-muted-foreground">进程数</dt><dd className="m-0 tabular-nums">{metrics.processes ?? '暂无数据'}</dd></div>
+        <div className={detailRow}><dt className="text-muted-foreground">面板期望版本</dt><dd className="m-0 tabular-nums">{entry.manifest_rev || '尚未发布'}</dd></div>
+      </dl></Panel>
+      <Panel className="mb-0"><PanelHeader className="min-h-10 py-1.5"><PanelTitle>系统信息</PanelTitle></PanelHeader><dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-2.5 p-3.5 md:grid-cols-3">{rows.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-muted-foreground text-xs">{label}</dt><dd className="m-0 text-[13px] wrap-anywhere">{value ?? '暂无数据'}</dd></div>)}</dl></Panel>
+    </div>
+    <Panel><PanelHeader className="min-h-10 py-1.5"><PanelTitle>磁盘与 GPU</PanelTitle></PanelHeader>
       {metrics.disks?.length ? <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>磁盘 / 挂载点</TableHead><TableHead>读速率</TableHead><TableHead>写速率</TableHead><TableHead>读 / 写 IOPS</TableHead><TableHead>等待 / 利用率</TableHead></TableRow></TableHeader><TableBody>{metrics.disks.map((disk, index) => <TableRow key={`${disk.name}-${index}`}>
         <TableCell>{disk.name}<small className="text-muted-foreground mt-1 block text-xs">{disk.mount_point}</small></TableCell>
         <TableCell>{disk.read_bytes_per_sec == null ? '暂无数据' : `${bytes(disk.read_bytes_per_sec)}/秒`}</TableCell>
@@ -106,8 +109,7 @@ function Overview({ entry }: { entry: Server }) {
         <TableCell>{bytes(gpu.memory_used ?? undefined)} / {bytes(gpu.memory_total ?? undefined)}</TableCell>
       </TableRow>)}</TableBody></Table></div> : <div className={empty}>暂无 GPU 数据。</div>}
     </Panel>
-    <Panel><PanelHeader><PanelTitle>系统信息</PanelTitle><span className="text-muted-foreground text-xs">缺失字段显示暂无数据</span></PanelHeader><dl className="m-0 grid grid-cols-2 gap-x-6 gap-y-5 p-4 md:grid-cols-3">{rows.map(([label, value]) => <div key={label}><dt className="text-muted-foreground mb-1 text-xs">{label}</dt><dd className="m-0 text-sm wrap-anywhere">{value ?? '暂无数据'}</dd></div>)}</dl></Panel>
-    <Panel><PanelHeader><PanelTitle>网络接口</PanelTitle><span className="text-muted-foreground text-xs">服务器层面的累计计数</span></PanelHeader>
+    <Panel><PanelHeader className="min-h-10 py-1.5"><PanelTitle>网络接口</PanelTitle><span className="text-muted-foreground text-xs">服务器层面的累计计数</span></PanelHeader>
       {interfaces.length ? <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>接口</TableHead><TableHead>累计接收</TableHead><TableHead>累计发送</TableHead><TableHead>接收速率</TableHead><TableHead>发送速率</TableHead></TableRow></TableHeader><TableBody>{interfaces.map(([name, metric]) => <TableRow key={name}>
         <TableCell className="font-mono text-xs">{name}</TableCell>
         <TableCell>{bytes(metric.received_bytes)}</TableCell>

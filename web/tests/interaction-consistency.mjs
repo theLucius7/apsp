@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
 import { installControlCenterFixtures } from './control-center-fixtures.mjs'
+import { chooseLanguage } from './shell-navigation.mjs'
 
 // TEST_ONLY: after rebuilding web/dist, run `node web/tests/interaction-consistency.mjs`.
 // Controls that look alike behave alike: a language picked in the header is kept
@@ -98,13 +99,12 @@ try {
     try {
       await page.goto(`${origin}/#/servers`)
       await page.getByRole('heading', { name: '服务器列表', exact: true }).waitFor()
-      const language = page.locator('[data-slot=topbar] select')
-      await language.selectOption('en-US')
+      await chooseLanguage(page, 'English')
       await until(() => writes.some(write => write.path === 'appearance'), 'The header choice is saved')
       assert.deepEqual(writes.find(write => write.path === 'appearance').body, { value: { theme: 'light', density: 'comfortable', locale: 'en-US' }, expected_revision: 1 })
       await page.getByRole('heading', { name: 'Server list', exact: true }).waitFor()
       await page.waitForTimeout(600)
-      assert.equal(await language.inputValue(), 'en-US', 'The saved Chinese preference does not undo the header choice')
+      assert.equal(await page.evaluate(() => document.documentElement.lang), 'en-US', 'The saved Chinese preference does not undo the header choice')
       assert.equal((await html(page)).lang, 'en-US')
       assert.deepEqual(errors, [])
     } finally { await page.close() }
@@ -113,7 +113,7 @@ try {
     try {
       await next.page.goto(`${origin}/#/servers`)
       await next.page.getByRole('heading', { name: 'Server list', exact: true }).waitFor()
-      assert.equal(await next.page.locator('[data-slot=topbar] select').inputValue(), 'en-US')
+      assert.equal(await next.page.evaluate(() => document.documentElement.lang), 'en-US')
       assert.deepEqual(next.writes, [], 'Applying the saved language writes nothing')
       assert.deepEqual(next.errors, [])
     } finally { await next.page.close() }
@@ -132,16 +132,10 @@ try {
       assert.equal((await html(page)).density, 'compact')
       assert.equal(await backgroundLuminance(page) < 0.2, true, 'The console background is dark')
       await page.evaluate(() => { location.hash = '#/dashboard' })
-      const toggle = page.getByRole('button', { name: '切换深色主题', exact: true })
-      await toggle.waitFor()
-      const { theme, density } = await html(page)
-      assert.deepEqual({ theme, density }, { theme: 'light', density: 'comfortable' }, 'The dashboard owns the document theme and density')
-      assert.equal(await backgroundLuminance(page) > 0.8, true, 'The dashboard background is light')
-      await toggle.click()
-      await page.getByRole('button', { name: '切换浅色主题', exact: true }).waitFor()
-      assert.equal((await html(page)).theme, 'dark')
-      await page.getByRole('button', { name: '切换浅色主题', exact: true }).click()
-      await until(async () => (await html(page)).theme === 'light', 'The dashboard switches back to light')
+      // Signed in, the board is one more console page and keeps the console's appearance.
+      await page.getByRole('region', { name: '服务器总览', exact: true }).waitFor()
+      assert.deepEqual(await html(page).then(({ theme, density }) => ({ theme, density })), { theme: 'dark', density: 'compact' })
+      assert.equal(await page.getByRole('button', { name: /切换(深|浅)色主题/ }).count(), 0)
       await page.evaluate(() => { location.hash = '#/servers' })
       await page.getByRole('heading', { name: '服务器列表', exact: true }).waitFor()
       await until(async () => (await html(page)).theme === 'dark' && (await html(page)).density === 'compact', 'Returning to the console restores its preference')
@@ -158,7 +152,7 @@ try {
       await page.goto(`${origin}/#/servers`)
       await page.getByRole('row').filter({ hasText: 'TEST_ONLY 服务器 1' }).waitFor()
       const palette = page.getByRole('dialog', { name: '搜索或跳转' })
-      await page.locator('[data-slot=topbar]').getByRole('button', { name: '全局搜索', exact: true }).click()
+      await page.getByRole('button', { name: '全局搜索', exact: true }).first().click()
       await palette.waitFor(); await page.keyboard.press('Escape'); await palette.waitFor({ state: 'hidden' })
       await until(async () => (await focused(page)).slot === 'global-search', 'The palette returns focus to its button')
       await addServer(page).focus(); await page.keyboard.press('Control+k')
@@ -229,16 +223,17 @@ try {
       await page.getByRole('heading', { name: '服务器列表', exact: true }).waitFor()
       const button = page.getByRole('button', { name: '菜单', exact: true }), menu = page.locator('#admin-navigation')
       const expanded = async () => await button.getAttribute('aria-expanded') === 'true'
-      await button.click(); await menu.getByRole('link', { name: '服务器列表', exact: true }).waitFor()
-      await menu.getByRole('link', { name: '告警设置', exact: true }).focus()
+      await button.click(); await menu.getByRole('link', { name: '服务器', exact: true }).waitFor()
+      await menu.getByRole('link', { name: '告警', exact: true }).focus()
       await page.keyboard.press('Escape')
       await until(async () => !await expanded(), 'Escape closes the menu')
-      await until(async () => (await focused(page)).text?.includes('菜单'), 'Escape returns focus to the menu button')
+      await until(() => page.evaluate(() => document.activeElement?.getAttribute('aria-label') === '菜单'), 'Escape returns focus to the menu button')
       await button.click(); await until(expanded, 'The menu opens again')
-      await page.getByRole('heading', { name: '服务器列表', exact: true }).click()
+      // The menu covers the top of the page, so press what is left below it.
+      await page.mouse.click(195, page.viewportSize().height - 4)
       await until(async () => !await expanded(), 'A press outside closes the menu')
       await button.click(); await until(expanded, 'The menu opens once more')
-      await menu.getByText(/当前账号/).click()
+      await menu.locator('[data-slot=account-menu]').click()
       await page.waitForTimeout(150)
       assert.equal(await expanded(), true, 'A press inside the menu keeps it open')
       assert.deepEqual(errors, [])

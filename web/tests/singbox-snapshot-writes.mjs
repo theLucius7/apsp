@@ -278,7 +278,7 @@ try {
     })
     await fixture('users', async control => {
       const { page, writes } = control
-      await page.getByRole('button', { name: '订阅链接', exact: true }).click(); await page.getByRole('button', { name: '重置订阅链接', exact: true }).click()
+      await page.getByRole('button', { name: '订阅详情', exact: true }).click(); await page.getByRole('button', { name: '重置订阅链接', exact: true }).click()
       const button = page.getByRole('dialog').getByRole('button', { name: '确认重置', exact: true })
       await blockAndRecover(control, `${prefix}/users/1/entitlement`, sameEvent => forceClick(button, sameEvent), () => button.click())
       assert.equal(writes[0].method, 'POST'); assert.equal(writes[0].path, `${prefix}/users/1/subscription/reset`)

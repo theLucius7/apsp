@@ -79,6 +79,8 @@ struct AccountWrite {
     site: String,
     enabled: bool,
     auto_enabled: bool,
+    billing_enabled: Option<bool>,
+    balance_enabled: Option<bool>,
     limit_gb: i64,
     access_key_id: Option<String>,
     access_key_secret: Option<String>,
@@ -152,6 +154,11 @@ async fn create_account(
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     auth::require_admin(&state, &headers).await?;
     input.validate()?;
+    let billing_enabled = input.billing_enabled.unwrap_or(false);
+    let balance_enabled = input.balance_enabled.unwrap_or(false);
+    if input.auto_enabled && !billing_enabled {
+        return Err(ApiError::BadRequest("自动降速需要先启用账单查询".into()));
+    }
     let (key, secret, credential) = input.credentials(None)?;
     validate_reference(&state, credential).await?;
     let id = Uuid::new_v4();
@@ -166,8 +173,8 @@ async fn create_account(
     if count >= 8 {
         return Err(ApiError::Conflict("最多登记 8 个云账号".into()));
     }
-    sqlx::query("INSERT INTO alicloud_accounts(id,name,site,access_key_id,access_key_secret,enabled,auto_enabled,limit_gb,credential_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)")
-        .bind(id).bind(input.name.trim()).bind(input.site).bind(key).bind(secret).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).bind(credential).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO alicloud_accounts(id,name,site,access_key_id,access_key_secret,enabled,auto_enabled,limit_gb,credential_id,billing_enabled,balance_enabled) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)")
+        .bind(id).bind(input.name.trim()).bind(input.site).bind(key).bind(secret).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).bind(credential).bind(billing_enabled).bind(balance_enabled).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(json!({"id":id}))))
 }
@@ -183,6 +190,17 @@ async fn update_account(
     let previous = account_on(&mut tx, id).await?;
     if input.revision != Some(previous.revision) {
         return Err(ApiError::Conflict("账号配置已变化，请刷新后重试".into()));
+    }
+    let billing_enabled = input.billing_enabled.unwrap_or(previous.billing_enabled);
+    let balance_enabled = input.balance_enabled.unwrap_or(previous.balance_enabled);
+    if !billing_enabled {
+        let uses_bills: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM alicloud_resources WHERE account_id=$1 AND NOT archived AND power_policy->>'enabled'='true' AND power_policy->>'threshold_action' IN ('notify','stop'))")
+            .bind(id).fetch_one(&mut *tx).await?;
+        if input.auto_enabled || uses_bills {
+            return Err(ApiError::BadRequest(
+                "请先关闭自动降速及资源账单阈值策略，再关闭账单查询".into(),
+            ));
+        }
     }
     let (key, secret, credential) = input.credentials(Some(&previous))?;
     if credential != previous.credential_id {
@@ -203,8 +221,8 @@ async fn update_account(
         }
     }
     // Any edit invalidates queued authorization and cached billing evidence.
-    sqlx::query("UPDATE alicloud_accounts SET name=$2,site=$3,access_key_id=$4,access_key_secret=$5,enabled=$6,auto_enabled=$7,limit_gb=$8,credential_id=$9,revision=revision+1,bill=NULL,traffic=NULL,traffic_error=NULL,error_code=NULL,next_run_at=0,balance=NULL,balance_error=NULL,balance_next_at=0 WHERE id=$1")
-        .bind(id).bind(input.name.trim()).bind(input.site).bind(key).bind(secret).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).bind(credential).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_accounts SET name=$2,site=$3,access_key_id=$4,access_key_secret=$5,enabled=$6,auto_enabled=$7,limit_gb=$8,credential_id=$9,billing_enabled=$10,balance_enabled=$11,revision=revision+1,bill=NULL,traffic=NULL,traffic_error=NULL,error_code=NULL,next_run_at=0,balance=NULL,balance_error=NULL,balance_next_at=0 WHERE id=$1")
+        .bind(id).bind(input.name.trim()).bind(input.site).bind(key).bind(secret).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).bind(credential).bind(billing_enabled).bind(balance_enabled).execute(&mut *tx).await?;
     sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id IN (SELECT id FROM alicloud_resources WHERE account_id=$1) AND status IN ('preview','queued')")
         .bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id IN (SELECT id FROM alicloud_resources WHERE account_id=$1) AND status IN ('preview','queued')").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;

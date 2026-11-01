@@ -90,7 +90,7 @@ async fn previews_and_downloads_use_the_same_applied_seven_protocol_snapshot(
     let ready = preview(&panel, &cookie, uid, "singbox").await?;
     assert_eq!(ready["status"], "ready");
     assert_eq!(ready["granted_nodes"], 7);
-    assert_eq!(ready["available_formats"], json!(["singbox"]));
+    assert_eq!(ready["available_formats"], json!(["singbox", "clash"]));
     assert_eq!(ready["ready_nodes"].as_array().unwrap().len(), 7);
     assert_eq!(ready["subscription_url"], user["subscription_url"]);
     let content = ready["content"].as_str().unwrap();
@@ -164,7 +164,10 @@ async fn paused_and_expired_entitlements_cannot_return_preview_credentials(
         .execute(&pool)
         .await?;
     let ready = preview(&panel, &cookie, uid, "singbox").await?;
-    assert_eq!(ready["available_formats"], json!(["singbox", "links"]));
+    assert_eq!(
+        ready["available_formats"],
+        json!(["singbox", "clash", "links"])
+    );
     panel
         .admin(
             Method::PATCH,

@@ -75,7 +75,7 @@ try {
       pending.push(task); return task
     })
     // Open modal dialogs hide the page behind them from the accessibility tree.
-    const portalPanel = page.locator('section[data-slot=panel]').filter({ has: page.getByRole('heading', { name: '用户 Passkey 入口', exact: true, includeHidden: true }) })
+    const portalPanel = page.locator('section[data-slot=panel]').filter({ has: page.getByRole('heading', { name: '登录地址', exact: true, includeHidden: true }) })
     const pageRefresh = page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true })
     const portalRefresh = portalPanel.getByRole('button', { name: '刷新', exact: true, includeHidden: true })
     const reread = async (path = portalPath) => {

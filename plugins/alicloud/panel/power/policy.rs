@@ -52,7 +52,7 @@ impl Policy {
         Ok(())
     }
     pub fn exceeded(&self, account: &Account, now: i64) -> Option<bool> {
-        if !account.enabled || account.error_code.is_some() {
+        if !account.enabled || !account.billing_enabled || account.error_code.is_some() {
             return None;
         }
         let bill = account.bill.as_ref()?;

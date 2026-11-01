@@ -11,13 +11,14 @@ use uuid::Uuid;
 
 mod attached_eip;
 mod billing_cases;
+mod least_privilege;
 
 const KEY: &str = "TEST_ONLY_CLOUD_ID";
 const SECRET: &str = "TEST_ONLY_CLOUD_SECRET";
 async fn seed(pool: &PgPool, kind: &str) -> (Uuid, Uuid) {
     let account = Uuid::new_v4();
     let resource = Uuid::new_v4();
-    sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret) VALUES($1,'测试账号',$2,$3)")
+    sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret,billing_enabled,balance_enabled) VALUES($1,'测试账号',$2,$3,true,true)")
         .bind(account).bind(KEY).bind(SECRET).execute(pool).await.unwrap();
     sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id) VALUES($1,$2,'测试资源',$3,'cn-hangzhou',$4)")
         .bind(resource).bind(account).bind(kind).bind(if kind=="ecs"{"i-testonly"}else{"eip-testonly"}).execute(pool).await.unwrap();

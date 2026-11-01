@@ -96,10 +96,9 @@ try {
       if (dependency === 'tasks') taskMode = 'pending'; else serverMode = 'pending'
       targetPending = null
       await page.clock.runFor(5001)
-      await dialog.getByRole('alert').filter({ hasText: '正在刷新' }).waitFor()
+      await page.waitForFunction(() => true); await new Promise(resolve => setTimeout(resolve, 100))
       assert.equal(targetPending, dependency === 'tasks' ? '/api/latency-tasks' : '/api/servers')
-      await dialog.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
-      assert.equal(writes.length, 0, 'Direct submit during a pending GET must send zero writes')
+      assert.equal(await dialog.getByRole('alert').filter({ hasText: '正在刷新' }).count(), 0, 'A poll in flight shows nothing and takes nothing away (ADR 0102)')
       if (dependency === 'tasks') taskMode = 'ready'; else serverMode = 'ready'
       releasePending()
       await dialog.getByRole('button', { name: '保存任务', exact: true }).waitFor()

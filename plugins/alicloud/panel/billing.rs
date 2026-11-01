@@ -167,6 +167,7 @@ pub(super) async fn query(client: &Aliyun, account: &Account, now: i64) -> Resul
 
 pub(super) fn exceeded(account: &Account, now: i64) -> bool {
     account.enabled
+        && account.billing_enabled
         && account.auto_enabled
         && account.error_code.is_none()
         && account.bill.as_ref().is_some_and(|bill| {

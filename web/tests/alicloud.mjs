@@ -44,6 +44,8 @@ try {
     }
     if (path === '/api/plugins/alicloud/accounts' && method === 'POST') {
       assert.equal(body.auto_enabled, false)
+      assert.equal(body.billing_enabled, false)
+      assert.equal(body.balance_enabled, false)
       assert.equal(body.credential_id, credentialId)
       for (const field of ['access_key_id', 'access_key_secret', 'legacy_credentials']) assert.equal(Object.hasOwn(body, field), false, 'New cloud accounts contain only the encrypted credential reference')
       overview.accounts.push({ ...body, access_key_id: undefined, access_key_secret: undefined, id: 'account', revision: 1, balance: { available: '1234.5600', currency: 'USD', queried_at: now }, balance_error: null, error_code: null, traffic_error: null, next_run_at: now + 300, traffic: { queried_at: now, mainland_bytes: '1073741824', overseas_bytes: '2147483648', regions: [{ region: 'cn-hangzhou', bytes: '1073741824' }] }, bill: { month, queried_at: now, usage_micro_gb: 10000000, rows: [{ instance_id: 'test', region: '测试地域', billing_item: '公网流量', product_type: 'cdt', usage: '10', unit: 'GB', amount: '0.00', currency: 'CNY' }] } })
@@ -112,15 +114,29 @@ try {
   assert.equal(await dialog.getByLabel(/^凭据来源/).inputValue(), 'center')
   assert.equal(await dialog.getByLabel(/访问密钥/).count(), 0)
   assert.equal(await dialog.getByLabel('达到阈值时').isChecked(), false)
+  assert.equal(await dialog.getByLabel('达到阈值时').isEnabled(), false)
+  assert.equal(await dialog.getByLabel(/^查询账户余额/).isChecked(), false)
+  assert.equal(await dialog.getByLabel(/^查询 CDT 与实例账单/).isChecked(), false)
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
   await page.getByRole('heading', { name: '测试云账号' }).waitFor()
   assert.equal((await page.locator('body').innerText()).includes('TEST_ONLY_SECRET'), false)
+  assert.equal(await page.getByText('1234.5600 USD', { exact: true }).count(), 0)
   await page.getByRole('button', { name: '编辑账号与策略' }).click()
   dialog = page.getByRole('dialog')
   assert.equal(await dialog.getByLabel(/^云凭据标识/).inputValue(), credentialId)
   assert.equal(await dialog.getByLabel(/访问密钥/).count(), 0)
+  await dialog.getByLabel(/^查询账户余额/).check()
+  await dialog.getByLabel(/^查询 CDT 与实例账单/).check()
+  await dialog.getByLabel('达到阈值时').check()
+  await dialog.getByLabel(/^查询 CDT 与实例账单/).uncheck()
+  assert.equal(await dialog.getByLabel('达到阈值时').isChecked(), false)
+  assert.equal(await dialog.getByLabel('达到阈值时').isEnabled(), false)
+  assert.equal(await dialog.getByLabel(/^查询账户余额/).isChecked(), true)
+  if (screenshots) await page.screenshot({ path: `${screenshots}/alicloud-ram-${width}.png`, fullPage: true })
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
+  assert.equal(overview.accounts[0].balance_enabled, true)
+  assert.equal(overview.accounts[0].billing_enabled, false)
   // Re-read an existing legacy account, retain both stored credentials without
   // exposing them, then explicitly move it back to the encrypted reference.
   overview.accounts[0].credential_id = null; overview.accounts[0].revision++

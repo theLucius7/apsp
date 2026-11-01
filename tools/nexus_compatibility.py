@@ -239,7 +239,7 @@ $legacy = [];
 foreach ($seen as $uid => $ips) {
     $legacy[(string) $uid] = array_slice(array_keys($ips), 0, 64);
 }
-// Status of visible nodes for the member line catalogue (ADR 0101): online
+// Status of visible nodes for the member line catalogue (ADR 0106): online
 // state, load percentages and the three carrier pings the legacy member page
 // shows. No endpoint address or monitor identifier is returned. A failure here
 // never blocks the device exchange above; the catalogue then lets the status lapse.
@@ -366,7 +366,7 @@ def exchange_devices(config, connection):
     managed = config.get('_device_managed', [])
     # One legacy call publishes apsp-admitted addresses and reads the legacy
     # nodes' devices; every 30 s it also reads the status the member line
-    # catalogue shows (ADR 0101).
+    # catalogue shows (ADR 0106).
     status_due = time.monotonic() - config.get('_last_node_status', float('-inf')) >= 30
     legacy, nodes, failure = {}, None, None
     if managed or status_due:

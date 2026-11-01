@@ -223,7 +223,7 @@ try {
       await sourceRegion.getByRole('button', { name: '加入节点库', exact: true }).click(); await sourceRegion.getByRole('button', { name: '移出节点库', exact: true }).waitFor()
       assert.equal(writes.at(-1).body.metadata_revision, 1, 'Explicit new confirmation uses the current metadata revision')
       await sourceRegion.getByRole('button', { name: '设置与更新', exact: true }).click(); await dialog.getByLabel('来源名称').fill('导入测试改名'); await dialog.getByRole('button', { name: '保存并解析更新', exact: true }).click(); await dialog.waitFor({ state: 'hidden' }); assert.equal(source.refresh_interval_seconds, 1800)
-      assert.equal(sources.length, 1); assert.equal(await page.evaluate(() => Object.values(localStorage).some(value => value.includes('TEST_ONLY'))), false)
+      assert.equal(sources.length, 1); assert.equal(await page.evaluate(() => Object.entries(localStorage).some(([key, value]) => key !== 'apsp-shell-actor' && value.includes('TEST_ONLY'))), false)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `overflow at ${width}`)
       assert.deepEqual(errors, [])
       if (process.env.APSP_UI_SCREENSHOT_DIR) { await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `node-catalog-${width}.png`), fullPage: true }) }

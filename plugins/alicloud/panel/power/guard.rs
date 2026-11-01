@@ -49,6 +49,8 @@ pub(in super::super) struct Observation {
     pub max_usage_bytes: u64,
     pub max_jump_bytes: u64,
     pub queried_at: i64,
+    #[serde(default)]
+    pub cdt_observed: bool,
 }
 
 pub(super) fn key_digest(key: &str) -> String {
@@ -79,6 +81,7 @@ pub(super) fn observe(
 ) -> Result<Observation, Failure> {
     let cycle = billing::month(now);
     let (mut usage, mut jump) = (raw_bytes, 0);
+    let mut cdt_observed = raw_bytes > 0;
     if let Some(old) = previous {
         if !valid_cycle(&old.billing_cycle)
             || old.region != resource.region
@@ -91,6 +94,9 @@ pub(super) fn observe(
         {
             return Err("cdt_state_mismatch".into());
         }
+        // CDT cannot be disabled after activation. Keep evidence of a positive
+        // live reading across month resets; imported history is not such evidence.
+        cdt_observed |= old.queried_at > 0 && (old.cdt_observed || old.max_usage_bytes > 0);
         if old.billing_cycle == cycle {
             usage = usage.max(old.max_usage_bytes);
             jump = old
@@ -99,6 +105,9 @@ pub(super) fn observe(
         } else if old.max_usage_bytes > 0 && raw_bytes >= old.max_usage_bytes {
             return Err("cdt_reset_pending".into());
         }
+    }
+    if raw_bytes == 0 && !cdt_observed {
+        return Err("cdt_not_enabled".into());
     }
     if usage > MAX_BYTES {
         return Err("invalid_response".into());
@@ -112,6 +121,7 @@ pub(super) fn observe(
         max_usage_bytes: usage,
         max_jump_bytes: jump,
         queried_at: now,
+        cdt_observed,
     })
 }
 

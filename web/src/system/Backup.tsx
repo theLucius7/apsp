@@ -27,7 +27,7 @@ export default function Backup() {
     })()
   }
   return <div data-slot="backup-page" className="grid min-w-0 grid-cols-1 gap-4 *:min-w-0" aria-busy={busy}>
-    <PageHeader eyebrow="系统" title="备份与恢复" description="登记面板的完整恢复点、按计划自动备份，并导入恢复演练报告。面板不能启动时，用独立恢复工具在本机恢复。">
+    <PageHeader title="备份与恢复" description="登记面板的完整恢复点、按计划自动备份，并导入恢复演练报告。面板不能启动时，用独立恢复工具在本机恢复。">
       <Button variant="outline" disabled={busy} onClick={() => setVersion(value => value + 1)}>刷新状态</Button>
     </PageHeader>
     <ErrorNotice message={error} />

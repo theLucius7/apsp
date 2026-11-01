@@ -17,6 +17,12 @@ use sqlx::Row;
 use std::net::SocketAddr;
 use uuid::Uuid;
 
+/// The page this user signs in on: their own hostname when they have one.
+async fn login_base(state: &AppState, user: i64) -> ApiResult<String> {
+    let own = super::super::subscription_hosts::login_base(&state.pool, user).await?;
+    Ok(own.unwrap_or_else(|| format!("{}/", state.config.public_url)))
+}
+
 pub(super) async fn status(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -26,8 +32,9 @@ pub(super) async fn status(
     let row = sqlx::query("SELECT p.account_id,p.activation_expires_at,(SELECT count(*) FROM passkey_credentials c WHERE c.account_id=p.account_id) AS keys FROM users u LEFT JOIN singbox_portal_accounts p ON p.user_id=u.id WHERE u.id=$1 AND u.deleted_at IS NULL")
         .bind(id).fetch_optional(&state.pool).await?.ok_or(ApiError::NotFound)?;
     let account: Option<Uuid> = row.try_get("account_id")?;
+    let base = login_base(&state, id).await?;
     Ok(keys::reply(
-        json!({"configuration":state.passkeys.info(),"keys":row.try_get::<i64,_>("keys")?,"url":account.map(|id| format!("{}/#/plugins/sing-box/account/{id}",state.config.public_url)),"activation_expires_at":row.try_get::<Option<i64>,_>("activation_expires_at")?.filter(|time| *time>now_timestamp())}),
+        json!({"configuration":state.passkeys.info(),"keys":row.try_get::<i64,_>("keys")?,"url":account.map(|id| format!("{base}#/plugins/sing-box/account/{id}")),"activation_expires_at":row.try_get::<Option<i64>,_>("activation_expires_at")?.filter(|time| *time>now_timestamp())}),
     ))
 }
 
@@ -118,7 +125,8 @@ pub(super) async fn invitation(
         .bind(account).bind(hash_token(&token)).bind(expiry).execute(&mut *tx).await?;
     super::super::operations_workflows::event(&mut tx,Some(administrator),Some(id),"security_portal_invitation",json!({"reset_existing_keys":input.reset,"password_cleared":password_cleared,"expires_at":expiry,"subscription_token_used":false})).await?;
     tx.commit().await?;
+    let base = login_base(&state, id).await?;
     Ok(keys::reply(
-        json!({"url":format!("{}/#/plugins/sing-box/account/{account}?activate={token}",state.config.public_url),"expires_at":expiry}),
+        json!({"url":format!("{base}#/plugins/sing-box/account/{account}?activate={token}"),"expires_at":expiry}),
     ))
 }

@@ -4,6 +4,10 @@ import { LazyMotion, MotionConfig, domMax } from 'motion/react'
 import App from './App'
 import { I18nProvider } from './i18n'
 import './index.css'
+import { installConnectionMonitor } from './stores/connection'
+import { useSessionStore } from './stores/session'
+
+installConnectionMonitor(() => useSessionStore.getState().authenticated === true)
 
 // Animation features ship with the first load (in the eager "motion" vendor
 // chunk): an animation runtime that arrives late or fails to load must never

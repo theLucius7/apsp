@@ -14,6 +14,7 @@ export function CdtGuardFields({ value, onChange }: { value: CdtGuardConfig; onC
       <Field label="CDT 停机线（GiB）"><Input required type="number" min={0.001} max={1000000} step="any" value={value.threshold_bytes / GIB} onChange={e => onChange({ ...value, threshold_bytes: Math.round(Number(e.target.value) * GIB) })} /></Field>
       <Field label="突增检测阈值（GiB）"><Input required type="number" min={0.001} max={1000000} step="any" value={value.jump_bytes / GIB} onChange={e => onChange({ ...value, jump_bytes: Math.round(Number(e.target.value) * GIB) })} /></Field>
     </div>
+    <p className="text-muted-foreground text-xs leading-relaxed">首次零用量无法证明已开通 CDT，需在云控制台核对。曾查询到有效非零用量后，可接受完整零读数进行月度重置；空响应或缺少目标额度池仍暂停操作。</p>
     <label className="my-4 flex items-start gap-2.5 text-sm leading-relaxed"><Checkbox checked={value.auto_start} onCheckedChange={checked => onChange({ ...value, auto_start: checked === true })} className="mt-0.5" />用量低于停机线时自动开机</label>
     <p className="text-muted-foreground mt-3 text-xs leading-relaxed">每分钟读取账号所属中国内地或海外额度池的全部 BGP 用量，包含不同地域及 IPv4、IPv6 产品。按北京时间自然月保留最高用量；单次突增达到阈值后，本月最大突增作为延迟上报缓冲，叠加到用量后判断停机线。</p>
     <p className="text-muted-foreground mt-3 text-xs leading-relaxed">达到停机线时正常关机并请求节省停机；低于停机线时可自动启动普通或抢占式实例。手动停机暂停自动开机。跨月等待用量重置，异常或不完整数据保持实例原状。CDT 接口没有可信账期时间戳，缓冲无法保证零超额费用。</p>

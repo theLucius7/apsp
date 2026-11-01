@@ -35,6 +35,16 @@ pub struct Service {
 
 impl Service {
     pub fn new(origin: &str) -> Self {
+        Self::build(origin, None)
+    }
+
+    /// A service for another origin under `rp_id`, which must be that origin's host or
+    /// a parent of it. Passkeys created this way survive the origin changing within it.
+    pub fn scoped(origin: &str, rp_id: &str) -> Self {
+        Self::build(origin, Some(rp_id))
+    }
+
+    fn build(origin: &str, rp_id: Option<&str>) -> Self {
         let build = || -> anyhow::Result<Webauthn> {
             let url = Url::parse(origin)?;
             let host = url
@@ -45,7 +55,7 @@ impl Service {
                     && (url.scheme() == "https" || (url.scheme() == "http" && host == "localhost")),
                 "secure DNS origin required"
             );
-            Ok(WebauthnBuilder::new(host, &url)?
+            Ok(WebauthnBuilder::new(rp_id.unwrap_or(host), &url)?
                 .rp_name("apsp")
                 .allow_subdomains(false)
                 .allow_any_port(false)

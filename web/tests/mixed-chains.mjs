@@ -4,6 +4,7 @@ import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
+import { openPage } from './shell-navigation.mjs'
 
 const catalogView = resources => resources.map(resource => ({ ...resource, original_name: resource.name, tags: [], note: '', sort_order: resource.id, revision: '1'.repeat(64), metadata_revision: 0 }))
 // TEST_ONLY read-only contract for the newly mounted UserDiagnostics resource.
@@ -23,7 +24,7 @@ async function openNav(page, name) {
   // The viewport decides whether the menu button is in use: a visibility check does
   // not wait, and a closing dialog briefly hides the page from assistive technology.
   if (page.viewportSize().width < 768 && await menu.getAttribute('aria-expanded') !== 'true') await menu.click()
-  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name, exact: true }).click()
+  await openPage(page, name)
 }
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const server = createServer(async (request, response) => {

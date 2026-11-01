@@ -223,7 +223,7 @@ async fn assignment_is_atomic_redacted_revision_checked_and_revocable(pool: PgPo
     ensure!(preview["external_nodes"] == 1 && preview["managed_nodes"] == 0);
     ensure!(
         preview["ready_nodes"][0]["kind"] == "external"
-            && preview["available_formats"] == json!(["singbox"])
+            && preview["available_formats"] == json!(["singbox", "clash"])
     );
     let cleared: Value = put(&panel, &cookie, uid, json!({"revision":1,"accesses":[]}))
         .await?

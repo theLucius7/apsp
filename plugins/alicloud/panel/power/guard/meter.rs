@@ -47,12 +47,13 @@ fn complete(value: &Value, count: usize) -> Result<(), Failure> {
 pub(super) fn traffic(value: &Value, region: &str) -> Result<u64, Failure> {
     let rows = value["TrafficDetails"]
         .as_array()
-        .filter(|v| v.len() <= 256)
+        .filter(|v| !v.is_empty() && v.len() <= 256)
         .ok_or(Failure::from("invalid_response"))?;
     complete(value, rows.len())?;
     let target_pool = pool(region)?;
     let mut seen = BTreeSet::new();
     let mut total = 0_u64;
+    let mut pool_seen = false;
     for row in rows {
         let region = row["BusinessRegionId"]
             .as_str()
@@ -76,6 +77,7 @@ pub(super) fn traffic(value: &Value, region: &str) -> Result<u64, Failure> {
             }
             continue;
         }
+        pool_seen = true;
         let products = row["ProductTrafficDetails"]
             .as_array()
             .filter(|v| v.len() <= 256)
@@ -102,6 +104,9 @@ pub(super) fn traffic(value: &Value, region: &str) -> Result<u64, Failure> {
             .filter(|v| *v <= MAX_BYTES)
             .ok_or(Failure::from("invalid_response"))?;
     }
+    if !pool_seen {
+        return Err("cdt_not_enabled".into());
+    }
     Ok(total)
 }
 
@@ -123,35 +128,6 @@ impl Cloud {
             .await?;
         // BusinessRegionId is deliberately absent: BGP allowance is shared by pool.
         let usage = traffic(&value, region)?;
-        if usage == 0 {
-            let switched = self
-                .cdt
-                .call(
-                    &resolved.access_key_id,
-                    &resolved.access_key_secret,
-                    "ListSwitchedCdtProducts",
-                    &[
-                        ("RegionId", region.into()),
-                        ("BusinessRegionId", region.into()),
-                    ],
-                )
-                .await?;
-            let products = switched["CdtProducts"]
-                .as_array()
-                .filter(|v| v.len() <= 256)
-                .ok_or(Failure::from("invalid_response"))?;
-            complete(&switched, products.len())?;
-            if !products.iter().any(|p| {
-                p["BusinessRegionId"] == region
-                    && p["CdtType"] == "INTERNET"
-                    && matches!(
-                        p["BillingType"].as_str(),
-                        Some("PayByTraffic" | "PayByDominantTraffic")
-                    )
-            }) {
-                return Err("cdt_not_enabled".into());
-            }
-        }
         Ok((usage, key_digest(&resolved.access_key_id)))
     }
 }

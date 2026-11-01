@@ -175,3 +175,101 @@ async fn supplied_delete_revisions_reject_stale_resource_and_account_views(
     }
     Ok(())
 }
+
+#[sqlx::test]
+async fn bss_opt_ins_round_trip_preserve_omitted_fields_and_protect_billing_policies(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let mut body = json!({"name":"最小权限","site":"china","enabled":false,"auto_enabled":false,"limit_gb":100,"access_key_id":KEY,"access_key_secret":SECRET,"legacy_credentials":true});
+    let created: Value = panel
+        .admin(
+            Method::POST,
+            "/api/plugins/alicloud/accounts",
+            &cookie,
+            Some(body.clone()),
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let id = created["id"].as_str().unwrap();
+    let path = format!("/api/plugins/alicloud/accounts/{id}");
+    let flags: (bool, bool) = sqlx::query_as(
+        "SELECT billing_enabled,balance_enabled FROM alicloud_accounts WHERE id=$1::text::uuid",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(flags, (false, false));
+    body["revision"] = 1.into();
+    body["balance_enabled"] = true.into();
+    assert_eq!(
+        panel
+            .admin(Method::PATCH, &path, &cookie, Some(body.clone()))
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    body["revision"] = 2.into();
+    body.as_object_mut().unwrap().remove("balance_enabled");
+    assert_eq!(
+        panel
+            .admin(Method::PATCH, &path, &cookie, Some(body.clone()))
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    let overview: Value = panel
+        .admin(Method::GET, "/api/plugins/alicloud", &cookie, None)
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(overview["accounts"][0]["balance_enabled"], true);
+    assert_eq!(overview["accounts"][0]["billing_enabled"], false);
+    body["revision"] = 3.into();
+    body["auto_enabled"] = true.into();
+    assert_eq!(
+        panel
+            .admin(Method::PATCH, &path, &cookie, Some(body.clone()))
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    body["billing_enabled"] = true.into();
+    assert_eq!(
+        panel
+            .admin(Method::PATCH, &path, &cookie, Some(body.clone()))
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    body["revision"] = 4.into();
+    body["billing_enabled"] = false.into();
+    assert_eq!(
+        panel
+            .admin(Method::PATCH, &path, &cookie, Some(body.clone()))
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    body["auto_enabled"] = false.into();
+    body["balance_enabled"] = false.into();
+    assert_eq!(
+        panel
+            .admin(Method::PATCH, &path, &cookie, Some(body))
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    let flags: (bool, bool) = sqlx::query_as(
+        "SELECT billing_enabled,balance_enabled FROM alicloud_accounts WHERE id=$1::text::uuid",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(flags, (false, false));
+    Ok(())
+}

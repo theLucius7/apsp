@@ -58,7 +58,7 @@ export default function PluginCatalog() {
   // The line diagnostics share one entry; every other plugin keeps its own card.
   const diagnostics = catalog.plugins.filter(plugin => plugin.group === 'diagnostics')
   return <>
-    <PageHeader eyebrow="服务器" title="插件中心" description="先了解每个插件做什么、在哪里执行，再进入云账号或服务器管理。同一插件的各版本与架构集中展示。"><Refresh onClick={resource.reload} /></PageHeader>
+    <PageHeader title="插件中心" description="先了解每个插件做什么、在哪里执行，再进入云账号或服务器管理。同一插件的各版本与架构集中展示。"><Refresh onClick={resource.reload} /></PageHeader>
     <PluginCenterTabs active="catalog" />
     <Notice tone="quiet"><ServerIcon className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden="true" /><div><strong className="font-medium">按插件说明管理云账号或服务器</strong><p className="text-muted-foreground">设备插件由 Agent 下载、校验和执行；面板插件使用已上报的数据处理任务。下载包已验证，不代表服务器已安装或已就绪。</p></div></Notice>
     <ErrorNotice message={resource.error} retry={resource.reload} />

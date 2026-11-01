@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
 import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import { proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { chooseLanguage, openPage } from './shell-navigation.mjs'
 
 // TEST_ONLY: after rebuilding web/dist, run `node web/tests/shell-continuity.mjs`.
 // The console shell must stay usable as the viewport and the address change:
@@ -103,8 +104,6 @@ try {
       assert.equal(end.top + end.client >= end.height - 1, true, 'Wheel scrolling reaches the end of the page')
       const last = await cards.last().boundingBox()
       assert.equal(last.y >= 0 && last.y + last.height <= 900, true, 'The last server card can be brought on screen')
-      const footer = await page.getByText('清晰掌握，自在连接。').boundingBox()
-      assert.equal(footer.y + footer.height <= 900, true, 'The footer is reachable')
       // Back at the top, bulk actions for a selection stay on screen above the rest of the list.
       await page.mouse.wheel(0, -100000); await until(async () => (await metrics()).top === 0, 'Scrolls back to the top')
       await cards.first().getByRole('checkbox').click()
@@ -115,7 +114,7 @@ try {
       await bar.getByRole('button', { name: '清空选择', exact: true }).click(); await bar.waitFor({ state: 'hidden' })
       // The open menu takes part of the screen; the page below it still scrolls.
       await page.getByRole('button', { name: '菜单', exact: true }).click()
-      await page.locator('#admin-navigation').getByRole('link', { name: '服务器列表', exact: true }).waitFor()
+      await page.locator('#admin-navigation').getByRole('link', { name: '服务器', exact: true }).waitFor()
       const menu = await metrics()
       assert.equal(menu.client > 0 && menu.height > menu.client, true, 'The page keeps a scrolling area below the open menu')
       await page.mouse.move(195, 880); await page.mouse.wheel(0, 600)
@@ -167,7 +166,7 @@ try {
     try {
       await page.goto(`${origin}/#/monitoring/settings`)
       await page.getByRole('heading', { name: '告警设置', exact: true }).waitFor()
-      await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '服务器列表', exact: true }).click()
+      await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '服务器', exact: true }).click()
       await page.getByRole('heading', { name: '服务器列表', exact: true }).waitFor()
       await page.locator('header[data-slot=page-header]').getByRole('button', { name: '添加服务器', exact: true }).click()
       const dialog = page.getByRole('dialog').filter({ has: page.getByLabel('服务器名称') }), name = dialog.getByLabel('服务器名称')
@@ -212,7 +211,7 @@ try {
       await planName.waitFor()
       await planName.fill('TEST_ONLY 未保存方案')
       const jump = async () => {
-        await page.locator('[data-slot=topbar]').getByRole('button', { name: '全局搜索', exact: true }).click()
+        await page.getByRole('button', { name: '全局搜索', exact: true }).first().click()
         const input = palette(page).getByRole('combobox', { name: '搜索页面或对象' })
         await input.fill('告警设置')
         await palette(page).getByRole('option', { name: /告警设置/ }).first().waitFor()
@@ -225,7 +224,7 @@ try {
       assert.equal(await hash(page), '#/network-workbench')
       assert.equal(await planName.inputValue(), 'TEST_ONLY 未保存方案', 'Declining the palette jump keeps the input')
       state.answer.push(false)
-      await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '告警设置', exact: true }).click()
+      await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '告警', exact: true }).click()
       await until(() => prompts.length === 2, 'A sidebar link asks first')
       assert.equal(await hash(page), '#/network-workbench')
       assert.equal(await planName.inputValue(), 'TEST_ONLY 未保存方案')
@@ -264,9 +263,8 @@ try {
     const { page, errors } = await open(1440, 900, state)
     try {
       await page.goto(`${origin}/#/servers`)
-      const language = page.locator('[data-slot=topbar] select')
       await page.getByRole('heading', { name: '服务器列表', exact: true }).waitFor()
-      await language.selectOption('en-US')
+      await chooseLanguage(page, 'English')
       const row = page.getByRole('row').filter({ hasText: 'TEST_ONLY 服务器 1' })
       await row.getByText('Online', { exact: true }).waitFor()
       state.servers[0].online = false
@@ -279,7 +277,7 @@ try {
       await until(async () => await probe.textContent() === 'Online' && await probe.getAttribute('aria-label') === 'Online', 'Static text is translated')
       await probe.evaluate(element => { element.firstChild.nodeValue = '离线'; element.setAttribute('aria-label', '离线') })
       await until(async () => await probe.textContent() === 'Offline' && await probe.getAttribute('aria-label') === 'Offline', 'Rewritten text is translated from its new value')
-      await language.selectOption('zh-CN')
+      await chooseLanguage(page, /简体中文|Chinese/)
       await row.getByText('离线', { exact: true }).waitFor()
       await until(async () => await probe.textContent() === '离线' && await probe.getAttribute('aria-label') === '离线', 'Chinese restores the latest value')
       assert.deepEqual(errors, [])

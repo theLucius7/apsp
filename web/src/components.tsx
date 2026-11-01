@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { AnimatePresence, m, usePresence } from 'motion/react'
+import { AnimatePresence, usePresence } from 'motion/react'
 import { BoxIcon, CheckIcon, CircleAlertIcon, CompassIcon, CopyIcon, InfoIcon, RefreshCwIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { errorMessage } from './api'
 import { resourceRefreshingMessage } from './hooks'
+import { SectionContext } from './app/section'
 import { tierDescriptions, tierLabels } from './app/tiers'
 import type { Tier } from './app/tiers'
 import { useI18n } from './i18n'
+import { SegmentedLink, SegmentedNav } from '@/components/segmented'
+import { copyText } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
-import { noticeMotion } from '@/lib/motion'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Badge as UiBadge } from '@/components/ui/badge'
@@ -21,14 +23,15 @@ import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 export type Tone = 'good' | 'bad' | 'warm' | 'neutral'
 const toneVariant = { good: 'success', bad: 'destructive', warm: 'warning', neutral: 'secondary' } as const
+const refreshNoticeDelay = 1200
 
-export function Brand({ className }: { className?: string }) {
+export function Brand({ className, compact = false }: { className?: string; compact?: boolean }) {
   const { t } = useI18n()
-  return <div data-slot="brand" className={cn('flex min-w-0 items-center gap-2.5', className)}>
-    <span className="bg-primary text-primary-foreground grid size-8 shrink-0 place-items-center rounded-lg"><CompassIcon className="size-4.5" aria-hidden="true" /></span>
+  return <div data-slot="brand" className={cn('flex min-w-0 items-center gap-2', className)}>
+    <span className={cn('bg-primary text-primary-foreground grid shrink-0 place-items-center rounded-md', compact ? 'size-6' : 'size-8')}><CompassIcon className={compact ? 'size-3.5' : 'size-4.5'} aria-hidden="true" /></span>
     <span className="grid min-w-0 leading-tight">
-      <strong className="truncate text-base font-semibold tracking-wide">{t('apsp')}</strong>
-      <small className="text-muted-foreground truncate text-xs">{t('代理网络控制平面')}</small>
+      <strong className={cn('truncate font-semibold', compact ? 'text-sm' : 'text-base')}>{t('apsp')}</strong>
+      {!compact && <small className="text-muted-foreground truncate text-xs">{t('代理网络控制平面')}</small>}
     </span>
   </div>}
 
@@ -57,16 +60,26 @@ export function TierNotice({ tier, children }: { tier: Tier; children?: ReactNod
   </Alert>
 }
 
-export function PageHeader({ eyebrow, title, description, children }: { eyebrow: string; title: string; description: string; children?: ReactNode }) {
+/**
+ * The one bar at the top of a page: what this is, one line on what it is for, and
+ * what can be done here. It stays in view while the page scrolls on wider screens,
+ * so the actions are never out of reach. `leading` holds a way back.
+ */
+export function PageHeader({ title, description, leading, children }: { title: string; description?: string; leading?: ReactNode; children?: ReactNode }) {
   const { t } = useI18n()
-  return <header data-slot="page-header" className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-    <div className="min-w-0 space-y-1">
-      <div className="text-primary text-xs font-medium tracking-wide">{t(eyebrow)}</div>
-      <h1 className="text-xl font-semibold tracking-tight text-balance">{t(title)}</h1>
-      <p className="text-muted-foreground max-w-3xl text-sm text-pretty">{t(description)}</p>
+  const tabs = useContext(SectionContext)
+  return <><header data-slot="page-header" className="bg-background/95 supports-backdrop-filter:backdrop-blur-sm -mx-4 -mt-4 mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-2 md:sticky md:top-0 md:z-20 md:-mx-6 md:min-h-14 md:px-6">
+    {leading}
+    <div className="min-w-0 flex-[1_1_16rem]">
+      <h1 className="truncate text-base leading-snug font-semibold">{t(title)}</h1>
+      {description && <p title={t(description)} className="text-muted-foreground text-xs leading-snug md:truncate">{t(description)}</p>}
     </div>
-    {children && <div data-slot="page-actions" className="flex shrink-0 flex-wrap items-center gap-2">{children}</div>}
+    {children && <div data-slot="page-actions" className="flex flex-wrap items-center gap-2">{children}</div>}
   </header>
+  {tabs.length > 0 && <SegmentedNav aria-label={t('本节页面')} className="mb-4">
+    {tabs.map(tab => <SegmentedLink key={tab.path} href={`#${tab.path}`} aria-current={tab.label === title ? 'page' : undefined}>{t(tab.label)}</SegmentedLink>)}
+  </SegmentedNav>}
+  </>
 }
 
 export function ErrorNotice({ message, retry }: { message?: string; retry?: () => void }) {
@@ -76,17 +89,16 @@ export function ErrorNotice({ message, retry }: { message?: string; retry?: () =
   useEffect(() => {
     setShowRefresh(false)
     if (!transient) return
-    const timer = window.setTimeout(() => setShowRefresh(true), 250)
+    const timer = window.setTimeout(() => setShowRefresh(true), refreshNoticeDelay)
     return () => window.clearTimeout(timer)
   }, [message, transient])
-  const visible = Boolean(message) && (!transient || showRefresh)
+  // Waiting for a read is not a failure: it appears only when the wait is noticeable, and quietly.
+  if (transient) return showRefresh && <p data-slot="refresh-pending" role="status" className="text-muted-foreground mb-3 flex items-center gap-2 text-xs"><Spinner role="presentation" aria-hidden="true" aria-label={undefined} />{t('正在同步最新信息，完成后可以提交；当前草稿已保留。')}</p>
   // A resolved error leaves at once so it never lingers beside recovered data.
-  return visible && <m.div key="error" {...noticeMotion}>
-    <Alert variant="destructive" className="mb-4 flex items-start justify-between gap-3">
-      <span className="flex min-w-0 items-start gap-2"><CircleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><span className="min-w-0 break-words">{message}</span></span>
-      {retry && <Button variant="outline" size="xs" type="button" onClick={retry}>{t('重试')}</Button>}
-    </Alert>
-  </m.div>
+  return Boolean(message) && <Alert variant="destructive" className="mb-4 flex items-start justify-between gap-3">
+    <span className="flex min-w-0 items-start gap-2"><CircleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><span className="min-w-0 break-words">{message}</span></span>
+    {retry && <Button variant="outline" size="xs" type="button" onClick={retry}>{t('重试')}</Button>}
+  </Alert>
 }
 
 /** Explains why a click made during a background refresh did nothing. */
@@ -128,7 +140,7 @@ export function Loading({ variant = 'spinner', rows = 4 }: { variant?: 'spinner'
       <div className="grid min-w-0 flex-1 gap-1.5"><Skeleton className="h-3.5 w-2/5 max-w-56" /><Skeleton className="h-3 w-1/4 max-w-36" /></div>
       <Skeleton className="h-3.5 w-16 max-sm:hidden" /><Skeleton className="h-3.5 w-24 max-md:hidden" /><Skeleton className="h-7 w-14 rounded-lg" />
     </div>)}</div>}
-    {variant === 'cards' && <div aria-hidden="true" className="mb-6 grid grid-cols-2 gap-3 max-sm:gap-2 lg:grid-cols-4">{lines.map(index => <div key={index} className="ring-foreground/10 grid gap-3 rounded-xl p-4 ring-1">
+    {variant === 'cards' && <div aria-hidden="true" className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">{lines.map(index => <div key={index} className="ring-foreground/10 grid gap-3 rounded-xl p-4 ring-1">
       <Skeleton className="h-3 w-1/2" /><Skeleton className="h-6 w-2/3" /><Skeleton className="h-3 w-3/4" />
     </div>)}</div>}
     {variant === 'panel' && <div aria-hidden="true" className="ring-foreground/10 mb-4 grid gap-3 rounded-xl p-4 ring-1">
@@ -139,15 +151,16 @@ export function Loading({ variant = 'spinner', rows = 4 }: { variant?: 'spinner'
 
 export function Refresh({ onClick }: { onClick: () => void }) {
   const { t } = useI18n()
-  return <Button variant="outline" onClick={onClick}><RefreshCwIcon aria-hidden="true" /><span>{t('刷新')}</span></Button>
+  return <Button variant="ghost" size="icon" title={t('刷新')} onClick={onClick}><RefreshCwIcon aria-hidden="true" /><span className="sr-only">{t('刷新')}</span></Button>
 }
 
-export function Stat({ label, value, note, icon: Icon }: { label: string; value: ReactNode; note?: ReactNode; icon: LucideIcon }) {
+/** One headline number. `note` adds what the number alone does not say. */
+export function Stat({ label, value, note }: { label: string; value: ReactNode; note?: ReactNode; icon?: LucideIcon }) {
   const { t } = useI18n()
-  return <div data-slot="stat" className="bg-card text-card-foreground ring-foreground/10 min-w-0 rounded-xl p-4 ring-1">
-    <div className="text-muted-foreground flex items-center justify-between gap-2 text-xs">{t(label)}<Icon className="size-4 shrink-0 max-sm:hidden" aria-hidden="true" /></div>
-    <strong className="mt-2 block text-2xl font-semibold tracking-tight tabular-nums">{value}</strong>
-    {note && <small className="text-muted-foreground mt-1 block text-xs">{note}</small>}
+  return <div data-slot="stat" className="bg-card text-card-foreground min-w-0 rounded-lg border px-3.5 py-2.5">
+    <div className="text-muted-foreground truncate text-xs">{t(label)}</div>
+    <strong className="mt-0.5 block truncate text-xl leading-tight font-semibold">{value}</strong>
+    {note && <small title={typeof note === 'string' ? note : undefined} className="text-muted-foreground mt-0.5 block truncate text-xs">{note}</small>}
   </div>
 }
 
@@ -279,7 +292,7 @@ export function Field({ label, hint, children, className }: { label: string; hin
   </label>
 }
 
-export function CopyButton({ text, label = '复制' }: { text: string; label?: string }) {
+export function CopyButton({ text, label = '复制', primary = false }: { text: string; label?: string; primary?: boolean }) {
   const { t } = useI18n()
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
@@ -288,16 +301,12 @@ export function CopyButton({ text, label = '复制' }: { text: string; label?: s
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(false), 2000); return () => clearTimeout(timer) }, [copied])
   const copy = async () => {
     try {
-      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text)
-      else {
-        const textarea = document.createElement('textarea'); textarea.value = text; textarea.style.position = 'fixed'; textarea.style.opacity = '0'; document.body.append(textarea); textarea.select()
-        const success = document.execCommand('copy'); textarea.remove(); if (!success) throw new Error(t('浏览器禁止自动复制，请选中文字手动复制。'))
-      }
+      await copyText(text)
       if (alive.current) { setCopied(true); setError('') }
     } catch (error) { if (alive.current) setError(errorMessage(error)) }
   }
   return <span data-slot="copy-control" className="inline-flex shrink-0 flex-col items-end gap-1">
-    <Button variant="outline" size="sm" onClick={() => void copy()} type="button">{copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}{copied ? t('已复制') : t(label)}</Button>
+    <Button variant={primary ? 'default' : 'outline'} size="sm" onClick={() => void copy()} type="button">{copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}{copied ? t('已复制') : t(label)}</Button>
     {error && <small className="text-destructive max-w-36 text-xs" role="alert">{t('复制失败，请手动选择并复制。')}</small>}
   </span>
 }

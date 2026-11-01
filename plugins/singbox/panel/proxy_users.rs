@@ -30,12 +30,12 @@ pub struct ProxyUserView {
     pub credential_access_reason: &'static str,
 }
 impl ProxyUserRow {
-    fn view(self, public_url: &str, reveal: bool) -> ProxyUserView {
+    fn view(self, public_url: &str, reveal: bool, host: Option<String>) -> ProxyUserView {
         ProxyUserView {
             id: self.id,
             name: self.name,
             subscription_url: if reveal {
-                format!("{public_url}/sub/{}", self.subscription_token)
+                host.unwrap_or_else(|| format!("{public_url}/sub/{}", self.subscription_token))
             } else {
                 String::new()
             },
@@ -48,6 +48,25 @@ impl ProxyUserRow {
             credential_access_reason: super::secret_access::REASON,
         }
     }
+}
+
+/// One line of the user list: who may use what and whether they can sign in.
+/// It carries no credentials, so reading it needs no recent administrator proof.
+#[derive(Serialize, FromRow)]
+pub struct ProxyUserOverview {
+    pub id: i64,
+    pub status: String,
+    pub allowed: bool,
+    pub package_name: Option<String>,
+    pub monthly_bytes: Option<String>,
+    pub used_bytes: String,
+    pub expires_at: Option<i64>,
+    pub group_ids: Vec<i64>,
+    pub direct_nodes: i64,
+    pub external_nodes: i64,
+    pub portal_created: bool,
+    pub portal_keys: i64,
+    pub activation_expires_at: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -70,12 +89,41 @@ pub async fn list(
     if reveal {
         super::secret_access::audit_read(&state,&headers,None,"security_subscription_addresses_read",serde_json::json!({"source":"user_list","user_ids":users.iter().map(|user|user.id).collect::<Vec<_>>(),"credential_values_recorded":false})).await?;
     }
+    let mut hosts = if reveal {
+        super::subscription_hosts::addresses(&state.pool).await?
+    } else {
+        Default::default()
+    };
     Ok(Json(
         users
             .into_iter()
-            .map(|user| user.view(&state.config.public_url, reveal))
+            .map(|user| {
+                let host = hosts.remove(&user.id);
+                user.view(&state.config.public_url, reveal, host)
+            })
             .collect(),
     ))
+}
+
+pub async fn overview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<Json<Vec<ProxyUserOverview>>> {
+    require_admin(&state, &headers).await?;
+    let rows = sqlx::query_as::<_, ProxyUserOverview>(
+        "SELECT e.user_id AS id,e.status,e.allowed,e.package_name,e.monthly_bytes,e.used_bytes,e.expires_at,\
+         COALESCE((SELECT array_agg(p.group_id ORDER BY p.group_id) FROM singbox_user_policies p WHERE p.user_id=e.user_id),'{}'::BIGINT[]) AS group_ids,\
+         (SELECT count(*) FROM accesses a WHERE a.user_id=e.user_id AND a.direct_grant) AS direct_nodes,\
+         (SELECT count(*) FROM singbox_external_accesses x WHERE x.user_id=e.user_id) AS external_nodes,\
+         portal.account_id IS NOT NULL AS portal_created,\
+         (SELECT count(*) FROM passkey_credentials c WHERE c.account_id=portal.account_id) AS portal_keys,\
+         CASE WHEN portal.activation_expires_at>$1 THEN portal.activation_expires_at END AS activation_expires_at \
+         FROM singbox_entitlements($1) e LEFT JOIN singbox_portal_accounts portal ON portal.user_id=e.user_id ORDER BY e.user_id",
+    )
+    .bind(now_timestamp())
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(rows))
 }
 
 pub async fn get(
@@ -102,7 +150,12 @@ pub async fn get(
         )
         .await?;
     }
-    Ok(Json(user.view(&state.config.public_url, reveal)))
+    let host = if reveal {
+        super::subscription_hosts::address(&state.pool, id).await?
+    } else {
+        None
+    };
+    Ok(Json(user.view(&state.config.public_url, reveal, host)))
 }
 
 pub async fn create(
@@ -124,9 +177,15 @@ pub async fn create(
         )
         .await?;
     }
+    super::subscription_hosts::settle(&state.pool).await;
+    let host = if reveal {
+        super::subscription_hosts::address(&state.pool, user.id).await?
+    } else {
+        None
+    };
     Ok((
         StatusCode::CREATED,
-        Json(user.view(&state.config.public_url, reveal)),
+        Json(user.view(&state.config.public_url, reveal, host)),
     ))
 }
 
@@ -162,7 +221,12 @@ pub async fn update(
         )
         .await?;
     }
-    Ok(Json(user.view(&state.config.public_url, reveal)))
+    let host = if reveal {
+        super::subscription_hosts::address(&state.pool, id).await?
+    } else {
+        None
+    };
+    Ok(Json(user.view(&state.config.public_url, reveal, host)))
 }
 
 pub async fn reset_subscription(
@@ -191,8 +255,11 @@ pub async fn reset_subscription(
     .await?
     .ok_or(ApiError::NotFound)?;
     super::operations_workflows::event(&mut tx, Some(administrator), Some(id), "security_subscription_reset", serde_json::json!({"node_credentials_rotated":false,"downloaded_credentials_revoked":false})).await?;
+    super::subscription_hosts::rotate(&mut tx, id).await?;
     tx.commit().await?;
-    Ok(Json(user.view(&state.config.public_url, true)))
+    super::subscription_hosts::settle(&state.pool).await;
+    let host = super::subscription_hosts::address(&state.pool, id).await?;
+    Ok(Json(user.view(&state.config.public_url, true, host)))
 }
 
 pub async fn remove(
@@ -220,7 +287,9 @@ pub async fn remove(
         .bind(id)
         .execute(&mut *transaction)
         .await?;
+    super::subscription_hosts::retire(&mut transaction, id).await?;
     business::mark_dirty(&mut transaction, &servers).await?;
     transaction.commit().await?;
+    super::subscription_hosts::settle(&state.pool).await;
     Ok(StatusCode::NO_CONTENT)
 }

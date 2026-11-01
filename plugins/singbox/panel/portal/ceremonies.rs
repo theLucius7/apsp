@@ -27,6 +27,7 @@ pub(super) async fn login_start(
     headers: HeaderMap,
     Path(account): Path<Uuid>,
 ) -> ApiResult<Response> {
+    let state = super::super::subscription_hosts::scoped_state(state, &headers).await;
     let _permit = keys::permit(&state, &headers, peer).await?;
     let mut tx = state.pool.begin().await?;
     access::lock(&mut tx, account).await?;
@@ -42,6 +43,7 @@ pub(super) async fn login_finish(
     Path(account): Path<Uuid>,
     Json(input): Json<FinishAuthentication>,
 ) -> ApiResult<Response> {
+    let state = super::super::subscription_hosts::scoped_state(state, &headers).await;
     let _permit = keys::permit(&state, &headers, peer).await?;
     let pending: Ceremony<PendingAuthentication> = keys::consume(
         &state,
@@ -143,6 +145,7 @@ pub(super) async fn register_start(
     Path(account): Path<Uuid>,
     Json(input): Json<Register>,
 ) -> ApiResult<Response> {
+    let state = super::super::subscription_hosts::scoped_state(state, &headers).await;
     let _permit = keys::permit(&state, &headers, peer).await?;
     let mut tx = state.pool.begin().await?;
     let row = access::lock(&mut tx, account).await?;
@@ -178,6 +181,7 @@ pub(super) async fn register_finish(
     Path(account): Path<Uuid>,
     Json(input): Json<FinishRegistration>,
 ) -> ApiResult<Response> {
+    let state = super::super::subscription_hosts::scoped_state(state, &headers).await;
     let _permit = keys::permit(&state, &headers, peer).await?;
     let pending: Ceremony<PendingRegistration> = keys::consume(
         &state,
@@ -234,6 +238,7 @@ pub(super) async fn remove(
     headers: HeaderMap,
     Path((account, id)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<Response> {
+    let state = super::super::subscription_hosts::scoped_state(state, &headers).await;
     let _permit = keys::permit(&state, &headers, peer).await?;
     let hash = access::session_hash(&headers)?;
     let mut tx = state.pool.begin().await?;

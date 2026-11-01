@@ -24,6 +24,9 @@ pub(super) struct Config {
     pub provider: Provider,
     pub credential_id: Uuid,
     pub zone_ids: Vec<String>,
+    /// Domain names of `zone_ids`, kept so people pick a domain instead of an identifier.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub zone_names: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     pub server_ids: Vec<i64>,
     pub enabled: bool,
@@ -49,6 +52,10 @@ struct Write {
 pub(super) fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/plugins/ddns/accounts", get(list).post(create))
+        .route(
+            "/api/plugins/ddns/accounts/cloudflare",
+            post(connect_cloudflare),
+        )
         .route("/api/plugins/ddns/accounts/{id}", put(update))
         .route("/api/plugins/ddns/accounts/{id}/check", post(check))
 }
@@ -182,6 +189,104 @@ async fn create(
         .bind(now)
         .execute(&state.pool)
         .await?;
+    Ok(Json(json!(load(&state.pool, id).await?)))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CloudflareConnect {
+    #[serde(default)]
+    name: String,
+    api_token: String,
+}
+
+#[derive(Deserialize)]
+struct CloudflareZones {
+    #[serde(default)]
+    success: bool,
+    #[serde(default)]
+    result: Vec<CloudflareZone>,
+}
+#[derive(Deserialize)]
+struct CloudflareZone {
+    id: String,
+    name: String,
+}
+
+const CLOUDFLARE_ZONES: &str =
+    "https://api.cloudflare.com/client/v4/zones?per_page=32&status=active";
+
+/// The domains this token may manage; an empty list means it may manage none.
+async fn cloudflare_zones(url: &str, token: &str) -> ApiResult<Vec<CloudflareZone>> {
+    let refused = || {
+        ApiError::Conflict("Cloudflare 没有接受这个令牌，请检查令牌是否完整、是否仍然有效".into())
+    };
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(anyhow::Error::from)?;
+    let response = client
+        .get(url)
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|_| ApiError::Conflict("暂时无法连接 Cloudflare，请稍后重试".into()))?;
+    let zones: CloudflareZones = response.json().await.map_err(|_| refused())?;
+    if zones.success {
+        Ok(zones.result)
+    } else {
+        Err(refused())
+    }
+}
+
+/// Saves a Cloudflare token in one step: checks it, finds its domains, encrypts it
+/// and registers an account every Cloudflare feature can then choose from a list.
+async fn connect_cloudflare(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<CloudflareConnect>,
+) -> ApiResult<Json<Value>> {
+    control_center::require_recent_proof(&state, &headers).await?;
+    control_center::require_credential_choice(&state, &headers, true).await?;
+    let token = super::model::token(input.api_token.trim())?;
+    let zones = cloudflare_zones(CLOUDFLARE_ZONES, &token).await?;
+    if zones.is_empty() {
+        return Err(ApiError::Conflict(
+            "这个令牌有效，但没有可管理的域名。请在 Cloudflare 给令牌加上 DNS 编辑权限和对应域名"
+                .into(),
+        ));
+    }
+    let name = if input.name.trim().is_empty() {
+        format!("Cloudflare · {}", zones[0].name)
+    } else {
+        input.name.trim().to_owned()
+    };
+    let mut tx = state.pool.begin().await?;
+    let credential_id = control_center::credentials::store_generated_on(
+        &mut tx,
+        &name,
+        "dns",
+        json!({"api_token":token}),
+    )
+    .await?;
+    let config = Config {
+        name,
+        provider: Provider::Cloudflare,
+        credential_id,
+        zone_ids: zones.iter().map(|zone| zone.id.clone()).collect(),
+        zone_names: zones.into_iter().map(|zone| (zone.id, zone.name)).collect(),
+        server_ids: Vec::new(),
+        enabled: true,
+    };
+    let id = Uuid::new_v4();
+    let now = apsp_protocol::now_timestamp();
+    sqlx::query("INSERT INTO dns_accounts(id,config,created_at,updated_at) VALUES($1,$2,$3,$3)")
+        .bind(id)
+        .bind(json!(config))
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
     Ok(Json(json!(load(&state.pool, id).await?)))
 }
 
