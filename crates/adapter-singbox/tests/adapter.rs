@@ -23,7 +23,9 @@ async fn signed_path_plan_requires_matching_staged_bytes_native_features_and_pri
     std::fs::write(directory.0.join("config.json"), &spec.files["config.json"]).unwrap();
     std::fs::write(directory.0.join("runtime-probes.json"), &plan).unwrap();
     let complete = TestOps {
-        version: Some("sing-box version 1.14.2-apsp.1\nTags: with_v2ray_api,with_clash_api\n".into()),
+        version: Some(
+            "sing-box version 1.14.2-apsp.1\nTags: with_v2ray_api,with_clash_api\n".into(),
+        ),
         ..TestOps::default()
     };
     assert!(

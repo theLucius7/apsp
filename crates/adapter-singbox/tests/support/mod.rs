@@ -55,7 +55,9 @@ pub struct TestOps {
 impl Default for TestOps {
     fn default() -> Self {
         Self {
-            version: Some("sing-box version 1.14.2-apsp.1\nTags: with_quic,with_v2ray_api\n".into()),
+            version: Some(
+                "sing-box version 1.14.2-apsp.1\nTags: with_quic,with_v2ray_api\n".into(),
+            ),
             check_ok: true,
             commands: Mutex::new(Vec::new()),
         }
