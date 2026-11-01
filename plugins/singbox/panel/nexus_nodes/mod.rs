@@ -28,6 +28,7 @@ pub(super) fn router() -> Router<AppState> {
         .route("/nexus-nodes/preview", post(preview))
         .route("/nexus-nodes/import", post(import))
         .route("/nexus-nodes/{id}/public-endpoint", patch(public_endpoint))
+        .route("/nexus-nodes/{id}/groups", patch(legacy_groups))
         .merge(runtime::router())
         .layer(DefaultBodyLimit::max(3 * 1024 * 1024))
 }
@@ -109,6 +110,97 @@ async fn public_endpoint(
     Ok(Json(
         json!({"id":id,"public_host":input.public_host,"public_port":port}),
     ))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyGroup {
+    id: i64,
+    name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyGroups {
+    groups: Vec<LegacyGroup>,
+}
+
+/// Records a permission group the source added to a node after import, so a
+/// later cutover does not drop its members. Keys and client identities stay as
+/// preserved; only who may use the node changes.
+async fn legacy_groups(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    Json(input): Json<LegacyGroups>,
+) -> ApiResult<Json<Value>> {
+    let actor = control_center::require_owner(&state, &headers).await?;
+    control_center::require_recent_proof(&state, &headers).await?;
+    let ids: Vec<i64> = input.groups.iter().map(|group| group.id).collect();
+    let distinct: std::collections::BTreeSet<i64> = ids.iter().copied().collect();
+    if ids.is_empty()
+        || distinct.len() != ids.len()
+        || ids.iter().any(|id| *id <= 0)
+        || input
+            .groups
+            .iter()
+            .any(|group| group.name.is_empty() || group.name.len() > 512)
+    {
+        return Err(ApiError::BadRequest("权限组无效".into()));
+    }
+    let mut tx = state.pool.begin().await?;
+    crate::entitlements::lock(&mut tx).await?;
+    let server: Option<i64> =
+        sqlx::query_scalar("SELECT server_id FROM singbox_nexus_nodes WHERE id=$1")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    if let Some(server) = server {
+        crate::business::lock_server(&mut tx, server).await?;
+    }
+    let before: Value =
+        sqlx::query_scalar("SELECT display FROM singbox_nexus_nodes WHERE id=$1 FOR UPDATE")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+    let mapped: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT p.legacy_group_id) FROM singbox_nexus_plan_mappings p JOIN singbox_nexus_bridge b ON b.import_id=p.import_id WHERE p.legacy_group_id=ANY($1)")
+        .bind(&ids)
+        .fetch_one(&mut *tx)
+        .await?;
+    if mapped != ids.len() as i64 {
+        return Err(ApiError::Conflict(
+            "权限组还没有对应的套餐，成员无法继承".into(),
+        ));
+    }
+    let views: Vec<Value> = input
+        .groups
+        .iter()
+        .map(|group| json!({"id":group.id,"name":group.name}))
+        .collect();
+    sqlx::query("UPDATE singbox_nexus_nodes SET display=display||jsonb_build_object('groups',$2::jsonb) WHERE id=$1")
+        .bind(id)
+        .bind(json!(views))
+        .execute(&mut *tx)
+        .await?;
+    let state_after: Option<String> = sqlx::query_scalar("UPDATE singbox_nexus_runtime_nodes r SET legacy_group_ids=$2 FROM singbox_nexus_runtime_hosts h WHERE r.inventory_id=$1 AND h.server_id=r.server_id RETURNING h.state")
+        .bind(id)
+        .bind(&ids)
+        .fetch_optional(&mut *tx)
+        .await?;
+    if let (Some(server), Some("active")) = (server, state_after.as_deref()) {
+        crate::business::mark_dirty(&mut tx, &[server]).await?;
+    }
+    sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus_node_groups',$2,$3,$4,$5)")
+        .bind(actor)
+        .bind(format!("/api/plugins/sing-box/nexus-nodes/{id}/groups"))
+        .bind(json!({"from":before["groups"],"to":views}))
+        .bind(json!({"state":"recorded"}))
+        .bind(now_timestamp())
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(Json(json!({"id":id,"groups":views})))
 }
 
 async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Vec<Value>>> {

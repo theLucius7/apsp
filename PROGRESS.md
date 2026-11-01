@@ -4,6 +4,12 @@
 
 - 线上核实：44 个代理用户中 43 个仍由原系统出节点，面板给他们的 `/sub/` 返回 409。面板改为给出真正能用的地址；专属主机把请求转发给原系统；重置只换专属地址。详见 [ADR 0103](docs/adr/0103-per-user-subscription-hosts.md)。
 
+## 2026-11-02：补齐迁移节点的新增权限组
+
+- `compare-users` 发现已准备的 Oracle 节点候选配置比旧节点少一名成员：接管记录固定了准备时的权限组，之后新增的权限组没有进入候选。切换后这名成员会失去节点。
+- 新增 `PATCH /api/plugins/sing-box/nexus-nodes/{id}/groups`，见 [ADR 0104](docs/adr/0104-self-maintained-singbox-runtime.md)。只接受已有套餐映射的权限组；主机已接管时重新发布。
+- 验证：`nexus_runtime_takeover` 集成测试覆盖无映射、非法输入、记录更新和重新发布。只改面板，不影响 `agent-v0.3.4`，远端 CI 未运行。
+
 ## 2026-11-02：Nexus 迁移就绪检查与 0.3.4 发布基线
 
 - 用户要求检查 Nexus 到 apsp 的迁移准备并逐台登录服务器。结论是还不能切换，阻塞项和切换顺序记在 [Nexus Agent 迁移](docs/nexus-agent-migration.md#2026-11-02-就绪检查)。

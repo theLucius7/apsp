@@ -322,6 +322,67 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
             StatusCode::BAD_REQUEST
         );
     }
+    // A permission group added at the source after import reaches the runtime.
+    let groups = format!("/api/plugins/sing-box/nexus-nodes/{inventory}/groups");
+    let added = json!({"groups":[{"id":1,"name":"Fixture"},{"id":7,"name":"Added"}]});
+    assert_eq!(
+        panel
+            .admin(Method::PATCH, &groups, &cookie, Some(added.clone()))
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    for invalid in [
+        json!({"groups":[]}),
+        json!({"groups":[{"id":1,"name":"Fixture"},{"id":1,"name":"Fixture"}]}),
+        json!({"groups":[{"id":0,"name":"Fixture"}]}),
+    ] {
+        assert_eq!(
+            panel
+                .admin(Method::PATCH, &groups, &cookie, Some(invalid))
+                .await?
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let extra: i64 = sqlx::query_scalar("INSERT INTO singbox_package_groups(name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,duration_days) VALUES('TEST_ONLY added',1000000,1,0,0,'UTC',31) RETURNING id")
+        .fetch_one(&pool)
+        .await?;
+    sqlx::query(
+        "INSERT INTO singbox_nexus_plan_mappings SELECT import_id,$1,7,7 FROM singbox_nexus_bridge",
+    )
+    .bind(extra)
+    .execute(&pool)
+    .await?;
+    sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
+        .bind(server)
+        .execute(&pool)
+        .await?;
+    ok(panel
+        .admin(Method::PATCH, &groups, &cookie, Some(added))
+        .await?)
+    .await?;
+    let (recorded, display, dirty): (Vec<i64>, Value, Option<i64>) = sqlx::query_as(
+        "SELECT r.legacy_group_ids,d.display,s.dirty_at FROM singbox_nexus_runtime_nodes r JOIN singbox_nexus_nodes d ON d.id=r.inventory_id JOIN servers s ON s.id=r.server_id WHERE r.inventory_id=$1",
+    )
+    .bind(inventory)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(recorded, vec![1, 7]);
+    assert_eq!(display["groups"][1]["name"], "Added");
+    assert!(dirty.is_some(), "an active host must republish its members");
+    ok(panel
+        .admin(
+            Method::PATCH,
+            &groups,
+            &cookie,
+            Some(json!({"groups":[{"id":1,"name":"Fixture"}]})),
+        )
+        .await?)
+    .await?;
+    sqlx::query("DELETE FROM singbox_nexus_plan_mappings WHERE legacy_group_id=7")
+        .execute(&pool)
+        .await?;
     // The generic write path stays closed once the bypass transaction ended.
     assert!(
         sqlx::query("UPDATE nodes SET public_host='x.example.invalid' WHERE server_id=$1")
