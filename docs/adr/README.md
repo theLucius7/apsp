@@ -140,6 +140,8 @@
 - [ADR 0101：订阅支持 Clash Meta（mihomo）格式](0101-clash-subscription-format.md)：`format=clash` 由与 sing-box 订阅相同的客户端出站转换，无法等价表达的节点列在文件注释中；同一订阅地址按 User-Agent 识别 Clash 客户端
 - [ADR 0105：中国可达性监控](0105-china-reachability-monitor.md)：默认关闭，经 Globalping 比较中国与海外的 TCP 连接，用对照端口区分端口封锁与 IP 封锁，连续两轮失败才判定封锁，用量不超过额度的 80%
 
+- [ADR 0106：成员门户的线路目录与探针](0106-member-lines-and-probes.md)：代理用户登录后查看 Nexus 线路的入口、落地、类型、状态与三网延迟；探针按主机显示测得的 ASN、用途类型与风险标记，家宽标为运营方声明，不显示地址、城市与坐标
+
 
 ## 界面重组（2026-10-25）
 

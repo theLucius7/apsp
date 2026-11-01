@@ -4,6 +4,7 @@ mod runtime;
 mod runtime_model;
 pub(crate) mod runtime_publish;
 pub(crate) mod sessions;
+pub(crate) mod topology;
 
 use crate::{
     AppState, control_center,

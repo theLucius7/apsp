@@ -46,6 +46,7 @@ try {
       else if (path.endsWith('/commerce/migration') || path.endsWith('/commerce/migration/records')) value = { entries: [] }
       else if (path.endsWith('/commerce-public/account/login')) return route.fulfill(allowLogin ? { json: { account_id: account } } : { status: 401, json: { error: '邮箱或密码错误' } })
       else if (path === `/api/plugins/sing-box/portal/${account}`) value = { authenticated: true, name: '测试成员', configuration: { enabled: false, reason: '夹具未启用认证器' }, subscription_url: 'https://legacy.example.com/assets/fixture-token', legacy_compatibility: { last_sync_at: 1 }, usage: { uplink: '20', downlink: '30' }, keys: [], subscription_status: { status: 'ready', message: '', entitlement: { package_name: '原套餐', used_bytes: '50', monthly_bytes: '1000', expires_at: null, next_reset: null } } }
+      else if (path === `/api/plugins/sing-box/portal/${account}/lines`) value = { generated_at: 1, package: '原套餐', lines: [], hosts: [] }
       else if (path === `/api/plugins/sing-box/portal/${account}/commerce`) value = { enabled: true, profile: { user_id: 41, balance_cents: 1000, sponsor_required: false, state: 'active', email: 'fixture@example.com', email_verified: false, has_password: true, remind_expire: true, remind_traffic: true, remind_invitation: true }, offers: [], channels: [], content: [{ id: 1, kind: 'guide', category: '客户端', title: '安全指南', body: '<p>保留指南段落</p><a href="javascript:alert(1)">危险链接</a><script>window.guideExecuted = true</script><img src="data:text/html,unsafe" onerror="window.guideExecuted=true">' }], history: { ledger: [], orders: [], invitations: [], topups: [], legacy: [] }, invite_settings: { enabled: false, price_cents: 100 }, friends: [] }
       else value = []
       return route.fulfill({ json: value })
@@ -95,6 +96,8 @@ try {
     allowLogin = true
     await page.getByRole('button', { name: '登录', exact: true }).click()
     await page.getByRole('heading', { name: '测试成员', exact: true }).waitFor()
+    // Without an imported catalogue the line panel leaves once its answer arrives.
+    await page.locator('[data-slot=member-lines]').waitFor({ state: 'detached' })
     await page.getByRole('button', { name: '公告与指南', exact: true }).click()
     await page.getByText('客户端 · 安全指南', { exact: true }).click()
     await page.getByText('保留指南段落', { exact: true }).waitFor()
