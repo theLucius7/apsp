@@ -682,6 +682,6 @@ macOS 27 的动态库加载器暴露了 Rust/LLVM 删除调试信息后的 LINKE
 ## 用户专属地址的解析与证书（2026-11-01）
 
 - 问题：用户要求订阅和登录地址改成 `apsp-<随机>.example.com/<随机>`，重置后释放。每个随机主机名如何解析、如何签证书，会直接影响防扫描的效果。
-- 选择：按 [ADR 0103](adr/0103-per-user-subscription-hosts.md) 实现。每用户一条代理的 CNAME；边缘用 Cloudflare 通用证书，源站用 Origin CA 通配符证书；专属主机上的 Passkey 以根域名作为 RP ID。
-- 理由：逐主机签证书会让随机主机名进入公开的证书透明日志；域名上已有不走代理的泛解析，改动它影响面太大；以根域名作为 RP ID 时，重置地址不必重新绑定 Passkey。
+- 选择：按 [ADR 0103](adr/0103-per-user-subscription-hosts.md) 实现。每用户一条代理的 CNAME，指向专用 Cloudflare Tunnel；边缘用 Cloudflare 通用证书；专属主机上的 Passkey 以根域名作为 RP ID。
+- 理由：逐主机签证书会让随机主机名进入公开的证书透明日志；通配符证书放进共用的 Caddy 会让同域名其他站点换证书（实测，已回滚）；域名上已有不走代理的泛解析，改动它影响面太大；以根域名作为 RP ID 时，重置地址不必重新绑定 Passkey。
 - 未选：见 ADR 0103。

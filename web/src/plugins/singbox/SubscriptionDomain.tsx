@@ -26,7 +26,7 @@ export default function SubscriptionDomain({ onClose, onSaved }: { onClose: () =
   const [accountId, setAccountId] = useState('')
   const [zoneId, setZoneId] = useState('')
   const [prefix, setPrefix] = useState('apsp-')
-  const [target, setTarget] = useState(window.location.hostname)
+  const [target, setTarget] = useState('')
   const [legacy, setLegacy] = useState(true)
   const account = usable.find(entry => entry.id === accountId)
   // Fill the form once, from what is saved or from the only sensible choice.
@@ -57,7 +57,7 @@ export default function SubscriptionDomain({ onClose, onSaved }: { onClose: () =
     </>}
     <div className="grid gap-x-3 sm:grid-cols-2">
       <Field label="地址前缀"><Input required maxLength={20} value={prefix} onChange={event => setPrefix(event.target.value)} spellCheck={false} /></Field>
-      <Field label="解析目标" hint="面板的主机名，专属地址都解析到这里。"><Input required maxLength={253} value={target} onChange={event => setTarget(event.target.value)} spellCheck={false} /></Field>
+      <Field label="解析目标" hint="专属地址都解析到这里，通常是 Cloudflare Tunnel 的地址。"><Input required maxLength={253} value={target} onChange={event => setTarget(event.target.value)} spellCheck={false} placeholder="隧道 ID.cfargotunnel.com" /></Field>
     </div>
     <label className="flex items-start gap-2.5 text-[13px]"><Checkbox className="mt-0.5" checked={legacy} onCheckedChange={checked => setLegacy(checked === true)} /><span>旧地址继续可用<small className="text-muted-foreground block text-xs leading-relaxed">已经在用 /sub/… 和面板域名登录的客户端不受影响。都换成专属地址后，关掉这项，旧地址就不再响应。</small></span></label>
     {view.data?.enabled && hosts && <Notice className="mt-4 mb-0" tone={hosts.failed ? 'error' : 'quiet'} role="status">已创建 {hosts.ready} / {hosts.total} 个专属地址{hosts.failed ? `，${hosts.failed} 个失败：${hosts.last_error ?? '原因未知'}` : ''}</Notice>}
