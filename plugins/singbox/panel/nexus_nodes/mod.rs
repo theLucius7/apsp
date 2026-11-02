@@ -29,6 +29,7 @@ pub(super) fn router() -> Router<AppState> {
         .route("/nexus-nodes/import", post(import))
         .route("/nexus-nodes/{id}/public-endpoint", patch(public_endpoint))
         .route("/nexus-nodes/{id}/groups", patch(legacy_groups))
+        .route("/nexus-nodes/{id}/retire", post(retire))
         .merge(runtime::router())
         .layer(DefaultBodyLimit::max(3 * 1024 * 1024))
 }
@@ -201,6 +202,126 @@ async fn legacy_groups(
         .await?;
     tx.commit().await?;
     Ok(Json(json!({"id":id,"groups":views})))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Retire {
+    /// The node number on the source, repeated so that a mistyped inventory
+    /// id cannot remove a different line.
+    legacy_node_id: i64,
+}
+
+/// Removes an imported line for good, also from a host that already runs the
+/// preserved configuration. The encrypted runtime snapshot keeps the entry as
+/// history; publication skips entries whose inventory row is gone, so the
+/// host is republished without that listener. Recorded usage stays. The
+/// source panel's own row is removed separately, after this call, because
+/// the compatibility bridge expects every taken-over node to exist there.
+async fn retire(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    Json(input): Json<Retire>,
+) -> ApiResult<Json<Value>> {
+    let actor = control_center::require_owner(&state, &headers).await?;
+    control_center::require_recent_proof(&state, &headers).await?;
+    let mut tx = state.pool.begin().await?;
+    crate::entitlements::lock(&mut tx).await?;
+    let server: i64 = sqlx::query_scalar("SELECT server_id FROM singbox_nexus_nodes WHERE id=$1")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    crate::business::lock_server(&mut tx, server).await?;
+    let row = sqlx::query(
+        "SELECT source_id,legacy_node_id,credential_id,display FROM singbox_nexus_nodes WHERE id=$1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    let legacy: i64 = row.get("legacy_node_id");
+    if legacy != input.legacy_node_id {
+        return Err(ApiError::Conflict("原节点编号与该线路不符，未下线".into()));
+    }
+    let source: String = row.get("source_id");
+    let display: Value = row.get("display");
+    let runtime: Option<(i64, String)> = sqlx::query_as(
+        "SELECT r.node_id,h.state FROM singbox_nexus_runtime_nodes r JOIN singbox_nexus_runtime_hosts h ON h.server_id=r.server_id WHERE r.inventory_id=$1",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let mut republish = false;
+    if let Some((node, host_state)) = &runtime {
+        let lines: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM singbox_nexus_runtime_nodes WHERE server_id=$1",
+        )
+        .bind(server)
+        .fetch_one(&mut *tx)
+        .await?;
+        if lines <= 1 {
+            return Err(ApiError::Conflict(
+                "这是该主机接管的最后一条线路；整台主机停用请暂停接管".into(),
+            ));
+        }
+        sqlx::query("SELECT set_config('apsp.nexus_runtime_write','yes',TRUE)")
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM singbox_nexus_runtime_nodes WHERE inventory_id=$1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        // Usage history still refers to the native row, so it is retired, not deleted.
+        sqlx::query(
+            "UPDATE nodes SET enabled=FALSE,deleted_at=COALESCE(deleted_at,$2) WHERE id=$1",
+        )
+        .bind(node)
+        .bind(now_timestamp())
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("SELECT set_config('apsp.nexus_runtime_write','',TRUE)")
+            .execute(&mut *tx)
+            .await?;
+        if host_state == "active" {
+            crate::business::mark_dirty(&mut tx, &[server]).await?;
+            republish = true;
+        }
+    }
+    sqlx::query("DELETE FROM singbox_nexus_nodes WHERE id=$1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    // Keep the import's record count matching its rows for later previews.
+    sqlx::query(
+        "UPDATE singbox_nexus_node_imports SET node_count=node_count-1 WHERE source_id=$1 AND node_count>1",
+    )
+    .bind(&source)
+    .execute(&mut *tx)
+    .await?;
+    // The line's own preserved configuration (keys, landing credentials) is retired with it.
+    sqlx::query("UPDATE credential_entries SET enabled=FALSE,updated_at=$2 WHERE id=$1")
+        .bind(row.get::<uuid::Uuid, _>("credential_id"))
+        .bind(now_timestamp())
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus.nodes.retire',$2,$3,$4,$5)")
+        .bind(actor)
+        .bind(format!("/api/plugins/sing-box/nexus-nodes/{id}/retire"))
+        .bind(json!({"legacy_node_id":legacy,"server_id":server,"name":display["name"]}))
+        .bind(json!({"state":"retired","runtime_node_id":runtime.as_ref().map(|(node, _)| *node),"republish":republish}))
+        .bind(now_timestamp())
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(Json(json!({
+        "id": id,
+        "legacy_node_id": legacy,
+        "server_id": server,
+        "runtime_node_id": runtime.map(|(node, _)| node),
+        "republish": republish,
+    })))
 }
 
 async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Vec<Value>>> {
