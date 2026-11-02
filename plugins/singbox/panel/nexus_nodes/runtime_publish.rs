@@ -37,8 +37,18 @@ pub(crate) async fn compile(
     let mut prepared = Vec::new();
     let mut accounting = Vec::new();
     for mut entry in snapshot.nodes {
-        let (id, groups): (i64, Vec<i64>) = sqlx::query_as("SELECT r.node_id,r.legacy_group_ids FROM singbox_nexus_runtime_nodes r JOIN singbox_nexus_nodes i ON i.id=r.inventory_id WHERE r.server_id=$1 AND i.legacy_node_id=$2")
-            .bind(server).bind(entry.legacy_node_id).fetch_one(&mut **tx).await?;
+        let found: Option<(i64, Vec<i64>)> = sqlx::query_as("SELECT r.node_id,r.legacy_group_ids FROM singbox_nexus_runtime_nodes r JOIN singbox_nexus_nodes i ON i.id=r.inventory_id WHERE r.server_id=$1 AND i.legacy_node_id=$2")
+            .bind(server).bind(entry.legacy_node_id).fetch_optional(&mut **tx).await?;
+        let Some((id, groups)) = found else {
+            // A retired line keeps its snapshot entry as history but loses its
+            // inventory row. Any other missing record is still a fault.
+            let imported: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_nexus_nodes WHERE source_id=$1 AND legacy_node_id=$2)")
+                .bind(&snapshot.source_id).bind(entry.legacy_node_id).fetch_one(&mut **tx).await?;
+            if imported {
+                return Err(sqlx::Error::RowNotFound.into());
+            }
+            continue;
+        };
         entry.preserved.node.id = id;
         let members: Vec<(i64,Uuid)> = sqlx::query_as("SELECT i.user_id,i.legacy_uuid FROM singbox_nexus_identities i JOIN singbox_entitlements($1) e ON e.user_id=i.user_id JOIN singbox_nexus_plan_mappings p ON p.package_group_id=e.package_group_id AND p.import_id=i.import_id WHERE e.allowed AND p.legacy_group_id=ANY($2) ORDER BY i.user_id")
             .bind(at).bind(groups).fetch_all(&mut **tx).await?;

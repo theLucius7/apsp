@@ -845,3 +845,177 @@ async fn unactivated_preparation_can_be_discarded_and_generic_grants_are_refused
     );
     Ok(())
 }
+
+/// Listen ports in the newest published configuration of a host.
+async fn published_ports(pool: &PgPool, server: i64) -> Result<Vec<i64>> {
+    let bundle: String = sqlx::query_scalar(
+        "SELECT bundle FROM deployments WHERE server_id=$1 ORDER BY rev DESC LIMIT 1",
+    )
+    .bind(server)
+    .fetch_one(pool)
+    .await?;
+    let bundle: apsp_protocol::Bundle = serde_json::from_str(&bundle)?;
+    let config: Value = serde_json::from_str(&bundle.files["config.json"])?;
+    let mut ports: Vec<i64> = config["inbounds"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|inbound| inbound["listen_port"].as_i64())
+        .collect();
+    ports.sort_unstable();
+    Ok(ports)
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn retired_line_leaves_the_running_host_and_the_bridge(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, mut payload, _user) = fixture(&panel).await?;
+    // A second line on the same host, as on a relay host with several exits.
+    let mut second = payload["nodes"][0].clone();
+    second["legacy_node_id"] = json!(44);
+    second["preserved"]["node"]["id"] = json!(44);
+    second["preserved"]["node"]["name"] = json!("TEST_ONLY SS second");
+    second["preserved"]["node"]["port"] = json!(23457);
+    second["preserved"]["configuration"]["inbounds"][0]["listen_port"] = json!(23457);
+    payload["nodes"].as_array_mut().unwrap().push(second);
+    let credential = credentials::store_generated(
+        &pool,
+        "TEST_ONLY second node",
+        "backup",
+        json!({"node":{"id":44,"name":"TEST_ONLY SS second","host":"node.example.invalid","type":"shadowsocks","protocol_settings":{"cipher":"2022-blake3-aes-128-gcm"},"rate_time_enable":0}}),
+    )
+    .await?;
+    sqlx::query("INSERT INTO singbox_nexus_nodes(source_id,legacy_node_id,legacy_machine_id,legacy_host_id,server_id,credential_id,display) VALUES('fixture',44,31,15,$1,$2,$3)")
+        .bind(server).bind(credential).bind(json!({"name":"TEST_ONLY second","listen_port":"23457","rate":"1","groups":[{"id":1,"name":"Fixture"}]})).execute(&pool).await?;
+    sqlx::query("UPDATE singbox_nexus_node_imports SET node_count=2")
+        .execute(&pool)
+        .await?;
+    let preview = ok(post(&panel, &cookie, "/preview", json!({"payload":payload})).await?).await?;
+    assert_eq!(preview["conflicts"], json!([]));
+    ok(post(
+        &panel,
+        &cookie,
+        "/prepare",
+        json!({"payload":payload,"expected_digest":preview["digest"]}),
+    )
+    .await?)
+    .await?;
+    // The handoff itself is covered above; here the host simply runs.
+    sqlx::query("UPDATE singbox_nexus_runtime_hosts SET state='active',activated_at=1,last_activated_at=1 WHERE server_id=$1")
+        .bind(server)
+        .execute(&pool)
+        .await?;
+    sqlx::query("UPDATE server_plugins SET enabled=TRUE WHERE server_id=$1")
+        .bind(server)
+        .execute(&pool)
+        .await?;
+    publisher::publish_due(&panel.state).await?;
+    sqlx::query("UPDATE servers SET dirty_at=0")
+        .execute(&pool)
+        .await?;
+    publisher::publish_due(&panel.state).await?;
+    assert_eq!(published_ports(&pool, server).await?, vec![23456, 23457]);
+    let managed = bridge_devices(&pool, json!({}), json!({})).await?;
+    assert_eq!(managed["managed"].as_array().map(Vec::len), Some(2));
+
+    let inventory = |legacy: i64| {
+        sqlx::query_scalar::<_, i64>("SELECT id FROM singbox_nexus_nodes WHERE legacy_node_id=$1")
+            .bind(legacy)
+            .fetch_one(&pool)
+    };
+    let (first, retired) = (inventory(43).await?, inventory(44).await?);
+    let path = |id: i64| format!("/api/plugins/sing-box/nexus-nodes/{id}/retire");
+    let native: i64 =
+        sqlx::query_scalar("SELECT node_id FROM singbox_nexus_runtime_nodes WHERE inventory_id=$1")
+            .bind(retired)
+            .fetch_one(&pool)
+            .await?;
+    // A mistyped id must not remove the other line.
+    assert_eq!(
+        panel
+            .admin(
+                Method::POST,
+                &path(retired),
+                &cookie,
+                Some(json!({"legacy_node_id":43}))
+            )
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
+        .bind(server)
+        .execute(&pool)
+        .await?;
+    let done = ok(panel
+        .admin(
+            Method::POST,
+            &path(retired),
+            &cookie,
+            Some(json!({"legacy_node_id":44})),
+        )
+        .await?)
+    .await?;
+    assert_eq!(done["republish"], true);
+    assert_eq!(done["runtime_node_id"], native);
+    let state: (i64, i64, bool, Option<i64>, i32, bool, Option<i64>) = sqlx::query_as("SELECT (SELECT COUNT(*) FROM singbox_nexus_runtime_nodes),(SELECT COUNT(*) FROM singbox_nexus_nodes),(SELECT enabled FROM nodes WHERE id=$1),(SELECT deleted_at FROM nodes WHERE id=$1),(SELECT node_count FROM singbox_nexus_node_imports),(SELECT enabled FROM credential_entries WHERE id=$2),(SELECT dirty_at FROM servers WHERE id=$3)")
+        .bind(native).bind(credential).bind(server).fetch_one(&pool).await?;
+    assert_eq!(
+        (state.0, state.1, state.2, state.4, state.5),
+        (1, 1, false, 1, false)
+    );
+    assert!(state.3.is_some(), "the native row is retired, not deleted");
+    assert!(state.6.is_some(), "the running host must be republished");
+    // The generic write path stays closed after the bypass.
+    assert!(
+        sqlx::query("UPDATE nodes SET port=23458 WHERE server_id=$1")
+            .bind(server)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    // The snapshot still lists the line; publication leaves it out. The
+    // membership change restarts the debounce, as on the first publication.
+    publisher::publish_due(&panel.state).await?;
+    sqlx::query("UPDATE servers SET dirty_at=0")
+        .execute(&pool)
+        .await?;
+    publisher::publish_due(&panel.state).await?;
+    assert_eq!(published_ports(&pool, server).await?, vec![23456]);
+    let managed = bridge_devices(&pool, json!({}), json!({})).await?;
+    assert_eq!(managed["managed"][0]["legacy_node_id"], 43);
+    assert_eq!(managed["managed"].as_array().map(Vec::len), Some(1));
+    // The last line of a host is not retired; the whole host is paused instead.
+    assert_eq!(
+        panel
+            .admin(
+                Method::POST,
+                &path(first),
+                &cookie,
+                Some(json!({"legacy_node_id":43}))
+            )
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        panel
+            .admin(
+                Method::POST,
+                &path(retired),
+                &cookie,
+                Some(json!({"legacy_node_id":44}))
+            )
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    let audit: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM management_audit WHERE action='nexus.nodes.retire'",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(audit, 1);
+    Ok(())
+}
