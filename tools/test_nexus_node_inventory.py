@@ -169,7 +169,7 @@ class AppendTests(unittest.TestCase):
             def call(self, path, method="GET", payload=None):
                 if path == "/api/servers":
                     return copy.deepcopy(self.servers)
-                if method == "PUT":
+                if method == "PATCH":
                     self.put = payload
                     return {}
                 return {"id": 19, "name": "alice-hk", "asset_settings": {"tags": ["keep"], "region": "HK"}}
