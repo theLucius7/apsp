@@ -137,7 +137,7 @@ def link_server(panel, source_id, host_id, server_id):
     server = panel.call(f"/api/servers/{server_id}")
     settings = dict(server.get("asset_settings") or {})
     settings["tags"] = list(settings.get("tags") or []) + [source_tag({"source_id": source_id}, host_id)]
-    panel.call(f"/api/servers/{server_id}", "PUT", {"name": server["name"], "asset_settings": settings})
+    panel.call(f"/api/servers/{server_id}", "PATCH", {"name": server["name"], "asset_settings": settings})
     return True
 
 
