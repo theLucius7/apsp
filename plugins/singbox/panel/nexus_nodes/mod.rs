@@ -27,6 +27,8 @@ pub(super) fn router() -> Router<AppState> {
         .route("/nexus-nodes", get(list))
         .route("/nexus-nodes/preview", post(preview))
         .route("/nexus-nodes/import", post(import))
+        .route("/nexus-nodes/append/preview", post(append_preview))
+        .route("/nexus-nodes/append", post(append))
         .route("/nexus-nodes/{id}/public-endpoint", patch(public_endpoint))
         .route("/nexus-nodes/{id}/groups", patch(legacy_groups))
         .route("/nexus-nodes/{id}/retire", post(retire))
@@ -361,6 +363,157 @@ async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Js
     Ok(Json(nodes))
 }
 
+/// Encrypts each original node record and adds its inventory row.
+async fn store_nodes(
+    tx: &mut Transaction<'_, Postgres>,
+    source: &str,
+    nodes: Vec<model::PreparedNode>,
+) -> ApiResult<()> {
+    for node in nodes {
+        let credential = control_center::credentials::store_generated_on(
+            tx,
+            &format!("Nexus {source} node {}", node.legacy_id),
+            "backup",
+            node.archive,
+        )
+        .await?;
+        sqlx::query("INSERT INTO singbox_nexus_nodes(source_id,legacy_node_id,legacy_machine_id,legacy_host_id,server_id,credential_id,display) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(source).bind(node.legacy_id).bind(node.machine_id).bind(node.host_id).bind(node.server_id).bind(credential).bind(node.display).execute(&mut **tx).await?;
+    }
+    Ok(())
+}
+
+/// Checks that every host in the snapshot maps, by its source tag alone, to
+/// exactly the server the snapshot names. Locks the server rows it reads.
+async fn host_conflicts(
+    tx: &mut Transaction<'_, Postgres>,
+    snapshot: &Snapshot,
+) -> ApiResult<Vec<String>> {
+    let servers: Vec<(i64, Value)> = sqlx::query_as(
+        "SELECT id,asset_settings FROM servers WHERE deleted_at IS NULL ORDER BY id FOR SHARE",
+    )
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut conflicts = Vec::new();
+    for host in &snapshot.hosts {
+        let tag = source_tag(&snapshot.source_id, host.legacy_id);
+        let matches: Vec<_> = servers
+            .iter()
+            .filter(|(_, settings)| {
+                settings["tags"]
+                    .as_array()
+                    .is_some_and(|tags| tags.iter().any(|v| v.as_str() == Some(&tag)))
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        if matches != [host.server_id] {
+            conflicts.push(format!(
+                "原主机 {} 的来源标签与目标服务器映射不一致",
+                host.legacy_id
+            ));
+        }
+    }
+    Ok(conflicts)
+}
+
+/// An append adds nodes the source gained after its first import without
+/// touching what was imported then. Every requested node must be new, or, for a
+/// retried request, already present with the same host mapping.
+async fn inspect_append(
+    tx: &mut Transaction<'_, Postgres>,
+    snapshot: &Snapshot,
+    nodes: &[model::PreparedNode],
+    digest: &str,
+) -> ApiResult<Value> {
+    let mut conflicts = Vec::new();
+    let imported: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM singbox_nexus_node_imports WHERE source_id=$1)",
+    )
+    .bind(&snapshot.source_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if !imported {
+        conflicts.push("来源尚未完整导入，不能追加节点".to_owned());
+    }
+    let (mut present, mut fresh) = (0, Vec::new());
+    for node in nodes {
+        let saved: Option<(i64, i64, i64)> = sqlx::query_as("SELECT legacy_machine_id,legacy_host_id,server_id FROM singbox_nexus_nodes WHERE source_id=$1 AND legacy_node_id=$2")
+            .bind(&snapshot.source_id).bind(node.legacy_id).fetch_optional(&mut **tx).await?;
+        match saved {
+            None => fresh.push(node.legacy_id),
+            Some(row) if row == (node.machine_id, node.host_id, node.server_id) => present += 1,
+            Some(_) => conflicts.push(format!(
+                "原节点 {} 已导入且归属不同，不能追加",
+                node.legacy_id
+            )),
+        }
+    }
+    if present > 0 && !fresh.is_empty() {
+        conflicts.push("追加内容与已导入节点部分重叠，请只提交新节点".to_owned());
+    }
+    conflicts.extend(host_conflicts(tx, snapshot).await?);
+    Ok(
+        json!({"digest":digest,"node_count":nodes.len(),"new_nodes":fresh,
+        "already_imported":present == nodes.len(),"conflicts":conflicts,"state":"pending_agent"}),
+    )
+}
+
+async fn append_preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<Preview>,
+) -> ApiResult<Json<Value>> {
+    control_center::require_owner(&state, &headers).await?;
+    let snapshot = input.payload;
+    let nodes = prepare(&snapshot)?;
+    let mut tx = state.pool.begin().await?;
+    Ok(Json(
+        inspect_append(&mut tx, &snapshot, &nodes, &digest(&snapshot)?).await?,
+    ))
+}
+
+async fn append(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<Import>,
+) -> ApiResult<Json<Value>> {
+    let actor = control_center::require_owner(&state, &headers).await?;
+    control_center::require_recent_proof(&state, &headers).await?;
+    let snapshot = input.payload;
+    let nodes = prepare(&snapshot)?;
+    let digest = digest(&snapshot)?;
+    if !input.confirm_staged || input.expected_digest != digest {
+        return Err(ApiError::Conflict("请先预览并确认同一份追加快照".into()));
+    }
+    let mut tx = state.pool.begin().await?;
+    // Same lock as a full import: one inventory writer at a time.
+    sqlx::query("SELECT pg_advisory_xact_lock(71410071)")
+        .execute(&mut *tx)
+        .await?;
+    let report = inspect_append(&mut tx, &snapshot, &nodes, &digest).await?;
+    if !report["conflicts"].as_array().unwrap().is_empty() {
+        return Err(ApiError::Conflict(
+            "追加节点与已有记录或主机映射冲突，请重新预览".into(),
+        ));
+    }
+    if report["already_imported"] != true {
+        let added = nodes.len() as i32;
+        store_nodes(&mut tx, &snapshot.source_id, nodes).await?;
+        // Keep the source's record count matching its rows for later previews.
+        sqlx::query(
+            "UPDATE singbox_nexus_node_imports SET node_count=node_count+$2 WHERE source_id=$1",
+        )
+        .bind(&snapshot.source_id)
+        .bind(added)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus.nodes.append','/api/plugins/sing-box/nexus-nodes/append',$2,$3,$4)")
+            .bind(actor).bind(json!({"source_id":snapshot.source_id,"digest":digest,"infrastructure_digest":snapshot.infrastructure_digest}))
+            .bind(json!({"added":report["new_nodes"],"state":"pending_agent"})).bind(now_timestamp()).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+    Ok(Json(report))
+}
+
 async fn inspect(
     tx: &mut Transaction<'_, Postgres>,
     snapshot: &Snapshot,
@@ -387,31 +540,8 @@ async fn inspect(
             conflicts.push("已导入节点记录不完整，需先恢复原导入".into());
         }
     }
-    // Source tags are authoritative, not caller-supplied server ids. Lock all
-    // host rows to prevent a concurrent mapping edit during the transaction.
-    let servers: Vec<(i64, Value)> = sqlx::query_as(
-        "SELECT id,asset_settings FROM servers WHERE deleted_at IS NULL ORDER BY id FOR SHARE",
-    )
-    .fetch_all(&mut **tx)
-    .await?;
-    for host in &snapshot.hosts {
-        let tag = source_tag(&snapshot.source_id, host.legacy_id);
-        let matches: Vec<_> = servers
-            .iter()
-            .filter(|(_, settings)| {
-                settings["tags"]
-                    .as_array()
-                    .is_some_and(|tags| tags.iter().any(|v| v.as_str() == Some(&tag)))
-            })
-            .map(|(id, _)| *id)
-            .collect();
-        if matches != [host.server_id] {
-            conflicts.push(format!(
-                "原主机 {} 的来源标签与目标服务器映射不一致",
-                host.legacy_id
-            ));
-        }
-    }
+    // Source tags are authoritative, not caller-supplied server ids.
+    conflicts.extend(host_conflicts(tx, snapshot).await?);
     Ok(
         json!({"digest":digest,"node_count":snapshot.nodes.len(),"host_count":snapshot.hosts.len(),"machine_count":snapshot.machines.len(),"already_imported":already_imported,"conflicts":conflicts,"state":"pending_agent"}),
     )
@@ -472,16 +602,7 @@ async fn import(
     }
     if report["already_imported"] != true {
         sqlx::query("INSERT INTO singbox_nexus_node_imports(source_id,digest,infrastructure_digest,exported_at,imported_at,node_count) VALUES($1,$2,$3,$4,$5,$6)").bind(&snapshot.source_id).bind(&digest).bind(&snapshot.infrastructure_digest).bind(snapshot.exported_at).bind(now_timestamp()).bind(nodes.len() as i32).execute(&mut *tx).await?;
-        for node in nodes {
-            let credential = control_center::credentials::store_generated_on(
-                &mut tx,
-                &format!("Nexus {} node {}", snapshot.source_id, node.legacy_id),
-                "backup",
-                node.archive,
-            )
-            .await?;
-            sqlx::query("INSERT INTO singbox_nexus_nodes(source_id,legacy_node_id,legacy_machine_id,legacy_host_id,server_id,credential_id,display) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(&snapshot.source_id).bind(node.legacy_id).bind(node.machine_id).bind(node.host_id).bind(node.server_id).bind(credential).bind(node.display).execute(&mut *tx).await?;
-        }
+        store_nodes(&mut tx, &snapshot.source_id, nodes).await?;
         sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus.nodes.import','/api/plugins/sing-box/nexus-nodes',$2,$3,$4)")
             .bind(actor).bind(json!({"source_id":snapshot.source_id,"digest":digest})).bind(json!({"node_count":snapshot.nodes.len(),"state":"pending_agent"})).bind(now_timestamp()).execute(&mut *tx).await?;
     }

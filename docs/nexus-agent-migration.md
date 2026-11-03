@@ -37,6 +37,23 @@ python3 tools/nexus_node_inventory.py import /private/nodes.json /private/node-r
 
 导入需要所有者登录及近期验证。API 检查稳定来源标签，不信任单独传入的服务器编号。同快照重复提交不重复创建，不同快照拒绝覆盖。导入和加密凭据在一个事务中提交，响应丢失时使用原文件和摘要重试。节点明确显示“待 Agent 接管”，不会自动写入运行时或使新订阅出现尚未接管的节点。设计见 [ADR 0094](adr/0094-nexus-node-inventory.md)。
 
+### 追加导入后新增的线路
+
+来源导入后，旧面板又新增了主机或线路（例如新开的机器）时，不重新导出整份快照：同一来源只接受一份完整快照，换一份会被拒绝覆盖。改用追加，只导出指定节点：
+
+```sh
+python3 tools/nexus_node_inventory.py append /private/nexus.sqlite /private/append-<日期>.json /private/append-<日期>-receipt.json \
+  --source-id <原来源编号> --node <节点编号> [--node …] \
+  [--create-server] [--link-server <原主机编号>=<apsp 服务器编号>] \
+  --env-file /private/apsp.env --panel-api http://127.0.0.1:8080
+# 核对输出的预览后，加 --confirmed-digest '<预览摘要>' 重跑同一命令
+```
+
+- 快照第一次运行时写入指定文件，之后的预览、确认和重试都读同一份文件，摘要不会变化。
+- 只能追加有自己 machine 的节点。别名节点（`parent_id` 非零、没有 machine）由父节点的监听承载，导入父节点即可。
+- 节点所在主机必须在旧面板有基础设施记录，并且 machine 已关联到主机。apsp 侧按来源标签找服务器，不信任请求里的编号：`--create-server` 为还没有服务器的主机按原资料新建；`--link-server` 给已经接入的服务器补上该主机的标签。
+- 服务端逐个检查：节点都必须是新的；同一请求重试时，节点都已存在且主机映射不变视为已导入；新旧混合或归属不同一律拒绝。追加不改原导入的摘要，只增加节点计数，并记录管理审计。
+
 ## 正式切换前的缺口
 
 2026-10-24 查询 GitHub 公开 Release，当前只有 `agent-v0.3.0`。其已签 `release.json` 的来源为旧仓库身份，Agent 二进制名称为旧名称；当前校验器要求现项目身份。不能修改已签 JSON 或跳过校验，把旧资产伪装为新发布。旧适配器在 `native::listen_addresses` 明确只接受 VLESS；面板支持 Hysteria2/SS2022 不代表已签 Agent 支持。

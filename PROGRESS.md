@@ -1,5 +1,11 @@
 # 执行进度
 
+## 2026-11-03：追加导入后新增的 Nexus 线路
+
+- 导入按来源锁定整份快照，之后旧面板新增的主机和线路（hk5、Alice HK）无法进入 apsp，也就无法切换到 apsp 运行时；旧面板里不挂 machine 的别名节点还会让整份导出的校验失败。
+- 新增 `POST /api/plugins/sing-box/nexus-nodes/append/preview` 与 `/append`，以及 `tools/nexus_node_inventory.py append`，用法见 [Nexus Agent 迁移](docs/nexus-agent-migration.md#追加导入后新增的线路)。只导出并导入指定节点，已导入的记录不变。
+- 验证：`nexus_node_inventory` 集成测试覆盖来源未导入、正常追加、重试幂等、新旧混合、归属不同、无来源标签和追加后原导入仍幂等；工具单元测试覆盖只导出指定切片、拒绝别名与未关联的主机、补标签只补一次。只改面板和工具，远端 CI 未运行。
+
 ## 2026-11-03：CDT 守护跨月后无法自动开机
 
 - 11-01 跨月时，阿里云 `ListCdtInternetTraffic` 在首次计量前返回空列表。守护把空列表判为无效读数，被它在上月停机的实例不再产生流量，列表一直为空，于是整个月都不会自动开机，只能手动启动。

@@ -282,3 +282,135 @@ async fn node_inventory_rejects_untrusted_mappings_and_invalid_references(
     assert_eq!(counts(&pool).await?, (0, 0, 0));
     Ok(())
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn append_adds_only_new_nodes_and_keeps_the_original_import(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let snapshot = fixture(&pool).await?;
+    // A node the source gained after its first import, on an existing host.
+    let mut addition = snapshot.clone();
+    let mut node = snapshot["nodes"][0].clone();
+    node["id"] = json!(44);
+    node["name"] = json!("Fixture added later");
+    node["server_port"] = json!(8444);
+    addition["nodes"] = json!([node]);
+    addition["hosts"] = json!([snapshot["hosts"][0]]);
+    addition["machines"] = json!([snapshot["machines"][0]]);
+    addition["infrastructure_digest"] = json!("b".repeat(64));
+    let preview = |body: Value| {
+        let (panel, cookie) = (&panel, &cookie);
+        async move {
+            ok(request(
+                panel,
+                cookie,
+                Method::POST,
+                "/append/preview",
+                json!({"payload":body}),
+            )
+            .await?)
+            .await
+        }
+    };
+    // Nothing to append to before the source itself was imported.
+    let early = preview(addition.clone()).await?;
+    assert_eq!(early["conflicts"][0], "来源尚未完整导入，不能追加节点");
+    let base =
+        ok(request(&panel, &cookie, Method::POST, "/preview", snapshot.clone()).await?).await?;
+    prove(&panel, &cookie).await?;
+    ok(request(
+        &panel,
+        &cookie,
+        Method::POST,
+        "/import",
+        json!({"payload":snapshot,"expected_digest":base["digest"],"confirm_staged":true}),
+    )
+    .await?)
+    .await?;
+    assert_eq!(counts(&pool).await?, (1, 3, 3));
+
+    let planned = preview(addition.clone()).await?;
+    assert_eq!(planned["conflicts"], json!([]));
+    assert_eq!(planned["new_nodes"], json!([44]));
+    assert_eq!(planned["already_imported"], false);
+    let input =
+        json!({"payload":addition,"expected_digest":planned["digest"],"confirm_staged":true});
+    let stale = json!({"payload":addition,"expected_digest":"c".repeat(64),"confirm_staged":true});
+    assert_eq!(
+        request(&panel, &cookie, Method::POST, "/append", stale)
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    let done = ok(request(&panel, &cookie, Method::POST, "/append", input.clone()).await?).await?;
+    assert_eq!(done["new_nodes"], json!([44]));
+    assert_eq!(counts(&pool).await?, (1, 4, 4));
+    let (count, digest): (i32, String) = sqlx::query_as(
+        "SELECT node_count,digest FROM singbox_nexus_node_imports WHERE source_id='fixture'",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        (count, digest.as_str()),
+        (4, base["digest"].as_str().unwrap())
+    );
+    let (server, display): (i64, Value) =
+        sqlx::query_as("SELECT server_id,display FROM singbox_nexus_nodes WHERE legacy_node_id=44")
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(server, snapshot["hosts"][0]["server_id"].as_i64().unwrap());
+    assert_eq!(display["listen_port"], "8444");
+    // A retried request changes nothing.
+    let again = ok(request(&panel, &cookie, Method::POST, "/append", input).await?).await?;
+    assert_eq!(again["already_imported"], true);
+    assert_eq!(counts(&pool).await?, (1, 4, 4));
+    // The original import stays idempotent after an append.
+    let replay =
+        ok(request(&panel, &cookie, Method::POST, "/preview", snapshot.clone()).await?).await?;
+    assert_eq!(replay["already_imported"], true);
+    assert_eq!(replay["conflicts"], json!([]));
+
+    // Mixing an imported node with a new one is refused.
+    let mut mixed = addition.clone();
+    let mut extra = mixed["nodes"][0].clone();
+    extra["id"] = json!(45);
+    mixed["nodes"].as_array_mut().unwrap().push(extra);
+    let refused = preview(mixed).await?;
+    assert_eq!(
+        refused["conflicts"][0],
+        "追加内容与已导入节点部分重叠，请只提交新节点"
+    );
+    // An imported node cannot be moved to another host by an append.
+    let mut moved = snapshot.clone();
+    moved["nodes"] = json!([snapshot["nodes"][0]]);
+    moved["hosts"] = json!([{"legacy_id":1,"server_id":snapshot["hosts"][1]["server_id"]}]);
+    moved["machines"] = json!([snapshot["machines"][0]]);
+    let moved = preview(moved).await?;
+    assert!(
+        moved["conflicts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c == "原节点 31 已导入且归属不同，不能追加")
+    );
+    // A host without the source tag cannot receive nodes.
+    let untagged: i64 =
+        sqlx::query_scalar("INSERT INTO servers(name) VALUES('untagged') RETURNING id")
+            .fetch_one(&pool)
+            .await?;
+    let mut stray = addition.clone();
+    stray["nodes"][0]["id"] = json!(46);
+    stray["hosts"] = json!([{"legacy_id":1,"server_id":untagged}]);
+    let stray = preview(stray).await?;
+    assert_eq!(
+        stray["conflicts"][0],
+        "原主机 1 的来源标签与目标服务器映射不一致"
+    );
+    let audit: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM management_audit WHERE action='nexus.nodes.append'",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(audit, 1);
+    Ok(())
+}
