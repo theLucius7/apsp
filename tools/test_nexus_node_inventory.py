@@ -117,3 +117,66 @@ class NodeInventoryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AppendTests(unittest.TestCase):
+    """Appending later nodes reads only their own slice of the source."""
+
+    TABLES = {
+        "v2_server": [
+            {"id": 52, "machine_id": 34, "parent_id": None, "type": "vless", "protocol_settings": "{}"},
+            {"id": 54, "machine_id": None, "parent_id": 52, "type": "vless", "protocol_settings": "{}"},
+            {"id": 66, "machine_id": 40, "parent_id": None, "type": "vless", "protocol_settings": "{}"},
+            {"id": 70, "machine_id": 41, "parent_id": None, "type": "vless", "protocol_settings": "{}"},
+        ],
+        "v2_infra_machine": [{"machine_id": 34, "host_id": 19}, {"machine_id": 40, "host_id": 20}],
+        "v2_server_machine": [{"id": 34, "name": "hk5", "is_active": 1}, {"id": 40, "name": "alice-hk-cf", "is_active": 1},
+                              {"id": 41, "name": "unlinked", "is_active": 1}],
+        "v2_infra_host": [{"id": 19, "name": "alibaba-hk5", "address": "a", "notes": None, "metadata": "{}"},
+                          {"id": 20, "name": "alice-hk", "address": "b", "notes": None, "metadata": "{}"}],
+        "v2_server_group": [{"id": 2, "name": "group"}],
+        "v2_server_route": [],
+    }
+
+    def rows(self, connection, table, columns, required=True):
+        return copy.deepcopy(self.TABLES[table])
+
+    def servers(self, *hosts):
+        return [{"id": 100 + host, "asset_settings": {"tags": [migration.source_tag({"source_id": "fixture"}, host)]}}
+                for host in hosts]
+
+    def test_only_requested_nodes_and_their_hosts_are_exported(self):
+        with patch.object(migration, "rows", self.rows):
+            value = migration.append_snapshot(None, "fixture", [52, 66], self.servers(19, 20), now=7)
+        self.assertEqual([n["id"] for n in value["nodes"]], [52, 66])
+        self.assertEqual(value["hosts"], [{"legacy_id": 19, "server_id": 119}, {"legacy_id": 20, "server_id": 120}])
+        self.assertEqual([(m["id"], m["host_id"]) for m in value["machines"]], [(34, 19), (40, 20)])
+        self.assertEqual((value["format"], value["exported_at"]), ("apsp.nexus.nodes.v1", 7))
+        self.assertEqual(len(value["infrastructure_digest"]), 64)
+
+    def test_aliases_unlinked_machines_untagged_hosts_and_duplicates_are_refused(self):
+        with patch.object(migration, "rows", self.rows):
+            for nodes, servers in ([[54], self.servers(19)], [[70], self.servers(19)], [[66], self.servers(19)],
+                                   [[52, 52], self.servers(19)], [[99], self.servers(19)], [[52], self.servers(19) * 2]):
+                with self.assertRaises(ValueError):
+                    migration.append_snapshot(None, "fixture", nodes, servers)
+
+    def test_link_tags_once_and_refuses_another_owner(self):
+        class LinkPanel:
+            def __init__(self, servers):
+                self.servers, self.put = servers, None
+
+            def call(self, path, method="GET", payload=None):
+                if path == "/api/servers":
+                    return copy.deepcopy(self.servers)
+                if method == "PUT":
+                    self.put = payload
+                    return {}
+                return {"id": 19, "name": "alice-hk", "asset_settings": {"tags": ["keep"], "region": "HK"}}
+
+        panel = LinkPanel([{"id": 19, "asset_settings": {"tags": ["keep"]}}])
+        self.assertTrue(migration.link_server(panel, "fixture", 20, 19))
+        self.assertEqual(panel.put["asset_settings"]["tags"], ["keep", migration.source_tag({"source_id": "fixture"}, 20)])
+        self.assertEqual(panel.put["asset_settings"]["region"], "HK")
+        with self.assertRaises(ValueError):
+            migration.link_server(LinkPanel(self.servers(20)), "fixture", 20, 19)
