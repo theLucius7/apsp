@@ -69,8 +69,14 @@ async fn queued(pool: &PgPool, rid: Uuid) -> Vec<Job> {
 #[test]
 fn bgp_pool_includes_other_regions_and_ipv6_but_not_mainland() {
     let value = json!({"TrafficDetails":[row("cn-hongkong", 45*GIB), row("ap-southeast-1", 30*GIB), row("cn-hangzhou", 10*GIB)]});
-    assert_eq!(meter::traffic(&value, "cn-hongkong").unwrap(), 75 * GIB);
-    assert_eq!(meter::traffic(&value, "cn-shanghai").unwrap(), 10 * GIB);
+    assert_eq!(
+        meter::traffic(&value, "cn-hongkong").unwrap(),
+        Some(75 * GIB)
+    );
+    assert_eq!(
+        meter::traffic(&value, "cn-shanghai").unwrap(),
+        Some(10 * GIB)
+    );
     let mut duplicate = value.clone();
     duplicate["TrafficDetails"][1] = duplicate["TrafficDetails"][0].clone();
     assert!(meter::traffic(&duplicate, "cn-hongkong").is_err());
@@ -437,7 +443,22 @@ async fn confirmed_cdt_accepts_zero_month_reset_without_additional_permissions(p
 
 #[test]
 fn empty_or_missing_pool_is_not_a_zero_counter() {
-    assert!(meter::traffic(&json!({"TrafficDetails":[]}), "cn-hongkong").is_err());
+    // A complete empty listing is reported as "no reading", never as zero.
+    assert_eq!(
+        meter::traffic(&json!({"TrafficDetails":[]}), "cn-hongkong").unwrap(),
+        None
+    );
+    assert_eq!(
+        meter::traffic(&json!({"TrafficDetails":[],"TotalCount":0}), "cn-hongkong").unwrap(),
+        None
+    );
+    for incomplete in [
+        json!({"TrafficDetails":[],"TotalCount":2}),
+        json!({"TrafficDetails":[],"NextToken":"more"}),
+        json!({}),
+    ] {
+        assert!(meter::traffic(&incomplete, "cn-hongkong").is_err());
+    }
     assert!(
         meter::traffic(
             &json!({"TrafficDetails":[row("cn-hangzhou", 0)]}),
@@ -445,4 +466,79 @@ fn empty_or_missing_pool_is_not_a_zero_counter() {
         )
         .is_err()
     );
+}
+
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+async fn empty_listing_in_a_new_cycle_restarts_a_guard_stopped_instance(pool: PgPool) {
+    // 2026-11-01: the guard stopped the instance at its threshold in October;
+    // November's listing stays empty while it is off, so it must still start.
+    let (a, r) = seed(&pool).await;
+    let now = apsp_protocol::now_timestamp();
+    let mut previous = observation(&a, &r, 151 * GIB, 0, now - 60);
+    previous.billing_cycle = "2020-01".into();
+    save_observation(&pool, r.id, &previous).await;
+    let empty = Reply::ok(
+        "ListCdtInternetTraffic",
+        json!({"RequestId":"meter","TrafficDetails":[],"TotalCount":0}),
+    );
+    let mock = Mock::start(vec![power("Stopped"), empty]).await;
+    scheduler::poll(&pool, r.id, &Cloud::local(&mock.endpoint))
+        .await
+        .unwrap();
+    let saved = resource(&pool, r.id).await.unwrap();
+    assert!(saved.cdt_guard_error.is_none());
+    let reset = saved.cdt_guard_state.as_ref().unwrap();
+    assert_eq!(reset.max_usage_bytes, 0);
+    assert_eq!(reset.billing_cycle, billing::month(now));
+    assert_eq!(queued(&pool, r.id).await[0].action, "start");
+    // Still empty a minute later in the same cycle: accepted while nothing was metered.
+    assert!(observe_empty(Some(reset), &a, &saved, &key_digest(KEY), now + 60).is_ok());
+    mock.exhausted();
+}
+
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+async fn empty_listing_never_replaces_evidence(pool: PgPool) {
+    let (a, r) = seed(&pool).await;
+    let now = apsp_protocol::now_timestamp();
+    let digest = key_digest(KEY);
+    let reject = |result: Result<Observation, Failure>| result.unwrap_err().code;
+    // No history at all.
+    assert_eq!(
+        reject(observe_empty(None, &a, &r, &digest, now)),
+        "invalid_response"
+    );
+    // Usage already seen this cycle: an empty listing is a broken reading.
+    let current = observation(&a, &r, 5 * GIB, 0, now - 60);
+    assert_eq!(
+        reject(observe_empty(Some(&current), &a, &r, &digest, now)),
+        "invalid_response"
+    );
+    // Imported history without a live reading proves nothing.
+    let mut imported = current.clone();
+    imported.billing_cycle = "2020-01".into();
+    imported.queried_at = 0;
+    assert_eq!(
+        reject(observe_empty(Some(&imported), &a, &r, &digest, now)),
+        "invalid_response"
+    );
+    // A confirmed previous cycle still has to match the account key and instance.
+    let mut previous = current;
+    previous.billing_cycle = "2020-01".into();
+    assert!(observe_empty(Some(&previous), &a, &r, &digest, now).is_ok());
+    assert_eq!(
+        reject(observe_empty(Some(&previous), &a, &r, "changed-key", now)),
+        "cdt_state_mismatch"
+    );
+    // A running instance with an empty listing in a confirmed new cycle is not stopped.
+    save_observation(&pool, r.id, &previous).await;
+    let empty = Reply::ok(
+        "ListCdtInternetTraffic",
+        json!({"RequestId":"meter","TrafficDetails":[]}),
+    );
+    let mock = Mock::start(vec![power("Running"), empty]).await;
+    scheduler::poll(&pool, r.id, &Cloud::local(&mock.endpoint))
+        .await
+        .unwrap();
+    assert!(queued(&pool, r.id).await.is_empty());
+    mock.exhausted();
 }

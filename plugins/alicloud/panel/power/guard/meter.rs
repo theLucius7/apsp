@@ -44,12 +44,18 @@ fn complete(value: &Value, count: usize) -> Result<(), Failure> {
     Ok(())
 }
 
-pub(super) fn traffic(value: &Value, region: &str) -> Result<u64, Failure> {
+/// `None` is a complete, empty listing: Aliyun returns no rows for a fresh
+/// billing cycle until the first metered traffic. It is not a zero counter;
+/// only `guard::observe_empty` may accept it, for an already confirmed account.
+pub(super) fn traffic(value: &Value, region: &str) -> Result<Option<u64>, Failure> {
     let rows = value["TrafficDetails"]
         .as_array()
-        .filter(|v| !v.is_empty() && v.len() <= 256)
+        .filter(|v| v.len() <= 256)
         .ok_or(Failure::from("invalid_response"))?;
     complete(value, rows.len())?;
+    if rows.is_empty() {
+        return Ok(None);
+    }
     let target_pool = pool(region)?;
     let mut seen = BTreeSet::new();
     let mut total = 0_u64;
@@ -107,7 +113,7 @@ pub(super) fn traffic(value: &Value, region: &str) -> Result<u64, Failure> {
     if !pool_seen {
         return Err("cdt_not_enabled".into());
     }
-    Ok(total)
+    Ok(Some(total))
 }
 
 impl Cloud {
@@ -115,7 +121,7 @@ impl Cloud {
         &self,
         account: &Account,
         region: &str,
-    ) -> Result<(u64, String), Failure> {
+    ) -> Result<(Option<u64>, String), Failure> {
         let resolved = self.resolved_account(account).await?;
         let value = self
             .cdt

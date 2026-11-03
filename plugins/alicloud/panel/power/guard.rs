@@ -125,6 +125,30 @@ pub(super) fn observe(
     })
 }
 
+/// An empty CDT listing at a cycle boundary. A stopped instance produces no
+/// traffic, so the listing can stay empty for the whole new month and the guard
+/// would never start it again. Accept it as zero only for an account with a
+/// trusted positive live reading, and only while this cycle has shown no usage
+/// yet; anything else stays an invalid reading, as before.
+pub(super) fn observe_empty(
+    previous: Option<&Observation>,
+    account: &Account,
+    resource: &Resource,
+    digest: &str,
+    now: i64,
+) -> Result<Observation, Failure> {
+    let cycle = billing::month(now);
+    let eligible = previous.is_some_and(|old| {
+        old.queried_at > 0
+            && (old.cdt_observed || old.max_usage_bytes > 0)
+            && (old.billing_cycle < cycle || old.max_usage_bytes == 0)
+    });
+    if !eligible {
+        return Err("invalid_response".into());
+    }
+    observe(previous, 0, account, resource, digest, now)
+}
+
 pub(super) fn exceeded(account: &Account, resource: &Resource, now: i64) -> Option<bool> {
     let config = resource.power_policy.cdt_guard.as_ref()?;
     let observation = resource.cdt_guard_state.as_ref()?;
@@ -233,17 +257,13 @@ pub(super) async fn read(
     match cloud.guard_usage(account, &r.region).await {
         Ok((bytes, digest)) => {
             let now = apsp_protocol::now_timestamp();
+            let previous = r.cdt_guard_state.as_ref().map(|v| &v.0);
             if billing::month(now) != billing::month(started_at) {
                 Err(Failure::from("cdt_month_changed"))
+            } else if let Some(bytes) = bytes {
+                observe(previous, bytes, account, r, &digest, now)
             } else {
-                observe(
-                    r.cdt_guard_state.as_ref().map(|v| &v.0),
-                    bytes,
-                    account,
-                    r,
-                    &digest,
-                    now,
-                )
+                observe_empty(previous, account, r, &digest, now)
             }
         }
         Err(error) => Err(error),
