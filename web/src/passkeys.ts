@@ -58,10 +58,10 @@ export async function registerPasskey(base: string, body: unknown, admin = true)
   } }, undefined, admin)
 }
 
-export async function authenticatePasskey(base: string, admin = true): Promise<void> {
+export async function authenticatePasskey(base: string, admin = true, start?: unknown): Promise<void> {
   const support = passkeySupport()
   if (support) throw new Error(support)
-  const challenge = await api<Challenge<Request>>(`${base}/start`, 'POST', undefined, undefined, admin)
+  const challenge = await api<Challenge<Request>>(`${base}/start`, 'POST', start, undefined, admin)
   const options = challenge.options.publicKey
   const key = await credential(() => navigator.credentials.get({ publicKey: {
     ...options, challenge: decode(options.challenge), allowCredentials: options.allowCredentials?.map(item => ({ ...item, id: decode(item.id) })),

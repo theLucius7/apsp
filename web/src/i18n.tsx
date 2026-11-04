@@ -95,7 +95,7 @@ const english: Record<string, string> = {
   '密码或验证码不正确、已过期或已使用，请重新输入。': 'The password or verification code is incorrect, expired, or already used. Enter it again.',
   '二步验证码': 'Two-factor code', '未启用时留空': 'Leave blank when disabled', '请输入密码': 'Enter password',
   '启用二步验证后，请输入验证器当前的六位数字。': 'Enter the current six-digit code from your authenticator when two-factor authentication is enabled.',
-  '使用初始所有者 Passkey 登录': 'Sign in with the initial owner passkey', '仅限管理员访问，使用部署时设置的密码。': 'Administrator access only. Use the password set during deployment.',
+  '使用 Passkey 登录': 'Sign in with a passkey', '按上面的登录名验证该管理员的 Passkey，无需密码。': 'Uses the passkeys of the administrator named above; no password needed.', '仅限管理员访问，使用部署时设置的密码。': 'Administrator access only. Use the password set during deployment.',
   'Passkey 已绑定，请收藏此入口供下次登录。': 'Passkey bound. Bookmark this entry for your next sign-in.', '新 Passkey 已绑定。': 'New passkey bound.', 'Passkey 已删除，其他用户会话已退出。': 'Passkey removed. Other user sessions were signed out.',
   '一处管理，始终有序': 'One place to manage everything', '掌握每一台': 'Know every', '服务器。': 'server.',
   '从设备接入到节点授权，': 'From device enrollment to node authorization,', '让网络的每一步都清晰可见。': 'keep every network step clear.',

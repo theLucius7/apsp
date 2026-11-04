@@ -22,7 +22,7 @@ export default function AdminPasskeys() {
     void action.run(() => editing === 'new'
       ? registerPasskey('/api/security/passkeys', { ...proof, name: String(form.get('name') ?? '') })
       : api(`/api/security/passkeys/${editing.id}/remove`, 'POST', proof), () => {
-      setNotice(editing === 'new' ? 'Passkey 已绑定，下次可直接验证并登录。' : 'Passkey 已删除，其他管理员会话已退出。')
+      setNotice(editing === 'new' ? 'Passkey 已绑定，下次可直接验证并登录。' : 'Passkey 已删除，你在其他设备上的登录已退出。')
       setEditing(null); resource.reload()
     })
   }

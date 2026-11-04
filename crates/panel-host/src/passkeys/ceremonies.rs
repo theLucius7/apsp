@@ -91,6 +91,14 @@ async fn save(
     Ok(response)
 }
 
+/// The name the authenticator shows when choosing a key. Several people may
+/// keep keys for the same panel on one device, so administrators pass their
+/// own login and display names.
+pub struct Holder<'a> {
+    pub user_name: &'a str,
+    pub display_name: &'a str,
+}
+
 pub async fn start_registration(
     state: &AppState,
     tx: &mut Transaction<'_, Postgres>,
@@ -98,6 +106,7 @@ pub async fn start_registration(
     name: String,
     authorization: String,
     binding: &str,
+    holder: Holder<'_>,
 ) -> ApiResult<Response> {
     let name = name.trim();
     if name.is_empty()
@@ -118,7 +127,12 @@ pub async fn start_registration(
     let (options, registration) = state
         .passkeys
         .engine()?
-        .start_passkey_registration(account, &account.to_string(), "apsp账户", Some(excluded))
+        .start_passkey_registration(
+            account,
+            holder.user_name,
+            holder.display_name,
+            Some(excluded),
+        )
         .map_err(|_| invalid())?;
     save(
         state,

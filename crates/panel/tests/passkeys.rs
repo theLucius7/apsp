@@ -52,10 +52,11 @@ async fn reauthentication_requires_a_session_exact_origin_and_existing_keys(
     sqlx::query("UPDATE sessions SET admin_id=2 WHERE admin_id=1")
         .execute(&pool)
         .await?;
-    assert_eq!(
-        post(&panel, &cookie, path, json!({})).await?.status(),
-        StatusCode::FORBIDDEN
-    );
+    // Other administrators re-authenticate with their own keys; this one has none.
+    let response = post(&panel, &cookie, path, json!({})).await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let error: Value = response.json().await?;
+    assert_eq!(error["error"], "此账户尚未绑定 Passkey。");
     Ok(())
 }
 
@@ -414,5 +415,149 @@ async fn virtual_authenticator_browser_roundtrip(pool: PgPool) -> Result<()> {
         String::from_utf8_lossy(&result.stderr)
     );
     println!("{}", String::from_utf8_lossy(&result.stdout));
+    Ok(())
+}
+
+/// Signs in a fixture administrator created with the owner's password hash.
+async fn named_cookie(panel: &TestPanel, login_name: &str) -> Result<String> {
+    let response = panel
+        .client
+        .post(format!("{}/api/login", panel.base))
+        .json(&json!({"login_name":login_name,"password":PASSWORD}))
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(response
+        .headers()
+        .get(header::SET_COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .unwrap_or_default()
+        .to_owned())
+}
+
+#[sqlx::test]
+async fn named_administrators_have_their_own_passkey_accounts(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let owner = panel.admin_cookie().await?;
+    sqlx::query(
+        "INSERT INTO admins(id,password_hash) SELECT 7,password_hash FROM admins WHERE id=1",
+    )
+    .execute(&pool)
+    .await?;
+    sqlx::query("INSERT INTO administrator_profiles(admin_id,login_name,display_name,role,all_servers,capabilities,created_at,updated_at) VALUES(7,'operator','运维值班','viewer',true,'[\"servers:read\"]',0,0)")
+        .execute(&pool).await?;
+    let operator = named_cookie(&panel, "operator").await?;
+    // A viewer without security rights manages the keys of their own account.
+    let list = panel
+        .admin(Method::GET, "/api/security/passkeys", &operator, None)
+        .await?;
+    assert_eq!(list.status(), StatusCode::OK);
+    assert_eq!(list.json::<Value>().await?["keys"], json!([]));
+    let start = "/api/security/passkeys/register/start";
+    assert_eq!(
+        post(
+            &panel,
+            &operator,
+            start,
+            json!({"name":"值班密钥","password":"wrong-password"})
+        )
+        .await?
+        .status(),
+        StatusCode::BAD_REQUEST
+    );
+    let response = post(
+        &panel,
+        &operator,
+        start,
+        json!({"name":"值班密钥","password":PASSWORD}),
+    )
+    .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let options: Value = response.json().await?;
+    assert_eq!(options["options"]["publicKey"]["user"]["name"], "operator");
+    assert_eq!(
+        options["options"]["publicKey"]["user"]["displayName"],
+        "运维值班"
+    );
+    // A fresh database has no owner row when migrations run; the owner gets the
+    // original account on their first registration, as upgraded panels already have.
+    assert_eq!(
+        post(
+            &panel,
+            &owner,
+            start,
+            json!({"name":"所有者密钥","password":PASSWORD})
+        )
+        .await?
+        .status(),
+        StatusCode::OK
+    );
+    let accounts: Vec<(i64, uuid::Uuid)> = sqlx::query_as(
+        "SELECT admin_id,account_id FROM administrator_passkey_accounts ORDER BY admin_id",
+    )
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(accounts.len(), 2);
+    assert_eq!(accounts[0], (1, uuid::Uuid::from_u128(1)));
+    assert_eq!(accounts[1].0, 7);
+    assert_ne!(accounts[1].1, uuid::Uuid::from_u128(1));
+    // The owner's keys stay separate.
+    let owner_list = panel
+        .admin(Method::GET, "/api/security/passkeys", &owner, None)
+        .await?;
+    assert_eq!(owner_list.json::<Value>().await?["keys"], json!([]));
+    // API tokens cannot manage anyone's passkeys.
+    let token = "apsp_api_named_passkey_token";
+    sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,all_servers,expires_at,created_at) VALUES($1,7,$2,'viewer','[\"servers:read\"]','[]',true,$3,0)")
+        .bind(uuid::Uuid::new_v4()).bind(apsp_panel::auth::hash_token(token)).bind(apsp_protocol::now_timestamp() + 3600).execute(&pool).await?;
+    assert_eq!(
+        panel
+            .client
+            .get(format!("{}/api/security/passkeys", panel.base))
+            .bearer_auth(token)
+            .send()
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    // Sign-in names the administrator. Unknown names, names without keys and
+    // the default owner without keys all get the same answer.
+    let login = "/api/login/passkey/start";
+    let mut answers = Vec::new();
+    for body in [
+        Some(json!({"login_name":"operator"})),
+        Some(json!({"login_name":"nobody"})),
+        None,
+    ] {
+        let request = panel
+            .client
+            .post(format!("{}{login}", panel.base))
+            .header(header::ORIGIN, &panel.state.config.public_url);
+        let response = match body {
+            Some(body) => request.json(&body).send().await?,
+            None => request.send().await?,
+        };
+        answers.push((response.status(), response.text().await?));
+    }
+    assert_eq!(answers[0].0, StatusCode::BAD_REQUEST);
+    assert!(answers.iter().all(|answer| answer == &answers[0]));
+    // The attempts above share the login rate limit with password sign-in.
+    sqlx::query("UPDATE auth_rate_limits SET attempts=0,window_start=0")
+        .execute(&pool)
+        .await?;
+    let malformed = panel
+        .client
+        .post(format!("{}{login}", panel.base))
+        .header(header::ORIGIN, &panel.state.config.public_url)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body("{")
+        .send()
+        .await?;
+    assert_eq!(malformed.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        malformed.json::<Value>().await?["error"],
+        "登录请求格式无效。"
+    );
     Ok(())
 }

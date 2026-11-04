@@ -185,6 +185,8 @@ fn server_path(path: &str) -> Option<i64> {
 fn own_account_path(path: &str) -> bool {
     path.starts_with("/api/security/totp")
         || path == "/api/security/password"
+        || path == "/api/security/passkeys"
+        || path.starts_with("/api/security/passkeys/")
         || path == "/api/me"
         || path == "/api/control-center/me"
         || path == "/api/control-center/reauth"

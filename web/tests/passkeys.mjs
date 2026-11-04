@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { SQL } from 'bun'
 import { createHmac } from 'node:crypto'
 import { reauthentication } from './passkey-reauthentication.mjs'
+import { administrators } from './passkey-administrators.mjs'
 
 // Run only through the ignored Rust test, which owns a temporary PostgreSQL database and HTTP server.
 const origin = process.env.APSP_PASSKEY_TEST_ORIGIN
@@ -80,12 +81,13 @@ try {
   results.push('administrator registration through shipped UI with required user verification')
   await page.locator('[data-slot=account-menu]').first().click(); await page.getByRole('menuitem', { name: '退出登录' }).click()
   await page.getByRole('heading', { name: '欢迎回来', exact: true }).waitFor()
-  await page.getByRole('button', { name: '使用初始所有者 Passkey 登录', exact: true }).click()
+  await page.getByRole('button', { name: '使用 Passkey 登录', exact: true }).click()
   await page.getByRole('heading', { name: '账号安全', exact: true }).waitFor()
   assert.equal((await request(page, '/api/me', undefined, 'GET')).status, 200)
   results.push('administrator passwordless login and admin cookie')
 
   await reauthentication({ admin, sql, clearLimit, native, request, ok, password, origin, results })
+  await administrators({ admin, client, clearLimit, native, request, ok, password, origin, results })
 
   await clearLimit()
   const replayChallenge = await ok(page, '/api/login/passkey/start')

@@ -74,8 +74,9 @@ pub(super) async fn revoke_other_sessions(
     .bind(current)
     .fetch_one(&mut **tx)
     .await?;
-    if admin_id == 1 {
-        crate::passkeys::revoke(tx, crate::passkeys::ADMIN).await?;
+    // Pending ceremonies of this administrator's passkey account end with the sessions.
+    if let Some(account) = super::passkeys::account_of(&mut **tx, admin_id).await? {
+        crate::passkeys::revoke(tx, account).await?;
     }
     sqlx::query("DELETE FROM sessions WHERE admin_id = $2 AND token_hash <> $1")
         .bind(current)
