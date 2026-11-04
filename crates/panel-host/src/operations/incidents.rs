@@ -386,6 +386,14 @@ async fn note(
 pub(super) async fn observe(state: &AppState) -> ApiResult<()> {
     let now = now_timestamp();
     let mut tx = state.pool.begin().await?;
+    // Recovery only changes open incidents. Healthy sources are re-observed
+    // every tick, so skip the update when nothing under the key is open.
+    let open_keys: std::collections::HashSet<String> =
+        sqlx::query_scalar("SELECT source_key FROM operations_incidents WHERE status<>'resolved'")
+            .fetch_all(&mut *tx)
+            .await?
+            .into_iter()
+            .collect();
     let alerts=sqlx::query("SELECT * FROM server_alert_events WHERE resolved_at IS NULL OR resolved_at>$1 ORDER BY id DESC LIMIT 200").bind(now-600).fetch_all(&mut *tx).await?;
     for alert in alerts {
         let id: i64 = alert.get("id");
@@ -405,6 +413,7 @@ pub(super) async fn observe(state: &AppState) -> ApiResult<()> {
             )
             .await?;
         } else if let Some(resolved) = resolved
+            && open_keys.contains(&key)
             && alert.get::<Option<String>, _>("resolution").as_deref() == Some("recovered")
             && evidence
                 .pointer("/recovery/observed_at")
@@ -437,7 +446,9 @@ pub(super) async fn observe(state: &AppState) -> ApiResult<()> {
             .get::<Option<i64>, _>("target_created_at")
             .is_none_or(|created| now - created > APPLY_GRACE_SECS);
         if healthy && applied {
-            recover(&mut tx, &key, evidence, sampled, true).await?;
+            if open_keys.contains(&key) {
+                recover(&mut tx, &key, evidence, sampled, true).await?;
+            }
         } else if healthy && !overdue {
             continue;
         } else {
@@ -462,6 +473,9 @@ pub(super) async fn observe(state: &AppState) -> ApiResult<()> {
         let evidence =
             json!({"job_id":id,"status":status,"updated_at":job.get::<i64,_>("updated_at")});
         if matches!(status.as_str(), "succeeded" | "failed" | "cancelled") {
+            if !open_keys.contains(&key) {
+                continue;
+            }
             recover(&mut tx,&key,json!({"task_terminal":true,"execution_status":status,"job_id":id,"observed_at":job.get::<i64,_>("updated_at")}),job.get("updated_at"),true).await?;
         } else {
             let ids: Vec<i64> = job.get("targets");
@@ -514,9 +528,11 @@ pub(super) async fn open(
         title.chars().take(1024).collect()
     };
     let id = Uuid::new_v4();
-    let inserted=sqlx::query("INSERT INTO operations_incidents(id,source_key,server_id,title,severity,status,opened_at,observed_at,evidence,notification_event) VALUES($1,$2,$3,$4,$5,'open',$6,$6,$7,$8) ON CONFLICT(source_key) WHERE status<>'resolved' DO UPDATE SET evidence=EXCLUDED.evidence,observed_at=EXCLUDED.observed_at RETURNING id")
-        .bind(id).bind(key).bind(server).bind(&title).bind(severity).bind(observed).bind(&evidence).bind(notification).fetch_one(&mut **tx).await?;
-    if inserted.get::<Uuid, _>("id") == id {
+    // Sources are re-observed every few seconds; an unchanged incident is not
+    // rewritten and then returns no row.
+    let inserted=sqlx::query("INSERT INTO operations_incidents(id,source_key,server_id,title,severity,status,opened_at,observed_at,evidence,notification_event) VALUES($1,$2,$3,$4,$5,'open',$6,$6,$7,$8) ON CONFLICT(source_key) WHERE status<>'resolved' DO UPDATE SET evidence=EXCLUDED.evidence,observed_at=EXCLUDED.observed_at WHERE (operations_incidents.evidence,operations_incidents.observed_at) IS DISTINCT FROM (EXCLUDED.evidence,EXCLUDED.observed_at) RETURNING id")
+        .bind(id).bind(key).bind(server).bind(&title).bind(severity).bind(observed).bind(&evidence).bind(notification).fetch_optional(&mut **tx).await?;
+    if inserted.is_some_and(|row| row.get::<Uuid, _>("id") == id) {
         note(tx, id, None, "opened", &title, evidence, observed).await?;
         if notification.is_none() {
             enqueue(tx, id, "alert", observed).await?;

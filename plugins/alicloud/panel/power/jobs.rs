@@ -350,6 +350,8 @@ pub(in super::super) async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) ->
     tx.commit().await?;
     Ok(())
 }
+static LAST_PRUNE: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
 pub(in super::super) async fn tick(pool: &PgPool, cloud: &Cloud) -> ApiResult<()> {
     let now = apsp_protocol::now_timestamp();
     let jobs: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM alicloud_power_jobs WHERE status IN ('queued','running','uncertain') AND next_check_at<=$1 ORDER BY next_check_at,created_at LIMIT 8").bind(now).fetch_all(pool).await?;
@@ -361,6 +363,8 @@ pub(in super::super) async fn tick(pool: &PgPool, cloud: &Cloud) -> ApiResult<()
         scheduler::poll(pool, id, cloud).await?;
     }
     sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$1 WHERE status IN ('preview','queued') AND expires_at<=$1").bind(now).execute(pool).await?;
-    sqlx::query("DELETE FROM alicloud_power_jobs WHERE status NOT IN ('queued','running','uncertain') AND created_at<$1").bind(now-180*86400).execute(pool).await?;
+    if crate::prune_due(&LAST_PRUNE, now) {
+        sqlx::query("DELETE FROM alicloud_power_jobs WHERE status NOT IN ('queued','running','uncertain') AND created_at<$1").bind(now-180*86400).execute(pool).await?;
+    }
     Ok(())
 }

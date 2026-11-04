@@ -303,7 +303,9 @@ async fn provider_inspections_are_read_only_and_expected_snapshots_protect_each_
         snapshot.ttl += 1;
         let mock = Mock::start(responses()).await;
         let error = Providers::local(&mock.endpoint)
-            .reconcile_expected_guarded(&rule, public_ip(1), Some(&snapshot), || async { Ok(()) })
+            .reconcile_expected_guarded(&rule, public_ip(1), Some(&snapshot), &mut None, || async {
+                Ok(())
+            })
             .await
             .unwrap_err();
         assert_eq!(error.code, "remote_changed");

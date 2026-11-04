@@ -52,6 +52,16 @@ async fn resource(pool: &PgPool, id: Uuid) -> ApiResult<model::Resource> {
         .ok_or(ApiError::NotFound)
 }
 
+/// Whether an hourly retention pass is due, claiming it when it is.
+fn prune_due(last: &std::sync::atomic::AtomicI64, now: i64) -> bool {
+    use std::sync::atomic::Ordering;
+    let previous = last.load(Ordering::Relaxed);
+    now - previous >= 3600
+        && last
+            .compare_exchange(previous, now, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+}
+
 fn failure(error: crate::cloud_api::Failure) -> ApiError {
     ApiError::Conflict(format!("云接口未完成操作：{}", model::message(error.code)))
 }

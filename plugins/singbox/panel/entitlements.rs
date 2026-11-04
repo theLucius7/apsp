@@ -77,14 +77,19 @@ pub async fn refresh(pool: &PgPool, at: i64) -> ApiResult<()> {
     )
     .fetch_all(&mut *tx)
     .await?;
+    // All chains are checked together; only changed ones are written.
+    let available_chains =
+        super::ordered_paths::storage::chains_structurally_available(&mut tx, &chain_ids).await?;
+    let previous: std::collections::HashMap<i64, bool> =
+        sqlx::query_as("SELECT chain_id,available FROM singbox_chain_state WHERE chain_id=ANY($1)")
+            .bind(&chain_ids)
+            .fetch_all(&mut *tx)
+            .await?
+            .into_iter()
+            .collect();
     for id in chain_ids {
-        let available = super::ordered_paths::chain_is_structurally_available(&mut tx, id).await?;
-        let previous: Option<bool> =
-            sqlx::query_scalar("SELECT available FROM singbox_chain_state WHERE chain_id=$1")
-                .bind(id)
-                .fetch_optional(&mut *tx)
-                .await?;
-        if previous != Some(available) {
+        let available = available_chains.contains(&id);
+        if previous.get(&id) != Some(&available) {
             servers.extend(super::ordered_paths::storage::referenced_servers(&mut tx, id).await?);
             sqlx::query("INSERT INTO singbox_chain_state(chain_id,available) VALUES($1,$2) ON CONFLICT(chain_id) DO UPDATE SET available=EXCLUDED.available").bind(id).bind(available).execute(&mut *tx).await?;
         }

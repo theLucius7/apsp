@@ -55,7 +55,8 @@ impl Providers {
         Check: FnMut() -> Checked,
         Checked: Future<Output = Result<G, Failure>>,
     {
-        self.reconcile_expected_guarded(rule, ip, None, check).await
+        self.reconcile_expected_guarded(rule, ip, None, &mut None, check)
+            .await
     }
 
     pub(super) async fn inspect(&self, rule: &Rule) -> Result<Option<Snapshot>, Failure> {
@@ -72,6 +73,7 @@ impl Providers {
         rule: &Rule,
         ip: IpAddr,
         expected: Option<&Snapshot>,
+        observed: &mut Option<Snapshot>,
         check: Check,
     ) -> Result<Outcome, Failure>
     where
@@ -81,22 +83,22 @@ impl Providers {
         match rule.config.provider {
             Provider::Cloudflare => {
                 self.cloudflare
-                    .reconcile_expected_guarded(rule, ip, expected, check)
+                    .reconcile_expected_guarded(rule, ip, expected, observed, check)
                     .await
             }
             Provider::Aliyun => {
                 self.aliyun
-                    .reconcile_expected_guarded(rule, ip, expected, check)
+                    .reconcile_expected_guarded(rule, ip, expected, observed, check)
                     .await
             }
             Provider::Tencent => {
                 self.tencent
-                    .reconcile_expected_guarded(rule, ip, expected, check)
+                    .reconcile_expected_guarded(rule, ip, expected, observed, check)
                     .await
             }
             Provider::Huawei => {
                 self.huawei
-                    .reconcile_expected_guarded(rule, ip, expected, check)
+                    .reconcile_expected_guarded(rule, ip, expected, observed, check)
                     .await
             }
         }

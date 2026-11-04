@@ -53,15 +53,22 @@ pub(crate) async fn ingest(
     .bind(now - RETAIN_SECS)
     .execute(&mut *tx)
     .await?;
+    // One statement for the whole snapshot; a repeated address counts once.
+    let mut rows = BTreeMap::<(&str, String), (i64, i64)>::new();
     for (name, addresses) in &report.principals {
         let Some((user, node)) = principal(name).filter(|(_, node)| nodes.contains(node)) else {
             continue;
         };
         for address in addresses {
-            sqlx::query("INSERT INTO singbox_runtime_session_addresses(server_id,stat_name,user_id,node_id,address,observed_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(server_id,stat_name,address) DO UPDATE SET observed_at=EXCLUDED.observed_at")
-                .bind(server).bind(name).bind(user).bind(node).bind(address.to_string()).bind(now)
-                .execute(&mut *tx).await?;
+            rows.insert((name.as_str(), address.to_string()), (user, node));
         }
+    }
+    if !rows.is_empty() {
+        let (names, addresses): (Vec<&str>, Vec<String>) = rows.keys().cloned().unzip();
+        let (users, nodes): (Vec<i64>, Vec<i64>) = rows.values().copied().unzip();
+        sqlx::query("INSERT INTO singbox_runtime_session_addresses(server_id,stat_name,user_id,node_id,address,observed_at) SELECT $1,stat_name,user_id,node_id,address,$6 FROM UNNEST($2::text[],$3::bigint[],$4::bigint[],$5::text[]) AS t(stat_name,user_id,node_id,address) ON CONFLICT(server_id,stat_name,address) DO UPDATE SET observed_at=EXCLUDED.observed_at")
+            .bind(server).bind(&names).bind(&users).bind(&nodes).bind(&addresses).bind(now)
+            .execute(&mut *tx).await?;
     }
     tx.commit().await?;
     Ok(())
@@ -92,15 +99,30 @@ pub(crate) async fn policy(
             .or_default()
             .insert(apsp_compiler::stat_name(user, node));
     }
+    // Limits and the addresses seen on other hosts, for all members at once.
+    let users: Vec<i64> = principals.keys().copied().collect();
+    let mut states: BTreeMap<i64, (i32, sqlx::types::Json<Vec<String>>, i64)> =
+        sqlx::query_as::<_, (i64, i32, sqlx::types::Json<Vec<String>>, i64)>(
+            "SELECT user_id,device_limit,legacy_addresses,observed_at FROM singbox_nexus_device_state WHERE user_id=ANY($1) AND device_limit>0",
+        )
+        .bind(&users)
+        .fetch_all(&mut **tx)
+        .await?
+        .into_iter()
+        .map(|(user, limit, legacy, observed)| (user, (limit, legacy, observed)))
+        .collect();
+    let limited: Vec<i64> = states.keys().copied().collect();
+    let mut elsewhere = BTreeMap::<i64, Vec<String>>::new();
+    if !limited.is_empty() {
+        let rows: Vec<(i64, String)> = sqlx::query_as("SELECT DISTINCT user_id,address FROM singbox_runtime_session_addresses WHERE user_id=ANY($1) AND server_id<>$2 AND observed_at>=$3")
+            .bind(&limited).bind(server).bind(now - FRESH_SECS).fetch_all(&mut **tx).await?;
+        for (user, address) in rows {
+            elsewhere.entry(user).or_default().push(address);
+        }
+    }
     let mut groups = Vec::new();
     for (user, names) in principals {
-        let state: Option<(i32, sqlx::types::Json<Vec<String>>, i64)> = sqlx::query_as(
-            "SELECT device_limit,legacy_addresses,observed_at FROM singbox_nexus_device_state WHERE user_id=$1",
-        )
-        .bind(user)
-        .fetch_optional(&mut **tx)
-        .await?;
-        let Some((limit, legacy, observed)) = state.filter(|(limit, ..)| *limit > 0) else {
+        let Some((limit, legacy, observed)) = states.remove(&user) else {
             continue;
         };
         let mut remote = if now - observed <= FRESH_SECS {
@@ -108,9 +130,7 @@ pub(crate) async fn policy(
         } else {
             BTreeSet::new()
         };
-        let elsewhere: Vec<String> = sqlx::query_scalar("SELECT DISTINCT address FROM singbox_runtime_session_addresses WHERE user_id=$1 AND server_id<>$2 AND observed_at>=$3")
-            .bind(user).bind(server).bind(now - FRESH_SECS).fetch_all(&mut **tx).await?;
-        remote.extend(addresses(elsewhere));
+        remote.extend(addresses(elsewhere.remove(&user).unwrap_or_default()));
         groups.push(AdmissionGroup {
             principals: names
                 .into_iter()

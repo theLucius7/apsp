@@ -234,6 +234,7 @@ impl Cloudflare {
         rule: &Rule,
         ip: IpAddr,
         expected: Option<&Snapshot>,
+        observed: &mut Option<Snapshot>,
         mut check: Check,
     ) -> Result<Outcome, Failure>
     where
@@ -243,6 +244,8 @@ impl Cloudflare {
         let config = &rule.config;
         let record = self.read_record(rule).await?;
         let current = record.as_ref().map(Record::snapshot);
+        // The caller records what this read found, so it need not read twice.
+        observed.clone_from(&current);
         expected_matches(current.as_ref(), expected)?;
         let matching: Vec<_> = record.iter().collect();
         let path = format!("zones/{}/dns_records", config.zone_id);
