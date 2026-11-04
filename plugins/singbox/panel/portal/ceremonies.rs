@@ -161,6 +161,7 @@ pub(super) async fn register_start(
         access::key_session(&mut tx, account, &hash).await?;
         format!("session:{hash}")
     };
+    let user_name = account.to_string();
     let response = keys::start_registration(
         &state,
         &mut tx,
@@ -168,6 +169,10 @@ pub(super) async fn register_start(
         input.name,
         authorization,
         PORTAL_BINDING,
+        keys::Holder {
+            user_name: &user_name,
+            display_name: "apsp账户",
+        },
     )
     .await?;
     tx.commit().await?;

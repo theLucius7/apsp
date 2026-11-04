@@ -3,8 +3,8 @@ mod credentials;
 
 pub(crate) use ceremonies::start_reauthentication;
 pub use ceremonies::{
-    Ceremony, FinishAuthentication, FinishRegistration, PendingAuthentication, PendingRegistration,
-    consume, start_authentication, start_registration,
+    Ceremony, FinishAuthentication, FinishRegistration, Holder, PendingAuthentication,
+    PendingRegistration, consume, start_authentication, start_registration,
 };
 pub use credentials::{authenticate, insert, list, lock, revoke};
 
