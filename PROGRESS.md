@@ -1,5 +1,11 @@
 # 执行进度
 
+## 2026-11-04：再次验证统一为一套
+
+- 用户反馈：生成代理用户开通链接时只能输入管理员密码，不能用 Passkey。扫描发现还有几处同样各自要求密码：绑定/删除管理员 Passkey、开始设置/关闭二步验证、修改密码；自动化与维护页面和交互式终端各复制了一份密码弹窗。
+- 全部改用请求守卫里的五分钟证明和共用的「再次验证身份」对话框（Passkey 或密码加 TOTP），后端删掉各自的密码校验，前端删掉各自的密码输入框，见 [ADR 0108](docs/adr/0108-unified-reauthentication.md)。顺带改正「修改密码会撤销 Passkey」的过时提示。
+- 验证：`auth_security`、`passkeys`（含浏览器虚拟认证器，新增证明过期后用 Passkey 生成开通链接）、`control_center`、`member_commerce` 集成测试，`guard`、`integration_policy` 单元测试，`portal-current-snapshot`、`operations-reconciliation`、`connection-resilience` 浏览器测试和 `bun test` 通过；clippy 无告警；`web/dist` 已重新构建。只改面板，远端 CI 未运行。
+
 ## 2026-11-04：用户 Passkey 在专属地址和面板域名间通用
 
 - 线上核实：专属地址上的门户以根域名作为依赖方 ID，面板域名上的门户以面板域名作为依赖方 ID。用户在开通链接（专属地址）上绑定的 Passkey，回到面板域名登录时浏览器找不到可用的密钥，反过来也一样。

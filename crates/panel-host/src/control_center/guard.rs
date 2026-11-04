@@ -200,12 +200,22 @@ fn own_account_path(path: &str) -> bool {
         || path.starts_with("/api/control-center/sessions/")
 }
 
+/// Changes to the administrator's own sign-in factors use the same recent proof
+/// as every other high-risk action, so a Passkey satisfies them as well.
+fn own_account_needs_proof(path: &str) -> bool {
+    path == "/api/security/password"
+        || path == "/api/security/totp/setup"
+        || path == "/api/security/totp/disable"
+        || path == "/api/security/passkeys/register/start"
+        || (path.starts_with("/api/security/passkeys/") && path.ends_with("/remove"))
+}
+
 fn high_risk(path: &str, method: &Method) -> bool {
     if *method == Method::GET || *method == Method::HEAD || *method == Method::OPTIONS {
         return false;
     }
     if own_account_path(path) {
-        return false;
+        return own_account_needs_proof(path);
     }
     if *method == Method::POST
         && path.starts_with("/api/operations/cloud/hetzner/accounts/")
@@ -517,5 +527,29 @@ mod tests {
         assert!(!high_risk("/api/fleet/terminals/0b6f", &Method::DELETE));
         assert!(high_risk("/api/servers/3/fleet/terminals", &Method::POST));
         assert!(high_risk("/api/servers/3", &Method::DELETE));
+    }
+    #[test]
+    fn own_sign_in_factor_changes_need_the_shared_proof() {
+        for path in [
+            "/api/security/password",
+            "/api/security/totp/setup",
+            "/api/security/totp/disable",
+            "/api/security/passkeys/register/start",
+            "/api/security/passkeys/0b6f/remove",
+        ] {
+            assert!(high_risk(path, &Method::POST), "{path}");
+        }
+        // The new code proves the authenticator; a finish is bound to its challenge.
+        for path in [
+            "/api/security/totp/confirm",
+            "/api/security/passkeys/register/finish",
+            "/api/control-center/reauth",
+            "/api/control-center/reauth/passkey/start",
+            "/api/control-center/reauth/passkey/finish",
+            "/api/control-center/preferences/theme",
+        ] {
+            assert!(!high_risk(path, &Method::POST), "{path}");
+        }
+        assert!(!high_risk("/api/security/passkeys", &Method::GET));
     }
 }

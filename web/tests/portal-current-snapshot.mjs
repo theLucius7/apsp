@@ -62,7 +62,8 @@ try {
         } else if (method === 'POST' && /^\/api\/plugins\/sing-box\/users\/\d+\/portal\/invitation$/.test(path)) {
           writes.push({ path, body: request.postDataJSON() })
           assert.equal(path, `${portalPath}/invitation`, 'an old draft must never redirect credentials to another user')
-          assert.deepEqual(Object.keys(writes.at(-1).body).sort(), ['password', 'reset', 'totp_code'])
+          // Identity comes from the shared recent proof; the request never carries a password.
+          assert.deepEqual(Object.keys(writes.at(-1).body), ['reset'])
           value = { url: `${origin}/#/plugins/sing-box/account/00000000-0000-4000-8000-000000000001?activate=${'A'.repeat(43)}`, expires_at: Math.floor(Date.now() / 1000) + 900 }
         } else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/[1-9]\d*\/external-accesses$/.test(path)) value = { revision: 0, accesses: [], available_nodes: [] }
         else if (method === 'GET' && [ `${prefix}/nodes`, `${prefix}/proxy-resources`, `${prefix}/policy-groups`, `${prefix}/package-groups` ].includes(path)) value = []
@@ -92,8 +93,7 @@ try {
       })
     }
     const retained = async () => {
-      assert.equal(await dialog.getByLabel('管理员密码', { exact: true }).inputValue(), 'TEST_ONLY_DRAFT_PASSWORD')
-      assert.equal(await dialog.getByLabel('二步验证码', { exact: false }).inputValue(), '123456')
+      assert.equal(await dialog.count(), 1, 'a refused callback keeps the editor open')
     }
     const refuse = async () => {
       const baseline = writes.length
@@ -133,8 +133,6 @@ try {
         access = structuredClone(original); await reread(); await wait(() => open.isEnabled(), 'explicit valid readiness is required to reopen')
       }
       await open.click()
-      await dialog.getByLabel('管理员密码', { exact: true }).fill('TEST_ONLY_DRAFT_PASSWORD')
-      await dialog.getByLabel('二步验证码', { exact: false }).fill('123456')
       await capture()
       for (const path of [ `${prefix}/users`, portalPath ]) {
         let release
@@ -149,39 +147,39 @@ try {
         release(); held = null; await response
         await refuse()
         failures.delete(path); await reread(path)
-        await wait(() => dialog.getByRole('button', { name: '验证并生成', exact: true }).isEnabled(), 'successful prerequisite recovery retains the original draft')
+        await wait(() => dialog.getByRole('button', { name: '生成开通链接', exact: true }).isEnabled(), 'successful prerequisite recovery retains the original draft')
       }
       for (const changed of [ { ...original, configuration: { ...original.configuration, enabled: false, reason: 'TEST_ONLY RP 已停用' } }, { ...original, keys: 1 }, { ...original, configuration: { ...original.configuration, origin: 'https://changed.example.com' } }, {} ]) {
         access = changed; await reread(); await refuse()
-        assert.equal(await dialog.getByRole('button', { name: '验证并生成', exact: true }).isDisabled(), true)
+        assert.equal(await dialog.getByRole('button', { name: '生成开通链接', exact: true }).isDisabled(), true)
         access = structuredClone(original); await reread()
-        await wait(() => dialog.getByRole('button', { name: '验证并生成', exact: true }).isEnabled(), 'only the original portal identity can recover')
+        await wait(() => dialog.getByRole('button', { name: '生成开通链接', exact: true }).isEnabled(), 'only the original portal identity can recover')
       }
       notFound = true; await reread(); await refuse(); notFound = false; await reread()
       users.shift(); await reread(`${prefix}/users`); await refuse()
       assert.equal(await page.getByRole('button', { name: '清除已删除的用户选择', exact: true, includeHidden: true }).isVisible(), true)
       users.unshift({ id: 1, name: 'TEST_ONLY 用户 1', subscription_token: 'TEST_ONLY_1', subscription_url: `${origin}/s/TEST_ONLY_1` })
       await reread(`${prefix}/users`)
-      await wait(() => dialog.getByRole('button', { name: '验证并生成', exact: true }).isEnabled(), 'restoring user 1 and its exact portal enables the preserved draft')
-      await dialog.getByRole('button', { name: '验证并生成', exact: true }).click()
+      await wait(() => dialog.getByRole('button', { name: '生成开通链接', exact: true }).isEnabled(), 'restoring user 1 and its exact portal enables the preserved draft')
+      await dialog.getByRole('button', { name: '生成开通链接', exact: true }).click()
       await dialog.getByRole('heading', { name: '用户开通链接', exact: true }).waitFor()
       assert.equal(writes.length, 1); assert.equal(writes[0].body.reset, false)
       await dialog.getByRole('button', { name: '关闭对话框', exact: true }).click()
       access = { ...original, keys: 1, url: `${origin}/#/plugins/sing-box/account/00000000-0000-4000-8000-000000000001` }; await reread()
       const reset = portalPanel.getByRole('button', { name: '重置用户 Passkey', exact: true })
       await wait(() => reset.isEnabled(), 'current one-key portal can explicitly open a reset')
-      await reset.click(); await dialog.getByLabel('管理员密码', { exact: true }).fill('TEST_ONLY_DRAFT_PASSWORD'); await dialog.getByLabel('二步验证码', { exact: false }).fill('123456'); await capture()
+      await reset.click(); await capture()
       access = { ...access, keys: 2 }; await reread(); await refuse()
       access = { ...access, keys: 1 }; await reread()
       await page.locator('[data-slot=user-roster] button').filter({ hasText: 'TEST_ONLY 用户 2' }).evaluate(button => { button.click(); window.TEST_ONLY_submit() })
       await page.waitForTimeout(50); assert.equal(writes.length, 1, 'a synchronous user switch cannot redirect the retained old reset callback')
       await wait(() => portalPanel.getByRole('button', { name: '生成开通链接', exact: true }).isEnabled(), 'user 2 has an independent portal snapshot')
       await portalPanel.getByRole('button', { name: '生成开通链接', exact: true }).click()
-      assert.equal(await dialog.getByLabel('管理员密码', { exact: true }).inputValue(), '', 'new user editors never inherit another user password')
+      await dialog.getByRole('heading', { name: '生成用户开通链接', exact: true }).waitFor()
       await dialog.getByRole('button', { name: '取消', exact: true }).click()
       await page.locator('[data-slot=user-roster] button').filter({ hasText: 'TEST_ONLY 用户 1' }).click()
       await wait(() => reset.isEnabled(), 'explicit selection restores user 1 only')
-      await reset.click(); await dialog.getByLabel('管理员密码', { exact: true }).fill('TEST_ONLY_RESET_PASSWORD')
+      await reset.click()
       await dialog.getByRole('button', { name: '确认重置并生成', exact: true }).click()
       await dialog.getByRole('heading', { name: '用户开通链接', exact: true }).waitFor()
       assert.equal(writes.length, 2); assert.equal(writes[1].body.reset, true)

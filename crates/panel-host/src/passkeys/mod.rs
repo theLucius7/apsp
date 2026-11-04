@@ -117,7 +117,8 @@ impl Service {
         self.check_session_origin(headers)
     }
 
-    pub(crate) fn check_session_origin(&self, headers: &HeaderMap) -> ApiResult<()> {
+    /// Requests that change sign-in factors come only from the configured origin.
+    pub fn check_session_origin(&self, headers: &HeaderMap) -> ApiResult<()> {
         if headers.get_all(header::ORIGIN).iter().count() != 1
             || headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) != Some(&self.origin)
         {

@@ -22,20 +22,7 @@ use std::net::SocketAddr;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SetupRequest {
-    password: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct CodeRequest {
-    code: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DisableRequest {
-    password: String,
     code: String,
 }
 
@@ -89,15 +76,12 @@ pub(super) async fn revoke_other_sessions(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PasswordRequest {
-    current_password: String,
-    #[serde(default)]
-    totp_code: Option<String>,
     new_password: String,
 }
 
-/// Changes the signed-in administrator's own password. The current password,
-/// and the authenticator code when two-step verification is on, prove the
-/// request; like the other credential changes it ends every other session.
+/// Changes the signed-in administrator's own password. The request guard
+/// requires the shared recent proof (password or Passkey) first; like the other
+/// credential changes it ends every other session.
 pub async fn password_change(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -109,42 +93,25 @@ pub async fn password_change(
     if request.new_password.len() < 12 || request.new_password.len() > 1024 {
         return Err(ApiError::BadRequest("新密码须为12至1024字节".into()));
     }
-    if request.new_password == request.current_password {
-        return Err(ApiError::BadRequest("新密码不能与当前密码相同".into()));
-    }
     let permit = state
         .login_permits
         .clone()
         .try_acquire_owned()
         .map_err(|_| ApiError::Busy)?;
     rate_limit::consume(&state.pool, peer).await?;
-    let (hash, permit) =
-        verified_admin_password(&state, admin_id, request.current_password, permit).await?;
-    let hash = hash.ok_or_else(|| ApiError::BadRequest("当前密码或验证码不正确".into()))?;
+    let (unchanged, permit) =
+        verified_admin_password(&state, admin_id, request.new_password.clone(), permit).await?;
+    if unchanged.is_some() {
+        return Err(ApiError::BadRequest("新密码不能与当前密码相同".into()));
+    }
     let replacement = hash_password(request.new_password)
         .await
         .map_err(ApiError::Internal)?;
     drop(permit);
     let mut tx = state.pool.begin().await?;
     let row = locked_admin(&mut tx, &session).await?;
-    if row.try_get::<i64, _>("id")? != admin_id
-        || row.try_get::<String, _>("password_hash")? != hash
-    {
+    if row.try_get::<i64, _>("id")? != admin_id {
         return Err(ApiError::Unauthorized);
-    }
-    if let Some(secret) = row.try_get::<Option<Vec<u8>>, _>("totp_secret")? {
-        let step = totp::verify(
-            &secret,
-            request.totp_code.as_deref().unwrap_or(""),
-            now_timestamp(),
-            row.try_get("totp_last_step")?,
-        )
-        .ok_or_else(|| ApiError::BadRequest("当前密码或验证码不正确、已过期或已使用".into()))?;
-        sqlx::query("UPDATE admins SET totp_last_step = $2 WHERE id = $1")
-            .bind(admin_id)
-            .bind(step)
-            .execute(&mut *tx)
-            .await?;
     }
     sqlx::query("UPDATE admins SET password_hash = $2 WHERE id = $1")
         .bind(admin_id)
@@ -172,26 +139,13 @@ pub async fn totp_status(State(state): State<AppState>, headers: HeaderMap) -> A
     ))
 }
 
-pub async fn totp_setup(
-    State(state): State<AppState>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    headers: HeaderMap,
-    Json(request): Json<SetupRequest>,
-) -> ApiResult<Response> {
+/// Starts two-step setup after the shared recent proof checked by the request guard.
+pub async fn totp_setup(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
     let admin_id = require_admin(&state, &headers).await?;
     let session = session_hash(&headers)?;
-    let permit = state
-        .login_permits
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| ApiError::Busy)?;
-    rate_limit::consume(&state.pool, peer).await?;
-    let (hash, _permit) =
-        verified_admin_password(&state, admin_id, request.password, permit).await?;
-    let hash = hash.ok_or_else(|| ApiError::BadRequest("密码不正确".into()))?;
     let mut tx = state.pool.begin().await?;
     let row = locked_admin(&mut tx, &session).await?;
-    if row.try_get::<String, _>("password_hash")? != hash {
+    if row.try_get::<i64, _>("id")? != admin_id {
         return Err(ApiError::Unauthorized);
     }
     if row.try_get::<Option<Vec<u8>>, _>("totp_secret")?.is_some() {
@@ -253,38 +207,22 @@ pub async fn totp_confirm(
     Ok(reply(json!({"enabled": true})))
 }
 
+/// Turns two-step verification off after the shared recent proof checked by the
+/// request guard. With two-step on, a password proof already needed a fresh code.
 pub async fn totp_disable(
     State(state): State<AppState>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
-    Json(request): Json<DisableRequest>,
 ) -> ApiResult<Response> {
     let admin_id = require_admin(&state, &headers).await?;
     let session = session_hash(&headers)?;
-    let permit = state
-        .login_permits
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| ApiError::Busy)?;
-    rate_limit::consume(&state.pool, peer).await?;
-    let (hash, _permit) =
-        verified_admin_password(&state, admin_id, request.password, permit).await?;
-    let hash = hash.ok_or_else(|| ApiError::BadRequest("密码或验证码不正确".into()))?;
     let mut tx = state.pool.begin().await?;
     let row = locked_admin(&mut tx, &session).await?;
-    if row.try_get::<String, _>("password_hash")? != hash {
+    if row.try_get::<i64, _>("id")? != admin_id {
         return Err(ApiError::Unauthorized);
     }
-    let secret = row
-        .try_get::<Option<Vec<u8>>, _>("totp_secret")?
-        .ok_or_else(|| ApiError::Conflict("尚未启用二步验证".into()))?;
-    totp::verify(
-        &secret,
-        &request.code,
-        now_timestamp(),
-        row.try_get("totp_last_step")?,
-    )
-    .ok_or_else(|| ApiError::BadRequest("密码或验证码不正确、已过期或已使用".into()))?;
+    if row.try_get::<Option<Vec<u8>>, _>("totp_secret")?.is_none() {
+        return Err(ApiError::Conflict("尚未启用二步验证".into()));
+    }
     sqlx::query("UPDATE admins SET totp_secret = NULL, totp_last_step = NULL, totp_pending_secret = NULL, totp_pending_expires = NULL, totp_pending_session = NULL WHERE id = $1")
         .bind(admin_id).execute(&mut *tx).await?;
     revoke_other_sessions(&mut tx, &session).await?;

@@ -87,6 +87,27 @@ impl Panel {
             .await?)
     }
 
+    /// Ends every recent proof, as five minutes passing would.
+    async fn expire_proofs(&self) -> Result<()> {
+        sqlx::query("UPDATE administrator_reauth SET expires_at = 0")
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// The shared proof endpoint checks the session origin, as browsers send it.
+    async fn reauth(&self, cookie: &str, password: &str, code: Option<&str>) -> Result<StatusCode> {
+        Ok(self
+            .client
+            .post(format!("{}/api/control-center/reauth", self.base))
+            .header(header::COOKIE, cookie)
+            .header(header::ORIGIN, &self.base)
+            .json(&json!({"password": password, "totp_code": code}))
+            .send()
+            .await?
+            .status())
+    }
+
     async fn expire_rate_window(&self) -> Result<()> {
         sqlx::query("UPDATE auth_rate_limits SET window_start = $1")
             .bind(now_timestamp() - 61)
@@ -133,24 +154,17 @@ async fn setup_confirm_disable_require_factors_and_revoke_other_sessions(
     let panel = Panel::start(pool).await?;
     let first = cookie(&panel.login(PASSWORD, None).await?)?;
     let second = cookie(&panel.login(PASSWORD, None).await?)?;
+    // Setup needs the shared recent proof; a wrong password grants none.
+    panel.expire_proofs().await?;
+    let setup = || panel.post("/api/security/totp/setup", &first, json!({}));
+    assert_eq!(setup().await?.status(), StatusCode::FORBIDDEN);
     assert_eq!(
-        panel
-            .post(
-                "/api/security/totp/setup",
-                &first,
-                json!({"password":"wrong"})
-            )
-            .await?
-            .status(),
+        panel.reauth(&first, "wrong", None).await?,
         StatusCode::BAD_REQUEST
     );
-    let response = panel
-        .post(
-            "/api/security/totp/setup",
-            &first,
-            json!({"password":PASSWORD}),
-        )
-        .await?;
+    assert_eq!(setup().await?.status(), StatusCode::FORBIDDEN);
+    assert_eq!(panel.reauth(&first, PASSWORD, None).await?, StatusCode::OK);
+    let response = setup().await?;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
     let setup: Value = response.json().await?;
@@ -216,39 +230,29 @@ async fn setup_confirm_disable_require_factors_and_revoke_other_sessions(
     let current = code(&secret, now_timestamp() / 30);
     let third = cookie(&panel.login(PASSWORD, Some(&current)).await?)?;
     let future = code(&secret, now_timestamp() / 30 + 1);
+    // Disabling needs the shared proof; with two-step on, a password proof
+    // also needs an unused code.
+    panel.expire_proofs().await?;
+    let disable = || panel.post("/api/security/totp/disable", &first, json!({}));
+    assert_eq!(disable().await?.status(), StatusCode::FORBIDDEN);
     assert_eq!(
-        panel
-            .post(
-                "/api/security/totp/disable",
-                &first,
-                json!({"password":"wrong","code":future})
-            )
-            .await?
-            .status(),
+        panel.reauth(&first, "wrong", Some(&future)).await?,
         StatusCode::BAD_REQUEST
     );
     assert_eq!(
-        panel
-            .post(
-                "/api/security/totp/disable",
-                &first,
-                json!({"password":PASSWORD,"code":""})
-            )
-            .await?
-            .status(),
+        panel.reauth(&first, PASSWORD, None).await?,
         StatusCode::BAD_REQUEST
     );
     assert_eq!(
-        panel
-            .post(
-                "/api/security/totp/disable",
-                &first,
-                json!({"password":PASSWORD,"code":future})
-            )
-            .await?
-            .status(),
+        panel.reauth(&first, PASSWORD, Some(&current)).await?,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(disable().await?.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        panel.reauth(&first, PASSWORD, Some(&future)).await?,
         StatusCode::OK
     );
+    assert_eq!(disable().await?.status(), StatusCode::OK);
     assert_eq!(
         panel.get("/api/me", &third).await?.status(),
         StatusCode::UNAUTHORIZED
@@ -312,27 +316,19 @@ async fn setup_expiration_and_replacement_do_not_enable_or_disclose_seed(
     );
     assert_eq!(
         panel
-            .post("/api/security/totp/setup", "", json!({"password":PASSWORD}))
+            .post("/api/security/totp/setup", "", json!({}))
             .await?
             .status(),
         StatusCode::UNAUTHORIZED
     );
     let session = cookie(&panel.login(PASSWORD, None).await?)?;
     let first: Value = panel
-        .post(
-            "/api/security/totp/setup",
-            &session,
-            json!({"password":PASSWORD}),
-        )
+        .post("/api/security/totp/setup", &session, json!({}))
         .await?
         .json()
         .await?;
     let second: Value = panel
-        .post(
-            "/api/security/totp/setup",
-            &session,
-            json!({"password":PASSWORD}),
-        )
+        .post("/api/security/totp/setup", &session, json!({}))
         .await?
         .json()
         .await?;
@@ -434,20 +430,13 @@ async fn global_budget_and_hashing_concurrency_are_enforced(pool: PgPool) -> Res
 }
 
 #[sqlx::test]
-async fn password_change_needs_the_current_password_and_ends_other_sessions(
-    pool: PgPool,
-) -> Result<()> {
+async fn password_change_needs_a_recent_proof_and_ends_other_sessions(pool: PgPool) -> Result<()> {
     const REPLACEMENT: &str = "security-fixture-replacement";
     let panel = Panel::start(pool).await?;
     let first = cookie(&panel.login(PASSWORD, None).await?)?;
     let second = cookie(&panel.login(PASSWORD, None).await?)?;
-    let change =
-        |current: &str, new: &str| json!({"current_password": current, "new_password": new});
-    for body in [
-        change(PASSWORD, "short"),
-        change(PASSWORD, PASSWORD),
-        change("wrong-password", REPLACEMENT),
-    ] {
+    let change = |new: &str| json!({"new_password": new});
+    for body in [change("short"), change(PASSWORD)] {
         assert_eq!(
             panel
                 .post("/api/security/password", &first, body)
@@ -456,20 +445,37 @@ async fn password_change_needs_the_current_password_and_ends_other_sessions(
             StatusCode::BAD_REQUEST
         );
     }
-    assert_eq!(
-        panel
-            .post("/api/security/password", "", change(PASSWORD, REPLACEMENT))
-            .await?
-            .status(),
-        StatusCode::UNAUTHORIZED
-    );
+    // The old body with the current password is no longer accepted.
     assert_eq!(
         panel
             .post(
                 "/api/security/password",
                 &first,
-                change(PASSWORD, REPLACEMENT)
+                json!({"current_password": PASSWORD, "new_password": REPLACEMENT})
             )
+            .await?
+            .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        panel
+            .post("/api/security/password", "", change(REPLACEMENT))
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    panel.expire_proofs().await?;
+    assert_eq!(
+        panel
+            .post("/api/security/password", &first, change(REPLACEMENT))
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(panel.reauth(&first, PASSWORD, None).await?, StatusCode::OK);
+    assert_eq!(
+        panel
+            .post("/api/security/password", &first, change(REPLACEMENT))
             .await?
             .status(),
         StatusCode::OK

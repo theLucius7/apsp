@@ -1,20 +1,19 @@
 use crate::{
     AppState,
-    auth::{self, LoginRequest, hash_token, random_token},
+    auth::{self, hash_token, random_token},
     error::{ApiError, ApiResult},
     passkeys as keys,
 };
 use apsp_protocol::now_timestamp;
 use axum::{
     Json,
-    extract::{ConnectInfo, Path, State},
+    extract::{Path, State},
     http::HeaderMap,
     response::Response,
 };
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::Row;
-use std::net::SocketAddr;
 use uuid::Uuid;
 
 /// The page this user signs in on: their own hostname when they have one.
@@ -41,32 +40,21 @@ pub(super) async fn status(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Invitation {
-    password: String,
-    totp_code: Option<String>,
     #[serde(default)]
     reset: bool,
 }
 
+/// Issues a one-time activation link. The request guard has already required
+/// the shared recent proof (password or Passkey) for this route.
 pub(super) async fn invitation(
     State(state): State<AppState>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Path(id): Path<i64>,
     Json(input): Json<Invitation>,
 ) -> ApiResult<Response> {
     let administrator = auth::require_admin(&state, &headers).await?;
-    let proof = auth::proof::prepare(
-        &state,
-        &headers,
-        peer,
-        LoginRequest {
-            password: input.password,
-            totp_code: input.totp_code,
-        },
-    )
-    .await?;
+    state.passkeys.check_session_origin(&headers)?;
     let mut tx = state.pool.begin().await?;
-    proof.lock(&mut tx).await?;
     super::super::business::lock_user(&mut tx, id).await?;
     let existing: Option<Uuid> = sqlx::query_scalar(
         "SELECT account_id FROM singbox_portal_accounts WHERE user_id=$1 FOR UPDATE",

@@ -22,7 +22,7 @@ export async function administrators({ admin, client, clearLimit, native, reques
   await ok(op, '/api/login', { login_name: 'operator', password: operatorPassword })
   // A viewer without security rights still manages the keys of their own account.
   assert.deepEqual((await ok(op, '/api/security/passkeys', undefined, 'GET')).keys, [])
-  const start = await ok(op, '/api/security/passkeys/register/start', { name: '值班密钥', password: operatorPassword })
+  const start = await ok(op, '/api/security/passkeys/register/start', { name: '值班密钥' })
   assert.equal(start.options.publicKey.user.name, 'operator')
   assert.equal(start.options.publicKey.user.displayName, '运维值班')
   const registered = await native(op, start, true)
