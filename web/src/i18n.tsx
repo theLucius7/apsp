@@ -229,8 +229,16 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.lang = locale
     document.documentElement.dataset.locale = locale
+    // One pass restores the Chinese source text after switching back; the source
+    // language needs no observer, which would otherwise walk the whole document
+    // after every render.
     translateStaticDom(locale)
-    const observer = new MutationObserver(() => translateStaticDom(locale))
+    if (locale !== 'en-US') return
+    const observer = new MutationObserver(() => {
+      translateStaticDom(locale)
+      // Drop the records caused by this pass's own writes.
+      observer.takeRecords()
+    })
     observer.observe(document.body, { childList: true, subtree: true, characterData: true })
     return () => observer.disconnect()
   }, [locale])

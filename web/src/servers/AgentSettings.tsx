@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { ErrorNotice, Loading } from '../components'
-import { useAction, useResource } from '../hooks'
+import { useAction, useResource, settingsPoll } from '../hooks'
 import type { AgentSettings as Settings } from '../types'
 import TelemetrySettings from './TelemetrySettings'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
 export function AgentSettings({ serverId, liveSupported = false }: { serverId: number; liveSupported?: boolean }) {
-  const resource = useResource<Settings>(`/api/servers/${serverId}/agent-settings`)
+  const resource = useResource<Settings>(`/api/servers/${serverId}/agent-settings`, settingsPoll)
   const action = useAction()
   const [form, setForm] = useState<Settings | null>(null)
   const [saved, setSaved] = useState(false)

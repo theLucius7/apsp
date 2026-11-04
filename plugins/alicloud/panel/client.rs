@@ -4,10 +4,16 @@ use super::{
 };
 use crate::cloud_api::{Failure, aliyun::Aliyun};
 use serde_json::{Value, json};
+use std::{collections::HashMap, sync::Mutex};
 use uuid::Uuid;
+
+/// A handle lives for one background pass or one request. Within it, each
+/// referenced credential is decrypted (and audited) once instead of per call.
+type ResolvedKeys = Mutex<HashMap<(Uuid, Uuid), (String, String)>>;
 
 pub(super) struct Cloud {
     pool: Option<sqlx::PgPool>,
+    resolved: ResolvedKeys,
     pub(super) ecs: Aliyun,
     vpc: Aliyun,
     pub(super) bss: Aliyun,
@@ -18,6 +24,7 @@ impl Cloud {
     pub fn new(pool: &sqlx::PgPool) -> Result<Self, Failure> {
         Ok(Self {
             pool: Some(pool.clone()),
+            resolved: ResolvedKeys::default(),
             ecs: Aliyun::new("ecs")?,
             vpc: Aliyun::new("vpc")?,
             bss: Aliyun::new("bss")?,
@@ -29,6 +36,7 @@ impl Cloud {
     pub fn local(endpoint: &str) -> Self {
         Self {
             pool: None,
+            resolved: ResolvedKeys::default(),
             ecs: Aliyun::local("ecs", endpoint),
             vpc: Aliyun::local("vpc", endpoint),
             bss: Aliyun::local("bss", endpoint),
@@ -39,6 +47,17 @@ impl Cloud {
     pub(super) async fn resolved_account(&self, account: &Account) -> Result<Account, Failure> {
         let mut resolved = account.clone();
         if let Some(id) = account.credential_id {
+            let cached = self
+                .resolved
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(&(account.id, id))
+                .cloned();
+            if let Some((key, secret)) = cached {
+                resolved.access_key_id = key;
+                resolved.access_key_secret = secret;
+                return Ok(resolved);
+            }
             let pool = self
                 .pool
                 .as_ref()
@@ -68,6 +87,10 @@ impl Cloud {
                 .ok_or(Failure::from("credential_invalid"))?;
             resolved.access_key_id = key.into();
             resolved.access_key_secret = secret.into();
+            self.resolved
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert((account.id, id), (key.into(), secret.into()));
         } else if !crate::cloud_api::credential(&account.access_key_id)
             || !crate::cloud_api::credential(&account.access_key_secret)
         {

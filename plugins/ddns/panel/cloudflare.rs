@@ -6,11 +6,7 @@ use futures_util::StreamExt;
 use reqwest::{Client, Method, Url};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{
-    future::Future,
-    net::IpAddr,
-    time::{Duration, SystemTime},
-};
+use std::{future::Future, net::IpAddr, time::SystemTime};
 
 const RESPONSE_LIMIT: usize = 256 * 1024;
 
@@ -62,14 +58,7 @@ impl Record {
 impl Cloudflare {
     pub fn new() -> Result<Self, Failure> {
         Ok(Self {
-            client: Client::builder()
-                .no_proxy()
-                .redirect(reqwest::redirect::Policy::none())
-                .retry(reqwest::retry::never())
-                .connect_timeout(Duration::from_secs(3))
-                .timeout(Duration::from_secs(6))
-                .build()
-                .map_err(|_| Failure::from("client_error"))?,
+            client: crate::cloud_api::transport::client()?,
             base: Url::parse("https://api.cloudflare.com/client/v4/")
                 .map_err(|_| Failure::from("client_error"))?,
         })

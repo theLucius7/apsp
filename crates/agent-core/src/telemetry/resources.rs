@@ -1,9 +1,15 @@
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
-use sysinfo::System;
+use sysinfo::{Process, System, ThreadKind};
+
+/// Linux lists every thread of a process under its own id, each reporting the
+/// whole process's memory. Only processes count; kernel threads stay listed.
+pub(super) fn is_process(process: &Process) -> bool {
+    process.thread_kind() != Some(ThreadKind::Userland)
+}
 
 pub(super) fn processes(system: &System, cpu_ready: bool, elapsed: Option<f64>) -> Value {
-    let mut processes:Vec<_>=system.processes().iter().map(|(pid,process)|{
+    let mut processes:Vec<_>=system.processes().iter().filter(|(_,process)|is_process(process)).map(|(pid,process)|{
         let id=pid.as_u32();
         let cgroup=std::fs::read_to_string(format!("/proc/{id}/cgroup")).ok().and_then(|text|text.lines().find_map(|line|line.splitn(3,':').nth(2).map(|value|value.trim().chars().take(1024).collect::<String>())));
         let service=cgroup.as_deref().and_then(|group|group.split('/').rev().find(|part|part.ends_with(".service")||part.ends_with(".scope"))).map(str::to_owned);

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Badge, ErrorNotice, Field, FormDialog, Loading, Meter, DialogPresence } from '../../components'
 import { bytes } from '../../format'
-import { resourceWriteError, useAction, useResource } from '../../hooks'
+import { resourceWriteError, useAction, useResource, settingsPoll } from '../../hooks'
 import type { ResourceState } from '../../hooks'
 import { assignmentRequestId, dateText, scheduleText, statusText } from './groupTypes'
 import type { Entitlement, PackageGroup, PolicyGroup, UserPolicies } from './groupTypes'
@@ -15,8 +15,8 @@ import { cn } from '@/lib/utils'
 
 const root = '/api/plugins/sing-box'
 export default function UserEntitlements({ id, entitlement, userError, refreshRevision, onChange }: { id: number; entitlement: ResourceState<Entitlement>; userError: () => string; refreshRevision: number; onChange: () => void }) {
-  const policies = useResource<PolicyGroup[]>(`${root}/policy-groups`)
-  const packages = useResource<PackageGroup[]>(`${root}/package-groups`)
+  const policies = useResource<PolicyGroup[]>(`${root}/policy-groups`, settingsPoll)
+  const packages = useResource<PackageGroup[]>(`${root}/package-groups`, settingsPoll)
   const assigned = useResource<UserPolicies>(`${root}/users/${id}/policy-groups`, 0)
   const [selected, setSelected] = useState<number[]>([])
   const dirty = useRef(false)
@@ -26,7 +26,6 @@ export default function UserEntitlements({ id, entitlement, userError, refreshRe
   const action = useAction()
   const [operation, setOperation] = useState<WorkflowOperation | null>(null)
   useEffect(() => { if (assigned.data && !dirty.current) setSelected([...assigned.data.group_ids]) }, [assigned.data])
-  useEffect(() => { const timer = window.setInterval(entitlement.reload, 15000); return () => window.clearInterval(timer) }, [entitlement.reload])
   const refresh = () => { policies.reload(); packages.reload(); assigned.reload(); entitlement.reload() }
   useEffect(() => { if (refreshRevision) { policies.reload(); packages.reload(); assigned.reload() } }, [refreshRevision, policies.reload, packages.reload, assigned.reload])
   const e = entitlement.data

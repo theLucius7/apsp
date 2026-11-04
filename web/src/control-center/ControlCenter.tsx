@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { api } from '../api'
 import { ErrorNotice, Loading, PageHeader, Refresh } from '../components'
-import { useAction, useResource } from '../hooks'
+import { useAction, useResource, settingsPoll } from '../hooks'
 import SystemHealth from './SystemHealth'
 import ToolSecurity from './ToolSecurity'
 
@@ -27,7 +27,7 @@ const ids = (value: string) => value.split(/[,，\s]+/).filter(Boolean).map(Numb
 const emptyAdmin = { login_name: '', display_name: '', role: 'viewer', enabled: true, all_servers: false, capabilities: [] as string[], server_ids: [] as number[], password: '', expected_revision: 0 }
 
 function Administrators() {
-  const resource = useResource<{ administrators: Administrator[]; features: string[] }>('/api/control-center/administrators')
+  const resource = useResource<{ administrators: Administrator[]; features: string[] }>('/api/control-center/administrators', settingsPoll)
   const action = useAction()
   const [editing, setEditing] = useState<number | null>(null)
   const [form, setForm] = useState(emptyAdmin)
@@ -52,7 +52,7 @@ function Sessions() {
   return <Panel><PanelHeader><PanelTitle>我的管理员会话</PanelTitle><Refresh onClick={resource.reload} /></PanelHeader><div className="p-4"><ErrorNotice message={resource.error || action.error} retry={resource.reload} />{resource.data?.map(session => <div className="flex flex-wrap items-center justify-between gap-4 border-b py-4 max-md:items-start" key={session.id}><span>{session.current ? '当前会话' : '其他会话'} · 到期 {time(session.expires_at)}</span><Button variant="outline" disabled={action.busy} onClick={() => void action.run(() => api(`/api/control-center/sessions/${session.id}`, 'DELETE'), resource.reload)}>注销此会话</Button></div>)}</div></Panel>
 }
 function Credentials() {
-  const resource = useResource<{ entries: Credential[]; encryption_ready: boolean }>('/api/control-center/credentials')
+  const resource = useResource<{ entries: Credential[]; encryption_ready: boolean }>('/api/control-center/credentials', settingsPoll)
   const action = useAction()
   const [name, setName] = useState(''), [kind, setKind] = useState('dns'), [secret, setSecret] = useState('')
   const [rotation, setRotation] = useState<Credential | null>(null)
@@ -62,7 +62,7 @@ function Credentials() {
   </div></Panel>
 }
 function Tokens() {
-  const resource = useResource<ApiToken[]>('/api/control-center/tokens')
+  const resource = useResource<ApiToken[]>('/api/control-center/tokens', settingsPoll)
   const action = useAction()
   const [name, setName] = useState(''), [scope, setScope] = useState('servers:read'), [servers, setServers] = useState(''), [all, setAll] = useState(false), [days, setDays] = useState(7), [issued, setIssued] = useState('')
   return <Panel><PanelHeader><PanelTitle>管理 API 令牌</PanelTitle><Refresh onClick={resource.reload} /></PanelHeader><div className="p-4"><ErrorNotice message={resource.error || action.error} retry={resource.reload} />{issued && <Notice><div><strong className="font-medium">令牌仅显示本次</strong><pre className="bg-muted/50 max-h-[28rem] overflow-auto rounded-lg border p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap wrap-anywhere">{issued}</pre><Button variant="outline" onClick={() => setIssued('')}>我已保存，隐藏令牌</Button></div></Notice>}
@@ -75,7 +75,7 @@ function AuditLog() {
   return <Panel><PanelHeader><PanelTitle>操作审计</PanelTitle><Refresh onClick={resource.reload} /></PanelHeader><div className="p-4"><ErrorNotice message={resource.error} retry={resource.reload} />{resource.data?.map(entry => <details key={entry.id}><summary className="cursor-pointer text-sm font-medium">{time(entry.occurred_at)} · 管理员 {entry.admin_id ?? '后台执行器'} · {entry.action} · {entry.object_path}</summary><pre className="bg-muted/50 max-h-[28rem] overflow-auto rounded-lg border p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap wrap-anywhere">{JSON.stringify({ requested: entry.request_diff, result: entry.result }, null, 2)}</pre></details>)}<p>凭据、密码、私钥、终端输入和文件正文已脱敏。返回成功只表示接口已接受或完成，具体执行结果请查看相应任务。</p></div></Panel>
 }
 export default function ControlCenter() {
-  const actor = useResource<Actor>('/api/control-center/me')
+  const actor = useResource<Actor>('/api/control-center/me', settingsPoll)
   const [tab, setTab] = useState('sessions')
   const tabs = [{ id: 'sessions', name: '会话' }, ...(actor.data?.role === 'owner' ? [{ id: 'administrators', name: '管理员授权' }, { id: 'credentials', name: '凭据' }, { id: 'tokens', name: 'API 令牌' }, { id: 'audit', name: '审计' }, { id: 'health', name: '系统自检' }, { id: 'tool-security', name: '工具与依赖' }] : [])]
   return <><PageHeader title="管理与安全" description="管理员与权限、凭据、API 令牌、会话和操作审计，以及面板自检和工具依赖。" /><ErrorNotice message={actor.error} retry={actor.reload} />{actor.data && <p>{actor.data.display_name} · {roleNames[actor.data.role]} · {actor.data.all_servers ? '所有服务器' : `授权服务器 ${actor.data.server_ids.join('、') || '无'}`}</p>}<SegmentedNav className="my-4" aria-label="管理与安全功能">{tabs.map(item => <SegmentedButton type="button" aria-pressed={tab === item.id} key={item.id} onClick={() => setTab(item.id)}>{item.name}</SegmentedButton>)}</SegmentedNav>{tab === 'sessions' && <Sessions />}{actor.data?.role === 'owner' && <>{tab === 'administrators' && <Administrators />}{tab === 'credentials' && <Credentials />}{tab === 'tokens' && <Tokens />}{tab === 'audit' && <AuditLog />}{tab === 'health' && <SystemHealth />}{tab === 'tool-security' && <ToolSecurity />}</>}</>

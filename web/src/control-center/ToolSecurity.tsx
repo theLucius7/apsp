@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { api } from '../api'
 import { ErrorNotice, Loading, Refresh } from '../components'
-import { useAction, useResource } from '../hooks'
+import { useAction, useResource, settingsPoll } from '../hooks'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
@@ -12,7 +12,7 @@ type Inventory = { dependencies: Package[]; signed_tools: { status: string; reas
 const states: Record<string, string> = { unknown: '尚无来源证据', 'lookup-error': '查询失败，不能判断', 'no-recorded-advisory': '此来源暂未记录建议', 'advisories-recorded': '来源记录了安全建议', 'advisories-incomplete': '已有建议，详情不完整' }
 const time = (seconds?: number) => seconds ? new Date(seconds * 1000).toLocaleString('zh-CN') : '尚未观测'
 export default function ToolSecurity() {
-  const resource = useResource<Inventory>('/api/control-center/tool-security')
+  const resource = useResource<Inventory>('/api/control-center/tool-security', settingsPoll)
   const action = useAction()
   const [filter, setFilter] = useState('')
   const selected = resource.data?.dependencies.filter(item => item.name.toLowerCase().includes(filter.toLowerCase())) ?? []

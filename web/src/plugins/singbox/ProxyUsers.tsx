@@ -261,7 +261,7 @@ export default function ProxyUsers() {
           </Panel>}
         </div>
         <div hidden={section !== 'diagnosis'}>
-          <UserDiagnostics key={`diagnosis-${selected}`} userId={selected} userError={() => userError(selected)} onChanged={refresh} />
+          <UserDiagnostics key={`diagnosis-${selected}`} userId={selected} active={section === 'diagnosis'} userError={() => userError(selected)} onChanged={refresh} />
         </div>
       </div>}
     </div>

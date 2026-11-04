@@ -10,7 +10,7 @@ use apsp_protocol::{
 };
 use serde_json::{Value, json};
 use sqlx::{PgConnection, Postgres, Transaction};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use uuid::Uuid;
 
 type FollowNodeFact = (
@@ -345,7 +345,11 @@ async fn follow_updates(
     Ok(())
 }
 
-async fn advance(state: &AppState, id: i64) -> ApiResult<Option<Action>> {
+async fn advance(
+    state: &AppState,
+    id: i64,
+    granted_entries: &HashSet<i64>,
+) -> ApiResult<Option<Action>> {
     let mut tx = state.pool.begin().await?;
     super::super::entitlements::lock(&mut tx).await?;
     let chain = storage::lifecycle_chain(&mut tx, id, true).await?;
@@ -361,13 +365,16 @@ async fn advance(state: &AppState, id: i64) -> ApiResult<Option<Action>> {
     let servers = storage::referenced_servers(&mut tx, id).await?;
     super::super::proxy_resources::lock_cleanup_servers(&mut tx, &servers).await?;
     let live = storage::chain_is_structurally_available(&mut tx, id).await?;
-    let granted: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM singbox_eligible_accesses($2) WHERE node_id=$1)",
-    )
-    .bind(chain.entry_node_id)
-    .bind(now_timestamp())
-    .fetch_one(&mut *tx)
-    .await?;
+    // The tick's shared reading settles the usual case. Losing the grant retires
+    // the chain, so that is only ever decided by a reading under this lock.
+    let granted = granted_entries.contains(&chain.entry_node_id)
+        || sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM singbox_eligible_accesses($2) WHERE node_id=$1)",
+        )
+        .bind(chain.entry_node_id)
+        .bind(now_timestamp())
+        .fetch_one(&mut *tx)
+        .await?;
     if chain.last_granted != granted {
         sqlx::query("UPDATE singbox_chains SET last_granted=$2 WHERE id=$1")
             .bind(id)
@@ -1322,9 +1329,22 @@ async fn act(state: &AppState, action: Action) -> ApiResult<()> {
 pub async fn tick(state: &AppState) -> ApiResult<()> {
     capture_committed_floors(state).await?;
     let ids:Vec<i64>=sqlx::query_scalar("SELECT id FROM singbox_chains WHERE (path_kind='ordered' AND (deleted_at IS NULL OR phase<>'retired')) OR id IN (SELECT chain_id FROM singbox_mixed_conversions WHERE state='preparing') ORDER BY id").fetch_all(&state.pool).await?;
+    if ids.is_empty() {
+        return Ok(());
+    }
+    // One evaluation of every grant serves all chains this tick instead of one
+    // full evaluation per chain. A grant seen here can be at most one tick old,
+    // as if it had been revoked just after this tick.
+    let granted_entries: HashSet<i64> =
+        sqlx::query_scalar("SELECT DISTINCT node_id FROM singbox_eligible_accesses($1)")
+            .bind(now_timestamp())
+            .fetch_all(&state.pool)
+            .await?
+            .into_iter()
+            .collect();
     let mut first = None;
     for id in ids {
-        match advance(state, id).await {
+        match advance(state, id, &granted_entries).await {
             Ok(Some(action)) => {
                 if let Err(error) = act(state, action).await {
                     first.get_or_insert(error);

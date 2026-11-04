@@ -1,11 +1,19 @@
 import { cn } from '@/lib/utils'
 
+// One formatter for every flag: building it is far costlier than a lookup.
+let regionNames: Intl.DisplayNames | null | undefined
+const regionName = (code: string) => {
+  if (regionNames === undefined) { try { regionNames = new Intl.DisplayNames(['zh-CN'], { type: 'region' }) } catch { regionNames = null } }
+  try { return regionNames?.of(code) } catch { return undefined }
+}
+
 export function Region({ region }: { region?: string }) {
   const code = region?.trim().toUpperCase()
   if (!code) return null
   const flag = /^[A-Z]{2}$/.test(code) ? String.fromCodePoint(...[...code].map(letter => 0x1f1e6 + letter.charCodeAt(0) - 65)) : null
   let label = region
-  if (flag) { try { label = new Intl.DisplayNames(['zh-CN'], { type: 'region' }).of(code) } catch { /* Keep the configured region when display names are unavailable. */ } }
+  // Keeps the configured region when display names are unavailable.
+  if (flag) label = regionName(code) ?? region
   return <span className={cn('text-muted-foreground max-w-[70px] truncate', flag ? 'text-lg leading-none' : 'text-xs')} title={label} aria-label={label}>{flag ?? region}</span>
 }
 

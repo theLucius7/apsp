@@ -44,7 +44,7 @@ pub async fn descriptor(
     version: &str,
     arch: &str,
 ) -> ApiResult<Artifact> {
-    let (_, sha256, proof) = crate::releases::artifact(state, name, version, arch).await?;
+    let (sha256, proof) = crate::releases::artifact_digest(state, name, version, arch).await?;
     Ok(Artifact {
         url: format!(
             "{}/api/agent/v1/artifacts/{name}/{version}/{arch}",

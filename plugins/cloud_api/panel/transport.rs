@@ -2,17 +2,28 @@ use super::Failure;
 use futures_util::StreamExt;
 use reqwest::{Client, RequestBuilder};
 use serde_json::Value;
-use std::time::{Duration, SystemTime};
+use std::{
+    sync::OnceLock,
+    time::{Duration, SystemTime},
+};
 
+/// The client every cloud provider call shares. Background loops create their
+/// provider handles every few seconds; one client keeps the TLS setup and
+/// kept-alive connections across those ticks. Cloning is a reference count.
 pub fn client() -> Result<Client, Failure> {
-    Client::builder()
+    static CLIENT: OnceLock<Client> = OnceLock::new();
+    if let Some(client) = CLIENT.get() {
+        return Ok(client.clone());
+    }
+    let client = Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .retry(reqwest::retry::never())
         .connect_timeout(Duration::from_secs(3))
         .timeout(Duration::from_secs(6))
         .build()
-        .map_err(|_| "client_error".into())
+        .map_err(|_| Failure::from("client_error"))?;
+    Ok(CLIENT.get_or_init(|| client).clone())
 }
 
 pub async fn json(request: RequestBuilder) -> Result<Value, Failure> {

@@ -8,12 +8,12 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { useState } from 'react'
 import { api } from '../../../api'
 import { ErrorNotice, Field, FormDialog, DialogPresence } from '../../../components'
-import { useAction, useResource } from '../../../hooks'
+import { useAction, useResource, settingsPoll } from '../../../hooks'
 import { root } from './types'
 import type { Content } from './types'
 
 export default function ContentEditor() {
-  const content = useResource<{ entries: Content[] }>(`${root}/content`), action = useAction()
+  const content = useResource<{ entries: Content[] }>(`${root}/content`, settingsPoll), action = useAction()
   const [editing, setEditing] = useState<Content | 'new' | null>(null)
   const stale = !content.isCurrent() || Boolean(content.error)
   const submit = (form: FormData) => {

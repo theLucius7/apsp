@@ -27,7 +27,8 @@ export function ConnectionStatus({ compact = false }: { compact?: boolean }) {
 export function ConnectionNotice() {
   const { t } = useI18n()
   const status = useConnectionStore(state => state.status)
-  const lastContact = useConnectionStore(state => state.lastContact)
+  // Every answer from the panel moves lastContact; only the lost-connection notice shows it.
+  const lastContact = useConnectionStore(state => state.status === 'online' ? null : state.lastContact)
   const [recovered, setRecovered] = useState(false)
   const previous = useRef(status)
   useEffect(() => {

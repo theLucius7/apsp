@@ -166,12 +166,20 @@ async fn connection(mut socket: WebSocket, state: AppState) -> anyhow::Result<()
         Ok(())
     }.await;
     let _lifecycle = state.device_lifecycle.lock().await;
-    let mut connections = state.connections.write().await;
-    if connections
-        .get(&server_id)
-        .is_some_and(|entry| entry.id == connection_id)
-    {
-        connections.remove(&server_id);
+    // Release the connection map before touching the database: every agent's
+    // notifications read it. The lifecycle mutex still orders this update
+    // against a reconnect, which registers under the same mutex.
+    let removed = {
+        let mut connections = state.connections.write().await;
+        let current = connections
+            .get(&server_id)
+            .is_some_and(|entry| entry.id == connection_id);
+        if current {
+            connections.remove(&server_id);
+        }
+        current
+    };
+    if removed {
         // Leave the online window at once; offline alerts measure from the real contact time.
         let now = now_timestamp();
         sqlx::query("UPDATE servers SET last_seen=$2,last_contact_at=$3 WHERE id=$1")

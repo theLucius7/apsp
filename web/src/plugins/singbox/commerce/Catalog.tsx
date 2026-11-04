@@ -8,15 +8,15 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { useState } from 'react'
 import { api } from '../../../api'
 import { ErrorNotice, Field, FormDialog, DialogPresence } from '../../../components'
-import { useAction, useResource } from '../../../hooks'
+import { useAction, useResource, settingsPoll } from '../../../hooks'
 import { bytes } from '../../../format'
 import { root, money, parseMoney } from './types'
 import type { Offer } from './types'
 
 export default function Catalog() {
   const offers = useResource<Offer[]>(`${root}/offers`)
-  const packages = useResource<{ id: number; name: string }[]>('/api/plugins/sing-box/package-groups')
-  const policies = useResource<{ id: number; name: string }[]>('/api/plugins/sing-box/policy-groups')
+  const packages = useResource<{ id: number; name: string }[]>('/api/plugins/sing-box/package-groups', settingsPoll)
+  const policies = useResource<{ id: number; name: string }[]>('/api/plugins/sing-box/policy-groups', settingsPoll)
   const [editing, setEditing] = useState<Offer | 'new' | null>(null), action = useAction()
   const stale = !offers.isCurrent() || !packages.isCurrent() || !policies.isCurrent() || Boolean(offers.error || packages.error || policies.error)
   const refresh = () => { offers.reload(); packages.reload(); policies.reload() }

@@ -267,11 +267,11 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     </div>
     <div hidden={activeView !== 'sources'}>
       {migrated ? <>
-        <Sources createRequest={sourceCreate} migrated onCatalogChange={refresh} />
-        <details data-slot="source-archive" className="mt-6"><summary className="text-muted-foreground cursor-pointer py-3 font-semibold">旧版数字编号来源（只读保留）</summary><SubscriptionSources migrated onChange={refresh} /></details>
+        <Sources createRequest={sourceCreate} migrated onCatalogChange={refresh} active={activeView === 'sources'} />
+        <details data-slot="source-archive" className="mt-6"><summary className="text-muted-foreground cursor-pointer py-3 font-semibold">旧版数字编号来源（只读保留）</summary><SubscriptionSources migrated onChange={refresh} active={activeView === 'sources'} /></details>
       </> : <>
-        <SubscriptionSources migrated={migrated} onChange={refresh} />
-        <Sources createRequest={sourceCreate} migrated={migrated} onCatalogChange={refresh} />
+        <SubscriptionSources migrated={migrated} onChange={refresh} active={activeView === 'sources'} />
+        <Sources createRequest={sourceCreate} migrated={migrated} onCatalogChange={refresh} active={activeView === 'sources'} />
       </>}
     </div>
     <DialogPresence>{showFlatDetail && selected && <ProxyResourceDetail key={`${selected.kind}-${selected.id}`} selected={selected} onClose={closeDetail} onChanged={refresh}

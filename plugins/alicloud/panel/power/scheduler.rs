@@ -22,9 +22,12 @@ pub(in super::super) async fn poll(pool: &PgPool, id: Uuid, cloud: &Cloud) -> Ap
     if r.kind != "ecs" || !account.enabled || r.next_power_at > now {
         return Ok(());
     }
+    // Without a policy the poll only refreshes the displayed state, which the
+    // five-minute account refresh also reads. Saving a policy resets this time.
+    let interval = if r.power_policy.enabled { 60 } else { 300 };
     sqlx::query("UPDATE alicloud_resources SET next_power_at=$2 WHERE id=$1")
         .bind(id)
-        .bind(now + 60)
+        .bind(now + interval)
         .execute(&mut *tx)
         .await?;
     match cloud.power_state(&account, &r).await {

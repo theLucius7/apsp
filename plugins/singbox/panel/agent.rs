@@ -14,6 +14,20 @@ async fn preparation_result(
     revision: i64,
     error: Option<&str>,
 ) -> ApiResult<()> {
+    // Every successful manifest poll lands here; usually there is no recorded
+    // failure to clear, so skip the locked transaction.
+    if error.is_none() {
+        let recorded: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM singbox_installation WHERE server_id=$1 AND target_rev=$2)",
+        )
+        .bind(server_id)
+        .bind(revision)
+        .fetch_one(&state.pool)
+        .await?;
+        if !recorded {
+            return Ok(());
+        }
+    }
     let mut tx = state.pool.begin().await?;
     // Match the publisher's server-before-module order, including FK checks.
     super::business::lock_server(&mut tx, server_id).await?;

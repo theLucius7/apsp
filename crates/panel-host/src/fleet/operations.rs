@@ -378,6 +378,18 @@ pub async fn list(
 
 pub async fn work(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Work>> {
     let id = auth::require_agent(&state, &headers).await?;
+    // Agents ask every few seconds and there is almost never anything to hand
+    // out. With nothing queued every write below is a no-op and both lists are
+    // empty, so answer without locking the server row. Work queued meanwhile is
+    // collected on the next request, as it would be just after a full pass.
+    let idle: bool = sqlx::query_scalar("SELECT NOT EXISTS(SELECT 1 FROM fleet_operations WHERE server_id=$1 AND status='queued') AND NOT EXISTS(SELECT 1 FROM fleet_terminal_sessions WHERE server_id=$1 AND status IN ('queued','running'))")
+        .bind(id).fetch_one(&state.pool).await?;
+    if idle {
+        return Ok(Json(Work {
+            jobs: Vec::new(),
+            terminals: Vec::new(),
+        }));
+    }
     let now = now_timestamp();
     let mut tx = state.pool.begin().await?;
     sqlx::query("SELECT id FROM servers WHERE id=$1 FOR UPDATE")

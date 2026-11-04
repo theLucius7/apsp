@@ -156,7 +156,35 @@ async fn command(ops: &dyn Privileged, program: &str, args: &[&str]) -> Option<S
     .map(|execution| execution.output.stdout)
 }
 
-pub(super) async fn gpus(ops: &dyn Privileged) -> Vec<GpuMetrics> {
+/// Model-only GPU lists come from `lspci` or sysfs and never change on a
+/// running server, while each probe spawns processes. Only live readings from
+/// `nvidia-smi` are taken on every refresh; otherwise the list is rechecked
+/// every half hour.
+#[derive(Default)]
+pub(super) struct GpuProbe {
+    checked: Option<Instant>,
+    live: bool,
+    gpus: Vec<GpuMetrics>,
+}
+
+impl GpuProbe {
+    const RECHECK: Duration = Duration::from_secs(30 * 60);
+
+    async fn read(&mut self, ops: &dyn Privileged) -> Vec<GpuMetrics> {
+        if self.live
+            || self
+                .checked
+                .is_none_or(|time| time.elapsed() >= Self::RECHECK)
+        {
+            (self.gpus, self.live) = gpus(ops).await;
+            self.checked = Some(Instant::now());
+        }
+        self.gpus.clone()
+    }
+}
+
+/// The detected GPUs, and whether they carry live readings from `nvidia-smi`.
+pub(super) async fn gpus(ops: &dyn Privileged) -> (Vec<GpuMetrics>, bool) {
     if let Some(text) = command(
         ops,
         "nvidia-smi",
@@ -169,9 +197,13 @@ pub(super) async fn gpus(ops: &dyn Privileged) -> Vec<GpuMetrics> {
     {
         let result = nvidia(&text);
         if !result.is_empty() {
-            return result;
+            return (result, true);
         }
     }
+    (gpu_models(ops).await, false)
+}
+
+async fn gpu_models(ops: &dyn Privileged) -> Vec<GpuMetrics> {
     #[cfg(target_os = "linux")]
     {
         if let Some(text) = command(ops, "lspci", &["-mm"]).await {
@@ -303,6 +335,7 @@ pub(super) async fn gpus(ops: &dyn Privileged) -> Vec<GpuMetrics> {
 pub(super) async fn refresh(
     ops: &dyn Privileged,
     previous: &mut (Instant, IoCounters),
+    gpu: &mut GpuProbe,
 ) -> Result<Hardware> {
     let now = Instant::now();
     let current = disk_snapshot();
@@ -319,7 +352,7 @@ pub(super) async fn refresh(
     #[cfg(target_os = "linux")]
     let connections = None;
     Ok(Hardware {
-        gpus: gpus(ops).await,
+        gpus: gpu.read(ops).await,
         connections,
         io,
     })

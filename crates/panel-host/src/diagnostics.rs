@@ -77,6 +77,18 @@ pub async fn pending(
 ) -> ApiResult<Json<Vec<DiagnosticJob>>> {
     let server_id = auth::require_agent(&state, &headers).await?;
     artifacts::require_signed_agent(&state, server_id).await?;
+    // Polled every few seconds by each agent. Without a queued or running job
+    // nothing below can be delivered or changed for this server; maintenance
+    // still expires other servers' jobs on its own schedule.
+    let active: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM diagnostic_jobs WHERE server_id=$1 AND status IN ('queued','running'))",
+    )
+    .bind(server_id)
+    .fetch_one(&state.pool)
+    .await?;
+    if !active {
+        return Ok(Json(Vec::new()));
+    }
     expire(&state).await?;
     let mut tx = state.pool.begin().await?;
     let capabilities: Value = sqlx::query_scalar(

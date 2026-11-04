@@ -120,12 +120,13 @@ export default function Servers() {
         : !resource.data ? <Empty icon={ServerCrashIcon} title="无法读取服务器列表" description={resource.error ? '读取失败，尚未取得任何服务器数据。检查网络或面板状态后重试。' : '尚未取得服务器数据。'}><Button variant="outline" onClick={resource.reload}>重试</Button></Empty>
         : !allServers.length ? <Empty icon={ServerIcon} title="从第一台服务器开始" description="添加服务器后，在服务器上执行安装命令，即可自动接入。"><Button disabled={!canWrite} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />添加服务器</Button></Empty>
         : !servers.length ? <Empty icon={FilterXIcon} title="没有符合条件的服务器" description={`已有 ${allServers.length} 台服务器，当前筛选条件下没有匹配项。`}><Button variant="outline" onClick={clearFilters}>清除筛选</Button></Empty> : <>
-        <div className="max-w-full min-w-0 max-md:hidden"><Table><TableHeader><TableRow><TableHead className="w-10">{selectAll}</TableHead><TableHead>服务器</TableHead><TableHead>状态</TableHead>{column('cpu') && <TableHead>处理器</TableHead>}{column('memory') && <TableHead>内存</TableHead>}{column('cost') && <TableHead>成本 / 到期</TableHead>}{column('traffic') && <TableHead>本期观测 / 额度</TableHead>}{column('version') && <TableHead>设备版本</TableHead>}<TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{servers.map((server, index) => <Fragment key={server.id}>
+        {/* Only the layout for this width is rendered: the list re-renders on every poll. */}
+        {!phone && <div className="max-w-full min-w-0 max-md:hidden"><Table><TableHeader><TableRow><TableHead className="w-10">{selectAll}</TableHead><TableHead>服务器</TableHead><TableHead>状态</TableHead>{column('cpu') && <TableHead>处理器</TableHead>}{column('memory') && <TableHead>内存</TableHead>}{column('cost') && <TableHead>成本 / 到期</TableHead>}{column('traffic') && <TableHead>本期观测 / 额度</TableHead>}{column('version') && <TableHead>设备版本</TableHead>}<TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{servers.map((server, index) => <Fragment key={server.id}>
           {startsGroup(index) && <TableRow><TableHead className="bg-accent text-accent-foreground text-left" colSpan={4 + view.columns.length}>{groupKey(server)}</TableHead></TableRow>}
           <TableRow><TableCell>{selectOne(server)}</TableCell><TableCell>{identity(server)}</TableCell><TableCell>{status(server)}</TableCell>{column('cpu') && <TableCell>{cpuUsage(server)}</TableCell>}{column('memory') && <TableCell>{memoryUsage(server)}</TableCell>}{column('cost') && <TableCell>{cost(server)}</TableCell>}{column('traffic') && <TableCell>{traffic(server)}</TableCell>}{column('version') && <TableCell><span className="font-mono text-xs">{server.static_info.agent_version ?? '尚未上报'}</span></TableCell>}<TableCell>{actions(server, 'justify-end')}</TableCell></TableRow>
-        </Fragment>)}</TableBody></Table></div>
+        </Fragment>)}</TableBody></Table></div>}
         {/* Phones get one card per server instead of a sideways-scrolling table. */}
-        <div data-slot="server-list-cards" className="md:hidden">
+        {phone && <div data-slot="server-list-cards" className="md:hidden">
           <div className="text-muted-foreground flex items-center gap-2.5 border-b px-4 py-2.5 text-xs">{selectAll}<span aria-hidden="true">全选当前筛选</span></div>
           {servers.map((server, index) => <Fragment key={server.id}>
             {startsGroup(index) && <div className="bg-accent text-accent-foreground border-b px-4 py-1.5 text-xs font-medium">{groupKey(server)}</div>}
@@ -140,7 +141,7 @@ export default function Servers() {
               {actions(server, 'justify-end -mt-1')}
             </article>
           </Fragment>)}
-        </div>
+        </div>}
       </>}
     </Panel>
     <AnimatePresence>{availableSelected.length > 0 && <m.div key="bulk" {...barMotion} role="region" aria-label="批量操作" data-slot="bulk-bar"

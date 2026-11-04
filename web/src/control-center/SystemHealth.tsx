@@ -1,6 +1,6 @@
 import { api } from '../api'
 import { ErrorNotice, Loading, Refresh } from '../components'
-import { useAction, useResource } from '../hooks'
+import { useAction, useResource, settingsPoll } from '../hooks'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
@@ -19,7 +19,7 @@ const queueNames: Record<string, string> = { commands: '远程命令', diagnosti
 const verificationNames: Record<string, string> = { declared: '仅登记清单', integrity_verified: '完整性已核对', restored: '曾通过隔离恢复' }
 export default function SystemHealth() {
   const resource = useResource<Health>('/api/control-center/health')
-  const retention = useResource<Array<{ kind: string; days: number }>>('/api/control-center/retention')
+  const retention = useResource<Array<{ kind: string; days: number }>>('/api/control-center/retention', settingsPoll)
   const action = useAction()
   const health = resource.data
   return <><Panel><PanelHeader><PanelTitle>系统自检</PanelTitle><Refresh onClick={resource.reload} /></PanelHeader><div className="p-4"><ErrorNotice message={resource.error} retry={resource.reload} />{resource.loading && !health && <Loading />}{health && <>
