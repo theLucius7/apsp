@@ -71,8 +71,8 @@ try {
   await page.getByRole('button', { name: '添加 Passkey', exact: true }).click()
   let dialog = page.getByRole('dialog')
   await dialog.getByLabel('密钥名称', { exact: true }).fill('管理员测试密钥')
-  await dialog.getByLabel('管理员密码', { exact: true }).fill(password)
-  await dialog.getByRole('button', { name: '验证并绑定', exact: true }).click()
+  // The sign-in a moment ago is a recent proof, so no separate verification is asked.
+  await dialog.getByRole('button', { name: '绑定', exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
   await page.getByRole('cell', { name: '管理员测试密钥', exact: true }).waitFor()
   const management = await ok(page, '/api/security/passkeys', undefined, 'GET')
@@ -131,7 +131,7 @@ try {
   assert.equal(wrongOrigin.status(), 400)
 
   // A registration must finish in the same administrator session that authorized it.
-  const pending = await ok(page, '/api/security/passkeys/register/start', { name: '不能迁移会话', password })
+  const pending = await ok(page, '/api/security/passkeys/register/start', { name: '不能迁移会话' })
   const preservedAdminKeys = await admin.cdp.send('WebAuthn.getCredentials', { authenticatorId: admin.authenticatorId })
   await admin.cdp.send('WebAuthn.clearCredentials', { authenticatorId: admin.authenticatorId })
   const pendingBody = await native(page, pending, true)
@@ -143,10 +143,12 @@ try {
   await clearLimit()
   const user = await ok(page, '/api/plugins/sing-box/users', { name: '受验代理用户' })
   await page.goto(`${origin}/#/plugins/sing-box/users`)
+  // Without a recent proof the shared dialog asks, and the administrator's Passkey satisfies it.
+  await sql`UPDATE administrator_reauth SET expires_at=0`
   await page.getByRole('button', { name: '生成开通链接', exact: true }).click()
-  dialog = page.getByRole('dialog')
-  await dialog.getByLabel('管理员密码', { exact: true }).fill(password)
-  await dialog.getByRole('button', { name: '验证并生成', exact: true }).click()
+  await page.getByRole('dialog', { name: '生成用户开通链接', exact: true }).getByRole('button', { name: '生成开通链接', exact: true }).click()
+  await page.getByRole('dialog', { name: '再次验证身份', exact: true }).getByRole('button', { name: '使用 Passkey 验证', exact: true }).click()
+  dialog = page.getByRole('dialog', { name: '用户开通链接', exact: true })
   await dialog.getByRole('heading', { name: '用户开通链接', exact: true }).waitFor()
   const inviteUrl = await dialog.locator('[data-slot=copy-field] code').innerText()
   const invite = { url: inviteUrl }, userPath = portalPath(invite)
@@ -193,7 +195,7 @@ try {
   // Authentication with one account's key cannot satisfy another account's challenge.
   await clearLimit()
   const peer = await ok(page, '/api/plugins/sing-box/users', { name: '另一个代理用户' })
-  const peerInvite = await ok(page, `/api/plugins/sing-box/users/${peer.id}/portal/invitation`, { password })
+  const peerInvite = await ok(page, `/api/plugins/sing-box/users/${peer.id}/portal/invitation`, {})
   const peerPath = portalPath(peerInvite)
   const peerClient = await client(), peerPage = peerClient.page
   await peerPage.goto(peerInvite.url)
@@ -240,8 +242,8 @@ try {
   await clearLimit()
   const staleChallenge = await ok(userPage, `${userPath}/login/start`)
   const staleBody = await native(userPage, staleChallenge)
-  assert.equal((await request(page, `/api/plugins/sing-box/users/${user.id}/portal/invitation`, { password })).status, 409)
-  const replacement = await ok(page, `/api/plugins/sing-box/users/${user.id}/portal/invitation`, { password, reset: true })
+  assert.equal((await request(page, `/api/plugins/sing-box/users/${user.id}/portal/invitation`, {})).status, 409)
+  const replacement = await ok(page, `/api/plugins/sing-box/users/${user.id}/portal/invitation`, { reset: true })
   assert.equal((await request(userPage, `${userPath}/login/finish`, staleBody)).status, 400)
   assert.equal((await ok(userPage, userPath, undefined, 'GET')).authenticated, false)
   const unchanged = await ok(page, `/api/plugins/sing-box/users/${user.id}`, undefined, 'GET')
@@ -252,7 +254,7 @@ try {
   results.push('explicit admin recovery revokes keys/sessions/challenges while preserving existing proxy identity')
 
   await clearLimit()
-  const fresh = await ok(page, `/api/plugins/sing-box/users/${user.id}/portal/invitation`, { password })
+  const fresh = await ok(page, `/api/plugins/sing-box/users/${user.id}/portal/invitation`, {})
   const registration = await ok(userPage, `${userPath}/register/start`, { name: '重开通', activation_token: activation(fresh) })
   const registrationBody = await native(userPage, registration, true)
   const rival = await client()
@@ -278,13 +280,20 @@ try {
     return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1000000).padStart(6, '0')
   }
   await sql`UPDATE admins SET totp_secret=${totpSecret},totp_last_step=NULL WHERE id=1`
-  assert.equal((await request(page, '/api/security/passkeys/register/start', { name: '缺少验证码', password })).status, 400)
-  assert.equal((await request(page, `/api/security/passkeys/${adminKey.id}/remove`, { password })).status, 400)
-  assert.equal((await request(page, `/api/plugins/sing-box/users/${peer.id}/portal/invitation`, { password, reset: true })).status, 400)
-  await ok(page, '/api/security/passkeys/register/start', { name: '需要新验证码', password, totp_code: totp(totpStep) })
-  assert.equal((await request(page, `/api/security/passkeys/${adminKey.id}/remove`, { password, totp_code: totp(totpStep) })).status, 400)
-  await ok(page, `/api/security/passkeys/${adminKey.id}/remove`, { password, totp_code: totp(totpStep + 1) })
-  results.push('admin registration, removal and proxy recovery enforce enabled TOTP and reject code replay')
+  // These changes need the shared recent proof; with TOTP on, a password proof
+  // also needs an unused code.
+  await sql`UPDATE administrator_reauth SET expires_at=0`
+  assert.equal((await request(page, '/api/security/passkeys/register/start', { name: '缺少验证' })).status, 403)
+  assert.equal((await request(page, `/api/security/passkeys/${adminKey.id}/remove`)).status, 403)
+  assert.equal((await request(page, `/api/plugins/sing-box/users/${peer.id}/portal/invitation`, { reset: true })).status, 403)
+  assert.equal((await request(page, '/api/control-center/reauth', { password })).status, 400)
+  await ok(page, '/api/control-center/reauth', { password, totp_code: totp(totpStep) })
+  await ok(page, '/api/security/passkeys/register/start', { name: '需要新验证码' })
+  await sql`UPDATE administrator_reauth SET expires_at=0`
+  assert.equal((await request(page, '/api/control-center/reauth', { password, totp_code: totp(totpStep) })).status, 400)
+  await ok(page, '/api/control-center/reauth', { password, totp_code: totp(totpStep + 1) })
+  await ok(page, `/api/security/passkeys/${adminKey.id}/remove`)
+  results.push('admin registration, removal and proxy recovery need the shared proof; a password proof enforces enabled TOTP and rejects code replay')
   assert.equal((await request(page, '/api/login/passkey/finish', loginBody)).status, 400)
   await sql`UPDATE admins SET totp_secret=NULL,totp_last_step=NULL WHERE id=1`
   await clearLimit()

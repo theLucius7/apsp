@@ -28,13 +28,14 @@
 | 方法与路径 | 请求 | 成功响应 |
 |---|---|---|
 | `GET /api/security/totp` | 无 | `200 {"enabled":false,"pending_expires_at":null}` |
-| `POST /api/security/totp/setup` | `{"password":"管理员密码"}` | `200 {"secret":"Base32 秘密","otpauth_uri":"验证器导入 URI","expires_at":1790000000}` |
+| `POST /api/security/totp/setup` | 无 | `200 {"secret":"Base32 秘密","otpauth_uri":"验证器导入 URI","expires_at":1790000000}` |
 | `POST /api/security/totp/confirm` | `{"code":"六位验证码"}` | `200 {"enabled":true}` |
-| `POST /api/security/totp/disable` | `{"password":"管理员密码","code":"尚未使用的六位验证码"}` | `200 {"enabled":false}` |
+| `POST /api/security/totp/disable` | 无 | `200 {"enabled":false}` |
+| `POST /api/security/password` | `{"new_password":"至少 12 字节"}` | `200 {"changed":true}` |
 
-设置秘密为独立随机 20 字节，编码为无填充 Base32，仅在生成响应返回，绑定发起设置的当前会话，5 分钟内确认有效。重新 setup 替换旧的待确认秘密；启用前仍使用原登录方式。已启用时 setup 返回 409，需先验证并关闭。确认不存在、过期或其他会话发起的设置返回 409；设置/确认/关闭的密码或验证码错误返回 400，缺失或失效会话返回 401。
+设置秘密为独立随机 20 字节，编码为无填充 Base32，仅在生成响应返回，绑定发起设置的当前会话，5 分钟内确认有效。重新 setup 替换旧的待确认秘密；启用前仍使用原登录方式。已启用时 setup 返回 409，需先验证并关闭。确认不存在、过期或其他会话发起的设置返回 409；确认时验证码错误返回 400，缺失或失效会话返回 401。setup、disable 和修改密码需要当前会话五分钟内的再次验证（`POST /api/control-center/reauth` 或 Passkey，见 [ADR 0108](adr/0108-unified-reauthentication.md)），缺失时返回 403；用密码再次验证且已启用 TOTP 时，需要一个尚未使用的验证码。新密码与当前密码相同返回 400。
 
-启用和关闭都在事务内更新状态并撤销其他管理员会话，保留当前完成操作的会话。状态接口不返回秘密。丢失验证器时需由部署所有者经受保护的数据库管理通道恢复，见[部署文档](deploy.md#管理员登录与二步验证)；普通密码不能单独关闭 TOTP。
+启用和关闭都在事务内更新状态并撤销其他管理员会话，保留当前完成操作的会话。状态接口不返回秘密。丢失验证器时，已绑定 Passkey 的管理员可用 Passkey 再次验证后关闭；否则需由部署所有者经受保护的数据库管理通道恢复，见[部署文档](deploy.md#管理员登录与二步验证)。普通密码不能单独关闭 TOTP。
 
 ### Passkey
 
@@ -43,15 +44,15 @@
 | 方法与路径 | 请求 / 作用 |
 | --- | --- |
 | `GET /api/security/passkeys` | 管理员；返回 `{configuration:{enabled,reason,origin},keys:[{id,name,created_at,last_used_at}]}` |
-| `POST /api/security/passkeys/register/start` | 管理员；`{name,password,totp_code?}`，验证密码及已启用的 TOTP，开始绑定 |
+| `POST /api/security/passkeys/register/start` | 管理员；`{name}`，需要五分钟内的再次验证，开始绑定 |
 | `POST /api/security/passkeys/register/finish` | 同一管理员会话；完成注册 |
-| `POST /api/security/passkeys/{id}/remove` | 管理员；`{password,totp_code?}`，删除密钥，撤销其他会话和待完成挑战 |
+| `POST /api/security/passkeys/{id}/remove` | 管理员；无请求体，需要五分钟内的再次验证；删除密钥，撤销其他会话和待完成挑战 |
 | `POST /api/login/passkey/start` | 无需登录；开始管理员认证，无请求体 |
 | `POST /api/login/passkey/finish` | 完成管理员认证，签发原 `apsp_session`，返回 `{id:1}` |
 | `POST /api/control-center/reauth/passkey/start` | 已登录的初始所有者；无请求体，为当前会话创建再次验证挑战，使用独立的 `apsp_admin_reauth` 绑定 Cookie；无需已有五分钟证明 |
 | `POST /api/control-center/reauth/passkey/finish` | 同一初始所有者会话完成验证；返回 `{verified_at,expires_at}`，证明有效五分钟，不替换或延长 `apsp_session`，无需额外 TOTP；API 令牌不可调用 |
 | `GET /api/plugins/sing-box/users/{id}/portal` | 管理员；开通状态、密钥数量、账户登录 URL、开通链接过期时间，不返回开通秘密 |
-| `POST /api/plugins/sing-box/users/{id}/portal/invitation` | 管理员；`{password,totp_code?,reset:false}`；返回 `{url,expires_at}`，十五分钟、一次性。已有密钥时必须明确 `reset:true` |
+| `POST /api/plugins/sing-box/users/{id}/portal/invitation` | 管理员；`{reset:false}`，需要五分钟内的再次验证；返回 `{url,expires_at}`，十五分钟、一次性。已有密钥时必须明确 `reset:true` |
 | `GET /api/plugins/sing-box/portal/{account}` | 插件 UUID 入口；未认证返回 `{authenticated:false,configuration}`，已认证额外返回自身 `name,subscription_url,usage:{uplink,downlink},keys` |
 | `POST /api/plugins/sing-box/portal/{account}/login/start` | 开始该代理账户的认证，无请求体 |
 | `POST /api/plugins/sing-box/portal/{account}/login/finish` | 完成认证，签发独立 `apsp_proxy_session`，返回 `{ok:true}` |

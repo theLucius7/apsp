@@ -37,6 +37,7 @@ pub fn route_policy(path: &str, method: &Method) -> Option<RoutePolicy> {
                     || path.contains("/accesses")
                     || path.contains("/external-accesses")
                     || path.contains("/subscription/reset")
+                    || path.ends_with("/portal/invitation")
                     || path.ends_with("/reachability/settings")
                     || path.ends_with("/subscription-domain"))));
     let read = (feature == "cloud" && *method == Method::POST && path.ends_with("/cdt-check"))
@@ -102,6 +103,13 @@ mod tests {
         )
         .unwrap();
         assert!(reset.high_risk);
+        // Issuing or resetting a member's sign-in uses the shared proof.
+        let invitation = route_policy(
+            "/api/plugins/sing-box/users/1/portal/invitation",
+            &Method::POST,
+        )
+        .unwrap();
+        assert!(invitation.high_risk && !invitation.independent_identity);
         // Opting in sends node addresses to a third party; a run stays within that choice.
         let opt_in =
             route_policy("/api/plugins/sing-box/reachability/settings", &Method::PUT).unwrap();

@@ -60,6 +60,8 @@ try {
       if (method === 'GET' && path === '/api/dashboard/access') value = { authenticated: true, public_dashboard: false }
       else if (method === 'GET' && path === '/api/control-center/me') value = actor
       else if (method === 'GET' && path.startsWith('/api/control-center/preferences/')) value = { value: path.endsWith('/recent') || path.endsWith('/favorite') ? [] : null, revision: 0, updated_at: 0 }
+      // The shared verification dialog offers Passkey only when the account has keys.
+      else if (method === 'GET' && path === '/api/security/passkeys') value = { configuration: { enabled: true, reason: null, origin }, keys: [] }
       else if (method === 'GET' && path === '/api/servers') value = [{ id: 7, name: 'TEST_ONLY 核对服务器', online: true, capabilities: ['fleet:operations:v1'], static_info: {}, latest_metrics: {} }]
       else if (method === 'GET' && path === '/api/operations/jobs') value = [detail.job]
       else if (method === 'GET' && path === `/api/operations/jobs/${job}`) value = detail
@@ -106,8 +108,8 @@ try {
     const read = review.getByRole('button', { name: '读取实际只读回执', exact: true })
     const idle = () => page.waitForFunction(() => document.querySelector('[data-slot=operations-page]')?.getAttribute('aria-busy') === 'false')
     const proof = async password => {
-      const dialog = page.getByRole('dialog', { name: '再次验证管理员身份', exact: true })
-      await dialog.getByLabel('管理员密码', { exact: true }).fill(password)
+      const dialog = page.getByRole('dialog', { name: '再次验证身份', exact: true })
+      await dialog.getByLabel('当前管理员密码', { exact: true }).fill(password)
       await dialog.getByRole('button', { name: '验证并继续', exact: true }).click()
     }
     assert.equal(await final.isDisabled(), true)

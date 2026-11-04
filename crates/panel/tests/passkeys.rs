@@ -60,6 +60,25 @@ async fn reauthentication_requires_a_session_exact_origin_and_existing_keys(
     Ok(())
 }
 
+/// Ends every recent proof, as five minutes passing would.
+async fn expire_proofs(pool: &PgPool) -> Result<()> {
+    sqlx::query("UPDATE administrator_reauth SET expires_at=0")
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+async fn reauth(panel: &TestPanel, cookie: &str, password: &str) -> Result<StatusCode> {
+    Ok(post(
+        panel,
+        cookie,
+        "/api/control-center/reauth",
+        json!({"password": password}),
+    )
+    .await?
+    .status())
+}
+
 async fn post(
     panel: &TestPanel,
     cookie: &str,
@@ -118,7 +137,7 @@ async fn registration_requires_fresh_admin_proof_exact_origin_and_a_bound_single
     let panel = TestPanel::start_with_localhost(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let path = "/api/security/passkeys/register/start";
-    let input = json!({"name":"测试密钥","password":PASSWORD});
+    let input = json!({"name":"测试密钥"});
     assert_eq!(
         post(&panel, "", path, input.clone()).await?.status(),
         StatusCode::UNAUTHORIZED
@@ -142,16 +161,32 @@ async fn registration_requires_fresh_admin_proof_exact_origin_and_a_bound_single
             .status(),
         StatusCode::BAD_REQUEST
     );
+    // Registration needs the shared recent proof (password or Passkey); the
+    // request itself no longer carries a password.
+    expire_proofs(&pool).await?;
+    assert_eq!(
+        post(&panel, &cookie, path, input.clone()).await?.status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        reauth(&panel, &cookie, "wrong").await?,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        post(&panel, &cookie, path, input.clone()).await?.status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(reauth(&panel, &cookie, PASSWORD).await?, StatusCode::OK);
     assert_eq!(
         post(
             &panel,
             &cookie,
             path,
-            json!({"name":"测试","password":"wrong"})
+            json!({"name":"测试","password":PASSWORD})
         )
         .await?
         .status(),
-        StatusCode::BAD_REQUEST
+        StatusCode::UNPROCESSABLE_ENTITY
     );
     let response = post(&panel, &cookie, path, input)
         .await?
@@ -224,26 +259,49 @@ async fn proxy_invitations_are_scoped_hashed_rotatable_and_removed_with_the_owne
     let id = user["id"].as_i64().unwrap();
     let path = format!("/api/plugins/sing-box/users/{id}/portal");
     assert_eq!(
+        post(&panel, "", &format!("{path}/invitation"), json!({}))
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    // Issuing a link needs the shared recent proof, not a password in the request.
+    expire_proofs(&pool).await?;
+    assert_eq!(
+        post(&panel, &cookie, &format!("{path}/invitation"), json!({}))
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(reauth(&panel, &cookie, PASSWORD).await?, StatusCode::OK);
+    // The link still comes only from the configured origin.
+    assert_eq!(
+        panel
+            .admin(
+                Method::POST,
+                &format!("{path}/invitation"),
+                &cookie,
+                Some(json!({}))
+            )
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
         post(
             &panel,
-            "",
+            &cookie,
             &format!("{path}/invitation"),
             json!({"password":PASSWORD})
         )
         .await?
         .status(),
-        StatusCode::UNAUTHORIZED
+        StatusCode::UNPROCESSABLE_ENTITY
     );
-    let first: Value = post(
-        &panel,
-        &cookie,
-        &format!("{path}/invitation"),
-        json!({"password":PASSWORD}),
-    )
-    .await?
-    .error_for_status()?
-    .json()
-    .await?;
+    let first: Value = post(&panel, &cookie, &format!("{path}/invitation"), json!({}))
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     let url = first["url"].as_str().unwrap();
     let (base, token) = url.split_once("?activate=").unwrap();
     assert!(base.contains("/#/plugins/sing-box/account/"));
@@ -284,16 +342,11 @@ async fn proxy_invitations_are_scoped_hashed_rotatable_and_removed_with_the_owne
         .status(),
         StatusCode::BAD_REQUEST
     );
-    let second: Value = post(
-        &panel,
-        &cookie,
-        &format!("{path}/invitation"),
-        json!({"password":PASSWORD}),
-    )
-    .await?
-    .error_for_status()?
-    .json()
-    .await?;
+    let second: Value = post(&panel, &cookie, &format!("{path}/invitation"), json!({}))
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     assert_ne!(second["url"], first["url"]);
     assert_eq!(
         post(
@@ -382,7 +435,7 @@ async fn passkey_requests_share_the_login_rate_limit_and_fail_closed_on_large_bo
             &panel,
             &cookie,
             "/api/security/passkeys/register/start",
-            json!({"name":"a".repeat(70_000),"password":PASSWORD})
+            json!({"name":"a".repeat(70_000)})
         )
         .await?
         .status(),
@@ -455,24 +508,21 @@ async fn named_administrators_have_their_own_passkey_accounts(pool: PgPool) -> R
     assert_eq!(list.status(), StatusCode::OK);
     assert_eq!(list.json::<Value>().await?["keys"], json!([]));
     let start = "/api/security/passkeys/register/start";
+    // Each administrator proves their own identity through the shared proof.
+    expire_proofs(&pool).await?;
+    let named = json!({"name":"值班密钥"});
     assert_eq!(
-        post(
-            &panel,
-            &operator,
-            start,
-            json!({"name":"值班密钥","password":"wrong-password"})
-        )
-        .await?
-        .status(),
+        post(&panel, &operator, start, named.clone())
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        reauth(&panel, &operator, "wrong-password").await?,
         StatusCode::BAD_REQUEST
     );
-    let response = post(
-        &panel,
-        &operator,
-        start,
-        json!({"name":"值班密钥","password":PASSWORD}),
-    )
-    .await?;
+    assert_eq!(reauth(&panel, &operator, PASSWORD).await?, StatusCode::OK);
+    let response = post(&panel, &operator, start, named).await?;
     assert_eq!(response.status(), StatusCode::OK);
     let options: Value = response.json().await?;
     assert_eq!(options["options"]["publicKey"]["user"]["name"], "operator");
@@ -482,15 +532,11 @@ async fn named_administrators_have_their_own_passkey_accounts(pool: PgPool) -> R
     );
     // A fresh database has no owner row when migrations run; the owner gets the
     // original account on their first registration, as upgraded panels already have.
+    assert_eq!(reauth(&panel, &owner, PASSWORD).await?, StatusCode::OK);
     assert_eq!(
-        post(
-            &panel,
-            &owner,
-            start,
-            json!({"name":"所有者密钥","password":PASSWORD})
-        )
-        .await?
-        .status(),
+        post(&panel, &owner, start, json!({"name":"所有者密钥"}))
+            .await?
+            .status(),
         StatusCode::OK
     );
     let accounts: Vec<(i64, uuid::Uuid)> = sqlx::query_as(

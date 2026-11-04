@@ -12,8 +12,9 @@ import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
 type TotpStatus = { enabled: boolean; pending_expires_at: number | null }
 type Setup = { secret: string; otpauth_uri: string; expires_at: number }
 
-// The administrator's own password; previously only a database procedure could change it.
-function PasswordChange({ totp }: { totp: boolean }) {
+// The administrator's own password; identity is verified through the shared
+// dialog (Passkey or password) when the panel asks.
+function PasswordChange() {
   const action = useAction()
   const [done, setDone] = useState(false)
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -23,20 +24,18 @@ function PasswordChange({ totp }: { totp: boolean }) {
     setDone(false)
     void action.run(async () => {
       if (next !== String(data.get('repeat_password') ?? '')) throw new Error('两次输入的新密码不一致。')
-      await api('/api/security/password', 'POST', { current_password: String(data.get('current_password') ?? ''), new_password: next, ...(totp ? { totp_code: String(data.get('code') ?? '') } : {}) })
+      await api('/api/security/password', 'POST', { new_password: next })
     }, () => { form.reset(); setDone(true) })
   }
   return <Panel>
     <PanelHeader><PanelTitle>登录密码</PanelTitle></PanelHeader>
     <form className="p-4" onSubmit={submit}>
-      <Field label="当前密码"><Input name="current_password" type="password" autoComplete="current-password" required maxLength={1024} disabled={action.busy} /></Field>
       <Field label="新密码" hint="至少 12 个字符，不能与当前密码相同。"><Input name="new_password" type="password" autoComplete="new-password" required minLength={12} maxLength={1024} disabled={action.busy} /></Field>
       <Field label="再次输入新密码"><Input name="repeat_password" type="password" autoComplete="new-password" required minLength={12} maxLength={1024} disabled={action.busy} /></Field>
-      {totp && <Field label="当前验证码"><Input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" minLength={6} maxLength={6} required disabled={action.busy} /></Field>}
-      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">修改后，其他设备上的管理员会话会退出，当前会话保留；所有者的管理员 Passkey 也会撤销，需要重新登记。</p>
+      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">提交时需要再次验证身份（Passkey 或当前密码）。修改后，其他设备上的管理员会话会退出，当前会话保留；已绑定的 Passkey 不受影响。</p>
       <ErrorNotice message={action.error} />
       {done && <p role="status" className="text-sm">密码已修改。</p>}
-      <Button disabled={action.busy}>{action.busy ? '正在验证…' : '修改密码'}</Button>
+      <Button disabled={action.busy}>{action.busy ? '正在提交…' : '修改密码'}</Button>
     </form>
   </Panel>
 }
@@ -59,10 +58,8 @@ export default function Security() {
   useEffect(() => { if (resource.data?.enabled) setSetup(undefined) }, [resource.data?.enabled])
   const begin = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const form = event.currentTarget
-    const password = String(new FormData(form).get('password') ?? '')
-    void action.run(() => api<Setup>('/api/security/totp/setup', 'POST', { password }), value => {
-      form.reset(); setSetup(value); setNow(Math.floor(Date.now() / 1000)); setNotice(''); resource.reload()
+    void action.run(() => api<Setup>('/api/security/totp/setup', 'POST'), value => {
+      setSetup(value); setNow(Math.floor(Date.now() / 1000)); setNotice(''); resource.reload()
     })
   }
   const confirm = (event: FormEvent<HTMLFormElement>) => {
@@ -74,15 +71,13 @@ export default function Security() {
   }
   const disable = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const form = event.currentTarget
-    const data = new FormData(form)
-    void action.run(() => api('/api/security/totp/disable', 'POST', {
-      password: String(data.get('password') ?? ''), code: String(data.get('code') ?? ''),
-    }), () => { form.reset(); setSetup(undefined); setNotice('二步验证已关闭，其他设备的管理员会话已退出。'); resource.reload() })
+    void action.run(() => api('/api/security/totp/disable', 'POST'), () => {
+      setSetup(undefined); setNotice('二步验证已关闭，其他设备的管理员会话已退出。'); resource.reload()
+    })
   }
   return <>
     <PageHeader title="账号安全" description="管理当前管理员的登录密码、Passkey 和二步验证。其他管理员、会话与 API 令牌在「管理与安全」中管理。"><Refresh onClick={resource.reload} /></PageHeader>
-    {resource.data && <PasswordChange totp={resource.data.enabled} />}
+    {resource.data && <PasswordChange />}
     <AdminPasskeys />
     <ErrorNotice message={resource.error} retry={resource.reload} />
     <ErrorNotice message={action.error} />
@@ -93,10 +88,8 @@ export default function Security() {
         {resource.loading && !resource.data ? <Loading /> : resource.data?.enabled ? <>
           <p>登录时需要管理员密码和验证器中的六位验证码。每个验证码只能成功使用一次。</p>
           <form onSubmit={disable}>
-            <Field label="管理员密码"><Input name="password" type="password" autoComplete="current-password" required maxLength={1024} disabled={action.busy} /></Field>
-            <Field label="当前验证码" hint="请输入尚未用于本次登录的验证码；必要时等待验证器更新。"><Input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" minLength={6} maxLength={6} required disabled={action.busy} /></Field>
-            <p className="text-muted-foreground mt-3 text-xs leading-relaxed">关闭后将退出其他设备的管理员会话，当前会话保留。</p>
-            <Button variant="destructive" disabled={action.busy}>{action.busy ? '正在验证…' : '验证并关闭二步验证'}</Button>
+            <p className="text-muted-foreground mt-3 text-xs leading-relaxed">关闭前需要再次验证身份：使用 Passkey，或当前密码加验证器中的验证码。关闭后将退出其他设备的管理员会话，当前会话保留。</p>
+            <Button variant="destructive" disabled={action.busy}>{action.busy ? '正在提交…' : '关闭二步验证'}</Button>
           </form>
         </> : resource.data ? <>
           <p>使用支持动态验证码的验证器添加账户，然后输入验证码完成启用。确认前，原有登录方式仍然有效。</p>
@@ -111,12 +104,12 @@ export default function Security() {
             </form>
           </> : <form onSubmit={begin}>
             {!!resource.data.pending_expires_at && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">存在待确认设置。重新生成会使之前的秘密失效。</p>}
-            <Field label="管理员密码"><Input name="password" type="password" autoComplete="current-password" required maxLength={1024} disabled={action.busy} /></Field>
-            <Button disabled={action.busy}>{action.busy ? '正在验证…' : resource.data.pending_expires_at ? '重新生成设置' : '开始设置'}</Button>
+            <p className="text-muted-foreground mt-3 text-xs leading-relaxed">开始前需要再次验证身份（Passkey 或当前密码）。</p>
+            <Button disabled={action.busy}>{action.busy ? '正在提交…' : resource.data.pending_expires_at ? '重新生成设置' : '开始设置'}</Button>
           </form>}
         </> : null}
       </div>
     </Panel>
-    <p className="text-muted-foreground my-5 flex items-center justify-center gap-2 text-center text-xs leading-relaxed"><LockIcon className="size-3.5" aria-hidden="true" />请保持手机和服务器时间准确。丢失验证器时，需要部署所有者通过受保护的数据库管理通道恢复，密码本身不能关闭二步验证。</p>
+    <p className="text-muted-foreground my-5 flex items-center justify-center gap-2 text-center text-xs leading-relaxed"><LockIcon className="size-3.5" aria-hidden="true" />请保持手机和服务器时间准确。丢失验证器时，可用已绑定的 Passkey 再次验证后关闭二步验证；没有 Passkey 时需要部署所有者通过受保护的数据库管理通道恢复，密码本身不能关闭二步验证。</p>
   </>
 }

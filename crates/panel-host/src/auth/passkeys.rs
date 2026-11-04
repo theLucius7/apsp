@@ -1,8 +1,7 @@
 mod reauthentication;
 
 use super::{
-    ADMIN_SESSION_SECONDS, LoginRequest, hash_token, proof, random_token, require_admin, security,
-    session_cookie,
+    ADMIN_SESSION_SECONDS, hash_token, proof, random_token, require_admin, security, session_cookie,
 };
 use crate::{
     AppState,
@@ -108,29 +107,28 @@ async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Re
 #[serde(deny_unknown_fields)]
 struct Register {
     name: String,
-    password: String,
-    totp_code: Option<String>,
+}
+
+/// Locks the signed-in administrator. The request guard has already required
+/// the shared recent proof (password or Passkey) for these changes.
+async fn lock_self(tx: &mut Transaction<'_, Postgres>, session: &str, admin: i64) -> ApiResult<()> {
+    let row = security::locked_admin(tx, session).await?;
+    if sqlx::Row::try_get::<i64, _>(&row, "id")? != admin {
+        return Err(ApiError::Unauthorized);
+    }
+    Ok(())
 }
 
 async fn register_start(
     State(state): State<AppState>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Json(input): Json<Register>,
 ) -> ApiResult<Response> {
     let admin = require_admin(&state, &headers).await?;
-    let proof = proof::prepare(
-        &state,
-        &headers,
-        peer,
-        LoginRequest {
-            password: input.password,
-            totp_code: input.totp_code,
-        },
-    )
-    .await?;
+    state.passkeys.check_session_origin(&headers)?;
+    let session = security::session_hash(&headers)?;
     let mut tx = state.pool.begin().await?;
-    proof.lock(&mut tx).await?;
+    lock_self(&mut tx, &session, admin).await?;
     let account = account_for_registration(&mut tx, admin).await?;
     let (login_name, display_name): (String, String) = sqlx::query_as(
         "SELECT login_name,display_name FROM administrator_profiles WHERE admin_id=$1",
@@ -143,7 +141,7 @@ async fn register_start(
         &mut tx,
         account,
         input.name,
-        proof.session.clone(),
+        session,
         ADMIN_BINDING,
         keys::Holder {
             user_name: &login_name,
@@ -195,15 +193,14 @@ async fn register_finish(
 
 async fn remove(
     State(state): State<AppState>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
-    Json(input): Json<LoginRequest>,
 ) -> ApiResult<Response> {
     let admin = require_admin(&state, &headers).await?;
-    let proof = proof::prepare(&state, &headers, peer, input).await?;
+    state.passkeys.check_session_origin(&headers)?;
+    let session = security::session_hash(&headers)?;
     let mut tx = state.pool.begin().await?;
-    proof.lock(&mut tx).await?;
+    lock_self(&mut tx, &session, admin).await?;
     let account = account_of(&mut *tx, admin)
         .await?
         .ok_or(ApiError::NotFound)?;
@@ -218,7 +215,7 @@ async fn remove(
     {
         return Err(ApiError::NotFound);
     }
-    security::revoke_other_sessions(&mut tx, &proof.session).await?;
+    security::revoke_other_sessions(&mut tx, &session).await?;
     tx.commit().await?;
     Ok(keys::reply(json!({"ok":true})))
 }

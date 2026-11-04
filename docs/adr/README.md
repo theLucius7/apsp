@@ -141,6 +141,8 @@
 - [ADR 0105：中国可达性监控](0105-china-reachability-monitor.md)：默认关闭，经 Globalping 比较中国与海外的 TCP 连接，用对照端口区分端口封锁与 IP 封锁，连续两轮失败才判定封锁，用量不超过额度的 80%
 
 - [ADR 0106：成员门户的线路目录与探针](0106-member-lines-and-probes.md)：代理用户登录后查看 Nexus 线路的入口、落地、类型、状态与三网延迟；探针按主机显示测得的 ASN、用途类型与风险标记，家宽标为运营方声明，不显示地址、城市与坐标
+- [ADR 0107：每位管理员各自的 Passkey](0107-administrator-passkeys.md)：具名管理员绑定、登录和再次验证都用本人的 Passkey，登录页按登录名验证
+- [ADR 0108：统一的再次验证](0108-unified-reauthentication.md)：开通链接、本人 Passkey、二步验证和修改密码都改用五分钟证明与共用的「再次验证身份」，Passkey 或密码均可
 
 
 ## 界面重组（2026-10-25）
