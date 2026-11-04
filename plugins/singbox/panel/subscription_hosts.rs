@@ -296,27 +296,51 @@ pub async fn gate(State(state): State<AppState>, mut request: Request, next: Nex
     }
 }
 
-/// Portal requests on a user's own hostname verify Passkeys for that origin, under the
-/// zone so that a reset, which changes the hostname, leaves their Passkeys working.
+/// The origin and RP ID a portal request verifies Passkeys for, or `None` for the
+/// panel's own default. A user's own hostname is not a subdomain of the panel, so
+/// it uses the zone; a reset, which changes the hostname, then leaves Passkeys
+/// working. When the panel itself lives under that zone, its own host uses the
+/// zone as well, so a key bound through either address signs in on both.
+fn portal_scope(
+    public_url: &str,
+    request_host: Option<&str>,
+    domain: &Domain,
+) -> Option<(String, String)> {
+    if !domain.enabled {
+        return None;
+    }
+    let panel = panel_host(public_url).to_ascii_lowercase();
+    let zone = domain.zone_name.to_ascii_lowercase();
+    match request_host {
+        Some(host) if host != panel => {
+            slug_of(domain, host).map(|_| (format!("https://{host}"), domain.zone_name.clone()))
+        }
+        _ => (panel == zone || panel.ends_with(&format!(".{zone}")))
+            .then(|| (public_url.to_owned(), domain.zone_name.clone())),
+    }
+}
+
+/// Portal requests verify Passkeys under the scope `portal_scope` chooses.
 pub async fn scoped_state(state: AppState, headers: &HeaderMap) -> AppState {
     let host = headers
         .get(header::HOST)
         .and_then(|value| value.to_str().ok())
-        .map(str::to_ascii_lowercase);
-    let Some(host) = host.filter(|host| host != panel_host(&state.config.public_url)) else {
-        return state;
-    };
+        .map(|value| {
+            value
+                .rsplit_once(':')
+                .filter(|(_, port)| port.bytes().all(|byte| byte.is_ascii_digit()))
+                .map_or(value, |(host, _)| host)
+                .to_ascii_lowercase()
+        });
     let Ok(Some(domain)) = domain(&state.pool).await else {
         return state;
     };
-    if !domain.enabled || slug_of(&domain, &host).is_none() {
+    let Some((origin, rp_id)) = portal_scope(&state.config.public_url, host.as_deref(), &domain)
+    else {
         return state;
-    }
+    };
     let mut scoped = state;
-    scoped.passkeys = std::sync::Arc::new(crate::passkeys::Service::scoped(
-        &format!("https://{host}"),
-        &domain.zone_name,
-    ));
+    scoped.passkeys = std::sync::Arc::new(crate::passkeys::Service::scoped(&origin, &rp_id));
     scoped
 }
 
@@ -769,4 +793,71 @@ pub async fn put_settings(
     }
     WAKE.notify_one();
     get_settings(State(state), headers).await
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::*;
+
+    fn domain(enabled: bool) -> Domain {
+        Domain {
+            enabled,
+            credential_id: Uuid::nil(),
+            zone_id: "zone".into(),
+            zone_name: "example.test".into(),
+            host_prefix: "apsp-".into(),
+            target: "tunnel.example.test".into(),
+            legacy_paths: true,
+            revision: 1,
+        }
+    }
+
+    #[test]
+    fn panel_under_the_zone_shares_the_zone_with_personal_hosts() {
+        let panel = "https://panel.example.test";
+        let own = "apsp-abcdefghijklmnop.example.test";
+        let zone = || "example.test".to_owned();
+        assert_eq!(
+            portal_scope(panel, Some("panel.example.test"), &domain(true)),
+            Some((panel.to_owned(), zone()))
+        );
+        assert_eq!(
+            portal_scope(panel, None, &domain(true)),
+            Some((panel.to_owned(), zone()))
+        );
+        assert_eq!(
+            portal_scope(panel, Some(own), &domain(true)),
+            Some((format!("https://{own}"), zone()))
+        );
+        // Neither another subdomain nor a disabled feature changes the default.
+        assert_eq!(
+            portal_scope(panel, Some("other.example.test"), &domain(true)),
+            None
+        );
+        assert_eq!(
+            portal_scope(panel, Some("panel.example.test"), &domain(false)),
+            None
+        );
+        assert_eq!(portal_scope(panel, Some(own), &domain(false)), None);
+    }
+
+    #[test]
+    fn panel_outside_the_zone_keeps_its_own_rp_id() {
+        let panel = "https://panel.elsewhere.test";
+        assert_eq!(
+            portal_scope(panel, Some("panel.elsewhere.test"), &domain(true)),
+            None
+        );
+        // A user's own host still verifies under the zone.
+        let own = "apsp-abcdefghijklmnop.example.test";
+        assert_eq!(
+            portal_scope(panel, Some(own), &domain(true)),
+            Some((format!("https://{own}"), "example.test".to_owned()))
+        );
+        // A look-alike zone suffix is not the zone.
+        assert_eq!(
+            portal_scope("https://notexample.test", None, &domain(true)),
+            None
+        );
+    }
 }
