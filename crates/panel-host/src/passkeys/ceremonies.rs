@@ -95,7 +95,7 @@ async fn save(
 /// keep keys for the same panel on one device, so administrators pass their
 /// own login and display names.
 pub struct Holder<'a> {
-    pub user_name: &'a str,
+    pub login_name: &'a str,
     pub display_name: &'a str,
 }
 
@@ -129,7 +129,7 @@ pub async fn start_registration(
         .engine()?
         .start_passkey_registration(
             account,
-            holder.user_name,
+            holder.login_name,
             holder.display_name,
             Some(excluded),
         )

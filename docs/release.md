@@ -1,6 +1,6 @@
 # 签名发布与信任根
 
-Agent 在 `crates/agent/Cargo.toml` 独立声明版本，当前版本为 `0.3.4`（接受自维护运行时并改进 REALITY 健康检查，见 ADR 0104），已于 2026-11-02 签名发布；`0.3.1` 已签名发布；面板仍使用根 `Cargo.toml` 的 workspace 版本 `0.3.0`。Agent 标签使用 `agent-v<Agent版本>`。当前 wire 协议兼容范围为 `1..1`，记录在已签 `release.json`，不以面板产品版本代替协议兼容判断。
+Agent 在 `crates/agent/Cargo.toml` 独立声明版本，当前版本为 `0.3.5`（Linux ICMP 拨测有丢包时记为丢包率而不是检测不可用，并带上 #209 的 Agent 侧优化）；`0.3.4`（接受自维护运行时并改进 REALITY 健康检查，见 ADR 0104）已于 2026-11-02 签名发布；`0.3.1` 已签名发布；面板仍使用根 `Cargo.toml` 的 workspace 版本 `0.3.0`。Agent 标签使用 `agent-v<Agent版本>`。当前 wire 协议兼容范围为 `1..1`，记录在已签 `release.json`，不以面板产品版本代替协议兼容判断。
 
 CI 为两种架构构建 musl Agent、固定上游版本加 `tools/singbox-runtime/` 补丁的运行时和当前 NodeQuality 包装器，生成六个平铺资产、静态 `install.sh`、`release.json` 与规范 `SHA256SUMS`，只建立 GitHub Release 草稿。运行时按固定版本、架构和构建脚本内容缓存；固定 Go 工具链在 amd64 构建机交叉编译 arm64。Agent 两种架构都使用对应原生 runner。NodeQuality 当前源码默认构建 r14：固定上游提交、原入口 SHA-256 和 AGPL-3.0 许可证不变，包装器新增能力需使用新的不可变组件版本。打包不运行基准测试；外部诊断下载继续遵循 ADR 0016。
 
