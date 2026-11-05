@@ -59,8 +59,9 @@ fn valid_public_host(host: &str) -> bool {
 }
 
 /// Records where clients reach an imported node after its IP or public port
-/// moved. Only the catalog changes: the listener, keys and client identities
-/// stay preserved, so a port-forward in front of the host keeps working.
+/// moved, for example a tunnel origin whose clients enter at the edge on 443.
+/// Only the catalog and client endpoint change: the listener, keys and client
+/// identities stay preserved, so a port-forward in front of the host keeps working.
 async fn public_endpoint(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -91,11 +92,13 @@ async fn public_endpoint(
     sqlx::query("SELECT set_config('apsp.nexus_runtime_write','yes',TRUE)")
         .execute(&mut *tx)
         .await?;
+    // Clients render the public port from the node settings, so both move together.
     sqlx::query(
-        "UPDATE nodes SET public_host=$2 WHERE id=(SELECT node_id FROM singbox_nexus_runtime_nodes WHERE inventory_id=$1)",
+        "UPDATE nodes SET public_host=$2,settings=settings||jsonb_build_object('public_port',$3::int) WHERE id=(SELECT node_id FROM singbox_nexus_runtime_nodes WHERE inventory_id=$1)",
     )
     .bind(id)
     .bind(&input.public_host)
+    .bind(i32::from(input.public_port))
     .execute(&mut *tx)
     .await?;
     sqlx::query("SELECT set_config('apsp.nexus_runtime_write','',TRUE)")
