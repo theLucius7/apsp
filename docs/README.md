@@ -18,7 +18,7 @@
 
 | 需要做什么 | 文档 |
 | --- | --- |
-| 为服务器启用并安装 sing-box | [安装与控制流程](singbox-installation.md) |
+| 为服务器安装 sing-box | [安装与控制流程](singbox-installation.md) |
 | 配置代理协议、端点和证书 | [协议与证书](proxy-protocols.md) |
 | 整理节点库、导入外部订阅并直接授权 | [节点库与外部订阅](node-catalog.md) |
 | 配置策略组、套餐、授权和周期 | [策略与套餐](singbox-groups.md) |

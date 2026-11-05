@@ -50,10 +50,7 @@ export function Brand({ className, compact = false }: { className?: string; comp
   const { t } = useI18n()
   return <div data-slot="brand" className={cn('flex min-w-0 items-center gap-2.5', className)}>
     <BrandMark className={cn('shrink-0 drop-shadow-[0_4px_10px_color-mix(in_oklch,var(--brand-from)_38%,transparent)]', compact ? 'size-8' : 'size-10')} />
-    <span className="grid min-w-0 leading-tight">
-      <strong className={cn('truncate font-semibold tracking-[-0.02em]', compact ? 'text-base' : 'text-xl')}>{t('apsp')}</strong>
-      {!compact && <small className="text-muted-foreground truncate text-xs">{t('代理网络控制平面')}</small>}
-    </span>
+    <strong className={cn('min-w-0 truncate leading-tight font-semibold tracking-[-0.02em]', compact ? 'text-base' : 'text-xl')}>{t('apsp')}</strong>
   </div>}
 
 export function Badge({ children, tone = 'neutral', className }: { children: ReactNode; tone?: Tone; className?: string }) {

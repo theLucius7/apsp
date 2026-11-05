@@ -44,7 +44,7 @@ async fn runtime_operations_are_capability_gated_device_scoped_and_immutable(
         disabled.json::<serde_json::Value>().await?["error"]
             .as_str()
             .unwrap()
-            .contains("尚未启用 sing-box")
+            .contains("尚未安装 sing-box")
     );
     // Capability advertisements do not authorize plugin enablement.
     panel.enable_plugin(&cookie, server).await?;
@@ -175,7 +175,7 @@ async fn runtime_mutations_require_current_failed_target_and_refuse_retirement(
         disabled.json::<serde_json::Value>().await?["error"]
             .as_str()
             .unwrap()
-            .contains("尚未启用 sing-box")
+            .contains("尚未安装 sing-box")
     );
     panel.enable_plugin(&cookie, server).await?;
     sqlx::query("UPDATE servers SET capabilities='[\"singbox\",\"runtime:operations:v1\"]',dirty_at=NULL WHERE id=$1").bind(server).execute(&panel.state.pool).await?;

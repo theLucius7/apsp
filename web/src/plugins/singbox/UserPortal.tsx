@@ -36,7 +36,7 @@ export default function UserPortal({ account, activation }: { account: string; a
   const action = useAction()
   const reload = () => setRevision(value => value + 1)
   useEffect(() => {
-    document.title = `${t('代理用户')} · ${t('apsp')}`
+    document.title = `${t('我的账户')} · ${t('apsp')}`
     if (activation) window.history.replaceState(null, '', `#/plugins/sing-box/account/${account}`)
   }, [account, activation, t])
   useEffect(() => {
@@ -73,7 +73,7 @@ export default function UserPortal({ account, activation }: { account: string; a
     }, () => { setEditing(null); setNotice(editing === 'new' ? '新 Passkey 已绑定。' : 'Passkey 已删除，其他用户会话已退出。'); reload() })
   }
   return <main data-slot="proxy-portal" className="mx-auto max-w-[880px] px-6 pt-7 pb-16 max-sm:px-3 max-sm:py-5">
-    <header className="mb-7 flex items-center gap-4 max-sm:flex-wrap max-sm:gap-3"><Brand /><span className="text-muted-foreground flex-1 text-sm">{t('代理用户')}</span><LanguageSelect className="flex-none" />{data?.authenticated && <Button variant="outline" size="sm" disabled={action.busy} onClick={() => void action.run(() => api(`${base}/logout`, 'POST', undefined, undefined, false), () => { setData(undefined); setNotice(''); setEditing(null); reload() })}>{t('退出登录')}</Button>}</header>
+    <header className="mb-7 flex items-center gap-4 max-sm:flex-wrap max-sm:gap-3"><Brand /><span className="text-muted-foreground flex-1 text-sm">{t('我的账户')}</span><LanguageSelect className="flex-none" />{data?.authenticated && <Button variant="outline" size="sm" disabled={action.busy} onClick={() => void action.run(() => api(`${base}/logout`, 'POST', undefined, undefined, false), () => { setData(undefined); setNotice(''); setEditing(null); reload() })}>{t('退出登录')}</Button>}</header>
     <ErrorNotice message={error} retry={reload} /><ErrorNotice message={!editing ? action.error : ''} />
     {notice && <Notice tone="success" role="status">{notice}</Notice>}
     {loading && !data ? <Loading /> : data?.authenticated ? <>

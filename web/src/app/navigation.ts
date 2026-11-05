@@ -30,6 +30,8 @@ const groups: readonly NavigationGroup[] = [
   { label: '总览', items: [
     { page: 'singbox-overview', path: '/plugins/sing-box', label: '概览', icon: HouseIcon },
     { page: 'statistics', path: '/statistics', label: '统计报表', icon: ChartColumnIcon, parent: '/plugins/sing-box' },
+    // The server dashboard is a view of the whole network, a tab of the overview like the reports.
+    { page: 'dashboard', path: '/dashboard', label: '服务器看板', icon: LayoutDashboardIcon, parent: '/plugins/sing-box' },
     // ADR 0087: costs and renewals sit with the overview; the published path is kept.
     { page: 'expenses', path: '/plugins/expenses', label: '费用与续费', icon: CalendarClockIcon },
   ] },
@@ -40,7 +42,6 @@ const groups: readonly NavigationGroup[] = [
   ] },
   { label: '服务器', items: [
     { page: 'servers', path: '/servers', label: '服务器列表', navLabel: '服务器', icon: ServerIcon },
-    { page: 'dashboard', path: '/dashboard', label: '服务器看板', icon: LayoutDashboardIcon, parent: '/servers' },
     { page: 'ddns', path: '/plugins/ddns', label: '域名解析', icon: GlobeIcon },
     { page: 'alicloud', path: '/plugins/alicloud', label: '阿里云 CDT', icon: CloudCogIcon },
   ] },

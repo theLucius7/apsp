@@ -1,6 +1,6 @@
 // TEST_ONLY: how a page is reached in the console. Pages about the same thing are tabs
 // of one sidebar entry, and experimental workspaces are hidden until the settings show them.
-const entries = { 统计报表: '概览', 服务器列表: '服务器', 服务器看板: '服务器', 告警事件: '告警', 告警设置: '告警', 网络检测: '线路检测', 延迟检测: '线路检测', 面板设置: '设置', 插件中心: '设置', 备份与恢复: '设置', 管理与安全: '设置', 账号安全: '设置' }
+const entries = { 统计报表: '概览', 服务器列表: '服务器', 服务器看板: '概览', 告警事件: '告警', 告警设置: '告警', 网络检测: '线路检测', 延迟检测: '线路检测', 面板设置: '设置', 插件中心: '设置', 备份与恢复: '设置', 管理与安全: '设置', 账号安全: '设置' }
 const addresses = { 统计报表: '/statistics', 服务器看板: '/dashboard', 告警设置: '/monitoring/settings', 延迟检测: '/latency', 插件中心: '/plugins/catalog', 备份与恢复: '/system/backup', 管理与安全: '/system/control-center', 账号安全: '/system/administrator', 自动化与维护: '/operations', 网络配置: '/network-configuration' }
 
 export async function openPage(page, name, options = {}) {

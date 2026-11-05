@@ -100,12 +100,12 @@ impl PluginServer {
         let (state, reason) = if !self.enabled {
             (
                 InstallationState::NotEnabled,
-                "尚未启用插件；设备支持此插件不代表已安装".into(),
+                "尚未安装 sing-box；设备支持 sing-box 不代表已安装".into(),
             )
         } else if target.is_none() {
             (
                 InstallationState::Queued,
-                "启用请求已保存，等待首次空运行时安装；已有有效业务节点时请采集完整预检，并明确首次安装空运行时".into(),
+                "安装请求已保存，等待首次空运行时安装；已有有效业务节点时请采集完整预检，并明确首次安装空运行时".into(),
             )
         } else if let Some(error) = self.manifest_error.as_ref() {
             (InstallationState::Failed, error.clone())
@@ -118,7 +118,7 @@ impl PluginServer {
         } else if !self.online {
             (
                 InstallationState::Offline,
-                "设备当前离线，启用请求会在重新连接后继续".into(),
+                "设备当前离线，安装会在重新连接后继续".into(),
             )
         } else if self.applied_rev == target
             && self.healthy == Some(true)
@@ -227,7 +227,7 @@ pub(super) async fn is_enabled(
 pub(super) async fn require_enabled(tx: &mut Transaction<'_, Postgres>, id: i64) -> ApiResult<()> {
     if !is_enabled(tx, id).await? {
         return Err(ApiError::Conflict(
-            "此服务器尚未启用 sing-box，请先在系统的插件设置中明确启用".into(),
+            "此服务器尚未安装 sing-box，请先在插件中心安装".into(),
         ));
     }
     Ok(())

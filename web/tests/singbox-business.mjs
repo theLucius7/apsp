@@ -55,7 +55,7 @@ try {
     const openServerPlugins = () => page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '插件', exact: true }).click()
     const showView = name => page.getByRole('navigation', { name: '节点视图', exact: true }).getByRole('link', { name, exact: true }).click()
     page.on('pageerror', error => errors.push(error.message))
-    const metadata = { id: 1, name: '纯监控验收服务器', enabled: false, source: null, read_only: false, online: true, agent_supported: false, installation: { state: 'not_enabled', reason: '尚未启用插件；设备支持此插件不代表已安装', target_rev: 0, applied_rev: 0 } }
+    const metadata = { id: 1, name: '纯监控验收服务器', enabled: false, source: null, read_only: false, online: true, agent_supported: false, installation: { state: 'not_enabled', reason: '尚未安装 sing-box；设备支持 sing-box 不代表已安装', target_rev: 0, applied_rev: 0 } }
     const entry = { id: 1, name: metadata.name, online: true, device_public_key: 'test-only-key', static_info: { runtime_version: 'test-only-runtime' }, latest_metrics: { network_interfaces: { eth0: { received_bytes: 1024, transmitted_bytes: 2048 } } }, last_seen: now, manifest_rev: 0, capabilities: [] }
     const node = { id: 2, name: '插件代理节点', server_id: 1, protocol: 'vless-reality', port: 443, public_host: 'proxy.example.com', sni: 'www.example.com', public_key: 'public-test', short_id: '0123abcd' }
     const exitNode = { ...node, id: 3, name: '另一台服务器的出口', server_id: 2, public_host: 'exit.example.com' }
@@ -94,7 +94,7 @@ try {
       else if (path === '/api/plugins/sing-box/servers/1/enable') {
         assert.equal(route.request().method(), 'POST')
         assert.deepEqual(route.request().postDataJSON(), {})
-        Object.assign(metadata, { enabled: true, source: 'administrator', installation: { state: 'queued', reason: '启用请求已保存，正在生成初始运行配置', target_rev: 0, applied_rev: 0 } }); value = metadata
+        Object.assign(metadata, { enabled: true, source: 'administrator', installation: { state: 'queued', reason: '安装请求已保存，正在生成初始运行配置', target_rev: 0, applied_rev: 0 } }); value = metadata
       } else if (path === '/api/plugins/sing-box/servers/1/deployments') {
         assert.equal(metadata.enabled, true)
         if (deploymentFailure) { await route.fulfill({ status: 500, json: { error: '部署夹具读取失败' } }); return }
@@ -176,7 +176,7 @@ try {
     assert.equal(requests.some(path => path.endsWith('/deployments') || path.endsWith('/nodes')), false)
 
     // Adapter support alone must not opt this server into proxy business.
-    Object.assign(metadata, { agent_supported: true, installation: { state: 'not_enabled', reason: '尚未启用。', target_rev: 0, applied_rev: 0 } })
+    Object.assign(metadata, { agent_supported: true, installation: { state: 'not_enabled', reason: '尚未安装。', target_rev: 0, applied_rev: 0 } })
     entry.capabilities = ['singbox']
     const supportedStart = requests.length
     await page.reload()
@@ -187,9 +187,9 @@ try {
     await openServerPlugins()
     await page.getByRole('heading', { name: /^sing-box/ }).waitFor()
     assert.equal(await page.locator('[data-plugin="sing-box"]').count(), 0)
-    await page.getByText('设备支持 sing-box', { exact: true }).waitFor()
-    await page.getByRole('button', { name: '启用并安装 sing-box', exact: true }).click()
-    await page.getByText('管理员明确启用', { exact: true }).waitFor()
+    await page.getByRole('button', { name: '安装 sing-box', exact: true }).waitFor()
+    assert.equal(await page.getByText('设备尚未声明支持 sing-box', { exact: true }).count(), 0, 'A supported device needs no note')
+    await page.getByRole('button', { name: '安装 sing-box', exact: true }).click()
     await page.getByText('安装已安排', { exact: true }).waitFor()
     assert.equal(metadata.enabled, true)
     assert.equal(await page.getByText('已安装并运行', { exact: true }).count(), 0)
@@ -217,9 +217,9 @@ try {
     assert.equal(await page.getByText('已安装并运行', { exact: true }).count(), 0)
     Object.assign(metadata, { source: 'legacy_nodes', read_only: true, agent_supported: true })
     await page.reload()
-    await page.getByText('保留已有启用记录', { exact: true }).waitFor()
-    await page.getByText('兼容已有代理节点', { exact: true }).waitFor()
-    assert.equal(await page.getByRole('button', { name: '启用并安装 sing-box', exact: true }).count(), 0)
+    await page.getByText('保留已有安装记录', { exact: true }).waitFor()
+    await page.getByText('沿用已有代理节点', { exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '安装 sing-box', exact: true }).count(), 0)
 
     // The server plugin route reads only this server and keeps conservative ACK semantics.
     // Leave the tab first so the plugin route mounts afresh.

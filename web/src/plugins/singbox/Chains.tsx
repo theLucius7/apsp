@@ -39,7 +39,7 @@ export function chainSelectionError(snapshot: ChainWriteSnapshot, entry: string,
     const node = snapshot.nodes.data?.find(node => node.id === id)
     const server = node && snapshot.servers.data?.find(server => server.id === node.server_id)
     if (!node || node.protocol !== 'vless-reality' || node.enabled === false || !server?.enabled) {
-      return '已选节点已不可用或所属服务器尚未启用，请重新选择；名称和其他草稿已保留。'
+      return '已选节点已不可用或所属服务器尚未安装 sing-box，请重新选择；名称和其他草稿已保留。'
     }
   }
   const entryId = nodeId(entry), exitId = nodeId(exit)
@@ -150,7 +150,7 @@ function managedSelectionError(snapshot: ProxyWriteSnapshot, entry: number | nul
   for (const id of [entry, exit].filter((id): id is number => id !== null)) {
     const node = snapshot.nodes.data?.find(node => node.id === id)
     const server = node && snapshot.servers.data?.find(server => server.id === node.server_id)
-    if (!node || node.protocol !== 'vless-reality' || node.enabled === false || !server?.enabled) return '已选节点已不可用或所属服务器尚未启用，请重新选择；名称和其他草稿已保留。'
+    if (!node || node.protocol !== 'vless-reality' || node.enabled === false || !server?.enabled) return '已选节点已不可用或所属服务器尚未安装 sing-box，请重新选择；名称和其他草稿已保留。'
     if (snapshot.resources.data?.some(resource => resource.kind === 'chain' && resource.entry.id === id)) return '已选节点的链路身份已变更，不支持重复入口、嵌套或循环链路；请重新选择，草稿已保留。'
     const direct = snapshot.resources.data?.find(resource => resource.kind === 'direct' && resource.id === id)
     if (!direct) return '已选节点的链路身份已变更，请重新选择，草稿已保留。'
@@ -168,7 +168,7 @@ export function chainBatchSelectionError(draft: ChainBatchDraft, snapshot: Proxy
   if (error) return error
   const entry = draft.mode === 'existing' ? nodeId(draft.entry_node_id) : null
   const serverId = draft.mode === 'new' ? nodeId(draft.server_id) : undefined
-  if (draft.mode === 'new' && draft.server_id && !snapshot.servers.data?.some(server => server.id === serverId && server.enabled)) return '已选入口服务器已不可用或尚未启用，请重新选择；草稿已保留。'
+  if (draft.mode === 'new' && draft.server_id && !snapshot.servers.data?.some(server => server.id === serverId && server.enabled)) return '已选入口服务器已不可用或尚未安装 sing-box，请重新选择；草稿已保留。'
   if (draft.mode === 'existing' && draft.entry_node_id && entry === null) return '请选择有效的入口；草稿已保留。'
   const entryError = managedSelectionError(snapshot, entry, null, serverId ?? undefined)
   if (entryError) return entryError
@@ -261,7 +261,7 @@ export async function submitChainBatch(pending: PendingChainBatch, snapshot: Pro
     const entry = item.entry
     const selection = managedSelectionError(snapshot, entry.mode === 'existing' ? entry.node_id : null, null, entry.mode === 'new' ? entry.server_id : undefined)
     if (selection) throw new Error(selection)
-    if (entry.mode === 'new' && !snapshot.servers.data?.some(server => server.id === entry.server_id && server.enabled)) throw new Error('已选入口服务器已不可用或尚未启用；草稿已保留。')
+    if (entry.mode === 'new' && !snapshot.servers.data?.some(server => server.id === entry.server_id && server.enabled)) throw new Error('已选入口服务器已不可用或尚未安装 sing-box；草稿已保留。')
   }
   const selection = chainBatchSelectionError(JSON.parse(pending.source_draft) as ChainBatchDraft, snapshot)
   if (selection) throw new Error(selection)
@@ -316,7 +316,7 @@ export default function Chains({ snapshot, serverId, getServerId, refresh, onCre
   const filterError = () => {
     const selected = getServerId ? getServerId() : serverId
     if (selected === undefined) return ''
-    if (!snapshot.servers.data?.some(server => server.id === selected && server.enabled)) return '当前筛选的入口服务器已不存在或未启用，原草稿已保留。'
+    if (!snapshot.servers.data?.some(server => server.id === selected && server.enabled)) return '当前筛选的入口服务器已不存在或未安装 sing-box，原草稿已保留。'
     const entryServer = draft.mode === 'new' ? Number(draft.server_id) : snapshot.nodes.data?.find(node => node.id === Number(draft.entry_node_id))?.server_id
     return (draft.mode === 'new' ? Boolean(draft.server_id) : Boolean(draft.entry_node_id)) && entryServer !== selected ? '原入口不属于当前服务器筛选，请明确重新选择；草稿已保留。' : ''
   }
