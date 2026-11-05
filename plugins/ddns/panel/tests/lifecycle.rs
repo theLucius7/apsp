@@ -51,6 +51,7 @@ async fn provider_preview_never_writes_and_rollback_refuses_modified_remote_reco
             &rule,
             "192.0.2.11".parse().unwrap(),
             Some(&snapshot),
+            &mut None,
             || async { Ok(()) },
         )
         .await
@@ -75,6 +76,7 @@ async fn guarded_value_restore_preserves_external_comment_and_records_exact_snap
             &rule,
             "192.0.2.11".parse().unwrap(),
             Some(&before),
+            &mut None,
             || async { Ok(()) },
         )
         .await
@@ -95,6 +97,7 @@ async fn guarded_value_restore_preserves_external_comment_and_records_exact_snap
             &rule,
             "192.0.2.10".parse().unwrap(),
             Some(&after),
+            &mut None,
             || async { Ok(()) },
         )
         .await

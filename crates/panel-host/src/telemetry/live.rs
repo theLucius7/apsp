@@ -1,7 +1,10 @@
 use super::*;
 use apsp_protocol::telemetry::TelemetrySettings;
 use serde_json::{Value, json};
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 const MAX_LIVE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -13,6 +16,8 @@ pub struct LiveSample {
 
 struct Entry {
     value: LiveSample,
+    /// The sample's metrics as JSON, built once for the dashboard's polls.
+    metrics: Arc<Value>,
     bytes: usize,
 }
 
@@ -30,6 +35,21 @@ impl LiveStore {
             .filter(|entry| now_millis() - entry.value.received_at <= 600_000)
             .map(|entry| entry.value.clone())
     }
+    /// Time sampled, time received and metrics of a server's live sample.
+    fn metrics(&self, server: i64) -> Option<(i64, i64, Arc<Value>)> {
+        self.entries
+            .lock()
+            .ok()?
+            .get(&server)
+            .filter(|entry| now_millis() - entry.value.received_at <= 600_000)
+            .map(|entry| {
+                (
+                    entry.value.sample.sampled_at,
+                    entry.value.received_at,
+                    entry.metrics.clone(),
+                )
+            })
+    }
     fn publish(&self, server: i64, sample: TelemetrySample, now: i64) -> ApiResult<()> {
         let bytes = serde_json::to_vec(&sample)
             .map_err(anyhow::Error::from)?
@@ -37,6 +57,7 @@ impl LiveStore {
         if bytes > 128 * 1024 {
             return Err(ApiError::BadRequest("实时样本超过大小上限".into()));
         }
+        let metrics = Arc::new(serde_json::to_value(&sample.metrics).map_err(anyhow::Error::from)?);
         let mut entries = self
             .entries
             .lock()
@@ -55,6 +76,7 @@ impl LiveStore {
                     sample,
                     received_at: now,
                 },
+                metrics,
                 bytes,
             },
         );
@@ -139,22 +161,47 @@ fn is_stale(sampled: Option<i64>, settings: &Value, now: i64) -> bool {
 }
 
 pub(crate) async fn dashboard_live(state: &AppState, admin: bool) -> ApiResult<Value> {
-    let rows=sqlx::query("SELECT id,last_seen,last_heartbeat_at,NULLIF(metrics_sampled_at,0) AS metrics_sampled_at,latest_metrics,agent_settings,asset_settings FROM servers WHERE deleted_at IS NULL AND COALESCE(asset_settings->>'hidden','false')<>'true' ORDER BY id").fetch_all(&state.pool).await?;
+    let rows=sqlx::query("SELECT id,last_seen,last_heartbeat_at,NULLIF(metrics_sampled_at,0) AS metrics_sampled_at,agent_settings,asset_settings FROM servers WHERE deleted_at IS NULL AND COALESCE(asset_settings->>'hidden','false')<>'true' ORDER BY id").fetch_all(&state.pool).await?;
+    // A live sample at least as new as the stored one replaces it, so stored
+    // metrics are read only for servers without one.
+    let live: HashMap<i64, (i64, i64, Arc<Value>)> = rows
+        .iter()
+        .filter_map(|row| {
+            let id: i64 = row.get("id");
+            let persisted: Option<i64> = row.get("metrics_sampled_at");
+            state
+                .telemetry_live
+                .metrics(id)
+                .filter(|(sampled, _, _)| Some(*sampled) >= persisted)
+                .map(|value| (id, value))
+        })
+        .collect();
+    let missing: Vec<i64> = rows
+        .iter()
+        .map(|row| row.get::<i64, _>("id"))
+        .filter(|id| !live.contains_key(id))
+        .collect();
+    let mut stored: HashMap<i64, Value> = if missing.is_empty() {
+        HashMap::new()
+    } else {
+        sqlx::query_as("SELECT id,latest_metrics FROM servers WHERE id=ANY($1)")
+            .bind(&missing)
+            .fetch_all(&state.pool)
+            .await?
+            .into_iter()
+            .collect()
+    };
     let now = now_millis();
     let mut servers = Vec::with_capacity(rows.len());
     for row in rows {
         let id: i64 = row.get("id");
         let persisted: Option<i64> = row.get("metrics_sampled_at");
-        let mut sampled = persisted;
-        let mut received = None;
-        let mut metrics: Value = row.get("latest_metrics");
-        if let Some(value) =
-            latest_live(state, id).filter(|value| Some(value.sample.sampled_at) >= persisted)
-        {
-            sampled = Some(value.sample.sampled_at);
-            received = Some(value.received_at);
-            metrics = serde_json::to_value(value.sample.metrics).map_err(anyhow::Error::from)?;
-        }
+        let (sampled, received, metrics) = match live.get(&id) {
+            Some((sampled, received, metrics)) => {
+                (Some(*sampled), Some(*received), Value::clone(metrics))
+            }
+            None => (persisted, None, stored.remove(&id).unwrap_or(Value::Null)),
+        };
         let last_seen: Option<i64> = row.get("last_seen");
         servers.push(json!({"id":id,"last_seen":last_seen,"last_heartbeat_at":row.get::<Option<i64>,_>("last_heartbeat_at"),"online":last_seen.is_some_and(|seen|now/1000-seen<=60),"metrics_sampled_at":sampled,"metrics_received_at":received,"metrics_persisted_at":persisted,"metrics_stale":is_stale(sampled,&row.get("agent_settings"),now),"latest_metrics":if admin {metrics} else {crate::dashboard::public_metrics_for_asset(&metrics,&row.get("asset_settings"))}}));
     }

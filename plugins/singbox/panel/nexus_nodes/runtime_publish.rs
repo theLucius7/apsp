@@ -151,19 +151,26 @@ pub(crate) async fn membership(state: &AppState) -> anyhow::Result<()> {
     }
     let mut tx = state.pool.begin().await?;
     crate::entitlements::lock(&mut tx).await?;
-    let hosts: Vec<i64> = sqlx::query_scalar(
-        "SELECT server_id FROM singbox_nexus_runtime_hosts WHERE state='active' ORDER BY server_id",
-    )
-    .fetch_all(&mut *tx)
-    .await?;
-    for server in hosts {
-        crate::business::lock_server(&mut tx, server).await?;
-        let members: Value = sqlx::query_scalar("SELECT COALESCE(jsonb_agg(jsonb_build_array(r.node_id,i.user_id,i.legacy_uuid) ORDER BY r.node_id,i.user_id),'[]'::jsonb) FROM singbox_nexus_runtime_nodes r JOIN singbox_nexus_plan_mappings p ON p.legacy_group_id=ANY(r.legacy_group_ids) JOIN singbox_entitlements($2) e ON e.package_group_id=p.package_group_id AND e.allowed JOIN singbox_nexus_identities i ON i.user_id=e.user_id AND i.import_id=p.import_id WHERE r.server_id=$1")
-            .bind(server).bind(now_timestamp()).fetch_one(&mut *tx).await?;
-        let digest = crate::auth::hash_token(&members.to_string());
+    // One evaluation of every user's entitlement serves all hosts; only hosts
+    // whose membership changed are locked and dirtied. The per-host member list
+    // and its digest are the same as when each host was read on its own.
+    let hosts: Vec<(i64, Value)> = sqlx::query_as("WITH e AS MATERIALIZED (SELECT user_id,package_group_id FROM singbox_entitlements($1) WHERE allowed) SELECT h.server_id,COALESCE((SELECT jsonb_agg(jsonb_build_array(r.node_id,i.user_id,i.legacy_uuid) ORDER BY r.node_id,i.user_id) FROM singbox_nexus_runtime_nodes r JOIN singbox_nexus_plan_mappings p ON p.legacy_group_id=ANY(r.legacy_group_ids) JOIN e ON e.package_group_id=p.package_group_id JOIN singbox_nexus_identities i ON i.user_id=e.user_id AND i.import_id=p.import_id WHERE r.server_id=h.server_id),'[]'::jsonb) FROM singbox_nexus_runtime_hosts h WHERE h.state='active' ORDER BY h.server_id")
+        .bind(now_timestamp()).fetch_all(&mut *tx).await?;
+    let digests: Vec<String> = hosts
+        .iter()
+        .map(|(_, members)| crate::auth::hash_token(&members.to_string()))
+        .collect();
+    let servers: Vec<i64> = hosts.iter().map(|(server, _)| *server).collect();
+    let stale: Vec<i64> = sqlx::query_scalar("SELECT h.server_id FROM singbox_nexus_runtime_hosts h JOIN UNNEST($1::bigint[],$2::text[]) AS d(server_id,digest) USING(server_id) WHERE h.membership_digest IS DISTINCT FROM d.digest ORDER BY h.server_id")
+        .bind(&servers).bind(&digests).fetch_all(&mut *tx).await?;
+    for (server, digest) in servers.iter().zip(&digests) {
+        if stale.binary_search(server).is_err() {
+            continue;
+        }
+        crate::business::lock_server(&mut tx, *server).await?;
         let changed = sqlx::query("UPDATE singbox_nexus_runtime_hosts SET membership_digest=$2 WHERE server_id=$1 AND membership_digest IS DISTINCT FROM $2").bind(server).bind(digest).execute(&mut *tx).await?.rows_affected();
         if changed > 0 {
-            crate::business::mark_dirty(&mut tx, &[server]).await?;
+            crate::business::mark_dirty(&mut tx, &[*server]).await?;
         }
     }
     tx.commit().await?;

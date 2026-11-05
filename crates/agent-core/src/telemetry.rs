@@ -212,7 +212,14 @@ impl Collector {
         let mut metrics = Metrics {
             swap_total: Some(self.system.total_swap()),
             swap_used: Some(self.system.used_swap()),
-            processes: u64::try_from(self.system.processes().len()).ok(),
+            processes: u64::try_from(
+                self.system
+                    .processes()
+                    .values()
+                    .filter(|process| resources::is_process(process))
+                    .count(),
+            )
+            .ok(),
             disks,
             cpu_percent: cpu,
             memory_used: positive(self.system.total_memory()).map(|_| self.system.used_memory()),

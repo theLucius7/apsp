@@ -23,10 +23,16 @@ export default function MemberCommerce({ account }: { account: string }) {
   const action = useAction(), identity = useRef(new RequestIdentity())
   const reload = () => setRevision(v => v + 1)
   useEffect(() => {
-    const controller = new AbortController(); let active = true
-    void api<View>(base, 'GET', undefined, controller.signal, false).then(v => { if (active) { setData(v); setError('') } }).catch(e => { if (active) { setError(errorMessage(e)); setData(undefined) } })
-    const timer = setInterval(reload, 30000)
-    return () => { active = false; controller.abort(); clearInterval(timer) }
+    const controller = new AbortController(); let active = true, pending = false
+    const load = () => {
+      if (pending) return
+      pending = true
+      void api<View>(base, 'GET', undefined, controller.signal, false).then(v => { if (active) { setData(v); setError('') } }).catch(e => { if (active) { setError(errorMessage(e)); setData(undefined) } }).finally(() => { pending = false })
+    }
+    load()
+    // Refreshes in place while the page is visible, like the portal overview.
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') load() }, 30000)
+    return () => { active = false; controller.abort(); window.clearInterval(timer) }
   }, [base, revision])
   const open = (next: Dialog) => { identity.current = new RequestIdentity(); action.clearError(); setDialog(next) }
   const checkout = async (id: string) => {

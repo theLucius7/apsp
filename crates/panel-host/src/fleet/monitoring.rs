@@ -93,19 +93,14 @@ async fn window(
         .collect())
 }
 
-pub(crate) async fn observe(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    server: i64,
+/// Device events implied by a sample that is newer than the server's previous
+/// latest metrics: a new boot, OOM kills, a mount turning read-only, or a
+/// service whose processes disappeared. Telemetry ingest chains the previous
+/// value through a batch and records the events in the same transaction.
+pub(crate) fn changes(
+    previous: &Value,
     sample: &apsp_protocol::TelemetrySample,
-) -> ApiResult<()> {
-    let row = sqlx::query("SELECT latest_metrics,metrics_sampled_at FROM servers WHERE id=$1")
-        .bind(server)
-        .fetch_one(&mut **tx)
-        .await?;
-    if sample.sampled_at <= row.get::<i64, _>("metrics_sampled_at") {
-        return Ok(());
-    }
-    let previous: Value = row.get("latest_metrics");
+) -> Vec<(&'static str, Value)> {
     let current = sample
         .metrics
         .extra
@@ -173,8 +168,17 @@ pub(crate) async fn observe(
             }
         }
     }
+    events
+}
+
+pub(crate) async fn record(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    server: i64,
+    sampled_at: i64,
+    events: Vec<(&'static str, Value)>,
+) -> ApiResult<()> {
     for (kind, detail) in events {
-        sqlx::query("INSERT INTO fleet_events(id,server_id,kind,source,occurred_at,detail) VALUES($1,$2,$3,'agent_procfs',$4,$5)").bind(uuid::Uuid::new_v4()).bind(server).bind(kind).bind(sample.sampled_at/1000).bind(detail).execute(&mut **tx).await?;
+        sqlx::query("INSERT INTO fleet_events(id,server_id,kind,source,occurred_at,detail) VALUES($1,$2,$3,'agent_procfs',$4,$5)").bind(uuid::Uuid::new_v4()).bind(server).bind(kind).bind(sampled_at/1000).bind(detail).execute(&mut **tx).await?;
     }
     Ok(())
 }

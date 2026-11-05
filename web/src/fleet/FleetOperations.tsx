@@ -3,7 +3,7 @@ import { api, errorMessage } from '../api'
 import { Badge, ErrorNotice, Field, Loading, PageHeader, Refresh, Empty, TierNotice } from '../components'
 import { bytes } from '../format'
 import { interfaceSelected } from '../display/data'
-import { useResource } from '../hooks'
+import { useResource, settingsPoll } from '../hooks'
 import type { Server } from '../types'
 import FleetTerminal from './FleetTerminal'
 import FleetTools from './FleetTools'
@@ -29,7 +29,7 @@ const value = (entry: unknown) => entry === null || entry === undefined ? '未�
 // Per-server operations tools. Server detail embeds them as its experimental
 // 运维 tab; the old /fleet address keeps the server picker for saved links.
 export default function FleetOperations({serverId, embedded = false}: {serverId?: number; embedded?: boolean}) {
-  const actor = useResource<FleetActor>('/api/control-center/me')
+  const actor = useResource<FleetActor>('/api/control-center/me', settingsPoll)
   const permissions = fleetPermissions(actor)
   const servers = useResource<Server[]>('/api/servers'), [selected, setSelected] = useState(serverId ?? 0), [tab, setTab] = useState('overview')
   useEffect(() => setSelected(serverId ?? 0), [serverId])
@@ -90,7 +90,7 @@ function Assets({profile,servers,reload}: {profile:FleetProfile;servers:Server[]
 
 /** Template-based batch enrollment, opened from the server list. */
 export function BatchEnrollment() {
-  const actor = useResource<FleetActor>('/api/control-center/me')
+  const actor = useResource<FleetActor>('/api/control-center/me', settingsPoll)
   return <FleetPermissionsContext.Provider value={fleetPermissions(actor)}>
     <PageHeader title="批量接入" description="用接入模板一次登记多台服务器：分组、标签、采集、拨测与告警按模板写入，再分别在各服务器上执行安装命令。"><a className={buttonVariants({ variant: 'outline' })} href="#/servers">返回服务器列表</a></PageHeader>
     <ErrorNotice message={actor.error} />
@@ -100,7 +100,7 @@ export function BatchEnrollment() {
 
 function Enrollment() {
   const permissions=useFleetPermissions(), canWrite=permissions.allows('servers:write','global')
-  const templates=useResource<Array<{id:string;name:string;config:unknown}>>(permissions.allows('servers:read','global')?'/api/fleet/templates':null)
+  const templates=useResource<Array<{id:string;name:string;config:unknown}>>(permissions.allows('servers:read','global')?'/api/fleet/templates':null, settingsPoll)
   const [template,setTemplate]=useState(''),[name,setName]=useState(''),[names,setNames]=useState(''),[config,setConfig]=useState('{"asset_settings":{"group_name":"默认分组","tags":[]},"agent_settings":{"sample_interval_secs":1,"upload_interval_secs":3,"auto_update":false,"discover_public_ips":true},"telemetry_settings":{"persist_interval_secs":60},"probes":[],"alerts":[],"asset":{}}'),[result,setResult]=useState<unknown>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false)
   const run=async(action:()=>Promise<unknown>)=>{const denied=permissions.reason('servers:write','global');if(denied){setError(denied);return}setBusy(true);setError('');try{setResult(await action());templates.reload()}catch(failure){setError(errorMessage(failure))}finally{setBusy(false)}}
   return <><ErrorNotice message={error||templates.error}/><div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(300px,1fr))] max-sm:grid-cols-1"><Panel className="p-5"><h2 className="mb-3 text-base font-semibold">接入模板</h2>{!canWrite&&<p className="text-muted-foreground my-3 rounded-lg border p-3">{permissions.reason('servers:write','global')}</p>}<Field label="选择已有模板"><NativeSelect className="w-full" value={template} onChange={event=>{setTemplate(event.target.value);const item=templates.data?.find(item=>item.id===event.target.value);if(item){setName(item.name);setConfig(JSON.stringify(item.config,null,2))}}}><option value="">新模板</option>{templates.data?.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</NativeSelect></Field><Field label="模板名称"><Input value={name} readOnly={!canWrite} onChange={event=>setName(event.target.value)}/></Field><Field label="分组、标签、监测、告警与采集配置"><Textarea className="min-h-40 w-full resize-y font-mono" value={config} readOnly={!canWrite} onChange={event=>setConfig(event.target.value)}/></Field><Button disabled={busy||!canWrite||!name} onClick={()=>void run(()=>api('/api/fleet/templates','POST',{id:template||undefined,name,config:JSON.parse(config)}))}>保存模板</Button></Panel><Panel className="p-5"><h2 className="mb-3 text-base font-semibold">批量登记</h2><Field label="每行一个服务器名称（最多 100 台）"><Textarea className="min-h-40 w-full resize-y font-mono" value={names} readOnly={!canWrite} onChange={event=>setNames(event.target.value)}/></Field><p className="text-muted-foreground text-xs">每台分别登记并生成一次性独立凭据，有效期 24 小时。登记成功与设备已接入分别展示；安装命令仍从服务器接入页生成。</p><Button disabled={busy||!canWrite||!names.trim()} onClick={()=>void run(()=>api('/api/fleet/batch-enrollment','POST',{template_id:template||undefined,names:names.split('\n').map(name=>name.trim()).filter(Boolean)}))}>按模板批量登记</Button><pre className="bg-muted max-h-[360px] overflow-auto rounded-lg p-3 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">{result?JSON.stringify(result,null,2):'凭据仅在本次响应中显示，请妥善保存。'}</pre></Panel></div></>

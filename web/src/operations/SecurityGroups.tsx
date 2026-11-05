@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { ErrorNotice } from '../components'
-import { resourceWriteError, useAction, useResource } from '../hooks'
+import { resourceWriteError, useAction, useResource, settingsPoll } from '../hooks'
 import type { ActionRunner, CloudResource } from './types'
 import { time } from './types'
 import { Button } from '@/components/ui/button'
@@ -37,7 +37,7 @@ function authorization(actor: Actor | undefined, serverIds: number[], write: boo
 }
 
 export default function SecurityGroups({ resources, run, version }: { resources: CloudResource[]; run: ActionRunner; version: number }) {
-  const actor = useResource<Actor>('/api/control-center/me')
+  const actor = useResource<Actor>('/api/control-center/me', settingsPoll)
   const [resourceId, setResourceId] = useState(''), [target, setTarget] = useState<string[]>([]), [extra, setExtra] = useState('')
   const [operationId, setOperationId] = useState(''), [stopped, setStopped] = useState(false), [evidence, setEvidence] = useState(''), [message, setMessage] = useState(''), [submitting, setSubmitting] = useState(false)
   const selected = resources.find(resource => resource.id === resourceId)

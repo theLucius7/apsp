@@ -174,6 +174,7 @@ impl Huawei {
         rule: &Rule,
         ip: IpAddr,
         expected: Option<&Snapshot>,
+        observed: &mut Option<Snapshot>,
         mut check: Check,
     ) -> Result<Outcome, Failure>
     where
@@ -185,6 +186,8 @@ impl Huawei {
         let (records, zone) = self.read_records(rule).await?;
         let existing = choose(rule, &records, &zone)?;
         let current = existing.map(Record::snapshot);
+        // The caller records what this read found, so it need not read twice.
+        observed.clone_from(&current);
         expected_matches(current.as_ref(), expected)?;
         if let Some(record) = existing.filter(|r| same(r, rule, ip)) {
             let _guard = check().await?;

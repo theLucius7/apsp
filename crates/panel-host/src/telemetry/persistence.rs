@@ -120,59 +120,117 @@ pub(super) async fn save(
 ) -> ApiResult<TelemetryAck> {
     let retention = storage::read_policy(pool).await?.history_retention_days;
     let mut tx = pool.begin().await?;
-    sqlx::query("SELECT id FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
+    let row = sqlx::query("SELECT asset_settings,latest_metrics,metrics_sampled_at FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
         .bind(server)
         .fetch_optional(&mut *tx)
         .await?
         .ok_or(ApiError::NotFound)?;
     initialized(&mut tx, server).await?;
-    let asset: serde_json::Value =
-        sqlx::query_scalar("SELECT asset_settings FROM servers WHERE id=$1")
-            .bind(server)
-            .fetch_one(&mut *tx)
-            .await?;
     let asset: crate::server_assets::AssetSettings =
-        serde_json::from_value(asset).map_err(anyhow::Error::from)?;
-    let mut ack = Vec::new();
-    let mut samples = Vec::new();
-    let mut buckets = BTreeMap::<i64, HistoryPoint>::new();
+        serde_json::from_value(row.get("asset_settings")).map_err(anyhow::Error::from)?;
+    // The newest metrics so far: each sample is compared with the one before
+    // it, exactly as when every sample re-read and replaced the stored value.
+    let mut latest: serde_json::Value = row.get("latest_metrics");
+    let mut latest_at: i64 = row.get("metrics_sampled_at");
+    let mut latest_changed = false;
+    let mut entries = Vec::with_capacity(batch.samples.len());
+    // Digest and time of each identity's first occurrence in this batch.
+    let mut first = BTreeMap::<uuid::Uuid, (String, i64)>::new();
     for sample in batch.samples {
         let value = serde_json::to_value(&sample.metrics).map_err(anyhow::Error::from)?;
         let digest = format!(
             "{:x}",
             Sha256::digest(serde_json::to_vec(&sample).map_err(anyhow::Error::from)?)
         );
-        let added = sqlx::query("INSERT INTO telemetry_receipts(server_id,id,sampled_at,digest) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING").bind(server).bind(sample.id).bind(sample.sampled_at).bind(&digest).execute(&mut *tx).await?.rows_affected()>0;
-        if !added {
-            let old: String = sqlx::query_scalar(
-                "SELECT digest FROM telemetry_receipts WHERE server_id=$1 AND id=$2",
-            )
-            .bind(server)
-            .bind(sample.id)
-            .fetch_one(&mut *tx)
-            .await?;
-            if old != digest {
+        // A repeated identity within the batch behaves like a replay of the first.
+        let repeat = match first.get(&sample.id) {
+            Some((earlier, _)) if *earlier != digest => {
                 return Err(ApiError::Conflict("同一遥测标识的内容发生变化".into()));
             }
-        } else {
-            if sample.sampled_at >= (now - RAW_MS).div_euclid(60_000) * 60_000 {
-                sqlx::query("INSERT INTO telemetry_samples(server_id,id,sampled_at,digest,metrics) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING").bind(server).bind(sample.id).bind(sample.sampled_at).bind(&digest).bind(&value).execute(&mut *tx).await?;
+            Some(_) => true,
+            None => {
+                first.insert(sample.id, (digest.clone(), sample.sampled_at));
+                false
             }
-            crate::fleet::monitoring::observe(&mut tx, server, &sample).await?;
-            sqlx::query("UPDATE servers SET latest_metrics=$2,metrics_sampled_at=$3 WHERE id=$1 AND metrics_sampled_at<$3").bind(server).bind(&value).bind(sample.sampled_at).execute(&mut *tx).await?;
-            // Preserve the old last-observation projection for old consumers.
-            sqlx::query("INSERT INTO metrics_minutely(server_id,bucket,metrics,sampled_at) VALUES($1,$2,$3,$4) ON CONFLICT(server_id,bucket) DO UPDATE SET metrics=EXCLUDED.metrics,sampled_at=EXCLUDED.sampled_at WHERE metrics_minutely.sampled_at<EXCLUDED.sampled_at").bind(server).bind(sample.sampled_at.div_euclid(60_000)*60).bind(&value).bind(sample.sampled_at).execute(&mut *tx).await?;
-            if sample.sampled_at >= now - i64::from(retention) * DAY_MS {
-                let point = HistoryPoint::sample_with_scope(&sample, 60_000, &asset);
-                if let Some(old) = buckets.get_mut(&point.bucket_at) {
-                    old.merge(point);
-                } else {
-                    buckets.insert(point.bucket_at, point);
-                }
-            }
-            samples.push(sample.clone());
+        };
+        entries.push((sample, value, digest, repeat));
+    }
+    // One statement records every new receipt; the outer query still sees the
+    // digests stored before it, which decide replays and conflicts.
+    let ids: Vec<uuid::Uuid> = first.keys().copied().collect();
+    let times: Vec<i64> = first.values().map(|(_, at)| *at).collect();
+    let digests: Vec<&str> = first.values().map(|(digest, _)| digest.as_str()).collect();
+    let receipts = sqlx::query("WITH input AS (SELECT * FROM UNNEST($2::uuid[],$3::bigint[],$4::text[]) AS t(id,sampled_at,digest)), inserted AS (INSERT INTO telemetry_receipts(server_id,id,sampled_at,digest) SELECT $1,id,sampled_at,digest FROM input ON CONFLICT DO NOTHING RETURNING id) SELECT i.id,i.id IN (SELECT id FROM inserted) AS added,r.digest AS stored FROM input i LEFT JOIN telemetry_receipts r ON r.server_id=$1 AND r.id=i.id")
+        .bind(server).bind(&ids).bind(&times).bind(&digests).fetch_all(&mut *tx).await?;
+    let mut added = std::collections::HashSet::new();
+    for receipt in receipts {
+        let id: uuid::Uuid = receipt.get("id");
+        if receipt.get::<bool, _>("added") {
+            added.insert(id);
+        } else if receipt.get::<Option<String>, _>("stored").as_deref()
+            != first.get(&id).map(|(digest, _)| digest.as_str())
+        {
+            return Err(ApiError::Conflict("同一遥测标识的内容发生变化".into()));
         }
+    }
+    let raw_from = (now - RAW_MS).div_euclid(60_000) * 60_000;
+    let history_from = now - i64::from(retention) * DAY_MS;
+    let mut ack = Vec::new();
+    let mut samples = Vec::new();
+    let mut raw = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    // Newest sample per minute bucket; the first of equal timestamps wins.
+    let mut minutes = BTreeMap::<i64, (i64, serde_json::Value)>::new();
+    let mut buckets = BTreeMap::<i64, HistoryPoint>::new();
+    for (sample, value, digest, repeat) in entries {
         ack.push(sample.id);
+        if repeat || !added.contains(&sample.id) {
+            continue;
+        }
+        if sample.sampled_at >= raw_from {
+            raw.0.push(sample.id);
+            raw.1.push(sample.sampled_at);
+            raw.2.push(digest);
+            raw.3.push(value.clone());
+        }
+        if sample.sampled_at > latest_at {
+            let events = crate::fleet::monitoring::changes(&latest, &sample);
+            crate::fleet::monitoring::record(&mut tx, server, sample.sampled_at, events).await?;
+            latest = value.clone();
+            latest_at = sample.sampled_at;
+            latest_changed = true;
+        }
+        let minute = sample.sampled_at.div_euclid(60_000) * 60;
+        if minutes
+            .get(&minute)
+            .is_none_or(|(at, _)| *at < sample.sampled_at)
+        {
+            minutes.insert(minute, (sample.sampled_at, value));
+        }
+        if sample.sampled_at >= history_from {
+            let point = HistoryPoint::sample_with_scope(&sample, 60_000, &asset);
+            if let Some(old) = buckets.get_mut(&point.bucket_at) {
+                old.merge(point);
+            } else {
+                buckets.insert(point.bucket_at, point);
+            }
+        }
+        samples.push(sample);
+    }
+    if !raw.0.is_empty() {
+        sqlx::query("INSERT INTO telemetry_samples(server_id,id,sampled_at,digest,metrics) SELECT $1,id,sampled_at,digest,metrics FROM UNNEST($2::uuid[],$3::bigint[],$4::text[],$5::jsonb[]) AS t(id,sampled_at,digest,metrics) ON CONFLICT DO NOTHING")
+            .bind(server).bind(&raw.0).bind(&raw.1).bind(&raw.2).bind(&raw.3).execute(&mut *tx).await?;
+    }
+    if latest_changed {
+        sqlx::query("UPDATE servers SET latest_metrics=$2,metrics_sampled_at=$3 WHERE id=$1 AND metrics_sampled_at<$3").bind(server).bind(&latest).bind(latest_at).execute(&mut *tx).await?;
+    }
+    if !minutes.is_empty() {
+        // Preserve the old last-observation projection for old consumers.
+        let (minute_keys, rest): (Vec<i64>, Vec<(i64, serde_json::Value)>) =
+            minutes.into_iter().unzip();
+        let (minute_times, minute_values): (Vec<i64>, Vec<serde_json::Value>) =
+            rest.into_iter().unzip();
+        sqlx::query("INSERT INTO metrics_minutely(server_id,bucket,metrics,sampled_at) SELECT $1,bucket,metrics,sampled_at FROM UNNEST($2::bigint[],$3::jsonb[],$4::bigint[]) AS t(bucket,metrics,sampled_at) ON CONFLICT(server_id,bucket) DO UPDATE SET metrics=EXCLUDED.metrics,sampled_at=EXCLUDED.sampled_at WHERE metrics_minutely.sampled_at<EXCLUDED.sampled_at")
+            .bind(server).bind(&minute_keys).bind(&minute_values).bind(&minute_times).execute(&mut *tx).await?;
     }
     for point in buckets.into_values() {
         merge(&mut tx, server, 60, point).await?;

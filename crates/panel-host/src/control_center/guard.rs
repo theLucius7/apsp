@@ -1,4 +1,4 @@
-use super::access::{Principal, authenticate, require_recent_proof};
+use super::access::{Principal, authenticate, require_recent_proof, with_request_principal};
 use crate::{
     AppState,
     error::{ApiError, ApiResult},
@@ -427,7 +427,8 @@ pub async fn guard(State(state): State<AppState>, request: Request, next: Next) 
     } else {
         (request, None)
     };
-    let mut response = next.run(request).await;
+    // Handlers authenticate again; within this request they get this principal.
+    let mut response = with_request_principal(&headers, actor.clone(), next.run(request)).await;
     if let Some(id) = audit_id {
         let after = snapshot(&state, &path)
             .await

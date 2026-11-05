@@ -6,7 +6,12 @@ use apsp_protocol::release::{
     VerifiedArtifact, VerifiedRelease, verify_release,
 };
 use sha2::{Digest, Sha256};
-use std::path::Path;
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
 use tokio::io::AsyncReadExt;
 
 pub(super) const MAX_PROOF: usize =
@@ -58,15 +63,111 @@ pub(super) async fn read_proof(directory: &Path) -> Result<ReleaseProof> {
         .context("installed artifact has no signed proof")
 }
 
+/// Identifies a file's content without reading it: device, inode, and the
+/// modification and change times. Any write or replacement moves the change
+/// time, which userspace cannot set back.
+type FileStamp = (u64, u64, i64, i64, i64, i64);
+
+#[cfg(unix)]
+fn file_stamp(metadata: &std::fs::Metadata) -> Option<FileStamp> {
+    use std::os::unix::fs::MetadataExt;
+    Some((
+        metadata.dev(),
+        metadata.ino(),
+        metadata.mtime(),
+        metadata.mtime_nsec(),
+        metadata.ctime(),
+        metadata.ctime_nsec(),
+    ))
+}
+
+#[cfg(not(unix))]
+fn file_stamp(_: &std::fs::Metadata) -> Option<FileStamp> {
+    None
+}
+
+/// Unchanged files are hashed again at least this often, which also catches
+/// corruption below the filesystem.
+const REVERIFY_AFTER: Duration = Duration::from_secs(60 * 60);
+/// File times have coarse granularity. A file changed this recently could be
+/// changed again without its stamp moving, so its result is not remembered.
+const SETTLED_AFTER: Duration = Duration::from_secs(2);
+
+/// Whether the stamp's change time is safely before `started`.
+fn settled(stamp: &FileStamp, started: SystemTime) -> bool {
+    let (seconds, nanoseconds) = (stamp.4, stamp.5);
+    let (Ok(seconds), Ok(nanoseconds)) = (u64::try_from(seconds), u32::try_from(nanoseconds))
+    else {
+        return false;
+    };
+    UNIX_EPOCH
+        .checked_add(Duration::new(seconds, nanoseconds))
+        .and_then(|changed| started.duration_since(changed).ok())
+        .is_some_and(|age| age >= SETTLED_AFTER)
+}
+
+struct Verified {
+    stamp: FileStamp,
+    size: u64,
+    sha256: String,
+    at: Instant,
+}
+
+/// Files whose digest matched, so steady-state checks (several a minute for
+/// the runtime binary) do not re-read tens of megabytes each time.
+fn verified_files() -> &'static Mutex<HashMap<PathBuf, Verified>> {
+    static VERIFIED: OnceLock<Mutex<HashMap<PathBuf, Verified>>> = OnceLock::new();
+    VERIFIED.get_or_init(Mutex::default)
+}
+
 async fn verify_digest(path: &Path, expected_size: u64, expected_sha256: &str) -> Result<()> {
     let metadata = tokio::fs::symlink_metadata(path).await?;
     ensure!(
         metadata.is_file() && metadata.len() == expected_size,
         "installed artifact is not an ordinary file of its signed size"
     );
+    let stamp = file_stamp(&metadata);
+    if let Some(stamp) = stamp {
+        let verified = verified_files().lock().ok().is_some_and(|files| {
+            files.get(path).is_some_and(|known| {
+                known.stamp == stamp
+                    && known.size == expected_size
+                    && known.sha256 == expected_sha256
+                    && known.at.elapsed() < REVERIFY_AFTER
+            })
+        });
+        if verified {
+            return Ok(());
+        }
+    }
+    let started = SystemTime::now();
+    let result = hash_matches(path, expected_size, expected_sha256).await;
+    if let Ok(mut files) = verified_files().lock() {
+        match (&result, stamp) {
+            (Ok(()), Some(stamp)) if settled(&stamp, started) => {
+                files.insert(
+                    path.to_owned(),
+                    Verified {
+                        stamp,
+                        size: expected_size,
+                        sha256: expected_sha256.to_owned(),
+                        at: Instant::now(),
+                    },
+                );
+            }
+            _ => {
+                files.remove(path);
+            }
+        }
+    }
+    result
+}
+
+async fn hash_matches(path: &Path, expected_size: u64, expected_sha256: &str) -> Result<()> {
     let mut file = tokio::fs::File::open(path).await?;
     let mut hash = Sha256::new();
-    let mut buffer = vec![0_u8; 64 * 1024];
+    // Large reads: each one is a hop to the blocking pool.
+    let mut buffer = vec![0_u8; 1024 * 1024];
     let mut length = 0_u64;
     loop {
         let count = file.read(&mut buffer).await?;
@@ -250,4 +351,46 @@ pub async fn verify_release_directory(directory: &Path) -> Result<()> {
     };
     signed_release(&proof, &TrustedKeys::compiled()?)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod digest_tests {
+    use super::*;
+
+    fn sha256(bytes: &[u8]) -> String {
+        format!("{:x}", Sha256::digest(bytes))
+    }
+
+    #[tokio::test]
+    async fn a_freshly_changed_file_is_hashed_on_every_check() -> Result<()> {
+        let path = std::env::temp_dir().join(format!("apsp-digest-memo-{}", uuid::Uuid::new_v4()));
+        let original = b"TEST_ONLY original payload".to_vec();
+        tokio::fs::write(&path, &original).await?;
+        verify_digest(&path, original.len() as u64, &sha256(&original)).await?;
+        // Same size, rewritten in place within the timestamp granularity.
+        let mut changed = original.clone();
+        changed[0] ^= 1;
+        tokio::fs::write(&path, &changed).await?;
+        let result = verify_digest(&path, original.len() as u64, &sha256(&original)).await;
+        tokio::fs::remove_file(&path).await?;
+        assert!(
+            result.is_err(),
+            "a changed file must not pass on a remembered digest"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn only_settled_change_times_are_remembered() {
+        let now = SystemTime::now();
+        let seconds = |at: SystemTime| {
+            let since = at.duration_since(UNIX_EPOCH).unwrap();
+            (since.as_secs() as i64, since.subsec_nanos() as i64)
+        };
+        let (old_s, old_ns) = seconds(now - Duration::from_secs(10));
+        let (new_s, new_ns) = seconds(now - Duration::from_millis(500));
+        assert!(settled(&(1, 2, old_s, old_ns, old_s, old_ns), now));
+        assert!(!settled(&(1, 2, new_s, new_ns, new_s, new_ns), now));
+        assert!(!settled(&(1, 2, -1, 0, -1, 0), now));
+    }
 }

@@ -63,8 +63,12 @@ pub async fn refresh(pool: &PgPool, at: i64) -> ApiResult<()> {
     lock(&mut tx).await?;
     let changed: Vec<i64> = sqlx::query_scalar("SELECT e.user_id FROM singbox_entitlements($1) e LEFT JOIN singbox_entitlement_state s USING(user_id) WHERE s.allowed IS DISTINCT FROM e.allowed ORDER BY e.user_id")
         .bind(at).fetch_all(&mut *tx).await?;
-    let mut servers: Vec<i64> = sqlx::query_scalar("SELECT DISTINCT n.server_id FROM accesses a JOIN nodes n ON n.id=a.node_id WHERE a.user_id=ANY($1) ORDER BY n.server_id")
-        .bind(&changed).fetch_all(&mut *tx).await?;
+    let mut servers: Vec<i64> = if changed.is_empty() {
+        Vec::new()
+    } else {
+        sqlx::query_scalar("SELECT DISTINCT n.server_id FROM accesses a JOIN nodes n ON n.id=a.node_id WHERE a.user_id=ANY($1) ORDER BY n.server_id")
+            .bind(&changed).fetch_all(&mut *tx).await?
+    };
     let chain_servers: Vec<i64> = sqlx::query_scalar("SELECT DISTINCT n.server_id FROM singbox_chains c JOIN nodes n ON n.id=c.entry_node_id LEFT JOIN singbox_chain_state cs ON cs.chain_id=c.id WHERE c.path_kind IN('legacy','mixed') AND cs.available IS DISTINCT FROM singbox_path_resources_available(c.id)")
         .fetch_all(&mut *tx).await?;
     servers.extend(chain_servers);
@@ -73,14 +77,19 @@ pub async fn refresh(pool: &PgPool, at: i64) -> ApiResult<()> {
     )
     .fetch_all(&mut *tx)
     .await?;
+    // All chains are checked together; only changed ones are written.
+    let available_chains =
+        super::ordered_paths::storage::chains_structurally_available(&mut tx, &chain_ids).await?;
+    let previous: std::collections::HashMap<i64, bool> =
+        sqlx::query_as("SELECT chain_id,available FROM singbox_chain_state WHERE chain_id=ANY($1)")
+            .bind(&chain_ids)
+            .fetch_all(&mut *tx)
+            .await?
+            .into_iter()
+            .collect();
     for id in chain_ids {
-        let available = super::ordered_paths::chain_is_structurally_available(&mut tx, id).await?;
-        let previous: Option<bool> =
-            sqlx::query_scalar("SELECT available FROM singbox_chain_state WHERE chain_id=$1")
-                .bind(id)
-                .fetch_optional(&mut *tx)
-                .await?;
-        if previous != Some(available) {
+        let available = available_chains.contains(&id);
+        if previous.get(&id) != Some(&available) {
             servers.extend(super::ordered_paths::storage::referenced_servers(&mut tx, id).await?);
             sqlx::query("INSERT INTO singbox_chain_state(chain_id,available) VALUES($1,$2) ON CONFLICT(chain_id) DO UPDATE SET available=EXCLUDED.available").bind(id).bind(available).execute(&mut *tx).await?;
         }
@@ -88,8 +97,11 @@ pub async fn refresh(pool: &PgPool, at: i64) -> ApiResult<()> {
     servers.sort_unstable();
     servers.dedup();
     super::business::mark_dirty(&mut tx, &servers).await?;
-    sqlx::query("INSERT INTO singbox_entitlement_state SELECT user_id,allowed FROM singbox_entitlements($1) WHERE user_id=ANY($2) ON CONFLICT(user_id) DO UPDATE SET allowed=EXCLUDED.allowed")
-        .bind(at).bind(&changed).execute(&mut *tx).await?;
+    // Most ticks change nothing; skip a second evaluation of every user's entitlement.
+    if !changed.is_empty() {
+        sqlx::query("INSERT INTO singbox_entitlement_state SELECT user_id,allowed FROM singbox_entitlements($1) WHERE user_id=ANY($2) ON CONFLICT(user_id) DO UPDATE SET allowed=EXCLUDED.allowed")
+            .bind(at).bind(&changed).execute(&mut *tx).await?;
+    }
     sqlx::query("INSERT INTO singbox_chain_state SELECT c.id,singbox_path_resources_available(c.id) FROM singbox_chains c WHERE c.path_kind IN('legacy','mixed') ON CONFLICT(chain_id) DO UPDATE SET available=EXCLUDED.available WHERE singbox_chain_state.available IS DISTINCT FROM EXCLUDED.available")
         .execute(&mut *tx).await?;
     tx.commit().await?;

@@ -226,9 +226,10 @@ pub(super) async fn sync_with(
             )
             .map_err(Failure::from)?;
         desired = Some(ip);
-        previous = provider.inspect(&rule).await?;
+        // Reconciling reads the record once and reports what it found; a
+        // separate read first would only catch a change in between.
         provider
-            .reconcile_expected_guarded(&rule, ip, previous.as_ref(), || {
+            .reconcile_expected_guarded(&rule, ip, None, &mut previous, || {
                 write_guard(pool, &rule, lease, ip)
             })
             .await

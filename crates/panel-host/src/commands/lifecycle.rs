@@ -54,6 +54,17 @@ pub async fn pending_lifecycle(
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<RemoteCommand>>> {
     let server = auth::require_agent(&state, &headers).await?;
+    // Polled every few seconds; without a queued command there is nothing to
+    // expire or deliver, so skip the locked pass.
+    let queued: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM remote_commands WHERE server_id=$1 AND state='queued')",
+    )
+    .bind(server)
+    .fetch_one(&state.pool)
+    .await?;
+    if !queued {
+        return Ok(Json(Vec::new()));
+    }
     expire_queued(&state.pool, server).await?;
     let mut tx = state.pool.begin().await?;
     if command_server(&mut tx, server).await?.1 {

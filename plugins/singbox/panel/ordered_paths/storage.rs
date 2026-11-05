@@ -8,7 +8,7 @@ use apsp_protocol::now_timestamp;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, Postgres, Transaction};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use uuid::Uuid;
 
 type ExternalNodeFact = (
@@ -236,33 +236,66 @@ pub(crate) async fn chain_is_structurally_available(
     connection: &mut PgConnection,
     id: i64,
 ) -> ApiResult<bool> {
-    let ids:Vec<i64>=sqlx::query_scalar("SELECT c.entry_node_id FROM singbox_chains c WHERE c.id=$1 AND c.deleted_at IS NULL UNION SELECT h.managed_node_id FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE c.id=$1 AND c.deleted_at IS NULL AND h.kind='managed' AND h.generation=ANY(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation])").bind(id).fetch_all(&mut *connection).await?;
-    if ids.is_empty() {
-        return Ok(false);
+    Ok(chains_structurally_available(connection, &[id])
+        .await?
+        .contains(&id))
+}
+
+/// The chains among `ids` whose entry and current managed hop nodes all exist,
+/// are enabled REALITY nodes on live sing-box servers and pass validation.
+/// Three statements serve any number of chains; each node is validated once.
+pub(crate) async fn chains_structurally_available(
+    connection: &mut PgConnection,
+    ids: &[i64],
+) -> ApiResult<HashSet<i64>> {
+    let pairs: Vec<(i64, i64)> = sqlx::query_as("SELECT c.id,c.entry_node_id FROM singbox_chains c WHERE c.id=ANY($1) AND c.deleted_at IS NULL UNION SELECT c.id,h.managed_node_id FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE c.id=ANY($1) AND c.deleted_at IS NULL AND h.kind='managed' AND h.generation=ANY(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation])").bind(ids).fetch_all(&mut *connection).await?;
+    let mut chains = BTreeMap::<i64, Vec<i64>>::new();
+    for (chain, node) in pairs {
+        chains.entry(chain).or_default().push(node);
+    }
+    let nodes: Vec<i64> = chains
+        .values()
+        .flatten()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    if nodes.is_empty() {
+        return Ok(HashSet::new());
     }
     let query = format!(
-        "SELECT COUNT(*) FROM nodes n JOIN servers s ON s.id=n.server_id LEFT JOIN server_plugins p ON p.server_id=s.id AND p.plugin='sing-box' WHERE n.id=ANY($1) AND n.deleted_at IS NULL AND n.enabled AND s.deleted_at IS NULL AND ({}) IS NOT NULL",
+        "SELECT n.id FROM nodes n JOIN servers s ON s.id=n.server_id LEFT JOIN server_plugins p ON p.server_id=s.id AND p.plugin='sing-box' WHERE n.id=ANY($1) AND n.deleted_at IS NULL AND n.enabled AND s.deleted_at IS NULL AND ({}) IS NOT NULL",
         super::super::settings::SOURCE_SQL
     );
-    let count: i64 = sqlx::query_scalar(&query)
-        .bind(&ids)
-        .fetch_one(&mut *connection)
-        .await?;
-    if count != ids.len() as i64 {
-        return Ok(false);
-    }
+    let serving: HashSet<i64> = sqlx::query_scalar(&query)
+        .bind(&nodes)
+        .fetch_all(&mut *connection)
+        .await?
+        .into_iter()
+        .collect();
     let rows = sqlx::query_as::<_, super::super::business::NodeRow>(&format!(
         "SELECT {} FROM nodes n WHERE n.id=ANY($1)",
         super::super::business::NODE_COLUMNS
     ))
-    .bind(ids)
+    .bind(&nodes)
     .fetch_all(&mut *connection)
     .await?;
-    Ok(rows.iter().all(|row| {
-        row.model(vec![])
-            .is_ok_and(|node| node.protocol_config.is_reality() && node.enabled)
-            && super::super::business::validate_node(row).is_ok()
-    }))
+    let valid: HashSet<i64> = rows
+        .iter()
+        .filter(|row| {
+            serving.contains(&row.id)
+                && row
+                    .model(vec![])
+                    .is_ok_and(|node| node.protocol_config.is_reality() && node.enabled)
+                && super::super::business::validate_node(row).is_ok()
+        })
+        .map(|row| row.id)
+        .collect();
+    Ok(chains
+        .into_iter()
+        .filter(|(_, nodes)| nodes.iter().all(|node| valid.contains(node)))
+        .map(|(chain, _)| chain)
+        .collect())
 }
 pub(crate) async fn source_dependencies(
     connection: &mut PgConnection,

@@ -18,6 +18,9 @@ import { DisplayNotice, surface, toneText } from './ui'
 import { cn } from '@/lib/utils'
 import { revealMotion } from '@/lib/motion'
 import { Button, buttonVariants } from '@/components/ui/button'
+
+// Shared so servers without probes keep the same props and their memoized cards skip re-rendering.
+const noProbes: ProbeOverview[] = []
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -148,7 +151,7 @@ export default function Overview({ now }: { now: number }) {
     {!servers ? !error && (loading ? <CardsLoading /> : <div className="text-muted-foreground flex min-h-80 flex-col items-center justify-center gap-3 p-6 text-center text-sm" role="status">等待数据</div>) : visible.length ? view === 'cards' ?
       <section aria-label="服务器列表" className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start gap-3 max-sm:grid-cols-1">
         {/* Polling and filtering change cards in place; nothing moves unless the order really changed. */}
-        {visible.map(server => <div key={server.id} className="min-w-0"><ServerCard server={server} unavailable={unavailable} probes={probes.data ? byServer.get(server.id) ?? [] : undefined} probeError={probeUnavailable} probeLoading={probes.loading} now={now} /></div>)}
+        {visible.map(server => <div key={server.id} className="min-w-0"><ServerCard server={server} unavailable={unavailable} probes={probes.data ? byServer.get(server.id) ?? noProbes : undefined} probeError={probeUnavailable} probeLoading={probes.loading} now={now} /></div>)}
       </section> :
       <ServerTable servers={visible} unavailable={unavailable} byServer={byServer} probesKnown={probes.data !== undefined} probeError={probeUnavailable} probeLoading={probes.loading} now={now} /> :
       !error && <div className="text-muted-foreground flex min-h-80 flex-col items-center justify-center gap-3 p-6 text-center"><ServerIcon className="size-8" aria-hidden="true" /><strong className="text-foreground text-sm font-medium">{entries.length ? '没有匹配的节点' : resource.hiddenOnly ? '节点已隐藏' : '尚未添加服务器'}</strong>{entries.length ? <Button onClick={reset}>清除筛选</Button> : <a className={buttonVariants()} href="#/servers">前往服务器管理</a>}</div>}

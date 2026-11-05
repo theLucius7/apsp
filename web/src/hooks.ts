@@ -4,6 +4,12 @@ import { readKept, writeKept } from '@/lib/resource-cache'
 import { connectionRestoredEvent } from '@/stores/connection'
 
 export const resourceRefreshingMessage = '相关信息正在刷新或刷新失败，请成功刷新后再提交；当前草稿已保留。'
+/**
+ * Poll interval for settings, catalogues and the signed-in administrator: they
+ * change only through forms that reload after saving, so a quick poll would just
+ * repeat the same answer. Live state (servers, usage, jobs) keeps the default.
+ */
+export const settingsPoll = 30_000
 // A first read that loses its connection tries again before saying anything.
 const firstReadRetries = [1000, 3000]
 

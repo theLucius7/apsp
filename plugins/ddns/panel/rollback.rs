@@ -72,7 +72,9 @@ pub(super) async fn rollback_with(
             .await
             .map_err(|_| super::cloudflare::Failure::from("credential_unavailable"))?;
         client
-            .reconcile_expected_guarded(&rule, ip, Some(&observed), || guard(pool, &rule, lease))
+            .reconcile_expected_guarded(&rule, ip, Some(&observed), &mut None, || {
+                guard(pool, &rule, lease)
+            })
             .await
     })
     .await

@@ -47,7 +47,26 @@ pub async fn ingest(state: &AppState, server_id: i64, mut batch: UsageBatch) -> 
     let inserted = sqlx::query("INSERT INTO usage_batches(server_id,epoch,seq,payload_hash,received_at) VALUES($1,$2,$3::text::numeric,$4,$5) ON CONFLICT DO NOTHING")
         .bind(server_id).bind(batch.epoch).bind(&seq).bind(&hash).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?.rows_affected() != 0;
     if inserted {
-        for (record, (user_id, node_id)) in batch.records.iter().zip(identities) {
+        // Nearly every record names an identity of the newest deployment, so read
+        // that snapshot and the server's nodes once. Anything else falls back to
+        // the search through the whole deployment history below.
+        let nodes: std::collections::HashSet<i64> =
+            sqlx::query_scalar("SELECT id FROM nodes WHERE server_id=$1")
+                .bind(server_id)
+                .fetch_all(&mut *tx)
+                .await?
+                .into_iter()
+                .collect();
+        let latest: Option<Value> = sqlx::query_scalar("SELECT source_json FROM deployments WHERE server_id=$1 AND module='singbox' ORDER BY rev DESC LIMIT 1")
+            .bind(server_id).fetch_optional(&mut *tx).await?;
+        for (record, (user_id, node_id)) in batch.records.iter().zip(&identities) {
+            if nodes.contains(node_id)
+                && latest
+                    .as_ref()
+                    .is_some_and(|source| publishes(source, *user_id, *node_id, &record.stat_name))
+            {
+                continue;
+            }
             // Revoked identities remain valid for terminal samples and offline outbox replay.
             // Deployment history is retained, so search newest first: current identities match the
             // latest revision without decoding every historical snapshot. EXISTS would discard the
@@ -59,11 +78,20 @@ pub async fn ingest(state: &AppState, server_id: i64, mut batch: UsageBatch) -> 
                 authorized,
                 "usage identity was never published for this server"
             );
-            sqlx::query("INSERT INTO usage_records(server_id,epoch,seq,stat_name,user_id,node_id,uplink,downlink,period_start,period_end) VALUES($1,$2,$3::text::numeric,$4,$5,$6,$7::text::numeric,$8::text::numeric,$9,$10) ON CONFLICT DO NOTHING")
-                .bind(server_id).bind(batch.epoch).bind(&seq).bind(&record.stat_name).bind(user_id).bind(node_id)
-                .bind(record.uplink.to_string()).bind(record.downlink.to_string()).bind(batch.period_start).bind(batch.period_end)
-                .execute(&mut *tx).await?;
         }
+        // One statement, so the daily rollup trigger aggregates the batch once.
+        let stat_names: Vec<&str> = batch.records.iter().map(|r| r.stat_name.as_str()).collect();
+        let uplinks: Vec<String> = batch.records.iter().map(|r| r.uplink.to_string()).collect();
+        let downlinks: Vec<String> = batch
+            .records
+            .iter()
+            .map(|r| r.downlink.to_string())
+            .collect();
+        let (users, nodes): (Vec<i64>, Vec<i64>) = identities.iter().copied().unzip();
+        sqlx::query("INSERT INTO usage_records(server_id,epoch,seq,stat_name,user_id,node_id,uplink,downlink,period_start,period_end) SELECT $1,$2,$3::text::numeric,r.stat_name,r.user_id,r.node_id,r.uplink::numeric,r.downlink::numeric,$4,$5 FROM UNNEST($6::text[],$7::bigint[],$8::bigint[],$9::text[],$10::text[]) AS r(stat_name,user_id,node_id,uplink,downlink) ON CONFLICT DO NOTHING")
+            .bind(server_id).bind(batch.epoch).bind(&seq).bind(batch.period_start).bind(batch.period_end)
+            .bind(&stat_names).bind(&users).bind(&nodes).bind(&uplinks).bind(&downlinks)
+            .execute(&mut *tx).await?;
     } else {
         let previous: String = sqlx::query_scalar("SELECT payload_hash FROM usage_batches WHERE server_id=$1 AND epoch=$2 AND seq=$3::text::numeric")
             .bind(server_id).bind(batch.epoch).bind(&seq).fetch_one(&mut *tx).await?;
@@ -86,6 +114,30 @@ pub async fn ingest(state: &AppState, server_id: i64, mut batch: UsageBatch) -> 
     )
     .await;
     Ok(())
+}
+
+/// Whether a deployment's source snapshot contains this accounting identity,
+/// in either stored form. Answers the same as the `@>` containment checks in
+/// `ingest`, which still decide every identity this does not find.
+fn publishes(source: &Value, user_id: i64, node_id: i64, stat_name: &str) -> bool {
+    if let Some(nodes) = source.as_array() {
+        return nodes.iter().any(|node| {
+            node["id"].as_i64() == Some(node_id)
+                && node["users"].as_array().is_some_and(|users| {
+                    users
+                        .iter()
+                        .any(|user| user["user_id"].as_i64() == Some(user_id))
+                })
+        });
+    }
+    source["schema_version"].as_i64() == Some(1)
+        && source["accounting_users"].as_array().is_some_and(|users| {
+            users.iter().any(|user| {
+                user["user_id"].as_i64() == Some(user_id)
+                    && user["node_id"].as_i64() == Some(node_id)
+                    && user["stat_name"].as_str() == Some(stat_name)
+            })
+        })
 }
 
 fn parse_name(name: &str) -> anyhow::Result<(i64, i64)> {
@@ -134,4 +186,33 @@ pub async fn summary(
     Ok(Json(
         json!({"uplink":totals.get::<String,_>("uplink"),"downlink":totals.get::<String,_>("downlink"),"total":totals.get::<String,_>("total"),"by_user":by_user,"by_node":by_node}),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::publishes;
+    use serde_json::json;
+
+    #[test]
+    fn current_snapshots_publish_their_accounting_identities() {
+        let source = json!({"schema_version":1,"public_nodes":[],"accounting_users":[
+            {"user_id":7,"node_id":3,"stat_name":"u7_n3"},
+            {"user_id":8,"node_id":3,"stat_name":"u8_n3","extra":true}
+        ]});
+        assert!(publishes(&source, 7, 3, "u7_n3"));
+        assert!(publishes(&source, 8, 3, "u8_n3"));
+        assert!(!publishes(&source, 7, 4, "u7_n4"));
+        assert!(!publishes(&source, 7, 3, "u7_n4"));
+        let newer = json!({"schema_version":2,"accounting_users":[{"user_id":7,"node_id":3,"stat_name":"u7_n3"}]});
+        assert!(!publishes(&newer, 7, 3, "u7_n3"));
+    }
+
+    #[test]
+    fn legacy_snapshots_publish_node_users() {
+        let source =
+            json!([{"id":3,"users":[{"user_id":7,"uuid":"TEST_ONLY"}]},{"id":4,"users":[]}]);
+        assert!(publishes(&source, 7, 3, "u7_n3"));
+        assert!(!publishes(&source, 7, 4, "u7_n4"));
+        assert!(!publishes(&json!([]), 7, 3, "u7_n3"));
+    }
 }

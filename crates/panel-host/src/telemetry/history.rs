@@ -108,20 +108,33 @@ async fn read_window_with_resolution(
         return Err(ApiError::BadRequest("历史范围无效".into()));
     }
     let now = now_millis();
-    let mut tx = pool.begin().await?;
-    sqlx::query("SELECT id FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
+    // Charts poll this; only the one-time history backfill needs the server
+    // row lock. Once initialized, each branch below reads one table in a
+    // single statement, which already sees one consistent snapshot.
+    let initialized: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM telemetry_history_initialized WHERE server_id=s.id) FROM servers s WHERE s.id=$1 AND s.deleted_at IS NULL")
         .bind(server)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(pool)
         .await?
         .ok_or(ApiError::NotFound)?;
-    persistence::initialized(&mut tx, server).await?;
+    if !initialized {
+        let mut tx = pool.begin().await?;
+        sqlx::query("SELECT id FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
+            .bind(server)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+        persistence::initialized(&mut tx, server).await?;
+        tx.commit().await?;
+    }
     // A complete minute is the raw/summary boundary. Never combine both copies
     // of a sample, including when maintenance runs concurrently with a query.
     let boundary = (now - RAW_MS).div_euclid(60_000) * 60_000;
     let raw = bucket_ms < 60_000 && from >= boundary;
     let mut points = Vec::new();
     if raw {
-        let rows=sqlx::query("SELECT id,sampled_at,metrics FROM telemetry_samples WHERE server_id=$1 AND sampled_at>=$2 AND sampled_at<=$3 ORDER BY sampled_at,id LIMIT 8001").bind(server).bind(from).bind(to).fetch_all(&mut *tx).await?;
+        // History points use the typed metrics plus memory_total and disk_total;
+        // the per-process and inventory details make up most of each sample.
+        let rows=sqlx::query("SELECT id,sampled_at,metrics-'process_resources'-'system_pressure'-'network_inventory'-'disk_mount_read_only' AS metrics FROM telemetry_samples WHERE server_id=$1 AND sampled_at>=$2 AND sampled_at<=$3 ORDER BY sampled_at,id LIMIT 8001").bind(server).bind(from).bind(to).fetch_all(pool).await?;
         if rows.len() > 8000 {
             return Err(ApiError::Busy);
         }
@@ -132,7 +145,7 @@ async fn read_window_with_resolution(
             ));
         }
     } else {
-        let rows=sqlx::query("SELECT resolution_secs,summary FROM telemetry_history WHERE server_id=$1 AND bucket_at>=$2 AND bucket_at<=$3 ORDER BY bucket_at,resolution_secs LIMIT 30001").bind(server).bind(from.div_euclid(3_600_000)*3_600_000).bind(to).fetch_all(&mut *tx).await?;
+        let rows=sqlx::query("SELECT resolution_secs,summary FROM telemetry_history WHERE server_id=$1 AND bucket_at>=$2 AND bucket_at<=$3 ORDER BY bucket_at,resolution_secs LIMIT 30001").bind(server).bind(from.div_euclid(3_600_000)*3_600_000).bind(to).fetch_all(pool).await?;
         if rows.len() > 30000 {
             return Err(ApiError::Busy);
         }
@@ -147,7 +160,6 @@ async fn read_window_with_resolution(
             points.push(point);
         }
     }
-    tx.commit().await?;
     Ok((combine(points, bucket_ms), bucket_ms))
 }
 

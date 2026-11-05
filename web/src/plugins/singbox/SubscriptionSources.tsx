@@ -24,8 +24,9 @@ const time = (timestamp: number | null) => timestamp ? new Date(timestamp * 1000
 
 // Numbered sources. After the source migration they are a read-only archive;
 // `migrated` is undefined until the panel confirms which state applies.
-export default function SubscriptionSources({ onSelect, onChange, migrated }: { onSelect?: (reference: SubscriptionHopReference, node: ExternalNodePreview) => void; onChange?: () => void; migrated?: boolean }) {
-  const sourcesQuery = useResource<unknown>(`${root}/subscription-sources`)
+export default function SubscriptionSources({ onSelect, onChange, migrated, active = true }: { onSelect?: (reference: SubscriptionHopReference, node: ExternalNodePreview) => void; onChange?: () => void; migrated?: boolean; active?: boolean }) {
+  // A hidden pane stays mounted to keep drafts but stops polling until shown again.
+  const sourcesQuery = useResource<unknown>(`${root}/subscription-sources`, active ? 5000 : 0)
   const sourceHistory = useRef<SubscriptionSource[] | undefined>(undefined)
   const sourceView = validatedSnapshot(sourcesQuery, validSubscriptionSources, sourceHistory.current)
   if (sourceView.fresh) sourceHistory.current = sourceView.data
@@ -38,7 +39,7 @@ export default function SubscriptionSources({ onSelect, onChange, migrated }: { 
   const [mode, setMode] = useState<SubscriptionHopReference['update_mode']>('follow_node')
   const action = useAction()
   const selected = sources.data?.find(source => source.id === selectedId)
-  const nodesQuery = useResource<unknown>(selectedId ? `${root}/subscription-sources/${selectedId}/nodes` : null)
+  const nodesQuery = useResource<unknown>(selectedId ? `${root}/subscription-sources/${selectedId}/nodes` : null, active ? 5000 : 0)
   const nodeHistory = useRef<{ id: number | null; data?: ExternalNodePreview[] }>({ id: selectedId })
   if (nodeHistory.current.id !== selectedId) nodeHistory.current = { id: selectedId }
   const nodeView = validatedSnapshot(nodesQuery, validExternalNodePreviews, nodeHistory.current.data)

@@ -19,8 +19,9 @@ import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
 // After the source migration these are the only subscription sources: they feed
 // the node catalog, user grants and ordered chains.
-export default function Sources({ createRequest = 0, migrated, onCatalogChange }: { createRequest?: number; migrated?: boolean; onCatalogChange?: () => void } = {}) {
-  const query = useResource<unknown>(sourceRoot)
+export default function Sources({ createRequest = 0, migrated, onCatalogChange, active = true }: { createRequest?: number; migrated?: boolean; onCatalogChange?: () => void; active?: boolean } = {}) {
+  // A hidden pane stays mounted to keep drafts but stops polling until shown again.
+  const query = useResource<unknown>(sourceRoot, active ? 5000 : 0)
   const previous = useRef<SubscriptionSource[] | undefined>(undefined)
   const snapshot = validatedSnapshot(query, validSubscriptionSources, previous.current)
   if (snapshot.fresh) previous.current = snapshot.data

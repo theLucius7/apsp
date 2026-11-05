@@ -181,6 +181,8 @@ async fn maintenance(pool: PgPool) {
     }
 }
 
+static LAST_PRUNE: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
 async fn tick(pool: &PgPool) -> ApiResult<()> {
     let cloud = Cloud::new(pool).map_err(super::failure)?;
     let now = apsp_protocol::now_timestamp();
@@ -201,12 +203,16 @@ async fn tick(pool: &PgPool) -> ApiResult<()> {
         refresh(pool, id, &cloud).await?;
     }
     sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$1 WHERE status='preview' AND expires_at<=$1").bind(now).execute(pool).await?;
-    sqlx::query("DELETE FROM alicloud_operations WHERE status IN ('preview','cancelled','dismissed','failed','succeeded') AND created_at<$1")
-        .bind(now-180*86400).execute(pool).await?;
-    sqlx::query("DELETE FROM alicloud_events WHERE created_at<$1")
-        .bind(now - 180 * 86400)
-        .execute(pool)
-        .await?;
+    // Retention is measured in months; checking it hourly instead of on every
+    // five-second tick avoids scanning both tables 17,000 times a day.
+    if super::prune_due(&LAST_PRUNE, now) {
+        sqlx::query("DELETE FROM alicloud_operations WHERE status IN ('preview','cancelled','dismissed','failed','succeeded') AND created_at<$1")
+            .bind(now-180*86400).execute(pool).await?;
+        sqlx::query("DELETE FROM alicloud_events WHERE created_at<$1")
+            .bind(now - 180 * 86400)
+            .execute(pool)
+            .await?;
+    }
     if let Some(error) = first_error {
         return Err(error);
     }

@@ -27,7 +27,7 @@ export default function Chart({ title, series, from, to, gap, maximum, format }:
     return () => observer.disconnect()
   }, [])
   const plots = useMemo(() => series.map(item => ({ ...item, segments: segments(item.points, from, to, gap) })), [series, from, to, gap])
-  const visible = plots.filter(item => !hidden.includes(item.label))
+  const visible = useMemo(() => plots.filter(item => !hidden.includes(item.label)), [plots, hidden])
   const max = Math.max(maximum ?? 0, 1, ...visible.flatMap(item => item.segments.flatMap(part => part.map(point => point.range?.max ?? point.value!))))
   const y = (value: number) => top + (1 - value / max) * (height - top - bottom)
   const x = (at: number) => left + (at - from) / Math.max(1, to - from) * (width - left - right)

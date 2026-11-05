@@ -108,22 +108,39 @@ pub(super) fn spawn(program: &Path, args: &[String]) -> Result<Box<dyn ManagedPr
     }))
 }
 
-struct CommandGuard(u32);
-impl Drop for CommandGuard {
-    fn drop(&mut self) {
+/// Kills whatever the command left in its process group or tree.
+struct CommandGuard(Option<u32>);
+impl CommandGuard {
+    fn cleanup(id: u32) -> std::process::Command {
         #[cfg(unix)]
         let mut cleanup = {
             let mut command = std::process::Command::new("kill");
-            command.args(["-KILL", "--", &format!("-{}", self.0)]);
+            command.args(["-KILL", "--", &format!("-{id}")]);
             command
         };
         #[cfg(windows)]
         let mut cleanup = {
             let mut command = std::process::Command::new("taskkill.exe");
-            command.args(["/PID", &self.0.to_string(), "/T", "/F"]);
+            command.args(["/PID", &id.to_string(), "/T", "/F"]);
             command
         };
-        let _ = cleanup.stdout(Stdio::null()).stderr(Stdio::null()).status();
+        cleanup.stdout(Stdio::null()).stderr(Stdio::null());
+        cleanup
+    }
+
+    /// The usual path: clean up without blocking a runtime worker on the helper.
+    async fn finish(mut self) {
+        if let Some(id) = self.0.take() {
+            let _ = Command::from(Self::cleanup(id)).status().await;
+        }
+    }
+}
+impl Drop for CommandGuard {
+    // Cancellation during Agent shutdown cannot await; clean up synchronously.
+    fn drop(&mut self) {
+        if let Some(id) = self.0.take() {
+            let _ = Self::cleanup(id).status();
+        }
     }
 }
 
@@ -176,7 +193,7 @@ pub(super) async fn execute(
     command.process_group(0);
     let mut child = command.spawn().context("start command")?;
     let id = child.id().context("command has no process identifier")?;
-    let cleanup = CommandGuard(id);
+    let cleanup = CommandGuard(Some(id));
     let mut stdout = tokio::spawn(drain(
         child.stdout.take().context("command has no stdout")?,
         maximum,
@@ -189,7 +206,7 @@ pub(super) async fn execute(
     let timed_out = status.is_err();
     let success = matches!(&status, Ok(Ok(status)) if status.success());
     // The same guard also cleans up when this future is cancelled during Agent shutdown.
-    drop(cleanup);
+    cleanup.finish().await;
     if timed_out {
         let _ = child.kill().await;
     }

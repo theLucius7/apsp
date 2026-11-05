@@ -7,7 +7,7 @@ import { UsersIcon, PackageIcon, WalletIcon } from 'lucide-react'
 import { useState } from 'react'
 import { api } from '../../../api'
 import { ErrorNotice, Field, PageHeader, Stat } from '../../../components'
-import { useAction, useResource } from '../../../hooks'
+import { useAction, useResource, settingsPoll } from '../../../hooks'
 import { root, money, parseMoney } from './types'
 import type { Settings, Order, Invitation } from './types'
 import { OrdersTable, InvitationTable } from './Records'
@@ -37,7 +37,7 @@ function Orders() { const [offset, setOffset] = useState(0); const data = useRes
 function Invitations() { const [offset, setOffset] = useState(0); const data = useResource<{ entries: Invitation[] }>(`${root}/invitations?offset=${offset}`); return <Panel><ErrorNotice message={data.error} retry={data.reload} /><InvitationTable entries={data.data?.entries ?? []} /><Paging offset={offset} count={data.data?.entries.length ?? 0} setOffset={setOffset} /></Panel> }
 function Paging({ offset, count, setOffset }: { offset: number; count: number; setOffset: (n: number) => void }) { return <div className="flex flex-wrap items-center gap-2 p-4"><Button variant="ghost" size="sm" disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 100))}>上一页</Button><span>第 {offset / 100 + 1} 页</span><Button variant="ghost" size="sm" disabled={count < 100} onClick={() => setOffset(offset + 100)}>下一页</Button></div> }
 function Configuration() {
-  const settings = useResource<Settings>(`${root}/settings`), action = useAction()
+  const settings = useResource<Settings>(`${root}/settings`, settingsPoll), action = useAction()
   return <Panel><div className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><PanelTitle>运营设置</PanelTitle></div><div className="p-4 space-y-3"><ErrorNotice message={settings.error || action.error} retry={settings.reload} />{settings.data && <form key={settings.data.version} onSubmit={e => { e.preventDefault(); const form = new FormData(e.currentTarget); void action.run(() => api(`${root}/settings`, 'PUT', { enabled: form.get('enabled') === 'on', invitations_enabled: form.get('invitations') === 'on', invite_price_cents: parseMoney(form.get('price')), version: settings.data!.version }), settings.reload) }}>
     <label className="my-3 flex items-center gap-2.5 text-sm"><Checkbox name="enabled"  defaultChecked={settings.data.enabled} />启用成员运营入口</label><label className="my-3 flex items-center gap-2.5 text-sm"><Checkbox name="invitations"  defaultChecked={settings.data.invitations_enabled} />开放成员购买邀请</label><Field label="每份邀请准入费（元）"><Input name="price" required inputMode="decimal" defaultValue={(settings.data.invite_price_cents / 100).toFixed(2)} /></Field><p className="text-muted-foreground mt-1 text-xs leading-relaxed whitespace-pre-wrap wrap-anywhere">普通邀请准入费不退。预付邀请另收套餐价；尚未领取时撤销会全额退回，包含准入费。普通邀请的首次开通由邀请人购买，之后成员可以自行续费。</p><Button  disabled={action.busy || !settings.isCurrent() || Boolean(settings.error)}>保存运营设置</Button>
   </form>}</div></Panel>

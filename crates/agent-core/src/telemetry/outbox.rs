@@ -27,15 +27,22 @@ impl State {
             "DELETE FROM telemetry_outbox WHERE sampled_at<?1",
             [sample.sampled_at.saturating_sub(MAX_AGE_MS)],
         )?;
-        removed += tx.execute("DELETE FROM telemetry_outbox WHERE rowid NOT IN (SELECT rowid FROM telemetry_outbox ORDER BY rowid DESC LIMIT ?1)", [MAX_ROWS as i64])?;
+        // Keep the newest MAX_ROWS: everything below the oldest kept rowid goes.
+        // This runs every second, so avoid building a set of the kept rowids.
+        removed += tx.execute(
+            "DELETE FROM telemetry_outbox WHERE rowid<(SELECT rowid FROM telemetry_outbox ORDER BY rowid DESC LIMIT 1 OFFSET ?1)",
+            [MAX_ROWS as i64 - 1],
+        )?;
+        // octet_length comes from the record header; length() would read every
+        // payload to count characters, and MAX_BYTES is a byte limit anyway.
         let mut bytes: i64 = tx.query_row(
-            "SELECT COALESCE(SUM(length(payload)),0) FROM telemetry_outbox",
+            "SELECT COALESCE(SUM(octet_length(payload)),0) FROM telemetry_outbox",
             [],
             |row| row.get(0),
         )?;
         while bytes > MAX_BYTES {
             let (row, length): (i64, i64) = tx.query_row(
-                "SELECT rowid,length(payload) FROM telemetry_outbox ORDER BY rowid LIMIT 1",
+                "SELECT rowid,octet_length(payload) FROM telemetry_outbox ORDER BY rowid LIMIT 1",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )?;

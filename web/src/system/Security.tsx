@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../api'
 import { Badge, CopyField, ErrorNotice, Field, Loading, PageHeader, Refresh } from '../components'
-import { useAction, useResource } from '../hooks'
+import { useAction, useResource, settingsPoll } from '../hooks'
 import AdminPasskeys from './AdminPasskeys'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,7 +41,7 @@ function PasswordChange() {
 }
 
 export default function Security() {
-  const resource = useResource<TotpStatus>('/api/security/totp')
+  const resource = useResource<TotpStatus>('/api/security/totp', settingsPoll)
   const action = useAction()
   const [setup, setSetup] = useState<Setup>()
   const [now, setNow] = useState(Math.floor(Date.now() / 1000))

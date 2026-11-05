@@ -26,10 +26,11 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     future::Future,
     io::Read,
     path::{Component, Path, PathBuf},
+    sync::{Mutex, OnceLock},
 };
 use uuid::Uuid;
 
@@ -315,6 +316,81 @@ async fn stored_bytes(release: &StoredRelease, artifact: &VerifiedArtifact) -> R
     let bytes = ordinary_bytes(&release.directory.join(artifact.path()), MAX_ARTIFACT).await?;
     verify_payload(artifact, &bytes)?;
     Ok(bytes)
+}
+
+/// Identifies one stored file's content without reading it. The change time
+/// moves with every write and cannot be set from userspace, so a replaced or
+/// edited payload never matches an earlier verification.
+#[derive(Clone, PartialEq, Eq)]
+struct FileStamp {
+    length: u64,
+    inode: u64,
+    changed: (i64, i64),
+    modified: Option<std::time::SystemTime>,
+    sha256: String,
+}
+
+fn file_stamp(metadata: &std::fs::Metadata, sha256: &str) -> FileStamp {
+    #[cfg(unix)]
+    let (inode, changed) = {
+        use std::os::unix::fs::MetadataExt;
+        (metadata.ino(), (metadata.ctime(), metadata.ctime_nsec()))
+    };
+    #[cfg(not(unix))]
+    let (inode, changed) = (0, (0, 0));
+    FileStamp {
+        length: metadata.len(),
+        inode,
+        changed,
+        modified: metadata.modified().ok(),
+        sha256: sha256.to_owned(),
+    }
+}
+
+/// Payloads this process already verified completely.
+fn verified_payloads() -> &'static Mutex<HashMap<PathBuf, FileStamp>> {
+    static VERIFIED: OnceLock<Mutex<HashMap<PathBuf, FileStamp>>> = OnceLock::new();
+    VERIFIED.get_or_init(Mutex::default)
+}
+
+/// Verifies a stored payload like `stored_bytes`, but skips the read, unpack and
+/// hashing when this exact file was verified before. Agents ask for artifact
+/// descriptors every minute; downloads still verify the bytes they send.
+async fn verify_stored(release: &StoredRelease, artifact: &VerifiedArtifact) -> Result<()> {
+    let path = release.directory.join(artifact.path());
+    let metadata = tokio::fs::symlink_metadata(&path).await?;
+    let stamp = file_stamp(&metadata, artifact.sha256());
+    let known = verified_payloads()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(&path)
+        == Some(&stamp);
+    if known && metadata.is_file() {
+        return Ok(());
+    }
+    stored_bytes(release, artifact).await?;
+    verified_payloads()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(path, stamp);
+    Ok(())
+}
+
+/// The signed digest and proof of an available artifact, for descriptors.
+pub async fn artifact_digest(
+    state: &AppState,
+    name: &str,
+    version: &str,
+    arch: &str,
+) -> ApiResult<(String, ReleaseProof)> {
+    canonical_path(name, version, arch).map_err(|_| ApiError::NotFound)?;
+    let releases = released(state).await?;
+    let inventory = available_inventory(&releases).map_err(invalid)?;
+    let key = (name.to_owned(), version.to_owned(), arch.to_owned());
+    let (index, artifact) = inventory.get(&key).ok_or(ApiError::NotFound)?;
+    let release = &releases[*index];
+    verify_stored(release, artifact).await.map_err(invalid)?;
+    Ok((artifact.sha256().to_owned(), release.proof.clone()))
 }
 
 pub async fn artifact(

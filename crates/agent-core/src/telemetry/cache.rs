@@ -71,6 +71,7 @@ struct NativeSource {
     runtime: tokio::runtime::Runtime,
     previous: (Instant, BTreeMap<String, [u64; 7]>),
     supplement: hardware::Hardware,
+    gpu: hardware::GpuProbe,
     refreshed: Option<Instant>,
     cancellation: Arc<Cancellation>,
 }
@@ -83,7 +84,7 @@ impl Source for NativeSource {
         {
             self.supplement = self.cancellation.run(
                 &self.runtime,
-                hardware::refresh(self.ops.as_ref(), &mut self.previous),
+                hardware::refresh(self.ops.as_ref(), &mut self.previous, &mut self.gpu),
             )?;
             self.refreshed = Some(Instant::now());
         }
@@ -118,6 +119,7 @@ impl Sampling {
                         .build()?,
                     previous: (Instant::now(), BTreeMap::new()),
                     supplement: Default::default(),
+                    gpu: Default::default(),
                     refreshed: None,
                     cancellation,
                 }))

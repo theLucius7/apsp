@@ -8,13 +8,13 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { useState } from 'react'
 import { api } from '../../../api'
 import { ErrorNotice, Field, FormDialog, DialogPresence } from '../../../components'
-import { useAction, useResource } from '../../../hooks'
+import { useAction, useResource, settingsPoll } from '../../../hooks'
 import { money, parseMoney, root } from './types'
 import type { Channel, PaymentException, Topup } from './types'
 import { TopupsTable } from './Records'
 
 export default function Payments() {
-  const channels = useResource<Channel[]>(`${root}/channels`), payments = useResource<{ entries: Topup[]; exceptions: PaymentException[] }>(`${root}/payments`)
+  const channels = useResource<Channel[]>(`${root}/channels`, settingsPoll), payments = useResource<{ entries: Topup[]; exceptions: PaymentException[] }>(`${root}/payments`)
   const [editing, setEditing] = useState<Channel | 'new' | null>(null), [resolving, setResolving] = useState<PaymentException | null>(null), action = useAction()
   const refresh = () => { channels.reload(); payments.reload() }, stale = !channels.isCurrent() || !payments.isCurrent() || Boolean(channels.error || payments.error)
   const save = (form: FormData) => {

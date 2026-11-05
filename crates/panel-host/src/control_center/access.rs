@@ -67,7 +67,40 @@ fn management_token(headers: &HeaderMap) -> Option<&str> {
         .filter(|token| token.starts_with("apsp_api_") && token.len() <= 512)
 }
 
+tokio::task_local! {
+    /// The principal the request guard authenticated, with the credential it
+    /// came from. Handlers of the same request reuse it instead of repeating the
+    /// session, profile and grant queries; anything else asks the database.
+    static REQUEST_PRINCIPAL: (String, Principal);
+}
+
+/// The credential `authenticate` would use, with the same precedence.
+fn credential_key(headers: &HeaderMap) -> Option<String> {
+    match management_token(headers) {
+        Some(token) => Some(format!("token:{}", hash_token(token))),
+        None => session_hash(headers).map(|hash| format!("session:{hash}")),
+    }
+}
+
+/// Runs the rest of a request with the principal the guard authenticated.
+pub(crate) async fn with_request_principal<F: std::future::Future>(
+    headers: &HeaderMap,
+    principal: Principal,
+    request: F,
+) -> F::Output {
+    match credential_key(headers) {
+        Some(key) => REQUEST_PRINCIPAL.scope((key, principal), request).await,
+        None => request.await,
+    }
+}
+
 pub async fn authenticate(state: &AppState, headers: &HeaderMap) -> ApiResult<Principal> {
+    if let Some(key) = credential_key(headers)
+        && let Ok(Some(principal)) = REQUEST_PRINCIPAL
+            .try_with(|(cached, principal)| (*cached == key).then(|| principal.clone()))
+    {
+        return Ok(principal);
+    }
     let now = now_timestamp();
     let token = if let Some(token) = management_token(headers) {
         Some(sqlx::query("SELECT id,admin_id,capabilities,server_ids,all_servers FROM management_api_tokens WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>$2")
