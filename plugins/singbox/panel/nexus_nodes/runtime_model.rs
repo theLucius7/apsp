@@ -46,6 +46,7 @@ pub(super) fn validate(snapshot: &RuntimeSnapshot) -> ApiResult<()> {
             || !matches!(
                 node.protocol_config,
                 apsp_compiler::ProtocolConfig::VlessReality
+                    | apsp_compiler::ProtocolConfig::VlessTunnel
                     | apsp_compiler::ProtocolConfig::Shadowsocks2022 { .. }
                     | apsp_compiler::ProtocolConfig::Hysteria2 { .. }
             )
@@ -134,6 +135,20 @@ pub(super) async fn inspect(
                     && reality["public_key"] == node.public_key
                     && reality["short_id"] == node.short_id
                     && reality["server_name"] == node.sni;
+            }
+            apsp_compiler::ProtocolConfig::VlessTunnel => {
+                // Plain VLESS behind a tunnel: same HTTP transport and path, and the
+                // tunnel hostname (the legacy host) is what clients present as SNI.
+                let (network, path) = match &node.settings.transport {
+                    apsp_compiler::NodeTransport::Ws { path, .. } => ("ws", path),
+                    apsp_compiler::NodeTransport::Httpupgrade { path, .. } => ("httpupgrade", path),
+                    _ => ("", &String::new()),
+                };
+                same &= original["type"] == "vless"
+                    && protocol["tls"] == 0
+                    && protocol["network"] == network
+                    && protocol["network_settings"]["path"].as_str() == Some(path.as_str())
+                    && original["host"].as_str() == Some(node.sni.as_str());
             }
             apsp_compiler::ProtocolConfig::Shadowsocks2022 { method, .. } => {
                 same &= original["type"] == "shadowsocks" && protocol["cipher"] == json!(method);

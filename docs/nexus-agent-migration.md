@@ -98,7 +98,9 @@ python3 tools/nexus_runtime_snapshot.py request /private/nodes.json /private/run
 python3 tools/nexus_runtime_snapshot.py build /private/nodes.json /private/runtime
 ```
 
-导出时机器令牌不读取，`token_env` 引用一律填占位值；`custom_config` 指向的文件缺失时直接报错，不像旧节点那样静默跳过。汇总只写原因代码：`protocol_requires_conversion`（Hysteria2 等需要证书文件与跳端口规则）、`transport_requires_conversion`、`external_files`、`global_settings_require_reconciliation`、`reality_short_id_count`、`brutal_requires_review`、`effective_configuration_missing`（未取得主机文件）等。被阻止的主机继续由旧服务运行。
+导出时机器令牌不读取，`token_env` 引用一律填占位值；`custom_config` 指向的文件缺失时直接报错，不像旧节点那样静默跳过。汇总只写原因代码：`protocol_requires_conversion`（Hysteria2 等需要证书文件与跳端口规则）、`transport_requires_conversion`、`external_files`、`global_settings_require_reconciliation`、`reality_short_id_count`、`brutal_requires_review`、`tunnel_host_invalid`（隧道源站的旧地址不是域名）、`effective_configuration_missing`（未取得主机文件）等。被阻止的主机继续由旧服务运行。
+
+无 TLS 的 VLESS + WebSocket/HTTPUpgrade 监听（Cloudflare 优选线路的源站）转换为 `vless-tunnel` 节点（[ADR 0109](adr/0109-vless-tunnel-origins.md)）：`sni` 取旧节点地址（隧道主机名），监听收窄为 `127.0.0.1`。切换前确认该主机的隧道连接器转发到 `127.0.0.1:<端口>`；如果连的是其他地址，先改隧道配置。已经接管的主机不能追加这类节点。
 
 ### 切换步骤
 

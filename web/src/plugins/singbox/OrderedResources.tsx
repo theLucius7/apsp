@@ -4,7 +4,7 @@ import { bytes, totalBytes } from '../../format'
 import { useAction, useResource } from '../../hooks'
 import type { ResourceState } from '../../hooks'
 import type { Node, PluginServer, Usage } from '../../types'
-import { protocolNames } from './ProtocolFields'
+import { protocolName } from './ProtocolFields'
 import Chains, { deleteProxyResource, proxyDeleteError, proxyWriteError, validNodeList, validServerList } from './Chains'
 import type { ProxyWriteSnapshot } from './Chains'
 import { dateText, filterProxyResources, proxyResourceKey, validatedSnapshot, validProxyResource, validProxyResources } from './groupTypes'
@@ -54,7 +54,7 @@ function applicationView(endpoint: ResourceEndpoint, server?: PluginServer, fres
 }
 function EndpointView({ endpoint, server, node, fresh }: { endpoint: ResourceEndpoint; server?: PluginServer; node?: Node; fresh: boolean }) {
   const application = applicationView(endpoint, server, fresh)
-  return <div className="grid min-w-44 justify-items-start gap-1.5"><strong className="max-w-72 wrap-anywhere">{endpoint.name}</strong><a className="text-primary max-w-72 underline-offset-4 wrap-anywhere hover:underline" href={`#/servers/${endpoint.server_id}`}>{fresh ? endpoint.server_name : `服务器 #${endpoint.server_id}`}</a><code className="max-w-72 wrap-anywhere">{address(endpoint)}</code><small className="max-w-72 wrap-anywhere">{protocolNames[endpoint.protocol] ?? endpoint.protocol} · {endpoint.sni || '无需证书'}</small>
+  return <div className="grid min-w-44 justify-items-start gap-1.5"><strong className="max-w-72 wrap-anywhere">{endpoint.name}</strong><a className="text-primary max-w-72 underline-offset-4 wrap-anywhere hover:underline" href={`#/servers/${endpoint.server_id}`}>{fresh ? endpoint.server_name : `服务器 #${endpoint.server_id}`}</a><code className="max-w-72 wrap-anywhere">{address(endpoint)}</code><small className="max-w-72 wrap-anywhere">{protocolName(endpoint.protocol)} · {endpoint.sni || '无需证书'}</small>
     {node && <small className="text-muted-foreground mt-1.5 block max-w-72 wrap-anywhere">监听 {node.settings?.listen ?? '::'} / {endpoint.port}</small>}
     {!endpoint.enabled && <Badge tone="warm">已设为停用</Badge>}
     <small className="max-w-72 wrap-anywhere"><Badge tone={fresh && endpoint.online ? 'good' : 'neutral'}>{fresh ? endpoint.online ? '设备在线' : '设备离线' : '设备状态待确认'}</Badge></small>

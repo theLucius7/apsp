@@ -1,5 +1,12 @@
 # 执行进度
 
+## 2026-11-05：隧道后的 VLESS 源站（Alice 与 CF 线路）
+
+- Alice 和 Cloudflare 优选线路的源站是无 TLS 的 VLESS + WebSocket，apsp 不支持，运行接管被快照工具拒绝。新增协议 `vless-tunnel`：服务端只能监听回环，客户端用 TLS 连边缘、以隧道主机名作 SNI 和 Host，sing-box/Clash/分享链接同步生成；快照工具把这类旧监听转换过来并收窄到 `127.0.0.1`；迁移 0084 放开协议取值。见 [ADR 0109](docs/adr/0109-vless-tunnel-origins.md)。
+- 国内可达性监测不再探测隧道源站端口，消除 Alice `ah.solve.ac:21443` 一直“服务不可用”的误报。
+- 验证：`apsp-compiler`（新增 `vless_tunnel`，含官方 1.14.2 与签名运行时 `check`）、`apsp-plugin-singbox`、`nexus_runtime_takeover`（新增存档一致性）、`modern_protocols`、`node_settings`、`china_reachability`、`member_lines`、`nexus_node_inventory`、`node_catalog`，Python 工具测试、`bun test` 通过；workspace clippy 无告警；`web/dist` 已重新构建。只改面板与工具，不影响 Agent，远端 CI 未运行。
+- 尚未完成：已接管主机上的 CF 线路需要“修订运行快照”能力才能追加。
+
 ## 2026-11-05：性能检查第二轮
 
 - 用户要求继续，处理第一轮留下的项目，见 [待定问题](docs/open-questions.md#性能检查与精简2026-11-04) 的“第二轮”。

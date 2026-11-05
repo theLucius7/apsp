@@ -102,13 +102,37 @@ def requests(inventory, legacy, directory):
     return {'hosts': written}
 
 
-def references_files(value):
+def references_files(value, transport=False):
+    # An HTTP transport's `path` is a request path, not a file.
     if isinstance(value, dict):
-        return any(((key == 'path' or key.endswith('_path')) and isinstance(item, str) and item)
-                   or references_files(item) for key, item in value.items())
+        return any(((key == 'path' or key.endswith('_path')) and isinstance(item, str) and item
+                    and not (transport and key == 'path'))
+                   or references_files(item, key == 'transport') for key, item in value.items())
     if isinstance(value, list):
         return any(references_files(item) for item in value)
     return False
+
+
+TUNNEL_TRANSPORT_KEYS = {'ws': {'type', 'path', 'max_early_data', 'early_data_header_name'},
+                         'httpupgrade': {'type', 'path', 'host'}}
+
+
+def tunnel_transport(transport):
+    """The node-model transport of a plain VLESS listener behind a tunnel (ADR 0109)."""
+    kind = transport.get('type')
+    path = transport.get('path', '/')
+    if (kind not in TUNNEL_TRANSPORT_KEYS or set(transport) - TUNNEL_TRANSPORT_KEYS[kind]
+            or not isinstance(path, str) or not path.startswith('/') or path.startswith('//')
+            or len(path) > 2048 or any(c in path for c in '?#') or not path.isprintable() or ' ' in path):
+        raise SnapshotError('transport_requires_conversion')
+    return {key: value for key, value in transport.items()}
+
+
+def dns_hostname(value):
+    labels = value.rstrip('.').split('.') if isinstance(value, str) else []
+    return (1 < len(labels) and len(value) <= 253 and not all(label.isdigit() for label in labels)
+            and all(0 < len(label) <= 63 and label[0] != '-' and label[-1] != '-'
+                    and all(c.isalnum() or c == '-' for c in label) for label in labels))
 
 
 def as_port(value):
@@ -149,7 +173,10 @@ def preserved(raw, effective, disable=False):
     users = inbound.get('users') or []
     if len(users) != 1 or users[0].get('name') != PLACEHOLDER_UUID:
         raise SnapshotError('unexpected_user_list')
-    if 'transport' in inbound:
+    transport = inbound.get('transport')
+    # Plain VLESS over an HTTP transport sits behind a TLS-terminating tunnel.
+    tunnel = kind == 'vless' and transport is not None and not (inbound.get('tls') or {}).get('enabled')
+    if transport is not None and not tunnel:
         raise SnapshotError('transport_requires_conversion')
     if inbound.get('multiplex', {}).get('brutal'):
         raise SnapshotError('brutal_requires_review')
@@ -168,7 +195,18 @@ def preserved(raw, effective, disable=False):
             raise SnapshotError('port_range_invalid')
     else:
         node['settings']['public_port'] = as_port(public_port)
-    if kind == 'vless':
+    if tunnel:
+        if users[0].get('flow', ''):
+            raise SnapshotError('vless_flow_unsupported')
+        if not dns_hostname(raw['host']):
+            raise SnapshotError('tunnel_host_invalid')
+        # Without TLS the listener must only be reachable by the local tunnel
+        # connector; the legacy host relied on a firewall rule for that.
+        inbound['listen'] = '127.0.0.1'
+        node.update(sni=raw['host'].rstrip('.'), protocol_config={'type': 'vless-tunnel'})
+        node['settings']['listen'] = '127.0.0.1'
+        node['settings']['transport'] = tunnel_transport(transport)
+    elif kind == 'vless':
         tls = inbound.get('tls') or {}
         reality = tls.get('reality') or {}
         if not tls.get('enabled') or not reality.get('enabled'):

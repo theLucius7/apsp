@@ -8,7 +8,7 @@ import type { ResourceState } from '../../hooks'
 import type { Node, PluginServer, Usage } from '../../types'
 import type { ProxyResource, ResourceKey } from './resourceTypes'
 import { endpoint, resourceLink, roleNames, stageName } from './resourceTypes'
-import { protocolNames } from './ProtocolFields'
+import { protocolName } from './ProtocolFields'
 import { sourceReason } from './sourceTypes'
 import { catalogKey, catalogRef, catalogMutationError, filterCatalog, parsedTags, renamed, tagsError, validCatalog } from './catalog'
 import type { CatalogNode } from './catalog'
@@ -110,7 +110,7 @@ export default function NodeCatalog(props: Props) {
     </div>
   }
   const publicEndpoint = (node: CatalogNode) => node.public_host && node.port !== null ? endpoint(node.public_host, props.nodes.find(value => node.kind !== 'external' && value.id === (node.entry_node_id ?? node.id))?.settings?.public_port ?? node.port) : '未知端点'
-  const title = (node: CatalogNode) => <div className="min-w-32"><strong className="font-medium">{node.name}</strong><div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1"><small className="text-muted-foreground text-xs">{kinds[node.kind]} · {(node.protocol && protocolNames[node.protocol]) ?? node.protocol ?? '未知协议'}</small>{node.tags.map(tag => <button key={tag} onClick={() => { change('tag', tag); setMoreOpen(true) }} className="bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring/50 cursor-pointer rounded px-1 text-xs outline-none focus-visible:ring-3">{tag}</button>)}</div>{node.note && <small className="text-muted-foreground mt-1 block max-w-60 truncate text-xs" title={node.note}>{node.note}</small>}</div>
+  const title = (node: CatalogNode) => <div className="min-w-32"><strong className="font-medium">{node.name}</strong><div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1"><small className="text-muted-foreground text-xs">{kinds[node.kind]} · {node.protocol ? protocolName(node.protocol) : '未知协议'}</small>{node.tags.map(tag => <button key={tag} onClick={() => { change('tag', tag); setMoreOpen(true) }} className="bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring/50 cursor-pointer rounded px-1 text-xs outline-none focus-visible:ring-3">{tag}</button>)}</div>{node.note && <small className="text-muted-foreground mt-1 block max-w-60 truncate text-xs" title={node.note}>{node.note}</small>}</div>
   const status = (node: CatalogNode) => <><Badge tone={stale() ? 'neutral' : !node.enabled ? 'neutral' : node.available ? 'good' : 'warm'}>{stale() ? '资源状态待确认' : !node.enabled ? '已停用' : node.kind === 'external' ? node.available ? '可分配' : '不可分配' : node.available ? '可用' : '待就绪'}</Badge><small className="text-muted-foreground mt-1 block text-xs">{node.kind === 'external' ? node.last_error ? sourceReason(node.last_error) : '由来源提供服务' : `${roleNames[node.role as ProxyResource['role']]} · ${stageName(node.stage)}`}</small></>
   const traffic = (node: CatalogNode) => { const record = props.usage?.by_node.find(value => value.node_id === (node.entry_node_id ?? node.id)); return node.kind === 'external' ? '提供方计量' : record ? bytes(totalBytes(record.uplink, record.downlink)) : props.usage ? '0 B' : '暂无数据' }
   return <Panel aria-label="节点库">

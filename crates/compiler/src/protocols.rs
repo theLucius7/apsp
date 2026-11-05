@@ -8,6 +8,10 @@ use serde_json::{Value, json};
 pub enum ProtocolConfig {
     #[default]
     VlessReality,
+    /// VLESS behind a TLS-terminating tunnel or CDN (for example Cloudflare
+    /// Tunnel). The listener is plain and must stay on loopback; clients use
+    /// ordinary TLS to the edge hostname in `sni`, over the node's HTTP transport.
+    VlessTunnel,
     Hysteria2 {
         tls: TlsConfig,
     },
@@ -81,6 +85,7 @@ impl ProtocolConfig {
     pub fn kind(&self) -> &'static str {
         match self {
             Self::VlessReality => "vless-reality",
+            Self::VlessTunnel => "vless-tunnel",
             Self::Hysteria2 { .. } => "hysteria2",
             Self::Shadowsocks2022 { .. } => "shadowsocks2022",
             Self::Tuic { .. } => "tuic",
@@ -92,6 +97,11 @@ impl ProtocolConfig {
 
     pub fn is_reality(&self) -> bool {
         matches!(self, Self::VlessReality)
+    }
+
+    /// VLESS identifies users by UUID alone; no per-user credential exists.
+    pub fn is_vless(&self) -> bool {
+        matches!(self, Self::VlessReality | Self::VlessTunnel)
     }
 
     pub fn tls(&self) -> Option<&TlsConfig> {
@@ -110,7 +120,7 @@ impl ProtocolConfig {
 
     pub fn credential_size(&self) -> usize {
         match self {
-            Self::VlessReality => 0,
+            Self::VlessReality | Self::VlessTunnel => 0,
             Self::Shadowsocks2022 { method, .. } => method.key_size(),
             _ => 32,
         }
@@ -119,7 +129,7 @@ impl ProtocolConfig {
 
 pub(crate) fn validate(node: &Node) -> Result<(), CompileError> {
     let fail = |reason| invalid_node(node, reason);
-    if node.protocol_config.is_reality() || node.protocol_config.tls().is_some() {
+    if node.protocol_config.is_vless() || node.protocol_config.tls().is_some() {
         if !valid_dns_name(&node.sni) || node.sni.parse::<std::net::IpAddr>().is_ok() {
             return Err(fail("sni must be a DNS hostname"));
         }
@@ -140,6 +150,27 @@ pub(crate) fn validate(node: &Node) -> Result<(), CompileError> {
             {
                 return Err(fail(
                     "short_id must contain an even number of hexadecimal digits between 2 and 16",
+                ));
+            }
+        }
+        ProtocolConfig::VlessTunnel => {
+            // Without TLS at the origin, only the local tunnel connector may reach it.
+            if !node
+                .settings
+                .listen
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|address| address.is_loopback())
+            {
+                return Err(fail(
+                    "VLESS tunnel listeners have no TLS and must listen on loopback",
+                ));
+            }
+            if !matches!(
+                node.settings.transport,
+                crate::NodeTransport::Ws { .. } | crate::NodeTransport::Httpupgrade { .. }
+            ) {
+                return Err(fail(
+                    "VLESS tunnel requires a WebSocket or HTTPUpgrade transport",
                 ));
             }
         }
@@ -186,14 +217,13 @@ pub(crate) fn validate(node: &Node) -> Result<(), CompileError> {
     let mut credentials = std::collections::BTreeSet::new();
     let mut uuids = std::collections::BTreeSet::new();
     for access in &node.users {
-        if matches!(
-            node.protocol_config,
-            ProtocolConfig::VlessReality | ProtocolConfig::Tuic { .. }
-        ) && !uuids.insert(access.uuid)
+        if (node.protocol_config.is_vless()
+            || matches!(node.protocol_config, ProtocolConfig::Tuic { .. }))
+            && !uuids.insert(access.uuid)
         {
             return Err(fail("authorization UUIDs must be unique within a node"));
         }
-        if !node.protocol_config.is_reality()
+        if !node.protocol_config.is_vless()
             && !(matches!(node.protocol_config, ProtocolConfig::Hysteria2 { .. })
                 && !access.credential.is_empty()
                 && access.credential.len() <= 256
@@ -202,7 +232,7 @@ pub(crate) fn validate(node: &Node) -> Result<(), CompileError> {
         {
             return Err(fail("invalid access credential length or encoding"));
         }
-        if !node.protocol_config.is_reality() && !credentials.insert(&access.credential) {
+        if !node.protocol_config.is_vless() && !credentials.insert(&access.credential) {
             return Err(fail(
                 "authorization credentials must be unique within a node",
             ));
@@ -258,6 +288,7 @@ pub(crate) fn server(node: &Node, users: &[&Access]) -> Value {
             let name = stat_name(access.user_id, node.id);
             match &node.protocol_config {
                 ProtocolConfig::VlessReality => reality_identity(node, name, access.uuid),
+                ProtocolConfig::VlessTunnel => json!({"name": name, "uuid": access.uuid}),
                 ProtocolConfig::Tuic { .. } => {
                     json!({"name": name, "uuid": access.uuid, "password": access.credential})
                 }
@@ -311,6 +342,11 @@ pub(crate) fn client(node: &Node, access: &Access) -> Value {
                 "utls": {"enabled": true, "fingerprint": "chrome"},
                 "reality": {"enabled": true, "public_key": node.public_key, "short_id": node.short_id}});
         }
+        ProtocolConfig::VlessTunnel => {
+            result["uuid"] = json!(access.uuid);
+            result["tls"] = json!({"enabled": true, "server_name": node.sni,
+                "utls": {"enabled": true, "fingerprint": "chrome"}});
+        }
         ProtocolConfig::Shadowsocks2022 { method, password } => {
             result["method"] = json!(method);
             result["password"] = json!(format!("{password}:{}", access.credential));
@@ -335,12 +371,25 @@ pub(crate) fn client(node: &Node, access: &Access) -> Value {
         result["tls"] = client_tls(node, tls);
     }
     crate::settings::apply(node, &mut result, true);
+    if matches!(node.protocol_config, ProtocolConfig::VlessTunnel) {
+        // The edge routes by Host; without an explicit one it must be the tunnel hostname.
+        let transport = &mut result["transport"];
+        match transport["type"].as_str() {
+            Some("ws") if transport.get("headers").is_none() => {
+                transport["headers"] = json!({"Host": node.sni});
+            }
+            Some("httpupgrade") if transport.get("host").is_none() => {
+                transport["host"] = json!(node.sni);
+            }
+            _ => {}
+        }
+    }
     result
 }
 
 fn native_type(protocol: &ProtocolConfig) -> &str {
     match protocol {
-        ProtocolConfig::VlessReality => "vless",
+        ProtocolConfig::VlessReality | ProtocolConfig::VlessTunnel => "vless",
         ProtocolConfig::Shadowsocks2022 { .. } => "shadowsocks",
         ProtocolConfig::SnellV6 { .. } => "snell",
         other => other.kind(),

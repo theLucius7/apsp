@@ -112,6 +112,58 @@ class SnapshotTests(unittest.TestCase):
         (self.root / 'host-15-effective.json').unlink()
         self.assertEqual(self.built()[1]['hosts'][0]['blocked'], [{'reason': 'effective_configuration_missing'}])
 
+    def tunnel_case(self, host='tunnel.example.invalid', **inbound):
+        source = inventory()
+        source['nodes'].append({'id': 46, 'machine_id': 30, 'type': 'vless', 'name': 'TEST_ONLY tunnel',
+                                'host': host, 'port': '21443', 'enabled': 1,
+                                'protocol_settings': {'tls': 0, 'network': 'ws', 'network_settings': {'path': '/TEST_ONLY'}}})
+        native = copy.deepcopy(effective()[1]['configuration'])
+        listener = native['inbounds'][0]
+        listener.pop('tls')
+        listener['users'][0].pop('flow', None)
+        listener.update(listen='::', listen_port=21443, transport={'type': 'ws', 'path': '/TEST_ONLY'})
+        listener.update(inbound)
+        self.write_effective(effective() + [{'legacy_node_id': 46, 'configuration': native}])
+        return source
+
+    def test_plain_vless_over_http_becomes_a_loopback_tunnel_node(self):
+        source = self.tunnel_case()
+        self.assertEqual(snapshot.build(source, self.root)['ready'], 1)
+        built = json.loads((self.root / 'host-15-snapshot.json').read_text())
+        preserved = built['nodes'][-1]['preserved']
+        self.assertEqual(preserved['node']['protocol_config'], {'type': 'vless-tunnel'})
+        self.assertEqual(preserved['node']['sni'], 'tunnel.example.invalid')
+        self.assertEqual(preserved['node']['settings'], {
+            'listen': '127.0.0.1', 'public_port': 21443, 'transport': {'type': 'ws', 'path': '/TEST_ONLY'}})
+        # The listener narrows to loopback; everything else stays as the legacy builder made it.
+        self.assertEqual(preserved['configuration']['inbounds'][0]['listen'], '127.0.0.1')
+        self.assertEqual(preserved['configuration']['inbounds'][0]['transport'], {'type': 'ws', 'path': '/TEST_ONLY'})
+
+    def test_tunnel_nodes_need_a_hostname_plain_flow_and_an_http_transport(self):
+        cases = [
+            ({'host': '192.0.2.1'}, {}, 'tunnel_host_invalid'),
+            ({}, {'transport': {'type': 'grpc', 'service_name': 'x'}}, 'transport_requires_conversion'),
+            ({}, {'transport': {'type': 'ws', 'path': 'relative'}}, 'transport_requires_conversion'),
+            ({}, {'transport': {'type': 'ws', 'path': '/p', 'headers': {'Host': 'x'}}}, 'transport_requires_conversion'),
+        ]
+        for host, inbound, reason in cases:
+            source = self.tunnel_case(**host, **inbound)
+            self.assertEqual(snapshot.build(source, self.root)['ready'], 0, reason)
+            summary = json.loads((self.root / 'snapshot-summary.json').read_text())
+            self.assertEqual(summary['hosts'][0]['blocked'], [{'id': 46, 'reason': reason}], reason)
+        source = self.tunnel_case()
+        built = json.loads((self.root / 'host-15-effective.json').read_text())
+        built[-1]['configuration']['inbounds'][0]['users'][0]['flow'] = 'xtls-rprx-vision'
+        self.write_effective(built)
+        self.assertEqual(snapshot.build(source, self.root)['ready'], 0)
+        summary = json.loads((self.root / 'snapshot-summary.json').read_text())
+        self.assertEqual(summary['hosts'][0]['blocked'], [{'id': 46, 'reason': 'vless_flow_unsupported'}])
+
+    def test_transport_path_is_not_a_file_reference(self):
+        self.assertFalse(snapshot.references_files({'inbounds': [{'transport': {'type': 'ws', 'path': '/p'}}]}))
+        self.assertTrue(snapshot.references_files({'route': {'rule_set': [{'path': '/etc/x.srs'}]}}))
+        self.assertTrue(snapshot.references_files({'transport': {'nested': {'path': '/etc/x'}}}))
+
     def test_vision_flow_follows_the_legacy_users(self):
         value = effective()
         del value[1]['configuration']['inbounds'][0]['users'][0]['flow']
