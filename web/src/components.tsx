@@ -25,24 +25,33 @@ export type Tone = 'good' | 'bad' | 'warm' | 'neutral'
 const toneVariant = { good: 'success', bad: 'destructive', warm: 'warning', neutral: 'secondary' } as const
 const refreshNoticeDelay = 1200
 
-/** The apsp mark: entry, relay and exit on one flowing line, in jade. */
+/**
+ * The apsp mark: an “A” drawn as a route, entry and exit at its feet and the
+ * relay at its peak, on a violet-to-cyan tile with a light from above.
+ */
 export function BrandMark({ className }: { className?: string }) {
-  // Each mark owns its gradient: one defined inside a hidden copy would not paint.
-  const gradient = `apsp-mark-${useId().replace(/:/g, '')}`
+  // Each mark owns its gradients: one defined inside a hidden copy would not paint.
+  const id = `apsp-mark-${useId().replace(/:/g, '')}`
   return <svg viewBox="0 0 32 32" className={className} aria-hidden="true">
-    <defs><linearGradient id={gradient} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="var(--primary)" /><stop offset="1" stopColor="color-mix(in oklch, var(--primary), var(--foreground) 35%)" /></linearGradient></defs>
-    <rect width="32" height="32" rx="9" fill={`url(#${gradient})`} />
-    <path d="M8 21.5c3.5 0 4.5-11 8-11s4.5 11 8 11" fill="none" stroke="var(--primary-foreground)" strokeOpacity=".55" strokeWidth="1.6" strokeLinecap="round" />
-    <circle cx="8" cy="21.5" r="2.6" fill="var(--primary-foreground)" /><circle cx="16" cy="10.5" r="2.2" fill="var(--primary-foreground)" fillOpacity=".85" /><circle cx="24" cy="21.5" r="2.6" fill="var(--primary-foreground)" />
+    <defs>
+      <linearGradient id={`${id}-tile`} x1="3" y1="1" x2="29" y2="31" gradientUnits="userSpaceOnUse"><stop offset="0" stopColor="var(--brand-from)" /><stop offset="1" stopColor="var(--brand-to)" /></linearGradient>
+      <linearGradient id={`${id}-light`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="white" stopOpacity=".32" /><stop offset=".55" stopColor="white" stopOpacity="0" /></linearGradient>
+    </defs>
+    <rect x="1" y="1" width="30" height="30" rx="9" fill={`url(#${id}-tile)`} />
+    <rect x="1" y="1" width="30" height="30" rx="9" fill={`url(#${id}-light)`} />
+    <rect x="1.5" y="1.5" width="29" height="29" rx="8.5" fill="none" stroke="white" strokeOpacity=".22" />
+    <path d="M9.6 22.6 16 9.8l6.4 12.8" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M12.5 18.3q3.5 2.5 7 0" fill="none" stroke="white" strokeOpacity=".78" strokeWidth="1.9" strokeLinecap="round" />
+    <circle cx="16" cy="9.8" r="2.75" fill="white" /><circle cx="9.6" cy="22.6" r="2.4" fill="white" /><circle cx="22.4" cy="22.6" r="2.4" fill="white" />
   </svg>
 }
 
 export function Brand({ className, compact = false }: { className?: string; compact?: boolean }) {
   const { t } = useI18n()
   return <div data-slot="brand" className={cn('flex min-w-0 items-center gap-2.5', className)}>
-    <BrandMark className={cn('shrink-0 drop-shadow-sm', compact ? 'size-7' : 'size-9')} />
+    <BrandMark className={cn('shrink-0 drop-shadow-[0_4px_10px_color-mix(in_oklch,var(--brand-from)_38%,transparent)]', compact ? 'size-8' : 'size-10')} />
     <span className="grid min-w-0 leading-tight">
-      <strong className={cn('truncate font-semibold tracking-tight', compact ? 'text-[15px]' : 'text-lg')}>{t('apsp')}</strong>
+      <strong className={cn('truncate font-semibold tracking-[-0.02em]', compact ? 'text-base' : 'text-xl')}>{t('apsp')}</strong>
       {!compact && <small className="text-muted-foreground truncate text-xs">{t('代理网络控制平面')}</small>}
     </span>
   </div>}
@@ -83,7 +92,7 @@ export function PageHeader({ title, description, leading, children }: { title: s
   return <><header data-slot="page-header" className="bg-background/80 supports-backdrop-filter:backdrop-blur-md border-border/60 -mx-4 -mt-4 mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-2.5 md:sticky md:top-0 md:z-20 md:-mx-6 md:min-h-16 md:px-6">
     {leading}
     <div className="min-w-0 flex-[1_1_16rem]">
-      <h1 className="truncate text-lg leading-snug font-semibold tracking-tight">{t(title)}</h1>
+      <h1 className="truncate text-lg leading-snug font-semibold tracking-tight md:text-xl">{t(title)}</h1>
       {description && <p title={t(description)} className="text-muted-foreground mt-0.5 text-xs leading-snug md:truncate">{t(description)}</p>}
     </div>
     {children && <div data-slot="page-actions" className="flex flex-wrap items-center gap-2">{children}</div>}
@@ -163,7 +172,11 @@ export function Loading({ variant = 'spinner', rows = 4 }: { variant?: 'spinner'
 
 export function Refresh({ onClick }: { onClick: () => void }) {
   const { t } = useI18n()
-  return <Button variant="ghost" size="icon" title={t('刷新')} onClick={onClick}><RefreshCwIcon aria-hidden="true" /><span className="sr-only">{t('刷新')}</span></Button>
+  // Each click turns the icon once, so a refresh that changes nothing still shows it happened.
+  const [turns, setTurns] = useState(0)
+  return <Button variant="ghost" size="icon" title={t('刷新')} onClick={() => { setTurns(value => value + 1); onClick() }}>
+    <RefreshCwIcon key={turns} aria-hidden="true" className={turns ? 'motion-safe:animate-[refresh-turn_600ms_cubic-bezier(0.4,0,0.2,1)]' : undefined} /><span className="sr-only">{t('刷新')}</span>
+  </Button>
 }
 
 /** One headline number. `note` adds what the number alone does not say. */

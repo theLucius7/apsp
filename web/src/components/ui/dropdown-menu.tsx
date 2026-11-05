@@ -33,7 +33,7 @@ function DropdownMenuContent({
           animate={popoverMotion.animate}
           transition={popoverMotion.transition}
           className={cn(
-            "bg-popover text-popover-foreground ring-foreground/10 z-50 max-h-(--radix-dropdown-menu-content-available-height) min-w-36 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg p-1 shadow-md ring-1 outline-none",
+            "bg-popover text-popover-foreground ring-foreground/10 z-50 max-h-(--radix-dropdown-menu-content-available-height) min-w-36 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl p-1 shadow-lifted ring-1 outline-none",
             className
           )}
         >

@@ -5,6 +5,7 @@ import { useI18n } from '../i18n'
 import type { Locale } from '../i18n'
 import { cn } from '@/lib/utils'
 import type { ShellActor } from '@/lib/shell-actor'
+import { useConnectionStore } from '@/stores/connection'
 import type { Density, ThemePreference } from '@/stores/appearance'
 import { useAppearanceStore } from '@/stores/appearance'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -30,19 +31,35 @@ export default function AccountMenu({ actor, busy, onLogout, collapsed }: { acto
   const initial = [...name][0]?.toLocaleUpperCase() ?? '管'
   // A failed save keeps the choice for this session; the stored value applies next time.
   const save = (next: Partial<Saved>) => { if (preference.ready) void preference.save({ theme: preference.value?.theme ?? theme, density: preference.value?.density ?? density, ...(preference.value?.locale ? { locale: preference.value.locale } : {}), ...next }).catch(() => {}) }
+  // The connection to the panel reads on the avatar: one place for "who" and "connected".
+  const status = useConnectionStore(state => state.status)
+  const connection = t(status === 'online' ? '已连接面板' : status === 'offline' ? '网络已断开' : '正在重新连接')
+  const secondary = [name === role ? '' : role, connection].filter(Boolean).join(' · ')
+  // The primary colour carries the letter (its pair passes AA in both themes); the gradient only leans towards the brand cyan.
+  const avatar = <span className="bg-primary from-primary to-[color-mix(in_oklch,var(--primary),var(--brand-to)_38%)] text-primary-foreground ring-primary-foreground/15 relative grid size-9 shrink-0 place-items-center rounded-[11px] bg-gradient-to-br text-[13px] font-semibold shadow-soft ring-1 ring-inset" aria-hidden="true">
+    {initial}
+    <span data-slot="connection-dot" data-status={status} className={cn('ring-sidebar absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2', status === 'online' ? 'bg-success' : status === 'offline' ? 'bg-destructive' : 'bg-warning animate-pulse')} />
+  </span>
   return <DropdownMenu modal={false}>
+    <span data-slot="connection-status" role="status" className="sr-only">{connection}</span>
     <DropdownMenuTrigger asChild>
-      <button type="button" data-slot="account-menu" aria-label={`${name} · ${t('账号选项')}`}
-        className={cn('hover:bg-sidebar-accent focus-visible:ring-sidebar-ring/50 aria-expanded:bg-sidebar-accent flex w-full min-w-0 items-center gap-2 rounded-md p-1 text-left outline-none focus-visible:ring-3', collapsed && 'justify-center')}>
-        <span className="bg-primary/10 text-primary grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-semibold" aria-hidden="true">{initial}</span>
+      <button type="button" data-slot="account-menu" aria-label={`${name} · ${t('账号选项')}`} title={collapsed ? `${name} · ${secondary}` : undefined}
+        className={cn('group/account flex w-full min-w-0 items-center gap-2.5 rounded-xl text-left outline-none transition-[background-color,border-color,box-shadow] duration-150 focus-visible:shadow-focus',
+          collapsed ? 'justify-center p-1 hover:bg-sidebar-accent/60 aria-expanded:bg-sidebar-accent/60'
+            : 'border-sidebar-border/80 bg-sidebar-accent/55 shadow-soft hover:border-[color-mix(in_oklch,var(--primary)_28%,var(--sidebar-border))] hover:bg-sidebar-accent aria-expanded:bg-sidebar-accent border p-2')}>
+        {avatar}
         {!collapsed && <>
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{name}</span>
-          <small className="text-muted-foreground shrink-0 text-xs">{role}</small>
-          <ChevronsUpDownIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" />
+          <span className="grid min-w-0 flex-1 leading-tight">
+            <strong className="truncate text-[13px] font-semibold">{name}</strong>
+            <small className="text-muted-foreground mt-0.5 truncate text-[11.5px]">{secondary}</small>
+          </span>
+          <ChevronsUpDownIcon className="text-muted-foreground group-hover/account:text-foreground size-4 shrink-0 transition-colors" aria-hidden="true" />
         </>}
       </button>
     </DropdownMenuTrigger>
-    <DropdownMenuContent side={collapsed ? 'right' : 'top'} align="start" className="w-52">
+    <DropdownMenuContent side={collapsed ? 'right' : 'top'} align="start" className="w-60">
+      <div className="flex items-center gap-2.5 px-2 pt-1.5 pb-2">{avatar}<span className="grid min-w-0 leading-tight"><strong className="truncate text-[13px] font-semibold">{name}</strong><small className="text-muted-foreground mt-0.5 truncate text-[11.5px]">{role}</small></span></div>
+      <DropdownMenuSeparator />
       <DropdownMenuLabel className="text-muted-foreground text-xs font-medium">{t('主题')}</DropdownMenuLabel>
       {themes.map(item => {
         const Icon = item.icon

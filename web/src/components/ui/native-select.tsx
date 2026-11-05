@@ -27,10 +27,10 @@ function NativeSelect({
         data-slot="native-select"
         data-size={size}
         className={cn(
-          "border-input placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 dark:hover:bg-input/50 focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 w-full min-w-0 appearance-none rounded-lg border bg-transparent py-1 pl-2.5 text-sm transition-colors select-none focus-visible:ring-3 aria-invalid:ring-3 outline-none disabled:pointer-events-none disabled:cursor-not-allowed",
+          "border-input placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground bg-card/70 dark:bg-input/25 hover:border-[color-mix(in_oklch,var(--primary)_30%,var(--input))] focus-visible:border-primary/70 focus-visible:shadow-focus aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 w-full min-w-0 appearance-none rounded-[10px] border py-1 pl-3 text-sm transition-[border-color,box-shadow,background-color] duration-150 select-none aria-invalid:ring-3 outline-none disabled:pointer-events-none disabled:cursor-not-allowed",
           list
             ? "min-h-24 pr-2.5 [&>option]:rounded-sm [&>option]:px-1.5 [&>option]:py-1"
-            : "h-8 pointer-coarse:h-10 pr-8 data-[size=sm]:h-7 data-[size=sm]:rounded-[min(var(--radius-md),10px)] data-[size=sm]:py-0.5"
+            : "h-9 pointer-coarse:h-11 pr-8 data-[size=sm]:h-8 data-[size=sm]:rounded-[9px] data-[size=sm]:py-0.5"
         )}
         {...props}
       />

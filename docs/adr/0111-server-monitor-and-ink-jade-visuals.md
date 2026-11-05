@@ -35,6 +35,8 @@
 
 ### 「墨与玉」视觉
 
+> 本节已由 [ADR 0114](0114-aurora-palette-backdrop-and-controls.md) 取代：配色改为「极光」，并新增背景图、按钮与交互规范和新标识。
+
 - 色彩：暖白纸色底、深墨文字、唯一的玉色强调；深色主题为墨蓝底与发光的玉色。语义色（成功、警告、危险、信息）保持原含义。所有文字令牌仍满足 WCAG AA（`tests/contrast.test.ts`）。
 - 层次：卡片 12px 圆角、细边加两层柔和阴影（`shadow-soft`、`shadow-lifted`，按主题定义）；页面背后是一层静态的玉色与墨蓝环境光。
 - 字体与数字：系统字体栈优先 SF / Segoe UI Variable / 苹方 / HarmonyOS Sans / MiSans；标题略收字距，统计数字 26px。

@@ -94,7 +94,7 @@ export default function AdminShell({ current, exact = true, busy, error, onLogou
   // sidebar and the phone header, so the page, its open dialogs and unsaved input stay
   // mounted when a tablet rotates or a window is resized.
   return <TooltipProvider delayDuration={200}>
-    <div data-slot="app-shell" className="bg-background text-foreground flex h-dvh min-h-0 overflow-hidden">
+    <div data-slot="app-shell" className="text-foreground flex h-dvh min-h-0 overflow-hidden">
       <Reauthentication /><Appearance />
       {desktop && <aside data-slot="sidebar" data-collapsed={collapsed} className={cn('bg-sidebar text-sidebar-foreground border-sidebar-border flex h-full min-h-0 shrink-0 flex-col border-r transition-[width] duration-150', collapsed ? 'w-14' : 'w-58')}>
         <div className={cn('flex h-16 shrink-0 items-center gap-2 px-3.5', collapsed ? 'justify-center px-2' : 'justify-between')}>
@@ -105,8 +105,8 @@ export default function AdminShell({ current, exact = true, busy, error, onLogou
         </div>
         <div className={cn('shrink-0 pb-2', collapsed ? 'px-2' : 'px-3')}><CommandPalette pages={visibleNavigation} compact={collapsed} /></div>
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2 scrollbar-thin">{navigationList}</div>
-        <div className="shrink-0 border-t p-2">
-          <ConnectionStatus compact={collapsed} />
+        {/* Who is signed in and whether the panel answers: one card at the foot of the sidebar. */}
+        <div className={cn('shrink-0 pt-1', collapsed ? 'p-2' : 'px-2.5 pb-3')}>
           <AccountMenu actor={actor} busy={busy} onLogout={onLogout} collapsed={collapsed} />
         </div>
       </aside>}
@@ -121,7 +121,7 @@ export default function AdminShell({ current, exact = true, busy, error, onLogou
             <CommandPalette pages={visibleNavigation} compact />
           </div>
           {/* The menu covers the page instead of pushing it, so opening it moves nothing. */}
-          <div id="admin-navigation" hidden={!mobileOpen} className="bg-sidebar shadow-lifted absolute inset-x-0 top-full border-b">
+          <div id="admin-navigation" hidden={!mobileOpen} className="bg-popover shadow-lifted absolute inset-x-0 top-full border-b">
             <div className="max-h-[calc(100dvh-3rem)] overflow-y-auto px-3 pt-1 pb-3">
               {navigationList}
               <div className="mt-2 border-t pt-2">
@@ -160,7 +160,7 @@ function Navigation({ items, current, collapsed }: { items: readonly NavigationI
         const label = t(root.navLabel ?? root.label)
         const link = <a href={`#${href}`} aria-current={active ? 'page' : undefined}
           className={cn(
-            'text-sidebar-foreground/85 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring/50 group/nav relative flex h-8.5 min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-[13px] outline-none transition-colors focus-visible:ring-3 pointer-coarse:h-10',
+            'text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground group/nav relative flex h-9 min-w-0 items-center gap-2.5 rounded-[10px] px-2.5 text-[13px] outline-none transition-[color,background-color,box-shadow] duration-150 focus-visible:shadow-focus pointer-coarse:h-11',
             active && 'bg-sidebar-accent text-sidebar-accent-foreground shadow-soft font-medium',
             collapsed && 'justify-center px-0',
           )}>

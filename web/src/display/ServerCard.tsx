@@ -42,7 +42,7 @@ export const ServerCard = memo(function ServerCard({ server, unavailable, probes
   const sampleTime = server.metrics_sampled_at ? time(server.metrics_sampled_at / 1000) : '采样时间未知'
   const offline = !server.online && !unavailable
   return <a data-slot="server-card" data-offline={offline || undefined} href={serverHref(server)} aria-label={`${server.name}，${state.label}，查看详情`}
-    className={cn(surface, 'group/card hover:border-foreground/25 focus-visible:ring-ring relative flex w-full min-w-0 flex-col overflow-hidden text-left outline-none focus-visible:ring-2', offline && 'bg-muted/30')}>
+    className={cn(surface, 'group/card hover:border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] hover:shadow-lifted focus-visible:shadow-focus relative flex w-full min-w-0 flex-col overflow-hidden text-left outline-none transition-[border-color,box-shadow,translate] duration-200 hover:-translate-y-0.5 motion-reduce:hover:translate-y-0', offline && 'bg-muted/30')}>
     <div data-slot="card-header" className="flex min-w-0 items-center gap-2 px-3.5 pt-2.5 pb-2">
       <span className={cn('size-2 flex-none rounded-full', toneFill[state.tone])} title={state.label} />
       <strong className="min-w-0 flex-1 truncate text-sm font-semibold" title={[server.name, asset.group_name, ...asset.tags].filter(Boolean).join(' · ')}>{server.name}</strong>
