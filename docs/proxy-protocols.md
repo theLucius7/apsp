@@ -5,6 +5,7 @@
 | 协议 | 节点监听 | 证书与凭据 |
 |---|---|---|
 | VLESS + Reality | TCP | 保留原有 X25519、UUID 与 short ID，不需要申请证书 |
+| VLESS + 隧道 | TCP（WS / HTTPUpgrade，仅回环） | 无 TLS 的源站，由 Cloudflare Tunnel 等转发；客户端用 TLS 连边缘，隧道主机名作 SNI 和 Host。目前只来自运行接管，不能新建，见 [ADR 0109](adr/0109-vless-tunnel-origins.md) |
 | Hysteria2 | UDP | TLS 证书，每个授权独立密码 |
 | Shadowsocks 2022 | TCP + UDP | AES-128-GCM 或 AES-256-GCM，节点密钥与授权密钥自动生成 |
 | TUIC v5 | UDP | TLS 证书，每个授权独立 UUID 和密码，ALPN 为 h3 |
@@ -57,7 +58,7 @@ Hysteria2、TUIC、AnyTLS、Naive 的“证书域名”必须是证书覆盖的 
 
 新增协议统一使用 `?format=singbox`，界面默认复制此格式；需要支持对应协议的 sing-box 客户端，建议与固定运行时 1.14.2 对齐。Naive 客户端还需包含 `with_naive_outbound` 及对应平台 Cronet 支持，Snell 客户端必须支持 v6。服务端支持不代表所有客户端或操作系统发行包都支持全部出站。
 
-原有链接订阅和订阅令牌保持不变；`?format=links` 仅支持 Reality。混合订阅含新增协议时返回 409，提示切换 JSON，不静默省略节点、不生成非标准 Snell 链接。手动证书的公共链随 JSON 下发，客户端不启用 `insecure`。订阅仍仅含已经成功应用且健康的版本及当前有效授权。
+原有链接订阅和订阅令牌保持不变；`?format=links` 支持 Reality 和 VLESS 隧道（`security=tls`）。混合订阅含新增协议时返回 409，提示切换 JSON，不静默省略节点、不生成非标准 Snell 链接。手动证书的公共链随 JSON 下发，客户端不启用 `insecure`。订阅仍仅含已经成功应用且健康的版本及当前有效授权。
 
 在“代理用户 → 订阅链接”可查看已授权、当前资格与可用节点、套餐额度和到期状态，并复制订阅地址、显式预览、复制完整配置或下载文件。未部署、节点停用、套餐未开始/到期/额度用尽时会说明原因。内容获取复用公开订阅的同一生成逻辑；读取失败不继续提供旧配置，复制/下载时重新检查。
 

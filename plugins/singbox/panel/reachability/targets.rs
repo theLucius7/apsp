@@ -182,7 +182,17 @@ struct ImportedRow {
     server_name: String,
 }
 
+/// A plaintext VLESS listener over HTTP sits behind a tunnel or CDN; clients
+/// enter at the edge, so its own host and port are not an entrance to probe.
+fn tunnel_origin(protocol: &str, tls: Option<i64>, network: Option<&str>) -> bool {
+    protocol == "vless-tunnel"
+        || (protocol == "vless" && tls == Some(0) && matches!(network, Some("ws" | "httpupgrade")))
+}
+
 fn native_candidate(row: NativeRow) -> Option<Candidate> {
+    if tunnel_origin(&row.protocol, None, None) {
+        return None;
+    }
     let host = normalize_host(&row.public_host)?;
     let port = row
         .public_port
@@ -217,6 +227,13 @@ fn imported_candidate(row: ImportedRow) -> Option<Candidate> {
     let port = first_port(&display["public_port"])?;
     let protocol = display["protocol"].as_str()?.to_owned();
     let summary = &display["protocol_summary"];
+    if tunnel_origin(
+        &protocol,
+        summary["tls"].as_i64(),
+        summary["network"].as_str(),
+    ) {
+        return None;
+    }
     // Only the plaintext display summary is read; the encrypted archive stays closed.
     let sni = summary["reality_sni"].as_str().map(str::to_owned);
     let reality = (protocol == "vless" && summary["tls"].as_i64() == Some(2)) || sni.is_some();
@@ -322,6 +339,23 @@ mod tests {
             server_id: 3,
             server_name: "主机".into(),
         }
+    }
+
+    #[test]
+    fn tunnel_origins_are_not_probed() {
+        assert!(native_candidate(native("vless-tunnel")).is_none());
+        assert!(native_candidate(native("vless-reality")).is_some());
+        let origin = |tls: i64, network: &str| {
+            imported(
+                json!({"public_host":"origin.example.com","public_port":"21443","protocol":"vless",
+                "protocol_summary":{"tls":tls,"network":network}}),
+            )
+        };
+        assert!(imported_candidate(origin(0, "ws")).is_none());
+        assert!(imported_candidate(origin(0, "httpupgrade")).is_none());
+        // TLS at the listener or a raw TCP listener is still a public entrance.
+        assert!(imported_candidate(origin(1, "ws")).is_some());
+        assert!(imported_candidate(origin(0, "tcp")).is_some());
     }
 
     #[test]

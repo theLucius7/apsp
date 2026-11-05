@@ -547,7 +547,7 @@ pub async fn preview(
         && snapshot
             .nodes
             .iter()
-            .all(|node| node.protocol_config.is_reality())
+            .all(|node| node.protocol_config.is_vless())
     {
         formats.push("links");
     }

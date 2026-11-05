@@ -167,7 +167,7 @@ pub fn compile_client(nodes: &[Node], user_id: i64) -> Result<String, CompileErr
 pub fn subscription_links(nodes: &[Node], user_id: i64) -> Result<String, CompileError> {
     let accesses = authorized_nodes(nodes, user_id)?;
     for (node, _) in &accesses {
-        if !node.protocol_config.is_reality() {
+        if !node.protocol_config.is_vless() {
             return Err(CompileError::RequiresJson {
                 node_id: node.id,
                 protocol: node.protocol_config.kind().into(),
@@ -178,7 +178,20 @@ pub fn subscription_links(nodes: &[Node], user_id: i64) -> Result<String, Compil
         let host = unbracket_host(&node.public_host);
         let host = if host.contains(':') { format!("[{host}]") } else { host.to_string() };
         let flow = if node.settings.reality.flow == RealityFlow::Vision { "&flow=xtls-rprx-vision" } else { "" };
-        let transport = node.settings.transport.link_parameters().into_iter()
+        let mut parameters = node.settings.transport.link_parameters();
+        if matches!(node.protocol_config, ProtocolConfig::VlessTunnel) {
+            // The edge routes by Host, so the tunnel hostname is always explicit.
+            if !parameters.iter().any(|(key, _)| *key == "host") {
+                parameters.push(("host", node.sni.clone()));
+            }
+            let transport = parameters.into_iter()
+                .map(|(key,value)| format!("&{key}={}",percent_encode(&value))).collect::<String>();
+            return format!(
+                "vless://{}@{}:{}?encryption=none&security=tls&sni={}&fp=chrome{transport}#{}",
+                access.uuid, host, node.public_port(), percent_encode(&node.sni), percent_encode(&node.name)
+            );
+        }
+        let transport = parameters.into_iter()
             .map(|(key,value)| format!("&{key}={}",percent_encode(&value))).collect::<String>();
         format!(
             "vless://{}@{}:{}?encryption=none{flow}&security=reality&sni={}&fp={}&pbk={}&sid={}{transport}#{}",

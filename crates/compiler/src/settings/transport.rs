@@ -57,10 +57,11 @@ impl NodeTransport {
         if self.is_tcp() {
             return Ok(());
         }
-        if !node.protocol_config.is_reality() {
-            return Err(fail("仅 VLESS + Reality 支持额外传输设置"));
+        if !node.protocol_config.is_vless() {
+            return Err(fail("仅 VLESS（Reality 或隧道）支持额外传输设置"));
         }
-        if node.settings.reality.flow != RealityFlow::None {
+        // Vision flow belongs to Reality; a tunnel node keeps Reality settings at their defaults.
+        if node.protocol_config.is_reality() && node.settings.reality.flow != RealityFlow::None {
             return Err(fail(
                 "WebSocket、HTTPUpgrade 和 gRPC 传输必须关闭 Vision 流控",
             ));

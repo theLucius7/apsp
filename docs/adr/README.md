@@ -143,6 +143,7 @@
 - [ADR 0106：成员门户的线路目录与探针](0106-member-lines-and-probes.md)：代理用户登录后查看 Nexus 线路的入口、落地、类型、状态与三网延迟；探针按主机显示测得的 ASN、用途类型与风险标记，家宽标为运营方声明，不显示地址、城市与坐标
 - [ADR 0107：每位管理员各自的 Passkey](0107-administrator-passkeys.md)：具名管理员绑定、登录和再次验证都用本人的 Passkey，登录页按登录名验证
 - [ADR 0108：统一的再次验证](0108-unified-reauthentication.md)：开通链接、本人 Passkey、二步验证和修改密码都改用五分钟证明与共用的「再次验证身份」，Passkey 或密码均可
+- [ADR 0109：隧道后的 VLESS 源站](0109-vless-tunnel-origins.md)：新增 `vless-tunnel`，无 TLS 的源站只能监听回环，客户端用 TLS 连边缘并以隧道主机名作 SNI/Host；运行接管可迁 Alice 等 CF 源站，可达性监测不再误报源站端口
 
 
 ## 界面重组（2026-10-25）

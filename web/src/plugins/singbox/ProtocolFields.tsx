@@ -11,6 +11,14 @@ export const protocolNames: Record<string, string> = {
   tuic: 'TUIC v5', anytls: 'AnyTLS', naive: 'Naive（HTTP/2）', 'snell-v6': 'Snell v6',
 }
 
+// Protocols that appear on existing nodes but are not offered for creation:
+// tunnel origins arrive through the Nexus takeover (ADR 0109).
+const displayOnly: Record<string, string> = { 'vless-tunnel': 'VLESS + 隧道（WS）' }
+
+export function protocolName(protocol: string) {
+  return protocolNames[protocol] ?? displayOnly[protocol] ?? protocol
+}
+
 export function protocolRequest(form: FormData) {
   const type = String(form.get('protocol'))
   if (type === 'shadowsocks2022') return { type, method: String(form.get('method')) }

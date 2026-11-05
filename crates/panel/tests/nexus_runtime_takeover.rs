@@ -1019,3 +1019,100 @@ async fn retired_line_leaves_the_running_host_and_the_bridge(pool: PgPool) -> Re
     assert_eq!(audit, 1);
     Ok(())
 }
+
+/// A plain VLESS listener behind a tunnel (ADR 0109): archived with the legacy
+/// row's own transport, previewed and prepared like any preserved node.
+async fn tunnel_fixture(panel: &TestPanel, legacy: i64, archived: Value) -> Result<Value> {
+    let pool = &panel.state.pool;
+    let server: i64 = sqlx::query_scalar(
+        "INSERT INTO servers(name) VALUES('TEST_ONLY tunnel host') RETURNING id",
+    )
+    .fetch_one(pool)
+    .await?;
+    sqlx::query("INSERT INTO singbox_nexus_node_imports VALUES('fixture',repeat('a',64),repeat('b',64),1,1,1) ON CONFLICT DO NOTHING").execute(pool).await?;
+    let mut node = Node {
+        id: legacy,
+        name: format!("TEST_ONLY tunnel {legacy}"),
+        port: 21443,
+        public_host: "tunnel.example.invalid".into(),
+        sni: "tunnel.example.invalid".into(),
+        private_key: String::new(),
+        public_key: String::new(),
+        short_id: String::new(),
+        users: vec![],
+        enabled: true,
+        settings: Default::default(),
+        protocol_config: ProtocolConfig::VlessTunnel,
+    };
+    node.settings.listen = "127.0.0.1".into();
+    node.settings.public_port = Some(21443);
+    node.settings.transport = serde_json::from_value(json!({"type":"ws","path":"/TEST_ONLY"}))?;
+    let original = json!({"node":{"id":legacy,"name":node.name,"host":node.public_host,"type":"vless","protocol_settings":archived,"rate_time_enable":0}});
+    let credential =
+        credentials::store_generated(pool, "TEST_ONLY tunnel", "backup", original).await?;
+    sqlx::query("INSERT INTO singbox_nexus_nodes(source_id,legacy_node_id,legacy_machine_id,legacy_host_id,server_id,credential_id,display) VALUES('fixture',$4,40,20,$1,$2,$3)")
+        .bind(server).bind(credential).bind(json!({"listen_port":"21443","rate":"1","groups":[{"id":1,"name":"Fixture"}]})).bind(legacy).execute(pool).await?;
+    let configuration = json!({"inbounds":[{"type":"vless","tag":"vless-in","listen":"127.0.0.1","listen_port":21443,"multiplex":{"enabled":true},
+        "transport":{"type":"ws","path":"/TEST_ONLY"},"users":[{"name":"placeholder","uuid":"00000000-0000-0000-0000-000000000000"}]}],
+        "outbounds":[{"type":"direct","tag":"direct"},{"type":"block","tag":"block"}],"route":{"final":"direct"}});
+    Ok(
+        json!({"source_id":"fixture","server_id":server,"nodes":[{"legacy_node_id":legacy,"preserved":{"node":node,"configuration":configuration}}]}),
+    )
+}
+
+#[sqlx::test]
+async fn tunnel_origins_are_prepared_only_when_the_archive_matches(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let matching = json!({"tls":0,"network":"ws","network_settings":{"path":"/TEST_ONLY"}});
+    let payload = tunnel_fixture(&panel, 66, matching).await?;
+    let preview = ok(post(&panel, &cookie, "/preview", json!({"payload":payload})).await?).await?;
+    assert_eq!(preview["conflicts"], json!([]));
+    let prepared = ok(post(
+        &panel,
+        &cookie,
+        "/prepare",
+        json!({"payload":payload,"expected_digest":preview["digest"]}),
+    )
+    .await?)
+    .await?;
+    assert_eq!(prepared["state"], "prepared");
+    let (protocol, listen): (String, String) = sqlx::query_as(
+        "SELECT protocol,settings->>'listen' FROM nodes WHERE id=(SELECT node_id FROM singbox_nexus_runtime_nodes)",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        (protocol.as_str(), listen.as_str()),
+        ("vless-tunnel", "127.0.0.1")
+    );
+    // Listener TLS, another transport or path, or another hostname in the
+    // archive means the snapshot no longer describes that legacy node.
+    for (legacy, archived) in [
+        (
+            67,
+            json!({"tls":1,"network":"ws","network_settings":{"path":"/TEST_ONLY"}}),
+        ),
+        (
+            68,
+            json!({"tls":0,"network":"httpupgrade","network_settings":{"path":"/TEST_ONLY"}}),
+        ),
+        (
+            69,
+            json!({"tls":0,"network":"ws","network_settings":{"path":"/other"}}),
+        ),
+    ] {
+        let payload = tunnel_fixture(&panel, legacy, archived.clone()).await?;
+        let preview =
+            ok(post(&panel, &cookie, "/preview", json!({"payload":payload})).await?).await?;
+        assert!(
+            preview["conflicts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c.as_str().unwrap().contains(&legacy.to_string())),
+            "{archived}: {preview}"
+        );
+    }
+    Ok(())
+}

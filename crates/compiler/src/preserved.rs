@@ -39,6 +39,14 @@ fn fail(node: &Node, reason: &'static str) -> CompileError {
 fn no_external_files(value: &Value) -> bool {
     match value {
         Value::Object(fields) => fields.iter().all(|(key, value)| {
+            // An HTTP transport's `path` is a request path, not a file.
+            if key == "transport"
+                && let Value::Object(transport) = value
+            {
+                return transport
+                    .iter()
+                    .all(|(key, value)| key == "path" || no_external_files(value));
+            }
             !((key.ends_with("_path") || key == "path")
                 && value.as_str().is_some_and(|s| !s.is_empty()))
                 && no_external_files(value)
@@ -181,6 +189,15 @@ pub fn compile_preserved_server_with(
                 ));
             }
         }
+        if matches!(node.protocol_config, ProtocolConfig::VlessTunnel)
+            && (inbound.get("transport") != expected.get("transport")
+                || inbound.get("tls").is_some_and(|tls| !tls.is_null()))
+        {
+            return Err(fail(
+                node,
+                "preserved tunnel listener differs from the node model",
+            ));
+        }
         if node.protocol_config.is_reality() {
             for key in ["private_key", "short_id"] {
                 if inbound["tls"]["reality"][key] != expected["tls"]["reality"][key] {
@@ -277,6 +294,7 @@ pub fn compile_preserved_server_with(
                         ProtocolConfig::VlessReality => {
                             crate::protocols::reality_identity(node, name, user.uuid)
                         }
+                        ProtocolConfig::VlessTunnel => json!({"name":name,"uuid":user.uuid}),
                         _ => json!({"name":name,"password":user.credential}),
                     }
                 })
