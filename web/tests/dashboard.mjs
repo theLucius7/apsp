@@ -117,14 +117,17 @@ try {
     await page.locator('[data-slot=fleet] tbody tr').first().waitFor()
     await page.getByRole('button', { name: '筛选与视图', exact: true }).click()
     assert.equal(await page.getByLabel('排序', { exact: true }).inputValue(), 'cpu')
+    // An administrator who may read the server opens its console page, which shows the same monitoring panel.
     await page.getByRole('link', { name: '查看 东京 · 入口 详情', exact: true }).click()
-    assert(page.url().endsWith('/#/dashboard/1'))
-    await page.getByRole('link', { name: '返回服务器看板', exact: true }).click()
+    await page.waitForURL(/#\/servers\/1$/)
+    await page.locator('[data-slot=server-monitor]').waitFor()
+    await page.goto(`${origin}/#/dashboard`)
     await page.locator('[data-slot=fleet] tbody tr').first().waitFor()
     await installControlCenterFixtures(page)
+    // The old board address of one server leads there too.
     await page.goto(`${origin}/#/overview/1`)
-    await page.getByRole('link', { name: '返回服务器看板', exact: true }).click()
-    assert(page.url().endsWith('/#/dashboard'))
+    await page.waitForURL(/#\/servers\/1$/)
+    await page.goto(`${origin}/#/dashboard`)
     await page.locator('[data-slot=fleet] tbody tr').first().waitFor()
     // Polling stays automatic; it does not need an exposed pause control.
     await settle()

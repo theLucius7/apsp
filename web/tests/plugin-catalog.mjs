@@ -68,6 +68,13 @@ try {
         // Once enabled, the server's plugin tab also reads the plugin business for that server only.
         else if (path === '/api/plugins/sing-box/servers/2/deployments') value = { status: null, history: [] }
         else if (path === '/api/plugins/sing-box/servers/2/runtime-operations') value = { supported: false, online: false, retiring: false, operations: [] }
+        // Enabling shows the deployment tools at once, which read the operations view.
+        else if (path === '/api/plugins/sing-box/servers/2/operations-view') value = {
+          runtime: { supported_versions: [], selected_version: 'TEST_ONLY', reason: 'TEST_ONLY 未读取真实运行时版本。', compatibility_metadata: { upstream_release: 'https://example.com/TEST_ONLY', upstream_commit: 'TEST_ONLY', protocols: [], acceptance_scope: 'TEST_ONLY 只读夹具' } },
+          preflight: { id: null, ready: false, confirmed: false, device_checks_pending: false, checks: [] },
+          drift: { state: 'unknown', target_revision: null, applied_revision: null, last_observed_at: null, reason: 'TEST_ONLY 无真实配置检查点。', checkpoint_supported: false, checkpoint: { state: 'unknown', observed_at: null, reason: 'TEST_ONLY 未读取进程或文件。' } },
+          changes: [], history: [], paths: [], hop_observations: [], path_diagnosis: 'TEST_ONLY 无真实路径证据。',
+        }
         else if (path === '/api/plugins/sing-box/nodes') value = []
         else if (path === '/api/servers/2/node-quality/reports') value = { plugin_ready: false, plugin_reason: '测试安全门禁', full_ready: false, full_reason: '测试安全门禁', cancel_supported: false, reports: [] }
         else if (path === '/api/servers/2/diagnostics') value = { cancel_supported: false, plugins: [{ plugin: 'tcpquality', title: 'TCP 连接诊断', version: 'TEST_ONLY', ready: false, reason: '测试安全门禁' }], reports: [] }
@@ -165,9 +172,10 @@ try {
       await dialog.getByRole('button', { name: '前往服务器管理' }).click()
       await page.waitForURL(`${origin}/#/servers/2${destination}`)
       if (plugin === 'sing-box') {
+        // The server's own page: one sing-box card for it, under its name.
         await page.getByRole('button', { name: '启用并安装 sing-box', exact: true }).waitFor()
-        assert.equal(await page.locator('tbody tr').count(), 1)
-        assert.equal(await page.getByRole('link', { name: metadata.name, exact: true }).count(), 1)
+        assert.equal(await page.getByRole('button', { name: '启用并安装 sing-box', exact: true }).count(), 1)
+        await page.getByRole('heading', { name: metadata.name, exact: true }).waitFor()
       } else {
         for (const [view, buttons] of [['节点验机', ['日常检查', '完整验机']], ['TCP 诊断', ['开始 TCP 诊断']]]) {
           await page.getByRole('navigation', { name: '线路诊断' }).getByRole('link', { name: view, exact: true }).click()
@@ -181,7 +189,7 @@ try {
     assert.equal(reads.includes('/api/plugins/sing-box/servers'), false)
     metadataFailure = true
     // The server header has its own refresh; this one belongs to the sing-box panel.
-    await page.locator('section').filter({ has: page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }) }).getByRole('button', { name: '刷新', exact: true }).click()
+    await page.locator('section').filter({ has: page.getByRole('heading', { name: /^sing-box/ }) }).getByRole('button', { name: '刷新', exact: true }).click()
     await page.getByText('PLUGIN_STATE_UNKNOWN', { exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: '启用并安装 sing-box', exact: true }).isDisabled(), true)
     metadataFailure = false

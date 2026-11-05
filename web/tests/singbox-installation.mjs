@@ -139,10 +139,10 @@ try {
     const beforeSingle = reads.length
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1/plugins`)
-    await page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }).waitFor()
+    // One card for this server's sing-box, not a one-row table.
+    await page.getByRole('heading', { name: /^sing-box/ }).waitFor()
     await page.getByText('已安装并运行', { exact: true }).first().waitFor()
-    const settings = page.locator('section').filter({ has: page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }) })
-    assert.equal(await settings.locator('tbody tr').count(), 1)
+    assert.equal(await page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }).count(), 0)
     assert.equal(await page.getByRole('link', { name: otherName, exact: true }).count(), 0)
     assert.equal(await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '插件', exact: true }).getAttribute('aria-current'), 'page')
     assert(reads.slice(beforeSingle).includes(`${prefix}/1`))

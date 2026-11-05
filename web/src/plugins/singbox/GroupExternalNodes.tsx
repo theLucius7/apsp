@@ -39,8 +39,8 @@ export default function GroupExternalNodes({ selected, held, candidates, disable
     {rows.map(entry => {
       const chosen = selected.find(value => value.external_node_id === entry.external_node_id)
       const selectable = Boolean(chosen) || eligibleExternalSelection(entry)
-      return <div key={entry.external_node_id} className="grid items-center gap-2 sm:grid-cols-[minmax(0,1fr)_11rem]">
-        <label className="flex cursor-pointer items-center gap-3 py-1.5 text-sm"><Checkbox checked={Boolean(chosen)} disabled={disabled || !selectable} onCheckedChange={checked => toggle(entry, checked === true)} /><span className="min-w-0">{entry.name}<small className="text-muted-foreground mt-0.5 block truncate text-xs">{entry.source_name}{entry.protocol ? ` · ${entry.protocol}` : ''}{!entry.available ? ` · ${externalReasons[entry.reason ?? ''] ?? '当前不可用'}` : entry.source_last_error ? ' · 保留上次成功版本' : ''}</small></span></label>
+      return <div key={entry.external_node_id} className="grid grid-cols-[minmax(0,1fr)] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_11rem]">
+        <label className="flex min-w-0 cursor-pointer items-center gap-3 py-1.5 text-sm"><Checkbox checked={Boolean(chosen)} disabled={disabled || !selectable} onCheckedChange={checked => toggle(entry, checked === true)} /><span className="min-w-0">{entry.name}<small className="text-muted-foreground mt-0.5 block truncate text-xs">{entry.source_name}{entry.protocol ? ` · ${entry.protocol}` : ''}{!entry.available ? ` · ${externalReasons[entry.reason ?? ''] ?? '当前不可用'}` : entry.source_last_error ? ' · 保留上次成功版本' : ''}</small></span></label>
         {chosen && <NativeSelect className="w-full" aria-label={`${entry.name} 的更新方式`} value={chosen.update_mode} disabled={disabled} onChange={event => mode(entry, event.target.value)}><option value="follow_node">跟随节点更新</option><option value="pinned">固定当前版本</option></NativeSelect>}
       </div>
     })}

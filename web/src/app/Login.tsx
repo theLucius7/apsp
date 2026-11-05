@@ -39,12 +39,13 @@ export default function Login({ onLogin, notice }: { onLogin: () => void; notice
     void action.run(() => loginPasskey('/api/login/passkey', true, { login_name: name || 'admin' }), onLogin)
   }
 
-  return <main data-slot="login-page" className="bg-background relative flex min-h-dvh flex-col items-center justify-center px-5 py-10">
+  return <main data-slot="login-page" className="bg-background relative flex min-h-dvh flex-col items-center justify-center px-5 py-10 [background-image:var(--ambient)]">
     <LanguageSelect className="absolute top-3 right-3" />
     <div className="w-full max-w-sm">
-      <Brand className="mb-5" />
-      <h1 className="mb-3 text-base font-semibold">{t('欢迎回来')}</h1>
-      <div className="bg-card rounded-lg border p-5">
+      <Brand className="mb-8" />
+      <h1 className="mb-1 text-2xl font-semibold tracking-tight">{t('欢迎回来')}</h1>
+      <p className="text-muted-foreground mb-5 text-sm">{t('登录以管理你的代理网络。')}</p>
+      <div className="bg-card shadow-lifted rounded-2xl border p-6">
         <ErrorNotice message={action.error || notice} />
         <form ref={form} onSubmit={submit} className="grid">
           <Field label="管理员登录名"><Input name="login_name" required defaultValue="admin" autoComplete="username" disabled={action.busy} /></Field>

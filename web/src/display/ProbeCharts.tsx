@@ -11,8 +11,8 @@ import { buttonVariants } from '@/components/ui/button'
 import { NativeSelect } from '@/components/ui/native-select'
 import { SegmentedButton, SegmentedGroup } from '@/components/segmented'
 
-function History({ id, probe, now, minutes, unavailable }: { id: number; probe: Probe; now: number; minutes: number; unavailable: boolean }) {
-  const results = useDashboardPoll<ProbeResult[]>(`/api/dashboard/servers/${id}/probe-results?probe_id=${encodeURIComponent(probe.id)}&hours=${minutes / 60}`, 15_000, false)
+function History({ base, probe, now, minutes, unavailable }: { base: string; probe: Probe; now: number; minutes: number; unavailable: boolean }) {
+  const results = useDashboardPoll<ProbeResult[]>(`${base}/probe-results?probe_id=${encodeURIComponent(probe.id)}&hours=${minutes / 60}`, 15_000, false)
   const points = (results.data ?? []).filter(result => result.probe_id === probe.id && result.sampled_at >= now - minutes * 60_000 && result.sampled_at <= now).sort((a, b) => a.sampled_at - b.sampled_at)
   const latest = points[points.length - 1]
   const state = probeState(probe, latest, now, unavailable || Boolean(results.error))
@@ -29,8 +29,9 @@ function History({ id, probe, now, minutes, unavailable }: { id: number; probe: 
   </>
 }
 
-export default function ProbeCharts({ id, now, unavailable, publicView }: { id: number; now: number; unavailable: boolean; publicView: boolean }) {
-  const definitions = useDashboardPoll<Probe[]>(`/api/dashboard/servers/${id}/probes`, 30_000, false)
+/** `settings` links to where an administrator configures the probes; the public board has none. */
+export default function ProbeCharts({ base, now, unavailable, settings }: { base: string; now: number; unavailable: boolean; settings?: string }) {
+  const definitions = useDashboardPoll<Probe[]>(`${base}/probes`, 30_000, false)
   const [minutes, setMinutes] = useState(60)
   const [selected, setSelected] = useState('')
   const probes = definitions.data ?? []
@@ -39,10 +40,9 @@ export default function ProbeCharts({ id, now, unavailable, publicView }: { id: 
   return <section data-slot="probes" className="flex flex-col gap-3">
     <SectionHeading icon={NetworkIcon} title="延迟与丢包"><SegmentedGroup aria-label="拨测时间范围" className="max-sm:*:flex-1">{[[60, '1 小时'], [360, '6 小时'], [1440, '24 小时']].map(([value, label]) => <SegmentedButton key={value} aria-pressed={minutes === value} onClick={() => setMinutes(Number(value))}>{label}</SegmentedButton>)}</SegmentedGroup></SectionHeading>
     {definitions.error && <DisplayNotice tone="error" onRetry={definitions.reload}>拨测配置读取失败。</DisplayNotice>}
-    {definitions.loading && !definitions.data ? <div className={empty} role="status">正在读取拨测配置…</div> : definitions.error && !definitions.data ? <div className={cn(surface, empty)}>暂时无法读取拨测配置</div> : !probe ? <div className={cn(surface, empty)}>尚无已配置的拨测项目{!publicView && <a className={buttonVariants({ size: 'sm' })} href={`#/servers/${id}`}>前往后台配置拨测</a>}</div> : <>
+    {definitions.loading && !definitions.data ? <div className={empty} role="status">正在读取拨测配置…</div> : definitions.error && !definitions.data ? <div className={cn(surface, empty)}>暂时无法读取拨测配置</div> : !probe ? <div className={cn(surface, empty)}>尚无已配置的拨测项目{settings && <a className={buttonVariants({ size: 'sm', variant: 'outline' })} href={settings}>配置拨测</a>}</div> : <>
       <label className="text-muted-foreground flex min-w-0 items-center gap-3 text-sm">拨测目标<NativeSelect aria-label="拨测目标" className="w-[min(400px,75%)]" value={probe.id} onChange={event => setSelected(event.target.value)}>{probes.map(item => <option key={item.id} value={item.id}>{networkLabel(item)} · {item.monitor?.region || '地区未配置'} · {item.carrier ? `${item.carrier} · ` : ''}{item.name}{item.enabled ? '' : '（已暂停）'}</option>)}</NativeSelect></label>
-      <History key={`${probe.id}/${minutes}`} id={id} probe={probe} now={now} minutes={minutes} unavailable={unavailable || Boolean(definitions.error)} />
-      <p className="text-muted-foreground my-1 text-xs leading-relaxed">由服务器向配置的目标发起检测，每轮 4 次。ICMP 显示回显丢包率，TCP 显示连接失败率；延迟为成功响应的平均值。无响应为 100%，检测失败或缺少采样保留空缺。</p>
+      <History key={`${probe.id}/${minutes}`} base={base} probe={probe} now={now} minutes={minutes} unavailable={unavailable || Boolean(definitions.error)} />
     </>}
   </section>
 }

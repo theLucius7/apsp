@@ -133,7 +133,7 @@ try {
       const card = page.locator('[data-slot=server-list-card]').first()
       await card.waitFor()
       assert.equal(await card.getByRole('progressbar', { name: /处理器使用率/ }).count(), 1, 'Cards keep the load meters')
-      assert.equal(await card.getByText('本期观测 / 额度', { exact: true }).count(), 0, 'Traffic is optional on phones')
+      assert.equal(await card.getByText('本期流量', { exact: true }).count(), 0, 'Traffic is optional on phones')
       assert.equal(await card.getByText('成本 / 到期', { exact: true }).count(), 0, 'Cost is optional on phones')
       await toolbar(page).getByRole('button', { name: '更多筛选', exact: true }).click()
       const drawer = page.getByRole('dialog', { name: '更多筛选' })
@@ -152,7 +152,7 @@ try {
       await view.getByRole('group', { name: '卡片显示' }).getByRole('checkbox', { name: '流量' }).check()
       await view.getByRole('button', { name: '完成', exact: true }).click()
       await view.waitFor({ state: 'hidden' })
-      await card.getByText('本期观测 / 额度', { exact: true }).waitFor()
+      await card.getByText('本期流量', { exact: true }).waitFor()
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'No horizontal scroll')
       assert.deepEqual(errors, [])
       summary.push({ scenario: 'toolbar-phone' })
@@ -175,7 +175,8 @@ try {
             input: box('[data-slot=server-toolbar] input').height,
             checkbox: box('[data-slot=checkbox]').height,
             link: box('[data-slot=sidebar] nav a').height,
-            stat: parseFloat(getComputedStyle(document.querySelector('[data-slot=stat]')).paddingTop),
+            // The list's own header row: the server list no longer opens with stat tiles.
+            stat: parseFloat(getComputedStyle(document.querySelector('[data-slot=server-toolbar]')).paddingTop),
             cell: parseFloat(getComputedStyle(document.querySelector('tbody td')).paddingTop),
           }
         })

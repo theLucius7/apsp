@@ -14,6 +14,12 @@ const translatedAttributeSources = new WeakMap<Element, Map<string, string>>()
 // messages intentionally fall back to their source text when no translation is
 // available.
 const english: Record<string, string> = {
+  // Server monitoring panel, server pages and overview (2026-11-05 redesign).
+  '实时状态': 'Live status', '实时网络': 'Live network', '上行': 'Upload', '下行': 'Download', '本期流量': 'Traffic this cycle', '额度已用尽': 'Quota used up', '观测不完整': 'Incomplete observation',
+  '等待采样': 'Waiting for samples', '不限': 'Unlimited', '操作系统': 'Operating system', '常规': 'General', '设置已保存': 'Settings saved', '此服务器的节点': 'Nodes on this server',
+  '目标版本': 'Target revision', '已应用版本': 'Applied revision', '管理节点': 'Manage nodes', '配置拨测': 'Configure probes',
+  '续期': 'Renew', '今天': 'Today', '部署历史': 'Deployment history', '各服务器的 sing-box': 'sing-box on each server', '网络配置（实验）': 'Network configuration (experimental)', '自动化与维护（实验）': 'Automation and maintenance (experimental)',
+  '负载（1 / 5 / 15 分钟）': 'Load (1 / 5 / 15 min)', '登录以管理你的代理网络。': 'Sign in to manage your proxy network.', '看板已隐藏': 'Hidden from dashboard',
   // Connection state, account menu and the sign-in page (ADR 0102).
   '专属地址': 'Own address', '用户专属地址': 'Personal addresses', '登录地址': 'Sign-in address', '订阅链接': 'Subscription link', '订阅详情': 'Subscription details', '复制订阅链接': 'Copy subscription link', '权限与套餐': 'Permissions and package', '单独授权': 'Direct grants', '流量明细': 'Traffic details', '诊断与安全': 'Diagnostics and security', '添加 Cloudflare 账号': 'Add Cloudflare account', '验证并保存': 'Verify and save', '其他提供方': 'Other providers', 'DNS 账号': 'DNS accounts', '添加解析': 'Add record', '添加两条解析': 'Add both records', '解析记录': 'DNS records', '解析到': 'Points to', '添加账号': 'Add account', '添加 DNS 账号': 'Add DNS account', '连接 DNS 账号': 'Connect a DNS account', '先连接 DNS 账号': 'Connect a DNS account first', '还没有解析': 'No records yet', '管理记录': 'Manage records', '更多设置': 'More settings', '批量修改': 'Bulk edit', '立即同步': 'Sync now', '恢复同步': 'Resume sync', '暂停': 'Pause', '核对与历史': 'Check and history', '检查连接': 'Check connection', '解析操作': 'Record actions', '账号操作': 'Account actions', '这个页面显示时出错了': 'This page failed to display',
   '监控与设置': 'Monitoring and settings', '告警': 'Alerts', '线路检测': 'Line tests', '设置': 'Settings', '域名解析': 'DNS', '本节页面': 'Pages in this section', '显示实验与冻结功能': 'Show experimental and frozen features',

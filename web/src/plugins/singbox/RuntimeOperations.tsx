@@ -40,8 +40,8 @@ export default function RuntimeOperations({ serverId, status, deploymentError, g
     if (operation === 'retry_deployment' && !(currentStatus && currentStatus.last_result_rev === currentStatus.target_rev && currentStatus.last_error)) return
     void action.run(() => api(path, 'POST', { operation, expected_revision: operation === 'inspect' ? null : currentStatus?.target_rev }), () => { setConfirmation(null); resource.reload() }) }
   const failed = status && status.last_result_rev === status.target_rev && !!status.last_error
-  return <section data-slot="runtime-operations" className="py-4">
-    <PanelHeader className="px-0 pt-0 pb-3"><h3 className="text-sm font-semibold">运行时运维</h3>{snapshot && <Badge tone={snapshot.service === 'active' && snapshot.healthy ? 'good' : 'warm'}>{snapshot.service === 'active' ? '服务运行中' : snapshot.service === 'inactive' ? '服务已停止' : '服务状态未知'}</Badge>}</PanelHeader>
+  return <section data-slot="runtime-operations" className="pb-2">
+    <PanelHeader className="mb-3 px-0 pt-0 pb-2"><h3 className="text-sm font-semibold">运行时运维</h3>{snapshot && <Badge tone={snapshot.service === 'active' && snapshot.healthy ? 'good' : 'warm'}>{snapshot.service === 'active' ? '服务运行中' : snapshot.service === 'inactive' ? '服务已停止' : '服务状态未知'}</Badge>}</PanelHeader>
     <ErrorNotice message={resource.error || action.error} retry={resource.reload} />
     {resource.loading && !resource.data ? <Loading /> : <>
       {!resource.data?.supported && <p>此 Agent 尚不支持运行时运维，请先升级 Agent。</p>}

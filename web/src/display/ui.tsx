@@ -18,7 +18,7 @@ export const qualityText: Record<string, string> = { good: 'text-success', fair:
 export const qualityFill: Record<string, string> = { good: 'bg-success', fair: 'bg-info', warning: 'bg-warning', poor: 'bg-chart-5', danger: 'bg-destructive', empty: 'bg-muted-foreground/20' }
 
 /** Card surface used for every dashboard section; the same as the console's panels. */
-export const surface = 'bg-card text-card-foreground rounded-lg border'
+export const surface = 'bg-card text-card-foreground shadow-soft rounded-xl border'
 
 export function SectionHeading({ icon: Icon, title, children }: { icon: LucideIcon; title: string; children?: ReactNode }) {
   return <div className="flex items-center justify-between gap-3 max-sm:flex-col max-sm:items-stretch">
@@ -29,7 +29,7 @@ export function SectionHeading({ icon: Icon, title, children }: { icon: LucideIc
 
 export function DisplayNotice({ tone = 'warning', children, onRetry, retryLabel = '重试', role }: { tone?: 'warning' | 'error'; children: ReactNode; onRetry?: () => void; retryLabel?: string; role?: 'alert' | 'status' }) {
   const Icon = tone === 'error' ? CircleAlertIcon : TriangleAlertIcon
-  return <div data-slot="display-notice" role={role ?? (tone === 'error' ? 'alert' : undefined)} className={cn('flex items-start gap-2.5 rounded-lg border px-3.5 py-3 text-sm wrap-anywhere', tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-warning/30 bg-warning/5 text-warning')}>
+  return <div data-slot="display-notice" role={role ?? (tone === 'error' ? 'alert' : undefined)} className={cn('flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm wrap-anywhere', tone === 'error' ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-warning/30 bg-warning/5 text-warning')}>
     <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
     <span className="flex-1">{children}</span>
     {onRetry && <Button variant="link" size="xs" className="h-auto p-0 text-current underline" onClick={onRetry}>{retryLabel}</Button>}

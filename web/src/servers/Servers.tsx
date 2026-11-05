@@ -3,7 +3,7 @@ import type { ServerView } from './ServerToolbar'
 import { Fragment, useState } from 'react'
 import { AnimatePresence, m } from 'motion/react'
 import { api } from '../api'
-import { Badge, Confirm, Empty, ErrorNotice, Loading, Meter, PageHeader, Refresh, Stat, DialogPresence } from '../components'
+import { Badge, Confirm, Empty, ErrorNotice, Loading, Meter, PageHeader, Refresh, DialogPresence } from '../components'
 import { ago, bytes, navigate, percent, time } from '../format'
 import { useI18n } from '../i18n'
 import { useAction, useResource } from '../hooks'
@@ -15,12 +15,13 @@ import { assetDate, assetPrice, defaultAssets, expiryState, trafficSize } from '
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ChevronRightIcon, FilterXIcon, PencilIcon, PlusIcon, ServerCrashIcon, ServerIcon, Trash2Icon } from 'lucide-react'
+import { FilterXIcon, PencilIcon, PlusIcon, ServerCrashIcon, ServerIcon, Trash2Icon } from 'lucide-react'
 import { Notice, Panel, PanelTitle } from '@/components/panel'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Separator } from '@/components/ui/separator'
 import { barMotion } from '@/lib/motion'
 import { useMediaQuery } from '@/lib/use-media-query'
+import { Region } from '../display/Icon'
 
 type Lifecycle = 'maintenance' | 'draining' | 'active'
 // What each state means for the panel: maintenance (bounded by the chosen duration) and
@@ -56,6 +57,9 @@ export default function Servers() {
       && `${server.name} ${asset.region} ${asset.tags.join(' ')}`.toLocaleLowerCase().includes(view.query.toLocaleLowerCase())
   }).sort((left, right) => groupKey(left).localeCompare(groupKey(right), 'zh-CN') || (view.sort === 'name' ? left.name.localeCompare(right.name, 'zh-CN') : view.sort === 'cpu' ? (right.latest_metrics.cpu_percent ?? -1) - (left.latest_metrics.cpu_percent ?? -1) : view.sort === 'expiry' ? (left.asset_settings?.expires_at ?? Number.MAX_SAFE_INTEGER) - (right.asset_settings?.expires_at ?? Number.MAX_SAFE_INTEGER) : left.id - right.id))
   const column = (key: string) => view.columns.includes(key)
+  // Totals describe every server, whatever the filter shows.
+  const online = { total: allServers.length, up: allServers.filter(server => server.online).length,
+    down: allServers.filter(server => !server.online && server.device_public_key).length, pending: allServers.filter(server => !server.device_public_key).length }
   // Phones show cards with their own, shorter set of fields.
   const phone = !useMediaQuery('(min-width: 768px)')
   const cardColumn = (key: string) => view.cardColumns.includes(key)
@@ -85,9 +89,9 @@ export default function Servers() {
   const selectOne = (server: Server) => <Checkbox aria-label={`选择${server.name}`} checked={selected.includes(server.id)} onCheckedChange={checked => setSelected(checked === true ? [...new Set([...selected, server.id])] : selected.filter(id => id !== server.id))} />
   const identity = (server: Server) => {
     const asset = { ...defaultAssets, ...server.asset_settings }
-    return <button className="group/entity focus-visible:ring-ring/50 block max-w-full min-w-0 rounded-md border-0 bg-transparent p-0 text-left outline-none focus-visible:ring-3" onClick={() => navigate(`/servers/${server.id}`)}><strong className="group-hover/entity:text-primary block text-[13px] font-medium wrap-anywhere">{server.name}</strong><small className="text-muted-foreground mt-px block max-w-60 truncate text-xs">{[asset.region, asset.group_name, ...asset.tags].filter(Boolean).join(' · ') || (server.static_info.hostname ?? `服务器 #${server.id}`)}{asset.hidden ? ' · 展示隐藏' : ''}</small></button>
+    return <button className="group/entity focus-visible:ring-ring/50 flex max-w-full min-w-0 items-start gap-2 rounded-md border-0 bg-transparent p-0 text-left outline-none focus-visible:ring-3" onClick={() => navigate(`/servers/${server.id}`)}><span className="mt-0.5 w-5 shrink-0 text-center"><Region region={asset.region} /></span><span className="min-w-0"><strong className="group-hover/entity:text-primary block text-[13px] font-medium wrap-anywhere">{server.name}</strong><small className="text-muted-foreground mt-px block max-w-60 truncate text-xs">{[asset.group_name, ...asset.tags].filter(Boolean).join(' · ') || (server.static_info.hostname ?? `服务器 #${server.id}`)}{asset.hidden ? ' · 看板隐藏' : ''}</small></span></button>
   }
-  const status = (server: Server) => <><Badge tone={server.online ? 'good' : 'neutral'}>{t(server.online ? '在线' : server.device_public_key ? '离线' : '待接入')}</Badge>{!server.online && server.device_public_key && server.last_seen ? <small className="text-muted-foreground mt-1 block text-xs whitespace-nowrap" title={time(server.last_seen)}>最后联络 {ago(server.last_seen)}</small> : null}</>
+  const status = (server: Server) => <><Badge tone={server.online ? 'good' : server.device_public_key ? 'bad' : 'neutral'}>{t(server.online ? '在线' : server.device_public_key ? '离线' : '待接入')}</Badge>{!server.online && server.device_public_key && server.last_seen ? <small className="text-muted-foreground mt-1 block text-xs whitespace-nowrap" title={time(server.last_seen)}>最后联络 {ago(server.last_seen)}</small> : column('version') && server.static_info.agent_version ? <small className="text-muted-foreground mt-1 block font-mono text-xs">v{server.static_info.agent_version}</small> : null}</>
   const cpuUsage = (server: Server) => {
     const cpu = server.latest_metrics.cpu_percent
     return <div className="min-w-24 text-[13px]"><span>{percent(cpu)}</span>{cpu !== undefined && <Meter value={cpu} label={`${server.name} 处理器使用率`} />}</div>
@@ -98,21 +102,21 @@ export default function Servers() {
   }
   const cost = (server: Server) => {
     const asset = { ...defaultAssets, ...server.asset_settings }, expiry = expiryState(asset)
-    return <><span>{assetPrice(asset)}</span><small className="text-muted-foreground block text-xs">{assetDate(asset.expires_at)} · <span className={expiry.tone === 'bad' ? 'text-destructive' : ''}>{expiry.label}</span></small></>
+    if (asset.price === null && asset.expires_at === null) return <span className="text-muted-foreground">—</span>
+    return <><span>{assetPrice(asset)}</span><small className="text-muted-foreground block text-xs">{assetDate(asset.expires_at)} · <span className={expiry.tone === 'bad' ? 'text-destructive' : expiry.tone === 'warm' ? 'text-warning' : ''}>{expiry.label}</span></small></>
   }
   const traffic = (server: Server) => {
     const asset = { ...defaultAssets, ...server.asset_settings }
-    return <><span>{(server.traffic?.observed_from != null || server.traffic?.corrected) ? trafficSize(server.traffic.used) : '等待采样'} / {asset.traffic_limit === '0' ? '未设额度' : trafficSize(asset.traffic_limit)}</span>{server.traffic?.exceeded && <small className="text-destructive block text-xs">额度已用尽</small>}</>
+    const limited = asset.traffic_limit !== '0'
+    return <div className="min-w-24 text-[13px]"><span>{(server.traffic?.observed_from != null || server.traffic?.corrected) ? trafficSize(server.traffic.used) : '等待采样'}<small className="text-muted-foreground text-xs"> / {limited ? trafficSize(asset.traffic_limit) : '不限'}</small></span>{limited && server.traffic?.percent != null && <Meter value={server.traffic.percent} label={`${server.name} 流量额度`} warning={80} danger={100} />}{server.traffic?.exceeded && <small className="text-destructive block text-xs">额度已用尽</small>}</div>
   }
-  const actions = (server: Server, className: string) => <div className={`flex items-center gap-0.5 ${className}`}><Button variant="ghost" size="icon-sm" aria-label="详情" title="详情" onClick={() => navigate(`/servers/${server.id}`)}><ChevronRightIcon aria-hidden="true" /></Button><Button variant="ghost" size="icon-sm" aria-label="编辑" title="编辑" disabled={!canWrite} onClick={() => edit(server)}><PencilIcon aria-hidden="true" /></Button><Button variant="ghost" size="icon-sm" aria-label="删除" title="删除" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20" disabled={!canWrite} onClick={() => { action.clearError(); setDeleting(server) }}><Trash2Icon aria-hidden="true" /></Button></div>
+  const actions = (server: Server, className: string) => <div className={`flex items-center gap-0.5 ${className}`}><Button variant="ghost" size="icon-sm" aria-label="编辑" title="编辑" disabled={!canWrite} onClick={() => edit(server)}><PencilIcon aria-hidden="true" /></Button><Button variant="ghost" size="icon-sm" aria-label="删除" title="删除" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20" disabled={!canWrite} onClick={() => { action.clearError(); setDeleting(server) }}><Trash2Icon aria-hidden="true" /></Button></div>
   return <>
     <PageHeader title="服务器列表" description="接入服务器，看运行情况；点开一台查看详情、资产和诊断。"><Refresh onClick={resource.reload} /><a className={buttonVariants({ variant: 'outline' })} href="#/servers/batch">批量接入</a><Button disabled={!canWrite} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />添加服务器</Button></PageHeader>
-    {/* Totals describe every server; the list below says how many the filter shows. */}
-    <div className="mb-4 grid grid-cols-3 gap-2.5"><Stat label="服务器总数" value={resource.data ? allServers.length : '—'} /><Stat label="当前在线" value={resource.data ? allServers.filter(server => server.online).length : '—'} /><Stat label="已发布配置" value={resource.data ? allServers.filter(server => server.manifest_rev > 0).length : '—'} /></div>
     {batchResults.length > 0 && <Notice><div>{batchResults.map(result => <p key={result.id}>服务器 #{result.id}：{result.status}</p>)}</div></Notice>}
     <ErrorNotice message={resource.error || action.error || actor.error} retry={resource.reload} />{actor.data && !canWrite && <p className="text-muted-foreground text-xs">当前账号只有服务器读取权限；修改、接入和维护操作需要服务器写入授权。</p>}
     <Panel>
-      {allServers.length > 0 && <ServerToolbar title={<PanelTitle className="shrink-0">{filtered ? '筛选结果' : '全部服务器'} <span data-slot="server-count" className="bg-muted text-muted-foreground min-w-5 rounded px-1.5 text-center text-xs font-medium tabular-nums">{filtered ? `${servers.length} / ${allServers.length}` : servers.length}</span></PanelTitle>} value={view} onChange={setView} phone={phone}
+      {allServers.length > 0 && <ServerToolbar title={<PanelTitle className="shrink-0">{filtered ? '筛选结果' : '全部服务器'} <span data-slot="server-count" className="bg-muted text-muted-foreground min-w-5 rounded px-1.5 text-center text-xs font-medium tabular-nums">{filtered ? `${servers.length} / ${allServers.length}` : servers.length}</span>{online.total > 0 && <span data-slot="server-online" className="text-muted-foreground text-xs font-normal tabular-nums">{online.up} 在线{online.down > 0 && <> · <span className="text-destructive">{online.down} 离线</span></>}{online.pending > 0 && ` · ${online.pending} 待接入`}</span>}</PanelTitle>} value={view} onChange={setView} phone={phone}
         groups={[...new Set(allServers.map(server => server.asset_settings?.group_name ?? '').filter(Boolean))]}
         regions={[...new Set(allServers.map(server => server.asset_settings?.region ?? '').filter(Boolean))]} />}
       {resource.error && resource.data && <p role="status" className="text-muted-foreground border-b px-4 py-2.5 text-xs">最近一次刷新失败，下面是上次成功读取的数据，状态和用量可能已过期。</p>}
@@ -121,9 +125,9 @@ export default function Servers() {
         : !allServers.length ? <Empty icon={ServerIcon} title="从第一台服务器开始" description="添加服务器后，在服务器上执行安装命令，即可自动接入。"><Button disabled={!canWrite} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />添加服务器</Button></Empty>
         : !servers.length ? <Empty icon={FilterXIcon} title="没有符合条件的服务器" description={`已有 ${allServers.length} 台服务器，当前筛选条件下没有匹配项。`}><Button variant="outline" onClick={clearFilters}>清除筛选</Button></Empty> : <>
         {/* Only the layout for this width is rendered: the list re-renders on every poll. */}
-        {!phone && <div className="max-w-full min-w-0 max-md:hidden"><Table><TableHeader><TableRow><TableHead className="w-10">{selectAll}</TableHead><TableHead>服务器</TableHead><TableHead>状态</TableHead>{column('cpu') && <TableHead>处理器</TableHead>}{column('memory') && <TableHead>内存</TableHead>}{column('cost') && <TableHead>成本 / 到期</TableHead>}{column('traffic') && <TableHead>本期观测 / 额度</TableHead>}{column('version') && <TableHead>设备版本</TableHead>}<TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{servers.map((server, index) => <Fragment key={server.id}>
-          {startsGroup(index) && <TableRow><TableHead className="bg-accent text-accent-foreground text-left" colSpan={4 + view.columns.length}>{groupKey(server)}</TableHead></TableRow>}
-          <TableRow><TableCell>{selectOne(server)}</TableCell><TableCell>{identity(server)}</TableCell><TableCell>{status(server)}</TableCell>{column('cpu') && <TableCell>{cpuUsage(server)}</TableCell>}{column('memory') && <TableCell>{memoryUsage(server)}</TableCell>}{column('cost') && <TableCell>{cost(server)}</TableCell>}{column('traffic') && <TableCell>{traffic(server)}</TableCell>}{column('version') && <TableCell><span className="font-mono text-xs">{server.static_info.agent_version ?? '尚未上报'}</span></TableCell>}<TableCell>{actions(server, 'justify-end')}</TableCell></TableRow>
+        {!phone && <div className="max-w-full min-w-0 max-md:hidden"><Table><TableHeader><TableRow><TableHead className="w-10">{selectAll}</TableHead><TableHead>服务器</TableHead><TableHead>状态</TableHead>{column('cpu') && <TableHead>处理器</TableHead>}{column('memory') && <TableHead>内存</TableHead>}{column('cost') && <TableHead>成本 / 到期</TableHead>}{column('traffic') && <TableHead>本期流量</TableHead>}<TableHead className="w-20"><span className="sr-only">操作</span></TableHead></TableRow></TableHeader><TableBody>{servers.map((server, index) => <Fragment key={server.id}>
+          {startsGroup(index) && <TableRow><TableHead className="bg-accent text-accent-foreground text-left" colSpan={4 + view.columns.filter(key => key !== 'version').length}>{groupKey(server)}</TableHead></TableRow>}
+          <TableRow><TableCell>{selectOne(server)}</TableCell><TableCell>{identity(server)}</TableCell><TableCell>{status(server)}</TableCell>{column('cpu') && <TableCell>{cpuUsage(server)}</TableCell>}{column('memory') && <TableCell>{memoryUsage(server)}</TableCell>}{column('cost') && <TableCell>{cost(server)}</TableCell>}{column('traffic') && <TableCell>{traffic(server)}</TableCell>}<TableCell>{actions(server, 'justify-end')}</TableCell></TableRow>
         </Fragment>)}</TableBody></Table></div>}
         {/* Phones get one card per server instead of a sideways-scrolling table. */}
         {phone && <div data-slot="server-list-cards" className="md:hidden">
@@ -135,7 +139,7 @@ export default function Servers() {
               {(cardColumn('cpu') || cardColumn('memory')) && <div className="grid grid-cols-2 gap-3 pl-7">{cardColumn('cpu') && <div><small className="text-muted-foreground block text-xs">处理器</small>{cpuUsage(server)}</div>}{cardColumn('memory') && <div><small className="text-muted-foreground block text-xs">内存</small>{memoryUsage(server)}</div>}</div>}
               {(cardColumn('cost') || cardColumn('traffic') || cardColumn('version')) && <dl className="m-0 grid gap-1.5 pl-7 text-sm">
                 {cardColumn('cost') && <div className="flex justify-between gap-3"><dt className="text-muted-foreground text-xs">成本 / 到期</dt><dd className="m-0 text-right">{cost(server)}</dd></div>}
-                {cardColumn('traffic') && <div className="flex justify-between gap-3"><dt className="text-muted-foreground text-xs">本期观测 / 额度</dt><dd className="m-0 text-right">{traffic(server)}</dd></div>}
+                {cardColumn('traffic') && <div className="flex justify-between gap-3"><dt className="text-muted-foreground text-xs">本期流量</dt><dd className="m-0 text-right">{traffic(server)}</dd></div>}
                 {cardColumn('version') && <div className="flex justify-between gap-3"><dt className="text-muted-foreground text-xs">设备版本</dt><dd className="m-0 font-mono text-xs">{server.static_info.agent_version ?? '尚未上报'}</dd></div>}
               </dl>}
               {actions(server, 'justify-end -mt-1')}

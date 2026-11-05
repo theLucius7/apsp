@@ -5,41 +5,46 @@ import { useAction, useResource } from '../hooks'
 import type { Preferences } from './panelSettings'
 import TelemetryPolicy from './TelemetryPolicy'
 import ExchangeRateSettings from './ExchangeRateSettings'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button'
+import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
 import { Switch } from '@/components/ui/switch'
 import { useFeatureStore } from '@/stores/features'
 
-function DashboardAccess({ initial }: { initial: boolean }) {
-  const [enabled, setEnabled] = useState(initial), [saved, setSaved] = useState(false), [dirty, setDirty] = useState(false)
-  const action = useAction()
-  // Only the public dashboard switch changes here; the panel keeps every other setting.
-  const save = () => action.run(() => api<Preferences>('/api/settings', 'PATCH', { public_dashboard: enabled }), result => { setEnabled(result.public_dashboard); setSaved(true); setDirty(false) })
-  return <form data-slot="monitoring-settings" className="bg-card text-card-foreground ring-foreground/10 mb-4 min-w-0 overflow-hidden rounded-xl ring-1" onSubmit={event => { event.preventDefault(); void save() }}><div className="p-4"><fieldset disabled={action.busy}>
-    <h2 className="mb-3 text-base font-semibold">看板访问</h2>
-    <SettingRow title="公开服务器看板" description="开启后，无需登录即可查看未隐藏服务器的运行状态和拨测数据。管理操作仍需登录。"><Switch checked={enabled} onCheckedChange={checked => { setEnabled(checked); setSaved(false); setDirty(true) }} /></SettingRow>
-  </fieldset><ErrorNotice message={action.error} />{saved && <p role="status" className="text-sm">设置已保存。</p>}<div className="mt-4 flex flex-wrap items-center gap-2.5"><Button disabled={action.busy || !dirty}>{action.busy ? '正在保存…' : '保存设置'}</Button></div></div></form>
-}
+type Switches = { public_dashboard: boolean; show_frozen_features: boolean }
 
-// Frozen features only receive security fixes; this switch decides whether the
-// panel still shows them. Experimental features always stay visible with a label.
-function FeatureVisibility({ initial }: { initial: boolean }) {
-  const [enabled, setEnabled] = useState(initial), [saved, setSaved] = useState(false), [dirty, setDirty] = useState(false)
+/**
+ * The panel's two switches. Each applies as soon as it is flipped: a switch is
+ * its own confirmation, so a separate save button only added a step. A failed
+ * save puts the switch back and says why.
+ */
+function PanelSwitches({ initial }: { initial: Switches }) {
+  const [values, setValues] = useState(initial)
+  const [saved, setSaved] = useState<keyof Switches | null>(null)
   const action = useAction()
-  const save = () => action.run(() => api<Preferences>('/api/settings', 'PATCH', { show_frozen_features: enabled }), result => { const shown = Boolean(result.show_frozen_features); setEnabled(shown); useFeatureStore.getState().setShowFrozen(shown); setSaved(true); setDirty(false) })
-  return <form data-slot="feature-visibility" className="bg-card text-card-foreground ring-foreground/10 mb-4 min-w-0 overflow-hidden rounded-xl ring-1" onSubmit={event => { event.preventDefault(); void save() }}><div className="p-4"><fieldset disabled={action.busy}>
-    <h2 className="mb-3 text-base font-semibold">功能显示</h2>
-    <label className="relative flex cursor-pointer items-center gap-4 py-3.5"><span className="min-w-0 flex-1"><strong className="block text-sm font-medium">显示实验与冻结功能</strong><small className="text-muted-foreground mt-1 block text-xs leading-relaxed">默认隐藏，界面更简单。开启后显示实验功能（自动化与维护、网络配置）和冻结功能（系统网络参数、反向隧道、私有组网、受管防火墙、云资源与费用、硬件测试）。数据与地址一直保留。</small></span><Switch checked={enabled} onCheckedChange={checked => { setEnabled(checked); setSaved(false); setDirty(true) }} /></label>
-  </fieldset><ErrorNotice message={action.error} />{saved && <p role="status" className="text-sm">设置已保存。</p>}<div className="mt-4 flex flex-wrap items-center gap-2.5"><Button disabled={action.busy || !dirty}>{action.busy ? '正在保存…' : '保存功能显示'}</Button></div></div></form>
+  const change = (key: keyof Switches, value: boolean) => {
+    const previous = values
+    let applied = false
+    setValues({ ...values, [key]: value }); setSaved(null)
+    void action.run(() => api<Preferences>('/api/settings', 'PATCH', { [key]: value }), result => {
+      applied = true
+      const next = { public_dashboard: result.public_dashboard, show_frozen_features: Boolean(result.show_frozen_features) }
+      setValues(next); useFeatureStore.getState().setShowFrozen(next.show_frozen_features); setSaved(key)
+    }).then(() => { if (!applied) setValues(previous) })
+  }
+  return <Panel data-slot="panel-switches"><PanelHeader><PanelTitle>常规</PanelTitle>{saved && <span role="status" className="text-muted-foreground text-xs">设置已保存</span>}</PanelHeader><div className="px-4 pb-1"><fieldset disabled={action.busy}>
+    <SettingRow title="公开服务器看板" description="开启后，无需登录即可查看未隐藏服务器的运行状态和拨测数据。管理操作仍需登录。"><Switch checked={values.public_dashboard} onCheckedChange={checked => change('public_dashboard', checked)} /></SettingRow>
+    <SettingRow title="显示实验与冻结功能" description="默认隐藏，界面更简单。开启后显示实验功能（自动化与维护、网络配置、服务器运维）和冻结功能（系统网络参数、反向隧道、私有组网、受管防火墙、云资源与费用、硬件测试）。数据与地址一直保留。"><Switch checked={values.show_frozen_features} onCheckedChange={checked => change('show_frozen_features', checked)} /></SettingRow>
+  </fieldset><ErrorNotice message={action.error} /></div></Panel>
 }
 
 export default function Settings() {
   const resource = useResource<Preferences>('/api/settings', 0)
   return <>
-    <PageHeader title="面板设置" description="面板本身的全局设置：看板是否公开、显示哪些功能、金额按哪种币种显示、监控历史保存多久。">
+    <PageHeader title="面板设置" description="看板是否公开、显示哪些功能、金额币种与监控历史保存多久。">
       <a className={buttonVariants({ variant: 'outline' })} href="#/monitoring/settings">告警设置</a>
     </PageHeader>
     <ErrorNotice message={resource.error} retry={resource.reload} />
-    {resource.data ? <><DashboardAccess initial={resource.data.public_dashboard} /><FeatureVisibility initial={Boolean(resource.data.show_frozen_features)} /></> : resource.loading ? <Loading /> : null}
+    {resource.data ? <PanelSwitches initial={{ public_dashboard: resource.data.public_dashboard, show_frozen_features: Boolean(resource.data.show_frozen_features) }} /> : resource.loading ? <Loading /> : null}
     <ExchangeRateSettings />
     <TelemetryPolicy />
   </>

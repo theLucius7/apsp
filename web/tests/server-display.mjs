@@ -116,7 +116,9 @@ try {
     if (screenshots) await page.screenshot({ path: resolve(screenshots, `display-dark-${width}.png`), fullPage: true, animations: 'disabled' })
     await page.reload()
     await page.locator('[data-slot=server-card]').first().waitFor()
+    // An owner opens the server's console page, whose overview is the shared monitoring panel.
     await page.getByRole('link', { name: '东京 · 主节点，在线，查看详情', exact: true }).click()
+    await page.waitForURL(/#\/servers\/1$/)
     await page.getByRole('heading', { name: /^东京 · 主节点/ }).waitFor()
     await page.locator('[data-slot=chart] svg[role="img"]').first().waitFor()
     await page.getByRole('heading', { name: '测试目标 · 延迟', exact: true }).waitFor()
@@ -155,7 +157,6 @@ try {
     assert(scale > .95 && scale < 1.05, 'Chart labels must retain their readable font size on mobile')
     if (screenshots) await page.screenshot({ path: resolve(screenshots, `detail-dark-${width}.png`), fullPage: true, animations: 'disabled' })
     if (screenshots) await page.screenshot({ path: resolve(screenshots, `detail-light-${width}.png`), fullPage: true, animations: 'disabled' })
-    await page.getByRole('link', { name: '返回服务器看板', exact: true }).click()
     await openNav(page, '服务器')
     await page.locator('[data-slot=sidebar]').waitFor()
     assert.equal(await page.locator('[data-slot=server-display]').count(), 0)
@@ -185,9 +186,11 @@ try {
     await page.getByRole('button', { name: '重试', exact: true }).click()
     await page.getByRole('alert').waitFor({ state: 'hidden' })
     assert.equal(await statValue('实时上行'), '3.0 MiB/秒')
+    // An owner lands on the server's console page, whose overview is the same monitoring panel.
     await page.getByRole('link', { name: '法兰克福 · 存储节点，在线，查看详情', exact: true }).click()
+    await page.waitForURL(/#\/servers\/3$/)
     await page.getByText('指标已过期；在线心跳不代表指标仍在采集。', { exact: false }).waitFor()
-    assert.equal(await page.locator('[data-slot=live-strip] > div').nth(2).locator('strong').innerText(), '—')
+    assert.equal(await page.locator('[data-slot=live-network] strong').first().innerText(), '—')
     historyFailure = true
     await page.getByRole('group', { name: '资源时间范围' }).getByRole('button', { name: '1 小时' }).click()
     await page.getByRole('alert').waitFor()

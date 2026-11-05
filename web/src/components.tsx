@@ -1,7 +1,7 @@
-import { useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useId, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { AnimatePresence, usePresence } from 'motion/react'
-import { BoxIcon, CheckIcon, CircleAlertIcon, CompassIcon, CopyIcon, InfoIcon, RefreshCwIcon } from 'lucide-react'
+import { BoxIcon, CheckIcon, CircleAlertIcon, CopyIcon, InfoIcon, RefreshCwIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { errorMessage } from './api'
 import { resourceRefreshingMessage } from './hooks'
@@ -25,12 +25,24 @@ export type Tone = 'good' | 'bad' | 'warm' | 'neutral'
 const toneVariant = { good: 'success', bad: 'destructive', warm: 'warning', neutral: 'secondary' } as const
 const refreshNoticeDelay = 1200
 
+/** The apsp mark: entry, relay and exit on one flowing line, in jade. */
+export function BrandMark({ className }: { className?: string }) {
+  // Each mark owns its gradient: one defined inside a hidden copy would not paint.
+  const gradient = `apsp-mark-${useId().replace(/:/g, '')}`
+  return <svg viewBox="0 0 32 32" className={className} aria-hidden="true">
+    <defs><linearGradient id={gradient} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="var(--primary)" /><stop offset="1" stopColor="color-mix(in oklch, var(--primary), var(--foreground) 35%)" /></linearGradient></defs>
+    <rect width="32" height="32" rx="9" fill={`url(#${gradient})`} />
+    <path d="M8 21.5c3.5 0 4.5-11 8-11s4.5 11 8 11" fill="none" stroke="var(--primary-foreground)" strokeOpacity=".55" strokeWidth="1.6" strokeLinecap="round" />
+    <circle cx="8" cy="21.5" r="2.6" fill="var(--primary-foreground)" /><circle cx="16" cy="10.5" r="2.2" fill="var(--primary-foreground)" fillOpacity=".85" /><circle cx="24" cy="21.5" r="2.6" fill="var(--primary-foreground)" />
+  </svg>
+}
+
 export function Brand({ className, compact = false }: { className?: string; compact?: boolean }) {
   const { t } = useI18n()
-  return <div data-slot="brand" className={cn('flex min-w-0 items-center gap-2', className)}>
-    <span className={cn('bg-primary text-primary-foreground grid shrink-0 place-items-center rounded-md', compact ? 'size-6' : 'size-8')}><CompassIcon className={compact ? 'size-3.5' : 'size-4.5'} aria-hidden="true" /></span>
+  return <div data-slot="brand" className={cn('flex min-w-0 items-center gap-2.5', className)}>
+    <BrandMark className={cn('shrink-0 drop-shadow-sm', compact ? 'size-7' : 'size-9')} />
     <span className="grid min-w-0 leading-tight">
-      <strong className={cn('truncate font-semibold', compact ? 'text-sm' : 'text-base')}>{t('apsp')}</strong>
+      <strong className={cn('truncate font-semibold tracking-tight', compact ? 'text-[15px]' : 'text-lg')}>{t('apsp')}</strong>
       {!compact && <small className="text-muted-foreground truncate text-xs">{t('代理网络控制平面')}</small>}
     </span>
   </div>}
@@ -68,11 +80,11 @@ export function TierNotice({ tier, children }: { tier: Tier; children?: ReactNod
 export function PageHeader({ title, description, leading, children }: { title: string; description?: string; leading?: ReactNode; children?: ReactNode }) {
   const { t } = useI18n()
   const tabs = useContext(SectionContext)
-  return <><header data-slot="page-header" className="bg-background/95 supports-backdrop-filter:backdrop-blur-sm -mx-4 -mt-4 mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-2 md:sticky md:top-0 md:z-20 md:-mx-6 md:min-h-14 md:px-6">
+  return <><header data-slot="page-header" className="bg-background/80 supports-backdrop-filter:backdrop-blur-md border-border/60 -mx-4 -mt-4 mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-2.5 md:sticky md:top-0 md:z-20 md:-mx-6 md:min-h-16 md:px-6">
     {leading}
     <div className="min-w-0 flex-[1_1_16rem]">
-      <h1 className="truncate text-base leading-snug font-semibold">{t(title)}</h1>
-      {description && <p title={t(description)} className="text-muted-foreground text-xs leading-snug md:truncate">{t(description)}</p>}
+      <h1 className="truncate text-lg leading-snug font-semibold tracking-tight">{t(title)}</h1>
+      {description && <p title={t(description)} className="text-muted-foreground mt-0.5 text-xs leading-snug md:truncate">{t(description)}</p>}
     </div>
     {children && <div data-slot="page-actions" className="flex flex-wrap items-center gap-2">{children}</div>}
   </header>
@@ -157,10 +169,11 @@ export function Refresh({ onClick }: { onClick: () => void }) {
 /** One headline number. `note` adds what the number alone does not say. */
 export function Stat({ label, value, note }: { label: string; value: ReactNode; note?: ReactNode; icon?: LucideIcon }) {
   const { t } = useI18n()
-  return <div data-slot="stat" className="bg-card text-card-foreground min-w-0 rounded-lg border px-3.5 py-2.5">
-    <div className="text-muted-foreground truncate text-xs">{t(label)}</div>
-    <strong className="mt-0.5 block truncate text-xl leading-tight font-semibold">{value}</strong>
-    {note && <small title={typeof note === 'string' ? note : undefined} className="text-muted-foreground mt-0.5 block truncate text-xs">{note}</small>}
+  return <div data-slot="stat" className="bg-card text-card-foreground shadow-soft relative min-w-0 overflow-hidden rounded-xl border px-4 py-3.5">
+    <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_90%_at_100%_0%,color-mix(in_oklch,var(--primary)_7%,transparent),transparent_60%)]" aria-hidden="true" />
+    <div className="text-muted-foreground relative truncate text-xs tracking-wide">{t(label)}</div>
+    <strong className="relative mt-1 block truncate text-[26px] leading-none font-semibold tracking-tight">{value}</strong>
+    {note && <small title={typeof note === 'string' ? note : undefined} className="text-muted-foreground relative mt-1.5 block truncate text-xs">{note}</small>}
   </div>
 }
 

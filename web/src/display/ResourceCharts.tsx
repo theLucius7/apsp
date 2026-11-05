@@ -15,10 +15,10 @@ const diskSpeed = (metrics: Metrics, field: 'read_bytes_per_sec' | 'write_bytes_
 }
 const loadFormat = (value: number | null) => value === null ? '—' : value.toFixed(2)
 
-export default function ResourceCharts({ server, now, unavailable }: { server: Server; now: number; unavailable: boolean }) {
+export default function ResourceCharts({ server, base, now, unavailable }: { server: Server; base: string; now: number; unavailable: boolean }) {
   const modern = Boolean(server.telemetry_settings)
   const [window, setWindow] = useState<HistoryWindow>('15m')
-  const history = useHistory(server.id, window, modern)
+  const history = useHistory(base, window, modern)
   const aggregate = history.aggregate
   const samples = useMemo(() => {
     const byTime = new Map(history.samples.map(sample => [sample.sampled_at, sample]))
@@ -32,7 +32,7 @@ export default function ResourceCharts({ server, now, unavailable }: { server: S
     <SectionHeading icon={ActivityIcon} title="资源趋势"><SegmentedGroup aria-label="资源时间范围" className="max-[480px]:grid max-[480px]:grid-cols-3 max-sm:*:flex-1">{historyWindows.filter((_, index) => modern || index < 3).map(item => <SegmentedButton key={item.value} aria-pressed={window === item.value} onClick={() => setWindow(item.value)}>{item.label}</SegmentedButton>)}</SegmentedGroup></SectionHeading>
     {history.error && <DisplayNotice tone="error" onRetry={history.reload}>{history.error} 历史采样刷新失败。</DisplayNotice>}
     {history.loading && <p className="text-muted-foreground text-xs" role="status">正在读取历史采样…</p>}
-    {aggregate && <p data-slot="history-resolution" className="text-muted-foreground m-0 flex flex-wrap gap-x-4 gap-y-1 text-xs">每 {duration(aggregate.bucket_ms)} 聚合 · {duration(historyPollInterval(aggregate.bucket_ms))} 刷新 · 历史保留 {aggregate.retention_days} 天<span>曲线为平均值，色带为最小值至最大值。末端实心点为最新实际采样。</span></p>}
+    {aggregate && <p data-slot="history-resolution" className="text-muted-foreground m-0 text-xs" title="曲线为平均值，色带为最小值至最大值，末端实心点为最新实际采样；空缺不补零。">每 {duration(aggregate.bucket_ms)} 聚合 · {duration(historyPollInterval(aggregate.bucket_ms))} 刷新 · 历史保留 {aggregate.retention_days} 天</p>}
     <div className="grid gap-3 md:grid-cols-2">
       <Chart {...props} title="处理器" maximum={100} format={percentage} series={[series('使用率', 'var(--destructive)', 'cpu_percent', metrics => number(metrics.cpu_percent))]} />
       <Chart {...props} title="内存" maximum={number(server.static_info.memory_total) ?? undefined} format={size} series={[series('已用内存', 'var(--success)', 'memory_used', metrics => number(metrics.memory_used))]} />
@@ -41,6 +41,5 @@ export default function ResourceCharts({ server, now, unavailable }: { server: S
       {modern && <><Chart {...props} title="系统负载" format={loadFormat} series={(['load_1', 'load_5', 'load_15'] as const).map((key, index) => series(['1 分钟', '5 分钟', '15 分钟'][index], ['var(--success)', 'var(--info)', 'var(--warning)'][index], key, metrics => number(metrics[key])))} />
         <Chart {...props} title="磁盘读写速率" format={speed} series={[series('读取', 'var(--success)', 'disk_read_bytes_per_sec', metrics => diskSpeed(metrics, 'read_bytes_per_sec')), series('写入', 'var(--info)', 'disk_write_bytes_per_sec', metrics => diskSpeed(metrics, 'write_bytes_per_sec'))]} /></>}
     </div>
-    <p className="text-muted-foreground my-1 text-xs leading-relaxed">鼠标移到曲线上查看采样，键盘可用左右方向键移动；点击图例可隐藏曲线。空缺不补零，缺少整个聚合窗口时以断线显示。{aggregate && '聚合样本数仅统计实际收到的采样，边界或旧历史不完整时单独标记；不会用网卡累计计数推算费用或周期用量。'}</p>
   </section>
 }

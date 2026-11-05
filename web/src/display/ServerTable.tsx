@@ -2,7 +2,7 @@ import type { ProbeOverview } from '../probes'
 import type { Server } from '../types'
 import { uptime } from '../format'
 import { AssetChips } from './AssetInfo'
-import { dashboardServer } from './dashboard'
+import { serverHref } from './dashboard'
 import { fresh, network, number, ratio, size, speed, status } from './data'
 import { OSIcon } from './Icon'
 import ProbeQuality from './ProbeQuality'
@@ -26,7 +26,7 @@ export default function ServerTable({ servers, unavailable, byServer, probesKnow
           const historical = !live ? '（最近上报）' : ''
           return <tr key={server.id} data-server-id={server.id} className={cn(!live && '[&_[data-slot=metric]_span>span]:opacity-45')}>
             <th scope="row" className="max-w-64 min-w-48 font-medium">
-              <a className="hover:text-primary mb-1 flex items-center gap-2" href={dashboardServer(server.id)}><OSIcon system={info.system} /><strong className="text-sm font-medium wrap-anywhere">{server.name}</strong></a>
+              <a className="hover:text-primary mb-1 flex items-center gap-2" href={serverHref(server)}><OSIcon system={info.system} /><strong className="text-sm font-medium wrap-anywhere">{server.name}</strong></a>
               <small className="text-muted-foreground block text-xs font-normal">{info.system || '系统尚未上报'}{info.cpu_cores ? ` · ${info.cpu_cores} 核` : ''}</small>
               <AssetChips server={server} className="mt-2 mb-0" />
             </th>
@@ -36,7 +36,7 @@ export default function ServerTable({ servers, unavailable, byServer, probesKnow
             <td className="min-w-32"><Metric label={`磁盘${historical}`} value={ratio(metrics.disk_used, info.disk_total)} detail={`${size(metrics.disk_used)} / ${size(info.disk_total)}`} /></td>
             <td className="min-w-32 tabular-nums"><span className="text-success flex items-center gap-1"><ArrowUpIcon className="size-3.5" aria-label="上传" />{live ? speed(network(metrics, 'transmit_bytes_per_sec', server.asset_settings?.network_interface)) : '—'}</span><span className="text-info flex items-center gap-1"><ArrowDownIcon className="size-3.5" aria-label="下载" />{live ? speed(network(metrics, 'receive_bytes_per_sec', server.asset_settings?.network_interface)) : '—'}</span></td>
             <td className="min-w-56"><ProbeQuality probes={probesKnown ? byServer.get(server.id) ?? [] : undefined} now={now} online={server.online} unavailable={probeError || unavailable} loading={probeLoading} compact /></td>
-            <td className="min-w-32"><span>{number(metrics.uptime_secs) === null ? '—' : uptime(metrics.uptime_secs)}</span><small>{server.metrics_sampled_at ? new Date(server.metrics_sampled_at).toLocaleTimeString('zh-CN', { hour12: false }) : '无采样时间'}</small><a className="text-primary mt-1.5 block text-xs hover:underline" href={dashboardServer(server.id)} aria-label={`查看 ${server.name} 详情`}>查看详情<ChevronRightIcon className="inline size-3.5 align-[-2px]" aria-hidden="true" /></a></td>
+            <td className="min-w-32"><span>{number(metrics.uptime_secs) === null ? '—' : uptime(metrics.uptime_secs)}</span><small>{server.metrics_sampled_at ? new Date(server.metrics_sampled_at).toLocaleTimeString('zh-CN', { hour12: false }) : '无采样时间'}</small><a className="text-primary mt-1.5 block text-xs hover:underline" href={serverHref(server)} aria-label={`查看 ${server.name} 详情`}>查看详情<ChevronRightIcon className="inline size-3.5 align-[-2px]" aria-hidden="true" /></a></td>
           </tr>
         })}</tbody>
       </table>

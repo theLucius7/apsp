@@ -96,8 +96,8 @@ export default function AdminShell({ current, exact = true, busy, error, onLogou
   return <TooltipProvider delayDuration={200}>
     <div data-slot="app-shell" className="bg-background text-foreground flex h-dvh min-h-0 overflow-hidden">
       <Reauthentication /><Appearance />
-      {desktop && <aside data-slot="sidebar" data-collapsed={collapsed} className={cn('bg-sidebar text-sidebar-foreground flex h-full min-h-0 shrink-0 flex-col border-r transition-[width] duration-150', collapsed ? 'w-14' : 'w-56')}>
-        <div className={cn('flex h-12 shrink-0 items-center gap-2 px-3', collapsed ? 'justify-center px-2' : 'justify-between')}>
+      {desktop && <aside data-slot="sidebar" data-collapsed={collapsed} className={cn('bg-sidebar text-sidebar-foreground border-sidebar-border flex h-full min-h-0 shrink-0 flex-col border-r transition-[width] duration-150', collapsed ? 'w-14' : 'w-58')}>
+        <div className={cn('flex h-16 shrink-0 items-center gap-2 px-3.5', collapsed ? 'justify-center px-2' : 'justify-between')}>
           {!collapsed && <a href={home} aria-label={t('apsp首页')} className="min-w-0 rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"><Brand compact /></a>}
           <Button variant="ghost" size="icon-sm" aria-label={collapsed ? t('展开侧栏') : t('折叠侧栏')} onClick={() => setCollapsed(!collapsed)}>
             {collapsed ? <PanelLeftOpenIcon /> : <PanelLeftCloseIcon />}
@@ -111,7 +111,7 @@ export default function AdminShell({ current, exact = true, busy, error, onLogou
         </div>
       </aside>}
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        {!desktop && <aside ref={phoneHeader} data-slot="sidebar" className="bg-sidebar text-sidebar-foreground relative z-30 shrink-0 border-b">
+        {!desktop && <aside ref={phoneHeader} data-slot="sidebar" className="bg-sidebar text-sidebar-foreground border-sidebar-border relative z-30 shrink-0 border-b">
           <div className="flex h-12 items-center gap-1.5 px-3">
             <Button ref={menuButton} variant="ghost" size="icon" aria-label={t('菜单')} aria-expanded={mobileOpen} aria-controls="admin-navigation" onClick={() => setMobileOpen(!mobileOpen)}>
               {mobileOpen ? <XIcon aria-hidden="true" /> : <MenuIcon aria-hidden="true" />}
@@ -121,7 +121,7 @@ export default function AdminShell({ current, exact = true, busy, error, onLogou
             <CommandPalette pages={visibleNavigation} compact />
           </div>
           {/* The menu covers the page instead of pushing it, so opening it moves nothing. */}
-          <div id="admin-navigation" hidden={!mobileOpen} className="bg-sidebar absolute inset-x-0 top-full border-b shadow-lg">
+          <div id="admin-navigation" hidden={!mobileOpen} className="bg-sidebar shadow-lifted absolute inset-x-0 top-full border-b">
             <div className="max-h-[calc(100dvh-3rem)] overflow-y-auto px-3 pt-1 pb-3">
               {navigationList}
               <div className="mt-2 border-t pt-2">
@@ -153,19 +153,18 @@ function Navigation({ items, current, collapsed }: { items: readonly NavigationI
     {groups.map((group, index) => <div key={group} className="contents">
       {collapsed
         ? index > 0 && <div className="bg-sidebar-border mx-2 my-1.5 h-px" aria-hidden="true" />
-        : <div className="text-muted-foreground flex items-center gap-1.5 px-2 pt-3 pb-1 text-xs font-medium first:pt-1"><span className="truncate">{t(group)}</span>{entries.find(entry => entry.root.group === group)?.root.tier && <TierBadge tier="experimental" className="ml-auto" />}</div>}
+        : <div className="text-muted-foreground flex items-center gap-1.5 px-2.5 pt-4 pb-1.5 text-[11px] font-medium tracking-[0.08em] first:pt-1"><span className="truncate">{t(group)}</span>{entries.find(entry => entry.root.group === group)?.root.tier && <TierBadge tier="experimental" className="ml-auto" />}</div>}
       {entries.filter(entry => entry.root.group === group).map(({ root, href, path }) => {
         const active = activePath === path
         const Icon = root.icon
         const label = t(root.navLabel ?? root.label)
         const link = <a href={`#${href}`} aria-current={active ? 'page' : undefined}
           className={cn(
-            'text-sidebar-foreground/85 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring/50 relative flex h-8 min-w-0 items-center gap-2.5 rounded-md px-2 text-[13px] outline-none focus-visible:ring-3 pointer-coarse:h-10',
-            active && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
+            'text-sidebar-foreground/85 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring/50 group/nav relative flex h-8.5 min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-[13px] outline-none transition-colors focus-visible:ring-3 pointer-coarse:h-10',
+            active && 'bg-sidebar-accent text-sidebar-accent-foreground shadow-soft font-medium',
             collapsed && 'justify-center px-0',
           )}>
-          {active && <span className="bg-sidebar-primary absolute inset-y-1.5 left-0 w-0.5 rounded-full" aria-hidden="true" />}
-          <Icon className="size-4 shrink-0" aria-hidden="true" />
+          <Icon className={cn('size-4 shrink-0 transition-colors', active ? 'text-sidebar-primary' : 'opacity-75 group-hover/nav:opacity-100')} aria-hidden="true" />
           <span className={cn('truncate', collapsed && 'sr-only')}>{label}</span>
         </a>
         return <div key={path} className="contents">
