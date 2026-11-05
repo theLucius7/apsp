@@ -1,4 +1,4 @@
-import MemberCommerce from './commerce/MemberCommerce'
+import AccountPanel from './accounts/AccountPanel'
 import MemberLines from './lines/MemberLines'
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
@@ -87,7 +87,7 @@ export default function UserPortal({ account, activation }: { account: string; a
         <Field label="我的登录地址"><CopyField text={bookmark} label="复制我的登录地址" /></Field>
       </div></Panel>
       <MemberLines key={`lines:${account}`} account={account} />
-      <MemberCommerce key={account} account={account} />
+      <AccountPanel key={account} account={account} />
       <Panel className="mb-5"><PanelHeader><PanelTitle>我的 Passkey</PanelTitle><Button size="sm" disabled={action.busy || Boolean(disabled) || data.keys.length >= 10} onClick={() => { action.clearError(); setEditing('new') }}>添加 Passkey</Button></PanelHeader><div className="p-4">
         {disabled && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{disabled}</p>}
         <p>可添加备用密钥；丢失全部密钥时，请联系管理员重置。管理密钥前需要重新验证。</p>
@@ -97,7 +97,7 @@ export default function UserPortal({ account, activation }: { account: string; a
     </> : data ? <Panel className="mb-5"><PanelHeader><h1 className="m-0 text-xl font-semibold">{token ? '开通代理用户入口' : '代理用户登录'}</h1></PanelHeader><div className="p-4">
       {disabled && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{disabled}</p>}
       {token ? <form onSubmit={activate}><p>为此账户绑定 Passkey，之后可查看自己的订阅和流量。开通链接只能使用一次。</p><Field label="密钥名称"><Input name="name" required maxLength={64} placeholder="例如：我的手机" disabled={action.busy} /></Field><Button disabled={action.busy || Boolean(disabled)}>绑定 Passkey 并开通</Button></form> : <>
-        <p>使用已绑定的设备或安全密钥验证身份。</p><p><a className="underline text-primary" href="#/plugins/sing-box/member">邮箱密码登录 / 恢复密码</a></p>
+        <p>使用已绑定的设备或安全密钥验证身份。</p><p><a className="underline text-primary" href="#/plugins/sing-box/member">邮箱密码登录 / 找回密码</a></p>
         <Button disabled={action.busy || Boolean(disabled)} onClick={() => void action.run(() => loginPasskey(`${base}/login`, false), () => { setNotice(''); reload() })}>{action.busy ? '正在验证…' : '使用 Passkey 登录'}</Button>
         <p className="text-muted-foreground mt-3 text-xs leading-relaxed">尚未开通或丢失密钥时，请联系管理员获取新的开通链接。</p>
       </>}

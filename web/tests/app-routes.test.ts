@@ -63,10 +63,10 @@ test('node page sections are addressable and malformed sections are refused', ()
 test('navigation groups follow administrator tasks and keep every destination', () => {
   expect([...new Set(navigation.map(item => item.group))]).toEqual(['总览', '代理服务', '服务器', '监控与设置', '实验功能'])
   // Every destination stays; pages about the same thing are tabs of one sidebar entry (ADR 0102).
-  expect(navigation).toHaveLength(22)
+  expect(navigation).toHaveLength(21)
   const everyday = sidebarEntries(navigation.filter(item => !item.tier))
-  expect(everyday.map(entry => entry.root.navLabel ?? entry.root.label)).toEqual(['概览', '费用与续费', '代理节点', '代理用户', '策略与套餐', '成员运营', '服务器', '域名解析', '阿里云 CDT', '告警', '线路检测', '设置'])
-  expect(navigation.filter(item => item.group === '代理服务').map(item => item.label)).toEqual(['代理节点', '代理用户', '策略与套餐', '成员运营'])
+  expect(everyday.map(entry => entry.root.navLabel ?? entry.root.label)).toEqual(['概览', '费用与续费', '代理节点', '代理用户', '策略与套餐', '服务器', '域名解析', '阿里云 CDT', '告警', '线路检测', '设置'])
+  expect(navigation.filter(item => item.group === '代理服务').map(item => item.label)).toEqual(['代理节点', '代理用户', '策略与套餐'])
   expect(sectionTabs(currentNavigation(resolveRoute('/dashboard')), navigation).map(item => item.label)).toEqual(['服务器列表', '服务器看板'])
   expect(sectionTabs(currentNavigation(resolveRoute('/latency')), navigation).map(item => item.label)).toEqual(['网络检测', '延迟检测'])
   expect(sectionTabs(currentNavigation(resolveRoute('/plugins/sing-box/nodes')), navigation)).toEqual([])
@@ -128,7 +128,7 @@ test('server sections, plugin centre views and split settings resolve to one sid
 
 test('member and expense destinations preserve public and administrator boundaries', () => {
   expect(resolveRoute('/plugins/sing-box/member')).toEqual({ page: 'member-login' })
-  expect(resolveRoute('/plugins/sing-box/commerce')).toEqual({ page: 'commerce' })
+  expect(resolveRoute('/plugins/sing-box/commerce')).toEqual({ page: 'proxy-users' })
   expect(resolveRoute('/plugins/expenses')).toEqual({ page: 'expenses' })
   expect(currentNavigation(resolveRoute('/plugins/expenses'))?.group).toBe('总览')
 })

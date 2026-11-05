@@ -15,17 +15,22 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ActivityIcon, WaypointsIcon } from 'lucide-react'
 import { SegmentedButton, SegmentedGroup } from '@/components/segmented'
 import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
+import GroupExternalNodes, { externalSelectionError } from './GroupExternalNodes'
+import { externalReference } from './externalAccessTypes'
+import type { ExternalEntry, ExternalReference } from './externalAccessTypes'
 
 const root = '/api/plugins/sing-box'
 type Tab = 'policy-groups' | 'package-groups'
 type EditorInput = { kind: 'policy-groups'; value?: PolicyGroup } | { kind: 'package-groups'; value?: PackageGroup }
-type Editor = { kind: 'policy-groups'; value?: PolicyGroup; nodeIds: number[]; chainIds: number[] } | { kind: 'package-groups'; value?: PackageGroup }
+type Editor = { kind: 'policy-groups'; value?: PolicyGroup; nodeIds: number[]; chainIds: number[]; externals: ExternalReference[] } | { kind: 'package-groups'; value?: PackageGroup }
 const labels: Record<Tab, string> = { 'policy-groups': '策略组', 'package-groups': '套餐组' }
 
 export default function Groups({ initialTab = 'policy-groups' }: { initialTab?: Tab } = {}) {
   const policies = useResource<PolicyGroup[]>(`${root}/policy-groups`)
   const packages = useResource<PackageGroup[]>(`${root}/package-groups`)
   const resourceQuery = useResource<unknown>(`${root}/ordered-proxy-resources`)
+  const externalQuery = useResource<{ available_nodes: ExternalEntry[] }>(`${root}/external-node-candidates`)
+  const candidates = externalQuery.data?.available_nodes ?? []
   const flatQuery = useResource<unknown>(`${root}/proxy-resources`)
   const flatHistory = useRef<FlatResource[] | undefined>(undefined)
   const flat = validatedSnapshot(flatQuery, validFlatInventory, flatHistory.current)
@@ -41,24 +46,27 @@ export default function Groups({ initialTab = 'policy-groups' }: { initialTab?: 
   const [tab, setTab] = useState<Tab>(initialTab)
   const [editor, setEditor] = useState<Editor | null>(null)
   const [deleting, setDeleting] = useState<{ kind: Tab; id: number; name: string } | null>(null)
-  const policyWriteError = resourceWriteError(policies, packages, flat, resources)
+  // External candidates block a save only when they failed to load: the server checks every reference again.
+  const externalState = { error: externalQuery.error, isCurrent: () => true }
+  const policyWriteError = resourceWriteError(policies, packages, flat, resources, externalState)
   const packageWriteError = resourceWriteError(policies, packages, flat, resources)
   const writeError = (kind: Tab, id?: number) => {
-    const dependencyError = resourceWriteError(policies, packages, flat, resources)
+    // Policy groups also hold external nodes, so their candidates must have loaded.
+    const dependencyError = kind === 'policy-groups' ? resourceWriteError(policies, packages, flat, resources, externalState) : resourceWriteError(policies, packages, flat, resources)
     if (dependencyError) return dependencyError
     const data = kind === 'policy-groups' ? policies.getCurrent() : packages.getCurrent()
     return id !== undefined && !data?.some(value => value.id === id) ? '此资源已不可用，暂不能提交。草稿已保留，可关闭窗口后重新选择。' : ''
   }
   const invalidNodes = editor?.kind === 'policy-groups' ? editor.nodeIds.filter(id => !nodes.some(node => node.id === id && node.available)) : []
   const invalidChains = editor?.kind === 'policy-groups' ? editor.chainIds.filter(id => !chains.some(chain => chain.id === id && chain.available)) : []
-  const currentSelectionError = () => editor?.kind === 'policy-groups' && [...editor.nodeIds.map(id => ({ kind: 'direct', id })), ...editor.chainIds.map(id => ({ kind: 'chain', id }))].some(selected => !currentInventory().some(value => value.kind === selected.kind && value.id === selected.id && value.available)) ? '已选资源已不可用或身份已变更，请取消这些选择后再保存；其余草稿已保留。' : ''
-  const selectionError = invalidNodes.length || invalidChains.length ? '已选资源已不可用或身份已变更，请取消这些选择后再保存。其余草稿已保留。' : ''
-  const refresh = () => { policies.reload(); packages.reload(); resourceQuery.reload(); flatQuery.reload() }
+  const currentSelectionError = () => editor?.kind === 'policy-groups' && [...editor.nodeIds.map(id => ({ kind: 'direct', id })), ...editor.chainIds.map(id => ({ kind: 'chain', id }))].some(selected => !currentInventory().some(value => value.kind === selected.kind && value.id === selected.id && value.available)) ? '已选资源已不可用或身份已变更，请取消这些选择后再保存；其余草稿已保留。' : editor?.kind === 'policy-groups' ? externalSelectionError(editor.externals, policies.getCurrent()?.find(group => group.id === editor.value?.id)?.external_nodes ?? [], externalQuery.getCurrent()?.available_nodes ?? []) : ''
+  const selectionError = invalidNodes.length || invalidChains.length ? '已选资源已不可用或身份已变更，请取消这些选择后再保存。其余草稿已保留。' : editor?.kind === 'policy-groups' ? externalSelectionError(editor.externals, editor.value?.external_nodes ?? [], candidates) : ''
+  const refresh = () => { policies.reload(); packages.reload(); resourceQuery.reload(); flatQuery.reload(); externalQuery.reload() }
   const nodeName = (id: number) => nodes.find(n => n.id === id)?.name ?? `节点 #${id}（已不可用）`
   const open = (value: EditorInput) => {
     if (writeError(value.kind, value.value?.id)) return
     action.clearError()
-    setEditor(value.kind === 'policy-groups' ? { ...value, nodeIds: [...(value.value?.node_ids ?? [])], chainIds: [...(value.value?.chain_ids ?? [])] } : value)
+    setEditor(value.kind === 'policy-groups' ? { ...value, nodeIds: [...(value.value?.node_ids ?? [])], chainIds: [...(value.value?.chain_ids ?? [])], externals: (value.value?.external_nodes ?? []).map(externalReference) } : value)
   }
   const choose = (kind: 'nodeIds' | 'chainIds', id: number, checked: boolean) => { if (resourceWriteError(policies, packages, flat, resources)) return; setEditor(previous => previous?.kind === 'policy-groups' ? { ...previous, [kind]: checked ? [...previous[kind], id] : previous[kind].filter(value => value !== id) } : previous) }
   const remove = (kind: Tab, value: { id: number; name: string }) => { if (writeError(kind, value.id)) return; action.clearError(); setDeleting({ kind, ...value }) }
@@ -67,7 +75,7 @@ export default function Groups({ initialTab = 'policy-groups' }: { initialTab?: 
     void action.run(async () => {
       const name = String(form.get('name') ?? '').trim()
       const value = 'value' in editor ? editor.value : undefined
-      const body = editor.kind === 'policy-groups' ? { name, node_ids: editor.nodeIds, chain_ids: editor.chainIds }
+      const body = editor.kind === 'policy-groups' ? { name, node_ids: editor.nodeIds, chain_ids: editor.chainIds, external_nodes: editor.externals }
         : { name, monthly_bytes: quotaBytes(String(form.get('amount') ?? ''), String(form.get('unit'))), reset_day: Number(form.get('reset_day')), reset_hour: Number(String(form.get('reset_time')).split(':')[0]), reset_minute: Number(String(form.get('reset_time')).split(':')[1]), timezone: String(form.get('timezone')), duration_days: Number(form.get('duration_days')) }
       return api(`${root}/${editor.kind}${value ? `/${value.id}` : ''}`, value ? 'PUT' : 'POST', body)
     }, () => { setEditor(null); refresh() })
@@ -75,19 +83,20 @@ export default function Groups({ initialTab = 'policy-groups' }: { initialTab?: 
   return <>
     <PageHeader title="策略与套餐" description="策略组决定用户能用哪些节点与链路，套餐决定流量额度和有效期。两者在「代理用户」中分别分配。"><Refresh onClick={refresh} /><a className={buttonVariants({ variant: 'outline' })} href="#/plugins/sing-box/nodes">管理代理节点</a><a className={buttonVariants({ variant: 'outline' })} href="#/plugins/sing-box/users">分配给代理用户</a></PageHeader>
     <SegmentedGroup className="mb-4" role="group" aria-label="管理内容">{(Object.keys(labels) as Tab[]).map(key => <SegmentedButton type="button" key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{labels[key]}</SegmentedButton>)}</SegmentedGroup>
-    <ErrorNotice message={policies.error || packages.error || flat.error || resources.error} retry={refresh} />
+    <ErrorNotice message={policies.error || packages.error || flat.error || resources.error || externalQuery.error} retry={refresh} />
     <Panel>
       {writeError(tab) && <p className="text-muted-foreground mt-3 text-xs leading-relaxed" role="status">{writeError(tab)}</p>}
       <PanelHeader><PanelTitle>{labels[tab]}</PanelTitle><Button size="sm" onClick={() => open({ kind: tab })} disabled={action.busy || Boolean(writeError(tab))}>创建{labels[tab]}</Button></PanelHeader>
-      {tab === 'policy-groups' && (policies.loading && !policies.data ? <Loading variant="table" rows={3} /> : !policies.data?.length ? <Empty icon={WaypointsIcon} title="把常用节点放进一个策略组" description="一个用户可分配多个策略组；重叠的节点只授权一次。修改组内节点后，所有已分配用户随之更新。" /> : <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>策略组</TableHead><TableHead>可用节点与链路</TableHead><TableHead>已分配用户</TableHead><TableHead>操作</TableHead></TableRow></TableHeader><TableBody>{policies.data.map(p => <TableRow key={p.id}><TableCell><strong>{p.name}</strong></TableCell><TableCell className="min-w-64 whitespace-normal wrap-anywhere">{[...p.node_ids.map(nodeName), ...p.chain_ids.map(id => chains.find(c => c.id === id)?.name ?? `链路 #${id}`)].join('、') || '空组，不授予节点'}</TableCell><TableCell>{p.member_count}</TableCell><TableCell><div className="flex flex-wrap items-center justify-end gap-2"><Button variant="ghost" size="sm" disabled={action.busy || Boolean(policyWriteError)} onClick={() => open({ kind: 'policy-groups', value: p })}>编辑</Button><Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20" disabled={action.busy || Boolean(policyWriteError)} onClick={() => remove('policy-groups', p)}>删除</Button></div></TableCell></TableRow>)}</TableBody></Table></div>)}
+      {tab === 'policy-groups' && (policies.loading && !policies.data ? <Loading variant="table" rows={3} /> : !policies.data?.length ? <Empty icon={WaypointsIcon} title="把常用节点放进一个策略组" description="一个用户可分配多个策略组；重叠的节点只授权一次。修改组内节点后，所有已分配用户随之更新。" /> : <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>策略组</TableHead><TableHead>可用节点与链路</TableHead><TableHead>已分配用户</TableHead><TableHead>操作</TableHead></TableRow></TableHeader><TableBody>{policies.data.map(p => <TableRow key={p.id}><TableCell><strong>{p.name}</strong></TableCell><TableCell className="min-w-64 whitespace-normal wrap-anywhere">{[...p.node_ids.map(nodeName), ...p.chain_ids.map(id => chains.find(c => c.id === id)?.name ?? `链路 #${id}`), ...(p.external_nodes ?? []).map(entry => `${entry.name}（外部）`)].join('、') || '空组，不授予节点'}</TableCell><TableCell>{p.member_count}</TableCell><TableCell><div className="flex flex-wrap items-center justify-end gap-2"><Button variant="ghost" size="sm" disabled={action.busy || Boolean(policyWriteError)} onClick={() => open({ kind: 'policy-groups', value: p })}>编辑</Button><Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20" disabled={action.busy || Boolean(policyWriteError)} onClick={() => remove('policy-groups', p)}>删除</Button></div></TableCell></TableRow>)}</TableBody></Table></div>)}
       {tab === 'package-groups' && (packages.loading && !packages.data ? <Loading variant="table" rows={3} /> : !packages.data?.length ? <Empty icon={ActivityIcon} title="为不同用量创建套餐" description="例如每月 500 GiB、每月 1 日零点重置、使用 365 天。每位用户的套餐独立计量，不共用总额度。" /> : <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>套餐组</TableHead><TableHead>每月流量</TableHead><TableHead>重置时间</TableHead><TableHead>有效期</TableHead><TableHead>操作</TableHead></TableRow></TableHeader><TableBody>{packages.data.map(p => <TableRow key={p.id}><TableCell><strong>{p.name}</strong></TableCell><TableCell>{p.monthly_bytes === null ? '不限量' : bytes(p.monthly_bytes)}</TableCell><TableCell>{scheduleText(p)}</TableCell><TableCell>分配后 {p.duration_days} 天</TableCell><TableCell><div className="flex flex-wrap items-center justify-end gap-2"><Button variant="ghost" size="sm" disabled={action.busy || Boolean(packageWriteError)} onClick={() => open({ kind: 'package-groups', value: p })}>编辑</Button><Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20" disabled={action.busy || Boolean(packageWriteError)} onClick={() => remove('package-groups', p)}>删除</Button></div></TableCell></TableRow>)}</TableBody></Table></div>)}
-      <div className="border-t px-4 py-2.5"><p className="text-muted-foreground text-xs leading-relaxed">{tab === 'policy-groups' ? '多个策略组与单独授权取并集。只取消一个来源，不会撤销其他来源仍授予的节点。' : '套餐修改仅影响之后的分配；已分配用户保留原有套餐快照。29 至 31 日在短月份按月末重置，下一月仍按原设定日期计算。'}</p><a className={buttonVariants({ variant: 'ghost', size: 'sm' })} href="#/plugins/sing-box/nodes?kind=chains">管理链路</a></div>
+      <div className="border-t px-4 py-2.5"><p className="text-muted-foreground text-xs leading-relaxed">{tab === 'policy-groups' ? '用户只通过策略组获得节点。多个策略组取并集，只取消一个组，不会撤销其他组仍授予的节点。' : '套餐修改仅影响之后的分配；已分配用户保留原有套餐快照。29 至 31 日在短月份按月末重置，下一月仍按原设定日期计算。'}</p><a className={buttonVariants({ variant: 'ghost', size: 'sm' })} href="#/plugins/sing-box/nodes?kind=chains">管理链路</a></div>
     </Panel>
     <DialogPresence>{editor && <FormDialog title={`${'value' in editor && editor.value ? '编辑' : '创建'}${labels[editor.kind]}`} onClose={() => setEditor(null)} onSubmit={submit} busy={action.busy} disabled={Boolean(writeError(editor.kind, editor.value?.id))} submitDisabled={Boolean(selectionError)} error={writeError(editor.kind, editor.value?.id) || selectionError || action.error} retry={writeError(editor.kind, editor.value?.id) ? refresh : undefined}>
       <Field label="名称"><Input name="name" required maxLength={128} defaultValue={'value' in editor ? editor.value?.name ?? '' : ''} autoComplete="off" /></Field>
       {editor.kind === 'policy-groups' && <>
         <fieldset data-slot="group-choices" className="my-3 mb-4 grid gap-2.5 border-0 p-0"><legend className="mb-2.5 text-sm font-semibold">直接连接的节点</legend>{nodes.map(n => <label className="flex cursor-pointer items-center gap-3 py-2.5 text-sm" key={`direct:${n.id}`}><Checkbox name="node_ids" value={n.id} checked={editor.nodeIds.includes(n.id)} disabled={!n.available && !editor.nodeIds.includes(n.id)} onCheckedChange={checked => choose('nodeIds', n.id, checked === true)} /><span>{n.name}<small className="text-muted-foreground mt-0.5 block text-xs">{n.description}{!n.available && '（已不可用，请取消选择）'}</small></span></label>)}{invalidNodes.filter(id => !nodes.some(node => node.id === id)).map(id => <label className="flex cursor-pointer items-center gap-3 py-2.5 text-sm" key={`unavailable-${id}`}><Checkbox name="node_ids" value={id} checked onCheckedChange={checked => choose('nodeIds', id, checked === true)} /><span>{nodeName(id)}<small className="text-muted-foreground mt-0.5 block text-xs">当前不能作为普通节点授权，请取消选择。</small></span></label>)}{!nodes.length && <p>请先创建代理节点。</p>}</fieldset>
         <fieldset data-slot="group-choices" className="my-3 mb-4 grid gap-2.5 border-0 p-0"><legend className="mb-2.5 text-sm font-semibold">通过入口连接的链路</legend>{chains.map(c => <label className="flex cursor-pointer items-center gap-3 py-2.5 text-sm" key={`chain:${c.id}`}><Checkbox name="chain_ids" value={c.id} checked={editor.chainIds.includes(c.id)} onCheckedChange={checked => choose('chainIds', c.id, checked === true)} disabled={!c.available && !editor.chainIds.includes(c.id)} /><span>{c.name}<small className="text-muted-foreground mt-0.5 block text-xs">{c.description}{!c.available && '（已不可用，请取消选择）'}</small></span></label>)}{invalidChains.filter(id => !chains.some(chain => chain.id === id)).map(id => <label className="flex cursor-pointer items-center gap-3 py-2.5 text-sm" key={`unavailable-${id}`}><Checkbox name="chain_ids" value={id} checked onCheckedChange={checked => choose('chainIds', id, checked === true)} /><span>链路 #{id}<small className="text-muted-foreground mt-0.5 block text-xs">当前不可用，请取消选择。</small></span></label>)}{!chains.length && <p>尚未创建链路，可先只选择节点，或<a className={buttonVariants({ variant: 'ghost', size: 'sm' })} href="#/plugins/sing-box/nodes?kind=chains">创建链路</a>。</p>}</fieldset>
+        <GroupExternalNodes selected={editor.externals} held={editor.value?.external_nodes ?? []} candidates={candidates} disabled={action.busy} onChange={next => setEditor(previous => previous?.kind === 'policy-groups' ? { ...previous, externals: next } : previous)} />
         {editor.value && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">保存后会更新此组的 {editor.value.member_count} 位用户。新增授权等待设备应用，撤销授权同时移出订阅。</p>}
       </>}
       {editor.kind === 'package-groups' && <PackageFields value={editor.value} />}

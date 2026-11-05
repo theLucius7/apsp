@@ -26,7 +26,7 @@
 | --- | --- |
 | 通用探针 | 监控只服务于代理网络的运营。主题、地图、公开展示这类探针竞赛不是投入方向；只想要探针的用户更适合 Komari、哪吒或 Cloudflare 上的探针。 |
 | 通用运维面板 | 不再扩展终端、文件管理、防火墙、组网、批量脚本这类能力。通用运维交给 SSH 工具和用户自己的 AI Agent，apsp 通过接口提供数据与受控操作。 |
-| 公开售卖的代理平台 | 不做 Xboard 一类面板的运营功能：公开注册、订单与支付、优惠券、邀请佣金、工单和多租户。代理用户由管理员创建，管理员和代理用户使用各自独立的登录和会话。 |
+| 公开售卖的代理平台 | 不做 Xboard 一类面板的运营功能：公开注册、订单与支付、优惠券、邀请佣金、工单和多租户。代理用户由管理员创建，或由已有用户用管理员发放的邀请名额邀请（不收费、无佣金）；管理员和代理用户使用各自独立的登录和会话。 |
 | 云厂商控制台 | 费用、到期和续费是记账与提醒。只有阿里云 CDT 插件在管理员明确配置后调整带宽或启停实例，其他云资源不开通、不续费、不删除。 |
 | 多内核代理网关 | 每台服务器只运行一个 sing-box（上游版本加 `tools/singbox-runtime/` 的补丁，见 ADR 0104），不接入 xray 或自动出口池。 |
 
@@ -63,10 +63,11 @@
 | 服务器接入、Agent 对账与签名升级、运行时独立服务 | 服务器列表；服务器详情 |
 | 代理节点与七种协议，节点 TLS 证书的手动上传与自动申请、续期 | 代理节点 |
 | 链路：入口 / 中转 / 落地，订阅来源中的节点作为链路段 | 代理节点 › 链路、订阅来源 |
-| 代理用户、策略组与套餐（额度、有效期、重置周期） | 代理用户；策略与套餐 |
+| 代理用户、策略组与套餐（额度、有效期、重置周期）；用户只通过策略组获得节点、链路和外部节点（[ADR 0112](adr/0112-group-only-access.md)） | 代理用户；策略与套餐 |
 | 订阅生成、预览与重置（sing-box、Clash Meta 与分享链接格式，Clash 客户端按 User-Agent 自动识别）；逐用户代理流量账本；订阅响应头 `Subscription-Userinfo` 让客户端显示用量与到期 | 代理用户 |
 | 用户专属地址：每个用户的订阅和登录使用独立、可重置的随机主机名与路径（默认关闭，[ADR 0103](adr/0103-per-user-subscription-hosts.md)） | 代理用户 › 专属地址 |
-| 代理用户自助门户：Passkey 或邮箱密码登录，查看自己的订阅、用量、套餐与到期，以及线路目录与探针（入口与落地、线路类型、状态、三网延迟、测得的 ASN 与用途类型；ADR 0106）；规划补充使用说明与到期提醒 | 代理用户 › 登录地址；用户门户 `/#/plugins/sing-box/account/{id}` |
+| 代理用户自助门户：Passkey 或邮箱密码登录，查看自己的订阅、用量、套餐与到期，线路目录与探针（ADR 0106），公告与指南，到期与流量提醒 | 代理用户 › 登录地址、门户设置；用户门户 `/#/plugins/sing-box/account/{id}`；邮箱登录 `/#/plugins/sing-box/member` |
+| 邀请：每位代理用户有邀请名额，用名额生成邀请码，被邀请的人凭码自己创建账号，起始套餐、策略组和名额由管理员设定（[ADR 0113](adr/0113-invitation-quota-without-commerce.md)） | 代理用户 › 邀请、门户设置；门户 › 我的账号；接受邀请 `/#/plugins/sing-box/join` |
 | 从 Xboard 一类面板迁移（规划）：导入用户、套餐与用量，保留客户端凭据 | 代理用户（新功能） |
 | sing-box 配置部署、预检、运行时运维与部署历史 | 服务器详情 › 插件 |
 | 登录后的首页：需要处理的事项、关键数字、开始使用步骤、各服务器 sing-box 状态 | 总览 › 概览 `/#/plugins/sing-box` |
@@ -125,12 +126,12 @@
 
 ## 侧栏与功能区
 
-侧栏按使用顺序分为四组、12 个入口（[ADR 0102](adr/0102-connection-resilience-and-console-redesign.md)）：先看全局，再运营代理服务，然后管理服务器，最后是告警、线路和设置。讲同一件事的页面合成一个入口下的分页，地址不变。实验功能默认隐藏，「设置 › 面板设置 › 功能显示」开启后才进入侧栏。
+侧栏按使用顺序分为四组、11 个入口（[ADR 0102](adr/0102-connection-resilience-and-console-redesign.md)）：先看全局，再运营代理服务，然后管理服务器，最后是告警、线路和设置。讲同一件事的页面合成一个入口下的分页，地址不变。实验功能默认隐藏，「设置 › 面板设置 › 功能显示」开启后才进入侧栏。
 
 | 分组 | 入口（分页） | 地址 | 主要级别 |
 | --- | --- | --- | --- |
 | 总览 | 概览（概览、统计报表）；费用与续费 | `/#/plugins/sing-box`、`/#/statistics`；`/#/plugins/expenses` | 核心；支撑 |
-| 代理服务 | 代理节点、代理用户、策略与套餐、成员运营 | `/#/plugins/sing-box/nodes`、`/#/plugins/sing-box/users`、`/#/plugins/sing-box/groups`、`/#/plugins/sing-box/commerce` | 核心 |
+| 代理服务 | 代理节点、代理用户、策略与套餐 | `/#/plugins/sing-box/nodes`、`/#/plugins/sing-box/users`、`/#/plugins/sing-box/groups` | 核心 |
 | 服务器 | 服务器（服务器列表、服务器看板）；域名解析；阿里云 CDT | `/#/servers`、`/#/dashboard`；`/#/plugins/ddns`；`/#/plugins/alicloud` | 核心与支撑；可选插件 |
 | 监控与设置 | 告警（告警事件、告警设置）；线路检测（网络检测、延迟检测）；设置（面板设置、插件中心、备份与恢复、管理与安全、账号安全） | `/#/system/notifications`、`/#/monitoring/settings`；`/#/network-workbench`、`/#/latency`；`/#/system/settings`、`/#/plugins/catalog`、`/#/system/backup`、`/#/system/control-center`、`/#/system/administrator` | 支撑 |
 | 实验功能（默认隐藏） | 自动化与维护、网络配置 | `/#/operations`、`/#/network-configuration` | 降级；部分冻结 |
@@ -184,4 +185,4 @@
 
 后端的宿主、插件与组装分层不随功能分级改变，见[仓库目录与维护约定](repository.md)。
 
-成员运营归「代理服务」，入口 `/#/plugins/sing-box/commerce`；成员自助入口为 `/#/plugins/sing-box/member`。Wallos 订阅费用按 ADR 0087 改为「总览 → 费用与续费」，入口仍为 `/#/plugins/expenses`。详见 [迁移说明](nexus-migration.md)。
+原「成员运营」（Nexus 迁移带来的钱包、销售套餐、订单与充值）已删除，旧地址 `/#/plugins/sing-box/commerce` 打开「代理用户」；邀请、登录邮件与公告指南归「代理用户」，见 [ADR 0113](adr/0113-invitation-quota-without-commerce.md)。Wallos 订阅费用在「总览 → 费用与续费」，入口仍为 `/#/plugins/expenses`。

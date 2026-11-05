@@ -41,13 +41,13 @@
 
 ## 代理业务、协议与混合链路
 
-- [ADR 0076：节点库、来源预览与外部订阅授权](0076-node-catalog-and-external-access.md)
+- [ADR 0076：节点库、来源预览与外部订阅授权](0076-node-catalog-and-external-access.md)（外部节点按人分配已由 ADR 0112 改为放进策略组）
 
 - [ADR 0020：链式中转的内部凭证、入口计量与依赖发布](0020-chained-transit.md)
 - [ADR 0023：服务器核心与 sing-box 代理业务分层](0023-proxy-business-boundary.md)
 - [ADR 0030：sing-box 业务搬迁与服务器启用证据](0030-singbox-plugin-business.md)
 - [ADR 0034：现代代理协议与托管证书](0034-modern-protocols-and-certificates.md)
-- [ADR 0035：sing-box 策略组、套餐快照与受控两跳链路](0035-singbox-policy-package-groups.md)
+- [ADR 0035：sing-box 策略组、套餐快照与受控两跳链路](0035-singbox-policy-package-groups.md)（单独授权已由 ADR 0112 取消）
 - [ADR 0040：有序混合链路与机场订阅来源](0040-mixed-chains-and-subscriptions.md)
 - [ADR 0045：混合链路的执行与验证](0045-mixed-path-execution.md)
 - [ADR 0054：链路写入时复核资源快照与原选择](0054-chain-resource-snapshot-writes.md)
@@ -126,9 +126,9 @@
 
 ## Nexus 与 CDT 迁移（2026-10-24）
 
-- [ADR 0089：Nexus 成员业务原生接入](0089-nexus-member-commerce.md)
+- [ADR 0089：Nexus 成员业务原生接入](0089-nexus-member-commerce.md)（售卖部分已由 ADR 0113 删除）
 - [ADR 0090：Wallos 费用订阅配置原生接入](0090-recurring-expense-subscriptions.md)
-- [ADR 0091：成员账号与邮件](0091-member-account-and-mail.md)
+- [ADR 0091：成员账号与邮件](0091-member-account-and-mail.md)（账号与邮件保留，归入代理用户，见 ADR 0113）
 - [ADR 0092：Nexus 实际迁移与旧订阅兼容](0092-nexus-live-cutover.md)
 - [ADR 0093：原 CDT 脚本行为的原生守护模式](0093-cdt-script-guard.md)
 - [ADR 0094：Nexus 节点信息导入与运行时接管分开](0094-nexus-node-inventory.md)
@@ -158,3 +158,8 @@
 ## 自维护运行时（2026-11-01）
 
 - [ADR 0104：自维护 sing-box 运行时，修复 REALITY 可被区分的行为](0104-self-maintained-singbox-runtime.md)
+
+## 代理用户收敛（2026-11-05）
+
+- [ADR 0112：代理用户只通过策略组获得节点](0112-group-only-access.md)：删除单独授权与按人分配外部节点，策略组可含外部节点，原单独授权原样转成策略组。
+- [ADR 0113：去掉成员运营，邀请改为名额与邀请码](0113-invitation-quota-without-commerce.md)：删除钱包、销售套餐、订单与充值；邮箱密码登录、提醒、公告指南归入代理用户；邀请改为名额制邀请码，余额换算为名额。

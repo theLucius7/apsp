@@ -206,12 +206,9 @@ try {
     const users = [{ id: 7, name: 'TEST_ONLY 用户', subscription_token: '', subscription_url: '', credentials_redacted: true }]
     const state = { routes: {
       '/api/plugins/sing-box/users': route => route.fulfill({ json: users }),
-      '/api/plugins/sing-box/nodes': route => route.fulfill({ json: [] }),
-      '/api/plugins/sing-box/proxy-resources': route => route.fulfill({ json: [] }),
       '/api/plugins/sing-box/usage': route => route.fulfill({ json: { uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] } }),
       '/api/plugins/sing-box/policy-groups': route => route.fulfill({ json: [] }),
       '/api/plugins/sing-box/package-groups': route => route.fulfill({ json: [] }),
-      '/api/plugins/sing-box/users/7/accesses': route => route.fulfill({ json: [] }),
       '/api/plugins/sing-box/users/7/policy-groups': route => route.fulfill({ json: { group_ids: [] } }),
       '/api/plugins/sing-box/users/7/entitlement': route => route.fulfill({ json: { user_id: 7, package_group_id: null, package_name: null, monthly_bytes: null, reset_day: null, reset_hour: null, reset_minute: null, timezone: null, starts_at: null, expires_at: null, cycle_start: null, next_reset: null, used_bytes: '0', status: 'unmetered', allowed: true } }),
       '/api/plugins/sing-box/users/7/portal': route => route.fulfill({ json: { configuration: { enabled: true, origin: origin, reason: null }, keys: 0, url: null, activation_expires_at: null } }),

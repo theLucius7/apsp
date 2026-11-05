@@ -124,15 +124,44 @@ fn named<'a>(entries: &'a Value, name: &str) -> Result<&'a Value> {
         .with_context(|| format!("entry {name}"))
 }
 
-async fn accesses(panel: &TestPanel, cookie: &str, user: i64) -> Result<Value> {
-    ok(
+/// External nodes reach users through policy groups; this one holds them all.
+const EXTERNAL_GROUP: &str = "外部节点";
+
+/// Adopted external nodes a policy group can take now.
+async fn candidates(panel: &TestPanel, cookie: &str) -> Result<Value> {
+    let mut value = ok(
         panel,
         cookie,
         Method::GET,
-        &format!("/users/{user}/external-accesses"),
+        "/external-node-candidates",
         None,
     )
-    .await
+    .await?;
+    Ok(value["available_nodes"].take())
+}
+
+/// The external nodes a policy group holds, as the group listing shows them.
+async fn held(panel: &TestPanel, cookie: &str, group: i64) -> Result<Vec<Value>> {
+    ok(panel, cookie, Method::GET, "/policy-groups", None)
+        .await?
+        .as_array()
+        .context("policy groups")?
+        .iter()
+        .find(|value| value["id"] == group)
+        .and_then(|value| value["external_nodes"].as_array().cloned())
+        .context("external group")
+}
+
+async fn hold(panel: &TestPanel, cookie: &str, group: i64, external_nodes: &[Value]) -> Result<()> {
+    ok(
+        panel,
+        cookie,
+        Method::PUT,
+        &format!("/policy-groups/{group}"),
+        Some(json!({"name":EXTERNAL_GROUP,"node_ids":[],"chain_ids":[],"external_nodes":external_nodes})),
+    )
+    .await?;
+    Ok(())
 }
 
 async fn subscription(panel: &TestPanel, user: &Value) -> Result<String> {
@@ -196,13 +225,21 @@ async fn migration_keeps_every_output_and_rollback_restores_it(pool: PgPool) -> 
         .filter_map(|node| node["id"].as_i64())
         .collect();
 
-    // One grant pinned to the first version, one following its node.
+    // A policy group binds the first node pinned to its version and the
+    // second following its node.
     let user = panel.create_user(&cookie, "迁移用户").await?;
     let uid = id(&user)?;
-    let view = accesses(&panel, &cookie, uid).await?;
-    let first = named(&view["available_nodes"], "甲")?;
-    let second = named(&view["available_nodes"], "乙")?;
-    ok(&panel, &cookie, Method::PUT, &format!("/users/{uid}/external-accesses"), Some(json!({"revision":view["revision"],"accesses":[reference(first,"pinned"),reference(second,"follow_node")]}))).await?;
+    let view = candidates(&panel, &cookie).await?;
+    let first = named(&view, "甲")?;
+    let second = named(&view, "乙")?;
+    let external = id(&ok(
+        &panel,
+        &cookie,
+        Method::POST,
+        "/policy-groups",
+        Some(json!({"name":EXTERNAL_GROUP,"node_ids":[],"chain_ids":[],"external_nodes":[reference(first,"pinned"),reference(second,"follow_node")]})),
+    )
+    .await?)?;
 
     // A mixed chain whose first hop is a numbered-source node.
     let entry = host(&panel, &cookie, "入口").await?;
@@ -223,7 +260,7 @@ async fn migration_keeps_every_output_and_rollback_restores_it(pool: PgPool) -> 
         &cookie,
         Method::PUT,
         &format!("/users/{uid}/policy-groups"),
-        Some(json!({"group_ids":[id(&policy)?]})),
+        Some(json!({"group_ids":[external, id(&policy)?]})),
     )
     .await?;
 
@@ -269,6 +306,7 @@ async fn migration_keeps_every_output_and_rollback_restores_it(pool: PgPool) -> 
         report.versions_to_import,
         report.revisions_to_import
     );
+    // The external group's two bindings.
     ensure!(report.external_accesses == 2 && report.mixed_chains_with_subscription_hops == 1);
     ensure!(
         report.versions_not_normalized == 0
@@ -368,45 +406,32 @@ async fn migration_keeps_every_output_and_rollback_restores_it(pool: PgPool) -> 
     .await?;
     let node = &page["nodes"][0];
     ok(&panel, &cookie, Method::PATCH, &format!("/ordered-subscription-sources/{added}/nodes/{}", node["id"].as_str().context("node")?), Some(json!({"adopted":true,"settings_revision":1,"identity_epoch":1,"node_version_id":node["version_id"],"metadata_revision":0}))).await?;
-    let view = accesses(&panel, &cookie, uid).await?;
-    for entry in view["available_nodes"].as_array().context("available")? {
+    let view = candidates(&panel, &cookie).await?;
+    for entry in view.as_array().context("available")? {
         ensure!(entry["available"] == true, "{entry}");
     }
-    let third = named(&view["available_nodes"], "丙")?;
-    let kept: Vec<Value> = view["accesses"]
-        .as_array()
-        .context("accesses")?
+    let third = named(&view, "丙")?;
+    let kept: Vec<Value> = held(&panel, &cookie, external)
+        .await?
         .iter()
         .map(|entry| reference(entry, entry["update_mode"].as_str().unwrap_or_default()))
         .collect();
+    ensure!(kept.len() == 2);
     let mut widened = kept.clone();
     widened.push(reference(third, "follow_node"));
-    ok(
-        &panel,
-        &cookie,
-        Method::PUT,
-        &format!("/users/{uid}/external-accesses"),
-        Some(json!({"revision":view["revision"],"accesses":widened})),
-    )
-    .await?;
+    hold(&panel, &cookie, external, &widened).await?;
     ensure!(subscription(&panel, &user).await?.contains("c.example.com"));
 
-    // A rollback must not strand that grant.
+    // A rollback must not strand the group's binding of that node.
     let outcome = migration::rollback(&pool).await?;
     ensure!(!outcome.rolled_back && outcome.blockers.len() == 1);
     ensure!(outcome.blockers[0].starts_with("grants_on_nodes_or_versions_after_migration"));
-    let view = accesses(&panel, &cookie, uid).await?;
-    ok(
-        &panel,
-        &cookie,
-        Method::PUT,
-        &format!("/users/{uid}/external-accesses"),
-        Some(json!({"revision":view["revision"],"accesses":kept})),
-    )
-    .await?;
+    hold(&panel, &cookie, external, &kept).await?;
     let outcome = migration::rollback(&pool).await?;
     ensure!(outcome.rolled_back, "{:?}", outcome.blockers);
+    // Both of the group's bindings name numbered nodes again.
     ensure!(outcome.restored_sources == 1 && outcome.restored_accesses == 2);
+    ensure!(held(&panel, &cookie, external).await?.len() == 2);
     ensure!(
         ordered_sources(&pool).await? == 1,
         "ordered-only sources stay"

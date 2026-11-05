@@ -101,9 +101,6 @@ fn message(reason: &str, detail: Option<&str>) -> String {
         "mixed_not_ready" => {
             "当前混合路径尚未在全部服务器确认可用；转换需要从可用的路径开始".into()
         }
-        "entry_direct_grants" => {
-            "入口仍有直接授权；有序链路只接受整条链路的授权，请先改为通过策略组授权".into()
-        }
         "entry_policy_node_grants" => "策略组把入口当作普通节点授权；请改为授权整条链路".into(),
         "probe_target_invalid" => "有序链路需要没有路径前缀或查询参数的面板 HTTPS 根地址".into(),
         "generation_unreadable" => "混合链路的版本记录无法读取".into(),
@@ -306,11 +303,11 @@ async fn run(state: &AppState, id: i64, expected: Option<i64>) -> ApiResult<Chec
         reasons.push("mixed_not_ready".into());
     }
     // Ordered entries accept only chain grants; any other grant would be dropped.
-    let (direct, policy): (bool, bool) = sqlx::query_as("SELECT EXISTS(SELECT 1 FROM accesses WHERE node_id=$1 AND direct_grant),EXISTS(SELECT 1 FROM singbox_policy_nodes WHERE node_id=$1)")
-        .bind(chain.entry_node_id).fetch_one(&mut *tx).await?;
-    if direct {
-        reasons.push("entry_direct_grants".into());
-    }
+    let policy: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_policy_nodes WHERE node_id=$1)")
+            .bind(chain.entry_node_id)
+            .fetch_one(&mut *tx)
+            .await?;
     if policy {
         reasons.push("entry_policy_node_grants".into());
     }
@@ -416,13 +413,16 @@ pub(crate) async fn switch(
     tx: &mut Transaction<'_, Postgres>,
     chain: &ChainRow,
 ) -> ApiResult<bool> {
-    let grants: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM accesses WHERE node_id=$1 AND direct_grant) OR EXISTS(SELECT 1 FROM singbox_policy_nodes WHERE node_id=$1)")
-        .bind(chain.entry_node_id).fetch_one(&mut **tx).await?;
+    let grants: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_policy_nodes WHERE node_id=$1)")
+            .bind(chain.entry_node_id)
+            .fetch_one(&mut **tx)
+            .await?;
     if grants {
         revert(
             tx,
             chain,
-            "转换期间入口出现了直接授权或节点策略授权，已保留混合链路；请改为授权整条链路后重新转换",
+            "转换期间策略组把入口当作普通节点授权，已保留混合链路；请改为授权整条链路后重新转换",
         )
         .await?;
         return Ok(false);

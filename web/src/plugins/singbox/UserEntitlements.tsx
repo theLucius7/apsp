@@ -62,7 +62,7 @@ export default function UserEntitlements({ id, entitlement, userError, refreshRe
             {selected.filter(id => !policies.data?.some(value => value.id === id)).map(id => <label key={id} className="flex cursor-pointer items-center gap-2.5 rounded-md border px-2.5 py-2 text-[13px]">
               <Checkbox checked disabled={action.busy} onCheckedChange={() => { dirty.current = true; setSelected(previous => previous.filter(value => value !== id)) }} /><span>策略组 #{id}（已不存在，原选择保留）</span>
             </label>)}
-          </div> : <p className="text-muted-foreground text-xs leading-relaxed">尚未创建策略组，可以在下方单独授权节点。</p>}
+          </div> : <p className="text-muted-foreground text-xs leading-relaxed">尚未创建策略组。用户只通过策略组获得节点，请先在「策略与套餐」中创建。</p>}
         </section>
         <section aria-label="套餐" className="min-w-0">
           <div className="mb-2 flex min-h-7 flex-wrap items-center justify-between gap-2">
@@ -79,7 +79,7 @@ export default function UserEntitlements({ id, entitlement, userError, refreshRe
                 <div><dt className="text-muted-foreground">可使用至</dt><dd className="mt-0.5 wrap-anywhere">{dateText(e.expires_at, e.timezone)}</dd></div>
               </dl>
               <p className="text-muted-foreground mt-2 text-xs leading-relaxed" title={`本期起点 ${dateText(e.cycle_start, e.timezone)}。到期或用完流量后立即停止提供可用订阅，设备应用新配置后停止服务。设备离线或流量尚未上报时，限制不会瞬间生效。`}>按 {e.timezone} 显示。重置只恢复月度流量，不延长有效期。</p>
-            </> : <p className="text-muted-foreground mt-2 text-xs leading-relaxed">未分配套餐时不限制流量或有效期。分配后，所有策略组与单独授权共享此用户的额度。</p>}
+            </> : <p className="text-muted-foreground mt-2 text-xs leading-relaxed">未分配套餐时不限制流量或有效期。分配后，此用户所有策略组中的节点共享同一份额度。</p>}
           </>}
         </section>
       </div>

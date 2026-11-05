@@ -276,14 +276,7 @@ async fn quota_is_shared_across_nodes_and_terminal_samples_remain_chargeable(
         entitlement(&panel, &cookie, user).await?["used_bytes"],
         "199"
     );
-    call(
-        &panel,
-        &cookie,
-        Method::DELETE,
-        &format!("/users/{user}/accesses/{na}"),
-        None,
-    )
-    .await?;
+    panel.revoke(&cookie, user, na).await?;
     apsp_panel::usage::ingest(&panel.state, a, usage(user, na, now_timestamp(), 0, 1)).await?;
     assert_eq!(
         entitlement(&panel, &cookie, user).await?["status"],

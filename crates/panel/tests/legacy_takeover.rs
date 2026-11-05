@@ -257,17 +257,23 @@ async fn takeover_skips_chains_it_cannot_keep_byte_for_byte(pool: PgPool) -> Res
             exit,
         ));
     }
-    let user = id(&panel.create_user(&cookie, "直授用户").await?)?;
-    // A direct grant on an entry would be dropped once the entry is ordered.
-    sqlx::query("INSERT INTO accesses(user_id,node_id,uuid,stat_name,direct_grant) VALUES($1,$2,$3,$4,TRUE)")
-        .bind(user).bind(chains[0].1).bind(Uuid::new_v4()).bind(format!("u{user}_n{}", chains[0].1)).execute(&pool).await?;
+    // A group that grants an entry as a plain node would be dropped once the entry
+    // is ordered, whether or not anyone is in the group yet.
     let group: i64 =
         sqlx::query_scalar("INSERT INTO singbox_policy_groups(name) VALUES('节点组') RETURNING id")
             .fetch_one(&pool)
             .await?;
-    sqlx::query("INSERT INTO singbox_policy_nodes(group_id,node_id) VALUES($1,$2)")
+    for entry in [chains[0].1, chains[1].1] {
+        sqlx::query("INSERT INTO singbox_policy_nodes(group_id,node_id) VALUES($1,$2)")
+            .bind(group)
+            .bind(entry)
+            .execute(&pool)
+            .await?;
+    }
+    let user = id(&panel.create_user(&cookie, "组内用户").await?)?;
+    sqlx::query("INSERT INTO singbox_user_policies(user_id,group_id) VALUES($1,$2)")
+        .bind(user)
         .bind(group)
-        .bind(chains[1].1)
         .execute(&pool)
         .await?;
     // A disabled exit, a changed entry and a deleted chain.
@@ -299,7 +305,7 @@ async fn takeover_skips_chains_it_cannot_keep_byte_for_byte(pool: PgPool) -> Res
     let reasons =
         |chain: i64| -> Result<Vec<String>> { Ok(outcome(&report, chain)?.reasons.clone()) };
     ensure!(
-        reasons(chains[0].0)?.contains(&"entry_direct_grants".to_owned()),
+        reasons(chains[0].0)?.contains(&"entry_policy_node_grants".to_owned()),
         "{:?}",
         reasons(chains[0].0)?
     );
@@ -330,7 +336,7 @@ async fn takeover_skips_chains_it_cannot_keep_byte_for_byte(pool: PgPool) -> Res
     ensure!(rows == 0);
 
     // Once the chain leaves the taken-over generation, it cannot simply return.
-    sqlx::query("DELETE FROM accesses WHERE node_id=$1")
+    sqlx::query("DELETE FROM singbox_policy_nodes WHERE node_id=$1")
         .bind(chains[0].1)
         .execute(&pool)
         .await?;

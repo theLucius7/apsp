@@ -83,6 +83,6 @@ GitHub Actions 当前按协作安排暂停，只做本地验证。未运行或�
 
 许可证：[AGPL-3.0-only](LICENSE)。
 
-成员运营、Wallos 订阅费用、私密导出工具及兼容切换见 [Nexus 与 Wallos 迁移](docs/nexus-migration.md)。
+Nexus 迁移用户、Wallos 订阅费用及兼容通道见 [Nexus 与 Wallos 迁移](docs/nexus-migration.md)。
 
 阿里云 CDT 配置见 [RAM 最小权限与实例 ARN](docs/alicloud-ram.md) 和 [CDT 脚本守护迁移](docs/cdt-script-migration.md)。

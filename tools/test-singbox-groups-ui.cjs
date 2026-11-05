@@ -9,6 +9,7 @@ async function main() {
   const dependency = process.env.APSP_PLAYWRIGHT_MODULE || process.env.PLAYWRIGHT_MODULE || 'playwright'
   const { chromium } = await import(path.isAbsolute(dependency) ? pathToFileURL(dependency).href : dependency)
   const { flatResourceFixtures, proxyResourceFixtures, orderedResourceFixture, pathFixtureUuid } = await import('../web/tests/proxy-resource-fixtures.mjs')
+  const { installControlCenterFixtures } = await import('../web/tests/control-center-fixtures.mjs')
   const screenshots = process.env.APSP_UI_SCREENSHOT_DIR || process.env.APSP_GROUPS_SCREENSHOTS
   let server, browser
   try {
@@ -34,14 +35,15 @@ async function main() {
     browser = await chromium.launch({ headless: true, executablePath: process.env.APSP_CHROME_PATH || process.env.CHROMIUM_PATH || undefined })
     const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
     page.setDefaultTimeout(10000)
-    const errors = [], writes = [], assignments = []
+    const errors = [], writes = [], applied = [], previews = new Map()
     const root = '/api/plugins/sing-box'
     const nodes = [{ id: 1, name: '标准节点', server_id: 1 }, { id: 2, name: '入口节点', server_id: 1 }, { id: 3, name: '出口节点', server_id: 2 }, { id: 4, name: '备用入口', server_id: 1 }].map(n => ({ ...n, port: 20000 + n.id, protocol: 'vless-reality', public_host: 'proxy.example.com', sni: 'www.example.com' }))
     nodes.push({ ...nodes[0], id: 5, name: '现代节点', server_id: 2, protocol: 'shadowsocks2022' })
     nodes.push({ ...nodes[0], id: 6, name: '混合入口', port: 20006 })
     const chains = [{ id: 1, name: '两跳示例', entry_node_id: 2, exit_node_id: 3, available: true }]
     const servers = [1, 2].map(id => ({ id, name: `测试服务器 ${id}`, enabled: true, online: false, agent_supported: true, read_only: false, source: 'administrator' }))
-    const chainReceipts = new Map()
+    // Users get external nodes only through policy groups.
+    const external = { external_node_id: 7, source_id: 9, identity_epoch: 1, node_version_id: 70, update_mode: 'follow_node', metadata_revision: 0, name: '外部节点', source_name: '测试来源', protocol: 'shadowsocks', server: 'external.example.net', port: 443, available: true, reason: null, current_version_id: 70, resolved_version_id: 70, source_last_error: null }
     const policies = [{ id: 1, name: '常用节点', node_ids: [1], chain_ids: [1], member_count: 1 }]
     const plans = [{ id: 1, name: '月度套餐', monthly_bytes: '536870912000', reset_day: 31, reset_hour: 12, reset_minute: 30, timezone: 'Asia/Taipei', duration_days: 365 }]
     let groupIds = [1], assigned = false, exhausted = false, legacyChainReads = 0
@@ -56,6 +58,7 @@ async function main() {
       else if (pathname === `${root}/nodes`) data = nodes
       else if (method === 'GET' && pathname === `${root}/servers`) data = servers
       else if (method === 'GET' && [`${root}/subscription-sources`, `${root}/ordered-subscription-sources`].includes(pathname)) data = []
+      else if (method === 'GET' && pathname === `${root}/external-node-candidates`) data = { available_nodes: [external] }
       else if (method === 'GET' && pathname === `${root}/proxy-resources`) data = flatResourceFixtures(nodes.filter(node => node.id !== 6), servers, chains)
       else if (method === 'GET' && pathname === `${root}/ordered-proxy-resources`) {
         const resources = proxyResourceFixtures(nodes, servers, chains).map(resource => {
@@ -74,21 +77,6 @@ async function main() {
             { kind: 'managed', position: 2, node_id: 3, endpoint_version_id: pathFixtureUuid(3), endpoint: resources.find(resource => resource.kind === 'direct' && resource.id === 3).entry }],
         })]
       }
-      else if (method === 'POST' && pathname === `${root}/chains/ordered-batch`) {
-        assert.match(payload.request_id, /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/)
-        assert.deepEqual(payload.items, [{ name: '测试链路', entry: { mode: 'existing', node_id: 4 }, hops: [{ kind: 'managed', node_id: 3 }] }])
-        const previous = chainReceipts.get(payload.request_id)
-        if (previous) {
-          assert.deepEqual(payload, previous.body)
-          data = previous.receipt
-        } else {
-          const chain = { id: Math.max(...chains.map(chain => chain.id)) + 1, name: payload.items[0].name, entry_node_id: 4, exit_node_id: 3, available: true, path_kind: 'ordered' }
-          data = { request_id: payload.request_id, chain_ids: [chain.id], entry_node_ids: [4] }
-          chains.push(chain)
-          chainReceipts.set(payload.request_id, { body: structuredClone(payload), receipt: data })
-          await route.fulfill({ status: 201, json: data }); return
-        }
-      }
       else if (pathname === `${root}/chains`) {
         legacyChainReads += 1
         assert.equal(method, 'GET', 'The resource editor must use one atomic batch POST')
@@ -101,24 +89,39 @@ async function main() {
         else data = plans
       } else if (pathname === `${root}/users`) data = [{ id: 1, name: '测试用户', subscription_token: 'TEST_ONLY', subscription_url: 'https://panel.example.com/s/TEST_ONLY' }]
       else if (pathname === `${root}/usage`) data = { uplink: '40', downlink: '60', total: '100', by_user: [{ user_id: 1, name: '测试用户', deleted: false, uplink: '40', downlink: '60' }], by_node: [] }
-      else if (pathname === `${root}/users/1/accesses`) data = groupIds.includes(1) ? [{ user_id: 1, node_id: 1, uuid: 'TEST_ONLY', stat_name: 'u1_n1', direct_grant: false }, { user_id: 1, node_id: 2, uuid: 'TEST_ONLY_CHAIN', stat_name: 'u1_n2', direct_grant: false }] : []
       else if (pathname === `${root}/users/1/portal`) data = { configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin: origin.origin }, keys: 0, url: null, activation_expires_at: null }
-      else if (pathname === `${root}/users/1/policy-groups`) {
-        if (method === 'PUT') groupIds = payload.group_ids
-        data = { group_ids: groupIds }
+      else if (method === 'GET' && pathname === `${root}/users/1/policy-groups`) data = { group_ids: groupIds }
+      else if (method === 'GET' && pathname === `${root}/users/1/diagnosis`) data = { account: { name: '测试用户', portal_created: false, keys: 0, active_sessions: 0, activation_expires_at: null },
+        subscription: { status: 'ready', message: 'TEST_ONLY', granted_nodes: 1, ready_managed_nodes: 1, ready_external_nodes: 0 }, legacy: null, permissions: [], ledger: [], rotations: [], events: [], limitations: {} }
+      else if (method === 'GET' && pathname === `${root}/users/1/client-template`) data = { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY', limitations: 'TEST_ONLY' }
+      else if (method === 'GET' && pathname === `${root}/users/1/subscription`) {
+        const format = new URL(request.url()).searchParams.get('format') ?? 'singbox'
+        data = { format, status: 'ready', message: 'TEST_ONLY 订阅', subscription_url: 'https://panel.example.com/s/TEST_ONLY', available_formats: ['singbox'], granted_nodes: 1, eligible_nodes: 1, ready_nodes: [{ kind: 'managed', id: 1, name: '标准节点', protocol: 'vless-reality' }], content: '{"outbounds":[]}', filename: 'TEST_ONLY.json', content_type: 'application/json', entitlement: { allowed: true, status: 'unmetered', monthly_bytes: null, used_bytes: '100', expires_at: null } }
+      }
+      else if (method === 'POST' && pathname === `${root}/operations/preview`) {
+        const id = `00000000-0000-4000-8000-${String(previews.size + 1).padStart(12, '0')}`
+        previews.set(id, payload)
+        data = { id, expires_at: Math.floor(Date.now() / 1000) + 300, summary: payload.operation === 'policy_batch'
+          ? { effect: 'TEST_ONLY 固定策略目标', users: [{ id: 1, name: '测试用户' }], differences: [{ user_id: 1, added_nodes: [], removed_nodes: [1, 2], effective_nodes: [] }] }
+          : { effect: 'TEST_ONLY 固定套餐', plan: plans[0], new_cycle: { cycle_start: 1790812800, next_reset: 1793421000, used_bytes: '100' } } }
+      }
+      else if (method === 'POST' && /^\/api\/plugins\/sing-box\/operations\/[^/]+\/apply$/.test(pathname)) {
+        const previewed = previews.get(pathname.split('/').at(-2))
+        assert(previewed, 'apply binds an existing preview'); assert.deepEqual(payload, { confirm: true })
+        applied.push({ pathname, request: previewed })
+        if (previewed.operation === 'replace_package' && applied.filter(entry => entry.request.operation === 'replace_package').length === 1) { await route.fulfill({ status: 503, json: { error: '测试：响应丢失，请重试' } }); return }
+        if (previewed.operation === 'policy_batch') groupIds = previewed.group_ids
+        else assigned = true
+        data = { applied: true }
       } else if (pathname === `${root}/users/1/entitlement`) data = {
         user_id: 1, package_group_id: assigned ? 1 : null, package_name: assigned ? '月度套餐' : null,
         monthly_bytes: assigned ? '536870912000' : null, reset_day: 31, reset_hour: 12, reset_minute: 30, timezone: 'Asia/Taipei',
         starts_at: 1790812800, expires_at: 1822348800, cycle_start: 1790742600, next_reset: 1793421000,
         used_bytes: exhausted ? '536870912000' : '100', status: assigned ? exhausted ? 'exhausted' : 'active' : 'unmetered', allowed: !exhausted,
       }
-      else if (pathname === `${root}/users/1/package`) {
-        assignments.push(payload)
-        if (assignments.length === 1) { await route.fulfill({ status: 503, json: { error: '测试：响应丢失，请重试' } }); return }
-        assigned = true; data = { id: 1, user_id: 1, package_group_id: 1, starts_at: 1790812800, expires_at: 1822348800 }
-      }
       await route.fulfill({ json: data })
     })
+    await installControlCenterFixtures(page)
     await page.goto(`${origin.origin}/#/plugins/sing-box/groups`)
     await page.getByRole('button', { name: '创建策略组', exact: true }).click()
     await page.getByRole('textbox', { name: '名称', exact: true }).fill('测试策略')
@@ -126,11 +129,14 @@ async function main() {
     await page.getByRole('checkbox', { name: /现代节点/ }).check()
     await page.getByRole('checkbox', { name: /两跳示例/ }).check()
     await page.getByRole('checkbox', { name: /混合示例/ }).check()
+    await page.getByRole('checkbox', { name: /外部节点/ }).check()
+    await page.getByRole('combobox', { name: '外部节点 的更新方式', exact: true }).selectOption('pinned')
     assert.equal(await page.locator('input[name="node_ids"][value="2"]').count(), 0)
     assert.equal(await page.locator('input[name="node_ids"][value="6"]').count(), 0)
     await page.getByRole('button', { name: '保存', exact: true }).click()
     await page.getByText('测试策略', { exact: true }).waitFor()
-    assert.deepEqual(writes.at(-1).payload, { name: '测试策略', node_ids: [1, 5], chain_ids: [1, 100] })
+    const { name: _name, source_name: _source, protocol: _protocol, server: _server, port: _port, available: _available, reason: _reason, current_version_id: _current, resolved_version_id: _resolved, source_last_error: _error, ...reference } = external
+    assert.deepEqual(writes.at(-1).payload, { name: '测试策略', node_ids: [1, 5], chain_ids: [1, 100], external_nodes: [{ ...reference, update_mode: 'pinned' }] })
     assert.equal(legacyChainReads, 0, 'Policy groups must read complete resources instead of legacy chains')
     await page.getByRole('button', { name: '套餐组', exact: true }).click()
     await page.getByRole('button', { name: '创建套餐组', exact: true }).click()
@@ -143,45 +149,37 @@ async function main() {
     await page.getByRole('button', { name: '保存', exact: true }).click()
     await page.getByText('精确额度', { exact: true }).waitFor()
     assert.deepEqual(writes.at(-1).payload, { name: '精确额度', monthly_bytes: '549755813888', reset_day: 31, reset_hour: 2, reset_minute: 30, timezone: 'Asia/Taipei', duration_days: 90 })
-    await page.goto(`${origin.origin}/#/plugins/sing-box/nodes?kind=chains`)
-    await page.getByRole('link', { name: '链路', exact: true }).waitFor()
-    await page.getByRole('button', { name: '创建两跳链路', exact: true }).click()
-    await page.locator('select[name="entry_mode"]').selectOption('existing')
-    await page.locator('input[name="name"]').fill('测试链路')
-    assert.equal(await page.locator('select[name="entry_node_id"] option[value="5"]').count(), 0)
-    assert.equal(await page.locator('select[name="exit_node_id"] option[value="5"]').count(), 0)
-    await page.locator('select[name="entry_node_id"]').selectOption('4')
-    await page.locator('select[name="exit_node_id"]').selectOption('3')
-    await page.getByRole('button', { name: '创建未授权链路', exact: true }).click()
-    await page.getByText('测试链路', { exact: true }).waitFor()
-    const chainWrites = writes.filter(write => write.pathname === `${root}/chains/ordered-batch`)
-    assert.equal(chainWrites.length, 1)
-    assert.equal(chainWrites[0].method, 'POST')
-    assert.deepEqual(chainWrites[0].payload.items, [{ name: '测试链路', entry: { mode: 'existing', node_id: 4 }, hops: [{ kind: 'managed', node_id: 3 }] }])
-    assert.equal(writes.filter(write => write.pathname === `${root}/chains`).length, 0)
-    assert.equal(chains.filter(chain => chain.name === '测试链路').length, 1)
+    // Ordered chain creation is exercised by web/tests/ordered-chains.mjs.
     await page.goto(`${origin.origin}/#/plugins/sing-box/users`)
-    await page.getByRole('heading', { name: '可用范围与套餐', exact: true }).waitFor()
-    await page.getByRole('button', { name: '订阅链接', exact: true }).click()
+    await page.getByRole('heading', { name: '权限与套餐', exact: true }).waitFor()
+    await page.getByRole('button', { name: '订阅详情', exact: true }).click()
     assert.equal(await page.getByRole('combobox', { name: '订阅格式' }).inputValue(), 'singbox')
     await page.getByRole('button', { name: '完成', exact: true }).click()
-    await page.getByText('来自策略组', { exact: true }).waitFor()
-    assert.equal(await page.getByRole('checkbox', { name: '授权 入口节点', exact: true }).count(), 0)
-    assert.equal(await page.getByRole('checkbox', { name: '授权 标准节点', exact: true }).isChecked(), false)
+    assert.equal(await page.getByRole('switch', { name: /^授权 / }).count(), 0, 'Users get nodes only through policy groups')
+    const confirmPreview = async title => {
+      const review = page.getByRole('dialog', { name: title })
+      await review.getByRole('checkbox', { name: '已核对目标与影响，确认执行', exact: true }).check()
+      await review.getByRole('button', { name: '确认应用', exact: true }).click()
+      return review
+    }
     await page.getByRole('checkbox', { name: /常用节点/ }).uncheck()
     await page.getByRole('button', { name: '保存策略组分配', exact: true }).click()
-    await page.getByText('策略组分配已保存。单独授权仍保留，设备应用配置后更新可用节点。', { exact: true }).waitFor()
-    assert.deepEqual(writes.at(-1).payload, { group_ids: [] })
+    await (await confirmPreview('策略组分配预览')).waitFor({ state: 'hidden' })
+    await page.getByText('变更已确认保存；历史账本保留，请继续查看设备应用与订阅状态。', { exact: true }).waitFor()
+    assert.deepEqual(applied.at(-1).request, { operation: 'policy_batch', user_ids: [1], group_ids: [] })
     await page.getByRole('button', { name: '分配或更换套餐', exact: true }).click()
     await page.locator('select[name="package_group_id"]').selectOption('1')
     await page.getByRole('button', { name: '确认分配', exact: true }).click()
-    await page.getByText('测试：响应丢失，请重试', { exact: true }).waitFor()
-    await page.getByRole('button', { name: '确认分配', exact: true }).click()
-    await page.getByText('套餐已分配，按分配时刻计算有效期。本期历史用量没有清空。', { exact: true }).waitFor()
-    assert.equal(assignments.length, 2)
-    assert.deepEqual(assignments[0], assignments[1])
-    assert.match(assignments[0].request_id, /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/)
-    await page.getByText('本期已用 / 每月额度', { exact: true }).waitFor()
+    const review = await confirmPreview('套餐更换预览')
+    await review.getByText('测试：响应丢失，请重试', { exact: true }).waitFor()
+    // Retrying applies the same confirmed preview rather than a new one.
+    await review.getByRole('button', { name: '确认应用', exact: true }).click()
+    await review.waitFor({ state: 'hidden' })
+    const packageApplies = applied.filter(entry => entry.request.operation === 'replace_package')
+    assert.equal(packageApplies.length, 2)
+    assert.equal(packageApplies[0].pathname, packageApplies[1].pathname)
+    assert.deepEqual(packageApplies[0].request, { operation: 'replace_package', user_id: 1, package_group_id: 1 })
+    await page.getByText(/^本期已用 /).waitFor()
     exhausted = true
     await page.reload()
     await page.getByText('本期流量已用完', { exact: true }).waitFor()
@@ -193,7 +191,7 @@ async function main() {
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
     if (screenshots) await page.screenshot({ path: path.join(screenshots, 'user-mobile.png'), fullPage: true })
     assert.deepEqual(errors, [])
-    console.log('PASS: policy/package/chain forms, precise quota, scoped grants, stable assignment retry, expiry display, desktop/mobile Chromium')
+    console.log('PASS: policy/package forms with external nodes, precise quota, group-only grants, preview-confirmed assignment with stable retry, expiry display, desktop/mobile Chromium')
   } finally {
     try { await browser?.close() }
     finally { if (server?.listening) await new Promise(resolve => server.close(resolve)) }

@@ -45,7 +45,7 @@ try {
       let value
       if (path === `/api/plugins/sing-box/portal/${account}`) value = { authenticated: true, name: '测试成员', configuration: { enabled: false, reason: '夹具未启用认证器' }, subscription_url: 'https://legacy.example.com/assets/fixture-token', legacy_compatibility: { last_sync_at: 1 }, usage: { uplink: '20', downlink: '30' }, keys: [], subscription_status: { status: 'ready', message: '', entitlement: { package_name: '标准', used_bytes: '50', monthly_bytes: '1000', expires_at: null, next_reset: null } } }
       else if (path === `/api/plugins/sing-box/portal/${account}/lines`) value = { generated_at: now, package: '标准', lines, hosts }
-      else if (path === `/api/plugins/sing-box/portal/${account}/commerce`) value = { enabled: false }
+      else if (path === `/api/plugins/sing-box/portal/${account}/account`) value = { profile: { email: null, email_verified: false, has_password: false, remind_expire: false, remind_traffic: false }, guides: [], invitations: { enabled: false, remaining: 0, issued: [] } }
       else if (path === '/api/dashboard/access') value = { authenticated: false, public_dashboard: false }
       else { unexpected.push(path); return route.fulfill({ status: 404, json: { error: 'TEST_ONLY 未知请求' } }) }
       return route.fulfill({ json: value })

@@ -231,50 +231,55 @@ impl NodeState {
     }
 }
 
+/// A user's external nodes come from every policy group they are in. When two
+/// groups hold the same node, the binding that still matches the node's identity
+/// and follows its updates wins.
 pub async fn bindings(connection: &mut PgConnection, user_id: i64) -> ApiResult<Vec<Binding>> {
-    Ok(sqlx::query_as("SELECT external_node_id,source_id,identity_epoch,node_version_id,update_mode,created_at FROM singbox_external_accesses WHERE user_id=$1 ORDER BY external_node_id")
+    Ok(sqlx::query_as("SELECT DISTINCT ON (p.external_node_id) p.external_node_id,s.source_id,p.identity_epoch,p.node_version_id,p.update_mode,p.created_at FROM singbox_user_policies up JOIN singbox_policy_external_nodes p ON p.group_id=up.group_id JOIN singbox_external_node_states s ON s.id=p.external_node_id WHERE up.user_id=$1 ORDER BY p.external_node_id,(p.identity_epoch=s.identity_epoch) DESC,(p.update_mode='follow_node') DESC,p.node_version_id DESC")
         .bind(user_id).fetch_all(connection).await?)
 }
 
-pub async fn states(
+/// The external nodes one group holds, or every group's when `group` is `None`.
+pub async fn group_bindings(
     connection: &mut PgConnection,
-    ids: Option<&[i64]>,
-) -> ApiResult<BTreeMap<i64, NodeState>> {
-    let rows: Vec<NodeState> = sqlx::query_as("SELECT n.id,n.source_id,n.identity_epoch,n.current_version_id,COALESCE(m.name_override,n.name) AS name,n.source_name,n.adopted,n.present,n.identity_unique,n.source_epoch,n.source_archived,n.source_deleted_at IS NOT NULL AS source_deleted,n.source_last_error,COALESCE(m.enabled,TRUE) AS enabled,m.deleted_at IS NOT NULL AS deleted,COALESCE(m.revision,0) AS metadata_revision,COALESCE(m.sort_order,0) AS sort_order FROM singbox_external_node_states n LEFT JOIN singbox_node_metadata m ON m.kind='external' AND m.id=n.id WHERE ($1::BIGINT[] IS NULL OR n.id=ANY($1)) ORDER BY n.id")
-        .bind(ids).fetch_all(connection).await?;
-    Ok(rows.into_iter().map(|row| (row.id, row)).collect())
+    group: Option<i64>,
+) -> ApiResult<Vec<(i64, Binding)>> {
+    let rows: Vec<GroupBinding> = sqlx::query_as("SELECT p.group_id,p.external_node_id,s.source_id,p.identity_epoch,p.node_version_id,p.update_mode,p.created_at FROM singbox_policy_external_nodes p JOIN singbox_external_node_states s ON s.id=p.external_node_id WHERE $1::BIGINT IS NULL OR p.group_id=$1 ORDER BY p.group_id,p.external_node_id")
+        .bind(group).fetch_all(connection).await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            (
+                row.group_id,
+                Binding {
+                    external_node_id: row.external_node_id,
+                    source_id: row.source_id,
+                    identity_epoch: row.identity_epoch,
+                    node_version_id: row.node_version_id,
+                    update_mode: row.update_mode,
+                    created_at: row.created_at,
+                },
+            )
+        })
+        .collect())
 }
 
-pub async fn versions(
+#[derive(FromRow)]
+struct GroupBinding {
+    group_id: i64,
+    external_node_id: i64,
+    source_id: i64,
+    identity_epoch: i64,
+    node_version_id: i64,
+    update_mode: String,
+    created_at: i64,
+}
+
+/// Resolves bindings to the version a subscription would use and describes them.
+pub async fn resolve(
     connection: &mut PgConnection,
-    ids: Vec<i64>,
-) -> ApiResult<BTreeMap<i64, Version>> {
-    let rows:Vec<Version> = sqlx::query_as("SELECT id,external_node_id,source_id,identity_epoch,parser_version,ordered,config_json,config_sha256,normalized_config,content_digest FROM singbox_external_version_configs WHERE id=ANY($1)")
-        .bind(ids).fetch_all(connection).await?;
-    Ok(rows.into_iter().map(|row| (row.id, row)).collect())
-}
-
-pub async fn revision(connection: &mut PgConnection, user_id: i64) -> ApiResult<i64> {
-    Ok(
-        sqlx::query_scalar("SELECT revision FROM singbox_external_access_state WHERE user_id=$1")
-            .bind(user_id)
-            .fetch_optional(connection)
-            .await?
-            .unwrap_or(0),
-    )
-}
-
-pub struct SubscriptionNodes {
-    pub granted: usize,
-    pub nodes: Vec<ExternalClientNode>,
-    pub entries: Vec<Entry>,
-}
-
-pub async fn subscription_nodes(
-    connection: &mut PgConnection,
-    user_id: i64,
-) -> ApiResult<SubscriptionNodes> {
-    let bindings = bindings(connection, user_id).await?;
+    bindings: &[Binding],
+) -> ApiResult<(BTreeMap<i64, NodeState>, BTreeMap<i64, Version>)> {
     let states = states(
         connection,
         Some(
@@ -296,6 +301,39 @@ pub async fn subscription_nodes(
         })
         .collect();
     let versions = versions(connection, ids).await?;
+    Ok((states, versions))
+}
+
+pub async fn states(
+    connection: &mut PgConnection,
+    ids: Option<&[i64]>,
+) -> ApiResult<BTreeMap<i64, NodeState>> {
+    let rows: Vec<NodeState> = sqlx::query_as("SELECT n.id,n.source_id,n.identity_epoch,n.current_version_id,COALESCE(m.name_override,n.name) AS name,n.source_name,n.adopted,n.present,n.identity_unique,n.source_epoch,n.source_archived,n.source_deleted_at IS NOT NULL AS source_deleted,n.source_last_error,COALESCE(m.enabled,TRUE) AS enabled,m.deleted_at IS NOT NULL AS deleted,COALESCE(m.revision,0) AS metadata_revision,COALESCE(m.sort_order,0) AS sort_order FROM singbox_external_node_states n LEFT JOIN singbox_node_metadata m ON m.kind='external' AND m.id=n.id WHERE ($1::BIGINT[] IS NULL OR n.id=ANY($1)) ORDER BY n.id")
+        .bind(ids).fetch_all(connection).await?;
+    Ok(rows.into_iter().map(|row| (row.id, row)).collect())
+}
+
+pub async fn versions(
+    connection: &mut PgConnection,
+    ids: Vec<i64>,
+) -> ApiResult<BTreeMap<i64, Version>> {
+    let rows:Vec<Version> = sqlx::query_as("SELECT id,external_node_id,source_id,identity_epoch,parser_version,ordered,config_json,config_sha256,normalized_config,content_digest FROM singbox_external_version_configs WHERE id=ANY($1)")
+        .bind(ids).fetch_all(connection).await?;
+    Ok(rows.into_iter().map(|row| (row.id, row)).collect())
+}
+
+pub struct SubscriptionNodes {
+    pub granted: usize,
+    pub nodes: Vec<ExternalClientNode>,
+    pub entries: Vec<Entry>,
+}
+
+pub async fn subscription_nodes(
+    connection: &mut PgConnection,
+    user_id: i64,
+) -> ApiResult<SubscriptionNodes> {
+    let bindings = bindings(connection, user_id).await?;
+    let (states, versions) = resolve(connection, &bindings).await?;
     let mut result = SubscriptionNodes {
         granted: bindings.len(),
         nodes: Vec::new(),

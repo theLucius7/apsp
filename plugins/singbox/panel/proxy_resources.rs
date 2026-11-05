@@ -166,7 +166,7 @@ async fn read_resources(state: &AppState) -> ApiResult<Vec<ProxyResource>> {
         .bind(endpoint.id)
         .fetch_all(&mut *tx)
         .await?;
-        let user_count=sqlx::query_scalar("SELECT COUNT(DISTINCT g.user_id) FROM (SELECT user_id FROM accesses WHERE node_id=$1 AND direct_grant UNION SELECT up.user_id FROM singbox_user_policies up JOIN singbox_policy_nodes pn ON pn.group_id=up.group_id WHERE pn.node_id=$1) g JOIN users u ON u.id=g.user_id WHERE u.deleted_at IS NULL").bind(endpoint.id).fetch_one(&mut *tx).await?;
+        let user_count=sqlx::query_scalar("SELECT COUNT(DISTINCT up.user_id) FROM singbox_user_policies up JOIN singbox_policy_nodes pn ON pn.group_id=up.group_id JOIN users u ON u.id=up.user_id WHERE pn.node_id=$1 AND u.deleted_at IS NULL").bind(endpoint.id).fetch_one(&mut *tx).await?;
         let references = node_chain_references(&mut tx, endpoint.id, None).await?;
         let chain_refs = references
             .into_iter()

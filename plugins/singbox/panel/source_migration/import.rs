@@ -261,9 +261,9 @@ pub(super) async fn plan(tx: &mut PgConnection) -> ApiResult<Plan> {
         .fetch_all(&mut *tx).await?;
     // Versions still read: each node's current version, and those that user
     // grants and mixed-chain hops are bound to.
-    let versions: Vec<Version> = sqlx::query_as("SELECT id,external_node_id,source_revision_id,name,config_json,config_sha256 FROM singbox_external_node_versions WHERE id IN (SELECT current_version_id FROM singbox_external_nodes UNION SELECT node_version_id FROM singbox_external_accesses UNION SELECT external_version_id FROM singbox_chain_hops) ORDER BY id")
+    let versions: Vec<Version> = sqlx::query_as("SELECT id,external_node_id,source_revision_id,name,config_json,config_sha256 FROM singbox_external_node_versions WHERE id IN (SELECT current_version_id FROM singbox_external_nodes UNION SELECT node_version_id FROM singbox_policy_external_nodes UNION SELECT external_version_id FROM singbox_chain_hops) ORDER BY id")
         .fetch_all(&mut *tx).await?;
-    let referenced: BTreeSet<i64> = sqlx::query_scalar("SELECT node_version_id FROM singbox_external_accesses UNION SELECT external_version_id FROM singbox_chain_hops WHERE external_version_id IS NOT NULL")
+    let referenced: BTreeSet<i64> = sqlx::query_scalar("SELECT node_version_id FROM singbox_policy_external_nodes UNION SELECT external_version_id FROM singbox_chain_hops WHERE external_version_id IS NOT NULL")
         .fetch_all(&mut *tx).await?.into_iter().collect();
     // Revisions still read: those of the imported versions, each source's
     // current one, each node's last listing, and the latest of every epoch
@@ -271,9 +271,9 @@ pub(super) async fn plan(tx: &mut PgConnection) -> ApiResult<Plan> {
     let revisions: Vec<Revision> = sqlx::query_as("SELECT r.id,r.source_id,r.settings_revision,r.identity_epoch,r.parser_version,r.body_sha256,r.format,r.supported_count,r.unsupported_count,(SELECT COUNT(*) FROM jsonb_array_elements(r.rejected_nodes) e WHERE e->>'reason'='ambiguous_node_identity') AS ambiguous_count,r.fetched_at FROM singbox_source_revisions r WHERE r.id IN (SELECT source_revision_id FROM singbox_external_node_versions WHERE id=ANY($1) UNION SELECT current_revision_id FROM singbox_subscription_sources UNION SELECT last_seen_revision_id FROM singbox_external_nodes UNION SELECT MAX(id) FROM singbox_source_revisions GROUP BY source_id,identity_epoch) ORDER BY r.id")
         .bind(versions.iter().map(|version| version.id).collect::<Vec<_>>())
         .fetch_all(&mut *tx).await?;
-    let counts: (i64, i64, i64, i64) = sqlx::query_as("SELECT (SELECT COUNT(*) FROM singbox_external_accesses),(SELECT COUNT(*) FROM singbox_source_jobs WHERE state IN ('queued','running')),(SELECT COUNT(*) FROM singbox_source_previews),(SELECT COUNT(*) FROM singbox_ordered_subscription_sources WHERE deleted_at IS NULL)")
+    let counts: (i64, i64, i64, i64) = sqlx::query_as("SELECT (SELECT COUNT(*) FROM singbox_policy_external_nodes),(SELECT COUNT(*) FROM singbox_source_jobs WHERE state IN ('queued','running')),(SELECT COUNT(*) FROM singbox_source_previews),(SELECT COUNT(*) FROM singbox_ordered_subscription_sources WHERE deleted_at IS NULL)")
         .fetch_one(&mut *tx).await?;
-    let ambiguous_with_access: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM singbox_external_accesses a JOIN singbox_external_nodes n ON n.id=a.external_node_id WHERE NOT n.identity_unique")
+    let ambiguous_with_access: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM singbox_policy_external_nodes a JOIN singbox_external_nodes n ON n.id=a.external_node_id WHERE NOT n.identity_unique")
         .fetch_one(&mut *tx).await?;
     let mixed_chains: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT h.chain_id) FROM singbox_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE h.source_id IS NOT NULL AND c.deleted_at IS NULL")
         .fetch_one(&mut *tx).await?;
@@ -624,10 +624,7 @@ pub(super) async fn apply(tx: &mut PgConnection, plan: Plan) -> ApiResult<Report
                 .await?;
         }
     }
-    // Grants name their node by public id, unchanged; only the source moves.
-    sqlx::query("UPDATE singbox_external_accesses a SET source_id=m.b_source_id FROM singbox_source_id_map m WHERE a.source_id=m.a_source_id")
-        .execute(&mut *tx)
-        .await?;
+    // Group grants name their node and version by public id, which the import keeps.
     let mut report = report;
     report.migrated = true;
     sqlx::query("UPDATE singbox_source_migration SET migrated_at=$1,report=$2")

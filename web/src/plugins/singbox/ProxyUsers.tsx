@@ -1,37 +1,36 @@
 import { useEffect, useRef, useState } from 'react'
 import UserEntitlements from './UserEntitlements'
-import ExternalUserAccess from './ExternalUserAccess'
 import UserPasskeyAccess from './UserPasskeyAccess'
 import UserDiagnostics from './UserDiagnostics'
 import BatchProxyAssignments from './BatchProxyAssignments'
 import SubscriptionDialog from './SubscriptionDialog'
 import SubscriptionDomain from './SubscriptionDomain'
+import PortalSettings from './accounts/PortalSettings'
+import UserInvitations from './accounts/UserInvitations'
 import type { SubscriptionFormat } from './SubscriptionDialog'
-import type { ProxyResource } from './resourceTypes'
 import { api, errorMessage } from '../../api'
 import { Badge, Confirm, Empty, ErrorNotice, Field, FormDialog, Loading, Modal, PageHeader, Refresh, DialogPresence } from '../../components'
 import { bytes, totalBytes } from '../../format'
 import { resourceWriteError, useAction, useResource } from '../../hooks'
-import type { Access, Node, Usage, ProxyUser } from '../../types'
+import type { Usage, ProxyUser } from '../../types'
 import { statusText } from './groupTypes'
 import type { Entitlement, PolicyGroup } from './groupTypes'
 import { copyText } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { CheckIcon, CopyIcon, GlobeIcon, PlusIcon, UsersIcon, WaypointsIcon } from 'lucide-react'
+import { CheckIcon, CopyIcon, GlobeIcon, PlusIcon, Settings2Icon, UsersIcon } from 'lucide-react'
 import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
 import { SegmentedButton, SegmentedNav } from '@/components/segmented'
 
 /** A line of the user list from /users/overview; contains no credentials. */
 type UserLine = {
   id: number; status: Entitlement['status']; allowed: boolean; package_name: string | null; monthly_bytes: string | null; used_bytes: string
-  expires_at: number | null; group_ids: number[]; direct_nodes: number; external_nodes: number; bridged?: boolean; portal_created: boolean; portal_keys: number; activation_expires_at: number | null
+  expires_at: number | null; group_ids: number[]; external_nodes: number; bridged?: boolean; portal_created: boolean; portal_keys: number; activation_expires_at: number | null
 }
-type Section = 'grants' | 'usage' | 'diagnosis'
-const sections: readonly { key: Section; label: string }[] = [{ key: 'grants', label: '单独授权' }, { key: 'usage', label: '流量明细' }, { key: 'diagnosis', label: '诊断与安全' }]
+type Section = 'usage' | 'invitations' | 'diagnosis'
+const sections: readonly { key: Section; label: string }[] = [{ key: 'usage', label: '流量明细' }, { key: 'invitations', label: '邀请' }, { key: 'diagnosis', label: '诊断与安全' }]
 const root = '/api/plugins/sing-box'
 
 const lineTone = (line?: UserLine) => !line ? 'bg-muted-foreground/40' : !line.allowed ? 'bg-destructive' : line.status === 'not_started' ? 'bg-info' : quotaUsed(line) >= 90 ? 'bg-warning' : line.status === 'active' ? 'bg-success' : 'bg-muted-foreground/40'
@@ -55,8 +54,6 @@ function portalText(line?: UserLine) {
 export default function ProxyUsers() {
   const users = useResource<ProxyUser[]>(`${root}/users`, 5000, { keep: true })
   const lines = useResource<UserLine[]>(`${root}/users/overview`, 15_000, { keep: true })
-  const nodes = useResource<Node[]>(`${root}/nodes`, 5000, { keep: true })
-  const resources = useResource<ProxyResource[]>(`${root}/proxy-resources`, 5000, { keep: true })
   const usage = useResource<Usage>(`${root}/usage`, 5000, { keep: true })
   const groups = useResource<PolicyGroup[]>(`${root}/policy-groups`, 30_000, { keep: true })
   const actor = useResource<{ role: string }>('/api/control-center/me', 30_000, { keep: true })
@@ -69,11 +66,12 @@ export default function ProxyUsers() {
   const [deleting, setDeleting] = useState<ProxyUser | null>(null)
   const [subscription, setSubscription] = useState<ProxyUser | null>(null)
   const [domainOpen, setDomainOpen] = useState(false)
+  const [portalOpen, setPortalOpen] = useState(false)
   const [resetting, setResetting] = useState<ProxyUser | null>(null)
   const [format, setFormat] = useState<SubscriptionFormat>('singbox')
   const [notice, setNotice] = useState('')
   const [search, setSearch] = useState('')
-  const [section, setSection] = useState<Section>('grants')
+  const [section, setSection] = useState<Section>('usage')
   const [refreshRevision, setRefreshRevision] = useState(0)
   // Addresses stay hidden until the administrator proved themselves recently; what
   // a reveal returned is kept for this page so copying again asks nothing more.
@@ -83,17 +81,16 @@ export default function ProxyUsers() {
   useEffect(() => {
     if (users.data && selectedRef.current === null) selectUser(users.data[0]?.id ?? null)
   }, [users.data])
-  const accesses = useResource<Access[]>(selected ? `${root}/users/${selected}/accesses` : null)
   const entitlement = useResource<Entitlement>(selected ? `${root}/users/${selected}/entitlement` : null)
   const selectedUsage = useResource<Usage>(selected ? `${root}/usage?user_id=${selected}` : null)
   const user = users.data?.find(user => user.id === selected)
   const line = lines.data?.find(line => line.id === selected)
   const record = usage.data?.by_user.find(record => record.user_id === selected)
-  const refresh = () => { users.reload(); lines.reload(); nodes.reload(); resources.reload(); usage.reload(); groups.reload(); accesses.reload(); entitlement.reload(); selectedUsage.reload(); setRefreshRevision(value => value + 1) }
+  const refresh = () => { users.reload(); lines.reload(); usage.reload(); groups.reload(); entitlement.reload(); selectedUsage.reload(); setRefreshRevision(value => value + 1) }
   const userError = (id?: number) => {
     if (selected !== selectedRef.current) return '当前选择的代理用户已改变，请等待相关信息刷新后再操作；当前草稿已保留。'
     if (id !== undefined && users.isCurrent() && !users.getCurrent()?.some(value => value.id === id)) return '此代理用户已不存在，请重新选择；当前草稿已保留。'
-    const stale = resourceWriteError(users, nodes, resources, ...(selected ? [accesses, entitlement] : []))
+    const stale = resourceWriteError(users, ...(selected ? [entitlement] : []))
     if (stale) return stale
     if (id !== undefined && id !== selectedRef.current) return '当前选择的代理用户已改变，请关闭对话框后重新操作；当前草稿已保留。'
     return ''
@@ -105,17 +102,6 @@ export default function ProxyUsers() {
   const submit = (form: FormData) => {
     if (!editor || userError(editor === 'new' ? undefined : editor.id)) return
     void action.run(() => api<ProxyUser>(editor === 'new' ? `${root}/users` : `${root}/users/${editor?.id}`, editor === 'new' ? 'POST' : 'PATCH', { name: String(form.get('name')).trim() }), value => { setEditor(null); selectUser(value.id); users.reload(); lines.reload() })
-  }
-  const grant = (node: Node, checked: boolean) => {
-    if (!selected || userError(selected) || !nodes.getCurrent()?.some(value => value.id === node.id) || !resources.getCurrent()?.some(value => value.kind === 'direct' && value.id === node.id)) return
-    setNotice('')
-    const request = () => checked
-      ? api(`${root}/users/${selected}/accesses`, 'POST', { node_id: node.id })
-      : api(`${root}/users/${selected}/accesses/${node.id}`, 'DELETE')
-    void action.run(request, () => {
-      accesses.reload(); lines.reload()
-      setNotice(checked ? '授权已保存，设备应用新配置后会出现在订阅中。' : '授权已撤销，已从订阅移除；运行时将在新配置应用后更新。')
-    })
   }
   const visible = users.data?.filter(user => user.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())) ?? []
   const clearDeletedSelection = () => {
@@ -146,16 +132,16 @@ export default function ProxyUsers() {
   })
   const missingSelection = selected ? `代理用户 #${selected} 已不存在，请从列表重新选择。原选择没有自动切换。` : undefined
   const address = user ? user.subscription_url || revealed[user.id] || '' : ''
-  const grantableNodes = nodes.data?.filter(node => resources.data?.some(resource => resource.kind === 'direct' && resource.id === node.id)) ?? []
   const groupNames = (line?.group_ids ?? []).map(id => groups.data?.find(group => group.id === id)?.name).filter(Boolean)
   const empty = Boolean(users.data && !users.data.length)
   return <>
     <PageHeader title="代理用户" description="选一个人，就能复制订阅链接、发登录地址、修改能用的节点和套餐。">
       <Refresh onClick={refresh} />
+      <Button variant="outline" onClick={() => setPortalOpen(true)}><Settings2Icon aria-hidden="true" />门户设置</Button>
       {actor.data?.role === 'owner' && <Button variant="outline" onClick={() => setDomainOpen(true)}><GlobeIcon aria-hidden="true" />专属地址</Button>}
       <Button disabled={Boolean(userError())} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />创建代理用户</Button>
     </PageHeader>
-    <ErrorNotice message={users.error || nodes.error || resources.error || usage.error} retry={refresh} />
+    <ErrorNotice message={users.error || usage.error} retry={refresh} />
     <ErrorNotice message={linkAction.error} retry={linkAction.clearError} />
     {users.ready && selected && !user && <div className="mb-4 flex flex-wrap items-center gap-2"><ErrorNotice message={missingSelection} /><Button variant="outline" size="sm" disabled={action.busy} onClick={clearDeletedSelection}>清除已删除的用户选择</Button></div>}
     {/* One tree at every width and for every list state: retained drafts and open dialogs survive a failed or emptied list. */}
@@ -209,33 +195,14 @@ export default function ProxyUsers() {
           </Panel>}
           <UserPasskeyAccess key={`portal-${selected}`} id={selected} userError={() => userError(selected)} refreshRevision={refreshRevision} />
         </div>
-        {line?.bridged && <Notice role="status">这是从原系统迁移的用户：节点和订阅内容仍由原系统提供，这里的策略组和单独授权暂时不影响他的订阅。</Notice>}
+        {line?.bridged && <Notice role="status">从原系统迁移的用户：订阅仍由原系统生成，可用线路由套餐对应的原权限组决定；这里的策略组暂时只影响 apsp 自建节点。</Notice>}
+        {notice && <Notice tone="success" role="status">{notice}</Notice>}
+        <ErrorNotice message={!editor && !deleting && !resetting ? action.error : ''} />
         {user && <UserEntitlements key={user.id} id={user.id} entitlement={entitlement} userError={() => userError(user.id)} refreshRevision={refreshRevision} onChange={refresh} />}
         <SegmentedNav aria-label="更多用户信息" className="mb-3">
           {sections.map(entry => <SegmentedButton key={entry.key} aria-pressed={section === entry.key} onClick={() => setSection(entry.key)}>{entry.label}</SegmentedButton>)}
         </SegmentedNav>
         {/* Hidden, not removed: a draft in one section survives looking at another. */}
-        <div hidden={section !== 'grants'}>
-          {user && <Panel>
-            <PanelHeader className="min-h-10 py-1.5"><PanelTitle>单独节点授权</PanelTitle><span className="text-muted-foreground text-xs">更改后自动发布；链路只能通过策略组分配</span></PanelHeader>
-            <div className="p-3.5">
-              <ErrorNotice message={accesses.error || entitlement.error || userError(selected) || (!editor && !deleting && !resetting ? action.error : '')} retry={accesses.error ? accesses.reload : undefined} />
-              {notice && <Notice tone="success" role="status">{notice}</Notice>}
-              {accesses.loading && !accesses.data ? <Loading variant="table" rows={3} /> : !nodes.data?.length
-                ? <Empty icon={WaypointsIcon} title="还没有可授权的节点" description="先创建节点，再为代理用户开启访问权限。"><a className={buttonVariants({ variant: 'outline' })} href="#/plugins/sing-box/nodes">前往节点</a></Empty>
-                : <div className="grid gap-1.5 sm:grid-cols-2 2xl:grid-cols-3">{grantableNodes.map(node => {
-                  const access = accesses.data?.find(access => access.node_id === node.id)
-                  return <label className="hover:bg-muted/60 relative flex cursor-pointer items-center gap-2.5 rounded-md border px-2.5 py-2" key={node.id}>
-                    <span className="min-w-0 flex-1"><strong className="block truncate text-[13px] font-medium">{node.name}</strong><small className="text-muted-foreground block truncate text-xs">{node.public_host}:{node.port}</small></span>
-                    {access && <Badge tone="good">{access.direct_grant ? '单独授权' : '来自策略组'}</Badge>}
-                    <Switch checked={Boolean(access?.direct_grant)} disabled={action.busy || Boolean(userError(user.id))} onCheckedChange={checked => grant(node, checked)} aria-label={`授权 ${node.name}`} />
-                  </label>
-                })}</div>}
-              <p className="text-muted-foreground mt-2.5 text-xs leading-relaxed">这里只管单独授权，不取消策略组授予的权限。全部授权来源移除后才撤销凭据；设备离线时等重连后应用。</p>
-            </div>
-          </Panel>}
-          <ExternalUserAccess key="external-selected" userId={selected} userError={() => userError(selected)} refreshRevision={refreshRevision} onChanged={refresh} />
-        </div>
         <div hidden={section !== 'usage'}>
           {user && <Panel>
             <PanelHeader className="min-h-10 py-1.5"><PanelTitle>该代理用户的节点流量</PanelTitle><span className="text-muted-foreground text-xs tabular-nums">↑ {record ? bytes(record.uplink) : '0 B'} · ↓ {record ? bytes(record.downlink) : '0 B'}，含历史记录</span></PanelHeader>
@@ -259,6 +226,9 @@ export default function ProxyUsers() {
               </TableRow>)}</TableBody>
             </Table></div>
           </Panel>}
+        </div>
+        <div hidden={section !== 'invitations'}>
+          <UserInvitations key={`invitations-${selected}`} userId={selected} active={section === 'invitations'} />
         </div>
         <div hidden={section !== 'diagnosis'}>
           <UserDiagnostics key={`diagnosis-${selected}`} userId={selected} active={section === 'diagnosis'} userError={() => userError(selected)} onChanged={refresh} />
@@ -284,6 +254,7 @@ export default function ProxyUsers() {
         <Button variant="destructive" disabled={action.busy || Boolean(resettingError)} onClick={reset}>{action.busy ? '正在重置…' : '确认重置'}</Button>
       </footer>
     </Modal>}</DialogPresence>
+    <DialogPresence>{portalOpen && <PortalSettings onClose={() => setPortalOpen(false)} />}</DialogPresence>
     <DialogPresence>{domainOpen && <SubscriptionDomain onClose={() => setDomainOpen(false)} onSaved={() => { setDomainOpen(false); setRevealed({}); refresh() }} />}</DialogPresence>
     <DialogPresence>{subscription && <SubscriptionDialog user={subscription} format={format} onFormatChange={setFormat} onClose={() => setSubscription(null)}
       onReset={() => { if (userError(subscription.id)) return; action.clearError(); setResetting(subscription); setSubscription(null) }} />}</DialogPresence>

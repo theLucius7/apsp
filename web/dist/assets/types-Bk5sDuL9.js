@@ -1,0 +1,1 @@
+const s="/api/plugins/sing-box",o="/api/plugins/sing-box/portal-public",n={available:"待使用",claimed:"已使用",revoked:"已撤销"};class p{payload="";id="";for(a){const i=JSON.stringify(a);return(!this.id||i!==this.payload)&&(this.payload=i,this.id=crypto.randomUUID()),this.id}}export{p as R,n as i,o as p,s as r};

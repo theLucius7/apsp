@@ -186,15 +186,7 @@ async fn terminal_batches_remain_valid_after_revocation_and_deleted_users_keep_h
     let user = id(&panel.create_user(&cookie, "member").await?)?;
     panel.grant(&cookie, user, node).await?;
     panel.publish_now().await?;
-    panel
-        .admin(
-            Method::DELETE,
-            &format!("/api/plugins/sing-box/users/{user}/accesses/{node}"),
-            &cookie,
-            None,
-        )
-        .await?
-        .error_for_status()?;
+    panel.revoke(&cookie, user, node).await?;
     panel.publish_now().await?;
     usage::ingest(&panel.state, server, batch(user, node, 7, 9)).await?;
     panel

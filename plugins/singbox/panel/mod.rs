@@ -13,7 +13,6 @@ pub mod agent;
 pub mod business;
 pub mod catalog;
 pub mod chains;
-mod commerce;
 pub mod deployments;
 pub mod entitlements;
 pub mod external_access;
@@ -22,6 +21,7 @@ pub mod legacy_takeover;
 pub mod mixed_conversion;
 pub mod mixed_paths;
 mod nexus_nodes;
+mod user_accounts;
 
 /// Records a device's admitted session addresses for Nexus device limits.
 pub async fn ingest_runtime_sessions(
@@ -84,7 +84,7 @@ use axum::{
 pub async fn run(state: AppState) {
     tokio::join!(
         publisher::run(state.clone()),
-        commerce::run(state.clone()),
+        user_accounts::run(state.clone()),
         reachability::run(state.clone()),
         subscription_hosts::run(state.clone()),
         subscription_sources::worker::run(state)
@@ -162,17 +162,10 @@ pub fn router() -> Router<AppState> {
             post(proxy_users::reset_subscription),
         )
         .route("/users/{id}/subscription", get(subscriptions::preview))
+        .route("/users/{id}/accesses", get(accesses::list))
         .route(
-            "/users/{id}/external-accesses",
-            get(external_access::get).put(external_access::put),
-        )
-        .route(
-            "/users/{id}/accesses",
-            get(accesses::list).post(accesses::grant),
-        )
-        .route(
-            "/users/{user_id}/accesses/{node_id}",
-            delete(accesses::revoke),
+            "/external-node-candidates",
+            get(external_access::candidates),
         )
         .route("/usage", get(usage::summary))
         .merge(catalog::router())
@@ -181,7 +174,7 @@ pub fn router() -> Router<AppState> {
         .merge(sources::router())
         .route("/source-migration", get(source_migration::state))
         .merge(portal::router())
-        .merge(commerce::router())
+        .merge(user_accounts::router())
         .merge(mixed_paths::router());
     let management = management.merge(operations_workflows::router());
     Router::new()

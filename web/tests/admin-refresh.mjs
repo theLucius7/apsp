@@ -82,11 +82,10 @@ try {
       else if (path === `${prefix}/package-groups`) value = []
       else if (path === `${prefix}/proxy-resources`) value = [resource]
       else if (path === `${prefix}/ordered-proxy-resources`) value = proxyResourceFixtures([node], servers)
+      else if (path === `${prefix}/external-node-candidates`) value = { available_nodes: [] }
       else if (path === `${prefix}/nodes`) value = [node]
       else if (path === `${prefix}/users`) value = [user]
       else if (path === `${prefix}/usage`) value = usage
-      else if (path === `${prefix}/users/1/accesses`) value = []
-      else if (path === `${prefix}/users/1/external-accesses`) value = { revision: 0, accesses: [], available_nodes: [] }
       else if (path === `${prefix}/users/1/entitlement`) value = { user_id: 1, package_group_id: null, package_name: null, monthly_bytes: null, starts_at: null, expires_at: null, cycle_start: null, next_reset: null, used_bytes: '0', status: 'unlimited', allowed: true }
       else if (path === `${prefix}/users/1/policy-groups`) value = { group_ids: [] }
       else if (path === `${prefix}/users/1/portal`) value = { configuration: { enabled: false, reason: 'TEST_ONLY 尚未启用', origin }, keys: 0, url: null, activation_expires_at: null }
@@ -119,7 +118,8 @@ try {
       await settle()
       await page.clock.runFor(100)
       assert.equal(await dialog.getByRole('alert').count(), 0, 'A brief concurrent read must not flash an alert')
-      assert.equal(await page.locator('main [data-slot=loading]').count(), 0, `A background read must keep existing content: ${pageName}/${width}; ${await page.locator('main [data-slot=loading]').evaluateAll(items => items.map(item => item.parentElement?.outerHTML).join('\n'))}`)
+      // Only shown sections count: an unopened user section (邀请) waits, hidden, until it is opened.
+      assert.equal(await page.locator('main [data-slot=loading]').filter({ visible: true }).count(), 0, `A background read must keep existing content: ${pageName}/${width}; ${await page.locator('main [data-slot=loading]').filter({ visible: true }).evaluateAll(items => items.map(item => item.parentElement?.outerHTML).join('\n'))}`)
       finish(readPath)
       await wait(() => save.isEnabled(), 'Completed equal snapshots must restore write readiness')
       await page.clock.runFor(300)
@@ -128,7 +128,7 @@ try {
       assert.equal(await input.inputValue(), 'TEST_ONLY 未保存草稿')
 
       let extraDependencies = 0
-      if (pageName === 'groups') for (const path of ['package-groups', 'proxy-resources', 'ordered-proxy-resources'].map(name => `${prefix}/${name}`)) {
+      if (pageName === 'groups') for (const path of ['package-groups', 'proxy-resources', 'ordered-proxy-resources', 'external-node-candidates'].map(name => `${prefix}/${name}`)) {
         const dependency = hold(path)
         // Start this read on the next poll boundary before measuring its 100ms hold.
         await page.clock.runFor(5000 - (await page.evaluate(() => Date.now())) % 5000)
@@ -147,7 +147,7 @@ try {
       await settle(); await page.clock.runFor(600); await settle()
       assert.equal(await dialog.getByRole('alert').count(), 0, 'A slow poll shows nothing and takes nothing away (ADR 0102)')
       assert.equal(await save.isEnabled(), true)
-      assert.equal(await page.locator('main [data-slot=loading]').count(), 0, 'Slow background reads retain existing data instead of skeletons')
+      assert.equal(await page.locator('main [data-slot=loading]').filter({ visible: true }).count(), 0, 'Slow background reads retain existing data instead of skeletons')
       finish(readPath, true)
       await page.getByText('TEST_ONLY 后台刷新失败', { exact: true }).waitFor()
       await forceSubmit(dialog); assert.equal(writes.length, 0, 'Failed reads remain write-blocked')

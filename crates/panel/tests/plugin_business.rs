@@ -314,7 +314,6 @@ async fn migration_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Res
         .context("legacy accesses")?
     {
         access["credential"] = json!("");
-        access["direct_grant"] = json!(true);
     }
     // Starting the new panel applies the real migration to already imported records.
     let panel = TestPanel::start(pool.clone()).await?;

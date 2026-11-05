@@ -23,10 +23,55 @@ pub(super) async fn user(
     super::super::entitlements::lock(&mut tx).await?;
     super::super::business::lock_user(&mut tx, id).await?;
     let account:Value=sqlx::query_scalar("SELECT jsonb_build_object('user_id',u.id,'name',u.name,'portal_created',p.account_id IS NOT NULL,'keys',(SELECT COUNT(*) FROM passkey_credentials WHERE account_id=p.account_id),'active_sessions',(SELECT COUNT(*) FROM singbox_portal_sessions WHERE account_id=p.account_id AND expires_at>$2),'activation_expires_at',p.activation_expires_at) FROM users u LEFT JOIN singbox_portal_accounts p ON p.user_id=u.id WHERE u.id=$1").bind(id).bind(apsp_protocol::now_timestamp()).fetch_one(&mut *tx).await?;
-    let subscription = super::super::subscriptions::diagnostic_on(&mut tx, id).await?;
-    let permissions:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('node_id',n.id,'name',n.name,'server_id',n.server_id,'protocol',n.protocol,'enabled',n.enabled,'direct_grant',COALESCE(a.direct_grant,FALSE),'policy_groups',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',src.id,'name',src.name,'chain_id',src.chain_id) ORDER BY src.id,src.chain_id) FROM (SELECT g.id,g.name,NULL::bigint AS chain_id FROM singbox_user_policies up JOIN singbox_policy_groups g ON g.id=up.group_id JOIN singbox_policy_nodes pn ON pn.group_id=g.id AND pn.node_id=n.id WHERE up.user_id=$1 UNION SELECT g.id,g.name,c.id AS chain_id FROM singbox_user_policies up JOIN singbox_policy_groups g ON g.id=up.group_id JOIN singbox_policy_chains pc ON pc.group_id=g.id JOIN singbox_chains c ON c.id=pc.chain_id AND c.entry_node_id=n.id WHERE up.user_id=$1) src),'[]'),'deployment',jsonb_build_object('target_revision',m.target_rev,'applied_revision',m.applied_rev,'healthy',m.healthy,'last_error',m.last_error,'last_observed_at',m.updated_at,'pending',s.dirty_at IS NOT NULL),'effective',EXISTS(SELECT 1 FROM singbox_eligible_accesses($2) e WHERE e.user_id=$1 AND e.node_id=n.id)) FROM singbox_desired_accesses d JOIN nodes n ON n.id=d.node_id JOIN servers s ON s.id=n.server_id LEFT JOIN accesses a ON a.user_id=d.user_id AND a.node_id=d.node_id LEFT JOIN server_module_status m ON m.server_id=n.server_id AND m.module='singbox' WHERE d.user_id=$1 ORDER BY n.id")
+    let mut subscription = super::super::subscriptions::diagnostic_on(&mut tx, id).await?;
+    // Migrated users still get their subscription from the retained renderer: their
+    // package maps to an original permission group, which decides their lines.
+    let legacy: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('package_name',e.package_name,'allowed',COALESCE(e.allowed,FALSE),'status',e.status,'legacy_group_id',p.legacy_group_id,'lines',COALESCE((SELECT jsonb_agg(jsonb_build_object('name',COALESCE(n.display->>'name',''),'server_id',n.server_id,'taken_over',(r.node_id IS NOT NULL AND h.state='active')) ORDER BY COALESCE((n.display->>'sort_order')::BIGINT,0),n.legacy_node_id) FROM singbox_nexus_nodes n LEFT JOIN singbox_nexus_runtime_nodes r ON r.inventory_id=n.id LEFT JOIN singbox_nexus_runtime_hosts h ON h.server_id=r.server_id WHERE p.legacy_group_id IS NOT NULL AND COALESCE((n.display->>'visible')::BOOLEAN,FALSE) AND EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(n.display->'groups','[]'::jsonb)) g WHERE (g->>'id')::BIGINT=p.legacy_group_id)),'[]'::jsonb)) FROM singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id AND b.enabled LEFT JOIN singbox_entitlements($2) e ON e.user_id=i.user_id LEFT JOIN singbox_nexus_plan_mappings p ON p.package_group_id=e.package_group_id AND p.import_id=i.import_id WHERE i.user_id=$1")
+        .bind(id).bind(apsp_protocol::now_timestamp()).fetch_optional(&mut *tx).await?;
+    if let Some(legacy) = &legacy {
+        let lines = legacy["lines"].as_array().map_or(0, Vec::len);
+        let taken = legacy["lines"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|line| line["taken_over"] == true)
+            .count();
+        let (status, message) = if !legacy["allowed"].as_bool().unwrap_or(false) {
+            (
+                "blocked",
+                match legacy["status"].as_str() {
+                    Some("no_package") | None => {
+                        "迁移用户尚未分配套餐，原系统不会下发节点".to_owned()
+                    }
+                    Some("expired") => "套餐已到期，请先续期".to_owned(),
+                    Some("exhausted") => "当前周期流量已用尽，请等待重置或调整套餐".to_owned(),
+                    _ => "账号当前状态不允许使用代理".to_owned(),
+                },
+            )
+        } else if legacy["legacy_group_id"].is_null() {
+            (
+                "blocked",
+                format!(
+                    "套餐「{}」没有对应的原权限组，原系统不会下发节点",
+                    legacy["package_name"].as_str().unwrap_or("")
+                ),
+            )
+        } else {
+            (
+                "legacy",
+                format!(
+                    "订阅由原系统提供：套餐「{}」对应原权限组 #{}，可用 {lines} 条线路，其中 {taken} 条已由 apsp 运行",
+                    legacy["package_name"].as_str().unwrap_or(""),
+                    legacy["legacy_group_id"]
+                ),
+            )
+        };
+        subscription["status"] = json!(status);
+        subscription["message"] = json!(message);
+    }
+    let permissions:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('node_id',n.id,'name',n.name,'server_id',n.server_id,'protocol',n.protocol,'enabled',n.enabled,'policy_groups',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',src.id,'name',src.name,'chain_id',src.chain_id) ORDER BY src.id,src.chain_id) FROM (SELECT g.id,g.name,NULL::bigint AS chain_id FROM singbox_user_policies up JOIN singbox_policy_groups g ON g.id=up.group_id JOIN singbox_policy_nodes pn ON pn.group_id=g.id AND pn.node_id=n.id WHERE up.user_id=$1 UNION SELECT g.id,g.name,c.id AS chain_id FROM singbox_user_policies up JOIN singbox_policy_groups g ON g.id=up.group_id JOIN singbox_policy_chains pc ON pc.group_id=g.id JOIN singbox_chains c ON c.id=pc.chain_id AND c.entry_node_id=n.id WHERE up.user_id=$1) src),'[]'),'deployment',jsonb_build_object('target_revision',m.target_rev,'applied_revision',m.applied_rev,'healthy',m.healthy,'last_error',m.last_error,'last_observed_at',m.updated_at,'pending',s.dirty_at IS NOT NULL),'effective',EXISTS(SELECT 1 FROM singbox_eligible_accesses($2) e WHERE e.user_id=$1 AND e.node_id=n.id)) FROM singbox_desired_accesses d JOIN nodes n ON n.id=d.node_id JOIN servers s ON s.id=n.server_id LEFT JOIN server_module_status m ON m.server_id=n.server_id AND m.module='singbox' WHERE d.user_id=$1 ORDER BY n.id")
         .bind(id).bind(apsp_protocol::now_timestamp()).fetch_all(&mut *tx).await?;
-    let ledger:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('server_id',r.server_id,'epoch',r.epoch,'sequence',r.seq::text,'node_id',r.node_id,'period_start',r.period_start,'period_end',r.period_end,'uplink',r.uplink::text,'downlink',r.downlink::text,'batch_payload_hash',b.payload_hash,'received_at',b.received_at,'last_replayed_at',b.last_replayed_at,'replay_count',b.replay_count::text,'delivery_delay_seconds',CASE WHEN b.received_at IS NULL THEN NULL ELSE GREATEST(b.received_at-r.period_end,0) END,'package_cycle_start',e.cycle_start,'package_next_reset',e.next_reset,'in_current_cycle',r.period_end>e.cycle_start AND r.period_end<=e.next_reset) FROM usage_records r JOIN usage_batches b USING(server_id,epoch,seq) LEFT JOIN singbox_entitlements($2) e ON e.user_id=r.user_id WHERE r.user_id=$1 ORDER BY r.period_end DESC,r.server_id,r.seq DESC LIMIT 200")
+    let ledger:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('server_id',r.server_id,'epoch',r.epoch,'sequence',r.seq::text,'node_id',r.node_id,'period_start',r.period_start,'period_end',r.period_end,'uplink',r.uplink::text,'downlink',r.downlink::text,'batch_payload_hash',b.payload_hash,'received_at',b.received_at,'last_replayed_at',b.last_replayed_at,'replay_count',b.replay_count::text,'delivery_delay_seconds',CASE WHEN b.received_at IS NULL THEN NULL ELSE GREATEST(b.received_at-r.period_end,0) END,'package_cycle_start',e.cycle_start,'package_next_reset',e.next_reset,'in_current_cycle',r.period_end>e.cycle_start AND r.period_end<=e.next_reset) FROM usage_records r JOIN usage_batches b USING(server_id,epoch,seq) LEFT JOIN singbox_entitlements($2) e ON e.user_id=r.user_id WHERE r.user_id=$1 ORDER BY r.period_end DESC,r.server_id,r.seq DESC LIMIT 50")
         .bind(id).bind(apsp_protocol::now_timestamp()).fetch_all(&mut *tx).await?;
     let credits:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'cycle_start',cycle_start,'next_reset',next_reset,'bytes',bytes::text,'created_at',created_at,'administrator_id',administrator_id) FROM singbox_quota_credits WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100").bind(id).fetch_all(&mut *tx).await?;
     let history:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'package_group_id',package_group_id,'package_name',package_name,'monthly_bytes',monthly_bytes::text,'starts_at',starts_at,'expires_at',expires_at,'reset_day',reset_day,'reset_hour',reset_hour,'reset_minute',reset_minute,'timezone',timezone) FROM singbox_package_assignments WHERE user_id=$1 ORDER BY id DESC LIMIT 100").bind(id).fetch_all(&mut *tx).await?;
@@ -35,7 +80,7 @@ pub(super) async fn user(
     let external = super::super::external_access::subscription_nodes(&mut tx, id).await?;
     tx.commit().await?;
     Ok(Json(
-        json!({"user_id":id,"account":account,"subscription":subscription,"permissions":permissions,"external_authorizations":external.entries,"ledger":ledger,"quota_credits":credits,"package_history":history,"rotations":rotations,"events":events,"limitations":{"user_speed_limit":{"available":false,"reason":"当前单运行时尚未提供可验证的逐用户限速能力"},"connection_limit":{"available":false,"reason":"当前协议与运行时没有统一逐用户连接数控制能力"},"external_revocation":{"available":false,"reason":"外部节点凭据由提供方控制，移除订阅授权不会撤销已下载凭据"},"credentials_read":{"available":false,"reason":super::super::secret_access::REASON},"ledger_receipt_time":{"available":true,"legacy_unknown":true,"reason":"新批次保存首次接收、重放次数与最近重放时间；旧批次接收时间未知。延迟依据设备时钟，需考虑时钟偏差"}}}),
+        json!({"user_id":id,"account":account,"subscription":subscription,"legacy":legacy,"permissions":permissions,"external_authorizations":external.entries,"ledger":ledger,"quota_credits":credits,"package_history":history,"rotations":rotations,"events":events,"limitations":{"user_speed_limit":{"available":false,"reason":"当前单运行时尚未提供可验证的逐用户限速能力"},"connection_limit":{"available":false,"reason":"当前协议与运行时没有统一逐用户连接数控制能力"},"external_revocation":{"available":false,"reason":"外部节点凭据由提供方控制，移除订阅授权不会撤销已下载凭据"},"credentials_read":{"available":false,"reason":super::super::secret_access::REASON},"ledger_receipt_time":{"available":true,"legacy_unknown":true,"reason":"新批次保存首次接收、重放次数与最近重放时间；旧批次接收时间未知。延迟依据设备时钟，需考虑时钟偏差"}}}),
     ))
 }
 

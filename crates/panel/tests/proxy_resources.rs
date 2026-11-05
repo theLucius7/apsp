@@ -364,7 +364,16 @@ async fn catalog_has_typed_ids_distinct_grant_counts_and_preserves_existing_subs
     let route = resource(&list, "chain", chain)?;
     assert_eq!(direct["user_count"], 3);
     assert_eq!(route["user_count"], 2);
-    assert_eq!(direct["policy_group_ids"], json!([first, second]));
+    // The existing subscriber holds the exit through their own single-node group.
+    let subscriber_group: i64 =
+        sqlx::query_scalar("SELECT id FROM singbox_policy_groups WHERE name=$1")
+            .bind(format!("node-{exit}"))
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(
+        direct["policy_group_ids"],
+        json!([subscriber_group, first, second])
+    );
     assert_eq!(route["policy_group_ids"], json!([first, second]));
     assert_eq!(direct["exit"], Value::Null);
     assert_eq!(
@@ -813,18 +822,6 @@ async fn batch_rejects_unauthorized_entries_and_invalid_managed_topologies(
         panel
             .admin(
                 Method::POST,
-                &format!("{ROOT}/users/{user}/accesses"),
-                &cookie,
-                Some(json!({"node_id":na}))
-            )
-            .await?
-            .status(),
-        StatusCode::CONFLICT
-    );
-    assert_eq!(
-        panel
-            .admin(
-                Method::POST,
                 &format!("{ROOT}/policy-groups"),
                 &cookie,
                 Some(json!({"name":"Entry bypass","node_ids":[na],"chain_ids":[]}))
@@ -940,11 +937,24 @@ async fn resource_delete_preserves_shared_exit_history_and_deleted_request_repla
     );
     assert_eq!(references["references"]["chains"], json!([]));
     assert_eq!(state(&pool).await?, before);
-    for path in [
-        format!("/nodes/{exit}"),
-        format!("/proxy-resources/direct/{exit}"),
-        format!("/ordered-proxy-resources/direct/{exit}"),
-        format!("/nodes/{}", entries[0]),
+    // The shared exit is also held by the direct subscriber's single-node group.
+    let subscriber_group: i64 =
+        sqlx::query_scalar("SELECT id FROM singbox_policy_groups WHERE name=$1")
+            .bind(format!("node-{exit}"))
+            .fetch_one(&pool)
+            .await?;
+    let exit_policies = json!([{"id":subscriber_group,"name":format!("node-{exit}")}]);
+    for (path, policies) in [
+        (format!("/nodes/{exit}"), exit_policies.clone()),
+        (
+            format!("/proxy-resources/direct/{exit}"),
+            exit_policies.clone(),
+        ),
+        (
+            format!("/ordered-proxy-resources/direct/{exit}"),
+            exit_policies.clone(),
+        ),
+        (format!("/nodes/{}", entries[0]), json!([])),
     ] {
         let blocked = panel
             .admin(Method::DELETE, &format!("{ROOT}{path}"), &cookie, None)
@@ -952,7 +962,7 @@ async fn resource_delete_preserves_shared_exit_history_and_deleted_request_repla
         assert_eq!(blocked.status(), StatusCode::CONFLICT);
         let references: Value = blocked.json().await?;
         no_private_fields(&references);
-        assert_eq!(references["references"]["policies"], json!([]));
+        assert_eq!(references["references"]["policies"], policies, "{path}");
         assert!(
             references["references"]["chains"]
                 .as_array()
@@ -1161,7 +1171,7 @@ async fn resource_delete_preserves_shared_exit_history_and_deleted_request_repla
         let references: Value = blocked.json().await?;
         assert_eq!(
             references["references"]["policies"],
-            json!([{"id":policy,"name":"Direct protected"}])
+            json!([{"id":subscriber_group,"name":format!("node-{exit}")},{"id":policy,"name":"Direct protected"}])
         );
         assert_eq!(references["references"]["chains"], json!([]));
         no_private_fields(&references);

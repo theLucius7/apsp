@@ -67,7 +67,6 @@ const SingboxOverview = lazyPage(() => import('../plugins/singbox/Overview'), tr
 const Nodes = lazyPage(() => import('../plugins/singbox/Nodes'), true)
 const ProxyUsers = lazyPage(() => import('../plugins/singbox/ProxyUsers'), true)
 const Groups = lazyPage(() => import('../plugins/singbox/Groups'), true)
-const Commerce = lazyPage(() => import('../plugins/singbox/commerce/Commerce'))
 const Expenses = lazyPage(() => import('../plugins/expenses/Expenses'), true)
 const Ddns = lazyPage(() => import('../plugins/ddns/Ddns'))
 const Alicloud = lazyPage(() => import('../plugins/alicloud/Alicloud'))
@@ -116,7 +115,6 @@ function page(route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' | 'm
       initialServerRole={route.serverRole}
     />
     case 'expenses': return <Expenses />
-    case 'commerce': return <Commerce />
     case 'proxy-users': return <ProxyUsers />
     case 'groups': return <Groups />
     case 'plugins': return <PluginEnablement />

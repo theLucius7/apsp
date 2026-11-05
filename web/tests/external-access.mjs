@@ -1,22 +1,26 @@
 import { installControlCenterFixtures } from './control-center-fixtures.mjs'
-// TEST_ONLY: real user authorization forms with isolated external-provider fixtures.
+import { flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+// TEST_ONLY: the policy group editor with isolated external-provider fixtures.
+// Users get external nodes only through policy groups: the editor offers adopted
+// nodes from subscription sources, keeps nodes the group already holds even while
+// they are unavailable, sends exact node identities, refuses a draft whose chosen
+// node changed identity (retaining the rest), survives a save conflict, and a
+// user's subscription lists managed and external nodes side by side.
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-// TEST_ONLY read-only contract for the newly mounted UserDiagnostics resource.
-// Device state and sensitive template content remain explicitly unavailable.
-const diagnosisFixture = user => ({ user_id: user.id, account: { user_id: user.id, name: user.name, portal_created: false, keys: 0, active_sessions: 0, activation_expires_at: null },
-  subscription: { status: 'empty', message: 'TEST_ONLY 真实设备状态未验证。', granted_nodes: 0, ready_managed_nodes: 0, ready_external_nodes: 0 },
-  permissions: [], external_authorizations: [], ledger: [], quota_credits: [], package_history: [], rotations: [], events: [],
+const diagnosisFixture = user => ({ account: { name: user.name, portal_created: false, keys: 0, active_sessions: 0, activation_expires_at: null },
+  subscription: { status: 'ready', message: 'TEST_ONLY 真实设备状态未验证。', granted_nodes: 2, ready_managed_nodes: 1, ready_external_nodes: 1 },
+  legacy: null, permissions: [], ledger: [], rotations: [], events: [],
   limitations: { credentials_read: { available: false, reason: 'TEST_ONLY 敏感内容未读取；此处仅为独立只读诊断快照。' } } })
-const templateFixture = { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY 完整模板未读取。', supported_client: 'singbox', supported_version: '1.14.2', schema_validation: true, runtime_validation: false, limitations: 'TEST_ONLY 没有保存的模板，未执行真实客户端验证。' }
+const templateFixture = { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY 完整模板未读取。', limitations: 'TEST_ONLY 没有保存的模板，未执行真实客户端验证。' }
 
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = process.env.APSP_WEB_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url))
-const root = '/api/plugins/sing-box', accessPath = `${root}/users/1/external-accesses`
+const root = '/api/plugins/sing-box', candidatesPath = `${root}/external-node-candidates`, groupPath = `${root}/policy-groups/1`
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname
@@ -32,7 +36,10 @@ const wait = async (condition, description) => {
 }
 const forceSubmit = dialog => dialog.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
 const ref = entry => Object.fromEntries(['external_node_id', 'source_id', 'identity_epoch', 'node_version_id', 'update_mode', 'metadata_revision'].map(key => [key, entry[key]]))
-const entry = (id, name) => ({ external_node_id: id, source_id: 8, identity_epoch: 2, node_version_id: id + 10, update_mode: 'follow_node', metadata_revision: 0, name, source_name: 'TEST_ONLY 外部来源', protocol: 'shadowsocks', server: 'provider.example.com', port: 443, available: true, reason: null, current_version_id: id + 10, resolved_version_id: id + 10, source_last_error: null })
+const entry = (id, name, extra = {}) => ({ external_node_id: id, source_id: 8, identity_epoch: 2, node_version_id: id + 10, update_mode: 'follow_node', metadata_revision: 0, name, source_name: 'TEST_ONLY 外部来源', protocol: 'shadowsocks', server: 'provider.example.com', port: 443, available: true, reason: null, current_version_id: id + 10, resolved_version_id: id + 10, source_last_error: null, ...extra })
+const node = { enabled: true, id: 1, name: 'TEST_ONLY 受管入口', server_id: 1, protocol: 'vless-reality', public_host: '127.0.0.1', port: 24443, sni: 'localhost', public_key: 'TEST_ONLY', short_id: '0123abcd' }
+const servers = [{ id: 1, name: 'TEST_ONLY 服务器', enabled: true, online: true, read_only: false }]
+const user = { id: 1, name: 'TEST_ONLY 用户', subscription_token: 'TEST_ONLY', subscription_url: 'http://127.0.0.1/sub/TEST_ONLY' }
 let browser
 try {
   await new Promise(done => server.listen(0, '127.0.0.1', done))
@@ -41,49 +48,38 @@ try {
   for (const width of [1440, 390, 340]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } }), errors = [], writes = []
     const first = entry(1, 'TEST_ONLY 原分配'), second = entry(2, 'TEST_ONLY 新节点')
-    let data = { revision: 1, accesses: [{ ...first, node_version_id: 10 }], available_nodes: [first, second] }
-    const userRows = [{ id: 1, name: 'TEST_ONLY 用户', subscription_token: 'TEST_ONLY', subscription_url: `${origin}/sub/TEST_ONLY` }, { id: 2, name: 'TEST_ONLY 第二用户', subscription_token: 'TEST_ONLY_TWO', subscription_url: `${origin}/sub/TEST_ONLY_TWO` }]
-    let users = structuredClone(userRows), parentGate, gate, putFailure = true, subscriptionReads = 0
-    const hold = () => { let release; const promise = new Promise(done => { release = done }); return gate = { promise, release, reached: 0, fail: false } }
-    const finish = fail => { const pending = gate; gate = undefined; pending.fail = fail; pending.release() }
+    const disabled = entry(3, 'TEST_ONLY 已停用节点', { available: false, reason: 'node_disabled' })
+    const archived = entry(4, 'TEST_ONLY 已归档候选', { available: false, reason: 'source_archived' })
+    let candidates = { available_nodes: [first, second, disabled, archived] }
+    const group = { id: 1, name: 'TEST_ONLY 外部策略', node_ids: [1], chain_ids: [], member_count: 2, external_nodes: [first, disabled] }
+    let putConflict = true, gate, release, subscriptionReads = 0
     page.on('pageerror', error => errors.push(error.message))
-    await page.clock.install({ time: new Date('2026-10-03T00:00:00Z') })
-    // Dialogs finish closing on animation frames, which the page clock holds here; with reduced motion they close at once.
-    await page.emulateMedia({ reducedMotion: 'reduce' })
-    await page.clock.pauseAt(new Date('2026-10-03T00:10:00Z'))
     await page.route('**/*', async route => {
-      const request = route.request(), url = new URL(request.url()), path = url.pathname
+      const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method()
       assert.equal(url.origin, origin, 'Provider/external requests must never leave the browser fixture')
       if (!path.startsWith('/api/')) return route.continue()
-      if (path === accessPath && request.method() === 'PUT') {
+      if (path === groupPath && method === 'PUT') {
         const body = request.postDataJSON(); writes.push(body)
-        if (putFailure) { data = { ...data, revision: 2 }; return route.fulfill({ status: 409, json: { error: 'TEST_ONLY 授权已变化' } }) }
-        assert.equal(body.revision, data.revision)
-        data = { ...data, revision: data.revision + 1, accesses: body.accesses.map(value => ({ ...data.available_nodes.find(entry => entry.external_node_id === value.external_node_id), ...value })) }
-        return route.fulfill({ json: data })
+        if (putConflict) { putConflict = false; return route.fulfill({ status: 409, json: { error: 'TEST_ONLY 策略组已变化' } }) }
+        Object.assign(group, { name: body.name, node_ids: body.node_ids, chain_ids: body.chain_ids, external_nodes: body.external_nodes.map(value => ({ ...candidates.available_nodes.find(item => item.external_node_id === value.external_node_id), ...value })) })
+        return route.fulfill({ json: group })
       }
-      assert.equal(request.method(), 'GET', `Unexpected write ${path}`)
-      if (parentGate && path === parentGate.path) { const pending = parentGate; pending.reached++; await pending.promise; if (pending.fail) return route.fulfill({ status: 503, json: { error: 'TEST_ONLY 当前用户依赖读取失败' } }).catch(() => {}) }
-      if (path === accessPath && gate) {
-        const pending = gate; pending.reached++; await pending.promise
-        if (pending.fail) return route.fulfill({ status: 503, json: { error: 'TEST_ONLY 外部分配读取失败' } }).catch(() => {})
-      }
+      assert.equal(method, 'GET', `Unexpected write ${method} ${path}`)
+      if (path === candidatesPath && gate) { const pending = gate; pending.reached++; await pending.promise }
       let value
       if (path === '/api/dashboard/access') value = { authenticated: true, public_dashboard: false }
-      else if (path === `${root}/users`) value = users
-      else if (path === `${root}/nodes` || path === `${root}/proxy-resources` || path === `${root}/policy-groups` || path === `${root}/package-groups` || path === `${root}/users/1/accesses`) value = []
+      else if (path === `${root}/policy-groups`) value = [group]
+      else if (path === `${root}/package-groups`) value = []
+      else if (path === `${root}/proxy-resources`) value = flatResourceFixtures([node], servers)
+      else if (path === `${root}/ordered-proxy-resources`) value = proxyResourceFixtures([node], servers)
+      else if (path === candidatesPath) value = structuredClone(candidates)
+      else if (path === `${root}/users`) value = [user]
       else if (path === `${root}/usage`) value = { uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] }
-      else if (path === `${root}/users/1/policy-groups`) value = { group_ids: [] }
+      else if (path === `${root}/users/1/policy-groups`) value = { group_ids: [1] }
       else if (path === `${root}/users/1/entitlement`) value = { user_id: 1, status: 'unlimited', allowed: true, monthly_bytes: null, used_bytes: '0', expires_at: null }
       else if (path === `${root}/users/1/portal`) value = { configuration: { enabled: false, reason: 'TEST_ONLY', origin }, keys: 0, url: null, activation_expires_at: null }
-      else if (path === accessPath) value = data
-      else if (path === `${root}/users/2/external-accesses`) value = { revision: 0, accesses: [], available_nodes: [] }
-      else if (path === `${root}/users/2/accesses`) value = []
-      else if (path === `${root}/users/2/policy-groups`) value = { group_ids: [] }
-      else if (path === `${root}/users/2/entitlement`) value = { user_id: 2, status: 'unlimited', allowed: true, monthly_bytes: null, used_bytes: '0', expires_at: null }
-      else if (path === `${root}/users/2/portal`) value = { configuration: { enabled: false, reason: 'TEST_ONLY', origin }, keys: 0, url: null, activation_expires_at: null }
-      else if (!url.search && [ `${root}/users/1/diagnosis`, `${root}/users/2/diagnosis` ].includes(path)) value = diagnosisFixture(userRows.find(user => path === `${root}/users/${user.id}/diagnosis`))
-      else if (!url.search && [ `${root}/users/1/client-template`, `${root}/users/2/client-template` ].includes(path)) value = templateFixture
+      else if (!url.search && path === `${root}/users/1/diagnosis`) value = diagnosisFixture(user)
+      else if (!url.search && path === `${root}/users/1/client-template`) value = templateFixture
       else if (path === `${root}/users/1/subscription`) {
         subscriptionReads++
         const format = url.searchParams.get('format') ?? 'singbox'
@@ -93,92 +89,84 @@ try {
     })
     try {
       await installControlCenterFixtures(page)
-      await page.goto(`${origin}/#/plugins/sing-box/users`)
-      // Open modal dialogs hide the page behind them from the accessibility tree.
-      const section = page.getByRole('region', { name: '外部节点授权', includeHidden: true })
-      await wait(() => section.getByRole('button', { name: '管理分配' }).isEnabled(), 'External assignment read completes')
-      await section.getByRole('button', { name: '管理分配' }).click()
-      const dialog = page.getByRole('dialog'), save = dialog.getByRole('button', { name: '保存分配', exact: true })
-      await dialog.getByRole('combobox', { name: 'TEST_ONLY 原分配 更新方式' }).selectOption('pinned')
-      await dialog.getByRole('checkbox', { name: /TEST_ONLY 新节点/ }).check()
-      assert.equal(await dialog.locator('fieldset[data-slot=group-choices]').first().getByRole('checkbox').count(), 2)
-      assert.equal(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth), true, 'Assignment editor fits viewport')
-      const pending = hold()
-      await page.clock.runFor(5000); await wait(() => pending.reached > 0, 'Background assignment request starts')
-      assert.equal(await save.isEnabled(), true, 'A poll in flight leaves the draft submittable (ADR 0102)')
-      finish(true)
-      await section.getByText('TEST_ONLY 外部分配读取失败', { exact: true }).waitFor()
-      await forceSubmit(dialog); assert.equal(writes.length, 0, 'Failed read cannot submit old authorization')
-      assert.equal(await dialog.getByRole('combobox', { name: 'TEST_ONLY 原分配 更新方式' }).inputValue(), 'pinned')
-      await page.clock.runFor(5000)
-      await wait(() => save.isEnabled(), 'Recovered read allows the retained draft')
-      await dialog.getByLabel('搜索外部节点').fill('TEST_ONLY 保留草稿')
-      const parentRefresh = () => page.getByRole('button', { name: '刷新', exact: true, includeHidden: true }).first().evaluate(button => button.click())
-      // Each held parent GET is observed before invoking the real submit callback.
-      for (const dependency of [`${root}/users`, `${root}/nodes`, `${root}/proxy-resources`, `${root}/users/1/accesses`, `${root}/users/1/entitlement`]) {
-        let release; const promise = new Promise(done => { release = done })
-        parentGate = { path: dependency, promise, release, reached: 0, fail: false }
-        const pendingParent = parentGate
-        await parentRefresh(); await wait(() => pendingParent.reached > 0, `Current parent read reached ${dependency}`)
-        await forceSubmit(dialog); assert.equal(writes.length, 0, `${dependency} pending must issue zero PUTs`)
-        const failedParent = page.waitForResponse(response => new URL(response.url()).pathname === dependency && response.status() === 503)
-        pendingParent.fail = true; parentGate = undefined; pendingParent.release(); await failedParent
-        await wait(() => save.isDisabled(), `${dependency} failure retains disabled submit`)
-        await forceSubmit(dialog); assert.equal(writes.length, 0, `${dependency} failed must issue zero PUTs`)
-        assert.equal(await dialog.getByLabel('搜索外部节点').inputValue(), 'TEST_ONLY 保留草稿')
-        assert.equal(await dialog.getByRole('combobox', { name: 'TEST_ONLY 原分配 更新方式' }).inputValue(), 'pinned')
-        await parentRefresh(); await wait(() => save.isEnabled(), `${dependency} current recovery preserves the same draft`)
+      await page.goto(`${origin}/#/plugins/sing-box/groups`)
+      const row = page.getByRole('row').filter({ hasText: group.name })
+      await row.getByText('TEST_ONLY 受管入口、TEST_ONLY 原分配（外部）、TEST_ONLY 已停用节点（外部）', { exact: true }).waitFor()
+      const edit = row.getByRole('button', { name: '编辑', exact: true })
+      await wait(() => edit.isEnabled(), 'Initial group snapshots complete')
+      await edit.click()
+      const dialog = page.getByRole('dialog'), save = dialog.getByRole('button', { name: '保存', exact: true })
+      const externals = dialog.locator('fieldset[data-slot=group-choices]').filter({ has: page.getByText('订阅来源中的外部节点', { exact: true }) })
+      const choice = name => externals.getByRole('checkbox', { name: new RegExp(name) })
+      const mode = name => externals.getByRole('combobox', { name: `${name} 的更新方式`, exact: true })
+      await externals.waitFor()
+      assert.equal(await externals.getByRole('checkbox').count(), 4, 'held nodes and adopted candidates are listed once each')
+      // A held node stays chosen while unavailable; an unavailable candidate cannot be added.
+      assert.equal(await choice('TEST_ONLY 原分配').isChecked(), true)
+      assert.equal(await choice('TEST_ONLY 已停用节点').isChecked(), true)
+      assert.equal(await choice('TEST_ONLY 已停用节点').isEnabled(), true)
+      await externals.getByText('TEST_ONLY 外部来源 · shadowsocks · 节点已停用', { exact: true }).waitFor()
+      assert.equal(await choice('TEST_ONLY 已归档候选').isDisabled(), true)
+      await externals.getByText('TEST_ONLY 外部来源 · shadowsocks · 来源已归档', { exact: true }).waitFor()
+      assert.equal(await mode('TEST_ONLY 原分配').inputValue(), 'follow_node')
+      await mode('TEST_ONLY 原分配').selectOption('pinned')
+      await choice('TEST_ONLY 新节点').check()
+      assert.equal(await mode('TEST_ONLY 新节点').inputValue(), 'follow_node')
+      assert.equal(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth), true, 'Group editor fits viewport')
+      const refresh = () => page.locator('[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click())
+      const draftKept = async (label, listed = true) => {
+        assert.equal(await mode('TEST_ONLY 原分配').inputValue(), 'pinned', `${label}: pinned mode kept`)
+        if (listed) assert.equal(await choice('TEST_ONLY 新节点').isChecked(), true, `${label}: added node kept`)
+        assert.equal(await dialog.locator('input[name="name"]').inputValue(), group.name)
       }
-      const original = structuredClone(data)
+      // A candidate read in flight leaves the draft submittable (ADR 0102).
+      gate = { reached: 0, promise: new Promise(done => { release = done }) }
+      const pending = gate
+      await refresh(); await wait(() => pending.reached > 0, 'Candidate refresh starts')
+      await wait(() => save.isEnabled(), 'A held candidate read leaves the draft submittable')
+      gate = undefined; release()
+      const original = structuredClone(candidates)
+      const blocked = '所选外部节点已缺失、停用或来源与版本已变化，请重新选择；其余草稿已保留。'
       for (const [label, mutate] of [
-        ['node disappeared', value => { value.available_nodes = value.available_nodes.filter(node => node.external_node_id !== second.external_node_id) }],
+        ['node disappeared', value => { value.available_nodes = value.available_nodes.filter(item => item.external_node_id !== second.external_node_id) }],
         ['source replaced', value => { value.available_nodes[1].source_id = 9; value.available_nodes[1].identity_epoch++ }],
         ['node disabled', value => { value.available_nodes[1].available = false; value.available_nodes[1].reason = 'node_disabled' }],
-        ['version changed', value => { value.available_nodes[1].node_version_id++; value.available_nodes[1].current_version_id++; value.available_nodes[1].resolved_version_id++ }],
+        ['newer version not applied', value => { value.available_nodes[1].current_version_id++ }],
         ['metadata changed', value => { value.available_nodes[1].metadata_revision++ }],
-        ['unknown revision', value => { delete value.revision }],
-        ['unsafe revision', value => { value.revision = Number.MAX_SAFE_INTEGER + 1 }],
       ]) {
-        data = structuredClone(original); mutate(data)
-        const changed = page.waitForResponse(response => new URL(response.url()).pathname === accessPath && response.request().method() === 'GET' && response.status() === 200)
-        await parentRefresh(); await changed; await wait(() => save.isDisabled(), label)
+        candidates = structuredClone(original); mutate(candidates)
+        const changed = page.waitForResponse(response => new URL(response.url()).pathname === candidatesPath && response.status() === 200)
+        await refresh(); await changed
+        await wait(() => save.isDisabled(), `${label} blocks saving`)
+        await dialog.getByText(blocked, { exact: true }).waitFor()
         await forceSubmit(dialog); assert.equal(writes.length, 0, `${label} must issue zero PUTs`)
-        assert.equal(await dialog.getByLabel('搜索外部节点').inputValue(), 'TEST_ONLY 保留草稿')
-        assert.equal(await dialog.locator('fieldset[data-slot=group-choices]').first().getByRole('checkbox').count(), 2)
-        data = structuredClone(original); await parentRefresh(); await wait(() => save.isEnabled(), `${label} original identity recovered`)
+        // A chosen node that vanished from the candidates has no row of its own.
+        await draftKept(label, label !== 'node disappeared')
+        candidates = structuredClone(original)
+        const restored = page.waitForResponse(response => new URL(response.url()).pathname === candidatesPath && response.status() === 200)
+        await refresh(); await restored
+        await wait(() => save.isEnabled(), `${label}: original identity recovers`)
+        await draftKept(`${label} recovered`)
       }
-      users = []
-      const removed = page.waitForResponse(response => new URL(response.url()).pathname === `${root}/users` && response.status() === 200)
-      await parentRefresh(); await removed; await wait(() => save.isDisabled(), 'Current target disappearance blocks the retained editor')
-      await forceSubmit(dialog); assert.equal(writes.length, 0, 'A disappeared user cannot receive the old external authorization')
-      assert.equal(await dialog.getByLabel('搜索外部节点').inputValue(), 'TEST_ONLY 保留草稿')
-      users = structuredClone(userRows); await parentRefresh(); await wait(() => save.isEnabled(), 'Only the original restored user can resume')
-      await page.evaluate(() => { const form = document.querySelector('[role="dialog"] form'); const choice = [...document.querySelectorAll('[data-slot=user-roster] button')].find(button => button.textContent.includes('TEST_ONLY 第二用户')); choice.click(); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
-      assert.equal(writes.length, 0, 'Same-event user switch never redirects the original draft to the new user')
-      await dialog.waitFor({ state: 'hidden' })
-      await page.locator('[data-slot=user-roster] button[aria-pressed]').filter({ hasText: 'TEST_ONLY 用户' }).first().click()
-      await wait(() => save.isEnabled(), 'Original user selection restores its preserved draft')
-      assert.equal(await dialog.getByLabel('搜索外部节点').inputValue(), 'TEST_ONLY 保留草稿')
+      // A save conflict keeps the draft; the next save sends exact identities.
       await save.click()
-      await dialog.getByText('TEST_ONLY 授权已变化', { exact: true }).waitFor()
+      await dialog.getByText('TEST_ONLY 策略组已变化', { exact: true }).waitFor()
       assert.equal(writes.length, 1)
-      assert.deepEqual(writes[0].accesses, [{ ...ref(first), update_mode: 'pinned' }, ref(second)])
-      assert.equal(await dialog.locator('fieldset[data-slot=group-choices]').first().getByRole('checkbox').count(), 2, 'Conflict retains the draft')
-      const reloading = hold()
-      await dialog.getByRole('button', { name: '重新读取授权', exact: true }).click()
-      await wait(() => reloading.reached > 0, 'Reload draft must actually fetch, not reuse its rejected cache')
-      await forceSubmit(dialog); assert.equal(writes.length, 1)
-      finish(false)
-      await wait(async () => await dialog.locator('fieldset[data-slot=group-choices]').first().getByRole('checkbox').count() === 1, 'Explicit reload adopts the current assignment snapshot')
-      await dialog.getByLabel('搜索外部节点').fill('')
-      await dialog.getByRole('checkbox', { name: /TEST_ONLY 新节点/ }).check()
-      putFailure = false
-      await wait(() => save.isEnabled(), 'Fresh snapshot is writable')
+      assert.deepEqual(writes[0], { name: group.name, node_ids: [1], chain_ids: [], external_nodes: [{ ...ref(first), update_mode: 'pinned' }, ref(disabled), ref(second)] })
+      await draftKept('conflict')
       await save.click(); await dialog.waitFor({ state: 'hidden' })
-      assert.equal(writes.length, 2); assert.equal(writes[1].revision, 2)
-      await section.getByText('外部节点分配已保存，后续订阅按新分配生成。', { exact: true }).waitFor()
-      const overflow = await page.evaluate(() => [...document.querySelectorAll('body *')].filter(element => element.getBoundingClientRect().right > innerWidth + 1).map(element => ({ tag: element.tagName, class: element.className, text: element.textContent?.slice(0, 70), width: element.getBoundingClientRect().width })))
+      assert.equal(writes.length, 2)
+      assert.deepEqual(writes[1], writes[0])
+      await row.getByText('TEST_ONLY 受管入口、TEST_ONLY 原分配（外部）、TEST_ONLY 已停用节点（外部）、TEST_ONLY 新节点（外部）', { exact: true }).waitFor()
+      // Reopening shows the saved pin from the group itself.
+      await edit.click()
+      assert.equal(await mode('TEST_ONLY 原分配').inputValue(), 'pinned')
+      await dialog.getByRole('button', { name: '取消', exact: true }).click(); await dialog.waitFor({ state: 'hidden' })
+      const overflow = await page.evaluate(() => [...document.querySelectorAll('body *')].filter(element => element.getBoundingClientRect().right > innerWidth + 1).map(element => ({ tag: element.tagName, class: element.className, text: element.textContent?.slice(0, 70) })))
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Page fits viewport: ${JSON.stringify(overflow.slice(0, 12))}`)
+
+      // The user's subscription lists managed and external nodes without ID collisions.
+      await page.goto(`${origin}/#/plugins/sing-box/users`)
       await page.getByRole('button', { name: '订阅详情', exact: true }).click()
       const subscription = page.getByRole('dialog')
       await subscription.getByText('TEST_ONLY 外部入口', { exact: true }).waitFor()
@@ -188,7 +176,7 @@ try {
       assert.equal(await subscription.locator('option[value=links]').evaluate(option => option.disabled), true)
       assert(subscriptionReads > 0)
       assert.deepEqual(errors, [])
-      console.log(`external access ${width}: current parent/identity zero-write matrix, retained target draft, conflict recovery, fixed version and mixed subscription passed`)
-    } finally { gate?.release(); parentGate?.release(); await page.close() }
+      console.log(`external nodes in policy groups ${width}: held/unavailable listing, exact identities, zero-write identity matrix, conflict recovery and mixed subscription passed`)
+    } finally { release?.(); await page.close() }
   }
 } finally { await browser?.close(); await new Promise(done => server.close(done)) }

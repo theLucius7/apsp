@@ -160,14 +160,7 @@ async fn entry_eligibility_tracks_grants_and_live_path_references(pool: PgPool) 
             .status()
             == StatusCode::CONFLICT
     );
-    call(
-        &panel,
-        &cookie,
-        Method::DELETE,
-        &format!("/users/{user}/accesses/{entry}"),
-        None,
-    )
-    .await?;
+    panel.revoke(&cookie, user, entry).await?;
     ensure!(resource(&panel, &cookie, entry).await?["entry_eligible"] == true);
     let policy = call(
         &panel,

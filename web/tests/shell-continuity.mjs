@@ -46,7 +46,6 @@ const proxyReads = {
   [`${prefix}/policy-groups`]: [], [`${prefix}/package-groups`]: [], [`${prefix}/nodes`]: [node], [`${prefix}/users`]: [user],
   [`${prefix}/proxy-resources`]: [], [`${prefix}/ordered-proxy-resources`]: proxyResourceFixtures([node], pluginServers),
   [`${prefix}/usage`]: { uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] },
-  [`${prefix}/users/1/accesses`]: [], [`${prefix}/users/1/external-accesses`]: { revision: 0, accesses: [], available_nodes: [] },
   [`${prefix}/users/1/policy-groups`]: { group_ids: [] },
   [`${prefix}/users/1/entitlement`]: { user_id: 1, package_group_id: null, package_name: null, monthly_bytes: null, starts_at: null, expires_at: null, cycle_start: null, next_reset: null, used_bytes: '0', status: 'unlimited', allowed: true },
   [`${prefix}/users/1/portal`]: { configuration: { enabled: false, reason: 'TEST_ONLY 尚未启用', origin: 'http://127.0.0.1' }, keys: 0, url: null, activation_expires_at: null },

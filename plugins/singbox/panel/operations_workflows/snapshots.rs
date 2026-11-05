@@ -90,8 +90,8 @@ pub(super) async fn snapshot(
             let mut differences = Vec::new();
             for user in &users {
                 let current: Vec<i64> = sqlx::query_scalar("SELECT node_id FROM singbox_desired_accesses WHERE user_id=$1 ORDER BY node_id").bind(user).fetch_all(&mut **tx).await?;
-                let desired: Vec<i64> = sqlx::query_scalar("SELECT DISTINCT node_id FROM (SELECT node_id FROM accesses WHERE user_id=$1 AND direct_grant UNION SELECT node_id FROM singbox_policy_nodes WHERE group_id=ANY($2) UNION SELECT c.entry_node_id FROM singbox_policy_chains p JOIN singbox_chains c ON c.id=p.chain_id WHERE p.group_id=ANY($2)) n ORDER BY node_id")
-                    .bind(user).bind(&group_ids).fetch_all(&mut **tx).await?;
+                let desired: Vec<i64> = sqlx::query_scalar("SELECT DISTINCT node_id FROM (SELECT node_id FROM singbox_policy_nodes WHERE group_id=ANY($1) UNION SELECT c.entry_node_id FROM singbox_policy_chains p JOIN singbox_chains c ON c.id=p.chain_id WHERE p.group_id=ANY($1)) n ORDER BY node_id")
+                    .bind(&group_ids).fetch_all(&mut **tx).await?;
                 differences.push(json!({"user_id":user,"added_nodes":desired.iter().filter(|n|!current.contains(n)).collect::<Vec<_>>(),"removed_nodes":current.iter().filter(|n|!desired.contains(n)).collect::<Vec<_>>(),"effective_nodes":desired}));
             }
             (

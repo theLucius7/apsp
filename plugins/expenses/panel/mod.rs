@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! Recurring service expenses, independent of proxy member commerce.
+//! Recurring service expenses, independent of the proxy business.
 mod api;
 mod calendar;
 mod history;

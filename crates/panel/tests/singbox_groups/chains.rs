@@ -44,15 +44,6 @@ async fn chain_is_private_billed_once_and_requires_both_applied_endpoints(
     let group = create_policy(&panel, &cookie, &[], &[chain_id]).await?;
     set_policies(&panel, &cookie, uid, &[group]).await?;
     assert_eq!(eligible(&pool, uid, now_timestamp()).await?, vec![entry]);
-    let direct = panel
-        .admin(
-            Method::POST,
-            &format!("{ROOT}/users/{uid}/accesses"),
-            &cookie,
-            Some(json!({"node_id":entry})),
-        )
-        .await?;
-    assert_eq!(direct.status(), StatusCode::CONFLICT);
     entitlements::refresh(&pool, now_timestamp()).await?;
     panel.publish_now().await?;
     let entry_config = latest_config(&pool, a).await?;
@@ -237,7 +228,7 @@ async fn chain_is_private_billed_once_and_requires_both_applied_endpoints(
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn chain_rejects_existing_direct_grants_cycles_nesting_and_same_server(
+async fn chain_rejects_existing_group_grants_cycles_nesting_and_same_server(
     pool: PgPool,
 ) -> Result<()> {
     let panel = TestPanel::start_with_public_url(pool, Some("https://panel.example")).await?;

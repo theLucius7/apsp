@@ -184,7 +184,7 @@ export default function OrderedResources({ resourcesQuery, nodesQuery, serversQu
       })}</TableBody></Table></div>}
     </Panel>
     <DialogPresence>{deployment !== null && <NodeDeployment serverId={deployment} server={servers.fresh ? servers.data?.find(server => server.id === deployment) : undefined} onClose={() => setDeployment(null)} />}</DialogPresence>
-    <p className="text-muted-foreground mt-3 text-xs leading-relaxed">普通节点需为代理用户授权并等待设备成功应用配置；出口可使用内部连接凭据监听，无需为出口单独授权用户。两端状态仅表示设备应用与健康信息，尚未验证公网可达或链路连通。</p>
+    <p className="text-muted-foreground mt-3 text-xs leading-relaxed">普通节点需放进代理用户的策略组，并等待设备成功应用配置；出口使用内部连接凭据监听，不需要放进策略组。两端状态仅表示设备应用与健康信息，尚未验证公网可达或链路连通。</p>
     <DialogPresence>{(selected || detail) && <ResourceDetail key={proxyResourceKey((selected || detail)!)} selected={(selected || detail)!} snapshot={snapshot} onClose={() => { setDetail(null); if (selected) onCloseSelected() }} />}</DialogPresence>
     <DialogPresence>{chainEditor && <ChainResourceEditor key={chainEditor.id} resource={chainEditor} snapshot={resources} open={chainEditorOpen} onClose={() => { setChainEditorOpen(false); if (!editPending) setChainEditor(null) }} onSaved={() => { setChainEditorOpen(false); setChainEditor(null) }} onPending={setEditPending} refresh={refresh} />}</DialogPresence>
     <DialogPresence>{versionEditor && <ChainVersionEditor key={versionEditor.id} resource={versionEditor} snapshot={resources} open={versionEditorOpen} onClose={() => { setVersionEditorOpen(false); if (!versionPending) setVersionEditor(null) }} onSaved={() => { setVersionEditorOpen(false); setVersionEditor(null) }} onPending={setVersionPending} refresh={refresh} />}</DialogPresence>

@@ -416,7 +416,7 @@ async fn the_owner_sees_flags_and_no_member_or_subscription_response_mentions_th
             Some(member_cookie.clone()),
         ),
         (
-            format!("/api/plugins/sing-box/portal/{account}/commerce/messages"),
+            format!("/api/plugins/sing-box/portal/{account}/account/messages"),
             Some(member_cookie.clone()),
         ),
     ] {
