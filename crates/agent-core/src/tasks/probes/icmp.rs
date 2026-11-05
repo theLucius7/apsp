@@ -37,7 +37,9 @@ fn command(platform: &str, address: IpAddr) -> Result<(&'static str, Vec<String>
     let mut args: Vec<String> = ["LC_ALL=C", "LANG=C"].map(String::from).to_vec();
     let flags: &[&str] = match platform {
         // Quiet mode can hide local send failures while still counting them as transmitted.
-        "linux" => &["ping", "-n", "-c", "4", "-W", "1", "-w", "6"],
+        // No -w: with a deadline iputils keeps sending until four replies arrive, so any
+        // loss reports more than four transmissions. The bounded executor is the deadline.
+        "linux" => &["ping", "-n", "-c", "4", "-W", "1"],
         "freebsd" => &["ping", "-n", "-c", "4", "-W", "1000", "-t", "6"],
         // Apple's ping6 has no deadline flag; the bounded executor enforces it.
         "macos" if address.is_ipv6() => &["ping6", "-n", "-c", "4"],
@@ -312,6 +314,9 @@ mod tests {
                         for unrelated in ["-X", "-w", "-W", "-t"] {
                             assert!(!args.contains(&unrelated.into()));
                         }
+                    } else if platform == "linux" {
+                        // iputils -w overrides -c and sends until four replies arrive.
+                        assert_eq!(&args[2..], ["ping", "-n", "-c", "4", "-W", "1", address]);
                     } else {
                         assert!(args.contains(&"6".into()));
                     }
