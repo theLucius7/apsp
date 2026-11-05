@@ -156,11 +156,11 @@
 |---|---|
 | `GET /api/plugins/sing-box/servers` | 未删除服务器的插件启用元数据列表 |
 | `GET /api/plugins/sing-box/servers/{id}` | 单台服务器的插件启用元数据 |
-| `POST /api/plugins/sing-box/servers/{id}/enable` | 空 JSON `{}`；管理员明确启用并安排首次安装，重复请求幂等 |
+| `POST /api/plugins/sing-box/servers/{id}/enable` | 空 JSON `{}`；管理员明确安装 sing-box 并安排首次发布，重复请求幂等（路径沿用 `enable`） |
 
 元数据为 `{id,name,enabled,online,agent_supported,read_only,source,installation}`。source 为 `administrator`、兼容 `legacy_nodes` / `legacy_deployments` 或 null；旧能力标记仅保留历史记录，单独能力声明不自动启用。`installation={state,reason,target_rev,applied_rev}`，state 为 `not_enabled`、`queued`、`waiting_agent`、`offline`、`pending`、`ready` 或 `failed`，reason 提供中文原因。启用安排无部署服务器的首次安全配置，重复请求不延后待办；实际安装仍须签名制品、设备支持和应用确认。创建节点和读取部署需先启用，否则返回 409。未启用服务器详情不请求节点或部署；已有网卡遥测继续显示。详见 [安装流程](singbox-installation.md)。
 
-服务器详情的「插件」分页 `/#/servers/{id}/plugins` 只管理这一台服务器；`/#/system/plugins` 是「插件中心 → 服务器启用」汇总页。插件目录选择服务器后只跳转；启用仍须管理员明确调用上述服务器级接口，不创建全局安装或启用状态。
+服务器详情的「插件」分页 `/#/servers/{id}/plugins` 只管理这一台服务器；`/#/system/plugins` 是「插件中心 → sing-box 安装」汇总页。插件目录选择服务器后只跳转；安装仍须管理员明确调用上述服务器级接口，不创建全局安装状态。
 
 ## 节点
 

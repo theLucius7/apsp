@@ -58,7 +58,7 @@ export default function Overview() {
   // Setup steps stay visible until each one is done.
   const steps = [
     { title: '接入服务器', done: enrolled.length > 0, description: '安装 Agent 并确认服务器在线。监控、资产和日常运维都在「服务器」中管理。', href: '#/servers', action: '管理服务器' },
-    { title: '启用 sing-box', done: enabled.length > 0, description: '为需要提供代理的服务器启用插件，等待设备确认安装和运行状态。', href: '#/system/plugins', action: '启用插件' },
+    { title: '安装 sing-box', done: enabled.length > 0, description: '在需要提供代理的服务器上安装 sing-box，等待设备确认运行状态。', href: '#/system/plugins', action: '安装 sing-box' },
     { title: '创建节点与链路', done: Boolean(nodes.data?.length), description: '节点是某台服务器上的代理入口；链路把多台服务器或订阅中的节点串成一条线路。新增监听需要先预检并确认，才会发布到服务器。', href: '#/plugins/sing-box/nodes', action: '创建代理节点' },
     { title: '创建用户并授权', done: Boolean(users.data?.length), description: '用策略组决定代理用户能用哪些节点；需要流量和有效期限制时，再分配套餐。之后把门户或订阅链接发给对方。', href: '#/plugins/sing-box/users', action: '管理代理用户' },
   ]
@@ -69,7 +69,7 @@ export default function Overview() {
     <PageHeader title="概览" description="这张代理网络现在怎么样：先看要处理的事，再看每台服务器。"><Refresh onClick={reload} /></PageHeader>
     <div className="mb-4 grid grid-cols-2 gap-2.5 xl:grid-cols-4">
       <Stat label="服务器在线" value={servers.data ? `${enrolled.length - offline.length} / ${enrolled.length}` : '—'} note={servers.data ? `${servers.data.length - enrolled.length} 台待接入` : '无权查看或正在读取'} />
-      <Stat label="代理节点" value={nodes.data ? nodes.data.length : '—'} note={pluginServers.data ? `${enabled.length} 台服务器已启用 sing-box` : '无权查看或正在读取'} />
+      <Stat label="代理节点" value={nodes.data ? nodes.data.length : '—'} note={pluginServers.data ? `${enabled.length} 台服务器已安装 sing-box` : '无权查看或正在读取'} />
       <Stat label="代理用户" value={users.data ? users.data.length : '—'} />
       <Stat label="累计代理流量" value={usage.data ? bytes(usage.data.total) : '—'} note="含已删除用户" />
     </div>
@@ -90,9 +90,9 @@ export default function Overview() {
             <span className="flex items-center gap-1.5"><i className="bg-success size-2 rounded-full" />{states.ready} 运行</span>
             {states.attention > 0 && <span className="text-destructive flex items-center gap-1.5"><i className="bg-destructive size-2 rounded-full" />{states.attention} 需处理</span>}
             {states.waiting > 0 && <span className="flex items-center gap-1.5"><i className="bg-warning size-2 rounded-full" />{states.waiting} 等待</span>}
-            <span className="flex items-center gap-1.5"><i className="border-muted-foreground size-2 rounded-full border" />{states.off} 未启用</span>
+            <span className="flex items-center gap-1.5"><i className="border-muted-foreground size-2 rounded-full border" />{states.off} 未安装</span>
             {offline.length > 0 && <span className="flex items-center gap-1.5"><i className="border-destructive size-2.5 rounded-full border border-dashed" />{offline.length} 离线</span>}
-          </span>}{states.off > 0 && <a className={buttonVariants({ variant: 'ghost', size: 'xs' })} href="#/system/plugins">启用插件</a>}</PanelHeader>
+          </span>}{states.off > 0 && <a className={buttonVariants({ variant: 'ghost', size: 'xs' })} href="#/system/plugins">安装 sing-box</a>}</PanelHeader>
         {pluginServers.loading && !pluginServers.data ? <Loading variant="table" rows={3} /> : !pluginServers.data?.length ? <Empty icon={ServerIcon} title="先接入服务器" description="服务器在线后，再为需要代理服务的设备安装 sing-box。"><a className={buttonVariants()} href="#/servers">添加服务器</a></Empty>
           : wide ? <div className="px-2 py-3"><NetworkMap plugins={pluginServers.data} servers={servers.data} /><p className="text-muted-foreground px-3 text-xs">圆点大小表示本期流量，虚线红圈表示 Agent 离线；点击服务器查看它的 sing-box。</p></div>
           : <ul data-slot="singbox-servers" className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-1.5 p-2.5">{ordered.map(({ server, state }) => <li key={server.id} className="min-w-0">

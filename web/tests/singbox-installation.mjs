@@ -35,22 +35,22 @@ try {
     const page = await context.newPage()
     const errors = [], unexpected = [], reads = [], writes = []
     const prefix = '/api/plugins/sing-box/servers'
-    const name = '能力支持但尚未启用服务器'
-    const otherName = '另一台未启用服务器'
+    const name = '能力支持但尚未安装服务器'
+    const otherName = '另一台未安装服务器'
     const missingArtifact = '清单准备失败：目标版本 1：缺少此平台的已验签 sing-box 1.14.2 制品，请先导入可信发布制品'
     let enabled = false, targetRev = 0, preparationError = null
     const device = { downloaded: false, appliedRev: 0, healthy: false }
     const installation = () => {
       const revisions = { target_rev: targetRev, applied_rev: device.appliedRev }
-      if (!enabled) return { ...revisions, state: 'not_enabled', reason: '尚未启用插件；设备支持此插件不代表已安装' }
-      if (!targetRev) return { ...revisions, state: 'queued', reason: '启用请求已保存，正在生成初始运行配置' }
+      if (!enabled) return { ...revisions, state: 'not_enabled', reason: '尚未安装 sing-box；设备支持 sing-box 不代表已安装' }
+      if (!targetRev) return { ...revisions, state: 'queued', reason: '安装请求已保存，正在生成初始运行配置' }
       if (preparationError) return { ...revisions, state: 'failed', reason: preparationError }
       // Neither enablement nor downloading bytes establishes a device application/health result.
       if (device.appliedRev === targetRev && device.healthy) return { ...revisions, state: 'ready', reason: '设备已确认应用目标版本，运行时健康检查通过' }
       return { ...revisions, state: 'pending', reason: '等待设备下载已签制品、应用配置并确认健康；尚未确认安装完成' }
     }
     const selected = () => ({ id: 1, name, enabled, online: true, agent_supported: true, read_only: false, source: enabled ? 'administrator' : null, installation: installation() })
-    const other = { id: 2, name: otherName, enabled: false, online: false, agent_supported: false, read_only: false, source: null, installation: { state: 'not_enabled', reason: '尚未启用插件', target_rev: 0, applied_rev: 0 } }
+    const other = { id: 2, name: otherName, enabled: false, online: false, agent_supported: false, read_only: false, source: null, installation: { state: 'not_enabled', reason: '尚未安装 sing-box', target_rev: 0, applied_rev: 0 } }
     page.on('pageerror', error => errors.push(error.message))
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
     await context.route('**/*', async route => {
@@ -92,24 +92,25 @@ try {
     await page.goto(`${origin}/#/system/plugins`)
     await page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }).waitFor()
     assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '设置', exact: true, includeHidden: true }).getAttribute('aria-current'), 'page')
-    assert.equal(await page.getByRole('navigation', { name: '插件中心' }).getByRole('link', { name: '服务器启用', exact: true }).getAttribute('aria-current'), 'page')
+    assert.equal(await page.getByRole('navigation', { name: '插件中心' }).getByRole('link', { name: 'sing-box 安装', exact: true }).getAttribute('aria-current'), 'page')
     assert.equal(await page.title(), '插件中心 · apsp')
     const row = page.locator('tbody tr').filter({ has: page.getByRole('link', { name, exact: true }) })
-    await row.getByText('设备支持 sing-box', { exact: true }).waitFor()
-    assert.equal(await row.getByText('未启用', { exact: true }).count(), 1)
+    await row.getByRole('button', { name: '安装 sing-box', exact: true }).waitFor()
+    assert.equal(await row.getByText('设备尚未声明支持 sing-box', { exact: true }).count(), 0, 'A supported device needs no note')
+    assert.equal(await row.getByText('未安装', { exact: true }).count(), 1)
     assert.equal(await row.getByRole('link', { name: '管理节点', exact: true }).count(), 0)
     assert.equal(await row.getByText('已安装并运行', { exact: true }).count(), 0)
-    assert.equal(await row.getByRole('button', { name: '启用并安装 sing-box', exact: true }).isEnabled(), true)
+    assert.equal(await row.getByRole('button', { name: '安装 sing-box', exact: true }).isEnabled(), true)
     assert.equal(writes.length, 0, 'capability discovery must not implicitly enable a server')
 
-    await row.getByRole('button', { name: '启用并安装 sing-box', exact: true }).click()
+    await row.getByRole('button', { name: '安装 sing-box', exact: true }).click()
     await row.getByText('安装已安排', { exact: true }).waitFor()
-    await row.getByText('启用请求已保存，正在生成初始运行配置', { exact: true }).waitFor()
+    await row.getByText('安装请求已保存，正在生成初始运行配置', { exact: true }).waitFor()
     assert.deepEqual(writes, [{ pathname: `${prefix}/1/enable`, method: 'POST', payload: {} }])
     assert.equal(device.appliedRev, 0)
     assert.equal(await row.getByText('已安装并运行', { exact: true }).count(), 0)
-    assert.equal(await row.getByRole('button', { name: '启用并安装 sing-box', exact: true }).count(), 0)
-    assert.equal(await page.locator('tbody tr').filter({ hasText: otherName }).getByRole('button', { name: '启用并安装 sing-box', exact: true }).count(), 1)
+    assert.equal(await row.getByRole('button', { name: '安装 sing-box', exact: true }).count(), 0)
+    assert.equal(await page.locator('tbody tr').filter({ hasText: otherName }).getByRole('button', { name: '安装 sing-box', exact: true }).count(), 1)
 
     const refresh = async (label, reason) => {
       const response = page.waitForResponse(response => new URL(response.url()).pathname === prefix && response.request().method() === 'GET')
@@ -133,7 +134,8 @@ try {
     await refresh('等待应用配置')
     assert.equal(device.downloaded, true)
     device.healthy = true
-    await refresh('已安装并运行', '设备已确认应用目标版本，运行时健康检查通过')
+    await refresh('已安装并运行')
+    assert.equal(await row.getByText('设备已确认应用目标版本，运行时健康检查通过', { exact: true }).count(), 0, 'A healthy install needs no per-row explanation')
 
     // The existing per-server route must use only the selected metadata endpoint.
     const beforeSingle = reads.length

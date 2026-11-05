@@ -37,7 +37,7 @@ function SelectServer({ plugin, onClose }: { plugin: CatalogDefinition; onClose:
   const path = server ? pluginServerPath(plugin, server.id) : null
   return <Modal title={`选择使用 ${plugin.title} 的服务器`} onClose={onClose}>
     <div data-slot="modal-body" className="p-4">
-      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{plugin.execution === 'panel' ? '选择服务器后查看它的域名解析。由面板使用 Agent 已上报的 IP 更新 DNS，无需单独启用。' : '这里只选择要管理的服务器，不会立即安装或运行插件。后续操作由该服务器的 Agent 执行。'}</p>
+      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{plugin.execution === 'panel' ? '选择服务器后查看它的域名解析。由面板使用 Agent 已上报的 IP 更新 DNS。' : '这里只选择要管理的服务器，不会立即安装或运行插件。后续操作由该服务器的 Agent 执行。'}</p>
       <ErrorNotice message={servers.error} retry={servers.reload} />
       {servers.loading && !servers.data ? <Loading /> : !servers.error && !servers.data?.length ? <Empty icon={ServerIcon} title="还没有服务器" description="先添加服务器并接入 Agent，再使用插件。"><a className={buttonVariants()} href="#/servers">前往服务器</a></Empty> : <Field label="目标服务器">
         <NativeSelect className="w-full" value={selected} onChange={event => setSelected(event.target.value)} disabled={!!servers.error}>
@@ -87,7 +87,7 @@ export default function PluginCatalog() {
       </article>
     </div>
     <Panel aria-label="基础组件"><PanelHeader><PanelTitle>服务器 Agent</PanelTitle><Badge>基础组件，不是插件</Badge></PanelHeader><div className="p-4"><p className="text-foreground text-sm leading-relaxed">采集服务器状态，接收面板配置，并管理服务器上的插件。接入或升级请在具体服务器页面操作。</p><Packages item={catalog.agent} unavailable={unavailable} /><a className={buttonVariants({ variant: 'ghost', size: 'sm' })} href="#/servers">管理服务器接入 <ArrowRightIcon className="size-3.5" aria-hidden="true" /></a></div></Panel>
-    {!!catalog.others.length && <Panel><PanelHeader><PanelTitle>其他分发组件</PanelTitle></PanelHeader><div className="p-4"><p className="text-muted-foreground mt-3 text-xs leading-relaxed">这些组件尚未登记插件介绍，仅展示下载包信息，不提供启用或执行入口。</p>{catalog.others.map(item => <div data-slot="catalog-unknown" key={item.id} className="mt-5 wrap-anywhere"><h3 className="text-sm font-semibold">{item.id}</h3><Packages item={item} unavailable={unavailable} /></div>)}</div></Panel>}
+    {!!catalog.others.length && <Panel><PanelHeader><PanelTitle>其他分发组件</PanelTitle></PanelHeader><div className="p-4"><p className="text-muted-foreground mt-3 text-xs leading-relaxed">这些组件尚未登记插件介绍，仅展示下载包信息，不提供安装或执行入口。</p>{catalog.others.map(item => <div data-slot="catalog-unknown" key={item.id} className="mt-5 wrap-anywhere"><h3 className="text-sm font-semibold">{item.id}</h3><Packages item={item} unavailable={unavailable} /></div>)}</div></Panel>}
     <DialogPresence>{selected && <SelectServer key={selected.id} plugin={selected} onClose={() => setSelected(null)} />}</DialogPresence>
   </>
 }

@@ -390,7 +390,7 @@ fn endpoint_reasons(endpoint: &ResourceEndpoint, role: &str) -> Vec<String> {
         reasons.push(format!("{role}节点已停用"));
     }
     if !endpoint.plugin_enabled {
-        reasons.push(format!("{role}服务器未启用 sing-box 插件"));
+        reasons.push(format!("{role}服务器未安装 sing-box"));
     }
     if !endpoint.public_port_valid {
         reasons.push(format!("{role}公开端口参数无法确认，暂显示监听端口"));

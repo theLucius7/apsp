@@ -4,7 +4,7 @@ import { time } from '../../format'
 import { resourceWriteError, useAction, useResource, settingsPoll } from '../../hooks'
 import type { Deployment, Node, PluginServer } from '../../types'
 import RuntimeOperations from './RuntimeOperations'
-import { installationView, sourceLabel } from './Settings'
+import { installationView, sourceNote } from './Settings'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ArrowRightIcon, WaypointsIcon } from 'lucide-react'
@@ -50,14 +50,14 @@ export default function ServerBusiness({ serverId, runtimeVersion }: { serverId:
         <div className="flex items-center gap-1">
           <Refresh onClick={refresh} />
           {enabled ? <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={`#/plugins/sing-box/nodes?server=${serverId}`}>管理节点</a>
-            : server && <Button size="sm" disabled={action.busy || Boolean(resourceWriteError(metadata)) || server.read_only} onClick={enable}>启用并安装 sing-box</Button>}
+            : server && <Button size="sm" disabled={action.busy || Boolean(resourceWriteError(metadata)) || server.read_only} onClick={enable}>安装 sing-box</Button>}
         </div>
       </PanelHeader>
       <div className="grid gap-3 p-4">
         <ErrorNotice message={metadata.error || deployment.error || nodes.error || action.error} retry={refresh} />
         {metadata.loading && !server ? <Loading /> : server && installation && <>
-          <p className="text-muted-foreground text-[13px] leading-relaxed">{installation.reason}</p>
-          <p className="text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 text-xs"><span>{server.agent_supported ? '设备支持 sing-box' : '设备尚未声明支持'}</span>{server.enabled && <span>{sourceLabel(server.source)}</span>}{enabled && runtimeVersion && <span>运行时 {runtimeVersion}</span>}{server.read_only && <span>保留已有启用记录</span>}</p>
+          {installation.reason && <p className="text-muted-foreground text-[13px] leading-relaxed">{installation.reason}</p>}
+          <p className="text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 text-xs">{!server.agent_supported && <span>设备尚未声明支持 sing-box</span>}{sourceNote(server) && <span>{sourceNote(server)}</span>}{enabled && runtimeVersion && <span>运行时 {runtimeVersion}</span>}{server.read_only && <span>保留已有安装记录</span>}</p>
           {enabled && (deployment.loading && !deployment.data ? <Loading /> : status ? <div data-slot="deployment" className="grid gap-2">
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:max-w-md">
               <Revision label="目标版本" value={status.target_rev} />
@@ -67,7 +67,7 @@ export default function ServerBusiness({ serverId, runtimeVersion }: { serverId:
             <p className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">{health && <Badge tone={health.tone}>{health.label}</Badge>}最后更新 {time(status.updated_at)}</p>
             {status.last_error && <Notice tone="error" className="mb-0"><div><strong className="font-medium">最近一次部署失败</strong><p className="wrap-anywhere">{status.last_error}</p>{status.healthy && <p>旧配置仍健康，节点继续使用上次成功应用的版本。</p>}</div></Notice>}
             {status.target_rev > status.applied_rev && !status.last_error && <Notice className="mb-0">正在等待设备应用最新配置。设备离线时会在重连后继续。</Notice>}
-          </div> : <p className="text-muted-foreground text-[13px]">还没有发布记录。启用后先安装空运行时；新增有效节点须在下方运维入口采集并确认完整预检。</p>)}
+          </div> : <p className="text-muted-foreground text-[13px]">还没有发布记录。安装时先部署空运行时；新增有效节点须在下方运维入口采集并确认完整预检。</p>)}
           {enabled && <div className="grid gap-1.5">
             <span className="text-muted-foreground text-xs">此服务器的节点</span>
             <div className="flex flex-wrap gap-1.5">{own.map(node => <a key={node.id} href={`#/plugins/sing-box/nodes?server=${serverId}`} className="bg-muted/60 hover:border-foreground/25 flex max-w-full items-center gap-1.5 rounded-md border px-2.5 py-1 text-[13px]"><WaypointsIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{node.name}</span><code className="text-muted-foreground text-xs">:{node.port}</code></a>)}

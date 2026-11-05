@@ -1,5 +1,12 @@
 # 执行进度
 
+## 2026-11-06：登录页去掉介绍文案，插件不再叫“启用”，服务器看板归入概览
+
+- 用户指出登录页的产品介绍（“代理网络控制平面”、一句话标语和三项能力）太敏感，要求删除。登录页只保留标识、“欢迎回来”和登录卡片，宽屏与手机都居中；共用标识下的副标题一并删除，它出现在管理员登录、成员登录、邀请页、用户门户、看板和侧栏。页面标题与说明改为 “apsp”，用户门户页眉与标签页标题由“代理用户”改为“我的账户”，登录页底部改为“其他用户请使用管理员发给你的登录地址。”。
+- 用户指出插件中心仍在说“启用插件”。插件随仓库维护，界面只剩“安装 sing-box”：插件中心第二个分页改名「sing-box 安装」，状态“未启用”改为“未安装”，按钮改为“安装 sing-box”；汇总表去掉每行相同的“设备支持”列、“管理员明确启用”来源和健康时的固定说明，只在不同处（未支持、沿用旧记录、异常原因）给出提示。概览、节点、链路、服务器接入、目录和后端的安装原因与错误文案同步改为“安装”。接口路径 `POST …/servers/{id}/enable` 不变。
+- 用户要求服务器看板放进概览、与统计报表同一层：「概览」下分页为概览、统计报表、服务器看板，「服务器」只剩服务器列表；`/#/dashboard` 地址不变。
+- 验证：界面 `bun test` 222 项通过；`bun run build` 重建 `web/dist`；浏览器测试 shell-navigation、singbox-installation、singbox-business、plugin-catalog、singbox-resource-snapshots、dashboard、statistics、member-accounts、theme-contrast、motion-resilience、server-operations 通过（passkey-administrators 需要实时面板，本机跳过）；1440 与 390 宽度浅色、深色截图核对登录页。Rust 只改了字符串与一处断言，`rustfmt --check` 通过，未编译运行（避免与同时进行的会话争用内存），由 `runtime_operations` 断言覆盖的文案已同步。
+
 ## 2026-11-06：「极光」配色、背景图、按钮与交互、新标识、登录页与账号卡片
 
 - 用户要求按钮大小、交互和网站 logo 重新设计，背景图片与配色也重新设计，并指出面板左下角和登录页太丑。决定见 [ADR 0114](docs/adr/0114-aurora-palette-backdrop-and-controls.md)，取代 ADR 0111 的视觉一节。

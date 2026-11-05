@@ -145,11 +145,11 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     ? '节点配置已变化，请重新打开编辑；当前草稿已保留。' : ''
   const nodeServerError = () => editor
     && !servers.getCurrent()?.some(server => server.id === (editor === 'new' ? Number(draftServer) : editor.server_id) && server.enabled)
-    ? '已选节点所属服务器已不存在或未启用；当前草稿已保留。' : ''
+    ? '已选节点所属服务器已不存在或未安装 sing-box；当前草稿已保留。' : ''
   const newServerMissing = () => editor === 'new' && !servers.getCurrent()?.some(server => String(server.id) === draftServer && server.enabled)
   const editorError = editor
     ? writeError(editor === 'new' ? undefined : { kind: 'direct', id: editor.id }) || nodeDraftError() || nodeServerError()
-      || (newServerMissing() ? '已选服务器已不存在或未启用，请明确重新选择；当前草稿已保留。' : '')
+      || (newServerMissing() ? '已选服务器已不存在或未安装 sing-box，请明确重新选择；当前草稿已保留。' : '')
     : ''
   const currentEditor = editor && editor !== 'new' ? nodes.data?.find(node => node.id === editor.id) : null
   const connectionLocked = Boolean(currentEditor?.configuration_locked || (editor && editor !== 'new' && editor.configuration_locked))
@@ -217,8 +217,8 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
       <Button disabled={!canCreate} aria-describedby={createBlocked ? 'create-blocked-reason' : undefined} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />创建节点</Button>
       <Button variant="outline" disabled={!canCreateChain} aria-describedby={createBlocked ? 'create-blocked-reason' : undefined} onClick={openChainCreate}>创建链路</Button>
     </PageHeader>
-    {createBlocked && <Notice id="create-blocked-reason" role="status"><span>{noEnabledServer ? '还没有服务器启用 sing-box，所以暂时不能创建节点或链路。' : '当前筛选的服务器尚未启用 sing-box，所以暂时不能创建节点或链路。'}</span>
-      <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={noEnabledServer ? '#/system/plugins' : `#/servers/${filter}/plugins`}>为服务器启用 sing-box</a></Notice>}
+    {createBlocked && <Notice id="create-blocked-reason" role="status"><span>{noEnabledServer ? '还没有服务器安装 sing-box，所以暂时不能创建节点或链路。' : '当前筛选的服务器尚未安装 sing-box，所以暂时不能创建节点或链路。'}</span>
+      <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={noEnabledServer ? '#/system/plugins' : `#/servers/${filter}/plugins`}>为服务器安装 sing-box</a></Notice>}
     <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
       <Stat icon={WaypointsIcon} label="代理资源" value={resources.data && ordered.data && importedNodes ? inventoryCount + importedNodes.length : '—'} note={importedNodes?.length ? `受管 ${inventoryCount} · 待接管 ${importedNodes.length}` : '直连节点与独立链路入口'} />
       <Stat icon={ServerIcon} label="所在服务器" value={resources.data && importedNodes ? new Set([...all, ...importedNodes].map(node => node.server_id)).size : '—'} note={importedNodes?.length ? '含已导入的 Nexus 节点主机' : '每台服务器运行一份完整配置'} />
@@ -284,7 +284,7 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
       <div className="grid gap-x-5 sm:grid-cols-2">
         <Field label="节点名称"><Input name="name" required maxLength={128} defaultValue={editor === 'new' ? '' : editor.name} placeholder="例如：香港 · 直连" autoComplete="off" /></Field>
         {editor === 'new' && <Field label="所属服务器"><NativeSelect className="w-full" name="server_id" required value={draftServer} onChange={event => setDraftServer(event.target.value)}>
-          {draftServer && !enabledServers.some(server => String(server.id) === draftServer) && <option value={draftServer}>已选服务器已不存在或未启用（原选择保留）</option>}
+          {draftServer && !enabledServers.some(server => String(server.id) === draftServer) && <option value={draftServer}>已选服务器已不存在或未安装 sing-box（原选择保留）</option>}
           {enabledServers.map(server => <option key={server.id} value={server.id}>{server.name}{server.online ? ' · 在线' : ' · 离线'}</option>)}
         </NativeSelect></Field>}
         <label className="flex items-start gap-2.5 pt-3 pb-5 text-sm"><Checkbox name="enabled" defaultChecked={editor === 'new' || editor.enabled !== false} className="mt-0.5" /><span>启用节点<small className="text-muted-foreground mt-1.5 block text-xs leading-relaxed">停用保留授权与历史流量。</small></span></label>

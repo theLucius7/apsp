@@ -28,12 +28,12 @@ export const pluginDefinitions: readonly CatalogDefinition[] = [
   {
     id: 'ddns', title: '动态域名解析', icon: GlobeIcon, serverSection: '/ddns', execution: 'panel',
     description: '使用服务器 Agent 上报的公网 IP，自动更新 Cloudflare、腾讯云、阿里云和华为云的 A / AAAA 记录。',
-    usage: '连接 DNS 账号后添加解析即可，所有接入 Agent 的服务器都能直接使用，无需按服务器启用。DNS 同步由面板执行，无需设备安装包；暂停或删除解析时保留现有记录。',
+    usage: '连接 DNS 账号后添加解析即可，所有接入 Agent 的服务器都能直接使用。DNS 同步由面板执行，无需设备安装包；暂停或删除解析时保留现有记录。',
   },
   {
     id: 'sing-box', title: 'sing-box', icon: WaypointsIcon, serverSection: '/plugins',
     description: '在服务器上提供代理节点，管理代理用户、订阅、策略组、套餐和用量周期。',
-    usage: '先为目标服务器启用并安装插件，等待 Agent 确认安装与运行状态，再创建节点和分配代理用户。',
+    usage: '先在目标服务器上安装 sing-box，等待 Agent 确认运行状态，再创建节点和分配代理用户。',
   },
   {
     id: 'ipquality', title: 'IP 质量', icon: ShieldCheckIcon, serverSection: '/ip-info', group: 'diagnostics',
@@ -56,7 +56,7 @@ export const pluginDefinitions: readonly CatalogDefinition[] = [
 export const diagnosticsEntry: CatalogDefinition = {
   id: 'diagnostics', title: '线路诊断', icon: ActivityIcon, serverSection: '/ip-info',
   description: 'IP 质量、TCP 连接诊断和 NodeQuality 都在服务器详情的「线路诊断」中使用，由该服务器的 Agent 执行。',
-  usage: '选择服务器后进入它的线路诊断页；浏览目录不会安装、启用或运行任何诊断。',
+  usage: '选择服务器后进入它的线路诊断页；浏览目录不会安装或运行任何诊断。',
 }
 
 export type CatalogVersion = { version: string; packages: Artifact[] }

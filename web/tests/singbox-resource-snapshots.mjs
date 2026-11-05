@@ -115,7 +115,7 @@ try {
       await page.getByRole('button', { name: '创建节点', exact: true }).first().click()
       const dialog = page.getByRole('dialog'); await dialog.locator('[name=name]').fill('TEST_ONLY 固定服务器草稿')
       hosts.splice(0, 1); await nodesRefresh(page)
-      await dialog.getByText('已选节点所属服务器已不存在或未启用；当前草稿已保留。', { exact: true }).waitFor()
+      await dialog.getByText('已选节点所属服务器已不存在或未安装 sing-box；当前草稿已保留。', { exact: true }).waitFor()
       assert.equal(await dialog.locator('[name=server_id]').inputValue(), '1'); await forceForm(dialog.locator('form')); assert.equal(writes.length, 0)
       await dialog.locator('[name=server_id]').selectOption('2'); await dialog.locator('[name=public_host]').fill('127.0.0.1'); await dialog.locator('[name=sni]').fill('localhost'); await dialog.getByRole('button', { name: '创建目标节点', exact: true }).click()
       await wait(() => writes.length === 1, 'Explicit new server selection'); assert.equal(writes[0].body.server_id, 2)
@@ -216,7 +216,7 @@ try {
       const { page, hosts } = control; hosts[0].enabled = false
       // The initial response can already be in flight; explicitly refresh the installation collection.
       const refresh = () => page.locator('section[data-slot=panel]').filter({ has: page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }) }).getByRole('button', { name: '刷新', exact: true }).evaluate(button => button.click())
-      await refresh(); const enable = page.getByRole('button', { name: '启用并安装 sing-box', exact: true }); await wait(() => enable.isEnabled(), 'Enable snapshot')
+      await refresh(); const enable = page.getByRole('button', { name: '安装 sing-box', exact: true }); await wait(() => enable.isEnabled(), 'Enable snapshot')
       await block(control, `${prefix}/servers`, refresh, () => forceClick(enable), () => enable.click())
     })
   }

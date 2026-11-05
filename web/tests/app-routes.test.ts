@@ -67,7 +67,7 @@ test('navigation groups follow administrator tasks and keep every destination', 
   const everyday = sidebarEntries(navigation.filter(item => !item.tier))
   expect(everyday.map(entry => entry.root.navLabel ?? entry.root.label)).toEqual(['概览', '费用与续费', '代理节点', '代理用户', '策略与套餐', '服务器', '域名解析', '阿里云 CDT', '告警', '线路检测', '设置'])
   expect(navigation.filter(item => item.group === '代理服务').map(item => item.label)).toEqual(['代理节点', '代理用户', '策略与套餐'])
-  expect(sectionTabs(currentNavigation(resolveRoute('/dashboard')), navigation).map(item => item.label)).toEqual(['服务器列表', '服务器看板'])
+  expect(sectionTabs(currentNavigation(resolveRoute('/dashboard')), navigation).map(item => item.label)).toEqual(['概览', '统计报表', '服务器看板'])
   expect(sectionTabs(currentNavigation(resolveRoute('/latency')), navigation).map(item => item.label)).toEqual(['网络检测', '延迟检测'])
   expect(sectionTabs(currentNavigation(resolveRoute('/plugins/sing-box/nodes')), navigation)).toEqual([])
   // Someone who may only open some tabs of an entry goes to the first of those.
