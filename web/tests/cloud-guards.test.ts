@@ -83,8 +83,8 @@ test('billing display preserves exact zero and never rounds unsafe, negative or 
 
 test('legacy Cloudflare drafts stay readable, but stale revisions and vanished server choices cannot write', () => {
   const config: DdnsConfig = { name: 'TEST_ONLY legacy', server_id: 1, zone_id: '0'.repeat(32), record_name: 'node.example.com', record_type: 'A', ttl: 1, proxied: false, enabled: true, interval_secs: 300, adopt_existing: false }
-  const rule = { id: 'TEST_ONLY rule', config, revision: 2, busy: false, plugin_enabled: true } as DdnsRule
-  const data = { rules: [rule], servers: [{ id: 1, name: 'TEST_ONLY server', online: false, enabled: true }] }
+  const rule = { id: 'TEST_ONLY rule', config, revision: 2, busy: false } as DdnsRule
+  const data = { rules: [rule], servers: [{ id: 1, name: 'TEST_ONLY server', online: false }] }
   expect(editorError(() => data, config, rule)).toBe('')
   expect(editorError(() => data, { ...config, provider: 'cloudflare' }, rule)).toBe('')
   expect(editorError(() => data, { ...config, provider: 'aliyun' }, rule)).not.toBe('')
@@ -95,7 +95,7 @@ test('legacy Cloudflare drafts stay readable, but stale revisions and vanished s
 
 test('dual-stack creation reserves two slots from the current snapshot', () => {
   const config: DdnsConfig = { name: 'TEST_ONLY dual', server_id: 1, zone_id: '0'.repeat(32), record_name: 'dual.example.com', record_type: 'A', ttl: 1, proxied: false, enabled: true, interval_secs: 300, adopt_existing: false }
-  const data = { rules: Array.from({ length: 31 }, (_, index) => ({ id: `TEST_ONLY ${index}`, config, revision: 1, busy: false, plugin_enabled: true } as DdnsRule)), servers: [{ id: 1, name: 'TEST_ONLY server', online: false, enabled: true }] }
+  const data = { rules: Array.from({ length: 31 }, (_, index) => ({ id: `TEST_ONLY ${index}`, config, revision: 1, busy: false } as DdnsRule)), servers: [{ id: 1, name: 'TEST_ONLY server', online: false }] }
   expect(editorError(() => data, config)).toBe('')
   expect(editorError(() => data, config, undefined, 2)).toContain('两条')
   expect(editorError(() => undefined, config, undefined, 2)).not.toBe('')

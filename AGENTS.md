@@ -92,7 +92,7 @@
 
 2026-10-02 用户授权进一步对齐 NodeFlare 的服务器展示刷新、数据上报、历史保存粒度、每日汇率与通知。按 [ADR 0047](docs/adr/0047-monitoring-refresh-history-and-channels.md) 实施：实时样本与持久化确认分开，历史聚合不改变网卡或代理业务账本；汇率使用可追溯来源、不编造缺失币种，匿名看板不公开成本；Telegram 与 Webhook 分渠道投递，测试不发送真实通知。CI 暂停及实机签收门禁保持。
 
-2026-10-02 用户授权 DDNS，首个提供方为 Cloudflare，覆盖上述 DDNS 排除项。用户进一步明确做成插件，实际实现位于 `plugins/ddns/panel/`，按服务器在 `server_plugins` 显式启用。按 [ADR 0048](docs/adr/0048-cloudflare-ddns.md) 实施：复用 Agent 已上报的 IP，面板持有 API Token 并执行有限 DNS 对账，凭据不发给 Agent 或公开界面；无有效地址或设备离线时保留解析。CI 暂停与实机门禁保持，真实 DNS 写入不属于开发测试。
+2026-10-02 用户授权 DDNS，首个提供方为 Cloudflare，覆盖上述 DDNS 排除项。用户进一步明确做成插件，实际实现位于 `plugins/ddns/panel/`。原按服务器在 `server_plugins` 显式启用，2026-11-05 用户要求取消，规则自身的启用状态是唯一开关，见 [ADR 0110](docs/adr/0110-ddns-without-server-switch.md)。按 [ADR 0048](docs/adr/0048-cloudflare-ddns.md) 实施：复用 Agent 已上报的 IP，面板持有 API Token 并执行有限 DNS 对账，凭据不发给 Agent 或公开界面；无有效地址或设备离线时保留解析。CI 暂停与实机门禁保持，真实 DNS 写入不属于开发测试。
 
 2026-10-02 用户授权 DDNS 增加腾讯云、阿里云、华为云，以及阿里云 CDT 管理，包含 ECS 固定公网 IP 与独立 EIP 的公网带宽/计费管理和自动流量控制，按 ADR 0056–0057 实施。凭据留在面板插件，真实开通、计费和带宽操作不属于开发验证，CI 继续暂停。
 

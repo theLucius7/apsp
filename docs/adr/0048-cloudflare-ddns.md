@@ -4,7 +4,7 @@
 
 ## 决策
 
-- 用户在实现过程中进一步明确 DDNS 做成插件。实现物理位于 `plugins/ddns/panel/`，核心仅通过现有 plugins 注册桥装配路由与后台任务；前端位于 `web/src/plugins/ddns/`，API 使用 `/api/plugins/ddns/`。复用 `server_plugins` 的 `ddns` 标识按服务器显式启用，默认为未启用；禁用同时阻止周期和手动同步，保留规则和 DNS。插件目录标明执行位置为面板，无设备制品。DDNS 与代理插件、代理用户、配置编译及流量账本无关。Agent 继续使用现有 `telemetry.static.ip_addresses`，不新增 DNS 凭据、外部命令或探测服务。
+- 用户在实现过程中进一步明确 DDNS 做成插件。实现物理位于 `plugins/ddns/panel/`，核心仅通过现有 plugins 注册桥装配路由与后台任务；前端位于 `web/src/plugins/ddns/`，API 使用 `/api/plugins/ddns/`。复用 `server_plugins` 的 `ddns` 标识按服务器显式启用，默认为未启用；禁用同时阻止周期和手动同步，保留规则和 DNS。（2026-11-05 起取消按服务器启用，规则自身的启用状态是唯一开关，见 [ADR 0110](0110-ddns-without-server-switch.md)。）插件目录标明执行位置为面板，无设备制品。DDNS 与代理插件、代理用户、配置编译及流量账本无关。Agent 继续使用现有 `telemetry.static.ip_addresses`，不新增 DNS 凭据、外部命令或探测服务。
 - 规则绑定一台服务器、一个 Cloudflare Zone ID、一个完整域名及一个 A 或 AAAA 类型。双栈使用两条独立规则；同一 Zone、规范化域名和类型只能绑定一次。支持泛域名与 IDN 规范化、TTL、代理开关、检查间隔、暂停、立即同步及执行状态。域名/Zone/类型创建后固定，改变目标应另建规则。
 - 每条规则独立保存 API Token；仅接受 API Token，不支持 Global API Key。管理员读接口仅返回是否已配置，留空编辑保留原值。沿用项目数据库凭据存储方式，不宣称静态加密；备份和数据库访问权限必须按包含秘密处理。不向 Agent、公开看板、日志或 Cloudflare 原始错误转发 Token。
 - 只调用固定 Cloudflare HTTPS API，不接受自定义 URL、代理或重定向。请求、响应大小、总时长、规则数与并发均有上限。响应必须同时满足 HTTP 成功、Cloudflare `success=true` 和预期资源身份，错误使用本地固定说明。

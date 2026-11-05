@@ -63,9 +63,6 @@ struct Write {
 
 async fn valid_server(state: &AppState, config: &Config) -> ApiResult<()> {
     let server = model::observation(&state.pool, config.server_id).await?;
-    if !server.plugin_enabled {
-        return Err(ApiError::Conflict("请先为该服务器启用 DDNS 插件".into()));
-    }
     if server.deleted_at.is_some() || server.retiring {
         return Err(ApiError::Conflict(
             "无法绑定已删除或正在退役的服务器".into(),

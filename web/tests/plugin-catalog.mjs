@@ -54,7 +54,7 @@ try {
         else if (path === '/api/me') value = { authenticated: true }
         else if (path === '/api/plugins/ddns/accounts') value = []
         else if (path === '/api/plugins/ddns/rules') value = []
-        else if (path === '/api/plugins/ddns/servers') value = [{ id: 2, name: 'DDNS 测试服务器', online: true, enabled: false }]
+        else if (path === '/api/plugins/ddns/servers') value = [{ id: 2, name: 'DDNS 测试服务器', online: true }]
         else if (path === '/api/artifacts') {
           if (artifactFailure) { await route.fulfill({ status: 403, json: { error: 'CATALOG_READ_FAILED' } }); return }
           value = inventory
@@ -94,7 +94,7 @@ try {
     await ddnsDialog.getByLabel('目标服务器').selectOption('2')
     await ddnsDialog.getByRole('button', { name: '前往服务器管理' }).click()
     await page.waitForURL(`${origin}/#/servers/2/ddns`)
-    await page.getByRole('button', { name: '启用 DDNS 插件', exact: true }).waitFor()
+    await page.getByRole('heading', { name: '先连接 DNS 账号', exact: true }).waitFor()
     assert.deepEqual(mutations, [])
     await openCatalog('/artifacts')
     assert.equal(await cards.count(), 6)

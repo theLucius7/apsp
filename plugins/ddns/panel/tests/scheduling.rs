@@ -8,7 +8,6 @@ async fn seed(pool: &PgPool) -> anyhow::Result<Uuid> {
         .bind(json!({"ip_addresses":[public_ip(4)]})).bind(now).fetch_one(pool).await?;
     let mut rule = rule();
     rule.config.server_id = server;
-    super::super::settings::set_enabled(pool, server, true).await?;
     sqlx::query("INSERT INTO ddns_rules(id,server_id,config,api_token) VALUES($1,$2,$3,$4)")
         .bind(rule.id)
         .bind(server)
@@ -28,25 +27,18 @@ async fn due(pool: &PgPool, id: Uuid) -> anyhow::Result<()> {
 }
 
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
-async fn plugin_disable_blocks_claims_preserves_rules_and_cannot_acknowledge_during_io(
+async fn rules_sync_without_a_server_switch_and_a_paused_rule_is_never_claimed(
     pool: PgPool,
 ) -> anyhow::Result<()> {
     let id = seed(&pool).await?;
-    let rule = load(&pool, id).await?;
     let mock = Mock::start().await;
-    sqlx::query("UPDATE ddns_rules SET lease_until=$1")
-        .bind(apsp_protocol::now_timestamp() + 60)
+    let view = model::view(&pool, load(&pool, id).await?).await?;
+    assert_eq!(view["ip_status"], "ready");
+    assert!(view.get("plugin_enabled").is_none());
+    sqlx::query("UPDATE ddns_rules SET config=jsonb_set(config,'{enabled}','false') WHERE id=$1")
+        .bind(id)
         .execute(&pool)
         .await?;
-    assert!(
-        super::super::settings::set_enabled(&pool, rule.config.server_id, false)
-            .await
-            .is_err()
-    );
-    sqlx::query("UPDATE ddns_rules SET lease_until=0")
-        .execute(&pool)
-        .await?;
-    super::super::settings::set_enabled(&pool, rule.config.server_id, false).await?;
     worker::sync_with(&pool, id, false, &mock.client).await?;
     assert!(
         worker::sync_with(&pool, id, true, &mock.client)
@@ -54,11 +46,10 @@ async fn plugin_disable_blocks_claims_preserves_rules_and_cannot_acknowledge_dur
             .is_err()
     );
     assert!(mock.data.lock().unwrap().requests.is_empty());
-    assert!(load(&pool, id).await?.config.enabled);
-    let view = model::view(&pool, load(&pool, id).await?).await?;
-    assert_eq!(view["plugin_enabled"], false);
-    assert_eq!(view["ip_status"], "plugin_disabled");
-    super::super::settings::set_enabled(&pool, rule.config.server_id, true).await?;
+    sqlx::query("UPDATE ddns_rules SET config=jsonb_set(config,'{enabled}','true') WHERE id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await?;
     worker::sync_with(&pool, id, false, &mock.client).await?;
     assert_eq!(mock.writes(), 1);
     Ok(())
@@ -232,9 +223,6 @@ async fn changes_during_provider_reads_stop_before_any_dns_write(
             assert_eq!(load(&pool, id).await?.error_code.as_deref(), Some(expected));
         }
         sqlx::query("DELETE FROM ddns_rules").execute(&pool).await?;
-        sqlx::query("DELETE FROM server_plugins WHERE plugin='ddns'")
-            .execute(&pool)
-            .await?;
         sqlx::query("DELETE FROM servers").execute(&pool).await?;
     }
     Ok(())

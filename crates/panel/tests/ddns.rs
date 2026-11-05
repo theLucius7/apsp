@@ -33,15 +33,6 @@ async fn dual_stack_creation_is_atomic_and_redacts_all_provider_credentials(
     let cookie = panel.admin_cookie().await?;
     prove_cookie(&pool, &cookie).await?;
     let server = panel.create_server(&cookie, "TEST_ONLY dual stack").await?;
-    panel
-        .admin(
-            Method::POST,
-            &format!("/api/plugins/ddns/servers/{server}/enable"),
-            &cookie,
-            None,
-        )
-        .await?
-        .error_for_status()?;
     let path = "/api/plugins/ddns/rules/dual-stack";
     assert_eq!(
         panel
@@ -122,15 +113,6 @@ async fn dual_stack_reserves_two_slots_and_a_single_family_still_uses_one(
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "TEST_ONLY capacity").await?;
-    panel
-        .admin(
-            Method::POST,
-            &format!("/api/plugins/ddns/servers/{server}/enable"),
-            &cookie,
-            None,
-        )
-        .await?
-        .error_for_status()?;
     for i in 0..31 {
         let mut body = input(server);
         body["config"]["record_name"] = format!("node{i}.example.com").into();
@@ -186,27 +168,6 @@ async fn administrator_crud_redacts_credentials_guards_revisions_and_never_delet
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "TEST_ONLY DNS").await?;
     let body = input(server);
-    assert_eq!(
-        panel
-            .admin(
-                Method::POST,
-                "/api/plugins/ddns/rules",
-                &cookie,
-                Some(body.clone())
-            )
-            .await?
-            .status(),
-        StatusCode::CONFLICT
-    );
-    panel
-        .admin(
-            Method::POST,
-            &format!("/api/plugins/ddns/servers/{server}/enable"),
-            &cookie,
-            None,
-        )
-        .await?
-        .error_for_status()?;
     for method in [Method::GET, Method::POST] {
         assert_eq!(
             panel
@@ -368,15 +329,6 @@ async fn only_new_static_reports_are_fresh_and_missing_public_ip_never_contacts_
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "TEST_ONLY IP").await?;
-    panel
-        .admin(
-            Method::POST,
-            &format!("/api/plugins/ddns/servers/{server}/enable"),
-            &cookie,
-            None,
-        )
-        .await?
-        .error_for_status()?;
     let mut body = input(server);
     body["config"]["enabled"] = true.into();
     let rule: Value = panel
@@ -443,15 +395,6 @@ async fn multicloud_credentials_are_write_only_rotated_together_and_default_line
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "TEST_ONLY multicloud").await?;
-    panel
-        .admin(
-            Method::POST,
-            &format!("/api/plugins/ddns/servers/{server}/enable"),
-            &cookie,
-            None,
-        )
-        .await?
-        .error_for_status()?;
     for provider in ["tencent", "aliyun", "huawei"] {
         let mut body = input(server);
         body.as_object_mut().unwrap().remove("api_token");
@@ -570,5 +513,164 @@ async fn upgrade_keeps_cloudflare_tokens_history_and_all_original_migration_chec
         .await?,
         before
     );
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+async fn removing_the_server_switch_pauses_rules_that_were_switched_off(
+    pool: PgPool,
+) -> Result<()> {
+    use sqlx::migrate::Migrator;
+    use std::borrow::Cow;
+    use uuid::Uuid;
+    let migrations = sqlx::migrate!();
+    let previous = Migrator {
+        migrations: Cow::Owned(
+            migrations
+                .iter()
+                .filter(|m| m.version <= 84)
+                .cloned()
+                .collect(),
+        ),
+        ..Migrator::DEFAULT
+    };
+    previous.run(&pool).await?;
+    let mut servers = Vec::new();
+    for name in [
+        "TEST_ONLY switched on",
+        "TEST_ONLY switched off",
+        "TEST_ONLY never switched",
+    ] {
+        servers.push(
+            sqlx::query_scalar::<_, i64>("INSERT INTO servers(name) VALUES($1) RETURNING id")
+                .bind(name)
+                .fetch_one(&pool)
+                .await?,
+        );
+    }
+    for (server, enabled) in [(servers[0], true), (servers[1], false)] {
+        sqlx::query("INSERT INTO server_plugins(server_id,plugin,enabled,source,enabled_at) VALUES($1,'ddns',$2,'administrator',0)")
+            .bind(server).bind(enabled).execute(&pool).await?;
+    }
+    let mut rules = Vec::new();
+    for (index, (server, enabled)) in [
+        (servers[0], true),
+        (servers[1], true),
+        (servers[2], true),
+        (servers[1], false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut config = input(server)["config"].clone();
+        config["record_name"] = format!("node{index}.example.com").into();
+        config["enabled"] = enabled.into();
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO ddns_rules(id,server_id,config,api_token) VALUES($1,$2,$3,$4)")
+            .bind(id)
+            .bind(server)
+            .bind(&config)
+            .bind(TOKEN)
+            .execute(&pool)
+            .await?;
+        rules.push(id);
+    }
+    migrations.run(&pool).await?;
+    let mut after = Vec::new();
+    for id in &rules {
+        after.push(
+            sqlx::query_as::<_, (bool, i64)>(
+                "SELECT (config->>'enabled')::boolean,revision FROM ddns_rules WHERE id=$1",
+            )
+            .bind(id)
+            .fetch_one(&pool)
+            .await?,
+        );
+    }
+    // Only the rule that was due to run keeps running; the two that could not
+    // run become paused, and an already paused rule is left as it was.
+    assert_eq!(after, vec![(true, 1), (false, 2), (false, 2), (false, 1)]);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM server_plugins WHERE plugin='ddns'")
+            .fetch_one(&pool)
+            .await?,
+        0
+    );
+    Ok(())
+}
+
+#[sqlx::test]
+async fn access_key_accounts_are_saved_in_one_step_without_echoing_the_secret(
+    pool: PgPool,
+) -> Result<()> {
+    const SECRET: &str = "TEST_ONLY_ACCESS_SECRET";
+    let panel = TestPanel::start(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    prove_cookie(&pool, &cookie).await?;
+    let path = "/api/plugins/ddns/accounts/access-key";
+    let body = |provider: &str, zone: &str| json!({"provider":provider,"access_key_id":"TEST_ONLY_ACCESS_ID","access_key_secret":SECRET,"zone_ids":[zone]});
+    assert_eq!(
+        panel
+            .admin(
+                Method::POST,
+                path,
+                &cookie,
+                Some(body("cloudflare", "example.com"))
+            )
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST,
+        "Cloudflare accounts are added with an API token"
+    );
+    assert_eq!(
+        panel
+            .admin(
+                Method::POST,
+                path,
+                &cookie,
+                Some(body("huawei", "example.com"))
+            )
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST,
+        "Huawei zones are identifiers, not domain names"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM credential_entries")
+            .fetch_one(&pool)
+            .await?,
+        0,
+        "A refused account leaves no stored credential behind"
+    );
+    let response = panel
+        .admin(
+            Method::POST,
+            path,
+            &cookie,
+            Some(body("tencent", " Example.COM ")),
+        )
+        .await?;
+    let status = response.status();
+    let text = response.text().await?;
+    assert!(status.is_success(), "{status}: {text}");
+    assert!(!text.contains(SECRET));
+    let account: Value = serde_json::from_str(&text)?;
+    assert_eq!(account["config"]["name"], "腾讯云 DNSPod · example.com");
+    assert_eq!(account["config"]["provider"], "tencent");
+    assert_eq!(account["config"]["zone_ids"], json!(["example.com"]));
+    let (kind, ciphertext): (String, Vec<u8>) = sqlx::query_as("SELECT c.kind,c.ciphertext FROM dns_accounts a JOIN credential_entries c ON c.id=(a.config->>'credential_id')::uuid")
+        .fetch_one(&pool).await?;
+    assert_eq!(kind, "dns");
+    assert!(
+        !ciphertext
+            .windows(SECRET.len())
+            .any(|window| window == SECRET.as_bytes())
+    );
+    let listed = panel
+        .admin(Method::GET, "/api/plugins/ddns/accounts", &cookie, None)
+        .await?
+        .text()
+        .await?;
+    assert!(!listed.contains(SECRET));
     Ok(())
 }

@@ -1,5 +1,10 @@
 # 执行进度
 
+## 2026-11-05：域名解析页面重排，取消按服务器启用
+
+- 用户反馈页面太乱、「插件未启用」看不懂、为什么还要单独设置。按 [ADR 0110](docs/adr/0110-ddns-without-server-switch.md) 取消按服务器启用：规则自身的自动同步是唯一开关，删除启用/停用接口；迁移 0085 把原本因服务器未启用而不会同步的启用规则改为暂停，升级不新增 DNS 写入。
+- 页面：解析记录列表在前（域名、服务器、解析到、状态，异常原因单独一行，操作收进「⋯」），DNS 账号在后（显示域名而不是 Zone ID，一个「添加账号」入口）；无账号时引导连接。添加解析只填域名、服务器和 IP 类型，按域名自动匹配账号和最长区域，其余在「更多设置」。新增 `POST /api/plugins/ddns/accounts/access-key`，腾讯云、阿里云、华为云账号一步添加。批量修改的目标账号改为下拉选择，DNS 记录对话框的区域显示域名。
+- 验证：`cargo clippy -p apsp-plugin-ddns -p apsp-panel --all-targets -- -D warnings` 与 `cargo fmt --check` 通过；`apsp-plugin-ddns` 64 项单元测试通过（调度测试改为无服务器开关时照常同步、暂停的规则不被认领）；`apsp-panel` 的 `ddns`（新增迁移 0085 与密钥对账号测试）、`plugin_business`、`network_server_migrations`、`network_configuration`、`control_center`、`control_center_search` 集成测试和库测试通过。界面 `bun test` 222 项通过；`ddns.mjs`（1440/390/320 宽度，重写）、`plugin-catalog.mjs`、`workbench-dns-readonly.mjs`、`visual-hierarchy.mjs` 浏览器测试通过（`visual-hierarchy` 首次运行出现已知的退出动画帧数偶发失败，重跑两次通过）。`web/dist` 已重新构建。只改面板，远端 CI 按约定暂停未运行。
 ## 2026-11-05：三网拨测、Agent 0.3.5 发布与 OpenRC 升级停机
 
 - 用户要求为服务器设置拨测。生产库原来没有任何延迟任务。新建三个统一任务：广东电信 202.96.128.86、广东联通 221.5.88.88、广东移动 211.136.192.6（与旧 Komari 相同），ICMP、IPv4、每 60 秒，分配给全部服务器并默认分配给新服务器。授权由用户决定照实登记：运营商公共 DNS，未单独取得书面同意。

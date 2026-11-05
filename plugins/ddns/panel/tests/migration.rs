@@ -33,12 +33,6 @@ async fn fixture(pool: PgPool) -> (AppState, HeaderMap, i64, i64, Vec<Selection>
         .bind(now).fetch_one(&pool).await.unwrap();
     let target: i64 = sqlx::query_scalar("INSERT INTO servers(name,last_seen,static_info_received_at) VALUES('TEST_ONLY target',$1,$1) RETURNING id")
         .bind(now).fetch_one(&pool).await.unwrap();
-    super::super::settings::set_enabled(&pool, source, true)
-        .await
-        .unwrap();
-    super::super::settings::set_enabled(&pool, target, true)
-        .await
-        .unwrap();
     let mut rules = Vec::new();
     for number in 1..=2 {
         let id = Uuid::new_v4();

@@ -60,7 +60,7 @@ try {
       else if (method === 'GET' && path === '/api/network-workbench/runs') value = [{ id: run, name: 'TEST_ONLY 未确认报告', status: 'failed', current_step: 0, error: null, created_at: now - 20 }]
       else if (method === 'GET' && path === `/api/network-workbench/runs/${run}`) value = report
       else if (method === 'GET' && path === '/api/plugins/ddns/rules') value = []
-      else if (method === 'GET' && path === '/api/plugins/ddns/servers') value = [{ id: 7, name: 'TEST_ONLY DNS服务器', enabled: true }]
+      else if (method === 'GET' && path === '/api/plugins/ddns/servers') value = [{ id: 7, name: 'TEST_ONLY DNS服务器', online: true }]
       else if (method === 'GET' && path === '/api/plugins/ddns/accounts') value = [{ id: account, revision: 3, record_management_available: true, unavailable_reason: null,
         config: { name: 'TEST_ONLY 私有DNS账号', provider: 'cloudflare', enabled: true, credential_id: '66666666-6666-4666-8666-666666666666', zone_ids: ['TEST_ONLY_ZONE'], server_ids: [7], region: null } }]
       else if (method === 'GET' && path === `/api/plugins/ddns/accounts/${account}/records`) {
@@ -105,8 +105,8 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.goto(`${origin}/#/plugins/ddns`)
     await page.getByRole('heading', { name: 'DNS 账号', exact: true }).waitFor()
-    await page.getByText('TEST_ONLY 私有DNS账号 · Cloudflare', { exact: true }).waitFor()
-    await page.getByRole('button', { name: '记录、传播观测与历史', exact: true }).click()
+    await page.locator('[data-slot=dns-account]').getByText('TEST_ONLY 私有DNS账号', { exact: true }).waitFor()
+    await page.getByRole('button', { name: '管理记录', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'DNS 记录 · TEST_ONLY 私有DNS账号', exact: true })
     await dialog.getByRole('heading', { name: '记录变更历史', exact: true }).waitFor()
     const history = dialog.locator('article[data-slot=ddns-rule]').filter({ has: page.getByRole('button', { name: '只读核对远端结果', exact: true }) })

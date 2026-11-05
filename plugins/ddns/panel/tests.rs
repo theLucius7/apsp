@@ -110,7 +110,6 @@ fn selection_keeps_a_still_reported_address_and_requires_recent_authenticated_re
         last_seen: Some(now),
         deleted_at: None,
         retiring: false,
-        plugin_enabled: true,
     };
     let spec = config();
     assert_eq!(info.select(&spec, None, now).unwrap(), public_ip(3));
@@ -143,7 +142,6 @@ fn ddns_rejects_new_documentation_benchmark_and_deprecated_ipv4_ranges() {
         last_seen: Some(now),
         deleted_at: None,
         retiring: false,
-        plugin_enabled: true,
     };
     for address in [
         "3fff::1",

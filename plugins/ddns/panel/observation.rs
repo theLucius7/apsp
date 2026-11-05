@@ -12,7 +12,6 @@ pub(super) struct Observation {
     pub last_seen: Option<i64>,
     pub deleted_at: Option<i64>,
     pub retiring: bool,
-    pub plugin_enabled: bool,
 }
 
 impl Observation {
@@ -22,9 +21,6 @@ impl Observation {
         previous: Option<&str>,
         now: i64,
     ) -> Result<IpAddr, &'static str> {
-        if !self.plugin_enabled {
-            return Err("plugin_disabled");
-        }
         if self.deleted_at.is_some() || self.retiring {
             return Err("server_retired");
         }
@@ -97,7 +93,7 @@ pub(super) fn ddns_public_ip(ip: IpAddr) -> bool {
     }
 }
 
-const OBSERVATION: &str = "SELECT name,static_info,static_info_received_at,last_seen,deleted_at,EXISTS(SELECT 1 FROM server_retirements WHERE server_id=servers.id) AS retiring,EXISTS(SELECT 1 FROM server_plugins WHERE server_id=servers.id AND plugin='ddns' AND enabled) AS plugin_enabled FROM servers WHERE id=$1";
+const OBSERVATION: &str = "SELECT name,static_info,static_info_received_at,last_seen,deleted_at,EXISTS(SELECT 1 FROM server_retirements WHERE server_id=servers.id) AS retiring FROM servers WHERE id=$1";
 
 pub(super) async fn observation(pool: &PgPool, server_id: i64) -> ApiResult<Observation> {
     sqlx::query_as(OBSERVATION)
@@ -157,7 +153,6 @@ pub(super) async fn view(pool: &PgPool, rule: Rule) -> ApiResult<Value> {
         !rule.access_key_id.is_empty() && !rule.access_key_secret.is_empty()
     };
     value["token_configured"] = credential_configured.into();
-    value["plugin_enabled"] = info.plugin_enabled.into();
     value["busy"] = (rule.lease_until > now).into();
     value["server_name"] = info.name.into();
     value["candidate_ip"] = selected.as_ref().ok().map(ToString::to_string).into();

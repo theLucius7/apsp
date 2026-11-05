@@ -144,6 +144,7 @@
 - [ADR 0107：每位管理员各自的 Passkey](0107-administrator-passkeys.md)：具名管理员绑定、登录和再次验证都用本人的 Passkey，登录页按登录名验证
 - [ADR 0108：统一的再次验证](0108-unified-reauthentication.md)：开通链接、本人 Passkey、二步验证和修改密码都改用五分钟证明与共用的「再次验证身份」，Passkey 或密码均可
 - [ADR 0109：隧道后的 VLESS 源站](0109-vless-tunnel-origins.md)：新增 `vless-tunnel`，无 TLS 的源站只能监听回环，客户端用 TLS 连边缘并以隧道主机名作 SNI/Host；运行接管可迁 Alice 等 CF 源站，可达性监测不再误报源站端口
+- [ADR 0110：域名解析不再按服务器启用，页面按使用顺序重排](0110-ddns-without-server-switch.md)：所有接入 Agent 的服务器可直接绑定解析，规则自身的自动同步是唯一开关；迁移 0084 把原本不会运行的规则改为暂停；任意提供方的账号一步添加；添加解析只需域名、服务器和 IP 类型
 
 
 ## 界面重组（2026-10-25）
