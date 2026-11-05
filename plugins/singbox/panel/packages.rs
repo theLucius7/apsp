@@ -194,21 +194,32 @@ pub async fn assign(
         tx.commit().await?;
         return Ok(Json(previous));
     }
-    let unmapped: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_nexus_bridge b WHERE b.enabled AND NOT EXISTS(SELECT 1 FROM singbox_nexus_plan_mappings p WHERE p.import_id=b.import_id AND p.package_group_id=$1 AND p.legacy_group_id IS NOT NULL))").bind(request.package_group_id).fetch_one(&mut *tx).await?;
+    let value = assign_on(&mut tx, id, request.package_group_id, request.request_id).await?;
+    tx.commit().await?;
+    Ok(Json(value))
+}
+
+/// Gives a user a snapshot of a package group, replacing their current package.
+pub(crate) async fn assign_on(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user: i64,
+    package_group_id: i64,
+    request_id: uuid::Uuid,
+) -> ApiResult<Assignment> {
+    let unmapped: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_nexus_bridge b WHERE b.enabled AND NOT EXISTS(SELECT 1 FROM singbox_nexus_plan_mappings p WHERE p.import_id=b.import_id AND p.package_group_id=$1 AND p.legacy_group_id IS NOT NULL))").bind(package_group_id).fetch_one(&mut **tx).await?;
     if unmapped {
         return Err(ApiError::Conflict(
             "原订阅兼容期间只能分配已映射的套餐".into(),
         ));
     }
-    let servers = super::business::lock_user_servers(&mut tx, id).await?;
+    let servers = super::business::lock_user_servers(tx, user).await?;
     let value = sqlx::query_as::<_, Assignment>("INSERT INTO singbox_package_assignments(user_id,request_id,package_group_id,package_name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,starts_at,expires_at) SELECT $1,$2,id,name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,$4,$4+duration_days::bigint*86400 FROM singbox_package_groups WHERE id=$3 AND deleted_at IS NULL RETURNING id,user_id,package_group_id,starts_at,expires_at")
-        .bind(id).bind(request.request_id).bind(request.package_group_id).bind(apsp_protocol::now_timestamp())
-        .fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
+        .bind(user).bind(request_id).bind(package_group_id).bind(apsp_protocol::now_timestamp())
+        .fetch_optional(&mut **tx).await?.ok_or(ApiError::NotFound)?;
     sqlx::query("INSERT INTO singbox_user_packages(user_id,assignment_id) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET assignment_id=EXCLUDED.assignment_id")
-        .bind(id).bind(value.id).execute(&mut *tx).await?;
-    super::business::mark_dirty(&mut tx, &servers).await?;
-    tx.commit().await?;
-    Ok(Json(value))
+        .bind(user).bind(value.id).execute(&mut **tx).await?;
+    super::business::mark_dirty(tx, &servers).await?;
+    Ok(value)
 }
 
 #[cfg(test)]

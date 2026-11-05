@@ -39,7 +39,8 @@ pub(super) async fn execute(
             package_group_id,
         } => {
             let servers = super::super::business::lock_user_servers(tx, *user_id).await?;
-            crate::commerce::require_compatible_package(tx, *user_id, *package_group_id).await?;
+            crate::user_accounts::require_compatible_package(tx, *user_id, *package_group_id)
+                .await?;
             let assignment:i64=sqlx::query_scalar("INSERT INTO singbox_package_assignments(user_id,request_id,package_group_id,package_name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,starts_at,expires_at) SELECT $1,$2,id,name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,$4,$4+duration_days::bigint*86400 FROM singbox_package_groups WHERE id=$3 AND deleted_at IS NULL RETURNING id")
                 .bind(user_id).bind(preview_id).bind(package_group_id).bind(now).fetch_one(&mut **tx).await?;
             sqlx::query("INSERT INTO singbox_user_packages(user_id,assignment_id) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET assignment_id=EXCLUDED.assignment_id").bind(user_id).bind(assignment).execute(&mut **tx).await?;
@@ -128,26 +129,6 @@ pub(super) async fn execute(
             .await?;
             sqlx::query("INSERT INTO singbox_policy_nodes(group_id,node_id) SELECT group_id,$2 FROM singbox_policy_nodes WHERE node_id=$1 ON CONFLICT DO NOTHING").bind(source_node_id).bind(candidate_node_id).execute(&mut **tx).await?;
             sqlx::query("DELETE FROM singbox_policy_nodes WHERE node_id=$1")
-                .bind(source_node_id)
-                .execute(&mut **tx)
-                .await?;
-            let directs: Vec<i64> = sqlx::query_scalar(
-                "SELECT user_id FROM accesses WHERE node_id=$1 AND direct_grant ORDER BY user_id",
-            )
-            .bind(source_node_id)
-            .fetch_all(&mut **tx)
-            .await?;
-            let config: Value = sqlx::query_scalar("SELECT protocol_config FROM nodes WHERE id=$1")
-                .bind(candidate_node_id)
-                .fetch_one(&mut **tx)
-                .await?;
-            let config: apsp_compiler::ProtocolConfig =
-                serde_json::from_value(config).map_err(anyhow::Error::from)?;
-            for user in directs {
-                sqlx::query("INSERT INTO accesses(user_id,node_id,uuid,stat_name,direct_grant,credential) VALUES($1,$2,$3,$4,TRUE,$5) ON CONFLICT(user_id,node_id) DO UPDATE SET direct_grant=TRUE")
-                    .bind(user).bind(candidate_node_id).bind(Uuid::new_v4()).bind(apsp_compiler::stat_name(user,*candidate_node_id)).bind(super::super::node_protocol::credential(config.credential_size())).execute(&mut **tx).await?;
-            }
-            sqlx::query("UPDATE accesses SET direct_grant=FALSE WHERE node_id=$1")
                 .bind(source_node_id)
                 .execute(&mut **tx)
                 .await?;

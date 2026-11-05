@@ -218,15 +218,7 @@ async fn new_protocol_credentials_snapshots_and_revocation(pool: PgPool) -> Resu
         "other clients keep the links default"
     );
     let node = nodes[5];
-    panel
-        .admin(
-            Method::DELETE,
-            &format!("/api/plugins/sing-box/users/{first_id}/accesses/{node}"),
-            &cookie,
-            None,
-        )
-        .await?
-        .error_for_status()?;
+    panel.revoke(&cookie, first_id, node).await?;
     panel.grant(&cookie, first_id, node).await?;
     // Regrant must not publish old applied credentials before the new revision is healthy.
     let client: Value = panel

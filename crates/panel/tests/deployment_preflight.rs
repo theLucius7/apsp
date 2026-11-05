@@ -319,15 +319,7 @@ async fn same_listener_credentials_quota_and_final_revocation_publish_without_ne
         .error_for_status()?;
     due(&panel, server).await?;
     assert_eq!(revision(&pool, server).await?, 1);
-    panel
-        .admin(
-            Method::DELETE,
-            &format!("{ROOT}/users/{account}/accesses/{node}"),
-            &cookie,
-            None,
-        )
-        .await?
-        .error_for_status()?;
+    panel.revoke(&cookie, account, node).await?;
     let replacement = panel.grant(&cookie, account, node).await?;
     let replacement_uuid = replacement["uuid"]
         .as_str()
@@ -389,15 +381,7 @@ async fn same_listener_credentials_quota_and_final_revocation_publish_without_ne
     let native = configuration(&pool, server).await?;
     assert!(!native.to_string().contains(replacement_uuid));
     assert!(native.to_string().contains(&format!("u{survivor}_n{node}")));
-    panel
-        .admin(
-            Method::DELETE,
-            &format!("{ROOT}/users/{survivor}/accesses/{node}"),
-            &cookie,
-            None,
-        )
-        .await?
-        .error_for_status()?;
+    panel.revoke(&cookie, survivor, node).await?;
     due(&panel, server).await?;
     assert_eq!(revision(&pool, server).await?, 4);
     assert!(

@@ -22,6 +22,8 @@ pub struct Policy {
     pub node_ids: Vec<i64>,
     pub chain_ids: Vec<i64>,
     pub member_count: i64,
+    #[sqlx(skip)]
+    pub external_nodes: Vec<super::external_access::model::Entry>,
 }
 
 #[derive(Deserialize)]
@@ -30,6 +32,21 @@ pub struct PolicyRequest {
     pub name: String,
     pub node_ids: Vec<i64>,
     pub chain_ids: Vec<i64>,
+    #[serde(default)]
+    pub external_nodes: Vec<super::external_access::model::Reference>,
+}
+
+/// Fills in each group's external nodes, read in the same transaction.
+async fn with_external(
+    connection: &mut sqlx::PgConnection,
+    mut policies: Vec<Policy>,
+    group: Option<i64>,
+) -> ApiResult<Vec<Policy>> {
+    let mut external = super::external_access::group_entries(connection, group).await?;
+    for policy in &mut policies {
+        policy.external_nodes = external.remove(&policy.id).unwrap_or_default();
+    }
+    Ok(policies)
 }
 
 pub(crate) fn ids(values: &[i64]) -> ApiResult<Vec<i64>> {
@@ -51,11 +68,16 @@ pub async fn list(
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<Policy>>> {
     require_admin(&state, &headers).await?;
-    Ok(Json(
-        sqlx::query_as(&format!("{SELECT} ORDER BY g.id"))
-            .fetch_all(&state.pool)
-            .await?,
-    ))
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        .execute(&mut *tx)
+        .await?;
+    let policies = sqlx::query_as(&format!("{SELECT} ORDER BY g.id"))
+        .fetch_all(&mut *tx)
+        .await?;
+    let policies = with_external(&mut tx, policies, None).await?;
+    tx.commit().await?;
+    Ok(Json(policies))
 }
 
 pub async fn create(
@@ -84,6 +106,7 @@ async fn save(state: &AppState, id: Option<i64>, request: PolicyRequest) -> ApiR
     let name = super::business::name(&request.name)?;
     let nodes = ids(&request.node_ids)?;
     let chains = ids(&request.chain_ids)?;
+    super::external_access::validate(&request.external_nodes)?;
     let mut tx = state.pool.begin().await?;
     super::entitlements::lock(&mut tx).await?;
     let preserved: bool = sqlx::query_scalar(
@@ -147,11 +170,16 @@ async fn save(state: &AppState, id: Option<i64>, request: PolicyRequest) -> ApiR
         .bind(&chains)
         .execute(&mut *tx)
         .await?;
+    super::external_access::replace(&mut tx, id, &request.external_nodes).await?;
     sync_users(&mut tx, &members).await?;
     let result = sqlx::query_as(&format!("{SELECT} WHERE g.id=$1"))
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;
+    let result = with_external(&mut tx, vec![result], Some(id))
+        .await?
+        .pop()
+        .ok_or(ApiError::NotFound)?;
     tx.commit().await?;
     Ok(result)
 }
@@ -246,8 +274,8 @@ pub async fn user_set(
     Ok(Json(UserPolicies { group_ids: groups }))
 }
 
-/// Materialize credentials for the union of direct grants and all policy groups.
-/// Removing one overlapping source preserves credentials; final revocation deletes them.
+/// Materialize credentials for the union of the user's policy groups. Removing one
+/// overlapping group preserves credentials; removing the last one deletes them.
 pub(crate) async fn sync_users(tx: &mut Transaction<'_, Postgres>, users: &[i64]) -> ApiResult<()> {
     if users.is_empty() {
         return Ok(());
@@ -259,7 +287,7 @@ pub(crate) async fn sync_users(tx: &mut Transaction<'_, Postgres>, users: &[i64]
     let servers: Vec<i64> = sqlx::query_scalar("SELECT DISTINCT n.server_id FROM nodes n JOIN (SELECT node_id FROM accesses WHERE user_id=ANY($1) UNION SELECT node_id FROM singbox_desired_accesses WHERE user_id=ANY($1)) a ON a.node_id=n.id ORDER BY n.server_id")
         .bind(users).fetch_all(&mut **tx).await?;
     super::business::mark_dirty(tx, &servers).await?;
-    sqlx::query("DELETE FROM accesses a WHERE user_id=ANY($1) AND NOT direct_grant AND NOT EXISTS(SELECT 1 FROM singbox_desired_accesses d WHERE d.user_id=a.user_id AND d.node_id=a.node_id)")
+    sqlx::query("DELETE FROM accesses a WHERE user_id=ANY($1) AND NOT EXISTS(SELECT 1 FROM singbox_desired_accesses d WHERE d.user_id=a.user_id AND d.node_id=a.node_id)")
         .bind(users).execute(&mut **tx).await?;
     let missing = sqlx::query("SELECT d.user_id,d.node_id,n.protocol_config FROM singbox_desired_accesses d JOIN nodes n ON n.id=d.node_id WHERE d.user_id=ANY($1) AND NOT EXISTS(SELECT 1 FROM accesses a WHERE a.user_id=d.user_id AND a.node_id=d.node_id) ORDER BY d.user_id,d.node_id")
         .bind(users).fetch_all(&mut **tx).await?;
@@ -268,7 +296,7 @@ pub(crate) async fn sync_users(tx: &mut Transaction<'_, Postgres>, users: &[i64]
         let node: i64 = row.get("node_id");
         let config: apsp_compiler::ProtocolConfig =
             serde_json::from_value(row.get("protocol_config")).map_err(anyhow::Error::from)?;
-        sqlx::query("INSERT INTO accesses(user_id,node_id,uuid,stat_name,direct_grant,credential) VALUES($1,$2,$3,$4,FALSE,$5)")
+        sqlx::query("INSERT INTO accesses(user_id,node_id,uuid,stat_name,credential) VALUES($1,$2,$3,$4,$5)")
             .bind(user).bind(node).bind(Uuid::new_v4()).bind(apsp_compiler::stat_name(user,node))
             .bind(super::node_protocol::credential(config.credential_size())).execute(&mut **tx).await?;
     }

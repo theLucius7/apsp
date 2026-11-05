@@ -65,9 +65,8 @@ try {
           // Identity comes from the shared recent proof; the request never carries a password.
           assert.deepEqual(Object.keys(writes.at(-1).body), ['reset'])
           value = { url: `${origin}/#/plugins/sing-box/account/00000000-0000-4000-8000-000000000001?activate=${'A'.repeat(43)}`, expires_at: Math.floor(Date.now() / 1000) + 900 }
-        } else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/[1-9]\d*\/external-accesses$/.test(path)) value = { revision: 0, accesses: [], available_nodes: [] }
-        else if (method === 'GET' && [ `${prefix}/nodes`, `${prefix}/proxy-resources`, `${prefix}/policy-groups`, `${prefix}/package-groups` ].includes(path)) value = []
-        else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/(accesses|policy-groups)$/.test(path)) value = path.endsWith('/accesses') ? [] : { group_ids: [] }
+        } else if (method === 'GET' && [ `${prefix}/policy-groups`, `${prefix}/package-groups` ].includes(path)) value = []
+        else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/policy-groups$/.test(path)) value = { group_ids: [] }
         else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/entitlement$/.test(path)) value = { user_id: Number(path.split('/')[5]), package_group_id: null, package_name: null, monthly_bytes: null, starts_at: null, expires_at: null, used_bytes: '0', status: 'unmetered', allowed: true }
         else if (method === 'GET' && path === `${prefix}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
         else { unexpected.push(`${method} ${path}`); return route.fulfill({ status: 500, json: { error: 'TEST_ONLY 未知请求' } }) }

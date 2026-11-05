@@ -1,4 +1,4 @@
-import { BellRingIcon, BlocksIcon, CalendarClockIcon, ChartColumnIcon, CloudCogIcon, DatabaseBackupIcon, GaugeIcon, GlobeIcon, HandshakeIcon, HouseIcon, KeyRoundIcon, LayersIcon, LayoutDashboardIcon, NetworkIcon, ServerIcon, Settings2Icon, ShieldCheckIcon, SlidersHorizontalIcon, TimerIcon, UsersIcon, WaypointsIcon, WorkflowIcon } from 'lucide-react'
+import { BellRingIcon, BlocksIcon, CalendarClockIcon, ChartColumnIcon, CloudCogIcon, DatabaseBackupIcon, GaugeIcon, GlobeIcon, HouseIcon, KeyRoundIcon, LayersIcon, LayoutDashboardIcon, NetworkIcon, ServerIcon, Settings2Icon, ShieldCheckIcon, SlidersHorizontalIcon, TimerIcon, UsersIcon, WaypointsIcon, WorkflowIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AppRoute } from './routes'
 import type { Tier } from './tiers'
@@ -37,7 +37,6 @@ const groups: readonly NavigationGroup[] = [
     { page: 'nodes', path: '/plugins/sing-box/nodes', label: '代理节点', icon: WaypointsIcon },
     { page: 'proxy-users', path: '/plugins/sing-box/users', label: '代理用户', icon: UsersIcon },
     { page: 'groups', path: '/plugins/sing-box/groups', label: '策略与套餐', icon: LayersIcon },
-    { page: 'commerce', path: '/plugins/sing-box/commerce', label: '成员运营', icon: HandshakeIcon },
   ] },
   { label: '服务器', items: [
     { page: 'servers', path: '/servers', label: '服务器列表', navLabel: '服务器', icon: ServerIcon },

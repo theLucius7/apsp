@@ -253,18 +253,138 @@ impl TestPanel {
         Ok(response.json().await?)
     }
 
+    /// Gives a user one node the only way the panel allows: through a policy group
+    /// that holds just that node. Returns the user's access row for it.
     pub async fn grant(&self, cookie: &str, user_id: i64, node_id: i64) -> Result<Value> {
-        Ok(self
+        let group = self.node_group(cookie, node_id).await?;
+        let mut groups = self.user_groups(cookie, user_id).await?;
+        if !groups.contains(&group) {
+            groups.push(group);
+        }
+        self.set_user_groups(cookie, user_id, &groups).await?;
+        let accesses: Vec<Value> = self
             .admin(
-                Method::POST,
+                Method::GET,
                 &format!("/api/plugins/sing-box/users/{user_id}/accesses"),
                 cookie,
-                Some(json!({"node_id":node_id})),
+                None,
             )
             .await?
             .error_for_status()?
             .json()
-            .await?)
+            .await?;
+        accesses
+            .into_iter()
+            .find(|access| access["node_id"] == node_id)
+            .ok_or_else(|| anyhow::anyhow!("node {node_id} was not granted to user {user_id}"))
+    }
+
+    /// Takes the single-node group of [`grant`](Self::grant) away from the user again.
+    pub async fn revoke(&self, cookie: &str, user_id: i64, node_id: i64) -> Result<()> {
+        let group = self.node_group(cookie, node_id).await?;
+        let groups: Vec<i64> = self
+            .user_groups(cookie, user_id)
+            .await?
+            .into_iter()
+            .filter(|id| *id != group)
+            .collect();
+        self.set_user_groups(cookie, user_id, &groups).await?;
+        // An unused single-node group would still reserve the node, as any group does.
+        let unused = self
+            .admin(
+                Method::GET,
+                "/api/plugins/sing-box/policy-groups",
+                cookie,
+                None,
+            )
+            .await?
+            .error_for_status()?
+            .json::<Vec<Value>>()
+            .await?
+            .iter()
+            .any(|value| value["id"] == group && value["member_count"] == 0);
+        if unused {
+            self.admin(
+                Method::DELETE,
+                &format!("/api/plugins/sing-box/policy-groups/{group}"),
+                cookie,
+                None,
+            )
+            .await?
+            .error_for_status()?;
+        }
+        Ok(())
+    }
+
+    async fn node_group(&self, cookie: &str, node_id: i64) -> Result<i64> {
+        let name = format!("node-{node_id}");
+        let groups: Vec<Value> = self
+            .admin(
+                Method::GET,
+                "/api/plugins/sing-box/policy-groups",
+                cookie,
+                None,
+            )
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        if let Some(id) = groups
+            .iter()
+            .find(|group| group["name"] == name.as_str())
+            .and_then(|group| group["id"].as_i64())
+        {
+            return Ok(id);
+        }
+        let response = self
+            .admin(
+                Method::POST,
+                "/api/plugins/sing-box/policy-groups",
+                cookie,
+                Some(json!({"name":name,"node_ids":[node_id],"chain_ids":[]})),
+            )
+            .await?;
+        anyhow::ensure!(
+            response.status() == StatusCode::CREATED,
+            "policy group creation failed: {}",
+            response.text().await?
+        );
+        let group: Value = response.json().await?;
+        group["id"]
+            .as_i64()
+            .ok_or_else(|| anyhow::anyhow!("policy group without id"))
+    }
+
+    async fn user_groups(&self, cookie: &str, user_id: i64) -> Result<Vec<i64>> {
+        let value: Value = self
+            .admin(
+                Method::GET,
+                &format!("/api/plugins/sing-box/users/{user_id}/policy-groups"),
+                cookie,
+                None,
+            )
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        Ok(value["group_ids"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_i64)
+            .collect())
+    }
+
+    async fn set_user_groups(&self, cookie: &str, user_id: i64, groups: &[i64]) -> Result<()> {
+        self.admin(
+            Method::PUT,
+            &format!("/api/plugins/sing-box/users/{user_id}/policy-groups"),
+            cookie,
+            Some(json!({"group_ids":groups})),
+        )
+        .await?
+        .error_for_status()?;
+        Ok(())
     }
 
     pub async fn publish_now(&self) -> Result<()> {

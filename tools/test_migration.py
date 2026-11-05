@@ -5,7 +5,6 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
-from export_nexus import snapshot as nexus
 from export_wallos import units
 from migration_snapshot import connect, write_private
 from nexus_compatibility import apply_members, BridgeError, observe
@@ -32,31 +31,6 @@ class MigrationTests(unittest.TestCase):
         for value in ['1.00001', '-1', 'NaN', 'Infinity', '900000000001']:
             with self.assertRaises(ValueError):
                 units(value)
-
-    def test_export_uses_allowlist_and_opt_in_password_hashes(self):
-        c = sqlite3.connect(':memory:')
-        self.addCleanup(c.close)
-        c.row_factory = sqlite3.Row
-        c.execute('CREATE TABLE v2_user(id INTEGER,email TEXT,balance INTEGER,banned INTEGER,uuid TEXT,plan_id INTEGER,invite_user_id INTEGER,transfer_enable INTEGER,u INTEGER,d INTEGER,expired_at INTEGER,next_reset_at INTEGER,token TEXT,nexus_sponsor_required INTEGER,nexus_first_purchase_at INTEGER,member_status TEXT,last_reset_at INTEGER,password TEXT,admin_secret TEXT,remind_expire INTEGER,remind_traffic INTEGER)')
-        c.execute("INSERT INTO v2_user VALUES(41,'fixture@example.com',123,0,'00000000-0000-4000-8000-000000000041',7,NULL,1000,10,20,9999999999,9999999000,'fixture-subscription-token',0,1,'ACTIVE',1,'fixture-hash','never-export',0,1)")
-        c.execute('CREATE TABLE v2_plan(id INTEGER,name TEXT,transfer_enable INTEGER,prices TEXT,group_id INTEGER)')
-        c.execute('INSERT INTO v2_plan VALUES(7,?,?,?,9)', ('Fixture', 1, '{"monthly":"1.25"}'))
-        c.execute('CREATE TABLE v2_traffic_reset_logs(id INTEGER,user_id INTEGER,created_at INTEGER)')
-        c.execute('INSERT INTO v2_traffic_reset_logs VALUES(1,99,100)')
-        exported = nexus(c, 'fixture')
-        self.assertIsNone(exported['history'][0]['member_id'])
-        self.assertEqual(exported['history'][0]['record']['user_id'], 99)
-        self.assertEqual(exported['plans'][0]['prices'][0]['cents'], 125)
-        self.assertEqual(exported['members'][0]['balance_cents'], 123)
-        self.assertFalse(exported['members'][0]['remind_expire'])
-        self.assertTrue(exported['members'][0]['remind_traffic'])
-        self.assertIsNone(exported['members'][0]['legacy_password_hash'])
-        self.assertNotIn('never-export', json.dumps(exported))
-        self.assertNotIn('fixture-hash', json.dumps(exported))
-        self.assertEqual(nexus(c, 'fixture', True)['members'][0]['legacy_password_hash'], 'fixture-hash')
-        c.execute('UPDATE v2_plan SET prices=?', ('{"unknown":100}',))
-        with self.assertRaises(ValueError):
-            nexus(c, 'fixture')
 
     def test_bridge_preserves_credentials_counters_and_rolls_back_mismatches(self):
         c = sqlite3.connect(':memory:', isolation_level=None)

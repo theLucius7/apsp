@@ -354,11 +354,11 @@ async fn remove(
                 .join("、")
         )));
     }
-    let assigned: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_external_accesses a JOIN users u ON u.id=a.user_id WHERE a.source_id=$1 AND u.deleted_at IS NULL)")
+    let assigned: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_policy_external_nodes p JOIN singbox_external_nodes n ON n.id=p.external_node_id WHERE n.source_id=$1)")
         .bind(id).fetch_one(&mut *tx).await?;
     if assigned {
         return Err(ApiError::Conflict(
-            "来源节点仍分配给代理用户，请先撤销分配；可先归档来源".into(),
+            "来源节点仍在策略组中，请先从策略组移除；可先归档来源".into(),
         ));
     }
     let now = apsp_protocol::now_timestamp();

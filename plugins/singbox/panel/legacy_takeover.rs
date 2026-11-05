@@ -167,11 +167,11 @@ async fn generation_one(
     if !storage::chain_is_structurally_available(tx, id).await? {
         reasons.push("not_available".into());
     }
-    let (direct, policy): (bool, bool) = sqlx::query_as("SELECT EXISTS(SELECT 1 FROM accesses WHERE node_id=$1 AND direct_grant),EXISTS(SELECT 1 FROM singbox_policy_nodes WHERE node_id=$1)")
-        .bind(entry).fetch_one(&mut **tx).await?;
-    if direct {
-        reasons.push("entry_direct_grants".into());
-    }
+    let policy: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_policy_nodes WHERE node_id=$1)")
+            .bind(entry)
+            .fetch_one(&mut **tx)
+            .await?;
     if policy {
         reasons.push("entry_policy_node_grants".into());
     }

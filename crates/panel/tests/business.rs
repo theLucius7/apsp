@@ -91,14 +91,9 @@ async fn business_routes_require_admin_and_node_ports_are_atomic(pool: PgPool) -
         ),
         (Method::DELETE, "/api/plugins/sing-box/users/1", None),
         (
-            Method::POST,
-            "/api/plugins/sing-box/users/1/accesses",
-            Some(json!({"node_id":1})),
-        ),
-        (
-            Method::DELETE,
-            "/api/plugins/sing-box/users/1/accesses/1",
-            None,
+            Method::PUT,
+            "/api/plugins/sing-box/users/1/policy-groups",
+            Some(json!({"group_ids":[]})),
         ),
     ] {
         let request = panel
@@ -194,6 +189,20 @@ async fn business_routes_require_admin_and_node_ports_are_atomic(pool: PgPool) -
         )
         .await?
         .error_for_status()?;
+    // A node still held by a policy group must be taken out of it first.
+    assert_eq!(
+        panel
+            .admin(
+                Method::DELETE,
+                &format!("/api/plugins/sing-box/nodes/{node}"),
+                &cookie,
+                None
+            )
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    panel.revoke(&cookie, user_id, node).await?;
     assert_eq!(
         panel
             .admin(
@@ -413,18 +422,7 @@ async fn subscriptions_use_applied_snapshots_and_current_authorization(pool: PgP
     assert!(!pending.contains("sni=new.example.com"));
     applied(&panel, server, 2).await?;
     assert!(links(&panel, token).await?.contains("sni=new.example.com"));
-    assert_eq!(
-        panel
-            .admin(
-                Method::DELETE,
-                &format!("/api/plugins/sing-box/users/{user_id}/accesses/{node_id}"),
-                &cookie,
-                None
-            )
-            .await?
-            .status(),
-        StatusCode::NO_CONTENT
-    );
+    panel.revoke(&cookie, user_id, node_id).await?;
     assert!(links(&panel, token).await?.is_empty());
     let regrant = panel.grant(&cookie, user_id, node_id).await?;
     assert_ne!(regrant["uuid"], first_access["uuid"]);

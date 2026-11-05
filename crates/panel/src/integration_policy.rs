@@ -31,11 +31,12 @@ pub fn route_policy(path: &str, method: &Method) -> Option<RoutePolicy> {
                 && !path.ends_with("/refresh"))
             || (path.starts_with("/api/plugins/sing-box/")
                 && !path.ends_with("/preview")
-                && (path.contains("/commerce/")
+                && (path.ends_with("/account-mail")
+                    || path.contains("/portal-guides")
+                    || path.ends_with("/invitation-settings")
+                    || path.ends_with("/invitations/quota")
                     || path.contains("/nodes")
                     || path.contains("/nexus-nodes")
-                    || path.contains("/accesses")
-                    || path.contains("/external-accesses")
                     || path.contains("/subscription/reset")
                     || path.ends_with("/portal/invitation")
                     || path.ends_with("/reachability/settings")
@@ -49,7 +50,7 @@ pub fn route_policy(path: &str, method: &Method) -> Option<RoutePolicy> {
                     && path.ends_with("/reconcile")));
     Some(RoutePolicy {
         independent_identity: path.starts_with("/api/plugins/sing-box/portal/")
-            || path.starts_with("/api/plugins/sing-box/commerce-public/"),
+            || path.starts_with("/api/plugins/sing-box/portal-public/"),
         feature: Some(feature),
         high_risk,
         read,

@@ -51,7 +51,7 @@ pub(super) async fn run(tx: &mut PgConnection) -> ApiResult<Outcome> {
         outcome.blockers.push("not_migrated".into());
         return Ok(outcome);
     }
-    let grants: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM singbox_external_accesses a WHERE NOT EXISTS(SELECT 1 FROM singbox_external_node_versions v WHERE v.id=a.node_version_id AND v.external_node_id=a.external_node_id)")
+    let grants: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM singbox_policy_external_nodes a WHERE NOT EXISTS(SELECT 1 FROM singbox_external_node_versions v WHERE v.id=a.node_version_id AND v.external_node_id=a.external_node_id)")
         .fetch_one(&mut *tx).await?;
     if grants > 0 {
         outcome.blockers.push(format!(
@@ -77,8 +77,11 @@ pub(super) async fn run(tx: &mut PgConnection) -> ApiResult<Outcome> {
     sqlx::query("UPDATE singbox_external_nodes a SET adopted=o.adopted FROM singbox_ordered_external_nodes o WHERE o.public_id=a.id AND o.adopted<>a.adopted")
         .execute(&mut *tx)
         .await?;
-    outcome.restored_accesses = sqlx::query("UPDATE singbox_external_accesses a SET source_id=m.a_source_id FROM singbox_source_id_map m WHERE a.source_id=m.b_source_id")
-        .execute(&mut *tx).await?.rows_affected();
+    // Group grants name nodes by public id, so they point at the numbered nodes again.
+    let restored: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM singbox_policy_external_nodes")
+        .fetch_one(&mut *tx)
+        .await?;
+    outcome.restored_accesses = restored.try_into().unwrap_or_default();
     outcome.removed_metadata = sqlx::query("DELETE FROM singbox_node_metadata d USING singbox_ordered_external_nodes o, singbox_source_id_map m WHERE d.kind='external' AND d.id=o.public_id AND o.source_id=m.b_source_id AND NOT EXISTS(SELECT 1 FROM singbox_external_nodes a WHERE a.id=o.public_id)")
         .execute(&mut *tx).await?.rows_affected();
 

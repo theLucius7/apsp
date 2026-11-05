@@ -65,16 +65,17 @@ async fn group_credentials_and_quota_cover_all_modern_protocols_without_losing_m
     .bind(uid)
     .fetch_all(&pool)
     .await?;
-    // Overlapping direct grants reuse rather than replace group-generated credentials.
-    panel.grant(&cookie, uid, nodes[1]).await?;
-    set_policies(&panel, &cookie, uid, &[]).await?;
-    let direct_secret: String =
+    // Overlapping groups reuse rather than replace credentials.
+    let single = create_policy(&panel, &cookie, &[nodes[1]], &[]).await?;
+    set_policies(&panel, &cookie, uid, &[group, single]).await?;
+    set_policies(&panel, &cookie, uid, &[single]).await?;
+    let kept_secret: String =
         sqlx::query_scalar("SELECT credential FROM accesses WHERE user_id=$1 AND node_id=$2")
             .bind(uid)
             .bind(nodes[1])
             .fetch_one(&pool)
             .await?;
-    assert_eq!(direct_secret, first_credentials[1].2);
+    assert_eq!(kept_secret, first_credentials[1].2);
     set_policies(&panel, &cookie, uid, &[group]).await?;
     let current_credentials: Vec<(i64, Uuid, String)> = sqlx::query_as(
         "SELECT node_id,uuid,credential FROM accesses WHERE user_id=$1 ORDER BY node_id",

@@ -1,7 +1,7 @@
 use super::*;
 
 #[sqlx::test(migrations = "./migrations")]
-async fn policy_union_preserves_credentials_until_the_last_source_is_removed(
+async fn policy_union_preserves_credentials_until_the_last_group_is_removed(
     pool: PgPool,
 ) -> Result<()> {
     let panel = TestPanel::start(pool.clone()).await?;
@@ -11,10 +11,10 @@ async fn policy_union_preserves_credentials_until_the_last_source_is_removed(
     let n2 = id(&panel.create_node(&cookie, server, "Two").await?)?;
     let user = id(&panel.create_user(&cookie, "Member").await?)?;
     let other = id(&panel.create_user(&cookie, "Other").await?)?;
-    let direct = panel.grant(&cookie, user, n1).await?;
     let first = create_policy(&panel, &cookie, &[n1, n2, n2], &[]).await?;
     let second = create_policy(&panel, &cookie, &[n2], &[]).await?;
-    set_policies(&panel, &cookie, user, &[first, second, second]).await?;
+    let third = create_policy(&panel, &cookie, &[n1], &[]).await?;
+    set_policies(&panel, &cookie, user, &[first, second, second, third]).await?;
     let before = call(
         &panel,
         &cookie,
@@ -24,14 +24,12 @@ async fn policy_union_preserves_credentials_until_the_last_source_is_removed(
     )
     .await?;
     assert_eq!(before.as_array().unwrap().len(), 2);
-    assert_eq!(before[0]["uuid"], direct["uuid"]);
-    assert_eq!(before[0]["direct_grant"], true);
-    assert_eq!(before[1]["direct_grant"], false);
+    assert!(before[0].get("direct_grant").is_none());
     assert_eq!(
         eligible(&pool, other, now_timestamp()).await?,
         Vec::<i64>::new()
     );
-    set_policies(&panel, &cookie, user, &[second]).await?;
+    set_policies(&panel, &cookie, user, &[second, third]).await?;
     let retained = call(
         &panel,
         &cookie,
@@ -41,14 +39,7 @@ async fn policy_union_preserves_credentials_until_the_last_source_is_removed(
     )
     .await?;
     assert_eq!(retained, before);
-    call(
-        &panel,
-        &cookie,
-        Method::DELETE,
-        &format!("/users/{user}/accesses/{n1}"),
-        None,
-    )
-    .await?;
+    set_policies(&panel, &cookie, user, &[second]).await?;
     assert_eq!(eligible(&pool, user, now_timestamp()).await?, vec![n2]);
     let blocked = panel
         .admin(
@@ -110,7 +101,7 @@ async fn policy_union_preserves_credentials_until_the_last_source_is_removed(
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn concurrent_group_and_direct_grants_share_one_stable_credential(
+async fn overlapping_groups_changed_together_share_one_stable_credential(
     pool: PgPool,
 ) -> Result<()> {
     let panel = TestPanel::start(pool.clone()).await?;
@@ -118,23 +109,32 @@ async fn concurrent_group_and_direct_grants_share_one_stable_credential(
     let server = panel.create_server(&cookie, "Server").await?;
     let node = id(&panel.create_node(&cookie, server, "Node").await?)?;
     let user = id(&panel.create_user(&cookie, "Member").await?)?;
-    let group = create_policy(&panel, &cookie, &[node], &[]).await?;
-    let groups = [group];
-    let (direct, grouped) = tokio::join!(
-        panel.grant(&cookie, user, node),
-        set_policies(&panel, &cookie, user, &groups)
+    let first = create_policy(&panel, &cookie, &[node], &[]).await?;
+    let second = create_policy(&panel, &cookie, &[], &[]).await?;
+    let groups = [first, second];
+    let path = format!("/policy-groups/{second}");
+    let (assigned, extended) = tokio::join!(
+        set_policies(&panel, &cookie, user, &groups),
+        call(
+            &panel,
+            &cookie,
+            Method::PUT,
+            &path,
+            Some(json!({"name":"Second","node_ids":[node],"chain_ids":[]})),
+        )
     );
-    let direct = direct?;
-    grouped?;
+    assigned?;
+    extended?;
     assert_eq!(eligible(&pool, user, now_timestamp()).await?, vec![node]);
-    call(
+    let before = call(
         &panel,
         &cookie,
-        Method::DELETE,
-        &format!("/users/{user}/accesses/{node}"),
+        Method::GET,
+        &format!("/users/{user}/accesses"),
         None,
     )
     .await?;
+    set_policies(&panel, &cookie, user, &[second]).await?;
     let current = call(
         &panel,
         &cookie,
@@ -143,8 +143,8 @@ async fn concurrent_group_and_direct_grants_share_one_stable_credential(
         None,
     )
     .await?;
-    assert_eq!(current[0]["uuid"], direct["uuid"]);
-    assert_eq!(current[0]["direct_grant"], false);
+    assert_eq!(current, before);
+    assert_eq!(current.as_array().unwrap().len(), 1);
     Ok(())
 }
 
@@ -250,9 +250,7 @@ async fn group_migration_retains_legacy_identifiers_credentials_and_usage(
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn modern_group_credentials_survive_direct_overlap_and_obey_quota(
-    pool: PgPool,
-) -> Result<()> {
+async fn modern_group_credentials_survive_group_overlap_and_obey_quota(pool: PgPool) -> Result<()> {
     use base64::{Engine as _, engine::general_purpose::STANDARD};
 
     let panel = TestPanel::start(pool.clone()).await?;
@@ -294,14 +292,7 @@ async fn modern_group_credentials_survive_direct_overlap_and_obey_quota(
     assert_eq!(STANDARD.decode(&other_secret)?.len(), 32);
     assert_ne!(before.1, other_secret);
     panel.grant(&cookie, uid, node).await?;
-    call(
-        &panel,
-        &cookie,
-        Method::DELETE,
-        &format!("/users/{uid}/accesses/{node}"),
-        None,
-    )
-    .await?;
+    panel.revoke(&cookie, uid, node).await?;
     let retained: (Uuid, String) =
         sqlx::query_as("SELECT uuid,credential FROM accesses WHERE user_id=$1 AND node_id=$2")
             .bind(uid)

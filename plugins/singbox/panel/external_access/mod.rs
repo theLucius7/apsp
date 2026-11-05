@@ -1,4 +1,7 @@
-pub(super) mod model;
+//! External nodes reach proxy users only through policy groups (ADR 0112). A
+//! group binds a node either to its current version or to one pinned version;
+//! subscriptions resolve the binding when they are generated.
+pub mod model;
 pub(super) use model::subscription_nodes;
 
 use crate::{
@@ -8,34 +11,30 @@ use crate::{
 };
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::State,
     http::{HeaderMap, header},
     response::{IntoResponse, Response},
 };
-use model::{Entry, Reference};
-use serde::{Deserialize, Serialize};
-use sqlx::PgConnection;
-use std::collections::BTreeSet;
+use model::{Binding, Entry, Reference};
+use serde::Serialize;
+use sqlx::{PgConnection, Postgres, Transaction};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Serialize)]
-pub struct AccessView {
-    revision: i64,
-    accesses: Vec<Entry>,
+pub struct Candidates {
     available_nodes: Vec<Entry>,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ReplaceAccesses {
-    revision: i64,
-    accesses: Vec<Reference>,
-}
-
-async fn view(connection: &mut PgConnection, user_id: i64) -> ApiResult<AccessView> {
-    let revision = model::revision(connection, user_id).await?;
-    let states = model::states(connection, None).await?;
+/// Adopted external nodes a group can take now, each bound to its current version.
+pub async fn candidates(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
+    require_admin(&state, &headers).await?;
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        .execute(&mut *tx)
+        .await?;
+    let states = model::states(&mut tx, None).await?;
     let versions = model::versions(
-        connection,
+        &mut tx,
         states
             .values()
             .filter_map(|node| node.current_version_id)
@@ -65,68 +64,77 @@ async fn view(connection: &mut PgConnection, user_id: i64) -> ApiResult<AccessVi
             entry.reference.external_node_id,
         )
     });
-    let accesses = model::subscription_nodes(connection, user_id)
-        .await?
-        .entries;
-    Ok(AccessView {
-        revision,
-        accesses,
-        available_nodes,
-    })
-}
-
-fn response(value: AccessView) -> Response {
-    (
+    tx.commit().await?;
+    Ok((
         [
             (header::CACHE_CONTROL, "no-store"),
             (header::REFERRER_POLICY, "no-referrer"),
         ],
-        Json(value),
+        Json(Candidates { available_nodes }),
     )
-        .into_response()
+        .into_response())
 }
 
-pub async fn get(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-) -> ApiResult<Response> {
-    require_admin(&state, &headers).await?;
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        .execute(&mut *tx)
-        .await?;
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND deleted_at IS NULL)")
-            .bind(id)
-            .fetch_one(&mut *tx)
-            .await?;
-    if !exists {
-        return Err(ApiError::NotFound);
+fn describe(
+    bindings: Vec<Binding>,
+    states: &BTreeMap<i64, model::NodeState>,
+    versions: &BTreeMap<i64, model::Version>,
+) -> Vec<Entry> {
+    let mut entries: Vec<Entry> = bindings
+        .into_iter()
+        .filter_map(|binding| {
+            let state = states.get(&binding.external_node_id)?;
+            let version = if binding.update_mode == "pinned" {
+                versions.get(&binding.node_version_id)
+            } else {
+                state.current_version_id.and_then(|id| versions.get(&id))
+            };
+            Some(state.entry(binding.reference(state.metadata_revision), version, false))
+        })
+        .collect();
+    entries.sort_by_key(|entry| {
+        (
+            states[&entry.reference.external_node_id].sort_order,
+            entry.reference.external_node_id,
+        )
+    });
+    entries
+}
+
+/// Every group's external nodes, keyed by group id.
+pub(crate) async fn group_entries(
+    connection: &mut PgConnection,
+    group: Option<i64>,
+) -> ApiResult<BTreeMap<i64, Vec<Entry>>> {
+    let rows = model::group_bindings(connection, group).await?;
+    let all: Vec<Binding> = rows
+        .iter()
+        .map(|(_, binding)| Binding {
+            external_node_id: binding.external_node_id,
+            source_id: binding.source_id,
+            identity_epoch: binding.identity_epoch,
+            node_version_id: binding.node_version_id,
+            update_mode: binding.update_mode.clone(),
+            created_at: binding.created_at,
+        })
+        .collect();
+    let (states, versions) = model::resolve(connection, &all).await?;
+    let mut grouped: BTreeMap<i64, Vec<Binding>> = BTreeMap::new();
+    for (group, binding) in rows {
+        grouped.entry(group).or_default().push(binding);
     }
-    let value = view(&mut tx, id).await?;
-    tx.commit().await?;
-    Ok(response(value))
+    Ok(grouped
+        .into_iter()
+        .map(|(group, bindings)| (group, describe(bindings, &states, &versions)))
+        .collect())
 }
 
-pub async fn put(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-    request: Result<Json<ReplaceAccesses>, axum::extract::rejection::JsonRejection>,
-) -> ApiResult<Response> {
-    require_admin(&state, &headers).await?;
-    let Json(request) =
-        request.map_err(|_| ApiError::BadRequest("外部节点授权字段或大小不符合要求".into()))?;
-    if !(0..=super::business::MAX_SAFE_INTEGER).contains(&request.revision)
-        || request.accesses.len() > 5000
-    {
-        return Err(ApiError::BadRequest(
-            "授权修订号无效或节点超过 5000 个".into(),
-        ));
+pub(crate) fn validate(references: &[Reference]) -> ApiResult<Vec<i64>> {
+    if references.len() > 5000 {
+        return Err(ApiError::BadRequest("外部节点超过 5000 个".into()));
     }
     let mut ids = BTreeSet::new();
-    for entry in &request.accesses {
+    for entry in references {
         if entry.external_node_id <= 0
             || entry.source_id <= 0
             || entry.identity_epoch <= 0
@@ -138,39 +146,36 @@ pub async fn put(
             || !(0..=super::business::MAX_SAFE_INTEGER).contains(&entry.metadata_revision)
             || !ids.insert(entry.external_node_id)
         {
-            return Err(ApiError::BadRequest(
-                "外部节点授权包含无效或重复的身份".into(),
-            ));
+            return Err(ApiError::BadRequest("外部节点包含无效或重复的身份".into()));
         }
     }
-    let mut tx = state.pool.begin().await?;
-    super::entitlements::lock(&mut tx).await?;
-    let exists: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?;
-    if exists.is_none() {
-        return Err(ApiError::NotFound);
-    }
-    let revision = model::revision(&mut tx, id).await?;
-    if revision != request.revision {
-        return Err(ApiError::Conflict(
-            "外部节点授权已变化，请刷新确认；草稿仍保留".into(),
-        ));
-    }
-    let previous = model::bindings(&mut tx, id).await?;
-    let states = model::states(&mut tx, Some(&ids.into_iter().collect::<Vec<_>>())).await?;
+    Ok(ids.into_iter().collect())
+}
+
+/// Replaces a group's external nodes. A node that stays in the group keeps its
+/// binding even when it is unavailable now; a node added to it must be adopted,
+/// enabled and on its current version.
+pub(crate) async fn replace(
+    tx: &mut Transaction<'_, Postgres>,
+    group: i64,
+    references: &[Reference],
+) -> ApiResult<()> {
+    let ids = validate(references)?;
+    let previous: Vec<Binding> = model::group_bindings(tx, Some(group))
+        .await?
+        .into_iter()
+        .map(|(_, binding)| binding)
+        .collect();
+    let states = model::states(tx, Some(&ids)).await?;
     let versions = model::versions(
-        &mut tx,
-        request
-            .accesses
+        tx,
+        references
             .iter()
             .map(|entry| entry.node_version_id)
             .collect(),
     )
     .await?;
-    for entry in &request.accesses {
+    for entry in references {
         let Some(state) = states.get(&entry.external_node_id) else {
             return Err(ApiError::Conflict("所选外部节点已不存在".into()));
         };
@@ -179,8 +184,6 @@ pub async fn put(
                 "所选外部节点管理设置已变化，请刷新确认".into(),
             ));
         }
-        // Preserve an existing inactive binding only when its entire identity and mode match.
-        // It stays visible for explicit removal and never bypasses subscription eligibility.
         if previous.iter().any(|binding| binding.matches(entry)) {
             continue;
         }
@@ -195,29 +198,21 @@ pub async fn put(
                 .is_some()
         {
             return Err(ApiError::Conflict(
-                "所选节点未采用、已停用或版本与来源身份已变化，请刷新后重新选择".into(),
+                "所选外部节点未采用、已停用或版本与来源身份已变化，请刷新后重新选择".into(),
             ));
         }
     }
-    let next_revision = revision
-        .checked_add(1)
-        .filter(|next| *next <= super::business::MAX_SAFE_INTEGER)
-        .ok_or_else(|| ApiError::Conflict("授权修订号已达上限".into()))?;
-    sqlx::query("DELETE FROM singbox_external_accesses WHERE user_id=$1")
-        .bind(id)
-        .execute(&mut *tx)
+    sqlx::query("DELETE FROM singbox_policy_external_nodes WHERE group_id=$1")
+        .bind(group)
+        .execute(&mut **tx)
         .await?;
-    for entry in request.accesses {
+    for entry in references {
         let created_at = previous
             .iter()
-            .find(|binding| binding.matches(&entry))
+            .find(|binding| binding.matches(entry))
             .map_or_else(apsp_protocol::now_timestamp, |binding| binding.created_at);
-        sqlx::query("INSERT INTO singbox_external_accesses(user_id,external_node_id,source_id,identity_epoch,node_version_id,update_mode,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)")
-            .bind(id).bind(entry.external_node_id).bind(entry.source_id).bind(entry.identity_epoch).bind(entry.node_version_id).bind(entry.update_mode.as_str()).bind(created_at).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO singbox_policy_external_nodes(group_id,external_node_id,identity_epoch,node_version_id,update_mode,created_at) VALUES($1,$2,$3,$4,$5,$6)")
+            .bind(group).bind(entry.external_node_id).bind(entry.identity_epoch).bind(entry.node_version_id).bind(entry.update_mode.as_str()).bind(created_at).execute(&mut **tx).await?;
     }
-    sqlx::query("INSERT INTO singbox_external_access_state(user_id,revision) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET revision=EXCLUDED.revision")
-        .bind(id).bind(next_revision).execute(&mut *tx).await?;
-    let value = view(&mut tx, id).await?;
-    tx.commit().await?;
-    Ok(response(value))
+    Ok(())
 }

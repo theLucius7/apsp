@@ -261,11 +261,11 @@ pub(crate) async fn ensure_external_removable(
     tx: &mut Transaction<'_, Postgres>,
     id: i64,
 ) -> ApiResult<()> {
-    let used:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE h.external_node_id=$1 AND c.deleted_at IS NULL) OR EXISTS(SELECT 1 FROM singbox_external_accesses a JOIN users u ON u.id=a.user_id WHERE a.external_node_id=$1 AND u.deleted_at IS NULL) OR EXISTS(SELECT 1 FROM singbox_ordered_chain_hops h JOIN singbox_ordered_external_nodes o ON o.id=h.external_node_id JOIN singbox_chains c ON c.id=h.chain_id WHERE o.public_id=$1 AND c.path_kind='ordered' AND c.phase<>'retired' AND h.generation IN (c.applied_generation,c.candidate_generation,c.recovery_generation,c.desired_generation))")
+    let used:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE h.external_node_id=$1 AND c.deleted_at IS NULL) OR EXISTS(SELECT 1 FROM singbox_policy_external_nodes p WHERE p.external_node_id=$1) OR EXISTS(SELECT 1 FROM singbox_ordered_chain_hops h JOIN singbox_ordered_external_nodes o ON o.id=h.external_node_id JOIN singbox_chains c ON c.id=h.chain_id WHERE o.public_id=$1 AND c.path_kind='ordered' AND c.phase<>'retired' AND h.generation IN (c.applied_generation,c.candidate_generation,c.recovery_generation,c.desired_generation))")
         .bind(id).fetch_one(&mut **tx).await?;
     if used {
         return Err(ApiError::Conflict(format!(
-            "外部节点 {id} 仍被链路或代理用户授权引用，请先解除引用"
+            "外部节点 {id} 仍被链路或策略组引用，请先解除引用"
         )));
     }
     Ok(())

@@ -62,7 +62,6 @@ pub struct ProxyUserOverview {
     pub used_bytes: String,
     pub expires_at: Option<i64>,
     pub group_ids: Vec<i64>,
-    pub direct_nodes: i64,
     pub external_nodes: i64,
     /// The retained legacy renderer still decides this user's nodes.
     pub bridged: bool,
@@ -115,8 +114,7 @@ pub async fn overview(
     let rows = sqlx::query_as::<_, ProxyUserOverview>(
         "SELECT e.user_id AS id,e.status,e.allowed,e.package_name,e.monthly_bytes,e.used_bytes,e.expires_at,\
          COALESCE((SELECT array_agg(p.group_id ORDER BY p.group_id) FROM singbox_user_policies p WHERE p.user_id=e.user_id),'{}'::BIGINT[]) AS group_ids,\
-         (SELECT count(*) FROM accesses a WHERE a.user_id=e.user_id AND a.direct_grant) AS direct_nodes,\
-         (SELECT count(*) FROM singbox_external_accesses x WHERE x.user_id=e.user_id) AS external_nodes,\
+         (SELECT count(DISTINCT x.external_node_id) FROM singbox_user_policies p JOIN singbox_policy_external_nodes x ON x.group_id=p.group_id WHERE p.user_id=e.user_id) AS external_nodes,\
          EXISTS(SELECT 1 FROM singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id WHERE b.enabled AND i.user_id=e.user_id) AS bridged,\
          portal.account_id IS NOT NULL AS portal_created,\
          (SELECT count(*) FROM passkey_credentials c WHERE c.account_id=portal.account_id) AS portal_keys,\

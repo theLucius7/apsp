@@ -32,8 +32,8 @@ try {
   const origin = `http://127.0.0.1:${server.address().port}`
   for (const width of [1280, 390]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } })
-    const errors = [], writes = [], policyReads = [], usageReads = [], mutations = [], groupWrites = [], userWrites = [], accessWrites = []
-    const failures = new Set(), heldReads = new Map(), directIds = new Set()
+    const errors = [], writes = [], policyReads = [], usageReads = [], mutations = [], groupWrites = [], userWrites = []
+    const failures = new Set(), heldReads = new Map()
     const previews = [], applications = [], operationSnapshots = new Map()
     let previewSequence = 0, operationRevision = 0, heldPreview = null
     const prefix = '/api/plugins/sing-box'
@@ -150,17 +150,18 @@ try {
       }
       else if (pathname === `${prefix}/proxy-resources` && method === 'GET') value = proxyResources()
       else if (pathname === `${prefix}/ordered-proxy-resources` && method === 'GET') value = []
+      else if (pathname === `${prefix}/external-node-candidates` && method === 'GET') value = { available_nodes: [] }
       else if (pathname === `${prefix}/nodes` && method === 'GET') value = nodes
       else if (pathname === `${prefix}/chains` && method === 'GET') value = chainEntries
       else if (pathname === `${prefix}/policy-groups` && method === 'GET') value = policies
       else if (pathname === `${prefix}/policy-groups` && method === 'POST') {
         const payload = request.postDataJSON()
-        assert.deepEqual(payload, { name: '已保留的策略草稿', node_ids: [1], chain_ids: [] })
+        assert.deepEqual(payload, { name: '已保留的策略草稿', node_ids: [1], chain_ids: [], external_nodes: [] })
         groupWrites.push({ pathname, method, payload }); value = { id: 3, ...payload, member_count: 0 }; policies.push(value)
       }
       else if (pathname === `${prefix}/policy-groups/1` && method === 'PUT') {
         const payload = request.postDataJSON()
-        assert.deepEqual(payload, { name: '原策略', node_ids: [1], chain_ids: [] })
+        assert.deepEqual(payload, { name: '原策略', node_ids: [1], chain_ids: [], external_nodes: [] })
         groupWrites.push({ pathname, method, payload }); Object.assign(policies[0], payload); value = policies[0]
       }
       else if (pathname === `${prefix}/package-groups` && method === 'GET') value = packages
@@ -173,12 +174,6 @@ try {
         groupWrites.push({ pathname, method }); packages.splice(1, 1); value = {}
       }
       else if (pathname === `${prefix}/usage` && method === 'GET') { usageReads.push(Date.now()); value = usage }
-      else if (pathname === `${prefix}/users/1/external-accesses` && method === 'GET') value = { revision: 0, accesses: [], available_nodes: [] }
-      else if (pathname === `${prefix}/users/1/accesses` && method === 'GET') value = [...new Set([...groupIds, ...directIds])].map(id => ({ user_id: 1, node_id: id, uuid: 'TEST_ONLY', stat_name: `fixture_${id}`, direct_grant: directIds.has(id) }))
-      else if (pathname === `${prefix}/users/1/accesses` && method === 'POST') {
-        const payload = request.postDataJSON(); assert.deepEqual(payload, { node_id: 1 })
-        directIds.add(1); accessWrites.push(payload); value = { user_id: 1, node_id: 1, uuid: 'TEST_ONLY', stat_name: 'fixture_1', direct_grant: true }
-      }
       else if (pathname === `${prefix}/users/1/policy-groups` && method === 'GET') { policyReads.push([...groupIds]); value = { group_ids: [...groupIds] } }
       else if (pathname === `${prefix}/users/1/entitlement` && method === 'GET') value = entitlement()
       else if (pathname === `${prefix}/users/1/subscription` && method === 'GET') {
@@ -204,7 +199,7 @@ try {
         const gate = heldPreview; heldPreview = null
         if (gate) { gate.enter(); await gate.released }
         value = { id, expires_at: Math.floor(Date.now() / 1000) + 300, summary: payload.operation === 'policy_batch'
-          ? { effect: 'TEST_ONLY 固定策略范围，历史账本与单独授权保留', users: [{ id: 1, name: user.name }], differences: [{ user_id: 1, added_nodes: [2], removed_nodes: [1], effective_nodes: [2] }] }
+          ? { effect: 'TEST_ONLY 固定策略范围，历史账本保留', users: [{ id: 1, name: user.name }], differences: [{ user_id: 1, added_nodes: [2], removed_nodes: [1], effective_nodes: [2] }] }
           : { effect: 'TEST_ONLY 更换固定套餐，历史用量保留', plan: packages[1], new_cycle: { cycle_start: 1790812800, next_reset: 1793491200, used_bytes: usage.total } } }
       } else if (new RegExp(`^${prefix}/operations/[^/]+/apply$`).test(pathname) && method === 'POST') {
         const payload = request.postDataJSON(), fixed = operationSnapshots.get(pathname.split('/').at(-2))
@@ -369,42 +364,16 @@ try {
     await page.getByRole('button', { name: '完成', exact: true }).click()
     assert.equal(writes.length, 2, 'subscription display must not write credentials or grants')
 
-    const direct = page.getByRole('switch', { name: '授权 节点 1', exact: true })
-    // A clean snapshot is also unwritable while the real header refresh is pending.
-    assert.equal(failures.size, 0)
-    await enabled(direct)
-    await recoverRead(`${prefix}/proxy-resources`, page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }), async () => {
-      assert.equal(await direct.isDisabled(), true)
-      assert.equal(await direct.isChecked(), false)
-      assert.equal(accessWrites.length, 0)
-    })
-    await enabled(direct)
-    // Each direct-grant dependency must independently block writes after a failed GET.
-    for (const dependency of [`${prefix}/users`, `${prefix}/proxy-resources`, `${prefix}/users/1/accesses`]) {
-      await failedRead(dependency, () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).click())
-      assert.equal(await direct.isDisabled(), true)
-      assert.equal(await direct.isChecked(), false)
-      assert.equal(await page.getByText(user.name, { exact: true }).count() > 0, true, 'last good data remains visible')
-      await recoverRead(dependency, page.getByRole('button', { name: '重试', exact: true }).first(), async () => {
-        assert.equal(await direct.isDisabled(), true)
-        assert.equal(accessWrites.length, 0)
-      })
-      await enabled(direct)
-    }
-    // A metrics-only failure has no authority over access edits.
+    // Users get nodes only through policy groups: no per-user grant switches remain.
+    await page.getByRole('dialog').waitFor({ state: 'hidden' })
+    const more = page.getByRole('navigation', { name: '更多用户信息' })
+    await more.getByRole('button', { name: '诊断与安全', exact: true }).waitFor()
+    assert.deepEqual(await more.getByRole('button').allTextContents(), ['流量明细', '邀请', '诊断与安全'])
+    assert.equal(await page.getByRole('switch', { name: /^授权 / }).count(), 0)
+    // A metrics-only failure has no authority over user edits.
+    const editUser = page.locator('[data-slot=user-heading]').getByRole('button', { name: '编辑', exact: true })
     await failedRead(`${prefix}/usage`, () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).click())
-    await enabled(direct)
-    const grantSaved = page.waitForResponse(response => new URL(response.url()).pathname === `${prefix}/users/1/accesses` && response.request().method() === 'POST' && response.status() === 200)
-    const grantReadback = page.waitForResponse(async response => new URL(response.url()).pathname === `${prefix}/users/1/accesses` && response.request().method() === 'GET' && response.status() === 200 && (await response.json()).some(access => access.user_id === 1 && access.node_id === 1 && access.direct_grant === true))
-    await direct.click()
-    await grantSaved
-    await grantReadback
-    await page.getByText('授权已保存，设备应用新配置后会出现在订阅中。', { exact: true }).waitFor()
-    await enabled(direct)
-    const grantDeadline = Date.now() + 5000
-    while (!await direct.isChecked() && Date.now() < grantDeadline) await page.waitForTimeout(25)
-    assert.equal(await direct.isChecked(), true, 'the real successful access readback must select the controlled switch')
-    assert.deepEqual(accessWrites, [{ node_id: 1 }])
+    await enabled(editUser)
     failures.delete(`${prefix}/usage`)
     await page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).click()
 
@@ -458,7 +427,7 @@ try {
     await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="1"])').check()
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     await dialog.waitFor({ state: 'hidden' })
-    assert.deepEqual(groupWrites[0].payload, { name: '已保留的策略草稿', node_ids: [1], chain_ids: [] })
+    assert.deepEqual(groupWrites[0].payload, { name: '已保留的策略草稿', node_ids: [1], chain_ids: [], external_nodes: [] })
 
     // Existing unavailable IDs remain visible when opening, and after recovery removes them.
     policies[0].chain_ids = [42]
@@ -530,7 +499,7 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.close()
   }
-  console.log('PASS: dist desktop/mobile, real polling and refresh preserve drafts; failed/pending dependencies block direct grants and open dialogs; fixed policy/package preview requires explicit confirmation, stale CAS refuses apply, return/re-preview preserve drafts and ledger; subscription display remains read-only')
+  console.log('PASS: dist desktop/mobile, real polling and refresh preserve drafts; failed/pending dependencies block open dialogs; no per-user grants remain; fixed policy/package preview requires explicit confirmation, stale CAS refuses apply, return/re-preview preserve drafts and ledger; subscription display remains read-only')
 } finally {
   try { await browser?.close() }
   finally { await new Promise(resolve => server.close(resolve)) }

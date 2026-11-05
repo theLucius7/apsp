@@ -98,13 +98,28 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
         )
         .await?;
     let user_id = user["id"].as_i64().context("user id")?;
-    let access = panel
+    let group = panel
         .api(
             Method::POST,
-            &format!("/api/plugins/sing-box/users/{user_id}/accesses"),
-            json!({"node_id": node_id}),
+            "/api/plugins/sing-box/policy-groups",
+            json!({"name": "E2E group", "node_ids": [node_id], "chain_ids": []}),
         )
         .await?;
+    panel
+        .api(
+            Method::PUT,
+            &format!("/api/plugins/sing-box/users/{user_id}/policy-groups"),
+            json!({"group_ids": [group["id"]]}),
+        )
+        .await?;
+    let access = panel
+        .api(
+            Method::GET,
+            &format!("/api/plugins/sing-box/users/{user_id}/accesses"),
+            json!(null),
+        )
+        .await?[0]
+        .clone();
     let stat_name = access["stat_name"]
         .as_str()
         .context("stat name")?

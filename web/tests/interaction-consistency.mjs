@@ -12,7 +12,7 @@ import { chooseLanguage } from './shell-navigation.mjs'
 // focus to what opened it, or to the page when that is gone; the server list
 // tells totals, filter results, a first failed read and a stale refresh apart;
 // the phone menu closes on Escape and outside presses; multiple selects show
-// several rows; and member bulk changes never touch members the search hides.
+// several rows.
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webp': 'image/webp' }
@@ -26,7 +26,6 @@ const http = createServer(async (request, response) => {
 await new Promise(done => http.listen(0, '127.0.0.1', done))
 const origin = `http://127.0.0.1:${http.address().port}`
 const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
-const commerce = '/api/plugins/sing-box/commerce'
 const GiB = 1024 ** 3
 const serverFixture = (id, online = true) => {
   const now = Date.now()
@@ -38,7 +37,6 @@ const serverFixture = (id, online = true) => {
     asset_settings: { region: 'JP', group_name: '亚洲', tags: [], hidden: false, price: '0', currency: 'CNY', billing_cycle: 30, expires_at: null, auto_renewal: false, traffic_limit: '0', traffic_limit_type: 'sum', reset_day: 1, network_interface: '' },
   }
 }
-const member = (id, name) => ({ user_id: id, name, email: `member-${id}@example.com`, state: 'active', balance_cents: 0, version: id * 10 })
 const rates = { base: 'CNY', rates: { CNY: 1 }, rate_dates: {}, rate_date: null, source: null, source_url: null, fetched_at: null, attempted_at: null, next_refresh_at: 0, stale: true, status: 'unavailable', error_code: null }
 
 async function open(width, state) {
@@ -50,14 +48,12 @@ async function open(width, state) {
     const json = (body, status = 200) => route.fulfill({ status, json: body })
     if (method !== 'GET') {
       writes.push({ method, path, body: request.postDataJSON() })
-      return path === `${commerce}/members/bulk` ? json({}) : json({ error: 'TEST_ONLY 此夹具不接受该写入。' }, 400)
+      return json({ error: 'TEST_ONLY 此夹具不接受该写入。' }, 400)
     }
     if (path === '/api/dashboard/access') return json({ authenticated: true, public_dashboard: false })
     if (path === '/api/servers' || path === '/api/dashboard/servers') return state.failServers ? json({ error: 'TEST_ONLY 读取失败' }, 503) : json(state.servers ?? [])
     if (path === '/api/dashboard/exchange-rates') return json(rates)
     if (path === '/api/dashboard/probes/overview' || path.startsWith('/api/network-workbench/')) return json([])
-    if (path === `${commerce}/overview`) return json({ members: 3, pending_members: 0, balance_cents: '0', orders: 0, sales_cents: '0', open_exceptions: 0, invitations: 0, ledger_entries: 0 })
-    if (path === `${commerce}/members`) return json({ entries: state.members ?? [], total: state.members?.length ?? 0 })
     return json({ error: 'TEST_ONLY 此夹具未提供该数据。' }, 404)
   })
   await installControlCenterFixtures(page)
@@ -262,31 +258,6 @@ try {
     } finally { await page.close() }
   }
 
-  // Member bulk changes apply only to selected members the search shows (E52).
-  {
-    const state = { members: [member(1, 'TEST_ONLY 甲'), member(2, 'TEST_ONLY 乙'), member(3, 'TEST_ONLY 丙')], appearance: { value: null, revision: 0 } }
-    const { page, errors, writes } = await open(1440, state)
-    try {
-      await page.goto(`${origin}/#/plugins/sing-box/commerce`)
-      await page.getByRole('button', { name: '成员', exact: true }).click()
-      await page.getByRole('checkbox', { name: '选择成员 TEST_ONLY 甲' }).check()
-      await page.getByRole('checkbox', { name: '选择成员 TEST_ONLY 乙' }).check()
-      await page.getByRole('button', { name: '批量修改状态（2）', exact: true }).waitFor()
-      await page.getByRole('textbox', { name: '搜索当前页成员' }).fill('甲')
-      await page.getByText('另有 1 位已选成员不在搜索结果中，批量操作不会修改。', { exact: true }).waitFor()
-      await page.getByRole('button', { name: '批量修改状态（1）', exact: true }).click()
-      const dialog = page.getByRole('dialog', { name: '批量修改成员状态' })
-      assert.equal(await dialog.locator('[data-slot=bulk-targets]').textContent(), 'TEST_ONLY 甲（#1）')
-      await dialog.getByText('另有 1 位已选成员不在当前搜索结果中，不会被修改。', { exact: true }).waitFor()
-      await dialog.getByLabel('原因').fill('TEST_ONLY 批量暂停')
-      await dialog.getByRole('button', { name: '保存', exact: true }).click()
-      await dialog.waitFor({ state: 'hidden' })
-      const bulk = writes.filter(write => write.path === `${commerce}/members/bulk`)
-      assert.deepEqual(bulk.map(write => write.body), [{ members: [{ id: 1, version: 10 }], state: 'suspended', reason: 'TEST_ONLY 批量暂停' }])
-      assert.deepEqual(errors, [])
-      summary.push({ scenario: 'member-bulk' })
-    } finally { await page.close() }
-  }
   console.log(JSON.stringify({ passed: true, scenarios: summary }, null, 2))
 } finally {
   await browser.close()

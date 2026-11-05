@@ -399,7 +399,6 @@ dependencies = [
  "flate2",
  "futures-util",
  "lettre",
- "md-5",
  "rand 0.8.8",
  "reqwest",
  "rustls",

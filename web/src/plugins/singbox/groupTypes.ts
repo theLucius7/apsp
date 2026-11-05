@@ -1,4 +1,5 @@
-export type PolicyGroup = { id: number; name: string; node_ids: number[]; chain_ids: number[]; member_count: number }
+import type { ExternalEntry } from './externalAccessTypes'
+export type PolicyGroup = { id: number; name: string; node_ids: number[]; chain_ids: number[]; member_count: number; external_nodes?: ExternalEntry[] }
 export type PackageGroup = { id: number; name: string; monthly_bytes: string | null; reset_day: number; reset_hour: number; reset_minute: number; timezone: string; duration_days: number }
 export type Chain = { id: number; name: string; entry_node_id: number; exit_node_id: number; available: boolean }
 export type ProxyResourceKind = 'direct' | 'chain'

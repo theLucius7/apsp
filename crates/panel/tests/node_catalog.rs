@@ -223,9 +223,20 @@ async fn deletion_references_and_invalid_metadata_roll_back_all_items(pool: PgPo
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Host").await?;
     let direct = id(&panel.create_node(&cookie, server, "Managed").await?)?;
-    let (source, node, version) = external(&panel, &cookie, &pool).await?;
+    let (_source, node, version) = external(&panel, &cookie, &pool).await?;
     let user = id(&panel.create_user(&cookie, "External user").await?)?;
-    sqlx::query("INSERT INTO singbox_external_accesses(user_id,external_node_id,source_id,identity_epoch,node_version_id,update_mode,created_at) VALUES($1,$2,$3,1,$4,'pinned',0)").bind(user).bind(node).bind(source).bind(version).execute(&pool).await?;
+    // The external node is held by a policy group the user is in.
+    let group: i64 = sqlx::query_scalar(
+        "INSERT INTO singbox_policy_groups(name) VALUES('External') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await?;
+    sqlx::query("INSERT INTO singbox_policy_external_nodes(group_id,external_node_id,identity_epoch,node_version_id,update_mode,created_at) VALUES($1,$2,1,$3,'pinned',0)").bind(group).bind(node).bind(version).execute(&pool).await?;
+    sqlx::query("INSERT INTO singbox_user_policies(user_id,group_id) VALUES($1,$2)")
+        .bind(user)
+        .bind(group)
+        .execute(&pool)
+        .await?;
     let rows = catalog(&panel, &cookie).await?;
     let response = panel
         .admin(

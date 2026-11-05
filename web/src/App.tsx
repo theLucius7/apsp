@@ -14,8 +14,8 @@ import { acceptHashChange, guardLinks } from '@/lib/leave-guard'
 import { Button } from '@/components/ui/button'
 
 const ServerDisplay = lazy(() => import('./display/ServerDisplay'))
-const MemberLogin = lazy(() => import('./plugins/singbox/commerce/MemberLogin'))
-const MemberJoin = lazy(() => import('./plugins/singbox/commerce/Join'))
+const MemberLogin = lazy(() => import('./plugins/singbox/accounts/MemberLogin'))
+const MemberJoin = lazy(() => import('./plugins/singbox/accounts/Join'))
 const UserPortal = lazy(() => import('./plugins/singbox/UserPortal'))
 
 /** The first screen. A lost connection stays here and keeps trying: it says nothing about the session. */
