@@ -18,13 +18,13 @@ import { DisplayNotice, surface, toneText } from './ui'
 import { cn } from '@/lib/utils'
 import { revealMotion } from '@/lib/motion'
 import { Button, buttonVariants } from '@/components/ui/button'
-
-// Shared so servers without probes keep the same props and their memoized cards skip re-rendering.
-const noProbes: ProbeOverview[] = []
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SegmentedButton, SegmentedGroup } from '@/components/segmented'
+
+// Shared so servers without probes keep the same props and their memoized cards skip re-rendering.
+const noProbes: ProbeOverview[] = []
 
 function Stat({ icon: Icon = ServerIcon, label, value, unit, children, tone, title }: { icon?: LucideIcon; label: string; value: ReactNode; unit?: string; children: ReactNode; tone?: string; title?: string }) {
   return <div data-slot="overview-item" className="min-w-0 border-border px-4 py-2.5 max-sm:px-3" title={title}>
@@ -114,7 +114,7 @@ export default function Overview({ now }: { now: number }) {
           <SearchIcon className="text-muted-foreground pointer-events-none absolute left-2.5 size-4" aria-hidden="true" />
           <Input type="search" aria-label="搜索服务器" placeholder="搜索服务器" value={query} onChange={event => setQuery(event.target.value)} className="pl-8" />
         </label>
-        <SegmentedGroup aria-label="服务器分组" className="no-scrollbar max-w-full flex-nowrap overflow-x-auto max-lg:order-3 max-lg:flex-[1_1_100%]">
+        <SegmentedGroup aria-label="服务器分组" className="no-scrollbar max-w-full flex-nowrap overflow-x-auto *:shrink-0 max-lg:order-3 max-lg:flex-[1_1_100%]">
           <SegmentedButton aria-pressed={!group} onClick={() => setGroup('')}>全部</SegmentedButton>
           {groups.map(name => <SegmentedButton key={name} aria-pressed={group === name} onClick={() => setGroup(name)}>{name}</SegmentedButton>)}
         </SegmentedGroup>

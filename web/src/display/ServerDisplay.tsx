@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useNow } from './useNow'
 import { CircleUserIcon, MoonIcon, SunIcon } from 'lucide-react'
 import { Brand, PageHeader } from '../components'
 import { LanguageSelect, useI18n } from '../i18n'
@@ -23,15 +24,9 @@ function useTheme() {
 }
 
 /** The live clock every card measures freshness against, and which view is open. */
-function DisplayContent({ serverId }: { serverId?: number }) {
-  const [now, setNow] = useState(Date.now)
-  useEffect(() => {
-    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') setNow(Date.now()) }, 5000)
-    const visible = () => { if (document.visibilityState === 'visible') setNow(Date.now()) }
-    document.addEventListener('visibilitychange', visible)
-    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', visible) }
-  }, [])
-  return serverId ? <ServerView key={serverId} id={serverId} now={now} /> : <Overview now={now} />
+function DisplayContent({ serverId, embedded = false }: { serverId?: number; embedded?: boolean }) {
+  const now = useNow(5000)
+  return serverId ? <ServerView key={serverId} id={serverId} now={now} embedded={embedded} /> : <Overview now={now} />
 }
 
 /** The standalone page visitors see when the panel makes the dashboard public. */
@@ -41,7 +36,7 @@ function PublicDisplay({ serverId }: { serverId?: number }) {
   // The dashboard's own light/dark choice applies to the whole document, not only
   // this wrapper, so a dark console theme left on <html> cannot bleed into it.
   useDocumentAppearance(theme)
-  return <CurrencyProvider><div data-slot="server-display" className="bg-background text-foreground flex min-h-dvh flex-col">
+  return <CurrencyProvider><div data-slot="server-display" data-ambient className="bg-background text-foreground flex min-h-dvh flex-col">
     <a className="bg-card text-foreground sr-only z-30 rounded-md p-2.5 focus:not-sr-only focus:absolute focus:top-2 focus:left-2" href="#display-main" onClick={event => { event.preventDefault(); document.getElementById('display-main')?.focus() }}>{t('跳到服务器信息')}</a>
     <header className="bg-background/95 supports-backdrop-filter:backdrop-blur-sm sticky top-0 z-20 border-b">
       <div className="mx-auto flex min-h-12 w-full max-w-[1600px] items-center justify-between gap-3 px-4 md:px-6">
@@ -62,6 +57,6 @@ export default function ServerDisplay({ serverId, embedded = false }: { serverId
   if (!embedded) return <PublicDisplay serverId={serverId} />
   return <CurrencyProvider><div data-slot="server-display" className="min-w-0">
     {!serverId && <PageHeader title="服务器看板" description="各服务器的实时状态与资源占用；可在「面板设置」公开给访客。" />}
-    <DisplayContent serverId={serverId} />
+    <DisplayContent serverId={serverId} embedded />
   </div></CurrencyProvider>
 }

@@ -6,6 +6,8 @@ export type DashboardSort = 'default' | 'name' | 'attention' | 'cpu' | 'memory' 
 export type DashboardFilter = 'all' | 'online' | 'offline' | 'pending' | 'stale'
 export const dashboardHome = '#/dashboard'
 export const dashboardServer = (id: number) => `${dashboardHome}/${id}`
+/** Where a server card leads: its console page for administrators who may read it, the board's view otherwise. */
+export const serverHref = (server: { id: number; public_view?: boolean }) => server.public_view ? dashboardServer(server.id) : `#/servers/${server.id}`
 
 // The old display links remain valid bookmarks; never reinterpret an unsafe numeric ID.
 export function dashboardRoute(path: string): { serverId?: number } | null {

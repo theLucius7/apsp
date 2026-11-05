@@ -34,7 +34,7 @@ export default function OperationsWorkflows({ serverId }: { serverId: number }) 
   const action = useAction()
   const [inspectionNotice, setInspectionNotice] = useState('')
   const current = resource.data
-  return <section data-slot="runtime-operations" className="py-4"><PanelHeader className="px-0 pt-0 pb-3"><h3 className="text-sm font-semibold">配置预检、差异与链路证据</h3><Refresh onClick={resource.reload} /></PanelHeader><ErrorNotice message={resource.error || action.error} retry={resource.reload} />
+  return <section data-slot="runtime-operations" className="pt-4"><PanelHeader className="mb-3 px-0 pt-0 pb-2"><h3 className="text-sm font-semibold">配置预检、差异与链路证据</h3><Refresh onClick={resource.reload} /></PanelHeader><ErrorNotice message={resource.error || action.error} retry={resource.reload} />
     {!current ? <Loading /> : <>
       <p>运行时版本：{current.runtime.selected_version}。{current.runtime.reason}</p><p className="text-muted-foreground mt-3 text-xs leading-relaxed"><a className="text-primary underline-offset-4 hover:underline" href={current.runtime.compatibility_metadata.upstream_release} target="_blank" rel="noreferrer">官方版本材料</a> · 固定上游提交 {current.runtime.compatibility_metadata.upstream_commit.slice(0, 12)}；{current.runtime.compatibility_metadata.acceptance_scope}。</p>
       <p><Badge tone={current.drift.state === 'revision_aligned' ? 'good' : 'warm'}>{driftNames[current.drift.state] ?? '状态未知'}</Badge> 目标 {current.drift.target_revision ?? '—'} / 已应用 {current.drift.applied_revision ?? '—'} · 观测 {current.drift.last_observed_at ? time(current.drift.last_observed_at) : '未提供'}</p><p className="text-muted-foreground mt-3 text-xs leading-relaxed">{current.drift.reason}</p>

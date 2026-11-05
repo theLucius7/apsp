@@ -6,7 +6,7 @@ import { time, uptime } from '../format'
 import type { Server } from '../types'
 import { fresh, network, number, percentage, ratio, size, speed, status } from './data'
 import { OSIcon, Region } from './Icon'
-import { dashboardServer } from './dashboard'
+import { serverHref } from './dashboard'
 import { assetDate, assetPrice, defaultAssets, expiryState, trafficSize } from '../server-assets'
 import { useCurrency } from './CurrencyContext'
 import { convert, money, remainingCost } from './currency'
@@ -41,7 +41,7 @@ export const ServerCard = memo(function ServerCard({ server, unavailable, probes
   const remainder = convert(remainingCost(asset, now), asset.currency, currency, quote)
   const sampleTime = server.metrics_sampled_at ? time(server.metrics_sampled_at / 1000) : '采样时间未知'
   const offline = !server.online && !unavailable
-  return <a data-slot="server-card" data-offline={offline || undefined} href={dashboardServer(server.id)} aria-label={`${server.name}，${state.label}，查看详情`}
+  return <a data-slot="server-card" data-offline={offline || undefined} href={serverHref(server)} aria-label={`${server.name}，${state.label}，查看详情`}
     className={cn(surface, 'group/card hover:border-foreground/25 focus-visible:ring-ring relative flex w-full min-w-0 flex-col overflow-hidden text-left outline-none focus-visible:ring-2', offline && 'bg-muted/30')}>
     <div data-slot="card-header" className="flex min-w-0 items-center gap-2 px-3.5 pt-2.5 pb-2">
       <span className={cn('size-2 flex-none rounded-full', toneFill[state.tone])} title={state.label} />

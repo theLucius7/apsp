@@ -520,6 +520,23 @@ async fn monitoring_only_sessions_and_tokens_keep_private_server_fields_hidden(
             assert!(!text.contains(private), "{private}");
         }
     }
+    // Administrators get every field except the per-process detail, which only the
+    // fleet profile shows; polled reads would otherwise carry it every few seconds.
+    for path in [
+        "/api/servers".to_string(),
+        format!("/api/servers/{visible}"),
+        "/api/dashboard/servers".to_string(),
+        "/api/dashboard/live".to_string(),
+    ] {
+        let text = panel
+            .admin(Method::GET, &path, &cookie, None)
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+        assert!(text.contains("cpu_percent"), "{path}");
+        assert!(!text.contains("TEST_ONLY_PROCESS_DETAIL"), "{path}");
+    }
     sqlx::query("UPDATE administrator_profiles SET role='viewer',capabilities=$1,all_servers=true WHERE admin_id=1").bind(json!(["monitoring:read"])).execute(&panel.state.pool).await?;
     let text = panel
         .admin(Method::GET, "/api/dashboard/servers", &cookie, None)

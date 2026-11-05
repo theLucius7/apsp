@@ -148,8 +148,19 @@ pub async fn attach_live(
             server.metrics_received_at = Some(value.received_at);
         }
         server.metrics_stale = is_stale(server.metrics_sampled_at, &server.agent_settings, now);
+        without_process_detail(&mut server.latest_metrics);
     }
     Ok(())
+}
+
+/// Per-process and pressure detail is tens of kilobytes per server, and only the
+/// fleet profile (which reads the stored row) shows it. Every polled server read
+/// leaves it out: with it, the list was over half a megabyte every few seconds.
+pub(crate) fn without_process_detail(metrics: &mut Value) {
+    if let Some(object) = metrics.as_object_mut() {
+        object.remove("process_resources");
+        object.remove("system_pressure");
+    }
 }
 
 fn is_stale(sampled: Option<i64>, settings: &Value, now: i64) -> bool {
@@ -198,9 +209,15 @@ pub(crate) async fn dashboard_live(state: &AppState, admin: bool) -> ApiResult<V
         let persisted: Option<i64> = row.get("metrics_sampled_at");
         let (sampled, received, metrics) = match live.get(&id) {
             Some((sampled, received, metrics)) => {
-                (Some(*sampled), Some(*received), Value::clone(metrics))
+                let mut metrics = Value::clone(metrics);
+                without_process_detail(&mut metrics);
+                (Some(*sampled), Some(*received), metrics)
             }
-            None => (persisted, None, stored.remove(&id).unwrap_or(Value::Null)),
+            None => {
+                let mut metrics = stored.remove(&id).unwrap_or(Value::Null);
+                without_process_detail(&mut metrics);
+                (persisted, None, metrics)
+            }
         };
         let last_seen: Option<i64> = row.get("last_seen");
         servers.push(json!({"id":id,"last_seen":last_seen,"last_heartbeat_at":row.get::<Option<i64>,_>("last_heartbeat_at"),"online":last_seen.is_some_and(|seen|now/1000-seen<=60),"metrics_sampled_at":sampled,"metrics_received_at":received,"metrics_persisted_at":persisted,"metrics_stale":is_stale(sampled,&row.get("agent_settings"),now),"latest_metrics":if admin {metrics} else {crate::dashboard::public_metrics_for_asset(&metrics,&row.get("asset_settings"))}}));

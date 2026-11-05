@@ -50,8 +50,6 @@ export function preloadPages() {
 // Each administrator page loads on first visit, keeping the initial bundle small.
 const Servers = lazyPage(() => import('../servers/Servers'), true)
 const ServerDetail = lazyPage(() => import('../servers/ServerDetail'), true)
-const ServerToolPage = lazyPage(() => import('../servers/ServerToolPage'))
-const ServerOperations = lazyPage(() => import('../servers/ServerOperations'))
 const BatchEnrollment = lazyPage(() => import('../servers/BatchEnrollmentPage'))
 const PluginEnablement = lazyPage(() => import('../plugins/PluginEnablement'))
 const PluginCatalog = lazyPage(() => import('../plugins/PluginCatalog'))
@@ -84,12 +82,10 @@ function page(route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' | 'm
   switch (route.page) {
     case 'server': {
       const { serverId, section } = route
-      if (section === 'fleet') return <ServerOperations key={serverId} id={serverId} />
       if (section === 'network-workbench') return <NetworkWorkbench key={serverId} initialServerId={serverId} />
       if (section === 'network-configuration') return <NetworkConfiguration key={serverId} serverId={serverId} />
       if (section === 'operations') return <OperationsPage key={serverId} selectedServerId={serverId} />
       if (section === 'ddns') return <Ddns key={serverId} serverId={serverId} />
-      if (section === 'ip-info' || section === 'node-quality' || section === 'tcp-quality') return <ServerToolPage key={`${serverId}/${section}`} id={serverId} section={section} />
       return <ServerDetail key={serverId} id={serverId} section={section} />
     }
     case 'fleet': return <FleetOperations />

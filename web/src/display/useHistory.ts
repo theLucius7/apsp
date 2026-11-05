@@ -7,8 +7,9 @@ import type { AggregateHistory, HistoryWindow } from './history'
 type Snapshot = { key: string; samples: Sample[]; aggregate?: AggregateHistory; error: string; loading: boolean; denied: boolean }
 const empty = (key: string): Snapshot => ({ key, samples: [], error: '', loading: true, denied: false })
 
-export function useHistory(serverId: number, window: HistoryWindow, modern: boolean) {
-  const key = `${serverId}/${window}/${modern}`
+/** `base` is the server's endpoint prefix: the board's or the console's. */
+export function useHistory(base: string, window: HistoryWindow, modern: boolean) {
+  const key = `${base}/${window}/${modern}`
   const [snapshot, setSnapshot] = useState<Snapshot>(() => empty(key))
   const trigger = useRef<() => void>(() => {})
   const reload = useCallback(() => trigger.current(), [])
@@ -29,14 +30,14 @@ export function useHistory(serverId: number, window: HistoryWindow, modern: bool
       timeout = globalThis.setTimeout(() => { timedOut = true; request.abort() }, 12_000)
       try {
         if (modern) {
-          const result = await api<AggregateHistory>(`/api/dashboard/servers/${serverId}/history?window=${window}`, 'GET', undefined, request.signal)
+          const result = await api<AggregateHistory>(`${base}/history?window=${window}`, 'GET', undefined, request.signal)
           if (!active || controller !== request || request.signal.aborted) return
           if (result.window !== window) throw new Error('返回的历史窗口不匹配，请重试。')
           interval = historyPollInterval(result.bucket_ms)
           update({ aggregate: result, error: '', denied: false })
         } else {
           // Periodically include delayed uploads while preserving the legacy raw endpoint.
-          const result = await api<Sample[]>(`/api/dashboard/servers/${serverId}/metrics?since=${Math.max(since, !fullRead && newest ? newest - 120_000 : since)}`, 'GET', undefined, request.signal)
+          const result = await api<Sample[]>(`${base}/metrics?since=${Math.max(since, !fullRead && newest ? newest - 120_000 : since)}`, 'GET', undefined, request.signal)
           if (!active || controller !== request || request.signal.aborted) return
           const merged = new Map([...saved, ...result].map(sample => [sample.id, sample]))
           saved = [...merged.values()].filter(sample => sample.sampled_at >= since && sample.sampled_at <= Date.now() + 60_000)
@@ -65,6 +66,6 @@ export function useHistory(serverId: number, window: HistoryWindow, modern: bool
     const timer = globalThis.setInterval(() => { void load() }, 15_000)
     document.addEventListener('visibilitychange', refresh)
     return () => { active = false; cancel(); globalThis.clearInterval(timer); document.removeEventListener('visibilitychange', refresh); trigger.current = () => {} }
-  }, [key, serverId, window, modern])
+  }, [key, base, window, modern])
   return { ...(snapshot.key === key ? snapshot : empty(key)), reload }
 }

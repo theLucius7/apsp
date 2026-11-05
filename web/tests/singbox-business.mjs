@@ -149,6 +149,8 @@ try {
       else if (path === '/api/plugins/sing-box/usage') value = { uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] }
       // The overview (landing page) also reads servers, open alerts and upcoming renewals.
       else if (path === '/api/servers') value = []
+      // The server overview is its monitoring panel; this fixture has no samples to chart.
+      else if (/^\/api\/servers\/1\/(metrics|probes|probe-results)$/.test(path)) value = []
       else if (path === '/api/notifications') value = []
       else if (path === '/api/plugins/expenses/summary') value = { upcoming: [] }
       else if (path === '/api/servers/1/agent-settings') value = { sample_interval_secs: 1, upload_interval_secs: 3, discover_public_ips: false, auto_update: false }
@@ -183,7 +185,7 @@ try {
     assert.equal(await page.locator('[data-plugin="sing-box"]').count(), 0)
     assert.equal(requests.slice(supportedStart).some(path => path.endsWith('/deployments') || path.endsWith('/nodes')), false)
     await openServerPlugins()
-    await page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }).waitFor()
+    await page.getByRole('heading', { name: /^sing-box/ }).waitFor()
     assert.equal(await page.locator('[data-plugin="sing-box"]').count(), 0)
     await page.getByText('设备支持 sing-box', { exact: true }).waitFor()
     await page.getByRole('button', { name: '启用并安装 sing-box', exact: true }).click()
@@ -203,7 +205,7 @@ try {
     await page.getByText('已安装并运行', { exact: true }).waitFor()
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1/plugins`)
-    await page.getByRole('heading', { name: '配置部署', exact: true }).waitFor()
+    await page.locator('[data-slot=deployment]').waitFor()
     await page.getByText('插件代理节点', { exact: true }).waitFor()
     await page.getByText('已安装并运行', { exact: true }).waitFor()
     assert.equal(await page.locator('[data-plugin="sing-box"]').count(), 1)
@@ -222,23 +224,26 @@ try {
     // The server plugin route reads only this server and keeps conservative ACK semantics.
     // Leave the tab first so the plugin route mounts afresh.
     await page.goto(`${origin}/#/servers/1`)
-    await page.getByRole('heading', { name: '连接概况', exact: true }).waitFor()
+    await page.getByRole('heading', { name: '资源趋势', exact: true }).waitFor()
     const scopedStart = requests.length
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1/plugins`)
-    await page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }).waitFor()
+    await page.getByRole('heading', { name: /^sing-box/ }).waitFor()
     await page.getByText('安装状态待确认', { exact: true }).waitFor()
     assert.equal(await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '插件', exact: true }).getAttribute('aria-current'), 'page')
-    // The operations tools are now the experimental 运维 tab of the server itself.
-    assert.equal(await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '运维', exact: true }).getAttribute('href'), '#/servers/1/fleet')
+    // The experimental 运维 tab appears only with the experimental features (ADR 0111).
+    assert.equal(await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '运维', exact: true }).count(), 0)
     assert.equal(requests.slice(scopedStart).includes('/api/plugins/sing-box/servers/1'), true)
     assert.equal(requests.slice(scopedStart).includes('/api/plugins/sing-box/servers'), false)
     assert.equal(await page.getByText('已安装并运行', { exact: true }).count(), 0)
 
     await navigate('概览')
     await page.getByRole('heading', { name: '概览', exact: true }).waitFor()
-    await page.getByText('安装状态待确认', { exact: true }).waitFor()
-    await page.getByRole('link', { name: '管理此服务器节点', exact: true }).click()
+    // Every server on the overview (the network drawing, or a list on phones) opens its sing-box card.
+    const escaped = metadata.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    await page.getByRole('link', { name: new RegExp(`^${escaped}.*安装状态待确认`) }).click()
+    await page.waitForURL(/#\/servers\/1\/plugins$/)
+    await page.getByRole('link', { name: '管理节点', exact: true }).click()
     await page.getByRole('heading', { name: '代理节点', exact: true }).waitFor()
     assert.equal(new URL(page.url()).hash, '#/plugins/sing-box/nodes?server=1')
     assert.equal(await page.getByRole('combobox', { name: '按服务器筛选', exact: true }).inputValue(), '1')

@@ -70,7 +70,7 @@
 | 邀请：每位代理用户有邀请名额，用名额生成邀请码，被邀请的人凭码自己创建账号，起始套餐、策略组和名额由管理员设定（[ADR 0113](adr/0113-invitation-quota-without-commerce.md)） | 代理用户 › 邀请、门户设置；门户 › 我的账号；接受邀请 `/#/plugins/sing-box/join` |
 | 从 Xboard 一类面板迁移（规划）：导入用户、套餐与用量，保留客户端凭据 | 代理用户（新功能） |
 | sing-box 配置部署、预检、运行时运维与部署历史 | 服务器详情 › 插件 |
-| 登录后的首页：需要处理的事项、关键数字、开始使用步骤、各服务器 sing-box 状态 | 总览 › 概览 `/#/plugins/sing-box` |
+| 登录后的首页：需要处理的事项、关键数字、开始使用步骤、代理网络示意图（各服务器 sing-box 状态与本期流量） | 总览 › 概览 `/#/plugins/sing-box` |
 
 ### 支撑
 
@@ -136,7 +136,7 @@
 | 监控与设置 | 告警（告警事件、告警设置）；线路检测（网络检测、延迟检测）；设置（面板设置、插件中心、备份与恢复、管理与安全、账号安全） | `/#/system/notifications`、`/#/monitoring/settings`；`/#/network-workbench`、`/#/latency`；`/#/system/settings`、`/#/plugins/catalog`、`/#/system/backup`、`/#/system/control-center`、`/#/system/administrator` | 支撑 |
 | 实验功能（默认隐藏） | 自动化与维护、网络配置 | `/#/operations`、`/#/network-configuration` | 降级；部分冻结 |
 
-**服务器详情**按“这台服务器”分为六个分页：概况（`/#/servers/{id}`）、资产与流量（`/assets`）、Agent 与任务（`/agent`）、插件（`/plugins`）、线路诊断（IP 信息 `/ip-info`、TCP 诊断 `/tcp-quality`、节点验机 `/node-quality` 三个子视图）、运维（实验，`/fleet`）。分页下方的「带此服务器打开」进入网络检测、网络配置和自动化与维护，并预先选中这台服务器。
+**服务器详情**按“这台服务器”分为六个分页：概况（`/#/servers/{id}`，即服务器监控面板，与看板单机视图是同一个面板，[ADR 0111](adr/0111-server-monitor-and-ink-jade-visuals.md)）、资产与流量（`/assets`）、Agent 与任务（`/agent`）、插件（`/plugins`）、线路诊断（IP 信息 `/ip-info`、TCP 诊断 `/tcp-quality`、节点验机 `/node-quality` 三个子视图）、运维（实验，`/fleet`，随「显示实验与冻结功能」显示）。页面右上角的「带此服务器打开」菜单进入网络检测（实验功能开启时还有网络配置和自动化与维护），并预先选中这台服务器。管理员在看板点服务器卡片进入服务器详情；`/#/dashboard/{id}` 留给访客和只有监控权限的管理员。
 
 **不在侧栏但仍可用的地址：** `/#/fleet`（原运维工具，显示服务器选择与迁移说明）、`/#/servers/batch`（批量接入，从服务器列表进入）、`/#/system/plugins`（插件中心的服务器启用视图）、`/#/artifacts`（插件中心别名）、`/#/plugins/sing-box/chains`（链路视图）、`/#/latency/reachability`（延迟检测的中国可达性视图）、`/#/overview` 与 `/` （服务器看板别名；登录后无指定地址时进入概览）。
 

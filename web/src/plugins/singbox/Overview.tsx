@@ -1,17 +1,20 @@
 import type { ReactNode } from 'react'
-import { Badge, Empty, ErrorNotice, Loading, PageHeader, Refresh, Stat } from '../../components'
+import { Empty, ErrorNotice, Loading, PageHeader, Refresh, Stat } from '../../components'
 import { bytes } from '../../format'
 import { useResource } from '../../hooks'
 import type { Node, PluginServer, ProxyUser, Server, Usage } from '../../types'
 import { installationView } from './Settings'
 import { buttonVariants } from '@/components/ui/button'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { cn } from '@/lib/utils'
+import { useMediaQuery } from '@/lib/use-media-query'
+import NetworkMap from './NetworkMap'
 import { CircleCheckIcon, ServerIcon } from 'lucide-react'
 import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
 type AlertEvent = { id: number; message: string; server_id: number; server_name: string; resolved_at: number | null }
 type Due = { kind: 'item' | 'server' | 'reference'; id: number; name: string; date: string }
 type RenewalSummary = { upcoming: Due[] }
+const toneDot = { good: 'bg-success', bad: 'bg-destructive', warm: 'bg-warning', neutral: 'bg-muted-foreground/50' } as const
 type Attention = { key: string; tone: 'bad' | 'warm'; text: ReactNode; href: string; action: string }
 
 // The overview is the administrator's landing page: what needs attention
@@ -43,6 +46,14 @@ export default function Overview() {
     ...due.slice(0, 5).map(entry => ({ key: `due-${entry.kind}-${entry.id}`, tone: 'warm' as const, text: <><strong>{entry.name}</strong> 将在 {entry.date} 续费</>, href: '#/plugins/expenses', action: '费用与续费' })),
   ]
   const loaded = [servers, pluginServers, alerts].every(resource => resource.data || resource.error)
+  // The drawing needs room for its labels; phones get the same servers as a list.
+  const wide = useMediaQuery('(min-width: 900px)')
+  // Problems first, then work in progress, running servers, and those without sing-box last.
+  const rank = { bad: 0, warm: 1, good: 2, neutral: 3 } as const
+  const ordered = (pluginServers.data ?? []).map(server => ({ server, state: installationView(server) }))
+    .sort((left, right) => Number(!left.server.enabled) - Number(!right.server.enabled) || rank[left.state.tone] - rank[right.state.tone])
+  const states = { ready: ordered.filter(entry => entry.state.tone === 'good').length, attention: ordered.filter(entry => entry.state.tone === 'bad').length,
+    waiting: ordered.filter(entry => entry.server.enabled && (entry.state.tone === 'warm' || entry.state.tone === 'neutral')).length, off: ordered.filter(entry => !entry.server.enabled).length }
 
   // Setup steps stay visible until each one is done.
   const steps = [
@@ -67,19 +78,28 @@ export default function Overview() {
       {!step.done && <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={step.href}>{step.action}</a>}
     </li>)}</ol></Panel>}
     <ErrorNotice message={pluginServers.error} retry={pluginServers.reload} />
-    <div className="grid min-w-0 items-start gap-4 xl:grid-cols-2">
-      <Panel className="mb-0"><PanelHeader className="min-h-10 py-1.5"><PanelTitle>需要处理{attention.length > 0 && <span className="bg-muted text-muted-foreground rounded px-1.5 text-xs font-medium tabular-nums">{attention.length}</span>}</PanelTitle></PanelHeader>
+      <Panel><PanelHeader className="min-h-10 py-1.5"><PanelTitle>需要处理{attention.length > 0 && <span className="bg-muted text-muted-foreground rounded px-1.5 text-xs font-medium tabular-nums">{attention.length}</span>}</PanelTitle></PanelHeader>
         {!loaded ? <Loading variant="table" rows={3} /> : attention.length ? <ul className="divide-y" data-slot="overview-attention">{attention.map(entry => <li key={entry.key} className="flex items-center gap-2.5 px-4 py-2 text-[13px]">
           <span className={entry.tone === 'bad' ? 'bg-destructive size-2 shrink-0 rounded-full' : 'bg-warning size-2 shrink-0 rounded-full'} title={entry.tone === 'bad' ? '异常' : '注意'} aria-hidden="true" />
           <span className="sr-only">{entry.tone === 'bad' ? '异常' : '注意'}：</span>
           <span className="min-w-0 flex-1 wrap-anywhere">{entry.text}</span>
           <a className={buttonVariants({ variant: 'ghost', size: 'xs' })} href={entry.href}>{entry.action}</a>
-        </li>)}</ul> : <Empty icon={CircleCheckIcon} title="没有需要处理的事项" description={`服务器在线、sing-box 运行正常、告警均已恢复${renewals.data ? '，30 天内也没有待续费的项目' : ''}。`} />}
+        </li>)}</ul> : <p data-slot="overview-clear" className="flex items-center gap-2.5 px-4 py-3.5 text-[13px]"><CircleCheckIcon className="text-success size-4 shrink-0" aria-hidden="true" /><strong className="font-medium">没有需要处理的事项</strong><span className="text-muted-foreground">服务器在线、sing-box 运行正常、告警均已恢复{renewals.data ? '，30 天内也没有待续费的项目' : ''}。</span></p>}
       </Panel>
-      <Panel className="mb-0"><PanelHeader className="min-h-10 py-1.5"><PanelTitle>各服务器的 sing-box 状态</PanelTitle><a className={buttonVariants({ variant: 'ghost', size: 'xs' })} href="#/servers">服务器列表</a></PanelHeader>{pluginServers.loading && !pluginServers.data ? <Loading variant="table" rows={3} /> : !pluginServers.data?.length ? <Empty icon={ServerIcon} title="先接入服务器" description="服务器在线后，再为需要代理服务的设备安装 sing-box。"><a className={buttonVariants()} href="#/servers">添加服务器</a></Empty> : <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>服务器</TableHead><TableHead>安装与运行</TableHead><TableHead className="text-right">下一步</TableHead></TableRow></TableHeader><TableBody>{pluginServers.data.map(server => {
-        const state = installationView(server)
-        return <TableRow key={server.id}><TableCell><a className="hover:text-primary font-medium underline-offset-4 hover:underline" href={`#/servers/${server.id}`}>{server.name}</a><small>{server.online ? 'Agent 在线' : 'Agent 离线'}{server.agent_supported ? '' : ' · 尚未声明支持'}</small></TableCell><TableCell title={state.reason}><Badge tone={state.tone}>{state.label}</Badge></TableCell><TableCell className="text-right">{server.enabled ? <div className="flex flex-wrap items-center justify-end gap-1"><a className={buttonVariants({ variant: 'ghost', size: 'xs' })} href={`#/plugins/sing-box/nodes?server=${server.id}`}>管理此服务器节点</a><a className={buttonVariants({ variant: 'ghost', size: 'xs' })} href={`#/servers/${server.id}/plugins`}>查看部署</a></div> : <a className={buttonVariants({ variant: 'ghost', size: 'xs' })} href="#/system/plugins">启用并安装</a>}</TableCell></TableRow>
-      })}</TableBody></Table></div>}</Panel>
-    </div>
+      <Panel><PanelHeader><PanelTitle>代理网络</PanelTitle>{pluginServers.data && <span data-slot="singbox-summary" className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-normal tabular-nums">
+            <span className="flex items-center gap-1.5"><i className="bg-success size-2 rounded-full" />{states.ready} 运行</span>
+            {states.attention > 0 && <span className="text-destructive flex items-center gap-1.5"><i className="bg-destructive size-2 rounded-full" />{states.attention} 需处理</span>}
+            {states.waiting > 0 && <span className="flex items-center gap-1.5"><i className="bg-warning size-2 rounded-full" />{states.waiting} 等待</span>}
+            <span className="flex items-center gap-1.5"><i className="border-muted-foreground size-2 rounded-full border" />{states.off} 未启用</span>
+            {offline.length > 0 && <span className="flex items-center gap-1.5"><i className="border-destructive size-2.5 rounded-full border border-dashed" />{offline.length} 离线</span>}
+          </span>}{states.off > 0 && <a className={buttonVariants({ variant: 'ghost', size: 'xs' })} href="#/system/plugins">启用插件</a>}</PanelHeader>
+        {pluginServers.loading && !pluginServers.data ? <Loading variant="table" rows={3} /> : !pluginServers.data?.length ? <Empty icon={ServerIcon} title="先接入服务器" description="服务器在线后，再为需要代理服务的设备安装 sing-box。"><a className={buttonVariants()} href="#/servers">添加服务器</a></Empty>
+          : wide ? <div className="px-2 py-3"><NetworkMap plugins={pluginServers.data} servers={servers.data} /><p className="text-muted-foreground px-3 text-xs">圆点大小表示本期流量，虚线红圈表示 Agent 离线；点击服务器查看它的 sing-box。</p></div>
+          : <ul data-slot="singbox-servers" className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-1.5 p-2.5">{ordered.map(({ server, state }) => <li key={server.id} className="min-w-0">
+            <a href={`#/servers/${server.id}/plugins`} title={state.reason} className={cn('hover:border-foreground/25 focus-visible:ring-ring/50 flex min-w-0 items-center gap-2 rounded-md border px-2.5 py-2 outline-none focus-visible:ring-3', !server.enabled && 'bg-muted/40')}>
+              <span className={cn('size-2 shrink-0 rounded-full', toneDot[state.tone])} aria-hidden="true" />
+              <span className="grid min-w-0 leading-tight"><strong className="truncate text-[13px] font-medium">{server.name}</strong><small className={cn('truncate text-xs', state.tone === 'bad' ? 'text-destructive' : 'text-muted-foreground')}>{state.label}{server.online ? '' : ' · Agent 离线'}</small></span>
+            </a></li>)}</ul>}
+      </Panel>
   </>
 }

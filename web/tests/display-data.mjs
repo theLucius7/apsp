@@ -91,7 +91,8 @@ try {
         return respond(snapshot)
       }
       if (path === '/api/dashboard/probes/overview') return respond([])
-      const detail = path.match(/^\/api\/dashboard\/servers\/(\d+)(.*)$/)
+      // The console's server page reads the same data from its own endpoints.
+      const detail = path.match(/^\/api\/(?:dashboard\/)?servers\/(\d+)(.*)$/)
       if (detail) {
         const id = Number(detail[1]), endpoint = detail[2]
         if (!visible.has(id)) return respond({ error: '服务器不存在或已隐藏' }, 404)
@@ -203,9 +204,13 @@ try {
     assert(count('/api/dashboard/live') >= liveReads + 3)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     if (screenshots) await page.screenshot({ path: resolve(screenshots, `display-data-overview-${width}.png`), fullPage: true, animations: 'disabled' })
+    // An owner opens the console page of the server: the same monitoring panel beside its settings.
     await page.locator('[data-slot=server-card]').first().click()
+    await page.waitForURL(/#\/servers\/1$/)
     await page.getByRole('heading', { name: /^东京 · 测试入口/ }).waitFor()
     await page.getByText('每 2 秒 聚合', { exact: false }).waitFor()
+    // Costs and their conversion are on the server's assets tab.
+    await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '资产与流量', exact: true }).click()
     const assetDetail = page.locator('[data-slot=asset-detail]'), detailReference = assetDetail.getByRole('status', { name: '参考汇率状态', exact: true })
     assert.match(await detailReference.innerText(), /2026-09-30.*参考汇率.*Frankfurter/)
     dashboardRatesReadFailure = true
@@ -234,6 +239,7 @@ try {
     await readDashboardRates()
     await assetDetail.getByText(/折算 CNY\s*80\.00/).waitFor()
     assert.equal(writes.length, 3, 'Every detail recovery is a GET and preserves the administrator-only refresh count')
+    await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '概况', exact: true }).click()
     const probes = page.locator('[data-slot=probes]'), probeSummary = probes.locator('[data-slot=probe-summary]')
     await probeSummary.getByText(/最近采样/).waitFor()
     assert.match(await probeSummary.innerText(), /电信 · 测试地区 · IPv4 · telecom · TCP 连接 · private-probe\.example\.invalid:443/)
@@ -305,24 +311,18 @@ try {
     holdWindow = '15m'
     await windows.getByRole('button', { name: '15 分钟', exact: true }).click()
     await settle(); assert(heldHistory)
-    await page.getByRole('link', { name: '返回服务器看板', exact: true }).click()
+    // The next card opens that server; a held read for the previous one cannot leak into it.
+    await page.goto(`${origin}/#/dashboard`)
     await page.getByRole('link', { name: /^法兰克福 · 测试存储，/ }).click()
+    await page.waitForURL(/#\/servers\/2$/)
     await page.getByText('每 2 秒 聚合', { exact: false }).waitFor()
     heldHistory(); heldHistory = undefined; await settle()
     await page.getByRole('region', { name: '处理器图表', exact: true }).locator('svg[role="img"]').focus(); await page.keyboard.press('Home')
     assert.match(await page.getByRole('region', { name: '处理器图表', exact: true }).locator('[data-slot=chart-details]').innerText(), /平均 77\.0%/)
     assert.equal(await page.getByRole('heading', { name: /^东京/ }).count(), 0)
-    await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' }); document.dispatchEvent(new Event('visibilitychange')) })
-    await advance(60_000)
-    holdLive = true; holdDetail = true
-    await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' }); document.dispatchEvent(new Event('visibilitychange')) })
-    await page.getByText('超过 15 秒未收到新的服务器快照，状态待确认。', { exact: false }).waitFor()
-    assert.equal(await page.locator('[data-slot=detail-hero] [data-slot=status]').innerText(), '状态未知')
-    assert.equal(await page.locator('[data-slot=live-strip] > div').nth(2).locator('strong').innerText(), '—')
-    await settle(); assert(heldLive && heldDetail)
-    heldLive(); heldDetail(); heldLive = undefined; heldDetail = undefined
-    await page.locator('[data-slot=detail-hero] [data-slot=status]').filter({ hasText: '在线' }).waitFor()
-    await page.getByRole('link', { name: '返回服务器看板', exact: true }).click()
+    await page.getByText('TEST_ONLY_PRIVATE_HOST', { exact: true }).waitFor()
+    // On the board, hidden tabs abort every feed and a late answer cannot restore a removed server.
+    await page.goto(`${origin}/#/dashboard`)
     await page.locator('[data-slot=server-card]').first().waitFor()
     holdLive = true
     for (let attempt = 0; attempt < 4 && !heldLive; attempt++) await advance(1500)
@@ -336,17 +336,31 @@ try {
     await page.getByRole('link', { name: /^东京 · 测试入口，/ }).waitFor({ state: 'hidden' })
     heldLive(); heldLive = undefined; await settle()
     assert.equal(await page.locator('[data-slot=server-card]').count(), 2, 'A late pre-hide live response cannot restore a removed server')
-    await page.getByRole('link', { name: /^法兰克福 · 测试存储，/ }).click()
-    await page.getByText('TEST_ONLY_PRIVATE_HOST', { exact: true }).waitFor()
+    // When the session ends, the public board takes over and keeps nothing private.
     signedIn = false
     await advance(3000)
-    await page.getByText('TEST_ONLY_PRIVATE_HOST', { exact: true }).waitFor({ state: 'hidden' })
+    await page.getByRole('link', { name: /^法兰克福 · 测试存储，/ }).click()
+    await page.waitForURL(/#\/dashboard\/2$/)
     await page.getByRole('heading', { name: /^法兰克福 · 测试存储/ }).waitFor()
+    assert.equal(await page.getByText('TEST_ONLY_PRIVATE_HOST', { exact: true }).count(), 0)
     assert.equal(await page.getByLabel('显示币种', { exact: true }).count(), 0)
     assert.equal(await page.getByRole('button', { name: '更新汇率', exact: true }).count(), 0)
-    assert(!/EUR|CNY|本周期剩余/.test(await page.locator('[data-slot=server-detail]').innerText()), 'Public fallback clears private asset metadata')
+    assert(!/EUR|CNY|本周期剩余/.test(await page.locator('[data-slot=server-detail]').innerText()), 'Public view carries no private asset metadata')
     assert.equal(await page.getByRole('status', { name: '参考汇率状态', exact: true }).count(), 0, 'Anonymous detail cannot reveal private conversion provenance')
-    assert(!/private-probe\.example\.invalid|TEST_ONLY_PRIVATE_AUTH_SOURCE|TEST_ONLY_PRIVATE_AUTH_SCOPE/.test(await page.locator('[data-slot=server-detail]').innerText()), 'Public fallback cannot retain target or authorization provenance')
+    assert(!/private-probe\.example\.invalid|TEST_ONLY_PRIVATE_AUTH_SOURCE|TEST_ONLY_PRIVATE_AUTH_SCOPE/.test(await page.locator('[data-slot=server-detail]').innerText()), 'Public view cannot show target or authorization provenance')
+    // A stalled snapshot says so instead of showing old rates as live.
+    await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' }); document.dispatchEvent(new Event('visibilitychange')) })
+    await advance(60_000)
+    holdLive = true; holdDetail = true
+    await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' }); document.dispatchEvent(new Event('visibilitychange')) })
+    await page.getByText('超过 15 秒未收到新的服务器快照，状态待确认。', { exact: false }).waitFor()
+    assert.equal(await page.locator('[data-slot=detail-hero] [data-slot=status]').innerText(), '状态未知')
+    assert.equal(await page.locator('[data-slot=live-network] strong').first().innerText(), '—')
+    await settle(); assert(heldLive && heldDetail)
+    heldLive(); heldDetail(); heldLive = undefined; heldDetail = undefined
+    await page.locator('[data-slot=detail-hero] [data-slot=status]').filter({ hasText: '在线' }).waitFor()
+    await page.getByRole('link', { name: '返回服务器看板', exact: true }).click()
+    await page.locator('[data-slot=server-card]').first().waitFor()
     assert.deepEqual(writes, Array(3).fill('/api/exchange-rates/refresh'), 'Only explicitly requested backend FX refreshes write')
     publicDashboard = false
     await advance(3000)

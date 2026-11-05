@@ -5,18 +5,18 @@ import { cn } from '@/lib/utils'
 // Page sections share the shadcn card surface: a titled header row with its
 // actions, then a table or padded content.
 export function Panel({ className, ...props }: React.ComponentProps<'section'>) {
-  return <section data-slot="panel" className={cn('bg-card text-card-foreground mb-4 min-w-0 overflow-hidden rounded-lg border', className)} {...props} />
+  return <section data-slot="panel" className={cn('bg-card text-card-foreground shadow-soft mb-4 min-w-0 overflow-hidden rounded-xl border', className)} {...props} />
 }
 
 export function PanelHeader({ className, ...props }: React.ComponentProps<'div'>) {
-  return <div data-slot="panel-header" className={cn('flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-4 py-2', className)} {...props} />
+  return <div data-slot="panel-header" className={cn('border-border/70 flex min-h-12 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-4 py-2', className)} {...props} />
 }
 
 export function PanelTitle({ className, ...props }: React.ComponentProps<'h2'>) {
-  return <h2 data-slot="panel-title" className={cn('flex min-w-0 items-center gap-2 text-sm font-semibold', className)} {...props} />
+  return <h2 data-slot="panel-title" className={cn('flex min-w-0 items-center gap-2 text-[13.5px] font-semibold tracking-tight', className)} {...props} />
 }
 
-const noticeVariants = cva('mb-4 flex items-start justify-between gap-3 rounded-lg border px-3 py-2 text-[13px] leading-relaxed', {
+const noticeVariants = cva('mb-4 flex items-start justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-[13px] leading-relaxed', {
   variants: {
     tone: {
       info: 'bg-muted/60 text-foreground',

@@ -29,16 +29,14 @@ export function installationView(server: PluginServer): { label: string; tone: '
   return { ...view, reason: installation.reason }
 }
 
-export default function Settings({ serverId }: { serverId?: number }) {
-  const collection = useResource<PluginServer[]>(serverId ? null : '/api/plugins/sing-box/servers')
-  const single = useResource<PluginServer>(serverId ? `/api/plugins/sing-box/servers/${serverId}` : null)
-  const servers = serverId ? { ...single, data: single.data ? [single.data] : undefined } : collection
+/** Every server's sing-box enablement; one server's lives in its plugins tab. */
+export default function Settings() {
+  const servers = useResource<PluginServer[]>('/api/plugins/sing-box/servers')
   const action = useAction()
-  const state = serverId ? single : collection
-  const writeError = () => resourceWriteError(state)
+  const writeError = () => resourceWriteError(servers)
   const enable = (id: number) => {
     if (writeError()) return
-    const current = serverId ? single.getCurrent() : collection.getCurrent()?.find(server => server.id === id)
+    const current = servers.getCurrent()?.find(server => server.id === id)
     if (!current || current.id !== id || current.read_only || current.enabled) return
     void action.run(() => api(`/api/plugins/sing-box/servers/${id}/enable`, 'POST', {}), servers.reload)
   }

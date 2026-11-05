@@ -110,10 +110,10 @@ try {
     assert.deepEqual(sessions.slice(0, 2), [0, 1].map(() => ({ path: '/api/login', body: { login_name: 'admin', password: 'TEST_ONLY', totp_code: '123456' } })))
     // Panel settings change only the public dashboard switch.
     assert.equal(await page.getByLabel('离线告警阈值（分钟）', { exact: false }).count(), 0)
+    // A switch saves as soon as it is flipped.
     await page.getByRole('switch', { name: /^公开服务器看板/ }).uncheck()
-    if (screenshots) await page.screenshot({ path: resolve(screenshots, `operations-settings-${width}.png`), fullPage: true, animations: 'disabled' })
-    await page.getByRole('button', { name: '保存设置' }).click()
     await page.getByRole('status').filter({ hasText: '设置已保存' }).waitFor()
+    if (screenshots) await page.screenshot({ path: resolve(screenshots, `operations-settings-${width}.png`), fullPage: true, animations: 'disabled' })
     const dashboardWrite = writes.find(write => write.path === '/api/settings').body
     assert.equal(dashboardWrite.public_dashboard, false)
     assert.equal(Object.hasOwn(dashboardWrite, 'telegram_token'), false)
@@ -140,7 +140,8 @@ try {
     const edit = writes.find(write => write.path === '/api/servers/1').body
     assert.equal(edit.auto_update, false); assert.equal(edit.asset_settings.offline_notify, false)
     assert.equal(edit.asset_settings.agent_mirror, 'https://mirror.example.com')
-    await page.getByRole('button', { name: '详情', exact: true }).click()
+    // The server's name opens its page.
+    await page.getByRole('button', { name: /演示服务器/ }).first().click()
     // Traffic correction belongs to the server's assets tab.
     await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '资产与流量', exact: true }).click()
     await page.getByRole('button', { name: '流量矫正', exact: true }).click()
