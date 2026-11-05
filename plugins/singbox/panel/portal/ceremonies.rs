@@ -170,7 +170,7 @@ pub(super) async fn register_start(
         authorization,
         PORTAL_BINDING,
         keys::Holder {
-            user_name: &user_name,
+            login_name: &user_name,
             display_name: "apsp账户",
         },
     )
