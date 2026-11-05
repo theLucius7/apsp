@@ -14,6 +14,8 @@ const translatedAttributeSources = new WeakMap<Element, Map<string, string>>()
 // messages intentionally fall back to their source text when no translation is
 // available.
 const english: Record<string, string> = {
+  // Sign-in page and account card (2026-11-06).
+  'apsp 简介': 'About apsp', '一处配置，': 'Configure once,', '整张网络随之运转': 'and the whole network follows', '入口、中转与落地在面板里编排，节点和订阅自动下发；面板离线时，已应用的节点照常工作。': 'Arrange entries, relays and exits in the panel; nodes and subscriptions are pushed out automatically, and applied nodes keep working while the panel is offline.', '节点与链路': 'Nodes and chains', '入口、中转、落地一处配置，自动下发到每台服务器。': 'Entries, relays and exits configured in one place and pushed to every server.', '用户与订阅': 'Users and subscriptions', '按策略组授权，流量逐用户记账，订阅与用量自助查看。': 'Access by policy group, traffic metered per user, subscriptions and usage self-service.', '服务器与费用': 'Servers and costs', '实时监控、三网拨测与告警，续费到期提前提醒。': 'Live monitoring, carrier probes and alerts, with renewal reminders ahead of time.', '隐藏密码': 'Hide password', '显示密码': 'Show password',
   // Server monitoring panel, server pages and overview (2026-11-05 redesign).
   '实时状态': 'Live status', '实时网络': 'Live network', '上行': 'Upload', '下行': 'Download', '本期流量': 'Traffic this cycle', '额度已用尽': 'Quota used up', '观测不完整': 'Incomplete observation',
   '等待采样': 'Waiting for samples', '不限': 'Unlimited', '操作系统': 'Operating system', '常规': 'General', '设置已保存': 'Settings saved', '此服务器的节点': 'Nodes on this server',

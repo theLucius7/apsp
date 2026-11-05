@@ -36,7 +36,7 @@ function PublicDisplay({ serverId }: { serverId?: number }) {
   // The dashboard's own light/dark choice applies to the whole document, not only
   // this wrapper, so a dark console theme left on <html> cannot bleed into it.
   useDocumentAppearance(theme)
-  return <CurrencyProvider><div data-slot="server-display" data-ambient className="bg-background text-foreground flex min-h-dvh flex-col">
+  return <CurrencyProvider><div data-slot="server-display" className="text-foreground flex min-h-dvh flex-col">
     <a className="bg-card text-foreground sr-only z-30 rounded-md p-2.5 focus:not-sr-only focus:absolute focus:top-2 focus:left-2" href="#display-main" onClick={event => { event.preventDefault(); document.getElementById('display-main')?.focus() }}>{t('跳到服务器信息')}</a>
     <header className="bg-background/95 supports-backdrop-filter:backdrop-blur-sm sticky top-0 z-20 border-b">
       <div className="mx-auto flex min-h-12 w-full max-w-[1600px] items-center justify-between gap-3 px-4 md:px-6">

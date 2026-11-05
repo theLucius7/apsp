@@ -56,7 +56,7 @@ function DialogOverlay({
       <m.div
         {...fadeMotion}
         exit={reduce ? undefined : fadeMotion.exit}
-        className={cn("bg-black/10 supports-backdrop-filter:backdrop-blur-xs fixed inset-0 isolate z-50 data-[state=closed]:pointer-events-none!", className)}
+        className={cn("bg-[color-mix(in_oklch,var(--foreground)_16%,transparent)] supports-backdrop-filter:backdrop-blur-[2px] fixed inset-0 isolate z-50 data-[state=closed]:pointer-events-none!", className)}
       />
     </DialogPrimitive.Overlay>
   )
@@ -104,8 +104,8 @@ function DialogContent({
               data-placement={placement}
               className={cn(
                 placement === "bottom"
-                  ? "bg-popover text-popover-foreground ring-foreground/10 grid max-h-[85dvh] gap-4 overflow-y-auto rounded-t-xl p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-sm ring-1 shadow-lg fixed inset-x-0 bottom-0 z-50 w-full outline-none"
-                  : "bg-popover text-popover-foreground ring-foreground/10 grid max-w-[calc(100%-2rem)] gap-4 rounded-xl p-4 text-sm ring-1 shadow-lg sm:max-w-sm fixed top-1/2 left-1/2 z-50 w-full -translate-x-1/2 -translate-y-1/2 outline-none",
+                  ? "bg-popover text-popover-foreground ring-foreground/10 grid max-h-[85dvh] gap-4 overflow-y-auto rounded-t-2xl p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-sm ring-1 shadow-lg fixed inset-x-0 bottom-0 z-50 w-full outline-none"
+                  : "bg-popover text-popover-foreground ring-foreground/10 grid max-w-[calc(100%-2rem)] gap-4 rounded-2xl p-5 text-sm ring-1 shadow-lifted sm:max-w-sm fixed top-1/2 left-1/2 z-50 w-full -translate-x-1/2 -translate-y-1/2 outline-none",
                 className
               )}
             >

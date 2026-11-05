@@ -53,7 +53,7 @@ function AlertDialogOverlay({
       <m.div
         {...fadeMotion}
         exit={reduce ? undefined : fadeMotion.exit}
-        className={cn("bg-black/10 supports-backdrop-filter:backdrop-blur-xs fixed inset-0 z-50 data-[state=closed]:pointer-events-none!", className)}
+        className={cn("bg-[color-mix(in_oklch,var(--foreground)_16%,transparent)] supports-backdrop-filter:backdrop-blur-[2px] fixed inset-0 z-50 data-[state=closed]:pointer-events-none!", className)}
       />
     </AlertDialogPrimitive.Overlay>
   )
@@ -97,7 +97,7 @@ function AlertDialogContent({
             <AlertDialogBox
               {...dialogMotion}
               className={cn(
-                "bg-popover text-popover-foreground ring-foreground/10 gap-4 rounded-xl p-4 ring-1 shadow-lg data-[size=default]:max-w-xs data-[size=sm]:max-w-xs data-[size=default]:sm:max-w-sm group/alert-dialog-content fixed top-1/2 left-1/2 z-50 grid w-full -translate-x-1/2 -translate-y-1/2 outline-none",
+                "bg-popover text-popover-foreground ring-foreground/10 gap-4 rounded-2xl p-5 ring-1 shadow-lifted data-[size=default]:max-w-xs data-[size=sm]:max-w-xs data-[size=default]:sm:max-w-sm group/alert-dialog-content fixed top-1/2 left-1/2 z-50 grid w-full -translate-x-1/2 -translate-y-1/2 outline-none",
                 className
               )}
             >
