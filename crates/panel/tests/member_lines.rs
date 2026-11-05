@@ -121,6 +121,11 @@ async fn members_see_lines_status_and_measured_network_without_private_details(
         .bind(assignment)
         .execute(&pool)
         .await?;
+    // Lines follow the policy group standing for original group 1 (ADR 0115).
+    sqlx::query("INSERT INTO singbox_user_policies(user_id,group_id) VALUES($1,singbox_legacy_policy_group(1))")
+        .bind(user)
+        .execute(&pool)
+        .await?;
     sqlx::query("INSERT INTO singbox_nexus_bridge(singleton,import_id,subscription_base,enabled,last_sync_at,activated_at) VALUES(TRUE,$1,'https://subscriptions.example.invalid/assets/',TRUE,$2,$2)").bind(import).bind(now).execute(&pool).await?;
 
     // The bridge validates every legacy status before storing it.

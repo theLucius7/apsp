@@ -1,5 +1,12 @@
 # 执行进度
 
+## 2026-11-06：原权限组并入策略组
+
+- 用户要求把已有数据的套餐对应的权限在策略组里做好（路线图 1.3）。按 [ADR 0115](docs/adr/0115-original-permission-groups-as-policy-groups.md)，迁移 0088 为三个原权限组建立「原权限组 · 00 / 11 / hk5」策略组：分别含 15、25、17 条已接管线路，37、5、1 位成员。决定见 [待定问题](docs/open-questions.md#原权限组并入策略组2026-11-06)。
+- 迁移线路进入策略组但不生成新身份；运行时发布、成员摘要、设备数预算、成员门户与用户诊断改为看策略组；兼容桥写给原面板的组号由策略组推出；接管、放弃准备、线路下线和原组记录接口同步策略组。策略组页显示原组编号和仍由原面板运行的线路数。
+- 生产数据核对：用 2026-11-05 16:51 UTC 的生产备份恢复到本地临时库，迁移前后按旧、新查询计算发布成员（597 条线路-用户-UUID）、17 台接管主机的成员摘要、设备预算（597 条）、门户可用性（308 条）、44 位迁移用户的诊断与兼容桥成员记录，全部逐字节相同；`accesses` 与期望授权前后均为空。
+- 验证：`apsp-panel` 集成测试 `nexus_runtime_takeover`、`member_lines`、`user_accounts`、`legacy_takeover`、`mixed_paths`、`business`、`external_node_access`、`mixed_conversion`、`proxy_resources`、`source_migration`、`singbox_groups`、`node_catalog` 共 76 项通过；`apsp-plugin-singbox` 单元测试 209 项通过；`cargo clippy -p apsp-plugin-singbox -p apsp-panel --all-targets -D warnings` 与 `cargo fmt --all --check` 通过；界面 `bun test` 225 项、浏览器测试 `singbox-entitlement-draft`、`external-access`、`singbox-business` 通过。完整测试套件按主机内存限制未运行，远端 CI 按约定暂停。
+
 ## 2026-11-06：阿里云 CDT 页面去重与重排
 
 - 用户贴出生产页面，指出账号卡片、资源卡片和三份记录互相重复。决定见 [待定问题](docs/open-questions.md#阿里云-cdt-页面去重2026-11-06)，页面结构见 [阿里云插件](docs/alicloud.md#页面结构)。

@@ -37,9 +37,9 @@ pub(crate) async fn compile(
     let mut prepared = Vec::new();
     let mut accounting = Vec::new();
     for mut entry in snapshot.nodes {
-        let found: Option<(i64, Vec<i64>)> = sqlx::query_as("SELECT r.node_id,r.legacy_group_ids FROM singbox_nexus_runtime_nodes r JOIN singbox_nexus_nodes i ON i.id=r.inventory_id WHERE r.server_id=$1 AND i.legacy_node_id=$2")
+        let found: Option<i64> = sqlx::query_scalar("SELECT r.node_id FROM singbox_nexus_runtime_nodes r JOIN singbox_nexus_nodes i ON i.id=r.inventory_id WHERE r.server_id=$1 AND i.legacy_node_id=$2")
             .bind(server).bind(entry.legacy_node_id).fetch_optional(&mut **tx).await?;
-        let Some((id, groups)) = found else {
+        let Some(id) = found else {
             // A retired line keeps its snapshot entry as history but loses its
             // inventory row. Any other missing record is still a fault.
             let imported: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_nexus_nodes WHERE source_id=$1 AND legacy_node_id=$2)")
@@ -50,8 +50,10 @@ pub(crate) async fn compile(
             continue;
         };
         entry.preserved.node.id = id;
-        let members: Vec<(i64,Uuid)> = sqlx::query_as("SELECT i.user_id,i.legacy_uuid FROM singbox_nexus_identities i JOIN singbox_entitlements($1) e ON e.user_id=i.user_id JOIN singbox_nexus_plan_mappings p ON p.package_group_id=e.package_group_id AND p.import_id=i.import_id WHERE e.allowed AND p.legacy_group_id=ANY($2) ORDER BY i.user_id")
-            .bind(at).bind(groups).fetch_all(&mut **tx).await?;
+        // Policy groups decide who may use the line (ADR 0115); members keep
+        // their original client identity on it.
+        let members: Vec<(i64,Uuid)> = sqlx::query_as("SELECT i.user_id,i.legacy_uuid FROM singbox_nexus_identities i JOIN singbox_entitlements($1) e ON e.user_id=i.user_id AND e.allowed WHERE EXISTS(SELECT 1 FROM singbox_user_policies up JOIN singbox_policy_nodes pn ON pn.group_id=up.group_id WHERE up.user_id=i.user_id AND pn.node_id=$2) ORDER BY i.user_id")
+            .bind(at).bind(id).fetch_all(&mut **tx).await?;
         for (user, uuid) in members {
             entry.preserved.node.users.push(nexus_access(
                 user,
@@ -154,7 +156,7 @@ pub(crate) async fn membership(state: &AppState) -> anyhow::Result<()> {
     // One evaluation of every user's entitlement serves all hosts; only hosts
     // whose membership changed are locked and dirtied. The per-host member list
     // and its digest are the same as when each host was read on its own.
-    let hosts: Vec<(i64, Value)> = sqlx::query_as("WITH e AS MATERIALIZED (SELECT user_id,package_group_id FROM singbox_entitlements($1) WHERE allowed) SELECT h.server_id,COALESCE((SELECT jsonb_agg(jsonb_build_array(r.node_id,i.user_id,i.legacy_uuid) ORDER BY r.node_id,i.user_id) FROM singbox_nexus_runtime_nodes r JOIN singbox_nexus_plan_mappings p ON p.legacy_group_id=ANY(r.legacy_group_ids) JOIN e ON e.package_group_id=p.package_group_id JOIN singbox_nexus_identities i ON i.user_id=e.user_id AND i.import_id=p.import_id WHERE r.server_id=h.server_id),'[]'::jsonb) FROM singbox_nexus_runtime_hosts h WHERE h.state='active' ORDER BY h.server_id")
+    let hosts: Vec<(i64, Value)> = sqlx::query_as("WITH e AS MATERIALIZED (SELECT user_id FROM singbox_entitlements($1) WHERE allowed) SELECT h.server_id,COALESCE((SELECT jsonb_agg(jsonb_build_array(m.node_id,m.user_id,m.legacy_uuid) ORDER BY m.node_id,m.user_id) FROM (SELECT DISTINCT r.node_id,i.user_id,i.legacy_uuid FROM singbox_nexus_runtime_nodes r JOIN singbox_policy_nodes pn ON pn.node_id=r.node_id JOIN singbox_user_policies up ON up.group_id=pn.group_id JOIN e ON e.user_id=up.user_id JOIN singbox_nexus_identities i ON i.user_id=e.user_id WHERE r.server_id=h.server_id) m),'[]'::jsonb) FROM singbox_nexus_runtime_hosts h WHERE h.state='active' ORDER BY h.server_id")
         .bind(now_timestamp()).fetch_all(&mut *tx).await?;
     let digests: Vec<String> = hosts
         .iter()

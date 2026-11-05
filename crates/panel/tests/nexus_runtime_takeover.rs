@@ -85,6 +85,11 @@ async fn fixture(panel: &TestPanel) -> Result<(i64, Value, i64)> {
         .bind(group)
         .execute(pool)
         .await?;
+    // The member is in the policy group standing for original group 1 (ADR 0115).
+    sqlx::query("INSERT INTO singbox_user_policies(user_id,group_id) VALUES($1,singbox_legacy_policy_group(1))")
+        .bind(user)
+        .execute(pool)
+        .await?;
     sqlx::query("INSERT INTO singbox_nexus_bridge(singleton,import_id,subscription_base,enabled,last_sync_at,activated_at) VALUES(TRUE,$1,'https://subscriptions.example.invalid/assets/',TRUE,$2,$2)").bind(import).bind(now_timestamp()).execute(pool).await?;
     Ok((server, payload, user))
 }
@@ -327,16 +332,10 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
             StatusCode::BAD_REQUEST
         );
     }
-    // A permission group added at the source after import reaches the runtime.
+    // A permission group added at the source after import reaches the runtime:
+    // the line joins the policy group standing for it, created on first use.
     let groups = format!("/api/plugins/sing-box/nexus-nodes/{inventory}/groups");
     let added = json!({"groups":[{"id":1,"name":"Fixture"},{"id":7,"name":"Added"}]});
-    assert_eq!(
-        panel
-            .admin(Method::PATCH, &groups, &cookie, Some(added.clone()))
-            .await?
-            .status(),
-        StatusCode::CONFLICT
-    );
     for invalid in [
         json!({"groups":[]}),
         json!({"groups":[{"id":1,"name":"Fixture"},{"id":1,"name":"Fixture"}]}),
@@ -350,15 +349,6 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
             StatusCode::BAD_REQUEST
         );
     }
-    let extra: i64 = sqlx::query_scalar("INSERT INTO singbox_package_groups(name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,duration_days) VALUES('TEST_ONLY added',1000000,1,0,0,'UTC',31) RETURNING id")
-        .fetch_one(&pool)
-        .await?;
-    sqlx::query(
-        "INSERT INTO singbox_nexus_plan_mappings SELECT import_id,$1,7,7 FROM singbox_nexus_bridge",
-    )
-    .bind(extra)
-    .execute(&pool)
-    .await?;
     sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
         .bind(server)
         .execute(&pool)
@@ -376,6 +366,17 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     assert_eq!(recorded, vec![1, 7]);
     assert_eq!(display["groups"][1]["name"], "Added");
     assert!(dirty.is_some(), "an active host must republish its members");
+    let held = "SELECT g.legacy_group_id FROM singbox_policy_nodes p JOIN singbox_policy_groups g ON g.id=p.group_id JOIN singbox_nexus_runtime_nodes r ON r.node_id=p.node_id WHERE r.inventory_id=$1 ORDER BY 1";
+    let in_groups: Vec<i64> = sqlx::query_scalar(held)
+        .bind(inventory)
+        .fetch_all(&pool)
+        .await?;
+    assert_eq!(in_groups, vec![1, 7]);
+    let named: String =
+        sqlx::query_scalar("SELECT name FROM singbox_policy_groups WHERE legacy_group_id=7")
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(named, "原权限组 · Added");
     ok(panel
         .admin(
             Method::PATCH,
@@ -385,9 +386,15 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
         )
         .await?)
     .await?;
-    sqlx::query("DELETE FROM singbox_nexus_plan_mappings WHERE legacy_group_id=7")
-        .execute(&pool)
+    let in_groups: Vec<i64> = sqlx::query_scalar(held)
+        .bind(inventory)
+        .fetch_all(&pool)
         .await?;
+    assert_eq!(
+        in_groups,
+        vec![1],
+        "the line leaves only the original group's policy group"
+    );
     // The generic write path stays closed once the bypass transaction ended.
     assert!(
         sqlx::query("UPDATE nodes SET public_host='x.example.invalid' WHERE server_id=$1")
@@ -491,11 +498,14 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
         .fetch_one(&pool)
         .await?;
     assert_eq!(token, "TEST_ONLY unchanged token");
-    // Moving to a different permission group removes the listener without a
+    // Moving to a policy group without the line removes the listener without a
     // password rotation or an accidentally exposed SS single-user listener.
-    sqlx::query("UPDATE singbox_nexus_plan_mappings SET legacy_group_id=2")
-        .execute(&pool)
-        .await?;
+    sqlx::query(
+        "UPDATE singbox_user_policies SET group_id=singbox_legacy_policy_group(2) WHERE user_id=$1",
+    )
+    .bind(user)
+    .execute(&pool)
+    .await?;
     publisher::publish_due(&panel.state).await?;
     sqlx::query("UPDATE servers SET dirty_at=0")
         .execute(&pool)
@@ -771,12 +781,12 @@ async fn expired_device_addresses_are_purged_without_new_reports(pool: PgPool) -
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn unactivated_preparation_can_be_discarded_and_generic_grants_are_refused(
+async fn unactivated_preparation_can_be_discarded_and_policy_groups_keep_identities(
     pool: PgPool,
 ) -> Result<()> {
     let panel = TestPanel::start_with_localhost(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
-    let (server, payload, _) = fixture(&panel).await?;
+    let (server, payload, user) = fixture(&panel).await?;
     let preview = ok(post(&panel, &cookie, "/preview", json!({"payload":payload})).await?).await?;
     let digest = preview["digest"].clone();
     ok(post(
@@ -790,16 +800,38 @@ async fn unactivated_preparation_can_be_discarded_and_generic_grants_are_refused
     let native: i64 = sqlx::query_scalar("SELECT node_id FROM singbox_nexus_runtime_nodes")
         .fetch_one(&pool)
         .await?;
-    // Policy groups would mint new UUIDs; access stays on the legacy groups.
-    let policy = panel
+    // The line already joined the policy group of its original group.
+    let original: i64 = sqlx::query_scalar("SELECT g.legacy_group_id FROM singbox_policy_nodes p JOIN singbox_policy_groups g ON g.id=p.group_id WHERE p.node_id=$1")
+        .bind(native).fetch_one(&pool).await?;
+    assert_eq!(original, 1);
+    // Any policy group may hold a migrated line; it never mints a new UUID.
+    let policy = ok(panel
         .admin(
             Method::POST,
             "/api/plugins/sing-box/policy-groups",
             &cookie,
             Some(json!({"name":"TEST_ONLY policy","node_ids":[native],"chain_ids":[]})),
         )
-        .await?;
-    assert_eq!(policy.status(), StatusCode::CONFLICT);
+        .await?)
+    .await?;
+    assert_eq!(policy["migrated_node_ids"], json!([native]));
+    assert_eq!(policy["legacy_group_id"], Value::Null);
+    let group = policy["id"].as_i64().expect("group id");
+    ok(panel
+        .admin(
+            Method::PUT,
+            &format!("/api/plugins/sing-box/users/{user}/policy-groups"),
+            &cookie,
+            Some(json!({"group_ids":[group]})),
+        )
+        .await?)
+    .await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM accesses")
+            .fetch_one(&pool)
+            .await?,
+        0
+    );
     assert_eq!(
         post(
             &panel,

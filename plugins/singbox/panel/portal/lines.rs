@@ -1,7 +1,7 @@
 //! Member line catalogue and probe panel (ADR 0106).
 //!
 //! A signed-in member sees the lines of the migrated Nexus catalogue: how each
-//! route is built, whether it is in their package, its status, multiplier and
+//! route is built, whether their policy groups include it, its status, multiplier and
 //! carrier latency, and for every host the network attributes measured by the
 //! panel's IP quality datasets. Endpoint addresses, SNI and key material,
 //! monitor identifiers, cities and coordinates, and other members never appear.
@@ -34,6 +34,8 @@ struct Line {
     display: Value,
     tags: Vec<String>,
     taken_over: bool,
+    /// The native node running a taken-over line, served by policy groups.
+    runtime_node: Option<i64>,
 }
 
 struct Host {
@@ -249,9 +251,29 @@ pub(super) async fn view(
     .fetch_optional(&mut *tx)
     .await?
     .flatten();
+    // Which lines the member may use follows policy groups (ADR 0115): the old
+    // panel lists the lines of their one original group, and a taken-over line
+    // also needs a policy group that holds it.
+    let allowed: bool = sqlx::query_scalar(
+        "SELECT COALESCE(bool_or(allowed),FALSE) FROM singbox_entitlements($1) WHERE user_id=$2",
+    )
+    .bind(now)
+    .bind(user)
+    .fetch_one(&mut *tx)
+    .await?;
+    let original: Option<i64> = sqlx::query_scalar("SELECT singbox_member_legacy_group($1)")
+        .bind(user)
+        .fetch_one(&mut *tx)
+        .await?;
+    let served: BTreeSet<i64> = sqlx::query_scalar::<_, i64>("SELECT DISTINCT pn.node_id FROM singbox_user_policies up JOIN singbox_policy_nodes pn ON pn.group_id=up.group_id WHERE up.user_id=$1")
+        .bind(user)
+        .fetch_all(&mut *tx)
+        .await?
+        .into_iter()
+        .collect();
     let mappings: Vec<(i64, i64, String)> = sqlx::query_as("SELECT p.legacy_group_id,p.package_group_id,g.name FROM singbox_nexus_plan_mappings p JOIN singbox_nexus_bridge b ON b.import_id=p.import_id AND b.enabled JOIN singbox_package_groups g ON g.id=p.package_group_id WHERE p.legacy_group_id IS NOT NULL ORDER BY g.name,g.id")
         .fetch_all(&mut *tx).await?;
-    let rows = sqlx::query("SELECT n.legacy_node_id,n.server_id,n.display,(r.node_id IS NOT NULL AND h.state='active') AS taken_over FROM singbox_nexus_nodes n LEFT JOIN singbox_nexus_runtime_nodes r ON r.inventory_id=n.id LEFT JOIN singbox_nexus_runtime_hosts h ON h.server_id=r.server_id WHERE COALESCE((n.display->>'visible')::BOOLEAN,FALSE) ORDER BY COALESCE((n.display->>'sort_order')::BIGINT,0),n.legacy_node_id LIMIT 2000")
+    let rows = sqlx::query("SELECT n.legacy_node_id,n.server_id,n.display,(r.node_id IS NOT NULL AND h.state='active') AS taken_over,r.node_id AS runtime_node FROM singbox_nexus_nodes n LEFT JOIN singbox_nexus_runtime_nodes r ON r.inventory_id=n.id LEFT JOIN singbox_nexus_runtime_hosts h ON h.server_id=r.server_id WHERE COALESCE((n.display->>'visible')::BOOLEAN,FALSE) ORDER BY COALESCE((n.display->>'sort_order')::BIGINT,0),n.legacy_node_id LIMIT 2000")
         .fetch_all(&mut *tx).await?;
     let lines: Vec<Line> = rows
         .iter()
@@ -271,6 +293,7 @@ pub(super) async fn view(
                 taken_over: row
                     .try_get::<Option<bool>, _>("taken_over")?
                     .unwrap_or(false),
+                runtime_node: row.try_get("runtime_node")?,
             })
         })
         .collect::<Result<_, sqlx::Error>>()?;
@@ -427,7 +450,9 @@ pub(super) async fn view(
                 );
             }
         }
-        let access = package.is_some_and(|package| plans.contains_key(&package));
+        let access = allowed
+            && original.is_some_and(|group| groups.contains(&group))
+            && (!line.taken_over || line.runtime_node.is_some_and(|node| served.contains(&node)));
         let enabled = line.display["enabled"] == true;
         let host = hosts.get(&line.server_id);
         let (online, checked_at, source) = if let Some(host) = host.filter(|_| line.taken_over) {

@@ -22,7 +22,7 @@ pub(crate) const FRESH_SECS: i64 = 60;
 const RETAIN_SECS: i64 = 300;
 
 /// Members currently authorized on a host's taken-over nodes.
-pub(crate) const HOST_MEMBERS: &str = "SELECT r.node_id,i.user_id FROM singbox_nexus_runtime_nodes r JOIN singbox_nexus_plan_mappings p ON p.legacy_group_id=ANY(r.legacy_group_ids) JOIN singbox_entitlements($2) e ON e.package_group_id=p.package_group_id AND e.allowed JOIN singbox_nexus_identities i ON i.user_id=e.user_id AND i.import_id=p.import_id WHERE r.server_id=$1";
+pub(crate) const HOST_MEMBERS: &str = "SELECT DISTINCT r.node_id,i.user_id FROM singbox_nexus_runtime_nodes r JOIN singbox_policy_nodes pn ON pn.node_id=r.node_id JOIN singbox_user_policies up ON up.group_id=pn.group_id JOIN singbox_entitlements($2) e ON e.user_id=up.user_id AND e.allowed JOIN singbox_nexus_identities i ON i.user_id=e.user_id WHERE r.server_id=$1";
 
 fn principal(value: &str) -> Option<(i64, i64)> {
     let (user, node) = value.strip_prefix('u')?.split_once("_n")?;

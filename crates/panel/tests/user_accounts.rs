@@ -505,6 +505,52 @@ async fn diagnosis_explains_where_a_migrated_user_gets_their_lines(pool: PgPool)
     )
     .await?)
     .await?;
+    // A package alone no longer decides lines: the member needs the policy group
+    // standing for the original group (ADR 0115).
+    let outside = diagnosis(&panel, &cookie, user).await?;
+    assert_eq!(outside["subscription"]["status"], "blocked");
+    assert!(
+        outside["subscription"]["message"]
+            .as_str()
+            .context("message")?
+            .contains("不在任何原权限组对应的策略组中")
+    );
+    let (nine, three): (i64, i64) =
+        sqlx::query_as("SELECT singbox_legacy_policy_group(9),singbox_legacy_policy_group(3)")
+            .fetch_one(&pool)
+            .await?;
+    for (groups, expected) in [
+        (vec![nine, three], Some(9_i64)),
+        (vec![three], Some(3)),
+        (vec![], None),
+    ] {
+        ok(request(
+            &panel,
+            Method::PUT,
+            &format!("{ROOT}/users/{user}/policy-groups"),
+            &cookie,
+            json!({"group_ids":groups}),
+        )
+        .await?)
+        .await?;
+        let original: Option<i64> = sqlx::query_scalar("SELECT singbox_member_legacy_group($1)")
+            .bind(user)
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(
+            original, expected,
+            "the package's original group wins, then the lowest"
+        );
+    }
+    ok(request(
+        &panel,
+        Method::PUT,
+        &format!("{ROOT}/users/{user}/policy-groups"),
+        &cookie,
+        json!({"group_ids":[nine]}),
+    )
+    .await?)
+    .await?;
     let ready = diagnosis(&panel, &cookie, user).await?;
     assert_eq!(ready["subscription"]["status"], "legacy");
     let message = ready["subscription"]["message"]
@@ -516,7 +562,7 @@ async fn diagnosis_explains_where_a_migrated_user_gets_their_lines(pool: PgPool)
     );
     assert_eq!(
         ready["legacy"]["lines"],
-        json!([{"name":"香港 01","server_id":server,"taken_over":false}])
+        json!([{"name":"香港 01","server_id":server,"taken_over":false,"served":true}])
     );
     assert_eq!(ready["permissions"], json!([]));
     Ok(())
