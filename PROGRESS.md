@@ -1,5 +1,14 @@
 # 执行进度
 
+## 2026-11-05：三网拨测、Agent 0.3.5 发布与 OpenRC 升级停机
+
+- 用户要求为服务器设置拨测。生产库原来没有任何延迟任务。新建三个统一任务：广东电信 202.96.128.86、广东联通 221.5.88.88、广东移动 211.136.192.6（与旧 Komari 相同），ICMP、IPv4、每 60 秒，分配给全部服务器并默认分配给新服务器。授权由用户决定照实登记：运营商公共 DNS，未单独取得书面同意。
+- 首批样本中约四成显示「检测不可用」。原因是 Linux 的 `ping -c 4 -w 6`：iputils 带截止时间时会一直发包，直到收满 4 个回包，丢包时发送数超过 4，解析器拒绝。#210 去掉 `-w`。
+- `agent-v0.3.5` 从 `b0522e0c`（#212）发布，包含 #210 和 #209 的 Agent 侧优化。#212 顺带修复自 #206 起失败的核心边界检查。main CI 全部通过（arm64 GNU 运行时任务因 snapshot.debian.org 返回 503/504 重跑过一次），VPS 第二把根签名，本地 `release.py verify --publication` 通过后发布。按 AGENTS.md 的例外，发布后重新停用 `CI` 与 `Signed release draft`。
+- 已导入生产面板，16 台在线主机逐台临时打开自动更新升到 0.3.5，再关回；oracle-sg2 离线，仍为 0.3.4。升级后一小时三网各 944 个样本，「不可用」为 0。
+- 事故：三台 Alpine/OpenRC 主机（aliyun-hk1/hk2/hk3）在 Agent 升级时运行时被停掉，线路分别中断约 4、3、2 分钟，手动 `rc-service apsp-singbox@main start` 后恢复，停机前最后一个采样窗口的用量可能漏记。原因与取舍见[待定问题](docs/open-questions.md)，升级前检查见[设备平台与能力](docs/platforms.md#openrc)。本次修复让 `SystemOps::execute` 的命令进入独立进程组，并加回归测试；随下一个 Agent 版本生效。
+- 验证：`cargo test -p apsp-agent-core --lib system` 51 项通过（新测试在去掉修复时失败），`cargo clippy -p apsp-agent-core --all-targets -- -D warnings`、`cargo fmt --check` 通过。本机内存有限且运行生产服务，未跑全工作区测试；远端 CI 已按约定停用，未运行。
+
 ## 2026-11-05：删除成员运营，邀请改为名额，授权只走策略组
 
 - 用户要求：删掉 Nexus 迁移带来的成员运营；原来的用户仍可邀请别人，从按金额改为邀请码与名额，余额换算过来；代理用户不需要单独授权，授权一个组即可；用户诊断页对迁移用户显示有误；规划后续功能与升级优化。
