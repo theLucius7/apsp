@@ -30,6 +30,8 @@ Unix 默认配置 `/etc/apsp/agent.toml`、Agent `/opt/apsp/core`、状态 `/var
 
 OpenRC 安装要求 `supervise-daemon` 支持 capabilities/no_new_privs，并安装 CA、curl、基础账号/文件工具与 `unshare`。安装后将两个服务加入 default runlevel，刷新依赖树。Agent 与代理分别监督，日志在 `/var/log/apsp/`；更新只重启 Agent，reload 将 HUP 发送到实际代理子进程。
 
+**Agent 0.3.5 及更早版本在 OpenRC 上的升级风险（2026-11-05）：** 这些版本用 `rc-service` 启停运行时时，运行时的 `supervise-daemon` 留在 Agent 工作进程的进程组里。Agent 升级或重启会向整个进程组发 SIGTERM，于是运行时被一起停掉，服务显示 `stopped`；新 Agent 只报「上一次应用的运行时不健康」，不会自己拉起。修复版本把这些命令放进独立进程组，但升级到修复版本的那一次仍由旧代码执行。所以在 OpenRC 主机上升级 Agent 前，先比较两个进程组：`cut -d')' -f2 /proc/$(cat /run/apsp-singbox@main.pid)/stat | awk '{print $3}'` 与 `apsp-agent ... run` 进程的 PID。两者相等时，先在管理员 shell 里执行 `rc-service apsp-singbox@main restart` 让运行时脱离该进程组，再升级；升级后用 `rc-service apsp-singbox@main status` 确认仍为 started。
+
 NodeQuality 使用独立一次性服务、独立挂载命名空间、超时与持久终态；Agent 重启不重启已开始的诊断。自 2026-10-03 起诊断启动要求 systemd/cgroup v2 的 CPU 硬上限与 swap 系统调用保护，OpenRC 无法证明这些保护，真实 Agent 一律拒绝且不创建服务、不运行负载；OpenRC CI 校验这一拒绝边界。公网 NodeQuality 性能结果仍须独立验收。详见 [ADR 0021](adr/0021-openrc-services.md)、[ADR 0022](adr/0022-agent-capability-alignment.md)。
 
 ## 监控、任务与更新

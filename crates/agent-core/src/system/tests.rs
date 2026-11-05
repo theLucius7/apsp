@@ -400,3 +400,37 @@ async fn real_systemd_diagnostic_jobs_survive_manager_recreation_and_enforce_tim
     std::fs::remove_dir_all(directory)?;
     result
 }
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn executed_commands_leave_the_worker_process_group() -> Result<()> {
+    // A daemon started through `execute` (OpenRC's supervise-daemon via rc-service)
+    // must not receive the group signal that stops the Agent worker during an update.
+    let output = SystemOps
+        .execute(
+            Path::new("/bin/sh"),
+            &[
+                "-c".into(),
+                r#"echo "$$ $(cut -d')' -f2 /proc/$$/stat | awk '{print $3}')""#.into(),
+            ],
+        )
+        .await?;
+    ensure!(output.success, "{}", output.stderr);
+    let fields: Vec<u32> = output
+        .stdout
+        .split_whitespace()
+        .map(str::parse)
+        .collect::<Result<_, _>>()?;
+    let worker_group = std::fs::read_to_string("/proc/self/stat")?
+        .rsplit_once(')')
+        .and_then(|(_, rest)| rest.split_whitespace().nth(2).map(str::to_owned))
+        .context("own process group")?
+        .parse::<u32>()?;
+    ensure!(fields.len() == 2, "unexpected output {:?}", output.stdout);
+    assert_eq!(
+        fields[0], fields[1],
+        "the command leads its own process group"
+    );
+    assert_ne!(fields[1], worker_group);
+    Ok(())
+}

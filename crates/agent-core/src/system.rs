@@ -279,12 +279,17 @@ impl Privileged for SystemOps {
                 }),
                 "service management requires Linux"
             );
-            let output = timeout(
-                COMMAND_TIMEOUT,
-                Command::new(program).args(args).kill_on_drop(true).output(),
-            )
-            .await
-            .context("command exceeded 30 seconds")??;
+            let mut command = Command::new(program);
+            command.args(args).kill_on_drop(true);
+            // The Agent supervisor stops a worker by signalling its whole process group.
+            // OpenRC's supervise-daemon keeps the group of whoever ran `rc-service`, so a
+            // runtime started from here would be stopped with the worker on every Agent
+            // update or restart. A new group keeps such daemons independent, as systemd does.
+            #[cfg(all(unix, not(target_os = "macos")))]
+            command.process_group(0);
+            let output = timeout(COMMAND_TIMEOUT, command.output())
+                .await
+                .context("command exceeded 30 seconds")??;
             if publication && output.status.success() {
                 publication::sync(args).await?;
             }
