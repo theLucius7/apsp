@@ -104,6 +104,14 @@ try {
     }
     unexpected.push(`${method} ${path}`); return respond({ error: 'Unexpected request' }, 500)
   })
+  // Rarely used actions live in each card's menu; the trigger names the card's subject.
+  const choose = async (scope, menu, item) => { await scope.getByRole('button', { name: menu, exact: true }).click(); await page.getByRole('menu').getByRole('menuitem', { name: item, exact: true }).click() }
+  const menuItem = async (scope, menu, item) => {
+    await scope.getByRole('button', { name: menu, exact: true }).click()
+    const entries = page.getByRole('menu').getByRole('menuitem', { name: item, exact: true }), count = await entries.count(), disabled = count ? await entries.isDisabled() : null
+    await page.keyboard.press('Escape'); await page.getByRole('menu').waitFor({ state: 'hidden' })
+    return { count, disabled }
+  }
   await installControlCenterFixtures(page)
   await page.goto(`${origin}/#/plugins/alicloud`)
   await page.getByRole('heading', { name: '阿里云 CDT 与带宽', exact: true }).waitFor()
@@ -121,7 +129,7 @@ try {
   await page.getByRole('heading', { name: '测试云账号' }).waitFor()
   assert.equal((await page.locator('body').innerText()).includes('TEST_ONLY_SECRET'), false)
   assert.equal(await page.getByText('1234.5600 USD', { exact: true }).count(), 0)
-  await page.getByRole('button', { name: '编辑账号与策略' }).click()
+  await choose(page, '账号操作', '编辑账号与策略')
   dialog = page.getByRole('dialog')
   assert.equal(await dialog.getByLabel(/^云凭据标识/).inputValue(), credentialId)
   assert.equal(await dialog.getByLabel(/访问密钥/).count(), 0)
@@ -141,7 +149,7 @@ try {
   // exposing them, then explicitly move it back to the encrypted reference.
   overview.accounts[0].credential_id = null; overview.accounts[0].revision++
   await page.reload()
-  await page.getByRole('button', { name: '编辑账号与策略', exact: true }).click()
+  await choose(page, '账号操作', '编辑账号与策略')
   dialog = page.getByRole('dialog')
   assert.equal(await dialog.getByLabel(/^凭据来源/).inputValue(), 'legacy')
   assert.equal(await dialog.getByLabel(/^旧兼容访问密钥 ID/).inputValue(), '')
@@ -151,21 +159,21 @@ try {
   const legacyWrite = writes.at(-1).body
   assert.equal(legacyWrite.legacy_credentials, true)
   for (const field of ['credential_id', 'access_key_id', 'access_key_secret']) assert.equal(Object.hasOwn(legacyWrite, field), false)
-  await page.getByRole('button', { name: '编辑账号与策略', exact: true }).click()
+  await choose(page, '账号操作', '编辑账号与策略')
   dialog = page.getByRole('dialog')
   await dialog.getByLabel(/^凭据来源/).selectOption('center')
   await dialog.getByLabel(/^云凭据标识/).fill(credentialId)
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
   assert.equal(overview.accounts[0].credential_id, credentialId)
-  await page.getByRole('button', { name: '登记资源', exact: true }).click()
+  await choose(page, '账号操作', '登记资源')
   dialog = page.getByRole('dialog')
   await dialog.getByLabel('资源名称').fill('测试 ECS')
   await dialog.getByLabel('地域标识').fill('cn-hangzhou')
   await dialog.getByLabel('ECS 实例 ID').fill('i-testonly')
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
   await page.getByRole('heading', { name: '测试 ECS' }).waitFor()
-  await page.getByRole('button', { name: '调整带宽与计费' }).click()
+  await choose(page, '资源操作', '调整带宽与计费')
   dialog = page.getByRole('dialog')
   await dialog.getByLabel('公网出带宽').fill('1')
   await dialog.getByRole('button', { name: '预览变更' }).click()
@@ -179,14 +187,14 @@ try {
   failConfirm = false
   await confirm.click()
   await page.getByText('结果待核对', { exact: true }).waitFor()
-  assert.equal(await page.getByRole('button', { name: '调整带宽与计费' }).isDisabled(), true)
+  assert.equal((await menuItem(page, '资源操作', '调整带宽与计费')).disabled, true)
   await page.getByRole('button', { name: '已人工核对' }).click()
   dialog = page.getByRole('dialog')
   assert.equal(await dialog.getByRole('button', { name: '结束跟踪并暂停资源策略' }).isDisabled(), true)
   await dialog.getByLabel('已核对云端结果，确认结束跟踪').check()
   await dialog.getByRole('button', { name: '结束跟踪并暂停资源策略' }).click()
   await page.getByText('已人工结束跟踪', { exact: true }).waitFor()
-  await page.getByRole('button', { name: '配置自动启停' }).click()
+  await choose(page, '资源操作', '配置自动启停')
   dialog = page.getByRole('dialog')
   assert.equal(await dialog.getByLabel('启用自动启停策略').isChecked(), false)
   await dialog.getByLabel('启用自动启停策略').check()
@@ -213,8 +221,8 @@ try {
   failPowerConfirm = false; await powerConfirm.click()
   await dialog.waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: '核对并结束跟踪' }).waitFor()
-  assert.equal(await page.getByRole('button', { name: '开机', exact: true }).isDisabled(), true)
-  assert.equal(await page.getByRole('button', { name: '调整带宽与计费' }).isDisabled(), true)
+  assert.equal(await page.getByRole('button', { name: '停机', exact: true }).isDisabled(), true)
+  assert.equal((await menuItem(page, '资源操作', '调整带宽与计费')).disabled, true)
   await page.getByRole('button', { name: '核对并结束跟踪' }).click()
   dialog = page.getByRole('alertdialog'); await dialog.getByRole('button', { name: '结束跟踪', exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
@@ -222,7 +230,7 @@ try {
   dialog = page.getByRole('alertdialog'); await dialog.getByRole('button', { name: '恢复自动开机', exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
   assert.equal(overview.resources[0].manual_hold, false)
-  await page.getByRole('button', { name: '配置自动启停' }).click()
+  await choose(page, '资源操作', '配置自动启停')
   dialog = page.getByRole('dialog')
   await dialog.getByLabel('启停策略类型').selectOption('cdt')
   await dialog.getByLabel('CDT 停机线（GiB）', { exact: true }).fill('150')
@@ -243,32 +251,42 @@ try {
   failRead = true; await page.getByRole('button', { name: '刷新', exact: true }).click()
   await page.getByText('测试：云状态不可用').waitFor()
   assert.equal(await page.getByRole('button', { name: '添加云账号' }).isDisabled(), true)
-  assert.equal(await page.getByRole('button', { name: '调整带宽与计费' }).isDisabled(), true)
-  assert.equal(await page.getByRole('button', { name: '开机', exact: true }).isDisabled(), true)
-  assert.equal(await page.getByRole('button', { name: '配置自动启停' }).isDisabled(), true)
+  assert.equal((await menuItem(page, '资源操作', '调整带宽与计费')).disabled, true)
+  assert.equal(await page.getByRole('button', { name: '停机', exact: true }).isDisabled(), true)
+  assert.equal((await menuItem(page, '资源操作', '配置自动启停')).disabled, true)
   // Both migrated accounts can query attached EIP configuration independently.
   failRead = false
   const template = structuredClone(overview.resources[0]), accountTemplate = structuredClone(overview.accounts[0])
   overview.accounts = [1, 2].map(n => ({ ...accountTemplate, id: `account${n}`, name: `测试 CDT 账号 ${n}` }))
   overview.resources = [2000, 500].map((bandwidth, index) => ({ ...structuredClone(template), id: `resource${index + 1}`, account_id: `account${index + 1}`, name: `测试 CDT 实例 ${index + 1}`, cloud_id: `i-testonly${index + 1}`, error_code: null, snapshot: { ...snap, cloud_id: `i-testonly${index + 1}`, bandwidth_mbps: bandwidth, charge_type: 'PayByDominantTraffic', attached_eip_id: `eip-testonly${index + 1}` } }))
+  // Realistic guard month state: the row measures it against the stop line.
+  overview.resources.forEach((resource, index) => { resource.power_policy.enabled = true; resource.cdt_guard_state = { billing_cycle: month, region: resource.region, cloud_id: resource.cloud_id, account_revision: accountTemplate.revision, max_usage_bytes: Math.round([16.36, 145][index] * 1024 ** 3), max_jump_bytes: Math.round([2.16, 3.77][index] * 1024 ** 3), queried_at: now } })
   overview.operations = []; overview.power_jobs = []
   await page.reload()
+  await page.getByText('距停机线 133.64 GiB', { exact: true }).waitFor()
+  await page.getByText('距停机线 5 GiB', { exact: true }).waitFor()
   await page.getByText('2000 Mbps · 按主流量计费', { exact: true }).waitFor()
   await page.getByText('500 Mbps · 按主流量计费', { exact: true }).waitFor()
   assert.equal(await page.getByText('查询异常', { exact: true }).count(), 0)
-  const articles = page.locator('article').filter({ has: page.getByRole('button', { name: '查询当前配置', exact: true }) })
+  const articles = page.locator('article[data-slot=cloud-resource]')
   assert.equal(await articles.count(), 2)
   const previousWrites = writes.length
   for (let index = 0; index < 2; ++index) {
     const article = articles.nth(index)
+    // IDs are folded into the resource details.
+    assert.equal((await article.innerText()).includes(`eip-testonly${index + 1}`), false)
+    await article.getByText('详情', { exact: true }).click()
     assert((await article.innerText()).includes(`eip-testonly${index + 1}`))
     // Resource text renders before the overview is marked ready; wait for the power
     // control to become usable so the bandwidth check below runs against a ready page.
-    const start = article.getByRole('button', { name: '开机', exact: true })
-    for (const deadline = Date.now() + 5000; !await start.isEnabled() && Date.now() < deadline;) await page.waitForTimeout(25)
-    assert.equal(await start.isEnabled(), true)
-    assert.equal(await article.getByRole('button', { name: '调整带宽与计费' }).isDisabled(), true)
-    await Promise.all([page.waitForResponse(response => response.url().endsWith(`/resource${index + 1}/refresh`)), article.getByRole('button', { name: '查询当前配置' }).click()])
+    const stop = article.getByRole('button', { name: '停机', exact: true })
+    for (const deadline = Date.now() + 5000; !await stop.isEnabled() && Date.now() < deadline;) await page.waitForTimeout(25)
+    assert.equal(await stop.isEnabled(), true)
+    assert.equal(await article.getByRole('button', { name: '开机', exact: true }).count(), 0, 'A running instance offers only the stop action')
+    // An attached EIP's bandwidth is managed in the EIP console, so the action is not offered.
+    assert.equal((await menuItem(article, '资源操作', '调整带宽与计费')).count, 0)
+    await article.getByRole('button', { name: '资源操作', exact: true }).click()
+    await Promise.all([page.waitForResponse(response => response.url().endsWith(`/resource${index + 1}/refresh`)), page.getByRole('menu').getByRole('menuitem', { name: '查询当前配置', exact: true }).click()])
   }
   assert.deepEqual(writes.slice(previousWrites).map(w => w.path), ['/api/plugins/alicloud/resources/resource1/refresh', '/api/plugins/alicloud/resources/resource2/refresh'])
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)

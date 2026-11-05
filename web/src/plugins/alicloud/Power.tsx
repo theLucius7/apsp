@@ -1,18 +1,16 @@
 import { useState } from 'react'
 import { api } from '../../api'
-import { Badge, Confirm, Empty, ErrorNotice, Field, Modal, DialogPresence } from '../../components'
+import { ErrorNotice, Field, Modal } from '../../components'
 import { useAction } from '../../hooks'
-import { defaultPowerPolicy, message, powerSource, powerStatus, status, stopMode, time, utcOffset } from './types'
-import type { Account, CloudEvent, PowerJob, PowerPolicy, Resource } from './types'
+import { defaultPowerPolicy, powerStatus, stopMode, time, utcOffset } from './types'
+import type { PowerJob, PowerPolicy, Resource } from './types'
 import { checked, operationError, powerError, resourceError } from './guards'
 import type { CurrentCloud } from './guards'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
-import { CdtGuardDetails, CdtGuardFields, defaultCdtGuard } from './CdtGuard'
+import { CdtGuardFields, defaultCdtGuard } from './CdtGuard'
 
 type Events = { close: () => void; saved: () => void; available: boolean; current: CurrentCloud; refresh: () => void }
 export function PowerPolicyEditor({ resource, close, saved, current }: Events & { resource: Resource }) {
@@ -45,22 +43,4 @@ export function PowerEditor({ resource, action: verb, close, saved, current, ref
       {verb === 'stop' && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">正常关机，不强制断电。普通停机继续收费；节省停机仍可能收取磁盘等费用，并可能释放固定公网 IP。手动停机会暂停计划开机与保活，直到手动开机或恢复自动策略。</p>}<p className="text-muted-foreground mt-3 text-xs leading-relaxed">确认后进入任务队列，只有云端状态核对完成才显示成功。已发送的命令不能取消，未知结果不会重复发送。</p>
     </div><footer><Button variant="outline" type="button" disabled={action.busy} onClick={preview ? () => { setPreview(null); setConfirmed(false) } : close}>{preview ? '重新预览' : '取消'}</Button><Button disabled={action.busy || Boolean(writeError()) || (!!preview && !confirmed)}>{preview ? '确认执行启停' : '预览启停操作'}</Button></footer>
   </form></Modal>
-}
-export function PowerDetails({ resource }: { resource: Resource }) {
-  const p = resource.power_policy, s = resource.power_state
-  return <><dl className="my-5 grid gap-4 sm:grid-cols-2"><div><dt className="text-muted-foreground mb-1.5 text-xs">实例运行状态</dt><dd className="m-0 wrap-anywhere">{powerStatus(s?.status)}{s?.locked ? ' · 云端锁定' : ''}{s?.status === 'Stopped' ? ` · ${s.stopped_mode ? stopMode(s.stopped_mode) : '停机模式待核实'}` : ''}</dd></div><div><dt className="text-muted-foreground mb-1.5 text-xs">当前公网 IP（启停查询）</dt><dd className="m-0 wrap-anywhere">{s ? s.public_ips.join('、') || '未分配' : '尚未查询'}</dd></div><div><dt className="text-muted-foreground mb-1.5 text-xs">启停查询时间</dt><dd className="m-0 wrap-anywhere">{time(resource.power_checked_at ?? null)}</dd></div><div><dt className="text-muted-foreground mb-1.5 text-xs">自动启停</dt><dd className="m-0 wrap-anywhere">{p?.enabled ? '已启用' : '已关闭'}{resource.manual_hold ? ' · 手动暂停开机' : ''}{resource.threshold_hold ? ' · 流量停机保护' : ''}</dd></div><div><dt className="text-muted-foreground mb-1.5 text-xs">每日计划</dt><dd className="m-0 wrap-anywhere">{p?.schedule_enabled ? `${p.start_time} 开机 / ${p.stop_time} 停机 · ${utcOffset(p.utc_offset_minutes)}` : '未启用'}</dd></div><div><dt className="text-muted-foreground mb-1.5 text-xs">抢占式保活</dt><dd className="m-0 wrap-anywhere">{p?.keepalive ? '已配置' : '未启用'}{s?.spot_strategy === 'NoSpot' ? ' · 当前非抢占式实例' : ''}{s?.interruption_behavior === 'Terminate' ? ' · 云端中断会释放实例，释放后无法保活' : ''}</dd></div></dl><ErrorNotice message={message(resource.power_error)} /><CdtGuardDetails resource={resource} /></>
-}
-export function CostDetails({ account, resource }: { account?: Account; resource?: Resource }) {
-  if (account?.balance_enabled === false) return <p className="text-muted-foreground text-sm">余额查询已关闭，可在账号设置中按需启用。</p>
-  if (account) return <><p className="m-0 text-sm leading-relaxed">账户可用额度：<strong>{account.balance ? `${account.balance.available} ${account.balance.currency}` : '尚未查询'}</strong></p><p className="text-muted-foreground mt-3 text-xs leading-relaxed">余额缓存：{time(account.balance?.queried_at ?? null)} · 默认每 6 小时更新；可用额度以云端为准，包含账期延迟。旧值不代表当前余额。</p><ErrorNotice message={account.balance_error ? `余额：${message(account.balance_error)}` : ''} /></>
-  if (!resource) return null
-  const bill = resource.instance_bill, labels: Record<string, string> = { SubscriptionOrder: '预付订单', PayAsYouGoBill: '后付账单', Refund: '退款', Adjustment: '调账' }
-  return <details><summary className="cursor-pointer text-sm font-medium">实例账单与缓存</summary><p className="text-muted-foreground mt-3 text-xs leading-relaxed">{bill?.month ?? '当月'} · 更新：{time(bill?.queried_at ?? null)} · 缓存 6 小时，跨月重新查询；不同币种不混加。云账单有延迟，无项目不代表没有费用。</p><ErrorNotice message={message(resource.bill_error)} />{bill?.rows.map((row, index) => <p key={index}>{labels[row.item] ?? '账单项目'}：{row.amount} {row.currency}</p>)}</details>
-}
-export function PowerHistory({ jobs, resources, events, available, current, reload }: { jobs: PowerJob[]; resources: Resource[]; events: CloudEvent[]; available: boolean; current: CurrentCloud; reload: () => void }) {
-  const action = useAction(), [dismiss, setDismiss] = useState<PowerJob | null>(null)
-  return <><Panel><PanelHeader><PanelTitle>启停任务</PanelTitle><span className="text-muted-foreground text-xs">最近 100 条 · 保留 180 天</span></PanelHeader><ErrorNotice message={action.error} />{!jobs.length ? <Empty title="暂无启停任务" description="手动、阈值、每日计划与保活任务会显示在这里。" /> : <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>实例 / 时间</TableHead><TableHead>操作与来源</TableHead><TableHead>状态</TableHead><TableHead>操作</TableHead></TableRow></TableHeader><TableBody>{jobs.map(job => <TableRow key={job.id}><TableCell>{resources.find(r => r.id === job.resource_id)?.name ?? job.before_state.cloud_id}<small className="text-muted-foreground mt-1.5 block wrap-anywhere">{time(job.created_at)}</small></TableCell><TableCell>{job.action === 'start' ? '开机' : stopMode(job.stop_mode)}<small className="text-muted-foreground mt-1.5 block wrap-anywhere">{powerSource(job.source)}</small></TableCell><TableCell><Badge tone={job.status === 'succeeded' ? 'good' : ['failed', 'uncertain'].includes(job.status) ? 'warm' : 'neutral'}>{job.status === 'failed' ? '未按预期完成' : status(job.status)}</Badge><small className="text-muted-foreground mt-1.5 block wrap-anywhere">{message(job.error_code)}</small>{job.request_id && <small className="text-muted-foreground mt-1.5 block wrap-anywhere">云请求：{job.request_id}</small>}</TableCell><TableCell>{['preview', 'queued'].includes(job.status) && <Button variant="ghost" size="sm" disabled={!available || action.busy} onClick={() => void action.run(() => checked(() => operationError(current, job, true, ['preview', 'queued']), () => api(`/api/plugins/alicloud/power-jobs/${job.id}/cancel`, 'POST')), reload)}>取消任务</Button>}{job.status === 'uncertain' && <Button variant="ghost" size="sm" disabled={!available || action.busy} onClick={() => setDismiss(job)}>核对并结束跟踪</Button>}</TableCell></TableRow>)}</TableBody></Table></div>}</Panel>
-    <Panel><PanelHeader><PanelTitle>云资源通知</PanelTitle><a className="text-primary underline-offset-4 hover:underline" href="#/monitoring/settings">配置通知渠道</a></PanelHeader>{!events.length ? <Empty title="暂无云资源事件" description="流量阈值和启停结果保存在这里，并发送到已启用的 Telegram / Webhook。" /> : <div className="p-4">{events.map(event => <article className="border-b py-3.5 last:border-0 wrap-anywhere" key={event.id}><strong>{event.title} · {resources.find(r => r.id === event.resource_id)?.name ?? '已移除资源'}</strong><p>{event.message}</p><small className="text-muted-foreground text-xs">{time(event.created_at)}{event.deliveries.length === 0 ? ' · 未配置外部通知，仅保存站内事件' : ''}</small>{event.deliveries.map(d => <p className="text-muted-foreground mt-3 text-xs leading-relaxed" key={d.channel}>{d.channel === 'telegram' ? 'Telegram' : 'Webhook'}：{({ pending: '等待投递', sent: '已送达', failed: '投递失败', cancelled: '已取消' })[d.status] ?? '状态未知'} · 尝试 {d.attempts} 次{d.last_error ? ` · ${d.last_error}` : ''}</p>)}</article>)}</div>}</Panel>
-    <DialogPresence>{dismiss && <Confirm title="结束启停跟踪" confirmLabel="结束跟踪" busyLabel="正在处理…" busy={action.busy} error={action.error} confirmDisabled={Boolean(operationError(current, dismiss, true, ['uncertain']))} onClose={() => setDismiss(null)} onConfirm={() => void action.run(() => checked(() => operationError(current, dismiss, true, ['uncertain']), () => api(`/api/plugins/alicloud/power-jobs/${dismiss.id}/dismiss`, 'POST')), () => { setDismiss(null); reload() })}>请先在阿里云核对实例状态及收费模式。结束跟踪不会撤回命令，会暂停此资源的自动启停和降速，并保留手动暂停标记。</Confirm>}</DialogPresence>
-  </>
 }

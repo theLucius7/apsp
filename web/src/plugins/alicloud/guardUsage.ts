@@ -12,3 +12,11 @@ export function cdtGuardExceeded(account: Account, resource: Resource, now = Dat
   return BigInt(state.max_usage_bytes) + BigInt(backlog) >= BigInt(config.threshold_bytes)
 }
 
+/** The guard's month state against its stop line, for the resource row and its details. */
+export function cdtGuardProgress(resource: Resource, now = Date.now() / 1000) {
+  const config = resource.power_policy?.cdt_guard, state = resource.cdt_guard_state
+  if (!config || !state) return null
+  const backlog = state.max_jump_bytes >= config.jump_bytes ? state.max_jump_bytes : 0, used = state.max_usage_bytes + backlog
+  return { config, state, backlog, used, left: Math.max(0, config.threshold_bytes - used), percent: config.threshold_bytes > 0 ? used / config.threshold_bytes * 100 : 100,
+    stale: !state.queried_at || now - state.queried_at > 120 }
+}
