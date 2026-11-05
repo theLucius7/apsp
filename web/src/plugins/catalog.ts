@@ -28,7 +28,7 @@ export const pluginDefinitions: readonly CatalogDefinition[] = [
   {
     id: 'ddns', title: '动态域名解析', icon: GlobeIcon, serverSection: '/ddns', execution: 'panel',
     description: '使用服务器 Agent 上报的公网 IP，自动更新 Cloudflare、腾讯云、阿里云和华为云的 A / AAAA 记录。',
-    usage: '按服务器启用后配置域名与云服务凭据。DNS 同步由面板插件执行，无需额外设备安装包；停用时保留现有解析。',
+    usage: '连接 DNS 账号后添加解析即可，所有接入 Agent 的服务器都能直接使用，无需按服务器启用。DNS 同步由面板执行，无需设备安装包；暂停或删除解析时保留现有记录。',
   },
   {
     id: 'sing-box', title: 'sing-box', icon: WaypointsIcon, serverSection: '/plugins',

@@ -481,20 +481,21 @@ report 为 `{text,report_url?}`，文本以纯文本呈现，协议接受上限 
 
 ## DDNS 插件（Cloudflare）
 
-全部接口要求管理员会话，不进入 Agent API 或公开看板。按服务器启用，插件标识为 `ddns`；核心 IP 报告不包含 Token。
+全部接口要求管理员会话，不进入 Agent API 或公开看板。不需要按服务器启用（2026-11-05 起，见 ADR 0110），规则自身的 `enabled` 是唯一开关；核心 IP 报告不包含 Token。
 
 | 方法与路径 | 用途 |
 | --- | --- |
-| `GET /api/plugins/ddns/servers` | 服务器及插件启用状态 |
-| `POST /api/plugins/ddns/servers/{id}/enable` | 显式启用插件 |
-| `POST /api/plugins/ddns/servers/{id}/disable` | 停用插件，保留规则与 DNS；运行中返回 409 |
-| `GET /api/plugins/ddns/rules` | 规则、候选地址、插件状态与最近结果，无 Token |
-| `POST /api/plugins/ddns/rules` | 创建规则，目标服务器须已启用插件 |
+| `GET /api/plugins/ddns/servers` | 可绑定的服务器、在线状态、网卡名与公网发现能力 |
+| `GET /api/plugins/ddns/accounts` | 已保存的 DNS 账号、可管理的区域与域名，无凭据 |
+| `POST /api/plugins/ddns/accounts/cloudflare` | `{name?,api_token}`：校验令牌、找出可管理的域名并保存账号；需再次验证 |
+| `POST /api/plugins/ddns/accounts/access-key` | `{provider,name?,access_key_id,access_key_secret,zone_ids}`：腾讯云、阿里云（根域名）或华为云（Zone ID）账号，加密保存密钥并登记账号，同一事务；需再次验证，不回显密钥 |
+| `GET /api/plugins/ddns/rules` | 规则、候选地址与最近结果，无 Token |
+| `POST /api/plugins/ddns/rules` | 创建规则；服务器须未删除、未退役 |
 | `POST /api/plugins/ddns/rules/dual-stack` | 相同创建请求，一次事务创建 A、AAAA；返回 `201 {rules:[IPv4规则,IPv6规则]}`，任何冲突/容量不足时整组不创建 |
 | `PATCH /api/plugins/ddns/rules/{id}` | 全量替换 config，必须带当前 revision；空 Token 保留 |
 | `DELETE /api/plugins/ddns/rules/{id}` | 删除本地规则及凭据，保留远端 DNS |
-| `POST /api/plugins/ddns/rules/{id}/sync` | 手动同步；插件与规则均需启用，限流返回 429 |
+| `POST /api/plugins/ddns/rules/{id}/sync` | 手动同步；规则须已启用，限流返回 429 |
 
 写入体为 `{"config":{"name":"示例规则","server_id":1,"zone_id":"00000000000000000000000000000000","record_name":"node.example.com","record_type":"A","ttl":1,"proxied":false,"interval_secs":300,"enabled":false,"adopt_existing":false},"api_token":"YOUR_CLOUDFLARE_API_TOKEN"}`。Zone、域名、Token 与服务器 ID 均需替换为自己管理的资源。更新另加 `revision`；Zone、域名和类型不可改变。接口拒绝重复身份、非法域名/TTL、过期修订及运行中修改。
 
-执行返回的 `status` 为 pending/running/updated/unchanged/waiting/error，`error_code` 为固定脱敏代码。同步 API 成功返回结果不代表 Cloudflare 一定写入成功，应检查 status/error_code；失败保留 last_ip/last_success_at。busy 与 plugin_enabled 单独反映运行和启用状态；读取无外部请求。详细语义见 [DDNS 插件](ddns.md)。
+执行返回的 `status` 为 pending/running/updated/unchanged/waiting/error，`error_code` 为固定脱敏代码。同步 API 成功返回结果不代表 Cloudflare 一定写入成功，应检查 status/error_code；失败保留 last_ip/last_success_at。busy 反映是否正在同步；读取无外部请求。详细语义见 [DDNS 插件](ddns.md)。

@@ -1,70 +1,34 @@
 import { useState } from 'react'
 import { api } from '../../api'
-import { Badge, Confirm, Empty, ErrorNotice, Field, Loading, Modal, PageHeader, Refresh, DialogPresence } from '../../components'
-import { ddnsMessage, ddnsWrite, providers } from './types'
-import type { DdnsConfig, DdnsRule } from './types'
+import { Badge, Confirm, Empty, ErrorNotice, Loading, PageHeader, Refresh, DialogPresence } from '../../components'
+import { ActionMenu } from '../../components/action-menu'
+import { ago } from '../../format'
+import { ddnsWrite, providers, ruleState } from './types'
+import type { DdnsRule } from './types'
 import { resourceWriteError, useAction, useResource } from '../../hooks'
-import { ddnsCurrentError, editorError, ruleError, serverError } from './guards'
+import { ddnsCurrentError, ruleError } from './guards'
 import type { DdnsCurrent, DdnsServer as Server } from './guards'
 import Lifecycle from './Lifecycle'
 import Migration from './Migration'
-import DnsAccounts from './DnsAccounts'
+import RuleEditor from './RuleEditor'
+import DnsAccounts, { useAccountConnect } from './DnsAccounts'
 import type { DnsAccount } from './DnsAccounts'
 
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/native-select'
-import { PlusIcon, WaypointsIcon } from 'lucide-react'
+import { GlobeIcon, PlusIcon, RefreshCwIcon } from 'lucide-react'
 import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
-const time = (value: number) => new Date(value * 1000).toLocaleString('zh-CN', { hour12: false })
-const empty: DdnsConfig = { provider: 'cloudflare', line: '', name: '', server_id: 0, zone_id: '', record_name: '', record_type: 'A', ttl: 1, proxied: false, interval_secs: 300, enabled: true, adopt_existing: false }
+const MAX_RULES = 32
 
-function Editor({ rule, servers, current, close, saved }: { rule?: DdnsRule; servers: Server[]; current: DdnsCurrent; close: () => void; saved: () => void }) {
-  const [config, setConfig] = useState<DdnsConfig>(rule?.config ?? { ...empty, server_id: servers[0]?.id ?? 0 })
-  const [addressMode, setAddressMode] = useState<'A' | 'AAAA' | 'dual'>(rule?.config.record_type ?? 'A')
-  const [credentialMode, setCredentialMode] = useState(rule?.config.account_id ? 'account' : rule?.config.credential_id ? 'center' : rule ? 'legacy' : 'account')
-  const [token, setToken] = useState('')
-  const [key, setKey] = useState(''), [secret, setSecret] = useState('')
-  const accounts = useResource<DnsAccount[]>('/api/plugins/ddns/accounts', 0)
-  const provider = config.provider ?? 'cloudflare', cloudflare = provider === 'cloudflare', namedZone = provider === 'tencent' || provider === 'aliyun'
-  const action = useAction()
-  const slots = !rule && addressMode === 'dual' ? 2 : 1
-  const savedAccounts = accounts.data?.filter(account => account.config.provider === provider && account.config.enabled) ?? []
-  const selectedAccount = savedAccounts.find(account => account.id === config.account_id)
-  const accountZones = credentialMode === 'account' ? selectedAccount?.config.zone_ids ?? [] : []
-  const writeError = () => (addressMode === 'dual' && config.address_source === 'manual' ? '双栈手工地址请分别创建 IPv4 与 IPv6 规则。' : '') || editorError(current, config, rule, slots) || (credentialMode === 'account' ? !config.account_id?.trim() ? '请填写集中 DNS 账号标识。' : '' : credentialMode === 'center' ? !config.credential_id?.trim() ? '请填写凭据中心的 DNS 凭据标识。' : '' : cloudflare ? !rule && !token.trim() ? '请填写 Cloudflare API Token。' : ''
-    : Boolean(key.trim()) !== Boolean(secret.trim()) || (!rule && (!key.trim() || !secret.trim())) ? '请同时填写访问密钥 ID 与 Secret。' : '')
-  const change = (part: Partial<DdnsConfig>) => setConfig(value => ({ ...value, ...part }))
-  return <Modal title={rule ? `编辑动态解析 · ${rule.config.name}` : '添加动态解析'} busy={action.busy} onClose={close} wide ><form onSubmit={event => {
-    event.preventDefault()
-    void action.run(() => { const reason = writeError(); if (reason) throw new Error(reason); return api(rule ? `/api/plugins/ddns/rules/${rule.id}` : addressMode === 'dual' ? '/api/plugins/ddns/rules/dual-stack' : '/api/plugins/ddns/rules', rule ? 'PATCH' : 'POST', ddnsWrite(config, token, rule?.revision, key, secret)) }, () => { setToken(''); setKey(''); setSecret(''); saved() })
-  }}><div data-slot="modal-body" className="p-4"><ErrorNotice message={action.error || editorError(current, config, rule, slots)} /><fieldset disabled={action.busy}>
-    <div className="mb-6 flex flex-wrap items-center gap-4"><strong>{providers[provider]}</strong><span className="text-muted-foreground text-sm">从所选地址来源更新 DNS</span></div>
-    <Field label="DNS 提供方"><NativeSelect className="w-full" value={provider} disabled={Boolean(rule)} onChange={event => { const next = event.target.value as NonNullable<DdnsConfig['provider']>; change({ provider: next, zone_id: '', line: '', proxied: false, ttl: next === 'cloudflare' ? 1 : 600 }); setToken(''); setKey(''); setSecret('') }}>{Object.entries(providers).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</NativeSelect></Field>
-    <div className="grid gap-x-4 sm:grid-cols-2"><Field label="规则名称"><Input value={config.name} required maxLength={128} onChange={event => change({ name: event.target.value })} placeholder="例如：家庭服务器 IPv4" /></Field>
-      <Field label="绑定服务器"><NativeSelect className="w-full" value={config.server_id} required onChange={event => change({ server_id: Number(event.target.value) })}>{!servers.some(server => server.id === config.server_id) && <option value={config.server_id}>{rule?.server_name ?? '请选择服务器'}（不可用）</option>}{servers.map(server => <option key={server.id} value={server.id}>{server.name}{!server.online ? '（离线）' : ''}</option>)}</NativeSelect></Field>
-      <Field label="地址来源" hint="网卡地址与公网发现结果分别由 Agent 上报；旧 Agent 缺少所选来源时保留解析。手工来源不依赖服务器在线状态，退役或停用插件仍会阻止同步。"><NativeSelect className="w-full" value={config.address_source ?? 'agent'} onChange={event => change({ address_source: event.target.value as NonNullable<DdnsConfig['address_source']>, manual_ip: null, interface_name: null })}><option value="agent">Agent 合并地址报告（兼容旧版本）</option><option value="interface">指定网卡地址</option><option value="discovered">Agent 实际发现的公网出口</option><option value="manual">手工公网地址</option></NativeSelect></Field>
-      {config.address_source === 'interface' && <Field label="地址来源网卡" hint="使用此网卡上报的公网单播地址；私有网卡地址不能直接用作 DDNS 公网地址。"><Input required value={config.interface_name ?? ''} maxLength={128} list="ddns-address-interfaces" onChange={event => change({ interface_name: event.target.value })} /><datalist id="ddns-address-interfaces">{servers.find(server => server.id === config.server_id)?.interface_names?.map(name => <option key={name} value={name} />)}</datalist></Field>}
-      {config.address_source === 'manual' && <Field label="手工公网地址" hint="填写与当前 A / AAAA 类型匹配的公网地址。"><Input value={config.manual_ip ?? ''} required maxLength={64} spellCheck={false} onChange={event => change({ manual_ip: event.target.value })} placeholder={config.record_type === 'A' ? 'IPv4 公网地址' : 'IPv6 公网地址'} /></Field>}
-      <Field label="完整域名" hint="支持泛域名与中文域名，例如 node.example.com 或 *.example.com。"><Input value={config.record_name} disabled={Boolean(rule)} required maxLength={253} autoCapitalize="none" spellCheck={false} onChange={event => change({ record_name: event.target.value })} placeholder="node.example.com" /></Field>
-      <Field label="IP 类型" hint="双栈一次创建 A 和 AAAA 两条规则，可分别查看同步状态、编辑或暂停。"><NativeSelect className="w-full" value={addressMode} disabled={Boolean(rule)} onChange={event => { const mode = event.target.value as typeof addressMode; setAddressMode(mode); change({ record_type: mode === 'AAAA' ? 'AAAA' : 'A' }) }}><option value="A">仅 IPv4</option><option value="AAAA">仅 IPv6</option><option value="dual">IPv4 和 IPv6</option></NativeSelect></Field>
-      {accountZones.length > 0 && !rule ? <Field label="域名"><NativeSelect className="w-full" required value={config.zone_id} onChange={event => change({ zone_id: event.target.value })}><option value="" disabled>选择域名</option>{accountZones.map(zone => <option key={zone} value={zone}>{selectedAccount?.config.zone_names?.[zone] ?? zone}</option>)}</NativeSelect></Field> : <Field label={namedZone ? '托管根域名' : 'Zone ID'} hint={namedZone ? '填写在该云服务托管的根域名，例如 example.com；支持托管子域。' : `在 ${providers[provider]} 复制公网区域的 Zone ID。`}><Input value={config.zone_id} disabled={Boolean(rule)} required pattern={namedZone ? undefined : '[a-fA-F0-9]{32}'} maxLength={namedZone ? 253 : 32} spellCheck={false} autoCapitalize="none" onChange={event => change({ zone_id: event.target.value.trim() })} placeholder={namedZone ? 'example.com' : '32 位区域标识'} /></Field>}
-      {namedZone && <Field label="解析线路标识" hint={provider === 'tencent' ? '默认线路为 0，其他线路填写 DNSPod 的线路 ID。' : '默认线路为 default，其他线路填写阿里云线路代码。'}><Input disabled={Boolean(rule)} value={config.line ?? ''} maxLength={64} placeholder={provider === 'tencent' ? '0' : 'default'} onChange={event => change({ line: event.target.value })} /></Field>}
-      <Field label="凭据来源"><NativeSelect className="w-full" value={credentialMode} onChange={event => { const mode = event.target.value; setCredentialMode(mode); change({ credential_id: mode === 'center' ? '' : null, account_id: mode === 'account' ? '' : null }); setToken(''); setKey(''); setSecret('') }}><option value="account">已保存的账号</option>{credentialMode === 'center' && <option value="center">凭据中心加密引用</option>}<option value="legacy">只给这条规则单独填写</option></NativeSelect></Field>
-      {credentialMode === 'account' && <Field label="DNS 账号" hint={savedAccounts.length ? '令牌已加密保存，在这里选择即可。' : '还没有保存的账号，请先在页面下方添加。'}><NativeSelect className="w-full" required value={config.account_id ?? ''} onChange={event => { const chosen = savedAccounts.find(account => account.id === event.target.value); change({ account_id: event.target.value, ...(chosen?.config.zone_ids.length === 1 ? { zone_id: chosen.config.zone_ids[0] } : {}) }) }}><option value="" disabled>选择账号</option>{savedAccounts.map(account => <option key={account.id} value={account.id}>{account.config.name}</option>)}</NativeSelect></Field>}
-      {credentialMode === 'center' && <Field label="DNS 凭据标识" hint="在凭据中心创建用途为 DNS 的凭据并复制标识。Cloudflare 使用 api_token；其他提供方使用 access_key_id 与 access_key_secret；可用 provider 指定提供方。"><Input value={config.credential_id ?? ''} required maxLength={36} spellCheck={false} pattern="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}" onChange={event => change({ credential_id: event.target.value.trim() })} placeholder="DNS 凭据的 UUID" /></Field>}
-      {credentialMode === 'legacy' && (cloudflare ? <Field label="API Token" hint={rule ? '已保存的凭据不回显；留空保留，填写则替换。' : '创建仅限此 Zone、包含 DNS 编辑权限的 API 令牌。'}><Input type="password" value={token} autoComplete="new-password" required={!rule} minLength={16} maxLength={256} onChange={event => setToken(event.target.value)} placeholder={rule?.token_configured ? '已配置，留空保留' : '输入 Cloudflare API Token'} /></Field> : <><Field label="访问密钥 ID" hint={rule ? '密钥对同时留空保留；替换时同时填写两项。' : '使用仅有目标域名 DNS 权限的子账号密钥。'}><Input type="password" autoComplete="new-password" value={key} required={!rule || Boolean(secret)} minLength={8} maxLength={256} onChange={event => setKey(event.target.value)} /></Field><Field label="访问密钥 Secret"><Input type="password" autoComplete="new-password" value={secret} required={!rule || Boolean(key)} minLength={8} maxLength={256} onChange={event => setSecret(event.target.value)} /></Field></>)}
-      <Field label="TTL（秒）" hint={cloudflare ? '1 表示自动；手动范围为 60–86400 秒。' : '60–86400 秒；还需满足所购域名套餐的最小 TTL，建议从 600 秒开始。'}><Input type="number" required min={cloudflare ? 1 : 60} max={86400} step={1} value={config.proxied ? 1 : config.ttl} disabled={config.proxied} onChange={event => change({ ttl: Number(event.target.value) })} /></Field>
-      <Field label="检查间隔（秒）" hint="60–86400 秒；仅在地址或设置变化时更新 DNS。"><Input type="number" required min={60} max={86400} step={1} value={config.interval_secs} onChange={event => change({ interval_secs: Number(event.target.value) })} /></Field>
-    </div>
-    {cloudflare && <label className="my-5 flex items-start gap-3 text-sm"><Checkbox checked={config.proxied} onCheckedChange={checked => change({ proxied: checked === true })} className="mt-0.5" /><span><strong>启用 Cloudflare 代理</strong><small className="text-muted-foreground mt-1 block leading-relaxed">代理仅适用于 Cloudflare 支持的流量与端口，会自动使用自动 TTL；普通代理协议通常应保持关闭。</small></span></label>}
-    <label className="my-5 flex items-start gap-3 text-sm"><Checkbox checked={config.adopt_existing} onCheckedChange={checked => change({ adopt_existing: checked === true })} className="mt-0.5" /><span><strong>接管已有的同名同类型记录</strong><small className="text-muted-foreground mt-1 block leading-relaxed">勾选后允许覆盖指定线路唯一已有记录的 IP、TTL 和代理设置。重复或多值记录请先在提供方整理。</small></span></label>
-    <label className="my-5 flex items-start gap-3 text-sm"><Checkbox checked={config.enabled} onCheckedChange={checked => change({ enabled: checked === true })} className="mt-0.5" /><span><strong>启用自动同步</strong><small className="text-muted-foreground mt-1 block leading-relaxed">保存后按间隔同步；Agent 来源离线、无有效公网地址时保留现有解析。手工地址不依赖在线状态。暂停或删除规则不会删除 DNS 记录。</small></span></label>
-    {rule && (rule.config.server_id !== config.server_id || (rule.config.address_source ?? 'agent') !== (config.address_source ?? 'agent') || rule.config.manual_ip !== config.manual_ip) && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">保存后的影响：地址来源从“{rule.server_name} · {rule.config.address_source === 'manual' ? rule.config.manual_ip : 'Agent 报告'}”变更为“{servers.find(server => server.id === config.server_id)?.name ?? config.server_id} · {config.address_source === 'manual' ? config.manual_ip || '待填写' : 'Agent 报告'}”。下轮同步按新来源更新此域名，服务器 Agent 身份不复制。</p>}
-    <p className="text-muted-foreground mt-3 text-xs leading-relaxed">多地址优先沿用仍在 Agent 报告中的上次成功地址，否则按地址排序选取首个。若服务器处于 NAT 后，请在采样设置中启用公网 IP 发现。{rule && '提供方、区域、域名、类型和线路固定，变更时请另建规则。'}</p>
-  </fieldset></div><footer><Button type="button" variant="outline" disabled={action.busy} onClick={close}>取消</Button><Button disabled={action.busy || Boolean(writeError())}>{action.busy ? '正在保存…' : '保存规则'}</Button></footer></form></Modal>
+/** Where the record points now, and what the panel would write next. */
+function Address({ rule, known }: { rule: DdnsRule; known: boolean }) {
+  const next = known ? rule.candidate_ip : null
+  const shown = next ?? rule.last_ip
+  const checked = rule.last_success_at === null ? null : new Date(rule.last_success_at * 1000).toLocaleString('zh-CN', { hour12: false })
+  return <div className="min-w-0">
+    <div className="font-mono text-xs wrap-anywhere">{shown ?? '—'}</div>
+    <small className="text-muted-foreground block text-xs" title={checked ?? undefined}>{next && rule.last_ip && next !== rule.last_ip ? `DNS 现为 ${rule.last_ip}` : rule.last_success_at === null ? '尚未同步' : rule.last_success_at > 0 ? `${ago(rule.last_success_at)}核对` : `${checked} 核对`}</small>
+  </div>
 }
 
 export default function Ddns({ serverId }: { serverId?: number }) {
@@ -72,33 +36,78 @@ export default function Ddns({ serverId }: { serverId?: number }) {
   const [lifecycle, setLifecycle] = useState<DdnsRule | null>(null)
   const [editing, setEditing] = useState<DdnsRule | 'new' | null>(null), [removing, setRemoving] = useState<DdnsRule | null>(null)
   const rules = useResource<DdnsRule[]>('/api/plugins/ddns/rules'), servers = useResource<Server[]>('/api/plugins/ddns/servers')
+  const accounts = useResource<DnsAccount[]>('/api/plugins/ddns/accounts', 30_000)
+  const connect = useAccountConnect(accounts.reload)
   const action = useAction()
   const available = Boolean(rules.data && servers.data && !resourceWriteError(rules, servers))
   const scope = servers.data?.filter(server => !serverId || server.id === serverId) ?? []
-  const enabledServers = scope.filter(server => server.enabled)
   const visibleRules = rules.data?.filter(rule => !serverId || rule.config.server_id === serverId)
-  const refresh = () => { rules.reload(); servers.reload() }
+  const full = (rules.data?.length ?? MAX_RULES) >= MAX_RULES
+  const refresh = () => { rules.reload(); servers.reload(); accounts.reload() }
   const current: DdnsCurrent = () => {
     if (resourceWriteError(rules, servers)) return undefined
     return { rules: rules.getCurrent()!, servers: servers.getCurrent()!.filter(server => !serverId || server.id === serverId) }
   }
   const perform = (error: () => string, request: () => Promise<unknown>, saved = rules.reload) => void action.run(() => { const reason = error(); if (reason) throw new Error(reason); return request() }, saved)
   const open = (rule: DdnsRule | 'new') => { if (rule === 'new' ? ddnsCurrentError(current) : ruleError(current, rule)) return; action.clearError(); setEditing(rule) }
-  return <div><PageHeader title="域名解析" description="让域名跟随服务器公网 IP 自动更新，支持 Cloudflare、腾讯云、阿里云和华为云。"><Refresh onClick={refresh} /><Button variant="outline" disabled={action.busy || !available || !enabledServers.length || !visibleRules?.length} onClick={() => setMigrating(true)}>批量迁移与编辑</Button><Button disabled={action.busy || !available || !enabledServers.length || (rules.data?.length ?? 32) >= 32} onClick={() => open('new')}><PlusIcon aria-hidden="true" />添加规则</Button></PageHeader>
+  const toggle = (rule: DdnsRule) => perform(() => ruleError(current, rule), () => api(`/api/plugins/ddns/rules/${rule.id}`, 'PATCH', ddnsWrite({ ...rule.config, enabled: !rule.config.enabled }, '', rule.revision)))
+  const sync = (rule: DdnsRule) => perform(() => ruleError(current, rule, true), () => api(`/api/plugins/ddns/rules/${rule.id}/sync`, 'POST'))
+  const mixed = new Set(visibleRules?.map(rule => rule.config.provider ?? 'cloudflare')).size > 1
+  const noAccounts = accounts.data !== undefined && !accounts.data.some(account => account.config.enabled)
+  const addDisabled = action.busy || !available || !scope.length || full
+
+  return <div>
+    <PageHeader title="域名解析" description="让域名自动指向服务器当前的公网 IP，服务器换 IP 后自动更新。"><Refresh onClick={refresh} /><Button disabled={addDisabled} onClick={() => open('new')}><PlusIcon aria-hidden="true" />添加解析</Button></PageHeader>
     <ErrorNotice message={rules.error || servers.error || action.error} retry={refresh} />
-    {servers.data && <DnsAccounts servers={servers.data} />}
-    <Panel className="mb-6"><PanelHeader><PanelTitle>DDNS 插件启用状态</PanelTitle><Badge>面板插件</Badge></PanelHeader><div className="p-4"><p className="text-muted-foreground mt-3 text-xs leading-relaxed">按服务器启用；使用已有 Agent 上报的 IP，云服务凭据与 DNS 更新由面板插件管理。无需在设备上下载或安装额外程序。</p>{scope.map(server => <div className="flex flex-wrap items-center justify-between gap-4 max-sm:items-start mt-4" key={server.id}><span>{server.name} · {server.enabled ? '插件已启用' : '插件未启用'}</span><Button variant="outline" size="sm" disabled={action.busy || !available} onClick={() => perform(() => serverError(current, server), () => api(`/api/plugins/ddns/servers/${server.id}/${server.enabled ? 'disable' : 'enable'}`, 'POST'), refresh)}>{server.enabled ? '停用 DDNS 插件' : '启用 DDNS 插件'}</Button></div>)}{!scope.length && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{servers.error || !servers.data ? '服务器状态暂不可用。' : serverId ? '指定服务器不存在或不可用。' : '请先添加服务器，再启用 DDNS 插件。'}</p>}</div></Panel>
-    <Panel className="mb-6"><PanelHeader><PanelTitle>域名解析规则</PanelTitle><span className="text-muted-foreground text-xs">{rules.error || !rules.data ? '—' : rules.data.length} / 32 条</span></PanelHeader>
-      {!rules.data && rules.loading ? <Loading variant="table" rows={3} /> : !rules.data || (rules.error && !visibleRules?.length) ? <Empty icon={WaypointsIcon} title="规则状态暂不可用" description="请刷新读取规则和服务器状态后再操作。" /> : !visibleRules?.length ? <Empty icon={WaypointsIcon} title="尚未配置动态解析" description="选择提供方并配置域名、区域和云服务凭据，绑定已经接入 Agent 的服务器。" /> : <div className="px-6 max-sm:px-4">{visibleRules.map(rule => <article data-slot="ddns-rule" className="border-t py-5 first:border-t-0" key={rule.id}>
-        <div className="flex flex-wrap items-center justify-between gap-4"><div className="min-w-0"><h3 className="m-0 mb-1.5 text-base font-semibold">{rule.config.name}</h3><code className="wrap-anywhere">{rule.config.record_name}</code><span className="text-muted-foreground text-xs"> · {rule.config.record_type}</span></div><Badge tone={!available || !rule.config.enabled || !rule.plugin_enabled ? 'neutral' : rule.error_code || rule.ip_status !== 'ready' ? 'warm' : rule.last_success_at !== null ? 'good' : 'neutral'}>{!available ? '状态未知' : !rule.plugin_enabled ? '插件未启用' : !rule.config.enabled ? '已暂停' : rule.busy ? '正在同步' : rule.ip_status !== 'ready' ? ddnsMessage(rule.ip_status) : ddnsMessage(rule.status === 'running' ? 'pending' : rule.status)}</Badge></div>
-        <dl className="my-5 grid grid-cols-1 gap-x-3 gap-y-4 text-sm min-[361px]:grid-cols-2 md:grid-cols-3 md:gap-5"><div><dt className="text-muted-foreground mb-1.5">绑定服务器</dt><dd className="m-0 wrap-anywhere">{rule.server_name}</dd></div><div><dt className="text-muted-foreground mb-1.5">本次候选地址</dt><dd className="font-mono text-xs m-0 wrap-anywhere">{!available ? '当前状态未知' : rule.candidate_ip ?? '等待有效地址'}</dd></div><div><dt className="text-muted-foreground mb-1.5">上次成功地址</dt><dd className="font-mono text-xs m-0 wrap-anywhere">{rule.last_ip ?? '尚未同步'}</dd></div><div><dt className="text-muted-foreground mb-1.5">检查间隔 / TTL</dt><dd className="m-0 wrap-anywhere">{rule.config.interval_secs} 秒 / {rule.config.ttl === 1 ? '自动' : `${rule.config.ttl} 秒`}</dd></div><div><dt className="text-muted-foreground mb-1.5">最近成功核对</dt><dd className="m-0 wrap-anywhere">{rule.last_success_at !== null ? time(rule.last_success_at) : '尚未成功'}</dd></div><div><dt className="text-muted-foreground mb-1.5">下次检查</dt><dd className="m-0 wrap-anywhere">{!available ? '当前状态未知' : !rule.config.enabled || !rule.plugin_enabled ? '暂停期间不检查' : rule.busy ? '正在检查' : rule.next_run_at ? time(rule.next_run_at) : '即将检查'}</dd></div></dl>
-        <div className="flex flex-wrap items-center justify-between gap-4 max-sm:items-start"><span className="text-muted-foreground text-xs">{providers[rule.config.provider ?? 'cloudflare']} · {rule.config.line || '默认线路'} · {rule.config.proxied ? '已开启 Cloudflare 代理' : '仅 DNS'} · {rule.config.account_id ? '集中 DNS 账号' : rule.config.credential_id ? '凭据中心引用' : '独立凭据'}{rule.token_configured ? '已配置' : '未配置'}{rule.ip_received_at !== null && ` · IP 报告 ${time(rule.ip_received_at)}`}</span><div className="flex flex-wrap gap-4"><Button variant="ghost" size="sm" disabled={action.busy || !available || rule.busy || !rule.config.enabled || !rule.plugin_enabled} onClick={() => perform(() => ruleError(current, rule, true), () => api(`/api/plugins/ddns/rules/${rule.id}/sync`, 'POST'))}>立即同步</Button><Button variant="ghost" size="sm" disabled={action.busy || !available || rule.busy} onClick={() => setLifecycle(rule)}>核对与历史</Button><Button variant="ghost" size="sm" disabled={action.busy || !available || rule.busy} onClick={() => open(rule)}>编辑</Button><Button variant="ghost" size="sm" disabled={action.busy || !available || rule.busy || (!rule.config.enabled && !rule.plugin_enabled)} onClick={() => perform(() => ruleError(current, rule) || (!rule.config.enabled && !current()?.servers.find(server => server.id === rule.config.server_id)?.enabled ? '请先启用此服务器的 DDNS 插件。' : ''), () => api(`/api/plugins/ddns/rules/${rule.id}`, 'PATCH', ddnsWrite({ ...rule.config, enabled: !rule.config.enabled }, '', rule.revision)))}>{rule.config.enabled ? '暂停' : '启用'}</Button><Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20" disabled={action.busy || !available || rule.busy} onClick={() => { action.clearError(); setRemoving(rule) }}>删除</Button></div></div>
-        {(rule.error_code || rule.ip_status !== 'ready') && <p className="bg-muted mt-4 rounded-lg p-3 text-sm wrap-anywhere" role="status">{ddnsMessage(rule.error_code) || ddnsMessage(rule.ip_status)}</p>}
-      </article>)}</div>}
-    </Panel><p className="text-muted-foreground mt-3 text-xs leading-relaxed">同步状态区分已提交和已核对；提供方已接收不代表各地解析已生效；各地 DNS 缓存生效仍受 TTL 影响。手动同步有 60 秒冷却，限流或失败时等待页面显示的重试时间。</p>
-    <DialogPresence>{migrating && rules.data && servers.data && <Migration rules={visibleRules ?? []} servers={servers.data} close={() => setMigrating(false)} saved={() => { setMigrating(false); refresh() }} />}</DialogPresence>
+    <Panel>
+      <PanelHeader>
+        <PanelTitle>解析记录<span className="text-muted-foreground text-xs font-normal tabular-nums">{rules.error || !rules.data ? '—' : rules.data.length} / {MAX_RULES}</span></PanelTitle>
+        {Boolean(visibleRules?.length) && <Button variant="ghost" size="sm" disabled={action.busy || !available || !scope.length} onClick={() => setMigrating(true)}>批量修改</Button>}
+      </PanelHeader>
+      {!rules.data && rules.loading ? <Loading variant="table" rows={3} />
+        : !rules.data || (rules.error && !visibleRules?.length) ? <Empty icon={GlobeIcon} title="解析状态暂不可用" description="请刷新读取规则和服务器状态后再操作。" />
+        : !visibleRules?.length ? !scope.length
+          ? <Empty icon={GlobeIcon} title={serverId ? '这台服务器不可用' : '还没有服务器'} description={servers.error || !servers.data ? '服务器状态暂不可用。' : serverId ? '指定服务器不存在或不可用。' : '先添加服务器并接入 Agent，域名才有 IP 可以指向。'} />
+          : noAccounts
+            ? <Empty icon={GlobeIcon} title="先连接 DNS 账号" description="连接 Cloudflare、腾讯云、阿里云或华为云账号后，添加解析只需要填写域名和服务器。"><Button onClick={connect.open}>连接 DNS 账号</Button></Empty>
+            : <Empty icon={GlobeIcon} title="还没有解析" description="添加后，域名会指向所选服务器的公网 IP；服务器换 IP 时自动更新。"><Button disabled={addDisabled} onClick={() => open('new')}><PlusIcon aria-hidden="true" />添加解析</Button></Empty>
+        : <ul className="md:grid md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.1fr)_auto]">
+          <li aria-hidden="true" className="text-muted-foreground hidden border-b px-4 py-2 text-xs md:col-span-4 md:grid md:grid-cols-subgrid md:gap-x-4"><span>域名</span><span>服务器</span><span>解析到</span><span className="text-right">状态</span></li>
+          {visibleRules.map(rule => {
+            const state = ruleState(rule, available)
+            const idle = action.busy || !available || rule.busy
+            const note = [rule.config.name !== rule.config.record_name && rule.config.name, mixed && providers[rule.config.provider ?? 'cloudflare'], rule.config.proxied && '已开启 Cloudflare 代理'].filter(Boolean).join(' · ')
+            // Phones: domain with its state on top, server and address below. Wider
+            // screens: one row aligned to the header columns.
+            return <li key={rule.id} data-slot="ddns-rule" className="grid gap-y-2 border-b px-4 py-3 last:border-b-0 md:col-span-4 md:grid-cols-subgrid md:items-center md:gap-x-4">
+              <div className="flex items-start justify-between gap-2 md:contents">
+                <div className="min-w-0 md:col-start-1 md:row-start-1">
+                  <div className="flex min-w-0 items-center gap-2"><h3 className="m-0 min-w-0 font-mono text-sm font-medium wrap-anywhere">{rule.config.record_name}</h3><span className="bg-muted text-muted-foreground shrink-0 rounded px-1 text-[11px] font-medium">{rule.config.record_type === 'A' ? 'IPv4' : 'IPv6'}</span></div>
+                  {note && <small className="text-muted-foreground block truncate text-xs">{note}</small>}
+                </div>
+                <div className="flex shrink-0 items-center justify-end gap-1 md:col-start-4 md:row-start-1">
+                  <Badge tone={state.tone}>{state.label}</Badge>
+                  <Button variant="ghost" size="icon-sm" className="max-md:hidden" aria-label="立即同步" title="立即同步" disabled={idle || !rule.config.enabled} onClick={() => sync(rule)}><RefreshCwIcon aria-hidden="true" /></Button>
+                  <ActionMenu label="解析操作" groups={[
+                    [{ label: '立即同步', disabled: idle || !rule.config.enabled, onSelect: () => sync(rule) }, { label: '编辑', disabled: idle, onSelect: () => open(rule) }, { label: rule.config.enabled ? '暂停' : '恢复同步', disabled: idle, onSelect: () => toggle(rule) }, { label: '核对与历史', disabled: idle, onSelect: () => setLifecycle(rule) }],
+                    [{ label: '删除', destructive: true, disabled: idle, onSelect: () => { action.clearError(); setRemoving(rule) } }],
+                  ]} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 md:contents">
+                <div className="min-w-0 self-center text-sm wrap-anywhere md:col-start-2 md:row-start-1">{rule.server_name}</div>
+                <div className="min-w-0 md:col-start-3 md:row-start-1"><Address rule={rule} known={available} /></div>
+              </div>
+              {state.detail && <p className="text-warning m-0 text-xs leading-relaxed wrap-anywhere md:col-span-4 md:row-start-2" role="status">{state.detail}</p>}
+            </li>
+          })}
+        </ul>}
+    </Panel>
+    {servers.data && <DnsAccounts accounts={accounts} servers={servers.data} connect={connect.open} />}
+    {connect.dialog}
+    <DialogPresence>{migrating && rules.data && servers.data && <Migration rules={visibleRules ?? []} servers={servers.data} accounts={accounts.data ?? []} close={() => setMigrating(false)} saved={() => { setMigrating(false); refresh() }} />}</DialogPresence>
     <DialogPresence>{lifecycle && <Lifecycle rule={rules.data?.find(rule => rule.id === lifecycle.id) ?? lifecycle} close={() => setLifecycle(null)} changed={refresh} />}</DialogPresence>
-    <DialogPresence>{editing && servers.data && <Editor key={editing === 'new' ? 'new' : editing.id} rule={editing === 'new' ? undefined : editing} servers={enabledServers} current={current} close={() => setEditing(null)} saved={() => { setEditing(null); refresh() }} />}</DialogPresence>
-    <DialogPresence>{removing && <Confirm title="删除动态解析规则" busy={action.busy} error={action.error} confirmDisabled={Boolean(ruleError(current, removing))} onClose={() => setRemoving(null)} onConfirm={() => perform(() => ruleError(current, removing), () => api(`/api/plugins/ddns/rules/${removing.id}`, 'DELETE'), () => { setRemoving(null); rules.reload() })}>确认删除“{removing.config.name}”？云服务中的 DNS 记录会保留，之后不再自动更新。</Confirm>}</DialogPresence>
+    <DialogPresence>{editing && servers.data && <RuleEditor key={editing === 'new' ? 'new' : editing.id} rule={editing === 'new' ? undefined : editing} servers={scope} accounts={accounts.data ?? []} current={current} close={() => setEditing(null)} saved={() => { setEditing(null); refresh() }} connect={() => { setEditing(null); connect.open() }} />}</DialogPresence>
+    <DialogPresence>{removing && <Confirm title="删除解析" busy={action.busy} error={action.error} confirmDisabled={Boolean(ruleError(current, removing))} onClose={() => setRemoving(null)} onConfirm={() => perform(() => ruleError(current, removing), () => api(`/api/plugins/ddns/rules/${removing.id}`, 'DELETE'), () => { setRemoving(null); rules.reload() })}>确认删除“{removing.config.record_name}”的自动解析？DNS 提供方中的记录会保留，只是之后不再自动更新。</Confirm>}</DialogPresence>
   </div>
 }

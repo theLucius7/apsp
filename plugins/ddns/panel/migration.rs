@@ -77,10 +77,8 @@ async fn preview(
     }
     input.rules.sort_by_key(|rule| rule.id);
     let target = model::observation(&state.pool, input.target_server_id).await?;
-    if target.deleted_at.is_some() || target.retiring || !target.plugin_enabled {
-        return Err(ApiError::Conflict(
-            "目标服务器不可用或尚未启用 DDNS 插件".into(),
-        ));
+    if target.deleted_at.is_some() || target.retiring {
+        return Err(ApiError::Conflict("目标服务器已删除或正在退役".into()));
     }
     let now = apsp_protocol::now_timestamp();
     let mut snapshot = Vec::new();
@@ -176,10 +174,8 @@ async fn apply(
     }
     access::require_server(&state, &headers, target_id, "dns:write").await?;
     let target = model::locked_observation(&mut tx, target_id).await?;
-    if target.deleted_at.is_some() || target.retiring || !target.plugin_enabled {
-        return Err(ApiError::Conflict(
-            "目标服务器已退役或 DDNS 插件已停用".into(),
-        ));
+    if target.deleted_at.is_some() || target.retiring {
+        return Err(ApiError::Conflict("目标服务器已删除或正在退役".into()));
     }
     let mut rules: Vec<(Rule, model::Config)> = Vec::new();
     for selected in snapshot {

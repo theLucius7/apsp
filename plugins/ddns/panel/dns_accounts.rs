@@ -56,6 +56,10 @@ pub(super) fn routes() -> Router<AppState> {
             "/api/plugins/ddns/accounts/cloudflare",
             post(connect_cloudflare),
         )
+        .route(
+            "/api/plugins/ddns/accounts/access-key",
+            post(connect_access_key),
+        )
         .route("/api/plugins/ddns/accounts/{id}", put(update))
         .route("/api/plugins/ddns/accounts/{id}/check", post(check))
 }
@@ -97,6 +101,27 @@ pub(super) async fn authorize(
 }
 
 async fn normalize(state: &AppState, headers: &HeaderMap, config: &mut Config) -> ApiResult<()> {
+    normalize_scope(state, headers, config).await?;
+    let valid: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM credential_entries WHERE id=$1 AND kind='dns' AND enabled)",
+    )
+    .bind(config.credential_id)
+    .fetch_one(&state.pool)
+    .await?;
+    if !valid {
+        return Err(ApiError::Conflict(
+            "DNS 凭据不存在、已停用或用途不匹配".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Checks everything about an account except its credential reference.
+async fn normalize_scope(
+    state: &AppState,
+    headers: &HeaderMap,
+    config: &mut Config,
+) -> ApiResult<()> {
     config.name = config.name.trim().into();
     if config.name.is_empty()
         || config.name.len() > 128
@@ -134,17 +159,6 @@ async fn normalize(state: &AppState, headers: &HeaderMap, config: &mut Config) -
         if !exists {
             return Err(ApiError::BadRequest("授权范围包含不存在的服务器".into()));
         }
-    }
-    let valid: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM credential_entries WHERE id=$1 AND kind='dns' AND enabled)",
-    )
-    .bind(config.credential_id)
-    .fetch_one(&state.pool)
-    .await?;
-    if !valid {
-        return Err(ApiError::Conflict(
-            "DNS 凭据不存在、已停用或用途不匹配".into(),
-        ));
     }
     Ok(())
 }
@@ -278,6 +292,84 @@ async fn connect_cloudflare(
         server_ids: Vec::new(),
         enabled: true,
     };
+    let id = Uuid::new_v4();
+    let now = apsp_protocol::now_timestamp();
+    sqlx::query("INSERT INTO dns_accounts(id,config,created_at,updated_at) VALUES($1,$2,$3,$3)")
+        .bind(id)
+        .bind(json!(config))
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(Json(json!(load(&state.pool, id).await?)))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AccessKeyConnect {
+    provider: Provider,
+    #[serde(default)]
+    name: String,
+    access_key_id: String,
+    access_key_secret: String,
+    zone_ids: Vec<String>,
+}
+
+/// The access-key counterpart of `connect_cloudflare`: encrypts the key pair
+/// and registers the account in one step, so nobody has to create a
+/// credential elsewhere and paste its identifier.
+async fn connect_access_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<AccessKeyConnect>,
+) -> ApiResult<Json<Value>> {
+    control_center::require_recent_proof(&state, &headers).await?;
+    control_center::require_credential_choice(&state, &headers, true).await?;
+    let label = match input.provider {
+        Provider::Cloudflare => {
+            return Err(ApiError::BadRequest(
+                "Cloudflare 账号请使用 API 令牌添加".into(),
+            ));
+        }
+        Provider::Tencent => ("tencent", "腾讯云 DNSPod"),
+        Provider::Aliyun => ("aliyun", "阿里云 DNS"),
+        Provider::Huawei => ("huawei", "华为云 DNS"),
+    };
+    let key = input.access_key_id.trim();
+    let secret = input.access_key_secret.trim();
+    if !crate::cloud_api::credential(key) || !crate::cloud_api::credential(secret) {
+        return Err(ApiError::BadRequest(
+            "请填写有效的访问密钥 ID 与 Secret".into(),
+        ));
+    }
+    let mut config = Config {
+        name: input.name,
+        provider: input.provider,
+        credential_id: Uuid::nil(),
+        zone_ids: input.zone_ids,
+        zone_names: Default::default(),
+        server_ids: Vec::new(),
+        enabled: true,
+    };
+    if config.name.trim().is_empty() {
+        config.name = format!(
+            "{} · {}",
+            label.1,
+            config
+                .zone_ids
+                .first()
+                .map_or(String::new(), |zone| zone.trim().to_ascii_lowercase())
+        );
+    }
+    normalize_scope(&state, &headers, &mut config).await?;
+    let mut tx = state.pool.begin().await?;
+    config.credential_id = control_center::credentials::store_generated_on(
+        &mut tx,
+        &config.name,
+        "dns",
+        json!({"provider":label.0,"access_key_id":key,"access_key_secret":secret}),
+    )
+    .await?;
     let id = Uuid::new_v4();
     let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO dns_accounts(id,config,created_at,updated_at) VALUES($1,$2,$3,$3)")

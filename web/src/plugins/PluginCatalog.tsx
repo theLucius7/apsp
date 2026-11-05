@@ -37,7 +37,7 @@ function SelectServer({ plugin, onClose }: { plugin: CatalogDefinition; onClose:
   const path = server ? pluginServerPath(plugin, server.id) : null
   return <Modal title={`选择使用 ${plugin.title} 的服务器`} onClose={onClose}>
     <div data-slot="modal-body" className="p-4">
-      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{plugin.execution === 'panel' ? '选择服务器后启用 DDNS 插件，由面板使用 Agent 已上报的 IP 更新 DNS。' : '这里只选择要管理的服务器，不会立即安装或运行插件。后续操作由该服务器的 Agent 执行。'}</p>
+      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{plugin.execution === 'panel' ? '选择服务器后查看它的域名解析。由面板使用 Agent 已上报的 IP 更新 DNS，无需单独启用。' : '这里只选择要管理的服务器，不会立即安装或运行插件。后续操作由该服务器的 Agent 执行。'}</p>
       <ErrorNotice message={servers.error} retry={servers.reload} />
       {servers.loading && !servers.data ? <Loading /> : !servers.error && !servers.data?.length ? <Empty icon={ServerIcon} title="还没有服务器" description="先添加服务器并接入 Agent，再使用插件。"><a className={buttonVariants()} href="#/servers">前往服务器</a></Empty> : <Field label="目标服务器">
         <NativeSelect className="w-full" value={selected} onChange={event => setSelected(event.target.value)} disabled={!!servers.error}>

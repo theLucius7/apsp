@@ -46,15 +46,6 @@ async fn claim(pool: &PgPool, id: Uuid, force: bool) -> ApiResult<Option<(Uuid, 
             Ok(None)
         };
     }
-    let enabled: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM server_plugins WHERE server_id=$1 AND plugin='ddns' AND enabled)")
-        .bind(rule.config.server_id).fetch_one(&mut *tx).await?;
-    if !enabled {
-        return if force {
-            Err(ApiError::Conflict("请先为该服务器启用 DDNS 插件".into()))
-        } else {
-            Ok(None)
-        };
-    }
     if rule.lease_until > now
         || (force && rule.attempted_at.is_some_and(|at| at + 60 > now))
         || (rule.next_run_at > now && (!force || rule.failures > 0))
@@ -115,7 +106,6 @@ async fn complete_with_history(
                     | "no_public_ip"
                     | "source_unavailable"
                     | "address_changed"
-                    | "plugin_disabled"
                     | "provider_pending"
             );
             let failures = if waiting {
@@ -272,7 +262,7 @@ pub async fn run(pool: PgPool) {
 
 async fn tick(pool: &PgPool) -> ApiResult<serde_json::Value> {
     let now = apsp_protocol::now_timestamp();
-    let ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM ddns_rules d WHERE config->>'enabled'='true' AND next_run_at<=$1 AND lease_until<=$1 AND EXISTS(SELECT 1 FROM server_plugins p WHERE p.server_id=d.server_id AND p.plugin='ddns' AND p.enabled) ORDER BY next_run_at,id LIMIT 8")
+    let ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM ddns_rules d WHERE config->>'enabled'='true' AND next_run_at<=$1 AND lease_until<=$1 ORDER BY next_run_at,id LIMIT 8")
         .bind(now).fetch_all(pool).await?;
     let dispatched = ids.len();
     let results = stream::iter(

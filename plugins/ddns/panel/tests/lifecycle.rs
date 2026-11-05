@@ -17,7 +17,6 @@ fn manual_sources_do_not_depend_on_agent_freshness_but_keep_lifecycle_guards() {
         last_seen: None,
         deleted_at: None,
         retiring: false,
-        plugin_enabled: true,
     };
     assert_eq!(info.select(&config, None, 10000), Ok(public_ip(8)));
     config.record_type = "AAAA".into();
@@ -30,9 +29,6 @@ fn manual_sources_do_not_depend_on_agent_freshness_but_keep_lifecycle_guards() {
     config.manual_ip = Some(public_ip(8).to_string());
     info.retiring = true;
     assert_eq!(info.select(&config, None, 10000), Err("server_retired"));
-    info.retiring = false;
-    info.plugin_enabled = false;
-    assert_eq!(info.select(&config, None, 10000), Err("plugin_disabled"));
 }
 
 #[tokio::test]
@@ -173,11 +169,10 @@ async fn history_completion_is_atomic_bounded_redacted_and_survives_rule_removal
 
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn rollback_rechecks_provider_and_pauses_automatic_reconciliation(pool: sqlx::PgPool) {
-    use crate::{load, rollback, settings};
+    use crate::{load, rollback};
     let now = apsp_protocol::now_timestamp();
     let server: i64 = sqlx::query_scalar("INSERT INTO servers(name,static_info,last_seen,static_info_received_at) VALUES('TEST_ONLY rollback',$1,$2,$2) RETURNING id")
         .bind(json!({"ip_addresses":[public_ip(9)]})).bind(now).fetch_one(&pool).await.unwrap();
-    settings::set_enabled(&pool, server, true).await.unwrap();
     let mut rule = rule();
     rule.config.server_id = server;
     rule.config.adopt_existing = true;
@@ -273,11 +268,10 @@ fn credential_payloads_validate_provider_and_never_serialize_secret_fields() {
 async fn unavailable_credential_reference_stops_before_provider_io_instead_of_using_legacy_secret(
     pool: sqlx::PgPool,
 ) {
-    use crate::{load, settings};
+    use crate::load;
     let now = apsp_protocol::now_timestamp();
     let server: i64 = sqlx::query_scalar("INSERT INTO servers(name,static_info,last_seen,static_info_received_at) VALUES('TEST_ONLY credential failure',$1,$2,$2) RETURNING id")
         .bind(json!({"ip_addresses":[public_ip(9)]})).bind(now).fetch_one(&pool).await.unwrap();
-    settings::set_enabled(&pool, server, true).await.unwrap();
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO credential_entries(id,name,kind,key_id,nonce,ciphertext,created_at,updated_at) VALUES($1,'TEST_ONLY missing key','dns',$2,$3,$4,$5,$5)")
         .bind(id).bind(format!("TEST_ONLY_MISSING_{}", Uuid::new_v4())).bind(vec![0u8;12]).bind(vec![0u8;32]).bind(now)
@@ -320,7 +314,6 @@ fn interface_and_discovery_sources_do_not_fall_back_to_merged_or_manual_addresse
         last_seen: Some(now),
         deleted_at: None,
         retiring: false,
-        plugin_enabled: true,
     };
     let mut config = config();
     config.address_source = AddressSource::Interface;
