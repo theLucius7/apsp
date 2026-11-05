@@ -1,12 +1,12 @@
-import { Field, ErrorNotice } from '../../components'
+import { Badge, Field, Meter } from '../../components'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { message, time } from './types'
+import { gib, time } from './types'
+import { cdtGuardProgress } from './guardUsage'
 import type { CdtGuardConfig, Resource } from './types'
 
 export const GIB = 1024 ** 3
 export const defaultCdtGuard: CdtGuardConfig = { threshold_bytes: 150 * GIB, jump_bytes: 20 * GIB, auto_start: true }
-const gib = (bytes: number) => (bytes / GIB).toLocaleString('zh-CN', { maximumFractionDigits: 2 })
 
 export function CdtGuardFields({ value, onChange }: { value: CdtGuardConfig; onChange: (value: CdtGuardConfig) => void }) {
   return <>
@@ -22,14 +22,31 @@ export function CdtGuardFields({ value, onChange }: { value: CdtGuardConfig; onC
   </>
 }
 
-export function CdtGuardDetails({ resource }: { resource: Resource }) {
-  const config = resource.power_policy?.cdt_guard, state = resource.cdt_guard_state
+/** One line of the resource row: how far the month's CDT usage is from the guard's stop line. */
+export function CdtGuardSummary({ resource }: { resource: Resource }) {
+  const config = resource.power_policy?.cdt_guard
   if (!config) return null
-  const backlog = state && state.max_jump_bytes >= config.jump_bytes ? state.max_jump_bytes : 0
-  return <section aria-label="CDT 脚本守护">
-    <strong>CDT 脚本守护 · {resource.power_policy?.enabled ? '已启用' : '已暂停'}</strong>
-    <p className="text-sm leading-relaxed">停机线 {gib(config.threshold_bytes)} GiB · 突增阈值 {gib(config.jump_bytes)} GiB · {config.auto_start ? '低用量自动开机' : '仅自动停机'}</p>
-    {state ? <><p className="text-sm leading-relaxed">{state.billing_cycle} · 月度最高 {gib(state.max_usage_bytes)} GiB · 最大突增 {gib(state.max_jump_bytes)} GiB · 当前缓冲 {gib(backlog)} GiB</p><p className="text-muted-foreground mt-3 text-xs leading-relaxed">最近用量查询：{time(state.queried_at || null)}{!state.queried_at ? ' · 已导入历史，等待首次查询' : ''} · 超过 2 分钟或跨月的读数不用于启停</p></> : <p>尚未建立月度状态。</p>}
-    <ErrorNotice message={message(resource.cdt_guard_error)} />
+  const progress = cdtGuardProgress(resource), paused = !resource.power_policy?.enabled
+  return <section aria-label="CDT 脚本守护" data-slot="cdt-guard" className="grid gap-1">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
+      <span className="font-medium">CDT 守护</span>
+      {paused && <Badge>已暂停</Badge>}
+      {progress ? <span className={progress.left === 0 ? 'text-destructive' : undefined}>{progress.left === 0 ? '已达停机线' : `距停机线 ${gib(progress.left)} GiB`}</span> : <span className="text-muted-foreground">尚未建立月度状态</span>}
+    </div>
+    {progress && <Meter value={progress.percent} label={`CDT 用量占停机线 ${Math.round(progress.percent)}%`} className="max-w-72" />}
+    <p className="text-muted-foreground text-xs leading-relaxed">停机线 {gib(config.threshold_bytes)} GiB{config.auto_start ? ' · 低于停机线自动开机' : ' · 仅自动停机'}{progress && progress.backlog > 0 ? ` · 含突增缓冲 ${gib(progress.backlog)} GiB` : ''}{progress?.stale && !paused ? ' · 读数超过 2 分钟，暂不据此启停' : ''}</p>
   </section>
+}
+
+/** The guard's settings and month state, folded into the resource details. */
+export function cdtGuardFacts(resource: Resource): [string, string][] {
+  const progress = cdtGuardProgress(resource), config = resource.power_policy?.cdt_guard
+  if (!config) return []
+  return [
+    ['CDT 守护', `停机线 ${gib(config.threshold_bytes)} GiB · 突增阈值 ${gib(config.jump_bytes)} GiB`],
+    ...(progress ? [
+      [`${progress.state.billing_cycle} 用量`, `月度最高 ${gib(progress.state.max_usage_bytes)} GiB · 最大突增 ${gib(progress.state.max_jump_bytes)} GiB · 当前缓冲 ${gib(progress.backlog)} GiB`],
+      ['用量查询', progress.state.queried_at ? time(progress.state.queried_at) : '已导入历史，等待首次查询'],
+    ] as [string, string][] : []),
+  ]
 }

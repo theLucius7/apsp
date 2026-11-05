@@ -1,28 +1,33 @@
 import { useState } from 'react'
 import { api } from '../../api'
-import { Badge, Confirm, Empty, ErrorNotice, Loading, Modal, PageHeader, Refresh, DialogPresence } from '../../components'
+import { Confirm, Empty, ErrorNotice, Loading, PageHeader, Refresh, DialogPresence } from '../../components'
 import { useAction, useResource } from '../../hooks'
+import { AccountPanel } from './Accounts'
+import type { CloudActions } from './Accounts'
+import { Activity } from './Activity'
 import { AccountEditor, BandwidthEditor, ResourceEditor } from './Editors'
-import { CostDetails, PowerDetails, PowerEditor, PowerHistory, PowerPolicyEditor } from './Power'
-import { billUsable, charge, exactUsage, message, status, time } from './types'
-import type { Account, Operation, Overview, Resource } from './types'
-import { accountError, bandwidthError, checked, cloudError, operationError, powerError, resourceError } from './guards'
+import { PowerEditor, PowerPolicyEditor } from './Power'
+import type { Account, Overview, Resource } from './types'
+import { accountError, bandwidthError, checked, cloudError, powerError, resourceError } from './guards'
 
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ActivityIcon, PlusIcon, ServerIcon } from 'lucide-react'
-import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
+import { CloudIcon, PlusIcon } from 'lucide-react'
+import { Panel } from '@/components/panel'
 
-const gb = (bytes: string) => (Number(bytes) / 1024 ** 3).toLocaleString('zh-CN', { maximumFractionDigits: 3 })
-type Editor = { type: 'account'; value?: Account } | { type: 'resource'; value?: Resource } | { type: 'bandwidth'; value: Resource } | { type: 'power-policy'; value: Resource } | { type: 'power'; value: Resource; action: 'start' | 'stop' }
+type Editor = { type: 'account'; value?: Account } | { type: 'resource'; value?: Resource; accountId?: string } | { type: 'bandwidth'; value: Resource } | { type: 'power-policy'; value: Resource } | { type: 'power'; value: Resource; action: 'start' | 'stop' }
+
+/**
+ * Alibaba Cloud CDT, ECS power and public bandwidth. Each account is one card
+ * with its CDT pools and its registered resources nested below; everything
+ * that happened (bandwidth changes, power jobs, notices) is one history.
+ * Every write still goes through the guarded dialogs and revision checks.
+ */
 export default function Alicloud() {
   const [editing, setEditing] = useState<Editor | null>(null), [removing, setRemoving] = useState<{ type: 'accounts'; value: Account } | { type: 'resources'; value: Resource; accountRevision: number | undefined } | null>(null)
-  const [dismiss, setDismiss] = useState<Operation | null>(null), [verified, setVerified] = useState(false)
   const [resume, setResume] = useState<{ value: Resource; accountRevision: number | undefined } | null>(null)
   const overview = useResource<Overview>('/api/plugins/alicloud'), action = useAction()
   const data = overview.data, available = Boolean(data && overview.ready && !overview.error)
-  const done = () => { setEditing(null); setRemoving(null); setDismiss(null); setResume(null); overview.reload() }
+  const done = () => { setEditing(null); setRemoving(null); setResume(null); overview.reload() }
   const current = overview.getCurrent
   const perform = (error: () => string, request: () => Promise<unknown>, success = overview.reload) => void action.run(() => checked(error, request), success)
   const open = (editor: Editor) => {
@@ -37,45 +42,42 @@ export default function Alicloud() {
     : resourceError(current, removing.value, { idle: true, accountRevision: removing.accountRevision })
   const resumeError = () => !resume ? '' : powerError(current, resume.value, undefined, resume.accountRevision) ||
     (!current()?.resources.find(r => r.id === resume.value.id)?.manual_hold ? '手动暂停状态已变化，请重新核对。' : '')
-  return <div className="grid min-w-0 gap-5"><PageHeader title="阿里云 CDT 与带宽" description="管理流量、账单、余额和公网带宽，配置 ECS 启停计划、阈值停机与抢占式保活。"><Refresh onClick={overview.reload} /><Button disabled={!available || action.busy || (data?.accounts.length ?? 8) >= 8} onClick={() => open({ type: 'account' })}><PlusIcon aria-hidden="true" />添加云账号</Button></PageHeader>
+  const actions: CloudActions = {
+    available, busy: action.busy, full: (data?.resources.length ?? 0) >= 32,
+    refreshAccount: account => perform(() => accountError(current, account, true), () => api(`/api/plugins/alicloud/accounts/${account.id}/refresh`, 'POST')),
+    editAccount: account => open({ type: 'account', value: account }),
+    addResource: account => open({ type: 'resource', accountId: account.id }),
+    removeAccount: account => { action.clearError(); setRemoving({ type: 'accounts', value: account }) },
+    refreshResource: (resource, account) => perform(() => resourceError(current, resource, { managed: true, accountRevision: account?.revision }), () => api(`/api/plugins/alicloud/resources/${resource.id}/refresh`, 'POST')),
+    editResource: resource => open({ type: 'resource', value: resource }),
+    bandwidth: resource => open({ type: 'bandwidth', value: resource }),
+    powerPolicy: resource => open({ type: 'power-policy', value: resource }),
+    power: (resource, verb) => open({ type: 'power', value: resource, action: verb }),
+    resume: (resource, account) => { action.clearError(); setResume({ value: resource, accountRevision: account?.revision }) },
+    removeResource: (resource, account) => { action.clearError(); setRemoving({ type: 'resources', value: resource, accountRevision: account?.revision }) },
+  }
+  const orphans = data?.resources.filter(resource => !data.accounts.some(account => account.id === resource.account_id)) ?? []
+  return <div className="grid min-w-0 gap-5">
+    <div className="grid gap-2">
+      <PageHeader title="阿里云 CDT 与带宽" description="每个云账号的 CDT 用量，以及其下实例的运行、守护与公网带宽。"><Refresh onClick={overview.reload} /><Button disabled={!available || action.busy || (data?.accounts.length ?? 8) >= 8} onClick={() => open({ type: 'account' })}><PlusIcon aria-hidden="true" />添加云账号</Button></PageHeader>
+      <details data-slot="cloud-reading-note" className="text-muted-foreground text-xs leading-relaxed">
+        <summary className="w-fit">用量与费用读数说明</summary>
+        <p className="mt-2 max-w-3xl">中国内地 / 海外 CDT 用量是兼容 CDT-Monitor 的读数（1 GiB = 1024³ 字节），只用于展示；CDT 守护每分钟单独读取所属额度池，自动降速依据带账期的完整 CDT 账单，账单有延迟。查询失败时保留上次读数，以“更新于”为准。账单与余额是可选查询，在账号设置中开启，缓存 6 小时，以云端为准。免费额度与开通状态请在<a className="text-primary underline-offset-4 hover:underline" href="https://cdt.console.aliyun.com/" target="_blank" rel="noreferrer">阿里云 CDT 控制台</a>核对。</p>
+      </details>
+    </div>
     <ErrorNotice message={overview.error || action.error} retry={overview.reload} />
-    <Notice tone="quiet"><ActivityIcon className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden="true" /><div><strong className="font-medium">流量查询、账单与免费额度分别核对</strong><p className="text-muted-foreground">兼容 CDT-Monitor 的国内 / 海外用量查询只用于展示；自动降速依据带账期的完整 CDT 账单，数据存在延迟。免费额度与开通状态请在<a className="text-primary underline-offset-4 hover:underline" href="https://cdt.console.aliyun.com/" target="_blank" rel="noreferrer">阿里云 CDT 控制台</a>核对。</p></div></Notice>
     {!data && overview.loading ? <Loading variant="panel" /> : !data ? <Empty title="云服务状态暂不可用" description="请刷新后再管理账号和资源。" /> : <>
-      {!data.accounts.length && <Panel><Empty title="尚未添加云账号" description="添加账号后登记需要管理的资源。凭据只保存在面板，自动控制默认关闭。" /></Panel>}
-      <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,480px),1fr))]">{data.accounts.map(account => <Panel key={account.id}>
-        <PanelHeader><PanelTitle>{account.name}</PanelTitle><Badge tone={account.enabled && !account.error_code ? 'good' : 'neutral'}>{account.enabled ? account.site === 'china' ? '中国站账号' : '国际站账号' : '已停用'}</Badge></PanelHeader>
-        <div className="p-4 grid min-w-0 gap-4"><div className="grid gap-4 sm:grid-cols-3"><div><span className="text-muted-foreground mb-2 block text-xs">中国内地用量（兼容读数）</span><strong className="text-xl font-semibold wrap-anywhere">{account.traffic ? gb(account.traffic.mainland_bytes) : '—'} <small className="text-xs font-normal">GB</small></strong></div><div><span className="text-muted-foreground mb-2 block text-xs">海外用量（兼容读数）</span><strong className="text-xl font-semibold wrap-anywhere">{account.traffic ? gb(account.traffic.overseas_bytes) : '—'} <small className="text-xs font-normal">GB</small></strong></div><div><span className="text-muted-foreground mb-2 block text-xs">{account.bill?.month ?? '当月'} 已出账 CDT 合计</span><strong className="text-xl font-semibold wrap-anywhere">{exactUsage(account.bill?.usage_micro_gb) !== null ? exactUsage(account.bill?.usage_micro_gb)!.toLocaleString('zh-CN', { maximumFractionDigits: 3 }) : '—'} <small className="text-xs font-normal">GB</small></strong></div></div>
-          <p className="text-muted-foreground mt-3 text-xs leading-relaxed">兼容读数更新：{time(account.traffic?.queried_at ?? null)}；账单更新：{time(account.bill?.queried_at ?? null)}。旧值保留供查阅，不代表当前数据。</p>
-          <CostDetails account={account} />
-          {(account.error_code || account.traffic_error) && <ErrorNotice message={[account.error_code && `账单：${message(account.error_code)}`, account.traffic_error && `兼容用量：${message(account.traffic_error)}`].filter(Boolean).join('；')} />}
-          <p className="m-0 text-sm leading-relaxed">自动控制：{account.auto_enabled && account.enabled ? `达到 ${account.limit_gb} GB 后降低已选资源带宽` : '已关闭'} · {account.billing_enabled === false ? '账单查询已关闭，CDT 守护与实例启停仍可使用' : billUsable(account) ? '账单可用于判断' : '等待当月完整、有效的 GB 单位后付账单'}</p>
-          {account.billing_enabled !== false && <details><summary className="cursor-pointer text-sm">查看 CDT 账单项目（{account.bill?.rows.length ?? 0} 项）</summary><p className="text-muted-foreground mt-3 text-xs leading-relaxed">此处列出全部 CDT 项目，可能同时包含公网与跨地域流量，不按币种混加费用。无账单不代表未开通或没有用量。</p><div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>地域 / 实例</TableHead><TableHead>账单项目</TableHead><TableHead>用量</TableHead><TableHead>费用</TableHead></TableRow></TableHeader><TableBody>{account.bill?.rows.map((row, index) => <TableRow key={index}><TableCell>{row.region || '—'}<br /><code>{row.instance_id || '—'}</code></TableCell><TableCell>{row.billing_item || row.product_type || '—'}</TableCell><TableCell>{row.usage || '—'} {row.unit}</TableCell><TableCell>{row.amount || '—'} {row.currency || '币种未知'}</TableCell></TableRow>)}</TableBody></Table></div></details>}
-          {account.traffic && <details><summary className="cursor-pointer text-sm">查看地域读数</summary><div className="mt-3 flex flex-wrap gap-3">{account.traffic.regions.map(row => <span key={row.region}>{row.region}：{gb(row.bytes)} GB</span>)}</div></details>}
-          <div className="flex flex-wrap items-center justify-end gap-4 max-md:justify-start"><Button variant="ghost" size="sm" disabled={!available || action.busy || !account.enabled} onClick={() => perform(() => accountError(current, account, true), () => api(`/api/plugins/alicloud/accounts/${account.id}/refresh`, 'POST'))}>请求更新</Button><Button variant="ghost" size="sm" disabled={!available || action.busy} onClick={() => open({ type: 'account', value: account })}>编辑账号与策略</Button><Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20" disabled={!available || action.busy} onClick={() => { action.clearError(); setRemoving({ type: 'accounts', value: account }) }}>移除账号</Button></div>
-        </div>
-      </Panel>)}</div>
-      <Panel><PanelHeader><PanelTitle>登记的云资源 <span className="text-muted-foreground text-xs">{data.resources.length} / 32</span></PanelTitle><Button variant="outline" size="sm" disabled={!available || action.busy || !data.accounts.length || data.resources.length >= 32} onClick={() => open({ type: 'resource' })}>登记资源</Button></PanelHeader>
-        {!data.resources.length ? <Empty icon={ServerIcon} title="尚未登记云资源" description="按账号、地域和资源 ID 登记，不会在阿里云新建资源。" /> : <div>{data.resources.map(resource => {
-          const account = data.accounts.find(a => a.id === resource.account_id), active = [...data.operations, ...(data.power_jobs ?? [])].some(o => o.resource_id === resource.id && ['queued', 'running', 'uncertain'].includes(o.status))
-          return <article className="border-b p-6 last:border-0 max-md:p-4" key={resource.id}><div className="flex flex-wrap items-center justify-between gap-4"><div><h3 className="m-0 mb-2 text-sm font-semibold">{resource.name}</h3><code className="wrap-anywhere">{resource.cloud_id}</code><span className="text-muted-foreground text-xs"> · {resource.kind === 'ecs' ? 'ECS' : 'EIP'} · {resource.region}</span></div><Badge tone={resource.error_code || active ? 'warm' : 'neutral'}>{active ? '有待处理操作' : resource.error_code ? '查询异常' : resource.snapshot ? '已查询' : '等待查询'}</Badge></div>
-            <dl className="my-5 grid gap-4 sm:grid-cols-2"><div><dt className="text-muted-foreground mb-1.5 text-xs">云账号</dt><dd className="m-0 wrap-anywhere">{account?.name ?? '账号已移除'}</dd></div><div><dt className="text-muted-foreground mb-1.5 text-xs">{resource.snapshot?.attached_eip_id ? '绑定 EIP 带宽 / 计费' : '最近带宽 / 计费'}</dt><dd className="m-0 wrap-anywhere">{resource.snapshot ? `${resource.snapshot.bandwidth_mbps} Mbps · ${charge(resource.snapshot.charge_type)}` : '尚未查询'}</dd></div><div><dt className="text-muted-foreground mb-1.5 text-xs">公网 IP</dt><dd className="m-0 wrap-anywhere">{resource.snapshot?.public_ip ?? '—'}</dd></div><div><dt className="text-muted-foreground mb-1.5 text-xs">状态更新时间</dt><dd className="m-0 wrap-anywhere">{time(resource.checked_at)}</dd></div><div><dt className="text-muted-foreground mb-1.5 text-xs">自动降速</dt><dd className="m-0 wrap-anywhere">{resource.snapshot?.attached_eip_id ? '绑定 EIP，此实例不执行自动降速' : resource.auto_enabled ? `纳入策略，降至 ${resource.cap_mbps} Mbps${account?.auto_enabled && account.enabled ? '' : '（账号策略未启用）'}` : '未纳入策略'}</dd></div></dl>
-            {resource.snapshot?.attached_eip_id && <p className="text-muted-foreground my-3 text-sm leading-relaxed">绑定 EIP：<code className="wrap-anywhere">{resource.snapshot.attached_eip_id}</code>。此处展示公网配置；带宽与计费请在<a className="text-primary underline-offset-4 hover:underline" href="https://vpc.console.aliyun.com/" target="_blank" rel="noreferrer">阿里云 EIP 控制台</a>管理。CDT 守护与 ECS 启停照常运行。</p>}
-            {resource.kind === 'ecs' && <PowerDetails resource={resource} />}{account?.billing_enabled !== false && <CostDetails resource={resource} />}
-            <ErrorNotice message={message(resource.error_code)} /><div className="flex flex-wrap items-center justify-end gap-4 max-md:justify-start"><Button variant="ghost" size="sm" disabled={!available || action.busy || !account?.enabled} onClick={() => perform(() => resourceError(current, resource, { managed: true, accountRevision: account?.revision }), () => api(`/api/plugins/alicloud/resources/${resource.id}/refresh`, 'POST'))}>查询当前配置</Button><Button variant="ghost" size="sm" disabled={!available || action.busy || !account?.enabled || active || resource.snapshot?.attached_eip_id != null || (resource.kind === 'eip' && !resource.snapshot)} onClick={() => open({ type: 'bandwidth', value: resource })}>调整带宽与计费</Button><Button variant="ghost" size="sm" disabled={!available || action.busy} onClick={() => open({ type: 'resource', value: resource })}>编辑策略</Button><Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20" disabled={!available || action.busy || active} onClick={() => { action.clearError(); setRemoving({ type: 'resources', value: resource, accountRevision: account?.revision }) }}>移除登记</Button></div>
-            {resource.kind === 'ecs' && <div className="flex flex-wrap items-center justify-end gap-4 max-md:justify-start"><Button variant="outline" size="sm" disabled={!available || action.busy || !account?.enabled || active} onClick={() => open({ type: 'power', value: resource, action: 'start' })}>开机</Button><Button variant="outline" size="sm" disabled={!available || action.busy || !account?.enabled || active} onClick={() => open({ type: 'power', value: resource, action: 'stop' })}>停机</Button><Button variant="ghost" size="sm" disabled={!available || action.busy} onClick={() => open({ type: 'power-policy', value: resource })}>配置自动启停</Button>{resource.manual_hold && <Button variant="ghost" size="sm" disabled={!available || action.busy || !account?.enabled || active} onClick={() => { action.clearError(); setResume({ value: resource, accountRevision: account?.revision }) }}>恢复自动开机</Button>}</div>}
-          </article>
-        })}</div>}
-      </Panel>
-      <Panel><PanelHeader><PanelTitle>变配操作记录</PanelTitle><span className="text-muted-foreground text-xs">优先展示待处理及最近 100 条 · 保留 180 天</span></PanelHeader>{!data.operations.length ? <Empty title="暂无变配操作" description="预览、确认、取消和自动降速记录会显示在这里。" /> : <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>资源 / 时间</TableHead><TableHead>调整内容</TableHead><TableHead>状态</TableHead><TableHead>操作</TableHead></TableRow></TableHeader><TableBody>{data.operations.map(operation => <TableRow key={operation.id}><TableCell>{data.resources.find(r => r.id === operation.resource_id)?.name ?? operation.before_state.cloud_id}<small className="text-muted-foreground mt-1.5 block wrap-anywhere">{time(operation.created_at)} · {operation.source === 'manual' ? '手动' : '自动降速'}</small></TableCell><TableCell>{operation.before_state.bandwidth_mbps} → {operation.target.bandwidth_mbps} Mbps<small className="text-muted-foreground mt-1.5 block wrap-anywhere">{charge(operation.before_state.charge_type)} → {charge(operation.target.charge_type)}</small></TableCell><TableCell><Badge tone={operation.status === 'succeeded' ? 'good' : ['uncertain', 'failed'].includes(operation.status) ? 'warm' : 'neutral'}>{status(operation.status)}</Badge>{operation.error_code && <small className="text-muted-foreground mt-1.5 block wrap-anywhere">{message(operation.error_code)}</small>}{operation.request_id && <small className="text-muted-foreground mt-1.5 block wrap-anywhere">云请求：{operation.request_id}</small>}</TableCell><TableCell>{['preview', 'queued'].includes(operation.status) && <Button variant="ghost" size="sm" disabled={!available || action.busy} onClick={() => perform(() => operationError(current, operation, false, ['preview', 'queued']), () => api(`/api/plugins/alicloud/operations/${operation.id}/cancel`, 'POST'))}>取消</Button>}{operation.status === 'uncertain' && <Button variant="ghost" size="sm" disabled={!available || action.busy} onClick={() => { action.clearError(); setVerified(false); setDismiss(operation) }}>已人工核对</Button>}</TableCell></TableRow>)}</TableBody></Table></div>}</Panel>
-      <PowerHistory jobs={data.power_jobs ?? []} resources={data.resources} events={data.events ?? []} available={available} current={current} reload={overview.reload} />
+      {!data.accounts.length && <Panel><Empty icon={CloudIcon} title="尚未添加云账号" description="添加账号后登记需要管理的资源。凭据只保存在面板，自动控制默认关闭。" /></Panel>}
+      {data.accounts.map(account => <AccountPanel key={account.id} account={account} resources={data.resources.filter(resource => resource.account_id === account.id)} data={data} actions={actions} />)}
+      {orphans.length > 0 && <AccountPanel resources={orphans} data={data} actions={actions} />}
+      <Activity data={data} available={available} current={current} reload={overview.reload} />
     </>}
     <DialogPresence>{editing?.type === 'account' && <AccountEditor account={editing.value} available={available} current={current} refresh={overview.reload} close={() => setEditing(null)} saved={done} />}</DialogPresence>
-    <DialogPresence>{editing?.type === 'resource' && data && <ResourceEditor resource={editing.value} accounts={data.accounts} available={available} current={current} refresh={overview.reload} close={() => setEditing(null)} saved={done} />}</DialogPresence>
+    <DialogPresence>{editing?.type === 'resource' && data && <ResourceEditor resource={editing.value} accountId={editing.accountId} accounts={data.accounts} available={available} current={current} refresh={overview.reload} close={() => setEditing(null)} saved={done} />}</DialogPresence>
     <DialogPresence>{editing?.type === 'bandwidth' && <BandwidthEditor resource={editing.value} available={available} current={current} refresh={overview.reload} close={() => setEditing(null)} saved={done} />}</DialogPresence>
     <DialogPresence>{editing?.type === 'power' && <PowerEditor resource={editing.value} action={editing.action} available={available} current={current} refresh={overview.reload} close={() => setEditing(null)} saved={done} />}</DialogPresence>
     <DialogPresence>{editing?.type === 'power-policy' && <PowerPolicyEditor resource={editing.value} available={available} current={current} refresh={overview.reload} close={() => setEditing(null)} saved={done} />}</DialogPresence>
     <DialogPresence>{resume && <Confirm title="恢复自动开机" confirmLabel="恢复自动开机" busyLabel="正在处理…" busy={action.busy} error={action.error} confirmDisabled={Boolean(resumeError())} onClose={() => setResume(null)} onConfirm={() => perform(resumeError, () => api(`/api/plugins/alicloud/resources/${resume.value.id}/power-resume`, 'POST', { revision: resume.value.revision }), done)}>解除“{resume.value.name}”的手动暂停后，已启用的每日计划或保活可能启动实例并产生费用。流量停机保护仍然有效。</Confirm>}</DialogPresence>
     <DialogPresence>{removing && <Confirm title={removing.type === 'accounts' ? '移除云账号' : '移除资源登记'} busy={action.busy} error={action.error} confirmDisabled={Boolean(removalError())} onClose={() => setRemoving(null)} onConfirm={() => perform(removalError, () => api(`/api/plugins/alicloud/${removing.type}/${removing.value.id}`, 'DELETE', { revision: removing.value.revision }), done)}>确认移除“{removing.value.name}”？这不会删除阿里云资源。账号须先移除全部资源登记；操作历史保留。</Confirm>}</DialogPresence>
-    <DialogPresence>{dismiss && <Modal title="结束不确定操作的跟踪" busy={action.busy} onClose={() => setDismiss(null)}><div data-slot="modal-body" className="p-4"><ErrorNotice message={action.error} /><p>请先在阿里云控制台核对资源与订单。结束跟踪不会撤销已提交的调整，会同时暂停此资源的自动降速与自动启停，并保留手动暂停开机标记，避免立即再次执行。</p><label className="my-4 flex items-start gap-2.5 text-sm leading-relaxed"><Checkbox checked={verified} onCheckedChange={checked => setVerified(checked === true)} className="mt-0.5" />已核对云端结果，确认结束跟踪</label></div><footer><Button variant="outline" disabled={action.busy} onClick={() => setDismiss(null)}>返回</Button><Button disabled={action.busy || !verified || Boolean(operationError(current, dismiss, false, ['uncertain']))} onClick={() => { if (verified) perform(() => operationError(current, dismiss, false, ['uncertain']), () => api(`/api/plugins/alicloud/operations/${dismiss.id}/dismiss`, 'POST'), done) }}>结束跟踪并暂停资源策略</Button></footer></Modal>}</DialogPresence>
   </div>
 }
