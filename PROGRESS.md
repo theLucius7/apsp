@@ -1,5 +1,11 @@
 # 执行进度
 
+## 2026-11-05：Alice 迁入 apsp 运行时；公开入口接口同步公开端口
+
+- Alice HK（apsp 服务器 19）按 ADR 0109 迁入：源站监听收窄为 `127.0.0.1:21443`，Alice DNS 解锁配置保持不变，切换停机 36 秒；成员经边缘 `edge.solve.ac` 的真实客户端出口不变，兼容桥心跳与计费正常。
+- 把源站的公开入口改到边缘 `edge.solve.ac:443` 时发现，`PATCH nexus-nodes/{id}/public-endpoint` 只更新了目录和节点的公开地址，节点设置里的公开端口没变，apsp 自己生成的客户端会连 `edge.solve.ac:21443`。现在一并更新公开端口，监听端口不变。
+- 验证：`nexus_runtime_takeover` 集成测试新增公开端口与监听端口断言；clippy 无告警。只改面板，远端 CI 未运行。
+
 ## 2026-11-05：隧道后的 VLESS 源站（Alice 与 CF 线路）
 
 - Alice 和 Cloudflare 优选线路的源站是无 TLS 的 VLESS + WebSocket，apsp 不支持，运行接管被快照工具拒绝。新增协议 `vless-tunnel`：服务端只能监听回环，客户端用 TLS 连边缘、以隧道主机名作 SNI 和 Host，sing-box/Clash/分享链接同步生成；快照工具把这类旧监听转换过来并收窄到 `127.0.0.1`；迁移 0084 放开协议取值。见 [ADR 0109](docs/adr/0109-vless-tunnel-origins.md)。

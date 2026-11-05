@@ -301,8 +301,8 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
         .admin(Method::PATCH, &endpoint, &cookie, Some(moved))
         .await?;
     assert_eq!(ok(response).await?["public_port"], "443");
-    let (display, public_host): (Value, String) = sqlx::query_as(
-        "SELECT d.display,n.public_host FROM singbox_nexus_nodes d JOIN singbox_nexus_runtime_nodes r ON r.inventory_id=d.id JOIN nodes n ON n.id=r.node_id WHERE d.id=$1",
+    let (display, public_host, settings): (Value, String, Value) = sqlx::query_as(
+        "SELECT d.display,n.public_host,n.settings FROM singbox_nexus_nodes d JOIN singbox_nexus_runtime_nodes r ON r.inventory_id=d.id JOIN nodes n ON n.id=r.node_id WHERE d.id=$1",
     )
     .bind(inventory)
     .fetch_one(&pool)
@@ -310,6 +310,11 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     assert_eq!(display["public_host"], "moved.example.invalid");
     assert_eq!(display["public_port"], "443");
     assert_eq!(public_host, "moved.example.invalid");
+    // Client links use the node's own public port; the listener stays on 23456.
+    assert_eq!(settings["public_port"], 443);
+    let listen: i32 = sqlx::query_scalar("SELECT n.port FROM nodes n JOIN singbox_nexus_runtime_nodes r ON r.node_id=n.id WHERE r.inventory_id=$1")
+        .bind(inventory).fetch_one(&pool).await?;
+    assert_eq!(listen, 23456);
     for invalid in [
         json!({"public_host":"https://bad","public_port":443}),
         json!({"public_host":"ok.example.invalid","public_port":0}),
