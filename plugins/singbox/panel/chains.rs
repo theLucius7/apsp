@@ -151,7 +151,7 @@ pub(crate) async fn ensure_direct(tx: &mut Transaction<'_, Postgres>, node: i64)
     .await?;
     if preserved {
         return Err(ApiError::Conflict(
-            "此迁移节点沿用原权限组，请修改套餐与原权限组映射".into(),
+            "迁移线路保留原客户端身份，不能用作链路节点；调整谁能使用请编辑它所在的策略组".into(),
         ));
     }
     let entry: bool = sqlx::query_scalar(

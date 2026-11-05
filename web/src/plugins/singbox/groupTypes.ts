@@ -1,5 +1,6 @@
 import type { ExternalEntry } from './externalAccessTypes'
-export type PolicyGroup = { id: number; name: string; node_ids: number[]; chain_ids: number[]; member_count: number; external_nodes?: ExternalEntry[] }
+/** `legacy_group_id` marks a group that stands for an original Nexus permission group (ADR 0115). */
+export type PolicyGroup = { id: number; name: string; node_ids: number[]; chain_ids: number[]; member_count: number; external_nodes?: ExternalEntry[]; legacy_group_id?: number | null; migrated_node_ids?: number[]; legacy_lines?: number }
 export type PackageGroup = { id: number; name: string; monthly_bytes: string | null; reset_day: number; reset_hour: number; reset_minute: number; timezone: string; duration_days: number }
 export type Chain = { id: number; name: string; entry_node_id: number; exit_node_id: number; available: boolean }
 export type ProxyResourceKind = 'direct' | 'chain'

@@ -85,6 +85,9 @@ async fn prepare(
                 .bind(json!(node.protocol_config)).bind(node.enabled).bind(json!(node.settings)).fetch_one(&mut *tx).await?;
             sqlx::query("INSERT INTO singbox_nexus_runtime_nodes(inventory_id,node_id,server_id,legacy_group_ids,rate) SELECT id,$3,server_id,ARRAY(SELECT (g->>'id')::bigint FROM jsonb_array_elements(display->'groups') g),(display->>'rate')::numeric FROM singbox_nexus_nodes WHERE source_id=$1 AND legacy_node_id=$2")
                 .bind(&snapshot.source_id).bind(entry.legacy_node_id).bind(id).execute(&mut *tx).await?;
+            // The line joins the policy groups of its original groups (ADR 0115).
+            sqlx::query("INSERT INTO singbox_policy_nodes(group_id,node_id) SELECT singbox_legacy_policy_group(g),node_id FROM singbox_nexus_runtime_nodes, unnest(legacy_group_ids) g WHERE node_id=$1 ON CONFLICT DO NOTHING")
+                .bind(id).execute(&mut *tx).await?;
         }
         // An explicit disabled plugin also blocks capability-based auto-enable.
         sqlx::query("INSERT INTO server_plugins(server_id,plugin,enabled,source,enabled_at) VALUES($1,'sing-box',FALSE,'administrator',$2) ON CONFLICT(server_id,plugin) DO UPDATE SET enabled=FALSE,source='administrator'")
@@ -392,6 +395,10 @@ async fn discard(
     .bind(server)
     .fetch_all(&mut *tx)
     .await?;
+    sqlx::query("DELETE FROM singbox_policy_nodes WHERE node_id=ANY($1)")
+        .bind(&nodes)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query("DELETE FROM nodes WHERE id=ANY($1)")
         .bind(&nodes)
         .execute(&mut *tx)

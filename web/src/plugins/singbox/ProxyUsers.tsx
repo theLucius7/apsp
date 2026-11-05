@@ -195,7 +195,7 @@ export default function ProxyUsers() {
           </Panel>}
           <UserPasskeyAccess key={`portal-${selected}`} id={selected} userError={() => userError(selected)} refreshRevision={refreshRevision} />
         </div>
-        {line?.bridged && <Notice role="status">从原系统迁移的用户：订阅仍由原系统生成，可用线路由套餐对应的原权限组决定；这里的策略组暂时只影响 apsp 自建节点。</Notice>}
+        {line?.bridged && <Notice role="status">从原系统迁移的用户：订阅仍由原系统生成，列出所属「原权限组」策略组中的线路；修改套餐不再改变线路。</Notice>}
         {notice && <Notice tone="success" role="status">{notice}</Notice>}
         <ErrorNotice message={!editor && !deleting && !resetting ? action.error : ''} />
         {user && <UserEntitlements key={user.id} id={user.id} entitlement={entitlement} userError={() => userError(user.id)} refreshRevision={refreshRevision} onChange={refresh} />}

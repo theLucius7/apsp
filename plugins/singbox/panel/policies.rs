@@ -13,7 +13,7 @@ use sqlx::{FromRow, Postgres, Row, Transaction};
 use std::collections::BTreeSet;
 use uuid::Uuid;
 
-const SELECT: &str = "SELECT g.id,g.name,ARRAY(SELECT node_id FROM singbox_policy_nodes WHERE group_id=g.id ORDER BY node_id) AS node_ids,ARRAY(SELECT chain_id FROM singbox_policy_chains WHERE group_id=g.id ORDER BY chain_id) AS chain_ids,(SELECT COUNT(*) FROM singbox_user_policies p JOIN users u ON u.id=p.user_id AND u.deleted_at IS NULL WHERE p.group_id=g.id) AS member_count FROM singbox_policy_groups g";
+const SELECT: &str = "SELECT g.id,g.name,ARRAY(SELECT node_id FROM singbox_policy_nodes WHERE group_id=g.id ORDER BY node_id) AS node_ids,ARRAY(SELECT chain_id FROM singbox_policy_chains WHERE group_id=g.id ORDER BY chain_id) AS chain_ids,(SELECT COUNT(*) FROM singbox_user_policies p JOIN users u ON u.id=p.user_id AND u.deleted_at IS NULL WHERE p.group_id=g.id) AS member_count,g.legacy_group_id,ARRAY(SELECT p.node_id FROM singbox_policy_nodes p JOIN singbox_nexus_runtime_nodes r ON r.node_id=p.node_id WHERE p.group_id=g.id ORDER BY p.node_id) AS migrated_node_ids,(SELECT COUNT(*) FROM singbox_nexus_nodes n LEFT JOIN singbox_nexus_runtime_nodes r ON r.inventory_id=n.id LEFT JOIN singbox_nexus_runtime_hosts h ON h.server_id=r.server_id WHERE g.legacy_group_id IS NOT NULL AND h.state IS DISTINCT FROM 'active' AND n.display->'groups' @> jsonb_build_array(jsonb_build_object('id',g.legacy_group_id))) AS legacy_lines FROM singbox_policy_groups g";
 
 #[derive(Serialize, FromRow)]
 pub struct Policy {
@@ -22,6 +22,12 @@ pub struct Policy {
     pub node_ids: Vec<i64>,
     pub chain_ids: Vec<i64>,
     pub member_count: i64,
+    /// The original Nexus permission group this group stands for (ADR 0115).
+    pub legacy_group_id: Option<i64>,
+    /// Migrated lines in the group; they keep members' original client identities.
+    pub migrated_node_ids: Vec<i64>,
+    /// Lines of the original group that the old panel still runs and lists.
+    pub legacy_lines: i64,
     #[sqlx(skip)]
     pub external_nodes: Vec<super::external_access::model::Entry>,
 }
@@ -109,17 +115,6 @@ async fn save(state: &AppState, id: Option<i64>, request: PolicyRequest) -> ApiR
     super::external_access::validate(&request.external_nodes)?;
     let mut tx = state.pool.begin().await?;
     super::entitlements::lock(&mut tx).await?;
-    let preserved: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM singbox_nexus_runtime_nodes WHERE node_id=ANY($1))",
-    )
-    .bind(&nodes)
-    .fetch_one(&mut *tx)
-    .await?;
-    if preserved {
-        return Err(ApiError::Conflict(
-            "迁移节点沿用原权限组，请修改套餐与原权限组映射".into(),
-        ));
-    }
     let valid_nodes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM nodes n JOIN servers s ON s.id=n.server_id WHERE n.id=ANY($1) AND n.deleted_at IS NULL AND s.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM singbox_chains c WHERE c.entry_node_id=n.id AND (c.deleted_at IS NULL OR (c.path_kind='ordered' AND c.phase<>'retired')))")
         .bind(&nodes).fetch_one(&mut *tx).await?;
     let mut valid_chains: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM singbox_live_chains c WHERE c.id=ANY($1) AND (singbox_path_resources_available(c.id) OR EXISTS(SELECT 1 FROM singbox_policy_chains p WHERE p.chain_id=c.id AND p.group_id=$2))")

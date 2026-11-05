@@ -131,9 +131,10 @@ struct LegacyGroups {
     groups: Vec<LegacyGroup>,
 }
 
-/// Records a permission group the source added to a node after import, so a
-/// later cutover does not drop its members. Keys and client identities stay as
-/// preserved; only who may use the node changes.
+/// Records the permission groups the source lists for a node after import. A
+/// taken-over line also moves between the policy groups standing for those
+/// original groups (ADR 0115), so its members follow; keys and client identities
+/// stay as preserved.
 async fn legacy_groups(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -170,15 +171,6 @@ async fn legacy_groups(
             .bind(id)
             .fetch_one(&mut *tx)
             .await?;
-    let mapped: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT p.legacy_group_id) FROM singbox_nexus_plan_mappings p JOIN singbox_nexus_bridge b ON b.import_id=p.import_id WHERE p.legacy_group_id=ANY($1)")
-        .bind(&ids)
-        .fetch_one(&mut *tx)
-        .await?;
-    if mapped != ids.len() as i64 {
-        return Err(ApiError::Conflict(
-            "权限组还没有对应的套餐，成员无法继承".into(),
-        ));
-    }
     let views: Vec<Value> = input
         .groups
         .iter()
@@ -189,12 +181,28 @@ async fn legacy_groups(
         .bind(json!(views))
         .execute(&mut *tx)
         .await?;
-    let state_after: Option<String> = sqlx::query_scalar("UPDATE singbox_nexus_runtime_nodes r SET legacy_group_ids=$2 FROM singbox_nexus_runtime_hosts h WHERE r.inventory_id=$1 AND h.server_id=r.server_id RETURNING h.state")
+    let runtime: Option<(i64, String)> = sqlx::query_as("UPDATE singbox_nexus_runtime_nodes r SET legacy_group_ids=$2 FROM singbox_nexus_runtime_hosts h WHERE r.inventory_id=$1 AND h.server_id=r.server_id RETURNING r.node_id,h.state")
         .bind(id)
         .bind(&ids)
         .fetch_optional(&mut *tx)
         .await?;
-    if let (Some(server), Some("active")) = (server, state_after.as_deref()) {
+    if let Some((node, _)) = &runtime {
+        // Only the groups standing for original groups follow the source; groups
+        // an administrator made keep the line.
+        sqlx::query("DELETE FROM singbox_policy_nodes p USING singbox_policy_groups g WHERE g.id=p.group_id AND p.node_id=$1 AND g.legacy_group_id IS NOT NULL AND NOT g.legacy_group_id=ANY($2)")
+            .bind(node)
+            .bind(&ids)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("INSERT INTO singbox_policy_nodes(group_id,node_id) SELECT singbox_legacy_policy_group(g),$1 FROM unnest($2::bigint[]) g ON CONFLICT DO NOTHING")
+            .bind(node)
+            .bind(&ids)
+            .execute(&mut *tx)
+            .await?;
+    }
+    if let (Some(server), Some((_, state))) = (server, &runtime)
+        && state == "active"
+    {
         crate::business::mark_dirty(&mut tx, &[server]).await?;
     }
     sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus_node_groups',$2,$3,$4,$5)")
@@ -276,6 +284,10 @@ async fn retire(
             .await?;
         sqlx::query("DELETE FROM singbox_nexus_runtime_nodes WHERE inventory_id=$1")
             .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM singbox_policy_nodes WHERE node_id=$1")
+            .bind(node)
             .execute(&mut *tx)
             .await?;
         // Usage history still refers to the native row, so it is retired, not deleted.
