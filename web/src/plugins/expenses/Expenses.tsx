@@ -11,7 +11,7 @@ import { useRef, useState } from 'react'
 import { api } from '../../api'
 import { ErrorNotice, FormDialog, PageHeader, Stat, DialogPresence } from '../../components'
 import { useAction, useResource, useResourceGroup } from '../../hooks'
-import { amount, cycles, download, optionalId, optionalText, parseAmount, root } from './types'
+import { amount, cycles, daysUntil, download, optionalId, optionalText, parseAmount, root } from './types'
 import type { Expense, Label } from './types'
 import ExpenseForm from './ExpenseForm'
 import Configuration from './Configuration'
@@ -20,8 +20,8 @@ import { Cancellations, Payments, References, ServerCostDialog } from './ServerL
 
 /** How far away the next payment is, so the soon and the overdue stand out in the list. */
 function Due({ date, inactive }: { date: string; inactive: boolean }) {
-  const days = Math.round((Date.parse(`${date}T00:00:00Z`) - Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate())) / 86_400_000)
-  if (inactive || !Number.isFinite(days)) return null
+  const days = daysUntil(date)
+  if (inactive || days === null) return null
   return <small className={cn('mt-1 block text-xs', days < 0 ? 'text-destructive' : days <= 30 ? 'text-warning' : 'text-muted-foreground')}>{days < 0 ? `已过 ${-days} 天` : days === 0 ? '今天' : `${days} 天后`}</small>
 }
 

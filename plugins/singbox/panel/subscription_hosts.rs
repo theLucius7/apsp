@@ -279,13 +279,27 @@ pub async fn gate(State(state): State<AppState>, mut request: Request, next: Nex
         return plain_not_found();
     }
     if let Some(renderer) = owner.renderer {
-        return relay(
+        let response = relay(
             &renderer,
             &owner.token,
             request.uri().query(),
             request.headers(),
         )
         .await;
+        // The renderer chose the format and the nodes; the fetch itself is still the
+        // user's, so it is kept like any other. A failed record never costs the client
+        // its subscription.
+        let result = if response.status().is_success() {
+            "relayed"
+        } else {
+            "unavailable"
+        };
+        if let Err(error) =
+            super::subscriptions::record_fetch(&state, owner.user, "renderer", None, result).await
+        {
+            tracing::warn!(?error, "relayed subscription fetch not recorded");
+        }
+        return response;
     }
     let query = query_of(request.uri());
     let headers = request.headers().clone();

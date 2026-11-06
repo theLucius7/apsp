@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
 import { AnimatePresence, m } from 'motion/react'
 import { ArrowDownIcon, ArrowUpIcon, DatabaseIcon, LayoutGridIcon, ListFilterIcon, RefreshCwIcon, SearchIcon, ServerIcon, TableIcon, WalletIcon } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
 import type { ProbeOverview } from '../probes'
 import type { Server } from '../types'
 import { aggregate, fresh, network, size, speed } from './data'
@@ -14,7 +12,7 @@ import { useDashboardPoll } from './useDashboardPoll'
 import { useDashboardServers } from './useDashboardServers'
 import { useCurrency } from './CurrencyContext'
 import { costSummary, money, quoteState } from './currency'
-import { DisplayNotice, surface, toneText } from './ui'
+import { DisplayNotice, Stat, StatStrip, surface } from './ui'
 import { cn } from '@/lib/utils'
 import { revealMotion } from '@/lib/motion'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -25,20 +23,6 @@ import { SegmentedButton, SegmentedGroup } from '@/components/segmented'
 
 // Shared so servers without probes keep the same props and their memoized cards skip re-rendering.
 const noProbes: ProbeOverview[] = []
-
-function Stat({ icon: Icon = ServerIcon, label, value, unit, children, tone, title }: { icon?: LucideIcon; label: string; value: ReactNode; unit?: string; children: ReactNode; tone?: string; title?: string }) {
-  return <div data-slot="overview-item" className="min-w-0 border-border px-4 py-2.5 max-sm:px-3" title={title}>
-    <div data-slot="overview-label" className="text-muted-foreground mb-0.5 flex items-center justify-between gap-2 text-xs">
-      <span>{label}</span>
-      <Icon className="size-3.5 opacity-70" aria-hidden="true" />
-    </div>
-    <div data-slot="overview-value" className="flex min-w-0 items-baseline gap-1.5">
-      <strong className={cn('truncate text-xl leading-tight font-semibold tabular-nums', tone && toneText[tone])}>{value}</strong>
-      {unit && <b className="text-muted-foreground shrink-0 text-xs font-medium">{unit}</b>}
-    </div>
-    <div className="text-muted-foreground mt-0.5 flex min-h-4 items-center gap-2 overflow-hidden text-xs whitespace-nowrap *:truncate">{children}</div>
-  </div>
-}
 
 function readPreference(key: string): string | null {
   try { return localStorage.getItem(`apsp-dashboard-${key}`) } catch { return null }
@@ -101,13 +85,13 @@ export default function Overview({ now }: { now: number }) {
   const chooseView = (value: DashboardView) => { setView(value); savePreference('view', value) }
   const chooseSort = (value: string) => { const next = savedSort(value); setSort(next); savePreference('sort', next) }
   return <div data-slot="dashboard-home" className="flex flex-col gap-3">
-    <section aria-label="服务器总览" className={cn(surface, 'grid overflow-hidden [&>*]:border-border max-lg:grid-cols-2 max-lg:[&>*:nth-child(even)]:border-l max-lg:[&>*:not(:nth-last-child(-n+2))]:border-b max-lg:[&>*:last-child:nth-child(odd)]:col-span-full lg:[&>*+*]:border-l', showCosts ? 'lg:grid-cols-5' : 'lg:grid-cols-4')}>
+    <StatStrip label="服务器总览" columns={showCosts ? 5 : 4}>
       <Stat icon={ServerIcon} label="在线服务器" value={!servers || unavailable ? '—' : counts.online} unit={servers ? `/ ${entries.length} 台` : undefined} tone="good">{unavailable ? '等待更新' : !entries.length ? '等待接入' : counts.online === counts.all ? '全部运行正常' : `${counts.offline} 台离线${counts.pending ? ` · ${counts.pending} 台待接入` : ''}`}</Stat>
       {showCosts && <Stat icon={WalletIcon} label="资产" value={money(costs.total, currency)} title={`${costs.converted} 台可折算 · ${costs.missingPrices} 台未填写费用；每 30 天约 ${money(costs.recurring, currency)}`}><span>剩余价值 {money(costs.remaining, currency)}</span>{costs.missingRates > 0 ? <span className="text-warning" title={`${costs.missingRates} 台缺少汇率，未计入合计`}>汇率缺失</span> : staleCosts ? <span className="text-warning" title={referenceState === 'read-error' ? '汇率读取失败，使用上次有效汇率' : referenceState === 'stale' ? '使用上次有效汇率' : '无法确认参考汇率状态'}>{referenceState === 'read-error' ? '汇率读取失败' : referenceState === 'stale' ? '旧汇率' : '汇率状态未知'}</span> : null}</Stat>}
       <Stat icon={DatabaseIcon} label="累计流量" value={size(total)} title={`网卡累计 · ${completeCounters.length} / ${entries.length} 台有完整计数`}><span className="text-success">上传 {size(sent.value)}</span><span className="text-info">下载 {size(received.value)}</span></Stat>
       <Stat icon={ArrowUpIcon} label="实时上行" value={uploadValue} unit={uploadUnit} tone="good" title={`${upload.count} / ${entries.length} 台有有效采样`}>{peak(topUpload, 'transmit_bytes_per_sec')}</Stat>
       <Stat icon={ArrowDownIcon} label="实时下行" value={downloadValue} unit={downloadUnit} tone="info" title={`${download.count} / ${entries.length} 台有有效采样`}>{peak(topDownload, 'receive_bytes_per_sec')}</Stat>
-    </section>
+    </StatStrip>
     <div data-slot="dashboard-toolbar" className="min-w-0">
       <div className="flex min-h-9 items-center gap-3 max-lg:flex-wrap max-lg:gap-2">
         <label className="relative flex min-w-44 flex-[0_1_300px] items-center max-lg:flex-[1_1_180px] max-sm:min-w-24 max-sm:flex-[1_1_100px]">
