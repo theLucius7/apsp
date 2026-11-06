@@ -13,8 +13,8 @@ import { NativeSelect } from '@/components/ui/native-select'
 export function ConnectionFields({ node }: { node: Node | 'new' }) {
   const settings = node === 'new' ? undefined : node.settings
   return <>
-    <Field label="监听地址" hint="填写服务器本机 IP。:: 监听 IPv6，通常同时接受 IPv4；仅 IPv4 可填 0.0.0.0。"><Input name="listen" required defaultValue={settings?.listen ?? '::'} maxLength={45} spellCheck={false} /></Field>
-    <Field label="公开端口" hint="客户端连接使用的端口。留空跟随监听端口；有 NAT 映射时填写映射后的端口。"><Input name="public_port" type="number" min={1} max={65535} step={1} defaultValue={settings?.public_port ?? ''} placeholder="与监听端口相同" /></Field>
+    <Field label="监听地址" hint="服务器本机 IP。:: 监听 IPv6（通常也接受 IPv4），只用 IPv4 填 0.0.0.0。"><Input name="listen" required defaultValue={settings?.listen ?? '::'} maxLength={45} spellCheck={false} /></Field>
+    <Field label="公开端口" hint="客户端连接的端口；留空同监听端口，NAT 时填映射后的端口。"><Input name="public_port" type="number" min={1} max={65535} step={1} defaultValue={settings?.public_port ?? ''} placeholder="与监听端口相同" /></Field>
   </>
 }
 

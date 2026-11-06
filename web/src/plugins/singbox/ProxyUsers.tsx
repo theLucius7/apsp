@@ -252,7 +252,7 @@ export default function ProxyUsers({ initialUserId }: { initialUserId?: number }
     <DialogPresence>{resetting && <Modal title={`重置「${resetting.name}」的订阅链接？`} busy={action.busy} onClose={() => setResetting(null)}>
       <div data-slot="modal-body" className="p-4">
         <ErrorNotice message={resettingError || action.error} />
-        <p className="text-muted-foreground text-sm leading-relaxed">旧链接将立即失效，代理用户需要在客户端换成新链接。现有节点连接凭据和授权保持不变，已下载的配置仍可使用。</p>
+        <p className="text-muted-foreground text-sm leading-relaxed">旧链接立即失效，用户需要在客户端换成新链接；节点凭据和授权不变。</p>
       </div>
       <footer>
         <Button variant="outline" disabled={action.busy} onClick={() => setResetting(null)}>取消</Button>

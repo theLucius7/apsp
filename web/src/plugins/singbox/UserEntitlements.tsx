@@ -79,7 +79,7 @@ export default function UserEntitlements({ id, entitlement, userError, refreshRe
                 <div><dt className="text-muted-foreground">可使用至</dt><dd className="mt-0.5 wrap-anywhere">{dateText(e.expires_at, e.timezone)}</dd></div>
               </dl>
               <p className="text-muted-foreground mt-2 text-xs leading-relaxed" title={`本期起点 ${dateText(e.cycle_start, e.timezone)}。到期或用完流量后立即停止提供可用订阅，设备应用新配置后停止服务。设备离线或流量尚未上报时，限制不会瞬间生效。`}>按 {e.timezone} 显示。重置只恢复月度流量，不延长有效期。</p>
-            </> : <p className="text-muted-foreground mt-2 text-xs leading-relaxed">未分配套餐时不限制流量或有效期。分配后，此用户所有策略组中的节点共享同一份额度。</p>}
+            </> : <p className="text-muted-foreground mt-2 text-xs leading-relaxed">未分配套餐时不限流量和期限；分配后，所有节点共用这一份额度。</p>}
           </>}
         </section>
       </div>
@@ -87,7 +87,7 @@ export default function UserEntitlements({ id, entitlement, userError, refreshRe
     <DialogPresence>{assignment && <FormDialog title="分配套餐" onClose={() => setAssignment(null)} onSubmit={assign} busy={action.busy} submitDisabled={Boolean(packageError())} error={packageError() || action.error} submitLabel="确认分配">
       <Field label="套餐组"><NativeSelect className="w-full" name="package_group_id" required value={packageChoice} onChange={event => setPackageChoice(event.target.value)}><option value="" disabled>选择套餐</option>{packageChoice && !packages.data?.some(value => String(value.id) === packageChoice) && <option value={packageChoice}>套餐组 #{packageChoice}（已不存在，原选择保留）</option>}{packages.data?.map(p => <option key={p.id} value={p.id}>{p.name} · {p.monthly_bytes === null ? '不限量' : bytes(p.monthly_bytes)} / 月 · {p.duration_days} 天</option>)}</NativeSelect></Field>
       {packages.data?.map(p => <p className="text-muted-foreground mt-3 text-xs leading-relaxed" key={p.id}>{p.name}：{scheduleText(p)}</p>)}
-      <p>此操作替换当前套餐，使用期限从现在重新计算，不是在原到期日上续加。本月已记录的流量不会清空。变更月度重置规则会重新按新规则统计当前周期。</p>
+      <p>替换当前套餐，期限从现在重新计算（不是续加）；本月已记录的流量不清空。</p>
       <p className="text-muted-foreground mt-3 text-xs leading-relaxed">套餐与节点权限分别分配；仅分配套餐不会自动授予节点。</p>
     </FormDialog>}</DialogPresence>
     <DialogPresence>{operation && <OperationReview request={operation} onClose={() => setOperation(null)} onApplied={() => { setOperation(null); setAssignment(null); dirty.current = false; assigned.reload(); entitlement.reload(); onChange(); setNotice('变更已确认保存；历史账本保留，请继续查看设备应用与订阅状态。') }} />}</DialogPresence>
