@@ -1,6 +1,6 @@
 # 文档导航
 
-先读[功能地图](product-map.md)了解 apsp 的定位（自托管的代理网络控制平面）、功能分级和各自边界；下面的使用文档按功能区排列，代理服务在前，标“实验”的文档对应已降级或冻结的功能。代码位置见[目录说明](repository.md)，近期实现与验证见 [PROGRESS](../PROGRESS.md)。本文只是导航，具体限制和验收结果以对应专题为准。
+先读[功能地图](product-map.md)了解 apsp 的定位（自托管的服务器管理与配置面板）、功能分级和各自边界；下面的使用文档按功能区排列，代理服务在前，标“实验”的文档对应已降级或冻结的功能。代码位置见[目录说明](repository.md)，近期实现与验证见 [PROGRESS](../PROGRESS.md)。本文只是导航，具体限制和验收结果以对应专题为准。
 
 ## 开始使用
 
@@ -22,7 +22,7 @@
 | 配置代理协议、端点和证书 | [协议与证书](proxy-protocols.md) |
 | 整理节点库、导入外部订阅并直接授权 | [节点库与外部订阅](node-catalog.md) |
 | 配置策略组、套餐、授权和周期 | [策略与套餐](singbox-groups.md) |
-| 导入机场订阅并创建混合链路 | [Agent 运维与混合链路](agent-runtime-and-chains.md) |
+| 导入订阅来源并创建混合链路 | [Agent 运维与混合链路](agent-runtime-and-chains.md) |
 | 为代理用户开通自助门户与 Passkey | [Passkey 登录与开通](passkeys.md) |
 | 了解运维与代理用户的完整流程 | [运维与代理用户流程](singbox-operations-workflows.md)、[读取与编辑保护](singbox-snapshot-editing.md) |
 
