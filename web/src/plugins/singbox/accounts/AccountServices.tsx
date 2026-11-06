@@ -10,6 +10,7 @@ import { Badge, ErrorNotice, Field } from '../../../components'
 import { ago, time } from '../../../format'
 import { useAction } from '../../../hooks'
 import { loginPasskey } from '../../../passkeys'
+import { onOwnAddress } from './types'
 
 export type MemberProfile = { email: string | null; email_verified: boolean; has_password: boolean; remind_expire: boolean; remind_traffic: boolean }
 
@@ -30,7 +31,9 @@ export default function AccountServices({ account, profile, reload }: { account:
       if (value.account_id !== account) throw new Error('登录账户不一致，请重新打开个人入口。')
     } else await loginPasskey(`${base}/login`, false)
   }
-  const authentication = <Field label="当前密码（留空则使用 Passkey 验证）"><Input type="password" name="old_password" autoComplete="current-password" maxLength={1024} /></Field>
+  // Password checks go through the panel's address; a user's own address verifies with a Passkey.
+  const authentication = onOwnAddress() ? <p className="text-muted-foreground mb-4 text-xs">提交时用 Passkey 验证身份。</p>
+    : <Field label="当前密码（留空则使用 Passkey 验证）"><Input type="password" name="old_password" autoComplete="current-password" maxLength={1024} /></Field>
   return <div data-slot="account-services" className="grid gap-3">
     {(action.error || notice) && <div><ErrorNotice message={action.error} />{notice && <Notice tone="success" role="status" className="mb-0">{notice}</Notice>}</div>}
     <div className="flex min-w-0 items-center gap-3 rounded-xl border px-4 py-3">

@@ -22,7 +22,7 @@ pub(crate) async fn challenge(
     headers: HeaderMap,
     Json(input): Json<Request>,
 ) -> ApiResult<Json<Value>> {
-    state.passkeys.check_origin(&headers)?;
+    crate::subscription_hosts::check_portal_origin(&state, &headers).await?;
     let address = email(&input.email)?;
     if !["invite", "reset"].contains(&input.purpose.as_str()) {
         return Err(bad("验证码用途无效"));

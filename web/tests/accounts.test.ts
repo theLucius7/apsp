@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { RequestIdentity } from '../src/plugins/singbox/accounts/types'
+import { isOwnAddressPath, RequestIdentity } from '../src/plugins/singbox/accounts/types'
 import { parseAmount, decimal } from '../src/plugins/expenses/types'
 import { resolveRoute } from '../src/app/routes'
 
@@ -21,4 +21,14 @@ test('invitation links accept codes and the links of paid invitations', () => {
   const legacy = 'a'.repeat(43)
   expect(resolveRoute(`/plugins/sing-box/join/${legacy}`)).toEqual({ page: 'member-join', token: legacy })
   expect(resolveRoute('/plugins/sing-box/join/ABCD').page).not.toBe('member-join')
+})
+
+test('a user\'s own address is recognised by its sign-in path only', () => {
+  // The own address serves its sign-in page at /{path}/login; the panel itself lives at /.
+  expect(isOwnAddressPath('/Zq3xR9aT/login')).toBe(true)
+  expect(isOwnAddressPath('/Zq3xR9aT/login/')).toBe(true)
+  expect(isOwnAddressPath('/')).toBe(false)
+  expect(isOwnAddressPath('/login')).toBe(false)
+  expect(isOwnAddressPath('/a/b/login')).toBe(false)
+  expect(isOwnAddressPath('/Zq3xR9aT')).toBe(false)
 })

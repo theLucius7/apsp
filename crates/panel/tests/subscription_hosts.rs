@@ -5,6 +5,7 @@ mod business_support;
 mod release_support;
 
 use anyhow::Result;
+use apsp_panel::auth::{hash_token, random_token};
 use apsp_panel::plugins::singbox::subscription_hosts::{DnsApi, reconcile};
 use axum::{
     Json, Router,
@@ -16,6 +17,7 @@ use reqwest::{Method, StatusCode, header};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::sync::{Arc, Mutex};
+use uuid::Uuid;
 
 const ROOT: &str = "/api/plugins/sing-box";
 const ZONE: &str = "example.test";
@@ -513,5 +515,68 @@ async fn every_subscription_fetch_is_recorded_including_relayed_ones(pool: PgPoo
         StatusCode::OK
     );
     assert_eq!(fetches(&pool, migrated).await?.len(), 2);
+    Ok(())
+}
+
+/// A signed-in portal session for an existing proxy user, as a Passkey sign-in leaves it.
+async fn portal_session(pool: &PgPool, user: i64) -> Result<(Uuid, String)> {
+    let account = Uuid::new_v4();
+    let token = random_token();
+    sqlx::query("INSERT INTO passkey_accounts(id) VALUES($1)")
+        .bind(account)
+        .execute(pool)
+        .await?;
+    sqlx::query("INSERT INTO singbox_portal_accounts(user_id,account_id) VALUES($1,$2)")
+        .bind(user)
+        .bind(account)
+        .execute(pool)
+        .await?;
+    let now = apsp_protocol::now_timestamp();
+    sqlx::query("INSERT INTO singbox_portal_sessions(token_hash,account_id,expires_at,verified_at) VALUES($1,$2,$3,$4)")
+        .bind(hash_token(&token))
+        .bind(account)
+        .bind(now + 3600)
+        .bind(now)
+        .execute(pool)
+        .await?;
+    Ok((account, format!("apsp_proxy_session={token}")))
+}
+
+#[sqlx::test]
+async fn a_users_own_address_takes_their_account_changes(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let user = id(&panel.create_user(&cookie, "Own").await?)?;
+    enable(&pool, true).await?;
+    let (dns, _) = fake_cloudflare().await?;
+    reconcile(&pool, &DnsApi::new(&dns)).await?;
+    let (host, _) = host_of(&pool, user).await?;
+    let (account, session) = portal_session(&pool, user).await?;
+    let save = |origin: String| {
+        panel
+            .client
+            .put(format!(
+                "{}{ROOT}/portal/{account}/account/reminders",
+                panel.base
+            ))
+            .header(header::HOST, &host)
+            .header(header::ORIGIN, origin)
+            .header(header::COOKIE, &session)
+            .json(&json!({"remind_expire": true, "remind_traffic": false}))
+            .send()
+    };
+    // The portal page was opened at the user's own address, so that is its origin.
+    let accepted = save(format!("https://{host}")).await?;
+    let status = accepted.status();
+    assert_eq!(status, StatusCode::OK, "{}", accepted.text().await?);
+    let saved: (bool, bool) =
+        sqlx::query_as("SELECT remind_expire,remind_traffic FROM singbox_members WHERE user_id=$1")
+            .bind(user)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(saved, (true, false));
+    // A page from anywhere else cannot write through that address.
+    let refused = save(panel.state.config.public_url.clone()).await?;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
     Ok(())
 }

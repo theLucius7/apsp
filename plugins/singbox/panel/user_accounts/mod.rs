@@ -203,7 +203,7 @@ async fn account_session(
     write: bool,
 ) -> ApiResult<i64> {
     if write {
-        state.passkeys.check_origin(headers)?;
+        crate::subscription_hosts::check_portal_origin(state, headers).await?;
     }
     let owner = crate::portal::access::lock(tx, account).await?;
     crate::portal::access::session(

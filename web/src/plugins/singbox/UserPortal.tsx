@@ -1,5 +1,6 @@
 import AccountPanel from './accounts/AccountPanel'
 import { PortalSubscription, PortalSummary } from './accounts/PortalOverview'
+import { onOwnAddress } from './accounts/types'
 import type { SubscriptionStatus } from './accounts/PortalOverview'
 import MemberLines from './lines/MemberLines'
 import { useEffect, useState } from 'react'
@@ -97,8 +98,11 @@ export default function UserPortal({ account, activation }: { account: string; a
       <Button size="lg" className="h-11 w-full text-sm" disabled={action.busy || Boolean(disabled)} onClick={() => void action.run(() => loginPasskey(`${base}/login`, false), () => { setNotice(''); reload() })}>
         {action.busy ? <><Spinner role="presentation" aria-hidden="true" aria-label={undefined} />正在验证…</> : <><KeyRoundIcon aria-hidden="true" />使用 Passkey 登录</>}
       </Button>
-      <AuthDivider label="或" />
-      <a className={buttonVariants({ variant: 'outline', size: 'lg', className: 'h-11 w-full text-sm' })} href="#/plugins/sing-box/member"><MailIcon aria-hidden="true" />邮箱密码登录 / 找回密码</a>
+      {/* A user's own address serves only this portal; email sign-in lives on the panel's address. */}
+      {!onOwnAddress() && <>
+        <AuthDivider label="或" />
+        <a className={buttonVariants({ variant: 'outline', size: 'lg', className: 'h-11 w-full text-sm' })} href="#/plugins/sing-box/member"><MailIcon aria-hidden="true" />邮箱密码登录 / 找回密码</a>
+      </>}
     </>}
     {disabled && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{disabled}</p>}
   </AuthShell>
