@@ -77,7 +77,7 @@
 | 功能 | 位置 |
 | --- | --- |
 | 服务器看板（可只读公开）、统计报表 | 总览 |
-| 订阅看板：代理用户订阅、续费项目与订阅来源各一张卡片，看用量、续费、到期与最近拉取，仅管理员（[ADR 0117](adr/0117-subscription-board.md)） | 总览 › 概览 › 订阅看板 `/#/subscriptions` |
+| 订阅看板：管理员自己付费的订阅（「费用与续费」中的 Wallos 式项目）每个一张卡片，看每月费用与下次续费，仅管理员（[ADR 0117](adr/0117-subscription-board.md)） | 总览 › 概览 › 订阅看板 `/#/subscriptions` |
 | 服务器概况；资产与流量（到期、续费、网卡流量额度与矫正） | 服务器详情 |
 | Agent 采集与上报设置、周期拨测 | 服务器详情 › Agent 与任务 |
 | 离线、资源、到期、流量告警；Telegram 与 Webhook | 监控告警 |
@@ -139,7 +139,7 @@
 
 **服务器详情**按“这台服务器”分为六个分页：概况（`/#/servers/{id}`，即服务器监控面板，与看板单机视图是同一个面板，[ADR 0111](adr/0111-server-monitor-and-ink-jade-visuals.md)）、资产与流量（`/assets`）、Agent 与任务（`/agent`）、插件（`/plugins`）、线路诊断（IP 信息 `/ip-info`、TCP 诊断 `/tcp-quality`、节点验机 `/node-quality` 三个子视图）、运维（实验，`/fleet`，随「显示实验与冻结功能」显示）。页面右上角的「带此服务器打开」菜单进入网络检测（实验功能开启时还有网络配置和自动化与维护），并预先选中这台服务器。管理员在看板点服务器卡片进入服务器详情；`/#/dashboard/{id}` 留给访客和只有监控权限的管理员。
 
-**不在侧栏但仍可用的地址：** `/#/fleet`（原运维工具，显示服务器选择与迁移说明）、`/#/servers/batch`（批量接入，从服务器列表进入）、`/#/system/plugins`（插件中心的 sing-box 安装视图）、`/#/artifacts`（插件中心别名）、`/#/plugins/sing-box/chains`（链路视图）、`/#/latency/reachability`（延迟检测的中国可达性视图）、`/#/plugins/sing-box/users/{id}`（代理用户页直接打开某个用户，订阅看板的卡片使用）、`/#/plugins/expenses/items/{id}` 与 `/#/plugins/expenses/servers/{id}`（费用与续费中某一项的详情）、`/#/overview` 与 `/` （服务器看板别名；登录后无指定地址时进入概览）。
+**不在侧栏但仍可用的地址：** `/#/fleet`（原运维工具，显示服务器选择与迁移说明）、`/#/servers/batch`（批量接入，从服务器列表进入）、`/#/system/plugins`（插件中心的 sing-box 安装视图）、`/#/artifacts`（插件中心别名）、`/#/plugins/sing-box/chains`（链路视图）、`/#/latency/reachability`（延迟检测的中国可达性视图）、`/#/plugins/sing-box/users/{id}`（代理用户页直接打开某个用户）、`/#/plugins/expenses/items/{id}` 与 `/#/plugins/expenses/servers/{id}`（费用与续费中某一项的详情）、`/#/overview` 与 `/` （服务器看板别名；登录后无指定地址时进入概览）。
 
 ## 归类规则
 
@@ -162,10 +162,10 @@
 | 链路 | 入口、中转、落地组成的多段线路 | 节点：单个代理入口 |
 | 管理员 | 登录面板的人，分所有者、运维和只读 | 代理用户：使用订阅的人，只能进入自己的门户 |
 | 策略组 | 用户能用哪些节点和链路 | 套餐：流量额度、有效期和重置周期 |
-| 续费项目 | 「费用与续费」中需要按周期付款的一项：服务器、域名、机场订阅或其他服务 | 订阅：代理用户使用的订阅链接，或作为节点来源的订阅来源；订阅看板同时列出这两种订阅和续费项目（服务器除外） |
+| 续费项目 | 「费用与续费」中需要按周期付款的一项：服务器、域名、机场订阅或其他服务 | 订阅：代理用户使用的订阅链接，或作为节点来源的订阅来源；订阅看板只列管理员自己付费的服务（续费项目中手动记的部分），不含这两种 |
 | 概览 | 登录后的首页：需要处理的事项与整体状态 | 服务器看板：服务器实时状态，可公开 |
 | 服务器看板 | 实时状态，可公开 | 统计报表：历史趋势，仅管理员 |
-| 订阅看板 | 代理用户订阅、续费项目与订阅来源的卡片看板，仅管理员 | 服务器看板：服务器的实时状态 |
+| 订阅看板 | 管理员自己付费的订阅（Wallos 式）的卡片看板，仅管理员 | 代理用户的订阅：别人的，在「代理用户」 |
 | 告警事件 | 自动检测产生的单条告警及恢复 | 故障事件：聚合、指派与处置记录（实验） |
 | 网络检测 | 只测量，不改动 | 网络配置：会改变服务器网络状态，需要确认（实验） |
 | 安装 sing-box | 管理员要求这台服务器运行 sing-box，面板安排安装 | 安装完成：Agent 下载、校验、应用并回报健康 |
@@ -178,7 +178,7 @@
 | 功能区 | 前端目录（`web/src/`） | 后端位置 |
 | --- | --- | --- |
 | 应用外框、路由、侧栏、功能分级 | `app/`（`navigation.ts`、`routes.ts`、`tiers.ts`）、`stores/features.ts` | `crates/panel-host/src/frontend.rs`；分级开关在 `panel-host` 的 `settings` |
-| 总览 | `plugins/singbox/Overview.tsx`（概览）、`display/`（服务器看板）、`subscriptions/`（订阅看板）、`statistics/`、`plugins/expenses/` | `panel-host` 的 `dashboard`、`statistics`；`plugins/singbox/panel/subscription_board.rs`（订阅看板的代理用户部分）；`plugins/expenses/panel/`（费用与续费） |
+| 总览 | `plugins/singbox/Overview.tsx`（概览）、`display/`（服务器看板）、`subscriptions/`（订阅看板）、`statistics/`、`plugins/expenses/` | `panel-host` 的 `dashboard`、`statistics`；`plugins/expenses/panel/`（费用与续费） |
 | 代理服务 | `plugins/singbox/` | `plugins/singbox/panel/`、`crates/compiler/`、`crates/adapter-singbox/` |
 | 服务器 | `servers/`、`server-diagnostics/`、`fleet/`（服务器详情 › 运维与批量接入）、`plugins/`（插件中心）、`plugins/ddns/`、`plugins/alicloud/` | `panel-host` 的 `servers`、`telemetry`、`fleet`、`diagnostics`、`artifacts`；`plugins/ddns/panel/`、`plugins/alicloud/panel/`；Agent 在 `crates/agent-core/` |
 | 监控告警 | `monitoring/`、`network-workbench/` | `panel-host` 的 `notifications`、`probes`、`latency_tasks`、`network_workbench` |

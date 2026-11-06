@@ -33,7 +33,7 @@ type Props = {
   children: ReactNode
 }
 
-const features: Record<string, string[]> = { servers: ['servers'], fleet: ['servers'], 'batch-enrollment': ['servers'], statistics: ['monitoring'], dashboard: ['monitoring'], latency: ['monitoring'], notifications: ['monitoring'], 'alert-settings': ['monitoring'], 'network-workbench': ['diagnostics'], 'network-configuration': ['network'], operations: ['operations', 'cloud'], backup: ['recovery'], expenses: ['cloud'], alicloud: ['cloud'], ddns: ['dns'], 'singbox-overview': ['proxy'], nodes: ['proxy'], 'proxy-users': ['proxy'], 'subscription-board': ['proxy', 'cloud'], groups: ['proxy'] }
+const features: Record<string, string[]> = { servers: ['servers'], fleet: ['servers'], 'batch-enrollment': ['servers'], statistics: ['monitoring'], dashboard: ['monitoring'], latency: ['monitoring'], notifications: ['monitoring'], 'alert-settings': ['monitoring'], 'network-workbench': ['diagnostics'], 'network-configuration': ['network'], operations: ['operations', 'cloud'], backup: ['recovery'], expenses: ['cloud'], alicloud: ['cloud'], ddns: ['dns'], 'singbox-overview': ['proxy'], nodes: ['proxy'], 'proxy-users': ['proxy'], 'subscription-board': ['cloud'], groups: ['proxy'] }
 const globalPages = new Set(['backup', 'statistics', 'dashboard', 'latency', 'notifications', 'alert-settings', 'expenses', 'alicloud', 'singbox-overview', 'nodes', 'proxy-users', 'subscription-board', 'groups'])
 
 export default function AdminShell({ current, exact = true, busy, error, onLogout, children }: Props) {
