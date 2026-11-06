@@ -157,6 +157,24 @@ def resource(panel, path, state, kind, fields, state_path):
     return item
 
 
+def policy_group(panel, state, node_id, state_path):
+    name = state["prefix"] + "-group"
+    matches = [item for item in panel.request("/api/plugins/sing-box/policy-groups") if item["name"] == name]
+    ensure(len(matches) <= 1, "专用验收名称出现重复；保留现状并人工检查")
+    if matches:
+        group = matches[0]
+    else:
+        # The unique name is persisted before POST, so a lost response is recoverable.
+        save(state_path, state)
+        group = panel.request("/api/plugins/sing-box/policy-groups",
+                              {"name": name, "node_ids": [node_id], "chain_ids": []})
+    ensure(state.get("group_id") in (None, group["id"]), "验收对象已改名；拒绝操作其他对象")
+    ensure(group["node_ids"] == [node_id] and not group["chain_ids"], "验收策略组配置与私有 state 不一致")
+    state["group_id"] = group["id"]
+    save(state_path, state)
+    return group
+
+
 def installation_descriptor(value, state, agent_version=None):
     ensure(isinstance(value, dict), "安装描述缺失，请先导入兼容且已签名的 Release")
     version, tag = value.get("version"), value.get("tag")
@@ -216,7 +234,13 @@ def prepare(panel, state, args):
     existing = panel.request(f"/api/plugins/sing-box/users/{user['id']}/accesses")
     ensure(all(item["node_id"] == node["id"] for item in existing),
            "专用验收用户出现其他授权；拒绝修改")
-    access = panel.request(f"/api/plugins/sing-box/users/{user['id']}/accesses", {"node_id": node["id"]})
+    # Nodes are granted only through policy groups; this run's group holds just its node.
+    group = policy_group(panel, state, node["id"], args.state)
+    panel.request(f"/api/plugins/sing-box/users/{user['id']}/policy-groups",
+                  {"group_ids": [group["id"]]}, method="PUT")
+    access = next((item for item in panel.request(f"/api/plugins/sing-box/users/{user['id']}/accesses")
+                   if item["node_id"] == node["id"]), None)
+    ensure(access is not None, "策略组没有把验收节点授权给专用用户")
     state["port"] = node["port"]
     state["stat_name"] = access["stat_name"]
     save(args.state, state)
