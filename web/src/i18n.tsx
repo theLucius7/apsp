@@ -17,11 +17,11 @@ const english: Record<string, string> = {
   // Costs and renewals (ADR 0118).
   '即将续费': 'Upcoming', '支出': 'Spending', '未来 30 天': 'Next 30 days', '待处理': 'To do', '添加项目': 'Add item', '确认续期': 'Confirm renewal',
   '费用记录': 'Cost records', '导出日历': 'Export calendar', '每月费用构成': 'Monthly cost by category', '实际付款': 'Payments', '费用与续费设置': 'Costs and renewals settings', '登记费用': 'Record a cost',
-  // Subscription board (ADR 0117).
-  '订阅看板': 'Subscription dashboard', '订阅总览': 'Subscription summary', '可用订阅': 'Usable subscriptions', '本期用量': 'Usage this cycle', '每月费用': 'Monthly cost',
-  '需关注': 'Needs attention', '24 小时拉取': 'Fetched in 24 hours', '订阅来源': 'Subscription sources', '订阅类型': 'Subscription kinds', '订阅状态筛选': 'Subscription status filter',
-  '搜索订阅': 'Search subscriptions', '管理代理用户': 'Manage proxy users', '管理订阅来源': 'Manage subscription sources', '下次续费': 'Next renewal', '续费方式': 'Renewal',
-  '最近拉取': 'Last fetched', '没有匹配的订阅': 'No matching subscriptions', '原系统': 'Original system',
+  // Subscription board (ADR 0117): the administrator's own paid subscriptions.
+  '订阅看板': 'Subscription dashboard', '订阅总览': 'Subscription summary', '使用中': 'In use', '每月费用': 'Monthly cost', '30 天内续费': 'Renewing within 30 days',
+  '需关注': 'Needs attention', '订阅来源': 'Subscription sources', '订阅状态筛选': 'Subscription status filter', '搜索订阅': 'Search subscriptions',
+  '管理代理用户': 'Manage proxy users', '下次续费': 'Next renewal', '续费方式': 'Renewal', '没有匹配的订阅': 'No matching subscriptions', '原系统': 'Original system',
+  '在费用与续费中管理': 'Manage in costs and renewals',
   // Sign-in page and account card (2026-11-06).
   '隐藏密码': 'Hide password', '显示密码': 'Show password',
   // Server monitoring panel, server pages and overview (2026-11-05 redesign).

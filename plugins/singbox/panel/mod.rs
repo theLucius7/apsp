@@ -61,7 +61,6 @@ pub mod settings;
 pub mod source_migration;
 pub mod sources;
 pub mod statistics;
-pub mod subscription_board;
 mod subscription_fetch;
 pub mod subscription_hosts;
 pub mod subscription_parser;
@@ -157,7 +156,6 @@ pub fn router() -> Router<AppState> {
         )
         .route("/users", get(proxy_users::list).post(proxy_users::create))
         .route("/users/overview", get(proxy_users::overview))
-        .route("/subscription-board", get(subscription_board::get))
         .route(
             "/subscription-domain",
             get(subscription_hosts::get_settings).put(subscription_hosts::put_settings),

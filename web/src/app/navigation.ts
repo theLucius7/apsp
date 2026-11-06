@@ -32,7 +32,7 @@ const groups: readonly NavigationGroup[] = [
     { page: 'statistics', path: '/statistics', label: '统计报表', icon: ChartColumnIcon, parent: '/plugins/sing-box' },
     // The server dashboard is a view of the whole network, a tab of the overview like the reports.
     { page: 'dashboard', path: '/dashboard', label: '服务器看板', icon: LayoutDashboardIcon, parent: '/plugins/sing-box' },
-    // Every subscription at a glance, next to the servers: proxy users', renewal items and sources (ADR 0117).
+    // The administrator's own paid subscriptions (Wallos style) at a glance, next to the servers (ADR 0117).
     { page: 'subscription-board', path: '/subscriptions', label: '订阅看板', icon: RssIcon, parent: '/plugins/sing-box' },
     // ADR 0087: costs and renewals sit with the overview; the published path is kept.
     { page: 'expenses', path: '/plugins/expenses', label: '费用与续费', icon: CalendarClockIcon },
