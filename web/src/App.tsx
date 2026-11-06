@@ -1,8 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { api, errorMessage } from './api'
-import { Brand, Loading } from './components'
+import { BrandMark, PageSkeleton } from './components'
 import { useAction } from './hooks'
-import AdminPage from './app/AdminPage'
+import AdminPage, { preloadRoute } from './app/AdminPage'
 import PageBoundary from './app/PageBoundary'
 import AdminShell from './app/AdminShell'
 import Login from './app/Login'
@@ -18,16 +18,20 @@ const MemberLogin = lazy(() => import('./plugins/singbox/accounts/MemberLogin'))
 const MemberJoin = lazy(() => import('./plugins/singbox/accounts/Join'))
 const UserPortal = lazy(() => import('./plugins/singbox/UserPortal'))
 
-/** The first screen. A lost connection stays here and keeps trying: it says nothing about the session. */
+/**
+ * The first screen, identical to the splash index.html draws before any script runs,
+ * so loading looks like one screen from the first frame. A lost connection stays
+ * here and keeps trying: it says nothing about the session.
+ */
 function Boot({ message, onRetry }: { message?: string; onRetry?: () => void }) {
   const { t } = useI18n()
-  return <div data-slot="boot" className="flex min-h-dvh flex-col items-center justify-center gap-4 px-6 text-center">
-    <Brand />
+  return <div data-slot="boot" className="boot-splash">
+    <BrandMark />
     {message ? <div role="status" className="grid max-w-sm justify-items-center gap-3 text-sm">
       <p className="text-foreground font-medium">{t('暂时连不上面板')}</p>
       <p className="text-muted-foreground">{message} {t('正在自动重试，恢复后会直接进入。')}</p>
       {onRetry && <Button variant="outline" size="sm" onClick={onRetry}>{t('立即重试')}</Button>}
-    </div> : <Loading />}
+    </div> : <span className="boot-bar" role="status" aria-label={t('正在加载…')} />}
   </div>
 }
 
@@ -60,6 +64,8 @@ export default function App() {
   }
 
   useEffect(() => guardLinks(), [])
+  // The page's code downloads while the session is checked; a bare address lands on the overview.
+  useEffect(() => { preloadRoute(resolveRoute(window.location.hash.length > 2 ? shown.current : homePath)) }, [])
 
   useEffect(() => {
     // Proxy users and members have their own sign-in; on a user's own hostname the
@@ -130,7 +136,7 @@ export default function App() {
   return <AdminShell current={current} exact={route.page === current?.page && !(route.page === 'dashboard' && route.serverId)} busy={action.busy} error={action.error} onLogout={logout}>
     <PageBoundary resetKey={path}>
       {route.page === 'dashboard'
-        ? <Suspense fallback={<Loading />}><ServerDisplay key="admin" embedded serverId={route.serverId} /></Suspense>
+        ? <Suspense fallback={<PageSkeleton />}><ServerDisplay key="admin" embedded serverId={route.serverId} /></Suspense>
         : <AdminPage route={route} />}
     </PageBoundary>
   </AdminShell>

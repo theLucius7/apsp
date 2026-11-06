@@ -40,7 +40,7 @@ function PanelSwitches({ initial }: { initial: Switches }) {
 export default function Settings() {
   const resource = useResource<Preferences>('/api/settings', 0)
   return <>
-    <PageHeader title="面板设置" description="看板是否公开、显示哪些功能、金额币种与监控历史保存多久。">
+    <PageHeader title="面板设置">
       <a className={buttonVariants({ variant: 'outline' })} href="#/monitoring/settings">告警设置</a>
     </PageHeader>
     <ErrorNotice message={resource.error} retry={resource.reload} />

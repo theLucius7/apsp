@@ -76,7 +76,7 @@ export default function Security() {
     })
   }
   return <>
-    <PageHeader title="账号安全" description="管理当前管理员的登录密码、Passkey 和二步验证。其他管理员、会话与 API 令牌在「管理与安全」中管理。"><Refresh onClick={resource.reload} /></PageHeader>
+    <PageHeader title="账号安全"><Refresh onClick={resource.reload} /></PageHeader>
     {resource.data && <PasswordChange />}
     <AdminPasskeys />
     <ErrorNotice message={resource.error} retry={resource.reload} />

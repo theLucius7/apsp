@@ -57,7 +57,7 @@ export default function Ddns({ serverId }: { serverId?: number }) {
   const addDisabled = action.busy || !available || !scope.length || full
 
   return <div>
-    <PageHeader title="域名解析" description="让域名自动指向服务器当前的公网 IP，服务器换 IP 后自动更新。"><Refresh onClick={refresh} /><Button disabled={addDisabled} onClick={() => open('new')}><PlusIcon aria-hidden="true" />添加解析</Button></PageHeader>
+    <PageHeader title="域名解析"><Refresh onClick={refresh} /><Button disabled={addDisabled} onClick={() => open('new')}><PlusIcon aria-hidden="true" />添加解析</Button></PageHeader>
     <ErrorNotice message={rules.error || servers.error || action.error} retry={refresh} />
     <Panel>
       <PanelHeader>

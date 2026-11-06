@@ -5,7 +5,7 @@ import { BoxIcon, CheckIcon, CircleAlertIcon, CopyIcon, InfoIcon, RefreshCwIcon 
 import type { LucideIcon } from 'lucide-react'
 import { errorMessage } from './api'
 import { resourceRefreshingMessage } from './hooks'
-import { PageIconContext, SectionContext } from './app/section'
+import { SectionContext } from './app/section'
 import { tierDescriptions, tierLabels } from './app/tiers'
 import type { Tier } from './app/tiers'
 import { useI18n } from './i18n'
@@ -83,23 +83,27 @@ export function TierNotice({ tier, children }: { tier: Tier; children?: ReactNod
  * what can be done here. It stays in view while the page scrolls on wider screens,
  * so the actions are never out of reach. `leading` holds a way back.
  */
-export function PageHeader({ title, description, leading, children }: { title: string; description?: string; leading?: ReactNode; children?: ReactNode }) {
+/**
+ * The bar at the top of every console page: the page's name in small type and its
+ * actions at the far end. No subtitle: the sidebar already says where you are and
+ * the page itself shows what it is for. Pages that belong to a section show the
+ * section's tabs in place of the name (the name stays for screen readers); detail
+ * pages put a back link in `leading` and a short identity line in `meta`.
+ */
+export function PageHeader({ title, meta, leading, children }: { title: string; meta?: ReactNode; leading?: ReactNode; children?: ReactNode }) {
   const { t } = useI18n()
   const tabs = useContext(SectionContext)
-  // Top-level pages repeat their sidebar icon; pages with a way back show that instead.
-  const PageIcon = useContext(PageIconContext)
-  return <><header data-slot="page-header" className="bg-background/80 supports-backdrop-filter:backdrop-blur-md border-border/60 -mx-4 -mt-4 mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-2.5 md:sticky md:top-0 md:z-20 md:-mx-6 md:min-h-16 md:px-6">
-    {leading ?? (PageIcon && <span data-slot="page-icon" className="bg-card text-primary shadow-soft grid size-10 shrink-0 place-items-center rounded-xl border max-md:hidden" aria-hidden="true"><PageIcon className="size-[18px]" /></span>)}
-    <div className="min-w-0 flex-[1_1_16rem]">
-      <h1 className="truncate text-lg leading-snug font-semibold tracking-tight md:text-xl">{t(title)}</h1>
-      {description && <p title={t(description)} className="text-muted-foreground mt-0.5 text-xs leading-snug md:truncate">{t(description)}</p>}
-    </div>
-    {children && <div data-slot="page-actions" className="flex flex-wrap items-center gap-2">{children}</div>}
+  return <header data-slot="page-header" className="bg-background/80 supports-backdrop-filter:backdrop-blur-md border-border/60 -mx-4 -mt-4 mb-4 flex min-h-12 flex-wrap items-center gap-x-3 gap-y-1 border-b px-4 md:sticky md:top-0 md:z-20 md:-mx-6 md:px-6">
+    {leading}
+    {tabs.length > 0 ? <>
+      <h1 className="sr-only">{t(title)}</h1>
+      <SegmentedNav aria-label={t('本节页面')} className="-mb-px min-w-0 self-stretch border-b-0 *:h-full">
+        {tabs.map(tab => <SegmentedLink key={tab.path} href={`#${tab.path}`} aria-current={tab.label === title ? 'page' : undefined}>{t(tab.label)}</SegmentedLink>)}
+      </SegmentedNav>
+    </> : <h1 className="min-w-0 truncate py-3 text-[15px] leading-6 font-semibold tracking-tight">{t(title)}</h1>}
+    {meta && <span className="text-muted-foreground min-w-0 truncate text-xs max-sm:hidden">{meta}</span>}
+    {children && <div data-slot="page-actions" className="ml-auto flex flex-wrap items-center gap-2 py-1.5">{children}</div>}
   </header>
-  {tabs.length > 0 && <SegmentedNav aria-label={t('本节页面')} className="mb-4">
-    {tabs.map(tab => <SegmentedLink key={tab.path} href={`#${tab.path}`} aria-current={tab.label === title ? 'page' : undefined}>{t(tab.label)}</SegmentedLink>)}
-  </SegmentedNav>}
-  </>
 }
 
 export function ErrorNotice({ message, retry }: { message?: string; retry?: () => void }) {
@@ -154,13 +158,36 @@ export function Empty({ icon: Icon = BoxIcon, title, description, children }: { 
  * the shape of the coming content so the page does not jump when data arrives;
  * small areas keep the spinner.
  */
+// Every loading state appears only once the wait is noticeable, then fades in, so a
+// quick answer never flashes a placeholder.
+const settle = 'motion-safe:animate-[fade-in_240ms_ease-out_160ms_both]'
+
+/** A page whose code is still on its way: the shape of the page bar, a figure strip and a panel. */
+export function PageSkeleton() {
+  const { t } = useI18n()
+  return <div data-slot="loading" data-variant="page" role="status" className={cn('min-w-0', settle)}>
+    <span className="sr-only">{t('正在加载…')}</span>
+    <div aria-hidden="true" className="border-border/60 -mx-4 -mt-4 mb-4 flex min-h-12 items-center gap-3 border-b px-4 md:-mx-6 md:px-6"><Skeleton className="h-4 w-24" /><Skeleton className="ml-auto h-8 w-24 rounded-[9px]" /></div>
+    <div aria-hidden="true" className="bg-card shadow-soft mb-4 grid grid-cols-2 overflow-hidden rounded-xl border lg:grid-cols-4 [&>*+*]:border-l max-lg:[&>*:nth-child(3)]:border-l-0 max-lg:[&>*:nth-child(-n+2)]:border-b">
+      {[0, 1, 2, 3].map(index => <div key={index} className="grid gap-2 px-4 py-3"><Skeleton className="h-3 w-14" /><Skeleton className="h-5 w-20" /><Skeleton className="h-3 w-24" /></div>)}
+    </div>
+    <div aria-hidden="true" className="bg-card shadow-soft overflow-hidden rounded-xl border">
+      <div className="border-border/70 flex min-h-12 items-center border-b px-4"><Skeleton className="h-3.5 w-28" /></div>
+      <div className="divide-y">{[0, 1, 2, 3, 4].map(index => <div key={index} className="flex items-center gap-4 px-4 py-3">
+        <div className="grid min-w-0 flex-1 gap-1.5"><Skeleton className="h-3.5 max-w-56" style={{ width: `${60 - index * 7}%` }} /><Skeleton className="h-3 w-1/4 max-w-36" /></div>
+        <Skeleton className="h-3.5 w-16 max-sm:hidden" /><Skeleton className="h-3.5 w-24 max-md:hidden" />
+      </div>)}</div>
+    </div>
+  </div>
+}
+
 export function Loading({ variant = 'spinner', rows = 4 }: { variant?: 'spinner' | 'table' | 'cards' | 'panel'; rows?: number }) {
   const { t } = useI18n()
-  if (variant === 'spinner') return <div data-slot="loading" role="status" className="text-muted-foreground flex min-h-40 items-center justify-center gap-2 text-sm">
+  if (variant === 'spinner') return <div data-slot="loading" role="status" className={cn('text-muted-foreground flex min-h-40 items-center justify-center gap-2 text-sm', settle)}>
     <Spinner role="presentation" aria-hidden="true" aria-label={undefined} />{t('正在加载…')}
   </div>
   const lines = Array.from({ length: rows }, (_, index) => index)
-  return <div data-slot="loading" data-variant={variant} role="status" className="min-w-0">
+  return <div data-slot="loading" data-variant={variant} role="status" className={cn('min-w-0', settle)}>
     <span className="sr-only">{t('正在加载…')}</span>
     {variant === 'table' && <div aria-hidden="true" className="divide-y">{lines.map(index => <div key={index} className="flex items-center gap-4 px-4 py-3">
       <Skeleton className="size-8 shrink-0 rounded-lg" />
@@ -183,17 +210,6 @@ export function Refresh({ onClick }: { onClick: () => void }) {
   return <Button variant="ghost" size="icon" title={t('刷新')} onClick={() => { setTurns(value => value + 1); onClick() }}>
     <RefreshCwIcon key={turns} aria-hidden="true" className={turns ? 'motion-safe:animate-[refresh-turn_600ms_cubic-bezier(0.4,0,0.2,1)]' : undefined} /><span className="sr-only">{t('刷新')}</span>
   </Button>
-}
-
-/** One headline number. `note` adds what the number alone does not say. */
-export function Stat({ label, value, note }: { label: string; value: ReactNode; note?: ReactNode; icon?: LucideIcon }) {
-  const { t } = useI18n()
-  return <div data-slot="stat" className="bg-card text-card-foreground shadow-soft relative min-w-0 overflow-hidden rounded-xl border px-4 py-3.5">
-    <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_90%_at_100%_0%,color-mix(in_oklch,var(--primary)_7%,transparent),transparent_60%)]" aria-hidden="true" />
-    <div className="text-muted-foreground relative truncate text-xs tracking-wide">{t(label)}</div>
-    <strong className="relative mt-1 block truncate text-[26px] leading-none font-semibold tracking-tight">{value}</strong>
-    {note && <small title={typeof note === 'string' ? note : undefined} className="text-muted-foreground relative mt-1.5 block truncate text-xs">{note}</small>}
-  </div>
 }
 
 /** Usage bar that turns warning and then destructive, matching the dashboard thresholds (75% / 90% by default). */

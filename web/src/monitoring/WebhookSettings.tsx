@@ -21,7 +21,7 @@ function Form({ initial }: { initial: Summary }) {
   const selected = webhookPresets.find(value => value.id === preset) ?? webhookPresets[0]
   const mark = () => { setDirty(true); setNotice(''); setRemoving(false); save.clearError(); test.clearError(); remove.clearError() }
   const apply = (value: Summary) => { setSaved(value); setEnabled(value.enabled); setPreset(value.preset); setUrl(''); setHeaders(''); setBody(''); setClearHeaders(false); setDirty(false); setRemoving(false); changed() }
-  return <Panel aria-labelledby="webhook-title"><div className="p-4"><h2 className="mt-6 mb-3 text-base font-semibold" id="webhook-title">Webhook 通知 <Badge tone={saved.url_configured ? 'good' : 'neutral'}>{saved.url_configured ? '已配置' : '未配置'}</Badge></h2>
+  return <Panel aria-labelledby="webhook-title"><div className="p-4"><h2 className="mt-6 mb-3 text-sm font-semibold" id="webhook-title">Webhook 通知 <Badge tone={saved.url_configured ? 'good' : 'neutral'}>{saved.url_configured ? '已配置' : '未配置'}</Badge></h2>
     <p className="text-muted-foreground mt-3 text-xs leading-relaxed">可与 Telegram 同时启用。两个渠道独立重试，成功的渠道不会因另一渠道失败而重发。</p>
     <form onSubmit={event => { event.preventDefault(); void save.run(() => api<Summary>('/api/notifications/webhook', 'PATCH', { enabled, preset, url, headers, body, clear_headers: clearHeaders }), value => { apply(value); setNotice('Webhook 设置已保存。') }) }}><fieldset disabled={busy}>
       <SettingRow title="启用 Webhook" description="自动推送已启用的告警；总通知开关关闭时暂停自动发送。"><Switch checked={enabled} onCheckedChange={checked => { setEnabled(checked); mark() }} /></SettingRow>

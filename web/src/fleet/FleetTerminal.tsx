@@ -64,7 +64,7 @@ export default function FleetTerminal({ profile }: {profile: FleetProfile}) {
     const data = special[event.key] ?? (event.key.length === 1 ? event.key : '')
     if (data) { event.preventDefault(); send(data) }
   }
-  return <Panel><h2 className="text-base font-semibold">交互式终端</h2><p className="text-muted-foreground text-xs">在指定系统账号下建立独立 PTY。会话最长 15 分钟，空闲五分钟自动关闭；Ctrl+C 发送中断信号。</p><ErrorNotice message={error} />
+  return <Panel><h2 className="text-sm font-semibold">交互式终端</h2><p className="text-muted-foreground text-xs">在指定系统账号下建立独立 PTY。会话最长 15 分钟，空闲五分钟自动关闭；Ctrl+C 发送中断信号。</p><ErrorNotice message={error} />
     {(!canRead||!canWrite)&&<div className="text-muted-foreground my-3 rounded-lg border p-3">{permissions.reason('terminal:write',profile.server_id)||permissions.reason('terminal:read',profile.server_id)}交互终端需要读取输出和执行输入两项授权。</div>}
     {!deviceAvailable && <div className="text-muted-foreground my-3 rounded-lg border p-3">此服务器尚未提供终端能力或账号授权。需要在 Agent 本机和面板同时配置允许账号。</div>}
     <fieldset disabled={busy||!available}><div className="my-3 flex flex-wrap items-end gap-2 max-sm:flex-col max-sm:items-stretch"><Field className="mb-0 min-w-36 flex-1" label="执行账号"><NativeSelect className="w-full" value={account} onChange={event => setAccount(event.target.value)}>{profile.policy.terminal_accounts.map(account => <option key={account}>{account}</option>)}</NativeSelect></Field><Button disabled={busy || !available || !!id && !['closed', 'failed'].includes(status)} onClick={() => void start()}>连接</Button></div></fieldset>

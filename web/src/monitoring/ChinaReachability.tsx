@@ -66,9 +66,8 @@ export default function ChinaReachability() {
   const last = settings ? runLine(settings.last_run) : undefined
   const active = settings?.running || settings?.run_requested
   const writeError = () => resourceWriteError(overview)
-  const description = '从中国大陆三家运营商和海外探测点比较 TCP 连接，分清节点是被封锁、服务本身故障，还是探测点不足。只提醒，不改动节点。'
-  if (actor.data && !owner) return <><PageHeader title="延迟检测" description={description} /><Empty icon={GlobeIcon} title="需要所有者会话" description="这里会显示节点地址并能把地址发送给第三方，只对所有者开放。" /></>
-  return <><PageHeader title="延迟检测" description={description}>
+  if (actor.data && !owner) return <><PageHeader title="延迟检测" /><Empty icon={GlobeIcon} title="需要所有者会话" description="这里会显示节点地址并能把地址发送给第三方，只对所有者开放。" /></>
+  return <><PageHeader title="延迟检测">
     <Refresh onClick={overview.reload} />
     <Button disabled={!settings?.enabled || action.busy || Boolean(active) || Boolean(writeError())} title={settings?.enabled ? undefined : '启用检测后才能运行'} onClick={() => { if (!writeError()) void action.run(() => api(`${root}/run`, 'POST'), overview.reload) }}><PlayIcon aria-hidden="true" />{active ? '检测进行中…' : '立即检测'}</Button>
   </PageHeader>

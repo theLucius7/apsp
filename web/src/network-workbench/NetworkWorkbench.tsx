@@ -120,7 +120,7 @@ export default function NetworkWorkbench({ servers: suppliedServers, initialServ
   const numeric = typeof value === 'number' || ['server_id', 'reverse_server'].includes(key)
   return <label className="grid min-w-0 gap-1.5 text-sm" key={key}>{fieldLabels[key] ?? key}<Input type={numeric ? 'number' : 'text'} value={value == null ? '' : String(value)} onChange={e => update(e.target.value === '' && value === null ? null : numeric ? Number(e.target.value) : e.target.value)} /></label>
  }
- return <section data-slot="network-workbench" className="grid min-w-0 grid-cols-1 gap-4 wrap-anywhere"><PageHeader title="网络检测" description="从面板或指定服务器按需测试连通性、路由与 IP 资料，也可做双端吞吐测试。每个结果都记录从哪里测到哪里、工具版本和参数；持续的三网延迟在「延迟检测」中配置。" />
+ return <section data-slot="network-workbench" className="grid min-w-0 grid-cols-1 gap-4 wrap-anywhere"><PageHeader title="网络检测" />
  {error && <p role="alert" className="text-destructive">{error}</p>}{message && <p role="status">{message}</p>}
  {tab === 'plan' && serverListMessage && <p role="status">{serverListMessage}</p>}
  <SegmentedNav aria-label="工作台视图">{[['plan', '测试方案'], ['targets', '授权目标'], ['tools', '工具与许可'], ['providers', 'IP资料来源'], ['reports', '任务与报告']].map(([value, text]) => <SegmentedButton type="button" key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>{text}</SegmentedButton>)}</SegmentedNav>

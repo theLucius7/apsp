@@ -3,6 +3,7 @@ import type { LucideIcon } from 'lucide-react'
 import { CircleAlertIcon, ServerIcon, TriangleAlertIcon } from 'lucide-react'
 import { m } from 'motion/react'
 import { cn } from '@/lib/utils'
+import { Skeleton } from '@/components/ui/skeleton'
 import { transition } from '@/lib/motion'
 import { Button } from '@/components/ui/button'
 
@@ -30,18 +31,24 @@ export function StatStrip({ label, columns, children }: { label: string; columns
   return <section aria-label={label} className={cn(surface, 'grid overflow-hidden [&>*]:border-border max-lg:grid-cols-2 max-lg:[&>*:nth-child(even)]:border-l max-lg:[&>*:not(:nth-last-child(-n+2))]:border-b max-lg:[&>*:last-child:nth-child(odd)]:col-span-full lg:[&>*+*]:border-l', stripColumns[columns])}>{children}</section>
 }
 
-/** One headline figure of a StatStrip, with a short line of context under it. */
-export function Stat({ icon: Icon = ServerIcon, label, value, unit, children, tone, title }: { icon?: LucideIcon; label: string; value: ReactNode; unit?: string; children: ReactNode; tone?: string; title?: string }) {
-  return <div data-slot="overview-item" className="min-w-0 border-border px-4 py-2.5 max-sm:px-3" title={title}>
+/**
+ * One headline figure of a StatStrip, with a short line of context under it. Every
+ * page's figures use this one cell. While `loading`, the value is a placeholder bar
+ * of the same height, so nothing moves when the number arrives.
+ */
+export function Stat({ icon: Icon = ServerIcon, label, value, unit, children, tone, title, loading = false }: { icon?: LucideIcon; label: string; value: ReactNode; unit?: string; children?: ReactNode; tone?: string; title?: string; loading?: boolean }) {
+  return <div data-slot="overview-item" className="min-w-0 border-border px-4 py-2.5 max-sm:px-3" title={title} aria-busy={loading || undefined}>
     <div data-slot="overview-label" className="text-muted-foreground mb-0.5 flex items-center justify-between gap-2 text-xs">
-      <span>{label}</span>
-      <Icon className="size-3.5 opacity-70" aria-hidden="true" />
+      <span className="truncate">{label}</span>
+      <Icon className="size-3.5 shrink-0 opacity-70" aria-hidden="true" />
     </div>
-    <div data-slot="overview-value" className="flex min-w-0 items-baseline gap-1.5">
-      <strong className={cn('truncate text-xl leading-tight font-semibold tabular-nums', tone && toneText[tone])}>{value}</strong>
-      {unit && <b className="text-muted-foreground shrink-0 text-xs font-medium">{unit}</b>}
+    <div data-slot="overview-value" className="flex min-h-7 min-w-0 items-baseline gap-1.5">
+      {loading ? <Skeleton className="mt-1 h-5 w-16" /> : <>
+        <strong className={cn('truncate text-xl leading-tight font-semibold tabular-nums', tone && toneText[tone])}>{value}</strong>
+        {unit && <b className="text-muted-foreground shrink-0 text-xs font-medium">{unit}</b>}
+      </>}
     </div>
-    <div className="text-muted-foreground mt-0.5 flex min-h-4 items-center gap-2 overflow-hidden text-xs whitespace-nowrap *:truncate">{children}</div>
+    <div className="text-muted-foreground mt-0.5 flex min-h-4 items-center gap-2 overflow-hidden text-xs whitespace-nowrap *:truncate">{loading ? null : children}</div>
   </div>
 }
 

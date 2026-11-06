@@ -130,7 +130,7 @@ export default function SubscriptionBoard() {
   const chooseSort = (value: string) => { const next = savedSort(value); setSort(next); savePreference('sort', next) }
 
   return <div data-slot="subscription-board" className="flex flex-col gap-3">
-    <PageHeader title="订阅看板" description="你自己付费的订阅：每月花多少、什么时候续费。">
+    <PageHeader title="订阅看板">
       <Refresh onClick={refresh} />
       <a className={buttonVariants({ variant: 'outline' })} href="#/plugins/expenses">在费用与续费中管理</a>
     </PageHeader>

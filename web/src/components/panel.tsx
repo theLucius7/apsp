@@ -13,7 +13,7 @@ export function PanelHeader({ className, ...props }: React.ComponentProps<'div'>
 }
 
 export function PanelTitle({ className, ...props }: React.ComponentProps<'h2'>) {
-  return <h2 data-slot="panel-title" className={cn('flex min-w-0 items-center gap-2 text-[13.5px] font-semibold tracking-tight', className)} {...props} />
+  return <h2 data-slot="panel-title" className={cn('flex min-w-0 items-center gap-2 text-sm font-semibold tracking-tight', className)} {...props} />
 }
 
 const noticeVariants = cva('mb-4 flex items-start justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-[13px] leading-relaxed', {

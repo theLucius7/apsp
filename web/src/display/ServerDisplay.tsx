@@ -56,7 +56,7 @@ function PublicDisplay({ serverId }: { serverId?: number }) {
 export default function ServerDisplay({ serverId, embedded = false }: { serverId?: number; embedded?: boolean }) {
   if (!embedded) return <PublicDisplay serverId={serverId} />
   return <CurrencyProvider><div data-slot="server-display" className="min-w-0">
-    {!serverId && <PageHeader title="服务器看板" description="各服务器的实时状态与资源占用；可在「面板设置」公开给访客。" />}
+    {!serverId && <PageHeader title="服务器看板" />}
     <DisplayContent serverId={serverId} embedded />
   </div></CurrencyProvider>
 }
