@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Badge, Empty, ErrorNotice, Loading, Modal, DialogPresence } from '../../components'
+import { Badge, Empty, ErrorNotice, Loading, Modal, DialogPresence, InfoTip } from '../../components'
 import { time } from '../../format'
 import type { ResourceState } from '../../hooks'
 import { validatedSnapshot } from './groupTypes'
@@ -26,8 +26,7 @@ export default function NexusNodes({ query, server, onReload }: { query: Resourc
   const hosts = [...new Map(all.map(node => [node.server_id, node.server_name])).entries()]
   if (view.fresh && !all.length) return null
   return <Panel aria-label="Nexus 节点" className="mb-5">
-    <PanelHeader><PanelTitle>Nexus 节点 <span className="bg-muted text-muted-foreground rounded px-1.5 text-xs tabular-nums">{view.data ? all.length : '—'}</span></PanelTitle><Badge tone="warm">已接管 {all.filter(node => node.state === 'applied').length} / {all.length}</Badge></PanelHeader>
-    <div className="border-b px-5 py-3 text-sm text-muted-foreground">按主机逐台接管运行服务。尚未接管的节点继续由 Nexus 运行，原订阅链接保持可用。</div>
+    <PanelHeader><span className="flex min-w-0 items-center gap-1.5"><PanelTitle>Nexus 节点 <span className="bg-muted text-muted-foreground rounded px-1.5 text-xs tabular-nums">{view.data ? all.length : '—'}</span></PanelTitle><InfoTip label="接管说明"><p>按主机逐台接管运行服务。尚未接管的节点继续由 Nexus 运行，原订阅链接保持可用。</p></InfoTip></span><Badge tone="warm">已接管 {all.filter(node => node.state === 'applied').length} / {all.length}</Badge></PanelHeader>
     <div className="flex flex-wrap gap-2 border-b px-5 py-3">
       <Input className="min-w-40 flex-1" aria-label="搜索 Nexus 节点" placeholder="搜索名称、地址、主机、标签或原编号" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} />
       <NativeSelect className="w-auto" aria-label="Nexus 节点协议" value={protocol} onChange={e => { setProtocol(e.target.value); setPage(1) }}><option value="">全部协议</option>{[...new Set(all.map(n => n.protocol))].map(p => <option key={p} value={p}>{protocolLabels[p] ?? p}</option>)}</NativeSelect>

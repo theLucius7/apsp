@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { AnimatePresence, m } from 'motion/react'
 import { AlertTriangleIcon, CalendarClockIcon, CalendarIcon, CreditCardIcon, LayoutGridIcon, ListFilterIcon, RefreshCcwIcon, RssIcon, SearchIcon, TableIcon, WalletIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { Empty, ErrorNotice, PageHeader, Refresh } from '../components'
+import { Empty, ErrorNotice, InfoTip, PageHeader, Refresh } from '../components'
 import { useResourceGroup } from '../hooks'
 import { money } from '../display/currency'
 import { Stat, StatStrip, cardLink, surface, toneFill, toneText } from '../display/ui'
@@ -133,6 +133,7 @@ export default function SubscriptionBoard() {
     <PageHeader title="订阅看板">
       <Refresh onClick={refresh} />
       <a className={buttonVariants({ variant: 'outline' })} href="#/plugins/expenses">在费用与续费中管理</a>
+      <InfoTip label="图例"><p>卡片上的圆环是本期已经过去的时间，中间是距下次续费的天数。</p></InfoTip>
     </PageHeader>
     <ErrorNotice message={data.items.error || data.summary.error || (malformed ? '订阅数据不完整，请刷新重试。' : '')} retry={refresh} />
     <StatStrip label="订阅总览" columns={4}>
@@ -180,7 +181,6 @@ export default function SubscriptionBoard() {
         : !visible.length ? <div className="text-muted-foreground flex min-h-60 flex-col items-center justify-center gap-3 p-6 text-center"><RssIcon className="size-8" aria-hidden="true" /><strong className="text-foreground text-sm font-medium">没有匹配的订阅</strong><Button onClick={reset}>清除筛选</Button></div>
           : view === 'cards' ? <section aria-label="订阅" className={grid}>{visible.map(entry => <div key={entry.key} className="min-w-0"><SubscriptionCard entry={entry} base={base} /></div>)}</section>
             : <SubscriptionTable entries={visible} base={base} />}
-    {view === 'cards' && entries.length > 0 && <p className="text-muted-foreground text-xs">圆环是本期已经过去的时间，中间是距下次续费的天数。</p>}
   </div>
 }
 

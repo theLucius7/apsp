@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../../api'
-import { Badge, ErrorNotice, Field, FormDialog, DialogPresence } from '../../components'
+import { Badge, ErrorNotice, Field, FormDialog, DialogPresence, InfoTip } from '../../components'
 import { ActionMenu } from '../../components/action-menu'
 import { useAction } from '../../hooks'
 import type { ResourceState } from '../../hooks'
@@ -77,7 +77,7 @@ export default function DnsAccounts({ accounts, servers, connect }: { accounts: 
   const list = accounts.data ?? []
   const runCheck = (account: DnsAccount) => void action.run(async () => { setCheck({ account: account.id, result: await api<Check>(`/api/plugins/ddns/accounts/${account.id}/check`, 'POST') }); accounts.reload() })
   return <Panel>
-    <PanelHeader><div className="min-w-0"><PanelTitle>DNS 账号</PanelTitle><p className="text-muted-foreground text-xs">令牌加密保存；解析规则和用户专属地址都从这里选。</p></div><Button size="sm" variant="outline" onClick={connect}><PlusIcon aria-hidden="true" />添加账号</Button></PanelHeader>
+    <PanelHeader><span className="flex min-w-0 items-center gap-1.5"><PanelTitle>DNS 账号</PanelTitle><InfoTip label="账号说明"><p>令牌加密保存；解析规则和用户专属地址都从这里选。</p></InfoTip></span><Button size="sm" variant="outline" onClick={connect}><PlusIcon aria-hidden="true" />添加账号</Button></PanelHeader>
     {(accounts.error || action.error) && <div className="px-4 pt-4"><ErrorNotice message={accounts.error || action.error} retry={accounts.reload} /></div>}
     {!list.length ? !accounts.loading && <p className="text-muted-foreground p-4 text-sm">还没有 DNS 账号。添加一个 Cloudflare、腾讯云、阿里云或华为云账号后，添加解析只需要填写域名。</p>
       : <ul className="divide-y">{list.map(account => {

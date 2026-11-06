@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api'
-import { ErrorNotice, Field, Loading } from '../components'
+import { ErrorNotice, Field, Loading, InfoTip } from '../components'
 import { useAction, useResource } from '../hooks'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -22,8 +22,7 @@ function Form({ initial }: { initial: Policy }) {
       setSavedDays(result.history_retention_days); setDays(String(result.history_retention_days)); setConfirmed(false); setSaved(true)
     })
   }}><fieldset disabled={action.busy}>
-    <Field label="监控历史保留天数" hint="1–3650 天，默认 30 天。只影响系统指标，不改变流量账本或代理用户用量。"><Input type="number" required min={1} max={3650} step={1} value={days} onChange={event => { setDays(event.target.value); setSaved(false); setConfirmed(false) }} /></Field>
-    <p className="text-muted-foreground mt-3 text-xs leading-relaxed">近 2 小时保留原始采样；7 天内按分钟汇总，7–30 天按 5 分钟汇总，更早按小时汇总。平均值按实际样本数计算，保留峰值；缺失数据不补零。超过所设期限的历史会分批清理。</p>
+    <Field label="监控历史保留天数" hint="1–3650 天，默认 30 天；只影响系统指标，不影响流量账本。"><Input type="number" required min={1} max={3650} step={1} value={days} onChange={event => { setDays(event.target.value); setSaved(false); setConfirmed(false) }} /></Field>
     {decreasing && <label className="flex items-center gap-2 text-sm"><Checkbox required checked={confirmed} onCheckedChange={checked => setConfirmed(checked === true)} />我了解缩短期限会永久清理更早的监控历史，之后调长也无法恢复。</label>}
     <ErrorNotice message={action.error} />
     <Button disabled={action.busy || (decreasing && !confirmed)}>{action.busy ? '正在保存…' : '保存历史策略'}</Button>
@@ -33,7 +32,7 @@ function Form({ initial }: { initial: Policy }) {
 
 export default function TelemetryPolicy() {
   const resource = useResource<Policy>('/api/telemetry/policy', 0)
-  return <Panel><PanelHeader><PanelTitle>监控历史保存</PanelTitle></PanelHeader><div className="p-4">
+  return <Panel><PanelHeader><span className="flex min-w-0 items-center gap-1.5"><PanelTitle>监控历史保存</PanelTitle><InfoTip label="汇总方式"><p>近 2 小时保留原始采样；7 天内按分钟汇总，7–30 天按 5 分钟汇总，更早按小时汇总。平均值按实际样本数计算，保留峰值；缺失数据不补零。超过所设期限的历史会分批清理。</p></InfoTip></span></PanelHeader><div className="p-4">
     <ErrorNotice message={resource.error} retry={resource.reload} />
     {resource.data ? <Form initial={resource.data} /> : resource.loading ? <Loading /> : null}
   </div></Panel>

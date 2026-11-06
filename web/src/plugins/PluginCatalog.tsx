@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Badge, CopyButton, Empty, ErrorNotice, Field, Loading, Modal, PageHeader, Refresh, DialogPresence, TierBadge } from '../components'
+import { Badge, CopyButton, Empty, ErrorNotice, Field, Loading, Modal, PageHeader, Refresh, DialogPresence, TierBadge, InfoTip } from '../components'
 import { bytes, navigate } from '../format'
 import { useResource } from '../hooks'
 import { diagnosticsEntry, pluginCatalog, pluginServerPath } from './catalog'
@@ -11,7 +11,7 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ArrowRightIcon, ServerIcon } from 'lucide-react'
-import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
+import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
 function Packages({ item, unavailable }: { item: CatalogItem; unavailable: boolean }) {
   if (!item.versions.length) return <p className="text-muted-foreground my-4 text-xs leading-relaxed">{unavailable ? '暂时无法读取版本信息。' : '暂无已验证的下载包。插件介绍不代表服务器已经安装或可以执行。'}</p>
@@ -58,9 +58,8 @@ export default function PluginCatalog() {
   // The line diagnostics share one entry; every other plugin keeps its own card.
   const diagnostics = catalog.plugins.filter(plugin => plugin.group === 'diagnostics')
   return <>
-    <PageHeader title="插件中心"><Refresh onClick={resource.reload} /></PageHeader>
+    <PageHeader title="插件中心"><Refresh onClick={resource.reload} /><InfoTip label="插件如何运行"><p>设备插件由 Agent 下载、校验和执行；面板插件使用已上报的数据处理任务。下载包已验证，不代表服务器已安装或已就绪。</p></InfoTip></PageHeader>
     <PluginCenterTabs active="catalog" />
-    <Notice tone="quiet"><ServerIcon className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden="true" /><div><strong className="font-medium">按插件说明管理云账号或服务器</strong><p className="text-muted-foreground">设备插件由 Agent 下载、校验和执行；面板插件使用已上报的数据处理任务。下载包已验证，不代表服务器已安装或已就绪。</p></div></Notice>
     <ErrorNotice message={resource.error} retry={resource.reload} />
     {resource.loading && !resource.data && <Loading variant="cards" rows={3} />}
     <div data-slot="catalog-grid" className="mb-6 grid items-start gap-5 xl:grid-cols-2" aria-label="插件目录">

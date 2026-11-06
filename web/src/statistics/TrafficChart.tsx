@@ -28,7 +28,6 @@ export default function TrafficChart({ title, points }: { title: string; points:
         <div className="text-muted-foreground mt-2 flex justify-between text-xs"><span>{utcDay(points[0].day)}</span><span>{utcDay(points[Math.floor(points.length / 2)].day)}</span><span>{utcDay(points[points.length - 1].day)}</span></div>
         <div data-slot="statistics-chart-selection" className="bg-muted/60 mt-4 flex min-h-12 flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-3 py-2.5 text-xs" aria-live="polite"><strong className="text-foreground font-medium">{current ? `${utcDay(current.day)}（UTC）` : ''}</strong><span>上传 {bytes(current?.uploaded)} · 下载 {bytes(current?.downloaded)}</span>{current?.incomplete && <small className="text-warning w-full text-xs">这一天包含不完整采样</small>}</div>
       </> : <div className="text-muted-foreground grid min-h-[245px] place-items-center p-6 text-center text-sm">此时间段暂无流量记录，等待数据上报。</div>}
-      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">悬停、点击或使用左右方向键查看每日数值。空白日期表示暂无记录，当天数据仍在累积。</p>
     </div>
   </Panel>
 }

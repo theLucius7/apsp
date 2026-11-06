@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ErrorNotice } from '../../components'
+import { ErrorNotice, InfoTip } from '../../components'
 import { money } from '../../display/currency'
 import { Track, toneText } from '../../display/ui'
 import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
@@ -31,7 +31,7 @@ export default function Spending({ ledger, onOpen }: { ledger: Ledger; onOpen: (
   const shown = year ? all ? year.payments : year.payments.slice(0, PAGE) : []
   return <section aria-label="支出" className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] lg:items-start">
     <Panel className="mb-0">
-      <PanelHeader className="min-h-11 py-2"><PanelTitle>每月费用构成</PanelTitle><span className="text-muted-foreground text-xs tabular-nums">{base ? money(monthly, base) : '—'} / 月</span></PanelHeader>
+      <PanelHeader className="min-h-11 py-2"><span className="flex min-w-0 items-center gap-1.5"><PanelTitle>每月费用构成</PanelTitle><InfoTip label="计算方式"><p>按周期平摊到每月，服务器按资产设置的费用周期计算；一次性购买与已停用的项目不计入。</p></InfoTip></span><span className="text-muted-foreground text-xs tabular-nums">{base ? money(monthly, base) : '—'} / 月</span></PanelHeader>
       <div className="grid gap-4 p-4">
         {budget !== null && base && <div data-slot="budget" className="grid gap-1.5">
           <div className="flex items-baseline justify-between gap-3 text-xs"><span className="text-muted-foreground">月预算 {money(budget, base)}</span>
@@ -43,11 +43,10 @@ export default function Spending({ ledger, onOpen }: { ledger: Ledger; onOpen: (
           <Track value={group.share} tone="info" />
         </li>)}</ul> : <p className="text-muted-foreground text-sm">还没有可折算的周期费用。</p>}
         {ledger.totals.unconverted > 0 && <p className="text-warning text-xs">{ledger.totals.unconverted} 项缺少到 {base} 的汇率，未计入。</p>}
-        <p className="text-muted-foreground text-xs leading-relaxed">按周期平摊到每月，服务器按资产设置的费用周期计算；一次性购买与已停用的项目不计入。</p>
       </div>
     </Panel>
     <Panel className="mb-0">
-      <PanelHeader className="min-h-11 py-2"><PanelTitle>实际付款</PanelTitle>
+      <PanelHeader className="min-h-11 py-2"><span className="flex min-w-0 items-center gap-1.5"><PanelTitle>实际付款</PanelTitle><InfoTip label="计算方式"><p>退款记为负数，价格变化与退订不计入合计。</p></InfoTip></span>
         {years.length > 1 && <SegmentedGroup aria-label="年份">{years.map(entry => <SegmentedButton key={entry.year} aria-pressed={entry.year === year?.year} onClick={() => { setChosen(entry.year); setAll(false) }}>{entry.year}</SegmentedButton>)}</SegmentedGroup>}
       </PanelHeader>
       <ErrorNotice message={ledger.paymentsError} />
@@ -67,7 +66,6 @@ export default function Spending({ ledger, onOpen }: { ledger: Ledger; onOpen: (
           </li>
         })}</ul>
         {year.payments.length > PAGE && <div className="border-t px-4 py-2"><Button variant="ghost" size="sm" onClick={() => setAll(value => !value)}>{all ? '收起' : `显示全部 ${year.payments.length} 笔`}</Button></div>}
-        <p className="text-muted-foreground border-t px-4 py-2.5 text-xs">退款记为负数，价格变化与退订不计入合计。</p>
       </>}
     </Panel>
   </section>

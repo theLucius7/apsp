@@ -62,7 +62,10 @@ try {
     assert.equal(await ranking.getByRole('link').count(), 8)
     assert.equal(await ranking.getByRole('link').first().getAttribute('href'), '#/servers/1')
     assert.match(await page.getByRole('region', { name: '代理用户流量排行', exact: true }).innerText(), /已删除/)
-    assert.match(await page.locator('[data-slot=statistics-scope]').first().innerText(), /不含账单周期流量矫正/)
+    // The counting rules sit behind the section's ⓘ instead of a paragraph under it.
+    await page.getByRole('button', { name: '统计口径' }).first().click()
+    assert.match(await page.locator('[data-slot=statistics-scope]').innerText(), /不含账单周期流量矫正/)
+    await page.keyboard.press('Escape')
     // Phones show the totals as the shared figure strip: two cells per row, the third across the bottom.
     if (width <= 600) assert.equal(await page.locator('[data-slot=statistics-traffic-totals] > section').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length), 2)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false)
