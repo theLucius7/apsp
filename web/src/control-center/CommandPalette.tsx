@@ -160,24 +160,25 @@ export default function CommandPalette({ pages, compact = false }: { pages: read
       <DialogContent data-slot="command-palette" showCloseButton={false} onCloseAutoFocus={restoreFocus} className="top-[12vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl">
         <DialogTitle className="sr-only">{t('搜索或跳转')}</DialogTitle>
         <DialogDescription className="sr-only">{t('输入页面名称或服务器、域名、节点等对象，用方向键选择，回车打开。')}</DialogDescription>
-        <div className="flex items-center gap-2 border-b px-3">
-          <SearchIcon className="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+        <div className="flex items-center gap-2.5 border-b px-4">
+          <SearchIcon className="text-primary size-[18px] shrink-0" aria-hidden="true" />
           <input role="combobox" aria-expanded="true" aria-controls={`${id}-list`} aria-autocomplete="list" aria-activedescendant={current ? optionId(activeIndex) : undefined}
             aria-label={t('搜索页面或对象')} placeholder={t('搜索页面、服务器、域名、节点、任务…')} value={query} onChange={event => setQuery(event.target.value)} onKeyDown={keyboard}
-            className="placeholder:text-muted-foreground h-12 min-w-0 flex-1 bg-transparent text-sm outline-none" />
-          {searching && <Spinner className="text-muted-foreground" aria-hidden="true" role={undefined} aria-label={undefined} />}
+            className="placeholder:text-muted-foreground h-14 min-w-0 flex-1 bg-transparent text-[15px] outline-none" />
+          {searching ? <Spinner className="text-muted-foreground" aria-hidden="true" role={undefined} aria-label={undefined} /> : <Kbd className="max-sm:hidden">Esc</Kbd>}
         </div>
         {error && <p role="alert" className="text-destructive border-b px-4 py-2 text-sm">{error}</p>}
         <div id={`${id}-list`} role="listbox" aria-label={t('搜索结果')} className="max-h-[min(60dvh,26rem)] overflow-y-auto overscroll-contain p-1.5 scrollbar-thin">
           {sections.map((section, sectionIndex) => <div key={section.id} role="presentation" className="pb-1">
-            <div id={`${id}-${section.id}`} aria-hidden="true" className="text-muted-foreground px-2 pt-2 pb-1 text-xs font-medium">{section.title}</div>
+            <div id={`${id}-${section.id}`} aria-hidden="true" className="text-muted-foreground px-2.5 pt-2.5 pb-1 text-[11px] font-medium tracking-wide">{section.title}</div>
             <div role="group" aria-labelledby={`${id}-${section.id}`}>
               {section.entries.map((entry, entryIndex) => {
                 const index = offsets[sectionIndex] + entryIndex, selected = index === activeIndex
                 const Icon = entry.icon
                 return <div key={entry.key} id={optionId(index)} role="option" aria-selected={selected} onMouseMove={() => { if (!selected) setActiveKey(entry.key) }} onClick={() => visit(entry)}
-                  className="aria-selected:bg-accent aria-selected:text-accent-foreground flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm pointer-coarse:py-3">
-                  <Icon className="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+                  className="group/option aria-selected:bg-accent aria-selected:text-accent-foreground relative flex cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 text-sm pointer-coarse:py-2.5 before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full aria-selected:before:bg-primary">
+                  {/* The option's kind as a small tile; the chosen one lights up with the accent. */}
+                  <span className="bg-card text-muted-foreground shadow-soft group-aria-selected/option:border-primary/30 group-aria-selected/option:text-primary grid size-7 shrink-0 place-items-center rounded-lg border transition-colors" aria-hidden="true"><Icon className="size-3.5" /></span>
                   <span className="min-w-0 flex-1 truncate">{entry.label}</span>
                   {pinned(entry.item) && <StarIcon className="fill-warning text-warning size-3.5 shrink-0" aria-label={t('已收藏')} />}
                   <small className="text-muted-foreground shrink-0 text-xs">{entry.detail}</small>

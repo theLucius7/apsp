@@ -7,8 +7,9 @@ import { defaultAssets, trafficSize } from '../server-assets'
 import { count, fresh, network, number, percentage, ratio, size, speed } from './data'
 import ProbeCharts from './ProbeCharts'
 import ResourceCharts from './ResourceCharts'
-import { DisplayNotice, Track, surface, toneText } from './ui'
+import { DisplayNotice, Track, surface } from './ui'
 import { cn } from '@/lib/utils'
+import { ProgressRing } from '@/components/progress-ring'
 
 // One monitoring panel for one server. The console's server page and the public
 // board both show it, so a server never has two different "details" views; only
@@ -17,25 +18,11 @@ import { cn } from '@/lib/utils'
 
 const levelTone = (value: number | null) => value === null ? 'muted' : value >= 90 ? 'danger' : value >= 75 ? 'warning' : 'good'
 
-/** A ring that fills with the share used; colour follows the same thresholds as the cards. */
-function Ring({ value, label }: { value: number | null; label: string }) {
-  const radius = 21, circumference = 2 * Math.PI * radius
-  const share = value === null ? 0 : Math.min(100, Math.max(0, value)) / 100
-  return <span className="relative grid size-12 shrink-0 place-items-center sm:size-14" role="img" aria-label={`${label} ${percentage(value)}`}>
-    <svg viewBox="0 0 52 52" className="absolute inset-0 size-full -rotate-90" aria-hidden="true">
-      <circle cx="26" cy="26" r={radius} fill="none" strokeWidth="5" className="stroke-muted" />
-      <circle cx="26" cy="26" r={radius} fill="none" strokeWidth="5" strokeLinecap="round" stroke="currentColor"
-        className={cn('transition-[stroke-dashoffset] duration-700 ease-out motion-reduce:transition-none', toneText[levelTone(value)])}
-        strokeDasharray={circumference} strokeDashoffset={circumference * (1 - share)} opacity={value === null ? 0 : 1} />
-    </svg>
-    <span className="text-[11px] font-semibold tabular-nums" aria-hidden="true">{value === null ? '—' : `${Math.round(value)}%`}</span>
-  </span>
-}
-
 function Gauge({ label, value, main, detail }: { label: string; value: number | null; main: ReactNode; detail: ReactNode }) {
   // Phones stack the ring over its numbers so three gauges fit in one row.
   return <div data-slot="gauge" className={cn(surface, 'col-span-2 flex min-w-0 flex-col items-center gap-2 px-2 py-3 text-center sm:flex-row sm:gap-3 sm:px-3.5 sm:text-left xl:col-span-1')}>
-    <Ring value={value} label={label} />
+    {/* Colour follows the same thresholds as the cards. */}
+    <ProgressRing value={value} tone={levelTone(value)} label={`${label} ${percentage(value)}`} className="size-12 sm:size-14"><span className="text-[11px] font-semibold">{value === null ? '—' : `${Math.round(value)}%`}</span></ProgressRing>
     <div className="grid w-full min-w-0 gap-0.5">
       <span className="text-muted-foreground text-xs">{label}</span>
       <strong className="truncate text-base leading-tight font-semibold tabular-nums">{main}</strong>

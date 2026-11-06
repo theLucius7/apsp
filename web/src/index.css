@@ -304,6 +304,38 @@
   button:not(:disabled), [role="button"]:not(:disabled), summary {
     cursor: pointer;
   }
+  /* Every disclosure shares one marker: a chevron that turns as the section opens,
+     instead of the browser's triangle. It stays inline, so summaries keep their layout. */
+  summary {
+    list-style: none;
+    border-radius: 0.375rem;
+    outline: none;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+  summary::before {
+    content: "";
+    display: inline-block;
+    width: 0.42em;
+    height: 0.42em;
+    margin: 0 0.65em 0.16em 0.12em;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    opacity: 0.55;
+    rotate: -45deg;
+    vertical-align: middle;
+    transition: rotate 160ms ease, opacity 160ms ease;
+  }
+  summary:hover::before {
+    opacity: 0.9;
+  }
+  details[open] > summary::before {
+    rotate: 45deg;
+  }
+  summary:focus-visible {
+    box-shadow: var(--focus-glow);
+  }
   fieldset {
     @apply m-0 min-w-0 border-0 p-0;
   }

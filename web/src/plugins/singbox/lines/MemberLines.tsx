@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRightIcon } from 'lucide-react'
+import { ArrowRightIcon, RouteIcon } from 'lucide-react'
 import { api, errorMessage } from '../../../api'
 import { Badge, DialogPresence, ErrorNotice, Loading, Meter, Modal } from '../../../components'
 import { ago, percent, time, uptime } from '../../../format'
@@ -167,7 +167,7 @@ export default function MemberLines({ account }: { account: string }) {
   // Deployments without an imported catalogue show nothing here.
   if (data && !data.lines.length) return null
   return <Panel data-slot="member-lines" className="mb-5">
-    <PanelHeader><PanelTitle>线路与探针</PanelTitle><div className="flex items-center gap-2"><SegmentedNav aria-label="线路视图">{(['线路', '探针'] as const).map(name => <SegmentedButton key={name} aria-pressed={tab === name} onClick={() => { setTab(name); if (name === '线路') setFocus(null) }}>{name}</SegmentedButton>)}</SegmentedNav><Button variant="ghost" size="sm" onClick={reload}>刷新</Button></div></PanelHeader>
+    <PanelHeader><PanelTitle><RouteIcon className="text-primary size-4" aria-hidden="true" />线路与探针</PanelTitle><div className="flex items-center gap-2"><SegmentedNav aria-label="线路视图">{(['线路', '探针'] as const).map(name => <SegmentedButton key={name} aria-pressed={tab === name} onClick={() => { setTab(name); if (name === '线路') setFocus(null) }}>{name}</SegmentedButton>)}</SegmentedNav><Button variant="ghost" size="sm" onClick={reload}>刷新</Button></div></PanelHeader>
     <div className="p-4">
       <ErrorNotice message={error} retry={reload} />
       {!data ? !error && <Loading variant="cards" rows={3} /> : tab === '线路' ? <>

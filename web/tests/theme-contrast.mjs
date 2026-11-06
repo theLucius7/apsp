@@ -5,8 +5,8 @@ import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 // TEST_ONLY: after rebuilding web/dist, run `node web/tests/theme-contrast.mjs`.
-// Audits the built sign-in page, administrator server list, public dashboard and
-// a dialog in both themes. Every visible text node is measured against the
+// Audits the built sign-in page, administrator server list, public dashboard,
+// a dialog and a proxy user's own portal in both themes. Every visible text node is measured against the
 // background actually painted behind it (all translucent layers composited),
 // so a token change that weakens contrast anywhere fails here. Only local
 // fixtures are served; no deployed panel is contacted.
@@ -32,6 +32,20 @@ const servers = [['东京 · 主节点', true, 'JP', 42], ['法兰克福', false
   asset_settings: { region, group_name: '亚洲', tags: ['BGP'], hidden: false, price: '12.5', currency: 'CNY', billing_cycle: 30, expires_at: Math.floor(now / 1000) + 5 * 86400, auto_renewal: false, traffic_limit: '0', traffic_limit_type: 'sum', reset_day: 1, network_interface: '' },
 }))
 const owner = { id: 1, role: 'owner', display_name: 'TEST_ONLY 所有者', all_servers: true, capabilities: [], token_capabilities: null, token_servers: null }
+const account = '00000000-0000-4000-8000-000000000041', seconds = Math.floor(now / 1000)
+const portal = {
+  authenticated: true, name: 'TEST_ONLY 用户', configuration: { enabled: true, reason: null, origin: 'http://127.0.0.1' },
+  subscription_url: 'https://sub.example.com/s/TEST_ONLY?format=singbox', clash_subscription_url: 'https://sub.example.com/s/TEST_ONLY?format=clash', legacy_compatibility: null,
+  usage: { uplink: String(3 * GiB), downlink: String(20 * GiB) }, keys: [{ id: 'k1', name: 'TEST_ONLY 手机', created_at: seconds - 86400, last_used_at: seconds - 600 }, { id: 'k2', name: 'TEST_ONLY 电脑', created_at: seconds, last_used_at: null }],
+  subscription_status: { status: 'ready', message: '', entitlement: { package_name: 'TEST_ONLY 套餐', used_bytes: String(170 * GiB), monthly_bytes: String(200 * GiB), expires_at: seconds + 40 * 86400, next_reset: seconds + 12 * 86400, cycle_start: seconds - 18 * 86400 } },
+}
+const latency = { source: 'apsp_probe', monitored: true, updated_at: seconds - 60, window_minutes: 60, direction: 'node_to_carrier', carriers: { telecom: { latest: 45, average: 50, loss: 0 }, unicom: { latest: 160, average: 150, loss: 1.5 }, mobile: { latest: 320, average: 300, loss: 4 } } }
+const lines = { generated_at: seconds, package: 'TEST_ONLY 套餐', hosts: [], lines: [
+  { id: 1, name: 'TEST_ONLY 香港', protocol: { name: 'vless', network: 'tcp', security: 'reality' }, topology: { region: 'HK', provider: null, residential: true, dynamic: true, classification_source: 'node_catalog', kind: 'direct', source: 'node_catalog', inferred: false, position_precision: 'region', front_node_id: null, points: [{ id: 'entry', role: 'entry', region: 'HK', provider: null, node_id: 1 }], edges: [] }, status: { state: 'online', checked_at: seconds - 30, source: 'apsp' }, rate: '1', timed_rate: false, latency, host: 'h1', network_scope: 'entry', plans: [{ name: 'TEST_ONLY 套餐', current: true }], access: true },
+  { id: 2, name: 'TEST_ONLY 日本', protocol: { name: 'trojan', network: 'tcp', security: 'tls' }, topology: { region: 'JP', provider: null, residential: false, dynamic: false, classification_source: 'node_catalog', kind: 'direct', source: 'node_catalog', inferred: false, position_precision: 'region', front_node_id: null, points: [{ id: 'entry', role: 'entry', region: 'JP', provider: null, node_id: 2 }], edges: [] }, status: { state: 'offline', checked_at: seconds - 30, source: 'apsp' }, rate: '2', timed_rate: true, latency: { monitored: false }, host: 'h2', network_scope: 'entry', plans: [], access: false },
+] }
+const portalAccount = { profile: { email: 'fixture@example.com', email_verified: true, has_password: true, remind_expire: true, remind_traffic: false }, guides: [],
+  invitations: { enabled: true, remaining: 2, issued: [{ id: 'i1', hint: 'WXYZ', origin: 'quota', state: 'claimed', created_at: seconds - 86400, claimed_at: seconds, revoked_at: null, recipient: { id: 2, name: 'TEST_ONLY 受邀人' } }, { id: 'i2', hint: 'PQRS', origin: 'quota', state: 'available', created_at: seconds, claimed_at: null, revoked_at: null, recipient: null }] } }
 const rates = { base: 'CNY', rates: { CNY: 1 }, rate_dates: {}, rate_date: null, source: null, source_url: null, fetched_at: null, attempted_at: null, next_refresh_at: 0, stale: true, status: 'unavailable', error_code: null }
 
 function fixtures(scenario) {
@@ -45,6 +59,9 @@ function fixtures(scenario) {
     if (path === '/api/dashboard/exchange-rates') return json(rates)
     if (path === '/api/dashboard/probes/overview') return json([])
     if (path === '/api/login') return json({ error: '测试：密码或验证码不正确。' }, 400)
+    if (path === `/api/plugins/sing-box/portal/${account}`) return json(portal)
+    if (path === `/api/plugins/sing-box/portal/${account}/lines`) return json(lines)
+    if (path === `/api/plugins/sing-box/portal/${account}/account`) return json(portalAccount)
     return json({ error: '测试：此夹具未提供该数据。' }, 404)
   }
 }
@@ -97,11 +114,11 @@ async function run() {
     for (const width of [1440, 390]) for (const theme of ['light', 'dark']) {
       const context = await browser.newContext({ viewport: { width, height: 1000 }, colorScheme: theme, reducedMotion: 'reduce' })
       try {
-        for (const scenario of ['login', 'admin', 'dialog', 'dashboard']) {
+        for (const scenario of ['login', 'admin', 'dialog', 'dashboard', 'portal']) {
           const page = await context.newPage()
           page.on('pageerror', error => totals.pageErrors.push({ width, theme, scenario, error: error.message }))
           await page.route('**/api/**', fixtures(scenario === 'dialog' ? 'admin' : scenario))
-          await page.goto(`${origin}/#${scenario === 'dashboard' ? '/dashboard' : '/servers'}`)
+          await page.goto(`${origin}/#${scenario === 'dashboard' ? '/dashboard' : scenario === 'portal' ? `/plugins/sing-box/account/${account}` : '/servers'}`)
           if (scenario === 'login') {
             await page.getByRole('heading', { name: '欢迎回来' }).waitFor()
             await page.getByLabel('管理员密码').fill('TEST_ONLY')
@@ -117,6 +134,10 @@ async function run() {
               }
               return true
             }, null, { timeout: 5000 })
+          } else if (scenario === 'portal') {
+            await page.getByRole('heading', { name: 'TEST_ONLY 用户', exact: true }).waitFor()
+            await page.locator('[data-slot=member-line]').first().waitFor()
+            await page.getByText('剩余邀请名额 2', { exact: true }).waitFor()
           } else if (scenario === 'dashboard') {
             await page.locator('[data-slot=server-card]').first().waitFor()
           } else {
