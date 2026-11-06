@@ -268,3 +268,84 @@ fn additive_runtime_tables_preserve_legacy_state_and_pending_intents() {
     assert_eq!(state.runtime_revision_floor("demo").unwrap(), 0);
     assert!(state.pending_runtime_controls().unwrap().is_empty());
 }
+
+fn acknowledged(state: &mut State, expires_at: i64) -> ControlRequest {
+    let mut request = request();
+    if let ControlRequest::Checkpoint(value) = &mut request {
+        value.expires_at = expires_at;
+    }
+    state.enqueue_runtime_control(&request).unwrap();
+    state
+        .finish_runtime_control(&failure(&request), None)
+        .unwrap();
+    state
+        .acknowledge_runtime_control(
+            "checkpoint",
+            &RuntimeControlAck {
+                request_id: request.id(),
+                request_digest: request.digest().unwrap(),
+            },
+        )
+        .unwrap();
+    request
+}
+
+fn rows(state: &State) -> u64 {
+    state
+        .connection
+        .query_row("SELECT COUNT(*) FROM runtime_control", [], |row| row.get(0))
+        .unwrap()
+}
+
+#[test]
+fn a_journal_full_of_long_expired_acknowledged_tombstones_accepts_new_work() {
+    let mut state = State::open(std::path::Path::new(":memory:")).unwrap();
+    let recent = acknowledged(&mut state, apsp_protocol::now_timestamp() + 60);
+    for _ in 1..MAX_ROWS {
+        acknowledged(&mut state, 1);
+    }
+    assert_eq!(rows(&state), MAX_ROWS);
+    let fresh = request();
+    assert_eq!(state.enqueue_runtime_control(&fresh).unwrap(), None);
+    // Only the recent tombstone and the new request remain; a replay of the
+    // recent request still returns its stored result instead of running again.
+    assert_eq!(rows(&state), 2);
+    assert_eq!(
+        state.enqueue_runtime_control(&recent).unwrap(),
+        Some(failure(&recent))
+    );
+    assert_eq!(state.pending_runtime_controls().unwrap(), vec![fresh]);
+}
+
+#[test]
+fn tombstones_inside_their_replay_window_still_fill_the_journal() {
+    let mut state = State::open(std::path::Path::new(":memory:")).unwrap();
+    // Expired a minute ago: a replay could still be in flight, so it is kept.
+    let recently_expired = apsp_protocol::now_timestamp() - 60;
+    for _ in 0..MAX_ROWS {
+        acknowledged(&mut state, recently_expired);
+    }
+    assert!(state.enqueue_runtime_control(&request()).is_err());
+    assert_eq!(rows(&state), MAX_ROWS);
+}
+
+#[test]
+fn unacknowledged_results_are_never_pruned_even_when_expired() {
+    let mut state = State::open(std::path::Path::new(":memory:")).unwrap();
+    let mut pending = request();
+    if let ControlRequest::Checkpoint(value) = &mut pending {
+        value.expires_at = 1;
+    }
+    state.enqueue_runtime_control(&pending).unwrap();
+    state
+        .finish_runtime_control(&failure(&pending), None)
+        .unwrap();
+    for _ in 1..MAX_ROWS {
+        acknowledged(&mut state, 1);
+    }
+    state.enqueue_runtime_control(&request()).unwrap();
+    assert_eq!(
+        state.pending_runtime_results().unwrap(),
+        vec![failure(&pending)]
+    );
+}
