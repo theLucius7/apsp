@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::Locked;
 use apsp_protocol::{AuthorizedProbe, ProbeExecution};
 
 pub(super) async fn sample_loop(
@@ -46,7 +47,7 @@ pub(super) async fn sample_loop(
                             && lease.current(clients.borrow().as_ref()));
                         if initial.current(clients.borrow().as_ref())
                             && current.as_ref().is_some_and(|lease| lease.snapshot.revision == initial.snapshot.revision && lease.snapshot.probes.contains(&probe)) {
-                            let mut state = state.lock().map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+                            let mut state = state.locked()?;
                             storage.finish("persist probe sample", state.save_probe_result(&result))?;
                         }
                     }

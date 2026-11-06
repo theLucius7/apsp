@@ -15,10 +15,7 @@ pub async fn list(
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<Value>>> {
     auth::require_admin(&state, &headers).await?;
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        .execute(&mut *tx)
-        .await?;
+    let mut tx = crate::read_snapshot(&state.pool).await?;
     Ok(Json(resources_on(&mut tx).await?))
 }
 
@@ -61,10 +58,7 @@ pub async fn detail(
     Path((kind, id)): Path<(String, i64)>,
 ) -> ApiResult<Json<Value>> {
     auth::require_admin(&state, &headers).await?;
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        .execute(&mut *tx)
-        .await?;
+    let mut tx = crate::read_snapshot(&state.pool).await?;
     let resource = resources_on(&mut tx)
         .await?
         .into_iter()

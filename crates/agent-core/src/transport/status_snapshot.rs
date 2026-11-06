@@ -1,14 +1,12 @@
 use super::Runtime;
+use crate::state::Locked;
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, sync::atomic::Ordering};
 
 pub(super) fn snapshot(runtime: &Runtime) -> Result<Value> {
     let applied = runtime.applied()?;
-    let state = runtime
-        .state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+    let state = runtime.state.locked()?;
     let mut healthy = BTreeMap::new();
     for module in runtime.modules.iter() {
         healthy.insert(

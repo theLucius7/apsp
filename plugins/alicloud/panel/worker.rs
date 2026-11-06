@@ -10,39 +10,78 @@ use sqlx::{PgPool, types::Json};
 use std::time::Duration;
 use uuid::Uuid;
 
+/// Refreshes one account in three steps so the account lock is never held
+/// across cloud calls, which can take tens of seconds and would hold back the
+/// CDT guard, power jobs and edits: claim the pass, call the cloud without a
+/// transaction, then store the results unless the account or a resource was
+/// edited meanwhile. An edit resets the schedule, so its refresh follows at once.
 pub(super) async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
-    let mut tx = lock(pool, id).await?;
-    let mut account = account_on(&mut tx, id).await?;
     let now = apsp_protocol::now_timestamp();
-    if !account.enabled || account.next_run_at > now {
-        return Ok(());
-    }
-    sqlx::query("UPDATE alicloud_accounts SET last_attempt_at=$2,next_run_at=$3 WHERE id=$1")
-        .bind(id)
-        .bind(now)
-        .bind(now + 300)
-        .execute(&mut *tx)
-        .await?;
-    if account.billing_enabled {
-        match cloud.bill(&account, now).await {
-            Ok(bill) => {
-                sqlx::query("UPDATE alicloud_accounts SET bill=$2,error_code=NULL WHERE id=$1")
-                    .bind(id)
-                    .bind(Json(&bill))
-                    .execute(&mut *tx)
-                    .await?;
-                account.bill = Some(Json(bill));
-                account.error_code = None;
-            }
-            Err(error) => {
-                sqlx::query("UPDATE alicloud_accounts SET error_code=$2,next_run_at=GREATEST(next_run_at,$3) WHERE id=$1")
-                .bind(id).bind(error.code).bind(now+error.retry_after.max(300)).execute(&mut *tx).await?;
-                account.error_code = Some(error.code.into());
-            }
+    let (account, resources) = {
+        let mut tx = lock(pool, id).await?;
+        let account = account_on(&mut tx, id).await?;
+        if !account.enabled || account.next_run_at > now {
+            return Ok(());
         }
-    }
+        sqlx::query("UPDATE alicloud_accounts SET last_attempt_at=$2,next_run_at=$3 WHERE id=$1")
+            .bind(id)
+            .bind(now)
+            .bind(now + 300)
+            .execute(&mut *tx)
+            .await?;
+        // Poll at most eight resources per pass; rotate by last attempt, including failures.
+        let resources: Vec<Resource> = sqlx::query_as("SELECT * FROM alicloud_resources WHERE account_id=$1 AND NOT archived ORDER BY last_attempt_at,id LIMIT 8")
+            .bind(id).fetch_all(&mut *tx).await?;
+        let ids: Vec<Uuid> = resources.iter().map(|resource| resource.id).collect();
+        sqlx::query("UPDATE alicloud_resources SET last_attempt_at=$2 WHERE id=ANY($1)")
+            .bind(&ids)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        (account, resources)
+    };
+    let bill = if account.billing_enabled {
+        Some(cloud.bill(&account, now).await)
+    } else {
+        None
+    };
     // Compatibility counters are display-only: no trustworthy period field is supplied.
-    match cloud.traffic(&account, now).await {
+    let traffic = cloud.traffic(&account, now).await;
+    let mut snapshots = Vec::with_capacity(resources.len());
+    for resource in resources {
+        let snapshot = cloud.snapshot(&account, &resource).await;
+        snapshots.push((resource, snapshot));
+    }
+
+    let mut tx = lock(pool, id).await?;
+    let current: Option<super::model::Account> =
+        sqlx::query_as("SELECT * FROM alicloud_accounts WHERE id=$1 AND NOT archived")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let Some(mut account) = current.filter(|current| current.revision == account.revision) else {
+        // Edited or archived meanwhile: these results describe the old settings.
+        return Ok(());
+    };
+    match bill {
+        Some(Ok(bill)) => {
+            sqlx::query("UPDATE alicloud_accounts SET bill=$2,error_code=NULL WHERE id=$1")
+                .bind(id)
+                .bind(Json(&bill))
+                .execute(&mut *tx)
+                .await?;
+            account.bill = Some(Json(bill));
+            account.error_code = None;
+        }
+        Some(Err(error)) => {
+            sqlx::query("UPDATE alicloud_accounts SET error_code=$2,next_run_at=GREATEST(next_run_at,$3) WHERE id=$1")
+                .bind(id).bind(error.code).bind(now+error.retry_after.max(300)).execute(&mut *tx).await?;
+            account.error_code = Some(error.code.into());
+        }
+        None => {}
+    }
+    match traffic {
         Ok(traffic) => {
             sqlx::query("UPDATE alicloud_accounts SET traffic=$2,traffic_error=NULL WHERE id=$1")
                 .bind(id)
@@ -58,16 +97,24 @@ pub(super) async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult
                 .await?;
         }
     }
-    let resources: Vec<Resource> = sqlx::query_as("SELECT * FROM alicloud_resources WHERE account_id=$1 AND NOT archived ORDER BY last_attempt_at,id LIMIT 8")
-        .bind(id).fetch_all(&mut *tx).await?;
-    for resource in resources {
-        // Poll at most eight resources per pass; rotate by last attempt, including failures.
-        sqlx::query("UPDATE alicloud_resources SET last_attempt_at=$2 WHERE id=$1")
-            .bind(resource.id)
-            .bind(apsp_protocol::now_timestamp())
-            .execute(&mut *tx)
-            .await?;
-        let snapshot = match cloud.snapshot(&account, &resource).await {
+    for (polled, snapshot) in snapshots {
+        let resource: Option<Resource> =
+            sqlx::query_as("SELECT * FROM alicloud_resources WHERE id=$1 AND NOT archived")
+                .bind(polled.id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        // The snapshot describes the cloud, not local settings, so it stays valid
+        // across a resource edit; automatic action uses the settings read here.
+        let Some(resource) = resource else {
+            continue;
+        };
+        // A bandwidth change, preview or manual refresh stores its own snapshot
+        // under the lock. One stored since this pass began is newer than ours,
+        // so ours must neither replace it nor drive automatic action.
+        if resource.checked_at.is_some_and(|checked| checked >= now) {
+            continue;
+        }
+        let snapshot = match snapshot {
             Ok(snapshot) => snapshot,
             Err(error) => {
                 sqlx::query("UPDATE alicloud_resources SET error_code=$2 WHERE id=$1")

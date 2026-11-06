@@ -40,7 +40,11 @@ impl Ring {
             events: VecDeque::new(),
             bytes: 0,
             limit,
-            sender: broadcast::channel(64).0,
+            // Room for a burst of lines, so a follower does not lag and
+            // restart, which replays the last two minutes. A lagging follower
+            // keeps up to this many lines alive (at most WIRE_LIMIT each), so
+            // the bound stays small for hosts with little memory.
+            sender: broadcast::channel(256).0,
         }
     }
 
@@ -83,28 +87,40 @@ impl Splitter {
         bytes: &[u8],
         mut line: impl FnMut(String) -> Result<()>,
     ) -> Result<()> {
-        for byte in bytes {
-            if *byte == b'\n' {
-                if !self.dropping {
-                    if self.pending.last() == Some(&b'\r') {
-                        self.pending.pop();
-                    }
-                    if let Ok(text) = String::from_utf8(std::mem::take(&mut self.pending)) {
-                        line(text)?;
-                    }
+        let mut rest = bytes;
+        while let Some(end) = rest.iter().position(|byte| *byte == b'\n') {
+            self.append(&rest[..end]);
+            rest = &rest[end + 1..];
+            let text = if self.dropping {
+                None
+            } else {
+                if self.pending.last() == Some(&b'\r') {
+                    self.pending.pop();
                 }
-                self.pending.clear();
-                self.dropping = false;
-            } else if !self.dropping {
-                if self.pending.len() == LINE_LIMIT {
-                    self.pending.clear();
-                    self.dropping = true;
-                } else {
-                    self.pending.push(*byte);
-                }
+                std::str::from_utf8(&self.pending).ok().map(str::to_owned)
+            };
+            // The buffer keeps its capacity for the next line.
+            self.pending.clear();
+            self.dropping = false;
+            if let Some(text) = text {
+                line(text)?;
             }
         }
+        self.append(rest);
         Ok(())
+    }
+
+    /// Adds part of a line; a line longer than the limit is dropped whole.
+    fn append(&mut self, part: &[u8]) {
+        if self.dropping {
+            return;
+        }
+        if self.pending.len() + part.len() > LINE_LIMIT {
+            self.pending.clear();
+            self.dropping = true;
+        } else {
+            self.pending.extend_from_slice(part);
+        }
     }
 }
 
@@ -284,5 +300,70 @@ mod tests {
             .unwrap();
         assert_eq!(lines, ["INFO recovered"]);
         assert!(splitter.pending.is_empty());
+    }
+
+    /// The previous byte-at-a-time splitter, kept as the reference behaviour.
+    fn reference(input: &[u8]) -> Vec<String> {
+        let (mut lines, mut pending, mut dropping) = (Vec::new(), Vec::new(), false);
+        for byte in input {
+            if *byte == b'\n' {
+                if !dropping {
+                    if pending.last() == Some(&b'\r') {
+                        pending.pop();
+                    }
+                    if let Ok(text) = String::from_utf8(std::mem::take(&mut pending)) {
+                        lines.push(text);
+                    }
+                }
+                pending.clear();
+                dropping = false;
+            } else if !dropping {
+                if pending.len() == LINE_LIMIT {
+                    pending.clear();
+                    dropping = true;
+                } else {
+                    pending.push(*byte);
+                }
+            }
+        }
+        lines
+    }
+
+    #[test]
+    fn chunk_boundaries_do_not_change_the_lines() {
+        let mut input = Vec::new();
+        input.extend_from_slice(b"first\r\nsecond\n\n");
+        input.extend(std::iter::repeat_n(b'a', LINE_LIMIT));
+        input.extend_from_slice(b"\r\n");
+        input.extend(std::iter::repeat_n(b'b', LINE_LIMIT));
+        input.extend_from_slice(b"\n");
+        input.extend(std::iter::repeat_n(b'c', LINE_LIMIT + 1));
+        input.extend_from_slice(b"\nbad \xff utf8\nlast without newline");
+        let expected = reference(&input);
+        // A CR counts toward the limit before it is stripped, so the "a" line
+        // is dropped like the "c" line; the invalid line and the tail are not lines.
+        assert_eq!(expected.len(), 4);
+        for chunk in [
+            1,
+            2,
+            7,
+            1000,
+            LINE_LIMIT - 1,
+            LINE_LIMIT,
+            LINE_LIMIT + 1,
+            input.len(),
+        ] {
+            let mut splitter = Splitter::default();
+            let mut lines = Vec::new();
+            for part in input.chunks(chunk) {
+                splitter
+                    .feed(part, |line| {
+                        lines.push(line);
+                        Ok(())
+                    })
+                    .unwrap();
+            }
+            assert_eq!(lines, expected, "chunk size {chunk}");
+        }
     }
 }

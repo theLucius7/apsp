@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::Locked;
 use apsp_protocol::{DiagnosticCancelRequest, DiagnosticCancelResult, Envelope};
 use tokio::sync::mpsc;
 
@@ -41,10 +42,7 @@ impl CancellationControl {
                 && (1..=3600).contains(&request.job.timeout_secs),
             "cancel request does not match this device or a registered plugin"
         );
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+        let mut state = self.state.locked()?;
         let results: Vec<DiagnosticCancelResult> = state.get_json(RESULTS)?.unwrap_or_default();
         if results
             .iter()
@@ -83,22 +81,14 @@ impl CancellationControl {
     }
 
     fn pending(&self) -> Result<Vec<DiagnosticCancelRequest>> {
-        Ok(self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-            .get_json(PENDING)?
-            .unwrap_or_default())
+        Ok(self.state.locked()?.get_json(PENDING)?.unwrap_or_default())
     }
     pub(super) fn requested(&self, id: Uuid) -> Result<bool> {
         Ok(self.pending()?.iter().any(|request| request.job.id == id))
     }
 
     fn save_result(&self, result: DiagnosticCancelResult) -> Result<()> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+        let mut state = self.state.locked()?;
         let mut results: Vec<DiagnosticCancelResult> = state.get_json(RESULTS)?.unwrap_or_default();
         if results
             .iter()
@@ -151,12 +141,8 @@ impl CancellationControl {
         client: &PanelClient,
         retirement: Option<&crate::retirement::Retirement>,
     ) -> Result<()> {
-        let results: Vec<DiagnosticCancelResult> = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-            .get_json(RESULTS)?
-            .unwrap_or_default();
+        let results: Vec<DiagnosticCancelResult> =
+            self.state.locked()?.get_json(RESULTS)?.unwrap_or_default();
         for result in results {
             if retirement.is_some_and(|retirement| retirement.requested()) {
                 return Ok(());
@@ -170,10 +156,7 @@ impl CancellationControl {
             if retirement.is_some_and(|retirement| retirement.requested()) {
                 return Ok(());
             }
-            let mut state = self
-                .state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+            let mut state = self.state.locked()?;
             let mut pending: Vec<DiagnosticCancelResult> =
                 state.get_json(RESULTS)?.unwrap_or_default();
             // A stale negative acknowledgment must not remove a later positive result.

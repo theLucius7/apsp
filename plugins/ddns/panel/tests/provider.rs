@@ -277,10 +277,13 @@ fn rate_limit_accepts_unsigned_seconds_and_http_date_without_shortening_fraction
         ("", None),
         ("1.5", None),
     ] {
-        assert_eq!(crate::cloudflare::retry_after(input, now), expected);
+        assert_eq!(
+            crate::cloud_api::transport::retry_after(input, now),
+            expected
+        );
     }
     assert_eq!(
-        crate::cloudflare::retry_after(
+        crate::cloud_api::transport::retry_after(
             "Sun, 06 Nov 1994 09:04:37 GMT",
             now + std::time::Duration::from_millis(1)
         ),

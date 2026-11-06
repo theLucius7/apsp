@@ -1,5 +1,6 @@
 use super::Runtime;
 use crate::Config;
+use crate::state::Locked;
 use anyhow::Result;
 use apsp_protocol::{AgentSettings, Envelope, now_timestamp};
 use futures_util::StreamExt;
@@ -67,8 +68,7 @@ pub(super) async fn run(
             if !retirement.requested() {
                 let enabled = runtime
                     .state
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
+                    .locked()?
                     .get_json::<AgentSettings>("agent_settings")?
                     .unwrap_or_else(|| config.settings.clone())
                     .discover_public_ips;
@@ -79,8 +79,7 @@ pub(super) async fn run(
                     let mut records = {
                         runtime
                             .state
-                            .lock()
-                            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
+                            .locked()?
                             .get_json::<Vec<(String, i64)>>("discovered_ips")?
                             .unwrap_or_default()
                     };
@@ -92,15 +91,10 @@ pub(super) async fn run(
                     }
                     runtime
                         .state
-                        .lock()
-                        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
+                        .locked()?
                         .set_json("discovered_ips", &records)?;
                 } else {
-                    runtime
-                        .state
-                        .lock()
-                        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-                        .remove_json("discovered_ips")?;
+                    runtime.state.locked()?.remove_json("discovered_ips")?;
                 }
                 if let Some(info) = runtime.static_info()? {
                     let _ = outgoing.try_send(Envelope::new("telemetry.static", info)?);

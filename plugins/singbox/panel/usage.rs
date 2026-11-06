@@ -169,10 +169,7 @@ pub async fn summary(
     if query.user_id.is_some_and(|id| id <= 0) || query.node_id.is_some_and(|id| id <= 0) {
         return Err(ApiError::BadRequest("用户和节点编号必须为正整数".into()));
     }
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        .execute(&mut *tx)
-        .await?;
+    let mut tx = crate::read_snapshot(&state.pool).await?;
     // All-time totals read the per-day rollup that the ledger trigger maintains (ADR 0077).
     let totals = sqlx::query("SELECT COALESCE(SUM(uplink),0)::text AS uplink,COALESCE(SUM(downlink),0)::text AS downlink,(COALESCE(SUM(uplink),0)+COALESCE(SUM(downlink),0))::text AS total FROM singbox_usage_daily WHERE ($1::bigint IS NULL OR user_id=$1) AND ($2::bigint IS NULL OR node_id=$2)")
         .bind(query.user_id).bind(query.node_id).fetch_one(&mut *tx).await?;

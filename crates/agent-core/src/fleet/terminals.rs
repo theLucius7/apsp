@@ -1,3 +1,4 @@
+use crate::state::Locked;
 use crate::{SharedState, artifacts::PanelClient};
 use anyhow::{Result, ensure};
 use apsp_adapter_sdk::{Privileged, TerminalProcess};
@@ -137,8 +138,7 @@ impl Sessions {
             if let Entry::Vacant(entry) = self.active.entry(control.id) {
                 let already_seen = {
                     state
-                        .lock()
-                        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
+                        .locked()?
                         .get_json::<Vec<Uuid>>("fleet_terminal_seen")?
                         .unwrap_or_default()
                         .contains(&control.id)
@@ -172,9 +172,7 @@ impl Sessions {
                     ),
                 };
                 {
-                    let mut durable = state
-                        .lock()
-                        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+                    let mut durable = state.locked()?;
                     let mut seen = durable
                         .get_json::<Vec<Uuid>>("fleet_terminal_seen")?
                         .unwrap_or_default();

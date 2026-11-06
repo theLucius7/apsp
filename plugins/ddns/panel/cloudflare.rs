@@ -2,15 +2,13 @@ use super::{
     lifecycle::{Snapshot, expected_matches},
     model::{Rule, domain, identifier},
 };
-use futures_util::StreamExt;
 use reqwest::{Client, Method, Url};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{future::Future, net::IpAddr, time::SystemTime};
-
-const RESPONSE_LIMIT: usize = 256 * 1024;
+use std::{future::Future, net::IpAddr};
 
 pub(super) use crate::cloud_api::Failure;
+use crate::cloud_api::transport;
 
 pub(super) struct Cloudflare {
     client: Client,
@@ -98,15 +96,7 @@ impl Cloudflare {
             .map_err(|_| Failure::from("network_error"))?;
         let status = response.status();
         if status.as_u16() == 429 {
-            return Err(Failure {
-                code: "rate_limited",
-                retry_after: response
-                    .headers()
-                    .get("retry-after")
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|v| retry_after(v, SystemTime::now()))
-                    .unwrap_or(300),
-            });
+            return Err(transport::rate_limited(&response));
         }
         if !status.is_success() {
             return Err(match status.as_u16() {
@@ -119,23 +109,7 @@ impl Cloudflare {
             }
             .into());
         }
-        if response
-            .content_length()
-            .is_some_and(|length| length > RESPONSE_LIMIT as u64)
-        {
-            return Err("response_too_large".into());
-        }
-        let mut bytes = Vec::new();
-        let mut stream = response.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|_| Failure::from("network_error"))?;
-            if bytes.len() + chunk.len() > RESPONSE_LIMIT {
-                return Err("response_too_large".into());
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        let envelope: Value =
-            serde_json::from_slice(&bytes).map_err(|_| Failure::from("invalid_response"))?;
+        let envelope = transport::bounded_json(response).await?;
         if envelope["success"] != true
             || envelope
                 .get("errors")
@@ -306,20 +280,4 @@ impl Cloudflare {
             status: "updated",
         })
     }
-}
-
-pub(super) fn retry_after(value: &str, now: SystemTime) -> Option<i64> {
-    let value = value.trim();
-    let seconds = if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
-        value.parse::<u64>().ok()?
-    } else {
-        let duration = httpdate::parse_http_date(value)
-            .ok()?
-            .duration_since(now)
-            .unwrap_or_default();
-        duration
-            .as_secs()
-            .saturating_add(u64::from(duration.subsec_nanos() != 0))
-    };
-    Some(seconds.clamp(60, 3600) as i64)
 }

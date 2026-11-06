@@ -1,4 +1,5 @@
 use super::cache::{Control, Snapshot};
+use crate::state::Locked;
 use crate::{Config, SharedState, state::StorageRetry};
 use anyhow::{Result, ensure};
 use apsp_protocol::{AgentSettings, telemetry::TelemetrySettings};
@@ -12,9 +13,7 @@ use tokio::sync::watch;
 mod tests;
 
 pub(crate) fn initial_control(config: &Config, state: &SharedState) -> Result<Control> {
-    let state = state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+    let state = state.locked()?;
     let settings = state
         .get_json::<AgentSettings>("agent_settings")?
         .unwrap_or_else(|| config.settings.clone());
@@ -63,9 +62,7 @@ pub(crate) async fn run(
                     .filter(|sample| !retirement.requested() && Some(sample.id) != saved)
                 {
                     let persisted = {
-                        let mut state = state
-                            .lock()
-                            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+                        let mut state = state.locked()?;
                         storage.finish("persist telemetry", state.save_telemetry(sample))?
                     };
                     if let Some(dropped) = persisted {
@@ -103,9 +100,7 @@ pub(crate) async fn run(
                         last_settings = Some(Instant::now());
                         match active.agent_settings().await {
                             Ok(settings) => {
-                                let mut state = state
-                                    .lock()
-                                    .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+                                let mut state = state.locked()?;
                                 if settings_storage
                                     .finish(
                                         "persist Agent settings",
@@ -145,8 +140,7 @@ pub(crate) async fn run(
                     }
                 }
                 state
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
+                    .locked()?
                     .get_json::<AgentSettings>("agent_settings")?
                     .unwrap_or_else(|| config.settings.clone())
                     .upload_interval_secs
@@ -175,8 +169,7 @@ async fn deliver(
     let mut acknowledgment_storage = StorageRetry::default();
     loop {
         let upload_interval = state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
+            .locked()?
             .get_json::<AgentSettings>("agent_settings")?
             .unwrap_or_else(|| config.settings.clone())
             .upload_interval_secs;
@@ -195,10 +188,7 @@ async fn deliver(
                     if retirement.requested() {
                         break;
                     }
-                    let samples = state
-                        .lock()
-                        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-                        .pending_telemetry()?;
+                    let samples = state.locked()?.pending_telemetry()?;
                     if samples.is_empty() {
                         saved = Some(Instant::now());
                         break;
@@ -209,9 +199,7 @@ async fn deliver(
                     {
                         Ok(ack) => {
                             let acknowledged = {
-                                let mut state = state
-                                    .lock()
-                                    .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+                                let mut state = state.locked()?;
                                 acknowledgment_storage.finish(
                                     "persist telemetry acknowledgment",
                                     state.acknowledge_telemetry(&ack),

@@ -424,10 +424,7 @@ pub async fn serve(
     if token.is_empty() || token.len() > 512 {
         return Err(ApiError::NotFound);
     }
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        .execute(&mut *tx)
-        .await?;
+    let mut tx = crate::read_snapshot(&state.pool).await?;
     sqlx::query("SET LOCAL statement_timeout='5s'")
         .execute(&mut *tx)
         .await?;
@@ -519,10 +516,7 @@ pub async fn preview(
     let administrator = super::secret_access::require_reveal(&state, &headers).await?;
     let format = query.format.as_deref().unwrap_or("singbox");
     validate_format(format)?;
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        .execute(&mut *tx)
-        .await?;
+    let mut tx = crate::read_snapshot(&state.pool).await?;
     sqlx::query("SET LOCAL statement_timeout='5s'")
         .execute(&mut *tx)
         .await?;

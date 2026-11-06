@@ -1,4 +1,5 @@
 use super::Reconciler;
+use crate::state::Locked;
 use crate::state::runtime_control::{ControlRequest, ControlResult};
 use anyhow::{Context, Result, ensure};
 use apsp_adapter_sdk::{Prepared, RuntimeInstance};
@@ -20,8 +21,7 @@ pub(super) struct Activation {
 impl Reconciler {
     pub(super) fn revision_floor(&self) -> Result<u64> {
         self.state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?
+            .locked()?
             .runtime_revision_floor(&self.adapter.describe().module)
     }
 
@@ -35,8 +35,7 @@ impl Reconciler {
 
     pub(super) fn saved_activation(&self) -> Result<Option<Activation>> {
         self.state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?
+            .locked()?
             .get_json::<Option<Activation>>(&format!(
                 "runtime_activation:{}",
                 self.adapter.describe().module
@@ -64,13 +63,10 @@ impl Reconciler {
         }
         .await;
         if result.is_err() {
-            self.state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state poisoned"))?
-                .set_json(
-                    &format!("health:{}", self.adapter.describe().module),
-                    &false,
-                )?;
+            self.state.locked()?.set_json(
+                &format!("health:{}", self.adapter.describe().module),
+                &false,
+            )?;
         }
         result
     }
@@ -122,10 +118,7 @@ impl Reconciler {
         self.require_revision_floor(current.spec.revision)?;
         let key = format!("runtime_binding:{}:{}", binding.module, binding.revision);
         {
-            let state = self
-                .state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state poisoned"))?;
+            let state = self.state.locked()?;
             if let Some(saved) = state.get_json::<RuntimeBinding>(&key)? {
                 ensure!(
                     saved == *binding,
@@ -136,16 +129,13 @@ impl Reconciler {
         let activation = self.saved_activation()?.context(
             "runtime has no certified activation; administrator must create a new deployment before certification")?;
         self.validate_activation(&current, &activation).await?;
-        self.state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?
-            .set_json_batch(&[
-                (key, serde_json::to_value(binding)?),
-                (
-                    format!("health:{}", binding.module),
-                    serde_json::json!(true),
-                ),
-            ])?;
+        self.state.locked()?.set_json_batch(&[
+            (key, serde_json::to_value(binding)?),
+            (
+                format!("health:{}", binding.module),
+                serde_json::json!(true),
+            ),
+        ])?;
         Ok(RuntimeCheckpoint {
             binding: binding.clone(),
             activation_id: activation.activation_id,
@@ -157,8 +147,7 @@ impl Reconciler {
     pub(super) fn runtime_control_now(&self) -> Result<i64> {
         let offset = self
             .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?
+            .locked()?
             .get_json::<i64>("clock_offset_ms")?
             .unwrap_or(0);
         Ok(apsp_protocol::telemetry::now_millis()
@@ -175,8 +164,7 @@ impl Reconciler {
         let module = self.adapter.describe().module;
         let failure = self
             .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?
+            .locked()?
             .get_json::<Failure>(&format!("runtime_recovery_error:{module}"))?;
         failure
             .map(|failure| {
@@ -195,12 +183,7 @@ impl Reconciler {
     /// The same gate protects apply, recovery, observation and the atomic barrier receipt.
     pub async fn runtime_control(&self, request: &ControlRequest) -> Result<ControlResult> {
         let _guard = self.gate.lock().await;
-        if let Some(saved) = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?
-            .runtime_control_result(request)?
-        {
+        if let Some(saved) = self.state.locked()?.runtime_control_result(request)? {
             return Ok(saved);
         }
         let digest = request.digest()?;
@@ -217,7 +200,7 @@ impl Reconciler {
             };
             self.require_revision_floor(binding.revision)?;
             ensure!(self.services.supports_runtime_checkpoint(), "exact runtime inspection is unsupported");
-            let clear = self.state.lock().map_err(|_| anyhow::anyhow!("state poisoned"))?
+            let clear = self.state.locked()?
                 .pending_intents()?.iter().all(|intent| intent.module != binding.module);
             ensure!(clear, "unfinished runtime intent must be recovered by managed reconciliation before certification");
             let observed = self.observe_checkpoint(binding).await?;
@@ -228,7 +211,7 @@ impl Reconciler {
                     ensure!(observed == value.expected, "expected activation or runtime instance differs from the observed checkpoint");
                     ensure!(value.minimum_revision >= self.revision_floor()? && value.minimum_revision <= observed.binding.revision,
                         "requested recovery floor decreases a promise or exceeds the current revision");
-                    let clear = self.state.lock().map_err(|_| anyhow::anyhow!("state poisoned"))?
+                    let clear = self.state.locked()?
                         .pending_intents()?.iter().all(|intent| intent.module != binding.module);
                     ensure!(clear, "unfinished runtime intent prevents a recovery barrier");
                     Some(value.minimum_revision)
@@ -265,8 +248,7 @@ impl Reconciler {
             }
         };
         self.state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?
+            .locked()?
             .finish_runtime_control(&result, floor.map(|revision| (request.module(), revision)))?;
         Ok(result)
     }

@@ -118,12 +118,22 @@ async fn reauthenticate(
 pub async fn run(state: AppState) {
     let mut timer = tokio::time::interval(std::time::Duration::from_secs(60));
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    // Retention periods are whole days, so purge hourly; a failed pass is
+    // retried on the next minute. The heartbeat stays once a minute.
+    let mut next_purge = 0;
+    let mut status = "healthy";
     loop {
         timer.tick().await;
-        let result = system::maintain(&state.pool).await;
-        let status = if result.is_ok() { "healthy" } else { "failed" };
-        if let Err(error) = result {
-            tracing::warn!(%error,"control center retention maintenance failed");
+        let now = apsp_protocol::now_timestamp();
+        if now >= next_purge {
+            let result = system::maintain(&state.pool).await;
+            status = if result.is_ok() { "healthy" } else { "failed" };
+            match result {
+                Ok(()) => next_purge = now + 3600,
+                Err(error) => {
+                    tracing::warn!(%error,"control center retention maintenance failed")
+                }
+            }
         }
         if let Err(error) = system::heartbeat(
             &state.pool,

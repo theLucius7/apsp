@@ -1,4 +1,5 @@
 use super::Reconciler;
+use crate::state::Locked;
 use anyhow::{Result, ensure};
 use apsp_adapter_sdk::Prepared;
 use apsp_protocol::{
@@ -71,8 +72,7 @@ impl Reconciler {
         let constraints = Constraints::parse(runtime)?;
         let floors: BTreeMap<String, u64> = self
             .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?
+            .locked()?
             .get_json(&self.floor_key())?
             .unwrap_or_default();
         ensure!(

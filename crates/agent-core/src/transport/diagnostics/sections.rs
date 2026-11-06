@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::Locked;
 use apsp_protocol::{DIAGNOSTIC_SECTION_COUNT, DiagnosticSectionUpdate};
 
 pub(super) const SECTIONS_OUTBOX: &str = "diagnostics:sections:outbox";
@@ -49,10 +50,7 @@ impl DiagnosticWorker {
                 .all(|update| update.id == id && update.valid()),
             "invalid diagnostic chapters"
         );
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+        let mut state = self.state.locked()?;
         let sent: BTreeMap<String, u64> = state
             .get_json(&format!("diagnostics:sections:sent:{id}"))?
             .unwrap_or_default();
@@ -93,10 +91,7 @@ impl DiagnosticWorker {
         // Keep each upload bounded and acknowledge only the submitted revision.
         for update in pending.into_iter().take(DIAGNOSTIC_SECTION_COUNT) {
             self.bounded(client.diagnostic_section(&update)).await?;
-            let mut state = self
-                .state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+            let mut state = self.state.locked()?;
             let mut outbox: Vec<DiagnosticSectionUpdate> =
                 state.get_json(SECTIONS_OUTBOX)?.unwrap_or_default();
             outbox.retain(|saved| {

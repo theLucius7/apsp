@@ -575,10 +575,7 @@ pub(super) async fn compatibility(
             json!({"available":false,"client":request.client,"version":request.version,"format":request.format,"reason":"当前仅提供 sing-box 1.14.2 完整 JSON 模型；不能确认其他客户端或版本对协议与字段的支持","dropped_fields":[]}),
         ));
     }
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        .execute(&mut *tx)
-        .await?;
+    let mut tx = crate::read_snapshot(&state.pool).await?;
     let content = super::super::subscriptions::content_on(&mut tx, id, true).await;
     tx.commit().await?;
     match content {

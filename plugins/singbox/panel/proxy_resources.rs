@@ -110,10 +110,7 @@ fn validate_identity(kind: &str, id: i64) -> ApiResult<()> {
 
 async fn read_resources(state: &AppState) -> ApiResult<Vec<ProxyResource>> {
     use super::ordered_paths::{models::*, storage};
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        .execute(&mut *tx)
-        .await?;
+    let mut tx = crate::read_snapshot(&state.pool).await?;
     let query = format!(
         "SELECT n.id,n.name,n.server_id,s.name AS server_name,n.protocol,n.port,n.settings,n.protocol_config,n.public_host,n.sni,n.enabled,n.deleted_at IS NOT NULL AS node_deleted,s.deleted_at IS NOT NULL AS server_deleted,({}) IS NOT NULL AS plugin_enabled,(s.last_seen IS NOT NULL AND $1-s.last_seen<=60) AS online,m.target_rev AS desired_revision,m.applied_rev AS applied_revision,m.updated_at AS applied_observed_at FROM nodes n JOIN servers s ON s.id=n.server_id LEFT JOIN server_plugins p ON p.server_id=s.id AND p.plugin='sing-box' LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' ORDER BY n.id",
         super::settings::SOURCE_SQL

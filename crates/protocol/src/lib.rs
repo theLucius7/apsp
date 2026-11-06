@@ -74,7 +74,8 @@ impl Envelope {
     }
 
     pub fn to_payload<T: DeserializeOwned>(&self) -> serde_json::Result<T> {
-        serde_json::from_value(self.payload.clone())
+        // Deserializing from a reference copies only what T keeps, not the whole tree.
+        T::deserialize(&self.payload)
     }
 
     /// Unknown message types remain available to callers for logging and ignoring.

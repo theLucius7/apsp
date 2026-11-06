@@ -10,10 +10,7 @@ pub async fn list(
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<Value>>> {
     require_admin(&state, &headers).await?;
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        .execute(&mut *tx)
-        .await?;
+    let mut tx = crate::read_snapshot(&state.pool).await?;
     Ok(Json(catalog_on(&mut tx).await?))
 }
 

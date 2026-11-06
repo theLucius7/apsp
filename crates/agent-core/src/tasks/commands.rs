@@ -1,3 +1,4 @@
+use crate::state::Locked;
 use crate::{SharedState, artifacts::PanelClient};
 use anyhow::{Result, ensure};
 use apsp_adapter_sdk::{CommandObserver, CommandProcessIdentity, Privileged};
@@ -32,10 +33,7 @@ pub(super) async fn run(
     {
         let _guard = retirement.gate.read().await;
         if !retirement.requested() {
-            state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-                .recover_commands()?;
+            state.locked()?.recover_commands()?;
         }
     }
     loop {
@@ -71,8 +69,7 @@ fn terminal(id: uuid::Uuid, status: CommandStatus, offset: i64, message: &str) -
 
 fn clock_offset(state: &SharedState) -> Result<i64> {
     Ok(state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
+        .locked()?
         .get_json::<i64>("clock_offset_ms")?
         .unwrap_or(0)
         / 1000)
@@ -95,21 +92,17 @@ impl CommandObserver for JournalObserver<'_> {
             "device retirement prevents command execution"
         );
         self.state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
+            .locked()?
             .command_spawned(self.command.id, process)
     }
     fn started(&self) -> Result<()> {
-        self.state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-            .command_started(
-                self.command.id,
-                &CommandStarted {
-                    claim_id: self.claim_id,
-                    started_at: (now_timestamp() + self.offset).max(self.minimum_start),
-                },
-            )
+        self.state.locked()?.command_started(
+            self.command.id,
+            &CommandStarted {
+                claim_id: self.claim_id,
+                started_at: (now_timestamp() + self.offset).max(self.minimum_start),
+            },
+        )
     }
     fn cancellation_requested(&self) -> bool {
         self.cancel.load(Ordering::SeqCst) || self.retirement.requested()
@@ -157,8 +150,7 @@ async fn execute(
                 {
                     let saved = observer
                         .state
-                        .lock()
-                        .map_err(|_| anyhow::anyhow!("state lock poisoned"))
+                        .locked()
                         .and_then(|mut state| state.request_command_cancel(command.id));
                     match saved {
                         Ok(()) => observer.cancel.store(true, Ordering::SeqCst),

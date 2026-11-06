@@ -1,5 +1,6 @@
 use super::{ApplyIntent, Reconciler};
 use crate::state::IntentRecord;
+use crate::state::Locked;
 use anyhow::{Context, Result};
 use apsp_adapter_sdk::{Plan, Prepared};
 use apsp_protocol::{ApplyResult, ApplyStatus, UsageBatch, now_timestamp};
@@ -46,8 +47,7 @@ impl Reconciler {
             Err(error) => {
                 let healthy = self
                     .state
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("state poisoned"))?
+                    .locked()?
                     .get_json::<bool>(&format!("health:{}", self.adapter.describe().module))?
                     .unwrap_or(false);
                 self.stable_apply_result(ApplyResult {
@@ -72,8 +72,7 @@ impl Reconciler {
             self.verify_applied_runtime(&previous).await?;
             let healthy = self
                 .state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state poisoned"))?
+                .locked()?
                 .get_json::<bool>(&format!("health:{module}"))?
                 .unwrap_or(false);
             anyhow::ensure!(healthy, "current runtime is unhealthy");
@@ -89,8 +88,7 @@ impl Reconciler {
         let error = observed.err().map(|error| format!("{error:#}"));
         if !healthy {
             self.state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state poisoned"))?
+                .locked()?
                 .set_json(&format!("health:{module}"), &false)?;
         }
         self.stable_apply_result(ApplyResult {
@@ -191,22 +189,16 @@ impl Reconciler {
             target,
             plan,
         };
-        self.state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?
-            .begin_intent(&IntentRecord {
-                op_id,
-                module: descriptor.module.clone(),
-                payload: serde_json::to_value(&intent)?,
-            })?;
+        self.state.locked()?.begin_intent(&IntentRecord {
+            op_id,
+            module: descriptor.module.clone(),
+            payload: serde_json::to_value(&intent)?,
+        })?;
         if plan != Plan::Noop
             && let Some(previous) = &intent.previous
             && let Err(error) = self.sample_runtime(previous).await
         {
-            self.state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state poisoned"))?
-                .finish_intent(op_id)?;
+            self.state.locked()?.finish_intent(op_id)?;
             return Err(error.context("cannot capture terminal counters; application cancelled"));
         }
         let attempt: Result<()> = async {
@@ -218,8 +210,7 @@ impl Reconciler {
             .await?;
             if plan != Plan::Noop {
                 self.state
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("state poisoned"))?
+                    .locked()?
                     .begin_usage_epoch(&descriptor.module, now_timestamp())?;
             }
             anyhow::ensure!(
@@ -242,8 +233,7 @@ impl Reconciler {
         if let Err(error) = attempt {
             if let Err(rollback) = self.rollback(&intent, op_id).await {
                 self.state
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("state poisoned"))?
+                    .locked()?
                     .set_json(&format!("health:{}", descriptor.module), &false)?;
                 return Err(error.context(format!("rollback also failed: {rollback:#}")));
             }
@@ -312,8 +302,7 @@ impl Reconciler {
             )
             .await?;
             self.state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state poisoned"))?
+                .locked()?
                 .begin_usage_epoch(&descriptor.module, now_timestamp())?;
             anyhow::ensure!(
                 self.runtime_health(previous).await?,
@@ -358,10 +347,7 @@ impl Reconciler {
         activation: Option<&super::checkpoint::Activation>,
     ) -> Result<()> {
         let module = self.adapter.describe().module;
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?;
+        let mut state = self.state.locked()?;
         let mut updates = vec![(format!("health:{module}"), serde_json::json!(healthy))];
         if let Some(applied) = applied {
             updates.push((format!("applied:{module}"), serde_json::to_value(applied)?));
@@ -388,10 +374,7 @@ impl Reconciler {
 
     pub(super) fn stable_apply_result(&self, result: ApplyResult) -> Result<ApplyResult> {
         let key = format!("apply_receipt:{}", self.adapter.describe().module);
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?;
+        let mut state = self.state.locked()?;
         if let Some(saved) = state.get_json::<ApplyResult>(&key)?
             && saved.module == result.module
             && saved.rev == result.rev
@@ -410,10 +393,11 @@ impl Reconciler {
             return Ok(None);
         };
         let counters = self.bounded(source.read_counters(runtime)).await?;
-        self.state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?
-            .sample_usage(&self.adapter.describe().module, &counters, now_timestamp())
+        self.state.locked()?.sample_usage(
+            &self.adapter.describe().module,
+            &counters,
+            now_timestamp(),
+        )
     }
 
     pub async fn sample_usage(&self) -> Result<Option<UsageBatch>> {

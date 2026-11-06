@@ -1,4 +1,5 @@
 use super::Runtime;
+use crate::state::Locked;
 use crate::{
     reconcile::Reconciler,
     state::runtime_control::{ControlRequest, ControlResult},
@@ -63,10 +64,7 @@ pub(super) async fn run(
         }
         if let Some(input) = input {
             let outcome: Result<Option<ControlResult>> = (|| {
-                let mut state = runtime
-                    .state
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("state poisoned"))?;
+                let mut state = runtime.state.locked()?;
                 match input {
                     Input::Request(request) => state.enqueue_runtime_control(&request),
                     Input::Ack(kind, ack) => {
@@ -85,11 +83,7 @@ pub(super) async fn run(
                 }
             }
         }
-        let pending = runtime
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?
-            .pending_runtime_controls()?;
+        let pending = runtime.state.locked()?.pending_runtime_controls()?;
         for request in pending {
             let result = if let Some((_, reconciler)) = reconcilers
                 .iter()
@@ -100,8 +94,7 @@ pub(super) async fn run(
                 let result = unsupported(&request)?;
                 runtime
                     .state
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("state poisoned"))?
+                    .locked()?
                     .finish_runtime_control(&result, None)?;
                 Ok(result)
             };
@@ -115,18 +108,10 @@ pub(super) async fn run(
             }
         }
         if runtime.connected.load(std::sync::atomic::Ordering::Relaxed) {
-            let mut saved = runtime
-                .state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state poisoned"))?
-                .runtime_results_after(cursor)?;
+            let mut saved = runtime.state.locked()?.runtime_results_after(cursor)?;
             if saved.is_empty() && cursor != 0 {
                 cursor = 0;
-                saved = runtime
-                    .state
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("state poisoned"))?
-                    .runtime_results_after(cursor)?;
+                saved = runtime.state.locked()?.runtime_results_after(cursor)?;
             }
             for (position, result) in saved {
                 if outgoing.try_send(result.envelope()?).is_err() {

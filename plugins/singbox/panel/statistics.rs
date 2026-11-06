@@ -36,10 +36,7 @@ pub async fn summary(
 ) -> ApiResult<Json<Value>> {
     auth::require_admin(&state, &headers).await?;
     let window = query.window()?;
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        .execute(&mut *tx)
-        .await?;
+    let mut tx = crate::read_snapshot(&state.pool).await?;
     sqlx::query("SET LOCAL statement_timeout = '5s'")
         .execute(&mut *tx)
         .await?;

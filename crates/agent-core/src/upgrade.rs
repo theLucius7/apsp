@@ -1,3 +1,4 @@
+use crate::state::Locked;
 mod supervisor;
 #[cfg(all(test, unix))]
 mod tests;
@@ -70,8 +71,7 @@ pub async fn run(
             let _guard = retirement.gate.read().await;
             if !retirement.requested() {
                 let settings = state
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
+                    .locked()?
                     .get_json::<AgentSettings>("agent_settings")?
                     .unwrap_or_else(|| config.settings.clone());
                 if !settings.auto_update {
