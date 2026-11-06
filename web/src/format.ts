@@ -10,7 +10,10 @@ export function bytes(value: string | number | bigint | undefined | null): strin
     return `${scaled / 10n}.${scaled % 10n} ${units[unit]}`
   } catch { return '暂无数据' }
 }
-export const totalBytes = (up: string, down: string) => (BigInt(up) + BigInt(down)).toString()
+/** Upload plus download, or undefined when either counter is not a whole number, so `bytes` shows it as missing. */
+export function totalBytes(up: string, down: string): string | undefined {
+  try { return (BigInt(up) + BigInt(down)).toString() } catch { return undefined }
+}
 export const percent = (value?: number) => value === undefined ? '暂无数据' : `${value.toFixed(1)}%`
 export const time = (value?: number | null) => value ? new Date(value * 1000).toLocaleString('zh-CN', { hour12: false }) : '尚未上报'
 export function uptime(value?: number) {

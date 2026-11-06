@@ -14,7 +14,7 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import { recordKinds } from './model'
+import { recordKinds, validCosts, validItemPayments } from './model'
 import type { ItemRow, LedgerRow, ServerRow, Tone } from './model'
 import { confirmed, operationText, runOperation } from './operations'
 import type { ItemOperation } from './operations'
@@ -41,11 +41,10 @@ function Heading({ row }: { row: LedgerRow }) {
   </div>
 }
 
-type ItemPaymentRow = { id: string; period_start: string; paid_on: string; amount_units: string; currency: string }
-
 function ItemDetail({ row, ledger, onClose, onEdit, onOpenItem }: { row: ItemRow; ledger: Ledger; onClose: () => void; onEdit: (item: Expense) => void; onOpenItem: (id: number) => void }) {
   const item = row.item
-  const payments = useResource<{ entries: ItemPaymentRow[] }>(`${root}/subscriptions/${item.id}/payments`, 60_000)
+  const paymentQuery = useResource<unknown>(`${root}/subscriptions/${item.id}/payments`, 60_000)
+  const payments = { ...paymentQuery, data: validItemPayments(paymentQuery.data) ? paymentQuery.data : undefined, error: paymentQuery.error || (paymentQuery.data !== undefined && !validItemPayments(paymentQuery.data) ? '付款记录的数据不完整。' : '') }
   const action = useAction()
   const [asking, setAsking] = useState<'renew' | 'delete' | null>(null)
   const [requestId, setRequestId] = useState('')
@@ -107,8 +106,6 @@ function ItemDetail({ row, ledger, onClose, onEdit, onOpenItem }: { row: ItemRow
   </Modal>
 }
 
-type CostRecord = { id: string; kind: string; amount_minor: number | string; currency: string; occurred_at: number; valid_until: number | null; reference: string }
-type Costs = { records: CostRecord[]; annual: { year: number; currency: string; amount_minor: string }[] }
 type Reminder = { record_id: string; server_id: number; valid_until: number | null; enabled: boolean; lead_secs: number; notified_at: number | null; last_error: string | null }
 const DEFAULT_LEAD = 604800
 const leads = [[86400, '提前 1 天'], [259200, '提前 3 天'], [DEFAULT_LEAD, '提前 7 天'], [1209600, '提前 14 天'], [2592000, '提前 30 天']] as const
@@ -136,7 +133,8 @@ function CancellationReminder({ reminder, onSaved }: { reminder: Reminder; onSav
 
 function ServerDetail({ row, ledger, onClose }: { row: ServerRow; ledger: Ledger; onClose: () => void }) {
   const server = row.server
-  const costs = useResource<Costs>(`/api/servers/${server.id}/fleet/costs`, 60_000)
+  const costQuery = useResource<unknown>(`/api/servers/${server.id}/fleet/costs`, 60_000)
+  const costs = { ...costQuery, data: validCosts(costQuery.data) ? costQuery.data : undefined, error: costQuery.error || (costQuery.data !== undefined && !validCosts(costQuery.data) ? '费用记录的数据不完整。' : '') }
   // Cancellation reminders belong to the operations feature; without it the controls stay away.
   const reminders = useResource<Reminder[]>('/api/operations/cancellation-reminders', 60_000)
   const action = useAction()

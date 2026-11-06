@@ -21,6 +21,10 @@ const integer = (value: unknown) => typeof value === 'number' && Number.isSafeIn
 const nullableInteger = (value: unknown) => value === null || value === undefined || integer(value)
 const counter = (value: unknown) => typeof value === 'string' && /^\d{1,20}$/.test(value)
 const day = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+const signedCounter = (value: unknown) => typeof value === 'string' && /^-?\d{1,20}$/.test(value)
+/** Minor currency units: the cost records send numbers, the payment history text. */
+const minor = (value: unknown) => (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) || counter(value)
+const text = (value: unknown) => typeof value === 'string'
 
 export function validItems(value: unknown): value is Expense[] {
   return Array.isArray(value) && value.every(item => record(item) && integer(item.id) && typeof item.name === 'string' && counter(item.amount_units) && typeof item.currency === 'string'
@@ -201,6 +205,22 @@ export function monthGroups(dues: readonly Due[], base?: string, rates?: Exchang
 export type ItemPayment = { kind: 'item'; id: string; subscription_id: number; name: string; paid_on: string; period_start: string; amount_units: string; currency: string }
 export type ServerPayment = { kind: 'server'; id: string; server_id: number; name: string; record_kind: string; paid_on: string; valid_until: number | null; amount_minor: string; currency: string; reference: string }
 export type Payment = ItemPayment | ServerPayment
+
+export function validPayments(value: unknown): value is { items: ItemPayment[]; servers: ServerPayment[] } {
+  return record(value) && Array.isArray(value.items) && Array.isArray(value.servers)
+    && value.items.every(payment => record(payment) && (text(payment.id) || integer(payment.id)) && integer(payment.subscription_id) && text(payment.name) && day(payment.paid_on) && day(payment.period_start) && counter(payment.amount_units) && text(payment.currency))
+    && value.servers.every(payment => record(payment) && text(payment.id) && integer(payment.server_id) && text(payment.name) && text(payment.record_kind) && day(payment.paid_on) && minor(payment.amount_minor) && text(payment.currency) && nullableInteger(payment.valid_until))
+}
+export type ItemPaymentRow = { id: string | number; period_start: string; paid_on: string; amount_units: string; currency: string }
+export const validItemPayments = (value: unknown): value is { entries: ItemPaymentRow[] } => record(value) && Array.isArray(value.entries)
+  && value.entries.every(payment => record(payment) && (text(payment.id) || integer(payment.id)) && day(payment.paid_on) && day(payment.period_start) && counter(payment.amount_units) && text(payment.currency))
+export type CostRecord = { id: string; kind: string; amount_minor: number | string; currency: string; occurred_at: number; valid_until: number | null; reference: string }
+export type Costs = { records: CostRecord[]; annual: { year: number; currency: string; amount_minor: string }[] }
+export function validCosts(value: unknown): value is Costs {
+  return record(value) && Array.isArray(value.records) && Array.isArray(value.annual)
+    && value.records.every(entry => record(entry) && text(entry.id) && text(entry.kind) && minor(entry.amount_minor) && text(entry.currency) && integer(entry.occurred_at) && nullableInteger(entry.valid_until) && (entry.reference === null || entry.reference === undefined || text(entry.reference)))
+    && value.annual.every(entry => record(entry) && integer(entry.year) && text(entry.currency) && signedCounter(entry.amount_minor))
+}
 export const recordKinds: Record<string, string> = { renewal: '续费', purchase: '购买', price_change: '价格变化', refund: '退款', cancellation: '退订' }
 
 /** Purchases, renewals and confirmed item renewals count; refunds subtract; price changes and cancellations do not count. */
