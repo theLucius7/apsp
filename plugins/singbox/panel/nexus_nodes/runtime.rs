@@ -1,5 +1,5 @@
 use super::{
-    runtime_model::{RuntimeSnapshot, digest, inspect},
+    runtime_model::{RuntimeNode, RuntimeSnapshot, digest, inspect, inspect_extension},
     runtime_publish,
 };
 use crate::{
@@ -25,6 +25,11 @@ pub(super) fn router() -> Router<AppState> {
         .route("/nexus-nodes/runtime/{id}/activate", post(activate))
         .route("/nexus-nodes/runtime/{id}/pause", post(pause))
         .route("/nexus-nodes/runtime/{id}/discard", post(discard))
+        .route(
+            "/nexus-nodes/runtime/{id}/extend/preview",
+            post(extend_preview),
+        )
+        .route("/nexus-nodes/runtime/{id}/extend", post(extend))
 }
 
 #[derive(Deserialize)]
@@ -78,17 +83,13 @@ async fn prepare(
         sqlx::query("SELECT set_config('apsp.nexus_runtime_write','yes',TRUE)")
             .execute(&mut *tx)
             .await?;
-        for entry in &snapshot.nodes {
-            let node = &entry.preserved.node;
-            let id: i64 = sqlx::query_scalar("INSERT INTO nodes(name,server_id,protocol,port,public_host,sni,private_key,public_key,short_id,protocol_config,enabled,settings) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id")
-                .bind(&node.name).bind(snapshot.server_id).bind(node.protocol_config.kind()).bind(i32::from(node.port)).bind(&node.public_host).bind(&node.sni).bind(&node.private_key).bind(&node.public_key).bind(&node.short_id)
-                .bind(json!(node.protocol_config)).bind(node.enabled).bind(json!(node.settings)).fetch_one(&mut *tx).await?;
-            sqlx::query("INSERT INTO singbox_nexus_runtime_nodes(inventory_id,node_id,server_id,legacy_group_ids,rate) SELECT id,$3,server_id,ARRAY(SELECT (g->>'id')::bigint FROM jsonb_array_elements(display->'groups') g),(display->>'rate')::numeric FROM singbox_nexus_nodes WHERE source_id=$1 AND legacy_node_id=$2")
-                .bind(&snapshot.source_id).bind(entry.legacy_node_id).bind(id).execute(&mut *tx).await?;
-            // The line joins the policy groups of its original groups (ADR 0115).
-            sqlx::query("INSERT INTO singbox_policy_nodes(group_id,node_id) SELECT singbox_legacy_policy_group(g),node_id FROM singbox_nexus_runtime_nodes, unnest(legacy_group_ids) g WHERE node_id=$1 ON CONFLICT DO NOTHING")
-                .bind(id).execute(&mut *tx).await?;
-        }
+        insert_lines(
+            &mut tx,
+            &snapshot.source_id,
+            snapshot.server_id,
+            &snapshot.nodes,
+        )
+        .await?;
         // An explicit disabled plugin also blocks capability-based auto-enable.
         sqlx::query("INSERT INTO server_plugins(server_id,plugin,enabled,source,enabled_at) VALUES($1,'sing-box',FALSE,'administrator',$2) ON CONFLICT(server_id,plugin) DO UPDATE SET enabled=FALSE,source='administrator'")
             .bind(snapshot.server_id).bind(now_timestamp()).execute(&mut *tx).await?;
@@ -96,6 +97,183 @@ async fn prepare(
     tx.commit().await?;
     Ok(Json(
         json!({"server_id":snapshot.server_id,"digest":hash,"state":if report["already_prepared"]==true {report["state"].clone()} else {json!("prepared")},"published":false}),
+    ))
+}
+
+/// Native rows for preserved lines, linked to their inventory and to the policy
+/// groups of their original groups (ADR 0115). Caller enables the runtime write.
+async fn insert_lines(
+    tx: &mut Transaction<'_, Postgres>,
+    source: &str,
+    server: i64,
+    entries: &[RuntimeNode],
+) -> ApiResult<()> {
+    for entry in entries {
+        let node = &entry.preserved.node;
+        let id: i64 = sqlx::query_scalar("INSERT INTO nodes(name,server_id,protocol,port,public_host,sni,private_key,public_key,short_id,protocol_config,enabled,settings) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id")
+            .bind(&node.name).bind(server).bind(node.protocol_config.kind()).bind(i32::from(node.port)).bind(&node.public_host).bind(&node.sni).bind(&node.private_key).bind(&node.public_key).bind(&node.short_id)
+            .bind(json!(node.protocol_config)).bind(node.enabled).bind(json!(node.settings)).fetch_one(&mut **tx).await?;
+        sqlx::query("INSERT INTO singbox_nexus_runtime_nodes(inventory_id,node_id,server_id,legacy_group_ids,rate) SELECT id,$3,server_id,ARRAY(SELECT (g->>'id')::bigint FROM jsonb_array_elements(display->'groups') g),(display->>'rate')::numeric FROM singbox_nexus_nodes WHERE source_id=$1 AND legacy_node_id=$2")
+            .bind(source).bind(entry.legacy_node_id).bind(id).execute(&mut **tx).await?;
+        sqlx::query("INSERT INTO singbox_policy_nodes(group_id,node_id) SELECT singbox_legacy_policy_group(g),node_id FROM singbox_nexus_runtime_nodes, unnest(legacy_group_ids) g WHERE node_id=$1 ON CONFLICT DO NOTHING")
+            .bind(id).execute(&mut **tx).await?;
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Extension {
+    /// Digest of the host's current snapshot, as the panel stored it.
+    expected_digest: String,
+    /// Digest of the merged snapshot from the preview; required to commit.
+    #[serde(default)]
+    extended_digest: Option<String>,
+    nodes: Vec<RuntimeNode>,
+    /// Services stopped on the host to free the added listeners; required to commit.
+    #[serde(default)]
+    stopped_services: Vec<String>,
+    #[serde(default)]
+    stopped_at: Option<i64>,
+}
+
+/// The stored snapshot of a host that already has one, locked for the change.
+async fn stored_snapshot(
+    state: &AppState,
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    expected: &str,
+) -> ApiResult<(RuntimeSnapshot, String, uuid::Uuid)> {
+    let host = sqlx::query("SELECT digest,state,credential_id FROM singbox_nexus_runtime_hosts WHERE server_id=$1 FOR UPDATE")
+        .bind(server).fetch_optional(&mut **tx).await?.ok_or(ApiError::NotFound)?;
+    if host.get::<String, _>("digest") != expected {
+        return Err(ApiError::Conflict("运行快照已改变".into()));
+    }
+    let credential: uuid::Uuid = host.get("credential_id");
+    let raw = control_center::credentials::resolve_reference(
+        state,
+        credential,
+        "backup",
+        "nexus-runtime-extension",
+    )
+    .await?;
+    let snapshot: RuntimeSnapshot = serde_json::from_value(raw).map_err(anyhow::Error::from)?;
+    Ok((snapshot, host.get("state"), credential))
+}
+
+/// Previews added lines: archive checks for the new entries and the candidate
+/// the host would receive, compiled in a transaction that is then discarded.
+async fn extend_preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server): Path<i64>,
+    Json(input): Json<Extension>,
+) -> ApiResult<Json<Value>> {
+    control_center::require_owner(&state, &headers).await?;
+    control_center::require_recent_proof(&state, &headers).await?;
+    let mut tx = state.pool.begin().await?;
+    crate::entitlements::lock(&mut tx).await?;
+    crate::business::lock_server(&mut tx, server).await?;
+    let (stored, _, _) = stored_snapshot(&state, &mut tx, server, &input.expected_digest).await?;
+    let (merged, mut report) = inspect_extension(&state, &mut tx, &stored, &input.nodes).await?;
+    if report["conflicts"].as_array().is_some_and(|c| c.is_empty()) {
+        sqlx::query("SELECT set_config('apsp.nexus_runtime_write','yes',TRUE)")
+            .execute(&mut *tx)
+            .await?;
+        insert_lines(&mut tx, &merged.source_id, server, &input.nodes).await?;
+        let candidate = runtime_publish::compile_snapshot(&mut tx, server, merged).await?;
+        report["candidate"] = json!({"payload":{"bundle":candidate.bundle,"bundle_sha256":candidate.hash},"config_sha256":candidate.config_hash});
+    }
+    tx.rollback().await?;
+    Ok(Json(report))
+}
+
+/// Stores the merged snapshot and the added lines; an active host is published again.
+async fn extend(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server): Path<i64>,
+    Json(input): Json<Extension>,
+) -> ApiResult<Json<Value>> {
+    let actor = control_center::require_owner(&state, &headers).await?;
+    control_center::require_recent_proof(&state, &headers).await?;
+    let now = now_timestamp();
+    if input
+        .stopped_at
+        .is_none_or(|at| at > now || now.saturating_sub(at) > 600)
+        || input.stopped_services.is_empty()
+        || input.stopped_services.len() > 20
+        || input.stopped_services.iter().any(|s| {
+            s.len() > 100
+                || s.is_empty()
+                || !s
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"-_.@".contains(&b))
+        })
+    {
+        return Err(ApiError::BadRequest(
+            "需提供十分钟内为新增监听停用的旧服务记录".into(),
+        ));
+    }
+    let mut tx = state.pool.begin().await?;
+    crate::entitlements::lock(&mut tx).await?;
+    crate::business::lock_server(&mut tx, server).await?;
+    let (stored, host_state, previous) =
+        stored_snapshot(&state, &mut tx, server, &input.expected_digest).await?;
+    let (merged, report) = inspect_extension(&state, &mut tx, &stored, &input.nodes).await?;
+    if !report["conflicts"].as_array().is_some_and(|c| c.is_empty()) {
+        return Err(ApiError::Conflict(
+            "追加的线路与原资料或目标主机冲突，请重新预览".into(),
+        ));
+    }
+    let hash = digest(&merged)?;
+    if input.extended_digest.as_deref() != Some(hash.as_str()) {
+        return Err(ApiError::Conflict("请先预览并确认同一份追加配置".into()));
+    }
+    let credential = control_center::credentials::store_generated_on(
+        &mut tx,
+        &format!("Nexus runtime {server}"),
+        "backup",
+        serde_json::to_value(&merged).map_err(anyhow::Error::from)?,
+    )
+    .await?;
+    sqlx::query(
+        "UPDATE singbox_nexus_runtime_hosts SET credential_id=$2,digest=$3 WHERE server_id=$1",
+    )
+    .bind(server)
+    .bind(credential)
+    .bind(&hash)
+    .execute(&mut *tx)
+    .await?;
+    // The replaced snapshot is a subset of the new one; it is retired, not reused.
+    sqlx::query("UPDATE credential_entries SET enabled=FALSE,updated_at=$2 WHERE id=$1")
+        .bind(previous)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("SELECT set_config('apsp.nexus_runtime_write','yes',TRUE)")
+        .execute(&mut *tx)
+        .await?;
+    insert_lines(&mut tx, &merged.source_id, server, &input.nodes).await?;
+    sqlx::query("SELECT set_config('apsp.nexus_runtime_write','',TRUE)")
+        .execute(&mut *tx)
+        .await?;
+    let republish = host_state == "active";
+    if republish {
+        crate::business::mark_dirty(&mut tx, &[server]).await?;
+    }
+    let added: Vec<i64> = input.nodes.iter().map(|e| e.legacy_node_id).collect();
+    sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus.runtime.extend',$2,$3,$4,$5)")
+        .bind(actor)
+        .bind(format!("/api/plugins/sing-box/nexus-nodes/runtime/{server}/extend"))
+        .bind(json!({"from":input.expected_digest,"to":hash,"added_legacy_nodes":added,"stopped_services":input.stopped_services,"stopped_at":input.stopped_at}))
+        .bind(json!({"state":"recorded","republish":republish}))
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(Json(
+        json!({"server_id":server,"digest":hash,"added":added,"state":host_state,"republish":republish}),
     ))
 }
 

@@ -33,6 +33,16 @@ pub(crate) async fn compile(
     )
     .await?;
     let snapshot: RuntimeSnapshot = serde_json::from_value(raw).map_err(anyhow::Error::from)?;
+    compile_snapshot(tx, server, snapshot).await
+}
+
+/// Compiles a given snapshot for the host, with users from the current policy
+/// groups; used for the stored snapshot and for a proposed extension.
+pub(super) async fn compile_snapshot(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    snapshot: RuntimeSnapshot,
+) -> ApiResult<Candidate> {
     let at = now_timestamp();
     let mut prepared = Vec::new();
     let mut accounting = Vec::new();

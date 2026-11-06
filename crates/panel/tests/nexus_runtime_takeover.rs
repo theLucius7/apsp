@@ -1153,3 +1153,169 @@ async fn tunnel_origins_are_prepared_only_when_the_archive_matches(pool: PgPool)
     }
     Ok(())
 }
+
+/// A tunnel origin imported onto an existing host: archive, inventory row and
+/// the snapshot entry the exporter would produce for it.
+async fn added_tunnel(panel: &TestPanel, server: i64, legacy: i64) -> Result<Value> {
+    let pool = &panel.state.pool;
+    let mut node = Node {
+        id: legacy,
+        name: format!("TEST_ONLY origin {legacy}"),
+        port: 21000 + legacy as u16,
+        public_host: "origin.example.invalid".into(),
+        sni: "origin.example.invalid".into(),
+        private_key: String::new(),
+        public_key: String::new(),
+        short_id: String::new(),
+        users: vec![],
+        enabled: true,
+        settings: Default::default(),
+        protocol_config: ProtocolConfig::VlessTunnel,
+    };
+    node.settings.listen = "127.0.0.1".into();
+    node.settings.transport = serde_json::from_value(json!({"type":"ws","path":"/TEST_ONLY"}))?;
+    let original = json!({"node":{"id":legacy,"name":node.name,"host":node.public_host,"type":"vless",
+        "protocol_settings":{"tls":0,"network":"ws","network_settings":{"path":"/TEST_ONLY"}},"rate_time_enable":0}});
+    let credential =
+        credentials::store_generated(pool, "TEST_ONLY origin", "backup", original).await?;
+    sqlx::query("INSERT INTO singbox_nexus_nodes(source_id,legacy_node_id,legacy_machine_id,legacy_host_id,server_id,credential_id,display) VALUES('fixture',$4,31,15,$1,$2,$3)")
+        .bind(server).bind(credential).bind(json!({"listen_port":node.port.to_string(),"rate":"1","groups":[{"id":1,"name":"Fixture"}]})).bind(legacy).execute(pool).await?;
+    let configuration = json!({"inbounds":[{"type":"vless","tag":"vless-in","listen":"127.0.0.1","listen_port":node.port,
+        "transport":{"type":"ws","path":"/TEST_ONLY"},"users":[{"name":"placeholder","uuid":"00000000-0000-0000-0000-000000000000"}]}],
+        "outbounds":[{"type":"direct","tag":"direct"}],"route":{"final":"direct"}});
+    Ok(json!({"legacy_node_id":legacy,"preserved":{"node":node,"configuration":configuration}}))
+}
+
+#[sqlx::test]
+async fn lines_are_added_to_a_prepared_or_running_host(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, payload, _) = fixture(&panel).await?;
+    let preview = ok(post(&panel, &cookie, "/preview", json!({"payload":payload})).await?).await?;
+    let digest = preview["digest"].as_str().unwrap().to_owned();
+    ok(post(
+        &panel,
+        &cookie,
+        "/prepare",
+        json!({"payload":payload,"expected_digest":digest}),
+    )
+    .await?)
+    .await?;
+    let entry = added_tunnel(&panel, server, 66).await?;
+    let extend_path = format!("/{server}/extend");
+    let preview_path = format!("/{server}/extend/preview");
+    let extend = |body: Value| post(&panel, &cookie, &extend_path, body);
+    let preview_extension = |body: Value| post(&panel, &cookie, &preview_path, body);
+    let counts = || async {
+        sqlx::query_as::<_, (i64, i64)>("SELECT (SELECT COUNT(*) FROM nodes),(SELECT COUNT(*) FROM singbox_nexus_runtime_nodes)")
+            .fetch_one(&pool).await
+    };
+    // The stored snapshot is pinned by its digest.
+    assert_eq!(
+        preview_extension(json!({"expected_digest":"c".repeat(64),"nodes":[entry]}))
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    let before = counts().await?;
+    let report =
+        ok(preview_extension(json!({"expected_digest":digest,"nodes":[entry]})).await?).await?;
+    assert_eq!(report["conflicts"], json!([]));
+    assert_eq!(report["added"], json!([66]));
+    assert_eq!(report["node_count"], 2);
+    let config: Value = serde_json::from_str(
+        serde_json::from_str::<Value>(report["candidate"]["payload"]["bundle"].as_str().unwrap())?
+            ["files"]["config.json"]
+            .as_str()
+            .unwrap(),
+    )?;
+    assert!(config["inbounds"].is_array());
+    // The preview compiles in a transaction that is discarded.
+    assert_eq!(counts().await?, before);
+    let extended = report["digest"].as_str().unwrap().to_owned();
+    let stopped = now_timestamp();
+    // Committing needs the stopped legacy service and the previewed digest.
+    assert_eq!(
+        extend(json!({"expected_digest":digest,"extended_digest":extended,"nodes":[entry]}))
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        extend(json!({"expected_digest":digest,"extended_digest":"d".repeat(64),"nodes":[entry],"stopped_services":["xboard-node-cf.service"],"stopped_at":stopped})).await?.status(),
+        StatusCode::CONFLICT
+    );
+    let previous: Uuid = sqlx::query_scalar(
+        "SELECT credential_id FROM singbox_nexus_runtime_hosts WHERE server_id=$1",
+    )
+    .bind(server)
+    .fetch_one(&pool)
+    .await?;
+    let done = ok(extend(json!({"expected_digest":digest,"extended_digest":extended,"nodes":[entry],"stopped_services":["xboard-node-cf.service"],"stopped_at":stopped})).await?).await?;
+    assert_eq!(
+        (done["republish"].clone(), done["digest"].as_str()),
+        (json!(false), Some(extended.as_str()))
+    );
+    assert_eq!(counts().await?, (before.0 + 1, before.1 + 1));
+    let (stored, protocol): (String, String) = sqlx::query_as("SELECT h.digest,n.protocol FROM singbox_nexus_runtime_hosts h JOIN singbox_nexus_runtime_nodes r ON r.server_id=h.server_id JOIN singbox_nexus_nodes i ON i.id=r.inventory_id AND i.legacy_node_id=66 JOIN nodes n ON n.id=r.node_id WHERE h.server_id=$1")
+        .bind(server).fetch_one(&pool).await?;
+    assert_eq!(
+        (stored.as_str(), protocol.as_str()),
+        (extended.as_str(), "vless-tunnel")
+    );
+    let retired: bool =
+        sqlx::query_scalar("SELECT NOT enabled FROM credential_entries WHERE id=$1")
+            .bind(previous)
+            .fetch_one(&pool)
+            .await?;
+    assert!(retired);
+    // The same line cannot be added twice; a line not imported to this host is refused.
+    let again =
+        ok(preview_extension(json!({"expected_digest":extended,"nodes":[entry]})).await?).await?;
+    assert!(
+        again["conflicts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c.as_str().unwrap().contains("66"))
+    );
+    let mut stray = entry.clone();
+    stray["legacy_node_id"] = json!(77);
+    stray["preserved"]["node"]["id"] = json!(77);
+    stray["preserved"]["node"]["port"] = json!(21077);
+    stray["preserved"]["configuration"]["inbounds"][0]["listen_port"] = json!(21077);
+    let missing =
+        ok(preview_extension(json!({"expected_digest":extended,"nodes":[stray]})).await?).await?;
+    assert!(
+        missing["conflicts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c.as_str().unwrap().contains("77"))
+    );
+    // A running host is published again with the added line.
+    sqlx::query("UPDATE singbox_nexus_runtime_hosts SET state='active',activated_at=1,last_activated_at=1 WHERE server_id=$1")
+        .bind(server).execute(&pool).await?;
+    sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
+        .bind(server)
+        .execute(&pool)
+        .await?;
+    let second = added_tunnel(&panel, server, 67).await?;
+    let report =
+        ok(preview_extension(json!({"expected_digest":extended,"nodes":[second]})).await?).await?;
+    assert_eq!(report["conflicts"], json!([]));
+    let done = ok(extend(json!({"expected_digest":extended,"extended_digest":report["digest"],"nodes":[second],"stopped_services":["xboard-node-cf.service"],"stopped_at":now_timestamp()})).await?).await?;
+    assert_eq!(done["republish"], true);
+    let dirty: Option<i64> = sqlx::query_scalar("SELECT dirty_at FROM servers WHERE id=$1")
+        .bind(server)
+        .fetch_one(&pool)
+        .await?;
+    assert!(dirty.is_some());
+    let audited: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM management_audit WHERE action='nexus.runtime.extend'",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(audited, 2);
+    Ok(())
+}

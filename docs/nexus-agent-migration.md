@@ -100,7 +100,7 @@ python3 tools/nexus_runtime_snapshot.py build /private/nodes.json /private/runti
 
 导出时机器令牌不读取，`token_env` 引用一律填占位值；`custom_config` 指向的文件缺失时直接报错，不像旧节点那样静默跳过。汇总只写原因代码：`protocol_requires_conversion`（Hysteria2 等需要证书文件与跳端口规则）、`transport_requires_conversion`、`external_files`、`global_settings_require_reconciliation`、`reality_short_id_count`、`brutal_requires_review`、`tunnel_host_invalid`（隧道源站的旧地址不是域名）、`effective_configuration_missing`（未取得主机文件）等。被阻止的主机继续由旧服务运行。
 
-无 TLS 的 VLESS + WebSocket/HTTPUpgrade 监听（Cloudflare 优选线路的源站）转换为 `vless-tunnel` 节点（[ADR 0109](adr/0109-vless-tunnel-origins.md)）：`sni` 取旧节点地址（隧道主机名），监听收窄为 `127.0.0.1`。切换前确认该主机的隧道连接器转发到 `127.0.0.1:<端口>`；如果连的是其他地址，先改隧道配置。已经接管的主机不能追加这类节点。切换后用 `PATCH /api/plugins/sing-box/nexus-nodes/{库存编号}/public-endpoint`（`{"public_host":"edge.example.com","public_port":443}`）把公开入口改成成员实际连接的边缘地址；该接口同时更新目录、节点的公开地址和公开端口，监听端口不变。
+无 TLS 的 VLESS + WebSocket/HTTPUpgrade 监听（Cloudflare 优选线路的源站）转换为 `vless-tunnel` 节点（[ADR 0109](adr/0109-vless-tunnel-origins.md)）：`sni` 取旧节点地址（隧道主机名），监听收窄为 `127.0.0.1`。切换前确认该主机的隧道连接器转发到 `127.0.0.1:<端口>`；如果连的是其他地址，先改隧道配置。主机已经接管时，用下文“给已接管主机追加线路”加入。切换后用 `PATCH /api/plugins/sing-box/nexus-nodes/{库存编号}/public-endpoint`（`{"public_host":"edge.example.com","public_port":443}`）把公开入口改成成员实际连接的边缘地址；该接口同时更新目录、节点的公开地址和公开端口，监听端口不变。
 
 ### 切换步骤
 
@@ -115,6 +115,18 @@ python3 tools/nexus_runtime_snapshot.py build /private/nodes.json /private/runti
 旧订阅兼容后端及重置调度继续运行。未经正式签名发布、网络不可达、证书续期未承接的主机保持原运行状态。
 
 准备之后发现快照需要修正（例如补齐旧服务的实际生效字段），且该主机从未启动、没有任何部署时，用 `discard --server <ID> --input <{"expected_digest":…}>` 撤销准备，再重新预览和准备。启动过的主机不能撤销，只能暂停；暂停后旧服务的恢复见上文第 6 步。
+
+### 给已接管主机追加线路
+
+主机已经由 apsp 运行（或已准备）后，旧面板在这台主机上新增的线路（例如 Cloudflare 优选线路的隧道源站，由单独的 `xboard-node-cf` 服务提供）不能用 `prepare` 加入：一台主机只有一份运行快照，不能覆盖。用 `extend`：
+
+1. 用 `tools/nexus_node_inventory.py append` 把新线路导入到这台主机（见上文“追加导入后新增的线路”）。
+2. 只为新线路生成快照（导出与 `build` 同上，清单只含新线路），得到只含新线路的 `host-<ID>-snapshot.json`。
+3. `nexus_runtime_takeover.py extend-preview --server <ID> --digest <当前快照摘要> --input <新线路快照>`：面板把新线路并入已存的快照，只对新线路做与准备时相同的存档核对，要求合并后覆盖这台主机已导入的全部线路（已下线的线路作为历史留在快照里），并在随后丢弃的事务中编译出候选配置（含新线路的用户），写入 0600 输出文件。用同版本签名运行时检查候选；监听、DNS 或路由选项与原有线路冲突时在这一步报错，不发布。
+4. 在主机上停掉占用新监听的旧服务（如 `xboard-node-cf`），在十分钟内执行 `extend --extended-digest <预览中的合并摘要> --stopped-service <服务名>`。面板保存合并后的快照（加密，旧快照停用）、新增原生节点与策略组成员；主机正在运行时重新发布，Agent 照常应用新修订（先读取当前运行时的终止计数）。
+5. 用真实客户端验证新线路和原有线路。新线路有问题时，用下文的 `retire` 下线它，再启动旧服务；原有线路不受影响。
+
+`extend` 只追加，不改变快照中已有的条目；要修改已有线路，仍需按原流程处理。
 
 ### 下线已接管主机上的单条线路
 
