@@ -225,7 +225,7 @@ fn legacy_builder_snapshot_compiles_with_original_identities() {
 }
 
 #[test]
-fn identical_host_route_options_are_kept_and_differences_refused() {
+fn identical_host_route_options_are_kept_host_wide() {
     let mut first = fixture(1);
     let mut second = fixture(2);
     for input in [&mut first, &mut second] {
@@ -239,13 +239,82 @@ fn identical_host_route_options_are_kept_and_differences_refused() {
     assert_eq!(result["route"]["default_interface"], "eth0");
     assert_eq!(result["route"]["default_domain_resolver"], "local");
     assert!(result["route"].get("final").is_none());
-    second.configuration["route"]
-        .as_object_mut()
-        .unwrap()
-        .remove("default_interface");
-    assert!(compile_preserved_server(&[first.clone(), second]).is_err());
+    assert!(
+        result["outbounds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|o| o.get("bind_interface").is_none())
+    );
     first.configuration["route"]["domain_strategy"] = json!("ipv4_only");
     assert!(compile_preserved_server(&[first]).is_err());
+}
+
+/// A landing whose main line binds an interface and resolves IPv4 only, beside
+/// a tunnel origin that uses the defaults (TMNET): each keeps its own dialing.
+#[test]
+fn different_host_route_options_move_onto_each_lines_outbounds() {
+    let mut main = fixture(1);
+    main.configuration["route"]["default_interface"] = json!("eth1");
+    main.configuration["route"]["default_domain_resolver"] =
+        json!({"server":"local","strategy":"ipv4_only"});
+    main.configuration["dns"] = json!({"servers":[{"type":"local","tag":"local"}]});
+    let origin = fixture(2);
+    let result: Value =
+        serde_json::from_str(&compile_preserved_server(&[main.clone(), origin.clone()]).unwrap())
+            .unwrap();
+    assert!(result["route"].get("default_interface").is_none());
+    assert!(result["route"].get("default_domain_resolver").is_none());
+    let outbound = |tag: &str| {
+        result["outbounds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["tag"] == tag)
+            .cloned()
+            .unwrap()
+    };
+    assert_eq!(outbound("n1-direct")["bind_interface"], "eth1");
+    assert_eq!(
+        outbound("n1-direct")["domain_resolver"],
+        json!({"server":"local","strategy":"ipv4_only"})
+    );
+    // An outbound that dials through a detour inherits it from the detour.
+    assert!(outbound("n1-exit").get("bind_interface").is_none());
+    assert_eq!(outbound("n1-exit")["detour"], "n1-direct");
+    // The other line keeps the defaults it had on its own.
+    for tag in ["n2-direct", "n2-exit"] {
+        assert!(outbound(tag).get("bind_interface").is_none(), "{tag}");
+        assert!(outbound(tag).get("domain_resolver").is_none(), "{tag}");
+    }
+    assert_eq!(result["dns"]["servers"][0]["type"], "local");
+    // An explicit per-outbound value is not overwritten.
+    let mut explicit = main.clone();
+    explicit.configuration["outbounds"][0]["bind_interface"] = json!("eth9");
+    let merged: Value =
+        serde_json::from_str(&compile_preserved_server(&[explicit, origin.clone()]).unwrap())
+            .unwrap();
+    assert_eq!(merged["outbounds"][0]["bind_interface"], "eth9");
+}
+
+#[test]
+fn merging_refuses_what_cannot_move_onto_outbounds() {
+    let mut first = fixture(1);
+    first.configuration["route"]["auto_detect_interface"] = json!(true);
+    // Interface auto-detection exists only host-wide.
+    assert!(compile_preserved_server(&[first.clone(), fixture(2)]).is_err());
+    // A line without its own DNS used the system resolver; it cannot inherit
+    // another line's remote default server.
+    let mut remote = fixture(1);
+    remote.configuration["route"]["default_interface"] = json!("eth1");
+    remote.configuration["dns"] =
+        json!({"servers":[{"type":"https","tag":"remote","server":"dns.example.invalid"}]});
+    assert!(compile_preserved_server(&[remote.clone(), fixture(2)]).is_err());
+    remote.configuration["dns"]["servers"]
+        .as_array_mut()
+        .unwrap()
+        .insert(0, json!({"type":"local","tag":"local"}));
+    assert!(compile_preserved_server(&[remote, fixture(2)]).is_ok());
 }
 
 #[test]

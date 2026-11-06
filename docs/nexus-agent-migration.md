@@ -128,6 +128,8 @@ python3 tools/nexus_runtime_snapshot.py build /private/nodes.json /private/runti
 
 `extend` 只追加，不改变快照中已有的条目；要修改已有线路，仍需按原流程处理。
 
+同一主机的线路在旧服务里可以各自设置主机级路由选项（出站网卡 `default_interface`、默认解析器 `default_domain_resolver`），合并到一个运行时后这些选项会作用于所有线路。线路之间不一致时，编译器把每条线路自己的选项改写到它自己的出站上（`bind_interface`、`domain_resolver`），每条线路保持单独运行时的行为；一致时仍保留为主机级选项，配置不变。网卡自动检测（`auto_detect_interface`）只能是主机级，不一致时拒绝合并；没有自己 DNS 设置的线路原先使用系统解析器，只有合并后的默认 DNS 也是系统解析器（`local`）时才允许合并。
+
 ### 下线已接管主机上的单条线路
 
 主机已接管后，某条线路不再使用（例如出口失效，或入口端口在国内被封），用 `POST /api/plugins/sing-box/nexus-nodes/{id}/retire` 下线，请求体为 `{"legacy_node_id": <原节点编号>}`。`{id}` 是 apsp 的库存编号，原节点编号必须一致，防止输错编号删掉另一条线路。
