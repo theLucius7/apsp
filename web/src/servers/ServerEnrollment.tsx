@@ -65,7 +65,7 @@ export default function ServerEnrollment({ server, created = false, onClose }: {
             <option value="">自动匹配系统与架构</option>
             {availableTargets.map(value => <option value={value} key={value}>{agentTargetLabel(value)}</option>)}
           </NativeSelect></Field>
-          <Field className="flex-1 max-sm:w-full mb-0" label="Agent 版本" hint="列表只显示已收录、已验签且协议兼容的稳定版本。自动模式会在执行时选择本机最新兼容版本。"><NativeSelect className="w-full" value={version} onChange={event => { setVersion(event.target.value); setEnrollment(null); action.clearError() }} disabled={action.busy || versionsLoading || !versions.length}>
+          <Field className="flex-1 max-sm:w-full mb-0" label="Agent 版本" hint="只列出已验签且兼容的稳定版本；自动模式执行时选最新兼容版本。"><NativeSelect className="w-full" value={version} onChange={event => { setVersion(event.target.value); setEnrollment(null); action.clearError() }} disabled={action.busy || versionsLoading || !versions.length}>
             <option value="">自动匹配最新兼容版本</option>
             {versions.map(item => <option value={item.version} key={item.version}>{item.version} · 已验签</option>)}
           </NativeSelect></Field>
@@ -81,8 +81,8 @@ export default function ServerEnrollment({ server, created = false, onClose }: {
           <p className="text-muted-foreground px-4 pb-3 text-xs leading-relaxed">一次性接入令牌有效至 {time(enrollment.expires_at)}，请勿公开分享命令。</p>
         </div> : <Notice role="status"><span>{enrollment.warning ?? '请维护者准备对应的已签名 Agent 发布后重试。'}<br />服务器配置已保留，发布准备好后可在这里重新生成命令。</span></Notice> : !action.error && versions.length > 0 && <p className="text-muted-foreground mt-3 text-xs leading-relaxed wrap-anywhere">点击“重新生成命令”获取所选版本的接入命令。</p>}
         {action.error && <p className="text-muted-foreground mt-3 text-xs leading-relaxed wrap-anywhere">服务器已保存。重试只会生成新的接入命令，不会重复创建服务器。</p>}
-        <div className="text-muted-foreground mt-4 flex gap-2"><LockIcon className="size-4 mt-0.5 flex-none" aria-hidden="true" /><p className="m-0 text-xs leading-relaxed">安装命令会自动下载安装器、准备验证工具，识别目标服务器的系统与架构，并验证对应的签名制品。升级保留设备身份与本地状态。</p></div>
-        <p className="text-muted-foreground mt-3 text-xs leading-relaxed wrap-anywhere">安装时只下载当前系统与架构的 Agent；缺少兼容的签名版本时，会明确提示原因。</p>
+        <div className="text-muted-foreground mt-4 flex gap-2"><LockIcon className="size-4 mt-0.5 flex-none" aria-hidden="true" /><p className="m-0 text-xs leading-relaxed">安装命令会识别系统与架构并验证签名；升级保留设备身份。</p></div>
+        
       </section>
       <section className={cn('bg-card mb-4 scroll-mt-16 rounded-xl border p-5 last:mb-0 max-sm:p-4', online && 'border-success/40 bg-success/5')} aria-labelledby="enrollment-status">
         <div className="mb-4 flex items-center justify-between gap-3.5 max-sm:flex-wrap"><div className="min-w-0"><h3 className="flex items-center gap-2 text-sm font-semibold" id="enrollment-status" aria-live="polite">{live.error ? '暂时无法确认设备状态' : status}</h3><p className="text-muted-foreground mt-1 text-xs leading-relaxed">{online ? `当前 Agent 版本：${entry.static_info.agent_version ?? '尚未上报'}。可进入详情查看采样与拨测结果。` : registered ? '设备身份已登记，等待 Agent 建立连接并上报状态。' : '执行命令后保持此页面打开，我们会自动检测连接状态。'}</p></div>{online ? <CheckIcon className="size-6 text-muted-foreground flex-none" aria-hidden="true" /> : <ActivityIcon className="size-6 text-muted-foreground flex-none" aria-hidden="true" />}</div>
@@ -92,7 +92,7 @@ export default function ServerEnrollment({ server, created = false, onClose }: {
           <li className={cn('text-muted-foreground flex items-center gap-1.5 text-xs', online && 'text-success')}>{online ? <CheckIcon className="size-3.5" aria-hidden="true" /> : <ActivityIcon className="size-3.5" aria-hidden="true" />}{online ? '设备在线' : '等待设备上线'}</li>
         </ol>
         <ErrorNotice message={live.error} retry={live.reload} />
-        {online && <Notice><div><strong className="font-medium">下一步：按需安装 sing-box</strong><p className="text-muted-foreground mt-1 mb-3">监控已接入，这台服务器已经可以在看板、告警和运维工具中使用。需要提供代理时，安装 sing-box 后即可创建代理节点、代理用户和链路。</p><a className={buttonVariants({ size: 'sm' })} href="#/plugins/sing-box" onClick={onClose}>前往代理服务<ArrowRightIcon className="size-3.5" aria-hidden="true" /></a></div></Notice>}
+        {online && <Notice><div><strong className="font-medium">下一步：按需安装 sing-box</strong><p className="text-muted-foreground mt-1 mb-3">监控已接入，可以在看板、告警和运维工具中使用。需要代理时，先安装 sing-box 再创建节点。</p><a className={buttonVariants({ size: 'sm' })} href="#/plugins/sing-box" onClick={onClose}>前往代理服务<ArrowRightIcon className="size-3.5" aria-hidden="true" /></a></div></Notice>}
         <div className="mt-5 flex items-center justify-between gap-2.5 border-t pt-3"><span className="text-muted-foreground text-xs">页面可见时，每 3 秒自动检查</span><Button type="button" variant="ghost" size="sm" onClick={live.reload}>立即检查</Button></div>
         <Button type="button" variant="ghost" size="sm" className="mt-3.5" aria-expanded={showHelp} aria-controls="enrollment-help" onClick={() => setShowHelp(value => !value)}>{showHelp ? '收起排查说明' : '设备迟迟未上线？'}</Button>
         {showHelp && <ul id="enrollment-help" className="text-muted-foreground mt-3 list-disc pl-5 text-sm leading-relaxed"><li>确认安装命令执行成功，Agent 服务正在运行。</li><li>确认设备能访问命令中的面板地址，HTTPS 与 WebSocket 反向代理可用。</li><li>令牌过期或已被使用时，重新生成命令；已有服务器需保留原设备身份。</li><li>接入后暂时没有拨测结果时，等待配置同步，并检查目标地址与检测权限。</li></ul>}

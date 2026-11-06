@@ -49,7 +49,7 @@ function ConnectAccount({ close, saved }: { close: () => void; saved: (account: 
     : api<DnsAccount>('/api/plugins/ddns/accounts/access-key', 'POST', { provider, name: name.trim(), access_key_id: key.trim(), access_key_secret: secret.trim(), zone_ids: zones.split(/[\s,]+/).filter(Boolean) }), saved)}>
     <Field label="DNS 提供方"><NativeSelect className="w-full" value={provider} onChange={event => setProvider(event.target.value as keyof typeof providers)}>{Object.entries(providers).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</NativeSelect></Field>
     {cloudflare
-      ? <Field label="API 令牌" hint="在 Cloudflare 的「账户 API 令牌」创建，权限选 DNS 编辑。保存时会校验并自动找出它能管理的域名，之后不再显示。"><Input type="password" autoComplete="off" required value={token} onChange={event => setToken(event.target.value)} placeholder="cfat_…" /></Field>
+      ? <Field label="API 令牌" hint="在 Cloudflare「账户 API 令牌」创建，权限选 DNS 编辑；保存时自动识别可管理的域名，之后不再显示。"><Input type="password" autoComplete="off" required value={token} onChange={event => setToken(event.target.value)} placeholder="cfat_…" /></Field>
       : <>
         <div className="grid items-start gap-x-4 sm:grid-cols-2">
           <Field label="访问密钥 ID"><Input type="password" autoComplete="off" required minLength={8} maxLength={256} value={key} onChange={event => setKey(event.target.value)} /></Field>

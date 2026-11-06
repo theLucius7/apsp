@@ -33,7 +33,7 @@ export default function ServerAssetFields({ value, onChange }: { value: AssetDra
         <Field className="mb-0" label="费用周期（天）" hint="0 为一次性；可输入自定义天数。"><Input required type="number" min={0} max={3650} value={value.billing_cycle} onChange={event => update({ billing_cycle: event.target.value, ...(Number(event.target.value) === 0 ? { auto_renewal: false } : {}) })} list="server-billing-cycles" /><datalist id="server-billing-cycles"><option value="30">30 天</option><option value="90">90 天</option><option value="180">180 天</option><option value="365">365 天</option><option value="0">一次性</option></datalist></Field>
       </div>
       <div className="mt-4"><Field label="到期日期（UTC）" hint="到期时间按所选日期的 UTC 零点记录。"><Input type="date" min="1970-01-01" max="9999-12-31" value={value.expiry} onChange={event => update({ expiry: event.target.value, ...(!event.target.value ? { auto_renewal: false } : {}) })} /></Field></div>
-      <SettingRow title="自动顺延到期记录" description="到期后按费用周期更新日期记录；不会向供应商付款。需先设置到期日期与非零周期。"><Switch checked={value.auto_renewal} disabled={!value.expiry || Number(value.billing_cycle) <= 0} onCheckedChange={checked => update({ auto_renewal: checked })} /></SettingRow>
+      <SettingRow title="自动顺延到期记录" description="到期后按周期顺延日期，不会付款；需先填写到期日和周期。"><Switch checked={value.auto_renewal} disabled={!value.expiry || Number(value.billing_cycle) <= 0} onCheckedChange={checked => update({ auto_renewal: checked })} /></SettingRow>
     </section>
     <section className="bg-card mb-4 scroll-mt-16 rounded-xl border p-5 last:mb-0 max-sm:p-4" aria-labelledby="setup-traffic">
       <div className="mb-4 flex items-center justify-between gap-3.5 max-sm:flex-wrap"><div className="min-w-0"><h3 className="flex items-center gap-2 text-sm font-semibold" id="setup-traffic">流量额度</h3><p className="text-muted-foreground mt-1 text-xs leading-relaxed">按账单日汇总网卡观测流量，展示本期使用与剩余额度。</p></div><span className="bg-muted text-muted-foreground inline-block rounded border px-1.5 text-xs font-normal whitespace-nowrap">可选</span></div>
@@ -42,9 +42,9 @@ export default function ServerAssetFields({ value, onChange }: { value: AssetDra
         <Field className="mb-0" label="流量统计口径"><NativeSelect className="w-full" value={value.traffic_limit_type} onChange={event => update({ traffic_limit_type: event.target.value as AssetDraft['traffic_limit_type'] })}>{Object.entries(trafficModes).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</NativeSelect></Field>
         <Field className="mb-0" label="每月重置日（UTC）" hint="1–31 日；短月按当月最后一天。"><Input type="number" min={1} max={31} required value={value.reset_day} onChange={event => update({ reset_day: event.target.value })} /></Field>
       </div>
-      <p className="text-muted-foreground mt-3 text-xs leading-relaxed wrap-anywhere">0 表示不设额度。GB / TB 为十进制，GiB / TiB 为二进制。超额仅标记状态。</p>
-      <div className="mt-4"><Field label="统计网卡" hint="留空统计所有上报网卡；支持 * 匹配和 ! 排除，逗号分隔。建议指定出口网卡，避免虚拟与回环接口重复统计。"><Input maxLength={1040} value={value.network_interface} onChange={event => update({ network_interface: event.target.value })} placeholder="例如：eth*,!eth1" /></Field></div>
-      <p className="text-muted-foreground mt-3 text-xs leading-relaxed wrap-anywhere">从首个有效采样建立基线；接入前、重启或缺失期间的流量可能不完整，观测值可能与供应商账单不同。修改口径或网卡选择会按已有记录重新汇总。</p>
+      <p className="text-muted-foreground mt-3 text-xs leading-relaxed wrap-anywhere">0 表示不设额度；GB/TB 为十进制，GiB/TiB 为二进制；超额只标记。</p>
+      <div className="mt-4"><Field label="统计网卡" hint="留空统计所有网卡；支持 * 和 ! 排除，逗号分隔。建议只填出口网卡。"><Input maxLength={1040} value={value.network_interface} onChange={event => update({ network_interface: event.target.value })} placeholder="例如：eth*,!eth1" /></Field></div>
+      <p className="text-muted-foreground mt-3 text-xs leading-relaxed wrap-anywhere">从首个有效采样开始统计；接入前、重启或缺失期间的流量可能不全，可能与供应商账单不同。</p>
     </section>
   </>
 }
