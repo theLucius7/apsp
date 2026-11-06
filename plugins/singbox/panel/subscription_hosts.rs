@@ -23,7 +23,14 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
-use std::{collections::HashMap, sync::LazyLock, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{
+        LazyLock,
+        atomic::{AtomicI64, Ordering},
+    },
+    time::Duration,
+};
 use tokio::sync::Notify;
 use uuid::Uuid;
 
@@ -33,6 +40,9 @@ const BATCH: i64 = 25;
 const RECORD_COMMENT: &str = "apsp subscription host; managed by the panel";
 
 static WAKE: LazyLock<Notify> = LazyLock::new(Notify::new);
+/// When this process last looked for left-over records (see `sweep`); 0 means never.
+static SWEPT_AT: AtomicI64 = AtomicI64::new(0);
+const SWEEP_SECONDS: i64 = 3600;
 
 #[derive(Clone, FromRow)]
 struct Domain {
@@ -517,6 +527,13 @@ struct RecordId {
     id: String,
 }
 #[derive(Deserialize)]
+struct Listed {
+    id: String,
+    name: String,
+    #[serde(default)]
+    comment: Option<String>,
+}
+#[derive(Deserialize)]
 struct Zone {
     name: String,
 }
@@ -581,6 +598,28 @@ impl DnsApi {
             .map(|record| record.id)
             .ok_or_else(|| "Cloudflare 没有返回记录标识".to_owned())
     }
+    /// The zone's CNAME records, page by page; bounded so a huge zone cannot stall the worker.
+    async fn list(&self, token: &str, zone: &str) -> Result<Vec<Listed>, String> {
+        const PAGE: usize = 500;
+        let mut records = Vec::new();
+        for page in 1..=40 {
+            let batch: Vec<Listed> = self
+                .call(
+                    token,
+                    reqwest::Method::GET,
+                    &format!("/zones/{zone}/dns_records?type=CNAME&per_page={PAGE}&page={page}"),
+                    None,
+                )
+                .await?
+                .unwrap_or_default();
+            let last = batch.len() < PAGE;
+            records.extend(batch);
+            if last {
+                break;
+            }
+        }
+        Ok(records)
+    }
     async fn delete(&self, token: &str, zone: &str, record: &str) -> Result<(), String> {
         match self
             .call::<RecordId>(
@@ -621,18 +660,13 @@ pub async fn reconcile(pool: &PgPool, dns: &DnsApi) -> ApiResult<()> {
         .bind(BATCH)
         .fetch_all(pool)
         .await?;
-    if pending.is_empty() && retired.is_empty() {
+    let now = now_timestamp();
+    let sweep_due = now - SWEPT_AT.load(Ordering::Relaxed) >= SWEEP_SECONDS;
+    if pending.is_empty() && retired.is_empty() && !sweep_due {
         return Ok(());
     }
     // Resolved only when there is work, because each use of a credential is audited.
-    let secret = control_center::credentials::resolve_reference_pool(
-        pool,
-        domain.credential_id,
-        "dns",
-        "subscription-domain",
-    )
-    .await?;
-    let token = secret["api_token"].as_str().unwrap_or_default().to_owned();
+    let token = token(pool, &domain).await?;
     for (user, slug) in pending {
         let (state, record, error) = match dns.create(&token, &domain, &slug).await {
             Ok(record) => ("ready", Some(record), None),
@@ -659,7 +693,77 @@ pub async fn reconcile(pool: &PgPool, dns: &DnsApi) -> ApiResult<()> {
             .execute(pool)
             .await?;
     }
+    if sweep_due {
+        match sweep_with(pool, dns, &token, &domain).await {
+            Ok(removed) => {
+                SWEPT_AT.store(now, Ordering::Relaxed);
+                if removed > 0 {
+                    tracing::info!(removed, "left-over subscription host DNS records deleted");
+                }
+            }
+            // Looked at again in ten minutes rather than on every pass.
+            Err(error) => {
+                SWEPT_AT.store(now - SWEEP_SECONDS + 600, Ordering::Relaxed);
+                tracing::warn!(%error, "left-over subscription host DNS records not checked");
+            }
+        }
+    }
     Ok(())
+}
+
+async fn token(pool: &PgPool, domain: &Domain) -> ApiResult<String> {
+    let secret = control_center::credentials::resolve_reference_pool(
+        pool,
+        domain.credential_id,
+        "dns",
+        "subscription-domain",
+    )
+    .await?;
+    Ok(secret["api_token"].as_str().unwrap_or_default().to_owned())
+}
+
+/// Deletes the records this feature created that no current host uses: a user who was
+/// deleted or reset while a call was running, or a record whose ID the panel lost, which
+/// Cloudflare then reports as already gone. Only records carrying this feature's comment
+/// are considered, so records an administrator added to the zone are never touched.
+pub async fn sweep(pool: &PgPool, dns: &DnsApi) -> ApiResult<usize> {
+    let Some(domain) = domain(pool).await?.filter(|domain| domain.enabled) else {
+        return Ok(0);
+    };
+    let token = token(pool, &domain).await?;
+    sweep_with(pool, dns, &token, &domain)
+        .await
+        .map_err(ApiError::BadRequest)
+}
+
+async fn sweep_with(
+    pool: &PgPool,
+    dns: &DnsApi,
+    token: &str,
+    domain: &Domain,
+) -> Result<usize, String> {
+    // Listed before the hosts are read: a record created after this listing is not in it,
+    // and every record in it belongs to a host row written before the record was.
+    let records = dns.list(token, &domain.zone_id).await?;
+    let hosts: Vec<String> = sqlx::query_scalar("SELECT slug FROM singbox_subscription_hosts")
+        .fetch_all(pool)
+        .await
+        .map_err(|_| "无法读取专属地址".to_owned())?;
+    let live: HashSet<String> = hosts
+        .iter()
+        .map(|slug| host_name(domain, slug).to_ascii_lowercase())
+        .collect();
+    let mut removed = 0;
+    for record in records {
+        if record.comment.as_deref() != Some(RECORD_COMMENT)
+            || live.contains(&record.name.to_ascii_lowercase())
+        {
+            continue;
+        }
+        dns.delete(token, &domain.zone_id, &record.id).await?;
+        removed += 1;
+    }
+    Ok(removed)
 }
 
 pub async fn run(state: AppState) {

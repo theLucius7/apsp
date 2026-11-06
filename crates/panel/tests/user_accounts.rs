@@ -567,3 +567,66 @@ async fn diagnosis_explains_where_a_migrated_user_gets_their_lines(pool: PgPool)
     assert_eq!(ready["permissions"], json!([]));
     Ok(())
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn administrators_delete_notices_and_guides(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = admin(&panel).await?;
+    let saved = ok(request(
+        &panel,
+        Method::POST,
+        &format!("{ROOT}/portal-guides"),
+        &cookie,
+        json!({"kind":"guide","title":"Outdated guide","category":"Help","body":"<p>Old steps</p>","published":true,"version":null}),
+    )
+    .await?)
+    .await?;
+    let guide = saved["id"].as_i64().context("guide")?;
+    let member = panel.create_user(&cookie, "Member").await?["id"]
+        .as_i64()
+        .context("member")?;
+    let (account, session) = portal(&panel, member).await?;
+    let titles = |view: &Value| -> Vec<String> {
+        view["guides"]
+            .as_array()
+            .map(|guides| {
+                guides
+                    .iter()
+                    .filter_map(|guide| guide["title"].as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let view = format!("{ROOT}/portal/{account}/account");
+    let before = ok(request(&panel, Method::GET, &view, &session, json!(null)).await?).await?;
+    assert_eq!(titles(&before), ["Outdated guide"]);
+
+    let path = format!("{ROOT}/portal-guides/{guide}");
+    let removed = request(&panel, Method::DELETE, &path, &cookie, json!(null)).await?;
+    assert_eq!(removed.status(), StatusCode::NO_CONTENT);
+    let after = ok(request(&panel, Method::GET, &view, &session, json!(null)).await?).await?;
+    assert!(
+        titles(&after).is_empty(),
+        "the portal stops showing it at once"
+    );
+    let listed = ok(request(
+        &panel,
+        Method::GET,
+        &format!("{ROOT}/portal-guides"),
+        &cookie,
+        json!(null),
+    )
+    .await?)
+    .await?;
+    assert_eq!(listed["entries"], json!([]));
+    let again = request(&panel, Method::DELETE, &path, &cookie, json!(null)).await?;
+    assert_eq!(again.status(), StatusCode::NOT_FOUND);
+    let audited: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM singbox_commerce_events WHERE action='content_deleted' AND object_id=$1",
+    )
+    .bind(guide.to_string())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(audited, 1);
+    Ok(())
+}
