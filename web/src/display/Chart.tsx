@@ -12,6 +12,37 @@ const labelWidth = (text: string) => [...text].reduce((total, char) => total + (
 const clock = (value: number) => new Date(value).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
 const date = (value: number) => new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour12: false, hour: '2-digit', minute: '2-digit' })
 
+/**
+ * A monotone cubic curve through the points (Fritsch–Carlson). It passes through
+ * every sample and never overshoots between two of them, so a smoother line shows
+ * no peak or dip that was not measured.
+ */
+export function smoothPath(points: readonly (readonly [number, number])[]): string {
+  const count = points.length
+  if (count === 0) return ''
+  const format = (value: number) => value.toFixed(2)
+  if (count < 3) return points.map(([px, py], index) => `${index ? 'L' : 'M'}${format(px)},${format(py)}`).join(' ')
+  const slopes: number[] = [], tangents: number[] = []
+  for (let index = 0; index < count - 1; index++) {
+    const dx = points[index + 1][0] - points[index][0]
+    slopes.push(dx === 0 ? 0 : (points[index + 1][1] - points[index][1]) / dx)
+  }
+  tangents.push(slopes[0])
+  for (let index = 1; index < count - 1; index++) tangents.push(slopes[index - 1] * slopes[index] <= 0 ? 0 : (slopes[index - 1] + slopes[index]) / 2)
+  tangents.push(slopes[count - 2])
+  for (let index = 0; index < count - 1; index++) {
+    if (slopes[index] === 0) { tangents[index] = 0; tangents[index + 1] = 0; continue }
+    const a = tangents[index] / slopes[index], b = tangents[index + 1] / slopes[index], length = a * a + b * b
+    if (length > 9) { const scale = 3 / Math.sqrt(length); tangents[index] = scale * a * slopes[index]; tangents[index + 1] = scale * b * slopes[index] }
+  }
+  let path = `M${format(points[0][0])},${format(points[0][1])}`
+  for (let index = 0; index < count - 1; index++) {
+    const [x0, y0] = points[index], [x1, y1] = points[index + 1], third = (x1 - x0) / 3
+    path += ` C${format(x0 + third)},${format(y0 + tangents[index] * third)} ${format(x1 - third)},${format(y1 - tangents[index + 1] * third)} ${format(x1)},${format(y1)}`
+  }
+  return path
+}
+
 export default function Chart({ title, series, from, to, gap, maximum, format }: {
   title: string; series: Series[]; from: number; to: number; gap: number; maximum?: number; format: (value: number | null) => string
 }) {
@@ -71,7 +102,7 @@ export default function Chart({ title, series, from, to, gap, maximum, format }:
       {ticks.map(({ tick, label }) => <g key={tick}><line x1={left} x2={width - right} y1={y(tick * max)} y2={y(tick * max)} className="stroke-border" strokeDasharray="3 3" /><text x={left - 8} y={y(tick * max) + 4} textAnchor="end">{label}</text></g>)}
       {[0, .5, 1].map(tick => <text key={tick} x={x(from + (to - from) * tick)} y={height - 8} textAnchor={tick === 0 ? 'start' : tick === 1 ? 'end' : 'middle'}>{axisTime(from + (to - from) * tick)}</text>)}
       {visible.map((item, index) => <g key={item.label}>{item.segments.map((part, partIndex) => {
-        const path = part.map((point, pointIndex) => `${pointIndex ? 'L' : 'M'}${x(point.at).toFixed(2)},${y(point.value!).toFixed(2)}`).join(' ')
+        const path = smoothPath(part.map(point => [x(point.at), y(point.value!)] as const))
         const range = part.every(point => point.range)
         const band = range ? `${part.map((point, i) => `${i ? 'L' : 'M'}${x(point.at)},${y(point.range!.max)}`).join(' ')} ${[...part].reverse().map(point => `L${x(point.at)},${y(point.range!.min)}`).join(' ')} Z` : ''
         return <g key={partIndex}>{part.length === 1 ? <>{range && <line x1={x(part[0].at)} x2={x(part[0].at)} y1={y(part[0].range!.min)} y2={y(part[0].range!.max)} stroke={item.color} strokeWidth="5" opacity=".25" />}<circle cx={x(part[0].at)} cy={y(part[0].value!)} r="2.5" fill={item.color} /></> : <><path d={range ? band : `${path} L${x(part[part.length - 1].at)},${y(0)} L${x(part[0].at)},${y(0)} Z`} fill={range ? item.color : `url(#${id}-${index})`} opacity={range ? '.18' : undefined} data-range={range || undefined} /><path d={path} fill="none" stroke={item.color} strokeWidth="1.8" vectorEffect="non-scaling-stroke" /></>}{part.filter(point => point.range?.live).map(point => <circle key={point.at} cx={x(point.at)} cy={y(point.value!)} r="3" fill={item.color} data-live="true" />)}</g>

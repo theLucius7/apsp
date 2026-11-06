@@ -2,7 +2,7 @@ import { useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ArrowRightIcon, EyeIcon, EyeOffIcon, KeyRoundIcon, LockKeyholeIcon, ShieldCheckIcon, UserRoundIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { api, ApiError } from '../api'
-import { Brand, ErrorNotice } from '../components'
+import { BrandMark, ErrorNotice } from '../components'
 import { useAction } from '../hooks'
 import { loginPasskey, passkeySupport } from '../passkeys'
 import { LanguageSelect, useI18n } from '../i18n'
@@ -52,9 +52,23 @@ export default function Login({ onLogin, notice }: { onLogin: () => void; notice
   return <main data-slot="login-page" className="relative grid min-h-dvh place-items-center px-5 py-12 sm:px-8">
     <LanguageSelect className="absolute top-4 right-4" />
     <div className="mx-auto w-full max-w-[26rem] min-w-0">
-      <Brand className="mb-9" />
-      <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.02em]">{t('欢迎回来')}</h1>
-      <p className="text-muted-foreground mt-1.5 mb-6 text-sm">{t('使用管理员账号登录。')}</p>
+      {/* The mark at the centre of a slowly turning network: decoration only, nothing about what the panel does. */}
+      <div className="relative mx-auto -mt-4 size-40" aria-hidden="true">
+        <span className="absolute inset-5 rounded-full bg-[radial-gradient(closest-side,color-mix(in_oklch,var(--brand-from)_28%,transparent),transparent)]" />
+        <div className="absolute inset-0 motion-safe:animate-[orbit-turn_60s_linear_infinite]">
+          <svg viewBox="0 0 160 160" className="size-full" fill="none">
+            <circle cx="80" cy="80" r="74" className="stroke-primary/25" strokeDasharray="2 7" strokeLinecap="round" />
+            <circle cx="80" cy="80" r="54" className="stroke-info/30" strokeDasharray="1.5 6" strokeLinecap="round" />
+            <path d="M80 6 Q128 26 134 80" className="stroke-primary/25" strokeWidth="1" />
+            <circle cx="80" cy="6" r="3.2" className="fill-primary/80" /><circle cx="134" cy="80" r="2.4" className="fill-info/80" />
+            <circle cx="42" cy="118" r="2.8" className="fill-chart-4/70" /><circle cx="28" cy="52" r="1.8" className="fill-primary/50" />
+          </svg>
+        </div>
+        <div className="absolute inset-0 grid place-items-center"><BrandMark className="size-16 drop-shadow-[0_12px_28px_color-mix(in_oklch,var(--brand-from)_45%,transparent)]" /></div>
+      </div>
+      <p className="-mt-2 mb-7 text-center text-lg font-semibold tracking-[-0.02em]">{t('apsp')}</p>
+      <h1 className="text-center text-[28px] leading-tight font-semibold tracking-[-0.02em]">{t('欢迎回来')}</h1>
+      <p className="text-muted-foreground mt-1.5 mb-6 text-center text-sm">{t('使用管理员账号登录。')}</p>
       <div className="bg-card shadow-lifted rounded-[20px] border p-6 sm:p-7">
         <ErrorNotice message={action.error || notice} />
         <form ref={form} onSubmit={submit} className="grid gap-4">
