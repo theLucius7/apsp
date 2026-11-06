@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useResource, useResourceGroup } from '../../hooks'
-import { itemRow, ledgerTotals, serverRow, todayUtc, validItems, validLabels, validServers, validSummary } from './model'
-import type { ItemPayment, LedgerRow, ServerPayment } from './model'
+import { itemRow, ledgerTotals, serverRow, todayUtc, validItems, validLabels, validPayments, validServers, validSummary } from './model'
+import type { LedgerRow } from './model'
 import { root } from './types'
 
 /** Everything the ledger's views read, in one round, with the rows they all show. */
@@ -9,7 +9,8 @@ export function useLedger() {
   const data = useResourceGroup<{ items: unknown; labels: unknown; servers: unknown; summary: unknown }>({
     items: `${root}/subscriptions`, labels: `${root}/labels`, servers: `${root}/servers`, summary: `${root}/summary`,
   }, 60_000, { keep: true })
-  const payments = useResource<{ items: ItemPayment[]; servers: ServerPayment[] }>(`${root}/payments`, 120_000, { keep: true })
+  const payments = useResource<unknown>(`${root}/payments`, 120_000, { keep: true })
+  const paid = validPayments(payments.data) ? payments.data : undefined
   const items = validItems(data.items.data) ? data.items.data : undefined
   const labels = validLabels(data.labels.data) ? data.labels.data.entries : undefined
   const servers = validServers(data.servers.data) ? data.servers.data.entries : undefined
@@ -22,12 +23,12 @@ export function useLedger() {
     return [...(items ?? []).map(item => itemRow(item, context)), ...(servers ?? []).map(server => serverRow(server, context))]
   }, [items, servers, labels, today, base, rates])
   const totals = useMemo(() => ledgerTotals(rows), [rows])
-  const malformed = (['items', 'labels', 'servers', 'summary'] as const).some(key => data[key].data !== undefined && !{ items, labels, servers, summary }[key])
+  const malformed = (['items', 'labels', 'servers', 'summary'] as const).some(key => data[key].data !== undefined && !{ items, labels, servers, summary }[key]) || (payments.data !== undefined && !paid)
   const reload = () => { data.items.reload(); data.labels.reload(); data.servers.reload(); data.summary.reload(); payments.reload() }
   return {
     items, labels: labels ?? [], servers, summary, rows, totals, today, base, rates,
     budget: summary?.budget_units ? Number(summary.budget_units) / 10000 : null,
-    payments: payments.data ? [...payments.data.items, ...payments.data.servers] : undefined,
+    payments: paid ? [...paid.items, ...paid.servers] : undefined,
     loaded: items !== undefined && servers !== undefined,
     error: data.items.error || data.servers.error || data.labels.error || data.summary.error,
     paymentsError: payments.error,

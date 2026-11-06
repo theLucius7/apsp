@@ -157,12 +157,11 @@ try {
 
   // A page that fails to render stays a failed page: the console and other pages work.
   {
-    // The proxy user list sums usage counters without checking them first; malformed ones make it throw while rendering.
-    const state = { routes: {
-      '/api/plugins/sing-box/users': route => route.fulfill({ json: [{ id: 1, name: 'TEST_ONLY', subscription_url: '' }] }),
-      '/api/plugins/sing-box/usage': route => route.fulfill({ json: { uplink: '0', downlink: '0', total: '0', by_user: [{ user_id: 1, name: 'TEST_ONLY', uplink: 'not-a-number', downlink: '1', deleted: false }], by_node: [] } }),
-    } }
-    const { context, page } = await open(state, '/plugins/sing-box/users')
+    // TEST_ONLY: the page's own code throws while rendering, whatever data it reads. The backup
+    // page is loaded on first visit only (not preloaded), so its module is always this one.
+    const { context, page } = await open({}, '/servers')
+    await page.route('**/assets/Backup-*.js', route => route.fulfill({ contentType: 'text/javascript', body: 'export default function TestBrokenPage() { throw new Error("TEST_ONLY render failure") }' }))
+    await page.evaluate(() => { location.hash = '#/system/backup' })
     await page.locator('[data-slot=page-failure]').waitFor()
     assert.equal(await page.locator('[data-slot=sidebar]').count(), 1, 'The console survives')
     await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '服务器', exact: true }).click()
