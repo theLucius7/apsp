@@ -129,7 +129,7 @@ try {
     return { count, disabled }
   }
   await installControlCenterFixtures(page)
-  await page.goto(`${origin}/#/plugins/alicloud`)
+  await page.goto(`${origin}/#/alicloud`)
   await page.getByRole('heading', { name: '阿里云 CDT 与带宽', exact: true }).waitFor()
   await page.getByRole('button', { name: '添加云账号' }).click()
   let dialog = page.getByRole('dialog')
@@ -345,7 +345,7 @@ try {
   await rotationEntry.getByText('已更换', { exact: true }).waitFor()
   await rotationEntry.getByText('候选：198.51.100.1 可用（11/11）', { exact: true }).waitFor()
   await rotationEntry.getByText('通知：Telegram 已送达', { exact: true }).waitFor()
-  assert.equal(await rotationEntry.getByRole('link', { name: '检查此服务器的节点', exact: true }).getAttribute('href'), '#/plugins/sing-box/nodes?server=7')
+  assert.equal(await rotationEntry.getByRole('link', { name: '检查此服务器的节点', exact: true }).getAttribute('href'), '#/nodes?server=7')
   assert.equal(await page.locator('[data-slot=cloud-activity-item]').filter({ hasText: 'TEST_ONLY 192.0.2.1 → 198.51.100.1' }).count(), 0, 'The result notice is not a second entry')
   assert.equal((await menuItem(articles.first(), '资源操作', '更换公网 IP')).disabled, false)
   if (screenshots) await page.locator('[data-slot=cloud-activity]').screenshot({ path: `${screenshots}/alicloud-rotation-activity-done-${width}.png` })

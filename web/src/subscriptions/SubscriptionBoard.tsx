@@ -34,7 +34,7 @@ const filters: [BoardFilter, string][] = [['all', '全部'], ['active', '使用�
 const valueTone = (tone: Tone) => tone === 'warning' || tone === 'danger' || tone === 'info' ? toneText[tone] : 'text-foreground'
 const statusText = (tone: Tone) => tone === 'good' ? 'text-muted-foreground' : toneText[tone]
 const grid = 'grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start gap-3 max-sm:grid-cols-1'
-const detail = (item: { id: number }) => `#/plugins/expenses/items/${item.id}`
+const detail = (item: { id: number }) => `#/expenses/items/${item.id}`
 /** "约 CNY 7.50 / 月" when the price is not already a monthly amount in the ledger's currency. */
 function perMonth(item: Entry['item'], view: Entry['view'], base?: string) {
   if (!base) return ''
@@ -132,7 +132,7 @@ export default function SubscriptionBoard() {
   return <div data-slot="subscription-board" className="flex flex-col gap-3">
     <PageHeader title="订阅看板">
       <Refresh onClick={refresh} />
-      <a className={buttonVariants({ variant: 'outline' })} href="#/plugins/expenses">在费用与续费中管理</a>
+      <a className={buttonVariants({ variant: 'outline' })} href="#/expenses">在费用与续费中管理</a>
       <InfoTip label="图例"><p>卡片上的圆环是本期已经过去的时间，中间是距下次续费的天数。</p></InfoTip>
     </PageHeader>
     <ErrorNotice message={data.items.error || data.summary.error || (malformed ? '订阅数据不完整，请刷新重试。' : '')} retry={refresh} />
@@ -177,7 +177,7 @@ export default function SubscriptionBoard() {
     </div>
 
     {!items ? !data.items.error && !malformed && <CardsLoading />
-      : !entries.length ? <Empty icon={RssIcon} title="还没有订阅" description="在「费用与续费」里添加你付费的服务，或从 Wallos 导入。"><a className={buttonVariants()} href="#/plugins/expenses">前往费用与续费</a></Empty>
+      : !entries.length ? <Empty icon={RssIcon} title="还没有订阅" description="在「费用与续费」里添加你付费的服务，或从 Wallos 导入。"><a className={buttonVariants()} href="#/expenses">前往费用与续费</a></Empty>
         : !visible.length ? <div className="text-muted-foreground flex min-h-60 flex-col items-center justify-center gap-3 p-6 text-center"><RssIcon className="size-8" aria-hidden="true" /><strong className="text-foreground text-sm font-medium">没有匹配的订阅</strong><Button onClick={reset}>清除筛选</Button></div>
           : view === 'cards' ? <section aria-label="订阅" className={grid}>{visible.map(entry => <div key={entry.key} className="min-w-0"><SubscriptionCard entry={entry} base={base} /></div>)}</section>
             : <SubscriptionTable entries={visible} base={base} />}

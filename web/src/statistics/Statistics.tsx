@@ -43,7 +43,7 @@ export default function Statistics() {
     </>}
     <div className="mt-6 mb-3 flex items-center justify-between gap-4"><span className="flex min-w-0 items-center gap-1.5"><h2 className="flex items-center gap-1.5 text-sm font-semibold">代理业务统计
       </h2><InfoTip label="统计口径"><p>独立汇总代理用户账本，不能与服务器网卡流量相加。上传和下载以代理用户为视角，按计量批次结束时间归入 UTC 日期，不按跨日时长拆分；保留已删除用户与节点的历史，离线补报会更新历史，暂无记录不代表实际零流量。{business?.traffic.last_record_at ? `最新计量：${time(business.traffic.last_record_at)}。` : ''}</p></InfoTip></span>
-      <a href="#/plugins/sing-box/nodes" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>管理代理节点</a></div>
+      <a href="#/nodes" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>管理代理节点</a></div>
     <ErrorNotice message={proxy.error} retry={proxy.reload} />
     {proxy.loading && !business ? <Loading variant="cards" /> : business && <>
       <StatStrip label="代理业务概况" columns={4}>

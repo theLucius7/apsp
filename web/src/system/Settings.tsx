@@ -41,7 +41,7 @@ export default function Settings() {
   const resource = useResource<Preferences>('/api/settings', 0)
   return <>
     <PageHeader title="面板设置">
-      <a className={buttonVariants({ variant: 'outline' })} href="#/monitoring/settings">告警设置</a>
+      <a className={buttonVariants({ variant: 'outline' })} href="#/alerts/settings">告警设置</a>
     </PageHeader>
     <ErrorNotice message={resource.error} retry={resource.reload} />
     {resource.data ? <PanelSwitches initial={{ public_dashboard: resource.data.public_dashboard, show_frozen_features: Boolean(resource.data.show_frozen_features) }} /> : resource.loading ? <Loading /> : null}

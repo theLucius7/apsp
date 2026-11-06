@@ -85,7 +85,7 @@ try {
     assert.equal(await cards(page).count(), 5)
     assert.deepEqual(await cards(page).locator('[data-slot=card-name]').allInnerTexts(), ['云盘', 'ChatGPT Plus', 'Claude Pro', 'example.com 域名', '旧 VPN 服务'])
     const chat = cards(page).filter({ hasText: 'ChatGPT Plus' })
-    assert.equal(await chat.getAttribute('href'), '#/plugins/expenses/items/11')
+    assert.equal(await chat.getAttribute('href'), '#/expenses/items/11')
     const chatText = await chat.innerText()
     for (const phrase of ['USD 20', '即将续费', '3 天后', 'AI 服务', '信用卡', '自动']) assert(chatText.includes(phrase), `The card shows ${phrase}`)
     assert.match(chatText, /142\.86/)
@@ -128,7 +128,7 @@ try {
       assert(reads > before, 'The board polls')
       // A card opens that subscription in the ledger.
       await cards(page).filter({ hasText: 'ChatGPT Plus' }).click()
-      await page.waitForURL(/#\/plugins\/expenses\/items\/11$/)
+      await page.waitForURL(/#\/expenses\/items\/11$/)
     }
     assert.deepEqual(proxyReads, [], 'No proxy user data is read for the board')
     assert.deepEqual(writes, [], 'The board never writes')

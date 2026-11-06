@@ -44,7 +44,7 @@ try {
     })
     const catalogRows = page.locator(width < 768 ? '[data-slot=catalog-card]' : '[data-slot=catalog-table] tbody tr')
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/plugins/sing-box/nodes?server=2`)
+    await page.goto(`${origin}/#/nodes?server=2`)
     await page.getByRole('heading', { name:'代理节点', exact:true }).waitFor({ timeout:3000 })
     await page.waitForFunction(() => document.querySelector('[aria-label="按服务器筛选"]')?.value === '2')
     assert.equal(await catalogRows.count(), 1)

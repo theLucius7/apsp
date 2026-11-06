@@ -31,8 +31,8 @@ function NodeFollowUp({ rotation }: { rotation: EipRotation }) {
   const servers = rotation.before.server_ids ?? []
   const link = (href: string, label: string) => <a key={href} className="text-primary underline-offset-4 hover:underline" href={href}>{label}</a>
   return <small className="text-muted-foreground text-xs wrap-anywhere">写着 {rotation.before.public_ip} 的节点公开地址需改为新地址：{servers.length
-    ? servers.map((id, index) => <span key={id}>{index > 0 && '、'}{link(`#/plugins/sing-box/nodes?server=${id}`, servers.length > 1 ? `检查服务器 ${index + 1} 的节点` : '检查此服务器的节点')}</span>)
-    : link('#/plugins/sing-box/nodes', '检查代理节点')}</small>
+    ? servers.map((id, index) => <span key={id}>{index > 0 && '、'}{link(`#/nodes?server=${id}`, servers.length > 1 ? `检查服务器 ${index + 1} 的节点` : '检查此服务器的节点')}</span>)
+    : link('#/nodes', '检查代理节点')}</small>
 }
 
 /** One history for the page: what changed on which resource, its state and the step left to take. */
@@ -97,7 +97,7 @@ export function Activity({ data, available, current, reload }: { data: Overview;
   }
 
   return <Panel data-slot="cloud-activity">
-    <PanelHeader><PanelTitle>操作记录</PanelTitle><span className="text-muted-foreground text-xs">保留 180 天 · <a className="text-primary underline-offset-4 hover:underline" href="#/monitoring/settings">通知渠道</a></span></PanelHeader>
+    <PanelHeader><PanelTitle>操作记录</PanelTitle><span className="text-muted-foreground text-xs">保留 180 天 · <a className="text-primary underline-offset-4 hover:underline" href="#/alerts/settings">通知渠道</a></span></PanelHeader>
     {action.error && <div className="px-4 pt-3"><ErrorNotice message={action.error} /></div>}
     {!items.length ? <Empty icon={HistoryIcon} title="暂无操作记录" description="带宽调整、开关机（手动、CDT 守护、每日计划与保活）、更换公网 IP 和流量阈值提醒会记录在这里。" />
       : <ul className="divide-border/70 divide-y">{shown.map(row)}</ul>}

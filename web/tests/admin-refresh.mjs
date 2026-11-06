@@ -165,7 +165,7 @@ try {
       if (portal) {
         await wait(() => portal.reached > 0, 'Manual reload must include the selected user access panel')
         // The open modal dialog hides the page behind it from the accessibility tree.
-        const panel = page.locator('[data-slot=panel]').filter({ has: page.getByRole('heading', { name: '登录地址', includeHidden: true }) })
+        const panel = page.locator('[data-slot=user-login-access]')
         assert.equal(await panel.locator('[data-slot=loading]').count(), 0, 'A known portal snapshot remains visible during its explicit refresh')
         assert.equal(await panel.getByText(/还没有开通/).count(), 1, 'The original access state is retained while its current read is held')
         assert.equal(await panel.getByText('TEST_ONLY 尚未启用', { exact: true }).count(), 1, 'The disabled configuration reason remains readable')

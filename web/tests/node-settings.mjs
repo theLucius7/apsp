@@ -65,7 +65,7 @@ try {
       await route.fulfill({json:value})
     })
     await installControlCenterFixtures(page)
-    await page.goto(`http://127.0.0.1:${server.address().port}/#/plugins/sing-box/nodes`)
+    await page.goto(`http://127.0.0.1:${server.address().port}/#/nodes`)
     await page.getByRole('button',{name:'创建节点',exact:true}).first().click()
     const dialog = page.getByRole('dialog')
     await dialog.locator('[name=name]').fill('测试 HY2')

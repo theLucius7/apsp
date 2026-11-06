@@ -213,7 +213,7 @@ try {
     await page.getByText('可在「告警设置」中配置离线、资源、到期和流量提醒。', { exact: true }).waitFor()
     // The header shortcut shares its name with the sidebar entry, so scope it to the page actions.
     const alertSettings = page.getByRole('navigation', { name: '本节页面' }).getByRole('link', { name: '告警设置', exact: true })
-    assert.equal(await alertSettings.getAttribute('href'), '#/monitoring/settings')
+    assert.equal(await alertSettings.getAttribute('href'), '#/alerts/settings')
     await alertSettings.click()
     await page.getByRole('heading', { name: '告警设置', exact: true }).waitFor()
     // Rules, Webhook and channel status do not wait for the panel settings, even when the owner's read fails.

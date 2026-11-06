@@ -6,6 +6,7 @@ import { api, errorMessage } from '../api'
 import { usePreference } from './preferences'
 import { useI18n } from '../i18n'
 import type { NavigationItem } from '../app/navigation'
+import { canonicalPath } from '../app/paths'
 import { cn } from '@/lib/utils'
 import { navigate } from '@/lib/leave-guard'
 import { Button } from '@/components/ui/button'
@@ -16,6 +17,18 @@ import { Spinner } from '@/components/ui/spinner'
 type Item = { kind: string; id: number | string; label: string; path: string }
 type Entry = { key: string; label: string; detail: string; icon: LucideIcon; item: Item }
 type Section = { id: string; title: string; entries: Entry[] }
+
+// Visits and favourites saved before the address rename (ADR 0120) hold the former
+// address; they are read at the current one, so a page is never listed twice.
+function saved(items: Item[] | null | undefined): Item[] {
+  const seen = new Set<string>()
+  return (items ?? []).flatMap(item => {
+    const path = canonicalPath(item.path)
+    if (seen.has(path)) return []
+    seen.add(path)
+    return [path === item.path ? item : { ...item, path }]
+  })
+}
 
 const kinds: Record<string, string> = { page: '页面', server: '服务器', ip: '服务器地址', 'ip-observation': 'IP来源观测', 'ip-quality': 'IP质量资料', node: '节点', 'proxy-user': '代理用户', domain: '域名', certificate: '证书', 'dns-rule': 'DNS规则', 'network-rule': '网络规则', 'diagnostic-task': '诊断任务', 'test-plan': '测试方案', 'test-run': '测试运行', 'command-task': '远程命令', 'fleet-task': '设备操作', 'operation-task': '运维任务', 'operation-schedule': '任务计划', 'remediation-rule': '自动处置规则', maintenance: '维护窗口', incident: '故障事件', 'probe-rule': '探测规则', 'alert-rule': '告警规则', 'latency-task': '延迟监测', task: '任务', rule: '规则' }
 const kindIcons: Record<string, LucideIcon> = { server: ServerIcon, ip: ServerIcon, node: WaypointsIcon, 'proxy-user': UsersIcon, domain: GlobeIcon, 'dns-rule': GlobeIcon, certificate: ShieldCheckIcon, incident: BellRingIcon, 'alert-rule': BellRingIcon }
@@ -62,6 +75,8 @@ export default function CommandPalette({ pages, compact = false }: { pages: read
   const recent = usePreference<Item[]>('recent')
   const favorite = usePreference<Item[]>('favorite')
   const term = query.trim().toLowerCase()
+  const recentItems = useMemo(() => saved(recent.value), [recent.value])
+  const favoriteItems = useMemo(() => saved(favorite.value), [favorite.value])
 
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
@@ -101,9 +116,9 @@ export default function CommandPalette({ pages, compact = false }: { pages: read
 
   const sections = useMemo<Section[]>(() => {
     const matches = (item: Item) => !term || `${item.label} ${t(item.label)} ${item.path}`.toLowerCase().includes(term)
-    const favourites = (favorite.value ?? []).filter(matches)
+    const favourites = favoriteItems.filter(matches)
     const pinnedPaths = new Set(favourites.map(item => item.path))
-    const recents = (recent.value ?? []).filter(item => !pinnedPaths.has(item.path) && matches(item)).slice(0, term ? 5 : 8)
+    const recents = recentItems.filter(item => !pinnedPaths.has(item.path) && matches(item)).slice(0, term ? 5 : 8)
     const pageMatches = pages.filter(page => !term || `${page.label} ${t(page.label)} ${page.group} ${t(page.group)} ${page.path}`.toLowerCase().includes(term))
     return [
       { id: 'favorite', title: t('收藏'), entries: favourites.map(item => entryOf(item, 'favorite')) },
@@ -111,7 +126,7 @@ export default function CommandPalette({ pages, compact = false }: { pages: read
       { id: 'pages', title: t('页面'), entries: pageMatches.map(page => ({ ...entryOf(pageItem(page), 'page'), detail: t(page.group), icon: page.icon })) },
       { id: 'results', title: t('搜索结果'), entries: term ? results.map(item => entryOf(item, 'result')) : [] },
     ].filter(section => section.entries.length > 0)
-  }, [term, favorite.value, recent.value, pages, results, t])
+  }, [term, favoriteItems, recentItems, pages, results, t])
   const entries = sections.flatMap(section => section.entries)
   const keyedIndex = entries.findIndex(entry => entry.key === activeKey)
   const activeIndex = entries.length ? Math.max(keyedIndex, 0) : -1
@@ -132,11 +147,11 @@ export default function CommandPalette({ pages, compact = false }: { pages: read
     const left = navigate(entry.item.path)
     close(false)
     if (!left) return
-    if (recent.ready) void recent.save([entry.item, ...(recent.value ?? []).filter(value => value.path !== entry.item.path)].slice(0, 20)).catch(reason => setError(errorMessage(reason)))
+    if (recent.ready) void recent.save([entry.item, ...recentItems.filter(value => value.path !== entry.item.path)].slice(0, 20)).catch(reason => setError(errorMessage(reason)))
   }
-  const pinned = (item?: Item) => Boolean(item && (favorite.value ?? []).some(value => value.path === item.path))
+  const pinned = (item?: Item) => Boolean(item && favoriteItems.some(value => value.path === item.path))
   const pin = (item: Item) => {
-    const values = favorite.value ?? []
+    const values = favoriteItems
     void favorite.save(pinned(item) ? values.filter(value => value.path !== item.path) : [item, ...values].slice(0, 30)).catch(reason => setError(errorMessage(reason)))
   }
   const keyboard = (event: ReactKeyboardEvent<HTMLInputElement>) => {

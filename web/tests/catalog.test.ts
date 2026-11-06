@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
-import { catalogItem, isCatalogPath, pluginCatalog, pluginDefinitions, pluginServerPath } from '../src/plugins/catalog'
+import { catalogItem, pluginCatalog, pluginDefinitions, pluginServerPath } from '../src/plugins/catalog'
+import { resolveRoute } from '../src/app/routes'
 import type { Artifact } from '../src/types'
 
 const artifact = (name: string, version: string, arch: string): Artifact => ({ name, version, arch, sha256: 'a'.repeat(64), bytes: 1024 })
@@ -49,13 +50,14 @@ test('cloud account plugins have a global destination and device plugins require
   // The three line diagnostics open the merged 线路诊断 tab of the server.
   expect(pluginDefinitions.map(plugin => pluginServerPath(plugin, 42))).toEqual([null, '/servers/42/ddns', '/servers/42/plugins', '/servers/42/ip-info', '/servers/42/ip-info', '/servers/42/ip-info'])
   expect(pluginDefinitions.filter(plugin => plugin.group === 'diagnostics').map(plugin => plugin.id)).toEqual(['ipquality', 'tcpquality', 'nodequality'])
-  expect(pluginDefinitions.find(plugin => plugin.id === 'alicloud')?.panelPath).toBe('/plugins/alicloud')
+  expect(pluginDefinitions.find(plugin => plugin.id === 'alicloud')?.panelPath).toBe('/alicloud')
   for (const plugin of pluginDefinitions) {
     for (const invalid of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) expect(pluginServerPath(plugin, invalid)).toBeNull()
   }
 })
 
 test('legacy artifact bookmarks show the catalog without matching unrelated routes', () => {
-  for (const path of ['/plugins/catalog', '/artifacts']) expect(isCatalogPath(path)).toBeTrue()
-  for (const path of ['/artifacts/import-release', '/plugins/catalog/1', '/system/plugins', '/servers']) expect(isCatalogPath(path)).toBeFalse()
+  for (const path of ['/settings/plugins', '/plugins/catalog', '/artifacts']) expect(resolveRoute(path)).toEqual({ page: 'catalog' })
+  for (const path of ['/artifacts/import-release', '/plugins/catalog/1', '/settings/plugins/1']) expect(resolveRoute(path)).toEqual({ page: 'not-found' })
+  for (const path of ['/system/plugins', '/settings/plugins/servers']) expect(resolveRoute(path)).toEqual({ page: 'plugins' })
 })

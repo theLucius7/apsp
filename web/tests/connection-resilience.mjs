@@ -161,7 +161,7 @@ try {
     // page is loaded on first visit only (not preloaded), so its module is always this one.
     const { context, page } = await open({}, '/servers')
     await page.route('**/assets/Backup-*.js', route => route.fulfill({ contentType: 'text/javascript', body: 'export default function TestBrokenPage() { throw new Error("TEST_ONLY render failure") }' }))
-    await page.evaluate(() => { location.hash = '#/system/backup' })
+    await page.evaluate(() => { location.hash = '#/settings/backup' })
     await page.locator('[data-slot=page-failure]').waitFor()
     assert.equal(await page.locator('[data-slot=sidebar]').count(), 1, 'The console survives')
     await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '服务器', exact: true }).click()
@@ -176,7 +176,7 @@ try {
     const state = {}
     const { context, page } = await open(state)
     await page.getByRole('row').filter({ hasText: 'TEST_ONLY 服务器 1' }).waitFor()
-    await page.evaluate(() => { location.hash = '#/system/administrator' })
+    await page.evaluate(() => { location.hash = '#/settings/account' })
     await page.getByRole('heading', { name: '账号安全', exact: true }).waitFor()
     await page.route('**/api/servers', async route => { await new Promise(done => setTimeout(done, 500)); return route.fallback() })
     await page.evaluate(() => { location.hash = '#/servers' })
@@ -216,8 +216,8 @@ try {
       '/api/control-center/reauth': route => { proven = true; return route.fulfill({ status: 204 }) },
     } }
     const { context, page, reads } = await open(state, '/plugins/sing-box/users', { permissions: ['clipboard-read', 'clipboard-write'] })
-    const row = page.locator('[data-user-id="7"]')
-    await row.getByRole('button', { name: '复制 TEST_ONLY 用户 的订阅链接', exact: true }).click()
+    // The selected user's access card holds the one copy button.
+    await page.locator('[data-slot=user-access]').getByRole('button', { name: '复制订阅链接', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '再次验证身份' })
     await dialog.getByLabel('当前管理员密码').fill('TEST_ONLY_PASSWORD')
     await dialog.getByRole('button', { name: '验证并继续', exact: true }).click()

@@ -30,9 +30,9 @@ const stages: Record<string, string> = {
   failed: '应用失败', retired: '旧版本已退出',
 }
 export const stageName = (stage: string) => stages[stage] ?? '等待设备确认'
-export const resourceLink = ({ kind, id }: ResourceKey) => `#/plugins/sing-box/nodes/${kind}/${id}`
+export const resourceLink = ({ kind, id }: ResourceKey) => `#/nodes/${kind}/${id}`
 export function resourceRoute(path: string): ResourceKey | null {
-  const match = path.match(/^\/plugins\/sing-box\/nodes\/(direct|chain)\/([1-9]\d*)$/)
+  const match = path.match(/^\/nodes\/(direct|chain)\/([1-9]\d*)$/)
   return match && Number.isSafeInteger(Number(match[2])) ? { kind: match[1] as ResourceKey['kind'], id: Number(match[2]) } : null
 }
 export const endpoint = (host: string, port: number) => `${host.includes(':') ? `[${host.replace(/^\[|\]$/g, '')}]` : host}:${port}`

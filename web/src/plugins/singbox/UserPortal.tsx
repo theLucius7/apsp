@@ -31,7 +31,7 @@ export default function UserPortal({ account, activation }: { account: string; a
   const { t } = useI18n()
   useSystemTheme()
   const base = `/api/plugins/sing-box/portal/${account}`
-  const bookmark = `${window.location.origin}/#/plugins/sing-box/account/${account}`
+  const bookmark = `${window.location.origin}${window.location.pathname}#/account/${account}`
   const [token, setToken] = useState(activation)
   const [data, setData] = useState<View>()
   const [error, setError] = useState('')
@@ -43,7 +43,7 @@ export default function UserPortal({ account, activation }: { account: string; a
   const reload = () => setRevision(value => value + 1)
   useEffect(() => {
     document.title = `${t('我的账户')} · ${t('apsp')}`
-    if (activation) window.history.replaceState(null, '', `#/plugins/sing-box/account/${account}`)
+    if (activation) window.history.replaceState(null, '', `#/account/${account}`)
   }, [account, activation, t])
   useEffect(() => {
     const controller = new AbortController()
@@ -101,7 +101,7 @@ export default function UserPortal({ account, activation }: { account: string; a
       {/* A user's own address serves only this portal; email sign-in lives on the panel's address. */}
       {!onOwnAddress() && <>
         <AuthDivider label="或" />
-        <a className={buttonVariants({ variant: 'outline', size: 'lg', className: 'h-11 w-full text-sm' })} href="#/plugins/sing-box/member"><MailIcon aria-hidden="true" />邮箱密码登录 / 找回密码</a>
+        <a className={buttonVariants({ variant: 'outline', size: 'lg', className: 'h-11 w-full text-sm' })} href="#/member"><MailIcon aria-hidden="true" />邮箱密码登录 / 找回密码</a>
       </>}
     </>}
     {disabled && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{disabled}</p>}

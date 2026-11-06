@@ -65,7 +65,7 @@ try {
     const numberedPanel = page.locator('section[data-slot=subscription-sources]')
 
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/plugins/sing-box/nodes?view=sources`)
+    await page.goto(`${origin}/#/nodes?view=sources`)
     await manager.getByRole('heading', { level: 2 }).filter({ hasText: /^订阅来源/ }).waitFor()
     assert.equal(await manager.getByRole('heading', { level: 2 }).filter({ hasText: '有序链路' }).count(), 0)
     assert.equal(await archive.getAttribute('open'), null, 'the archive starts collapsed')
@@ -88,7 +88,7 @@ try {
     assert.equal(await page.getByRole('region', { name: '创建链路', exact: true }).count(), 0)
     await orderedForm.getByRole('button', { name: '取消', exact: true }).click()
     await orderedForm.waitFor({ state: 'detached' })
-    await page.goto(`${origin}/#/plugins/sing-box/nodes?view=sources`)
+    await page.goto(`${origin}/#/nodes?view=sources`)
     await manager.getByRole('heading', { level: 2 }).filter({ hasText: /^订阅来源/ }).waitFor()
 
     // Unknown state: the error is shown and numbered-source writes stay blocked.

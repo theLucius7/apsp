@@ -52,7 +52,7 @@ try {
       errors.push(`${method} ${path}`); return reply({error:'Unexpected fixture API'},404)
     })
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/system/settings`)
+    await page.goto(`${origin}/#/settings`)
     const policy = page.locator('section[data-slot=panel]').filter({has:page.getByRole('heading',{name:'监控历史保存',exact:true})})
     const days=policy.getByLabel('监控历史保留天数',{exact:false})
     await days.waitFor()

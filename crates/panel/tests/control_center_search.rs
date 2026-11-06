@@ -295,7 +295,7 @@ async fn result_paths_open_the_page_section_that_manages_each_object(pool: PgPoo
     let mut cases = vec![
         ("command-task", command, agent.clone()),
         ("probe-rule", probe, agent),
-        ("alert-rule", rule, "/monitoring/settings".to_owned()),
+        ("alert-rule", rule, "/alerts/settings".to_owned()),
     ];
     for (plugin, section) in [
         ("nodequality", "node-quality"),

@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { resolveRoute } from '../src/app/routes'
+import { canonicalPath } from '../src/app/paths'
 import { currentNavigation, homePath, navigation, sectionTabs, sidebarEntries } from '../src/app/navigation'
 import { visibleByTier } from '../src/app/tiers'
 import { nodeHash } from '../src/plugins/singbox/nodeRoute'
@@ -13,23 +14,23 @@ test('dashboard aliases keep the public read-only route after shell extraction',
 
 test('old device DDNS, catalog alias and unified node selection retain their destinations', () => {
   expect(resolveRoute('/servers/42/ddns')).toEqual({ page: 'server', serverId: 42, section: 'ddns' })
-  expect(currentNavigation(resolveRoute('/servers/42/ddns'))?.path).toBe('/plugins/ddns')
+  expect(currentNavigation(resolveRoute('/servers/42/ddns'))?.path).toBe('/dns')
   expect(currentNavigation(resolveRoute('/servers/42/node-quality'))?.path).toBe('/servers')
   expect(resolveRoute('/artifacts')).toEqual({ page: 'catalog' })
-  expect(currentNavigation(resolveRoute('/artifacts'))?.path).toBe('/plugins/catalog')
+  expect(currentNavigation(resolveRoute('/artifacts'))?.path).toBe('/settings/plugins')
   expect(resolveRoute('/plugins/sing-box/nodes?server=42')).toEqual({ page: 'nodes', serverId: 42, chains: false })
   expect(resolveRoute('/plugins/sing-box/nodes?kind=chains')).toEqual({ page: 'nodes', chains: true })
   expect(resolveRoute('/plugins/sing-box/nodes/chain/42')).toEqual({ page: 'nodes', selected: { kind: 'chain', id: 42 } })
-  expect(currentNavigation(resolveRoute('/plugins/alicloud'))?.path).toBe('/plugins/alicloud')
+  expect(currentNavigation(resolveRoute('/plugins/alicloud'))?.path).toBe('/alicloud')
 })
 
 test('the subscription board sits beside the server board and its cards open one proxy user', () => {
   expect(resolveRoute('/subscriptions')).toEqual({ page: 'subscription-board' })
-  expect(currentNavigation(resolveRoute('/subscriptions'))).toMatchObject({ label: '订阅看板', group: '总览', parent: '/plugins/sing-box' })
+  expect(currentNavigation(resolveRoute('/subscriptions'))).toMatchObject({ label: '订阅看板', group: '总览', parent: '/home' })
   expect(resolveRoute('/plugins/sing-box/users')).toEqual({ page: 'proxy-users' })
   expect(resolveRoute('/plugins/sing-box/commerce')).toEqual({ page: 'proxy-users' })
   expect(resolveRoute('/plugins/sing-box/users/42')).toEqual({ page: 'proxy-users', userId: 42 })
-  expect(currentNavigation(resolveRoute('/plugins/sing-box/users/42'))?.path).toBe('/plugins/sing-box/users')
+  expect(currentNavigation(resolveRoute('/plugins/sing-box/users/42'))?.path).toBe('/users')
   for (const path of ['/plugins/sing-box/users/0', '/plugins/sing-box/users/01', '/plugins/sing-box/users/9007199254740992', '/plugins/sing-box/users/x']) expect(resolveRoute(path)).toEqual({ page: 'not-found' })
 })
 
@@ -37,7 +38,7 @@ test('an entry of the costs and renewals ledger has its own address', () => {
   expect(resolveRoute('/plugins/expenses')).toEqual({ page: 'expenses' })
   expect(resolveRoute('/plugins/expenses/items/12')).toEqual({ page: 'expenses', item: 12 })
   expect(resolveRoute('/plugins/expenses/servers/7')).toEqual({ page: 'expenses', server: 7 })
-  expect(currentNavigation(resolveRoute('/plugins/expenses/items/12'))?.path).toBe('/plugins/expenses')
+  expect(currentNavigation(resolveRoute('/plugins/expenses/items/12'))?.path).toBe('/expenses')
   for (const path of ['/plugins/expenses/items/0', '/plugins/expenses/items/x', '/plugins/expenses/servers/9007199254740992', '/plugins/expenses/other/1']) expect(resolveRoute(path)).toEqual({ page: 'not-found' })
 })
 
@@ -70,11 +71,11 @@ test('node page sections are addressable and malformed sections are refused', ()
   expect(resolveRoute('/plugins/sing-box/nodes?server=42&view=chains')).toEqual({ page: 'nodes', serverId: 42, chains: false, view: 'chains' })
   expect(resolveRoute('/plugins/sing-box/nodes?kind=chains&view=catalog')).toEqual({ page: 'nodes', chains: true, view: 'catalog' })
   for (const query of ['view=unknown', 'view=chains&view=sources', 'view=']) expect(resolveRoute(`/plugins/sing-box/nodes?${query}`)).toEqual({ page: 'not-found' })
-  expect(nodeHash({ view: 'catalog' })).toBe('#/plugins/sing-box/nodes')
-  expect(nodeHash({ server: '2', view: 'chains' })).toBe('#/plugins/sing-box/nodes?server=2&view=chains')
-  expect(nodeHash({ kind: 'chains', view: 'chains' })).toBe('#/plugins/sing-box/nodes?kind=chains')
-  expect(nodeHash({ kind: 'chains', view: 'catalog' })).toBe('#/plugins/sing-box/nodes?kind=chains&view=catalog')
-  expect(nodeHash({ server: '3', role: 'middle', view: 'chains' })).toBe('#/plugins/sing-box/nodes?server=3&role=middle&view=chains')
+  expect(nodeHash({ view: 'catalog' })).toBe('#/nodes')
+  expect(nodeHash({ server: '2', view: 'chains' })).toBe('#/nodes?server=2&view=chains')
+  expect(nodeHash({ kind: 'chains', view: 'chains' })).toBe('#/nodes?kind=chains')
+  expect(nodeHash({ kind: 'chains', view: 'catalog' })).toBe('#/nodes?kind=chains&view=catalog')
+  expect(nodeHash({ server: '3', role: 'middle', view: 'chains' })).toBe('#/nodes?server=3&role=middle&view=chains')
   for (const view of ['catalog', 'chains', 'sources'] as const) expect(resolveRoute(nodeHash({ server: '7', view }).slice(1))).toMatchObject({ page: 'nodes', serverId: 7 })
 })
 
@@ -92,7 +93,7 @@ test('navigation groups follow administrator tasks and keep every destination', 
   // Someone who may only open some tabs of an entry goes to the first of those.
   const limited = navigation.filter(item => item.page === 'control-center' || item.page === 'security')
   expect(sidebarEntries(limited)).toHaveLength(1)
-  expect(sidebarEntries(limited)[0].href).toBe('/system/control-center')
+  expect(sidebarEntries(limited)[0].href).toBe('/settings/admin')
   expect(sidebarEntries(limited)[0].root.navLabel).toBe('设置')
   expect(navigation.filter(item => item.tier === 'experimental').map(item => item.page)).toEqual(['operations', 'network-configuration'])
   expect(navigation[0]).toMatchObject({ page: 'singbox-overview', label: '概览', path: homePath })
@@ -156,4 +157,26 @@ test('frozen entries stay hidden until the panel shows them', () => {
   const entries = [{ key: 'core' }, { key: 'experimental', tier: 'experimental' as const }, { key: 'frozen', tier: 'frozen' as const }]
   expect(visibleByTier(entries, false).map(entry => entry.key)).toEqual(['core', 'experimental'])
   expect(visibleByTier(entries, true).map(entry => entry.key)).toEqual(['core', 'experimental', 'frozen'])
+})
+
+test('page addresses name what a page is for, and earlier addresses lead to the same pages', () => {
+  expect(canonicalPath('/plugins/sing-box')).toBe('/home')
+  expect(canonicalPath('/plugins/sing-box/nodes?server=1&view=chains')).toBe('/nodes?server=1&view=chains')
+  expect(canonicalPath('/plugins/sing-box/account/00000000-0000-4000-8000-000000000001?activate=x')).toBe('/account/00000000-0000-4000-8000-000000000001?activate=x')
+  expect(canonicalPath('/plugins/sing-box/join/ABCD-EFGH-JKMN-PQRS')).toBe('/join/ABCD-EFGH-JKMN-PQRS')
+  expect(canonicalPath('/plugins/sing-box/chains')).toBe('/nodes?kind=chains')
+  expect(canonicalPath('/system/notifications')).toBe('/alerts')
+  expect(canonicalPath('/monitoring/settings')).toBe('/alerts/settings')
+  // Only whole segments are renamed, and current addresses stay as they are.
+  expect(canonicalPath('/plugins/sing-box-extra')).toBe('/plugins/sing-box-extra')
+  for (const path of ['/home', '/nodes', '/users/42', '/servers/1/plugins', '/dashboard/3']) expect(canonicalPath(path)).toBe(path)
+  for (const [old, current] of [['/plugins/sing-box', '/home'], ['/plugins/sing-box/users/42', '/users/42'], ['/plugins/expenses/items/12', '/expenses/items/12'],
+    ['/system/settings', '/settings'], ['/plugins/catalog', '/settings/plugins'], ['/plugins/sing-box/member', '/member'], ['/plugins/sing-box/join', '/join']]) {
+    expect(resolveRoute(old)).toEqual(resolveRoute(current))
+    expect(resolveRoute(current).page).not.toBe('not-found')
+  }
+  // No sidebar address names a plugin or an internal area any more.
+  for (const item of navigation) expect(/^\/(plugins|system|monitoring)\//.test(item.path)).toBe(false)
+  expect(homePath).toBe('/home')
+  expect(nodeHash({ server: '1' })).toBe('#/nodes?server=1')
 })

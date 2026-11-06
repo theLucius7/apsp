@@ -21,7 +21,7 @@ export async function reauthentication({ admin, sql, clearLimit, native, request
   const [sessionBefore] = await sql`SELECT expires_at FROM sessions WHERE token_hash=${hash}`
   // Passkey is an independent factor even when password verification would need TOTP.
   await sql`UPDATE admins SET totp_secret=decode('0102030405060708090001020304050607080900','hex') WHERE id=1`
-  await page.goto(`${origin}/#/system/control-center`)
+  await page.goto(`${origin}/#/settings/admin`)
   await page.getByRole('button', { name: 'API 令牌', exact: true }).click()
   await page.getByLabel('名称', { exact: true }).fill('passkey-reauth-ui')
   const issued = page.waitForResponse(response => response.url().endsWith('/api/control-center/tokens') && response.request().method() === 'POST' && response.status() === 200)
@@ -107,6 +107,6 @@ export async function reauthentication({ admin, sql, clearLimit, native, request
     results.push(`reauthentication rejects ${mutation} without granting a proof`)
   }
   await clearLimit()
-  await page.goto(`${origin}/#/system/administrator`)
+  await page.goto(`${origin}/#/settings/account`)
   await page.getByRole('heading', { name: '账号安全', exact: true }).waitFor()
 }

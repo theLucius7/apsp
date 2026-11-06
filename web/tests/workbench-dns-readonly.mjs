@@ -103,7 +103,7 @@ try {
     assert.equal(requests.some(request => request.path === '/api/servers'), false)
     assert.equal(requests.some(request => request.method !== 'GET'), false)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-    await page.goto(`${origin}/#/plugins/ddns`)
+    await page.goto(`${origin}/#/dns`)
     await page.getByRole('heading', { name: 'DNS 账号', exact: true }).waitFor()
     await page.locator('[data-slot=dns-account]').getByText('TEST_ONLY 私有DNS账号', { exact: true }).waitFor()
     await page.getByRole('button', { name: '管理记录', exact: true }).click()

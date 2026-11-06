@@ -8,6 +8,7 @@ import AdminShell from './app/AdminShell'
 import Login from './app/Login'
 import { currentNavigation, homePath } from './app/navigation'
 import { resolveRoute } from './app/routes'
+import { canonicalPath } from './app/paths'
 import { useI18n } from './i18n'
 import { useSessionStore } from './stores/session'
 import { acceptHashChange, guardLinks } from '@/lib/leave-guard'
@@ -35,6 +36,18 @@ function Boot({ message, onRetry }: { message?: string; onRetry?: () => void }) 
   </div>
 }
 
+/**
+ * The page path in the address bar. An address published before the rename is
+ * replaced by its current form in place, keeping what precedes the hash (a user's
+ * own address signs in at /{path}/login).
+ */
+function addressPath() {
+  const path = window.location.hash.slice(1) || '/dashboard'
+  const current = canonicalPath(path)
+  if (current !== path) window.history.replaceState(null, '', `#${current}`)
+  return current
+}
+
 export default function App() {
   const { t } = useI18n()
   const session = useSessionStore(state => state.authenticated)
@@ -43,7 +56,7 @@ export default function App() {
   const accessRevision = useSessionStore(state => state.revision)
   const bootError = useSessionStore(state => state.bootError)
   const [bootAttempt, setBootAttempt] = useState(0)
-  const [path, setPath] = useState(window.location.hash.slice(1) || '/dashboard')
+  const [path, setPath] = useState(addressPath)
   const shown = useRef(path)
   shown.current = path
   const action = useAction()
@@ -54,7 +67,7 @@ export default function App() {
       useSessionStore.getState().signedOut(useSessionStore.getState().authenticated ? translate.current('登录已过期，请重新登录。') : undefined)
     }
     // Back, forward and direct hash writes reach the router here; unsaved input decides.
-    const hash = () => { if (acceptHashChange(`#${shown.current}`)) setPath(window.location.hash.slice(1) || '/dashboard') }
+    const hash = () => { if (acceptHashChange(`#${shown.current}`)) setPath(addressPath()) }
     window.addEventListener('apsp:unauthorized', unauthorized)
     window.addEventListener('hashchange', hash)
     return () => {
@@ -89,7 +102,7 @@ export default function App() {
           void api<{ role: string; all_servers: boolean; capabilities: string[] }>('/api/control-center/me').then(actor => {
             if (!active) return
             const owner = actor.role === 'owner'
-            const fallback = actor.capabilities.includes('servers:read') ? '/servers' : '/system/control-center'
+            const fallback = actor.capabilities.includes('servers:read') ? '/servers' : '/settings/admin'
             if (landing) window.location.hash = owner || (actor.all_servers && actor.capabilities.includes('proxy:read')) ? homePath : fallback
             else if (!owner && (!actor.all_servers || !actor.capabilities.includes('monitoring:read'))) window.location.hash = fallback
           }).catch(() => { if (active && landing) window.location.hash = homePath })

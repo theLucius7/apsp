@@ -1,6 +1,6 @@
 # 管理与安全
 
-入口为「管理与安全」`/#/system/control-center`。「账号安全」（原「系统管理员」，`/#/system/administrator`）管理当前管理员自己的 Passkey 与个人 TOTP；代理用户继续使用 sing-box 独立门户。
+入口为「管理与安全」`/#/settings/admin`。「账号安全」（原「系统管理员」，`/#/settings/account`）管理当前管理员自己的 Passkey 与个人 TOTP；代理用户继续使用 sing-box 独立门户。
 
 ## 管理员与权限
 

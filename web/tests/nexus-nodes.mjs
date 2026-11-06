@@ -78,7 +78,7 @@ try {
       external.push(route.request().url()); return route.abort()
     })
     try {
-      await page.goto(`${origin}/#/plugins/sing-box/nodes`)
+      await page.goto(`${origin}/#/nodes`)
       const inventory = page.getByRole('region', { name: 'Nexus 节点', exact: true })
       const library = page.getByRole('region', { name: '节点库', exact: true })
       const importedRow = inventory.getByRole('row').filter({ has: page.getByText(imported[0].name, { exact: true }) })

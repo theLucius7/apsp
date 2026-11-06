@@ -464,7 +464,7 @@ visible_servers AS (
                     r#"
  SELECT jsonb_build_object('kind','alert-rule','id',a.id,
    'label',COALESCE(a.spec->>'name','告警规则')||' · '||a.id,
-   'path','/monitoring/settings','sampled_at',NULL)
+   'path','/alerts/settings','sampled_at',NULL)
  FROM alert_rules a CROSS JOIN visibility v WHERE v.unrestricted
    AND (a.spec->>'name' ILIKE $1 OR a.id::text ILIKE $1) ORDER BY a.id"#,
                 )

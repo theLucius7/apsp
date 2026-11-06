@@ -282,7 +282,7 @@ try {
     assert.equal(enrollments.length, previousEnrollmentCount, 'An empty catalogue does not issue an unusable enrollment token')
     assert.equal(await dialog.getByRole('link', { name: /导入/ }).count(), 0, 'Enrollment does not link to a removed import form')
     const catalogLink = dialog.getByRole('link', { name: '查看已收录版本', exact: true })
-    assert.equal(await catalogLink.getAttribute('href'), '#/plugins/catalog')
+    assert.equal(await catalogLink.getAttribute('href'), '#/settings/plugins')
     await catalogLink.click()
     await dialog.waitFor({ state: 'hidden' })
     await page.getByRole('heading', { name: '插件中心', exact: true }).waitFor()

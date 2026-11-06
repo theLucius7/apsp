@@ -32,7 +32,7 @@ export default function Join({ token }: { token?: string }) {
   const entering = !checked || Boolean(error)
   return <AuthShell slot="member-join" title="用邀请码创建账号"
     steps={<AuthSteps steps={['核对邀请码', '填写信息', '绑定 Passkey']} current={!entering && data?.available ? 1 : 0} />}
-    footer={<>已有账号？<a className={link} href="#/plugins/sing-box/member">邮箱密码登录</a></>}>
+    footer={<>已有账号？<a className={link} href="#/member">邮箱密码登录</a></>}>
     <ErrorNotice message={error || action.error} />
     {notice && <Notice tone="success" role="status">{notice}</Notice>}
     {entering ? <form className="grid gap-4" onSubmit={e => { e.preventDefault(); setChecked(code.trim()) }}>

@@ -89,7 +89,7 @@ try {
     })
 
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/system/plugins`)
+    await page.goto(`${origin}/#/settings/plugins/servers`)
     await page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }).waitFor()
     assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '设置', exact: true, includeHidden: true }).getAttribute('aria-current'), 'page')
     assert.equal(await page.getByRole('navigation', { name: '插件中心' }).getByRole('link', { name: 'sing-box 安装', exact: true }).getAttribute('aria-current'), 'page')

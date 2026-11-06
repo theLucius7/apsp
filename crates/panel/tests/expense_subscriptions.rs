@@ -418,7 +418,7 @@ async fn ledger_shows_server_cost_records_and_source_expiries(pool: PgPool) -> R
     ensure!(
         upcoming.iter().any(|e| e["kind"] == "reference"
             && e["name"] == "Airport"
-            && e["path"] == "/plugins/sing-box/nodes?view=sources"),
+            && e["path"] == "/nodes?view=sources"),
         "{summary}"
     );
     ensure!(

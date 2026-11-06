@@ -63,14 +63,14 @@
 | 服务器接入、Agent 对账与签名升级、运行时独立服务 | 服务器列表；服务器详情 |
 | 代理节点与七种协议，节点 TLS 证书的手动上传与自动申请、续期 | 代理节点 |
 | 链路：入口 / 中转 / 落地，订阅来源中的节点作为链路段 | 代理节点 › 链路、订阅来源 |
-| 代理用户、策略组与套餐（额度、有效期、重置周期）；用户只通过策略组获得节点、链路和外部节点（[ADR 0112](adr/0112-group-only-access.md)） | 代理用户；策略与套餐 |
+| 代理用户、策略组与套餐（额度、有效期、重置周期）；用户只通过策略组获得节点、链路和外部节点（[ADR 0112](adr/0112-group-only-access.md)） | 代理用户；策略与套餐（含批量分配策略组） |
 | 订阅生成、预览与重置（sing-box、Clash Meta 与分享链接格式，Clash 客户端按 User-Agent 自动识别）；逐用户代理流量账本；订阅响应头 `Subscription-Userinfo` 让客户端显示用量与到期 | 代理用户 |
-| 用户专属地址：每个用户的订阅和登录使用独立、可重置的随机主机名与路径（默认关闭，[ADR 0103](adr/0103-per-user-subscription-hosts.md)） | 代理用户 › 专属地址 |
-| 代理用户自助门户：Passkey 或邮箱密码登录，查看自己的订阅、用量、套餐与到期，线路目录与探针（ADR 0106），公告与指南，到期与流量提醒 | 代理用户 › 登录地址、门户设置；用户门户 `/#/plugins/sing-box/account/{id}`；邮箱登录 `/#/plugins/sing-box/member` |
-| 邀请：每位代理用户有邀请名额，用名额生成邀请码，被邀请的人凭码自己创建账号，起始套餐、策略组和名额由管理员设定（[ADR 0113](adr/0113-invitation-quota-without-commerce.md)） | 代理用户 › 邀请、门户设置；门户 › 我的账号；接受邀请 `/#/plugins/sing-box/join` |
+| 用户专属地址：每个用户的订阅和登录使用独立、可重置的随机主机名与路径（默认关闭，[ADR 0103](adr/0103-per-user-subscription-hosts.md)） | 代理用户 › 门户设置 › 专属地址 |
+| 代理用户自助门户：Passkey 或邮箱密码登录，查看自己的订阅、用量、套餐与到期，线路目录与探针（ADR 0106），公告与指南，到期与流量提醒 | 代理用户 › 登录地址、门户设置；用户门户 `/#/account/{id}`；邮箱登录 `/#/member` |
+| 邀请：每位代理用户有邀请名额，用名额生成邀请码，被邀请的人凭码自己创建账号，起始套餐、策略组和名额由管理员设定（[ADR 0113](adr/0113-invitation-quota-without-commerce.md)） | 代理用户 › 邀请、门户设置；门户 › 我的账号；接受邀请 `/#/join` |
 | 从 Xboard 一类面板迁移（规划）：导入用户、套餐与用量，保留客户端凭据 | 代理用户（新功能） |
 | sing-box 配置部署、预检、运行时运维与部署历史 | 服务器详情 › 插件 |
-| 登录后的首页：需要处理的事项、关键数字、开始使用步骤、代理网络示意图（各服务器 sing-box 状态与本期流量） | 总览 › 概览 `/#/plugins/sing-box` |
+| 登录后的首页：需要处理的事项、关键数字、开始使用步骤、代理网络示意图（各服务器 sing-box 状态与本期流量） | 总览 › 概览 `/#/home` |
 
 ### 支撑
 
@@ -85,10 +85,10 @@
 | 中国可达性：经第三方探测点比较中国与海外的 TCP 连接，区分端口封锁、IP 封锁与服务故障，默认关闭，仅所有者可用，见 [ADR 0105](adr/0105-china-reachability-monitor.md) | 监控告警 › 延迟检测 › 中国可达性 `/#/latency/reachability` |
 | IP 质量与流媒体、AI 服务解锁；TCP 连接诊断 | 服务器详情 › 线路诊断 › IP 信息、TCP 诊断 |
 | 网络检测中的基础探测（TCP、ICMP、HTTP、DNS、TLS 等）、路由追踪与多来源 IP，计划并入线路质量中心 | 监控告警 › 网络检测 |
-| **费用与续费账本**（Wallos 式）：手动添加的域名、AI 与其他服务，以及按资产设置自动列出的服务器，在「项目」「即将续费」「支出」三个视图中查看：每月费用（按周期平摊并折算）与月预算、下次续费、按月的续费时间线与 iCalendar、续期付款与服务器的购买、续费、退款与退订记录、退订提醒，机场订阅来源报告的到期（仅供参考）；设置对话框管理统计币种、预算、分类与付款方式、提醒和 Wallos 导入，见 [ADR 0096](adr/0096-costs-and-renewals-ledger.md)、[ADR 0097](adr/0097-ledger-server-records-and-source-references.md)、[ADR 0118](adr/0118-costs-and-renewals-page.md) | 总览 › 费用与续费 `/#/plugins/expenses` |
+| **费用与续费账本**（Wallos 式）：手动添加的域名、AI 与其他服务，以及按资产设置自动列出的服务器，在「项目」「即将续费」「支出」三个视图中查看：每月费用（按周期平摊并折算）与月预算、下次续费、按月的续费时间线与 iCalendar、续期付款与服务器的购买、续费、退款与退订记录、退订提醒，机场订阅来源报告的到期（仅供参考）；设置对话框管理统计币种、预算、分类与付款方式、提醒和 Wallos 导入，见 [ADR 0096](adr/0096-costs-and-renewals-ledger.md)、[ADR 0097](adr/0097-ledger-server-records-and-source-references.md)、[ADR 0118](adr/0118-costs-and-renewals-page.md) | 总览 › 费用与续费 `/#/expenses` |
 | 插件中心：插件说明、sing-box 安装与签名制品 | 服务器 › 插件中心 |
 | 面板设置（含功能显示）、账号安全；管理员权限、API 令牌、审计与自检 | 系统 |
-| 面板备份与恢复 | 系统 › 备份与恢复 `/#/system/backup` |
+| 面板备份与恢复 | 系统 › 备份与恢复 `/#/settings/backup` |
 
 ### 可选插件
 
@@ -131,15 +131,15 @@
 
 | 分组 | 入口（分页） | 地址 | 主要级别 |
 | --- | --- | --- | --- |
-| 总览 | 概览（概览、统计报表、服务器看板、订阅看板）；费用与续费 | `/#/plugins/sing-box`、`/#/statistics`、`/#/dashboard`、`/#/subscriptions`；`/#/plugins/expenses` | 核心；支撑 |
-| 代理服务 | 代理节点、代理用户、策略与套餐 | `/#/plugins/sing-box/nodes`、`/#/plugins/sing-box/users`、`/#/plugins/sing-box/groups` | 核心 |
-| 服务器 | 服务器列表；域名解析；阿里云 CDT | `/#/servers`；`/#/plugins/ddns`；`/#/plugins/alicloud` | 核心与支撑；可选插件 |
-| 监控与设置 | 告警（告警事件、告警设置）；线路检测（网络检测、延迟检测）；设置（面板设置、插件中心、备份与恢复、管理与安全、账号安全） | `/#/system/notifications`、`/#/monitoring/settings`；`/#/network-workbench`、`/#/latency`；`/#/system/settings`、`/#/plugins/catalog`、`/#/system/backup`、`/#/system/control-center`、`/#/system/administrator` | 支撑 |
+| 总览 | 概览（概览、统计报表、服务器看板、订阅看板）；费用与续费 | `/#/home`、`/#/statistics`、`/#/dashboard`、`/#/subscriptions`；`/#/expenses` | 核心；支撑 |
+| 代理服务 | 代理节点、代理用户、策略与套餐 | `/#/nodes`、`/#/users`、`/#/groups` | 核心 |
+| 服务器 | 服务器列表；域名解析；阿里云 CDT | `/#/servers`；`/#/dns`；`/#/alicloud` | 核心与支撑；可选插件 |
+| 监控与设置 | 告警（告警事件、告警设置）；线路检测（网络检测、延迟检测）；设置（面板设置、插件中心、备份与恢复、管理与安全、账号安全） | `/#/alerts`、`/#/alerts/settings`；`/#/network-workbench`、`/#/latency`；`/#/settings`、`/#/settings/plugins`、`/#/settings/backup`、`/#/settings/admin`、`/#/settings/account` | 支撑 |
 | 实验功能（默认隐藏） | 自动化与维护、网络配置 | `/#/operations`、`/#/network-configuration` | 降级；部分冻结 |
 
 **服务器详情**按“这台服务器”分为六个分页：概况（`/#/servers/{id}`，即服务器监控面板，与看板单机视图是同一个面板，[ADR 0111](adr/0111-server-monitor-and-ink-jade-visuals.md)）、资产与流量（`/assets`）、Agent 与任务（`/agent`）、插件（`/plugins`）、线路诊断（IP 信息 `/ip-info`、TCP 诊断 `/tcp-quality`、节点验机 `/node-quality` 三个子视图）、运维（实验，`/fleet`，随「显示实验与冻结功能」显示）。页面右上角的「带此服务器打开」菜单进入网络检测（实验功能开启时还有网络配置和自动化与维护），并预先选中这台服务器。管理员在看板点服务器卡片进入服务器详情；`/#/dashboard/{id}` 留给访客和只有监控权限的管理员。
 
-**不在侧栏但仍可用的地址：** `/#/fleet`（原运维工具，显示服务器选择与迁移说明）、`/#/servers/batch`（批量接入，从服务器列表进入）、`/#/system/plugins`（插件中心的 sing-box 安装视图）、`/#/artifacts`（插件中心别名）、`/#/plugins/sing-box/chains`（链路视图）、`/#/latency/reachability`（延迟检测的中国可达性视图）、`/#/plugins/sing-box/users/{id}`（代理用户页直接打开某个用户）、`/#/plugins/expenses/items/{id}` 与 `/#/plugins/expenses/servers/{id}`（费用与续费中某一项的详情）、`/#/overview` 与 `/` （服务器看板别名；登录后无指定地址时进入概览）。
+**不在侧栏但仍可用的地址：** `/#/fleet`（原运维工具，显示服务器选择与迁移说明）、`/#/servers/batch`（批量接入，从服务器列表进入）、`/#/settings/plugins/servers`（插件中心的 sing-box 安装视图）、`/#/artifacts`（插件中心别名）、`/#/nodes?kind=chains`（链路视图）、`/#/latency/reachability`（延迟检测的中国可达性视图）、`/#/users/{id}`（代理用户页直接打开某个用户）、`/#/expenses/items/{id}` 与 `/#/expenses/servers/{id}`（费用与续费中某一项的详情）、`/#/overview` 与 `/` （服务器看板别名；登录后无指定地址时进入概览）。
 
 ## 归类规则
 
@@ -187,4 +187,4 @@
 
 后端的宿主、插件与组装分层不随功能分级改变，见[仓库目录与维护约定](repository.md)。
 
-原「成员运营」（Nexus 迁移带来的钱包、销售套餐、订单与充值）已删除，旧地址 `/#/plugins/sing-box/commerce` 打开「代理用户」；邀请、登录邮件与公告指南归「代理用户」，见 [ADR 0113](adr/0113-invitation-quota-without-commerce.md)。Wallos 订阅费用在「总览 → 费用与续费」，入口仍为 `/#/plugins/expenses`。
+原「成员运营」（Nexus 迁移带来的钱包、销售套餐、订单与充值）已删除，旧地址 `/#/users` 打开「代理用户」；邀请、登录邮件与公告指南归「代理用户」，见 [ADR 0113](adr/0113-invitation-quota-without-commerce.md)。Wallos 订阅费用在「总览 → 费用与续费」，入口仍为 `/#/expenses`。

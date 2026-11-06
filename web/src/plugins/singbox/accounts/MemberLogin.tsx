@@ -17,13 +17,13 @@ const link = 'text-primary font-medium underline-offset-4 hover:underline focus-
 export default function MemberLogin() {
   useSystemTheme()
   const [recover, setRecover] = useState(false), [email, setEmail] = useState(''), [challenge, setChallenge] = useState(''), [notice, setNotice] = useState(''), action = useAction()
-  const navigate = (result: { account_id: string }) => { if (!/^[0-9a-f-]{36}$/.test(result.account_id)) throw new Error('返回的账户入口无效。'); window.location.hash = `/plugins/sing-box/account/${result.account_id}` }
+  const navigate = (result: { account_id: string }) => { if (!/^[0-9a-f-]{36}$/.test(result.account_id)) throw new Error('返回的账户入口无效。'); window.location.hash = `/account/${result.account_id}` }
   const toggle = () => { setRecover(!recover); setChallenge(''); setNotice(''); action.clearError() }
   const send = () => void action.run(() => api<{ challenge_id: string; message: string }>(`${root}/challenge`, 'POST', { email, purpose: 'reset', invitation: null }, undefined, false), value => { setChallenge(value.challenge_id); setNotice(value.message) })
   return <AuthShell slot="member-login" title={recover ? '设置或恢复密码' : '登录我的账户'}
     footer={<>
       <p>{recover ? '恢复已有密码会同时移除已登记的 Passkey，之后可重新添加；首次设置密码不影响 Passkey。无法收信时可联系管理员恢复个人入口。' : '已有 Passkey 可从保存的个人入口登录。'}</p>
-      <p className="mt-2">新成员须先领取邀请。<a className={link} href="#/plugins/sing-box/join">用邀请码创建账号</a></p>
+      <p className="mt-2">新成员须先领取邀请。<a className={link} href="#/join">用邀请码创建账号</a></p>
     </>}>
     <ErrorNotice message={action.error} />
     {notice && <Notice tone="success" role="status">{notice}</Notice>}

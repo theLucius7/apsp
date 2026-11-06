@@ -89,7 +89,7 @@ try {
     })
     try {
       await installControlCenterFixtures(page)
-      await page.goto(`${origin}/#/plugins/sing-box/groups`)
+      await page.goto(`${origin}/#/groups`)
       const row = page.getByRole('row').filter({ hasText: group.name })
       await row.getByText('TEST_ONLY 受管入口、TEST_ONLY 原分配（外部）、TEST_ONLY 已停用节点（外部）', { exact: true }).waitFor()
       const edit = row.getByRole('button', { name: '编辑', exact: true })
@@ -166,7 +166,7 @@ try {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Page fits viewport: ${JSON.stringify(overflow.slice(0, 12))}`)
 
       // The user's subscription lists managed and external nodes without ID collisions.
-      await page.goto(`${origin}/#/plugins/sing-box/users`)
+      await page.goto(`${origin}/#/users`)
       await page.getByRole('button', { name: '订阅详情', exact: true }).click()
       const subscription = page.getByRole('dialog')
       await subscription.getByText('TEST_ONLY 外部入口', { exact: true }).waitFor()

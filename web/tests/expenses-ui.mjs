@@ -89,7 +89,7 @@ try {
         return json({ entries: [
           { kind: 'server', id: 8, name: 'tw0 · 住宅', date: '2026-11-08', amount_units: '125000', currency: 'USD', auto_renew: false },
           { kind: 'item', id: 11, name: 'ChatGPT Plus', date: '2026-11-09', amount_units: '200000', currency: 'USD', auto_renew: true },
-          { kind: 'reference', id: 3, name: '备用机场', date: '2026-11-20', amount_units: null, currency: '', auto_renew: false, path: '/plugins/sing-box/nodes?view=sources' },
+          { kind: 'reference', id: 3, name: '备用机场', date: '2026-11-20', amount_units: null, currency: '', auto_renew: false, path: '/nodes?view=sources' },
           { kind: 'server', id: 7, name: 'hk1 · 阿里云香港', date: '2026-11-20', amount_units: '340000', currency: 'CNY', auto_renew: true },
           { kind: 'item', id: 11, name: 'ChatGPT Plus', date: '2026-12-09', amount_units: '200000', currency: 'USD', auto_renew: true },
         ] })
@@ -112,7 +112,7 @@ try {
     await installControlCenterFixtures(page)
     const rows = page.locator('[data-slot=ledger-row]')
     const overflow = async label => assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${label} overflows at ${width}px`)
-    await page.goto(`${origin}/#/plugins/expenses`)
+    await page.goto(`${origin}/#/expenses`)
     await rows.first().waitFor()
 
     // One list: services and servers together, stopped ones hidden, what is due first.
@@ -129,18 +129,18 @@ try {
 
     // An entry's detail has its own address and Back... or closing returns to the list.
     await rows.filter({ hasText: 'tw0 · 住宅' }).getByRole('button', { name: '费用记录', exact: true }).click()
-    await page.waitForURL(/#\/plugins\/expenses\/servers\/8$/)
+    await page.waitForURL(/#\/expenses\/servers\/8$/)
     const detail = page.locator('[data-dialog=ledger-detail]')
     await detail.locator('[data-slot=cost-record]').first().waitFor()
     assert.equal(await detail.locator('[data-slot=cost-record]').count(), 2)
     assert.equal(await detail.locator('[data-slot=cancellation-reminder]').count(), 1, 'A cancellation sets its reminder where it is recorded')
     await overflow('server detail')
     await detail.getByRole('button', { name: '关闭', exact: true }).first().click()
-    await page.waitForURL(/#\/plugins\/expenses$/)
+    await page.waitForURL(/#\/expenses$/)
 
     if (width === 1440) {
       // Server detail: record a cost and switch on the cancellation reminder.
-      await page.goto(`${origin}/#/plugins/expenses/servers/8`)
+      await page.goto(`${origin}/#/expenses/servers/8`)
       await detail.locator('[data-slot=cancellation-reminder]').waitFor()
       await detail.getByRole('switch', { name: '退订提醒' }).click()
       await detail.locator('[data-slot=cancellation-reminder]').getByRole('button', { name: '保存', exact: true }).click()
@@ -157,7 +157,7 @@ try {
       assert.equal(cost.body.currency, 'USD')
       assert.equal(cost.body.kind, 'renewal')
       await page.goBack()
-      await page.waitForURL(/#\/plugins\/expenses$/)
+      await page.waitForURL(/#\/expenses$/)
       await detail.waitFor({ state: 'detached' })
 
       // Adding an item, with a category created on the spot.
@@ -191,7 +191,7 @@ try {
       await page.getByText('「云盘 2TB」已记录付款，下次续费改为 2026-12-01。').waitFor()
 
       // An item opened by its address: the facts, its payments, and deleting asks first.
-      await page.goto(`${origin}/#/plugins/expenses/items/12`)
+      await page.goto(`${origin}/#/expenses/items/12`)
       await detail.getByText('在 Cloudflare 续费').waitFor()
       await detail.getByText('覆盖 2026-03-02 起的一期').waitFor()
       assert.match(await detail.innerText(), /CNY 90 · 每年[\s\S]*手动续费[\s\S]*2026-03-02/)
@@ -200,7 +200,7 @@ try {
       await detail.locator('[data-slot=confirm]').waitFor()
       assert.equal(writes.filter(write => write.method === 'DELETE').length, 0, 'Nothing is deleted before it is confirmed')
       await detail.getByRole('button', { name: '确认删除', exact: true }).click()
-      await page.waitForURL(/#\/plugins\/expenses$/)
+      await page.waitForURL(/#\/expenses$/)
       assert.equal(writes.filter(write => write.method === 'DELETE' && write.path.endsWith('/subscriptions/12')).length, 1)
 
       // The timeline: past due first, then each month, and the calendar export.
@@ -243,16 +243,16 @@ try {
       await settings.getByRole('button', { name: '完成', exact: true }).click()
     } else {
       // Phones get the same detail, form and settings without sideways scrolling.
-      await page.goto(`${origin}/#/plugins/expenses/items/11`)
+      await page.goto(`${origin}/#/expenses/items/11`)
       await detail.getByRole('button', { name: '编辑', exact: true }).waitFor()
       await overflow('item detail')
       await detail.getByRole('button', { name: '编辑', exact: true }).click()
       await page.locator('[data-dialog=expense-form]').waitFor()
       await overflow('form')
       await page.locator('[data-dialog=expense-form]').getByRole('button', { name: '取消', exact: true }).click()
-      await page.waitForURL(/#\/plugins\/expenses\/items\/11$/)
+      await page.waitForURL(/#\/expenses\/items\/11$/)
       await detail.getByRole('button', { name: '编辑', exact: true }).waitFor()
-      await page.goto(`${origin}/#/plugins/expenses`)
+      await page.goto(`${origin}/#/expenses`)
       for (const view of ['即将续费', '支出']) { await page.getByRole('button', { name: view, exact: true }).click(); await page.waitForTimeout(200); await overflow(view) }
       await page.getByRole('button', { name: '设置', exact: true }).click()
       await page.locator('[data-dialog=ledger-settings]').waitFor()

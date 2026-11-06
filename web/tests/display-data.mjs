@@ -135,7 +135,7 @@ try {
     assert.equal(await page.getByRole('button', { name: '更新汇率', exact: true }).count(), 0)
     const changeCurrency = async code => {
       await installControlCenterFixtures(page)
-      await page.goto(`${origin}/#/system/settings`)
+      await page.goto(`${origin}/#/settings`)
       const settings = page.locator('[data-slot=exchange-rate-settings]')
       await settings.getByLabel('显示币种', { exact: false }).selectOption(code)
       await settings.getByRole('button', { name: '保存显示币种', exact: true }).click()
@@ -152,7 +152,7 @@ try {
     await changeCurrency('CNY')
     assert.equal(writes.length, 0, 'Changing the display preference does not write server settings or fetch provider rates')
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/system/settings`)
+    await page.goto(`${origin}/#/settings`)
     const exchange = page.locator('[data-slot=exchange-rate-settings]')
     await exchange.getByRole('button', { name: '更新汇率', exact: true }).click()
     await exchange.getByText('刷新过于频繁，请稍后重试。', { exact: false }).waitFor()

@@ -174,7 +174,7 @@ export default function HetznerInventory({ servers, run, version }: { servers: S
     {canManageAccounts && <form onSubmit={event => { event.preventDefault(); saveAccount() }}>
       <h4 className="text-sm font-medium">{accountDraft.id ? '编辑本地账号引用' : '登记 Hetzner 账号'}</h4>
       <div className="flex flex-wrap gap-2.5"><label className="max-sm:basis-full my-2 grid min-w-0 flex-[1_1_12rem] gap-1.5 text-sm has-[[role=checkbox]]:flex has-[[role=checkbox]]:flex-none has-[[role=checkbox]]:items-center">账号名称<Input required maxLength={128} value={accountDraft.name} onChange={event => setAccountDraft({ ...accountDraft, name: event.target.value })} /></label><label className="max-sm:basis-full my-2 grid min-w-0 flex-[1_1_12rem] gap-1.5 text-sm has-[[role=checkbox]]:flex has-[[role=checkbox]]:flex-none has-[[role=checkbox]]:items-center">加密云凭据引用编号<Input required value={accountDraft.credential_id} autoComplete="off" placeholder="填写凭据中心生成的编号" onChange={event => setAccountDraft({ ...accountDraft, credential_id: event.target.value })} /></label></div>
-      <p>先在<a className="text-primary underline-offset-4 hover:underline" href="#/system/control-center">凭据中心</a>创建用途为云账号的加密凭据，正文将 provider 设为 hetzner，并用 api_token 字段保存官方只读令牌。此处只保存引用编号，不接收或展示令牌。</p>
+      <p>先在<a className="text-primary underline-offset-4 hover:underline" href="#/settings/admin">凭据中心</a>创建用途为云账号的加密凭据，正文将 provider 设为 hetzner，并用 api_token 字段保存官方只读令牌。此处只保存引用编号，不接收或展示令牌。</p>
       <div className="flex flex-wrap gap-2.5"><Button variant="outline" type="submit">验证身份并保存账号引用</Button>{accountDraft.id && <Button variant="outline" type="button" onClick={() => { setAccountDraft(emptyAccount); setAccountError('') }}>返回登记新账号</Button>}</div>
     </form>}
     {inventory && <>

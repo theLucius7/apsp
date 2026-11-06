@@ -16,5 +16,5 @@ export function ServerPluginsSection({ serverId, server }: { serverId: number; s
 
 /** Every server's sing-box installation, for the plugin centre. */
 export function PluginSettings() {
-  return <><SingboxSettings /><DdnsEntry href="#/plugins/ddns" /></>
+  return <><SingboxSettings /><DdnsEntry href="#/dns" /></>
 }

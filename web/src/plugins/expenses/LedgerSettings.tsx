@@ -37,7 +37,7 @@ function General({ onChanged }: { onChanged: () => void }) {
       </div>
       <Field label="日期时区" hint="决定“今天”是哪一天，续费日按这个时区计算。"><Input name="timezone" required list="ledger-zones" defaultValue={value.timezone} /></Field>
       <datalist id="ledger-zones">{zones.map(zone => <option key={zone} value={zone} />)}</datalist>
-      <SettingRow title="续费提醒" description={<>总开关：打开后，开启了提醒的项目在续费前经「告警设置」的渠道通知；关闭时取消尚未发送的提醒。<a className="text-primary ml-1 underline-offset-4 hover:underline" href="#/monitoring/settings">通知渠道</a></>}>
+      <SettingRow title="续费提醒" description={<>总开关：打开后，开启了提醒的项目在续费前经「告警设置」的渠道通知；关闭时取消尚未发送的提醒。<a className="text-primary ml-1 underline-offset-4 hover:underline" href="#/alerts/settings">通知渠道</a></>}>
         <Switch name="reminders" defaultChecked={value.reminders_enabled} />
       </SettingRow>
       <div className="mt-4 flex items-center justify-end gap-3">{saved && <span role="status" className="text-success text-xs">已保存</span>}<Button disabled={action.busy || !settings.isCurrent()}>{action.busy ? '正在保存…' : '保存'}</Button></div>

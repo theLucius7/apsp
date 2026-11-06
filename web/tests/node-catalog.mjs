@@ -117,7 +117,7 @@ try {
     const rowAction = async (name, action) => { await row(name).getByRole('button', { name: '更多操作', exact: true }).click(); await page.getByRole('menu').getByRole('menuitem', { name: action, exact: true }).click() }
     try {
       await installControlCenterFixtures(page)
-      await page.goto(`${origin}/#/plugins/sing-box/nodes`)
+      await page.goto(`${origin}/#/nodes`)
       await row('外部 01').waitFor(); await row('受管节点').getByText('managed.example.com:8443', { exact: true }).waitFor()
       assert.equal(await library.locator('[data-slot=catalog-table]').isVisible(), !cards, `The catalog shows ${cards ? 'cards' : 'a table'} at ${width}px`)
       assert.equal(await row('受管节点').getByText('0 B', { exact: true }).count(), 1)

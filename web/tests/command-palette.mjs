@@ -26,7 +26,9 @@ try {
   for (const width of [1440, 390]) {
     const page = await browser.newPage({ viewport: { width, height: 900 } })
     const errors = [], writes = [], searches = [], answered = []
-    const preferences = { recent: { value: [], revision: 0 }, favorite: { value: [], revision: 0 } }
+    // One page visited before the address rename (ADR 0120) and again after it.
+    const users = { kind: 'page', id: 'proxy-users', label: '代理用户', path: '/users' }
+    const preferences = { recent: { value: [{ ...users, path: '/plugins/sing-box/users' }, users], revision: 0 }, favorite: { value: [], revision: 0 } }
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
       const request = route.request(), url = new URL(request.url()), path = url.pathname
@@ -74,6 +76,9 @@ try {
       assert.equal(await dialog.getByRole('group', { name: '页面' }).getByRole('option').count() >= 15, true, 'Every sidebar page can be jumped to')
       assert.equal(await selected().count(), 1, 'Exactly one option is active')
       assert.equal(await input.getAttribute('aria-activedescendant'), await selected().getAttribute('id'), 'The active option is announced')
+      const savedVisit = dialog.getByRole('group', { name: '最近访问' }).getByRole('option', { name: /代理用户/ })
+      await savedVisit.first().waitFor()
+      assert.equal(await savedVisit.count(), 1, 'A page saved under its former address is listed once')
 
       // Typing filters pages; arrow keys move and wrap without leaving the field.
       await input.fill('告警')
@@ -119,8 +124,8 @@ try {
       await dialog.getByRole('option', { name: /告警设置/ }).waitFor()
       await input.press('Enter')
       await dialog.waitFor({ state: 'hidden' })
-      assert.equal(new URL(page.url()).hash, '#/monitoring/settings')
-      assert.deepEqual(writes.at(-1), { key: 'recent', value: [{ kind: 'page', id: 'alert-settings', label: '告警设置', path: '/monitoring/settings' }] })
+      assert.equal(new URL(page.url()).hash, '#/alerts/settings')
+      assert.deepEqual(writes.at(-1), { key: 'recent', value: [{ kind: 'page', id: 'alert-settings', label: '告警设置', path: '/alerts/settings' }, users] })
 
       // Ctrl+K reopens it from anywhere; the visit now appears under recent pages.
       await page.locator('body').press('Control+k')

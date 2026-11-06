@@ -87,7 +87,7 @@ try {
     const choose = async (label, target) => (await menu(label, target)).click()
     const disabled = async label => { const item = await menu(label); const value = await item.getAttribute('aria-disabled'); await page.keyboard.press('Escape'); return value === 'true' }
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/plugins/ddns`)
+    await page.goto(`${origin}/#/dns`)
     await page.getByRole('heading', { name: '域名解析', exact: true }).waitFor()
     await page.getByRole('heading', { name: '先连接 DNS 账号', exact: true }).waitFor()
     assert.equal(await page.getByText('插件未启用', { exact: false }).count(), 0, 'Servers need no per-server switch')
@@ -284,7 +284,7 @@ try {
     assert.equal(await page.getByText('另一台服务器', { exact: false }).count(), 0)
     failRules = true
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/plugins/ddns`)
+    await page.goto(`${origin}/#/dns`)
     await page.getByRole('heading', { name: '解析状态暂不可用', exact: true }).waitFor()
     assert.match(await page.locator('[data-slot=panel-header]').first().innerText(), /— \/ 32/)
     assert.equal(await page.getByRole('heading', { name: '还没有解析' }).count(), 0)

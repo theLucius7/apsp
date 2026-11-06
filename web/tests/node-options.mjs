@@ -68,7 +68,7 @@ try {
       await route.fulfill({json:value})
     })
     await installControlCenterFixtures(page)
-    await page.goto(`http://127.0.0.1:${server.address().port}/#/plugins/sing-box/nodes`)
+    await page.goto(`http://127.0.0.1:${server.address().port}/#/nodes`)
     const dialog=page.getByRole('dialog')
     for(let index=0;index<fixtures.length;index++) {
       await page.getByRole('button',{name:'编辑',exact:true}).nth(index).click()

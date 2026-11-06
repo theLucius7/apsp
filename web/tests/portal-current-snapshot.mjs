@@ -64,7 +64,7 @@ try {
           assert.equal(path, `${portalPath}/invitation`, 'an old draft must never redirect credentials to another user')
           // Identity comes from the shared recent proof; the request never carries a password.
           assert.deepEqual(Object.keys(writes.at(-1).body), ['reset'])
-          value = { url: `${origin}/#/plugins/sing-box/account/00000000-0000-4000-8000-000000000001?activate=${'A'.repeat(43)}`, expires_at: Math.floor(Date.now() / 1000) + 900 }
+          value = { url: `${origin}/#/account/00000000-0000-4000-8000-000000000001?activate=${'A'.repeat(43)}`, expires_at: Math.floor(Date.now() / 1000) + 900 }
         } else if (method === 'GET' && [ `${prefix}/policy-groups`, `${prefix}/package-groups` ].includes(path)) value = []
         else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/policy-groups$/.test(path)) value = { group_ids: [] }
         else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/entitlement$/.test(path)) value = { user_id: Number(path.split('/')[5]), package_group_id: null, package_name: null, monthly_bytes: null, starts_at: null, expires_at: null, used_bytes: '0', status: 'unmetered', allowed: true }
@@ -75,7 +75,7 @@ try {
       pending.push(task); return task
     })
     // Open modal dialogs hide the page behind them from the accessibility tree.
-    const portalPanel = page.locator('section[data-slot=panel]').filter({ has: page.getByRole('heading', { name: '登录地址', exact: true, includeHidden: true }) })
+    const portalPanel = page.locator('section[data-slot=user-login-access]')
     const pageRefresh = page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true })
     const portalRefresh = portalPanel.getByRole('button', { name: '刷新', exact: true, includeHidden: true })
     const reread = async (path = portalPath) => {
@@ -103,7 +103,7 @@ try {
     }
     try {
       await installControlCenterFixtures(page)
-      await page.goto(`${origin}/#/plugins/sing-box/users`)
+      await page.goto(`${origin}/#/users`)
       const open = portalPanel.getByRole('button', { name: '生成开通链接', exact: true })
       await wait(() => open.isEnabled(), 'initial current user and portal must be ready')
       await open.evaluate(button => {
@@ -164,7 +164,7 @@ try {
       await dialog.getByRole('heading', { name: '用户开通链接', exact: true }).waitFor()
       assert.equal(writes.length, 1); assert.equal(writes[0].body.reset, false)
       await dialog.getByRole('button', { name: '关闭对话框', exact: true }).click()
-      access = { ...original, keys: 1, url: `${origin}/#/plugins/sing-box/account/00000000-0000-4000-8000-000000000001` }; await reread()
+      access = { ...original, keys: 1, url: `${origin}/#/account/00000000-0000-4000-8000-000000000001` }; await reread()
       const reset = portalPanel.getByRole('button', { name: '重置用户 Passkey', exact: true })
       await wait(() => reset.isEnabled(), 'current one-key portal can explicitly open a reset')
       await reset.click(); await capture()

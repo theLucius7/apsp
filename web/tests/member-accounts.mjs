@@ -60,7 +60,7 @@ try {
       else if (method === 'GET' && path === `${root}/package-groups`) value = packages
       else if (method === 'GET' && path === `${root}/users/1/entitlement`) value = { user_id: 1, package_group_id: null, package_name: null, monthly_bytes: null, starts_at: null, expires_at: null, cycle_start: null, next_reset: null, used_bytes: '0', status: 'unmetered', allowed: true }
       else if (method === 'GET' && path === `${root}/users/1/policy-groups`) value = { group_ids: [1] }
-      else if (method === 'GET' && path === `${root}/users/1/portal`) value = { configuration: { enabled: true, reason: null, origin }, keys: 1, url: `${origin}/#/plugins/sing-box/account/${account}`, activation_expires_at: null }
+      else if (method === 'GET' && path === `${root}/users/1/portal`) value = { configuration: { enabled: true, reason: null, origin }, keys: 1, url: `${origin}/#/account/${account}`, activation_expires_at: null }
       else if (method === 'GET' && !url.search && path === `${root}/users/1/diagnosis`) value = diagnosis
       else if (method === 'GET' && !url.search && path === `${root}/users/1/client-template`) value = template
       else if (method === 'GET' && path === `${root}/users/1/invitations`) value = { remaining: quota, issued, invited_by: { id: 9, name: 'TEST_ONLY 邀请人' }, events: [{ id: 1, delta: 3, remaining: 3, reason: 'balance_conversion', detail: { balance_cents: 300, price_cents: 100 }, created_at: 1790000000 }] }
@@ -82,7 +82,7 @@ try {
         if (dropNextInvitation) { dropNextInvitation = false; return route.fulfill({ status: 503, json: { error: 'TEST_ONLY 响应丢失，请重试' } }) }
         remaining -= body.quantity
         issued.push({ id: 'inv-2', hint: code.slice(-4), origin: 'quota', state: 'available', created_at: 1790000200, claimed_at: null, revoked_at: null, recipient: null })
-        value = { codes: [code], links: [`${origin}/#/plugins/sing-box/join/${code}`] }
+        value = { codes: [code], links: [`${origin}/#/join/${code}`] }
       }
       else if (method === 'POST' && path === `${root}/portal/${account}/invitations/inv-2/revoke`) { Object.assign(issued.find(entry => entry.id === 'inv-2'), { state: 'revoked', revoked_at: 1790000300 }); remaining += 1; value = {} }
       else if (method === 'PUT' && path === `${root}/portal/${account}/account/reminders`) value = {}
@@ -93,14 +93,14 @@ try {
         if (body.token !== code) return route.fulfill({ status: 404, json: { error: '邀请不存在' } })
         value = { available: true, package_name: 'TEST_ONLY 套餐', email_verification_required: false, configuration: { enabled: true } }
       }
-      else if (method === 'POST' && path === `${root}/portal-public/claim`) value = { url: `${origin}/#/plugins/sing-box/account/${account}?activate=${'A'.repeat(43)}` }
+      else if (method === 'POST' && path === `${root}/portal-public/claim`) value = { url: `${origin}/#/account/${account}?activate=${'A'.repeat(43)}` }
       else { unexpected.push(`${method} ${path}`); return route.fulfill({ status: 404, json: { error: 'TEST_ONLY 未知请求' } }) }
       return route.fulfill({ json: value })
     })
     await installControlCenterFixtures(page)
 
     // The former member operations address opens 代理用户; no 成员运营 entry remains.
-    await page.goto(`${origin}/#/plugins/sing-box/commerce`)
+    await page.goto(`${origin}/#/users`)
     await page.locator('[data-slot=page-header]').getByRole('heading', { name: '代理用户', exact: true }).waitFor()
     assert.equal(await page.getByRole('link', { name: '成员运营', includeHidden: true }).count(), 0)
     await page.locator('[data-slot=user-heading]').getByRole('heading', { name: user.name, exact: true }).waitFor()
@@ -108,7 +108,8 @@ try {
     const portal = page.getByRole('dialog', { name: '门户设置' })
     const portalTabs = portal.getByRole('navigation', { name: '门户设置' })
     await portalTabs.getByRole('button', { name: '公告与指南', exact: true }).waitFor()
-    assert.deepEqual(await portalTabs.getByRole('button').allTextContents(), ['邀请', '登录邮件', '公告与指南'])
+    // The owner also sets the users' own addresses here; it used to be a separate button.
+    assert.deepEqual(await portalTabs.getByRole('button').allTextContents(), ['邀请', '登录邮件', '公告与指南', '专属地址'])
     await portal.getByText('允许代理用户用邀请名额生成邀请码', { exact: true }).click()
     await portal.getByLabel('受邀账号的套餐').selectOption('2')
     await portal.getByRole('checkbox', { name: 'TEST_ONLY 策略', exact: true }).check()
@@ -142,7 +143,7 @@ try {
     assert.ok(await fits(page), `proxy users fit ${width}px`)
 
     // Email and password sign-in.
-    await page.goto(`${origin}/#/plugins/sing-box/member`)
+    await page.goto(`${origin}/#/member`)
     await page.getByLabel('邮箱', { exact: true }).fill('fixture@example.com')
     await page.getByLabel('密码', { exact: true }).fill('wrong-fixture-password')
     await page.getByRole('button', { name: '登录', exact: true }).click()
@@ -165,7 +166,7 @@ try {
     await page.getByRole('button', { name: '生成邀请码', exact: true }).click()
     await page.getByText('邀请码只显示这一次，请复制后发给对方。', { exact: true }).waitFor()
     await page.getByText(`邀请码 ${code}`, { exact: true }).waitFor()
-    assert.equal(await page.locator('[data-slot=copy-field] code').filter({ hasText: `/#/plugins/sing-box/join/${code}` }).count(), 1)
+    assert.equal(await page.locator('[data-slot=copy-field] code').filter({ hasText: `/#/join/${code}` }).count(), 1)
     const created = writes.filter(write => write.path === `${root}/portal/${account}/invitations`)
     assert.equal(created.length, 2)
     assert.equal(created[0].body.quantity, 1)
@@ -206,7 +207,7 @@ try {
     assert.deepEqual(writes.filter(write => write.path.endsWith('/account/messages/read')).map(write => write.body), [{ ids: [1] }])
 
     // A visitor types a code: an unknown one is explained and the input stays.
-    await page.goto(`${origin}/#/plugins/sing-box/join`)
+    await page.goto(`${origin}/#/join`)
     await page.getByRole('heading', { name: '用邀请码创建账号', exact: true }).waitFor()
     const input = page.getByLabel('邀请码', { exact: true })
     assert.equal(await input.getAttribute('placeholder'), 'XXXX-XXXX-XXXX-XXXX')
@@ -222,14 +223,22 @@ try {
     await page.getByLabel('联系邮箱', { exact: true }).fill('new@example.com')
     await page.getByRole('button', { name: '创建账号', exact: true }).click()
     // The portal opens with the one-time activation and then drops it from the address.
-    await page.waitForFunction(expected => location.hash === expected, `#/plugins/sing-box/account/${account}`)
+    await page.waitForFunction(expected => location.hash === expected, `#/account/${account}`)
     const claim = writes.find(write => write.path === `${root}/portal-public/claim`)
     assert.equal(claim.body.token, code); assert.equal(claim.body.name, 'TEST_ONLY 新成员'); assert.equal(claim.body.email, 'new@example.com')
     assert.equal(claim.body.challenge_id, null); assert.match(claim.body.request_id, /^[0-9a-f-]{36}$/)
     // A link carrying the code checks it at once.
-    await page.goto(`${origin}/#/plugins/sing-box/join/${code}`)
+    await page.goto(`${origin}/#/join/${code}`)
     await page.getByText('创建后即可使用「TEST_ONLY 套餐」。', { exact: true }).waitFor()
     assert.deepEqual(writes.filter(write => write.path === `${root}/portal-public/invitation`).map(write => write.body.token), ['ZZZZ-ZZZZ-ZZZZ-ZZZZ', code, code])
+
+    // Links sent before the page addresses were renamed open the same page under the current address.
+    await page.goto(`${origin}/#/plugins/sing-box/join/${code}`)
+    await page.getByText('创建后即可使用「TEST_ONLY 套餐」。', { exact: true }).waitFor()
+    assert.equal(new URL(page.url()).hash, `#/join/${code}`)
+    await page.goto(`${origin}/#/plugins/sing-box/member`)
+    await page.getByLabel('邮箱', { exact: true }).waitFor()
+    assert.equal(new URL(page.url()).hash, '#/member')
 
     assert.deepEqual(unexpected, [])
     assert.deepEqual(dialogs, [])

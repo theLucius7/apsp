@@ -49,7 +49,7 @@ export default function ServerBusiness({ serverId, runtimeVersion }: { serverId:
         <PanelTitle>sing-box{installation && <Badge tone={installation.tone}>{installation.label}</Badge>}</PanelTitle>
         <div className="flex items-center gap-1">
           <Refresh onClick={refresh} />
-          {enabled ? <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={`#/plugins/sing-box/nodes?server=${serverId}`}>管理节点</a>
+          {enabled ? <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={`#/nodes?server=${serverId}`}>管理节点</a>
             : server && <Button size="sm" disabled={action.busy || Boolean(resourceWriteError(metadata)) || server.read_only} onClick={enable}>安装 sing-box</Button>}
         </div>
       </PanelHeader>
@@ -70,7 +70,7 @@ export default function ServerBusiness({ serverId, runtimeVersion }: { serverId:
           </div> : <p className="text-muted-foreground text-[13px]">还没有发布记录。安装时先部署空运行时；新增有效节点须在下方运维入口采集并确认完整预检。</p>)}
           {enabled && <div className="grid gap-1.5">
             <span className="text-muted-foreground text-xs">此服务器的节点</span>
-            <div className="flex flex-wrap gap-1.5">{own.map(node => <a key={node.id} href={`#/plugins/sing-box/nodes?server=${serverId}`} className="bg-muted/60 hover:border-foreground/25 flex max-w-full items-center gap-1.5 rounded-md border px-2.5 py-1 text-[13px]"><WaypointsIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{node.name}</span><code className="text-muted-foreground text-xs">:{node.port}</code></a>)}
+            <div className="flex flex-wrap gap-1.5">{own.map(node => <a key={node.id} href={`#/nodes?server=${serverId}`} className="bg-muted/60 hover:border-foreground/25 flex max-w-full items-center gap-1.5 rounded-md border px-2.5 py-1 text-[13px]"><WaypointsIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{node.name}</span><code className="text-muted-foreground text-xs">:{node.port}</code></a>)}
               {!own.length && <span className="text-muted-foreground text-[13px]">尚未创建节点。</span>}</div>
           </div>}
         </>}
