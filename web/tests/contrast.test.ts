@@ -88,3 +88,10 @@ test('components use tokens instead of literal colours', () => {
   const outside = css.replace(/:root \{[^}]*\}/, '').replace(/\[data-theme="dark"\] \{[^}]*\}/, '')
   expect(outside.match(/#[0-9a-f]{3,8}\b|rgb\(|oklch\(/gi) ?? []).toEqual([])
 })
+
+test('the splash in index.html paints the theme backgrounds', () => {
+  // index.html draws the first screen before the stylesheet arrives, so it repeats these two values.
+  const html = readFileSync(fileURLToPath(new URL('../index.html', import.meta.url)), 'utf8')
+  expect(html.match(/html \{ background: ([^;]+); \}/)?.[1]).toBe(light['--background'])
+  expect(html.match(/html\[data-theme="dark"\] \{ background: ([^;]+); \}/)?.[1]).toBe(dark['--background'])
+})

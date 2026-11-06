@@ -51,14 +51,14 @@ export default function AccountMenu({ actor, busy, onLogout, collapsed }: { acto
         {!collapsed && <>
           <span className="grid min-w-0 flex-1 leading-tight">
             <strong className="truncate text-[13px] font-semibold">{name}</strong>
-            <small className="text-muted-foreground mt-0.5 truncate text-[11.5px]">{secondary}</small>
+            <small className="text-muted-foreground mt-0.5 truncate text-xs">{secondary}</small>
           </span>
           <ChevronsUpDownIcon className="text-muted-foreground group-hover/account:text-foreground size-4 shrink-0 transition-colors" aria-hidden="true" />
         </>}
       </button>
     </DropdownMenuTrigger>
     <DropdownMenuContent side={collapsed ? 'right' : 'top'} align="start" className="w-60">
-      <div className="flex items-center gap-2.5 px-2 pt-1.5 pb-2">{avatar}<span className="grid min-w-0 leading-tight"><strong className="truncate text-[13px] font-semibold">{name}</strong><small className="text-muted-foreground mt-0.5 truncate text-[11.5px]">{role}</small></span></div>
+      <div className="flex items-center gap-2.5 px-2 pt-1.5 pb-2">{avatar}<span className="grid min-w-0 leading-tight"><strong className="truncate text-[13px] font-semibold">{name}</strong><small className="text-muted-foreground mt-0.5 truncate text-xs">{role}</small></span></div>
       <DropdownMenuSeparator />
       <DropdownMenuLabel className="text-muted-foreground text-xs font-medium">{t('主题')}</DropdownMenuLabel>
       {themes.map(item => {

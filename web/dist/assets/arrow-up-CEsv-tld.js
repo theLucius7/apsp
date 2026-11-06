@@ -1,1 +1,0 @@
-import{e as o}from"./index-CX5ZVsf8.js";const e={name:"arrow-up",size:24,node:[["path",{d:"m5 12 7-7 7 7",key:"hav0vg"}],["path",{d:"M12 19V5",key:"x0mq9r"}]]};e.node;const r=o(e);export{r as A};

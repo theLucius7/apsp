@@ -106,7 +106,7 @@ export default function Expenses({ item, server }: { item?: number; server?: num
   const parts = [totals.overdue && `${totals.overdue} 项已过续费日`, totals.soon && `${totals.soon} 项 7 天内到期`].filter(Boolean)
 
   return <>
-    <PageHeader title="费用与续费" description="为哪些服务付钱、接下来要付什么、一共花了多少；只记账和提醒，不会付款。">
+    <PageHeader title="费用与续费">
       <Refresh onClick={ledger.reload} />
       <Button variant="outline" onClick={() => setSettings('general')}><Settings2Icon aria-hidden="true" />设置</Button>
       <Button disabled={ledger.stale} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />添加项目</Button>

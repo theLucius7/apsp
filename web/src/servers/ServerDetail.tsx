@@ -66,7 +66,7 @@ export default function ServerDetail({ id, section = 'overview' }: { id: number;
     ...(showExperimental ? [{ path: 'network-configuration', label: '网络配置（实验）' }, { path: 'operations', label: '自动化与维护（实验）' }] : []),
   ]
   return <>
-    <PageHeader leading={back} title={entry.name} description={identity(entry)}>
+    <PageHeader leading={back} title={entry.name} meta={identity(entry)}>
       <Badge tone={entry.online ? 'good' : 'neutral'}>{t(entry.online ? '在线' : entry.device_public_key ? '离线' : '待接入')}</Badge>
       {entry.metrics_stale && <Badge tone="warm">指标过期</Badge>}
       <Refresh onClick={refresh} />

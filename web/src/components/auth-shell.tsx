@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 
 // Every page a visitor sees before signing in (administrator, proxy user,
 // invitation) shares one layout: the mark inside a slowly turning network, a
-// title, one card and a quiet footer. Nothing here may describe what the
+// short title, one card and a quiet footer; no subtitle, the form says the rest. Nothing here may describe what the
 // panel does: before sign-in the only name shown is "apsp" (#219).
 
 function AuthArt() {
@@ -26,8 +26,8 @@ function AuthArt() {
   </div>
 }
 
-export function AuthShell({ slot, title, description, corner, steps, footer, children }: {
-  slot: string; title: string; description?: ReactNode; corner?: ReactNode; steps?: ReactNode; footer?: ReactNode; children: ReactNode
+export function AuthShell({ slot, title, corner, steps, footer, children }: {
+  slot: string; title: string; corner?: ReactNode; steps?: ReactNode; footer?: ReactNode; children: ReactNode
 }) {
   const { t } = useI18n()
   return <main data-slot={slot} className="relative grid min-h-dvh place-items-center px-5 py-12 sm:px-8">
@@ -35,8 +35,7 @@ export function AuthShell({ slot, title, description, corner, steps, footer, chi
     <div className="mx-auto w-full max-w-[26rem] min-w-0">
       <AuthArt />
       <p className="-mt-2 mb-7 text-center text-lg font-semibold tracking-[-0.02em]">{t('apsp')}</p>
-      <h1 className="text-center text-[28px] leading-tight font-semibold tracking-[-0.02em]">{title}</h1>
-      {description && <p className="text-muted-foreground mt-1.5 text-center text-sm leading-relaxed">{description}</p>}
+      <h1 className="text-center text-[22px] leading-tight font-semibold tracking-[-0.01em]">{title}</h1>
       {steps}
       <div className="bg-card shadow-lifted mt-6 rounded-[20px] border p-6 sm:p-7">{children}</div>
       {footer && <div className="text-muted-foreground mt-5 text-center text-xs leading-relaxed">{footer}</div>}

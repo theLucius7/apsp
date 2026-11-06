@@ -141,7 +141,7 @@ export default function ProxyUsers({ initialUserId }: { initialUserId?: number }
   const groupNames = (line?.group_ids ?? []).map(id => groups.data?.find(group => group.id === id)?.name).filter(Boolean)
   const empty = Boolean(users.data && !users.data.length)
   return <>
-    <PageHeader title="代理用户" description="选一个人，就能复制订阅链接、发登录地址、修改能用的节点和套餐。">
+    <PageHeader title="代理用户">
       <Refresh onClick={refresh} />
       <Button variant="outline" onClick={() => setPortalOpen(true)}><Settings2Icon aria-hidden="true" />门户设置</Button>
       {actor.data?.role === 'owner' && <Button variant="outline" onClick={() => setDomainOpen(true)}><GlobeIcon aria-hidden="true" />专属地址</Button>}
@@ -178,7 +178,7 @@ export default function ProxyUsers({ initialUserId }: { initialUserId?: number }
       </Panel>
       {selected !== null && <div className="min-w-0">
         {user && <div data-slot="user-heading" className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-          <h2 className="text-base font-semibold wrap-anywhere">{user.name}</h2>
+          <h2 className="text-sm font-semibold wrap-anywhere">{user.name}</h2>
           {line && <Badge tone={!line.allowed ? 'bad' : line.status === 'active' ? 'good' : 'neutral'}>{line.status === 'unmetered' ? '不限流量' : statusText[line.status]}</Badge>}
           <span className="text-muted-foreground min-w-0 text-xs">#{user.id}{line ? ` · ${portalText(line)}` : ''}{groupNames.length ? ` · ${groupNames.join('、')}` : ''}{line?.expires_at ? ` · 到 ${dayText(line.expires_at)}` : ''}</span>
           <div className="ml-auto flex items-center gap-1">

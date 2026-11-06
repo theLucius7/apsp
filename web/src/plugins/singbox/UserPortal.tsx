@@ -83,7 +83,6 @@ export default function UserPortal({ account, activation }: { account: string; a
   // Signing in and activation share the sign-in layout; the account itself is a page of cards.
   if (data && !data.authenticated) return <AuthShell slot="proxy-portal" corner={<LanguageSelect />}
     title={token ? '开通我的账户' : '登录我的账户'}
-    description={token ? '为此账户绑定 Passkey，之后可查看自己的订阅和流量。' : '使用已绑定的设备或安全密钥验证身份。'}
     footer={token ? '开通链接只能使用一次。' : '尚未开通或丢失密钥时，请联系管理员获取新的开通链接。'}>
     <ErrorNotice message={error} retry={reload} /><ErrorNotice message={action.error} />
     {notice && <Notice tone="success" role="status">{notice}</Notice>}

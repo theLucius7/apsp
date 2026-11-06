@@ -41,7 +41,7 @@ export default function Login({ onLogin, notice }: { onLogin: () => void; notice
     void action.run(() => loginPasskey('/api/login/passkey', true, { login_name: name || 'admin' }), onLogin)
   }
 
-  return <AuthShell slot="login-page" corner={<LanguageSelect />} title={t('欢迎回来')} description={t('使用管理员账号登录。')}
+  return <AuthShell slot="login-page" corner={<LanguageSelect />} title={t('欢迎回来')}
     footer={t('其他用户请使用管理员发给你的登录地址。')}>
     <ErrorNotice message={action.error || notice} />
     <form ref={form} onSubmit={submit} className="grid gap-4">

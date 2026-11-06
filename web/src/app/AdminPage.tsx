@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ComponentType, ReactNode } from 'react'
-import { ErrorNotice, Loading } from '../components'
+import { ErrorNotice, PageSkeleton } from '../components'
 import type { AppRoute } from './routes'
 import { homePath } from './navigation'
 import { buttonVariants } from '@/components/ui/button'
@@ -19,7 +19,7 @@ function lazyPage<P extends object>(load: () => Promise<{ default: ComponentType
   let pending: Promise<ComponentType<P>> | undefined
   const start = () => (pending ??= load().then(module => (loaded = module.default)))
   if (preload) preloads.push(() => { void start().catch(() => { pending = undefined }) })
-  return function LazyPage(props: P) {
+  function LazyPage(props: P) {
     const [page, setPage] = useState<ComponentType<P> | undefined>(() => loaded)
     const [failed, setFailed] = useState(false)
     useEffect(() => {
@@ -34,8 +34,9 @@ function lazyPage<P extends object>(load: () => Promise<{ default: ComponentType
     }, [page])
     const Page = page
     if (Page) return <Page {...props} />
-    return failed ? <ErrorNotice message="页面加载失败，请检查网络后刷新重试。" retry={() => window.location.reload()} /> : <Loading />
+    return failed ? <ErrorNotice message="页面加载失败，请检查网络后刷新重试。" retry={() => window.location.reload()} /> : <PageSkeleton />
   }
+  return Object.assign(LazyPage, { preload: () => void start().catch(() => { pending = undefined }) })
 }
 
 /** Fetches the everyday pages while idle, so moving between them never waits on the network. */
@@ -74,6 +75,22 @@ const NetworkWorkbench = lazyPage(() => import('../network-workbench/NetworkWork
 const NetworkConfiguration = lazyPage(() => import('../network-configuration/NetworkConfiguration'))
 const OperationsPage = lazyPage(() => import('../operations/OperationsPage'))
 const ControlCenter = lazyPage(() => import('../control-center/ControlCenter'))
+
+/**
+ * Starts fetching the code of the page a route opens. The first screen calls it while
+ * the session is still being checked, so the page is ready when the console appears.
+ */
+export function preloadRoute(route: AppRoute) {
+  const pages: Partial<Record<AppRoute['page'], { preload: () => void }>> = {
+    server: ServerDetail, fleet: FleetOperations, 'batch-enrollment': BatchEnrollment, 'network-workbench': NetworkWorkbench,
+    'network-configuration': NetworkConfiguration, operations: OperationsPage, 'control-center': ControlCenter, servers: Servers,
+    'singbox-overview': SingboxOverview, statistics: Statistics, latency: LatencyTasks, 'latency-reachability': ChinaReachability,
+    alicloud: Alicloud, ddns: Ddns, nodes: Nodes, expenses: Expenses, 'proxy-users': ProxyUsers, 'subscription-board': SubscriptionBoard,
+    groups: Groups, plugins: PluginEnablement, catalog: PluginCatalog, settings: Settings, backup: Backup,
+    'alert-settings': AlertSettings, notifications: Notifications, security: Security,
+  }
+  pages[route.page]?.preload()
+}
 
 export default function AdminPage({ route }: { route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' | 'member-join' | 'member-login' }> }) {
   return page(route)

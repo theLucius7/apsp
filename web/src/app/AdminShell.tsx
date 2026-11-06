@@ -10,9 +10,10 @@ import { useI18n } from '../i18n'
 import { navigation, sectionTabs, sidebarEntries } from './navigation'
 import type { NavigationItem } from './navigation'
 import AccountMenu from './AccountMenu'
-import { preloadPages } from './AdminPage'
+import { preloadPages, preloadRoute } from './AdminPage'
+import { resolveRoute } from './routes'
 import { ConnectionNotice, ConnectionStatus } from './ConnectionStatus'
-import { PageIconContext, SectionContext } from './section'
+import { SectionContext } from './section'
 import { cn } from '@/lib/utils'
 import { readShellActor, writeShellActor } from '@/lib/shell-actor'
 import type { ShellActor } from '@/lib/shell-actor'
@@ -132,9 +133,9 @@ export default function AdminShell({ current, exact = true, busy, error, onLogou
           </div>
         </aside>}
         <ConnectionNotice />
-        <PageIconContext.Provider value={current?.icon}><SectionContext.Provider value={exact ? sectionTabs(current, visibleNavigation) : []}>
+        <SectionContext.Provider value={exact ? sectionTabs(current, visibleNavigation) : []}>
           <MainColumn current={current} error={error}>{children}</MainColumn>
-        </SectionContext.Provider></PageIconContext.Provider>
+        </SectionContext.Provider>
       </div>
     </div>
   </TooltipProvider>
@@ -158,7 +159,8 @@ function Navigation({ items, current, collapsed }: { items: readonly NavigationI
         const active = activePath === path
         const Icon = root.icon
         const label = t(root.navLabel ?? root.label)
-        const link = <a href={`#${href}`} aria-current={active ? 'page' : undefined}
+        // Pointing at an entry starts fetching its page, so the click rarely waits.
+        const link = <a href={`#${href}`} aria-current={active ? 'page' : undefined} onPointerEnter={() => preloadRoute(resolveRoute(href))} onFocus={() => preloadRoute(resolveRoute(href))}
           className={cn(
             'text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground group/nav relative flex h-9 min-w-0 items-center gap-2.5 rounded-[10px] px-2.5 text-[13px] outline-none transition-[color,background-color,box-shadow] duration-150 focus-visible:shadow-focus pointer-coarse:h-11',
             active && 'bg-sidebar-accent text-sidebar-accent-foreground shadow-soft font-medium',

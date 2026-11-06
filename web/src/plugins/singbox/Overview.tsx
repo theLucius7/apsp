@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { Empty, ErrorNotice, Loading, PageHeader, Refresh, Stat } from '../../components'
+import { Empty, ErrorNotice, Loading, PageHeader, Refresh } from '../../components'
+import { Stat, StatStrip } from '../../display/ui'
 import { bytes } from '../../format'
 import { useResource } from '../../hooks'
 import type { Node, PluginServer, ProxyUser, Server, Usage } from '../../types'
@@ -8,7 +9,7 @@ import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useMediaQuery } from '@/lib/use-media-query'
 import NetworkMap from './NetworkMap'
-import { CircleCheckIcon, ServerIcon } from 'lucide-react'
+import { ActivityIcon, CircleCheckIcon, ServerIcon, UsersIcon, WaypointsIcon } from 'lucide-react'
 import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
 type AlertEvent = { id: number; message: string; server_id: number; server_name: string; resolved_at: number | null }
@@ -66,15 +67,16 @@ export default function Overview() {
   const setupKnown = [servers, pluginServers, nodes, users].every(resource => resource.data || resource.error)
 
   return <>
-    <PageHeader title="概览" description="这张代理网络现在怎么样：先看要处理的事，再看每台服务器。"><Refresh onClick={reload} /></PageHeader>
-    <div className="mb-4 grid grid-cols-2 gap-2.5 xl:grid-cols-4">
-      <Stat label="服务器在线" value={servers.data ? `${enrolled.length - offline.length} / ${enrolled.length}` : '—'} note={servers.data ? `${servers.data.length - enrolled.length} 台待接入` : '无权查看或正在读取'} />
-      <Stat label="代理节点" value={nodes.data ? nodes.data.length : '—'} note={pluginServers.data ? `${enabled.length} 台服务器已安装 sing-box` : '无权查看或正在读取'} />
-      <Stat label="代理用户" value={users.data ? users.data.length : '—'} />
-      <Stat label="累计代理流量" value={usage.data ? bytes(usage.data.total) : '—'} note="含已删除用户" />
-    </div>
+    <PageHeader title="概览"><Refresh onClick={reload} /></PageHeader>
+    {/* Each figure waits for its own read; one that cannot be read says so instead of "——". */}
+    <div className="mb-4"><StatStrip label="代理网络概况" columns={4}>
+      <Stat icon={ServerIcon} label="服务器在线" loading={!servers.data && !servers.error} value={servers.data ? `${enrolled.length - offline.length} / ${enrolled.length}` : '—'}>{servers.data ? `${servers.data.length - enrolled.length} 台待接入` : '无法读取'}</Stat>
+      <Stat icon={WaypointsIcon} label="代理节点" loading={!nodes.data && !nodes.error} value={nodes.data ? nodes.data.length : '—'}>{pluginServers.data ? `${enabled.length} 台服务器已安装 sing-box` : pluginServers.error ? '无法读取' : ''}</Stat>
+      <Stat icon={UsersIcon} label="代理用户" loading={!users.data && !users.error} value={users.data ? users.data.length : '—'}>{users.error ? '无法读取' : ''}</Stat>
+      <Stat icon={ActivityIcon} label="累计代理流量" loading={!usage.data && !usage.error} value={usage.data ? bytes(usage.data.total) : '—'}>含已删除用户</Stat>
+    </StatStrip></div>
     {setupKnown && !setupDone && <Panel><PanelHeader><PanelTitle>开始使用</PanelTitle></PanelHeader><ol className="m-0 grid gap-px p-1.5">{steps.map((step, index) => <li className="flex flex-wrap items-center justify-between gap-2 rounded-md px-2.5 py-2" key={step.title}>
-      <div className="min-w-0 flex-1"><strong className="flex items-center gap-2 text-[13px] font-medium">{step.done ? <CircleCheckIcon className="text-success size-4" aria-label="已完成" /> : <span className="bg-muted grid size-4 place-items-center rounded-full text-[10px]" aria-hidden="true">{index + 1}</span>}{step.title}</strong>{!step.done && <p className="text-muted-foreground mt-0.5 pl-6 text-xs">{step.description}</p>}</div>
+      <div className="min-w-0 flex-1"><strong className="flex items-center gap-2 text-[13px] font-medium">{step.done ? <CircleCheckIcon className="text-success size-4" aria-label="已完成" /> : <span className="bg-muted grid size-4 place-items-center rounded-full text-[11px]" aria-hidden="true">{index + 1}</span>}{step.title}</strong>{!step.done && <p className="text-muted-foreground mt-0.5 pl-6 text-xs">{step.description}</p>}</div>
       {!step.done && <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={step.href}>{step.action}</a>}
     </li>)}</ol></Panel>}
     <ErrorNotice message={pluginServers.error} retry={pluginServers.reload} />

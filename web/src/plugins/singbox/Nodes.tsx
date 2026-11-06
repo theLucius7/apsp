@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
-import { Confirm, ErrorNotice, Field, FormDialog, PageHeader, Refresh, RefreshNotice, Stat, DialogPresence } from '../../components'
+import { Confirm, ErrorNotice, Field, FormDialog, PageHeader, Refresh, RefreshNotice, DialogPresence } from '../../components'
+import { Stat, StatStrip } from '../../display/ui'
 import { bytes } from '../../format'
 import { resourceWriteError, useAction, useRefreshNotice, useResource, useResourceGroup } from '../../hooks'
 import type { Node, PluginServer, Usage } from '../../types'
@@ -27,7 +28,7 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
-import { ActivityIcon, CheckIcon, PlusIcon, ServerIcon, WaypointsIcon } from 'lucide-react'
+import { ActivityIcon, CheckIcon, PlusIcon, RadioTowerIcon, ServerIcon, WaypointsIcon } from 'lucide-react'
 import { SegmentedLink, SegmentedNav } from '@/components/segmented'
 import { Notice } from '@/components/panel'
 
@@ -212,19 +213,19 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     const details = event.target.closest('details')
     if (details) details.open = true
   }}>
-    <PageHeader title="代理节点" description="管理你服务器上的节点、由多段组成的链路，以及从订阅来源导入的外部节点。">
+    <PageHeader title="代理节点">
       <Refresh onClick={refresh} />
       <Button disabled={!canCreate} aria-describedby={createBlocked ? 'create-blocked-reason' : undefined} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />创建节点</Button>
       <Button variant="outline" disabled={!canCreateChain} aria-describedby={createBlocked ? 'create-blocked-reason' : undefined} onClick={openChainCreate}>创建链路</Button>
     </PageHeader>
     {createBlocked && <Notice id="create-blocked-reason" role="status"><span>{noEnabledServer ? '还没有服务器安装 sing-box，所以暂时不能创建节点或链路。' : '当前筛选的服务器尚未安装 sing-box，所以暂时不能创建节点或链路。'}</span>
       <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={noEnabledServer ? '#/system/plugins' : `#/servers/${filter}/plugins`}>为服务器安装 sing-box</a></Notice>}
-    <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-      <Stat icon={WaypointsIcon} label="代理资源" value={resources.data && ordered.data && importedNodes ? inventoryCount + importedNodes.length : '—'} note={importedNodes?.length ? `受管 ${inventoryCount} · 待接管 ${importedNodes.length}` : '直连节点与独立链路入口'} />
-      <Stat icon={ServerIcon} label="所在服务器" value={resources.data && importedNodes ? new Set([...all, ...importedNodes].map(node => node.server_id)).size : '—'} note={importedNodes?.length ? '含已导入的 Nexus 节点主机' : '每台服务器运行一份完整配置'} />
-      <Stat label="物理监听数" value={nodes.data ? nodes.data.length : '—'} note="受管节点监听，不重复计算链路引用" />
-      <Stat icon={ActivityIcon} label="累计代理流量" value={usage.data ? bytes(usage.data.total) : '—'} note="含已删除节点的历史用量" />
-    </div>
+    <div className="mb-4"><StatStrip label="代理资源概况" columns={4}>
+      <Stat icon={WaypointsIcon} label="代理资源" loading={!(resources.data && ordered.data && importedNodes) && !(resources.error || ordered.error)} value={resources.data && ordered.data && importedNodes ? inventoryCount + importedNodes.length : '—'}>{importedNodes?.length ? `受管 ${inventoryCount} · 待接管 ${importedNodes.length}` : '直连节点与独立链路入口'}</Stat>
+      <Stat icon={ServerIcon} label="所在服务器" loading={!(resources.data && importedNodes) && !resources.error} value={resources.data && importedNodes ? new Set([...all, ...importedNodes].map(node => node.server_id)).size : '—'}>{importedNodes?.length ? '含已导入的 Nexus 节点主机' : '每台服务器运行一份完整配置'}</Stat>
+      <Stat icon={RadioTowerIcon} label="物理监听数" loading={!nodes.data && !nodes.error} value={nodes.data ? nodes.data.length : '—'}>受管节点监听，不重复计算链路引用</Stat>
+      <Stat icon={ActivityIcon} label="累计代理流量" loading={!usage.data && !usage.error} value={usage.data ? bytes(usage.data.total) : '—'}>含已删除节点的历史用量</Stat>
+    </StatStrip></div>
     <ErrorNotice message={resources.error || nodes.error || servers.error || usage.error || (migrationQuery.error ? `订阅来源迁移状态读取失败：${migrationQuery.error}` : '')} retry={refresh} />
     {refreshNotice.visible && <RefreshNotice />}
     {saved && <Notice role="status"><span>{savedAuthorised

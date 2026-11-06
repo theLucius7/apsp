@@ -63,7 +63,8 @@ try {
     assert.equal(await ranking.getByRole('link').first().getAttribute('href'), '#/servers/1')
     assert.match(await page.getByRole('region', { name: '代理用户流量排行', exact: true }).innerText(), /已删除/)
     assert.match(await page.locator('[data-slot=statistics-scope]').first().innerText(), /不含账单周期流量矫正/)
-    if (width <= 600) assert.equal(await page.locator('[data-slot=statistics-traffic-totals]').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length), 1)
+    // Phones show the totals as the shared figure strip: two cells per row, the third across the bottom.
+    if (width <= 600) assert.equal(await page.locator('[data-slot=statistics-traffic-totals] > section').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length), 2)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false)
     if (screenshots) await page.screenshot({ path: resolve(screenshots, `statistics-${width}.png`), fullPage: true, animations: 'disabled' })
     await page.getByRole('button', { name: '近 30 天', exact: true }).click()
