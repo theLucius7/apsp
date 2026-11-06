@@ -156,7 +156,7 @@ Agent 把面板发来的核对请求（checkpoint）记在 `/var/lib/apsp/core/s
 - 暂停中的主机在 `activate` 后 150 秒内等不到健康，切换脚本回滚（2026-11-06 azure-in1 因此回滚）。
 - 已接管的主机会停在不健康，兼容桥随之不再续旧面板的机器心跳，300 秒后线路从旧订阅消失。
 
-修复见 `crates/agent-core/src/state/runtime_control.rs`：日志写满时删去已确认、且请求过期超过 `RUNTIME_CONTROL_MAX_TTL_SECS` 加一小时的墓碑，未确认的结果永不删除。修复版 Agent 发布并升级之前，按需手工清理：用 `sqlite3` 或 `python3` 读取 `SELECT COUNT(*), SUM(acknowledged=0) FROM runtime_control`；接近 4096 时，先停 `apsp-agent`（systemd 主机上运行时单独运行，不受影响），备份 `state.db*`，执行 `DELETE FROM runtime_control WHERE acknowledged=1 AND result IS NOT NULL`，再启动 Agent。被删的都是只读核对的结果，重放最多重新核对一次或回报已过期。
+修复见 `crates/agent-core/src/state/runtime_control.rs`：日志写满时删去已确认、且请求过期超过 `RUNTIME_CONTROL_MAX_TTL_SECS` 加一小时的墓碑，未确认的结果永不删除。Agent 0.3.7 起生效，2026-11-06 全部服务器已升级；更早版本的 Agent 按需手工清理：用 `sqlite3` 或 `python3` 读取 `SELECT COUNT(*), SUM(acknowledged=0) FROM runtime_control`；接近 4096 时，先停 `apsp-agent`（systemd 主机上运行时单独运行，不受影响），备份 `state.db*`，执行 `DELETE FROM runtime_control WHERE acknowledged=1 AND result IS NOT NULL`，再启动 Agent。被删的都是只读核对的结果，重放最多重新核对一次或回报已过期。
 
 ### 切换半途失败后重试
 
