@@ -56,7 +56,7 @@ pub(super) async fn login(
     headers: HeaderMap,
     Json(input): Json<Login>,
 ) -> ApiResult<Response> {
-    state.passkeys.check_origin(&headers)?;
+    crate::subscription_hosts::check_portal_origin(&state, &headers).await?;
     let address = email(&input.email)?;
     limit(&state, "login-ip", &peer.ip().to_string(), 30, 60).await?;
     limit(&state, "login-email", &address, 10, 600).await?;
@@ -169,7 +169,7 @@ pub(super) async fn reset(
     headers: HeaderMap,
     Json(input): Json<Reset>,
 ) -> ApiResult<Response> {
-    state.passkeys.check_origin(&headers)?;
+    crate::subscription_hosts::check_portal_origin(&state, &headers).await?;
     limit(&state, "reset-ip", &peer.ip().to_string(), 20, 600).await?;
     let challenge = check(&state, input.challenge_id, "reset", &input.code, None).await?;
     let hash = password(&state, input.password).await?;
@@ -334,7 +334,7 @@ pub(super) async fn email_finish(
     Path(account): Path<Uuid>,
     Json(input): Json<ContactConfirm>,
 ) -> ApiResult<Response> {
-    state.passkeys.check_origin(&headers)?;
+    crate::subscription_hosts::check_portal_origin(&state, &headers).await?;
     let challenge = check(
         &state,
         input.challenge_id,

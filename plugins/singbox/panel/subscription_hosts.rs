@@ -334,6 +334,17 @@ fn portal_scope(
     }
 }
 
+/// A page opened at a user's own address sends that address as its origin; every
+/// other page sends the panel's. Portal and account requests that change something
+/// check the origin of the page they came from, as `portal_scope` chooses it, so a
+/// user's own address works for the same writes as the panel's.
+pub async fn check_portal_origin(state: &AppState, headers: &HeaderMap) -> ApiResult<()> {
+    scoped_state(state.clone(), headers)
+        .await
+        .passkeys
+        .check_origin(headers)
+}
+
 /// Portal requests verify Passkeys under the scope `portal_scope` chooses.
 pub async fn scoped_state(state: AppState, headers: &HeaderMap) -> AppState {
     let host = headers

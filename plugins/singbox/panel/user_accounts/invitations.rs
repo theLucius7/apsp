@@ -474,7 +474,7 @@ pub(super) async fn claim(
     headers: HeaderMap,
     Json(input): Json<Claim>,
 ) -> ApiResult<Json<Value>> {
-    state.passkeys.check_origin(&headers)?;
+    crate::subscription_hosts::check_portal_origin(&state, &headers).await?;
     let token = normalize(&input.token).ok_or(ApiError::NotFound)?;
     let token_hash = hash_token(&token);
     let name = crate::business::name(&input.name)?;
