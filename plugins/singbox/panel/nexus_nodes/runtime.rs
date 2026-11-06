@@ -1,5 +1,5 @@
 use super::{
-    runtime_model::{RuntimeNode, RuntimeSnapshot, digest, inspect, inspect_extension},
+    runtime_model::{Revision, RuntimeNode, RuntimeSnapshot, digest, inspect, inspect_extension},
     runtime_publish,
 };
 use crate::{
@@ -129,7 +129,12 @@ struct Extension {
     /// Digest of the merged snapshot from the preview; required to commit.
     #[serde(default)]
     extended_digest: Option<String>,
+    /// Lines to add (whole snapshot entries).
+    #[serde(default)]
     nodes: Vec<RuntimeNode>,
+    /// Lines already in the snapshot whose native configuration is replaced.
+    #[serde(default)]
+    configurations: Vec<Revision>,
     /// Services stopped on the host to free the added listeners; required to commit.
     #[serde(default)]
     stopped_services: Vec<String>,
@@ -175,7 +180,14 @@ async fn extend_preview(
     crate::entitlements::lock(&mut tx).await?;
     crate::business::lock_server(&mut tx, server).await?;
     let (stored, _, _) = stored_snapshot(&state, &mut tx, server, &input.expected_digest).await?;
-    let (merged, mut report) = inspect_extension(&state, &mut tx, &stored, &input.nodes).await?;
+    let (merged, mut report) = inspect_extension(
+        &state,
+        &mut tx,
+        &stored,
+        &input.nodes,
+        &input.configurations,
+    )
+    .await?;
     if report["conflicts"].as_array().is_some_and(|c| c.is_empty()) {
         sqlx::query("SELECT set_config('apsp.nexus_runtime_write','yes',TRUE)")
             .execute(&mut *tx)
@@ -198,18 +210,20 @@ async fn extend(
     let actor = control_center::require_owner(&state, &headers).await?;
     control_center::require_recent_proof(&state, &headers).await?;
     let now = now_timestamp();
-    if input
-        .stopped_at
-        .is_none_or(|at| at > now || now.saturating_sub(at) > 600)
-        || input.stopped_services.is_empty()
-        || input.stopped_services.len() > 20
-        || input.stopped_services.iter().any(|s| {
-            s.len() > 100
-                || s.is_empty()
-                || !s
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"-_.@".contains(&b))
-        })
+    // Only an added listener needs its legacy service stopped first.
+    if !input.nodes.is_empty()
+        && (input
+            .stopped_at
+            .is_none_or(|at| at > now || now.saturating_sub(at) > 600)
+            || input.stopped_services.is_empty()
+            || input.stopped_services.len() > 20
+            || input.stopped_services.iter().any(|s| {
+                s.len() > 100
+                    || s.is_empty()
+                    || !s
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"-_.@".contains(&b))
+            }))
     {
         return Err(ApiError::BadRequest(
             "需提供十分钟内为新增监听停用的旧服务记录".into(),
@@ -220,7 +234,14 @@ async fn extend(
     crate::business::lock_server(&mut tx, server).await?;
     let (stored, host_state, previous) =
         stored_snapshot(&state, &mut tx, server, &input.expected_digest).await?;
-    let (merged, report) = inspect_extension(&state, &mut tx, &stored, &input.nodes).await?;
+    let (merged, report) = inspect_extension(
+        &state,
+        &mut tx,
+        &stored,
+        &input.nodes,
+        &input.configurations,
+    )
+    .await?;
     if !report["conflicts"].as_array().is_some_and(|c| c.is_empty()) {
         return Err(ApiError::Conflict(
             "追加的线路与原资料或目标主机冲突，请重新预览".into(),
@@ -263,17 +284,22 @@ async fn extend(
         crate::business::mark_dirty(&mut tx, &[server]).await?;
     }
     let added: Vec<i64> = input.nodes.iter().map(|e| e.legacy_node_id).collect();
+    let revised: Vec<i64> = input
+        .configurations
+        .iter()
+        .map(|r| r.legacy_node_id)
+        .collect();
     sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus.runtime.extend',$2,$3,$4,$5)")
         .bind(actor)
         .bind(format!("/api/plugins/sing-box/nexus-nodes/runtime/{server}/extend"))
-        .bind(json!({"from":input.expected_digest,"to":hash,"added_legacy_nodes":added,"stopped_services":input.stopped_services,"stopped_at":input.stopped_at}))
+        .bind(json!({"from":input.expected_digest,"to":hash,"added_legacy_nodes":added,"revised_legacy_nodes":revised,"stopped_services":input.stopped_services,"stopped_at":input.stopped_at}))
         .bind(json!({"state":"recorded","republish":republish}))
         .bind(now)
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
     Ok(Json(
-        json!({"server_id":server,"digest":hash,"added":added,"state":host_state,"republish":republish}),
+        json!({"server_id":server,"digest":hash,"added":added,"revised":revised,"state":host_state,"republish":republish}),
     ))
 }
 
