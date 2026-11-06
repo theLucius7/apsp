@@ -15,7 +15,7 @@ pub(super) struct Cloud {
     pool: Option<sqlx::PgPool>,
     resolved: ResolvedKeys,
     pub(super) ecs: Aliyun,
-    vpc: Aliyun,
+    pub(super) vpc: Aliyun,
     pub(super) bss: Aliyun,
     pub(super) bss_international: Aliyun,
     pub(super) cdt: Aliyun,

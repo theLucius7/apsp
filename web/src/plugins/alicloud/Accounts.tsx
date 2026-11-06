@@ -25,6 +25,7 @@ export type CloudActions = {
   bandwidth: (resource: Resource) => void
   powerPolicy: (resource: Resource) => void
   power: (resource: Resource, verb: 'start' | 'stop') => void
+  rotateEip: (resource: Resource) => void
   resume: (resource: Resource, account?: Account) => void
   removeResource: (resource: Resource, account?: Account) => void
 }
@@ -132,6 +133,8 @@ function ResourceRow({ resource, account, data, actions }: { resource: Resource;
         <ActionMenu label="资源操作" groups={[
           [{ label: '查询当前配置', disabled: !managed, onSelect: () => actions.refreshResource(resource, account) },
             ecs && { label: '配置自动启停', disabled: !editable, onSelect: () => actions.powerPolicy(resource) },
+            // Only a running instance with an attached EIP can be moved to a new address.
+            ecs && attached && { label: '更换公网 IP', disabled: !managed || active || !running, onSelect: () => actions.rotateEip(resource) },
             !attached && { label: '调整带宽与计费', disabled: !managed || active || (resource.kind === 'eip' && !snapshot), onSelect: () => actions.bandwidth(resource) }],
           [{ label: '编辑登记与降速', disabled: !editable, onSelect: () => actions.editResource(resource) }],
           [{ label: '移除登记', destructive: true, disabled: !editable || active, onSelect: () => actions.removeResource(resource, account) }],

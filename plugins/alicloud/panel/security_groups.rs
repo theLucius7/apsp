@@ -166,7 +166,7 @@ fn impact(before: &Snapshot, target: &[String]) -> ApiResult<Value> {
         json!({"added":added,"removed":removed,"baseline_retained":true,"management_connectivity":"existing_baseline_preserved_not_guaranteed","rules_changed":false,"fee":fee(),"order":"join_and_verify_before_leave","scope":"registered_ecs_group_membership_only"}),
     )
 }
-async fn linked(pool: &PgPool, id: Uuid) -> ApiResult<(Vec<i64>, Option<i64>)> {
+pub(super) async fn linked(pool: &PgPool, id: Uuid) -> ApiResult<(Vec<i64>, Option<i64>)> {
     let row =
         sqlx::query("SELECT server_id,updated_at FROM operations_cloud_links WHERE resource_id=$1")
             .bind(id)

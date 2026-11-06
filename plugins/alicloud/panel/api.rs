@@ -22,6 +22,7 @@ use uuid::Uuid;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .merge(super::power::routes())
+        .merge(super::eip_rotation::routes())
         .route("/api/plugins/alicloud", get(list))
         .route("/api/plugins/alicloud/accounts", post(create_account))
         .route(
@@ -68,8 +69,9 @@ async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Js
     let operations: Vec<Operation> = sqlx::query_as("SELECT * FROM alicloud_operations ORDER BY (status IN ('queued','running','uncertain')) DESC,created_at DESC,id LIMIT 100").fetch_all(&state.pool).await?;
     let power_jobs: Vec<super::power::Job> = sqlx::query_as("SELECT * FROM alicloud_power_jobs ORDER BY (status IN ('queued','running','uncertain')) DESC,created_at DESC,id LIMIT 100").fetch_all(&state.pool).await?;
     let events: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',e.id,'resource_id',e.resource_id,'title',e.title,'message',e.message,'created_at',e.created_at,'deliveries',COALESCE((SELECT jsonb_agg(jsonb_build_object('channel',d.channel,'status',d.status,'attempts',d.attempts,'last_error',d.last_error,'next_attempt_at',d.next_attempt_at,'delivered_at',d.delivered_at) ORDER BY d.id) FROM alicloud_deliveries d WHERE d.event_id=e.id),'[]'::jsonb)) FROM alicloud_events e ORDER BY e.id DESC LIMIT 100").fetch_all(&state.pool).await?;
+    let eip_rotations: Vec<super::eip_rotation::Rotation> = sqlx::query_as("SELECT * FROM alicloud_eip_rotations ORDER BY (status IN ('running','unknown')) DESC,created_at DESC,id LIMIT 50").fetch_all(&state.pool).await?;
     Ok(Json(
-        json!({"accounts":accounts,"resources":resources,"operations":operations,"power_jobs":power_jobs,"events":events}),
+        json!({"accounts":accounts,"resources":resources,"operations":operations,"power_jobs":power_jobs,"eip_rotations":eip_rotations,"events":events}),
     ))
 }
 #[derive(Deserialize)]
@@ -226,6 +228,7 @@ async fn update_account(
     sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id IN (SELECT id FROM alicloud_resources WHERE account_id=$1) AND status IN ('preview','queued')")
         .bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id IN (SELECT id FROM alicloud_resources WHERE account_id=$1) AND status IN ('preview','queued')").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_eip_rotations SET status='cancelled',updated_at=$2 WHERE resource_id IN (SELECT id FROM alicloud_resources WHERE account_id=$1) AND status='preview'").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     sqlx::query("UPDATE alicloud_resources SET instance_bill=NULL,bill_error=NULL,bill_next_at=0,next_power_at=0 WHERE account_id=$1").bind(id).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
@@ -334,6 +337,13 @@ async fn create_resource(
     if count >= 32 {
         return Err(ApiError::Conflict("最多登记 32 个云资源".into()));
     }
+    // An unfinished EIP rotation may still release this address; registering it
+    // now would leave a record of a released EIP behind.
+    if input.kind == "eip" && super::eip_rotation::involves(&mut tx, &input.cloud_id).await? {
+        return Err(ApiError::Conflict(
+            "此 EIP 正在更换公网 IP 的流程中，请在流程结束后再登记".into(),
+        ));
+    }
     let id = Uuid::new_v4();
     let result=sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id,auto_enabled,cap_mbps) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
         .bind(id).bind(input.account_id).bind(input.name.trim()).bind(input.kind).bind(input.region).bind(input.cloud_id).bind(input.auto_enabled).bind(input.cap_mbps).execute(&mut *tx).await;
@@ -382,6 +392,7 @@ async fn update_resource(
     sqlx::query("UPDATE alicloud_resources SET name=$2,auto_enabled=$3,cap_mbps=$4,revision=revision+1 WHERE id=$1").bind(id).bind(input.name.trim()).bind(input.auto_enabled).bind(input.cap_mbps).execute(&mut *tx).await?;
     sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status IN ('preview','queued')").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status IN ('preview','queued')").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_eip_rotations SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status='preview'").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -407,6 +418,7 @@ async fn remove_resource(
     sqlx::query("UPDATE alicloud_resources SET archived=true,auto_enabled=false,revision=revision+1 WHERE id=$1").bind(id).execute(&mut *tx).await?;
     sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status='preview'").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status='preview'").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_eip_rotations SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status='preview'").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

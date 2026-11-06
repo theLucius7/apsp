@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
-import { accountError, bandwidthError, checked, credentialError, operationError, powerError, registrationError, resourceError } from '../src/plugins/alicloud/guards'
+import { accountError, bandwidthError, checked, cloudBusy, credentialError, operationError, powerError, registrationError, resourceError } from '../src/plugins/alicloud/guards'
 import { billUsable, defaultPowerPolicy, exactUsage } from '../src/plugins/alicloud/types'
-import type { Account, Operation, Overview, PowerJob, Resource } from '../src/plugins/alicloud/types'
+import type { Account, EipRotation, Operation, Overview, PowerJob, Resource } from '../src/plugins/alicloud/types'
 import { editorError, ruleError } from '../src/plugins/ddns/guards'
 import type { DdnsConfig, DdnsRule } from '../src/plugins/ddns/types'
 
@@ -101,4 +101,18 @@ test('dual-stack creation reserves two slots from the current snapshot', () => {
   expect(editorError(() => undefined, config, undefined, 2)).not.toBe('')
   data.rules.pop()
   expect(editorError(() => data, config, undefined, 2)).toBe('')
+})
+
+test('a running or unresolved EIP rotation holds the resource against other changes', () => {
+  const rotation = (status: string) => ({ resource_id: resource.id, status }) as EipRotation
+  for (const status of ['running', 'unknown']) {
+    const data = { ...base(), eip_rotations: [rotation(status)] }
+    expect(cloudBusy(data, resource.id)).toBeTrue()
+    expect(cloudBusy(data, 'TEST_ONLY other')).toBeFalse()
+    expect(resourceError(() => data, resource, { idle: true })).toContain('待核对')
+  }
+  for (const status of ['preview', 'succeeded', 'restored', 'failed', 'reconciled', 'cancelled']) {
+    expect(cloudBusy({ ...base(), eip_rotations: [rotation(status)] }, resource.id)).toBeFalse()
+  }
+  expect(cloudBusy(base(), resource.id)).toBeFalse()
 })

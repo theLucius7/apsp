@@ -35,3 +35,7 @@
 - CDT 月度状态、150/20 GiB 配置与 ECS 启停逻辑不变。回归覆盖两个真实响应形状、异常字段、自动刷新事务、预览后绑定变化、未知结果读回及桌面/手机查询。
 
 依据：[DescribeInstances 的 EipAddress 字段](https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-describeinstances)、[阿里云对 PayByDominantTraffic 的定义](https://www.alibabacloud.com/help/en/ros/developer-reference/datasource-vpc-commonbandwidthpackages)。真实验证仅查询两个已迁移账号，不执行带宽、计费或绑定变更。
+
+## 2026-11-06：更换公网 IP
+
+用户要求把更换 EIP 做成功能（2026-10-30 起草，2026-11-06 完成）。[ADR 0116](0116-alicloud-eip-rotation.md) 在独立流程内申请、改绑和释放 EIP，覆盖上文“不申请/释放 IP、不改绑定”的限制；带宽变配、自动降速和其他流程的限制不变。

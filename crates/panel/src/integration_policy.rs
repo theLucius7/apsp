@@ -71,6 +71,7 @@ pub fn worker_names() -> &'static [&'static str] {
         "alicloud",
         "alicloud-cost-cache",
         "alicloud-power",
+        "alicloud-eip-rotation",
         "sing-box",
     ]
 }
@@ -140,6 +141,26 @@ mod tests {
             !route_policy("/api/plugins/alicloud/accounts/1/refresh", &Method::POST)
                 .unwrap()
                 .high_risk
+        );
+        // Replacing a public IP releases an address: confirming, cancelling and
+        // closing it need the shared proof; reading the preview does not.
+        for action in ["confirm", "cancel", "reconcile"] {
+            assert!(
+                route_policy(
+                    &format!("/api/plugins/alicloud/eip-rotations/1/{action}"),
+                    &Method::POST
+                )
+                .unwrap()
+                .high_risk
+            );
+        }
+        assert!(
+            !route_policy(
+                "/api/plugins/alicloud/resources/1/eip-rotation/preview",
+                &Method::POST
+            )
+            .unwrap()
+            .high_risk
         );
         let root = route_policy("/api/plugins/alicloud", &Method::PUT).unwrap();
         assert_eq!(root.feature, Some("cloud"));

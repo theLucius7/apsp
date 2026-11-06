@@ -173,6 +173,11 @@ pub(super) fn message(code: &str) -> &'static str {
         "invalid_response" => "云服务响应与预期不符",
         "provider_rejected" => "云服务未接受请求，请检查资源限制与权限",
         "awaiting_confirmation" => "请求结果尚未核实，系统只读回状态，不重复提交",
+        "all_candidates_blocked" => "候选地址从国内都连不上，已放弃本次更换",
+        "service_unreachable" => "新地址绑定后面板连不上探测端口，无法判断可用性",
+        "probe_unavailable" => "国内探测服务暂不可用，无法判断新地址是否可用",
+        "probe_inconclusive" => "国内探测结果不足，无法判断新地址是否可用",
+        "old_eip_retained" => "旧 EIP 未能释放，请到阿里云控制台手动释放，否则闲置会产生费用",
         _ => "云接口暂时不可用",
     }
 }

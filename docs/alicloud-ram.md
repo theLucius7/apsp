@@ -63,6 +63,28 @@ CDT 查询与 ECS 查询、启停只需下面的策略；余额查询为可选�
 
 查询语句和启停语句分别授权；查询的 `Resource: "*"` 不会使启停获得全资源权限。RAM 策略的有效授权还会合并已有策略，请移除不再需要的宽泛授权。
 
+## 更换公网 IP 的额外权限
+
+只有使用「更换公网 IP」时才需要。这些权限可以申请和释放 EIP，建议按需单独授予，用完可以撤销：
+
+```json
+{
+  "Effect": "Allow",
+  "Action": [
+    "vpc:DescribeEipAddresses",
+    "vpc:AllocateEipAddress",
+    "vpc:AssociateEipAddress",
+    "vpc:UnassociateEipAddress",
+    "vpc:ReleaseEipAddress",
+    "vpc:AddCommonBandwidthPackageIp",
+    "vpc:RemoveCommonBandwidthPackageIp"
+  ],
+  "Resource": "*"
+}
+```
+
+新地址的 ID 事先未知，所以这里不能写成单个资源。请一次授予全部七项：缺少读取权限时预览会说明缺少 VPC 权限；缺少申请权限时流程直接失败，不改动实例；只缺换绑或释放权限时，流程会绑回原地址或停在“需要人工核对”，可能留下需要在控制台手动释放的地址。
+
 ## APSP 配置与兼容
 
 - 新增账号默认关闭「查询账户余额」与「查询 CDT 与实例账单」。CDT 脚本守护、ECS 状态查询、每日计划、保活和手动启停不依赖 BSS。
@@ -71,7 +93,7 @@ CDT 查询与 ECS 查询、启停只需下面的策略；余额查询为可选�
 - 升级时仅为已有自动降速或已启用账单阈值策略的账号保留账单查询。其他账号停止 BSS 查询，旧缓存保留但不作为关闭查询后的自动控制依据。需要余额或账单展示时重新显式开启对应开关。
 - CDT 脚本守护改用单实例 `StartInstance` / `StopInstance`；旧脚本的 `StartInstances` / `StopInstances` 权限不能替代它们。先增加精确实例的单实例授权，再升级，待旧控制器退出后移除批量权限。已发送且结果未知的任务继续只读核对，不重发。
 - 最小权限下不调用 `ListSwitchedCdtProducts`。首次零用量不能单独证明已开通 CDT，因此保留历史、暂停自动启停并提示核对。同一凭据、地域和实例曾有有效非零 API 观测后，保存该证据，允许完整零读数按原有月界规则重置并自动开机；同月零读数不会降低历史最高值。空响应、缺少目标额度池、仅导入的历史或凭据身份变化均不能据此开机。此判断依据 [CDT 不支持关闭的说明](https://help.aliyun.com/zh/cdt/support/faq) 的产品约束；不是对单个资源零费用的保证。
-- ECS 绑定 EIP 的信息仍从 `DescribeInstances` 读取，无需 VPC 查询权限。独立 EIP、带宽变配、安全组管理超出本策略范围，只有使用相应功能时才另行授权。
+- ECS 绑定 EIP 的信息仍从 `DescribeInstances` 读取，无需 VPC 查询权限。更换公网 IP 见上一节。独立 EIP、带宽变配、安全组管理超出本策略范围，只有使用相应功能时才另行授权。
 
 账号 API 的 `billing_enabled` 与 `balance_enabled` 独立控制查询；创建时省略默认为 `false`，更新时省略保留原值。手动刷新不会绕过开关；关闭账单查询会清除当前错误和缓存授权，后台不会因旧缓存仍存在而继续执行账单策略。
 

@@ -12,6 +12,7 @@ use uuid::Uuid;
 mod attached_eip;
 mod billing_cases;
 mod least_privilege;
+mod rotation_refresh;
 
 const KEY: &str = "TEST_ONLY_CLOUD_ID";
 const SECRET: &str = "TEST_ONLY_CLOUD_SECRET";
