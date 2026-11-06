@@ -104,3 +104,8 @@ CDT 查询与 ECS 查询、启停只需下面的策略；余额查询为可选�
 单实例 ARN 与操作权限参考阿里云官方 [StartInstance](https://help.aliyun.com/zh/ecs/developer-reference/api-ecs-2014-05-26-startinstance)、[StopInstance](https://help.aliyun.com/zh/ecs/developer-reference/api-ecs-2014-05-26-stopinstance)、[DescribeInstances](https://help.aliyun.com/zh/ecs/developer-reference/api-ecs-2014-05-26-describeinstances)。云控制器仍受计量和状态上报延迟影响，不能把阈值守护当作实时硬额度。
 
 BSS 权限采用 `bssapi:<APIName>`，与控制台兼容权限点的映射见阿里云官方 [API 调用授权](https://help.aliyun.com/en/user-center/developer-reference/api-calling-authorization)。API 名称与授权页面显示的 `bss:DescribeAcccount`、`bss:DescribeBillList` 不同，不需要同时授予两套等价权限。
+
+
+### IPv6 地址补查（可选）
+
+实例详情没有返回 IPv6 时，使用 [`ecs:DescribeNetworkInterfaces`](https://help.aliyun.com/zh/ecs/developer-reference/api-ecs-2014-05-26-describenetworkinterfaces)，请求限定 `RegionId` 与 `InstanceId`，查询已挂载网卡。按阿里云 RAM 支持的资源范围授权；缺少该权限只影响地址补查，界面保留实例状态与旧地址并显示错误。此查询不采集流量，CDT 的整体用量已经包含 IPv6。

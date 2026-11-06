@@ -1,10 +1,14 @@
 # 仓库协作规则
 
+## 2026-11-07 CDT 补齐与构建产物
+
+按 ADR 0121 补齐 CDT 分项采集时间、IPv6 地址展示、总用量历史、高级 Cron 与守护组合；不增加每日汇总通知，CDT 总量已包含 IPv6，不另行实现 IPv6 流量采集。生成的 `web/dist` 不再提交到 Git，覆盖旧文档的同步提交要求；面板编译前先构建前端。正式签名 Release 仍按原发布流程管理，本地构建不会自动上传 GitHub。
+
 本仓库实现 Apsp MVP。任务说明中的架构决策与范围是实现约束；遇到歧义，采用最简单且符合既定架构的方案，将问题、选择和理由记录到 `docs/open-questions.md` 后继续执行。
 
-## 提交身份（2026-10-04 用户要求）
+## 提交身份（2026-11-07 用户更正）
 
-所有会话的提交作者与提交者均使用用户身份 `Lucius7 Nya <i@lucius7.dev>`，不使用 Claude 默认身份。云端会话启动时由 `.claude/hooks/git-identity.sh` 写入仓库级 git 配置，并关闭使用环境签名密钥的提交签名；提交前用 `git var GIT_AUTHOR_IDENT` 确认，钩子未生效时手动执行脚本中的同样配置。提交信息不加 `Co-Authored-By` 行。
+所有会话的提交作者与提交者均使用当前仓库所有者身份 `imengying <yuzuzv@gmail.com>`。此前 `Lucius7 Nya <i@lucius7.dev>` 属于上游账号，不能继续沿用，也不使用代理默认身份。云端会话启动时由 `.claude/hooks/git-identity.sh` 写入仓库级 git 配置，并关闭使用环境签名密钥的提交签名；提交前用 `git var GIT_AUTHOR_IDENT` 确认，钩子未生效时手动执行脚本中的同样配置。提交信息不加 `Co-Authored-By` 行。
 
 ## 2026-10-03 平台扩展与集中交付
 

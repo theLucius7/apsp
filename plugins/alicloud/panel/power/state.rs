@@ -17,6 +17,8 @@ pub(in super::super) struct State {
     pub spot_strategy: String,
     pub interruption_behavior: Option<String>,
     pub public_ips: Vec<String>,
+    #[serde(default)]
+    pub public_ipv6: Vec<String>,
     pub locked: bool,
 }
 impl State {
@@ -180,6 +182,7 @@ fn parse(value: &Value, resource: &Resource) -> Result<State, Failure> {
             .filter(|v| matches!(*v, "Stop" | "Terminate"))
             .map(str::to_owned),
         public_ips,
+        public_ipv6: super::super::addresses::from_instance(row),
         locked: !locks.is_empty(),
     })
 }

@@ -1,11 +1,13 @@
 #![forbid(unsafe_code)]
 //! Alibaba Cloud plugin: CDT traffic, ECS power, billing and cost tracking.
 
+mod addresses;
 mod api;
 mod billing;
 mod client;
 mod costs;
 mod eip_rotation;
+mod history;
 mod model;
 mod notices;
 mod operations;

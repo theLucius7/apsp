@@ -9,7 +9,7 @@
 | `crates/` | Rust 工作区：公共协议、配置编译、面板、Agent、适配器及原生 TCP 工具 |
 | `plugins/` | 插件面板业务、外部工具包装及固定来源材料；插件业务不回迁到核心 |
 | `web/src/` | React 界面（简体中文/English）；前端依赖与构建由 Bun 管理 |
-| `web/dist/` | 提交到仓库、由面板嵌入的构建产物；修改源码后生成，不手工编辑 |
+| `web/dist/` | 仅在本地或构建环境生成、由面板嵌入的产物；不提交 Git，不手工编辑 |
 | `deploy/` | Compose、服务定义、安装模板、生成后的独立 bootstrap 入口和发布公钥 |
 | `scripts/` | [面板运维、接入与验收入口](../scripts/README.md)；包含已有 CI 包装脚本 |
 | `tools/` | [构建、签名、发布、规则检查与隔离测试工具](../tools/README.md) |
