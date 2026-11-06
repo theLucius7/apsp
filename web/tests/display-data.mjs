@@ -125,6 +125,8 @@ try {
     await page.goto(`${origin}/#/dashboard`)
     await page.locator('[data-slot=server-card]').first().waitFor()
     const costs = page.locator('[data-slot=overview-item]').filter({ has: page.getByText('资产', { exact: true }) })
+    // Cards can appear before the first rate read returns; the total follows it.
+    await costs.filter({ hasText: /CNY\s*280\.00/ }).waitFor()
     assert.match(await costs.innerText(), /CNY\s*280\.00/)
     assert.match(await costs.innerText(), /汇率缺失/)
     assert.match(await page.locator('[data-slot=server-card]').first().innerText(), /流量/)
@@ -210,7 +212,11 @@ try {
     await page.getByRole('heading', { name: /^东京 · 测试入口/ }).waitFor()
     await page.getByText('每 2 秒 聚合', { exact: false }).waitFor()
     // Costs and their conversion are on the server's assets tab.
+    // The tab reads the rates on opening and shows the last ones meanwhile; a failure
+    // set before that read returns would land on a read already in flight.
+    const tabRates = page.waitForResponse(response => new URL(response.url()).pathname === '/api/dashboard/exchange-rates')
     await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '资产与流量', exact: true }).click()
+    await tabRates
     const assetDetail = page.locator('[data-slot=asset-detail]'), detailReference = assetDetail.getByRole('status', { name: '参考汇率状态', exact: true })
     assert.match(await detailReference.innerText(), /2026-09-30.*参考汇率.*Frankfurter/)
     dashboardRatesReadFailure = true

@@ -9,7 +9,7 @@ import PortalSettings from './accounts/PortalSettings'
 import UserInvitations from './accounts/UserInvitations'
 import type { SubscriptionFormat } from './SubscriptionDialog'
 import { api, errorMessage } from '../../api'
-import { Badge, Confirm, Empty, ErrorNotice, Field, FormDialog, Loading, Modal, PageHeader, Refresh, DialogPresence } from '../../components'
+import { Badge, Confirm, Empty, ErrorNotice, Field, FormDialog, Loading, Modal, PageHeader, Refresh, DialogPresence, InfoTip } from '../../components'
 import { bytes, totalBytes } from '../../format'
 import { resourceWriteError, useAction, useResource } from '../../hooks'
 import type { Usage, ProxyUser } from '../../types'
@@ -189,11 +189,10 @@ export default function ProxyUsers({ initialUserId }: { initialUserId?: number }
         {!user && !users.ready && !users.data?.length && users.error ? null : !user && <Panel><div className="p-4"><ErrorNotice message={missingSelection} /></div></Panel>}
         <div className="mb-4 grid items-stretch gap-3 lg:grid-cols-2">
           {user && <Panel aria-label="订阅链接" className="mb-0 flex flex-col">
-            <PanelHeader className="min-h-10 py-1.5"><PanelTitle>订阅链接</PanelTitle><Button variant="ghost" size="xs" onClick={() => { linkAction.clearError(); setFormat('singbox'); setSubscription(user) }}>订阅详情</Button></PanelHeader>
+            <PanelHeader className="min-h-10 py-1.5"><span className="flex min-w-0 items-center gap-1.5"><PanelTitle>订阅链接</PanelTitle><InfoTip label="订阅链接说明"><p>sing-box 和 Clash 用同一个地址，客户端会自动拿到对应格式。重置后旧专属地址立即失效。</p></InfoTip></span><Button variant="ghost" size="xs" onClick={() => { linkAction.clearError(); setFormat('singbox'); setSubscription(user) }}>订阅详情</Button></PanelHeader>
             <div className="flex flex-1 flex-col gap-2.5 p-3.5">
               {address ? <code data-slot="subscription-address" tabIndex={0} className="bg-muted/50 focus-visible:ring-ring/50 scrollbar-thin block overflow-x-auto rounded-md border px-2.5 py-2 text-xs break-normal whitespace-pre focus-visible:ring-3 focus-visible:outline-none">{address}</code>
                 : <p className="bg-muted/50 text-muted-foreground rounded-md border px-2.5 py-2 text-xs">链接包含连接凭据，复制时会先确认管理员身份。</p>}
-              <p className="text-muted-foreground text-xs leading-relaxed">sing-box 和 Clash 用同一个地址，客户端会自动拿到对应格式。重置后旧专属地址立即失效。</p>
               <div className="mt-auto flex flex-wrap items-center gap-2">
                 <Button size="sm" disabled={linkAction.busy} onClick={() => copySubscription(user)}>{copied === user.id ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}{copied === user.id ? '已复制' : linkAction.busy ? '正在获取…' : '复制订阅链接'}</Button>
               </div>
@@ -201,7 +200,7 @@ export default function ProxyUsers({ initialUserId }: { initialUserId?: number }
           </Panel>}
           <UserPasskeyAccess key={`portal-${selected}`} id={selected} userError={() => userError(selected)} refreshRevision={refreshRevision} />
         </div>
-        {line?.bridged && <Notice role="status">从原系统迁移的用户：订阅仍由原系统生成，列出所属「原权限组」策略组中的线路；修改套餐不再改变线路。</Notice>}
+        {line?.bridged && <Notice role="status">迁移用户：订阅仍由原系统生成，线路来自所属「原权限组」，修改套餐不改变线路。</Notice>}
         {notice && <Notice tone="success" role="status">{notice}</Notice>}
         <ErrorNotice message={!editor && !deleting && !resetting ? action.error : ''} />
         {user && <UserEntitlements key={user.id} id={user.id} entitlement={entitlement} userError={() => userError(user.id)} refreshRevision={refreshRevision} onChange={refresh} />}

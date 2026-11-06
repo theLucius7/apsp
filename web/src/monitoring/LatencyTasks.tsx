@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api'
-import { Badge, Confirm, Empty, ErrorNotice, Field, Loading, Modal, PageHeader, Refresh, SettingRow, DialogPresence } from '../components'
+import { Badge, Confirm, Empty, ErrorNotice, Field, Loading, Modal, PageHeader, Refresh, SettingRow, DialogPresence, InfoTip } from '../components'
 import { resourceWriteError, useAction, useResource } from '../hooks'
 import { latencyDraftError, saveLatencyTask, deleteLatencyTask, bindProbeAuthorization, changeProbe, authorizationState, monitoringOf, withMonitoring, familyLabel, latency, loss, lossLabel, networkLabel, networks, probeState, probeValue } from '../probes'
 import type { Probe, ProbeOverview, TaskWriteSnapshot } from '../probes'
@@ -50,7 +50,7 @@ export default function LatencyTasks() {
   }
   const toggle = (task: Task) => { if (writeError(task)) return; void action.run(() => saveLatencyTask({ tasks, servers }, task, { ...task, spec: { ...task.spec, enabled: !task.spec.enabled } }, body => api(`/api/latency-tasks/${task.id}`, 'PATCH', body)), tasks.reload) }
   return <><PageHeader title="延迟检测"><Refresh onClick={refresh} /><Button disabled={Boolean(writeError()) || (tasks.data?.length ?? 32) >= 32} onClick={() => { if (!writeError()) setEditing(empty) }}><PlusIcon aria-hidden="true" />添加任务</Button></PageHeader><LatencyTabs active="latency" /><ErrorNotice message={tasks.error || servers.error || overview.error || action.error} retry={refresh} />
-    <Panel><div className="p-4"><label className="grid min-w-0 gap-1.5 text-sm">观测服务器<NativeSelect className="w-full" aria-label="观测服务器" value={serverId} onChange={event => setServerId(Number(event.target.value))}><option value={0}>全部服务器</option>{servers.data?.map(server => <option key={server.id} value={server.id}>{server.name}</option>)}</NativeSelect></label><p className="text-muted-foreground mt-3 text-xs leading-relaxed">按目标所属运营商与地区查看每台服务器的观测。时间为实际采样时间；历史值不代表当前连通性，也不用于完整三网排名。</p></div></Panel>
+    <Panel><div className="flex items-end gap-2 p-4"><label className="grid min-w-0 flex-1 gap-1.5 text-sm">观测服务器<NativeSelect className="w-full" aria-label="观测服务器" value={serverId} onChange={event => setServerId(Number(event.target.value))}><option value={0}>全部服务器</option>{servers.data?.map(server => <option key={server.id} value={server.id}>{server.name}</option>)}</NativeSelect></label><InfoTip label="观测说明" className="mb-1.5"><p>按目标所属运营商与地区查看每台服务器的观测。时间为实际采样时间；历史值不代表当前连通性，也不用于完整三网排名。</p></InfoTip></div></Panel>
     {networks.slice(0, 3).map(([network, label]) => {
       const rows = overview.data?.filter(row => row.probe.monitor?.network === network && (!serverId || row.server_id === serverId)) ?? []
       return <Panel key={network} aria-label={`${label}周期观测`}><PanelHeader><PanelTitle>{label}</PanelTitle><span className="text-muted-foreground text-xs">{rows.length} 个目标</span></PanelHeader>{!rows.length ? <div className="p-4">{overview.loading && !overview.data ? '正在读取…' : overview.error ? '状态未知' : '未配置'}</div> : <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>服务器 / 地区</TableHead><TableHead>目标 / 轻量方法</TableHead><TableHead>状态</TableHead><TableHead>延迟</TableHead><TableHead>丢包 / 连接失败率</TableHead><TableHead>采样时间</TableHead></TableRow></TableHeader><TableBody>{rows.map(({ server_id, probe, results }) => {

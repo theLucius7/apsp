@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Empty, ErrorNotice, Loading, PageHeader, Refresh } from '../../components'
+import { Empty, ErrorNotice, InfoTip, Loading, PageHeader, Refresh } from '../../components'
 import { Stat, StatStrip } from '../../display/ui'
 import { bytes } from '../../format'
 import { useResource } from '../../hooks'
@@ -73,7 +73,7 @@ export default function Overview() {
       <Stat icon={ServerIcon} label="服务器在线" loading={!servers.data && !servers.error} value={servers.data ? `${enrolled.length - offline.length} / ${enrolled.length}` : '—'}>{servers.data ? `${servers.data.length - enrolled.length} 台待接入` : '无法读取'}</Stat>
       <Stat icon={WaypointsIcon} label="代理节点" loading={!nodes.data && !nodes.error} value={nodes.data ? nodes.data.length : '—'}>{pluginServers.data ? `${enabled.length} 台服务器已安装 sing-box` : pluginServers.error ? '无法读取' : ''}</Stat>
       <Stat icon={UsersIcon} label="代理用户" loading={!users.data && !users.error} value={users.data ? users.data.length : '—'}>{users.error ? '无法读取' : ''}</Stat>
-      <Stat icon={ActivityIcon} label="累计代理流量" loading={!usage.data && !usage.error} value={usage.data ? bytes(usage.data.total) : '—'}>含已删除用户</Stat>
+      <Stat icon={ActivityIcon} label="累计代理流量" loading={!usage.data && !usage.error} value={usage.data ? bytes(usage.data.total) : '—'} />
     </StatStrip></div>
     {setupKnown && !setupDone && <Panel><PanelHeader><PanelTitle>开始使用</PanelTitle></PanelHeader><ol className="m-0 grid gap-px p-1.5">{steps.map((step, index) => <li className="flex flex-wrap items-center justify-between gap-2 rounded-md px-2.5 py-2" key={step.title}>
       <div className="min-w-0 flex-1"><strong className="flex items-center gap-2 text-[13px] font-medium">{step.done ? <CircleCheckIcon className="text-success size-4" aria-label="已完成" /> : <span className="bg-muted grid size-4 place-items-center rounded-full text-[11px]" aria-hidden="true">{index + 1}</span>}{step.title}</strong>{!step.done && <p className="text-muted-foreground mt-0.5 pl-6 text-xs">{step.description}</p>}</div>
@@ -88,7 +88,7 @@ export default function Overview() {
           <a className={buttonVariants({ variant: 'ghost', size: 'xs' })} href={entry.href}>{entry.action}</a>
         </li>)}</ul> : <p data-slot="overview-clear" className="flex items-center gap-2.5 px-4 py-3.5 text-[13px]"><CircleCheckIcon className="text-success size-4 shrink-0" aria-hidden="true" /><strong className="font-medium">没有需要处理的事项</strong><span className="text-muted-foreground">服务器在线、sing-box 运行正常、告警均已恢复{renewals.data ? '，30 天内也没有待续费的项目' : ''}。</span></p>}
       </Panel>
-      <Panel><PanelHeader><PanelTitle>代理网络</PanelTitle>{pluginServers.data && <span data-slot="singbox-summary" className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-normal tabular-nums">
+      <Panel><PanelHeader><span className="flex min-w-0 items-center gap-1.5"><PanelTitle>代理网络</PanelTitle>{wide && <InfoTip label="图例"><p>圆点大小表示本期流量，虚线红圈表示 Agent 离线；点击服务器查看它的 sing-box。</p></InfoTip>}</span>{pluginServers.data && <span data-slot="singbox-summary" className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-normal tabular-nums">
             <span className="flex items-center gap-1.5"><i className="bg-success size-2 rounded-full" />{states.ready} 运行</span>
             {states.attention > 0 && <span className="text-destructive flex items-center gap-1.5"><i className="bg-destructive size-2 rounded-full" />{states.attention} 需处理</span>}
             {states.waiting > 0 && <span className="flex items-center gap-1.5"><i className="bg-warning size-2 rounded-full" />{states.waiting} 等待</span>}
@@ -96,7 +96,7 @@ export default function Overview() {
             {offline.length > 0 && <span className="flex items-center gap-1.5"><i className="border-destructive size-2.5 rounded-full border border-dashed" />{offline.length} 离线</span>}
           </span>}{states.off > 0 && <a className={buttonVariants({ variant: 'ghost', size: 'xs' })} href="#/system/plugins">安装 sing-box</a>}</PanelHeader>
         {pluginServers.loading && !pluginServers.data ? <Loading variant="table" rows={3} /> : !pluginServers.data?.length ? <Empty icon={ServerIcon} title="先接入服务器" description="服务器在线后，再为需要代理服务的设备安装 sing-box。"><a className={buttonVariants()} href="#/servers">添加服务器</a></Empty>
-          : wide ? <div className="px-2 py-3"><NetworkMap plugins={pluginServers.data} servers={servers.data} /><p className="text-muted-foreground px-3 text-xs">圆点大小表示本期流量，虚线红圈表示 Agent 离线；点击服务器查看它的 sing-box。</p></div>
+          : wide ? <div className="px-2 py-3"><NetworkMap plugins={pluginServers.data} servers={servers.data} /></div>
           : <ul data-slot="singbox-servers" className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-1.5 p-2.5">{ordered.map(({ server, state }) => <li key={server.id} className="min-w-0">
             <a href={`#/servers/${server.id}/plugins`} title={state.reason} className={cn('hover:border-foreground/25 focus-visible:ring-ring/50 flex min-w-0 items-center gap-2 rounded-md border px-2.5 py-2 outline-none focus-visible:ring-3', !server.enabled && 'bg-muted/40')}>
               <span className={cn('size-2 shrink-0 rounded-full', toneDot[state.tone])} aria-hidden="true" />

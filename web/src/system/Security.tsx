@@ -32,7 +32,7 @@ function PasswordChange() {
     <form className="p-4" onSubmit={submit}>
       <Field label="新密码" hint="至少 12 个字符，不能与当前密码相同。"><Input name="new_password" type="password" autoComplete="new-password" required minLength={12} maxLength={1024} disabled={action.busy} /></Field>
       <Field label="再次输入新密码"><Input name="repeat_password" type="password" autoComplete="new-password" required minLength={12} maxLength={1024} disabled={action.busy} /></Field>
-      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">提交时需要再次验证身份（Passkey 或当前密码）。修改后，其他设备上的管理员会话会退出，当前会话保留；已绑定的 Passkey 不受影响。</p>
+      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">提交前需再次验证身份；修改后其他设备会退出登录，Passkey 不受影响。</p>
       <ErrorNotice message={action.error} />
       {done && <p role="status" className="text-sm">密码已修改。</p>}
       <Button disabled={action.busy}>{action.busy ? '正在提交…' : '修改密码'}</Button>
@@ -86,25 +86,25 @@ export default function Security() {
       <PanelHeader><PanelTitle>二步验证</PanelTitle>{resource.data && <Badge tone={resource.data.enabled ? 'good' : 'neutral'}>{resource.data.enabled ? '已启用' : '未启用'}</Badge>}</PanelHeader>
       <div className="p-4">
         {resource.loading && !resource.data ? <Loading /> : resource.data?.enabled ? <>
-          <p>登录时需要管理员密码和验证器中的六位验证码。每个验证码只能成功使用一次。</p>
+          <p>登录时需要密码和验证器中的六位验证码。</p>
           <form onSubmit={disable}>
-            <p className="text-muted-foreground mt-3 text-xs leading-relaxed">关闭前需要再次验证身份：使用 Passkey，或当前密码加验证器中的验证码。关闭后将退出其他设备的管理员会话，当前会话保留。</p>
+            <p className="text-muted-foreground mt-3 text-xs leading-relaxed">关闭前需再次验证身份（Passkey，或密码加验证码）；关闭后其他设备会退出登录。</p>
             <Button variant="destructive" disabled={action.busy}>{action.busy ? '正在提交…' : '关闭二步验证'}</Button>
           </form>
         </> : resource.data ? <>
-          <p>使用支持动态验证码的验证器添加账户，然后输入验证码完成启用。确认前，原有登录方式仍然有效。</p>
+          <p>用验证器添加账户，再输入验证码完成启用。</p>
           {setup ? <>
-            <p className="text-muted-foreground mt-3 text-xs leading-relaxed">本次设置剩余 {Math.max(0, setup.expires_at - now)} 秒。秘密仅在本次生成后显示，请勿分享；离开此页面后需要重新生成。</p>
+            <p className="text-muted-foreground mt-3 text-xs leading-relaxed">剩余 {Math.max(0, setup.expires_at - now)} 秒。秘密只显示这一次，请勿分享。</p>
             <div data-slot="field" className="mb-4 grid min-w-0 gap-1.5 last:mb-0"><span className="text-sm leading-snug font-medium">手动添加的秘密</span><CopyField text={setup.secret} label="复制秘密" /></div>
             <div data-slot="field" className="mb-4 grid min-w-0 gap-1.5 last:mb-0"><span className="text-sm leading-snug font-medium">验证器导入地址</span><CopyField text={setup.otpauth_uri} label="复制导入地址" /></div>
             <form onSubmit={confirm}>
               <Field label="验证器中的六位验证码"><Input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" minLength={6} maxLength={6} required disabled={action.busy} /></Field>
-              <p className="text-muted-foreground mt-3 text-xs leading-relaxed">启用成功后，其他设备的管理员会话将退出，当前会话保留。</p>
+              <p className="text-muted-foreground mt-3 text-xs leading-relaxed">启用后其他设备会退出登录。</p>
               <Button disabled={action.busy || now >= setup.expires_at}>{action.busy ? '正在验证…' : '确认启用'}</Button>
             </form>
           </> : <form onSubmit={begin}>
             {!!resource.data.pending_expires_at && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">存在待确认设置。重新生成会使之前的秘密失效。</p>}
-            <p className="text-muted-foreground mt-3 text-xs leading-relaxed">开始前需要再次验证身份（Passkey 或当前密码）。</p>
+            <p className="text-muted-foreground mt-3 text-xs leading-relaxed">开始前需再次验证身份。</p>
             <Button disabled={action.busy}>{action.busy ? '正在提交…' : resource.data.pending_expires_at ? '重新生成设置' : '开始设置'}</Button>
           </form>}
         </> : null}

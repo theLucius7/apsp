@@ -18,6 +18,7 @@ import { Badge as UiBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Empty as UiEmpty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -210,6 +211,23 @@ export function Refresh({ onClick }: { onClick: () => void }) {
   return <Button variant="ghost" size="icon" title={t('刷新')} onClick={() => { setTurns(value => value + 1); onClick() }}>
     <RefreshCwIcon key={turns} aria-hidden="true" className={turns ? 'motion-safe:animate-[refresh-turn_600ms_cubic-bezier(0.4,0,0.2,1)]' : undefined} /><span className="sr-only">{t('刷新')}</span>
   </Button>
+}
+
+/**
+ * The fine print of a section: how a figure is counted, what a symbol on a chart
+ * means. A small ⓘ beside the heading opens it, so pages carry no explanatory
+ * sentences of their own. Works by tap as well as by keyboard.
+ */
+export function InfoTip({ label = '说明', children, className }: { label?: string; children: ReactNode; className?: string }) {
+  const { t } = useI18n()
+  return <Popover>
+    <PopoverTrigger asChild>
+      <button type="button" data-slot="info-tip" aria-label={t(label)} title={t(label)} className={cn('text-muted-foreground hover:text-foreground focus-visible:shadow-focus data-[state=open]:text-foreground inline-grid size-6 shrink-0 place-items-center rounded-full outline-none transition-colors pointer-coarse:size-8', className)}>
+        <InfoIcon className="size-3.5" aria-hidden="true" />
+      </button>
+    </PopoverTrigger>
+    <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)] gap-2 text-xs leading-relaxed">{children}</PopoverContent>
+  </Popover>
 }
 
 /** Usage bar that turns warning and then destructive, matching the dashboard thresholds (75% / 90% by default). */
