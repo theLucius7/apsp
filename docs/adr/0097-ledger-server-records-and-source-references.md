@@ -2,6 +2,7 @@
 
 - 状态：已实现；本地编译、静态检查、PostgreSQL 集成测试与浏览器夹具见 [PROGRESS](../../PROGRESS.md) 本轮记录，未在生产面板上操作。
 - 日期：2026-10-25。
+- 后续：页面重排为三个视图与设置对话框，退订提醒并入服务器详情，见 [ADR 0118](0118-costs-and-renewals-page.md)。
 - 落实：[ADR 0087](0087-narrow-positioning-proxy-network.md) 决定 4 的剩余部分（项目来源中的机场订阅、沿用运维资产档案的记录与退订提醒）；接续 [ADR 0096](0096-costs-and-renewals-ledger.md)。
 - 关联：[功能地图](../product-map.md)、[日常运维](../fleet-operations.md)、[自动化与恢复](../operations-recovery.md)、[ADR 0085](0085-rearchitecture-plugins-sources-chains.md)（宿主、插件与组装分层）。
 

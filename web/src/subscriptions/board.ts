@@ -7,9 +7,10 @@
 import type { SubscriptionSource as OrderedSource } from '../plugins/singbox/orderedSourceTypes'
 import type { SubscriptionSource as NumberedSource } from '../plugins/singbox/sourceTypes'
 import { sourceReason, sourceStatus } from '../plugins/singbox/sourceTypes'
-import { amount, cycleDays, cycles, daysUntil, monthlyAmount } from '../plugins/expenses/types'
+import { cycleDays } from '../plugins/expenses/types'
+import { itemRow } from '../plugins/expenses/model'
+import type { LedgerSummary } from '../plugins/expenses/model'
 import type { Expense, Label } from '../plugins/expenses/types'
-import { convert } from '../display/currency'
 import type { ExchangeRates } from '../display/currency'
 import { ago } from '../format'
 
@@ -142,19 +143,9 @@ export function userView(item: UserSubscription, now: number, recorded: boolean,
 
 // Renewal items of the costs and renewals ledger.
 
-export type RenewalSummary = { from: string; base_currency: string; budget_units: string | null; exchange: ExchangeRates }
-
-export function validRenewals(value: unknown): value is Expense[] {
-  return Array.isArray(value) && value.every(item => record(item) && integer(item.id) && typeof item.name === 'string' && counter(item.amount_units) && typeof item.currency === 'string'
-    && typeof item.next_payment === 'string' && ['day', 'week', 'month', 'year'].includes(String(item.cycle)) && integer(item.frequency) && Number(item.frequency) > 0
-    && typeof item.inactive === 'boolean' && typeof item.auto_renew === 'boolean' && nullableText(item.cancellation_date ?? null)
-    && ['category_id', 'payment_method_id', 'payer_id'].every(key => nullableInteger(item[key] ?? null)))
-}
-export function validRenewalSummary(value: unknown): value is RenewalSummary {
-  return record(value) && typeof value.from === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.from) && typeof value.base_currency === 'string' && /^[A-Z]{3}$/.test(value.base_currency)
-    && (value.budget_units === null || counter(value.budget_units)) && record(value.exchange)
-}
-export const validLabels = (value: unknown): value is { entries: Label[] } => record(value) && Array.isArray(value.entries) && value.entries.every(label => record(label) && integer(label.id) && typeof label.name === 'string')
+// The ledger's own validators: the board reads the same three endpoints as the page.
+export type RenewalSummary = LedgerSummary
+export { validItems as validRenewals, validLabels, validSummary as validRenewalSummary } from '../plugins/expenses/model'
 
 export type RenewalView = Common & {
   price: string
@@ -170,35 +161,19 @@ export type RenewalView = Common & {
   payment: string
 }
 
-const ledgerDay = (date: string) => { const [, month, dayOfMonth] = date.split('-').map(Number); return month && dayOfMonth ? `${month}/${dayOfMonth}` : date }
-
 /** `today` is the ledger's own date (its time zone), from the summary; `base` and `rates` convert to its currency. */
 export function renewalView(item: Expense, today: string | undefined, base: string | undefined, rates: ExchangeRates | undefined, labels: Label[]): RenewalView {
-  const days = daysUntil(item.next_payment, today)
+  // The ledger page reads the same item the same way (ADR 0118).
+  const row = itemRow(item, { today, base, rates, labels })
+  const { days, status, reasons } = row.due
   const period = cycleDays(item)
-  const cancelled = item.cancellation_date !== null && item.cancellation_date !== undefined && item.cancellation_date <= item.next_payment
-  const status: { label: string; tone: Tone } = item.inactive ? { label: '已停用', tone: 'muted' }
-    : days !== null && days < 0 ? { label: '待确认续费', tone: 'danger' }
-      : cancelled ? { label: '到期不续', tone: 'info' }
-        : days !== null && days <= SOON_DAYS ? { label: days === 0 ? '今天续费' : '即将续费', tone: 'warning' }
-          : { label: item.auto_renew ? '自动续费' : '手动续费', tone: 'good' }
-  const own = monthlyAmount(item)
-  const monthly = base && own !== null ? convert(own, item.currency, base, rates) : null
   const progress = item.inactive || days === null || period === null ? null : Math.min(100, Math.max(0, (1 - days / period) * 100))
   const next = item.inactive ? { label: '—', title: '已停用，不再续费', tone: 'muted' as Tone }
-    : { label: days === null ? item.next_payment : days < 0 ? `已过 ${-days} 天` : days === 0 ? '今天' : days <= SOON_DAYS ? `${days} 天后` : ledgerDay(item.next_payment),
-      title: `下次续费 ${item.next_payment}${cancelled ? `；已安排 ${item.cancellation_date} 取消` : ''}`, tone: (days !== null && days < 0 ? 'danger' : days !== null && days <= SOON_DAYS ? 'warning' : 'muted') as Tone }
-  const label = (id: number | null) => labels.find(entry => entry.id === id)?.name ?? ''
-  const reasons: string[] = []
-  if (!item.inactive && days !== null) {
-    if (days < 0) reasons.push(item.auto_renew ? '续费日已过，等待顺延' : '续费日已过，等待确认')
-    else if (days <= SOON_DAYS && !cancelled) reasons.push(days === 0 ? '今天续费' : `${days} 天后续费`)
-  }
+    : { ...row.due.next, title: `下次续费 ${item.next_payment}${row.cancelled ? `；已安排 ${item.cancellation_date} 取消` : ''}` }
   const dueAt = Date.parse(`${item.next_payment}T00:00:00Z`) / 1000
   return {
-    status, usable: !item.inactive, reasons, weight: monthly ?? own, due: item.inactive || !Number.isFinite(dueAt) ? null : dueAt,
-    price: amount(item.amount_units, item.currency), cycle: item.frequency === 1 ? `每${cycles[item.cycle]}` : `每 ${item.frequency} ${cycles[item.cycle]}`,
-    monthly, days, progress, next, renewal: item.auto_renew ? '自动' : '手动', category: label(item.category_id), payment: label(item.payment_method_id),
+    status, usable: !item.inactive, reasons, weight: row.monthly ?? row.ownMonthly, due: item.inactive || !Number.isFinite(dueAt) ? null : dueAt,
+    price: row.price!, cycle: row.cycle, monthly: row.monthly, days, progress, next, renewal: item.auto_renew ? '自动' : '手动', category: row.category, payment: row.payment,
   }
 }
 

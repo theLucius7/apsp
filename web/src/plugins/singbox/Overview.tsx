@@ -43,7 +43,7 @@ export default function Overview() {
     ...(offline.length > 5 ? [{ key: 'offline-more', tone: 'bad' as const, text: `另有 ${offline.length - 5} 台服务器离线`, href: '#/servers', action: '服务器列表' }] : []),
     ...failing.map(server => ({ key: `install-${server.id}`, tone: 'bad' as const, text: <><strong>{server.name}</strong> 的 sing-box 安装或运行失败</>, href: `#/servers/${server.id}/plugins`, action: '查看部署' })),
     ...(active.length ? [{ key: 'alerts', tone: 'warm' as const, text: `${active.length} 条告警尚未恢复${active[0] ? `，最近：${active[0].server_name} · ${active[0].message}` : ''}`, href: '#/system/notifications', action: '告警事件' }] : []),
-    ...due.slice(0, 5).map(entry => ({ key: `due-${entry.kind}-${entry.id}`, tone: 'warm' as const, text: <><strong>{entry.name}</strong> 将在 {entry.date} 续费</>, href: '#/plugins/expenses', action: '费用与续费' })),
+    ...due.slice(0, 5).map(entry => ({ key: `due-${entry.kind}-${entry.id}`, tone: 'warm' as const, text: <><strong>{entry.name}</strong> 将在 {entry.date} {entry.kind === 'server' ? '到期' : '续费'}</>, href: entry.kind === 'reference' ? '#/plugins/sing-box/nodes?view=sources' : `#/plugins/expenses/${entry.kind === 'server' ? 'servers' : 'items'}/${entry.id}`, action: entry.kind === 'reference' ? '订阅来源' : '查看' })),
   ]
   const loaded = [servers, pluginServers, alerts].every(resource => resource.data || resource.error)
   // The drawing needs room for its labels; phones get the same servers as a list.

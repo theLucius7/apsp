@@ -58,3 +58,16 @@ export function parseMinor(value: FormDataEntryValue | null, code: string): numb
   const [whole, fraction = ''] = raw.split('.')
   return Number(BigInt(whole) * 10n ** BigInt(digits) + BigInt(fraction.padEnd(digits, '0') || '0'))
 }
+
+/** The full write body for an item as it stands, with some fields changed (the API takes every field on update). */
+export function itemInput(item: Expense, changes: Partial<Omit<Expense, 'id' | 'anchor_payment' | 'version'>> = {}) {
+  const value = { ...item, ...changes }
+  return {
+    name: value.name, amount_units: value.amount_units, currency: value.currency, start_date: value.start_date, next_payment: value.next_payment,
+    cycle: value.cycle, frequency: value.frequency, category_id: value.category_id, payment_method_id: value.payment_method_id, payer_id: value.payer_id,
+    notes: value.notes, url: value.url, inactive: value.inactive, auto_renew: value.auto_renew, notify: value.notify, notify_days_before: value.notify_days_before,
+    cancellation_date: value.cancellation_date, replacement_id: value.replacement_id, version: item.version,
+  }
+}
+/** Common currencies first; any other three-letter code can still be typed. */
+export const currencies = ['CNY', 'USD', 'EUR', 'HKD', 'JPY', 'GBP', 'SGD', 'TWD', 'KRW', 'AUD', 'CAD', 'CHF', 'RUB', 'VND']

@@ -124,7 +124,7 @@ const UserCard = memo(function UserCard({ entry: { item, view } }: { entry: User
 
 const RenewalCard = memo(function RenewalCard({ entry: { item, view }, base }: { entry: RenewalEntry; base?: string }) {
   const ring = item.inactive ? '已停用' : view.days === null ? `下次续费 ${item.next_payment}` : view.days < 0 ? `续费日已过 ${-view.days} 天` : `本期已过 ${Math.round(view.progress ?? 0)}%，${view.days} 天后续费`
-  return <a data-slot="subscription-card" data-kind="renewals" data-stopped={item.inactive || undefined} href="#/plugins/expenses" aria-label={`${item.name}，${view.status.label}，查看费用与续费`}
+  return <a data-slot="subscription-card" data-kind="renewals" data-stopped={item.inactive || undefined} href={`#/plugins/expenses/items/${item.id}`} aria-label={`${item.name}，${view.status.label}，查看费用与续费`}
     className={cn(surface, cardLink, item.inactive && 'bg-muted/30')}>
     <CardHeader tone={view.status.tone} name={item.name} status={view.status} />
     <div className="flex min-w-0 items-center gap-3 px-3.5 pb-2.5">
@@ -194,7 +194,7 @@ function RenewalTable({ entries, base }: { entries: RenewalEntry[]; base?: strin
   return <div className={cn(surface, 'max-w-full min-w-0 overflow-hidden')}><Table>
     <TableHeader><TableRow><TableHead>续费项目</TableHead><TableHead>费用 / 周期</TableHead><TableHead>折合每月</TableHead><TableHead>下次续费</TableHead><TableHead>续费方式</TableHead><TableHead>分类 / 付款</TableHead></TableRow></TableHeader>
     <TableBody>{entries.map(({ key, item, view }) => <TableRow key={key} data-stopped={item.inactive || undefined}>
-      <TableCell>{nameCell('#/plugins/expenses', view.status.tone, view.status.label, item.name)}{view.reasons.length > 0 && <small className="text-warning block text-xs">{view.reasons.join(' · ')}</small>}</TableCell>
+      <TableCell>{nameCell(`#/plugins/expenses/items/${item.id}`, view.status.tone, view.status.label, item.name)}{view.reasons.length > 0 && <small className="text-warning block text-xs">{view.reasons.join(' · ')}</small>}</TableCell>
       <TableCell className="text-xs whitespace-nowrap tabular-nums">{view.price}<small className="text-muted-foreground block">{view.cycle}</small></TableCell>
       <TableCell className="text-xs whitespace-nowrap tabular-nums">{view.monthly !== null && base ? money(view.monthly, base) : '—'}</TableCell>
       <TableCell title={view.next.title} className={cn('text-xs whitespace-nowrap', valueTone(view.next.tone))}>{item.inactive ? '已停用' : item.next_payment}{!item.inactive && <small className="block">{view.next.label}</small>}</TableCell>

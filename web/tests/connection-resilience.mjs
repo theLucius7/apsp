@@ -157,11 +157,12 @@ try {
 
   // A page that fails to render stays a failed page: the console and other pages work.
   {
-    const state = { routes: { '/api/plugins/sing-box/users/overview': route => route.fulfill({ json: [{ id: 1, status: 'active', allowed: true, package_name: 'x', monthly_bytes: 'not-a-number', used_bytes: {} }] }) } }
-    const { context, page } = await open(state, '/plugins/expenses')
-    await page.route('**/api/plugins/expenses/subscriptions', route => route.fulfill({ json: [{ id: 1, name: 'x', amount_units: 'not-a-number', currency: 'CNY', next_payment: '2026-01-01', cycle: 'month', frequency: 1, inactive: false }] }))
-    await page.route('**/api/plugins/expenses/labels', route => route.fulfill({ json: { entries: [] } }))
-    await page.reload()
+    // The proxy user list sums usage counters without checking them first; malformed ones make it throw while rendering.
+    const state = { routes: {
+      '/api/plugins/sing-box/users': route => route.fulfill({ json: [{ id: 1, name: 'TEST_ONLY', subscription_url: '' }] }),
+      '/api/plugins/sing-box/usage': route => route.fulfill({ json: { uplink: '0', downlink: '0', total: '0', by_user: [{ user_id: 1, name: 'TEST_ONLY', uplink: 'not-a-number', downlink: '1', deleted: false }], by_node: [] } }),
+    } }
+    const { context, page } = await open(state, '/plugins/sing-box/users')
     await page.locator('[data-slot=page-failure]').waitFor()
     assert.equal(await page.locator('[data-slot=sidebar]').count(), 1, 'The console survives')
     await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '服务器', exact: true }).click()
