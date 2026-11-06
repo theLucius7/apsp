@@ -156,7 +156,7 @@ try {
   assert.notEqual(saved[0].activation_hash, activation(invite))
   const userClient = await client(390), userPage = userClient.page
   await userPage.goto(inviteUrl)
-  await userPage.getByRole('heading', { name: '开通代理用户入口', exact: true }).waitFor()
+  await userPage.getByRole('heading', { name: '开通我的账户', exact: true }).waitFor()
   assert.equal(userPage.url().includes('activate='), false, 'Activation secret is removed from address/history')
   await userPage.getByLabel('密钥名称', { exact: true }).fill('用户手机')
   await userPage.getByRole('button', { name: '绑定 Passkey 并开通', exact: true }).click()

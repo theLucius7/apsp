@@ -344,9 +344,9 @@ export function CopyButton({ text, label = '复制', primary = false }: { text: 
 }
 
 /** `singleLine` keeps commands on one scrollable line so the preview matches what is copied. */
-export function CopyField({ text, label, singleLine = false }: { text: string; label: string; singleLine?: boolean }) {
-  return <div data-slot="copy-field" className="bg-muted/50 my-3 flex items-start gap-3 rounded-lg border p-3 max-md:flex-col max-md:*:data-[slot=copy-control]:self-end">
+export function CopyField({ text, label, singleLine = false, primary = false, className }: { text: string; label: string; singleLine?: boolean; primary?: boolean; className?: string }) {
+  return <div data-slot="copy-field" className={cn('bg-muted/50 my-3 flex min-w-0 items-start gap-3 rounded-lg border p-3 max-md:flex-col max-md:*:data-[slot=copy-control]:self-end', singleLine && 'md:items-center', className)}>
     <code tabIndex={0} className={cn('text-foreground min-w-0 rounded-sm leading-relaxed focus-visible:ring-ring/50 focus-visible:ring-3 focus-visible:outline-none', singleLine ? 'scrollbar-thin max-w-full overflow-x-auto break-normal whitespace-pre max-md:self-stretch md:flex-1' : 'flex-1 break-all whitespace-pre-wrap')}>{text}</code>
-    <CopyButton text={text} label={label} />
+    <CopyButton text={text} label={label} primary={primary} />
   </div>
 }

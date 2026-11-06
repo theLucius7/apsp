@@ -17,8 +17,9 @@ import type { ShellActor } from '@/lib/shell-actor'
 import { boardCounts, fullTime, numberedSourceCard, orderedSourceCard, renewalView, savedSort, selectEntries, sourceView, userView, validLabels, validRenewalSummary, validRenewals, validUserBoard } from './board'
 import type { BoardFilter, BoardKind, BoardSort, Entry, SourceCard, Tone } from './board'
 import { cn } from '@/lib/utils'
-import { revealMotion, transition } from '@/lib/motion'
+import { revealMotion } from '@/lib/motion'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { ProgressRing } from '@/components/progress-ring'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -44,32 +45,10 @@ const kinds: { kind: BoardKind; label: string; icon: LucideIcon; manage: { href:
   { kind: 'sources', label: '订阅来源', icon: WaypointsIcon, manage: { href: '#/plugins/sing-box/nodes?view=sources', label: '管理订阅来源' } },
 ]
 const filters: [BoardFilter, string][] = [['all', '全部'], ['usable', '可用'], ['attention', '需关注'], ['stopped', '已停用']]
-const strokeTone: Record<Tone, string> = { good: 'stroke-success', warning: 'stroke-warning', danger: 'stroke-destructive', info: 'stroke-info', muted: 'stroke-muted-foreground/60' }
 /** Plain values read in the foreground; only states worth noticing take a colour. */
 const valueTone = (tone: Tone) => tone === 'warning' || tone === 'danger' || tone === 'info' ? toneText[tone] : 'text-foreground'
 const statusText = (tone: Tone) => tone === 'good' ? 'text-muted-foreground' : toneText[tone]
 const grid = 'grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start gap-3 max-sm:grid-cols-1'
-
-const RADIUS = 22
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS
-
-/**
- * A share drawn as a ring, with the reading in the middle. The optional hollow dot
- * marks where the calendar has got to: an arc past it is running ahead of time.
- */
-function Ring({ value, marker = null, tone, label, children }: { value: number | null; marker?: number | null; tone: Tone; label: string; children: ReactNode }) {
-  const share = value === null ? 0 : Math.min(100, Math.max(0, value)) / 100
-  const angle = marker === null ? null : marker / 100 * 2 * Math.PI - Math.PI / 2
-  return <div data-slot="ring" role="img" aria-label={label} title={label} className="relative size-14 shrink-0">
-    <svg viewBox="0 0 56 56" className="size-full" aria-hidden="true">
-      <circle cx="28" cy="28" r={RADIUS} fill="none" strokeWidth="5" className="stroke-foreground/10" />
-      {share > 0 && <m.circle cx="28" cy="28" r={RADIUS} fill="none" strokeWidth="5" strokeLinecap="round" transform="rotate(-90 28 28)"
-        className={strokeTone[tone]} strokeDasharray={CIRCUMFERENCE} initial={false} animate={{ strokeDashoffset: CIRCUMFERENCE * (1 - share) }} transition={transition.slow} />}
-      {angle !== null && <circle data-slot="cycle-marker" cx={28 + RADIUS * Math.cos(angle)} cy={28 + RADIUS * Math.sin(angle)} r="3.25" strokeWidth="1.5" className="fill-card stroke-foreground/70" />}
-    </svg>
-    <span className="absolute inset-0 grid place-content-center text-center leading-none tabular-nums">{children}</span>
-  </div>
-}
 
 function Datum({ icon: Icon, label, value, tone, title }: { icon: LucideIcon; label: string; value: ReactNode; tone: Tone; title: string }) {
   return <div data-slot="datum" title={title} className="bg-muted/50 min-w-0 overflow-hidden rounded-md px-2 py-1">
@@ -103,7 +82,7 @@ const UserCard = memo(function UserCard({ entry: { item, view } }: { entry: User
     className={cn(surface, cardLink, stopped && 'bg-muted/30')}>
     <CardHeader tone={view.status.tone} name={item.name} status={view.status} />
     <div className="flex min-w-0 items-center gap-3 px-3.5 pb-2.5">
-      <Ring value={view.usage} marker={stopped ? null : view.elapsed} tone={stopped ? 'muted' : view.usageTone} label={ring}><span className="text-[13px] font-semibold">{view.usage === null ? '∞' : `${Math.min(999, Math.round(view.usage))}%`}</span></Ring>
+      <ProgressRing value={view.usage} marker={stopped ? null : view.elapsed} tone={stopped ? 'muted' : view.usageTone} label={ring}><span className="text-[13px] font-semibold">{view.usage === null ? '∞' : `${Math.min(999, Math.round(view.usage))}%`}</span></ProgressRing>
       <div className="grid min-w-0 flex-1 gap-0.5">
         <div className="flex min-w-0 items-baseline gap-1.5 whitespace-nowrap">
           <strong className="text-base leading-tight font-semibold tabular-nums">{bytes(item.used_bytes)}</strong>
@@ -128,10 +107,10 @@ const RenewalCard = memo(function RenewalCard({ entry: { item, view }, base }: {
     className={cn(surface, cardLink, item.inactive && 'bg-muted/30')}>
     <CardHeader tone={view.status.tone} name={item.name} status={view.status} />
     <div className="flex min-w-0 items-center gap-3 px-3.5 pb-2.5">
-      <Ring value={view.progress} tone={item.inactive ? 'muted' : view.next.tone === 'muted' ? 'info' : view.next.tone} label={ring}>
+      <ProgressRing value={view.progress} tone={item.inactive ? 'muted' : view.next.tone === 'muted' ? 'info' : view.next.tone} label={ring}>
         {item.inactive ? <span className="text-muted-foreground text-[13px] font-semibold">—</span> : view.days !== null && view.days < 0 ? <span className="text-destructive text-xs font-semibold">逾期</span>
           : <><span className="text-[13px] font-semibold">{view.days === null ? '—' : Math.min(999, view.days)}</span><span className="text-muted-foreground mt-0.5 text-[10px]">天</span></>}
-      </Ring>
+      </ProgressRing>
       <div className="grid min-w-0 flex-1 gap-0.5">
         <div className="flex min-w-0 items-baseline gap-1.5 whitespace-nowrap">
           <strong className="truncate text-base leading-tight font-semibold tabular-nums">{view.price}</strong>

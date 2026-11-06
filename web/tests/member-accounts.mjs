@@ -189,9 +189,12 @@ try {
     await page.getByText('提醒设置已保存。', { exact: true }).waitFor()
     assert.deepEqual(writes.filter(write => write.path.endsWith('/account/reminders')).map(write => write.body), [{ remind_expire: true, remind_traffic: false }])
     await tabs.getByRole('button', { name: '通知', exact: true }).click()
-    await page.getByText(/^未读 · .* · TEST_ONLY 套餐即将到期$/).waitFor()
+    const notices = page.locator('[data-slot=member-message]').filter({ hasText: 'TEST_ONLY 套餐即将到期' })
+    await notices.and(page.locator('[data-unread]')).waitFor()
+    await page.getByText('1 条未读', { exact: true }).waitFor()
     await page.getByRole('button', { name: '全部标为已读', exact: true }).click()
-    await page.getByText(/^.* · TEST_ONLY 套餐即将到期$/).filter({ hasNotText: '未读' }).waitFor()
+    await notices.and(page.locator(':not([data-unread])')).waitFor()
+    await page.getByText('没有未读通知', { exact: true }).waitFor()
     assert.deepEqual(writes.filter(write => write.path.endsWith('/account/messages/read')).map(write => write.body), [{ ids: [1] }])
 
     // A visitor types a code: an unknown one is explained and the input stays.
