@@ -1,4 +1,5 @@
 use super::Runtime;
+use crate::state::Locked;
 use crate::{artifacts::PanelClient, reconcile::Reconciler, state::StorageRetry};
 use anyhow::Result;
 use apsp_protocol::{ApplyResult, ApplyStatus, Envelope};
@@ -57,7 +58,7 @@ pub(super) async fn run(
                     }
                 }
                 {
-                    let mut state = runtime.state.lock().map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+                    let mut state = runtime.state.locked()?;
                     cleanup_storage.finish("clean acknowledged state", state.cleanup_acknowledged())?;
                 }
                 continue;

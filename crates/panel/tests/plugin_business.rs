@@ -79,7 +79,7 @@ async fn monitoring_server_requires_explicit_enablement_and_never_publishes_prox
         response.json::<Value>().await?["error"]
             .as_str()
             .context("reason")?
-            .contains("插件设置")
+            .contains("插件中心")
     );
     assert_eq!(
         panel

@@ -1,3 +1,4 @@
+use crate::state::Locked;
 mod operations;
 mod runtime_permissions;
 mod terminals;
@@ -207,8 +208,7 @@ async fn tick(
         return Ok(());
     }
     let pending = state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
+        .locked()?
         .get_json::<Vec<JobResult>>("fleet_results")?
         .unwrap_or_default();
     for result in &pending {
@@ -226,9 +226,7 @@ async fn tick(
             }
             Err(status) => anyhow::bail!("panel did not accept fleet results: HTTP {status}"),
         }
-        let mut durable = state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+        let mut durable = state.locked()?;
         let mut records = durable
             .get_json::<Vec<JobResult>>("fleet_results")?
             .unwrap_or_default();
@@ -257,9 +255,7 @@ async fn tick(
     for job in work.jobs {
         let key = format!("fleet_intent:{}", job.id);
         {
-            let mut durable = state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+            let mut durable = state.locked()?;
             if durable.get_json::<bool>(&key)?.is_some() {
                 tracing::error!(job = %job.id, "operation already attempted; remote state must be reconciled");
                 continue;
@@ -314,9 +310,7 @@ async fn tick(
                     },
                 };
                 {
-                    let mut durable = state
-                        .lock()
-                        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+                    let mut durable = state.locked()?;
                     let mut records = durable
                         .get_json::<Vec<JobResult>>("fleet_results")?
                         .unwrap_or_default();
@@ -377,9 +371,7 @@ fn parse_work(value: &serde_json::Value, state: &SharedState) -> Result<Work> {
                 };
                 // Read the panel clock before taking the state lock; it is not reentrant.
                 let completed_at = panel_now(state);
-                let mut durable = state
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+                let mut durable = state.locked()?;
                 let mut records = durable
                     .get_json::<Vec<JobResult>>("fleet_results")?
                     .unwrap_or_default();

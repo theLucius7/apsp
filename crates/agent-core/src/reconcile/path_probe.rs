@@ -1,4 +1,5 @@
 use super::Reconciler;
+use crate::state::Locked;
 use crate::state::runtime_control::ControlResult;
 use anyhow::{Context, Result, ensure};
 use apsp_protocol::{RuntimePathProbeRequest, RuntimePathProbeResult};
@@ -32,8 +33,7 @@ impl Reconciler {
             );
             ensure!(
                 self.state
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("state poisoned"))?
+                    .locked()?
                     .pending_intents()?
                     .iter()
                     .all(|intent| &intent.module != module),
@@ -86,10 +86,7 @@ impl Reconciler {
             success: error.is_none(),
             error,
         });
-        self.state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?
-            .finish_runtime_control(&result, None)?;
+        self.state.locked()?.finish_runtime_control(&result, None)?;
         Ok(result)
     }
 }

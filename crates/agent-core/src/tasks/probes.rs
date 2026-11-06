@@ -1,3 +1,4 @@
+use crate::state::Locked;
 mod icmp;
 #[cfg(test)]
 mod lease_tests;
@@ -37,11 +38,7 @@ pub(super) async fn run(
     // Keep results and the schedule, but never restore that permission after restart.
     // The legacy cache is never consulted for execution permission. A failed
     // cleanup must not stop heartbeats when local storage is temporarily full.
-    if let Err(error) = state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-        .remove_json("probes:configuration")
-    {
+    if let Err(error) = state.locked()?.remove_json("probes:configuration") {
         tracing::warn!(%error, "legacy probe permission cache could not be removed; it remains inactive");
     }
     let (leases, authorized) = watch::channel(None);
@@ -176,10 +173,7 @@ async fn upload(
     client: &PanelClient,
     storage: &mut crate::state::StorageRetry,
 ) -> Result<()> {
-    let results = state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-        .probe_results()?;
+    let results = state.locked()?.probe_results()?;
     if results.is_empty() {
         return Ok(());
     }
@@ -195,9 +189,7 @@ async fn upload(
                 .all(|id| batch.results.iter().any(|v| v.id == *id)),
         "invalid probe acknowledgment"
     );
-    let mut state = state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+    let mut state = state.locked()?;
     storage.finish(
         "persist probe acknowledgment",
         state.acknowledge_probes(&ack.ids),

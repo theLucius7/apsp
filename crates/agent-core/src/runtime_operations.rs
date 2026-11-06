@@ -1,3 +1,4 @@
+use crate::state::Locked;
 use crate::{SharedState, artifacts::PanelClient, reconcile::Reconciler};
 use anyhow::{Result, ensure};
 use apsp_protocol::{
@@ -17,18 +18,11 @@ struct Record {
 }
 
 fn records(state: &SharedState) -> Result<Vec<Record>> {
-    Ok(state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state poisoned"))?
-        .get_json(LEDGER_KEY)?
-        .unwrap_or_default())
+    Ok(state.locked()?.get_json(LEDGER_KEY)?.unwrap_or_default())
 }
 
 fn save(state: &SharedState, records: &[Record]) -> Result<()> {
-    state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state poisoned"))?
-        .set_json(LEDGER_KEY, &records)
+    state.locked()?.set_json(LEDGER_KEY, &records)
 }
 
 fn result(
@@ -88,8 +82,7 @@ pub(crate) async fn poll(
     outgoing: &tokio::sync::mpsc::Sender<apsp_protocol::Envelope>,
 ) -> Result<()> {
     let offset = state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state poisoned"))?
+        .locked()?
         .get_json::<i64>("clock_offset_ms")?
         .unwrap_or(0)
         / 1000;

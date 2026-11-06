@@ -28,10 +28,7 @@ pub struct Candidates {
 /// Adopted external nodes a group can take now, each bound to its current version.
 pub async fn candidates(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
     require_admin(&state, &headers).await?;
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        .execute(&mut *tx)
-        .await?;
+    let mut tx = crate::read_snapshot(&state.pool).await?;
     let states = model::states(&mut tx, None).await?;
     let versions = model::versions(
         &mut tx,

@@ -164,6 +164,45 @@ async fn auto_control_requires_opt_in_fresh_current_bill_and_only_lowers_once_pe
     );
 }
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
+async fn refresh_never_replaces_a_snapshot_stored_after_its_pass_began(pool: PgPool) {
+    // Cloud calls run outside the account lock, so a bandwidth change or manual
+    // refresh can store a newer snapshot in between; the pass must yield to it.
+    let (account_id, id) = seed(&pool, "ecs").await;
+    sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true WHERE id=$1")
+        .bind(account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let later = apsp_protocol::now_timestamp() + 3600;
+    sqlx::query("UPDATE alicloud_resources SET auto_enabled=true,checked_at=$2 WHERE id=$1")
+        .bind(id)
+        .bind(later)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mock = Mock::start(vec![
+        bill(1, 1, vec![row("100.000000", "x")]),
+        traffic(),
+        snapshot("ecs", 10),
+    ])
+    .await;
+    worker::refresh(&pool, account_id, &Cloud::local(&mock.endpoint))
+        .await
+        .unwrap();
+    mock.exhausted();
+    // Account results still land; the resource keeps the newer state.
+    assert!(account(&pool, account_id).await.bill.is_some());
+    let resource = super::super::resource(&pool, id).await.unwrap();
+    assert!(resource.snapshot.is_none());
+    assert_eq!(resource.checked_at, Some(later));
+    let automatic: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM alicloud_operations WHERE source='automatic'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(automatic, 0);
+}
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn missing_or_unreadable_bill_preserves_history_and_cannot_trigger_with_stale_counters(
     pool: PgPool,
 ) {

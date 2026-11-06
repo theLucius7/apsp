@@ -1,11 +1,9 @@
 use super::*;
+use crate::state::Locked;
 
 pub(super) async fn flush(state: &SharedState, client: &PanelClient) -> Result<()> {
     let mut failed = flush_starts(state, client, None).await.is_err();
-    let results = state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-        .command_results()?;
+    let results = state.locked()?.command_results()?;
     for result in results {
         let received: Result<TaskAck> = async {
             tokio::time::timeout(
@@ -16,10 +14,7 @@ pub(super) async fn flush(state: &SharedState, client: &PanelClient) -> Result<(
         }
         .await;
         match received {
-            Ok(ack) if ack.ids == [result.id] => state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-                .acknowledge_command(result.id)?,
+            Ok(ack) if ack.ids == [result.id] => state.locked()?.acknowledge_command(result.id)?,
             _ => failed = true,
         }
     }
@@ -32,10 +27,7 @@ pub(super) async fn flush_starts(
     client: &PanelClient,
     only: Option<uuid::Uuid>,
 ) -> Result<()> {
-    let starts = state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-        .command_starts()?;
+    let starts = state.locked()?.command_starts()?;
     let mut failed = false;
     for (id, started) in starts
         .into_iter()
@@ -50,10 +42,7 @@ pub(super) async fn flush_starts(
         }
         .await;
         match result {
-            Ok(ack) if ack.ids == [id] => state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-                .acknowledge_command_start(id)?,
+            Ok(ack) if ack.ids == [id] => state.locked()?.acknowledge_command_start(id)?,
             _ => failed = true,
         }
     }
@@ -62,10 +51,7 @@ pub(super) async fn flush_starts(
 }
 
 pub(super) async fn recover(state: &SharedState, ops: &dyn Privileged) -> Result<()> {
-    let records = state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-        .pending_commands()?;
+    let records = state.locked()?.pending_commands()?;
     for record in records {
         if record.recovering {
             cleanup_record(state, ops, record, false).await?;
@@ -80,15 +66,9 @@ pub(super) async fn recover_for_retirement(
     state: &SharedState,
     ops: &dyn Privileged,
 ) -> Result<()> {
-    state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-        .recover_commands()?;
+    state.locked()?.recover_commands()?;
     loop {
-        let records = state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-            .pending_command_cleanup()?;
+        let records = state.locked()?.pending_command_cleanup()?;
         if records.is_empty() {
             return Ok(());
         }
@@ -128,10 +108,7 @@ async fn cleanup_record(
         }
     };
     let result = terminal(record.command.id, status, clock_offset(state)?, message);
-    state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-        .finish_command(&result)?;
+    state.locked()?.finish_command(&result)?;
     Ok(())
 }
 
@@ -156,15 +133,9 @@ pub(super) async fn tick(
         "invalid commands from panel"
     );
     for command in commands {
-        state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-            .queue_command(&command)?;
+        state.locked()?.queue_command(&command)?;
     }
-    let records = state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-        .pending_commands()?;
+    let records = state.locked()?.pending_commands()?;
     for record in records {
         if retirement.requested() {
             break;
@@ -200,10 +171,7 @@ pub(super) async fn tick(
                 result
             }
             CommandState::CancelRequested => {
-                state
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-                    .request_command_cancel(record.command.id)?;
+                state.locked()?.request_command_cancel(record.command.id)?;
                 terminal(
                     record.command.id,
                     CommandStatus::Cancelled,
@@ -239,10 +207,7 @@ pub(super) async fn tick(
             }
             _ => anyhow::bail!("command state does not allow a new execution"),
         };
-        state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-            .finish_command(&result)?;
+        state.locked()?.finish_command(&result)?;
         if let Err(error) = flush(state, &client).await {
             tracing::debug!(%error,"command result will retry after reconnect");
         }
@@ -259,11 +224,7 @@ pub(super) fn execution_result(
     match result {
         Ok(result) => Ok(result),
         Err(error) => {
-            if state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-                .defer_command_cleanup(id)?
-            {
+            if state.locked()?.defer_command_cleanup(id)? {
                 anyhow::bail!("command execution ended without confirmed cleanup: {error}");
             }
             Ok(terminal(

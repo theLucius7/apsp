@@ -1,3 +1,4 @@
+use crate::state::Locked;
 mod admission;
 mod connection;
 pub mod diagnostics;
@@ -64,10 +65,7 @@ impl Runtime {
                 .chain(self.public_ips.iter())
                 .filter_map(|address| address.parse().ok()),
         );
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+        let state = self.state.locked()?;
         if let Some(records) = state.get_json::<Vec<(String, i64)>>("discovered_ips")? {
             info.discovered_public_ips = crate::telemetry::normalized_addresses(
                 records
@@ -96,10 +94,7 @@ impl Runtime {
     }
 
     fn applied(&self) -> Result<AppliedRevisions> {
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+        let state = self.state.locked()?;
         let mut applied = BTreeMap::new();
         for module in self.modules.iter() {
             if let Some(prepared) = state.get_json::<Prepared>(&format!("applied:{module}"))? {

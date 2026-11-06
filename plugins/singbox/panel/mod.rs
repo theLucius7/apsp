@@ -81,6 +81,15 @@ use axum::{
     routing::{delete, get, post},
 };
 
+/// A read-only transaction over one consistent snapshot, started with a single
+/// statement instead of BEGIN followed by SET TRANSACTION.
+pub(crate) async fn read_snapshot(
+    pool: &sqlx::PgPool,
+) -> sqlx::Result<sqlx::Transaction<'static, sqlx::Postgres>> {
+    pool.begin_with("BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        .await
+}
+
 pub async fn run(state: AppState) {
     tokio::join!(
         publisher::run(state.clone()),

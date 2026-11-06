@@ -1,3 +1,4 @@
+use crate::state::Locked;
 mod apply;
 mod checkpoint;
 mod constraints;
@@ -120,8 +121,10 @@ impl Reconciler {
         }
         .await;
         if let Err(error) = &result {
-            self.state.lock().map_err(|_| anyhow::anyhow!("state poisoned"))?
-                .set_json(&format!("artifact_error:{}", descriptor.module), &serde_json::json!({"revision":runtime.spec.revision,"error":error.to_string()}))?;
+            self.state.locked()?.set_json(
+                &format!("artifact_error:{}", descriptor.module),
+                &serde_json::json!({"revision":runtime.spec.revision,"error":error.to_string()}),
+            )?;
             tracing::error!(module=%descriptor.module, revision=runtime.spec.revision, %error, "artifact verification failed; executable was not started");
         }
         result
@@ -130,13 +133,10 @@ impl Reconciler {
     async fn verify_applied_runtime(&self, runtime: &Prepared) -> Result<()> {
         let result = self.verify_runtime(runtime).await;
         if result.is_err() {
-            self.state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state poisoned"))?
-                .set_json(
-                    &format!("health:{}", self.adapter.describe().module),
-                    &false,
-                )?;
+            self.state.locked()?.set_json(
+                &format!("health:{}", self.adapter.describe().module),
+                &false,
+            )?;
         }
         result
     }
@@ -148,21 +148,16 @@ impl Reconciler {
 
     async fn recover_locked(&self) -> Result<()> {
         let module = self.adapter.describe().module;
-        let pending = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?
-            .pending_intents()?;
+        let pending = self.state.locked()?.pending_intents()?;
         for record in pending.into_iter().filter(|record| record.module == module) {
             let intent: ApplyIntent = serde_json::from_value(record.payload)?;
             tracing::warn!(%module, op_id = %record.op_id, "recovering unfinished operation");
             if let Err(error) = self.rollback(&intent, record.op_id).await {
                 self.state
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("state poisoned"))?
+                    .locked()?
                     .set_json(&format!("health:{module}"), &false)?;
                 if error.downcast_ref::<RecoveryBlocked>().is_some() {
-                    self.state.lock().map_err(|_| anyhow::anyhow!("state poisoned"))?.set_json(
+                    self.state.locked()?.set_json(
                         &format!("runtime_recovery_error:{module}"),
                         &serde_json::json!({"revision": intent.target.spec.revision, "error": error.to_string()}),
                     )?;
@@ -174,16 +169,14 @@ impl Reconciler {
             }
         }
         self.state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?
+            .locked()?
             .remove_json(&format!("runtime_recovery_error:{module}"))?;
         Ok(())
     }
 
     fn previous(&self) -> Result<Option<Prepared>> {
         self.state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?
+            .locked()?
             .get_json(&format!("applied:{}", self.adapter.describe().module))
     }
 
@@ -248,8 +241,7 @@ impl Reconciler {
             Err(error) => {
                 let healthy = self
                     .state
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("state poisoned"))?
+                    .locked()?
                     .get_json::<bool>(&format!("health:{module}"))?
                     .unwrap_or(false);
                 tracing::warn!(%module,rev=manifest.config_rev,error=%error,"application failed");
@@ -296,8 +288,7 @@ impl Reconciler {
             {
                 let healthy = self.runtime_health(previous).await?;
                 self.state
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("state poisoned"))?
+                    .locked()?
                     .set_json(&format!("health:{}", descriptor.module), &healthy)?;
                 anyhow::ensure!(healthy, "last applied runtime is unhealthy");
                 if self.services.supports_runtime_checkpoint()

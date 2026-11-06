@@ -1,3 +1,4 @@
+use crate::state::Locked;
 mod budget;
 mod sections;
 use crate::{
@@ -116,10 +117,7 @@ impl DiagnosticWorker {
     }
 
     fn read<T: serde::de::DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
-        self.state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-            .get_json(key)
+        self.state.locked()?.get_json(key)
     }
 
     async fn bounded<T>(&self, future: impl Future<Output = Result<T>>) -> Result<T> {
@@ -132,10 +130,7 @@ impl DiagnosticWorker {
     }
 
     fn save(&self, checkpoint: &Checkpoint) -> Result<()> {
-        self.state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-            .set_json(ACTIVE, &Some(checkpoint))
+        self.state.locked()?.set_json(ACTIVE, &Some(checkpoint))
     }
 
     fn active(&self) -> Result<Option<Checkpoint>> {
@@ -152,10 +147,7 @@ impl DiagnosticWorker {
             anyhow::bail!("only started diagnostic updates require ownership");
         };
         let id = Uuid::parse_str(&spec.id)?;
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+        let mut state = self.state.locked()?;
         if state
             .get_json::<bool>(&format!("diagnostics:done:{id}"))?
             .unwrap_or(false)
@@ -187,10 +179,7 @@ impl DiagnosticWorker {
     }
 
     fn finish_result(&self, update: DiagnosticUpdate, require_owned: bool) -> Result<()> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+        let mut state = self.state.locked()?;
         if state
             .get_json::<bool>(&format!("diagnostics:done:{}", update.id))?
             .unwrap_or(false)
@@ -243,10 +232,7 @@ impl DiagnosticWorker {
         let pending: Vec<DiagnosticUpdate> = self.read(OUTBOX)?.unwrap_or_default();
         for update in pending {
             self.bounded(client.diagnostic_update(&update)).await?;
-            let mut state = self
-                .state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+            let mut state = self.state.locked()?;
             let mut outbox: Vec<DiagnosticUpdate> = state.get_json(OUTBOX)?.unwrap_or_default();
             outbox.retain(|saved| saved.id != update.id);
             state.set_json(OUTBOX, &outbox)?;
@@ -439,8 +425,7 @@ pub(crate) async fn stop_for_retirement(
     timeout_secs: u64,
 ) -> Result<()> {
     let active: Option<Checkpoint> = state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
+        .locked()?
         .get_json::<Option<Checkpoint>>(ACTIVE)?
         .flatten();
     if let Some(Checkpoint::Started { spec, service, .. }) = active {

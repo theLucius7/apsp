@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::Locked;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -102,9 +103,7 @@ pub(super) fn accept_lease(
         "probe lease belongs to another device"
     );
     let received = Instant::now();
-    let mut state = state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+    let mut state = state.locked()?;
     let panel_now =
         now_millis().saturating_add(state.get_json::<i64>("clock_offset_ms")?.unwrap_or(0)) / 1000;
     ensure!(
@@ -172,8 +171,7 @@ pub(super) type Schedule = BTreeMap<Uuid, ScheduleEntry>;
 
 pub(super) fn schedule(state: &SharedState) -> Result<Schedule> {
     let schedule = state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
+        .locked()?
         .get_json::<Schedule>("probes:schedule")?
         .unwrap_or_default();
     ensure!(
@@ -194,9 +192,7 @@ pub(super) fn record_start(
     lease: &AcceptedLease,
     spec: &ProbeSpec,
 ) -> Result<()> {
-    let mut state = state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+    let mut state = state.locked()?;
     let mut schedule = state
         .get_json::<Schedule>("probes:schedule")?
         .unwrap_or_default();

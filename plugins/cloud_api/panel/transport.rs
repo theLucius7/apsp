@@ -1,6 +1,6 @@
 use super::Failure;
 use futures_util::StreamExt;
-use reqwest::{Client, RequestBuilder};
+use reqwest::{Client, RequestBuilder, Response};
 use serde_json::Value;
 use std::{
     sync::OnceLock,
@@ -54,15 +54,7 @@ async fn json_inner(request: RequestBuilder, power: bool) -> Result<Value, Failu
         .map_err(|_| Failure::from("network_error"))?;
     let status = response.status().as_u16();
     if status == 429 {
-        return Err(Failure {
-            code: "rate_limited",
-            retry_after: response
-                .headers()
-                .get("retry-after")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| retry_after(v, SystemTime::now()))
-                .unwrap_or(300),
-        });
+        return Err(rate_limited(&response));
     }
     if !(200..300).contains(&status) && !(power && (400..500).contains(&status)) {
         return Err(match status {
@@ -74,6 +66,31 @@ async fn json_inner(request: RequestBuilder, power: bool) -> Result<Value, Failu
         }
         .into());
     }
+    let value = bounded_json(response).await?;
+    if power && let Some(code) = power_rejection(&value) {
+        return Err(code.into());
+    }
+    if !(200..300).contains(&status) {
+        return Err("provider_rejected".into());
+    }
+    Ok(value)
+}
+
+/// A 429 answer, waiting as long as the provider asks (one to sixty minutes).
+pub fn rate_limited(response: &Response) -> Failure {
+    Failure {
+        code: "rate_limited",
+        retry_after: response
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| retry_after(v, SystemTime::now()))
+            .unwrap_or(300),
+    }
+}
+
+/// Reads a JSON body of at most 256 KiB, whatever the declared length says.
+pub async fn bounded_json(response: Response) -> Result<Value, Failure> {
     const LIMIT: usize = 256 * 1024;
     if response.content_length().is_some_and(|v| v > LIMIT as u64) {
         return Err("response_too_large".into());
@@ -87,15 +104,7 @@ async fn json_inner(request: RequestBuilder, power: bool) -> Result<Value, Failu
         }
         bytes.extend_from_slice(&chunk);
     }
-    let value: Value =
-        serde_json::from_slice(&bytes).map_err(|_| Failure::from("invalid_response"))?;
-    if power && let Some(code) = power_rejection(&value) {
-        return Err(code.into());
-    }
-    if !(200..300).contains(&status) {
-        return Err("provider_rejected".into());
-    }
-    Ok(value)
+    serde_json::from_slice(&bytes).map_err(|_| Failure::from("invalid_response"))
 }
 
 pub fn retry_after(value: &str, now: SystemTime) -> Option<i64> {

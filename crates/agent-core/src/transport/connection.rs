@@ -1,4 +1,5 @@
 use super::Runtime;
+use crate::state::Locked;
 use crate::{
     Config, artifacts::PanelClient, config::validate_panel_url, identity::Identity,
     state::StorageRetry,
@@ -64,10 +65,7 @@ pub(super) async fn run(
         .saturating_mul(1000)
         .saturating_sub(apsp_protocol::telemetry::now_millis());
     let mut clock_pending = {
-        let mut state = runtime
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+        let mut state = runtime.state.locked()?;
         clock_storage
             .finish(
                 "persist authenticated clock offset",
@@ -165,7 +163,7 @@ pub(super) async fn run(
                                 }
                             }
                             Message::UsageAck(ack) => {
-                                let mut state = runtime.state.lock().map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+                                let mut state = runtime.state.locked()?;
                                 acknowledgment_storage.finish("persist usage acknowledgment", state.acknowledge_usage(ack.epoch, ack.seq))?;
                             }
                             Message::Unknown { message_type, .. } => tracing::debug!(%message_type, "ignoring unknown panel message"),
@@ -187,7 +185,7 @@ pub(super) async fn run(
                     })?).await?;
                     continue;
                 }
-                let pending = runtime.state.lock().map_err(|_| anyhow::anyhow!("state lock poisoned"))?.pending_usage_count()?;
+                let pending = runtime.state.locked()?.pending_usage_count()?;
                 if pending != 0 {
                     continue;
                 }
@@ -216,7 +214,7 @@ pub(super) async fn run(
             }
             _ = heartbeat.tick() => {
                 if clock_pending {
-                    let mut state = runtime.state.lock().map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+                    let mut state = runtime.state.locked()?;
                     clock_pending = clock_storage.finish("persist authenticated clock offset", state.set_json("clock_offset_ms", &clock_offset))?.is_none();
                 }
                 let uptime = telemetry.borrow().sample.as_ref().and_then(|sample| sample.metrics.uptime_secs).unwrap_or(0);
@@ -242,7 +240,7 @@ pub(super) async fn run(
             }
             _ = resend.tick() => {
                 if resend_queue.is_empty() {
-                    let state = runtime.state.lock().map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
+                    let state = runtime.state.locked()?;
                     let oversized = state.oversized_usage_count()?;
                     if oversized != 0 {
                         tracing::error!(oversized_batches = oversized,

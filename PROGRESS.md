@@ -11,6 +11,16 @@
 - README 重写为“自托管的服务器管理与配置面板”，去掉“适合谁”与“接下来”的营销段落、协议清单和上述用语；功能表改为“服务配置”“服务器运营”。文档首页、功能地图、路线图、需求说明与 AGENTS.md 的定位句同步改写，功能地图的界面用语规则改为“对外文案不描述用途”。GitHub 仓库简介改为同样措辞，话题去掉 vless、reality、sing-box。
 - 未改：ADR、验收记录、PROGRESS 历史条目与路线图里的竞品分析保持原文；控制台内的功能名称不变。
 
+## 2026-11-06：性能检查第三轮
+
+- 用户要求继续。阿里云账户刷新、余额和实例账单的云 API 调用移到账户锁之外，CDT 守护和电源任务不再排在慢速账单查询之后；账户在调用期间被修改时丢弃旧结果。
+- 精简：Cloudflare 客户端复用云 API 公共库的限流和有界读取；sing-box 插件的只读快照事务统一为 `read_snapshot`；Agent 状态锁样板代码统一为 `locked()`；管理中心保留期清理改为每小时一次。
+- Agent：运行时日志整段切分并复用缓冲区，广播容量提高到 256；流量基线未变化时不重写；协议消息按引用解码。详见 [待定问题](docs/open-questions.md#性能检查与精简2026-11-04) 的“第三轮”。
+- 合并前评审补充：账户刷新在锁外调用云端期间，带宽变配（在锁内调用并回读）、预览或手动刷新可能已写入更新的资源快照，本轮的旧快照不再覆盖它，也不用于自动限速，新增回归测试（去掉判断时该测试失败）。运行时日志广播容量定为 256 而不是草稿中的 1024：落后的订阅者会让每格保留一条日志（最长约 98 KiB），1024 格最坏约 100 MiB，对小内存主机过大。变基到 main 后，单用户外部授权接口已随 #216 删除，相应改动去掉；策略组列表与外部节点候选两处只读快照同样改用 `read_snapshot`。
+- 顺带修正：`plugin_business` 的一处断言仍要求错误文字含“插件设置”，#219 已把该提示改为“请先在插件中心安装”，改为检查“插件中心”。
+- 验证：`cargo fmt --all --check`；`cargo clippy -p <库> --all-targets -- -D warnings` 覆盖 apsp-protocol、apsp-agent-core、apsp-cloud-api、apsp-plugin-ddns、apsp-plugin-alicloud、apsp-panel-host、apsp-plugin-singbox，均无告警；上述 7 个库单元测试 937 项通过（apsp-agent-core 356、apsp-plugin-singbox 209、apsp-panel-host 185、apsp-plugin-alicloud 67、apsp-plugin-ddns 64、apsp-protocol 50、apsp-cloud-api 6），忽略 10 项为既有需实机的测试；`apsp-panel` 集成测试 alicloud、ddns、control_center、singbox_groups、external_node_access、proxy_resources、mixed_paths、statistics、subscription_sources、subscription_preview、node_catalog、accounting、usage_rollup、plugin_business、business 共 102 项通过；`tools/check-core-boundary.py` 通过。未跑全量集成测试与浏览器测试（无界面改动），远端 CI 按约定暂停。
+- Agent 侧改动（运行时日志、流量基线、状态锁、协议解码）只有在下一个签名发布的 Agent 版本中才生效；协议线格式未变，面板与生产中的 Agent 0.3.5 保持兼容。本次未发布 Agent，也未启用 CI。
+
 ## 2026-11-06：原权限组并入策略组
 
 - 用户要求把已有数据的套餐对应的权限在策略组里做好（路线图 1.3）。按 [ADR 0115](docs/adr/0115-original-permission-groups-as-policy-groups.md)，迁移 0088 为三个原权限组建立「原权限组 · 00 / 11 / hk5」策略组：分别含 15、25、17 条已接管线路，37、5、1 位成员。决定见 [待定问题](docs/open-questions.md#原权限组并入策略组2026-11-06)。

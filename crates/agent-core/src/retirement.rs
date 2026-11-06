@@ -1,3 +1,4 @@
+use crate::state::Locked;
 use crate::{Config, SharedState, State, artifacts::safe_component, identity::Identity};
 use anyhow::{Context, Result, ensure};
 use apsp_adapter_sdk::{Adapter, Prepared, Privileged, ServiceManager};
@@ -58,11 +59,7 @@ impl Retirement {
         privileged: Arc<dyn Privileged>,
         services: Arc<dyn ServiceManager>,
     ) -> Result<Self> {
-        let requested = state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-            .get_json::<Record>(KEY)?
-            .is_some();
+        let requested = state.locked()?.get_json::<Record>(KEY)?.is_some();
         for adapter in &adapters {
             let descriptor = adapter.describe();
             ensure!(
@@ -86,17 +83,11 @@ impl Retirement {
     }
 
     fn read(&self) -> Result<Option<Record>> {
-        self.state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-            .get_json(KEY)
+        self.state.locked()?.get_json(KEY)
     }
 
     fn save(&self, record: &Record) -> Result<()> {
-        self.state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-            .set_json(KEY, record)
+        self.state.locked()?.set_json(KEY, record)
     }
 
     pub(crate) fn request(&self, identity: &Identity, request: RetirementRequest) -> Result<()> {
@@ -139,8 +130,7 @@ impl Retirement {
             if self.services.is_active(&descriptor.service_unit).await? {
                 let runtime = self
                     .state
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
+                    .locked()?
                     .get_json::<Prepared>(&format!("applied:{}", descriptor.module))?;
                 if let (Some(runtime), Some(source)) = (runtime, adapter.usage_source()) {
                     let sampled = tokio::time::timeout(
@@ -150,14 +140,11 @@ impl Retirement {
                     .await;
                     match sampled {
                         Ok(Ok(counters)) => {
-                            self.state
-                                .lock()
-                                .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-                                .sample_usage(
-                                    &descriptor.module,
-                                    &counters,
-                                    apsp_protocol::now_timestamp(),
-                                )?;
+                            self.state.locked()?.sample_usage(
+                                &descriptor.module,
+                                &counters,
+                                apsp_protocol::now_timestamp(),
+                            )?;
                         }
                         other => tracing::warn!(module=%descriptor.module, result=?other,
                             "terminal runtime counters could not be read; persisted usage remains available"),
@@ -237,11 +224,7 @@ impl Retirement {
         crate::tasks::cleanup_commands_for_retirement(&self.state, self.privileged.as_ref())
             .await?;
         ensure!(
-            self.state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-                .pending_usage_count()?
-                == 0,
+            self.state.locked()?.pending_usage_count()? == 0,
             "retirement awaits usage acknowledgements"
         );
         let receipt = RetirementReceipt {
@@ -279,10 +262,7 @@ impl Retirement {
                 Err(error) => return Err(error.into()),
             }
         }
-        self.state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state lock poisoned"))?
-            .clear_retired_configuration()?;
+        self.state.locked()?.clear_retired_configuration()?;
         for name in ["device.key", "server_id", "panel_origin"] {
             self.privileged
                 .remove_file(&self.config.identity_dir.join(name))

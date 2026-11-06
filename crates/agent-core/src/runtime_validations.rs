@@ -1,3 +1,4 @@
+use crate::state::Locked;
 use crate::{SharedState, artifacts::PanelClient, reconcile::Reconciler};
 use anyhow::{Result, ensure};
 use apsp_protocol::{
@@ -19,10 +20,7 @@ struct Record {
 }
 
 fn save(state: &SharedState, records: &[Record]) -> Result<()> {
-    state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("state poisoned"))?
-        .set_json(KEY, &records)
+    state.locked()?.set_json(KEY, &records)
 }
 
 async fn deliver(client: &PanelClient, result: &RuntimeValidationResult) -> Result<()> {
@@ -49,9 +47,7 @@ pub(crate) async fn poll(
     client: &PanelClient,
 ) -> Result<()> {
     let (mut records, offset): (Vec<Record>, i64) = {
-        let state = state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("state poisoned"))?;
+        let state = state.locked()?;
         (
             state.get_json(KEY)?.unwrap_or_default(),
             state

@@ -196,18 +196,35 @@ impl Cloud {
         Err("billing_incomplete".into())
     }
 }
+/// Like the account refresh, the cloud call runs outside the account lock:
+/// claim the slot, call, then store unless the account was edited meanwhile.
 pub(super) async fn refresh_balance(
     pool: &PgPool,
     id: Uuid,
     cloud: &Cloud,
     now: i64,
 ) -> ApiResult<()> {
+    let a = {
+        let mut tx = lock(pool, id).await?;
+        let a = account_on(&mut tx, id).await?;
+        if !a.enabled || !a.balance_enabled || a.balance_next_at > now {
+            return Ok(());
+        }
+        // Claimed until the result is stored; an edit resets it to now.
+        sqlx::query("UPDATE alicloud_accounts SET balance_next_at=$2 WHERE id=$1")
+            .bind(id)
+            .bind(now + 300)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        a
+    };
+    let result = cloud.balance(&a, now).await;
     let mut tx = lock(pool, id).await?;
-    let a = account_on(&mut tx, id).await?;
-    if !a.enabled || !a.balance_enabled || a.balance_next_at > now {
+    if !unchanged_account(&mut tx, id, a.revision).await? {
         return Ok(());
     }
-    match cloud.balance(&a, now).await {
+    match result {
         Ok(value) => {
             sqlx::query("UPDATE alicloud_accounts SET balance=$2,balance_error=NULL,balance_next_at=$3 WHERE id=$1").bind(id).bind(Json(value)).bind(now+21600).execute(&mut *tx).await?;
         }
@@ -232,24 +249,47 @@ pub(super) async fn refresh_bill(
     now: i64,
 ) -> ApiResult<()> {
     let initial = super::resource(pool, id).await?;
+    let (a, r) = {
+        let mut tx = lock(pool, initial.account_id).await?;
+        let a = account_on(&mut tx, initial.account_id).await?;
+        let r: Resource =
+            sqlx::query_as("SELECT * FROM alicloud_resources WHERE id=$1 AND NOT archived")
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await?;
+        let stale_month = r
+            .instance_bill
+            .as_ref()
+            .is_some_and(|b| b.month != billing::month(now));
+        if !a.enabled
+            || !a.billing_enabled
+            || (r.bill_next_at > now && !(stale_month && r.bill_error.is_none()))
+        {
+            return Ok(());
+        }
+        sqlx::query(
+            "UPDATE alicloud_resources SET bill_next_at=GREATEST(bill_next_at,$2) WHERE id=$1",
+        )
+        .bind(id)
+        .bind(now + 300)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        (a, r)
+    };
+    let result = cloud.instance_bill(&a, &r, now).await;
     let mut tx = lock(pool, initial.account_id).await?;
-    let a = account_on(&mut tx, initial.account_id).await?;
-    let r: Resource =
-        sqlx::query_as("SELECT * FROM alicloud_resources WHERE id=$1 AND NOT archived")
-            .bind(id)
-            .fetch_one(&mut *tx)
-            .await?;
-    let stale_month = r
-        .instance_bill
-        .as_ref()
-        .is_some_and(|b| b.month != billing::month(now));
-    if !a.enabled
-        || !a.billing_enabled
-        || (r.bill_next_at > now && !(stale_month && r.bill_error.is_none()))
-    {
+    // Resource edits change only its name and bandwidth policy, not its bill.
+    let present: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM alicloud_resources WHERE id=$1 AND NOT archived)",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !present || !unchanged_account(&mut tx, initial.account_id, a.revision).await? {
         return Ok(());
     }
-    match cloud.instance_bill(&a, &r, now).await {
+    match result {
         Ok(value) => {
             sqlx::query("UPDATE alicloud_resources SET instance_bill=$2,bill_error=NULL,bill_next_at=$3 WHERE id=$1").bind(id).bind(Json(value)).bind(now+21600).execute(&mut *tx).await?;
         }
@@ -264,6 +304,20 @@ pub(super) async fn refresh_bill(
     }
     tx.commit().await?;
     Ok(())
+}
+/// Whether the account still exists, enabled, at the revision a result was read for.
+async fn unchanged_account(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    id: Uuid,
+    revision: i64,
+) -> ApiResult<bool> {
+    Ok(sqlx::query_scalar::<_, i64>(
+        "SELECT revision FROM alicloud_accounts WHERE id=$1 AND NOT archived AND enabled",
+    )
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?
+        == Some(revision))
 }
 pub(super) async fn tick(pool: &PgPool, cloud: &Cloud) -> ApiResult<()> {
     let now = apsp_protocol::now_timestamp();

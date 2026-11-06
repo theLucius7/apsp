@@ -22,11 +22,7 @@ pub(super) async fn load_source(
 }
 
 async fn snapshot(state: &AppState) -> ApiResult<Transaction<'_, Postgres>> {
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        .execute(&mut *tx)
-        .await?;
-    Ok(tx)
+    Ok(crate::read_snapshot(&state.pool).await?)
 }
 
 pub(super) async fn revision(connection: &mut PgConnection, id: Uuid) -> ApiResult<RevisionView> {

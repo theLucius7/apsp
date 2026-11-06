@@ -57,20 +57,33 @@ impl State {
         let period_start = clock.timestamp;
         let mut records = Vec::new();
         let mut decreased = false;
+        // Baselines whose counters and epoch already match need no rewrite.
+        let mut unchanged = Vec::with_capacity(counters.len());
+        let mut select = transaction.prepare_cached(
+            "SELECT uplink, downlink, epoch FROM usage_baselines WHERE module = ?1 AND stat_name = ?2",
+        )?;
         for counter in counters {
-            let previous: Option<(String, String)> = transaction.query_row(
-                "SELECT uplink, downlink FROM usage_baselines WHERE module = ?1 AND stat_name = ?2",
-                params![module, counter.stat_name], |row| Ok((row.get(0)?, row.get(1)?)),
-            ).optional()?;
-            let (previous_up, previous_down) = previous
-                .map(|(up, down)| -> Result<(u64, u64)> {
+            let previous: Option<(String, String, String)> = select
+                .query_row(params![module, counter.stat_name], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                })
+                .optional()?;
+            let (previous_up, previous_down, previous_epoch) = previous
+                .map(|(up, down, epoch)| -> Result<(u64, u64, Option<String>)> {
                     Ok((
                         up.parse().context("invalid saved uplink counter")?,
                         down.parse().context("invalid saved downlink counter")?,
+                        Some(epoch),
                     ))
                 })
                 .transpose()?
-                .unwrap_or((0, 0));
+                .unwrap_or((0, 0, None));
+            // The saved epoch of a baseline whose counters did not move.
+            unchanged.push(
+                ((previous_up, previous_down) == (counter.uplink, counter.downlink))
+                    .then_some(previous_epoch)
+                    .flatten(),
+            );
             let uplink = delta(counter.uplink, previous_up, &mut decreased);
             let downlink = delta(counter.downlink, previous_down, &mut decreased);
             if uplink != 0 || downlink != 0 {
@@ -81,6 +94,7 @@ impl State {
                 });
             }
         }
+        drop(select);
         if decreased {
             clock.epoch = Uuid::new_v4();
             transaction.execute(
@@ -88,12 +102,28 @@ impl State {
                 params![module, clock.epoch.to_string()],
             )?;
         }
-        for counter in counters {
-            transaction.execute(
-                "INSERT INTO usage_baselines (module, stat_name, epoch, uplink, downlink, observed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT (module, stat_name) DO UPDATE SET epoch = excluded.epoch, uplink = excluded.uplink, downlink = excluded.downlink, observed_at = excluded.observed_at",
-                params![module, counter.stat_name, clock.epoch.to_string(), counter.uplink.to_string(), counter.downlink.to_string(), timestamp],
-            )?;
+        let epoch = clock.epoch.to_string();
+        let mut upsert = transaction.prepare_cached(
+            "INSERT INTO usage_baselines (module, stat_name, epoch, uplink, downlink, observed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT (module, stat_name) DO UPDATE SET epoch = excluded.epoch, uplink = excluded.uplink, downlink = excluded.downlink, observed_at = excluded.observed_at",
+        )?;
+        for (counter, saved) in counters.iter().zip(&unchanged) {
+            // After a decrease every baseline already carries the new epoch.
+            if saved
+                .as_ref()
+                .is_some_and(|saved| decreased || *saved == epoch)
+            {
+                continue;
+            }
+            upsert.execute(params![
+                module,
+                counter.stat_name,
+                epoch,
+                counter.uplink.to_string(),
+                counter.downlink.to_string(),
+                timestamp
+            ])?;
         }
+        drop(upsert);
         clock.timestamp = timestamp;
         write_json(&transaction, &clock_key, &clock)?;
         let batch = if records.is_empty() {

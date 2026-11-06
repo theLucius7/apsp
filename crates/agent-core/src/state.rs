@@ -13,6 +13,18 @@ pub mod runtime_control;
 
 pub type SharedState = Arc<Mutex<State>>;
 
+/// Locks the shared Agent state; a panic while it was held becomes an error.
+pub(crate) trait Locked {
+    fn locked(&self) -> anyhow::Result<std::sync::MutexGuard<'_, State>>;
+}
+
+impl Locked for Mutex<State> {
+    fn locked(&self) -> anyhow::Result<std::sync::MutexGuard<'_, State>> {
+        self.lock()
+            .map_err(|_| anyhow::anyhow!("state lock poisoned"))
+    }
+}
+
 mod storage;
 pub(crate) use storage::StorageRetry;
 
