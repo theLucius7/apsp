@@ -4,9 +4,9 @@ mod business_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use apsp_panel::auth::{hash_token, random_token};
-use apsp_panel::plugins::singbox::subscription_hosts::{DnsApi, reconcile};
+use apsp_panel::plugins::singbox::subscription_hosts::{DnsApi, reconcile, sweep};
 use axum::{
     Json, Router,
     extract::{Path, RawQuery},
@@ -22,38 +22,80 @@ use uuid::Uuid;
 const ROOT: &str = "/api/plugins/sing-box";
 const ZONE: &str = "example.test";
 
+/// The records a stand-in Cloudflare zone holds: id, name and comment.
+type Records = Arc<Mutex<Vec<(String, String, Option<String>)>>>;
+
 /// A stand-in for Cloudflare's DNS API that remembers what was asked of it.
 async fn fake_cloudflare() -> Result<(String, Arc<Mutex<Vec<String>>>)> {
+    let (base, calls, _) = fake_zone().await?;
+    Ok((base, calls))
+}
+
+/// The same stand-in, also holding its records so a test can add or inspect them.
+async fn fake_zone() -> Result<(String, Arc<Mutex<Vec<String>>>, Records)> {
     let calls = Arc::new(Mutex::new(Vec::new()));
-    let created = calls.clone();
-    let deleted = calls.clone();
+    let records: Records = Arc::default();
+    let created = (calls.clone(), records.clone());
+    let listed = records.clone();
+    let deleted = (calls.clone(), records.clone());
     let app = Router::new()
         .route(
             "/zones/{zone}/dns_records",
             post(move |Path(_): Path<String>, Json(body): Json<Value>| {
-                let created = created.clone();
+                let (calls, records) = created.clone();
                 async move {
-                    let mut calls = created.lock().unwrap();
-                    calls.push(format!("create {}", body["name"].as_str().unwrap()));
+                    let mut calls = calls.lock().unwrap();
+                    let name = body["name"].as_str().unwrap().to_owned();
+                    calls.push(format!("create {name}"));
                     assert_eq!(body["proxied"], true);
-                    Json(json!({"success":true,"result":{"id":format!("record-{}", calls.len())}}))
+                    let id = format!("record-{}", calls.len());
+                    let comment = body["comment"].as_str().map(str::to_owned);
+                    records.lock().unwrap().push((id.clone(), name, comment));
+                    Json(json!({"success":true,"result":{"id":id}}))
+                }
+            })
+            .get(move |Path(_): Path<String>, RawQuery(query): RawQuery| {
+                let records = listed.clone();
+                async move {
+                    // Everything fits on the first page.
+                    let first = !query.unwrap_or_default().contains("page=2");
+                    let result: Vec<Value> = if first {
+                        records
+                            .lock()
+                            .unwrap()
+                            .iter()
+                            .map(|(id, name, comment)| json!({"id":id,"name":name,"type":"CNAME","comment":comment}))
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+                    Json(json!({"success":true,"result":result}))
                 }
             }),
         )
         .route(
             "/zones/{zone}/dns_records/{record}",
             delete(move |Path((_, record)): Path<(String, String)>| {
-                let deleted = deleted.clone();
+                let (calls, records) = deleted.clone();
                 async move {
-                    deleted.lock().unwrap().push(format!("delete {record}"));
-                    Json(json!({"success":true,"result":{"id":record}}))
+                    calls.lock().unwrap().push(format!("delete {record}"));
+                    let mut records = records.lock().unwrap();
+                    let before = records.len();
+                    records.retain(|(id, _, _)| *id != record);
+                    if records.len() == before {
+                        return (
+                            StatusCode::NOT_FOUND,
+                            Json(json!({"success":false,"errors":[{"code":81044,"message":"Record does not exist."}],"result":null})),
+                        );
+                    }
+                    (StatusCode::OK, Json(json!({"success":true,"result":{"id":record}})))
                 }
             }),
         );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let address = listener.local_addr()?;
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    Ok((format!("http://{address}"), calls))
+    Ok((format!("http://{address}"), calls, records))
 }
 
 async fn enable(pool: &PgPool, legacy_paths: bool) -> Result<()> {
@@ -578,5 +620,220 @@ async fn a_users_own_address_takes_their_account_changes(pool: PgPool) -> Result
     // A page from anywhere else cannot write through that address.
     let refused = save(panel.state.config.public_url.clone()).await?;
     assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    Ok(())
+}
+
+/// A portal write sent to `host`, as a browser on that page would send it.
+async fn portal_write(
+    panel: &TestPanel,
+    host: &str,
+    origin: Option<&str>,
+    session: &str,
+    path: &str,
+    body: Value,
+) -> Result<reqwest::Response> {
+    let mut request = panel
+        .client
+        .post(format!("{}{path}", panel.base))
+        .header(header::HOST, host)
+        .header(header::COOKIE, session)
+        .json(&body);
+    if let Some(origin) = origin {
+        request = request.header(header::ORIGIN, origin);
+    }
+    Ok(request.send().await?)
+}
+
+#[sqlx::test]
+async fn a_user_acts_on_their_account_from_their_own_host(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    // Granting invitation quota is a high-risk administrator write.
+    let now = apsp_protocol::now_timestamp();
+    sqlx::query(
+        "INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET verified_at=EXCLUDED.verified_at,expires_at=EXCLUDED.expires_at",
+    )
+    .bind(apsp_panel::auth::hash_token(
+        cookie.split_once('=').context("cookie")?.1,
+    ))
+    .bind(now)
+    .bind(now + 3600)
+    .execute(&pool)
+    .await?;
+    let user = id(&panel.create_user(&cookie, "Member").await?)?;
+    enable(&pool, true).await?;
+    let (dns, _) = fake_cloudflare().await?;
+    reconcile(&pool, &DnsApi::new(&dns)).await?;
+    let (host, _) = host_of(&pool, user).await?;
+    let (account, session) = portal_session(&pool, user).await?;
+    sqlx::query("UPDATE singbox_invitation_settings SET enabled=TRUE WHERE singleton")
+        .execute(&pool)
+        .await?;
+    let panel_origin = panel.state.config.public_url.clone();
+    let granted = panel
+        .client
+        .post(format!(
+            "{}{ROOT}/users/{user}/invitations/quota",
+            panel.base
+        ))
+        .header(header::COOKIE, &cookie)
+        .header(header::ORIGIN, &panel_origin)
+        .json(&json!({"delta":3,"reason":"fixture"}))
+        .send()
+        .await?;
+    assert!(granted.status().is_success(), "{}", granted.text().await?);
+    let create = format!("{ROOT}/portal/{account}/invitations");
+    let own_origin = format!("https://{host}");
+
+    // The page on the user's own address creates an invitation link.
+    let created = portal_write(
+        &panel,
+        &host,
+        Some(&own_origin),
+        &session,
+        &create,
+        json!({"request_id":uuid::Uuid::new_v4(),"quantity":1}),
+    )
+    .await?;
+    let status = created.status();
+    let body: Value = serde_json::from_str(&created.text().await?)?;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["codes"].as_array().map(Vec::len), Some(1));
+    assert_eq!(body["links"].as_array().map(Vec::len), Some(1));
+
+    // Another site, the panel's address and a missing Origin are all refused there.
+    for origin in [
+        Some(panel_origin.as_str()),
+        Some("https://elsewhere.example"),
+        None,
+    ] {
+        let refused = portal_write(
+            &panel,
+            &host,
+            origin,
+            &session,
+            &create,
+            json!({"request_id":uuid::Uuid::new_v4(),"quantity":1}),
+        )
+        .await?;
+        assert_eq!(refused.status(), StatusCode::BAD_REQUEST, "{origin:?}");
+    }
+
+    // Other account writes go through the same check: revoke the code just made.
+    let view: Value = panel
+        .client
+        .get(format!("{}{ROOT}/portal/{account}/account", panel.base))
+        .header(header::HOST, &host)
+        .header(header::COOKIE, &session)
+        .send()
+        .await?
+        .json()
+        .await?;
+    let issued = view["invitations"]["issued"][0]["id"]
+        .as_str()
+        .context("issued invitation")?
+        .to_owned();
+    let revoked = portal_write(
+        &panel,
+        &host,
+        Some(&own_origin),
+        &session,
+        &format!("{ROOT}/portal/{account}/invitations/{issued}/revoke"),
+        json!({}),
+    )
+    .await?;
+    assert!(revoked.status().is_success(), "{}", revoked.text().await?);
+
+    // The panel's own address keeps accepting its own origin.
+    let from_panel = panel
+        .client
+        .post(format!("{}{create}", panel.base))
+        .header(header::COOKIE, &session)
+        .header(header::ORIGIN, &panel_origin)
+        .json(&json!({"request_id":uuid::Uuid::new_v4(),"quantity":1}))
+        .send()
+        .await?;
+    assert_eq!(
+        from_panel.status(),
+        StatusCode::OK,
+        "{}",
+        from_panel.text().await?
+    );
+    Ok(())
+}
+
+#[sqlx::test]
+async fn records_of_deleted_users_do_not_outlive_them(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let now = apsp_protocol::now_timestamp();
+    sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET verified_at=EXCLUDED.verified_at,expires_at=EXCLUDED.expires_at")
+        .bind(apsp_panel::auth::hash_token(cookie.split_once('=').context("cookie")?.1))
+        .bind(now)
+        .bind(now + 3600)
+        .execute(&pool)
+        .await?;
+    let kept = id(&panel.create_user(&cookie, "Kept").await?)?;
+    let gone = id(&panel.create_user(&cookie, "Gone").await?)?;
+    enable(&pool, true).await?;
+    let (base, _, records) = fake_zone().await?;
+    let dns = DnsApi::new(&base);
+    reconcile(&pool, &dns).await?;
+    let (kept_host, _) = host_of(&pool, kept).await?;
+    let (gone_host, _) = host_of(&pool, gone).await?;
+    // The panel lost track of one record: the ID it kept is not Cloudflare's any more.
+    sqlx::query("UPDATE singbox_subscription_hosts SET record_id='lost-record' WHERE user_id=$1")
+        .bind(gone)
+        .execute(&pool)
+        .await?;
+    {
+        let mut records = records.lock().unwrap();
+        // One left behind by this feature earlier, and one an administrator added by hand.
+        records.push((
+            "stray-record".into(),
+            format!("apsp-straystraystray.{ZONE}"),
+            Some("apsp subscription host; managed by the panel".into()),
+        ));
+        records.push((
+            "manual-record".into(),
+            format!("apsp-handmade.{ZONE}"),
+            None,
+        ));
+    }
+    let removed = panel
+        .client
+        .delete(format!("{}{ROOT}/users/{gone}", panel.base))
+        .header(header::COOKIE, &cookie)
+        .header(header::ORIGIN, &panel.state.config.public_url)
+        .send()
+        .await?;
+    assert_eq!(removed.status(), StatusCode::NO_CONTENT);
+    // Cloudflare reports the stored ID as gone, so the queue empties while the record stays.
+    reconcile(&pool, &dns).await?;
+    let queued: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM singbox_subscription_host_retired")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(queued, 0);
+    sweep(&pool, &dns).await?;
+    let names: Vec<String> = records
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(_, name, _)| name.clone())
+        .collect();
+    assert!(
+        names.contains(&kept_host),
+        "a current host keeps its record"
+    );
+    assert!(
+        names.contains(&format!("apsp-handmade.{ZONE}")),
+        "records without the panel's comment are never touched"
+    );
+    assert!(
+        !names.contains(&gone_host),
+        "the deleted user's record is removed"
+    );
+    assert!(!names.contains(&format!("apsp-straystraystray.{ZONE}")));
+    assert_eq!(sweep(&pool, &dns).await?, 0, "nothing is left to remove");
     Ok(())
 }

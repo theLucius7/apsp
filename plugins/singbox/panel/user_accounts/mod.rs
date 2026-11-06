@@ -31,7 +31,10 @@ pub(super) fn router() -> Router<AppState> {
     Router::new()
         .route("/account-mail", get(mail::settings).put(mail::save))
         .route("/portal-guides", get(guides::list).post(guides::create))
-        .route("/portal-guides/{id}", axum::routing::put(guides::update))
+        .route(
+            "/portal-guides/{id}",
+            axum::routing::put(guides::update).delete(guides::remove),
+        )
         .route(
             "/invitation-settings",
             get(invitations::settings).put(invitations::settings_save),

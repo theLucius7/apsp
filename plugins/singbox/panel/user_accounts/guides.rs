@@ -40,6 +40,32 @@ pub(super) async fn update(
     let actor = administrator(&state, &headers, true).await?;
     Ok(Json(save(&state, &actor, Some(id), input).await?))
 }
+/// Removes a notice or guide; the portal stops showing it at once.
+pub(super) async fn remove(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<axum::http::StatusCode> {
+    let actor = administrator(&state, &headers, true).await?;
+    let mut tx = state.pool.begin().await?;
+    let title: String =
+        sqlx::query_scalar("DELETE FROM singbox_member_content WHERE id=$1 RETURNING title")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    event(
+        &mut tx,
+        None,
+        &actor,
+        "content_deleted",
+        &id.to_string(),
+        json!({"title":title}),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
 async fn save(state: &AppState, actor: &str, id: Option<i64>, input: Input) -> ApiResult<Value> {
     if !["notice", "guide"].contains(&input.kind.as_str()) {
         return Err(bad("内容类型无效"));

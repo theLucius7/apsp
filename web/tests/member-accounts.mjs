@@ -43,12 +43,12 @@ try {
     const dialogs = []
     page.on('dialog', dialog => { dialogs.push(dialog.message()); void dialog.dismiss() })
     let allowLogin = false, dropNextInvitation = true, remaining = 3, quota = 3
-    let settings = { enabled: false, package_group_id: null, policy_group_ids: [], default_quota: 0, version: 1 }
+    let settings = { enabled: false, package_group_id: null, policy_group_ids: [], default_quota: 0, version: 1 }, guides = [guide]
     const issued = [{ id: 'inv-1', hint: 'WXYZ', origin: 'quota', state: 'claimed', created_at: 1790000000, claimed_at: 1790000100, revoked_at: null, recipient: { id: 42, name: 'TEST_ONLY 受邀人' } }]
     const messages = [{ id: 1, message: 'TEST_ONLY 套餐即将到期', created_at: 1790000000, read_at: null }]
     await page.route('**/api/**', async route => {
       const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method()
-      const body = method === 'GET' ? undefined : request.postDataJSON()
+      const body = method === 'GET' || method === 'DELETE' ? undefined : request.postDataJSON()
       if (method !== 'GET') writes.push({ method, path, body })
       let value
       if (path === '/api/me') value = { authenticated: true }
@@ -70,7 +70,8 @@ try {
         value = settings
       }
       else if (method === 'GET' && path === `${root}/account-mail`) value = { enabled: false, reminders_enabled: false, host: '', port: 465, security: 'tls', username: '', from_address: '', credential_id: null, blocked_domains: [], version: 1 }
-      else if (method === 'GET' && path === `${root}/portal-guides`) value = { entries: [guide] }
+      else if (method === 'GET' && path === `${root}/portal-guides`) value = { entries: guides }
+      else if (method === 'DELETE' && path === `${root}/portal-guides/${guide.id}`) { guides = []; return route.fulfill({ status: 204, body: '' }) }
       // The user's own portal.
       else if (method === 'POST' && path === `${root}/portal-public/account/login`) return route.fulfill(allowLogin ? { json: { account_id: account } } : { status: 401, json: { error: '邮箱或密码错误' } })
       else if (method === 'GET' && path === `${root}/portal/${account}`) value = { authenticated: true, name: '测试成员', configuration: { enabled: false, reason: '夹具未启用认证器' }, subscription_url: 'https://legacy.example.com/assets/fixture-token', legacy_compatibility: { last_sync_at: 1 }, usage: { uplink: '20', downlink: '30' }, keys: [], subscription_status: { status: 'ready', message: '', entitlement: { package_name: '原套餐', used_bytes: '50', monthly_bytes: '1000', expires_at: null, next_reset: null } } }
@@ -120,6 +121,13 @@ try {
     await portal.getByRole('button', { name: '公告与指南', exact: true }).click()
     await portal.getByText('安全指南').first().waitFor()
     assert.ok(await portal.evaluate(element => element.scrollWidth <= element.clientWidth + 1), `portal settings fit ${width}px`)
+    // An outdated guide is deleted after a confirmation; the list follows.
+    await portal.getByRole('row').filter({ hasText: '安全指南' }).getByRole('button', { name: '删除', exact: true }).click()
+    const confirm = page.getByRole('alertdialog', { name: '删除「安全指南」？' })
+    await confirm.getByRole('button', { name: '确认删除', exact: true }).click()
+    await confirm.waitFor({ state: 'hidden' })
+    await portal.getByText('安全指南', { exact: true }).waitFor({ state: 'hidden' })
+    assert.deepEqual(writes.filter(write => write.method === 'DELETE').map(write => write.path), [`${root}/portal-guides/${guide.id}`])
     await page.keyboard.press('Escape')
     await portal.waitFor({ state: 'hidden' })
     // One user's quota, the codes they issued and who invited them.
