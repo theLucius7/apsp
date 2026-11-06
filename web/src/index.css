@@ -327,6 +327,10 @@
   to { rotate: 360deg; }
 }
 
+@keyframes orbit-turn {
+  to { rotate: 360deg; }
+}
+
 @keyframes network-pulse {
   0%, 100% { scale: 0.85; opacity: 0.9; }
   50% { scale: 1.45; opacity: 0.15; }

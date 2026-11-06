@@ -5,7 +5,7 @@ import { BoxIcon, CheckIcon, CircleAlertIcon, CopyIcon, InfoIcon, RefreshCwIcon 
 import type { LucideIcon } from 'lucide-react'
 import { errorMessage } from './api'
 import { resourceRefreshingMessage } from './hooks'
-import { SectionContext } from './app/section'
+import { PageIconContext, SectionContext } from './app/section'
 import { tierDescriptions, tierLabels } from './app/tiers'
 import type { Tier } from './app/tiers'
 import { useI18n } from './i18n'
@@ -86,8 +86,10 @@ export function TierNotice({ tier, children }: { tier: Tier; children?: ReactNod
 export function PageHeader({ title, description, leading, children }: { title: string; description?: string; leading?: ReactNode; children?: ReactNode }) {
   const { t } = useI18n()
   const tabs = useContext(SectionContext)
+  // Top-level pages repeat their sidebar icon; pages with a way back show that instead.
+  const PageIcon = useContext(PageIconContext)
   return <><header data-slot="page-header" className="bg-background/80 supports-backdrop-filter:backdrop-blur-md border-border/60 -mx-4 -mt-4 mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-2.5 md:sticky md:top-0 md:z-20 md:-mx-6 md:min-h-16 md:px-6">
-    {leading}
+    {leading ?? (PageIcon && <span data-slot="page-icon" className="bg-card text-primary shadow-soft grid size-10 shrink-0 place-items-center rounded-xl border max-md:hidden" aria-hidden="true"><PageIcon className="size-[18px]" /></span>)}
     <div className="min-w-0 flex-[1_1_16rem]">
       <h1 className="truncate text-lg leading-snug font-semibold tracking-tight md:text-xl">{t(title)}</h1>
       {description && <p title={t(description)} className="text-muted-foreground mt-0.5 text-xs leading-snug md:truncate">{t(description)}</p>}
@@ -132,7 +134,14 @@ export function Empty({ icon: Icon = BoxIcon, title, description, children }: { 
   const { t } = useI18n()
   return <UiEmpty className="py-10">
     <EmptyHeader>
-      <EmptyMedia variant="icon"><Icon aria-hidden="true" /></EmptyMedia>
+      {/* A small drawing rather than a bare icon: a halo, an orbit with two nodes, and the icon on a lifted tile. */}
+      <EmptyMedia data-slot="empty-art" className="relative mb-3 grid size-20 place-items-center" aria-hidden="true">
+        <span className="absolute inset-0 rounded-full bg-[radial-gradient(closest-side,color-mix(in_oklch,var(--primary)_16%,transparent),transparent)]" />
+        <span className="border-primary/25 absolute inset-2 rounded-full border border-dashed" />
+        <span className="bg-primary/55 absolute top-2.5 right-3.5 size-1.5 rounded-full" />
+        <span className="bg-info/55 absolute bottom-3.5 left-2 size-1 rounded-full" />
+        <span className="bg-card text-primary shadow-soft relative grid size-11 place-items-center rounded-xl border"><Icon className="size-5" /></span>
+      </EmptyMedia>
       <EmptyTitle><h3>{t(title)}</h3></EmptyTitle>
       <EmptyDescription>{t(description)}</EmptyDescription>
     </EmptyHeader>

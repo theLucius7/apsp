@@ -12,7 +12,7 @@ import type { NavigationItem } from './navigation'
 import AccountMenu from './AccountMenu'
 import { preloadPages } from './AdminPage'
 import { ConnectionNotice, ConnectionStatus } from './ConnectionStatus'
-import { SectionContext } from './section'
+import { PageIconContext, SectionContext } from './section'
 import { cn } from '@/lib/utils'
 import { readShellActor, writeShellActor } from '@/lib/shell-actor'
 import type { ShellActor } from '@/lib/shell-actor'
@@ -132,9 +132,9 @@ export default function AdminShell({ current, exact = true, busy, error, onLogou
           </div>
         </aside>}
         <ConnectionNotice />
-        <SectionContext.Provider value={exact ? sectionTabs(current, visibleNavigation) : []}>
+        <PageIconContext.Provider value={current?.icon}><SectionContext.Provider value={exact ? sectionTabs(current, visibleNavigation) : []}>
           <MainColumn current={current} error={error}>{children}</MainColumn>
-        </SectionContext.Provider>
+        </SectionContext.Provider></PageIconContext.Provider>
       </div>
     </div>
   </TooltipProvider>
