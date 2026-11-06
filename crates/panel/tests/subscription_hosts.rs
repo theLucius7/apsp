@@ -425,3 +425,151 @@ async fn the_user_overview_never_carries_credentials(pool: PgPool) -> Result<()>
     assert_eq!(rows[0]["portal_keys"], 0);
     Ok(())
 }
+
+/// The board row of one user from the subscription board.
+async fn board_row(panel: &TestPanel, cookie: &str, user: i64) -> Result<(Value, Value)> {
+    let board: Value = panel
+        .admin(
+            Method::GET,
+            &format!("{ROOT}/subscription-board"),
+            cookie,
+            None,
+        )
+        .await?
+        .json()
+        .await?;
+    let row = board["subscriptions"]
+        .as_array()
+        .and_then(|rows| rows.iter().find(|row| row["id"] == user))
+        .cloned()
+        .unwrap_or(Value::Null);
+    Ok((board, row))
+}
+
+#[sqlx::test]
+async fn the_subscription_board_sees_every_fetch_and_no_credentials(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let native = id(&panel.create_user(&cookie, "Native").await?)?;
+    let migrated = id(&panel.create_user(&cookie, "Migrated").await?)?;
+    let (renderer, _) = fake_renderer().await?;
+    bridge(&pool, migrated, &renderer).await?;
+    enable(&pool, true).await?;
+    let (dns, _) = fake_cloudflare().await?;
+    reconcile(&pool, &DnsApi::new(&dns)).await?;
+
+    let (board, row) = board_row(&panel, &cookie, native).await?;
+    assert_eq!(board["fetches_recorded"], true);
+    assert_eq!(
+        board["fetch_retention_days"], 7,
+        "the shorter of the plugin and panel limits"
+    );
+    assert_eq!(row["status"], "unmetered");
+    assert_eq!(row["bridged"], false);
+    assert_eq!(row["last_fetch_at"], Value::Null);
+    assert_eq!(row["fetches_today"], 0);
+    let (_, row) = board_row(&panel, &cookie, migrated).await?;
+    assert_eq!(row["bridged"], true);
+    assert_eq!(row["status"], "no_package");
+
+    // The panel answers the native user's own host; the migrated user's is relayed.
+    let (host, path) = host_of(&pool, native).await?;
+    assert_eq!(
+        fetch(&panel, &host, &format!("/{path}")).await?.status(),
+        StatusCode::OK
+    );
+    let (migrated_host, migrated_path) = host_of(&pool, migrated).await?;
+    assert_eq!(
+        fetch(&panel, &migrated_host, &format!("/{migrated_path}"))
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+
+    let (_, row) = board_row(&panel, &cookie, native).await?;
+    assert_eq!(row["last_fetch_format"], "links");
+    assert_eq!(row["last_fetch_result"], "generated");
+    assert_eq!(row["fetches_today"], 1);
+    // A Clash profile needs at least one node, so this one cannot be served; the
+    // board sees the failure.
+    let answer = panel
+        .client
+        .get(format!("{}/{path}", panel.base))
+        .header(header::HOST, &host)
+        .header(header::USER_AGENT, "mihomo/1.19")
+        .send()
+        .await?;
+    assert_eq!(answer.status(), StatusCode::CONFLICT);
+    let (_, row) = board_row(&panel, &cookie, native).await?;
+    assert_eq!(row["last_fetch_format"], "clash");
+    assert_eq!(row["last_fetch_result"], "unavailable");
+    assert_eq!(row["fetches_today"], 2);
+    let (board, row) = board_row(&panel, &cookie, migrated).await?;
+    assert_eq!(row["last_fetch_format"], "renderer");
+    assert_eq!(row["last_fetch_result"], "relayed");
+    assert_eq!(row["fetches_today"], 1);
+    assert!(row["last_fetch_at"].as_i64().is_some());
+    // Nothing secret reaches the board.
+    let text = board.to_string();
+    let tokens: Vec<String> = sqlx::query_scalar("SELECT subscription_token FROM users")
+        .fetch_all(&pool)
+        .await?;
+    for secret in tokens.iter().chain([&path, &migrated_path]) {
+        assert!(
+            !text.contains(secret.as_str()),
+            "the board carries no addresses or tokens"
+        );
+    }
+    // The relayed record has the same shape as the panel's own, without node counts.
+    let detail: Value = sqlx::query_scalar("SELECT detail FROM singbox_operation_events WHERE action='subscription_fetch' AND user_id=$1")
+        .bind(migrated)
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(
+        detail,
+        json!({"format":"renderer","managed_nodes":null,"external_nodes":null,"result":"relayed"})
+    );
+
+    // A renderer that does not answer is recorded as unavailable; the client gets a gateway error.
+    sqlx::query("UPDATE singbox_nexus_bridge SET subscription_base='http://127.0.0.1:9/assets/'")
+        .execute(&pool)
+        .await?;
+    assert_eq!(
+        fetch(&panel, &migrated_host, &format!("/{migrated_path}"))
+            .await?
+            .status(),
+        StatusCode::BAD_GATEWAY
+    );
+    let (_, row) = board_row(&panel, &cookie, migrated).await?;
+    assert_eq!(row["last_fetch_result"], "unavailable");
+    assert_eq!(row["fetches_today"], 2);
+
+    // With fetch records switched off, nothing more is kept and the board says so.
+    sqlx::query("UPDATE singbox_operation_privacy SET subscription_days=0")
+        .execute(&pool)
+        .await?;
+    sqlx::query("UPDATE singbox_nexus_bridge SET subscription_base=$1")
+        .bind(&renderer)
+        .execute(&pool)
+        .await?;
+    assert_eq!(
+        fetch(&panel, &migrated_host, &format!("/{migrated_path}"))
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    let (board, row) = board_row(&panel, &cookie, migrated).await?;
+    assert_eq!(board["fetches_recorded"], false);
+    assert_eq!(row["fetches_today"], 2);
+    // Signed out, the board is not there.
+    assert_eq!(
+        panel
+            .client
+            .get(format!("{}{ROOT}/subscription-board", panel.base))
+            .send()
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    Ok(())
+}

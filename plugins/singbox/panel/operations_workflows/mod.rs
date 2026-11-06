@@ -154,10 +154,10 @@ pub(super) async fn record_subscription(
     tx: &mut Transaction<'_, Postgres>,
     user: i64,
     format: &str,
-    managed: usize,
-    external: usize,
+    nodes: Option<(usize, usize)>,
     result: &str,
 ) -> ApiResult<()> {
+    let (managed, external) = nodes.unzip();
     event(
         tx,
         None,

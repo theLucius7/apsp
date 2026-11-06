@@ -64,6 +64,7 @@ const Statistics = lazyPage(() => import('../statistics/Statistics'), true)
 const SingboxOverview = lazyPage(() => import('../plugins/singbox/Overview'), true)
 const Nodes = lazyPage(() => import('../plugins/singbox/Nodes'), true)
 const ProxyUsers = lazyPage(() => import('../plugins/singbox/ProxyUsers'), true)
+const SubscriptionBoard = lazyPage(() => import('../subscriptions/SubscriptionBoard'), true)
 const Groups = lazyPage(() => import('../plugins/singbox/Groups'), true)
 const Expenses = lazyPage(() => import('../plugins/expenses/Expenses'), true)
 const Ddns = lazyPage(() => import('../plugins/ddns/Ddns'))
@@ -111,7 +112,8 @@ function page(route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' | 'm
       initialServerRole={route.serverRole}
     />
     case 'expenses': return <Expenses />
-    case 'proxy-users': return <ProxyUsers />
+    case 'proxy-users': return <ProxyUsers key={route.userId ?? 'users'} initialUserId={route.userId} />
+    case 'subscription-board': return <SubscriptionBoard />
     case 'groups': return <Groups />
     case 'plugins': return <PluginEnablement />
     case 'catalog': return <PluginCatalog />

@@ -14,6 +14,11 @@ const translatedAttributeSources = new WeakMap<Element, Map<string, string>>()
 // messages intentionally fall back to their source text when no translation is
 // available.
 const english: Record<string, string> = {
+  // Subscription board (ADR 0117).
+  '订阅看板': 'Subscription dashboard', '订阅总览': 'Subscription summary', '可用订阅': 'Usable subscriptions', '本期用量': 'Usage this cycle', '每月费用': 'Monthly cost',
+  '需关注': 'Needs attention', '24 小时拉取': 'Fetched in 24 hours', '订阅来源': 'Subscription sources', '订阅类型': 'Subscription kinds', '订阅状态筛选': 'Subscription status filter',
+  '搜索订阅': 'Search subscriptions', '管理代理用户': 'Manage proxy users', '管理订阅来源': 'Manage subscription sources', '下次续费': 'Next renewal', '续费方式': 'Renewal',
+  '最近拉取': 'Last fetched', '没有匹配的订阅': 'No matching subscriptions', '原系统': 'Original system',
   // Sign-in page and account card (2026-11-06).
   '隐藏密码': 'Hide password', '显示密码': 'Show password',
   // Server monitoring panel, server pages and overview (2026-11-05 redesign).

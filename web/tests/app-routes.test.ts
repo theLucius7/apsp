@@ -23,6 +23,16 @@ test('old device DDNS, catalog alias and unified node selection retain their des
   expect(currentNavigation(resolveRoute('/plugins/alicloud'))?.path).toBe('/plugins/alicloud')
 })
 
+test('the subscription board sits beside the server board and its cards open one proxy user', () => {
+  expect(resolveRoute('/subscriptions')).toEqual({ page: 'subscription-board' })
+  expect(currentNavigation(resolveRoute('/subscriptions'))).toMatchObject({ label: '订阅看板', group: '总览', parent: '/plugins/sing-box' })
+  expect(resolveRoute('/plugins/sing-box/users')).toEqual({ page: 'proxy-users' })
+  expect(resolveRoute('/plugins/sing-box/commerce')).toEqual({ page: 'proxy-users' })
+  expect(resolveRoute('/plugins/sing-box/users/42')).toEqual({ page: 'proxy-users', userId: 42 })
+  expect(currentNavigation(resolveRoute('/plugins/sing-box/users/42'))?.path).toBe('/plugins/sing-box/users')
+  for (const path of ['/plugins/sing-box/users/0', '/plugins/sing-box/users/01', '/plugins/sing-box/users/9007199254740992', '/plugins/sing-box/users/x']) expect(resolveRoute(path)).toEqual({ page: 'not-found' })
+})
+
 test('china reachability is a view of the latency entry, not another sidebar entry', () => {
   expect(resolveRoute('/latency/reachability')).toEqual({ page: 'latency-reachability' })
   expect(currentNavigation(resolveRoute('/latency/reachability'))?.path).toBe('/latency')
@@ -63,11 +73,12 @@ test('node page sections are addressable and malformed sections are refused', ()
 test('navigation groups follow administrator tasks and keep every destination', () => {
   expect([...new Set(navigation.map(item => item.group))]).toEqual(['总览', '代理服务', '服务器', '监控与设置', '实验功能'])
   // Every destination stays; pages about the same thing are tabs of one sidebar entry (ADR 0102).
-  expect(navigation).toHaveLength(21)
+  expect(navigation).toHaveLength(22)
   const everyday = sidebarEntries(navigation.filter(item => !item.tier))
   expect(everyday.map(entry => entry.root.navLabel ?? entry.root.label)).toEqual(['概览', '费用与续费', '代理节点', '代理用户', '策略与套餐', '服务器', '域名解析', '阿里云 CDT', '告警', '线路检测', '设置'])
   expect(navigation.filter(item => item.group === '代理服务').map(item => item.label)).toEqual(['代理节点', '代理用户', '策略与套餐'])
-  expect(sectionTabs(currentNavigation(resolveRoute('/dashboard')), navigation).map(item => item.label)).toEqual(['概览', '统计报表', '服务器看板'])
+  expect(sectionTabs(currentNavigation(resolveRoute('/dashboard')), navigation).map(item => item.label)).toEqual(['概览', '统计报表', '服务器看板', '订阅看板'])
+  expect(sectionTabs(currentNavigation(resolveRoute('/subscriptions')), navigation).map(item => item.label)).toEqual(['概览', '统计报表', '服务器看板', '订阅看板'])
   expect(sectionTabs(currentNavigation(resolveRoute('/latency')), navigation).map(item => item.label)).toEqual(['网络检测', '延迟检测'])
   expect(sectionTabs(currentNavigation(resolveRoute('/plugins/sing-box/nodes')), navigation)).toEqual([])
   // Someone who may only open some tabs of an entry goes to the first of those.

@@ -16,6 +16,24 @@ export function decimal(units: string): string {
   return `${number / 10000n}${fraction ? `.${fraction}` : ''}`
 }
 export const amount = (units: string, currency: string) => `${currency} ${decimal(units)}`
+
+/** Whole days from `today` to a ledger date (both YYYY-MM-DD in the ledger's time zone); negative once it has passed. */
+export function daysUntil(date: string, today = new Date().toISOString().slice(0, 10)): number | null {
+  const days = (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000
+  return Number.isFinite(days) ? Math.round(days) : null
+}
+const cycleMonths = { day: 12 / 365.25, week: 7 * 12 / 365.25, month: 1, year: 12 }
+/** One record's cost per month in its own currency, spreading longer and shorter cycles evenly. */
+export function monthlyAmount({ amount_units, cycle, frequency }: Pick<Expense, 'amount_units' | 'cycle' | 'frequency'>): number | null {
+  const months = (cycleMonths[cycle] ?? Number.NaN) * frequency
+  const value = Number(amount_units) / 10000 / months
+  return Number.isFinite(value) && value >= 0 ? value : null
+}
+/** The length of one billing period in days. */
+export function cycleDays({ cycle, frequency }: Pick<Expense, 'cycle' | 'frequency'>): number | null {
+  const days = ({ day: 1, week: 7, month: 365.25 / 12, year: 365.25 })[cycle] * frequency
+  return Number.isFinite(days) && days > 0 ? days : null
+}
 export const optionalId = (value: FormDataEntryValue | null) => value ? Number(value) : null
 export const optionalText = (value: FormDataEntryValue | null) => value ? String(value) : null
 export async function download(path: string, filename: string) {

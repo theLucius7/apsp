@@ -406,6 +406,35 @@ pub async fn get(
     serve(&state, &request_headers, token, query).await
 }
 
+/// Whether subscription fetches are recorded, and for how many days: the plugin's
+/// own limit or the panel's proxy-access limit, whichever is shorter.
+pub(super) const FETCH_RECORDING: &str = "SELECT p.subscription_days>0 AND COALESCE(r.days>0,TRUE),LEAST(p.subscription_days,COALESCE(r.days,p.subscription_days)) FROM singbox_operation_privacy p LEFT JOIN record_retention_policy r ON r.kind='proxy-access' WHERE p.singleton";
+
+/// Keeps one record of a subscription fetch while the privacy settings ask for it.
+/// Every way a client reaches its subscription records here, so the subscription
+/// board and the user's audit trail see the same fetches. `nodes` is unknown when
+/// the retained renderer answered.
+pub(super) async fn record_fetch(
+    state: &AppState,
+    user_id: i64,
+    format: &str,
+    nodes: Option<(usize, usize)>,
+    result: &str,
+) -> ApiResult<()> {
+    let mut audit = state.pool.begin().await?;
+    let (record, _): (bool, i32) = sqlx::query_as(FETCH_RECORDING)
+        .fetch_one(&mut *audit)
+        .await?;
+    if record {
+        super::operations_workflows::record_subscription(
+            &mut audit, user_id, format, nodes, result,
+        )
+        .await?;
+    }
+    audit.commit().await?;
+    Ok(())
+}
+
 /// Answers one subscription fetch, from the panel path or a user's own hostname.
 pub async fn serve(
     state: &AppState,
@@ -444,26 +473,20 @@ pub async fn serve(
         None
     };
     tx.commit().await?;
-    let mut audit = state.pool.begin().await?;
-    let record: bool = sqlx::query_scalar("SELECT subscription_days>0 AND COALESCE((SELECT days>0 FROM record_retention_policy WHERE kind='proxy-access'),TRUE) FROM singbox_operation_privacy WHERE singleton").fetch_one(&mut *audit).await?;
-    if record {
-        super::operations_workflows::record_subscription(
-            &mut audit,
-            user_id,
-            format,
-            snapshot.nodes.len(),
-            snapshot.external.nodes.len(),
-            if body.is_ok() {
-                "generated"
-            } else if snapshot.entitlement.allowed {
-                "unavailable"
-            } else {
-                "restricted"
-            },
-        )
-        .await?;
-    }
-    audit.commit().await?;
+    record_fetch(
+        state,
+        user_id,
+        format,
+        Some((snapshot.nodes.len(), snapshot.external.nodes.len())),
+        if body.is_ok() {
+            "generated"
+        } else if snapshot.entitlement.allowed {
+            "unavailable"
+        } else {
+            "restricted"
+        },
+    )
+    .await?;
     let body = body?;
     let mut response = (
         [

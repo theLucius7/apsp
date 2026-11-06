@@ -9,7 +9,7 @@ import type { NodeView } from '../plugins/singbox/nodeRoute'
 // opened with this server preselected.
 type ServerSection = 'assets' | 'agent' | 'ip-info' | 'node-quality' | 'tcp-quality' | 'plugins' | 'ddns' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations'
 type SimplePage = 'singbox-overview' | 'servers' | 'statistics' | 'latency' | 'latency-reachability' | 'alicloud' | 'ddns'
-  | 'expenses' | 'proxy-users' | 'groups' | 'plugins' | 'catalog' | 'settings' | 'backup' | 'batch-enrollment' | 'alert-settings' | 'notifications' | 'security' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations' | 'control-center' | 'not-found'
+  | 'expenses' | 'subscription-board' | 'groups' | 'plugins' | 'catalog' | 'settings' | 'backup' | 'batch-enrollment' | 'alert-settings' | 'notifications' | 'security' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations' | 'control-center' | 'not-found'
 
 export type AppRoute =
   | { page: 'dashboard'; serverId?: number }
@@ -17,6 +17,7 @@ export type AppRoute =
   | { page: 'member-join'; token?: string }
   | { page: 'proxy-portal'; account: string; activation?: string }
   | { page: 'server'; serverId: number; section?: ServerSection }
+  | { page: 'proxy-users'; userId?: number }
   | { page: 'nodes'; serverId?: number; chains?: boolean; selected?: ResourceKey; kind?: 'direct'; serverRole?: 'any' | 'entry' | 'middle' | 'exit'; view?: NodeView }
   | { page: SimplePage }
 
@@ -30,15 +31,13 @@ const pages: Readonly<Record<string, SimplePage>> = {
   '/system/control-center': 'control-center',
   '/plugins/sing-box': 'singbox-overview',
   '/statistics': 'statistics',
+  '/subscriptions': 'subscription-board',
   '/latency': 'latency',
   '/latency/reachability': 'latency-reachability',
   '/monitoring/settings': 'alert-settings',
   '/plugins/alicloud': 'alicloud',
   '/plugins/ddns': 'ddns',
   '/plugins/expenses': 'expenses',
-  // Former member operations; invitations and sign-in now live with proxy users.
-  '/plugins/sing-box/commerce': 'proxy-users',
-  '/plugins/sing-box/users': 'proxy-users',
   '/plugins/sing-box/groups': 'groups',
   '/system/plugins': 'plugins',
   '/system/settings': 'settings',
@@ -61,6 +60,11 @@ export function resolveRoute(path: string): AppRoute {
   if (server && Number.isSafeInteger(Number(server[1]))) {
     return { page: 'server', serverId: Number(server[1]), section: server[2] as ServerSection | undefined }
   }
+
+  // Former member operations; invitations and sign-in now live with proxy users.
+  if (path === '/plugins/sing-box/commerce' || path === '/plugins/sing-box/users') return { page: 'proxy-users' }
+  const proxyUser = path.match(/^\/plugins\/sing-box\/users\/([1-9]\d*)$/)
+  if (proxyUser && Number.isSafeInteger(Number(proxyUser[1]))) return { page: 'proxy-users', userId: Number(proxyUser[1]) }
 
   if (path === '/plugins/sing-box/chains') return { page: 'nodes', chains: true }
   const node = nodeRoute(path)

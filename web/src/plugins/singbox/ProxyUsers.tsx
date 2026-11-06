@@ -51,7 +51,8 @@ function portalText(line?: UserLine) {
   return line.activation_expires_at ? '等待对方开通' : '未开通登录'
 }
 
-export default function ProxyUsers() {
+/** `initialUserId` opens one user, as the subscription board's cards do. */
+export default function ProxyUsers({ initialUserId }: { initialUserId?: number }) {
   const users = useResource<ProxyUser[]>(`${root}/users`, 5000, { keep: true })
   const lines = useResource<UserLine[]>(`${root}/users/overview`, 15_000, { keep: true })
   const usage = useResource<Usage>(`${root}/usage`, 5000, { keep: true })
@@ -59,8 +60,8 @@ export default function ProxyUsers() {
   const actor = useResource<{ role: string }>('/api/control-center/me', 30_000, { keep: true })
   const action = useAction()
   const linkAction = useAction()
-  const [selected, setSelected] = useState<number | null>(null)
-  const selectedRef = useRef<number | null>(null)
+  const [selected, setSelected] = useState<number | null>(initialUserId ?? null)
+  const selectedRef = useRef<number | null>(initialUserId ?? null)
   const selectUser = (id: number | null) => { selectedRef.current = id; setSelected(id) }
   const [editor, setEditor] = useState<ProxyUser | 'new' | null>(null)
   const [deleting, setDeleting] = useState<ProxyUser | null>(null)
@@ -81,6 +82,11 @@ export default function ProxyUsers() {
   useEffect(() => {
     if (users.data && selectedRef.current === null) selectUser(users.data[0]?.id ?? null)
   }, [users.data])
+  // A user opened by address is scrolled into view in the roster once it is drawn.
+  const rosterReady = Boolean(users.data)
+  useEffect(() => {
+    if (initialUserId && rosterReady) document.querySelector(`[data-slot=user-roster] [data-user-id="${initialUserId}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [initialUserId, rosterReady])
   const entitlement = useResource<Entitlement>(selected ? `${root}/users/${selected}/entitlement` : null)
   const selectedUsage = useResource<Usage>(selected ? `${root}/usage?user_id=${selected}` : null)
   const user = users.data?.find(user => user.id === selected)
