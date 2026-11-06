@@ -11,14 +11,11 @@ import subprocess
 import tarfile
 import tempfile
 
-VERSION = "1.14.2-apsp.1"
-REVISION = "e2288134223b5b9e3a272f9fb4abb717bf7647f3"
-TAGS = {
-    "with_gvisor", "with_quic", "with_dhcp", "with_wireguard", "with_utls",
-    "with_acme", "with_clash_api", "with_tailscale", "with_ccm", "with_ocm",
-    "with_cloudflared", "with_naive_outbound", "with_usbip", "with_openvpn",
-    "with_openconnect", "badlinkname", "tfogo_checklinkname0", "with_v2ray_api",
-}
+VERSION = "1.14.0-apsp.1"
+REVISION = "7cf0370571977d4a3ed01d35dcf08ffbd67f1d9b"
+# The legacy service's build tags, plus the statistics API the Agent reads.
+TAGS = "with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api"
+MODULES = Path(__file__).resolve().parent / "singbox-runtime" / "modules.txt"
 MAX_ARCHIVE = 256 * 1024 * 1024
 MAX_BINARY = 512 * 1024 * 1024
 
@@ -33,27 +30,34 @@ def ordinary(path, maximum):
     require(0 < path.stat().st_size <= maximum, "file size exceeds the allowed bound")
 
 
-def verify_metadata(metadata, arch, libc="gnu"):
-    require(libc in ("gnu", "musl"), "unsupported libc")
+def pinned_modules():
+    lines = MODULES.read_text(encoding="ascii").splitlines()
+    return {line.split("#", 1)[0].strip() for line in lines} - {""}
+
+
+def verify_metadata(metadata, arch):
     lines = metadata.splitlines()
     require(lines and lines[0].endswith(": go1.26.8"), "unexpected Go toolchain")
-    values = {}
+    values, modules = {}, set()
     for line in lines[1:]:
-        fields = line.strip().split("\t", 1)
-        if len(fields) == 2 and fields[0] == "build":
+        fields = line.strip().split("\t")
+        if fields[0] == "build" and len(fields) == 2:
             key, separator, value = fields[1].partition("=")
             require(separator and key not in values, "invalid or duplicate build setting")
             values[key] = value
+        elif fields[0] == "dep":
+            modules.add(" ".join(fields[1:4]))
+        elif fields[0] == "=>":
+            raise ValueError("runtime must not replace modules")
     for key, expected in {
-        "GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "1",
+        "GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "0",
         "-trimpath": "true", "vcs": "git", "vcs.revision": REVISION,
         "vcs.modified": "false", "-buildmode": "exe", "-compiler": "gc",
     }.items():
         require(values.get(key) == expected, "unexpected build setting: " + key)
-    tags = values.get("-tags", "").split(",")
-    expected_tags = TAGS | ({"with_musl"} if libc == "musl" else set())
-    require(len(tags) == len(expected_tags) and set(tags) == expected_tags,
-            "unexpected runtime build tags")
+    require(values.get("-tags") == TAGS, "unexpected runtime build tags")
+    require("DefaultGODEBUG" not in values, "runtime must keep the legacy service's GODEBUG defaults")
+    require(modules == pinned_modules(), "runtime dependencies differ from modules.txt")
     # Trimmed Go metadata does not preserve the Version linker override.
     # The pinned source revision binds the expected release; this is no attestation.
 
@@ -96,14 +100,12 @@ def verify(root, arch, reader=None, *, libc=None):
                                                text=True, timeout=30)
         else:
             metadata = reader(binary)
-        verify_metadata(metadata, arch, libc or "gnu")
-        if libc == "musl":
-            headers = subprocess.check_output(["readelf", "-lW", str(binary)],
-                                               text=True, timeout=30)
-            dynamic = subprocess.check_output(["readelf", "-dW", str(binary)],
-                                               text=True, timeout=30)
-            require("INTERP" not in headers and "NEEDED" not in dynamic,
-                    "musl runtime must be statically linked")
+        verify_metadata(metadata, arch)
+        # One pure Go binary serves glibc and musl hosts.
+        headers = subprocess.check_output(["readelf", "-lW", str(binary)], text=True, timeout=30)
+        dynamic = subprocess.check_output(["readelf", "-dW", str(binary)], text=True, timeout=30)
+        require("INTERP" not in headers and "NEEDED" not in dynamic,
+                "runtime must be statically linked")
     return digest
 
 

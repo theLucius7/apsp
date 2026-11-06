@@ -85,11 +85,8 @@ impl Adapter for SingboxAdapter {
                 "sing-box"
             }
             .into(),
-            auxiliary_files: if cfg!(windows) {
-                vec!["libcronet.dll".into()]
-            } else {
-                Vec::new()
-            },
+            // The runtime is pure Go everywhere, so it ships no libraries.
+            auxiliary_files: Vec::new(),
             service_unit: SERVICE_UNIT.into(),
             service_group: "apsp-singbox".into(),
         }

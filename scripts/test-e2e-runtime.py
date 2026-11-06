@@ -21,7 +21,7 @@ class CacheContracts(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
-        self.artifacts = self.root / "sing-box" / "1.14.2-apsp.1"
+        self.artifacts = self.root / "sing-box" / VERIFIER.VERSION
         self.artifacts.mkdir(parents=True)
 
     def package(self, name="sing-box", link=False):
@@ -58,8 +58,8 @@ class CacheContracts(unittest.TestCase):
 
     def test_right_version_with_missing_default_tag_is_rejected(self):
         self.package()
-        tags = VERIFIER.TAGS - {"with_naive_outbound"}
-        version = f"sing-box version 1.14.2-apsp.1\nTags: {','.join(sorted(tags))}\nRevision: {VERIFIER.REVISION}\nCGO: enabled\n"
+        tags = VERIFIER.TAGS.replace(",with_v2ray_api", "")
+        version = f"sing-box version {VERIFIER.VERSION}\nTags: {tags}\nRevision: {VERIFIER.REVISION}\nCGO: disabled\n"
         with patch.object(VERIFIER.subprocess, "check_output", side_effect=["Advanced Micro Devices X86-64", version]):
             with self.assertRaisesRegex(ValueError, "tags mismatch"):
                 VERIFIER.verify(self.root, self.root / "runtime")

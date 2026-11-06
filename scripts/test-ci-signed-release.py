@@ -50,7 +50,7 @@ class SignedCiContracts(unittest.TestCase):
     def bundle(self):
         source = self.directory / "source"
         for name, version, data in (("agent", "0.3.0", b"explicitly non-executable CI structural fixture"),
-                                    ("sing-box", "1.14.2-apsp.1", packed("sing-box", b"runtime fixture")),
+                                    ("sing-box", "1.14.0-apsp.1", packed("sing-box", b"runtime fixture")),
                                     ("nodequality", TOOLS.NODEQUALITY_VERSION, packed("nodequality", b"diagnostic fixture"))):
             target = source / name / version / "amd64"
             target.parent.mkdir(parents=True)
@@ -59,7 +59,7 @@ class SignedCiContracts(unittest.TestCase):
         installer.write_bytes(b"#!/bin/sh\nexit 1\n")
         bundle = self.directory / "bundle"
         TOOLS.assemble(argparse.Namespace(source=source, output=bundle, tag="agent-v0.3.0", agent_version="0.3.0",
-            runtime_version="1.14.2-apsp.1", nodequality_version=TOOLS.NODEQUALITY_VERSION, installer=installer, arch=["amd64"]))
+            runtime_version="1.14.0-apsp.1", nodequality_version=TOOLS.NODEQUALITY_VERSION, installer=installer, arch=["amd64"]))
         # This fixture deliberately exercises shape and hash guards only, not crypto.
         (bundle / "SHA256SUMS.minisig").write_bytes(b"invalid signature; structural test only\n")
         metadata, _ = TOOLS.validate_manifest(bundle, "agent-v0.3.0")
@@ -168,10 +168,10 @@ class SignedCiContracts(unittest.TestCase):
 
     def test_systemd_probe_binds_role_and_does_not_claim_failed_gate_executed_payload(self):
         with patch.object(PREFLIGHT.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)) as run:
-            PREFLIGHT.probe(Path("/opt/apsp/plugins/sing-box/1.14.2-apsp.1/sing-box"), self.directory, False)
+            PREFLIGHT.probe(Path("/opt/apsp/plugins/sing-box/1.14.0-apsp.1/sing-box"), self.directory, False)
         gate = next(argument for argument in run.call_args.args[0] if argument.startswith("--property=ExecStartPre="))
         self.assertIn("--name sing-box --format tar.gz", gate)
-        self.assertIn("--binary /opt/apsp/plugins/sing-box/1.14.2-apsp.1/sing-box", gate)
+        self.assertIn("--binary /opt/apsp/plugins/sing-box/1.14.0-apsp.1/sing-box", gate)
         self.assertEqual(list(self.directory.glob("systemd-marker-*")), [])
 
 

@@ -206,13 +206,13 @@ mod tests {
         crate::plugins::install();
         let mut step: apsp_panel_host::operations::Step = serde_json::from_value(json!({
             "kind":"singbox_retry_deployment", "service":null, "timeout_secs":300,
-            "runtime_version":"1.14.2-apsp.1"
+            "runtime_version":"1.14.0-apsp.1"
         }))
         .unwrap();
         assert!(step.validate().is_ok());
         step.runtime_version = Some("latest".into());
         assert!(step.validate().is_err());
-        step.runtime_version = Some("1.14.2-apsp.1".into());
+        step.runtime_version = Some("1.14.0-apsp.1".into());
         step.service = Some("other.service".into());
         assert!(step.validate().is_err());
     }

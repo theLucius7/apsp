@@ -8,7 +8,7 @@
 | --- | --- |
 | `build-agent.py`、`build-agent.sh` | Agent 平台构建及打包入口 |
 | `build-singbox.sh`、`build-runtime-native.py`、`singbox-builder.Dockerfile` | 固定运行时源码与平台构建 |
-| `singbox-runtime/` | 自维护运行时的补丁、应用脚本和线上行为对比工具 |
+| `singbox-runtime/` | 自维护运行时（旧服务同一份内核）的补丁队列、依赖清单、应用脚本和线上行为对比工具 |
 | `build-tcp-probe.py`、`tcp_probe_artifact.py`、`tcp_probe_notices.py` | 原生 TCP 工具制品、元数据与许可 |
 | `build-nodequality.sh`、`build-nodequality-offline.py`、`build-nodequality-node-query.py` | NodeQuality 制品及独立节点查询工具 |
 | `nodequality-rootfs-build.py`、`nodequality-rootfs-collect.py`、`nodequality_rootfs_artifact.py` | 离线依赖材料、rootfs 构建及制品检查 |

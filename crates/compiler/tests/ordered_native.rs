@@ -68,8 +68,8 @@ fn native_version(binary: &Path) {
     assert!(
         output
             .lines()
-            .any(|line| line.trim() == "sing-box version 1.14.2-apsp.1"),
-        "native gate requires exact runtime version 1.14.2-apsp.1"
+            .any(|line| line.trim() == "sing-box version 1.14.0-apsp.1"),
+        "native gate requires exact runtime version 1.14.0-apsp.1"
     );
     let tags = output
         .lines()
@@ -136,7 +136,7 @@ fn accept(generation: u64, position: u8, id: i64, identity: u128) -> ManagedAcce
 }
 
 #[test]
-#[ignore = "requires exact sing-box 1.14.2-apsp.1 with full observed feature tags and a private evidence directory"]
+#[ignore = "requires exact sing-box 1.14.0-apsp.1 with full observed feature tags and a private evidence directory"]
 fn exact_native_checks_three_and_four_hops_acceptances_and_legacy_bytes() {
     let binary = absolute_input("APSP_ORDERED_NATIVE_BINARY");
     assert!(binary.is_file(), "native binary input must be a file");
@@ -274,7 +274,7 @@ fn exact_native_checks_three_and_four_hops_acceptances_and_legacy_bytes() {
         );
         assert!(success, "native check failed for controlled fixture {name}");
     }
-    fs::write(directory.join("acceptance-scope.json"),serde_json::to_vec_pretty(&json!({"schema":1,"runtime_version":"1.14.2-apsp.1","native_check":true,
+    fs::write(directory.join("acceptance-scope.json"),serde_json::to_vec_pretty(&json!({"schema":1,"runtime_version":"1.14.0-apsp.1","native_check":true,
         "required_build_tags":["with_clash_api","with_v2ray_api","with_utls","with_quic"],
         "legacy_bytes_unchanged":true,"traffic_verified":false,"udp_verified":false,"failure_no_bypass_verified":false,"entry_accounting_verified":false})).unwrap()).unwrap();
 }

@@ -9,15 +9,10 @@ import sys
 import tarfile
 
 
-VERSION = "1.14.2-apsp.1"
-REVISION = "e2288134223b5b9e3a272f9fb4abb717bf7647f3"
-# release/DEFAULT_BUILD_TAGS at the pinned upstream revision, plus the statistics API.
-TAGS = {
-    "with_gvisor", "with_quic", "with_dhcp", "with_wireguard", "with_utls",
-    "with_acme", "with_clash_api", "with_tailscale", "with_ccm", "with_ocm",
-    "with_cloudflared", "with_naive_outbound", "with_usbip", "with_openvpn",
-    "with_openconnect", "badlinkname", "tfogo_checklinkname0", "with_v2ray_api",
-}
+VERSION = "1.14.0-apsp.1"
+REVISION = "7cf0370571977d4a3ed01d35dcf08ffbd67f1d9b"
+# The legacy service's build tags, plus the statistics API the Agent reads.
+TAGS = "with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api"
 
 
 def require(condition, message):
@@ -54,13 +49,13 @@ def verify(root, destination):
     version = subprocess.check_output([str(binary), "version"], text=True, timeout=30)
     require(version.splitlines()[0] == f"sing-box version {VERSION}", "runtime version mismatch")
     tags_line = next(line for line in version.splitlines() if line.startswith("Tags: "))
-    require(set(tags_line.removeprefix("Tags: ").split(",")) == TAGS, "runtime tags mismatch")
+    require(tags_line.removeprefix("Tags: ") == TAGS, "runtime tags mismatch")
     require(f"Revision: {REVISION}" in version, "runtime revision mismatch")
-    require("CGO: enabled" in version, "upstream runtime must use its original CGO build")
+    require("CGO: disabled" in version, "runtime must be the pure Go build")
     metadata = subprocess.check_output(["go", "version", "-m", str(binary)], text=True, timeout=30)
     require(metadata.splitlines()[0].endswith(": go1.26.8"), "runtime toolchain mismatch")
     require("GOOS=linux" in metadata and "GOARCH=amd64" in metadata, "runtime build target mismatch")
-    print(f"Pinned runtime verified: {VERSION}, amd64, complete upstream tags and statistics API")
+    print(f"Pinned runtime verified: {VERSION}, amd64, legacy service tags and statistics API")
     return binary
 
 

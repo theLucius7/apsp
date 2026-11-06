@@ -22,7 +22,7 @@ async fn probe_fixture(pool: PgPool) -> Result<(TestPanel, i64)> {
     .await?;
     let bundle = Bundle { files: BTreeMap::from([
         ("config.json".into(), "TEST_ONLY native configuration".into()),
-        ("runtime-probes.json".into(), json!({"schema":1,"runtime_version":"1.14.2-apsp.1",
+        ("runtime-probes.json".into(), json!({"schema":1,"runtime_version":"1.14.0-apsp.1",
             "required_build_tags":["with_clash_api","with_v2ray_api"],
             "bindings":[{"id":PROBE,"selector":"path_1_2_0","target":"https://panel.example/health"},
                 {"id":ANOTHER,"selector":"path_1_3_0","target":"https://panel.example/health"}]}).to_string()),

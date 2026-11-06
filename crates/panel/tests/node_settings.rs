@@ -267,7 +267,7 @@ async fn signed_runtime_cannot_make_an_agent_without_signature_support_ready(
     release_fixture::write(
         &panel.state.config.data_dir,
         "sing-box",
-        "1.14.2-apsp.1",
+        "1.14.0-apsp.1",
         "sing-box",
         &archive,
         binary,

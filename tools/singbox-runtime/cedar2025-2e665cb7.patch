@@ -1,0 +1,1665 @@
+diff --git a/.github/workflows/build.yml b/.github/workflows/build.yml
+index 2cf9e62d3b1d735c05a71c3c044be0fc86d6666f..14dc80dc8698c091705e895225b21be7159e8ecc 100644
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -11,7 +11,7 @@ on:
+         description: "Build type"
+         required: true
+         type: choice
+-        default: "All"
++        default: "Binary"
+         options:
+           - All
+           - Binary
+@@ -342,13 +342,13 @@ jobs:
+             -p "dist/sing-box_${{ needs.calculate_version.outputs.version }}_${{ matrix.os }}_${{ matrix.debian }}.deb" \
+             --architecture ${{ matrix.debian }} \
+             dist/sing-box=/usr/bin/sing-box
+-          curl -Lo '/tmp/debsigs.diff' 'https://gitlab.com/debsigs/debsigs/-/commit/160138f5de1ec110376d3c807b60a37388bc7c90.diff'
+-          sudo patch /usr/bin/debsigs < '/tmp/debsigs.diff'
+-          rm -rf $HOME/.gnupg
+-          gpg --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --import <<EOF
+-          ${{ secrets.GPG_KEY }}
+-          EOF
+-          debsigs --sign=origin -k ${{ secrets.GPG_KEY_ID }} --gpgopts '--pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}"' dist/*.deb
++          # curl -Lo '/tmp/debsigs.diff' 'https://gitlab.com/debsigs/debsigs/-/commit/160138f5de1ec110376d3c807b60a37388bc7c90.diff'
++          # sudo patch /usr/bin/debsigs < '/tmp/debsigs.diff'
++          # rm -rf $HOME/.gnupg
++          # gpg --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --import <<EOF
++          # ${{ secrets.GPG_KEY }}
++          # EOF
++          # debsigs --sign=origin -k ${{ secrets.GPG_KEY_ID }} --gpgopts '--pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}"' dist/*.deb
+       - name: Package RPM
+         if: matrix.rpm != ''
+         run: |-
+@@ -360,14 +360,14 @@ jobs:
+             -p "dist/sing-box_${{ needs.calculate_version.outputs.version }}_${{ matrix.os }}_${{ matrix.rpm }}.rpm" \
+             --architecture ${{ matrix.rpm }} \
+             dist/sing-box=/usr/bin/sing-box
+-          cat > $HOME/.rpmmacros <<EOF
+-          %_gpg_name ${{ secrets.GPG_KEY_ID }}
+-          %_gpg_sign_cmd_extra_args --pinentry-mode loopback --passphrase ${{ secrets.GPG_PASSPHRASE }}
+-          EOF
+-          gpg --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --import <<EOF
+-          ${{ secrets.GPG_KEY }}
+-          EOF
+-          rpmsign --addsign dist/*.rpm
++          # cat > $HOME/.rpmmacros <<EOF
++          # %_gpg_name ${{ secrets.GPG_KEY_ID }}
++          # %_gpg_sign_cmd_extra_args --pinentry-mode loopback --passphrase ${{ secrets.GPG_PASSPHRASE }}
++          # EOF
++          # gpg --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --import <<EOF
++          # ${{ secrets.GPG_KEY }}
++          # EOF
++          # rpmsign --addsign dist/*.rpm
+       - name: Package Pacman
+         if: matrix.pacman != ''
+         run: |-
+@@ -546,9 +546,11 @@ jobs:
+     strategy:
+       matrix:
+         include:
+-          - { arch: amd64, naive: true }
++          # - { arch: amd64, naive: true }
++          - { arch: amd64 }
+           - { arch: "386" }
+-          - { arch: arm64, naive: true }
++          # - { arch: arm64, naive: true }
++          - { arch: arm64 }
+     steps:
+       - name: Checkout
+         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+diff --git a/.github/workflows/linux.yml b/.github/workflows/linux.yml
+index 0ab06e72276208012a2aa5a3d91d94ab5310f4ee..e926abff67cdf81c889f52a32301df3ba0091ee9 100644
+--- a/.github/workflows/linux.yml
++++ b/.github/workflows/linux.yml
+@@ -194,13 +194,13 @@ jobs:
+             -p "dist/${NAME}_${{ needs.calculate_version.outputs.version }}_linux_${{ matrix.debian }}.deb" \
+             --architecture ${{ matrix.debian }} \
+             dist/sing-box=/usr/bin/sing-box
+-          curl -Lo '/tmp/debsigs.diff' 'https://gitlab.com/debsigs/debsigs/-/commit/160138f5de1ec110376d3c807b60a37388bc7c90.diff'
+-          sudo patch /usr/bin/debsigs < '/tmp/debsigs.diff'
+-          rm -rf $HOME/.gnupg
+-          gpg --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --import <<EOF
+-          ${{ secrets.GPG_KEY }}
+-          EOF
+-          debsigs --sign=origin -k ${{ secrets.GPG_KEY_ID }} --gpgopts '--pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}"' dist/*.deb
++          # curl -Lo '/tmp/debsigs.diff' 'https://gitlab.com/debsigs/debsigs/-/commit/160138f5de1ec110376d3c807b60a37388bc7c90.diff'
++          # sudo patch /usr/bin/debsigs < '/tmp/debsigs.diff'
++          # rm -rf $HOME/.gnupg
++          # gpg --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --import <<EOF
++          # ${{ secrets.GPG_KEY }}
++          # EOF
++          # debsigs --sign=origin -k ${{ secrets.GPG_KEY_ID }} --gpgopts '--pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}"' dist/*.deb
+       - name: Package RPM
+         if: matrix.rpm != ''
+         run: |-
+@@ -213,14 +213,14 @@ jobs:
+             -p "dist/${NAME}_${{ needs.calculate_version.outputs.version }}_linux_${{ matrix.rpm }}.rpm" \
+             --architecture ${{ matrix.rpm }} \
+             dist/sing-box=/usr/bin/sing-box
+-          cat > $HOME/.rpmmacros <<EOF
+-          %_gpg_name ${{ secrets.GPG_KEY_ID }}
+-          %_gpg_sign_cmd_extra_args --pinentry-mode loopback --passphrase ${{ secrets.GPG_PASSPHRASE }}
+-          EOF
+-          gpg --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --import <<EOF
+-          ${{ secrets.GPG_KEY }}
+-          EOF
+-          rpmsign --addsign dist/*.rpm
++          # cat > $HOME/.rpmmacros <<EOF
++          # %_gpg_name ${{ secrets.GPG_KEY_ID }}
++          # %_gpg_sign_cmd_extra_args --pinentry-mode loopback --passphrase ${{ secrets.GPG_PASSPHRASE }}
++          # EOF
++          # gpg --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --import <<EOF
++          # ${{ secrets.GPG_KEY }}
++          # EOF
++          # rpmsign --addsign dist/*.rpm
+       - name: Cleanup
+         run: rm dist/sing-box
+       - name: Upload artifact
+diff --git a/README.md b/README.md
+index 90be2a83a7c1677cfad865b48fc70a883907c690..1bc8e71d9f512f61c7057f066f98d0cdee5193a3 100644
+--- a/README.md
++++ b/README.md
+@@ -1,20 +1,88 @@
+-> Sponsored by [Warp](https://go.warp.dev/sing-box), built for coding with multiple AI agents
++# mbox
+ 
+-<a href="https://go.warp.dev/sing-box">
+-<img alt="Warp sponsorship" width="400" src="https://github.com/warpdotdev/brand-assets/raw/refs/heads/main/Github/Sponsor/Warp-Github-LG-02.png">
+-</a>
++A reference implementation of [mieru](https://github.com/enfein/mieru) protocol
++in sing-box.
+ 
+----
++We don't guarantee all sing-box features are working. We recommend you maintain
++your own fork.
+ 
+-# sing-box
++## Example Configuration with mieru Outbound (Proxy Client)
+ 
+-The universal proxy platform.
++```js
++{
++    "inbounds": [
++        {
++            "type": "mixed",
++            "tag": "mixed-in",
++            "listen": "0.0.0.0",
++            "listen_port": 1080
++        }
++    ],
++    "outbounds": [
++        {
++            "type": "mieru",
++            "tag": "mieru-out",
++            "server": "127.0.0.1",
++            "server_port": 8964,
++            "transport": "TCP",
++            "username": "baozi",
++            "password": "manlianpenfen",
++            "traffic_pattern": "GgQIARAK"
++        }
++    ],
++    "route": {
++        "rules": [
++            {
++                "inbound": ["mixed-in"],
++                "action": "route",
++                "outbound": "mieru-out"
++            }
++        ]
++    },
++    "log": {
++        "level": "warn"
++    }
++}
++```
++
++You can also use `server_ports` to set a list of port ranges.
+ 
+-[![Packaging status](https://repology.org/badge/vertical-allrepos/sing-box.svg)](https://repology.org/project/sing-box/versions)
++## Example Configuration with mieru Inbound (Proxy Server)
++
++```js
++{
++    "inbounds": [
++        {
++            "type": "mieru",
++            "tag": "mieru-tcp",
++            "listen": "0.0.0.0",
++            "listen_port": 8964,
++            "transport": "TCP",
++            "users": [
++                {
++                    "name": "baozi",
++                    "password": "manlianpenfen"
++                }
++            ],
++            "traffic_pattern": "GgQIARAK"
++        }
++    ],
++    "outbounds": [],
++    "route": {},
++    "log": {
++        "level": "warn"
++    }
++}
++```
+ 
+-## Documentation
++## Branches
+ 
+-https://sing-box.sagernet.org
++- `mieru` branch has the latest code based on recent upstream releases. It may not be stable.
++- `release-*` branches record the references where binaries are published. Those branches don't change after creation.
++
++## Limitations
++
++- UDP outbound can't use domain name as server address.
+ 
+ ## License
+ 
+@@ -36,4 +104,4 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
+ 
+ In addition, no derivative work may use the name or imply association
+ with this application without prior consent.
+-```
+\ No newline at end of file
++```
+diff --git a/adapter/inbound.go b/adapter/inbound.go
+index acd6f4912c7c81ecf8b959873a0f794b34627ae3..92876dbc26bf80026e9f80c20bf3c9210fd265ba 100644
+--- a/adapter/inbound.go
++++ b/adapter/inbound.go
+@@ -18,6 +18,16 @@ type Inbound interface {
+ 	Tag() string
+ }
+ 
++type UpdatableInbound[T any] interface {
++	Inbound
++	UpdateUsers(users []T) error
++}
++
++type UpdatableShadowsocksInbound interface {
++	Inbound
++	UpdateUsersByOptions(users []option.ShadowsocksUser) error
++}
++
+ type TCPInjectableInbound interface {
+ 	Inbound
+ 	ConnectionHandlerEx
+diff --git a/adapter/router.go b/adapter/router.go
+index 82e6881a60f10ca62392ce2287d56dd0e576c9bf..6f35956cd66954867ac6d01a47e5f08ea251c790 100644
+--- a/adapter/router.go
++++ b/adapter/router.go
+@@ -9,6 +9,7 @@ import (
+ 	"time"
+ 
+ 	C "github.com/sagernet/sing-box/constant"
++	"github.com/sagernet/sing-box/option"
+ 	"github.com/sagernet/sing-tun"
+ 	M "github.com/sagernet/sing/common/metadata"
+ 	N "github.com/sagernet/sing/common/network"
+@@ -30,6 +31,7 @@ type Router interface {
+ 	NeighborResolver() NeighborResolver
+ 	AppendTracker(tracker ConnectionTracker)
+ 	ResetNetwork()
++	UpdateRules(rules []option.Rule, ruleSets []option.RuleSet) error
+ }
+ 
+ type ConnectionTracker interface {
+diff --git a/constant/proxy.go b/constant/proxy.go
+index 278a46c2f6f99b3b147329c7cdbc2b407d7f7cce..aa8e278992069e4ecdb3d51b4e27d8c095990955 100644
+--- a/constant/proxy.go
++++ b/constant/proxy.go
+@@ -20,6 +20,7 @@ const (
+ 	TypeSSH          = "ssh"
+ 	TypeShadowTLS    = "shadowtls"
+ 	TypeAnyTLS       = "anytls"
++	TypeMieru        = "mieru"
+ 	TypeShadowsocksR = "shadowsocksr"
+ 	TypeVLESS        = "vless"
+ 	TypeTUIC         = "tuic"
+@@ -88,6 +89,8 @@ func ProxyDisplayName(proxyType string) string {
+ 		return "AnyTLS"
+ 	case TypeTailscale:
+ 		return "Tailscale"
++	case TypeMieru:
++		return "Mieru"
+ 	case TypeSelector:
+ 		return "Selector"
+ 	case TypeURLTest:
+diff --git a/docs/configuration/inbound/index.md b/docs/configuration/inbound/index.md
+index 27cc9fdbbd67606774c47976df7cd1a50c76a490..8be7b928e781785e2eb44c7fba9676d793a98d53 100644
+--- a/docs/configuration/inbound/index.md
++++ b/docs/configuration/inbound/index.md
+@@ -31,10 +31,11 @@
+ | `hysteria2`   | [Hysteria2](./hysteria2/)     | :material-close: |
+ | `vless`       | [VLESS](./vless/)             | TCP              |
+ | `anytls`      | [AnyTLS](./anytls/)           | TCP              |
++| `mieru`       | [Mieru](./mieru/)             | :material-close: |
+ | `tun`         | [Tun](./tun/)                 | :material-close: |
+ | `redirect`    | [Redirect](./redirect/)       | :material-close: |
+ | `tproxy`      | [TProxy](./tproxy/)           | :material-close: |
+ 
+ #### tag
+ 
+-The tag of the inbound.
+\ No newline at end of file
++The tag of the inbound.
+diff --git a/docs/configuration/inbound/index.zh.md b/docs/configuration/inbound/index.zh.md
+index 1e0c0c4f657d321a8b51ad6141a4371430bea398..a2585e795a7aa3c6816d7f14a1797f0bc75a1477 100644
+--- a/docs/configuration/inbound/index.zh.md
++++ b/docs/configuration/inbound/index.zh.md
+@@ -31,10 +31,11 @@
+ | `hysteria2`   | [Hysteria2](./hysteria2/)     | :material-close: |
+ | `vless`       | [VLESS](./vless/)             | TCP              |
+ | `anytls`      | [AnyTLS](./anytls/)           | TCP              |
++| `mieru`       | [Mieru](./mieru/)             | :material-close: |
+ | `tun`         | [Tun](./tun/)                 | :material-close: |
+ | `redirect`    | [Redirect](./redirect/)       | :material-close: |
+ | `tproxy`      | [TProxy](./tproxy/)           | :material-close: |
+ 
+ #### tag
+ 
+-入站的标签。
+\ No newline at end of file
++入站的标签。
+diff --git a/docs/configuration/inbound/mieru.md b/docs/configuration/inbound/mieru.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c8e88449388ddfe568cec592ef462ffa45a8bc54
+--- /dev/null
++++ b/docs/configuration/inbound/mieru.md
+@@ -0,0 +1,45 @@
++---
++icon: material/new-box
++---
++
++### Structure
++
++```json
++{
++  "type": "mieru",
++  "tag": "mieru-in",
++
++  ... // Listen Fields
++
++  "transport": "TCP",
++  "users": [
++    {
++      "name": "asdf",
++      "password": "hjkl"
++    }
++  ],
++  "traffic_pattern": "GgQIARAK",
++}
++```
++
++### Listen Fields
++
++See [Listen Fields](/configuration/shared/listen/) for details.
++
++### Fields
++
++#### transport
++
++==Required==
++
++Transmission protocol. Allowed values are `TCP` and `UDP`.
++
++#### users
++
++==Required==
++
++A list of mieru user name and password.
++
++#### traffic_pattern
++
++A base64 string to fine tune network behavior.
+diff --git a/docs/configuration/inbound/mieru.zh.md b/docs/configuration/inbound/mieru.zh.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..82d7f85e35c5dca15e07ce118b68581d75ffec40
+--- /dev/null
++++ b/docs/configuration/inbound/mieru.zh.md
+@@ -0,0 +1,45 @@
++---
++icon: material/new-box
++---
++
++### 结构
++
++```json
++{
++  "type": "mieru",
++  "tag": "mieru-in",
++
++  ... // 监听字段
++
++  "transport": "TCP",
++  "users": [
++    {
++      "name": "asdf",
++      "password": "hjkl"
++    }
++  ],
++  "traffic_pattern": "GgQIARAK",
++}
++```
++
++### 监听字段
++
++参阅 [监听字段](/zh/configuration/shared/listen/)。
++
++### 字段
++
++#### transport
++
++==必填==
++
++通信协议。可设为 `TCP` 或 `UDP`。
++
++#### users
++
++==必填==
++
++一组 mieru 用户名和密码。
++
++#### traffic_pattern
++
++一个 base64 字符串用于微调网络行为。
+diff --git a/docs/configuration/outbound/index.md b/docs/configuration/outbound/index.md
+index 47b8a96a5c9771f4df8f948a425ec88a3c821831..6257bdc9ed801573c509176df5893936716867bf 100644
+--- a/docs/configuration/outbound/index.md
++++ b/docs/configuration/outbound/index.md
+@@ -31,6 +31,7 @@
+ | `tuic`         | [TUIC](./tuic/)                 |
+ | `hysteria2`    | [Hysteria2](./hysteria2/)       |
+ | `anytls`       | [AnyTLS](./anytls/)             |
++| `mieru`        | [Mieru](./mieru/)               |
+ | `tor`          | [Tor](./tor/)                   |
+ | `ssh`          | [SSH](./ssh/)                   |
+ | `dns`          | [DNS](./dns/)                   |
+diff --git a/docs/configuration/outbound/index.zh.md b/docs/configuration/outbound/index.zh.md
+index a1c4a7addc9cd649ea12fa6aa70786c822f8f3ff..345b022874810ec21603ddbef7faf8bfb54bb44c 100644
+--- a/docs/configuration/outbound/index.zh.md
++++ b/docs/configuration/outbound/index.zh.md
+@@ -31,6 +31,7 @@
+ | `tuic`         | [TUIC](./tuic/)                 |
+ | `hysteria2`    | [Hysteria2](./hysteria2/)       |
+ | `anytls`       | [AnyTLS](./anytls/)             |
++| `mieru`        | [Mieru](./mieru/)               |
+ | `tor`          | [Tor](./tor/)                   |
+ | `ssh`          | [SSH](./ssh/)                   |
+ | `dns`          | [DNS](./dns/)                   |
+diff --git a/docs/configuration/outbound/mieru.md b/docs/configuration/outbound/mieru.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..22851fcb80677eaeb9724f8bfd242a16b99cdda3
+--- /dev/null
++++ b/docs/configuration/outbound/mieru.md
+@@ -0,0 +1,76 @@
++---
++icon: material/new-box
++---
++
++### Structure
++
++```json
++{
++  "type": "mieru",
++  "tag": "mieru-out",
++
++  "server": "127.0.0.1",
++  "server_port": 1080,
++  "server_ports": [
++    "9000-9010",
++    "9020-9030"
++  ],
++  "transport": "TCP",
++  "username": "asdf",
++  "password": "hjkl",
++  "multiplexing": "MULTIPLEXING_LOW",
++  "traffic_pattern": "GgQIARAK",
++
++  ... // Dial Fields
++}
++```
++
++### Fields
++
++#### server
++
++==Required==
++
++The server address.
++
++#### server_port
++
++The server port.
++
++Must set at least one field between `server_port` and `server_ports`.
++
++#### server_ports
++
++Server port range list.
++
++Must set at least one field between `server_port` and `server_ports`.
++
++#### transport
++
++==Required==
++
++Transmission protocol. Allowed values are `TCP` and `UDP`.
++
++#### username
++
++==Required==
++
++mieru user name.
++
++#### password
++
++==Required==
++
++mieru password.
++
++#### multiplexing
++
++Multiplexing level. Supported values are `MULTIPLEXING_OFF`, `MULTIPLEXING_LOW`, `MULTIPLEXING_MIDDLE`, `MULTIPLEXING_HIGH`. `MULTIPLEXING_OFF` disables multiplexing.
++
++#### traffic_pattern
++
++A base64 string to fine tune network behavior.
++
++### Dial Fields
++
++See [Dial Fields](/configuration/shared/dial/) for details.
+diff --git a/docs/configuration/outbound/mieru.zh.md b/docs/configuration/outbound/mieru.zh.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9fdb52fabd31c019eb1c824017763903a3887224
+--- /dev/null
++++ b/docs/configuration/outbound/mieru.zh.md
+@@ -0,0 +1,76 @@
++---
++icon: material/new-box
++---
++
++### 结构
++
++```json
++{
++  "type": "mieru",
++  "tag": "mieru-out",
++
++  "server": "127.0.0.1",
++  "server_port": 1080,
++  "server_ports": [
++    "9000-9010",
++    "9020-9030"
++  ],
++  "transport": "TCP",
++  "username": "asdf",
++  "password": "hjkl",
++  "multiplexing": "MULTIPLEXING_LOW",
++  "traffic_pattern": "GgQIARAK",
++
++  ... // 拨号字段
++}
++```
++
++### 字段
++
++#### server
++
++==必填==
++
++服务器地址。
++
++#### server_port
++
++服务器端口。
++
++必须填写 `server_port` 和 `server_ports` 中至少一项。
++
++#### server_ports
++
++服务器端口范围列表。
++
++必须填写 `server_port` 和 `server_ports` 中至少一项。
++
++#### transport
++
++==必填==
++
++通信协议。可设为 `TCP` 或 `UDP`。
++
++#### username
++
++==必填==
++
++mieru 用户名。
++
++#### password
++
++==必填==
++
++mieru 密码。
++
++#### multiplexing
++
++多路复用设置。可以设为 `MULTIPLEXING_OFF`，`MULTIPLEXING_LOW`，`MULTIPLEXING_MIDDLE`，`MULTIPLEXING_HIGH`。其中 `MULTIPLEXING_OFF` 会关闭多路复用功能。
++
++#### traffic_pattern
++
++一个 base64 字符串用于微调网络行为。
++
++### 拨号字段
++
++参阅 [拨号字段](/zh/configuration/shared/dial/)。
+diff --git a/go.mod b/go.mod
+index 98a7811a2356c80c152138ea09463857f4e48f0d..052b026b7fe62c33664f55dfdceb405cad913ef8 100644
+--- a/go.mod
++++ b/go.mod
+@@ -9,6 +9,7 @@ require (
+ 	github.com/coder/websocket v1.8.14
+ 	github.com/cretz/bine v0.2.0
+ 	github.com/database64128/tfo-go/v2 v2.3.2
++	github.com/enfein/mieru/v3 v3.29.0
+ 	github.com/go-chi/chi/v5 v5.2.5
+ 	github.com/go-chi/render v1.0.3
+ 	github.com/godbus/dbus/v5 v5.2.2
+diff --git a/go.sum b/go.sum
+index 1607560bfc00d0f89ed740d7c107303d4610b9d8..f60281371c796c138b01bd0518721eaac6a21b97 100644
+--- a/go.sum
++++ b/go.sum
+@@ -46,6 +46,8 @@ github.com/dnaeon/go-vcr v1.2.0 h1:zHCHvJYTMh1N7xnV7zf1m1GPBF9Ad0Jk/whtQ1663qI=
+ github.com/dnaeon/go-vcr v1.2.0/go.mod h1:R4UdLID7HZT3taECzJs4YgbbH6PIGXB6W/sc5OLb6RQ=
+ github.com/ebitengine/purego v0.9.1 h1:a/k2f2HQU3Pi399RPW1MOaZyhKJL9w/xFpKAg4q1s0A=
+ github.com/ebitengine/purego v0.9.1/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
++github.com/enfein/mieru/v3 v3.29.0 h1:i5Hwl5spEWg4ydvYW86zWSYVJ2uGTf5sLYQmFXHdulQ=
++github.com/enfein/mieru/v3 v3.29.0/go.mod h1:zJBUCsi5rxyvHM8fjFf+GLaEl4OEjjBXr1s5F6Qd3hM=
+ github.com/florianl/go-nfqueue/v2 v2.0.2 h1:FL5lQTeetgpCvac1TRwSfgaXUn0YSO7WzGvWNIp3JPE=
+ github.com/florianl/go-nfqueue/v2 v2.0.2/go.mod h1:VA09+iPOT43OMoCKNfXHyzujQUty2xmzyCRkBOlmabc=
+ github.com/fsnotify/fsnotify v1.7.0 h1:8JEhPFa5W2WU7YfeZzPNqzMP6Lwt7L2715Ggo0nosvA=
+diff --git a/include/registry.go b/include/registry.go
+index f090845b51875b72c81b433dfcf535d3ae795880..f0f989766ea6f55a6b7fee2c167d9a19df99366e 100644
+--- a/include/registry.go
++++ b/include/registry.go
+@@ -22,6 +22,7 @@ import (
+ 	"github.com/sagernet/sing-box/protocol/direct"
+ 	"github.com/sagernet/sing-box/protocol/group"
+ 	"github.com/sagernet/sing-box/protocol/http"
++	"github.com/sagernet/sing-box/protocol/mieru"
+ 	"github.com/sagernet/sing-box/protocol/mixed"
+ 	"github.com/sagernet/sing-box/protocol/naive"
+ 	"github.com/sagernet/sing-box/protocol/redirect"
+@@ -62,6 +63,7 @@ func InboundRegistry() *inbound.Registry {
+ 	shadowtls.RegisterInbound(registry)
+ 	vless.RegisterInbound(registry)
+ 	anytls.RegisterInbound(registry)
++	mieru.RegisterInbound(registry)
+ 
+ 	registerQUICInbounds(registry)
+ 	registerStubForRemovedInbounds(registry)
+@@ -90,6 +92,7 @@ func OutboundRegistry() *outbound.Registry {
+ 	shadowtls.RegisterOutbound(registry)
+ 	vless.RegisterOutbound(registry)
+ 	anytls.RegisterOutbound(registry)
++	mieru.RegisterOutbound(registry)
+ 
+ 	registerQUICOutbounds(registry)
+ 	registerStubForRemovedOutbounds(registry)
+diff --git a/option/mieru.go b/option/mieru.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..a9ca4d1183a4c552395a0cca858731d18d35c637
+--- /dev/null
++++ b/option/mieru.go
+@@ -0,0 +1,26 @@
++package option
++
++import "github.com/sagernet/sing/common/json/badoption"
++
++type MieruOutboundOptions struct {
++	DialerOptions
++	ServerOptions
++	ServerPortRanges badoption.Listable[string] `json:"server_ports,omitempty"`
++	Transport        string                     `json:"transport,omitempty"`
++	UserName         string                     `json:"username,omitempty"`
++	Password         string                     `json:"password,omitempty"`
++	Multiplexing     string                     `json:"multiplexing,omitempty"`
++	TrafficPattern   string                     `json:"traffic_pattern,omitempty"`
++}
++
++type MieruInboundOptions struct {
++	ListenOptions
++	Users          []MieruUser `json:"users,omitempty"`
++	Transport      string      `json:"transport,omitempty"`
++	TrafficPattern string      `json:"traffic_pattern,omitempty"`
++}
++
++type MieruUser struct {
++	Name     string `json:"name,omitempty"`
++	Password string `json:"password,omitempty"`
++}
+diff --git a/protocol/anytls/user.go b/protocol/anytls/user.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..67d10e8b7ceb3a9f23cec0fc5ce85bf681893887
+--- /dev/null
++++ b/protocol/anytls/user.go
+@@ -0,0 +1,14 @@
++package anytls
++
++import (
++	anytls "github.com/anytls/sing-anytls"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common"
++)
++
++func (h *Inbound) UpdateUsers(users []option.AnyTLSUser) error {
++	h.service.UpdateUsers(common.Map(users, func(it option.AnyTLSUser) anytls.User {
++		return (anytls.User)(it)
++	}))
++	return nil
++}
+diff --git a/protocol/http/user.go b/protocol/http/user.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..9d41a57d8313c6e87c3019ea7958ba04bf1d3e14
+--- /dev/null
++++ b/protocol/http/user.go
+@@ -0,0 +1,10 @@
++package http
++
++import (
++	"github.com/sagernet/sing/common/auth"
++)
++
++func (h *Inbound) UpdateUsers(users []auth.User) error {
++	h.authenticator = auth.NewAuthenticator(users)
++	return nil
++}
+diff --git a/protocol/hysteria2/user.go b/protocol/hysteria2/user.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..ce1dd3cd5ad3deeb064c4045154491603e925359
+--- /dev/null
++++ b/protocol/hysteria2/user.go
+@@ -0,0 +1,19 @@
++package hysteria2
++
++import (
++	"github.com/sagernet/sing-box/option"
++)
++
++func (h *Inbound) UpdateUsers(users []option.Hysteria2User) error {
++	userList := make([]int, 0, len(users))
++	userNameList := make([]string, 0, len(users))
++	userPasswordList := make([]string, 0, len(users))
++	for index, user := range users {
++		userList = append(userList, index)
++		userNameList = append(userNameList, user.Name)
++		userPasswordList = append(userPasswordList, user.Password)
++	}
++	h.service.UpdateUsers(userList, userPasswordList)
++	h.userNameList = userNameList
++	return nil
++}
+diff --git a/protocol/mieru/inbound.go b/protocol/mieru/inbound.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..ec4843b4c01baebb0ffc09323c8cbb019a890322
+--- /dev/null
++++ b/protocol/mieru/inbound.go
+@@ -0,0 +1,333 @@
++package mieru
++
++import (
++	"context"
++	"fmt"
++	"io"
++	"net"
++	"net/netip"
++	"sync"
++
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/adapter/inbound"
++	"github.com/sagernet/sing-box/common/listener"
++	"github.com/sagernet/sing-box/common/uot"
++	C "github.com/sagernet/sing-box/constant"
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common"
++	"github.com/sagernet/sing/common/buf"
++	E "github.com/sagernet/sing/common/exceptions"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++
++	mierucommon "github.com/enfein/mieru/v3/apis/common"
++	mieruconstant "github.com/enfein/mieru/v3/apis/constant"
++	mierumodel "github.com/enfein/mieru/v3/apis/model"
++	mieruserver "github.com/enfein/mieru/v3/apis/server"
++	mierutp "github.com/enfein/mieru/v3/apis/trafficpattern"
++	mierupb "github.com/enfein/mieru/v3/pkg/appctl/appctlpb"
++	"google.golang.org/protobuf/proto"
++)
++
++func RegisterInbound(registry *inbound.Registry) {
++	inbound.Register[option.MieruInboundOptions](registry, C.TypeMieru, NewInbound)
++}
++
++type Inbound struct {
++	inbound.Adapter
++	ctx       context.Context
++	router    adapter.ConnectionRouterEx
++	logger    log.ContextLogger
++	listener  *listener.Listener
++	server    mieruserver.Server
++	userNames []string
++
++	mu sync.Mutex
++}
++
++func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.MieruInboundOptions) (adapter.Inbound, error) {
++	config, userNames, err := buildMieruServerConfig(ctx, options)
++	if err != nil {
++		return nil, fmt.Errorf("failed to build mieru server config: %w", err)
++	}
++
++	s := mieruserver.NewServer()
++	if err := s.Store(config); err != nil {
++		return nil, fmt.Errorf("failed to store mieru server config: %w", err)
++	}
++
++	inboundInstance := &Inbound{
++		Adapter:   inbound.NewAdapter(C.TypeMieru, tag),
++		ctx:       ctx,
++		router:    uot.NewRouter(router, logger),
++		logger:    logger,
++		server:    s,
++		userNames: userNames,
++	}
++	inboundInstance.listener = listener.New(listener.Options{
++		Context: ctx,
++		Logger:  logger,
++		Network: []string{N.NetworkTCP, N.NetworkUDP},
++		Listen:  options.ListenOptions,
++	})
++
++	return inboundInstance, nil
++}
++
++func (h *Inbound) Start(stage adapter.StartStage) error {
++	if stage != adapter.StartStateStart {
++		return nil
++	}
++
++	h.mu.Lock()
++	defer h.mu.Unlock()
++
++	if err := h.server.Start(); err != nil {
++		return fmt.Errorf("failed to start mieru server: %w", err)
++	}
++
++	h.logger.Info("mieru server is started")
++	go h.acceptLoop()
++	return nil
++}
++
++func (h *Inbound) Close() error {
++	h.mu.Lock()
++	defer h.mu.Unlock()
++
++	if h.server.IsRunning() {
++		return h.server.Stop()
++	}
++	return nil
++}
++
++func (h *Inbound) acceptLoop() {
++	for {
++		conn, request, err := h.server.Accept()
++		if err != nil {
++			if !h.server.IsRunning() {
++				return
++			}
++			h.logger.Debug("failed to accept mieru connection: ", err)
++			continue
++		}
++		go h.handleConnection(conn, request)
++	}
++}
++
++func (h *Inbound) handleConnection(conn net.Conn, request *mierumodel.Request) {
++	ctx := log.ContextWithNewID(h.ctx)
++
++	// Send fake SOCKS5 response back to proxy client.
++	resp := &mierumodel.Response{
++		Reply: mieruconstant.Socks5ReplySuccess,
++		BindAddr: mierumodel.AddrSpec{
++			IP:   net.IPv4zero,
++			Port: 0,
++		},
++	}
++	if err := resp.WriteToSocks5(conn); err != nil {
++		conn.Close()
++		h.logger.DebugContext(ctx, "failed to write mieru response: ", err)
++		return
++	}
++
++	// Build metadata.
++	var metadata adapter.InboundContext
++	metadata.Inbound = h.Tag()
++	metadata.InboundType = h.Type()
++	//nolint:staticcheck
++	metadata.InboundDetour = h.listener.ListenOptions().Detour
++	metadata.UDPDisableDomainUnmapping = h.listener.ListenOptions().UDPDisableDomainUnmapping
++
++	// Parse source address.
++	if remoteAddr := conn.RemoteAddr(); remoteAddr != nil {
++		metadata.Source = M.SocksaddrFromNet(remoteAddr)
++	}
++
++	// Parse destination from request.
++	if request.DstAddr.FQDN != "" {
++		metadata.Destination = M.Socksaddr{
++			Fqdn: request.DstAddr.FQDN,
++			Port: uint16(request.DstAddr.Port),
++		}
++	} else if request.DstAddr.IP != nil {
++		addr, _ := netip.AddrFromSlice(request.DstAddr.IP)
++		metadata.Destination = M.Socksaddr{
++			Addr: addr.Unmap(),
++			Port: uint16(request.DstAddr.Port),
++		}
++	}
++
++	// Get username from connection.
++	if userCtx, ok := conn.(mierucommon.UserContext); ok {
++		metadata.User = userCtx.UserName()
++	}
++
++	// Handle request.
++	switch request.Command {
++	case mieruconstant.Socks5ConnectCmd:
++		h.logger.InfoContext(ctx, "inbound TCP connection from ", metadata.Source, " to ", metadata.Destination)
++		if metadata.User != "" {
++			h.logger.InfoContext(ctx, "[", metadata.User, "] inbound TCP connection")
++		}
++		h.router.RouteConnectionEx(ctx, conn, metadata, nil)
++	case mieruconstant.Socks5UDPAssociateCmd:
++		h.logger.InfoContext(ctx, "inbound UDP connection from ", metadata.Source, " to ", metadata.Destination)
++		if metadata.User != "" {
++			h.logger.InfoContext(ctx, "[", metadata.User, "] inbound UDP connection")
++		}
++		h.handleUDP(ctx, conn, metadata)
++	default:
++		conn.Close()
++		h.logger.WarnContext(ctx, "unsupported mieru command: ", request.Command)
++	}
++}
++
++func (h *Inbound) handleUDP(ctx context.Context, conn net.Conn, metadata adapter.InboundContext) {
++	pc := mierucommon.NewPacketOverStreamTunnel(conn)
++	packetConn := &mieruPacketConn{
++		PacketConn:  pc,
++		destination: metadata.Destination,
++	}
++	h.router.RoutePacketConnectionEx(ctx, packetConn, metadata, nil)
++}
++
++// mieruPacketConn wraps mieru's PacketConn to implement N.PacketConn
++type mieruPacketConn struct {
++	net.PacketConn
++	destination M.Socksaddr
++}
++
++var _ N.PacketConn = (*mieruPacketConn)(nil)
++
++// ReadPacket parses the SOCKS5 UDP header and returns the destination address.
++func (c *mieruPacketConn) ReadPacket(buffer *buf.Buffer) (destination M.Socksaddr, err error) {
++	n, _, err := c.PacketConn.ReadFrom(buffer.FreeBytes())
++	if err != nil {
++		return M.Socksaddr{}, err
++	}
++	buffer.Truncate(n)
++	if buffer.Len() < 3 {
++		return M.Socksaddr{}, io.ErrShortBuffer
++	}
++
++	// Skip RSV (2 bytes) and FRAG (1 byte).
++	buffer.Advance(3)
++
++	var addr mierumodel.AddrSpec
++	if err := addr.ReadFromSocks5(buffer); err != nil {
++		return M.Socksaddr{}, err
++	}
++	if addr.FQDN != "" {
++		destination = M.Socksaddr{
++			Fqdn: addr.FQDN,
++			Port: uint16(addr.Port),
++		}
++	} else if addr.IP != nil {
++		netAddr, _ := netip.AddrFromSlice(addr.IP)
++		destination = M.Socksaddr{
++			Addr: netAddr.Unmap(),
++			Port: uint16(addr.Port),
++		}
++	}
++	return destination, nil
++}
++
++// WritePacket writes the SOCKS5 UDP header and the payload.
++func (c *mieruPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr) error {
++	header := buf.NewSize(3 + M.MaxSocksaddrLength)
++	defer header.Release()
++
++	// RSV (2 bytes) + FRAG (1 byte)
++	common.Must(header.WriteZeroN(3))
++
++	var addr mierumodel.AddrSpec
++	if destination.IsFqdn() {
++		addr.FQDN = destination.Fqdn
++	} else {
++		addr.IP = destination.Addr.AsSlice()
++	}
++	addr.Port = int(destination.Port)
++	if err := addr.WriteToSocks5(header); err != nil {
++		return err
++	}
++
++	packet := buf.NewSize(header.Len() + buffer.Len())
++	defer packet.Release()
++	common.Must1(packet.Write(header.Bytes()))
++	common.Must1(packet.Write(buffer.Bytes()))
++	_, err := c.PacketConn.WriteTo(packet.Bytes(), nil)
++	return err
++}
++
++func buildMieruServerConfig(_ context.Context, options option.MieruInboundOptions) (*mieruserver.ServerConfig, []string, error) {
++	if err := validateMieruInboundOptions(options); err != nil {
++		return nil, nil, fmt.Errorf("failed to validate mieru options: %w", err)
++	}
++
++	var transportProtocol *mierupb.TransportProtocol
++	switch options.Transport {
++	case "TCP":
++		transportProtocol = mierupb.TransportProtocol_TCP.Enum()
++	case "UDP":
++		transportProtocol = mierupb.TransportProtocol_UDP.Enum()
++	}
++
++	if options.ListenOptions.ListenPort == 0 {
++		return nil, nil, E.New("listen_port must be set")
++	}
++	portBindings := []*mierupb.PortBinding{
++		{
++			Port:     proto.Int32(int32(options.ListenOptions.ListenPort)),
++			Protocol: transportProtocol,
++		},
++	}
++
++	var users []*mierupb.User
++	var userNames []string
++	for _, user := range options.Users {
++		users = append(users, &mierupb.User{
++			Name:     proto.String(user.Name),
++			Password: proto.String(user.Password),
++		})
++		userNames = append(userNames, user.Name)
++	}
++	var trafficPattern *mierupb.TrafficPattern
++	trafficPattern, _ = mierutp.Decode(options.TrafficPattern)
++	return &mieruserver.ServerConfig{
++		Config: &mierupb.ServerConfig{
++			PortBindings:   portBindings,
++			Users:          users,
++			TrafficPattern: trafficPattern,
++		},
++	}, userNames, nil
++}
++
++func validateMieruInboundOptions(options option.MieruInboundOptions) error {
++	if options.Transport != "TCP" && options.Transport != "UDP" {
++		return E.New("transport must be TCP or UDP")
++	}
++	if len(options.Users) == 0 {
++		return E.New("users is empty")
++	}
++	for _, user := range options.Users {
++		if user.Name == "" {
++			return E.New("username is empty")
++		}
++		if user.Password == "" {
++			return E.New("password is empty")
++		}
++	}
++	if options.TrafficPattern != "" {
++		trafficPattern, err := mierutp.Decode(options.TrafficPattern)
++		if err != nil {
++			return fmt.Errorf("failed to decode traffic pattern %q: %w", options.TrafficPattern, err)
++		}
++		if err := mierutp.Validate(trafficPattern); err != nil {
++			return fmt.Errorf("invalid traffic pattern %q: %w", options.TrafficPattern, err)
++		}
++	}
++	return nil
++}
+diff --git a/protocol/mieru/outbound.go b/protocol/mieru/outbound.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..d04826fd4f9d5f7c856b899bba224813370065f6
+--- /dev/null
++++ b/protocol/mieru/outbound.go
+@@ -0,0 +1,277 @@
++package mieru
++
++import (
++	"context"
++	"fmt"
++	"net"
++	"os"
++
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/adapter/outbound"
++	"github.com/sagernet/sing-box/common/dialer"
++	C "github.com/sagernet/sing-box/constant"
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common"
++	E "github.com/sagernet/sing/common/exceptions"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++
++	mieruclient "github.com/enfein/mieru/v3/apis/client"
++	mierucommon "github.com/enfein/mieru/v3/apis/common"
++	mierumodel "github.com/enfein/mieru/v3/apis/model"
++	mierutp "github.com/enfein/mieru/v3/apis/trafficpattern"
++	mierupb "github.com/enfein/mieru/v3/pkg/appctl/appctlpb"
++	"google.golang.org/protobuf/proto"
++)
++
++type Outbound struct {
++	outbound.Adapter
++	dialer N.Dialer
++	logger log.ContextLogger
++	client mieruclient.Client
++}
++
++func RegisterOutbound(registry *outbound.Registry) {
++	outbound.Register(registry, C.TypeMieru, NewOutbound)
++}
++
++func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.MieruOutboundOptions) (adapter.Outbound, error) {
++	outboundDialer, err := dialer.New(ctx, options.DialerOptions, M.IsDomainName(options.Server))
++	if err != nil {
++		return nil, err
++	}
++
++	config, err := buildMieruClientConfig(options, mieruDialer{dialer: outboundDialer})
++	if err != nil {
++		return nil, fmt.Errorf("failed to build mieru client config: %w", err)
++	}
++	c := mieruclient.NewClient()
++	if err := c.Store(config); err != nil {
++		return nil, fmt.Errorf("failed to store mieru client config: %w", err)
++	}
++	if err := c.Start(); err != nil {
++		return nil, fmt.Errorf("failed to start mieru client: %w", err)
++	}
++	logger.InfoContext(ctx, "mieru client is started")
++
++	return &Outbound{
++		Adapter: outbound.NewAdapterWithDialerOptions(C.TypeMieru, tag, []string{N.NetworkTCP, N.NetworkUDP}, options.DialerOptions),
++		dialer:  outboundDialer,
++		logger:  logger,
++		client:  c,
++	}, nil
++}
++
++func (o *Outbound) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
++	ctx, metadata := adapter.ExtendContext(ctx)
++	metadata.Outbound = o.Tag()
++	metadata.Destination = destination
++	switch N.NetworkName(network) {
++	case N.NetworkTCP:
++		o.logger.InfoContext(ctx, "outbound connection to ", destination)
++		d, err := socksAddrToNetAddrSpec(destination, "tcp")
++		if err != nil {
++			return nil, E.Cause(err, "failed to convert destination address")
++		}
++		return o.client.DialContext(ctx, d)
++	case N.NetworkUDP:
++		o.logger.InfoContext(ctx, "outbound UoT packet connection to ", destination)
++		d, err := socksAddrToNetAddrSpec(destination, "udp")
++		if err != nil {
++			return nil, E.Cause(err, "failed to convert destination address")
++		}
++		streamConn, err := o.client.DialContext(ctx, d)
++		if err != nil {
++			return nil, err
++		}
++		return &streamer{
++			PacketConn: mierucommon.NewUDPAssociateWrapper(mierucommon.NewPacketOverStreamTunnel(streamConn)),
++			Remote:     destination,
++		}, nil
++	default:
++		return nil, os.ErrInvalid
++	}
++}
++
++func (o *Outbound) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
++	ctx, metadata := adapter.ExtendContext(ctx)
++	metadata.Outbound = o.Tag()
++	metadata.Destination = destination
++	o.logger.InfoContext(ctx, "outbound UoT packet connection to ", destination)
++	d, err := socksAddrToNetAddrSpec(destination, "udp")
++	if err != nil {
++		return nil, E.Cause(err, "failed to convert destination address")
++	}
++	streamConn, err := o.client.DialContext(ctx, d)
++	if err != nil {
++		return nil, err
++	}
++	return mierucommon.NewUDPAssociateWrapper(mierucommon.NewPacketOverStreamTunnel(streamConn)), nil
++}
++
++func (o *Outbound) Close() error {
++	return common.Close(o.client)
++}
++
++// mieruDialer is an adapter to mieru dialer interface.
++type mieruDialer struct {
++	dialer N.Dialer
++}
++
++func (md mieruDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
++	addr := M.ParseSocksaddr(address)
++	return md.dialer.DialContext(ctx, network, addr)
++}
++
++func (md mieruDialer) ListenPacket(ctx context.Context, network, laddr, raddr string) (net.PacketConn, error) {
++	addr := M.ParseSocksaddr(raddr)
++	return md.dialer.ListenPacket(ctx, addr)
++}
++
++var (
++	_ mierucommon.Dialer       = (*mieruDialer)(nil)
++	_ mierucommon.PacketDialer = (*mieruDialer)(nil)
++)
++
++// streamer converts a net.PacketConn to a net.Conn.
++type streamer struct {
++	net.PacketConn
++	Remote net.Addr
++}
++
++var _ net.Conn = (*streamer)(nil)
++
++func (s *streamer) Read(b []byte) (n int, err error) {
++	n, _, err = s.PacketConn.ReadFrom(b)
++	return
++}
++
++func (s *streamer) Write(b []byte) (n int, err error) {
++	return s.WriteTo(b, s.Remote)
++}
++
++func (s *streamer) RemoteAddr() net.Addr {
++	return s.Remote
++}
++
++// socksAddrToNetAddrSpec converts a Socksaddr object to NetAddrSpec, and overrides the network.
++func socksAddrToNetAddrSpec(sa M.Socksaddr, network string) (mierumodel.NetAddrSpec, error) {
++	var nas mierumodel.NetAddrSpec
++	if err := nas.From(sa); err != nil {
++		return nas, err
++	}
++	nas.Net = network
++	return nas, nil
++}
++
++func buildMieruClientConfig(options option.MieruOutboundOptions, dialer mieruDialer) (*mieruclient.ClientConfig, error) {
++	if err := validateMieruOptions(options); err != nil {
++		return nil, fmt.Errorf("failed to validate mieru options: %w", err)
++	}
++
++	var transportProtocol *mierupb.TransportProtocol
++	switch options.Transport {
++	case "TCP":
++		transportProtocol = mierupb.TransportProtocol_TCP.Enum()
++	case "UDP":
++		transportProtocol = mierupb.TransportProtocol_UDP.Enum()
++	}
++	server := &mierupb.ServerEndpoint{}
++	if options.ServerPort != 0 {
++		server.PortBindings = append(server.PortBindings, &mierupb.PortBinding{
++			Port:     proto.Int32(int32(options.ServerPort)),
++			Protocol: transportProtocol,
++		})
++	}
++	for _, pr := range options.ServerPortRanges {
++		server.PortBindings = append(server.PortBindings, &mierupb.PortBinding{
++			PortRange: proto.String(pr),
++			Protocol:  transportProtocol,
++		})
++	}
++	if M.IsDomainName(options.Server) {
++		server.DomainName = proto.String(options.Server)
++	} else {
++		server.IpAddress = proto.String(options.Server)
++	}
++	config := &mieruclient.ClientConfig{
++		Profile: &mierupb.ClientProfile{
++			ProfileName: proto.String("sing-box"),
++			User: &mierupb.User{
++				Name:     proto.String(options.UserName),
++				Password: proto.String(options.Password),
++			},
++			Servers: []*mierupb.ServerEndpoint{server},
++		},
++		Dialer:       dialer,
++		PacketDialer: dialer,
++		DNSConfig: &mierucommon.ClientDNSConfig{
++			BypassDialerDNS: true,
++		},
++	}
++	if multiplexing, ok := mierupb.MultiplexingLevel_value[options.Multiplexing]; ok {
++		config.Profile.Multiplexing = &mierupb.MultiplexingConfig{
++			Level: mierupb.MultiplexingLevel(multiplexing).Enum(),
++		}
++	}
++	if options.TrafficPattern != "" {
++		trafficPattern, _ := mierutp.Decode(options.TrafficPattern)
++		config.Profile.TrafficPattern = trafficPattern
++	}
++	return config, nil
++}
++
++func validateMieruOptions(options option.MieruOutboundOptions) error {
++	if options.Server == "" {
++		return fmt.Errorf("server is empty")
++	}
++	if options.ServerPort == 0 && len(options.ServerPortRanges) == 0 {
++		return fmt.Errorf("either server_port or server_ports must be set")
++	}
++	for _, pr := range options.ServerPortRanges {
++		begin, end, err := beginAndEndPortFromPortRange(pr)
++		if err != nil {
++			return fmt.Errorf("invalid server_ports format")
++		}
++		if begin < 1 || begin > 65535 {
++			return fmt.Errorf("begin port must be between 1 and 65535")
++		}
++		if end < 1 || end > 65535 {
++			return fmt.Errorf("end port must be between 1 and 65535")
++		}
++		if begin > end {
++			return fmt.Errorf("begin port must be less than or equal to end port")
++		}
++	}
++	if options.Transport != "TCP" && options.Transport != "UDP" {
++		return fmt.Errorf("transport must be TCP or UDP")
++	}
++	if options.UserName == "" {
++		return fmt.Errorf("username is empty")
++	}
++	if options.Password == "" {
++		return fmt.Errorf("password is empty")
++	}
++	if options.Multiplexing != "" {
++		if _, ok := mierupb.MultiplexingLevel_value[options.Multiplexing]; !ok {
++			return fmt.Errorf("invalid multiplexing level: %s", options.Multiplexing)
++		}
++	}
++	if options.TrafficPattern != "" {
++		trafficPattern, err := mierutp.Decode(options.TrafficPattern)
++		if err != nil {
++			return fmt.Errorf("failed to decode traffic pattern %q: %w", options.TrafficPattern, err)
++		}
++		if err := mierutp.Validate(trafficPattern); err != nil {
++			return fmt.Errorf("invalid traffic pattern %q: %w", options.TrafficPattern, err)
++		}
++	}
++	return nil
++}
++
++func beginAndEndPortFromPortRange(portRange string) (int, int, error) {
++	var begin, end int
++	_, err := fmt.Sscanf(portRange, "%d-%d", &begin, &end)
++	return begin, end, err
++}
+diff --git a/protocol/naive/user.go b/protocol/naive/user.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..fd7414035ed3839c207e98c739a5da4bd6115670
+--- /dev/null
++++ b/protocol/naive/user.go
+@@ -0,0 +1,10 @@
++package naive
++
++import (
++	"github.com/sagernet/sing/common/auth"
++)
++
++func (n *Inbound) UpdateUsers(users []auth.User) error {
++	n.authenticator = auth.NewAuthenticator(users)
++	return nil
++}
+diff --git a/protocol/shadowsocks/user.go b/protocol/shadowsocks/user.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..0480f5820eb8ebdf2e34d8756b958c402df13a0b
+--- /dev/null
++++ b/protocol/shadowsocks/user.go
+@@ -0,0 +1,15 @@
++package shadowsocks
++
++import (
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common"
++)
++
++func (h *MultiInbound) UpdateUsersByOptions(users []option.ShadowsocksUser) error {
++	h.users = users
++	return h.service.UpdateUsersWithPasswords(common.MapIndexed(h.users, func(index int, user option.ShadowsocksUser) int {
++		return index
++	}), common.Map(h.users, func(user option.ShadowsocksUser) string {
++		return user.Password
++	}))
++}
+diff --git a/protocol/socks/user.go b/protocol/socks/user.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..f39d98f000212bb77d5fcc426d4ea035adf560fe
+--- /dev/null
++++ b/protocol/socks/user.go
+@@ -0,0 +1,10 @@
++package socks
++
++import (
++	"github.com/sagernet/sing/common/auth"
++)
++
++func (h *Inbound) UpdateUsers(users []auth.User) error {
++	h.authenticator = auth.NewAuthenticator(users)
++	return nil
++}
+diff --git a/protocol/trojan/user.go b/protocol/trojan/user.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..cc75e06f5f47349f63aaa0018295994da455c5f5
+--- /dev/null
++++ b/protocol/trojan/user.go
+@@ -0,0 +1,15 @@
++package trojan
++
++import (
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common"
++)
++
++func (h *Inbound) UpdateUsers(users []option.TrojanUser) error {
++	h.users = users
++	return h.service.UpdateUsers(common.MapIndexed(h.users, func(index int, it option.TrojanUser) int {
++		return index
++	}), common.Map(h.users, func(it option.TrojanUser) string {
++		return it.Password
++	}))
++}
+diff --git a/protocol/tuic/user.go b/protocol/tuic/user.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..f77755c7d7a7bd95cb59a37898a0714f32db4f98
+--- /dev/null
++++ b/protocol/tuic/user.go
+@@ -0,0 +1,30 @@
++package tuic
++
++import (
++	"github.com/gofrs/uuid/v5"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common/exceptions"
++)
++
++func (h *Inbound) UpdateUsers(users []option.TUICUser) error {
++	var userList []int
++	var userNameList []string
++	var userUUIDList [][16]byte
++	var userPasswordList []string
++	for index, user := range users {
++		if user.UUID == "" {
++			return exceptions.New("missing uuid for user ", index)
++		}
++		userUUID, err := uuid.FromString(user.UUID)
++		if err != nil {
++			return exceptions.Cause(err, "invalid uuid for user ", index)
++		}
++		userList = append(userList, index)
++		userNameList = append(userNameList, user.Name)
++		userUUIDList = append(userUUIDList, userUUID)
++		userPasswordList = append(userPasswordList, user.Password)
++	}
++	h.server.UpdateUsers(userList, userUUIDList, userPasswordList)
++	h.userNameList = userNameList
++	return nil
++}
+diff --git a/protocol/vless/user.go b/protocol/vless/user.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..583d1ef6b1b0650023745ec7208083a078ccf158
+--- /dev/null
++++ b/protocol/vless/user.go
+@@ -0,0 +1,18 @@
++package vless
++
++import (
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common"
++)
++
++func (h *Inbound) UpdateUsers(users []option.VLESSUser) error {
++	h.users = users
++	h.service.UpdateUsers(common.MapIndexed(h.users, func(index int, _ option.VLESSUser) int {
++		return index
++	}), common.Map(h.users, func(it option.VLESSUser) string {
++		return it.UUID
++	}), common.Map(h.users, func(it option.VLESSUser) string {
++		return it.Flow
++	}))
++	return nil
++}
+diff --git a/protocol/vmess/user.go b/protocol/vmess/user.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..3dd74e4b22ded56a734a0a9343fa3b4da3c8188e
+--- /dev/null
++++ b/protocol/vmess/user.go
+@@ -0,0 +1,42 @@
++package vmess
++
++import (
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common"
++)
++
++func (h *Inbound) UpdateUsers(users []option.VMessUser) error {
++	h.users = users
++	return h.service.UpdateUsers(common.MapIndexed(h.users, func(index int, it option.VMessUser) int {
++		return index
++	}), common.Map(h.users, func(it option.VMessUser) string {
++		return it.UUID
++	}), common.Map(h.users, func(it option.VMessUser) int {
++		return it.AlterId
++	}))
++}
++
++func (h *Inbound) DelUsers(uuids []string) error {
++	toDelete := make(map[string]struct{})
++	for _, uuid := range uuids {
++		toDelete[uuid] = struct{}{}
++	}
++	remaining := make([]option.VMessUser, 0)
++	for _, user := range h.users {
++		if _, found := toDelete[user.UUID]; !found {
++			remaining = append(remaining, user)
++		}
++	}
++	h.users = remaining
++	err := h.service.UpdateUsers(
++		common.MapIndexed(h.users, func(index int, it option.VMessUser) int {
++			return index
++		}),
++		common.Map(h.users, func(it option.VMessUser) string {
++			return it.UUID
++		}),
++		common.Map(h.users, func(it option.VMessUser) int {
++			return it.AlterId
++		}))
++	return err
++}
+diff --git a/route/router.go b/route/router.go
+index c141581d01038fbc7c9519d1f281f1190dd6914f..de5615ffaf78baf13df9b18aaecfde2fcc25c390 100644
+--- a/route/router.go
++++ b/route/router.go
+@@ -249,6 +249,93 @@ func (r *Router) NeedFindProcess() bool {
+ 	return r.needFindProcess
+ }
+ 
++func (r *Router) UpdateRules(rules []option.Rule, ruleSets []option.RuleSet) error {
++	newRules := make([]adapter.Rule, 0, len(rules))
++	for i, options := range rules {
++		rule, err := R.NewRule(r.ctx, r.logger, options, false)
++		if err != nil {
++			return E.Cause(err, "parse rule[", i, "]")
++		}
++		newRules = append(newRules, rule)
++	}
++
++	newRuleSets := make([]adapter.RuleSet, 0, len(ruleSets))
++	newRuleSetMap := make(map[string]adapter.RuleSet)
++	for i, options := range ruleSets {
++		if _, exists := newRuleSetMap[options.Tag]; exists {
++			return E.New("duplicate rule-set tag: ", options.Tag)
++		}
++		ruleSet, err := R.NewRuleSet(r.ctx, r.logger, options)
++		if err != nil {
++			return E.Cause(err, "parse rule-set[", i, "]")
++		}
++		newRuleSets = append(newRuleSets, ruleSet)
++		newRuleSetMap[options.Tag] = ruleSet
++	}
++
++	if r.started {
++		var cacheContext *adapter.HTTPStartContext
++		if len(newRuleSets) > 0 {
++			cacheContext = adapter.NewHTTPStartContext(r.ctx)
++			var ruleSetStartGroup task.Group
++			for i, ruleSet := range newRuleSets {
++				ruleSetInPlace := ruleSet
++				ruleSetStartGroup.Append0(func(ctx context.Context) error {
++					err := ruleSetInPlace.StartContext(ctx, cacheContext)
++					if err != nil {
++						return E.Cause(err, "initialize rule-set[", i, "]")
++					}
++					return nil
++				})
++			}
++			ruleSetStartGroup.Concurrency(5)
++			ruleSetStartGroup.FastFail()
++			err := ruleSetStartGroup.Run(r.ctx)
++			if err != nil {
++				return err
++			}
++		}
++		if cacheContext != nil {
++			cacheContext.Close()
++		}
++
++		for i, rule := range newRules {
++			err := rule.Start()
++			if err != nil {
++				return E.Cause(err, "initialize rule[", i, "]")
++			}
++		}
++		for _, ruleSet := range newRuleSets {
++			err := ruleSet.PostStart()
++			if err != nil {
++				return E.Cause(err, "post start rule_set[", ruleSet.Name(), "]")
++			}
++		}
++
++		oldRules := r.rules
++		oldRuleSets := r.ruleSets
++
++		r.rules = newRules
++		r.ruleSets = newRuleSets
++		r.ruleSetMap = newRuleSetMap
++
++		r.network.Initialize(r.ruleSets)
++
++		for _, rule := range oldRules {
++			rule.Close()
++		}
++		for _, ruleSet := range oldRuleSets {
++			ruleSet.Close()
++		}
++	} else {
++		r.rules = newRules
++		r.ruleSets = newRuleSets
++		r.ruleSetMap = newRuleSetMap
++	}
++
++	return nil
++}
++
+ func (r *Router) NeedFindNeighbor() bool {
+ 	return r.needFindNeighbor
+ }

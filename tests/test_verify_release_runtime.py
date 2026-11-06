@@ -18,14 +18,20 @@ runtime = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runtime)
 
 
-def metadata(arch, libc="gnu"):
+def metadata(arch):
     settings = {
-        "GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "1", "-trimpath": "true",
+        "GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "0", "-trimpath": "true",
         "vcs": "git", "vcs.revision": runtime.REVISION, "vcs.modified": "false",
-        "-buildmode": "exe", "-compiler": "gc",
-        "-tags": ",".join(sorted(runtime.TAGS | ({"with_musl"} if libc == "musl" else set()))),
+        "-buildmode": "exe", "-compiler": "gc", "-tags": runtime.TAGS,
     }
-    return "runtime: go1.26.8\n" + "\n".join("\tbuild\t" + k + "=" + v for k, v in settings.items())
+    modules = ["\tdep\t" + "\t".join(line.split()) for line in sorted(runtime.pinned_modules())]
+    return "runtime: go1.26.8\n" + "\n".join(
+        modules + ["\tbuild\t" + k + "=" + v for k, v in settings.items()])
+
+
+def static_elf(metadata_text, headers="LOAD", dynamic="No dynamic section"):
+    """go version -m, then readelf -lW and readelf -dW, in the order verify() reads them."""
+    return [metadata_text, headers, dynamic]
 
 
 class RuntimeInspectionTests(unittest.TestCase):
@@ -56,25 +62,23 @@ class RuntimeInspectionTests(unittest.TestCase):
         (self.directory / target).write_bytes(archive)
         (self.directory / "SHA256SUMS").write_text(hashlib.sha256(archive).hexdigest() + "  " + target + "\n")
 
-    def test_musl_cache_requires_its_build_tag_and_static_elf_on_both_architectures(self):
+    def test_every_runtime_must_be_a_static_elf_on_both_architectures(self):
         for arch in ("amd64", "arm64"):
-            self.archive(arch, libc="musl")
-            for headers, dynamic, valid in (("LOAD", "No dynamic section", True),
-                                             ("INTERP", "No dynamic section", False),
-                                             ("LOAD", "(NEEDED) libc.so.6", False)):
-                with self.subTest(arch=arch, headers=headers, dynamic=dynamic), \
-                        patch.object(runtime.subprocess, "check_output", side_effect=[headers, dynamic]) as reader:
-                    if valid:
-                        runtime.verify(self.root, arch, lambda _: metadata(arch, "musl"), libc="musl")
-                    else:
-                        with self.assertRaisesRegex(ValueError, "statically linked"):
-                            runtime.verify(self.root, arch, lambda _: metadata(arch, "musl"), libc="musl")
-                    self.assertEqual([call.args[0][:2] for call in reader.call_args_list],
-                                     [["readelf", "-lW"], ["readelf", "-dW"]])
-            with self.assertRaisesRegex(ValueError, "build tags"):
-                runtime.verify(self.root, arch, lambda _: metadata(arch), libc="musl")
-            with self.assertRaisesRegex(ValueError, "build tags"):
-                runtime.verify_metadata(metadata(arch, "musl"), arch)
+            for libc in ("gnu", "musl"):
+                self.archive(arch, libc=libc)
+                for headers, dynamic, valid in (("LOAD", "No dynamic section", True),
+                                                 ("INTERP", "No dynamic section", False),
+                                                 ("LOAD", "(NEEDED) libc.so.6", False)):
+                    with self.subTest(arch=arch, libc=libc, headers=headers, dynamic=dynamic), \
+                            patch.object(runtime.subprocess, "check_output",
+                                         side_effect=static_elf(metadata(arch), headers, dynamic)) as reader:
+                        if valid:
+                            runtime.verify(self.root, arch, libc=libc)
+                        else:
+                            with self.assertRaisesRegex(ValueError, "statically linked"):
+                                runtime.verify(self.root, arch, libc=libc)
+                        self.assertEqual([call.args[0][:2] for call in reader.call_args_list],
+                                         [["go", "version"], ["readelf", "-lW"], ["readelf", "-dW"]])
 
     def test_musl_archive_cannot_borrow_a_legacy_checksum_identity(self):
         self.archive("amd64")
@@ -86,9 +90,10 @@ class RuntimeInspectionTests(unittest.TestCase):
         for arch in ("amd64", "arm64"):
             with self.subTest(arch=arch):
                 self.archive(arch)
-                with patch.object(runtime.subprocess, "check_output", return_value=metadata(arch)) as reader:
+                with patch.object(runtime.subprocess, "check_output",
+                                  side_effect=static_elf(metadata(arch))) as reader:
                     runtime.verify(self.root, arch)
-                self.assertEqual(reader.call_args.args[0][:3], ["go", "version", "-m"])
+                self.assertEqual(reader.call_args_list[0].args[0][:3], ["go", "version", "-m"])
 
     def test_wrong_elf_architecture_rejected_before_metadata_tool(self):
         self.archive("amd64")
@@ -104,13 +109,18 @@ class RuntimeInspectionTests(unittest.TestCase):
         original = metadata("amd64")
         for previous, changed in (
             ("go1.26.8", "go1.26.1"), ("GOOS=linux", "GOOS=darwin"),
-            ("GOARCH=amd64", "GOARCH=arm64"), ("CGO_ENABLED=1", "CGO_ENABLED=0"),
+            ("GOARCH=amd64", "GOARCH=arm64"), ("CGO_ENABLED=0", "CGO_ENABLED=1"),
             ("-trimpath=true", "-trimpath=false"), (runtime.REVISION, "0" * 40),
             ("vcs.modified=false", "vcs.modified=true"),
             ("with_v2ray_api", "missing_statistics_api"),
+            ("with_wireguard,", "with_wireguard,with_acme,"),
+            ("golang.org/x/crypto\tv0.49.0", "golang.org/x/crypto\tv0.50.0"),
+            ("\tbuild\tGOOS=linux", "\tbuild\tDefaultGODEBUG=tlssecpmlkem=0\n\tbuild\tGOOS=linux"),
+            ("\tdep\tgolang.org/x/sys", "\t=>\tgolang.org/x/sys"),
         ):
             with self.subTest(changed=changed), self.assertRaises(ValueError):
                 runtime.verify_metadata(original.replace(previous, changed), "amd64")
+        runtime.verify_metadata(original, "amd64")
         with self.assertRaisesRegex(ValueError, "duplicate"):
             runtime.verify_metadata(original + "\n\tbuild\tGOOS=linux", "amd64")
 

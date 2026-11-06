@@ -500,10 +500,10 @@ class AcceptanceContracts(unittest.TestCase):
         self.args.agent_version, self.args.agent_restarted = "0.3.1", True
         baseline = self.state["checkpoints"]["before"]
         baseline["agent"].update(pid=100, agent_version="0.3.0")
-        baseline["server"].update(id=41, agent_version="0.3.0", runtime_version="1.14.2-apsp.1")
+        baseline["server"].update(id=41, agent_version="0.3.0", runtime_version="1.14.0-apsp.1")
         upgraded = view()
         upgraded["agent"].update(pid=200, agent_version="0.3.1")
-        upgraded["server"].update(id=41, agent_version="0.3.1", runtime_version="1.14.2-apsp.1")
+        upgraded["server"].update(id=41, agent_version="0.3.1", runtime_version="1.14.0-apsp.1")
         for field, mutation in (("agent", {"agent_version": "0.3.0"}), ("agent", {"pid": 100}),
                                 ("server", {"id": 42}), ("server", {"runtime_version": "1.14.3"})):
             changed = json.loads(json.dumps(upgraded))

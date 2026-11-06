@@ -50,7 +50,7 @@ async fn controlled_panel(pool: PgPool) -> Result<ControlledPanel> {
     release_fixture::write(
         &panel.state.config.data_dir,
         "sing-box",
-        "1.14.2-apsp.1",
+        "1.14.0-apsp.1",
         "sing-box",
         &archive,
         binary,

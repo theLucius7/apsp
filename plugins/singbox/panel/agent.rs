@@ -83,7 +83,7 @@ pub async fn manifest_module(
             // Explicit fixed candidates bind ordinary node revisions as well.
             // Their artifact must remain the exact previewed platform payload.
             if path_deployment || explicit_rollout {
-                sqlx::query("INSERT INTO singbox_runtime_manifest_facts(server_id,module,revision,runtime_version,artifact_sha256,artifact) VALUES($1,'singbox',$2,'1.14.2-apsp.1',$3,$4) ON CONFLICT DO NOTHING").bind(server_id).bind(revision).bind(&module.artifact.sha256).bind(serde_json::to_value(&module.artifact).map_err(anyhow::Error::from)?).execute(&mut *tx).await?;
+                sqlx::query("INSERT INTO singbox_runtime_manifest_facts(server_id,module,revision,runtime_version,artifact_sha256,artifact) VALUES($1,'singbox',$2,'1.14.0-apsp.1',$3,$4) ON CONFLICT DO NOTHING").bind(server_id).bind(revision).bind(&module.artifact.sha256).bind(serde_json::to_value(&module.artifact).map_err(anyhow::Error::from)?).execute(&mut *tx).await?;
                 let same:bool=sqlx::query_scalar("SELECT artifact_sha256=$3 FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2").bind(server_id).bind(revision).bind(&module.artifact.sha256).fetch_one(&mut *tx).await?;
                 if !same {
                     return Err(ApiError::Conflict(

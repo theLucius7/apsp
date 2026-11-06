@@ -148,7 +148,7 @@ def stage_release(source, output, target, runtime, runtime_sha, version):
     runtime_bytes = native_header(runtime, target)
     require(digest(runtime_bytes) == runtime_sha, "runtime_binary_changed")
     info = capture([str(runtime), "version"]).decode()
-    require(info.splitlines()[0] == "sing-box version 1.14.2-apsp.1", "runtime_version_mismatch")
+    require(info.splitlines()[0] == "sing-box version 1.14.0-apsp.1", "runtime_version_mismatch")
     tags = next((line.partition(":")[2].strip().split(",") for line in info.splitlines()
                  if line.startswith("Tags:")), [])
     require({"with_clash_api", "with_v2ray_api", "with_utls", "with_quic"} <= set(tags),
@@ -160,7 +160,7 @@ def stage_release(source, output, target, runtime, runtime_sha, version):
     archive = archive_runtime(runtime_bytes)
     for name, artifact_version, format_, binary, data in (
             ("agent", version, "raw", "apsp-agent", agent_bytes),
-            ("sing-box", "1.14.2-apsp.1", "tar.gz", "sing-box", archive)):
+            ("sing-box", "1.14.0-apsp.1", "tar.gz", "sing-box", archive)):
         actual_binary = agent_bytes if name == "agent" else runtime_bytes
         entry = {"name": name, "version": artifact_version, "arch": TARGETS[target][1],
                  "format": format_, "binary_name": binary, "archive_size": len(data),

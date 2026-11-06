@@ -237,7 +237,7 @@ fn panel_checks(
         ));
     }
     let compiled = apsp_compiler::compile_server(&context.nodes);
-    checks.push(check("configuration","普通节点配置",if compiled.is_ok(){"passed"}else{"failed"},Some(now),"fixed_compiler_1.14.2-apsp.1",json!({"node_ids":context.nodes.iter().map(|node|node.id).collect::<Vec<_>>(),"compiled":compiled.is_ok(),"configuration_sha256":compiled.ok().map(|value|format!("{:x}",sha2::Sha256::digest(value.as_bytes()))),"secret_values_returned":false}),"确定性编译当前有效授权与普通节点；预检不复制凭据，也不替代 Agent 的原生配置检查。"));
+    checks.push(check("configuration","普通节点配置",if compiled.is_ok(){"passed"}else{"failed"},Some(now),"fixed_compiler_1.14.0-apsp.1",json!({"node_ids":context.nodes.iter().map(|node|node.id).collect::<Vec<_>>(),"compiled":compiled.is_ok(),"configuration_sha256":compiled.ok().map(|value|format!("{:x}",sha2::Sha256::digest(value.as_bytes()))),"secret_values_returned":false}),"确定性编译当前有效授权与普通节点；预检不复制凭据，也不替代 Agent 的原生配置检查。"));
     let state = state.clone();
     let info = context.info.clone();
     async move {

@@ -97,7 +97,7 @@ async fn fixture(
     let binding = RuntimeBinding::new(Uuid::new_v4(), MODULE.into(), 1, hash);
     sqlx::query("INSERT INTO runtime_deployment_bindings(deployment_id,server_id,module,rev,bundle_sha256,binding_digest) VALUES($1,$2,'singbox',1,$3,$4)").bind(binding.deployment_id).bind(server).bind(&binding.bundle_sha256).bind(&binding.binding_digest).execute(pool).await?;
     let artifact_sha = "a".repeat(64);
-    sqlx::query("INSERT INTO singbox_runtime_manifest_facts(server_id,module,revision,runtime_version,artifact_sha256,artifact) VALUES($1,'singbox',1,'1.14.2-apsp.1',$2,$3)").bind(server).bind(&artifact_sha).bind(json!({"sha256":artifact_sha})).execute(pool).await?;
+    sqlx::query("INSERT INTO singbox_runtime_manifest_facts(server_id,module,revision,runtime_version,artifact_sha256,artifact) VALUES($1,'singbox',1,'1.14.0-apsp.1',$2,$3)").bind(server).bind(&artifact_sha).bind(json!({"sha256":artifact_sha})).execute(pool).await?;
     let job = Uuid::new_v4();
     sqlx::query("INSERT INTO operations_jobs(id,name,requested_by,spec,targets,status,created_at,updated_at,expires_at,preview_digest) VALUES($1,'TEST_ONLY runtime reapply',1,'{}',$2,'running',$3,$3,$4,'TEST_ONLY')").bind(job).bind(vec![server]).bind(now-10).bind(now+3600).execute(pool).await?;
     let request = RuntimeOperationRequest {
