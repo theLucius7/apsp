@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build the pinned upstream release plus the Apsp patch queue in tools/singbox-runtime.
+# Build the legacy service kernel from the pinned upstream tag plus the Apsp
+# patch queue in tools/singbox-runtime (see its README).
 set -euo pipefail
 umask 022
 
@@ -7,18 +8,17 @@ usage() {
   cat <<'USAGE'
 Usage: tools/build-singbox.sh <amd64|arm64> <ARTIFACT_ROOT> [--libc=gnu|--libc=musl]
 
-Run on Linux/amd64 with Go 1.26.8. Both targets use the upstream Chromium
-clang/sysroot toolchain. GNU uses glibc >= 2.31; musl is statically linked.
+Run on Linux/amd64 with Go 1.26.8. The runtime is pure Go (CGO disabled), as
+the legacy service built it, so one static binary serves glibc and musl hosts;
+--libc only selects the artifact name.
 
-Output: ARTIFACT_ROOT/sing-box/1.14.2-apsp.1/<arch> (a gzip archive with one binary)
-        ARTIFACT_ROOT/sing-box/1.14.2-apsp.1/SHA256SUMS
+Output: ARTIFACT_ROOT/sing-box/1.14.0-apsp.1/<arch> (a gzip archive with one binary)
+        ARTIFACT_ROOT/sing-box/1.14.0-apsp.1/SHA256SUMS
 With --libc, the artifact filename is linux-<libc>-<arch>. The legacy default
-remains GNU under <arch>. musl retains all upstream default tags.
+remains GNU under <arch>.
 
 Debian build prerequisites:
-  ca-certificates git curl python3 python3-requests gnupg dirmngr xz-utils
-  unzip bzip2 zstd file binutils binutils-aarch64-linux-gnu build-essential
-  pkg-config coreutils
+  ca-certificates git python3 binutils coreutils
 
 Existing architecture files are immutable. A second invocation for the other
 architecture verifies and retains the existing checksum entry. Do not run both
@@ -37,27 +37,22 @@ if [[ $# == 3 ]]; then
   artifact=linux-$libc-$arch
 fi
 [[ -n $2 ]] || die 'ARTIFACT_ROOT must not be empty'
-for tool in go git curl python3 gpg gpgconf gpgv tar gzip sha256sum readelf timeout \
-  file xz unzip bzip2 zstd dpkg-deb pkg-config make gcc g++ ar; do
+for tool in go git python3 tar gzip sha256sum readelf timeout; do
   command -v "$tool" >/dev/null || die "missing build tool: $tool"
 done
 [[ $(uname -s) == Linux && $(uname -m) == x86_64 ]] || die 'use a Linux/amd64 build host (both targets are supported there)'
 export GOTOOLCHAIN=local
-[[ $(go env GOVERSION) == go1.26.8 ]] || die 'Go 1.26.8 is required to match the pinned upstream release workflow'
+[[ $(go env GOVERSION) == go1.26.8 ]] || die 'Go 1.26.8 is required'
 [[ $(go env GOHOSTOS)/$(go env GOHOSTARCH) == linux/amd64 ]] || die 'Go must run natively on Linux/amd64'
 tar_version=$(tar --version)
 [[ $tar_version == *'GNU tar'* ]] || die 'GNU tar is required for deterministic packaging'
-python3 -c 'import requests' || die 'install python3-requests'
-if [[ $arch == arm64 ]]; then
-  command -v aarch64-linux-gnu-objcopy >/dev/null || die 'install binutils-aarch64-linux-gnu'
-fi
 
-upstream_version=1.14.2
-version=$upstream_version-apsp.1
-patched_commit=e2288134223b5b9e3a272f9fb4abb717bf7647f3
-upstream_commit=af6e64c3b69e6132ebaee0e1a3d24e93903f6709
-cronet_commit=0d28acc44093df24b2526dea3d6ffefd6b0a54f0
-naive_commit=72a06c9fca0e2d228588c7f3074bf7efff3ff686
+version=1.14.0-apsp.1
+upstream_tag=v1.14.0-alpha.2
+upstream_commit=7df171ff20cdcd5e79dd373198176811dabc7742
+patched_commit=7cf0370571977d4a3ed01d35dcf08ffbd67f1d9b
+# The legacy service's build tags, plus the statistics API the Agent reads.
+tags=with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api
 output=$2/sing-box/$version
 [[ ! -L $output ]] || die 'output version directory must not be a symlink'
 mkdir -p "$output"
@@ -73,9 +68,6 @@ cleanup() {
   if [[ $output_created == 1 && $committed == 0 ]]; then rm -f -- "$output/$artifact"; fi
   [[ -z $stage_file ]] || rm -f -- "$stage_file"
   [[ -z $sums_file ]] || rm -f -- "$sums_file"
-  if [[ -n $scratch && -d $scratch/gnupg ]]; then
-    gpgconf --homedir "$scratch/gnupg" --kill all || true
-  fi
   [[ -z $scratch ]] || rm -rf -- "$scratch"
   rmdir -- "$lock"
 }
@@ -117,53 +109,19 @@ for arch in ("amd64", "arm64", "linux-gnu-amd64", "linux-gnu-arm64", "linux-musl
 PY
 
 patch_queue=${APSP_SINGBOX_PATCHES:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/singbox-runtime}
-[[ -f $patch_queue/apply.py ]] || die "missing runtime patch queue: $patch_queue"
+[[ -f $patch_queue/apply.py && -f $patch_queue/modules.txt ]] || die "missing runtime patch queue: $patch_queue"
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/apsp-runtime.XXXXXX")
 source_dir=$scratch/source
-cronet_dir=$scratch/cronet-go
-git clone --depth=1 --branch "v$upstream_version" https://github.com/SagerNet/sing-box.git "$source_dir"
+git -c advice.detachedHead=false clone --depth=1 --branch "$upstream_tag" https://github.com/SagerNet/sing-box.git "$source_dir"
 [[ $(git -C "$source_dir" rev-parse HEAD) == "$upstream_commit" ]] || die 'upstream tag resolved to an unexpected commit'
-[[ $(cat "$source_dir/.github/CRONET_GO_VERSION") == "$cronet_commit" ]] || die 'unexpected upstream toolchain revision'
 [[ $(python3 "$patch_queue/apply.py" "$source_dir") == "$patched_commit" ]] || die 'patch queue produced an unexpected commit'
-git init "$cronet_dir"
-git -C "$cronet_dir" remote add origin https://github.com/SagerNet/cronet-go.git
-git -C "$cronet_dir" sparse-checkout set --no-cone '/*' '!/lib'
-git -C "$cronet_dir" fetch --depth=1 --filter=blob:none origin "$cronet_commit"
-git -C "$cronet_dir" checkout --detach FETCH_HEAD
-[[ $(git -C "$cronet_dir" rev-parse HEAD) == "$cronet_commit" ]] || die 'unexpected toolchain checkout'
-git -C "$cronet_dir" submodule update --init --recursive --depth=1
-[[ $(git -C "$cronet_dir/naiveproxy" rev-parse HEAD) == "$naive_commit" ]] || die 'unexpected Chromium toolchain submodule'
-
-# Isolate upstream keyring generation from the caller's private GnuPG keyring.
-mkdir -m 0700 "$scratch/gnupg"
-(
-  cd "$cronet_dir"
-  rm -f naiveproxy/src/build/linux/sysroot_scripts/keyring.gpg
-  GNUPGHOME="$scratch/gnupg" GPG_TTY=/dev/null ./naiveproxy/src/build/linux/sysroot_scripts/generate_keyring.sh
-  toolchain_args=(--target="linux/$arch")
-  [[ $libc != musl ]] || toolchain_args+=(--libc=musl)
-  GOFLAGS= go run ./cmd/build-naive "${toolchain_args[@]}" download-toolchain
-  GOFLAGS= go run ./cmd/build-naive "${toolchain_args[@]}" env > "$scratch/toolchain.env"
-)
-caller_cgo_ldflags=${CGO_LDFLAGS:-}
-while IFS='=' read -r name value; do
-  case "$name" in
-    CC|CXX|QEMU_LD_PREFIX) export "$name=$value" ;;
-    CGO_LDFLAGS) export "CGO_LDFLAGS=$value${caller_cgo_ldflags:+ $caller_cgo_ldflags}" ;;
-    *) die "unexpected toolchain variable: $name" ;;
-  esac
-done < "$scratch/toolchain.env"
-[[ -n ${CC:-} && -n ${CXX:-} ]] || die 'upstream toolchain did not provide its compilers'
 
 cd "$source_dir"
-tags="$(cat release/DEFAULT_BUILD_TAGS),with_v2ray_api"
-[[ $libc != musl ]] || tags="$tags,with_musl"
-shared_ldflags=$(cat release/LDFLAGS)
 mkdir "$scratch/stage"
 for attempt in 1 2 3; do
-  if CGO_ENABLED=1 GOOS=linux GOARCH="$arch" GOFLAGS= \
+  if CGO_ENABLED=0 GOOS=linux GOARCH="$arch" GOFLAGS= \
     go build -mod=readonly -v -trimpath -tags "$tags" \
-      -ldflags "-X github.com/sagernet/sing-box/constant.Version=$version $shared_ldflags -s -w -buildid=" \
+      -ldflags "-X github.com/sagernet/sing-box/constant.Version=$version -s -w -buildid=" \
       -o "$scratch/stage/sing-box" ./cmd/sing-box; then
     break
   fi
@@ -174,20 +132,41 @@ done
 [[ -z $(git status --porcelain) ]] || die 'upstream source changed during the build'
 binary=$scratch/stage/sing-box
 chmod 0755 "$binary"
-go version -m "$binary"
+go version -m "$binary" | tee "$scratch/buildinfo"
+python3 - "$scratch/buildinfo" "$patch_queue/modules.txt" "$arch" "$tags" "$patched_commit" <<'PY'
+import sys
+
+buildinfo, modules, arch, tags, commit = sys.argv[1:]
+settings, deps = {}, set()
+for line in open(buildinfo).read().splitlines()[1:]:
+    fields = line.strip().split("\t")
+    if fields[0] == "build":
+        key, _, value = fields[1].partition("=")
+        settings[key] = value
+    elif fields[0] == "dep":
+        deps.add(" ".join(fields[1:4]))
+    elif fields[0] == "=>":
+        raise SystemExit("runtime must not replace modules")
+expected = {"GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "0", "-tags": tags,
+            "-trimpath": "true", "vcs.revision": commit, "vcs.modified": "false"}
+for key, value in expected.items():
+    if settings.get(key) != value:
+        raise SystemExit("unexpected build setting: " + key)
+if "DefaultGODEBUG" in settings:
+    raise SystemExit("runtime must keep the legacy service's GODEBUG defaults")
+pinned = {line.split("#", 1)[0].strip() for line in open(modules)} - {""}
+if deps != pinned:
+    raise SystemExit("runtime dependencies differ from modules.txt")
+PY
+program_headers=$(readelf -lW "$binary")
+dynamic=$(readelf -dW "$binary")
+[[ $program_headers != *INTERP* && $dynamic != *NEEDED* ]] || die 'runtime must be statically linked'
 header=$(readelf -h "$binary")
-if [[ $libc == musl ]]; then
-  program_headers=$(readelf -lW "$binary")
-  dynamic=$(readelf -dW "$binary")
-  [[ $program_headers != *INTERP* && $dynamic != *NEEDED* ]] || die 'musl runtime must be statically linked'
-  build_metadata=$(go version -m "$binary")
-  [[ $build_metadata == *with_musl* ]] || die 'musl runtime lacks its upstream build tag'
-fi
 if [[ $arch == amd64 ]]; then
   [[ $header == *'Advanced Micro Devices X86-64'* ]] || die 'built binary has the wrong architecture'
   runtime_version=$(timeout 30 "$binary" version)
   printf '%s\n' "$runtime_version"
-  [[ ${runtime_version%%$'\n'*} == "sing-box version $version" && $runtime_version == *with_v2ray_api* ]] || die 'native version/tags verification failed'
+  [[ ${runtime_version%%$'\n'*} == "sing-box version $version" && $runtime_version == *"Tags: $tags"* && $runtime_version == *'CGO: disabled'* ]] || die 'native version/tags verification failed'
 else
   [[ $header == *AArch64* ]] || die 'built binary has the wrong architecture'
   printf '%s\n' 'Cross-compiled arm64: ELF/build metadata verified; execute version on an arm64 host before deployment.'

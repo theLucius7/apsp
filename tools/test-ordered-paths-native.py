@@ -141,12 +141,12 @@ def binary_identity(binary, expected):
     require(binary.stat().st_size <= 512 * 1024 * 1024, "native_binary_file_budget_exceeded")
     require(len(expected) == 64 and sha_file(binary) == expected.lower(), "native_binary_hash_mismatch")
     version = capture([str(binary), "version"]).decode("utf-8")
-    require(any(line.strip() == "sing-box version 1.14.2-apsp.1" for line in version.splitlines()), "exact_runtime_version_required")
+    require(any(line.strip() == "sing-box version 1.14.0-apsp.1" for line in version.splitlines()), "exact_runtime_version_required")
     tags = next((line.split(":", 1)[1].strip() for line in version.splitlines() if line.startswith("Tags:")), None)
     actual = set(tags.split(",")) if tags is not None else set()
     actual = {tag.strip() for tag in actual}
     require(REQUIRED_TAGS <= actual, "required_runtime_tags_missing")
-    return {"version": "1.14.2-apsp.1", "sha256": expected.lower(), "observed_build_tags": sorted(actual)}
+    return {"version": "1.14.0-apsp.1", "sha256": expected.lower(), "observed_build_tags": sorted(actual)}
 
 
 def linux_dedicated(args):
@@ -239,7 +239,7 @@ def prepare(args):
     capture(["openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=reality.test", "-keyout", str(tls / "server.key"), "-out", str(tls / "server.csr")], 20)
     capture(["openssl", "x509", "-req", "-in", str(tls / "server.csr"), "-CA", str(tls / "ca.crt"), "-CAkey", str(tls / "ca.key"), "-CAcreateserial",
              "-out", str(tls / "server.crt"), "-days", "1", "-sha256", "-extfile", str(extensions)], 20)
-    value = {"schema": 1, "test_only": True, "runtime_version": "1.14.2-apsp.1", "native_binary_sha256": identity["sha256"],
+    value = {"schema": 1, "test_only": True, "runtime_version": "1.14.0-apsp.1", "native_binary_sha256": identity["sha256"],
              "ports": allocate_ports(), "node_keys": keys, "credentials": credentials}
     private_json(directory / "compiler-input.json", value)
     private_json(directory / "prepare-receipt.json", {"schema": 1, "test_only": True, "native": identity,
@@ -278,7 +278,7 @@ def compilation(args, directory, inputs):
     manifest_file = checked_relative(parent, "compilation-manifest.json")
     require(sha_file(manifest_file) == args.compilation_manifest_sha256.lower(), "compilation_receipt_hash_mismatch")
     manifest = load_json(manifest_file)
-    require(manifest.get("schema") == 1 and manifest.get("test_only") is True and manifest.get("runtime_version") == "1.14.2-apsp.1", "invalid_compilation_contract")
+    require(manifest.get("schema") == 1 and manifest.get("test_only") is True and manifest.get("runtime_version") == "1.14.0-apsp.1", "invalid_compilation_contract")
     require(manifest.get("native_binary_sha256") == inputs["native_binary_sha256"] and manifest.get("compiler_input_sha256") == sha_file(directory / "compiler-input.json"), "compiled_input_binding_mismatch")
     require(manifest.get("generator_source_sha256") == args.generator_source_sha256.lower(), "generator_source_binding_mismatch")
     compiler_source_identity(manifest.get("compiler_sources"))

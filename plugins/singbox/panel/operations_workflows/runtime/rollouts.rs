@@ -47,9 +47,10 @@ pub(crate) async fn create_rollout(
     }
     if request.runtime_version != crate::RUNTIME_VERSION || !(1..=20).contains(&request.batch_size)
     {
-        return Err(ApiError::BadRequest(
-            "当前仅支持固定可信版本 1.14.2-apsp.1，批次大小 1–20".into(),
-        ));
+        return Err(ApiError::BadRequest(format!(
+            "当前仅支持固定可信版本 {}，批次大小 1–20",
+            crate::RUNTIME_VERSION
+        )));
     }
     super::inventory::require_version(&state, &request.runtime_version).await?;
     let mut tx = state.pool.begin().await?;

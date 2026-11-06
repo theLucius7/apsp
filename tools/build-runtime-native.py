@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Build unmodified, pinned upstream runtimes for macOS, FreeBSD and Windows."""
+"""Build the legacy service kernel (tools/singbox-runtime) for macOS, FreeBSD and Windows."""
 import argparse
 import gzip
 import io
 import os
 from pathlib import Path
 import platform
-import shutil
 import subprocess
 import tarfile
 import sys
@@ -18,10 +17,11 @@ from artifact_manifest import publish
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'singbox-runtime'))
 import apply as runtime_patches
 
-VERSION = '1.14.2-apsp.1'
-PATCHED_COMMIT = 'e2288134223b5b9e3a272f9fb4abb717bf7647f3'
-COMMIT = 'af6e64c3b69e6132ebaee0e1a3d24e93903f6709'
-CRONET = '0d28acc44093df24b2526dea3d6ffefd6b0a54f0'
+VERSION = '1.14.0-apsp.1'
+PATCHED_COMMIT = '7cf0370571977d4a3ed01d35dcf08ffbd67f1d9b'
+COMMIT = '7df171ff20cdcd5e79dd373198176811dabc7742'
+# The legacy service's build tags, plus the statistics API the Agent reads.
+TAGS = 'with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api'
 TARGETS = ('macos-arm64', 'freebsd-amd64', 'freebsd-arm64', 'windows-amd64', 'windows-arm64')
 
 
@@ -29,11 +29,9 @@ def run(args, **kwargs):
     return subprocess.run(args, check=True, **kwargs)
 
 
-def checkout(directory, url, commit, sparse=None):
+def checkout(directory, url, commit):
     run(['git', 'init', str(directory)])
     run(['git', '-C', str(directory), 'remote', 'add', 'origin', url])
-    if sparse:
-        run(['git', '-C', str(directory), 'sparse-checkout', 'set', '--no-cone', '/' + sparse])
     # The patch queue and its pinned commit need upstream's exact bytes on Windows too.
     run(['git', '-C', str(directory), 'config', 'core.autocrlf', 'false'])
     run(['git', '-C', str(directory), 'fetch', '--depth=1', '--filter=blob:none', 'origin', commit])
@@ -63,16 +61,14 @@ def main():
         checkout(source, 'https://github.com/SagerNet/sing-box.git', COMMIT)
         if runtime_patches.apply(source) != PATCHED_COMMIT:
             raise ValueError('patch queue produced an unexpected commit')
-        tags_file = 'DEFAULT_BUILD_TAGS' if system == 'macos' else 'DEFAULT_BUILD_TAGS_WINDOWS' if system == 'windows' else 'DEFAULT_BUILD_TAGS_OTHERS'
-        tags = (source / 'release' / tags_file).read_text().strip() + ',with_v2ray_api'
-        ldflags = (source / 'release/LDFLAGS').read_text().strip()
         binary = root / ('sing-box.exe' if system == 'windows' else 'sing-box')
+        # Pure Go on every platform, as the legacy service built it.
         env = dict(os.environ, GOOS='darwin' if system == 'macos' else system, GOARCH=arch,
-                   CGO_ENABLED='1' if system == 'macos' else '0', GOTOOLCHAIN='local')
+                   CGO_ENABLED='0', GOTOOLCHAIN='local', GOFLAGS='')
         for attempt in range(3):
             try:
-                run(['go', 'build', '-trimpath', '-o', str(binary), '-tags', tags,
-                     '-ldflags', f'-X github.com/sagernet/sing-box/constant.Version={VERSION} {ldflags} -s -w -buildid=',
+                run(['go', 'build', '-mod=readonly', '-trimpath', '-o', str(binary), '-tags', TAGS,
+                     '-ldflags', f'-X github.com/sagernet/sing-box/constant.Version={VERSION} -s -w -buildid=',
                      './cmd/sing-box'], cwd=source, env=env)
                 break
             except subprocess.CalledProcessError:
@@ -81,17 +77,10 @@ def main():
                 print('Retrying runtime build with the existing module cache', flush=True)
                 time.sleep(5)
         files = [binary]
-        if system == 'windows':
-            if (source / '.github/CRONET_GO_VERSION').read_text().strip() != CRONET:
-                raise ValueError('upstream changed its pinned runtime library')
-            library = f'lib/windows_{arch}/libcronet.dll'
-            checkout(root / 'cronet', 'https://github.com/SagerNet/cronet-go.git', CRONET, library)
-            shutil.copyfile(root / 'cronet' / library, root / 'libcronet.dll')
-            files.append(root / 'libcronet.dll')
         if system != 'freebsd' or platform.system() == 'FreeBSD':
             text = run([str(binary), 'version'], capture_output=True, text=True).stdout
-            if f'sing-box version {VERSION}' not in text or 'with_v2ray_api' not in text:
-                raise ValueError('runtime version or traffic accounting support is missing')
+            if f'sing-box version {VERSION}' not in text or f'Tags: {TAGS}' not in text:
+                raise ValueError('runtime version or build tags are wrong')
             print(text)
         archive = io.BytesIO()
         with gzip.GzipFile(fileobj=archive, mode='wb', mtime=0, filename='') as compressed:

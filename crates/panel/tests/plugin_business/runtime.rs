@@ -61,9 +61,9 @@ impl Runtime {
         let version_text = String::from_utf8(version.stdout)?;
         ensure!(
             version.status.success()
-                && version_text.lines().next() == Some("sing-box version 1.14.2-apsp.1")
+                && version_text.lines().next() == Some("sing-box version 1.14.0-apsp.1")
                 && version_text.contains("with_v2ray_api"),
-            "requires pinned statistics-enabled sing-box 1.14.2-apsp.1"
+            "requires pinned statistics-enabled sing-box 1.14.0-apsp.1"
         );
         let directory =
             std::env::temp_dir().join(format!("apsp-imported-runtime-{}", uuid::Uuid::new_v4()));
@@ -89,7 +89,7 @@ impl Runtime {
             prepared: Prepared {
                 spec: RuntimeSpec {
                     revision: 7,
-                    kernel_version: "1.14.2-apsp.1".into(),
+                    kernel_version: "1.14.0-apsp.1".into(),
                     config_hash: "fixture".into(),
                     binary_path: binary.clone(),
                     revision_dir: directory.clone(),

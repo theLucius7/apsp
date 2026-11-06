@@ -138,7 +138,7 @@ impl Harness {
         let archive = archive.into_inner()?.finish()?;
         let mut entry = release_support::entry(
             "sing-box",
-            "1.14.2-apsp.1",
+            "1.14.0-apsp.1",
             "demo",
             "tar.gz",
             &archive,

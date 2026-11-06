@@ -26,7 +26,7 @@ async fn musl_agent_on_gnu_host_receives_legacy_gnu_runtime(pool: PgPool) -> Res
     let archive = release_fixture::archive("sing-box", binary)?;
     let mut entry = release_support::entry(
         "sing-box",
-        "1.14.2-apsp.1",
+        "1.14.0-apsp.1",
         "sing-box",
         "tar.gz",
         &archive,
@@ -55,7 +55,7 @@ async fn musl_agent_on_gnu_host_receives_legacy_gnu_runtime(pool: PgPool) -> Res
         manifest["modules"]["singbox"]["artifact"]["url"]
             .as_str()
             .unwrap()
-            .ends_with("/sing-box/1.14.2-apsp.1/amd64")
+            .ends_with("/sing-box/1.14.0-apsp.1/amd64")
     );
     // Preserve the legacy selection made by old musl Agents before host detection.
     let mut explicit_gnu = entry.clone();
@@ -80,7 +80,7 @@ async fn musl_agent_on_gnu_host_receives_legacy_gnu_runtime(pool: PgPool) -> Res
         manifest["modules"]["singbox"]["artifact"]["url"]
             .as_str()
             .unwrap()
-            .ends_with("/sing-box/1.14.2-apsp.1/amd64")
+            .ends_with("/sing-box/1.14.0-apsp.1/amd64")
     );
     for info in [
         json!({"os":"linux","arch":"amd64","libc":"musl"}),
@@ -124,7 +124,7 @@ async fn musl_agent_on_gnu_host_receives_legacy_gnu_runtime(pool: PgPool) -> Res
         manifest["modules"]["singbox"]["artifact"]["url"]
             .as_str()
             .unwrap()
-            .ends_with("/sing-box/1.14.2-apsp.1/amd64")
+            .ends_with("/sing-box/1.14.0-apsp.1/amd64")
     );
     // With neither musl nor a signed legacy entry, the GNU host can use GNU.
     release_fixture::write_entries(
@@ -148,7 +148,7 @@ async fn musl_agent_on_gnu_host_receives_legacy_gnu_runtime(pool: PgPool) -> Res
         manifest["modules"]["singbox"]["artifact"]["url"]
             .as_str()
             .unwrap()
-            .ends_with("/sing-box/1.14.2-apsp.1/linux-gnu-amd64")
+            .ends_with("/sing-box/1.14.0-apsp.1/linux-gnu-amd64")
     );
     // Importing the first musl release must not retarget existing GNU hosts.
     let mut musl = entry.clone();
@@ -176,7 +176,7 @@ async fn musl_agent_on_gnu_host_receives_legacy_gnu_runtime(pool: PgPool) -> Res
             manifest["modules"]["singbox"]["artifact"]["url"]
                 .as_str()
                 .unwrap()
-                .ends_with(&format!("/sing-box/1.14.2-apsp.1/{expected}"))
+                .ends_with(&format!("/sing-box/1.14.0-apsp.1/{expected}"))
         );
     }
     Ok(())
@@ -202,7 +202,7 @@ async fn runtime_selection_matches_abi_and_preserves_legacy_devices(pool: PgPool
         let archive = release_fixture::archive("sing-box", binary)?;
         let mut entry = release_support::entry(
             "sing-box",
-            "1.14.2-apsp.1",
+            "1.14.0-apsp.1",
             "sing-box",
             "tar.gz",
             &archive,
@@ -268,7 +268,7 @@ async fn runtime_selection_matches_abi_and_preserves_legacy_devices(pool: PgPool
                 value["modules"]["singbox"]["artifact"]["url"]
                     .as_str()
                     .unwrap()
-                    .ends_with(&format!("/sing-box/1.14.2-apsp.1/{target}"))
+                    .ends_with(&format!("/sing-box/1.14.0-apsp.1/{target}"))
             );
         } else {
             assert!(!response.status().is_success());
@@ -304,7 +304,7 @@ async fn runtime_selection_matches_abi_and_preserves_legacy_devices(pool: PgPool
             .await?;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
-    std::fs::remove_file(root.join("sing-box/1.14.2-apsp.1/linux-musl-amd64"))?;
+    std::fs::remove_file(root.join("sing-box/1.14.0-apsp.1/linux-musl-amd64"))?;
     sqlx::query("UPDATE servers SET static_info=$2 WHERE id=$1")
         .bind(server)
         .bind(json!({"arch":"amd64","os":"linux","libc":"musl"}))
@@ -317,7 +317,7 @@ async fn runtime_selection_matches_abi_and_preserves_legacy_devices(pool: PgPool
         .send()
         .await?;
     assert_eq!(response.status(), StatusCode::CONFLICT);
-    std::fs::remove_file(root.join("sing-box/1.14.2-apsp.1/amd64"))?;
+    std::fs::remove_file(root.join("sing-box/1.14.0-apsp.1/amd64"))?;
     sqlx::query("UPDATE servers SET static_info=$2 WHERE id=$1")
         .bind(server)
         .bind(json!({"arch":"amd64","os":"linux","libc":"gnu","runtime_libc":"musl"}))

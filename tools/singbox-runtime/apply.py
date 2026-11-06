@@ -1,58 +1,44 @@
 #!/usr/bin/env python3
 """Apply the Apsp patch queue to a pinned sing-box checkout.
 
+The queue rebuilds the kernel the legacy service ran: upstream v1.14.0-alpha.2,
+then the two commits of github.com/cedar2025/sing-box up to 2e665cb7, then the
+dependency versions that the legacy binaries were linked with.
+
 The result is committed with a fixed identity and date, so the commit hash is
 a function of the upstream commit and the patches alone. Release verification
 pins that hash, which binds a runtime binary to exactly this patch queue.
 """
 import argparse
-import json
 import os
 from pathlib import Path
-import re
-import shutil
-import stat
 import subprocess
 
-UTLS_MODULE = "github.com/metacubex/utls"
-UTLS_VERSION = "v1.8.7"
-VENDORED = "third_party/utls"
 HERE = Path(__file__).resolve().parent
-FIXED_DATE = "2026-11-01T00:00:00+00:00"
+FORK_PATCH = "cedar2025-2e665cb7.patch"
+DEPENDENCY_PATCH = "legacy-dependencies.patch"
+# Tree of github.com/cedar2025/sing-box commit 2e665cb7e295949ba7c5536f9b7754f94ab78cee.
+FORK_TREE = "ce5b9a70ee94c864fce30776c3287107c6c6a579"
+FIXED_DATE = "2026-11-06T00:00:00+00:00"
 
 
-def run(arguments, source, **environment):
+def git(source, *arguments, **environment):
     return subprocess.run(
-        arguments,
+        ["git", "-c", "core.autocrlf=false", "-c", "core.filemode=false", *arguments],
         cwd=source,
         check=True,
         text=True,
         stdout=subprocess.PIPE,
-        env={**os.environ, "GOFLAGS": "", "GOTOOLCHAIN": "local", **environment},
+        env={**os.environ, **environment},
     ).stdout
 
 
-def git(source, *arguments, **environment):
-    return run(
-        ["git", "-c", "core.autocrlf=false", "-c", "core.filemode=false", *arguments],
-        source,
-        **environment,
-    )
-
-
 def apply(source, patches=HERE):
-    requirement = rf"^\s*{re.escape(UTLS_MODULE)} {re.escape(UTLS_VERSION)}$"
-    if not re.search(requirement, (source / "go.mod").read_text(), re.M):
-        raise ValueError("upstream no longer pins the patched utls version; rebase the patches")
-    module = json.loads(run(["go", "mod", "download", "-json", f"{UTLS_MODULE}@{UTLS_VERSION}"], source))
-    vendored = source / VENDORED
-    shutil.copytree(module["Dir"], vendored)
-    for path in [vendored, *vendored.rglob("*")]:
-        mode = stat.S_IMODE(path.stat().st_mode)
-        path.chmod(0o755 if path.is_dir() else 0o644 if not mode & 0o111 else 0o755)
-    git(source, "apply", f"--directory={VENDORED}", str(patches / "utls-reality-hardening.patch"))
-    git(source, "apply", str(patches / "sing-box-reality-prepare.patch"))
-    run(["go", "mod", "edit", f"-replace={UTLS_MODULE}=./{VENDORED}"], source)
+    git(source, "apply", "--whitespace=nowarn", str(patches / FORK_PATCH))
+    git(source, "add", "-A", "-f")
+    if git(source, "write-tree").strip() != FORK_TREE:
+        raise ValueError("the fork patch no longer reproduces cedar2025/sing-box 2e665cb7")
+    git(source, "apply", str(patches / DEPENDENCY_PATCH))
     git(source, "add", "-A", "-f")
     identity = {
         "GIT_AUTHOR_NAME": "apsp-runtime",
@@ -62,7 +48,7 @@ def apply(source, patches=HERE):
         "GIT_AUTHOR_DATE": FIXED_DATE,
         "GIT_COMMITTER_DATE": FIXED_DATE,
     }
-    git(source, "commit", "--no-gpg-sign", "-q", "-m", "Apply Apsp runtime patches", **identity)
+    git(source, "commit", "--no-gpg-sign", "-q", "-m", "Rebuild the legacy service kernel", **identity)
     return git(source, "rev-parse", "HEAD").strip()
 
 

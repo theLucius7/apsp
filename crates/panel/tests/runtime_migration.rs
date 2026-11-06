@@ -141,3 +141,48 @@ async fn runtime_extensions_upgrade_the_existing_installation_schema_without_rep
     assert_eq!(installation, (7, "TEST_ONLY retained failure".into(), 123));
     Ok(())
 }
+
+#[sqlx::test(migrations = false)]
+async fn runtime_history_survives_the_switch_to_the_legacy_service_kernel(
+    pool: PgPool,
+) -> Result<()> {
+    let migrations = sqlx::migrate!();
+    let old = Migrator {
+        migrations: Cow::Owned(
+            migrations
+                .iter()
+                .filter(|m| m.version <= 89)
+                .cloned()
+                .collect(),
+        ),
+        ..Migrator::DEFAULT
+    };
+    old.run(&pool).await?;
+    let server: i64 = sqlx::query_scalar(
+        "INSERT INTO servers(name) VALUES('TEST_ONLY kernel switch') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await?;
+    let fact = |revision: i64, version: &'static str| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query("INSERT INTO deployments(server_id,module,rev,bundle,bundle_sha256,created_at) VALUES($1,'singbox',$2,'TEST_ONLY bundle','TEST_ONLY digest',1) ON CONFLICT DO NOTHING")
+                .bind(server).bind(revision).execute(&pool).await?;
+            sqlx::query("INSERT INTO singbox_runtime_manifest_facts(server_id,module,revision,runtime_version,artifact_sha256,artifact) VALUES($1,'singbox',$2,$3,'TEST_ONLY artifact','{}')")
+                .bind(server).bind(revision).bind(version).execute(&pool).await
+        }
+    };
+    fact(1, "1.14.2-apsp.1").await?;
+    assert!(fact(2, "1.14.0-apsp.1").await.is_err());
+    migrations.run(&pool).await?;
+    let history: String = sqlx::query_scalar(
+        "SELECT runtime_version FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND revision=1",
+    )
+    .bind(server)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(history, "1.14.2-apsp.1");
+    fact(3, "1.14.0-apsp.1").await?;
+    assert!(fact(4, "1.14.3").await.is_err());
+    Ok(())
+}

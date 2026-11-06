@@ -74,12 +74,27 @@ class PreparationPanel:
         self.resources = {path: [] for path in ("/api/servers", "/api/plugins/sing-box/nodes", "/api/plugins/sing-box/users")}
         self.node_posts = []
         self.lose_node_response = lose_node_response
+        self.groups, self.user_groups = [], []
 
-    def request(self, path, data=None):
+    def request(self, path, data=None, method=None):
         if path.endswith("/enable"):
             return {"enabled": True}
         if path.endswith("/accesses"):
-            return {"stat_name": "u43_n42"} if data is not None else []
+            # Direct grants were removed; only policy groups give a user nodes.
+            assert data is None, "nodes are granted only through policy groups"
+            nodes = sorted({node for group in self.groups if group["id"] in self.user_groups
+                            for node in group["node_ids"]})
+            return [{"node_id": node, "stat_name": f"u43_n{node}"} for node in nodes]
+        if path == "/api/plugins/sing-box/policy-groups":
+            if data is None:
+                return self.groups
+            group = {"id": 70 + len(self.groups), "member_count": 0, **data}
+            self.groups.append(group)
+            return group
+        if path.endswith("/policy-groups"):
+            assert method == "PUT"
+            self.user_groups = list(data["group_ids"])
+            return {"group_ids": self.user_groups}
         if path in self.resources:
             if data is None:
                 return self.resources[path]
@@ -333,6 +348,10 @@ class AcceptanceContracts(unittest.TestCase):
         self.assertEqual(len(panel.node_posts), 1)
         self.assertEqual(panel.node_posts[0]["port"], 443)
         self.assertEqual(recovered["port"], 443)
+        # The retry reuses the run's single-node policy group.
+        self.assertEqual([group["node_ids"] for group in panel.groups], [[42]])
+        self.assertEqual(panel.user_groups, [70])
+        self.assertEqual(recovered["stat_name"], "u43_n42")
 
     def test_automatic_port_is_not_submitted_and_changed_assignment_is_rejected(self):
         panel = PreparationPanel()
@@ -500,10 +519,10 @@ class AcceptanceContracts(unittest.TestCase):
         self.args.agent_version, self.args.agent_restarted = "0.3.1", True
         baseline = self.state["checkpoints"]["before"]
         baseline["agent"].update(pid=100, agent_version="0.3.0")
-        baseline["server"].update(id=41, agent_version="0.3.0", runtime_version="1.14.2-apsp.1")
+        baseline["server"].update(id=41, agent_version="0.3.0", runtime_version="1.14.0-apsp.1")
         upgraded = view()
         upgraded["agent"].update(pid=200, agent_version="0.3.1")
-        upgraded["server"].update(id=41, agent_version="0.3.1", runtime_version="1.14.2-apsp.1")
+        upgraded["server"].update(id=41, agent_version="0.3.1", runtime_version="1.14.0-apsp.1")
         for field, mutation in (("agent", {"agent_version": "0.3.0"}), ("agent", {"pid": 100}),
                                 ("server", {"id": 42}), ("server", {"runtime_version": "1.14.3"})):
             changed = json.loads(json.dumps(upgraded))

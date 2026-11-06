@@ -180,7 +180,7 @@ async fn migration_preserves_imported_subscription_credentials_access_and_accoun
 }
 
 #[sqlx::test(migrations = false)]
-#[ignore = "Requires pinned real sing-box 1.14.2-apsp.1 and openssl on a dedicated test node; set APSP_TEST_SINGBOX"]
+#[ignore = "Requires pinned real sing-box 1.14.0-apsp.1 and openssl on a dedicated test node; set APSP_TEST_SINGBOX"]
 async fn imported_subscription_keeps_real_connection_authorization_and_counters_after_migration(
     pool: PgPool,
 ) -> Result<()> {

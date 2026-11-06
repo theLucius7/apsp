@@ -3,9 +3,10 @@
 //!
 //! The plugin reaches panel services only through the `apsp-panel-host` API.
 
-/// The signed runtime every new deployment uses: upstream 1.14.2 plus the
-/// patch queue in `tools/singbox-runtime` (ADR 0104).
-pub const RUNTIME_VERSION: &str = "1.14.2-apsp.1";
+/// The signed runtime every new deployment uses: the legacy service's kernel
+/// (upstream v1.14.0-alpha.2 plus cedar2025/sing-box 2e665cb7), rebuilt from
+/// the patch queue in `tools/singbox-runtime` (ADR 0119).
+pub const RUNTIME_VERSION: &str = "1.14.0-apsp.1";
 
 pub mod accesses;
 mod activity;

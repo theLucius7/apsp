@@ -231,8 +231,8 @@ jobs:
       - name: Install the pinned runtime build prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ca-certificates git curl python3 python3-requests gnupg dirmngr xz-utils unzip bzip2 zstd file binutils binutils-aarch64-linux-gnu build-essential pkg-config coreutils qemu-user-static libc6-arm64-cross libstdc++6-arm64-cross
-      - name: Build the complete upstream runtime for the selected libc
+          sudo apt-get install -y --no-install-recommends ca-certificates git python3 binutils coreutils qemu-user-static
+      - name: Build the legacy service kernel for the selected libc
         env:
           RUNTIME_ARCH: ${{ matrix.arch }}
           RUNTIME_LIBC: ${{ matrix.libc }}
@@ -243,7 +243,7 @@ jobs:
           RUNTIME_LIBC: ${{ matrix.libc }}
         run: |
           mkdir -p "$RUNNER_TEMP/runtime"
-          tar -xzf "$RUNNER_TEMP/runtime-artifacts/sing-box/1.14.2-apsp.1/linux-$RUNTIME_LIBC-$RUNTIME_ARCH" -C "$RUNNER_TEMP/runtime"
+          tar -xzf "$RUNNER_TEMP/runtime-artifacts/sing-box/1.14.0-apsp.1/linux-$RUNTIME_LIBC-$RUNTIME_ARCH" -C "$RUNNER_TEMP/runtime"
           image=debian:bookworm-slim
           if [ "$RUNTIME_LIBC" = musl ]; then image=alpine:3.24.2; fi
           docker run --rm --network none --platform "linux/$RUNTIME_ARCH" -v "$RUNNER_TEMP/runtime:/runtime:ro" "$image" /runtime/sing-box version
@@ -253,7 +253,7 @@ jobs:
         run: |
           binary="$RUNNER_TEMP/runtime/sing-box"
           if [ "$RUNTIME_ARCH" = arm64 ]; then
-            printf '#!/bin/sh\nexec qemu-aarch64-static -L /usr/aarch64-linux-gnu "%s" "$@"\n' "$binary" > "$RUNNER_TEMP/runtime/run-runtime"
+            printf '#!/bin/sh\nexec qemu-aarch64-static "%s" "$@"\n' "$binary" > "$RUNNER_TEMP/runtime/run-runtime"
             chmod 755 "$RUNNER_TEMP/runtime/run-runtime"
             binary="$RUNNER_TEMP/runtime/run-runtime"
           fi
@@ -331,7 +331,7 @@ jobs:
           binary=target/${{ matrix.target }}/release/apsp-agent
           if [ '${{ matrix.platform }}' = windows ]; then binary="$binary.exe"; fi
           python tools/ci-run.py python tools/agent-smoke.py "$binary"
-      - name: Build the pinned upstream native runtime
+      - name: Build the legacy service kernel for this platform
         id: native-runtime-build
         if: ${{ !cancelled() && steps.native-agent-build.outcome == 'success' }}
         run: python tools/ci-run.py python tools/build-runtime-native.py '${{ matrix.platform }}-${{ matrix.arch }}' .ci-artifacts
@@ -340,7 +340,7 @@ jobs:
         shell: bash
         run: |
           binary=target/${{ matrix.target }}/release/apsp-agent
-          runtime=.ci-artifacts/sing-box/1.14.2-apsp.1/${{ matrix.platform }}-${{ matrix.arch }}
+          runtime=.ci-artifacts/sing-box/1.14.0-apsp.1/${{ matrix.platform }}-${{ matrix.arch }}
           if [ '${{ matrix.platform }}' = windows ]; then
             python tools/ci-run.py python tools/native-service-smoke.py "$binary.exe" "$runtime"
           else
@@ -421,7 +421,7 @@ jobs:
         with:
           go-version: 1.26.8
           cache: false
-      - name: Build the pinned upstream FreeBSD runtime
+      - name: Build the legacy service kernel for FreeBSD
         run: python3 tools/ci-run.py python3 tools/build-runtime-native.py 'freebsd-${{ matrix.arch }}' .ci-artifacts
       - name: Verify the binary on FreeBSD ${{ matrix.release }}
         uses: vmactions/freebsd-vm@v1.5.8
@@ -436,7 +436,7 @@ jobs:
             test "$(.ci-binaries/apsp-agent --version)" = 'apsp-agent ${{ steps.build.outputs.version }}'
             .ci-binaries/apsp-agent --help
             mkdir -p /tmp/apsp-runtime
-            tar -xzf .ci-artifacts/sing-box/1.14.2-apsp.1/freebsd-${{ matrix.arch }} -C /tmp/apsp-runtime
+            tar -xzf .ci-artifacts/sing-box/1.14.0-apsp.1/freebsd-${{ matrix.arch }} -C /tmp/apsp-runtime
             /tmp/apsp-runtime/sing-box version
             if [ '${{ matrix.package }}' != true ]; then exit 0; fi
             # The newest supported release also packages the binary and runs the
@@ -450,7 +450,7 @@ jobs:
             # The arm64 VM is fully emulated on an x86 runner; sing-box cannot meet
             # the production 8 s health budget there. amd64 covers the runtime.
             if [ '${{ matrix.arch }}' = amd64 ]; then
-              env CI=true GITHUB_ACTIONS=true apsp-ci-python tools/ci-run.py apsp-ci-python tools/native-service-smoke.py .ci-binaries/apsp-agent .ci-artifacts/sing-box/1.14.2-apsp.1/freebsd-${{ matrix.arch }} || result=1
+              env CI=true GITHUB_ACTIONS=true apsp-ci-python tools/ci-run.py apsp-ci-python tools/native-service-smoke.py .ci-binaries/apsp-agent .ci-artifacts/sing-box/1.14.0-apsp.1/freebsd-${{ matrix.arch }} || result=1
             fi
             exit "$result"
       - uses: actions/upload-artifact@v7.0.1
@@ -503,13 +503,13 @@ jobs:
         with:
           go-version: 1.26.8
           cache: false
-      - name: Restore the pinned upstream runtime
+      - name: Restore the pinned runtime
         id: runtime-cache
         uses: actions/cache/restore@v6.1.0
         with:
           path: ${{ runner.temp }}/apsp-runtime-artifacts
-          key: apsp-runtime-linux-amd64-1.14.2-apsp.1-${{ hashFiles('tools/build-singbox.sh', 'tools/singbox-builder.Dockerfile', 'tools/singbox-runtime/**') }}
-      - name: Build the unchanged upstream runtime on a cache miss
+          key: apsp-runtime-linux-amd64-1.14.0-apsp.1-${{ hashFiles('tools/build-singbox.sh', 'tools/singbox-builder.Dockerfile', 'tools/singbox-runtime/**') }}
+      - name: Build the pinned runtime on a cache miss
         if: steps.runtime-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p '${{ runner.temp }}/apsp-runtime-artifacts'
