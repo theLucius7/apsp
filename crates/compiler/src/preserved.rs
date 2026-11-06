@@ -89,6 +89,50 @@ fn rewrite(value: &mut Value, tags: &BTreeMap<String, String>) {
     }
 }
 
+fn host_route_options(configuration: &Value) -> serde_json::Map<String, Value> {
+    configuration["route"]
+        .as_object()
+        .map(|route| {
+            route
+                .iter()
+                .filter(|(key, _)| HOST_ROUTE_OPTIONS.contains(&key.as_str()))
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Puts one line's host-wide interface and resolver onto an outbound that
+/// dials by itself; explicit per-outbound values stay as they are.
+fn push_down(outbound: &mut Value, options: &serde_json::Map<String, Value>) {
+    let dials = !matches!(
+        outbound["type"].as_str(),
+        Some("block" | "dns" | "selector" | "urltest")
+    ) && outbound.get("detour").is_none();
+    if !dials {
+        return;
+    }
+    for (host, dial) in [
+        ("default_interface", "bind_interface"),
+        ("default_domain_resolver", "domain_resolver"),
+    ] {
+        if let Some(value) = options.get(host)
+            && outbound.get(dial).is_none()
+        {
+            outbound[dial] = value.clone();
+        }
+    }
+}
+
+fn default_dns_is_local(dns: &Value) -> bool {
+    let servers = dns["servers"].as_array().cloned().unwrap_or_default();
+    let default = dns["final"]
+        .as_str()
+        .and_then(|tag| servers.iter().find(|server| server["tag"] == tag).cloned())
+        .or_else(|| servers.first().cloned());
+    default.is_none_or(|server| server["type"] == "local")
+}
+
 /// Route options that describe the host rather than one listener. Their values
 /// may reference DNS server tags, which are kept unchanged with the shared DNS.
 const HOST_ROUTE_OPTIONS: [&str; 3] = [
@@ -134,9 +178,28 @@ pub fn compile_preserved_server_with(
     let mut stats = BTreeSet::new();
     let mut common_dns: Option<Value> = None;
     // Host-wide route options (outbound interface and default resolver) apply
-    // to every listener, so all merged nodes must carry the same values.
-    let mut common_route: Option<serde_json::Map<String, Value>> = None;
-    for input in inputs {
+    // to every listener. When the merged lines disagree, each line's interface
+    // and resolver move onto its own dialing outbounds instead, so every line
+    // keeps the behaviour it had on its own.
+    let per_node: Vec<serde_json::Map<String, Value>> = inputs
+        .iter()
+        .map(|input| host_route_options(&input.configuration))
+        .collect();
+    let shared = per_node.windows(2).all(|pair| pair[0] == pair[1]);
+    if !shared
+        && !per_node.windows(2).all(|pair| {
+            pair[0].get("auto_detect_interface") == pair[1].get("auto_detect_interface")
+        })
+    {
+        return Err(fail(
+            &inputs[0].node,
+            "different interface auto-detection requires explicit reconciliation before merging",
+        ));
+    }
+    // First line that relied on sing-box's built-in system resolver.
+    let mut implicit_resolver: Option<&Node> = None;
+    for (index, input) in inputs.into_iter().enumerate() {
+        let options = &per_node[index];
         let node = &input.node;
         let config = input
             .configuration
@@ -234,21 +297,12 @@ pub fn compile_preserved_server_with(
                 "global route settings need explicit reconciliation",
             ));
         }
-        let options: serde_json::Map<_, _> = route
-            .iter()
-            .filter(|(key, _)| HOST_ROUTE_OPTIONS.contains(&key.as_str()))
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect();
-        if common_route
-            .as_ref()
-            .is_some_and(|previous| previous != &options)
+        if !shared
+            && config.get("dns").is_none_or(Value::is_null)
+            && !options.contains_key("default_domain_resolver")
         {
-            return Err(fail(
-                node,
-                "different host route options require explicit reconciliation before merging",
-            ));
+            implicit_resolver.get_or_insert(node);
         }
-        common_route = Some(options);
         let original = config
             .get("outbounds")
             .and_then(Value::as_array)
@@ -310,6 +364,9 @@ pub fn compile_preserved_server_with(
                 continue;
             }
             let mut outbound = outbound.clone();
+            if !shared {
+                push_down(&mut outbound, options);
+            }
             rewrite(&mut outbound, &tags);
             outbounds.push(outbound);
         }
@@ -368,7 +425,27 @@ pub fn compile_preserved_server_with(
             json!({"inbound":[inbound_tag],"action":"route","outbound":tags[final_tag]})
         });
     }
-    let mut route = common_route.unwrap_or_default();
+    let mut route = if shared {
+        per_node.into_iter().next().unwrap_or_default()
+    } else {
+        per_node[0]
+            .iter()
+            .filter(|(key, _)| key.as_str() == "auto_detect_interface")
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect()
+    };
+    // A line without its own DNS used sing-box's system resolver; it may share
+    // another line's DNS only when that default is the system resolver too.
+    if let Some(node) = implicit_resolver
+        && common_dns
+            .as_ref()
+            .is_some_and(|dns| !default_dns_is_local(dns))
+    {
+        return Err(fail(
+            node,
+            "a line without its own DNS cannot share another line's non-system default resolver",
+        ));
+    }
     route.insert("rules".into(), json!(rules));
     let mut result = json!({"log":{"level":"warn","timestamp":true},"inbounds":inbounds,"outbounds":outbounds,"route":route,
         "experimental":{"v2ray_api":{"listen":"127.0.0.1:18085","stats":{"enabled":true,"users":stats}}}});
