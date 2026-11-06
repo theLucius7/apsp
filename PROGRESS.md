@@ -1,5 +1,13 @@
 # 执行进度
 
+## 2026-11-06：全部主机运行在 apsp 运行时，Agent 运行时控制日志写满
+
+- `agent-v0.3.6` 于 08:31 UTC 从 `07725519` 签名发布（发布包里的运行时与本机独立构建逐字节一致），`CI` 与 `Signed release draft` 随后重新停用。导入后约 1 分钟内，已接管的 10 台以同一配置版本换到 `1.14.0-apsp.1`；三台 OpenRC 主机随后从 shell 重启运行时以脱离 Agent 的进程组。换前换后真实客户端对比：27 条 REALITY 与 6 条 CF 公开线路全部可用，出口 IP 无一变化；国内抽查 3/3。
+- 剩余 7 台连续切换：oracle-sg2（36 秒）、oracle-sg3（29 秒）、wap-tw1（80 秒，51004 中转保留）、aws-jp1（46 秒）、netcup-de1（18 秒）、aws-sg1（41 秒）、azure-in1（31 秒）。17 台接管主机全部 `active`、健康，旧面板 23 台机器心跳正常，计量照常投递。
+- azure-in1 前两次回滚：先是 Agent 运行时控制日志写满（4096 条墓碑，拒收面板核对请求，激活后等不到健康），清理后又因第一次失败留下的已应用记录指向已停掉的实例。处理与修复见[迁移文档](docs/nexus-agent-migration.md#运行时控制日志写满)；当时 aws-sg1、aws-jp1、wap-tw1、netcup-de1 也已写满，已接管的五台在 2000 条左右，均已手工清理。Agent 修复在本 PR，需另行发布。
+- 主机 12（tw）以 apsp 服务器 21 `wap-tw2` 接入，只做监控；aliyun-hk1 按 2026-11-01 的处理关闭 MPTCP（内核未修复 CVE-2026-98432）。
+- 验证：`apsp-agent-core` 的 `state::runtime_control` 9 项（新增 3 项）通过，`cargo clippy -p apsp-agent-core --all-targets -D warnings` 与 `cargo fmt --check` 通过；远端 CI 按 AGENTS.md 暂停，未运行。
+
 ## 2026-11-06：页头改细栏、统一字号、统计横条与加载
 
 - 用户说“还是太丑了，怎么每个页面还有个大字”，并指出“字体格式都对不上，加载逻辑有问题，有的黑屏加载，有的局部加载”；补充见 [ADR 0114](docs/adr/0114-aurora-palette-backdrop-and-controls.md#补充2026-11-06页头字号与加载)。

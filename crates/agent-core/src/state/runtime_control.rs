@@ -11,6 +11,9 @@ use uuid::Uuid;
 
 const MAX_ROWS: u64 = 4096;
 const MAX_PENDING: u64 = 256;
+/// Clock skew allowance before an acknowledged tombstone of an expired request
+/// may be dropped; a replay that late is answered as expired anyway.
+const TOMBSTONE_GRACE_SECS: i64 = 3600;
 const MAX_ROW_BYTES: usize = 16 * 1024;
 const MAX_BATCH_BYTES: usize = 64 * 1024;
 
@@ -28,6 +31,13 @@ impl ControlRequest {
             Self::Checkpoint(v) => v.request_id,
             Self::Barrier(v) => v.request_id,
             Self::Probe(v) => v.request_id,
+        }
+    }
+    pub fn expires_at(&self) -> i64 {
+        match self {
+            Self::Checkpoint(v) => v.expires_at,
+            Self::Barrier(v) => v.expires_at,
+            Self::Probe(v) => v.expires_at,
         }
     }
     pub fn module(&self) -> &str {
@@ -114,7 +124,9 @@ impl ControlResult {
 }
 
 impl State {
-    /// Completed identifiers are retained as bounded tombstones, never reused or TTL-evicted.
+    /// Completed identifiers are retained as tombstones and never reused. Once the
+    /// journal is full, acknowledged tombstones whose request expired long ago are
+    /// dropped; unacknowledged work is never discarded.
     pub fn enqueue_runtime_control(
         &mut self,
         request: &ControlRequest,
@@ -143,11 +155,12 @@ impl State {
                 .map(|raw| serde_json::from_str(&raw).context("decode runtime result"))
                 .transpose();
         }
-        let (rows, pending): (u64, u64) = self.connection.query_row(
-            "SELECT COUNT(*), COALESCE(SUM(acknowledged = 0), 0) FROM runtime_control",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )?;
+        let mut counts = self.runtime_control_counts()?;
+        if counts.0 >= MAX_ROWS {
+            self.prune_expired_tombstones(apsp_protocol::now_timestamp())?;
+            counts = self.runtime_control_counts()?;
+        }
+        let (rows, pending) = counts;
         ensure!(
             rows < MAX_ROWS && pending < MAX_PENDING,
             "runtime control journal is full; unacknowledged work retained"
@@ -157,6 +170,47 @@ impl State {
             params![request.id().to_string(), digest, request.kind(), request.module(), raw],
         )?;
         Ok(None)
+    }
+
+    fn runtime_control_counts(&self) -> Result<(u64, u64)> {
+        Ok(self.connection.query_row(
+            "SELECT COUNT(*), COALESCE(SUM(acknowledged = 0), 0) FROM runtime_control",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?)
+    }
+
+    /// The panel sends a checkpoint every few minutes, so tombstones kept forever
+    /// filled the journal within days and every later request was refused.
+    /// An expired request can never run again, so its acknowledged result is only
+    /// needed while a replay could still arrive inside its validity window.
+    fn prune_expired_tombstones(&mut self, now: i64) -> Result<()> {
+        let horizon = now
+            .saturating_sub(apsp_protocol::RUNTIME_CONTROL_MAX_TTL_SECS)
+            .saturating_sub(TOMBSTONE_GRACE_SECS);
+        let mut expired = Vec::new();
+        {
+            let mut statement = self.connection.prepare(
+                "SELECT rowid, request FROM runtime_control WHERE acknowledged = 1 AND result IS NOT NULL",
+            )?;
+            let rows = statement.query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (rowid, raw) = row?;
+                let request: ControlRequest =
+                    serde_json::from_str(&raw).context("decode runtime request")?;
+                if request.expires_at() < horizon {
+                    expired.push(rowid);
+                }
+            }
+        }
+        let transaction = self.connection.transaction()?;
+        for rowid in expired {
+            transaction.execute("DELETE FROM runtime_control WHERE rowid = ?1", [rowid])?;
+        }
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn pending_runtime_controls(&self) -> Result<Vec<ControlRequest>> {

@@ -149,6 +149,19 @@ python3 tools/nexus_runtime_snapshot.py build /private/nodes.json /private/runti
 - 导入后逐台确认：模块健康、运行时 sha 是新制品、各端口 TCP 可连、真实客户端出口不变、兼容桥心跳和流量投递正常。
 - OpenRC 主机：运行时由 Agent 重启后与 Agent 同在一个进程组，Agent 0.3.6 之前升级或重启 Agent 会停掉运行时，切换后从 shell 重启一次运行时（[平台文档](platforms.md#openrc)）。
 
+### 运行时控制日志写满
+
+Agent 把面板发来的核对请求（checkpoint）记在 `/var/lib/apsp/core/state.db` 的 `runtime_control` 表里，完成的请求号作为墓碑保留，上限 4096 条。Agent 0.3.6 及以前从不清理墓碑，而面板每当核对凭证过期（5 分钟）就再发一次，所以几天到十几天后日志写满，Agent 只记 `runtime control journal is full; unacknowledged work retained`，拒收之后所有请求。面板发核对请求时先把模块标为不健康，收不到结果就一直不健康：
+
+- 暂停中的主机在 `activate` 后 150 秒内等不到健康，切换脚本回滚（2026-11-06 azure-in1 因此回滚）。
+- 已接管的主机会停在不健康，兼容桥随之不再续旧面板的机器心跳，300 秒后线路从旧订阅消失。
+
+修复见 `crates/agent-core/src/state/runtime_control.rs`：日志写满时删去已确认、且请求过期超过 `RUNTIME_CONTROL_MAX_TTL_SECS` 加一小时的墓碑，未确认的结果永不删除。修复版 Agent 发布并升级之前，按需手工清理：用 `sqlite3` 或 `python3` 读取 `SELECT COUNT(*), SUM(acknowledged=0) FROM runtime_control`；接近 4096 时，先停 `apsp-agent`（systemd 主机上运行时单独运行，不受影响），备份 `state.db*`，执行 `DELETE FROM runtime_control WHERE acknowledged=1 AND result IS NOT NULL`，再启动 Agent。被删的都是只读核对的结果，重放最多重新核对一次或回报已过期。
+
+### 切换半途失败后重试
+
+切换失败时，如果 Agent 已在本机把新修订记为已应用（`state.db` 的 `kv` 表里 `applied:singbox`、`runtime_activation:singbox` 指向新修订），回滚会停掉那个已登记的运行时实例。重试时脚本启动的是新实例，Agent 报 `controlled runtime instance differs from the successfully applied activation`，同一修订无法再应用（只有更高的修订才能替换失效的激活记录）。处理：运行时停止时停 `apsp-agent`，备份 `state.db*`，删除 `kv` 中的 `applied:singbox`、`runtime_activation:singbox`、`apply_receipt:singbox`，把 `health:singbox` 设为 `false`，启动 Agent，再按原参数重新演练和切换；Agent 会像首次部署一样应用该修订。
+
 迁移节点的用户授权来自策略组（[ADR 0115](adr/0115-original-permission-groups-as-policy-groups.md)）：每个原权限组对应一个「原权限组 · 组名」策略组，接管时线路自动加入；策略组不为迁移线路生成新 UUID 与密钥，下发的仍是用户原来的身份。需要调整谁能用哪个节点时，编辑策略组或用户所属的策略组；修改套餐不再改变线路。
 
 ## 2026-10-26 回滚后的重新迁移
