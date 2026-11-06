@@ -6,6 +6,7 @@ import { AccountPanel } from './Accounts'
 import type { CloudActions } from './Accounts'
 import { Activity } from './Activity'
 import { AccountEditor, BandwidthEditor, ResourceEditor } from './Editors'
+import { EipRotationEditor } from './EipRotation'
 import { PowerEditor, PowerPolicyEditor } from './Power'
 import type { Account, Overview, Resource } from './types'
 import { accountError, bandwidthError, checked, cloudError, powerError, resourceError } from './guards'
@@ -14,12 +15,13 @@ import { Button } from '@/components/ui/button'
 import { CloudIcon, PlusIcon } from 'lucide-react'
 import { Panel } from '@/components/panel'
 
-type Editor = { type: 'account'; value?: Account } | { type: 'resource'; value?: Resource; accountId?: string } | { type: 'bandwidth'; value: Resource } | { type: 'power-policy'; value: Resource } | { type: 'power'; value: Resource; action: 'start' | 'stop' }
+type Editor = { type: 'account'; value?: Account } | { type: 'resource'; value?: Resource; accountId?: string } | { type: 'bandwidth'; value: Resource } | { type: 'power-policy'; value: Resource } | { type: 'power'; value: Resource; action: 'start' | 'stop' } | { type: 'eip-rotation'; value: Resource }
 
 /**
  * Alibaba Cloud CDT, ECS power and public bandwidth. Each account is one card
  * with its CDT pools and its registered resources nested below; everything
- * that happened (bandwidth changes, power jobs, notices) is one history.
+ * that happened (bandwidth changes, power jobs, public IP rotations, notices)
+ * is one history.
  * Every write still goes through the guarded dialogs and revision checks.
  */
 export default function Alicloud() {
@@ -33,7 +35,8 @@ export default function Alicloud() {
   const open = (editor: Editor) => {
     const reason = editor.type === 'account' ? accountError(current, editor.value)
       : editor.type === 'resource' ? editor.value ? resourceError(current, editor.value) : cloudError(current)
-        : editor.type === 'bandwidth' ? bandwidthError(current, editor.value) : resourceError(current, editor.value, { managed: true, idle: true, power: true })
+        : editor.type === 'bandwidth' ? bandwidthError(current, editor.value)
+          : editor.type === 'eip-rotation' ? resourceError(current, editor.value, { managed: true, idle: true }) : resourceError(current, editor.value, { managed: true, idle: true, power: true })
     if (reason) return
     action.clearError(); setEditing(editor)
   }
@@ -53,6 +56,7 @@ export default function Alicloud() {
     bandwidth: resource => open({ type: 'bandwidth', value: resource }),
     powerPolicy: resource => open({ type: 'power-policy', value: resource }),
     power: (resource, verb) => open({ type: 'power', value: resource, action: verb }),
+    rotateEip: resource => open({ type: 'eip-rotation', value: resource }),
     resume: (resource, account) => { action.clearError(); setResume({ value: resource, accountRevision: account?.revision }) },
     removeResource: (resource, account) => { action.clearError(); setRemoving({ type: 'resources', value: resource, accountRevision: account?.revision }) },
   }
@@ -76,6 +80,7 @@ export default function Alicloud() {
     <DialogPresence>{editing?.type === 'resource' && data && <ResourceEditor resource={editing.value} accountId={editing.accountId} accounts={data.accounts} available={available} current={current} refresh={overview.reload} close={() => setEditing(null)} saved={done} />}</DialogPresence>
     <DialogPresence>{editing?.type === 'bandwidth' && <BandwidthEditor resource={editing.value} available={available} current={current} refresh={overview.reload} close={() => setEditing(null)} saved={done} />}</DialogPresence>
     <DialogPresence>{editing?.type === 'power' && <PowerEditor resource={editing.value} action={editing.action} available={available} current={current} refresh={overview.reload} close={() => setEditing(null)} saved={done} />}</DialogPresence>
+    <DialogPresence>{editing?.type === 'eip-rotation' && <EipRotationEditor resource={editing.value} current={current} close={() => setEditing(null)} saved={done} />}</DialogPresence>
     <DialogPresence>{editing?.type === 'power-policy' && <PowerPolicyEditor resource={editing.value} available={available} current={current} refresh={overview.reload} close={() => setEditing(null)} saved={done} />}</DialogPresence>
     <DialogPresence>{resume && <Confirm title="恢复自动开机" confirmLabel="恢复自动开机" busyLabel="正在处理…" busy={action.busy} error={action.error} confirmDisabled={Boolean(resumeError())} onClose={() => setResume(null)} onConfirm={() => perform(resumeError, () => api(`/api/plugins/alicloud/resources/${resume.value.id}/power-resume`, 'POST', { revision: resume.value.revision }), done)}>解除“{resume.value.name}”的手动暂停后，已启用的每日计划或保活可能启动实例并产生费用。流量停机保护仍然有效。</Confirm>}</DialogPresence>
     <DialogPresence>{removing && <Confirm title={removing.type === 'accounts' ? '移除云账号' : '移除资源登记'} busy={action.busy} error={action.error} confirmDisabled={Boolean(removalError())} onClose={() => setRemoving(null)} onConfirm={() => perform(removalError, () => api(`/api/plugins/alicloud/${removing.type}/${removing.value.id}`, 'DELETE', { revision: removing.value.revision }), done)}>确认移除“{removing.value.name}”？这不会删除阿里云资源。账号须先移除全部资源登记；操作历史保留。</Confirm>}</DialogPresence>

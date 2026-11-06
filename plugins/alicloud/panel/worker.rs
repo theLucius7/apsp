@@ -114,6 +114,14 @@ pub(super) async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult
         if resource.checked_at.is_some_and(|checked| checked >= now) {
             continue;
         }
+        // A running EIP rotation is moving this instance between addresses; a
+        // snapshot read meanwhile can show a candidate about to be released.
+        // The rotation stores the final address itself when it ends.
+        let rotating: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM alicloud_eip_rotations WHERE resource_id=$1 AND status='running')")
+            .bind(resource.id).fetch_one(&mut *tx).await?;
+        if rotating {
+            continue;
+        }
         let snapshot = match snapshot {
             Ok(snapshot) => snapshot,
             Err(error) => {
@@ -162,6 +170,7 @@ pub async fn run(pool: PgPool) {
     tokio::join!(
         maintenance(pool.clone()),
         super::power::run(pool.clone()),
+        super::eip_rotation::run(pool.clone()),
         ancillary(pool)
     );
 }

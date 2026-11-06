@@ -2,6 +2,7 @@
 //! Shared signing and transport for the cloud provider plugins.
 
 pub mod aliyun;
+pub mod globalping;
 pub mod signing;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;

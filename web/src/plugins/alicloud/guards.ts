@@ -1,13 +1,21 @@
-import type { Account, Operation, Overview, PowerJob, Resource } from './types'
-import { billUsable, message } from './types'
+import type { Account, EipRotation, Operation, Overview, PowerJob, Resource } from './types'
+import { billUsable, message, rotationActive } from './types'
 import { cdtGuardExceeded } from './guardUsage'
 
 export type CurrentCloud = () => Overview | undefined
 const stale = '云服务信息正在刷新或刷新失败，请成功刷新后再提交；当前草稿已保留。'
 const changed = '云账号、资源或操作已变化，请关闭草稿后重新核对；当前草稿已保留。'
 export const revisionMatches = (draft: number | undefined, current: number | undefined) => Number.isSafeInteger(draft) && draft! > 0 && draft === current
-export const cloudBusy = (data: Overview, id: string) => [...data.operations, ...(data.power_jobs ?? [])].some(item => item.resource_id === id && ['queued', 'running', 'uncertain'].includes(item.status))
+export const cloudBusy = (data: Overview, id: string) => [...data.operations, ...(data.power_jobs ?? [])].some(item => item.resource_id === id && ['queued', 'running', 'uncertain'].includes(item.status)) ||
+  (data.eip_rotations ?? []).some(item => item.resource_id === id && rotationActive(item.status))
 export const cloudError = (current: CurrentCloud) => current() ? '' : stale
+/** A rotation can be cancelled or closed only while the page still shows it in that state. */
+export function rotationError(current: CurrentCloud, rotation: EipRotation, statuses: string[]) {
+  const data = current()
+  if (!data) return stale
+  const live = data.eip_rotations?.find(item => item.id === rotation.id)
+  return live && statuses.includes(live.status) ? '' : changed
+}
 
 export function accountError(current: CurrentCloud, draft?: Account, enabled = false) {
   const data = current()

@@ -5,6 +5,7 @@ mod api;
 mod billing;
 mod client;
 mod costs;
+mod eip_rotation;
 mod model;
 mod notices;
 mod operations;

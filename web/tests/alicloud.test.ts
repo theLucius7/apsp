@@ -1,7 +1,8 @@
 import { expect, test } from 'bun:test'
 import { accountWrite, billUsable, charge, defaultPowerPolicy, gib, message, status, updated } from '../src/plugins/alicloud/types'
 import type { Account, Resource } from '../src/plugins/alicloud/types'
-import { POWER_RESULT, activityItems, deliveryText } from '../src/plugins/alicloud/history'
+import { POWER_RESULT, ROTATION_RESULTS, activityItems, deliveryText } from '../src/plugins/alicloud/history'
+import type { EipRotation } from '../src/plugins/alicloud/types'
 import { cdtGuardProgress } from '../src/plugins/alicloud/guardUsage'
 
 test('attached EIP billing is displayed without relabelling dominant traffic as ordinary traffic', () => {
@@ -58,6 +59,26 @@ test('one history folds each power result notice into its job and keeps other no
   expect(deliveryText(event(7, POWER_RESULT, 1))).toBe('')
   expect(deliveryText({ ...event(8, POWER_RESULT, 1), deliveries: [{ channel: 'telegram', status: 'sent', attempts: 1, last_error: null }, { channel: 'webhook', status: 'failed', attempts: 3, last_error: 'TEST_ONLY 503' }] }))
     .toBe('通知：Telegram 已送达；Webhook 投递失败（尝试 3 次） · TEST_ONLY 503')
+})
+
+test('a public IP rotation is one entry: its result notice folds into it, and unfinished ones lead', () => {
+  const before = { allocation_id: 'eip-testonly', public_ip: '192.0.2.1', package_id: null, isp: 'BGP', internet_charge_type: 'PayByTraffic', bandwidth: 200, instance_id: 'i-testonly', region: 'cn-hongkong', server_ids: [1] }
+  const rotation = (id: string, created_at: number, status: string, resource_id = 'r1') => ({ id, resource_id, requested_by: 1, probe_port: 443, max_attempts: 3, snapshot_digest: 'TEST_ONLY', before, status, phase: 'allocate', attempt: 1, attempts: [], new_ip: null, error_code: null, created_at, expires_at: created_at + 300, updated_at: created_at }) as EipRotation
+  const event = (id: number, title: string, created_at: number, resource_id = 'r1') => ({ id, resource_id, title, message: 'TEST_ONLY', created_at, deliveries: [] })
+  const [succeeded, restored, halted] = ROTATION_RESULTS
+  const items = activityItems({
+    operations: [],
+    power_jobs: [],
+    eip_rotations: [rotation('first', 100, 'succeeded'), rotation('second', 300, 'restored'), rotation('halted', 400, 'unknown', 'r2'), rotation('waiting', 500, 'preview')],
+    events: [event(1, succeeded, 160), event(2, restored, 320), event(3, halted, 410, 'r2'), event(4, POWER_RESULT, 600), event(5, '公网 IP 已更换', 50)],
+  })
+  // The halted one and the preview still need the administrator; a notice older than any rotation stays visible.
+  expect(items.map(item => item.key)).toEqual(['rotation:waiting', 'rotation:halted', 'event:4', 'rotation:second', 'rotation:first', 'event:5'])
+  const folded = (key: string) => { const item = items.find(entry => entry.key === key); return item?.kind === 'rotation' ? item.event?.id : undefined }
+  expect(folded('rotation:first')).toBe(1)
+  expect(folded('rotation:second')).toBe(2)
+  expect(folded('rotation:halted')).toBe(3)
+  expect(folded('rotation:waiting')).toBeUndefined()
 })
 
 test('the guard summary measures the month high plus a counted jump against the stop line', () => {

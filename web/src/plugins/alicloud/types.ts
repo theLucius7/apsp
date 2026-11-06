@@ -6,7 +6,15 @@ export type CdtGuardConfig = { threshold_bytes: number; jump_bytes: number; auto
 export type CdtGuardState = { billing_cycle: string; region: string; cloud_id: string; account_revision: number; max_usage_bytes: number; max_jump_bytes: number; queried_at: number }
 export type Resource = { cdt_guard_state?: CdtGuardState | null; cdt_guard_error?: string | null; id: string; account_id: string; name: string; kind: 'ecs' | 'eip'; region: string; cloud_id: string; auto_enabled: boolean; cap_mbps: number; revision: number; snapshot: Snapshot | null; checked_at: number | null; error_code: string | null; power_policy?: PowerPolicy; power_state?: PowerState | null; power_checked_at?: number | null; power_error?: string | null; manual_hold?: boolean; threshold_hold?: boolean; instance_bill?: { month: string; queried_at: number; rows: { item: string; amount: string; currency: string }[] } | null; bill_error?: string | null; bill_next_at?: number }
 export type Operation = { id: string; resource_id: string; account_revision?: number; resource_revision?: number; before_state: Snapshot; target: Target; source: string; billing_cycle: string | null; status: string; created_at: number; updated_at: number; expires_at: number; error_code: string | null; request_id: string | null }
-export type Overview = { accounts: Account[]; resources: Resource[]; operations: Operation[]; power_jobs?: PowerJob[]; events?: CloudEvent[] }
+export type RotationTally = { total: number; reached: number }
+export type RotationAttempt = { n: number; allocation_id: string; ip: string; verdict: string; screen?: RotationTally | null; confirm?: RotationTally | null }
+export type EipRotation = {
+  id: string; resource_id: string; requested_by: number; probe_port: number; max_attempts: number; snapshot_digest: string
+  before: { allocation_id: string; public_ip: string; package_id: string | null; isp: string; internet_charge_type: string; bandwidth: number; instance_id: string; region: string; server_ids: number[] }
+  status: string; phase: string; attempt: number; attempts: RotationAttempt[]; new_ip: string | null; error_code: string | null
+  created_at: number; expires_at: number; updated_at: number; reconciliation?: unknown
+}
+export type Overview = { accounts: Account[]; resources: Resource[]; operations: Operation[]; power_jobs?: PowerJob[]; eip_rotations?: EipRotation[]; events?: CloudEvent[] }
 export type PowerPolicy = { cdt_guard?: CdtGuardConfig | null; enabled: boolean; stop_mode: 'KeepCharging' | 'StopCharging'; threshold_action: 'off' | 'notify' | 'stop'; limit_gb: number; threshold_percent: number; schedule_enabled: boolean; start_time: string; stop_time: string; utc_offset_minutes: number; keepalive: boolean }
 export const defaultPowerPolicy: PowerPolicy = { enabled: false, stop_mode: 'KeepCharging', threshold_action: 'off', limit_gb: 100, threshold_percent: 95, schedule_enabled: false, start_time: '08:00', stop_time: '23:00', utc_offset_minutes: 480, keepalive: false }
 export type PowerState = { cloud_id: string; region: string; status: string; stopped_mode: string | null; charge_type: string; network_type: string; spot_strategy: string; interruption_behavior: string | null; public_ips: string[]; locked: boolean }
@@ -41,8 +49,19 @@ const messages: Record<string, string> = {
   unsupported_resource: '仅支持 ECS 固定公网 IP 与按量付费的独立 EIP；不操作共享带宽包', resource_busy: '云资源正在变更或状态不支持调整',
   billing_incomplete: '账单数据不完整，自动控制暂停', state_changed: '云资源或本地配置已变化，请重新预览', policy_inactive: '策略已关闭或账单数据不可用于控制',
   request_timeout: '云接口超时，等待核对结果', network_error: '云接口连接失败', response_error: '云接口暂时不可用', invalid_response: '云接口响应与预期不符',
+  all_candidates_blocked: '候选地址从国内都连不上，已放弃本次更换', service_unreachable: '新地址绑定后面板连不上探测端口，无法判断可用性',
+  probe_unavailable: '国内探测服务暂不可用，无法判断新地址是否可用', probe_inconclusive: '国内探测结果不足，无法判断新地址是否可用',
+  old_eip_retained: '旧 EIP 未能释放，请到阿里云控制台手动释放，否则闲置会产生费用',
   provider_rejected: '云服务拒绝请求，请检查权限和资源限制', awaiting_confirmation: '尚未核对到目标状态，系统只读回结果，不重复提交',
 }
+const lookup = (table: Record<string, string>, value: string, fallback: string) => Object.hasOwn(table, value) ? table[value] : fallback
+const rotationStates: Record<string, string> = { preview: '等待确认', cancelled: '已取消', running: '更换中', unknown: '需要人工核对', succeeded: '已更换', restored: '未更换，已恢复原地址', failed: '未开始', reconciled: '已人工结束' }
+const rotationPhases: Record<string, string> = { allocate: '申请新地址', join: '加入共享带宽', swap: '切换绑定', drop: '释放不用的地址', serving: '确认服务可连接', screen: '国内探测', confirm: '国内复测', release_old: '释放旧地址', restore: '恢复原地址' }
+const rotationVerdicts: Record<string, string> = { pending: '探测中', clean: '可用', blocked: '国内不通', duplicate: '重复地址，未绑定', abandoned: '已放弃' }
+export const rotationStatus = (value: string) => lookup(rotationStates, value, '状态未知')
+export const rotationPhase = (value: string) => lookup(rotationPhases, value, '处理中')
+export const rotationVerdict = (value: string) => lookup(rotationVerdicts, value, '结果未知')
+export const rotationActive = (value: string) => value === 'running' || value === 'unknown'
 export const status = (value: string) => Object.hasOwn(states, value) ? states[value] : '状态未知'
 export const message = (value: string | null | undefined) => value ? Object.hasOwn(messages, value) ? messages[value] : '云接口暂时不可用' : ''
 export function accountWrite(account: Pick<Account, 'name' | 'site' | 'enabled' | 'auto_enabled' | 'limit_gb' | 'billing_enabled' | 'balance_enabled'>, key: string, secret: string, revision?: number, credentialId = '', legacy = false) {

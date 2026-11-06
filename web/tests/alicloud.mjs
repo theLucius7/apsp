@@ -30,6 +30,7 @@ try {
   const credentialId = 'a0000000-0000-4000-8000-000000000160'
   const powerPolicy = { enabled: false, stop_mode: 'KeepCharging', threshold_action: 'off', limit_gb: 100, threshold_percent: 95, schedule_enabled: false, start_time: '08:00', stop_time: '23:00', utc_offset_minutes: 480, keepalive: false }
   const powerState = { cloud_id: 'i-testonly', region: 'cn-hangzhou', status: 'Running', stopped_mode: 'KeepCharging', charge_type: 'PostPaid', network_type: 'vpc', spot_strategy: 'SpotAsPriceGo', interruption_behavior: 'Stop', public_ips: ['192.0.2.1'], locked: false }
+  const rotation = { id: 'rotation1', resource_id: 'resource1', requested_by: 1, probe_port: 8443, max_attempts: 5, snapshot_digest: 'TEST_ONLY digest', status: 'preview', phase: 'allocate', attempt: 1, attempts: [], new_ip: null, error_code: null, created_at: now, expires_at: now + 300, updated_at: now, before: { allocation_id: 'eip-testonly1', public_ip: '192.0.2.1', package_id: 'cbwp-testonly', isp: 'BGP', internet_charge_type: 'PayByTraffic', bandwidth: 200, instance_id: 'i-testonly', region: 'cn-hangzhou', server_ids: [7] } }
   const snap = { kind: 'ecs', cloud_id: 'i-testonly', region: 'cn-hangzhou', public_ip: '192.0.2.1', bandwidth_mbps: 10, charge_type: 'PayByTraffic', resource_charge_type: 'PostPaid', status: 'Running' }
   await page.route('**/api/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname, method = request.method(), body = request.postData() ? request.postDataJSON() : null
@@ -41,6 +42,21 @@ try {
       const resource = overview.resources.find(r => path.includes(`/${r.id}/`))
       assert(resource?.snapshot.attached_eip_id)
       return respond(resource.snapshot)
+    }
+    if (path === '/api/plugins/alicloud/resources/resource1/eip-rotation/preview' && method === 'POST') {
+      assert.deepEqual(body, { probe_port: 8443, max_attempts: 5, resource_revision: overview.resources[0].revision })
+      return respond({ ...rotation, status: 'preview' })
+    }
+    if (path === '/api/plugins/alicloud/eip-rotations/rotation1/reconcile' && method === 'POST') {
+      assert.equal(body.process_stopped, true)
+      assert(body.evidence.length >= 32)
+      overview.eip_rotations = [{ ...overview.eip_rotations[0], status: 'reconciled' }]
+      return respond(overview.eip_rotations[0])
+    }
+    if (path === '/api/plugins/alicloud/eip-rotations/rotation1/confirm' && method === 'POST') {
+      assert.deepEqual(body, { confirm: true, snapshot_digest: rotation.snapshot_digest })
+      overview.eip_rotations = [{ ...rotation, status: 'running', phase: 'screen', attempts: [{ n: 1, allocation_id: 'eip-new', ip: '198.51.100.1', verdict: 'pending' }] }]
+      return respond(overview.eip_rotations[0])
     }
     if (path === '/api/plugins/alicloud/accounts' && method === 'POST') {
       assert.equal(body.auto_enabled, false)
@@ -291,6 +307,63 @@ try {
   assert.deepEqual(writes.slice(previousWrites).map(w => w.path), ['/api/plugins/alicloud/resources/resource1/refresh', '/api/plugins/alicloud/resources/resource2/refresh'])
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   if (screenshots) await page.screenshot({ path: `${screenshots}/alicloud-eip-${width}.png`, fullPage: true })
+  // Replacing the address never starts before the preview is read and explicitly confirmed.
+  for (let index = 0; index < 2; ++index) assert.equal((await menuItem(articles.nth(index), '资源操作', '更换公网 IP')).disabled, false, 'Each running instance with an EIP offers it')
+  await choose(articles.first(), '资源操作', '更换公网 IP')
+  dialog = page.getByRole('dialog')
+  await dialog.locator('input[type=number]').first().fill('0')
+  assert.equal(await dialog.getByRole('button', { name: '读取并预览' }).isDisabled(), true)
+  await dialog.locator('input[type=number]').first().fill('8443')
+  await Promise.all([page.waitForResponse(response => response.url().endsWith('/eip-rotation/preview')), dialog.getByRole('button', { name: '读取并预览' }).click()])
+  await dialog.getByText('确认更换，并释放 192.0.2.1').waitFor()
+  await dialog.getByText('共享带宽 cbwp-testonly').waitFor()
+  await dialog.getByText('旧地址会被释放且无法找回').waitFor()
+  await dialog.getByText('Globalping', { exact: false }).waitFor()
+  assert.equal(await dialog.getByRole('button', { name: '确认更换', exact: true }).isDisabled(), true)
+  assert.equal(writes.some(w => w.path.includes('/eip-rotations/')), false)
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  if (screenshots) await page.screenshot({ path: `${screenshots}/alicloud-rotation-preview-${width}.png` })
+  await dialog.getByRole('checkbox').click()
+  await Promise.all([page.waitForResponse(response => response.url().endsWith('/eip-rotations/rotation1/confirm')), dialog.getByRole('button', { name: '确认更换', exact: true }).click()])
+  // The rotation is one entry of the page history, and it holds its instance only.
+  const rotationEntry = page.locator('[data-slot=cloud-activity-item]').filter({ hasText: '更换公网 IP' })
+  await rotationEntry.getByText('更换中', { exact: true }).waitFor()
+  await rotationEntry.getByText('第 1 / 5 个新地址 · 国内探测', { exact: true }).waitFor()
+  await rotationEntry.getByText('候选：198.51.100.1 探测中', { exact: true }).waitFor()
+  assert.equal(await page.locator('[data-slot=cloud-activity-item]').first().innerText().then(text => text.includes('更换公网 IP')), true, 'Unfinished work leads the history')
+  assert.equal((await menuItem(articles.first(), '资源操作', '更换公网 IP')).disabled, true)
+  assert.equal(await articles.first().getByRole('button', { name: '停机', exact: true }).isDisabled(), true, 'A running rotation holds the instance')
+  assert.equal(await articles.nth(1).getByRole('button', { name: '停机', exact: true }).isEnabled(), true)
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  if (screenshots) await page.screenshot({ path: `${screenshots}/alicloud-rotation-running-${width}.png`, fullPage: true })
+  if (screenshots) await page.locator('[data-slot=cloud-activity]').screenshot({ path: `${screenshots}/alicloud-rotation-activity-running-${width}.png` })
+  // Finished: one entry with its result notice folded in, and the node addresses left to check.
+  overview.eip_rotations = [{ ...rotation, status: 'succeeded', phase: 'release_old', new_ip: '198.51.100.1', attempts: [{ n: 1, allocation_id: 'eip-new', ip: '198.51.100.1', verdict: 'clean', screen: { total: 5, reached: 5 }, confirm: { total: 11, reached: 11 } }] }]
+  overview.events = [{ id: 41, resource_id: 'resource1', title: '公网 IP 已更换', message: 'TEST_ONLY 192.0.2.1 → 198.51.100.1', created_at: now + 1, deliveries: [{ channel: 'telegram', status: 'sent', attempts: 1, last_error: null, next_attempt_at: 0, delivered_at: now + 2 }] }]
+  await page.reload()
+  await rotationEntry.getByText('更换公网 IP · 192.0.2.1 → 198.51.100.1', { exact: false }).waitFor()
+  await rotationEntry.getByText('已更换', { exact: true }).waitFor()
+  await rotationEntry.getByText('候选：198.51.100.1 可用（11/11）', { exact: true }).waitFor()
+  await rotationEntry.getByText('通知：Telegram 已送达', { exact: true }).waitFor()
+  assert.equal(await rotationEntry.getByRole('link', { name: '检查此服务器的节点', exact: true }).getAttribute('href'), '#/plugins/sing-box/nodes?server=7')
+  assert.equal(await page.locator('[data-slot=cloud-activity-item]').filter({ hasText: 'TEST_ONLY 192.0.2.1 → 198.51.100.1' }).count(), 0, 'The result notice is not a second entry')
+  assert.equal((await menuItem(articles.first(), '资源操作', '更换公网 IP')).disabled, false)
+  if (screenshots) await page.locator('[data-slot=cloud-activity]').screenshot({ path: `${screenshots}/alicloud-rotation-activity-done-${width}.png` })
+  // Halted for a person: the entry offers to close it, and the instance stays held until then.
+  overview.eip_rotations = [{ ...rotation, status: 'unknown', phase: 'swap', error_code: 'state_changed', attempts: [{ n: 1, allocation_id: 'eip-new', ip: '198.51.100.1', verdict: 'pending' }] }]
+  overview.events = []
+  await page.reload()
+  await rotationEntry.getByText('需要人工核对', { exact: true }).waitFor()
+  assert.equal(await articles.first().getByRole('button', { name: '停机', exact: true }).isDisabled(), true)
+  await rotationEntry.getByRole('button', { name: '已人工核对', exact: true }).click()
+  dialog = page.getByRole('dialog')
+  await dialog.getByText('本次申请过的地址：198.51.100.1（eip-new）', { exact: false }).waitFor()
+  assert.equal(await dialog.getByRole('button', { name: '结束跟踪', exact: true }).isDisabled(), true)
+  await dialog.getByRole('checkbox').click()
+  await dialog.locator('textarea').fill('TEST_ONLY 已在控制台核对：实例绑定原地址，候选地址已手动释放。')
+  await Promise.all([page.waitForResponse(response => response.url().endsWith('/eip-rotations/rotation1/reconcile')), dialog.getByRole('button', { name: '结束跟踪', exact: true }).click()])
+  await rotationEntry.getByText('已人工结束', { exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   assert.deepEqual(errors, []); assert.deepEqual(unexpected, [])
   results.push({ width, writes: writes.length, attached_eip_accounts: 2, passed: true })
   await context.close()
