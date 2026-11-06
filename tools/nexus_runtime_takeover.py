@@ -35,6 +35,8 @@ def main():
     parser.add_argument('--stopped-service', action='append', default=[],
                         help='service stopped to free an added listener (extend); repeatable')
     parser.add_argument('--stopped-at', type=int, help='Unix time the services were stopped (extend; default now)')
+    parser.add_argument('--revise', action='store_true',
+                        help='replace the native configuration of lines already in the snapshot instead of adding them')
     args = parser.parse_args()
     env = environment(args.environment)
     panel = Panel(args.panel, env['APSP_PUBLIC_URL'], env['APSP_ADMIN_PASSWORD'])
@@ -49,7 +51,11 @@ def main():
         added = json.loads(args.input.read_text())
         if added.get('server_id') != args.server:
             parser.error('the added-lines snapshot belongs to another server')
-        body = {'expected_digest': args.digest, 'nodes': added['nodes']}
+        if args.revise:
+            body = {'expected_digest': args.digest, 'configurations': [
+                {'legacy_node_id': n['legacy_node_id'], 'configuration': n['preserved']['configuration']} for n in added['nodes']]}
+        else:
+            body = {'expected_digest': args.digest, 'nodes': added['nodes']}
         reauthenticate()
         preview = panel.call(f'{ROOT}/{args.server}/extend/preview', 'POST', body)
         if args.operation == 'extend-preview':
@@ -59,8 +65,8 @@ def main():
                 raise ValueError('Extension preview has conflicts; nothing was changed')
             if not args.extended_digest or preview.get('digest') != args.extended_digest:
                 raise ValueError('The merge differs from the reviewed preview; preview and review it again')
-            if not args.stopped_service:
-                parser.error('--stopped-service is required for extend')
+            if not args.stopped_service and not args.revise:
+                parser.error('--stopped-service is required when adding lines')
             reauthenticate()
             result = panel.call(f'{ROOT}/{args.server}/extend', 'POST', {
                 **body, 'extended_digest': args.extended_digest, 'stopped_services': args.stopped_service,

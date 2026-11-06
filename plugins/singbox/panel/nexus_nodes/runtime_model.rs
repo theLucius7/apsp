@@ -17,6 +17,14 @@ pub(super) struct RuntimeSnapshot {
     pub nodes: Vec<RuntimeNode>,
 }
 
+/// A replacement native configuration for a line already in the snapshot.
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Revision {
+    pub legacy_node_id: i64,
+    pub configuration: Value,
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RuntimeNode {
@@ -211,12 +219,14 @@ pub(super) async fn inspect_extension(
     tx: &mut Transaction<'_, Postgres>,
     stored: &RuntimeSnapshot,
     added: &[RuntimeNode],
+    revised: &[Revision],
 ) -> ApiResult<(RuntimeSnapshot, Value)> {
-    if added.is_empty() || added.len() > 50 {
-        return Err(ApiError::BadRequest("每次追加 1 至 50 条线路".into()));
+    if added.is_empty() && revised.is_empty() || added.len() + revised.len() > 50 {
+        return Err(ApiError::BadRequest("每次追加或修订 1 至 50 条线路".into()));
     }
     let mut conflicts = Vec::new();
-    let mut seen: BTreeSet<i64> = stored.nodes.iter().map(|e| e.legacy_node_id).collect();
+    let stored_ids: BTreeSet<i64> = stored.nodes.iter().map(|e| e.legacy_node_id).collect();
+    let mut seen = stored_ids.clone();
     for entry in added {
         if !seen.insert(entry.legacy_node_id) {
             conflicts.push(format!(
@@ -225,12 +235,34 @@ pub(super) async fn inspect_extension(
             ));
         }
     }
+    let mut revising = BTreeSet::new();
+    for revision in revised {
+        if !stored_ids.contains(&revision.legacy_node_id)
+            || !revising.insert(revision.legacy_node_id)
+        {
+            conflicts.push(format!(
+                "原节点 {} 不在运行快照中或重复修订",
+                revision.legacy_node_id
+            ));
+        }
+    }
+    let ids = |entries: &mut dyn Iterator<Item = i64>| entries.collect::<Vec<_>>();
     if !conflicts.is_empty() {
-        let added: Vec<i64> = added.iter().map(|e| e.legacy_node_id).collect();
-        let report = json!({"server_id":stored.server_id,"added":added,"conflicts":conflicts});
+        let report = json!({"server_id":stored.server_id,"added":ids(&mut added.iter().map(|e| e.legacy_node_id)),
+            "revised":ids(&mut revised.iter().map(|r| r.legacy_node_id)),"conflicts":conflicts});
         return Ok((stored.clone(), report));
     }
     let mut merged = stored.clone();
+    // A revision keeps the stored node model and replaces only the native
+    // configuration; compiling the merge re-checks the listener identity.
+    for entry in &mut merged.nodes {
+        if let Some(revision) = revised
+            .iter()
+            .find(|r| r.legacy_node_id == entry.legacy_node_id)
+        {
+            entry.preserved.configuration = revision.configuration.clone();
+        }
+    }
     merged.nodes.extend(added.iter().cloned());
     validate(&merged)?;
     let rows = sqlx::query("SELECT n.id,n.legacy_node_id,n.display,n.credential_id FROM singbox_nexus_nodes n WHERE n.source_id=$1 AND n.server_id=$2 ORDER BY n.legacy_node_id FOR SHARE")
@@ -241,6 +273,30 @@ pub(super) async fn inspect_extension(
     let merged_ids: BTreeSet<i64> = merged.nodes.iter().map(|e| e.legacy_node_id).collect();
     if !catalog.is_subset(&merged_ids) {
         conflicts.push("需一次接管同一主机的全部原节点，不能遗漏实例".to_owned());
+    }
+    for revision in revised {
+        let Some(row) = rows
+            .iter()
+            .find(|row| row.get::<i64, _>("legacy_node_id") == revision.legacy_node_id)
+        else {
+            conflicts.push(format!(
+                "原节点 {} 已下线，不能修订",
+                revision.legacy_node_id
+            ));
+            continue;
+        };
+        let wired: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM singbox_nexus_runtime_nodes WHERE inventory_id=$1)",
+        )
+        .bind(row.get::<i64, _>("id"))
+        .fetch_one(&mut **tx)
+        .await?;
+        if !wired {
+            conflicts.push(format!(
+                "原节点 {} 未由运行时接管，不能修订",
+                revision.legacy_node_id
+            ));
+        }
     }
     for entry in added {
         let Some(row) = rows
@@ -270,6 +326,9 @@ pub(super) async fn inspect_extension(
         conflicts.push("目标主机已有其他受管节点，不能合并发布所有权".into());
     }
     let report = json!({"server_id":stored.server_id,"digest":digest(&merged)?,
-        "added":added.iter().map(|e| e.legacy_node_id).collect::<Vec<_>>(),"node_count":merged.nodes.len(),"conflicts":conflicts});
+        "added":added.iter().map(|e| e.legacy_node_id).collect::<Vec<_>>(),
+        "revised":revised.iter().map(|r| r.legacy_node_id).collect::<Vec<_>>(),
+        "node_count":merged.nodes.len(),"conflicts":conflicts});
+
     Ok((merged, report))
 }

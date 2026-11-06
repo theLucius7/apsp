@@ -1319,3 +1319,84 @@ async fn lines_are_added_to_a_prepared_or_running_host(pool: PgPool) -> Result<(
     assert_eq!(audited, 2);
     Ok(())
 }
+
+#[sqlx::test]
+async fn a_line_configuration_is_revised_in_place(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, payload, _) = fixture(&panel).await?;
+    let preview = ok(post(&panel, &cookie, "/preview", json!({"payload":payload})).await?).await?;
+    let digest = preview["digest"].as_str().unwrap().to_owned();
+    ok(post(
+        &panel,
+        &cookie,
+        "/prepare",
+        json!({"payload":payload,"expected_digest":digest}),
+    )
+    .await?)
+    .await?;
+    let preview_path = format!("/{server}/extend/preview");
+    let extend_path = format!("/{server}/extend");
+    // The legacy listener later gained reuse_addr; only the configuration changes.
+    let mut configuration = payload["nodes"][0]["preserved"]["configuration"].clone();
+    configuration["inbounds"][0]["reuse_addr"] = json!(true);
+    let revision = json!({"expected_digest":digest,"configurations":[{"legacy_node_id":43,"configuration":configuration}]});
+    let nodes_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM nodes")
+        .fetch_one(&pool)
+        .await?;
+    let report = ok(post(&panel, &cookie, &preview_path, revision.clone()).await?).await?;
+    assert_eq!(report["conflicts"], json!([]));
+    assert_eq!(
+        (report["added"].clone(), report["revised"].clone()),
+        (json!([]), json!([43]))
+    );
+    let mut commit = revision.clone();
+    commit["extended_digest"] = report["digest"].clone();
+    // A revision adds no listener, so no stopped service is required.
+    let done = ok(post(&panel, &cookie, &extend_path, commit).await?).await?;
+    assert_eq!(done["revised"], json!([43]));
+    let nodes_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM nodes")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(nodes_before, nodes_after);
+    let candidate =
+        ok(post(&panel, &cookie, &format!("/{server}/candidate"), json!({})).await?).await?;
+    let config: Value = serde_json::from_str(
+        serde_json::from_str::<Value>(candidate["payload"]["bundle"].as_str().unwrap())?["files"]["config.json"].as_str().unwrap(),
+    )?;
+    assert!(
+        config["inbounds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|i| i["reuse_addr"] == true)
+            || config["inbounds"].as_array().unwrap().is_empty()
+    );
+    // The revision is stored: the next revision starts from the new digest.
+    let stored: String =
+        sqlx::query_scalar("SELECT digest FROM singbox_nexus_runtime_hosts WHERE server_id=$1")
+            .bind(server)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(Some(stored.as_str()), report["digest"].as_str());
+    // A line outside the snapshot cannot be revised; an identity change is refused.
+    let stray = json!({"expected_digest":stored,"configurations":[{"legacy_node_id":99,"configuration":configuration}]});
+    let refused = ok(post(&panel, &cookie, &preview_path, stray).await?).await?;
+    assert!(
+        refused["conflicts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c.as_str().unwrap().contains("99"))
+    );
+    let mut moved = configuration.clone();
+    moved["inbounds"][0]["listen_port"] = json!(23999);
+    let identity = json!({"expected_digest":stored,"configurations":[{"legacy_node_id":43,"configuration":moved}]});
+    assert_eq!(
+        post(&panel, &cookie, &preview_path, identity)
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    Ok(())
+}
