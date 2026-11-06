@@ -111,7 +111,7 @@ function page(route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' | 'm
       initialKind={route.kind}
       initialServerRole={route.serverRole}
     />
-    case 'expenses': return <Expenses />
+    case 'expenses': return <Expenses item={route.item} server={route.server} />
     case 'proxy-users': return <ProxyUsers key={route.userId ?? 'users'} initialUserId={route.userId} />
     case 'subscription-board': return <SubscriptionBoard />
     case 'groups': return <Groups />

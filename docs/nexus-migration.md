@@ -18,7 +18,7 @@
 python3 tools/export_wallos.py /private/wallos.db /private/wallos.json --source-id wallos-001 --user-id 1 --timezone Asia/Shanghai
 ```
 
-Wallos 文件在订阅费用的导入导出页处理。生产快照、哈希、凭据和用户资料均不得提交。
+Wallos 文件在「费用与续费 › 设置 › 导入导出」中处理。生产快照、哈希、凭据和用户资料均不得提交。
 
 迁移用户登录门户后，可在「线路与探针」查看原 Nexus「节点」页的内容，见 [ADR 0106](adr/0106-member-lines-and-probes.md)：
 

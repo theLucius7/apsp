@@ -33,6 +33,14 @@ test('the subscription board sits beside the server board and its cards open one
   for (const path of ['/plugins/sing-box/users/0', '/plugins/sing-box/users/01', '/plugins/sing-box/users/9007199254740992', '/plugins/sing-box/users/x']) expect(resolveRoute(path)).toEqual({ page: 'not-found' })
 })
 
+test('an entry of the costs and renewals ledger has its own address', () => {
+  expect(resolveRoute('/plugins/expenses')).toEqual({ page: 'expenses' })
+  expect(resolveRoute('/plugins/expenses/items/12')).toEqual({ page: 'expenses', item: 12 })
+  expect(resolveRoute('/plugins/expenses/servers/7')).toEqual({ page: 'expenses', server: 7 })
+  expect(currentNavigation(resolveRoute('/plugins/expenses/items/12'))?.path).toBe('/plugins/expenses')
+  for (const path of ['/plugins/expenses/items/0', '/plugins/expenses/items/x', '/plugins/expenses/servers/9007199254740992', '/plugins/expenses/other/1']) expect(resolveRoute(path)).toEqual({ page: 'not-found' })
+})
+
 test('china reachability is a view of the latency entry, not another sidebar entry', () => {
   expect(resolveRoute('/latency/reachability')).toEqual({ page: 'latency-reachability' })
   expect(currentNavigation(resolveRoute('/latency/reachability'))?.path).toBe('/latency')

@@ -9,7 +9,7 @@ import type { NodeView } from '../plugins/singbox/nodeRoute'
 // opened with this server preselected.
 type ServerSection = 'assets' | 'agent' | 'ip-info' | 'node-quality' | 'tcp-quality' | 'plugins' | 'ddns' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations'
 type SimplePage = 'singbox-overview' | 'servers' | 'statistics' | 'latency' | 'latency-reachability' | 'alicloud' | 'ddns'
-  | 'expenses' | 'subscription-board' | 'groups' | 'plugins' | 'catalog' | 'settings' | 'backup' | 'batch-enrollment' | 'alert-settings' | 'notifications' | 'security' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations' | 'control-center' | 'not-found'
+  | 'subscription-board' | 'groups' | 'plugins' | 'catalog' | 'settings' | 'backup' | 'batch-enrollment' | 'alert-settings' | 'notifications' | 'security' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations' | 'control-center' | 'not-found'
 
 export type AppRoute =
   | { page: 'dashboard'; serverId?: number }
@@ -18,6 +18,7 @@ export type AppRoute =
   | { page: 'proxy-portal'; account: string; activation?: string }
   | { page: 'server'; serverId: number; section?: ServerSection }
   | { page: 'proxy-users'; userId?: number }
+  | { page: 'expenses'; item?: number; server?: number }
   | { page: 'nodes'; serverId?: number; chains?: boolean; selected?: ResourceKey; kind?: 'direct'; serverRole?: 'any' | 'entry' | 'middle' | 'exit'; view?: NodeView }
   | { page: SimplePage }
 
@@ -37,7 +38,6 @@ const pages: Readonly<Record<string, SimplePage>> = {
   '/monitoring/settings': 'alert-settings',
   '/plugins/alicloud': 'alicloud',
   '/plugins/ddns': 'ddns',
-  '/plugins/expenses': 'expenses',
   '/plugins/sing-box/groups': 'groups',
   '/system/plugins': 'plugins',
   '/system/settings': 'settings',
@@ -65,6 +65,11 @@ export function resolveRoute(path: string): AppRoute {
   if (path === '/plugins/sing-box/commerce' || path === '/plugins/sing-box/users') return { page: 'proxy-users' }
   const proxyUser = path.match(/^\/plugins\/sing-box\/users\/([1-9]\d*)$/)
   if (proxyUser && Number.isSafeInteger(Number(proxyUser[1]))) return { page: 'proxy-users', userId: Number(proxyUser[1]) }
+
+  // One entry of the costs and renewals ledger opens its detail.
+  if (path === '/plugins/expenses') return { page: 'expenses' }
+  const expense = path.match(/^\/plugins\/expenses\/(items|servers)\/([1-9]\d*)$/)
+  if (expense && Number.isSafeInteger(Number(expense[2]))) return { page: 'expenses', ...(expense[1] === 'items' ? { item: Number(expense[2]) } : { server: Number(expense[2]) }) }
 
   if (path === '/plugins/sing-box/chains') return { page: 'nodes', chains: true }
   const node = nodeRoute(path)
