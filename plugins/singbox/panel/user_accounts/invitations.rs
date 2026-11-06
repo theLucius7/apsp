@@ -53,7 +53,7 @@ pub(super) fn normalize(input: &str) -> Option<String> {
 
 fn link(state: &AppState, code: &str) -> String {
     format!(
-        "{}/#/plugins/sing-box/join/{}",
+        "{}/#/join/{}",
         state.config.public_url,
         display(code)
     )
@@ -604,7 +604,7 @@ pub(super) async fn claim(
     };
     let has_keys:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM passkey_credentials WHERE account_id=$1) OR EXISTS(SELECT 1 FROM singbox_members m JOIN singbox_portal_accounts p ON p.user_id=m.user_id WHERE p.account_id=$1 AND m.password_hash IS NOT NULL)").bind(account).fetch_one(&mut *tx).await?;
     let mut url = format!(
-        "{}/#/plugins/sing-box/account/{account}",
+        "{}/#/account/{account}",
         state.config.public_url
     );
     if !has_keys {

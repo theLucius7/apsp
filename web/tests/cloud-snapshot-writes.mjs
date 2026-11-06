@@ -58,7 +58,7 @@ try {
     }
     try {
       await installControlCenterFixtures(page)
-      await page.goto(`${origin}/#/plugins/alicloud`)
+      await page.goto(`${origin}/#/alicloud`)
       // Power is a visible row action; the others sit in the account or resource menu.
       const names = { account: '编辑账号与策略', resource: '编辑登记与降速', bandwidth: '调整带宽与计费', policy: '配置自动启停', power: '停机' }
       const openEditor = async () => {

@@ -26,7 +26,7 @@ import { useLedger } from './useLedger'
 type View = 'items' | 'upcoming' | 'spending'
 const views: [View, string][] = [['items', '项目'], ['upcoming', '即将续费'], ['spending', '支出']]
 const savedView = (): View => { try { const value = localStorage.getItem('apsp-expenses-view'); return value === 'upcoming' || value === 'spending' ? value : 'items' } catch { return 'items' } }
-const base = '/plugins/expenses'
+const base = '/expenses'
 export const entryPath = (row: Pick<LedgerRow, 'kind' | 'id'>) => `${base}/${row.kind === 'item' ? 'items' : 'servers'}/${row.id}`
 
 /**

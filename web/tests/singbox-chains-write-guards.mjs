@@ -206,7 +206,7 @@ try {
     }
 
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/plugins/sing-box/nodes?kind=chains`)
+    await page.goto(`${origin}/#/nodes?kind=chains`)
     await enabled(createButton)
     await oldRow.waitFor()
     for (const pathname of paths) {
@@ -293,7 +293,7 @@ try {
     await page.getByRole('dialog').waitFor({ state: 'hidden' })
     await recover(`${prefix}/servers`, null, async () => assert.equal(writes.length, 2))
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/plugins/sing-box/nodes?kind=chains&server=2`)
+    await page.goto(`${origin}/#/nodes?kind=chains&server=2`)
     await page.waitForFunction(() => document.querySelector('select[aria-label="按服务器筛选"]')?.value === '2')
     // The cancelled server=1 draft survives this route change and must not silently retarget server=2.
     await scope('2')
@@ -305,7 +305,7 @@ try {
     await creating.getByRole('button', { name: '取消', exact: true }).click()
     await creating.waitFor({ state: 'hidden' })
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/plugins/sing-box/nodes`)
+    await page.goto(`${origin}/#/nodes`)
     await page.waitForFunction(() => document.querySelector('select[aria-label="按服务器筛选"]')?.value === '')
     await scope('')
     await enabled(createButton); await createButton.click()
@@ -316,7 +316,7 @@ try {
     await creating.waitFor({ state: 'hidden' })
     assert.equal(writes.length, 2, 'Explicitly choosing the new scope edits only the local draft')
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/plugins/sing-box/nodes?kind=chains&server=2`)
+    await page.goto(`${origin}/#/nodes?kind=chains&server=2`)
     await page.waitForFunction(() => document.querySelector('select[aria-label="按服务器筛选"]')?.value === '2')
     await scope('2')
     await enabled(createButton)

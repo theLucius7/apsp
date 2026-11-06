@@ -7,7 +7,6 @@ import { validatedSnapshot } from './groupTypes'
 import { portalAccessError, validPortalAccess } from './portalAccess'
 import type { PortalAccess } from './portalAccess'
 import { Button } from '@/components/ui/button'
-import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
 type Invitation = { url: string; expires_at: number }
 
@@ -39,9 +38,10 @@ export default function UserPasskeyAccess({ id, userError, refreshRevision }: { 
     : access.activation_expires_at !== null ? `开通链接有效至 ${time(access.activation_expires_at)}，对方绑定后即可登录。`
       : '还没有开通。生成开通链接发给对方，绑定 Passkey 后就能自己看订阅、用量和到期。'
   // Each read carries the panel's own state; the address only helps once a Passkey is bound.
-  return <Panel aria-label="登录地址" className="mb-0 flex flex-col">
-    <PanelHeader className="min-h-10 py-1.5"><PanelTitle>登录地址</PanelTitle><Refresh onClick={resource.reload} /></PanelHeader>
-    <div className="flex flex-1 flex-col gap-2.5 p-3.5">
+  // One half of the user's access card; the subscription link is the other half.
+  return <section aria-label="登录地址" data-slot="user-login-access" className="flex min-w-0 flex-col gap-2.5 p-4">
+    <div className="flex min-h-7 items-center justify-between gap-2"><h3 className="text-sm font-semibold">登录地址</h3><Refresh onClick={resource.reload} /></div>
+    <div className="flex flex-1 flex-col gap-2.5">
       <ErrorNotice message={snapshot.error} retry={resource.reload} />
       {resource.loading && !access ? <Loading variant="panel" rows={1} /> : access && <>
         {access.url && reset && <code data-slot="portal-address" tabIndex={0} aria-label="用户登录地址" className="bg-muted/50 focus-visible:ring-ring/50 scrollbar-thin block min-w-0 overflow-x-auto rounded-md border px-2.5 py-2 text-xs break-normal whitespace-pre focus-visible:ring-3 focus-visible:outline-none">{access.url}</code>}
@@ -57,5 +57,5 @@ export default function UserPasskeyAccess({ id, userError, refreshRevision }: { 
       <p>{editing.reset ? '原有 Passkey、会员登录密码和用户登录会话将立即失效，用户需要通过新链接重新开通，之后可经邮箱验证重新设置密码。订阅、授权和流量保持不变。' : '开通链接十五分钟内有效，只能使用一次；重新生成会使之前的链接失效。请仅发送给该代理用户。'}</p>
     </FormDialog>}</DialogPresence>
     <DialogPresence>{invitation && <Modal title="用户开通链接" onClose={() => setInvitation(undefined)}><div data-slot="modal-body" className="p-4"><p>有效至 {time(invitation.expires_at)}，只能使用一次。关闭后不会再次显示完整链接。</p><CopyField text={invitation.url} label="复制开通链接" /><p className="text-muted-foreground mt-3 text-xs leading-relaxed">请将此链接私下交给该用户。它用于绑定 Passkey，不是代理订阅地址。</p></div></Modal>}</DialogPresence>
-  </Panel>
+  </section>
 }

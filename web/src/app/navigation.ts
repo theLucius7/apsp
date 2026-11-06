@@ -24,39 +24,40 @@ type NavigationGroup = { label: string; tier?: Tier; items: readonly Omit<Naviga
 // network, run the proxy service, manage the servers it runs on, watch alerts and
 // lines and set up the panel. Pages about the same thing are tabs of one entry
 // instead of separate entries. Downgraded workspaces stay hidden until the panel
-// settings show them. Addresses never change. See docs/product-map.md and ADR 0102.
-const settingsPath = '/system/settings'
+// settings show them. Addresses name what a page is for; earlier ones still open
+// the same pages (app/paths.ts, ADR 0120). See docs/product-map.md and ADR 0102.
+const settingsPath = '/settings'
 const groups: readonly NavigationGroup[] = [
   { label: '总览', items: [
-    { page: 'singbox-overview', path: '/plugins/sing-box', label: '概览', icon: HouseIcon },
-    { page: 'statistics', path: '/statistics', label: '统计报表', icon: ChartColumnIcon, parent: '/plugins/sing-box' },
+    { page: 'singbox-overview', path: '/home', label: '概览', icon: HouseIcon },
+    { page: 'statistics', path: '/statistics', label: '统计报表', icon: ChartColumnIcon, parent: '/home' },
     // The server dashboard is a view of the whole network, a tab of the overview like the reports.
-    { page: 'dashboard', path: '/dashboard', label: '服务器看板', icon: LayoutDashboardIcon, parent: '/plugins/sing-box' },
+    { page: 'dashboard', path: '/dashboard', label: '服务器看板', icon: LayoutDashboardIcon, parent: '/home' },
     // The administrator's own paid subscriptions (Wallos style) at a glance, next to the servers (ADR 0117).
-    { page: 'subscription-board', path: '/subscriptions', label: '订阅看板', icon: RssIcon, parent: '/plugins/sing-box' },
-    // ADR 0087: costs and renewals sit with the overview; the published path is kept.
-    { page: 'expenses', path: '/plugins/expenses', label: '费用与续费', icon: CalendarClockIcon },
+    { page: 'subscription-board', path: '/subscriptions', label: '订阅看板', icon: RssIcon, parent: '/home' },
+    // ADR 0087: costs and renewals sit with the overview.
+    { page: 'expenses', path: '/expenses', label: '费用与续费', icon: CalendarClockIcon },
   ] },
   { label: '代理服务', items: [
-    { page: 'nodes', path: '/plugins/sing-box/nodes', label: '代理节点', icon: WaypointsIcon },
-    { page: 'proxy-users', path: '/plugins/sing-box/users', label: '代理用户', icon: UsersIcon },
-    { page: 'groups', path: '/plugins/sing-box/groups', label: '策略与套餐', icon: LayersIcon },
+    { page: 'nodes', path: '/nodes', label: '代理节点', icon: WaypointsIcon },
+    { page: 'proxy-users', path: '/users', label: '代理用户', icon: UsersIcon },
+    { page: 'groups', path: '/groups', label: '策略与套餐', icon: LayersIcon },
   ] },
   { label: '服务器', items: [
     { page: 'servers', path: '/servers', label: '服务器列表', navLabel: '服务器', icon: ServerIcon },
-    { page: 'ddns', path: '/plugins/ddns', label: '域名解析', icon: GlobeIcon },
-    { page: 'alicloud', path: '/plugins/alicloud', label: '阿里云 CDT', icon: CloudCogIcon },
+    { page: 'ddns', path: '/dns', label: '域名解析', icon: GlobeIcon },
+    { page: 'alicloud', path: '/alicloud', label: '阿里云 CDT', icon: CloudCogIcon },
   ] },
   { label: '监控与设置', items: [
-    { page: 'notifications', path: '/system/notifications', label: '告警事件', navLabel: '告警', icon: BellRingIcon },
-    { page: 'alert-settings', path: '/monitoring/settings', label: '告警设置', icon: SlidersHorizontalIcon, parent: '/system/notifications' },
+    { page: 'notifications', path: '/alerts', label: '告警事件', navLabel: '告警', icon: BellRingIcon },
+    { page: 'alert-settings', path: '/alerts/settings', label: '告警设置', icon: SlidersHorizontalIcon, parent: '/alerts' },
     { page: 'network-workbench', path: '/network-workbench', label: '网络检测', navLabel: '线路检测', icon: GaugeIcon },
     { page: 'latency', path: '/latency', label: '延迟检测', icon: TimerIcon, parent: '/network-workbench' },
     { page: 'settings', path: settingsPath, label: '面板设置', navLabel: '设置', icon: Settings2Icon },
-    { page: 'catalog', path: '/plugins/catalog', label: '插件中心', icon: BlocksIcon, parent: settingsPath },
-    { page: 'backup', path: '/system/backup', label: '备份与恢复', icon: DatabaseBackupIcon, parent: settingsPath },
-    { page: 'control-center', path: '/system/control-center', label: '管理与安全', icon: ShieldCheckIcon, parent: settingsPath },
-    { page: 'security', path: '/system/administrator', label: '账号安全', icon: KeyRoundIcon, parent: settingsPath },
+    { page: 'catalog', path: '/settings/plugins', label: '插件中心', icon: BlocksIcon, parent: settingsPath },
+    { page: 'backup', path: '/settings/backup', label: '备份与恢复', icon: DatabaseBackupIcon, parent: settingsPath },
+    { page: 'control-center', path: '/settings/admin', label: '管理与安全', icon: ShieldCheckIcon, parent: settingsPath },
+    { page: 'security', path: '/settings/account', label: '账号安全', icon: KeyRoundIcon, parent: settingsPath },
   ] },
   { label: '实验功能', tier: 'experimental', items: [
     { page: 'operations', path: '/operations', label: '自动化与维护', icon: WorkflowIcon },
@@ -87,7 +88,7 @@ export function sectionTabs(current: NavigationItem | undefined, pages: readonly
 }
 
 /** The page an administrator lands on after signing in. */
-export const homePath = '/plugins/sing-box'
+export const homePath = '/home'
 
 // Workspaces opened from a server keep their own sidebar entry; every other
 // server section belongs to the server list. The operations tools and batch

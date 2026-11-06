@@ -5,12 +5,15 @@ import { api } from '../src/api'
 test('only explicit plugin account routes bypass administrator page routing', () => {
   const account = '00000000-0000-4000-8000-000000000002'
   const token = 'T'.repeat(43)
-  expect(resolveRoute(`/plugins/sing-box/account/${account}`)).toEqual({ page: 'proxy-portal', account, activation: undefined })
-  expect(resolveRoute(`/plugins/sing-box/account/${account}?activate=${token}`)).toEqual({ page: 'proxy-portal', account, activation: token })
-  for (const path of ['/users', '/account', '/plugins/sing-box/account/1', `/plugins/sing-box/account/${account}/administrator`, `/plugins/sing-box/account/${account}?activate=<script>`, `/plugins/sing-box/account/${account}?activate=${token}&admin=true`]) {
-    expect(resolveRoute(path).page).toBe('not-found')
+  // The current address and the one sign-in links used before the rename (ADR 0120).
+  for (const base of ['/account', '/plugins/sing-box/account']) {
+    expect(resolveRoute(`${base}/${account}`)).toEqual({ page: 'proxy-portal', account, activation: undefined })
+    expect(resolveRoute(`${base}/${account}?activate=${token}`)).toEqual({ page: 'proxy-portal', account, activation: token })
+    for (const path of [base, `${base}/1`, `${base}/${account}/administrator`, `${base}/${account}?activate=<script>`, `${base}/${account}?activate=${token}&admin=true`]) {
+      expect(resolveRoute(path).page).toBe('not-found')
+    }
   }
-  expect(resolveRoute('/plugins/sing-box/users').page).toBe('proxy-users')
+  for (const path of ['/users', '/plugins/sing-box/users']) expect(resolveRoute(path).page).toBe('proxy-users')
 })
 
 test('a proxy authentication error never ends an administrator session', async () => {

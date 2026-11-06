@@ -75,7 +75,7 @@ pub fn search_sources() -> Vec<SearchSource> {
             extra_ctes: "",
             select: r#"
  SELECT jsonb_build_object('kind','node','id',n.id,'label',n.name||' · '||n.id,
-   'path','/plugins/sing-box/nodes/direct/'||n.id,'server_id',n.server_id,'sampled_at',NULL)
+   'path','/nodes/direct/'||n.id,'server_id',n.server_id,'sampled_at',NULL)
  FROM nodes n CROSS JOIN visibility v WHERE v.unrestricted AND n.deleted_at IS NULL
    AND (n.name ILIKE $1 OR n.public_host ILIKE $1 OR n.sni ILIKE $1 OR n.id::text ILIKE $1)
  ORDER BY n.name,n.id"#,
@@ -87,7 +87,7 @@ pub fn search_sources() -> Vec<SearchSource> {
             extra_ctes: "",
             select: r#"
  SELECT jsonb_build_object('kind','proxy-user','id',u.id,'label',u.name||' · '||u.id,
-   'path','/plugins/sing-box/users','sampled_at',NULL)
+   'path','/users/'||u.id,'sampled_at',NULL)
  FROM users u CROSS JOIN visibility v WHERE v.unrestricted AND u.deleted_at IS NULL
    AND (u.name ILIKE $1 OR u.id::text ILIKE $1) ORDER BY u.name,u.id"#,
         },

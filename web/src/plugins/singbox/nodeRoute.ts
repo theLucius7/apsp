@@ -15,10 +15,10 @@ type NodeRoute = {
 const parameters = ['server', 'kind', 'role', 'view']
 
 export function nodeRoute(path: string): NodeRoute | null {
-  const detail = path.match(/^\/plugins\/sing-box\/nodes\/(direct|chain)\/([1-9]\d*)$/)
+  const detail = path.match(/^\/nodes\/(direct|chain)\/([1-9]\d*)$/)
   if (detail) return Number.isSafeInteger(Number(detail[2])) ? { kind: 'all', chains: false, resource: { kind: detail[1] as 'direct' | 'chain', id: Number(detail[2]) } } : null
   const [pathname, query = '', ...extra] = path.split('?')
-  if (pathname !== '/plugins/sing-box/nodes' || extra.length) return null
+  if (pathname !== '/nodes' || extra.length) return null
   const params = new URLSearchParams(query)
   if ([...params.keys()].some(key => !parameters.includes(key)) || parameters.some(key => params.getAll(key).length > 1)) return null
   const server = params.get('server'), kind = params.get('kind')
@@ -43,5 +43,5 @@ export function nodeHash({ server, kind = 'all', role = 'any', view }: { server?
   if (server) params.set('server', server)
   if (role !== 'any') params.set('role', role)
   if (view && view !== (kind === 'chains' ? 'chains' : 'catalog')) params.set('view', view)
-  return `#/plugins/sing-box/nodes${params.size ? `?${params}` : ''}`
+  return `#/nodes${params.size ? `?${params}` : ''}`
 }

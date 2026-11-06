@@ -186,3 +186,4 @@
 ## 旧服务同一份内核（2026-11-06）
 
 - [ADR 0119：运行时改用旧服务同一份内核](0119-legacy-service-kernel.md)：`1.14.0-apsp.1` 由上游 `v1.14.0-alpha.2` 加 cedar2025 分支 `2e665cb7` 的两个提交重建，依赖固定为旧服务二进制的版本，纯 Go 构建、标签与旧服务相同（另加统计接口）；去掉 ADR 0104 的 REALITY 仿真补丁；原生节点的 Snell v6、ACME 证书提供者等新配置不再支持。
+- [ADR 0120：页面地址按功能命名](0120-page-addresses-by-function.md)：地址与侧栏一致（`/#/home`、`/#/nodes`、`/#/users`、`/#/settings` 等），旧地址打开时改写为新地址。

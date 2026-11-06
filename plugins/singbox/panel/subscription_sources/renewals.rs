@@ -26,7 +26,7 @@ pub async fn renewal_references(state: &AppState) -> ApiResult<Vec<RenewalRefere
                 used_bytes: row.try_get("used")?,
                 total_bytes: row.try_get("total")?,
                 reported_at: row.try_get("reported")?,
-                path: "/plugins/sing-box/nodes?view=sources".into(),
+                path: "/nodes?view=sources".into(),
                 capability: "proxy:read",
             })
         })

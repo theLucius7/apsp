@@ -108,12 +108,12 @@ try {
       errors.push(`Unexpected ${method} ${path}`);return route.fulfill({status:404,json:{error:'Unexpected API'}})
     })
     await installControlCenterFixtures(page)
-    await page.goto(`http://127.0.0.1:${server.address().port}/#/plugins/sing-box/nodes`)
+    await page.goto(`http://127.0.0.1:${server.address().port}/#/nodes`)
     // The single create entry opens the ordered form (covered by ordered-chains.mjs); the mixed editor is gone.
     await page.locator('header[data-slot=page-header]').getByRole('button',{name:'创建链路',exact:true}).waitFor()
     assert.equal(await page.getByRole('region',{name:'创建链路'}).count(),0)
     // Existing mixed chains stay readable, updatable, renamable and convertible.
-    await page.goto(`http://127.0.0.1:${server.address().port}/#/plugins/sing-box/nodes/chain/8`)
+    await page.goto(`http://127.0.0.1:${server.address().port}/#/nodes/chain/8`)
     const dialog=page.getByRole('dialog')
     await dialog.getByRole('heading',{name:'有序路径'}).waitFor()
     assert.match(page.url(),/\/nodes\/chain\/8$/)

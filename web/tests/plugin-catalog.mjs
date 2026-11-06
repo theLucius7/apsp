@@ -88,7 +88,7 @@ try {
 
     const cards = page.locator('[data-catalog-plugin]')
     const singbox = page.locator('[data-catalog-plugin="sing-box"]')
-    const openCatalog = async (path = '/plugins/catalog') => {
+    const openCatalog = async (path = '/settings/plugins') => {
       await installControlCenterFixtures(page)
       await page.goto(`${origin}/#${path}`)
       await page.getByRole('heading', { name: '插件中心', exact: true }).waitFor()
@@ -214,7 +214,7 @@ try {
       if (path === '/api/dashboard/access') await route.fulfill({ json: { authenticated: false, public_dashboard: true } })
       else { privateReads.push(path); await route.fulfill({ status: 403, json: {} }) }
     })
-    for (const path of ['/plugins/catalog', '/artifacts', '/servers/2/plugins']) {
+    for (const path of ['/settings/plugins', '/plugins/catalog', '/artifacts', '/servers/2/plugins']) {
       await anonymous.goto(`${origin}/#${path}`)
       await anonymous.getByRole('heading', { name: '欢迎回来', exact: true }).waitFor()
       assert.equal(await anonymous.locator('[data-catalog-plugin]').count(), 0)

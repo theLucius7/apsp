@@ -151,7 +151,7 @@ async fn account(tx: &mut Tx<'_>, id: i64) -> ApiResult<Uuid> {
 }
 fn reply(state: &AppState, account: Uuid, token: &str) -> ApiResult<Response> {
     let mut response = crate::passkeys::reply(
-        json!({"account_id":account,"url":format!("{}/#/plugins/sing-box/account/{account}",state.config.public_url)}),
+        json!({"account_id":account,"url":format!("{}/#/account/{account}",state.config.public_url)}),
     );
     crate::passkeys::set_cookie(state, &mut response, "apsp_proxy_session", token, 86400)?;
     Ok(response)

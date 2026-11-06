@@ -127,7 +127,7 @@ try {
       await block(control, `${prefix}/proxy-resources`, () => nodesRefresh(page), () => forceClick(button), () => button.click())
     })
     // Chain creation now goes through the ordered chain form (ADR 0098); its snapshot guards live in singbox-chains-write-guards.mjs.
-    for (const creating of [false, true]) await fixture('/plugins/sing-box/nodes?view=sources', async control => {
+    for (const creating of [false, true]) await fixture('/nodes?view=sources', async control => {
       const { page, writes } = control, sourcePanel = page.locator('[data-slot=subscription-sources]')
       await sourcePanel.getByRole('button', { name: creating ? '添加来源' : '设置与更新', exact: true }).first().click()
       const dialog = page.getByRole('dialog'); await dialog.getByLabel('来源名称', { exact: true }).fill('TEST_ONLY 来源草稿')
@@ -144,7 +144,7 @@ try {
         assert.deepEqual(writes[1].body.selected, ['node-0'])
       }
     })
-    await fixture('/plugins/sing-box/nodes?view=sources', async control => {
+    await fixture('/nodes?view=sources', async control => {
       const { page } = control
       await page.locator('[data-slot=subscription-sources]').getByRole('button', { name: '删除', exact: true }).click()
       const button = page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true })
@@ -212,7 +212,7 @@ try {
       await wait(() => writes.length === 1, 'Explicit current revision selection permits one write'); ++totals.recovered
       assert.equal(writes[0].body.revision, 2)
     })
-    await fixture('/system/plugins', async control => {
+    await fixture('/settings/plugins/servers', async control => {
       const { page, hosts } = control; hosts[0].enabled = false
       // The initial response can already be in flight; explicitly refresh the installation collection.
       const refresh = () => page.locator('section[data-slot=panel]').filter({ has: page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }) }).getByRole('button', { name: '刷新', exact: true }).evaluate(button => button.click())

@@ -95,7 +95,7 @@ try {
     await page.getByRole('heading', { name: '欢迎回来' }).waitFor()
     assert.equal(await page.locator('[data-slot=server-detail]').count(), 0)
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/system/settings`)
+    await page.goto(`${origin}/#/settings`)
     await page.getByRole('heading', { name: '欢迎回来' }).waitFor()
     assert.equal(await page.locator('[data-slot=sidebar]').count(), 0)
     rejectLogin = true

@@ -112,7 +112,7 @@ try {
     const showView = name => page.getByRole('navigation', { name: '节点视图', exact: true }).getByRole('link', { name, exact: true }).click()
     const scope = async server => { await showView('节点库'); await page.getByRole('combobox', { name: '按服务器筛选', exact: true }).selectOption(server); await showView('链路') }
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/plugins/sing-box/nodes`)
+    await page.goto(`${origin}/#/nodes`)
     await showView('链路')
     const create = page.locator('header[data-slot=page-header]').getByRole('button', { name: '创建链路', exact: true }); await enabled(create)
     await scope('3')

@@ -50,7 +50,7 @@ try {
       else { unexpected.push(path); return route.fulfill({ status: 404, json: { error: 'TEST_ONLY 未知请求' } }) }
       return route.fulfill({ json: value })
     })
-    await page.goto(`${origin}/#/plugins/sing-box/account/${account}`)
+    await page.goto(`${origin}/#/account/${account}`)
     const panel = page.locator('[data-slot=member-lines]')
     await panel.getByRole('heading', { name: '线路与探针', exact: true }).waitFor()
     await panel.getByText('共 3 条线路，2 条在线；当前套餐「标准」可用 2 条。', { exact: true }).waitFor()

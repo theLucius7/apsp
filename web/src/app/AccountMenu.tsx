@@ -78,7 +78,7 @@ export default function AccountMenu({ actor, busy, onLogout, collapsed }: { acto
         <span className="flex-1">{item.label}</span>{locale === item.value && <CheckIcon className="text-primary" aria-label={t('当前项')} />}
       </DropdownMenuItem>)}
       <DropdownMenuSeparator />
-      <DropdownMenuItem onSelect={() => { window.location.hash = '#/system/administrator' }}><KeyRoundIcon aria-hidden="true" />{t('账号安全')}</DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => { window.location.hash = '#/settings/account' }}><KeyRoundIcon aria-hidden="true" />{t('账号安全')}</DropdownMenuItem>
       <DropdownMenuItem data-slot="logout-button" disabled={busy} onSelect={onLogout}><LogOutIcon aria-hidden="true" />{t('退出登录')}</DropdownMenuItem>
     </DropdownMenuContent>
   </DropdownMenu>

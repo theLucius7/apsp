@@ -44,7 +44,7 @@ export default function UserEntitlements({ id, entitlement, userError, refreshRe
   const changed = selected.length !== assignedIds.length || selected.some(id => !assignedIds.includes(id))
   const quota = e?.monthly_bytes ? Number(e.used_bytes) / Number(e.monthly_bytes) * 100 : undefined
   return <Panel aria-label="权限与套餐">
-    <PanelHeader className="min-h-10 py-1.5"><PanelTitle>权限与套餐</PanelTitle><a className={buttonVariants({ variant: 'ghost', size: 'xs' })} href="#/plugins/sing-box/groups">管理策略与套餐</a></PanelHeader>
+    <PanelHeader className="min-h-10 py-1.5"><PanelTitle>权限与套餐</PanelTitle><a className={buttonVariants({ variant: 'ghost', size: 'xs' })} href="#/groups">管理策略与套餐</a></PanelHeader>
     <div className="p-3.5">
       <ErrorNotice message={policies.error || packages.error || assigned.error || entitlement.error || policyError() || (!assignment ? action.error : '')} retry={refresh} />
       {notice && <Notice tone="success" role="status">{notice}</Notice>}

@@ -202,10 +202,10 @@ try {
       await nav.getByRole('link', { name: '概览', exact: true }).waitFor()
       const links = await nav.getByRole('link').evaluateAll(items => items.map(item => [item.textContent.trim(), item.getAttribute('href')]))
       // ADR 0098: the overview group leads with the landing page, then the proxy service.
-      assert.deepEqual(links, [['概览', '#/plugins/sing-box'], ['费用与续费', '#/plugins/expenses'], ['代理节点', '#/plugins/sing-box/nodes'], ['代理用户', '#/plugins/sing-box/users'], ['策略与套餐', '#/plugins/sing-box/groups'], ['服务器', '#/servers'], ['域名解析', '#/plugins/ddns'], ['阿里云 CDT', '#/plugins/alicloud'], ['告警', '#/system/notifications'], ['线路检测', '#/network-workbench'], ['设置', '#/system/settings']])
+      assert.deepEqual(links, [['概览', '#/home'], ['费用与续费', '#/expenses'], ['代理节点', '#/nodes'], ['代理用户', '#/users'], ['策略与套餐', '#/groups'], ['服务器', '#/servers'], ['域名解析', '#/dns'], ['阿里云 CDT', '#/alicloud'], ['告警', '#/alerts'], ['线路检测', '#/network-workbench'], ['设置', '#/settings']])
       // Decision D6: signing in without an address lands on the overview, not the server board.
       await page.goto(`${origin}/`)
-      await page.waitForFunction(() => location.hash === '#/plugins/sing-box')
+      await page.waitForFunction(() => location.hash === '#/home')
       await page.getByRole('heading', { name: '概览', exact: true }).waitFor()
       assert.deepEqual(errors, [])
       summary.push({ scenario: 'navigation' })

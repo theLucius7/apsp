@@ -21,7 +21,7 @@ export type CatalogDefinition = {
 // Product identities are independent of release versions and platform packages.
 export const pluginDefinitions: readonly CatalogDefinition[] = [
   {
-    id: 'alicloud', title: '阿里云 CDT 与带宽', icon: CloudCogIcon, execution: 'panel', panelPath: '/plugins/alicloud',
+    id: 'alicloud', title: '阿里云 CDT 与带宽', icon: CloudCogIcon, execution: 'panel', panelPath: '/alicloud',
     description: '查看阿里云 CDT 国内、海外用量与账单，调整 ECS 固定公网 IP 和独立 EIP 的带宽。',
     usage: '按云账号登记资源，预览并确认后提交变配。自动降速默认关闭，需要同时启用账号与资源策略；无需 Agent 安装。',
   },
@@ -91,8 +91,6 @@ export function pluginCatalog(artifacts: readonly Artifact[]) {
     others: [...new Set(artifacts.map(artifact => artifact.name))].filter(name => !known.has(name)).sort().map(name => catalogItem(name, artifacts)),
   }
 }
-
-export function isCatalogPath(path: string) { return path === '/plugins/catalog' || path === '/artifacts' }
 
 export function pluginServerPath(plugin: CatalogDefinition, serverId: number): string | null {
   if (!plugin.serverSection || !Number.isSafeInteger(serverId) || serverId <= 0) return null

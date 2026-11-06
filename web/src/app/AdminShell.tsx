@@ -53,7 +53,7 @@ export default function AdminShell({ current, exact = true, busy, error, onLogou
   const mobileOpen = useShellStore(state => state.mobileOpen)
   const setMobileOpen = useShellStore(state => state.setMobileOpen)
   // The brand returns to the first page this administrator may open.
-  const home = `#${visibleNavigation[0]?.path ?? '/system/control-center'}`
+  const home = `#${visibleNavigation[0]?.path ?? '/settings/admin'}`
 
   // Frozen features stay hidden unless the panel settings show them; the actor
   // response carries that panel-wide choice.

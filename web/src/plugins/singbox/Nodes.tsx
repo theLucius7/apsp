@@ -175,7 +175,7 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     action.clearError()
     setDeleting(resource)
   }
-  const closeDetail = () => { window.location.hash = '/plugins/sing-box/nodes' }
+  const closeDetail = () => { window.location.hash = '/nodes' }
   const submit = (form: FormData) => {
     if (!editor || writeError(editor === 'new' ? undefined : { kind: 'direct', id: editor.id }) || nodeDraftError() || nodeServerError() || newServerMissing()) return
     const fields = {
@@ -220,7 +220,7 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
       <InfoTip label="发布规则"><p>保存后等待 5 秒合并处理。新增有效监听，或协议、TLS、服务设置变化，须先在部署进度内查看差异、采集并确认完整预检；原监听内的凭据更新、撤销和停用自动处理。</p><p>未授权给任何用户的节点不会监听端口；订阅只包含设备已成功应用的配置。</p></InfoTip>
     </PageHeader>
     {createBlocked && <Notice id="create-blocked-reason" role="status"><span>{noEnabledServer ? '还没有服务器安装 sing-box，所以暂时不能创建节点或链路。' : '当前筛选的服务器尚未安装 sing-box，所以暂时不能创建节点或链路。'}</span>
-      <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={noEnabledServer ? '#/system/plugins' : `#/servers/${filter}/plugins`}>为服务器安装 sing-box</a></Notice>}
+      <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={noEnabledServer ? '#/settings/plugins/servers' : `#/servers/${filter}/plugins`}>为服务器安装 sing-box</a></Notice>}
     <div className="mb-4"><StatStrip label="代理资源概况" columns={4}>
       <Stat icon={WaypointsIcon} label="代理资源" loading={!(resources.data && ordered.data && importedNodes) && !(resources.error || ordered.error)} value={resources.data && ordered.data && importedNodes ? inventoryCount + importedNodes.length : '—'}>{importedNodes?.length ? `受管 ${inventoryCount} · 待接管 ${importedNodes.length}` : '直连节点与独立链路入口'}</Stat>
       <Stat icon={ServerIcon} label="所在服务器" loading={!(resources.data && importedNodes) && !resources.error} value={resources.data && importedNodes ? new Set([...all, ...importedNodes].map(node => node.server_id)).size : '—'} />
@@ -236,8 +236,8 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
         : '目标已保存；该节点尚未授权给任何代理用户，暂不会监听端口，实际应用等待设备回执。'}</span>
       <div className="flex flex-wrap items-center justify-end gap-1">
         {!savedAuthorised && <>
-          <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href="#/plugins/sing-box/groups">加入策略组</a>
-          <a className={buttonVariants({ variant: 'ghost', size: 'sm' })} href="#/plugins/sing-box/users">授权给代理用户</a>
+          <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href="#/groups">加入策略组</a>
+          <a className={buttonVariants({ variant: 'ghost', size: 'sm' })} href="#/users">授权给代理用户</a>
         </>}
         <Button variant="ghost" size="sm" onClick={() => setDeployment(saved.server)}>{savedAuthorised ? '查看差异、完整预检与发布状态' : '查看部署状态'}</Button>
       </div></Notice>}

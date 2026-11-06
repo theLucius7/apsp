@@ -219,7 +219,7 @@ try {
     })
 
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/plugins/sing-box/users`)
+    await page.goto(`${origin}/#/users`)
     await page.getByRole('heading', { name: '权限与套餐', exact: true }).waitFor()
     const previous = page.getByRole('checkbox', { name: /原策略/ })
     const next = page.getByRole('checkbox', { name: /新策略/ })

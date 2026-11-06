@@ -1,5 +1,13 @@
 # 执行进度
 
+## 2026-11-06：页面地址按功能命名；代理用户页合并重复功能
+
+- 用户要求“重新整理命名路径，应该不叫这种路径的：/#/plugins/sing-box”，按 [ADR 0120](docs/adr/0120-page-addresses-by-function.md) 改为与侧栏一致的地址：`/#/home`（概览）、`/#/nodes`、`/#/users`、`/#/groups`、`/#/expenses`、`/#/dns`、`/#/alicloud`、`/#/alerts`、`/#/settings…`、`/#/account/{id}`、`/#/member`、`/#/join`。旧地址由 `web/src/app/paths.ts` 在打开时改写为新地址，已发出的登录地址、开通与邀请链接照常可用；后端生成的这些链接、全局搜索结果（代理用户直接打开该用户）和续费日历里的订阅来源链接改为新格式；全局搜索保存的最近访问与收藏按新地址读取并去重。`AGENTS.md` 中“不改地址”的规定随之更新。
+- 用户要求“还有用户页面的排版，冗余功能，删掉，该合并合并”：代理用户页的订阅链接与登录地址合成一张卡片；列表每行的复制按钮去掉，只在卡片里复制；与所选用户无关的“历史代理用户流量”删除（已删除用户的流量见统计报表排行）；列表底部的全站累计去掉；标题旁不再重复策略组、开通状态与到期；“专属地址”并入“门户设置”的分页；“批量分配策略组”移到策略与套餐页。
+- 门户“我的登录地址”在专属地址上保留登录页路径，复制后可直接打开。
+- 测试：浏览器测试改用新地址，`member-accounts` 新增旧邀请链接与旧登录地址打开后改写为新地址的检查；`app-routes.test.ts` 新增地址改写与旧地址解析到同一页面的检查；`connection-resilience` 改用卡片中的复制按钮；`member-accounts` 的门户设置分页增加“专属地址”；`command-palette` 新增旧地址保存的最近访问只显示一条、再次保存时写成新地址的检查；`proxy-resources`、`ordered-chains`、`catalog` 与 `passkeys` 单元测试同时覆盖新旧地址。
+- 验证：`bun test` 246 项通过；浏览器测试 65 项通过（`admin-refresh` 与 `portal-current-snapshot` 改为按合并后卡片里的登录地址区块定位）；`cargo clippy -p apsp-plugin-singbox -p apsp-panel-host --all-targets -- -D warnings` 无告警；`cargo test -p apsp-panel` 的 `control_center_search`（8）、`expense_subscriptions`（3）、`passkeys`（7，含浏览器往返）通过；合并 #242 后重跑 `subscription_hosts`（9）、`user_accounts`（5）、clippy 与代理用户、门户相关的 8 项浏览器测试，均通过。
+
 ## 2026-11-06：公告与指南可删除，删除用户不留解析记录，补专属地址邀请测试
 
 - 用户反馈在专属地址无法生成邀请链接；原因与修复同 #241（下一条）。本条补一项测试 `subscription_hosts::a_user_acts_on_their_account_from_their_own_host`：在专属地址上生成并撤销邀请码成功，来自面板地址、其他网站或缺少 Origin 的同一请求被拒，面板地址照常可用。

@@ -304,7 +304,7 @@ async fn proxy_invitations_are_scoped_hashed_rotatable_and_removed_with_the_owne
         .await?;
     let url = first["url"].as_str().unwrap();
     let (base, token) = url.split_once("?activate=").unwrap();
-    assert!(base.contains("/#/plugins/sing-box/account/"));
+    assert!(base.contains("/#/account/"));
     let account = base.rsplit('/').next().unwrap();
     let saved: String =
         sqlx::query_scalar("SELECT activation_hash FROM singbox_portal_accounts WHERE user_id=$1")

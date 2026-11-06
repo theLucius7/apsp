@@ -47,7 +47,7 @@ export default function Settings() {
       const installation = installationView(server)
       // Only what differs between rows: a healthy install needs no explanation.
       const notes = [server.installation?.state === 'ready' ? '' : installation.reason, server.agent_supported ? '' : '设备尚未声明支持 sing-box', sourceNote(server), server.read_only ? '保留已有安装记录' : ''].filter(Boolean)
-      return <TableRow key={server.id}><TableCell><a className={buttonVariants({ variant: 'ghost', size: 'sm' })} href={`#/servers/${server.id}`}>{server.name}</a></TableCell><TableCell><Badge tone={installation.tone}>{installation.label}</Badge>{notes.map(note => <small key={note}>{note}</small>)}</TableCell><TableCell>{server.enabled ? <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={`#/plugins/sing-box/nodes?server=${server.id}`}>管理节点</a> : <Button size="sm" disabled={action.busy || Boolean(writeError()) || server.read_only} onClick={() => enable(server.id)}>安装 sing-box</Button>}</TableCell></TableRow>
+      return <TableRow key={server.id}><TableCell><a className={buttonVariants({ variant: 'ghost', size: 'sm' })} href={`#/servers/${server.id}`}>{server.name}</a></TableCell><TableCell><Badge tone={installation.tone}>{installation.label}</Badge>{notes.map(note => <small key={note}>{note}</small>)}</TableCell><TableCell>{server.enabled ? <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={`#/nodes?server=${server.id}`}>管理节点</a> : <Button size="sm" disabled={action.busy || Boolean(writeError()) || server.read_only} onClick={() => enable(server.id)}>安装 sing-box</Button>}</TableCell></TableRow>
     })}</TableBody></Table></div>}
   </Panel>
 }

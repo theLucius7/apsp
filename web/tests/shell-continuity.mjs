@@ -142,7 +142,7 @@ try {
       }
       // The proxy users list/detail keeps its detail dialog across the breakpoint too.
       await dialog.getByRole('button', { name: '取消', exact: true }).click(); await dialog.waitFor({ state: 'hidden' })
-      await page.goto(`${origin}/#/plugins/sing-box/users`)
+      await page.goto(`${origin}/#/users`)
       const edit = page.locator('[data-slot=user-heading]').getByRole('button', { name: '编辑', exact: true })
       await until(() => edit.isEnabled(), 'The proxy user detail is ready')
       await edit.click()
@@ -163,7 +163,7 @@ try {
     const state = { servers: [serverFixture(1)], answer: [] }
     const { page, errors, prompts } = await open(1440, 900, state)
     try {
-      await page.goto(`${origin}/#/monitoring/settings`)
+      await page.goto(`${origin}/#/alerts/settings`)
       await page.getByRole('heading', { name: '告警设置', exact: true }).waitFor()
       await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '服务器', exact: true }).click()
       await page.getByRole('heading', { name: '服务器列表', exact: true }).waitFor()
@@ -178,7 +178,7 @@ try {
 
       // Code that writes the address directly is caught by the router.
       state.answer.push(false)
-      await page.evaluate(() => { location.hash = '#/monitoring/settings' })
+      await page.evaluate(() => { location.hash = '#/alerts/settings' })
       await until(() => prompts.length === 1, 'Changing the address asks first')
       await until(async () => await hash(page) === '#/servers', 'Declining restores the address')
       assert.equal(await name.inputValue(), 'TEST_ONLY 待确认离开', 'Declining keeps the input')
@@ -231,7 +231,7 @@ try {
       await jump()
       await page.getByRole('heading', { name: '告警设置', exact: true }).waitFor()
       assert.equal(prompts.length, 3, 'An accepted palette jump asks exactly once')
-      assert.equal(await hash(page), '#/monitoring/settings')
+      assert.equal(await hash(page), '#/alerts/settings')
       assert.deepEqual(errors, [])
       summary.push({ scenario: 'leave-inline', prompts: prompts.length })
     } finally { await page.close() }

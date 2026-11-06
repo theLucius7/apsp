@@ -64,7 +64,7 @@ const activation = invitation => invitation.url.split('?activate=')[1]
 try {
   const admin = await client()
   const page = admin.page
-  await page.goto(`${origin}/#/system/administrator`)
+  await page.goto(`${origin}/#/settings/account`)
   await page.getByLabel('管理员密码', { exact: true }).fill(password)
   await page.getByRole('button', { name: '登录面板', exact: true }).click()
   await page.getByRole('heading', { name: '账号安全', exact: true }).waitFor()
@@ -142,7 +142,7 @@ try {
 
   await clearLimit()
   const user = await ok(page, '/api/plugins/sing-box/users', { name: '受验代理用户' })
-  await page.goto(`${origin}/#/plugins/sing-box/users`)
+  await page.goto(`${origin}/#/users`)
   // Without a recent proof the shared dialog asks, and the administrator's Passkey satisfies it.
   await sql`UPDATE administrator_reauth SET expires_at=0`
   await page.getByRole('button', { name: '生成开通链接', exact: true }).click()

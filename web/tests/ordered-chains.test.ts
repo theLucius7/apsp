@@ -8,6 +8,7 @@ import type { ChainMutation } from '../src/plugins/singbox/chainRequests'
 import { filterProxyResources, validProxyResource, validatedSnapshot } from '../src/plugins/singbox/groupTypes'
 import type { ProxyResource, PublicHop } from '../src/plugins/singbox/groupTypes'
 import { nodeRoute } from '../src/plugins/singbox/nodeRoute'
+import { canonicalPath } from '../src/app/paths'
 import { validSubscriptionSource } from '../src/plugins/singbox/orderedSourceTypes'
 import { orderedResourceFixture, pathFixtureUuid, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
 import { sourceNodeFixture, sourceNodePageFixture, sourceUuid, subscriptionSourceFixture } from './subscription-source-fixtures.mjs'
@@ -105,9 +106,12 @@ test('ordered public projection exposes every managed position and independent f
   }
 })
 test('typed detail routes and strict role filters preserve legacy list bookmarks', () => {
-  expect(nodeRoute('/plugins/sing-box/nodes/chain/10')).toEqual({ kind: 'all', chains: false, resource: { kind: 'chain', id: 10 } })
-  expect(nodeRoute('/plugins/sing-box/nodes?kind=chains&server=3&role=middle')).toEqual({ kind: 'chains', chains: true, serverId: 3, serverRole: 'middle' })
-  for (const path of ['/plugins/sing-box/nodes/chain/01', '/plugins/sing-box/nodes/chain/1?kind=chains', '/plugins/sing-box/nodes?role=other', '/plugins/sing-box/nodes?role=any&role=entry']) expect(nodeRoute(path)).toBeNull()
+  for (const base of ['/nodes', '/plugins/sing-box/nodes']) {
+    const route = (rest: string) => nodeRoute(canonicalPath(`${base}${rest}`))
+    expect(route('/chain/10')).toEqual({ kind: 'all', chains: false, resource: { kind: 'chain', id: 10 } })
+    expect(route('?kind=chains&server=3&role=middle')).toEqual({ kind: 'chains', chains: true, serverId: 3, serverRole: 'middle' })
+    for (const rest of ['/chain/01', '/chain/1?kind=chains', '?role=other', '?role=any&role=entry']) expect(route(rest)).toBeNull()
+  }
 })
 test('source dependencies are explicit current/candidate/recovery references, not arbitrary JSON or credentials', () => {
   const source = subscriptionSourceFixture({ dependencies: [{ chain_id: 10, chain_name: '混合资源', generation: 1, state: 'candidate', hop_position: 1, external_node_id: sourceUuid(301), node_version_id: sourceUuid(401), identity_epoch: 1 }] })

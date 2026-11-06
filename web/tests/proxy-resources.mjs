@@ -127,7 +127,7 @@ try {
     const resourceCount = async () => await catalogRows.count() + await page.locator('[data-slot=proxy-resource-table] tbody tr').count()
     const waitCount = async count => { const deadline = Date.now() + 8000; while (await resourceCount() !== count) { assert(Date.now() < deadline, `Expected ${count} visible resources`); await page.waitForTimeout(20) } }
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/plugins/sing-box/nodes`)
+    await page.goto(`${origin}/#/nodes`)
     await showView('链路')
     await enabled(create)
     assert.equal(await resourceCount(),4)
@@ -212,7 +212,7 @@ try {
     await page.locator('[data-resource-key="chain:102"]').getByText('失响应链路',{exact:true}).waitFor()
     await page.reload()
     // The reloaded route keeps the chain section and carries no server scope.
-    assert.equal(new URL(page.url()).hash,'#/plugins/sing-box/nodes?view=chains')
+    assert.equal(new URL(page.url()).hash,'#/nodes?view=chains')
     await page.waitForFunction(() => document.querySelector('select[aria-label="按服务器筛选"]')?.value === '')
     // Changing a rejected draft gets a new request key; it never mutates the old request body.
     mode='reject-draft';await enabled(create);await create.click();dialog=page.getByRole('dialog')

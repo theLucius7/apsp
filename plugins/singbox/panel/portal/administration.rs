@@ -33,7 +33,7 @@ pub(super) async fn status(
     let account: Option<Uuid> = row.try_get("account_id")?;
     let base = login_base(&state, id).await?;
     Ok(keys::reply(
-        json!({"configuration":state.passkeys.info(),"keys":row.try_get::<i64,_>("keys")?,"url":account.map(|id| format!("{base}#/plugins/sing-box/account/{id}")),"activation_expires_at":row.try_get::<Option<i64>,_>("activation_expires_at")?.filter(|time| *time>now_timestamp())}),
+        json!({"configuration":state.passkeys.info(),"keys":row.try_get::<i64,_>("keys")?,"url":account.map(|id| format!("{base}#/account/{id}")),"activation_expires_at":row.try_get::<Option<i64>,_>("activation_expires_at")?.filter(|time| *time>now_timestamp())}),
     ))
 }
 
@@ -115,6 +115,6 @@ pub(super) async fn invitation(
     tx.commit().await?;
     let base = login_base(&state, id).await?;
     Ok(keys::reply(
-        json!({"url":format!("{base}#/plugins/sing-box/account/{account}?activate={token}"),"expires_at":expiry}),
+        json!({"url":format!("{base}#/account/{account}?activate={token}"),"expires_at":expiry}),
     ))
 }

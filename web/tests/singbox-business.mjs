@@ -245,7 +245,7 @@ try {
     await page.waitForURL(/#\/servers\/1\/plugins$/)
     await page.getByRole('link', { name: '管理节点', exact: true }).click()
     await page.getByRole('heading', { name: '代理节点', exact: true }).waitFor()
-    assert.equal(new URL(page.url()).hash, '#/plugins/sing-box/nodes?server=1')
+    assert.equal(new URL(page.url()).hash, '#/nodes?server=1')
     assert.equal(await page.getByRole('combobox', { name: '按服务器筛选', exact: true }).inputValue(), '1')
     await page.getByRole('button', { name: '创建节点', exact: true }).click()
     assert.equal(await page.locator('select[name="server_id"]').inputValue(), '1')
@@ -320,7 +320,7 @@ try {
     await page.getByText('未授权验收链路', { exact: true }).waitFor()
     assert.deepEqual(mutations.slice(chainMutationStart), [{ path: '/api/plugins/sing-box/chains/ordered-batch', method: 'POST' }])
     // The server query includes any managed segment and never shows unrelated chains.
-    assert.equal(new URL(page.url()).hash, '#/plugins/sing-box/nodes?server=1&view=chains')
+    assert.equal(new URL(page.url()).hash, '#/nodes?server=1&view=chains')
     await page.getByText(`筛选范围：任一受管段属于「${metadata.name}」的链路。`, { exact: false }).waitFor()
     const reverseRow = page.locator('[data-resource-key="chain:11"]')
     await reverseRow.locator('td').first().locator('strong').filter({ hasText: /^本服务器作为出口$/ }).waitFor()
@@ -356,7 +356,7 @@ try {
     await page.locator('nav[aria-label="节点视图"] a[aria-current="page"]').filter({ hasText: /^链路/ }).waitFor()
     await page.waitForFunction(() => document.querySelector('select[aria-label="按服务器筛选"]')?.value === '2')
     await page.getByText('未授权验收链路', { exact: true }).waitFor()
-    assert.equal(new URL(page.url()).hash, '#/plugins/sing-box/nodes?server=2&view=chains')
+    assert.equal(new URL(page.url()).hash, '#/nodes?server=2&view=chains')
     assert.equal(await page.locator('[data-slot=proxy-resource-table]').getByRole('row').count(), 2)
     assert.equal(await reverseRow.count(), 0, 'The unrelated reverse chain is absent in the server=2 scope')
     await createdRow.locator('small').filter({ hasText: /^本服务器作为出口$/ }).waitFor()
@@ -383,7 +383,7 @@ try {
     await closeResourceDetail()
 
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/plugins/sing-box/nodes?kind=chains&server=3`)
+    await page.goto(`${origin}/#/nodes?kind=chains&server=3`)
     await page.getByText('无关服务器链路', { exact: true }).waitFor()
     await page.getByText('设备状态与目标版本尚未确认一致，请查看服务器详情。', { exact: true }).waitFor()
     assert.equal(await page.getByText('应用状态待确认', { exact: true }).count(), 2)
@@ -394,13 +394,13 @@ try {
     await page.getByText('未授权验收链路', { exact: true }).waitFor()
     assert.equal(await page.locator('[data-slot=proxy-resource-table]').getByRole('row').count(), 4)
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/plugins/sing-box/nodes?kind=chains&server=999`)
+    await page.goto(`${origin}/#/nodes?kind=chains&server=999`)
     await page.getByText('此服务器暂无已确认关联的链路', { exact: true }).waitFor()
     assert.equal(await page.getByText('未授权验收链路', { exact: true }).count(), 0)
 
     // A failed refresh must stop treating the previous successful snapshot as current.
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/plugins/sing-box/nodes?kind=chains&server=1`)
+    await page.goto(`${origin}/#/nodes?kind=chains&server=1`)
     createdRow = page.getByRole('row').filter({ has: page.getByText('未授权验收链路', { exact: true }) })
     await createdRow.getByText('目标配置已应用', { exact: true }).first().waitFor()
     resourceDetail = await showResourceDetail(9)
@@ -420,7 +420,7 @@ try {
     pluginServersFailure = false
     chainFixtures = false
     await showView('节点库')
-    assert.equal(new URL(page.url()).hash, '#/plugins/sing-box/nodes?server=1')
+    assert.equal(new URL(page.url()).hash, '#/nodes?server=1')
     // Sections preserve the server scope and the component keeps pending drafts. The
     // shared exit belongs to server 2, so explicitly clear scope and refresh the
     // changed fixtures rather than expecting a route change to remount loaders.
@@ -439,7 +439,7 @@ try {
     await page.getByText('普通节点需放进代理用户的策略组，并等待设备成功应用配置', { exact: false }).waitFor()
     await page.getByText('出口使用内部连接凭据监听，不需要放进策略组。', { exact: false }).waitFor()
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/plugins/sing-box/nodes?view=chains`)
+    await page.goto(`${origin}/#/nodes?view=chains`)
     await page.getByRole('button', { name: /· 1 个引用$/ }).waitFor()
     chainsFailure = true
     await page.reload()
@@ -461,7 +461,7 @@ try {
     await page.getByRole('button', { name: '接入 / 升级', exact: true }).click()
     const enrollment = page.getByRole('dialog')
     await enrollment.getByRole('link', { name: '前往代理服务', exact: true }).waitFor()
-    assert.equal(await enrollment.getByRole('link', { name: '前往代理服务', exact: true }).getAttribute('href'), '#/plugins/sing-box')
+    assert.equal(await enrollment.getByRole('link', { name: '前往代理服务', exact: true }).getAttribute('href'), '#/home')
     await enrollment.getByRole('link', { name: '前往代理服务', exact: true }).click()
     await page.getByRole('heading', { name: '概览', exact: true }).waitFor()
 
@@ -472,7 +472,7 @@ try {
     await navigate('账号安全')
     await page.getByRole('heading', { name: '账号安全', exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: '创建代理用户', exact: true }).count(), 0)
-    assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '概览', exact: true, includeHidden: true }).getAttribute('href'), '#/plugins/sing-box')
+    assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '概览', exact: true, includeHidden: true }).getAttribute('href'), '#/home')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     assert.deepEqual(errors, [])
     assert.equal(requests.some(path => ['/api/nodes', '/api/users', '/api/usage'].includes(path)), false)

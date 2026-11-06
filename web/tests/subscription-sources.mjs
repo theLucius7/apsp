@@ -171,7 +171,7 @@ try {
       await page.screenshot({ animations: 'disabled', path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `sources-${name}-${width}.png`) })
     }
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/plugins/sing-box/nodes?view=sources`)
+    await page.goto(`${origin}/#/nodes?view=sources`)
     await enable(manager.getByRole('button', { name: '添加订阅来源', exact: true }))
     assert.equal(await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '订阅来源', exact: true }).count(), 0)
     assert.equal(await page.locator('[data-slot=overview-item]').filter({ hasText: '代理资源' }).locator('[data-slot=overview-value] strong').innerText(), '2')
