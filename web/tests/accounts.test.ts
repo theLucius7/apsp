@@ -15,12 +15,12 @@ test('retry identity changes only with the intended operation', () => {
   expect(request.for({ quantity: 2 })).not.toBe(first)
 })
 test('invitation links accept codes and the links of paid invitations', () => {
-  expect(resolveRoute('/plugins/sing-box/join')).toEqual({ page: 'member-join' })
-  expect(resolveRoute('/plugins/sing-box/join/ABCD-EFGH-JKMN-PQRS')).toEqual({ page: 'member-join', token: 'ABCD-EFGH-JKMN-PQRS' })
-  expect(resolveRoute('/plugins/sing-box/join/ABCDEFGHJKMNPQRS')).toEqual({ page: 'member-join', token: 'ABCDEFGHJKMNPQRS' })
+  expect(resolveRoute('/join')).toEqual({ page: 'member-join' })
+  expect(resolveRoute('/join/ABCD-EFGH-JKMN-PQRS')).toEqual({ page: 'member-join', token: 'ABCD-EFGH-JKMN-PQRS' })
+  expect(resolveRoute('/join/ABCDEFGHJKMNPQRS')).toEqual({ page: 'member-join', token: 'ABCDEFGHJKMNPQRS' })
   const legacy = 'a'.repeat(43)
-  expect(resolveRoute(`/plugins/sing-box/join/${legacy}`)).toEqual({ page: 'member-join', token: legacy })
-  expect(resolveRoute('/plugins/sing-box/join/ABCD').page).not.toBe('member-join')
+  expect(resolveRoute(`/join/${legacy}`)).toEqual({ page: 'member-join', token: legacy })
+  expect(resolveRoute('/join/ABCD').page).not.toBe('member-join')
 })
 
 test('a user\'s own address is recognised by its sign-in path only', () => {

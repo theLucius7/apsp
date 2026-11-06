@@ -29,7 +29,7 @@ pub struct AppState {
 
 impl AppState {
     pub async fn new(pool: PgPool, config: Config) -> anyhow::Result<Self> {
-        sqlx::migrate!("../panel/migrations").run(&pool).await?;
+        crate::schema::initialize(&pool).await?;
         auth::ensure_admin(&pool, config.admin_password.as_deref()).await?;
         Ok(Self {
             pool,

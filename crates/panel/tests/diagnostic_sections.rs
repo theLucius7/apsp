@@ -293,9 +293,7 @@ async fn legacy_report_text_is_retained_with_unknown_chapter_completeness(
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn cancellation_migration_applies_after_sections_without_losing_saved_reports(
-    pool: PgPool,
-) -> Result<()> {
+async fn reopening_preserves_reports_and_current_lifecycle_constraints(pool: PgPool) -> Result<()> {
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel
@@ -305,10 +303,7 @@ async fn cancellation_migration_applies_after_sections_without_losing_saved_repo
     sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,job,status,report,created_at,updated_at,expires_at,expected_sections,report_completeness) VALUES($1,$2,'{}','succeeded',$3,1,1,2,ARRAY['header_info'],'complete')")
         .bind(id).bind(server).bind(json!({"text":"保存的历史报告"})).execute(&pool).await?;
     sqlx::query("INSERT INTO diagnostic_report_sections(job_id,name,text,complete,revision,collected_at,received_at) VALUES($1,'header_info','保存的完整章节',TRUE,1,1,1)").bind(id).execute(&pool).await?;
-    // Recreate the published main schema where 0011 already exists but 0010
-    // was not yet introduced. Keep its migration checksum and all report data.
-    sqlx::raw_sql("DROP INDEX diagnostic_cancel_pending_idx; ALTER TABLE diagnostic_jobs DROP COLUMN cancel_requested_at, DROP COLUMN cancel_confirmed_at, DROP COLUMN cancel_error; ALTER TABLE diagnostic_jobs DROP CONSTRAINT diagnostic_jobs_status_check; ALTER TABLE diagnostic_jobs ADD CONSTRAINT diagnostic_jobs_status_check CHECK(status IN ('queued','running','succeeded','failed')); DELETE FROM _sqlx_migrations WHERE version=10;").execute(&pool).await?;
-    sqlx::migrate!("./migrations").run(&pool).await?;
+    apsp_panel::schema::initialize(&pool).await?;
     let row: (String, Value, String, Option<i64>) = sqlx::query_as("SELECT status,report,report_completeness,cancel_requested_at FROM diagnostic_jobs WHERE id=$1").bind(id).fetch_one(&pool).await?;
     assert_eq!(
         row,
@@ -329,7 +324,5 @@ async fn cancellation_migration_applies_after_sections_without_losing_saved_repo
         .bind(id)
         .execute(&pool)
         .await?;
-    let applied: Vec<i64> = sqlx::query_scalar("SELECT version FROM _sqlx_migrations WHERE version IN (10,11) AND success ORDER BY version").fetch_all(&pool).await?;
-    assert_eq!(applied, vec![10, 11]);
     Ok(())
 }

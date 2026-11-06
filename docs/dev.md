@@ -1,5 +1,7 @@
 # 开发、构建与验证
 
+**未发布开发基线：** 不支持旧 APSP 开发数据库自动升级。空库初始化当前结构，旧库拒绝启动，请先备份再手动重建；见[数据库基线与重建说明](database-baseline.md)。
+
 除明确写出 `cd web` 的前端开发步骤外，命令在仓库根目录运行。代码位置见[目录与维护约定](repository.md)，文档入口见[导航](README.md)，脚本用途见 [scripts](../scripts/README.md) 与 [tools](../tools/README.md)。
 
 当前 GitHub Actions 按 [AGENTS.md](../AGENTS.md#临时-ci-暂停2026-10-01-用户要求) 暂停。以下 CI 小节描述保留的工作流设计；暂停期间只做本地验证，不触发、重跑或恢复工作流，不把未运行/取消的 CI 记为通过。
@@ -44,7 +46,7 @@ export APSP_DATA_DIR="$PWD/data"
 cargo run --locked -p apsp-panel
 ```
 
-数据库名、用户和卷在首次执行时创建，面板启动时自动迁移。重用该容器时运行 `docker start apsp-dev-postgres`，继续使用最初的数据库密码。只使用本地原生 PostgreSQL 时，也可以先创建具有建库权限的开发角色和数据库，再把 `APSP_DATABASE_URL` 与测试用 `DATABASE_URL` 指向它；sqlx 集成测试会创建独立测试数据库。
+数据库名、用户和卷在首次执行时创建，面板启动时初始化空库或核对当前基线。重用该容器时运行 `docker start apsp-dev-postgres`，继续使用最初的数据库密码。只使用本地原生 PostgreSQL 时，也可以先创建具有建库权限的开发角色和数据库，再把 `APSP_DATABASE_URL` 与测试用 `DATABASE_URL` 指向它；sqlx 集成测试会创建独立测试数据库。
 
 另开终端开发前端，Vite 将 API 请求代理到 `127.0.0.1:8080`：
 
@@ -64,6 +66,9 @@ bun run build
 # DATABASE_URL must allow creating isolated test databases on PostgreSQL 16.
 # This public TEST_ONLY root is for tests, never production.
 export APSP_RELEASE_PUBLIC_KEYS="$(cat crates/protocol/tests/fixtures/public-keys.json)"
+# Public TEST_ONLY fixture, never a production credential key.
+export APSP_CREDENTIAL_KEYS='{"TEST_ONLY":"VEVTVF9PTkxZIGNpIGNyZWRlbnRpYWwga2V5cmluZyE="}'
+export APSP_CREDENTIAL_CURRENT_KEY=TEST_ONLY
 python3 tools/check-core-boundary.py
 cargo fmt --check
 (cd web && bun install --frozen-lockfile && bun test && bun run build)

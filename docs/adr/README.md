@@ -189,3 +189,5 @@
 - [ADR 0120：页面地址按功能命名](0120-page-addresses-by-function.md)：地址与侧栏一致（`/#/home`、`/#/nodes`、`/#/users`、`/#/settings` 等），旧地址打开时改写为新地址。
 
 - [ADR 0121：CDT 监控补齐与源码制品分离](0121-cdt-monitor-alignment-and-source-artifacts.md)：分项采集时间、IPv6 地址、整体用量历史、Cron 与守护组合，生成的前端产物不再提交。
+
+- [0122：未发布阶段统一当前结构](0122-unreleased-schema-baseline.md)：空库初始化、当前基线核验、旧开发库手动重建。

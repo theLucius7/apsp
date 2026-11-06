@@ -1,5 +1,4 @@
 import { dashboardRoute } from '../display/dashboard'
-import { canonicalPath } from './paths'
 import { nodeRoute } from '../plugins/singbox/nodeRoute'
 import { resourceRoute } from '../plugins/singbox/resourceTypes'
 import type { ResourceKey } from '../plugins/singbox/resourceTypes'
@@ -47,9 +46,7 @@ const pages: Readonly<Record<string, SimplePage>> = {
   '/settings/account': 'security',
 }
 
-export function resolveRoute(address: string): AppRoute {
-  // Addresses published before the rename resolve to the same pages.
-  const path = canonicalPath(address)
+export function resolveRoute(path: string): AppRoute {
   if (path === '/member') return { page: 'member-login' }
   if (path === '/join') return { page: 'member-join' }
   const join = path.match(/^\/join\/([A-Za-z0-9_-]{43}|[A-Za-z0-9]{4}(?:-?[A-Za-z0-9]{4}){3})$/)

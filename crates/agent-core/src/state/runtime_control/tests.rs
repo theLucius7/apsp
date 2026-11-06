@@ -247,28 +247,6 @@ fn barrier_floor_and_result_commit_together_and_pending_intent_preserves_both() 
     assert_eq!(state.runtime_revision_floor("demo").unwrap(), 2);
 }
 
-#[test]
-fn additive_runtime_tables_preserve_legacy_state_and_pending_intents() {
-    let mut state = State::open(std::path::Path::new(":memory:")).unwrap();
-    state
-        .set_json("applied:demo", &serde_json::json!({"legacy": true}))
-        .unwrap();
-    state
-        .connection
-        .execute_batch("DROP TABLE runtime_control; DROP TABLE runtime_revision_floors;")
-        .unwrap();
-    state
-        .connection
-        .execute_batch(include_str!("../migrations/0005_runtime_control.sql"))
-        .unwrap();
-    assert_eq!(
-        state.get_json::<serde_json::Value>("applied:demo").unwrap(),
-        Some(serde_json::json!({"legacy": true}))
-    );
-    assert_eq!(state.runtime_revision_floor("demo").unwrap(), 0);
-    assert!(state.pending_runtime_controls().unwrap().is_empty());
-}
-
 fn acknowledged(state: &mut State, expires_at: i64) -> ControlRequest {
     let mut request = request();
     if let ControlRequest::Checkpoint(value) = &mut request {
