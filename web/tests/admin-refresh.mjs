@@ -96,7 +96,7 @@ try {
     })
     try {
       await installControlCenterFixtures(page)
-      await page.goto(`${origin}/#/home/${pageName}`)
+      await page.goto(`${origin}/#/plugins/sing-box/${pageName}`)
       const edit = pageName === 'groups' ? page.getByRole('row').filter({ hasText: row.name }).getByRole('button', { name: '编辑', exact: true }) : page.locator('[data-slot=user-heading]').getByRole('button', { name: '编辑', exact: true })
       await wait(() => edit.isEnabled(), 'Initial snapshots must finish')
       await edit.click()

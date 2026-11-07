@@ -94,7 +94,7 @@ try {
       await page.getByRole('heading', { name: '插件中心', exact: true }).waitFor()
       await page.getByText('有已验证下载包', { exact: true }).first().waitFor()
     }
-    await openCatalog('/settings/plugins')
+    await openCatalog('/artifacts')
     const ddns = page.locator('[data-catalog-plugin="ddns"]')
     await ddns.getByRole('button', { name: '选择服务器' }).click()
     const ddnsDialog = page.getByRole('dialog')
@@ -103,7 +103,7 @@ try {
     await page.waitForURL(`${origin}/#/servers/2/ddns`)
     await page.getByRole('heading', { name: '先连接 DNS 账号', exact: true }).waitFor()
     assert.deepEqual(mutations, [])
-    await openCatalog('/settings/plugins')
+    await openCatalog('/artifacts')
     assert.equal(await cards.count(), 6)
     assert.equal(await page.getByRole('navigation', { name: '主导航', includeHidden: true }).getByRole('link', { name: '设置', exact: true, includeHidden: true }).getAttribute('aria-current'), 'page')
     assert.equal(await page.getByRole('navigation', { name: '插件中心' }).getByRole('link', { name: '插件目录', exact: true }).getAttribute('aria-current'), 'page')
@@ -214,7 +214,7 @@ try {
       if (path === '/api/dashboard/access') await route.fulfill({ json: { authenticated: false, public_dashboard: true } })
       else { privateReads.push(path); await route.fulfill({ status: 403, json: {} }) }
     })
-    for (const path of ['/settings/plugins', '/settings/plugins', '/settings/plugins', '/servers/2/plugins']) {
+    for (const path of ['/settings/plugins', '/plugins/catalog', '/artifacts', '/servers/2/plugins']) {
       await anonymous.goto(`${origin}/#${path}`)
       await anonymous.getByRole('heading', { name: '欢迎回来', exact: true }).waitFor()
       assert.equal(await anonymous.locator('[data-catalog-plugin]').count(), 0)

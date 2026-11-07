@@ -233,10 +233,10 @@ try {
     assert.deepEqual(writes.filter(write => write.path === `${root}/portal-public/invitation`).map(write => write.body.token), ['ZZZZ-ZZZZ-ZZZZ-ZZZZ', code, code])
 
     // Links sent before the page addresses were renamed open the same page under the current address.
-    await page.goto(`${origin}/#/join/${code}`)
+    await page.goto(`${origin}/#/plugins/sing-box/join/${code}`)
     await page.getByText('创建后即可使用「TEST_ONLY 套餐」。', { exact: true }).waitFor()
     assert.equal(new URL(page.url()).hash, `#/join/${code}`)
-    await page.goto(`${origin}/#/member`)
+    await page.goto(`${origin}/#/plugins/sing-box/member`)
     await page.getByLabel('邮箱', { exact: true }).waitFor()
     assert.equal(new URL(page.url()).hash, '#/member')
 

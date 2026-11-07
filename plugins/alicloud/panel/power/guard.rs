@@ -3,7 +3,7 @@ use super::super::{
     client::Cloud,
     model::{Account, Resource},
 };
-use super::State;
+use super::{State, jobs};
 use crate::{
     cloud_api::Failure,
     error::{ApiError, ApiResult},
@@ -183,15 +183,12 @@ pub(super) async fn poll(
     if !r.power_policy.enabled {
         return Ok(());
     }
-    if r.cdt_guard_next_at > started_at {
-        return super::scheduler::evaluate(tx, account, r, state, started_at).await;
-    }
     let reading = read(account, r, cloud, started_at).await;
     match reading {
         Ok(observation) => {
             // Persist the high-water mark in the same transaction as the durable intent.
             sqlx::query(
-                "UPDATE alicloud_resources SET cdt_guard_state=$2,cdt_guard_error=NULL,cdt_guard_next_at=0 WHERE id=$1",
+                "UPDATE alicloud_resources SET cdt_guard_state=$2,cdt_guard_error=NULL WHERE id=$1",
             )
             .bind(r.id)
             .bind(Json(&observation))
@@ -199,24 +196,56 @@ pub(super) async fn poll(
             .await?;
             r.cdt_guard_state = Some(Json(observation));
             r.cdt_guard_error = None;
-            r.cdt_guard_next_at = 0;
         }
         Err(error) => {
-            r.cdt_guard_error = Some(error.code.into());
-            sqlx::query(
-                "UPDATE alicloud_resources SET cdt_guard_error=$2,cdt_guard_next_at=$3 WHERE id=$1",
-            )
-            .bind(r.id)
-            .bind(error.code)
-            .bind(apsp_protocol::now_timestamp() + error.retry_after.max(60))
-            .execute(&mut **tx)
-            .await?;
+            sqlx::query("UPDATE alicloud_resources SET cdt_guard_error=$2,next_power_at=GREATEST(next_power_at,$3) WHERE id=$1")
+                .bind(r.id).bind(error.code).bind(apsp_protocol::now_timestamp()+error.retry_after.max(60)).execute(&mut **tx).await?;
             sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',error_code='policy_inactive',updated_at=$2 WHERE resource_id=$1 AND action='start' AND status='queued'")
                 .bind(r.id).bind(apsp_protocol::now_timestamp()).execute(&mut **tx).await?;
+            return Ok(());
         }
     }
     let now = apsp_protocol::now_timestamp();
-    super::scheduler::evaluate(tx, account, r, state, now).await
+    let over = exceeded(account, r, now);
+    let action = if over == Some(true) && state.status == "Running" {
+        "stop"
+    } else if over == Some(false)
+        && state.status == "Stopped"
+        && !r.manual_hold
+        && r.power_policy
+            .cdt_guard
+            .as_ref()
+            .is_some_and(|g| g.auto_start)
+    {
+        "start"
+    } else {
+        return Ok(());
+    };
+    if state.validate(action, "StopCharging").is_err() {
+        return Ok(());
+    }
+    if let Err(error) = super::super::operations::idle(tx, r.id).await {
+        return match error {
+            ApiError::Conflict(_) => Ok(()),
+            other => Err(other),
+        };
+    }
+    jobs::prepare(
+        tx,
+        account,
+        r,
+        state,
+        jobs::Intent {
+            action,
+            mode: "StopCharging",
+            source: "cdt_guard",
+            key: Some(format!("cdt-guard:{}:{}:{}", r.id, r.revision, now / 60)),
+            expires_at: now + 90,
+        },
+        now,
+    )
+    .await?;
+    Ok(())
 }
 
 pub(super) async fn read(

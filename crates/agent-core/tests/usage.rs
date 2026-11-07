@@ -355,7 +355,7 @@ fn state_migrations_kv_and_intents_survive_reopening() {
     let journal: String = connection
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(migration, 2);
+    assert_eq!(migration, 1);
     assert_eq!(journal, "wal");
 }
 

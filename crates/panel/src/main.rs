@@ -73,6 +73,7 @@ async fn main() -> anyhow::Result<()> {
         .max_connections(10)
         .connect(&config.database_url)
         .await?;
+    apsp_panel::schema::prepare(&pool).await?;
     let state = AppState::new(pool, config).await?;
     let recovery_verified = match std::env::var("APSP_RECOVERY_VERIFY_CREDENTIALS") {
         Ok(value) if value == "true" => {

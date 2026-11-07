@@ -8,7 +8,7 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
 fi
 
 cd "${CLAUDE_PROJECT_DIR:-.}"
-git config user.name "imengying"
-git config user.email "yuzuzv@gmail.com"
+git config user.name "Lucius7 Nya"
+git config user.email "i@lucius7.dev"
 # The environment's signing key belongs to the agent, not to this identity.
 git config commit.gpgsign false

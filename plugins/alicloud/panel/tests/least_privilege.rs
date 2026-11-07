@@ -111,7 +111,7 @@ async fn disabled_billing_never_reuses_cached_evidence_for_automatic_control(poo
 }
 
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
-async fn reopening_does_not_implicitly_enable_billable_services(pool: PgPool) {
+async fn upgrade_preserves_only_existing_billing_dependent_policies(pool: PgPool) {
     let (automatic, _) = seed(&pool, "ecs").await;
     let threshold = Uuid::new_v4();
     let display = Uuid::new_v4();
@@ -119,15 +119,26 @@ async fn reopening_does_not_implicitly_enable_billable_services(pool: PgPool) {
         sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret) VALUES($1,'测试升级',$2,$3)")
             .bind(id).bind(KEY).bind(SECRET).execute(&pool).await.unwrap();
     }
-    sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true,balance_enabled=false WHERE id=$1")
+    sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true WHERE id=$1")
         .bind(automatic)
         .execute(&pool)
         .await
         .unwrap();
     sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id,power_policy) VALUES($1,$2,'测试阈值','ecs','cn-hangzhou','i-threshold', '{\"enabled\":true,\"threshold_action\":\"stop\"}')")
         .bind(Uuid::new_v4()).bind(threshold).execute(&pool).await.unwrap();
-    apsp_panel_host::schema::initialize(&pool).await.unwrap();
-    for (id, expected) in [(automatic, true), (threshold, false), (display, false)] {
+    sqlx::raw_sql(
+        "ALTER TABLE alicloud_accounts DROP COLUMN billing_enabled, DROP COLUMN balance_enabled",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::raw_sql(include_str!(
+        "../../../../crates/panel/migrations/0077_alicloud_optional_bss.sql"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    for (id, expected) in [(automatic, true), (threshold, true), (display, false)] {
         let flags: (bool, bool) = sqlx::query_as(
             "SELECT billing_enabled,balance_enabled FROM alicloud_accounts WHERE id=$1",
         )

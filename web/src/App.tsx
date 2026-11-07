@@ -8,6 +8,7 @@ import AdminShell from './app/AdminShell'
 import Login from './app/Login'
 import { currentNavigation, homePath } from './app/navigation'
 import { resolveRoute } from './app/routes'
+import { canonicalPath } from './app/paths'
 import { useI18n } from './i18n'
 import { useSessionStore } from './stores/session'
 import { acceptHashChange, guardLinks } from '@/lib/leave-guard'
@@ -35,8 +36,16 @@ function Boot({ message, onRetry }: { message?: string; onRetry?: () => void }) 
   </div>
 }
 
+/**
+ * The page path in the address bar. An address published before the rename is
+ * replaced by its current form in place, keeping what precedes the hash (a user's
+ * own address signs in at /{path}/login).
+ */
 function addressPath() {
-  return window.location.hash.slice(1) || '/dashboard'
+  const path = window.location.hash.slice(1) || '/dashboard'
+  const current = canonicalPath(path)
+  if (current !== path) window.history.replaceState(null, '', `#${current}`)
+  return current
 }
 
 export default function App() {

@@ -35,9 +35,8 @@ elif "pg_dump" in args:
 elif "psql" in args:
     statement = args[-1]
     if "FROM _sqlx_migrations WHERE success" in statement:
-        print(json.dumps([{"version": 1, "checksum": "a" * 96}]))
-    elif statement == "SELECT to_regclass('public.credential_entries') IS NOT NULL":
-        print("t")
+        print(json.dumps([{"version": 1, "checksum": "a" * 96},
+                          {"version": 54, "checksum": "b" * 96}]))
     elif statement == "SHOW server_version_num":
         print("160015")
     elif "FROM credential_entries" in statement:
@@ -109,6 +108,7 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(manifest["postgres_version_num"], 160015)
         self.assertEqual(manifest["schema_migrations"], [
             {"version": 1, "checksum": "a" * 96},
+            {"version": 54, "checksum": "b" * 96},
         ])
         self.assertEqual(manifest["required_key_ids"], [])
         self.assertFalse(manifest["keyring_included"])

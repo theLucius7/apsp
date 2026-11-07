@@ -36,16 +36,6 @@ try {
     const request = route.request(), path = new URL(request.url()).pathname, method = request.method(), body = request.postData() ? request.postDataJSON() : null
     const respond = (json, status = 200) => route.fulfill({ status, json })
     if (path === '/api/dashboard/access') return respond({ authenticated: true, public_dashboard: false })
-    if (path.endsWith('/traffic-history') && method === 'GET') {
-      return respond({ account_id: 'account', queried_at: now, groups: [3600, 86400].map(seconds => {
-        const to = Math.floor(now / seconds) * seconds
-        return { seconds, from: to - 2 * seconds, to, samples: [0, 2].map(index => ({ bucket_start: to - index * seconds, sampled_at: to - index * seconds, mainland_bytes: String(1024 ** 3), overseas_bytes: String((3 - index) * 1024 ** 3) })) }
-      }) })
-    }
-    if (path === '/api/plugins/alicloud/cron-preview' && method === 'POST') {
-      if (body.expression === 'invalid') return respond({ error: 'Cron 需要五字段' }, 400)
-      return respond({ occurrences: [1,2,3,4,5].map(day => now + day * 86400), utc_offset_minutes: body.utc_offset_minutes })
-    }
     if (path === '/api/plugins/alicloud' && method === 'GET') return failRead ? respond({ error: '测试：云状态不可用' }, 503) : respond(overview)
     if (method !== 'GET') writes.push({ path, method, body })
     if (/^\/api\/plugins\/alicloud\/resources\/resource[12]\/refresh$/.test(path) && method === 'POST') {
@@ -228,7 +218,7 @@ try {
   await dialog.getByLabel('流量阈值动作').selectOption('stop')
   await dialog.getByLabel('账号 CDT 月流量额度').fill('100')
   await dialog.getByLabel('触发百分比').fill('95')
-  await dialog.getByLabel('定时开关机').check()
+  await dialog.getByLabel('每日定时开关机').check()
   await dialog.getByLabel('每日开机时间').fill('23:58')
   await dialog.getByLabel('每日停机时间').fill('08:00')
   await dialog.getByLabel('抢占式实例保活').check()
@@ -261,40 +251,13 @@ try {
   await dialog.getByLabel('启停策略类型').selectOption('cdt')
   await dialog.getByLabel('CDT 停机线（GiB）', { exact: true }).fill('150')
   await dialog.getByLabel('突增检测阈值（GiB）', { exact: true }).fill('20')
-  assert.equal(await dialog.getByLabel('定时开关机').count(), 1)
-  await dialog.getByLabel('定时开关机').check()
-  await dialog.getByLabel('计划类型').selectOption('cron')
-  await dialog.getByLabel('开机 Cron', { exact: true }).fill('invalid')
-  await dialog.getByRole('button', { name: '预览开机 Cron', exact: true }).click()
-  await dialog.getByText('Cron 需要五字段', { exact: true }).waitFor()
-  await dialog.getByLabel('开机 Cron', { exact: true }).fill('0 8 * * 1-5')
-  await dialog.getByLabel('停机 Cron', { exact: true }).fill('0 22 * * 1-5')
-  await dialog.getByRole('button', { name: '预览开机 Cron', exact: true }).click()
-  await dialog.getByRole('list', { name: '开机 Cron未来触发时间' }).waitFor()
-  assert.equal(await dialog.getByRole('list', { name: '开机 Cron未来触发时间' }).getByRole('listitem').count(), 5)
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  assert.equal(await dialog.getByLabel('每日定时开关机').count(), 0)
   assert.equal(await dialog.getByLabel('用量低于停机线时自动开机').isChecked(), true)
   await dialog.getByRole('button', { name: '保存启停策略' }).click()
   await dialog.waitFor({ state: 'hidden' })
   assert.deepEqual(overview.resources[0].power_policy.cdt_guard, { threshold_bytes: 150 * 1024 ** 3, jump_bytes: 20 * 1024 ** 3, auto_start: true })
   assert.equal(overview.resources[0].power_policy.stop_mode, 'StopCharging')
-  assert.equal(overview.resources[0].power_policy.keepalive, true)
-  assert.equal(overview.resources[0].power_policy.schedule_mode, 'cron')
-  assert.equal(overview.resources[0].power_policy.start_cron, '0 8 * * 1-5')
-  overview.resources[0].ipv6_addresses = ['2001:db8::7']
-  overview.resources[0].ipv6_checked_at = now
-  overview.accounts[0].traffic.queried_at = now - 1000
-  await page.reload()
-  await page.getByText('IPv6：2001:db8::7', { exact: true }).waitFor()
-  assert.match(await page.getByLabel('分项采集时间').innerText(), /用量采集于.*待更新/)
-  await page.getByRole('button', { name: '用量历史', exact: true }).click()
-  dialog = page.getByRole('dialog')
-  await dialog.getByRole('region', { name: 'CDT 用量图表' }).waitFor()
-  await dialog.getByRole('button', { name: '期间增量', exact: true }).click()
-  await dialog.getByRole('button', { name: '30 天', exact: true }).click()
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-  await dialog.getByRole('button', { name: '关闭', exact: true }).last().click()
-  await dialog.waitFor({ state: 'hidden' })
+  assert.equal(overview.resources[0].power_policy.keepalive, false)
   await page.getByRole('region', { name: 'CDT 脚本守护', exact: true }).waitFor()
   assert.equal(await page.getByText('1234.5600 USD', { exact: true }).count(), 1)
   const overflow = await page.evaluate(() => ({ viewport: innerWidth, width: document.documentElement.scrollWidth, elements: [...document.querySelectorAll('body *')].map(el => ({ tag: el.tagName, class: el.className, width: el.getBoundingClientRect().width, right: el.getBoundingClientRect().right })).filter(el => el.right > innerWidth + 1).slice(0, 15) }))

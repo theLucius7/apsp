@@ -506,7 +506,7 @@ def main():
                 stop(process)
             supervise_smoke(binary, config, root, log)
         with closing(sqlite3.connect(root / 'state.db')) as db:
-            assert db.execute('pragma user_version').fetchone()[0] == 2
+            assert db.execute('pragma user_version').fetchone()[0] == 1
         print('Native Agent: enrollment, telemetry/replay, command deduplication, TCP/ICMP probes, activation, rollback and shutdown passed')
     except BaseException as error:
         if isinstance(error, subprocess.CalledProcessError):

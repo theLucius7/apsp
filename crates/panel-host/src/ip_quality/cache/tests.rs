@@ -241,6 +241,53 @@ async fn partial_datasets_providers_and_old_ips_remain_independent(pool: PgPool)
     Ok(())
 }
 
+#[sqlx::test(migrations = false)]
+async fn migration_preserves_old_payload_success_and_unknown_times(pool: PgPool) -> Result<()> {
+    sqlx::raw_sql(include_str!(
+        "../../../../panel/migrations/0001_initial.sql"
+    ))
+    .execute(&pool)
+    .await?;
+    sqlx::raw_sql(include_str!(
+        "../../../../panel/migrations/0003_node_quality.sql"
+    ))
+    .execute(&pool)
+    .await?;
+    let id = server(&pool).await?;
+    let old = json!({"ip":"192.0.2.1","checked_at":1000,"expires_at":2000,"status":"partial","databases":[
+        {"database":"ipqualityscore","label":"old success","status":"succeeded","fields":[{"label":"risk","value":0},{"label":"proxy","value":false}],"error":null},
+        {"database":"ipapi","label":"old error","status":"failed","fields":[],"error":"old failure"}
+    ]});
+    sqlx::query("INSERT INTO server_ip_quality(server_id,ip,payload,checked_at) VALUES($1,'192.0.2.1',$2,1000)").bind(id).bind(&old).execute(&pool).await?;
+    sqlx::raw_sql(include_str!(
+        "../../../../panel/migrations/0008_ip_provider_cache.sql"
+    ))
+    .execute(&pool)
+    .await?;
+    let unchanged: Value =
+        sqlx::query_scalar("SELECT payload FROM server_ip_quality WHERE server_id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(unchanged, old);
+    let migrated = read(&pool, id, &["192.0.2.1".into()]).await?.remove(0);
+    assert_eq!(migrated.last_success_at, Some(1000));
+    assert_eq!(migrated.last_attempt_at, Some(1000));
+    assert_eq!(migrated.fresh_until, None);
+    assert_eq!(migrated.databases[0].fields[0].value, json!(0));
+    assert_eq!(migrated.databases[0].fields[1].value, json!(false));
+    assert!(migrated.databases[0].historical);
+    assert_eq!(migrated.databases[0].last_attempt_at, None);
+    assert_eq!(migrated.databases[0].fresh_until, Some(2000));
+    assert!(migrated.databases[1].fields.is_empty());
+    assert_eq!(migrated.databases[1].last_success_at, None);
+    assert_eq!(
+        migrated.databases[1].last_error.as_ref().unwrap().kind,
+        None
+    );
+    Ok(())
+}
+
 #[sqlx::test(migrations = "../panel/migrations")]
 async fn concurrent_admission_and_an_interrupted_refresh_use_durable_locks(
     pool: PgPool,

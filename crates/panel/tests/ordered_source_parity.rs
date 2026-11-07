@@ -12,7 +12,8 @@ use apsp_panel::plugins::singbox::subscription_sources::worker;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sqlx::PgPool;
+use sqlx::{PgPool, migrate::Migrator};
+use std::borrow::Cow;
 use uuid::Uuid;
 
 const ROOT: &str = "/api/plugins/sing-box";
@@ -387,8 +388,21 @@ async fn public_ids_share_the_numbered_source_sequences(pool: PgPool) -> Result<
 }
 
 #[sqlx::test(migrations = false)]
-async fn ordered_sources_keep_their_behaviour_after_reopening(pool: PgPool) -> Result<()> {
-    apsp_panel::schema::initialize(&pool).await?;
+async fn existing_ordered_sources_keep_their_behaviour_after_the_upgrade(
+    pool: PgPool,
+) -> Result<()> {
+    let migrations = sqlx::migrate!();
+    let old = Migrator {
+        migrations: Cow::Owned(
+            migrations
+                .iter()
+                .filter(|migration| migration.version <= 60)
+                .cloned()
+                .collect(),
+        ),
+        ..Migrator::DEFAULT
+    };
+    old.run(&pool).await?;
     let source: i64 = sqlx::query_scalar("INSERT INTO singbox_ordered_subscription_sources(name,kind,input_config,refresh_interval_secs,next_refresh_at,created_at,updated_at) VALUES('TEST_ONLY existing','url','{\"kind\":\"url\",\"url\":\"https://source.example.com/a\"}',86400,5,1,1) RETURNING id")
         .fetch_one(&pool).await?;
     let job = Uuid::new_v4();
@@ -403,7 +417,7 @@ async fn ordered_sources_keep_their_behaviour_after_reopening(pool: PgPool) -> R
     let version = Uuid::new_v4();
     sqlx::query("INSERT INTO singbox_ordered_external_node_versions(id,node_id,source_revision_id,public_preview,capabilities,supported,reasons) VALUES($1,$2,$3,'{}','{}',FALSE,'[]')")
         .bind(version).bind(node).bind(revision).execute(&pool).await?;
-    apsp_panel::schema::initialize(&pool).await?;
+    migrations.run(&pool).await?;
     let (agent, auto_refresh, next, changes): (Option<String>, bool, Option<i64>, Value) = sqlx::query_as("SELECT user_agent,auto_refresh,next_refresh_at,changes FROM singbox_ordered_subscription_sources WHERE id=$1")
         .bind(source).fetch_one(&pool).await?;
     assert!(agent.is_none(), "existing sources still send no User-Agent");

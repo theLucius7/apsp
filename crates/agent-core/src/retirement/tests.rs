@@ -1303,10 +1303,6 @@ async fn blocked_sampling_does_not_hold_retirement_gate_or_offline_uploads() -> 
                     "200 OK",
                     serde_json::to_vec(&apsp_protocol::AgentSettings::default()).unwrap(),
                 )
-            } else if request.starts_with("GET /api/agent/v1/telemetry-settings ") {
-                ("200 OK", br#"{"persist_interval_secs":15}"#.to_vec())
-            } else if request.starts_with("POST /api/agent/v1/telemetry/live ") {
-                ("200 OK", b"{}".to_vec())
             } else if request.starts_with("POST /api/agent/v1/telemetry ") {
                 if captured.fetch_add(1, Ordering::SeqCst) == 0 {
                     ("503 Service Unavailable", b"{}".to_vec())

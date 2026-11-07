@@ -55,10 +55,6 @@ pub(super) struct Resource {
     pub threshold_hold: bool,
     pub cdt_guard_state: Option<Json<super::power::GuardState>>,
     pub cdt_guard_error: Option<String>,
-    pub cdt_guard_next_at: i64,
-    pub ipv6_addresses: Json<Vec<String>>,
-    pub ipv6_checked_at: Option<i64>,
-    pub ipv6_error: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

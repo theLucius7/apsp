@@ -460,6 +460,145 @@ async fn multicloud_credentials_are_write_only_rotated_together_and_default_line
     Ok(())
 }
 
+#[sqlx::test(migrations = false)]
+async fn upgrade_keeps_cloudflare_tokens_history_and_all_original_migration_checksums(
+    pool: PgPool,
+) -> Result<()> {
+    use sqlx::migrate::Migrator;
+    use std::borrow::Cow;
+    use uuid::Uuid;
+    let migrations = sqlx::migrate!();
+    let previous = Migrator {
+        migrations: Cow::Owned(
+            migrations
+                .iter()
+                .filter(|m| m.version <= 35)
+                .cloned()
+                .collect(),
+        ),
+        ..Migrator::DEFAULT
+    };
+    previous.run(&pool).await?;
+    let server: i64 =
+        sqlx::query_scalar("INSERT INTO servers(name) VALUES('TEST_ONLY old DDNS') RETURNING id")
+            .fetch_one(&pool)
+            .await?;
+    let config = input(server)["config"].clone();
+    let id = Uuid::new_v4();
+    sqlx::query("INSERT INTO ddns_rules(id,server_id,config,api_token,record_id,last_ip,last_success_at) VALUES($1,$2,$3,$4,'record2','192.0.2.1',123)").bind(id).bind(server).bind(&config).bind(TOKEN).execute(&pool).await?;
+    let before: Vec<(i64, Vec<u8>)> =
+        sqlx::query_as("SELECT version,checksum FROM _sqlx_migrations ORDER BY version")
+            .fetch_all(&pool)
+            .await?;
+    migrations.run(&pool).await?;
+    migrations.run(&pool).await?;
+    let after:(Value,String,String,String,i64,String,String)=sqlx::query_as("SELECT config,api_token,record_id,last_ip,last_success_at,access_key_id,access_key_secret FROM ddns_rules WHERE id=$1").bind(id).fetch_one(&pool).await?;
+    assert_eq!(
+        after,
+        (
+            config,
+            TOKEN.into(),
+            "record2".into(),
+            "192.0.2.1".into(),
+            123,
+            String::new(),
+            String::new()
+        )
+    );
+    assert_eq!(
+        sqlx::query_as::<_, (i64, Vec<u8>)>(
+            "SELECT version,checksum FROM _sqlx_migrations WHERE version<=35 ORDER BY version"
+        )
+        .fetch_all(&pool)
+        .await?,
+        before
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+async fn removing_the_server_switch_pauses_rules_that_were_switched_off(
+    pool: PgPool,
+) -> Result<()> {
+    use sqlx::migrate::Migrator;
+    use std::borrow::Cow;
+    use uuid::Uuid;
+    let migrations = sqlx::migrate!();
+    let previous = Migrator {
+        migrations: Cow::Owned(
+            migrations
+                .iter()
+                .filter(|m| m.version <= 84)
+                .cloned()
+                .collect(),
+        ),
+        ..Migrator::DEFAULT
+    };
+    previous.run(&pool).await?;
+    let mut servers = Vec::new();
+    for name in [
+        "TEST_ONLY switched on",
+        "TEST_ONLY switched off",
+        "TEST_ONLY never switched",
+    ] {
+        servers.push(
+            sqlx::query_scalar::<_, i64>("INSERT INTO servers(name) VALUES($1) RETURNING id")
+                .bind(name)
+                .fetch_one(&pool)
+                .await?,
+        );
+    }
+    for (server, enabled) in [(servers[0], true), (servers[1], false)] {
+        sqlx::query("INSERT INTO server_plugins(server_id,plugin,enabled,source,enabled_at) VALUES($1,'ddns',$2,'administrator',0)")
+            .bind(server).bind(enabled).execute(&pool).await?;
+    }
+    let mut rules = Vec::new();
+    for (index, (server, enabled)) in [
+        (servers[0], true),
+        (servers[1], true),
+        (servers[2], true),
+        (servers[1], false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut config = input(server)["config"].clone();
+        config["record_name"] = format!("node{index}.example.com").into();
+        config["enabled"] = enabled.into();
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO ddns_rules(id,server_id,config,api_token) VALUES($1,$2,$3,$4)")
+            .bind(id)
+            .bind(server)
+            .bind(&config)
+            .bind(TOKEN)
+            .execute(&pool)
+            .await?;
+        rules.push(id);
+    }
+    migrations.run(&pool).await?;
+    let mut after = Vec::new();
+    for id in &rules {
+        after.push(
+            sqlx::query_as::<_, (bool, i64)>(
+                "SELECT (config->>'enabled')::boolean,revision FROM ddns_rules WHERE id=$1",
+            )
+            .bind(id)
+            .fetch_one(&pool)
+            .await?,
+        );
+    }
+    // Only the rule that was due to run keeps running; the two that could not
+    // run become paused, and an already paused rule is left as it was.
+    assert_eq!(after, vec![(true, 1), (false, 2), (false, 2), (false, 1)]);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM server_plugins WHERE plugin='ddns'")
+            .fetch_one(&pool)
+            .await?,
+        0
+    );
+    Ok(())
+}
+
 #[sqlx::test]
 async fn access_key_accounts_are_saved_in_one_step_without_echoing_the_secret(
     pool: PgPool,

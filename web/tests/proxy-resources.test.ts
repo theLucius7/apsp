@@ -4,6 +4,7 @@ import type { ChainBatchDraft, ProxyWriteSnapshot } from '../src/plugins/singbox
 import { filterProxyResources, proxyResourceCounts, proxyResourceKey, validatedSnapshot, validProxyResources } from '../src/plugins/singbox/groupTypes'
 import type { ProxyResource, ResourceEndpoint } from '../src/plugins/singbox/groupTypes'
 import { nodeRoute } from '../src/plugins/singbox/nodeRoute'
+import { canonicalPath } from '../src/app/paths'
 import { publicResourceFields } from './proxy-resource-fixtures.mjs'
 const requestId = '00000000-0000-4000-8000-000000000001'
 const nextId = '00000000-0000-4000-8000-000000000002'
@@ -40,17 +41,17 @@ test('retained and unresolved cleanup references keep current resource snapshots
   expect(validProxyResources(invalid)).toBe(false)
 })
 test('new filter URLs and legacy chain bookmarks preserve strict query parsing', () => {
-  const route = (path: string) => nodeRoute(path)
-  for (const base of ['/nodes']) {
+  const route = (path: string) => nodeRoute(canonicalPath(path))
+  for (const base of ['/nodes', '/plugins/sing-box/nodes']) {
     expect(route(base)).toEqual({ kind: 'all', chains: false })
     expect(route(`${base}?kind=chains&server=2`)).toEqual({ kind: 'chains', chains: true, serverId: 2 })
     expect(route(`${base}?kind=direct`)).toEqual({ kind: 'direct', chains: false })
     for (const query of ['kind=chain', 'server=01', 'server=1e0', 'kind=all&kind=direct', 'other=1']) expect(route(`${base}?${query}`)).toBeNull()
   }
   // The former chain list address opens the chain filter; further parameters narrow it, a sub-page never matches.
-  expect(route('/nodes?kind=chains')).toEqual({ kind: 'chains', chains: true })
-  expect(route('/nodes?kind=chains&server=2')).toEqual({ kind: 'chains', chains: true, serverId: 2 })
-  for (const path of ['/nodes?kind=chains/1', '/nodes?kind=chains&kind=direct']) expect(route(path)).toBeNull()
+  expect(route('/plugins/sing-box/chains')).toEqual({ kind: 'chains', chains: true })
+  expect(route('/plugins/sing-box/chains?server=2')).toEqual({ kind: 'chains', chains: true, serverId: 2 })
+  for (const path of ['/plugins/sing-box/chains/1', '/plugins/sing-box/chains?kind=direct']) expect(route(path)).toBeNull()
 })
 test('invalid current metadata preserves a readable prior snapshot without authorizing writes', () => {
   const previous = snapshot().resources.data!

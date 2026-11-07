@@ -60,8 +60,6 @@ EXCEPTIONS = {
         r'"UserShell"',
         r"<key>UserName</key>",
     ),
-    "src/state/schema.rs": (r'"user_version"',),
-    "tests/state_baseline.rs": (r"\bPRAGMA user_version\b",),
     "tests/usage.rs": (r"\bPRAGMA user_version\b",),
     "tests/usage_bounds.rs": (
         r"\bPRAGMA user_version\b",

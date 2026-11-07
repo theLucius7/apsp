@@ -215,7 +215,7 @@ try {
       '/api/plugins/sing-box/users/7/subscription': route => proven ? route.fulfill({ json: { format: 'singbox', subscription_url: 'https://apsp-TEST.example.test/TEST_ONLY_PATH' } }) : route.fulfill({ status: 403, json: { error: '请先再次验证管理员身份，证明有效期为五分钟' } }),
       '/api/control-center/reauth': route => { proven = true; return route.fulfill({ status: 204 }) },
     } }
-    const { context, page, reads } = await open(state, '/users', { permissions: ['clipboard-read', 'clipboard-write'] })
+    const { context, page, reads } = await open(state, '/plugins/sing-box/users', { permissions: ['clipboard-read', 'clipboard-write'] })
     // The selected user's access card holds the one copy button.
     await page.locator('[data-slot=user-access]').getByRole('button', { name: '复制订阅链接', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '再次验证身份' })

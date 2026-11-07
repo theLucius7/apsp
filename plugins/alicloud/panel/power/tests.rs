@@ -25,14 +25,13 @@ fn state(status: &str, mode: &str) -> State {
         spot_strategy: "SpotAsPriceGo".into(),
         interruption_behavior: Some("Stop".into()),
         public_ips: vec!["192.0.2.1".into()],
-        public_ipv6: vec!["2001:db8::1".into()],
         locked: false,
     }
 }
 fn response(s: &State) -> Reply {
     Reply::ok(
         "DescribeInstances",
-        json!({"RequestId":"test-read","TotalCount":1,"Instances":{"Instance":[{"InstanceId":s.cloud_id,"RegionId":s.region,"Status":s.status,"StoppedMode":s.stopped_mode,"InstanceChargeType":s.charge_type,"InstanceNetworkType":s.network_type,"SpotStrategy":s.spot_strategy,"SpotInterruptionBehavior":s.interruption_behavior,"Ipv6Address":s.public_ipv6,"PublicIpAddress":{"IpAddress":s.public_ips},"OperationLocks":{"LockReason":[]}}]}}),
+        json!({"RequestId":"test-read","TotalCount":1,"Instances":{"Instance":[{"InstanceId":s.cloud_id,"RegionId":s.region,"Status":s.status,"StoppedMode":s.stopped_mode,"InstanceChargeType":s.charge_type,"InstanceNetworkType":s.network_type,"SpotStrategy":s.spot_strategy,"SpotInterruptionBehavior":s.interruption_behavior,"PublicIpAddress":{"IpAddress":s.public_ips},"OperationLocks":{"LockReason":[]}}]}}),
     )
 }
 async fn prepare(pool: &PgPool, id: Uuid, s: &State, action: &str, mode: &str) -> Uuid {
@@ -75,13 +74,10 @@ async fn stop_is_confirmed_once_and_recovers_without_duplicate_write(pool: PgPoo
     api::confirm_on(&pool, id).await.unwrap();
     api::confirm_on(&pool, id).await.unwrap();
     assert!(super::super::resource(&pool, r).await.unwrap().manual_hold);
-    // A new optional address must not invalidate an otherwise identical stop.
-    let mut current = initial.clone();
-    current.public_ipv6 = vec!["2001:db8::2".into()];
     let mut stopped = state("Stopped", "StopCharging");
     stopped.public_ips.clear();
     let mock = Mock::start(vec![
-        response(&current),
+        response(&initial),
         Reply::ok("StopInstance", json!({"RequestId":"test-stop"})),
         response(&state("Stopping", "KeepCharging")),
         response(&stopped),
@@ -217,33 +213,6 @@ async fn start_rejection_is_terminal_but_unknown_write_remains_uncertain(pool: P
 }
 fn policy() -> Policy {
     serde_json::from_value(json!({"enabled":true,"stop_mode":"KeepCharging","threshold_action":"stop","limit_gb":100,"threshold_percent":95,"schedule_enabled":true,"start_time":"23:58","stop_time":"08:00","utc_offset_minutes":480,"keepalive":true})).unwrap()
-}
-
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
-async fn optional_ipv6_failure_keeps_instance_status_and_previous_addresses(pool: PgPool) {
-    let (_, id) = seed(&pool).await;
-    sqlx::query("UPDATE alicloud_resources SET ipv6_addresses='[\"2001:db8::9\"]',ipv6_checked_at=1 WHERE id=$1").bind(id).execute(&pool).await.unwrap();
-    let mut state = state("Running", "KeepCharging");
-    state.public_ipv6.clear();
-    let mock = Mock::start(vec![
-        response(&state),
-        Reply {
-            action: "DescribeNetworkInterfaces".into(),
-            status: 403,
-            value: json!({"Code":"Forbidden","Message":"TEST_ONLY","RequestId":"test"}),
-        },
-    ])
-    .await;
-    scheduler::poll(&pool, id, &Cloud::local(&mock.endpoint))
-        .await
-        .unwrap();
-    let resource = super::super::resource(&pool, id).await.unwrap();
-    assert_eq!(resource.power_state.unwrap().status, "Running");
-    assert!(resource.power_error.is_none());
-    assert_eq!(resource.ipv6_addresses.0, vec!["2001:db8::9"]);
-    assert_eq!(resource.ipv6_checked_at, Some(1));
-    assert!(resource.ipv6_error.is_some());
-    mock.exhausted();
 }
 #[test]
 fn schedule_handles_midnight_window_and_overlapping_due_events() {

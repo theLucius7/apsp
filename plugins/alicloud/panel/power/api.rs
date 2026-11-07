@@ -17,7 +17,6 @@ use uuid::Uuid;
 pub(in super::super) fn routes() -> Router<AppState> {
     Router::new()
         .merge(super::guard::seed::routes())
-        .route("/api/plugins/alicloud/cron-preview", post(cron_preview))
         .route(
             "/api/plugins/alicloud/resources/{id}/power-policy",
             patch(update_policy),
@@ -39,33 +38,6 @@ pub(in super::super) fn routes() -> Router<AppState> {
             "/api/plugins/alicloud/power-jobs/{id}/dismiss",
             post(dismiss),
         )
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CronPreview {
-    expression: String,
-    utc_offset_minutes: i64,
-}
-async fn cron_preview(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(input): Json<CronPreview>,
-) -> ApiResult<Json<serde_json::Value>> {
-    auth::require_admin(&state, &headers).await?;
-    if !(-720..=840).contains(&input.utc_offset_minutes) || input.utc_offset_minutes % 15 != 0 {
-        return Err(ApiError::BadRequest("请选择有效的固定 UTC 偏移".into()));
-    }
-    let cron =
-        super::cron::Cron::parse(&input.expression).map_err(|e| ApiError::BadRequest(e.into()))?;
-    let occurrences = cron.preview(apsp_protocol::now_timestamp(), input.utc_offset_minutes);
-    if occurrences.is_empty() {
-        return Err(ApiError::BadRequest(
-            "Cron 在未来五年内没有有效触发时间".into(),
-        ));
-    }
-    Ok(Json(
-        serde_json::json!({"occurrences":occurrences,"utc_offset_minutes":input.utc_offset_minutes}),
-    ))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
