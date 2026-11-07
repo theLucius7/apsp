@@ -128,12 +128,12 @@ class Handler(BaseHTTPRequestHandler):
             # The panel lists a command until its terminal result is acknowledged.
             'commands/lifecycle': [] if self.server.command_results else [self.server.command],
             f"commands/{self.server.command['id']}/control": self.control(),
-        }
-        if suffix == 'telemetry-settings':
-            # Without this endpoint the Agent keeps the durable one-second upload
-            # schedule this smoke measures; live samples are covered by the
+            # The Agent uploads durable samples only once the panel returns valid
+            # settings: at once, then every interval (15 s is the minimum), and
+            # each second while uploads fail. Live samples are covered by the
             # panel telemetry_live tests.
-            return self.reply({'error': 'not found'}, 404)
+            'telemetry-settings': dict(persist_interval_secs=15),
+        }
         self.reply(values.get(suffix, []))
 
     def do_POST(self):
