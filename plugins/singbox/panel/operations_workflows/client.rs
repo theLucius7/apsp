@@ -20,13 +20,27 @@ pub(super) struct Definition {
     selection_groups: Vec<Selection>,
     dns: Option<Value>,
     route: Option<Value>,
+    #[serde(default)]
+    clash: Option<Value>,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Selection {
     tag: String,
+    #[serde(default)]
     outbounds: Vec<String>,
+    #[serde(default = "selector_kind", rename = "type")]
+    kind: String,
+    #[serde(default)]
+    filter: Vec<String>,
+    url: Option<String>,
+    interval: Option<String>,
+    tolerance: Option<u16>,
     default: Option<String>,
+}
+
+fn selector_kind() -> String {
+    "selector".into()
 }
 
 fn known_keys(value: &Value, keys: &[&str]) -> ApiResult<()> {
@@ -52,17 +66,42 @@ fn validate(definition: &Definition) -> ApiResult<()> {
             || group.tag.len() > 64
             || group.tag.chars().any(char::is_control)
             || !tags.insert(&group.tag)
-            || group.outbounds.is_empty()
+            || !matches!(group.kind.as_str(), "selector" | "urltest")
+            || (group.outbounds.is_empty() && group.filter.is_empty())
+            || group.filter.len() > 32
+            || group.filter.iter().any(|v| v.is_empty() || v.len() > 128)
+            || group
+                .url
+                .as_ref()
+                .is_some_and(|v| !v.starts_with("https://") || v.len() > 2048)
+            || group.interval.as_ref().is_some_and(|v| {
+                let (number, scale) = if let Some(n) = v.strip_suffix('s') {
+                    (n, 1)
+                } else if let Some(n) = v.strip_suffix('m') {
+                    (n, 60)
+                } else if let Some(n) = v.strip_suffix('h') {
+                    (n, 3600)
+                } else {
+                    return true;
+                };
+                !number
+                    .parse::<u64>()
+                    .ok()
+                    .and_then(|n| n.checked_mul(scale))
+                    .is_some_and(|s| (1..=86400).contains(&s))
+            })
             || group.outbounds.len() > 200
             || group
                 .outbounds
                 .iter()
                 .any(|tag| tag.len() > 256 || tag.chars().any(char::is_control))
             || group.outbounds.iter().collect::<BTreeSet<_>>().len() != group.outbounds.len()
-            || group
-                .default
-                .as_ref()
-                .is_some_and(|tag| !group.outbounds.contains(tag))
+            || group.default.as_ref().is_some_and(|tag| {
+                tag.is_empty()
+                    || tag.len() > 256
+                    || tag.chars().any(char::is_control)
+                    || (group.filter.is_empty() && !group.outbounds.contains(tag))
+            })
         {
             return Err(ApiError::BadRequest(
                 "选择组名称、成员或默认成员无效".into(),
@@ -187,9 +226,29 @@ fn validate(definition: &Definition) -> ApiResult<()> {
                 "final",
                 "auto_detect_interface",
                 "default_domain_resolver",
+                "rule_set",
             ],
         )?;
         validate_rules(route.get("rules"), false)?;
+        apsp_compiler::profile::validate_rule_sets(route)
+            .map_err(|e| ApiError::BadRequest(e.into()))?;
+    }
+    let tags: BTreeSet<&str> = definition
+        .route
+        .as_ref()
+        .and_then(|r| r.get("rule_set"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|s| s["tag"].as_str())
+        .collect();
+    if let Some(dns) = &definition.dns {
+        apsp_compiler::profile::validate_rule_refs(dns.get("rules"), &tags)
+            .map_err(|e| ApiError::BadRequest(e.into()))?;
+    }
+    if let Some(clash) = &definition.clash {
+        apsp_compiler::profile::validate_clash_template(clash)
+            .map_err(|e| ApiError::BadRequest(e.into()))?;
     }
     Ok(())
 }
@@ -211,6 +270,8 @@ fn validate_rules(value: Option<&Value>, dns: bool) -> ApiResult<()> {
                     "domain_suffix",
                     "domain_keyword",
                     "query_type",
+                    "rule_set",
+                    "clash_mode",
                     "action",
                     "server",
                     "strategy",
@@ -226,17 +287,23 @@ fn validate_rules(value: Option<&Value>, dns: bool) -> ApiResult<()> {
                     "ip_cidr",
                     "port",
                     "protocol",
+                    "rule_set",
+                    "clash_mode",
+                    "ip_is_private",
+                    "network",
                     "action",
                     "outbound",
                 ],
             )?;
         }
-        if rule
-            .get("action")
-            .is_some_and(|a| !matches!(a.as_str(), Some("route" | "reject")))
-        {
+        if rule.get("action").is_some_and(|a| {
+            !matches!(
+                a.as_str(),
+                Some("route" | "reject" | "sniff" | "hijack-dns")
+            )
+        }) {
             return Err(ApiError::BadRequest(
-                "模板仅表达 route 与 reject 动作，其他动作不会被丢弃或替换".into(),
+                "模板动作仅支持路由、拒绝、嗅探与接管 DNS".into(),
             ));
         }
         for key in [
@@ -303,35 +370,78 @@ pub(in super::super) fn apply_definition(
     definition: Option<&Value>,
 ) -> ApiResult<String> {
     let Some(definition) = definition else {
-        return Ok(content);
+        let mut value: Value = serde_json::from_str(&content).map_err(anyhow::Error::from)?;
+        if let Some(object) = value.as_object_mut() {
+            object.remove("apsp_labels");
+        }
+        return Ok(format!(
+            "{}\n",
+            serde_json::to_string_pretty(&value).map_err(anyhow::Error::from)?
+        ));
     };
     let definition: Definition = serde_json::from_value(definition.clone())
         .map_err(|_| ApiError::Conflict("客户端模板格式已不受支持，请修正模板".into()))?;
     validate(&definition)?;
     let mut value: Value = serde_json::from_str(&content).map_err(anyhow::Error::from)?;
+    let labels = value
+        .as_object_mut()
+        .and_then(|v| v.remove("apsp_labels"))
+        .unwrap_or(json!({}));
     let outbounds = value["outbounds"]
         .as_array_mut()
         .ok_or_else(|| ApiError::Conflict("生成配置缺少出站列表".into()))?;
     let leaf_tags: BTreeSet<String> = outbounds
         .iter()
-        .filter(|v| v["type"] != "selector")
+        .filter(|v| {
+            !matches!(
+                v["type"].as_str(),
+                Some("selector" | "urltest" | "shadowtls")
+            )
+        })
         .filter_map(|v| v["tag"].as_str().map(str::to_owned))
         .collect();
     for group in &definition.selection_groups {
-        if leaf_tags.contains(&group.tag)
-            || group.outbounds.iter().any(|tag| !leaf_tags.contains(tag))
-        {
+        if leaf_tags.contains(&group.tag) {
+            return Err(ApiError::Conflict("分组名称与授权出站冲突".into()));
+        }
+        let mut members = group.outbounds.clone();
+        for tag in &leaf_tags {
+            if tag == "direct" {
+                continue;
+            }
+            let name = labels[tag].as_str().unwrap_or(tag);
+            if group.filter.iter().any(|f| {
+                f == "*" || name.to_lowercase().contains(&f.to_lowercase()) || tag.contains(f)
+            }) && !members.contains(tag)
+            {
+                members.push(tag.clone());
+            }
+        }
+        if members.is_empty() {
             return Err(ApiError::Conflict(
-                "模板引用的节点已不可用或名称冲突，请重新确认选择组；不丢弃成员、不自动直连".into(),
+                "分组没有匹配的可用节点，请调整筛选条件".into(),
             ));
         }
         outbounds.retain(|v| v["tag"] != group.tag);
-        let mut selector = json!({"type":"selector","tag":group.tag,"outbounds":group.outbounds});
-        if let Some(default) = &group.default {
-            selector["default"] = json!(default);
+        let mut selector = json!({"type":group.kind,"tag":group.tag,"outbounds":members});
+        if group.kind == "selector" {
+            if let Some(default) = &group.default {
+                selector["default"] = json!(default);
+            }
+        } else {
+            selector["url"] = json!(
+                group
+                    .url
+                    .as_deref()
+                    .unwrap_or("https://www.gstatic.com/generate_204")
+            );
+            selector["interval"] = json!(group.interval.as_deref().unwrap_or("5m"));
+            selector["tolerance"] = json!(group.tolerance.unwrap_or(50));
         }
         outbounds.push(selector);
     }
+    apsp_compiler::profile::validate_groups(outbounds, "tag", "outbounds")
+        .map_err(|e| ApiError::Conflict(e.into()))?;
     let all_tags: BTreeSet<String> = outbounds
         .iter()
         .filter_map(|v| v["tag"].as_str().map(str::to_owned))
@@ -451,7 +561,7 @@ pub(super) async fn get(
     }
     tx.commit().await?;
     Ok(Json(
-        json!({"template":template,"definition_redacted":!reveal&&template.is_some(),"credential_access_reason":super::super::secret_access::REASON,"supported_client":"singbox","supported_version":"1.14.2","schema_validation":true,"runtime_validation":false,"limitations":"其他客户端和版本未提供兼容矩阵；模板字段超出表达范围时拒绝保存，不静默丢弃"}),
+        json!({"template":template,"definition_redacted":!reveal&&template.is_some(),"credential_access_reason":super::super::secret_access::REASON,"supported_client":"singbox","supported_version":"1.14.4","schema_validation":false,"runtime_validation":false,"limitations":"其他客户端和版本未提供兼容矩阵；模板字段超出表达范围时拒绝保存，不静默丢弃"}),
     ))
 }
 
@@ -471,9 +581,9 @@ pub(super) async fn save(
     Json(request): Json<Save>,
 ) -> ApiResult<Json<Value>> {
     let administrator = super::super::secret_access::require_reveal(&state, &headers).await?;
-    if request.client != "singbox" || request.client_version != "1.14.2" {
+    if request.client != "singbox" || request.client_version != "1.14.4" {
         return Err(ApiError::BadRequest(
-            "当前仅支持 sing-box 1.14.2 完整 JSON 模板；其他客户端/版本未完成兼容支持".into(),
+            "当前仅支持 sing-box 1.14.4 完整 JSON 模板；其他客户端/版本未完成兼容支持".into(),
         ));
     }
     if request.expected_revision < 0
@@ -505,6 +615,22 @@ pub(super) async fn save(
         ));
     }
     let content = reference_content(&mut tx, id).await?;
+    if let Some(clash) = definition.get("clash").filter(|v| !v.is_null()) {
+        let reference: Value = serde_json::from_str(&content).map_err(anyhow::Error::from)?;
+        let proxies: Vec<Value> = reference["outbounds"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|o| o["type"] == "authorized_reference")
+            .filter_map(|o| o["tag"].as_str())
+            .map(|tag| json!({"name":reference["apsp_labels"][tag].as_str().unwrap_or(tag)}))
+            .collect();
+        apsp_compiler::profile::apply_clash(
+            json!({"proxies":proxies,"proxy-groups":[],"rules":[]}),
+            clash,
+        )
+        .map_err(|e| ApiError::BadRequest(e.into()))?;
+    }
     apply_definition(content, Some(&definition))?;
     let revision = request
         .expected_revision
@@ -520,13 +646,21 @@ pub(super) async fn save(
 }
 
 async fn reference_content(tx: &mut Transaction<'_, Postgres>, user: i64) -> ApiResult<String> {
-    let managed: Vec<i64> = sqlx::query_scalar(
-        "SELECT node_id FROM singbox_desired_accesses WHERE user_id=$1 ORDER BY node_id",
-    )
-    .bind(user)
-    .fetch_all(&mut **tx)
-    .await?;
-    let mut tags: Vec<String> = managed.into_iter().map(|id| format!("node-{id}")).collect();
+    let managed:Vec<(i64,String,Value)>=sqlx::query_as("SELECT id,name,settings FROM nodes WHERE id IN(SELECT node_id FROM singbox_desired_accesses WHERE user_id=$1) ORDER BY id").bind(user).fetch_all(&mut **tx).await?;
+    let mut tags = Vec::new();
+    let mut labels = serde_json::Map::new();
+    for (id, name, settings) in managed {
+        let tag = format!("node-{id}");
+        tags.push(tag.clone());
+        labels.insert(tag, json!(name));
+        let settings: apsp_compiler::NodeSettings =
+            serde_json::from_value(settings).map_err(anyhow::Error::from)?;
+        for (index, address) in settings.public_addresses.iter().enumerate() {
+            let tag = format!("node-{id}-address-{}", index + 1);
+            tags.push(tag.clone());
+            labels.insert(tag, json!(format!("{name} · {}", address.name)));
+        }
+    }
     let external = super::super::external_access::subscription_nodes(tx, user).await?;
     tags.extend(
         external
@@ -549,8 +683,10 @@ async fn reference_content(tx: &mut Transaction<'_, Postgres>, user: i64) -> Api
         .collect();
     outbounds.push(json!({"type":"selector","tag":"proxy","outbounds":tags}));
     outbounds.push(json!({"type":"direct","tag":"direct"}));
-    serde_json::to_string(&json!({"outbounds":outbounds,"route":{"final":"proxy"}}))
-        .map_err(|e| ApiError::Internal(e.into()))
+    serde_json::to_string(
+        &json!({"outbounds":outbounds,"route":{"final":"proxy"},"apsp_labels":labels}),
+    )
+    .map_err(|e| ApiError::Internal(e.into()))
 }
 
 #[derive(Deserialize)]
@@ -569,10 +705,10 @@ pub(super) async fn compatibility(
 ) -> ApiResult<Json<Value>> {
     crate::control_center::require_capability(&state, &headers, "proxy:read").await?;
     let supported =
-        request.client == "singbox" && request.version == "1.14.2" && request.format == "singbox";
+        request.client == "singbox" && request.version == "1.14.4" && request.format == "singbox";
     if !supported {
         return Ok(Json(
-            json!({"available":false,"client":request.client,"version":request.version,"format":request.format,"reason":"当前仅提供 sing-box 1.14.2 完整 JSON 模型；不能确认其他客户端或版本对协议与字段的支持","dropped_fields":[]}),
+            json!({"available":false,"client":request.client,"version":request.version,"format":request.format,"reason":"当前仅提供 sing-box 1.14.4 完整 JSON 模型；不能确认其他客户端或版本对协议与字段的支持","dropped_fields":[]}),
         ));
     }
     let mut tx = crate::read_snapshot(&state.pool).await?;
@@ -582,7 +718,7 @@ pub(super) async fn compatibility(
         Ok(content) => {
             let value: Value = serde_json::from_str(&content).map_err(anyhow::Error::from)?;
             Ok(Json(
-                json!({"available":true,"client":"singbox","version":"1.14.2","format":"singbox","protocols":value["outbounds"].as_array().into_iter().flatten().filter_map(|v|v["type"].as_str()).collect::<BTreeSet<_>>(),"dropped_fields":[],"schema_model":"当前固定编译器模型","runtime_validation":false,"reason":"配置生成成功；仍需由目标客户端执行配置检查及实际连接验证"}),
+                json!({"available":true,"client":"singbox","version":"1.14.4","format":"singbox","protocols":value["outbounds"].as_array().into_iter().flatten().filter_map(|v|v["type"].as_str()).collect::<BTreeSet<_>>(),"dropped_fields":[],"schema_model":"当前固定编译器模型","runtime_validation":false,"reason":"配置生成成功；仍需由目标客户端执行配置检查及实际连接验证"}),
             ))
         }
         Err(ApiError::Conflict(reason)) => Ok(Json(

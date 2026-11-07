@@ -582,10 +582,28 @@ pub struct ActiveSession {
     pub source: std::net::SocketAddr,
 }
 
+#[derive(Clone, Debug)]
+pub struct RuntimeConnection {
+    pub id: String,
+    pub principal: String,
+    pub source: std::net::SocketAddr,
+    pub network: String,
+    pub upload: u64,
+    pub download: u64,
+}
+
 /// Observes and closes runtime sessions for concurrent address limits. Session
 /// state and admission decisions stay in the core; adapters only translate the
 /// runtime's log lines and use its local control interface.
 pub trait SessionSource: Send + Sync {
+    fn connections<'a>(
+        &'a self,
+        _runtime: &'a Prepared,
+        _principals: &'a [String],
+    ) -> BoxFuture<'a, Vec<RuntimeConnection>> {
+        Box::pin(async { anyhow::bail!("authenticated connection inspection is unsupported") })
+    }
+
     /// Whether this applied configuration enables session control.
     fn enabled(&self, runtime: &Prepared) -> bool;
     /// Pure translation; lines that carry no session evidence yield nothing.
@@ -613,6 +631,10 @@ pub trait Adapter: Send + Sync {
         Box::pin(async { anyhow::bail!("runtime dependency validation is not supported") })
     }
     fn describe(&self) -> Descriptor;
+    /// File contract for a verified release target, which can differ from the Agent ABI.
+    fn describe_artifact(&self, _version: &str, _target: &str) -> Descriptor {
+        self.describe()
+    }
     fn supports_runtime_probe(&self) -> bool {
         false
     }

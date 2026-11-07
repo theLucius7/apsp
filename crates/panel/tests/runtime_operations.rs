@@ -97,6 +97,7 @@ async fn runtime_operations_are_capability_gated_device_scoped_and_immutable(
         id: request.id,
         module: request.module.clone(),
         operation: request.operation,
+        sessions: None,
         finished_at: now_timestamp(),
         error: Some(RuntimeOperationError::Interrupted),
         snapshot: None,

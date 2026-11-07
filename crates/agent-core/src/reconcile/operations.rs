@@ -8,6 +8,66 @@ use apsp_protocol::{
 use uuid::Uuid;
 
 impl Reconciler {
+    pub(crate) async fn connection_operation(
+        &self,
+        request: &apsp_protocol::RuntimeOperationRequest,
+    ) -> Result<apsp_protocol::RuntimeConnections> {
+        let _guard = self.gate.lock().await;
+        let previous = self.previous()?.context("no applied runtime")?;
+        ensure!(
+            Some(previous.spec.revision) == request.expected_revision,
+            "applied revision changed"
+        );
+        self.verify_applied_runtime(&previous).await?;
+        let filter = request
+            .session_filter
+            .as_ref()
+            .context("missing connection filter")?;
+        ensure!(filter.valid(), "invalid connection filter");
+        let source = self
+            .adapter
+            .session_source()
+            .context("session control unsupported")?;
+        let connections = self
+            .bounded(source.connections(&previous, &filter.principals))
+            .await?;
+        let truncated = connections.len() > 256;
+        let mut closed = 0;
+        if request.operation == apsp_protocol::RuntimeOperation::CloseSessions {
+            let ids: Vec<String> = connections
+                .iter()
+                .filter(|entry| filter.ids.is_empty() || filter.ids.contains(&entry.id))
+                .take(256)
+                .map(|entry| entry.id.clone())
+                .collect();
+            closed = self.bounded(source.close_sessions(&previous, &ids)).await? as u32;
+        }
+        let connections = if request.operation == apsp_protocol::RuntimeOperation::CloseSessions {
+            self.bounded(source.connections(&previous, &filter.principals))
+                .await?
+        } else {
+            connections
+        };
+        Ok(apsp_protocol::RuntimeConnections {
+            observed_at: now_timestamp(),
+            revision: previous.spec.revision,
+            truncated: truncated || connections.len() > 256,
+            closed,
+            connections: connections
+                .into_iter()
+                .take(256)
+                .map(|c| apsp_protocol::RuntimeConnection {
+                    id: c.id,
+                    principal: c.principal,
+                    source: c.source,
+                    network: c.network,
+                    upload: c.upload,
+                    download: c.download,
+                })
+                .collect(),
+        })
+    }
+
     pub(crate) async fn restart_current(
         &self,
         target: &apsp_protocol::ModuleManifest,
@@ -15,11 +75,12 @@ impl Reconciler {
     ) -> Result<()> {
         let _guard = self.gate.lock().await;
         self.recover_locked().await?;
-        client.verify_artifact(
+        let descriptor = client.runtime_descriptor(
             &target.artifact,
             &target.kernel_version,
-            &self.adapter.describe(),
+            self.adapter.as_ref(),
         )?;
+        client.verify_artifact(&target.artifact, &target.kernel_version, &descriptor)?;
         let previous = self.previous()?.context("no applied runtime")?;
         ensure!(
             previous.spec.revision == target.config_rev

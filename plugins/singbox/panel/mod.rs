@@ -4,7 +4,7 @@
 //! The plugin reaches panel services only through the `apsp-panel-host` API.
 
 /// The signed stable runtime with APSP per-user budgets (ADR 0124).
-pub const RUNTIME_VERSION: &str = "1.14.4-apsp.1";
+pub const RUNTIME_VERSION: &str = "1.14.4-apsp.2";
 
 pub mod accesses;
 mod activity;
@@ -56,6 +56,7 @@ pub mod publisher;
 pub mod reachability;
 pub mod runtime_operations;
 mod secret_access;
+pub mod server_profiles;
 pub mod settings;
 pub mod source_migration;
 pub mod sources;
@@ -66,7 +67,9 @@ pub mod subscription_parser;
 pub mod subscription_sources;
 pub mod subscriptions;
 pub mod usage;
+pub mod user_controls;
 pub mod user_limits;
+pub mod user_sessions;
 
 pub use activity::runtime_activity_on;
 
@@ -102,6 +105,10 @@ pub async fn run(state: AppState) {
 
 pub fn router() -> Router<AppState> {
     let management = Router::new()
+        .route(
+            "/servers/{id}/profile",
+            get(server_profiles::get).put(server_profiles::put),
+        )
         .route("/statistics", get(statistics::summary))
         .route("/policy-groups", get(policies::list).post(policies::create))
         .route(
@@ -143,6 +150,15 @@ pub fn router() -> Router<AppState> {
         .route(
             "/users/{id}/limits",
             get(user_limits::get).put(user_limits::put),
+        )
+        .route("/users/{id}/sessions", get(user_sessions::get))
+        .route(
+            "/users/{id}/sessions/{server}",
+            post(user_sessions::request),
+        )
+        .route(
+            "/users/{id}/control",
+            get(user_controls::get).put(user_controls::put),
         )
         .route("/servers", get(settings::list))
         .route("/servers/{id}", get(settings::get))

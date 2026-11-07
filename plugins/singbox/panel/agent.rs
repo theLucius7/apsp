@@ -83,7 +83,7 @@ pub async fn manifest_module(
             // Explicit fixed candidates bind ordinary node revisions as well.
             // Their artifact must remain the exact previewed platform payload.
             if path_deployment || explicit_rollout {
-                sqlx::query("INSERT INTO singbox_runtime_manifest_facts(server_id,module,revision,runtime_version,artifact_sha256,artifact) VALUES($1,'singbox',$2,'1.14.4-apsp.1',$3,$4) ON CONFLICT DO NOTHING").bind(server_id).bind(revision).bind(&module.artifact.sha256).bind(serde_json::to_value(&module.artifact).map_err(anyhow::Error::from)?).execute(&mut *tx).await?;
+                sqlx::query("INSERT INTO singbox_runtime_manifest_facts(server_id,module,revision,runtime_version,artifact_sha256,artifact) VALUES($1,'singbox',$2,'1.14.4-apsp.2',$3,$4) ON CONFLICT DO NOTHING").bind(server_id).bind(revision).bind(&module.artifact.sha256).bind(serde_json::to_value(&module.artifact).map_err(anyhow::Error::from)?).execute(&mut *tx).await?;
                 let same:bool=sqlx::query_scalar("SELECT artifact_sha256=$3 FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2").bind(server_id).bind(revision).bind(&module.artifact.sha256).fetch_one(&mut *tx).await?;
                 if !same {
                     return Err(ApiError::Conflict(
@@ -162,6 +162,11 @@ async fn prepare_manifest(
         Some(artifact) => serde_json::from_value(artifact).map_err(anyhow::Error::from)?,
         None => runtime_artifact(state, info).await?,
     };
+    let capabilities: Value = sqlx::query_scalar("SELECT capabilities FROM servers WHERE id=$1")
+        .bind(server_id)
+        .fetch_one(&state.pool)
+        .await?;
+    artifact_capability(&artifact, &capabilities)?;
     let selected:Option<String>=sqlx::query_scalar("SELECT m.artifact_sha256 FROM singbox_runtime_rollout_members m JOIN singbox_runtime_rollouts r ON r.id=m.rollout_id WHERE m.server_id=$1 AND m.baseline_revision<$2 AND r.completed_at IS NULL ORDER BY r.created_at DESC LIMIT 1").bind(server_id).bind(config_rev).fetch_optional(&state.pool).await?;
     if selected.is_some_and(|expected| expected != artifact.sha256) {
         return Err(ApiError::Conflict(
@@ -179,6 +184,36 @@ async fn prepare_manifest(
         bundle_sha256,
         stats_listen: "127.0.0.1:18085".into(),
     })
+}
+
+// Artifact descriptors have already passed the independent signature and payload checks.
+pub(super) fn artifact_capability(
+    artifact: &apsp_protocol::Artifact,
+    capabilities: &Value,
+) -> ApiResult<()> {
+    let proof = artifact
+        .proof
+        .as_ref()
+        .ok_or_else(|| ApiError::BadRequest("运行时缺少签名证明".into()))?;
+    let metadata: apsp_protocol::release::ReleaseMetadata =
+        serde_json::from_str(&proof.metadata_json).map_err(anyhow::Error::from)?;
+    let has_files = metadata.artifacts.iter().any(|entry| {
+        entry.name == "sing-box"
+            && entry.version == crate::RUNTIME_VERSION
+            && !entry.auxiliary_files.is_empty()
+    });
+    if has_files
+        && !capabilities.as_array().is_some_and(|values| {
+            values
+                .iter()
+                .any(|value| value == apsp_protocol::release::VERSIONED_RUNTIME_FILES_CAPABILITY)
+        })
+    {
+        return Err(ApiError::BadRequest(
+            "此运行时包含版本化附件，请先升级到支持运行时附件校验的当前 Agent".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub(super) async fn runtime_artifact(
@@ -252,4 +287,38 @@ pub async fn bundle(state: &AppState, server_id: i64, rev: i64) -> ApiResult<Str
     .fetch_optional(&state.pool)
     .await?
     .ok_or(ApiError::NotFound)
+}
+
+#[cfg(test)]
+mod artifact_capability_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn runtime_attachments_require_explicit_device_support() {
+        let metadata = json!({"schema":1,"source_repo":"theLucius7/apsp","tag":"agent-v0.3.7","protocol_min":1,"protocol_max":1,"artifacts":[{"name":"sing-box","version":crate::RUNTIME_VERSION,"arch":"amd64","format":"tar.gz","binary_name":"sing-box","archive_size":3,"binary_sha256":"a".repeat(64),"binary_size":3,"asset_name":"fixture.tar.gz","auxiliary_files":{"libcronet.so":{"sha256":"b".repeat(64),"size":3}}}]});
+        // Signature verification belongs to descriptor(); this tests its capability gate.
+        let artifact = apsp_protocol::Artifact {
+            url: "https://example.com/fixture".into(),
+            sha256: "a".repeat(64),
+            proof: Some(apsp_protocol::release::ReleaseProof {
+                metadata_json: metadata.to_string(),
+                checksums: String::new(),
+                signature: String::new(),
+            }),
+        };
+        assert!(
+            artifact_capability(
+                &artifact,
+                &json!([apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY])
+            )
+            .is_err()
+        );
+        assert!(
+            artifact_capability(
+                &artifact,
+                &json!([apsp_protocol::release::VERSIONED_RUNTIME_FILES_CAPABILITY])
+            )
+            .is_ok()
+        );
+    }
 }

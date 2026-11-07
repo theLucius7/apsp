@@ -155,7 +155,7 @@ pub async fn check(
     ];
     let artifact = if registered {
         match super::agent::runtime_artifact(&state, &row.get("static_info")).await {
-            Ok(_) => Check { name: "签名运行时", passed: true, detail: "已找到与设备平台匹配的 sing-box 1.14.4-apsp.1 制品，签名验证通过".into() },
+            Ok(_) => Check { name: "签名运行时", passed: true, detail: "已找到与设备平台匹配的 sing-box 1.14.4-apsp.2 制品，签名验证通过".into() },
             Err(ApiError::NotFound) => Check { name: "签名运行时", passed: false, detail: "面板缺少此平台的签名运行时，请维护者按部署文档导入匹配 Release；插件目录可查看已收录版本".into() },
             Err(ApiError::BadRequest(message)) => Check { name: "签名运行时", passed: false, detail: message },
             Err(error) => return Err(error),

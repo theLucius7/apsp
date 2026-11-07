@@ -9,10 +9,10 @@ import sys
 import tarfile
 
 
-VERSION = "1.14.4-apsp.1"
-REVISION = "243a13cd63c275a1567badb2905b731a48545a26"
+VERSION = "1.14.4-apsp.2"
+REVISION = "5d74251bd02a4b243a2cf23a6f0e7bdfc2259642"
 # Server build tags, including the statistics API the Agent reads.
-TAGS = "with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api,with_acme"
+TAGS = "with_quic,with_utls,with_grpc,with_wireguard,with_clash_api,with_v2ray_api,with_acme,with_gvisor,with_cloudflared,with_openvpn,with_openconnect,with_tailscale,with_naive_outbound,with_purego"
 
 
 def require(condition, message):
@@ -34,11 +34,17 @@ def verify(root, destination):
     with archive.open("rb") as source:
         digest = hashlib.file_digest(source, "sha256").hexdigest()
     require(entries.get("amd64") == digest, "runtime archive checksum mismatch")
+    sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"tools"))
+    from runtime_auxiliary import inspect
+    libraries=inspect(archive.read_bytes(),"amd64","sing-box")
     destination.mkdir(mode=0o700, parents=True, exist_ok=False)
+    for name,contents in libraries.items():
+        (destination/name).write_bytes(contents)
     binary = destination / "sing-box"
     with tarfile.open(archive, "r:gz") as package:
         members = package.getmembers()
-        require(len(members) == 1 and members[0].name == "sing-box", "unexpected runtime archive members")
+        require({m.name for m in members} == {"sing-box","libcronet.so"}, "unexpected runtime archive members")
+        members = [m for m in members if m.name == "sing-box"]
         require(members[0].isfile() and 0 < members[0].size <= 512 * 1024 * 1024, "invalid binary member")
         with package.extractfile(members[0]) as source, binary.open("xb") as output:
             while chunk := source.read(1024 * 1024):

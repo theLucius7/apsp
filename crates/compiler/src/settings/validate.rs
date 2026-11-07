@@ -94,6 +94,32 @@ pub(crate) fn validate(node: &Node) -> Result<(), CompileError> {
             "Reality 握手目标需为不含端口的域名或 IP，端口需为 1 至 65535",
         ));
     }
+    if let Some(realm) = &value.realm
+        && (!matches!(
+            node.protocol_config,
+            crate::ProtocolConfig::Hysteria2 { .. }
+        ) || !realm.server_url.starts_with("https://")
+            || realm.server_url.len() > 2048
+            || realm.server_url.contains(['@', '#', '\n', '\r'])
+            || realm.realm_id.is_empty()
+            || realm.realm_id.len() > 128
+            || realm.realm_id.chars().any(char::is_control)
+            || ![0, 4, 6].contains(&realm.ip_version)
+            || realm.stun_servers.is_empty()
+            || realm.stun_servers.len() > 8
+            || realm
+                .stun_servers
+                .iter()
+                .any(|s| s.len() > 255 || s.chars().any(char::is_whitespace))
+            || [&realm.server_token, &realm.client_token]
+                .iter()
+                .any(|s| s.len() < 32 || s.len() > 4096 || s.chars().any(char::is_control)))
+    {
+        return Err(crate::invalid_node(
+            node,
+            "invalid Hysteria Realm parameters",
+        ));
+    }
     let hy = &value.hysteria2;
     if !matches!(node.protocol_config, ProtocolConfig::Hysteria2 { .. })
         && *hy != Hysteria2Settings::default()

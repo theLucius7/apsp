@@ -197,7 +197,7 @@ mod tests {
     fn runtime_step_requires_the_traffic_service_fixed_version() {
         let mut step: Step = serde_json::from_value(serde_json::json!({
             "kind":"singbox_retry_deployment", "service":null, "timeout_secs":300,
-            "runtime_version":"1.14.4-apsp.1"
+            "runtime_version":"1.14.4-apsp.2"
         }))
         .unwrap();
         assert!(step.is_runtime());
@@ -205,7 +205,7 @@ mod tests {
         assert_eq!(step.permission(), "proxy:write");
         step.runtime_version = Some("latest".into());
         assert!(step.validate().is_err());
-        step.runtime_version = Some("1.14.4-apsp.1".into());
+        step.runtime_version = Some("1.14.4-apsp.2".into());
         step.service = Some("other.service".into());
         assert!(step.validate().is_err());
     }

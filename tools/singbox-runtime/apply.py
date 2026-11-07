@@ -24,13 +24,14 @@ def apply(source, patches=HERE):
     if git(source, "status", "--porcelain").strip():
         raise ValueError("runtime checkout must be clean before applying patches")
     git(source, "apply", str(patches / "user-limits.patch"))
+    git(source, "apply", str(patches / "sessions.patch"))
     git(source, "add", "-A", "-f")
     identity = {
         "GIT_AUTHOR_NAME": "imengying", "GIT_AUTHOR_EMAIL": "yuzuzv@gmail.com",
         "GIT_COMMITTER_NAME": "imengying", "GIT_COMMITTER_EMAIL": "yuzuzv@gmail.com",
         "GIT_AUTHOR_DATE": FIXED_DATE, "GIT_COMMITTER_DATE": FIXED_DATE,
     }
-    git(source, "commit", "--no-gpg-sign", "-q", "-m", "feat: enforce APSP per-user runtime limits", **identity)
+    git(source, "commit", "--no-gpg-sign", "-q", "-m", "feat: enforce APSP limits and expose authenticated sessions", **identity)
     return git(source, "rev-parse", "HEAD").strip()
 
 

@@ -69,24 +69,44 @@ pub(crate) fn listen_addresses(spec: &RuntimeSpec) -> Result<Vec<Listener>> {
         .context("inbounds must be an array")?
     {
         let kind = inbound["type"].as_str().context("missing inbound type")?;
+        if kind == "shadowsocks" && inbound.get("listen_port").is_none() {
+            let tag = inbound["tag"].as_str().context("missing inner tag")?;
+            anyhow::ensure!(
+                config["inbounds"].as_array().is_some_and(|items| items
+                    .iter()
+                    .any(|v| v["type"] == "shadowtls" && v["detour"] == tag)),
+                "unreferenced virtual inbound"
+            );
+            continue;
+        }
+        if kind == "cloudflared" {
+            anyhow::ensure!(
+                inbound["token"].as_str().is_some_and(|s| s.len() >= 32),
+                "missing tunnel credential"
+            );
+            continue;
+        }
         let transports: &[Transport] = match kind {
-            "vless" | "anytls" => &[Transport::Tcp],
+            "vless" | "vmess" | "trojan" | "http" | "mixed" | "socks" | "shadowtls" | "anytls" => {
+                &[Transport::Tcp]
+            }
             "snell" if inbound["version"].as_u64() == Some(6) => &[Transport::Tcp],
             "naive" if inbound["network"].as_str() == Some("tcp") => &[Transport::Tcp],
             "hysteria2" | "tuic" => &[Transport::Udp],
             "shadowsocks" => &[Transport::Tcp, Transport::Udp],
             _ => bail!("unsupported native inbound type or transport"),
         };
-        let tls = if matches!(kind, "hysteria2" | "tuic" | "anytls" | "naive") {
-            let tls = inbound.get("tls").context("missing TLS configuration")?;
-            anyhow::ensure!(
-                tls["enabled"] == true && tls["server_name"].as_str().is_some(),
-                "invalid TLS configuration"
-            );
-            Some(tls.clone())
-        } else {
-            None
-        };
+        let tls =
+            if inbound["tls"]["enabled"] == true && inbound["tls"]["reality"]["enabled"] != true {
+                let tls = inbound.get("tls").context("missing TLS configuration")?;
+                anyhow::ensure!(
+                    tls["enabled"] == true && tls["server_name"].as_str().is_some(),
+                    "invalid TLS configuration"
+                );
+                Some(tls.clone())
+            } else {
+                None
+            };
         let obfuscation = if let Some(obfs) = inbound.get("obfs") {
             anyhow::ensure!(
                 kind == "hysteria2" && obfs["type"] == "salamander",
@@ -103,7 +123,7 @@ pub(crate) fn listen_addresses(spec: &RuntimeSpec) -> Result<Vec<Listener>> {
         } else {
             None
         };
-        let reality = inbound["tls"]["reality"]["enabled"] == true;
+        let reality = inbound["tls"]["reality"]["enabled"] == true || kind == "shadowtls";
         let port: u16 = inbound["listen_port"]
             .as_u64()
             .context("inbound has no listen port")?
@@ -129,6 +149,38 @@ pub(crate) fn listen_addresses(spec: &RuntimeSpec) -> Result<Vec<Listener>> {
                 reality,
             });
         }
+    }
+    for service in config["services"].as_array().into_iter().flatten() {
+        anyhow::ensure!(
+            service["type"] == "hysteria-realm",
+            "unsupported native service"
+        );
+        let port: u16 = service["listen_port"]
+            .as_u64()
+            .context("service has no listen port")?
+            .try_into()?;
+        anyhow::ensure!(
+            port > 0 && port != stats.port() && probe_port != Some(port) && ports.insert(port),
+            "conflicting service port"
+        );
+        let address: IpAddr = service["listen"]
+            .as_str()
+            .context("service has no listen address")?
+            .parse()?;
+        let address = match address {
+            IpAddr::V4(ip) if ip.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
+            IpAddr::V6(ip) if ip.is_unspecified() => IpAddr::V6(Ipv6Addr::LOCALHOST),
+            ip => ip,
+        };
+        let tls = service.get("tls").filter(|v| v["enabled"] == true).cloned();
+        anyhow::ensure!(tls.is_some(), "Realm requires TLS");
+        addresses.push(Listener {
+            address: SocketAddr::new(address, port),
+            transport: Transport::Tcp,
+            tls,
+            obfuscation: None,
+            reality: false,
+        });
     }
     addresses.sort_by_key(|listener| listener.address);
     Ok(addresses)

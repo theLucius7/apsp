@@ -99,19 +99,19 @@ class NativeIdentityContracts(unittest.TestCase):
 
     def test_pinned_binary_version_and_required_flags_are_accepted(self):
         tags = sorted(controller.REQUIRED_TAGS | {"TEST_ONLY_extra_tag"})
-        version = ("sing-box version 1.14.4-apsp.1\nTags: " + ",".join(tags) + "\n").encode()
+        version = ("sing-box version 1.14.4-apsp.2\nTags: " + ",".join(tags) + "\n").encode()
         with mock.patch.object(controller, "capture", return_value=version) as capture:
             identity = controller.binary_identity(self.binary, self.digest)
         capture.assert_called_once_with([str(self.binary), "version"])
         self.assertEqual(identity["sha256"], self.digest)
-        self.assertEqual(identity["version"], "1.14.4-apsp.1")
+        self.assertEqual(identity["version"], "1.14.4-apsp.2")
         self.assertEqual(identity["observed_build_tags"], tags)
 
     def test_wrong_runtime_or_each_missing_build_flag_is_rejected(self):
         for missing in (None, *sorted(controller.REQUIRED_TAGS)):
             with self.subTest(missing=missing):
                 tags = controller.REQUIRED_TAGS - {missing}
-                version = "1.14.3" if missing is None else "1.14.4-apsp.1"
+                version = "1.14.3" if missing is None else "1.14.4-apsp.2"
                 output = ("sing-box version " + version + "\nTags: " + ",".join(sorted(tags))).encode()
                 code = "exact_runtime_version_required" if missing is None else "required_runtime_tags_missing"
                 with mock.patch.object(controller, "capture", return_value=output), \
@@ -147,7 +147,7 @@ class CompilationManifestContracts(unittest.TestCase):
                                  "stats_m": 22082, "stats_b": 22083}}
         self.write(self.prepared / "compiler-input.json", self.inputs)
         self.manifest = {
-            "schema": 1, "test_only": True, "runtime_version": "1.14.4-apsp.1",
+            "schema": 1, "test_only": True, "runtime_version": "1.14.4-apsp.2",
             "native_binary_sha256": self.inputs["native_binary_sha256"],
             "compiler_input_sha256": controller.sha_file(self.prepared / "compiler-input.json"),
             "generator_source_sha256": "b" * 64,

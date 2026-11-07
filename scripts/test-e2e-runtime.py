@@ -7,6 +7,7 @@ import io
 from pathlib import Path
 import tarfile
 import tempfile
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -24,7 +25,7 @@ class CacheContracts(unittest.TestCase):
         self.artifacts = self.root / "sing-box" / VERIFIER.VERSION
         self.artifacts.mkdir(parents=True)
 
-    def package(self, name="sing-box", link=False):
+    def package(self, name="sing-box", link=False, library=False):
         archive = self.artifacts / "amd64"
         with tarfile.open(archive, "w:gz") as output:
             member = tarfile.TarInfo(name)
@@ -33,6 +34,10 @@ class CacheContracts(unittest.TestCase):
                 member.linkname = "/unrelated/runtime"
                 output.addfile(member)
             else:
+                member.size = 7
+                output.addfile(member, io.BytesIO(b"fixture"))
+            if library:
+                member = tarfile.TarInfo("libcronet.so")
                 member.size = 7
                 output.addfile(member, io.BytesIO(b"fixture"))
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
@@ -52,15 +57,17 @@ class CacheContracts(unittest.TestCase):
             with self.subTest(name=name, link=link):
                 self.package(name, link)
                 with patch.object(VERIFIER.subprocess, "check_output") as command:
-                    with self.assertRaisesRegex(ValueError, "archive members|binary member"):
+                    with self.assertRaisesRegex(ValueError, "archive member|binary member"):
                         VERIFIER.verify(self.root, self.root / ("runtime-link" if link else "runtime-path"))
                     command.assert_not_called()
 
     def test_right_version_with_missing_default_tag_is_rejected(self):
-        self.package()
+        self.package(library=True)
         tags = VERIFIER.TAGS.replace(",with_v2ray_api", "")
         version = f"sing-box version {VERIFIER.VERSION}\nTags: {tags}\nRevision: {VERIFIER.REVISION}\nCGO: disabled\n"
-        with patch.object(VERIFIER.subprocess, "check_output", side_effect=["Advanced Micro Devices X86-64", version]):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+        import runtime_auxiliary
+        with patch.object(runtime_auxiliary, "inspect", return_value={"libcronet.so":b"fixture"}), patch.object(VERIFIER.subprocess, "check_output", side_effect=["Advanced Micro Devices X86-64", version]):
             with self.assertRaisesRegex(ValueError, "tags mismatch"):
                 VERIFIER.verify(self.root, self.root / "runtime")
 

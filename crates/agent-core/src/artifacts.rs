@@ -22,7 +22,7 @@ use std::{
     time::Duration,
 };
 use uuid::Uuid;
-pub(crate) use verification::verify_expected;
+pub(crate) use verification::{installed_descriptor, verify_expected};
 pub use verification::{verify_installed_binary, verify_release_directory};
 
 const MAX_DOWNLOAD: usize = 512 * 1024 * 1024;
@@ -248,6 +248,23 @@ impl PanelClient {
         self.keys
             .as_ref()
             .map_err(|error| anyhow::anyhow!(error.to_string()))
+    }
+
+    pub(crate) fn runtime_descriptor(
+        &self,
+        artifact: &Artifact,
+        version: &str,
+        adapter: &dyn apsp_adapter_sdk::Adapter,
+    ) -> Result<Descriptor> {
+        verification::runtime_descriptor(
+            adapter,
+            version,
+            artifact
+                .proof
+                .as_ref()
+                .context("artifact has no signed release proof")?,
+            self.keys()?,
+        )
     }
 
     pub(crate) fn verify_artifact(

@@ -38,7 +38,7 @@ pub(super) async fn fixture(pool: PgPool) -> Result<Fixture> {
     release_fixture::write(
         &panel.state.config.data_dir,
         "sing-box",
-        "1.14.4-apsp.1",
+        "1.14.4-apsp.2",
         "sing-box",
         &archive,
         b"TEST_ONLY native binary never executed",

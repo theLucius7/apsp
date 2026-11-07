@@ -125,7 +125,10 @@ pub(super) async fn create_locked(
     request: CreateNode,
 ) -> ApiResult<NodeRow> {
     let requested_port = request.port.map(validate_port).transpose()?;
-    let protocol = request.protocol_config.build(None)?;
+    let protocol = request
+        .protocol_config
+        .build_on(transaction, request.server_id, None)
+        .await?;
     let (private_key, public_key) = if protocol.is_reality() {
         business::generate_reality_keypair()
     } else {
@@ -250,7 +253,9 @@ pub async fn update(
     if let Some(input) = request.protocol_config {
         let previous =
             serde_json::from_value(node.protocol_config.clone()).map_err(anyhow::Error::from)?;
-        let next = input.build(Some(&previous))?;
+        let next = input
+            .build_on(&mut transaction, server_id, Some(&previous))
+            .await?;
         if matches!(previous.tls(), Some(apsp_compiler::TlsConfig::Acme { .. }))
             && let Some(apsp_compiler::TlsConfig::Acme { .. }) = next.tls()
         {

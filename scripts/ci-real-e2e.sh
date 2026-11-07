@@ -69,7 +69,7 @@ specification.loader.exec_module(driver)
 traffic_specification = importlib.util.spec_from_file_location("e2e_traffic_evidence", "scripts/e2e-traffic-evidence.py")
 traffic = importlib.util.module_from_spec(traffic_specification)
 traffic_specification.loader.exec_module(traffic)
-summary = {"passed": passed == "1", "last_phase": phase, "exit_code": int(exit_code), "runtime_version": "1.14.4-apsp.1"}
+summary = {"passed": passed == "1", "last_phase": phase, "exit_code": int(exit_code), "runtime_version": "1.14.4-apsp.2"}
 if not summary["passed"]:
     summary["failure_line"] = int(failure_line)
 traffic_evidence = traffic.load(Path(state_path).with_name(traffic.EVIDENCE_NAME))

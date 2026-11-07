@@ -87,6 +87,7 @@ fn request() -> RuntimeOperationRequest {
         module: "demo".into(),
         operation: RuntimeOperation::Inspect,
         expected_revision: None,
+        session_filter: None,
         requested_at: now_timestamp(),
         expires_at: now_timestamp() + 600,
     }

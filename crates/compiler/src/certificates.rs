@@ -44,3 +44,26 @@ pub(crate) fn provider(nodes: &[&Node]) -> Result<Option<Value>, CompileError> {
         "disable_tls_alpn_challenge": challenge.port() != 443
     })))
 }
+
+pub(crate) fn dns_providers(nodes: &[&Node]) -> Vec<Value> {
+    let mut configs = Vec::new();
+    let mut providers = Vec::new();
+    for node in nodes.iter().filter(|n| n.enabled && !n.users.is_empty()) {
+        let Some(
+            tls @ TlsConfig::Dns01 {
+                email,
+                api_token,
+                domains,
+            },
+        ) = node.protocol_config.tls()
+        else {
+            continue;
+        };
+        if configs.contains(&tls) {
+            continue;
+        }
+        configs.push(tls);
+        providers.push(json!({"type":"acme","tag":format!("managed-dns-{}",node.id),"domain":domains,"data_directory":"certificates","email":email,"provider":"letsencrypt","disable_http_challenge":true,"disable_tls_alpn_challenge":true,"dns01_challenge":{"provider":"cloudflare","api_token":api_token}}));
+    }
+    providers
+}
