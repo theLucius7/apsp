@@ -4,6 +4,7 @@ import { readFile, mkdir } from 'node:fs/promises'
 import { resolve, extname, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { installControlCenterFixtures } from './control-center-fixtures.mjs'
+import { assertNativeSelectContrast } from './native-select-contrast.mjs'
 
 // TEST_ONLY: after rebuilding web/dist, run `node web/tests/expenses-ui.mjs`.
 // The costs and renewals ledger (ADR 0118): one list of services and servers, the
@@ -56,13 +57,19 @@ try {
   await new Promise(done => server.listen(0, '127.0.0.1', done))
   const origin = `http://127.0.0.1:${server.address().port}`
   browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
-  for (const width of [1440, 390, 320]) {
-    const context = await browser.newContext({ viewport: { width, height: 1000 }, acceptDownloads: true })
+  for (const width of [1440, 390, 320]) for (const theme of ['light', 'dark']) {
+    const context = await browser.newContext({ viewport: { width, height: 1000 }, acceptDownloads: true, colorScheme: theme === 'dark' ? 'light' : 'dark' })
+    await context.addInitScript(({ theme, width }) => {
+      localStorage.setItem('apsp-appearance', JSON.stringify({ theme, density: 'comfortable' }))
+      // Older WebViews still get common zones and retain an existing IANA alias.
+      if (width === 320) Object.defineProperty(Intl, 'supportedValuesOf', { value: undefined })
+    }, { theme, width })
     page = await context.newPage()
     const errors = [], writes = [], unexpected = [], reads = []
     page.on('pageerror', error => errors.push(error.message))
     await page.clock.install({ time: now * 1000 })
     const state = fixtures()
+    if (width === 320) state.settings.timezone = 'Etc/GMT+3'
     await page.route('**/api/**', async route => {
       const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method()
       if (method === 'GET') reads.push(path); else writes.push({ path, method, body: request.postDataJSON() })
@@ -110,8 +117,21 @@ try {
       return route.fulfill({ status: 404, json: { error: 'TEST_ONLY' } })
     })
     await installControlCenterFixtures(page)
+    await page.route('**/api/control-center/preferences/appearance', route => route.fulfill({ json: { value: { theme, density: 'comfortable' }, revision: 1, updated_at: now } }))
     const rows = page.locator('[data-slot=ledger-row]')
     const overflow = async label => assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${label} overflows at ${width}px`)
+    const chooseTimezone = async settings => {
+      const timezone = settings.getByRole('combobox', { name: /^日期时区/ })
+      await timezone.waitFor()
+      assert.equal(await timezone.evaluate(element => element.tagName), 'SELECT')
+      assert.equal(await timezone.inputValue(), state.settings.timezone, 'The saved zone must survive opening the form')
+      if (width !== 320) assert(await timezone.locator('option').count() > 100, 'Other IANA zones remain selectable')
+      await assertNativeSelectContrast(page, theme)
+      // Exercise opening the actual native picker, then select and persist an IANA value.
+      await timezone.click()
+      await timezone.press('Escape')
+      await timezone.selectOption('America/New_York')
+    }
     await page.goto(`${origin}/#/expenses`)
     await rows.first().waitFor()
 
@@ -223,10 +243,13 @@ try {
       // Settings in one place: budget, labels, reminder history and import.
       await page.getByRole('button', { name: '设置', exact: true }).click()
       const settings = page.locator('[data-dialog=ledger-settings]')
+      await chooseTimezone(settings)
       await settings.getByLabel(/^每月预算/).fill('600')
       await settings.getByRole('button', { name: '保存', exact: true }).click()
       await settings.getByText('已保存', { exact: true }).waitFor()
       assert.equal(writes.find(write => write.path === '/api/plugins/expenses/settings').body.budget_units, '6000000')
+      assert.equal(writes.find(write => write.path === '/api/plugins/expenses/settings').body.timezone, 'America/New_York')
+      assert.equal(await settings.getByRole('combobox', { name: /^日期时区/ }).inputValue(), 'America/New_York')
       await settings.getByRole('button', { name: '分类与付款', exact: true }).click()
       await settings.getByLabel('新的付款方式', { exact: true }).fill('支付宝')
       await settings.getByLabel('新的付款方式', { exact: true }).press('Enter')
@@ -255,12 +278,20 @@ try {
       await page.goto(`${origin}/#/expenses`)
       for (const view of ['即将续费', '支出']) { await page.getByRole('button', { name: view, exact: true }).click(); await page.waitForTimeout(200); await overflow(view) }
       await page.getByRole('button', { name: '设置', exact: true }).click()
-      await page.locator('[data-dialog=ledger-settings]').waitFor()
+      const settings = page.locator('[data-dialog=ledger-settings]')
+      await settings.waitFor()
+      await chooseTimezone(settings)
+      await settings.getByRole('button', { name: '保存', exact: true }).click()
+      await settings.getByText('已保存', { exact: true }).waitFor()
+      assert.equal(writes.find(write => write.path === '/api/plugins/expenses/settings').body.timezone, 'America/New_York')
+      await settings.getByRole('button', { name: '完成', exact: true }).click()
+      await page.getByRole('button', { name: '设置', exact: true }).click()
+      assert.equal(await settings.getByRole('combobox', { name: /^日期时区/ }).inputValue(), 'America/New_York', 'Reopening preserves the saved zone')
       await overflow('settings')
     }
     assert.deepEqual(errors, [])
     assert.deepEqual(unexpected, [], `Unexpected API calls: ${unexpected.join(', ')}`)
-    results.push(`${width}px`)
+    results.push(`${width}px/${theme}`)
     await context.close()
   }
   console.log(`expense UI passed at ${results.join(', ')}`)

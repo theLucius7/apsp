@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
 import { flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { assertNativeSelectContrast } from './native-select-contrast.mjs'
 
 // TEST_ONLY read-only resources; no device execution or secret template content is claimed.
 const diagnosisFixture = user => ({ user_id: user.id, account: { user_id: user.id, name: user.name, portal_created: false, keys: 0, active_sessions: 0, activation_expires_at: null },
@@ -31,7 +32,8 @@ try {
   browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
   const origin = `http://127.0.0.1:${server.address().port}`
   for (const width of [1280, 390]) {
-    const page = await browser.newPage({ viewport: { width, height: 1000 } })
+    const theme = width === 390 ? 'dark' : 'light'
+    const page = await browser.newPage({ viewport: { width, height: 1000 }, colorScheme: theme })
     const errors = [], writes = [], policyReads = [], usageReads = [], mutations = [], groupWrites = [], userWrites = []
     const failures = new Set(), heldReads = new Map()
     const previews = [], applications = [], operationSnapshots = new Map()
@@ -141,6 +143,7 @@ try {
       else if (pathname === '/api/me' && method === 'GET') value = { authenticated: true }
       else if (pathname === `${prefix}/users/1/portal` && method === 'GET') value = { configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin }, keys: 0, url: null, activation_expires_at: null }
       else if (pathname === `${prefix}/users/1/diagnosis` && method === 'GET' && !url.search) value = diagnosisFixture(user)
+      else if (pathname === `${prefix}/users/1/limits` && method === 'GET') value = { user_id: 1, revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] }
       else if (pathname === `${prefix}/users/1/client-template` && method === 'GET' && !url.search) value = templateFixture
       else if (pathname === `${prefix}/users` && method === 'GET') value = [user]
       else if (pathname === `${prefix}/users/1` && method === 'PATCH') {
@@ -167,7 +170,7 @@ try {
       else if (pathname === `${prefix}/package-groups` && method === 'GET') value = packages
       else if (pathname === `${prefix}/package-groups/2` && method === 'PUT') {
         const payload = request.postDataJSON()
-        assert.deepEqual(payload, { name: '已保留的套餐草稿', monthly_bytes: '2147483648', reset_day: 15, reset_hour: 8, reset_minute: 30, timezone: 'UTC', duration_days: 60 })
+        assert.deepEqual(payload, { name: '已保留的套餐草稿', monthly_bytes: '2147483648', reset_day: 15, reset_hour: 8, reset_minute: 30, timezone: 'Europe/London', duration_days: 60 })
         groupWrites.push({ pathname, method, payload }); Object.assign(packages[1], payload); value = packages[1]
       }
       else if (pathname === `${prefix}/package-groups/2` && method === 'DELETE') {
@@ -466,6 +469,9 @@ try {
     const packageRow = page.getByRole('row').filter({ has: page.getByText('新套餐', { exact: true }) })
     await packageRow.getByRole('button', { name: '编辑', exact: true }).click()
     dialog = page.getByRole('dialog')
+    assert.equal(await dialog.getByRole('combobox', { name: '重置时区', exact: true }).inputValue(), 'UTC')
+    await assertNativeSelectContrast(page, theme)
+    await dialog.getByRole('combobox', { name: '重置时区', exact: true }).selectOption('Europe/London')
     await dialog.getByRole('textbox', { name: '名称', exact: true }).fill('已保留的套餐草稿')
     await failedRead(`${prefix}/package-groups`)
     await blockedForm(dialog, '保存')
@@ -473,6 +479,7 @@ try {
       await blockedForm(dialog, '保存')
       assert.equal(await dialog.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '已保留的套餐草稿')
       assert.equal(await dialog.locator('input[name="duration_days"]').inputValue(), '60')
+      assert.equal(await dialog.getByRole('combobox', { name: '重置时区', exact: true }).inputValue(), 'Europe/London', 'A failed refresh must preserve the timezone draft')
     })
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     await dialog.waitFor({ state: 'hidden' })
