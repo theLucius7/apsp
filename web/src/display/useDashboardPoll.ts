@@ -13,6 +13,7 @@ export function useDashboardPoll<T>(path: string | null, interval: number, pause
   const key = path === null ? null : `${identity}\n${path}`
   const kept = () => key === null ? undefined : readKept<Kept<T>>(key)
   const [snapshot, setSnapshot] = useState<Snapshot<T>>(() => empty(key, kept()))
+  const currentSnapshot = useRef(snapshot)
   const trigger = useRef<() => void>(() => {})
   const reset = useRef<() => void>(() => {})
   const reload = useCallback(() => trigger.current(), [])
@@ -20,12 +21,14 @@ export function useDashboardPoll<T>(path: string | null, interval: number, pause
   useEffect(() => {
     let active = true, controller: AbortController | undefined, timeout: number | undefined, losses = 0
     const cancel = () => { window.clearTimeout(timeout); const pending = controller; controller = undefined; pending?.abort() }
-    const update = (patch: Partial<Snapshot<T>> | ((current: Snapshot<T>) => Partial<Snapshot<T>>)) => setSnapshot(current => {
+    const update = (patch: Partial<Snapshot<T>> | ((current: Snapshot<T>) => Partial<Snapshot<T>>)) => {
+      const current = currentSnapshot.current
       const previous = current.path === key ? current : empty<T>(key, kept())
       const changes = typeof patch === 'function' ? patch(previous) : patch
-      if (previous === current && (Object.keys(changes) as (keyof Snapshot<T>)[]).every(field => previous[field] === changes[field])) return current
-      return { ...previous, ...changes }
-    })
+      if (previous === current && (Object.keys(changes) as (keyof Snapshot<T>)[]).every(field => previous[field] === changes[field])) return
+      currentSnapshot.current = { ...previous, ...changes }
+      setSnapshot(currentSnapshot.current)
+    }
     update({ loading: Boolean(path) && !paused })
     const load = async (manual = false) => {
       if (!path || controller || document.visibilityState !== 'visible' || (paused && !manual)) return
@@ -38,12 +41,17 @@ export function useDashboardPoll<T>(path: string | null, interval: number, pause
         const result = await api<T>(path, 'GET', undefined, request.signal)
         if (active && controller === request && !request.signal.aborted) {
           losses = 0
-          if (key !== null) writeKept(key, { data: result, at: Date.now() })
-          update(current => ({ data: reconcile ? reconcile(current.data, result) : result, updatedAt: Date.now(), error: '', denied: false }))
+          // Reconcile once outside React's state updater. The visible snapshot and
+          // the route cache must retain the same sample, including delayed reads.
+          const data = reconcile ? reconcile(currentSnapshot.current.data, result) : result
+          const at = Date.now()
+          if (key !== null) writeKept(key, { data, at })
+          update({ data, updatedAt: at, error: '', denied: false })
         }
       } catch (reason) {
         if (active && controller === request && (!request.signal.aborted || timedOut)) {
           const denied = reason instanceof ApiError && [401, 403, 404].includes(reason.status)
+          if (denied && key !== null) writeKept(key, undefined)
           // One lost read during a poll is not news; the next read usually succeeds.
           losses += 1
           const quiet = !timedOut && isTransient(reason) && !manual && losses === 1

@@ -14,6 +14,33 @@ use serde_json::{Value, json};
 pub(super) use service_events::observe as observe_service_result;
 use sqlx::Row;
 
+const COMPARISON_METRICS: [&str; 7] = [
+    "cpu_percent",
+    "memory_used",
+    "disk_used",
+    "load_1",
+    "swap_used",
+    "tcp_connections",
+    "udp_connections",
+];
+
+/// Keep the last observation used by comparisons without duplicating inventories,
+/// per-process details or network counters already held by telemetry storage.
+pub(crate) fn comparison_metrics(metrics: &Value) -> Value {
+    Value::Object(
+        COMPARISON_METRICS
+            .into_iter()
+            .filter_map(|key| {
+                let value = metrics.get(key)?;
+                value
+                    .as_f64()
+                    .is_some_and(|number| number.is_finite() && number >= 0.0)
+                    .then(|| (key.to_owned(), value.clone()))
+            })
+            .collect(),
+    )
+}
+
 pub async fn health(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     crate::control_center::require_capability(&state, &headers, "monitoring:read").await?;
     let database:Value=sqlx::query_scalar("SELECT jsonb_build_object('size_bytes',pg_database_size(current_database()),'connections',(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database()),'checked_at',$1::bigint)").bind(now_timestamp()).fetch_one(&state.pool).await?;
@@ -53,16 +80,7 @@ pub async fn compare(
     crate::control_center::require_server(&state, &headers, other, "monitoring:read").await?;
     let other_from = input.other_from.unwrap_or(input.from - 86400);
     let other_until = input.other_until.unwrap_or(input.until - 86400);
-    let metrics = [
-        "cpu_percent",
-        "memory_used",
-        "disk_used",
-        "load_1",
-        "swap_used",
-        "tcp_connections",
-        "udp_connections",
-    ];
-    if !metrics.contains(&input.metric.as_str())
+    if !COMPARISON_METRICS.contains(&input.metric.as_str())
         || input.until <= input.from
         || other_until <= other_from
         || input.until - input.from > 7 * 86400

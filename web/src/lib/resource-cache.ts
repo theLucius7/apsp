@@ -5,5 +5,5 @@
 const kept = new Map<string, unknown>()
 
 export const readKept = <T,>(path: string) => kept.get(path) as T | undefined
-export const writeKept = (path: string, value: unknown) => { kept.set(path, value) }
+export const writeKept = (path: string, value: unknown) => { if (value === undefined) kept.delete(path); else kept.set(path, value) }
 export const clearKept = () => kept.clear()

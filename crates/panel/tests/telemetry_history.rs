@@ -51,6 +51,79 @@ async fn post(
 }
 
 #[sqlx::test]
+async fn comparison_storage_keeps_only_last_numeric_values_without_changing_history(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start(pool).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, _socket, ack) = panel
+        .authenticated_device(&cookie, "TEST_ONLY comparison")
+        .await?;
+    let at = (now_millis() - 120_000).div_euclid(60_000) * 60_000;
+    let first = sample(at + 1000, Some(10.0), 100);
+    let mut newest = sample(at + 3000, Some(40.0), 300);
+    newest.metrics.memory_used = Some(9007199254740993);
+    newest.metrics.disk_used = Some(1234);
+    newest.metrics.swap_used = Some(0);
+    newest.metrics.load_1 = Some(0.5);
+    newest.metrics.tcp_connections = Some(12);
+    newest.metrics.udp_connections = Some(0);
+    newest
+        .metrics
+        .extra
+        .insert("TEST_ONLY_inventory".into(), json!("x".repeat(16_384)));
+    post(&panel, &ack.session_token, vec![first, newest.clone()])
+        .await?
+        .error_for_status()?;
+    let delayed = sample(at + 2000, Some(100.0), 200);
+    post(&panel, &ack.session_token, vec![delayed, newest.clone()])
+        .await?
+        .error_for_status()?;
+    let expected = json!({"cpu_percent":40.0,"memory_used":9007199254740993_u64,"disk_used":1234,"swap_used":0,"load_1":0.5,"tcp_connections":12,"udp_connections":0});
+    let stored: Value =
+        sqlx::query_scalar("SELECT metrics FROM metrics_minutely WHERE server_id=$1 AND bucket=$2")
+            .bind(server)
+            .bind(at / 1000)
+            .fetch_one(&panel.state.pool)
+            .await?;
+    assert_eq!(stored, expected);
+    let size: (i32, i32) = sqlx::query_as("SELECT pg_column_size(metrics),pg_column_size($3::jsonb) FROM metrics_minutely WHERE server_id=$1 AND bucket=$2")
+        .bind(server).bind(at / 1000).bind(json!(newest.metrics)).fetch_one(&panel.state.pool).await?;
+    assert!(size.0 < size.1 / 10, "comparison projection: {size:?}");
+    let raw: Value =
+        sqlx::query_scalar("SELECT metrics FROM telemetry_samples WHERE server_id=$1 AND id=$2")
+            .bind(server)
+            .bind(newest.id)
+            .fetch_one(&panel.state.pool)
+            .await?;
+    assert_eq!(raw, json!(newest.metrics));
+    let latest: Value = sqlx::query_scalar("SELECT latest_metrics FROM servers WHERE id=$1")
+        .bind(server)
+        .fetch_one(&panel.state.pool)
+        .await?;
+    assert_eq!(latest, raw);
+    let summary: Value = sqlx::query_scalar("SELECT summary FROM telemetry_history WHERE server_id=$1 AND resolution_secs=60 AND bucket_at=$2")
+        .bind(server).bind(at).fetch_one(&panel.state.pool).await?;
+    assert_eq!(summary["sample_count"], 3);
+    assert_eq!(
+        summary["metrics"]["cpu_percent"],
+        json!({"count":3,"avg":50.0,"min":10.0,"max":100.0})
+    );
+    let missing = sample(at + 61_000, None, 400);
+    post(&panel, &ack.session_token, vec![missing])
+        .await?
+        .error_for_status()?;
+    let response: Value = panel.admin(Method::GET, &format!("/api/servers/{server}/fleet/compare?from={}&until={}&other_from={}&other_until={}&metric=cpu_percent",at/1000,at/1000+120,at/1000,at/1000+120), &cookie, None).await?.error_for_status()?.json().await?;
+    assert_eq!(
+        response["left"]["samples"],
+        json!([{"at":at/1000,"value":40.0},{"at":at/1000+60,"value":null}])
+    );
+    assert_eq!(response["right"]["samples"], response["left"]["samples"]);
+    assert_eq!(response["missing_is_zero"], false);
+    Ok(())
+}
+
+#[sqlx::test]
 async fn replay_identity_outlives_raw_rows_and_aggregates_only_observed_values(
     pool: PgPool,
 ) -> Result<()> {

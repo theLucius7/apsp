@@ -204,7 +204,13 @@ pub(super) async fn save(
             .get(&minute)
             .is_none_or(|(at, _)| *at < sample.sampled_at)
         {
-            minutes.insert(minute, (sample.sampled_at, value));
+            minutes.insert(
+                minute,
+                (
+                    sample.sampled_at,
+                    crate::fleet::monitoring::comparison_metrics(&value),
+                ),
+            );
         }
         if sample.sampled_at >= history_from {
             let point = HistoryPoint::sample_with_scope(&sample, 60_000, &asset);
@@ -224,7 +230,7 @@ pub(super) async fn save(
         sqlx::query("UPDATE servers SET latest_metrics=$2,metrics_sampled_at=$3 WHERE id=$1 AND metrics_sampled_at<$3").bind(server).bind(&latest).bind(latest_at).execute(&mut *tx).await?;
     }
     if !minutes.is_empty() {
-        // Preserve the old last-observation projection for old consumers.
+        // Comparisons need the last observation, not the aggregate's mean.
         let (minute_keys, rest): (Vec<i64>, Vec<(i64, serde_json::Value)>) =
             minutes.into_iter().unzip();
         let (minute_times, minute_values): (Vec<i64>, Vec<serde_json::Value>) =
