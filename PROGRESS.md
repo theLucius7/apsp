@@ -19,6 +19,12 @@
 - 新增三尺寸看板缓存浏览器回归及 PostgreSQL 投影、乱序重放、完整样本与对比接口测试。集中验证：前端 248 项、PostgreSQL 相关 22 项、分层检查器 13 项、浏览器 13 个尺寸场景及连接恢复 9 个场景通过；TypeScript/Vite、宿主全 targets 与面板相关测试的严格 Clippy、工作区格式和产物检查通过，见 [验收记录](docs/acceptance/dashboard-cache-and-storage.md)。
 - 补齐上游 #248 新增 SQLite 原生调用在分层检查器中的精确例外，不豁免文件或整行。未运行全工作区测试、远端 CI、生产迁移或部署；验证后清理本轮隔离 PostgreSQL、编译目录、依赖及临时日志。
 
+## 2026-11-07：功能划分（ADR 0125）与边界守护
+
+- 用户要求整理功能划分与逻辑结构，并研究软件工程、项目哲学、交互与使用理论。只读调查后端、前端、项目原则与上游来源，写成[功能划分与逻辑结构](docs/architecture.md)与 ADR 0125（#257）：内核只提供机制，`proxy`、`dns`、`cloud`、`costs`、`alerts`、`lines`、`overview`、`lab` 八个功能与侧栏对应，每张表一个所有者，上游代码归功能所有，分八个阶段迁移。
+- 阶段 0：`tools/check-feature-boundaries.py` 按 `tools/feature-boundaries.toml`（249 张表与 4 个视图的所有者、代码路径归属）检查跨功能 SQL、跨 crate `#[path]` 与前端跨功能引用；现有 226 处记在 `tools/feature-boundaries.baseline`，只许减少。CI 的边界步骤同时运行它（CI 仍暂停）。`AGENTS.md` 写入规则。
+- 验证：`python3 -m unittest tests.test_feature_boundaries` 11 项通过（所有者优先级、读写区分、注释与字符串、跨 crate `#[path]`、前端引用、无主表失败、清单只减不增）；`python3 tools/check-feature-boundaries.py` 通过；只改工具、测试与文档，不影响镜像。
+
 ## 2026-11-07：部署前在生产库结构副本上试启动，自动执行基线接入
 
 - 用户选择用部署脚本防护基线变更（“改部署脚本”“整体修复”）。部署器（Codex 管理的 `outputs/apsp-deploy/deploy.py`，不在仓库内）现在：新镜像与运行中的不同时，先在 `--internal` 隔离网络里用生产库结构副本（`pg_dump --schema-only` 加 `_sqlx_migrations` 与 `apsp_schema_baseline` 两张表的记录，无业务数据）试启动；被拒绝时依次在副本上尝试 `scripts/baseline-adoption-*.sql`，成功后把同样的脚本按顺序在生产各以一个事务执行，再换镜像；没有脚本能让它启动时部署被拦下，生产不变。换上后不健康且本次未接入数据库时，换回上次成功部署的镜像；`apsp-panel:previous` 只标成功部署过的镜像。

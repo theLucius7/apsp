@@ -1,0 +1,97 @@
+# Feature ownership for tools/check-feature-boundaries.py (ADR 0125, docs/architecture.md).
+# Owners: kernel, proxy, dns, cloud, costs, alerts, lines, overview, lab.
+
+# Every table and view in crates/panel/migrations/0001_current.sql has exactly one owner.
+# An exact name wins over a prefix (written with a trailing "*"); the longest prefix wins otherwise.
+[tables]
+kernel = [
+  "servers", "enrollment_tokens", "metrics_minutely", "telemetry_*", "deployments", "runtime_*",
+  "server_module_status", "server_network_counters", "server_network_daily", "server_plugins",
+  "server_retirements", "server_traffic_corrections", "administrator_*", "admins", "sessions", "auth_rate_limits", "passkey_*",
+  "management_api_tokens", "management_audit", "credential_entries", "notification_*", "diagnostic_*",
+  "system_*", "exchange_rates", "panel_settings", "record_retention_policy", "apsp_schema_baseline",
+  "tool_advisory_observations", "operations_backup_records", "operations_backup_schedules",
+  "operations_restore_drills",
+]
+proxy = ["singbox_*", "users", "nodes", "accesses", "usage_batches", "usage_records"]
+dns = ["dns_*", "ddns_*"]
+cloud = ["alicloud_*", "operations_hetzner_*"]
+costs = ["expense_*", "fleet_cost_records", "operations_cancellation_reminders"]
+alerts = ["alert_*", "server_alert_events", "operations_maintenance"]
+lines = [
+  "server_ip_quality*", "network_probes", "network_workbench_*", "latency_tasks", "probe_*",
+  "tcpquality_*",
+]
+lab = ["operations_*", "network_*", "fleet_*", "remote_commands"]
+
+# Code location to owner: the longest matching path prefix wins. Host modules are mapped to the
+# feature they belong to, so crossings are measured before the code moves out of the host.
+[rust]
+"crates/panel-host/src" = "kernel"
+"crates/panel-host/src/operations" = "lab"
+"crates/panel-host/src/operations/backups.rs" = "kernel"
+"crates/panel-host/src/operations/backup_executor" = "kernel"
+"crates/panel-host/src/operations/panel_job_backup" = "kernel"
+"crates/panel-host/src/operations/recovery.rs" = "kernel"
+"crates/panel-host/src/operations/cancellation_reminders.rs" = "costs"
+"crates/panel-host/src/operations/suppliers.rs" = "costs"
+"crates/panel-host/src/operations/hetzner" = "cloud"
+"crates/panel-host/src/network_configuration" = "lab"
+"crates/panel-host/src/network_workbench" = "lines"
+"crates/panel-host/src/ip_quality" = "lines"
+"crates/panel-host/src/diagnostic_plugins.rs" = "lines"
+"crates/panel-host/src/latency_tasks.rs" = "lines"
+"crates/panel-host/src/probes.rs" = "lines"
+"crates/panel-host/src/fleet" = "lab"
+"crates/panel-host/src/fleet/enrollment.rs" = "kernel"
+"crates/panel-host/src/fleet/assets.rs" = "costs"
+"crates/panel-host/src/commands" = "lab"
+"crates/panel-host/src/statistics.rs" = "overview"
+"crates/panel-host/src/dashboard.rs" = "overview"
+"crates/panel-host/src/notifications/rules.rs" = "alerts"
+"crates/panel-host/src/notifications/evaluation.rs" = "alerts"
+"crates/panel-host/src/notifications/events.rs" = "alerts"
+"crates/compiler" = "proxy"
+"plugins/singbox" = "proxy"
+"plugins/sing-box" = "proxy"
+"plugins/ddns" = "dns"
+"plugins/alicloud" = "cloud"
+"plugins/cloud_api" = "cloud"
+"plugins/expenses" = "costs"
+"plugins/ipquality" = "lines"
+"plugins/nodequality" = "lines"
+"plugins/tcpquality" = "lines"
+
+# The assembly crate, its integration tests and the Agent (which keeps its own SQLite ledger)
+# are outside the panel database rules.
+[rust_exempt]
+paths = ["crates/panel/src", "crates/panel/tests", "crates/agent", "crates/agent-core", "crates/adapter-"]
+
+# Web console: feature folders, the shell (app/) and the shared layer.
+[web]
+"web/src" = "shared"
+"web/src/app" = "shell"
+"web/src/App.tsx" = "shell"
+"web/src/main.tsx" = "shell"
+"web/src/servers" = "kernel"
+"web/src/system" = "kernel"
+"web/src/control-center" = "kernel"
+"web/src/plugins" = "kernel"
+"web/src/plugins/singbox" = "proxy"
+"web/src/plugins/ddns" = "dns"
+"web/src/plugins/alicloud" = "cloud"
+"web/src/plugins/expenses" = "costs"
+"web/src/subscriptions" = "costs"
+"web/src/monitoring" = "alerts"
+"web/src/monitoring/Latency" = "lines"
+"web/src/monitoring/ChinaReachability" = "lines"
+"web/src/network-workbench" = "lines"
+"web/src/server-diagnostics" = "lines"
+"web/src/ip-quality.ts" = "lines"
+"web/src/quality.ts" = "lines"
+"web/src/diagnostics.ts" = "lines"
+"web/src/statistics" = "overview"
+"web/src/display" = "overview"
+"web/src/operations" = "lab"
+"web/src/network-configuration" = "lab"
+"web/src/fleet" = "lab"
