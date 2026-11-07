@@ -102,7 +102,7 @@ try {
       control.recover(path); await refreshReads(control.page); await restored(); await wait(() => control.writes.length === baseline + 1, 'One explicitly recovered write'); ++totals.recovered
     }
     // The chains filter opens the chain section by default; these scenarios act on catalog rows.
-    for (const hash of ['/plugins/sing-box/nodes', '/plugins/sing-box/nodes?kind=chains&view=catalog']) {
+    for (const hash of ['/nodes', '/nodes?kind=chains&view=catalog']) {
       for (const dependency of ['nodes', 'proxy-resources', 'servers']) {
         await fixture(hash, async control => {
           await originalChain(control.page).getByRole('button', { name: '删除', exact: true }).click()
@@ -112,7 +112,7 @@ try {
         })
       }
     }
-    for (const label of ['创建节点']) await fixture('/plugins/sing-box/nodes', async control => {
+    for (const label of ['创建节点']) await fixture('/nodes', async control => {
       const button = control.page.getByRole('button', { name: label, exact: true }).first()
       await button.evaluate(button => {
         const filter = document.querySelector('select[aria-label="按服务器筛选"]')
@@ -128,7 +128,7 @@ try {
       assert.equal(await selected.inputValue(), '2', 'Creation uses the explicitly restored current filter')
       assert.equal(control.writes.length, 0)
     })
-    await fixture('/plugins/sing-box/nodes', async control => {
+    await fixture('/nodes', async control => {
       await originalChain(control.page).getByRole('button', { name: '删除', exact: true }).click()
       control.resources.splice(control.resources.findIndex(value => value.kind === 'chain'), 1); await refresh(control.page)
       const dialog = control.page.getByRole('alertdialog'); await dialog.getByText('此代理资源已不存在，请重新选择；当前草稿已保留。', { exact: true }).waitFor()

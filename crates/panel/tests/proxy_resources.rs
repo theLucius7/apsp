@@ -719,8 +719,8 @@ async fn batch_rejects_unauthorized_entries_and_invalid_managed_topologies(
             StatusCode::BAD_REQUEST,
         ),
         (
-            existing_entry("Public address loop", legacy_node, nb),
-            StatusCode::BAD_REQUEST,
+            existing_entry("Disabled plugin", legacy_node, nb),
+            StatusCode::CONFLICT,
         ),
         (
             existing_entry("Non Reality entry", snell, nb),
@@ -791,18 +791,18 @@ async fn batch_rejects_unauthorized_entries_and_invalid_managed_topologies(
         Some(json!({"public_host":"exit-b.example.com"})),
     )
     .await?;
-    // Preserved nodes keep legacy enablement even when the explicit row is disabled.
+    // Existing nodes cannot override an explicit disabled plugin.
     let (status, created) = batch(
         &panel,
         &cookie,
         request(vec![existing_entry(
-            "Legacy compatibility",
+            "Disabled plugin remains disabled",
             legacy_node,
             nb,
         )]),
     )
     .await?;
-    assert_eq!(status, StatusCode::CREATED, "{created}");
+    assert_eq!(status, StatusCode::CONFLICT, "{created}");
     panel.import_legacy_chain(&cookie, "AB", na, nb).await?;
     let before = state(&pool).await?;
     for item in [
@@ -1393,8 +1393,8 @@ async fn damaged_chains_stay_readable_and_cleanable_without_exposing_private_con
     assert_eq!(route["exit"]["id"], exit);
     assert_eq!(route["exit"]["node_deleted"], true);
     assert_eq!(route["exit"]["server_deleted"], true);
-    // This flag describes preserved configuration evidence, not retirement eligibility.
-    assert_eq!(route["exit"]["plugin_enabled"], true);
+    // Current enablement follows the explicit administrator setting.
+    assert_eq!(route["exit"]["plugin_enabled"], false);
     let reasons = route["unavailable_reasons"]
         .as_array()
         .context("unavailable reasons")?;

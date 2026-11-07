@@ -22,6 +22,7 @@ use uuid::Uuid;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .merge(super::power::routes())
+        .merge(super::history::routes())
         .merge(super::eip_rotation::routes())
         .route("/api/plugins/alicloud", get(list))
         .route("/api/plugins/alicloud/accounts", post(create_account))
@@ -223,13 +224,24 @@ async fn update_account(
         }
     }
     // Any edit invalidates queued authorization and cached billing evidence.
+    if input.site != previous.site
+        || key != previous.access_key_id
+        || secret != previous.access_key_secret
+        || credential != previous.credential_id
+    {
+        sqlx::query("DELETE FROM alicloud_traffic_history WHERE account_id=$1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("UPDATE alicloud_resources SET ipv6_addresses='[]',ipv6_checked_at=NULL,ipv6_error=NULL WHERE account_id=$1").bind(id).execute(&mut *tx).await?;
+    }
     sqlx::query("UPDATE alicloud_accounts SET name=$2,site=$3,access_key_id=$4,access_key_secret=$5,enabled=$6,auto_enabled=$7,limit_gb=$8,credential_id=$9,billing_enabled=$10,balance_enabled=$11,revision=revision+1,bill=NULL,traffic=NULL,traffic_error=NULL,error_code=NULL,next_run_at=0,balance=NULL,balance_error=NULL,balance_next_at=0 WHERE id=$1")
         .bind(id).bind(input.name.trim()).bind(input.site).bind(key).bind(secret).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).bind(credential).bind(billing_enabled).bind(balance_enabled).execute(&mut *tx).await?;
     sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id IN (SELECT id FROM alicloud_resources WHERE account_id=$1) AND status IN ('preview','queued')")
         .bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id IN (SELECT id FROM alicloud_resources WHERE account_id=$1) AND status IN ('preview','queued')").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     sqlx::query("UPDATE alicloud_eip_rotations SET status='cancelled',updated_at=$2 WHERE resource_id IN (SELECT id FROM alicloud_resources WHERE account_id=$1) AND status='preview'").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
-    sqlx::query("UPDATE alicloud_resources SET instance_bill=NULL,bill_error=NULL,bill_next_at=0,next_power_at=0 WHERE account_id=$1").bind(id).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_resources SET instance_bill=NULL,bill_error=NULL,bill_next_at=0,next_power_at=0,cdt_guard_next_at=0 WHERE account_id=$1").bind(id).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

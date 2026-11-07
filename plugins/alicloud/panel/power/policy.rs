@@ -14,6 +14,12 @@ pub(in super::super) struct Policy {
     pub limit_gb: u64,
     pub threshold_percent: u64,
     pub schedule_enabled: bool,
+    #[serde(default)]
+    pub schedule_mode: ScheduleMode,
+    #[serde(default)]
+    pub start_cron: String,
+    #[serde(default)]
+    pub stop_cron: String,
     pub start_time: String,
     pub stop_time: String,
     pub utc_offset_minutes: i64,
@@ -21,17 +27,20 @@ pub(in super::super) struct Policy {
     #[serde(default)]
     pub cdt_guard: Option<super::guard::Config>,
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(in super::super) enum ScheduleMode {
+    #[default]
+    Daily,
+    Cron,
+}
 impl Policy {
     pub fn validate(&self) -> ApiResult<()> {
         if let Some(guard) = &self.cdt_guard {
             guard.validate()?;
-            if self.stop_mode != "StopCharging"
-                || self.threshold_action != "off"
-                || self.schedule_enabled
-                || self.keepalive
-            {
+            if self.stop_mode != "StopCharging" || self.threshold_action != "off" {
                 return Err(ApiError::BadRequest(
-                    "CDT 脚本守护使用节省停机，不能同时启用账单阈值、每日计划或抢占式保活".into(),
+                    "CDT 守护使用节省停机，不能同时启用账单阈值".into(),
                 ));
             }
         }
@@ -43,11 +52,29 @@ impl Policy {
             || self.utc_offset_minutes % 15 != 0
             || minute(&self.start_time).is_none()
             || minute(&self.stop_time).is_none()
-            || self.start_time == self.stop_time
+            || (self.schedule_mode == ScheduleMode::Daily && self.start_time == self.stop_time)
         {
             return Err(ApiError::BadRequest(
                 "请核对停机模式、流量额度、1–100% 阈值及不同的每日开关机时间（00:00–23:59）".into(),
             ));
+        }
+        if self.schedule_enabled && self.schedule_mode == ScheduleMode::Cron {
+            for expression in [&self.start_cron, &self.stop_cron] {
+                let cron = super::cron::Cron::parse(expression)
+                    .map_err(|e| ApiError::BadRequest(e.into()))?;
+                if cron
+                    .occurrence(
+                        apsp_protocol::now_timestamp(),
+                        self.utc_offset_minutes,
+                        true,
+                    )
+                    .is_none()
+                {
+                    return Err(ApiError::BadRequest(
+                        "Cron 在未来五年内没有有效触发时间".into(),
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -74,6 +101,19 @@ impl Policy {
             && (resource.threshold_hold || self.exceeded(account, now) != Some(false))
     }
     pub fn in_window(&self, now: i64) -> bool {
+        if self.schedule_mode == ScheduleMode::Cron {
+            let previous = |expression: &str| {
+                super::cron::Cron::parse(expression).ok()?.occurrence(
+                    now,
+                    self.utc_offset_minutes,
+                    false,
+                )
+            };
+            return match (previous(&self.start_cron), previous(&self.stop_cron)) {
+                (Some(start), Some(stop)) => start > stop,
+                _ => false,
+            };
+        }
         let minute_now = (now + self.utc_offset_minutes * 60).rem_euclid(86400) / 60;
         let start = minute(&self.start_time).unwrap_or(0);
         let stop = minute(&self.stop_time).unwrap_or(0);
@@ -84,6 +124,19 @@ impl Policy {
         }
     }
     pub fn occurrence(&self, action: &str, now: i64) -> Option<i64> {
+        if self.schedule_mode == ScheduleMode::Cron {
+            let expression = if action == "start" {
+                &self.start_cron
+            } else {
+                &self.stop_cron
+            };
+            let event = super::cron::Cron::parse(expression).ok()?.occurrence(
+                now,
+                self.utc_offset_minutes,
+                false,
+            )?;
+            return (now - event < 600).then_some(event);
+        }
         let clock = if action == "start" {
             &self.start_time
         } else {

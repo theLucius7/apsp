@@ -6,7 +6,7 @@ import { api, errorMessage } from '../api'
 import { usePreference } from './preferences'
 import { useI18n } from '../i18n'
 import type { NavigationItem } from '../app/navigation'
-import { canonicalPath } from '../app/paths'
+import { resolveRoute } from '../app/routes'
 import { cn } from '@/lib/utils'
 import { navigate } from '@/lib/leave-guard'
 import { Button } from '@/components/ui/button'
@@ -18,15 +18,15 @@ type Item = { kind: string; id: number | string; label: string; path: string }
 type Entry = { key: string; label: string; detail: string; icon: LucideIcon; item: Item }
 type Section = { id: string; title: string; entries: Entry[] }
 
-// Visits and favourites saved before the address rename (ADR 0120) hold the former
-// address; they are read at the current one, so a page is never listed twice.
+// Ignore saved entries whose pages are not part of the current application.
 function saved(items: Item[] | null | undefined): Item[] {
   const seen = new Set<string>()
   return (items ?? []).flatMap(item => {
-    const path = canonicalPath(item.path)
+    const path = item.path
+    if (resolveRoute(path).page === 'not-found') return []
     if (seen.has(path)) return []
     seen.add(path)
-    return [path === item.path ? item : { ...item, path }]
+    return [item]
   })
 }
 

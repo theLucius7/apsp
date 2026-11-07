@@ -4,6 +4,7 @@ import type { Account, Resource } from '../src/plugins/alicloud/types'
 import { POWER_RESULT, ROTATION_RESULTS, activityItems, deliveryText } from '../src/plugins/alicloud/history'
 import type { EipRotation } from '../src/plugins/alicloud/types'
 import { cdtGuardProgress } from '../src/plugins/alicloud/guardUsage'
+import { trafficPoints, readingStale } from '../src/plugins/alicloud/usageHistory'
 
 test('attached EIP billing is displayed without relabelling dominant traffic as ordinary traffic', () => {
   expect(charge('PayByDominantTraffic')).toBe('按主流量计费')
@@ -11,6 +12,28 @@ test('attached EIP billing is displayed without relabelling dominant traffic as 
   expect(charge('PayByBandwidth')).toBe('按带宽计费')
   expect(charge('PayBy95')).toBe('按增强 95 计费')
   expect(charge('TEST_ONLY_UNKNOWN')).toBe('其他计费方式')
+})
+
+test('traffic history preserves missing buckets, pool separation, resets and exact large-counter differences', () => {
+  const from = Date.parse('2026-10-31T15:00:00Z') / 1000
+  const sample = (hour: number, bytes: string) => ({ bucket_start: from + hour * 3600, sampled_at: from + hour * 3600, mainland_bytes: bytes, overseas_bytes: '0' })
+  const group = { seconds: 3600, from, to: from + 5 * 3600, samples: [sample(0, '100'), sample(1, '10'), sample(2, '20'), sample(4, '9007199254740992'), sample(5, '9007199254740993')] }
+  const delta = trafficPoints(group, 'mainland_bytes', true)
+  expect(delta.map(point => point.value)).toEqual([null, null, 10 / 1024 ** 3, null, null, 1 / 1024 ** 3])
+  expect(trafficPoints(group, 'overseas_bytes', true)[2].value).toBe(0)
+  expect(trafficPoints(group, 'mainland_bytes', false).some(point => point.at === (from + 3600) * 1000 - 1 && point.value === null)).toBeTrue()
+  const backward = { ...group, samples: [sample(0, '100'), sample(1, '10'), sample(2, '5')] }
+  expect(trafficPoints(backward, 'mainland_bytes', true)[2].value).toBeNull()
+})
+
+test('fresh instance timestamps cannot make stale traffic current', () => {
+  const now = Date.parse('2026-11-01T00:10:00+08:00') / 1000
+  expect(readingStale(now - 30, now, 900, null, true)).toBeFalse()
+  expect(readingStale(now - 901, now, 900, null, true)).toBeTrue()
+  expect(readingStale(now - 700, now, 900, null, true)).toBeTrue()
+  expect(readingStale(now - 1, now, 900, 'network_error')).toBeTrue()
+  expect(readingStale(now + 1, now, 900)).toBeTrue()
+  expect(readingStale(null, now, 900)).toBeTrue()
 })
 
 test('cloud edits do not copy cached billing or write-only credentials back into requests', () => {
@@ -91,7 +114,7 @@ test('the guard summary measures the month high plus a counted jump against the 
   expect(cdtGuardProgress({ ...resource, cdt_guard_state: null }, now)).toBeNull()
 })
 
-test('a card shows one update time: the clock today, the date otherwise', () => {
+test('each reading shows its clock today and its date otherwise', () => {
   const now = new Date(2026, 10, 6, 12, 0, 0)
   expect(updated(Math.floor(new Date(2026, 10, 6, 1, 42, 16).getTime() / 1000), now)).toBe('01:42:16')
   expect(updated(Math.floor(new Date(2026, 10, 5, 1, 42, 16).getTime() / 1000), now)).toContain('2026')

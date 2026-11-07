@@ -132,7 +132,7 @@ try {
       })
       try {
         await installControlCenterFixtures(page)
-        await page.goto(`${origin}/#/plugins/sing-box/${routeName}`)
+        await page.goto(`${origin}/#/home/${routeName}`)
         await page.getByRole('button', { name: routeName === 'groups' ? '创建策略组' : '创建代理用户', exact: true }).first().waitFor()
         await wait(async () => await page.getByRole('button', { name: routeName === 'groups' ? '创建策略组' : '创建代理用户', exact: true }).first().isEnabled(), 'initial snapshot must be ready')
         await callback(control)
