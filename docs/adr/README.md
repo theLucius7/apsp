@@ -195,3 +195,5 @@
 - [ADR 0121：CDT 监控补齐与源码制品分离](0121-cdt-monitor-alignment-and-source-artifacts.md)：分项采集时间、IPv6 地址、整体用量历史、Cron 与守护组合，生成的前端产物不再提交。
 
 - [0122：未发布阶段统一当前结构](0122-unreleased-schema-baseline.md)：空库初始化、当前基线核验、旧开发库手动重建。
+
+- [0125：按功能划分模块，内核只提供机制](0125-feature-modules.md)：模块化单体、功能地图、数据归属、上游归属与分阶段迁移，详见[功能划分与逻辑结构](../architecture.md)。

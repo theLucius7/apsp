@@ -72,6 +72,7 @@
 
 ## 开发与设计
 
+- [功能划分与逻辑结构](architecture.md)：功能地图、依赖与数据规则、上游代码归属、迁移计划（ADR 0125）。
 - [仓库目录与维护约定](repository.md)：修改入口、模块归属、脚本及测试的位置。
 - [本地开发、构建与检查](dev.md)：Rust、PostgreSQL、Bun 与条件测试。
 - [HTTP API](api.md)、[面板与 Agent 协议](protocol.md)、[术语表](glossary.md)：公共契约。
