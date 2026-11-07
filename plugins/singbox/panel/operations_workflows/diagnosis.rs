@@ -76,7 +76,7 @@ pub(super) async fn user(
     let external = super::super::external_access::subscription_nodes(&mut tx, id).await?;
     tx.commit().await?;
     Ok(Json(
-        json!({"user_id":id,"account":account,"subscription":subscription,"legacy":legacy,"permissions":permissions,"external_authorizations":external.entries,"ledger":ledger,"quota_credits":credits,"package_history":history,"rotations":rotations,"events":events,"limitations":{"user_speed_limit":{"available":false,"reason":"当前单运行时尚未提供可验证的逐用户限速能力"},"connection_limit":{"available":false,"reason":"当前协议与运行时没有统一逐用户连接数控制能力"},"external_revocation":{"available":false,"reason":"外部节点凭据由提供方控制，移除订阅授权不会撤销已下载凭据"},"credentials_read":{"available":false,"reason":super::super::secret_access::REASON},"ledger_receipt_time":{"available":true,"legacy_unknown":true,"reason":"新批次保存首次接收、重放次数与最近重放时间；旧批次接收时间未知。延迟依据设备时钟，需考虑时钟偏差"}}}),
+        json!({"user_id":id,"account":account,"subscription":subscription,"legacy":legacy,"permissions":permissions,"external_authorizations":external.entries,"ledger":ledger,"quota_credits":credits,"package_history":history,"rotations":rotations,"events":events,"limitations":{"user_speed_limit":{"available":true,"reason":"在用户限制中设置上下行限速；每台受管服务器分别合计，需等待新运行时配置应用"},"connection_limit":{"available":true,"reason":"在用户限制中设置 TCP 连接与 UDP 会话的合计上限；外部节点不受控"},"external_revocation":{"available":false,"reason":"外部节点凭据由提供方控制，移除订阅授权不会撤销已下载凭据"},"credentials_read":{"available":false,"reason":super::super::secret_access::REASON},"ledger_receipt_time":{"available":true,"legacy_unknown":true,"reason":"新批次保存首次接收、重放次数与最近重放时间；旧批次接收时间未知。延迟依据设备时钟，需考虑时钟偏差"}}}),
     ))
 }
 

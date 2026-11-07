@@ -11,10 +11,10 @@ import subprocess
 import tarfile
 import tempfile
 
-VERSION = "1.14.0-apsp.1"
-REVISION = "7cf0370571977d4a3ed01d35dcf08ffbd67f1d9b"
-# The legacy service's build tags, plus the statistics API the Agent reads.
-TAGS = "with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api"
+VERSION = "1.14.4-apsp.1"
+REVISION = "243a13cd63c275a1567badb2905b731a48545a26"
+# Server build tags, including the statistics API the Agent reads.
+TAGS = "with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api,with_acme"
 MODULES = Path(__file__).resolve().parent / "singbox-runtime" / "modules.txt"
 MAX_ARCHIVE = 256 * 1024 * 1024
 MAX_BINARY = 512 * 1024 * 1024
@@ -56,7 +56,6 @@ def verify_metadata(metadata, arch):
     }.items():
         require(values.get(key) == expected, "unexpected build setting: " + key)
     require(values.get("-tags") == TAGS, "unexpected runtime build tags")
-    require("DefaultGODEBUG" not in values, "runtime must keep the legacy service's GODEBUG defaults")
     require(modules == pinned_modules(), "runtime dependencies differ from modules.txt")
     # Trimmed Go metadata does not preserve the Version linker override.
     # The pinned source revision binds the expected release; this is no attestation.

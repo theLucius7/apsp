@@ -1,5 +1,7 @@
 # 架构决策索引
 
+- [ADR 0124：稳定内核与逐用户限制](0124-stable-runtime-and-user-limits.md)
+
 - [ADR 0123：看板缓存一致性与分钟对比存储](0123-dashboard-cache-and-comparison-storage.md)
 
 [文档导航](../README.md) · [目录与维护约定](../repository.md) · [协作约束](../../AGENTS.md)

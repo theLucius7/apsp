@@ -101,7 +101,7 @@ mod tests {
             assert!(validate_output(&output, "1.14.2").is_err());
         }
         assert!(validate_requested("1.14.2-apsp.1").is_ok());
-        assert!(validate_requested("1.14.0-apsp.1").is_ok());
+        assert!(validate_requested("1.14.4-apsp.1").is_ok());
         assert!(
             validate_output(&valid.replace("1.14.2", "1.14.2-apsp.1"), "1.14.2-apsp.1").is_ok()
         );

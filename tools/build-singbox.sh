@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the legacy service kernel from the pinned upstream tag plus the Apsp
+# Build the stable upstream kernel with APSP limits from the pinned upstream tag plus the Apsp
 # patch queue in tools/singbox-runtime (see its README).
 set -euo pipefail
 umask 022
@@ -8,12 +8,12 @@ usage() {
   cat <<'USAGE'
 Usage: tools/build-singbox.sh <amd64|arm64> <ARTIFACT_ROOT> [--libc=gnu|--libc=musl]
 
-Run on Linux/amd64 with Go 1.26.8. The runtime is pure Go (CGO disabled), as
-the legacy service built it, so one static binary serves glibc and musl hosts;
+Run on Linux/amd64 with Go 1.26.8. The runtime is pure Go (CGO disabled);
+one static binary serves glibc and musl hosts;
 --libc only selects the artifact name.
 
-Output: ARTIFACT_ROOT/sing-box/1.14.0-apsp.1/<arch> (a gzip archive with one binary)
-        ARTIFACT_ROOT/sing-box/1.14.0-apsp.1/SHA256SUMS
+Output: ARTIFACT_ROOT/sing-box/1.14.4-apsp.1/<arch> (a gzip archive with one binary)
+        ARTIFACT_ROOT/sing-box/1.14.4-apsp.1/SHA256SUMS
 With --libc, the artifact filename is linux-<libc>-<arch>. The legacy default
 remains GNU under <arch>.
 
@@ -47,12 +47,12 @@ export GOTOOLCHAIN=local
 tar_version=$(tar --version)
 [[ $tar_version == *'GNU tar'* ]] || die 'GNU tar is required for deterministic packaging'
 
-version=1.14.0-apsp.1
-upstream_tag=v1.14.0-alpha.2
-upstream_commit=7df171ff20cdcd5e79dd373198176811dabc7742
-patched_commit=7cf0370571977d4a3ed01d35dcf08ffbd67f1d9b
-# The legacy service's build tags, plus the statistics API the Agent reads.
-tags=with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api
+version=1.14.4-apsp.1
+upstream_tag=v1.14.4
+upstream_commit=c005f35300ce76427dc285481ec5695f5b179cd2
+patched_commit=243a13cd63c275a1567badb2905b731a48545a26
+# Server build tags, including the statistics API the Agent reads.
+tags=with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api,with_acme
 output=$2/sing-box/$version
 [[ ! -L $output ]] || die 'output version directory must not be a symlink'
 mkdir -p "$output"
@@ -152,8 +152,6 @@ expected = {"GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "0", "-tags": tags,
 for key, value in expected.items():
     if settings.get(key) != value:
         raise SystemExit("unexpected build setting: " + key)
-if "DefaultGODEBUG" in settings:
-    raise SystemExit("runtime must keep the legacy service's GODEBUG defaults")
 pinned = {line.split("#", 1)[0].strip() for line in open(modules)} - {""}
 if deps != pinned:
     raise SystemExit("runtime dependencies differ from modules.txt")

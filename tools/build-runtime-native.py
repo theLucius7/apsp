@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the legacy service kernel (tools/singbox-runtime) for macOS, FreeBSD and Windows."""
+"""Build the stable upstream kernel with APSP limits (tools/singbox-runtime) for macOS, FreeBSD and Windows."""
 import argparse
 import gzip
 import io
@@ -17,11 +17,11 @@ from artifact_manifest import publish
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'singbox-runtime'))
 import apply as runtime_patches
 
-VERSION = '1.14.0-apsp.1'
-PATCHED_COMMIT = '7cf0370571977d4a3ed01d35dcf08ffbd67f1d9b'
-COMMIT = '7df171ff20cdcd5e79dd373198176811dabc7742'
-# The legacy service's build tags, plus the statistics API the Agent reads.
-TAGS = 'with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api'
+VERSION = '1.14.4-apsp.1'
+PATCHED_COMMIT = '243a13cd63c275a1567badb2905b731a48545a26'
+COMMIT = 'c005f35300ce76427dc285481ec5695f5b179cd2'
+# Server build tags, including the statistics API the Agent reads.
+TAGS = 'with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api,with_acme'
 TARGETS = ('macos-arm64', 'freebsd-amd64', 'freebsd-arm64', 'windows-amd64', 'windows-arm64')
 
 
@@ -62,7 +62,7 @@ def main():
         if runtime_patches.apply(source) != PATCHED_COMMIT:
             raise ValueError('patch queue produced an unexpected commit')
         binary = root / ('sing-box.exe' if system == 'windows' else 'sing-box')
-        # Pure Go on every platform, as the legacy service built it.
+        # Pure Go on every supported platform.
         env = dict(os.environ, GOOS='darwin' if system == 'macos' else system, GOARCH=arch,
                    CGO_ENABLED='0', GOTOOLCHAIN='local', GOFLAGS='')
         for attempt in range(3):

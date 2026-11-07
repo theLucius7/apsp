@@ -1,0 +1,532 @@
+--- a/option/route.go
++++ b/option/route.go
+@@ -3,6 +3,7 @@
+ import "github.com/sagernet/sing/common/json/badoption"
+ 
+ type RouteOptions struct {
++	APSPUserLimits             []APSPUserLimit                   `json:"apsp_user_limits,omitempty"`
+ 	GeoIP                      *GeoIPOptions                     `json:"geoip,omitempty" schema:"omit"`
+ 	Geosite                    *GeositeOptions                   `json:"geosite,omitempty" schema:"omit"`
+ 	Rules                      []Rule                            `json:"rules,omitempty"`
+@@ -34,3 +35,11 @@
+ 	DownloadURL    string `json:"download_url,omitempty"`
+ 	DownloadDetour string `json:"download_detour,omitempty" reference:"outbound"`
+ }
++
++// APSPUserLimit shares one budget across the listed authenticated principals.
++type APSPUserLimit struct {
++	Principals             []string `json:"principals"`
++	UploadBytesPerSecond   uint64   `json:"upload_bytes_per_second,omitempty"`
++	DownloadBytesPerSecond uint64   `json:"download_bytes_per_second,omitempty"`
++	MaxConnections         uint32   `json:"max_connections,omitempty"`
++}
+--- /dev/null
++++ b/route/apsp_limits.go
+@@ -0,0 +1,253 @@
++package route
++
++import (
++	"context"
++	"fmt"
++	"net"
++	"os"
++	"sync"
++	"sync/atomic"
++	"time"
++
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common/buf"
++	"github.com/sagernet/sing/common/bufio/deadline"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++	"golang.org/x/time/rate"
++)
++
++const apspBurst = 32 * 1024
++
++type apspLimit struct {
++	upload, download *rate.Limiter
++	maximum          int64
++	active           atomic.Int64
++}
++
++func newAPSPLimits(options []option.APSPUserLimit) (map[string]*apspLimit, error) {
++	limits := make(map[string]*apspLimit)
++	for _, item := range options {
++		if len(item.Principals) == 0 || item.UploadBytesPerSecond > 125000000000 || item.DownloadBytesPerSecond > 125000000000 || item.MaxConnections > 1000000 {
++			return nil, fmt.Errorf("invalid APSP user limit")
++		}
++		group := &apspLimit{maximum: int64(item.MaxConnections)}
++		if item.UploadBytesPerSecond > 0 {
++			group.upload = rate.NewLimiter(rate.Limit(item.UploadBytesPerSecond), apspBurst)
++		}
++		if item.DownloadBytesPerSecond > 0 {
++			group.download = rate.NewLimiter(rate.Limit(item.DownloadBytesPerSecond), apspBurst)
++		}
++		for _, principal := range item.Principals {
++			if principal == "" || len(principal) > 256 {
++				return nil, fmt.Errorf("invalid APSP principal")
++			}
++			if _, exists := limits[principal]; exists {
++				return nil, fmt.Errorf("duplicate APSP principal")
++			}
++			limits[principal] = group
++		}
++	}
++	return limits, nil
++}
++
++func (l *apspLimit) acquire(ctx context.Context) (*apspSession, error) {
++	for {
++		active := l.active.Load()
++		if l.maximum > 0 && active >= l.maximum {
++			return nil, fmt.Errorf("APSP connection limit reached")
++		}
++		if l.active.CompareAndSwap(active, active+1) {
++			break
++		}
++	}
++	ctx, cancel := context.WithCancel(ctx)
++	return &apspSession{ctx: ctx, cancel: cancel, limit: l, changed: make(chan struct{})}, nil
++}
++
++type apspSession struct {
++	ctx                         context.Context
++	cancel                      context.CancelFunc
++	limit                       *apspLimit
++	once                        sync.Once
++	mu                          sync.Mutex
++	readDeadline, writeDeadline time.Time
++	changed                     chan struct{}
++}
++
++func (s *apspSession) release() {
++	s.once.Do(func() { s.cancel(); s.limit.active.Add(-1) })
++}
++
++func (s *apspSession) deadline(t time.Time, read, write bool) {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	if read {
++		s.readDeadline = t
++	}
++	if write {
++		s.writeDeadline = t
++	}
++	close(s.changed)
++	s.changed = make(chan struct{})
++}
++
++// Reservations are shared by every authenticated principal in the group. A
++// deadline change or close interrupts a pending reservation, including UDP.
++func (s *apspSession) wait(limiter *rate.Limiter, size int, read bool) error {
++	if limiter == nil {
++		return nil
++	}
++	for size > 0 {
++		n := min(size, apspBurst)
++		reservation := limiter.ReserveN(time.Now(), n)
++		if !reservation.OK() {
++			return fmt.Errorf("invalid APSP bandwidth reservation")
++		}
++		ready := time.Now().Add(reservation.Delay())
++		for {
++			s.mu.Lock()
++			deadline := s.writeDeadline
++			if read {
++				deadline = s.readDeadline
++			}
++			changed := s.changed
++			s.mu.Unlock()
++			if err := s.ctx.Err(); err != nil {
++				reservation.Cancel()
++				return err
++			}
++			now := time.Now()
++			if !deadline.IsZero() && !now.Before(deadline) {
++				reservation.Cancel()
++				return os.ErrDeadlineExceeded
++			}
++			if !now.Before(ready) {
++				break
++			}
++			wake := ready
++			if !deadline.IsZero() && deadline.Before(wake) {
++				wake = deadline
++			}
++			timer := time.NewTimer(time.Until(wake))
++			select {
++			case <-s.ctx.Done():
++				timer.Stop()
++				reservation.Cancel()
++				return s.ctx.Err()
++			case <-changed:
++				timer.Stop()
++			case <-timer.C:
++			}
++		}
++		size -= n
++	}
++	return nil
++}
++
++// Embed only the minimal interfaces: exposing Upstream/ReaderReplaceable would
++// let splice and zero-copy helpers bypass enforcement. Protocol handshakes stay
++// on the original connection and authenticated payload passes through here.
++type apspConn struct {
++	net.Conn
++	session *apspSession
++}
++
++func (c *apspConn) Read(p []byte) (int, error) {
++	n, err := c.Conn.Read(p[:min(len(p), apspBurst)])
++	if waitErr := c.session.wait(c.session.limit.upload, n, true); waitErr != nil {
++		return 0, waitErr
++	}
++	return n, err
++}
++func (c *apspConn) Write(p []byte) (int, error) {
++	total := 0
++	for len(p) > 0 {
++		chunk := p[:min(len(p), apspBurst)]
++		if err := c.session.wait(c.session.limit.download, len(chunk), false); err != nil {
++			return total, err
++		}
++		n, err := c.Conn.Write(chunk)
++		total += n
++		if err != nil {
++			return total, err
++		}
++		if n != len(chunk) {
++			return total, fmt.Errorf("short APSP connection write")
++		}
++		p = p[n:]
++	}
++	return total, nil
++}
++func (c *apspConn) Close() error { c.session.release(); return c.Conn.Close() }
++func (c *apspConn) SetDeadline(t time.Time) error {
++	c.session.deadline(t, true, true)
++	return c.Conn.SetDeadline(t)
++}
++func (c *apspConn) SetReadDeadline(t time.Time) error {
++	c.session.deadline(t, true, false)
++	return c.Conn.SetReadDeadline(t)
++}
++func (c *apspConn) SetWriteDeadline(t time.Time) error {
++	c.session.deadline(t, false, true)
++	return c.Conn.SetWriteDeadline(t)
++}
++
++// Preserve the packet buffer ownership contract: WritePacket consumes it even
++// when admission waiting is cancelled before the underlying writer is called.
++type apspPacketConn struct {
++	N.PacketConn
++	session *apspSession
++}
++
++func (c *apspPacketConn) ReadPacket(buffer *buf.Buffer) (M.Socksaddr, error) {
++	destination, err := c.PacketConn.ReadPacket(buffer)
++	if err == nil {
++		err = c.session.wait(c.session.limit.upload, buffer.Len(), true)
++	}
++	return destination, err
++}
++func (c *apspPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr) error {
++	if err := c.session.wait(c.session.limit.download, buffer.Len(), false); err != nil {
++		buffer.Release()
++		return err
++	}
++	return c.PacketConn.WritePacket(buffer, destination)
++}
++func (c *apspPacketConn) Close() error { c.session.release(); return c.PacketConn.Close() }
++func (c *apspPacketConn) SetDeadline(t time.Time) error {
++	c.session.deadline(t, true, true)
++	return c.PacketConn.SetDeadline(t)
++}
++func (c *apspPacketConn) SetReadDeadline(t time.Time) error {
++	c.session.deadline(t, true, false)
++	return c.PacketConn.SetReadDeadline(t)
++}
++func (c *apspPacketConn) SetWriteDeadline(t time.Time) error {
++	c.session.deadline(t, false, true)
++	return c.PacketConn.SetWriteDeadline(t)
++}
++
++func (c *apspConn) ConnHandshakeSuccess(conn net.Conn) error {
++	return N.ReportConnHandshakeSuccess(c.Conn, conn)
++}
++func (c *apspConn) HandshakeFailure(err error) error { return N.ReportHandshakeFailure(c.Conn, err) }
++func (c *apspPacketConn) PacketConnHandshakeSuccess(conn net.PacketConn) error {
++	return N.ReportPacketConnHandshakeSuccess(c.PacketConn, conn)
++}
++func (c *apspPacketConn) HandshakeFailure(err error) error {
++	return N.ReportHandshakeFailure(c.PacketConn, err)
++}
++
++// Preserve protocol buffer requirements without exposing a bypassable reader.
++func (c *apspPacketConn) FrontHeadroom() int  { return N.CalculateFrontHeadroom(c.PacketConn) }
++func (c *apspPacketConn) RearHeadroom() int   { return N.CalculateRearHeadroom(c.PacketConn) }
++func (c *apspPacketConn) ReaderOverhead() int { return N.CalculateReaderOverhead(c.PacketConn) }
++func (c *apspPacketConn) ReaderMTU() int      { return N.CalculateMTU(c.PacketConn, nil) }
++func (c *apspPacketConn) WriterMTU() int      { return N.CalculateMTU(nil, c.PacketConn) }
++func (c *apspPacketConn) NeedAdditionalReadDeadline() bool {
++	return deadline.NeedAdditionalReadDeadline(c.PacketConn)
++}
++func (c *apspConn) NeedAdditionalReadDeadline() bool {
++	return deadline.NeedAdditionalReadDeadline(c.Conn)
++}
+--- /dev/null
++++ b/route/apsp_limits_test.go
+@@ -0,0 +1,159 @@
++package route
++
++import (
++	"context"
++	"errors"
++	"io"
++	"net"
++	"os"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing/common/buf"
++	M "github.com/sagernet/sing/common/metadata"
++	"golang.org/x/time/rate"
++)
++
++func TestAPSPSharedAdmission(t *testing.T) {
++	limits, err := newAPSPLimits([]option.APSPUserLimit{{Principals: []string{"u1_n1", "u1_n2"}, MaxConnections: 3}, {Principals: []string{"u2_n1"}, MaxConnections: 1}})
++	if err != nil {
++		t.Fatal(err)
++	}
++	var wg sync.WaitGroup
++	var mu sync.Mutex
++	var sessions []*apspSession
++	for i := 0; i < 100; i++ {
++		wg.Go(func() {
++			s, err := limits["u1_n2"].acquire(context.Background())
++			if err == nil {
++				mu.Lock()
++				sessions = append(sessions, s)
++				mu.Unlock()
++			}
++		})
++	}
++	wg.Wait()
++	if len(sessions) != 3 {
++		t.Fatalf("admitted %d", len(sessions))
++	}
++	if _, err := limits["u1_n1"].acquire(context.Background()); err == nil {
++		t.Fatal("second node escaped shared limit")
++	}
++	other, err := limits["u2_n1"].acquire(context.Background())
++	if err != nil {
++		t.Fatal("another user was blocked")
++	}
++	other.release()
++	for _, s := range sessions {
++		s.release()
++		s.release()
++	}
++	if limits["u1_n1"].active.Load() != 0 {
++		t.Fatal("double release or leaked reservation")
++	}
++	if _, err := newAPSPLimits([]option.APSPUserLimit{{Principals: []string{"x", "x"}}}); err == nil {
++		t.Fatal("duplicate identity accepted")
++	}
++}
++
++func TestAPSPBandwidthAndDeadline(t *testing.T) {
++	limits, _ := newAPSPLimits([]option.APSPUserLimit{{Principals: []string{"a", "b"}, UploadBytesPerSecond: 128 * 1024, DownloadBytesPerSecond: 128 * 1024}})
++	first, _ := limits["a"].acquire(context.Background())
++	second, _ := limits["b"].acquire(context.Background())
++	defer first.release()
++	defer second.release()
++	for _, upload := range []bool{true, false} {
++		limiter := first.limit.download
++		if upload {
++			limiter = first.limit.upload
++		}
++		start := time.Now()
++		var wg sync.WaitGroup
++		for _, s := range []*apspSession{first, second} {
++			wg.Go(func() {
++				if err := s.wait(limiter, 64*1024, upload); err != nil {
++					t.Error(err)
++				}
++			})
++		}
++		wg.Wait()
++		if time.Since(start) < 650*time.Millisecond {
++			t.Fatal("aggregate bandwidth was bypassed")
++		}
++	}
++	blocked, _ := (&apspLimit{download: newLimiterForDeadline()}).acquire(context.Background())
++	done := make(chan error, 1)
++	go func() { done <- blocked.wait(blocked.limit.download, apspBurst*2, false) }()
++	time.Sleep(10 * time.Millisecond)
++	blocked.deadline(time.Now(), false, true)
++	select {
++	case err := <-done:
++		if !errors.Is(err, os.ErrDeadlineExceeded) {
++			t.Fatal(err)
++		}
++	case <-time.After(time.Second):
++		t.Fatal("changed deadline did not interrupt limiter")
++	}
++	blocked.release()
++}
++
++func newLimiterForDeadline() *rate.Limiter { return rate.NewLimiter(1, apspBurst) }
++
++func TestAPSPWrappersAndCancellation(t *testing.T) {
++	group := &apspLimit{maximum: 2}
++	tcpSession, _ := group.acquire(context.Background())
++	packetSession, _ := group.acquire(context.Background())
++	local, peer := net.Pipe()
++	defer peer.Close()
++	conn := &apspConn{Conn: local, session: tcpSession}
++	packet := &apspPacketConn{PacketConn: &apspPacketFixture{}, session: packetSession}
++	if _, err := group.acquire(context.Background()); err == nil {
++		t.Fatal("TCP and UDP did not share capacity")
++	}
++	payload := make([]byte, apspBurst*3)
++	go func() { _, _ = peer.Write(payload) }()
++	if _, err := io.ReadFull(conn, payload); err != nil {
++		t.Fatal(err)
++	}
++	go func() { _, _ = io.CopyN(io.Discard, peer, int64(len(payload))) }()
++	if n, err := conn.Write(payload); err != nil || n != len(payload) {
++		t.Fatalf("write %d: %v", n, err)
++	}
++	_ = conn.Close()
++	tcpSession.release()
++	_ = packet.Close()
++	packetSession.release()
++	if group.active.Load() != 0 {
++		t.Fatal("close leaked capacity")
++	}
++	s, _ := (&apspLimit{upload: newLimiterForDeadline()}).acquire(context.Background())
++	done := make(chan error, 1)
++	go func() { done <- s.wait(s.limit.upload, apspBurst*2, true) }()
++	s.release()
++	select {
++	case err := <-done:
++		if !errors.Is(err, context.Canceled) {
++			t.Fatal(err)
++		}
++	case <-time.After(time.Second):
++		t.Fatal("close did not interrupt limiter")
++	}
++}
++
++type apspPacketFixture struct{}
++
++func (*apspPacketFixture) ReadPacket(buffer *buf.Buffer) (M.Socksaddr, error) {
++	_, _ = buffer.Write([]byte("packet"))
++	return M.Socksaddr{}, nil
++}
++func (*apspPacketFixture) WritePacket(buffer *buf.Buffer, _ M.Socksaddr) error {
++	buffer.Release()
++	return nil
++}
++func (*apspPacketFixture) Close() error                     { return nil }
++func (*apspPacketFixture) LocalAddr() net.Addr              { return &net.UDPAddr{} }
++func (*apspPacketFixture) SetDeadline(time.Time) error      { return nil }
++func (*apspPacketFixture) SetReadDeadline(time.Time) error  { return nil }
++func (*apspPacketFixture) SetWriteDeadline(time.Time) error { return nil }
+--- a/route/route.go
++++ b/route/route.go
+@@ -69,7 +69,7 @@
+ 	}
+ }
+ 
+-func (r *Router) routeConnection(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) error {
++func (r *Router) routeConnection(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) (routeErr error) {
+ 	//nolint:staticcheck
+ 	if metadata.InboundDetour != "" {
+ 		if metadata.LastInbound == metadata.InboundDetour {
+@@ -90,6 +90,19 @@
+ 		return nil
+ 	}
+ 	metadata.Network = N.NetworkTCP
++	if limit := r.apspLimits[metadata.User]; limit != nil {
++		session, err := limit.acquire(ctx)
++		if err != nil {
++			return err
++		}
++		conn = &apspConn{Conn: conn, session: session}
++		onClose = N.AppendClose(onClose, func(error) { session.release() })
++		defer func() {
++			if routeErr != nil {
++				session.release()
++			}
++		}()
++	}
+ 	switch metadata.Destination.Fqdn {
+ 	case mux.Destination.Fqdn:
+ 		return E.New("global multiplex is deprecated since sing-box v1.7.0, enable multiplex in Inbound fields instead.")
+@@ -245,7 +258,7 @@
+ 	}
+ }
+ 
+-func (r *Router) routePacketConnection(ctx context.Context, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) error {
++func (r *Router) routePacketConnection(ctx context.Context, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) (routeErr error) {
+ 	//nolint:staticcheck
+ 	if metadata.InboundDetour != "" {
+ 		if metadata.LastInbound == metadata.InboundDetour {
+@@ -267,6 +280,19 @@
+ 	}
+ 	// TODO: move to UoT
+ 	metadata.Network = N.NetworkUDP
++	if limit := r.apspLimits[metadata.User]; limit != nil {
++		session, err := limit.acquire(ctx)
++		if err != nil {
++			return err
++		}
++		conn = &apspPacketConn{PacketConn: conn, session: session}
++		onClose = N.AppendClose(onClose, func(error) { session.release() })
++		defer func() {
++			if routeErr != nil {
++				session.release()
++			}
++		}()
++	}
+ 
+ 	// Currently we don't have deadline usages for UDP connections
+ 	/*if deadline.NeedAdditionalReadDeadline(conn) {
+--- a/route/router.go
++++ b/route/router.go
+@@ -25,6 +25,8 @@
+ var _ adapter.Router = (*Router)(nil)
+ 
+ type Router struct {
++	apspOptions       []option.APSPUserLimit
++	apspLimits        map[string]*apspLimit
+ 	ctx               context.Context
+ 	logger            log.ContextLogger
+ 	inbound           adapter.InboundManager
+@@ -51,6 +53,7 @@
+ 
+ func NewRouter(ctx context.Context, logFactory log.Factory, options option.RouteOptions, dnsOptions option.DNSOptions) *Router {
+ 	return &Router{
++		apspOptions:       options.APSPUserLimits,
+ 		ctx:               ctx,
+ 		logger:            logFactory.NewLogger("router"),
+ 		inbound:           service.FromContext[adapter.InboundManager](ctx),
+@@ -71,6 +74,12 @@
+ }
+ 
+ func (r *Router) Initialize(rules []option.Rule, ruleSets []option.RuleSet) error {
++	var err error
++	r.apspLimits, err = newAPSPLimits(r.apspOptions)
++	if err != nil {
++		return err
++	}
++
+ 	for i, options := range rules {
+ 		err := R.ValidateNoNestedRuleActions(options)
+ 		if err != nil {

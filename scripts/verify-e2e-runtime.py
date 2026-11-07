@@ -9,10 +9,10 @@ import sys
 import tarfile
 
 
-VERSION = "1.14.0-apsp.1"
-REVISION = "7cf0370571977d4a3ed01d35dcf08ffbd67f1d9b"
-# The legacy service's build tags, plus the statistics API the Agent reads.
-TAGS = "with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api"
+VERSION = "1.14.4-apsp.1"
+REVISION = "243a13cd63c275a1567badb2905b731a48545a26"
+# Server build tags, including the statistics API the Agent reads.
+TAGS = "with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api,with_acme"
 
 
 def require(condition, message):
@@ -55,7 +55,7 @@ def verify(root, destination):
     metadata = subprocess.check_output(["go", "version", "-m", str(binary)], text=True, timeout=30)
     require(metadata.splitlines()[0].endswith(": go1.26.8"), "runtime toolchain mismatch")
     require("GOOS=linux" in metadata and "GOARCH=amd64" in metadata, "runtime build target mismatch")
-    print(f"Pinned runtime verified: {VERSION}, amd64, legacy service tags and statistics API")
+    print(f"Pinned runtime verified: {VERSION}, amd64, stable server tags and statistics API")
     return binary
 
 

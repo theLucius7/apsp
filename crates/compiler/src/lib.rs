@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod limits;
 mod relays;
 pub use relays::{Relay, compile_server_with_relays};
 pub mod clash;
@@ -79,6 +80,8 @@ impl Node {
 
 #[derive(Debug, Error)]
 pub enum CompileError {
+    #[error("invalid authenticated user limit configuration")]
+    InvalidUserLimits,
     #[error("node {node_id}: {reason}")]
     InvalidNode { node_id: i64, reason: String },
     #[error("duplicate node id {0}")]

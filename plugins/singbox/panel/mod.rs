@@ -3,10 +3,8 @@
 //!
 //! The plugin reaches panel services only through the `apsp-panel-host` API.
 
-/// The signed runtime every new deployment uses: the legacy service's kernel
-/// (upstream v1.14.0-alpha.2 plus cedar2025/sing-box 2e665cb7), rebuilt from
-/// the patch queue in `tools/singbox-runtime` (ADR 0119).
-pub const RUNTIME_VERSION: &str = "1.14.0-apsp.1";
+/// The signed stable runtime with APSP per-user budgets (ADR 0124).
+pub const RUNTIME_VERSION: &str = "1.14.4-apsp.1";
 
 pub mod accesses;
 mod activity;
@@ -68,6 +66,7 @@ pub mod subscription_parser;
 pub mod subscription_sources;
 pub mod subscriptions;
 pub mod usage;
+pub mod user_limits;
 
 pub use activity::runtime_activity_on;
 
@@ -141,6 +140,10 @@ pub fn router() -> Router<AppState> {
         )
         .route("/users/{id}/package", post(packages::assign))
         .route("/users/{id}/entitlement", get(entitlements::get))
+        .route(
+            "/users/{id}/limits",
+            get(user_limits::get).put(user_limits::put),
+        )
         .route("/servers", get(settings::list))
         .route("/servers/{id}", get(settings::get))
         .route("/servers/{id}/enable", post(settings::enable))
