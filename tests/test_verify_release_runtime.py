@@ -107,19 +107,23 @@ class RuntimeInspectionTests(unittest.TestCase):
 
     def test_required_metadata_fields(self):
         original = metadata("amd64")
+        crypto = next(module.split()[1] for module in runtime.pinned_modules()
+                      if module.startswith("golang.org/x/crypto "))
         for previous, changed in (
             ("go1.26.8", "go1.26.1"), ("GOOS=linux", "GOOS=darwin"),
             ("GOARCH=amd64", "GOARCH=arm64"), ("CGO_ENABLED=0", "CGO_ENABLED=1"),
             ("-trimpath=true", "-trimpath=false"), (runtime.REVISION, "0" * 40),
             ("vcs.modified=false", "vcs.modified=true"),
             ("with_v2ray_api", "missing_statistics_api"),
-            ("with_wireguard,", "with_wireguard,with_acme,"),
-            ("golang.org/x/crypto\tv0.49.0", "golang.org/x/crypto\tv0.50.0"),
-            ("\tbuild\tGOOS=linux", "\tbuild\tDefaultGODEBUG=tlssecpmlkem=0\n\tbuild\tGOOS=linux"),
+            (",with_acme", ""), ("with_acme", "with_acme,with_naive_outbound"),
+            ("golang.org/x/crypto\t" + crypto, "golang.org/x/crypto\tv0.0.1"),
             ("\tdep\tgolang.org/x/sys", "\t=>\tgolang.org/x/sys"),
         ):
-            with self.subTest(changed=changed), self.assertRaises(ValueError):
-                runtime.verify_metadata(original.replace(previous, changed), "amd64")
+            with self.subTest(changed=changed):
+                # A stale fixture value would make the case pass without testing anything.
+                self.assertNotEqual(original.replace(previous, changed), original)
+                with self.assertRaises(ValueError):
+                    runtime.verify_metadata(original.replace(previous, changed), "amd64")
         runtime.verify_metadata(original, "amd64")
         with self.assertRaisesRegex(ValueError, "duplicate"):
             runtime.verify_metadata(original + "\n\tbuild\tGOOS=linux", "amd64")
