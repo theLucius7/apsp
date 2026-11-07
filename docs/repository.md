@@ -1,6 +1,6 @@
 # 仓库目录与维护约定
 
-本页说明现有代码与文档的位置。使用方法从[文档导航](README.md)进入，架构和范围以 [AGENTS.md](../AGENTS.md) 与[各项 ADR](adr/README.md) 为准。
+本页说明现有代码与文档的位置；目标结构与迁移计划见[功能划分与逻辑结构](architecture.md)（ADR 0125）。使用方法从[文档导航](README.md)进入，架构和范围以 [AGENTS.md](../AGENTS.md) 与[各项 ADR](adr/README.md) 为准。
 
 ## 顶层目录
 
