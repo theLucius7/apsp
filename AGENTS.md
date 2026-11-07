@@ -69,6 +69,7 @@
   - 业务插件（sing-box、DDNS、阿里云）是 `plugins/*/panel/` 下的独立 crate，工作区依赖只能是宿主、`protocol`、`compiler` 和云 API 公共库 `plugins/cloud_api/panel/`，插件之间不互相依赖；插件业务不得移回宿主或组装 crate。
   - sing-box 面板业务保持物理位于根 `plugins/singbox/panel/`，以独立 crate 暴露；组装 crate 只登记与再导出，不把业务实现搬回 `crates/panel/src/plugins/`。
   - 只有 `apsp-panel` 同时依赖宿主和具体插件，负责登记插件并保存唯一的迁移序列。
+- 功能划分见 [ADR 0125](docs/adr/0125-feature-modules.md) 与[功能划分与逻辑结构](docs/architecture.md)：内核只提供机制，每个功能一个家，每张表一个所有者（`tools/feature-boundaries.toml`）。提交前运行 `python3 tools/check-feature-boundaries.py`：现有的跨功能访问记在 `tools/feature-boundaries.baseline`，只许减少；新增的跨功能 SQL、跨 crate `#[path]` 或前端跨功能引用会失败，应改为经所有者的接口，而不是加进清单。新增表必须在所有者清单里登记。
 - 管理界面和使用文档按[功能地图](docs/product-map.md)的侧栏分组组织（六组，降级功能集中在「实验功能」组）：新增页面先确定所属功能区和侧栏入口，一台服务器的事放服务器详情，前端目录与功能区对应；页面地址按用途命名、与侧栏一致；2026-11-06 用户要求不再使用 `/#/plugins/sing-box` 这类插件式地址，改名后旧地址必须在 `web/src/app/paths.ts` 中改写到新地址、不得删除，见 [ADR 0120](docs/adr/0120-page-addresses-by-function.md)（覆盖 [ADR 0086](docs/adr/0086-product-map-and-navigation.md) 与 [ADR 0098](docs/adr/0098-usage-driven-navigation-and-tiers.md) 中“不改地址”的规定）。降级功能在界面标“实验”，冻结功能默认隐藏、由面板设置显示；核心旅程不得依赖降级页面。
 - 产品定位为自托管的服务器管理与配置面板，以节点、链路、用户与订阅为主线（[ADR 0087](docs/adr/0087-narrow-positioning-proxy-network.md)）。新功能必须服务节点、链路、用户与订阅，或运营这张网络所需的服务器、线路与费用感知；否则进入路线图候选池。按功能地图的分级处理现有功能：降级功能只修缺陷和安全问题，冻结功能只修安全问题，移除功能或数据需用户单独授权。
 - 系统管理员与代理用户分别命名；服务器网卡总流量留在 core。计量 `epoch` 只标记计数器重置，不得用作套餐周期。业务搬迁保留用户 ID、令牌、旧订阅路径、节点凭据、授权和历史流量，数据库表先不改名。

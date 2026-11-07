@@ -45,10 +45,12 @@ jobs:
         working-directory: web
       - name: Reject tracked build outputs
         run: python3 tools/check-source-artifacts.py
-      - name: Check core boundary
+      - name: Check core and feature boundaries
         run: |
           python3 tools/check-core-boundary.py
+          python3 tools/check-feature-boundaries.py
           python3 -m unittest discover -s tests -p 'test_core_boundary.py'
+          python3 -m unittest discover -s tests -p 'test_feature_boundaries.py'
       - name: Verify artifact build script contracts
         run: python3 tools/test-build-scripts.py
       - name: Verify deployment environment initialization
