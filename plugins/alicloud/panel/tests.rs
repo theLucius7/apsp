@@ -16,7 +16,7 @@ mod rotation_refresh;
 
 const KEY: &str = "TEST_ONLY_CLOUD_ID";
 const SECRET: &str = "TEST_ONLY_CLOUD_SECRET";
-pub(super) async fn seed(pool: &PgPool, kind: &str) -> (Uuid, Uuid) {
+async fn seed(pool: &PgPool, kind: &str) -> (Uuid, Uuid) {
     let account = Uuid::new_v4();
     let resource = Uuid::new_v4();
     sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret,billing_enabled,balance_enabled) VALUES($1,'测试账号',$2,$3,true,true)")

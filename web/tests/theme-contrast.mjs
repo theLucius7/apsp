@@ -118,7 +118,7 @@ async function run() {
           const page = await context.newPage()
           page.on('pageerror', error => totals.pageErrors.push({ width, theme, scenario, error: error.message }))
           await page.route('**/api/**', fixtures(scenario === 'dialog' ? 'admin' : scenario))
-          await page.goto(`${origin}/#${scenario === 'dashboard' ? '/dashboard' : scenario === 'portal' ? `/account/${account}` : '/servers'}`)
+          await page.goto(`${origin}/#${scenario === 'dashboard' ? '/dashboard' : scenario === 'portal' ? `/plugins/sing-box/account/${account}` : '/servers'}`)
           if (scenario === 'login') {
             await page.getByRole('heading', { name: '欢迎回来' }).waitFor()
             await page.getByLabel('管理员密码').fill('TEST_ONLY')

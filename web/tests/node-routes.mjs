@@ -53,15 +53,15 @@ try {
     await page.getByRole('button', { name:'创建节点', exact:true }).first().click()
     assert.equal(await page.getByRole('dialog').locator('[name=server_id]').inputValue(), '2')
     await page.getByRole('dialog').getByRole('button', { name:'取消', exact:true }).click()
-    await page.evaluate(() => { location.hash = '/nodes?server=1' })
+    await page.evaluate(() => { location.hash = '/plugins/sing-box/nodes?server=1' })
     await page.waitForFunction(() => document.querySelector('[aria-label="按服务器筛选"]')?.value === '1')
     assert.match(await catalogRows.innerText(), /服务器1节点/)
-    await page.evaluate(() => { location.hash = '/nodes?server=3' })
+    await page.evaluate(() => { location.hash = '/plugins/sing-box/nodes?server=3' })
     await page.waitForFunction(() => document.querySelector('[aria-label="按服务器筛选"]')?.value === '3')
     assert.equal(await page.getByRole('button', { name:'创建节点', exact:true }).first().isDisabled(), true)
     assert.equal(await catalogRows.count(), 0)
-    await page.evaluate(() => { location.hash = '/nodes?kind=chains' })
-    // The chain route opens the chain section and keeps the catalog type filter on chains.
+    await page.evaluate(() => { location.hash = '/plugins/sing-box/nodes?kind=chains' })
+    // The legacy chains route opens the chain section and keeps the catalog type filter on chains.
     await page.locator('nav[aria-label="节点视图"] a[aria-current="page"]').filter({ hasText: /^链路/ }).waitFor()
     await page.getByLabel('按类型筛选').waitFor({ state: 'attached' })
     assert.equal(await page.getByLabel('按类型筛选').inputValue(), 'chain')
@@ -77,18 +77,13 @@ try {
     await chain.getByRole('button', { name:'取消', exact:true }).click()
     await chain.waitFor({ state:'detached' })
     for (const query of ['server=0','server=1&server=2','server=9007199254740992','server=1e2','kind=unknown','view=unknown','view=chains&view=sources','other=1']) {
-      await page.evaluate(query => { location.hash = '/nodes?' + query }, query)
+      await page.evaluate(query => { location.hash = '/plugins/sing-box/nodes?' + query }, query)
       await page.getByRole('heading', { name:'这个页面不存在', exact:true }).waitFor()
       assert.equal(await page.locator('[data-dialog=node-editor]').count(), 0)
-    }
-    for (const path of ['/plugins/sing-box/nodes', '/system/settings', '/monitoring/settings']) {
-      await page.evaluate(path => { location.hash = path }, path)
-      await page.getByRole('heading', { name:'这个页面不存在', exact:true }).waitFor()
-      assert.equal(new URL(page.url()).hash, `#${path}`, 'Unsupported pages are not silently rewritten')
     }
     assert.deepEqual(writes, [])
     assert.deepEqual(errors, [])
     await page.close()
   }
-  console.log('PASS: selected-server node route and create default, live route change, chain route opens unified resources and the ordered chain form, invalid/duplicate routes refuse without writes')
+  console.log('PASS: selected-server node route and create default, live route change, legacy chain route opens unified resources and the ordered chain form, invalid/duplicate routes refuse without writes')
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)) }

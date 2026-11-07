@@ -34,7 +34,6 @@ pub mod retirement;
 pub mod runtime_control;
 pub mod runtime_operations;
 pub mod runtime_validations;
-pub mod schema;
 pub mod server_assets;
 pub mod server_traffic;
 pub mod servers;

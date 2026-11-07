@@ -117,17 +117,9 @@ pub(crate) async fn run(
                         let settings = active
                             .get_json::<TelemetrySettings>("/api/agent/v1/telemetry-settings")
                             .await;
-                        match settings {
-                            Ok(settings) if settings.valid() => {
-                                delivery_tx.send_replace(Some(settings));
-                            }
-                            _ => {
-                                delivery_tx.send_replace(None);
-                                tracing::warn!(
-                                    "current telemetry settings unavailable; samples retained until the panel is ready"
-                                );
-                            }
-                        }
+                        // Older panels do not expose this endpoint. Keep their
+                        // durable upload schedule and strict settings decoder.
+                        delivery_tx.send_replace(settings.ok().filter(TelemetrySettings::valid));
                     }
                     if delivery_tx.borrow().is_some() {
                         let sample = live_snapshots.borrow().sample.clone();
@@ -155,7 +147,7 @@ pub(crate) async fn run(
             };
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(interval)) => {},
-                changed = client.changed() => { changed?; last_settings = None; live_sent = None; delivery_tx.send_replace(None); },
+                changed = client.changed() => { changed?; last_settings = None; live_sent = None; },
             }
         }
         #[allow(unreachable_code)]
@@ -184,10 +176,8 @@ async fn deliver(
         let interval = settings
             .borrow_and_update()
             .as_ref()
-            .map(|s| s.persist_interval_secs);
-        let due = interval.is_some_and(|interval| {
-            saved.is_none_or(|at| at.elapsed() >= Duration::from_secs(interval))
-        });
+            .map_or(upload_interval, |s| s.persist_interval_secs);
+        let due = saved.is_none_or(|at| at.elapsed() >= Duration::from_secs(interval));
         let active = client.borrow_and_update().clone();
         if due && let Some(active) = active {
             // Bound each catch-up pass; release the read gate between requests

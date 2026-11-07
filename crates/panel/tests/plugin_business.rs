@@ -2,12 +2,12 @@
 mod business_support;
 #[path = "plugin_business/installation.rs"]
 mod installation;
+#[path = "plugin_business/migration_recovery.rs"]
+mod migration_recovery;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 #[path = "plugin_business/runtime.rs"]
 mod runtime;
-#[path = "plugin_business/snapshot.rs"]
-mod snapshot;
 
 use anyhow::{Context, Result};
 use apsp_compiler::{Access, Node};
@@ -15,8 +15,8 @@ use apsp_protocol::{UsageBatch, UsageRecord};
 use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
-use sqlx::PgPool;
-use std::collections::BTreeMap;
+use sqlx::{PgPool, migrate::Migrator};
+use std::{borrow::Cow, collections::BTreeMap};
 use uuid::Uuid;
 
 async fn metadata(panel: &TestPanel, cookie: &str, server: i64) -> Result<Value> {
@@ -173,22 +173,22 @@ async fn capability_only_establishes_support_and_an_administrator_must_enable_bu
 }
 
 #[sqlx::test(migrations = false)]
-async fn reopening_preserves_subscription_credentials_access_and_accounting(
+async fn migration_preserves_imported_subscription_credentials_access_and_accounting(
     pool: PgPool,
 ) -> Result<()> {
-    restart_case(pool, None).await
+    migration_case(pool, None).await
 }
 
 #[sqlx::test(migrations = false)]
 #[ignore = "Requires pinned real sing-box 1.14.0-apsp.1 and openssl on a dedicated test node; set APSP_TEST_SINGBOX"]
-async fn subscription_keeps_real_connection_authorization_and_counters_after_reopening(
+async fn imported_subscription_keeps_real_connection_authorization_and_counters_after_migration(
     pool: PgPool,
 ) -> Result<()> {
     let binary = std::env::var_os("APSP_TEST_SINGBOX").context("set APSP_TEST_SINGBOX")?;
-    restart_case(pool, Some(binary.into())).await
+    migration_case(pool, Some(binary.into())).await
 }
 
-async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Result<()> {
+async fn migration_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Result<()> {
     let port = if binary.is_some() {
         runtime::port().await?
     } else {
@@ -199,7 +199,12 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
     } else {
         "imported.example.com"
     };
-    apsp_panel::schema::initialize(&pool).await?;
+    let all = sqlx::migrate!();
+    let old = Migrator {
+        migrations: Cow::Owned(all.iter().filter(|m| m.version < 12).cloned().collect()),
+        ..Migrator::DEFAULT
+    };
+    old.run(&pool).await?;
     let server: i64 = sqlx::query_scalar("INSERT INTO servers(name,device_public_key,manifest_rev) VALUES('Imported server','imported-device-key',7) RETURNING id").fetch_one(&pool).await?;
     let monitor: i64 =
         sqlx::query_scalar("INSERT INTO servers(name) VALUES('Pure monitor') RETURNING id")
@@ -227,21 +232,6 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
         .bind(node_id)
         .bind(credential)
         .bind(&stat_name)
-        .execute(&pool)
-        .await?;
-    let group: i64 = sqlx::query_scalar(
-        "INSERT INTO singbox_policy_groups(name) VALUES('TEST_ONLY restart grant') RETURNING id",
-    )
-    .fetch_one(&pool)
-    .await?;
-    sqlx::query("INSERT INTO singbox_policy_nodes(group_id,node_id) VALUES($1,$2)")
-        .bind(group)
-        .bind(node_id)
-        .execute(&pool)
-        .await?;
-    sqlx::query("INSERT INTO singbox_user_policies(user_id,group_id) VALUES($1,$2)")
-        .bind(user_id)
-        .bind(group)
         .execute(&pool)
         .await?;
     let node = Node {
@@ -309,17 +299,28 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
         .bind(server).execute(&pool).await?;
     sqlx::query("INSERT INTO enrollment_tokens(token_hash,server_id,expires_at,consumed_at) VALUES('TEST_ONLY-imported-enrollment',$1,4099680000,1234)")
         .bind(server).execute(&pool).await?;
-    for id in [server, deploy_only] {
-        sqlx::query("INSERT INTO server_plugins(server_id,plugin,enabled,source,enabled_at) VALUES($1,'sing-box',true,'administrator',0)")
-            .bind(id).execute(&pool).await?;
+    let mut legacy = migration_recovery::legacy_snapshot(&pool).await?;
+    // New columns have explicit legacy defaults; every preexisting value stays identical.
+    migration_recovery::append_expected_server_defaults(&mut legacy)?;
+    for node in legacy.get_mut("nodes").unwrap().as_array_mut().unwrap() {
+        node["protocol_config"] = json!({"type":"vless-reality"});
+        node["enabled"] = json!(true);
+        node["settings"] = json!({});
+        node["resource_revision"] = json!(1);
     }
-    let legacy = without_batch_observation_columns(snapshot::current(&pool).await?)?;
-    // Reopening the current baseline must preserve credentials and ledger records.
+    for access in legacy
+        .get_mut("accesses")
+        .and_then(Value::as_array_mut)
+        .context("legacy accesses")?
+    {
+        access["credential"] = json!("");
+    }
+    // Starting the new panel applies the real migration to already imported records.
     let panel = TestPanel::start(pool.clone()).await?;
     let initial_observation = batch_observation(&pool, server, epoch).await?;
     assert_eq!(initial_observation, (None, None, 0));
     assert_eq!(
-        without_batch_observation_columns(snapshot::current(&pool).await?)?,
+        without_batch_observation_columns(migration_recovery::legacy_snapshot(&pool).await?)?,
         legacy
     );
     let mut connection = pool.acquire().await?;
@@ -327,9 +328,9 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
     assert!(activity.configured);
     assert_eq!(activity.last_positive_at, Some(20));
     drop(connection);
-    // Reopening the current database must neither duplicate enablement nor
+    // Reopening the migrated database must neither duplicate enablement nor
     // alter previously acknowledged batches. Offline outbox replay still dedupes.
-    apsp_panel::schema::initialize(&pool).await?;
+    all.run(&pool).await?;
     assert_eq!(
         batch_observation(&pool, server, epoch).await?,
         initial_observation
@@ -349,7 +350,7 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
         "replay observation must use the actual request interval"
     );
     assert_eq!(
-        without_batch_observation_columns(snapshot::current(&pool).await?)?,
+        without_batch_observation_columns(migration_recovery::legacy_snapshot(&pool).await?)?,
         legacy
     );
     let mut altered = batch;
@@ -361,7 +362,7 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
     );
     assert_eq!(batch_observation(&pool, server, epoch).await?, replayed);
     assert_eq!(
-        without_batch_observation_columns(snapshot::current(&pool).await?)?,
+        without_batch_observation_columns(migration_recovery::legacy_snapshot(&pool).await?)?,
         legacy
     );
     assert_eq!(
@@ -413,11 +414,11 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
     );
     assert_eq!(
         metadata(&panel, &cookie, server).await?["source"],
-        "administrator"
+        "legacy_nodes"
     );
     assert_eq!(
         metadata(&panel, &cookie, deploy_only).await?["source"],
-        "administrator"
+        "legacy_deployments"
     );
     assert_eq!(metadata(&panel, &cookie, monitor).await?["enabled"], false);
     let keys: (String, String, String) =
@@ -499,7 +500,7 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
         );
         runtime.stop().await?;
         eprintln!(
-            "imported-client Reality traffic and exact counters survived reopening; replay stayed deduplicated"
+            "imported-client Reality traffic and exact counters survived migration; replay stayed deduplicated"
         );
     }
     Ok(())

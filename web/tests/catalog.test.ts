@@ -57,7 +57,7 @@ test('cloud account plugins have a global destination and device plugins require
 })
 
 test('legacy artifact bookmarks show the catalog without matching unrelated routes', () => {
-  for (const path of ['/settings/plugins', '/settings/plugins', '/settings/plugins']) expect(resolveRoute(path)).toEqual({ page: 'catalog' })
-  for (const path of ['/settings/plugins/import-release', '/settings/plugins/1', '/settings/plugins/1']) expect(resolveRoute(path)).toEqual({ page: 'not-found' })
-  for (const path of ['/settings/plugins/servers', '/settings/plugins/servers']) expect(resolveRoute(path)).toEqual({ page: 'plugins' })
+  for (const path of ['/settings/plugins', '/plugins/catalog', '/artifacts']) expect(resolveRoute(path)).toEqual({ page: 'catalog' })
+  for (const path of ['/artifacts/import-release', '/plugins/catalog/1', '/settings/plugins/1']) expect(resolveRoute(path)).toEqual({ page: 'not-found' })
+  for (const path of ['/system/plugins', '/settings/plugins/servers']) expect(resolveRoute(path)).toEqual({ page: 'plugins' })
 })

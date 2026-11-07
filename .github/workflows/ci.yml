@@ -38,13 +38,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2.9.2
       - uses: oven-sh/setup-bun@v2.2.0
         with:
-          bun-version: 1.4.4
+          bun-version: 1.4.2
       - run: bun install --frozen-lockfile
         working-directory: web
       - run: bun run build
         working-directory: web
-      - name: Reject tracked build outputs
-        run: python3 tools/check-source-artifacts.py
+      - name: Check committed frontend build
+        run: git diff --exit-code -- web/dist
       - name: Check core boundary
         run: |
           python3 tools/check-core-boundary.py

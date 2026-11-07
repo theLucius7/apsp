@@ -1,7 +1,5 @@
 # 开发、构建与验证
 
-**未发布开发基线：** 不支持旧 APSP 开发数据库自动升级。空库初始化当前结构，旧库拒绝启动，请先备份再手动重建；见[数据库基线与重建说明](database-baseline.md)。
-
 除明确写出 `cd web` 的前端开发步骤外，命令在仓库根目录运行。代码位置见[目录与维护约定](repository.md)，文档入口见[导航](README.md)，脚本用途见 [scripts](../scripts/README.md) 与 [tools](../tools/README.md)。
 
 当前 GitHub Actions 按 [AGENTS.md](../AGENTS.md#临时-ci-暂停2026-10-01-用户要求) 暂停。以下 CI 小节描述保留的工作流设计；暂停期间只做本地验证，不触发、重跑或恢复工作流，不把未运行/取消的 CI 记为通过。
@@ -12,16 +10,16 @@
 
 ## 本地开发与测试
 
-需要 Rust stable、PostgreSQL 16。仓库不再跟踪 `web/dist`。首次编译面板及每次修改前端后，使用固定版本 **Bun 1.4.4** 执行 `cd web && bun install --frozen-lockfile && bun run build`，随后回到仓库根目录编译 Rust。生成产物只留在本地；不要使用 `git add -f` 提交。CI 与 Docker 前端构建使用相同版本。
+需要 Rust stable、PostgreSQL 16。仓库提交了 `web/dist`，不修改前端时可直接编译面板；修改前端时使用固定版本 **Bun 1.4.2** 管理依赖和运行构建，并同步构建产物。CI 与 Docker 前端构建使用相同版本。
 
 Passkey 验证使用 `webauthn-rs`，源码构建面板还需 OpenSSL 开发库和 `pkg-config`（Debian/Ubuntu：`libssl-dev pkg-config`）。Dockerfile 已安装构建及运行库；Agent 无此新增依赖。默认 Rust 测试覆盖来源、权限、挑战、邀请和速率约束；完整虚拟认证器回归需设置 `APSP_PLAYWRIGHT_MODULE`、`APSP_CHROME_PATH` 后执行 `cargo test -p apsp-panel --test passkeys virtual_authenticator_browser_roundtrip -- --ignored --nocapture`。它使用 sqlx 创建的隔离数据库和回环 HTTP 服务，不启用后台插件，不访问真实云 API。该用例默认忽略，不能将默认 cargo test 结果作为浏览器/硬件认证验收。
 
 尚未安装 Bun 时，按[官方安装说明](https://bun.com/docs/installation)安装指定版本，并确认当前终端可调用：
 
 ```bash
-curl -fsSL https://bun.com/install | bash -s "bun-v1.4.4"
+curl -fsSL https://bun.com/install | bash -s "bun-v1.4.2"
 export PATH="$HOME/.bun/bin:$PATH"
-bun --version  # Must report 1.4.4.
+bun --version  # Must report 1.4.2.
 ```
 
 如果不使用 Compose 面板，可以单独启动一个开发数据库。在按[部署文档](deploy.md)生成 `.env`、且没有占用 5432 端口的环境中运行：
@@ -46,7 +44,7 @@ export APSP_DATA_DIR="$PWD/data"
 cargo run --locked -p apsp-panel
 ```
 
-数据库名、用户和卷在首次执行时创建，面板启动时初始化空库或核对当前基线。重用该容器时运行 `docker start apsp-dev-postgres`，继续使用最初的数据库密码。只使用本地原生 PostgreSQL 时，也可以先创建具有建库权限的开发角色和数据库，再把 `APSP_DATABASE_URL` 与测试用 `DATABASE_URL` 指向它；sqlx 集成测试会创建独立测试数据库。
+数据库名、用户和卷在首次执行时创建，面板启动时自动迁移。重用该容器时运行 `docker start apsp-dev-postgres`，继续使用最初的数据库密码。只使用本地原生 PostgreSQL 时，也可以先创建具有建库权限的开发角色和数据库，再把 `APSP_DATABASE_URL` 与测试用 `DATABASE_URL` 指向它；sqlx 集成测试会创建独立测试数据库。
 
 另开终端开发前端，Vite 将 API 请求代理到 `127.0.0.1:8080`：
 
@@ -66,19 +64,16 @@ bun run build
 # DATABASE_URL must allow creating isolated test databases on PostgreSQL 16.
 # This public TEST_ONLY root is for tests, never production.
 export APSP_RELEASE_PUBLIC_KEYS="$(cat crates/protocol/tests/fixtures/public-keys.json)"
-# Public TEST_ONLY fixture, never a production credential key.
-export APSP_CREDENTIAL_KEYS='{"TEST_ONLY":"VEVTVF9PTkxZIGNpIGNyZWRlbnRpYWwga2V5cmluZyE="}'
-export APSP_CREDENTIAL_CURRENT_KEY=TEST_ONLY
 python3 tools/check-core-boundary.py
 cargo fmt --check
 (cd web && bun install --frozen-lockfile && bun test && bun run build)
 cargo clippy --all-targets -- -D warnings
 cargo test
 git diff --check
-python3 tools/check-source-artifacts.py
+git diff --stat -- web/dist
 ```
 
-前端构建放在 Rust 检查之前，因为面板嵌入 `web/dist`。前端有修改时只提交源码、依赖锁和测试，生成产物不提交。CI 在构建环境生成产物并检查 Git 索引没有误跟踪构建目录；本轮只修改工作流定义，不恢复或触发暂停的 CI。冻结源码用于隔离验收时，仍须将本地构建的 `web/dist` 纳入该次冻结清单，不能把未构建的源码当作可直接编译的完整面板输入。
+前端构建放在 Rust 检查之前，因为面板嵌入 `web/dist`。前端有修改时，检查并一并提交生成产物；已提交产物的重建一致性可用 `git diff --exit-code -- web/dist` 检查，不把本次正常生成的差异误判为失败。
 
 `bun test` 运行 `web/tests/*.test.ts` 的数据与协议逻辑回归；`web/tests/*.mjs` 是使用本地 API 夹具的浏览器回归。修改登录/导航/路由时可选择已有的 `dashboard.mjs`、`server-operations.mjs`、`plugin-catalog.mjs` 和 `node-routes.mjs`，修改插件时再加对应插件场景。它们读取构建后的 `web/dist`，需要本地 Playwright/Chromium；可通过 `APSP_PLAYWRIGHT_MODULE` 与 `APSP_CHROME_PATH` 指定已安装位置，然后用 `bun web/tests/<场景>.mjs` 执行。浏览器测试不需要连接生产面板。
 

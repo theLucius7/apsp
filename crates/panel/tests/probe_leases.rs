@@ -424,3 +424,76 @@ async fn anonymous_history_redacts_execution_proof_but_preserves_monitor_fields(
     assert!(!wire.contains("lease_id"));
     Ok(())
 }
+
+#[sqlx::test(migrations = false)]
+async fn append_only_0035_preserves_all_existing_migrations_grants_and_history(
+    pool: PgPool,
+) -> Result<()> {
+    use sqlx::migrate::Migrator;
+    use std::borrow::Cow;
+    let migrations = sqlx::migrate!();
+    let previous = Migrator {
+        migrations: Cow::Owned(
+            migrations
+                .iter()
+                .filter(|migration| migration.version <= 34)
+                .cloned()
+                .collect(),
+        ),
+        ..Migrator::DEFAULT
+    };
+    previous.run(&pool).await?;
+    let server: i64 =
+        sqlx::query_scalar("INSERT INTO servers(name) VALUES('TEST_ONLY migration') RETURNING id")
+            .fetch_one(&pool)
+            .await?;
+    let id = Uuid::new_v4();
+    let result_id = Uuid::new_v4();
+    let mut granted = spec();
+    granted["id"] = json!(id);
+    let result = json!({"id":result_id,"probe_id":id,"sampled_at":1000,"latency_ms":0.0,"loss_percent":0.0,"error":null});
+    sqlx::query("INSERT INTO network_probes(id,server_id,spec) VALUES($1,$2,$3)")
+        .bind(id)
+        .bind(server)
+        .bind(&granted)
+        .execute(&pool)
+        .await?;
+    sqlx::query("INSERT INTO probe_results(id,server_id,probe_id,sampled_at,result,digest) VALUES($1,$2,$3,1000,$4,'TEST_ONLY exact retained digest')").bind(result_id).bind(server).bind(id).bind(&result).execute(&pool).await?;
+    let checksums: Vec<(i64, Vec<u8>)> =
+        sqlx::query_as("SELECT version,checksum FROM _sqlx_migrations ORDER BY version")
+            .fetch_all(&pool)
+            .await?;
+    migrations.run(&pool).await?;
+    let preserved: (Value, i64) =
+        sqlx::query_as("SELECT spec,revision FROM network_probes WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(preserved, (granted, 1));
+    assert_eq!(
+        sqlx::query_scalar::<_, Value>("SELECT result FROM probe_results WHERE id=$1")
+            .bind(result_id)
+            .fetch_one(&pool)
+            .await?,
+        result
+    );
+    assert_eq!(
+        sqlx::query_as::<_, (i64, Vec<u8>)>(
+            "SELECT version,checksum FROM _sqlx_migrations WHERE version<=34 ORDER BY version"
+        )
+        .fetch_all(&pool)
+        .await?,
+        checksums
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT MAX(version) FROM _sqlx_migrations")
+            .fetch_one(&pool)
+            .await?,
+        migrations
+            .iter()
+            .map(|migration| migration.version)
+            .max()
+            .expect("workspace migrations")
+    );
+    Ok(())
+}

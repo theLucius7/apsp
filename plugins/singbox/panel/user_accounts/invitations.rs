@@ -52,7 +52,11 @@ pub(super) fn normalize(input: &str) -> Option<String> {
 }
 
 fn link(state: &AppState, code: &str) -> String {
-    format!("{}/#/join/{}", state.config.public_url, display(code))
+    format!(
+        "{}/#/join/{}",
+        state.config.public_url,
+        display(code)
+    )
 }
 
 /// Whether a code can still create an account: invitations are open, the code is
@@ -599,7 +603,10 @@ pub(super) async fn claim(
         (user, account)
     };
     let has_keys:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM passkey_credentials WHERE account_id=$1) OR EXISTS(SELECT 1 FROM singbox_members m JOIN singbox_portal_accounts p ON p.user_id=m.user_id WHERE p.account_id=$1 AND m.password_hash IS NOT NULL)").bind(account).fetch_one(&mut *tx).await?;
-    let mut url = format!("{}/#/account/{account}", state.config.public_url);
+    let mut url = format!(
+        "{}/#/account/{account}",
+        state.config.public_url
+    );
     if !has_keys {
         let token = crate::auth::random_token();
         sqlx::query("UPDATE singbox_portal_accounts SET activation_hash=$2,activation_expires_at=$3 WHERE user_id=$1").bind(user).bind(hash_token(&token)).bind(now_timestamp()+900).execute(&mut *tx).await?;

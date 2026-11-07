@@ -1,6 +1,5 @@
 /target/
 /web/node_modules/
-/web/dist/
 /web/*.tsbuildinfo
 /.local/
 /.env

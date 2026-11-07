@@ -33,19 +33,6 @@ pub(in super::super) async fn poll(pool: &PgPool, id: Uuid, cloud: &Cloud) -> Ap
     match cloud.power_state(&account, &r).await {
         Ok(state) => {
             jobs::state_on(&mut tx, id, &state, now).await?;
-            // Address supplementation is optional and does not change state validity.
-            match cloud.ipv6(&account, &r, &state.public_ipv6).await {
-                Ok(addresses) => {
-                    sqlx::query("UPDATE alicloud_resources SET ipv6_addresses=$2,ipv6_checked_at=$3,ipv6_error=NULL WHERE id=$1").bind(id).bind(sqlx::types::Json(addresses)).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
-                }
-                Err(error) => {
-                    sqlx::query("UPDATE alicloud_resources SET ipv6_error=$2 WHERE id=$1")
-                        .bind(id)
-                        .bind(error.code)
-                        .execute(&mut *tx)
-                        .await?;
-                }
-            }
             if r.power_policy.cdt_guard.is_some() {
                 super::guard::poll(&mut tx, &account, &mut r, &state, cloud, now).await?;
             } else {
@@ -77,15 +64,7 @@ pub(super) async fn evaluate(
     if !p.enabled {
         return Ok(());
     }
-    let guarded = p.cdt_guard.is_some();
-    let exceeded = if guarded {
-        super::guard::exceeded(account, r, now)
-    } else {
-        p.exceeded(account, now)
-    };
-    if guarded && exceeded != Some(false) {
-        sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',error_code='policy_inactive',updated_at=$2 WHERE resource_id=$1 AND action='start' AND status='queued'").bind(r.id).bind(now).execute(&mut **tx).await?;
-    }
+    let exceeded = p.exceeded(account, now);
     if p.threshold_action == "stop" {
         if let Some(value) = exceeded {
             r.threshold_hold = value;
@@ -120,14 +99,10 @@ pub(super) async fn evaluate(
         )
         .await?;
     }
-    let intent = if guarded && exceeded == Some(true) && state.status == "Running" {
-        Some((
-            "stop",
-            "cdt_guard",
-            format!("cdt-guard:{}:{}:{}", r.id, r.revision, now / 60),
-            now + 90,
-        ))
-    } else if p.threshold_action == "stop" && exceeded == Some(true) && state.status == "Running" {
+    let intent = if p.threshold_action == "stop"
+        && exceeded == Some(true)
+        && state.status == "Running"
+    {
         Some((
             "stop",
             "threshold",
@@ -154,19 +129,6 @@ pub(super) async fn evaluate(
             "schedule",
             format!("schedule:{}:start:{occurrence}", r.id),
             occurrence + 600,
-        ))
-    } else if guarded
-        && exceeded == Some(false)
-        && state.status == "Stopped"
-        && !r.manual_hold
-        && p.cdt_guard.as_ref().is_some_and(|g| g.auto_start)
-        && (!p.schedule_enabled || p.in_window(now))
-    {
-        Some((
-            "start",
-            "cdt_guard",
-            format!("cdt-guard:{}:{}:{}", r.id, r.revision, now / 60),
-            now + 90,
         ))
     } else if p.keepalive
         && r.next_power_at <= now

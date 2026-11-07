@@ -329,16 +329,31 @@ fn failed_outbox_write_rolls_back_chunks_and_cumulative_baselines() {
 }
 
 #[test]
-fn reopening_preserves_batch_identity_and_bounded_indexes() {
+fn upgrading_an_existing_ledger_adds_indexes_without_rewriting_batch_identity() {
     let database = Database::new();
-    drop(database.open());
-    let connection = Connection::open(&database.0).unwrap();
-    let saved = batch(1, "TEST_ONLY counter".into());
+    let mut connection = Connection::open(&database.0).unwrap();
+    connection
+        .execute_batch(include_str!("../src/state/migrations/0001.sql"))
+        .unwrap();
+    connection.pragma_update(None, "user_version", 1).unwrap();
+    let saved = batch(1, "u1_n1".into());
     insert(&connection, &saved);
-    assert_eq!(database.open().pending_usage().unwrap(), vec![saved]);
+    let state = database.open();
+    assert_eq!(state.pending_usage().unwrap(), vec![saved.clone()]);
+    let migration: i64 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(migration, 1);
     let plan: String = connection.query_row(
         "EXPLAIN QUERY PLAN SELECT seq FROM usage_outbox INDEXED BY usage_outbox_pending_order_idx WHERE acknowledged=0 AND octet_length(batch)<=1048447 ORDER BY length(seq),seq LIMIT 64",
         [], |row| row.get(3),
     ).unwrap();
     assert!(plan.contains("usage_outbox_pending_order_idx"));
+    // An old Agent's migration registry must still accept the ledger on rollback.
+    rusqlite_migration::Migrations::new(vec![rusqlite_migration::M::up(include_str!(
+        "../src/state/migrations/0001.sql"
+    ))])
+    .to_latest(&mut connection)
+    .unwrap();
+    assert_eq!(database.open().pending_usage().unwrap(), vec![saved]);
 }

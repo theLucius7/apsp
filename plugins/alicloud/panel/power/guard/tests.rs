@@ -1,5 +1,4 @@
 use super::super::super::{account_on, lock, resource};
-use super::super::jobs;
 use super::super::{Job, Policy, scheduler};
 use super::*;
 use crate::cloud_api::test_support::{Mock, Reply};
@@ -43,7 +42,7 @@ fn power(status: &str) -> Reply {
         json!({"RequestId":"power","TotalCount":1,"Instances":{"Instance":[{
         "InstanceId":"i-guardtest","RegionId":"cn-hongkong","Status":status,"StoppedMode":"StopCharging",
         "InstanceChargeType":"PostPaid","InstanceNetworkType":"vpc","SpotStrategy":"NoSpot",
-        "Ipv6Address":["2001:db8::1"],"PublicIpAddress":{"IpAddress":[]},"OperationLocks":{"LockReason":[]}}]}}),
+        "PublicIpAddress":{"IpAddress":[]},"OperationLocks":{"LockReason":[]}}]}}),
     )
 }
 fn observation(a: &Account, r: &Resource, usage: u64, jump: u64, now: i64) -> Observation {
@@ -115,8 +114,7 @@ fn script_mode_is_opt_in_and_excludes_conflicting_automation() {
     let mut p = config();
     p.validate().unwrap();
     p.keepalive = true;
-    p.schedule_enabled = true;
-    assert!(p.validate().is_ok());
+    assert!(p.validate().is_err());
     p.keepalive = false;
     p.threshold_action = "stop".into();
     assert!(p.validate().is_err());
@@ -131,110 +129,6 @@ fn script_mode_is_opt_in_and_excludes_conflicting_automation() {
             .cdt_guard
             .is_none()
     );
-}
-
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
-async fn combined_guard_cron_and_keepalive_preserve_stop_priority_and_start_gates(pool: PgPool) {
-    use super::super::{policy::ScheduleMode, scheduler};
-    let (account, mut resource) = seed(&pool).await;
-    let base = 1_793_923_200; // Friday 08:00 at UTC+08.
-    let state: State = serde_json::from_value(json!({"cloud_id":"i-guardtest","region":"cn-hongkong","status":"Stopped","stopped_mode":"StopCharging","charge_type":"PostPaid","network_type":"vpc","spot_strategy":"SpotAsPriceGo","interruption_behavior":"Stop","public_ips":[],"locked":false})).unwrap();
-    for (minute, over, stale, hold, running, same_time, expected) in [
-        (0, false, false, false, false, false, Some("start")),
-        (0, true, false, false, true, false, Some("stop")),
-        (0, false, true, false, false, false, None),
-        (0, false, false, true, false, false, None),
-        (120, false, false, false, false, false, None),
-        (60, false, true, false, true, false, Some("stop")),
-        (0, false, false, false, true, true, Some("stop")),
-        (30, false, false, false, false, false, Some("start")),
-    ] {
-        let now = base + minute * 60;
-        resource.power_policy.0 = config();
-        resource.power_policy.schedule_enabled = true;
-        resource.power_policy.schedule_mode = ScheduleMode::Cron;
-        resource.power_policy.start_cron = "0 8 * * 1-5".into();
-        resource.power_policy.stop_cron = if same_time {
-            "0 8 * * 1-5"
-        } else {
-            "0 9 * * 1-5"
-        }
-        .into();
-        resource.power_policy.keepalive = true;
-        resource.power_policy.cdt_guard.as_mut().unwrap().auto_start = false;
-        resource.manual_hold = hold;
-        resource.next_power_at = 0;
-        resource.cdt_guard_state = Some(Json(observation(
-            &account,
-            &resource,
-            if over { 200 * GIB } else { 10 * GIB },
-            0,
-            if stale { now - 121 } else { now },
-        )));
-        resource.cdt_guard_error = None;
-        let mut state = state.clone();
-        state.status = if running { "Running" } else { "Stopped" }.into();
-        let mut tx = pool.begin().await.unwrap();
-        scheduler::evaluate(&mut tx, &account, &mut resource, &state, now)
-            .await
-            .unwrap();
-        let jobs: Vec<Job> =
-            sqlx::query_as("SELECT * FROM alicloud_power_jobs WHERE resource_id=$1")
-                .bind(resource.id)
-                .fetch_all(&mut *tx)
-                .await
-                .unwrap();
-        assert_eq!(
-            jobs.first().map(|job| job.action.as_str()),
-            expected,
-            "minute={minute} over={over} stale={stale} hold={hold} same={same_time}"
-        );
-        if let Some(job) = jobs.first() {
-            assert!(jobs::allowed(job, &account, &resource, now));
-            if job.action == "start" {
-                resource.manual_hold = true;
-                assert!(!jobs::allowed(job, &account, &resource, now));
-                resource.manual_hold = false;
-                resource.cdt_guard_error = Some("request_timeout".into());
-                assert!(!jobs::allowed(job, &account, &resource, now));
-            }
-        }
-        tx.rollback().await.unwrap();
-    }
-}
-
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
-async fn guard_backoff_skips_meter_but_still_evaluates_scheduled_stop(pool: PgPool) {
-    let (account, mut resource) = seed(&pool).await;
-    let now = apsp_protocol::now_timestamp();
-    let local_minute = (now + 28800).rem_euclid(86400) / 60;
-    resource.power_policy.schedule_enabled = true;
-    resource.power_policy.stop_time = format!("{:02}:{:02}", local_minute / 60, local_minute % 60);
-    let start = (local_minute + 720) % 1440;
-    resource.power_policy.start_time = format!("{:02}:{:02}", start / 60, start % 60);
-    resource.cdt_guard_next_at = now + 3600;
-    resource.cdt_guard_error = Some("rate_limited".into());
-    let state: State = serde_json::from_value(json!({"cloud_id":"i-guardtest","region":"cn-hongkong","status":"Running","stopped_mode":null,"charge_type":"PostPaid","network_type":"vpc","spot_strategy":"NoSpot","interruption_behavior":null,"public_ips":[],"locked":false})).unwrap();
-    let mock = Mock::start(vec![]).await;
-    let mut tx = pool.begin().await.unwrap();
-    poll(
-        &mut tx,
-        &account,
-        &mut resource,
-        &state,
-        &Cloud::local(&mock.endpoint),
-        now,
-    )
-    .await
-    .unwrap();
-    let job: Job = sqlx::query_as("SELECT * FROM alicloud_power_jobs WHERE resource_id=$1")
-        .bind(resource.id)
-        .fetch_one(&mut *tx)
-        .await
-        .unwrap();
-    assert_eq!(job.action, "stop");
-    assert!(jobs::allowed(&job, &account, &resource, now));
-    assert!(mock.requests().is_empty());
 }
 
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
@@ -414,7 +308,6 @@ async fn invalid_meter_cancels_start_and_retains_history(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(jobs::load(&pool, id).await.unwrap().status, "cancelled");
-    assert!(queued(&pool, r.id).await.is_empty());
     let r = resource(&pool, r.id).await.unwrap();
     assert_eq!(
         r.cdt_guard_state.as_ref().unwrap().max_usage_bytes,
