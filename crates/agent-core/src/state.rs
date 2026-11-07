@@ -1,6 +1,5 @@
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, params};
-use rusqlite_migration::{M, Migrations};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{
     path::Path,
@@ -25,6 +24,7 @@ impl Locked for Mutex<State> {
     }
 }
 
+mod schema;
 mod storage;
 pub(crate) use storage::StorageRetry;
 
@@ -48,6 +48,8 @@ impl State {
             std::fs::create_dir_all(parent).context("create state directory")?;
         }
         let mut connection = Connection::open(path).context("open state database")?;
+        connection.busy_timeout(Duration::from_secs(10))?;
+        schema::initialize(&mut connection)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -55,18 +57,9 @@ impl State {
                 std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
             }
         }
-        connection.busy_timeout(Duration::from_secs(10))?;
         connection.execute_batch(
             "PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON;",
         )?;
-        Migrations::new(vec![M::up(include_str!("state/migrations/0001.sql"))])
-            .to_latest(&mut connection)?;
-        // Auxiliary tables remain additive so an older Agent can reopen the ledger after rollback.
-        connection.execute_batch(include_str!("state/migrations/0002.sql"))?;
-        connection.execute_batch(include_str!("state/migrations/0003.sql"))?;
-        connection.execute_batch(include_str!("state/migrations/0004_bounded_usage.sql"))?;
-        connection.execute_batch(include_str!("state/migrations/0005_runtime_control.sql"))?;
-        connection.execute_batch(include_str!("state/migrations/0005_command_lifecycle.sql"))?;
         Ok(Self { connection })
     }
 

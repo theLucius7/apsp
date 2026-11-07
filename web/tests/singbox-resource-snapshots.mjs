@@ -104,14 +104,14 @@ try {
     }
     const nodesRefresh = page => page.locator('[data-slot=page-header] button').filter({ hasText: /^刷新$/ }).evaluate(button => button.click())
     const sourceRefresh = page => page.locator('[data-slot=subscription-sources] > [data-slot=panel-header] button').filter({ hasText: /^刷新$/ }).evaluate(button => button.click())
-    await fixture('/plugins/sing-box/nodes', async control => {
+    await fixture('/nodes', async control => {
       const { page, writes } = control
       await page.getByRole('button', { name: '创建节点', exact: true }).first().click()
       const dialog = page.getByRole('dialog'); await dialog.locator('[name=name]').fill('TEST_ONLY 节点草稿'); await dialog.locator('[name=public_host]').fill('127.0.0.1'); await dialog.locator('[name=sni]').fill('localhost')
       await block(control, `${prefix}/servers`, () => nodesRefresh(page), () => forceForm(dialog.locator('form')), () => dialog.getByRole('button', { name: '创建目标节点', exact: true }).click(), async () => assert.equal(await dialog.locator('[name=name]').inputValue(), 'TEST_ONLY 节点草稿'))
       assert.equal(writes[0].body.server_id, 1)
     })
-    await fixture('/plugins/sing-box/nodes', async ({ page, hosts, writes }) => {
+    await fixture('/nodes', async ({ page, hosts, writes }) => {
       await page.getByRole('button', { name: '创建节点', exact: true }).first().click()
       const dialog = page.getByRole('dialog'); await dialog.locator('[name=name]').fill('TEST_ONLY 固定服务器草稿')
       hosts.splice(0, 1); await nodesRefresh(page)
@@ -120,7 +120,7 @@ try {
       await dialog.locator('[name=server_id]').selectOption('2'); await dialog.locator('[name=public_host]').fill('127.0.0.1'); await dialog.locator('[name=sni]').fill('localhost'); await dialog.getByRole('button', { name: '创建目标节点', exact: true }).click()
       await wait(() => writes.length === 1, 'Explicit new server selection'); assert.equal(writes[0].body.server_id, 2)
     })
-    await fixture('/plugins/sing-box/nodes', async control => {
+    await fixture('/nodes', async control => {
       const { page } = control
       await page.locator(width < 768 ? '[data-slot=catalog-card]' : '[data-slot=catalog-table] tbody tr').filter({ hasText: 'TEST_ONLY 节点 1' }).getByRole('button', { name: '删除', exact: true }).click()
       const button = page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true })
@@ -150,7 +150,7 @@ try {
       const button = page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true })
       await block(control, `${prefix}/subscription-sources`, () => sourceRefresh(page), () => forceClick(button), () => button.click())
     })
-    await fixture('/plugins/sing-box/nodes/chain/7', async control => {
+    await fixture('/nodes/chain/7', async control => {
       const { page } = control, dialog = page.getByRole('dialog')
       await dialog.getByRole('button', { name: '修改名称', exact: true }).click(); await dialog.getByLabel('链路名称', { exact: true }).fill('TEST_ONLY 链路名称草稿')
       // The detail has its own poll, so wait for that real request rather than reload the document.
@@ -164,7 +164,7 @@ try {
       assert.equal(await dialog.getByLabel('链路名称', { exact: true }).inputValue(), 'TEST_ONLY 链路名称草稿')
       await dialog.getByRole('button', { name: '保存名称', exact: true }).click(); await wait(() => control.writes.length === baseline + 1, 'Exactly one recovered write'); ++totals.recovered
     })
-    await fixture('/plugins/sing-box/nodes', async control => {
+    await fixture('/nodes', async control => {
       const { page, writes, status } = control
       await page.locator(width < 768 ? '[data-slot=catalog-card]' : '[data-slot=catalog-table] tbody tr').filter({ hasText: 'TEST_ONLY 节点 1' }).getByRole('button', { name: '更多操作', exact: true }).click()
       await page.getByRole('menuitem', { name: '部署', exact: true }).click()

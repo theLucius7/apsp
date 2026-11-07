@@ -82,13 +82,14 @@ pub(super) fn allowed(job: &Job, account: &Account, resource: &Resource, now: i6
     if !policy.enabled || (job.action == "start" && resource.manual_hold) {
         return false;
     }
-    if policy.cdt_guard.is_some() {
-        return job.source == "cdt_guard"
+    if job.source == "cdt_guard" {
+        return policy.cdt_guard.is_some()
             && match job.action.as_str() {
                 "stop" => super::guard::exceeded(account, resource, now) == Some(true),
                 "start" => {
                     policy.cdt_guard.as_ref().is_some_and(|g| g.auto_start)
                         && super::guard::exceeded(account, resource, now) == Some(false)
+                        && (!policy.schedule_enabled || policy.in_window(now))
                 }
                 _ => false,
             };
@@ -266,7 +267,10 @@ pub(in super::super) async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) ->
         tx.commit().await?;
         return Ok(());
     }
-    if current != job.before_state.0 || (job.source == "keepalive" && !current.spot()) {
+    // Optional address discovery is display data, not power authorization.
+    let mut expected = job.before_state.0.clone();
+    expected.public_ipv6.clone_from(&current.public_ipv6);
+    if current != expected || (job.source == "keepalive" && !current.spot()) {
         finish(&mut tx, &job, &r, "failed", Some("state_changed"), now).await?;
         tx.commit().await?;
         return Ok(());

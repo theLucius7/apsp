@@ -731,9 +731,7 @@ async fn unresolved_corrupt_tasks_remain_visible_and_block_starts_beyond_latest_
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn completion_migration_after_published_schema_preserves_history_and_adds_mutex(
-    pool: PgPool,
-) -> Result<()> {
+async fn reopening_preserves_reports_and_current_lifecycle_constraints(pool: PgPool) -> Result<()> {
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "清理状态迁移设备").await?;
@@ -746,10 +744,7 @@ async fn completion_migration_after_published_schema_preserves_history_and_adds_
     let before = stored(&panel, historical_id).await?;
     let running = Uuid::new_v4();
     sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,job,status,created_at,updated_at,expires_at) VALUES($1,$2,'{}','running',1,1,9999999999)").bind(running).bind(server).execute(&pool).await?;
-    // Recreate the published 0033 diagnostic schema, then apply only the new
-    // migration while retaining the exact history row and section contents.
-    sqlx::raw_sql("ALTER TABLE diagnostic_jobs DROP CONSTRAINT diagnostic_jobs_status_check; ALTER TABLE diagnostic_jobs ADD CONSTRAINT diagnostic_jobs_status_check CHECK(status IN ('queued','running','cancel_requested','cancelled','succeeded','failed')); DROP INDEX diagnostic_active_server_idx; CREATE UNIQUE INDEX diagnostic_active_server_idx ON diagnostic_jobs(server_id) WHERE status IN ('queued','running'); DELETE FROM _sqlx_migrations WHERE version=34;").execute(&pool).await?;
-    sqlx::migrate!("./migrations").run(&pool).await?;
+    apsp_panel::schema::initialize(&pool).await?;
     assert_eq!(stored(&panel, historical_id).await?, before);
     let chapter: (String, bool, i64, i64, i64) = sqlx::query_as("SELECT text,complete,revision,collected_at,received_at FROM diagnostic_report_sections WHERE job_id=$1").bind(historical_id).fetch_one(&pool).await?;
     assert_eq!(chapter, ("迁移前的独立章节".into(), true, 2, 1, 2));
@@ -767,7 +762,5 @@ async fn completion_migration_after_published_schema_preserves_history_and_adds_
     );
     let index: String = sqlx::query_scalar("SELECT indexdef FROM pg_indexes WHERE schemaname='public' AND indexname='diagnostic_active_server_idx'").fetch_one(&pool).await?;
     assert!(index.contains("cleaning"));
-    let applied: Vec<i64> = sqlx::query_scalar("SELECT version FROM _sqlx_migrations WHERE version IN (33,34) AND success ORDER BY version").fetch_all(&pool).await?;
-    assert_eq!(applied, vec![33, 34]);
     Ok(())
 }

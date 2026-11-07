@@ -13,6 +13,132 @@ use uuid::Uuid;
 
 const KEY: &str = "TEST_ONLY_ALICLOUD_ID";
 const SECRET: &str = "TEST_ONLY_ALICLOUD_SECRET";
+
+#[sqlx::test]
+async fn cron_preview_is_authenticated_and_uses_fixed_offset(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start(pool).await?;
+    let cookie = panel.admin_cookie().await?;
+    let path = "/api/plugins/alicloud/cron-preview";
+    let valid = json!({"expression":"0 8 * * 1-5","utc_offset_minutes":480});
+    assert_ne!(
+        panel
+            .admin(Method::POST, path, "", Some(valid.clone()))
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    let response = panel
+        .admin(Method::POST, path, &cookie, Some(valid))
+        .await?
+        .error_for_status()?
+        .json::<Value>()
+        .await?;
+    let times = response["occurrences"].as_array().unwrap();
+    assert_eq!(times.len(), 5);
+    for at in times {
+        assert_eq!((at.as_i64().unwrap() + 28800).rem_euclid(86400), 8 * 3600);
+    }
+    for expression in ["bad", "0 0 31 2 *"] {
+        assert_eq!(
+            panel
+                .admin(
+                    Method::POST,
+                    path,
+                    &cookie,
+                    Some(json!({"expression":expression,"utc_offset_minutes":480}))
+                )
+                .await?
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    Ok(())
+}
+#[sqlx::test]
+async fn traffic_history_requires_admin_and_clears_when_account_identity_changes(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let mut body = json!({"name":"测试账号","site":"china","enabled":false,"auto_enabled":false,"limit_gb":100,"access_key_id":KEY,"access_key_secret":SECRET,"legacy_credentials":true});
+    let created = panel
+        .admin(
+            Method::POST,
+            "/api/plugins/alicloud/accounts",
+            &cookie,
+            Some(body.clone()),
+        )
+        .await?
+        .error_for_status()?
+        .json::<Value>()
+        .await?;
+    let id = Uuid::parse_str(created["id"].as_str().unwrap())?;
+    let now = apsp_protocol::now_timestamp();
+    let bucket = now.div_euclid(3600) * 3600;
+    sqlx::query("INSERT INTO alicloud_traffic_history VALUES($1,3600,$2,$3,9007199254740993,42)")
+        .bind(id)
+        .bind(bucket)
+        .bind(now)
+        .execute(&pool)
+        .await?;
+    let history_path = format!("/api/plugins/alicloud/accounts/{id}/traffic-history");
+    assert_eq!(
+        panel
+            .admin(Method::GET, &history_path, "", None)
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let history = panel
+        .admin(Method::GET, &history_path, &cookie, None)
+        .await?
+        .error_for_status()?
+        .json::<Value>()
+        .await?;
+    assert_eq!(
+        history["groups"][0]["samples"][0]["mainland_bytes"],
+        "9007199254740993"
+    );
+    assert_eq!(history["groups"][1]["samples"], json!([]));
+    let path = format!("/api/plugins/alicloud/accounts/{id}");
+    body["name"] = "修改名称".into();
+    body["revision"] = 1.into();
+    assert_eq!(
+        panel
+            .admin(Method::PATCH, &path, &cookie, Some(body.clone()))
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM alicloud_traffic_history WHERE account_id=$1"
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await?,
+        1
+    );
+    body["access_key_id"] = "TEST_ONLY_REPLACEMENT".into();
+    body["revision"] = 2.into();
+    assert_eq!(
+        panel
+            .admin(Method::PATCH, &path, &cookie, Some(body))
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM alicloud_traffic_history WHERE account_id=$1"
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await?,
+        0
+    );
+    Ok(())
+}
 #[sqlx::test]
 async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and_resource_identity(
     pool: PgPool,

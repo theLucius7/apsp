@@ -1,4 +1,8 @@
+import { useState } from 'react'
 import type { ReactNode } from 'react'
+import { TrafficHistory } from './TrafficHistory'
+import { readingStale } from './usageHistory'
+import { useNow } from '../../display/useNow'
 import { Badge, Empty, ErrorNotice } from '../../components'
 import type { Tone } from '../../components'
 import { ActionMenu } from '../../components/action-menu'
@@ -35,17 +39,12 @@ const Figure = ({ label, children }: { label: string; children: ReactNode }) => 
   <dd className="mt-0.5 text-lg leading-tight font-semibold tabular-nums wrap-anywhere">{children}</dd>
 </div>
 
-/** Newest reading of anything the card shows; the card's single “更新于”. */
-function latest(account: Account | undefined, resources: Resource[]) {
-  const times = [account?.traffic?.queried_at, account?.billing_enabled !== false ? account?.bill?.queried_at : null, account?.balance_enabled !== false ? account?.balance?.queried_at : null,
-    ...resources.flatMap(r => [r.checked_at, r.power_checked_at, r.cdt_guard_state?.queried_at])]
-  return Math.max(0, ...times.filter((value): value is number => Number.isSafeInteger(value) && value! > 0)) || null
-}
-
 /** The account's CDT pools, and its bill and balance only where the account queries them. */
 function AccountUsage({ account }: { account: Account }) {
   const traffic = account.traffic, billing = account.billing_enabled !== false, balance = account.balance_enabled !== false
   const usage = exactUsage(account.bill?.usage_micro_gb)
+  const now = useNow() / 1000
+  const [history, setHistory] = useState(false)
   const errors = [account.traffic_error && `用量：${message(account.traffic_error)}`, account.error_code && `${billing ? '账单' : '账号'}：${message(account.error_code)}`, balance && account.balance_error && `余额：${message(account.balance_error)}`].filter(Boolean).join('；')
   return <div data-slot="cloud-account-usage" className="grid gap-3 border-b px-4 py-3.5">
     <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:flex sm:flex-wrap">
@@ -54,6 +53,13 @@ function AccountUsage({ account }: { account: Account }) {
       {billing && <Figure label={`${account.bill?.month ?? '当月'} 已出账`}>{usage !== null ? `${usage.toLocaleString('zh-CN', { maximumFractionDigits: 3 })} GB` : '—'}</Figure>}
       {balance && <Figure label="可用额度">{account.balance ? `${account.balance.available} ${account.balance.currency}` : '尚未查询'}</Figure>}
     </dl>
+    <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs" aria-label="分项采集时间">
+      <span>用量采集于 {updated(traffic?.queried_at ?? null)}{readingStale(traffic?.queried_at, now, 900, account.traffic_error, true) ? ' · 待更新' : ''}</span>
+      {billing && <span>账单采集于 {updated(account.bill?.queried_at ?? null)}{readingStale(account.bill?.queried_at, now, 900, account.error_code, true) ? ' · 待更新' : ''}</span>}
+      {balance && <span>余额采集于 {updated(account.balance?.queried_at ?? null)}{readingStale(account.balance?.queried_at, now, 21600, account.balance_error) ? ' · 待更新' : ''}</span>}
+      <Button variant="link" size="sm" onClick={() => setHistory(true)}>用量历史</Button>
+    </div>
+    {history && <TrafficHistory account={account} close={() => setHistory(false)} />}
     {billing && account.auto_enabled && account.enabled && <p className="m-0 text-[13px]">自动降速：已出账达到 {account.limit_gb} GB 后降低所选资源带宽{billUsable(account) ? '' : ' · 等待当月完整账单'}</p>}
     {errors && <ErrorNotice message={errors} />}
     {(traffic?.regions.length || billing) && <div className="flex flex-wrap gap-x-5 gap-y-2 text-[13px]">
@@ -70,16 +76,17 @@ const billItems: Record<string, string> = { SubscriptionOrder: '预付订单', P
 function Automation({ resource, account }: { resource: Resource; account?: Account }) {
   const policy = resource.power_policy, attached = resource.snapshot?.attached_eip_id != null
   const rules: string[] = []
-  if (resource.kind === 'ecs' && policy?.enabled && !policy.cdt_guard) {
+  if (resource.kind === 'ecs' && policy?.enabled) {
     if (policy.threshold_action !== 'off') rules.push(`已出账达到 ${policy.limit_gb} GB 的 ${policy.threshold_percent}% 时${policy.threshold_action === 'stop' ? '停机' : '通知'}`)
-    if (policy.schedule_enabled) rules.push(`每日 ${policy.start_time} 开机、${policy.stop_time} 停机（${utcOffset(policy.utc_offset_minutes)}）`)
+    if (policy.schedule_enabled && policy.schedule_mode === 'cron') rules.push(`Cron：${policy.start_cron} 开机、${policy.stop_cron} 停机（${utcOffset(policy.utc_offset_minutes)}）`)
+    else if (policy.schedule_enabled) rules.push(`每日 ${policy.start_time} 开机、${policy.stop_time} 停机（${utcOffset(policy.utc_offset_minutes)}）`)
     if (policy.keepalive) rules.push('抢占式保活')
   }
   const downgrade = resource.auto_enabled && !attached ? `自动降速：降至 ${resource.cap_mbps} Mbps${account?.auto_enabled && account.enabled ? '' : '（账号未开启自动降速）'}` : ''
   if (!policy?.cdt_guard && !rules.length && !downgrade && !(resource.kind === 'ecs' && policy?.enabled)) return null
   return <div className="grid gap-2">
     {resource.kind === 'ecs' && <CdtGuardSummary resource={resource} />}
-    {resource.kind === 'ecs' && policy?.enabled && !policy.cdt_guard && <p className="m-0 text-[13px]"><span className="font-medium">自动启停</span> · {rules.length ? rules.join(' · ') : '未设置动作'}</p>}
+    {resource.kind === 'ecs' && policy?.enabled && rules.length > 0 && <p className="m-0 text-[13px]"><span className="font-medium">自动启停</span> · {rules.length ? rules.join(' · ') : '未设置动作'}</p>}
     {downgrade && <p className="m-0 text-[13px]">{downgrade}</p>}
   </div>
 }
@@ -93,6 +100,7 @@ function ResourceDetails({ resource, account }: { resource: Resource; account?: 
     ...(state?.status === 'Stopped' ? [['停机模式', state.stopped_mode ? stopMode(state.stopped_mode) : '待核实']] as [string, ReactNode][] : []),
     ...(state && state.spot_strategy !== 'NoSpot' ? [['实例类型', `抢占式实例${state.interruption_behavior === 'Terminate' ? '，云端中断会释放实例，释放后无法保活' : ''}`]] as [string, ReactNode][] : []),
     ...cdtGuardFacts(resource),
+    ...(ecs ? [['IPv6 查询', `${time(resource.ipv6_checked_at ?? null)}${resource.ipv6_error ? ' · ' + message(resource.ipv6_error) + '；请核对 ecs:DescribeNetworkInterfaces 权限' : ''}`]] as [string, ReactNode][] : []),
     ['查询时间', `配置 ${time(resource.checked_at)}${ecs ? ` · 运行状态 ${time(resource.power_checked_at ?? null)}` : ''}`],
   ]
   const bill = resource.instance_bill
@@ -141,6 +149,7 @@ function ResourceRow({ resource, account, data, actions }: { resource: Resource;
         ]} />
       </div>
     </div>
+    {(resource.ipv6_addresses?.length || resource.ipv6_error) ? <p className="text-muted-foreground m-0 text-[13px] wrap-anywhere">IPv6：{resource.ipv6_addresses?.join('、') || '尚未查询'}{resource.ipv6_error ? ' · 读取失败，保留上次地址' : ''}</p> : null}
     <Automation resource={resource} account={account} />
     {errors && <ErrorNotice message={errors} />}
     <ResourceDetails resource={resource} account={account} />
@@ -159,7 +168,6 @@ export function AccountPanel({ account, resources, data, actions }: { account?: 
     <PanelHeader>
       <PanelTitle>{account?.name ?? '账号已移除'}{account && !account.enabled && <Badge>已停用</Badge>}{account?.site === 'international' && <Badge>国际站</Badge>}</PanelTitle>
       <div className="flex items-center gap-1">
-        <span className="text-muted-foreground text-xs">更新于 {updated(latest(account, resources))}</span>
         {account && <ActionMenu label="账号操作" groups={[
           [{ label: '请求更新', disabled: !editable || !account.enabled, onSelect: () => actions.refreshAccount(account) }],
           [{ label: '编辑账号与策略', disabled: !editable, onSelect: () => actions.editAccount(account) },

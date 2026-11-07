@@ -26,9 +26,9 @@ try {
   for (const width of [1440, 390]) {
     const page = await browser.newPage({ viewport: { width, height: 900 } })
     const errors = [], writes = [], searches = [], answered = []
-    // One page visited before the address rename (ADR 0120) and again after it.
+    // Ignore an unsupported saved page and deduplicate current visits.
     const users = { kind: 'page', id: 'proxy-users', label: '代理用户', path: '/users' }
-    const preferences = { recent: { value: [{ ...users, path: '/plugins/sing-box/users' }, users], revision: 0 }, favorite: { value: [], revision: 0 } }
+    const preferences = { recent: { value: [{ ...users, label: '过期页面入口', path: '/plugins/sing-box/users' }, users, users], revision: 0 }, favorite: { value: [], revision: 0 } }
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
       const request = route.request(), url = new URL(request.url()), path = url.pathname

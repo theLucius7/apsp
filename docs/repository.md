@@ -9,7 +9,7 @@
 | `crates/` | Rust 工作区：公共协议、配置编译、面板、Agent、适配器及原生 TCP 工具 |
 | `plugins/` | 插件面板业务、外部工具包装及固定来源材料；插件业务不回迁到核心 |
 | `web/src/` | React 界面（简体中文/English）；前端依赖与构建由 Bun 管理 |
-| `web/dist/` | 提交到仓库、由面板嵌入的构建产物；修改源码后生成，不手工编辑 |
+| `web/dist/` | 仅在本地或构建环境生成、由面板嵌入的产物；不提交 Git，不手工编辑 |
 | `deploy/` | Compose、服务定义、安装模板、生成后的独立 bootstrap 入口和发布公钥 |
 | `scripts/` | [面板运维、接入与验收入口](../scripts/README.md)；包含已有 CI 包装脚本 |
 | `tools/` | [构建、签名、发布、规则检查与隔离测试工具](../tools/README.md) |
@@ -18,7 +18,7 @@
 | `.github/workflows/` | 远端构建和验证定义；当前暂停，不因本轮整理恢复 |
 | `PROGRESS.md` | 历史完成项、证据和未验证范围；保留既有记录与链接 |
 
-`target/`、`web/node_modules/` 和本机临时目录属于忽略的本地状态，不作为源码整理对象。已有迁移编号、公开安装脚本路径、签名制品结构和 ADR 文件名属于兼容边界。
+`target/`、`web/node_modules/` 和本机临时目录属于忽略的本地状态，不作为源码整理对象。数据库仅维护当前基线，历史开发库手动重建，见 [ADR 0122](adr/0122-unreleased-schema-baseline.md)；公开安装脚本和签名制品结构仍按发布约定管理。
 
 ## Rust 工作区与分层
 
@@ -28,7 +28,7 @@
 | `compiler` | 从业务模型确定性地生成完整运行时配置包 |
 | `panel-host` | 面板宿主：HTTP 服务、管理员会话、服务器、遥测、通知、任务、共用诊断服务和插件接口；工作区依赖仅 `protocol`，不认识具体业务插件 |
 | `plugins/*/panel` | 业务插件 crate（sing-box、DDNS、阿里云）及云 API 公共库；工作区依赖仅宿主、`protocol`、`compiler` 和云 API 公共库，插件之间不互相依赖 |
-| `panel` | 组装：登记业务插件并启动服务；保存唯一的迁移序列，保留原有 `apsp_panel::*` Rust 路径 |
+| `panel` | 组装：登记业务插件并启动服务；保存唯一的当前数据库初始化 SQL，保留原有 `apsp_panel::*` Rust 路径 |
 | `agent-core` | 设备身份、传输、对账、持久状态、遥测、计量与制品；工作区依赖仅 `protocol`、`adapter-sdk` |
 | `adapter-sdk` | 无状态适配器接口与共享模型 |
 | `adapter-singbox`、`adapter-nodequality`、`adapter-tcpquality` | 运行时或工具翻译；工作区依赖仅 `adapter-sdk` |

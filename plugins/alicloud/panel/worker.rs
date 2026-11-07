@@ -47,7 +47,13 @@ pub(super) async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult
         None
     };
     // Compatibility counters are display-only: no trustworthy period field is supplied.
-    let traffic = cloud.traffic(&account, now).await;
+    let traffic = match cloud.resolved_account(&account).await {
+        Ok(resolved) => cloud
+            .traffic(&resolved, now)
+            .await
+            .map(|traffic| (traffic, super::history::identity(&resolved))),
+        Err(error) => Err(error),
+    };
     let mut snapshots = Vec::with_capacity(resources.len());
     for resource in resources {
         let snapshot = cloud.snapshot(&account, &resource).await;
@@ -82,7 +88,8 @@ pub(super) async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult
         None => {}
     }
     match traffic {
-        Ok(traffic) => {
+        Ok((traffic, identity)) => {
+            super::history::record(&mut tx, id, &traffic, &identity).await?;
             sqlx::query("UPDATE alicloud_accounts SET traffic=$2,traffic_error=NULL WHERE id=$1")
                 .bind(id)
                 .bind(Json(traffic))
@@ -262,6 +269,10 @@ async fn tick(pool: &PgPool) -> ApiResult<()> {
     // Retention is measured in months; checking it hourly instead of on every
     // five-second tick avoids scanning both tables 17,000 times a day.
     if super::prune_due(&LAST_PRUNE, now) {
+        sqlx::query("DELETE FROM alicloud_traffic_history WHERE bucket_start<$1")
+            .bind(now - 32 * 86400)
+            .execute(pool)
+            .await?;
         sqlx::query("DELETE FROM alicloud_operations WHERE status IN ('preview','cancelled','dismissed','failed','succeeded') AND created_at<$1")
             .bind(now-180*86400).execute(pool).await?;
         sqlx::query("DELETE FROM alicloud_events WHERE created_at<$1")

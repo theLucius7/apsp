@@ -285,13 +285,8 @@ async fn changing_one_channel_only_cancels_its_pending_messages(pool: PgPool) ->
 }
 
 #[sqlx::test(migrations = false)]
-async fn channel_migration_preserves_old_telegram_messages(pool: PgPool) -> Result<()> {
-    for migration in sqlx::migrate!()
-        .iter()
-        .filter(|migration| migration.version < 31)
-    {
-        sqlx::raw_sql(&migration.sql).execute(&pool).await?;
-    }
+async fn reopening_preserves_pending_channel_deliveries(pool: PgPool) -> Result<()> {
+    apsp_panel::schema::initialize(&pool).await?;
     let server: i64 = sqlx::query_scalar(
         "INSERT INTO servers(name) VALUES('notification migration fixture') RETURNING id",
     )
@@ -299,11 +294,7 @@ async fn channel_migration_preserves_old_telegram_messages(pool: PgPool) -> Resu
     .await?;
     let event: i64 = sqlx::query_scalar("INSERT INTO server_alert_events(server_id,server_name,opened_at) VALUES($1,'fixture',1) RETURNING id").bind(server).fetch_one(&pool).await?;
     sqlx::query("INSERT INTO notification_outbox(event_id,kind,message,attempts,next_attempt_at) VALUES($1,'offline','original',3,100)").bind(event).execute(&pool).await?;
-    sqlx::raw_sql(include_str!(
-        "../migrations/0031_notification_alignment.sql"
-    ))
-    .execute(&pool)
-    .await?;
+    apsp_panel::schema::initialize(&pool).await?;
     let row: (String, String, i32, i64) =
         sqlx::query_as("SELECT channel,message,attempts,next_attempt_at FROM notification_outbox")
             .fetch_one(&pool)

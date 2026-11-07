@@ -8,7 +8,6 @@ import type { ChainMutation } from '../src/plugins/singbox/chainRequests'
 import { filterProxyResources, validProxyResource, validatedSnapshot } from '../src/plugins/singbox/groupTypes'
 import type { ProxyResource, PublicHop } from '../src/plugins/singbox/groupTypes'
 import { nodeRoute } from '../src/plugins/singbox/nodeRoute'
-import { canonicalPath } from '../src/app/paths'
 import { validSubscriptionSource } from '../src/plugins/singbox/orderedSourceTypes'
 import { orderedResourceFixture, pathFixtureUuid, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
 import { sourceNodeFixture, sourceNodePageFixture, sourceUuid, subscriptionSourceFixture } from './subscription-source-fixtures.mjs'
@@ -106,8 +105,8 @@ test('ordered public projection exposes every managed position and independent f
   }
 })
 test('typed detail routes and strict role filters preserve legacy list bookmarks', () => {
-  for (const base of ['/nodes', '/plugins/sing-box/nodes']) {
-    const route = (rest: string) => nodeRoute(canonicalPath(`${base}${rest}`))
+  for (const base of ['/nodes']) {
+    const route = (rest: string) => nodeRoute(`${base}${rest}`)
     expect(route('/chain/10')).toEqual({ kind: 'all', chains: false, resource: { kind: 'chain', id: 10 } })
     expect(route('?kind=chains&server=3&role=middle')).toEqual({ kind: 'chains', chains: true, serverId: 3, serverRole: 'middle' })
     for (const rest of ['/chain/01', '/chain/1?kind=chains', '?role=other', '?role=any&role=entry']) expect(route(rest)).toBeNull()
