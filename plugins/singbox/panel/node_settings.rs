@@ -10,6 +10,9 @@ use serde_json::{Value, json};
 #[serde(deny_unknown_fields)]
 pub struct SettingsInput {
     pub listen: Option<String>,
+    pub public_addresses: Option<Vec<apsp_compiler::PublicAddress>>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub realm: Option<Option<apsp_compiler::HysteriaRealm>>,
     #[serde(default, deserialize_with = "nullable")]
     pub public_port: Option<Option<u16>>,
     pub tcp_fast_open: Option<bool>,
@@ -59,6 +62,9 @@ impl SettingsInput {
         if let Some(listen) = self.listen {
             settings.listen = listen;
         }
+        if let Some(addresses) = self.public_addresses {
+            settings.public_addresses = addresses;
+        }
         if let Some(port) = self.public_port {
             settings.public_port = port;
         }
@@ -104,6 +110,19 @@ impl SettingsInput {
         if let Some(snell) = self.snell {
             settings.snell = snell;
         }
+        if let Some(mut realm) = self.realm {
+            if let Some(next) = &mut realm
+                && let Some(old) = &settings.realm
+            {
+                if next.server_token.is_empty() {
+                    next.server_token = old.server_token.clone();
+                }
+                if next.client_token.is_empty() {
+                    next.client_token = old.client_token.clone();
+                }
+            }
+            settings.realm = realm;
+        }
         if let Some(hy) = self.hysteria2 {
             let password = if hy.obfs_enabled {
                 Some(
@@ -137,5 +156,9 @@ pub(crate) fn view(value: Value) -> ApiResult<Value> {
         .expect("settings object")
         .remove("obfs_password");
     view["hysteria2"]["obfs_enabled"] = json!(configured);
+    if !view["realm"].is_null() {
+        view["realm"]["server_token"] = json!("");
+        view["realm"]["client_token"] = json!("");
+    }
     Ok(view)
 }

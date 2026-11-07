@@ -34,6 +34,7 @@ fn result(
         id: request.id,
         module: request.module.clone(),
         operation: request.operation,
+        sessions: None,
         finished_at: now_timestamp()
             .saturating_add(offset)
             .max(request.requested_at),
@@ -161,6 +162,23 @@ async fn execute(
         );
     };
     let mut completed = result(request, None, offset);
+    if matches!(
+        request.operation,
+        RuntimeOperation::InspectSessions | RuntimeOperation::CloseSessions
+    ) {
+        match reconciler.connection_operation(request).await {
+            Ok(mut report) => {
+                report.observed_at = report
+                    .observed_at
+                    .saturating_add(offset)
+                    .max(request.requested_at);
+                completed.finished_at = report.observed_at;
+                completed.sessions = Some(report);
+            }
+            Err(_) => completed.error = Some(RuntimeOperationError::OperationFailed),
+        }
+        return completed;
+    }
     if request.operation != RuntimeOperation::Inspect {
         let manifest = match client.manifest().await {
             Ok(manifest) => manifest,
@@ -194,7 +212,9 @@ async fn execute(
                 }
                 Err(_) => false,
             },
-            RuntimeOperation::Inspect => unreachable!(),
+            RuntimeOperation::Inspect
+            | RuntimeOperation::InspectSessions
+            | RuntimeOperation::CloseSessions => unreachable!(),
         };
         if !success {
             completed.error = Some(RuntimeOperationError::OperationFailed);

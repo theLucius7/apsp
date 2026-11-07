@@ -245,7 +245,7 @@ jobs:
           RUNTIME_LIBC: ${{ matrix.libc }}
         run: |
           mkdir -p "$RUNNER_TEMP/runtime"
-          tar -xzf "$RUNNER_TEMP/runtime-artifacts/sing-box/1.14.4-apsp.1/linux-$RUNTIME_LIBC-$RUNTIME_ARCH" -C "$RUNNER_TEMP/runtime"
+          tar -xzf "$RUNNER_TEMP/runtime-artifacts/sing-box/1.14.4-apsp.2/linux-$RUNTIME_LIBC-$RUNTIME_ARCH" -C "$RUNNER_TEMP/runtime"
           image=debian:bookworm-slim
           if [ "$RUNTIME_LIBC" = musl ]; then image=alpine:3.24.2; fi
           docker run --rm --network none --platform "linux/$RUNTIME_ARCH" -v "$RUNNER_TEMP/runtime:/runtime:ro" "$image" /runtime/sing-box version
@@ -342,7 +342,7 @@ jobs:
         shell: bash
         run: |
           binary=target/${{ matrix.target }}/release/apsp-agent
-          runtime=.ci-artifacts/sing-box/1.14.4-apsp.1/${{ matrix.platform }}-${{ matrix.arch }}
+          runtime=.ci-artifacts/sing-box/1.14.4-apsp.2/${{ matrix.platform }}-${{ matrix.arch }}
           if [ '${{ matrix.platform }}' = windows ]; then
             python tools/ci-run.py python tools/native-service-smoke.py "$binary.exe" "$runtime"
           else
@@ -438,7 +438,7 @@ jobs:
             test "$(.ci-binaries/apsp-agent --version)" = 'apsp-agent ${{ steps.build.outputs.version }}'
             .ci-binaries/apsp-agent --help
             mkdir -p /tmp/apsp-runtime
-            tar -xzf .ci-artifacts/sing-box/1.14.4-apsp.1/freebsd-${{ matrix.arch }} -C /tmp/apsp-runtime
+            tar -xzf .ci-artifacts/sing-box/1.14.4-apsp.2/freebsd-${{ matrix.arch }} -C /tmp/apsp-runtime
             /tmp/apsp-runtime/sing-box version
             if [ '${{ matrix.package }}' != true ]; then exit 0; fi
             # The newest supported release also packages the binary and runs the
@@ -452,7 +452,7 @@ jobs:
             # The arm64 VM is fully emulated on an x86 runner; sing-box cannot meet
             # the production 8 s health budget there. amd64 covers the runtime.
             if [ '${{ matrix.arch }}' = amd64 ]; then
-              env CI=true GITHUB_ACTIONS=true apsp-ci-python tools/ci-run.py apsp-ci-python tools/native-service-smoke.py .ci-binaries/apsp-agent .ci-artifacts/sing-box/1.14.4-apsp.1/freebsd-${{ matrix.arch }} || result=1
+              env CI=true GITHUB_ACTIONS=true apsp-ci-python tools/ci-run.py apsp-ci-python tools/native-service-smoke.py .ci-binaries/apsp-agent .ci-artifacts/sing-box/1.14.4-apsp.2/freebsd-${{ matrix.arch }} || result=1
             fi
             exit "$result"
       - uses: actions/upload-artifact@v7.0.1
@@ -510,7 +510,7 @@ jobs:
         uses: actions/cache/restore@v6.1.0
         with:
           path: ${{ runner.temp }}/apsp-runtime-artifacts
-          key: apsp-runtime-linux-amd64-1.14.4-apsp.1-${{ hashFiles('tools/build-singbox.sh', 'tools/singbox-builder.Dockerfile', 'tools/singbox-runtime/**') }}
+          key: apsp-runtime-linux-amd64-1.14.4-apsp.2-${{ hashFiles('tools/build-singbox.sh', 'tools/singbox-builder.Dockerfile', 'tools/singbox-runtime/**') }}
       - name: Build the pinned runtime on a cache miss
         if: steps.runtime-cache.outputs.cache-hit != 'true'
         run: |

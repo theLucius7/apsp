@@ -75,6 +75,17 @@ impl Adapter for SingboxAdapter {
         health::budget(target) + Duration::from_secs(5)
     }
 
+    fn describe_artifact(&self, version: &str, target: &str) -> Descriptor {
+        let mut descriptor = self.describe();
+        if version == "1.14.4-apsp.2" {
+            if target.starts_with("windows-") {
+                descriptor.auxiliary_files = vec!["libcronet.dll".into()];
+            } else if target.starts_with("linux-gnu-") || matches!(target, "amd64" | "arm64") {
+                descriptor.auxiliary_files = vec!["libcronet.so".into()];
+            }
+        }
+        descriptor
+    }
     fn describe(&self) -> Descriptor {
         Descriptor {
             module: "singbox".into(),
@@ -85,7 +96,7 @@ impl Adapter for SingboxAdapter {
                 "sing-box"
             }
             .into(),
-            // The runtime is pure Go everywhere, so it ships no libraries.
+            // Release-specific libraries are described by describe_artifact.
             auxiliary_files: Vec::new(),
             service_unit: SERVICE_UNIT.into(),
             service_group: "apsp-singbox".into(),
@@ -135,6 +146,7 @@ impl Adapter for SingboxAdapter {
             }
             version::validate_output(&output.stdout, &runtime.kernel_version)?;
             path_probe::validate_build(&runtime, &output.stdout)?;
+            version::validate_config_features(&output.stdout, config)?;
             version::validate_features(
                 &output.stdout,
                 runtime.files.get("path-features.json").map(String::as_str),

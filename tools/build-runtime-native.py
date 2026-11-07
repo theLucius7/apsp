@@ -16,12 +16,13 @@ from artifact_manifest import publish
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'singbox-runtime'))
 import apply as runtime_patches
+import cronet
 
-VERSION = '1.14.4-apsp.1'
-PATCHED_COMMIT = '243a13cd63c275a1567badb2905b731a48545a26'
+VERSION = '1.14.4-apsp.2'
+PATCHED_COMMIT = '5d74251bd02a4b243a2cf23a6f0e7bdfc2259642'
 COMMIT = 'c005f35300ce76427dc285481ec5695f5b179cd2'
 # Server build tags, including the statistics API the Agent reads.
-TAGS = 'with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api,with_acme'
+TAGS = 'with_quic,with_utls,with_grpc,with_wireguard,with_clash_api,with_v2ray_api,with_acme,with_gvisor,with_cloudflared,with_openvpn,with_openconnect,with_tailscale'
 TARGETS = ('macos-arm64', 'freebsd-amd64', 'freebsd-arm64', 'windows-amd64', 'windows-arm64')
 
 
@@ -62,12 +63,20 @@ def main():
         if runtime_patches.apply(source) != PATCHED_COMMIT:
             raise ValueError('patch queue produced an unexpected commit')
         binary = root / ('sing-box.exe' if system == 'windows' else 'sing-box')
-        # Pure Go on every supported platform.
+        tags = TAGS
+        cgo = '0'
+        if system != 'freebsd':
+            tags += ',with_naive_outbound'
+        if system == 'windows':
+            tags += ',with_purego'
+        if system == 'macos':
+            cgo = '1'
+        # macOS links the pinned static Cronet module using the local Xcode toolchain.
         env = dict(os.environ, GOOS='darwin' if system == 'macos' else system, GOARCH=arch,
-                   CGO_ENABLED='0', GOTOOLCHAIN='local', GOFLAGS='')
+                   CGO_ENABLED=cgo, GOTOOLCHAIN='local', GOFLAGS='')
         for attempt in range(3):
             try:
-                run(['go', 'build', '-mod=readonly', '-trimpath', '-o', str(binary), '-tags', TAGS,
+                run(['go', 'build', '-mod=readonly', '-trimpath', '-o', str(binary), '-tags', tags,
                      '-ldflags', f'-X github.com/sagernet/sing-box/constant.Version={VERSION} -s -w -buildid=',
                      './cmd/sing-box'], cwd=source, env=env)
                 break
@@ -77,9 +86,11 @@ def main():
                 print('Retrying runtime build with the existing module cache', flush=True)
                 time.sleep(5)
         files = [binary]
+        if system == 'windows':
+            files.append(cronet.fetch('windows_' + arch, root))
         if system != 'freebsd' or platform.system() == 'FreeBSD':
             text = run([str(binary), 'version'], capture_output=True, text=True).stdout
-            if f'sing-box version {VERSION}' not in text or f'Tags: {TAGS}' not in text:
+            if f'sing-box version {VERSION}' not in text or f'Tags: {tags}' not in text:
                 raise ValueError('runtime version or build tags are wrong')
             print(text)
         archive = io.BytesIO()

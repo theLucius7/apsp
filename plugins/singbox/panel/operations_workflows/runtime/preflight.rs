@@ -63,6 +63,7 @@ pub(super) async fn nodes(tx: &mut Transaction<'_, Postgres>, server: i64) -> Ap
 }
 
 struct Context {
+    profile: Value,
     nodes: Vec<Node>,
     info: Value,
     capabilities: Value,
@@ -79,7 +80,14 @@ async fn context(tx: &mut Transaction<'_, Postgres>, server: i64) -> ApiResult<C
     let row=sqlx::query("SELECT s.static_info,s.capabilities,s.last_seen,COALESCE(p.policy,'{}'::jsonb) AS policy,m.target_rev,EXISTS(SELECT 1 FROM server_retirements WHERE server_id=s.id) OR COALESCE(p.lifecycle IN('draining','retired'),FALSE) OR COALESCE(p.lifecycle='maintenance' AND COALESCE(p.maintenance_from,0)<=$2 AND (p.maintenance_until IS NULL OR p.maintenance_until>$2),FALSE) OR EXISTS(SELECT 1 FROM operations_maintenance w WHERE s.id=ANY(w.targets) AND w.block_new_tasks AND w.starts_at<=$2 AND w.ends_at>$2) AS blocked FROM servers s LEFT JOIN fleet_profiles p ON p.server_id=s.id LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id=$1").bind(server).bind(now_timestamp()).fetch_one(&mut **tx).await?;
     let network_references=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'revision',revision,'active_version',active_version,'config',config) FROM network_documents WHERE (kind='endpoint' AND (config->>'server_id')::bigint=$1) OR (kind='certificate' AND EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(config->'targets','[]'::jsonb)) target WHERE (target->>'server_id')::bigint=$1)) ORDER BY id")
         .bind(server).fetch_all(&mut **tx).await?;
+    let profile =
+        sqlx::query_scalar("SELECT definition FROM singbox_server_profiles WHERE server_id=$1")
+            .bind(server)
+            .fetch_optional(&mut **tx)
+            .await?
+            .unwrap_or(json!({}));
     Ok(Context {
+        profile,
         network_references,
         nodes: nodes(tx, server).await?,
         info: row.get("static_info"),
@@ -104,9 +112,15 @@ fn fingerprint(
 ) -> impl std::future::Future<Output = ApiResult<String>> + Send + use<> {
     let state = state.clone();
     let info = context.info.clone();
-    let mut snapshot = json!({"nodes":context.nodes,"platform":context.info,"capabilities":context.capabilities,"policy":context.policy,"network_references":context.network_references,"runtime_version":crate::RUNTIME_VERSION});
+    let capabilities = context.capabilities.clone();
+    let mut snapshot = json!({"server_profile":context.profile,"nodes":context.nodes,"platform":context.info,"capabilities":context.capabilities,"policy":context.policy,"network_references":context.network_references,"runtime_version":crate::RUNTIME_VERSION});
     async move {
-        let artifact = match super::super::super::agent::runtime_artifact(&state, &info).await {
+        let artifact = match super::super::super::agent::runtime_artifact(&state, &info)
+            .await
+            .and_then(|value| {
+                super::super::super::agent::artifact_capability(&value, &capabilities)?;
+                Ok(value)
+            }) {
             Ok(value) => Some(value.sha256),
             Err(ApiError::BadRequest(_) | ApiError::NotFound) => None,
             Err(error) => return Err(error),
@@ -122,6 +136,32 @@ struct Listener {
     address: String,
     port: u16,
     purpose: String,
+}
+
+fn profile_listeners(nodes: &[Node], profile: &Value) -> Vec<Listener> {
+    let mut items = listeners(nodes);
+    items.push(Listener {
+        protocol: "tcp".into(),
+        address: "127.0.0.1".into(),
+        port: 18086,
+        purpose: "运行时控制接口".into(),
+    });
+    for service in profile["services"].as_array().into_iter().flatten() {
+        if let (Some(address), Some(port)) = (
+            service["listen"].as_str(),
+            service["listen_port"]
+                .as_u64()
+                .and_then(|p| u16::try_from(p).ok()),
+        ) {
+            items.push(Listener {
+                protocol: "tcp".into(),
+                address: address.into(),
+                port,
+                purpose: "Realm 服务".into(),
+            });
+        }
+    }
+    items
 }
 
 fn listeners(nodes: &[Node]) -> Vec<Listener> {
@@ -237,11 +277,17 @@ fn panel_checks(
         ));
     }
     let compiled = apsp_compiler::compile_server(&context.nodes);
-    checks.push(check("configuration","普通节点配置",if compiled.is_ok(){"passed"}else{"failed"},Some(now),"fixed_compiler_1.14.4-apsp.1",json!({"node_ids":context.nodes.iter().map(|node|node.id).collect::<Vec<_>>(),"compiled":compiled.is_ok(),"configuration_sha256":compiled.ok().map(|value|format!("{:x}",sha2::Sha256::digest(value.as_bytes()))),"secret_values_returned":false}),"确定性编译当前有效授权与普通节点；预检不复制凭据，也不替代 Agent 的原生配置检查。"));
+    checks.push(check("configuration","普通节点配置",if compiled.is_ok(){"passed"}else{"failed"},Some(now),"fixed_compiler_1.14.4-apsp.2",json!({"node_ids":context.nodes.iter().map(|node|node.id).collect::<Vec<_>>(),"compiled":compiled.is_ok(),"configuration_sha256":compiled.ok().map(|value|format!("{:x}",sha2::Sha256::digest(value.as_bytes()))),"secret_values_returned":false}),"确定性编译当前有效授权与普通节点；预检不复制凭据，也不替代 Agent 的原生配置检查。"));
     let state = state.clone();
     let info = context.info.clone();
+    let capabilities = context.capabilities.clone();
     async move {
-        let artifact = match super::super::super::agent::runtime_artifact(&state, &info).await {
+        let artifact = match super::super::super::agent::runtime_artifact(&state, &info)
+            .await
+            .and_then(|value| {
+                super::super::super::agent::artifact_capability(&value, &capabilities)?;
+                Ok(value)
+            }) {
             Ok(value) => check(
                 "artifact",
                 "运行时制品",
@@ -251,7 +297,16 @@ fn panel_checks(
                 json!({"version":crate::RUNTIME_VERSION,"sha256":value.sha256,"signature_verified":true,"payload_verified":true}),
                 "核对目标平台与当前真正可用的签名制品，确认时重新核对摘要。",
             ),
-            Err(ApiError::BadRequest(_) | ApiError::NotFound) => check(
+            Err(ApiError::BadRequest(message)) => check(
+                "artifact",
+                "运行时制品",
+                "failed",
+                Some(now),
+                "verified_local_release_inventory",
+                json!({"version":crate::RUNTIME_VERSION}),
+                &message,
+            ),
+            Err(ApiError::NotFound) => check(
                 "artifact",
                 "运行时制品",
                 "failed",
@@ -334,7 +389,7 @@ pub(in super::super) async fn request(
             .await?;
     let id = Uuid::new_v4();
     let now = now_timestamp();
-    let snapshot = json!({"listeners":listeners(&current.nodes),"node_ids":current.nodes.iter().map(|node|node.id).collect::<Vec<_>>(),"runtime_module":PERMISSIONS_MODULE,"server_id":server});
+    let snapshot = json!({"listeners":profile_listeners(&current.nodes,&current.profile),"node_ids":current.nodes.iter().map(|node|node.id).collect::<Vec<_>>(),"runtime_module":PERMISSIONS_MODULE,"server_id":server});
     sqlx::query("INSERT INTO singbox_deployment_preflights(id,server_id,administrator_id,expected_digest,snapshot,panel_checks,ports_operation_id,permissions_operation_id,created_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
         .bind(id).bind(server).bind(actor).bind(expected).bind(snapshot).bind(json!(network)).bind(ports).bind(permissions).bind(now).bind(now+300).execute(&mut *tx).await?;
     event(&mut tx,Some(actor),None,"runtime_preflight_requested",json!({"id":id,"server_id":server,"ports_operation_id":ports,"permissions_operation_id":permissions,"secret_values_recorded":false})).await?;
@@ -724,7 +779,10 @@ async fn aggregate_tx(
                 && !node.users.is_empty()
                 && matches!(
                     node.protocol_config.tls(),
-                    Some(apsp_compiler::TlsConfig::Acme { .. })
+                    Some(
+                        apsp_compiler::TlsConfig::Acme { .. }
+                            | apsp_compiler::TlsConfig::Dns01 { .. }
+                    )
                 )
         }) {
             checks.push(storage_check(&permissions, started, now));
@@ -733,7 +791,7 @@ async fn aggregate_tx(
         checks.push(ports_check(
             &ports,
             &permissions,
-            &listeners(&context.nodes),
+            &profile_listeners(&context.nodes, &context.profile),
             started,
             now,
             checkpoint["state"] == "verified" || checkpoint["current_binding_answered"] == true,

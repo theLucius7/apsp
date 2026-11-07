@@ -5,6 +5,7 @@ import { time } from '../../format'
 import { resourceWriteError, useAction, useResource, settingsPoll } from '../../hooks'
 import type { Deployment, Node, PluginServer } from '../../types'
 import RuntimeOperations from './RuntimeOperations'
+import ServerProfile from './ServerProfile'
 import { installationView, sourceNote } from './Settings'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -99,6 +100,7 @@ export default function ServerBusiness({ serverId, runtimeVersion }: { serverId:
       用同一份配置生成新版本并下发到这台服务器。运行时已脱离 Agent 的受控实例时（例如服务器重启后），Agent 会受控重启一次，期间这台服务器的线路中断几秒；运行时正常时不会重启。需要再次验证身份。
     </Confirm>}</DialogPresence>
     {enabled && <>
+      <ServerProfile serverId={serverId} />
       <Panel><div className="p-4"><RuntimeOperations serverId={serverId} status={status} deploymentError={() => resourceWriteError(metadata, deployment)} getStatus={() => deployment.getCurrent()?.status} /></div></Panel>
       <Panel><PanelHeader><PanelTitle>部署历史</PanelTitle><span className="text-muted-foreground text-xs">最近 6 次发布</span></PanelHeader>{deployment.data?.history.length ? <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>版本</TableHead><TableHead>配置包摘要</TableHead><TableHead>发布时间</TableHead></TableRow></TableHeader><TableBody>{deployment.data.history.slice(0, 6).map(item => <TableRow key={item.rev}><TableCell><strong>版本 {item.rev}</strong>{item.rev === status?.applied_rev && <span className="bg-muted text-muted-foreground ml-2 inline-block rounded px-1.5 py-0.5 align-middle text-xs">已应用</span>}</TableCell><TableCell><code title={item.bundle_sha256}>{item.bundle_sha256.slice(0, 16)}…</code></TableCell><TableCell>{time(item.created_at)}</TableCell></TableRow>)}</TableBody></Table></div> : <div className="text-muted-foreground px-4 py-6 text-sm">还没有发布记录。</div>}</Panel>
     </>}

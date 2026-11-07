@@ -1,0 +1,19 @@
+diff --git a/experimental/clashapi/connections.go b/experimental/clashapi/connections.go
+--- a/experimental/clashapi/connections.go
++++ b/experimental/clashapi/connections.go
+@@ -37,6 +37,7 @@ func connectionsSnapshot(trafficManager *trafficcontrol.Manager) render.M {
+ 		return metadata.OutboundType != C.TypeDNS
+ 	})
+ 	return render.M{
++		"apsp_authenticated_sessions": true,
+ 		"downloadTotal": downlinkTotal,
+ 		"uploadTotal":   uplinkTotal,
+ 		"connections": common.Map(connections, func(metadata *trafficcontrol.TrackerMetadata) connectionObject {
+@@ -88,6 +89,7 @@ func (c connectionObject) MarshalJSON() ([]byte, error) {
+ 	return json.Marshal(map[string]any{
+ 		"id": c.ID,
+ 		"metadata": map[string]any{
++			"apsp_principal": c.Metadata.User,
+ 			"network":         c.Metadata.Network,
+ 			"type":            inbound,
+ 			"sourceIP":        c.Metadata.Source.Addr,

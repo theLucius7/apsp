@@ -12,6 +12,8 @@ pub(crate) use validate::validate;
 pub struct NodeSettings {
     pub listen: String,
     pub public_port: Option<u16>,
+    pub public_addresses: Vec<PublicAddress>,
+    pub realm: Option<HysteriaRealm>,
     pub tcp_fast_open: bool,
     pub disable_tcp_keep_alive: bool,
     pub tcp_keep_alive_seconds: Option<u16>,
@@ -34,6 +36,8 @@ impl Default for NodeSettings {
         Self {
             listen: "::".into(),
             public_port: None,
+            public_addresses: Vec::new(),
+            realm: None,
             tcp_fast_open: false,
             disable_tcp_keep_alive: false,
             tcp_keep_alive_seconds: None,
@@ -225,4 +229,28 @@ pub enum MultiplexProtocol {
     H2mux,
     Smux,
     Yamux,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublicAddress {
+    pub name: String,
+    pub server: String,
+    pub port: u16,
+    #[serde(default)]
+    pub sni: Option<String>,
+    #[serde(default)]
+    pub host: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HysteriaRealm {
+    pub server_url: String,
+    pub realm_id: String,
+    pub server_token: String,
+    pub client_token: String,
+    pub stun_servers: Vec<String>,
+    #[serde(default)]
+    pub ip_version: u8,
 }

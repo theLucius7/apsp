@@ -6,6 +6,36 @@ use apsp_adapter_sdk::{Adapter, Plan, Prepared};
 use apsp_adapter_singbox::SingboxAdapter;
 use support::{TempDir, TestOps, TestServices};
 
+#[test]
+fn runtime_libraries_follow_the_signed_target_not_the_agent_abi() {
+    let adapter = SingboxAdapter::new();
+    for (target, files) in [
+        ("amd64", vec!["libcronet.so"]),
+        ("arm64", vec!["libcronet.so"]),
+        ("linux-gnu-amd64", vec!["libcronet.so"]),
+        ("linux-gnu-arm64", vec!["libcronet.so"]),
+        ("linux-musl-amd64", vec![]),
+        ("linux-musl-arm64", vec![]),
+        ("windows-amd64", vec!["libcronet.dll"]),
+        ("windows-arm64", vec!["libcronet.dll"]),
+        ("darwin-arm64", vec![]),
+        ("freebsd-amd64", vec![]),
+    ] {
+        assert_eq!(
+            adapter
+                .describe_artifact("1.14.4-apsp.2", target)
+                .auxiliary_files,
+            files
+        );
+        assert!(
+            adapter
+                .describe_artifact("1.14.4-apsp.1", target)
+                .auxiliary_files
+                .is_empty()
+        );
+    }
+}
+
 #[tokio::test]
 async fn signed_path_plan_requires_matching_staged_bytes_native_features_and_private_controller() {
     let directory = TempDir::new();
@@ -16,7 +46,7 @@ async fn signed_path_plan_requires_matching_staged_bytes_native_features_and_pri
     native["experimental"]["clash_api"] =
         serde_json::json!({"external_controller":"127.0.0.1:18086","secret":"a".repeat(64)});
     spec.files.insert("config.json".into(), native.to_string());
-    let plan = serde_json::json!({"schema":1,"runtime_version":"1.14.4-apsp.1","required_build_tags":["with_clash_api","with_v2ray_api"],
+    let plan = serde_json::json!({"schema":1,"runtime_version":"1.14.4-apsp.2","required_build_tags":["with_clash_api","with_v2ray_api"],
         "bindings":[{"id":"00000000-0000-0000-0000-000000000002","selector":"chain-1-g2-h1","target":"https://panel.example/health"}]}).to_string();
     spec.files
         .insert("runtime-probes.json".into(), plan.clone());
@@ -24,7 +54,7 @@ async fn signed_path_plan_requires_matching_staged_bytes_native_features_and_pri
     std::fs::write(directory.0.join("runtime-probes.json"), &plan).unwrap();
     let complete = TestOps {
         version: Some(
-            "sing-box version 1.14.4-apsp.1\nTags: with_v2ray_api,with_clash_api\n".into(),
+            "sing-box version 1.14.4-apsp.2\nTags: with_v2ray_api,with_clash_api\n".into(),
         ),
         ..TestOps::default()
     };
@@ -88,7 +118,7 @@ async fn rejects_wrong_version_missing_tags_and_failed_native_check() {
     let spec = directory.spec(18085, serde_json::json!([]));
     for version in [
         "sing-box version 1.14.1\nTags: with_v2ray_api\n",
-        "sing-box version 1.14.4-apsp.1\nTags: with_quic\n",
+        "sing-box version 1.14.4-apsp.2\nTags: with_quic\n",
     ] {
         let ops = TestOps {
             version: Some(version.into()),

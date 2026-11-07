@@ -30,7 +30,7 @@ async fn current(tx: &mut Transaction<'_, Postgres>, id: i64) -> ApiResult<Value
 
 // Include both ordinary and taken-over nodes, and hosts still holding revoked
 // credentials. Publication reuses the same entitlement lock as this write.
-async fn servers(tx: &mut Transaction<'_, Postgres>, id: i64) -> ApiResult<Vec<i64>> {
+pub(crate) async fn servers(tx: &mut Transaction<'_, Postgres>, id: i64) -> ApiResult<Vec<i64>> {
     Ok(sqlx::query_scalar("SELECT DISTINCT n.server_id FROM nodes n JOIN (SELECT node_id FROM accesses WHERE user_id=$1 UNION SELECT node_id FROM singbox_desired_accesses WHERE user_id=$1 UNION SELECT pn.node_id FROM singbox_user_policies up JOIN singbox_policy_nodes pn ON pn.group_id=up.group_id WHERE up.user_id=$1) a ON a.node_id=n.id JOIN servers s ON s.id=n.server_id WHERE s.deleted_at IS NULL ORDER BY n.server_id")
         .bind(id).fetch_all(&mut **tx).await?)
 }
@@ -165,10 +165,20 @@ pub async fn put(
     Ok(Json(value))
 }
 
+pub(crate) async fn ensure_control(
+    tx: &mut Transaction<'_, Postgres>,
+    server_id: i64,
+) -> anyhow::Result<()> {
+    sqlx::query("INSERT INTO singbox_runtime_controls(server_id,control_secret) VALUES($1,$2) ON CONFLICT DO NOTHING").bind(server_id).bind(crate::auth::random_token()).execute(&mut **tx).await?;
+    Ok(())
+}
+
 pub(crate) async fn compile(
     tx: &mut Transaction<'_, Postgres>,
     config: &str,
+    server_id: i64,
 ) -> anyhow::Result<String> {
+    ensure_control(tx, server_id).await?;
     let rows = sqlx::query("SELECT user_id,upload_mbps,download_mbps,max_connections FROM singbox_user_limits WHERE upload_mbps>0 OR download_mbps>0 OR max_connections>0 ORDER BY user_id").fetch_all(&mut **tx).await?;
     let limits: BTreeMap<_, _> = rows
         .into_iter()
@@ -183,7 +193,17 @@ pub(crate) async fn compile(
             )
         })
         .collect();
-    Ok(apply_user_limits(config, &limits)?)
+    let mut config: Value = serde_json::from_str(&apply_user_limits(config, &limits)?)?;
+    if config.pointer("/experimental/clash_api").is_none() {
+        let secret: String = sqlx::query_scalar(
+            "SELECT control_secret FROM singbox_runtime_controls WHERE server_id=$1",
+        )
+        .bind(server_id)
+        .fetch_one(&mut **tx)
+        .await?;
+        config["experimental"]["clash_api"] = json!({"external_controller":"127.0.0.1:18086","secret":secret,"access_control_allow_origin":[]});
+    }
+    Ok(serde_json::to_string_pretty(&config)?)
 }
 
 #[cfg(test)]
@@ -198,7 +218,12 @@ mod tests {
         sqlx::query("INSERT INTO singbox_user_limits(user_id,upload_mbps,download_mbps,max_connections) VALUES($1,8,16,2)").bind(id).execute(&pool).await?;
         let config = json!({"experimental":{"v2ray_api":{"stats":{"users":[format!("u{id}_n1"),format!("u{id}_n2")]}}}}).to_string();
         let mut tx = pool.begin().await?;
-        let compiled = compile(&mut tx, &config).await?;
+        let host: i64 = sqlx::query_scalar(
+            "INSERT INTO servers(name) VALUES('TEST_ONLY control') RETURNING id",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        let compiled = compile(&mut tx, &config, host).await?;
         let compiled: Value = serde_json::from_str(&compiled)?;
         assert_eq!(
             compiled["route"]["apsp_user_limits"]

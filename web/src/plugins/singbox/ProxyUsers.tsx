@@ -1,3 +1,5 @@
+import UserSessions from './UserSessions'
+import UserControl from './UserControl'
 import { useEffect, useRef, useState } from 'react'
 import UserEntitlements from './UserEntitlements'
 import UserPasskeyAccess from './UserPasskeyAccess'
@@ -38,7 +40,7 @@ const quotaUsed = (line: UserLine) => line.monthly_bytes ? Number(line.used_byte
 /** The list answers "who is this and can they use it" without opening anyone. */
 function lineSummary(line?: UserLine) {
   if (!line) return ''
-  if (line.status === 'expired' || line.status === 'exhausted' || line.status === 'not_started') return statusText[line.status]
+  if (line.status === 'paused' || line.status === 'expired' || line.status === 'exhausted' || line.status === 'not_started') return statusText[line.status]
   if (!line.package_name) return '未设套餐'
   return `${line.package_name} · ${bytes(line.used_bytes)} / ${line.monthly_bytes ? bytes(line.monthly_bytes) : '不限量'}`
 }
@@ -216,6 +218,8 @@ export default function ProxyUsers({ initialUserId }: { initialUserId?: number }
           <UserInvitations key={`invitations-${selected}`} userId={selected} active={section === 'invitations'} />
         </div>
         <div hidden={section !== 'diagnosis'}>
+          <UserSessions key={`sessions-${selected}`} userId={selected} active={section === 'diagnosis'} />
+          <UserControl key={`control-${selected}`} userId={selected} active={section === 'diagnosis'} onChanged={refresh} />
           <UserDiagnostics key={`diagnosis-${selected}`} userId={selected} active={section === 'diagnosis'} userError={() => userError(selected)} onChanged={refresh} />
         </div>
       </div>}

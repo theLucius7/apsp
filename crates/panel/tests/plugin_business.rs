@@ -180,7 +180,7 @@ async fn reopening_preserves_subscription_credentials_access_and_accounting(
 }
 
 #[sqlx::test(migrations = false)]
-#[ignore = "Requires pinned real sing-box 1.14.4-apsp.1 and openssl on a dedicated test node; set APSP_TEST_SINGBOX"]
+#[ignore = "Requires pinned real sing-box 1.14.4-apsp.2 and openssl on a dedicated test node; set APSP_TEST_SINGBOX"]
 async fn subscription_keeps_real_connection_authorization_and_counters_after_reopening(
     pool: PgPool,
 ) -> Result<()> {

@@ -57,8 +57,13 @@ impl NodeTransport {
         if self.is_tcp() {
             return Ok(());
         }
-        if !node.protocol_config.is_vless() {
-            return Err(fail("仅 VLESS（Reality 或隧道）支持额外传输设置"));
+        if !node.protocol_config.is_vless()
+            && !matches!(
+                node.protocol_config,
+                crate::ProtocolConfig::Trojan { .. } | crate::ProtocolConfig::Vmess { .. }
+            )
+        {
+            return Err(fail("当前协议不支持额外传输设置"));
         }
         // Vision flow belongs to Reality; a tunnel node keeps Reality settings at their defaults.
         if node.protocol_config.is_reality() && node.settings.reality.flow != RealityFlow::None {
@@ -142,38 +147,6 @@ impl NodeTransport {
             }
             Self::Grpc { service_name } => json!({"type":"grpc","service_name":service_name}),
         })
-    }
-
-    pub(crate) fn link_parameters(&self) -> Vec<(&'static str, String)> {
-        let mut parameters = vec![("type", self.kind().into())];
-        match self {
-            Self::Ws {
-                path,
-                host,
-                max_early_data,
-                early_data_header_name,
-            } => {
-                parameters.push(("path", path.clone()));
-                if let Some(host) = host {
-                    parameters.push(("host", host.clone()));
-                }
-                if *max_early_data > 0 {
-                    parameters.push(("ed", max_early_data.to_string()));
-                    if !early_data_header_name.is_empty() {
-                        parameters.push(("eh", early_data_header_name.clone()));
-                    }
-                }
-            }
-            Self::Httpupgrade { path, host } => {
-                parameters.push(("path", path.clone()));
-                if let Some(host) = host {
-                    parameters.push(("host", host.clone()));
-                }
-            }
-            Self::Grpc { service_name } => parameters.push(("serviceName", service_name.clone())),
-            Self::Tcp {} => {}
-        }
-        parameters
     }
 }
 

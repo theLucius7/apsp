@@ -7,6 +7,7 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 
 export const protocolNames: Record<string, string> = {
+  shadowtls: 'Shadowsocks + ShadowTLS v3', 'vless-tls': 'VLESS + TLS', 'vless-tunnel': 'VLESS + 隧道', trojan: 'Trojan', vmess: 'VMess', http: 'HTTPS 代理', mixed: 'HTTP / SOCKS 混合（TLS）', socks: 'SOCKS5', shadowsocks: 'Shadowsocks AEAD',
   'vless-reality': 'VLESS + Reality', hysteria2: 'Hysteria2', shadowsocks2022: 'Shadowsocks 2022',
   tuic: 'TUIC v5', anytls: 'AnyTLS', naive: 'Naive（HTTP/2）', 'snell-v6': 'Snell v6',
 }
@@ -21,9 +22,11 @@ export function protocolName(protocol: string) {
 
 export function protocolRequest(form: FormData) {
   const type = String(form.get('protocol'))
-  if (type === 'shadowsocks2022') return { type, method: String(form.get('method')) }
-  if (!['hysteria2', 'tuic', 'anytls', 'naive'].includes(type)) return { type }
+  if (['shadowsocks2022', 'shadowsocks', 'shadowtls'].includes(type)) return { type, method: String(form.get('method')) }
+  if (!['hysteria2', 'tuic', 'anytls', 'naive', 'vless-tls', 'trojan', 'vmess', 'http', 'mixed'].includes(type)) return { type }
   const mode = String(form.get('tls_mode'))
+  if (mode === 'reuse') return { type, tls: { mode, node_id: Number(form.get('certificate_node_id')) } }
+  if (mode === 'dns01') return { type, tls: { mode, email: String(form.get('email')).trim(), domains: String(form.get('domains')).split(/[\s,]+/).filter(Boolean), ...(form.get('api_token') ? { api_token: String(form.get('api_token')).trim() } : {}) } }
   if (mode === 'acme') return { type, tls: { mode, email: String(form.get('email')).trim(), challenge: String(form.get('challenge')) } }
   const certificate = String(form.get('certificate') ?? '').trim()
   const key = String(form.get('key') ?? '').trim()
@@ -34,28 +37,35 @@ export default function ProtocolFields({ node }: { node: Node | 'new' }) {
   const existing = node === 'new' ? null : node
   const [protocol, setProtocol] = useState(existing?.protocol ?? 'vless-reality')
   const tls = existing?.protocol_config?.tls
-  const [mode, setMode] = useState(tls?.mode ?? 'acme')
+  const [mode, setMode] = useState<string>(tls?.mode ?? 'acme')
   const [challenge, setChallenge] = useState(tls?.challenge ?? 'http-01')
   const [email, setEmail] = useState(tls?.email ?? '')
   const [certificate, setCertificate] = useState('')
   const [privateKey, setPrivateKey] = useState('')
-  const needsTls = ['hysteria2', 'tuic', 'anytls', 'naive'].includes(protocol)
+  const needsTls = ['hysteria2', 'tuic', 'anytls', 'naive', 'vless-tls', 'trojan', 'vmess', 'http', 'mixed'].includes(protocol)
   const reality = protocol === 'vless-reality'
   return <>
     <Field label="代理协议" hint={existing ? '协议创建后不可更改。需要更换协议时请创建新节点。' : '所有协议均支持完整 sing-box 配置订阅。'}>
       <NativeSelect className="w-full" aria-label="代理协议" value={protocol} disabled={Boolean(existing)} onChange={event => setProtocol(event.target.value)}>{Object.entries(protocolNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</NativeSelect>
       <input type="hidden" name="protocol" value={protocol} />
     </Field>
-    {protocol === 'shadowsocks2022' && <Field label="加密方法" hint="节点密钥和每个授权的密钥自动生成。加密方法创建后不可更改。">
+    {['shadowsocks','shadowtls'].includes(protocol) && <Field label="加密方法"><NativeSelect name="method" defaultValue={existing?.protocol_config?.method ?? 'aes-128-gcm'}>{['aes-128-gcm','aes-256-gcm','chacha20-ietf-poly1305','xchacha20-ietf-poly1305'].map(method => <option key={method}>{method}</option>)}</NativeSelect></Field>}
+    {protocol === 'vless-tunnel' && <p className="text-sm text-muted-foreground">源站必须监听回环地址，使用 WebSocket 或 HTTPUpgrade；公开域名由隧道或 CDN 提供 TLS。</p>}
+    {protocol === 'shadowsocks2022'  && <Field label="加密方法" hint="节点密钥和每个授权的密钥自动生成。加密方法创建后不可更改。">
       <NativeSelect className="w-full" name="method" defaultValue={existing?.protocol_config?.method ?? '2022-blake3-aes-128-gcm'} disabled={Boolean(existing)}><option value="2022-blake3-aes-128-gcm">AES-128-GCM</option><option value="2022-blake3-aes-256-gcm">AES-256-GCM</option></NativeSelect>
       {existing && <input type="hidden" name="method" value={existing.protocol_config?.method ?? '2022-blake3-aes-128-gcm'} />}
     </Field>}
-    {(needsTls || reality) && <Field label={reality ? '伪装域名（SNI）' : '证书域名（SNI）'} hint={reality ? '填写可从服务器访问、支持 TLS 的目标域名。' : '填写证书覆盖的完整域名；自动申请时此域名需解析到当前服务器。'}>
+    {(needsTls || reality || protocol === 'vless-tunnel' || protocol === 'shadowtls') && <Field label={reality ? '伪装域名（SNI）' : '证书域名（SNI）'} hint={reality ? '填写可从服务器访问、支持 TLS 的目标域名。' : '填写证书覆盖的完整域名；自动申请时此域名需解析到当前服务器。'}>
       <Input name="sni" required defaultValue={existing?.sni ?? ''} placeholder={reality ? 'www.example.com' : 'node.example.com'} autoComplete="off" spellCheck={false} />
     </Field>}
     {needsTls && <>
-      <Field label="TLS 证书"><NativeSelect className="w-full" name="tls_mode" value={mode} onChange={event => setMode(event.target.value as 'acme' | 'manual')}><option value="acme">自动申请和续期（Let's Encrypt）</option><option value="manual">手动导入证书</option></NativeSelect></Field>
-      {mode === 'acme' ? <>
+      <Field label="TLS 证书"><NativeSelect className="w-full" name="tls_mode" value={mode} onChange={event => setMode(event.target.value as 'acme' | 'manual' | 'dns01')}><option value="acme">自动申请和续期（Let's Encrypt）</option><option value="dns01">DNS-01（Cloudflare，支持通配符）</option><option value="manual">手动导入证书</option><option value="reuse">复用本机节点的证书</option></NativeSelect></Field>
+      {mode === 'reuse' ? <Field label="证书来源节点编号" hint="复用同一服务器的证书配置。相同 DNS-01 配置共用签发与续期；SNI 必须在证书覆盖范围内。"><Input name="certificate_node_id" type="number" min={1} step={1} required /></Field> : mode === 'dns01' ? <>
+        <Field label="联系邮箱"><Input name="email" type="email" required value={email} onChange={event => setEmail(event.target.value)} /></Field>
+        <Field label="证书覆盖域名" hint="逗号或空格分隔，可填写 *.example.com；必须覆盖上方 SNI。"><Input name="domains" required defaultValue={tls?.domains?.join(', ') ?? existing?.sni ?? ''} /></Field>
+        <Field label="Cloudflare DNS API Token" hint="需要目标区域的 DNS 编辑权限。保存后不回显；留空保留原令牌。"><Input name="api_token" type="password" autoComplete="new-password" required={tls?.mode !== 'dns01'} /></Field>
+        <p className="text-sm text-muted-foreground">令牌将随证书配置发送到此受管服务器，供运行时签发和续期使用。不需要开放 TCP 80 或 443。</p>
+      </> : mode === 'acme' ? <>
         <Field label="联系邮箱"><Input type="email" name="email" required maxLength={254} value={email} onChange={event => setEmail(event.target.value)} placeholder="admin@example.com" autoComplete="email" /></Field>
         <Field label="域名验证方式"><NativeSelect className="w-full" name="challenge" value={challenge} onChange={event => setChallenge(event.target.value as 'http-01' | 'tls-alpn-01')}><option value="http-01">HTTP-01（TCP 80）</option><option value="tls-alpn-01">TLS-ALPN-01（TCP 443）</option></NativeSelect></Field>
         <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{challenge === 'http-01' ? 'TCP 80' : 'TCP 443'} 需允许公网访问且未被其他服务占用。保存即授权使用 Let's Encrypt 自动签发和续期；同一服务器共用邮箱与验证方式。编辑现有自动证书时，这两项会同步修改该服务器的其他自动证书节点。首次签发最多等待 4 分钟，失败时部署回滚。</p>

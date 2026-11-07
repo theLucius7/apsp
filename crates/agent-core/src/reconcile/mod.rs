@@ -111,6 +111,13 @@ impl Reconciler {
                 .keys
                 .as_ref()
                 .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            let descriptor = crate::artifacts::installed_descriptor(
+                self.adapter.as_ref(),
+                &runtime.spec.kernel_version,
+                &runtime.spec.binary_path,
+                keys,
+            )
+            .await?;
             crate::artifacts::verify_expected(
                 &runtime.spec.binary_path,
                 &descriptor,
@@ -264,7 +271,11 @@ impl Reconciler {
         op_id: Uuid,
     ) -> Result<u64> {
         self.recover_locked().await?;
-        let descriptor = self.adapter.describe();
+        let descriptor = client.runtime_descriptor(
+            &manifest.artifact,
+            &manifest.kernel_version,
+            self.adapter.as_ref(),
+        )?;
         self.require_revision_floor(manifest.config_rev)?;
         client.verify_artifact(&manifest.artifact, &manifest.kernel_version, &descriptor)?;
         let previous = self.previous()?;

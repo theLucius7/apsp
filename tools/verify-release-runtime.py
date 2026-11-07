@@ -10,11 +10,14 @@ import struct
 import subprocess
 import tarfile
 import tempfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent / "singbox-runtime"))
+import cronet
 
-VERSION = "1.14.4-apsp.1"
-REVISION = "243a13cd63c275a1567badb2905b731a48545a26"
+VERSION = "1.14.4-apsp.2"
+REVISION = "5d74251bd02a4b243a2cf23a6f0e7bdfc2259642"
 # Server build tags, including the statistics API the Agent reads.
-TAGS = "with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api,with_acme"
+TAGS = "with_quic,with_utls,with_grpc,with_wireguard,with_clash_api,with_v2ray_api,with_acme,with_gvisor,with_cloudflared,with_openvpn,with_openconnect,with_tailscale,with_naive_outbound,with_purego"
 MODULES = Path(__file__).resolve().parent / "singbox-runtime" / "modules.txt"
 MAX_ARCHIVE = 256 * 1024 * 1024
 MAX_BINARY = 512 * 1024 * 1024
@@ -35,7 +38,7 @@ def pinned_modules():
     return {line.split("#", 1)[0].strip() for line in lines} - {""}
 
 
-def verify_metadata(metadata, arch):
+def verify_metadata(metadata, arch, libc=None):
     lines = metadata.splitlines()
     require(lines and lines[0].endswith(": go1.26.8"), "unexpected Go toolchain")
     values, modules = {}, set()
@@ -50,13 +53,13 @@ def verify_metadata(metadata, arch):
         elif fields[0] == "=>":
             raise ValueError("runtime must not replace modules")
     for key, expected in {
-        "GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "0",
+        "GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "1" if libc == "musl" else "0",
         "-trimpath": "true", "vcs": "git", "vcs.revision": REVISION,
         "vcs.modified": "false", "-buildmode": "exe", "-compiler": "gc",
     }.items():
         require(values.get(key) == expected, "unexpected build setting: " + key)
-    require(values.get("-tags") == TAGS, "unexpected runtime build tags")
-    require(modules == pinned_modules(), "runtime dependencies differ from modules.txt")
+    require(values.get("-tags") == (TAGS.replace("with_purego", "with_musl") if libc == "musl" else TAGS), "unexpected runtime build tags")
+    require(modules <= pinned_modules(), "runtime dependencies differ from modules.txt")
     # Trimmed Go metadata does not preserve the Version linker override.
     # The pinned source revision binds the expected release; this is no attestation.
 
@@ -80,14 +83,24 @@ def verify(root, arch, reader=None, *, libc=None):
     with tempfile.TemporaryDirectory(prefix="apsp-release-inspection-") as temporary:
         binary = Path(temporary) / "runtime"
         with tarfile.open(archive, "r|gz") as package:
-            member = package.next()
-            require(member is not None and member.name == "sing-box" and member.isfile(),
-                    "expected one ordinary runtime binary")
-            require(0 < member.size <= MAX_BINARY, "invalid binary member size")
-            with package.extractfile(member) as source, binary.open("xb") as output:
-                shutil.copyfileobj(source, output, length=1024 * 1024)
-            require(binary.stat().st_size == member.size, "incomplete binary member")
-            require(package.next() is None, "unexpected runtime archive member")
+            seen = set()
+            for member in package:
+                if member.isdir() and member.name == ".":
+                    continue
+                name = member.name.removeprefix("./")
+                require(member.isfile() and name not in seen, "invalid or duplicate runtime member")
+                seen.add(name)
+                if name == "sing-box":
+                    require(0 < member.size <= MAX_BINARY, "invalid runtime size")
+                    with package.extractfile(member) as source, binary.open("xb") as output:
+                        shutil.copyfileobj(source, output, length=1024 * 1024)
+                elif name == "libcronet.so" and libc != "musl":
+                    require(member.size <= 16000000, "oversize Cronet library")
+                    with package.extractfile(member) as source:
+                        cronet.validate("linux_" + arch, source.read())
+                else:
+                    raise ValueError("unexpected runtime archive member")
+            require(seen == ({"sing-box"} if libc == "musl" else {"sing-box", "libcronet.so"}), "incomplete runtime archive")
         with binary.open("rb") as source:
             header = source.read(64)
         require(len(header) == 64 and header[:7] == b"\x7fELF\x02\x01\x01",
@@ -99,12 +112,12 @@ def verify(root, arch, reader=None, *, libc=None):
                                                text=True, timeout=30)
         else:
             metadata = reader(binary)
-        verify_metadata(metadata, arch)
-        # One pure Go binary serves glibc and musl hosts.
+        verify_metadata(metadata, arch, libc)
+        # Musl must be fully static; GNU uses the pinned shared Cronet library.
         headers = subprocess.check_output(["readelf", "-lW", str(binary)], text=True, timeout=30)
         dynamic = subprocess.check_output(["readelf", "-dW", str(binary)], text=True, timeout=30)
-        require("INTERP" not in headers and "NEEDED" not in dynamic,
-                "runtime must be statically linked")
+        if libc == "musl":
+            require("INTERP" not in headers and "NEEDED" not in dynamic, "musl runtime must be statically linked")
     return digest
 
 

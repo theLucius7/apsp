@@ -7,6 +7,7 @@ import contextlib
 import hashlib
 import gzip
 import io
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -204,6 +205,14 @@ def assemble(args):
             path = canonical_path(entry)
             data = read_regular(source / path)
             auxiliary = {}
+            if name == "sing-box" and version == "1.14.4-apsp.2":
+                spec = importlib.util.spec_from_file_location("apsp_runtime_auxiliary", Path(__file__).with_name("runtime_auxiliary.py"))
+                runtime = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(runtime)
+                libraries = runtime.inspect(data, arch, binary_name)
+                auxiliary = {key: {"sha256": digest(value), "size": len(value)} for key, value in libraries.items()}
+                if auxiliary:
+                    entry["auxiliary_files"] = auxiliary
             if name == "tcpquality":
                 from tcp_probe_artifact import archive_files, validate_files
                 files = archive_files(data)
@@ -436,6 +445,12 @@ def validate_manifest(bundle, expected_tag=None, protocol_version=1):
                    and entry["arch"] in ("amd64", "arm64")
                    and not entry.get("auxiliary_files", {}),
                    "wrong official node-query artifact identity")
+        if entry["name"] == "sing-box" and entry["version"] == "1.14.4-apsp.2":
+            # Keep the offline manifest verifier usable as a standalone file.
+            arch = entry["arch"]
+            expected = ({"libcronet.dll"} if arch.startswith("windows-") else
+                        {"libcronet.so"} if arch in ("amd64", "arm64") or arch.startswith("linux-gnu-") else set())
+            ensure(set(entry.get("auxiliary_files", {})) == expected, "incomplete runtime library contract")
         if entry["name"] == "agent":
             binary_name = "apsp-agent.exe" if entry["arch"].startswith("windows-") else "apsp-agent"
             ensure(metadata["tag"] == "agent-v" + entry["version"] and entry["format"] == "raw"

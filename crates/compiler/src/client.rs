@@ -1,5 +1,5 @@
 //! Compose authorized external provider outbounds with applied managed nodes.
-use crate::{CompileError, Node, authorized_nodes, external::ExternalOutbound, pretty, protocols};
+use crate::{CompileError, Node, authorized_nodes, external::ExternalOutbound, pretty};
 use serde_json::json;
 use std::collections::BTreeSet;
 
@@ -35,11 +35,19 @@ pub fn compile_with_external(
     let mut ids = BTreeSet::new();
     let mut tags: Vec<_> = accesses
         .iter()
-        .map(|(node, _)| format!("node-{}", node.id))
+        .flat_map(|(node, access)| {
+            crate::client_variants(node, access)
+                .into_iter()
+                .filter_map(|(_, v)| v["tag"].as_str().map(str::to_owned))
+        })
         .collect();
     let mut outbounds = Vec::new();
     for (node, access) in accesses {
-        outbounds.push(protocols::client(node, access));
+        outbounds.extend(
+            crate::client_variants(node, access)
+                .into_iter()
+                .map(|(_, value)| value),
+        );
     }
     for node in external {
         if node.id <= 0 || !ids.insert(node.id) {

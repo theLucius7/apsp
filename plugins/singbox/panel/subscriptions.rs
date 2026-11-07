@@ -59,6 +59,7 @@ impl Snapshot {
     fn message(&self) -> (&'static str, String) {
         if !self.entitlement.allowed {
             let reason = match self.entitlement.status.as_str() {
+                "paused" => "此用户已被暂停，请联系管理员恢复",
                 "expired" => "套餐已到期，请先续期或重新分配套餐",
                 "exhausted" => "当前套餐周期流量已用尽，请等待重置或调整套餐",
                 "not_started" => "套餐尚未生效，请等待开始时间",
@@ -114,7 +115,9 @@ impl Snapshot {
                     "订阅中的节点均无法以 Clash 格式等价表达，请使用 format=singbox 下载 sing-box JSON".into(),
                 ));
             }
-            return Ok(profile.content);
+            return profile
+                .with_template(self.template.as_ref().and_then(|v| v.get("clash")))
+                .map_err(|reason| ApiError::Conflict(reason.into()));
         }
         if format == "links" {
             if self.template.is_some() {
@@ -141,7 +144,28 @@ impl Snapshot {
                     user_id,
                     &self.external.nodes,
                 )
-                .map_err(anyhow::Error::from)?,
+                .map_err(anyhow::Error::from)
+                .and_then(|content| {
+                    let mut value: Value = serde_json::from_str(&content)?;
+                    let mut labels = serde_json::Map::new();
+                    for node in &self.nodes {
+                        labels.insert(format!("node-{}", node.id), json!(node.name));
+                        for (i, address) in node.settings.public_addresses.iter().enumerate() {
+                            labels.insert(
+                                format!("node-{}-address-{}", node.id, i + 1),
+                                json!(format!("{} · {}", node.name, address.name)),
+                            );
+                        }
+                    }
+                    for node in &self.external.nodes {
+                        labels.insert(
+                            format!("external-node-{} {}", node.id, node.name.trim()),
+                            json!(node.name),
+                        );
+                    }
+                    value["apsp_labels"] = Value::Object(labels);
+                    Ok(serde_json::to_string(&value)?)
+                })?,
                 self.template.as_ref(),
             )
         }
