@@ -1,5 +1,9 @@
 # 执行进度
 
+## 2026-11-07：整理 #249 的接入脚本
+
+- 生产库已用 `scripts/baseline-adoption-20261107-pr249.sql` 接入 #249 的基线（#250）。#249 自带的 `scripts/baseline-adoption-user-limits-20261107.sql` 只在 PostgreSQL 18 的源码基线副本上验证过、没有在生产执行，留着容易被当成待执行步骤，删除；`docs/database-baseline.md` 的对应一节改为记录已完成的接入，并注明新内核随签名发布生效。
+
 ## 2026-11-07：稳定内核与逐用户限速、连接数限制
 
 - 基于正式版 1.14.4 固定 `1.14.4-apsp.1`，移除旧内核补丁队列，启用 `with_acme`，同步构建、制品校验及部署版本。Snell v6、自动证书、BBR/TLS 参数通过原生检查；Naive 出站仍缺 Cronet 制品。
