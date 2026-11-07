@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
+import { TimezoneSelect } from '@/components/timezone-select'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { currencies, decimal, download, parseAmount, root } from './types'
@@ -16,7 +17,6 @@ import type { Label, Settings } from './types'
 
 export type SettingsTab = 'general' | 'labels' | 'activity' | 'migration'
 const tabs: [SettingsTab, string][] = [['general', '常规'], ['labels', '分类与付款'], ['activity', '提醒记录'], ['migration', '导入导出']]
-const zones = ['Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Taipei', 'Asia/Tokyo', 'Asia/Singapore', 'Europe/London', 'Europe/Berlin', 'America/New_York', 'America/Los_Angeles', 'UTC']
 
 function General({ onChanged }: { onChanged: () => void }) {
   const settings = useResource<Settings>(`${root}/settings`, 0)
@@ -35,8 +35,7 @@ function General({ onChanged }: { onChanged: () => void }) {
         <Field label="统计币种" hint="每月费用和预算按这个币种折算。"><NativeSelect name="currency" defaultValue={value.base_currency}>{[...new Set([value.base_currency, ...currencies])].map(code => <option key={code} value={code}>{code}</option>)}</NativeSelect></Field>
         <Field label="每月预算" hint="留空表示不设预算。"><Input name="budget" inputMode="decimal" defaultValue={value.budget_units ? decimal(value.budget_units) : ''} placeholder="不设预算" /></Field>
       </div>
-      <Field label="日期时区" hint="决定“今天”是哪一天，续费日按这个时区计算。"><Input name="timezone" required list="ledger-zones" defaultValue={value.timezone} /></Field>
-      <datalist id="ledger-zones">{zones.map(zone => <option key={zone} value={zone} />)}</datalist>
+      <Field label="日期时区" hint="决定“今天”是哪一天，续费日按这个时区计算。"><TimezoneSelect name="timezone" required defaultValue={value.timezone} /></Field>
       <SettingRow title="续费提醒" description={<>总开关：打开后，开启了提醒的项目在续费前经「告警设置」的渠道通知；关闭时取消尚未发送的提醒。<a className="text-primary ml-1 underline-offset-4 hover:underline" href="#/alerts/settings">通知渠道</a></>}>
         <Switch name="reminders" defaultChecked={value.reminders_enabled} />
       </SettingRow>

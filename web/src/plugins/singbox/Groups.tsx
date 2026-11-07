@@ -11,6 +11,7 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
+import { TimezoneSelect } from '@/components/timezone-select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ChipList } from '@/components/chip-list'
 import { ActivityIcon, WaypointsIcon } from 'lucide-react'
@@ -120,7 +121,7 @@ function PackageFields({ value }: { value?: PackageGroup }) {
   return <>
     <div className="grid gap-4 sm:grid-cols-2"><Field label="每月流量" hint="留空表示不限量；填写正整数。"><Input name="amount" inputMode="numeric" pattern="[1-9][0-9]*" defaultValue={amount} /></Field><Field label="流量单位"><NativeSelect className="w-full" name="unit" defaultValue={gib ? 'GiB' : 'B'}><option value="GiB">GiB（1024³ 字节）</option><option value="B">字节</option></NativeSelect></Field></div>
     <div className="grid gap-4 sm:grid-cols-2"><Field label="每月重置日" hint="短月份自动取月末。"><Input name="reset_day" type="number" required min={1} max={31} step={1} defaultValue={value?.reset_day ?? 1} /></Field><Field label="重置时间"><Input name="reset_time" type="time" required defaultValue={`${String(value?.reset_hour ?? 0).padStart(2, '0')}:${String(value?.reset_minute ?? 0).padStart(2, '0')}`} /></Field></div>
-    <Field label="重置时区"><Input name="timezone" required maxLength={128} list="group-timezones" defaultValue={value?.timezone ?? 'Asia/Taipei'} /><datalist id="group-timezones"><option value="Asia/Taipei" /><option value="Asia/Shanghai" /><option value="UTC" /><option value="America/New_York" /></datalist></Field>
+    <Field label="重置时区"><TimezoneSelect name="timezone" required defaultValue={value?.timezone ?? 'Asia/Taipei'} /></Field>
     <Field label="可使用天数" hint="从分配时刻起计算，每天按 24 小时计。"><Input name="duration_days" type="number" required min={1} max={36500} step={1} defaultValue={value?.duration_days ?? 365} /></Field>
     <p className="text-muted-foreground mt-3 text-xs leading-relaxed">每月流量按用户所有节点的上下行合计；重新分配不清空本期流量，修改模板不影响已分配的套餐。</p>
   </>
