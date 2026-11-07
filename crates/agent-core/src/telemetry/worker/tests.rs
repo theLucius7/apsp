@@ -24,7 +24,7 @@ async fn live_delivery_remains_responsive_while_durable_ack_is_blocked() -> Resu
 }
 
 #[tokio::test]
-async fn old_panels_keep_the_legacy_durable_upload_schedule() -> Result<()> {
+async fn unsupported_panels_keep_samples_locally_without_legacy_uploads() -> Result<()> {
     delivery_fixture(true, false).await
 }
 
@@ -42,6 +42,7 @@ async fn delivery_fixture(legacy: bool, full_ack: bool) -> Result<()> {
     let first = Arc::new(AtomicBool::new(true));
     let live = Arc::new(Mutex::new(Vec::<Uuid>::new()));
     let server = {
+        let first = first.clone();
         let started = started.clone();
         let release = release.clone();
         let live = live.clone();
@@ -165,7 +166,9 @@ async fn delivery_fixture(legacy: bool, full_ack: bool) -> Result<()> {
         clients,
         retirement.clone(),
     ));
-    tokio::time::timeout(Duration::from_secs(5), started.notified()).await?;
+    if !legacy {
+        tokio::time::timeout(Duration::from_secs(5), started.notified()).await?;
+    }
     let second = sample(now_millis() + 1);
     snapshots_tx.send_replace(Arc::new(Snapshot {
         sample: Some(second.clone()),
@@ -183,7 +186,16 @@ async fn delivery_fixture(legacy: bool, full_ack: bool) -> Result<()> {
     .await?;
     assert_eq!(state.lock().unwrap().pending_telemetry_count()?, 2);
     if legacy {
+        tokio::time::sleep(Duration::from_millis(1100)).await;
         assert!(live.lock().unwrap().is_empty());
+        assert!(
+            first.load(Ordering::SeqCst),
+            "no durable upload before current settings"
+        );
+        assert_eq!(state.lock().unwrap().pending_telemetry_count()?, 2);
+        worker.abort();
+        server.abort();
+        return Ok(());
     }
     if full_ack {
         release.add_permits(1);

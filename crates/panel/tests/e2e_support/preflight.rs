@@ -128,11 +128,23 @@ async fn prepare_server(
     }
     let path = format!("/api/plugins/sing-box/servers/{server}/operations-view/preflight");
     let response = panel.admin(Method::POST, &path, cookie, None).await?;
-    ensure!(
-        response.status().is_success(),
-        "TEST_ONLY deployment preflight request failed: {}",
-        response.text().await?
-    );
+    if !response.status().is_success() {
+        let detail: Value = panel
+            .admin(
+                Method::GET,
+                &format!("/api/plugins/sing-box/servers/{server}/operations-view"),
+                cookie,
+                None,
+            )
+            .await?
+            .json()
+            .await?;
+        anyhow::bail!(
+            "TEST_ONLY deployment preflight request failed: {}; checks: {}",
+            response.text().await?,
+            detail["preflight"]
+        );
+    }
     let request: Value = response.json().await?;
     let preflight: Uuid = serde_json::from_value(request["id"].clone())?;
     let expected = [

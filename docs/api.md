@@ -499,3 +499,10 @@ report 为 `{text,report_url?}`，文本以纯文本呈现，协议接受上限 
 写入体为 `{"config":{"name":"示例规则","server_id":1,"zone_id":"00000000000000000000000000000000","record_name":"node.example.com","record_type":"A","ttl":1,"proxied":false,"interval_secs":300,"enabled":false,"adopt_existing":false},"api_token":"YOUR_CLOUDFLARE_API_TOKEN"}`。Zone、域名、Token 与服务器 ID 均需替换为自己管理的资源。更新另加 `revision`；Zone、域名和类型不可改变。接口拒绝重复身份、非法域名/TTL、过期修订及运行中修改。
 
 执行返回的 `status` 为 pending/running/updated/unchanged/waiting/error，`error_code` 为固定脱敏代码。同步 API 成功返回结果不代表 Cloudflare 一定写入成功，应检查 status/error_code；失败保留 last_ip/last_success_at。busy 反映是否正在同步；读取无外部请求。详细语义见 [DDNS 插件](ddns.md)。
+
+
+### 阿里云 CDT 历史与 Cron 预览（ADR 0121）
+
+管理员 `GET /api/plugins/alicloud/accounts/{id}/traffic-history` 返回两组固定窗口（小时 25 点／日 31 点）的成功采样：`seconds/from/to/samples`，采样包含 `bucket_start/sampled_at/mainland_bytes/overseas_bytes`，字节数为字符串。缺失桶不补零。
+
+管理员 `POST /api/plugins/alicloud/cron-preview` 接受 `expression` 与 `utc_offset_minutes`，返回秒时间戳数组 `occurrences`（未来五次）及同一偏移；无有效触发或表达式不合法返回 400。启停策略新增可选 `schedule_mode`（`daily` 默认／`cron`）、`start_cron`、`stop_cron`，旧配置可继续读取。资源快照新增 `ipv6_addresses/ipv6_checked_at/ipv6_error`，地址查询失败不代表实例状态失败。

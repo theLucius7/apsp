@@ -132,7 +132,9 @@ class Panel:
                 "SELECT COALESCE(json_agg(json_build_object('version',version,'checksum',encode(checksum,'hex')) ORDER BY version)::text,'[]') FROM _sqlx_migrations WHERE success", quiet=True))
             database_version = self.compose("exec", "-T", "postgres", "psql", "-U", "apsp", "-d", "apsp", "-Atc", "SHOW server_version_num", quiet=True)
             required_key_ids = []
-            if any(item["version"] == 54 for item in migrations):
+            credential_table = self.compose("exec", "-T", "postgres", "psql", "-U", "apsp", "-d", "apsp", "-Atc",
+                "SELECT to_regclass('public.credential_entries') IS NOT NULL", quiet=True).strip()
+            if credential_table == "t":
                 required_key_ids = json.loads(self.compose("exec", "-T", "postgres", "psql", "-U", "apsp", "-d", "apsp", "-Atc",
                     "SELECT COALESCE(json_agg(key_id)::text,'[]') FROM (SELECT DISTINCT key_id FROM credential_entries ORDER BY key_id) keys", quiet=True))
             keyring_reference = next((line.partition("=")[2].strip().strip("\"'") for line in environment_lines if line.startswith("APSP_BACKUP_KEYRING_REFERENCE=")), None)

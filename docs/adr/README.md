@@ -187,3 +187,7 @@
 
 - [ADR 0119：运行时改用旧服务同一份内核](0119-legacy-service-kernel.md)：`1.14.0-apsp.1` 由上游 `v1.14.0-alpha.2` 加 cedar2025 分支 `2e665cb7` 的两个提交重建，依赖固定为旧服务二进制的版本，纯 Go 构建、标签与旧服务相同（另加统计接口）；去掉 ADR 0104 的 REALITY 仿真补丁；原生节点的 Snell v6、ACME 证书提供者等新配置不再支持。
 - [ADR 0120：页面地址按功能命名](0120-page-addresses-by-function.md)：地址与侧栏一致（`/#/home`、`/#/nodes`、`/#/users`、`/#/settings` 等），旧地址打开时改写为新地址。
+
+- [ADR 0121：CDT 监控补齐与源码制品分离](0121-cdt-monitor-alignment-and-source-artifacts.md)：分项采集时间、IPv6 地址、整体用量历史、Cron 与守护组合，生成的前端产物不再提交。
+
+- [0122：未发布阶段统一当前结构](0122-unreleased-schema-baseline.md)：空库初始化、当前基线核验、旧开发库手动重建。
