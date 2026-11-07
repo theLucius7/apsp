@@ -108,7 +108,7 @@ import sys
 import time
 
 if sys.argv[1] == "version":
-    print("sing-box version 1.14.4-apsp.1 (OpenRC process fixture)")
+    print("sing-box version 1.14.4-apsp.2 (OpenRC process fixture)")
     raise SystemExit(0)
 root = Path("/var/lib/apsp/plugins/sing-box@main/data")
 listener = socket.socket()
@@ -233,7 +233,7 @@ def check_runtime_access(runtime):
         assert not Path(path).is_symlink()
         assert (observed, properties.st_uid, properties.st_gid) == (mode, 0, group)
     unprivileged = ("setpriv", f"--reuid={account.pw_uid}", f"--regid={account.pw_gid}", "--clear-groups", "--")
-    assert run(*unprivileged, str(runtime), "version").startswith("sing-box version 1.14.4-apsp.1")
+    assert run(*unprivileged, str(runtime), "version").startswith("sing-box version 1.14.4-apsp.2")
     run(*unprivileged, "/usr/bin/python3", "-c", """
 import os
 assert os.geteuid() != 0
@@ -331,7 +331,7 @@ def main():
             member.size = len(RUNTIME)
             member.mode = 0o755
             archive.addfile(member, io.BytesIO(RUNTIME))
-        RELEASE["install"](runtime.parent, RELEASE["proof"]("sing-box", "1.14.4-apsp.1", "sing-box", packed.getvalue(), "tar.gz", arch=RELEASE["architecture"]()))
+        RELEASE["install"](runtime.parent, RELEASE["proof"]("sing-box", "1.14.4-apsp.2", "sing-box", packed.getvalue(), "tar.gz", arch=RELEASE["architecture"]()))
         current = Path("/var/lib/apsp/plugins/sing-box@main/current")
         current.mkdir(mode=0o755)
         current.chmod(0o755)

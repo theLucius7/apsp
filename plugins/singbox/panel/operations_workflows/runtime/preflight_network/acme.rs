@@ -2,6 +2,32 @@ use super::{Node, TlsConfig, Value, check, json};
 use std::collections::BTreeMap;
 
 pub(super) fn preparation(node: &Node, compiled: Option<&Value>, now: i64) -> Value {
+    if let Some(TlsConfig::Dns01 { email, domains, .. }) = node.protocol_config.tls() {
+        let tag = compiled
+            .and_then(|c| c["inbounds"].as_array())
+            .and_then(|v| v.iter().find(|i| i["tag"] == format!("node-{}", node.id)))
+            .map(|i| i["tls"]["certificate_provider"].clone())
+            .unwrap_or(Value::Null);
+        let valid = compiled
+            .and_then(|c| c["certificate_providers"].as_array())
+            .is_some_and(|p| {
+                p.iter().any(|p| {
+                    p["tag"] == tag
+                        && p["email"] == *email
+                        && p["domain"] == json!(domains)
+                        && p["dns01_challenge"]["provider"] == "cloudflare"
+                })
+            });
+        return check(
+            &format!("certificate:{}", node.id),
+            "DNS-01 自动签发准备",
+            if valid { "passed" } else { "failed" },
+            Some(now),
+            "compiled_runtime_acme_provider",
+            json!({"node_id":node.id,"configuration_verified":valid,"provider":"cloudflare","requires_public_challenge_port":false,"certificate_issued":null,"secret_values_returned":false}),
+            "DNS 凭据只向受管服务器提供；保存的配置不代表 DNS 权限和实际签发已验证。",
+        );
+    }
     let Some(TlsConfig::Acme { email, challenge }) = node.protocol_config.tls() else {
         return check(
             &format!("certificate:{}", node.id),
@@ -14,9 +40,8 @@ pub(super) fn preparation(node: &Node, compiled: Option<&Value>, now: i64) -> Va
         );
     };
     let providers = compiled.and_then(|value| value["certificate_providers"].as_array());
-    let provider = providers
-        .filter(|values| values.len() == 1)
-        .and_then(|values| values.first());
+    let provider =
+        providers.and_then(|values| values.iter().find(|value| value["tag"] == "managed-tls"));
     let inbound = compiled
         .and_then(|value| value["inbounds"].as_array())
         .and_then(|values| {

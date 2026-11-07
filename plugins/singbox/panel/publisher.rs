@@ -188,7 +188,8 @@ async fn compile(
         plan.probe_control.as_ref(),
         &prepared.compiled,
     )?;
-    let native = super::user_limits::compile(tx, &native).await?;
+    let native = super::server_profiles::compile(tx, server_id, &native).await?;
+    let native = super::user_limits::compile(tx, &native, server_id).await?;
     let mut files = BTreeMap::from([("config.json".into(), native)]);
     if let Some(probes) = &plan.probe_plan {
         files.insert("runtime-probes.json".into(), serde_json::to_string(probes)?);
@@ -406,3 +407,12 @@ async fn synchronize_path_secret_on(
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) async fn preview_profile(
+    state: &AppState,
+    tx: &mut Transaction<'_, Postgres>,
+    server_id: i64,
+) -> anyhow::Result<()> {
+    compile(state, tx, server_id, now_timestamp()).await?;
+    Ok(())
+}

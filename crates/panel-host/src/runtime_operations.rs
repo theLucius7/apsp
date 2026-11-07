@@ -104,6 +104,22 @@ pub async fn complete(
     {
         return Err(ApiError::Conflict("运行时操作身份或执行时间不匹配".into()));
     }
+    if let Some(report) = &result.sessions {
+        let filter = request
+            .session_filter
+            .as_ref()
+            .ok_or_else(|| ApiError::Conflict("操作未授权连接结果".into()))?;
+        if Some(report.revision) != request.expected_revision
+            || report.observed_at > result.finished_at
+            || report.observed_at < request.requested_at
+            || report
+                .connections
+                .iter()
+                .any(|c| !filter.principals.contains(&c.principal))
+        {
+            return Err(ApiError::Conflict("连接结果与请求身份不匹配".into()));
+        }
+    }
     let value = serde_json::to_value(&result).map_err(anyhow::Error::from)?;
     if let Some(previous) = row.get::<Option<Value>, _>("result") {
         if previous != value {

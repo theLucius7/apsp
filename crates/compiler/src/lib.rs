@@ -1,7 +1,10 @@
 #![forbid(unsafe_code)]
 
 pub mod limits;
+mod links;
+pub mod profile;
 mod relays;
+pub mod server_profile;
 pub use relays::{Relay, compile_server_with_relays};
 pub mod clash;
 pub mod client;
@@ -33,9 +36,9 @@ pub use protocols::{AcmeChallenge, ProtocolConfig, SsMethod, TlsConfig};
 mod settings;
 pub use settings::{
     AnyTlsSettings, BbrProfile, CongestionControl, Fingerprint, Hysteria2Masquerade,
-    Hysteria2Settings, MultiplexProtocol, MultiplexSettings, NodeSettings, NodeTransport,
-    RealityFlow, RealitySettings, ShadowsocksSettings, SnellMode, SnellSettings, TlsVersion,
-    TuicSettings, TuicUdpRelayMode,
+    Hysteria2Settings, HysteriaRealm, MultiplexProtocol, MultiplexSettings, NodeSettings,
+    NodeTransport, PublicAddress, RealityFlow, RealitySettings, ShadowsocksSettings, SnellMode,
+    SnellSettings, TlsVersion, TuicSettings, TuicUdpRelayMode,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -118,6 +121,7 @@ pub fn compile_server(nodes: &[Node]) -> Result<String, CompileError> {
     let mut inbounds = Vec::new();
     let mut stats_users = BTreeSet::new();
     let provider = certificates::provider(&nodes)?;
+    let mut providers = certificates::dns_providers(&nodes);
     for node in nodes {
         if !node.enabled || node.users.is_empty() {
             continue;
@@ -127,7 +131,31 @@ pub fn compile_server(nodes: &[Node]) -> Result<String, CompileError> {
         for access in &users {
             stats_users.insert(stat_name(access.user_id, node.id));
         }
-        inbounds.push(protocols::server(node, &users));
+        let mut inbound = protocols::server(node, &users);
+        if let Some(TlsConfig::Dns01 {
+            email,
+            api_token,
+            domains,
+        }) = node.protocol_config.tls()
+            && let Some(provider) = providers.iter().find(|p| {
+                p["email"] == *email
+                    && p["domain"] == json!(domains)
+                    && p["dns01_challenge"]["api_token"] == *api_token
+            })
+        {
+            inbound["tls"]["certificate_provider"] = provider["tag"].clone();
+        }
+        if matches!(node.protocol_config, ProtocolConfig::Shadowtls { .. }) {
+            let inner = format!("node-{}-inner", node.id);
+            inbound["tag"] = json!(inner);
+            inbound.as_object_mut().expect("inbound").remove("listen");
+            inbound
+                .as_object_mut()
+                .expect("inbound")
+                .remove("listen_port");
+            inbounds.push(json!({"type":"shadowtls","tag":format!("node-{}",node.id),"listen":node.settings.listen,"listen_port":node.port,"version":3,"strict_mode":true,"handshake":{"server":node.sni,"server_port":443},"detour":inner,"users":users.iter().map(|a|json!({"name":stat_name(a.user_id,node.id),"password":a.credential})).collect::<Vec<_>>()}));
+        }
+        inbounds.push(inbound);
     }
     let mut config = json!({
         "log": { "level": "warn", "timestamp": true },
@@ -139,7 +167,10 @@ pub fn compile_server(nodes: &[Node]) -> Result<String, CompileError> {
         } } }
     });
     if let Some(provider) = provider {
-        config["certificate_providers"] = json!([provider]);
+        providers.push(provider);
+    }
+    if !providers.is_empty() {
+        config["certificate_providers"] = json!(providers);
     }
     pretty(config)
 }
@@ -152,11 +183,17 @@ pub fn compile_client(nodes: &[Node], user_id: i64) -> Result<String, CompileErr
     }
     let tags: Vec<_> = accesses
         .iter()
-        .map(|(node, _)| format!("node-{}", node.id))
+        .flat_map(|(node, access)| {
+            client_variants(node, access)
+                .into_iter()
+                .filter_map(|(_, outbound)| outbound["tag"].as_str().map(str::to_owned))
+        })
         .collect();
     let mut outbounds = vec![json!({ "type": "selector", "tag": "proxy", "outbounds": tags })];
     for (node, access) in accesses {
-        outbounds.push(protocols::client(node, access));
+        for (_, outbound) in client_variants(node, access) {
+            outbounds.push(outbound);
+        }
     }
     outbounds.push(json!({ "type": "direct", "tag": "direct" }));
     pretty(json!({
@@ -167,46 +204,55 @@ pub fn compile_client(nodes: &[Node], user_id: i64) -> Result<String, CompileErr
     }))
 }
 
+pub(crate) fn client_variants(node: &Node, access: &Access) -> Vec<(String, Value)> {
+    let mut result = vec![(node.name.clone(), protocols::client(node, access))];
+    for (index, address) in node.settings.public_addresses.iter().enumerate() {
+        let mut endpoint = node.clone();
+        endpoint.public_host = address.server.clone();
+        endpoint.settings.public_port = Some(address.port);
+        if let Some(sni) = &address.sni {
+            endpoint.sni = sni.clone();
+        }
+        if let Some(host) = &address.host {
+            match &mut endpoint.settings.transport {
+                NodeTransport::Ws { host: current, .. }
+                | NodeTransport::Httpupgrade { host: current, .. } => *current = Some(host.clone()),
+                _ => {}
+            }
+        }
+        let mut outbound = protocols::client(&endpoint, access);
+        outbound["tag"] = json!(format!("node-{}-address-{}", node.id, index + 1));
+        result.push((format!("{} · {}", node.name, address.name), outbound));
+    }
+    result
+}
+
 pub fn subscription_links(nodes: &[Node], user_id: i64) -> Result<String, CompileError> {
-    let accesses = authorized_nodes(nodes, user_id)?;
-    for (node, _) in &accesses {
-        if !node.protocol_config.is_vless() {
-            return Err(CompileError::RequiresJson {
-                node_id: node.id,
-                protocol: node.protocol_config.kind().into(),
-            });
+    let mut links = Vec::new();
+    for (node, access) in authorized_nodes(nodes, user_id)? {
+        for (name, outbound) in client_variants(node, access) {
+            links.push(links::render(&outbound, &name, node.id)?);
         }
     }
-    let links: Vec<_> = accesses.into_iter().map(|(node, access)| {
-        let host = unbracket_host(&node.public_host);
-        let host = if host.contains(':') { format!("[{host}]") } else { host.to_string() };
-        let flow = if node.settings.reality.flow == RealityFlow::Vision { "&flow=xtls-rprx-vision" } else { "" };
-        let mut parameters = node.settings.transport.link_parameters();
-        if matches!(node.protocol_config, ProtocolConfig::VlessTunnel) {
-            // The edge routes by Host, so the tunnel hostname is always explicit.
-            if !parameters.iter().any(|(key, _)| *key == "host") {
-                parameters.push(("host", node.sni.clone()));
-            }
-            let transport = parameters.into_iter()
-                .map(|(key,value)| format!("&{key}={}",percent_encode(&value))).collect::<String>();
-            return format!(
-                "vless://{}@{}:{}?encryption=none&security=tls&sni={}&fp=chrome{transport}#{}",
-                access.uuid, host, node.public_port(), percent_encode(&node.sni), percent_encode(&node.name)
-            );
-        }
-        let transport = parameters.into_iter()
-            .map(|(key,value)| format!("&{key}={}",percent_encode(&value))).collect::<String>();
-        format!(
-            "vless://{}@{}:{}?encryption=none{flow}&security=reality&sni={}&fp={}&pbk={}&sid={}{transport}#{}",
-            access.uuid, host, node.public_port(), percent_encode(&node.sni),
-            serde_json::to_value(node.settings.reality.fingerprint).expect("fingerprint").as_str().expect("fingerprint string"), percent_encode(&node.public_key),
-            percent_encode(&node.short_id), percent_encode(&node.name)
-        )
-    }).collect();
     Ok(STANDARD.encode(links.join("\n")))
 }
 
-fn pretty(value: Value) -> Result<String, CompileError> {
+fn pretty(mut value: Value) -> Result<String, CompileError> {
+    if let Some(outbounds) = value["outbounds"].as_array_mut() {
+        let mut auxiliary = Vec::new();
+        for outbound in outbounds.iter_mut() {
+            if let Some(mut wrapper) = outbound
+                .as_object_mut()
+                .and_then(|v| v.remove("apsp_shadowtls"))
+            {
+                let tag = format!("{}-shadowtls", outbound["tag"].as_str().unwrap_or("node"));
+                wrapper["tag"] = json!(tag);
+                outbound["detour"] = json!(tag);
+                auxiliary.push(wrapper);
+            }
+        }
+        outbounds.extend(auxiliary);
+    }
     Ok(format!("{}\n", serde_json::to_string_pretty(&value)?))
 }
 
@@ -223,7 +269,7 @@ fn sorted_validated(nodes: &[Node], same_server: bool) -> Result<Vec<&Node>, Com
         if same_server && !ports.insert(node.port) {
             return Err(CompileError::DuplicatePort(node.port));
         }
-        if same_server && node.port == 18085 {
+        if same_server && [18085, 18086].contains(&node.port) {
             return Err(invalid_node(
                 node,
                 "port conflicts with the local statistics API",
@@ -252,6 +298,37 @@ fn authorized_nodes(nodes: &[Node], user_id: i64) -> Result<Vec<(&Node, &Access)
 
 fn validate_node(node: &Node) -> Result<(), CompileError> {
     settings::validate(node)?;
+    if node.settings.public_addresses.len() > 16 {
+        return Err(invalid_node(
+            node,
+            "at most 16 public addresses are allowed",
+        ));
+    }
+    let mut address_names = BTreeSet::new();
+    for address in &node.settings.public_addresses {
+        if address.name.trim().is_empty()
+            || address.name.len() > 128
+            || address.name.chars().any(char::is_control)
+            || !address_names.insert(&address.name)
+            || !valid_public_host(&address.server)
+            || address.port == 0
+            || address.sni.as_ref().is_some_and(|s| !valid_dns_name(s))
+            || address.host.as_ref().is_some_and(|s| !valid_dns_name(s))
+        {
+            return Err(invalid_node(node, "invalid or duplicate public address"));
+        }
+        if address.host.is_some()
+            && !matches!(
+                node.settings.transport,
+                NodeTransport::Ws { .. } | NodeTransport::Httpupgrade { .. }
+            )
+        {
+            return Err(invalid_node(
+                node,
+                "alternate Host requires WS or HTTPUpgrade",
+            ));
+        }
+    }
     if node.id <= 0 {
         return Err(invalid_node(node, "id must be positive"));
     }

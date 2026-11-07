@@ -97,7 +97,7 @@ CREATE FUNCTION public.singbox_entitlements(at_s bigint) RETURNS TABLE(user_id b
     WITH evaluated AS (
         SELECT u.id,a.package_group_id,a.package_name,a.monthly_bytes,a.reset_day,a.reset_hour,a.reset_minute,a.timezone,a.starts_at,a.expires_at,
             b.cycle_start,b.next_reset,GREATEST(COALESCE(t.used,0)-COALESCE(c.credit,0),0) AS used,
-            CASE WHEN m.state IS NOT NULL AND (m.state<>'active' OR (m.sponsor_required AND m.first_purchase_at IS NULL)) THEN CASE WHEN m.state='active' THEN 'pending' ELSE m.state END
+            CASE WHEN EXISTS(SELECT 1 FROM singbox_user_controls control WHERE control.user_id=u.id AND control.paused) THEN 'paused' WHEN m.state IS NOT NULL AND (m.state<>'active' OR (m.sponsor_required AND m.first_purchase_at IS NULL)) THEN CASE WHEN m.state='active' THEN 'pending' ELSE m.state END
                 WHEN a.id IS NULL AND bridge.enabled THEN 'no_package' WHEN a.id IS NULL THEN 'unmetered' WHEN at_s<a.starts_at THEN 'not_started' WHEN at_s>=a.expires_at THEN 'expired'
                 WHEN a.monthly_bytes IS NOT NULL AND GREATEST(COALESCE(t.used,0)-COALESCE(c.credit,0),0)>=a.monthly_bytes THEN 'exhausted' ELSE 'active' END AS status
         FROM users u LEFT JOIN singbox_members m ON m.user_id=u.id LEFT JOIN singbox_user_packages p ON p.user_id=u.id
@@ -1561,7 +1561,7 @@ CREATE TABLE public.nodes (
     settings jsonb DEFAULT '{}'::jsonb NOT NULL,
     resource_revision bigint DEFAULT 1 NOT NULL,
     CONSTRAINT nodes_port_check CHECK (((port >= 1) AND (port <= 65535))),
-    CONSTRAINT nodes_protocol_check CHECK ((protocol = ANY (ARRAY['vless-reality'::text, 'vless-tunnel'::text, 'hysteria2'::text, 'shadowsocks2022'::text, 'tuic'::text, 'anytls'::text, 'naive'::text, 'snell-v6'::text]))),
+    CONSTRAINT nodes_protocol_check CHECK ((protocol = ANY (ARRAY['vless-reality'::text, 'vless-tunnel'::text, 'hysteria2'::text, 'shadowsocks2022'::text, 'tuic'::text, 'anytls'::text, 'naive'::text, 'snell-v6'::text, 'vless-tls'::text, 'trojan'::text, 'vmess'::text, 'http'::text, 'mixed'::text, 'socks'::text, 'shadowsocks'::text, 'shadowtls'::text]))),
     CONSTRAINT nodes_protocol_config_check CHECK (((jsonb_typeof(protocol_config) = 'object'::text) AND (protocol_config ? 'type'::text) AND COALESCE(((protocol_config ->> 'type'::text) = protocol), false))),
     CONSTRAINT nodes_resource_revision_check CHECK ((resource_revision > 0)),
     CONSTRAINT nodes_settings_check CHECK ((jsonb_typeof(settings) = 'object'::text))
@@ -2408,7 +2408,7 @@ CREATE TABLE public.singbox_chain_runtime_requirements (
     artifact_sha256 text NOT NULL,
     artifact jsonb NOT NULL,
     CONSTRAINT singbox_chain_runtime_requirements_artifact_sha256_check CHECK ((artifact_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT singbox_chain_runtime_requirements_runtime_version_check CHECK ((runtime_version = ANY (ARRAY['1.14.2'::text, '1.14.2-apsp.1'::text, '1.14.0-apsp.1'::text, '1.14.4-apsp.1'::text])))
+    CONSTRAINT singbox_chain_runtime_requirements_runtime_version_check CHECK ((runtime_version = ANY (ARRAY['1.14.2'::text, '1.14.2-apsp.1'::text, '1.14.0-apsp.1'::text, '1.14.4-apsp.1'::text, '1.14.4-apsp.2'::text])))
 );
 
 CREATE TABLE public.singbox_chain_state (
@@ -2481,7 +2481,7 @@ CREATE TABLE public.singbox_client_templates (
     definition jsonb NOT NULL,
     updated_at bigint NOT NULL,
     CONSTRAINT singbox_client_templates_client_check CHECK ((client = 'singbox'::text)),
-    CONSTRAINT singbox_client_templates_client_version_check CHECK ((client_version = '1.14.2'::text)),
+    CONSTRAINT singbox_client_templates_client_version_check CHECK ((client_version = '1.14.4'::text)),
     CONSTRAINT singbox_client_templates_revision_check CHECK ((revision > 0))
 );
 
@@ -3878,7 +3878,7 @@ CREATE TABLE public.singbox_runtime_manifest_facts (
     runtime_version text NOT NULL,
     artifact_sha256 text NOT NULL,
     artifact jsonb NOT NULL,
-    CONSTRAINT singbox_runtime_manifest_facts_runtime_version_check CHECK ((runtime_version = ANY (ARRAY['1.14.2'::text, '1.14.2-apsp.1'::text, '1.14.0-apsp.1'::text, '1.14.4-apsp.1'::text])))
+    CONSTRAINT singbox_runtime_manifest_facts_runtime_version_check CHECK ((runtime_version = ANY (ARRAY['1.14.2'::text, '1.14.2-apsp.1'::text, '1.14.0-apsp.1'::text, '1.14.4-apsp.1'::text, '1.14.4-apsp.2'::text])))
 );
 
 CREATE TABLE public.singbox_runtime_rollout_members (
@@ -3905,7 +3905,7 @@ CREATE TABLE public.singbox_runtime_rollouts (
     updated_at bigint NOT NULL,
     CONSTRAINT singbox_runtime_rollouts_batch_size_check CHECK (((batch_size >= 1) AND (batch_size <= 20))),
     CONSTRAINT singbox_runtime_rollouts_dispatched_count_check CHECK ((dispatched_count >= 0)),
-    CONSTRAINT singbox_runtime_rollouts_runtime_version_check CHECK ((runtime_version = ANY (ARRAY['1.14.2'::text, '1.14.2-apsp.1'::text, '1.14.0-apsp.1'::text, '1.14.4-apsp.1'::text])))
+    CONSTRAINT singbox_runtime_rollouts_runtime_version_check CHECK ((runtime_version = ANY (ARRAY['1.14.2'::text, '1.14.2-apsp.1'::text, '1.14.0-apsp.1'::text, '1.14.4-apsp.1'::text, '1.14.4-apsp.2'::text])))
 );
 
 CREATE TABLE public.singbox_runtime_session_addresses (
@@ -6645,6 +6645,22 @@ CREATE TABLE public.singbox_user_limits (
     revision bigint NOT NULL DEFAULT 0 CHECK (revision BETWEEN 0 AND 9007199254740991)
 );
 
+CREATE TABLE public.singbox_user_controls (
+    user_id BIGINT PRIMARY KEY REFERENCES public.users(id),
+    paused BOOLEAN NOT NULL DEFAULT FALSE,
+    revision BIGINT NOT NULL DEFAULT 1 CHECK(revision>0),
+    updated_at BIGINT NOT NULL
+);
+
+CREATE TABLE public.singbox_runtime_controls (server_id BIGINT PRIMARY KEY REFERENCES public.servers(id), control_secret TEXT NOT NULL);
+
+CREATE TABLE public.singbox_server_profiles (
+    server_id BIGINT PRIMARY KEY REFERENCES public.servers(id),
+    definition JSONB NOT NULL,
+    revision BIGINT NOT NULL CHECK (revision > 0),
+    updated_at BIGINT NOT NULL
+);
+
 CREATE TABLE public.apsp_schema_baseline (singleton boolean PRIMARY KEY CHECK (singleton), fingerprint text NOT NULL);
 INSERT INTO public.apsp_schema_baseline SELECT true, (SELECT md5(string_agg(definition, E'\n' ORDER BY definition COLLATE "C"))
 FROM (
@@ -6672,3 +6688,5 @@ FROM (
     FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname='public' AND NOT t.tgisinternal
 ) AS definitions);
+
+-- Ordinary and imported users share the same reversible administrative gate.

@@ -1,11 +1,19 @@
 # 自维护 sing-box 运行时
 
-当前版本 `1.14.4-apsp.1` 基于上游正式版 `v1.14.4`（`c005f35300ce76427dc285481ec5695f5b179cd2`），加上 `user-limits.patch`。见 [ADR 0124](../../docs/adr/0124-stable-runtime-and-user-limits.md)。旧服务内核的历史选择保留在 ADR 0119。
+当前 `1.14.4-apsp.2` 基于正式版 `v1.14.4`，上游提交 `c005f35300ce76427dc285481ec5695f5b179cd2`，补丁提交 `5d74251bd02a4b243a2cf23a6f0e7bdfc2259642`。见 ADR 0124、0125。
 
-补丁在认证后的 TCP/UDP 路由入口实施逐用户、每服务器合计的上下行限速和连接数限制。配置位于 `route.apsp_user_limits`，每组显式列出认证主体；0 表示不限，32 KiB 突发，TCP 连接和 UDP 会话合计。面板与编译器负责生成，不需要修改 Agent core。
+`user-limits.patch` 在认证后的 TCP/UDP 路由入口实施每用户每服务器合计限速与连接数限制；`sessions.patch` 在受密钥保护的回环控制接口提供认证主体。`apply.py` 只接受固定上游的干净 checkout，以固定身份/日期生成可复现提交。上游 checkout 不作为补丁编辑源。
 
-`apply.py` 只接受固定上游的干净 checkout，以固定身份/日期生成可复现提交；构建和校验脚本固定此提交。`modules.txt` 固定运行时实际链接模块的版本和校验和。`wire-probe.py` 保留为 REALITY 目标站对照工具，不代表本次已执行外部探测。
+`modules.txt` 来自固定上游的 go.sum，限制各平台链接的模块版本与校验和。基础标签包括 QUIC、uTLS、gRPC、WireGuard、Clash/V2Ray API、ACME、gVisor、Cloudflared、OpenVPN/OpenConnect 和 Tailscale。
 
-构建保持 `CGO_ENABLED=0`，标签 `with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api,with_acme`。支持原生 Snell v6、自动证书配置、Hysteria2 BBR 参数和 TLS 握手超时；Naive 入站可用，Naive 出站仍需未打包的 Cronet 原生库，不能宣称已支持。glibc 与 musl 使用相同静态二进制。
+- Linux glibc：`with_naive_outbound,with_purego`，Go 主程序通过 purego 加载动态库，随包固定 Cronet `libcronet.so`，要求 glibc ≥ 2.31。
+- Windows：相同纯 Go 模式，随包固定 `libcronet.dll`。
+- Linux musl：`with_naive_outbound,with_musl`，CGO 静态链接；缺少 `CC`/`CXX` 时，构建脚本通过 `prepare-musl.py` 自动准备固定 Cronet 提交的 Chromium/musl 工具链；只采用 `env` 输出的四个白名单环境变量，不执行其文本。Docker 构建环境包含所需 Python requests、解压与签名校验工具。不能把 glibc 动态库给 musl 使用。
+- macOS：本机 Xcode/CGO 链接上游固定静态 Cronet 模块。
+- FreeBSD：不包含 Naive 出站，服务器配置入口明确拒绝此组合。
 
-更新补丁后按顺序：在干净固定 checkout 应用、更新提交固定值、运行补丁单元测试、构建并更新模块清单、原生配置检查和回环协议验证。之后另行签名发布；本地构建不会上传 GitHub。数据库约束只保留历史部署事实并允许新版本，生产基线按显式接入脚本处理，不增加自动升级路径。
+`cronet.py` 固定库长度与 SHA-256，构建包和发布元数据均包含附件。Agent 对包与每个文件独立核对签名声明，库没有单独的未验签下载通道。版本化附件契约允许对已安装签名旧制品执行回滚。
+
+`test-user-limits.py` 验证本机真实 TCP/UDP 限制；`test-sessions.py` 验证同一 NAT 地址下认证主体隔离及定向断开。配置检查不等于公网 ACME、Cloudflared、Realm 或 VPN 服务已完成连接。
+
+本地构建不会上传 GitHub。正式签名发布和生产接入另行执行，CI 维持仓库当前暂停状态。

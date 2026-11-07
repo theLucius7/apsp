@@ -199,6 +199,8 @@ pub async fn run_with_diagnostics(
     }
     if !modules.is_empty() {
         capabilities.push(apsp_protocol::RUNTIME_OPERATIONS_CAPABILITY.into());
+        capabilities.push(apsp_protocol::RUNTIME_SESSIONS_CAPABILITY.into());
+        capabilities.push(apsp_protocol::release::VERSIONED_RUNTIME_FILES_CAPABILITY.into());
     }
     capabilities.push(apsp_protocol::RETIREMENT_CAPABILITY.into());
     capabilities.push(apsp_protocol::PROBE_LEASE_CAPABILITY.into());

@@ -91,6 +91,7 @@ async fn prepare(
         )
         .await?;
         // An explicit disabled plugin also blocks capability-based auto-enable.
+        crate::user_limits::ensure_control(&mut tx, snapshot.server_id).await?;
         sqlx::query("INSERT INTO server_plugins(server_id,plugin,enabled,source,enabled_at) VALUES($1,'sing-box',FALSE,'administrator',$2) ON CONFLICT(server_id,plugin) DO UPDATE SET enabled=FALSE,source='administrator'")
             .bind(snapshot.server_id).bind(now_timestamp()).execute(&mut *tx).await?;
     }
@@ -493,7 +494,8 @@ async fn activate(
     if !input.ignore_reachability {
         reachable(&state, &mut tx, server, now_timestamp()).await?;
     }
-    crate::agent::runtime_artifact(&state, &info).await?;
+    let artifact = crate::agent::runtime_artifact(&state, &info).await?;
+    crate::agent::artifact_capability(&artifact, &caps)?;
     let candidate = runtime_publish::compile(&state, &mut tx, server).await?;
     if candidate.config_hash != input.config_sha256 {
         return Err(ApiError::Conflict(

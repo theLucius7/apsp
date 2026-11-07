@@ -4,7 +4,7 @@
 //! subscription, so both formats always describe the same authorized nodes.
 //! An outbound whose meaning Clash cannot express exactly is left out and
 //! listed in the profile header instead of being approximated.
-use crate::{Node, authorized_nodes, client::ClientError, client::ExternalClientNode, protocols};
+use crate::{Node, authorized_nodes, client::ClientError, client::ExternalClientNode};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 
@@ -16,6 +16,7 @@ const TEST_URL: &str = "https://www.gstatic.com/generate_204";
 #[derive(Debug)]
 pub struct ClashProfile {
     pub content: String,
+    pub document: Value,
     pub included: usize,
     pub skipped: Vec<(String, &'static str)>,
 }
@@ -383,6 +384,17 @@ fn udp_over_tcp(outbound: &Map<String, Value>, proxy: &mut Map<String, Value>) {
 
 /// Converts one sing-box client outbound into a Clash Meta proxy.
 pub fn proxy(outbound: &Value, name: &str) -> Converted {
+    if let Some(wrapper) = outbound.get("apsp_shadowtls") {
+        let mut inner = outbound.clone();
+        inner
+            .as_object_mut()
+            .ok_or("出站无效")?
+            .remove("apsp_shadowtls");
+        let mut result = proxy(&inner, name)?;
+        result["plugin"] = json!("shadow-tls");
+        result["plugin-opts"] = json!({"host":wrapper["tls"]["server_name"],"password":wrapper["password"],"version":3});
+        return Ok(result);
+    }
     let outbound = object(outbound)?;
     if outbound.contains_key("detour") {
         return Err("Clash 不能表达前置跳板");
@@ -708,7 +720,11 @@ pub fn compile_clash(
 ) -> Result<ClashProfile, ClientError> {
     let mut sources: Vec<(String, Result<Value, &'static str>)> = Vec::new();
     for (node, access) in authorized_nodes(nodes, user_id)? {
-        sources.push((node.name.clone(), Ok(protocols::client(node, access))));
+        sources.extend(
+            crate::client_variants(node, access)
+                .into_iter()
+                .map(|(name, value)| (name, Ok(value))),
+        );
     }
     let mut external: Vec<_> = external.iter().collect();
     external.sort_by_key(|node| (node.sort_order, node.id));
@@ -768,6 +784,7 @@ fn render(sources: Vec<(String, Result<Value, &'static str>)>) -> ClashProfile {
     }
     yaml(&profile, 0, &mut content);
     ClashProfile {
+        document: profile.clone(),
         content,
         included: proxies_len(&profile),
         skipped,
@@ -905,6 +922,21 @@ mod regression_tests;
 
 #[cfg(test)]
 mod normalized_tests;
+
+impl ClashProfile {
+    pub fn with_template(self, template: Option<&Value>) -> Result<String, &'static str> {
+        let Some(template) = template else {
+            return Ok(self.content);
+        };
+        let document = crate::profile::apply_clash(self.document, template)?;
+        let mut content = String::from("# apsp 自定义 Clash Meta / mihomo 订阅\n");
+        for (name, reason) in self.skipped {
+            content.push_str(&format!("# 未包含 {}：{reason}\n", comment(&name)));
+        }
+        yaml(&document, 0, &mut content);
+        Ok(content)
+    }
+}
 
 #[cfg(test)]
 mod tests {

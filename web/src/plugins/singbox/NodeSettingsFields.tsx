@@ -1,3 +1,4 @@
+import { Textarea } from '@/components/ui/textarea'
 import { useState } from 'react'
 import { Field } from '../../components'
 import type { Node } from '../../types'
@@ -14,6 +15,7 @@ export function ConnectionFields({ node }: { node: Node | 'new' }) {
   const settings = node === 'new' ? undefined : node.settings
   return <>
     <Field label="监听地址" hint="服务器本机 IP。:: 监听 IPv6（通常也接受 IPv4），只用 IPv4 填 0.0.0.0。"><Input name="listen" required defaultValue={settings?.listen ?? '::'} maxLength={45} spellCheck={false} /></Field>
+    <Field label="额外连接地址" hint='JSON 数组，每项填写 name、server、port，可选 sni 和 host；例如直连与 CDN 两个地址，最多 16 项。'><Textarea name="public_addresses" rows={3} defaultValue={JSON.stringify(settings?.public_addresses ?? [], null, 2)} spellCheck={false} /></Field>
     <Field label="公开端口" hint="客户端连接的端口；留空同监听端口，NAT 时填映射后的端口。"><Input name="public_port" type="number" min={1} max={65535} step={1} defaultValue={settings?.public_port ?? ''} placeholder="与监听端口相同" /></Field>
   </>
 }
@@ -27,7 +29,7 @@ export default function ProtocolSettings({ protocol, node }: { protocol: string;
   const [obfs, setObfs] = useState(settings?.hysteria2?.obfs_enabled ?? false)
   const [bbr, setBbr] = useState(settings?.hysteria2?.ignore_client_bandwidth ?? false)
   const [disableKeepAlive, setDisableKeepAlive] = useState(settings?.disable_tcp_keep_alive ?? false)
-  const tls = ['hysteria2', 'tuic', 'anytls', 'naive'].includes(protocol)
+  const tls = ['hysteria2', 'tuic', 'anytls', 'naive', 'vless-tls', 'trojan', 'vmess', 'http', 'mixed'].includes(protocol)
   const tcp = !['hysteria2', 'tuic'].includes(protocol)
   return <>
     <details className="my-4 rounded-lg border p-3.5 [&[open]>summary]:mb-5"><summary className="cursor-pointer text-sm font-semibold">监听与连接</summary><div className="grid gap-x-5 sm:grid-cols-2">
@@ -49,7 +51,7 @@ export default function ProtocolSettings({ protocol, node }: { protocol: string;
     {tcp && <Seconds name="tls_handshake_timeout_seconds" label="TLS 握手超时（秒）" value={settings?.tls_handshake_timeout_seconds} hint="服务端设置，留空使用默认值。" />}
     {tls && <Field label="TLS ALPN" hint={protocol === 'naive' ? '留空使用默认值；自定义仅支持 h2。' : '多个值用英文逗号分隔。留空沿用默认值，Hysteria2 / TUIC 默认为 h3。'}><Input name="tls_alpn" maxLength={263} defaultValue={settings?.tls_alpn?.join(', ') ?? ''} placeholder={['hysteria2', 'tuic'].includes(protocol) ? 'h3' : protocol === 'naive' ? 'h2' : '使用默认值'} autoComplete="off" /></Field>}
     </div></details>}
-    {protocol === 'vless-reality' && <TransportFields settings={settings} />}
+    {['vless-reality','vless-tls','vless-tunnel','trojan','vmess'].includes(protocol) && <TransportFields settings={settings} />}
     <details className="my-4 rounded-lg border p-3.5 [&[open]>summary]:mb-5"><summary className="cursor-pointer text-sm font-semibold">协议高级设置</summary><div className="grid gap-x-5 sm:grid-cols-2">
     {protocol === 'vless-reality' && <>
       <Field label="Reality 握手目标" hint="留空跟随伪装域名。可指定域名或 IP，不含端口与路径。"><Input name="handshake_server" defaultValue={settings?.reality?.handshake_server ?? ''} placeholder="与伪装域名相同" maxLength={253} spellCheck={false} /></Field>
@@ -58,6 +60,7 @@ export default function ProtocolSettings({ protocol, node }: { protocol: string;
       <Field label="客户端 TLS 指纹" hint="同步写入 sing-box 配置与 VLESS 分享链接。"><NativeSelect className="w-full" name="fingerprint" defaultValue={settings?.reality?.fingerprint ?? 'chrome'}>{[['chrome', 'Chrome'], ['firefox', 'Firefox'], ['safari', 'Safari'], ['edge', 'Edge'], ['ios', 'iOS'], ['android', 'Android'], ['randomized', '随机']].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</NativeSelect></Field>
     </>}
     {protocol === 'hysteria2' && <>
+      <Field label="Realm 穿透" hint='留空关闭。JSON 字段：server_url、realm_id、server_token、client_token、stun_servers、ip_version。客户端令牌会提供给授权用户，服务端令牌仅下发本机；编辑时空令牌保留原值。'><Textarea name="realm" rows={5} defaultValue={settings?.realm ? JSON.stringify(settings.realm, null, 2) : ''} spellCheck={false} autoComplete="off" /></Field>
       <label className="flex items-start gap-2.5 pt-3 pb-5 text-sm"><Checkbox name="ignore_client_bandwidth" checked={bbr} onCheckedChange={checked => setBbr(checked === true)} className="mt-0.5" /><span>强制使用 BBR<small className="text-muted-foreground mt-1.5 block text-xs leading-relaxed">与手动带宽互斥。关闭且留空带宽时沿用运行时协商。</small></span></label>
       <Field label="服务器上传带宽（Mbps）" hint="对应客户端下行；上下行同时填写或同时留空。"><Input name="up_mbps" type="number" min={1} max={1000000} step={1} disabled={bbr} defaultValue={settings?.hysteria2?.up_mbps ?? ''} placeholder="不限制" /></Field>
       <Field label="服务器下载带宽（Mbps）" hint="对应客户端上行，订阅自动换算方向。"><Input name="down_mbps" type="number" min={1} max={1000000} step={1} disabled={bbr} defaultValue={settings?.hysteria2?.down_mbps ?? ''} placeholder="不限制" /></Field>

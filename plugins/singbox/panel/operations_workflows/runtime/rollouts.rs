@@ -204,6 +204,7 @@ async fn dispatch(
             module: "singbox".into(),
             operation: RuntimeOperation::Inspect,
             expected_revision: None,
+            session_filter: None,
             requested_at: now_timestamp(),
             expires_at: now_timestamp() + 600,
         };
@@ -358,6 +359,7 @@ pub(crate) async fn inspect_member(
         module: "singbox".into(),
         operation: RuntimeOperation::Inspect,
         expected_revision: None,
+        session_filter: None,
         requested_at: now_timestamp(),
         expires_at: now_timestamp() + 600,
     };

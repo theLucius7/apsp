@@ -83,6 +83,41 @@ pub(crate) fn validate_features(output: &str, required: Option<&str>) -> Result<
     Ok(())
 }
 
+pub(crate) fn validate_config_features(output: &str, content: &str) -> Result<()> {
+    let config: serde_json::Value = serde_json::from_str(content)?;
+    let tags = output
+        .lines()
+        .find_map(|l| l.strip_prefix("Tags: "))
+        .context("missing build tags")?;
+    for key in ["inbounds", "outbounds", "endpoints", "services"] {
+        for object in config[key].as_array().into_iter().flatten() {
+            let required = match object["type"].as_str() {
+                Some("naive") if key == "outbounds" => Some("with_naive_outbound"),
+                Some("cloudflared") => Some("with_cloudflared"),
+                Some("openvpn-client") => Some("with_openvpn"),
+                Some("openconnect") => Some("with_openconnect"),
+                Some("tailscale") => Some("with_tailscale"),
+                Some("wireguard") => Some("with_wireguard"),
+                Some("hysteria-realm" | "hysteria2" | "tuic") => Some("with_quic"),
+                _ => None,
+            };
+            if object["transport"]["type"] == "grpc" {
+                anyhow::ensure!(
+                    tags.split(',').any(|t| t.trim() == "with_grpc"),
+                    "runtime lacks gRPC transport"
+                );
+            }
+            if let Some(required) = required {
+                anyhow::ensure!(
+                    tags.split(',').any(|t| t.trim() == required),
+                    "runtime lacks required feature: {required}"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

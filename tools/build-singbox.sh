@@ -8,12 +8,11 @@ usage() {
   cat <<'USAGE'
 Usage: tools/build-singbox.sh <amd64|arm64> <ARTIFACT_ROOT> [--libc=gnu|--libc=musl]
 
-Run on Linux/amd64 with Go 1.26.8. The runtime is pure Go (CGO disabled);
-one static binary serves glibc and musl hosts;
---libc only selects the artifact name.
+Run on Linux/amd64 with Go 1.26.8. GNU builds use pure Go plus a pinned Cronet library (glibc >= 2.31).
+Musl builds statically link Cronet; its pinned Chromium toolchain is prepared automatically.
 
-Output: ARTIFACT_ROOT/sing-box/1.14.4-apsp.1/<arch> (a gzip archive with one binary)
-        ARTIFACT_ROOT/sing-box/1.14.4-apsp.1/SHA256SUMS
+Output: ARTIFACT_ROOT/sing-box/1.14.4-apsp.2/<arch> (gzip archive containing the binary and required libraries)
+        ARTIFACT_ROOT/sing-box/1.14.4-apsp.2/SHA256SUMS
 With --libc, the artifact filename is linux-<libc>-<arch>. The legacy default
 remains GNU under <arch>.
 
@@ -47,12 +46,19 @@ export GOTOOLCHAIN=local
 tar_version=$(tar --version)
 [[ $tar_version == *'GNU tar'* ]] || die 'GNU tar is required for deterministic packaging'
 
-version=1.14.4-apsp.1
+version=1.14.4-apsp.2
 upstream_tag=v1.14.4
 upstream_commit=c005f35300ce76427dc285481ec5695f5b179cd2
-patched_commit=243a13cd63c275a1567badb2905b731a48545a26
+patched_commit=5d74251bd02a4b243a2cf23a6f0e7bdfc2259642
 # Server build tags, including the statistics API the Agent reads.
-tags=with_quic,with_utls,with_wireguard,with_clash_api,with_v2ray_api,with_acme
+tags=with_quic,with_utls,with_grpc,with_wireguard,with_clash_api,with_v2ray_api,with_acme,with_gvisor,with_cloudflared,with_openvpn,with_openconnect,with_tailscale,with_naive_outbound
+cgo=0
+if [[ $libc == musl ]]; then
+  tags=$tags,with_musl
+  cgo=1
+else
+  tags=$tags,with_purego
+fi
 output=$2/sing-box/$version
 [[ ! -L $output ]] || die 'output version directory must not be a symlink'
 mkdir -p "$output"
@@ -111,6 +117,12 @@ PY
 patch_queue=${APSP_SINGBOX_PATCHES:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/singbox-runtime}
 [[ -f $patch_queue/apply.py && -f $patch_queue/modules.txt ]] || die "missing runtime patch queue: $patch_queue"
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/apsp-runtime.XXXXXX")
+if [[ $libc == musl && ( -z ${CC:-} || -z ${CXX:-} ) ]]; then
+  python3 "$patch_queue/prepare-musl.py" "$arch" "$scratch/cronet-toolchain" > "$scratch/toolchain.env"
+  while IFS='=' read -r key value; do
+    case "$key" in CC|CXX|CGO_LDFLAGS|QEMU_LD_PREFIX) export "$key=$value" ;; *) die 'unexpected toolchain environment' ;; esac
+  done < "$scratch/toolchain.env"
+fi
 source_dir=$scratch/source
 git -c advice.detachedHead=false clone --depth=1 --branch "$upstream_tag" https://github.com/SagerNet/sing-box.git "$source_dir"
 [[ $(git -C "$source_dir" rev-parse HEAD) == "$upstream_commit" ]] || die 'upstream tag resolved to an unexpected commit'
@@ -118,8 +130,13 @@ git -c advice.detachedHead=false clone --depth=1 --branch "$upstream_tag" https:
 
 cd "$source_dir"
 mkdir "$scratch/stage"
+archive_files=(sing-box)
+if [[ $libc == gnu ]]; then
+  python3 "$patch_queue/cronet.py" "linux_$arch" "$scratch/stage"
+  archive_files+=(libcronet.so)
+fi
 for attempt in 1 2 3; do
-  if CGO_ENABLED=0 GOOS=linux GOARCH="$arch" GOFLAGS= \
+  if CGO_ENABLED="$cgo" GOOS=linux GOARCH="$arch" GOFLAGS= \
     go build -mod=readonly -v -trimpath -tags "$tags" \
       -ldflags "-X github.com/sagernet/sing-box/constant.Version=$version -s -w -buildid=" \
       -o "$scratch/stage/sing-box" ./cmd/sing-box; then
@@ -133,10 +150,10 @@ done
 binary=$scratch/stage/sing-box
 chmod 0755 "$binary"
 go version -m "$binary" | tee "$scratch/buildinfo"
-python3 - "$scratch/buildinfo" "$patch_queue/modules.txt" "$arch" "$tags" "$patched_commit" <<'PY'
+python3 - "$scratch/buildinfo" "$patch_queue/modules.txt" "$arch" "$tags" "$patched_commit" "$cgo" <<'PY'
 import sys
 
-buildinfo, modules, arch, tags, commit = sys.argv[1:]
+buildinfo, modules, arch, tags, commit, cgo = sys.argv[1:]
 settings, deps = {}, set()
 for line in open(buildinfo).read().splitlines()[1:]:
     fields = line.strip().split("\t")
@@ -147,31 +164,33 @@ for line in open(buildinfo).read().splitlines()[1:]:
         deps.add(" ".join(fields[1:4]))
     elif fields[0] == "=>":
         raise SystemExit("runtime must not replace modules")
-expected = {"GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "0", "-tags": tags,
+expected = {"GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": cgo, "-tags": tags,
             "-trimpath": "true", "vcs.revision": commit, "vcs.modified": "false"}
 for key, value in expected.items():
     if settings.get(key) != value:
         raise SystemExit("unexpected build setting: " + key)
 pinned = {line.split("#", 1)[0].strip() for line in open(modules)} - {""}
-if deps != pinned:
+if not deps <= pinned:
     raise SystemExit("runtime dependencies differ from modules.txt")
 PY
 program_headers=$(readelf -lW "$binary")
 dynamic=$(readelf -dW "$binary")
-[[ $program_headers != *INTERP* && $dynamic != *NEEDED* ]] || die 'runtime must be statically linked'
+if [[ $libc == musl ]]; then
+  [[ $program_headers != *INTERP* && $dynamic != *NEEDED* ]] || die 'musl runtime must be statically linked'
+fi
 header=$(readelf -h "$binary")
 if [[ $arch == amd64 ]]; then
   [[ $header == *'Advanced Micro Devices X86-64'* ]] || die 'built binary has the wrong architecture'
   runtime_version=$(timeout 30 "$binary" version)
   printf '%s\n' "$runtime_version"
-  [[ ${runtime_version%%$'\n'*} == "sing-box version $version" && $runtime_version == *"Tags: $tags"* && $runtime_version == *'CGO: disabled'* ]] || die 'native version/tags verification failed'
+  [[ ${runtime_version%%$'\n'*} == "sing-box version $version" && $runtime_version == *"Tags: $tags"*  ]] || die 'native version/tags verification failed'
 else
   [[ $header == *AArch64* ]] || die 'built binary has the wrong architecture'
   printf '%s\n' 'Cross-compiled arm64: ELF/build metadata verified; execute version on an arm64 host before deployment.'
 fi
 stage_file=$(mktemp "$output/.$artifact.XXXXXX")
 tar --format=ustar --mtime=@0 --owner=0 --group=0 --numeric-owner --sort=name \
-  -cf - -C "$scratch/stage" sing-box | gzip -n -9 > "$stage_file"
+  -cf - -C "$scratch/stage" "${archive_files[@]}" | gzip -n -9 > "$stage_file"
 chmod 0644 "$stage_file"
 ln -- "$stage_file" "$output/$artifact"
 output_created=1

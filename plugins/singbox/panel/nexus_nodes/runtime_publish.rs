@@ -93,7 +93,8 @@ pub(super) async fn compile_snapshot(
     };
     let config =
         compile_preserved_server_with(&prepared, control.as_ref()).map_err(anyhow::Error::from)?;
-    let config = crate::user_limits::compile(tx, &config).await?;
+    let config = crate::server_profiles::compile(tx, server, &config).await?;
+    let config = crate::user_limits::compile(tx, &config, server).await?;
     let config_hash = crate::auth::hash_token(&config);
     let bundle = serde_json::to_string(&Bundle {
         files: BTreeMap::from([("config.json".into(), config)]),

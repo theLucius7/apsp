@@ -68,6 +68,9 @@ pub(crate) fn apply(node: &Node, config: &mut Value, client: bool) {
         }
         ProtocolConfig::Hysteria2 { .. } => {
             let hy = &settings.hysteria2;
+            if let Some(realm) = &settings.realm {
+                config["realm"] = json!({"server_url":realm.server_url,"realm_id":realm.realm_id,"token":if client{&realm.client_token}else{&realm.server_token},"stun_servers":realm.stun_servers,"ip_version":realm.ip_version});
+            }
             if let (Some(up), Some(down)) = (hy.up_mbps, hy.down_mbps) {
                 config["up_mbps"] = json!(if client { down } else { up });
                 config["down_mbps"] = json!(if client { up } else { down });

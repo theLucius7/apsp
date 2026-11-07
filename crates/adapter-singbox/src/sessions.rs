@@ -188,6 +188,26 @@ fn parse_sessions(body: &[u8]) -> Result<Vec<ActiveSession>> {
 }
 
 impl SessionSource for Sessions {
+    fn connections<'a>(
+        &'a self,
+        runtime: &'a Prepared,
+        principals: &'a [String],
+    ) -> BoxFuture<'a, Vec<apsp_adapter_sdk::RuntimeConnection>> {
+        Box::pin(async move {
+            let (address, secret) = control(runtime)?.context("session control is disabled")?;
+            let response = client()
+                .get(format!("http://{address}/connections"))
+                .bearer_auth(secret)
+                .send()
+                .await?;
+            ensure!(
+                response.status().is_success(),
+                "connection inspection failed"
+            );
+            authenticated_connections(&bounded_body(response).await?, principals)
+        })
+    }
+
     fn enabled(&self, runtime: &Prepared) -> bool {
         matches!(control(runtime), Ok(Some(_)))
     }
@@ -295,5 +315,91 @@ mod tests {
                 .is_empty()
         );
         assert!(parse_sessions(br#"{}"#).is_err());
+    }
+}
+
+fn authenticated_connections(
+    body: &[u8],
+    principals: &[String],
+) -> Result<Vec<apsp_adapter_sdk::RuntimeConnection>> {
+    let value: Value = serde_json::from_slice(body)?;
+    ensure!(
+        value["apsp_authenticated_sessions"] == true,
+        "runtime does not expose authenticated session identities"
+    );
+    let Some(entries) = value["connections"].as_array() else {
+        ensure!(value["connections"].is_null(), "invalid session list");
+        return Ok(Vec::new());
+    };
+    let mut result = Vec::new();
+    for entry in entries {
+        let metadata = &entry["metadata"];
+        let Some(principal) = metadata["apsp_principal"]
+            .as_str()
+            .filter(|p| principals.iter().any(|v| v == p))
+        else {
+            continue;
+        };
+        let id = entry["id"]
+            .as_str()
+            .filter(|id| {
+                !id.is_empty()
+                    && id.len() <= 128
+                    && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            })
+            .context("invalid connection identity")?;
+        let network = metadata["network"]
+            .as_str()
+            .filter(|n| matches!(*n, "tcp" | "udp"))
+            .context("invalid network")?;
+        let ip = metadata["sourceIP"]
+            .as_str()
+            .context("missing source")?
+            .parse()?;
+        let port = metadata["sourcePort"]
+            .as_str()
+            .context("missing port")?
+            .parse()?;
+        result.push(apsp_adapter_sdk::RuntimeConnection {
+            id: id.into(),
+            principal: principal.into(),
+            source: SocketAddr::new(ip, port),
+            network: network.into(),
+            upload: entry["upload"].as_u64().context("missing upload counter")?,
+            download: entry["download"]
+                .as_u64()
+                .context("missing download counter")?,
+        });
+        if result.len() == 257 {
+            break;
+        }
+    }
+    Ok(result)
+}
+
+#[cfg(test)]
+mod authenticated_tests {
+    use super::*;
+    #[test]
+    fn shared_nat_does_not_share_authenticated_identity() {
+        let body = serde_json::json!({"apsp_authenticated_sessions":true,"connections":[
+            {"id":"first","metadata":{"apsp_principal":"u1_n2","network":"tcp","sourceIP":"192.0.2.1","sourcePort":"1000"},"upload":12,"download":34},
+            {"id":"other","metadata":{"apsp_principal":"u9_n2","network":"tcp","sourceIP":"192.0.2.1","sourcePort":"1001"},"upload":56,"download":78},
+            {"id":"internal","metadata":{"network":"tcp","sourceIP":"192.0.2.1","sourcePort":"1002"},"upload":1,"download":1}
+        ]});
+        let result =
+            authenticated_connections(body.to_string().as_bytes(), &["u1_n2".into()]).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].id, "first");
+        assert_eq!(result[0].upload, 12);
+        let mut unsupported = body;
+        unsupported
+            .as_object_mut()
+            .unwrap()
+            .remove("apsp_authenticated_sessions");
+        assert!(
+            authenticated_connections(unsupported.to_string().as_bytes(), &["u1_n2".into()])
+                .is_err()
+        );
     }
 }

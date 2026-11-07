@@ -70,6 +70,7 @@ try {
         else if (pathname === `${prefix}/2`) value = other
         // The server's plugin tab shares the server header and shows plugin business once enabled.
         else if (pathname === '/api/servers/1') value = { id: 1, name, online: true, device_public_key: 'TEST_ONLY', capabilities: ['singbox'], static_info: {}, latest_metrics: {}, manifest_rev: targetRev }
+        else if (pathname === `${prefix}/1/profile`) value = {definition:{},revision:0}
         else if (pathname === `${prefix}/1/deployments`) value = { status: null, history: [] }
         else if (pathname === `${prefix}/1/runtime-operations`) value = { supported: false, online: false, retiring: false, operations: [] }
         else if (pathname === '/api/plugins/sing-box/nodes') value = []

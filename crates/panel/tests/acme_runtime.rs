@@ -118,7 +118,7 @@ async fn actual_challenges_persistence_and_expired_certificate_renewal() -> Resu
             .prepare(
                 RuntimeSpec {
                     revision: 1,
-                    kernel_version: "1.14.4-apsp.1".into(),
+                    kernel_version: "1.14.4-apsp.2".into(),
                     config_hash: "a".repeat(64),
                     binary_path: binary.clone(),
                     revision_dir: directory.0.clone(),

@@ -241,6 +241,33 @@ pub(super) fn signed_artifact(
     Ok(verified)
 }
 
+pub(crate) fn runtime_descriptor(
+    adapter: &dyn apsp_adapter_sdk::Adapter,
+    version: &str,
+    proof: &ReleaseProof,
+    keys: &TrustedKeys,
+) -> Result<Descriptor> {
+    let release = signed_release(proof, keys)?;
+    let verified =
+        crate::runtime_platform::artifact(&release, &adapter.describe().plugin_name, version)?;
+    Ok(adapter.describe_artifact(version, &verified.metadata().arch))
+}
+
+pub(crate) async fn installed_descriptor(
+    adapter: &dyn apsp_adapter_sdk::Adapter,
+    version: &str,
+    binary: &Path,
+    keys: &TrustedKeys,
+) -> Result<Descriptor> {
+    let proof = read_proof(
+        binary
+            .parent()
+            .context("artifact binary has no directory")?,
+    )
+    .await?;
+    runtime_descriptor(adapter, version, &proof, keys)
+}
+
 pub(crate) async fn verify_expected(
     binary: &Path,
     descriptor: &Descriptor,

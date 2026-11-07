@@ -121,9 +121,9 @@ export type Entitlement = {
   user_id: number; package_group_id: number | null; package_name: string | null; monthly_bytes: string | null;
   reset_day: number | null; reset_hour: number | null; reset_minute: number | null; timezone: string | null;
   starts_at: number | null; expires_at: number | null; cycle_start: number | null; next_reset: number | null;
-  used_bytes: string; status: 'unmetered' | 'not_started' | 'active' | 'expired' | 'exhausted'; allowed: boolean;
+  used_bytes: string; status: 'paused' | 'unmetered' | 'not_started' | 'active' | 'expired' | 'exhausted'; allowed: boolean;
 }
-export const statusText = { unmetered: '未分配套餐', not_started: '尚未生效', active: '使用中', expired: '已到期', exhausted: '本期流量已用完' }
+export const statusText = { paused: '已暂停', unmetered: '未分配套餐', not_started: '尚未生效', active: '使用中', expired: '已到期', exhausted: '本期流量已用完' }
 export const scheduleText = (p: Pick<PackageGroup, 'reset_day' | 'reset_hour' | 'reset_minute' | 'timezone'>) => `每月 ${p.reset_day} 日 ${String(p.reset_hour).padStart(2, '0')}:${String(p.reset_minute).padStart(2, '0')}（${p.timezone}）`
 export function dateText(seconds: number | null, zone?: string | null): string {
   if (seconds === null) return '—'

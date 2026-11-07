@@ -93,12 +93,19 @@ pub async fn create(
     Json(body): Json<Create>,
 ) -> ApiResult<Json<RuntimeOperationRequest>> {
     auth::require_admin(&state, &headers).await?;
+    if matches!(
+        body.operation,
+        RuntimeOperation::InspectSessions | RuntimeOperation::CloseSessions
+    ) {
+        return Err(ApiError::BadRequest("请从代理用户的连接管理执行".into()));
+    }
     let now = now_timestamp();
     let request = RuntimeOperationRequest {
         id: Uuid::new_v4(),
         module: "singbox".into(),
         operation: body.operation,
         expected_revision: body.expected_revision,
+        session_filter: None,
         requested_at: now,
         expires_at: now + 600,
     };

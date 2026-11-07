@@ -288,7 +288,7 @@ pub(super) fn refresh(
                     };
                     checks.push(check(&key,"证书材料",status,Some(now),"current_managed_certificate",evidence,"核对当前配置中的证书域名、有效期与私钥匹配；这里只证明可部署材料，不冒充已经部署或实际握手。"));
                 }
-                Some(TlsConfig::Acme { .. }) => {
+                Some(TlsConfig::Acme { .. }) | Some(TlsConfig::Dns01 { .. }) => {
                     checks.push(preparation(&node, compiled.as_ref(), now));
                     let evidence =
                         recent_handshake(state.clone(), headers.clone(), server, node.clone())

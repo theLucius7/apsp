@@ -46,7 +46,7 @@ def panel_tree(bundle, output, metadata, tools):
             data = tools.read_regular(bundle / entry["asset_name"])
             if len(data) != entry["archive_size"] or hashlib.sha256(data).hexdigest() != rows[tools.canonical_path(entry)]:
                 raise ValueError("signed archive size differs")
-            binary = tools.binary_bytes(data, entry["format"], entry["binary_name"])
+            binary = tools.binary_bytes(data, entry["format"], entry["binary_name"], entry.get("auxiliary_files", {}))
             if len(binary) != entry["binary_size"] or hashlib.sha256(binary).hexdigest() != entry["binary_sha256"]:
                 raise ValueError("signed binary differs")
             destination = directory / tools.canonical_path(entry)
@@ -65,7 +65,7 @@ def main():
     parser.add_argument("--panel-root", type=Path, required=True)
     parser.add_argument("--agent-version", required=True)
     parser.add_argument("--arch", choices=("amd64", "arm64"), default="amd64")
-    parser.add_argument("--runtime-version", default="1.14.4-apsp.1")
+    parser.add_argument("--runtime-version", default="1.14.4-apsp.2")
     parser.add_argument("--minisign", default="minisign")
     parser.add_argument("--release-tools", type=Path, default=ROOT / "tools")
     args = parser.parse_args()

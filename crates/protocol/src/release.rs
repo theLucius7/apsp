@@ -7,6 +7,7 @@ use thiserror::Error;
 
 pub const RELEASE_SCHEMA: u32 = 1;
 pub const RELEASE_SOURCE_REPO: &str = "theLucius7/apsp";
+pub const VERSIONED_RUNTIME_FILES_CAPABILITY: &str = "artifact:versioned-runtime-files-v1";
 pub const ARTIFACT_SIGNATURE_CAPABILITY: &str = "artifact:minisign-v1";
 pub const MAX_CHECKSUMS_BYTES: usize = 8 * 1024;
 pub const MAX_METADATA_BYTES: usize = 32 * 1024;

@@ -1,9 +1,9 @@
-# The runtime is pure Go; this amd64 image cross-compiles both targets.
+# This amd64 image cross-compiles GNU and prepares the pinned Cronet musl toolchain.
 # Build from the repository root with --platform=linux/amd64.
 FROM --platform=linux/amd64 golang:1.26.8-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates git python3 binutils coreutils \
+    ca-certificates git python3 python3-requests binutils coreutils curl xz-utils zstd gnupg make \
     && rm -rf /var/lib/apt/lists/*
 
 COPY tools/build-singbox.sh /usr/local/bin/build-singbox
