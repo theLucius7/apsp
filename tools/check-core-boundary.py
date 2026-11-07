@@ -61,7 +61,10 @@ EXCEPTIONS = {
         r"<key>UserName</key>",
     ),
     "src/state/schema.rs": (r'"user_version"',),
-    "tests/state_baseline.rs": (r"\bPRAGMA user_version\b",),
+    "tests/state_baseline.rs": (
+        r"\bPRAGMA user_version\b",
+        r'\.pragma_query_value\(None, "user_version",',
+    ),
     "tests/usage.rs": (r"\bPRAGMA user_version\b",),
     "tests/usage_bounds.rs": (
         r"\bPRAGMA user_version\b",

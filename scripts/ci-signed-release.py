@@ -65,7 +65,7 @@ def main():
     parser.add_argument("--panel-root", type=Path, required=True)
     parser.add_argument("--agent-version", required=True)
     parser.add_argument("--arch", choices=("amd64", "arm64"), default="amd64")
-    parser.add_argument("--runtime-version", default="1.14.0-apsp.1")
+    parser.add_argument("--runtime-version", default="1.14.4-apsp.1")
     parser.add_argument("--minisign", default="minisign")
     parser.add_argument("--release-tools", type=Path, default=ROOT / "tools")
     args = parser.parse_args()

@@ -192,7 +192,7 @@ async fn prepare_server(
         .state
         .config
         .data_dir
-        .join("artifacts/releases/agent-v0.3.0/sing-box/1.14.0-apsp.1");
+        .join("artifacts/releases/agent-v0.3.0/sing-box/1.14.4-apsp.1");
     if !runtime.join(&target).is_file() && !legacy.is_some_and(|arch| runtime.join(arch).is_file())
     {
         ensure!(
@@ -209,7 +209,7 @@ async fn prepare_server(
         release_fixture::write(
             &panel.state.config.data_dir,
             "sing-box",
-            "1.14.0-apsp.1",
+            "1.14.4-apsp.1",
             "sing-box",
             &archive,
             binary,

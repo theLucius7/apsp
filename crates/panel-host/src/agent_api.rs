@@ -332,7 +332,7 @@ pub async fn process_message(
                 .bind(&value)
                 .execute(&mut *tx)
                 .await?;
-            sqlx::query("INSERT INTO metrics_minutely(server_id,bucket,metrics) VALUES($1,$2,$3) ON CONFLICT(server_id,bucket) DO UPDATE SET metrics=EXCLUDED.metrics").bind(server_id).bind(now_timestamp()/60*60).bind(value).execute(&mut *tx).await?;
+            sqlx::query("INSERT INTO metrics_minutely(server_id,bucket,metrics) VALUES($1,$2,$3) ON CONFLICT(server_id,bucket) DO UPDATE SET metrics=EXCLUDED.metrics").bind(server_id).bind(now_timestamp()/60*60).bind(crate::fleet::monitoring::comparison_metrics(&value)).execute(&mut *tx).await?;
             sqlx::query("DELETE FROM metrics_minutely WHERE bucket<$1")
                 .bind(now_timestamp() - 7 * 86400)
                 .execute(&mut *tx)

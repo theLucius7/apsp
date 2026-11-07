@@ -381,3 +381,37 @@ fn upstream_accepts_every_protocol_and_acme_provider() {
     }
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+#[ignore = "requires the patched stable runtime in APSP_TEST_SINGBOX"]
+fn stable_runtime_accepts_server_settings_and_user_limits() {
+    let binary = std::env::var("APSP_TEST_SINGBOX").unwrap();
+    let directory = std::env::temp_dir().join(format!("apsp-stable-check-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let model = advanced::configured_nodes();
+    let config = apsp_compiler::limits::apply_user_limits(
+        &compile_server(&model).unwrap(),
+        &std::collections::BTreeMap::from([(
+            1,
+            apsp_compiler::limits::UserLimits {
+                upload_mbps: 8,
+                download_mbps: 16,
+                max_connections: 4,
+            },
+        )]),
+    )
+    .unwrap();
+    let path = directory.join("config.json");
+    std::fs::write(&path, config).unwrap();
+    let output = std::process::Command::new(binary)
+        .args(["check", "-c"])
+        .arg(path)
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(directory).unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

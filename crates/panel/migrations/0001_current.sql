@@ -2408,7 +2408,7 @@ CREATE TABLE public.singbox_chain_runtime_requirements (
     artifact_sha256 text NOT NULL,
     artifact jsonb NOT NULL,
     CONSTRAINT singbox_chain_runtime_requirements_artifact_sha256_check CHECK ((artifact_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT singbox_chain_runtime_requirements_runtime_version_check CHECK ((runtime_version = ANY (ARRAY['1.14.2'::text, '1.14.2-apsp.1'::text, '1.14.0-apsp.1'::text])))
+    CONSTRAINT singbox_chain_runtime_requirements_runtime_version_check CHECK ((runtime_version = ANY (ARRAY['1.14.2'::text, '1.14.2-apsp.1'::text, '1.14.0-apsp.1'::text, '1.14.4-apsp.1'::text])))
 );
 
 CREATE TABLE public.singbox_chain_state (
@@ -3878,7 +3878,7 @@ CREATE TABLE public.singbox_runtime_manifest_facts (
     runtime_version text NOT NULL,
     artifact_sha256 text NOT NULL,
     artifact jsonb NOT NULL,
-    CONSTRAINT singbox_runtime_manifest_facts_runtime_version_check CHECK ((runtime_version = ANY (ARRAY['1.14.2'::text, '1.14.2-apsp.1'::text, '1.14.0-apsp.1'::text])))
+    CONSTRAINT singbox_runtime_manifest_facts_runtime_version_check CHECK ((runtime_version = ANY (ARRAY['1.14.2'::text, '1.14.2-apsp.1'::text, '1.14.0-apsp.1'::text, '1.14.4-apsp.1'::text])))
 );
 
 CREATE TABLE public.singbox_runtime_rollout_members (
@@ -3905,7 +3905,7 @@ CREATE TABLE public.singbox_runtime_rollouts (
     updated_at bigint NOT NULL,
     CONSTRAINT singbox_runtime_rollouts_batch_size_check CHECK (((batch_size >= 1) AND (batch_size <= 20))),
     CONSTRAINT singbox_runtime_rollouts_dispatched_count_check CHECK ((dispatched_count >= 0)),
-    CONSTRAINT singbox_runtime_rollouts_runtime_version_check CHECK ((runtime_version = ANY (ARRAY['1.14.2'::text, '1.14.2-apsp.1'::text, '1.14.0-apsp.1'::text])))
+    CONSTRAINT singbox_runtime_rollouts_runtime_version_check CHECK ((runtime_version = ANY (ARRAY['1.14.2'::text, '1.14.2-apsp.1'::text, '1.14.0-apsp.1'::text, '1.14.4-apsp.1'::text])))
 );
 
 CREATE TABLE public.singbox_runtime_session_addresses (
@@ -6636,6 +6636,14 @@ INSERT INTO public.singbox_operation_privacy VALUES (true, 180, 7, 90);
 INSERT INTO public.singbox_reachability_settings VALUES (true, false, 30, NULL, 1, 0, NULL, NULL, '{}');
 INSERT INTO public.singbox_source_migration VALUES (true, NULL, '{}');
 INSERT INTO public.telemetry_policy VALUES (true, 30);
+
+CREATE TABLE public.singbox_user_limits (
+    user_id bigint PRIMARY KEY REFERENCES public.users(id),
+    upload_mbps integer NOT NULL DEFAULT 0 CHECK (upload_mbps BETWEEN 0 AND 1000000),
+    download_mbps integer NOT NULL DEFAULT 0 CHECK (download_mbps BETWEEN 0 AND 1000000),
+    max_connections integer NOT NULL DEFAULT 0 CHECK (max_connections BETWEEN 0 AND 1000000),
+    revision bigint NOT NULL DEFAULT 0 CHECK (revision BETWEEN 0 AND 9007199254740991)
+);
 
 CREATE TABLE public.apsp_schema_baseline (singleton boolean PRIMARY KEY CHECK (singleton), fingerprint text NOT NULL);
 INSERT INTO public.apsp_schema_baseline SELECT true, (SELECT md5(string_agg(definition, E'\n' ORDER BY definition COLLATE "C"))

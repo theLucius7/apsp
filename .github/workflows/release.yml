@@ -120,16 +120,16 @@ jobs:
       - uses: actions/cache@v6.1.0
         id: runtime-cache
         with:
-          path: ${{ runner.temp }}/artifacts/sing-box/1.14.0-apsp.1
-          key: runtime-ubuntu24-1.14.0-apsp.1-${{ matrix.target }}-${{ hashFiles('tools/build-singbox.sh', 'tools/singbox-builder.Dockerfile', 'tools/singbox-runtime/**') }}
+          path: ${{ runner.temp }}/artifacts/sing-box/1.14.4-apsp.1
+          key: runtime-ubuntu24-1.14.4-apsp.1-${{ matrix.target }}-${{ hashFiles('tools/build-singbox.sh', 'tools/singbox-builder.Dockerfile', 'tools/singbox-runtime/**') }}
       - name: Build pinned runtime on cache miss
         if: steps.runtime-cache.outputs.cache-hit != 'true'
         run: |
-          docker build --platform=linux/amd64 -f tools/singbox-builder.Dockerfile -t apsp-release-runtime:1.14.0-apsp.1 .
+          docker build --platform=linux/amd64 -f tools/singbox-builder.Dockerfile -t apsp-release-runtime:1.14.4-apsp.1 .
           mkdir -p '${{ runner.temp }}/artifacts'
           libc_args=()
           if [[ '${{ matrix.libc }}' == musl ]]; then libc_args+=(--libc=musl); fi
-          docker run --rm --platform=linux/amd64 -v '${{ runner.temp }}/artifacts:/artifacts' apsp-release-runtime:1.14.0-apsp.1 '${{ matrix.arch }}' /artifacts "${libc_args[@]}"
+          docker run --rm --platform=linux/amd64 -v '${{ runner.temp }}/artifacts:/artifacts' apsp-release-runtime:1.14.4-apsp.1 '${{ matrix.arch }}' /artifacts "${libc_args[@]}"
       - name: Inspect cached or fresh runtime without executing it
         run: |
           libc_args=()
@@ -162,7 +162,7 @@ jobs:
       - name: Render immutable installer and canonical manifests
         run: |
           python3 tools/release.py render-installer --template deploy/install.sh.tmpl --agent-unit deploy/apsp-agent.service --runtime-unit plugins/sing-box/apsp-singbox@.service --output '${{ runner.temp }}/install.sh'
-          python3 tools/release.py assemble --source '${{ runner.temp }}/artifacts' --output '${{ runner.temp }}/release' --agent-version "$AGENT_VERSION" --runtime-version 1.14.0-apsp.1 --include-musl-runtime --tag "$RELEASE_TAG" --installer '${{ runner.temp }}/install.sh'
+          python3 tools/release.py assemble --source '${{ runner.temp }}/artifacts' --output '${{ runner.temp }}/release' --agent-version "$AGENT_VERSION" --runtime-version 1.14.4-apsp.1 --include-musl-runtime --tag "$RELEASE_TAG" --installer '${{ runner.temp }}/install.sh'
       - name: Create draft without any signing secret
         run: |
           python3 - <<'PY'

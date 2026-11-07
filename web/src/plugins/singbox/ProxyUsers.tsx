@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import UserEntitlements from './UserEntitlements'
 import UserPasskeyAccess from './UserPasskeyAccess'
 import UserDiagnostics from './UserDiagnostics'
+import UserLimits from './UserLimits'
 import SubscriptionDialog from './SubscriptionDialog'
 import PortalSettings from './accounts/PortalSettings'
 import UserInvitations from './accounts/UserInvitations'
@@ -191,6 +192,7 @@ export default function ProxyUsers({ initialUserId }: { initialUserId?: number }
         {notice && <Notice tone="success" role="status">{notice}</Notice>}
         <ErrorNotice message={!editor && !deleting && !resetting ? action.error : ''} />
         {user && <UserEntitlements key={user.id} id={user.id} entitlement={entitlement} userError={() => userError(user.id)} refreshRevision={refreshRevision} onChange={refresh} />}
+        {user && <UserLimits key={`limits-${user.id}`} id={user.id} userError={() => userError(user.id)} refreshRevision={refreshRevision} />}
         <SegmentedNav aria-label="更多用户信息" className="mb-3">
           {sections.map(entry => <SegmentedButton key={entry.key} aria-pressed={section === entry.key} onClick={() => setSection(entry.key)}>{entry.label}</SegmentedButton>)}
         </SegmentedNav>

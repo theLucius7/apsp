@@ -13,13 +13,13 @@
 | Naive | TCP（HTTP/2） | TLS 证书，统计名称作为用户名，独立密码；客户端开启 UDP over TCP |
 | Snell v6 | TCP | v6 多用户模式，节点 PSK 与每个授权的 userkey 自动生成 |
 
-服务器上的签名运行时 `1.14.0-apsp.1` 是旧服务同一份内核（[ADR 0119](adr/0119-legacy-service-kernel.md)），早于上游 1.14.2：Snell v6、ACME 自动证书（证书提供者）、Hysteria2 的 BBR 配置档、TLS 握手超时和 Naive 出站跳在它上面无法运行，部署时由运行时拒绝。下文按 1.14.2 描述的这些字段，只在本地用上游 1.14.2 验证。
+当前源码固定 `1.14.4-apsp.1`（上游正式版 1.14.4 + APSP 用户限制补丁，[ADR 0124](adr/0124-stable-runtime-and-user-limits.md)），Snell v6、ACME 证书提供者、Hysteria2 BBR 配置档和 TLS 握手超时均通过原生检查。已发布的旧内核不能因此视为已升级；需先完成签名发布、导入制品并由设备应用。Naive 入站支持；Naive 出站跳需要尚未打包的 Cronet 库，仍不可用。
 
 所有协议使用同一用户账本，统计名称仍为 `u{用户ID}_n{节点ID}`。撤销后重新授权会更换凭据；旧的客户端需更新订阅。协议与 Shadowsocks 加密方法创建后不可更改，需要变更时创建新节点。
 
 ## 节点连接与高级设置
 
-参考 3X-UI 的入站设置分组和 S-UI 的监听/客户端地址分离，具体原生字段按固定 sing-box 1.14.2 实现，见 [ADR 0042](adr/0042-node-settings-and-panel-operations.md) 和 [ADR 0075](adr/0075-node-options-and-background-refresh.md)。
+参考 3X-UI 的入站设置分组和 S-UI 的监听/客户端地址分离，具体原生字段按 sing-box 1.14.4 验证，见 [ADR 0042](adr/0042-node-settings-and-panel-operations.md) 和 [ADR 0075](adr/0075-node-options-and-background-refresh.md)。
 
 | 字段 | 行为 |
 |---|---|
@@ -58,7 +58,7 @@ Hysteria2、TUIC、AnyTLS、Naive 的“证书域名”必须是证书覆盖的 
 
 ## 客户端订阅
 
-新增协议统一使用 `?format=singbox`，界面默认复制此格式；需要支持对应协议的 sing-box 客户端，建议与固定运行时 1.14.2 对齐。Naive 客户端还需包含 `with_naive_outbound` 及对应平台 Cronet 支持，Snell 客户端必须支持 v6。服务端支持不代表所有客户端或操作系统发行包都支持全部出站。
+新增协议统一使用 `?format=singbox`，界面默认复制此格式；需要支持对应协议的 sing-box 客户端，建议与固定运行时 1.14.4 对齐。Naive 客户端还需包含 `with_naive_outbound` 及对应平台 Cronet 支持，Snell 客户端必须支持 v6。服务端支持不代表所有客户端或操作系统发行包都支持全部出站。
 
 原有链接订阅和订阅令牌保持不变；`?format=links` 支持 Reality 和 VLESS 隧道（`security=tls`）。混合订阅含新增协议时返回 409，提示切换 JSON，不静默省略节点、不生成非标准 Snell 链接。手动证书的公共链随 JSON 下发，客户端不启用 `insecure`。订阅仍仅含已经成功应用且健康的版本及当前有效授权。
 
@@ -92,3 +92,9 @@ python3 tools/acme-smoke.py --pebble-source /tmp/pebble --runtime /tmp/sing-box
 ```
 
 脚本隔离测试 CA/DNS、执行真实 HTTP-01 与 TLS-ALPN-01、检查证书持久复用，以及短期证书过期后重载自动续期；不请求公网证书、不安装系统信任根。测试证书只存临时目录。此测试不替代真实 DNS、公网 Let's Encrypt、长期驻留续期与多平台实机验收；运行结果及未验证范围见 PROGRESS。
+
+## 逐用户限速与连接数
+
+在「代理用户 → 用户限制」配置上传、下载 Mbps 和最大连接数。每项 0 表示不限，默认关闭；上传、下载从代理用户视角计算。一个用户在每台受管服务器的全部入口节点共享额度，各台服务器分别计算。TCP 逻辑连接与 UDP 会话合计计数；连接复用仍按解复用后的逻辑连接统计，达到上限拒绝新会话，关闭释放名额。每个方向允许 32 KiB 短暂突发；限速针对认证后的有效载荷，协议握手及封装开销不包含在限速值内。
+
+保存后等待新运行时配置应用；已保存不等于已生效。界面只在设备在线、目标配置已应用、参数匹配并且健康观测新鲜时显示「服务器已确认」。配置应用可能重建连接。外部节点、尚未接管的线路以及中转段的内部凭据不承诺逐终端用户执行，入口服务器执行这条连接的额度。

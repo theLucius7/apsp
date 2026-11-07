@@ -24,7 +24,7 @@ type Diagnosis = {
   limitations: Record<string, { available: boolean; reason: string }>
 }
 type Template = { template: { revision: number; definition: unknown } | null; limitations: string; definition_redacted: boolean; credential_access_reason: string }
-const auditNames: Record<string, string> = { subscription_fetch: '获取订阅', security_subscription_reset: '重置订阅地址', security_subscription_credentials_read: '再验证后读取连接配置', security_subscription_addresses_read: '再验证后读取订阅地址', security_node_credentials_read: '再验证后读取节点连接身份', security_client_template_read: '再验证后读取完整客户端模板', client_template_update: '修改客户端模板', security_portal_login: 'Passkey 登录', security_portal_login_failed: 'Passkey 验证失败', security_portal_logout: '主动退出会话', security_portal_key_register: '登记 Passkey', security_portal_key_remove: '移除 Passkey并撤销其他会话', security_portal_invitation: '生成自助入口邀请' }
+const auditNames: Record<string, string> = { user_limits_updated: '修改用户限制', subscription_fetch: '获取订阅', security_subscription_reset: '重置订阅地址', security_subscription_credentials_read: '再验证后读取连接配置', security_subscription_addresses_read: '再验证后读取订阅地址', security_node_credentials_read: '再验证后读取节点连接身份', security_client_template_read: '再验证后读取完整客户端模板', client_template_update: '修改客户端模板', security_portal_login: 'Passkey 登录', security_portal_login_failed: 'Passkey 验证失败', security_portal_logout: '主动退出会话', security_portal_key_register: '登记 Passkey', security_portal_key_remove: '移除 Passkey并撤销其他会话', security_portal_invitation: '生成自助入口邀请' }
 
 export default function UserDiagnostics({ userId, userError, onChanged, active = true }: { userId: number; userError: () => string; onChanged: () => void; active?: boolean }) {
   // A hidden section stays mounted to keep drafts but stops polling until shown again.

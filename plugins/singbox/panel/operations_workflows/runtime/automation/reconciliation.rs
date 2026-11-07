@@ -67,7 +67,7 @@ async fn unknown_binding(
             "当前目标已不匹配原固定部署，需要受控恢复，不能用其他版本证明原请求已恢复",
         ));
     }
-    let same: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2 AND runtime_version='1.14.0-apsp.1' AND artifact_sha256=$3)").bind(server).bind(binding.revision as i64).bind(&sha).fetch_one(&mut **tx).await?;
+    let same: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2 AND runtime_version='1.14.4-apsp.1' AND artifact_sha256=$3)").bind(server).bind(binding.revision as i64).bind(&sha).fetch_one(&mut **tx).await?;
     if !same {
         return Err(conflict("原固定签名制品身份已变化，不能核对解锁"));
     }

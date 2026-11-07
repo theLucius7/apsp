@@ -107,7 +107,7 @@ jobs:
           RUNTIME_LIBC: ${{ matrix.libc }}
         run: |
           mkdir -p "$RUNNER_TEMP/runtime"
-          tar -xzf "$RUNNER_TEMP/runtime-artifacts/sing-box/1.14.0-apsp.1/linux-$RUNTIME_LIBC-$RUNTIME_ARCH" -C "$RUNNER_TEMP/runtime"
+          tar -xzf "$RUNNER_TEMP/runtime-artifacts/sing-box/1.14.4-apsp.1/linux-$RUNTIME_LIBC-$RUNTIME_ARCH" -C "$RUNNER_TEMP/runtime"
           image=debian:bookworm-slim
           if [ "$RUNTIME_LIBC" = musl ]; then image=alpine:3.24.2; fi
           docker run --rm --network none --platform "linux/$RUNTIME_ARCH" -v "$RUNNER_TEMP/runtime:/runtime:ro" "$image" /runtime/sing-box version
@@ -204,7 +204,7 @@ jobs:
         shell: bash
         run: |
           binary=target/${{ matrix.target }}/release/apsp-agent
-          runtime=.ci-artifacts/sing-box/1.14.0-apsp.1/${{ matrix.platform }}-${{ matrix.arch }}
+          runtime=.ci-artifacts/sing-box/1.14.4-apsp.1/${{ matrix.platform }}-${{ matrix.arch }}
           if [ '${{ matrix.platform }}' = windows ]; then
             python tools/ci-run.py python tools/native-service-smoke.py "$binary.exe" "$runtime"
           else
@@ -292,7 +292,7 @@ jobs:
             test "$(.ci-binaries/apsp-agent --version)" = 'apsp-agent ${{ steps.build.outputs.version }}'
             .ci-binaries/apsp-agent --help
             mkdir -p /tmp/apsp-runtime
-            tar -xzf .ci-artifacts/sing-box/1.14.0-apsp.1/freebsd-${{ matrix.arch }} -C /tmp/apsp-runtime
+            tar -xzf .ci-artifacts/sing-box/1.14.4-apsp.1/freebsd-${{ matrix.arch }} -C /tmp/apsp-runtime
             /tmp/apsp-runtime/sing-box version
       - name: Verify the same binary on FreeBSD 14
         uses: vmactions/freebsd-vm@v1.5.8
@@ -305,7 +305,7 @@ jobs:
             test "$(.ci-binaries/apsp-agent --version)" = 'apsp-agent ${{ steps.build.outputs.version }}'
             .ci-binaries/apsp-agent --help
             mkdir -p /tmp/apsp-runtime
-            tar -xzf .ci-artifacts/sing-box/1.14.0-apsp.1/freebsd-${{ matrix.arch }} -C /tmp/apsp-runtime
+            tar -xzf .ci-artifacts/sing-box/1.14.4-apsp.1/freebsd-${{ matrix.arch }} -C /tmp/apsp-runtime
             /tmp/apsp-runtime/sing-box version
       - name: Verify and package the same binary on FreeBSD 15
         uses: vmactions/freebsd-vm@v1.5.8
@@ -322,7 +322,7 @@ jobs:
             ulimit -c unlimited
             result=0
             env GITHUB_ACTIONS=true APSP_SMOKE_CORE_DIR=/tmp/apsp-cores python3.11 tools/ci-run.py python3.11 tools/agent-smoke.py .ci-binaries/apsp-agent || result=1
-            env CI=true GITHUB_ACTIONS=true python3.11 tools/ci-run.py python3.11 tools/native-service-smoke.py .ci-binaries/apsp-agent .ci-artifacts/sing-box/1.14.0-apsp.1/freebsd-${{ matrix.arch }} || result=1
+            env CI=true GITHUB_ACTIONS=true python3.11 tools/ci-run.py python3.11 tools/native-service-smoke.py .ci-binaries/apsp-agent .ci-artifacts/sing-box/1.14.4-apsp.1/freebsd-${{ matrix.arch }} || result=1
             exit "$result"
       - uses: actions/upload-artifact@v7.0.1
         with:
