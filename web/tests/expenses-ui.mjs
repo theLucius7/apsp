@@ -59,11 +59,9 @@ try {
   browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
   for (const width of [1440, 390, 320]) for (const theme of ['light', 'dark']) {
     const context = await browser.newContext({ viewport: { width, height: 1000 }, acceptDownloads: true, colorScheme: theme === 'dark' ? 'light' : 'dark' })
-    await context.addInitScript(({ theme, width }) => {
+    await context.addInitScript(theme => {
       localStorage.setItem('apsp-appearance', JSON.stringify({ theme, density: 'comfortable' }))
-      // Older WebViews still get common zones and retain an existing IANA alias.
-      if (width === 320) Object.defineProperty(Intl, 'supportedValuesOf', { value: undefined })
-    }, { theme, width })
+    }, theme)
     page = await context.newPage()
     const errors = [], writes = [], unexpected = [], reads = []
     page.on('pageerror', error => errors.push(error.message))
@@ -125,7 +123,7 @@ try {
       await timezone.waitFor()
       assert.equal(await timezone.evaluate(element => element.tagName), 'SELECT')
       assert.equal(await timezone.inputValue(), state.settings.timezone, 'The saved zone must survive opening the form')
-      if (width !== 320) assert(await timezone.locator('option').count() > 100, 'Other IANA zones remain selectable')
+      assert(await timezone.locator('option').count() <= 8, 'Only representative zones and at most one saved zone should be offered')
       await assertNativeSelectContrast(page, theme)
       // Exercise opening the actual native picker, then select and persist an IANA value.
       await timezone.click()
