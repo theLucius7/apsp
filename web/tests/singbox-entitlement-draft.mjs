@@ -176,6 +176,8 @@ try {
       else if (pathname === `${prefix}/usage` && method === 'GET') { usageReads.push(Date.now()); value = usage }
       else if (pathname === `${prefix}/users/1/policy-groups` && method === 'GET') { policyReads.push([...groupIds]); value = { group_ids: [...groupIds] } }
       else if (pathname === `${prefix}/users/1/entitlement` && method === 'GET') value = entitlement()
+      // The user page also shows per-user limits (ADR 0124); none are set in this fixture.
+      else if (pathname === `${prefix}/users/1/limits` && method === 'GET') value = { user_id: 1, revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] }
       else if (pathname === `${prefix}/users/1/subscription` && method === 'GET') {
         const format = new URL(request.url()).searchParams.get('format')
         assert(['singbox', 'links'].includes(format))

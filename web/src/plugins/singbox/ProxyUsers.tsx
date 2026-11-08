@@ -191,7 +191,7 @@ export default function ProxyUsers({ initialUserId }: { initialUserId?: number }
         {line?.bridged && <Notice role="status">迁移用户：订阅仍由原系统生成，线路来自所属「原权限组」，修改套餐不改变线路。</Notice>}
         {notice && <Notice tone="success" role="status">{notice}</Notice>}
         <ErrorNotice message={!editor && !deleting && !resetting ? action.error : ''} />
-        {user && <UserEntitlements key={user.id} id={user.id} entitlement={entitlement} userError={() => userError(user.id)} refreshRevision={refreshRevision} onChange={refresh} />}
+        {user && <UserEntitlements key={user.id} id={user.id} entitlement={entitlement} userError={() => userError(user.id)} refreshRevision={refreshRevision} onChange={refresh} bridged={Boolean(line?.bridged)} />}
         {user && <UserLimits key={`limits-${user.id}`} id={user.id} userError={() => userError(user.id)} refreshRevision={refreshRevision} />}
         <SegmentedNav aria-label="更多用户信息" className="mb-3">
           {sections.map(entry => <SegmentedButton key={entry.key} aria-pressed={section === entry.key} onClick={() => setSection(entry.key)}>{entry.label}</SegmentedButton>)}

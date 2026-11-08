@@ -1,13 +1,13 @@
-use super::{Operation, digest};
+use super::{NO_EXPIRY, Operation, Validity, digest};
 use crate::error::ApiResult;
 use serde_json::{Value, json};
-use sqlx::{Postgres, Row, Transaction};
+use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 pub(super) fn user_id(operation: &Operation) -> Option<i64> {
     match operation {
         Operation::ReplacePackage { user_id, .. }
-        | Operation::ExtendValidity { user_id, .. }
+        | Operation::SetValidity { user_id, .. }
         | Operation::ResetQuota { user_id }
         | Operation::RotateNodeCredentials { user_id, .. } => Some(*user_id),
         _ => None,
@@ -47,23 +47,26 @@ pub(super) async fn execute(
             super::super::business::mark_dirty(tx, &servers).await?;
             json!({"status":"saved","assignment_id":assignment,"effective_at":now,"ledger_preserved":true})
         }
-        Operation::ExtendValidity { user_id, days } => {
+        Operation::SetValidity { user_id, until } => {
             let servers = super::super::business::lock_user_servers(tx, *user_id).await?;
             let previous: i64 = sqlx::query_scalar("SELECT a.expires_at FROM singbox_user_packages p JOIN singbox_package_assignments a ON a.id=p.assignment_id WHERE p.user_id=$1")
                 .bind(user_id).fetch_one(&mut **tx).await?;
-            // The period is added to the later of now and the current expiry, so an expired
-            // user is renewed from this moment instead of staying expired.
-            let row=sqlx::query("INSERT INTO singbox_package_assignments(user_id,request_id,package_group_id,package_name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,starts_at,expires_at) SELECT a.user_id,$2,a.package_group_id,a.package_name,a.monthly_bytes,a.reset_day,a.reset_hour,a.reset_minute,a.timezone,a.starts_at,GREATEST(a.expires_at,$4::bigint)+$3::bigint*86400 FROM singbox_user_packages p JOIN singbox_package_assignments a ON a.id=p.assignment_id WHERE p.user_id=$1 RETURNING id,expires_at")
-                .bind(user_id).bind(preview_id).bind(days).bind(now).fetch_one(&mut **tx).await?;
-            let assignment: i64 = row.get("id");
+            let expires_at = match until {
+                Validity::At(at) => *at,
+                Validity::Never => NO_EXPIRY,
+            };
+            // A new immutable snapshot that differs from the current one only in its expiry:
+            // package, start, reset schedule and the cycle's usage stay as they are.
+            let assignment:i64=sqlx::query_scalar("INSERT INTO singbox_package_assignments(user_id,request_id,package_group_id,package_name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,starts_at,expires_at) SELECT a.user_id,$2,a.package_group_id,a.package_name,a.monthly_bytes,a.reset_day,a.reset_hour,a.reset_minute,a.timezone,a.starts_at,$3 FROM singbox_user_packages p JOIN singbox_package_assignments a ON a.id=p.assignment_id WHERE p.user_id=$1 RETURNING id")
+                .bind(user_id).bind(preview_id).bind(expires_at).fetch_one(&mut **tx).await?;
             sqlx::query("UPDATE singbox_user_packages SET assignment_id=$2 WHERE user_id=$1")
                 .bind(user_id)
                 .bind(assignment)
                 .execute(&mut **tx)
                 .await?;
             super::super::business::mark_dirty(tx, &servers).await?;
-            let from_now = previous <= now;
-            json!({"status":"saved","assignment_id":assignment,"previous_expires_at":previous,"expires_at":row.get::<i64,_>("expires_at"),"extended_from_now":from_now,"quota_reset":false})
+            let shown = |at: i64| (at != NO_EXPIRY).then_some(at);
+            json!({"status":"saved","assignment_id":assignment,"previous_expires_at":shown(previous),"expires_at":shown(expires_at),"quota_reset":false})
         }
         Operation::ResetQuota { user_id } => {
             let servers = super::super::business::lock_user_servers(tx, *user_id).await?;

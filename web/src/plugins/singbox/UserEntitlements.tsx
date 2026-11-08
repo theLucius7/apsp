@@ -7,6 +7,8 @@ import { assignmentRequestId, dateText, scheduleText, statusText } from './group
 import type { Entitlement, PackageGroup, PolicyGroup, UserPolicies } from './groupTypes'
 import OperationReview from './OperationReview'
 import type { WorkflowOperation } from './OperationReview'
+import ValidityDialog from './ValidityDialog'
+import { expiryText } from './validity'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { NativeSelect } from '@/components/ui/native-select'
@@ -14,7 +16,7 @@ import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
 import { cn } from '@/lib/utils'
 
 const root = '/api/plugins/sing-box'
-export default function UserEntitlements({ id, entitlement, userError, refreshRevision, onChange }: { id: number; entitlement: ResourceState<Entitlement>; userError: () => string; refreshRevision: number; onChange: () => void }) {
+export default function UserEntitlements({ id, entitlement, userError, refreshRevision, onChange, bridged = false }: { id: number; entitlement: ResourceState<Entitlement>; userError: () => string; refreshRevision: number; onChange: () => void; bridged?: boolean }) {
   const policies = useResource<PolicyGroup[]>(`${root}/policy-groups`, settingsPoll)
   const packages = useResource<PackageGroup[]>(`${root}/package-groups`, settingsPoll)
   const assigned = useResource<UserPolicies>(`${root}/users/${id}/policy-groups`, 0)
@@ -25,6 +27,7 @@ export default function UserEntitlements({ id, entitlement, userError, refreshRe
   const [notice, setNotice] = useState('')
   const action = useAction()
   const [operation, setOperation] = useState<WorkflowOperation | null>(null)
+  const [adjusting, setAdjusting] = useState(false)
   useEffect(() => { if (assigned.data && !dirty.current) setSelected([...assigned.data.group_ids]) }, [assigned.data])
   const refresh = () => { policies.reload(); packages.reload(); assigned.reload(); entitlement.reload() }
   useEffect(() => { if (refreshRevision) { policies.reload(); packages.reload(); assigned.reload() } }, [refreshRevision, policies.reload, packages.reload, assigned.reload])
@@ -72,11 +75,13 @@ export default function UserEntitlements({ id, entitlement, userError, refreshRe
           {!e ? <Loading variant="panel" rows={2} /> : <>
             <div className="flex flex-wrap items-center gap-2 text-[13px]"><strong className="font-medium">{e.package_name ?? '未设置流量与到期限制'}</strong><Badge tone={e.allowed ? 'good' : 'bad'}>{statusText[e.status]}</Badge></div>
             {e.package_group_id !== null ? <>
-              <div className="text-muted-foreground mt-2 text-xs tabular-nums">本期已用 <span className="text-foreground">{bytes(e.used_bytes)}</span> / {e.monthly_bytes === null ? '不限量' : bytes(e.monthly_bytes)}</div>
+              <div className="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-2 text-xs tabular-nums"><span>本期已用 <span className="text-foreground">{bytes(e.used_bytes)}</span> / {e.monthly_bytes === null ? '不限量' : bytes(e.monthly_bytes)}</span>
+                {e.monthly_bytes !== null && <Button variant="ghost" size="xs" disabled={action.busy || Boolean(writeError()) || e.used_bytes === '0'} title={e.used_bytes === '0' ? '本期还没有用量' : '把本期已用流量清零，历史记录保留'} onClick={() => { if (!writeError()) setOperation({ operation: 'reset_quota', user_id: id }) }}>重置流量</Button>}
+              </div>
               {quota !== undefined && <Meter value={quota} label="本期流量使用比例" className="mt-1 h-1 max-w-none" />}
               <dl className="mt-2.5 grid grid-cols-2 gap-2 text-xs">
                 <div><dt className="text-muted-foreground">下次重置</dt><dd className="mt-0.5 wrap-anywhere">{dateText(e.next_reset, e.timezone)}</dd></div>
-                <div><dt className="text-muted-foreground">可使用至</dt><dd className="mt-0.5 wrap-anywhere">{dateText(e.expires_at, e.timezone)}</dd></div>
+                <div><dt className="text-muted-foreground">可使用至</dt><dd className="mt-0.5 flex flex-wrap items-center gap-x-2 wrap-anywhere"><span>{expiryText(e.expires_at)}</span><Button variant="ghost" size="xs" disabled={action.busy || Boolean(writeError())} onClick={() => { if (!writeError()) setAdjusting(true) }}>调整</Button></dd></div>
               </dl>
               <p className="text-muted-foreground mt-2 text-xs leading-relaxed" title={`本期起点 ${dateText(e.cycle_start, e.timezone)}。到期或用完流量后立即停止提供可用订阅，设备应用新配置后停止服务。设备离线或流量尚未上报时，限制不会瞬间生效。`}>按 {e.timezone} 显示。重置只恢复月度流量，不延长有效期。</p>
             </> : <p className="text-muted-foreground mt-2 text-xs leading-relaxed">未分配套餐时不限流量和期限；分配后，所有节点共用这一份额度。</p>}
@@ -90,6 +95,7 @@ export default function UserEntitlements({ id, entitlement, userError, refreshRe
       <p>替换当前套餐，期限从现在重新计算（不是续加）；本月已记录的流量不清空。</p>
       <p className="text-muted-foreground mt-3 text-xs leading-relaxed">套餐与节点权限分别分配；仅分配套餐不会自动授予节点。</p>
     </FormDialog>}</DialogPresence>
-    <DialogPresence>{operation && <OperationReview request={operation} onClose={() => setOperation(null)} onApplied={() => { setOperation(null); setAssignment(null); dirty.current = false; assigned.reload(); entitlement.reload(); onChange(); setNotice('变更已确认保存；历史账本保留，请继续查看设备应用与订阅状态。') }} />}</DialogPresence>
+    <DialogPresence>{adjusting && e && <ValidityDialog expiresAt={e.expires_at} startsAt={e.starts_at} bridged={bridged} onClose={() => setAdjusting(false)} onSubmit={until => setOperation({ operation: 'set_validity', user_id: id, until })} />}</DialogPresence>
+    <DialogPresence>{operation && <OperationReview request={operation} onClose={() => setOperation(null)} onApplied={() => { setOperation(null); setAssignment(null); setAdjusting(false); dirty.current = false; assigned.reload(); entitlement.reload(); onChange(); setNotice('变更已确认保存；历史账本保留，请继续查看设备应用与订阅状态。') }} />}</DialogPresence>
   </Panel>
 }

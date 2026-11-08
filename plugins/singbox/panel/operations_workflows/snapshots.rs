@@ -1,4 +1,4 @@
-use super::{Operation, digest, ids};
+use super::{NO_EXPIRY, Operation, Validity, digest, ids};
 use crate::error::{ApiError, ApiResult};
 use serde_json::{Value, json};
 use sqlx::{Postgres, Transaction};
@@ -115,36 +115,53 @@ pub(super) async fn snapshot(
                 json!({"operation":"replace_package","user":safe_user(&state[0]),"plan":plan,"new_cycle":cycle,"effective_at":"确认时立即生效","duration_days":plan["duration_days"],"effect":"更换不可变套餐快照；有效期从确认时重新计算，历史账本保留，按新周期重新归集，不自动延长原到期日；新账期已用量为预览时的数值"}),
             )
         }
-        Operation::ExtendValidity { user_id, days } => {
-            if !(1..=36500).contains(days) {
-                return Err(ApiError::BadRequest("延期天数应为 1 至 36500".into()));
-            }
+        Operation::SetValidity { user_id, until } => {
             let state = user_state(tx, &[*user_id]).await?;
-            let expiry = state[0]["entitlement"]["expires_at"]
-                .as_i64()
-                .ok_or_else(|| ApiError::Conflict("用户未分配套餐，不能延期".into()))?;
-            let now = apsp_protocol::now_timestamp();
-            let expired = expiry <= now;
-            // Renewal counts from the later of now and the current expiry, so an expired user
-            // gets the full period from the moment the operation is applied.
-            let new_expiry = expiry
-                .max(now)
-                .checked_add(i64::from(*days) * 86400)
-                .ok_or_else(|| ApiError::BadRequest("到期时间超出范围".into()))?;
-            // Safeguard: an extension must never leave the user expired.
-            if new_expiry <= now {
-                return Err(ApiError::BadRequest(
-                    "延期后的到期时间仍不晚于当前时间，请增加延期天数".into(),
+            let entitlement = &state[0]["entitlement"];
+            if entitlement["package_group_id"].is_null() {
+                return Err(ApiError::Conflict(
+                    "用户未分配套餐，不能调整有效期；请先分配套餐".into(),
                 ));
             }
-            let effect = if expired {
-                "该用户的套餐已到期：新到期时间从确认应用的时刻起算，而不是从已过期的原到期日累加；原套餐、开始时间、月度周期及本期用量保留，不重置额度（本期流量已用尽时需另行重置）"
-            } else {
-                "在原到期日基础上延长；原套餐、开始时间、月度周期及本期用量保留，不重置额度"
+            // None means the current package has no time limit.
+            let previous = entitlement["expires_at"].as_i64();
+            let starts = entitlement["starts_at"].as_i64().unwrap_or(0);
+            let now = apsp_protocol::now_timestamp();
+            let next = match until {
+                Validity::At(at) => {
+                    // An earlier expiry is allowed, but never one in the past: apply runs this
+                    // check again, so a preview left open past the chosen moment cannot apply.
+                    if *at <= now {
+                        return Err(ApiError::BadRequest("到期时间必须晚于当前时间".into()));
+                    }
+                    if *at <= starts {
+                        return Err(ApiError::BadRequest("到期时间必须晚于套餐开始时间".into()));
+                    }
+                    if *at >= NO_EXPIRY {
+                        return Err(ApiError::BadRequest("到期时间超出范围".into()));
+                    }
+                    Some(*at)
+                }
+                Validity::Never => None,
+            };
+            if next == previous {
+                return Err(ApiError::BadRequest("到期时间没有变化".into()));
+            }
+            let kept = "套餐、开始时间、重置周期和本期已用流量保留，不重置流量";
+            let effect = match (previous, next) {
+                (_, None) => format!("改为不限期，不再按时间到期；{kept}"),
+                (None, Some(_)) => {
+                    format!("由不限期改为在所选时间到期，到期后停止提供可用订阅；{kept}")
+                }
+                (Some(old), Some(new)) if new > old && old <= now => {
+                    format!("该用户已到期，确认后恢复可用直到所选时间；{kept}")
+                }
+                (Some(old), Some(new)) if new > old => format!("推迟到期时间；{kept}"),
+                _ => format!("提前到期时间，到期后停止提供可用订阅；{kept}"),
             };
             (
                 stable(&state),
-                json!({"operation":"extend_validity","user":safe_user(&state[0]),"previous_expires_at":expiry,"new_expires_at":new_expiry,"extends_from_now":expired,"effect":effect}),
+                json!({"operation":"set_validity","user":safe_user(&state[0]),"previous_expires_at":previous,"new_expires_at":next,"effect":effect}),
             )
         }
         Operation::ResetQuota { user_id } => {
