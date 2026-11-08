@@ -1,6 +1,6 @@
 # 收敛方案：领域模型与发布
 
-- 状态：提议（2026-11-07）。本文只做设计；涉及生产数据、数据库基线、部署器或删除旧模型的每一步都需要单独授权（[执行计划](09-execution.md)）。
+- 状态：提议（2026-11-07），是[执行计划](09-execution.md)步骤 2、3 的设计依据。本文只做设计；涉及生产数据、数据库基线、部署器或删除旧模型的每一步都需要单独授权（[执行计划](09-execution.md)）。
 - 依据：[设计依据](01-principles.md) R4、R5、R13、R14、R15；[ADR 0085](../adr/0085-rearchitecture-plugins-sources-chains.md)、[阶段三迁移方案](../rearchitecture-phase3-plan.md)、[ADR 0122](../adr/0122-unreleased-schema-baseline.md)、[数据库基线](../database-baseline.md)；2026-11-07 的两次停机（#245、#249）。
 
 ## 1. 目标与做法

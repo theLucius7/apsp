@@ -1,5 +1,7 @@
 # ADR 0012：异步流工具和日志订阅器
 
+状态：已接受。
+
 ## 背景
 
 规定栈中的 axum WebSocket 与 tokio-tungstenite 暴露 Stream/Sink，需要组合发送、接收和分流。tracing 仅产生事件，本身不把日志写到终端。

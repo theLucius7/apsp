@@ -1,12 +1,10 @@
 # 架构决策索引
 
-- [ADR 0124：稳定内核与逐用户限制](0124-stable-runtime-and-user-limits.md)
-
-- [ADR 0123：看板缓存一致性与分钟对比存储](0123-dashboard-cache-and-comparison-storage.md)
-
 [文档导航](../README.md) · [目录与维护约定](../repository.md) · [协作约束](../../AGENTS.md)
 
 按主题查找 ADR；编号保留决策顺序，文件名和历史链接保持稳定。早期范围限制可能由后续用户授权覆盖，判断现行约束须结合 AGENTS.md 与对应后续 ADR。例如 Agent 二进制下载以 ADR 0038 为准，替代 ADR 0010 中的面板同源限制；链路能力由 ADR 0040/0045 扩展。设计决策不代表已经通过实机验收。
+
+每份 ADR 开头写明状态（已接受、部分被取代、被取代）及取代它的 ADR；下面的条目在括号中注明替代关系。编号说明：0043 有两份文件（`0043-runtime-operations.md` 与 `0043-nodequality-offline-rootfs.md`，后者与 0049 主题相同、内容略有差异，索引列 0049）；0052 与 0066、0053 与 0067 主题相同，分别来自主线与作者独立分支的整合，内容有差异，引用时以各自文件为准。编号保持不变。
 
 ## 配置、协议与计量基础
 
@@ -23,11 +21,9 @@
 
 ## 部署、身份、服务与运维
 
-- [ADR 0059：管理员与代理用户 Passkey](0059-passkeys-and-proxy-user-access.md)
-
 - [ADR 0003：运行时使用独立 systemd 服务](0003-independent-runtime-service.md)
 - [ADR 0006：特权操作经由统一 trait](0006-privileged-trait.md)
-- [ADR 0010：Agent 只从面板下载](0010-panel-only-downloads.md)
+- [ADR 0010：Agent 只从面板下载](0010-panel-only-downloads.md)（Agent 二进制部分已由 ADR 0038 取代）
 - [ADR 0013：在进程内安全解包运行时制品](0013-archive-decoding.md)
 - [ADR 0015：扩展 Agent 编译产物的平台](0015-agent-build-platforms.md)
 - [ADR 0017：minisign 发布制品、构建时信任根与 Release 导入](0017-signed-release-artifacts.md)
@@ -42,19 +38,19 @@
 - [ADR 0042：节点配置与面板部署管理](0042-node-settings-and-panel-operations.md)
 - [ADR 0043：运行时状态、脱敏日志与明确运维操作](0043-runtime-operations.md)
 - [ADR 0044：远程命令的持久状态和确认取消](0044-command-lifecycle.md)
+- [ADR 0059：管理员与代理用户 Passkey](0059-passkeys-and-proxy-user-access.md)
 
 ## 代理业务、协议与混合链路
-
-- [ADR 0076：节点库、来源预览与外部订阅授权](0076-node-catalog-and-external-access.md)（外部节点按人分配已由 ADR 0112 改为放进策略组）
 
 - [ADR 0020：链式中转的内部凭证、入口计量与依赖发布](0020-chained-transit.md)
 - [ADR 0023：服务器核心与 sing-box 代理业务分层](0023-proxy-business-boundary.md)
 - [ADR 0030：sing-box 业务搬迁与服务器启用证据](0030-singbox-plugin-business.md)
 - [ADR 0034：现代代理协议与托管证书](0034-modern-protocols-and-certificates.md)
-- [ADR 0035：sing-box 策略组、套餐快照与受控两跳链路](0035-singbox-policy-package-groups.md)（单独授权已由 ADR 0112 取消）
+- [ADR 0035：sing-box 策略组、套餐快照与受控两跳链路](0035-singbox-policy-package-groups.md)（单独授权已由 ADR 0112 取消，两台服务器的限制已由 ADR 0040 取代）
 - [ADR 0040：有序混合链路与机场订阅来源](0040-mixed-chains-and-subscriptions.md)
 - [ADR 0045：混合链路的执行与验证](0045-mixed-path-execution.md)
 - [ADR 0054：链路写入时复核资源快照与原选择](0054-chain-resource-snapshot-writes.md)
+- [ADR 0076：节点库、来源预览与外部订阅授权](0076-node-catalog-and-external-access.md)（外部节点按人分配已由 ADR 0112 改为放进策略组）
 - [ADR 0083：代理流量按天汇总与数据保留](0083-usage-daily-rollup-and-retention.md)
 - [ADR 0084：管理界面重排、节点页分区与离线时间](0084-admin-layout-and-node-sections.md)（导航分组已由 ADR 0086 取代）
 - [ADR 0085：重新架构：插件边界、订阅来源与链路模型（已接受，分阶段实施）](0085-rearchitecture-plugins-sources-chains.md)
@@ -87,31 +83,30 @@
 
 ## DDNS 与云资源插件
 
-- [ADR 0060：DDNS 双栈配置入口](0060-ddns-dual-stack-creation.md)
-
 - [ADR 0048：使用 Agent 已上报地址的 Cloudflare DDNS](0048-cloudflare-ddns.md)
 - [ADR 0056：多云 DDNS 插件](0056-multicloud-ddns.md)
+- [ADR 0060：DDNS 双栈配置入口](0060-ddns-dual-stack-creation.md)
 - [ADR 0057：阿里云 CDT 与公网带宽管理](0057-alicloud-cdt-management.md)
 - [ADR 0058：阿里云 ECS 启停、自动策略与费用缓存](0058-alicloud-power-and-billing-cache.md)
 
 ## PR151 追加决策及来源
 
-以下来自作者独立实现，按主线追加编号；本聊天整合验证另记。
+以下来自作者独立实现，按主线追加编号（作者原分支编号比文件编号小 2）；整合验证另记。
 
-- [ADR 0059：singbox-plugin-lifecycle](0061-singbox-plugin-lifecycle.md)
-- [ADR 0060：nodequality-artifact-lineages](0062-nodequality-artifact-lineages.md)
-- [ADR 0061：nodequality-input-collection](0063-nodequality-input-collection.md)
-- [ADR 0062：runtime-checkpoints-and-recovery-barriers](0064-runtime-checkpoints-and-recovery-barriers.md)
-- [ADR 0063：nodequality-factory-capacity](0065-nodequality-factory-capacity.md)
-- [ADR 0064：confirmed-diagnostic-completion](0066-confirmed-diagnostic-completion.md)
-- [ADR 0065：authorized-probe-leases](0067-authorized-probe-leases.md)
-- [ADR 0066：independent-node-ipquality](0068-independent-node-ipquality.md)
-- [ADR 0067：ipquality-derived-debian-inputs](0069-ipquality-derived-debian-inputs.md)
-- [ADR 0068：ipquality-minimal-profile-chain](0070-ipquality-minimal-profile-chain.md)
-- [ADR 0069：proxy-resource-batch-lifecycle](0071-proxy-resource-batch-lifecycle.md)
-- [ADR 0070：subscription-source-lifecycle](0072-subscription-source-lifecycle.md)
-- [ADR 0071：ordered-path-publication-and-native-probe](0073-ordered-path-publication-and-native-probe.md)
-- [ADR 0072：private-panel-certificate-authorities](0074-private-panel-certificate-authorities.md)
+- [ADR 0061：sing-box 两端插件与服务器安装流程](0061-singbox-plugin-lifecycle.md)
+- [ADR 0062：NodeQuality 整合的制品身份与未授权查询](0062-nodequality-artifact-lineages.md)
+- [ADR 0063：收集实际 Debian 诊断输入](0063-nodequality-input-collection.md)
+- [ADR 0064：精确运行确认与持久恢复屏障](0064-runtime-checkpoints-and-recovery-barriers.md)
+- [ADR 0065：NodeQuality 离线工厂的容量与失败证据](0065-nodequality-factory-capacity.md)
+- [ADR 0066：诊断结束也等待设备清理确认](0066-confirmed-diagnostic-completion.md)
+- [ADR 0067：周期拨测来源与可撤销执行许可](0067-authorized-probe-leases.md)
+- [ADR 0068：独立节点出口 IPQuality](0068-independent-node-ipquality.md)
+- [ADR 0069：从认证 Debian 缓存派生最小 IPQuality 输入](0069-ipquality-derived-debian-inputs.md)
+- [ADR 0070：IPQuality 最小闭包证明贯穿工厂与制品](0070-ipquality-minimal-profile-chain.md)
+- [ADR 0071：统一代理资源与原子链路创建](0071-proxy-resource-batch-lifecycle.md)
+- [ADR 0072：有界订阅导入与不可变来源版本](0072-subscription-source-lifecycle.md)
+- [ADR 0073：有序路径发布与具体出站验证](0073-ordered-path-publication-and-native-probe.md)
+- [ADR 0074：Agent 的可选私有面板 CA](0074-private-panel-certificate-authorities.md)
 
 ## 平台扩展（2026-10-03）
 
@@ -124,7 +119,7 @@
 
 ## 产品定位与界面（2026-10-24）
 
-- [ADR 0086：产品定位、功能分区与管理界面导航](0086-product-map-and-navigation.md)：七个功能区、服务器详情分页、设置拆分与前端目录；定位与归类规则见[功能地图](../product-map.md)
+- [ADR 0086：产品定位、功能分区与管理界面导航](0086-product-map-and-navigation.md)：七个功能区、服务器详情分页、设置拆分与前端目录；定位与归类规则见[功能地图](../product-map.md)（分组先后由 ADR 0098、0102、0126 取代）
 - [ADR 0087：收窄定位为代理网络控制平面：功能分级、用户门户与费用续费账本](0087-narrow-positioning-proxy-network.md)：核心、支撑、可选插件、降级与冻结清单，Xboard 迁移边界，新功能准入规则
 - [ADR 0088：界面重构：shadcn/ui Nova、Tailwind CSS v4 与统一交互库](0088-ui-component-system.md)：组件、设计变量、图标、动画、分栏、拖拽与界面状态的统一约定
 
@@ -153,20 +148,20 @@
 
 ## 界面重组（2026-10-25）
 
-- [ADR 0098：按使用逻辑重组界面：功能分级呈现、运维工具并入服务器详情与概览首页](0098-usage-driven-navigation-and-tiers.md)：六组 22 个入口、概览首页、实验与冻结的界面处理、服务器详情六个分页、备份归入系统、单一编辑位置
+- [ADR 0098：按使用逻辑重组界面：功能分级呈现、运维工具并入服务器详情与概览首页](0098-usage-driven-navigation-and-tiers.md)：六组 22 个入口、概览首页、实验与冻结的界面处理、服务器详情六个分页、备份归入系统、单一编辑位置（分组先后由 ADR 0102、0126 取代，地址规则由 ADR 0120 取代）
 
 ## 界面重新设计（2026-11-01）
 
-- [ADR 0102：连接韧性与控制台重新设计](0102-connection-resilience-and-console-redesign.md)：连接失败统一报告、读取超时、后台轮询不再使写入快照失效、错误边界、发版后自动恢复、单一页面顶栏、代理用户页三件事同屏与用户概况接口。
+- [ADR 0102：连接韧性与控制台重新设计](0102-connection-resilience-and-console-redesign.md)：连接失败统一报告、读取超时、后台轮询不再使写入快照失效、错误边界、发版后自动恢复、单一页面顶栏、代理用户页三件事同屏与用户概况接口（侧栏分组由 ADR 0126 取代）。
 - [ADR 0103：用户专属地址与 Cloudflare 账号保存](0103-per-user-subscription-hosts.md)：每个用户独立的订阅与登录主机名、重置即释放、一步保存 Cloudflare 令牌。
 
 ## 自维护运行时（2026-11-01）
 
-- [ADR 0104：自维护 sing-box 运行时，修复 REALITY 可被区分的行为](0104-self-maintained-singbox-runtime.md)
+- [ADR 0104：自维护 sing-box 运行时，修复 REALITY 可被区分的行为](0104-self-maintained-singbox-runtime.md)（运行时版本先后由 ADR 0119、0124 取代，补丁队列的做法继续有效）
 
 ## 服务器监控面板与界面视觉（2026-11-05）
 
-- [ADR 0111：服务器页即监控面板，界面改用「墨与玉」视觉](0111-server-monitor-and-ink-jade-visuals.md)：一台服务器一个页面，概况即监控面板；删去重复的统计、表单与外壳；概览绘制代理网络；轮询接口不再携带进程明细。
+- [ADR 0111：服务器页即监控面板，界面改用「墨与玉」视觉](0111-server-monitor-and-ink-jade-visuals.md)：一台服务器一个页面，概况即监控面板；删去重复的统计、表单与外壳；概览绘制代理网络；轮询接口不再携带进程明细（视觉部分由 ADR 0114 取代）。
 - [ADR 0114：「极光」配色、背景图、按钮与交互、新标识](0114-aurora-palette-backdrop-and-controls.md)：取代 0111 的视觉部分；半透明表面透出自绘背景图，按钮按 4px 递进并统一悬停、按下与聚焦反馈，新增 favicon。
 
 ## 代理用户收敛（2026-11-05）
@@ -181,7 +176,7 @@
 
 ## 订阅看板（2026-11-06）
 
-- [ADR 0117：订阅看板](0117-subscription-board.md)：概览的第四个分页，只放管理员自己付费的订阅（「费用与续费」中的 Wallos 式项目），每个一张卡片；第一版的代理用户订阅与订阅来源按用户要求去掉，转发拉取的记录保留。
+- [ADR 0117：订阅看板](0117-subscription-board.md)：概览的第四个分页，只放管理员自己付费的订阅（「费用与续费」中的 Wallos 式项目），每个一张卡片；第一版的代理用户订阅与订阅来源按用户要求去掉，转发拉取的记录保留（位置由 ADR 0126 改为费用与续费中的「付费服务」）。
 
 ## 费用与续费页面（2026-11-06）
 
@@ -189,11 +184,18 @@
 
 ## 旧服务同一份内核（2026-11-06）
 
-- [ADR 0119：运行时改用旧服务同一份内核](0119-legacy-service-kernel.md)：`1.14.0-apsp.1` 由上游 `v1.14.0-alpha.2` 加 cedar2025 分支 `2e665cb7` 的两个提交重建，依赖固定为旧服务二进制的版本，纯 Go 构建、标签与旧服务相同（另加统计接口）；去掉 ADR 0104 的 REALITY 仿真补丁；原生节点的 Snell v6、ACME 证书提供者等新配置不再支持。
-- [ADR 0120：页面地址按功能命名](0120-page-addresses-by-function.md)：地址与侧栏一致（`/#/home`、`/#/nodes`、`/#/users`、`/#/settings` 等），旧地址打开时改写为新地址。
+- [ADR 0119：运行时改用旧服务同一份内核](0119-legacy-service-kernel.md)：`1.14.0-apsp.1` 由上游 `v1.14.0-alpha.2` 加 cedar2025 分支 `2e665cb7` 的两个提交重建，依赖固定为旧服务二进制的版本，纯 Go 构建、标签与旧服务相同（另加统计接口）；去掉 ADR 0104 的 REALITY 仿真补丁；原生节点的 Snell v6、ACME 证书提供者等新配置不再支持（内核选择已由 ADR 0124 取代）。
+- [ADR 0120：页面地址按功能命名](0120-page-addresses-by-function.md)：地址与侧栏一致（`/#/home`、`/#/nodes`、`/#/users`、`/#/settings` 等），旧地址打开时改写为新地址（旧地址改写规则先后由 ADR 0122、0126 取代）。
+
+## 未发布阶段收敛与功能划分（2026-11-07）
 
 - [ADR 0121：CDT 监控补齐与源码制品分离](0121-cdt-monitor-alignment-and-source-artifacts.md)：分项采集时间、IPv6 地址、整体用量历史、Cron 与守护组合，生成的前端产物不再提交。
+- [ADR 0122：未发布阶段统一当前结构](0122-unreleased-schema-baseline.md)：空库初始化、当前基线核验、旧开发库手动重建（外部地址部分由 ADR 0126 取代）。
+- [ADR 0123：看板缓存一致性与分钟对比存储](0123-dashboard-cache-and-comparison-storage.md)
+- [ADR 0124：稳定内核与逐用户限制](0124-stable-runtime-and-user-limits.md)
+- [ADR 0125：按功能划分模块，内核只提供机制](0125-feature-modules.md)：模块化单体、功能地图、数据归属、上游归属与分阶段迁移，详见[功能划分与逻辑结构](../architecture.md)。
 
-- [0122：未发布阶段统一当前结构](0122-unreleased-schema-baseline.md)：空库初始化、当前基线核验、旧开发库手动重建。
+## 工作区、统一用语与界面语言（2026-11-08）
 
-- [0125：按功能划分模块，内核只提供机制](0125-feature-modules.md)：模块化单体、功能地图、数据归属、上游归属与分阶段迁移，详见[功能划分与逻辑结构](../architecture.md)。
+- [ADR 0126：六个工作区、统一用语与地址策略](0126-workspaces-language-and-addresses.md)：接受[重新设计方案](../redesign/README.md)第一部分；外部地址永不失效，控制台地址改名后至少保留一个版本的改写；入口属于功能模块。
+- [ADR 0127：界面以中文为源语言，英文为翻译](0127-chinese-source-language.md)：补记 2026-10-06 起的英文界面翻译，只提供中英两种界面语言。

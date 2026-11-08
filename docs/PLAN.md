@@ -1,5 +1,7 @@
 # Apsp MVP 执行计划
 
+> **状态：历史计划。** G1–G9 已于早期完成（见 PROGRESS），不再作为现行执行顺序；现行规则见 [AGENTS.md](../AGENTS.md)，后续工作的顺序见[路线图](roadmap.md)与[重新设计执行计划](redesign/09-execution.md)。
+
 以任务说明为验收基准，顺序推进 G1–G9。每阶段完成 fmt、clippy（-D warnings）、test，更新 PROGRESS 并提交 Conventional Commit。
 
 ## G1：基础结构

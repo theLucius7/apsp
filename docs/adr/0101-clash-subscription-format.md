@@ -1,5 +1,7 @@
 # ADR 0101：订阅支持 Clash Meta（mihomo）格式
 
+状态：已接受。
+
 ## 背景
 
 apsp 的订阅此前只有 sing-box JSON 和 Reality 分享链接两种格式。成员大多使用 Clash 系客户端：Clash Verge、FlClash、Clash Meta for Android 和 Stash。这些客户端读不了上述两种格式，导入订阅地址后得不到节点。用户要求订阅链接与订阅格式都支持 Clash。仓库约定原先把「Clash 订阅」列为排除项，这次由用户明确授权覆盖。

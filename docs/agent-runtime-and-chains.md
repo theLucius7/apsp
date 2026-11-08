@@ -1,5 +1,7 @@
 # Agent 运维与混合链路
 
+> **状态：使用文档，部分内容属于历史模型。**「sing-box 运维」一节仍然有效；链路与来源部分描述的是混合链路与数字编号来源时期的接口。现在新建链路只用有序模型（界面「创建链路」，接口 `POST /chains/ordered-batch`），外部来源只用 `/ordered-subscription-sources`；旧模型只经迁移与兼容流程进入，见[重新设计收敛方案 §2](redesign/07-convergence.md#2-新建只有一条路径)。
+
 本轮源码按 ADR 0043、0044、0045 实现。CI 继续暂停；本地检查与真实常驻设备、正式发布和生产迁移分别记录，不能互相代替。
 
 ## sing-box 运维
@@ -53,9 +55,9 @@ Unix 运行取消的范围为受管进程组，不保证控制自行建立新会
 | `GET/POST /servers/{id}/runtime-operations` | 运维历史与固定操作 |
 | `GET /proxy-resources` | 统一直连、链路列表 |
 | `GET/PATCH/DELETE /proxy-resources/{kind}/{id}` | 资源详情、名称与删除；kind 为 direct 或 chain |
-| `POST /chains/batch` | 带请求 UUID 的原子批量创建 |
+| `POST /chains/batch` | 混合链路的旧批量创建；界面已不调用，来源迁移后返回 409。新建用 `POST /chains/ordered-batch` |
 | `POST /proxy-resources/chain/{id}/apply-node-versions` | 带期望代数的节点版本应用，失败候选可用空版本集合重试 |
-| `GET/POST /subscription-sources` | 来源列表与新增 |
+| `GET/POST /subscription-sources` | 数字编号来源的列表与新增（历史模型）；新增外部来源用 `/ordered-subscription-sources` |
 | `GET/PATCH/DELETE /subscription-sources/{id}` | 脱敏详情、修改、归档与删除 |
 | `POST /subscription-sources/{id}/refresh` | 手动刷新 URL 来源 |
 | `GET /subscription-sources/{id}/nodes` | 已解析节点与不可用原因 |

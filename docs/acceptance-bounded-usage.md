@@ -1,5 +1,7 @@
 # 流量 outbox 有界读取独立验收
 
+> **状态：历史验收记录。** 文中“独立提交、独立 PR”是当时的交付方式，现行交付方式见 [AGENTS.md](../AGENTS.md)。
+
 对应第 1 步 P0「有界读取」与 [Issue #18](https://github.com/theLucius7/apsp/issues/18)。本次只处理 Agent 的流量账本读取、批次大小和传输调度；独立提交、独立 PR。
 
 ## 行为与预算

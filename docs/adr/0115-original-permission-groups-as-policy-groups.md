@@ -1,5 +1,7 @@
 # ADR 0115：原权限组并入策略组
 
+状态：已接受。
+
 ## 背景
 
 [ADR 0112](0112-group-only-access.md) 之后，自建节点只通过策略组授权，迁移用户却仍走另一套：用户的套餐通过 `singbox_nexus_plan_mappings` 对应一个原权限组，已接管的迁移线路按 `singbox_nexus_runtime_nodes.legacy_group_ids` 判断谁能用（[ADR 0095](0095-nexus-runtime-takeover.md)）。生产上 0086 没有任何单独授权可转，「策略组」页是空的，而 43 位迁移用户的线路全部来自三个原权限组（00、11、hk5）。

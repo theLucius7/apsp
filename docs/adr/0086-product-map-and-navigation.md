@@ -1,6 +1,6 @@
 # ADR 0086：产品定位、功能分区与管理界面导航
 
-- 状态：已实现；本地构建、单元测试和受影响的浏览器回归见 [PROGRESS](../../PROGRESS.md) 本轮记录，未在真实设备或生产面板上验收。
+- 状态：已实现；本地构建、单元测试和受影响的浏览器回归见 [PROGRESS](../../PROGRESS.md) 本轮记录，未在真实设备或生产面板上验收。决定 2 由 [ADR 0098](0098-usage-driven-navigation-and-tiers.md) 取代，“不改地址”由 [ADR 0120](0120-page-addresses-by-function.md) 取代，侧栏分组由 [ADR 0126](0126-workspaces-language-and-addresses.md) 取代。
 - 日期：2026-10-24。
 - 取代：[ADR 0084](0084-admin-layout-and-node-sections.md) 决定 1 中的五组导航；该 ADR 的其余决定（窄屏菜单、对话框挂载、节点页分区、同轮发布、按页拆分代码、离线时间）继续有效。
 - 后续：产品定位由 [ADR 0087](0087-narrow-positioning-proxy-network.md) 收窄为代理网络控制平面；分组组成与服务器详情分页由 [ADR 0098](0098-usage-driven-navigation-and-tiers.md) 按使用逻辑重组为六组，本 ADR 的其余决定继续有效。
