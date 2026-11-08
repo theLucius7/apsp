@@ -1,5 +1,7 @@
 # ADR 0089：Nexus 成员业务原生接入
 
+状态：部分被取代：钱包、销售套餐、订单与充值已由 [ADR 0113](0113-invitation-quota-without-commerce.md) 删除。
+
 用户要求整理当前部署的 Nexus，将功能添加到 apsp，为后续迁移准备，并明确统一到 apsp 的界面和架构。
 
 ## 决策

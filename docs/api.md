@@ -179,7 +179,7 @@
 | 方法与路径 | 请求或用途 |
 | --- | --- |
 | `GET /api/plugins/sing-box/proxy-resources` | 同一快照中的直连／链路公开资源数组；链路入口不作为直连重复出现 |
-| `GET /api/plugins/sing-box/proxy-resources/{kind}/{id}` | `kind=direct|chain`；类型与 ID 一起标识资源 |
+| `GET /api/plugins/sing-box/proxy-resources/{kind}/{id}` | `kind=direct\|chain`；类型与 ID 一起标识资源 |
 | `DELETE /api/plugins/sing-box/proxy-resources/direct/{id}` | 与旧节点删除共用策略和链路引用保护 |
 | `DELETE /api/plugins/sing-box/proxy-resources/chain/{id}` | 无策略引用时删除链路及专用入口；共享出口、历史流量和创建收据保持 |
 | `POST /api/plugins/sing-box/chains/batch` | 至多 32 行原子创建 mixed 链路，一次请求保存全部入口／链路或整批回滚；来源迁移后返回 409，新链路改用 `POST /chains/ordered-batch` |
@@ -315,9 +315,9 @@
 | `PATCH /api/plugins/sing-box/users/{id}` | `{"name":"新名称"}` |
 | `DELETE /api/plugins/sing-box/users/{id}` | 删除用户和全部现有授权；历史用量保留 |
 | `POST /api/plugins/sing-box/users/{id}/subscription/reset` | 无请求体，原子替换订阅令牌，返回 200 和更新后的完整用户对象 |
-| `GET /api/plugins/sing-box/users/{id}/accesses` | 用户的有效节点授权列表 |
-| `POST /api/plugins/sing-box/users/{id}/accesses` | `{"node_id":1}`，授权成功返回 200 |
-| `DELETE /api/plugins/sing-box/users/{user_id}/accesses/{node_id}` | 撤销授权，重复撤销仍返回 204 |
+| `GET /api/plugins/sing-box/users/{id}/accesses` | 用户的有效节点授权列表（由所属策略组推出） |
+
+按人单独授权的写接口（`POST /users/{id}/accesses`、`DELETE /users/{user_id}/accesses/{node_id}`）已随 [ADR 0112](adr/0112-group-only-access.md) 删除；用户只经策略组获得节点、链路与外部节点。
 
 用户对象为 `{"id":1,"name":"示例用户","subscription_token":"…","subscription_url":"https://panel.example.com/sub/…"}`。订阅令牌可直接获得该用户的代理凭据，界面应把订阅地址作为敏感内容按需展示或复制。
 
@@ -428,7 +428,7 @@
 
 `GET /api/artifacts` 返回签名与实际内容均验证通过的制品数组，每项包含 `name`、`version`、`arch`、`sha256`、`bytes`，例如 `{"name":"sing-box","version":"版本","arch":"amd64","sha256":"摘要","bytes":123}`。`arch` 可为旧 `amd64/arm64` 或精确签名 ABI。插件目录按组件身份归并不同版本和架构；`agent` 独立展示为基础组件，已登记插件为 `sing-box`、`nodequality`、`tcpquality`，未登记组件仅展示分发信息。此响应不是任何服务器的已安装列表，也不能代替服务器能力、版本或安全门禁检查。
 
-界面入口为「插件中心 → 插件目录」`/#/settings/plugins`，旧 `/#/artifacts` 书签继续可用。目录展示介绍与分发版本，选择服务器后跳转对应服务器的插件或诊断页，不发起安装、启用或任务；页面职责见 [插件中心与服务器执行边界](plugin-catalog.md)。
+界面入口为「插件中心 → 插件目录」`/#/settings/plugins`（ADR 0126 计划改称「系统 › 制品与版本」）；旧 `/#/artifacts` 书签已随 ADR 0122 停止改写，按 ADR 0126 不恢复。目录展示介绍与分发版本，选择服务器后跳转对应服务器的插件或诊断页，不发起安装、启用或任务；页面职责见 [插件中心与服务器执行边界](plugin-catalog.md)。
 
 `GET /api/artifacts/targets` 返回 `{default_targets,supported_targets}`，仅管理员可读取。默认目标由现有服务器上报的 Agent/运行时平台架构推断；没有可用上报时使用面板宿主平台。
 

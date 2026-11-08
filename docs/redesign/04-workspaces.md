@@ -1,6 +1,6 @@
 # 六工作区方案：全局页面、对象详情与系统设置的分工
 
-- 状态：提议（2026-11-07）。实施后取代[功能地图](../product-map.md)“侧栏与功能区”一节、[ADR 0098](../adr/0098-usage-driven-navigation-and-tiers.md) 与 [ADR 0102](../adr/0102-connection-resilience-and-console-redesign.md) 的分组部分。
+- 状态：已接受（[ADR 0126](../adr/0126-workspaces-language-and-addresses.md)，2026-11-08）。[功能地图](../product-map.md)已按本文改写目标结构；界面按[执行计划](09-execution.md)步骤 4 实施，实施前现有界面不变。
 - 依据：[设计依据](01-principles.md) R1、R2、R7、R8、R9、R10；对象定义见[对象词典](03-objects.md)，现有功能的去向见[功能盘点](02-inventory.md)。
 - 与 [ADR 0125](../adr/0125-feature-modules.md) 的关系：ADR 0125 规定代码与数据按功能模块划分，界面分组交给功能地图。本方案只调整界面分组与入口，**不改变任何模块的归属**；每个入口仍由一个功能模块提供（§2.3）。
 

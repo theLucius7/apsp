@@ -1,6 +1,6 @@
 # ADR 0098：按使用逻辑重组界面：功能分级呈现、运维工具并入服务器详情与概览首页
 
-- 状态：已实现。集中验证结果见 [PROGRESS](../../PROGRESS.md) 本轮记录；未在真实设备或生产面板上验收。
+- 状态：已实现。集中验证结果见 [PROGRESS](../../PROGRESS.md) 本轮记录；未在真实设备或生产面板上验收。侧栏分组先由 [ADR 0102](0102-connection-resilience-and-console-redesign.md)、再由 [ADR 0126](0126-workspaces-language-and-addresses.md) 取代；地址规则由 [ADR 0120](0120-page-addresses-by-function.md) 取代。
 - 日期：2026-10-25（审查与调研于 2026-10-24 完成）。
 - 取代：[ADR 0086](0086-product-map-and-navigation.md) 决定 2 的分组组成（七组，含 2026-10-24 把代理服务移到第一组的调整）与服务器详情的七个分页。ADR 0086 的其余决定继续有效：已发布的 Hash 路径不变、服务器详情只放这台服务器的事、告警设置与面板设置分开。
 - 落实：[ADR 0087](0087-narrow-positioning-proxy-network.md) 决定 3（各级别的界面处理）、[路线图](../roadmap.md) M0 工作包 0.2 与决定 D6。

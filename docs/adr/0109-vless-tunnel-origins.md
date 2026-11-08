@@ -1,5 +1,7 @@
 # ADR 0109：隧道后的 VLESS 源站
 
+状态：已接受。
+
 ## 背景
 
 Cloudflare 优选线路（HKT、TMNET、华为云、Azure HK/KR、Alice）的落地上，旧节点（xboard-node）以无 TLS 的 VLESS + WebSocket 监听一个本机端口，`cloudflared` 把隧道主机名（如 `ah.solve.ac`）转发到 `http://127.0.0.1:<端口>`。TLS 由 Cloudflare 边缘终止，客户端连 `edge.solve.ac:443`，SNI 和 Host 都是隧道主机名。

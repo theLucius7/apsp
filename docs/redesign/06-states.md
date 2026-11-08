@@ -1,6 +1,6 @@
 # 状态设计：保存、下发、应用、验证、失败
 
-- 状态：提议（2026-11-07）。
+- 状态：已接受（[ADR 0126](../adr/0126-workspaces-language-and-addresses.md)，2026-11-08）。状态用语自接受起用于新代码与文档；现有界面与存储按执行计划步骤 4 调整。
 - 依据：[设计依据](01-principles.md) R4、R11、R12；[ADR 0001](../adr/0001-declarative-snapshots.md) 期望状态与观察状态分开，[ADR 0007](../adr/0007-intent-journal.md) 意图日志，[ADR 0064](../adr/0064-runtime-checkpoints-and-recovery-barriers.md) 运行时检查点与恢复边界；Kubernetes 的 spec / status 约定（[设计依据 §3.8](01-principles.md#38-期望状态控制器的状态约定)）。
 - 范围：所有会下发到服务器或外部提供方的对象（运行时配置、节点、链路、用户凭据、Agent 设置），以及异步操作（远程命令、批量操作、诊断、来源刷新、DNS 同步、证书签发、云操作）。
 

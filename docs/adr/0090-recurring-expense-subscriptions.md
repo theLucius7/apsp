@@ -1,5 +1,7 @@
 # ADR 0090：Wallos 费用订阅配置原生接入
 
+状态：已接受；页面与账本的后续调整见 [ADR 0096](0096-costs-and-renewals-ledger.md)、[ADR 0118](0118-costs-and-renewals-page.md)。
+
 - 后续：入口、服务器项目与付款记录见 [ADR 0096](0096-costs-and-renewals-ledger.md)。
 
 用户要求将 Wallos 的订阅配置功能一起添加到 apsp。费用订阅表示需周期付款的服务，与代理成员购买的销售套餐分开。

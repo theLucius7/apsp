@@ -1,6 +1,6 @@
 # 核心对象词典
 
-- 状态：提议（2026-11-07）。接受后作为统一语言的唯一出处，[术语表](../glossary.md)与[功能地图](../product-map.md)“核心概念”“界面用语”两节并入本文（[执行计划 C7](09-execution.md#3-当前规范冲突清单)）。
+- 状态：已接受（[ADR 0126](../adr/0126-workspaces-language-and-addresses.md)，2026-11-08）。本文是对象与界面用语的唯一出处；[术语表](../glossary.md)只保留技术术语，[功能地图](../product-map.md)的“核心对象”“界面用语”两节引用本文。
 - 依据：[设计依据](01-principles.md) R1、R3、R5、R13、R14、R17；扫描基线 main `a32ec49b`。表名、函数名出自 `crates/panel/migrations/0001_current.sql`，Agent 状态库出自 `crates/agent-core/src/state/schema.sql`。
 
 ## 1. 怎样读这份词典

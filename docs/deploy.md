@@ -6,6 +6,8 @@
 
 ## 面板统一安装与运维
 
+> 本仓库自己的生产面板随 main 自动部署：部署器的 `apsp-deploy.timer` 每分钟检查 main，换镜像前在生产库结构副本上试启动新镜像，需要时先执行 `scripts/baseline-adoption-*.sql`；只改文档的提交只记录版本、不重启。规则见 [AGENTS.md](../AGENTS.md)「生产边界」与[数据库基线](database-baseline.md)「生产安装」。下面是自托管安装的通用步骤。
+
 需要 Python 3、可访问的 Docker Engine 及支持 `up --wait` 的 Compose 插件。工具沿用本仓库的 Compose 和 Dockerfile，不自动安装 Docker、不修改 DNS/防火墙。核对 `deploy/release-public-keys.json` 与[发布信任根说明](release.md)后运行：
 
 ```sh
@@ -169,7 +171,7 @@ SQL
 
 旧 0.3.0 及更早 Agent 的签名不包含后来新增的完整验机启动门禁。恢复既有安装前须先通过受控维护停止旧 Agent；入口不会自行停用运行中的服务。已有配置需 Python 3.11 或更新版本严格解析，预检只读取配置指定的状态库，未显式配置时使用原 `/var/lib/apsp/core/state.db`。systemd/OpenRC 状态与本地状态端点无法明确确认停止，或 SQLite/WAL/SHM、检查点损坏、读取期间变化时拒绝安装。`Preparing` 的 NodeQuality 完整任务（包括旧缺 plugin/mode 字段）被拒绝，原 JSON 不改；`Started` 保留精确旧版本，旧 Agent 只继续其确切 r2 及原参数回收，其他版本/新参数要求兼容的新签名 Agent，不能降级后把历史变成失败。门禁放行 daily 不代表旧 0.3.0 适配器支持 mode，实际日常执行仍需相应兼容的已签 Agent/包装器。接入前及激活前重复预检，最后拒绝时恢复旧配置；这不宣称能阻止其他特权操作者在预检后另行启动服务。
 
-正常部署无需在服务器编译运行时或 `docker cp` 制品。面板原“制品”页现为「插件中心 → [插件目录](plugin-catalog.md)」，只介绍插件和展示版本、架构，不再提供 Release 导入表单，也不在面板本机安装插件。旧 `/#/artifacts` 书签继续显示目录，新入口为 `/#/settings/plugins`。
+正常部署无需在服务器编译运行时或 `docker cp` 制品。面板原“制品”页现为「插件中心 → [插件目录](plugin-catalog.md)」（ADR 0126 计划改称「系统 › 制品与版本」），只介绍插件和展示版本、架构，不再提供 Release 导入表单，也不在面板本机安装插件。入口为 `/#/settings/plugins`；旧 `/#/artifacts` 书签已不再改写（ADR 0122、0126）。
 
 签名 Release 的准备属于部署维护流程。保留的管理员运维接口 `POST /api/artifacts/import-release` 按 [API 文档](api.md)的认证和 CSRF 要求提交已发布标签，可省略 `targets` 自动匹配服务器平台，或显式传入目标平台架构。自动匹配使用已接入服务器的上报信息；没有可用信息时默认面板宿主平台，新服务器与面板架构不同时应显式选择目标。ARM 目标仅下载兼容的 ARM 制品，不下载 AMD。完整签名 proof 始终保存并验证，草稿、缺签名、错误版本、归档或摘要不一致均拒绝。
 

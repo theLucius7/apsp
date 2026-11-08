@@ -1,5 +1,7 @@
 # DNS、证书与服务器网络配置
 
+> **状态：使用文档。** 对应 2026-10-03 的平台扩展，文中“本轮”指那一轮的实施与集中验收；功能的级别与位置以[功能地图](product-map.md)为准，验证结果以[当轮验收记录](acceptance/operations-platform-expansion.md)为准。
+
 此文对应用户清单第 10–13 组。源码与界面已进入根任务集中验证及失败修复阶段，最终结果以[本轮验收记录](acceptance/operations-platform-expansion.md)为准；尚未执行真实 DNS/服务器操作。配置已保存、提供方已接受、Agent 已执行与真实观察成功是不同状态。
 
 ## DNS 与 DDNS

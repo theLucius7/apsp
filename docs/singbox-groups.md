@@ -44,9 +44,10 @@
 | --- | --- | --- |
 | `/policy-groups` | GET / POST | 列出、创建策略组 |
 | `/policy-groups/{id}` | PUT / DELETE | 完整替换策略组、删除未分配的组 |
-| `/chains`、`/chains/{id}` | GET / POST、DELETE | 列出、创建、删除两跳链路 |
+| `/chains`、`/chains/{id}` | GET / POST、DELETE | 列出与删除链路；`POST /chains` 固定返回 409，新建链路用 `/chains/ordered-batch` |
 | `/proxy-resources`、`/proxy-resources/{kind}/{id}` | GET、GET / DELETE | 统一公开资源与完整资源删除；kind 为 direct 或 chain |
-| `/chains/batch` | POST | 原子批量创建独立入口与两跳，绑定提交键 |
+| `/chains/ordered-batch` | POST | 创建有序链路（含两跳模板），绑定提交键；这是唯一的新建入口 |
+| `/chains/batch` | POST | 混合链路的旧批量创建：界面已不调用，来源迁移后返回 409，见[收敛方案](redesign/07-convergence.md#2-新建只有一条路径) |
 | `/package-groups` | GET / POST | 列出未归档模板、创建模板 |
 | `/package-groups/{id}` | PUT / DELETE | 编辑模板、归档模板 |
 | `/users/{id}/policy-groups` | GET / PUT | 读取或完整替换用户的策略组集合 |
