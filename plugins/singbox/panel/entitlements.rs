@@ -45,12 +45,10 @@ pub async fn get(
     Ok(Json(value))
 }
 
-// Serialize group topology and assignment changes before taking user/server locks.
+// Serialize group topology and assignment changes before taking user/server locks. The lock
+// belongs to publication; existing callers move to `business::lock_publication` in phase C.
 pub(crate) async fn lock(tx: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error> {
-    sqlx::query("SELECT pg_advisory_xact_lock(73201001)")
-        .execute(&mut **tx)
-        .await?;
-    Ok(())
+    crate::business::lock_publication(tx).await
 }
 
 /// Persist eligibility transitions so expiry/reset also publish without HTTP traffic.

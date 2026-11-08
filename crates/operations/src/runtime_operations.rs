@@ -138,3 +138,47 @@ pub async fn complete(
     tx.commit().await?;
     Ok(Json(TaskAck { ids: vec![id] }))
 }
+
+/// Whether a server has an unexpired operation in flight or one requested in the last five
+/// seconds; a new request waits for it instead of piling up.
+pub async fn busy(connection: &mut sqlx::PgConnection, server: i64, now: i64) -> ApiResult<bool> {
+    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM runtime_operations WHERE server_id=$1 AND result IS NULL AND cancelled_at IS NULL AND (spec->>'expires_at')::bigint>$2) OR EXISTS(SELECT 1 FROM runtime_operations WHERE server_id=$1 AND requested_at>$2-5)")
+        .bind(server)
+        .bind(now)
+        .fetch_one(connection)
+        .await?)
+}
+
+/// Queues one runtime operation for a module on a server.
+pub async fn enqueue(
+    connection: &mut sqlx::PgConnection,
+    server: i64,
+    module: &str,
+    request: &RuntimeOperationRequest,
+) -> ApiResult<()> {
+    sqlx::query("INSERT INTO runtime_operations(id,server_id,module,requested_at,spec) VALUES($1,$2,$3,$4,$5)")
+        .bind(request.id)
+        .bind(server)
+        .bind(module)
+        .bind(request.requested_at)
+        .bind(serde_json::to_value(request).map_err(anyhow::Error::from)?)
+        .execute(connection)
+        .await?;
+    Ok(())
+}
+
+/// The latest operation of a module on a server whose session filter names a principal
+/// matching `pattern`, as `{id, requested_at, expires_at, operation, result}`.
+pub async fn latest_for_principal(
+    connection: &mut sqlx::PgConnection,
+    server: i64,
+    module: &str,
+    pattern: &str,
+) -> ApiResult<Vec<Value>> {
+    Ok(sqlx::query_scalar("SELECT jsonb_build_object('id',id,'requested_at',requested_at,'expires_at',(spec->>'expires_at')::bigint,'operation',spec->>'operation','result',result) FROM runtime_operations WHERE server_id=$1 AND module=$2 AND EXISTS(SELECT 1 FROM jsonb_array_elements_text(spec->'session_filter'->'principals') p WHERE p.value ~ $3) ORDER BY requested_at DESC,id DESC LIMIT 1")
+        .bind(server)
+        .bind(module)
+        .bind(pattern)
+        .fetch_all(connection)
+        .await?)
+}

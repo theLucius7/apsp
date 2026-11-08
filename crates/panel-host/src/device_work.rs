@@ -7,7 +7,8 @@
 //! operations decide); the application connects it at startup. Without a connection no
 //! work is accepted.
 
-use apsp_protocol::fleet::Operation;
+use apsp_protocol::{RuntimeOperationRequest, fleet::Operation};
+use serde_json::Value;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
@@ -42,6 +43,33 @@ pub trait DeviceWork: Send + Sync {
         actor: i64,
         operation: Operation,
     ) -> BoxFuture<'a, ApiResult<Uuid>>;
+
+    /// Whether the device has a runtime operation in flight, or one requested in the last
+    /// few seconds; a new request waits for it instead of piling up.
+    fn runtime_busy_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        server: i64,
+        now: i64,
+    ) -> BoxFuture<'a, ApiResult<bool>>;
+
+    /// Queues a runtime operation for the module the request names.
+    fn submit_runtime_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        server: i64,
+        request: &'a RuntimeOperationRequest,
+    ) -> BoxFuture<'a, ApiResult<()>>;
+
+    /// The latest runtime operation of a module whose session filter names a principal
+    /// matching `pattern`, as `{id, requested_at, expires_at, operation, result}`.
+    fn latest_runtime_for_principal_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        server: i64,
+        module: &'a str,
+        pattern: &'a str,
+    ) -> BoxFuture<'a, ApiResult<Vec<Value>>>;
 }
 
 static WORK: Port<dyn DeviceWork> = Port::new();
@@ -85,5 +113,32 @@ pub async fn submit_observation_tx(
 ) -> ApiResult<Uuid> {
     required()?
         .submit_observation_tx(tx, server, actor, operation)
+        .await
+}
+
+pub async fn runtime_busy_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    now: i64,
+) -> ApiResult<bool> {
+    required()?.runtime_busy_tx(tx, server, now).await
+}
+
+pub async fn submit_runtime_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    request: &RuntimeOperationRequest,
+) -> ApiResult<()> {
+    required()?.submit_runtime_tx(tx, server, request).await
+}
+
+pub async fn latest_runtime_for_principal_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    module: &str,
+    pattern: &str,
+) -> ApiResult<Vec<Value>> {
+    required()?
+        .latest_runtime_for_principal_tx(tx, server, module, pattern)
         .await
 }

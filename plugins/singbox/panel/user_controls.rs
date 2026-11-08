@@ -62,8 +62,7 @@ pub async fn put(
     sqlx::query("INSERT INTO singbox_user_controls(user_id,paused,revision,updated_at) VALUES($1,$2,$3,$4) ON CONFLICT(user_id) DO UPDATE SET paused=EXCLUDED.paused,revision=EXCLUDED.revision,updated_at=EXCLUDED.updated_at")
         .bind(id).bind(request.paused).bind(request.expected_revision+1).bind(now).execute(&mut *tx).await?;
     business::mark_dirty(&mut tx, &hosts).await?;
-    sqlx::query("INSERT INTO singbox_operation_events(administrator_id,user_id,action,detail,created_at) VALUES($1,$2,'user_control_updated',$3,$4)")
-        .bind(administrator).bind(id).bind(json!({"paused":request.paused,"previous_paused":previous.is_some_and(|(paused,_)|paused),"server_ids":hosts})).bind(now).execute(&mut *tx).await?;
+    crate::operations_workflows::event(&mut tx, Some(administrator), Some(id), "user_control_updated", json!({"paused":request.paused,"previous_paused":previous.is_some_and(|(paused,_)|paused),"server_ids":hosts})).await?;
     tx.commit().await?;
     Ok(Json(
         json!({"paused":request.paused,"revision":request.expected_revision+1,"updated_at":now}),

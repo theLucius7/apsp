@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use apsp_costs::renewals::{self, RenewalReference, RenewalSources};
 use apsp_naming as naming;
-use apsp_operations::fleet;
+use apsp_operations::{fleet, runtime_operations};
 use apsp_panel_host::{
     AppState,
     agent_api::{self, DeviceReports},
@@ -27,8 +27,9 @@ use apsp_panel_host::{
 use apsp_plugin_singbox as singbox;
 use apsp_protocol::{
     AppliedRevisions, ApplyResult, DiagnosticCancelResult, Metrics, ModuleManifest,
-    RetirementResult, RuntimeCheckpointResult, RuntimeControlAck, RuntimePathProbeResult,
-    RuntimeRecoveryBarrierResult, RuntimeSessionReport, StaticInfo, UsageBatch, fleet::Operation,
+    RetirementResult, RuntimeCheckpointResult, RuntimeControlAck, RuntimeOperationRequest,
+    RuntimePathProbeResult, RuntimeRecoveryBarrierResult, RuntimeSessionReport, StaticInfo,
+    UsageBatch, fleet::Operation,
 };
 use axum::http::Method;
 use serde_json::Value;
@@ -282,6 +283,41 @@ impl DeviceWork for Wiring {
     ) -> BoxFuture<'a, ApiResult<Uuid>> {
         Box::pin(fleet::enqueue_readonly_for_actor_tx(
             tx, server, actor, operation,
+        ))
+    }
+
+    fn runtime_busy_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        server: i64,
+        now: i64,
+    ) -> BoxFuture<'a, ApiResult<bool>> {
+        Box::pin(runtime_operations::busy(tx, server, now))
+    }
+
+    fn submit_runtime_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        server: i64,
+        request: &'a RuntimeOperationRequest,
+    ) -> BoxFuture<'a, ApiResult<()>> {
+        Box::pin(runtime_operations::enqueue(
+            tx,
+            server,
+            &request.module,
+            request,
+        ))
+    }
+
+    fn latest_runtime_for_principal_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        server: i64,
+        module: &'a str,
+        pattern: &'a str,
+    ) -> BoxFuture<'a, ApiResult<Vec<Value>>> {
+        Box::pin(runtime_operations::latest_for_principal(
+            tx, server, module, pattern,
         ))
     }
 }

@@ -91,12 +91,13 @@ try {
       else if (path === `${prefix}/users/1/portal`) value = { configuration: { enabled: false, reason: 'TEST_ONLY 尚未启用', origin }, keys: 0, url: null, activation_expires_at: null }
       else if (method === 'GET' && !url.search && path === `${prefix}/users/1/diagnosis`) value = diagnosisFixture(user)
       else if (method === 'GET' && !url.search && path === `${prefix}/users/1/client-template`) value = templateFixture
+      else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/limits$/.test(path)) value = { user_id: Number(path.split('/')[5]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } // Per-user limits (ADR 0124) are read on the user page; none are set here.
       else assert.fail(`Unexpected read: ${path}`)
       await route.fulfill({ json: value }).catch(() => {})
     })
     try {
       await installControlCenterFixtures(page)
-      await page.goto(`${origin}/#/home/${pageName}`)
+      await page.goto(`${origin}/#/${pageName}`)
       const edit = pageName === 'groups' ? page.getByRole('row').filter({ hasText: row.name }).getByRole('button', { name: '编辑', exact: true }) : page.locator('[data-slot=user-heading]').getByRole('button', { name: '编辑', exact: true })
       await wait(() => edit.isEnabled(), 'Initial snapshots must finish')
       await edit.click()

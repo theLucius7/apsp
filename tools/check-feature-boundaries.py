@@ -379,6 +379,55 @@ def crate_root(path):
     return None
 
 
+CFG_TEST_MOD = re.compile(r"#\[cfg\(test\)\]\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{")
+
+
+def literal_end(text, i):
+    """Index just past a string, raw string, char literal or comment starting at i, else None."""
+    if text.startswith("//", i):
+        end = text.find("\n", i)
+        return len(text) if end < 0 else end
+    if text.startswith("/*", i):
+        depth, i = 1, i + 2
+        while i < len(text) and depth:
+            if text.startswith("/*", i):
+                depth, i = depth + 1, i + 2
+            elif text.startswith("*/", i):
+                depth, i = depth - 1, i + 2
+            else:
+                i += 1
+        return i
+    raw = re.compile(r'b?r(#*)"').match(text, i)
+    if raw and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")):
+        end = text.find('"' + raw.group(1), raw.end())
+        return len(text) if end < 0 else end + 1 + len(raw.group(1))
+    if text[i] == '"':
+        i += 1
+        while i < len(text) and text[i] != '"':
+            i += 2 if text[i] == "\\" else 1
+        return i + 1
+    char = re.compile(r"'(?:\\.[^']*|[^'\\])'").match(text, i)
+    return char.end() if char else None
+
+
+def without_test_modules(text):
+    """Blank out inline `#[cfg(test)] mod … { … }` bodies; test fixtures there seed every owner."""
+    out = list(text)
+    for match in CFG_TEST_MOD.finditer(text):
+        i, depth = match.end(), 1
+        while i < len(text) and depth:
+            end = literal_end(text, i)
+            if end is not None:
+                i = end
+                continue
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            i += 1
+        for k in range(match.start(), min(i, len(text))):
+            if out[k] != "\n":
+                out[k] = " "
+    return "".join(out)
+
+
 def rust_crossings(root, config, owners):
     crossings = set()
     rank, published = ranks(config), set(config["domains"].get("published", []))
@@ -391,7 +440,7 @@ def rust_crossings(root, config, owners):
         owner = path_owner(rel, config["rust"])
         if owner is None or TEST_FILE.search(rel):
             continue
-        text = path.read_text(errors="replace")
+        text = without_test_modules(path.read_text(errors="replace"))
         for include in PATH_ATTR.findall(text):
             target = (path.parent / include).resolve()
             if crate_root(target) != crate_root(path):

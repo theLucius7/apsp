@@ -123,6 +123,17 @@ pub(crate) fn validate_node(node: &NodeRow) -> ApiResult<()> {
     Ok(())
 }
 
+/// Serialize changes to anything publication compiles (group topology, assignments, nodes and
+/// server configuration) with publication itself. Take it before user or server row locks.
+pub(crate) async fn lock_publication(
+    transaction: &mut Transaction<'_, Postgres>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("SELECT pg_advisory_xact_lock(73201001)")
+        .execute(&mut **transaction)
+        .await?;
+    Ok(())
+}
+
 pub(crate) async fn lock_server(
     transaction: &mut Transaction<'_, Postgres>,
     id: i64,
