@@ -1400,3 +1400,66 @@ async fn a_line_configuration_is_revised_in_place(pool: PgPool) -> Result<()> {
     );
     Ok(())
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn redeploy_repeats_a_running_hosts_bundle_as_a_higher_revision(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, payload, _user) = fixture(&panel).await?;
+    let preview = ok(post(&panel, &cookie, "/preview", json!({"payload":payload})).await?).await?;
+    ok(post(
+        &panel,
+        &cookie,
+        "/prepare",
+        json!({"payload":payload,"expected_digest":preview["digest"]}),
+    )
+    .await?)
+    .await?;
+    sqlx::query("UPDATE singbox_nexus_runtime_hosts SET state='active',activated_at=1,last_activated_at=1 WHERE server_id=$1")
+        .bind(server)
+        .execute(&pool)
+        .await?;
+    sqlx::query("UPDATE server_plugins SET enabled=TRUE WHERE server_id=$1")
+        .bind(server)
+        .execute(&pool)
+        .await?;
+    publisher::publish_due(&panel.state).await?;
+    sqlx::query("UPDATE servers SET dirty_at=0")
+        .execute(&pool)
+        .await?;
+    publisher::publish_due(&panel.state).await?;
+    let revisions = || async {
+        sqlx::query_as::<_, (i64, String)>(
+            "SELECT rev,bundle_sha256 FROM deployments WHERE server_id=$1 ORDER BY rev",
+        )
+        .bind(server)
+        .fetch_all(&pool)
+        .await
+    };
+    let before = revisions().await?;
+    let (current, digest) = before.last().cloned().expect("running host deployment");
+
+    // A running migrated host takes the same administrator recovery as any other server.
+    business_support::prove(&pool, &cookie).await?;
+    let response = panel
+        .admin(
+            Method::POST,
+            &format!("/api/plugins/sing-box/servers/{server}/deployments/redeploy"),
+            &cookie,
+            None,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await?;
+    assert_eq!(body["revision"], current + 1);
+    let after = revisions().await?;
+    assert_eq!(after.len(), before.len() + 1);
+    assert_eq!(after.last(), Some(&(current + 1, digest)));
+    // Scheduled publication of the unchanged host keeps the repeated revision.
+    sqlx::query("UPDATE servers SET dirty_at=0")
+        .execute(&pool)
+        .await?;
+    publisher::publish_due(&panel.state).await?;
+    assert_eq!(revisions().await?.len(), after.len());
+    Ok(())
+}

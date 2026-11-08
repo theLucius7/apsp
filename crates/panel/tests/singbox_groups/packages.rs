@@ -1,3 +1,4 @@
+use super::business_support::prove;
 use super::*;
 use base64::{Engine, engine::general_purpose::STANDARD};
 
@@ -437,21 +438,6 @@ async fn subscription_headers_report_cycle_usage_quota_expiry_and_profile(
         header(&response, "profile-title")?,
         format!("base64:{}", STANDARD.encode("Unmetered"))
     );
-    Ok(())
-}
-
-/// Marks the admin session as recently re-authenticated, which applying an operation requires.
-async fn prove(pool: &PgPool, cookie: &str) -> Result<()> {
-    let token = cookie
-        .strip_prefix("apsp_session=")
-        .context("session cookie")?;
-    let now = now_timestamp();
-    sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET verified_at=$2,expires_at=$3")
-        .bind(apsp_panel::auth::hash_token(token))
-        .bind(now)
-        .bind(now + 300)
-        .execute(pool)
-        .await?;
     Ok(())
 }
 

@@ -173,3 +173,43 @@ pub async fn check(
         checks,
     }))
 }
+
+#[derive(Serialize)]
+pub struct Redeployed {
+    pub revision: u64,
+}
+
+/// Publishes the server's current configuration again as a new revision (see
+/// `publisher::redeploy`). When the service manager restarted the runtime outside the Agent,
+/// for example on a host reboot, the Agent restarts it once under its control and certifies
+/// the new instance; a runtime that is still the certified one is not restarted.
+pub async fn redeploy(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<Redeployed>> {
+    crate::control_center::require_capability(&state, &headers, "proxy:write").await?;
+    crate::control_center::require_server(&state, &headers, id, "proxy:write").await?;
+    crate::control_center::require_recent_proof(&state, &headers).await?;
+    let mut tx = state.pool.begin().await?;
+    super::business::lock_server(&mut tx, id).await?;
+    super::settings::require_enabled(&mut tx, id).await?;
+    let deployed: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM deployments WHERE server_id=$1 AND module='singbox')",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    if !deployed {
+        return Err(ApiError::Conflict(
+            "此服务器还没有部署过配置，不需要重新部署".into(),
+        ));
+    }
+    let revision = super::publisher::redeploy(&state, id).await?.ok_or_else(|| {
+        ApiError::Conflict(
+            "暂时不能生成新版本：配置正在发布，或有等待确认的部署预检。请稍后重试，或先完成部署预检".into(),
+        )
+    })?;
+    Ok(Json(Redeployed { revision }))
+}

@@ -25,6 +25,22 @@ pub mod deployment;
 pub mod release_fixture;
 
 pub type Socket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
+
+/// Marks the admin session as recently re-authenticated, which applying an operation or
+/// restarting a runtime requires.
+pub async fn prove(pool: &PgPool, cookie: &str) -> Result<()> {
+    let token = cookie
+        .strip_prefix("apsp_session=")
+        .context("session cookie")?;
+    let now = apsp_protocol::now_timestamp();
+    sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET verified_at=$2,expires_at=$3")
+        .bind(apsp_panel::auth::hash_token(token))
+        .bind(now)
+        .bind(now + 300)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
 const PASSWORD: &str = "business-test-password";
 
 pub struct TestPanel {

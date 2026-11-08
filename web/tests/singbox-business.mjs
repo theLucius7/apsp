@@ -76,7 +76,7 @@ try {
       { ...exitMetadata, id: 4, name: '版本不一致的服务器', installation: { state: 'ready', reason: '不一致夹具不能认证应用成功。', target_rev: 4, applied_rev: 3 } },
       { ...exitMetadata, id: 5, name: '离线入口服务器', online: false, installation: { state: 'offline', reason: '入口夹具当前离线。', target_rev: 2, applied_rev: 1 } },
     ]
-    let chainsFailure = false, chainFixtures = false, pluginServersFailure = false, nodesEmpty = false, deploymentFailure = false
+    let chainsFailure = false, chainFixtures = false, pluginServersFailure = false, nodesEmpty = false, deploymentFailure = false, deploymentError = null
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
       requests.push(path)
@@ -99,8 +99,12 @@ try {
         assert.equal(metadata.enabled, true)
         if (deploymentFailure) { await route.fulfill({ status: 500, json: { error: '部署夹具读取失败' } }); return }
         const installation = metadata.installation
-        value = { status: installation?.target_rev > 0 ? { module: 'singbox', target_rev: installation.target_rev, applied_rev: installation.applied_rev, last_result_rev: installation.applied_rev, healthy: installation.state === 'ready', last_error: null, updated_at: now } : null,
+        value = { status: installation?.target_rev > 0 ? { module: 'singbox', target_rev: installation.target_rev, applied_rev: installation.applied_rev, last_result_rev: installation.applied_rev, healthy: installation.state === 'ready', last_error: deploymentError, updated_at: now } : null,
           pending: ['queued', 'pending'].includes(installation?.state), enabled_nodes: node.enabled === false ? 0 : 1, authorized_nodes: 0, history: [] }
+      } else if (path === '/api/plugins/sing-box/servers/1/deployments/redeploy') {
+        assert.equal(route.request().method(), 'POST')
+        metadata.installation = { state: 'pending', reason: '重新部署已生成新版本，等待设备应用。', target_rev: 6, applied_rev: 5 }
+        deploymentError = null; value = { revision: 6 }
       } else if (path === '/api/plugins/sing-box/nodes/2') {
         assert.equal(route.request().method(), 'PATCH')
         const payload = route.request().postDataJSON()
@@ -476,6 +480,27 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     assert.deepEqual(errors, [])
     assert.equal(requests.some(path => ['/api/nodes', '/api/users', '/api/usage'].includes(path)), false)
+
+    // A runtime restarted outside the Agent (a host reboot): the card says so in plain words
+    // and offers a redeploy, which asks for confirmation before it publishes a new revision.
+    metadata.installation = { state: 'failed', reason: 'TEST_ONLY 运行时被系统重新启动。', target_rev: 5, applied_rev: 5 }
+    deploymentError = 'controlled runtime instance differs from the successfully applied activation'
+    await page.goto(`${origin}/#/servers/1/plugins`)
+    await page.getByText('运行时在 Agent 之外被重新启动过', { exact: true }).waitFor()
+    const redeploys = () => mutations.filter(entry => entry.path === '/api/plugins/sing-box/servers/1/deployments/redeploy').length
+    await page.getByRole('button', { name: '重新部署', exact: true }).click()
+    const confirmation = page.getByRole('alertdialog', { name: '重新部署当前配置？' })
+    await confirmation.getByRole('button', { name: '取消', exact: true }).click()
+    await confirmation.waitFor({ state: 'hidden' })
+    assert.equal(redeploys(), 0, 'cancelling must not publish')
+    await page.getByRole('button', { name: '重新部署', exact: true }).click()
+    await confirmation.getByRole('button', { name: '重新部署', exact: true }).click()
+    await confirmation.waitFor({ state: 'hidden' })
+    await page.getByText('已生成版本 6，等待设备应用。', { exact: true }).waitFor()
+    assert.equal(redeploys(), 1)
+    assert.equal(await page.getByText('运行时在 Agent 之外被重新启动过', { exact: true }).count(), 0)
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    assert.deepEqual(errors, [])
     await page.close()
   }
   console.log('PASS: dist desktop/mobile, support does not enable business, queued/failed/ready installation and conservative legacy fallback, overview/server-node selection/settings preservation/deployment stale-failure guard/ungranted chain creation, either-endpoint server filtering/details/application states/unknown and stale-failure guards, listener/relay roles/enrollment navigation, statistics route and administrator/proxy-user separation, canonical APIs')
