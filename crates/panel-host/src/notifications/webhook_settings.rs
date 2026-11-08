@@ -3,11 +3,11 @@ use super::{
     webhook::{self, Config, Preset},
 };
 use crate::{
-    AppState, auth,
+    AppState,
     error::{ApiError, ApiResult},
     settings,
 };
-use axum::{Json, extract::State, http::HeaderMap};
+use axum::Json;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -21,8 +21,7 @@ pub(super) fn view(config: Option<&Config>) -> Value {
     })
 }
 
-pub async fn get(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
-    auth::require_admin(&state, &headers).await?;
+pub async fn current(state: &AppState) -> ApiResult<Json<Value>> {
     Ok(Json(view(
         settings::read(&state.pool).await?.webhook.as_ref(),
     )))
@@ -40,12 +39,7 @@ pub struct Update {
     clear_headers: bool,
 }
 
-pub async fn update(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(update): Json<Update>,
-) -> ApiResult<Json<Value>> {
-    auth::require_admin(&state, &headers).await?;
+pub async fn apply(state: &AppState, update: Update) -> ApiResult<Json<Value>> {
     let mut tx = state.pool.begin().await?;
     let mut settings = lock_settings(&mut tx).await?;
     // Changing provider never inherits credentials or templates from the previous provider.
@@ -113,8 +107,7 @@ fn same_origin(left: &str, right: &str) -> bool {
     }
 }
 
-pub async fn remove(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
-    auth::require_admin(&state, &headers).await?;
+pub async fn clear(state: &AppState) -> ApiResult<Json<Value>> {
     let mut tx = state.pool.begin().await?;
     let mut settings = lock_settings(&mut tx).await?;
     settings.webhook = None;

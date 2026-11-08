@@ -3,6 +3,7 @@ mod backup_executor;
 mod backups;
 mod cancellation_reminders;
 mod cloud;
+pub mod deployment_automation;
 mod hetzner;
 mod incidents;
 mod model;

@@ -1,12 +1,9 @@
-//! Business-owned descriptions consumed by the panel host through plugin hooks.
+//! Descriptions of the runtime's routes, objects and steps that administration and
+//! operations read; the application connects them to those owners' interfaces.
 
 use std::collections::BTreeSet;
 
-use apsp_panel_host::{
-    AppState,
-    error::ApiResult,
-    plugin_api::{RuntimeStepPolicy, SearchSource},
-};
+use apsp_panel_host::{AppState, control_center::contributions::SearchSource, error::ApiResult};
 use serde_json::{Value, json};
 
 pub fn sensitive_key(key: &str) -> bool {
@@ -29,8 +26,14 @@ pub fn worker_names() -> &'static [&'static str] {
     &["sing-box"]
 }
 
-pub fn runtime_step_policy(kind: &str) -> Option<RuntimeStepPolicy> {
-    (kind == "singbox_retry_deployment").then_some(RuntimeStepPolicy {
+/// Runtime version and capability that an operations step on this runtime requires.
+pub struct RuntimeStepRequirement {
+    pub version: &'static str,
+    pub capability: &'static str,
+}
+
+pub fn runtime_step_policy(kind: &str) -> Option<RuntimeStepRequirement> {
+    (kind == "singbox_retry_deployment").then_some(RuntimeStepRequirement {
         version: crate::RUNTIME_VERSION,
         capability: "proxy:write",
     })

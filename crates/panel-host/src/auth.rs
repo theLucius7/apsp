@@ -13,11 +13,9 @@ use axum::{
     http::{HeaderMap, HeaderValue, header},
     response::{IntoResponse, Response},
 };
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rand::{RngCore, rngs::OsRng};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
 use std::net::SocketAddr;
 
@@ -27,20 +25,10 @@ pub(crate) mod rate_limit;
 pub(crate) mod security;
 mod totp;
 
+pub use crate::tokens::{hash_token, random_token};
 pub use security::{password_change, totp_confirm, totp_disable, totp_setup, totp_status};
 
 const ADMIN_SESSION_SECONDS: i64 = 86_400;
-
-pub fn random_token() -> String {
-    let mut bytes = [0_u8; 32];
-    OsRng.fill_bytes(&mut bytes);
-    URL_SAFE_NO_PAD.encode(bytes)
-}
-
-pub fn hash_token(token: &str) -> String {
-    let digest = Sha256::digest(token.as_bytes());
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
-}
 
 pub async fn ensure_admin(pool: &PgPool, password: Option<&str>) -> anyhow::Result<()> {
     let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM admins WHERE id = 1)")

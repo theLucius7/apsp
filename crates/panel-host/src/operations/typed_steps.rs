@@ -41,7 +41,7 @@ pub(super) async fn preview(
             for server in targets {
                 candidates.insert(
                     server.to_string(),
-                    crate::plugin_api::automation_candidate(state, tx, *server).await?,
+                    super::deployment_automation::automation_candidate(state, tx, *server).await?,
                 );
             }
             previews.push(json!({"position":position,"kind":step.kind,"targets":candidates,"version":step.runtime_version,"scope":"仅重新应用固定失败部署，不生成新的业务配置或选择其他版本"}));
@@ -161,7 +161,7 @@ pub(super) async fn enqueue_runtime(
     let candidate = frozen["targets"]
         .get(server.to_string())
         .ok_or_else(|| ApiError::Conflict("服务器的固定失败部署候选缺失".into()))?;
-    let request = crate::plugin_api::enqueue_automation_deployment_tx(
+    let request = super::deployment_automation::enqueue_automation_deployment_tx(
         state, tx, server, job, actor, candidate, expires,
     )
     .await?;
@@ -175,7 +175,8 @@ pub(super) async fn sync(tx: &mut Transaction<'_, Postgres>, job: Uuid, now: i64
         .bind(job).fetch_all(&mut **tx).await?;
     for row in runtime {
         let request: Uuid = row.get("runtime_operation_id");
-        let receipt = crate::plugin_api::automation_deployment_receipt(tx, request).await?;
+        let receipt =
+            super::deployment_automation::automation_deployment_receipt(tx, request).await?;
         let state = receipt["state"].as_str().unwrap_or("uncertain");
         let terminal = matches!(state, "succeeded" | "failed" | "cancelled");
         sqlx::query("UPDATE operations_target_steps SET state=$4,result=$5,started_at=COALESCE(started_at,$6),finished_at=CASE WHEN $7 THEN COALESCE(finished_at,$8) ELSE NULL END WHERE job_id=$1 AND server_id=$2 AND position=$3")
@@ -195,7 +196,7 @@ pub(super) async fn cancel(
     let ids:Vec<Uuid>=sqlx::query_scalar("SELECT runtime_operation_id FROM operations_target_steps WHERE job_id=$1 AND runtime_operation_id IS NOT NULL AND state IN ('queued','running','cancel_requested','uncertain')")
         .bind(job).fetch_all(&mut **tx).await?;
     for id in ids {
-        crate::plugin_api::cancel_automation_deployment_tx(tx, id).await?;
+        super::deployment_automation::cancel_automation_deployment_tx(tx, id).await?;
     }
     sqlx::query("UPDATE operations_panel_steps SET state='cancelled',finished_at=$2,result=jsonb_build_object('executed',false,'reason','执行前已取消') WHERE job_id=$1 AND state IN ('pending','queued')")
         .bind(job).bind(now).execute(&mut **tx).await?;

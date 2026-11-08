@@ -1,8 +1,11 @@
+//! The panel's settings store. Administrators edit it through governance; the
+//! notification channels and alert evaluation read their parts from it.
+
 use crate::{
-    AppState, auth,
+    AppState,
     error::{ApiError, ApiResult},
 };
-use axum::{Json, extract::State, http::HeaderMap};
+use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -75,8 +78,8 @@ pub async fn read(pool: &PgPool) -> ApiResult<Settings> {
     serde_json::from_value(value).map_err(|error| ApiError::Internal(error.into()))
 }
 
-pub async fn get(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
-    auth::require_admin(&state, &headers).await?;
+/// The settings as administrators see them, without stored secrets.
+pub async fn current_view(state: &AppState) -> ApiResult<Json<Value>> {
     Ok(Json(read(&state.pool).await?.view()))
 }
 
@@ -100,12 +103,8 @@ pub struct Update {
     show_frozen_features: Option<bool>,
 }
 
-pub async fn update(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(update): Json<Update>,
-) -> ApiResult<Json<Value>> {
-    auth::require_admin(&state, &headers).await?;
+/// Validates and stores a partial update, cancelling deliveries it makes stale.
+pub async fn apply(state: &AppState, update: Update) -> ApiResult<Json<Value>> {
     let mut tx = state.pool.begin().await?;
     let value: Value =
         sqlx::query_scalar("SELECT settings FROM panel_settings WHERE singleton FOR UPDATE")

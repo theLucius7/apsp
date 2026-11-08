@@ -44,11 +44,11 @@
 - `agent-core` 目录内任何文件不得出现 `singbox` 或 `sing-box` 字样；使用模块标识、能力和统一接口。
 - core 管服务器；代理用户、授权、订阅、用户流量、配额和周期属于服务权益领域（拆分前位于 sing-box crate），详见 [ADR 0023](docs/adr/0023-proxy-business-boundary.md) 与 [搬迁及启用兼容 ADR 0030](docs/adr/0030-singbox-plugin-business.md)。core 不得引用代理业务的 `user`、`subscription`、`quota`，含复数、蛇形和驼峰形式；CI 使用 `tools/check-core-boundary.py` 检查。系统账户与 SQLite 原生 API 仅允许检查器列出的具体表达式，不允许文件或整行豁免。
 - 面板是按领域组织的一体化系统，分平台、领域和应用三层，不再有插件（[ADR 0128](docs/adr/0128-domain-architecture.md)；九个领域、依赖顺序与写入规则见[功能划分与逻辑结构](docs/architecture.md)，逐项功能的归属见[领域归属表](docs/domain-map.md)）：
-  - 平台（`crates/panel-host`、`crates/cloud-api`）只放技术机制，工作区依赖只能是 `protocol`，不依赖任何领域；目录内禁止 sing-box 名称和上述代理业务词汇，例外表达式由检查器逐条列出。宿主里尚未迁出的领域代码已按领域登记所有者，阶段 B 迁出。
+  - 平台（`crates/panel-host`、`crates/cloud-api`）只放技术机制，工作区依赖只能是 `protocol`，不依赖任何领域；目录内禁止 sing-box 名称和上述代理业务词汇，例外表达式由检查器逐条列出。宿主里尚未迁出的领域代码已按领域登记所有者，路由由各领域在 `crates/panel-host/src/domains/` 声明，阶段 B2 迁出。
   - 领域 crate（`crates/naming`、`crates/costs`、`crates/compiler`）只依赖平台、`protocol` 和依赖顺序中排在前面的领域 crate。`plugins/singbox/panel`（流量服务与服务权益，阶段 C 拆分）与 `plugins/alicloud/panel`（云能力，阶段 D 分回各领域）拆分前保持现有依赖、不再新增。领域代码不得移回平台或应用 crate。诊断代码（IPQuality、NodeQuality、TcpQuality）暂由宿主经 `#[path]` 编入，阶段 B 改为观测领域的代码。
-  - 只有应用 `apsp-panel` 组合平台与各领域、接线依赖倒置接口，并保存唯一的数据库基线。
+  - 只有应用 `apsp-panel` 组合平台与各领域、接线依赖倒置接口（清单见 [architecture.md §5.5](docs/architecture.md#55-类型化接口)，接线在 `crates/panel/src/wiring.rs`），并保存唯一的数据库基线。不再新增插件式的全局钩子：需要逆着依赖顺序调用时，由调用方声明类型化接口。
   - `tools/check-core-boundary.py` 检查每个 crate 的层级与依赖方向；新增 crate 先在检查器里登记层级。
-- 每张表只有一个所有者（`tools/feature-boundaries.toml`）。提交前运行 `python3 tools/check-feature-boundaries.py`：现有越界记在 `tools/feature-boundaries.baseline`，只许减少；新增的跨领域 SQL（写其他领域的表、读其他领域的私有表或平台的表、逆着依赖顺序读公开只读表）、跨 crate `#[path]` 或前端跨领域引用会失败，应改为经所有者的接口，而不是加进清单。新增表必须在所有者清单里登记。
+- 每张表只有一个所有者（`tools/feature-boundaries.toml`）。提交前运行 `python3 tools/check-feature-boundaries.py`：现有越界记在 `tools/feature-boundaries.baseline`，只许减少；新增的跨领域 SQL（写其他领域的表、读其他领域的私有表或平台的表、逆着依赖顺序读公开只读表）、逆着依赖顺序的代码引用（平台引用领域，或前面的领域引用后面的领域、同组的领域）、跨 crate `#[path]` 或前端跨领域引用会失败，应改为经所有者的接口，而不是加进清单。新增表必须在所有者清单里登记。
 - 管理界面和使用文档按[功能地图](docs/product-map.md)的六个工作区组织（[ADR 0126](docs/adr/0126-workspaces-language-and-addresses.md)；界面在重新设计步骤 4 之前仍是现有五个分组，对照见功能地图）：新增页面先确定所属领域与工作区，一台服务器的事放服务器详情。前端按领域目录组织（阶段 E 迁移），每个入口属于一个领域，侧栏分组由清单声明；同一对象允许多个入口，但只有一套模型和编辑逻辑。页面地址按用途命名、与入口一致；已发给代理用户或客户端的地址永不失效，控制台地址改名后旧地址改写到新地址并至少保留一个发布版本。降级功能在界面标“实验”，冻结功能默认隐藏、由面板设置显示，都放在所属工作区内；核心旅程不得依赖降级页面。
 - 产品定位为自托管的服务器管理与配置面板，以节点、链路、用户与订阅为主线（[ADR 0087](docs/adr/0087-narrow-positioning-proxy-network.md)）。新功能必须服务节点、链路、用户与订阅，或运营这张网络所需的服务器、线路与费用感知；否则进入路线图候选池。按功能地图的分级处理现有功能：降级功能只修缺陷和安全问题，冻结功能只修安全问题，移除功能或数据需用户单独授权。
 - 系统管理员与代理用户分别命名；服务器网卡总流量留在 core。计量 `epoch` 只标记计数器重置，不得用作套餐周期。业务搬迁保留用户 ID、令牌、旧订阅路径、节点凭据、授权和历史流量，数据库表先不改名。

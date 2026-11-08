@@ -2,7 +2,7 @@ mod acme;
 mod acme_executor;
 mod certificate_deployments;
 mod certificates;
-mod dns_challenges;
+pub mod dns_challenges;
 mod documents;
 mod models;
 mod operations;

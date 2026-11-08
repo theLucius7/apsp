@@ -5,7 +5,7 @@ use super::{
 use crate::{
     AppState,
     error::{ApiError, ApiResult},
-    plugin_api,
+    ports::{BoxFuture, Port},
 };
 use axum::{
     Json, Router,
@@ -144,7 +144,7 @@ async fn run(
     let credential_id: Option<Uuid> = row.get("credential_id");
     rule_permission(&state, &headers, rule_id).await?;
     let result = if cleanup {
-        plugin_api::dns_cleanup(
+        dns_cleanup(
             &state,
             rule_id,
             id,
@@ -156,7 +156,7 @@ async fn run(
         .await
         .map(|_| None)
     } else {
-        plugin_api::dns_present(&state, rule_id, id, &name, &value, credential_id)
+        dns_present(&state, rule_id, id, &name, &value, credential_id)
             .await
             .map(Some)
     };
@@ -179,4 +179,86 @@ async fn rule_permission(state: &AppState, headers: &HeaderMap, id: Uuid) -> Api
         .ok_or(ApiError::NotFound)?;
     crate::control_center::require_server(state, headers, server, "dns:write").await?;
     Ok(())
+}
+
+/// A bounded TXT challenge; credentials remain references inside the provider.
+pub struct DnsChallenge<'a> {
+    pub rule: Uuid,
+    pub challenge: Uuid,
+    pub name: &'a str,
+    pub value: &'a str,
+    pub credential: Option<Uuid>,
+}
+
+/// DNS-01 records written through the DNS accounts of the names domain.
+pub trait Dns01: Send + Sync {
+    fn present<'a>(
+        &'a self,
+        state: &'a AppState,
+        challenge: DnsChallenge<'a>,
+    ) -> BoxFuture<'a, ApiResult<String>>;
+    fn cleanup<'a>(
+        &'a self,
+        state: &'a AppState,
+        challenge: DnsChallenge<'a>,
+        record: Option<&'a str>,
+    ) -> BoxFuture<'a, ApiResult<()>>;
+}
+
+static DNS01: Port<dyn Dns01> = Port::new();
+
+pub fn install(dns01: &'static dyn Dns01) {
+    DNS01.install(dns01);
+}
+
+fn dns01() -> ApiResult<&'static dyn Dns01> {
+    DNS01
+        .get()
+        .ok_or_else(|| ApiError::Conflict("执行器提供方未登记，无法确认能力或安全执行".into()))
+}
+
+async fn dns_present(
+    state: &AppState,
+    rule: Uuid,
+    challenge: Uuid,
+    name: &str,
+    value: &str,
+    credential: Option<Uuid>,
+) -> ApiResult<String> {
+    dns01()?
+        .present(
+            state,
+            DnsChallenge {
+                rule,
+                challenge,
+                name,
+                value,
+                credential,
+            },
+        )
+        .await
+}
+
+async fn dns_cleanup(
+    state: &AppState,
+    rule: Uuid,
+    challenge: Uuid,
+    name: &str,
+    value: &str,
+    record: Option<&str>,
+    credential: Option<Uuid>,
+) -> ApiResult<()> {
+    dns01()?
+        .cleanup(
+            state,
+            DnsChallenge {
+                rule,
+                challenge,
+                name,
+                value,
+                credential,
+            },
+            record,
+        )
+        .await
 }

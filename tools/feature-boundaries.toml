@@ -89,6 +89,13 @@ operations = [
 # so crossings are measured before the code moves (docs/architecture.md section 9).
 [rust]
 "crates/panel-host/src" = "platform"
+"crates/panel-host/src/domains/governance.rs" = "governance"
+"crates/panel-host/src/domains/resources.rs" = "resources"
+"crates/panel-host/src/domains/networking.rs" = "networking"
+"crates/panel-host/src/domains/traffic.rs" = "traffic"
+"crates/panel-host/src/domains/costs.rs" = "costs"
+"crates/panel-host/src/domains/observability.rs" = "observability"
+"crates/panel-host/src/domains/operations.rs" = "operations"
 "crates/panel-host/src/agent_updates.rs" = "governance"
 "crates/panel-host/src/artifacts.rs" = "governance"
 "crates/panel-host/src/auth" = "governance"
@@ -107,6 +114,7 @@ operations = [
 "crates/panel-host/src/network_configuration/x509.rs" = "naming"
 "crates/panel-host/src/network_configuration/server_migrations" = "resources"
 "crates/panel-host/src/runtime_control" = "traffic"
+"crates/panel-host/src/device_config.rs" = "traffic"
 "crates/panel-host/src/runtime_validations.rs" = "traffic"
 "crates/panel-host/src/exchange" = "costs"
 "crates/panel-host/src/telemetry" = "observability"

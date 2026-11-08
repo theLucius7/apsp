@@ -69,7 +69,7 @@ async fn expire_queued(pool: &sqlx::PgPool, server: i64) -> ApiResult<()> {
 /// Removes old finished commands in bounded batches (ADR 0077). A device keeps
 /// retrying an unacknowledged result, so a claimed command is removable only
 /// after its result has been recorded; the newest 100 per server always stay.
-pub(crate) async fn purge_finished(pool: &sqlx::PgPool, now: i64) -> anyhow::Result<u64> {
+pub async fn purge_finished(pool: &sqlx::PgPool, now: i64) -> anyhow::Result<u64> {
     Ok(sqlx::query("DELETE FROM remote_commands WHERE id IN (SELECT id FROM (SELECT id,state,finished_at,result_digest,claimed_at,row_number() OVER (PARTITION BY server_id ORDER BY requested_at DESC,id DESC) AS position FROM remote_commands) c WHERE c.position > 100 AND c.state IN ('succeeded','failed','cancelled','expired','interrupted') AND c.finished_at < $1 AND (c.result_digest IS NOT NULL OR c.claimed_at IS NULL) ORDER BY c.finished_at LIMIT 500)")
         .bind(now - 90 * 86_400)
         .execute(pool)

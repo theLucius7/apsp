@@ -249,3 +249,27 @@ pub(crate) async fn read_history(
     samples.reverse();
     Ok(Json(samples))
 }
+
+/// Latest metrics of a device and the minute history used by comparisons.
+pub async fn record_metrics(
+    state: &AppState,
+    server_id: i64,
+    metrics: apsp_protocol::Metrics,
+) -> anyhow::Result<()> {
+    let value = serde_json::to_value(metrics)?;
+    let mut tx = state.pool.begin().await?;
+    // Legacy envelopes contain no collection timestamp. Preserve the metrics,
+    // but do not label their reception time as a fresh collection.
+    sqlx::query("UPDATE servers SET latest_metrics=$2,metrics_sampled_at=0 WHERE id=$1")
+        .bind(server_id)
+        .bind(&value)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("INSERT INTO metrics_minutely(server_id,bucket,metrics) VALUES($1,$2,$3) ON CONFLICT(server_id,bucket) DO UPDATE SET metrics=EXCLUDED.metrics").bind(server_id).bind(apsp_protocol::now_timestamp()/60*60).bind(crate::fleet::monitoring::comparison_metrics(&value)).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM metrics_minutely WHERE bucket<$1")
+        .bind(apsp_protocol::now_timestamp() - 7 * 86400)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
+}

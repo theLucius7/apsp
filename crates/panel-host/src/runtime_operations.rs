@@ -69,7 +69,10 @@ pub async fn pending(
                 .bind(server).bind(now).fetch_one(&mut *tx).await?;
             authorized
                 && !blocked
-                && crate::plugin_api::automation_dispatch_matches_tx(&mut tx, server, id).await?
+                && crate::operations::deployment_automation::automation_dispatch_matches_tx(
+                    &mut tx, server, id,
+                )
+                .await?
         } else {
             accepting
         };

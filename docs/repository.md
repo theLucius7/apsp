@@ -42,25 +42,28 @@
 
 ## 面板入口与领域接线
 
-面板分为平台、领域和应用三层（[ADR 0128](adr/0128-domain-architecture.md)）。`crates/panel-host/src/lib.rs` 声明平台模块（包括尚未迁出的领域代码）；`state.rs` 创建共享状态；`plugin_api.rs` 定义平台钩子（阶段 B 改为各领域的类型化接口）。`crates/panel/src/` 是应用层：`lib.rs` 再导出平台模块并保留原有公共路径，`plugins.rs` 把各领域 crate 接到平台钩子上，`main.rs` 启动服务与后台任务。`passkeys/` 提供共用 WebAuthn 验证、挑战和凭据存储，管理员包装在 `auth/`，代理用户入口、邀请和独立会话在 `plugins/singbox/panel/portal/`。宿主的 HTTP 路由在 `crates/panel-host/src/routes/` 按职责组合：
+面板分为平台、领域和应用三层（[ADR 0128](adr/0128-domain-architecture.md)）。`crates/panel-host/src/lib.rs` 声明平台模块与尚未迁出的领域代码；`state.rs` 创建共享状态；`shell.rs` 是 HTTP 外壳（健康检查、前端兜底与全局请求体限制）；`agent_api.rs` 是 Agent 通道（传输、设备认证、会话与在线状态、协议分派）；`ports.rs` 提供类型化接口的安装机制。`crates/panel/src/` 是应用层：`lib.rs` 组合各领域的路由、套上治理的权限守卫与专属地址网关，并再导出平台模块、保留原有公共路径；`wiring.rs` 在启动时接线全部类型化接口；`maintenance.rs` 运行 30 秒维护循环；`plugins.rs` 登记领域 crate 的路由与后台任务；`main.rs` 启动服务。`passkeys/` 提供共用 WebAuthn 验证、挑战和凭据存储，管理员包装在 `auth/`，代理用户入口、邀请和独立会话在 `plugins/singbox/panel/portal/`。
+
+宿主里各领域的路由由该领域在 `crates/panel-host/src/domains/` 声明：
 
 | 文件 | 注册的接口 |
 | --- | --- |
-| `routes/mod.rs` | 健康检查、各组路由、应用层传入的领域路由、前端兜底及全局请求体限制 |
-| `routes/system.rs` | 登录/TOTP/管理员 Passkey、统计、汇率、设置与通知 |
-| `routes/servers.rs` | 服务器、接入令牌、遥测配置、命令、周期拨测和流量矫正 |
-| `routes/diagnostics.rs` | IP 查询、共用诊断服务、旧诊断路径与 TCP 目标 |
-| `routes/agent.rs` | Agent 认证接口、上报、待办、结果、配置包和运行时下载 |
-| `routes/artifacts.rs` | 管理员制品目录、导入、版本查询及公开安装入口 |
+| `domains/governance.rs` | 登录/TOTP/管理员 Passkey、面板设置、通知渠道与 Webhook 设置、管理与安全、制品目录与导入、公开安装入口、Agent 更新与制品下载 |
+| `domains/resources.rs` | 服务器、接入令牌、Agent 接入与退役回执 |
+| `domains/traffic.rs` | 运行时检查点、设备的清单与配置包、运行时校验 |
+| `domains/observability.rs` | 统计、告警事件与规则、网络检测、看板、遥测与历史、流量矫正、周期拨测与延迟检测、IP 查询与共用诊断服务、Agent 遥测与拨测与诊断上报 |
+| `domains/operations.rs` | 运维（fleet）、自动化与维护、远程命令与 Agent 的命令通道、运行时操作 |
+| `domains/networking.rs` | 网络配置 |
+| `domains/costs.rs` | 汇率 |
 
-路由文件只组合处理函数，鉴权和业务校验仍由原处理函数负责。`apsp_panel::router`、`AppState`、`AgentConnection` 及旧代理业务 Rust 导出继续可用。新增接口按职责归组，不再把所有接口堆入 crate 根文件。
+路由文件只组合处理函数，鉴权和业务校验仍由原处理函数负责。`apsp_panel::router`、`AppState`、`AgentConnection`、`apsp_panel::agent_api` 及旧代理业务 Rust 导出继续可用。新增接口放进所属领域的声明，不加到平台。
 
 领域与平台的接线：
 
-- 平台通过 `plugin_api::PanelPlugins` 把 Agent 通道上的用量入账、模块清单、配置包和运行活动查询交给对应领域（依赖倒置；阶段 B 改为各领域的类型化接口）。应用层在构造路由和启动后台任务时接线一次。
-- 领域路由由应用层传入平台的 `router`；各领域的后台任务由应用层分别守护，一个崩溃不会停掉其他任务。
+- 领域之间需要逆着依赖顺序调用，或调用方还在宿主里时，由调用方声明类型化接口、实现方回答、应用层接线，清单见[功能划分与逻辑结构 §5.5](architecture.md#55-类型化接口)。Agent 通道把设备回报经 `DeviceReports` 交给各领域，不再有插件接口。
+- 领域路由由应用层组合后放进平台的外壳；各领域的后台任务由应用层分别守护，一个崩溃不会停掉其他任务。
 - `crates/naming/`、`crates/costs/`、`plugins/singbox/panel/`、`plugins/alicloud/panel/` 各自是独立 crate，只经平台公开接口使用面板能力；`crates/cloud-api/` 是平台的云接口客户端。
-- 诊断代码（IP 质量、NodeQuality、TCP 质量）暂时仍由宿主的 `diagnostic_plugins.rs` 通过 path 编入，共用诊断服务继续负责生命周期、预算、取消和历史。它们与宿主的 IP 质量和诊断类型互相引用，拆成独立 crate 前需要先把共用类型移入宿主接口。
+- 诊断代码（IP 质量、NodeQuality、TCP 质量）暂时仍由宿主的 `diagnostic_plugins.rs` 通过 path 编入，共用诊断服务继续负责生命周期、预算、取消和历史。它们与宿主的 IP 质量和诊断类型互相引用，阶段 B2 随观测的代码一起迁出宿主并去掉 `#[path]`。
 
 数据库只有一份当前基线 `crates/panel/migrations/0001_current.sql`（[ADR 0122](adr/0122-unreleased-schema-baseline.md)）；平台通过 `sqlx::migrate!("../panel/migrations")` 嵌入它，领域 crate 的数据库测试也指向它（如 `crates/naming` 的 `#[sqlx::test(migrations = "../panel/migrations")]`）。修改基线是高风险改动，必须附带 `scripts/baseline-adoption-*.sql`，写法与部署验证见[数据库基线](database-baseline.md)「生产安装」；整理 SQL 而生成的基线逐字节不变时不算基线变更。
 

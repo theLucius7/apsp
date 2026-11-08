@@ -2,8 +2,20 @@
 //! ledger (ADR 0097). The values come from `subscription-userinfo` and are
 //! shown for reference only; the ledger never prices or renews a source.
 use crate::{AppState, error::ApiResult};
-use apsp_panel_host::plugin_api::RenewalReference;
 use sqlx::Row;
+
+/// Provider-reported expiry of one subscription source and where it is managed.
+pub struct RenewalReference {
+    pub kind: &'static str,
+    pub id: i64,
+    pub name: String,
+    pub expires_at: Option<i64>,
+    pub used_bytes: Option<i64>,
+    pub total_bytes: Option<i64>,
+    pub reported_at: Option<i64>,
+    pub path: String,
+    pub capability: &'static str,
+}
 
 pub async fn renewal_references(state: &AppState) -> ApiResult<Vec<RenewalReference>> {
     let rows = sqlx::query(

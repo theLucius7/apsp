@@ -129,6 +129,53 @@ class SqlTests(unittest.TestCase):
         self.assertEqual(boundaries.rust_strings(source), ["SELECT id FROM users", 'DELETE FROM "quoted" dns_records', "bytes"])
 
 
+class ModuleRefTests(unittest.TestCase):
+    def test_code_keeps_offsets_and_drops_comments_and_literals(self):
+        source = 'let a = "crate::x"; // crate::y\n/* crate::z */ crate::w::f(\'c\');\n'
+        code = boundaries.rust_code(source)
+        self.assertEqual(len(code), len(source))
+        self.assertEqual(code.count("\n"), 2)
+        self.assertNotIn("crate::x", code)
+        self.assertNotIn("crate::y", code)
+        self.assertNotIn("crate::z", code)
+        self.assertIn("crate::w::f(", code)
+
+    def test_use_trees_expand_to_paths(self):
+        code = "use crate::{a, b::{c, d}, e::*, F};"
+        start = code.index("{")
+        self.assertEqual(boundaries.use_paths(code, start), [["a"], ["b", "c"], ["b", "d"], ["e"], ["F"]])
+        call = "crate::g::h(1)::<T>"
+        self.assertEqual(boundaries.use_paths(call, len("crate::")), [["g", "h"]])
+
+    def test_crate_and_super_paths_resolve_to_source_files(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        crate = Path(temp.name)
+        files = {"Cargo.toml": '[package]\nname = "fixture"\n', "src/lib.rs": "", "src/a.rs": "",
+                 "src/b/mod.rs": "", "src/b/c.rs": "", "src/b/d.rs": ""}
+        for relative, text in files.items():
+            (crate / relative).parent.mkdir(parents=True, exist_ok=True)
+            (crate / relative).write_text(text)
+        root_file = boundaries.crate_source(crate)
+        self.assertEqual(root_file, crate / "src/lib.rs")
+        code = "use super::d::Item; fn f() { crate::a::run(); super::super::a::run(); }"
+        self.assertEqual(boundaries.module_refs(crate / "src/b/c.rs", code, root_file),
+                         {crate / "src/b/d.rs", crate / "src/a.rs"})
+        # `super` in a mod.rs names the parent module; the crate root has no parent.
+        self.assertEqual(boundaries.module_refs(crate / "src/b/mod.rs", "super::a::run()", root_file),
+                         {crate / "src/a.rs"})
+        self.assertEqual(boundaries.module_refs(crate / "src/lib.rs", "super::a::run()", root_file), set())
+
+    def test_reference_direction_follows_the_order(self):
+        rank = boundaries.ranks(boundaries.tomllib.loads(CONFIG))
+        self.assertTrue(boundaries.ref_allowed("resources", "governance", rank))
+        self.assertTrue(boundaries.ref_allowed("operations", "platform", rank))
+        self.assertTrue(boundaries.ref_allowed("app", "platform", rank))
+        self.assertFalse(boundaries.ref_allowed("platform", "resources", rank))
+        self.assertFalse(boundaries.ref_allowed("governance", "resources", rank))
+        self.assertFalse(boundaries.ref_allowed("naming", "networking", rank))
+
+
 class TreeTests(unittest.TestCase):
     def tree(self, files, config=CONFIG):
         temp = tempfile.TemporaryDirectory()
@@ -177,6 +224,27 @@ class TreeTests(unittest.TestCase):
             "sql\tplugins/singbox/panel/src/hosts.rs\tread\tdns_records\ttraffic->naming",
             "sql\tplugins/singbox/panel/src/hosts.rs\tread\tusers\ttraffic->access",
             "sql\tplugins/singbox/panel/src/users.rs\tread\tsingbox_nodes\taccess->traffic",
+        })
+
+    def test_module_references_against_the_order_are_reported(self):
+        config = CONFIG.replace('"crates/panel-host/src/servers.rs" = "resources"',
+                                '"crates/panel-host/src/servers.rs" = "resources"\n'
+                                '"crates/panel-host/src/auth.rs" = "governance"')
+        root = self.tree({
+            "crates/panel-host/Cargo.toml": '[package]\nname = "fixture"\n',
+            "crates/panel-host/src/lib.rs": "pub mod auth; pub mod operations; pub mod router; pub mod servers;",
+            "crates/panel-host/src/auth.rs": "pub fn check() {}",
+            "crates/panel-host/src/router.rs": "use crate::{servers, auth::check};\n// crate::operations is prose\n",
+            "crates/panel-host/src/servers.rs": "fn f() { crate::auth::check(); crate::operations::jobs::run(); }",
+            "crates/panel-host/src/operations/mod.rs": "pub mod jobs; pub mod queue;",
+            "crates/panel-host/src/operations/jobs.rs": "use crate::servers; use super::queue::Item;",
+            "crates/panel-host/src/operations/queue.rs": "",
+            "crates/panel-host/src/operations/tests.rs": "use crate::router;",
+        }, config)
+        self.assertEqual(self.crossings(root), {
+            "ref\tcrates/panel-host/src/router.rs\tcrates/panel-host/src/servers.rs\tplatform->resources",
+            "ref\tcrates/panel-host/src/router.rs\tcrates/panel-host/src/auth.rs\tplatform->governance",
+            "ref\tcrates/panel-host/src/servers.rs\tcrates/panel-host/src/operations/jobs.rs\tresources->operations",
         })
 
     def test_path_includes_across_crates_are_reported(self):

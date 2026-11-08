@@ -1,6 +1,8 @@
-use crate::{servers::Server, settings::Settings};
+use crate::{AppState, error::ApiResult, servers::Server, settings::Settings};
+use axum::{Json, extract::State, http::HeaderMap};
+use serde::Serialize;
 use serde_json::Value;
-use sqlx::{Postgres, Transaction};
+use sqlx::{FromRow, Postgres, Transaction};
 
 pub(super) struct Observation {
     pub key: String,
@@ -162,4 +164,28 @@ pub(super) async fn close_obsolete(
     sqlx::query("UPDATE notification_outbox o SET status='cancelled' FROM server_alert_events e WHERE o.event_id=e.id AND e.server_id=$1 AND NOT(e.source_key=ANY($2)) AND o.status='pending'")
         .bind(server).bind(keep).execute(&mut **tx).await?;
     Ok(())
+}
+
+#[derive(Serialize, FromRow)]
+pub struct Event {
+    id: i64,
+    server_id: i64,
+    server_name: String,
+    last_seen: Option<i64>,
+    category: String,
+    message: String,
+    details: Value,
+    opened_at: i64,
+    resolved_at: Option<i64>,
+    resolution: Option<String>,
+    deliveries: Value,
+}
+
+/// Recent alert events with the delivery attempts of each.
+pub async fn list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<Json<Vec<Event>>> {
+    crate::auth::require_admin(&state, &headers).await?;
+    Ok(Json(sqlx::query_as("SELECT e.*, COALESCE((SELECT jsonb_agg(jsonb_build_object('id',o.id,'channel',o.channel,'kind',o.kind,'status',o.status,'attempts',o.attempts,'last_error',o.last_error,'next_attempt_at',o.next_attempt_at,'last_attempt_at',o.last_attempt_at,'delivered_at',o.delivered_at) ORDER BY o.id) FROM notification_outbox o WHERE o.event_id=e.id),'[]'::jsonb) AS deliveries FROM server_alert_events e ORDER BY e.id DESC LIMIT 200").fetch_all(&state.pool).await?))
 }

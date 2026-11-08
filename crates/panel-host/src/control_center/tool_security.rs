@@ -22,7 +22,7 @@ fn packages() -> Vec<Value> {
 }
 
 fn add_signed_tools(packages: &mut Vec<Value>, entries: &[crate::artifacts::ArtifactEntry]) {
-    packages.extend(crate::plugin_api::signed_tool_packages(entries));
+    packages.extend(super::contributions::signed_tool_packages(entries));
 }
 fn supported(package: &Value) -> bool {
     matches!(package["ecosystem"].as_str(), Some("crates.io" | "Go"))
