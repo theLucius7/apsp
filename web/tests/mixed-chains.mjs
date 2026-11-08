@@ -105,6 +105,7 @@ try {
       if(path.endsWith('/users/1/policy-groups'))return reply({group_ids:[]})
       if(path.endsWith('/users/1/portal'))return reply({configuration:{enabled:false,reason:'TEST_ONLY 未启用',origin:'https://panel.example.com'},keys:0,url:null,activation_expires_at:null})
       if(path.endsWith('/users/1/entitlement'))return reply({user_id:1,package_group_id:null,monthly_bytes:null,starts_at:null,expires_at:null,used_bytes:'0',status:'unmetered',allowed:true})
+      if(method==='GET'&&/^\/api\/plugins\/sing-box\/users\/\d+\/limits$/.test(path))return reply({ user_id: Number(path.split('/')[5]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] }) // Per-user limits (ADR 0124) are read on the user page; none are set here.
       errors.push(`Unexpected ${method} ${path}`);return route.fulfill({status:404,json:{error:'Unexpected API'}})
     })
     await installControlCenterFixtures(page)

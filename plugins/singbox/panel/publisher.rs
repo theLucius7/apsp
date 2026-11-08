@@ -203,7 +203,8 @@ async fn compile(
         &prepared.compiled,
     )?;
     let native = super::server_profiles::compile(tx, server_id, &native).await?;
-    let native = super::user_limits::compile(tx, &native, server_id).await?;
+    let native = super::user_limits::compile(tx, &native).await?;
+    let native = super::runtime_controls::attach(tx, &native, server_id).await?;
     let mut files = BTreeMap::from([("config.json".into(), native)]);
     if let Some(probes) = &plan.probe_plan {
         files.insert("runtime-probes.json".into(), serde_json::to_string(probes)?);

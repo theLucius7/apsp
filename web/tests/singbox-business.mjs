@@ -109,7 +109,7 @@ try {
         assert.equal(route.request().method(), 'PATCH')
         const payload = route.request().postDataJSON()
         assert.deepEqual(payload, { name: node.name, public_host: node.public_host, sni: node.sni, protocol_config: { type: 'vless-reality' }, port: 443, enabled: false,
-          settings: { listen: '0.0.0.0', public_port: 8443, tcp_fast_open: false, disable_tcp_keep_alive: false, tcp_keep_alive_seconds: null, tcp_keep_alive_interval_seconds: null, tls_alpn: [], tls_min_version: null, tls_max_version: null, tls_handshake_timeout_seconds: null, transport: { type: 'tcp' }, reality: { handshake_server: 'handshake.example.com', handshake_port: 443, fingerprint: 'firefox', max_time_difference_seconds: null, flow: 'vision' } } })
+          settings: { listen: '0.0.0.0', public_port: 8443, public_addresses: [], tcp_fast_open: false, disable_tcp_keep_alive: false, tcp_keep_alive_seconds: null, tcp_keep_alive_interval_seconds: null, tls_alpn: [], tls_min_version: null, tls_max_version: null, tls_handshake_timeout_seconds: null, transport: { type: 'tcp' }, reality: { handshake_server: 'handshake.example.com', handshake_port: 443, fingerprint: 'firefox', max_time_difference_seconds: null, flow: 'vision' } } })
         Object.assign(node, payload)
         metadata.installation = { state: 'pending', reason: '节点设置已保存，等待设备应用。', target_rev: 2, applied_rev: 1 }
         value = node
@@ -166,6 +166,8 @@ try {
       else if (path === '/api/security/totp') value = { enabled: false }
       else if (path === '/api/security/passkeys') value = { configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin: `http://127.0.0.1:${server.address().port}` }, keys: [] }
       else if (path.endsWith('/runtime-operations')) value = { supported:false,online:false,retiring:false,operations:[] }
+      // The server page also reads the server-side profile (ADR 0129); an empty one here.
+      else if (path === '/api/plugins/sing-box/servers/1/profile') value = { definition: { outbounds: [], endpoints: [], services: [], cloudflared: [], dns: null, route: null }, revision: 0 }
       else { errors.push(`Unexpected API: ${path}`); await route.fulfill({ status: 404, json: {} }); return }
       await route.fulfill({ json: value })
     })

@@ -1,7 +1,8 @@
--- One-time baseline adoption for the S-UI capability alignment.
--- Validated on PostgreSQL 18 against the previous source baseline only.
--- Back up and verify the actual production schema first, stop the panel, then
--- apply this transaction before deploying the matching new panel binary.
+-- One-time baseline adoption for the S-UI capability alignment (ADR 0129), from the #249
+-- baseline (checksum 5e0ed43b…, fingerprint 90578f83…) to the new one (405612a7…, 7701ab9e…).
+-- Fingerprints are PostgreSQL 16 values with sqlx's _sqlx_migrations present, verified on a
+-- copy of the production structure. The deployer tries this script on such a copy, then runs it
+-- on production in one transaction before swapping the panel image.
 -- psql -v ON_ERROR_STOP=1 -1 -f scripts/baseline-adoption-sui-20261107.sql
 SET LOCAL lock_timeout = '10s';
 SET LOCAL search_path TO public;
@@ -38,7 +39,7 @@ FROM (
     FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname='public' AND NOT t.tgisinternal
 ) AS definitions) INTO actual;
-    IF actual <> '48047f10471ff2f949b3c5959fb85e22' OR actual IS DISTINCT FROM (SELECT fingerprint FROM public.apsp_schema_baseline WHERE singleton) THEN
+    IF actual <> '90578f83a578ed9d2a7df8c2b1b4dcb7' OR actual IS DISTINCT FROM (SELECT fingerprint FROM public.apsp_schema_baseline WHERE singleton) THEN
         RAISE EXCEPTION 'existing schema differs from its recorded baseline';
     END IF;
 END $$;
@@ -123,7 +124,7 @@ FROM (
     FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname='public' AND NOT t.tgisinternal
 ) AS definitions) INTO actual;
-    IF actual <> '719b65a0dc7c564a3873d4322319625a' THEN RAISE EXCEPTION 'result differs from fresh target baseline: %',actual; END IF;
+    IF actual <> '7701ab9e14096c9fb137d56ccdac5e32' THEN RAISE EXCEPTION 'result differs from fresh target baseline: %',actual; END IF;
     UPDATE public.apsp_schema_baseline SET fingerprint=actual WHERE singleton;
     UPDATE public._sqlx_migrations SET checksum=decode('405612a777a144b2f00f90bd2446dca71e3b754c5b1e5625249469ec274fe1af75b2171a15b720882beca2630b69f1a7','hex') WHERE version=1;
 END $$;

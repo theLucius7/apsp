@@ -1,5 +1,21 @@
 # 执行进度
 
+## 2026-11-08：合并 #255（S-UI 能力补齐）
+
+- 用户要求：处理好 #255 后合并。#255 来自 imengying/apsp 的 main，基于较旧的 main：前两个提交与已合入的 #249 树一致，只把后三个提交（S-UI 能力补齐、深色下拉与时区选择、时区简化）变基到当前 main（领域阶段 B2a 之后）。文档冲突按现行用语合并；S-UI 的 ADR 由 0125 改为 [0129](docs/adr/0129-sui-capability-alignment.md)（0125–0128 已被占用）；`AGENTS.md` 中自动部署的说明保持现状；#251 删除的旧接入脚本不再加回。
+- 接入脚本 `scripts/baseline-adoption-sui-20261107.sql` 原用 PostgreSQL 18 源码副本上的指纹，会被生产库拒绝；改为 PostgreSQL 16、含 sqlx 迁移表时的值（来源 90578f83…，结果 7701ab9e…）。先验证同一方法能复现生产的指纹，再在生产结构副本上执行通过，重复执行被拒绝。
+- 面板目标运行时保持 `1.14.4-apsp.1`：#255 把面板目标版本与构建工具一起改成 `1.14.4-apsp.2`。合并会自动部署，而新内核尚未签名发布，生产没有它的制品，GNU 主机的 Cronet 附件还要求 Agent 先升级（全部服务器仍是 0.3.7）。这时切换，所有服务器的清单下发都会失败，直到发布、升级与导入完成（11-07 #249 合并后就这样失败了约 3.5 小时）。因此构建、发布与 Agent 代码保留 apsp.2，面板代码、面板测试与前端的版本号回到 apsp.1，单独一个提交，切换时撤销它；切换顺序见[签名发布](docs/release.md)。切换前依赖新内核的功能不可用：连接管理按 Agent 能力显示为不支持；Naive 出站与 Cloudflared、VPN 等端点在旧内核上会让该服务器的部署失败。
+- 领域归属（ADR 0128）：变基后新代码有 7 处流量服务引用服务权益，按所改对象调整。
+  - sing-box 本机控制接口（Clash API 回环地址与每台服务器的密钥 `singbox_runtime_controls`）属于运行时，从逐用户限制移到流量服务的 `runtime_controls`，在发布编译的最后附加。已有控制接口的配置逐字节原样返回：生产 17 台迁移接管主机都已有会话控制接口，配置摘要不变，不会因合并重新下发。
+  - 用户连接的查看与断开归服务权益，与用户暂停、逐用户限制同列；部署状态经流量服务新增的 `deployments::applied_state` 读取。用户会话的运行时操作经平台的设备任务接口 `device_work`（新增 `runtime_busy_tx`、`submit_runtime_tx`、`latest_runtime_for_principal_tx`，应用层接到作业领域的 `runtime_operations`：作业依赖 sing-box crate，后者不能反过来依赖作业）；逐用户限制与暂停的操作记录改用 `operations_workflows::event`。
+  - 服务端配置改用流量服务的 `business::lock_publication`（同一把 73201001 锁，`entitlements::lock` 暂时转调，原有调用在阶段 C 迁移）；去掉写入逐用户操作记录的 `server_profile_updated`：该表只在用户诊断里按用户读取，修改已由管理审计记录。
+  - 边界检查跳过内联 `#[cfg(test)]` 模块，已知越界减少 25 条（测试夹具的写入，以及测试模块里 `super::` 的误判）。
+- 审计脱敏：管理审计按 sing-box 提供的键脱敏，原来漏掉服务端配置与节点请求里的 `pre_shared_key`、`auth_key`、`static_key`、`key`、`client_key`、`cookie`、`psk` 等凭据；改为复用服务端配置的凭据判定。
+- 浏览器测试：补齐服务端配置与逐用户限制接口的夹具，节点设置的期望加入 `public_addresses`；`admin-refresh` 与 `singbox-snapshot-writes` 的地址由 `#/home/{页面}` 改回 `#/{页面}`（#245 重新合入时机械替换所致）。其中 7 项在未改动的 main 上同样失败。
+- 验证（本地，PostgreSQL 16）：`cargo fmt --check`；`cargo clippy --all-targets -D warnings`（sing-box、宿主、作业、应用）；单元测试 400 项通过（作业 10、宿主 174、sing-box 216，1 个原有忽略），编译器与协议 145 项通过（10 项需真实运行时，忽略）；应用集成测试除 `end_to_end` 外的全部 85 个目标共 421 项通过（8 个原有忽略）；前端 `bun test` 251 项与构建通过；浏览器测试 70 项全部通过；两项边界检查与检查器测试（21 项）通过。接入脚本在生产结构副本上执行通过；脚本中依赖数据的语句已对照生产核对：节点协议约束只增不减（生产只用 4 种协议），资格函数只多了暂停判断（暂停表为空）。Agent 一侧的 crate 在本轮变基中没有改动，沿用变基前的验证结果（clippy 与单元测试通过，agent-core 301 项）。
+- 未验证：新内核与新 Agent 的实机运行（CI 暂停，未发布）；真实 Cloudflare DNS、ACME、Cloudflared/Realm/VPN 提供方；`end_to_end`（本机在未改动的 main 上同样失败）。
+- 下一步：签名发布包含 `1.14.4-apsp.2` 的 Agent、升级各服务器 Agent、导入制品后撤销固定版本的提交（[签名发布](docs/release.md)）；阶段 C 把其余 `entitlements::lock` 调用迁到 `business::lock_publication`。
+
 ## 2026-11-08：领域架构阶段 B2a——作业迁出宿主
 
 - 用户要求：继续下一步（领域重构）。宿主里的领域只能按依赖顺序从后往前离开（宿主里的代码不能引用迁出去的 crate），所以 B2a 先把排在最后的作业迁成独立的 `crates/operations`；其余领域在 B2 中依次迁出，下一步是观测与成本。

@@ -84,7 +84,8 @@ try {
         subscriptionReads++
         const format = url.searchParams.get('format') ?? 'singbox'
         value = { format, status: format === 'singbox' ? 'ready' : 'format_unavailable', message: 'TEST_ONLY 订阅', subscription_url: `${origin}/sub/TEST_ONLY`, available_formats: ['singbox'], granted_nodes: 2, eligible_nodes: 2, managed_nodes: 1, external_nodes: 1, external_granted_nodes: 1, ready_nodes: [{ kind: 'managed', id: 1, name: 'TEST_ONLY 受管入口', protocol: 'vless-reality' }, { kind: 'external', id: 1, name: 'TEST_ONLY 外部入口', protocol: 'shadowsocks' }], content: format === 'singbox' ? '{"outbounds":[]}' : null, filename: 'TEST_ONLY.json', content_type: 'application/json', entitlement: { allowed: true, status: 'unlimited', monthly_bytes: null, used_bytes: '0', expires_at: null } }
-      } else assert.fail(`Unexpected read ${path}`)
+      } else if (/^\/api\/plugins\/sing-box\/users\/\d+\/limits$/.test(path)) value = { user_id: Number(path.split('/')[5]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } // Per-user limits (ADR 0124) are read on the user page; none are set here.
+      else assert.fail(`Unexpected read ${path}`)
       await route.fulfill({ json: value }).catch(() => {})
     })
     try {

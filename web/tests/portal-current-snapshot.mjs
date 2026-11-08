@@ -69,6 +69,7 @@ try {
         else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/policy-groups$/.test(path)) value = { group_ids: [] }
         else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/entitlement$/.test(path)) value = { user_id: Number(path.split('/')[5]), package_group_id: null, package_name: null, monthly_bytes: null, starts_at: null, expires_at: null, used_bytes: '0', status: 'unmetered', allowed: true }
         else if (method === 'GET' && path === `${prefix}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
+        else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/limits$/.test(path)) value = { user_id: Number(path.split('/')[5]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } // Per-user limits (ADR 0124) are read on the user page; none are set here.
         else { unexpected.push(`${method} ${path}`); return route.fulfill({ status: 500, json: { error: 'TEST_ONLY 未知请求' } }) }
         return route.fulfill({ json: value })
       })()

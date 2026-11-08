@@ -7,7 +7,8 @@ use apsp_panel_host::{AppState, control_center::contributions::SearchSource, err
 use serde_json::{Value, json};
 
 pub fn sensitive_key(key: &str) -> bool {
-    key.contains("subscription")
+    crate::server_profiles::secret(key)
+        || key.contains("subscription")
         || matches!(
             key,
             "email"

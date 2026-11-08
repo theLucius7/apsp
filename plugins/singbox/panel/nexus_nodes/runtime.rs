@@ -91,7 +91,7 @@ async fn prepare(
         )
         .await?;
         // An explicit disabled plugin also blocks capability-based auto-enable.
-        crate::user_limits::ensure_control(&mut tx, snapshot.server_id).await?;
+        crate::runtime_controls::ensure(&mut tx, snapshot.server_id).await?;
         sqlx::query("INSERT INTO server_plugins(server_id,plugin,enabled,source,enabled_at) VALUES($1,'sing-box',FALSE,'administrator',$2) ON CONFLICT(server_id,plugin) DO UPDATE SET enabled=FALSE,source='administrator'")
             .bind(snapshot.server_id).bind(now_timestamp()).execute(&mut *tx).await?;
     }

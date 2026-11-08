@@ -127,12 +127,13 @@ try {
           else if (method === 'PUT') { const list = path.includes('/policy-groups/') ? policies : packages; Object.assign(list.find(item => item.id === Number(path.split('/').at(-1))), payload); value = {} }
           else if (method === 'DELETE') { const list = path.includes('/policy-groups/') ? policies : path.includes('/package-groups/') ? packages : users; const index = list.findIndex(item => item.id === Number(path.split('/').at(-1))); if (index >= 0) list.splice(index, 1); value = {} }
           else value = {}
-        } else { totals.unexpected.push(`${method} ${path}`); await route.fulfill({ status: 404, json: { error: 'TEST_ONLY 未知接口' } }); return }
+        } else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/limits$/.test(path)) { value = { user_id: Number(path.split('/')[5]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } } // Per-user limits (ADR 0124) are read on the user page; none are set here.
+        else { totals.unexpected.push(`${method} ${path}`); await route.fulfill({ status: 404, json: { error: 'TEST_ONLY 未知接口' } }); return }
         await route.fulfill({ json: value })
       })
       try {
         await installControlCenterFixtures(page)
-        await page.goto(`${origin}/#/home/${routeName}`)
+        await page.goto(`${origin}/#/${routeName}`)
         await page.getByRole('button', { name: routeName === 'groups' ? '创建策略组' : '创建代理用户', exact: true }).first().waitFor()
         await wait(async () => await page.getByRole('button', { name: routeName === 'groups' ? '创建策略组' : '创建代理用户', exact: true }).first().isEnabled(), 'initial snapshot must be ready')
         await callback(control)

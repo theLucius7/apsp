@@ -54,6 +54,7 @@ pub mod proxy_resources;
 pub mod proxy_users;
 pub mod publisher;
 pub mod reachability;
+mod runtime_controls;
 pub mod runtime_operations;
 mod secret_access;
 pub mod server_profiles;

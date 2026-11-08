@@ -158,27 +158,23 @@ pub async fn put(
     sqlx::query("INSERT INTO singbox_user_limits(user_id,upload_mbps,download_mbps,max_connections,revision) VALUES($1,$2,$3,$4,$5) ON CONFLICT(user_id) DO UPDATE SET upload_mbps=EXCLUDED.upload_mbps,download_mbps=EXCLUDED.download_mbps,max_connections=EXCLUDED.max_connections,revision=EXCLUDED.revision")
         .bind(id).bind(limits.upload_mbps as i32).bind(limits.download_mbps as i32).bind(limits.max_connections as i32).bind(request.expected_revision+1).execute(&mut *tx).await?;
     business::mark_dirty(&mut tx, &hosts).await?;
-    sqlx::query("INSERT INTO singbox_operation_events(administrator_id,user_id,action,detail,created_at) VALUES($1,$2,'user_limits_updated',$3,$4)")
-        .bind(administrator).bind(id).bind(json!({"before":previous,"after":limits,"scope":"per_server","server_ids":hosts})).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
+    crate::operations_workflows::event(
+        &mut tx,
+        Some(administrator),
+        Some(id),
+        "user_limits_updated",
+        json!({"before":previous,"after":limits,"scope":"per_server","server_ids":hosts}),
+    )
+    .await?;
     let value = current(&mut tx, id).await?;
     tx.commit().await?;
     Ok(Json(value))
 }
 
-pub(crate) async fn ensure_control(
-    tx: &mut Transaction<'_, Postgres>,
-    server_id: i64,
-) -> anyhow::Result<()> {
-    sqlx::query("INSERT INTO singbox_runtime_controls(server_id,control_secret) VALUES($1,$2) ON CONFLICT DO NOTHING").bind(server_id).bind(crate::auth::random_token()).execute(&mut **tx).await?;
-    Ok(())
-}
-
 pub(crate) async fn compile(
     tx: &mut Transaction<'_, Postgres>,
     config: &str,
-    server_id: i64,
 ) -> anyhow::Result<String> {
-    ensure_control(tx, server_id).await?;
     let rows = sqlx::query("SELECT user_id,upload_mbps,download_mbps,max_connections FROM singbox_user_limits WHERE upload_mbps>0 OR download_mbps>0 OR max_connections>0 ORDER BY user_id").fetch_all(&mut **tx).await?;
     let limits: BTreeMap<_, _> = rows
         .into_iter()
@@ -193,17 +189,7 @@ pub(crate) async fn compile(
             )
         })
         .collect();
-    let mut config: Value = serde_json::from_str(&apply_user_limits(config, &limits)?)?;
-    if config.pointer("/experimental/clash_api").is_none() {
-        let secret: String = sqlx::query_scalar(
-            "SELECT control_secret FROM singbox_runtime_controls WHERE server_id=$1",
-        )
-        .bind(server_id)
-        .fetch_one(&mut **tx)
-        .await?;
-        config["experimental"]["clash_api"] = json!({"external_controller":"127.0.0.1:18086","secret":secret,"access_control_allow_origin":[]});
-    }
-    Ok(serde_json::to_string_pretty(&config)?)
+    Ok(apply_user_limits(config, &limits)?)
 }
 
 #[cfg(test)]
@@ -218,12 +204,7 @@ mod tests {
         sqlx::query("INSERT INTO singbox_user_limits(user_id,upload_mbps,download_mbps,max_connections) VALUES($1,8,16,2)").bind(id).execute(&pool).await?;
         let config = json!({"experimental":{"v2ray_api":{"stats":{"users":[format!("u{id}_n1"),format!("u{id}_n2")]}}}}).to_string();
         let mut tx = pool.begin().await?;
-        let host: i64 = sqlx::query_scalar(
-            "INSERT INTO servers(name) VALUES('TEST_ONLY control') RETURNING id",
-        )
-        .fetch_one(&mut *tx)
-        .await?;
-        let compiled = compile(&mut tx, &config, host).await?;
+        let compiled = compile(&mut tx, &config).await?;
         let compiled: Value = serde_json::from_str(&compiled)?;
         assert_eq!(
             compiled["route"]["apsp_user_limits"]

@@ -73,6 +73,7 @@ try {
           ready_nodes: status === 'ready' || status === 'format_unavailable' ? nodes.map(node => ({ ...node, protocol: modern ? 'hysteria2' : 'vless-reality' })) : [], external_granted_nodes: format === 'clash' ? 1 : 0, content: lastContent, filename: '../../untrusted.html', content_type: 'text/html',
           entitlement: status === 'blocked' ? { ...entitlement, allowed: false, status: 'exhausted', monthly_bytes: '4096' } : entitlement })
       }
+      if (/^\/api\/plugins\/sing-box\/users\/\d+\/limits$/.test(path)) return route.fulfill({ json: { user_id: Number(path.split('/')[5]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } }) // Per-user limits (ADR 0124) are read on the user page; none are set here.
       unexpected.push(path); return route.fulfill({ status: 500, json: { error: 'Unexpected API' } })
     })
     await installControlCenterFixtures(page)

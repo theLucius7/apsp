@@ -285,6 +285,19 @@ class TreeTests(unittest.TestCase):
             "ref\tplugins/singbox/panel/users.rs\tcrates/panel-host/src/operations/mod.rs\ttraffic->operations",
         })
 
+    def test_inline_test_modules_are_fixtures(self):
+        source = textwrap.dedent('''
+            const Q: &str = "SELECT id FROM users";
+            #[cfg(test)]
+            mod tests {
+                fn seed() { let s = "{"; let c = '}'; /* } */ sqlx::query("INSERT INTO servers(id) VALUES(1)"); }
+                mod inner { fn f() {} }
+            }
+            const R: &str = "SELECT id FROM dns_records";
+        ''')
+        self.assertEqual(boundaries.rust_strings(boundaries.without_test_modules(source)),
+                         ["SELECT id FROM users", "SELECT id FROM dns_records"])
+
     def test_path_includes_across_crates_are_reported(self):
         root = self.tree({
             "crates/panel-host/Cargo.toml": "",

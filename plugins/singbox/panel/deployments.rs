@@ -213,3 +213,28 @@ pub async fn redeploy(
     })?;
     Ok(Json(Redeployed { revision }))
 }
+
+/// What a server last reported for its sing-box module, with the bundle of the applied revision
+/// while it is still stored. Other domains read deployment state through this.
+pub(crate) struct AppliedState {
+    pub applied_rev: i64,
+    pub target_rev: i64,
+    pub healthy: bool,
+    pub bundle: Option<String>,
+}
+
+pub(crate) async fn applied_state(
+    connection: &mut sqlx::PgConnection,
+    server_id: i64,
+) -> sqlx::Result<Option<AppliedState>> {
+    let row = sqlx::query("SELECT m.applied_rev,m.target_rev,m.healthy,d.bundle FROM server_module_status m LEFT JOIN deployments d ON d.server_id=m.server_id AND d.module=m.module AND d.rev=m.applied_rev WHERE m.server_id=$1 AND m.module='singbox'")
+        .bind(server_id)
+        .fetch_optional(connection)
+        .await?;
+    Ok(row.map(|row| AppliedState {
+        applied_rev: row.get("applied_rev"),
+        target_rev: row.get("target_rev"),
+        healthy: row.get("healthy"),
+        bundle: row.get("bundle"),
+    }))
+}

@@ -206,7 +206,7 @@ pub async fn enable(
     auth::require_admin(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
     super::business::lock_server(&mut tx, id).await?;
-    super::user_limits::ensure_control(&mut tx, id).await?;
+    super::runtime_controls::ensure(&mut tx, id).await?;
     sqlx::query("INSERT INTO server_plugins(server_id,plugin,source,enabled_at) VALUES($1,'sing-box','administrator',$2) ON CONFLICT(server_id,plugin) DO UPDATE SET enabled=TRUE,source='administrator'")
         .bind(id).bind(now_timestamp()).execute(&mut *tx).await?;
     sqlx::query("UPDATE servers SET dirty_at=COALESCE(dirty_at,FLOOR(EXTRACT(EPOCH FROM clock_timestamp())*1000)::bigint) WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM deployments WHERE server_id=$1 AND module='singbox')")

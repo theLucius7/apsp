@@ -54,6 +54,8 @@ try {
       else if (path.endsWith('/agent-settings')) value = {sample_interval_secs:10,upload_interval_secs:30,auto_update:false,discover_public_ips:false}
       else if (path === '/api/servers/1/telemetry-settings' && method === 'GET') value = {persist_interval_secs:60}
       else if (['/probes','/probe-results','/commands','/metrics'].some(suffix=>path.endsWith(suffix))) value=[]
+      // The server page also reads the server-side profile (ADR 0129); an empty one here.
+      else if (path === '/api/plugins/sing-box/servers/1/profile' && method === 'GET') value = { definition: { outbounds: [], endpoints: [], services: [], cloudflared: [], dns: null, route: null }, revision: 0 }
       else { errors.push(`Unexpected ${method}: ${path}`); return route.fulfill({status:404,json:{}}) }
       return route.fulfill({json:value})
     })

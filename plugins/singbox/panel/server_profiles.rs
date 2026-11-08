@@ -13,7 +13,8 @@ use serde_json::{Value, json};
 use sqlx::{Postgres, Transaction};
 
 const MASK: &str = "__APSP_REDACTED__";
-fn secret(key: &str) -> bool {
+/// Credential fields of server configuration objects; also redacted from audit records.
+pub(crate) fn secret(key: &str) -> bool {
     let normalized = key.to_ascii_lowercase();
     let key = normalized.as_str();
     [
@@ -123,13 +124,14 @@ pub async fn put(
     Path(id): Path<i64>,
     Json(mut request): Json<Request>,
 ) -> ApiResult<Json<Value>> {
-    let actor = crate::control_center::require_server(&state, &headers, id, "proxy:write").await?;
+    // The administration guard audits this request with secrets removed (`host_support`).
+    crate::control_center::require_server(&state, &headers, id, "proxy:write").await?;
     crate::control_center::require_recent_proof(&state, &headers).await?;
     if !(0..business::MAX_SAFE_INTEGER).contains(&request.expected_revision) {
         return Err(ApiError::BadRequest("版本无效".into()));
     }
     let mut tx = state.pool.begin().await?;
-    crate::entitlements::lock(&mut tx).await?;
+    business::lock_publication(&mut tx).await?;
     business::lock_server(&mut tx, id).await?;
     let previous: Option<(Value, i64)> = sqlx::query_as(
         "SELECT definition,revision FROM singbox_server_profiles WHERE server_id=$1 FOR UPDATE",
@@ -170,7 +172,6 @@ pub async fn put(
             ApiError::BadRequest("配置与当前节点或链路不兼容，请检查对象引用和监听端口".into())
         })?;
     business::mark_dirty(&mut tx, &[id]).await?;
-    sqlx::query("INSERT INTO singbox_operation_events(administrator_id,action,detail,created_at) VALUES($1,'server_profile_updated',$2,$3)").bind(actor).bind(json!({"server_id":id,"revision":request.expected_revision+1})).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(json!({"revision":request.expected_revision+1})))
 }

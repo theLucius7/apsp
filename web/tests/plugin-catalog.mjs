@@ -67,6 +67,8 @@ try {
         } else if (path === '/api/servers/2') value = servers[1]
         // Once enabled, the server's plugin tab also reads the plugin business for that server only.
         else if (path === '/api/plugins/sing-box/servers/2/deployments') value = { status: null, history: [] }
+        // The server page also reads the server-side profile (ADR 0129); an empty one here.
+        else if (path === '/api/plugins/sing-box/servers/2/profile') value = { definition: { outbounds: [], endpoints: [], services: [], cloudflared: [], dns: null, route: null }, revision: 0 }
         else if (path === '/api/plugins/sing-box/servers/2/runtime-operations') value = { supported: false, online: false, retiring: false, operations: [] }
         // Enabling shows the deployment tools at once, which read the operations view.
         else if (path === '/api/plugins/sing-box/servers/2/operations-view') value = {
