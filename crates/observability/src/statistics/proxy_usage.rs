@@ -1,5 +1,8 @@
+//! Proxy usage of a time window for the trends page, read from the usage ledger of
+//! service access (`/api/plugins/sing-box/statistics`).
+
+use super::StatisticsQuery;
 use crate::{AppState, auth, error::ApiResult};
-use apsp_panel_host::statistics::StatisticsQuery;
 use axum::{
     Json,
     extract::{Query, State},
@@ -29,6 +32,14 @@ struct UsageBucket {
     last_record_at: Option<i64>,
 }
 
+/// One consistent read-only snapshot, started with a single statement.
+async fn read_snapshot(
+    pool: &sqlx::PgPool,
+) -> sqlx::Result<sqlx::Transaction<'static, sqlx::Postgres>> {
+    pool.begin_with("BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        .await
+}
+
 pub async fn summary(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -36,7 +47,7 @@ pub async fn summary(
 ) -> ApiResult<Json<Value>> {
     auth::require_admin(&state, &headers).await?;
     let window = query.window()?;
-    let mut tx = crate::read_snapshot(&state.pool).await?;
+    let mut tx = read_snapshot(&state.pool).await?;
     sqlx::query("SET LOCAL statement_timeout = '5s'")
         .execute(&mut *tx)
         .await?;

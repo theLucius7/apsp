@@ -61,7 +61,6 @@ pub mod server_profiles;
 pub mod settings;
 pub mod source_migration;
 pub mod sources;
-pub mod statistics;
 mod subscription_fetch;
 pub mod subscription_hosts;
 pub mod subscription_parser;
@@ -72,12 +71,13 @@ pub mod user_controls;
 pub mod user_limits;
 pub mod user_sessions;
 
-pub use activity::runtime_activity_on;
+pub use activity::{ActivityEvidence, runtime_activity_on};
+pub use portal::{HostNetwork, install_host_network};
 
 #[cfg(test)]
 pub(crate) use apsp_panel_host::config;
 pub(crate) use apsp_panel_host::{
-    AppState, agent_api, artifacts, auth, control_center, device_work, error, ip_quality,
+    AppState, agent_api, artifacts, auth, control_center, device_work, error,
     network_configuration, passkeys, releases, runtime_control,
 };
 use axum::{
@@ -110,7 +110,6 @@ pub fn router() -> Router<AppState> {
             "/servers/{id}/profile",
             get(server_profiles::get).put(server_profiles::put),
         )
-        .route("/statistics", get(statistics::summary))
         .route("/policy-groups", get(policies::list).post(policies::create))
         .route(
             "/policy-groups/{id}",

@@ -25,7 +25,7 @@ pub fn valid(template: &str) -> bool {
     !rest.contains("}}")
 }
 
-pub(super) fn render(template: &str, values: [&str; 5]) -> String {
+pub fn render(template: &str, values: [&str; 5]) -> String {
     let mut output = String::new();
     let mut rest = template;
     while let Some((before, after)) = rest.split_once("{{") {

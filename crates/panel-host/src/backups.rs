@@ -144,22 +144,13 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
     sqlx::query("UPDATE operations_backup_schedules SET claimed_id=NULL,last_finished_at=$2,last_error=$3,updated_at=$2 WHERE id=$1 AND claimed_id=$4").bind(id).bind(now_timestamp()).bind(&error).bind(execution).execute(&state.pool).await?;
     if let Some(error) = error {
         let mut tx = state.pool.begin().await?;
-        crate::incidents::open(
-            &mut tx,
-            &format!("backup:{id}"),
-            None,
-            &format!("定时完整备份失败：{error}"),
-            "critical",
-            json!({"schedule_id":id,"execution_id":execution,"observed_at":now_timestamp()}),
-            now_timestamp(),
-            None,
-        )
+        crate::evidence::open_incident_tx(&mut tx, crate::evidence::IncidentReport { key: &format!("backup:{id}"), server: None, title: &format!("定时完整备份失败：{error}"), severity: "critical", evidence: json!({"schedule_id":id,"execution_id":execution,"observed_at":now_timestamp()}), observed_at: now_timestamp() })
         .await?;
         tx.commit().await?;
         return result.map(|_| ());
     } else {
         let mut tx = state.pool.begin().await?;
-        crate::incidents::recover(&mut tx,&format!("backup:{id}"),json!({"backup_id":execution,"database_dump":"实际完成","encryption":"实际完成","observed_at":now_timestamp()}),now_timestamp(),true).await?;
+        crate::evidence::recover_incident_tx(&mut tx,&format!("backup:{id}"),json!({"backup_id":execution,"database_dump":"实际完成","encryption":"实际完成","observed_at":now_timestamp()}),now_timestamp(),true).await?;
         tx.commit().await?;
         executor::retention(
             state,

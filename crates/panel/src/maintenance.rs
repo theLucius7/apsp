@@ -13,7 +13,7 @@ pub async fn run(state: AppState) {
     loop {
         poll.tick().await;
         let mut healthy = true;
-        if let Err(error) = apsp_panel_host::diagnostics::expire(&state).await {
+        if let Err(error) = apsp_observability::diagnostics::expire(&state).await {
             healthy = false;
             tracing::error!(%error, "diagnostic expiry cleanup failed");
         }
@@ -49,7 +49,7 @@ pub async fn run(state: AppState) {
         }
         let now = apsp_protocol::now_timestamp();
         if let Err(error) =
-            apsp_panel_host::notifications::evaluate(&state.pool, state.started_at, now).await
+            apsp_observability::alerts::evaluate(&state.pool, state.started_at, now).await
         {
             healthy = false;
             tracing::error!(%error, "server alert evaluation failed");

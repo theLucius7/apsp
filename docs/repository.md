@@ -26,12 +26,13 @@
 | --- | --- |
 | `protocol` | 面板与 Agent 的共享消息、能力、签名制品契约 |
 | `compiler` | 流量服务的配置编译：从业务模型确定性地生成完整运行时配置包；客户端配置部分供服务权益使用 |
-| `panel-host` | 平台：HTTP 外壳、数据库、Agent 通道、凭据库、通知发送、设备任务接口、类型化接口机制与通用的文本、摘要和地址检查；工作区依赖仅 `protocol`，不依赖任何领域。尚未迁出的治理、资源、观测、基础网络代码，以及名称与证书的 ACME、流量服务的设备配置与运行时检查点、成本的汇率也在这里，已逐个路径登记所属领域（阶段 B2 迁出） |
+| `panel-host` | 平台：HTTP 外壳、数据库、Agent 通道、凭据库、通知发送、设备任务与观测证据的接口、各领域运行时状态的槽、类型化接口机制与通用的文本、摘要和地址检查；工作区依赖仅 `protocol`，不依赖任何领域。尚未迁出的治理、资源、基础网络代码，以及名称与证书的 ACME、流量服务的设备配置与运行时检查点、成本的汇率也在这里，已逐个路径登记所属领域（阶段 B2 迁出） |
 | `cloud-api` | 平台的云接口客户端：签名、传输、重试与错误码；工作区依赖仅 `protocol` |
 | `naming` | 名称与证书领域：DNS 账号与记录、DDNS、DNS-01 验证记录 |
 | `costs` | 成本领域：付费服务、付款、续费提醒与续费日历、供应商对照、计划退订提醒 |
+| `observability` | 观测领域：遥测与历史、网卡计数与矫正、拨测与延迟检测、共用诊断任务服务与诊断工具（IP 质量、NodeQuality、TCP 质量、网络检测）、告警规则与事件、故障事件、服务器健康与事件时间线、统计与看板；直接调用 sing-box crate 的运行活动 |
 | `operations` | 作业领域：远程命令、终端、固定设备操作及其核对、运行时操作，以及作业、计划、维护窗口、有界自动处置与面板备份步骤；排在依赖顺序最后，直接调用流量服务（sing-box crate）与成本 |
-| `plugins/singbox/panel`、`plugins/alicloud/panel` | 尚未拆分的 crate：前者装着流量服务与服务权益（阶段 C 拆开），后者装着云资源、安全组、CDT 计费流量与启停、换 IP 作业（阶段 D 分回各领域）；拆分前保持现有依赖，排在它们所含全部领域之后的领域 crate 可以依赖它们（作业依赖 sing-box crate）。诊断工具（IPQuality、NodeQuality、TcpQuality）的面板代码暂由宿主经 `#[path]` 编入，不是独立 crate |
+| `plugins/singbox/panel`、`plugins/alicloud/panel` | 尚未拆分的 crate：前者装着流量服务与服务权益（阶段 C 拆开），后者装着云资源、安全组、CDT 计费流量与启停、换 IP 作业（阶段 D 分回各领域）；拆分前保持现有依赖，排在它们所含全部领域之后的领域 crate 可以依赖它们（作业依赖 sing-box crate）。诊断工具（IPQuality、NodeQuality、TcpQuality）的面板代码在 `crates/observability/src/diagnostic_plugins/`，`plugins/` 下只留它们的打包脚本与上游锁定文件 |
 | `panel` | 应用：组合平台与各领域、接线依赖倒置接口、启动服务与后台任务；保存唯一的当前数据库初始化 SQL，保留原有 `apsp_panel::*` Rust 路径 |
 | `agent-core` | 设备身份、传输、对账、持久状态、遥测、计量与制品；工作区依赖仅 `protocol`、`adapter-sdk` |
 | `adapter-sdk` | 无状态适配器接口与共享模型 |
@@ -52,18 +53,18 @@
 | `domains/governance.rs` | 登录/TOTP/管理员 Passkey、面板设置、通知渠道与 Webhook 设置、管理与安全、制品目录与导入、公开安装入口、Agent 更新与制品下载、面板备份计划、导入的备份与恢复演练 |
 | `domains/resources.rs` | 服务器、接入令牌、Agent 接入与退役回执、接入模板与批量接入、服务器资产档案、生命周期、迁移与费用记录、云资源关联与 Hetzner 清单 |
 | `domains/traffic.rs` | 运行时检查点、设备的清单与配置包、运行时校验 |
-| `domains/observability.rs` | 统计、告警事件与规则、故障事件、网络检测、看板、遥测与历史、服务器健康、事件时间线与比较、流量矫正、周期拨测与延迟检测、IP 查询与共用诊断服务、Agent 遥测与拨测与诊断上报 |
 | `domains/networking.rs` | 网络配置 |
 | `domains/costs.rs` | 汇率 |
 
-作业已迁到 `crates/operations`，它的 `routes()` 注册设备操作与终端、自动化与维护、远程命令与 Agent 的命令通道、运行时操作。路由文件只组合处理函数，鉴权和业务校验仍由原处理函数负责。`apsp_panel::router`、`AppState`、`AgentConnection`、`apsp_panel::agent_api` 及旧代理业务 Rust 导出继续可用。新增接口放进所属领域的声明，不加到平台。
+作业已迁到 `crates/operations`，它的 `routes()` 注册设备操作与终端、自动化与维护、远程命令与 Agent 的命令通道、运行时操作；观测已迁到 `crates/observability`，它的 `routes()` 注册统计、告警事件与规则、故障事件、网络检测、看板、遥测与历史、服务器健康与比较、流量矫正、拨测与延迟检测、IP 查询与共用诊断服务，以及 Agent 的遥测、拨测与诊断上报。路由文件只组合处理函数，鉴权和业务校验仍由原处理函数负责。`apsp_panel::router`、`AppState`、`AgentConnection`、`apsp_panel::agent_api` 及旧代理业务 Rust 导出继续可用。新增接口放进所属领域的声明，不加到平台。
 
 领域与平台的接线：
 
 - 领域之间需要逆着依赖顺序调用，或调用方还在宿主里时，由调用方声明类型化接口、实现方回答、应用层接线，清单见[功能划分与逻辑结构 §5.5](architecture.md#55-类型化接口)。Agent 通道把设备回报经 `DeviceReports` 交给各领域，不再有插件接口。
 - 领域路由由应用层组合后放进平台的外壳；各领域的后台任务由应用层分别守护，一个崩溃不会停掉其他任务。
-- `crates/naming/`、`crates/costs/`、`crates/operations/`、`plugins/singbox/panel/`、`plugins/alicloud/panel/` 各自是独立 crate，只经平台公开接口与排在前面的领域使用面板能力；`crates/cloud-api/` 是平台的云接口客户端。排在前面的领域要向设备派发任务时经平台的 `device_work`（设备能否接收新任务、提交固定设备操作），作业实现、应用层接线。
-- 诊断代码（IP 质量、NodeQuality、TCP 质量）暂时仍由宿主的 `diagnostic_plugins.rs` 通过 path 编入，共用诊断服务继续负责生命周期、预算、取消和历史。它们与宿主的 IP 质量和诊断类型互相引用，阶段 B2 随观测的代码一起迁出宿主并去掉 `#[path]`。
+- `crates/naming/`、`crates/costs/`、`crates/observability/`、`crates/operations/`、`plugins/singbox/panel/`、`plugins/alicloud/panel/` 各自是独立 crate，只经平台公开接口与排在前面的领域使用面板能力；`crates/cloud-api/` 是平台的云接口客户端。排在前面的领域要向设备派发任务时经平台的 `device_work`（设备能否接收新任务、提交固定设备操作），作业实现、应用层接线。
+- 诊断工具（IP 质量、NodeQuality、TCP 质量）是观测 crate 的 `diagnostic_plugins/` 子模块，共用诊断服务负责生命周期、预算、取消和历史；不再有跨 crate 的 `#[path]`。
+- 领域在进程内的运行时状态（实时遥测缓存、IP 查询提供方）放在 `AppState` 的 `domain_states` 槽里，类型属于领域，平台不认识；测试用 `with` 换成替身。资源、治理与成本经平台的 `evidence` 记录服务器事件与故障，资源的服务器视图与新服务器的拨测、延迟检测经资源声明的 `server_observation` 取得观测的数据。
 
 数据库只有一份当前基线 `crates/panel/migrations/0001_current.sql`（[ADR 0122](adr/0122-unreleased-schema-baseline.md)）；平台通过 `sqlx::migrate!("../panel/migrations")` 嵌入它，领域 crate 的数据库测试也指向它（如 `crates/naming` 的 `#[sqlx::test(migrations = "../panel/migrations")]`）。修改基线是高风险改动，必须附带 `scripts/baseline-adoption-*.sql`，写法与部署验证见[数据库基线](database-baseline.md)「生产安装」；整理 SQL 而生成的基线逐字节不变时不算基线变更。
 

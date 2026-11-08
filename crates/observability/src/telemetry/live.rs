@@ -96,7 +96,7 @@ impl LiveStore {
 }
 
 pub fn latest_live(state: &AppState, server: i64) -> Option<LiveSample> {
-    state.telemetry_live.get(server)
+    store(state).get(server)
 }
 
 pub async fn live(
@@ -110,9 +110,14 @@ pub async fn live(
         return Err(ApiError::BadRequest("实时样本格式或时间无效".into()));
     }
     let sampled_at = sample.sampled_at;
-    state.telemetry_live.publish(server, sample, now)?;
+    store(&state).publish(server, sample, now)?;
     // Receipt is explicitly not a durable ACK; the Agent keeps its outbox.
     Ok(Json(json!({"accepted":true,"sampled_at":sampled_at})))
+}
+
+/// The live samples of this process, shared by every copy of the application state.
+fn store(state: &AppState) -> Arc<LiveStore> {
+    state.domain_states.get_or_init(LiveStore::default)
 }
 
 pub async fn attach_live(
@@ -175,13 +180,13 @@ pub(crate) async fn dashboard_live(state: &AppState, admin: bool) -> ApiResult<V
     let rows=sqlx::query("SELECT id,last_seen,last_heartbeat_at,NULLIF(metrics_sampled_at,0) AS metrics_sampled_at,agent_settings,asset_settings FROM servers WHERE deleted_at IS NULL AND COALESCE(asset_settings->>'hidden','false')<>'true' ORDER BY id").fetch_all(&state.pool).await?;
     // A live sample at least as new as the stored one replaces it, so stored
     // metrics are read only for servers without one.
+    let live_store = store(state);
     let live: HashMap<i64, (i64, i64, Arc<Value>)> = rows
         .iter()
         .filter_map(|row| {
             let id: i64 = row.get("id");
             let persisted: Option<i64> = row.get("metrics_sampled_at");
-            state
-                .telemetry_live
+            live_store
                 .metrics(id)
                 .filter(|(sampled, _, _)| Some(*sampled) >= persisted)
                 .map(|value| (id, value))

@@ -1,0 +1,28 @@
+[package]
+name = "apsp-observability"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+apsp-panel-host.workspace = true
+apsp-protocol.workspace = true
+apsp-plugin-singbox.workspace = true
+axum.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+tracing.workspace = true
+flate2 = "1"
+rustls = { version = "0.23", default-features = false }
+tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring", "tls12"] }
+webpki-roots = "=1.0.9"
+tower-http = { version = "0.6", features = ["set-header"] }

@@ -32,7 +32,7 @@ pub struct Task {
 }
 
 // Serialize default assignment and group edits before taking server row locks.
-pub(crate) async fn lock(tx: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error> {
+pub async fn lock(tx: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error> {
     sqlx::query("SELECT pg_advisory_xact_lock(1936289389, 1)")
         .execute(&mut **tx)
         .await?;
@@ -234,10 +234,7 @@ pub async fn remove(
 }
 
 // The caller acquires the group lock before inserting the server and explicit probes.
-pub(crate) async fn assign_defaults(
-    tx: &mut Transaction<'_, Postgres>,
-    server: i64,
-) -> ApiResult<()> {
+pub async fn assign_defaults(tx: &mut Transaction<'_, Postgres>, server: i64) -> ApiResult<()> {
     let defaults: Vec<(Uuid, Value)> =
         sqlx::query_as("SELECT id,spec FROM latency_tasks WHERE default_enabled ORDER BY id")
             .fetch_all(&mut **tx)

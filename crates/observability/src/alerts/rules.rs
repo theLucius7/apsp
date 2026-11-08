@@ -52,6 +52,20 @@ pub struct Spec {
     pub server_ids: Vec<i64>,
 }
 
+/// Checks an alert rule that an enrollment template applies to the servers it enrolls.
+pub fn check_template(rule: &serde_json::Value) -> ApiResult<()> {
+    let spec: Spec = serde_json::from_value(rule.clone())
+        .map_err(|_| ApiError::BadRequest("告警模板必须符合资源告警字段".into()))?;
+    if spec.name.trim().is_empty()
+        || !spec.threshold.is_finite()
+        || spec.threshold <= 0.0
+        || !(1..=1440).contains(&spec.duration_minutes)
+    {
+        return Err(ApiError::BadRequest("告警名称、阈值或持续时间无效".into()));
+    }
+    Ok(())
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
@@ -149,7 +163,7 @@ async fn save(state: &AppState, id: Uuid, mut input: Input, editing: bool) -> Ap
         spec.server_ids.clear();
     }
     let mut tx = state.pool.begin().await?;
-    super::lock_settings(&mut tx).await?;
+    crate::notifications::lock_settings(&mut tx).await?;
     let revision = if editing {
         let previous: i64 = sqlx::query_scalar("SELECT revision FROM alert_rules WHERE id=$1")
             .bind(id)
@@ -204,7 +218,7 @@ pub async fn remove(
 ) -> ApiResult<StatusCode> {
     auth::require_admin(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
-    super::lock_settings(&mut tx).await?;
+    crate::notifications::lock_settings(&mut tx).await?;
     if sqlx::query("DELETE FROM alert_rules WHERE id=$1")
         .bind(id)
         .execute(&mut *tx)

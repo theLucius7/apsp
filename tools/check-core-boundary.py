@@ -77,28 +77,12 @@ EXCEPTIONS = {
 # Panel host: HTTP and Windows API spellings plus URL userinfo test fixtures.
 HOST_EXCEPTIONS = {
     "src/config.rs": (r'"https://user:secret@example\.invalid"',),
-    "src/diagnostics/tests.rs": (r'"https://user:secret@nodequality\.com/r/x"',),
     "src/exchange/fetch.rs": (r"\.user_agent\(",),
     "src/installation/windows.rs": (
         r"\[Security\.Principal\.WindowsIdentity\]::GetCurrent\(\)\.User\b",
         r"\.DefaultRequestHeaders\.UserAgent\b",
     ),
-    "src/ip_quality/providers/tests.rs": (r'contains_key\("user-agent"\)',),
     "src/releases/network.rs": (r"\.user_agent\(", r'"https://user@github\.com/"'),
-    "src/network_workbench/http_probe.rs": (r"\breqwest::header::USER_AGENT\.as_str\(\)",),
-    # Wire/storage names for external provider request limits, never proxy plans.
-    "src/network_workbench/reports.rs": (
-        r'(?<=serde\(rename = ")daily_quota(?="\))',
-        r'r\.get\("daily_quota"\)',
-        r'(?<=credential_ref,)daily_quota(?=,cache_seconds)',
-        r'daily_quota=EXCLUDED\.daily_quota(?=,cache_seconds=EXCLUDED\.cache_seconds)',
-        r'(?<=CASE WHEN )quota_day(?=<>\$2 THEN 1 ELSE requests_today\+1 END,)',
-        r'(?<=END,)quota_day(?==\$2 WHERE id=\$1 AND NOT disabled AND \()',
-        r'(?<=AND \()quota_day(?=<>\$2 OR requests_today<daily_quota\))',
-        r'(?<=requests_today<)daily_quota(?=\) RETURNING requests_today")',
-        r'(?<=AND NOT disabled AND )quota_day(?==\$2 AND requests_today<daily_quota RETURNING)',
-        r'(?<=requests_today<)daily_quota(?= RETURNING requests_today")',
-    ),
     # Exact official cloud initialization field used to prove its omission.
     "src/cloud_resources/hetzner/client/tests.rs": (r'raw\["user_data"\]',),
 
@@ -134,6 +118,7 @@ DOMAIN_CRATES = {
     "crates/compiler": ("apsp-compiler", "traffic"),
     "crates/costs": ("apsp-costs", "costs"),
     "crates/operations": ("apsp-operations", "operations"),
+    "crates/observability": ("apsp-observability", "observability"),
 }
 # Crates that still hold several domains keep their current dependencies until they are
 # split (docs/architecture.md section 9, stages C and D). A domain crate may depend on

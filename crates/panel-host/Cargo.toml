@@ -32,7 +32,6 @@ httpdate = "1.0.3"
 sha1 = "0.10"
 data-encoding = "2"
 rust-embed = { version = "8", features = ["debug-embed"] }
-tower-http = { version = "0.6", features = ["trace", "limit", "set-header"] }
 
 tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring", "tls12"] }
 webpki-roots = "=1.0.9"

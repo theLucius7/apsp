@@ -267,9 +267,9 @@ async fn live(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Js
 async fn exchange_rates(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> ApiResult<Json<crate::exchange::ExchangeView>> {
+) -> ApiResult<Json<apsp_panel_host::exchange::ExchangeView>> {
     allowed(&state, &headers, None).await?;
-    Ok(Json(crate::exchange::current(&state.pool).await?))
+    Ok(Json(apsp_panel_host::exchange::current(&state.pool).await?))
 }
 
 async fn history(

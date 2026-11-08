@@ -250,7 +250,7 @@ pub async fn observe(pool: &PgPool) -> ApiResult<()> {
                 .iter()
                 .any(|v| v["currency"].as_str() != Some(currency.as_str()))
             {
-                crate::incidents::open(&mut tx,&format!("cloud:budget-currency:{id}:{}",snapshot["bill"]["month"].as_str().unwrap_or("unknown")),row.get("server_id"),&format!("云资源 {} 的账单含预算币种以外的金额，未计入预算比较",row.get::<String,_>("name")),"info",json!({"provider":"alicloud","resource_id":id,"queried_at":queried,"budget_currency":currency,"bill":snapshot["bill"],"converted":false}),queried.unwrap(),None).await?;
+                crate::evidence::open_incident_tx(&mut tx, crate::evidence::IncidentReport { key: &format!("cloud:budget-currency:{id}:{}",snapshot["bill"]["month"].as_str().unwrap_or("unknown")), server: row.get("server_id"), title: &format!("云资源 {} 的账单含预算币种以外的金额，未计入预算比较",row.get::<String,_>("name")), severity: "info", evidence: json!({"provider":"alicloud","resource_id":id,"queried_at":queried,"budget_currency":currency,"bill":snapshot["bill"],"converted":false}), observed_at: queried.unwrap() }).await?;
             }
             let actual = entries
                 .iter()
@@ -264,14 +264,14 @@ pub async fn observe(pool: &PgPool) -> ApiResult<()> {
                     .iter()
                     .any(|v| v["currency"].as_str() == Some(currency.as_str()))
             {
-                crate::incidents::open(&mut tx,&format!("cloud:budget:{id}:{}",snapshot["bill"]["month"].as_str().unwrap_or("unknown")),row.get("server_id"),&format!("云资源 {} 的账单缓存达到月预算",row.get::<String,_>("name")),"warning",json!({"provider":"alicloud","resource_id":id,"queried_at":queried,"currency":currency,"budget":budget,"bill":snapshot["bill"],"real_time_limit":false}),queried.unwrap(),None).await?;
+                crate::evidence::open_incident_tx(&mut tx, crate::evidence::IncidentReport { key: &format!("cloud:budget:{id}:{}",snapshot["bill"]["month"].as_str().unwrap_or("unknown")), server: row.get("server_id"), title: &format!("云资源 {} 的账单缓存达到月预算",row.get::<String,_>("name")), severity: "warning", evidence: json!({"provider":"alicloud","resource_id":id,"queried_at":queried,"currency":currency,"budget":budget,"bill":snapshot["bill"],"real_time_limit":false}), observed_at: queried.unwrap() }).await?;
             }
         }
         if let Some(expires) = row.get::<Option<i64>, _>("expires_at")
             && expires - now <= 7 * 86400
             && now - expires <= 7 * 86400
         {
-            crate::incidents::open(&mut tx,&format!("cloud:expiry:{id}:{expires}"),row.get("server_id"),&format!("云资源 {} 的采购到期记录需要处理",row.get::<String,_>("name")),"warning",json!({"resource_id":id,"expires_at":expires,"source":"人工采购台账，非实时云计费状态"}),now,None).await?;
+            crate::evidence::open_incident_tx(&mut tx, crate::evidence::IncidentReport { key: &format!("cloud:expiry:{id}:{expires}"), server: row.get("server_id"), title: &format!("云资源 {} 的采购到期记录需要处理",row.get::<String,_>("name")), severity: "warning", evidence: json!({"resource_id":id,"expires_at":expires,"source":"人工采购台账，非实时云计费状态"}), observed_at: now }).await?;
         }
     }
     tx.commit().await?;

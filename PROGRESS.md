@@ -1,5 +1,20 @@
 # 执行进度
 
+## 2026-11-08：领域架构阶段 B2b——观测迁出宿主
+
+- 用户要求：继续下一步（领域重构）。作业之后，观测是宿主里排在最后的领域，B2b 把它迁成独立的 `crates/observability`。
+- 观测 crate：遥测与历史、网卡计数与矫正、拨测与延迟检测、共用诊断任务服务与诊断工具（IP 质量、NodeQuality、TCP 质量、网络检测）、告警规则与事件（原 `notifications/` 中的规则、评估与事件，现为 `alerts/`）、故障事件、服务器健康与事件时间线、统计与看板迁到 `crates/observability`；`plugins/{ipquality,nodequality,tcpquality}/panel` 的诊断工具代码成为它的 `diagnostic_plugins/` 子模块，不再经 `#[path]` 编入宿主（`plugins/` 下只留打包脚本与上游锁定文件）；sing-box 里归观测的代理用量统计移到 `statistics/proxy_usage.rs`。观测直接调用 sing-box 的运行活动，`RuntimeActivity` 接口删除。
+- 去掉对观测的反向引用：
+  - `AppState` 的 IP 查询提供方与实时遥测缓存改放平台新增的 `DomainStates` 槽（每种类型一个值、首次使用时创建、所有副本共享），平台不再认识观测的类型；外部查询的并发许可留作平台字段。
+  - 资源、治理与成本记录服务器事件、打开与恢复故障改经平台的 `evidence`；资源的服务器视图（流量摘要、实时遥测）与新服务器、接入模板的拨测、告警检查和延迟检测分配改经资源声明的 `server_observation`，视图的流量摘要类型移到资源。
+  - 成员门户显示的主机网络属性改经门户声明的 `HostNetwork`，成员可见字段的筛选随代码移到观测。
+  - 各接口由应用层 `wiring.rs` 接线；取舍见 `docs/open-questions.md`。
+- 边界检查：越界从 595 条减到 575 条（SQL 363、代码引用 92、前端引用 120），按搬家前后的路径对照没有新增，`#[path]` 越界清零；平台代码指向领域只剩 `state.rs` 指向治理的 2 条。依赖检查登记 `crates/observability`；观测文件迁出平台后，平台业务词汇检查中对应的例外删除。静态比对路由登记，538 个组合不变（sing-box 的代理用量统计改为在观测登记完整路径 `/api/plugins/sing-box/statistics`，实际地址不变）。宿主从约 3.7 万行减到约 2.2 万行。
+- 公共 Rust 路径：`apsp_panel::{telemetry, diagnostics, diagnostic_plugins, ip_quality, latency_tasks, probes, network_workbench, server_traffic, traffic_correction, statistics, dashboard, incidents, server_monitoring}` 改由观测 crate 提供，`apsp_panel::notifications` 合并平台的发送与观测的 `evaluate`、`events`、`rules`；`AppState` 的 `quality_providers`、`telemetry_live` 字段改为 `domain_states`。
+- 验证：`cargo fmt --check` 与全工作区 `cargo clippy --all-targets -- -D warnings` 通过；本地 PostgreSQL 16 上受影响 crate 的测试全部通过：宿主 82、观测 93、作业 10、成本 7、名称与证书 64、云接口 8、sing-box 216（1 个原有忽略）、阿里云 101、应用库 1、应用集成测试 86 个目标共 422 个（8 个原有忽略，需要真实运行时或测试机），合计 1004 个通过、0 失败；诊断工具与观测的单元测试随代码进入观测 crate。成本的计划退订提醒测试在第一轮里失败（成本 crate 的单元测试没有接线观测证据接口，报“观测证据的接收方未登记”），这正是跨领域流程，改为应用层集成测试 `cancellation_reminders.rs` 后通过，成本的其余测试复跑通过。两个边界检查通过（575 条已知越界，没有新增），检查器单元测试 34 个通过；文档链接与锚点 1943 个，0 错误。前端源码未改，只构建了 `web/dist` 供编译。验证后已删除本轮的编译目录、前端依赖与产物和临时数据库。
+- 未验证：Agent 一侧（agent-core、适配器、tcp-probe）代码未改，只经 clippy 类型检查；前端源码未改，前端测试未运行；CI 仍暂停，未触发；没有在测试机上用真实设备验证遥测、拨测与诊断。
+- 下一步：阶段 B2 继续——成本留在宿主的汇率（先理清看板汇率入口的归属与看板访问规则），然后基础网络与名称、资源、治理依次迁出；阶段 C（sing-box 拆为流量服务与服务权益）。
+
 ## 2026-11-09：提交身份移出仓库，按为谁工作区分
 
 - 用户要求：身份钩子 `.claude/hooks/git-identity.sh` 不上传 GitHub、只在本地，身份改回用户本人。该钩子 2026-11-07 随 imengying/apsp 的 #245 合入，把 fork 所有者 `imengying <yuzuzv@gmail.com>` 写成了本仓库的提交身份，本机两个克隆的仓库级配置也被改成了它，此后所有者会话的提交都署了 imengying。

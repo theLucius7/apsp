@@ -16,7 +16,7 @@ pub async fn evaluate(pool: &PgPool, started_at: i64, now: i64) -> anyhow::Resul
     // Keep telemetry contention local to one server, rather than locking the whole fleet.
     for id in ids {
         let mut tx = pool.begin().await?;
-        let settings = super::lock_settings(&mut tx).await?;
+        let settings = crate::notifications::lock_settings(&mut tx).await?;
         let query = format!(
             "SELECT {SERVER_COLUMNS} FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE"
         );

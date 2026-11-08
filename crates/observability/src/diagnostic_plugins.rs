@@ -1,9 +1,10 @@
+//! Diagnostic tools that the shared diagnostic job service runs: NodeQuality, TCP quality,
+//! IP quality and network checks. Each tool converts parameters, runs and parses its
+//! report; the service owns the job lifecycle (ADR 0028).
+
 use crate::diagnostics::service::DiagnosticPlugin;
-#[path = "../../../plugins/ipquality/panel/mod.rs"]
 pub mod ipquality;
-#[path = "../../../plugins/nodequality/panel/mod.rs"]
 pub mod nodequality;
-#[path = "../../../plugins/tcpquality/panel/mod.rs"]
 pub mod tcpquality;
 static NODEQUALITY: nodequality::NodeQualityPlugin = nodequality::NodeQualityPlugin;
 static NODE_IPQUALITY: nodequality::node_queries::NodeIpQualityPlugin =

@@ -93,7 +93,9 @@ impl TestPanel {
         )
         .await?;
         state.release_keys = Some(Arc::new(release_support::trusted_keys()));
-        state.quality_providers = Arc::default();
+        state.domain_states = state
+            .domain_states
+            .with(apsp_panel::ip_quality::ProviderRegistry::default());
         let app = router(state.clone());
         let task = tokio::spawn(async move {
             axum::serve(

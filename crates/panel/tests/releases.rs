@@ -37,12 +37,11 @@ impl Fixture {
         let state = AppState {
             started_at: apsp_protocol::now_timestamp(),
             device_lifecycle: Default::default(),
-            telemetry_live: Arc::default(),
             pool: PgPoolOptions::new().connect_lazy("postgres://fixture@127.0.0.1/unused")?,
             login_permits: Arc::new(Semaphore::new(4)),
             passkeys: Arc::new(apsp_panel::passkeys::Service::new("http://127.0.0.1")),
             quality_permits: Arc::new(Semaphore::new(2)),
-            quality_providers: Arc::default(),
+            domain_states: Default::default(),
             release_permits: Arc::new(Semaphore::new(1)),
             release_keys: Some(Arc::new(signing::trusted_keys())),
             config: Arc::new(Config {

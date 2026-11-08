@@ -16,6 +16,7 @@ apsp-naming.workspace = true
 apsp-plugin-alicloud.workspace = true
 apsp-costs.workspace = true
 apsp-operations.workspace = true
+apsp-observability.workspace = true
 apsp-protocol.workspace = true
 axum.workspace = true
 sqlx.workspace = true

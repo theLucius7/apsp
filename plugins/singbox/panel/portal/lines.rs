@@ -8,10 +8,10 @@
 use super::access::{lock, session, session_hash};
 use crate::{
     AppState,
-    error::ApiResult,
-    ip_quality,
+    error::{ApiError, ApiResult},
     nexus_nodes::topology::{self, CatalogNode, Topology},
 };
+use apsp_panel_host::ports::{BoxFuture, Port};
 use apsp_protocol::now_timestamp;
 use axum::{
     Json,
@@ -111,79 +111,32 @@ fn rounded(value: &Value) -> Value {
         .unwrap_or(Value::Null)
 }
 
-/// Field labels a member may see: network identity, usage class, risk flags
-/// and scores. Cities, coordinates and time zones could locate a host.
-fn member_field(field: &ip_quality::QualityField) -> bool {
-    use ip_quality::QualityFieldKind as Kind;
-    match field.kind {
-        Some(Kind::Latitude | Kind::Longitude) => false,
-        Some(Kind::Asn | Kind::CountryCode | Kind::Boolean | Kind::Score) => true,
-        _ => matches!(
-            field.label.as_str(),
-            "ASN"
-                | "国家代码"
-                | "ISP"
-                | "网络组织"
-                | "用途类型"
-                | "连接类型"
-                | "ASN 类型"
-                | "ASN 用途"
-                | "组织类型"
-                | "国家或地区"
-        ),
-    }
+/// The network attributes a member may see for a host, measured by observability from
+/// the addresses the host reported: network identity, usage class, risk flags and
+/// scores, without the addresses, cities, coordinates or time zones. Observability
+/// answers and the application connects it.
+pub trait HostNetwork: Send + Sync {
+    fn member_network<'a>(
+        &'a self,
+        state: &'a AppState,
+        server: i64,
+        static_info: &'a Value,
+    ) -> BoxFuture<'a, ApiResult<Value>>;
 }
 
-/// Measured network attributes per address family, without the address.
-fn network(quality: &[ip_quality::IpQuality]) -> Value {
-    let mut families: BTreeMap<&'static str, Vec<Value>> = BTreeMap::new();
-    let mut summary: BTreeMap<&'static str, BTreeMap<&'static str, Value>> = BTreeMap::new();
-    let mut checked = None::<i64>;
-    for entry in quality {
-        let Ok(address) = entry.ip.parse::<std::net::IpAddr>() else {
-            continue;
-        };
-        if !apsp_panel_host::net::public_ip(address) {
-            continue;
-        }
-        let family = if address.is_ipv4() { "IPv4" } else { "IPv6" };
-        for database in &entry.databases {
-            let fields: Vec<Value> = database
-                .fields
-                .iter()
-                .filter(|field| member_field(field) && !field.value.is_null())
-                .map(|field| json!({"label":field.label,"value":field.value,"kind":field.kind}))
-                .collect();
-            if fields.is_empty() {
-                continue;
-            }
-            let found = summary.entry(family).or_default();
-            for field in &database.fields {
-                let key = match (field.kind, field.label.as_str()) {
-                    (Some(ip_quality::QualityFieldKind::Asn), _) | (None, "ASN") => "asn",
-                    (Some(ip_quality::QualityFieldKind::CountryCode), _) | (None, "国家代码") => {
-                        "country"
-                    }
-                    (_, "网络组织" | "ISP") => "organization",
-                    _ => continue,
-                };
-                if !field.value.is_null() {
-                    found.entry(key).or_insert_with(|| field.value.clone());
-                }
-            }
-            let at = database.last_success_at.or(database.attempted_at);
-            checked = checked.max(at);
-            families.entry(family).or_default().push(json!({
-                "source":database.label,"database":database.database,"checked_at":at,"historical":database.historical,"fields":fields
-            }));
-        }
+static HOST_NETWORK: Port<dyn HostNetwork> = Port::new();
+
+pub fn install(network: &'static dyn HostNetwork) {
+    HOST_NETWORK.install(network);
+}
+
+async fn member_network(state: &AppState, server: i64, static_info: &Value) -> ApiResult<Value> {
+    match HOST_NETWORK.get() {
+        Some(network) => network.member_network(state, server, static_info).await,
+        None => Err(ApiError::Conflict(
+            "线路网络属性的提供方未登记，不能显示主机的网络属性".into(),
+        )),
     }
-    if families.is_empty() {
-        return json!({"available":false});
-    }
-    json!({"available":true,"checked_at":checked,"families":families.into_iter().map(|(family, datasets)| json!({
-        "family":family,"summary":summary.remove(family).unwrap_or_default(),"datasets":datasets
-    })).collect::<Vec<_>>()})
 }
 
 /// Latest, one-hour average and loss per carrier from the host's own probes.
@@ -410,10 +363,7 @@ pub(super) async fn view(
             .unwrap_or_else(|| json!({"monitored":false}));
         host_latency.insert(*server, latency.clone());
         let network = match host.filter(|_| agent) {
-            Some(host) => {
-                let ips = ip_quality::reported_ips(&host.static_info);
-                network(&ip_quality::cached(&state, host.server_id, &ips).await?)
-            }
+            Some(host) => member_network(&state, host.server_id, &host.static_info).await?,
             None => json!({"available":false,"reason":"no_agent"}),
         };
         let label = direct

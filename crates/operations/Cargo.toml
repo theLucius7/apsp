@@ -10,6 +10,7 @@ apsp-panel-host.workspace = true
 apsp-protocol.workspace = true
 apsp-plugin-singbox.workspace = true
 apsp-costs.workspace = true
+apsp-observability.workspace = true
 axum.workspace = true
 sqlx.workspace = true
 tokio.workspace = true

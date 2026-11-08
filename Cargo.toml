@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/protocol", "crates/compiler", "crates/panel", "crates/panel-host", "crates/agent", "crates/agent-core", "crates/adapter-sdk", "crates/adapter-singbox", "crates/adapter-nodequality", "crates/tcp-probe", "crates/adapter-tcpquality", "crates/adapter-ipquality", "crates/cloud-api", "crates/naming", "crates/costs", "crates/operations", "plugins/singbox/panel", "plugins/alicloud/panel"]
+members = ["crates/protocol", "crates/compiler", "crates/panel", "crates/panel-host", "crates/agent", "crates/agent-core", "crates/adapter-sdk", "crates/adapter-singbox", "crates/adapter-nodequality", "crates/tcp-probe", "crates/adapter-tcpquality", "crates/adapter-ipquality", "crates/cloud-api", "crates/naming", "crates/costs", "crates/operations", "crates/observability", "plugins/singbox/panel", "plugins/alicloud/panel"]
 resolver = "3"
 
 [workspace.package]
@@ -22,6 +22,7 @@ apsp-cloud-api = { path = "crates/cloud-api" }
 apsp-naming = { path = "crates/naming" }
 apsp-costs = { path = "crates/costs" }
 apsp-operations = { path = "crates/operations" }
+apsp-observability = { path = "crates/observability" }
 apsp-plugin-singbox = { path = "plugins/singbox/panel" }
 apsp-plugin-alicloud = { path = "plugins/alicloud/panel" }
 anyhow = "1"

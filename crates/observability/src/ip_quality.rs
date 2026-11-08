@@ -11,7 +11,7 @@ use axum::{
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
     net::IpAddr,
@@ -185,7 +185,7 @@ pub async fn view(state: &AppState, server_id: i64) -> ApiResult<ServerIpInfoVie
     quality.retain(|entry| !entry.provider.starts_with(node::PROVIDER_PREFIX));
     quality.extend(node::cached(state, server_id, &mut node_quality).await?);
     quality.sort_by(|a, b| a.ip.cmp(&b.ip).then_with(|| a.provider.cmp(&b.provider)));
-    let mut providers = state.quality_providers.descriptions_for(&quality);
+    let mut providers = providers(state).descriptions_for(&quality);
     providers.extend(providers::node_descriptions(
         node_quality.source_ready,
         node_quality.source_reason.as_deref(),
@@ -214,6 +214,11 @@ pub async fn get(
     Ok(Json(view(&state, id).await?))
 }
 
+/// The configured lookup providers, read from the environment on first use.
+pub fn providers(state: &AppState) -> Arc<ProviderRegistry> {
+    state.domain_states.get_or_init(ProviderRegistry::from_env)
+}
+
 pub fn reported_ips(info: &Value) -> Vec<String> {
     let mut ips: Vec<_> = info["ip_addresses"]
         .as_array()
@@ -233,9 +238,93 @@ pub fn reported_ips(info: &Value) -> Vec<String> {
     ips
 }
 
+/// What the member portal shows for a host: the measured network attributes of its
+/// reported public addresses, per address family and without the addresses.
+pub async fn member_network(
+    state: &AppState,
+    server_id: i64,
+    static_info: &Value,
+) -> ApiResult<Value> {
+    let ips = reported_ips(static_info);
+    Ok(member_view(&cached(state, server_id, &ips).await?))
+}
+
+/// Field labels a member may see: network identity, usage class, risk flags
+/// and scores. Cities, coordinates and time zones could locate a host.
+fn member_field(field: &QualityField) -> bool {
+    use QualityFieldKind as Kind;
+    match field.kind {
+        Some(Kind::Latitude | Kind::Longitude) => false,
+        Some(Kind::Asn | Kind::CountryCode | Kind::Boolean | Kind::Score) => true,
+        _ => matches!(
+            field.label.as_str(),
+            "ASN"
+                | "国家代码"
+                | "ISP"
+                | "网络组织"
+                | "用途类型"
+                | "连接类型"
+                | "ASN 类型"
+                | "ASN 用途"
+                | "组织类型"
+                | "国家或地区"
+        ),
+    }
+}
+
+/// Measured network attributes per address family, without the address.
+fn member_view(quality: &[IpQuality]) -> Value {
+    let mut families: BTreeMap<&'static str, Vec<Value>> = BTreeMap::new();
+    let mut summary: BTreeMap<&'static str, BTreeMap<&'static str, Value>> = BTreeMap::new();
+    let mut checked = None::<i64>;
+    for entry in quality {
+        let Ok(address) = entry.ip.parse::<std::net::IpAddr>() else {
+            continue;
+        };
+        if !apsp_panel_host::net::public_ip(address) {
+            continue;
+        }
+        let family = if address.is_ipv4() { "IPv4" } else { "IPv6" };
+        for database in &entry.databases {
+            let fields: Vec<Value> = database
+                .fields
+                .iter()
+                .filter(|field| member_field(field) && !field.value.is_null())
+                .map(|field| json!({"label":field.label,"value":field.value,"kind":field.kind}))
+                .collect();
+            if fields.is_empty() {
+                continue;
+            }
+            let found = summary.entry(family).or_default();
+            for field in &database.fields {
+                let key = match (field.kind, field.label.as_str()) {
+                    (Some(QualityFieldKind::Asn), _) | (None, "ASN") => "asn",
+                    (Some(QualityFieldKind::CountryCode), _) | (None, "国家代码") => "country",
+                    (_, "网络组织" | "ISP") => "organization",
+                    _ => continue,
+                };
+                if !field.value.is_null() {
+                    found.entry(key).or_insert_with(|| field.value.clone());
+                }
+            }
+            let at = database.last_success_at.or(database.attempted_at);
+            checked = checked.max(at);
+            families.entry(family).or_default().push(json!({
+                "source":database.label,"database":database.database,"checked_at":at,"historical":database.historical,"fields":fields
+            }));
+        }
+    }
+    if families.is_empty() {
+        return json!({"available":false});
+    }
+    json!({"available":true,"checked_at":checked,"families":families.into_iter().map(|(family, datasets)| json!({
+        "family":family,"summary":summary.remove(family).unwrap_or_default(),"datasets":datasets
+    })).collect::<Vec<_>>()})
+}
+
 pub async fn cached(state: &AppState, server_id: i64, ips: &[String]) -> ApiResult<Vec<IpQuality>> {
     let mut quality = cache::read(&state.pool, server_id, ips).await?;
-    state.quality_providers.mark_availability(&mut quality);
+    providers(state).mark_availability(&mut quality);
     Ok(quality)
 }
 
@@ -288,7 +377,7 @@ async fn refresh_inner(state: &AppState, id: i64, ips: &[String]) -> ApiResult<V
         .map_err(anyhow::Error::from)?;
     let mut quality = queries::query_sources(
         &client,
-        &state.quality_providers,
+        &providers(state),
         ips,
         false,
         Duration::from_secs(40),

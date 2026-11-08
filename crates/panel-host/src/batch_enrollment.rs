@@ -55,18 +55,10 @@ fn normalize(mut config: TemplateConfig) -> ApiResult<TemplateConfig> {
     }
     for spec in &mut config.probes {
         spec.normalize();
-        crate::probes::prepare_write(spec)?;
+        crate::server_observation::prepare_probe(spec)?;
     }
     for alert in &config.alerts {
-        let spec: crate::notifications::rules::Spec = serde_json::from_value(alert.clone())
-            .map_err(|_| ApiError::BadRequest("告警模板必须符合资源告警字段".into()))?;
-        if spec.name.trim().is_empty()
-            || !spec.threshold.is_finite()
-            || spec.threshold <= 0.0
-            || !(1..=1440).contains(&spec.duration_minutes)
-        {
-            return Err(ApiError::BadRequest("告警名称、阈值或持续时间无效".into()));
-        }
+        crate::server_observation::check_alert_rule(alert)?;
     }
     if !config.asset.is_object()
         || serde_json::to_vec(&config.asset)
@@ -159,7 +151,7 @@ async fn register(state: &AppState, config: &TemplateConfig, name: &str) -> ApiR
     let token = auth::random_token();
     let now = now_timestamp();
     let mut tx = state.pool.begin().await?;
-    crate::latency_tasks::lock(&mut tx).await?;
+    crate::server_observation::lock_latency_tasks_tx(&mut tx).await?;
     let id: i64=sqlx::query_scalar("INSERT INTO servers(name,agent_settings,telemetry_settings,asset_settings) VALUES($1,$2,$3,$4) RETURNING id")
         .bind(name).bind(json!(config.agent_settings)).bind(json!(config.telemetry_settings)).bind(json!(config.asset_settings)).fetch_one(&mut *tx).await?;
     sqlx::query("INSERT INTO fleet_profiles(server_id,asset,updated_at) VALUES($1,$2,$3)")
@@ -188,15 +180,14 @@ async fn register(state: &AppState, config: &TemplateConfig, name: &str) -> ApiR
             .execute(&mut *tx)
             .await?;
     }
-    crate::latency_tasks::assign_defaults(&mut tx, id).await?;
+    crate::server_observation::assign_default_latency_tasks_tx(&mut tx, id).await?;
     sqlx::query("INSERT INTO enrollment_tokens(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
         .bind(auth::hash_token(&token))
         .bind(id)
         .bind(now + 86400)
         .execute(&mut *tx)
         .await?;
-    crate::server_monitoring::record_event(&mut tx, id, "registered", json!({"template":true}))
-        .await?;
+    crate::evidence::record_event_tx(&mut tx, id, "registered", json!({"template":true})).await?;
     tx.commit().await?;
     Ok(json!({"server_id":id,"token":token,"expires_at":now+86400,"enrolled":false}))
 }

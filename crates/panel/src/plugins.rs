@@ -8,9 +8,9 @@ pub use apsp_costs as costs;
 pub use apsp_costs as expenses;
 pub use apsp_naming as ddns;
 pub use apsp_naming as naming;
-pub use apsp_panel_host::diagnostics::activity::ActivityEvidence;
 pub use apsp_plugin_alicloud as alicloud;
 pub use apsp_plugin_singbox as singbox;
+pub use apsp_plugin_singbox::ActivityEvidence;
 
 use std::collections::BTreeMap;
 
@@ -57,7 +57,7 @@ pub async fn runtime_activity_on(
     server_id: i64,
     checked_at: i64,
 ) -> ApiResult<ActivityEvidence> {
-    crate::wiring::runtime_activity_on(connection, server_id, checked_at).await
+    singbox::runtime_activity_on(connection, server_id, checked_at).await
 }
 
 pub async fn ingest_usage(

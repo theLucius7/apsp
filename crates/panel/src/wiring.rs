@@ -1,12 +1,14 @@
 //! Connects the typed interfaces at startup (ADR 0128): device reports, the traffic
-//! runtime's configuration, administration contributions, device work, DNS-01 records,
-//! runtime activity and renewal references. This is the only place that names which
-//! owner answers each interface.
+//! runtime's configuration, administration contributions, device work, observability
+//! evidence, server observation, the member portal's host network, DNS-01 records and
+//! renewal references. This is the only place that names which owner answers each
+//! interface.
 
 use std::collections::BTreeMap;
 
 use apsp_costs::renewals::{self, RenewalReference, RenewalSources};
 use apsp_naming as naming;
+use apsp_observability as observability;
 use apsp_operations::{fleet, runtime_operations};
 use apsp_panel_host::{
     AppState,
@@ -15,25 +17,24 @@ use apsp_panel_host::{
     control_center::contributions::{self, Contributions, RoutePolicy, SearchSource},
     device_config::{self, ConfigSource},
     device_work::{self, DeviceWork},
-    diagnostics::{
-        self,
-        activity::{self, ActivityEvidence, RuntimeActivity},
-    },
     error::ApiResult,
+    evidence::{self, Evidence, IncidentReport},
     network_configuration::dns_challenges::{self, Dns01, DnsChallenge},
     ports::BoxFuture,
-    retirement, runtime_control, servers, telemetry,
+    retirement, runtime_control,
+    server_observation::{self, ServerObservation},
+    servers::{self, Server},
 };
 use apsp_plugin_singbox as singbox;
 use apsp_protocol::{
-    AppliedRevisions, ApplyResult, DiagnosticCancelResult, Metrics, ModuleManifest,
+    AppliedRevisions, ApplyResult, DiagnosticCancelResult, Metrics, ModuleManifest, ProbeSpec,
     RetirementResult, RuntimeCheckpointResult, RuntimeControlAck, RuntimeOperationRequest,
     RuntimePathProbeResult, RuntimeRecoveryBarrierResult, RuntimeSessionReport, StaticInfo,
     UsageBatch, fleet::Operation,
 };
 use axum::http::Method;
 use serde_json::Value;
-use sqlx::{Postgres, Transaction};
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 struct Wiring;
@@ -46,8 +47,10 @@ pub fn install() {
     device_config::install(&WIRING);
     contributions::install(&WIRING);
     device_work::install(&WIRING);
+    evidence::install(&WIRING);
+    server_observation::install(&WIRING);
+    singbox::install_host_network(&WIRING);
     dns_challenges::install(&WIRING);
-    activity::install(&WIRING);
     renewals::install(&WIRING);
 }
 
@@ -62,18 +65,6 @@ pub async fn manifest_modules(
         modules.insert("singbox".into(), module);
     }
     Ok(modules)
-}
-
-pub async fn runtime_activity_on(
-    connection: &mut sqlx::PgConnection,
-    server_id: i64,
-    checked_at: i64,
-) -> ApiResult<ActivityEvidence> {
-    let evidence = singbox::runtime_activity_on(connection, server_id, checked_at).await?;
-    Ok(ActivityEvidence {
-        configured: evidence.configured,
-        last_positive_at: evidence.last_positive_at,
-    })
 }
 
 impl DeviceReports for Wiring {
@@ -120,7 +111,9 @@ impl DeviceReports for Wiring {
         server_id: i64,
         metrics: Metrics,
     ) -> BoxFuture<'a, anyhow::Result<()>> {
-        Box::pin(telemetry::record_metrics(state, server_id, metrics))
+        Box::pin(observability::telemetry::record_metrics(
+            state, server_id, metrics,
+        ))
     }
 
     fn apply_result<'a>(
@@ -172,7 +165,8 @@ impl DeviceReports for Wiring {
         result: DiagnosticCancelResult,
     ) -> BoxFuture<'a, anyhow::Result<()>> {
         Box::pin(async move {
-            diagnostics::cancellation::record_result(state, server_id, result).await?;
+            observability::diagnostics::cancellation::record_result(state, server_id, result)
+                .await?;
             Ok(())
         })
     }
@@ -356,14 +350,108 @@ impl Dns01 for Wiring {
     }
 }
 
-impl RuntimeActivity for Wiring {
-    fn activity_on<'a>(
+impl Evidence for Wiring {
+    fn record_event_tx<'a, 't>(
         &'a self,
-        connection: &'a mut sqlx::PgConnection,
-        server_id: i64,
-        checked_at: i64,
-    ) -> BoxFuture<'a, ApiResult<ActivityEvidence>> {
-        Box::pin(runtime_activity_on(connection, server_id, checked_at))
+        tx: &'a mut Transaction<'t, Postgres>,
+        server: i64,
+        kind: &'a str,
+        detail: Value,
+    ) -> BoxFuture<'a, ApiResult<()>> {
+        Box::pin(observability::server_monitoring::record_event(
+            tx, server, kind, detail,
+        ))
+    }
+
+    fn open_incident_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        report: IncidentReport<'a>,
+    ) -> BoxFuture<'a, ApiResult<()>> {
+        Box::pin(observability::incidents::open(
+            tx,
+            report.key,
+            report.server,
+            report.title,
+            report.severity,
+            report.evidence,
+            report.observed_at,
+            None,
+        ))
+    }
+
+    fn recover_incident_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        key: &'a str,
+        evidence: Value,
+        observed_at: i64,
+        notify: bool,
+    ) -> BoxFuture<'a, ApiResult<()>> {
+        Box::pin(observability::incidents::recover(
+            tx,
+            key,
+            evidence,
+            observed_at,
+            notify,
+        ))
+    }
+}
+
+impl ServerObservation for Wiring {
+    fn attach_traffic<'a>(
+        &'a self,
+        pool: &'a PgPool,
+        servers: &'a mut [Server],
+        now: i64,
+    ) -> BoxFuture<'a, anyhow::Result<()>> {
+        Box::pin(observability::server_traffic::attach(pool, servers, now))
+    }
+
+    fn attach_live<'a>(
+        &'a self,
+        state: &'a AppState,
+        servers: &'a mut [Server],
+    ) -> BoxFuture<'a, ApiResult<()>> {
+        Box::pin(observability::telemetry::attach_live(state, servers))
+    }
+
+    fn prepare_probe(&self, spec: &mut ProbeSpec) -> ApiResult<()> {
+        observability::probes::prepare_write(spec)
+    }
+
+    fn check_alert_rule(&self, rule: &Value) -> ApiResult<()> {
+        observability::alerts::rules::check_template(rule)
+    }
+
+    fn lock_latency_tasks_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+    ) -> BoxFuture<'a, ApiResult<()>> {
+        Box::pin(async move { Ok(observability::latency_tasks::lock(tx).await?) })
+    }
+
+    fn assign_default_latency_tasks_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        server: i64,
+    ) -> BoxFuture<'a, ApiResult<()>> {
+        Box::pin(observability::latency_tasks::assign_defaults(tx, server))
+    }
+}
+
+impl singbox::HostNetwork for Wiring {
+    fn member_network<'a>(
+        &'a self,
+        state: &'a AppState,
+        server: i64,
+        static_info: &'a Value,
+    ) -> BoxFuture<'a, ApiResult<Value>> {
+        Box::pin(observability::ip_quality::member_network(
+            state,
+            server,
+            static_info,
+        ))
     }
 }
 

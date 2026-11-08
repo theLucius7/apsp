@@ -228,7 +228,7 @@ pub(crate) fn presentation(mut spec: ProbeSpec) -> ProbeSpec {
     spec
 }
 
-pub(crate) fn prepare_write(spec: &mut ProbeSpec) -> ApiResult<()> {
+pub fn prepare_write(spec: &mut ProbeSpec) -> ApiResult<()> {
     spec.normalize();
     spec.execution_authorized = None;
     spec.name = spec.name.trim().into();

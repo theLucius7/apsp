@@ -6,15 +6,26 @@
 //! (`apsp_panel::auth`, `apsp_panel::plugins::singbox`, ...) stays unchanged.
 
 pub use apsp_panel_host::{
-    AgentConnection, AppState, agent_updates, artifacts, auth, config, control_center, dashboard,
-    diagnostic_plugins, diagnostics, error, exchange, frontend, installation, ip_quality,
-    latency_tasks, network_configuration, network_workbench, notifications, passkeys, probes,
-    releases, retirement, runtime_control, runtime_validations, server_assets, server_traffic,
-    servers, settings, statistics, telemetry, traffic_correction,
+    AgentConnection, AppState, DomainStates, agent_updates, artifacts, auth, config,
+    control_center, error, exchange, frontend, installation, network_configuration, passkeys,
+    releases, retirement, runtime_control, runtime_validations, server_assets, servers, settings,
 };
-// Operations moved to its own crate; its modules keep their previous public paths.
+// Operations and observability moved to their own crates; their modules keep their
+// previous public paths.
+pub use apsp_observability::{
+    dashboard, diagnostic_plugins, diagnostics, incidents, ip_quality, latency_tasks,
+    network_workbench, probes, server_monitoring, server_traffic, statistics, telemetry,
+    traffic_correction,
+};
 pub use apsp_operations::jobs as operations;
 pub use apsp_operations::{commands, fleet, runtime_operations};
+
+/// Notification delivery from the platform, with alert evaluation, events and rules from
+/// observability, under the previous public path.
+pub mod notifications {
+    pub use apsp_observability::alerts::{evaluate, events, rules};
+    pub use apsp_panel_host::notifications::*;
+}
 
 pub mod agent_api;
 mod integration_policy;
@@ -40,7 +51,7 @@ pub fn router(state: AppState) -> axum::Router {
         .merge(domains::networking::routes())
         .merge(domains::traffic::routes())
         .merge(domains::costs::routes())
-        .merge(domains::observability::routes())
+        .merge(apsp_observability::routes())
         .merge(apsp_operations::routes())
         .merge(plugins::router());
     let guard = axum::middleware::from_fn_with_state(state.clone(), control_center::guard::guard);

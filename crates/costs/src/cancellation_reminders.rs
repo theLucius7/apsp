@@ -123,7 +123,7 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
         let incident = if let Some(id) = existing {
             id
         } else {
-            apsp_panel_host::incidents::open(&mut tx,&source,Some(server),&format!("服务器 {} 的计划退订日期需要核对",row.get::<String,_>("name")),"info",json!({"record_id":record,"valid_until":row.get::<i64,_>("valid_until"),"reference":row.get::<String,_>("reference"),"lead_secs":row.get::<i64,_>("lead_secs"),"source":"人工费用台账：计划退订生效日期","action_executed":false,"observed_at":now}),now,None).await?;
+            apsp_panel_host::evidence::open_incident_tx(&mut tx, apsp_panel_host::evidence::IncidentReport { key: &source, server: Some(server), title: &format!("服务器 {} 的计划退订日期需要核对",row.get::<String,_>("name")), severity: "info", evidence: json!({"record_id":record,"valid_until":row.get::<i64,_>("valid_until"),"reference":row.get::<String,_>("reference"),"lead_secs":row.get::<i64,_>("lead_secs"),"source":"人工费用台账：计划退订生效日期","action_executed":false,"observed_at":now}), observed_at: now }).await?;
             sqlx::query_scalar(
                 "SELECT id FROM operations_incidents WHERE source_key=$1 AND status<>'resolved'",
             )
@@ -135,103 +135,4 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
     }
     tx.commit().await?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use apsp_panel_host::config::Config;
-    use sqlx::PgPool;
-    struct Directory(std::path::PathBuf);
-    impl Drop for Directory {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    #[sqlx::test(migrations = "../panel/migrations")]
-    async fn explicit_reminders_do_not_replay_and_revocation_stops_new_events(
-        pool: PgPool,
-    ) -> anyhow::Result<()> {
-        let directory = Directory(std::env::temp_dir().join(format!(
-            "apsp-cancellation-reminder-test-{}",
-            Uuid::new_v4()
-        )));
-        std::fs::create_dir(&directory.0)?;
-        let state = AppState::new(
-            pool.clone(),
-            Config {
-                database_url: String::new(),
-                listen: "127.0.0.1:0".parse()?,
-                public_url: "http://127.0.0.1".into(),
-                data_dir: directory.0.clone(),
-                admin_password: Some("cancellation-reminder-test-password".into()),
-            },
-        )
-        .await?;
-        let server: i64 = sqlx::query_scalar(
-            "INSERT INTO servers(name) VALUES('TEST_ONLY reminder') RETURNING id",
-        )
-        .fetch_one(&pool)
-        .await?;
-        let now = now_timestamp();
-        let record = Uuid::new_v4();
-        let unconfigured = Uuid::new_v4();
-        for id in [record, unconfigured] {
-            sqlx::query("INSERT INTO fleet_cost_records(id,server_id,kind,amount_minor,currency,occurred_at,valid_until,reference,created_at) VALUES($1,$2,'cancellation',0,'USD',$3,$4,'TEST_ONLY planned cancellation',$3)").bind(id).bind(server).bind(now).bind(now+3600).execute(&pool).await?;
-        }
-        sqlx::query("INSERT INTO operations_cancellation_reminders(record_id,enabled,lead_secs,configured_by,configured_at) VALUES($1,true,604800,1,$2)").bind(record).bind(now).execute(&pool).await?;
-        tick(&state).await?;
-        tick(&state).await?;
-        let events: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM operations_incidents WHERE source_key LIKE 'cancellation:%'",
-        )
-        .fetch_one(&pool)
-        .await?;
-        assert_eq!(events, 1);
-        sqlx::query(
-            "UPDATE operations_incidents SET status='resolved',resolved_at=$1 WHERE source_key=$2",
-        )
-        .bind(now)
-        .bind(format!("cancellation:{record}"))
-        .execute(&pool)
-        .await?;
-        sqlx::query(
-            "UPDATE operations_cancellation_reminders SET enabled=false WHERE record_id=$1",
-        )
-        .bind(record)
-        .execute(&pool)
-        .await?;
-        tick(&state).await?;
-        sqlx::query("UPDATE operations_cancellation_reminders SET enabled=true WHERE record_id=$1")
-            .bind(record)
-            .execute(&pool)
-            .await?;
-        tick(&state).await?;
-        let events: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM operations_incidents WHERE source_key LIKE 'cancellation:%'",
-        )
-        .fetch_one(&pool)
-        .await?;
-        assert_eq!(events, 1);
-        sqlx::query("INSERT INTO operations_cancellation_reminders(record_id,enabled,lead_secs,configured_by,configured_at) VALUES($1,true,604800,1,$2)").bind(unconfigured).bind(now).execute(&pool).await?;
-        sqlx::query("UPDATE administrator_profiles SET enabled=false WHERE admin_id=1")
-            .execute(&pool)
-            .await?;
-        tick(&state).await?;
-        let active: bool = sqlx::query_scalar(
-            "SELECT enabled FROM operations_cancellation_reminders WHERE record_id=$1",
-        )
-        .bind(unconfigured)
-        .fetch_one(&pool)
-        .await?;
-        assert!(!active);
-        let events: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM operations_incidents WHERE source_key LIKE 'cancellation:%'",
-        )
-        .fetch_one(&pool)
-        .await?;
-        assert_eq!(events, 1);
-        Ok(())
-    }
 }

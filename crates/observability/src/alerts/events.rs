@@ -56,7 +56,7 @@ pub(super) async fn enqueue(
         &message
     };
     if settings.telegram_ready() {
-        let text = super::template::render(
+        let text = crate::notifications::template::render(
             &settings.telegram_template,
             [
                 title(&category, kind == "recovery"),
@@ -78,9 +78,9 @@ pub(super) async fn enqueue(
             ("resource", "recovery") => "resource_recovery",
             (category, _) => category,
         };
-        let rendered = super::webhook::render(
+        let rendered = crate::notifications::webhook::render(
             &config.body,
-            &super::webhook::Message {
+            &crate::notifications::webhook::Message {
                 title: title(&category, kind == "recovery"),
                 server: &name,
                 message,

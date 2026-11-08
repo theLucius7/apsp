@@ -7,6 +7,5 @@
 pub mod costs;
 pub mod governance;
 pub mod networking;
-pub mod observability;
 pub mod resources;
 pub mod traffic;

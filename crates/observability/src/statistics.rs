@@ -1,3 +1,5 @@
+pub mod proxy_usage;
+
 use crate::{
     AppState, auth,
     error::{ApiError, ApiResult},

@@ -147,7 +147,7 @@ pub struct Message<'a> {
     pub category: &'a str,
 }
 
-pub(super) fn render(body: &str, message: &Message<'_>) -> Result<String, &'static str> {
+pub fn render(body: &str, message: &Message<'_>) -> Result<String, &'static str> {
     let mut body: Value = serde_json::from_str(body).map_err(|_| "Webhook 模板必须为有效 JSON")?;
     substitute(
         &mut body,

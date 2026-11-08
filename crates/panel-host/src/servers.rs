@@ -3,7 +3,7 @@ use crate::{
     auth::{hash_token, random_token, require_admin},
     error::{ApiError, ApiResult},
     server_assets::AssetSettings,
-    server_traffic::{self, TrafficSummary},
+    server_observation,
 };
 use apsp_protocol::{AgentSettings, EnrollRequest, EnrollResponse, ProbeSpec, now_timestamp};
 use axum::{
@@ -18,7 +18,28 @@ use serde_json::{Value, json};
 use sqlx::{FromRow, PgPool, Row};
 use uuid::Uuid;
 
-pub(crate) const SERVER_COLUMNS: &str = "id, name, device_public_key, static_info, last_seen, last_contact_at, last_heartbeat_at, NULLIF(metrics_sampled_at,0) AS metrics_sampled_at, latest_metrics, agent_settings, asset_settings, manifest_rev, capabilities";
+pub const SERVER_COLUMNS: &str = "id, name, device_public_key, static_info, last_seen, last_contact_at, last_heartbeat_at, NULLIF(metrics_sampled_at,0) AS metrics_sampled_at, latest_metrics, agent_settings, asset_settings, manifest_rev, capabilities";
+
+/// Network traffic of the server's current billing cycle against its allowance, filled
+/// by observability.
+#[derive(Default, Serialize)]
+pub struct TrafficSummary {
+    pub correction_id: Option<i64>,
+    pub corrected: bool,
+    pub cycle_start: i64,
+    pub cycle_end: i64,
+    pub uploaded: String,
+    pub downloaded: String,
+    pub used: String,
+    pub limit: String,
+    pub remaining: Option<String>,
+    pub percent: Option<f64>,
+    pub exceeded: bool,
+    pub observed_from: Option<i64>,
+    pub last_sample_at: Option<i64>,
+    pub incomplete: bool,
+    pub interfaces: Vec<String>,
+}
 
 #[derive(Serialize, FromRow)]
 pub struct Server {
@@ -56,7 +77,7 @@ pub struct Server {
 }
 
 impl Server {
-    pub(crate) fn with_online(mut self) -> Self {
+    pub fn with_online(mut self) -> Self {
         let now = now_timestamp();
         self.asset_settings.renew(now);
         self.online = self
@@ -109,8 +130,8 @@ pub async fn list(
         .fetch_all(&state.pool)
         .await?;
     let mut servers: Vec<_> = servers.into_iter().map(Server::with_online).collect();
-    server_traffic::attach(&state.pool, &mut servers, now_timestamp()).await?;
-    crate::telemetry::attach_live(&state, &mut servers).await?;
+    server_observation::attach_traffic(&state.pool, &mut servers, now_timestamp()).await?;
+    server_observation::attach_live(&state, &mut servers).await?;
     Ok(Json(servers))
 }
 
@@ -138,10 +159,10 @@ pub async fn create(
     for spec in &mut request.probes {
         spec.normalize();
         spec.id = Uuid::new_v4();
-        crate::probes::prepare_write(spec)?;
+        server_observation::prepare_probe(spec)?;
     }
     let mut transaction = state.pool.begin().await?;
-    crate::latency_tasks::lock(&mut transaction).await?;
+    server_observation::lock_latency_tasks_tx(&mut transaction).await?;
     let query = format!(
         "INSERT INTO servers (name, agent_settings, asset_settings, telemetry_settings) VALUES ($1, $2, $3, $4) RETURNING {SERVER_COLUMNS}"
     );
@@ -160,10 +181,10 @@ pub async fn create(
             .execute(&mut *transaction)
             .await?;
     }
-    crate::latency_tasks::assign_defaults(&mut transaction, server.id).await?;
+    server_observation::assign_default_latency_tasks_tx(&mut transaction, server.id).await?;
     transaction.commit().await?;
     let mut server = server.with_online();
-    crate::telemetry::attach_live(&state, std::slice::from_mut(&mut server)).await?;
+    server_observation::attach_live(&state, std::slice::from_mut(&mut server)).await?;
     Ok((StatusCode::CREATED, Json(server)))
 }
 
@@ -181,13 +202,13 @@ pub async fn get(
         .await?
         .ok_or(ApiError::NotFound)?;
     let mut server = server.with_online();
-    server_traffic::attach(
+    server_observation::attach_traffic(
         &state.pool,
         std::slice::from_mut(&mut server),
         now_timestamp(),
     )
     .await?;
-    crate::telemetry::attach_live(&state, std::slice::from_mut(&mut server)).await?;
+    server_observation::attach_live(&state, std::slice::from_mut(&mut server)).await?;
     Ok(Json(server))
 }
 
@@ -241,13 +262,13 @@ pub async fn update(
         .ok_or(ApiError::NotFound)?;
     transaction.commit().await?;
     let mut server = server.with_online();
-    server_traffic::attach(
+    server_observation::attach_traffic(
         &state.pool,
         std::slice::from_mut(&mut server),
         now_timestamp(),
     )
     .await?;
-    crate::telemetry::attach_live(&state, std::slice::from_mut(&mut server)).await?;
+    server_observation::attach_live(&state, std::slice::from_mut(&mut server)).await?;
     Ok(Json(server))
 }
 

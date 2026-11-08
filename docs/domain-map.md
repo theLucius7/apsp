@@ -100,16 +100,16 @@
 
 | 功能 | 意图 | 核心对象 | 关键约束 | 协作 | 实现与入口 |
 | --- | --- | --- | --- | --- | --- |
-| 遥测与历史 | 知道机器现在与过去怎样 | 采集计划、样本、历史聚合、服务器事件时间线 | 实时样本与持久化确认分开 | 资源 | 宿主 `telemetry/`、`server_monitoring.rs`（健康、事件时间线与两台比较）；Agent 遥测；服务器详情 › 概况、Agent |
-| 服务器看板与公开看板 | 一眼看清所有服务器 | 看板视图（汇总，不拥有数据） | 公开看板只读白名单，匿名不公开成本 | 资源；成本 | 宿主 `dashboard.rs`；服务器列表的看板视图、`/#/dashboard` |
-| 网卡流量计数与矫正 | 记下机器实际的网络活动 | 网卡计数、矫正记录 | 不改代理用量账本 | 资源（网卡额度设置） | `server_network_*`、`server_traffic_corrections` |
-| 告警与通知 | 出事时告诉管理员 | 告警规则、告警事件、处置记录 | 通知只提醒，不执行付款、停用或远程命令 | 平台（通知通道） | 宿主 `notifications/` 的规则与评估（发件箱与渠道归平台）；监测与诊断 › 告警 |
-| 故障事件（实验） | 聚合告警并记录处置 | 故障事件、处置记录 | 计划与告警合并（路线图 4.3） | 作业 | 宿主 `incidents.rs` |
-| 延迟检测与周期拨测 | 测三网延迟与丢包 | 拨测、拨测结果 | 执行许可可撤销；只测授权目标 | 资源 | 宿主 `probes.rs`、`latency_tasks.rs`；Agent 拨测；线路质量 |
+| 遥测与历史 | 知道机器现在与过去怎样 | 采集计划、样本、历史聚合、服务器事件时间线 | 实时样本与持久化确认分开 | 资源（服务器视图经资源的 `server_observation` 取得流量摘要与实时遥测；事件经平台的 `evidence` 记录） | `crates/observability` 的 `telemetry/`、`server_monitoring.rs`（健康、事件时间线与两台比较）；Agent 遥测；服务器详情 › 概况、Agent |
+| 服务器看板与公开看板 | 一眼看清所有服务器 | 看板视图（汇总，不拥有数据） | 公开看板只读白名单，匿名不公开成本 | 资源；成本（汇率入口仍读宿主的 `exchange`） | `crates/observability` 的 `dashboard.rs`；服务器列表的看板视图、`/#/dashboard` |
+| 网卡流量计数与矫正 | 记下机器实际的网络活动 | 网卡计数、矫正记录 | 不改代理用量账本 | 资源（网卡额度设置；视图的流量摘要类型属于资源） | `crates/observability` 的 `server_traffic.rs`、`traffic_correction.rs`；表 `server_network_*`、`server_traffic_corrections` |
+| 告警与通知 | 出事时告诉管理员 | 告警规则、告警事件、处置记录 | 通知只提醒，不执行付款、停用或远程命令 | 平台（通知通道） | `crates/observability` 的 `alerts/`（规则、评估与告警事件；发件箱与渠道归平台的 `notifications`）；监测与诊断 › 告警 |
+| 故障事件（实验） | 聚合告警并记录处置 | 故障事件、处置记录 | 计划与告警合并（路线图 4.3） | 作业；资源、治理与成本经平台的 `evidence` 打开与恢复 | `crates/observability` 的 `incidents.rs` |
+| 延迟检测与周期拨测 | 测三网延迟与丢包 | 拨测、拨测结果 | 执行许可可撤销；只测授权目标 | 资源（新服务器与接入模板的拨测经资源的 `server_observation`） | `crates/observability` 的 `probes.rs`、`latency_tasks.rs`；Agent 拨测；线路质量 |
 | 中国可达性 | 区分端口封锁、IP 封锁与服务故障 | 可达性观测与事件 | 默认关闭；用量不超额度的 80% | 流量服务（节点端点，阶段 C 改经接口读取） | sing-box `reachability/`（阶段 C 迁入观测） |
-| 网络检测 | 测连通性、路由与 IP 资料 | 检测方案、运行与结果 | 只测量，不改动 | 资源 | 宿主 `network_workbench/`；线路质量 |
-| IP 质量、TCP 诊断、服务器验机 | 判断一台服务器的出口与线路质量 | 诊断任务与报告 | 共用诊断任务生命周期（ADR 0028）；完整验机门禁未解除 | 资源 | 宿主 `diagnostics/`、`ip_quality/`；诊断代码 `plugins/{ipquality,nodequality,tcpquality}/panel`（经 `#[path]` 编入，阶段 B 去掉）；Agent 诊断适配器；服务器详情 › 诊断 |
-| 趋势与报表 | 回顾一段时间的整体运行 | 汇总视图（网卡计数与代理用量两本账） | 两本账分开显示，各自标明口径 | 服务权益（用量，经接口） | 宿主 `statistics.rs`、sing-box `statistics.rs` |
+| 网络检测 | 测连通性、路由与 IP 资料 | 检测方案、运行与结果 | 只测量，不改动 | 资源 | `crates/observability` 的 `network_workbench/`；线路质量 |
+| IP 质量、TCP 诊断、服务器验机 | 判断一台服务器的出口与线路质量 | 诊断任务与报告 | 共用诊断任务生命周期（ADR 0028）；完整验机门禁未解除 | 资源；服务权益（门户经 `HostNetwork` 显示成员可见的网络属性） | `crates/observability` 的 `diagnostics/`、`ip_quality/`、`diagnostic_plugins/{ipquality,nodequality,tcpquality}/`（打包脚本与上游锁定文件仍在 `plugins/`）；Agent 诊断适配器；服务器详情 › 诊断 |
+| 趋势与报表 | 回顾一段时间的整体运行 | 汇总视图（网卡计数与代理用量两本账） | 两本账分开显示，各自标明口径 | 服务权益（用量，经接口） | `crates/observability` 的 `statistics.rs`（网卡计数）、`statistics/proxy_usage.rs`（代理用量，原 sing-box `statistics.rs`） |
 
 ## 变更与作业 `operations`
 
@@ -126,6 +126,6 @@
 
 | 部分 | 内容 | 实现 |
 | --- | --- | --- |
-| 平台 | 数据库连接与事务、基线核对、后台任务与心跳、Agent 通道、设备任务接口、加密凭据库、制品存储、通知发送通道、HTTP 外壳与中间件、设置存储、类型化接口的机制、文本与摘要检查、地址分类 | 宿主 `crates/panel-host` 的 `shell`、`agent_api`、`device_work`、`ports`、`tokens`、`text`、`digest`、`net`、`settings`、`notifications` 的发送部分等技术模块（阶段 B1 起不引用领域，B2 迁出其余领域代码）；`crates/cloud-api`（供应商接口的签名、分页与重试） |
+| 平台 | 数据库连接与事务、基线核对、后台任务与心跳、Agent 通道、设备任务与观测证据的接口、各领域运行时状态的槽、加密凭据库、制品存储、通知发送通道、HTTP 外壳与中间件、设置存储、类型化接口的机制、文本与摘要检查、地址分类 | 宿主 `crates/panel-host` 的 `shell`、`agent_api`、`device_work`、`evidence`、`state`（`DomainStates`）、`ports`、`tokens`、`text`、`digest`、`net`、`settings`、`notifications` 的发送部分等技术模块（阶段 B1 起不引用领域，B2 迁出其余领域代码）；`crates/cloud-api`（供应商接口的签名、分页与重试） |
 | 应用 | 组合各领域、HTTP 路由、后台任务登记、跨领域流程、依赖倒置接口的接线、命令行入口 | `crates/panel`：`lib.rs` 组合路由与权限守卫，`wiring.rs` 接线类型化接口，`maintenance.rs` 运行 30 秒维护循环 |
 | Agent | 本地执行、采集与状态协调；运行时与诊断工具的适配器 | `crates/agent-core`、`crates/adapter-*`、`crates/agent` |

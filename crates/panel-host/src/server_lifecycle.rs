@@ -105,7 +105,7 @@ pub async fn save(
     let digest = profile_digest(&input.asset, &policy)?;
     sqlx::query("INSERT INTO fleet_profiles(server_id,asset,policy,updated_at) VALUES($1,$2,$3,$4) ON CONFLICT(server_id) DO UPDATE SET asset=$2,policy=$3,updated_at=$4")
         .bind(id).bind(&input.asset).bind(json!(policy)).bind(now_timestamp()).execute(&mut *tx).await?;
-    crate::server_monitoring::record_event(
+    crate::evidence::record_event_tx(
         &mut tx,
         id,
         "profile_changed",
@@ -191,7 +191,7 @@ pub async fn lifecycle(
         .ok_or(ApiError::NotFound)?;
     sqlx::query("INSERT INTO fleet_profiles(server_id,lifecycle,maintenance_from,maintenance_until,maintenance_reason,updated_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(server_id) DO UPDATE SET lifecycle=$2,maintenance_from=$3,maintenance_until=$4,maintenance_reason=$5,updated_at=$6")
         .bind(id).bind(&input.lifecycle).bind(input.from).bind(input.until).bind(reason).bind(now_timestamp()).execute(&mut *tx).await?;
-    crate::server_monitoring::record_event(
+    crate::evidence::record_event_tx(
         &mut tx,
         id,
         "lifecycle_changed",
@@ -265,7 +265,7 @@ pub async fn migrate(
     )
     .await?;
     let mut tx = state.pool.begin().await?;
-    crate::latency_tasks::lock(&mut tx).await?;
+    crate::server_observation::lock_latency_tasks_tx(&mut tx).await?;
     sqlx::query("SELECT id FROM servers WHERE id=ANY($1) ORDER BY id FOR UPDATE")
         .bind(vec![id, input.target_server_id])
         .fetch_all(&mut *tx)
@@ -302,7 +302,7 @@ pub async fn migrate(
             .execute(&mut *tx)
             .await?;
     }
-    crate::server_monitoring::record_event(
+    crate::evidence::record_event_tx(
         &mut tx,
         input.target_server_id,
         "collection_migrated",
@@ -361,13 +361,8 @@ pub async fn add_cost(
     if updates_expiry && let Some(until) = input.valid_until {
         sqlx::query("UPDATE servers SET asset_settings=jsonb_set(asset_settings,'{expires_at}',to_jsonb($2::bigint)) WHERE id=$1").bind(id).bind(until).execute(&mut *tx).await?;
     }
-    crate::server_monitoring::record_event(
-        &mut tx,
-        id,
-        "cost_recorded",
-        json!({"record_id":record_id}),
-    )
-    .await?;
+    crate::evidence::record_event_tx(&mut tx, id, "cost_recorded", json!({"record_id":record_id}))
+        .await?;
     tx.commit().await?;
     Ok(Json(json!({"id":record_id})))
 }

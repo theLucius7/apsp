@@ -1,3 +1,4 @@
+pub use crate::servers::TrafficSummary;
 use crate::{server_assets::AssetSettings, servers::Server};
 use apsp_protocol::TelemetrySample;
 use serde::{Deserialize, Serialize};
@@ -24,25 +25,6 @@ struct Daily {
     first: i64,
     last: i64,
     incomplete: bool,
-}
-
-#[derive(Default, Serialize)]
-pub struct TrafficSummary {
-    pub correction_id: Option<i64>,
-    pub corrected: bool,
-    pub cycle_start: i64,
-    pub cycle_end: i64,
-    pub uploaded: String,
-    pub downloaded: String,
-    pub used: String,
-    pub limit: String,
-    pub remaining: Option<String>,
-    pub percent: Option<f64>,
-    pub exceeded: bool,
-    pub observed_from: Option<i64>,
-    pub last_sample_at: Option<i64>,
-    pub incomplete: bool,
-    pub interfaces: Vec<String>,
 }
 
 // The caller holds the server row lock and commits this with telemetry and its ACK.

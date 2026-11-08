@@ -1,9 +1,31 @@
 use super::*;
-use crate::notifications::{events, lock_settings};
+use crate::notifications::lock_settings;
+use sqlx::{Postgres, Transaction};
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
+
+/// Queues one pending message per ready channel for an alert event, as observability's
+/// alert events do, so delivery is tested without the alert rules.
+async fn queue(
+    tx: &mut Transaction<'_, Postgres>,
+    settings: &Settings,
+    event: i64,
+    kind: &str,
+    now: i64,
+) -> anyhow::Result<()> {
+    for (channel, ready) in [
+        ("telegram", settings.telegram_ready()),
+        ("webhook", settings.webhook_ready()),
+    ] {
+        if ready {
+            sqlx::query("INSERT INTO notification_outbox(event_id,kind,message,next_attempt_at,channel) VALUES($1,$2,'TEST_ONLY message',$3,$4) ON CONFLICT DO NOTHING")
+                .bind(event).bind(kind).bind(now).bind(channel).execute(&mut **tx).await?;
+        }
+    }
+    Ok(())
+}
 
 #[sqlx::test(migrations = "../panel/migrations")]
 async fn retry_delay_starts_after_delivery_finishes_instead_of_the_maintenance_tick(
@@ -27,7 +49,7 @@ async fn retry_delay_starts_after_delivery_finishes_instead_of_the_maintenance_t
     let event: i64 = sqlx::query_scalar("INSERT INTO server_alert_events(server_id,server_name,opened_at) VALUES($1,'fixture',1) RETURNING id")
         .bind(server).fetch_one(&pool).await?;
     let mut tx = pool.begin().await?;
-    events::enqueue(&mut tx, &settings, event, "offline", 100).await?;
+    queue(&mut tx, &settings, event, "offline", 100).await?;
     tx.commit().await?;
     let timestamp = Arc::new(AtomicI64::new(100));
     let clock = {
@@ -77,8 +99,8 @@ async fn outbox_retries_in_order_and_concurrent_workers_do_not_duplicate(
     let event: i64 = sqlx::query_scalar("INSERT INTO server_alert_events(server_id,server_name,last_seen,opened_at,resolved_at,resolution) VALUES($1,'outbox fixture',0,1,2,'recovered') RETURNING id").bind(id).fetch_one(&pool).await?;
     let mut tx = pool.begin().await?;
     let settings = lock_settings(&mut tx).await?;
-    events::enqueue(&mut tx, &settings, event, "offline", 100).await?;
-    events::enqueue(&mut tx, &settings, event, "recovery", 100).await?;
+    queue(&mut tx, &settings, event, "offline", 100).await?;
+    queue(&mut tx, &settings, event, "recovery", 100).await?;
     tx.commit().await?;
     dispatch_with(&pool, 100, |_, _, _| async {
         Err(telegram::Failure {
@@ -148,8 +170,8 @@ async fn channels_retry_independently_and_stop_after_the_bounded_attempts(
             .await?;
     let event: i64 = sqlx::query_scalar("INSERT INTO server_alert_events(server_id,server_name,opened_at) VALUES($1,'channel fixture',1) RETURNING id").bind(server).fetch_one(&pool).await?;
     let mut tx = pool.begin().await?;
-    events::enqueue(&mut tx, &config, event, "offline", 100).await?;
-    events::enqueue(&mut tx, &config, event, "recovery", 100).await?;
+    queue(&mut tx, &config, event, "offline", 100).await?;
+    queue(&mut tx, &config, event, "recovery", 100).await?;
     tx.commit().await?;
     let telegram = Arc::new(AtomicUsize::new(0));
     let webhook = Arc::new(AtomicUsize::new(0));

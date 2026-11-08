@@ -14,11 +14,11 @@ pub mod fleet;
 pub mod jobs;
 pub mod runtime_operations;
 
+pub(crate) use apsp_observability::{incidents, server_monitoring};
 #[cfg(test)]
 pub(crate) use apsp_panel_host::config;
 pub(crate) use apsp_panel_host::{
-    AppState, auth, backups, cloud_resources, control_center, digest, error, incidents,
-    server_monitoring, text,
+    AppState, auth, backups, cloud_resources, control_center, digest, error, text,
 };
 use axum::{
     Router,

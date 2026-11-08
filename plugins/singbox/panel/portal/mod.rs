@@ -3,6 +3,8 @@ mod administration;
 mod ceremonies;
 mod lines;
 
+pub use lines::{HostNetwork, install as install_host_network};
+
 use crate::AppState;
 use axum::{
     Router,

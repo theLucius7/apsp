@@ -1,29 +1,57 @@
-//! Observability: telemetry, network counters and corrections, probes and latency
-//! tasks, diagnostics, network checks, alerts and incidents, server health and event
-//! timelines, statistics and the dashboard.
+#![forbid(unsafe_code)]
+//! Observability evidence and events (ADR 0128 section 3.2): telemetry and history,
+//! network counters and corrections, probes and latency tasks, the shared diagnostic job
+//! service and its tools (IP quality, NodeQuality, TCP quality, network checks), alert
+//! rules and events, incidents, server health and event timelines, statistics and the
+//! dashboard. Observability records facts and the reasons for its judgements; the
+//! configuration and rules of what it observes stay with their owners.
+//!
+//! Earlier domains report events and incidents through the platform's `evidence`
+//! interface and reach server observation through `server_observation` in resources;
+//! the application connects both to this crate.
 
+pub mod alerts;
+pub mod dashboard;
+pub mod diagnostic_plugins;
+pub mod diagnostics;
+pub mod incidents;
+pub mod ip_quality;
+pub mod latency_tasks;
+pub mod network_workbench;
+pub mod probes;
+pub mod server_monitoring;
+pub mod server_traffic;
+pub mod statistics;
+pub mod telemetry;
+pub mod traffic_correction;
+
+// Platform modules and earlier domains that the code names as `crate::...`.
+#[cfg(test)]
+pub(crate) use apsp_panel_host::config;
+pub(crate) use apsp_panel_host::{
+    AppState, agent_api, artifacts, auth, control_center, device_work, error, net, notifications,
+    server_assets, servers, settings, text,
+};
 use axum::{
     Router,
     routing::{get, post},
 };
 
-use crate::{
-    AppState, dashboard, diagnostic_plugins, diagnostics, incidents, ip_quality, latency_tasks,
-    network_workbench, notifications, probes, server_monitoring, statistics, telemetry,
-    traffic_correction,
-};
-
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/statistics", get(statistics::summary))
-        .route("/api/notifications", get(notifications::events::list))
+        .route(
+            "/api/plugins/sing-box/statistics",
+            get(statistics::proxy_usage::summary),
+        )
+        .route("/api/notifications", get(alerts::events::list))
         .route(
             "/api/alert-rules",
-            get(notifications::rules::list).post(notifications::rules::create),
+            get(alerts::rules::list).post(alerts::rules::create),
         )
         .route(
             "/api/alert-rules/{id}",
-            axum::routing::patch(notifications::rules::update).delete(notifications::rules::remove),
+            axum::routing::patch(alerts::rules::update).delete(alerts::rules::remove),
         )
         .route("/api/operations/incidents", get(incidents::list))
         .route("/api/operations/incidents/{id}", get(incidents::detail))

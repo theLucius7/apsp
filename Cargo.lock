@@ -276,11 +276,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "apsp-observability"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-panel-host",
+ "apsp-plugin-singbox",
+ "apsp-protocol",
+ "axum 0.8.9",
+ "flate2",
+ "futures-util",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls",
+ "tower-http",
+ "tracing",
+ "uuid",
+ "webpki-roots 1.0.9",
+]
+
+[[package]]
 name = "apsp-operations"
 version = "0.3.0"
 dependencies = [
  "anyhow",
  "apsp-costs",
+ "apsp-observability",
  "apsp-panel-host",
  "apsp-plugin-singbox",
  "apsp-protocol",
@@ -308,6 +335,7 @@ dependencies = [
  "apsp-compiler",
  "apsp-costs",
  "apsp-naming",
+ "apsp-observability",
  "apsp-operations",
  "apsp-panel-host",
  "apsp-plugin-alicloud",
@@ -379,7 +407,6 @@ dependencies = [
  "tokio-rustls",
  "tokio-tungstenite 0.28.0",
  "toml",
- "tower-http",
  "tracing",
  "uuid",
  "webauthn-rs",

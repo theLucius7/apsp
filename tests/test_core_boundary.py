@@ -105,40 +105,15 @@ class CoreBoundaryTests(unittest.TestCase):
         self.assertTrue(boundary.violations(relative, source + "; user_id", boundary.HOST_EXCEPTIONS))
         self.assertTrue(boundary.violations("src/lib.rs", "pub mod singbox;", boundary.HOST_EXCEPTIONS))
 
-    def test_host_external_limits_and_cloud_fields_have_expression_scoped_exceptions(self):
-        relative = "src/network_workbench/reports.rs"
-        fixtures = (
-            '#[serde(rename = "daily_quota")]',
-            'r.get("daily_quota")',
-            'credential_ref,daily_quota,cache_seconds',
-            'daily_quota=EXCLUDED.daily_quota,cache_seconds=EXCLUDED.cache_seconds',
-            'CASE WHEN quota_day<>$2 THEN 1 ELSE requests_today+1 END,',
-            'END,quota_day=$2 WHERE id=$1 AND NOT disabled AND (',
-            'AND (quota_day<>$2 OR requests_today<daily_quota) RETURNING requests_today"',
-            'AND NOT disabled AND quota_day=$2 AND requests_today<daily_quota RETURNING requests_today"',
-        )
-        for native in fixtures:
-            with self.subTest(native=native):
-                self.assertFalse(boundary.violations(relative, native, boundary.HOST_EXCEPTIONS))
-                self.assertTrue(boundary.violations("src/control_center/search.rs", native, boundary.HOST_EXCEPTIONS))
-                self.assertTrue(boundary.violations(relative, native + "; user_id=1", boundary.HOST_EXCEPTIONS))
-        self.assertTrue(boundary.violations(relative, 'pub daily_quota: i32', boundary.HOST_EXCEPTIONS))
-        self.assertTrue(boundary.violations(relative, 'FROM users WHERE quota_day=$2', boundary.HOST_EXCEPTIONS))
+    def test_host_cloud_field_exception_is_expression_scoped(self):
         relative = "src/cloud_resources/hetzner/client/tests.rs"
         native = 'raw["user_data"]'
         self.assertFalse(boundary.violations(relative, native, boundary.HOST_EXCEPTIONS))
         self.assertTrue(boundary.violations(relative, native + "; user_id=1", boundary.HOST_EXCEPTIONS))
         self.assertTrue(boundary.violations("src/servers.rs", native, boundary.HOST_EXCEPTIONS))
-
-    def test_host_http_header_exception_is_native_and_expression_scoped(self):
-        relative = "src/network_workbench/http_probe.rs"
-        native = "reqwest::header::USER_AGENT.as_str()"
-        self.assertFalse(boundary.violations(relative, native, boundary.HOST_EXCEPTIONS))
-        self.assertTrue(boundary.violations(relative, native + "; user_id=1", boundary.HOST_EXCEPTIONS))
-        self.assertTrue(boundary.violations("src/control_center/search.rs", native, boundary.HOST_EXCEPTIONS))
-        self.assertTrue(boundary.violations(relative, '"User-Agent"', boundary.HOST_EXCEPTIONS))
-        self.assertTrue(boundary.violations(relative, "reqwest::header::USER_AGENT", boundary.HOST_EXCEPTIONS))
-        self.assertTrue(boundary.violations(relative, "reqwest::header::USER_AGENT_PROXY.as_str()", boundary.HOST_EXCEPTIONS))
+        # Provider request limits moved to observability, which is not a platform crate.
+        self.assertTrue(boundary.violations("src/network_workbench/reports.rs", 'r.get("daily_quota")',
+                                            boundary.HOST_EXCEPTIONS))
 
     def test_cloud_api_passes_and_its_header_exception_stays_scoped(self):
         root = SCRIPT.parents[1]
@@ -166,7 +141,8 @@ class CoreBoundaryTests(unittest.TestCase):
             "crates/compiler/Cargo.toml": "[package]\n",
             "crates/naming/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-cloud-api.workspace = true\n",
             "crates/costs/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-naming.workspace = true\n",
-            "crates/operations/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-costs.workspace = true\napsp-plugin-singbox.workspace = true\n",
+            "crates/operations/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-costs.workspace = true\napsp-observability.workspace = true\napsp-plugin-singbox.workspace = true\n",
+            "crates/observability/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-plugin-singbox.workspace = true\n",
             "plugins/singbox/panel/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-compiler.workspace = true\n",
             "plugins/alicloud/panel/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-cloud-api.workspace = true\n",
             "crates/panel/Cargo.toml": "[dependencies]\napsp-costs.workspace = true\napsp-plugin-singbox.workspace = true\n",
@@ -181,6 +157,8 @@ class CoreBoundaryTests(unittest.TestCase):
             "crates/costs/Cargo.toml": "[dependencies]\napsp-plugin-alicloud.workspace = true\n",
             # A crate that still holds a domain of the same or a later group is not earlier.
             "crates/operations/Cargo.toml": "[dependencies]\napsp-plugin-alicloud.workspace = true\n",
+            # Peers in one group do not depend on each other.
+            "crates/observability/Cargo.toml": "[dependencies]\napsp-costs.workspace = true\n",
             "plugins/singbox/panel/Cargo.toml": "[dependencies]\napsp-naming.workspace = true\n",
             "crates/protocol/Cargo.toml": "[dependencies]\napsp-compiler.workspace = true\n",
             "crates/agent-core/Cargo.toml": "[target.'cfg(unix)'.dependencies]\napsp-adapter-singbox.workspace = true\n",
@@ -211,7 +189,10 @@ class CoreBoundaryTests(unittest.TestCase):
                           "apsp-plugin-singbox"})
         self.assertEqual(boundary.domain_dependencies("operations"),
                          {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api", "apsp-naming", "apsp-compiler",
-                          "apsp-costs", "apsp-plugin-singbox"})
+                          "apsp-costs", "apsp-observability", "apsp-plugin-singbox"})
+        self.assertEqual(boundary.domain_dependencies("observability"),
+                         {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api", "apsp-naming", "apsp-compiler",
+                          "apsp-plugin-singbox"})
 
 
 if __name__ == "__main__":
