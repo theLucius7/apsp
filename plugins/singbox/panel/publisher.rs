@@ -76,7 +76,7 @@ pub async fn publish_due(state: &AppState) -> anyhow::Result<()> {
     super::nexus_nodes::runtime_publish::membership(state).await?;
     let mut first_error = None;
     for server_id in ids {
-        if let Err(error) = publish_server(state, server_id).await {
+        if let Err(error) = publish_server(state, server_id, false).await {
             tracing::error!(server_id, %error, "server publication failed");
             first_error.get_or_insert(error);
         }
@@ -118,10 +118,24 @@ async fn snapshot(
         .collect()
 }
 
-async fn publish_server(state: &AppState, server_id: i64) -> anyhow::Result<()> {
+/// Publishes the current configuration of one server as a new revision even when its bundle
+/// is unchanged. An Agent replaces a certified activation only for a higher revision, so this
+/// is the administrator's recovery after the service manager restarted the runtime outside
+/// the Agent (a host reboot, for example); a still-valid activation applies it without a
+/// restart. `None` means nothing was published: the server is being published right now,
+/// awaits a deployment preflight, or is not eligible.
+pub(crate) async fn redeploy(state: &AppState, server_id: i64) -> anyhow::Result<Option<u64>> {
+    publish_server(state, server_id, true).await
+}
+
+async fn publish_server(
+    state: &AppState,
+    server_id: i64,
+    force: bool,
+) -> anyhow::Result<Option<u64>> {
     let mut retries = 0;
     let revision = loop {
-        match publish_server_transaction(state, server_id).await {
+        match publish_server_transaction(state, server_id, force).await {
             Ok(revision) => break revision,
             Err(error)
                 if retries < 2
@@ -151,7 +165,7 @@ async fn publish_server(state: &AppState, server_id: i64) -> anyhow::Result<()> 
         )
         .await;
     }
-    Ok(())
+    Ok(revision)
 }
 
 /// One server's desired bundle and the evidence recorded with it.
@@ -271,6 +285,7 @@ pub(crate) async fn bundle_digest_on(
 async fn publish_server_transaction(
     state: &AppState,
     server_id: i64,
+    force: bool,
 ) -> anyhow::Result<Option<u64>> {
     let mut tx = state.pool.begin().await?;
     // Authorization and relay selection must see the same ledger and clock.
@@ -281,11 +296,12 @@ async fn publish_server_transaction(
     super::entitlements::lock(&mut tx).await?;
     let at = now_timestamp();
     let query = format!(
-        "SELECT s.manifest_rev FROM servers s LEFT JOIN server_plugins p ON p.server_id=s.id AND p.plugin='sing-box' WHERE s.id=$1 AND s.deleted_at IS NULL AND {DUE} AND ({}) IS NOT NULL FOR UPDATE OF s SKIP LOCKED",
+        "SELECT s.manifest_rev FROM servers s LEFT JOIN server_plugins p ON p.server_id=s.id AND p.plugin='sing-box' WHERE s.id=$1 AND s.deleted_at IS NULL AND ({DUE} OR $2) AND ({}) IS NOT NULL FOR UPDATE OF s SKIP LOCKED",
         super::settings::SOURCE_SQL
     );
     let Some(manifest_rev) = sqlx::query_scalar::<_, i64>(&query)
         .bind(server_id)
+        .bind(force)
         .fetch_optional(&mut *tx)
         .await?
     else {
@@ -298,7 +314,7 @@ async fn publish_server_transaction(
         return Ok(None);
     }
     if let Some(result) =
-        super::nexus_nodes::runtime_publish::publish(state, &mut tx, server_id, manifest_rev)
+        super::nexus_nodes::runtime_publish::publish(state, &mut tx, server_id, manifest_rev, force)
             .await?
     {
         tx.commit().await?;
@@ -315,9 +331,9 @@ async fn publish_server_transaction(
         .bind(server_id).bind(MODULE).fetch_optional(&mut *tx).await?;
     let previous_revision = previous.as_ref().map(|row| row.get::<i64, _>("rev"));
     let force_runtime_candidate:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_runtime_rollout_members m JOIN singbox_runtime_rollouts r ON r.id=m.rollout_id WHERE m.server_id=$1 AND m.baseline_revision>=$2 AND r.completed_at IS NULL)").bind(server_id).bind(previous_revision).fetch_one(&mut *tx).await?;
-    if let Some(previous) = previous
-        .filter(|row| row.get::<String, _>("bundle_sha256") == hash && !force_runtime_candidate)
-    {
+    if let Some(previous) = previous.filter(|row| {
+        row.get::<String, _>("bundle_sha256") == hash && !force_runtime_candidate && !force
+    }) {
         // Public display metadata is separate from immutable accounting/path evidence.
         super::ordered_paths::publication::record(
             &mut tx,

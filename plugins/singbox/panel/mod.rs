@@ -150,6 +150,10 @@ pub fn router() -> Router<AppState> {
         .route("/servers/{id}/deployments", get(deployments::get))
         .route("/servers/{id}/deployments/check", post(deployments::check))
         .route(
+            "/servers/{id}/deployments/redeploy",
+            post(deployments::redeploy),
+        )
+        .route(
             "/servers/{id}/runtime-operations",
             get(runtime_operations::list).post(runtime_operations::create),
         )

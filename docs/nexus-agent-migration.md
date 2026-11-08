@@ -164,6 +164,8 @@ Agent 把面板发来的核对请求（checkpoint）记在 `/var/lib/apsp/core/s
 
 切换失败时，如果 Agent 已在本机把新修订记为已应用（`state.db` 的 `kv` 表里 `applied:singbox`、`runtime_activation:singbox` 指向新修订），回滚会停掉那个已登记的运行时实例。重试时脚本启动的是新实例，Agent 报 `controlled runtime instance differs from the successfully applied activation`，同一修订无法再应用（只有更高的修订才能替换失效的激活记录）。处理：运行时停止时停 `apsp-agent`，备份 `state.db*`，删除 `kv` 中的 `applied:singbox`、`runtime_activation:singbox`、`apply_receipt:singbox`，把 `health:singbox` 设为 `false`，启动 Agent，再按原参数重新演练和切换；Agent 会像首次部署一样应用该修订。
 
+服务器重启、或运行时被系统服务管理器重新拉起后，会出现同样的错误：运行时由系统启动，已登记的激活记录仍指向重启前的实例，同一修订不能再应用，健康状态一直是失败（2026-11-08 bytevirt-my1 主机重启后出现）。这时在服务器详情「插件」的 sing-box 卡片点「重新部署」：面板用同一份配置生成更高的修订，Agent 受控重启运行时一次（这台服务器的线路中断几秒），再登记新的激活。激活记录仍然有效时，重新部署不会重启运行时。只有面板无法使用时，才需要上面的手动步骤。
+
 迁移节点的用户授权来自策略组（[ADR 0115](adr/0115-original-permission-groups-as-policy-groups.md)）：每个原权限组对应一个「原权限组 · 组名」策略组，接管时线路自动加入；策略组不为迁移线路生成新 UUID 与密钥，下发的仍是用户原来的身份。需要调整谁能用哪个节点时，编辑策略组或用户所属的策略组；修改套餐不再改变线路。
 
 ## 2026-10-26 回滚后的重新迁移

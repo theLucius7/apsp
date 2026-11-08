@@ -114,6 +114,7 @@ pub(crate) async fn publish(
     tx: &mut Transaction<'_, Postgres>,
     server: i64,
     manifest: i64,
+    force: bool,
 ) -> anyhow::Result<Option<Option<u64>>> {
     let status: Option<String> =
         sqlx::query_scalar("SELECT state FROM singbox_nexus_runtime_hosts WHERE server_id=$1")
@@ -128,7 +129,8 @@ pub(crate) async fn publish(
     }
     let candidate = compile(state, tx, server).await?;
     let previous: Option<String> = sqlx::query_scalar("SELECT bundle_sha256 FROM deployments WHERE server_id=$1 AND module='singbox' ORDER BY rev DESC LIMIT 1").bind(server).fetch_optional(&mut **tx).await?;
-    if previous.as_deref() == Some(&candidate.hash) {
+    // An administrator's redeploy publishes the unchanged bundle as a higher revision.
+    if !force && previous.as_deref() == Some(&candidate.hash) {
         sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
             .bind(server)
             .execute(&mut **tx)

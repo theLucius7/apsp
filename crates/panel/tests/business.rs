@@ -545,3 +545,60 @@ async fn apply_results_are_monotonic_and_heartbeat_repairs_lost_results(
     );
     Ok(())
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn redeploy_repeats_the_current_configuration_as_a_higher_revision(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let server = panel.create_server(&cookie, "Redeploy server").await?;
+    panel.create_node(&cookie, server, "Redeploy node").await?;
+    let path = format!("/api/plugins/sing-box/servers/{server}/deployments/redeploy");
+    business_support::prove(&pool, &cookie).await?;
+    // Nothing was deployed yet, so there is nothing to repeat.
+    let early = panel.admin(Method::POST, &path, &cookie, None).await?;
+    assert_eq!(early.status(), StatusCode::CONFLICT);
+    panel.publish_now().await?;
+    let first = latest_revision(&pool, server).await?;
+    assert_eq!(first, 1);
+
+    // Restarting live traffic needs a recent verification of the administrator.
+    sqlx::query("DELETE FROM administrator_reauth")
+        .execute(&pool)
+        .await?;
+    let refused = panel.admin(Method::POST, &path, &cookie, None).await?;
+    assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+    assert_eq!(latest_revision(&pool, server).await?, first);
+
+    business_support::prove(&pool, &cookie).await?;
+    let response = panel.admin(Method::POST, &path, &cookie, None).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await?;
+    assert_eq!(body["revision"], first + 1);
+    let digests: Vec<String> = sqlx::query_scalar(
+        "SELECT bundle_sha256 FROM deployments WHERE server_id=$1 AND module='singbox' ORDER BY rev",
+    )
+    .bind(server)
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(digests.len(), 2);
+    assert_eq!(digests[0], digests[1], "a redeploy repeats the same bytes");
+    let status: Value = panel
+        .admin(
+            Method::GET,
+            &format!("/api/plugins/sing-box/servers/{server}/deployments"),
+            &cookie,
+            None,
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(status["status"]["target_rev"], first + 1);
+    assert_eq!(status["pending"], false);
+    // Scheduled publication of the unchanged configuration stays at the new revision.
+    panel.publish_now().await?;
+    assert_eq!(latest_revision(&pool, server).await?, first + 1);
+    Ok(())
+}

@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { api } from '../../api'
-import { Badge, ErrorNotice, Loading, Refresh } from '../../components'
+import { Badge, Confirm, DialogPresence, ErrorNotice, Loading, Refresh } from '../../components'
 import { time } from '../../format'
 import { resourceWriteError, useAction, useResource, settingsPoll } from '../../hooks'
 import type { Deployment, Node, PluginServer } from '../../types'
@@ -31,8 +32,17 @@ export default function ServerBusiness({ serverId, runtimeVersion }: { serverId:
   const deployment = useResource<Deployment>(enabled ? `/api/plugins/sing-box/servers/${serverId}/deployments` : null, 15_000)
   const nodes = useResource<Node[]>(enabled ? '/api/plugins/sing-box/nodes' : null, settingsPoll, { keep: true })
   const action = useAction()
+  const [redeploying, setRedeploying] = useState(false)
+  const [notice, setNotice] = useState('')
   const status = deployment.data?.status
   const refresh = () => { metadata.reload(); deployment.reload(); nodes.reload() }
+  // The Agent reports this when the service manager restarted the runtime outside it, such
+  // as on a host reboot; it then waits for a higher revision instead of restarting on its own.
+  const outsideRestart = Boolean(status?.last_error?.includes('controlled runtime instance differs from the successfully applied activation'))
+  const redeploy = () => {
+    if (resourceWriteError(metadata, deployment)) return
+    void action.run(() => api<{ revision: number }>(`/api/plugins/sing-box/servers/${serverId}/deployments/redeploy`, 'POST'), value => { setRedeploying(false); setNotice(`已生成版本 ${value.revision}，等待设备应用。`); refresh() })
+  }
   const enable = () => {
     if (resourceWriteError(metadata)) return
     const current = metadata.getCurrent()
@@ -65,7 +75,16 @@ export default function ServerBusiness({ serverId, runtimeVersion }: { serverId:
               <Revision label="已应用版本" value={status.applied_rev || null} tone={health?.tone} />
             </div>
             <p className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">{health && <Badge tone={health.tone}>{health.label}</Badge>}最后更新 {time(status.updated_at)}</p>
-            {status.last_error && <Notice tone="error" className="mb-0"><div><strong className="font-medium">最近一次部署失败</strong><p className="wrap-anywhere">{status.last_error}</p>{status.healthy && <p>旧配置仍健康，节点继续使用上次成功应用的版本。</p>}</div></Notice>}
+            {status.last_error && <Notice tone="error" className="mb-0"><div>
+              {outsideRestart ? <>
+                <strong className="font-medium">运行时在 Agent 之外被重新启动过</strong>
+                <p>例如服务器重启后由系统自动拉起。为了不擅自中断流量，Agent 不会自己接管，需要重新部署一次：用同一份配置生成新版本，Agent 受控重启运行时并恢复健康。</p>
+                <details className="mt-1"><summary className="cursor-pointer text-xs">原始错误</summary><p className="wrap-anywhere text-xs">{status.last_error}</p></details>
+              </> : <><strong className="font-medium">最近一次部署失败</strong><p className="wrap-anywhere">{status.last_error}</p></>}
+              {status.healthy && <p>旧配置仍健康，节点继续使用上次成功应用的版本。</p>}
+            </div></Notice>}
+            {status.applied_rev > 0 && (status.last_error || !status.healthy) && <div><Button size="sm" variant={outsideRestart ? 'default' : 'outline'} disabled={action.busy || Boolean(resourceWriteError(metadata, deployment))} onClick={() => { action.clearError(); setRedeploying(true) }}>重新部署</Button></div>}
+            {notice && <Notice tone="success" role="status" className="mb-0">{notice}</Notice>}
             {status.target_rev > status.applied_rev && !status.last_error && <Notice className="mb-0">正在等待设备应用最新配置。设备离线时会在重连后继续。</Notice>}
           </div> : <p className="text-muted-foreground text-[13px]">还没有发布记录。安装时先部署空运行时；新增有效节点须在下方运维入口采集并确认完整预检。</p>)}
           {enabled && <div className="grid gap-1.5">
@@ -76,6 +95,9 @@ export default function ServerBusiness({ serverId, runtimeVersion }: { serverId:
         </>}
       </div>
     </Panel>
+    <DialogPresence>{redeploying && <Confirm title="重新部署当前配置？" busy={action.busy} error={action.error} confirmLabel="重新部署" busyLabel="正在生成新版本…" tone="default" onClose={() => setRedeploying(false)} onConfirm={redeploy}>
+      用同一份配置生成新版本并下发到这台服务器。运行时已脱离 Agent 的受控实例时（例如服务器重启后），Agent 会受控重启一次，期间这台服务器的线路中断几秒；运行时正常时不会重启。需要再次验证身份。
+    </Confirm>}</DialogPresence>
     {enabled && <>
       <Panel><div className="p-4"><RuntimeOperations serverId={serverId} status={status} deploymentError={() => resourceWriteError(metadata, deployment)} getStatus={() => deployment.getCurrent()?.status} /></div></Panel>
       <Panel><PanelHeader><PanelTitle>部署历史</PanelTitle><span className="text-muted-foreground text-xs">最近 6 次发布</span></PanelHeader>{deployment.data?.history.length ? <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>版本</TableHead><TableHead>配置包摘要</TableHead><TableHead>发布时间</TableHead></TableRow></TableHeader><TableBody>{deployment.data.history.slice(0, 6).map(item => <TableRow key={item.rev}><TableCell><strong>版本 {item.rev}</strong>{item.rev === status?.applied_rev && <span className="bg-muted text-muted-foreground ml-2 inline-block rounded px-1.5 py-0.5 align-middle text-xs">已应用</span>}</TableCell><TableCell><code title={item.bundle_sha256}>{item.bundle_sha256.slice(0, 16)}…</code></TableCell><TableCell>{time(item.created_at)}</TableCell></TableRow>)}</TableBody></Table></div> : <div className="text-muted-foreground px-4 py-6 text-sm">还没有发布记录。</div>}</Panel>
