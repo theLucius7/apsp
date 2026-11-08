@@ -1,5 +1,7 @@
 # 插件中心与服务器执行边界
 
+> [ADR 0128](adr/0128-domain-architecture.md) 起代码按领域组织，不再有插件。本页说明的是现有界面「插件中心」及其执行边界；界面改名（「制品与版本」）与按领域重组见[执行计划](redesign/09-execution.md)步骤 4 与[迁移阶段](architecture.md#9-迁移阶段) E。
+
 ## 页面职责
 
 侧栏「监控与设置 › 设置 › 插件中心」（ADR 0126 计划改称「系统 › 制品与版本」）有两个分页：「插件目录」（`/#/settings/plugins`）介绍每个插件，「sing-box 安装」（`/#/settings/plugins/servers`）按服务器汇总 sing-box 的安装与运行状态。原“制品”页面混合了插件介绍、Release 导入与逐架构下载包清单，现由插件目录取代；旧 `/#/artifacts` 书签已不再改写（ADR 0122、0126）。目录没有 Release 标签输入、导入按钮或面板安装操作。

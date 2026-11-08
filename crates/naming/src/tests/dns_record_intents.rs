@@ -105,7 +105,7 @@ async fn history(fixture: &Fixture, operation: Uuid) -> Value {
         .unwrap()
 }
 
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn committed_unsent_intent_consumes_preview_blocks_writes_and_reconciles_without_provider(
     pool: sqlx::PgPool,
 ) {
@@ -162,7 +162,7 @@ async fn committed_unsent_intent_consumes_preview_blocks_writes_and_reconciles_w
     tx.commit().await.unwrap();
 }
 
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn active_writer_prevents_reconciliation_and_retention_never_removes_uncertain_identity(
     pool: sqlx::PgPool,
 ) {
@@ -197,7 +197,7 @@ async fn active_writer_prevents_reconciliation_and_retention_never_removes_uncer
     tx.commit().await.unwrap();
 }
 
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn finalization_rollback_keeps_attempt_marker_and_blocks_replay(pool: sqlx::PgPool) {
     let fixture = fixture(pool).await;
     let (_, operation) = intent(&fixture).await;
@@ -258,7 +258,7 @@ async fn delayed(
     response
 }
 
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn dropped_caller_after_actual_provider_write_keeps_intent_and_blocks_new_preview_and_rollback(
     pool: sqlx::PgPool,
 ) {
@@ -337,7 +337,7 @@ async fn dropped_caller_after_actual_provider_write_keeps_intent_and_blocks_new_
     server.abort();
 }
 
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn revoked_actor_changed_account_or_rotated_credential_blocks_before_any_provider_request(
     pool: sqlx::PgPool,
 ) {
@@ -424,7 +424,7 @@ async fn revoked_actor_changed_account_or_rotated_credential_blocks_before_any_p
     server.abort();
 }
 
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn rollback_original_is_consumed_with_the_durable_intent_even_when_no_write_is_sent(
     pool: sqlx::PgPool,
 ) {
@@ -465,7 +465,7 @@ async fn rollback_original_is_consumed_with_the_durable_intent_even_when_no_writ
     ));
 }
 
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn history_requires_both_original_and_current_scope_and_missing_legacy_scope_fails_closed(
     pool: sqlx::PgPool,
 ) {
@@ -618,7 +618,7 @@ async fn history_requires_both_original_and_current_scope_and_missing_legacy_sco
     );
 }
 
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn another_account_cannot_bypass_uncertain_owner_or_record_identity(pool: sqlx::PgPool) {
     let fixture = fixture(pool).await;
     let (_, operation) = intent(&fixture).await;
@@ -673,7 +673,7 @@ async fn another_account_cannot_bypass_uncertain_owner_or_record_identity(pool: 
     tx.commit().await.unwrap();
 }
 
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn repeated_read_only_create_observations_never_become_a_write_receipt_or_clear_the_gate(
     pool: sqlx::PgPool,
 ) {

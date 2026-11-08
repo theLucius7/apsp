@@ -61,7 +61,7 @@ async fn prove(state: &AppState, headers: &HeaderMap) {
         .bind(auth::hash_token(token)).bind(now).bind(now+300).execute(&state.pool).await.unwrap();
 }
 
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn migration_requires_recent_proof_and_rejects_the_whole_batch_when_a_revision_changes(
     pool: PgPool,
 ) {
@@ -157,7 +157,7 @@ async fn migration_requires_recent_proof_and_rejects_the_whole_batch_when_a_revi
     assert!(bindings.iter().all(|server| *server == target));
 }
 
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn expired_preview_and_scoped_administrator_cannot_migrate_ungranted_server(pool: PgPool) {
     let (state, headers, source, target, rules) = fixture(pool.clone()).await;
     let response = preview(
@@ -214,7 +214,7 @@ async fn expired_preview_and_scoped_administrator_cannot_migrate_ungranted_serve
     assert!(bindings.iter().all(|server| *server == source));
 }
 
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn domain_batch_edit_resets_record_identity_and_keeps_old_history(pool: PgPool) {
     let (state, headers, _, target, mut selections) = fixture(pool.clone()).await;
     prove(&state, &headers).await;
@@ -257,7 +257,7 @@ async fn domain_batch_edit_resets_record_identity_and_keeps_old_history(pool: Pg
     }
 }
 
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn changing_dns_provider_without_a_new_credential_reference_is_blocked(pool: PgPool) {
     let (state, headers, _, target, mut selections) = fixture(pool.clone()).await;
     let mut config = load(&pool, selections[0].id).await.unwrap().config;

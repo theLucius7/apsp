@@ -140,7 +140,7 @@
 
 据此，第 3 节的调整中只有两处需要新地址：外部来源与链路升为入口（`/#/sources`、`/#/chains`，旧的 `?kind=`、`?view=` 查询改写过去），付费服务搬入费用与续费（`/#/expenses/services`，`/#/subscriptions` 改写过去）。其余地址不变。
 
-这条规则也回答了 [architecture.md §10](../architecture.md#10-待决定) 中“旧地址改写是否恢复”：ADR 0122 删除的改写里，已发给代理用户的门户、邮箱登录与邀请旧地址（`/#/plugins/sing-box/account`、`/member`、`/join` 一类，原先分别改写到 `/#/account`、`/#/member`、`/#/join`）属于外部契约，应当恢复改写；控制台的旧地址已过改写期，不恢复。需要用户确认。
+这条规则也回答了功能划分文档原先列为待决定的“旧地址改写是否恢复”（2026-11-08 已由用户确认，见 [ADR 0126](../adr/0126-workspaces-language-and-addresses.md)）：ADR 0122 删除的改写里，已发给代理用户的门户、邮箱登录与邀请旧地址（`/#/plugins/sing-box/account`、`/member`、`/join` 一类，原先分别改写到 `/#/account`、`/#/member`、`/#/join`）属于外部契约，应当恢复改写；控制台的旧地址已过改写期，不恢复。需要用户确认。
 
 ## 7. 网络服务内的结构
 

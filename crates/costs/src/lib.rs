@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
-//! Recurring service expenses, independent of the proxy business.
+//! Costs domain (ADR 0128): recurring paid services, payments, renewal reminders and the
+//! renewal calendar, independent of the proxy business.
 mod api;
 mod calendar;
 mod history;

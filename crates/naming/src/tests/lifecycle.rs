@@ -102,7 +102,7 @@ async fn guarded_value_restore_preserves_external_comment_and_records_exact_snap
     assert_eq!(mock.writes(), 2);
 }
 
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn history_completion_is_atomic_bounded_redacted_and_survives_rule_removal(
     pool: sqlx::PgPool,
 ) {
@@ -167,7 +167,7 @@ async fn history_completion_is_atomic_bounded_redacted_and_survives_rule_removal
     assert_eq!(history::list(&pool, rule.id).await.unwrap().len(), 256);
 }
 
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn rollback_rechecks_provider_and_pauses_automatic_reconciliation(pool: sqlx::PgPool) {
     use crate::{load, rollback};
     let now = apsp_protocol::now_timestamp();
@@ -264,7 +264,7 @@ fn credential_payloads_validate_provider_and_never_serialize_secret_fields() {
     assert!(credentials::populate(&mut rule, &json!({"access_key_id":"short"})).is_err());
 }
 
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn unavailable_credential_reference_stops_before_provider_io_instead_of_using_legacy_secret(
     pool: sqlx::PgPool,
 ) {

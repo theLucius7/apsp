@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Reject proxy business references in core while preserving native account APIs.
 
-Two cores are checked: the Agent core (`crates/agent-core`) and the panel host
-(`crates/panel-host`). Crate manifests are also checked so that plugins depend
-on the host and never the reverse.
+The Agent core (`crates/agent-core`) and the platform crates (`crates/panel-host`,
+`crates/cloud-api`) are checked. Crate manifests are also checked so that every
+workspace crate has a layer and depends only in the documented direction: the
+platform never depends on a domain, and a domain crate depends only on the
+platform and on domain crates of earlier groups (ADR 0128, docs/architecture.md).
 """
 import argparse
 from pathlib import Path
@@ -102,16 +104,44 @@ HOST_EXCEPTIONS = {
 
 }
 
+# Cloud API client: the HTTP header name and the constant that fills it.
+CLOUD_API_EXCEPTIONS = {
+    "src/globalping.rs": (
+        r'(?<=const )USER_AGENT(?=: &str = "apsp-panel";)',
+        r'\.header\("user-agent", USER_AGENT\)',
+    ),
+}
+
 CORES = {
     "crates/agent-core": EXCEPTIONS,
     "crates/panel-host": HOST_EXCEPTIONS,
+    "crates/cloud-api": CLOUD_API_EXCEPTIONS,
 }
 
 # Workspace crates each layer may depend on (all dependency tables).
 AGENT_CORE_DEPENDENCIES = {"apsp-adapter-sdk", "apsp-protocol"}
 ADAPTER_DEPENDENCIES = {"apsp-adapter-sdk"}
-HOST_DEPENDENCIES = {"apsp-protocol"}
-PLUGIN_DEPENDENCIES = {"apsp-panel-host", "apsp-protocol", "apsp-compiler", "apsp-cloud-api"}
+# Crates without workspace dependencies.
+LEAVES = ("crates/protocol", "crates/adapter-sdk", "crates/tcp-probe")
+# The platform knows no domain.
+PLATFORM_CRATES = {"crates/panel-host": "apsp-panel-host", "crates/cloud-api": "apsp-cloud-api"}
+PLATFORM_DEPENDENCIES = {"apsp-protocol"}
+# Domain groups in dependency order (docs/architecture.md section 5.1) and the domain crates.
+DOMAIN_ORDER = (("governance",), ("resources",), ("networking", "naming"), ("traffic",),
+                ("access",), ("costs", "observability"), ("operations",))
+DOMAIN_CRATES = {
+    "crates/naming": ("apsp-naming", "naming"),
+    "crates/compiler": ("apsp-compiler", "traffic"),
+    "crates/costs": ("apsp-costs", "costs"),
+}
+# Crates that still hold several domains keep their current dependencies until they are
+# split (docs/architecture.md section 9, stages C and D).
+TRANSITIONAL_DEPENDENCIES = {
+    "plugins/singbox/panel": {"apsp-panel-host", "apsp-protocol", "apsp-compiler"},
+    "plugins/alicloud/panel": {"apsp-panel-host", "apsp-protocol", "apsp-cloud-api"},
+}
+# The application and the Agent binary compose the layers.
+COMPOSERS = ("crates/panel", "crates/agent")
 
 
 def violations(relative, source, exceptions=None):
@@ -162,21 +192,39 @@ def workspace_dependencies(manifest):
     return {name for table in tables for name in table if name.startswith("apsp-")}
 
 
+def domain_dependencies(domain):
+    """The platform, the protocol and the domain crates of earlier groups."""
+    rank = {name: index for index, group in enumerate(DOMAIN_ORDER) for name in group}
+    earlier = {crate for crate, other in DOMAIN_CRATES.values() if rank[other] < rank[domain]}
+    return {"apsp-protocol", *PLATFORM_CRATES.values(), *earlier}
+
+
 def layer_rules(root):
     """Maps each layered manifest to the workspace crates it may depend on."""
     rules = {root / "crates/agent-core/Cargo.toml": AGENT_CORE_DEPENDENCIES}
     for manifest in sorted(root.glob("crates/adapter-*/Cargo.toml")):
         if manifest.parent.name != "adapter-sdk":
             rules[manifest] = ADAPTER_DEPENDENCIES
-    rules[root / "crates/panel-host/Cargo.toml"] = HOST_DEPENDENCIES
-    for manifest in sorted(root.glob("plugins/*/panel/Cargo.toml")):
-        rules[manifest] = PLUGIN_DEPENDENCIES
+    for crate in LEAVES:
+        rules[root / crate / "Cargo.toml"] = set()
+    for crate in PLATFORM_CRATES:
+        rules[root / crate / "Cargo.toml"] = PLATFORM_DEPENDENCIES
+    for crate, (_, domain) in DOMAIN_CRATES.items():
+        rules[root / crate / "Cargo.toml"] = domain_dependencies(domain)
+    for crate, allowed in TRANSITIONAL_DEPENDENCIES.items():
+        rules[root / crate / "Cargo.toml"] = allowed
     return rules
 
 
 def check_dependencies(root):
     failed = False
-    for manifest, allowed in layer_rules(root).items():
+    rules = layer_rules(root)
+    composers = {root / crate / "Cargo.toml" for crate in COMPOSERS}
+    for manifest in sorted([*root.glob("crates/*/Cargo.toml"), *root.glob("plugins/*/panel/Cargo.toml")]):
+        if manifest not in rules and manifest not in composers:
+            print(f"{manifest}: workspace crate has no layer in tools/check-core-boundary.py", file=sys.stderr)
+            failed = True
+    for manifest, allowed in rules.items():
         if not manifest.is_file():
             print(f"{manifest}: layered manifest is missing", file=sys.stderr)
             failed = True
