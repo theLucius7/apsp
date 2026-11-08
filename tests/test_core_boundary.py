@@ -140,31 +140,71 @@ class CoreBoundaryTests(unittest.TestCase):
         self.assertTrue(boundary.violations(relative, "reqwest::header::USER_AGENT", boundary.HOST_EXCEPTIONS))
         self.assertTrue(boundary.violations(relative, "reqwest::header::USER_AGENT_PROXY.as_str()", boundary.HOST_EXCEPTIONS))
 
-    def test_plugins_depend_on_the_host_and_never_the_reverse(self):
+    def test_cloud_api_passes_and_its_header_exception_stays_scoped(self):
+        root = SCRIPT.parents[1]
+        exceptions = boundary.CORES["crates/cloud-api"]
+        self.assertTrue(boundary.check(root / "crates/cloud-api", exceptions))
+        relative = "src/globalping.rs"
+        native = 'const USER_AGENT: &str = "apsp-panel";\n.header("user-agent", USER_AGENT)'
+        self.assertFalse(boundary.violations(relative, native, exceptions))
+        self.assertTrue(boundary.violations("src/aliyun.rs", native, exceptions))
+        self.assertTrue(boundary.violations(relative, native + "; user_id", exceptions))
+        self.assertTrue(boundary.violations(relative, '.header("x-user", USER_AGENT)', exceptions))
+
+    def test_layers_depend_in_the_documented_direction(self):
         self.assertTrue(boundary.check_dependencies(SCRIPT.parents[1]))
+        protocol = "[dependencies]\napsp-protocol.workspace = true\n"
         manifests = {
-            "crates/agent-core/Cargo.toml": "[dependencies]\napsp-protocol.workspace = true\n",
-            "crates/panel-host/Cargo.toml": "[dependencies]\napsp-protocol.workspace = true\n",
-            "plugins/ddns/panel/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\n",
+            "crates/protocol/Cargo.toml": "[package]\n",
+            "crates/adapter-sdk/Cargo.toml": "[package]\n",
+            "crates/tcp-probe/Cargo.toml": "[package]\n",
+            "crates/adapter-singbox/Cargo.toml": "[dependencies]\napsp-adapter-sdk.workspace = true\n",
+            "crates/agent-core/Cargo.toml": protocol,
+            "crates/agent/Cargo.toml": "[dependencies]\napsp-agent-core.workspace = true\napsp-adapter-singbox.workspace = true\n",
+            "crates/panel-host/Cargo.toml": protocol,
+            "crates/cloud-api/Cargo.toml": protocol,
+            "crates/compiler/Cargo.toml": "[package]\n",
+            "crates/naming/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-cloud-api.workspace = true\n",
+            "crates/costs/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-naming.workspace = true\n",
+            "plugins/singbox/panel/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-compiler.workspace = true\n",
+            "plugins/alicloud/panel/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-cloud-api.workspace = true\n",
+            "crates/panel/Cargo.toml": "[dependencies]\napsp-costs.workspace = true\napsp-plugin-singbox.workspace = true\n",
         }
         broken = {
+            # The platform never depends on a domain or on a crate that holds domains.
             "crates/panel-host/Cargo.toml": "[dev-dependencies]\napsp-plugin-singbox.workspace = true\n",
-            "plugins/ddns/panel/Cargo.toml": "[dependencies]\napsp-plugin-singbox.workspace = true\n",
+            "crates/cloud-api/Cargo.toml": "[dependencies]\napsp-naming.workspace = true\n",
+            # A domain depends only on earlier groups, never on a later domain or a peer.
+            "crates/naming/Cargo.toml": "[dependencies]\napsp-costs.workspace = true\n",
+            "crates/compiler/Cargo.toml": "[dependencies]\napsp-costs.workspace = true\n",
+            "crates/costs/Cargo.toml": "[dependencies]\napsp-plugin-alicloud.workspace = true\n",
+            "plugins/singbox/panel/Cargo.toml": "[dependencies]\napsp-naming.workspace = true\n",
+            "crates/protocol/Cargo.toml": "[dependencies]\napsp-compiler.workspace = true\n",
             "crates/agent-core/Cargo.toml": "[target.'cfg(unix)'.dependencies]\napsp-adapter-singbox.workspace = true\n",
+            # Every workspace crate needs a layer.
+            "crates/traffic/Cargo.toml": "[package]\n",
         }
-        for path, manifest in broken.items():
-            with self.subTest(path=path), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                for relative, text in {**manifests, path: manifest}.items():
-                    (root / relative).parent.mkdir(parents=True, exist_ok=True)
-                    (root / relative).write_text(text)
-                self.assertFalse(boundary.check_dependencies(root))
-        with tempfile.TemporaryDirectory() as directory:
+
+        def tree(directory, files):
             root = Path(directory)
-            for relative, text in manifests.items():
+            for relative, text in files.items():
                 (root / relative).parent.mkdir(parents=True, exist_ok=True)
                 (root / relative).write_text(text)
-            self.assertTrue(boundary.check_dependencies(root))
+            return root
+
+        for path, manifest in broken.items():
+            with self.subTest(path=path), tempfile.TemporaryDirectory() as directory:
+                self.assertFalse(boundary.check_dependencies(tree(directory, {**manifests, path: manifest})))
+        # A layered crate that moves away without updating the rules fails.
+        with tempfile.TemporaryDirectory() as directory:
+            root = tree(directory, {k: v for k, v in manifests.items() if k != "crates/naming/Cargo.toml"})
+            self.assertFalse(boundary.check_dependencies(root))
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertTrue(boundary.check_dependencies(tree(directory, manifests)))
+        self.assertEqual(boundary.domain_dependencies("naming"),
+                         {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api"})
+        self.assertEqual(boundary.domain_dependencies("costs"),
+                         {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api", "apsp-naming", "apsp-compiler"})
 
 
 if __name__ == "__main__":

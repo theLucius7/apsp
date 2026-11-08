@@ -29,7 +29,7 @@
 | 通用探针 | 监控只服务于这些服务器与服务的运营。主题、地图、公开展示这类探针竞赛不是投入方向；只想要探针的用户更适合 Komari、哪吒或 Cloudflare 上的探针。 |
 | 通用运维面板 | 不再扩展终端、文件管理、防火墙、组网、批量脚本这类能力。通用运维交给 SSH 工具和用户自己的 AI Agent，apsp 通过接口提供数据与受控操作。 |
 | 公开售卖的代理平台 | 不做 Xboard 一类面板的运营功能：公开注册、订单与支付、优惠券、邀请佣金、工单和多租户。代理用户由管理员创建，或由已有用户用管理员发放的邀请名额邀请（不收费、无佣金）；管理员和代理用户使用各自独立的登录和会话。 |
-| 云厂商控制台 | 费用、到期和续费是记账与提醒。只有阿里云 CDT 插件在管理员明确配置后调整带宽或启停实例，其他云资源不开通、不续费、不删除。 |
+| 云厂商控制台 | 费用、到期和续费是记账与提醒。只有阿里云 CDT 功能在管理员明确配置后调整带宽或启停实例，其他云资源不开通、不续费、不删除。 |
 | 多内核代理网关 | 每台服务器只运行一个 sing-box（上游版本加 `tools/singbox-runtime/` 的补丁，见 ADR 0104、0124），不接入 xray，不做多个运行时实例或自动出口池，不实现 SSM API。 |
 | 高可用平台 | 面板单实例部署，不做面板高可用；特权操作经 `Privileged` trait，不另设独立的特权 helper 进程。 |
 
@@ -52,15 +52,15 @@
 
 ## 功能分级
 
-每项现有功能处于下面五个级别之一。级别决定投入方式与默认显示，不决定代码放在哪里（[ADR 0125](adr/0125-feature-modules.md)、[ADR 0126](adr/0126-workspaces-language-and-addresses.md)）。
+每项现有功能处于下面五个级别之一。级别决定投入方式与默认显示，不决定代码放在哪里（[ADR 0128](adr/0128-domain-architecture.md)、[ADR 0126](adr/0126-workspaces-language-and-addresses.md)）。
 
 | 级别 | 含义 |
 | --- | --- |
 | **核心** | 主线。持续投入，每个版本都必须在实机上签收。 |
 | **支撑** | 运营服务需要的能力。保留并维护，只做主线需要的部分。 |
-| **可选插件** | 按需使用。保持可用，不扩展新能力。 |
+| **可选** | 按需使用。保持可用，不扩展新能力（原称“可选插件”，ADR 0128 起不再有插件，含义不变）。 |
 | **降级** | 保留现有功能，只修缺陷和安全问题，不新增能力。界面上标为“实验”，放在所属工作区内、默认隐藏；高风险操作默认关闭，按服务器显式开启。 |
-| **冻结** | 不再投入，只修安全问题，默认关闭或隐藏。评估后移除或拆为独立插件，移除需要用户单独授权。 |
+| **冻结** | 不再投入，只修安全问题，默认关闭或隐藏。评估后移除，移除需要用户单独授权。 |
 
 已有安全门禁而“暂停”的能力（NodeQuality 完整验机）继续拒绝新任务，并按冻结处理。
 
@@ -102,7 +102,7 @@
 | 面板备份与恢复 | 系统 › 备份与恢复 `/#/settings/backup` |
 | 迁移与兼容：来源迁移、旧链路接管、Nexus 兼容桥等一次性流程的状态与退出条件（只读） | 系统 › 迁移与兼容（新增） |
 
-### 可选插件
+### 可选
 
 | 功能 | 位置 | 说明 |
 | --- | --- | --- |
@@ -189,13 +189,13 @@
 
 1. **先问是否服务主线。** 新功能必须直接服务节点、链路、用户与订阅，或者是运营这张网络所需的服务器、线路与费用感知。都不是，就进入[路线图](roadmap.md)的候选池，不直接实现。
 2. **降级和冻结的功能不加新能力。** 只修缺陷和安全问题；需要扩展时，先申请调整级别。它们放在所属工作区内、默认隐藏并标注级别，不再集中到一个分组；级别变化只改标记，不搬位置与代码。
-3. **按任务归组，不按实现方式。** 插件提供的页面放进它服务的任务所在的工作区：DDNS 与阿里云 CDT 作用于服务器，属于“服务器”；sing-box 属于“网络服务”。
+3. **按任务归组，不按实现方式。** 各领域提供的页面放进它服务的任务所在的工作区：DDNS 与阿里云 CDT 作用于服务器，属于“服务器”；sing-box 属于“网络服务”。
 4. **一台服务器的事放服务器详情，跨服务器的事放工作区。** 服务器详情里的关联对象是按这台服务器筛选的视图，编辑仍在对象自己的家；工作区页面支持从服务器详情“带此服务器打开”。
 5. **同一设置只有一个编辑位置。** 影响整个面板的设置在「系统」，属于某个领域的设置在该工作区的设置分页；其他页面只读显示并链接到编辑位置。
 6. **讲同一件事的页面合成一个入口下的分页，入口名用对象名，不与工作区同名。** 页面标题与侧栏名称一致，不加眉题或面包屑；外观（主题、密度、语言）只在账号菜单里设置；说明文字只用一句话讲“在这里做什么”。
 7. **核心旅程不依赖降级页面。** 核心功能需要的授权或设置，在使用它的位置就地提供。
 8. **地址按读者区分**（[ADR 0126](adr/0126-workspaces-language-and-addresses.md)）。已发给代理用户或客户端的地址（客户端订阅、门户、邮箱登录、邀请、开通链接、专属地址）永不失效，改名必须改写到新地址；控制台页面地址尽量稳定，对象换了家时才改，旧地址改写到新地址并至少保留一个发布版本；接口地址按接口契约管理。
-9. **每个入口属于一个功能模块。** 新页面先确定所属的功能模块（[ADR 0125](adr/0125-feature-modules.md)），再确定工作区；工作区是功能前端清单里的分组属性，调整工作区不搬代码。
+9. **每个入口属于一个领域。** 新页面先确定所属的领域（[ADR 0128](adr/0128-domain-architecture.md)、[领域归属表](domain-map.md)），再确定工作区；工作区是领域前端清单里的分组属性，调整工作区不搬代码。组合几个领域的页面（概览、服务器详情）属于应用层，只组合各领域的入口，不另存数据。
 
 ## 界面用语
 
@@ -223,17 +223,17 @@
 
 ## 代码对应
 
-代码与数据按[功能模块](architecture.md#4-功能地图)组织，不随侧栏调整搬家；工作区由几个模块的入口组成（[六工作区方案 §2.3](redesign/04-workspaces.md#23-工作区与功能模块)）。
+代码与数据按[领域](domain-map.md)组织，不随侧栏调整搬家；工作区由几个领域的入口组成（[六工作区方案 §2.3](redesign/04-workspaces.md#23-工作区与功能模块)）。每个文件属于哪个领域登记在 `tools/feature-boundaries.toml`。
 
-| 工作区 | 功能模块（ADR 0125） | 现在的前端目录（`web/src/`） | 现在的后端位置 |
+| 工作区 | 领域（ADR 0128） | 现在的前端目录（`web/src/`） | 现在的后端位置 |
 | --- | --- | --- | --- |
-| 概览 | `overview` | `plugins/singbox/Overview.tsx` | 读取各功能的汇总接口 |
-| 服务器 | 内核·设备、`dns`、`cloud`；实验部分 `lab` | `servers/`、`display/`、`plugins/ddns/`、`plugins/alicloud/`；实验 `fleet/`、`operations/`、`network-configuration/` | `panel-host` 的 `servers`、`telemetry`；`plugins/ddns/panel/`、`plugins/alicloud/panel/`；实验 `panel-host` 的 `fleet`、`operations`、`network_configuration`；Agent 在 `crates/agent-core/` |
-| 网络服务 | `proxy` | `plugins/singbox/` | `plugins/singbox/panel/`、`crates/compiler/`、`crates/adapter-singbox/` |
-| 监测与诊断 | `alerts`、`lines`；趋势与报表属 `overview` | `monitoring/`、`network-workbench/`、`server-diagnostics/`、`statistics/` | `panel-host` 的 `notifications`、`probes`、`latency_tasks`、`network_workbench`、`ip_quality`、`statistics`；诊断插件 `plugins/{nodequality,ipquality,tcpquality}/` |
-| 费用与续费 | `costs` | `plugins/expenses/`、`subscriptions/` | `plugins/expenses/panel/` |
-| 系统 | 内核·身份、内核·平台服务、内核·设备（制品） | `system/`、`control-center/`、`plugins/` 根目录的插件中心文件 | `panel-host` 的 `settings`、`control_center`、`auth`、`passkeys`、`exchange`、`artifacts`、`operations` 中的备份 |
+| 概览 | 应用层组合各领域的汇总 | `plugins/singbox/Overview.tsx` | 读取各领域的汇总接口 |
+| 服务器 | 资源、名称与证书、基础网络、作业；看板与遥测属观测 | `servers/`、`display/`、`plugins/ddns/`、`plugins/alicloud/`；实验 `fleet/`、`operations/`、`network-configuration/` | `panel-host` 的 `servers`、`telemetry`；`crates/naming/`、`plugins/alicloud/panel/`；实验 `panel-host` 的 `fleet`、`operations`、`network_configuration`；Agent 在 `crates/agent-core/` |
+| 网络服务 | 流量服务、服务权益 | `plugins/singbox/` | `plugins/singbox/panel/`、`crates/compiler/`、`crates/adapter-singbox/` |
+| 监测与诊断 | 观测 | `monitoring/`、`network-workbench/`、`server-diagnostics/`、`statistics/` | `panel-host` 的 `notifications`、`probes`、`latency_tasks`、`network_workbench`、`ip_quality`、`statistics`；诊断代码 `plugins/{nodequality,ipquality,tcpquality}/` |
+| 费用与续费 | 成本 | `plugins/expenses/`、`subscriptions/` | `crates/costs/` |
+| 系统 | 平台治理（含制品、备份与恢复）；汇率属成本 | `system/`、`control-center/`、`plugins/` 根目录的插件中心文件 | `panel-host` 的 `settings`、`control_center`、`auth`、`passkeys`、`exchange`、`artifacts`、`operations` 中的备份 |
 
-后端的宿主、插件与组装分层不随功能分级改变，见[仓库目录与维护约定](repository.md)。
+后端的平台、领域与应用分层不随功能分级改变，见[仓库目录与维护约定](repository.md)。
 
 原「成员运营」（Nexus 迁移带来的钱包、销售套餐、订单与充值）已删除，邀请、登录邮件与公告指南归入代理用户，见 [ADR 0113](adr/0113-invitation-quota-without-commerce.md)。

@@ -4,17 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-# Submodule directories such as `tests/` belong to the library, not to Cargo targets.
-autobins = false
-autoexamples = false
-autotests = false
-autobenches = false
-
-[lib]
-path = "mod.rs"
 
 [features]
-# Exposes the local provider mock to the tests of dependent plugins.
+# Exposes the local provider mock to the tests of dependent crates.
 test-support = []
 
 [dependencies]

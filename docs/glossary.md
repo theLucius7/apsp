@@ -15,7 +15,7 @@
 | 计数器代次 | `epoch` | 一段连续的计数周期，以 UUID 标识；运行时重载或重启后开启新代次。只标记计数器重置，不是套餐的重置周期。 |
 | 适配器 | `adapter` | 把 core 的统一操作翻译成外部程序原生接口的一层，不保存持久状态，也不连接面板。 |
 | 运行时 | `module`（如 `singbox`） | Agent 管理的外部程序实例，例如 sing-box。sing-box 自 ADR 0104 起是带 `tools/singbox-runtime/` 补丁的自维护构建（当前版本见 ADR 0124），不再是“原样安装”的外部程序。 |
-| 功能 | `plugins/<功能>/` | 面板中的业务模块，如代理服务、DDNS、阿里云、费用（[ADR 0125](adr/0125-feature-modules.md)）。原来的“插件”“外插”两个词不再用于指外部程序；界面入口「插件中心」按 ADR 0126 改称「制品与版本」。 |
+| 领域 | `resources`、`networking`、`traffic`、`access`、`naming`、`costs`、`governance`、`observability`、`operations` | 按“管理什么对象、维护什么规则”划分的代码与数据边界，共九个；平台 `platform` 只放技术机制，应用 `app` 负责组合（[ADR 0128](adr/0128-domain-architecture.md)、[领域归属表](domain-map.md)）。不再有插件：原来的“插件”“外插”两个词不再用于指代码模块或外部程序；界面入口「插件中心」按 ADR 0126 改称「制品与版本」。 |
 
 ## 状态与计量约定
 

@@ -1,5 +1,16 @@
 # 执行进度
 
+## 2026-11-08：领域架构阶段 A——九个领域的归属与第一批领域 crate
+
+- 用户要求（2026-11-08）：APSP 重新设计成一个统一维护、按领域组织的一体化系统，功能分类从“管理什么对象、维护什么规则、对什么结果负责”出发；不再用插件的方式维护，全部自己维护，按技术本质重构代码、重写逻辑。
+- 决策：新增 [ADR 0128](docs/adr/0128-domain-architecture.md)：七个对象与规则领域（资源、基础网络、流量服务、服务权益、名称与证书、成本、平台治理）与两个运行支撑领域（观测、作业），平台只放技术机制；领域经公开接口协作、依赖无环，一个事实一个所有者；期望、执行、已应用与观测分别保存；成熟度是元数据。它部分取代 ADR 0085 的三层与 ADR 0125 的模块清单。[功能划分与逻辑结构](docs/architecture.md)按九个领域重写（分类依据、领域定义、典型交叉的归属、依赖顺序与写入规则、运行模型、代码结构、迁移阶段 A–F）；新增[领域归属表](docs/domain-map.md)，逐项功能写明意图、核心对象、关键约束、协作领域与实现位置。
+- 归属落到检查：`tools/feature-boundaries.toml` 给 253 张表与视图全部登记了所有者（平台 7、治理 20、资源 13、基础网络 5、名称与证书 13、流量服务 64、服务权益 58、成本 11、观测 42、作业 20），登记三张公开只读的身份表（`servers`、`nodes`、`users`），并按依赖顺序检查读取方向；宿主、sing-box 与阿里云 crate 中尚未迁出的代码、前端的每个文件都逐个路径登记了领域。越界清单按新规则从零重建为 517 条（SQL 394、前端引用 120、`#[path]` 3；按位置：宿主 201、sing-box 149、前端 120、阿里云 42、`crates/naming` 5；旧规则下 226 条），最多的是流量服务与服务权益之间 103 条。`tools/check-core-boundary.py` 改为按层级检查每个 crate 的依赖方向：平台不依赖领域，领域 crate 只依赖排在前面的领域，未拆分的 sing-box 与阿里云 crate 冻结现有依赖，新 crate 必须先登记层级；业务词汇检查扩到平台的云接口客户端。
+- 代码：DDNS、费用与云接口三个插件 crate 迁为 `crates/naming`（`apsp-naming`）、`crates/costs`（`apsp-costs`）、`crates/cloud-api`（`apsp-cloud-api`），改用标准的 `src/lib.rs` 布局；应用层按领域接线，`apsp_panel::plugins::ddns`、`::expenses` 保留为别名。后台任务名、接口前缀 `/api/plugins/...`、数据库基线、协议与部署方式不变；`plugins/` 下不再有这三个 crate。
+- 协作规则的分层条款、功能地图、仓库说明、术语表、文档导航、重新设计各篇与 ADR 索引改为领域说法（较早 ADR 中的旧路径由索引统一说明）；功能分级中的“可选插件”改称“可选”。取舍见 [open-questions](docs/open-questions.md)。
+- 验证：两个边界检查通过（517 条已知越界，没有新增），两个检查器的单元测试 28 个通过；`cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings`（17 个工作区 crate）通过，`Cargo.lock` 只变了两个包名、依赖版本不变。在本地 PostgreSQL 16 上，`apsp-naming` 64、`apsp-costs` 6、`apsp-cloud-api` 8、`apsp-plugin-alicloud` 101 个测试通过（与迁移前的测试数一致，`apsp-naming` 的数据库测试经新的基线路径建库）；`apsp-panel` 的库测试 2 个与 `control_center`、`ddns`、`expense_subscriptions` 集成测试 6、6、3 个通过，覆盖领域路由经完整路由器注册。文档：全部 Markdown 的相对链接与锚点 1926 个，0 错误；改动的 25 个文档表格列数一致；`git diff --check` 与 `tools/check-source-artifacts.py` 通过。前端源码未改，只构建了 `web/dist` 供面板编译。提交前 main 合入了 `b7aee37b`（代理用户重置流量与调整有效期），本提交变基到它之上，新增的两个前端文件登记为服务权益；变基后复核两个边界检查（仍为 517 条、没有新增）、文档链接与锚点 1930 个 0 错误、`cargo fmt --check` 与全工作区 clippy 通过，上面的测试是在变基前的 `44ed6036` 上运行的。验证后已删除本轮的编译目录、前端依赖与产物和临时数据库。
+- 未验证：其余 crate（sing-box、宿主、Agent 等，代码未改）只经 clippy 全量类型检查，没有运行测试；前端测试未运行；CI 仍暂停，未触发；没有部署，也没有在测试机上运行。本轮只移动与改名，生产行为预期不变，合入后由自动部署重建面板镜像。
+- 下一步：阶段 B（平台收口与显式接口：`PanelPlugins` 的钩子换成各领域的类型化接口，宿主里的治理、资源、观测、作业、基础网络代码迁出，诊断代码去掉 `#[path]`）与阶段 C（sing-box crate 拆为流量服务与服务权益）可以并行开始；每完成一个阶段用 `python3 tools/check-feature-boundaries.py --summary` 复核越界数字。
+
 ## 2026-11-08：代理用户重置流量与调整有效期
 
 - 用户详情「流量与有效期」：

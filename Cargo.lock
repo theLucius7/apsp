@@ -237,6 +237,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "apsp-costs"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-panel-host",
+ "apsp-protocol",
+ "axum 0.8.9",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "time",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "apsp-naming"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-cloud-api",
+ "apsp-panel-host",
+ "apsp-protocol",
+ "axum 0.8.9",
+ "futures-util",
+ "httpdate",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "apsp-panel"
 version = "0.3.0"
 dependencies = [
@@ -247,10 +286,10 @@ dependencies = [
  "apsp-agent-core",
  "apsp-cloud-api",
  "apsp-compiler",
+ "apsp-costs",
+ "apsp-naming",
  "apsp-panel-host",
  "apsp-plugin-alicloud",
- "apsp-plugin-ddns",
- "apsp-plugin-expenses",
  "apsp-plugin-singbox",
  "apsp-protocol",
  "argon2",
@@ -339,45 +378,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sqlx",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "apsp-plugin-ddns"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "apsp-cloud-api",
- "apsp-panel-host",
- "apsp-protocol",
- "axum 0.8.9",
- "futures-util",
- "httpdate",
- "reqwest",
- "serde",
- "serde_json",
- "sqlx",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "apsp-plugin-expenses"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "apsp-panel-host",
- "apsp-protocol",
- "axum 0.8.9",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "sqlx",
- "time",
  "tokio",
  "tracing",
  "uuid",

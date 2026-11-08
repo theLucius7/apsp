@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
-//! Shared signing and transport for the cloud provider plugins.
+//! Platform client for cloud provider APIs (ADR 0128): request signing, transport, retries
+//! and error codes, with no business decisions.
 
 pub mod aliyun;
 pub mod globalping;
