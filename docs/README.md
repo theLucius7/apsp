@@ -8,6 +8,7 @@
 | --- | --- |
 | 了解产品定位、功能分级、界面用语和不做的事 | [功能地图](product-map.md)、[定位决策](adr/0087-narrow-positioning-proxy-network.md) |
 | 了解后续里程碑、工作包、排期与待决定事项 | [后续路线图](roadmap.md)（提议） |
+| 了解功能划分、核心对象、主线流程、状态与发布的重新设计 | [重新设计方案](redesign/README.md)（提议） |
 | 安装面板、备份升级、导入签名制品、接入 Agent | [部署与节点接入](deploy.md) |
 | 确认系统、架构、服务管理与升级能力 | [设备平台与能力](platforms.md) |
 | 从旧名称迁移既有安装 | [改名说明](apsp-renaming.md) |
