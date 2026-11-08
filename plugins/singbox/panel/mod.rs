@@ -4,7 +4,7 @@
 //! The plugin reaches panel services only through the `apsp-panel-host` API.
 
 /// The signed stable runtime with APSP per-user budgets (ADR 0124).
-pub const RUNTIME_VERSION: &str = "1.14.4-apsp.2";
+pub const RUNTIME_VERSION: &str = "1.14.4-apsp.1";
 
 pub mod accesses;
 mod activity;

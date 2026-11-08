@@ -453,7 +453,7 @@ pub(crate) async fn pin_runtimes(
             .await
             .map_err(|_| {
                 ApiError::Conflict(format!(
-                    "服务器 #{server} 缺少已验签的固定 sing-box 1.14.4-apsp.2 制品或平台信息"
+                    "服务器 #{server} 缺少已验签的固定 sing-box 1.14.4-apsp.1 制品或平台信息"
                 ))
             })?;
         let incompatible:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_chain_runtime_requirements p JOIN singbox_chains c ON c.id=p.chain_id WHERE p.server_id=$1 AND (c.deleted_at IS NULL OR c.phase<>'retired') AND p.generation=ANY(ARRAY[c.applied_generation,c.candidate_generation,c.recovery_generation]) AND p.artifact_sha256<>$2)").bind(server).bind(&artifact.sha256).fetch_one(&mut **tx).await?;
@@ -462,7 +462,7 @@ pub(crate) async fn pin_runtimes(
                 "服务器 #{server} 仍有依赖另一固定制品的链路，请先完成原代数撤销"
             )));
         }
-        sqlx::query("INSERT INTO singbox_chain_runtime_requirements(chain_id,generation,server_id,runtime_version,artifact_sha256,artifact) VALUES($1,$2,$3,'1.14.4-apsp.2',$4,$5)").bind(chain_id).bind(generation).bind(server).bind(&artifact.sha256).bind(json!(artifact)).execute(&mut **tx).await?;
+        sqlx::query("INSERT INTO singbox_chain_runtime_requirements(chain_id,generation,server_id,runtime_version,artifact_sha256,artifact) VALUES($1,$2,$3,'1.14.4-apsp.1',$4,$5)").bind(chain_id).bind(generation).bind(server).bind(&artifact.sha256).bind(json!(artifact)).execute(&mut **tx).await?;
     }
     Ok(())
 }

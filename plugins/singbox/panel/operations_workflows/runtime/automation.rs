@@ -251,7 +251,7 @@ pub async fn automation_dispatch_matches_tx(
     {
         return Ok(false);
     }
-    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2 AND runtime_version='1.14.4-apsp.2' AND artifact_sha256=$3)")
+    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2 AND runtime_version='1.14.4-apsp.1' AND artifact_sha256=$3)")
         .bind(server).bind(binding.revision as i64).bind(candidate["artifact"]["sha256"].as_str().unwrap_or("")).fetch_one(&mut **tx).await?)
 }
 
@@ -369,7 +369,7 @@ pub async fn automation_deployment_receipt(
                     .map_err(anyhow::Error::from)?;
                 let current =
                     crate::runtime_control::target_is_current(tx, server, &binding).await?;
-                let facts: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2 AND runtime_version='1.14.4-apsp.2' AND artifact_sha256=$3)")
+                let facts: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2 AND runtime_version='1.14.4-apsp.1' AND artifact_sha256=$3)")
                     .bind(server).bind(binding.revision as i64).bind(candidate["artifact"]["sha256"].as_str().unwrap_or("")).fetch_one(&mut **tx).await?;
                 let matching_request = binding.valid()
                     && binding.module == request.module

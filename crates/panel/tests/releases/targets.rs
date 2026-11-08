@@ -15,7 +15,7 @@ pub(super) fn multi_arch_bundle() -> Result<Bundle> {
         let archive = release_fixture::archive("sing-box", runtime)?;
         let mut entry = signing::entry(
             "sing-box",
-            "1.14.4-apsp.2",
+            "1.14.4-apsp.1",
             "sing-box",
             "tar.gz",
             &archive,
