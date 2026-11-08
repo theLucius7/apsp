@@ -47,7 +47,7 @@ async fn inventory(
     let actor =
         crate::control_center::require_server(&state, &headers, server, "network:read").await?;
     let request = json!({"action":"inventory"});
-    let id = crate::fleet::enqueue_for_actor(
+    let id = crate::device_work::submit_for_actor(
         &state,
         server,
         actor,
@@ -285,7 +285,8 @@ async fn execute(
         },
     )
     .await?;
-    let operation_id = crate::fleet::enqueue_for_actor(&state, server, actor, operation).await?;
+    let operation_id =
+        crate::device_work::submit_for_actor(&state, server, actor, operation).await?;
     link(
         &state,
         operation_id,

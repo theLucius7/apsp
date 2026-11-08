@@ -42,7 +42,7 @@ pub async fn run(state: AppState) {
             tracing::error!(%error, "expired enrollment token cleanup failed");
         }
         if let Err(error) =
-            apsp_panel_host::commands::purge_finished(&state.pool, apsp_protocol::now_timestamp())
+            apsp_operations::commands::purge_finished(&state.pool, apsp_protocol::now_timestamp())
                 .await
         {
             tracing::error!(%error, "finished command retention failed");

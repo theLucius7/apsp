@@ -275,7 +275,7 @@ pub(crate) async fn create_job(
     request: Value,
 ) -> ApiResult<ReportRecord> {
     let mut tx = state.pool.begin().await?;
-    crate::fleet::ensure_accepts_tasks_tx(&mut tx, id).await?;
+    crate::device_work::ensure_accepts_tasks_tx(&mut tx, id).await?;
     let row = sqlx::query("SELECT static_info,last_seen,capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
         .bind(id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
     let arch = ready(&row, plugin)?;

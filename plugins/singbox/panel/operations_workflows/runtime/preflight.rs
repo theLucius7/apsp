@@ -320,7 +320,7 @@ pub(in super::super) async fn request(
             "业务、授权、入口或制品在采集期间发生变化，请重新预检".into(),
         ));
     }
-    let permissions = crate::fleet::enqueue_readonly_for_actor_tx(
+    let permissions = crate::device_work::submit_observation_tx(
         &mut tx,
         server,
         actor,
@@ -330,7 +330,7 @@ pub(in super::super) async fn request(
     )
     .await?;
     let ports =
-        crate::fleet::enqueue_readonly_for_actor_tx(&mut tx, server, actor, Operation::Ports {})
+        crate::device_work::submit_observation_tx(&mut tx, server, actor, Operation::Ports {})
             .await?;
     let id = Uuid::new_v4();
     let now = now_timestamp();

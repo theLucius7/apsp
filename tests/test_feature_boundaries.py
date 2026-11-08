@@ -146,6 +146,10 @@ class ModuleRefTests(unittest.TestCase):
         self.assertEqual(boundaries.use_paths(code, start), [["a"], ["b", "c"], ["b", "d"], ["e"], ["F"]])
         call = "crate::g::h(1)::<T>"
         self.assertEqual(boundaries.use_paths(call, len("crate::")), [["g", "h"]])
+        renamed, renames = "use other::{a as b, c::{d as e, f}};", []
+        self.assertEqual(boundaries.use_paths(renamed, len("use "), renames),
+                         [["other", "a"], ["other", "c", "d"], ["other", "c", "f"]])
+        self.assertEqual(renames, [(["other", "a"], "b"), (["other", "c", "d"], "e")])
 
     def test_crate_and_super_paths_resolve_to_source_files(self):
         temp = tempfile.TemporaryDirectory()
@@ -245,6 +249,40 @@ class TreeTests(unittest.TestCase):
             "ref\tcrates/panel-host/src/router.rs\tcrates/panel-host/src/servers.rs\tplatform->resources",
             "ref\tcrates/panel-host/src/router.rs\tcrates/panel-host/src/auth.rs\tplatform->governance",
             "ref\tcrates/panel-host/src/servers.rs\tcrates/panel-host/src/operations/jobs.rs\tresources->operations",
+        })
+
+    def test_references_through_other_crates_are_reported(self):
+        config = CONFIG.replace('"crates/panel-host/src/servers.rs" = "resources"',
+                                '"crates/panel-host/src/servers.rs" = "resources"\n'
+                                '"crates/panel-host/src/auth.rs" = "governance"')
+        root = self.tree({
+            "crates/panel-host/Cargo.toml": '[package]\nname = "apsp-panel-host"\n',
+            "crates/panel-host/src/lib.rs": "pub mod auth; pub mod operations; pub mod servers;",
+            "crates/panel-host/src/auth.rs": "pub fn check() {}",
+            "crates/panel-host/src/servers.rs": "",
+            "crates/panel-host/src/operations/mod.rs": "pub fn enqueue() {}",
+            "plugins/singbox/panel/Cargo.toml": '[package]\nname = "apsp-plugin-singbox"\n\n[lib]\npath = "mod.rs"\n',
+            "plugins/singbox/panel/mod.rs": "pub mod deploy; pub mod local; pub mod users;\n"
+                                            "pub(crate) use apsp_panel_host::{auth, servers};\n",
+            "plugins/singbox/panel/local.rs": "pub fn enqueue() {}",
+            # `crate::servers` names the host through the root's re-export; a local module wins.
+            "plugins/singbox/panel/deploy.rs": "fn f() { crate::auth::check(); crate::servers::x(); crate::local::enqueue(); }",
+            "plugins/singbox/panel/users.rs": "use apsp_panel_host::{auth::check, operations::enqueue};",
+            "crates/panel/Cargo.toml": '[package]\nname = "apsp-panel"\n',
+            "crates/panel/src/lib.rs": "pub use apsp_panel_host::operations;\nfn f() { apsp_plugin_singbox::deploy::f(); }",
+        }, config)
+        self.assertEqual(self.crossings(root), {
+            "ref\tplugins/singbox/panel/users.rs\tcrates/panel-host/src/operations/mod.rs\ttraffic->operations",
+        })
+        # A re-exported later module is a crossing where the root names it and where it is used,
+        # under its own name or a new one.
+        (root / "plugins/singbox/panel/mod.rs").write_text(
+            "pub mod deploy; pub mod local; pub mod users;\npub(crate) use apsp_panel_host::{auth, operations as jobs, servers};\n")
+        (root / "plugins/singbox/panel/deploy.rs").write_text("fn f() { crate::jobs::enqueue(); }")
+        self.assertEqual(self.crossings(root), {
+            "ref\tplugins/singbox/panel/mod.rs\tcrates/panel-host/src/operations/mod.rs\ttraffic->operations",
+            "ref\tplugins/singbox/panel/deploy.rs\tcrates/panel-host/src/operations/mod.rs\ttraffic->operations",
+            "ref\tplugins/singbox/panel/users.rs\tcrates/panel-host/src/operations/mod.rs\ttraffic->operations",
         })
 
     def test_path_includes_across_crates_are_reported(self):

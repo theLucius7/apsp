@@ -1,5 +1,5 @@
 //! Platform governance: administrators and their sessions, panel settings,
-//! signed artifacts and Agent versions, audit and the control center.
+//! signed artifacts and Agent versions, audit, the control center and panel backups.
 
 use axum::{
     Router,
@@ -8,6 +8,7 @@ use axum::{
 
 use crate::{
     AppState, agent_updates, artifacts, auth,
+    backups::{self, recovery},
     control_center::{self, panel_settings},
     releases,
 };
@@ -43,6 +44,26 @@ pub fn routes() -> Router<AppState> {
         .route("/api/security/totp/disable", post(auth::totp_disable))
         .route("/api/security/password", post(auth::password_change))
         .merge(control_center::router())
+        .route(
+            "/api/operations/backups",
+            get(recovery::backups).post(recovery::import_backup),
+        )
+        .route(
+            "/api/operations/backups/{id}/drills",
+            post(recovery::import_drill),
+        )
+        .route(
+            "/api/operations/backups/{id}/retire",
+            post(recovery::retire),
+        )
+        .route(
+            "/api/operations/backup-schedules",
+            get(backups::list).post(backups::create),
+        )
+        .route(
+            "/api/operations/backup-schedules/{id}/pause",
+            post(backups::pause),
+        )
         .route("/api/artifacts", get(artifacts::list))
         .route("/api/artifacts/targets", get(releases::target_options))
         .route(

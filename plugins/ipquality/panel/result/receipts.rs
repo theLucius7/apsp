@@ -1,8 +1,5 @@
 use super::{Envelope, invalid, required_option};
-use crate::{
-    error::ApiResult,
-    ip_quality::{QueryErrorKind, public_ip},
-};
+use crate::{error::ApiResult, ip_quality::QueryErrorKind, net::public_ip};
 use serde::Deserialize;
 use std::net::IpAddr;
 

@@ -1,36 +1,34 @@
 //! Connects the typed interfaces at startup (ADR 0128): device reports, the traffic
-//! runtime's configuration, administration contributions, deployment automation,
-//! DNS-01 records, runtime activity and renewal references. This is the only place
-//! that names which owner answers each interface.
+//! runtime's configuration, administration contributions, device work, DNS-01 records,
+//! runtime activity and renewal references. This is the only place that names which
+//! owner answers each interface.
 
 use std::collections::BTreeMap;
 
 use apsp_costs::renewals::{self, RenewalReference, RenewalSources};
 use apsp_naming as naming;
+use apsp_operations::fleet;
 use apsp_panel_host::{
     AppState,
     agent_api::{self, DeviceReports},
     artifacts::ArtifactEntry,
     control_center::contributions::{self, Contributions, RoutePolicy, SearchSource},
     device_config::{self, ConfigSource},
+    device_work::{self, DeviceWork},
     diagnostics::{
         self,
         activity::{self, ActivityEvidence, RuntimeActivity},
     },
     error::ApiResult,
     network_configuration::dns_challenges::{self, Dns01, DnsChallenge},
-    operations::deployment_automation::{
-        self, DeploymentAutomation, DeploymentIntent, RuntimeStepPolicy,
-    },
     ports::BoxFuture,
     retirement, runtime_control, servers, telemetry,
 };
 use apsp_plugin_singbox as singbox;
 use apsp_protocol::{
     AppliedRevisions, ApplyResult, DiagnosticCancelResult, Metrics, ModuleManifest,
-    RetirementResult, RuntimeCheckpointRequest, RuntimeCheckpointResult, RuntimeControlAck,
-    RuntimePathProbeResult, RuntimeRecoveryBarrierResult, RuntimeSessionReport, StaticInfo,
-    UsageBatch,
+    RetirementResult, RuntimeCheckpointResult, RuntimeControlAck, RuntimePathProbeResult,
+    RuntimeRecoveryBarrierResult, RuntimeSessionReport, StaticInfo, UsageBatch, fleet::Operation,
 };
 use axum::http::Method;
 use serde_json::Value;
@@ -46,7 +44,7 @@ pub fn install() {
     agent_api::install(&WIRING);
     device_config::install(&WIRING);
     contributions::install(&WIRING);
-    deployment_automation::install(&WIRING);
+    device_work::install(&WIRING);
     dns_challenges::install(&WIRING);
     activity::install(&WIRING);
     renewals::install(&WIRING);
@@ -256,90 +254,35 @@ impl Contributions for Wiring {
     }
 }
 
-impl DeploymentAutomation for Wiring {
-    fn runtime_step_policy(&self, kind: &str) -> Option<RuntimeStepPolicy> {
-        crate::integration_policy::runtime_step_policy(kind)
-    }
-
-    fn candidate<'a, 't>(
+impl DeviceWork for Wiring {
+    fn ensure_accepts_tasks_tx<'a, 't>(
         &'a self,
-        state: &'a AppState,
         tx: &'a mut Transaction<'t, Postgres>,
         server: i64,
-    ) -> BoxFuture<'a, ApiResult<Value>> {
-        Box::pin(singbox::operations_workflows::automation_candidate(
-            state, tx, server,
-        ))
-    }
-
-    fn enqueue_tx<'a, 't>(
-        &'a self,
-        state: &'a AppState,
-        tx: &'a mut Transaction<'t, Postgres>,
-        intent: DeploymentIntent<'a>,
-    ) -> BoxFuture<'a, ApiResult<Uuid>> {
-        Box::pin(
-            singbox::operations_workflows::enqueue_automation_deployment_tx(
-                state,
-                tx,
-                intent.server,
-                intent.job,
-                intent.actor,
-                intent.candidate,
-                intent.expires,
-            ),
-        )
-    }
-
-    fn cancel_tx<'a, 't>(
-        &'a self,
-        tx: &'a mut Transaction<'t, Postgres>,
-        request: Uuid,
     ) -> BoxFuture<'a, ApiResult<()>> {
-        Box::pin(singbox::operations_workflows::cancel_automation_deployment_tx(tx, request))
+        Box::pin(fleet::ensure_accepts_tasks_tx(tx, server))
     }
 
-    fn dispatch_matches_tx<'a, 't>(
+    fn submit_tx<'a, 't>(
         &'a self,
         tx: &'a mut Transaction<'t, Postgres>,
         server: i64,
-        request: Uuid,
-    ) -> BoxFuture<'a, ApiResult<bool>> {
-        Box::pin(singbox::operations_workflows::automation_dispatch_matches_tx(tx, server, request))
+        actor: i64,
+        operation: Operation,
+    ) -> BoxFuture<'a, ApiResult<Uuid>> {
+        Box::pin(fleet::enqueue_for_actor_tx(tx, server, actor, operation))
     }
 
-    fn receipt<'a, 't>(
+    fn submit_observation_tx<'a, 't>(
         &'a self,
         tx: &'a mut Transaction<'t, Postgres>,
-        request: Uuid,
-    ) -> BoxFuture<'a, ApiResult<Value>> {
-        Box::pin(singbox::operations_workflows::automation_deployment_receipt(tx, request))
-    }
-
-    fn request_checkpoint_tx<'a, 't>(
-        &'a self,
-        tx: &'a mut Transaction<'t, Postgres>,
-        original: Uuid,
-    ) -> BoxFuture<'a, ApiResult<RuntimeCheckpointRequest>> {
-        Box::pin(
-            singbox::operations_workflows::request_automation_deployment_checkpoint_tx(
-                tx, original,
-            ),
-        )
-    }
-
-    fn reconcile_tx<'a, 't>(
-        &'a self,
-        tx: &'a mut Transaction<'t, Postgres>,
-        original: Uuid,
-        checkpoint: Uuid,
-        evidence: &'a str,
-    ) -> BoxFuture<'a, ApiResult<Value>> {
-        Box::pin(
-            singbox::operations_workflows::reconcile_automation_deployment_tx(
-                tx, original, checkpoint, evidence,
-            ),
-        )
+        server: i64,
+        actor: i64,
+        operation: Operation,
+    ) -> BoxFuture<'a, ApiResult<Uuid>> {
+        Box::pin(fleet::enqueue_readonly_for_actor_tx(
+            tx, server, actor, operation,
+        ))
     }
 }
 

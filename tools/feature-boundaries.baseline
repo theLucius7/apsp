@@ -123,34 +123,29 @@ import	web/src/types.ts	web/src/plugins/singbox/NodeSettingsFields.tsx	platform-
 path	crates/panel-host/src/diagnostic_plugins.rs	plugins/ipquality/panel/mod.rs	observability->observability
 path	crates/panel-host/src/diagnostic_plugins.rs	plugins/nodequality/panel/mod.rs	observability->observability
 path	crates/panel-host/src/diagnostic_plugins.rs	plugins/tcpquality/panel/mod.rs	observability->observability
+ref	crates/costs/src/cancellation_reminders.rs	crates/panel-host/src/incidents.rs	costs->observability
 ref	crates/panel-host/src/agent_updates.rs	crates/panel-host/src/server_assets.rs	governance->resources
 ref	crates/panel-host/src/artifacts.rs	crates/panel-host/src/installation.rs	governance->resources
 ref	crates/panel-host/src/artifacts.rs	crates/panel-host/src/servers.rs	governance->resources
+ref	crates/panel-host/src/backups.rs	crates/panel-host/src/incidents.rs	governance->observability
+ref	crates/panel-host/src/batch_enrollment.rs	crates/panel-host/src/latency_tasks.rs	resources->observability
+ref	crates/panel-host/src/batch_enrollment.rs	crates/panel-host/src/notifications/rules.rs	resources->observability
+ref	crates/panel-host/src/batch_enrollment.rs	crates/panel-host/src/probes.rs	resources->observability
+ref	crates/panel-host/src/batch_enrollment.rs	crates/panel-host/src/server_monitoring.rs	resources->observability
+ref	crates/panel-host/src/cloud_resources.rs	crates/panel-host/src/incidents.rs	resources->observability
 ref	crates/panel-host/src/dashboard.rs	crates/panel-host/src/exchange.rs	observability->costs
-ref	crates/panel-host/src/diagnostics.rs	crates/panel-host/src/fleet/mod.rs	observability->operations
-ref	crates/panel-host/src/diagnostics/service.rs	crates/panel-host/src/fleet/mod.rs	observability->operations
-ref	crates/panel-host/src/fleet/assets.rs	crates/panel-host/src/fleet/mod.rs	resources->operations
-ref	crates/panel-host/src/fleet/assets.rs	crates/panel-host/src/latency_tasks.rs	resources->observability
-ref	crates/panel-host/src/fleet/enrollment.rs	crates/panel-host/src/fleet/mod.rs	resources->operations
-ref	crates/panel-host/src/fleet/enrollment.rs	crates/panel-host/src/latency_tasks.rs	resources->observability
-ref	crates/panel-host/src/fleet/enrollment.rs	crates/panel-host/src/notifications/rules.rs	resources->observability
-ref	crates/panel-host/src/fleet/enrollment.rs	crates/panel-host/src/probes.rs	resources->observability
-ref	crates/panel-host/src/fleet/monitoring/service_events.rs	crates/panel-host/src/fleet/mod.rs	observability->operations
 ref	crates/panel-host/src/network_configuration/acme.rs	crates/panel-host/src/network_configuration/documents.rs	naming->networking
 ref	crates/panel-host/src/network_configuration/acme.rs	crates/panel-host/src/network_configuration/models.rs	naming->networking
 ref	crates/panel-host/src/network_configuration/acme_executor.rs	crates/panel-host/src/network_configuration/documents.rs	naming->networking
 ref	crates/panel-host/src/network_configuration/acme_executor.rs	crates/panel-host/src/network_configuration/models.rs	naming->networking
-ref	crates/panel-host/src/network_configuration/certificate_deployments.rs	crates/panel-host/src/fleet/mod.rs	naming->operations
 ref	crates/panel-host/src/network_configuration/certificate_deployments.rs	crates/panel-host/src/network_configuration/documents.rs	naming->networking
 ref	crates/panel-host/src/network_configuration/certificate_deployments.rs	crates/panel-host/src/network_configuration/mod.rs	naming->networking
 ref	crates/panel-host/src/network_configuration/certificate_deployments.rs	crates/panel-host/src/network_configuration/models.rs	naming->networking
-ref	crates/panel-host/src/network_configuration/certificates.rs	crates/panel-host/src/ip_quality.rs	naming->observability
 ref	crates/panel-host/src/network_configuration/certificates.rs	crates/panel-host/src/network_configuration/documents.rs	naming->networking
 ref	crates/panel-host/src/network_configuration/certificates.rs	crates/panel-host/src/network_configuration/models.rs	naming->networking
 ref	crates/panel-host/src/network_configuration/dns_challenges.rs	crates/panel-host/src/network_configuration/documents.rs	naming->networking
 ref	crates/panel-host/src/network_configuration/dns_challenges.rs	crates/panel-host/src/network_configuration/mod.rs	naming->networking
 ref	crates/panel-host/src/network_configuration/dns_challenges.rs	crates/panel-host/src/network_configuration/models.rs	naming->networking
-ref	crates/panel-host/src/network_configuration/operations.rs	crates/panel-host/src/fleet/mod.rs	networking->operations
 ref	crates/panel-host/src/network_configuration/server_migrations.rs	crates/panel-host/src/network_configuration/documents.rs	resources->networking
 ref	crates/panel-host/src/network_configuration/server_migrations.rs	crates/panel-host/src/network_configuration/mod.rs	resources->networking
 ref	crates/panel-host/src/network_configuration/server_migrations.rs	crates/panel-host/src/network_configuration/models.rs	resources->networking
@@ -162,31 +157,9 @@ ref	crates/panel-host/src/network_configuration/server_migrations/plan.rs	crates
 ref	crates/panel-host/src/network_configuration/server_migrations/transform.rs	crates/panel-host/src/network_configuration/models.rs	resources->networking
 ref	crates/panel-host/src/network_configuration/x509.rs	crates/panel-host/src/network_configuration/mod.rs	naming->networking
 ref	crates/panel-host/src/network_configuration/x509.rs	crates/panel-host/src/network_configuration/models.rs	naming->networking
-ref	crates/panel-host/src/operations/backup_executor.rs	crates/panel-host/src/operations/mod.rs	governance->operations
-ref	crates/panel-host/src/operations/backup_executor.rs	crates/panel-host/src/operations/model.rs	governance->operations
-ref	crates/panel-host/src/operations/backups.rs	crates/panel-host/src/operations/incidents.rs	governance->observability
-ref	crates/panel-host/src/operations/backups.rs	crates/panel-host/src/operations/mod.rs	governance->operations
-ref	crates/panel-host/src/operations/backups.rs	crates/panel-host/src/operations/model.rs	governance->operations
-ref	crates/panel-host/src/operations/cancellation_reminders.rs	crates/panel-host/src/operations/incidents.rs	costs->observability
-ref	crates/panel-host/src/operations/cancellation_reminders.rs	crates/panel-host/src/operations/mod.rs	costs->operations
-ref	crates/panel-host/src/operations/cloud.rs	crates/panel-host/src/operations/incidents.rs	resources->observability
-ref	crates/panel-host/src/operations/cloud.rs	crates/panel-host/src/operations/mod.rs	resources->operations
-ref	crates/panel-host/src/operations/cloud.rs	crates/panel-host/src/operations/model.rs	resources->operations
-ref	crates/panel-host/src/operations/hetzner.rs	crates/panel-host/src/operations/mod.rs	resources->operations
-ref	crates/panel-host/src/operations/hetzner.rs	crates/panel-host/src/operations/model.rs	resources->operations
-ref	crates/panel-host/src/operations/incidents.rs	crates/panel-host/src/operations/api.rs	observability->operations
-ref	crates/panel-host/src/operations/incidents.rs	crates/panel-host/src/operations/mod.rs	observability->operations
-ref	crates/panel-host/src/operations/incidents.rs	crates/panel-host/src/operations/model.rs	observability->operations
-ref	crates/panel-host/src/operations/incidents/certificates.rs	crates/panel-host/src/operations/mod.rs	observability->operations
-ref	crates/panel-host/src/operations/panel_job_backup.rs	crates/panel-host/src/operations/api.rs	governance->operations
-ref	crates/panel-host/src/operations/panel_job_backup.rs	crates/panel-host/src/operations/mod.rs	governance->operations
-ref	crates/panel-host/src/operations/panel_job_backup.rs	crates/panel-host/src/operations/model.rs	governance->operations
-ref	crates/panel-host/src/operations/panel_job_backup.rs	crates/panel-host/src/operations/typed_steps.rs	governance->operations
-ref	crates/panel-host/src/operations/recovery.rs	crates/panel-host/src/operations/mod.rs	governance->operations
-ref	crates/panel-host/src/operations/recovery.rs	crates/panel-host/src/operations/model.rs	governance->operations
-ref	crates/panel-host/src/operations/suppliers.rs	crates/panel-host/src/operations/mod.rs	costs->operations
-ref	crates/panel-host/src/operations/suppliers.rs	crates/panel-host/src/operations/model.rs	costs->operations
 ref	crates/panel-host/src/releases/agents.rs	crates/panel-host/src/servers.rs	governance->resources
+ref	crates/panel-host/src/server_lifecycle.rs	crates/panel-host/src/latency_tasks.rs	resources->observability
+ref	crates/panel-host/src/server_lifecycle.rs	crates/panel-host/src/server_monitoring.rs	resources->observability
 ref	crates/panel-host/src/servers.rs	crates/panel-host/src/latency_tasks.rs	resources->observability
 ref	crates/panel-host/src/servers.rs	crates/panel-host/src/probes.rs	resources->observability
 ref	crates/panel-host/src/servers.rs	crates/panel-host/src/server_traffic.rs	resources->observability
@@ -228,6 +201,7 @@ ref	plugins/singbox/panel/mixed_paths/create.rs	plugins/singbox/panel/entitlemen
 ref	plugins/singbox/panel/mixed_paths/publication/advance.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 ref	plugins/singbox/panel/mixed_paths/resources.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 ref	plugins/singbox/panel/mixed_paths/updates.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/mod.rs	crates/panel-host/src/ip_quality.rs	traffic->observability
 ref	plugins/singbox/panel/nexus_nodes/mod.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 ref	plugins/singbox/panel/nexus_nodes/runtime.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 ref	plugins/singbox/panel/nexus_nodes/runtime.rs	plugins/singbox/panel/nexus_nodes/sessions.rs	traffic->access
@@ -245,6 +219,7 @@ ref	plugins/singbox/panel/operations_workflows/runtime/rollouts.rs	plugins/singb
 ref	plugins/singbox/panel/operations_workflows/runtime/rollouts.rs	plugins/singbox/panel/operations_workflows/mod.rs	traffic->access
 ref	plugins/singbox/panel/ordered_paths/api.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 ref	plugins/singbox/panel/ordered_paths/lifecycle.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/portal/lines.rs	crates/panel-host/src/ip_quality.rs	access->observability
 ref	plugins/singbox/panel/proxy_resources.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 ref	plugins/singbox/panel/publisher.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 ref	plugins/singbox/panel/publisher.rs	plugins/singbox/panel/nexus_nodes/sessions.rs	traffic->access
@@ -258,11 +233,49 @@ ref	plugins/singbox/panel/sources/previews.rs	plugins/singbox/panel/entitlements
 ref	plugins/singbox/panel/sources/service.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 ref	plugins/singbox/panel/subscription_sources/mutations.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 ref	plugins/singbox/panel/subscription_sources/previews.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+sql	crates/costs/src/cancellation_reminders.rs	read	operations_incidents	costs->observability
+sql	crates/costs/src/cancellation_reminders.rs	write	administrator_profiles	costs->governance
+sql	crates/costs/src/cancellation_reminders.rs	write	operations_incident_deliveries	costs->observability
+sql	crates/costs/src/cancellation_reminders.rs	write	operations_incidents	costs->observability
+sql	crates/costs/src/cancellation_reminders.rs	write	servers	costs->resources
+sql	crates/costs/src/suppliers.rs	read	diagnostic_jobs	costs->observability
+sql	crates/costs/src/suppliers.rs	read	diagnostic_report_sections	costs->observability
+sql	crates/costs/src/suppliers.rs	read	fleet_profiles	costs->resources
+sql	crates/costs/src/suppliers.rs	read	telemetry_history	costs->observability
 sql	crates/naming/src/credentials.rs	read	credential_entries	naming->platform
 sql	crates/naming/src/dns_accounts.rs	read	credential_entries	naming->platform
 sql	crates/naming/src/dns_record_actions.rs	read	credential_entries	naming->platform
 sql	crates/naming/src/observation.rs	read	credential_entries	naming->platform
 sql	crates/naming/src/observation.rs	read	server_retirements	naming->resources
+sql	crates/operations/src/commands.rs	read	fleet_profiles	operations->resources
+sql	crates/operations/src/commands.rs	read	server_retirements	operations->resources
+sql	crates/operations/src/commands.rs	write	servers	operations->resources
+sql	crates/operations/src/fleet/mod.rs	read	fleet_profiles	operations->resources
+sql	crates/operations/src/fleet/mod.rs	read	server_retirements	operations->resources
+sql	crates/operations/src/fleet/operations.rs	read	diagnostic_jobs	operations->observability
+sql	crates/operations/src/fleet/operations.rs	read	fleet_profiles	operations->resources
+sql	crates/operations/src/fleet/operations.rs	read	server_retirements	operations->resources
+sql	crates/operations/src/fleet/reconciliation.rs	read	administrator_profiles	operations->governance
+sql	crates/operations/src/fleet/reconciliation.rs	read	administrator_reauth	operations->governance
+sql	crates/operations/src/fleet/reconciliation.rs	read	administrator_server_grants	operations->governance
+sql	crates/operations/src/fleet/reconciliation.rs	read	sessions	operations->governance
+sql	crates/operations/src/fleet/terminal.rs	read	administrator_profiles	operations->governance
+sql	crates/operations/src/fleet/terminal.rs	read	administrator_reauth	operations->governance
+sql	crates/operations/src/fleet/terminal.rs	read	administrator_server_grants	operations->governance
+sql	crates/operations/src/fleet/terminal.rs	read	fleet_profiles	operations->resources
+sql	crates/operations/src/fleet/terminal.rs	read	sessions	operations->governance
+sql	crates/operations/src/jobs/api.rs	read	fleet_profiles	operations->resources
+sql	crates/operations/src/jobs/panel_backup.rs	read	operations_backup_records	operations->governance
+sql	crates/operations/src/jobs/panel_backup.rs	write	operations_backup_records	operations->governance
+sql	crates/operations/src/jobs/remediation.rs	read	operations_incidents	operations->observability
+sql	crates/operations/src/jobs/typed_steps.rs	read	administrator_profiles	operations->governance
+sql	crates/operations/src/jobs/typed_steps.rs	read	operations_backup_schedules	operations->governance
+sql	crates/operations/src/jobs/worker.rs	read	diagnostic_jobs	operations->observability
+sql	crates/operations/src/jobs/worker.rs	read	fleet_profiles	operations->resources
+sql	crates/operations/src/jobs/worker.rs	read	server_retirements	operations->resources
+sql	crates/operations/src/runtime_operations.rs	read	diagnostic_jobs	operations->observability
+sql	crates/operations/src/runtime_operations.rs	read	fleet_profiles	operations->resources
+sql	crates/operations/src/runtime_operations.rs	read	server_retirements	operations->resources
 sql	crates/panel-host/src/agent_api.rs	read	servers	platform->resources
 sql	crates/panel-host/src/agent_api.rs	write	servers	platform->resources
 sql	crates/panel-host/src/agent_api.rs	write	sessions	platform->governance
@@ -270,9 +283,19 @@ sql	crates/panel-host/src/agent_updates.rs	read	servers	governance->resources
 sql	crates/panel-host/src/artifacts.rs	read	servers	governance->resources
 sql	crates/panel-host/src/auth.rs	read	servers	governance->resources
 sql	crates/panel-host/src/auth.rs	write	servers	governance->resources
-sql	crates/panel-host/src/commands.rs	read	fleet_profiles	operations->resources
-sql	crates/panel-host/src/commands.rs	read	server_retirements	operations->resources
-sql	crates/panel-host/src/commands.rs	write	servers	operations->resources
+sql	crates/panel-host/src/backups/executor.rs	read	credential_entries	governance->platform
+sql	crates/panel-host/src/backups/executor.rs	read	operations_jobs	governance->operations
+sql	crates/panel-host/src/backups/executor.rs	read	operations_panel_steps	governance->operations
+sql	crates/panel-host/src/backups/executor.rs	write	operations_jobs	governance->operations
+sql	crates/panel-host/src/backups/executor.rs	write	operations_panel_steps	governance->operations
+sql	crates/panel-host/src/backups/executor.rs	write	servers	governance->resources
+sql	crates/panel-host/src/backups/recovery.rs	read	operations_jobs	governance->operations
+sql	crates/panel-host/src/backups/recovery.rs	read	operations_panel_steps	governance->operations
+sql	crates/panel-host/src/batch_enrollment.rs	write	alert_rules	resources->observability
+sql	crates/panel-host/src/batch_enrollment.rs	write	enrollment_tokens	resources->governance
+sql	crates/panel-host/src/batch_enrollment.rs	write	network_probes	resources->observability
+sql	crates/panel-host/src/cloud_resources.rs	read	alicloud_security_group_operations	resources->operations
+sql	crates/panel-host/src/cloud_resources/hetzner.rs	read	credential_entries	resources->platform
 sql	crates/panel-host/src/control_center/administrators.rs	read	servers	governance->resources
 sql	crates/panel-host/src/control_center/credentials.rs	read	credential_entries	governance->platform
 sql	crates/panel-host/src/control_center/credentials.rs	write	credential_entries	governance->platform
@@ -313,36 +336,28 @@ sql	crates/panel-host/src/control_center/system.rs	write	remote_commands	governa
 sql	crates/panel-host/src/control_center/system.rs	write	server_ip_quality	governance->observability
 sql	crates/panel-host/src/control_center/system.rs	write	server_ip_quality_datasets	governance->observability
 sql	crates/panel-host/src/control_center/system.rs	write	system_worker_heartbeats	governance->platform
-sql	crates/panel-host/src/fleet/assets.rs	read	fleet_cost_records	resources->costs
-sql	crates/panel-host/src/fleet/assets.rs	read	network_probes	resources->observability
-sql	crates/panel-host/src/fleet/assets.rs	read	server_module_status	resources->traffic
-sql	crates/panel-host/src/fleet/assets.rs	read	server_plugins	resources->traffic
-sql	crates/panel-host/src/fleet/assets.rs	write	fleet_cost_records	resources->costs
-sql	crates/panel-host/src/fleet/assets.rs	write	network_probes	resources->observability
-sql	crates/panel-host/src/fleet/enrollment.rs	write	alert_rules	resources->observability
-sql	crates/panel-host/src/fleet/enrollment.rs	write	enrollment_tokens	resources->governance
-sql	crates/panel-host/src/fleet/enrollment.rs	write	network_probes	resources->observability
-sql	crates/panel-host/src/fleet/mod.rs	read	fleet_profiles	operations->resources
-sql	crates/panel-host/src/fleet/mod.rs	read	server_retirements	operations->resources
-sql	crates/panel-host/src/fleet/mod.rs	write	fleet_events	operations->observability
-sql	crates/panel-host/src/fleet/monitoring.rs	read	fleet_operations	observability->operations
-sql	crates/panel-host/src/fleet/monitoring.rs	read	notification_outbox	observability->platform
-sql	crates/panel-host/src/fleet/monitoring.rs	read	remote_commands	observability->operations
-sql	crates/panel-host/src/fleet/monitoring/service_events.rs	read	fleet_operations	observability->operations
-sql	crates/panel-host/src/fleet/monitoring/service_events.rs	write	fleet_operations	observability->operations
-sql	crates/panel-host/src/fleet/monitoring/service_events.rs	write	servers	observability->resources
-sql	crates/panel-host/src/fleet/operations.rs	read	diagnostic_jobs	operations->observability
-sql	crates/panel-host/src/fleet/operations.rs	read	fleet_profiles	operations->resources
-sql	crates/panel-host/src/fleet/operations.rs	read	server_retirements	operations->resources
-sql	crates/panel-host/src/fleet/reconciliation.rs	read	administrator_profiles	operations->governance
-sql	crates/panel-host/src/fleet/reconciliation.rs	read	administrator_reauth	operations->governance
-sql	crates/panel-host/src/fleet/reconciliation.rs	read	administrator_server_grants	operations->governance
-sql	crates/panel-host/src/fleet/reconciliation.rs	read	sessions	operations->governance
-sql	crates/panel-host/src/fleet/terminal.rs	read	administrator_profiles	operations->governance
-sql	crates/panel-host/src/fleet/terminal.rs	read	administrator_reauth	operations->governance
-sql	crates/panel-host/src/fleet/terminal.rs	read	administrator_server_grants	operations->governance
-sql	crates/panel-host/src/fleet/terminal.rs	read	fleet_profiles	operations->resources
-sql	crates/panel-host/src/fleet/terminal.rs	read	sessions	operations->governance
+sql	crates/panel-host/src/incidents.rs	read	administrator_profiles	observability->governance
+sql	crates/panel-host/src/incidents.rs	read	admins	observability->governance
+sql	crates/panel-host/src/incidents.rs	read	deployments	observability->traffic
+sql	crates/panel-host/src/incidents.rs	read	fleet_profiles	observability->resources
+sql	crates/panel-host/src/incidents.rs	read	operations_jobs	observability->operations
+sql	crates/panel-host/src/incidents.rs	read	operations_maintenance	observability->operations
+sql	crates/panel-host/src/incidents.rs	read	panel_settings	observability->platform
+sql	crates/panel-host/src/incidents.rs	read	server_module_status	observability->traffic
+sql	crates/panel-host/src/incidents/certificates.rs	read	admins	observability->governance
+sql	crates/panel-host/src/incidents/certificates.rs	read	network_acme_jobs	observability->naming
+sql	crates/panel-host/src/incidents/certificates.rs	read	network_certificate_versions	observability->naming
+sql	crates/panel-host/src/incidents/certificates.rs	read	network_documents	observability->networking
+sql	crates/panel-host/src/incidents/certificates.rs	write	administrator_profiles	observability->governance
+sql	crates/panel-host/src/incidents/certificates.rs	write	administrator_server_grants	observability->governance
+sql	crates/panel-host/src/incidents/certificates.rs	write	admins	observability->governance
+sql	crates/panel-host/src/incidents/certificates.rs	write	management_api_tokens	observability->governance
+sql	crates/panel-host/src/incidents/certificates.rs	write	network_acme_jobs	observability->naming
+sql	crates/panel-host/src/incidents/certificates.rs	write	network_certificate_versions	observability->naming
+sql	crates/panel-host/src/incidents/certificates.rs	write	network_documents	observability->networking
+sql	crates/panel-host/src/incidents/certificates.rs	write	panel_settings	observability->platform
+sql	crates/panel-host/src/incidents/certificates.rs	write	servers	observability->resources
+sql	crates/panel-host/src/incidents/certificates.rs	write	sessions	observability->governance
 sql	crates/panel-host/src/ip_quality.rs	write	servers	observability->resources
 sql	crates/panel-host/src/ip_quality/cache.rs	write	servers	observability->resources
 sql	crates/panel-host/src/network_configuration/acme.rs	read	network_documents	naming->networking
@@ -385,67 +400,25 @@ sql	crates/panel-host/src/notifications/outbox.rs	read	operations_maintenance	pl
 sql	crates/panel-host/src/notifications/outbox.rs	read	server_alert_events	platform->observability
 sql	crates/panel-host/src/notifications/outbox.rs	read	servers	platform->resources
 sql	crates/panel-host/src/notifications/rules.rs	write	notification_outbox	observability->platform
-sql	crates/panel-host/src/operations/api.rs	read	fleet_profiles	operations->resources
-sql	crates/panel-host/src/operations/backup_executor.rs	read	credential_entries	governance->platform
-sql	crates/panel-host/src/operations/backup_executor.rs	read	operations_jobs	governance->operations
-sql	crates/panel-host/src/operations/backup_executor.rs	read	operations_panel_steps	governance->operations
-sql	crates/panel-host/src/operations/backup_executor.rs	write	operations_jobs	governance->operations
-sql	crates/panel-host/src/operations/backup_executor.rs	write	operations_panel_steps	governance->operations
-sql	crates/panel-host/src/operations/backup_executor.rs	write	servers	governance->resources
-sql	crates/panel-host/src/operations/cancellation_reminders.rs	read	operations_incidents	costs->observability
-sql	crates/panel-host/src/operations/cancellation_reminders.rs	write	administrator_profiles	costs->governance
-sql	crates/panel-host/src/operations/cancellation_reminders.rs	write	operations_incident_deliveries	costs->observability
-sql	crates/panel-host/src/operations/cancellation_reminders.rs	write	operations_incidents	costs->observability
-sql	crates/panel-host/src/operations/cancellation_reminders.rs	write	servers	costs->resources
-sql	crates/panel-host/src/operations/cloud.rs	read	alicloud_security_group_operations	resources->operations
-sql	crates/panel-host/src/operations/hetzner.rs	read	credential_entries	resources->platform
-sql	crates/panel-host/src/operations/incidents.rs	read	administrator_profiles	observability->governance
-sql	crates/panel-host/src/operations/incidents.rs	read	admins	observability->governance
-sql	crates/panel-host/src/operations/incidents.rs	read	deployments	observability->traffic
-sql	crates/panel-host/src/operations/incidents.rs	read	operations_jobs	observability->operations
-sql	crates/panel-host/src/operations/incidents.rs	read	operations_maintenance	observability->operations
-sql	crates/panel-host/src/operations/incidents.rs	read	panel_settings	observability->platform
-sql	crates/panel-host/src/operations/incidents.rs	read	server_module_status	observability->traffic
-sql	crates/panel-host/src/operations/incidents/certificates.rs	read	admins	observability->governance
-sql	crates/panel-host/src/operations/incidents/certificates.rs	read	network_acme_jobs	observability->naming
-sql	crates/panel-host/src/operations/incidents/certificates.rs	read	network_certificate_versions	observability->naming
-sql	crates/panel-host/src/operations/incidents/certificates.rs	read	network_documents	observability->networking
-sql	crates/panel-host/src/operations/incidents/certificates.rs	write	administrator_profiles	observability->governance
-sql	crates/panel-host/src/operations/incidents/certificates.rs	write	administrator_server_grants	observability->governance
-sql	crates/panel-host/src/operations/incidents/certificates.rs	write	admins	observability->governance
-sql	crates/panel-host/src/operations/incidents/certificates.rs	write	management_api_tokens	observability->governance
-sql	crates/panel-host/src/operations/incidents/certificates.rs	write	network_acme_jobs	observability->naming
-sql	crates/panel-host/src/operations/incidents/certificates.rs	write	network_certificate_versions	observability->naming
-sql	crates/panel-host/src/operations/incidents/certificates.rs	write	network_documents	observability->networking
-sql	crates/panel-host/src/operations/incidents/certificates.rs	write	panel_settings	observability->platform
-sql	crates/panel-host/src/operations/incidents/certificates.rs	write	servers	observability->resources
-sql	crates/panel-host/src/operations/incidents/certificates.rs	write	sessions	observability->governance
-sql	crates/panel-host/src/operations/mod.rs	read	fleet_profiles	operations->resources
-sql	crates/panel-host/src/operations/panel_job_backup.rs	read	operations_jobs	governance->operations
-sql	crates/panel-host/src/operations/panel_job_backup.rs	read	operations_panel_steps	governance->operations
-sql	crates/panel-host/src/operations/panel_job_backup.rs	write	operations_panel_steps	governance->operations
-sql	crates/panel-host/src/operations/recovery.rs	read	operations_jobs	governance->operations
-sql	crates/panel-host/src/operations/recovery.rs	read	operations_panel_steps	governance->operations
-sql	crates/panel-host/src/operations/remediation.rs	read	operations_incidents	operations->observability
-sql	crates/panel-host/src/operations/suppliers.rs	read	diagnostic_jobs	costs->observability
-sql	crates/panel-host/src/operations/suppliers.rs	read	diagnostic_report_sections	costs->observability
-sql	crates/panel-host/src/operations/suppliers.rs	read	fleet_profiles	costs->resources
-sql	crates/panel-host/src/operations/suppliers.rs	read	telemetry_history	costs->observability
-sql	crates/panel-host/src/operations/typed_steps.rs	read	administrator_profiles	operations->governance
-sql	crates/panel-host/src/operations/typed_steps.rs	read	operations_backup_schedules	operations->governance
-sql	crates/panel-host/src/operations/worker.rs	read	diagnostic_jobs	operations->observability
-sql	crates/panel-host/src/operations/worker.rs	read	fleet_profiles	operations->resources
-sql	crates/panel-host/src/operations/worker.rs	read	server_retirements	operations->resources
 sql	crates/panel-host/src/probes.rs	write	servers	observability->resources
 sql	crates/panel-host/src/releases/selection.rs	read	servers	governance->resources
 sql	crates/panel-host/src/retirement.rs	write	diagnostic_jobs	resources->observability
 sql	crates/panel-host/src/retirement.rs	write	enrollment_tokens	resources->governance
 sql	crates/panel-host/src/retirement.rs	write	fleet_terminal_sessions	resources->operations
 sql	crates/panel-host/src/retirement.rs	write	sessions	resources->governance
-sql	crates/panel-host/src/runtime_operations.rs	read	diagnostic_jobs	operations->observability
-sql	crates/panel-host/src/runtime_operations.rs	read	fleet_profiles	operations->resources
-sql	crates/panel-host/src/runtime_operations.rs	read	server_retirements	operations->resources
 sql	crates/panel-host/src/runtime_validations.rs	read	server_retirements	traffic->resources
+sql	crates/panel-host/src/server_lifecycle.rs	read	fleet_cost_records	resources->costs
+sql	crates/panel-host/src/server_lifecycle.rs	read	network_probes	resources->observability
+sql	crates/panel-host/src/server_lifecycle.rs	read	server_module_status	resources->traffic
+sql	crates/panel-host/src/server_lifecycle.rs	read	server_plugins	resources->traffic
+sql	crates/panel-host/src/server_lifecycle.rs	write	fleet_cost_records	resources->costs
+sql	crates/panel-host/src/server_lifecycle.rs	write	network_probes	resources->observability
+sql	crates/panel-host/src/server_monitoring.rs	read	fleet_operations	observability->operations
+sql	crates/panel-host/src/server_monitoring.rs	read	notification_outbox	observability->platform
+sql	crates/panel-host/src/server_monitoring.rs	read	remote_commands	observability->operations
+sql	crates/panel-host/src/server_monitoring/service_events.rs	read	fleet_operations	observability->operations
+sql	crates/panel-host/src/server_monitoring/service_events.rs	write	fleet_operations	observability->operations
+sql	crates/panel-host/src/server_monitoring/service_events.rs	write	servers	observability->resources
 sql	crates/panel-host/src/servers.rs	read	enrollment_tokens	resources->governance
 sql	crates/panel-host/src/servers.rs	write	enrollment_tokens	resources->governance
 sql	crates/panel-host/src/servers.rs	write	network_probes	resources->observability

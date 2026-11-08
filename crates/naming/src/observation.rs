@@ -78,7 +78,7 @@ impl Observation {
 // Ordinary server addresses only; exclude special non-unicast uses even when a
 // historical general IP classifier did not include the newer documentation block.
 pub(super) fn ddns_public_ip(ip: IpAddr) -> bool {
-    if !crate::ip_quality::public_ip(ip) {
+    if !crate::net::public_ip(ip) {
         return false;
     }
     match ip {

@@ -1,13 +1,16 @@
 #![forbid(unsafe_code)]
 //! Costs domain (ADR 0128): recurring paid services, payments, renewal reminders and the
-//! renewal calendar, independent of the proxy business.
+//! renewal calendar, supplier comparison and reminders before a server's planned
+//! cancellation, independent of the proxy business.
 mod api;
 mod calendar;
+pub mod cancellation_reminders;
 mod history;
 mod migration;
 pub mod renewals;
 pub mod schedule;
 mod servers;
+mod suppliers;
 mod worker;
 pub use worker::tick;
 
@@ -28,42 +31,48 @@ use uuid::Uuid;
 
 type Tx<'a> = Transaction<'a, Postgres>;
 pub fn routes() -> Router<AppState> {
-    Router::new().nest(
-        "/api/plugins/expenses",
-        Router::new()
-            .route("/settings", get(api::settings).put(api::settings_save))
-            .route("/labels", get(api::labels).post(api::label_create))
-            .route(
-                "/labels/{id}",
-                axum::routing::put(api::label_update).delete(api::label_remove),
-            )
-            .route("/subscriptions", get(api::list).post(api::create))
-            .route(
-                "/subscriptions/{id}",
-                axum::routing::put(api::update).delete(api::remove),
-            )
-            .route("/subscriptions/{id}/clone", post(api::clone_entry))
-            .route("/subscriptions/{id}/renew", post(api::renew))
-            .route("/subscriptions/{id}/payments", get(api::payments))
-            .route("/servers", get(servers::list))
-            .route("/references", get(servers::reference_list))
-            .route("/payments", get(history::payments))
-            .route("/calendar", get(calendar::calendar))
-            .route("/calendar.ics", get(calendar::ical))
-            .route("/summary", get(calendar::summary))
-            .route("/notifications", get(worker::notifications))
-            .route("/export", get(migration::export))
-            .route(
-                "/import/preview",
-                post(migration::preview)
-                    .layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),
-            )
-            .route(
-                "/import",
-                post(migration::import)
-                    .layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),
-            ),
-    )
+    Router::new()
+        .route("/api/operations/suppliers", get(suppliers::comparison))
+        .route(
+            "/api/operations/cancellation-reminders",
+            get(cancellation_reminders::list).post(cancellation_reminders::configure),
+        )
+        .nest(
+            "/api/plugins/expenses",
+            Router::new()
+                .route("/settings", get(api::settings).put(api::settings_save))
+                .route("/labels", get(api::labels).post(api::label_create))
+                .route(
+                    "/labels/{id}",
+                    axum::routing::put(api::label_update).delete(api::label_remove),
+                )
+                .route("/subscriptions", get(api::list).post(api::create))
+                .route(
+                    "/subscriptions/{id}",
+                    axum::routing::put(api::update).delete(api::remove),
+                )
+                .route("/subscriptions/{id}/clone", post(api::clone_entry))
+                .route("/subscriptions/{id}/renew", post(api::renew))
+                .route("/subscriptions/{id}/payments", get(api::payments))
+                .route("/servers", get(servers::list))
+                .route("/references", get(servers::reference_list))
+                .route("/payments", get(history::payments))
+                .route("/calendar", get(calendar::calendar))
+                .route("/calendar.ics", get(calendar::ical))
+                .route("/summary", get(calendar::summary))
+                .route("/notifications", get(worker::notifications))
+                .route("/export", get(migration::export))
+                .route(
+                    "/import/preview",
+                    post(migration::preview)
+                        .layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),
+                )
+                .route(
+                    "/import",
+                    post(migration::import)
+                        .layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),
+                ),
+        )
 }
 pub async fn run(state: AppState) {
     worker::run(state).await;

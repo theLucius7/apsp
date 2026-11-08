@@ -8,9 +8,12 @@ Owners are ordered by dependency (docs/architecture.md section 5.1). Checked cro
 - sql: Rust code reading or writing a table of another owner. The only exception is reading
   a published identity table whose owner comes in an earlier group of the order;
 - path: `#[path]` including a source file from another crate;
-- ref: Rust code naming a module of another owner in the same crate (`crate::`, `super::`)
-  against the dependency order: the platform naming a domain, a domain naming a later
-  domain or a peer. Naming earlier owners is the normal direction; the application may
+- ref: Rust code naming a module of another owner against the dependency order: the
+  platform naming a domain, a domain naming a later domain or a peer. Modules are named in
+  the same crate (`crate::`, `super::`), through another workspace crate's path
+  (`apsp_panel_host::fleet`), or through a module the crate root re-exports from another
+  crate (`crate::fleet` after `use apsp_panel_host::fleet`), so moving code between crates
+  keeps its crossings. Naming earlier owners is the normal direction; the application may
   name everything;
 - import: a web domain importing another domain or the application shell, or the platform
   layer importing a domain or the shell. The shell composes and may import everything.
@@ -179,20 +182,24 @@ def rust_code(text):
 
 MODULE_REF = re.compile(r"(?<![\w:])((?:crate|super)(?:\s*::\s*super)*)\s*::\s*")
 IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+RENAME = re.compile(r"\s+as\s+([A-Za-z_][A-Za-z0-9_]*)")
 
 
-def use_paths(code, start):
-    """Expand the path or use tree that starts at `start` into lists of segments."""
-    def tree(i):
-        paths, segments = [], []
+def use_paths(code, start, renames=None):
+    """Expand the path or use tree that starts at `start` into lists of segments.
+
+    A rename (`x as y`) keeps the path of `x`; `renames` collects (path, new name) pairs.
+    """
+    def tree(i, prefix):
+        paths, segments = [], list(prefix)
         while True:
             while i < len(code) and code[i].isspace():
                 i += 1
             if i < len(code) and code[i] == "{":
                 i += 1
                 while True:
-                    sub, i = tree(i)
-                    paths += [segments + s for s in sub]
+                    sub, i = tree(i, segments)
+                    paths += sub
                     while i < len(code) and code[i].isspace():
                         i += 1
                     if i < len(code) and code[i] == ",":
@@ -210,9 +217,14 @@ def use_paths(code, start):
             if sep and code.startswith("*", sep.end()):
                 return [segments], sep.end() + 1
             if not sep or (sep.end() < len(code) and code[sep.end()] not in "{" and not IDENT.match(code, sep.end())):
+                rename = RENAME.match(code, i)
+                if rename:
+                    if renames is not None:
+                        renames.append((list(segments), rename.group(1)))
+                    i = rename.end()
                 return [segments], i
             i = sep.end()
-    return tree(start)[0]
+    return tree(start, [])[0]
 
 
 def crate_source(crate_dir):
@@ -251,9 +263,9 @@ def resolve_module(segments, root_file):
     return None
 
 
-def module_refs(path, code, root_file):
-    """Source files of the same crate that `crate::` and `super::` paths in `code` name."""
-    targets, here = set(), module_of(path, root_file)
+def local_paths(path, code, root_file):
+    """Module paths from the crate root that `crate::` and `super::` paths in `code` name."""
+    here = module_of(path, root_file)
     for match in MODULE_REF.finditer(code):
         head = re.sub(r"\s+", "", match.group(1)).split("::")
         if head[0] == "crate":
@@ -263,8 +275,76 @@ def module_refs(path, code, root_file):
         else:
             continue
         for segments in use_paths(code, match.end()):
-            target = resolve_module(base + segments, root_file) if base + segments else None
-            if target is not None and target != path:
+            if base + segments:
+                yield base + segments
+
+
+def module_refs(path, code, root_file):
+    """Source files of the same crate that `crate::` and `super::` paths in `code` name."""
+    targets = set()
+    for segments in local_paths(path, code, root_file):
+        target = resolve_module(segments, root_file)
+        if target is not None and target != path:
+            targets.add(target)
+    return targets
+
+
+USE = re.compile(r"(?<![\w:])use\s+")
+
+
+def workspace_crates(root):
+    """Name each crate is used by in paths (`apsp_panel_host`) -> its crate root file.
+
+    Members come from the workspace manifest; without one, every package manifest counts.
+    """
+    try:
+        members = tomllib.loads((root / "Cargo.toml").read_text())["workspace"]["members"]
+        manifests = [crate / "Cargo.toml" for pattern in members for crate in sorted(root.glob(pattern))]
+    except (OSError, KeyError, tomllib.TOMLDecodeError):
+        manifests = [m for m in sorted(root.glob("**/Cargo.toml")) if "target" not in m.relative_to(root).parts]
+    crates = {}
+    for manifest in manifests:
+        try:
+            data = tomllib.loads(manifest.read_text())
+        except (OSError, tomllib.TOMLDecodeError):
+            continue
+        root_file = crate_source(manifest.parent)
+        if root_file is not None:
+            name = data.get("lib", {}).get("name") or data["package"]["name"].replace("-", "_")
+            crates[name] = root_file
+    return crates
+
+
+def crate_aliases(root_file, crates):
+    """Names the crate root re-exports from other workspace crates: name -> (crate, path)."""
+    code = rust_code(root_file.read_text(errors="replace"))
+    aliases = {}
+    for match in USE.finditer(code):
+        renames = []
+        named = [(segments, segments[-1]) for segments in use_paths(code, match.end(), renames) if segments]
+        for segments, name in named + renames:
+            if crates.get(segments[0], root_file) != root_file and (len(segments) > 1 or name != segments[0]):
+                aliases[name] = (segments[0], segments[1:])
+    return aliases
+
+
+def foreign_refs(path, code, root_file, crates, aliases):
+    """Source files of other workspace crates that paths in `code` name, directly
+    (`apsp_panel_host::auth`) or through a re-exported module (`crate::auth`)."""
+    targets = set()
+    others = sorted((name for name, file in crates.items() if file != root_file), key=len, reverse=True)
+    if others:
+        pattern = re.compile(r"(?<![\w:])(" + "|".join(map(re.escape, others)) + r")\s*::\s*")
+        for match in pattern.finditer(code):
+            for segments in use_paths(code, match.end()):
+                target = resolve_module(segments, crates[match.group(1)]) if segments else None
+                if target is not None:
+                    targets.add(target)
+    for segments in local_paths(path, code, root_file):
+        if segments[0] in aliases and resolve_module(segments, root_file) is None:
+            crate, prefix = aliases[segments[0]]
+            target = resolve_module(prefix + segments[1:], crates[crate])
+            if target is not None:
                 targets.add(target)
     return targets
 
@@ -303,6 +383,7 @@ def rust_crossings(root, config, owners):
     crossings = set()
     rank, published = ranks(config), set(config["domains"].get("published", []))
     exempt = config.get("rust_exempt", {}).get("paths", [])
+    crates, aliases = workspace_crates(root), {}
     for path in sorted(root.glob("**/*.rs")):
         rel = path.relative_to(root).as_posix()
         if "/target/" in f"/{rel}" or rel.startswith("target/") or any(rel.startswith(p) for p in exempt):
@@ -320,7 +401,10 @@ def rust_crossings(root, config, owners):
         root_file = crate_source(crate_dir) if crate_dir is not None else None
         # Examples, benches and build scripts are separate targets with their own `crate`.
         if root_file is not None and path.is_relative_to(root_file.parent):
-            for target in module_refs(path, rust_code(text), root_file):
+            code = rust_code(text)
+            if root_file not in aliases:
+                aliases[root_file] = crate_aliases(root_file, crates)
+            for target in module_refs(path, code, root_file) | foreign_refs(path, code, root_file, crates, aliases[root_file]):
                 target_rel = target.relative_to(root).as_posix()
                 target_owner = path_owner(target_rel, config["rust"])
                 if target_owner is not None and not ref_allowed(owner, target_owner, rank):

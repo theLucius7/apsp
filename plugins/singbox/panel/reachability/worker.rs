@@ -54,7 +54,7 @@ impl Resolver for SystemResolver {
         // Private and reserved addresses say nothing and must not leave the panel.
         found
             .into_iter()
-            .filter(|ip| apsp_panel_host::ip_quality::public_ip(*ip))
+            .filter(|ip| apsp_panel_host::net::public_ip(*ip))
             .collect()
     }
 }

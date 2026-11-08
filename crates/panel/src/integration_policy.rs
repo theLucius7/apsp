@@ -2,12 +2,9 @@ use apsp_panel_host::{
     AppState,
     control_center::contributions::{RoutePolicy, SearchSource},
     error::ApiResult,
-    operations::deployment_automation::RuntimeStepPolicy,
 };
 use axum::http::Method;
 use serde_json::Value;
-#[cfg(test)]
-use serde_json::json;
 
 pub fn route_policy(path: &str, method: &Method) -> Option<RoutePolicy> {
     let feature = if path.starts_with("/api/plugins/sing-box/") {
@@ -75,13 +72,6 @@ pub fn worker_names() -> &'static [&'static str] {
         "alicloud-eip-rotation",
         "sing-box",
     ]
-}
-
-pub fn runtime_step_policy(kind: &str) -> Option<RuntimeStepPolicy> {
-    apsp_plugin_singbox::host_support::runtime_step_policy(kind).map(|step| RuntimeStepPolicy {
-        version: step.version,
-        capability: step.capability,
-    })
 }
 
 pub async fn audit_snapshot(state: &AppState, path: &str) -> ApiResult<Option<Value>> {
@@ -204,20 +194,5 @@ mod tests {
                 .unwrap()
                 .read
         );
-    }
-    #[test]
-    fn runtime_step_is_registered_with_its_fixed_version() {
-        crate::plugins::install();
-        let mut step: apsp_panel_host::operations::Step = serde_json::from_value(json!({
-            "kind":"singbox_retry_deployment", "service":null, "timeout_secs":300,
-            "runtime_version":"1.14.4-apsp.1"
-        }))
-        .unwrap();
-        assert!(step.validate().is_ok());
-        step.runtime_version = Some("latest".into());
-        assert!(step.validate().is_err());
-        step.runtime_version = Some("1.14.4-apsp.1".into());
-        step.service = Some("other.service".into());
-        assert!(step.validate().is_err());
     }
 }

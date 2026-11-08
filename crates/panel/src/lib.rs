@@ -6,13 +6,15 @@
 //! (`apsp_panel::auth`, `apsp_panel::plugins::singbox`, ...) stays unchanged.
 
 pub use apsp_panel_host::{
-    AgentConnection, AppState, agent_updates, artifacts, auth, commands, config, control_center,
-    dashboard, diagnostic_plugins, diagnostics, error, exchange, fleet, frontend, installation,
-    ip_quality, latency_tasks, network_configuration, network_workbench, notifications, operations,
-    passkeys, probes, releases, retirement, runtime_control, runtime_operations,
-    runtime_validations, server_assets, server_traffic, servers, settings, statistics, telemetry,
-    traffic_correction,
+    AgentConnection, AppState, agent_updates, artifacts, auth, config, control_center, dashboard,
+    diagnostic_plugins, diagnostics, error, exchange, frontend, installation, ip_quality,
+    latency_tasks, network_configuration, network_workbench, notifications, passkeys, probes,
+    releases, retirement, runtime_control, runtime_validations, server_assets, server_traffic,
+    servers, settings, statistics, telemetry, traffic_correction,
 };
+// Operations moved to its own crate; its modules keep their previous public paths.
+pub use apsp_operations::jobs as operations;
+pub use apsp_operations::{commands, fleet, runtime_operations};
 
 pub mod agent_api;
 mod integration_policy;
@@ -39,7 +41,7 @@ pub fn router(state: AppState) -> axum::Router {
         .merge(domains::traffic::routes())
         .merge(domains::costs::routes())
         .merge(domains::observability::routes())
-        .merge(domains::operations::routes())
+        .merge(apsp_operations::routes())
         .merge(plugins::router());
     let guard = axum::middleware::from_fn_with_state(state.clone(), control_center::guard::guard);
     let gate = axum::middleware::from_fn_with_state(

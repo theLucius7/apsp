@@ -1,5 +1,6 @@
 //! Observability: telemetry, network counters and corrections, probes and latency
-//! tasks, diagnostics, network checks, alerts, statistics and the dashboard.
+//! tasks, diagnostics, network checks, alerts and incidents, server health and event
+//! timelines, statistics and the dashboard.
 
 use axum::{
     Router,
@@ -7,8 +8,9 @@ use axum::{
 };
 
 use crate::{
-    AppState, dashboard, diagnostic_plugins, diagnostics, ip_quality, latency_tasks,
-    network_workbench, notifications, probes, statistics, telemetry, traffic_correction,
+    AppState, dashboard, diagnostic_plugins, diagnostics, incidents, ip_quality, latency_tasks,
+    network_workbench, notifications, probes, server_monitoring, statistics, telemetry,
+    traffic_correction,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -22,6 +24,25 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/alert-rules/{id}",
             axum::routing::patch(notifications::rules::update).delete(notifications::rules::remove),
+        )
+        .route("/api/operations/incidents", get(incidents::list))
+        .route("/api/operations/incidents/{id}", get(incidents::detail))
+        .route(
+            "/api/operations/incidents/{id}/action",
+            post(incidents::action),
+        )
+        .route(
+            "/api/operations/incidents/{id}/assignees",
+            get(incidents::assignees),
+        )
+        .route("/api/fleet/health", get(server_monitoring::health))
+        .route(
+            "/api/servers/{id}/fleet/events",
+            get(server_monitoring::events),
+        )
+        .route(
+            "/api/servers/{id}/fleet/compare",
+            get(server_monitoring::compare),
         )
         .merge(network_workbench::router())
         .merge(dashboard::routes())

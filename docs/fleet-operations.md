@@ -64,7 +64,7 @@ Agent 日常操作使用共同执行互斥锁；等待后重新读取本机授�
 
 ## 集成接口
 
-面板 `fleet::router()` 提供 `/api/servers/{id}/fleet`、`/lifecycle`、`/costs`、`/migration-preview`、`/migrate`、`/events`、`/compare`、`/operations`、`/config-history` 与 `/terminals`。操作结果通过 `/api/fleet/operations/{id}` 查询；终端通过 `/api/fleet/terminals/{id}` 获取/请求关闭、`/input` 发输入。Agent 使用独立 `/api/agent/v1/fleet/work`、`/results`、`/terminal-events`，完成回执不因维护阻断。
+面板按领域登记这些接口（2026-11-08 起，路径不变）：资源提供 `/api/servers/{id}/fleet`、`/lifecycle`、`/costs`、`/migration-preview`、`/migrate`，观测提供 `/events`、`/compare`，作业（`crates/operations` 的 `fleet::router()`）提供 `/operations`、`/config-history` 与 `/terminals`。操作结果通过 `/api/fleet/operations/{id}` 查询；终端通过 `/api/fleet/terminals/{id}` 获取/请求关闭、`/input` 发输入。Agent 使用独立 `/api/agent/v1/fleet/work`、`/results`、`/terminal-events`，完成回执不因维护阻断。
 
 强类型操作、结果与文件历史按实际能力授权，聚合操作历史只返回元数据。异步设备操作暂不接受 API 令牌，避免排队后令牌撤销仍借管理员权限执行；管理员任务领取时重新检查当前范围，并将排队授权快照与当前服务器 policy 再取交集；当前授权收窄或撤销不能被旧快照扩大。管理员终端绑定确切会话散列而非任意同账号会话。
 

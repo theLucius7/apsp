@@ -45,7 +45,7 @@ pub(super) async fn locked_admin(
     Ok(row)
 }
 
-pub(crate) fn session_hash(headers: &HeaderMap) -> ApiResult<String> {
+pub fn session_hash(headers: &HeaderMap) -> ApiResult<String> {
     cookie_token(headers)
         .map(hash_token)
         .ok_or(ApiError::Unauthorized)

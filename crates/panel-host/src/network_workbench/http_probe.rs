@@ -50,7 +50,7 @@ fn authorized(execution: &Execution, url: &reqwest::Url) -> ApiResult<()> {
 /// and metadata addresses are reachable from the panel host alone, so checks of
 /// such targets run on a server instead.
 pub(super) fn panel_destination(address: IpAddr) -> bool {
-    crate::ip_quality::public_ip(address)
+    crate::net::public_ip(address)
 }
 fn refuse_private(
     addresses: &[std::net::SocketAddr],

@@ -99,7 +99,7 @@ pub async fn pending(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(ApiError::NotFound)?;
-    match crate::fleet::ensure_accepts_tasks_tx(&mut tx, server_id).await {
+    match crate::device_work::ensure_accepts_tasks_tx(&mut tx, server_id).await {
         Ok(()) => {}
         Err(ApiError::Conflict(_)) => {
             tx.commit().await?;

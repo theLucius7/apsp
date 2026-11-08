@@ -276,6 +276,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "apsp-operations"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-costs",
+ "apsp-panel-host",
+ "apsp-plugin-singbox",
+ "apsp-protocol",
+ "axum 0.8.9",
+ "base64 0.22.1",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "apsp-panel"
 version = "0.3.0"
 dependencies = [
@@ -288,6 +308,7 @@ dependencies = [
  "apsp-compiler",
  "apsp-costs",
  "apsp-naming",
+ "apsp-operations",
  "apsp-panel-host",
  "apsp-plugin-alicloud",
  "apsp-plugin-singbox",

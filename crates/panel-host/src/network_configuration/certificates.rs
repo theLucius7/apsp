@@ -195,7 +195,7 @@ async fn handshake(host: &str, port: u16, expected: &str) -> Result<String, &'st
     if resolved.is_empty()
         || resolved
             .iter()
-            .any(|address| !crate::ip_quality::public_ip(address.ip()))
+            .any(|address| !crate::net::public_ip(address.ip()))
     {
         return Err("public_address_required");
     }

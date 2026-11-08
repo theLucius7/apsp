@@ -108,7 +108,7 @@ pub async fn create(
     let mut tx = state.pool.begin().await?;
     super::business::lock_server(&mut tx, server).await?;
     super::settings::require_enabled(&mut tx, server).await?;
-    crate::fleet::ensure_accepts_tasks_tx(&mut tx, server).await?;
+    crate::device_work::ensure_accepts_tasks_tx(&mut tx, server).await?;
     let row = sqlx::query("SELECT capabilities,last_seen,dirty_at,EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) AS retiring FROM servers WHERE id=$1").bind(server).fetch_one(&mut *tx).await?;
     let capabilities: Value = row.get("capabilities");
     if !capabilities

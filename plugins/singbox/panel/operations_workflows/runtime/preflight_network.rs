@@ -79,7 +79,7 @@ fn dns_evidence(
     let non_public: Vec<_> = observed
         .iter()
         .copied()
-        .filter(|ip| !crate::ip_quality::public_ip(*ip))
+        .filter(|ip| !apsp_panel_host::net::public_ip(*ip))
         .collect();
     let status = if observed.is_empty() || unmatched || public_challenge && !non_public.is_empty() {
         "failed"

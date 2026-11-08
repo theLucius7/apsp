@@ -210,6 +210,20 @@ pub async fn require_server(
     Ok(actor.admin_id)
 }
 
+/// The capability on every target server.
+pub async fn require_servers(
+    state: &AppState,
+    headers: &HeaderMap,
+    targets: &[i64],
+    capability: &str,
+) -> ApiResult<i64> {
+    let mut actor = require_capability(state, headers, capability).await?;
+    for server in targets {
+        actor = require_server(state, headers, *server, capability).await?;
+    }
+    Ok(actor)
+}
+
 /// Settings shared by every server, and objects bound to no server, belong to
 /// administrators whose scope covers all servers, through an unrestricted token
 /// if one is used.
@@ -218,11 +232,40 @@ pub async fn require_global(
     headers: &HeaderMap,
     capability: &str,
 ) -> ApiResult<i64> {
+    global(
+        state,
+        headers,
+        capability,
+        "此操作涉及全部服务器共享的设置或未关联服务器的对象，需要全局授权",
+    )
+    .await
+}
+
+/// The same scope for panel recovery material and for cloud resources that no server
+/// is linked to.
+pub async fn require_global_material(
+    state: &AppState,
+    headers: &HeaderMap,
+    capability: &str,
+) -> ApiResult<i64> {
+    global(
+        state,
+        headers,
+        capability,
+        "此功能涉及面板全局恢复材料或未关联云资源，需要明确的全局授权",
+    )
+    .await
+}
+
+async fn global(
+    state: &AppState,
+    headers: &HeaderMap,
+    capability: &str,
+    refusal: &str,
+) -> ApiResult<i64> {
     let actor = authenticate(state, headers).await?;
     if !actor.allows(capability) || !actor.global_servers() {
-        return Err(ApiError::Forbidden(
-            "此操作涉及全部服务器共享的设置或未关联服务器的对象，需要全局授权".into(),
-        ));
+        return Err(ApiError::Forbidden(refusal.into()));
     }
     Ok(actor.admin_id)
 }

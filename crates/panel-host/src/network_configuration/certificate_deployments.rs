@@ -175,7 +175,7 @@ async fn apply(
     tx.commit().await?;
     let mut results = Vec::new();
     for (deployment, server) in deployments {
-        match crate::fleet::enqueue_for_actor(
+        match crate::device_work::submit_for_actor(
             &state,
             server,
             actor,
