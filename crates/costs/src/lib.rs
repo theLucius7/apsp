@@ -5,6 +5,7 @@ mod api;
 mod calendar;
 mod history;
 mod migration;
+pub mod renewals;
 pub mod schedule;
 mod servers;
 mod worker;

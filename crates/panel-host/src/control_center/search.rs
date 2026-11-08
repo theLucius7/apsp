@@ -343,7 +343,7 @@ visible_servers AS (
  ORDER BY d.updated_at DESC,d.id"#).await?;
     }
 
-    for source in crate::plugin_api::search_sources() {
+    for source in super::contributions::search_sources() {
         if actor.allows(source.capability) && (!source.global_only || actor.global_servers()) {
             output
                 .append(

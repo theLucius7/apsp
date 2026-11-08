@@ -1,27 +1,136 @@
-use crate::{AgentConnection, AppState, artifacts, auth, error::ApiResult};
+//! The device channel: authenticated WebSocket transport, device sessions and presence.
+//!
+//! Reports are handed to the domains that own them through [`DeviceReports`], which
+//! the application connects; the channel itself keeps only the protocol.
+
+use crate::{
+    AgentConnection, AppState,
+    ports::{BoxFuture, Port},
+    tokens,
+};
 use apsp_protocol::{
-    AppliedRevisions, ApplyResult, ApplyStatus, AuthChallenge, Envelope, HelloAck, Manifest,
-    ManifestChanged, Message, now_timestamp,
+    AppliedRevisions, ApplyResult, AuthChallenge, DiagnosticCancelResult, Envelope, HelloAck,
+    Message, Metrics, RetirementResult, RuntimeCheckpointResult, RuntimeControlAck,
+    RuntimePathProbeResult, RuntimeRecoveryBarrierResult, RuntimeSessionReport, StaticInfo,
+    UsageBatch, now_timestamp,
 };
 use axum::{
-    Json,
+    Router,
     extract::{
-        Path, State,
+        State,
         ws::{Message as WsMessage, WebSocket, WebSocketUpgrade},
     },
-    http::{HeaderMap, header},
-    response::{IntoResponse, Response},
+    response::Response,
+    routing::get,
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::{Signature, VerifyingKey};
 use futures_util::{SinkExt, StreamExt};
-use sqlx::Row;
 use std::time::Duration;
 use tokio::{
     sync::mpsc,
     time::{Instant, timeout},
 };
 use uuid::Uuid;
+
+/// Reports of an authenticated device, answered by the domains that own them.
+pub trait DeviceReports: Send + Sync {
+    /// Capabilities and applied revisions announced when the device connects.
+    fn hello<'a>(
+        &'a self,
+        state: &'a AppState,
+        server_id: i64,
+        capabilities: Vec<String>,
+        applied: AppliedRevisions,
+    ) -> BoxFuture<'a, anyhow::Result<()>>;
+    fn heartbeat<'a>(
+        &'a self,
+        state: &'a AppState,
+        server_id: i64,
+        applied: AppliedRevisions,
+    ) -> BoxFuture<'a, anyhow::Result<()>>;
+    fn static_info<'a>(
+        &'a self,
+        state: &'a AppState,
+        server_id: i64,
+        info: StaticInfo,
+    ) -> BoxFuture<'a, anyhow::Result<()>>;
+    fn metrics<'a>(
+        &'a self,
+        state: &'a AppState,
+        server_id: i64,
+        metrics: Metrics,
+    ) -> BoxFuture<'a, anyhow::Result<()>>;
+    fn apply_result<'a>(
+        &'a self,
+        state: &'a AppState,
+        server_id: i64,
+        result: ApplyResult,
+    ) -> BoxFuture<'a, anyhow::Result<()>>;
+    fn checkpoint_result<'a>(
+        &'a self,
+        state: &'a AppState,
+        server_id: i64,
+        result: RuntimeCheckpointResult,
+    ) -> BoxFuture<'a, anyhow::Result<RuntimeControlAck>>;
+    fn path_probe_result<'a>(
+        &'a self,
+        state: &'a AppState,
+        server_id: i64,
+        result: RuntimePathProbeResult,
+    ) -> BoxFuture<'a, anyhow::Result<RuntimeControlAck>>;
+    fn barrier_result<'a>(
+        &'a self,
+        state: &'a AppState,
+        server_id: i64,
+        result: RuntimeRecoveryBarrierResult,
+    ) -> BoxFuture<'a, anyhow::Result<RuntimeControlAck>>;
+    fn diagnostic_cancel_result<'a>(
+        &'a self,
+        state: &'a AppState,
+        server_id: i64,
+        result: DiagnosticCancelResult,
+    ) -> BoxFuture<'a, anyhow::Result<()>>;
+    /// Records one usage batch; an error leaves the batch unacknowledged.
+    fn usage_batch<'a>(
+        &'a self,
+        state: &'a AppState,
+        server_id: i64,
+        batch: UsageBatch,
+    ) -> BoxFuture<'a, anyhow::Result<()>>;
+    /// Admitted runtime session addresses; devices report them only when session
+    /// control is enabled in their configuration.
+    fn runtime_sessions<'a>(
+        &'a self,
+        state: &'a AppState,
+        server_id: i64,
+        report: RuntimeSessionReport,
+    ) -> BoxFuture<'a, anyhow::Result<()>>;
+    fn retirement_result<'a>(
+        &'a self,
+        state: &'a AppState,
+        server_id: i64,
+        result: RetirementResult,
+    ) -> BoxFuture<'a, anyhow::Result<()>>;
+}
+
+static REPORTS: Port<dyn DeviceReports> = Port::new();
+
+/// Connects the device reports to their owners; later calls keep the first one.
+pub fn install(reports: &'static dyn DeviceReports) {
+    REPORTS.install(reports);
+}
+
+fn reports() -> anyhow::Result<&'static dyn DeviceReports> {
+    REPORTS
+        .get()
+        .ok_or_else(|| anyhow::anyhow!("device reports are not connected"))
+}
+
+/// The device channel's own route; every other device endpoint belongs to a domain.
+pub fn routes() -> Router<AppState> {
+    Router::new().route("/api/agent/v1/ws", get(websocket))
+}
 
 pub async fn websocket(State(state): State<AppState>, ws: WebSocketUpgrade) -> Response {
     ws.max_message_size(1024 * 1024)
@@ -33,7 +142,7 @@ pub async fn websocket(State(state): State<AppState>, ws: WebSocketUpgrade) -> R
 }
 
 async fn connection(mut socket: WebSocket, state: AppState) -> anyhow::Result<()> {
-    let nonce = auth::random_token();
+    let nonce = tokens::random_token();
     send(
         &mut socket,
         Envelope::new(
@@ -71,7 +180,7 @@ async fn connection(mut socket: WebSocket, state: AppState) -> anyhow::Result<()
     let signature = Signature::from_slice(&URL_SAFE_NO_PAD.decode(response.signature)?)?;
     VerifyingKey::from_bytes(&bytes)?.verify_strict(nonce.as_bytes(), &signature)?;
     let server_id = response.server_id;
-    let session_token = auth::random_token();
+    let session_token = tokens::random_token();
     let server_time = now_timestamp();
     let expires_at = server_time + 3600;
     let (sender, mut receiver) = mpsc::channel::<Envelope>(32);
@@ -91,7 +200,7 @@ async fn connection(mut socket: WebSocket, state: AppState) -> anyhow::Result<()
             "device was deleted or rebound during authentication"
         );
         sqlx::query("INSERT INTO sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
-            .bind(auth::hash_token(&session_token))
+            .bind(tokens::hash_token(&session_token))
             .bind(server_id)
             .bind(expires_at)
             .execute(&mut *tx)
@@ -139,7 +248,7 @@ async fn connection(mut socket: WebSocket, state: AppState) -> anyhow::Result<()
                                 // outbox and replays it. Tearing down the channel here would let one
                                 // invalid batch block later batches and every other control message.
                                 Message::UsageBatch(batch) => {
-                                    if let Err(error) = crate::plugin_api::ingest_usage(&state, server_id, batch).await {
+                                    if let Err(error) = usage_batch(&state, server_id, batch).await {
                                         tracing::warn!(server_id, %error, "usage batch rejected and left unacknowledged");
                                     }
                                 }
@@ -211,74 +320,11 @@ pub async fn notify(state: &AppState, server_id: i64, envelope: Envelope) {
     }
 }
 
-async fn reconcile_hint(
-    state: &AppState,
-    server_id: i64,
-    applied: AppliedRevisions,
-) -> anyhow::Result<()> {
-    let mut tx = state.pool.begin().await?;
-    crate::runtime_control::lock_server(&mut tx, server_id).await?;
-    let exact: bool = sqlx::query_scalar("SELECT COALESCE((SELECT checkpoint_required FROM runtime_control_devices WHERE server_id=$1),false)")
-        .bind(server_id).fetch_one(&mut *tx).await?;
-    let rows = sqlx::query(
-        "SELECT module,target_rev,applied_rev,healthy FROM server_module_status WHERE server_id=$1 FOR UPDATE",
-    )
-    .bind(server_id)
-    .fetch_all(&mut *tx)
-    .await?;
-    let mut differs = false;
-    let mut checks = Vec::new();
-    for row in rows {
-        let module: String = row.get("module");
-        let reported = applied.get(&module).copied().unwrap_or(0);
-        let known = row.get::<i64, _>("applied_rev") as u64;
-        differs |= reported != row.get::<i64, _>("target_rev") as u64 || reported != known;
-        if exact && reported != row.get::<i64, _>("target_rev") as u64 {
-            sqlx::query("UPDATE server_module_status SET healthy=false,updated_at=$3 WHERE server_id=$1 AND module=$2")
-                .bind(server_id).bind(&module).bind(now_timestamp()).execute(&mut *tx).await?;
-        }
-        if exact
-            && reported > 0
-            && reported == row.get::<i64, _>("target_rev") as u64
-            && (!row.get::<bool, _>("healthy") || known != reported)
-        {
-            checks.push(module.clone());
-        }
-        if !exact
-            && reported > known
-            && let Ok(rev) = i64::try_from(reported)
-        {
-            let published: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM deployments WHERE server_id=$1 AND module=$2 AND rev=$3)")
-                .bind(server_id).bind(&module).bind(rev).fetch_one(&mut *tx).await?;
-            if published {
-                // Applied checkpoints are durable on the device even if their result is lost.
-                sqlx::query("UPDATE server_module_status SET applied_rev=$3,healthy=true,updated_at=$4 WHERE server_id=$1 AND module=$2")
-                    .bind(server_id).bind(&module).bind(rev).bind(now_timestamp()).execute(&mut *tx).await?;
-            }
-        }
+async fn usage_batch(state: &AppState, server_id: i64, batch: UsageBatch) -> anyhow::Result<()> {
+    match REPORTS.get() {
+        Some(reports) => reports.usage_batch(state, server_id, batch).await,
+        None => anyhow::bail!("no domain accepts usage batches"),
     }
-    tx.commit().await?;
-    for module in checks {
-        // Failure to support a previously advertised capability stays conservative.
-        if let Err(error) =
-            crate::runtime_control::request_checkpoint(state, server_id, &module).await
-        {
-            tracing::debug!(%error, "runtime checkpoint request not scheduled");
-        }
-    }
-    if differs {
-        let rev: i64 = sqlx::query_scalar("SELECT manifest_rev FROM servers WHERE id=$1")
-            .bind(server_id)
-            .fetch_one(&state.pool)
-            .await?;
-        notify(
-            state,
-            server_id,
-            Envelope::new("manifest.changed", ManifestChanged { rev: rev as u64 })?,
-        )
-        .await;
-    }
-    Ok(())
 }
 
 pub async fn process_message(
@@ -294,58 +340,27 @@ pub async fn process_message(
                 .filter(|value| value.len() <= 128)
                 .take(64)
                 .collect();
-            crate::runtime_control::register_capabilities(state, server_id, &capabilities).await?;
-            sqlx::query("UPDATE servers SET capabilities=$2 WHERE id=$1 AND deleted_at IS NULL")
-                .bind(server_id)
-                .bind(serde_json::to_value(&capabilities)?)
-                .execute(&state.pool)
+            reports()?
+                .hello(state, server_id, capabilities, hello.applied)
                 .await?;
-            reconcile_hint(state, server_id, hello.applied).await?;
-            crate::runtime_control::replay_pending(state, server_id).await?;
         }
         Message::Heartbeat(heartbeat) => {
-            sqlx::query(
-                "UPDATE servers SET last_heartbeat_at=$2 WHERE id=$1 AND deleted_at IS NULL",
-            )
-            .bind(server_id)
-            .bind(now_timestamp())
-            .execute(&state.pool)
-            .await?;
-            reconcile_hint(state, server_id, heartbeat.applied).await?;
-            crate::runtime_control::replay_pending(state, server_id).await?;
-        }
-        Message::TelemetryStatic(info) => {
-            sqlx::query("UPDATE servers SET static_info=$2,static_info_received_at=$3 WHERE id=$1 AND deleted_at IS NULL")
-                .bind(server_id)
-                .bind(serde_json::to_value(info)?)
-                .bind(now_timestamp())
-                .execute(&state.pool)
+            reports()?
+                .heartbeat(state, server_id, heartbeat.applied)
                 .await?;
         }
-        Message::TelemetryMetrics(metrics) => {
-            let value = serde_json::to_value(metrics)?;
-            let mut tx = state.pool.begin().await?;
-            // Legacy envelopes contain no collection timestamp. Preserve the metrics,
-            // but do not label their reception time as a fresh collection.
-            sqlx::query("UPDATE servers SET latest_metrics=$2,metrics_sampled_at=0 WHERE id=$1")
-                .bind(server_id)
-                .bind(&value)
-                .execute(&mut *tx)
-                .await?;
-            sqlx::query("INSERT INTO metrics_minutely(server_id,bucket,metrics) VALUES($1,$2,$3) ON CONFLICT(server_id,bucket) DO UPDATE SET metrics=EXCLUDED.metrics").bind(server_id).bind(now_timestamp()/60*60).bind(crate::fleet::monitoring::comparison_metrics(&value)).execute(&mut *tx).await?;
-            sqlx::query("DELETE FROM metrics_minutely WHERE bucket<$1")
-                .bind(now_timestamp() - 7 * 86400)
-                .execute(&mut *tx)
-                .await?;
-            tx.commit().await?;
-        }
+        Message::TelemetryStatic(info) => reports()?.static_info(state, server_id, info).await?,
+        Message::TelemetryMetrics(metrics) => reports()?.metrics(state, server_id, metrics).await?,
         Message::DiagnosticCancelResult(result) => {
-            crate::diagnostics::cancellation::record_result(state, server_id, result).await?;
+            reports()?
+                .diagnostic_cancel_result(state, server_id, result)
+                .await?;
         }
-        Message::ApplyResult(result) => record_apply_result(state, server_id, result).await?,
+        Message::ApplyResult(result) => reports()?.apply_result(state, server_id, result).await?,
         Message::RuntimeCheckpointResult(result) => {
-            let ack =
-                crate::runtime_control::record_checkpoint_result(state, server_id, result).await?;
+            let ack = reports()?
+                .checkpoint_result(state, server_id, result)
+                .await?;
             notify(
                 state,
                 server_id,
@@ -354,8 +369,9 @@ pub async fn process_message(
             .await;
         }
         Message::RuntimePathProbeResult(result) => {
-            let ack =
-                crate::runtime_control::record_path_probe_result(state, server_id, result).await?;
+            let ack = reports()?
+                .path_probe_result(state, server_id, result)
+                .await?;
             notify(
                 state,
                 server_id,
@@ -364,18 +380,20 @@ pub async fn process_message(
             .await;
         }
         Message::RuntimeRecoveryBarrierResult(result) => {
-            let ack =
-                crate::runtime_control::record_barrier_result(state, server_id, result).await?;
+            let ack = reports()?.barrier_result(state, server_id, result).await?;
             notify(state, server_id, Envelope::new("runtime.barrier.ack", ack)?).await;
         }
-        Message::UsageBatch(batch) => {
-            crate::plugin_api::ingest_usage(state, server_id, batch).await?
-        }
+        Message::UsageBatch(batch) => usage_batch(state, server_id, batch).await?,
         Message::RuntimeSessionReport(report) => {
-            crate::plugin_api::ingest_runtime_sessions(state, server_id, report).await?
+            anyhow::ensure!(report.valid(), "invalid runtime session report");
+            if let Some(reports) = REPORTS.get() {
+                reports.runtime_sessions(state, server_id, report).await?;
+            }
         }
         Message::RetirementResult(result) => {
-            crate::retirement::record_result(state, server_id, result).await?
+            reports()?
+                .retirement_result(state, server_id, result)
+                .await?
         }
         Message::Unknown { message_type, .. } => {
             tracing::debug!(%message_type,"ignoring unknown device message")
@@ -383,71 +401,4 @@ pub async fn process_message(
         _ => tracing::debug!("ignoring unsupported device message direction"),
     }
     Ok(())
-}
-
-pub async fn record_apply_result(
-    state: &AppState,
-    server_id: i64,
-    result: ApplyResult,
-) -> anyhow::Result<()> {
-    let rev = i64::try_from(result.rev)?;
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM deployments WHERE server_id=$1 AND module=$2 AND rev=$3)",
-    )
-    .bind(server_id)
-    .bind(&result.module)
-    .bind(rev)
-    .fetch_one(&state.pool)
-    .await?;
-    anyhow::ensure!(exists, "unpublished revision");
-    let applied = result.status == ApplyStatus::Applied;
-    anyhow::ensure!(!applied || result.healthy, "applied result must be healthy");
-    let mut tx = state.pool.begin().await?;
-    crate::runtime_control::lock_server(&mut tx, server_id).await?;
-    let exact: bool = sqlx::query_scalar("SELECT COALESCE((SELECT checkpoint_required FROM runtime_control_devices WHERE server_id=$1),false)")
-        .bind(server_id).fetch_one(&mut *tx).await?;
-    if exact {
-        tx.commit().await?;
-        return crate::runtime_control::record_apply(state, server_id, &result).await;
-    }
-    sqlx::query("UPDATE server_module_status SET applied_rev=CASE WHEN $4 THEN GREATEST(applied_rev,$3) ELSE applied_rev END,last_result_rev=$3,healthy=$5,last_error=$6,updated_at=$7 WHERE server_id=$1 AND module=$2 AND last_result_rev<=$3 AND applied_rev<=$3")
-        .bind(server_id).bind(result.module).bind(rev).bind(applied).bind(result.healthy).bind(result.error.map(|error| error.chars().take(2048).collect::<String>())).bind(now_timestamp()).execute(&mut *tx).await?;
-    tx.commit().await?;
-    Ok(())
-}
-
-pub async fn manifest(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> ApiResult<Json<Manifest>> {
-    let server_id = auth::require_agent(&state, &headers).await?;
-    artifacts::require_signed_agent(&state, server_id).await?;
-    let row = sqlx::query("SELECT manifest_rev,static_info FROM servers WHERE id=$1")
-        .bind(server_id)
-        .fetch_one(&state.pool)
-        .await?;
-    let rev: i64 = row.get("manifest_rev");
-    let info: serde_json::Value = row.get("static_info");
-    let modules = crate::plugin_api::manifest_modules(&state, server_id, &info).await?;
-    Ok(Json(Manifest {
-        rev: rev as u64,
-        modules,
-    }))
-}
-
-pub async fn bundle(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(rev): Path<i64>,
-) -> ApiResult<Response> {
-    let server_id = auth::require_agent(&state, &headers).await?;
-    let bundle = crate::plugin_api::bundle(&state, server_id, rev).await?;
-    Ok((
-        [
-            (header::CONTENT_TYPE, "application/json"),
-            (header::CACHE_CONTROL, "no-store"),
-        ],
-        bundle,
-    )
-        .into_response())
 }

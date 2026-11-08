@@ -323,7 +323,7 @@ pub async fn issue_enrollment(
 
 /// Expired enrollment tokens can never validate again; keep a short grace period
 /// for troubleshooting and then remove them in bounded batches (ADR 0077).
-pub(crate) async fn purge_expired_enrollments(pool: &PgPool, now: i64) -> anyhow::Result<u64> {
+pub async fn purge_expired_enrollments(pool: &PgPool, now: i64) -> anyhow::Result<u64> {
     Ok(sqlx::query("DELETE FROM enrollment_tokens WHERE token_hash IN (SELECT token_hash FROM enrollment_tokens WHERE expires_at < $1 ORDER BY expires_at LIMIT 500)")
         .bind(now - 7 * 86_400)
         .execute(pool)
@@ -409,6 +409,44 @@ fn validate_mirror(asset: &AssetSettings, panel: &str) -> ApiResult<()> {
             "Agent 下载加速不能使用面板地址，请填写独立的 GitHub 镜像".into(),
         ));
     }
+    Ok(())
+}
+
+/// Capabilities a device announced when it connected.
+pub async fn record_capabilities(
+    state: &AppState,
+    server_id: i64,
+    capabilities: &[String],
+) -> anyhow::Result<()> {
+    sqlx::query("UPDATE servers SET capabilities=$2 WHERE id=$1 AND deleted_at IS NULL")
+        .bind(server_id)
+        .bind(serde_json::to_value(capabilities)?)
+        .execute(&state.pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn record_heartbeat(state: &AppState, server_id: i64) -> anyhow::Result<()> {
+    sqlx::query("UPDATE servers SET last_heartbeat_at=$2 WHERE id=$1 AND deleted_at IS NULL")
+        .bind(server_id)
+        .bind(now_timestamp())
+        .execute(&state.pool)
+        .await?;
+    Ok(())
+}
+
+/// Hardware and system facts a device reports about itself.
+pub async fn record_static_info(
+    state: &AppState,
+    server_id: i64,
+    info: apsp_protocol::StaticInfo,
+) -> anyhow::Result<()> {
+    sqlx::query("UPDATE servers SET static_info=$2,static_info_received_at=$3 WHERE id=$1 AND deleted_at IS NULL")
+        .bind(server_id)
+        .bind(serde_json::to_value(info)?)
+        .bind(now_timestamp())
+        .execute(&state.pool)
+        .await?;
     Ok(())
 }
 

@@ -1,7 +1,8 @@
 use apsp_panel_host::{
     AppState,
+    control_center::contributions::{RoutePolicy, SearchSource},
     error::ApiResult,
-    plugin_api::{RoutePolicy, RuntimeStepPolicy, SearchSource},
+    operations::deployment_automation::RuntimeStepPolicy,
 };
 use axum::http::Method;
 use serde_json::Value;
@@ -77,7 +78,10 @@ pub fn worker_names() -> &'static [&'static str] {
 }
 
 pub fn runtime_step_policy(kind: &str) -> Option<RuntimeStepPolicy> {
-    apsp_plugin_singbox::host_support::runtime_step_policy(kind)
+    apsp_plugin_singbox::host_support::runtime_step_policy(kind).map(|step| RuntimeStepPolicy {
+        version: step.version,
+        capability: step.capability,
+    })
 }
 
 pub async fn audit_snapshot(state: &AppState, path: &str) -> ApiResult<Option<Value>> {

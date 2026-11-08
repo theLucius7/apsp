@@ -46,7 +46,7 @@ pub fn redact(value: &Value) -> Value {
                         ]
                         .iter()
                         .any(|item| lower.contains(item))
-                            || crate::plugin_api::sensitive_key(&lower)
+                            || super::contributions::sensitive_key(&lower)
                             || ["url", "uri", "raw", "yaml", "payload", "bundle", "text"]
                                 .contains(&lower.as_str())
                             || lower.ends_with("_url")
@@ -94,7 +94,7 @@ fn independent_identity(path: &str) -> bool {
         || path.starts_with("/api/login/passkey/")
         || path == "/api/logout"
         || path == "/api/dashboard/access"
-        || crate::plugin_api::route_policy(path, &Method::GET)
+        || super::contributions::route_policy(path, &Method::GET)
             .is_some_and(|policy| policy.independent_identity)
         || path.starts_with("/api/network-workbench/shared/")
         || path.starts_with("/api/bootstrap/")
@@ -108,7 +108,7 @@ fn feature(path: &str) -> Option<&'static str> {
         return Some("security");
     }
     if let Some(feature) =
-        crate::plugin_api::route_policy(path, &Method::GET).and_then(|policy| policy.feature)
+        super::contributions::route_policy(path, &Method::GET).and_then(|policy| policy.feature)
     {
         return Some(feature);
     }
@@ -242,7 +242,7 @@ fn high_risk(path: &str, method: &Method) -> bool {
         || path.contains("/power")
         || path.contains("/bandwidth")
         || path.contains("/security-group")
-        || crate::plugin_api::route_policy(path, method).is_some_and(|policy| policy.high_risk)
+        || super::contributions::route_policy(path, method).is_some_and(|policy| policy.high_risk)
 }
 
 async fn allowed(
@@ -306,7 +306,7 @@ async fn allowed(
             && path.ends_with("/refresh"))
         || (path.starts_with("/api/network-configuration/servers/")
             && path.ends_with("/inventory"))
-        || crate::plugin_api::route_policy(path, method).is_some_and(|policy| policy.read);
+        || super::contributions::route_policy(path, method).is_some_and(|policy| policy.read);
 
     let capability = format!("{feature}:{}", if read { "read" } else { "write" });
     if !actor.allows(&capability) {
@@ -325,7 +325,7 @@ async fn allowed(
         }
     } else if !actor.global_servers()
         && !(path == "/api/servers" && read)
-        && !crate::plugin_api::route_policy(path, method)
+        && !super::contributions::route_policy(path, method)
             .is_some_and(|policy| policy.scoped_objects)
         && !path.starts_with("/api/network-workbench/")
         && !path.starts_with("/api/network-configuration/")
@@ -352,7 +352,7 @@ async fn snapshot(state: &AppState, path: &str) -> ApiResult<Value> {
             .await?;
         return Ok(value.as_ref().map(redact).unwrap_or(Value::Null));
     }
-    if let Some(value) = crate::plugin_api::audit_snapshot(state, path).await? {
+    if let Some(value) = super::contributions::audit_snapshot(state, path).await? {
         return Ok(redact(&value));
     }
     Ok(json!({"state":"unavailable","reason":"此入口的变更前后证据由对应任务或版本历史保存"}))

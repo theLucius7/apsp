@@ -33,7 +33,7 @@
 | 受管节点 | 开一个代理入口 | 受管节点（服务端点） | 端口不冲突；被链路引用时锁定部分配置；没有授权用户时不监听 | 名称（公开地址、证书）；服务权益（加入策略组） | sing-box `nodes*`；网络服务 › 节点 |
 | 链路 | 让流量按顺序经过多个端点 | 链路与不可变版本 | 只引用存在的端点；线性无环；入口单次计量；内部凭据不进订阅 | 外部来源 | sing-box `ordered_paths/`；网络服务 › 链路 |
 | 外部来源与外部节点 | 引入机场等外部节点 | 外部来源、外部节点版本 | 先预览再采用；失败保留上一个成功修订 | 服务权益（策略组引用）；成本（报告的到期只读） | sing-box `subscription_sources/`、`subscription_parser/`；网络服务 › 外部来源 |
-| 配置编译与发布 | 把期望配置变成每台服务器的完整快照并下发 | 配置版本、部署 | 同一输入同一字节；字节相同不产生新修订；只有回执才算已应用 | 服务权益（授权凭据，经依赖倒置接口）；平台（Agent 通道） | `crates/compiler`；sing-box `publisher.rs`、`deployments.rs` |
+| 配置编译与发布 | 把期望配置变成每台服务器的完整快照并下发 | 配置版本、部署 | 同一输入同一字节；字节相同不产生新修订；只有回执才算已应用 | 服务权益（授权凭据，经依赖倒置接口）；平台（Agent 通道） | `crates/compiler`；sing-box `publisher.rs`、`deployments.rs`；宿主 `device_config.rs`（设备的清单与配置包、已应用修订、应用结果） |
 | 运行时检查点与路径验证 | 确认目标修订真的在运行、路径真的通 | 已应用状态与验证证据 | 证据有有效期；旧代次的回执不覆盖新代次 | 平台（Agent 通道） | 宿主 `runtime_control.rs`、`runtime_validations.rs`；sing-box 路径探测 |
 | 运行时运维 | 检查、重启运行时或重试部署 | 运行时操作的合法性 | 只对受管运行时；结果未知不自动重试 | 作业（执行记录） | 宿主 `runtime_operations.rs`；sing-box `runtime_operations.rs` |
 | 服务器端逐用户限制的执行 | 把限速与连接数编进配置 | 运行时能力 `user-limits` | 运行时不支持时拒绝而不是忽略 | 服务权益（限制的值） | `crates/compiler/src/limits.rs` |
@@ -78,7 +78,7 @@
 | 汇率与统计币种 | 把不同币种折算成统计币种 | 每日汇率 | 来源可追溯，不编造缺失币种 | — | 宿主 `exchange.rs` |
 | 续费提醒与日历 | 按时提醒续费 | 提醒、日历输出 | 提醒只告知，不付款 | 平台（通知通道） | `crates/costs` 的后台任务；`/api/plugins/expenses/calendar.ics` |
 | 退订提醒与供应商 | 记得在合适的时候退订 | 退订提醒、供应商 | — | 资源 | 宿主 `operations/cancellation_reminders.rs`、`suppliers.rs` |
-| 外部来源报告的到期 | 机场订阅的到期一起看 | 到期引用 | 只读，仅供参考 | 流量服务 | 宿主钩子 `renewal_references`（阶段 B 改为显式接口） |
+| 外部来源报告的到期 | 机场订阅的到期一起看 | 到期引用 | 只读，仅供参考 | 流量服务 | `crates/costs` 的 `renewals` 接口，应用层接到 sing-box 的外部来源 |
 | Wallos 导入 | 从 Wallos 迁入 | 导入批次 | 先预览后导入 | — | `tools/export_wallos.py`、`crates/costs` 的导入接口 |
 | 云资源与费用对照（冻结） | 对比供应商价格 | 费用对照 | 只读 | 资源 | 宿主 `operations/` 中的云费用部分 |
 
@@ -91,7 +91,7 @@
 | 管理 API 令牌 | 让程序代表管理员调用 | API 令牌 | 令牌有用途与权限范围 | — | `management_api_tokens` |
 | 接入令牌 | 让一台机器被信任接入 | 接入令牌 | 一次性、有效期 | 资源 | `enrollment_tokens` |
 | 凭据保管与审计 | 秘密安全保存，操作可追溯 | 凭据保管策略、审计记录 | 秘密不进日志与前端 | 平台（加密凭据库） | 宿主 `control_center/` |
-| 平台配置与功能显示 | 面板本身的设置 | 面板设置 | 领域设置在各自领域编辑 | 各领域只读 | 系统 › 面板设置；保存在平台的设置存储 `panel_settings`（宿主 `settings.rs`），其中告警阈值与通知渠道等各项的规则归各自领域 |
+| 平台配置与功能显示 | 面板本身的设置 | 面板设置 | 领域设置在各自领域编辑 | 各领域只读 | 系统 › 面板设置；管理接口在宿主 `control_center/panel_settings.rs`，保存在平台的设置存储 `panel_settings`（宿主 `settings.rs`），其中告警阈值与通知渠道等各项的规则归各自领域 |
 | 制品与版本 | 决定哪些面板与 Agent 版本可信、可用 | 签名制品目录、版本策略 | 独立验签；Agent 只从 GitHub 或镜像下载 | 流量服务（运行时制品） | 宿主 `artifacts.rs`；系统 › 制品与版本 |
 | 平台备份与恢复 | 平台出事能恢复 | 恢复点、恢复演练 | 同基线、同 PostgreSQL 主版本恢复；凭据密钥独立保管 | 作业（执行） | 宿主 `operations/backups.rs`、`backup_executor`、`recovery.rs`；系统 › 备份与恢复 |
 | 平台自身的健康 | 面板与后台任务是否正常 | 独立观察者报告、工具通告 | — | 观测（展示）；平台（任务心跳 `system_worker_heartbeats`） | `system_observer_reports`、`tool_advisory_observations`；系统自检 |
@@ -126,6 +126,6 @@
 
 | 部分 | 内容 | 实现 |
 | --- | --- | --- |
-| 平台 | 数据库连接与事务、基线核对、后台任务与心跳、Agent 通道、加密凭据库、制品存储、通知发送通道、HTTP 外壳与中间件、设置存储 | 宿主 `crates/panel-host` 的技术部分（阶段 B 收口）；`crates/cloud-api`（供应商接口的签名、分页与重试） |
-| 应用 | 组合各领域、HTTP 路由、后台任务登记、跨领域流程、依赖倒置接口的接线、命令行入口 | `crates/panel` |
+| 平台 | 数据库连接与事务、基线核对、后台任务与心跳、Agent 通道、加密凭据库、制品存储、通知发送通道、HTTP 外壳与中间件、设置存储、类型化接口的机制 | 宿主 `crates/panel-host` 的 `shell`、`agent_api`、`ports`、`tokens`、`settings`、`notifications` 的发送部分等技术模块（阶段 B1 起不引用领域，B2 迁出其余领域代码）；`crates/cloud-api`（供应商接口的签名、分页与重试） |
+| 应用 | 组合各领域、HTTP 路由、后台任务登记、跨领域流程、依赖倒置接口的接线、命令行入口 | `crates/panel`：`lib.rs` 组合路由与权限守卫，`wiring.rs` 接线类型化接口，`maintenance.rs` 运行 30 秒维护循环 |
 | Agent | 本地执行、采集与状态协调；运行时与诊断工具的适配器 | `crates/agent-core`、`crates/adapter-*`、`crates/agent` |

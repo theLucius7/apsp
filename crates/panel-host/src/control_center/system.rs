@@ -62,7 +62,7 @@ pub async fn health(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
         "network-certificates",
     ]
     .into_iter()
-    .chain(crate::plugin_api::worker_names().iter().copied())
+    .chain(super::contributions::worker_names().iter().copied())
     {
         if !workers
             .iter()

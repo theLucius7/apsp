@@ -1,4 +1,10 @@
-use crate::{error::ApiResult, plugin_api::ActivityEvidence};
+use crate::error::ApiResult;
+
+/// Whether the runtime is configured on a server and when it last carried traffic.
+pub struct ActivityEvidence {
+    pub configured: bool,
+    pub last_positive_at: Option<i64>,
+}
 
 pub async fn runtime_activity_on(
     connection: &mut sqlx::PgConnection,

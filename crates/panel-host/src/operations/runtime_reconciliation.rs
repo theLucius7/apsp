@@ -74,7 +74,8 @@ pub(super) async fn checkpoint(
     let mut tx = state.pool.begin().await?;
     let request = original(&mut tx, job, input.server_id).await?;
     let checkpoint =
-        crate::plugin_api::request_automation_deployment_checkpoint_tx(&mut tx, request).await?;
+        super::deployment_automation::request_automation_deployment_checkpoint_tx(&mut tx, request)
+            .await?;
     history(&mut tx,job,Some(actor),"runtime_reconciliation_checkpoint_requested",json!({"server_id":input.server_id,"original_request_id":request,"checkpoint_request_id":checkpoint.request_id,"read_only":true,"original_result":"unknown"}),now_timestamp()).await?;
     tx.commit().await?;
     Ok(Json(
@@ -92,7 +93,7 @@ pub(super) async fn reconcile(
     label(&input.evidence, 4096)?;
     let mut tx = state.pool.begin().await?;
     let request = original(&mut tx, job, input.server_id).await?;
-    let receipt = crate::plugin_api::reconcile_automation_deployment_tx(
+    let receipt = super::deployment_automation::reconcile_automation_deployment_tx(
         &mut tx,
         request,
         input.checkpoint_request_id,

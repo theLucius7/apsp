@@ -123,17 +123,147 @@ import	web/src/types.ts	web/src/plugins/singbox/NodeSettingsFields.tsx	platform-
 path	crates/panel-host/src/diagnostic_plugins.rs	plugins/ipquality/panel/mod.rs	observability->observability
 path	crates/panel-host/src/diagnostic_plugins.rs	plugins/nodequality/panel/mod.rs	observability->observability
 path	crates/panel-host/src/diagnostic_plugins.rs	plugins/tcpquality/panel/mod.rs	observability->observability
+ref	crates/panel-host/src/agent_updates.rs	crates/panel-host/src/server_assets.rs	governance->resources
+ref	crates/panel-host/src/artifacts.rs	crates/panel-host/src/installation.rs	governance->resources
+ref	crates/panel-host/src/artifacts.rs	crates/panel-host/src/servers.rs	governance->resources
+ref	crates/panel-host/src/dashboard.rs	crates/panel-host/src/exchange.rs	observability->costs
+ref	crates/panel-host/src/diagnostics.rs	crates/panel-host/src/fleet/mod.rs	observability->operations
+ref	crates/panel-host/src/diagnostics/service.rs	crates/panel-host/src/fleet/mod.rs	observability->operations
+ref	crates/panel-host/src/fleet/assets.rs	crates/panel-host/src/fleet/mod.rs	resources->operations
+ref	crates/panel-host/src/fleet/assets.rs	crates/panel-host/src/latency_tasks.rs	resources->observability
+ref	crates/panel-host/src/fleet/enrollment.rs	crates/panel-host/src/fleet/mod.rs	resources->operations
+ref	crates/panel-host/src/fleet/enrollment.rs	crates/panel-host/src/latency_tasks.rs	resources->observability
+ref	crates/panel-host/src/fleet/enrollment.rs	crates/panel-host/src/notifications/rules.rs	resources->observability
+ref	crates/panel-host/src/fleet/enrollment.rs	crates/panel-host/src/probes.rs	resources->observability
+ref	crates/panel-host/src/fleet/monitoring/service_events.rs	crates/panel-host/src/fleet/mod.rs	observability->operations
+ref	crates/panel-host/src/network_configuration/acme.rs	crates/panel-host/src/network_configuration/documents.rs	naming->networking
+ref	crates/panel-host/src/network_configuration/acme.rs	crates/panel-host/src/network_configuration/models.rs	naming->networking
+ref	crates/panel-host/src/network_configuration/acme_executor.rs	crates/panel-host/src/network_configuration/documents.rs	naming->networking
+ref	crates/panel-host/src/network_configuration/acme_executor.rs	crates/panel-host/src/network_configuration/models.rs	naming->networking
+ref	crates/panel-host/src/network_configuration/certificate_deployments.rs	crates/panel-host/src/fleet/mod.rs	naming->operations
+ref	crates/panel-host/src/network_configuration/certificate_deployments.rs	crates/panel-host/src/network_configuration/documents.rs	naming->networking
+ref	crates/panel-host/src/network_configuration/certificate_deployments.rs	crates/panel-host/src/network_configuration/mod.rs	naming->networking
+ref	crates/panel-host/src/network_configuration/certificate_deployments.rs	crates/panel-host/src/network_configuration/models.rs	naming->networking
+ref	crates/panel-host/src/network_configuration/certificates.rs	crates/panel-host/src/ip_quality.rs	naming->observability
+ref	crates/panel-host/src/network_configuration/certificates.rs	crates/panel-host/src/network_configuration/documents.rs	naming->networking
+ref	crates/panel-host/src/network_configuration/certificates.rs	crates/panel-host/src/network_configuration/models.rs	naming->networking
+ref	crates/panel-host/src/network_configuration/dns_challenges.rs	crates/panel-host/src/network_configuration/documents.rs	naming->networking
+ref	crates/panel-host/src/network_configuration/dns_challenges.rs	crates/panel-host/src/network_configuration/mod.rs	naming->networking
+ref	crates/panel-host/src/network_configuration/dns_challenges.rs	crates/panel-host/src/network_configuration/models.rs	naming->networking
+ref	crates/panel-host/src/network_configuration/operations.rs	crates/panel-host/src/fleet/mod.rs	networking->operations
+ref	crates/panel-host/src/network_configuration/server_migrations.rs	crates/panel-host/src/network_configuration/documents.rs	resources->networking
+ref	crates/panel-host/src/network_configuration/server_migrations.rs	crates/panel-host/src/network_configuration/mod.rs	resources->networking
+ref	crates/panel-host/src/network_configuration/server_migrations.rs	crates/panel-host/src/network_configuration/models.rs	resources->networking
+ref	crates/panel-host/src/network_configuration/server_migrations/compatibility.rs	crates/panel-host/src/network_configuration/models.rs	resources->networking
+ref	crates/panel-host/src/network_configuration/server_migrations/plan.rs	crates/panel-host/src/network_configuration/documents.rs	resources->networking
+ref	crates/panel-host/src/network_configuration/server_migrations/plan.rs	crates/panel-host/src/network_configuration/mod.rs	resources->networking
+ref	crates/panel-host/src/network_configuration/server_migrations/plan.rs	crates/panel-host/src/network_configuration/models.rs	resources->networking
+ref	crates/panel-host/src/network_configuration/server_migrations/plan.rs	crates/panel-host/src/network_configuration/x509.rs	resources->naming
+ref	crates/panel-host/src/network_configuration/server_migrations/transform.rs	crates/panel-host/src/network_configuration/models.rs	resources->networking
+ref	crates/panel-host/src/network_configuration/x509.rs	crates/panel-host/src/network_configuration/mod.rs	naming->networking
+ref	crates/panel-host/src/network_configuration/x509.rs	crates/panel-host/src/network_configuration/models.rs	naming->networking
+ref	crates/panel-host/src/operations/backup_executor.rs	crates/panel-host/src/operations/mod.rs	governance->operations
+ref	crates/panel-host/src/operations/backup_executor.rs	crates/panel-host/src/operations/model.rs	governance->operations
+ref	crates/panel-host/src/operations/backups.rs	crates/panel-host/src/operations/incidents.rs	governance->observability
+ref	crates/panel-host/src/operations/backups.rs	crates/panel-host/src/operations/mod.rs	governance->operations
+ref	crates/panel-host/src/operations/backups.rs	crates/panel-host/src/operations/model.rs	governance->operations
+ref	crates/panel-host/src/operations/cancellation_reminders.rs	crates/panel-host/src/operations/incidents.rs	costs->observability
+ref	crates/panel-host/src/operations/cancellation_reminders.rs	crates/panel-host/src/operations/mod.rs	costs->operations
+ref	crates/panel-host/src/operations/cloud.rs	crates/panel-host/src/operations/incidents.rs	resources->observability
+ref	crates/panel-host/src/operations/cloud.rs	crates/panel-host/src/operations/mod.rs	resources->operations
+ref	crates/panel-host/src/operations/cloud.rs	crates/panel-host/src/operations/model.rs	resources->operations
+ref	crates/panel-host/src/operations/hetzner.rs	crates/panel-host/src/operations/mod.rs	resources->operations
+ref	crates/panel-host/src/operations/hetzner.rs	crates/panel-host/src/operations/model.rs	resources->operations
+ref	crates/panel-host/src/operations/incidents.rs	crates/panel-host/src/operations/api.rs	observability->operations
+ref	crates/panel-host/src/operations/incidents.rs	crates/panel-host/src/operations/mod.rs	observability->operations
+ref	crates/panel-host/src/operations/incidents.rs	crates/panel-host/src/operations/model.rs	observability->operations
+ref	crates/panel-host/src/operations/incidents/certificates.rs	crates/panel-host/src/operations/mod.rs	observability->operations
+ref	crates/panel-host/src/operations/panel_job_backup.rs	crates/panel-host/src/operations/api.rs	governance->operations
+ref	crates/panel-host/src/operations/panel_job_backup.rs	crates/panel-host/src/operations/mod.rs	governance->operations
+ref	crates/panel-host/src/operations/panel_job_backup.rs	crates/panel-host/src/operations/model.rs	governance->operations
+ref	crates/panel-host/src/operations/panel_job_backup.rs	crates/panel-host/src/operations/typed_steps.rs	governance->operations
+ref	crates/panel-host/src/operations/recovery.rs	crates/panel-host/src/operations/mod.rs	governance->operations
+ref	crates/panel-host/src/operations/recovery.rs	crates/panel-host/src/operations/model.rs	governance->operations
+ref	crates/panel-host/src/operations/suppliers.rs	crates/panel-host/src/operations/mod.rs	costs->operations
+ref	crates/panel-host/src/operations/suppliers.rs	crates/panel-host/src/operations/model.rs	costs->operations
+ref	crates/panel-host/src/releases/agents.rs	crates/panel-host/src/servers.rs	governance->resources
+ref	crates/panel-host/src/servers.rs	crates/panel-host/src/latency_tasks.rs	resources->observability
+ref	crates/panel-host/src/servers.rs	crates/panel-host/src/probes.rs	resources->observability
+ref	crates/panel-host/src/servers.rs	crates/panel-host/src/server_traffic.rs	resources->observability
+ref	crates/panel-host/src/servers.rs	crates/panel-host/src/telemetry.rs	resources->observability
+ref	crates/panel-host/src/state.rs	crates/panel-host/src/auth.rs	platform->governance
+ref	crates/panel-host/src/state.rs	crates/panel-host/src/ip_quality.rs	platform->observability
+ref	crates/panel-host/src/state.rs	crates/panel-host/src/passkeys/mod.rs	platform->governance
+ref	crates/panel-host/src/state.rs	crates/panel-host/src/telemetry.rs	platform->observability
+ref	plugins/alicloud/panel/api.rs	plugins/alicloud/panel/eip_rotation.rs	resources->operations
+ref	plugins/alicloud/panel/api.rs	plugins/alicloud/panel/history.rs	resources->costs
+ref	plugins/alicloud/panel/api.rs	plugins/alicloud/panel/operations.rs	resources->operations
+ref	plugins/alicloud/panel/api.rs	plugins/alicloud/panel/power/mod.rs	resources->operations
+ref	plugins/alicloud/panel/client.rs	plugins/alicloud/panel/billing.rs	resources->costs
+ref	plugins/alicloud/panel/model.rs	plugins/alicloud/panel/billing.rs	resources->costs
+ref	plugins/alicloud/panel/model.rs	plugins/alicloud/panel/costs.rs	resources->costs
+ref	plugins/alicloud/panel/model.rs	plugins/alicloud/panel/power/mod.rs	resources->operations
+ref	plugins/alicloud/panel/power/policy.rs	plugins/alicloud/panel/billing.rs	resources->costs
+ref	plugins/alicloud/panel/power/policy.rs	plugins/alicloud/panel/power/cron.rs	resources->operations
+ref	plugins/alicloud/panel/power/policy.rs	plugins/alicloud/panel/power/guard.rs	resources->operations
+ref	plugins/alicloud/panel/power/policy.rs	plugins/alicloud/panel/power/mod.rs	resources->operations
+ref	plugins/alicloud/panel/power/state.rs	plugins/alicloud/panel/power/mod.rs	resources->operations
+ref	plugins/alicloud/panel/security_groups.rs	plugins/alicloud/panel/operations.rs	networking->operations
+ref	plugins/alicloud/panel/security_groups/execution.rs	plugins/alicloud/panel/operations.rs	networking->operations
+ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/billing.rs	resources->costs
+ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/costs.rs	resources->costs
+ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/eip_rotation.rs	resources->operations
+ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/history.rs	resources->costs
+ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/notices.rs	resources->observability
+ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/operations.rs	resources->operations
+ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/power/mod.rs	resources->operations
+ref	plugins/singbox/panel/catalog/clone.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/catalog/mutation.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/catalog/projection.rs	plugins/singbox/panel/external_access/model.rs	traffic->access
+ref	plugins/singbox/panel/chains.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/legacy_takeover.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/legacy_takeover.rs	plugins/singbox/panel/subscriptions.rs	traffic->access
+ref	plugins/singbox/panel/mixed_conversion.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/mixed_paths/create.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/mixed_paths/publication/advance.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/mixed_paths/resources.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/mixed_paths/updates.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/nexus_nodes/mod.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/nexus_nodes/runtime.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/nexus_nodes/runtime.rs	plugins/singbox/panel/nexus_nodes/sessions.rs	traffic->access
+ref	plugins/singbox/panel/nexus_nodes/runtime.rs	plugins/singbox/panel/reachability/mod.rs	traffic->observability
+ref	plugins/singbox/panel/nexus_nodes/runtime_publish.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/nexus_nodes/runtime_publish.rs	plugins/singbox/panel/nexus_nodes/sessions.rs	traffic->access
+ref	plugins/singbox/panel/nexus_nodes/runtime_publish.rs	plugins/singbox/panel/user_limits.rs	traffic->access
+ref	plugins/singbox/panel/nodes.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/operations_workflows/runtime/mod.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/operations_workflows/runtime/mod.rs	plugins/singbox/panel/operations_workflows/mod.rs	traffic->access
+ref	plugins/singbox/panel/operations_workflows/runtime/preflight.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/operations_workflows/runtime/preflight.rs	plugins/singbox/panel/operations_workflows/mod.rs	traffic->access
+ref	plugins/singbox/panel/operations_workflows/runtime/preflight/bootstrap.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/operations_workflows/runtime/rollouts.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/operations_workflows/runtime/rollouts.rs	plugins/singbox/panel/operations_workflows/mod.rs	traffic->access
+ref	plugins/singbox/panel/ordered_paths/api.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/ordered_paths/lifecycle.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/proxy_resources.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/publisher.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/publisher.rs	plugins/singbox/panel/nexus_nodes/sessions.rs	traffic->access
+ref	plugins/singbox/panel/publisher.rs	plugins/singbox/panel/operations_workflows/mod.rs	traffic->access
+ref	plugins/singbox/panel/publisher.rs	plugins/singbox/panel/user_limits.rs	traffic->access
+ref	plugins/singbox/panel/source_migration/rehearsal.rs	plugins/singbox/panel/external_access/model.rs	traffic->access
+ref	plugins/singbox/panel/source_migration/rehearsal.rs	plugins/singbox/panel/subscriptions.rs	traffic->access
+ref	plugins/singbox/panel/sources/adoption.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/sources/mod.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/sources/previews.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/sources/service.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/subscription_sources/mutations.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+ref	plugins/singbox/panel/subscription_sources/previews.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 sql	crates/naming/src/credentials.rs	read	credential_entries	naming->platform
 sql	crates/naming/src/dns_accounts.rs	read	credential_entries	naming->platform
 sql	crates/naming/src/dns_record_actions.rs	read	credential_entries	naming->platform
 sql	crates/naming/src/observation.rs	read	credential_entries	naming->platform
 sql	crates/naming/src/observation.rs	read	server_retirements	naming->resources
-sql	crates/panel-host/src/agent_api.rs	read	deployments	platform->traffic
-sql	crates/panel-host/src/agent_api.rs	read	runtime_control_devices	platform->traffic
-sql	crates/panel-host/src/agent_api.rs	read	server_module_status	platform->traffic
 sql	crates/panel-host/src/agent_api.rs	read	servers	platform->resources
-sql	crates/panel-host/src/agent_api.rs	write	metrics_minutely	platform->observability
-sql	crates/panel-host/src/agent_api.rs	write	server_module_status	platform->traffic
 sql	crates/panel-host/src/agent_api.rs	write	servers	platform->resources
 sql	crates/panel-host/src/agent_api.rs	write	sessions	platform->governance
 sql	crates/panel-host/src/agent_updates.rs	read	servers	governance->resources
@@ -247,8 +377,8 @@ sql	crates/panel-host/src/network_configuration/server_migrations/plan.rs	read	n
 sql	crates/panel-host/src/network_configuration/server_migrations/plan.rs	read	network_operation_links	resources->networking
 sql	crates/panel-host/src/network_workbench/authorization.rs	write	servers	observability->resources
 sql	crates/panel-host/src/network_workbench/engine.rs	write	servers	observability->resources
-sql	crates/panel-host/src/notifications.rs	read	server_alert_events	platform->observability
 sql	crates/panel-host/src/notifications/evaluation.rs	read	notification_outbox	observability->platform
+sql	crates/panel-host/src/notifications/events.rs	read	notification_outbox	observability->platform
 sql	crates/panel-host/src/notifications/events.rs	write	notification_outbox	observability->platform
 sql	crates/panel-host/src/notifications/outbox.rs	read	fleet_profiles	platform->resources
 sql	crates/panel-host/src/notifications/outbox.rs	read	operations_maintenance	platform->operations

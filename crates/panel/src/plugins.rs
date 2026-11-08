@@ -1,5 +1,6 @@
-//! Compiled domain set: the only place that names the concrete domain crates and wires
-//! them into the platform hooks (ADR 0128; the hooks become typed interfaces in stage B).
+//! Compiled domain crates (ADR 0128): their routes and background workers, and the
+//! public Rust paths kept for existing callers. The typed interfaces between owners
+//! are connected in `wiring`.
 
 pub use apsp_cloud_api as cloud_api;
 pub use apsp_costs as costs;
@@ -7,227 +8,19 @@ pub use apsp_costs as costs;
 pub use apsp_costs as expenses;
 pub use apsp_naming as ddns;
 pub use apsp_naming as naming;
-pub use apsp_panel_host::plugin_api::ActivityEvidence;
+pub use apsp_panel_host::diagnostics::activity::ActivityEvidence;
 pub use apsp_plugin_alicloud as alicloud;
 pub use apsp_plugin_singbox as singbox;
 
 use std::collections::BTreeMap;
 
-use apsp_panel_host::{
-    AppState,
-    error::ApiResult,
-    plugin_api::{
-        self, DeploymentIntent, DnsChallenge, HookFuture, PanelPlugins, RenewalReference,
-        RoutePolicy, RuntimeStepPolicy, SearchSource,
-    },
-};
-use apsp_protocol::{ModuleManifest, RuntimeCheckpointRequest, UsageBatch};
+use apsp_panel_host::{AppState, error::ApiResult};
+use apsp_protocol::{ModuleManifest, UsageBatch};
 use axum::Router;
-use axum::http::Method;
-use serde_json::Value;
-use sqlx::{Postgres, Transaction};
-use uuid::Uuid;
 
-struct Compiled;
-
-impl PanelPlugins for Compiled {
-    fn ingest_usage<'a>(
-        &'a self,
-        state: &'a AppState,
-        server_id: i64,
-        batch: UsageBatch,
-    ) -> HookFuture<'a, anyhow::Result<()>> {
-        Box::pin(singbox::usage::ingest(state, server_id, batch))
-    }
-
-    fn ingest_runtime_sessions<'a>(
-        &'a self,
-        state: &'a AppState,
-        server_id: i64,
-        report: apsp_protocol::RuntimeSessionReport,
-    ) -> HookFuture<'a, anyhow::Result<()>> {
-        Box::pin(singbox::ingest_runtime_sessions(state, server_id, report))
-    }
-
-    fn manifest_modules<'a>(
-        &'a self,
-        state: &'a AppState,
-        server_id: i64,
-        info: &'a serde_json::Value,
-    ) -> HookFuture<'a, ApiResult<BTreeMap<String, ModuleManifest>>> {
-        Box::pin(async move {
-            let mut modules = BTreeMap::new();
-            if let Some(module) = singbox::agent::manifest_module(state, server_id, info).await? {
-                modules.insert("singbox".into(), module);
-            }
-            Ok(modules)
-        })
-    }
-
-    fn bundle<'a>(
-        &'a self,
-        state: &'a AppState,
-        server_id: i64,
-        rev: i64,
-    ) -> HookFuture<'a, ApiResult<String>> {
-        Box::pin(singbox::agent::bundle(state, server_id, rev))
-    }
-
-    fn runtime_activity_on<'a>(
-        &'a self,
-        connection: &'a mut sqlx::PgConnection,
-        server_id: i64,
-        checked_at: i64,
-    ) -> HookFuture<'a, ApiResult<ActivityEvidence>> {
-        Box::pin(singbox::runtime_activity_on(
-            connection, server_id, checked_at,
-        ))
-    }
-    fn route_policy(&self, path: &str, method: &Method) -> Option<RoutePolicy> {
-        crate::integration_policy::route_policy(path, method)
-    }
-    fn sensitive_key(&self, key: &str) -> bool {
-        crate::integration_policy::sensitive_key(key)
-    }
-    fn search_sources(&self) -> Vec<SearchSource> {
-        crate::integration_policy::search_sources()
-    }
-    fn worker_names(&self) -> &'static [&'static str] {
-        crate::integration_policy::worker_names()
-    }
-    fn signed_tool_packages(
-        &self,
-        entries: &[apsp_panel_host::artifacts::ArtifactEntry],
-    ) -> Vec<Value> {
-        crate::integration_policy::signed_tool_packages(entries)
-    }
-    fn audit_snapshot<'a>(
-        &'a self,
-        state: &'a AppState,
-        path: &'a str,
-    ) -> HookFuture<'a, ApiResult<Option<Value>>> {
-        Box::pin(crate::integration_policy::audit_snapshot(state, path))
-    }
-    fn runtime_step_policy(&self, kind: &str) -> Option<RuntimeStepPolicy> {
-        crate::integration_policy::runtime_step_policy(kind)
-    }
-    fn renewal_references<'a>(
-        &'a self,
-        state: &'a AppState,
-    ) -> HookFuture<'a, ApiResult<Vec<RenewalReference>>> {
-        Box::pin(singbox::subscription_sources::renewal_references(state))
-    }
-    fn dns_present<'a>(
-        &'a self,
-        state: &'a AppState,
-        input: DnsChallenge<'a>,
-    ) -> HookFuture<'a, ApiResult<String>> {
-        Box::pin(naming::dns01::present(
-            state,
-            input.rule,
-            input.challenge,
-            input.name,
-            input.value,
-            input.credential,
-        ))
-    }
-    fn dns_cleanup<'a>(
-        &'a self,
-        state: &'a AppState,
-        input: DnsChallenge<'a>,
-        record: Option<&'a str>,
-    ) -> HookFuture<'a, ApiResult<()>> {
-        Box::pin(naming::dns01::cleanup(
-            state,
-            input.rule,
-            input.challenge,
-            input.name,
-            input.value,
-            record,
-            input.credential,
-        ))
-    }
-    fn automation_candidate<'a, 't>(
-        &'a self,
-        state: &'a AppState,
-        tx: &'a mut Transaction<'t, Postgres>,
-        server: i64,
-    ) -> HookFuture<'a, ApiResult<Value>> {
-        Box::pin(singbox::operations_workflows::automation_candidate(
-            state, tx, server,
-        ))
-    }
-    fn enqueue_automation_deployment_tx<'a, 't>(
-        &'a self,
-        state: &'a AppState,
-        tx: &'a mut Transaction<'t, Postgres>,
-        intent: DeploymentIntent<'a>,
-    ) -> HookFuture<'a, ApiResult<Uuid>> {
-        Box::pin(
-            singbox::operations_workflows::enqueue_automation_deployment_tx(
-                state,
-                tx,
-                intent.server,
-                intent.job,
-                intent.actor,
-                intent.candidate,
-                intent.expires,
-            ),
-        )
-    }
-    fn cancel_automation_deployment_tx<'a, 't>(
-        &'a self,
-        tx: &'a mut Transaction<'t, Postgres>,
-        request: Uuid,
-    ) -> HookFuture<'a, ApiResult<()>> {
-        Box::pin(singbox::operations_workflows::cancel_automation_deployment_tx(tx, request))
-    }
-    fn automation_dispatch_matches_tx<'a, 't>(
-        &'a self,
-        tx: &'a mut Transaction<'t, Postgres>,
-        server: i64,
-        request: Uuid,
-    ) -> HookFuture<'a, ApiResult<bool>> {
-        Box::pin(singbox::operations_workflows::automation_dispatch_matches_tx(tx, server, request))
-    }
-    fn automation_deployment_receipt<'a, 't>(
-        &'a self,
-        tx: &'a mut Transaction<'t, Postgres>,
-        request: Uuid,
-    ) -> HookFuture<'a, ApiResult<Value>> {
-        Box::pin(singbox::operations_workflows::automation_deployment_receipt(tx, request))
-    }
-    fn request_automation_deployment_checkpoint_tx<'a, 't>(
-        &'a self,
-        tx: &'a mut Transaction<'t, Postgres>,
-        original: Uuid,
-    ) -> HookFuture<'a, ApiResult<RuntimeCheckpointRequest>> {
-        Box::pin(
-            singbox::operations_workflows::request_automation_deployment_checkpoint_tx(
-                tx, original,
-            ),
-        )
-    }
-    fn reconcile_automation_deployment_tx<'a, 't>(
-        &'a self,
-        tx: &'a mut Transaction<'t, Postgres>,
-        original: Uuid,
-        checkpoint: Uuid,
-        evidence: &'a str,
-    ) -> HookFuture<'a, ApiResult<Value>> {
-        Box::pin(
-            singbox::operations_workflows::reconcile_automation_deployment_tx(
-                tx, original, checkpoint, evidence,
-            ),
-        )
-    }
-}
-
-static COMPILED: Compiled = Compiled;
-
-/// Registers the compiled domains with the platform; repeated calls are harmless.
+/// Connects the typed interfaces of the compiled domains; repeated calls are harmless.
 pub fn install() {
-    plugin_api::install(&COMPILED);
+    crate::wiring::install();
 }
 
 pub fn router() -> Router<AppState> {
@@ -264,7 +57,7 @@ pub async fn runtime_activity_on(
     server_id: i64,
     checked_at: i64,
 ) -> ApiResult<ActivityEvidence> {
-    singbox::runtime_activity_on(connection, server_id, checked_at).await
+    crate::wiring::runtime_activity_on(connection, server_id, checked_at).await
 }
 
 pub async fn ingest_usage(
@@ -280,7 +73,7 @@ pub async fn manifest_modules(
     server_id: i64,
     info: &serde_json::Value,
 ) -> ApiResult<BTreeMap<String, ModuleManifest>> {
-    COMPILED.manifest_modules(state, server_id, info).await
+    crate::wiring::manifest_modules(state, server_id, info).await
 }
 
 pub async fn bundle(state: &AppState, server_id: i64, rev: i64) -> ApiResult<String> {

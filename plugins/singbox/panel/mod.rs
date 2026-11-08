@@ -74,7 +74,7 @@ pub use activity::runtime_activity_on;
 pub(crate) use apsp_panel_host::config;
 pub(crate) use apsp_panel_host::{
     AppState, agent_api, artifacts, auth, control_center, error, fleet, ip_quality,
-    network_configuration, passkeys, plugin_api, releases, runtime_control,
+    network_configuration, passkeys, releases, runtime_control,
 };
 use axum::{
     Router,

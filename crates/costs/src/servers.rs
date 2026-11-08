@@ -163,12 +163,12 @@ mod tests {
     }
 }
 
-/// A plugin-observed expiry (for example a proxy subscription source) shown
-/// for reference only: it has no price and the ledger never renews it.
+/// An expiry observed by another owner (for example a proxy subscription source)
+/// shown for reference only: it has no price and the ledger never renews it.
 #[derive(Clone, Serialize)]
 pub(crate) struct Reference {
     #[serde(flatten)]
-    pub source: apsp_panel_host::plugin_api::RenewalReference,
+    pub source: crate::renewals::RenewalReference,
     /// The expiry as a date in the ledger time zone.
     pub expires_on: Option<String>,
 }
@@ -177,7 +177,7 @@ pub(crate) async fn references(
     state: &AppState,
     principal: &Principal,
 ) -> ApiResult<Vec<Reference>> {
-    let sources: Vec<_> = apsp_panel_host::plugin_api::renewal_references(state)
+    let sources: Vec<_> = crate::renewals::renewal_references(state)
         .await?
         .into_iter()
         .filter(|r| principal.allows(r.capability))

@@ -1,8 +1,10 @@
 mod access;
 mod administrators;
+pub mod contributions;
 pub mod credentials;
 mod events;
 pub mod guard;
+pub mod panel_settings;
 mod search;
 pub mod system;
 mod tool_security;

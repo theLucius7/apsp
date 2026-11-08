@@ -1,13 +1,13 @@
 use super::{lock_settings, telegram, template, webhook};
 use crate::{
-    AppState, auth,
+    AppState,
     error::{ApiError, ApiResult},
 };
-use axum::{Json, extract::State, http::HeaderMap};
+use axum::Json;
 use serde_json::{Value, json};
 
-pub async fn channels(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
-    auth::require_admin(&state, &headers).await?;
+/// Configuration, delivery counts and the last test of every channel.
+pub async fn status(state: &AppState) -> ApiResult<Json<Value>> {
     let mut tx = state.pool.begin().await?;
     let value: Value =
         sqlx::query_scalar("SELECT settings FROM panel_settings WHERE singleton FOR SHARE")
@@ -40,23 +40,8 @@ pub async fn channels(State(state): State<AppState>, headers: HeaderMap) -> ApiR
     Ok(Json(json!(channels)))
 }
 
-pub async fn test_telegram(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> ApiResult<Json<Value>> {
-    auth::require_admin(&state, &headers).await?;
-    test(&state, "telegram").await
-}
-
-pub async fn test_webhook(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> ApiResult<Json<Value>> {
-    auth::require_admin(&state, &headers).await?;
-    test(&state, "webhook").await
-}
-
-async fn test(state: &AppState, channel: &str) -> ApiResult<Json<Value>> {
+/// Sends one test message through a configured channel, at most every 30 seconds.
+pub async fn test(state: &AppState, channel: &str) -> ApiResult<Json<Value>> {
     let mut tx = state.pool.begin().await?;
     let settings = lock_settings(&mut tx).await?;
     match channel {

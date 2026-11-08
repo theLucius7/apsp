@@ -31,7 +31,7 @@ pub struct Plan {
 
 impl Step {
     pub fn is_runtime(&self) -> bool {
-        crate::plugin_api::runtime_step_policy(&self.kind).is_some()
+        super::deployment_automation::runtime_step_policy(&self.kind).is_some()
     }
     pub fn is_panel(&self) -> bool {
         self.kind == "panel_backup"
@@ -54,7 +54,7 @@ impl Step {
             }
             return Ok(());
         }
-        if let Some(policy) = crate::plugin_api::runtime_step_policy(&self.kind) {
+        if let Some(policy) = super::deployment_automation::runtime_step_policy(&self.kind) {
             if self.service.is_some()
                 || self.backup_schedule_id.is_some()
                 || self.runtime_version.as_deref() != Some(policy.version)
@@ -108,7 +108,7 @@ impl Step {
     pub fn permission(&self) -> &'static str {
         if self.is_panel() {
             "recovery:write"
-        } else if let Some(policy) = crate::plugin_api::runtime_step_policy(&self.kind) {
+        } else if let Some(policy) = super::deployment_automation::runtime_step_policy(&self.kind) {
             policy.capability
         } else if self.kind == "system_snapshot" {
             "operations:read"

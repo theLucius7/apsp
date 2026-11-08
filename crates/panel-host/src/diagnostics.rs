@@ -44,6 +44,7 @@ pub(super) fn saved_job(mut job: Value, expected: Uuid) -> ApiResult<DiagnosticJ
     Ok(job)
 }
 
+pub mod activity;
 pub mod cancellation;
 
 #[derive(Serialize, FromRow)]

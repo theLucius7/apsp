@@ -8,6 +8,10 @@ Owners are ordered by dependency (docs/architecture.md section 5.1). Checked cro
 - sql: Rust code reading or writing a table of another owner. The only exception is reading
   a published identity table whose owner comes in an earlier group of the order;
 - path: `#[path]` including a source file from another crate;
+- ref: Rust code naming a module of another owner in the same crate (`crate::`, `super::`)
+  against the dependency order: the platform naming a domain, a domain naming a later
+  domain or a peer. Naming earlier owners is the normal direction; the application may
+  name everything;
 - import: a web domain importing another domain or the application shell, or the platform
   layer importing a domain or the shell. The shell composes and may import everything.
 
@@ -127,6 +131,149 @@ def rust_strings(text):
     return strings
 
 
+def rust_code(text):
+    """Rust source with comments, string and char literals blanked; offsets and lines stay."""
+    out, i, n = list(text), 0, len(text)
+
+    def blank(start, end):
+        for k in range(start, min(end, n)):
+            if out[k] != "\n":
+                out[k] = " "
+
+    while i < n:
+        c = text[i]
+        if text.startswith("//", i):
+            end = text.find("\n", i)
+            end = n if end < 0 else end
+            blank(i, end)
+            i = end
+        elif text.startswith("/*", i):
+            start, depth, i = i, 1, i + 2
+            while i < n and depth:
+                if text.startswith("/*", i):
+                    depth, i = depth + 1, i + 2
+                elif text.startswith("*/", i):
+                    depth, i = depth - 1, i + 2
+                else:
+                    i += 1
+            blank(start, i)
+        elif (raw := re.compile(r'b?r(#*)"').match(text, i)) and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")):
+            end = text.find('"' + raw.group(1), raw.end())
+            end = n if end < 0 else end + 1 + len(raw.group(1))
+            blank(i, end)
+            i = end
+        elif c == '"' or (c == "b" and text.startswith('b"', i) and (i == 0 or not text[i - 1].isalnum())):
+            start = i
+            i += 2 if c == "b" else 1
+            while i < n and text[i] != '"':
+                i += 2 if text[i] == "\\" else 1
+            i += 1
+            blank(start, i)
+        elif c == "'" and (char := re.compile(r"'(?:\\.[^']*|[^'\\])'").match(text, i)):
+            blank(i, char.end())
+            i = char.end()
+        else:
+            i += 1
+    return "".join(out)
+
+
+MODULE_REF = re.compile(r"(?<![\w:])((?:crate|super)(?:\s*::\s*super)*)\s*::\s*")
+IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def use_paths(code, start):
+    """Expand the path or use tree that starts at `start` into lists of segments."""
+    def tree(i):
+        paths, segments = [], []
+        while True:
+            while i < len(code) and code[i].isspace():
+                i += 1
+            if i < len(code) and code[i] == "{":
+                i += 1
+                while True:
+                    sub, i = tree(i)
+                    paths += [segments + s for s in sub]
+                    while i < len(code) and code[i].isspace():
+                        i += 1
+                    if i < len(code) and code[i] == ",":
+                        i += 1
+                        continue
+                    if i < len(code) and code[i] == "}":
+                        i += 1
+                    return paths or [segments], i
+            ident = IDENT.match(code, i)
+            if not ident:
+                return [segments], i
+            segments.append(ident.group())
+            i = ident.end()
+            sep = re.compile(r"\s*::\s*").match(code, i)
+            if sep and code.startswith("*", sep.end()):
+                return [segments], sep.end() + 1
+            if not sep or (sep.end() < len(code) and code[sep.end()] not in "{" and not IDENT.match(code, sep.end())):
+                return [segments], i
+            i = sep.end()
+    return tree(start)[0]
+
+
+def crate_source(crate_dir):
+    """Directory that holds the crate root file, from `[lib] path` or `src/lib.rs`."""
+    manifest = crate_dir / "Cargo.toml"
+    try:
+        data = tomllib.loads(manifest.read_text())
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    if "package" not in data:
+        return None
+    lib = data.get("lib", {}).get("path")
+    root_file = crate_dir / (lib or "src/lib.rs")
+    if not root_file.exists():
+        root_file = crate_dir / "src/main.rs"
+    return root_file if root_file.exists() else None
+
+
+def module_of(path, root_file):
+    """Module path (list of segments) of a source file inside its crate."""
+    base = root_file.parent
+    if path == root_file:
+        return []
+    parts = list(path.relative_to(base).with_suffix("").parts)
+    return parts[:-1] if parts[-1] == "mod" else parts
+
+
+def resolve_module(segments, root_file):
+    """The deepest source file that defines a prefix of `segments`, or None."""
+    base = root_file.parent
+    for k in range(len(segments), 0, -1):
+        prefix = base.joinpath(*segments[:k])
+        for candidate in (prefix.with_suffix(".rs"), prefix / "mod.rs"):
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def module_refs(path, code, root_file):
+    """Source files of the same crate that `crate::` and `super::` paths in `code` name."""
+    targets, here = set(), module_of(path, root_file)
+    for match in MODULE_REF.finditer(code):
+        head = re.sub(r"\s+", "", match.group(1)).split("::")
+        if head[0] == "crate":
+            base = []
+        elif len(head) <= len(here):
+            base = here[:len(here) - len(head)]
+        else:
+            continue
+        for segments in use_paths(code, match.end()):
+            target = resolve_module(base + segments, root_file) if base + segments else None
+            if target is not None and target != path:
+                targets.add(target)
+    return targets
+
+
+def ref_allowed(source, target, rank):
+    """Code may name its own owner, earlier owners, and the application everything."""
+    return source == target or source == "app" or rank.get(target, len(rank)) < rank.get(source, -1)
+
+
 def sql_accesses(literal, known):
     """(mode, table) pairs for one SQL literal; only known tables and views count."""
     if not SQL_HINT.search(literal):
@@ -169,6 +316,15 @@ def rust_crossings(root, config, owners):
             if crate_root(target) != crate_root(path):
                 target_rel = target.relative_to(root.resolve()).as_posix()
                 crossings.add(f"path\t{rel}\t{target_rel}\t{owner}->{path_owner(target_rel, config['rust'])}")
+        crate_dir = crate_root(path)
+        root_file = crate_source(crate_dir) if crate_dir is not None else None
+        # Examples, benches and build scripts are separate targets with their own `crate`.
+        if root_file is not None and path.is_relative_to(root_file.parent):
+            for target in module_refs(path, rust_code(text), root_file):
+                target_rel = target.relative_to(root).as_posix()
+                target_owner = path_owner(target_rel, config["rust"])
+                if target_owner is not None and not ref_allowed(owner, target_owner, rank):
+                    crossings.add(f"ref\t{rel}\t{target_rel}\t{owner}->{target_owner}")
         for literal in rust_strings(text):
             for mode, table in sql_accesses(literal, owners):
                 target = owners[table]
