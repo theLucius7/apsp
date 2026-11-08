@@ -4,9 +4,15 @@
 
 遇到歧义，采用最简单且符合既定架构的方案，将问题、选择和理由记录到 `docs/open-questions.md` 后继续执行。
 
-## 提交身份
+## 提交身份（2026-11-09 用户更正）
 
-所有会话的提交作者与提交者均使用当前仓库所有者身份 `imengying <yuzuzv@gmail.com>`。此前 `Lucius7 Nya <i@lucius7.dev>` 属于上游账号，不能继续沿用，也不使用代理默认身份。云端会话启动时由 `.claude/hooks/git-identity.sh` 写入仓库级 git 配置，并关闭使用环境签名密钥的提交签名；提交前用 `git var GIT_AUTHOR_IDENT` 确认，钩子未生效时手动执行脚本中的同样配置。提交信息不加 `Co-Authored-By` 行。
+提交身份按会话为谁工作区分，不写进仓库：
+
+- `origin` 是 `theLucius7/apsp` 的会话为仓库所有者工作，提交作者与提交者都用 `Lucius7 Nya <i@lucius7.dev>`。
+- 在 fork（如 `imengying/apsp`）里为其他贡献者工作的会话用该贡献者自己的身份，不改成所有者身份。合入、变基或 cherry-pick 别人的提交时保留原作者，提交者是执行合入的一方。
+- 身份只放本地：仓库级 `git config user.name`、`user.email`，以及被 `.gitignore` 忽略的 `.claude/hooks/git-identity.sh`、`.claude/settings.local.json`。不要把身份脚本或钩子注册提交进仓库，合入外部 PR 时也不带入。2026-11-07 随 #245 合入的身份钩子把 fork 所有者的身份带进了本仓库，此后所有者会话的提交都署了 `imengying`，2026-11-09 已移除。
+- 云端会话的新克隆没有本地配置，第一次提交前按上面写入仓库级配置，并设 `commit.gpgsign false`（环境签名密钥属于代理，不属于本人）。提交前用 `git var GIT_AUTHOR_IDENT` 与 `git var GIT_COMMITTER_IDENT` 确认，不使用代理默认身份。
+- 提交信息不加 `Co-Authored-By` 行。
 
 ## 交付方式（2026-11-08 用户确认）
 

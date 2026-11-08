@@ -15,3 +15,5 @@
 *.db-wal
 .DS_Store
 __pycache__/
+/.claude/hooks/git-identity.sh
+/.claude/settings.local.json

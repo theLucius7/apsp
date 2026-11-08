@@ -1,5 +1,14 @@
 # 执行进度
 
+## 2026-11-09：提交身份移出仓库，按为谁工作区分
+
+- 用户要求：身份钩子 `.claude/hooks/git-identity.sh` 不上传 GitHub、只在本地，身份改回用户本人。该钩子 2026-11-07 随 imengying/apsp 的 #245 合入，把 fork 所有者 `imengying <yuzuzv@gmail.com>` 写成了本仓库的提交身份，本机两个克隆的仓库级配置也被改成了它，此后所有者会话的提交都署了 imengying。
+- 删除跟踪的 `.claude/hooks/git-identity.sh` 与只注册它的 `.claude/settings.json`；`.gitignore` 忽略 `/.claude/hooks/git-identity.sh` 与 `/.claude/settings.local.json`，身份脚本只放本地。AGENTS.md「提交身份」改为按 `origin` 区分：为 `theLucius7/apsp` 工作的会话用 `Lucius7 Nya <i@lucius7.dev>`，fork 贡献者用自己的身份，合入别人的提交保留原作者。
+- 本机 `~/apsp-structure`、`~/apsp-runtime-20261101` 的仓库级配置已改为 `Lucius7 Nya <i@lucius7.dev>`（worktree 共用）。
+- 区分结果（main `6a52d548..af327493`）：所有者会话做的、署了 imengying 的提交 11 个——`6a52d548`、`2d5008ba`（#253）、`bb99ebf5`（#258）、`052a3129`（#260）、`44ed6036`、`b7aee37b`、`68a0ac33`、`4f205cec`、`c83a0c62`、`b74a60c9`、`af327493`；`442141f3`、`1791681a`、`dbf61e28` 是 imengying 的 #255 提交，作者正确，提交者是所有者会话变基时写成的 imengying。#245、#249 与 2026-09/10 的 imengying 提交都来自 imengying/apsp 的 PR，作者正确。
+- 未改：`tools/singbox-runtime/apply.py` 给补丁后的 sing-box 源码提交固定写入 imengying 身份（#249 引入），它决定运行时构建的源码提交哈希，属于 #249 的构建输入，不在本次范围。
+- 验证：只改文档、`.gitignore` 与 `.claude` 配置，不影响构建输入；`git var GIT_AUTHOR_IDENT` 在两个克隆中均为 `Lucius7 Nya <i@lucius7.dev>`。
+
 ## 2026-11-08：合并 #255（S-UI 能力补齐）
 
 - 用户要求：处理好 #255 后合并。#255 来自 imengying/apsp 的 main，基于较旧的 main：前两个提交与已合入的 #249 树一致，只把后三个提交（S-UI 能力补齐、深色下拉与时区选择、时区简化）变基到当前 main（领域阶段 B2a 之后）。文档冲突按现行用语合并；S-UI 的 ADR 由 0125 改为 [0129](docs/adr/0129-sui-capability-alignment.md)（0125–0128 已被占用）；`AGENTS.md` 中自动部署的说明保持现状；#251 删除的旧接入脚本不再加回。
