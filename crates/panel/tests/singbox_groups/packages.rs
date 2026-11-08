@@ -504,12 +504,13 @@ async fn operations_apply_after_traffic_arrives_between_preview_and_apply(
     )
     .await?;
 
-    // Extending: traffic arrives after the preview and the apply still succeeds.
+    // A new expiry: traffic arrives after the preview and the apply still succeeds.
     let before = entitlement(&panel, &cookie, uid).await?;
+    let later = before["expires_at"].as_i64().unwrap() + 30 * 86400;
     let extend = review(
         &panel,
         &cookie,
-        json!({"operation":"extend_validity","user_id":uid,"days":30}),
+        json!({"operation":"set_validity","user_id":uid,"until":{"at":later}}),
     )
     .await?;
     apsp_panel::usage::ingest(
@@ -520,9 +521,10 @@ async fn operations_apply_after_traffic_arrives_between_preview_and_apply(
     .await?;
     let (status, receipt) = confirm(&panel, &cookie, &extend).await?;
     assert_eq!(status, StatusCode::OK, "{receipt}");
+    assert_eq!(receipt["expires_at"], later);
     assert_eq!(
-        receipt["expires_at"].as_i64().unwrap(),
-        before["expires_at"].as_i64().unwrap() + 30 * 86400
+        entitlement(&panel, &cookie, uid).await?["expires_at"],
+        later
     );
 
     // Resetting the quota credits what was used by apply time, not what the preview showed.
@@ -549,13 +551,13 @@ async fn operations_apply_after_traffic_arrives_between_preview_and_apply(
     let first = review(
         &panel,
         &cookie,
-        json!({"operation":"extend_validity","user_id":uid,"days":10}),
+        json!({"operation":"set_validity","user_id":uid,"until":{"at":later + 10 * 86400}}),
     )
     .await?;
     let second = review(
         &panel,
         &cookie,
-        json!({"operation":"extend_validity","user_id":uid,"days":20}),
+        json!({"operation":"set_validity","user_id":uid,"until":"never"}),
     )
     .await?;
     let (status, receipt) = confirm(&panel, &cookie, &first).await?;
@@ -566,7 +568,7 @@ async fn operations_apply_after_traffic_arrives_between_preview_and_apply(
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn extending_an_expired_user_renews_from_the_moment_it_is_applied(
+async fn a_new_expiry_renews_an_expired_user_and_never_removes_the_limit(
     pool: PgPool,
 ) -> Result<()> {
     let panel = TestPanel::start(pool.clone()).await?;
@@ -586,20 +588,42 @@ async fn extending_an_expired_user_renews_from_the_moment_it_is_applied(
         entitlement(&panel, &cookie, uid).await?["status"],
         "expired"
     );
-    let now = now_timestamp();
+    let target = now_timestamp() + 30 * 86400;
     let extend = review(
         &panel,
         &cookie,
-        json!({"operation":"extend_validity","user_id":uid,"days":30}),
+        json!({"operation":"set_validity","user_id":uid,"until":{"at":target}}),
     )
     .await?;
-    assert_eq!(extend["summary"]["extends_from_now"], true);
-    assert!(extend["summary"]["new_expires_at"].as_i64().unwrap() >= now + 30 * 86400);
+    assert_eq!(extend["summary"]["new_expires_at"], target);
     let (status, receipt) = confirm(&panel, &cookie, &extend).await?;
     assert_eq!(status, StatusCode::OK, "{receipt}");
     let renewed = entitlement(&panel, &cookie, uid).await?;
     assert_eq!(renewed["status"], "active");
-    let expires = renewed["expires_at"].as_i64().unwrap();
-    assert!(expires >= now + 30 * 86400 && expires <= now_timestamp() + 30 * 86400);
+    assert_eq!(renewed["expires_at"], target);
+
+    // No time limit: the entitlement reports no expiry and the user stays active.
+    let never = review(
+        &panel,
+        &cookie,
+        json!({"operation":"set_validity","user_id":uid,"until":"never"}),
+    )
+    .await?;
+    let (status, receipt) = confirm(&panel, &cookie, &never).await?;
+    assert_eq!(status, StatusCode::OK, "{receipt}");
+    let unlimited = entitlement(&panel, &cookie, uid).await?;
+    assert_eq!(unlimited["status"], "active");
+    assert_eq!(unlimited["expires_at"], Value::Null);
+
+    // A moment in the past is refused before anything is stored.
+    let response = panel
+        .admin(
+            Method::POST,
+            &format!("{ROOT}/operations/preview"),
+            &cookie,
+            Some(json!({"operation":"set_validity","user_id":uid,"until":{"at":now_timestamp() - 60}})),
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     Ok(())
 }

@@ -38,9 +38,9 @@ pub(super) enum Operation {
         user_id: i64,
         package_group_id: i64,
     },
-    ExtendValidity {
+    SetValidity {
         user_id: i64,
-        days: i32,
+        until: Validity,
     },
     ResetQuota {
         user_id: i64,
@@ -60,6 +60,20 @@ pub(super) enum Operation {
         reason: String,
     },
 }
+
+/// The new expiry of a user's current package. The administrator states the exact moment
+/// (`{"at": seconds}`) or no time limit (`"never"`); there is no default, so a request that
+/// leaves the field out is rejected instead of silently removing the limit.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum Validity {
+    At(i64),
+    Never,
+}
+
+/// Stored as a package's expiry when it has none; `singbox_entitlements` reports it as NULL
+/// and the compatibility bridge passes NULL on to the legacy panel.
+pub(super) const NO_EXPIRY: i64 = 253_402_300_799;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -264,7 +278,7 @@ async fn authorize(state: &AppState, headers: &HeaderMap, operation: &Operation)
             group_ids,
         } => (user_ids.clone(), Vec::new(), group_ids.clone(), Vec::new()),
         Operation::ReplacePackage { user_id, .. }
-        | Operation::ExtendValidity { user_id, .. }
+        | Operation::SetValidity { user_id, .. }
         | Operation::ResetQuota { user_id } => (vec![*user_id], Vec::new(), Vec::new(), Vec::new()),
         Operation::RotateNodeCredentials { user_id, node_ids } => {
             (vec![*user_id], node_ids.clone(), Vec::new(), Vec::new())

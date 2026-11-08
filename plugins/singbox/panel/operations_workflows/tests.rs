@@ -63,10 +63,32 @@ fn client_template_preserves_credentials_and_expressible_fields() {
 fn distinct_business_operations_cannot_be_confused_by_extra_fields() {
     assert!(
         serde_json::from_value::<Operation>(
-            json!({"operation":"extend_validity","user_id":1,"days":30,"reset_quota":true})
+            json!({"operation":"set_validity","user_id":1,"until":"never","reset_quota":true})
         )
         .is_err()
     );
+    // The new expiry is always stated: leaving it out must not mean "no time limit".
+    assert!(
+        serde_json::from_value::<Operation>(json!({"operation":"set_validity","user_id":1}))
+            .is_err()
+    );
+    assert!(
+        serde_json::from_value::<Operation>(
+            json!({"operation":"set_validity","user_id":1,"until":null})
+        )
+        .is_err()
+    );
+    for (until, expected) in [
+        (json!({"at":1_900_000_000}), Validity::At(1_900_000_000)),
+        (json!("never"), Validity::Never),
+    ] {
+        match serde_json::from_value::<Operation>(
+            json!({"operation":"set_validity","user_id":1,"until":until}),
+        ) {
+            Ok(Operation::SetValidity { user_id: 1, until }) => assert_eq!(until, expected),
+            _ => panic!("set_validity with {expected:?} must parse"),
+        }
+    }
     assert!(
         serde_json::from_value::<Operation>(
             json!({"operation":"reset_quota","user_id":1,"days":30})
@@ -193,33 +215,23 @@ async fn quota_reset_preserves_ledger_and_late_batches_still_charge(pool: PgPool
 }
 
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
-async fn extension_creates_snapshot_without_resetting_cycle_or_used_bytes(
+async fn new_expiry_creates_snapshot_without_resetting_cycle_or_used_bytes(
     pool: PgPool,
 ) -> Result<()> {
     let (server, user, node, original) = fixture(&pool).await?;
     let at = apsp_protocol::now_timestamp();
     usage(&pool, server, user, node, 600, at).await?;
     let before:(i64,i64,String,i64)=sqlx::query_as("SELECT starts_at,expires_at,used_bytes,cycle_start FROM singbox_entitlements($1) WHERE user_id=$2").bind(at).bind(user).fetch_one(&pool).await?;
+    let operation = Operation::SetValidity {
+        user_id: user,
+        until: Validity::At(before.1 + 30 * 86400),
+    };
     let mut tx = pool.begin().await?;
-    snapshots::snapshot(
-        &mut tx,
-        &Operation::ExtendValidity {
-            user_id: user,
-            days: 30,
-        },
-    )
-    .await?;
-    let receipt = mutations::execute(
-        &mut tx,
-        1,
-        Uuid::new_v4(),
-        &Operation::ExtendValidity {
-            user_id: user,
-            days: 30,
-        },
-    )
-    .await?;
+    snapshots::snapshot(&mut tx, &operation).await?;
+    let receipt = mutations::execute(&mut tx, 1, Uuid::new_v4(), &operation).await?;
     tx.commit().await?;
+    assert_eq!(receipt["previous_expires_at"], before.1);
+    assert_eq!(receipt["expires_at"], before.1 + 30 * 86400);
     let after:(i64,i64,String,i64)=sqlx::query_as("SELECT starts_at,expires_at,used_bytes,cycle_start FROM singbox_entitlements($1) WHERE user_id=$2").bind(at).bind(user).fetch_one(&pool).await?;
     assert_eq!(after, (before.0, before.1 + 30 * 86400, before.2, before.3));
     assert_ne!(receipt["assignment_id"], json!(original));
@@ -277,9 +289,9 @@ async fn preview_fingerprint_ignores_late_usage_but_follows_group_and_assignment
             user_id: user,
             package_group_id: package,
         },
-        Operation::ExtendValidity {
+        Operation::SetValidity {
             user_id: user,
-            days: 30,
+            until: Validity::At(apsp_protocol::now_timestamp() + 400 * 86400),
         },
         Operation::ResetQuota { user_id: user },
     ];
@@ -299,7 +311,7 @@ async fn preview_fingerprint_ignores_late_usage_but_follows_group_and_assignment
         .execute(&pool)
         .await?;
     assert_ne!(preview_of(&pool, &policy).await?.0, previews[0]);
-    // So does a new assignment: after an extension the old quota reset is stale.
+    // So does a new assignment: after an expiry change the old quota reset is stale.
     let mut tx = pool.begin().await?;
     mutations::execute(&mut tx, 1, Uuid::new_v4(), &operations[2]).await?;
     tx.commit().await?;
@@ -332,8 +344,33 @@ async fn quota_reset_credits_the_usage_found_at_apply_not_the_previewed_figure(
     Ok(())
 }
 
+async fn entitled(pool: &PgPool, user: i64) -> Result<(String, Option<i64>)> {
+    Ok(
+        sqlx::query_as("SELECT status,expires_at FROM singbox_entitlements($1) WHERE user_id=$2")
+            .bind(apsp_protocol::now_timestamp())
+            .bind(user)
+            .fetch_one(pool)
+            .await?,
+    )
+}
+
+async fn apply_now(pool: &PgPool, operation: &Operation) -> Result<Value> {
+    let mut tx = pool.begin().await?;
+    snapshots::snapshot(&mut tx, operation).await?;
+    let receipt = mutations::execute(&mut tx, 1, Uuid::new_v4(), operation).await?;
+    tx.commit().await?;
+    Ok(receipt)
+}
+
+async fn rejection(pool: &PgPool, user_id: i64, until: Validity) -> String {
+    match preview_of(pool, &Operation::SetValidity { user_id, until }).await {
+        Ok(_) => panic!("{until:?} must be rejected"),
+        Err(error) => error.to_string(),
+    }
+}
+
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
-async fn extending_an_expired_user_renews_from_now_instead_of_the_old_expiry(
+async fn a_new_expiry_reactivates_an_expired_user_and_never_lifts_the_time_limit(
     pool: PgPool,
 ) -> Result<()> {
     let (_, user, _, _) = fixture(&pool).await?;
@@ -345,31 +382,121 @@ async fn extending_an_expired_user_renews_from_now_instead_of_the_old_expiry(
     .bind(now)
     .execute(&pool)
     .await?;
-    let operation = Operation::ExtendValidity {
+    assert_eq!(entitled(&pool, user).await?.0, "expired");
+    let renew = Operation::SetValidity {
         user_id: user,
-        days: 30,
+        until: Validity::At(now + 30 * 86400),
     };
-    let (_, summary) = preview_of(&pool, &operation).await?;
-    assert_eq!(summary["extends_from_now"], true);
+    let (_, summary) = preview_of(&pool, &renew).await?;
     assert_eq!(summary["previous_expires_at"], now - 86400);
-    let previewed = summary["new_expires_at"]
-        .as_i64()
-        .expect("previewed expiry");
-    assert!(previewed >= now + 30 * 86400, "{summary}");
-    let mut tx = pool.begin().await?;
-    let receipt = mutations::execute(&mut tx, 1, Uuid::new_v4(), &operation).await?;
-    tx.commit().await?;
-    let applied = receipt["expires_at"].as_i64().expect("applied expiry");
-    assert!(applied >= now + 30 * 86400);
-    assert!(applied <= apsp_protocol::now_timestamp() + 30 * 86400);
-    assert_eq!(receipt["extended_from_now"], true);
-    let status: String =
-        sqlx::query_scalar("SELECT status FROM singbox_entitlements($1) WHERE user_id=$2")
-            .bind(apsp_protocol::now_timestamp())
-            .bind(user)
-            .fetch_one(&pool)
-            .await?;
-    assert_eq!(status, "active");
+    assert_eq!(summary["new_expires_at"], now + 30 * 86400);
+    assert!(
+        summary["effect"].as_str().unwrap().contains("恢复可用"),
+        "{summary}"
+    );
+    assert_eq!(
+        apply_now(&pool, &renew).await?["expires_at"],
+        now + 30 * 86400
+    );
+    assert_eq!(
+        entitled(&pool, user).await?,
+        ("active".into(), Some(now + 30 * 86400))
+    );
+
+    let never = Operation::SetValidity {
+        user_id: user,
+        until: Validity::Never,
+    };
+    let (_, summary) = preview_of(&pool, &never).await?;
+    assert_eq!(summary["new_expires_at"], Value::Null);
+    let receipt = apply_now(&pool, &never).await?;
+    assert_eq!(receipt["previous_expires_at"], now + 30 * 86400);
+    assert_eq!(receipt["expires_at"], Value::Null);
+    assert_eq!(entitled(&pool, user).await?, ("active".into(), None));
+    let stored: i64 = sqlx::query_scalar("SELECT a.expires_at FROM singbox_user_packages p JOIN singbox_package_assignments a ON a.id=p.assignment_id WHERE p.user_id=$1")
+        .bind(user).fetch_one(&pool).await?;
+    assert_eq!(stored, NO_EXPIRY);
+    assert!(
+        rejection(&pool, user, Validity::Never)
+            .await
+            .contains("没有变化")
+    );
+    // From no time limit back to a fixed expiry.
+    let receipt = apply_now(
+        &pool,
+        &Operation::SetValidity {
+            user_id: user,
+            until: Validity::At(now + 7 * 86400),
+        },
+    )
+    .await?;
+    assert_eq!(receipt["previous_expires_at"], Value::Null);
+    assert_eq!(entitled(&pool, user).await?.1, Some(now + 7 * 86400));
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
+async fn a_new_expiry_must_be_a_future_change_of_an_assigned_package(pool: PgPool) -> Result<()> {
+    let (_, user, _, _) = fixture(&pool).await?;
+    let now = apsp_protocol::now_timestamp();
+    let current = entitled(&pool, user).await?.1.expect("fixture expiry");
+    assert!(
+        rejection(&pool, user, Validity::At(now - 60))
+            .await
+            .contains("晚于当前时间")
+    );
+    assert!(
+        rejection(&pool, user, Validity::At(now))
+            .await
+            .contains("晚于当前时间")
+    );
+    assert!(
+        rejection(&pool, user, Validity::At(current))
+            .await
+            .contains("没有变化")
+    );
+    assert!(
+        rejection(&pool, user, Validity::At(NO_EXPIRY))
+            .await
+            .contains("超出范围")
+    );
+    // An earlier expiry is fine as long as it is still ahead.
+    let (_, summary) = preview_of(
+        &pool,
+        &Operation::SetValidity {
+            user_id: user,
+            until: Validity::At(now + 3600),
+        },
+    )
+    .await?;
+    assert!(
+        summary["effect"].as_str().unwrap().contains("提前"),
+        "{summary}"
+    );
+    // A package that has not started cannot end before its start.
+    sqlx::query(
+        "UPDATE singbox_package_assignments SET starts_at=$2+86400,expires_at=$2+172800 WHERE user_id=$1",
+    )
+    .bind(user)
+    .bind(now)
+    .execute(&pool)
+    .await?;
+    assert!(
+        rejection(&pool, user, Validity::At(now + 3600))
+            .await
+            .contains("开始时间")
+    );
+    // A user without a package has no expiry to change.
+    let bare: i64 = sqlx::query_scalar(
+        "INSERT INTO users(name,subscription_token) VALUES('No package','TEST_ONLY-no-package') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert!(
+        rejection(&pool, bare, Validity::Never)
+            .await
+            .contains("未分配套餐")
+    );
     Ok(())
 }
 

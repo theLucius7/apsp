@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { api, errorMessage } from '../../api'
 import { ErrorNotice, Loading, Modal } from '../../components'
 import { bytes, time } from '../../format'
+import { expiryText } from './validity'
+import type { Until } from './validity'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -9,14 +11,14 @@ import { Notice } from '@/components/panel'
 
 export type WorkflowOperation = { operation: 'policy_batch'; user_ids: number[]; group_ids: number[] }
   | { operation: 'replace_package'; user_id: number; package_group_id: number }
-  | { operation: 'extend_validity'; user_id: number; days: number }
+  | { operation: 'set_validity'; user_id: number; until: Until }
   | { operation: 'reset_quota'; user_id: number }
   | { operation: 'rotate_node_credentials'; user_id: number; node_ids: number[] }
   | { operation: 'migrate_node'; source_node_id: number; candidate_node_id: number }
   | { operation: 'failover'; source_chain_id: number; alternate_chain_id: number; group_ids: number[]; reason: string }
-type Summary = { effect: string; users?: { id: number; name: string }[]; affected_users?: ({ id: number; name: string } | number)[]; differences?: { user_id: number; added_nodes: number[]; removed_nodes: number[]; effective_nodes: number[] }[]; previous_expires_at?: number; new_expires_at?: number; extends_from_now?: boolean; credit_bytes?: string; plan?: { name: string; monthly_bytes: string | null; duration_days: number; timezone: string }; new_cycle?: { cycle_start: number; next_reset: number; used_bytes: string }; candidate_endpoint?: { host: string; port: number; sni: string }; source_server_id?: number; candidate_server_id?: number; affected_groups?: number[] }
+type Summary = { effect: string; users?: { id: number; name: string }[]; affected_users?: ({ id: number; name: string } | number)[]; differences?: { user_id: number; added_nodes: number[]; removed_nodes: number[]; effective_nodes: number[] }[]; previous_expires_at?: number | null; new_expires_at?: number | null; credit_bytes?: string; plan?: { name: string; monthly_bytes: string | null; duration_days: number; timezone: string }; new_cycle?: { cycle_start: number; next_reset: number; used_bytes: string }; candidate_endpoint?: { host: string; port: number; sni: string }; source_server_id?: number; candidate_server_id?: number; affected_groups?: number[] }
 type Preview = { id: string; expires_at: number; summary: Summary }
-const titles: Record<WorkflowOperation['operation'], string> = { policy_batch: '策略组分配预览', replace_package: '套餐更换预览', extend_validity: '有效期延长预览', reset_quota: '本期额度重置预览', rotate_node_credentials: '节点凭据轮换预览', migrate_node: '节点迁移预览', failover: '备选链路切换预览' }
+const titles: Record<WorkflowOperation['operation'], string> = { policy_batch: '策略组分配预览', replace_package: '套餐更换预览', set_validity: '有效期调整预览', reset_quota: '本期流量重置预览', rotate_node_credentials: '节点凭据轮换预览', migrate_node: '节点迁移预览', failover: '备选链路切换预览' }
 
 export default function OperationReview({ request, onClose, onApplied }: { request: WorkflowOperation; onClose: () => void; onApplied: () => void }) {
   const [preview, setPreview] = useState<Preview>()
@@ -50,7 +52,7 @@ export default function OperationReview({ request, onClose, onApplied }: { reque
         {summary.affected_users && <p>受影响用户：{summary.affected_users.map(user => typeof user === 'number' ? `#${user}` : `${user.name}（#${user.id}）`).join('、') || '暂无授权用户'}</p>}
         {summary.differences && <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>用户</TableHead><TableHead>新增节点</TableHead><TableHead>撤销节点</TableHead><TableHead>变更后节点数</TableHead></TableRow></TableHeader><TableBody>{summary.differences.map(change => <TableRow key={change.user_id}><TableCell>#{change.user_id}</TableCell><TableCell>{change.added_nodes.join('、') || '无'}</TableCell><TableCell>{change.removed_nodes.join('、') || '无'}</TableCell><TableCell>{change.effective_nodes.length}</TableCell></TableRow>)}</TableBody></Table></div>}
         {summary.plan && <dl className="my-5 grid gap-5 sm:grid-cols-2"><div><dt className="text-muted-foreground text-sm">新套餐</dt><dd className="mt-1.5 font-semibold wrap-anywhere">{summary.plan.name}</dd></div><div><dt className="text-muted-foreground text-sm">月度额度</dt><dd className="mt-1.5 font-semibold wrap-anywhere">{summary.plan.monthly_bytes === null ? '不限量' : bytes(summary.plan.monthly_bytes)}</dd></div><div><dt className="text-muted-foreground text-sm">有效期</dt><dd className="mt-1.5 font-semibold wrap-anywhere">确认时起 {summary.plan.duration_days} 天</dd></div><div><dt className="text-muted-foreground text-sm">时区</dt><dd className="mt-1.5 font-semibold wrap-anywhere">{summary.plan.timezone}</dd></div>{summary.new_cycle && <><div><dt className="text-muted-foreground text-sm">新账期已用（约）</dt><dd className="mt-1.5 font-semibold wrap-anywhere">{bytes(summary.new_cycle.used_bytes)}</dd></div><div><dt className="text-muted-foreground text-sm">下次重置</dt><dd className="mt-1.5 font-semibold wrap-anywhere">{time(summary.new_cycle.next_reset)}</dd></div></>}</dl>}
-        {summary.new_expires_at && <p>原到期：{summary.previous_expires_at ? time(summary.previous_expires_at) : '未知'}；延长后：{time(summary.new_expires_at)}{summary.extends_from_now ? '（原到期日已过，从确认应用时起算，此时间为约数）' : ''}。</p>}
+        {request.operation === 'set_validity' && <p>到期时间：{expiryText(summary.previous_expires_at)} → <strong className="font-semibold">{expiryText(summary.new_expires_at)}</strong>。</p>}
         {summary.credit_bytes !== undefined && <p>当前账期补偿：约 {bytes(summary.credit_bytes)}（预览时的已用量）。应用时按届时的实际已用量补偿，实际补偿量记入审计记录；之后到达的计量批次仍会计入。</p>}
         {summary.candidate_endpoint && <p>服务器 #{summary.source_server_id} → #{summary.candidate_server_id}；候选入口 {summary.candidate_endpoint.host}:{summary.candidate_endpoint.port}，证书域名 {summary.candidate_endpoint.sni || '未设置'}；影响策略组 {summary.affected_groups?.join('、') || '无'}。</p>}
         {request.operation === 'rotate_node_credentials' && <p>用户 #{request.user_id}，所选节点 {request.node_ids.join('、')}。订阅地址重置和节点凭据轮换是独立操作。</p>}
