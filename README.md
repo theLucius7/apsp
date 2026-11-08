@@ -37,7 +37,7 @@ apsp 用一个面板管理分散在各家的服务器：每台服务器安装一
 | 网络检测 | IP 信息、TCP 连接诊断、基础网络探测与路由追踪 | [网络检测](docs/network-workbench.md) |
 | 管理与安全 | 管理员权限、API 令牌、审计、自检，面板备份与恢复 | [管理与安全](docs/control-center.md) |
 
-可选插件：[DDNS](docs/ddns.md)（Cloudflare、腾讯云、阿里云、华为云）与[阿里云 CDT](docs/alicloud.md)。
+可选功能：[DDNS](docs/ddns.md)（Cloudflare、腾讯云、阿里云、华为云）与[阿里云 CDT](docs/alicloud.md)。
 
 **实验功能**：远程命令、交互式终端、日志与文件、批量任务与自动处置、故障事件，以及网络配置中的端口转发、隧道、组网与防火墙、云资源对照、吞吐与硬件测试等，保留可用但不再扩展，高风险操作将默认关闭。分级清单见[功能地图](docs/product-map.md#功能分级)。
 

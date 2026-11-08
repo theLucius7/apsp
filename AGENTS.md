@@ -1,6 +1,6 @@
 # 仓库协作规则
 
-本文只写现在生效的规则，每条规则在这里只有一个出处。产品范围与界面位置以[功能地图](docs/product-map.md)为准，对象与用语以[对象词典](docs/redesign/03-objects.md)为准，代码与数据的归属以[功能划分与逻辑结构](docs/architecture.md)为准，具体决策见[架构决策索引](docs/adr/README.md)。2026-11-08 整理前的原文、各项用户授权的来历与每条旧条款的去向见[协作规则整理记录](docs/history/agents-rules-20261108.md)。
+本文只写现在生效的规则，每条规则在这里只有一个出处。产品范围与界面位置以[功能地图](docs/product-map.md)为准，对象与用语以[对象词典](docs/redesign/03-objects.md)为准，代码与数据的归属以[功能划分与逻辑结构](docs/architecture.md)与[领域归属表](docs/domain-map.md)为准，具体决策见[架构决策索引](docs/adr/README.md)。2026-11-08 整理前的原文、各项用户授权的来历与每条旧条款的去向见[协作规则整理记录](docs/history/agents-rules-20261108.md)。
 
 遇到歧义，采用最简单且符合既定架构的方案，将问题、选择和理由记录到 `docs/open-questions.md` 后继续执行。
 
@@ -37,22 +37,22 @@
 
 详细架构约束见 `docs/adr/0001-declarative-snapshots.md` 至 `docs/adr/0011-loopback-local-api.md`。
 
-- `protocol` 定义面板与 Agent 的公共消息；`compiler` 将模型确定性地编译成完整配置包（代理配置编译库，ADR 0125 归 `proxy-nodes`）。
+- `protocol` 定义面板与 Agent 的公共消息；`compiler` 将模型确定性地编译成完整配置包（流量服务的配置编译库，客户端配置部分供服务权益使用）。
 - `agent-core` 的工作区依赖只能是 `adapter-sdk`、`protocol`；原生配置、身份、传输、对账、状态、遥测、流量和制品管理放在 core。
 - `adapter-*` 的工作区依赖只能是 `adapter-sdk`。适配器只负责无状态翻译，不自行持久化，不连接面板。
 - 只有 `agent` 二进制入口同时依赖 core 和具体适配器，并将适配器注册到 core。
 - `agent-core` 目录内任何文件不得出现 `singbox` 或 `sing-box` 字样；使用模块标识、能力和统一接口。
-- core 管服务器；sing-box 插件管代理用户、授权、订阅、用户流量、配额和周期，详见 [ADR 0023](docs/adr/0023-proxy-business-boundary.md) 与 [搬迁及启用兼容 ADR 0030](docs/adr/0030-singbox-plugin-business.md)。core 不得引用代理业务的 `user`、`subscription`、`quota`，含复数、蛇形和驼峰形式；CI 使用 `tools/check-core-boundary.py` 检查。系统账户与 SQLite 原生 API 仅允许检查器列出的具体表达式，不允许文件或整行豁免。
-- 面板分宿主、插件和组装三层，见 [ADR 0085](docs/adr/0085-rearchitecture-plugins-sources-chains.md)：
-  - 宿主 `crates/panel-host` 的工作区依赖只能是 `protocol`，通过插件接口与业务插件交互，不得命名具体业务插件；目录内同样禁止 sing-box 名称和上述代理业务词汇，例外表达式由检查器逐条列出。
-  - 业务插件（sing-box、DDNS、阿里云、费用）是 `plugins/*/panel/` 下的独立 crate，工作区依赖只能是宿主、`protocol`、`compiler` 和云 API 公共库 `plugins/cloud_api/panel/`，插件之间不互相依赖；插件业务不得移回宿主或组装 crate。诊断插件（IPQuality、NodeQuality、TcpQuality）暂由宿主经 `#[path]` 编入，按 ADR 0125 阶段 2 改为登记。
-  - sing-box 面板业务保持物理位于根 `plugins/singbox/panel/`，以独立 crate 暴露；组装 crate 只登记与再导出，不把业务实现搬回 `crates/panel/src/plugins/`。
-  - 只有 `apsp-panel` 同时依赖宿主和具体插件，负责登记插件并保存唯一的数据库基线。
-- 功能划分见 [ADR 0125](docs/adr/0125-feature-modules.md) 与[功能划分与逻辑结构](docs/architecture.md)：内核只提供机制，每个功能一个家，每张表一个所有者（`tools/feature-boundaries.toml`）。提交前运行 `python3 tools/check-feature-boundaries.py`：现有的跨功能访问记在 `tools/feature-boundaries.baseline`，只许减少；新增的跨功能 SQL、跨 crate `#[path]` 或前端跨功能引用会失败，应改为经所有者的接口，而不是加进清单。新增表必须在所有者清单里登记。
-- 管理界面和使用文档按[功能地图](docs/product-map.md)的六个工作区组织（[ADR 0126](docs/adr/0126-workspaces-language-and-addresses.md)；界面在重新设计步骤 4 之前仍是现有五个分组，对照见功能地图）：新增页面先确定所属功能模块与工作区，一台服务器的事放服务器详情。前端按功能目录组织，每个入口属于一个功能，侧栏分组由功能清单声明；同一对象允许多个入口，但只有一套模型和编辑逻辑。页面地址按用途命名、与入口一致；已发给代理用户或客户端的地址永不失效，控制台地址改名后旧地址改写到新地址并至少保留一个发布版本。降级功能在界面标“实验”，冻结功能默认隐藏、由面板设置显示，都放在所属工作区内；核心旅程不得依赖降级页面。
+- core 管服务器；代理用户、授权、订阅、用户流量、配额和周期属于服务权益领域（拆分前位于 sing-box crate），详见 [ADR 0023](docs/adr/0023-proxy-business-boundary.md) 与 [搬迁及启用兼容 ADR 0030](docs/adr/0030-singbox-plugin-business.md)。core 不得引用代理业务的 `user`、`subscription`、`quota`，含复数、蛇形和驼峰形式；CI 使用 `tools/check-core-boundary.py` 检查。系统账户与 SQLite 原生 API 仅允许检查器列出的具体表达式，不允许文件或整行豁免。
+- 面板是按领域组织的一体化系统，分平台、领域和应用三层，不再有插件（[ADR 0128](docs/adr/0128-domain-architecture.md)；九个领域、依赖顺序与写入规则见[功能划分与逻辑结构](docs/architecture.md)，逐项功能的归属见[领域归属表](docs/domain-map.md)）：
+  - 平台（`crates/panel-host`、`crates/cloud-api`）只放技术机制，工作区依赖只能是 `protocol`，不依赖任何领域；目录内禁止 sing-box 名称和上述代理业务词汇，例外表达式由检查器逐条列出。宿主里尚未迁出的领域代码已按领域登记所有者，阶段 B 迁出。
+  - 领域 crate（`crates/naming`、`crates/costs`、`crates/compiler`）只依赖平台、`protocol` 和依赖顺序中排在前面的领域 crate。`plugins/singbox/panel`（流量服务与服务权益，阶段 C 拆分）与 `plugins/alicloud/panel`（云能力，阶段 D 分回各领域）拆分前保持现有依赖、不再新增。领域代码不得移回平台或应用 crate。诊断代码（IPQuality、NodeQuality、TcpQuality）暂由宿主经 `#[path]` 编入，阶段 B 改为观测领域的代码。
+  - 只有应用 `apsp-panel` 组合平台与各领域、接线依赖倒置接口，并保存唯一的数据库基线。
+  - `tools/check-core-boundary.py` 检查每个 crate 的层级与依赖方向；新增 crate 先在检查器里登记层级。
+- 每张表只有一个所有者（`tools/feature-boundaries.toml`）。提交前运行 `python3 tools/check-feature-boundaries.py`：现有越界记在 `tools/feature-boundaries.baseline`，只许减少；新增的跨领域 SQL（写其他领域的表、读其他领域的私有表或平台的表、逆着依赖顺序读公开只读表）、跨 crate `#[path]` 或前端跨领域引用会失败，应改为经所有者的接口，而不是加进清单。新增表必须在所有者清单里登记。
+- 管理界面和使用文档按[功能地图](docs/product-map.md)的六个工作区组织（[ADR 0126](docs/adr/0126-workspaces-language-and-addresses.md)；界面在重新设计步骤 4 之前仍是现有五个分组，对照见功能地图）：新增页面先确定所属领域与工作区，一台服务器的事放服务器详情。前端按领域目录组织（阶段 E 迁移），每个入口属于一个领域，侧栏分组由清单声明；同一对象允许多个入口，但只有一套模型和编辑逻辑。页面地址按用途命名、与入口一致；已发给代理用户或客户端的地址永不失效，控制台地址改名后旧地址改写到新地址并至少保留一个发布版本。降级功能在界面标“实验”，冻结功能默认隐藏、由面板设置显示，都放在所属工作区内；核心旅程不得依赖降级页面。
 - 产品定位为自托管的服务器管理与配置面板，以节点、链路、用户与订阅为主线（[ADR 0087](docs/adr/0087-narrow-positioning-proxy-network.md)）。新功能必须服务节点、链路、用户与订阅，或运营这张网络所需的服务器、线路与费用感知；否则进入路线图候选池。按功能地图的分级处理现有功能：降级功能只修缺陷和安全问题，冻结功能只修安全问题，移除功能或数据需用户单独授权。
 - 系统管理员与代理用户分别命名；服务器网卡总流量留在 core。计量 `epoch` 只标记计数器重置，不得用作套餐周期。业务搬迁保留用户 ID、令牌、旧订阅路径、节点凭据、授权和历史流量，数据库表先不改名。
-- 诊断任务生命周期、资源预算、持久化、取消及历史由共用服务管理；插件只转换参数、执行和解析报告，见 [ADR 0028](docs/adr/0028-shared-diagnostic-job-service.md)。后续插件登记代码可以经独立审查和相称验证后合入准备；NodeQuality 迁移及前置阶段的实机验收通过后，才能签收、正式发布或部署后续新增诊断能力。
+- 诊断任务生命周期、资源预算、持久化、取消及历史由观测领域的共用服务管理；各诊断实现只转换参数、执行和解析报告，见 [ADR 0028](docs/adr/0028-shared-diagnostic-job-service.md)。后续诊断能力的接入代码可以经独立审查和相称验证后合入准备；NodeQuality 迁移及前置阶段的实机验收通过后，才能签收、正式发布或部署后续新增诊断能力。
 - 特权操作必须经过 `Privileged` trait，服务管理经过 `ServiceManager` trait；外部运行时是独立的系统服务（Linux systemd/OpenRC、macOS launchd、FreeBSD rc.d、Windows 计划任务）。
 - core 按 `identity`、`transport`、`reconcile`、`state`、`telemetry`、`usage`、`artifacts`、`system` 拆分，先用单文件，超过约 400 行再按需拆目录。
 
@@ -85,11 +85,11 @@
 - **Agent 与平台**（ADR 0017、0021、0022）：OpenRC 服务；Agent 高频监控、任务、自动更新及非 Linux 常驻部署；特权 helper 仅保留 trait 边界，保留重复安装升级；制品签名与编译时发布信任根按 ADR 0017 执行。
 - **Agent 下载与公开看板**（ADR 0038）：Agent 二进制必须从 GitHub 下载，不能由面板提供；安装和自更新保留独立验签，镜像请求不携带设备凭据；运行时与配置仍经面板；公开看板使用只读白名单及统一隐藏校验，流量矫正不改代理业务账本。
 - **服务器成本与网卡配额**（ADR 0023、0036）：服务器成本、续费到期、按账单日计算的网卡配额与可配置的轻量周期拨测按 ADR 0023 分层。
-- **代理业务**（ADR 0023、0035、0040、0043–0045、0076、0112）：代理用户配额、重置周期和到期属于 sing-box 插件。权限组与套餐分别分配，套餐使用不可变快照和原计量账本，不扩大为平台全局用户；不能把清空计量 epoch 当作重置套餐，也不能把订阅过滤当作运行时停用；保持旧用户/凭据兼容，不混跑新旧 publisher。链路保持单运行时、独立公开入口、线性无环路径、入口单次计量及内部秘密不进入用户订阅，不扩展自动出口池。外部节点沿用提供方凭据与独立身份版本，不伪造 Agent 流量或配额执行能力；来源导入先预览再采用，新增节点不自动授权；用户只经策略组获得资源。
+- **代理业务**（ADR 0023、0035、0040、0043–0045、0076、0112）：代理用户配额、重置周期和到期属于服务权益。权限组与套餐分别分配，套餐使用不可变快照和原计量账本，不扩大为平台全局用户；不能把清空计量 epoch 当作重置套餐，也不能把订阅过滤当作运行时停用；保持旧用户/凭据兼容，不混跑新旧 publisher。链路保持单运行时、独立公开入口、线性无环路径、入口单次计量及内部秘密不进入用户订阅，不扩展自动出口池。外部节点沿用提供方凭据与独立身份版本，不伪造 Agent 流量或配额执行能力；来源导入先预览再采用，新增节点不自动授权；用户只经策略组获得资源。
 - **订阅格式与专属地址**（ADR 0101、0103）：Clash Meta（mihomo）YAML 由与 sing-box 订阅相同的客户端出站转换，不能等价表达的节点不写入并在文件中说明；同一订阅地址按 User-Agent 识别 Clash 客户端，显式格式参数优先；不调用第三方转换服务。每个用户独立、可重置的随机主机名与路径默认关闭，旧 `/sub/{token}` 由管理员决定何时关闭；真实令牌只进入面板的加密凭据，不得写入仓库。
-- **Passkey 与代理用户入口**（ADR 0059、0107）：通用 WebAuthn 服务与管理员包装留在面板，代理用户入口、开通链接及独立会话位于 sing-box 插件；不增加平台全局用户或公开注册；保留密码/TOTP 和旧订阅，开通/恢复不得使用订阅令牌。
+- **Passkey 与代理用户入口**（ADR 0059、0107）：通用 WebAuthn 服务与管理员包装留在面板，代理用户入口、开通链接及独立会话属于服务权益；不增加平台全局用户或公开注册；保留密码/TOTP 和旧订阅，开通/恢复不得使用订阅令牌。
 - **管理员**（ADR 0082、0107）：具名管理员分所有者、运维与只读，各自使用自己的 Passkey。
 - **监控与通知**（ADR 0039、0047）：复用现有 Agent 拨测协议；通知仅提醒，不执行付款、停用或远程命令；实时样本与持久化确认分开，历史聚合不改变网卡或代理业务账本；汇率使用可追溯来源、不编造缺失币种，匿名看板不公开成本；Telegram 与 Webhook 分渠道投递，测试不发送真实通知。
-- **DDNS**（ADR 0048、0056、0060、0110）：插件位于 `plugins/ddns/panel/`，规则自身的启用状态是唯一开关；复用 Agent 已上报的 IP，面板持有 API Token 并执行有限 DNS 对账，凭据不发给 Agent 或公开界面；无有效地址或设备离线时保留解析；一次表单以事务创建 A/AAAA 两条独立规则。
-- **阿里云**（ADR 0057、0058、0093、0116、0121）：凭据留在面板插件；更换 EIP 并释放旧地址需要管理员确认；CDT 不增加每日汇总通知，CDT 总量已包含 IPv6，不另行实现 IPv6 流量采集。
-- **平台扩展**（ADR 0077–0082）：各领域复用现有插件、共用诊断生命周期、特权与服务管理边界；不能将节点代理用户移到 core。
+- **DDNS**（ADR 0048、0056、0060、0110）：属于名称与证书领域 `crates/naming`，规则自身的启用状态是唯一开关；复用 Agent 已上报的 IP，面板持有 API Token 并执行有限 DNS 对账，凭据不发给 Agent 或公开界面；无有效地址或设备离线时保留解析；一次表单以事务创建 A/AAAA 两条独立规则。
+- **阿里云**（ADR 0057、0058、0093、0116、0121）：凭据留在面板；更换 EIP 并释放旧地址需要管理员确认；CDT 不增加每日汇总通知，CDT 总量已包含 IPv6，不另行实现 IPv6 流量采集。
+- **平台扩展**（ADR 0077–0082）：各领域复用已有的领域能力、共用诊断生命周期、特权与服务管理边界；不能将节点代理用户移到 core。

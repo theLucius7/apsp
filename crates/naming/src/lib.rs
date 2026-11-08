@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
-//! DDNS plugin: reconciles DNS records with addresses reported by devices.
+//! Names and certificates domain (ADR 0128): DNS accounts and records, DDNS rules that
+//! keep records pointed at device addresses, and DNS-01 validation records.
 
 mod api;
 mod cloudflare;

@@ -1,10 +1,14 @@
-//! Compiled plugin set: the only place that names concrete business plugins.
+//! Compiled domain set: the only place that names the concrete domain crates and wires
+//! them into the platform hooks (ADR 0128; the hooks become typed interfaces in stage B).
 
 pub use apsp_cloud_api as cloud_api;
+pub use apsp_costs as costs;
+// Previous public names of the costs and naming crates; `apsp_panel::*` paths stay valid.
+pub use apsp_costs as expenses;
+pub use apsp_naming as ddns;
+pub use apsp_naming as naming;
 pub use apsp_panel_host::plugin_api::ActivityEvidence;
 pub use apsp_plugin_alicloud as alicloud;
-pub use apsp_plugin_ddns as ddns;
-pub use apsp_plugin_expenses as expenses;
 pub use apsp_plugin_singbox as singbox;
 
 use std::collections::BTreeMap;
@@ -118,7 +122,7 @@ impl PanelPlugins for Compiled {
         state: &'a AppState,
         input: DnsChallenge<'a>,
     ) -> HookFuture<'a, ApiResult<String>> {
-        Box::pin(ddns::dns01::present(
+        Box::pin(naming::dns01::present(
             state,
             input.rule,
             input.challenge,
@@ -133,7 +137,7 @@ impl PanelPlugins for Compiled {
         input: DnsChallenge<'a>,
         record: Option<&'a str>,
     ) -> HookFuture<'a, ApiResult<()>> {
-        Box::pin(ddns::dns01::cleanup(
+        Box::pin(naming::dns01::cleanup(
             state,
             input.rule,
             input.challenge,
@@ -221,7 +225,7 @@ impl PanelPlugins for Compiled {
 
 static COMPILED: Compiled = Compiled;
 
-/// Registers the compiled plugins with the host; repeated calls are harmless.
+/// Registers the compiled domains with the platform; repeated calls are harmless.
 pub fn install() {
     plugin_api::install(&COMPILED);
 }
@@ -229,8 +233,8 @@ pub fn install() {
 pub fn router() -> Router<AppState> {
     install();
     singbox::router()
-        .merge(ddns::routes())
-        .merge(expenses::routes())
+        .merge(naming::routes())
+        .merge(costs::routes())
         .merge(alicloud::routes())
         .merge(alicloud::security_groups_routes())
 }
@@ -238,17 +242,18 @@ pub fn router() -> Router<AppState> {
 pub async fn run(state: AppState) {
     use apsp_panel_host::maintenance::supervise;
     install();
-    // Supervise each plugin separately: one plugin's panic must not stop the others.
+    // Supervise each domain worker separately: one panic must not stop the others. The
+    // supervisor names are kept so worker heartbeats and logs stay continuous.
     let pool = state.pool.clone();
     let expense_state = state.clone();
     tokio::join!(
         supervise("sing-box", move || singbox::run(state.clone())),
         supervise("ddns", {
             let pool = pool.clone();
-            move || ddns::run(pool.clone())
+            move || naming::run(pool.clone())
         }),
         supervise("alicloud", move || alicloud::run(pool.clone())),
-        supervise("expenses", move || expenses::run(expense_state.clone()))
+        supervise("expenses", move || costs::run(expense_state.clone()))
     );
 }
 

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Report code that crosses feature boundaries and fail on new crossings (ADR 0125).
+"""Report code that crosses domain boundaries and fail on new crossings (ADR 0128).
 
 Ownership comes from tools/feature-boundaries.toml: every panel table has one owner, and
-every Rust and web source path belongs to the kernel, a feature or the shared layer.
-Checked crossings:
+every Rust and web source path belongs to the platform, a domain or the application layer.
+Owners are ordered by dependency (docs/architecture.md section 5.1). Checked crossings:
 
-- sql: Rust code reading or writing a table owned by another feature, the kernel reading a
-  feature's table, or a feature writing a kernel table (features may read kernel tables);
+- sql: Rust code reading or writing a table of another owner. The only exception is reading
+  a published identity table whose owner comes in an earlier group of the order;
 - path: `#[path]` including a source file from another crate;
-- import: a web feature importing another feature, or the shared layer importing a feature
-  or the shell.
+- import: a web domain importing another domain or the application shell, or the platform
+  layer importing a domain or the shell. The shell composes and may import everything.
 
 Known crossings are listed in tools/feature-boundaries.baseline. The check fails when a
 crossing is not in that list; crossings that disappear are reported so the list can shrink
@@ -61,6 +61,25 @@ def table_owner(name, rules):
             elif score == best[0] and owner != best[1]:
                 raise ValueError(f"table {name} matches owners {best[1]} and {owner} equally")
     return best[1] if best else None
+
+
+def ranks(config):
+    """Dependency group index of every owner."""
+    rank = {}
+    for index, group in enumerate(config["domains"]["order"]):
+        for owner in group:
+            if owner in rank:
+                raise ValueError(f"owner {owner} appears twice in the dependency order")
+            rank[owner] = index
+    return rank
+
+
+def sql_allowed(mode, table, source, target, rank, published):
+    """Owners use their own tables and read published tables of earlier groups only."""
+    if source == target:
+        return True
+    return (mode == "read" and table in published
+            and rank.get(target, len(rank)) < rank.get(source, -1))
 
 
 def path_owner(rel, mapping):
@@ -135,6 +154,7 @@ def crate_root(path):
 
 def rust_crossings(root, config, owners):
     crossings = set()
+    rank, published = ranks(config), set(config["domains"].get("published", []))
     exempt = config.get("rust_exempt", {}).get("paths", [])
     for path in sorted(root.glob("**/*.rs")):
         rel = path.relative_to(root).as_posix()
@@ -152,9 +172,8 @@ def rust_crossings(root, config, owners):
         for literal in rust_strings(text):
             for mode, table in sql_accesses(literal, owners):
                 target = owners[table]
-                if target == owner or (target == "kernel" and mode == "read"):
-                    continue
-                crossings.add(f"sql\t{rel}\t{mode}\t{table}\t{owner}->{target}")
+                if not sql_allowed(mode, table, owner, target, rank, published):
+                    crossings.add(f"sql\t{rel}\t{mode}\t{table}\t{owner}->{target}")
     return crossings
 
 
@@ -185,22 +204,31 @@ def web_crossings(root, config):
                 continue
             target_rel = target_path.relative_to(root.resolve()).as_posix()
             target = path_owner(target_rel, config["web"])
-            if source == target or target == "shared" or source == "shell":
+            if source == target or target == "platform" or source == "app":
                 continue
-            if source == "shared" or target == "shell" or source != target:
-                crossings.add(f"import\t{rel}\t{target_rel}\t{source}->{target}")
+            crossings.add(f"import\t{rel}\t{target_rel}\t{source}->{target}")
     return crossings
 
 
 def ownership(root, config):
+    """Owner of every schema object, plus configuration problems."""
     known = schema_objects((root / SCHEMA.relative_to(ROOT)).read_text())
     owners, problems = {}, []
+    try:
+        rank = ranks(config)
+    except (KeyError, ValueError) as error:
+        return owners, [f"invalid dependency order in {CONFIG.relative_to(ROOT)}: {error}"]
     for name in sorted(known):
         owner = table_owner(name, config["tables"])
         if owner is None:
             problems.append(f"table {name} has no owner in {CONFIG.relative_to(ROOT)}")
         else:
             owners[name] = owner
+    named = set(config["tables"]) | set(config.get("rust", {}).values()) | set(config.get("web", {}).values())
+    problems += [f"owner {owner} is not in the dependency order in {CONFIG.relative_to(ROOT)}"
+                 for owner in sorted(named - set(rank))]
+    problems += [f"published table {name} is not in the schema"
+                 for name in config["domains"].get("published", []) if name not in known]
     return owners, problems
 
 
@@ -211,7 +239,7 @@ def read_baseline(path):
 
 
 def write_baseline(path, entries):
-    header = ["# Known feature-boundary crossings (ADR 0125). Generated by tools/check-feature-boundaries.py --update.",
+    header = ["# Known domain-boundary crossings (ADR 0128). Generated by tools/check-feature-boundaries.py --update.",
               "# Entries may only be removed; new crossings fail the check."]
     path.write_text("\n".join(header + sorted(entries)) + "\n")
 
@@ -243,7 +271,7 @@ def main(argv=None):
     if args.summary:
         print(summary(crossings))
     if new and baseline_path.exists():
-        print(f"{len(new)} new feature-boundary crossing(s); move the code or go through the owner's interface:", file=sys.stderr)
+        print(f"{len(new)} new domain-boundary crossing(s); move the code or go through the owner's interface:", file=sys.stderr)
         print("\n".join(sorted(new)), file=sys.stderr)
         return 1
     if args.update or not baseline_path.exists():
@@ -252,7 +280,7 @@ def main(argv=None):
         return 0
     if fixed:
         print(f"{len(fixed)} crossing(s) no longer present; run with --update to shrink the baseline.")
-    print(f"feature boundaries: {len(crossings)} known crossing(s), none new.")
+    print(f"domain boundaries: {len(crossings)} known crossing(s), none new.")
     return 0
 
 

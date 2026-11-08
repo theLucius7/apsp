@@ -10,33 +10,45 @@ boundaries = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(boundaries)
 
 CONFIG = textwrap.dedent('''
+    [domains]
+    order = [["platform"], ["governance"], ["resources"], ["networking", "naming"], ["traffic"],
+             ["access"], ["operations"], ["app"]]
+    published = ["servers", "users"]
+
     [tables]
-    kernel = ["servers", "management_audit"]
-    proxy = ["singbox_*", "users"]
-    dns = ["dns_*"]
-    lab = ["operations_*"]
+    platform = ["notification_outbox"]
+    governance = ["management_audit"]
+    resources = ["servers"]
+    naming = ["dns_*"]
+    traffic = ["singbox_*"]
+    access = ["users"]
+    operations = ["operations_*"]
 
     [rust]
-    "crates/panel-host/src" = "kernel"
-    "crates/panel-host/src/operations" = "lab"
-    "plugins/singbox" = "proxy"
-    "plugins/ddns" = "dns"
+    "crates/panel-host/src" = "platform"
+    "crates/panel-host/src/servers.rs" = "resources"
+    "crates/panel-host/src/operations" = "operations"
+    "crates/naming" = "naming"
+    "crates/panel/src" = "app"
+    "plugins/singbox" = "traffic"
+    "plugins/singbox/panel/src/users.rs" = "access"
 
     [rust_exempt]
     paths = ["crates/panel/tests"]
 
     [web]
-    "web/src" = "shared"
-    "web/src/app" = "shell"
-    "web/src/plugins/singbox" = "proxy"
-    "web/src/plugins/ddns" = "dns"
+    "web/src" = "platform"
+    "web/src/app" = "app"
+    "web/src/plugins/singbox" = "traffic"
+    "web/src/plugins/ddns" = "naming"
 ''')
 SCHEMA = textwrap.dedent('''
-    CREATE TABLE public.servers (id bigint);
+    CREATE TABLE public.notification_outbox (id bigint);
     CREATE TABLE public.management_audit (id bigint);
+    CREATE TABLE public.servers (id bigint);
+    CREATE TABLE public.dns_records (id bigint);
     CREATE TABLE public.singbox_nodes (id bigint);
     CREATE TABLE public.users (id bigint);
-    CREATE TABLE public.dns_records (id bigint);
     CREATE TABLE public.operations_jobs (id bigint);
     CREATE VIEW public.singbox_live AS SELECT 1;
 ''')
@@ -44,23 +56,49 @@ SCHEMA = textwrap.dedent('''
 
 class OwnershipTests(unittest.TestCase):
     def test_exact_names_win_over_prefixes_and_the_longest_prefix_wins(self):
-        rules = {"kernel": ["operations_backup_records"], "lab": ["operations_*"], "cloud": ["operations_hetzner_*"]}
-        self.assertEqual(boundaries.table_owner("operations_backup_records", rules), "kernel")
-        self.assertEqual(boundaries.table_owner("operations_hetzner_accounts", rules), "cloud")
-        self.assertEqual(boundaries.table_owner("operations_jobs", rules), "lab")
+        rules = {"governance": ["operations_backup_records"], "operations": ["operations_*"],
+                 "resources": ["operations_hetzner_*"]}
+        self.assertEqual(boundaries.table_owner("operations_backup_records", rules), "governance")
+        self.assertEqual(boundaries.table_owner("operations_hetzner_accounts", rules), "resources")
+        self.assertEqual(boundaries.table_owner("operations_jobs", rules), "operations")
         self.assertIsNone(boundaries.table_owner("servers", rules))
 
     def test_equal_claims_are_rejected(self):
         with self.assertRaises(ValueError):
-            boundaries.table_owner("dns_records", {"dns": ["dns_*"], "lab": ["dns_*"]})
+            boundaries.table_owner("dns_records", {"naming": ["dns_*"], "networking": ["dns_*"]})
 
     def test_longest_path_prefix_decides_the_owner(self):
-        mapping = {"crates/panel-host/src": "kernel", "crates/panel-host/src/operations": "lab",
-                   "crates/panel-host/src/operations/backups.rs": "kernel"}
-        self.assertEqual(boundaries.path_owner("crates/panel-host/src/operations/backups.rs", mapping), "kernel")
-        self.assertEqual(boundaries.path_owner("crates/panel-host/src/operations/jobs.rs", mapping), "lab")
-        self.assertEqual(boundaries.path_owner("crates/panel-host/src/servers.rs", mapping), "kernel")
+        mapping = {"crates/panel-host/src": "platform", "crates/panel-host/src/operations": "operations",
+                   "crates/panel-host/src/operations/backups.rs": "governance"}
+        self.assertEqual(boundaries.path_owner("crates/panel-host/src/operations/backups.rs", mapping), "governance")
+        self.assertEqual(boundaries.path_owner("crates/panel-host/src/operations/jobs.rs", mapping), "operations")
+        self.assertEqual(boundaries.path_owner("crates/panel-host/src/servers.rs", mapping), "platform")
         self.assertIsNone(boundaries.path_owner("web/src/App.tsx", mapping))
+
+    def test_dependency_groups_rank_owners_once(self):
+        config = boundaries.tomllib.loads(CONFIG)
+        rank = boundaries.ranks(config)
+        self.assertEqual(rank["platform"], 0)
+        self.assertEqual(rank["networking"], rank["naming"])
+        self.assertLess(rank["traffic"], rank["access"])
+        config["domains"]["order"].append(["naming"])
+        with self.assertRaises(ValueError):
+            boundaries.ranks(config)
+
+    def test_published_reads_follow_the_dependency_order(self):
+        rank = boundaries.ranks(boundaries.tomllib.loads(CONFIG))
+        published = {"servers", "users"}
+        allowed = boundaries.sql_allowed
+        self.assertTrue(allowed("write", "servers", "resources", "resources", rank, published))
+        self.assertTrue(allowed("read", "servers", "traffic", "resources", rank, published))
+        self.assertFalse(allowed("write", "servers", "traffic", "resources", rank, published))
+        # Reading a later owner's identity, or a peer's, is a dependency in the wrong direction.
+        self.assertFalse(allowed("read", "users", "traffic", "access", rank, published))
+        self.assertFalse(allowed("read", "servers", "platform", "resources", rank, published))
+        self.assertFalse(allowed("read", "dns_records", "networking", "naming", rank, published | {"dns_records"}))
+        # Private tables and platform tables are never read directly by another owner.
+        self.assertFalse(allowed("read", "dns_records", "operations", "naming", rank, published))
+        self.assertFalse(allowed("read", "notification_outbox", "naming", "platform", rank, published))
 
 
 class SqlTests(unittest.TestCase):
@@ -92,12 +130,12 @@ class SqlTests(unittest.TestCase):
 
 
 class TreeTests(unittest.TestCase):
-    def tree(self, files):
+    def tree(self, files, config=CONFIG):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         root = Path(temp.name)
         (root / "tools").mkdir()
-        (root / "tools/feature-boundaries.toml").write_text(CONFIG)
+        (root / "tools/feature-boundaries.toml").write_text(config)
         (root / "crates/panel/migrations").mkdir(parents=True)
         (root / "crates/panel/migrations/0001_current.sql").write_text(SCHEMA)
         for relative, text in files.items():
@@ -116,43 +154,56 @@ class TreeTests(unittest.TestCase):
         root = self.tree({
             "crates/panel-host/Cargo.toml": "",
             "crates/panel-host/src/search.rs": 'const Q: &str = "SELECT id FROM dns_records";',
+            "crates/panel-host/src/agent.rs": 'const Q: &str = "SELECT id FROM servers";',
             "crates/panel-host/src/servers.rs": 'const Q: &str = "UPDATE servers SET id=1";',
             "crates/panel-host/src/operations/jobs.rs": 'const Q: &str = "SELECT id FROM operations_jobs JOIN servers ON true";',
+            "crates/naming/Cargo.toml": "",
+            "crates/naming/src/outbox.rs": 'const Q: &str = "INSERT INTO notification_outbox(id) VALUES(1)";',
+            "crates/panel/Cargo.toml": "",
+            "crates/panel/src/main.rs": 'const A: &str = "SELECT id FROM users"; const B: &str = "DELETE FROM users";',
             "plugins/singbox/panel/Cargo.toml": "",
             "plugins/singbox/panel/src/publish.rs": 'const A: &str = "SELECT id FROM servers"; const B: &str = "INSERT INTO management_audit(id) VALUES(1)";',
-            "plugins/singbox/panel/src/hosts.rs": 'const A: &str = "SELECT id FROM dns_records";',
+            "plugins/singbox/panel/src/hosts.rs": 'const A: &str = "SELECT id FROM dns_records JOIN users ON true";',
+            "plugins/singbox/panel/src/users.rs": 'const A: &str = "UPDATE users SET id=1 FROM singbox_nodes, servers";',
             "plugins/singbox/panel/src/tests.rs": 'const A: &str = "INSERT INTO servers(id) VALUES(1)";',
             "crates/panel/tests/all.rs": 'const A: &str = "DELETE FROM dns_records";',
         })
         self.assertEqual(self.crossings(root), {
-            "sql\tcrates/panel-host/src/search.rs\tread\tdns_records\tkernel->dns",
-            "sql\tplugins/singbox/panel/src/publish.rs\twrite\tmanagement_audit\tproxy->kernel",
-            "sql\tplugins/singbox/panel/src/hosts.rs\tread\tdns_records\tproxy->dns",
+            "sql\tcrates/panel-host/src/search.rs\tread\tdns_records\tplatform->naming",
+            "sql\tcrates/panel-host/src/agent.rs\tread\tservers\tplatform->resources",
+            "sql\tcrates/naming/src/outbox.rs\twrite\tnotification_outbox\tnaming->platform",
+            "sql\tcrates/panel/src/main.rs\twrite\tusers\tapp->access",
+            "sql\tplugins/singbox/panel/src/publish.rs\twrite\tmanagement_audit\ttraffic->governance",
+            "sql\tplugins/singbox/panel/src/hosts.rs\tread\tdns_records\ttraffic->naming",
+            "sql\tplugins/singbox/panel/src/hosts.rs\tread\tusers\ttraffic->access",
+            "sql\tplugins/singbox/panel/src/users.rs\tread\tsingbox_nodes\taccess->traffic",
         })
 
     def test_path_includes_across_crates_are_reported(self):
         root = self.tree({
             "crates/panel-host/Cargo.toml": "",
-            "crates/panel-host/src/diagnostics.rs": '#[path = "../../../plugins/ddns/panel/mod.rs"]\nmod ddns;\n#[path = "local.rs"]\nmod local;',
+            "crates/panel-host/src/diagnostics.rs": '#[path = "../../naming/src/lib.rs"]\nmod naming;\n#[path = "local.rs"]\nmod local;',
             "crates/panel-host/src/local.rs": "",
-            "plugins/ddns/panel/mod.rs": "",
+            "crates/naming/Cargo.toml": "",
+            "crates/naming/src/lib.rs": "",
         })
         self.assertEqual(self.crossings(root), {
-            "path\tcrates/panel-host/src/diagnostics.rs\tplugins/ddns/panel/mod.rs\tkernel->dns"})
+            "path\tcrates/panel-host/src/diagnostics.rs\tcrates/naming/src/lib.rs\tplatform->naming"})
 
-    def test_web_imports_between_features_and_into_the_shell_are_reported(self):
+    def test_web_imports_between_domains_and_into_the_shell_are_reported(self):
         root = self.tree({
             "web/src/components.tsx": "import { tiers } from './app/tiers'\nimport { Node } from './plugins/singbox/types'",
             "web/src/app/tiers.ts": "export const tiers = 1",
             "web/src/app/routes.ts": "import { Node } from '../plugins/singbox/types'",
             "web/src/plugins/singbox/types.ts": "export type Node = 1",
-            "web/src/plugins/singbox/Domain.tsx": "import { Account } from '../ddns/Accounts'\nimport { Panel } from '@/components'",
+            "web/src/plugins/singbox/Domain.tsx": "import { Account } from '../ddns/Accounts'\nimport { Panel } from '@/components'\nimport { tiers } from '../../app/tiers'",
             "web/src/plugins/ddns/Accounts.tsx": "export type Account = 1",
         })
         self.assertEqual(self.crossings(root), {
-            "import\tweb/src/components.tsx\tweb/src/app/tiers.ts\tshared->shell",
-            "import\tweb/src/components.tsx\tweb/src/plugins/singbox/types.ts\tshared->proxy",
-            "import\tweb/src/plugins/singbox/Domain.tsx\tweb/src/plugins/ddns/Accounts.tsx\tproxy->dns",
+            "import\tweb/src/components.tsx\tweb/src/app/tiers.ts\tplatform->app",
+            "import\tweb/src/components.tsx\tweb/src/plugins/singbox/types.ts\tplatform->traffic",
+            "import\tweb/src/plugins/singbox/Domain.tsx\tweb/src/plugins/ddns/Accounts.tsx\ttraffic->naming",
+            "import\tweb/src/plugins/singbox/Domain.tsx\tweb/src/app/tiers.ts\ttraffic->app",
         })
 
     def test_tables_without_an_owner_fail(self):
@@ -162,6 +213,19 @@ class TreeTests(unittest.TestCase):
         owners, problems = boundaries.ownership(root, config)
         self.assertEqual(problems, ["table orphans has no owner in tools/feature-boundaries.toml"])
 
+    def test_unknown_owners_and_published_tables_fail(self):
+        config = CONFIG.replace('"crates/naming" = "naming"', '"crates/naming" = "nameing"')
+        config = config.replace('published = ["servers", "users"]', 'published = ["servers", "accounts"]')
+        root = self.tree({}, config)
+        owners, problems = boundaries.ownership(root, boundaries.tomllib.loads(config))
+        self.assertEqual(problems, ["owner nameing is not in the dependency order in tools/feature-boundaries.toml",
+                                    "published table accounts is not in the schema"])
+        broken = boundaries.tomllib.loads(CONFIG)
+        broken["domains"]["order"].append(["access"])
+        owners, problems = boundaries.ownership(root, broken)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("appears twice", problems[0])
+
     def test_the_baseline_only_shrinks(self):
         root = self.tree({
             "plugins/singbox/panel/Cargo.toml": "",
@@ -169,7 +233,7 @@ class TreeTests(unittest.TestCase):
         })
         baseline = root / "tools/feature-boundaries.baseline"
         self.assertEqual(boundaries.main(["--root", str(root)]), 0)
-        self.assertIn("proxy->dns", baseline.read_text())
+        self.assertIn("traffic->naming", baseline.read_text())
         # A new crossing fails and is not added, even with --update.
         (root / "plugins/singbox/panel/src/more.rs").write_text('const B: &str = "DELETE FROM dns_records";')
         self.assertEqual(boundaries.main(["--root", str(root)]), 1)
@@ -180,7 +244,7 @@ class TreeTests(unittest.TestCase):
             (root / "plugins/singbox/panel/src" / name).write_text("")
         self.assertEqual(boundaries.main(["--root", str(root)]), 0)
         self.assertEqual(boundaries.main(["--root", str(root), "--update"]), 0)
-        self.assertNotIn("proxy->dns", baseline.read_text())
+        self.assertNotIn("traffic->naming", baseline.read_text())
 
 
 if __name__ == "__main__":

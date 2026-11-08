@@ -1,13 +1,13 @@
 # 仓库目录与维护约定
 
-本页说明现有代码与文档的位置；目标结构与迁移计划见[功能划分与逻辑结构](architecture.md)（ADR 0125）。使用方法从[文档导航](README.md)进入，架构和范围以 [AGENTS.md](../AGENTS.md) 与[各项 ADR](adr/README.md) 为准。
+本页说明现有代码与文档的位置；目标结构与迁移阶段见[功能划分与逻辑结构](architecture.md)（ADR 0128），逐项功能的领域见[领域归属表](domain-map.md)。使用方法从[文档导航](README.md)进入，架构和范围以 [AGENTS.md](../AGENTS.md) 与[各项 ADR](adr/README.md) 为准。
 
 ## 顶层目录
 
 | 路径 | 职责 |
 | --- | --- |
-| `crates/` | Rust 工作区：公共协议、配置编译、面板、Agent、适配器及原生 TCP 工具 |
-| `plugins/` | 插件面板业务、外部工具包装及固定来源材料；插件业务不回迁到核心 |
+| `crates/` | Rust 工作区：公共协议、面板平台、领域 crate、面板应用、Agent、适配器及原生 TCP 工具 |
+| `plugins/` | 尚未拆分的 sing-box 与阿里云 crate（阶段 C、D 拆回各领域）、诊断工具的面板代码与包装脚本、固定来源材料；不再新增插件 |
 | `web/src/` | React 界面（中文为源语言，英文为翻译，[ADR 0127](adr/0127-chinese-source-language.md)）；前端依赖与构建由 Bun 管理 |
 | `web/dist/` | 仅在本地或构建环境生成、由面板嵌入的产物；不提交 Git，不手工编辑 |
 | `deploy/` | Compose、服务定义、安装模板、生成后的独立 bootstrap 入口和发布公钥 |
@@ -25,25 +25,28 @@
 | 模块 | 职责与依赖方向 |
 | --- | --- |
 | `protocol` | 面板与 Agent 的共享消息、能力、签名制品契约 |
-| `compiler` | 从业务模型确定性地生成完整运行时配置包 |
-| `panel-host` | 面板宿主：HTTP 服务、管理员会话、服务器、遥测、通知、任务、共用诊断服务和插件接口；工作区依赖仅 `protocol`，不认识具体业务插件 |
-| `plugins/*/panel` | 业务插件 crate（sing-box、DDNS、阿里云、费用）及云 API 公共库；工作区依赖仅宿主、`protocol`、`compiler` 和云 API 公共库，插件之间不互相依赖。诊断插件（IPQuality、NodeQuality、TcpQuality）的面板代码暂由宿主经 `#[path]` 编入，不是独立 crate |
-| `panel` | 组装：登记业务插件并启动服务；保存唯一的当前数据库初始化 SQL，保留原有 `apsp_panel::*` Rust 路径 |
+| `compiler` | 流量服务的配置编译：从业务模型确定性地生成完整运行时配置包；客户端配置部分供服务权益使用 |
+| `panel-host` | 平台：HTTP 外壳、数据库、Agent 通道、凭据库、通知发送、任务基础设施与平台钩子；工作区依赖仅 `protocol`，不依赖任何领域。尚未迁出的治理、资源、观测、作业、基础网络代码也在这里，已逐个路径登记所属领域（阶段 B 迁出） |
+| `cloud-api` | 平台的云接口客户端：签名、传输、重试与错误码；工作区依赖仅 `protocol` |
+| `naming` | 名称与证书领域：DNS 账号与记录、DDNS、DNS-01 验证记录 |
+| `costs` | 成本领域：付费服务、付款、续费提醒与续费日历 |
+| `plugins/singbox/panel`、`plugins/alicloud/panel` | 尚未拆分的 crate：前者装着流量服务与服务权益（阶段 C 拆开），后者装着云资源、安全组、CDT 计费流量与启停、换 IP 作业（阶段 D 分回各领域）；拆分前保持现有依赖。诊断工具（IPQuality、NodeQuality、TcpQuality）的面板代码暂由宿主经 `#[path]` 编入，不是独立 crate |
+| `panel` | 应用：组合平台与各领域、接线依赖倒置接口、启动服务与后台任务；保存唯一的当前数据库初始化 SQL，保留原有 `apsp_panel::*` Rust 路径 |
 | `agent-core` | 设备身份、传输、对账、持久状态、遥测、计量与制品；工作区依赖仅 `protocol`、`adapter-sdk` |
 | `adapter-sdk` | 无状态适配器接口与共享模型 |
 | `adapter-singbox`、`adapter-nodequality`、`adapter-ipquality`、`adapter-tcpquality` | 运行时或工具翻译；工作区依赖仅 `adapter-sdk` |
 | `agent` | 注册具体适配器、启动 core 的二进制入口 |
 | `tcp-probe` | 原生 TCP 检测工具 |
 
-服务器网卡总流量属于核心；代理用户、授权、订阅、套餐与代理流量属于 sing-box 插件。`agent-core` 和 `panel-host` 都不引入具体插件名称或代理业务类型。分层检查入口为 `tools/check-core-boundary.py`，同时检查两个核心目录的禁用词和各层 `Cargo.toml` 的依赖方向。
+领域 crate 只依赖平台、`protocol` 与依赖顺序中排在前面的领域（[功能划分与逻辑结构 §5](architecture.md#5-依赖与写入规则)）。服务器网卡总流量属于 Agent core 与观测；代理用户、授权、订阅、套餐与代理流量属于服务权益（现在在 sing-box crate 中）。`agent-core` 与平台 crate 都不引入运行时名称或代理业务类型。分层检查入口为 `tools/check-core-boundary.py`：检查 Agent core 与平台 crate 的禁用词，以及每个 crate 的层级与 `Cargo.toml` 依赖方向；新增 crate 先在其中登记层级。
 
-## 面板入口与插件
+## 面板入口与领域接线
 
-面板分为宿主、插件和组装三层（[ADR 0085](adr/0085-rearchitecture-plugins-sources-chains.md)）。`crates/panel-host/src/lib.rs` 声明宿主模块；`state.rs` 创建共享状态；`plugin_api.rs` 定义插件接口。`crates/panel/src/` 只负责组装：`lib.rs` 再导出宿主模块并保留原有公共路径，`plugins.rs` 登记业务插件，`main.rs` 启动服务与后台任务。`passkeys/` 提供共用 WebAuthn 验证、挑战和凭据存储，管理员包装在 `auth/`，代理用户入口、邀请和独立会话在 `plugins/singbox/panel/portal/`。宿主的 HTTP 路由在 `crates/panel-host/src/routes/` 按职责组合：
+面板分为平台、领域和应用三层（[ADR 0128](adr/0128-domain-architecture.md)）。`crates/panel-host/src/lib.rs` 声明平台模块（包括尚未迁出的领域代码）；`state.rs` 创建共享状态；`plugin_api.rs` 定义平台钩子（阶段 B 改为各领域的类型化接口）。`crates/panel/src/` 是应用层：`lib.rs` 再导出平台模块并保留原有公共路径，`plugins.rs` 把各领域 crate 接到平台钩子上，`main.rs` 启动服务与后台任务。`passkeys/` 提供共用 WebAuthn 验证、挑战和凭据存储，管理员包装在 `auth/`，代理用户入口、邀请和独立会话在 `plugins/singbox/panel/portal/`。宿主的 HTTP 路由在 `crates/panel-host/src/routes/` 按职责组合：
 
 | 文件 | 注册的接口 |
 | --- | --- |
-| `routes/mod.rs` | 健康检查、各组路由、组装时传入的插件路由、前端兜底及全局请求体限制 |
+| `routes/mod.rs` | 健康检查、各组路由、应用层传入的领域路由、前端兜底及全局请求体限制 |
 | `routes/system.rs` | 登录/TOTP/管理员 Passkey、统计、汇率、设置与通知 |
 | `routes/servers.rs` | 服务器、接入令牌、遥测配置、命令、周期拨测和流量矫正 |
 | `routes/diagnostics.rs` | IP 查询、共用诊断服务、旧诊断路径与 TCP 目标 |
@@ -52,14 +55,14 @@
 
 路由文件只组合处理函数，鉴权和业务校验仍由原处理函数负责。`apsp_panel::router`、`AppState`、`AgentConnection` 及旧代理业务 Rust 导出继续可用。新增接口按职责归组，不再把所有接口堆入 crate 根文件。
 
-插件接口：
+领域与平台的接线：
 
-- 宿主通过 `plugin_api::PanelPlugins` 把 Agent 通道上的用量入账、模块清单、配置包和运行活动查询交给插件。组装层在构造路由和启动后台任务时登记一次。
-- 插件路由由组装层传入宿主的 `router`；插件后台任务由组装层分别守护，一个插件崩溃不会停掉其他插件。
-- `plugins/singbox/panel/`、`plugins/ddns/panel/`、`plugins/alicloud/panel/`、`plugins/expenses/panel/` 各自是独立 crate，只经宿主公开接口使用面板能力。`plugins/cloud_api/panel/` 是云 API 公共库，不是独立产品插件。
-- 诊断插件（IP 质量、NodeQuality、TCP 质量）暂时仍由宿主的 `diagnostic_plugins.rs` 通过 path 编入，共用诊断服务继续负责生命周期、预算、取消和历史。它们与宿主的 IP 质量和诊断类型互相引用，拆成独立 crate 前需要先把共用类型移入宿主接口。
+- 平台通过 `plugin_api::PanelPlugins` 把 Agent 通道上的用量入账、模块清单、配置包和运行活动查询交给对应领域（依赖倒置；阶段 B 改为各领域的类型化接口）。应用层在构造路由和启动后台任务时接线一次。
+- 领域路由由应用层传入平台的 `router`；各领域的后台任务由应用层分别守护，一个崩溃不会停掉其他任务。
+- `crates/naming/`、`crates/costs/`、`plugins/singbox/panel/`、`plugins/alicloud/panel/` 各自是独立 crate，只经平台公开接口使用面板能力；`crates/cloud-api/` 是平台的云接口客户端。
+- 诊断代码（IP 质量、NodeQuality、TCP 质量）暂时仍由宿主的 `diagnostic_plugins.rs` 通过 path 编入，共用诊断服务继续负责生命周期、预算、取消和历史。它们与宿主的 IP 质量和诊断类型互相引用，拆成独立 crate 前需要先把共用类型移入宿主接口。
 
-数据库只有一份当前基线 `crates/panel/migrations/0001_current.sql`（[ADR 0122](adr/0122-unreleased-schema-baseline.md)）；宿主通过 `sqlx::migrate!("../panel/migrations")` 嵌入它，插件 crate 的数据库测试也指向它。修改基线是高风险改动，必须附带 `scripts/baseline-adoption-*.sql`，写法与部署验证见[数据库基线](database-baseline.md)「生产安装」；整理 SQL 而生成的基线逐字节不变时不算基线变更。
+数据库只有一份当前基线 `crates/panel/migrations/0001_current.sql`（[ADR 0122](adr/0122-unreleased-schema-baseline.md)）；平台通过 `sqlx::migrate!("../panel/migrations")` 嵌入它，领域 crate 的数据库测试也指向它（如 `crates/naming` 的 `#[sqlx::test(migrations = "../panel/migrations")]`）。修改基线是高风险改动，必须附带 `scripts/baseline-adoption-*.sql`，写法与部署验证见[数据库基线](database-baseline.md)「生产安装」；整理 SQL 而生成的基线逐字节不变时不算基线变更。
 
 ## 前端入口
 
@@ -76,7 +79,7 @@
 | `web/src/fleet/`、`operations/` | 服务器详情「运维」与批量接入；实验功能「自动化与维护」 |
 | `web/src/monitoring/` | 告警事件、延迟检测、告警设置及其规则、Webhook 和渠道状态 |
 | `web/src/network-workbench/`、`network-configuration/` | 监控告警「网络检测」；实验功能「网络配置」 |
-| `web/src/plugins/` | 插件中心（目录与 sing-box 安装）及 sing-box、DDNS、阿里云业务界面 |
+| `web/src/plugins/` | 插件中心（目录与 sing-box 安装）及 sing-box、DDNS、阿里云、费用界面（阶段 E 按领域拆开，现在每个文件已登记所属领域） |
 | `web/src/system/`、`control-center/` | 面板设置（含功能显示）、备份与恢复、账号安全；管理与安全及全局搜索、外观偏好 |
 | `web/src/api.ts`、`hooks.ts`、`components.tsx` | 共享请求、状态钩子和通用组件（页头、通知、弹窗、确认框、字段、复制） |
 | `web/src/index.css` | Tailwind CSS v4 入口与全部设计参数：浅色/暗色颜色、圆角、密度、基础样式 |
@@ -86,7 +89,7 @@
 | `web/src/stores/` | Zustand 跨组件界面状态：语言、外观、外框、会话与看板货币 |
 | `web/src/i18n.tsx` | 语言上下文、浏览器语言选择、管理员偏好同步及静态界面词典 |
 
-前端按功能目录组织（[ADR 0125](adr/0125-feature-modules.md)、[ADR 0126](adr/0126-workspaces-language-and-addresses.md)）：每个入口属于一个功能，新增页面放进它所属功能的目录；侧栏分组由功能清单声明，调整分组不搬目录；同一对象允许多个入口，但只有一套模型和编辑逻辑。目标目录结构（`features/<功能>/`、`ui/`、`lib/`）见[功能划分与逻辑结构](architecture.md#55-前端)，迁移前跨功能共用的数据模型和工具函数暂留在 `web/src/` 根目录（如 `probes.ts`、`server-assets.ts`）。页面标题与入口同名，不加眉题，说明文字先讲“在这里做什么”。
+前端按领域目录组织（[ADR 0128](adr/0128-domain-architecture.md)、[ADR 0126](adr/0126-workspaces-language-and-addresses.md)）：每个入口属于一个领域，新增页面放进它所属领域的目录；侧栏分组由清单声明，调整分组不搬目录；同一对象允许多个入口，但只有一套模型和编辑逻辑。目标目录结构（`web/src/<领域标识>/`、`app/` 与平台的 `components/`、`lib/`、`stores/`）见[功能划分与逻辑结构 §5.4](architecture.md#54-代码结构)；迁移前，现有目录的每个文件已在 `tools/feature-boundaries.toml` 登记所属领域，跨领域共用的数据模型暂留在 `web/src/` 根目录（如 `probes.ts`、`server-assets.ts`）。页面标题与入口同名，不加眉题，说明文字先讲“在这里做什么”。
 
 界面约定见 [ADR 0088](adr/0088-ui-component-system.md)：组件使用 `components/ui/` 中的 shadcn/ui Nova 组件，样式只写 Tailwind 类并引用 `index.css` 的设计变量，不再新增 CSS 文件或颜色字面量；图标来自 `lucide-react`，图标按钮必须有 `aria-label`；动画只用 `motion/react` 的 `m.*` 与 `lib/motion.ts` 预设，需要阅读的内容进入时只做位移、不得从透明或隐藏开始；可调分栏通过 `components/ui/resizable.tsx`，拖拽排序通过 `components/sortable.tsx`；跨组件界面状态放入 `stores/`，服务端数据仍经 `useResource` 与写保护。分区导航用 `SegmentedNav`，按钮通过 `aria-pressed`、页面链接通过 `aria-current="page"` 标记当前项；测试钩子使用 `data-slot` 与 `data-dialog`。首次加载用 `Loading` 的 `table`、`cards`、`panel` 形态显示与内容一致的骨架；开关类设置行用 `SettingRow`；用量条用 `Meter`（默认 75% 警告、90% 危险）；页面跳转与对象搜索集中在 `control-center/CommandPalette.tsx`，可跳转页面取自侧栏并按当前账号权限过滤。行操作只直接显示常用项，其余放进 `ActionMenu`（“更多操作”）；内容丰富的宽表格用容器查询在窄面板中堆叠为卡片，仍保持同一张表。页面跳转用 `navigate()` 或普通链接，不直接写 `location.hash`；有未保存输入的表单用 `useLeaveGuard`（或 `useFormDraft`）登记，离开检查集中在 `lib/leave-guard.ts`。响应式布局只增删外围元素，不替换承载页面内容的组件树；随数据变化的状态文字用 `t()`。按条件显示的弹窗包在 `DialogPresence` 中，让关闭动画有机会执行；列表的次要筛选与视图设置放进 `ToolbarPanel`。
 

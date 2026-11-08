@@ -4,7 +4,7 @@
 
 按主题查找 ADR；编号保留决策顺序，文件名和历史链接保持稳定。早期范围限制可能由后续用户授权覆盖，判断现行约束须结合 AGENTS.md 与对应后续 ADR。例如 Agent 二进制下载以 ADR 0038 为准，替代 ADR 0010 中的面板同源限制；链路能力由 ADR 0040/0045 扩展。设计决策不代表已经通过实机验收。
 
-每份 ADR 开头写明状态（已接受、部分被取代、被取代）及取代它的 ADR；下面的条目在括号中注明替代关系。编号说明：0043 有两份文件（`0043-runtime-operations.md` 与 `0043-nodequality-offline-rootfs.md`，后者与 0049 主题相同、内容略有差异，索引列 0049）；0052 与 0066、0053 与 0067 主题相同，分别来自主线与作者独立分支的整合，内容有差异，引用时以各自文件为准。编号保持不变。
+每份 ADR 开头写明状态（已接受、部分被取代、被取代）及取代它的 ADR；下面的条目在括号中注明替代关系。ADR 0128 起不再有插件：较早 ADR 中的 `plugins/ddns/panel`、`plugins/expenses/panel`、`plugins/cloud_api/panel` 是当时的位置，现在分别是 `crates/naming`、`crates/costs`、`crates/cloud-api`；`/api/plugins/...` 接口前缀与设备上的路径不变。编号说明：0043 有两份文件（`0043-runtime-operations.md` 与 `0043-nodequality-offline-rootfs.md`，后者与 0049 主题相同、内容略有差异，索引列 0049）；0052 与 0066、0053 与 0067 主题相同，分别来自主线与作者独立分支的整合，内容有差异，引用时以各自文件为准。编号保持不变。
 
 ## 配置、协议与计量基础
 
@@ -53,7 +53,7 @@
 - [ADR 0076：节点库、来源预览与外部订阅授权](0076-node-catalog-and-external-access.md)（外部节点按人分配已由 ADR 0112 改为放进策略组）
 - [ADR 0083：代理流量按天汇总与数据保留](0083-usage-daily-rollup-and-retention.md)
 - [ADR 0084：管理界面重排、节点页分区与离线时间](0084-admin-layout-and-node-sections.md)（导航分组已由 ADR 0086 取代）
-- [ADR 0085：重新架构：插件边界、订阅来源与链路模型（已接受，分阶段实施）](0085-rearchitecture-plugins-sources-chains.md)
+- [ADR 0085：重新架构：插件边界、订阅来源与链路模型（已接受，分阶段实施；三层结构被 ADR 0128 取代）](0085-rearchitecture-plugins-sources-chains.md)
 
 ## 诊断、IP 查询与执行保护
 
@@ -81,7 +81,7 @@
 - [ADR 0039：统一延迟任务与完整服务器通知](0039-latency-tasks-and-notification-rules.md)
 - [ADR 0047：实时监控、历史粒度、每日汇率与多渠道通知](0047-monitoring-refresh-history-and-channels.md)
 
-## DDNS 与云资源插件
+## DDNS 与云资源
 
 - [ADR 0048：使用 Agent 已上报地址的 Cloudflare DDNS](0048-cloudflare-ddns.md)
 - [ADR 0056：多云 DDNS 插件](0056-multicloud-ddns.md)
@@ -193,9 +193,13 @@
 - [ADR 0122：未发布阶段统一当前结构](0122-unreleased-schema-baseline.md)：空库初始化、当前基线核验、旧开发库手动重建（外部地址部分由 ADR 0126 取代）。
 - [ADR 0123：看板缓存一致性与分钟对比存储](0123-dashboard-cache-and-comparison-storage.md)
 - [ADR 0124：稳定内核与逐用户限制](0124-stable-runtime-and-user-limits.md)
-- [ADR 0125：按功能划分模块，内核只提供机制](0125-feature-modules.md)：模块化单体、功能地图、数据归属、上游归属与分阶段迁移，详见[功能划分与逻辑结构](../architecture.md)。
+- [ADR 0125：按功能划分模块，内核只提供机制](0125-feature-modules.md)（部分被 ADR 0128 取代）：模块化单体、数据归属、上游归属；功能模块清单与登记口由 ADR 0128 改为九个领域。
 
 ## 工作区、统一用语与界面语言（2026-11-08）
 
-- [ADR 0126：六个工作区、统一用语与地址策略](0126-workspaces-language-and-addresses.md)：接受[重新设计方案](../redesign/README.md)第一部分；外部地址永不失效，控制台地址改名后至少保留一个版本的改写；入口属于功能模块。
+- [ADR 0126：六个工作区、统一用语与地址策略](0126-workspaces-language-and-addresses.md)：接受[重新设计方案](../redesign/README.md)第一部分；外部地址永不失效，控制台地址改名后至少保留一个版本的改写；入口属于一个领域（第 6 条由 ADR 0128 调整）。
 - [ADR 0127：界面以中文为源语言，英文为翻译](0127-chinese-source-language.md)：补记 2026-10-06 起的英文界面翻译，只提供中英两种界面语言。
+
+## 按领域组织的一体化系统（2026-11-08）
+
+- [ADR 0128：按领域组织的一体化系统，不再有插件](0128-domain-architecture.md)：七个对象与规则领域、两个运行支撑领域，平台只放技术机制；领域经公开接口协作、依赖无环，一个事实一个所有者；期望、执行、已应用与观测分别保存。领域定义与迁移阶段见[功能划分与逻辑结构](../architecture.md)，逐项功能见[领域归属表](../domain-map.md)。取代 ADR 0085 的三层与 ADR 0125 的模块清单。
