@@ -7,14 +7,14 @@
 
 | 功能 | 意图 | 核心对象 | 关键约束 | 协作 | 实现与入口 |
 | --- | --- | --- | --- | --- | --- |
-| 服务器接入 | 把一台机器纳入管理并能执行任务 | 服务器、Agent 绑定 | 接入令牌一次性；资源身份独立于 IP 与名称 | 治理（接入令牌）；流量服务（安装运行时） | 宿主 `servers.rs`、`installation*`、`fleet/enrollment.rs`；Agent `enroll`；服务器列表 › 添加服务器、批量接入（实验） |
-| 服务器资产 | 记录地区、标签、到期与采购配置 | 服务器资产 | 一份资产记录（运维区的采购配置并入，路线图 4.4） | 成本（只读到期与成本） | 宿主 `server_assets.rs`、`fleet_profiles`；服务器详情 › 资产与流量、运维 |
+| 服务器接入 | 把一台机器纳入管理并能执行任务 | 服务器、Agent 绑定 | 接入令牌一次性；资源身份独立于 IP 与名称 | 治理（接入令牌）；流量服务（安装运行时） | 宿主 `servers.rs`、`installation*`、`batch_enrollment.rs`；Agent `enroll`；服务器列表 › 添加服务器、批量接入（实验） |
+| 服务器资产 | 记录地区、标签、到期与采购配置 | 服务器资产 | 一份资产记录（运维区的采购配置并入，路线图 4.4） | 成本（只读到期与成本） | 宿主 `server_assets.rs`、`server_lifecycle.rs`（资产档案、本机运维策略、生命周期与迁移，表 `fleet_profiles`）；服务器详情 › 资产与流量、运维 |
 | 服务器退役 | 安全删除一台服务器 | 退役记录 | 在线退役以设备签名回执为准；离线退役单独标明 | 流量服务（停止服务）；作业（执行） | 宿主 `retirement.rs` |
 | Agent 能力 | 知道每台 Agent 能做什么 | Agent 能力与绑定代次 | 迟到的回执不能覆盖新绑定代次 | 治理（版本策略） | 宿主 `agent_api.rs` 的能力登记 |
 | 云实例与 EIP | 知道云上有哪些实例与 EIP 及其状态 | 云资源、云账号关联 | 只经官方接口读回确认 | 成本（账单）；基础网络（安全组） | 阿里云 `addresses.rs`、`model.rs`；`operations_cloud_links`；云账号 `alicloud_accounts`（其中的账单与额度字段由成本写入，阶段 D 拆出）；服务器 › 云资源 |
 | 云实例启停规则 | 判断一台实例此刻能否开关机 | 实例电源状态 | 关机前确认不影响在用服务与保护策略 | 作业（执行与计划）；成本（额度触发） | 阿里云 `power/policy.rs`、`state.rs`（执行部分归作业） |
 | 资源替换 | 用新机器替换旧机器并保留关联 | 替换关系 | 显式替换，不凭相同 IP 或名称合并 | 名称；流量服务；成本 | 网络配置的服务器替换（实验）；`network_server_migration_previews` |
-| Hetzner 资源（冻结） | 查看 Hetzner 资源 | 云资源 | 只读 | 成本 | 宿主 `operations/hetzner` |
+| Hetzner 资源（冻结） | 查看 Hetzner 资源 | 云资源 | 只读 | 成本 | 宿主 `cloud_resources/hetzner`（云资源关联与账单观测在 `cloud_resources.rs`） |
 
 ## 基础网络 `networking`
 
@@ -35,7 +35,7 @@
 | 外部来源与外部节点 | 引入机场等外部节点 | 外部来源、外部节点版本 | 先预览再采用；失败保留上一个成功修订 | 服务权益（策略组引用）；成本（报告的到期只读） | sing-box `subscription_sources/`、`subscription_parser/`；网络服务 › 外部来源 |
 | 配置编译与发布 | 把期望配置变成每台服务器的完整快照并下发 | 配置版本、部署 | 同一输入同一字节；字节相同不产生新修订；只有回执才算已应用 | 服务权益（授权凭据，经依赖倒置接口）；平台（Agent 通道） | `crates/compiler`；sing-box `publisher.rs`、`deployments.rs`；宿主 `device_config.rs`（设备的清单与配置包、已应用修订、应用结果） |
 | 运行时检查点与路径验证 | 确认目标修订真的在运行、路径真的通 | 已应用状态与验证证据 | 证据有有效期；旧代次的回执不覆盖新代次 | 平台（Agent 通道） | 宿主 `runtime_control.rs`、`runtime_validations.rs`；sing-box 路径探测 |
-| 运行时运维 | 检查、重启运行时或重试部署 | 运行时操作的合法性 | 只对受管运行时；结果未知不自动重试 | 作业（执行记录） | 宿主 `runtime_operations.rs`；sing-box `runtime_operations.rs` |
+| 运行时运维 | 检查、重启运行时或重试部署 | 运行时操作的合法性 | 只对受管运行时；结果未知不自动重试 | 作业（执行记录） | `crates/operations` 的 `runtime_operations.rs`（设备队列与回执）；sing-box `runtime_operations.rs` |
 | 服务器端逐用户限制的执行 | 把限速与连接数编进配置 | 运行时能力 `user-limits` | 运行时不支持时拒绝而不是忽略 | 服务权益（限制的值） | `crates/compiler/src/limits.rs` |
 | 旧模型兼容 | 迁移两跳、混合链路、数字编号来源与 Nexus 运行时 | 历史模型 | 只经迁移流程进入；有退出条件 | 治理（迁移授权） | sing-box `legacy_takeover.rs`、`mixed_conversion.rs`、`source_migration/`、`nexus_nodes/`；系统 › 迁移与兼容 |
 
@@ -73,14 +73,14 @@
 | 功能 | 意图 | 核心对象 | 关键约束 | 协作 | 实现与入口 |
 | --- | --- | --- | --- | --- | --- |
 | 续费项目与付费服务 | 记下要周期付费的服务 | 续费项目、付款记录 | 金额、周期与币种清楚；预测与实际分开 | — | `crates/costs`（原费用插件）；费用与续费 |
-| 服务器费用 | 记录服务器的购买、续费与退款 | 服务器费用记录 | 服务器到期以资源的资产为准，这里只读 | 资源 | 宿主 `fleet/assets.rs`、`fleet_cost_records`（阶段 B 并入） |
+| 服务器费用 | 记录服务器的购买、续费与退款 | 服务器费用记录 | 服务器到期以资源的资产为准，这里只读 | 资源 | 宿主 `server_lifecycle.rs` 的费用记录、`fleet_cost_records`（阶段 B 并入成本） |
 | 供应商计费流量与免费额度 | 按供应商口径看额度用了多少 | 计费流量历史、额度状态 | 保留供应商口径，不与网卡计数或用户用量混算 | 资源（实例）；作业（超额处置） | 阿里云 `billing.rs`、`costs.rs`、`history.rs` |
 | 汇率与统计币种 | 把不同币种折算成统计币种 | 每日汇率 | 来源可追溯，不编造缺失币种 | — | 宿主 `exchange.rs` |
 | 续费提醒与日历 | 按时提醒续费 | 提醒、日历输出 | 提醒只告知，不付款 | 平台（通知通道） | `crates/costs` 的后台任务；`/api/plugins/expenses/calendar.ics` |
-| 退订提醒与供应商 | 记得在合适的时候退订 | 退订提醒、供应商 | — | 资源 | 宿主 `operations/cancellation_reminders.rs`、`suppliers.rs` |
+| 退订提醒与供应商 | 记得在合适的时候退订 | 退订提醒、供应商 | — | 资源；观测（提醒记为故障事件） | `crates/costs` 的 `cancellation_reminders.rs`、`suppliers.rs` |
 | 外部来源报告的到期 | 机场订阅的到期一起看 | 到期引用 | 只读，仅供参考 | 流量服务 | `crates/costs` 的 `renewals` 接口，应用层接到 sing-box 的外部来源 |
 | Wallos 导入 | 从 Wallos 迁入 | 导入批次 | 先预览后导入 | — | `tools/export_wallos.py`、`crates/costs` 的导入接口 |
-| 云资源与费用对照（冻结） | 对比供应商价格 | 费用对照 | 只读 | 资源 | 宿主 `operations/` 中的云费用部分 |
+| 云资源与费用对照（冻结） | 对比供应商价格 | 费用对照 | 只读 | 资源 | `crates/costs` 的 `suppliers.rs`；宿主 `cloud_resources.rs` 的账单与预算观测 |
 
 ## 平台治理 `governance`
 
@@ -93,18 +93,18 @@
 | 凭据保管与审计 | 秘密安全保存，操作可追溯 | 凭据保管策略、审计记录 | 秘密不进日志与前端 | 平台（加密凭据库） | 宿主 `control_center/` |
 | 平台配置与功能显示 | 面板本身的设置 | 面板设置 | 领域设置在各自领域编辑 | 各领域只读 | 系统 › 面板设置；管理接口在宿主 `control_center/panel_settings.rs`，保存在平台的设置存储 `panel_settings`（宿主 `settings.rs`），其中告警阈值与通知渠道等各项的规则归各自领域 |
 | 制品与版本 | 决定哪些面板与 Agent 版本可信、可用 | 签名制品目录、版本策略 | 独立验签；Agent 只从 GitHub 或镜像下载 | 流量服务（运行时制品） | 宿主 `artifacts.rs`；系统 › 制品与版本 |
-| 平台备份与恢复 | 平台出事能恢复 | 恢复点、恢复演练 | 同基线、同 PostgreSQL 主版本恢复；凭据密钥独立保管 | 作业（执行） | 宿主 `operations/backups.rs`、`backup_executor`、`recovery.rs`；系统 › 备份与恢复 |
+| 平台备份与恢复 | 平台出事能恢复 | 恢复点、恢复演练 | 同基线、同 PostgreSQL 主版本恢复；凭据密钥独立保管 | 作业（执行） | 宿主 `backups.rs`（计划与执行）、`backups/executor.rs`、`backups/recovery.rs`；作业中的面板备份步骤在 `crates/operations` 的 `jobs/panel_backup.rs`；系统 › 备份与恢复 |
 | 平台自身的健康 | 面板与后台任务是否正常 | 独立观察者报告、工具通告 | — | 观测（展示）；平台（任务心跳 `system_worker_heartbeats`） | `system_observer_reports`、`tool_advisory_observations`；系统自检 |
 
 ## 观测证据与事件 `observability`
 
 | 功能 | 意图 | 核心对象 | 关键约束 | 协作 | 实现与入口 |
 | --- | --- | --- | --- | --- | --- |
-| 遥测与历史 | 知道机器现在与过去怎样 | 采集计划、样本、历史聚合 | 实时样本与持久化确认分开 | 资源 | 宿主 `telemetry/`；Agent 遥测；服务器详情 › 概况、Agent |
+| 遥测与历史 | 知道机器现在与过去怎样 | 采集计划、样本、历史聚合、服务器事件时间线 | 实时样本与持久化确认分开 | 资源 | 宿主 `telemetry/`、`server_monitoring.rs`（健康、事件时间线与两台比较）；Agent 遥测；服务器详情 › 概况、Agent |
 | 服务器看板与公开看板 | 一眼看清所有服务器 | 看板视图（汇总，不拥有数据） | 公开看板只读白名单，匿名不公开成本 | 资源；成本 | 宿主 `dashboard.rs`；服务器列表的看板视图、`/#/dashboard` |
 | 网卡流量计数与矫正 | 记下机器实际的网络活动 | 网卡计数、矫正记录 | 不改代理用量账本 | 资源（网卡额度设置） | `server_network_*`、`server_traffic_corrections` |
 | 告警与通知 | 出事时告诉管理员 | 告警规则、告警事件、处置记录 | 通知只提醒，不执行付款、停用或远程命令 | 平台（通知通道） | 宿主 `notifications/` 的规则与评估（发件箱与渠道归平台）；监测与诊断 › 告警 |
-| 故障事件（实验） | 聚合告警并记录处置 | 故障事件、处置记录 | 计划与告警合并（路线图 4.3） | 作业 | 宿主 `operations/incidents.rs` |
+| 故障事件（实验） | 聚合告警并记录处置 | 故障事件、处置记录 | 计划与告警合并（路线图 4.3） | 作业 | 宿主 `incidents.rs` |
 | 延迟检测与周期拨测 | 测三网延迟与丢包 | 拨测、拨测结果 | 执行许可可撤销；只测授权目标 | 资源 | 宿主 `probes.rs`、`latency_tasks.rs`；Agent 拨测；线路质量 |
 | 中国可达性 | 区分端口封锁、IP 封锁与服务故障 | 可达性观测与事件 | 默认关闭；用量不超额度的 80% | 流量服务（节点端点，阶段 C 改经接口读取） | sing-box `reachability/`（阶段 C 迁入观测） |
 | 网络检测 | 测连通性、路由与 IP 资料 | 检测方案、运行与结果 | 只测量，不改动 | 资源 | 宿主 `network_workbench/`；线路质量 |
@@ -115,17 +115,17 @@
 
 | 功能 | 意图 | 核心对象 | 关键约束 | 协作 | 实现与入口 |
 | --- | --- | --- | --- | --- | --- |
-| 远程命令（实验） | 在服务器上执行一条命令 | 命令与执行结果 | 本机授权、默认关闭；超时为未知；不自动重放 | 资源 | 宿主 `commands/`；服务器详情 › Agent |
-| 终端、日志与文件（实验） | 交互式处理一台服务器 | 终端会话、文件操作 | 本机运维策略授权 | 资源 | 宿主 `fleet/`；服务器详情 › 运维 |
-| 批量任务、定时计划、维护窗口、有界自动处置（实验） | 跨服务器按计划执行固定步骤 | 作业、执行尝试、计划 | 步骤由所属领域判断合法；结果未知要核对 | 所属领域 | 宿主 `operations/`；服务器 › 自动化与维护 |
-| 固定类型的设备操作 | 下发有类型的设备操作并收回执 | 设备操作 | 过期与未知分开；迟到结果仍接受 | 资源 | 宿主 `fleet/operations.rs` |
+| 远程命令（实验） | 在服务器上执行一条命令 | 命令与执行结果 | 本机授权、默认关闭；超时为未知；不自动重放 | 资源 | `crates/operations` 的 `commands.rs`；服务器详情 › Agent |
+| 终端、日志与文件（实验） | 交互式处理一台服务器 | 终端会话、文件操作 | 本机运维策略授权 | 资源 | `crates/operations` 的 `fleet/terminal.rs`、`fleet/operations.rs`；服务器详情 › 运维 |
+| 批量任务、定时计划、维护窗口、有界自动处置（实验） | 跨服务器按计划执行固定步骤 | 作业、执行尝试、计划 | 步骤由所属领域判断合法；结果未知要核对 | 所属领域 | `crates/operations` 的 `jobs/`；服务器 › 自动化与维护 |
+| 固定类型的设备操作 | 下发有类型的设备操作并收回执 | 设备操作 | 过期与未知分开；迟到结果仍接受 | 资源；平台（其他领域经 `device_work` 提交） | `crates/operations` 的 `fleet/`（含能否接收新任务的判断） |
 | 云实例启停与换 IP 工作流 | 按计划或阈值开关机、更换公网 IP | 启停作业、换 IP 作业 | 只经官方接口读回确认；失败绑回原地址 | 资源（是否允许）；成本（阈值）；观测（可达性验证） | 阿里云 `power/jobs.rs`、`scheduler.rs`、`eip_rotation/` |
-| 备份、升级与部署的执行 | 把治理或流量服务批准的变更执行出来 | 执行记录 | 只执行，不决定是否合法 | 治理；流量服务 | 宿主 `operations/` 的执行部分 |
+| 备份、升级与部署的执行 | 把治理或流量服务批准的变更执行出来 | 执行记录 | 只执行，不决定是否合法 | 治理；流量服务 | `crates/operations` 的 `jobs/`（部署步骤直接调用流量服务） |
 
 ## 平台 `platform` 与应用 `app`
 
 | 部分 | 内容 | 实现 |
 | --- | --- | --- |
-| 平台 | 数据库连接与事务、基线核对、后台任务与心跳、Agent 通道、加密凭据库、制品存储、通知发送通道、HTTP 外壳与中间件、设置存储、类型化接口的机制 | 宿主 `crates/panel-host` 的 `shell`、`agent_api`、`ports`、`tokens`、`settings`、`notifications` 的发送部分等技术模块（阶段 B1 起不引用领域，B2 迁出其余领域代码）；`crates/cloud-api`（供应商接口的签名、分页与重试） |
+| 平台 | 数据库连接与事务、基线核对、后台任务与心跳、Agent 通道、设备任务接口、加密凭据库、制品存储、通知发送通道、HTTP 外壳与中间件、设置存储、类型化接口的机制、文本与摘要检查、地址分类 | 宿主 `crates/panel-host` 的 `shell`、`agent_api`、`device_work`、`ports`、`tokens`、`text`、`digest`、`net`、`settings`、`notifications` 的发送部分等技术模块（阶段 B1 起不引用领域，B2 迁出其余领域代码）；`crates/cloud-api`（供应商接口的签名、分页与重试） |
 | 应用 | 组合各领域、HTTP 路由、后台任务登记、跨领域流程、依赖倒置接口的接线、命令行入口 | `crates/panel`：`lib.rs` 组合路由与权限守卫，`wiring.rs` 接线类型化接口，`maintenance.rs` 运行 30 秒维护循环 |
 | Agent | 本地执行、采集与状态协调；运行时与诊断工具的适配器 | `crates/agent-core`、`crates/adapter-*`、`crates/agent` |

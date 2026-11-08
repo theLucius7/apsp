@@ -1,5 +1,17 @@
 # 执行进度
 
+## 2026-11-08：领域架构阶段 B2a——作业迁出宿主
+
+- 用户要求：继续下一步（领域重构）。宿主里的领域只能按依赖顺序从后往前离开（宿主里的代码不能引用迁出去的 crate），所以 B2a 先把排在最后的作业迁成独立的 `crates/operations`；其余领域在 B2 中依次迁出，下一步是观测与成本。
+- 作业 crate：远程命令、固定设备操作与人工核对、终端、运行时操作，以及作业、模板、计划、维护窗口、有界自动处置与面板备份步骤迁到 `crates/operations`（宿主的 `operations/` 改名 `jobs/`）。作业排在最后，直接调用 sing-box 的部署函数与成本的计划退订提醒，`DeploymentAutomation` 接口删除；作业的路由由 `apsp_operations::routes()` 声明，应用层组合。
+- 拆开复合路由：原 `fleet/`、`operations/` 中属于其他领域的代码按所有者搬到宿主的 `server_lifecycle.rs`、`batch_enrollment.rs`、`cloud_resources/`（资源），`server_monitoring.rs`、`incidents.rs`（观测），`backups/`（治理），以及 `crates/costs` 的 `suppliers.rs`、`cancellation_reminders.rs`，路由改由各自领域登记。静态比对路由登记，532 个“路径、方法、处理函数”组合不变。
+- 去掉对作业的反向引用：网络配置、证书部署、诊断、服务器迁移与 sing-box 的部署和预检向设备派发任务时，改经平台的 `device_work`（设备能否接收新任务、提交固定设备操作与只读观察），作业实现、应用层接线，未接线时拒绝；文本检查、JSON 摘要与公网地址判断移到平台的 `text`、`digest`、`net`；治理增加 `require_servers` 与 `require_global_material`（拒绝文字不变）；记录服务器事件的函数归观测（`server_monitoring::record_event`）。取舍见 `docs/open-questions.md`。
+- 边界检查：代码引用改为也计入跨 crate 的引用（其他 crate 的路径与 crate 根再导出的模块），在 B2a 之前的代码上计量为 657 条；之后为 620 条（SQL 387、代码引用 110、前端引用 120、`#[path]` 3）。按搬家前后的路径对照，615 条不变或只换位置，42 条消失（其中指向作业的 35 条），5 条随代码换了所有者，没有新增，明细见 [architecture.md §9](docs/architecture.md#9-迁移阶段)。依赖检查登记 `crates/operations`，并允许领域 crate 依赖“所含领域全部排在它前面”的未拆分 crate（作业依赖 sing-box）。宿主从约 4.2 万行减到约 3.7 万行。
+- 公共 Rust 路径：`apsp_panel::{commands, fleet, runtime_operations}` 与 `apsp_panel::operations`（即 `apsp_operations::jobs`）保持可用；`apsp_panel_host` 不再有这四个模块，`ip_quality::public_ip` 改为 `net::public_ip`。
+- 验证：`cargo fmt --check` 与全工作区 `cargo clippy --all-targets -- -D warnings` 通过；本地 PostgreSQL 16 上受影响 crate 的测试全部通过：宿主 174、作业 10、成本 8、名称与证书 64、云接口 8、sing-box 212（1 个原有忽略）、阿里云 101、应用库 1、应用集成测试 84 个目标共 417 个（8 个原有忽略，需要真实运行时或测试机），合计 995 个通过、0 失败；随代码迁走的单元测试跟着进入作业与成本 crate，运行时步骤的版本校验测试从应用层移到作业。两个边界检查通过（620 条已知越界，没有新增），检查器单元测试 34 个通过；文档链接与锚点 1933 个，0 错误。前端源码未改，只构建了 `web/dist` 供编译。验证后已删除本轮的编译目录、前端依赖与产物和临时数据库。
+- 未验证：Agent 一侧（agent-core、适配器、tcp-probe）代码未改，只经 clippy 类型检查；前端源码未改，前端测试未运行；CI 仍暂停，未触发；没有在测试机上用真实设备验证派发任务。
+- 下一步：阶段 B2 继续，观测与成本迁出宿主（诊断代码去掉 `#[path]`，`AppState` 中观测的运行时状态归观测，宿主里资源、治理对故障事件与服务器事件的引用改经接口）；阶段 C（sing-box 拆为流量服务与服务权益）。
+
 ## 2026-11-08：领域架构阶段 B1——平台不再组合领域，插件接口删除
 
 - 用户要求：继续下一步（领域重构）。阶段 B1 让平台只留技术机制，组合与接线移到应用层，插件钩子换成类型化接口；领域代码迁出宿主留到 B2。

@@ -12,8 +12,8 @@ mod workspace;
 
 pub use access::{
     Principal, actor_server_allowed, authenticate, require_actor_capability, require_actor_server,
-    require_capability, require_credential_choice, require_global, require_owner,
-    require_recent_proof, require_server,
+    require_capability, require_credential_choice, require_global, require_global_material,
+    require_owner, require_recent_proof, require_server, require_servers,
 };
 
 use crate::{AppState, auth, error::ApiResult};

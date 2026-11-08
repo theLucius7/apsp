@@ -193,8 +193,8 @@ pub(super) async fn save(
             raw.3.push(value.clone());
         }
         if sample.sampled_at > latest_at {
-            let events = crate::fleet::monitoring::changes(&latest, &sample);
-            crate::fleet::monitoring::record(&mut tx, server, sample.sampled_at, events).await?;
+            let events = crate::server_monitoring::changes(&latest, &sample);
+            crate::server_monitoring::record(&mut tx, server, sample.sampled_at, events).await?;
             latest = value.clone();
             latest_at = sample.sampled_at;
             latest_changed = true;
@@ -208,7 +208,7 @@ pub(super) async fn save(
                 minute,
                 (
                     sample.sampled_at,
-                    crate::fleet::monitoring::comparison_metrics(&value),
+                    crate::server_monitoring::comparison_metrics(&value),
                 ),
             );
         }

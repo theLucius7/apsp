@@ -68,7 +68,7 @@ async fn resolve(
     if input.name != zone && !input.name.ends_with(&format!(".{zone}")) {
         return Err(ApiError::BadRequest("查询名称不属于授权区域".into()));
     }
-    if !crate::ip_quality::public_ip(input.resolver_ip) {
+    if !crate::net::public_ip(input.resolver_ip) {
         return Err(ApiError::BadRequest(
             "解析器须为公网地址，面板不会向回环、内网或保留地址发送查询".into(),
         ));

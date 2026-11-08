@@ -32,7 +32,7 @@ pub use worker::run;
 pub(crate) use apsp_cloud_api as cloud_api;
 #[cfg(test)]
 pub(crate) use apsp_panel_host::config;
-pub(crate) use apsp_panel_host::{AppState, auth, control_center, error, ip_quality};
+pub(crate) use apsp_panel_host::{AppState, auth, control_center, error, net};
 
 use crate::error::{ApiError, ApiResult};
 use sqlx::{PgPool, Postgres, Transaction};

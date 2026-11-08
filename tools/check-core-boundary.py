@@ -100,7 +100,7 @@ HOST_EXCEPTIONS = {
         r'(?<=requests_today<)daily_quota(?= RETURNING requests_today")',
     ),
     # Exact official cloud initialization field used to prove its omission.
-    "src/operations/hetzner/client/tests.rs": (r'raw\["user_data"\]',),
+    "src/cloud_resources/hetzner/client/tests.rs": (r'raw\["user_data"\]',),
 
 }
 
@@ -133,12 +133,18 @@ DOMAIN_CRATES = {
     "crates/naming": ("apsp-naming", "naming"),
     "crates/compiler": ("apsp-compiler", "traffic"),
     "crates/costs": ("apsp-costs", "costs"),
+    "crates/operations": ("apsp-operations", "operations"),
 }
 # Crates that still hold several domains keep their current dependencies until they are
-# split (docs/architecture.md section 9, stages C and D).
+# split (docs/architecture.md section 9, stages C and D). A domain crate may depend on
+# one when all of its domains come in earlier groups.
 TRANSITIONAL_DEPENDENCIES = {
     "plugins/singbox/panel": {"apsp-panel-host", "apsp-protocol", "apsp-compiler"},
     "plugins/alicloud/panel": {"apsp-panel-host", "apsp-protocol", "apsp-cloud-api"},
+}
+TRANSITIONAL_DOMAINS = {
+    "apsp-plugin-singbox": ("traffic", "access"),
+    "apsp-plugin-alicloud": ("resources", "networking", "costs", "observability", "operations"),
 }
 # The application and the Agent binary compose the layers.
 COMPOSERS = ("crates/panel", "crates/agent")
@@ -196,6 +202,8 @@ def domain_dependencies(domain):
     """The platform, the protocol and the domain crates of earlier groups."""
     rank = {name: index for index, group in enumerate(DOMAIN_ORDER) for name in group}
     earlier = {crate for crate, other in DOMAIN_CRATES.values() if rank[other] < rank[domain]}
+    earlier |= {crate for crate, domains in TRANSITIONAL_DOMAINS.items()
+                if all(rank[other] < rank[domain] for other in domains)}
     return {"apsp-protocol", *PLATFORM_CRATES.values(), *earlier}
 
 

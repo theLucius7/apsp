@@ -143,7 +143,7 @@ fn network(quality: &[ip_quality::IpQuality]) -> Value {
         let Ok(address) = entry.ip.parse::<std::net::IpAddr>() else {
             continue;
         };
-        if !ip_quality::public_ip(address) {
+        if !apsp_panel_host::net::public_ip(address) {
             continue;
         }
         let family = if address.is_ipv4() { "IPv4" } else { "IPv6" };

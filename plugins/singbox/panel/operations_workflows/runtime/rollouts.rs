@@ -191,7 +191,7 @@ async fn dispatch(
                 "服务器 #{server} 的运行时平台或已签名制品已变化，固定候选不会自动替换"
             )));
         }
-        crate::fleet::ensure_accepts_tasks_tx(tx, *server).await?;
+        crate::device_work::ensure_accepts_tasks_tx(tx, *server).await?;
         let busy:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM runtime_operations WHERE server_id=$1 AND module='singbox' AND result IS NULL AND cancelled_at IS NULL AND reconciled_at IS NULL)").bind(server).fetch_one(&mut **tx).await?;
         if busy {
             return Err(ApiError::Conflict(format!(
@@ -329,7 +329,7 @@ pub(crate) async fn inspect_member(
         crate::control_center::require_server(&state, &headers, server, "proxy:write").await?;
     let mut tx = state.pool.begin().await?;
     super::super::super::business::lock_server(&mut tx, server).await?;
-    crate::fleet::ensure_accepts_tasks_tx(&mut tx, server).await?;
+    crate::device_work::ensure_accepts_tasks_tx(&mut tx, server).await?;
     let member:Option<i64>=sqlx::query_scalar("SELECT server_id FROM singbox_runtime_rollout_members WHERE rollout_id=$1 AND server_id=$2 FOR UPDATE").bind(id).bind(server).fetch_optional(&mut *tx).await?;
     member.ok_or(ApiError::NotFound)?;
     let busy:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM runtime_operations WHERE server_id=$1 AND module='singbox' AND result IS NULL AND cancelled_at IS NULL AND reconciled_at IS NULL)").bind(server).fetch_one(&mut *tx).await?;

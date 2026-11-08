@@ -124,7 +124,7 @@ class CoreBoundaryTests(unittest.TestCase):
                 self.assertTrue(boundary.violations(relative, native + "; user_id=1", boundary.HOST_EXCEPTIONS))
         self.assertTrue(boundary.violations(relative, 'pub daily_quota: i32', boundary.HOST_EXCEPTIONS))
         self.assertTrue(boundary.violations(relative, 'FROM users WHERE quota_day=$2', boundary.HOST_EXCEPTIONS))
-        relative = "src/operations/hetzner/client/tests.rs"
+        relative = "src/cloud_resources/hetzner/client/tests.rs"
         native = 'raw["user_data"]'
         self.assertFalse(boundary.violations(relative, native, boundary.HOST_EXCEPTIONS))
         self.assertTrue(boundary.violations(relative, native + "; user_id=1", boundary.HOST_EXCEPTIONS))
@@ -166,6 +166,7 @@ class CoreBoundaryTests(unittest.TestCase):
             "crates/compiler/Cargo.toml": "[package]\n",
             "crates/naming/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-cloud-api.workspace = true\n",
             "crates/costs/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-naming.workspace = true\n",
+            "crates/operations/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-costs.workspace = true\napsp-plugin-singbox.workspace = true\n",
             "plugins/singbox/panel/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-compiler.workspace = true\n",
             "plugins/alicloud/panel/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-cloud-api.workspace = true\n",
             "crates/panel/Cargo.toml": "[dependencies]\napsp-costs.workspace = true\napsp-plugin-singbox.workspace = true\n",
@@ -178,6 +179,8 @@ class CoreBoundaryTests(unittest.TestCase):
             "crates/naming/Cargo.toml": "[dependencies]\napsp-costs.workspace = true\n",
             "crates/compiler/Cargo.toml": "[dependencies]\napsp-costs.workspace = true\n",
             "crates/costs/Cargo.toml": "[dependencies]\napsp-plugin-alicloud.workspace = true\n",
+            # A crate that still holds a domain of the same or a later group is not earlier.
+            "crates/operations/Cargo.toml": "[dependencies]\napsp-plugin-alicloud.workspace = true\n",
             "plugins/singbox/panel/Cargo.toml": "[dependencies]\napsp-naming.workspace = true\n",
             "crates/protocol/Cargo.toml": "[dependencies]\napsp-compiler.workspace = true\n",
             "crates/agent-core/Cargo.toml": "[target.'cfg(unix)'.dependencies]\napsp-adapter-singbox.workspace = true\n",
@@ -204,7 +207,11 @@ class CoreBoundaryTests(unittest.TestCase):
         self.assertEqual(boundary.domain_dependencies("naming"),
                          {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api"})
         self.assertEqual(boundary.domain_dependencies("costs"),
-                         {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api", "apsp-naming", "apsp-compiler"})
+                         {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api", "apsp-naming", "apsp-compiler",
+                          "apsp-plugin-singbox"})
+        self.assertEqual(boundary.domain_dependencies("operations"),
+                         {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api", "apsp-naming", "apsp-compiler",
+                          "apsp-costs", "apsp-plugin-singbox"})
 
 
 if __name__ == "__main__":

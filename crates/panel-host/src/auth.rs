@@ -26,7 +26,9 @@ pub(crate) mod security;
 mod totp;
 
 pub use crate::tokens::{hash_token, random_token};
-pub use security::{password_change, totp_confirm, totp_disable, totp_setup, totp_status};
+pub use security::{
+    password_change, session_hash, totp_confirm, totp_disable, totp_setup, totp_status,
+};
 
 const ADMIN_SESSION_SECONDS: i64 = 86_400;
 

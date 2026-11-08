@@ -12,7 +12,7 @@ pub const NODE_QUERY_CAPABILITY: &str = "diagnostic:nodequality-node-query";
 const SCHEMA: &str = "apsp.node-ip-quality.v1";
 
 fn public_node_ip(ip: std::net::IpAddr) -> bool {
-    if !ip_quality::public_ip(ip) {
+    if !crate::net::public_ip(ip) {
         return false;
     }
     // Keep the legacy shared predicate unchanged, but exclude IANA special-use
