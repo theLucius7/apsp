@@ -121,7 +121,7 @@ impl Fixture<'_> {
 }
 
 async fn selected(pool: &PgPool) -> Result<Vec<i64>> {
-    let servers:Vec<i64>=sqlx::query_scalar("SELECT s.id FROM servers s JOIN server_plugins p ON p.server_id=s.id AND p.plugin='sing-box' AND p.enabled AND p.source='administrator' WHERE s.deleted_at IS NULL AND s.dirty_at IS NOT NULL AND EXISTS(SELECT 1 FROM nodes n WHERE n.server_id=s.id AND n.deleted_at IS NULL AND n.enabled AND EXISTS(SELECT 1 FROM singbox_eligible_accesses($1) a WHERE a.node_id=n.id) AND NOT EXISTS(SELECT 1 FROM singbox_chains c WHERE (c.deleted_at IS NULL OR c.phase<>'retired') AND (c.entry_node_id=n.id OR c.exit_node_id=n.id OR EXISTS(SELECT 1 FROM singbox_ordered_chain_hops h WHERE h.chain_id=c.id AND h.managed_node_id=n.id)))) ORDER BY s.id")
+    let servers:Vec<i64>=sqlx::query_scalar("SELECT s.id FROM servers s JOIN server_plugins p ON p.server_id=s.id AND p.plugin='sing-box' AND p.enabled AND p.source='administrator' WHERE s.deleted_at IS NULL AND s.dirty_at IS NOT NULL AND EXISTS(SELECT 1 FROM nodes n WHERE n.server_id=s.id AND n.deleted_at IS NULL AND n.enabled AND EXISTS(SELECT 1 FROM singbox_eligible_accesses($1) a WHERE a.node_id=n.id) AND NOT EXISTS(SELECT 1 FROM singbox_chains c WHERE (c.deleted_at IS NULL OR c.phase<>'retired') AND (c.entry_node_id=n.id OR EXISTS(SELECT 1 FROM singbox_ordered_chain_hops h WHERE h.chain_id=c.id AND h.managed_node_id=n.id)))) ORDER BY s.id")
         .bind(now_timestamp()).fetch_all(pool).await?;
     Ok(servers)
 }

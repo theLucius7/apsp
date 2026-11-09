@@ -220,16 +220,7 @@ pub fn parse_subscription(body: &[u8], hint: FormatHint) -> Result<ParsedSubscri
     })
 }
 
-/// Reads one stored sing-box outbound of a numbered source as if it were a
-/// node of a sing-box JSON subscription. The display name was already checked
-/// by numbered sources and is kept as shown there.
-pub fn import_outbound(config: serde_json::Value, ordinal: usize, name: &str) -> ParsedNode {
-    let mut parsed = outbound::node(config, ordinal, Some(name));
-    parsed.preview.name = name.to_owned();
-    parsed
-}
-
-pub(super) fn hex_digest(bytes: &[u8]) -> String {
+pub(crate) fn hex_digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 

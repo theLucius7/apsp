@@ -10,9 +10,7 @@ use serde_json::Value;
 use sqlx::PgPool;
 
 #[sqlx::test]
-async fn retiring_ordered_entry_is_never_reclassified_as_a_flat_direct_resource(
-    pool: PgPool,
-) -> Result<()> {
+async fn retiring_chain_entry_is_never_listed_as_a_direct_node(pool: PgPool) -> Result<()> {
     let panel = TestPanel::start(pool).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel
@@ -22,34 +20,29 @@ async fn retiring_ordered_entry_is_never_reclassified_as_a_flat_direct_resource(
         .create_node(&cookie, server, "TEST_ONLY reserved ordered entry")
         .await?;
     let id = node["id"].as_i64().unwrap();
-    // Model an unresolved, soft-deleted ordered lineage. The old API must not
+    // Model an unresolved, soft-deleted chain. Neither listing may
     // treat pending device cleanup as proof that the dedicated entry is free.
     sqlx::query("INSERT INTO singbox_chains(name,entry_node_id,path_kind,phase,deleted_at) VALUES('TEST_ONLY retained',$1,'ordered','retiring',1)").bind(id).execute(&panel.state.pool).await?;
-    let flat: Value = panel
-        .admin(
-            Method::GET,
-            "/api/plugins/sing-box/proxy-resources",
-            &cookie,
-            None,
-        )
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-    assert!(
-        flat.as_array()
-            .unwrap()
-            .iter()
-            .all(|row| !(row["kind"] == "direct" && row["id"] == id))
-    );
-    assert_eq!(
-        sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM singbox_live_chains WHERE entry_node_id=$1"
-        )
-        .bind(id)
-        .fetch_one(&panel.state.pool)
-        .await?,
-        0
-    );
+    for path in ["ordered-proxy-resources", "node-catalog"] {
+        let listed: Value = panel
+            .admin(
+                Method::GET,
+                &format!("/api/plugins/sing-box/{path}"),
+                &cookie,
+                None,
+            )
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        assert!(
+            listed
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|row| !(row["kind"] == "direct" && row["id"] == id)),
+            "{path} lists the reserved entry as a direct node"
+        );
+    }
     Ok(())
 }

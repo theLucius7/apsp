@@ -44,7 +44,7 @@ const node = { enabled: true, id: 1, name: 'TEST_ONLY 节点', server_id: 1, pro
 const pluginServers = [{ id: 1, name: 'TEST_ONLY 服务器', enabled: true, online: true, read_only: false }]
 const proxyReads = {
   [`${prefix}/policy-groups`]: [], [`${prefix}/package-groups`]: [], [`${prefix}/nodes`]: [node], [`${prefix}/users`]: [user],
-  [`${prefix}/proxy-resources`]: [], [`${prefix}/ordered-proxy-resources`]: proxyResourceFixtures([node], pluginServers),
+  [`${prefix}/ordered-proxy-resources`]: proxyResourceFixtures([node], pluginServers),
   [`${prefix}/usage`]: { uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] },
   [`${prefix}/users/1/policy-groups`]: { group_ids: [] },
   [`${prefix}/users/1/entitlement`]: { user_id: 1, package_group_id: null, package_name: null, monthly_bytes: null, starts_at: null, expires_at: null, cycle_start: null, next_reset: null, used_bytes: '0', status: 'unlimited', allowed: true },

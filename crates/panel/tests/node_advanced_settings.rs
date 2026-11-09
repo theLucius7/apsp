@@ -394,144 +394,18 @@ async fn invalid_options_roll_back_the_entire_node_edit(pool: PgPool) -> Result<
 }
 
 #[sqlx::test]
-async fn referenced_node_views_explain_immutable_configuration_before_editing(
-    pool: PgPool,
-) -> Result<()> {
-    let panel =
-        TestPanel::start_with_public_url(pool.clone(), Some("https://panel.example.com")).await?;
-    let cookie = panel.admin_cookie().await?;
-    let entry_server = panel.create_server(&cookie, "Entry").await?;
-    let hop_server = panel.create_server(&cookie, "Hop").await?;
-    for server in [entry_server, hop_server] {
-        panel.enable_plugin(&cookie, server).await?;
-        sqlx::query("UPDATE servers SET capabilities='[\"singbox\",\"runtime:dependency-validation:v1\"]' WHERE id=$1").bind(server).execute(&pool).await?;
-    }
-    let hop_settings =
-        json!({"reality":{"flow":"none"},"transport":{"type":"grpc","service_name":"private-hop"}});
-    let hop = id(&create(
-        &panel,
-        &cookie,
-        hop_server,
-        "vless-reality",
-        hop_settings.clone(),
-    )
-    .await?)?;
-    let receipt = call(&panel,&cookie,Method::POST,"/chains/batch",Some(json!({"request_id":Uuid::new_v4(),"items":[{
-        "name":"Frozen path","entry":{"mode":"new","server_id":entry_server,"public_host":"entry.example.com","sni":"www.example.com"},
-        "hops":[{"kind":"managed","node_id":hop}]
-    }]}))).await?;
-    let chain = receipt["chain_ids"][0].as_i64().context("chain")?;
-    let entry = receipt["entry_node_ids"][0].as_i64().context("entry")?;
-    // Simulate an existing database row before optional settings were added.
-    sqlx::query("UPDATE nodes SET settings='{}' WHERE id=$1")
-        .bind(entry)
-        .execute(&pool)
-        .await?;
-    let same_defaults = call(
-        &panel,
-        &cookie,
-        Method::GET,
-        &format!("/nodes/{entry}"),
-        None,
-    )
-    .await?;
-    sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
-        .bind(entry_server)
-        .execute(&pool)
-        .await?;
-    call(
-        &panel,
-        &cookie,
-        Method::PATCH,
-        &format!("/nodes/{entry}"),
-        Some(json!({"settings":same_defaults["settings"]})),
-    )
-    .await?;
-    let dirty: Option<i64> = sqlx::query_scalar("SELECT dirty_at FROM servers WHERE id=$1")
-        .bind(entry_server)
-        .fetch_one(&pool)
-        .await?;
-    assert_eq!(dirty, None);
-    let snapshot: Value = sqlx::query_scalar(
-        "SELECT path_json FROM singbox_chain_versions WHERE chain_id=$1 AND generation=1",
-    )
-    .bind(chain)
-    .fetch_one(&pool)
-    .await?;
-    assert_eq!(
-        snapshot["hops"][0]["endpoint"]["settings"]["transport"],
-        hop_settings["transport"]
-    );
-    for node in [entry, hop] {
-        let expected = json!([{"id":chain,"name":"Frozen path"}]);
-        let current = call(
-            &panel,
-            &cookie,
-            Method::GET,
-            &format!("/nodes/{node}"),
-            None,
-        )
-        .await?;
-        assert_eq!(current["configuration_locked"], true);
-        assert_eq!(current["referenced_chains"], expected);
-        let edited = call(
-            &panel,
-            &cookie,
-            Method::PATCH,
-            &format!("/nodes/{node}"),
-            Some(json!({"name":"Allowed rename"})),
-        )
-        .await?;
-        assert_eq!(edited["configuration_locked"], true);
-        assert_eq!(edited["referenced_chains"], expected);
-        let denied = panel
-            .admin(
-                Method::PATCH,
-                &format!("{ROOT}/nodes/{node}"),
-                &cookie,
-                Some(json!({"settings":{"tcp_keep_alive_seconds":25}})),
-            )
-            .await?;
-        assert_eq!(denied.status(), StatusCode::CONFLICT);
-    }
-    let nodes = call(&panel, &cookie, Method::GET, "/nodes", None).await?;
-    assert!(
-        nodes
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|node| node["configuration_locked"] == true)
-    );
-    call(
-        &panel,
-        &cookie,
-        Method::DELETE,
-        &format!("/proxy-resources/chain/{chain}"),
-        None,
-    )
-    .await?;
-    let unlocked = call(&panel, &cookie, Method::GET, &format!("/nodes/{hop}"), None).await?;
-    assert_eq!(unlocked["configuration_locked"], false);
-    assert_eq!(unlocked["referenced_chains"], json!([]));
-    patch(&panel, &cookie, hop, json!({"reality":{"flow":"none"}})).await?;
-    Ok(())
-}
-
-#[sqlx::test]
-async fn legacy_configuration_lock_uses_public_identity_and_releases_after_shared_cleanup(
+async fn chain_configuration_lock_uses_public_identity_and_releases_after_retirement(
     pool: PgPool,
 ) -> Result<()> {
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
-    let entry_server = panel.create_server(&cookie, "Legacy entry").await?;
-    let exit_server = panel.create_server(&cookie, "Legacy exit").await?;
+    let entry_server = panel.create_server(&cookie, "Entry host").await?;
+    let exit_server = panel.create_server(&cookie, "Exit host").await?;
     let entry = id(&panel.create_node(&cookie, entry_server, "Entry").await?)?;
     let exit = id(&panel.create_node(&cookie, exit_server, "Exit").await?)?;
-    let created = panel
-        .import_legacy_chain(&cookie, "Legacy owner", entry, exit)
-        .await?;
+    let created = panel.insert_chain("Chain owner", entry, exit).await?;
     let chain = id(&created)?;
-    let expected = json!([{"id":chain,"name":"Legacy owner"}]);
+    let expected = json!([{"id":chain,"name":"Chain owner"}]);
     for node in [entry, exit] {
         let view = call(
             &panel,
@@ -561,6 +435,11 @@ async fn legacy_configuration_lock_uses_public_identity_and_releases_after_share
         None,
     )
     .await?;
+    // A retiring chain keeps its hops until the devices confirm; this stands for that.
+    sqlx::query("UPDATE singbox_chains SET phase='retired' WHERE id=$1")
+        .bind(chain)
+        .execute(&pool)
+        .await?;
     let unlocked = call(
         &panel,
         &cookie,

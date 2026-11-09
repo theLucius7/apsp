@@ -3,7 +3,7 @@ import type { Tier } from '../app/tiers'
 import { SegmentedGroup, SegmentedLink, SegmentedNav } from '@/components/segmented'
 import { useFeatureStore } from '@/stores/features'
 
-export type ServerSectionKey = 'overview' | 'assets' | 'agent' | 'plugins' | 'ip-info' | 'node-quality' | 'tcp-quality' | 'fleet'
+export type ServerSectionKey = 'overview' | 'assets' | 'agent' | 'services' | 'ip-info' | 'node-quality' | 'tcp-quality' | 'fleet'
 type DiagnosticKey = Extract<ServerSectionKey, 'ip-info' | 'node-quality' | 'tcp-quality'>
 
 // Views of this one server, in the order an administrator usually needs them.
@@ -12,7 +12,7 @@ const sections: readonly { key: ServerSectionKey | 'diagnostics'; path: string; 
   { key: 'overview', path: '', label: '概况' },
   { key: 'assets', path: '/assets', label: '资产与流量' },
   { key: 'agent', path: '/agent', label: 'Agent 与任务' },
-  { key: 'plugins', path: '/plugins', label: '插件' },
+  { key: 'services', path: '/services', label: '网络服务' },
   { key: 'diagnostics', path: '/ip-info', label: '线路诊断' },
   { key: 'fleet', path: '/fleet', label: '运维', tier: 'experimental' },
 ]

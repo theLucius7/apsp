@@ -186,7 +186,7 @@ async fn load(tx: &mut Transaction<'_, Postgres>, user_id: i64) -> ApiResult<Sna
             .bind(user_id)
             .fetch_one(&mut **tx)
             .await?;
-    let accesses = sqlx::query("SELECT a.node_id,a.uuid,a.credential FROM singbox_eligible_accesses($2) a WHERE a.user_id=$1 AND NOT EXISTS (SELECT 1 FROM singbox_live_chains c JOIN nodes n ON n.id=c.entry_node_id LEFT JOIN nodes e ON e.id=c.exit_node_id WHERE c.entry_node_id=a.node_id AND ((c.path_kind='legacy' AND (SELECT COUNT(*) FROM server_module_status m JOIN servers s ON s.id=m.server_id WHERE m.server_id=ANY(ARRAY[n.server_id,e.server_id]) AND m.module='singbox' AND m.healthy AND m.applied_rev=m.target_rev AND s.dirty_at IS NULL AND s.deleted_at IS NULL) <> 2) OR (c.path_kind='mixed' AND NOT singbox_path_ready(c.id))))")
+    let accesses = sqlx::query("SELECT a.node_id,a.uuid,a.credential FROM singbox_eligible_accesses($2) a WHERE a.user_id=$1")
         .bind(user_id).bind(at).fetch_all(&mut **tx).await?;
     let mut current = BTreeMap::<i64, (Uuid, String)>::new();
     for row in accesses {
@@ -300,20 +300,6 @@ pub(super) async fn content_on(
         snapshot.template = None;
     }
     snapshot.content(user, "singbox")
-}
-
-/// Digest of a user's rendered subscription, for comparing before and after
-/// a migration; an unavailable format records its reason instead.
-pub(crate) async fn content_digest(
-    tx: &mut Transaction<'_, Postgres>,
-    user_id: i64,
-    format: &str,
-) -> ApiResult<String> {
-    let snapshot = load(tx, user_id).await?;
-    Ok(match snapshot.content(user_id, format) {
-        Ok(content) => crate::auth::hash_token(&content),
-        Err(error) => format!("unavailable: {error}"),
-    })
 }
 
 fn content_type(format: &str) -> &'static str {

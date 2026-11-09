@@ -1,10 +1,9 @@
 import { Badge } from '../../components'
-import { dateText } from './groupTypes'
-import type { PathPhase, ProxyResource, PublicHop } from './groupTypes'
+import { dateText, publicPathText } from './groupTypes'
+import type { PathPhase, ProxyResource } from './groupTypes'
 import { Notice } from '@/components/panel'
 
-export const pathPhaseText: Record<PathPhase, string> = { legacy: '旧两跳兼容状态', preparing_dependencies: '等待受管依赖', preparing_entry: '等待入口配置', probing_candidate: '验证候选路径', switching_entry: '切换用户入口', probing_switched: '验证切换后路径', fixing_barrier: '固定恢复边界', retiring_old: '清理旧代身份', applied: '路径已应用', restoring: '恢复已有路径', failed: '路径操作失败', retiring: '正在退役', retired: '已退役' }
-export function publicPathText(hops: PublicHop[]) { return hops.map(hop => hop.kind === 'managed' ? `受管 ${hop.endpoint.name}（服务器 #${hop.endpoint.server_id}）` : `订阅 ${hop.source_name} / ${hop.name}（${hop.update_mode === 'pinned' ? '固定' : '跟随'} ${hop.node_version_id.slice(0, 8)}）`).join(' → ') }
+export const pathPhaseText: Record<PathPhase, string> = { preparing_dependencies: '等待受管依赖', preparing_entry: '等待入口配置', probing_candidate: '验证候选路径', switching_entry: '切换用户入口', probing_switched: '验证切换后路径', fixing_barrier: '固定恢复边界', retiring_old: '清理旧代身份', applied: '路径已应用', restoring: '恢复已有路径', failed: '路径操作失败', retiring: '正在退役', retired: '已退役' }
 export default function ChainLifecycle({ resource, fresh }: { resource: ProxyResource; fresh: boolean }) {
   const state = resource.path_state
   if (!state) return null
@@ -13,6 +12,6 @@ export default function ChainLifecycle({ resource, fresh }: { resource: ProxyRes
     <p className="text-muted-foreground mt-3 text-sm leading-relaxed wrap-anywhere">路径能力 TCP {state.capabilities.tcp ? '支持' : '不支持'} · UDP {state.capabilities.udp ? '支持' : '不支持'} 来自完整承载校验。探测是指定时刻、指定出站对面板健康目标的 TCP 检查，不证明 UDP 或第三方持续健康；失败不会跳过节点或改直连。</p>
     {state.generations.map(view => <div key={view.state} className="border-t py-4"><strong>{{ desired: '目标', applied: '已应用', candidate: '候选', recovery: '恢复' }[view.state]}代 {view.generation}</strong><p className="text-sm leading-relaxed wrap-anywhere">{publicPathText(view.hops)}</p>{view.hops.filter(hop => hop.kind === 'subscription').map(hop => <small className="text-sm leading-relaxed wrap-anywhere text-muted-foreground block" key={hop.position}>第 {hop.position} 跳 · 节点 {hop.external_node_id} · 版本 {hop.node_version_id} · 来源代次 {hop.identity_epoch}</small>)}</div>)}
     <h4 className="text-sm font-medium">受管配置依赖</h4>{state.dependencies.length ? <ul className="list-disc pl-5 leading-relaxed">{state.dependencies.map((dep, index) => <li className="text-sm leading-relaxed wrap-anywhere" key={`${dep.server_id}:${dep.generation}:${dep.hop_position}:${index}`}>服务器 #{dep.server_id} · {dep.role === 'entry' ? '入口' : `第 ${dep.hop_position} 跳`} · 代 {dep.generation} · {dep.stage} · {{ pending: '等待', ready: '已确认', failed: '失败', retired: '已退役' }[dep.state]}<small className="text-muted-foreground block">要求配置 {dep.required_revision ?? '—'} / 已应用 {dep.applied_revision ?? '—'} · 观测 {dateText(dep.observed_at)}{dep.bundle_sha256 && ` · 配置摘要 ${dep.bundle_sha256}`}</small></li>)}</ul> : <p className="text-muted-foreground mt-3 text-sm leading-relaxed wrap-anywhere">尚无受管依赖观测。</p>}
-    <h4 className="text-sm font-medium">指定路径验证</h4>{state.probe ? <p className="text-muted-foreground mt-3 text-sm leading-relaxed wrap-anywhere">{state.probe.stage === 'candidate' ? '候选路径' : '切换后路径'} · {{ pending: '等待验证', verified: '指定目标验证成功', failed: '验证失败', expired: '验证已过期' }[state.probe.state]} · {dateText(state.probe.observed_at)} · 请求 {state.probe.request_id}{state.probe.error && ` · ${state.probe.error}`}</p> : <p className="text-muted-foreground mt-3 text-sm leading-relaxed wrap-anywhere">尚无指定路径验证证据。旧两跳保持原资格，不补造探测成功。</p>}
+    <h4 className="text-sm font-medium">指定路径验证</h4>{state.probe ? <p className="text-muted-foreground mt-3 text-sm leading-relaxed wrap-anywhere">{state.probe.stage === 'candidate' ? '候选路径' : '切换后路径'} · {{ pending: '等待验证', verified: '指定目标验证成功', failed: '验证失败', expired: '验证已过期' }[state.probe.state]} · {dateText(state.probe.observed_at)} · 请求 {state.probe.request_id}{state.probe.error && ` · ${state.probe.error}`}</p> : <p className="text-muted-foreground mt-3 text-sm leading-relaxed wrap-anywhere">尚无指定路径验证证据，不补造探测成功。</p>}
   </section>
 }

@@ -80,7 +80,6 @@ try {
       if (path === '/api/dashboard/access') value = { authenticated: true, public_dashboard: false }
       else if (path === `${prefix}/policy-groups`) value = [row]
       else if (path === `${prefix}/package-groups`) value = []
-      else if (path === `${prefix}/proxy-resources`) value = [resource]
       else if (path === `${prefix}/ordered-proxy-resources`) value = proxyResourceFixtures([node], servers)
       else if (path === `${prefix}/external-node-candidates`) value = { available_nodes: [] }
       else if (path === `${prefix}/nodes`) value = [node]
@@ -129,7 +128,7 @@ try {
       assert.equal(await input.inputValue(), 'TEST_ONLY 未保存草稿')
 
       let extraDependencies = 0
-      if (pageName === 'groups') for (const path of ['package-groups', 'proxy-resources', 'ordered-proxy-resources', 'external-node-candidates'].map(name => `${prefix}/${name}`)) {
+      if (pageName === 'groups') for (const path of ['package-groups', 'ordered-proxy-resources', 'external-node-candidates'].map(name => `${prefix}/${name}`)) {
         const dependency = hold(path)
         // Start this read on the next poll boundary before measuring its 100ms hold.
         await page.clock.runFor(5000 - (await page.evaluate(() => Date.now())) % 5000)

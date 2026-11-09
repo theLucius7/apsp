@@ -35,7 +35,7 @@ fn validate(mut request: Batch, deleting: bool) -> ApiResult<Vec<Change>> {
     }
     let mut seen = BTreeSet::new();
     for item in &mut request.items {
-        if !matches!(item.kind.as_str(), "direct" | "chain" | "external")
+        if !matches!(item.kind.as_str(), "direct" | "external")
             || item.id <= 0
             || item.revision.len() != 64
             || !item.revision.bytes().all(|v| v.is_ascii_hexdigit())
@@ -168,7 +168,7 @@ pub async fn batch_update(
     for item in &items {
         let resource = &current[&(item.kind.clone(), item.id)];
         if item.kind != "external" {
-            let node = resource["entry_node_id"].as_i64().unwrap_or(item.id);
+            let node = item.id;
             let name_changed = item
                 .name
                 .as_ref()
@@ -176,7 +176,7 @@ pub async fn batch_update(
             let enabled_changed = item
                 .enabled
                 .is_some_and(|enabled| resource["enabled"] != enabled);
-            let node_changed = enabled_changed || (item.kind == "direct" && name_changed);
+            let node_changed = enabled_changed || name_changed;
             // Catalog and the original resource editor share the same entity CAS.
             // Metadata-only edits use the independent catalog revision below.
             if node_changed {
@@ -187,31 +187,15 @@ pub async fn batch_update(
                     return Err(item_error(item, "节点设置修订号已达上限或无法确认"));
                 }
             }
-            if item.kind == "chain" && (name_changed || enabled_changed) {
-                let changed = sqlx::query("UPDATE singbox_chains SET settings_revision=settings_revision+1 WHERE id=$1 AND settings_revision>=1 AND settings_revision<$2")
-                    .bind(item.id).bind(super::super::business::MAX_SAFE_INTEGER)
-                    .execute(&mut *tx).await?.rows_affected();
-                if changed != 1 {
-                    return Err(item_error(item, "链路设置修订号已达上限或无法确认"));
-                }
-            }
             let mut dirty = false;
             if name_changed {
                 let name = item.name.as_ref().expect("changed name");
-                if item.kind == "chain" {
-                    sqlx::query("UPDATE singbox_chains SET name=$2 WHERE id=$1")
-                        .bind(item.id)
-                        .bind(name)
-                        .execute(&mut *tx)
-                        .await?;
-                } else {
-                    sqlx::query("UPDATE nodes SET name=$2 WHERE id=$1")
-                        .bind(node)
-                        .bind(name)
-                        .execute(&mut *tx)
-                        .await?;
-                    dirty = true;
-                }
+                sqlx::query("UPDATE nodes SET name=$2 WHERE id=$1")
+                    .bind(node)
+                    .bind(name)
+                    .execute(&mut *tx)
+                    .await?;
+                dirty = true;
             }
             if enabled_changed {
                 let enabled = item.enabled.expect("changed enabled state");
@@ -261,9 +245,18 @@ pub(crate) async fn ensure_external_removable(
     tx: &mut Transaction<'_, Postgres>,
     id: i64,
 ) -> ApiResult<()> {
-    let used:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE h.external_node_id=$1 AND c.deleted_at IS NULL) OR EXISTS(SELECT 1 FROM singbox_policy_external_nodes p WHERE p.external_node_id=$1) OR EXISTS(SELECT 1 FROM singbox_ordered_chain_hops h JOIN singbox_ordered_external_nodes o ON o.id=h.external_node_id JOIN singbox_chains c ON c.id=h.chain_id WHERE o.public_id=$1 AND c.path_kind='ordered' AND c.phase<>'retired' AND h.generation IN (c.applied_generation,c.candidate_generation,c.recovery_generation,c.desired_generation))")
-        .bind(id).fetch_one(&mut **tx).await?;
-    if used {
+    ensure_externals_removable(tx, &[id]).await
+}
+
+/// None of these external nodes may still be held by a policy group or by a chain version
+/// that is applied, a candidate, kept for recovery or desired.
+pub(crate) async fn ensure_externals_removable(
+    tx: &mut Transaction<'_, Postgres>,
+    ids: &[i64],
+) -> ApiResult<()> {
+    let used: Option<i64> = sqlx::query_scalar("SELECT x.id FROM unnest($1::bigint[]) AS x(id) WHERE EXISTS(SELECT 1 FROM singbox_policy_external_nodes p WHERE p.external_node_id=x.id) OR EXISTS(SELECT 1 FROM singbox_ordered_chain_hops h JOIN singbox_ordered_external_nodes o ON o.id=h.external_node_id JOIN singbox_chains c ON c.id=h.chain_id WHERE o.public_id=x.id AND c.phase<>'retired' AND h.generation IN (c.applied_generation,c.candidate_generation,c.recovery_generation,c.desired_generation)) ORDER BY x.id LIMIT 1")
+        .bind(ids).fetch_optional(&mut **tx).await?;
+    if let Some(id) = used {
         return Err(ApiError::Conflict(format!(
             "外部节点 {id} 仍被链路或策略组引用，请先解除引用"
         )));
@@ -289,27 +282,19 @@ pub async fn batch_remove(
                 super::super::proxy_resources::ensure_direct_node_unreferenced_on(&mut tx, item.id)
                     .await?
             }
-            "chain" => {
-                let entry =
-                    sqlx::query_scalar("SELECT entry_node_id FROM singbox_live_chains WHERE id=$1")
-                        .bind(item.id)
-                        .fetch_optional(&mut *tx)
-                        .await?
-                        .ok_or(ApiError::NotFound)?;
-                super::super::proxy_resources::ensure_chain_entry_unreferenced_on(
-                    &mut tx, item.id, entry,
-                )
-                .await?;
-            }
             _ => unreachable!(),
         }
     }
     for item in &items {
         match item.kind.as_str() {
             "direct" => super::super::nodes::remove_on(&mut tx, item.id).await?,
-            "chain" => super::super::mixed_paths::resources::remove_on(&mut tx, item.id).await?,
             "external" => {
-                super::super::source_migration::set_adopted(&mut tx, item.id, false).await?;
+                sqlx::query(
+                    "UPDATE singbox_ordered_external_nodes SET adopted=FALSE WHERE public_id=$1",
+                )
+                .bind(item.id)
+                .execute(&mut *tx)
+                .await?;
                 sqlx::query("INSERT INTO singbox_node_metadata(kind,id,deleted_at) VALUES('external',$1,$2) ON CONFLICT(kind,id) DO UPDATE SET deleted_at=$2,revision=singbox_node_metadata.revision+1")
                     .bind(item.id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
             }

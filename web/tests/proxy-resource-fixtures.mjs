@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto'
 // Explicit public API fixtures. This is test data, not the backend projection implementation.
 export const pathFixtureUuid = value => `00000000-0000-4000-8000-${String(value).padStart(12, '0')}`
-export function legacyPathFields(exit) {
+/** An applied chain with one managed hop: entry → exit. */
+export function appliedPathFields(exit) {
   const hops = [{ kind: 'managed', position: 1, node_id: exit.id, endpoint_version_id: pathFixtureUuid(exit.id), endpoint: exit }]
-  return { settings_revision: 1, path_kind: 'legacy', hops, path_state: { desired_generation: 1, candidate_generation: null, applied_generation: 1, recovery_generation: null, minimum_generation: 0, phase: 'legacy', capabilities: { tcp: true, udp: true }, last_error: null, dependencies: [], probe: null, generations: [{ generation: 1, state: 'desired', hops }, { generation: 1, state: 'applied', hops }] } }
+  return { settings_revision: 1, path_kind: 'ordered', hops, path_state: { desired_generation: 1, candidate_generation: null, applied_generation: 1, recovery_generation: null, minimum_generation: 0, phase: 'applied', capabilities: { tcp: true, udp: true }, last_error: null, dependencies: [], probe: null, generations: [{ generation: 1, state: 'desired', hops }, { generation: 1, state: 'applied', hops }] } }
 }
-export function publicResourceFields(kind, exit) { return kind === 'chain' ? legacyPathFields(exit) : { settings_revision: 1, path_kind: null, hops: [], path_state: null } }
+export function publicResourceFields(kind, exit) { return kind === 'chain' ? appliedPathFields(exit) : { settings_revision: 1, path_kind: null, hops: [], path_state: null } }
 export function orderedResourceFixture({ id, name, entry, hops, path_state, ...changes }) {
   if (!hops?.length) throw new Error('An ordered fixture requires an explicit immutable hop vector')
   const frozen = structuredClone(hops)
@@ -37,19 +38,14 @@ export function proxyResourceFixtures(nodes, servers, chains = []) {
   ]
 }
 
-// The existing flat API remains a separate numeric contract in combined-page tests.
-export function flatResourceFixtures(nodes, servers, chains = []) {
-  return proxyResourceFixtures(nodes, servers, chains).filter(resource => resource.kind !== 'chain' || resource.path_kind !== 'ordered').map(resource => ({
-    kind: resource.kind, id: resource.id, name: resource.name, server_id: resource.entry.server_id, server_name: resource.entry.server_name,
-    public_host: resource.entry.public_host, port: resource.entry.port, protocol: resource.entry.protocol, enabled: resource.entry.enabled, available: resource.available,
-    role: resource.kind === 'chain' ? 'chain_entry' : resource.chain_refs.length ? 'managed_hop' : 'direct', entry_node_id: resource.kind === 'chain' ? resource.entry.id : null,
-    tcp: true, udp: true, legacy: resource.kind === 'chain', active_generation: resource.kind === 'chain' ? 1 : null, pending_generation: null,
-    minimum_generation: 0, stage: resource.kind === 'chain' ? 'active' : 'direct', last_error: null,
-    reference_count: resource.policy_group_ids.length + resource.user_count + resource.chain_refs.length,
-    entry_eligible: resource.kind === 'direct' && resource.entry.protocol === 'vless-reality' && resource.available && !resource.chain_refs.length && !resource.policy_group_ids.length && !resource.user_count,
-    managed_server_ids: [...new Set([resource.entry.server_id, ...resource.hops.filter(hop => hop.kind === 'managed').map(hop => hop.endpoint.server_id)])],
-    managed_middle_server_ids: resource.hops.filter(hop => hop.kind === 'managed' && hop.position < resource.hops.length).map(hop => hop.endpoint.server_id),
-    managed_exit_server_ids: resource.exit ? [resource.exit.server_id] : [],
+// The node catalog's managed rows: every node that is not a chain's dedicated entry.
+export function catalogNodeFixtures(nodes, servers, chains = []) {
+  return proxyResourceFixtures(nodes, servers, chains).filter(resource => resource.kind === 'direct').map(resource => ({
+    kind: 'direct', id: resource.id, name: resource.name, server_id: resource.entry.server_id,
+    managed_server_ids: [resource.entry.server_id], managed_middle_server_ids: [], managed_exit_server_ids: [],
+    server_name: resource.entry.server_name, protocol: resource.entry.protocol, public_host: resource.entry.public_host, port: resource.entry.port,
+    enabled: resource.entry.enabled, available: resource.entry.enabled, role: resource.chain_refs.length ? 'managed_hop' : 'direct', entry_node_id: null,
+    tcp: true, udp: resource.entry.protocol !== 'naive', stage: 'direct', last_error: null, reference_count: new Set(resource.chain_refs.map(ref => ref.id)).size,
   }))
 }
 

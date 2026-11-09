@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PluginServer, Server } from '../../types'
-import { installationView } from './Settings'
+import { installationView } from './Runtimes'
 import { cn } from '@/lib/utils'
 
 type Tone = 'good' | 'bad' | 'warm' | 'neutral'
@@ -82,7 +82,7 @@ export default function NetworkMap({ plugins, servers = [] }: { plugins: PluginS
       {nodes.map(node => {
         const cos = Math.cos(node.angle), side = cos > 0.25 ? 'start' : cos < -0.25 ? 'end' : 'middle'
         const label = { x: node.x + Math.cos(node.angle) * (node.r + 8), y: node.y + Math.sin(node.angle) * (node.r + 8) + (side === 'middle' ? (Math.sin(node.angle) > 0 ? 10 : -2) : 4) }
-        return <a key={node.id} href={`#/servers/${node.id}/plugins`} aria-label={`${node.name}：${node.state}${node.online ? '' : '，Agent 离线'}`} className="group/node outline-none">
+        return <a key={node.id} href={`#/servers/${node.id}/services`} aria-label={`${node.name}：${node.state}${node.online ? '' : '，Agent 离线'}`} className="group/node outline-none">
           <title>{`${node.name} · ${node.group} · ${node.state}${node.online ? '' : ' · Agent 离线'}`}</title>
           {!node.online && <circle cx={node.x} cy={node.y} r={node.r + 4} fill="none" stroke="var(--destructive)" strokeWidth="1.2" strokeDasharray="2 2" />}
           <circle cx={node.x} cy={node.y} r={node.r + 6} fill="transparent" className="group-hover/node:fill-[color-mix(in_oklch,var(--primary)_12%,transparent)] group-focus-visible/node:stroke-[var(--ring)]" strokeWidth="2" />

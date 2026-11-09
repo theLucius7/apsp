@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { mkdir, readFile } from 'node:fs/promises'
 import { resolve, extname, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { orderedResourceFixture, pathFixtureUuid, flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { orderedResourceFixture, pathFixtureUuid, catalogNodeFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
 import { sourceNodeFixture, sourceNodePageFixture, sourceRevisionFixture, sourceUuid, subscriptionSourceFixture } from './subscription-source-fixtures.mjs'
 
 // Serve the real final dist. Owned public fixtures exercise UI contracts, not live proxy delivery.
@@ -30,7 +30,7 @@ try {
     page.on('pageerror', error => errors.push(error.message))
     const servers = [1, 2, 3].map(id => ({ id, name: `服务器 ${id}`, enabled: true, online: false, read_only: false, source: 'administrator', agent_supported: true }))
     let nodes = [1, 2, 3, 10, 11].map(id => ({ id, name: `节点 ${id}`, server_id: id >= 10 ? 1 : id, protocol: 'vless-reality', enabled: true, port: 20000 + id, public_host: `node${id}.example.com`, sni: 'www.example.com', public_key: 'TEST_ONLY', short_id: 'abcd' }))
-    const legacy = [{ id: 1, name: '旧两跳', entry_node_id: 10, exit_node_id: 2, available: true }]
+    const twoHop = [{ id: 1, name: '入口两跳', entry_node_id: 10, exit_node_id: 2, available: true }]
     let source = subscriptionSourceFixture(), sourceNodes = [sourceNodeFixture({ version_id: sourceUuid(405) })], sourceFailure = false, oldNodesFailure = false
     const endpoint = id => proxyResourceFixtures(nodes, servers).find(value => value.kind === 'direct' && value.id === id).entry
     const sourceHop = (position, version = sourceUuid(405), mode = 'pinned') => ({ kind: 'subscription', position, source_id: 1, source_name: source.name, identity_epoch: 1, external_node_id: sourceUuid(301), node_version_id: version, source_revision_id: sourceUuid(101), update_mode: mode, name: '外部示例节点', protocol: 'trojan', server: 'exit.example.com', server_port: 443, sni: 'exit.example.com', transport: 'tcp', capabilities: { tcp: true, udp: true }, source_archived: false, node_present: true, update_error: null })
@@ -39,7 +39,7 @@ try {
     const applied = structuredClone(hops); applied[1].node_version_id = sourceUuid(401)
     let ordered = [orderedResourceFixture({ id: 11, name: '已有四段路径', entry: endpoint(11), hops, path_state: { desired_generation: 2, candidate_generation: 2, applied_generation: 1, recovery_generation: 1, minimum_generation: 0, phase: 'preparing_dependencies', capabilities: { tcp: true, udp: true }, last_error: null, dependencies: [], probe: null, generations: [{ state: 'desired', generation: 2, hops }, { state: 'candidate', generation: 2, hops }, { state: 'applied', generation: 1, hops: applied }, { state: 'recovery', generation: 1, hops: applied }] } })]
     let nextNode = 20, nextChain = 30, mode = 'lose-batch', editMode = 'lose-edit'
-    const resources = () => [...proxyResourceFixtures(nodes, servers, legacy).filter(resource => resource.kind === 'chain' || !ordered.some(value => value.entry.id === resource.id)), ...ordered]
+    const resources = () => [...proxyResourceFixtures(nodes, servers, twoHop).filter(resource => resource.kind === 'chain' || !ordered.some(value => value.entry.id === resource.id)), ...ordered]
     const getSource = () => ({ ...source, dependencies: ordered.flatMap(resource => resource.path_state.generations.filter(view => ['candidate', 'applied', 'recovery'].includes(view.state)).flatMap(view => view.hops.filter(hop => hop.kind === 'subscription').map(hop => ({ chain_id: resource.id, chain_name: resource.name, generation: view.generation, state: view.state, hop_position: hop.position, external_node_id: hop.external_node_id, node_version_id: hop.node_version_id, identity_epoch: hop.identity_epoch })))) })
     await page.route('**/api/**', async route => {
       const request = route.request(), path = new URL(request.url()).pathname, method = request.method()
@@ -48,14 +48,11 @@ try {
       if (method === 'GET' && path === '/api/dashboard/access') value = { authenticated: true, public_dashboard: false }
       else if (method === 'GET' && path === '/api/me') value = { authenticated: true }
       else if (method === 'GET' && path === `${prefix}/servers`) value = servers
-      else if (method === 'GET' && path === `${prefix}/subscription-sources`) value = []
-      else if (method === 'GET' && path === `${prefix}/proxy-resources`) value = flatResourceFixtures(nodes.filter(node => !ordered.some(resource => resource.entry.id === node.id)), servers, legacy)
-      else if (method === 'GET' && path === `${prefix}/node-catalog`) value = catalogResourceFixtures(flatResourceFixtures(nodes.filter(node => !ordered.some(resource => resource.entry.id === node.id)), servers, legacy))
+      else if (method === 'GET' && path === `${prefix}/node-catalog`) value = catalogResourceFixtures(catalogNodeFixtures(nodes.filter(node => !ordered.some(resource => resource.entry.id === node.id)), servers, twoHop))
       else if (method === 'GET' && path === `${prefix}/nodes`) { if (oldNodesFailure) { await route.fulfill({ status: 500, json: { error: '旧节点配置无法读取' } }); return } value = nodes }
       else if (method === 'GET' && path === `${prefix}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
       else if (method === 'GET' && path === `${prefix}/ordered-proxy-resources`) value = resources()
       else if (method === 'GET' && /^\/api\/plugins\/sing-box\/ordered-proxy-resources\/(direct|chain)\/[1-9]\d*$/.test(path)) { const [, kind, id] = path.match(/\/(direct|chain)\/(\d+)$/); value = resources().find(resource => resource.kind === kind && resource.id === Number(id)); if (!value) { await route.fulfill({ status: 404, json: { error: '资源已删除' } }); return } }
-      else if (method === 'GET' && path === `${prefix}/source-migration`) value = { migrated: false, migrated_at: null }
       else if (method === 'GET' && path === `${prefix}/ordered-subscription-sources`) { if (sourceFailure) { await route.fulfill({ status: 503, json: { error: '来源读取失败' } }); return } value = [getSource()] }
       else if (method === 'GET' && path === `${prefix}/ordered-subscription-sources/1`) value = getSource()
       else if (method === 'GET' && path === `${prefix}/ordered-subscription-sources/1/nodes`) value = sourceNodePageFixture({ current_identity_epoch: source.identity_epoch, nodes: sourceNodes })
@@ -142,19 +139,19 @@ try {
     assert.match(await dialog.innerText(), new RegExp(sourceUuid(401))); assert.match(await dialog.innerText(), new RegExp(sourceUuid(405))); assert.equal(await dialog.getByText('指定目标验证成功', { exact: true }).count(), 0)
     await shot('versions'); await dialog.getByRole('button', { name: '关闭', exact: true }).click()
     await dialog.waitFor({ state: 'hidden' }); assert.equal(await focused(resourceRow.getByRole('button', { name: '详情', exact: true })), true, 'Closing a dialog returns focus to the button that opened it')
-    await showView('订阅来源')
+    await showView('外部来源')
     await page.locator('[data-source-id="1"]').getByRole('button', { name: '查看来源', exact: true }).click(); dialog = page.getByRole('dialog')
     const refs = dialog.getByRole('region', { name: '来源路径引用', exact: true }); await refs.getByText(/候选代 2/).waitFor(); await refs.getByRole('link', { name: '「已有四段路径」#11', exact: true }).first().click()
     dialog = page.getByRole('dialog'); await dialog.getByRole('heading', { name: '资源详情：已有四段路径', exact: true }).waitFor(); assert.match(page.url(), /nodes\/chain\/11$/); await dialog.getByRole('button', { name: '关闭', exact: true }).click()
     await showView('链路')
     await enabled(create); await create.click(); dialog = page.getByRole('dialog')
     await dialog.locator('[name=server_id]').selectOption('1'); await dialog.locator('[name=public_host]').fill('entry.example.com'); await dialog.locator('[name=sni]').fill('www.example.com'); await dialog.locator('[name=name]').fill('新四段甲')
-    const shared = dialog.getByRole('group', { name: '共享有序路径', exact: true })
+    const shared = dialog.getByRole('group', { name: '共享路径', exact: true })
     await fieldSelect(shared, '第 1 跳受管节点').selectOption('3'); await shared.getByRole('button', { name: '添加下一跳', exact: true }).click()
-    await fieldSelect(shared, '第 2 跳类型').selectOption('subscription'); await fieldSelect(shared, '第 2 跳订阅来源').selectOption('1')
+    await fieldSelect(shared, '第 2 跳类型').selectOption('subscription'); await fieldSelect(shared, '第 2 跳外部来源').selectOption('1')
     await enabled(shared.getByLabel('第 2 跳订阅节点', { exact: false })); await shared.getByLabel('第 2 跳订阅节点', { exact: false }).selectOption(sourceUuid(405))
     await shared.getByRole('button', { name: '添加下一跳', exact: true }).click(); await fieldSelect(shared, '第 3 跳受管节点').selectOption('2')
-    await shared.getByRole('button', { name: '共享有序路径第 2 跳上移', exact: true }).click(); await shared.getByRole('button', { name: '共享有序路径第 1 跳下移', exact: true }).click()
+    await shared.getByRole('button', { name: '共享路径第 2 跳上移', exact: true }).click(); await shared.getByRole('button', { name: '共享路径第 1 跳下移', exact: true }).click()
     await dialog.getByRole('button', { name: '添加一条链路', exact: true }).click(); await dialog.locator('[name=name_1]').fill('新四段乙'); await dialog.locator('[name=entry_port_1]').fill('24443')
     await dialog.getByRole('button', { name: '单独编辑第 2 条路径', exact: true }).click(); await fieldSelect(dialog.getByRole('group', { name: '第 2 条独立路径', exact: true }), '第 2 跳更新方式').selectOption('pinned')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true); await shot('batch')

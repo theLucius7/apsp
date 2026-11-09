@@ -72,7 +72,6 @@ import	web/src/plugins/singbox/ChainLifecycle.tsx	web/src/plugins/singbox/groupT
 import	web/src/plugins/singbox/ChainResourceEditor.tsx	web/src/plugins/singbox/groupTypes.ts	traffic->access
 import	web/src/plugins/singbox/ChainVersionEditor.tsx	web/src/plugins/singbox/groupTypes.ts	traffic->access
 import	web/src/plugins/singbox/Chains.tsx	web/src/plugins/singbox/groupTypes.ts	traffic->access
-import	web/src/plugins/singbox/Groups.tsx	web/src/plugins/singbox/resourceInventory.ts	access->traffic
 import	web/src/plugins/singbox/Groups.tsx	web/src/plugins/singbox/resourceTypes.ts	access->traffic
 import	web/src/plugins/singbox/NexusNodes.tsx	web/src/plugins/singbox/groupTypes.ts	traffic->access
 import	web/src/plugins/singbox/NodeCatalog.tsx	web/src/plugins/singbox/groupTypes.ts	traffic->access
@@ -87,14 +86,12 @@ import	web/src/plugins/singbox/SourceUsage.tsx	web/src/plugins/singbox/groupType
 import	web/src/plugins/singbox/Sources.tsx	web/src/plugins/singbox/groupTypes.ts	traffic->access
 import	web/src/plugins/singbox/SubscriptionDialog.tsx	web/src/plugins/singbox/ProtocolFields.tsx	access->traffic
 import	web/src/plugins/singbox/SubscriptionDomain.tsx	web/src/plugins/ddns/DnsAccounts.tsx	access->naming
-import	web/src/plugins/singbox/SubscriptionSources.tsx	web/src/plugins/singbox/groupTypes.ts	traffic->access
 import	web/src/plugins/singbox/UserPortal.tsx	web/src/passkeys.ts	access->governance
 import	web/src/plugins/singbox/accounts/AccountServices.tsx	web/src/passkeys.ts	access->governance
 import	web/src/plugins/singbox/chainRequests.ts	web/src/plugins/singbox/groupTypes.ts	traffic->access
 import	web/src/plugins/singbox/lines/MemberLines.tsx	web/src/quality.ts	access->observability
 import	web/src/plugins/singbox/nodeRoute.ts	web/src/plugins/singbox/groupTypes.ts	traffic->access
 import	web/src/plugins/singbox/portalAccess.ts	web/src/passkeys.ts	access->governance
-import	web/src/plugins/singbox/resourceInventory.ts	web/src/plugins/singbox/groupTypes.ts	traffic->access
 import	web/src/plugins/singbox/sourceRequests.ts	web/src/plugins/singbox/groupTypes.ts	traffic->access
 import	web/src/servers/AgentSettings.tsx	web/src/servers/TelemetrySettings.tsx	resources->observability
 import	web/src/servers/AgentTasks.tsx	web/src/servers/CommandsPanel.tsx	resources->operations
@@ -171,14 +168,6 @@ ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/power/mod.rs	resourc
 ref	plugins/singbox/panel/catalog/clone.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 ref	plugins/singbox/panel/catalog/mutation.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 ref	plugins/singbox/panel/catalog/projection.rs	plugins/singbox/panel/external_access/model.rs	traffic->access
-ref	plugins/singbox/panel/chains.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/legacy_takeover.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/legacy_takeover.rs	plugins/singbox/panel/subscriptions.rs	traffic->access
-ref	plugins/singbox/panel/mixed_conversion.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/mixed_paths/create.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/mixed_paths/publication/advance.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/mixed_paths/resources.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/mixed_paths/updates.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 ref	plugins/singbox/panel/nexus_nodes/mod.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 ref	plugins/singbox/panel/nexus_nodes/runtime.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 ref	plugins/singbox/panel/nexus_nodes/runtime.rs	plugins/singbox/panel/nexus_nodes/sessions.rs	traffic->access
@@ -201,12 +190,6 @@ ref	plugins/singbox/panel/publisher.rs	plugins/singbox/panel/entitlements.rs	tra
 ref	plugins/singbox/panel/publisher.rs	plugins/singbox/panel/nexus_nodes/sessions.rs	traffic->access
 ref	plugins/singbox/panel/publisher.rs	plugins/singbox/panel/operations_workflows/mod.rs	traffic->access
 ref	plugins/singbox/panel/publisher.rs	plugins/singbox/panel/user_limits.rs	traffic->access
-ref	plugins/singbox/panel/source_migration/rehearsal.rs	plugins/singbox/panel/external_access/model.rs	traffic->access
-ref	plugins/singbox/panel/source_migration/rehearsal.rs	plugins/singbox/panel/subscriptions.rs	traffic->access
-ref	plugins/singbox/panel/sources/adoption.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/sources/mod.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/sources/previews.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/sources/service.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 ref	plugins/singbox/panel/subscription_sources/mutations.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 ref	plugins/singbox/panel/subscription_sources/previews.rs	plugins/singbox/panel/entitlements.rs	traffic->access
 sql	crates/costs/src/cancellation_reminders.rs	read	operations_incidents	costs->observability
@@ -436,17 +419,6 @@ sql	plugins/singbox/panel/external_access/model.rs	read	singbox_external_node_st
 sql	plugins/singbox/panel/external_access/model.rs	read	singbox_external_version_configs	access->traffic
 sql	plugins/singbox/panel/external_access/model.rs	read	singbox_node_metadata	access->traffic
 sql	plugins/singbox/panel/host_support.rs	read	users	traffic->access
-sql	plugins/singbox/panel/legacy_takeover.rs	read	accesses	traffic->access
-sql	plugins/singbox/panel/legacy_takeover.rs	read	singbox_desired_accesses	traffic->access
-sql	plugins/singbox/panel/legacy_takeover.rs	read	singbox_policy_nodes	traffic->access
-sql	plugins/singbox/panel/mixed_conversion.rs	read	singbox_policy_nodes	traffic->access
-sql	plugins/singbox/panel/mixed_paths/create.rs	read	accesses	traffic->access
-sql	plugins/singbox/panel/mixed_paths/create.rs	read	singbox_policy_nodes	traffic->access
-sql	plugins/singbox/panel/mixed_paths/publication/advance.rs	write	servers	traffic->resources
-sql	plugins/singbox/panel/mixed_paths/resources.rs	read	accesses	traffic->access
-sql	plugins/singbox/panel/mixed_paths/resources.rs	read	singbox_policy_chains	traffic->access
-sql	plugins/singbox/panel/mixed_paths/resources.rs	read	singbox_policy_nodes	traffic->access
-sql	plugins/singbox/panel/mixed_paths/resources.rs	write	accesses	traffic->access
 sql	plugins/singbox/panel/nexus_nodes/mod.rs	write	credential_entries	traffic->platform
 sql	plugins/singbox/panel/nexus_nodes/mod.rs	write	management_audit	traffic->governance
 sql	plugins/singbox/panel/nexus_nodes/mod.rs	write	singbox_policy_nodes	traffic->access
@@ -518,7 +490,6 @@ sql	plugins/singbox/panel/ordered_paths/api.rs	read	accesses	traffic->access
 sql	plugins/singbox/panel/ordered_paths/api.rs	read	server_retirements	traffic->resources
 sql	plugins/singbox/panel/ordered_paths/api.rs	read	singbox_policy_nodes	traffic->access
 sql	plugins/singbox/panel/policies.rs	read	singbox_chains	access->traffic
-sql	plugins/singbox/panel/policies.rs	read	singbox_live_chains	access->traffic
 sql	plugins/singbox/panel/policies.rs	read	singbox_nexus_nodes	access->traffic
 sql	plugins/singbox/panel/policies.rs	read	singbox_nexus_runtime_hosts	access->traffic
 sql	plugins/singbox/panel/policies.rs	read	singbox_nexus_runtime_nodes	access->traffic
@@ -553,17 +524,12 @@ sql	plugins/singbox/panel/runtime_operations.rs	read	server_retirements	traffic-
 sql	plugins/singbox/panel/runtime_operations.rs	write	runtime_operations	traffic->operations
 sql	plugins/singbox/panel/runtime_validations.rs	read	server_retirements	traffic->resources
 sql	plugins/singbox/panel/settings.rs	write	servers	traffic->resources
-sql	plugins/singbox/panel/source_migration/import.rs	read	singbox_policy_external_nodes	traffic->access
-sql	plugins/singbox/panel/source_migration/rehearsal.rs	read	users	traffic->access
-sql	plugins/singbox/panel/source_migration/rollback.rs	read	singbox_policy_external_nodes	traffic->access
-sql	plugins/singbox/panel/sources/mod.rs	read	singbox_policy_external_nodes	traffic->access
 sql	plugins/singbox/panel/subscriptions.rs	read	deployments	access->traffic
 sql	plugins/singbox/panel/subscriptions.rs	read	record_retention_policy	access->governance
 sql	plugins/singbox/panel/subscriptions.rs	read	server_module_status	access->traffic
 sql	plugins/singbox/panel/subscriptions.rs	read	singbox_chains	access->traffic
 sql	plugins/singbox/panel/subscriptions.rs	read	singbox_deployment_projections	access->traffic
 sql	plugins/singbox/panel/subscriptions.rs	read	singbox_deployment_public_projection	access->traffic
-sql	plugins/singbox/panel/subscriptions.rs	read	singbox_live_chains	access->traffic
 sql	plugins/singbox/panel/usage.rs	read	deployments	access->traffic
 sql	plugins/singbox/panel/user_accounts/accounts.rs	write	passkey_accounts	access->governance
 sql	plugins/singbox/panel/user_accounts/accounts.rs	write	passkey_credentials	access->governance

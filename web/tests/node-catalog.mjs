@@ -16,7 +16,7 @@ const wait = async (condition, description) => {
 const forceSubmit = dialog => dialog.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = process.env.APSP_WEB_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url))
-const apiRoot = '/api/plugins/sing-box', catalogPath = `${apiRoot}/node-catalog`, sourcePath = `${apiRoot}/subscription-sources`
+const apiRoot = '/api/plugins/sing-box', catalogPath = `${apiRoot}/node-catalog`
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname
@@ -46,8 +46,7 @@ try {
     const managed = { id: 1, kind: 'direct', name: node.name, original_name: node.name, server_id: 1, server_name: '服务器', public_host: node.public_host, port: 443, protocol: node.protocol, enabled: true, available: true, role: 'direct', entry_node_id: null, tcp: true, udp: true, stage: 'direct', reference_count: 0, tags: [], note: '', sort_order: 0, revision: hash('managed-1'), managed_server_ids: [1], metadata_revision: 0, entry_eligible: true }
     const managedNodes = [node]
     let catalog = [managed, ...Array.from({ length: 22 }, (_, i) => ({ id: i + 1, kind: 'external', name: `外部 ${String(i + 1).padStart(2, '0')}`, original_name: `来源名称 ${i + 1}`, server_id: null, server_name: null, public_host: 'provider.example.com', port: 443, protocol: i % 2 ? 'tuic' : 'shadowsocks', enabled: true, available: true, role: 'external', tcp: true, udp: true, stage: 'external', reference_count: 0, source_id: 1, source_name: '测试来源', version_id: i + 1, identity_epoch: 1, tags: i === 0 ? ['常用'] : [], note: '', sort_order: i + 1, metadata_revision: 0, revision: hash(`external-${i + 1}-1`) }))]
-    let gate, catalogFail = false, rejectBatch = false, sources = [], previewCalls = 0, previewExpiry, sourceNode = { id: 23, source_id: 1, node_version_id: 23, source_revision_id: 1, identity_epoch: 1, metadata_revision: 0, name: '导入甲', protocol: 'shadowsocks', server: 'import.example.com', port: 443, transport: 'tcp', tcp: true, udp: true, selectable: true, present: true, identity_unique: true, adopted: true, reason: null }
-    const source = { id: 1, name: '导入测试', kind: 'inline', source_host: null, url_configured: false, authorization_configured: false, content_configured: true, settings_revision: 1, identity_epoch: 1, refresh_interval_seconds: 1800, auto_refresh: false, archived: false, current_revision_id: 1, last_attempt_at: 1, last_success_at: 1, last_error: null, supported_count: 2, unsupported_count: 1, active_job_id: null, dependency_ids: [], traffic: {}, changes: { added: 2, updated: 0, missing: 0, unsupported: 1 } }
+    let gate, catalogFail = false, rejectBatch = false
     const hold = path => { let release; const promise = new Promise(done => { release = done }); return gate = { path, promise, release, reached: 0, fail: false } }
     const release = fail => { const pending = gate; gate = undefined; pending.fail = fail; pending.release() }
     await page.route('**/*', async route => {
@@ -61,9 +60,7 @@ try {
       if (path === '/api/me') value = { authenticated: true }
       else if (path === '/api/dashboard/access') value = { authenticated: true, public_dashboard: false }
       else if (path === `${apiRoot}/nodes`) value = managedNodes
-      else if (path === `${apiRoot}/proxy-resources`) value = catalog.filter(row => row.kind === 'direct')
       else if (path === `${apiRoot}/ordered-proxy-resources`) value = proxyResourceFixtures(managedNodes, [...pluginServers, ...(!pluginServers.length ? [{ id: 1, name: '服务器', enabled: false, online: false }] : [])])
-      else if (path === `${apiRoot}/source-migration`) value = { migrated: false, migrated_at: null }
       else if (path === `${apiRoot}/ordered-subscription-sources`) value = []
       else if (path === `${apiRoot}/servers`) value = pluginServers
       else if (path === `${apiRoot}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
@@ -84,27 +81,6 @@ try {
       else if (path === `${apiRoot}/nodes/1/clone` && method === 'POST') {
         assert.equal(body.revision, catalog.find(row => row.kind === 'direct' && row.id === 1).revision); assert.equal(body.server_id, 1); assert.equal(body.name, 'TEST_ONLY 保留副本草稿'); assert.equal(body.public_host, 'clone.example.com')
         const created = { ...node, id: 2, name: body.name, public_host: body.public_host, port: body.port ?? 20002 }; managedNodes.push(created); catalog.push({ ...managed, id: 2, name: body.name, original_name: body.name, public_host: body.public_host, port: created.port, revision: hash('clone-2') }); value = created
-      }
-      else if (path === sourcePath) value = sources
-      else if (path === `${apiRoot}/subscription-source-previews` && method === 'POST') {
-        previewCalls++; assert.equal(sources.length, 0); assert.equal(body.kind, 'inline'); assert.ok(body.content.includes('TEST_ONLY'))
-        value = { id: `00000000-0000-4000-8000-${String(previewCalls).padStart(12, '0')}`, expires_at: previewExpiry, format: 'uri', supported_count: 2, unsupported_count: 1, nodes: [
-          { key: 'node-0', index: 0, name: '导入甲', protocol: 'shadowsocks', server: 'import.example.com', port: 443, transport: 'tcp', tcp: true, udp: true, supported: true, reason: null },
-          { key: 'node-1', index: 1, name: '导入乙', protocol: 'tuic', server: 'import.example.com', port: 8443, transport: 'quic', tcp: true, udp: true, supported: true, reason: null },
-          { key: 'rejected-0', index: 2, name: '不支持节点', protocol: null, server: null, port: null, transport: null, tcp: false, udp: false, supported: false, reason: 'unsupported_proxy_protocol' },
-        ] }
-      }
-      else if (/\/subscription-source-previews\/[0-9a-f-]+\/commit$/.test(path) && method === 'POST') {
-        assert.equal(previewCalls, 2); assert.deepEqual(body.selected, ['node-0']); assert.equal(body.name, '导入测试'); assert.equal(JSON.stringify(body).includes('TEST_ONLY'), false)
-        assert.deepEqual(Object.keys(body).sort(), ['auto_refresh', 'name', 'refresh_interval_seconds', 'selected'])
-        sources = [source]; value = source
-      }
-      else if (/\/subscription-source-previews\/[0-9a-f-]+$/.test(path) && method === 'DELETE') return route.fulfill({ status: 204, body: '' })
-      else if (path === `${sourcePath}/1` && method === 'PATCH') { assert.equal('refresh_interval_seconds' in body, false); assert.equal('content' in body, false); assert.equal(body.settings_revision, source.settings_revision); Object.assign(source, body, { settings_revision: source.settings_revision + 1 }); sources = [source]; value = source }
-      else if (path === `${sourcePath}/1/nodes` && method === 'GET') value = [sourceNode]
-      else if (path === `${sourcePath}/1/nodes/23` && method === 'PATCH') {
-        assert.deepEqual(body, { adopted: true, settings_revision: source.settings_revision, identity_epoch: sourceNode.identity_epoch, node_version_id: sourceNode.node_version_id, metadata_revision: sourceNode.metadata_revision })
-        sourceNode = { ...sourceNode, adopted: true, metadata_revision: sourceNode.metadata_revision + 1 }; value = sourceNode
       }
       else { errors.push(`Unexpected ${method} ${path}`); return route.fulfill({ status: 404, json: {} }) }
       return route.fulfill({ json: structuredClone(value) })
@@ -142,7 +118,7 @@ try {
       await dialog.getByLabel('备注').fill('整理后的备注'); await dialog.getByLabel(/^标签/).fill('常用, 高速')
       const save = dialog.getByRole('button', { name: '确认保存', exact: true })
       await wait(() => save.isEnabled(), 'Current metadata draft is initially writable')
-      for (const dependency of [catalogPath, `${apiRoot}/nodes`, `${apiRoot}/proxy-resources`, `${apiRoot}/ordered-proxy-resources`, `${apiRoot}/servers`]) {
+      for (const dependency of [catalogPath, `${apiRoot}/nodes`, `${apiRoot}/ordered-proxy-resources`, `${apiRoot}/servers`]) {
         const pending = hold(dependency), before = writes.length
         await refresh(); await wait(() => pending.reached > 0, `Held current GET reached ${dependency}`)
         await forceSubmit(dialog); assert.equal(writes.length, before, `${dependency} pending: actual submit issues zero POST`)
@@ -193,41 +169,10 @@ try {
       pluginServers.push(...restoredServers); await refresh(); await wait(() => cloneSave.isEnabled(), 'Original server restores the exact clone draft')
       await cloneSave.click(); await dialog.waitFor({ state: 'hidden' }); await row('TEST_ONLY 保留副本草稿').waitFor()
       assert.equal(writes.length, cloneBefore + 1)
-      // Preview credentials are removed from the DOM; expiry and parent failure block commit.
-      await page.getByRole('navigation', { name: '节点视图', exact: true }).getByRole('link', { name: '订阅来源', exact: true }).click()
-      await page.getByRole('region', { name: '订阅来源', exact: true }).getByRole('button', { name: '添加来源', exact: true }).first().click()
-      await dialog.getByLabel('来源名称').fill('导入测试'); await dialog.getByLabel('来源类型').selectOption('inline'); await dialog.getByLabel('配置内容').fill('TEST_ONLY provider data')
-      previewExpiry = Math.floor(await page.evaluate(() => Date.now()) / 1000) + 600
-      await dialog.getByRole('button', { name: '解析并预览', exact: true }).click(); await dialog.getByRole('checkbox', { name: '导入 导入乙' }).uncheck()
-      assert.equal(sources.length, 0); assert.equal(await dialog.getByRole('checkbox', { name: '导入 不支持节点' }).isDisabled(), true); assert.equal(await dialog.locator('textarea').count(), 0)
-      const beforePreview = writes.length, importing = hold(sourcePath)
-      await page.getByRole('region', { name: '订阅来源', exact: true, includeHidden: true }).getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click()); await wait(() => importing.reached > 0, 'The current source list GET is truly pending')
-      await forceSubmit(dialog); assert.equal(writes.length, beforePreview, 'Pending source GET cannot commit the retained preview')
-      release(false); await wait(() => dialog.getByRole('button', { name: '加入节点库（1）', exact: true }).isEnabled(), 'Source list recovery permits the retained selection')
-      await page.clock.fastForward(601000)
-      await wait(() => dialog.getByRole('button', { name: '加入节点库（1）', exact: true }).isDisabled(), 'Fresh preview expires on the real clock')
-      await dialog.getByText('导入预览已过期，请重新解析；当前选择已保留。', { exact: true }).waitFor()
-      await forceSubmit(dialog); assert.equal(writes.length, beforePreview, 'Expired preview cannot POST even through real submit')
-      assert.equal(await dialog.getByRole('checkbox', { name: '导入 导入甲' }).isChecked(), true)
-      await dialog.getByRole('button', { name: '重新填写', exact: true }).click(); await dialog.getByLabel('配置内容').fill('TEST_ONLY provider data')
-      previewExpiry = Math.floor(await page.evaluate(() => Date.now()) / 1000) + 600
-      await dialog.getByRole('button', { name: '解析并预览', exact: true }).click(); await dialog.getByRole('checkbox', { name: '导入 导入乙' }).uncheck()
-      await dialog.getByRole('button', { name: '加入节点库（1）', exact: true }).click(); await dialog.waitFor({ state: 'hidden' })
-      const sourceRegion = page.getByRole('region', { name: '订阅来源', exact: true })
-      await sourceRegion.getByRole('button', { name: '查看节点', exact: true }).click(); await sourceRegion.getByRole('button', { name: '移出节点库', exact: true }).waitFor()
-      const adoptBefore = writes.length
-      await sourceRegion.getByRole('button', { name: '移出节点库', exact: true }).evaluate(button => { window.TEST_ONLY_old_adopt = button[Object.keys(button).find(key => key.startsWith('__reactProps'))].onClick })
-      sourceNode = { ...sourceNode, adopted: false, metadata_revision: 1 }; await sourceRegion.getByRole('button', { name: '刷新', exact: true }).evaluate(button => button.click())
-      await sourceRegion.getByRole('button', { name: '加入节点库', exact: true }).waitFor()
-      await page.evaluate(() => window.TEST_ONLY_old_adopt()); assert.equal(writes.length, adoptBefore, 'Same-version catalog deletion advances metadata and blocks the captured adoption intent')
-      await sourceRegion.getByRole('button', { name: '加入节点库', exact: true }).click(); await sourceRegion.getByRole('button', { name: '移出节点库', exact: true }).waitFor()
-      assert.equal(writes.at(-1).body.metadata_revision, 1, 'Explicit new confirmation uses the current metadata revision')
-      await sourceRegion.getByRole('button', { name: '设置与更新', exact: true }).click(); await dialog.getByLabel('来源名称').fill('导入测试改名'); await dialog.getByRole('button', { name: '保存并解析更新', exact: true }).click(); await dialog.waitFor({ state: 'hidden' }); assert.equal(source.refresh_interval_seconds, 1800)
-      assert.equal(sources.length, 1); assert.equal(await page.evaluate(() => Object.entries(localStorage).some(([key, value]) => key !== 'apsp-shell-actor' && value.includes('TEST_ONLY'))), false)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `overflow at ${width}`)
       assert.deepEqual(errors, [])
       if (process.env.APSP_UI_SCREENSHOT_DIR) { await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `node-catalog-${width}.png`), fullPage: true }) }
-      console.log(`node catalog ${width}: current-read/identity/filter/delete zero-write matrix, CAS recovery, preview expiry/privacy and adoption metadata confirmed`)
+      console.log(`node catalog ${width}: current-read/identity/filter/delete zero-write matrix and CAS recovery confirmed`)
     } finally { gate?.release(); await page.close() }
   }
 } finally { await browser.close(); await new Promise(done => server.close(done)) }

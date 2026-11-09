@@ -106,6 +106,21 @@ async fn prepare_server(
         runtime.join(&target).is_file(),
         "TEST_ONLY dedicated signed runtime fixture must match the real Agent ABI"
     );
+    // Closing the paused Agent's WebSocket marks it offline (last_seen 61 s in the
+    // past). Wait for that write so it cannot overwrite the fixture's contact time.
+    crate::e2e_support::eventually(
+        "panel recorded the paused Agent's disconnect",
+        5,
+        || async {
+            let last_seen: Option<i64> =
+                sqlx::query_scalar("SELECT last_seen FROM servers WHERE id=$1")
+                    .bind(server)
+                    .fetch_one(&panel.state.pool)
+                    .await?;
+            Ok(last_seen.is_none_or(|at| at < now_timestamp() - 59))
+        },
+    )
+    .await?;
     // The real Agent is paused. Only the two controlled read-only dispatches
     // temporarily declare these fixture capabilities; the platform is unchanged.
     sqlx::query("UPDATE servers SET capabilities=$2,last_seen=$3 WHERE id=$1")

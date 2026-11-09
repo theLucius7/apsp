@@ -2,9 +2,9 @@
 
 use apsp_compiler::{
     Access, ManagedAcceptance, ManagedEndpointSnapshot, Node, OrderedPath, PathCapabilities,
-    PathHop, ProbeControl, ProtocolConfig, Relay, compile_client, compile_server,
-    compile_server_with_paths, compile_server_with_relays, external::NormalizedOutbound,
-    path_capabilities, required_build_tags, validate_path,
+    PathHop, ProbeControl, ProtocolConfig, compile_client, compile_server,
+    compile_server_with_paths, external::NormalizedOutbound, path_capabilities,
+    required_build_tags, validate_path,
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
@@ -82,7 +82,7 @@ fn control() -> ProbeControl {
 }
 fn compile(nodes: &[Node], paths: &[OrderedPath], accepts: &[ManagedAcceptance]) -> Value {
     serde_json::from_str(
-        &compile_server_with_paths(nodes, &[], paths, accepts, Some(&control())).unwrap(),
+        &compile_server_with_paths(nodes, paths, accepts, Some(&control())).unwrap(),
     )
     .unwrap()
 }
@@ -97,67 +97,11 @@ fn acceptance(generation: u64) -> ManagedAcceptance {
 }
 
 #[test]
-fn legacy_bytes_and_public_subscriptions_remain_unchanged() {
+fn plain_bytes_and_public_subscriptions_remain_unchanged() {
     let entry = node(1, true);
-    let relay = Relay {
-        settings: Default::default(),
-        fingerprint: Default::default(),
-        chain_id: 11,
-        entry_node_id: 1,
-        exit_node_id: 2,
-        uuid: Uuid::from_u128(99),
-        public_host: "node-2.example.com".into(),
-        port: 443,
-        sni: "www.example.com".into(),
-        public_key: URL_SAFE_NO_PAD.encode([2; 32]),
-        short_id: "1234abcd".into(),
-    };
-    let mut historical = serde_json::to_value(&relay).unwrap();
-    historical.as_object_mut().unwrap().remove("settings");
-    let historical: Relay = serde_json::from_value(historical).unwrap();
-    assert_eq!(
-        compile_server_with_relays(std::slice::from_ref(&entry), std::slice::from_ref(&relay))
-            .unwrap(),
-        compile_server_with_relays(std::slice::from_ref(&entry), &[historical]).unwrap()
-    );
     assert_eq!(
         compile_server(std::slice::from_ref(&entry)).unwrap(),
-        compile_server_with_paths(std::slice::from_ref(&entry), &[], &[], &[], None).unwrap()
-    );
-    assert_eq!(
-        compile_server_with_relays(std::slice::from_ref(&entry), std::slice::from_ref(&relay))
-            .unwrap(),
-        compile_server_with_paths(
-            std::slice::from_ref(&entry),
-            std::slice::from_ref(&relay),
-            &[],
-            &[],
-            None
-        )
-        .unwrap()
-    );
-    let mut candidate = path(vec![http(31), managed(3)]);
-    candidate.active = false;
-    candidate.generation = 2;
-    let bytes = compile_server_with_paths(
-        std::slice::from_ref(&entry),
-        &[relay],
-        &[candidate],
-        &[],
-        Some(&control()),
-    )
-    .unwrap();
-    let config: Value = serde_json::from_str(&bytes).unwrap();
-    assert_eq!(
-        config["route"]["rules"],
-        json!([{"inbound":["node-1"],"action":"route","outbound":"chain-11"}])
-    );
-    assert!(
-        config["outbounds"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|outbound| outbound["tag"] == "chain-11-g2-h2")
+        compile_server_with_paths(std::slice::from_ref(&entry), &[], &[], None).unwrap()
     );
     let client = compile_client(&[entry], 7).unwrap();
     assert!(!client.contains("TEST_ONLY_PASSWORD"));
@@ -194,8 +138,7 @@ fn inactive_generation_has_no_public_fallback_and_can_be_probed_without_users() 
     let mut conflicting = candidate;
     conflicting.active = true;
     assert!(
-        compile_server_with_paths(&[node(1, true)], &[], &[current, conflicting], &[], None)
-            .is_err()
+        compile_server_with_paths(&[node(1, true)], &[current, conflicting], &[], None).is_err()
     );
 }
 
@@ -344,11 +287,10 @@ fn internal_acceptances_share_frozen_listeners_without_changing_accounting() {
     );
     assert_eq!(config, compile(&[live.clone()], &[], &[a.clone(), b]));
     assert!(
-        compile_server_with_paths(&[live.clone()], &[], &[], &[a.clone(), a.clone()], None)
-            .is_err()
+        compile_server_with_paths(&[live.clone()], &[], &[a.clone(), a.clone()], None).is_err()
     );
     live.port = 444;
-    assert!(compile_server_with_paths(&[live], &[], &[], std::slice::from_ref(&a), None).is_err());
+    assert!(compile_server_with_paths(&[live], &[], std::slice::from_ref(&a), None).is_err());
     let restored = compile(&[], &[], &[a]);
     assert_eq!(restored["inbounds"][0]["listen_port"], 443);
     assert_eq!(
@@ -464,14 +406,8 @@ fn topology_and_secondary_parameter_errors_do_not_expose_authentication() {
     common.server = "NODE-1.EXAMPLE.COM".into();
     common.server_port = 443;
     assert!(
-        compile_server_with_paths(
-            &[node(1, true)],
-            &[],
-            &[path(vec![self_external])],
-            &[],
-            None
-        )
-        .is_err()
+        compile_server_with_paths(&[node(1, true)], &[path(vec![self_external])], &[], None)
+            .is_err()
     );
     let bad_plugin = external(
         json!({"type":"shadowsocks","server":"ss.example.com","server_port":443,"method":"aes-128-gcm","password":"TEST_ONLY_PASSWORD",
@@ -505,7 +441,6 @@ fn topology_and_secondary_parameter_errors_do_not_expose_authentication() {
     assert!(
         compile_server_with_paths(
             &[colliding],
-            &[],
             &[path(vec![managed(2)])],
             &[],
             Some(&control())
@@ -563,246 +498,6 @@ fn all_normalized_protocols_round_trip_and_versions_do_not_change_tags() {
         assert_ne!(
             serde_json::to_value(&ordered).unwrap(),
             serde_json::to_value(&new_version).unwrap()
-        );
-    }
-}
-
-#[test]
-fn numeric_and_uuid_paths_share_one_configuration_without_losing_routes_or_dns() {
-    use apsp_compiler::{compile_server_with_paths_on_config, paths as numeric};
-    let ordered_entry = node(1, true);
-    let mut numeric_entry = node(5, true);
-    numeric_entry.port = 8443;
-    let nodes = vec![ordered_entry, numeric_entry];
-    let old = numeric::Path {
-        chain_id: 22,
-        generation: 3,
-        entry_server_id: 1,
-        entry_node_id: 5,
-        active: true,
-        hops: vec![numeric::Hop::External {
-            node_id: 51,
-            version_id: 52,
-            outbound: apsp_compiler::external::ExternalOutbound(
-                json!({"type":"http","server":"numeric.example.com","server_port":8080}),
-            ),
-        }],
-    };
-    let old_control = numeric::Control {
-        secret: control().secret,
-        test_url: "https://panel.example.com/health".into(),
-    };
-    let base = numeric::compile(
-        1,
-        &nodes,
-        &[],
-        &[old],
-        &[],
-        Default::default(),
-        Some(&old_control),
-    )
-    .unwrap();
-    let constraints = serde_json::to_value(&base.constraints).unwrap();
-    let checks = serde_json::to_value(&base.checks).unwrap();
-    let ordered = path(vec![http(31)]);
-    let merged: Value = serde_json::from_str(
-        &compile_server_with_paths_on_config(&nodes, &[], &[ordered], &[], Some(&control()), &base)
-            .unwrap(),
-    )
-    .unwrap();
-    let outbounds = merged["outbounds"].as_array().unwrap();
-    assert!(
-        outbounds
-            .iter()
-            .any(|outbound| outbound["tag"] == "path-22-g3-h0")
-    );
-    assert!(
-        outbounds
-            .iter()
-            .any(|outbound| outbound["tag"] == "chain-11-g1-h1")
-    );
-    let rules = merged["route"]["rules"].as_array().unwrap();
-    assert!(rules.iter().any(|rule| rule["inbound"] == json!(["node-5"]) && rule["outbound"] == "path-22-g3-h0"));
-    assert!(
-        rules.iter().any(
-            |rule| rule["inbound"] == json!(["node-1"]) && rule["outbound"] == "chain-11-g1-h1"
-        )
-    );
-    let dns = merged["dns"]["servers"].as_array().unwrap();
-    assert!(dns.iter().any(|server| server["tag"] == "path-bootstrap"));
-    assert!(dns.iter().any(|server| server["tag"] == "chain-bootstrap"));
-    assert_eq!(
-        merged["experimental"]["clash_api"]["secret"],
-        control().secret
-    );
-    assert_eq!(
-        serde_json::to_value(&base.constraints).unwrap(),
-        constraints
-    );
-    assert_eq!(serde_json::to_value(&base.checks).unwrap(), checks);
-    assert_eq!(
-        compile_server_with_paths_on_config(&nodes, &[], &[], &[], None, &base).unwrap(),
-        base.config
-    );
-    let mut wrong = control();
-    wrong.secret = "b".repeat(64);
-    assert!(
-        compile_server_with_paths_on_config(
-            &nodes,
-            &[],
-            &[path(vec![http(31)])],
-            &[],
-            Some(&wrong),
-            &base
-        )
-        .is_err()
-    );
-}
-
-#[test]
-fn combined_pipelines_reject_competing_public_entry_and_frozen_listener_parameters() {
-    use apsp_compiler::{compile_server_with_paths_on_config, paths as numeric};
-    let entry = node(1, true);
-    let old = numeric::Path {
-        chain_id: 22,
-        generation: 3,
-        entry_server_id: 1,
-        entry_node_id: 1,
-        active: true,
-        hops: vec![numeric::Hop::External {
-            node_id: 51,
-            version_id: 52,
-            outbound: apsp_compiler::external::ExternalOutbound(
-                json!({"type":"http","server":"numeric.example.com","server_port":8080}),
-            ),
-        }],
-    };
-    let old_control = numeric::Control {
-        secret: control().secret,
-        test_url: "https://panel.example.com/health".into(),
-    };
-    let base = numeric::compile(
-        1,
-        std::slice::from_ref(&entry),
-        &[],
-        &[old],
-        &[],
-        Default::default(),
-        Some(&old_control),
-    )
-    .unwrap();
-    assert!(
-        compile_server_with_paths_on_config(
-            &[entry],
-            &[],
-            &[path(vec![http(31)])],
-            &[],
-            Some(&control()),
-            &base
-        )
-        .is_err()
-    );
-
-    let accept = acceptance(1);
-    let nodes = vec![node(2, true)];
-    let mut base = numeric::compile(2, &nodes, &[], &[], &[], Default::default(), None).unwrap();
-    let mut native: Value = serde_json::from_str(&base.config).unwrap();
-    native["inbounds"][0]["tls"]["server_name"] = json!("changed.example.com");
-    base.config = serde_json::to_string(&native).unwrap();
-    assert!(compile_server_with_paths_on_config(&nodes, &[], &[], &[accept], None, &base).is_err());
-}
-
-#[test]
-fn converting_chain_keeps_its_mixed_route_while_its_ordered_candidate_is_probed() {
-    use apsp_compiler::{compile_server_with_paths_on_config, paths as numeric};
-    use std::collections::BTreeMap;
-    let mut entry = node(5, true);
-    entry.port = 8443;
-    let nodes = vec![entry];
-    let mixed = numeric::Path {
-        chain_id: 22,
-        generation: 3,
-        entry_server_id: 1,
-        entry_node_id: 5,
-        active: true,
-        hops: vec![numeric::Hop::External {
-            node_id: 51,
-            version_id: 52,
-            outbound: apsp_compiler::external::ExternalOutbound(
-                json!({"type":"http","server":"numeric.example.com","server_port":8080}),
-            ),
-        }],
-    };
-    let mixed_control = numeric::Control {
-        secret: control().secret,
-        test_url: "https://panel.example.com/health".into(),
-    };
-    let base = numeric::compile(
-        1,
-        &nodes,
-        &[],
-        &[mixed],
-        &[],
-        Default::default(),
-        Some(&mixed_control),
-    )
-    .unwrap();
-    assert_eq!(base.routes, BTreeMap::from([(5, 22)]));
-    let candidate = |chain_id, active| OrderedPath {
-        chain_id,
-        generation: 4,
-        entry_node_id: 5,
-        entry_server_id: 1,
-        hops: vec![http(31)],
-        active,
-    };
-    let merged: Value = serde_json::from_str(
-        &compile_server_with_paths_on_config(
-            &nodes,
-            &[],
-            &[candidate(22, false)],
-            &[],
-            Some(&control()),
-            &base,
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    let rules = merged["route"]["rules"].as_array().unwrap();
-    let entry_rules: Vec<_> = rules
-        .iter()
-        .filter(|rule| rule["inbound"] == json!(["node-5"]))
-        .collect();
-    // The mixed route still carries users; the candidate adds no blanket reject
-    // in front of it and no route of its own.
-    assert!(
-        entry_rules
-            .iter()
-            .any(|rule| rule["outbound"] == "path-22-g3-h0")
-    );
-    assert!(
-        entry_rules
-            .iter()
-            .all(|rule| rule["action"] != "reject" || rule.get("network").is_some())
-    );
-    assert!(
-        entry_rules
-            .iter()
-            .all(|rule| rule["outbound"] != "chain-22-g4-h1")
-    );
-    assert!(
-        merged["outbounds"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|outbound| outbound["tag"] == "chain-22-g4-h1")
-    );
-    // Routing the candidate, or another chain's candidate on the same entry,
-    // would select the entry twice.
-    for path in [candidate(22, true), candidate(23, false)] {
-        assert!(
-            compile_server_with_paths_on_config(&nodes, &[], &[path], &[], Some(&control()), &base)
-                .is_err()
         );
     }
 }

@@ -1,79 +1,37 @@
 use super::model::acceptance_name;
 use super::{ManagedAcceptance, OrderedPath, PathHop, ProbeControl};
-use crate::{Access, CompileError, Node, Relay};
+use crate::{Access, CompileError, Node};
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
-/// Legacy-only calls retain their original bytes and accounting identities.
+/// A server without ordered paths keeps the plain node configuration byte for byte.
 pub fn compile_server_with_paths(
     nodes: &[Node],
-    legacy_relays: &[Relay],
     paths: &[OrderedPath],
     internal_accepts: &[ManagedAcceptance],
     probe_control: Option<&ProbeControl>,
 ) -> Result<String, CompileError> {
     if paths.is_empty() && internal_accepts.is_empty() && probe_control.is_none() {
-        return crate::compile_server_with_relays(nodes, legacy_relays);
+        return crate::compile_server(nodes);
     }
-    super::context::validate(nodes, legacy_relays, paths, internal_accepts, probe_control)?;
-    let original = crate::compile_server_with_relays(nodes, legacy_relays).map_err(|_| {
-        CompileError::InvalidPath {
-            chain_id: paths
-                .first()
-                .map(|path| path.chain_id)
-                .or_else(|| internal_accepts.first().map(|accept| accept.chain_id))
-                .unwrap_or(0),
-            position: None,
-            reason: "local node or legacy relay configuration is invalid",
-        }
+    super::context::validate(nodes, paths, internal_accepts, probe_control)?;
+    let original = crate::compile_server(nodes).map_err(|_| CompileError::InvalidPath {
+        chain_id: paths
+            .first()
+            .map(|path| path.chain_id)
+            .or_else(|| internal_accepts.first().map(|accept| accept.chain_id))
+            .unwrap_or(0),
+        position: None,
+        reason: "local node configuration is invalid",
     })?;
-    overlay(
-        nodes,
-        legacy_relays,
-        paths,
-        internal_accepts,
-        probe_control,
-        &original,
-        &BTreeMap::new(),
-    )
+    overlay(paths, internal_accepts, probe_control, &original)
 }
 
-/// Compose ordered generations with the established numeric-path compiler result.
-/// The caller records both evidence ledgers against this one resulting bundle.
-pub fn compile_server_with_paths_on_config(
-    nodes: &[Node],
-    legacy_relays: &[Relay],
-    paths: &[OrderedPath],
-    internal_accepts: &[ManagedAcceptance],
-    probe_control: Option<&ProbeControl>,
-    base: &crate::paths::Compiled,
-) -> Result<String, CompileError> {
-    if paths.is_empty() && internal_accepts.is_empty() && probe_control.is_none() {
-        return Ok(base.config.clone());
-    }
-    super::context::validate(nodes, legacy_relays, paths, internal_accepts, probe_control)?;
-    overlay(
-        nodes,
-        legacy_relays,
-        paths,
-        internal_accepts,
-        probe_control,
-        &base.config,
-        &base.routes,
-    )
-}
-
-/// `routes` maps each public entry the base configuration already routes to
-/// its chain. A chain being converted keeps that route while its ordered
-/// candidate is prepared and probed without routing.
 fn overlay(
-    _nodes: &[Node],
-    legacy_relays: &[Relay],
     paths: &[OrderedPath],
     internal_accepts: &[ManagedAcceptance],
     probe_control: Option<&ProbeControl>,
     original: &str,
-    routes: &BTreeMap<i64, i64>,
 ) -> Result<String, CompileError> {
     let mut config: Value = serde_json::from_str(original)?;
     let mut paths: Vec<_> = paths.iter().collect();
@@ -90,13 +48,6 @@ fn overlay(
         .iter()
         .filter(|path| path.active)
         .map(|path| path.entry_node_id)
-        .chain(
-            legacy_relays
-                .iter()
-                .filter(|relay| _nodes.iter().any(|node| node.id == relay.entry_node_id))
-                .map(|relay| relay.entry_node_id),
-        )
-        .chain(routes.keys().copied())
         .collect();
     for path in &paths {
         let tag = format!("node-{}", path.entry_node_id);
@@ -106,12 +57,7 @@ fn overlay(
                     .as_array()
                     .is_some_and(|ids| ids.iter().any(|id| id.as_str() == Some(&tag)))
             })
-        }) && !legacy_relays.iter().any(|relay| {
-            relay.entry_node_id == path.entry_node_id
-                && relay.chain_id == path.chain_id
-                && !path.active
-        }) && !(routes.get(&path.entry_node_id) == Some(&path.chain_id) && !path.active)
-        {
+        }) {
             return Err(super::validate::error(
                 path,
                 None,
@@ -178,8 +124,8 @@ fn overlay(
             rules.push(json!({"inbound":[inbound],"action":"reject"}));
         }
     }
-    if let Some(legacy_rules) = config["route"]["rules"].as_array() {
-        rules.extend(legacy_rules.iter().cloned());
+    if let Some(node_rules) = config["route"]["rules"].as_array() {
+        rules.extend(node_rules.iter().cloned());
     }
     if !rules.is_empty() {
         config["route"]["rules"] = Value::Array(rules);

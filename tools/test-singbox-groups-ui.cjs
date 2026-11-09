@@ -8,7 +8,7 @@ const { pathToFileURL } = require('node:url')
 async function main() {
   const dependency = process.env.APSP_PLAYWRIGHT_MODULE || process.env.PLAYWRIGHT_MODULE || 'playwright'
   const { chromium } = await import(path.isAbsolute(dependency) ? pathToFileURL(dependency).href : dependency)
-  const { flatResourceFixtures, proxyResourceFixtures, orderedResourceFixture, pathFixtureUuid } = await import('../web/tests/proxy-resource-fixtures.mjs')
+  const { proxyResourceFixtures, orderedResourceFixture, pathFixtureUuid } = await import('../web/tests/proxy-resource-fixtures.mjs')
   const { installControlCenterFixtures } = await import('../web/tests/control-center-fixtures.mjs')
   const screenshots = process.env.APSP_UI_SCREENSHOT_DIR || process.env.APSP_GROUPS_SCREENSHOTS
   let server, browser
@@ -46,7 +46,7 @@ async function main() {
     const external = { external_node_id: 7, source_id: 9, identity_epoch: 1, node_version_id: 70, update_mode: 'follow_node', metadata_revision: 0, name: '外部节点', source_name: '测试来源', protocol: 'shadowsocks', server: 'external.example.net', port: 443, available: true, reason: null, current_version_id: 70, resolved_version_id: 70, source_last_error: null }
     const policies = [{ id: 1, name: '常用节点', node_ids: [1], chain_ids: [1], member_count: 1 }]
     const plans = [{ id: 1, name: '月度套餐', monthly_bytes: '536870912000', reset_day: 31, reset_hour: 12, reset_minute: 30, timezone: 'Asia/Taipei', duration_days: 365 }]
-    let groupIds = [1], assigned = false, exhausted = false, legacyChainReads = 0
+    let groupIds = [1], assigned = false, exhausted = false
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
       const request = route.request(), pathname = new URL(request.url()).pathname, method = request.method()
@@ -57,9 +57,8 @@ async function main() {
       else if (pathname === '/api/me') data = {}
       else if (pathname === `${root}/nodes`) data = nodes
       else if (method === 'GET' && pathname === `${root}/servers`) data = servers
-      else if (method === 'GET' && [`${root}/subscription-sources`, `${root}/ordered-subscription-sources`].includes(pathname)) data = []
+      else if (method === 'GET' && pathname === `${root}/ordered-subscription-sources`) data = []
       else if (method === 'GET' && pathname === `${root}/external-node-candidates`) data = { available_nodes: [external] }
-      else if (method === 'GET' && pathname === `${root}/proxy-resources`) data = flatResourceFixtures(nodes.filter(node => node.id !== 6), servers, chains)
       else if (method === 'GET' && pathname === `${root}/ordered-proxy-resources`) {
         const resources = proxyResourceFixtures(nodes, servers, chains).map(resource => {
           if (resource.kind !== 'chain' || resource.id === 1) return resource
@@ -77,11 +76,7 @@ async function main() {
             { kind: 'managed', position: 2, node_id: 3, endpoint_version_id: pathFixtureUuid(3), endpoint: resources.find(resource => resource.kind === 'direct' && resource.id === 3).entry }],
         })]
       }
-      else if (pathname === `${root}/chains`) {
-        legacyChainReads += 1
-        assert.equal(method, 'GET', 'The resource editor must use one atomic batch POST')
-        data = chains
-      } else if (pathname === `${root}/policy-groups`) {
+      else if (pathname === `${root}/policy-groups`) {
         if (method === 'POST') { data = { ...payload, id: policies.length + 1, member_count: 0 }; policies.push(data) }
         else data = policies
       } else if (pathname === `${root}/package-groups`) {
@@ -122,7 +117,7 @@ async function main() {
       await route.fulfill({ json: data })
     })
     await installControlCenterFixtures(page)
-    await page.goto(`${origin.origin}/#/plugins/sing-box/groups`)
+    await page.goto(`${origin.origin}/#/groups`)
     await page.getByRole('button', { name: '创建策略组', exact: true }).click()
     await page.getByRole('textbox', { name: '名称', exact: true }).fill('测试策略')
     await page.getByRole('checkbox', { name: /标准节点/ }).check()
@@ -137,20 +132,19 @@ async function main() {
     await page.getByText('测试策略', { exact: true }).waitFor()
     const { name: _name, source_name: _source, protocol: _protocol, server: _server, port: _port, available: _available, reason: _reason, current_version_id: _current, resolved_version_id: _resolved, source_last_error: _error, ...reference } = external
     assert.deepEqual(writes.at(-1).payload, { name: '测试策略', node_ids: [1, 5], chain_ids: [1, 100], external_nodes: [{ ...reference, update_mode: 'pinned' }] })
-    assert.equal(legacyChainReads, 0, 'Policy groups must read complete resources instead of legacy chains')
     await page.getByRole('button', { name: '套餐组', exact: true }).click()
     await page.getByRole('button', { name: '创建套餐组', exact: true }).click()
     await page.getByRole('textbox', { name: '名称', exact: true }).fill('精确额度')
     await page.locator('input[name="amount"]').fill('512')
     await page.locator('input[name="reset_day"]').fill('31')
     await page.locator('input[name="reset_time"]').fill('02:30')
-    await page.locator('input[name="timezone"]').fill('Asia/Taipei')
+    await page.locator('select[name="timezone"]').selectOption('Asia/Taipei')
     await page.locator('input[name="duration_days"]').fill('90')
     await page.getByRole('button', { name: '保存', exact: true }).click()
     await page.getByText('精确额度', { exact: true }).waitFor()
     assert.deepEqual(writes.at(-1).payload, { name: '精确额度', monthly_bytes: '549755813888', reset_day: 31, reset_hour: 2, reset_minute: 30, timezone: 'Asia/Taipei', duration_days: 90 })
     // Ordered chain creation is exercised by web/tests/ordered-chains.mjs.
-    await page.goto(`${origin.origin}/#/plugins/sing-box/users`)
+    await page.goto(`${origin.origin}/#/users/1`)
     await page.getByRole('heading', { name: '权限与套餐', exact: true }).waitFor()
     await page.getByRole('button', { name: '订阅详情', exact: true }).click()
     assert.equal(await page.getByRole('combobox', { name: '订阅格式' }).inputValue(), 'singbox')

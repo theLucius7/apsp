@@ -75,7 +75,7 @@ try {
     })
 
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/servers/1/plugins`)
+    await page.goto(`${origin}/#/servers/1/services`)
     const editor=page.getByLabel('服务端配置 JSON')
     await editor.waitFor()
     await page.getByText('填入配置示例',{exact:true}).click()

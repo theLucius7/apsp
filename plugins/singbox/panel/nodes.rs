@@ -270,18 +270,6 @@ pub async fn update(
     business::validate_node(&node)?;
     validate_server_config(&mut transaction, &node).await?;
     super::ordered_paths::ensure_node_edit_safe(&mut transaction, &node, &previous_node).await?;
-    let path_references:Vec<i64>=sqlx::query_scalar("SELECT DISTINCT c.id FROM singbox_live_chains c LEFT JOIN singbox_chain_hops h ON h.chain_id=c.id WHERE c.path_kind='mixed' AND (c.entry_node_id=$1 OR h.managed_node_id=$1) ORDER BY c.id LIMIT 32").bind(id).fetch_all(&mut *transaction).await?;
-    if !path_references.is_empty()
-        && (previous.1 != node.settings
-            || previous.3 != node.public_host
-            || previous.4 != node.sni
-            || previous.5 != node.port
-            || previous.6 != node.protocol_config)
-    {
-        return Err(ApiError::Conflict(String::from(
-            "节点正在被混合链路引用，只能修改名称或启用状态；更换端点请创建新节点与链路",
-        )));
-    }
     sqlx::query(
         "UPDATE nodes SET name=$2,public_host=$3,sni=$4,port=$5,protocol_config=$6,enabled=$7,settings=$8,resource_revision=resource_revision+1 WHERE id=$1",
     )

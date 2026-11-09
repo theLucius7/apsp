@@ -895,7 +895,7 @@ pub(crate) async fn ordinary_shape_changes_tx(
     server: i64,
     desired: &[Node],
 ) -> ApiResult<Vec<i64>> {
-    let ordinary:Vec<i64>=sqlx::query_scalar("SELECT n.id FROM nodes n WHERE n.server_id=$1 AND n.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM singbox_chains c LEFT JOIN singbox_ordered_chain_hops h ON h.chain_id=c.id WHERE (c.deleted_at IS NULL OR c.phase<>'retired') AND (c.entry_node_id=n.id OR c.exit_node_id=n.id OR h.managed_node_id=n.id))")
+    let ordinary:Vec<i64>=sqlx::query_scalar("SELECT n.id FROM nodes n WHERE n.server_id=$1 AND n.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM singbox_chains c LEFT JOIN singbox_ordered_chain_hops h ON h.chain_id=c.id WHERE (c.deleted_at IS NULL OR c.phase<>'retired') AND (c.entry_node_id=n.id OR h.managed_node_id=n.id))")
         .bind(server).fetch_all(&mut **tx).await?;
     let previous:Option<Value>=sqlx::query_scalar("SELECT source_json FROM deployments WHERE server_id=$1 AND module='singbox' ORDER BY rev DESC LIMIT 1").bind(server).fetch_optional(&mut **tx).await?;
     let previous = previous

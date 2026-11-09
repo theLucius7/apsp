@@ -143,8 +143,6 @@ async fn current_defaults_cycles_and_listener_constraints_are_ready(pool: PgPool
             .await?,
         1727654400
     );
-    let source_agent: String = sqlx::query_scalar("SELECT column_default FROM information_schema.columns WHERE table_name='singbox_subscription_sources' AND column_name='user_agent'").fetch_one(&pool).await?;
-    assert!(source_agent.contains("Apsp-subscription-import/1"));
     let id = uuid::Uuid::new_v4();
     sqlx::query("INSERT INTO network_documents(id,kind,config,created_at,updated_at) VALUES($1,'forwarding',$2,1,1)").bind(id).bind(serde_json::json!({"owner":"apsp","enabled":true,"server_id":1,"listen_address":"127.0.0.1","listen_port":18080,"protocol":"tcp"})).execute(&pool).await?;
     let duplicate = sqlx::query("INSERT INTO network_documents(id,kind,config,created_at,updated_at) SELECT $1,kind,config,1,1 FROM network_documents WHERE id=$2").bind(uuid::Uuid::new_v4()).bind(id).execute(&pool).await.unwrap_err();

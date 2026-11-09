@@ -31,13 +31,13 @@
 | --- | --- | --- | --- | --- | --- |
 | 运行时安装与升级 | 让服务器运行 sing-box | 服务实例、运行时版本 | 只用已导入的签名制品；安装完成以 Agent 回报为准 | 资源；治理（制品可信）；作业（升级执行） | sing-box `settings.rs`（启用记录 `server_plugins`）、运行时升级记录；服务器详情 › 网络服务 |
 | 受管节点 | 开一个代理入口 | 受管节点（服务端点） | 端口不冲突；被链路引用时锁定部分配置；没有授权用户时不监听 | 名称（公开地址、证书）；服务权益（加入策略组） | sing-box `nodes*`；网络服务 › 节点 |
-| 链路 | 让流量按顺序经过多个端点 | 链路与不可变版本 | 只引用存在的端点；线性无环；入口单次计量；内部凭据不进订阅 | 外部来源 | sing-box `ordered_paths/`；网络服务 › 链路 |
-| 外部来源与外部节点 | 引入机场等外部节点 | 外部来源、外部节点版本 | 先预览再采用；失败保留上一个成功修订 | 服务权益（策略组引用）；成本（报告的到期只读） | sing-box `subscription_sources/`、`subscription_parser/`；网络服务 › 外部来源 |
+| 链路 | 让流量按顺序经过多个端点（唯一的链路模型，ADR 0131） | 链路与不可变版本 | 只引用存在的端点；线性无环；入口单次计量；内部凭据不进订阅 | 外部来源 | sing-box `ordered_paths/`；网络服务 › 链路 |
+| 外部来源与外部节点 | 引入机场等外部节点 | 外部来源、外部节点版本 | 先预览再采用；失败保留上一个成功修订 | 服务权益（策略组引用）；成本（报告的到期只读） | sing-box `subscription_sources/`、`subscription_parser/`（唯一的来源模型，ADR 0131）；网络服务 › 外部来源 |
 | 配置编译与发布 | 把期望配置变成每台服务器的完整快照并下发 | 配置版本、部署 | 同一输入同一字节；字节相同不产生新修订；只有回执才算已应用 | 服务权益（授权凭据，经依赖倒置接口）；平台（Agent 通道） | `crates/compiler`；sing-box `publisher.rs`、`deployments.rs`、`device_config.rs`（设备的清单与配置包、已应用修订、应用结果，阶段 B2c 从宿主迁入） |
-| 运行时检查点与路径验证 | 确认目标修订真的在运行、路径真的通 | 已应用状态与验证证据 | 证据有有效期；旧代次的回执不覆盖新代次 | 平台（Agent 通道） | sing-box `runtime_control/`（检查点、回执与路径探测）、`runtime_validations.rs`（阶段 B2c 从宿主迁入） |
+| 运行时检查点与路径验证 | 确认目标修订真的在运行、路径真的通 | 已应用状态与验证证据 | 证据有有效期；旧代次的回执不覆盖新代次 | 平台（Agent 通道） | sing-box `runtime_control/`（检查点、回执与路径探测）、`runtime_validations.rs`（阶段 B2c 从宿主迁入；混合链路退出后只为在用 Agent 保留空的轮询接口，随下一次 Agent 协议变更删除） |
 | 运行时运维 | 检查、重启运行时或重试部署 | 运行时操作的合法性 | 只对受管运行时；结果未知不自动重试 | 作业（执行记录） | `crates/operations` 的 `runtime_operations.rs`（设备队列与回执）；sing-box `runtime_operations.rs` |
 | 服务器端逐用户限制的执行 | 把限速与连接数编进配置 | 运行时能力 `user-limits` | 运行时不支持时拒绝而不是忽略 | 服务权益（限制的值） | `crates/compiler/src/limits.rs` |
-| 旧模型兼容 | 迁移两跳、混合链路、数字编号来源与 Nexus 运行时 | 历史模型 | 只经迁移流程进入；有退出条件 | 治理（迁移授权） | sing-box `legacy_takeover.rs`、`mixed_conversion.rs`、`source_migration/`、`nexus_nodes/`；系统 › 迁移与兼容 |
+| Nexus 运行时兼容 | 让接管的 Nexus 主机在兼容桥退出前继续用保留配置 | 保留配置、受保护节点 | 只经接管流程进入；兼容桥退出（路线图 1.5）后删除 | 治理（迁移授权）；服务权益（兼容桥） | sing-box `nexus_nodes/`、`crates/compiler/src/preserved.rs`；系统 › 迁移与兼容 |
 
 ## 服务权益与交付 `access`
 

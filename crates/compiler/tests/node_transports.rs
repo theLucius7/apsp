@@ -1,9 +1,7 @@
 #![forbid(unsafe_code)]
 
 use apsp_compiler::{
-    Access, Node, NodeSettings, NodeTransport, RealityFlow, Relay, compile_client, compile_server,
-    compile_server_with_relays,
-    paths::{self, Control, Hop, Path},
+    Access, Node, NodeSettings, NodeTransport, RealityFlow, compile_client, compile_server,
     subscription_links,
 };
 use base64::{
@@ -11,7 +9,6 @@ use base64::{
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
 use uuid::Uuid;
 
 fn endpoint(id: i64) -> Node {
@@ -137,113 +134,14 @@ fn transport_validation_rejects_vision_conflicts_and_invalid_http_inputs() {
     );
 }
 
-fn relay(node: &Node) -> Relay {
-    Relay {
-        settings: node.settings.clone(),
-        fingerprint: node.settings.reality.fingerprint,
-        chain_id: 1,
-        entry_node_id: 1,
-        exit_node_id: node.id,
-        uuid: Uuid::from_u128(77),
-        public_host: node.public_host.clone(),
-        port: node.public_port(),
-        sni: node.sni.clone(),
-        public_key: node.public_key.clone(),
-        short_id: node.short_id.clone(),
-    }
-}
-
-fn path(node: &Node) -> Path {
-    let mut endpoint = node.clone();
-    endpoint.users.clear();
-    Path {
-        chain_id: 2,
-        generation: 1,
-        entry_server_id: 1,
-        entry_node_id: 1,
-        active: true,
-        hops: vec![Hop::Managed {
-            server_id: 2,
-            endpoint: Box::new(endpoint),
-            identity: Uuid::from_u128(88),
-        }],
-    }
-}
-
-fn mixed(server: i64, nodes: &[Node], path: Path) -> String {
-    paths::compile(
-        server,
-        nodes,
-        &[],
-        &[path],
-        &[],
-        BTreeMap::new(),
-        (server == 1).then_some(&Control {
-            secret: "TEST_ONLY-control-01234567890123456789".into(),
-            test_url: "https://probe.example.com/healthz".into(),
-        }),
-    )
-    .unwrap()
-    .config
-}
-
-#[test]
-fn managed_and_legacy_relays_use_the_same_transport_and_private_identity() {
-    for transport in transports() {
-        let node = configured(transport);
-        let entry = endpoint(1);
-        let direct: Value =
-            serde_json::from_str(&compile_client(std::slice::from_ref(&node), 1).unwrap()).unwrap();
-        let outgoing: Value = serde_json::from_str(
-            &compile_server_with_relays(std::slice::from_ref(&entry), &[relay(&node)]).unwrap(),
-        )
-        .unwrap();
-        let exit: Value = serde_json::from_str(
-            &compile_server_with_relays(std::slice::from_ref(&node), &[relay(&node)]).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(
-            outgoing["outbounds"][1]["transport"],
-            direct["outbounds"][1]["transport"]
-        );
-        assert!(outgoing["outbounds"][1].get("flow").is_none());
-        assert_eq!(
-            outgoing["outbounds"][1]["uuid"],
-            Uuid::from_u128(77).to_string()
-        );
-        assert!(exit["inbounds"][0]["users"][1].get("flow").is_none());
-        let mixed_entry: Value = serde_json::from_str(&mixed(1, &[entry], path(&node))).unwrap();
-        let mixed_exit: Value =
-            serde_json::from_str(&mixed(2, std::slice::from_ref(&node), path(&node))).unwrap();
-        let outbound = mixed_entry["outbounds"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|v| v["tag"] == "path-2-g1-h0")
-            .unwrap();
-        assert_eq!(outbound["transport"], direct["outbounds"][1]["transport"]);
-        assert!(outbound.get("flow").is_none());
-        assert_eq!(outbound["uuid"], Uuid::from_u128(88).to_string());
-        assert!(mixed_exit["inbounds"][0]["users"][1].get("flow").is_none());
-        assert_eq!(
-            mixed_exit["experimental"]["v2ray_api"]["stats"]["users"],
-            json!(["u1_n2"])
-        );
-        let public = compile_client(&[node], 1).unwrap();
-        assert!(!public.contains(&Uuid::from_u128(77).to_string()));
-        assert!(!public.contains(&Uuid::from_u128(88).to_string()));
-    }
-}
-
 #[test]
 #[ignore = "requires official sing-box 1.14.2 in APSP_TEST_UPSTREAM; parses configs without connecting to external hosts"]
-fn official_runtime_accepts_all_transports_and_both_relay_formats() {
+fn official_runtime_accepts_all_transports() {
     let binary = std::env::var("APSP_TEST_UPSTREAM").unwrap();
     let directory = std::env::temp_dir().join(format!("apsp-transports-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&directory).unwrap();
     for transport in transports() {
         let node = configured(transport);
-        let entry = endpoint(1);
         for (name, config) in [
             (
                 "server",
@@ -252,22 +150,6 @@ fn official_runtime_accepts_all_transports_and_both_relay_formats() {
             (
                 "client",
                 compile_client(std::slice::from_ref(&node), 1).unwrap(),
-            ),
-            (
-                "legacy-entry",
-                compile_server_with_relays(std::slice::from_ref(&entry), &[relay(&node)]).unwrap(),
-            ),
-            (
-                "legacy-exit",
-                compile_server_with_relays(std::slice::from_ref(&node), &[relay(&node)]).unwrap(),
-            ),
-            (
-                "mixed-entry",
-                mixed(1, std::slice::from_ref(&entry), path(&node)),
-            ),
-            (
-                "mixed-exit",
-                mixed(2, std::slice::from_ref(&node), path(&node)),
             ),
         ] {
             let mut value: Value = serde_json::from_str(&config).unwrap();

@@ -156,7 +156,7 @@ async fn new_management_routes_require_administrator_and_validate_inputs(
     for path in [
         "/policy-groups",
         "/package-groups",
-        "/chains",
+        "/ordered-proxy-resources",
         "/users/1/entitlement",
         "/users/1/policy-groups",
     ] {

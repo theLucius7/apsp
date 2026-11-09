@@ -2,25 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
 import { Confirm, ErrorNotice, Field, FormDialog, InfoTip, PageHeader, Refresh, RefreshNotice, DialogPresence } from '../../components'
 import { Stat, StatStrip } from '../../display/ui'
-import { bytes } from '../../format'
+import { bytes, navigate } from '../../format'
 import { resourceWriteError, useAction, useRefreshNotice, useResource, useResourceGroup } from '../../hooks'
 import type { Node, PluginServer, Usage } from '../../types'
 import ProtocolFields, { protocolRequest } from './ProtocolFields'
 import { ConnectionFields, nodeSettingsRequest } from './NodeSettingsFields'
-import NodeDeployment from './NodeDeployment'
-import SubscriptionSources from './SubscriptionSources'
 import Sources from './Sources'
-import ProxyResourceDetail from './ProxyResourceDetail'
 import NodeCatalog from './NodeCatalog'
+import Runtimes from './Runtimes'
 import NexusNodes from './NexusNodes'
 import { validNexusNodes } from './nexusNodeTypes'
-import type { ProxyResource, ResourceKey } from './resourceTypes'
+import type { ResourceKey } from './resourceTypes'
 import { resourceLink } from './resourceTypes'
 import OrderedResources from './OrderedResources'
 import type { ProxyResourceFilter, ProxyResourceServerRole, ProxyResource as OrderedResource } from './groupTypes'
 import { validatedSnapshot, validProxyResources } from './groupTypes'
 import { validCatalog } from './catalog'
-import { sourceMigrationPath, validSourceMigration } from './orderedSourceTypes'
 import { nodeHash } from './nodeRoute'
 import type { NodeView } from './nodeRoute'
 
@@ -36,7 +33,8 @@ const root = '/api/plugins/sing-box'
 const views: readonly { key: NodeView; label: string }[] = [
   { key: 'catalog', label: '节点库' },
   { key: 'chains', label: '链路' },
-  { key: 'sources', label: '订阅来源' },
+  { key: 'sources', label: '外部来源' },
+  { key: 'runtimes', label: '运行时' },
 ]
 
 type Props = {
@@ -47,7 +45,9 @@ type Props = {
   initialKind?: ProxyResourceFilter
   initialServerRole?: ProxyResourceServerRole
 }
-type Reads = { nodes: Node[]; resources: ProxyResource[]; ordered: unknown; servers: PluginServer[]; usage: Usage; catalog: unknown }
+type Reads = { nodes: Node[]; ordered: unknown; servers: PluginServer[]; usage: Usage; catalog: unknown }
+/** The managed node a delete confirmation names; chains are deleted from the chain list. */
+type Deleting = { kind: 'direct'; id: number; name: string }
 // The node a save just reached; `node` is null when the response did not name it.
 type SavedNode = { server: number; node: number | null; created: boolean }
 
@@ -56,33 +56,28 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
   // data beside another's old data, such as a deleted chain lingering in the catalog.
   const reads = useResourceGroup<Reads>({
     nodes: `${root}/nodes`,
-    resources: `${root}/proxy-resources`,
     ordered: `${root}/ordered-proxy-resources`,
     servers: `${root}/servers`,
     usage: `${root}/usage`,
     catalog: `${root}/node-catalog`,
   })
-  const { nodes, resources, servers, usage, catalog } = reads
+  const { nodes, servers, usage, catalog } = reads
   // The imported Nexus inventory is owner-only; other administrators never request it.
   const actor = useResource<{ role: string }>('/api/control-center/me', 0)
   const owner = actor.data?.role === 'owner'
   const nexus = useResource<unknown>(owner ? `${root}/nexus-nodes` : null)
-  // Undefined until confirmed; numbered sources stay read-only while unknown.
-  const migrationQuery = useResource<unknown>(sourceMigrationPath, 0)
-  const migrated = !migrationQuery.error && validSourceMigration(migrationQuery.data) ? migrationQuery.data.migrated : undefined
   const orderedQuery = reads.ordered
   const orderedHistory = useRef<OrderedResource[] | undefined>(undefined)
   const ordered = validatedSnapshot(orderedQuery, validProxyResources, orderedHistory.current)
   if (ordered.fresh) orderedHistory.current = ordered.data
   const activeView: NodeView = view ?? (chainsOnly || selected?.kind === 'chain' ? 'chains' : 'catalog')
-  const selectedOrdered = selected?.kind === 'chain'
+  // `#/nodes/{kind}/{id}` opens that node's or chain's detail over the current view.
+  const selectedResource = selected
     ? ordered.data?.find(resource => resource.kind === selected.kind && resource.id === selected.id) : undefined
-  const showFlatDetail = selected && !selectedOrdered
-    && (resources.data?.some(resource => resource.kind === selected.kind && resource.id === selected.id) || ordered.fresh)
   const action = useAction()
   const [editor, setEditor] = useState<Node | 'new' | null>(null)
   const [draftServer, setDraftServer] = useState('')
-  const [deleting, setDeleting] = useState<ProxyResource | null>(null)
+  const [deleting, setDeleting] = useState<Deleting | null>(null)
   const [filter, setFilter] = useState(serverId === undefined ? '' : String(serverId))
   const currentFilter = useRef(filter)
   useEffect(() => {
@@ -90,10 +85,11 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     currentFilter.current = value
     setFilter(value)
   }, [serverId])
-  const [kind, setKind] = useState(initialKind === 'direct' ? 'direct' : chainsOnly ? 'chain' : '')
-  const [catalogMetadata, setCatalogMetadata] = useState<ResourceKey | null>(null)
-  useEffect(() => { setKind(initialKind === 'direct' ? 'direct' : chainsOnly ? 'chain' : '') }, [initialKind, chainsOnly])
-  const [deployment, setDeployment] = useState<number | null>(null)
+  // Chains have their own view, so only the direct filter reaches the catalog.
+  const [kind, setKind] = useState(initialKind === 'direct' ? 'direct' : '')
+  useEffect(() => { setKind(initialKind === 'direct' ? 'direct' : '') }, [initialKind])
+  // A server's deployment lives in its network services tab.
+  const showDeployment = (server: number) => navigate(`/servers/${server}/services`)
   const [saved, setSaved] = useState<SavedNode | null>(null)
   const [sourceCreate, setSourceCreate] = useState(0)
   const [orderedCreate, setOrderedCreate] = useState(0)
@@ -104,22 +100,19 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
   const noEnabledServer = serversKnown && enabledServers.length === 0
   const filteredServerDisabled = serversKnown && !noEnabledServer && Boolean(filter) && !enabledServers.some(server => server.id === Number(filter))
   const createBlocked = noEnabledServer || filteredServerDisabled
-  const pageGuard = resourceWriteError(nodes, resources, servers)
+  const pageGuard = resourceWriteError(nodes, orderedQuery, servers)
   // Buttons disable during a refresh only after a short delay that keeps brief polls
   // from flashing; a click in that window is reported rather than silently ignored.
   const refreshNotice = useRefreshNotice()
   const canCreate = !pageGuard && enabledServers.length > 0
     && (!filter || enabledServers.some(server => server.id === Number(filter)))
-  const all = resources.data ?? []
-  const orderedOnly = ordered.data?.filter(resource => resource.kind === 'chain' && resource.path_kind === 'ordered'
-    && !all.some(flat => flat.kind === resource.kind && flat.id === resource.id)).length ?? 0
-  const inventoryCount = all.length + orderedOnly
+  const all = ordered.data ?? []
+  const inventoryCount = all.length
   const chainCount = ordered.data?.filter(resource => resource.kind === 'chain').length
   const importedNodes = validNexusNodes(nexus.data) ? nexus.data : undefined
   // Non-owners count the catalog alone; an owner's count waits for the inventory.
   const importedKnown = actor.data !== undefined && (!owner || importedNodes !== undefined)
   const catalogCount = validCatalog(catalog.data) && importedKnown ? catalog.data.length + (importedNodes?.length ?? 0) : undefined
-  // The ordered chain form is the only creation path, so the source migration state does not gate it.
   // The chain form writes against the ordered resource snapshot; the button follows the form's own guard, so a
   // refreshing, failed or malformed read keeps it closed.
   const canCreateChain = canCreate && !resourceWriteError(nodes, orderedQuery, servers) && validProxyResources(orderedQuery.data)
@@ -128,17 +121,18 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
   const savedNodeId = saved?.node ?? null
   const savedAuthorised = savedNodeId !== null
     && (ordered.data?.find(resource => resource.kind === 'direct' && resource.id === savedNodeId)?.user_count ?? 0) > 0
-  const refresh = () => { reads.nodes.reload(); migrationQuery.reload(); if (owner) nexus.reload() }
+  const refresh = () => { reads.nodes.reload(); if (owner) nexus.reload() }
   // Section links keep the current server scope; the catalog type filter stays local.
   const routeHash = (target: NodeView) => nodeHash({ server: filter || undefined, role: initialServerRole, view: target })
 
-  const creationError = () => resourceWriteError(nodes, resources, servers)
+  const creationError = () => resourceWriteError(nodes, orderedQuery, servers)
     || (!servers.getCurrent()?.some(server => server.enabled && (!currentFilter.current || server.id === Number(currentFilter.current)))
       ? '当前筛选中没有可用的入口服务器，请明确选择后再创建。' : '')
-  const writeError = (value?: { kind: 'direct' | 'chain'; id: number }) => {
-    const stale = resourceWriteError(nodes, resources, servers)
+  // A managed node is written only while it is still a direct node in the confirmed resource list.
+  const writeError = (id?: number) => {
+    const stale = resourceWriteError(nodes, orderedQuery, servers)
     if (stale) return stale
-    return value && !resources.getCurrent()?.some(item => item.kind === value.kind && item.id === value.id)
+    return id !== undefined && !ordered.getCurrent?.()?.some(item => item.kind === 'direct' && item.id === id)
       ? '此代理资源已不存在，请重新选择；当前草稿已保留。' : ''
   }
   const nodeDraftError = () => editor && editor !== 'new'
@@ -149,35 +143,35 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     ? '已选节点所属服务器已不存在或未安装 sing-box；当前草稿已保留。' : ''
   const newServerMissing = () => editor === 'new' && !servers.getCurrent()?.some(server => String(server.id) === draftServer && server.enabled)
   const editorError = editor
-    ? writeError(editor === 'new' ? undefined : { kind: 'direct', id: editor.id }) || nodeDraftError() || nodeServerError()
+    ? writeError(editor === 'new' ? undefined : editor.id) || nodeDraftError() || nodeServerError()
       || (newServerMissing() ? '已选服务器已不存在或未安装 sing-box，请明确重新选择；当前草稿已保留。' : '')
     : ''
   const currentEditor = editor && editor !== 'new' ? nodes.data?.find(node => node.id === editor.id) : null
   const connectionLocked = Boolean(currentEditor?.configuration_locked || (editor && editor !== 'new' && editor.configuration_locked))
-  const deletingError = deleting ? writeError(deleting) : ''
+  const deletingError = deleting ? writeError(deleting.id) : ''
 
   const edit = (node: Node | 'new') => {
-    const error = writeError(node === 'new' ? undefined : { kind: 'direct', id: node.id }) || (node === 'new' ? creationError() : '')
+    const error = writeError(node === 'new' ? undefined : node.id) || (node === 'new' ? creationError() : '')
     if (!refreshNotice.allows(error)) return
     action.clearError()
     setDraftServer(currentFilter.current || String(servers.getCurrent()?.find(server => server.enabled)?.id ?? ''))
     setEditor(node)
   }
-  // The one chain entry: it opens the ordered chain form in the chain view, before and after the source migration.
+  // The one chain entry: it opens the chain form in the chain view.
   const openChainCreate = () => {
     if (!refreshNotice.allows(creationError())) return
     action.clearError()
     setOrderedCreate(value => value + 1)
     if (activeView !== 'chains') window.location.hash = routeHash('chains').slice(1)
   }
-  const confirmDelete = (resource: ProxyResource) => {
-    if (!refreshNotice.allows(writeError(resource))) return
+  const confirmDelete = (resource: Deleting) => {
+    if (!refreshNotice.allows(writeError(resource.id))) return
     action.clearError()
     setDeleting(resource)
   }
   const closeDetail = () => { window.location.hash = '/nodes' }
   const submit = (form: FormData) => {
-    if (!editor || writeError(editor === 'new' ? undefined : { kind: 'direct', id: editor.id }) || nodeDraftError() || nodeServerError() || newServerMissing()) return
+    if (!editor || writeError(editor === 'new' ? undefined : editor.id) || nodeDraftError() || nodeServerError() || newServerMissing()) return
     const fields = {
       name: String(form.get('name')).trim(),
       public_host: String(form.get('public_host')).trim(),
@@ -203,9 +197,8 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     })
   }
   const remove = () => {
-    if (!deleting || writeError(deleting)) return
-    const path = deleting.kind === 'chain' ? `${root}/proxy-resources/chain/${deleting.id}` : `${root}/nodes/${deleting.id}`
-    void action.run(() => api(path, 'DELETE'), () => { setDeleting(null); refresh() })
+    if (!deleting || writeError(deleting.id)) return
+    void action.run(() => api(`${root}/nodes/${deleting.id}`, 'DELETE'), () => { setDeleting(null); refresh() })
   }
 
   return <div data-slot="nodes-page" className="min-w-0" onInvalidCapture={event => {
@@ -220,14 +213,14 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
       <InfoTip label="发布规则"><p>保存后等待 5 秒合并处理。新增有效监听，或协议、TLS、服务设置变化，须先在部署进度内查看差异、采集并确认完整预检；原监听内的凭据更新、撤销和停用自动处理。</p><p>未授权给任何用户的节点不会监听端口；订阅只包含设备已成功应用的配置。</p></InfoTip>
     </PageHeader>
     {createBlocked && <Notice id="create-blocked-reason" role="status"><span>{noEnabledServer ? '还没有服务器安装 sing-box，所以暂时不能创建节点或链路。' : '当前筛选的服务器尚未安装 sing-box，所以暂时不能创建节点或链路。'}</span>
-      <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={noEnabledServer ? '#/settings/plugins/servers' : `#/servers/${filter}/plugins`}>为服务器安装 sing-box</a></Notice>}
+      <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={noEnabledServer ? '#/servers' : `#/servers/${filter}/services`}>为服务器安装 sing-box</a></Notice>}
     <div className="mb-4"><StatStrip label="代理资源概况" columns={4}>
-      <Stat icon={WaypointsIcon} label="代理资源" loading={!(resources.data && ordered.data && importedNodes) && !(resources.error || ordered.error)} value={resources.data && ordered.data && importedNodes ? inventoryCount + importedNodes.length : '—'}>{importedNodes?.length ? `受管 ${inventoryCount} · 待接管 ${importedNodes.length}` : '直连节点与独立链路入口'}</Stat>
-      <Stat icon={ServerIcon} label="所在服务器" loading={!(resources.data && importedNodes) && !resources.error} value={resources.data && importedNodes ? new Set([...all, ...importedNodes].map(node => node.server_id)).size : '—'} />
+      <Stat icon={WaypointsIcon} label="代理资源" loading={!(ordered.data && importedNodes) && !ordered.error} value={ordered.data && importedNodes ? inventoryCount + importedNodes.length : '—'}>{importedNodes?.length ? `受管 ${inventoryCount} · 待接管 ${importedNodes.length}` : '直连节点与独立链路入口'}</Stat>
+      <Stat icon={ServerIcon} label="所在服务器" loading={!(ordered.data && importedNodes) && !ordered.error} value={ordered.data && importedNodes ? new Set([...all.map(resource => resource.entry.server_id), ...importedNodes.map(node => node.server_id)]).size : '—'} />
       <Stat icon={RadioTowerIcon} label="物理监听数" loading={!nodes.data && !nodes.error} value={nodes.data ? nodes.data.length : '—'} />
       <Stat icon={ActivityIcon} label="累计代理流量" loading={!usage.data && !usage.error} value={usage.data ? bytes(usage.data.total) : '—'} />
     </StatStrip></div>
-    <ErrorNotice message={resources.error || nodes.error || servers.error || usage.error || (migrationQuery.error ? `订阅来源迁移状态读取失败：${migrationQuery.error}` : '')} retry={refresh} />
+    <ErrorNotice message={ordered.error || nodes.error || servers.error || usage.error} retry={refresh} />
     {refreshNotice.visible && <RefreshNotice />}
     {saved && <Notice role="status"><span>{savedAuthorised
       ? '目标已保存。该节点已有授权用户：新增监听或协议、TLS 等设置变化须先完整预检确认才会发布，实际应用等待设备回执。'
@@ -239,7 +232,7 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
           <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href="#/groups">加入策略组</a>
           <a className={buttonVariants({ variant: 'ghost', size: 'sm' })} href="#/users">授权给代理用户</a>
         </>}
-        <Button variant="ghost" size="sm" onClick={() => setDeployment(saved.server)}>{savedAuthorised ? '查看差异、完整预检与发布状态' : '查看部署状态'}</Button>
+        <Button variant="ghost" size="sm" onClick={() => showDeployment(saved.server)}>{savedAuthorised ? '查看差异、完整预检与发布状态' : '查看部署状态'}</Button>
       </div></Notice>}
     <SegmentedNav className="mt-1 mb-5" aria-label="节点视图">
       {views.map(item => <SegmentedLink key={item.key} href={routeHash(item.key)}
@@ -254,31 +247,19 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
       <NodeCatalog query={catalog} nodes={nodes.data ?? []} servers={enabledServers} getServers={() => servers.getCurrent()} usage={usage.data ?? undefined}
         server={filter} getServer={() => currentFilter.current} onServer={value => { currentFilter.current = value; setFilter(value) }}
         kind={kind} onKind={setKind}
-        excludedKeys={(ordered.data ?? []).filter(resource => resource.kind === 'chain' && resource.path_kind === 'legacy').map(resource => `${resource.kind}:${resource.id}`)}
-        metadataTarget={catalogMetadata} onMetadataOpened={() => setCatalogMetadata(null)} initialServerRole={initialServerRole}
         onChanged={refresh} managedWriteError={() => writeError() || resourceWriteError(ordered)}
-        onEdit={edit} onDelete={confirmDelete} onDeployment={setDeployment} />
+        onEdit={edit} onDelete={confirmDelete} onDeployment={showDeployment} />
     </div>
     <div hidden={activeView !== 'chains'}>
-      <OrderedResources resourcesQuery={orderedQuery} nodesQuery={nodes} serversQuery={servers} usage={usage} hideFlatRows
-        onOrganize={resource => { setCatalogMetadata({ kind: resource.kind, id: resource.id }); window.location.hash = routeHash('catalog').slice(1) }}
-        flatKeys={all.map(resource => `${resource.kind}:${resource.id}`)} selected={selectedOrdered} onCloseSelected={closeDetail}
+      <OrderedResources resourcesQuery={orderedQuery} nodesQuery={nodes} serversQuery={servers} usage={usage}
+        selected={selectedResource} onCloseSelected={closeDetail}
         filter={filter} initialServerRole={initialServerRole} getServerId={() => currentFilter.current ? Number(currentFilter.current) : undefined}
         onEdit={edit} onChanged={refresh} onAddSource={() => { setSourceCreate(value => value + 1); window.location.hash = routeHash('sources').slice(1) }} createRequest={orderedCreate} />
     </div>
     <div hidden={activeView !== 'sources'}>
-      {migrated ? <>
-        <Sources createRequest={sourceCreate} migrated onCatalogChange={refresh} active={activeView === 'sources'} />
-        <details data-slot="source-archive" className="mt-6"><summary className="text-muted-foreground cursor-pointer py-3 font-semibold">旧版数字编号来源（只读保留）</summary><SubscriptionSources migrated onChange={refresh} active={activeView === 'sources'} /></details>
-      </> : <>
-        <SubscriptionSources migrated={migrated} onChange={refresh} active={activeView === 'sources'} />
-        <Sources createRequest={sourceCreate} migrated={migrated} onCatalogChange={refresh} active={activeView === 'sources'} />
-      </>}
+      <Sources createRequest={sourceCreate} onCatalogChange={refresh} active={activeView === 'sources'} />
     </div>
-    <DialogPresence>{showFlatDetail && selected && <ProxyResourceDetail key={`${selected.kind}-${selected.id}`} selected={selected} onClose={closeDetail} onChanged={refresh}
-      onEdit={node => { closeDetail(); edit(node) }}
-      onDelete={resource => { if (!refreshNotice.allows(writeError(resource))) return; closeDetail(); confirmDelete(resource) }}
-      onDeployment={id => { closeDetail(); setDeployment(id) }} />}</DialogPresence>
+    <div hidden={activeView !== 'runtimes'}>{activeView === 'runtimes' && <Runtimes />}</div>
     <DialogPresence>{editor && <FormDialog wide slot="node-editor" title={editor === 'new' ? '创建节点' : '编辑节点'} onClose={() => setEditor(null)} onSubmit={submit}
       busy={action.busy} submitDisabled={Boolean(editorError)} error={editorError || action.error} submitLabel={editor === 'new' ? '创建目标节点' : '保存目标配置'}>
       <h3 className="mt-1.5 mb-4 text-sm font-semibold">基本信息</h3>
@@ -309,12 +290,9 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
         <ProtocolFields key={editor === 'new' ? 'new' : editor.id} node={editor} />
       </fieldset>
     </FormDialog>}</DialogPresence>
-    <DialogPresence>{deployment !== null && <NodeDeployment serverId={deployment} server={servers.data?.find(server => server.id === deployment)} onClose={() => setDeployment(null)} />}</DialogPresence>
     <DialogPresence>{deleting && <Confirm title={`删除「${deleting.name}」？`} busy={action.busy} confirmDisabled={Boolean(deletingError)} error={deletingError || action.error}
       onClose={() => setDeleting(null)} onConfirm={remove}>
-      {deleting.kind === 'chain'
-        ? '请先从策略组移除此链路。删除会同时停用专用入口和内部连接，保留历史流量与版本证据；设备应用新配置后停止监听。'
-        : '此节点及其授权将从订阅中移除，历史流量会保留。被链路引用的节点不能直接删除。设备应用新配置后，代理入口停止监听。'}
+      此节点及其授权将从订阅中移除，历史流量会保留。被链路引用的节点不能直接删除。设备应用新配置后，代理入口停止监听。
     </Confirm>}</DialogPresence>
   </div>
 }

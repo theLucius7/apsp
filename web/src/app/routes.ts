@@ -6,9 +6,9 @@ import type { NodeView } from '../plugins/singbox/nodeRoute'
 
 // Sections of one server; ddns, fleet, network and operations are workspaces
 // opened with this server preselected.
-type ServerSection = 'assets' | 'agent' | 'ip-info' | 'node-quality' | 'tcp-quality' | 'plugins' | 'ddns' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations'
+type ServerSection = 'assets' | 'agent' | 'ip-info' | 'node-quality' | 'tcp-quality' | 'services' | 'ddns' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations'
 type SimplePage = 'singbox-overview' | 'servers' | 'statistics' | 'latency' | 'latency-settings' | 'alicloud' | 'ddns'
-  | 'subscription-board' | 'groups' | 'plugins' | 'catalog' | 'settings' | 'backup' | 'batch-enrollment' | 'alert-settings' | 'notifications' | 'security' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations' | 'control-center' | 'not-found'
+  | 'subscription-board' | 'groups' | 'artifacts' | 'settings' | 'backup' | 'batch-enrollment' | 'alert-settings' | 'notifications' | 'security' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations' | 'control-center' | 'not-found'
 
 export type AppRoute =
   | { page: 'dashboard'; serverId?: number }
@@ -40,8 +40,9 @@ const pages: Readonly<Record<string, SimplePage>> = {
   '/alicloud': 'alicloud',
   '/dns': 'ddns',
   '/groups': 'groups',
-  '/settings/plugins': 'catalog',
-  '/settings/plugins/servers': 'plugins',
+  '/settings/artifacts': 'artifacts',
+  // The plugin centre's address until 2026-11-09 (ADR 0131); kept for one release.
+  '/settings/plugins': 'artifacts',
   '/settings': 'settings',
   '/settings/backup': 'backup',
   '/alerts': 'notifications',
@@ -58,10 +59,14 @@ export function resolveRoute(path: string): AppRoute {
   const display = dashboardRoute(path)
   if (display) return { page: 'dashboard', ...display }
 
-  const server = path.match(/^\/servers\/([1-9]\d*)(?:\/(assets|agent|ip-info|node-quality|tcp-quality|plugins|ddns|fleet|network-workbench|network-configuration|operations))?$/)
+  // `plugins` is the network services tab's address until 2026-11-09 (ADR 0131); kept for one release.
+  const server = path.match(/^\/servers\/([1-9]\d*)(?:\/(assets|agent|ip-info|node-quality|tcp-quality|services|plugins|ddns|fleet|network-workbench|network-configuration|operations))?$/)
   if (server && Number.isSafeInteger(Number(server[1]))) {
-    return { page: 'server', serverId: Number(server[1]), section: server[2] as ServerSection | undefined }
+    const section = server[2] === 'plugins' ? 'services' : server[2]
+    return { page: 'server', serverId: Number(server[1]), section: section as ServerSection | undefined }
   }
+  // The plugin centre's runtime list until 2026-11-09 is now a view of the network services workspace.
+  if (path === '/settings/plugins/servers') return { page: 'nodes', view: 'runtimes' }
 
   if (path === '/users') return { page: 'proxy-users' }
   const proxyUser = path.match(/^\/users\/([1-9]\d*)$/)

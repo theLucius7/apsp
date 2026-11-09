@@ -1,18 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { Badge, Confirm, Empty, ErrorNotice, Field, Loading, Modal, Refresh, DialogPresence } from '../../components'
-import { bytes, totalBytes } from '../../format'
+import { bytes, navigate, totalBytes } from '../../format'
 import { useAction, useResource } from '../../hooks'
 import type { ResourceState } from '../../hooks'
 import type { Node, PluginServer, Usage } from '../../types'
 import { protocolName } from './ProtocolFields'
 import Chains, { deleteProxyResource, proxyDeleteError, proxyWriteError, validNodeList, validServerList } from './Chains'
 import type { ProxyWriteSnapshot } from './Chains'
-import { dateText, filterProxyResources, proxyResourceKey, validatedSnapshot, validProxyResource, validProxyResources } from './groupTypes'
+import { dateText, filterProxyResources, proxyResourceKey, publicPathText, validatedSnapshot, validProxyResource, validProxyResources } from './groupTypes'
 import type { ProxyResource, ProxyResourceServerRole, ResourceEndpoint } from './groupTypes'
 import { nodeHash } from './nodeRoute'
-import NodeDeployment from './NodeDeployment'
-import { installationView } from './Settings'
-import ChainLifecycle, { publicPathText } from './ChainLifecycle'
+import { installationView } from './Runtimes'
+import ChainLifecycle from './ChainLifecycle'
 import ChainResourceEditor from './ChainResourceEditor'
 import ChainVersionEditor from './ChainVersionEditor'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -76,7 +75,7 @@ function ResourceDetail({ selected, snapshot, onClose }: { selected: ProxyResour
   const deviceFresh = fresh && snapshot.servers.fresh && !snapshot.servers.error
   return <Modal wide title={`资源详情：${resource.name}`} onClose={onClose}><div data-slot="modal-body" className="p-4"><ErrorNotice message={error} retry={query.reload} />
     {!fresh && <p className="text-muted-foreground mt-3 text-xs leading-relaxed" role="status">当前显示已取得的历史信息，资源与设备状态等待最新确认。</p>}
-    <dl className="my-6 grid gap-4 sm:grid-cols-2 md:grid-cols-3"><div><dt className="text-muted-foreground text-xs">资源类型</dt><dd className="m-0 mt-2 text-sm wrap-anywhere">{resource.kind === 'direct' ? '直连节点' : resource.path_kind === 'legacy' ? '受管两跳链路' : '有序混合链路'}</dd></div><div><dt className="text-muted-foreground text-xs">资源标识</dt><dd className="m-0 mt-2 text-sm wrap-anywhere"><code>{proxyResourceKey(resource)}</code> · 设置 {resource.settings_revision}</dd></div><div><dt className="text-muted-foreground text-xs">授权范围</dt><dd className="m-0 mt-2 text-sm wrap-anywhere">{resource.policy_group_ids.length} 个策略组 · {resource.user_count} 位代理用户</dd></div></dl>
+    <dl className="my-6 grid gap-4 sm:grid-cols-2 md:grid-cols-3"><div><dt className="text-muted-foreground text-xs">资源类型</dt><dd className="m-0 mt-2 text-sm wrap-anywhere">{resource.kind === 'direct' ? '直连节点' : '链路'}</dd></div><div><dt className="text-muted-foreground text-xs">资源标识</dt><dd className="m-0 mt-2 text-sm wrap-anywhere"><code>{proxyResourceKey(resource)}</code> · 设置 {resource.settings_revision}</dd></div><div><dt className="text-muted-foreground text-xs">授权范围</dt><dd className="m-0 mt-2 text-sm wrap-anywhere">{resource.policy_group_ids.length} 个策略组 · {resource.user_count} 位代理用户</dd></div></dl>
     <p className="text-muted-foreground mt-3 text-xs leading-relaxed">授权人数表示当前授权关系，不代表套餐仍然有效。</p>
     <div className="grid items-start gap-5 py-4 md:grid-cols-[repeat(auto-fit,minmax(min(220px,100%),1fr))]"><section className="min-w-0"><h3 className="mt-3 mb-4 text-sm font-semibold">{resource.kind === 'chain' ? '受管公开入口' : '直连监听'}</h3><EndpointView endpoint={resource.entry} server={snapshot.servers.data?.find(server => server.id === resource.entry.server_id)} node={snapshot.nodes.fresh ? snapshot.nodes.data?.find(node => node.id === resource.entry.id) : undefined} fresh={deviceFresh} /></section>{resource.hops.map(hop => <section className="min-w-0" key={hop.position}><h3 className="mt-3 mb-4 flex items-center gap-1.5 text-sm font-semibold"><CornerDownRightIcon className="text-muted-foreground size-4" aria-hidden="true" />第 {hop.position} 跳 · {hop.position === resource.hops.length ? '最终出口' : '中间段'}</h3>{hop.kind === 'managed' ? <EndpointView endpoint={hop.endpoint} server={snapshot.servers.data?.find(server => server.id === hop.endpoint.server_id)} node={snapshot.nodes.fresh ? snapshot.nodes.data?.find(node => node.id === hop.node_id) : undefined} fresh={deviceFresh} /> : <div className="grid justify-items-start gap-1.5 min-w-0"><strong className="max-w-72 wrap-anywhere">{hop.name}</strong><small className="max-w-72 wrap-anywhere">{hop.source_name} · 来源 #{hop.source_id} / 代次 {hop.identity_epoch}</small><code className="max-w-72 wrap-anywhere">{hop.server ?? '未知端点'}:{hop.server_port ?? '未知端口'}</code><small className="max-w-72 wrap-anywhere">{hop.protocol ?? '未知协议'} · {hop.transport ?? '默认传输'} · SNI {hop.sni ?? '—'}</small><Badge tone="neutral">订阅节点，无 Agent 状态</Badge><small className="max-w-72 wrap-anywhere">{hop.update_mode === 'pinned' ? '固定版本' : '跟随所选节点'} · 目标版本 {hop.node_version_id}</small><small className="max-w-72 wrap-anywhere">{hop.source_archived ? '来源已归档，保留已有快照' : !hop.node_present ? '当前来源缺失此节点，保留已应用快照' : '当前来源包含此节点'}</small>{hop.update_error && <small className="max-w-72 wrap-anywhere">{hop.update_error}</small>}</div>}</section>)}</div>
     {resource.kind === 'chain' && <><p className="text-muted-foreground mt-3 text-xs leading-relaxed">以上为目标拓扑；已应用、候选与恢复版本见下方。</p><ChainLifecycle resource={resource} fresh={fresh} /></>}
@@ -92,9 +91,6 @@ type Props = {
   nodesQuery: ResourceState<Node[]>
   serversQuery: ResourceState<PluginServer[]>
   usage: ResourceState<Usage>
-  flatKeys: string[]
-  hideFlatRows?: boolean
-  onOrganize?: (resource: ProxyResource) => void
   selected?: ProxyResource
   onCloseSelected: () => void
   filter: string
@@ -110,7 +106,7 @@ type Props = {
 // The chain section of the node page; direct nodes are managed in the catalog.
 const kind = 'chains'
 
-export default function OrderedResources({ resourcesQuery, nodesQuery, serversQuery, usage, flatKeys, hideFlatRows = false, onOrganize, selected, onCloseSelected, filter, initialServerRole = 'any', getServerId, onEdit, onChanged, onAddSource, createRequest }: Props) {
+export default function OrderedResources({ resourcesQuery, nodesQuery, serversQuery, usage, selected, onCloseSelected, filter, initialServerRole = 'any', getServerId, onEdit, onChanged, onAddSource, createRequest }: Props) {
   const history = useRef<{ resources?: ProxyResource[]; nodes?: Node[]; servers?: PluginServer[] }>({})
   const resources = validatedSnapshot(resourcesQuery, validProxyResources, history.current.resources)
   const nodes = validatedSnapshot(nodesQuery, validNodeList, history.current.nodes)
@@ -127,14 +123,15 @@ export default function OrderedResources({ resourcesQuery, nodesQuery, serversQu
   const [chainEditorOpen, setChainEditorOpen] = useState(false), [versionEditorOpen, setVersionEditorOpen] = useState(false)
   const [editPending, setEditPending] = useState(false), [versionPending, setVersionPending] = useState(false)
   const [replacement, setReplacement] = useState<{ generation: number; resource: ProxyResource } | undefined>(undefined)
-  const [deployment, setDeployment] = useState<number | null>(null)
   const [batchSaved, setBatchSaved] = useState(0)
   // The empty list's own create button raises its share of the request counter the creation form listens to.
   const [emptyCreate, setEmptyCreate] = useState(0)
   const [serverRole, setServerRole] = useState(initialServerRole)
   useEffect(() => { setServerRole(initialServerRole) }, [initialServerRole])
   const all = resources.data ?? []
-  const visible = filterProxyResources(all, kind, filter ? Number(filter) : undefined, serverRole).filter(resource => !hideFlatRows || resource.kind !== 'direct' || !flatKeys.includes(proxyResourceKey(resource)))
+  const visible = filterProxyResources(all, kind, filter ? Number(filter) : undefined, serverRole)
+  // Managed nodes that chains use, listed under the table so their references stay one click away.
+  const referenced = all.filter(resource => resource.kind === 'direct' && resource.chain_refs.length)
   const enabledServers = servers.data?.filter(server => server.enabled) ?? []
   const filterServer = servers.data?.find(server => server.id === Number(filter))
   const writeError = proxyWriteError(snapshot)
@@ -143,14 +140,14 @@ export default function OrderedResources({ resourcesQuery, nodesQuery, serversQu
   const remove = (resource: ProxyResource) => { if (action.busy || proxyDeleteError(resources, resource)) return; action.clearError(); setDeleting(resource) }
   const editChain = (resource: ProxyResource) => { if (proxyDeleteError(resources, resource) || editPending && chainEditor?.id !== resource.id) return; setChainEditor(current => current?.id === resource.id ? current : resource); setChainEditorOpen(true) }
   const editVersions = (resource: ProxyResource) => { if (proxyDeleteError(resources, resource) || versionPending && versionEditor?.id !== resource.id) return; setVersionEditor(current => current?.id === resource.id ? current : resource); setVersionEditorOpen(true) }
-  return <section aria-label="有序链路与资源引用">
+  return <section aria-label="链路与资源引用">
     <div className="flex flex-wrap items-center justify-end gap-2"><Chains snapshot={snapshot} serverId={filter ? Number(filter) : undefined} getServerId={getServerId} refresh={refresh} onCreated={result => setBatchSaved(result.chain_ids.length)} replacement={replacement} onAddSource={onAddSource} openRequest={(createRequest ?? 0) + emptyCreate} /></div>
     <ErrorNotice message={resources.error} retry={refresh} />
     {(editPending || versionPending) && <Notice role="status">有未确认的链路操作，原草稿与精确请求保留在当前页面内存。{editPending && <Button variant="ghost" size="sm" onClick={() => setChainEditorOpen(true)}>继续确认公开信息修改</Button>}{versionPending && <Button variant="ghost" size="sm" onClick={() => setVersionEditorOpen(true)}>继续确认节点版本更新</Button>}</Notice>}
-    {filter && <Field label="链路中的服务器角色" hint="直连按所在服务器匹配；链路按完整有序受管段匹配，订阅段无需 Agent。"><NativeSelect className="w-full" value={serverRole} onChange={event => { const value = event.target.value as ProxyResourceServerRole; setServerRole(value); window.location.hash = nodeHash({ server: filter, role: value, view: 'chains' }).slice(1) }}><option value="any">任一段</option><option value="entry">作为入口</option><option value="middle">作为中间段</option><option value="exit">作为最终出口</option></NativeSelect></Field>}
+    {filter && <Field label="链路中的服务器角色" hint="直连按所在服务器匹配；链路按每个受管段匹配，外部节点段无需 Agent。"><NativeSelect className="w-full" value={serverRole} onChange={event => { const value = event.target.value as ProxyResourceServerRole; setServerRole(value); window.location.hash = nodeHash({ server: filter, role: value, view: 'chains' }).slice(1) }}><option value="any">任一段</option><option value="entry">作为入口</option><option value="middle">作为中间段</option><option value="exit">作为最终出口</option></NativeSelect></Field>}
     {batchSaved > 0 && <Notice role="status"><span>{batchSaved} 条链路已原子创建，尚未授权给代理用户；受管依赖与入口仍需应用。</span><a className={buttonVariants({ variant: 'outline', size: 'sm' })} href="#/groups">加入策略组</a></Notice>}
-    {all.some(resource => resource.chain_refs.length && flatKeys.includes(proxyResourceKey(resource))) && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">资源引用：{all.filter(resource => resource.chain_refs.length && flatKeys.includes(proxyResourceKey(resource))).map(resource => <Button variant="ghost" size="sm" key={proxyResourceKey(resource)} onClick={() => setDetail(resource)}>{resource.name} · {resource.chain_refs.length} 个引用</Button>)}</p>}
-    <Panel><PanelHeader><PanelTitle>有序链路与资源引用 <span className="bg-muted text-muted-foreground min-w-5 rounded px-1.5 text-center text-xs font-medium tabular-nums">{visible.length}</span></PanelTitle></PanelHeader>
+    {referenced.length > 0 && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">资源引用：{referenced.map(resource => <Button variant="ghost" size="sm" key={proxyResourceKey(resource)} onClick={() => setDetail(resource)}>{resource.name} · {resource.chain_refs.length} 个引用</Button>)}</p>}
+    <Panel><PanelHeader><PanelTitle>链路与资源引用 <span className="bg-muted text-muted-foreground min-w-5 rounded px-1.5 text-center text-xs font-medium tabular-nums">{visible.length}</span></PanelTitle></PanelHeader>
       <div className="text-muted-foreground grid gap-1.5 border-b px-4 py-3 text-xs leading-relaxed">
         <p className="flex flex-wrap items-center gap-x-1">
           {filter
@@ -160,21 +157,18 @@ export default function OrderedResources({ resourcesQuery, nodesQuery, serversQu
         </p>
         {writeError && <p role="status">{writeError} 已取得的列表保留供查看，资源状态等待确认。</p>}
       </div>
-      {resourcesQuery.loading && !resources.data ? <Loading variant="table" /> : !visible.length ? <Empty icon={WaypointsIcon} title={filter ? '此服务器暂无已确认关联的链路' : '尚未创建链路'} description={enabledServers.length ? '选择一个模板，从入口依次连到落地节点。创建后加入策略组并授权给代理用户，等待设备成功应用配置，才能连接。' : '先在插件中心为服务器安装 sing-box，再创建代理节点。'}>{enabledServers.length ? <Button disabled={Boolean(writeError)} onClick={() => setEmptyCreate(value => value + 1)}>创建链路</Button> : <a className={buttonVariants()} href="#/settings/plugins/servers">插件设置</a>}</Empty> : <div className="@container/resources max-w-full min-w-0"><Table data-slot="proxy-resource-table" role="table" className={stacked.table}><TableHeader role="rowgroup" className={stacked.head}><TableRow role="row"><TableHead role="columnheader">资源</TableHead><TableHead role="columnheader">入口或直连监听</TableHead><TableHead role="columnheader">出口</TableHead><TableHead role="columnheader">资源与授权</TableHead><TableHead role="columnheader">累计流量</TableHead><TableHead role="columnheader" className="text-right">操作</TableHead></TableRow></TableHeader><TableBody role="rowgroup" className={stacked.body}>{visible.map(resource => {
+      {resourcesQuery.loading && !resources.data ? <Loading variant="table" /> : !visible.length ? <Empty icon={WaypointsIcon} title={filter ? '此服务器暂无已确认关联的链路' : '尚未创建链路'} description={enabledServers.length ? '选择一个模板，从入口依次连到落地节点。创建后加入策略组并授权给代理用户，等待设备成功应用配置，才能连接。' : '先为服务器安装运行时，再创建代理节点。'}>{enabledServers.length ? <Button disabled={Boolean(writeError)} onClick={() => setEmptyCreate(value => value + 1)}>创建链路</Button> : <a className={buttonVariants()} href="#/nodes?view=runtimes">查看运行时</a>}</Empty> : <div className="@container/resources max-w-full min-w-0"><Table data-slot="proxy-resource-table" role="table" className={stacked.table}><TableHeader role="rowgroup" className={stacked.head}><TableRow role="row"><TableHead role="columnheader">资源</TableHead><TableHead role="columnheader">入口或直连监听</TableHead><TableHead role="columnheader">出口</TableHead><TableHead role="columnheader">资源与授权</TableHead><TableHead role="columnheader">累计流量</TableHead><TableHead role="columnheader" className="text-right">操作</TableHead></TableRow></TableHeader><TableBody role="rowgroup" className={stacked.body}>{visible.map(resource => {
         const node = nodes.data?.find(node => node.id === resource.entry.id)
         const record = usage.data?.by_node.find(record => record.node_id === resource.entry.id)
         const unavailable = Boolean(proxyDeleteError(resources, resource))
-        return <TableRow key={proxyResourceKey(resource)} role="row" data-resource-key={proxyResourceKey(resource)} className={stacked.row}><TableCell role="cell" className={cn(stacked.cell, 'min-w-32 @max-4xl/resources:col-span-full')}><strong>{resource.name}</strong><small className="text-muted-foreground mt-1.5 block">{resource.kind === 'direct' ? '直连节点' : resource.path_kind === 'legacy' ? '受管两跳链路' : '有序混合链路'}</small><small className="text-muted-foreground mt-1.5 block"><code className="whitespace-nowrap">{proxyResourceKey(resource)}</code></small>{filter && resource.kind === 'chain' && resource.entry.server_id !== Number(filter) && resource.exit?.server_id === Number(filter) && <small className="text-muted-foreground mt-1.5 block">本服务器作为出口</small>}{resource.chain_refs.length > 0 && <small className="text-muted-foreground mt-1.5 block">共享端点 · {new Set(resource.chain_refs.map(ref => ref.id)).size} 条链路引用</small>}</TableCell>
+        return <TableRow key={proxyResourceKey(resource)} role="row" data-resource-key={proxyResourceKey(resource)} className={stacked.row}><TableCell role="cell" className={cn(stacked.cell, 'min-w-32 @max-4xl/resources:col-span-full')}><strong>{resource.name}</strong><small className="text-muted-foreground mt-1.5 block">{resource.kind === 'direct' ? '直连节点' : '链路'}</small><small className="text-muted-foreground mt-1.5 block"><code className="whitespace-nowrap">{proxyResourceKey(resource)}</code></small>{filter && resource.kind === 'chain' && resource.entry.server_id !== Number(filter) && resource.exit?.server_id === Number(filter) && <small className="text-muted-foreground mt-1.5 block">本服务器作为出口</small>}{resource.chain_refs.length > 0 && <small className="text-muted-foreground mt-1.5 block">共享端点 · {new Set(resource.chain_refs.map(ref => ref.id)).size} 条链路引用</small>}</TableCell>
           <TableCell role="cell" data-label="入口或直连监听" className={cn(stacked.cell, stacked.label, '@max-4xl/resources:order-3')}><EndpointView endpoint={resource.entry} node={nodes.fresh ? node : undefined} server={servers.data?.find(server => server.id === resource.entry.server_id)} fresh={resources.fresh && servers.fresh} /></TableCell><TableCell role="cell" data-label="出口" className={cn(stacked.cell, stacked.label, '@max-4xl/resources:order-4')}>{resource.path_kind === 'ordered' ? <div className="max-w-[340px] text-sm leading-relaxed wrap-anywhere @max-4xl/resources:max-w-none"><p>{publicPathText(resource.hops)}</p><small className="text-muted-foreground mt-1.5 block">{resource.hops.length} 个代理跳 · 已应用代 {resource.path_state?.applied_generation ?? '—'} / 目标代 {resource.path_state?.desired_generation ?? '—'}</small><small className="text-muted-foreground mt-1.5 block">状态与指定路径验证见详情</small></div> : resource.exit ? <EndpointView endpoint={resource.exit} node={nodes.fresh ? nodes.data?.find(node => node.id === resource.exit!.id) : undefined} server={servers.data?.find(server => server.id === resource.exit!.server_id)} fresh={resources.fresh && servers.fresh} /> : '—'}</TableCell>
           <TableCell role="cell" data-label="资源与授权" className={cn(stacked.cell, stacked.label, '@max-4xl/resources:order-1')}><Badge tone={!resources.fresh ? 'neutral' : resource.available ? 'good' : 'bad'}>{!resources.fresh ? '资源状态待确认' : resource.available ? '资源存在' : '资源已不可用'}</Badge><small className="text-muted-foreground mt-1.5 block">{resource.policy_group_ids.length} 个策略组 · {resource.user_count} 位代理用户</small>{resource.unavailable_reasons.map((reason, index) => <small className="text-muted-foreground mt-1.5 block" key={index}>{reason}</small>)}</TableCell><TableCell role="cell" data-label="累计流量" className={cn(stacked.cell, stacked.label, '@max-4xl/resources:order-2')}>{record ? bytes(totalBytes(record.uplink, record.downlink)) : usage.data ? '0 B' : '暂无数据'}{resource.kind === 'chain' && <small className="text-muted-foreground mt-1.5 block">按入口计量，不重复累计出口</small>}</TableCell>
           {/* Frequent actions stay visible; the rest sit behind “更多操作”. */}
-          <TableCell role="cell" className={cn(stacked.cell, '@max-4xl/resources:order-5 @max-4xl/resources:col-span-full')}><div className="flex items-center justify-end gap-1 @max-4xl/resources:flex-wrap"><Button variant="ghost" size="sm" onClick={() => { if (resource.path_kind === 'ordered') setDetail(resource); else window.location.hash = `/nodes/${resource.kind}/${resource.id}` }}>详情</Button>{resource.kind === 'direct' ? <Button variant="ghost" size="sm" disabled={action.busy || Boolean(writeError) || !node} onClick={() => { if (node) onEdit(node) }}>编辑</Button> : <Button variant="ghost" size="sm" disabled={unavailable || editPending && chainEditor?.id !== resource.id} onClick={() => editChain(resource)}>编辑公开信息</Button>}<Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20" disabled={action.busy || unavailable} onClick={() => remove(resource)}>删除</Button>
+          <TableCell role="cell" className={cn(stacked.cell, '@max-4xl/resources:order-5 @max-4xl/resources:col-span-full')}><div className="flex items-center justify-end gap-1 @max-4xl/resources:flex-wrap"><Button variant="ghost" size="sm" onClick={() => setDetail(resource)}>详情</Button>{resource.kind === 'direct' ? <Button variant="ghost" size="sm" disabled={action.busy || Boolean(writeError) || !node} onClick={() => { if (node) onEdit(node) }}>编辑</Button> : <Button variant="ghost" size="sm" disabled={unavailable || editPending && chainEditor?.id !== resource.id} onClick={() => editChain(resource)}>编辑公开信息</Button>}<Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20" disabled={action.busy || unavailable} onClick={() => remove(resource)}>删除</Button>
             <ActionMenu groups={[
               [
-                // Ordered chains already open their path and references from “详情”.
-                resource.path_kind !== 'ordered' && { label: '路径与引用', onSelect: () => setDetail(resource) },
-                resource.path_kind === 'legacy' && onOrganize && { label: '整理', disabled: unavailable, onSelect: () => { if (!proxyDeleteError(resources, resource)) onOrganize(resource) } },
-                { label: '部署', onSelect: () => setDeployment(resource.entry.server_id) },
+                { label: '部署', onSelect: () => navigate(`/servers/${resource.entry.server_id}/services`) },
               ],
               resource.kind === 'chain' ? [
                 resource.hops.some(hop => hop.kind === 'subscription') && { label: '应用节点新版本', disabled: unavailable || versionPending && versionEditor?.id !== resource.id, onSelect: () => editVersions(resource) },
@@ -183,7 +177,6 @@ export default function OrderedResources({ resourcesQuery, nodesQuery, serversQu
             ]} /></div></TableCell></TableRow>
       })}</TableBody></Table></div>}
     </Panel>
-    <DialogPresence>{deployment !== null && <NodeDeployment serverId={deployment} server={servers.fresh ? servers.data?.find(server => server.id === deployment) : undefined} onClose={() => setDeployment(null)} />}</DialogPresence>
     <p className="text-muted-foreground mt-3 text-xs leading-relaxed">普通节点需放进代理用户的策略组，并等待设备成功应用配置；出口使用内部连接凭据监听，不需要放进策略组。两端状态仅表示设备应用与健康信息，尚未验证公网可达或链路连通。</p>
     <DialogPresence>{(selected || detail) && <ResourceDetail key={proxyResourceKey((selected || detail)!)} selected={(selected || detail)!} snapshot={snapshot} onClose={() => { setDetail(null); if (selected) onCloseSelected() }} />}</DialogPresence>
     <DialogPresence>{chainEditor && <ChainResourceEditor key={chainEditor.id} resource={chainEditor} snapshot={resources} open={chainEditorOpen} onClose={() => { setChainEditorOpen(false); if (!editPending) setChainEditor(null) }} onSaved={() => { setChainEditorOpen(false); setChainEditor(null) }} onPending={setEditPending} refresh={refresh} />}</DialogPresence>

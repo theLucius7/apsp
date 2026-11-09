@@ -1,22 +1,17 @@
 #![forbid(unsafe_code)]
 
-pub mod limits;
-mod links;
-pub mod profile;
-mod relays;
-pub mod server_profile;
-pub use relays::{Relay, compile_server_with_relays};
 pub mod clash;
 pub mod client;
 pub mod external;
-#[path = "paths/mod.rs"]
-mod ordered_paths;
-#[path = "paths.rs"]
-pub mod paths;
-pub use ordered_paths::{
+pub mod limits;
+mod links;
+mod paths;
+pub mod profile;
+pub mod server_profile;
+pub use paths::{
     ManagedAcceptance, ManagedEndpointSnapshot, OrderedPath, PathCapabilities, PathHop,
-    ProbeControl, compile_server_with_paths, compile_server_with_paths_on_config,
-    path_capabilities, path_outbound_tag, required_build_tags, validate_path,
+    ProbeControl, compile_server_with_paths, path_capabilities, path_outbound_tag,
+    required_build_tags, validate_path,
 };
 
 use base64::{

@@ -15,7 +15,6 @@ pub use previews::{
     adopt, commit as commit_preview, create as create_preview, remove as remove_preview,
 };
 pub use service::{get, historical_nodes, history, list, nodes};
-pub(crate) use snapshots::identity_keys;
 
 pub fn routes() -> axum::Router<crate::AppState> {
     use axum::routing::{get as route_get, post};

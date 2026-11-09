@@ -14,7 +14,7 @@ import ServerAssets from './ServerAssets'
 import ServerMonitor from '../display/ServerMonitor'
 import { CurrencyProvider } from '../display/CurrencyContext'
 import { useNow } from '../display/useNow'
-import { ServerPluginsSection } from '../plugins'
+import ServerBusiness from '../plugins/singbox/ServerBusiness'
 import { ActionMenu } from '@/components/action-menu'
 import { Button } from '@/components/ui/button'
 import { ArrowLeftIcon, PlusIcon } from 'lucide-react'
@@ -47,21 +47,22 @@ export default function ServerDetail({ id, section = 'overview' }: { id: number;
   const connection = useConnectionStore(state => state.status)
   const showExperimental = useFeatureStore(state => state.showFrozen)
   const now = useNow(section === 'overview' ? 3000 : 30_000)
-  const [pluginRevision, setPluginRevision] = useState(0)
+  const [servicesRevision, setServicesRevision] = useState(0)
   const [installing, setInstalling] = useState(false)
   const [editing, setEditing] = useState(false)
-  const refresh = () => { server.reload(); setPluginRevision(value => value + 1) }
+  const refresh = () => { server.reload(); setServicesRevision(value => value + 1) }
   const entry = server.data
   const back = <Button variant="ghost" size="icon-sm" className="-ml-1" aria-label="返回服务器列表" title="返回服务器列表" onClick={() => navigate('/servers')}><ArrowLeftIcon aria-hidden="true" /></Button>
   if (!entry) return <>
     <PageHeader leading={back} title={`服务器 #${id}`} />
     <ErrorNotice message={server.error} retry={server.reload} />
     {server.loading && <Loading variant="panel" rows={5} />}
-    {/* Plugin enablement only needs the server ID, so it stays usable while the server read fails. */}
-    {section === 'plugins' && !server.loading && <ServerPluginsSection key={`${id}-${pluginRevision}`} serverId={id} />}
+    {/* Installing the runtime only needs the server ID, so it stays usable while the server read fails. */}
+    {section === 'services' && !server.loading && <ServerBusiness key={`${id}-${servicesRevision}`} serverId={id} />}
   </>
   const capabilities = Array.isArray(entry.capabilities) ? entry.capabilities : []
   const workspaces = [
+    { path: 'ddns', label: '域名解析' },
     { path: 'network-workbench', label: '网络检测' },
     ...(showExperimental ? [{ path: 'network-configuration', label: '网络配置（实验）' }, { path: 'operations', label: '自动化与维护（实验）' }] : []),
   ]
@@ -84,7 +85,7 @@ export default function ServerDetail({ id, section = 'overview' }: { id: number;
       <AgentSettings serverId={id} liveSupported={capabilities.includes('telemetry:live:v1')} />
       <AgentTasks key={id} serverId={id} commandsEnabled={capabilities.includes('command:execute')} />
     </>}
-    {section === 'plugins' && <ServerPluginsSection key={`${id}-${pluginRevision}`} serverId={id} server={entry} />}
+    {section === 'services' && <ServerBusiness key={`${id}-${servicesRevision}`} serverId={id} runtimeVersion={entry.static_info.runtime_version} />}
     <Suspense fallback={<Loading variant="panel" rows={4} />}>
       {section === 'ip-info' && <ServerIpInfo serverId={id} />}
       {section === 'tcp-quality' && <TcpQuality serverId={id} />}

@@ -9,7 +9,6 @@ use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use sqlx::PgPool;
-use std::time::Duration;
 use uuid::Uuid;
 
 const ROOT: &str = "/api/plugins/sing-box";
@@ -47,17 +46,34 @@ fn change(row: &Value, fields: Value) -> Value {
     value
 }
 
+const SHARE_LINK: &str = "ss://YWVzLTEyOC1nY206dGVzdC1jYXRhbG9nLXNlY3JldA@proxy.example.com:443";
+
+/// An inline source with one share link; `name` is the node name the provider publishes.
+async fn refresh(
+    panel: &TestPanel,
+    cookie: &str,
+    source: Option<(i64, i64)>,
+    name: &str,
+) -> Result<i64> {
+    let content = format!("{SHARE_LINK}#{}", name.replace(' ', "%20"));
+    let receipt = match source {
+        None => call(panel,cookie,Method::POST,"/ordered-subscription-sources",Some(json!({"request_id":Uuid::new_v4(),"name":"Source","input":{"kind":"inline","content":content}}))).await?,
+        Some((id, revision)) => call(panel,cookie,Method::PATCH,&format!("/ordered-subscription-sources/{id}"),Some(json!({"request_id":Uuid::new_v4(),"settings_revision":revision,"input":{"kind":"inline","content":content,"identity_action":"update"}}))).await?,
+    };
+    apsp_panel::plugins::singbox::subscription_sources::worker::run_once(&panel.state)
+        .await
+        .map_err(|_| anyhow::anyhow!("source worker failed"))?;
+    match source {
+        None => receipt["source_id"].as_i64().context("source"),
+        Some((id, _)) => Ok(id),
+    }
+}
+
 async fn external(panel: &TestPanel, cookie: &str, pool: &PgPool) -> Result<(i64, i64, i64)> {
-    let source=id(&call(panel,cookie,Method::POST,"/subscription-sources",Some(json!({"name":"Source","kind":"inline","content":"ss://YWVzLTEyOC1nY206dGVzdC1jYXRhbG9nLXNlY3JldA@proxy.example.com:443#Original"}))).await?)?;
-    let (node,version)=tokio::time::timeout(Duration::from_secs(20),async {
-        loop {
-            let value:Option<(i64,i64)>=sqlx::query_as("SELECT id,current_version_id FROM singbox_external_nodes WHERE source_id=$1 AND current_version_id IS NOT NULL").bind(source).fetch_optional(pool).await?;
-            if let Some(value)=value { return Ok::<_,anyhow::Error>(value); }
-            apsp_panel::plugins::singbox::sources::refresh_due(&panel.state).await?;
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    }).await??;
-    sqlx::query("UPDATE singbox_external_nodes SET adopted=TRUE WHERE id=$1")
+    let source = refresh(panel, cookie, None, "Original").await?;
+    let (node, version): (i64, i64) = sqlx::query_as("SELECT n.public_id,v.public_id FROM singbox_ordered_external_nodes n JOIN singbox_ordered_external_node_versions v ON v.id=n.latest_version WHERE n.source_id=$1")
+        .bind(source).fetch_one(pool).await?;
+    sqlx::query("UPDATE singbox_ordered_external_nodes SET adopted=TRUE WHERE public_id=$1")
         .bind(node)
         .execute(pool)
         .await?;
@@ -179,20 +195,17 @@ async fn external_metadata_survives_refresh_and_deletion_preserves_immutable_his
 ) -> Result<()> {
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
-    let (_source, node, version) = external(&panel, &cookie, &pool).await?;
+    let (source, _node, version) = external(&panel, &cookie, &pool).await?;
     let rows = catalog(&panel, &cookie).await?;
     assert_eq!(rows[0]["server_id"], Value::Null);
     ensure!(!json!(rows).to_string().contains("test-catalog-secret"));
     call(&panel,&cookie,Method::POST,"/node-catalog/batch",Some(json!({"items":[change(&rows[0],json!({"name":"Local alias","enabled":false,"tags":["Airport"]}))]}))).await?;
-    sqlx::query("UPDATE singbox_external_nodes SET name='Provider renamed' WHERE id=$1")
-        .bind(node)
-        .execute(&pool)
-        .await?;
+    refresh(&panel, &cookie, Some((source, 1)), "Provider renamed").await?;
     let rows = catalog(&panel, &cookie).await?;
     assert_eq!(rows[0]["name"], "Local alias");
     assert_eq!(rows[0]["original_name"], "Provider renamed");
     assert_eq!(rows[0]["available"], false);
-    assert_eq!(rows[0]["version_id"], version);
+    assert_eq!(rows[0]["tags"], json!(["Airport"]));
     call(
         &panel,
         &cookie,
@@ -202,17 +215,15 @@ async fn external_metadata_survives_refresh_and_deletion_preserves_immutable_his
     )
     .await?;
     assert!(catalog(&panel, &cookie).await?.is_empty());
-    let retained: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM singbox_external_node_versions WHERE id=$1")
-            .bind(version)
-            .fetch_one(&pool)
-            .await?;
+    let retained: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM singbox_ordered_external_node_versions WHERE public_id=$1",
+    )
+    .bind(version)
+    .fetch_one(&pool)
+    .await?;
     assert_eq!(retained, 1);
     // A refresh must not resurrect a locally removed resource.
-    sqlx::query("UPDATE singbox_external_nodes SET present=TRUE,name='Refreshed' WHERE id=$1")
-        .bind(node)
-        .execute(&pool)
-        .await?;
+    refresh(&panel, &cookie, Some((source, 2)), "Refreshed").await?;
     assert!(catalog(&panel, &cookie).await?.is_empty());
     Ok(())
 }
@@ -360,88 +371,6 @@ async fn cloning_recreates_runtime_identities_and_never_copies_grants(pool: PgPo
 }
 
 #[sqlx::test]
-async fn external_distribution_toggle_preserves_frozen_paths_and_dependency_guards(
-    pool: PgPool,
-) -> Result<()> {
-    let panel = TestPanel::start(pool.clone()).await?;
-    let cookie = panel.admin_cookie().await?;
-    let (source, node, version) = external(&panel, &cookie, &pool).await?;
-    let server = panel.create_server(&cookie, "Entry host").await?;
-    let entry = id(&panel.create_node(&cookie, server, "Entry").await?)?;
-    let chain:i64=sqlx::query_scalar("INSERT INTO singbox_chains(name,entry_node_id,path_kind) VALUES('Frozen path',$1,'mixed') RETURNING id").bind(entry).fetch_one(&pool).await?;
-    sqlx::query("INSERT INTO singbox_chain_versions(chain_id,generation,path_json,semantic_hash,networks,stage,created_at,updated_at) VALUES($1,1,'{\"fixture\":true}','fixture','{}','failed',0,0)").bind(chain).execute(&pool).await?;
-    sqlx::query("INSERT INTO singbox_chain_hops(chain_id,generation,position,kind,source_id,external_node_id,external_version_id,update_mode) VALUES($1,1,0,'subscription',$2,$3,$4,'pinned')").bind(chain).bind(source).bind(node).bind(version).execute(&pool).await?;
-    let rows = catalog(&panel, &cookie).await?;
-    let external_row = rows
-        .iter()
-        .find(|v| v["kind"] == "external")
-        .context("external")?;
-    call(
-        &panel,
-        &cookie,
-        Method::POST,
-        "/node-catalog/batch",
-        Some(json!({"items":[change(external_row,json!({"enabled":false}))]})),
-    )
-    .await?;
-    let mut connection = pool.acquire().await?;
-    let frozen = apsp_panel::plugins::singbox::sources::load_version_on(
-        &mut connection,
-        source,
-        node,
-        version,
-        true,
-    )
-    .await?;
-    assert_eq!(frozen.node_version_id, version);
-    drop(connection);
-    let rows = catalog(&panel, &cookie).await?;
-    let external_row = rows
-        .iter()
-        .find(|v| v["kind"] == "external")
-        .context("external")?;
-    let denied = panel
-        .admin(
-            Method::DELETE,
-            &format!("{ROOT}/node-catalog/batch"),
-            &cookie,
-            Some(json!({"items":[change(external_row,json!({}))]})),
-        )
-        .await?;
-    assert_eq!(denied.status(), StatusCode::CONFLICT);
-    let chain_row = rows
-        .iter()
-        .find(|v| v["kind"] == "chain")
-        .context("chain")?;
-    call(
-        &panel,
-        &cookie,
-        Method::DELETE,
-        "/node-catalog/batch",
-        Some(json!({"items":[change(chain_row,json!({}))]})),
-    )
-    .await?;
-    let rows = catalog(&panel, &cookie).await?;
-    assert_eq!(rows.len(), 1);
-    call(
-        &panel,
-        &cookie,
-        Method::DELETE,
-        "/node-catalog/batch",
-        Some(json!({"items":[change(&rows[0],json!({}))]})),
-    )
-    .await?;
-    let snapshot: Value = sqlx::query_scalar(
-        "SELECT path_json FROM singbox_chain_versions WHERE chain_id=$1 AND generation=1",
-    )
-    .bind(chain)
-    .fetch_one(&pool)
-    .await?;
-    assert_eq!(snapshot, json!({"fixture":true}));
-    Ok(())
-}
-
-#[sqlx::test]
 async fn catalog_entity_changes_invalidate_original_resource_cas_without_publishing_metadata(
     pool: PgPool,
 ) -> Result<()> {
@@ -454,9 +383,7 @@ async fn catalog_entity_changes_invalidate_original_resource_cas_without_publish
     let exit = id(&panel
         .create_node(&cookie, exit_server, "Legacy exit")
         .await?)?;
-    let chain = id(&panel
-        .import_legacy_chain(&cookie, "Legacy chain", entry, exit)
-        .await?)?;
+    let chain = id(&panel.insert_chain("Chain", entry, exit).await?)?;
     let history: Value = sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(v) ORDER BY generation) FROM singbox_ordered_chain_versions v WHERE chain_id=$1")
         .bind(chain).fetch_one(&pool).await?;
     sqlx::query("UPDATE servers SET dirty_at=NULL")
@@ -477,7 +404,7 @@ async fn catalog_entity_changes_invalidate_original_resource_cas_without_publish
         .fetch_one(&pool)
         .await?;
     assert_eq!(dirty, 0, "metadata does not schedule a runtime publication");
-    for (kind, identity) in [("direct", direct), ("chain", chain)] {
+    for (kind, identity) in [("direct", direct)] {
         for fields in [
             json!({"name":format!("Catalog {kind}")}),
             json!({"enabled":false}),
@@ -550,9 +477,7 @@ async fn catalog_deletion_preserves_damaged_cleanup_owners_and_old_entry_policy_
     let exit = id(&panel
         .create_node(&cookie, exit_server, "Retained hop")
         .await?)?;
-    let chain = id(&panel
-        .import_legacy_chain(&cookie, "Retiring owner", entry, exit)
-        .await?)?;
+    let chain = id(&panel.insert_chain("Retiring owner", entry, exit).await?)?;
     // TEST_ONLY receipt history remains independently bound to the saved owner.
     let request_id = Uuid::new_v4();
     sqlx::query("INSERT INTO singbox_ordered_chain_creation_requests(request_id,request_sha256,receipt,created_at) VALUES($1,$2,$3,0)")
@@ -564,7 +489,7 @@ async fn catalog_deletion_preserves_damaged_cleanup_owners_and_old_entry_policy_
     .fetch_one(&pool)
     .await?;
     // TEST_ONLY old immutable hop identities survive damaged generation pointers.
-    sqlx::query("UPDATE singbox_chains SET path_kind='ordered',exit_node_id=NULL,relay_uuid=NULL,deleted_at=1,phase='retiring',desired_generation=99,applied_generation=NULL,candidate_generation=99 WHERE id=$1").bind(chain).execute(&pool).await?;
+    sqlx::query("UPDATE singbox_chains SET deleted_at=1,phase='retiring',desired_generation=99,applied_generation=NULL,candidate_generation=99 WHERE id=$1").bind(chain).execute(&pool).await?;
     let history: Value = sqlx::query_scalar("SELECT jsonb_build_object('chain',to_jsonb(c),'versions',(SELECT jsonb_agg(to_jsonb(v) ORDER BY generation) FROM singbox_ordered_chain_versions v WHERE v.chain_id=c.id),'hops',(SELECT jsonb_agg(to_jsonb(h) ORDER BY generation,position) FROM singbox_ordered_chain_hops h WHERE h.chain_id=c.id)) FROM singbox_chains c WHERE c.id=$1")
         .bind(chain).fetch_one(&pool).await?;
     let locked = call(
@@ -589,8 +514,8 @@ async fn catalog_deletion_preserves_damaged_cleanup_owners_and_old_entry_policy_
     assert_eq!(
         rows.iter()
             .find(|v| v["kind"] == "direct" && v["id"] == exit)
-            .context("damaged retained hop")?["entry_eligible"],
-        false
+            .context("damaged retained hop")?["role"],
+        "managed_hop"
     );
     let items: Vec<_> = rows
         .iter()
@@ -665,9 +590,10 @@ async fn catalog_deletion_preserves_damaged_cleanup_owners_and_old_entry_policy_
         .await?,
         1
     );
-    let numeric_entry = id(&panel.create_node(&cookie, server, "Numeric entry").await?)?;
-    let numeric: i64 = sqlx::query_scalar("INSERT INTO singbox_chains(name,entry_node_id,path_kind) VALUES('Numeric damaged policy',$1,'mixed') RETURNING id").bind(numeric_entry).fetch_one(&pool).await?;
-    // Preserved legacy references require the same bounded public error as rich deletion.
+    let held = id(&panel
+        .create_node(&cookie, server, "Held by many groups")
+        .await?)?;
+    // Many policy references come back as the same bounded public error.
     for index in 0..40 {
         let policy: i64 =
             sqlx::query_scalar("INSERT INTO singbox_policy_groups(name) VALUES($1) RETURNING id")
@@ -676,15 +602,15 @@ async fn catalog_deletion_preserves_damaged_cleanup_owners_and_old_entry_policy_
                 .await?;
         sqlx::query("INSERT INTO singbox_policy_nodes(group_id,node_id) VALUES($1,$2)")
             .bind(policy)
-            .bind(numeric_entry)
+            .bind(held)
             .execute(&pool)
             .await?;
     }
     let rows = catalog(&panel, &cookie).await?;
-    let chain_row = rows
+    let held_row = rows
         .iter()
-        .find(|v| v["kind"] == "chain" && v["id"] == numeric)
-        .context("numeric chain")?;
+        .find(|v| v["kind"] == "direct" && v["id"] == held)
+        .context("held direct")?;
     let free_row = rows
         .iter()
         .find(|v| v["kind"] == "direct" && v["id"] == free)
@@ -694,7 +620,7 @@ async fn catalog_deletion_preserves_damaged_cleanup_owners_and_old_entry_policy_
             Method::DELETE,
             &format!("{ROOT}/node-catalog/batch"),
             &cookie,
-            Some(json!({"items":[change(free_row,json!({})),change(chain_row,json!({}))]})),
+            Some(json!({"items":[change(free_row,json!({})),change(held_row,json!({}))]})),
         )
         .await?;
     assert_eq!(denied.status(), StatusCode::CONFLICT);
@@ -710,71 +636,5 @@ async fn catalog_deletion_preserves_damaged_cleanup_owners_and_old_entry_policy_
     assert_eq!(error["references"]["chains"], json!([]));
     assert!(!error.to_string().contains("private_key"));
     assert_eq!(catalog(&panel, &cookie).await?, rows);
-    Ok(())
-}
-
-#[sqlx::test]
-async fn catalog_chain_policy_conflict_returns_public_references_before_batch_mutation(
-    pool: PgPool,
-) -> Result<()> {
-    let panel = TestPanel::start(pool.clone()).await?;
-    let cookie = panel.admin_cookie().await?;
-    let server = panel.create_server(&cookie, "Entry host").await?;
-    let entry = id(&panel.create_node(&cookie, server, "Policy entry").await?)?;
-    let free = id(&panel.create_node(&cookie, server, "Free direct").await?)?;
-    let exit_server = panel.create_server(&cookie, "Exit host").await?;
-    let exit = id(&panel
-        .create_node(&cookie, exit_server, "Shared exit")
-        .await?)?;
-    let chain = id(&panel
-        .import_legacy_chain(&cookie, "Protected chain", entry, exit)
-        .await?)?;
-    let policy: i64 = sqlx::query_scalar(
-        "INSERT INTO singbox_policy_groups(name) VALUES('Protected policy') RETURNING id",
-    )
-    .fetch_one(&pool)
-    .await?;
-    sqlx::query("INSERT INTO singbox_policy_chains(group_id,chain_id) VALUES($1,$2)")
-        .bind(policy)
-        .bind(chain)
-        .execute(&pool)
-        .await?;
-    let rows = catalog(&panel, &cookie).await?;
-    let free_row = rows
-        .iter()
-        .find(|value| value["kind"] == "direct" && value["id"] == free)
-        .context("free resource")?;
-    let chain_row = rows
-        .iter()
-        .find(|value| value["kind"] == "chain" && value["id"] == chain)
-        .context("protected chain resource")?;
-    let response = panel
-        .admin(
-            Method::DELETE,
-            &format!("{ROOT}/node-catalog/batch"),
-            &cookie,
-            Some(json!({"items":[change(free_row,json!({})),change(chain_row,json!({}))]})),
-        )
-        .await?;
-    assert_eq!(response.status(), StatusCode::CONFLICT);
-    let error: Value = response.json().await?;
-    assert_eq!(
-        error["references"]["policies"],
-        json!([{
-            "id":policy,"name":"Protected policy"
-        }])
-    );
-    assert_eq!(error["references"]["chains"], json!([]));
-    assert!(!error.to_string().contains("private_key"));
-    assert_eq!(catalog(&panel, &cookie).await?, rows);
-    assert_eq!(
-        sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM nodes WHERE id=ANY($1) AND deleted_at IS NULL",
-        )
-        .bind(vec![entry, free, exit])
-        .fetch_one(&pool)
-        .await?,
-        3
-    );
     Ok(())
 }

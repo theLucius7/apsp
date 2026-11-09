@@ -3,10 +3,9 @@ import { api } from '../../api'
 import { Confirm, Empty, ErrorNotice, Field, FormDialog, Loading, PageHeader, Refresh, DialogPresence, InfoTip } from '../../components'
 import { bytes } from '../../format'
 import { resourceWriteError, useAction, useResource } from '../../hooks'
-import { quotaBytes, scheduleText, validatedSnapshot, validProxyResources } from './groupTypes'
+import { publicPathText, quotaBytes, scheduleText, validatedSnapshot, validProxyResources } from './groupTypes'
 import type { ProxyResource, PackageGroup, PolicyGroup } from './groupTypes'
-import { mergeResourceInventory, validFlatInventory } from './resourceInventory'
-import type { ProxyResource as FlatResource } from './resourceTypes'
+import { endpoint } from './resourceTypes'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -29,6 +28,13 @@ type EditorInput = { kind: 'policy-groups'; value?: PolicyGroup } | { kind: 'pac
 type Editor = { kind: 'policy-groups'; value?: PolicyGroup; nodeIds: number[]; chainIds: number[]; externals: ExternalReference[] } | { kind: 'package-groups'; value?: PackageGroup }
 const labels: Record<Tab, string> = { 'policy-groups': '策略组', 'package-groups': '套餐组' }
 
+type Selectable = { kind: 'direct' | 'chain'; id: number; name: string; available: boolean; description: string }
+/** What a policy group can hold: managed nodes and chains, each described by where it connects. */
+function selectable(resources: ProxyResource[]): Selectable[] {
+  return resources.map(resource => ({ kind: resource.kind, id: resource.id, name: resource.name, available: resource.available,
+    description: resource.kind === 'direct' ? `${resource.entry.server_name} · ${endpoint(resource.entry.public_host, resource.entry.public_port)}` : `${resource.entry.name} → ${publicPathText(resource.hops)}` }))
+}
+
 export default function Groups({ initialTab = 'policy-groups' }: { initialTab?: Tab } = {}) {
   const policies = useResource<PolicyGroup[]>(`${root}/policy-groups`)
   const users = useResource<ProxyUser[]>(`${root}/users`, 30_000, { keep: true })
@@ -36,28 +42,24 @@ export default function Groups({ initialTab = 'policy-groups' }: { initialTab?: 
   const resourceQuery = useResource<unknown>(`${root}/ordered-proxy-resources`)
   const externalQuery = useResource<{ available_nodes: ExternalEntry[] }>(`${root}/external-node-candidates`)
   const candidates = externalQuery.data?.available_nodes ?? []
-  const flatQuery = useResource<unknown>(`${root}/proxy-resources`)
-  const flatHistory = useRef<FlatResource[] | undefined>(undefined)
-  const flat = validatedSnapshot(flatQuery, validFlatInventory, flatHistory.current)
-  if (flat.fresh) flatHistory.current = flat.data
   const resourceHistory = useRef<ProxyResource[] | undefined>(undefined)
   const resources = validatedSnapshot(resourceQuery, validProxyResources, resourceHistory.current)
   if (resources.fresh) resourceHistory.current = resources.data
-  const inventory = mergeResourceInventory(flat.data ?? [], resources.data ?? [])
+  const inventory = selectable(resources.data ?? [])
   const nodes = inventory.filter(resource => resource.kind === 'direct')
   const chains = inventory.filter(resource => resource.kind === 'chain')
-  const currentInventory = () => mergeResourceInventory(flat.getCurrent?.() ?? [], resources.getCurrent?.() ?? [])
+  const currentInventory = () => selectable(resources.getCurrent?.() ?? [])
   const action = useAction()
   const [tab, setTab] = useState<Tab>(initialTab)
   const [editor, setEditor] = useState<Editor | null>(null)
   const [deleting, setDeleting] = useState<{ kind: Tab; id: number; name: string } | null>(null)
   // External candidates block a save only when they failed to load: the server checks every reference again.
   const externalState = { error: externalQuery.error, isCurrent: () => true }
-  const policyWriteError = resourceWriteError(policies, packages, flat, resources, externalState)
-  const packageWriteError = resourceWriteError(policies, packages, flat, resources)
+  const policyWriteError = resourceWriteError(policies, packages, resources, externalState)
+  const packageWriteError = resourceWriteError(policies, packages, resources)
   const writeError = (kind: Tab, id?: number) => {
     // Policy groups also hold external nodes, so their candidates must have loaded.
-    const dependencyError = kind === 'policy-groups' ? resourceWriteError(policies, packages, flat, resources, externalState) : resourceWriteError(policies, packages, flat, resources)
+    const dependencyError = kind === 'policy-groups' ? resourceWriteError(policies, packages, resources, externalState) : resourceWriteError(policies, packages, resources)
     if (dependencyError) return dependencyError
     const data = kind === 'policy-groups' ? policies.getCurrent() : packages.getCurrent()
     return id !== undefined && !data?.some(value => value.id === id) ? '此资源已不可用，暂不能提交。草稿已保留，可关闭窗口后重新选择。' : ''
@@ -68,14 +70,14 @@ export default function Groups({ initialTab = 'policy-groups' }: { initialTab?: 
   const invalidChains = editor?.kind === 'policy-groups' ? editor.chainIds.filter(id => !chains.some(chain => chain.id === id && chain.available)) : []
   const currentSelectionError = () => editor?.kind === 'policy-groups' && [...editor.nodeIds.filter(id => !heldMigrated.includes(id)).map(id => ({ kind: 'direct', id })), ...editor.chainIds.map(id => ({ kind: 'chain', id }))].some(selected => !currentInventory().some(value => value.kind === selected.kind && value.id === selected.id && value.available)) ? '已选资源已不可用或身份已变更，请取消这些选择后再保存；其余草稿已保留。' : editor?.kind === 'policy-groups' ? externalSelectionError(editor.externals, policies.getCurrent()?.find(group => group.id === editor.value?.id)?.external_nodes ?? [], externalQuery.getCurrent()?.available_nodes ?? []) : ''
   const selectionError = invalidNodes.length || invalidChains.length ? '已选资源已不可用或身份已变更，请取消这些选择后再保存。其余草稿已保留。' : editor?.kind === 'policy-groups' ? externalSelectionError(editor.externals, editor.value?.external_nodes ?? [], candidates) : ''
-  const refresh = () => { policies.reload(); packages.reload(); resourceQuery.reload(); flatQuery.reload(); externalQuery.reload(); users.reload() }
+  const refresh = () => { policies.reload(); packages.reload(); resourceQuery.reload(); externalQuery.reload(); users.reload() }
   const nodeName = (id: number) => nodes.find(n => n.id === id)?.name ?? `节点 #${id}（已不可用）`
   const open = (value: EditorInput) => {
     if (writeError(value.kind, value.value?.id)) return
     action.clearError()
     setEditor(value.kind === 'policy-groups' ? { ...value, nodeIds: [...(value.value?.node_ids ?? [])], chainIds: [...(value.value?.chain_ids ?? [])], externals: (value.value?.external_nodes ?? []).map(externalReference) } : value)
   }
-  const choose = (kind: 'nodeIds' | 'chainIds', id: number, checked: boolean) => { if (resourceWriteError(policies, packages, flat, resources)) return; setEditor(previous => previous?.kind === 'policy-groups' ? { ...previous, [kind]: checked ? [...previous[kind], id] : previous[kind].filter(value => value !== id) } : previous) }
+  const choose = (kind: 'nodeIds' | 'chainIds', id: number, checked: boolean) => { if (resourceWriteError(policies, packages, resources)) return; setEditor(previous => previous?.kind === 'policy-groups' ? { ...previous, [kind]: checked ? [...previous[kind], id] : previous[kind].filter(value => value !== id) } : previous) }
   const remove = (kind: Tab, value: { id: number; name: string }) => { if (writeError(kind, value.id)) return; action.clearError(); setDeleting({ kind, ...value }) }
   const submit = (form: FormData) => {
     if (!editor || writeError(editor.kind, editor.value?.id) || currentSelectionError()) return
@@ -90,7 +92,7 @@ export default function Groups({ initialTab = 'policy-groups' }: { initialTab?: 
   return <>
     <PageHeader title="策略与套餐"><Refresh onClick={refresh} /><a className={buttonVariants({ variant: 'outline' })} href="#/nodes">管理代理节点</a><a className={buttonVariants({ variant: 'outline' })} href="#/users">分配给代理用户</a></PageHeader>
     <SegmentedGroup className="mb-4" role="group" aria-label="管理内容">{(Object.keys(labels) as Tab[]).map(key => <SegmentedButton type="button" key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{labels[key]}</SegmentedButton>)}</SegmentedGroup>
-    <ErrorNotice message={policies.error || packages.error || flat.error || resources.error || externalQuery.error} retry={refresh} />
+    <ErrorNotice message={policies.error || packages.error || resources.error || externalQuery.error} retry={refresh} />
     <Panel>
       {writeError(tab) && <p className="text-muted-foreground mt-3 text-xs leading-relaxed" role="status">{writeError(tab)}</p>}
       <PanelHeader><span className="flex min-w-0 items-center gap-1.5"><PanelTitle>{labels[tab]}</PanelTitle><InfoTip label={tab === 'policy-groups' ? '授权规则' : '套餐规则'}><p>{tab === 'policy-groups' ? '用户只通过策略组获得节点。多个策略组取并集，只取消一个组，不会撤销其他组仍授予的节点。「原权限组」由原系统的权限组转来，组内迁移线路沿用用户原有的客户端身份。' : '套餐修改仅影响之后的分配；已分配用户保留原有套餐快照。29 至 31 日在短月份按月末重置，下一月仍按原设定日期计算。'}</p></InfoTip></span><Button size="sm" onClick={() => open({ kind: tab })} disabled={action.busy || Boolean(writeError(tab))}>创建{labels[tab]}</Button></PanelHeader>

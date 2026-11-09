@@ -3,7 +3,7 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
-use apsp_compiler::{ManagedAcceptance, Node, OrderedPath, ProbeControl, Relay};
+use apsp_compiler::{ManagedAcceptance, Node, OrderedPath, ProbeControl};
 use apsp_protocol::RuntimeBinding;
 use serde_json::{Value, json};
 use sqlx::{Postgres, Transaction};
@@ -14,34 +14,11 @@ pub(crate) struct Plan {
     pub nodes: Vec<Node>,
     pub paths: Vec<OrderedPath>,
     pub accepts: Vec<ManagedAcceptance>,
-    pub legacy: Vec<Relay>,
     pub probe_control: Option<ProbeControl>,
     pub probe_plan: Option<Value>,
     pub dependencies: Vec<SnapshotDependency>,
     pub stages: Vec<(i64, i64, String, String, i32)>,
     pub versioned: bool,
-}
-fn legacy_relay(id: i64, frozen: &FrozenVersion) -> ApiResult<Relay> {
-    let Some(FrozenHop::Managed {
-        endpoint,
-        relay_uuid,
-    }) = frozen.hops.first()
-    else {
-        return Err(ApiError::Conflict("旧链路没有完整的受管出口快照".into()));
-    };
-    Ok(Relay {
-        settings: endpoint.node.settings.clone(),
-        fingerprint: endpoint.node.settings.reality.fingerprint,
-        chain_id: id,
-        entry_node_id: frozen.entry.node.id,
-        exit_node_id: endpoint.node.id,
-        uuid: *relay_uuid,
-        public_host: endpoint.node.public_host.clone(),
-        port: endpoint.node.public_port(),
-        sni: endpoint.node.sni.clone(),
-        public_key: endpoint.node.public_key.clone(),
-        short_id: endpoint.node.short_id.clone(),
-    })
 }
 pub(crate) async fn validate_candidate(
     tx: &mut Transaction<'_, Postgres>,
@@ -94,7 +71,7 @@ pub(crate) async fn validate_candidate(
             listen_port: 18086,
             secret: "0".repeat(64),
         });
-        apsp_compiler::compile_server_with_paths(&nodes, &[], &paths, &local, control.as_ref())
+        apsp_compiler::compile_server_with_paths(&nodes, &paths, &local, control.as_ref())
             .map_err(|error| ApiError::BadRequest(format!("候选配置无法编译：{error}")))?;
     }
     Ok(())
@@ -105,11 +82,8 @@ pub(crate) async fn plan(
     server: i64,
     at: i64,
     mut nodes: Vec<Node>,
-    mut legacy: Vec<Relay>,
 ) -> ApiResult<Plan> {
-    // A mixed chain under conversion contributes its unrouted candidate only; its
-    // entry and users belong to the mixed route until the switch.
-    let chains=sqlx::query_as::<_,ChainRow>(&format!("SELECT {CHAIN_COLUMNS} FROM singbox_chains WHERE (path_kind='ordered' AND (deleted_at IS NULL OR phase<>'retired')) OR id IN (SELECT chain_id FROM singbox_mixed_conversions WHERE state='preparing') ORDER BY id")).fetch_all(&mut **tx).await?;
+    let chains=sqlx::query_as::<_,ChainRow>(&format!("SELECT {CHAIN_COLUMNS} FROM singbox_chains WHERE path_kind='ordered' AND (deleted_at IS NULL OR phase<>'retired') ORDER BY id")).fetch_all(&mut **tx).await?;
     let mut paths = Vec::new();
     let mut accepts = Vec::new();
     let mut dependencies = Vec::new();
@@ -139,7 +113,6 @@ pub(crate) async fn plan(
             .map(|version| version.snapshot.entry.server_id);
         if !versions.values().any(|version|version.snapshot.entry.server_id==server || version.snapshot.hops.iter().any(|hop|matches!(hop,FrozenHop::Managed{endpoint,..}if endpoint.server_id==server))){continue;}
         versioned = true;
-        let converting = chain.path_kind == "mixed";
         let live = storage::chain_is_structurally_available(tx, chain.id).await?;
         let granted: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM singbox_eligible_accesses($2) WHERE node_id=$1)",
@@ -148,10 +121,6 @@ pub(crate) async fn plan(
         .bind(at)
         .fetch_one(&mut **tx)
         .await?;
-        if converting && (!live || chain.deleted_at.is_some()) {
-            // The lifecycle returns it to mixed; the mixed route retires it.
-            continue;
-        }
         if !live || chain.deleted_at.is_some() || chain.phase == "retiring" {
             if let Some(node) = nodes.iter_mut().find(|node| node.id == chain.entry_node_id) {
                 node.users.clear();
@@ -175,9 +144,7 @@ pub(crate) async fn plan(
             ));
             continue;
         }
-        if !granted
-            && !converting
-            && let Some(node) = nodes.iter_mut().find(|node| node.id == chain.entry_node_id)
+        if !granted && let Some(node) = nodes.iter_mut().find(|node| node.id == chain.entry_node_id)
         {
             node.users.clear();
         }
@@ -200,7 +167,7 @@ pub(crate) async fn plan(
                     .flatten()
                     .filter(|generation| *generation >= chain.minimum_generation)
             });
-        if entry_server == Some(server) && !converting {
+        if entry_server == Some(server) {
             let route_snapshot = route_generation.and_then(|generation| versions.get(&generation));
             if let Some(node) = nodes.iter_mut().find(|node| node.id == chain.entry_node_id) {
                 let users = std::mem::take(&mut node.users);
@@ -227,22 +194,13 @@ pub(crate) async fn plan(
                         && chain.restore_step.as_deref() == Some("cleanup")))
                 || retain;
             if entry_server == Some(server) && (active || entry_candidate) {
-                if version.legacy {
-                    // A legacy relay is compiled only when the old two-hop path would
-                    // compile it: both ends live and the entry has an eligible grant.
-                    if active && granted {
-                        legacy.push(legacy_relay(chain.id, &version.snapshot)?);
-                    }
-                } else {
-                    let path =
-                        storage::compiler_path(chain.id, *generation, &version.snapshot, active);
-                    tags.extend(apsp_compiler::required_build_tags(&path));
-                    let probes:Vec<(Uuid,String)>=sqlx::query_as("SELECT probe_id,stage FROM singbox_path_probes WHERE chain_id=$1 AND generation=$2 ORDER BY stage").bind(chain.id).bind(generation).fetch_all(&mut **tx).await?;
-                    for (probe_id, _) in probes {
-                        bindings.push(json!({"id":probe_id.to_string(),"selector":path.final_tag(),"target":storage::probe_target(state)?}));
-                    }
-                    paths.push(path);
+                let path = storage::compiler_path(chain.id, *generation, &version.snapshot, active);
+                tags.extend(apsp_compiler::required_build_tags(&path));
+                let probes:Vec<(Uuid,String)>=sqlx::query_as("SELECT probe_id,stage FROM singbox_path_probes WHERE chain_id=$1 AND generation=$2 ORDER BY stage").bind(chain.id).bind(generation).fetch_all(&mut **tx).await?;
+                for (probe_id, _) in probes {
+                    bindings.push(json!({"id":probe_id.to_string(),"selector":path.final_tag(),"target":storage::probe_target(state)?}));
                 }
+                paths.push(path);
                 dependencies.push(SnapshotDependency {
                     chain_id: chain.id,
                     generation: *generation,
@@ -261,19 +219,13 @@ pub(crate) async fn plan(
                         if endpoint.server_id != server {
                             continue;
                         }
-                        if version.legacy {
-                            if granted && !legacy.iter().any(|relay| relay.chain_id == chain.id) {
-                                legacy.push(legacy_relay(chain.id, &version.snapshot)?);
-                            }
-                        } else {
-                            accepts.push(ManagedAcceptance {
-                                endpoint: endpoint.as_ref().clone(),
-                                chain_id: chain.id,
-                                generation: *generation as u64,
-                                position: (index + 1) as u8,
-                                relay_uuid: *relay_uuid,
-                            });
-                        }
+                        accepts.push(ManagedAcceptance {
+                            endpoint: endpoint.as_ref().clone(),
+                            chain_id: chain.id,
+                            generation: *generation as u64,
+                            position: (index + 1) as u8,
+                            relay_uuid: *relay_uuid,
+                        });
                         dependencies.push(SnapshotDependency {
                             chain_id: chain.id,
                             generation: *generation,
@@ -402,7 +354,6 @@ pub(crate) async fn plan(
         nodes,
         paths,
         accepts,
-        legacy,
         probe_control,
         probe_plan,
         dependencies,

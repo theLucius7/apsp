@@ -1,5 +1,5 @@
 import { installControlCenterFixtures } from './control-center-fixtures.mjs'
-import { flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
 // TEST_ONLY: the policy group editor with isolated external-provider fixtures.
 // Users get external nodes only through policy groups: the editor offers adopted
 // nodes from subscription sources, keeps nodes the group already holds even while
@@ -70,7 +70,6 @@ try {
       if (path === '/api/dashboard/access') value = { authenticated: true, public_dashboard: false }
       else if (path === `${root}/policy-groups`) value = [group]
       else if (path === `${root}/package-groups`) value = []
-      else if (path === `${root}/proxy-resources`) value = flatResourceFixtures([node], servers)
       else if (path === `${root}/ordered-proxy-resources`) value = proxyResourceFixtures([node], servers)
       else if (path === candidatesPath) value = structuredClone(candidates)
       else if (path === `${root}/users`) value = [user]
@@ -97,7 +96,7 @@ try {
       await wait(() => edit.isEnabled(), 'Initial group snapshots complete')
       await edit.click()
       const dialog = page.getByRole('dialog'), save = dialog.getByRole('button', { name: '保存', exact: true })
-      const externals = dialog.locator('fieldset[data-slot=group-choices]').filter({ has: page.getByText('订阅来源中的外部节点', { exact: true }) })
+      const externals = dialog.locator('fieldset[data-slot=group-choices]').filter({ has: page.getByText('外部节点', { exact: true }) })
       const choice = name => externals.getByRole('checkbox', { name: new RegExp(name) })
       const mode = name => externals.getByRole('combobox', { name: `${name} 的更新方式`, exact: true })
       await externals.waitFor()

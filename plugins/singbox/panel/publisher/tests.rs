@@ -130,59 +130,6 @@ async fn stale_candidate_cannot_publish_after_enablement_is_withdrawn(
 }
 
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
-async fn shared_controller_rotation_is_transactional_and_never_rewrites_old_deployment_bytes(
-    pool: PgPool,
-) -> Result<()> {
-    let server: i64 = sqlx::query_scalar(
-        "INSERT INTO servers(name) VALUES('TEST_ONLY shared controller') RETURNING id",
-    )
-    .fetch_one(&pool)
-    .await?;
-    let old = crate::auth::random_token();
-    sqlx::query("INSERT INTO singbox_path_controls(server_id,secret,test_url) VALUES($1,$2,'https://panel.example.com/health')").bind(server).bind(&old).execute(&pool).await?;
-    let old_bundle = serde_json::json!({"files":{"config.json":format!("TEST_ONLY immutable old secret {old}")}}).to_string();
-    let old_hash = crate::auth::hash_token(&old_bundle);
-    sqlx::query("INSERT INTO deployments(server_id,module,rev,bundle,bundle_sha256,source_json,created_at) VALUES($1,'singbox',1,$2,$3,'[]',1)").bind(server).bind(&old_bundle).bind(&old_hash).execute(&pool).await?;
-    let new = "a".repeat(64);
-    let mut tx = pool.begin().await?;
-    synchronize_path_secret_on(&mut tx, server, &new).await?;
-    assert_eq!(
-        sqlx::query_scalar::<_, String>(
-            "SELECT secret FROM singbox_path_controls WHERE server_id=$1"
-        )
-        .bind(server)
-        .fetch_one(&mut *tx)
-        .await?,
-        new
-    );
-    tx.rollback().await?;
-    assert_eq!(
-        sqlx::query_scalar::<_, String>(
-            "SELECT secret FROM singbox_path_controls WHERE server_id=$1"
-        )
-        .bind(server)
-        .fetch_one(&pool)
-        .await?,
-        old
-    );
-    let mut tx = pool.begin().await?;
-    synchronize_path_secret_on(&mut tx, server, &new).await?;
-    tx.commit().await?;
-    let preserved: (String,String) = sqlx::query_as("SELECT bundle,bundle_sha256 FROM deployments WHERE server_id=$1 AND module='singbox' AND rev=1").bind(server).fetch_one(&pool).await?;
-    assert_eq!(preserved, (old_bundle, old_hash));
-    assert_eq!(
-        sqlx::query_scalar::<_, String>(
-            "SELECT secret FROM singbox_path_controls WHERE server_id=$1"
-        )
-        .bind(server)
-        .fetch_one(&pool)
-        .await?,
-        new
-    );
-    Ok(())
-}
-
-#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn redeploy_publishes_the_unchanged_bundle_as_a_higher_revision(pool: PgPool) -> Result<()> {
     let state = AppState::new(
         pool.clone(),

@@ -11,5 +11,5 @@ pub use model::{
     path_outbound_tag,
 };
 pub use network::{PathCapabilities, path_capabilities, required_build_tags};
-pub use render::{compile_server_with_paths, compile_server_with_paths_on_config};
+pub use render::compile_server_with_paths;
 pub use validate::validate_path;

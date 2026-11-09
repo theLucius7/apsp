@@ -2,9 +2,9 @@ import { expect, test } from 'bun:test'
 import { validatedSnapshot } from '../src/plugins/singbox/groupTypes'
 import { adoptSourceNode, cancelSourceJob, deleteSource, emptySourceDraft, prepareSourceMutation, previewCommit, previewInput, refreshSource, SourceFileReader, sourceAuthHeaders, sourceCommand, sourceMetadataError, sourceMutationReplay, sourceWriteError, submitSourceMutation } from '../src/plugins/singbox/sourceRequests'
 import type { SourceSnapshot } from '../src/plugins/singbox/sourceRequests'
-import { MAX_SOURCE_BYTES, orderedPreviewError, sourceInterval, sourceJobActive, sourceRoot, sourceStatusText, validOrderedPreview, validSourceCounts, validSourceHistory, validSourceJob, validSourceMigration, validSourceNodePage, validSubscriptionSource, validSubscriptionSources } from '../src/plugins/singbox/orderedSourceTypes'
+import { MAX_SOURCE_BYTES, orderedPreviewError, sourceInterval, sourceJobActive, sourceRoot, sourceStatusText, validOrderedPreview, validSourceCounts, validSourceHistory, validSourceJob, validSourceNodePage, validSubscriptionSource, validSubscriptionSources } from '../src/plugins/singbox/orderedSourceTypes'
 import type { OrderedPreview, SourceJob, SourceNode, SourceNodePage, SubscriptionSource } from '../src/plugins/singbox/orderedSourceTypes'
-import { sourceJobFixture, sourceMigrationFixture, sourceNodeFixture, sourceNodePageFixture, sourcePreviewFixture, sourceRevisionFixture, sourceUuid, subscriptionSourceFixture } from './subscription-source-fixtures.mjs'
+import { sourceJobFixture, sourceNodeFixture, sourceNodePageFixture, sourcePreviewFixture, sourceRevisionFixture, sourceUuid, subscriptionSourceFixture } from './subscription-source-fixtures.mjs'
 const source = () => subscriptionSourceFixture() as SubscriptionSource
 const snapshot = (): SourceSnapshot => ({ data: [source()], fresh: true, error: '' })
 const id = sourceUuid(900)
@@ -208,9 +208,4 @@ test('preview import commits only selectable nodes with the chosen name, interva
   expect(orderedPreviewError(preview, ['node-0'], 1_000_000)).toBe('')
   expect(previewInput({ ...draft, url: 'https://subscription.example.com/s', userAgent: 'A/1' })).toEqual({ input: { kind: 'url', url: 'https://subscription.example.com/s', auth_headers: {} }, user_agent: 'A/1' })
   expect(previewInput({ ...draft, kind: 'inline', content: 'trojan://x@exit.example.com:443', userAgent: 'ignored' })).toEqual({ input: { kind: 'inline', content: 'trojan://x@exit.example.com:443' }, user_agent: null })
-})
-test('migration state decoder keeps migrated, not migrated and unknown apart', () => {
-  expect(validSourceMigration(sourceMigrationFixture())).toBe(true)
-  expect(validSourceMigration(sourceMigrationFixture(true))).toBe(true)
-  for (const value of [{ migrated: true, migrated_at: null }, { migrated: false, migrated_at: 5 }, { migrated: false }, null, []]) expect(validSourceMigration(value)).toBe(false)
 })

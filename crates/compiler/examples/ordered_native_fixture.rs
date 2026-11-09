@@ -179,7 +179,6 @@ fn output_case(input: &Input, parent: &Path, name: &str, four: bool) -> Result<V
             "A",
             compile_server_with_paths(
                 std::slice::from_ref(&entry),
-                &[],
                 std::slice::from_ref(&ordered),
                 &[],
                 Some(&control),
@@ -187,13 +186,12 @@ fn output_case(input: &Input, parent: &Path, name: &str, four: bool) -> Result<V
         ),
         (
             "M",
-            compile_server_with_paths(&[node(input, 2, "M", false)?], &[], &[], &middle, None)?,
+            compile_server_with_paths(&[node(input, 2, "M", false)?], &[], &middle, None)?,
         ),
         (
             "B",
             compile_server_with_paths(
                 &[node(input, 3, "B", false)?],
-                &[],
                 &[],
                 &[accept(
                     input,
@@ -333,7 +331,6 @@ fn execute() -> Result<()> {
     let sources = [
         ("lib.rs", include_bytes!("../src/lib.rs").as_slice()),
         ("client.rs", include_bytes!("../src/client.rs").as_slice()),
-        ("relays.rs", include_bytes!("../src/relays.rs").as_slice()),
         (
             "external.rs",
             include_bytes!("../src/external.rs").as_slice(),

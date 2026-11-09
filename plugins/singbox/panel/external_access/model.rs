@@ -104,9 +104,11 @@ pub struct NodeState {
     pub sort_order: i64,
 }
 
-/// A version read through `singbox_external_version_configs`: a numbered-source
-/// configuration (also kept for imported versions), or an ordered-source
-/// typed outbound.
+/// A version read through `singbox_external_version_configs`: a typed outbound, or the
+/// original outbound of a version imported from the numbered sources on 2026-11-04.
+/// The parser version of the versions imported from the numbered sources (2026-11-04).
+pub const IMPORTED_PARSER_VERSION: &str = "apsp-subscriptions-2";
+
 #[derive(FromRow)]
 pub struct Version {
     pub id: i64,
@@ -126,13 +128,16 @@ impl Version {
             let value = ExternalOutbound(config.clone());
             value.capabilities().ok()?;
             let serialized = serde_json::to_vec(&value).ok()?;
-            return (super::super::sources::parse::digest(&serialized) == *sha256).then_some(value);
+            return (super::super::subscription_parser::hex_digest(&serialized) == *sha256)
+                .then_some(value);
         }
         // Typed outbounds are checked against their stored content digest first.
         let typed: NormalizedOutbound =
             serde_json::from_value(self.normalized_config.clone()?).ok()?;
         let serialized = serde_json::to_vec(&typed).ok()?;
-        if super::super::sources::parse::digest(&serialized) != *self.content_digest.as_ref()? {
+        if super::super::subscription_parser::hex_digest(&serialized)
+            != *self.content_digest.as_ref()?
+        {
             return None;
         }
         let value = ExternalOutbound::from_normalized(&typed).ok()?;
@@ -140,15 +145,15 @@ impl Version {
         Some(value)
     }
 
-    /// New grants require the parser that currently produces this kind of
-    /// version. A version imported from numbered sources is still served from
-    /// its original outbound, so the numbered parser's version applies to it.
+    /// New grants require the parser that currently produces this kind of version. An
+    /// imported version is still served from its original outbound, so it keeps the parser
+    /// version it was imported with.
     fn current_parser(&self) -> bool {
         self.parser_version
             == if self.ordered && self.config_json.is_none() {
                 super::super::subscription_parser::PARSER_VERSION
             } else {
-                super::super::sources::parse::PARSER_VERSION
+                IMPORTED_PARSER_VERSION
             }
     }
 }

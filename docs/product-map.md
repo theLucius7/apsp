@@ -102,7 +102,7 @@
 | 制品与版本：Agent 与运行时的签名制品、已验证版本 | 系统 › 制品与版本 |
 | 面板设置（含“显示实验与冻结功能”）；管理员与权限、API 令牌、凭据、审计与系统自检；账号安全 | 系统；账号安全在账号菜单 |
 | 面板备份与恢复 | 系统 › 备份与恢复 `/#/settings/backup` |
-| 迁移与兼容：来源迁移、旧链路接管、Nexus 兼容桥等一次性流程的状态与退出条件（只读） | 系统 › 迁移与兼容（新增） |
+| 迁移与兼容：Nexus 兼容桥等一次性流程的状态与退出条件（只读）；数字编号来源、两跳与混合链路已于 2026-11-09 退出（ADR 0131） | 系统 › 迁移与兼容（新增） |
 
 ### 可选
 
@@ -176,14 +176,14 @@
 | 费用与续费 | 总览 › 费用与续费 | `/#/expenses` |
 | 费用与续费 › 付费服务 | 总览 › 概览 › 订阅看板 | `/#/subscriptions` |
 | 系统 › 面板设置、备份与恢复、管理员与权限 | 监控与设置 › 设置（面板设置、备份与恢复、管理与安全） | `/#/settings`、`/#/settings/backup`、`/#/settings/admin` |
-| 系统 › 制品与版本 | 监控与设置 › 设置 › 插件中心 | `/#/settings/plugins` |
-| 系统 › 迁移与兼容 | 尚无界面；来源迁移与旧链路接管在命令行，Nexus 工具在 `tools/` | — |
+| 系统 › 制品与版本 | 监控与设置 › 设置 › 制品与版本 | `/#/settings/artifacts` |
+| 系统 › 迁移与兼容 | 尚无界面；Nexus 工具在 `tools/` | — |
 | 账号菜单 › 账号安全 | 监控与设置 › 设置 › 账号安全 | `/#/settings/account` |
 | 服务器详情 › 网络服务、地址与资源 | 服务器详情 › 插件 | `/#/servers/{id}/plugins` |
 | 服务器详情 › 诊断 | 服务器详情 › 线路诊断 | `/#/servers/{id}/ip-info` 等 |
 | 服务器详情 › Agent | 服务器详情 › Agent 与任务 | `/#/servers/{id}/agent` |
 
-**不在侧栏但仍可用的地址：** `/#/fleet`（原运维工具，显示服务器选择与迁移说明）、`/#/servers/batch`（批量接入，从服务器列表进入）、`/#/settings/plugins/servers`（插件中心的 sing-box 安装视图）、`/#/latency/reachability`（旧地址，打开质量概况）、`/#/users/{id}`（直接打开某个用户）、`/#/expenses/items/{id}` 与 `/#/expenses/servers/{id}`（费用与续费中某一项的详情）、`/#/overview` 与 `/`（服务器看板别名；登录后无指定地址时进入概览）。
+**不在侧栏但仍可用的地址：** `/#/fleet`（原运维工具，显示服务器选择与迁移说明）、`/#/servers/batch`（批量接入，从服务器列表进入）、`/#/settings/plugins`、`/#/settings/plugins/servers`、`/#/servers/{id}/plugins`（2026-11-09 前的插件中心与服务器「插件」分页，分别打开制品与版本、代理节点的运行时视图与服务器的网络服务分页，保留一个发布版本）、`/#/latency/reachability`（旧地址，打开质量概况）、`/#/users/{id}`（直接打开某个用户）、`/#/expenses/items/{id}` 与 `/#/expenses/servers/{id}`（费用与续费中某一项的详情）、`/#/overview` 与 `/`（服务器看板别名；登录后无指定地址时进入概览）。
 
 ## 归类规则
 
@@ -234,7 +234,7 @@
 | 网络服务 | 流量服务、服务权益 | `plugins/singbox/` | `plugins/singbox/panel/`、`crates/compiler/`、`crates/adapter-singbox/` |
 | 监测与诊断 | 观测 | `monitoring/`、`network-workbench/`、`server-diagnostics/`、`statistics/` | `panel-host` 的 `notifications`、`probes`、`latency_tasks`、`network_workbench`、`ip_quality`、`statistics`；诊断代码 `plugins/{nodequality,ipquality,tcpquality}/` |
 | 费用与续费 | 成本 | `plugins/expenses/`、`subscriptions/` | `crates/costs/` |
-| 系统 | 平台治理（含制品、备份与恢复）；汇率属成本 | `system/`、`control-center/`、`plugins/` 根目录的插件中心文件 | `panel-host` 的 `settings`、`control_center`、`auth`、`passkeys`、`exchange`、`artifacts`、`operations` 中的备份 |
+| 系统 | 平台治理（含制品、备份与恢复）；汇率属成本 | `system/`（含 `Artifacts.tsx`）、`control-center/` | `panel-host` 的 `settings`、`control_center`、`auth`、`passkeys`、`exchange`、`artifacts`、`operations` 中的备份 |
 
 后端的平台、领域与应用分层不随功能分级改变，见[仓库目录与维护约定](repository.md)。
 

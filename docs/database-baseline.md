@@ -59,3 +59,5 @@
 ### S-UI 能力补齐（2026-11-07）
 
 从 #249 的基线（`287de2b2`，与生产一致）接入 [ADR 0129](adr/0129-sui-capability-alignment.md) 的基线使用 `scripts/baseline-adoption-sui-20261107.sql`：增加用户暂停状态、运行时控制凭据及服务器配置表，扩展节点协议与运行时约束，更新客户端模板版本约束。脚本校验来源校验和、实际结构指纹和结果指纹。部署器先在生产结构副本上试启动新镜像并执行该脚本，通过后才在生产执行并换镜像；旧开发库仍由使用者手动重建，应用不会自动迁移或删数据。
+
+从 S-UI 的基线（`405612a7`，指纹 `7701ab9e`）接入 [ADR 0131](adr/0131-one-model-per-object.md) 的基线使用 `scripts/baseline-adoption-one-model-20261109.sql`：删除两跳旧链路、混合链路与数字编号来源的 17 张表、`singbox_live_chains` 视图、7 个函数及其触发器；两个外部节点视图与两个检查函数只读 B 模型，B 的两个公开编号序列先改归 B 表再改名；`singbox_chains` 与 `singbox_ordered_chain_versions` 在生产是空表，按新定义重建（删列会留下空的列序号，指纹不可能等于空库初始化），连同引用它们的 8 个外键与 `singbox_desired_accesses` 视图。脚本校验来源校验和与指纹、两张链路表为空，结果指纹必须等于空库初始化的值（`00168f4f`）。删除前，数字编号来源的存档行从生产备份导出到 `~/backups/apsp-numbered-sources-archive-20261109/`。

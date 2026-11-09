@@ -78,7 +78,7 @@ export default function SourceDetailDrawer({ selected, snapshot, refresh, onClos
     if (!fresh || action.busy || !activeJob || !job.fresh) return
     void action.run(() => cancelSourceJob(job, activeJob.id), receipt => { setLastJob(receipt); reload() })
   }
-  return <Modal wide  title={`订阅来源：${source.name}`} onClose={onClose} busy={action.busy}><div data-slot="modal-body" className="p-4">
+  return <Modal wide  title={`外部来源：${source.name}`} onClose={onClose} busy={action.busy}><div data-slot="modal-body" className="p-4">
     <ErrorNotice message={sourceResult.error || (!sameSource ? '来源详情标识不一致，请刷新确认。' : '') || action.error} retry={reload} />
     {!fresh && <p className="text-muted-foreground mt-3 text-xs leading-relaxed" role="status">当前显示历史来源信息，等待最新设置确认；修改操作暂不可用。</p>}
     <div className="mt-3 flex flex-wrap items-center gap-3"><Button variant="outline" disabled={!fresh || action.busy || source.archived} onClick={() => openEditor('metadata')}>修改名称与周期</Button>{source.kind === 'inline' && <Button variant="outline" disabled={!fresh || action.busy || source.archived} onClick={() => openEditor('update')}>更新同一来源内容</Button>}<Button variant="outline" disabled={!fresh || action.busy || source.archived} onClick={() => openEditor('replace')}>更换来源</Button><Button variant="outline" disabled={!fresh || action.busy} onClick={() => openEditor(source.archived ? 'unarchive' : 'archive')}>{source.archived ? '恢复来源' : '归档来源'}</Button><Button variant="destructive" disabled={!fresh || action.busy} onClick={() => { if (fresh && !action.busy) remove(source) }}>删除来源</Button></div>

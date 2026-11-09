@@ -35,7 +35,7 @@ export default function GroupExternalNodes({ selected, held, candidates, disable
     const next = kept ?? (candidate && eligibleExternalSelection(candidate) ? { ...externalReference(candidate), update_mode: value } : undefined)
     if (next) onChange(selected.map(item => item.external_node_id === entry.external_node_id ? externalReference(next) : item))
   }
-  return <fieldset data-slot="group-choices" className="my-3 mb-4 grid gap-2.5 border-0 p-0"><legend className="mb-2.5 text-sm font-semibold">订阅来源中的外部节点</legend>
+  return <fieldset data-slot="group-choices" className="my-3 mb-4 grid gap-2.5 border-0 p-0"><legend className="mb-2.5 text-sm font-semibold">外部节点</legend>
     {rows.map(entry => {
       const chosen = selected.find(value => value.external_node_id === entry.external_node_id)
       const selectable = Boolean(chosen) || eligibleExternalSelection(entry)

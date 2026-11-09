@@ -4,6 +4,7 @@ import { createServer } from 'node:http'
 import { mkdir, readFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { extname, resolve, sep } from 'node:path'
+import { orderedResourceFixture, pathFixtureUuid } from './proxy-resource-fixtures.mjs'
 
 // TEST_ONLY read-only resources; no device execution or secret template content is claimed.
 const diagnosisFixture = user => ({ user_id: user.id, account: { user_id: user.id, name: user.name, portal_created: false, keys: 0, active_sessions: 0, activation_expires_at: null },
@@ -41,8 +42,11 @@ try {
       const page = await browser.newPage({ viewport: { width, height: 1000 } })
       const users = [1, 2].map(id => ({ id, name: `TEST_ONLY 用户 ${id}`, subscription_token: `TEST_ONLY_${id}`, subscription_url: `http://127.0.0.1/s/TEST_ONLY_${id}` }))
       const nodes = [1, 2].map(id => ({ id, name: `TEST_ONLY 节点 ${id}`, server_id: id, protocol: 'vless-reality', public_host: '127.0.0.1', port: 20000 + id, sni: 'localhost', public_key: 'TEST_ONLY', short_id: '0123abcd' }))
-      const resources = nodes.map(node => ({ ...node, kind: 'direct', server_name: `TEST_ONLY 服务器 ${node.server_id}`, role: 'direct', entry_node_id: null, tcp: true, udp: true, available: true, enabled: true, stage: 'direct', reference_count: 0, entry_eligible: true }))
-      resources.push({ ...resources[0], id: 10, kind: 'chain', name: 'TEST_ONLY 原链路', role: 'chain_entry', entry_node_id: 1, stage: 'ready' })
+      // What policy groups choose from: the managed nodes and one chain with its own entry.
+      const endpoint = (id, name) => ({ id, name, server_id: id, server_name: `TEST_ONLY 服务器 ${id}`, protocol: 'vless-reality', port: 20000 + id, public_port: 20000 + id, public_host: '127.0.0.1', sni: 'localhost',
+        enabled: true, node_deleted: false, server_deleted: false, plugin_enabled: true, online: true, desired_revision: null, applied_revision: null, applied_observed_at: null })
+      const resources = nodes.map(node => ({ kind: 'direct', id: node.id, name: node.name, entry: endpoint(node.id, node.name), exit: null, available: true, unavailable_reasons: [], policy_group_ids: [], user_count: 0, chain_refs: [], settings_revision: 1, path_kind: null, hops: [], path_state: null }))
+      resources.push(orderedResourceFixture({ id: 10, name: 'TEST_ONLY 原链路', entry: endpoint(3, 'TEST_ONLY 链路入口'), hops: [{ kind: 'managed', position: 1, node_id: 2, endpoint_version_id: pathFixtureUuid(2), endpoint: endpoint(2, 'TEST_ONLY 节点 2') }] }))
       const policies = [{ id: 1, name: 'TEST_ONLY 原策略', node_ids: [1], chain_ids: [10], member_count: 1 }, { id: 2, name: 'TEST_ONLY 新策略', node_ids: [2], chain_ids: [], member_count: 0 }]
       const packages = [1, 2].map(id => ({ id, name: `TEST_ONLY 套餐 ${id}`, monthly_bytes: String(id * 1073741824), reset_day: 1, reset_hour: 0, reset_minute: 0, timezone: 'UTC', duration_days: 30 }))
       let groupIds = [1], packageId = 1
@@ -77,9 +81,8 @@ try {
         else if (method === 'GET' && !url.search && [1, 2, 3].some(id => path === `${prefix}/users/${id}/client-template` && users.some(user => user.id === id))) value = templateFixture
         else if (method === 'GET' && path === `${prefix}/users`) value = users
         else if (method === 'GET' && path === `${prefix}/nodes`) value = nodes
-        else if (method === 'GET' && path === `${prefix}/source-migration`) value = { migrated: false, migrated_at: null }
-        else if (method === 'GET' && [`${prefix}/ordered-proxy-resources`, `${prefix}/ordered-subscription-sources`].includes(path)) value = []
-        else if (method === 'GET' && path === `${prefix}/proxy-resources`) value = resources
+        else if (method === 'GET' && path === `${prefix}/ordered-proxy-resources`) value = resources
+        else if (method === 'GET' && path === `${prefix}/ordered-subscription-sources`) value = []
         else if (method === 'GET' && path === `${prefix}/external-node-candidates`) value = { available_nodes: [] }
         else if (method === 'GET' && path === `${prefix}/policy-groups`) value = policies
         else if (method === 'GET' && path === `${prefix}/package-groups`) value = packages
@@ -194,7 +197,7 @@ try {
       assert.equal(JSON.stringify(usage), ledger)
     }
 
-    for (const dependency of ['policy-groups', 'package-groups', 'proxy-resources']) await fixture('groups', async control => {
+    for (const dependency of ['policy-groups', 'package-groups', 'ordered-proxy-resources']) await fixture('groups', async control => {
       const { page, writes } = control
       await page.getByRole('row').filter({ hasText: 'TEST_ONLY 原策略' }).getByRole('button', { name: '编辑', exact: true }).click()
       const dialog = page.getByRole('dialog'), name = dialog.locator('input[name="name"]')

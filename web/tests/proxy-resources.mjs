@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { mkdir, readFile } from 'node:fs/promises'
 import { resolve, extname, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { catalogNodeFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
 
 // Exercise the shipped UI with owned API fixtures, including a committed request whose response is lost.
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
@@ -49,10 +49,8 @@ try {
       if (method === 'GET' && path === '/api/dashboard/access') value={authenticated:true,public_dashboard:false}
       else if (method === 'GET' && path === '/api/me') value={authenticated:true}
       else if (method === 'GET' && path === `${prefix}/servers`) value=servers
-      else if (method === 'GET' && path === `${prefix}/source-migration`) value={ migrated: false, migrated_at: null }
-      else if (method === 'GET' && [ `${prefix}/subscription-sources`, `${prefix}/ordered-subscription-sources` ].includes(path)) value=[]
-      else if (method === 'GET' && path === `${prefix}/proxy-resources`) value=flatResourceFixtures(nodes,servers,chains)
-      else if (method === 'GET' && path === `${prefix}/node-catalog`) value=catalogResourceFixtures(flatResourceFixtures(nodes,servers,chains))
+      else if (method === 'GET' && path === `${prefix}/ordered-subscription-sources`) value=[]
+      else if (method === 'GET' && path === `${prefix}/node-catalog`) value=catalogResourceFixtures(catalogNodeFixtures(nodes,servers,chains))
       else if (method === 'GET' && path === `${prefix}/nodes`) {
         if (nodesFailure) {await route.fulfill({status:500,json:{error:'旧节点设置无法解析'}});return}
         value=nodes
@@ -137,10 +135,10 @@ try {
     assert.equal(await page.locator('[data-slot=overview-item]').filter({hasText:'代理资源'}).locator('[data-slot=overview-value] strong').innerText(),'4')
     assert.equal(await page.locator('[data-slot=overview-item]').filter({hasText:'物理监听数'}).locator('[data-slot=overview-value] strong').innerText(),'4')
     await screenshot('resources')
-    await page.locator('[data-resource-key="chain:1"]').getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'路径与引用',exact:true}).click()
+    await page.locator('[data-resource-key="chain:1"]').getByRole('button',{name:'详情',exact:true}).click()
     let dialog = page.getByRole('dialog')
     await dialog.getByText('entry.example.com:8443',{exact:true}).waitFor()
-    await dialog.getByText('受管两跳链路',{exact:true}).waitFor()
+    await dialog.getByText('链路',{exact:true}).first().waitFor()
     await dialog.getByText('授权人数表示当前授权关系，不代表套餐仍然有效。',{exact:false}).waitFor()
     assert.equal(await dialog.getByText('目标配置已应用',{exact:true}).count(),0)
     await dialog.getByRole('button',{name:'关闭',exact:true}).click()
@@ -149,9 +147,8 @@ try {
     await page.getByRole('combobox',{name:'按类型筛选',exact:true}).selectOption('direct')
     assert.equal(await catalogRows.count(),3)
     assert.equal(await chainRows.count(),1)
-    await page.getByRole('combobox',{name:'按类型筛选',exact:true}).selectOption('chain')
-    await waitCount(1)
-    assert.equal(await catalogRows.count(),0)
+    // Chains are not catalog rows: the type filter offers direct and external nodes only.
+    assert.deepEqual(await page.getByRole('combobox',{name:'按类型筛选',exact:true}).locator('option').allTextContents(),['全部类型','直连节点','外部节点'])
     await page.getByRole('combobox',{name:'按类型筛选',exact:true}).selectOption('')
     await page.getByRole('combobox',{name:'按服务器筛选',exact:true}).selectOption('2')
     await waitCount(2)

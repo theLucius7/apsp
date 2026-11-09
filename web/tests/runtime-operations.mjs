@@ -50,7 +50,7 @@ try {
         } else value=view
       }
       else if (path.endsWith('/deployments')) value = {status,history:[]}
-      else if (path.endsWith('/nodes') || path.endsWith('/chains')) value=[]
+      else if (path.endsWith('/nodes')) value=[]
       else if (path.endsWith('/agent-settings')) value = {sample_interval_secs:10,upload_interval_secs:30,auto_update:false,discover_public_ips:false}
       else if (path === '/api/servers/1/telemetry-settings' && method === 'GET') value = {persist_interval_secs:60}
       else if (['/probes','/probe-results','/commands','/metrics'].some(suffix=>path.endsWith(suffix))) value=[]
@@ -59,7 +59,7 @@ try {
       else { errors.push(`Unexpected ${method}: ${path}`); return route.fulfill({status:404,json:{}}) }
       return route.fulfill({json:value})
     })
-    const url=`http://127.0.0.1:${httpServer.address().port}/#/servers/1/plugins`
+    const url=`http://127.0.0.1:${httpServer.address().port}/#/servers/1/services`
     await installControlCenterFixtures(page)
     await page.goto(url)
     const operations=page.locator('[data-slot=runtime-operations]')

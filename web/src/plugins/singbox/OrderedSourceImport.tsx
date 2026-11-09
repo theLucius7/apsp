@@ -97,7 +97,7 @@ export default function OrderedSourceImport({ snapshot, onClose, onSaved }: { sn
   const pages = Math.max(1, Math.ceil(visible.length / PAGE)), current = Math.min(page, pages - 1), rows = visible.slice(current * PAGE, (current + 1) * PAGE)
   const choose = (keys: string[], chosen: boolean) => { if (busy) return; setError(''); setSelected(previous => chosen ? [...new Set([...previous, ...keys])] : previous.filter(key => !keys.includes(key))) }
   const selectionError = preview ? orderedPreviewError(preview, selected) : ''
-  return <Modal wide  title={preview ? '选择加入节点库的节点' : '导入订阅来源'} onClose={onClose} busy={busy}><form onSubmit={event => { event.preventDefault(); void submit() }}><div data-slot="modal-body" className="p-4">
+  return <Modal wide  title={preview ? '选择加入节点库的节点' : '导入外部来源'} onClose={onClose} busy={busy}><form onSubmit={event => { event.preventDefault(); void submit() }}><div data-slot="modal-body" className="p-4">
     <div className="mb-4 flex flex-wrap justify-between gap-3"><Badge tone={!preview ? 'good' : 'neutral'}>1 · 获取并解析</Badge><Badge tone={preview ? 'good' : 'neutral'}>2 · 选择节点并保存</Badge></div>
     <ErrorNotice message={writeError || error} />
     <fieldset disabled={busy}>
@@ -122,7 +122,7 @@ export default function OrderedSourceImport({ snapshot, onClose, onSaved }: { sn
       </>}
       {draft.kind === 'url' && <><label className="mb-4 flex items-center gap-2.5 text-sm"><Checkbox name="import_auto_refresh" checked={draft.autoRefresh === 'on'} onCheckedChange={checked => set('autoRefresh', checked === true ? 'on' : 'off')} />按周期自动刷新</label>
         <Field label="自动刷新周期（秒）" hint="最少 300 秒，最多 2592000 秒；默认每天一次。"><Input type="number" name="import_interval" required min={300} max={2592000} step={1} value={draft.interval} onChange={event => set('interval', event.target.value)} /></Field></>}
-      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">保存时按预览时取得的内容创建来源；只有所选节点加入节点库，其余节点仍可在来源详情中加入，也可直接用于有序链路。</p>
+      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">保存时按预览时取得的内容创建来源；只有所选节点加入节点库，其余节点仍可在来源详情中加入，也可直接用于链路。</p>
     </fieldset>
   </div><footer><Button type="button" variant="outline" onClick={onClose} disabled={busy}>取消</Button><Button disabled={busy || fileBusy || Boolean(writeError) || Boolean(selectionError)}>{busy ? '正在处理…' : preview ? `保存来源并加入节点库（${selected.length}）` : '获取并预览'}</Button></footer></form></Modal>
 }

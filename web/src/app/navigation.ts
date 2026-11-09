@@ -1,4 +1,4 @@
-import { BellRingIcon, BlocksIcon, CalendarClockIcon, ChartColumnIcon, CloudCogIcon, DatabaseBackupIcon, GaugeIcon, GlobeIcon, HouseIcon, KeyRoundIcon, LayersIcon, LayoutDashboardIcon, NetworkIcon, RssIcon, ServerIcon, Settings2Icon, RadarIcon, ShieldCheckIcon, SlidersHorizontalIcon, UsersIcon, WaypointsIcon, WorkflowIcon } from 'lucide-react'
+import { BellRingIcon, CalendarClockIcon, ChartColumnIcon, CloudCogIcon, DatabaseBackupIcon, GaugeIcon, GlobeIcon, HouseIcon, KeyRoundIcon, LayersIcon, LayoutDashboardIcon, NetworkIcon, PackageIcon, RssIcon, ServerIcon, Settings2Icon, RadarIcon, ShieldCheckIcon, SlidersHorizontalIcon, UsersIcon, WaypointsIcon, WorkflowIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AppRoute } from './routes'
 import type { Tier } from './tiers'
@@ -57,7 +57,7 @@ const groups: readonly NavigationGroup[] = [
     { page: 'latency-settings', path: '/latency/settings', label: '检测设置', icon: SlidersHorizontalIcon, parent: '/latency' },
     { page: 'network-workbench', path: '/network-workbench', label: '网络检测', icon: RadarIcon, parent: '/latency' },
     { page: 'settings', path: settingsPath, label: '面板设置', navLabel: '设置', icon: Settings2Icon },
-    { page: 'catalog', path: '/settings/plugins', label: '插件中心', icon: BlocksIcon, parent: settingsPath },
+    { page: 'artifacts', path: '/settings/artifacts', label: '制品与版本', icon: PackageIcon, parent: settingsPath },
     { page: 'backup', path: '/settings/backup', label: '备份与恢复', icon: DatabaseBackupIcon, parent: settingsPath },
     { page: 'control-center', path: '/settings/admin', label: '管理与安全', icon: ShieldCheckIcon, parent: settingsPath },
     { page: 'security', path: '/settings/account', label: '账号安全', icon: KeyRoundIcon, parent: settingsPath },
@@ -101,8 +101,6 @@ const serverPages = new Set<string>(['fleet', 'batch-enrollment'])
 
 export function currentNavigation(route: AppRoute): NavigationItem | undefined {
   const page = route.page === 'server' ? (serverWorkspaces.has(route.section ?? '') ? route.section : 'servers')
-    // Plugin enablement is the second view of the plugin centre.
-    : route.page === 'plugins' ? 'catalog'
       : serverPages.has(route.page) ? 'servers'
         : route.page
   return navigation.find(item => item.page === page)

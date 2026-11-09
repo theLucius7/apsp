@@ -2,7 +2,7 @@
 
 本页记录面板管理接口，供中文前端和集成测试使用。所有路径都相对于 `APSP_PUBLIC_URL`。管理接口使用同源 Cookie；请求 JSON 时发送 `Content-Type: application/json`。应用错误返回 `{"error":"中文说明"}`，常见状态码为 400（输入无效）、401（未登录）、404（资源不存在）、409（冲突）、429（请求过多）、500（内部错误）。框架对无法解析的 JSON 或路径参数也可能返回文本错误。
 
-策略组、套餐组、两跳链路与代理用户分配接口见 [sing-box 策略与套餐 API](singbox-groups.md#api)。这些业务仅属于 `/api/plugins/sing-box`；管理会话和错误约定沿用本页。
+策略组、套餐组与代理用户分配接口见 [sing-box 策略与套餐 API](singbox-groups.md#api)。这些业务仅属于 `/api/plugins/sing-box`；管理会话和错误约定沿用本页。
 
 中国可达性接口（`/api/plugins/sing-box/reachability`，仅所有者会话）见[监控文档](monitoring.md#中国可达性)。
 
@@ -148,7 +148,7 @@
 
 `POST /api/agent/v1/retirement/receipt` 是无需 Cookie/Bearer 的设备恢复端点，请求 `{server_id,request_id,signature}`。它仅接受与持久退役请求、原注册公钥匹配的 Ed25519 签名，不能用任意请求触发删除；有效重复回执返回 204，错请求或签名返回 401，不存在的服务器返回 404。清凭据后的 Agent 可据本地保存的回执恢复提交，避免响应丢失后必须重新注册。签名格式与恢复边界见 [ADR 0019](adr/0019-server-retirement.md)。
 
-## sing-box 插件启用
+## 运行时安装
 
 代理管理接口与前端在同一版本切换为 `/api/plugins/sing-box/...`，旧根管理路径不保留别名，返回 404。已有 `/sub/{token}` 订阅地址永久保留，旧表、业务编号、令牌、密钥、授权和用量账本不重写，详见 [ADR 0030](adr/0030-singbox-plugin-business.md)。
 
@@ -158,9 +158,9 @@
 | `GET /api/plugins/sing-box/servers/{id}` | 单台服务器的插件启用元数据 |
 | `POST /api/plugins/sing-box/servers/{id}/enable` | 空 JSON `{}`；管理员明确安装 sing-box 并安排首次发布，重复请求幂等（路径沿用 `enable`） |
 
-元数据为 `{id,name,enabled,online,agent_supported,read_only,source,installation}`。source 为 `administrator`、兼容 `legacy_nodes` / `legacy_deployments` 或 null；旧能力标记仅保留历史记录，单独能力声明不自动启用。`installation={state,reason,target_rev,applied_rev}`，state 为 `not_enabled`、`queued`、`waiting_agent`、`offline`、`pending`、`ready` 或 `failed`，reason 提供中文原因。启用安排无部署服务器的首次安全配置，重复请求不延后待办；实际安装仍须签名制品、设备支持和应用确认。创建节点和读取部署需先启用，否则返回 409。未启用服务器详情不请求节点或部署；已有网卡遥测继续显示。详见 [安装流程](singbox-installation.md)。
+元数据为 `{id,name,enabled,online,agent_supported,read_only,source,installation}`。source 为 `administrator` 或 null（生产只有 `administrator`）；单独的能力声明不自动启用。`installation={state,reason,target_rev,applied_rev}`，state 为 `not_enabled`、`queued`、`waiting_agent`、`offline`、`pending`、`ready` 或 `failed`，reason 提供中文原因。启用安排无部署服务器的首次安全配置，重复请求不延后待办；实际安装仍须签名制品、设备支持和应用确认。创建节点和读取部署需先启用，否则返回 409。未启用服务器详情不请求节点或部署；已有网卡遥测继续显示。详见 [安装流程](singbox-installation.md)。
 
-服务器详情的「插件」分页 `/#/servers/{id}/plugins` 只管理这一台服务器；`/#/settings/plugins/servers` 是「插件中心 → sing-box 安装」汇总页。插件目录选择服务器后只跳转；安装仍须管理员明确调用上述服务器级接口，不创建全局安装状态。
+服务器详情的「网络服务」分页 `/#/servers/{id}/services`（旧地址 `/plugins` 保留一个发布版本）是一台服务器运行时的家：安装、部署状态、安装条件检查（`POST …/deployments/check`）、重新部署、运行时运维与部署历史都在这里；网络服务的「运行时」视图 `/#/nodes?view=runtimes`（旧地址 `/#/settings/plugins/servers`）只汇总各服务器的状态并链接过去。安装须管理员在服务器详情明确调用上述服务器级接口，不创建全局安装状态。
 
 ## 节点
 
@@ -172,20 +172,19 @@
 | `PATCH /api/plugins/sing-box/nodes/{id}` | 可选 `name`、`public_host`、`sni`、`port`、`protocol_config`、`enabled`、`settings`，至少一个字段；省略字段保留现值 |
 | `DELETE /api/plugins/sing-box/nodes/{id}` | 与直连资源删除共用引用保护；策略或链路仍引用时返回 409 清单，否则软删节点、移除现有授权并安排重新发布 |
 
-### 统一代理资源与批量两跳
+### 节点与链路资源
 
-以下接口与面板、迁移同版使用；设计及验收状态见 [ADR 0071](adr/0071-proxy-resource-batch-lifecycle.md) 和 [本步记录](acceptance/proxy-resources.md)。
+链路只有一套模型（[ADR 0131](adr/0131-one-model-per-object.md)）；设计见 [ADR 0071](adr/0071-proxy-resource-batch-lifecycle.md)。
 
 | 方法与路径 | 请求或用途 |
 | --- | --- |
-| `GET /api/plugins/sing-box/proxy-resources` | 同一快照中的直连／链路公开资源数组；链路入口不作为直连重复出现 |
-| `GET /api/plugins/sing-box/proxy-resources/{kind}/{id}` | `kind=direct\|chain`；类型与 ID 一起标识资源 |
-| `DELETE /api/plugins/sing-box/proxy-resources/direct/{id}` | 与旧节点删除共用策略和链路引用保护 |
-| `DELETE /api/plugins/sing-box/proxy-resources/chain/{id}` | 无策略引用时删除链路及专用入口；共享出口、历史流量和创建收据保持 |
-| `POST /api/plugins/sing-box/chains/batch` | 至多 32 行原子创建 mixed 链路，一次请求保存全部入口／链路或整批回滚；来源迁移后返回 409，新链路改用 `POST /chains/ordered-batch` |
-| `POST /api/plugins/sing-box/chains` | 旧两跳创建已停用，返回 409；已有两跳链路的读取和删除不变 |
-| `GET /api/plugins/sing-box/proxy-resources/chain/{id}/conversion` | mixed 链路转为有序链路的条件检查，见下文“mixed 链路转换” |
-| `POST /api/plugins/sing-box/proxy-resources/chain/{id}/conversion` | `{expected_generation}`；开始转换，首次 202 |
+| `GET /api/plugins/sing-box/ordered-proxy-resources` | 同一快照中的受管节点与链路公开资源数组；链路的专用入口不作为节点重复出现 |
+| `GET /api/plugins/sing-box/ordered-proxy-resources/{kind}/{id}` | `kind=direct\|chain`；类型与 ID 一起标识资源 |
+| `PATCH /api/plugins/sing-box/ordered-proxy-resources/{kind}/{id}` | 带 `settings_revision` 修改名称或启用状态 |
+| `DELETE /api/plugins/sing-box/ordered-proxy-resources/direct/{id}` | 与节点删除共用策略和链路引用保护 |
+| `DELETE /api/plugins/sing-box/ordered-proxy-resources/chain/{id}` | 无策略引用时删除链路及其专用入口；链路进入退役，设备确认后释放各段；共享出口、历史流量和创建收据保持 |
+| `POST /api/plugins/sing-box/ordered-proxy-resources/chain/{id}/apply-node-versions` | 带期望代数应用外部节点的新版本 |
+| `POST /api/plugins/sing-box/chains/ordered-batch` | 至多 32 行原子创建链路，一次请求保存全部入口与链路或整批回滚 |
 
 资源包含 `kind,id,name,entry,exit,available,unavailable_reasons,policy_group_ids,user_count,chain_refs`。公开端点包含节点／服务器 ID 和名称、协议、公开地址、监听 `port`、实际公开 `public_port`、SNI、启用／删除状态，以及 `online,desired_revision,applied_revision,applied_observed_at`；不包含私钥、内部 relay UUID、用户身份或完整配置。`public_port` 使用已有节点设置的有效覆盖值，未覆盖则沿用监听端口；损坏设置、协议配置解析失败或与协议标记不一致，让对应资源不可用并说明原因，不使整个列表失去可读性。`available` 表示结构及插件配置可用，在线和应用观察另列，不表示端到端连通。`user_count` 是未删除代理用户的授权并集人数，不是当前套餐资格人数。退役或软删端点的链路仍可读取与明确清理。
 
@@ -210,13 +209,13 @@
 }
 ```
 
-旧入口可使用 `entry={"mode":"existing","node_id":1}`，须未授权且未被链路或普通策略引用。每条链路入口之后有 1–8 个有序跳，可以是受管 Reality 节点，或数字编号来源的订阅节点 `{"kind":"subscription","source_id","external_node_id","node_version_id","update_mode"}`；订阅跳只在来源迁移前可用。端口省略或 null 才自动分配，每行独立入口，出口可以共享。整批规范化请求绑定 `request_id`；首次返回 201，重放返回 200，响应均为 `{request_id,chain_ids,entry_node_ids}` 且 ID 顺序对应请求行。相同键不同内容返回 409；删除后重放只返回原 ID，不重新创建。客户端应保留结果不确定时的原键与请求，不循环提交单行。
+入口也可使用已有节点 `entry={"mode":"existing","node_id":1}`，须未授权且未被链路或普通策略引用。每条链路入口之后有 1–8 个有序段：受管节点 `{"kind":"managed","node_id":2}`，或外部来源中节点的某个版本 `{"kind":"subscription","source_id":3,"external_node_id":"<节点 UUID>","node_version_id":"<版本 UUID>","update_mode":"pinned"}`（`update_mode` 为 `pinned` 或 `follow_node`）。
 
-引用冲突响应为 `{error,references}`，`references` 包含公开策略／链路 ID、名称及角色，不能泄露凭据。旧 `/chains/{id}` DELETE 继续只解除关系并保留入口，新完整资源删除同时清理入口，两种语义不同。创建不自动授予任何代理用户权限。
+引用冲突响应为 `{error,references}`，`references` 包含公开策略／链路 ID、名称及角色，不能泄露凭据。
 
-## 订阅来源
+## 外部来源
 
-本节是有序来源接口（UUID 节点身份），位于 `/api/plugins/sing-box`；数字编号来源 `/subscription-sources` 另见[节点库说明](node-catalog.md)，来源迁移后只读。见 [ADR 0072](adr/0072-subscription-source-lifecycle.md) 与 [验收边界](acceptance/subscription-sources.md)。仅管理员使用；来源节点不是对用户授权的公开入口。有序链路（`/chains/ordered-batch`）的订阅跳使用本节的节点；迁移前的 mixed 链路使用数字编号来源的节点。
+外部来源接口（UUID 节点身份）位于 `/api/plugins/sing-box`；节点在节点库中以数字别名 `public_id` 出现，见[节点库说明](node-catalog.md)。见 [ADR 0072](adr/0072-subscription-source-lifecycle.md) 与 [验收边界](acceptance/subscription-sources.md)。仅管理员使用；来源节点不是对用户授权的公开入口。有序链路（`/chains/ordered-batch`）的订阅跳使用本节的节点；迁移前的 mixed 链路使用数字编号来源的节点。
 
 | 方法与相对路径 | 请求／行为 |
 | --- | --- |
@@ -244,26 +243,6 @@
 来源公开字段包含 `id,name,kind,host,configured,auth_configured,settings_revision,identity_epoch,archived,refresh_interval_secs,user_agent,auto_refresh,traffic,changes,last_attempt_at,last_success_at,latest_success,active_job,last_error,counts,stale_reason,dependencies`。`latest_success`／历史批次为 `{id,source_id,settings_revision,identity_epoch,parser_version,format,parsed_at,counts}`；不返回原文、URL 路径／查询、认证、规范化配置、内容或身份摘要。
 
 节点读取外壳为 `{source_id,current_settings_revision,current_identity_epoch,success_revision,nodes}`；节点包含 UUID 身份／版本、数字别名 `public_id`、采用标记 `adopted`、节点库管理设置修订号 `metadata_revision`（采用接口须原样带回）、公开端点与参数类别、`present_in_latest,identity_state,supported,selectable,reasons,capabilities`。identity_state 为 unique（可明确匹配）、ambiguous（多个相同校验身份）或 unresolved（尚无可校验身份，不等同多个账号）。`selectable` 只表示当前来源下的导入资格，不能解释成运行时支持、网络在线或当前已有混合链路能力；客户端以服务端判定为准。任务状态为 queued／running／cancelling／succeeded／unchanged／failed／cancelled／superseded，阶段为 queued／fetch／parse／store／done。错误只有固定 stage／kind／message 与可选 http_status。`traffic` 是提供方 `subscription-userinfo` 的 upload/download/total/expire 与记录时间；`changes` 是相对上次成功的 added/updated/missing/unsupported 计数，304 时归零（unsupported 保留）。
-
-### 来源迁移（ADR 0085 阶段三 S1b）
-
-数字编号来源迁入有序来源只能由运维显式执行 `apsp-panel source-migration`，见[迁移方案](rearchitecture-phase3-plan.md#11-s1b来源迁移工具与使用方切换)。迁移前后接口变化：
-
-- 节点库、用户外部授权和用户订阅迁移前读数字编号来源，迁移后读有序来源。节点和版本编号不变；授权中的 `source_id` 变为对应有序来源的编号。
-- 迁移后数字编号来源的接口只读：`/subscription-sources` 的创建、修改、刷新、取消、删除、预览和节点采用返回 409，读取接口保留一个版本；来源详情新增 `migrated_to`，为对应的有序来源编号，迁移前为 null。
-- 迁移后不再新建 mixed 链路，`/chains/batch` 一律返回 409；已有 mixed 链路继续读取原版本，等待逐条转换（S1d）。
-- `GET /source-migration` 返回 `{migrated,migrated_at}`，仅管理员可读。界面据此切换：迁移前两套来源照常可写，订阅来源视图提示尚未迁移及迁移命令；迁移后数字编号来源折叠为只读存档。自 2026-10-24（[ADR 0098](adr/0098-usage-driven-navigation-and-tiers.md)）起，迁移前后都只有一个“创建链路”，打开有序链路表单；状态未确认时数字编号来源的写操作和页头“创建链路”保持禁用。
-
-### mixed 链路转换（ADR 0085 阶段三 S1d）
-
-管理员在 mixed 链路详情中逐条把链路转为有序链路，见[迁移方案](rearchitecture-phase3-plan.md#13-s1dmixed-链路转换与统一创建入口2026-10-04)。转换是设备上的一次真实切换，不保证字节一致。
-
-- `GET /proxy-resources/chain/{id}/conversion` 运行全部检查，并在回滚的事务中试建有序候选，不写入任何数据。返回 `{chain_id,ready,reasons,messages,mixed_generation,ordered_generation}`：`reasons` 是固定代码，`messages` 是对应的中文说明，`mixed_generation` 是当前 mixed 活动代。
-- `POST /proxy-resources/chain/{id}/conversion` 请求 `{expected_generation}`，须等于检查时看到的 mixed 活动代。全部检查通过才开始，返回 202 和同样的结构，`ordered_generation` 为新建的有序候选代；否则返回 409 并列出原因。
-- 原因代码：`not_mixed`、`deleted`、`mixed_update_pending`、`conversion_in_progress`、`generation_changed`、`no_active_generation`、`mixed_not_ready`（当前路径未在全部服务器确认可用）、`entry_direct_grants`、`entry_policy_node_grants`（有序入口只接受整条链路的授权）、`probe_target_invalid`、`generation_unreadable`、`generation_mismatch`、`sources_not_migrated`（含订阅跳而来源尚未迁移）、`entry_unavailable`、`capabilities_missing`（参与服务器缺少 `runtime:checkpoint-v1`、`runtime:barrier-v1` 或 `runtime:path-probe-v1`）、`candidate_rejected`（有序候选无法创建，`messages` 给出面板的拒绝说明），以及按段的 `hop_{n}_deleted|moved|disabled|not_reality|changed|unreadable|unavailable|unmapped|subscription_unavailable`。
-- 跳映射：受管跳冻结为受管端点版本；订阅跳按数字编号找到迁移后的同编号节点和版本。`pinned` 保持原版本；`follow_node` 从该节点的最新版本继续跟随，因为数字编号来源在迁移后不再更新。
-- `GET /proxy-resources/chain/{id}` 的链路详情新增 `conversion`：`{state,mixed_generation,ordered_generation,attempts,started_at,switched_at,finished_at,last_error}` 或 null。`state` 为 `preparing`（mixed 活动代继续承载用户，有序候选准备并探测）、`switched`（入口已切到有序候选，旧代保留在依赖服务器上直到恢复屏障）、`completed` 或 `reverted`（切换前失败，链路保持 mixed，`last_error` 说明原因，可以再次转换）。切换后链路从 mixed 资源列表移到有序资源列表，此接口对它返回 404。
-- 转换期间 mixed 链路不能应用新的节点版本，跟随更新也暂停。
 
 刷新失败保留成功；304 只沿用匹配当前条件缓存代数的成功批次。取消、输入修改、归档和删除均使旧任务结果失效；同步有界解析实际退出后才释放任务。归档停止新刷新和引用，历史保持。当前旧两跳没有外部节点引用，空 dependencies 不替代后续混合路径当前／待应用／恢复引用保护。
 
@@ -351,7 +330,7 @@
 
 新增可空标量 `tcp_keep_alive_seconds`、`tcp_keep_alive_interval_seconds`、`tls_min_version`、`tls_max_version`、`tls_handshake_timeout_seconds` 同样区分省略保留与 `null` 清空；`disable_tcp_keep_alive` 默认为 false。TLS 版本值为 `"1.2"` / `"1.3"`。传输示例为 `{"transport":{"type":"ws","path":"/proxy","host":null,"max_early_data":0,"early_data_header_name":""},"reality":{"flow":"none"}}`；传输组和 Reality 组分别整体替换，不可只提交 flow 而期望该组其他值自动合并。
 
-节点管理响应新增 `configuration_locked` 及 `referenced_chains:[{id,name}]`，列出存活混合链路对该节点的引用。锁定时连接配置仍可读取，PATCH 只改 `name` / `enabled`；更改其它连接参数会返回冲突，不影响已部署链路。旧数据和无引用节点返回 false / 空列表。
+节点管理响应新增 `configuration_locked` 及 `referenced_chains:[{id,name}]`，列出仍引用该节点的链路（含待设备确认退役的链路）。锁定时连接配置仍可读取，PATCH 只改 `name` / `enabled`；更改其它连接参数会返回冲突，不影响已部署链路。旧数据和无引用节点返回 false / 空列表。
 
 影响配置或订阅投影的节点、用户或授权变更在同一个数据库事务中更新对应服务器的 `dirty_at`；仅重置订阅令牌和字段未变的节点 PATCH 不触发发布。发布任务每秒检查一次，在最后一次变更后等待完整 5 秒，然后编译该服务器的完整快照。`dirty_at` 内部使用 Unix 毫秒，重启面板不会丢失待发布状态。新变更会重新开始合并窗口。
 
@@ -426,9 +405,9 @@
 
 所有字节总量都是精确十进制字符串，避免浏览器整数精度损失。分组数组只包含有流量的项目；`deleted` 表示对应对象已删除，用于显示历史记录。按 `(server_id, epoch, seq)` 在事务中去重，持久化成功才确认，设备重传不会重复计费。这里的流量仅来自代理统计，与服务器网卡指标分开显示。
 
-`GET /api/artifacts` 返回签名与实际内容均验证通过的制品数组，每项包含 `name`、`version`、`arch`、`sha256`、`bytes`，例如 `{"name":"sing-box","version":"版本","arch":"amd64","sha256":"摘要","bytes":123}`。`arch` 可为旧 `amd64/arm64` 或精确签名 ABI。插件目录按组件身份归并不同版本和架构；`agent` 独立展示为基础组件，已登记插件为 `sing-box`、`nodequality`、`tcpquality`，未登记组件仅展示分发信息。此响应不是任何服务器的已安装列表，也不能代替服务器能力、版本或安全门禁检查。
+`GET /api/artifacts` 返回签名与实际内容均验证通过的制品数组，每项包含 `name`、`version`、`arch`、`sha256`、`bytes`，例如 `{"name":"sing-box","version":"版本","arch":"amd64","sha256":"摘要","bytes":123}`。`arch` 可为旧 `amd64/arm64` 或精确签名 ABI。「制品与版本」按组件归并不同版本和架构：服务器 Agent（`agent`）、运行时（`sing-box`）、诊断工具（`ipquality`、`tcpquality`、`nodequality`），其他组件按自己的名称列出。此响应不是任何服务器的已安装列表，也不能代替服务器能力、版本或安全门禁检查。
 
-界面入口为「插件中心 → 插件目录」`/#/settings/plugins`（ADR 0126 计划改称「系统 › 制品与版本」）；旧 `/#/artifacts` 书签已随 ADR 0122 停止改写，按 ADR 0126 不恢复。目录展示介绍与分发版本，选择服务器后跳转对应服务器的插件或诊断页，不发起安装、启用或任务；页面职责见 [插件中心与服务器执行边界](plugin-catalog.md)。
+界面入口为「系统 › 制品与版本」`/#/settings/artifacts`（ADR 0131；旧地址 `/#/settings/plugins` 保留一个发布版本，`/#/artifacts` 按 ADR 0126 不恢复）。页面只读，不发起安装、启用或任务。
 
 `GET /api/artifacts/targets` 返回 `{default_targets,supported_targets}`，仅管理员可读取。默认目标由现有服务器上报的 Agent/运行时平台架构推断；没有可用上报时使用面板宿主平台。
 

@@ -29,7 +29,7 @@ export default function ChainResourceEditor({ resource, snapshot, open, onClose,
       pending.current = request; setSubmitted(request.request_id); onPending(true)
       return submitChainMutation(request, snapshot)
     }, () => { pending.current = undefined; onPending(false); refresh(); onSaved() })
-  }}><p className="text-muted-foreground mt-3 text-xs leading-relaxed">入口身份、协议、密钥及有序拓扑保持不变。修改公开接入参数会规划新路径候选；设备离线或无法并存可恢复参数时，面板会说明拒绝原因。显示名称可独立修改，入口订阅名称需明确填写。</p>
+  }}><p className="text-muted-foreground mt-3 text-xs leading-relaxed">入口身份、协议、密钥及路径拓扑保持不变。修改公开接入参数会规划新路径候选；设备离线或无法并存可恢复参数时，面板会说明拒绝原因。显示名称可独立修改，入口订阅名称需明确填写。</p>
     {(['name', 'entry_name', 'public_host', 'port', 'sni'] as const).map(key => <Field key={key} label={{ name: '链路显示名称', entry_name: '入口订阅名称', public_host: '入口公开地址', port: '入口监听端口', sni: 'Reality 协议域名' }[key]}><Input name={key} required value={draft[key]} type={key === 'port' ? 'number' : 'text'} min={key === 'port' ? 1 : undefined} max={key === 'port' ? 65535 : undefined} onChange={event => { action.clearError(); setDraft(current => ({ ...current, [key]: event.target.value })) }} autoComplete="off" /></Field>)}
     {submitted && <p className="text-muted-foreground mt-3 text-xs leading-relaxed" role="status">操作编号 <code>{submitted}</code>。失败或超时后，未改草稿重用原编号与精确请求；修改草稿生成新编号。</p>}
   </FormDialog>}</DialogPresence>

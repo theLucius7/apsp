@@ -210,7 +210,7 @@ pub(super) async fn snapshot(
             }
             let source = node(tx, *source_node_id).await?;
             let candidate = node(tx, *candidate_node_id).await?;
-            let referenced: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_chains c WHERE (c.entry_node_id=ANY($1) OR c.exit_node_id=ANY($1)) AND (c.deleted_at IS NULL OR c.phase<>'retired')) OR EXISTS(SELECT 1 FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE h.managed_node_id=ANY($1) AND (c.deleted_at IS NULL OR c.phase<>'retired'))")
+            let referenced: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_chains c WHERE c.entry_node_id=ANY($1) AND (c.deleted_at IS NULL OR c.phase<>'retired')) OR EXISTS(SELECT 1 FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE h.managed_node_id=ANY($1) AND (c.deleted_at IS NULL OR c.phase<>'retired'))")
                 .bind(vec![*source_node_id,*candidate_node_id]).fetch_one(&mut **tx).await?;
             if referenced {
                 return Err(ApiError::Conflict(
@@ -261,14 +261,8 @@ pub(super) async fn snapshot(
                 .iter()
                 .find(|c| c["id"] == *alternate_chain_id)
                 .ok_or(ApiError::NotFound)?;
-            let qualified = if alternate["path_kind"] == "ordered" {
-                super::super::ordered_paths::lifecycle::qualified(tx, *alternate_chain_id).await?
-            } else {
-                sqlx::query_scalar("SELECT singbox_path_ready($1)")
-                    .bind(alternate_chain_id)
-                    .fetch_one(&mut **tx)
-                    .await?
-            };
+            let qualified =
+                super::super::ordered_paths::lifecycle::qualified(tx, *alternate_chain_id).await?;
             if !qualified {
                 return Err(ApiError::Conflict(
                     "明确选择的备选链路尚未完成部署及路径验证，不能切换".into(),

@@ -1,8 +1,6 @@
 #![forbid(unsafe_code)]
 
 mod business_support;
-#[path = "singbox_groups/chains.rs"]
-mod chains;
 #[path = "singbox_groups/modern.rs"]
 mod modern;
 #[path = "singbox_groups/packages.rs"]

@@ -7,44 +7,118 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
-use apsp_panel::plugins::singbox::sources::parse::{PARSER_VERSION, digest};
+use apsp_panel::plugins::singbox::subscription_sources::worker;
 use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use sqlx::PgPool;
+use uuid::Uuid;
 
 const ROOT: &str = "/api/plugins/sing-box";
 const FIRST: &str = "TEST_ONLY_external_provider_first";
 const SECOND: &str = "TEST_ONLY_external_provider_second";
 const THIRD: &str = "TEST_ONLY_external_provider_third";
-/// A parser older than the one that produces numbered-source versions now.
-const OUTDATED_PARSER: &str = "apsp-subscriptions-1";
+/// A parser older than the one that produces source versions now.
+const OUTDATED_PARSER: &str = "apsp-subscription-v1";
 
-async fn source(pool: &PgPool) -> Result<(i64, i64)> {
-    let source:i64=sqlx::query_scalar("INSERT INTO singbox_subscription_sources(name,kind,secret_content,created_at) VALUES('来源','inline','TEST_ONLY content',0) RETURNING id").fetch_one(pool).await?;
-    let node:i64=sqlx::query_scalar("INSERT INTO singbox_external_nodes(source_id,identity_epoch,identity_key,name,adopted) VALUES($1,1,'stable','外部',TRUE) RETURNING id").bind(source).fetch_one(pool).await?;
-    version(pool, source, node, FIRST).await?;
+/// The provider's batch: one Shadowsocks node whose password marks the version.
+fn batch(password: &str) -> String {
+    json!({"outbounds":[{"type":"shadowsocks","tag":"外部","server":"provider.example.com","server_port":443,"method":"aes-128-gcm","password":password}]}).to_string()
+}
+
+async fn run_worker(panel: &TestPanel) -> Result<()> {
+    worker::run_once(&panel.state)
+        .await
+        .map_err(|_| anyhow::anyhow!("source worker failed"))?;
+    Ok(())
+}
+
+/// An inline source whose one node is adopted and carries `FIRST`; returns its public ID.
+async fn source(panel: &TestPanel, cookie: &str) -> Result<(i64, i64)> {
+    let receipt: Value = panel
+        .admin(
+            Method::POST,
+            &format!("{ROOT}/ordered-subscription-sources"),
+            cookie,
+            Some(json!({"request_id":Uuid::new_v4(),"name":"来源","input":{"kind":"inline","content":batch(FIRST)}})),
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let source = receipt["source_id"].as_i64().context("source")?;
+    run_worker(panel).await?;
+    let node: i64 = sqlx::query_scalar("UPDATE singbox_ordered_external_nodes SET adopted=TRUE WHERE source_id=$1 RETURNING public_id")
+        .bind(source)
+        .fetch_one(&panel.state.pool)
+        .await?;
     Ok((source, node))
 }
 
-async fn version(pool: &PgPool, source: i64, node: i64, password: &str) -> Result<i64> {
-    parsed_version(pool, source, node, password, PARSER_VERSION).await
+/// The provider's next batch carries `password`: the same node gets a new version.
+async fn version(panel: &TestPanel, cookie: &str, source: i64, password: &str) -> Result<i64> {
+    let pool = &panel.state.pool;
+    let revision: i64 = sqlx::query_scalar(
+        "SELECT settings_revision FROM singbox_ordered_subscription_sources WHERE id=$1",
+    )
+    .bind(source)
+    .fetch_one(pool)
+    .await?;
+    panel
+        .admin(
+            Method::PATCH,
+            &format!("{ROOT}/ordered-subscription-sources/{source}"),
+            cookie,
+            Some(json!({"request_id":Uuid::new_v4(),"settings_revision":revision,"input":{"kind":"inline","content":batch(password),"identity_action":"update"}})),
+        )
+        .await?
+        .error_for_status()?;
+    run_worker(panel).await?;
+    Ok(sqlx::query_scalar("SELECT v.public_id FROM singbox_ordered_external_nodes n JOIN singbox_ordered_external_node_versions v ON v.id=n.latest_version WHERE n.source_id=$1")
+        .bind(source)
+        .fetch_one(pool)
+        .await?)
 }
 
+/// Like `version`, as if an older parser had produced the batch.
 async fn parsed_version(
-    pool: &PgPool,
+    panel: &TestPanel,
+    cookie: &str,
     source: i64,
-    node: i64,
     password: &str,
     parser: &str,
 ) -> Result<i64> {
-    let config = json!({"type":"shadowsocks","server":"provider.example.com","server_port":443,"method":"aes-128-gcm","password":password});
-    let hash = digest(&serde_json::to_vec(&config)?);
-    let revision:i64=sqlx::query_scalar("INSERT INTO singbox_source_revisions(source_id,settings_revision,identity_epoch,parser_version,body_sha256,format,supported_count,unsupported_count,fetched_at) VALUES($1,1,1,$2,$3,'singbox_json',1,0,1) RETURNING id").bind(source).bind(parser).bind(&hash).fetch_one(pool).await?;
-    let version:i64=sqlx::query_scalar("INSERT INTO singbox_external_node_versions(external_node_id,source_id,source_revision_id,identity_epoch,parser_version,name,config_json,config_sha256,capabilities_json,created_at) VALUES($1,$2,$3,1,$4,'外部',$5,$6,'{}',1) RETURNING id").bind(node).bind(source).bind(revision).bind(parser).bind(config).bind(hash).fetch_one(pool).await?;
-    sqlx::query("UPDATE singbox_external_nodes SET current_version_id=$2,last_seen_revision_id=$3 WHERE id=$1").bind(node).bind(version).bind(revision).execute(pool).await?;
-    sqlx::query("UPDATE singbox_subscription_sources SET current_revision_id=$2,last_success_at=1 WHERE id=$1").bind(source).bind(revision).execute(pool).await?;
+    let version = version(panel, cookie, source, password).await?;
+    // TEST_ONLY: revisions are immutable, so the fixture lifts the guard for this one write.
+    let mut tx = panel.state.pool.begin().await?;
+    sqlx::query("ALTER TABLE singbox_subscription_source_revisions DISABLE TRIGGER singbox_subscription_revision_immutable").execute(&mut *tx).await?;
+    sqlx::query("UPDATE singbox_subscription_source_revisions r SET parser_version=$2 FROM singbox_ordered_external_node_versions v WHERE v.public_id=$1 AND r.id=v.source_revision_id")
+        .bind(version).bind(parser).execute(&mut *tx).await?;
+    sqlx::query("ALTER TABLE singbox_subscription_source_revisions ENABLE TRIGGER singbox_subscription_revision_immutable").execute(&mut *tx).await?;
+    tx.commit().await?;
     Ok(version)
+}
+
+/// Adopts or releases a node through the source page, as an administrator would.
+async fn adoption(
+    panel: &TestPanel,
+    cookie: &str,
+    source: i64,
+    node: i64,
+    adopted: bool,
+) -> Result<reqwest::Response> {
+    let (internal, latest, epoch, settings, metadata): (Uuid, Uuid, i64, i64, i64) = sqlx::query_as("SELECT n.id,n.latest_version,n.identity_epoch,s.settings_revision,COALESCE((SELECT m.revision FROM singbox_node_metadata m WHERE m.kind='external' AND m.id=n.public_id),0) FROM singbox_ordered_external_nodes n JOIN singbox_ordered_subscription_sources s ON s.id=n.source_id WHERE n.public_id=$1")
+        .bind(node)
+        .fetch_one(&panel.state.pool)
+        .await?;
+    panel
+        .admin(
+            Method::PATCH,
+            &format!("{ROOT}/ordered-subscription-sources/{source}/nodes/{internal}"),
+            cookie,
+            Some(json!({"adopted":adopted,"settings_revision":settings,"identity_epoch":epoch,"node_version_id":latest,"metadata_revision":metadata})),
+        )
+        .await
 }
 
 /// Administrator listings describe external nodes without their configuration.
@@ -344,9 +418,9 @@ async fn held_by_group(response: reqwest::Response) -> Result<()> {
 async fn group_external_nodes_are_atomic_redacted_validated_and_revocable(
     pool: PgPool,
 ) -> Result<()> {
-    let (source, node) = source(&pool).await?;
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
+    let (source, node) = source(&panel, &cookie).await?;
     let user = panel.create_user(&cookie, "外部用户").await?;
     let uid = id(&user)?;
     for path in ["external-node-candidates", "policy-groups"] {
@@ -372,21 +446,9 @@ async fn group_external_nodes_are_atomic_redacted_validated_and_revocable(
             && entry["available"] == true,
         "{assigned}"
     );
-    let version = entry["current_version_id"].clone();
-
     // While a group holds the node, it cannot be unadopted or deleted, and its
     // source cannot be deleted.
-    held_by_group(
-        panel
-            .admin(
-                Method::PATCH,
-                &format!("{ROOT}/subscription-sources/{source}/nodes/{node}"),
-                &cookie,
-                Some(json!({"adopted":false,"settings_revision":1,"identity_epoch":1,"node_version_id":version,"metadata_revision":0})),
-            )
-            .await?,
-    )
-    .await?;
+    held_by_group(adoption(&panel, &cookie, source, node, false).await?).await?;
     let catalog: Vec<Value> = panel
         .admin(Method::GET, &format!("{ROOT}/node-catalog"), &cookie, None)
         .await?
@@ -410,13 +472,19 @@ async fn group_external_nodes_are_atomic_redacted_validated_and_revocable(
             .await?,
     )
     .await?;
+    let settings: i64 = sqlx::query_scalar(
+        "SELECT settings_revision FROM singbox_ordered_subscription_sources WHERE id=$1",
+    )
+    .bind(source)
+    .fetch_one(&pool)
+    .await?;
     held_by_group(
         panel
             .admin(
                 Method::DELETE,
-                &format!("{ROOT}/subscription-sources/{source}"),
+                &format!("{ROOT}/ordered-subscription-sources/{source}"),
                 &cookie,
-                None,
+                Some(json!({"settings_revision":settings})),
             )
             .await?,
     )
@@ -468,13 +536,7 @@ async fn group_external_nodes_are_atomic_redacted_validated_and_revocable(
 
     let cleared = group.save(&panel, &cookie, json!([])).await?;
     ensure!(cleared["external_nodes"] == json!([]), "{cleared}");
-    panel
-        .admin(
-            Method::PATCH,
-            &format!("{ROOT}/subscription-sources/{source}/nodes/{node}"),
-            &cookie,
-            Some(json!({"adopted":false,"settings_revision":1,"identity_epoch":1,"node_version_id":version,"metadata_revision":0})),
-        )
+    adoption(&panel, &cookie, source, node, false)
         .await?
         .error_for_status()?;
     let adoption_revision: i64 = sqlx::query_scalar(
@@ -492,13 +554,7 @@ async fn group_external_nodes_are_atomic_redacted_validated_and_revocable(
         rejected == StatusCode::CONFLICT,
         "unadopted node: {rejected}"
     );
-    panel
-        .admin(
-            Method::PATCH,
-            &format!("{ROOT}/subscription-sources/{source}/nodes/{node}"),
-            &cookie,
-            Some(json!({"adopted":true,"settings_revision":1,"identity_epoch":1,"node_version_id":version,"metadata_revision":adoption_revision})),
-        )
+    adoption(&panel, &cookie, source, node, true)
         .await?
         .error_for_status()?;
     ensure!(status(&panel, &user).await? == StatusCode::CONFLICT);
@@ -516,18 +572,18 @@ async fn group_external_nodes_are_atomic_redacted_validated_and_revocable(
 async fn follow_and_pinned_versions_obey_identity_availability_and_failed_refresh(
     pool: PgPool,
 ) -> Result<()> {
-    let (source, node) = source(&pool).await?;
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
+    let (source, node) = source(&panel, &cookie).await?;
     let follow = panel.create_user(&cookie, "跟随").await?;
     let pinned = panel.create_user(&cookie, "固定").await?;
     let (follow_group, _) = assign(&panel, &cookie, id(&follow)?, "follow_node").await?;
     let (pinned_group, _) = assign(&panel, &cookie, id(&pinned)?, "pinned").await?;
-    version(&pool, source, node, SECOND).await?;
+    version(&panel, &cookie, source, SECOND).await?;
     ensure!(content(&panel, &follow).await?.contains(SECOND));
     ensure!(content(&panel, &pinned).await?.contains(FIRST));
     sqlx::query(
-        "UPDATE singbox_subscription_sources SET last_error='fixture_fetch_failed' WHERE id=$1",
+        "UPDATE singbox_ordered_subscription_sources SET last_error='{\"kind\":\"fixture_fetch_failed\"}' WHERE id=$1",
     )
     .bind(source)
     .execute(&pool)
@@ -543,35 +599,41 @@ async fn follow_and_pinned_versions_obey_identity_availability_and_failed_refres
     let fresh = reference(&first_candidate(&panel, &cookie).await?, "follow_node");
     probe.save(&panel, &cookie, json!([fresh.clone()])).await?;
     probe.save(&panel, &cookie, json!([])).await?;
+    let key: String = sqlx::query_scalar(
+        "SELECT identity_key FROM singbox_ordered_external_nodes WHERE public_id=$1",
+    )
+    .bind(node)
+    .fetch_one(&pool)
+    .await?;
     let transitions = [
         (
-            "UPDATE singbox_external_nodes SET present=FALSE WHERE id=$1",
-            "UPDATE singbox_external_nodes SET present=TRUE WHERE id=$1",
+            "UPDATE singbox_ordered_external_nodes SET last_seen_revision=NULL WHERE public_id=$1".to_owned(),
+            "UPDATE singbox_ordered_external_nodes n SET last_seen_revision=(SELECT r.id FROM singbox_subscription_source_revisions r WHERE r.source_id=n.source_id AND r.identity_epoch=n.identity_epoch ORDER BY r.generation DESC LIMIT 1) WHERE public_id=$1".to_owned(),
             node,
         ),
         (
-            "UPDATE singbox_external_nodes SET adopted=FALSE WHERE id=$1",
-            "UPDATE singbox_external_nodes SET adopted=TRUE WHERE id=$1",
+            "UPDATE singbox_ordered_external_nodes SET adopted=FALSE WHERE public_id=$1".to_owned(),
+            "UPDATE singbox_ordered_external_nodes SET adopted=TRUE WHERE public_id=$1".to_owned(),
             node,
         ),
         (
-            "UPDATE singbox_external_nodes SET identity_unique=FALSE WHERE id=$1",
-            "UPDATE singbox_external_nodes SET identity_unique=TRUE WHERE id=$1",
+            "UPDATE singbox_ordered_external_nodes SET identity_state='ambiguous',identity_key=NULL WHERE public_id=$1".to_owned(),
+            format!("UPDATE singbox_ordered_external_nodes SET identity_state='unique',identity_key='{}' WHERE public_id=$1", key.replace('\'', "''")),
             node,
         ),
         (
-            "UPDATE singbox_subscription_sources SET archived=TRUE WHERE id=$1",
-            "UPDATE singbox_subscription_sources SET archived=FALSE WHERE id=$1",
+            "UPDATE singbox_ordered_subscription_sources SET archived=TRUE WHERE id=$1".to_owned(),
+            "UPDATE singbox_ordered_subscription_sources SET archived=FALSE WHERE id=$1".to_owned(),
             source,
         ),
         (
-            "UPDATE singbox_subscription_sources SET identity_epoch=2 WHERE id=$1",
-            "UPDATE singbox_subscription_sources SET identity_epoch=1 WHERE id=$1",
+            "UPDATE singbox_ordered_subscription_sources SET identity_epoch=2 WHERE id=$1".to_owned(),
+            "UPDATE singbox_ordered_subscription_sources SET identity_epoch=1 WHERE id=$1".to_owned(),
             source,
         ),
     ];
     for (disable, restore, target) in transitions {
-        sqlx::query(disable).bind(target).execute(&pool).await?;
+        sqlx::query(&disable).bind(target).execute(&pool).await?;
         for (user, group) in [(&follow, &follow_group), (&pinned, &pinned_group)] {
             ensure!(
                 status(&panel, user).await? == StatusCode::CONFLICT,
@@ -585,13 +647,13 @@ async fn follow_and_pinned_versions_obey_identity_availability_and_failed_refres
         }
         let (rejected, _) = probe.put(&panel, &cookie, json!([fresh.clone()])).await?;
         ensure!(rejected == StatusCode::CONFLICT, "{disable}: {rejected}");
-        sqlx::query(restore).bind(target).execute(&pool).await?;
+        sqlx::query(&restore).bind(target).execute(&pool).await?;
     }
     ensure!(probe.held(&panel, &cookie).await?.is_empty());
 
     // A version from an outdated parser keeps serving existing bindings but
     // cannot be bound anew.
-    parsed_version(&pool, source, node, THIRD, OUTDATED_PARSER).await?;
+    parsed_version(&panel, &cookie, source, THIRD, OUTDATED_PARSER).await?;
     ensure!(content(&panel, &follow).await?.contains(THIRD));
     ensure!(content(&panel, &pinned).await?.contains(FIRST));
     let outdated = first_candidate(&panel, &cookie).await?;
@@ -629,10 +691,10 @@ async fn follow_and_pinned_versions_obey_identity_availability_and_failed_refres
 
 #[sqlx::test]
 async fn catalog_alias_and_order_reach_group_external_subscriptions(pool: PgPool) -> Result<()> {
-    let (_, first) = source(&pool).await?;
-    let (_, second) = source(&pool).await?;
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
+    let (_, first) = source(&panel, &cookie).await?;
+    let (_, second) = source(&panel, &cookie).await?;
     let user = panel.create_user(&cookie, "目录订阅").await?;
     let uid = id(&user)?;
     let group = Group::for_user(&panel, &cookie, uid).await?;
@@ -714,9 +776,9 @@ async fn catalog_alias_and_order_reach_group_external_subscriptions(pool: PgPool
 async fn mixed_subscription_keeps_managed_applied_health_and_entitlement_gates(
     pool: PgPool,
 ) -> Result<()> {
-    source(&pool).await?;
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
+    source(&panel, &cookie).await?;
     let server = panel.create_server(&cookie, "受管").await?;
     let managed = panel.create_node(&cookie, server, "受管入口").await?;
     let user = panel.create_user(&cookie, "混合订阅").await?;
@@ -773,9 +835,9 @@ async fn mixed_subscription_keeps_managed_applied_health_and_entitlement_gates(
 #[sqlx::test]
 async fn inactive_pinned_identity_is_retained_but_never_reissued(pool: PgPool) -> Result<()> {
     const MAX: i64 = 9_007_199_254_740_991;
-    let (source, node) = source(&pool).await?;
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
+    let (source, node) = source(&panel, &cookie).await?;
     let user = panel.create_user(&cookie, "Pinned history").await?;
     let uid = id(&user)?;
     let (group, assigned) = assign(&panel, &cookie, uid, "pinned").await?;
@@ -793,8 +855,8 @@ async fn inactive_pinned_identity_is_retained_but_never_reissued(pool: PgPool) -
         .fetch_one(&pool)
     };
     let original = row().await?;
-    version(&pool, source, node, SECOND).await?;
-    sqlx::query("UPDATE singbox_subscription_sources SET last_error='TEST_ONLY cached fetch failure' WHERE id=$1")
+    version(&panel, &cookie, source, SECOND).await?;
+    sqlx::query("UPDATE singbox_ordered_subscription_sources SET last_error='{\"kind\":\"TEST_ONLY cached fetch failure\"}' WHERE id=$1")
         .bind(source).execute(&pool).await?;
     let other = panel.create_user(&cookie, "New current grant").await?;
     assign(&panel, &cookie, id(&other)?, "follow_node").await?;
@@ -858,9 +920,9 @@ async fn inactive_pinned_identity_is_retained_but_never_reissued(pool: PgPool) -
 async fn overlapping_groups_give_one_binding_and_keep_the_node_until_the_last_goes(
     pool: PgPool,
 ) -> Result<()> {
-    let (source, node) = source(&pool).await?;
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
+    let (source, node) = source(&panel, &cookie).await?;
     let user = panel.create_user(&cookie, "两个策略组").await?;
     let uid = id(&user)?;
     let original = first_candidate(&panel, &cookie).await?;
@@ -876,7 +938,7 @@ async fn overlapping_groups_give_one_binding_and_keep_the_node_until_the_last_go
             json!([reference(&original, "follow_node")]),
         )
         .await?;
-    let second = version(&pool, source, node, SECOND).await?;
+    let second = version(&panel, &cookie, source, SECOND).await?;
     let newer = Group::create(&panel, &cookie, "固定次版").await?;
     newer
         .save(
@@ -888,7 +950,7 @@ async fn overlapping_groups_give_one_binding_and_keep_the_node_until_the_last_go
             )]),
         )
         .await?;
-    let third = version(&pool, source, node, THIRD).await?;
+    let third = version(&panel, &cookie, source, THIRD).await?;
 
     // Three groups hold the node; the user gets it once, through the binding
     // that follows the node.

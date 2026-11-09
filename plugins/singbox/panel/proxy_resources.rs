@@ -140,7 +140,7 @@ async fn read_resources(state: &AppState) -> ApiResult<Vec<ProxyResource>> {
         })
         .collect();
     let chains = sqlx::query_as::<_, super::ordered_paths::models::ChainRow>(&format!(
-        "SELECT {CHAIN_COLUMNS} FROM singbox_chains WHERE deleted_at IS NULL AND path_kind IN ('legacy','ordered') ORDER BY id"
+        "SELECT {CHAIN_COLUMNS} FROM singbox_chains WHERE deleted_at IS NULL AND path_kind='ordered' ORDER BY id"
     ))
     .fetch_all(&mut *tx)
     .await?;
@@ -209,11 +209,7 @@ async fn read_resources(state: &AppState) -> ApiResult<Vec<ProxyResource>> {
         let mut reasons = endpoint_reasons(current_entry, "入口");
         let mut generations = Vec::new();
         let desired = storage::version(&mut tx, chain.id, chain.desired_generation).await?;
-        let entry = if chain.path_kind == "legacy" {
-            current_entry.clone()
-        } else {
-            frozen_endpoint(&desired.snapshot.entry, &endpoints)?
-        };
+        let entry = frozen_endpoint(&desired.snapshot.entry, &endpoints)?;
         let hops = project_hops(&mut tx, &desired.snapshot, &endpoints).await?;
         for hop in &hops {
             if let PublicHop::Managed {
@@ -460,7 +456,13 @@ async fn remove_chain_resource(state: &AppState, id: i64) -> ApiResult<()> {
     let servers = super::ordered_paths::storage::referenced_servers(&mut tx, id).await?;
     lock_cleanup_servers(&mut tx, &servers).await?;
     ensure_chain_entry_unreferenced_on(&mut tx, id, chain.entry_node_id).await?;
-    sqlx::query("UPDATE singbox_chains SET deleted_at=$2,route_enabled=FALSE,phase=CASE WHEN path_kind='ordered' THEN 'retiring' ELSE 'retired' END,applied_generation=CASE WHEN path_kind='legacy' THEN NULL ELSE applied_generation END WHERE id=$1").bind(id).bind(now_timestamp()).execute(&mut *tx).await?;
+    sqlx::query(
+        "UPDATE singbox_chains SET deleted_at=$2,route_enabled=FALSE,phase='retiring' WHERE id=$1",
+    )
+    .bind(id)
+    .bind(now_timestamp())
+    .execute(&mut *tx)
+    .await?;
     soft_delete_node(&mut tx, chain.entry_node_id).await?;
     business::mark_dirty(&mut tx, &servers).await?;
     tx.commit().await?;
@@ -488,7 +490,7 @@ pub(super) async fn ensure_chain_entry_unreferenced_on(
     if !policies.is_empty() || !other_refs.is_empty() {
         return Err(reference_error(policies, other_refs));
     }
-    let retained: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_chains c WHERE c.id<>$1 AND (c.deleted_at IS NULL OR (c.path_kind='ordered' AND c.phase<>'retired')) AND (c.entry_node_id=$2 OR c.exit_node_id=$2)) OR EXISTS(SELECT 1 FROM singbox_chain_hops h JOIN singbox_live_chains c ON c.id=h.chain_id WHERE h.chain_id<>$1 AND h.managed_node_id=$2) OR EXISTS(SELECT 1 FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE h.chain_id<>$1 AND (c.deleted_at IS NULL OR c.phase<>'retired') AND h.managed_node_id=$2 AND (h.generation=ANY(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) OR EXISTS(SELECT 1 FROM unnest(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) AS selected(generation) WHERE selected.generation IS NOT NULL AND NOT EXISTS(SELECT 1 FROM singbox_ordered_chain_versions v WHERE v.chain_id=c.id AND v.generation=selected.generation))))")
+    let retained: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_chains c WHERE c.id<>$1 AND (c.deleted_at IS NULL OR c.phase<>'retired') AND c.entry_node_id=$2) OR EXISTS(SELECT 1 FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE h.chain_id<>$1 AND (c.deleted_at IS NULL OR c.phase<>'retired') AND h.managed_node_id=$2 AND (h.generation=ANY(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) OR EXISTS(SELECT 1 FROM unnest(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) AS selected(generation) WHERE selected.generation IS NOT NULL AND NOT EXISTS(SELECT 1 FROM singbox_ordered_chain_versions v WHERE v.chain_id=c.id AND v.generation=selected.generation))))")
         .bind(id).bind(entry_node_id).fetch_one(&mut **tx).await?;
     if retained {
         return Err(ApiError::Conflict(
@@ -545,18 +547,6 @@ async fn node_policies(
 ) -> ApiResult<Vec<PolicyReference>> {
     Ok(sqlx::query_as("SELECT p.id,p.name FROM singbox_policy_groups p JOIN singbox_policy_nodes n ON n.group_id=p.id WHERE n.node_id=$1 ORDER BY p.id LIMIT 32")
         .bind(id).fetch_all(&mut **tx).await?)
-}
-
-pub(super) async fn ensure_chain_unreferenced(
-    tx: &mut Transaction<'_, Postgres>,
-    id: i64,
-) -> ApiResult<()> {
-    let policies = sqlx::query_as::<_, PolicyReference>("SELECT p.id,p.name FROM singbox_policy_groups p JOIN singbox_policy_chains c ON c.group_id=p.id WHERE c.chain_id=$1 ORDER BY p.id LIMIT 32")
-        .bind(id).fetch_all(&mut **tx).await?;
-    if !policies.is_empty() {
-        return Err(reference_error(policies, vec![]));
-    }
-    Ok(())
 }
 
 async fn ensure_node_unreferenced(tx: &mut Transaction<'_, Postgres>, id: i64) -> ApiResult<()> {

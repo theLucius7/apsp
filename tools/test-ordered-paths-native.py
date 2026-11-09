@@ -41,7 +41,7 @@ MAX_OUTPUT = 256 * 1024
 MAX_ROWS = 4096
 REQUIRED_TAGS = {"with_clash_api", "with_v2ray_api", "with_utls", "with_quic"}
 COMPILER_COMMON_SOURCES = frozenset({
-    "lib.rs", "relays.rs", "external.rs", "protocols.rs", "certificates.rs",
+    "lib.rs", "external.rs", "protocols.rs", "certificates.rs",
     "paths/mod.rs", "paths/model.rs", "paths/network.rs", "paths/context.rs",
     "paths/validate.rs", "paths/render.rs", "paths/transport_validation.rs",
     "paths/outbound_validation.rs",

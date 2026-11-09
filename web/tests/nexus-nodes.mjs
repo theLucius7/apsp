@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { installControlCenterFixtures } from './control-center-fixtures.mjs'
-import { catalogResourceFixtures, flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { catalogNodeFixtures, catalogResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
 
 // Exercise the final bundle with isolated public DTOs, never a live migration.
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
@@ -43,7 +43,7 @@ try {
       groups: [{ id: 1, name: '测试组' }], routes: [], protocol_summary: { tls: 2, short_id: '0123456789abcdef' },
       custom_route_count: 1, custom_outbound_count: 1, timed_rate_enabled: false, timed_rate_count: 0,
       certificate_saved: false, configuration_saved: true, state: 'pending_agent', exported_at: 1, imported_at: 2 }]
-    const flat = flatResourceFixtures(nodes, hosts), ordered = proxyResourceFixtures(nodes, hosts), catalog = catalogResourceFixtures(flat)
+    const ordered = proxyResourceFixtures(nodes, hosts), catalog = catalogResourceFixtures(catalogNodeFixtures(nodes, hosts))
     let mode = 'valid', nexusReads = 0
     await page.route('**/*', async route => {
       const request = route.request(), url = new URL(request.url()), path = url.pathname
@@ -61,12 +61,10 @@ try {
         value = mode === 'invalid' ? [{ ...imported[0], state: 'active' }] : mode === 'empty' ? [] : imported
       } else if (path === `${prefix}/nodes`) value = nodes
       else if (path === `${prefix}/servers`) value = hosts
-      else if (path === `${prefix}/proxy-resources`) value = flat
       else if (path === `${prefix}/ordered-proxy-resources`) value = ordered
       else if (path === `${prefix}/node-catalog`) value = catalog
       else if (path === `${prefix}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
-      else if (path === `${prefix}/source-migration`) value = { migrated: false, migrated_at: null }
-      else if ([`${prefix}/subscription-sources`, `${prefix}/ordered-subscription-sources`].includes(path)) value = []
+      else if (path === `${prefix}/ordered-subscription-sources`) value = []
       else { unexpected.push(`GET ${path}`); return route.fulfill({ status: 404, json: { error: 'TEST_ONLY 未声明接口' } }) }
       return route.fulfill({ json: value })
     })

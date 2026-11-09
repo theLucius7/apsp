@@ -375,6 +375,14 @@ pub async fn remove(
             references: serde_json::json!({"chains":dependencies}),
         });
     }
+    // A policy group that holds one of its nodes keeps the source, like a chain does.
+    let nodes: Vec<i64> = sqlx::query_scalar(
+        "SELECT public_id FROM singbox_ordered_external_nodes WHERE source_id=$1",
+    )
+    .bind(id)
+    .fetch_all(&mut *tx)
+    .await?;
+    super::super::catalog::ensure_externals_removable(&mut tx, &nodes).await?;
     jobs::supersede(&mut tx, id).await?;
     sqlx::query("UPDATE singbox_ordered_subscription_sources SET deleted_at=$2,archived=TRUE,input_config='{}'::jsonb,host=NULL,next_refresh_at=NULL,conditional_etag=NULL,conditional_last_modified=NULL,conditional_settings_revision=NULL,conditional_identity_epoch=NULL,updated_at=$2 WHERE id=$1")
         .bind(id).bind(now_timestamp()).execute(&mut *tx).await?;

@@ -183,18 +183,13 @@ impl TestPanel {
         Ok(response.json().await?)
     }
 
-    /// Explicit TEST_ONLY import preserving both numeric and rich legacy projections.
-    pub async fn import_legacy_chain(
-        &self,
-        cookie: &str,
-        name: &str,
-        entry: i64,
-        exit: i64,
-    ) -> Result<Value> {
+    /// TEST_ONLY applied chain with one managed hop: the entry node routes through the
+    /// exit node. Written directly so tests need no runtime probes to reach this state.
+    pub async fn insert_chain(&self, name: &str, entry: i64, exit: i64) -> Result<Value> {
         let mut tx = self.state.pool.begin().await?;
         let relay = Uuid::new_v4();
-        let chain:i64=sqlx::query_scalar("INSERT INTO singbox_chains(name,entry_node_id,exit_node_id,relay_uuid,applied_generation) VALUES($1,$2,$3,$4,1) RETURNING id")
-            .bind(name).bind(entry).bind(exit).bind(relay).fetch_one(&mut *tx).await?;
+        let chain:i64=sqlx::query_scalar("INSERT INTO singbox_chains(name,entry_node_id,phase,applied_generation) VALUES($1,$2,'applied',1) RETURNING id")
+            .bind(name).bind(entry).fetch_one(&mut *tx).await?;
         let mut endpoints = Vec::new();
         for node in [entry, exit] {
             let (server,snapshot):(i64,Value)=sqlx::query_as("SELECT server_id,jsonb_build_object('id',id,'name',name,'port',port,'public_host',public_host,'sni',sni,'private_key',private_key,'public_key',public_key,'short_id',short_id,'users','[]'::jsonb,'enabled',enabled,'settings',settings,'protocol_config',protocol_config) FROM nodes WHERE id=$1")
@@ -206,40 +201,20 @@ impl TestPanel {
                 .bind(node).bind(&snapshot).fetch_one(&mut *tx).await?;
             endpoints.push(json!({"version_id":version,"server_id":server,"node":snapshot}));
         }
-        let frozen = json!({"entry":endpoints[0],"hops":[{"kind":"managed","endpoint":endpoints[1],"relay_uuid":relay}],"legacy_relay_uuid":relay});
+        let frozen = json!({"entry":endpoints[0],"hops":[{"kind":"managed","endpoint":endpoints[1],"relay_uuid":relay}]});
         let entry_version: Uuid = serde_json::from_value(endpoints[0]["version_id"].clone())?;
         let exit_version: Uuid = serde_json::from_value(endpoints[1]["version_id"].clone())?;
         let exit_server = endpoints[1]["server_id"]
             .as_i64()
-            .context("legacy fixture exit server")?;
-        sqlx::query("INSERT INTO singbox_ordered_chain_versions(chain_id,generation,legacy,entry_endpoint_version,semantic_sha256,capabilities,snapshot,created_at) VALUES($1,1,TRUE,$2,encode(sha256(convert_to($3::jsonb::text,'UTF8')),'hex'),'{\"tcp\":true,\"udp\":true}'::jsonb,$3,$4)")
+            .context("chain fixture exit server")?;
+        sqlx::query("INSERT INTO singbox_ordered_chain_versions(chain_id,generation,entry_endpoint_version,semantic_sha256,capabilities,snapshot,created_at) VALUES($1,1,$2,encode(sha256(convert_to($3::jsonb::text,'UTF8')),'hex'),'{\"tcp\":true,\"udp\":true}'::jsonb,$3,$4)")
             .bind(chain).bind(entry_version).bind(frozen).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
         sqlx::query("INSERT INTO singbox_ordered_chain_hops(chain_id,generation,position,kind,endpoint_version_id,managed_node_id,managed_server_id,relay_uuid) VALUES($1,1,1,'managed',$2,$3,$4,$5)")
             .bind(chain).bind(exit_version).bind(exit).bind(exit_server).bind(relay).execute(&mut *tx).await?;
-        let main_path = json!({"chain_id":chain,"generation":1,"entry_server_id":endpoints[0]["server_id"],"entry_node_id":entry,"active":true,"hops":[{"kind":"managed","server_id":exit_server,"identity":relay,"endpoint":endpoints[1]["node"]}]});
-        sqlx::query("INSERT INTO singbox_chain_versions(chain_id,generation,legacy,path_json,semantic_hash,networks,stage,created_at,updated_at) VALUES($1,1,TRUE,$2,'legacy-preserved','{\"tcp\":true,\"udp\":true}','active',0,0)")
-            .bind(chain).bind(&main_path).execute(&mut *tx).await?;
-        sqlx::query("INSERT INTO singbox_chain_hops(chain_id,generation,position,kind,managed_node_id,managed_server_id,endpoint_json,relay_uuid) VALUES($1,1,0,'managed',$2,$3,$4,$5)")
-            .bind(chain).bind(exit).bind(exit_server).bind(&endpoints[1]["node"]).bind(relay).execute(&mut *tx).await?;
-        sqlx::query("UPDATE singbox_chains SET active_generation=1 WHERE id=$1")
-            .bind(chain)
-            .execute(&mut *tx)
-            .await?;
         sqlx::query("UPDATE servers SET dirty_at=$2 WHERE id IN (SELECT server_id FROM nodes WHERE id=ANY($1))")
             .bind(vec![entry,exit]).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
         tx.commit().await?;
-        let list: Value = self
-            .admin(Method::GET, "/api/plugins/sing-box/chains", cookie, None)
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
-        list.as_array()
-            .context("legacy fixture chain list")?
-            .iter()
-            .find(|value| value["id"] == chain)
-            .cloned()
-            .context("legacy fixture chain presentation")
+        Ok(json!({"id":chain,"name":name,"entry_node_id":entry}))
     }
 
     pub async fn enable_plugin(&self, cookie: &str, server_id: i64) -> Result<()> {

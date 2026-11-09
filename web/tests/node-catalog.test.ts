@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { catalogKey, catalogMutationError, filterCatalog, parsedTags, renamed, tagsError, validCatalog } from '../src/plugins/singbox/catalog'
 import type { CatalogNode, CatalogFilter } from '../src/plugins/singbox/catalog'
+import { sourceReason } from '../src/plugins/singbox/sourceTypes'
 
 const node = (fields: Partial<CatalogNode>): CatalogNode => ({ id: 1, kind: 'direct', name: '香港入口', original_name: '香港入口', public_host: 'node.example.com', protocol: 'vless-reality', enabled: true, available: true, server_id: 1, server_name: '测试服务器', port: 443, role: 'direct', tcp: true, udp: true, stage: 'direct', reference_count: 0, sort_order: 0, revision: '1'.repeat(64), tags: [], note: '', ...fields }) as CatalogNode
 const empty: CatalogFilter = { search: '', kind: '', protocol: '', tag: '', status: '', source: '', server: '', role: '' }
@@ -51,11 +52,16 @@ describe('catalog current mutation eligibility', () => {
     expect(catalogMutationError([original], [original], '2')).not.toBe('')
     expect(catalogMutationError(undefined, [original], '')).not.toBe('')
   })
-  test('role filters include actual intermediate/exit servers rather than just entry', () => {
-    const chain = node({ kind: 'chain', role: 'chain_entry', managed_server_ids: [1, 2, 3], managed_middle_server_ids: [2], managed_exit_server_ids: [3] })
-    expect(filterCatalog([chain], { ...empty, server: '2', serverRole: 'middle' })).toEqual([chain])
-    expect(filterCatalog([chain], { ...empty, server: '2', serverRole: 'exit' })).toEqual([])
-    expect(filterCatalog([chain], { ...empty, server: '3', serverRole: 'exit' })).toEqual([chain])
+  test('a managed node is in scope only on the server it listens on; the catalog has no chain rows', () => {
+    const hop = node({ id: 4, role: 'managed_hop', server_id: 2 })
+    expect(filterCatalog([hop], { ...empty, server: '2' })).toEqual([hop])
+    expect(filterCatalog([hop], { ...empty, server: '3' })).toEqual([])
+    expect(validCatalog([{ ...node({}), kind: 'chain', role: 'chain_entry' } as unknown as CatalogNode])).toBe(false)
+  })
+  test('unavailable external nodes explain the catalog reason without echoing unknown codes', () => {
+    for (const reason of ['source_deleted', 'source_archived', 'source_replaced', 'node_missing', 'ambiguous_node_identity', 'unsupported_configuration']) expect(sourceReason(reason)).not.toBe('')
+    expect(sourceReason('unknown-fixture-secret')).not.toContain('fixture-secret')
+    expect(sourceReason(null)).toBe('')
   })
   test('external missing endpoint is readable without inventing a managed server or protocol', () => {
     const external = node({ kind: 'external', role: 'external', server_id: null, server_name: null, protocol: null, public_host: null, port: null, source_id: 1, source_name: '旧来源', version_id: null, identity_epoch: 1, available: false })

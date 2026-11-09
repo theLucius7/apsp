@@ -52,8 +52,7 @@ export function preloadPages() {
 const Servers = lazyPage(() => import('../servers/Servers'), true)
 const ServerDetail = lazyPage(() => import('../servers/ServerDetail'), true)
 const BatchEnrollment = lazyPage(() => import('../servers/BatchEnrollmentPage'))
-const PluginEnablement = lazyPage(() => import('../plugins/PluginEnablement'))
-const PluginCatalog = lazyPage(() => import('../plugins/PluginCatalog'))
+const Artifacts = lazyPage(() => import('../system/Artifacts'))
 const Security = lazyPage(() => import('../system/Security'))
 const Settings = lazyPage(() => import('../system/Settings'))
 const Backup = lazyPage(() => import('../system/Backup'))
@@ -86,7 +85,7 @@ export function preloadRoute(route: AppRoute) {
     'network-configuration': NetworkConfiguration, operations: OperationsPage, 'control-center': ControlCenter, servers: Servers,
     'singbox-overview': SingboxOverview, statistics: Statistics, latency: LineQuality, 'latency-settings': LineQualitySettings,
     alicloud: Alicloud, ddns: Ddns, nodes: Nodes, expenses: Expenses, 'proxy-users': ProxyUsers, 'subscription-board': SubscriptionBoard,
-    groups: Groups, plugins: PluginEnablement, catalog: PluginCatalog, settings: Settings, backup: Backup,
+    groups: Groups, artifacts: Artifacts, settings: Settings, backup: Backup,
     'alert-settings': AlertSettings, notifications: Notifications, security: Security,
   }
   pages[route.page]?.preload()
@@ -132,8 +131,7 @@ function page(route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' | 'm
     case 'proxy-users': return <ProxyUsers key={route.userId ?? 'users'} initialUserId={route.userId} />
     case 'subscription-board': return <SubscriptionBoard />
     case 'groups': return <Groups />
-    case 'plugins': return <PluginEnablement />
-    case 'catalog': return <PluginCatalog />
+    case 'artifacts': return <Artifacts />
     case 'settings': return <Settings />
     case 'backup': return <Backup />
     case 'alert-settings': return <AlertSettings />

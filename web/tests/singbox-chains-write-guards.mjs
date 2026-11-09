@@ -1,11 +1,10 @@
 import { installControlCenterFixtures } from './control-center-fixtures.mjs'
-import { catalogResourceFixtures } from './proxy-resource-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
-import { flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { catalogNodeFixtures, catalogResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
 
 // Exercise the actual dist; every API request is intercepted by an owned fixture.
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
@@ -56,12 +55,9 @@ try {
       else if (method === 'GET' && pathname === `${prefix}/nodes`) value = nodes
       else if (method === 'GET' && pathname === `${prefix}/servers`) value = servers
       else if (method === 'GET' && pathname === `${prefix}/usage`) value = {total:'0',uplink:'0',downlink:'0',by_node:[],by_user:[]}
-      else if (method === 'GET' && pathname === `${prefix}/source-migration`) value = { migrated: false, migrated_at: null }
-      else if (method === 'GET' && [ `${prefix}/subscription-sources`, `${prefix}/ordered-subscription-sources` ].includes(pathname)) value = []
-      else if (method === 'GET' && pathname === `${prefix}/proxy-resources`) value = flatResourceFixtures(nodes, [...servers,...baseServers.filter(base => !servers.some(server => server.id === base.id))], chains)
-      else if (method === 'GET' && pathname === `${prefix}/node-catalog`) value = catalogResourceFixtures(flatResourceFixtures(nodes, [...servers,...baseServers.filter(base => !servers.some(server => server.id === base.id))], chains))
+      else if (method === 'GET' && pathname === `${prefix}/ordered-subscription-sources`) value = []
+      else if (method === 'GET' && pathname === `${prefix}/node-catalog`) value = catalogResourceFixtures(catalogNodeFixtures(nodes, [...servers,...baseServers.filter(base => !servers.some(server => server.id === base.id))], chains))
       else if (method === 'GET' && pathname === `${prefix}/ordered-proxy-resources`) value = proxyResourceFixtures(nodes, [...servers,...baseServers.filter(base => !servers.some(server => server.id === base.id))], chains)
-      else if (method === 'GET' && pathname === `${prefix}/chains`) value = chains
       else if (method === 'POST' && pathname === `${prefix}/chains/ordered-batch`) {
         const payload = request.postDataJSON()
         assert.match(payload.request_id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)

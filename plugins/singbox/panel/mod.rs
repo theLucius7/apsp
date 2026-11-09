@@ -11,15 +11,11 @@ mod activity;
 pub mod agent;
 pub mod business;
 pub mod catalog;
-pub mod chains;
 pub mod deployments;
 pub mod device_config;
 pub mod entitlements;
 pub mod external_access;
 pub mod host_support;
-pub mod legacy_takeover;
-pub mod mixed_conversion;
-pub mod mixed_paths;
 mod nexus_nodes;
 mod user_accounts;
 
@@ -62,8 +58,6 @@ pub mod runtime_validations;
 mod secret_access;
 pub mod server_profiles;
 pub mod settings;
-pub mod source_migration;
-pub mod sources;
 mod subscription_fetch;
 pub mod subscription_hosts;
 pub mod subscription_parser;
@@ -85,7 +79,7 @@ pub(crate) use apsp_panel_host::{
 };
 use axum::{
     Router,
-    routing::{delete, get, post},
+    routing::{get, post},
 };
 
 /// A read-only transaction over one consistent snapshot, started with a single
@@ -126,13 +120,7 @@ pub fn router() -> Router<AppState> {
             "/package-groups/{id}",
             axum::routing::put(packages::update).delete(packages::remove),
         )
-        .route("/chains", get(chains::list).post(chains::create))
         .route("/chains/ordered-batch", post(ordered_paths::create_batch))
-        .route("/chains/{id}", delete(chains::remove))
-        .route(
-            "/proxy-resources/chain/{id}/conversion",
-            get(mixed_conversion::precheck).post(mixed_conversion::convert),
-        )
         .route("/ordered-proxy-resources", get(proxy_resources::list))
         .route(
             "/ordered-proxy-resources/{kind}/{id}",
@@ -207,11 +195,8 @@ pub fn router() -> Router<AppState> {
         .merge(catalog::router())
         .merge(nexus_nodes::router())
         .merge(reachability::router())
-        .merge(sources::router())
-        .route("/source-migration", get(source_migration::state))
         .merge(portal::router())
-        .merge(user_accounts::router())
-        .merge(mixed_paths::router());
+        .merge(user_accounts::router());
     let management = management.merge(operations_workflows::router());
     Router::new()
         .nest(

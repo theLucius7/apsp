@@ -73,7 +73,7 @@ export default function ServerEnrollment({ server, created = false, onClose }: {
         </form>
         {selectedVersion && <p className="text-muted-foreground mt-3 text-xs leading-relaxed wrap-anywhere">所选版本可用于：{agentInstallTargets(selectedVersion.targets, platform).map(agentTargetLabel).join('、')}。</p>}
         <ErrorNotice message={versionsError} retry={reloadVersions} />
-        {!versionsLoading && !versionsError && !versions.length && <p className="text-muted-foreground mt-3 text-xs leading-relaxed wrap-anywhere">当前没有适合此系统与架构的已签名版本，请维护者准备对应的 Agent 发布后重试。<a className="text-primary underline-offset-4 hover:underline" href="#/settings/plugins" onClick={onClose}>查看已收录版本</a></p>}
+        {!versionsLoading && !versionsError && !versions.length && <p className="text-muted-foreground mt-3 text-xs leading-relaxed wrap-anywhere">当前没有适合此系统与架构的已签名版本，请维护者准备对应的 Agent 发布后重试。<a className="text-primary underline-offset-4 hover:underline" href="#/settings/artifacts" onClick={onClose}>查看已收录版本</a></p>}
         <ErrorNotice message={action.error} />
         {action.busy ? <Loading /> : enrollment ? expired ? <Notice role="status">接入令牌已过期，请重新生成命令。</Notice> : enrollment.install_command ? <div className="bg-muted/40 mt-5 overflow-hidden rounded-lg border">
           <div className="flex items-center justify-between gap-3 border-b px-4 py-2.5 max-sm:flex-wrap"><span className="text-foreground flex items-center gap-1.5 text-xs font-medium"><BoxIcon className="size-3.5" aria-hidden="true" />{version ? `签名版本 ${enrollment.installation?.version ?? version}` : '执行时自动匹配最新兼容版本'}</span><small className="text-muted-foreground text-xs">复制一行命令，在{platform === 'windows' ? '管理员 PowerShell' : '服务器终端'}粘贴执行</small></div>

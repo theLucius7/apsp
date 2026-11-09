@@ -41,14 +41,10 @@ try {
       else if (path === '/api/dashboard/access') value = { authenticated:true, public_dashboard:false }
       else if (path === '/api/plugins/sing-box/servers') value = pluginServers
       else if (path === '/api/plugins/sing-box/usage') value = { total:'0', by_node:[], by_user:[], uplink:'0',downlink:'0' }
-      else if (path === '/api/plugins/sing-box/proxy-resources') value = nodes.map(node => ({ ...node, kind:'direct', server_name:'测试服务器', role:'direct', entry_node_id:null, tcp:true, udp:true, available:true, stage:'direct', reference_count:0 }))
       else if (path === '/api/plugins/sing-box/node-catalog') value = catalogResourceFixtures(nodes.map(node => ({ ...node, kind:'direct', server_name:'测试服务器', role:'direct', entry_node_id:null, tcp:true, udp:true, available:true, stage:'direct', reference_count:0 })))
-      else if (path === '/api/plugins/sing-box/subscription-sources') value = []
       else if (path === '/api/plugins/sing-box/nodes' && method === 'GET') value = nodes
       else if (path === '/api/plugins/sing-box/ordered-proxy-resources' && method === 'GET') value = proxyResourceFixtures(nodes, pluginServers)
-      else if (path === '/api/plugins/sing-box/source-migration' && method === 'GET') value = { migrated: false, migrated_at: null }
       else if (path === '/api/plugins/sing-box/ordered-subscription-sources' && method === 'GET') value = []
-      else if (path === '/api/plugins/sing-box/subscription-sources' && method === 'GET') value = []
       else if (path === '/api/plugins/sing-box/nodes' && method === 'POST') {
         const body = route.request().postDataJSON(); writes.push(body)
         value = { ...body,id:1,protocol:body.protocol_config.type,port:body.port ?? 20000 }
@@ -58,6 +54,10 @@ try {
         if (rejected) { await route.fulfill({status:400,json:{error:'夹具：参数无效'}}); return }
         Object.assign(nodes[0],body); value=nodes[0]
       } else if (method === 'GET' && !new URL(route.request().url()).search && path === '/api/plugins/sing-box/servers/1/operations-view') value = operationsViewFixture
+      // A server's deployment lives in its network services tab.
+      else if (path === '/api/servers/1') value = { id:1, name:'测试服务器', online:false, device_public_key:'TEST_ONLY', capabilities:[], static_info:{}, latest_metrics:{}, manifest_rev:0 }
+      else if (path === '/api/plugins/sing-box/servers/1') value = { ...pluginServers[0], source:'administrator', installation:{ state:'offline', reason:'设备离线，恢复连接后继续部署', target_rev:0, applied_rev:0 } }
+      else if (path === '/api/plugins/sing-box/servers/1/profile') value = { definition:{ outbounds:[], endpoints:[], services:[], cloudflared:[], dns:null, route:null }, revision:0 }
       else if (path.endsWith('/deployments')) value = progress
       else if (path.endsWith('/deployments/check')) value = { ready:false,checks:[{name:'设备在线',passed:false,detail:'设备离线，配置将在重新连接后下发'},{name:'签名运行时',passed:true,detail:'已验证匹配的制品'}] }
       else if (path.endsWith('/runtime-operations')) value = { supported:false,online:false,retiring:false,operations:[] }
@@ -93,15 +93,18 @@ try {
     assert.equal(Object.hasOwn(writes[0].settings.hysteria2,'obfs_password'),false)
     const currentRow = page.locator(width < 768 ? '[data-slot=catalog-card][data-resource-key="direct:1"]' : '[data-slot=catalog-table] [data-resource-key="direct:1"]')
     await currentRow.getByText('proxy.example.com:443',{exact:true}).waitFor()
+    // The saved node's deployment opens in its server's network services tab.
     await page.getByRole('button',{name:/^查看(差异、完整预检与发布状态|部署状态)$/}).click()
-    await dialog.getByText('目标配置待发布',{exact:true}).waitFor()
-    await dialog.getByRole('button',{name:'检查基础安装条件',exact:true}).click()
-    await dialog.getByText('设备离线，配置将在重新连接后下发',{exact:true}).waitFor()
+    await page.waitForURL(/#\/servers\/1\/services$/)
+    const services = page.locator('section').filter({ has: page.getByRole('heading', { name: /^sing-box/ }) })
+    await services.getByText('还没有发布记录。',{exact:false}).waitFor()
+    await services.getByRole('button',{name:'检查安装条件',exact:true}).click()
+    await services.getByText('已验证匹配的制品',{exact:true}).waitFor()
     Object.assign(progress,{pending:false,status:{target_rev:2,applied_rev:1,last_result_rev:2,healthy:true,last_error:'测试校验失败',updated_at:1}})
-    await dialog.locator('[data-slot=node-deployment-heading]').getByRole('button',{name:'刷新',exact:true}).click()
-    await dialog.getByText('最新配置应用失败',{exact:true}).waitFor()
-    assert.equal(await dialog.getByText('目标配置已应用',{exact:true}).count(),0)
-    await dialog.getByRole('button',{name:'关闭',exact:true}).click()
+    await services.getByRole('button',{name:'刷新',exact:true}).click()
+    await services.getByText('最近一次部署失败',{exact:true}).waitFor()
+    await services.getByText('测试校验失败',{exact:true}).waitFor()
+    await page.goto(`http://127.0.0.1:${server.address().port}/#/nodes`)
     await currentRow.getByRole('button',{name:'编辑',exact:true}).click()
     await dialog.locator('[role=checkbox]:has(+ [name=enabled])').uncheck()
     await dialog.locator('[name=public_port]').fill('')

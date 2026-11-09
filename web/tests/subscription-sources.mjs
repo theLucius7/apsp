@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { mkdir, readFile } from 'node:fs/promises'
 import { resolve, extname, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { catalogNodeFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
 import { sourceJobFixture, sourceNodeFixture, sourceNodePageFixture, sourcePreviewFixture, sourceRevisionFixture, sourceUuid, subscriptionSourceFixture } from './subscription-source-fixtures.mjs'
 
 // Exercise the built UI, with strict owned fixtures. No upstream requests or parser execution.
@@ -51,11 +51,8 @@ try {
       else if (method === 'GET' && path === `${prefix}/nodes`) {
         if (oldNodesFailure) { await route.fulfill({ status: 500, json: { error: '旧节点元数据损坏' } }); return }
         value = nodes
-      } else if (method === 'GET' && path === `${prefix}/proxy-resources`) value = flatResourceFixtures(nodes, servers)
-      else if (method === 'GET' && path === `${prefix}/node-catalog`) value = catalogResourceFixtures(flatResourceFixtures(nodes, servers))
+      } else if (method === 'GET' && path === `${prefix}/node-catalog`) value = catalogResourceFixtures(catalogNodeFixtures(nodes, servers))
       else if (method === 'GET' && path === `${prefix}/ordered-proxy-resources`) value = proxyResourceFixtures(nodes, servers)
-      else if (method === 'GET' && path === `${prefix}/source-migration`) value = { migrated: false, migrated_at: null }
-      else if (method === 'GET' && path === `${prefix}/subscription-sources`) value = []
       else if (method === 'GET' && path === `${prefix}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
       else if (method === 'GET' && path === sourceRoot) {
         if (listMode === 'failed') { await route.fulfill({ status: 403, json: { error: '来源夹具读取被拒绝' } }); return }
@@ -141,12 +138,12 @@ try {
       if (method === 'GET' && path.startsWith(sourceRoot)) assert(!JSON.stringify(value).includes('TEST_ONLY'))
       await route.fulfill({ json: value })
     })
-    const manager = page.getByRole('region', { name: '订阅来源管理', exact: true, includeHidden: true }), dialog = page.getByRole('dialog')
+    const manager = page.getByRole('region', { name: '外部来源管理', exact: true, includeHidden: true }), dialog = page.getByRole('dialog')
     // Sources and chain creation live in separate node page sections.
     const view = name => page.getByRole('navigation', { name: '节点视图', exact: true }).getByRole('link', { name, exact: true }).click()
     const enable = async locator => { await locator.waitFor(); const deadline = Date.now() + 8000; while (await locator.isDisabled() && Date.now() < deadline) await page.waitForTimeout(20); assert.equal(await locator.isDisabled(), false) }
     const reloadList = async () => { const response = page.waitForResponse(response => new URL(response.url()).pathname === sourceRoot && response.request().method() === 'GET'); await manager.getByRole('button', { name: '刷新来源列表', exact: true }).click(); await response }
-    const force = async label => page.evaluate(label => { const region = document.querySelector('[aria-label="订阅来源管理"]'); const button = [...region.querySelectorAll('button')].find(button => button.textContent.trim() === label); assertButton(button); function assertButton(button) { if (!button) throw new Error('Missing force target'); const key = Object.keys(button).find(key => key.startsWith('__reactProps')); if (!key || typeof button[key].onClick !== 'function') throw new Error('Missing actual click handler'); button[key].onClick() } }, label)
+    const force = async label => page.evaluate(label => { const region = document.querySelector('[aria-label="外部来源管理"]'); const button = [...region.querySelectorAll('button')].find(button => button.textContent.trim() === label); assertButton(button); function assertButton(button) { if (!button) throw new Error('Missing force target'); const key = Object.keys(button).find(key => key.startsWith('__reactProps')); if (!key || typeof button[key].onClick !== 'function') throw new Error('Missing actual click handler'); button[key].onClick() } }, label)
     const shot = async name => {
       if (!process.env.APSP_UI_SCREENSHOT_DIR) return
       if (await dialog.count()) {
@@ -172,11 +169,11 @@ try {
     }
     await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/nodes?view=sources`)
-    await enable(manager.getByRole('button', { name: '添加订阅来源', exact: true }))
-    assert.equal(await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '订阅来源', exact: true }).count(), 0)
+    await enable(manager.getByRole('button', { name: '添加外部来源', exact: true }))
+    assert.equal(await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '外部来源', exact: true }).count(), 0)
     assert.equal(await page.locator('[data-slot=overview-item]').filter({ hasText: '代理资源' }).locator('[data-slot=overview-value] strong').innerText(), '2')
     await view('链路'); await page.locator('header[data-slot=page-header]').getByRole('button', { name: '创建链路', exact: true }).click(); await dialog.locator('[name=name]').fill('必须保留的两跳草稿'); await dialog.getByRole('button', { name: '取消', exact: true }).click()
-    await view('订阅来源')
+    await view('外部来源')
     await manager.locator('[data-source-id="1"]').getByRole('button', { name: '查看来源', exact: true }).click()
     await dialog.getByText('外部示例节点', { exact: true }).waitFor()
     await dialog.getByText('端点未知', { exact: true }).waitFor()
@@ -204,17 +201,17 @@ try {
     await dialog.getByRole('button', { name: '关闭来源详情', exact: true }).click()
     for (const mode of ['failed', 'malformed']) {
       listMode = mode; await reloadList(); await manager.getByText('来源修改暂不可用，已读取的历史信息仍可查看。', { exact: true }).waitFor()
-      const before = writes.length; await force('添加订阅来源'); await force('抓取并解析'); await force('删除来源'); assert.equal(writes.length, before)
+      const before = writes.length; await force('添加外部来源'); await force('抓取并解析'); await force('删除来源'); assert.equal(writes.length, before)
       assert.equal(await page.getByRole('button', { name: '创建节点', exact: true }).first().isDisabled(), false)
       assert.equal(await manager.getByText('示例订阅', { exact: true }).count(), 1)
-      listMode = 'ok'; await reloadList(); await enable(manager.getByRole('button', { name: '添加订阅来源', exact: true }))
+      listMode = 'ok'; await reloadList(); await enable(manager.getByRole('button', { name: '添加外部来源', exact: true }))
     }
     listMode = 'held'; await manager.getByRole('button', { name: '刷新来源列表', exact: true }).click(); await heldStarted
-    const beforeHeld = writes.length; await force('添加订阅来源'); await force('删除来源'); assert.equal(writes.length, beforeHeld)
-    listMode = 'ok'; heldRelease(); await enable(manager.getByRole('button', { name: '添加订阅来源', exact: true }))
+    const beforeHeld = writes.length; await force('添加外部来源'); await force('删除来源'); assert.equal(writes.length, beforeHeld)
+    listMode = 'ok'; heldRelease(); await enable(manager.getByRole('button', { name: '添加外部来源', exact: true }))
     oldNodesFailure = true; await page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).click()
     await page.getByText('旧节点元数据损坏', { exact: true }).waitFor()
-    await manager.getByRole('button', { name: '添加订阅来源', exact: true }).click()
+    await manager.getByRole('button', { name: '添加外部来源', exact: true }).click()
     await dialog.locator('[name=source_name]').fill('URL 新来源')
     await dialog.locator('[name=source_url]').fill('https://subscription.example.com/private?token=TEST_ONLY')
     await dialog.locator('[name=source_authorization]').fill('Bearer TEST_ONLY'); await dialog.locator('[name=source_cookie]').fill('session=TEST_ONLY'); await dialog.locator('[name=source_apiKey]').fill('TEST_ONLY')
@@ -229,7 +226,7 @@ try {
     assert.equal(createWrites.length, 2); assert.equal(createWrites[1].serialized, firstCreate.serialized); assert.equal(allocations, 1)
     await manager.getByText('URL 新来源', { exact: true }).waitFor()
     await manager.locator('[data-source-id="2"]').getByText('自动刷新已关闭', { exact: false }).waitFor()
-    await manager.getByRole('button', { name: '添加订阅来源', exact: true }).click()
+    await manager.getByRole('button', { name: '添加外部来源', exact: true }).click()
     assert.equal(await dialog.locator('[name=source_url]').inputValue(), ''); assert.equal(await dialog.locator('[name=source_authorization]').inputValue(), '')
     await dialog.locator('[name=source_name]').fill('文件来源'); await dialog.getByRole('combobox', { name: '订阅输入方式', exact: true }).selectOption('inline')
     await dialog.locator('[name=source_file]').setInputFiles({ name: 'source.txt', mimeType: 'text/plain', buffer: Buffer.from('trojan://TEST_ONLY_FILE@exit.example.com:443#file') })
@@ -240,7 +237,7 @@ try {
     await enable(dialog.getByRole('button', { name: '重试原请求', exact: true })); await dialog.getByRole('button', { name: '重试原请求', exact: true }).click(); await dialog.waitFor({ state: 'hidden' })
     assert.equal(writes.filter(write => write.path === sourceRoot && write.method === 'POST').at(-1).serialized, fileFirst.serialized); assert.equal(allocations, 2)
     await manager.getByText('文件来源', { exact: true }).waitFor()
-    await manager.getByRole('button', { name: '添加订阅来源', exact: true }).click(); await dialog.getByRole('combobox', { name: '订阅输入方式', exact: true }).selectOption('inline')
+    await manager.getByRole('button', { name: '添加外部来源', exact: true }).click(); await dialog.getByRole('combobox', { name: '订阅输入方式', exact: true }).selectOption('inline')
     assert.equal(await dialog.locator('[name=source_content]').inputValue(), ''); assert.equal(await dialog.locator('[name=source_file]').evaluate(element => element.files.length), 0)
     await dialog.getByRole('button', { name: '取消', exact: true }).click()
     assert.equal(await page.evaluate(() => Object.keys(localStorage).some(key => /source|subscription/i.test(key))), false)

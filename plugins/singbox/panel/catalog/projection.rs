@@ -15,32 +15,23 @@ pub async fn list(
 }
 
 pub(crate) async fn catalog_on(tx: &mut Transaction<'_, Postgres>) -> ApiResult<Vec<Value>> {
-    let mut resources = super::super::mixed_paths::resources::resources_on(tx).await?;
+    let mut resources = direct_nodes_on(tx).await?;
     // Private values contribute to concurrency tokens, never to the public projection.
     let nodes: Vec<(i64, Value)> =
         sqlx::query_as("SELECT n.id,to_jsonb(n) FROM nodes n WHERE n.deleted_at IS NULL")
             .fetch_all(&mut **tx)
             .await?;
     let nodes: BTreeMap<_, _> = nodes.into_iter().collect();
-    let chains: Vec<(i64, Value)> = sqlx::query_as("SELECT c.id,jsonb_build_object('name',c.name,'entry_node_id',c.entry_node_id,'active_generation',c.active_generation,'pending_generation',c.pending_generation,'minimum_generation',c.minimum_generation) FROM singbox_live_chains c")
-        .fetch_all(&mut **tx).await?;
-    let chains: BTreeMap<_, _> = chains.into_iter().collect();
     let mut inputs = BTreeMap::new();
     for resource in &resources {
         let id = resource["id"].as_i64().expect("resource id");
-        let kind = resource["kind"].as_str().expect("resource kind");
-        let node = resource["entry_node_id"].as_i64().unwrap_or(id);
         inputs.insert(
-            (kind.to_owned(), id),
-            json!([
-                nodes.get(&node),
-                chains.get(&id).filter(|_| kind == "chain")
-            ]),
+            ("direct".to_owned(), id),
+            json!([nodes.get(&id), Value::Null]),
         );
     }
-    // External nodes come from numbered sources until the source migration and
-    // from ordered sources after it; ids are the public numeric ids either way.
-    let external = sqlx::query("SELECT e.id,e.source_id,e.identity_epoch,e.name,e.present,e.identity_unique,e.current_version_id,e.source_name,e.source_epoch,e.source_archived AS archived,e.source_deleted_at AS source_deleted,e.source_settings_revision AS settings_revision,(SELECT COUNT(DISTINCT h.chain_id) FROM singbox_chain_hops h JOIN singbox_live_chains c ON c.id=h.chain_id WHERE h.external_node_id=e.id)+(SELECT COUNT(DISTINCT h.chain_id) FROM singbox_ordered_chain_hops h JOIN singbox_ordered_external_nodes o ON o.id=h.external_node_id JOIN singbox_chains c ON c.id=h.chain_id WHERE o.public_id=e.id AND c.path_kind='ordered' AND c.phase<>'retired' AND h.generation IN (c.applied_generation,c.candidate_generation,c.recovery_generation,c.desired_generation)) AS reference_count FROM singbox_external_node_states e WHERE e.adopted ORDER BY e.id")
+    // External nodes are listed by their public numeric ids.
+    let external = sqlx::query("SELECT e.id,e.source_id,e.identity_epoch,e.name,e.present,e.identity_unique,e.current_version_id,e.source_name,e.source_epoch,e.source_archived AS archived,e.source_deleted_at AS source_deleted,e.source_settings_revision AS settings_revision,(SELECT COUNT(DISTINCT h.chain_id) FROM singbox_ordered_chain_hops h JOIN singbox_ordered_external_nodes o ON o.id=h.external_node_id JOIN singbox_chains c ON c.id=h.chain_id WHERE o.public_id=e.id AND c.path_kind='ordered' AND c.phase<>'retired' AND h.generation IN (c.applied_generation,c.candidate_generation,c.recovery_generation,c.desired_generation)) AS reference_count FROM singbox_external_node_states e WHERE e.adopted ORDER BY e.id")
         .fetch_all(&mut **tx).await?;
     let versions = super::super::external_access::model::versions(
         tx,
@@ -81,9 +72,8 @@ pub(crate) async fn catalog_on(tx: &mut Transaction<'_, Postgres>) -> ApiResult<
         let resource = json!({"kind":"external","id":id,"name":row.get::<String,_>("name"),
             "server_id":null,"server_name":null,"protocol":outbound.as_ref().map(|v|v.protocol()),
             "public_host":outbound.as_ref().map(|v|v.server()),"port":outbound.as_ref().map(|v|v.port()),
-            "enabled":true,"available":available,"entry_eligible":false,"role":"external","entry_node_id":null,
+            "enabled":true,"available":available,"role":"external","entry_node_id":null,
             "tcp":capabilities.as_ref().is_some_and(|v|v.tcp),"udp":capabilities.as_ref().is_some_and(|v|v.udp),
-            "legacy":false,"active_generation":null,"pending_generation":null,"minimum_generation":0,
             "stage":"external","last_error":reason,"reference_count":row.get::<i64,_>("reference_count"),
             "source_id":row.get::<i64,_>("source_id"),"source_name":row.get::<String,_>("source_name"),
             "version_id":row.get::<Option<i64>,_>("current_version_id"),"identity_epoch":row.get::<i64,_>("identity_epoch"),
@@ -154,4 +144,26 @@ pub(crate) async fn catalog_on(tx: &mut Transaction<'_, Postgres>) -> ApiResult<
         )
     });
     Ok(resources)
+}
+
+/// Managed nodes that are not a chain's dedicated entry. A node a chain still owns as a managed
+/// hop (selected versions, or every saved version while one is missing) is listed with that role.
+async fn direct_nodes_on(tx: &mut Transaction<'_, Postgres>) -> ApiResult<Vec<Value>> {
+    let rows = sqlx::query("SELECT n.id,n.name,n.server_id,s.name AS server_name,n.protocol,n.public_host,n.port,n.enabled,(SELECT COUNT(DISTINCT h.chain_id) FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE h.managed_node_id=n.id AND (c.deleted_at IS NULL OR c.phase<>'retired') AND (h.generation=ANY(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) OR EXISTS(SELECT 1 FROM unnest(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) AS selected(generation) WHERE selected.generation IS NOT NULL AND NOT EXISTS(SELECT 1 FROM singbox_ordered_chain_versions v WHERE v.chain_id=c.id AND v.generation=selected.generation)))) AS reference_count FROM nodes n JOIN servers s ON s.id=n.server_id WHERE n.deleted_at IS NULL AND s.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM singbox_chains c WHERE c.entry_node_id=n.id AND (c.deleted_at IS NULL OR c.phase<>'retired')) ORDER BY n.id")
+        .fetch_all(&mut **tx)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|n| {
+            let count: i64 = n.get("reference_count");
+            let protocol: String = n.get("protocol");
+            let server: i64 = n.get("server_id");
+            json!({"kind":"direct","id":n.get::<i64,_>("id"),"name":n.get::<String,_>("name"),"server_id":server,
+                "managed_server_ids":[server],"managed_middle_server_ids":[],"managed_exit_server_ids":[],
+                "server_name":n.get::<String,_>("server_name"),"protocol":protocol,"public_host":n.get::<String,_>("public_host"),
+                "port":n.get::<i32,_>("port"),"enabled":n.get::<bool,_>("enabled"),"available":n.get::<bool,_>("enabled"),
+                "role":if count>0 {"managed_hop"} else {"direct"},"entry_node_id":null,"tcp":true,"udp":protocol!="naive",
+                "stage":"direct","last_error":null,"reference_count":count})
+        })
+        .collect())
 }

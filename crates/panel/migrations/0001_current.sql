@@ -25,7 +25,6 @@ CREATE FUNCTION public.singbox_check_external_metadata() RETURNS trigger
     AS $$
 BEGIN
     IF NEW.kind <> 'external'
-        OR EXISTS(SELECT 1 FROM singbox_external_nodes WHERE id=NEW.id)
         OR EXISTS(SELECT 1 FROM singbox_ordered_external_nodes WHERE public_id=NEW.id) THEN
         RETURN NEW;
     END IF;
@@ -37,9 +36,6 @@ CREATE FUNCTION public.singbox_check_policy_external() RETURNS trigger
     AS $$
 BEGIN
     IF EXISTS(
-        SELECT 1 FROM singbox_external_node_versions v
-        WHERE v.id=NEW.node_version_id AND v.external_node_id=NEW.external_node_id
-    ) OR EXISTS(
         SELECT 1 FROM singbox_ordered_external_nodes n
         JOIN singbox_ordered_external_node_versions v ON v.node_id=n.id
         WHERE n.public_id=NEW.external_node_id AND v.public_id=NEW.node_version_id
@@ -84,11 +80,9 @@ CREATE FUNCTION public.singbox_eligible_accesses(at_s bigint) RETURNS TABLE(user
     JOIN singbox_desired_accesses d USING(user_id,node_id)
     JOIN singbox_entitlements(at_s) e ON e.user_id=a.user_id AND e.allowed
     JOIN nodes n ON n.id=a.node_id AND n.enabled
-    WHERE NOT EXISTS(SELECT 1 FROM singbox_chains c WHERE c.entry_node_id=n.id AND c.deleted_at IS NULL AND (
-        (c.path_kind='legacy' AND EXISTS(SELECT 1 FROM nodes x WHERE x.id=c.exit_node_id AND NOT x.enabled))
-        OR (c.path_kind='ordered' AND EXISTS(SELECT 1 FROM singbox_ordered_chain_hops h JOIN nodes x ON x.id=h.managed_node_id
-            WHERE h.chain_id=c.id AND h.generation=ANY(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) AND NOT x.enabled))
-    ));
+    WHERE NOT EXISTS(SELECT 1 FROM singbox_chains c WHERE c.entry_node_id=n.id AND c.deleted_at IS NULL
+        AND EXISTS(SELECT 1 FROM singbox_ordered_chain_hops h JOIN nodes x ON x.id=h.managed_node_id
+            WHERE h.chain_id=c.id AND h.generation=ANY(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) AND NOT x.enabled));
 $$;
 
 CREATE FUNCTION public.singbox_entitlements(at_s bigint) RETURNS TABLE(user_id bigint, package_group_id bigint, package_name text, monthly_bytes text, reset_day integer, reset_hour integer, reset_minute integer, timezone text, starts_at bigint, expires_at bigint, cycle_start bigint, next_reset bigint, used_bytes text, status text, allowed boolean)
@@ -112,14 +106,6 @@ CREATE FUNCTION public.singbox_entitlements(at_s bigint) RETURNS TABLE(user_id b
         WHERE u.deleted_at IS NULL
     )
     SELECT id,package_group_id,package_name,monthly_bytes::TEXT,reset_day,reset_hour,reset_minute,timezone,starts_at,NULLIF(expires_at,253402300799),cycle_start,next_reset,used::TEXT,status,status IN('unmetered','active') FROM evaluated;
-$$;
-
-CREATE FUNCTION public.singbox_immutable_source_version() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RAISE EXCEPTION 'subscription versions are immutable';
-END;
 $$;
 
 CREATE FUNCTION public.singbox_legacy_policy_group(legacy bigint) RETURNS bigint
@@ -359,69 +345,6 @@ BEGIN
 END;
 $_$;
 
-CREATE FUNCTION public.singbox_path_ready(chain bigint) RETURNS boolean
-    LANGUAGE sql STABLE
-    AS $$
-    SELECT EXISTS(SELECT 1 FROM singbox_live_chains c JOIN nodes n ON n.id=c.entry_node_id
-        WHERE c.id=chain AND c.path_kind='mixed' AND singbox_path_resources_available(c.id)
-        AND c.active_generation IS NOT NULL AND c.minimum_generation>=c.active_generation
-        AND NOT EXISTS(
-            SELECT 1 FROM (SELECT n.server_id AS server_id,'active'::text AS role
-                UNION SELECT h.managed_server_id,'dependency' FROM singbox_chain_hops h
-                WHERE h.chain_id=c.id AND h.generation=c.active_generation AND h.managed_server_id IS NOT NULL) required
-            WHERE NOT EXISTS(SELECT 1 FROM server_module_status m JOIN servers s ON s.id=m.server_id
-                JOIN singbox_path_deployments d ON d.server_id=m.server_id AND d.rev=m.applied_rev
-                JOIN deployments b ON b.server_id=d.server_id AND b.module='singbox' AND b.rev=d.rev AND b.bundle_sha256=d.bundle_sha256
-                WHERE m.server_id=required.server_id AND m.module='singbox' AND m.healthy AND m.applied_rev=m.target_rev
-                AND s.dirty_at IS NULL AND s.deleted_at IS NULL AND d.chain_id=c.id
-                AND d.generation=c.active_generation AND d.role=required.role)));
-$$;
-
-CREATE FUNCTION public.singbox_path_resources_available(chain bigint) RETURNS boolean
-    LANGUAGE sql STABLE
-    AS $$
-    SELECT EXISTS(SELECT 1 FROM singbox_live_chains c JOIN nodes n ON n.id=c.entry_node_id
-        JOIN servers s ON s.id=n.server_id
-        WHERE c.id=chain AND n.deleted_at IS NULL AND n.enabled AND n.protocol='vless-reality' AND s.deleted_at IS NULL
-        AND ((c.path_kind='legacy' AND EXISTS(SELECT 1 FROM nodes e JOIN servers es ON es.id=e.server_id WHERE e.id=c.exit_node_id AND e.enabled AND e.deleted_at IS NULL AND e.protocol='vless-reality' AND es.deleted_at IS NULL))
-          OR (c.path_kind='mixed' AND COALESCE(c.active_generation,c.pending_generation) IS NOT NULL))
-        AND NOT EXISTS(SELECT 1 FROM singbox_chain_hops h
-            LEFT JOIN nodes m ON m.id=h.managed_node_id LEFT JOIN servers ms ON ms.id=h.managed_server_id
-            WHERE h.chain_id=c.id AND h.generation=COALESCE(c.active_generation,c.pending_generation)
-            AND h.kind='managed' AND (m.deleted_at IS NOT NULL OR NOT m.enabled OR m.protocol<>'vless-reality' OR ms.deleted_at IS NOT NULL)));
-$$;
-
-CREATE FUNCTION public.singbox_preserve_path_hop() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN RAISE EXCEPTION 'path hop contents are immutable'; END;
-$$;
-
-CREATE FUNCTION public.singbox_preserve_path_version() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    IF TG_OP='DELETE' OR NEW.chain_id<>OLD.chain_id OR NEW.generation<>OLD.generation
-        OR NEW.path_json IS DISTINCT FROM OLD.path_json OR NEW.semantic_hash<>OLD.semantic_hash
-        OR NEW.networks IS DISTINCT FROM OLD.networks OR NEW.legacy<>OLD.legacy
-        OR NEW.previous_generation IS DISTINCT FROM OLD.previous_generation OR NEW.created_at<>OLD.created_at THEN
-        RAISE EXCEPTION 'path version contents are immutable';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-CREATE FUNCTION public.singbox_reject_numbered_source_write() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    IF singbox_sources_migrated() THEN
-        RAISE EXCEPTION 'numbered subscription sources are read-only after the source migration'
-            USING ERRCODE='55000';
-    END IF;
-    RETURN COALESCE(NEW, OLD);
-END $$;
-
 CREATE FUNCTION public.singbox_reject_path_snapshot_change() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -436,12 +359,6 @@ CREATE FUNCTION public.singbox_reject_subscription_snapshot_change() RETURNS tri
 BEGIN
     RAISE EXCEPTION 'immutable subscription snapshot' USING ERRCODE='55000';
 END;
-$$;
-
-CREATE FUNCTION public.singbox_sources_migrated() RETURNS boolean
-    LANGUAGE sql STABLE
-    AS $$
-    SELECT migrated_at IS NOT NULL FROM singbox_source_migration
 $$;
 
 CREATE FUNCTION public.singbox_usage_daily_apply() RETURNS trigger
@@ -2374,32 +2291,6 @@ CREATE TABLE public.singbox_account_limits (
     attempts integer NOT NULL
 );
 
-CREATE TABLE public.singbox_chain_creation_requests (
-    request_id uuid NOT NULL,
-    request_hash text NOT NULL,
-    receipt jsonb NOT NULL,
-    created_at bigint NOT NULL
-);
-
-CREATE TABLE public.singbox_chain_hops (
-    chain_id bigint NOT NULL,
-    generation bigint NOT NULL,
-    "position" integer NOT NULL,
-    kind text NOT NULL,
-    managed_node_id bigint,
-    managed_server_id bigint,
-    endpoint_json jsonb,
-    relay_uuid uuid,
-    source_id bigint,
-    external_node_id bigint,
-    external_version_id bigint,
-    update_mode text,
-    CONSTRAINT singbox_chain_hops_check CHECK ((((kind = 'managed'::text) AND (managed_node_id IS NOT NULL) AND (managed_server_id IS NOT NULL) AND (endpoint_json IS NOT NULL) AND (relay_uuid IS NOT NULL) AND (source_id IS NULL) AND (external_node_id IS NULL) AND (external_version_id IS NULL) AND (update_mode IS NULL)) OR ((kind = 'subscription'::text) AND (managed_node_id IS NULL) AND (managed_server_id IS NULL) AND (endpoint_json IS NULL) AND (relay_uuid IS NULL) AND (source_id IS NOT NULL) AND (external_node_id IS NOT NULL) AND (external_version_id IS NOT NULL) AND (update_mode IS NOT NULL)))),
-    CONSTRAINT singbox_chain_hops_kind_check CHECK ((kind = ANY (ARRAY['managed'::text, 'subscription'::text]))),
-    CONSTRAINT singbox_chain_hops_position_check CHECK ((("position" >= 0) AND ("position" <= 7))),
-    CONSTRAINT singbox_chain_hops_update_mode_check CHECK ((update_mode = ANY (ARRAY['follow_node'::text, 'pinned'::text])))
-);
-
 CREATE TABLE public.singbox_chain_runtime_requirements (
     chain_id bigint NOT NULL,
     generation bigint NOT NULL,
@@ -2416,32 +2307,11 @@ CREATE TABLE public.singbox_chain_state (
     available boolean NOT NULL
 );
 
-CREATE TABLE public.singbox_chain_versions (
-    chain_id bigint NOT NULL,
-    generation bigint NOT NULL,
-    previous_generation bigint,
-    legacy boolean DEFAULT false NOT NULL,
-    path_json jsonb NOT NULL,
-    semantic_hash text NOT NULL,
-    networks jsonb NOT NULL,
-    stage text NOT NULL,
-    failure_stage text,
-    last_error text,
-    created_at bigint NOT NULL,
-    updated_at bigint NOT NULL,
-    CONSTRAINT singbox_chain_versions_generation_check CHECK ((generation > 0)),
-    CONSTRAINT singbox_chain_versions_stage_check CHECK ((stage = ANY (ARRAY['waiting_dependencies'::text, 'preparing_entry'::text, 'checking_candidate'::text, 'switching_entry'::text, 'checking_active'::text, 'establishing_barrier'::text, 'retiring_old'::text, 'rolling_back'::text, 'active'::text, 'failed'::text, 'retired'::text])))
-);
-
 CREATE TABLE public.singbox_chains (
     id bigint NOT NULL,
     name text NOT NULL,
     entry_node_id bigint NOT NULL,
-    exit_node_id bigint,
-    relay_uuid uuid,
-    path_kind text DEFAULT 'legacy'::text NOT NULL,
-    active_generation bigint,
-    pending_generation bigint,
+    path_kind text DEFAULT 'ordered'::text NOT NULL,
     minimum_generation bigint DEFAULT 0 NOT NULL,
     deleted_at bigint,
     settings_revision bigint DEFAULT 1 NOT NULL,
@@ -2449,16 +2319,14 @@ CREATE TABLE public.singbox_chains (
     applied_generation bigint,
     candidate_generation bigint,
     recovery_generation bigint,
-    phase text DEFAULT 'legacy'::text NOT NULL,
+    phase text DEFAULT 'preparing_dependencies'::text NOT NULL,
     last_error text,
     route_enabled boolean DEFAULT true NOT NULL,
     last_granted boolean DEFAULT false NOT NULL,
     restore_step text,
-    CONSTRAINT singbox_chain_projection_kind CHECK ((((path_kind = 'legacy'::text) AND (exit_node_id IS NOT NULL) AND (relay_uuid IS NOT NULL)) OR ((path_kind = ANY (ARRAY['mixed'::text, 'ordered'::text])) AND (exit_node_id IS NULL) AND (relay_uuid IS NULL)))),
-    CONSTRAINT singbox_chains_check CHECK ((entry_node_id <> exit_node_id)),
     CONSTRAINT singbox_chains_desired_generation_check CHECK ((desired_generation > 0)),
-    CONSTRAINT singbox_chains_path_kind_check CHECK ((path_kind = ANY (ARRAY['legacy'::text, 'mixed'::text, 'ordered'::text]))),
-    CONSTRAINT singbox_chains_phase_check CHECK ((phase = ANY (ARRAY['legacy'::text, 'preparing_dependencies'::text, 'preparing_entry'::text, 'probing_candidate'::text, 'switching_entry'::text, 'probing_switched'::text, 'fixing_barrier'::text, 'retiring_old'::text, 'applied'::text, 'restoring'::text, 'failed'::text, 'retiring'::text, 'retired'::text]))),
+    CONSTRAINT singbox_chains_path_kind_check CHECK ((path_kind = 'ordered'::text)),
+    CONSTRAINT singbox_chains_phase_check CHECK ((phase = ANY (ARRAY['preparing_dependencies'::text, 'preparing_entry'::text, 'probing_candidate'::text, 'switching_entry'::text, 'probing_switched'::text, 'fixing_barrier'::text, 'retiring_old'::text, 'applied'::text, 'restoring'::text, 'failed'::text, 'retiring'::text, 'retired'::text]))),
     CONSTRAINT singbox_chains_restore_step_check CHECK ((restore_step = ANY (ARRAY['entry'::text, 'probe'::text, 'barrier'::text, 'cleanup'::text]))),
     CONSTRAINT singbox_chains_settings_revision_check CHECK ((settings_revision > 0)),
     CONSTRAINT singbox_ordered_minimum_generation_check CHECK ((minimum_generation >= 0))
@@ -2671,7 +2539,6 @@ CREATE TABLE public.singbox_ordered_chain_hops (
 CREATE TABLE public.singbox_ordered_chain_versions (
     chain_id bigint NOT NULL,
     generation bigint NOT NULL,
-    legacy boolean DEFAULT false NOT NULL,
     entry_endpoint_version uuid NOT NULL,
     semantic_sha256 text NOT NULL,
     capabilities jsonb NOT NULL,
@@ -2730,66 +2597,32 @@ CREATE VIEW public.singbox_desired_accesses AS
      JOIN public.nodes n ON (((n.id = granted.node_id) AND (n.deleted_at IS NULL))))
      JOIN public.servers s ON (((s.id = n.server_id) AND (s.deleted_at IS NULL))))
      LEFT JOIN public.singbox_chains c ON (((c.entry_node_id = n.id) AND ((c.deleted_at IS NULL) OR ((c.path_kind = 'ordered'::text) AND (c.phase <> 'retired'::text))))))
-  WHERE ((c.id IS NULL) OR ((c.deleted_at IS NULL) AND (n.protocol = 'vless-reality'::text) AND (((c.path_kind = 'legacy'::text) AND (EXISTS ( SELECT 1
-           FROM (public.nodes e
-             JOIN public.servers es ON ((es.id = e.server_id)))
-          WHERE ((e.id = c.exit_node_id) AND (e.protocol = 'vless-reality'::text) AND (e.deleted_at IS NULL) AND (es.deleted_at IS NULL))))) OR ((c.path_kind = 'mixed'::text) AND public.singbox_path_resources_available(c.id)) OR ((c.path_kind = 'ordered'::text) AND (EXISTS ( SELECT 1
+  WHERE ((c.id IS NULL) OR ((c.deleted_at IS NULL) AND (n.protocol = 'vless-reality'::text) AND (EXISTS ( SELECT 1
            FROM public.singbox_ordered_chain_versions v
           WHERE ((v.chain_id = c.id) AND (v.generation = c.desired_generation)))) AND (NOT (EXISTS ( SELECT 1
            FROM ((public.singbox_ordered_chain_hops h
              LEFT JOIN public.nodes e ON ((e.id = h.managed_node_id)))
              LEFT JOIN public.servers es ON ((es.id = h.managed_server_id)))
-          WHERE ((h.chain_id = c.id) AND (h.generation = c.desired_generation) AND (h.kind = 'managed'::text) AND ((e.id IS NULL) OR (es.id IS NULL) OR (e.deleted_at IS NOT NULL) OR (es.deleted_at IS NOT NULL) OR (NOT e.enabled))))))))));
+          WHERE ((h.chain_id = c.id) AND (h.generation = c.desired_generation) AND (h.kind = 'managed'::text) AND ((e.id IS NULL) OR (es.id IS NULL) OR (e.deleted_at IS NOT NULL) OR (es.deleted_at IS NOT NULL) OR (NOT e.enabled))))))));
 
 CREATE TABLE public.singbox_entitlement_state (
     user_id bigint NOT NULL,
     allowed boolean NOT NULL
 );
 
-CREATE TABLE public.singbox_external_node_versions (
-    id bigint NOT NULL,
-    external_node_id bigint NOT NULL,
-    source_id bigint NOT NULL,
-    source_revision_id bigint NOT NULL,
-    identity_epoch bigint NOT NULL,
-    parser_version text NOT NULL,
-    name text NOT NULL,
-    config_json jsonb NOT NULL,
-    config_sha256 text NOT NULL,
-    capabilities_json jsonb NOT NULL,
-    created_at bigint NOT NULL
-);
-
-CREATE SEQUENCE public.singbox_external_node_versions_id_seq
+CREATE SEQUENCE public.singbox_ordered_external_node_versions_public_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
     NO MAXVALUE
     CACHE 1;
 
-ALTER SEQUENCE public.singbox_external_node_versions_id_seq OWNED BY public.singbox_external_node_versions.id;
-
-CREATE TABLE public.singbox_external_nodes (
-    id bigint NOT NULL,
-    source_id bigint NOT NULL,
-    identity_epoch bigint NOT NULL,
-    identity_key text NOT NULL,
-    name text NOT NULL,
-    present boolean DEFAULT true NOT NULL,
-    identity_unique boolean DEFAULT true NOT NULL,
-    current_version_id bigint,
-    last_seen_revision_id bigint,
-    adopted boolean DEFAULT false NOT NULL
-);
-
-CREATE SEQUENCE public.singbox_external_nodes_id_seq
+CREATE SEQUENCE public.singbox_ordered_external_nodes_public_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
     NO MAXVALUE
     CACHE 1;
-
-ALTER SEQUENCE public.singbox_external_nodes_id_seq OWNED BY public.singbox_external_nodes.id;
 
 CREATE TABLE public.singbox_ordered_external_node_versions (
     id uuid NOT NULL,
@@ -2801,7 +2634,7 @@ CREATE TABLE public.singbox_ordered_external_node_versions (
     capabilities jsonb NOT NULL,
     supported boolean NOT NULL,
     reasons jsonb NOT NULL,
-    public_id bigint DEFAULT nextval('public.singbox_external_node_versions_id_seq'::regclass) NOT NULL,
+    public_id bigint DEFAULT nextval('public.singbox_ordered_external_node_versions_public_id_seq'::regclass) NOT NULL,
     legacy_config jsonb,
     legacy_config_sha256 text,
     CONSTRAINT singbox_ordered_external_node_versio_legacy_config_sha256_check CHECK ((legacy_config_sha256 ~ '^[0-9a-f]{64}$'::text)),
@@ -2824,11 +2657,15 @@ CREATE TABLE public.singbox_ordered_external_nodes (
     last_seen_revision uuid,
     created_at bigint NOT NULL,
     adopted boolean DEFAULT false NOT NULL,
-    public_id bigint DEFAULT nextval('public.singbox_external_nodes_id_seq'::regclass) NOT NULL,
+    public_id bigint DEFAULT nextval('public.singbox_ordered_external_nodes_public_id_seq'::regclass) NOT NULL,
     CONSTRAINT singbox_ordered_external_nodes_check CHECK (((identity_state = 'unique'::text) = (identity_key IS NOT NULL))),
     CONSTRAINT singbox_ordered_external_nodes_identity_epoch_check CHECK ((identity_epoch > 0)),
     CONSTRAINT singbox_ordered_external_nodes_identity_state_check CHECK ((identity_state = ANY (ARRAY['unique'::text, 'ambiguous'::text, 'unresolved'::text])))
 );
+
+ALTER SEQUENCE public.singbox_ordered_external_node_versions_public_id_seq OWNED BY public.singbox_ordered_external_node_versions.public_id;
+
+ALTER SEQUENCE public.singbox_ordered_external_nodes_public_id_seq OWNED BY public.singbox_ordered_external_nodes.public_id;
 
 CREATE TABLE public.singbox_ordered_subscription_sources (
     id bigint NOT NULL,
@@ -2899,63 +2736,7 @@ CREATE TABLE public.singbox_subscription_source_revisions (
     CONSTRAINT singbox_subscription_source_revisions_warnings_check CHECK ((jsonb_typeof(warnings) = 'array'::text))
 );
 
-CREATE TABLE public.singbox_subscription_sources (
-    id bigint NOT NULL,
-    name text NOT NULL,
-    kind text NOT NULL,
-    secret_url text,
-    secret_authorization text,
-    secret_content text,
-    source_host text,
-    settings_revision bigint DEFAULT 1 NOT NULL,
-    identity_epoch bigint DEFAULT 1 NOT NULL,
-    refresh_interval_seconds bigint DEFAULT 86400 NOT NULL,
-    archived boolean DEFAULT false NOT NULL,
-    deleted_at bigint,
-    current_revision_id bigint,
-    last_attempt_at bigint,
-    last_success_at bigint,
-    next_refresh_at bigint,
-    last_error text,
-    etag text,
-    last_modified text,
-    cache_settings_revision bigint,
-    cache_identity_epoch bigint,
-    created_at bigint NOT NULL,
-    auto_refresh boolean DEFAULT true NOT NULL,
-    user_agent text DEFAULT 'Apsp-subscription-import/1'::text NOT NULL,
-    traffic jsonb DEFAULT '{}'::jsonb NOT NULL,
-    changes jsonb DEFAULT '{"added": 0, "missing": 0, "updated": 0, "unsupported": 0}'::jsonb NOT NULL,
-    CONSTRAINT singbox_subscription_sources_check CHECK ((((kind = 'url'::text) AND (secret_url IS NOT NULL) AND (secret_content IS NULL)) OR ((kind = 'inline'::text) AND (secret_url IS NULL) AND (secret_content IS NOT NULL)))),
-    CONSTRAINT singbox_subscription_sources_identity_epoch_check CHECK ((identity_epoch > 0)),
-    CONSTRAINT singbox_subscription_sources_kind_check CHECK ((kind = ANY (ARRAY['url'::text, 'inline'::text]))),
-    CONSTRAINT singbox_subscription_sources_refresh_interval_seconds_check CHECK (((refresh_interval_seconds >= 300) AND (refresh_interval_seconds <= 2592000))),
-    CONSTRAINT singbox_subscription_sources_secret_authorization_check CHECK (((secret_authorization IS NULL) OR (octet_length(secret_authorization) <= 8192))),
-    CONSTRAINT singbox_subscription_sources_secret_content_check CHECK (((secret_content IS NULL) OR (octet_length(secret_content) <= 2097152))),
-    CONSTRAINT singbox_subscription_sources_secret_url_check CHECK (((secret_url IS NULL) OR (octet_length(secret_url) <= 8192))),
-    CONSTRAINT singbox_subscription_sources_settings_revision_check CHECK ((settings_revision > 0)),
-    CONSTRAINT singbox_subscription_sources_user_agent_check CHECK (((octet_length(user_agent) >= 1) AND (octet_length(user_agent) <= 256)))
-);
-
 CREATE VIEW public.singbox_external_node_states AS
- SELECT n.id,
-    n.source_id,
-    n.identity_epoch,
-    n.current_version_id,
-    n.name,
-    n.adopted,
-    n.present,
-    n.identity_unique,
-    s.name AS source_name,
-    s.identity_epoch AS source_epoch,
-    s.archived AS source_archived,
-    s.deleted_at AS source_deleted_at,
-    s.last_error AS source_last_error,
-    s.settings_revision AS source_settings_revision
-   FROM (public.singbox_external_nodes n
-     JOIN public.singbox_subscription_sources s ON ((s.id = n.source_id)))
-  WHERE (NOT public.singbox_sources_migrated())
-UNION ALL
  SELECT n.public_id AS id,
     n.source_id,
     n.identity_epoch,
@@ -2977,23 +2758,9 @@ UNION ALL
    FROM (((public.singbox_ordered_external_nodes n
      JOIN public.singbox_ordered_subscription_sources s ON ((s.id = n.source_id)))
      LEFT JOIN public.singbox_ordered_external_node_versions v ON ((v.id = n.latest_version)))
-     LEFT JOIN public.singbox_subscription_revision_nodes m ON (((m.node_id = n.id) AND (m.source_revision_id = n.last_seen_revision))))
-  WHERE public.singbox_sources_migrated();
+     LEFT JOIN public.singbox_subscription_revision_nodes m ON (((m.node_id = n.id) AND (m.source_revision_id = n.last_seen_revision))));
 
 CREATE VIEW public.singbox_external_version_configs AS
- SELECT v.id,
-    v.external_node_id,
-    v.source_id,
-    v.identity_epoch,
-    v.parser_version,
-    false AS ordered,
-    v.config_json,
-    v.config_sha256,
-    NULL::jsonb AS normalized_config,
-    NULL::text AS content_digest
-   FROM public.singbox_external_node_versions v
-  WHERE (NOT public.singbox_sources_migrated())
-UNION ALL
  SELECT v.public_id AS id,
     n.public_id AS external_node_id,
     n.source_id,
@@ -3006,8 +2773,7 @@ UNION ALL
     v.content_digest
    FROM ((public.singbox_ordered_external_node_versions v
      JOIN public.singbox_ordered_external_nodes n ON ((n.id = v.node_id)))
-     JOIN public.singbox_subscription_source_revisions r ON ((r.id = v.source_revision_id)))
-  WHERE public.singbox_sources_migrated();
+     JOIN public.singbox_subscription_source_revisions r ON ((r.id = v.source_revision_id)));
 
 CREATE TABLE public.singbox_installation (
     server_id bigint NOT NULL,
@@ -3077,37 +2843,6 @@ CREATE TABLE public.singbox_invitations (
     CONSTRAINT singbox_invitations_origin_check CHECK ((origin = ANY (ARRAY['quota'::text, 'paid'::text]))),
     CONSTRAINT singbox_invitations_state_check CHECK ((state = ANY (ARRAY['available'::text, 'claimed'::text, 'revoked'::text])))
 );
-
-CREATE TABLE public.singbox_legacy_takeovers (
-    chain_id bigint NOT NULL,
-    exit_node_id bigint NOT NULL,
-    relay_uuid uuid NOT NULL,
-    taken_over_at bigint NOT NULL
-);
-
-CREATE VIEW public.singbox_live_chains AS
- SELECT id,
-    name,
-    entry_node_id,
-    exit_node_id,
-    relay_uuid,
-    path_kind,
-    active_generation,
-    pending_generation,
-    minimum_generation,
-    deleted_at,
-    settings_revision,
-    desired_generation,
-    applied_generation,
-    candidate_generation,
-    recovery_generation,
-    phase,
-    last_error,
-    route_enabled,
-    last_granted,
-    restore_step
-   FROM public.singbox_chains
-  WHERE ((deleted_at IS NULL) AND (path_kind = ANY (ARRAY['legacy'::text, 'mixed'::text])));
 
 CREATE TABLE public.singbox_mail_settings (
     singleton boolean DEFAULT true NOT NULL,
@@ -3200,20 +2935,6 @@ CREATE TABLE public.singbox_members (
     legacy_login_email text,
     CONSTRAINT singbox_members_check CHECK (((inviter_id IS NULL) OR (inviter_id <> user_id))),
     CONSTRAINT singbox_members_state_check CHECK ((state = ANY (ARRAY['active'::text, 'pending'::text, 'suspended'::text, 'archived'::text, 'staged'::text])))
-);
-
-CREATE TABLE public.singbox_mixed_conversions (
-    chain_id bigint NOT NULL,
-    mixed_generation bigint NOT NULL,
-    ordered_generation bigint NOT NULL,
-    state text NOT NULL,
-    attempts integer DEFAULT 1 NOT NULL,
-    started_at bigint NOT NULL,
-    switched_at bigint,
-    finished_at bigint,
-    last_error text,
-    CONSTRAINT singbox_mixed_conversions_attempts_check CHECK ((attempts > 0)),
-    CONSTRAINT singbox_mixed_conversions_state_check CHECK ((state = ANY (ARRAY['preparing'::text, 'switched'::text, 'completed'::text, 'reverted'::text])))
 );
 
 CREATE TABLE public.singbox_nexus_bridge (
@@ -3546,12 +3267,6 @@ CREATE TABLE public.singbox_path_controller_secrets (
     CONSTRAINT singbox_path_controller_secrets_secret_check CHECK ((secret ~ '^[0-9a-f]{64}$'::text))
 );
 
-CREATE TABLE public.singbox_path_controls (
-    server_id bigint NOT NULL,
-    secret text NOT NULL,
-    test_url text NOT NULL
-);
-
 CREATE TABLE public.singbox_path_deployment_dependencies (
     server_id bigint NOT NULL,
     module text DEFAULT 'singbox'::text NOT NULL,
@@ -3563,16 +3278,6 @@ CREATE TABLE public.singbox_path_deployment_dependencies (
     route_active boolean NOT NULL,
     CONSTRAINT singbox_path_deployment_dependencies_hop_position_check CHECK (((hop_position >= 0) AND (hop_position <= 8))),
     CONSTRAINT singbox_path_deployment_dependencies_role_check CHECK ((role = ANY (ARRAY['entry'::text, 'managed'::text])))
-);
-
-CREATE TABLE public.singbox_path_deployments (
-    chain_id bigint NOT NULL,
-    generation bigint NOT NULL,
-    server_id bigint NOT NULL,
-    rev bigint NOT NULL,
-    bundle_sha256 text NOT NULL,
-    role text NOT NULL,
-    CONSTRAINT singbox_path_deployments_role_check CHECK ((role = ANY (ARRAY['dependency'::text, 'candidate'::text, 'active'::text, 'retired'::text])))
 );
 
 CREATE TABLE public.singbox_path_probes (
@@ -3862,15 +3567,6 @@ CREATE TABLE public.singbox_resource_mutation_requests (
     CONSTRAINT singbox_resource_mutation_requests_request_sha256_check CHECK ((request_sha256 ~ '^[0-9a-f]{64}$'::text))
 );
 
-CREATE TABLE public.singbox_retired_path_scopes (
-    server_id bigint NOT NULL,
-    scope text NOT NULL,
-    floor bigint NOT NULL,
-    chain_id bigint NOT NULL,
-    recorded_at bigint NOT NULL,
-    CONSTRAINT singbox_retired_path_scopes_floor_check CHECK ((floor > 0))
-);
-
 CREATE TABLE public.singbox_runtime_manifest_facts (
     server_id bigint NOT NULL,
     module text DEFAULT 'singbox'::text NOT NULL,
@@ -3916,87 +3612,6 @@ CREATE TABLE public.singbox_runtime_session_addresses (
     address text NOT NULL,
     observed_at bigint NOT NULL
 );
-
-CREATE TABLE public.singbox_source_id_map (
-    a_source_id bigint NOT NULL,
-    b_source_id bigint NOT NULL
-);
-
-CREATE TABLE public.singbox_source_jobs (
-    id uuid NOT NULL,
-    source_id bigint NOT NULL,
-    settings_revision bigint NOT NULL,
-    identity_epoch bigint NOT NULL,
-    parser_version text NOT NULL,
-    state text NOT NULL,
-    phase text NOT NULL,
-    error_code text,
-    result_revision_id bigint,
-    created_at bigint NOT NULL,
-    started_at bigint,
-    finished_at bigint,
-    lease_expires_at bigint,
-    CONSTRAINT singbox_source_jobs_state_check CHECK ((state = ANY (ARRAY['queued'::text, 'running'::text, 'succeeded'::text, 'failed'::text, 'cancelled'::text, 'superseded'::text])))
-);
-
-CREATE TABLE public.singbox_source_migration (
-    singleton boolean DEFAULT true NOT NULL,
-    migrated_at bigint,
-    report jsonb DEFAULT '{}'::jsonb NOT NULL,
-    CONSTRAINT singbox_source_migration_report_check CHECK ((jsonb_typeof(report) = 'object'::text)),
-    CONSTRAINT singbox_source_migration_singleton_check CHECK (singleton)
-);
-
-CREATE TABLE public.singbox_source_previews (
-    id uuid NOT NULL,
-    admin_id bigint NOT NULL,
-    kind text NOT NULL,
-    secret_url text,
-    secret_authorization text,
-    secret_body bytea NOT NULL,
-    user_agent text NOT NULL,
-    parser_version text NOT NULL,
-    traffic jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at bigint NOT NULL,
-    expires_at bigint NOT NULL,
-    CONSTRAINT singbox_source_previews_check CHECK (((expires_at > created_at) AND (expires_at <= (created_at + 600)))),
-    CONSTRAINT singbox_source_previews_check1 CHECK ((((kind = 'url'::text) AND (secret_url IS NOT NULL)) OR ((kind = 'inline'::text) AND (secret_url IS NULL)))),
-    CONSTRAINT singbox_source_previews_kind_check CHECK ((kind = ANY (ARRAY['url'::text, 'inline'::text]))),
-    CONSTRAINT singbox_source_previews_secret_authorization_check CHECK (((secret_authorization IS NULL) OR (octet_length(secret_authorization) <= 8192))),
-    CONSTRAINT singbox_source_previews_secret_body_check CHECK (((octet_length(secret_body) >= 1) AND (octet_length(secret_body) <= 2097152))),
-    CONSTRAINT singbox_source_previews_secret_url_check CHECK (((secret_url IS NULL) OR (octet_length(secret_url) <= 8192))),
-    CONSTRAINT singbox_source_previews_user_agent_check CHECK (((octet_length(user_agent) >= 1) AND (octet_length(user_agent) <= 256)))
-);
-
-CREATE TABLE public.singbox_source_revision_map (
-    a_revision_id bigint NOT NULL,
-    b_revision_id uuid NOT NULL
-);
-
-CREATE TABLE public.singbox_source_revisions (
-    id bigint NOT NULL,
-    source_id bigint NOT NULL,
-    settings_revision bigint NOT NULL,
-    identity_epoch bigint NOT NULL,
-    parser_version text NOT NULL,
-    body_sha256 text NOT NULL,
-    format text NOT NULL,
-    supported_count integer NOT NULL,
-    unsupported_count integer NOT NULL,
-    rejected_nodes jsonb DEFAULT '[]'::jsonb NOT NULL,
-    fetched_at bigint NOT NULL,
-    CONSTRAINT singbox_source_revisions_supported_count_check CHECK (((supported_count >= 0) AND (supported_count <= 5000))),
-    CONSTRAINT singbox_source_revisions_unsupported_count_check CHECK (((unsupported_count >= 0) AND (unsupported_count <= 5000)))
-);
-
-CREATE SEQUENCE public.singbox_source_revisions_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-ALTER SEQUENCE public.singbox_source_revisions_id_seq OWNED BY public.singbox_source_revisions.id;
 
 CREATE TABLE public.singbox_subscription_domain (
     singleton boolean DEFAULT true NOT NULL,
@@ -4073,15 +3688,6 @@ CREATE SEQUENCE public.singbox_subscription_source_revisions_generation_seq
     CACHE 1;
 
 ALTER SEQUENCE public.singbox_subscription_source_revisions_generation_seq OWNED BY public.singbox_subscription_source_revisions.generation;
-
-CREATE SEQUENCE public.singbox_subscription_sources_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-ALTER SEQUENCE public.singbox_subscription_sources_id_seq OWNED BY public.singbox_subscription_sources.id;
 
 CREATE TABLE public.singbox_usage_daily (
     user_id bigint NOT NULL,
@@ -4302,10 +3908,6 @@ ALTER TABLE ONLY public.singbox_commerce_offers ALTER COLUMN id SET DEFAULT next
 
 ALTER TABLE ONLY public.singbox_deployment_preflights ALTER COLUMN sequence SET DEFAULT nextval('public.singbox_deployment_preflights_sequence_seq'::regclass);
 
-ALTER TABLE ONLY public.singbox_external_node_versions ALTER COLUMN id SET DEFAULT nextval('public.singbox_external_node_versions_id_seq'::regclass);
-
-ALTER TABLE ONLY public.singbox_external_nodes ALTER COLUMN id SET DEFAULT nextval('public.singbox_external_nodes_id_seq'::regclass);
-
 ALTER TABLE ONLY public.singbox_invitation_quota_events ALTER COLUMN id SET DEFAULT nextval('public.singbox_invitation_quota_events_id_seq'::regclass);
 
 ALTER TABLE ONLY public.singbox_member_content ALTER COLUMN id SET DEFAULT nextval('public.singbox_member_content_id_seq'::regclass);
@@ -4338,11 +3940,7 @@ ALTER TABLE ONLY public.singbox_reachability_history ALTER COLUMN id SET DEFAULT
 
 ALTER TABLE ONLY public.singbox_reachability_targets ALTER COLUMN id SET DEFAULT nextval('public.singbox_reachability_targets_id_seq'::regclass);
 
-ALTER TABLE ONLY public.singbox_source_revisions ALTER COLUMN id SET DEFAULT nextval('public.singbox_source_revisions_id_seq'::regclass);
-
 ALTER TABLE ONLY public.singbox_subscription_source_revisions ALTER COLUMN generation SET DEFAULT nextval('public.singbox_subscription_source_revisions_generation_seq'::regclass);
-
-ALTER TABLE ONLY public.singbox_subscription_sources ALTER COLUMN id SET DEFAULT nextval('public.singbox_subscription_sources_id_seq'::regclass);
 
 ALTER TABLE ONLY public.singbox_wallet_ledger ALTER COLUMN id SET DEFAULT nextval('public.singbox_wallet_ledger_id_seq'::regclass);
 
@@ -4827,26 +4425,14 @@ ALTER TABLE ONLY public.singbox_account_challenges
 ALTER TABLE ONLY public.singbox_account_limits
     ADD CONSTRAINT singbox_account_limits_pkey PRIMARY KEY (bucket);
 
-ALTER TABLE ONLY public.singbox_chain_creation_requests
-    ADD CONSTRAINT singbox_chain_creation_requests_pkey PRIMARY KEY (request_id);
-
-ALTER TABLE ONLY public.singbox_chain_hops
-    ADD CONSTRAINT singbox_chain_hops_pkey PRIMARY KEY (chain_id, generation, "position");
-
 ALTER TABLE ONLY public.singbox_chain_runtime_requirements
     ADD CONSTRAINT singbox_chain_runtime_requirements_pkey PRIMARY KEY (chain_id, generation, server_id);
 
 ALTER TABLE ONLY public.singbox_chain_state
     ADD CONSTRAINT singbox_chain_state_pkey PRIMARY KEY (chain_id);
 
-ALTER TABLE ONLY public.singbox_chain_versions
-    ADD CONSTRAINT singbox_chain_versions_pkey PRIMARY KEY (chain_id, generation);
-
 ALTER TABLE ONLY public.singbox_chains
     ADD CONSTRAINT singbox_chains_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.singbox_chains
-    ADD CONSTRAINT singbox_chains_relay_uuid_key UNIQUE (relay_uuid);
 
 ALTER TABLE ONLY public.singbox_client_templates
     ADD CONSTRAINT singbox_client_templates_pkey PRIMARY KEY (user_id);
@@ -4896,24 +4482,6 @@ ALTER TABLE ONLY public.singbox_deployment_public_projection
 ALTER TABLE ONLY public.singbox_entitlement_state
     ADD CONSTRAINT singbox_entitlement_state_pkey PRIMARY KEY (user_id);
 
-ALTER TABLE ONLY public.singbox_external_node_versions
-    ADD CONSTRAINT singbox_external_node_versions_id_external_node_id_key UNIQUE (id, external_node_id);
-
-ALTER TABLE ONLY public.singbox_external_node_versions
-    ADD CONSTRAINT singbox_external_node_versions_id_source_id_key UNIQUE (id, source_id);
-
-ALTER TABLE ONLY public.singbox_external_node_versions
-    ADD CONSTRAINT singbox_external_node_versions_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.singbox_external_nodes
-    ADD CONSTRAINT singbox_external_nodes_id_source_id_key UNIQUE (id, source_id);
-
-ALTER TABLE ONLY public.singbox_external_nodes
-    ADD CONSTRAINT singbox_external_nodes_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.singbox_external_nodes
-    ADD CONSTRAINT singbox_external_nodes_source_id_identity_epoch_identity_ke_key UNIQUE (source_id, identity_epoch, identity_key);
-
 ALTER TABLE ONLY public.singbox_installation
     ADD CONSTRAINT singbox_installation_pkey PRIMARY KEY (server_id);
 
@@ -4938,9 +4506,6 @@ ALTER TABLE ONLY public.singbox_invitations
 ALTER TABLE ONLY public.singbox_invitations
     ADD CONSTRAINT singbox_invitations_token_hash_key UNIQUE (token_hash);
 
-ALTER TABLE ONLY public.singbox_legacy_takeovers
-    ADD CONSTRAINT singbox_legacy_takeovers_pkey PRIMARY KEY (chain_id);
-
 ALTER TABLE ONLY public.singbox_mail_settings
     ADD CONSTRAINT singbox_mail_settings_pkey PRIMARY KEY (singleton);
 
@@ -4964,9 +4529,6 @@ ALTER TABLE ONLY public.singbox_members
 
 ALTER TABLE ONLY public.singbox_members
     ADD CONSTRAINT singbox_members_pkey PRIMARY KEY (user_id);
-
-ALTER TABLE ONLY public.singbox_mixed_conversions
-    ADD CONSTRAINT singbox_mixed_conversions_pkey PRIMARY KEY (chain_id);
 
 ALTER TABLE ONLY public.singbox_nexus_bridge
     ADD CONSTRAINT singbox_nexus_bridge_pkey PRIMARY KEY (singleton);
@@ -5082,14 +4644,8 @@ ALTER TABLE ONLY public.singbox_package_groups
 ALTER TABLE ONLY public.singbox_path_controller_secrets
     ADD CONSTRAINT singbox_path_controller_secrets_pkey PRIMARY KEY (server_id);
 
-ALTER TABLE ONLY public.singbox_path_controls
-    ADD CONSTRAINT singbox_path_controls_pkey PRIMARY KEY (server_id);
-
 ALTER TABLE ONLY public.singbox_path_deployment_dependencies
     ADD CONSTRAINT singbox_path_deployment_dependencies_pkey PRIMARY KEY (server_id, module, revision, chain_id, generation, hop_position);
-
-ALTER TABLE ONLY public.singbox_path_deployments
-    ADD CONSTRAINT singbox_path_deployments_pkey PRIMARY KEY (chain_id, generation, server_id, rev, role);
 
 ALTER TABLE ONLY public.singbox_path_probes
     ADD CONSTRAINT singbox_path_probes_chain_id_generation_stage_key UNIQUE (chain_id, generation, stage);
@@ -5175,9 +4731,6 @@ ALTER TABLE ONLY public.singbox_reachability_targets
 ALTER TABLE ONLY public.singbox_resource_mutation_requests
     ADD CONSTRAINT singbox_resource_mutation_requests_pkey PRIMARY KEY (request_id);
 
-ALTER TABLE ONLY public.singbox_retired_path_scopes
-    ADD CONSTRAINT singbox_retired_path_scopes_pkey PRIMARY KEY (server_id, scope);
-
 ALTER TABLE ONLY public.singbox_runtime_manifest_facts
     ADD CONSTRAINT singbox_runtime_manifest_facts_pkey PRIMARY KEY (server_id, module, revision);
 
@@ -5189,33 +4742,6 @@ ALTER TABLE ONLY public.singbox_runtime_rollouts
 
 ALTER TABLE ONLY public.singbox_runtime_session_addresses
     ADD CONSTRAINT singbox_runtime_session_addresses_pkey PRIMARY KEY (server_id, stat_name, address);
-
-ALTER TABLE ONLY public.singbox_source_id_map
-    ADD CONSTRAINT singbox_source_id_map_b_source_id_key UNIQUE (b_source_id);
-
-ALTER TABLE ONLY public.singbox_source_id_map
-    ADD CONSTRAINT singbox_source_id_map_pkey PRIMARY KEY (a_source_id);
-
-ALTER TABLE ONLY public.singbox_source_jobs
-    ADD CONSTRAINT singbox_source_jobs_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.singbox_source_migration
-    ADD CONSTRAINT singbox_source_migration_pkey PRIMARY KEY (singleton);
-
-ALTER TABLE ONLY public.singbox_source_previews
-    ADD CONSTRAINT singbox_source_previews_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.singbox_source_revision_map
-    ADD CONSTRAINT singbox_source_revision_map_b_revision_id_key UNIQUE (b_revision_id);
-
-ALTER TABLE ONLY public.singbox_source_revision_map
-    ADD CONSTRAINT singbox_source_revision_map_pkey PRIMARY KEY (a_revision_id);
-
-ALTER TABLE ONLY public.singbox_source_revisions
-    ADD CONSTRAINT singbox_source_revisions_id_source_id_key UNIQUE (id, source_id);
-
-ALTER TABLE ONLY public.singbox_source_revisions
-    ADD CONSTRAINT singbox_source_revisions_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.singbox_subscription_domain
     ADD CONSTRAINT singbox_subscription_domain_pkey PRIMARY KEY (singleton);
@@ -5252,9 +4778,6 @@ ALTER TABLE ONLY public.singbox_subscription_source_revisions
 
 ALTER TABLE ONLY public.singbox_subscription_source_revisions
     ADD CONSTRAINT singbox_subscription_source_revisions_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.singbox_subscription_sources
-    ADD CONSTRAINT singbox_subscription_sources_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.singbox_usage_daily
     ADD CONSTRAINT singbox_usage_daily_pkey PRIMARY KEY (user_id, day, node_id);
@@ -5477,10 +5000,6 @@ CREATE INDEX singbox_commerce_orders_member ON public.singbox_commerce_orders US
 
 CREATE INDEX singbox_deployment_preflights_latest ON public.singbox_deployment_preflights USING btree (server_id, sequence DESC);
 
-CREATE INDEX singbox_external_node_source ON public.singbox_external_nodes USING btree (source_id, identity_epoch);
-
-CREATE INDEX singbox_external_node_versions_node ON public.singbox_external_node_versions USING btree (external_node_id, id);
-
 CREATE UNIQUE INDEX singbox_external_nodes_identity_idx ON public.singbox_ordered_external_nodes USING btree (source_id, identity_epoch, identity_key) WHERE (identity_state = 'unique'::text);
 
 CREATE INDEX singbox_external_nodes_source_idx ON public.singbox_ordered_external_nodes USING btree (source_id, identity_epoch, id);
@@ -5509,10 +5028,6 @@ CREATE INDEX singbox_ordered_source_preview_expiry ON public.singbox_ordered_sou
 
 CREATE INDEX singbox_path_dependency_lookup ON public.singbox_path_deployment_dependencies USING btree (chain_id, generation, server_id);
 
-CREATE INDEX singbox_path_external_references ON public.singbox_chain_hops USING btree (external_version_id, chain_id);
-
-CREATE INDEX singbox_path_managed_references ON public.singbox_chain_hops USING btree (managed_node_id, chain_id);
-
 CREATE INDEX singbox_policy_external_node ON public.singbox_policy_external_nodes USING btree (external_node_id);
 
 CREATE INDEX singbox_portal_sessions_account ON public.singbox_portal_sessions USING btree (account_id);
@@ -5532,14 +5047,6 @@ CREATE INDEX singbox_reachability_history_target ON public.singbox_reachability_
 CREATE INDEX singbox_reachability_targets_seen ON public.singbox_reachability_targets USING btree (seen_at);
 
 CREATE INDEX singbox_runtime_session_addresses_user ON public.singbox_runtime_session_addresses USING btree (user_id, observed_at);
-
-CREATE INDEX singbox_source_jobs_queue ON public.singbox_source_jobs USING btree (created_at) WHERE (state = 'queued'::text);
-
-CREATE INDEX singbox_source_preview_expiry ON public.singbox_source_previews USING btree (expires_at);
-
-CREATE INDEX singbox_source_refresh_due ON public.singbox_subscription_sources USING btree (next_refresh_at) WHERE ((kind = 'url'::text) AND (NOT archived) AND (deleted_at IS NULL));
-
-CREATE UNIQUE INDEX singbox_source_single_job ON public.singbox_source_jobs USING btree (source_id) WHERE (state = ANY (ARRAY['queued'::text, 'running'::text]));
 
 CREATE INDEX singbox_subscription_source_jobs_due_idx ON public.singbox_subscription_source_jobs USING btree (status, created_at, id);
 
@@ -5577,10 +5084,6 @@ CREATE INDEX usage_records_period_idx ON public.usage_records USING btree (perio
 
 CREATE INDEX usage_records_user_period_idx ON public.usage_records USING btree (user_id, period_end);
 
-CREATE TRIGGER immutable_external_version BEFORE DELETE OR UPDATE ON public.singbox_external_node_versions FOR EACH ROW EXECUTE FUNCTION public.singbox_immutable_source_version();
-
-CREATE TRIGGER immutable_source_revision BEFORE DELETE OR UPDATE ON public.singbox_source_revisions FOR EACH ROW EXECUTE FUNCTION public.singbox_immutable_source_version();
-
 CREATE TRIGGER singbox_endpoint_snapshot_immutable BEFORE DELETE OR UPDATE ON public.singbox_managed_endpoint_versions FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_path_snapshot_change();
 
 CREATE TRIGGER singbox_external_metadata_reference BEFORE INSERT OR UPDATE ON public.singbox_node_metadata FOR EACH ROW EXECUTE FUNCTION public.singbox_check_external_metadata();
@@ -5591,29 +5094,13 @@ CREATE TRIGGER singbox_nexus_guard_access BEFORE INSERT OR DELETE OR UPDATE ON p
 
 CREATE TRIGGER singbox_nexus_guard_node BEFORE INSERT OR DELETE OR UPDATE ON public.nodes FOR EACH ROW EXECUTE FUNCTION public.singbox_nexus_guard_node();
 
-CREATE TRIGGER singbox_numbered_source_archive BEFORE INSERT OR DELETE OR UPDATE ON public.singbox_external_node_versions FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_numbered_source_write();
-
-CREATE TRIGGER singbox_numbered_source_archive BEFORE INSERT OR DELETE OR UPDATE ON public.singbox_external_nodes FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_numbered_source_write();
-
-CREATE TRIGGER singbox_numbered_source_archive BEFORE INSERT OR DELETE OR UPDATE ON public.singbox_source_jobs FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_numbered_source_write();
-
-CREATE TRIGGER singbox_numbered_source_archive BEFORE INSERT OR DELETE OR UPDATE ON public.singbox_source_previews FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_numbered_source_write();
-
-CREATE TRIGGER singbox_numbered_source_archive BEFORE INSERT OR DELETE OR UPDATE ON public.singbox_source_revisions FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_numbered_source_write();
-
-CREATE TRIGGER singbox_numbered_source_archive BEFORE INSERT OR DELETE OR UPDATE ON public.singbox_subscription_sources FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_numbered_source_write();
-
 CREATE TRIGGER singbox_ordered_path_hop_immutable BEFORE DELETE OR UPDATE ON public.singbox_ordered_chain_hops FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_path_snapshot_change();
 
 CREATE TRIGGER singbox_path_deployment_dependency_immutable BEFORE DELETE OR UPDATE ON public.singbox_path_deployment_dependencies FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_path_snapshot_change();
 
-CREATE TRIGGER singbox_path_hop_immutable BEFORE DELETE OR UPDATE ON public.singbox_chain_hops FOR EACH ROW EXECUTE FUNCTION public.singbox_preserve_path_hop();
-
 CREATE TRIGGER singbox_path_runtime_requirement_immutable BEFORE DELETE OR UPDATE ON public.singbox_chain_runtime_requirements FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_path_snapshot_change();
 
 CREATE TRIGGER singbox_path_snapshot_immutable BEFORE DELETE OR UPDATE ON public.singbox_ordered_chain_versions FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_path_snapshot_change();
-
-CREATE TRIGGER singbox_path_version_immutable BEFORE DELETE OR UPDATE ON public.singbox_chain_versions FOR EACH ROW EXECUTE FUNCTION public.singbox_preserve_path_version();
 
 CREATE TRIGGER singbox_policy_external_reference BEFORE INSERT OR UPDATE ON public.singbox_policy_external_nodes FOR EACH ROW EXECUTE FUNCTION public.singbox_check_policy_external();
 
@@ -5730,9 +5217,6 @@ ALTER TABLE ONLY public.expense_subscriptions
 
 ALTER TABLE ONLY public.expense_subscriptions
     ADD CONSTRAINT expense_subscriptions_replacement_id_fkey FOREIGN KEY (replacement_id) REFERENCES public.expense_subscriptions(id);
-
-ALTER TABLE ONLY public.singbox_external_nodes
-    ADD CONSTRAINT external_current_version FOREIGN KEY (current_version_id, id) REFERENCES public.singbox_external_node_versions(id, external_node_id);
 
 ALTER TABLE ONLY public.fleet_config_history
     ADD CONSTRAINT fleet_config_history_operation_id_fkey FOREIGN KEY (operation_id) REFERENCES public.fleet_operations(id);
@@ -6097,27 +5581,6 @@ ALTER TABLE ONLY public.sessions
 ALTER TABLE ONLY public.singbox_account_challenges
     ADD CONSTRAINT singbox_account_challenges_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
 
-ALTER TABLE ONLY public.singbox_chains
-    ADD CONSTRAINT singbox_active_generation_fk FOREIGN KEY (id, active_generation) REFERENCES public.singbox_chain_versions(chain_id, generation) DEFERRABLE INITIALLY DEFERRED;
-
-ALTER TABLE ONLY public.singbox_chain_hops
-    ADD CONSTRAINT singbox_chain_hops_chain_id_generation_fkey FOREIGN KEY (chain_id, generation) REFERENCES public.singbox_chain_versions(chain_id, generation);
-
-ALTER TABLE ONLY public.singbox_chain_hops
-    ADD CONSTRAINT singbox_chain_hops_external_node_id_fkey FOREIGN KEY (external_node_id) REFERENCES public.singbox_external_nodes(id);
-
-ALTER TABLE ONLY public.singbox_chain_hops
-    ADD CONSTRAINT singbox_chain_hops_external_version_id_fkey FOREIGN KEY (external_version_id) REFERENCES public.singbox_external_node_versions(id);
-
-ALTER TABLE ONLY public.singbox_chain_hops
-    ADD CONSTRAINT singbox_chain_hops_managed_node_id_fkey FOREIGN KEY (managed_node_id) REFERENCES public.nodes(id);
-
-ALTER TABLE ONLY public.singbox_chain_hops
-    ADD CONSTRAINT singbox_chain_hops_managed_server_id_fkey FOREIGN KEY (managed_server_id) REFERENCES public.servers(id);
-
-ALTER TABLE ONLY public.singbox_chain_hops
-    ADD CONSTRAINT singbox_chain_hops_source_id_fkey FOREIGN KEY (source_id) REFERENCES public.singbox_subscription_sources(id);
-
 ALTER TABLE ONLY public.singbox_chain_runtime_requirements
     ADD CONSTRAINT singbox_chain_runtime_requirements_chain_id_generation_fkey FOREIGN KEY (chain_id, generation) REFERENCES public.singbox_ordered_chain_versions(chain_id, generation);
 
@@ -6127,17 +5590,8 @@ ALTER TABLE ONLY public.singbox_chain_runtime_requirements
 ALTER TABLE ONLY public.singbox_chain_state
     ADD CONSTRAINT singbox_chain_state_chain_id_fkey FOREIGN KEY (chain_id) REFERENCES public.singbox_chains(id) ON DELETE CASCADE;
 
-ALTER TABLE ONLY public.singbox_chain_versions
-    ADD CONSTRAINT singbox_chain_versions_chain_id_fkey FOREIGN KEY (chain_id) REFERENCES public.singbox_chains(id);
-
-ALTER TABLE ONLY public.singbox_chain_versions
-    ADD CONSTRAINT singbox_chain_versions_chain_id_previous_generation_fkey FOREIGN KEY (chain_id, previous_generation) REFERENCES public.singbox_chain_versions(chain_id, generation);
-
 ALTER TABLE ONLY public.singbox_chains
     ADD CONSTRAINT singbox_chains_entry_node_id_fkey FOREIGN KEY (entry_node_id) REFERENCES public.nodes(id);
-
-ALTER TABLE ONLY public.singbox_chains
-    ADD CONSTRAINT singbox_chains_exit_node_id_fkey FOREIGN KEY (exit_node_id) REFERENCES public.nodes(id);
 
 ALTER TABLE ONLY public.singbox_client_templates
     ADD CONSTRAINT singbox_client_templates_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
@@ -6199,18 +5653,6 @@ ALTER TABLE ONLY public.singbox_deployment_public_projection
 ALTER TABLE ONLY public.singbox_entitlement_state
     ADD CONSTRAINT singbox_entitlement_state_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
 
-ALTER TABLE ONLY public.singbox_external_node_versions
-    ADD CONSTRAINT singbox_external_node_version_source_revision_id_source_id_fkey FOREIGN KEY (source_revision_id, source_id) REFERENCES public.singbox_source_revisions(id, source_id);
-
-ALTER TABLE ONLY public.singbox_external_node_versions
-    ADD CONSTRAINT singbox_external_node_versions_external_node_id_source_id_fkey FOREIGN KEY (external_node_id, source_id) REFERENCES public.singbox_external_nodes(id, source_id);
-
-ALTER TABLE ONLY public.singbox_external_nodes
-    ADD CONSTRAINT singbox_external_nodes_last_seen_revision_id_fkey FOREIGN KEY (last_seen_revision_id) REFERENCES public.singbox_source_revisions(id);
-
-ALTER TABLE ONLY public.singbox_external_nodes
-    ADD CONSTRAINT singbox_external_nodes_source_id_fkey FOREIGN KEY (source_id) REFERENCES public.singbox_subscription_sources(id);
-
 ALTER TABLE ONLY public.singbox_installation
     ADD CONSTRAINT singbox_installation_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id) ON DELETE CASCADE;
 
@@ -6232,12 +5674,6 @@ ALTER TABLE ONLY public.singbox_invitations
 ALTER TABLE ONLY public.singbox_invitations
     ADD CONSTRAINT singbox_invitations_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES public.users(id);
 
-ALTER TABLE ONLY public.singbox_legacy_takeovers
-    ADD CONSTRAINT singbox_legacy_takeovers_chain_id_fkey FOREIGN KEY (chain_id) REFERENCES public.singbox_chains(id);
-
-ALTER TABLE ONLY public.singbox_legacy_takeovers
-    ADD CONSTRAINT singbox_legacy_takeovers_exit_node_id_fkey FOREIGN KEY (exit_node_id) REFERENCES public.nodes(id);
-
 ALTER TABLE ONLY public.singbox_mail_settings
     ADD CONSTRAINT singbox_mail_settings_credential_id_fkey FOREIGN KEY (credential_id) REFERENCES public.credential_entries(id);
 
@@ -6255,15 +5691,6 @@ ALTER TABLE ONLY public.singbox_members
 
 ALTER TABLE ONLY public.singbox_members
     ADD CONSTRAINT singbox_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
-
-ALTER TABLE ONLY public.singbox_mixed_conversions
-    ADD CONSTRAINT singbox_mixed_conversions_chain_id_fkey FOREIGN KEY (chain_id) REFERENCES public.singbox_chains(id);
-
-ALTER TABLE ONLY public.singbox_mixed_conversions
-    ADD CONSTRAINT singbox_mixed_conversions_chain_id_mixed_generation_fkey FOREIGN KEY (chain_id, mixed_generation) REFERENCES public.singbox_chain_versions(chain_id, generation);
-
-ALTER TABLE ONLY public.singbox_mixed_conversions
-    ADD CONSTRAINT singbox_mixed_conversions_chain_id_ordered_generation_fkey FOREIGN KEY (chain_id, ordered_generation) REFERENCES public.singbox_ordered_chain_versions(chain_id, generation);
 
 ALTER TABLE ONLY public.singbox_nexus_bridge
     ADD CONSTRAINT singbox_nexus_bridge_import_id_fkey FOREIGN KEY (import_id) REFERENCES public.singbox_nexus_imports(id);
@@ -6394,20 +5821,11 @@ ALTER TABLE ONLY public.singbox_package_assignments
 ALTER TABLE ONLY public.singbox_path_controller_secrets
     ADD CONSTRAINT singbox_path_controller_secrets_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id);
 
-ALTER TABLE ONLY public.singbox_path_controls
-    ADD CONSTRAINT singbox_path_controls_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id);
-
 ALTER TABLE ONLY public.singbox_path_deployment_dependencies
     ADD CONSTRAINT singbox_path_deployment_dependen_server_id_module_revision_fkey FOREIGN KEY (server_id, module, revision) REFERENCES public.deployments(server_id, module, rev);
 
 ALTER TABLE ONLY public.singbox_path_deployment_dependencies
     ADD CONSTRAINT singbox_path_deployment_dependencies_chain_id_generation_fkey FOREIGN KEY (chain_id, generation) REFERENCES public.singbox_ordered_chain_versions(chain_id, generation);
-
-ALTER TABLE ONLY public.singbox_path_deployments
-    ADD CONSTRAINT singbox_path_deployments_chain_id_generation_fkey FOREIGN KEY (chain_id, generation) REFERENCES public.singbox_chain_versions(chain_id, generation);
-
-ALTER TABLE ONLY public.singbox_path_deployments
-    ADD CONSTRAINT singbox_path_deployments_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id);
 
 ALTER TABLE ONLY public.singbox_path_probes
     ADD CONSTRAINT singbox_path_probes_chain_id_generation_fkey FOREIGN KEY (chain_id, generation) REFERENCES public.singbox_ordered_chain_versions(chain_id, generation);
@@ -6444,9 +5862,6 @@ ALTER TABLE ONLY public.singbox_payment_topups
 
 ALTER TABLE ONLY public.singbox_payment_topups
     ADD CONSTRAINT singbox_payment_topups_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
-
-ALTER TABLE ONLY public.singbox_chains
-    ADD CONSTRAINT singbox_pending_generation_fk FOREIGN KEY (id, pending_generation) REFERENCES public.singbox_chain_versions(chain_id, generation) DEFERRABLE INITIALLY DEFERRED;
 
 ALTER TABLE ONLY public.singbox_policy_chains
     ADD CONSTRAINT singbox_policy_chains_chain_id_fkey FOREIGN KEY (chain_id) REFERENCES public.singbox_chains(id);
@@ -6490,12 +5905,6 @@ ALTER TABLE ONLY public.singbox_reachability_history
 ALTER TABLE ONLY public.singbox_reachability_settings
     ADD CONSTRAINT singbox_reachability_settings_credential_id_fkey FOREIGN KEY (credential_id) REFERENCES public.credential_entries(id);
 
-ALTER TABLE ONLY public.singbox_retired_path_scopes
-    ADD CONSTRAINT singbox_retired_path_scopes_chain_id_fkey FOREIGN KEY (chain_id) REFERENCES public.singbox_chains(id);
-
-ALTER TABLE ONLY public.singbox_retired_path_scopes
-    ADD CONSTRAINT singbox_retired_path_scopes_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id);
-
 ALTER TABLE ONLY public.singbox_runtime_manifest_facts
     ADD CONSTRAINT singbox_runtime_manifest_facts_server_id_module_revision_fkey FOREIGN KEY (server_id, module, revision) REFERENCES public.deployments(server_id, module, rev);
 
@@ -6507,30 +5916,6 @@ ALTER TABLE ONLY public.singbox_runtime_rollout_members
 
 ALTER TABLE ONLY public.singbox_runtime_session_addresses
     ADD CONSTRAINT singbox_runtime_session_addresses_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.singbox_source_id_map
-    ADD CONSTRAINT singbox_source_id_map_a_source_id_fkey FOREIGN KEY (a_source_id) REFERENCES public.singbox_subscription_sources(id);
-
-ALTER TABLE ONLY public.singbox_source_id_map
-    ADD CONSTRAINT singbox_source_id_map_b_source_id_fkey FOREIGN KEY (b_source_id) REFERENCES public.singbox_ordered_subscription_sources(id);
-
-ALTER TABLE ONLY public.singbox_source_jobs
-    ADD CONSTRAINT singbox_source_jobs_result_revision_id_fkey FOREIGN KEY (result_revision_id) REFERENCES public.singbox_source_revisions(id);
-
-ALTER TABLE ONLY public.singbox_source_jobs
-    ADD CONSTRAINT singbox_source_jobs_source_id_fkey FOREIGN KEY (source_id) REFERENCES public.singbox_subscription_sources(id);
-
-ALTER TABLE ONLY public.singbox_source_previews
-    ADD CONSTRAINT singbox_source_previews_admin_id_fkey FOREIGN KEY (admin_id) REFERENCES public.admins(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.singbox_source_revision_map
-    ADD CONSTRAINT singbox_source_revision_map_a_revision_id_fkey FOREIGN KEY (a_revision_id) REFERENCES public.singbox_source_revisions(id);
-
-ALTER TABLE ONLY public.singbox_source_revision_map
-    ADD CONSTRAINT singbox_source_revision_map_b_revision_id_fkey FOREIGN KEY (b_revision_id) REFERENCES public.singbox_subscription_source_revisions(id);
-
-ALTER TABLE ONLY public.singbox_source_revisions
-    ADD CONSTRAINT singbox_source_revisions_source_id_fkey FOREIGN KEY (source_id) REFERENCES public.singbox_subscription_sources(id);
 
 ALTER TABLE ONLY public.singbox_subscription_domain
     ADD CONSTRAINT singbox_subscription_domain_credential_id_fkey FOREIGN KEY (credential_id) REFERENCES public.credential_entries(id);
@@ -6583,9 +5968,6 @@ ALTER TABLE ONLY public.singbox_wallet_ledger
 ALTER TABLE ONLY public.singbox_wallets
     ADD CONSTRAINT singbox_wallets_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
 
-ALTER TABLE ONLY public.singbox_subscription_sources
-    ADD CONSTRAINT source_current_revision FOREIGN KEY (current_revision_id, id) REFERENCES public.singbox_source_revisions(id, source_id);
-
 ALTER TABLE ONLY public.tcpquality_target_regions
     ADD CONSTRAINT tcpquality_target_regions_probe_id_fkey FOREIGN KEY (probe_id) REFERENCES public.network_probes(id) ON DELETE CASCADE;
 
@@ -6634,7 +6016,6 @@ INSERT INTO public.singbox_invitation_settings VALUES (true, false, NULL, 0, 1, 
 INSERT INTO public.singbox_mail_settings VALUES (true, false, false, '', 465, 'tls', '', '', NULL, '{}', 1);
 INSERT INTO public.singbox_operation_privacy VALUES (true, 180, 7, 90);
 INSERT INTO public.singbox_reachability_settings VALUES (true, false, 30, NULL, 1, 0, NULL, NULL, '{}');
-INSERT INTO public.singbox_source_migration VALUES (true, NULL, '{}');
 INSERT INTO public.telemetry_policy VALUES (true, 30);
 
 CREATE TABLE public.singbox_user_limits (
@@ -6687,6 +6068,4 @@ FROM (
     SELECT 'trigger:' || c.relname || ':' || pg_get_triggerdef(t.oid)
     FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname='public' AND NOT t.tgisinternal
-) AS definitions);
-
--- Ordinary and imported users share the same reversible administrative gate.
+) AS definitions);-- Ordinary and imported users share the same reversible administrative gate.

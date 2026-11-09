@@ -2,7 +2,7 @@
 
 策略组与套餐组位于 **sing-box 插件 → 策略与套餐**；直连节点、订阅来源和有序链路在 **代理节点** 内管理，不属于服务器的通用监控配置。代理用户详情分别分配策略组和套餐。实现约束见 [ADR 0035](adr/0035-singbox-policy-package-groups.md) 与 [资源生命周期 ADR 0071](adr/0071-proxy-resource-batch-lifecycle.md)。
 
-订阅来源的获取、导入、不可变版本，以及受管节点与订阅节点混合的有序链路已经实现。有序链路由一个受管公开入口和其后 1 至 8 个代理跳组成，订阅中的具体节点可以作为中间跳或出口；来源本身不是服务器，也不是对用户开放的入口。来源生命周期见 [ADR 0072](adr/0072-subscription-source-lifecycle.md) 和[订阅来源规则](chain-subscription-sources.md)，完整路径约束见 [ADR 0073](adr/0073-ordered-path-publication-and-native-probe.md)。源码、本地回归与原生流量证据见[有序链路验收记录](acceptance/ordered-paths.md)；真实 Agent 托管整链与正式部署仍待验。
+订阅来源的获取、导入、不可变版本，以及受管节点与订阅节点混合的有序链路已经实现。有序链路由一个受管公开入口和其后 1 至 8 个代理跳组成，订阅中的具体节点可以作为中间跳或出口；来源本身不是服务器，也不是对用户开放的入口。来源生命周期见 [ADR 0072](adr/0072-subscription-source-lifecycle.md) 和订阅来源规则，完整路径约束见 [ADR 0073](adr/0073-ordered-path-publication-and-native-probe.md)。源码、本地回归与原生流量证据见[有序链路验收记录](acceptance/ordered-paths.md)；真实 Agent 托管整链与正式部署仍待验。
 
 ## 使用顺序
 
@@ -44,10 +44,9 @@
 | --- | --- | --- |
 | `/policy-groups` | GET / POST | 列出、创建策略组 |
 | `/policy-groups/{id}` | PUT / DELETE | 完整替换策略组、删除未分配的组 |
-| `/chains`、`/chains/{id}` | GET / POST、DELETE | 列出与删除链路；`POST /chains` 固定返回 409，新建链路用 `/chains/ordered-batch` |
-| `/proxy-resources`、`/proxy-resources/{kind}/{id}` | GET、GET / DELETE | 统一公开资源与完整资源删除；kind 为 direct 或 chain |
-| `/chains/ordered-batch` | POST | 创建有序链路（含两跳模板），绑定提交键；这是唯一的新建入口 |
-| `/chains/batch` | POST | 混合链路的旧批量创建：界面已不调用，来源迁移后返回 409，见[收敛方案](redesign/07-convergence.md#2-新建只有一条路径) |
+| `/ordered-proxy-resources`、`/ordered-proxy-resources/{kind}/{id}` | GET、GET / PATCH / DELETE | 受管节点与链路的公开资源、链路编辑与完整资源删除；kind 为 direct 或 chain |
+| `/ordered-proxy-resources/chain/{id}/apply-node-versions` | POST | 让链路采用外部节点的新版本 |
+| `/chains/ordered-batch` | POST | 创建链路（含两跳模板），绑定提交键；这是唯一的新建入口 |
 | `/package-groups` | GET / POST | 列出未归档模板、创建模板 |
 | `/package-groups/{id}` | PUT / DELETE | 编辑模板、归档模板 |
 | `/users/{id}/policy-groups` | GET / PUT | 读取或完整替换用户的策略组集合 |
@@ -72,7 +71,7 @@
 
 套餐分配请求：`{"package_group_id":1,"request_id":"<客户端新生成的 UUID>"}`。同一次提交失败重试必须复用 request_id。相同键、相同套餐返回原结果；相同键改套餐返回冲突。旧请求晚到不覆盖之后的新套餐。开始、到期和周期时间戳全部使用 Unix 秒，字节数字全部用字符串返回。
 
-旧链路请求：`{"name":"入口到出口","entry_node_id":1,"exit_node_id":2}`。旧 DELETE 仍只解除关系并保留入口；界面使用新资源 DELETE 清理整条链路及专用入口。批量结构见 [API 文档](api.md#统一代理资源与批量两跳)。入口、出口保持不可变；改变拓扑需先从策略组移除旧链路，再删除／新建。链路或策略组存在引用时删除返回 409 清单，不自动扩大或改变用户权限。
+链路的新建与删除见 [API 文档](api.md#节点与链路资源)：删除清理整条链路及其专用入口。入口、出口保持不可变；改变拓扑需先从策略组移除旧链路，再删除／新建。链路或策略组存在引用时删除返回 409 清单，不自动扩大或改变用户权限。
 
 ## 本地验证与上线边界
 

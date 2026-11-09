@@ -31,12 +31,9 @@ try {
       if (path === '/api/dashboard/access') data = { authenticated:true, public_dashboard:false }
       else if (path === '/api/plugins/sing-box/servers') data = servers
       else if (path === '/api/plugins/sing-box/nodes') data = nodes
-      else if (path === '/api/plugins/sing-box/proxy-resources') data = nodes.map(node => ({ ...node, kind:'direct', server_name:`服务器${node.server_id}`, enabled:true, available:true, role:'direct', entry_node_id:null, tcp:true, udp:true, legacy:false, active_generation:null, pending_generation:null, minimum_generation:0, stage:'direct', last_error:null, reference_count:0, entry_eligible:true }))
       else if (path === '/api/plugins/sing-box/ordered-proxy-resources') data = proxyResourceFixtures(nodes, servers)
-      else if (path === '/api/plugins/sing-box/source-migration') data = { migrated: false, migrated_at: null }
       else if (path === '/api/plugins/sing-box/ordered-subscription-sources') data = []
       else if (path === '/api/plugins/sing-box/node-catalog') data = catalogView(nodes.map(node => ({ ...node, kind:'direct', server_name:`服务器${node.server_id}`, enabled:true, available:true, role:'direct', entry_node_id:null, tcp:true, udp:true, legacy:false, active_generation:null, pending_generation:null, minimum_generation:0, stage:'direct', last_error:null, reference_count:0, entry_eligible:true })))
-      else if (path === '/api/plugins/sing-box/subscription-sources') data = []
       else if (path === '/api/plugins/sing-box/usage') data = { total:'0', uplink:'0', downlink:'0', by_node:[], by_user:[] }
       else if (['policy-groups','package-groups','chains'].some(key => path === `/api/plugins/sing-box/${key}`)) data = []
       else { errors.push(`Unexpected API ${path}`); return route.fulfill({ status:404, json:{} }) }
@@ -61,11 +58,11 @@ try {
     assert.equal(await page.getByRole('button', { name:'创建节点', exact:true }).first().isDisabled(), true)
     assert.equal(await catalogRows.count(), 0)
     await page.evaluate(() => { location.hash = '/nodes?kind=chains' })
-    // The chain route opens the chain section and keeps the catalog type filter on chains.
+    // The chain route opens the chain section; the catalog behind it is hidden and keeps its own type filter.
     await page.locator('nav[aria-label="节点视图"] a[aria-current="page"]').filter({ hasText: /^链路/ }).waitFor()
     await page.getByLabel('按类型筛选').waitFor({ state: 'attached' })
-    assert.equal(await page.getByLabel('按类型筛选').inputValue(), 'chain')
-    assert.equal(await catalogRows.count(), 0)
+    assert.equal(await page.getByLabel('按类型筛选').inputValue(), '')
+    assert.equal(await page.locator('[aria-label="节点库"]').first().isVisible(), false)
     // The single create entry in the page header opens the ordered chain form.
     // A click during a refresh is reported instead of acting, so retry until the form opens.
     const create = page.locator('header[data-slot=page-header]').getByRole('button', { name:'创建链路', exact:true })

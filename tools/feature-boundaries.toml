@@ -46,12 +46,11 @@ naming = [
 ]
 traffic = [
   "nodes", "deployments", "server_module_status", "server_plugins", "runtime_*",
-  "singbox_chain*", "singbox_live_chains", "singbox_ordered_*", "singbox_external_*",
-  "singbox_source_*", "singbox_subscription_source*", "singbox_subscription_revision_nodes",
+  "singbox_chain*", "singbox_ordered_*", "singbox_external_*",
+  "singbox_subscription_source*", "singbox_subscription_revision_nodes",
   "singbox_path_*", "singbox_deployment_*", "singbox_runtime_*", "singbox_installation",
   "singbox_server_profiles",
-  "singbox_managed_endpoint_versions", "singbox_node_metadata", "singbox_mixed_conversions",
-  "singbox_legacy_takeovers", "singbox_retired_path_scopes",
+  "singbox_managed_endpoint_versions", "singbox_node_metadata",
   "singbox_resource_mutation_requests", "singbox_nexus_runtime_*", "singbox_nexus_node*",
 ]
 access = [

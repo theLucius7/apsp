@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
-import { flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { catalogNodeFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
 
 // Shipped dist with private loopback API responses; native compiler and persistence checks are separate.
 const catalogView = resources => resources.map(resource => ({ ...resource, original_name: resource.name, tags: [], note: '', sort_order: resource.id, revision: '1'.repeat(64), metadata_revision: 0 }))
@@ -57,11 +57,9 @@ try {
       else if(path==='/api/dashboard/access') value={authenticated:true,public_dashboard:false}
       else if(path==='/api/plugins/sing-box/servers') value=servers
       else if(path==='/api/plugins/sing-box/usage') value={total:'0',by_node:[],by_user:[],uplink:'0',downlink:'0'}
-      else if(path==='/api/plugins/sing-box/proxy-resources') value=flatResourceFixtures(nodes, servers, chains)
-      else if(path==='/api/plugins/sing-box/node-catalog') value=catalogView(flatResourceFixtures(nodes, servers, chains))
+      else if(path==='/api/plugins/sing-box/node-catalog') value=catalogView(catalogNodeFixtures(nodes, servers, chains))
       else if(path==='/api/plugins/sing-box/ordered-proxy-resources') value=richResources()
-      else if(path==='/api/plugins/sing-box/source-migration') value={ migrated: false, migrated_at: null }
-      else if(path==='/api/plugins/sing-box/subscription-sources' || path==='/api/plugins/sing-box/ordered-subscription-sources') value=[]
+      else if(path==='/api/plugins/sing-box/ordered-subscription-sources') value=[]
       else if(path==='/api/plugins/sing-box/nodes') value=nodes
       else if(path.match(/\/nodes\/\d+$/) && method==='PATCH') {const node=nodes.find(node=>node.id===Number(path.split('/').at(-1))); const body=route.request().postDataJSON(); writes.push({id:node.id,body}); Object.assign(node,body); value=node}
       else {errors.push(`Unexpected ${method}: ${path}`); return route.fulfill({status:404,json:{}})}

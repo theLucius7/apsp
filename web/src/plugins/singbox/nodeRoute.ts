@@ -1,7 +1,7 @@
 import type { ProxyResourceFilter, ProxyResourceServerRole } from './groupTypes'
 
 /** Node page sections, selected by the optional view parameter. */
-export type NodeView = 'catalog' | 'chains' | 'sources'
+export type NodeView = 'catalog' | 'chains' | 'sources' | 'runtimes'
 
 type NodeRoute = {
   serverId?: number
@@ -26,7 +26,7 @@ export function nodeRoute(path: string): NodeRoute | null {
   const role = params.get('role')
   if (role !== null && !['any', 'entry', 'middle', 'exit'].includes(role)) return null
   const view = params.get('view')
-  if (view !== null && !['catalog', 'chains', 'sources'].includes(view)) return null
+  if (view !== null && !['catalog', 'chains', 'sources', 'runtimes'].includes(view)) return null
   return {
     ...(server === null ? {} : { serverId: Number(server) }),
     ...(role === null ? {} : { serverRole: role as ProxyResourceServerRole }),

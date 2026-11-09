@@ -15,7 +15,6 @@ pub struct Capabilities {
 pub(crate) struct FrozenVersion {
     pub entry: ManagedEndpointSnapshot,
     pub hops: Vec<FrozenHop>,
-    pub legacy_relay_uuid: Option<Uuid>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -71,7 +70,6 @@ pub(crate) struct ChainRow {
     pub id: i64,
     pub name: String,
     pub entry_node_id: i64,
-    pub exit_node_id: Option<i64>,
     pub path_kind: String,
     pub settings_revision: i64,
     pub desired_generation: i64,
@@ -86,12 +84,11 @@ pub(crate) struct ChainRow {
     pub last_granted: bool,
     pub restore_step: Option<String>,
 }
-pub(crate) const CHAIN_COLUMNS: &str = "id,name,entry_node_id,exit_node_id,path_kind,settings_revision,desired_generation,applied_generation,candidate_generation,recovery_generation,minimum_generation,phase,last_error,deleted_at,route_enabled,last_granted,restore_step";
+pub(crate) const CHAIN_COLUMNS: &str = "id,name,entry_node_id,path_kind,settings_revision,desired_generation,applied_generation,candidate_generation,recovery_generation,minimum_generation,phase,last_error,deleted_at,route_enabled,last_granted,restore_step";
 
 #[derive(FromRow)]
 pub(crate) struct VersionRow {
     pub generation: i64,
-    pub legacy: bool,
     #[sqlx(json)]
     pub capabilities: Capabilities,
     #[sqlx(json)]

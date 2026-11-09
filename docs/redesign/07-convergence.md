@@ -1,7 +1,7 @@
 # 收敛方案：领域模型与发布
 
-- 状态：提议（2026-11-07），是[执行计划](09-execution.md)步骤 2、3 的设计依据。本文只做设计；涉及生产数据、数据库基线、部署器或删除旧模型的每一步都需要单独授权（[执行计划](09-execution.md)）。
-- 依据：[设计依据](01-principles.md) R4、R5、R13、R14、R15；[ADR 0085](../adr/0085-rearchitecture-plugins-sources-chains.md)、[阶段三迁移方案](../rearchitecture-phase3-plan.md)、[ADR 0122](../adr/0122-unreleased-schema-baseline.md)、[数据库基线](../database-baseline.md)；2026-11-07 的两次停机（#245、#249）。
+- 状态：部分实施。2026-11-09 起分阶段授权由 [ADR 0131](../adr/0131-one-model-per-object.md) 取代：两跳旧链路、混合链路与数字编号来源已整套删除（代码、接口、界面、测试与表），第 2、3 节中这三行只作记录；Nexus 兼容与第 4–6 节的发布衔接仍按本文设计，按需实施。
+- 依据：[设计依据](01-principles.md) R4、R5、R13、R14、R15；[ADR 0085](../adr/0085-rearchitecture-plugins-sources-chains.md)、阶段三迁移方案、[ADR 0122](../adr/0122-unreleased-schema-baseline.md)、[数据库基线](../database-baseline.md)；2026-11-07 的两次停机（#245、#249）。
 
 ## 1. 目标与做法
 
@@ -28,8 +28,8 @@
 | 运行时 | 服务器详情 › 网络服务 › 安装运行时（`/enable` 接口） | Nexus 运行时接管 `/nexus-nodes/runtime/prepare\|activate` | 接管归迁移与兼容。安装意图的旧来源值（`agent_capability`、`legacy_nodes`、`legacy_deployments`）在下一次基线变更时从约束中去掉 |
 | 受管节点 | 「新建节点」（先选服务器）、复制节点；新建链路时可同时新建专用入口节点 | Nexus 接管生成受保护节点 | 接管归迁移与兼容 |
 | 外部节点 | 外部来源的“预览 → 采用” | A 模型来源中的外部节点 | A 随来源迁移退出 |
-| 链路 | 「新建链路」→ `POST /chains/ordered-batch`（有序模型） | `POST /chains`（已固定返回 409）；`POST /chains/batch`（混合模型，来源迁移前仍可用，界面已不调用）；命令行 `legacy-takeover`；逐条混合 → 有序转换 | **收口：** `/chains/batch` 立即与 `/chains` 一样返回 409 并说明替代接口（先确认没有工具调用）；`singbox_chains.path_kind` 的默认值改为 `'ordered'`，随下一次必要的基线变更一起做（R15）。接管与转换归迁移与兼容 |
-| 外部来源 | 「添加外部来源」或“导入并选择节点”（B 模型） | 来源迁移前，订阅来源视图中 A 仍可写 | **收口：** 界面立即停止提供 A 的新建与编辑，A 只读显示在迁移与兼容中；接口层的 409 由迁移后的触发器保证 |
+| 链路（2026-11-09 已退出，ADR 0131） | 「新建链路」→ `POST /chains/ordered-batch`（有序模型） | `POST /chains`（已固定返回 409）；`POST /chains/batch`（混合模型，来源迁移前仍可用，界面已不调用）；命令行 `legacy-takeover`；逐条混合 → 有序转换 | **收口：** `/chains/batch` 立即与 `/chains` 一样返回 409 并说明替代接口（先确认没有工具调用）；`singbox_chains.path_kind` 的默认值改为 `'ordered'`，随下一次必要的基线变更一起做（R15）。接管与转换归迁移与兼容 |
+| 外部来源（2026-11-09 已退出，ADR 0131） | 「添加外部来源」或“导入并选择节点”（B 模型） | 来源迁移前，订阅来源视图中 A 仍可写 | **收口：** 界面立即停止提供 A 的新建与编辑，A 只读显示在迁移与兼容中；接口层的 409 由迁移后的触发器保证 |
 | 用户 | 「新建用户」；门户接受邀请 | 登录资料在已有用户设置邮箱密码时按需创建（兼容桥启用时被阻止）；Nexus 成员导入（ADR 0113 已删除） | 登录资料属于用户聚合，不是另一条新建路径 |
 | 策略组 | 「新建策略组」 | `singbox_legacy_policy_group()`（Nexus 转换时创建“原权限组 · X”） | 归迁移与兼容 |
 | 套餐 | 「新建套餐」；分给用户时生成快照 | — | 不变 |
@@ -44,9 +44,9 @@
 
 | 兼容流程 | 涉及 | 现在的入口 | 退出条件 | 退出后可删除 |
 | --- | --- | --- | --- | --- |
-| A → B 来源迁移 | A 来源及其修订、外部节点、任务；ID 映射表 | `apsp-panel source-migration precheck\|apply\|rollback\|snapshot\|compare` | 生产已执行迁移且快照比对一致；没有混合链路的段引用 A；经过一个发布周期无回退需求 | A 的表、`sources` 模块、A 的解析器（只留 `subscription_parser`）、按迁移状态切换的视图 |
-| 两跳旧模型接管 | `path_kind = 'legacy'` 的链路 | `apsp-panel legacy-takeover precheck\|apply\|rollback` | 生产没有 `legacy` 链路 | `crates/compiler/src/relays.rs` 的旧中转编译、链路行上的落地字段、旧设备标签 |
-| 混合 → 有序转换 | `path_kind = 'mixed'` 的链路 | 每条链路的转换接口 | 生产没有 `mixed` 链路 | 混合路径发布引擎（`mixed_paths`，带 `stage` 的版本表）；业务上只有它使用的验证通道 `runtime_validations`（宿主、协议与 Agent 中各有实现，删除属于协议变更，按第 6 节处理） |
+| A → B 来源迁移（2026-11-09 已退出，ADR 0131） | A 来源及其修订、外部节点、任务；ID 映射表 | `apsp-panel source-migration precheck\|apply\|rollback\|snapshot\|compare` | 生产已执行迁移且快照比对一致；没有混合链路的段引用 A；经过一个发布周期无回退需求 | A 的表、`sources` 模块、A 的解析器（只留 `subscription_parser`）、按迁移状态切换的视图 |
+| 两跳旧模型接管（2026-11-09 已退出，ADR 0131） | `path_kind = 'legacy'` 的链路 | `apsp-panel legacy-takeover precheck\|apply\|rollback` | 生产没有 `legacy` 链路 | `crates/compiler/src/relays.rs` 的旧中转编译、链路行上的落地字段、旧设备标签 |
+| 混合 → 有序转换（2026-11-09 已退出，ADR 0131） | `path_kind = 'mixed'` 的链路 | 每条链路的转换接口 | 生产没有 `mixed` 链路 | 混合路径发布引擎（`mixed_paths`，带 `stage` 的版本表）；业务上只有它使用的验证通道 `runtime_validations`（宿主、协议与 Agent 中各有实现，删除属于协议变更，按第 6 节处理） |
 | Nexus 节点清单与运行时接管 | 节点清单、受保护节点、保留配置发布、设备数限制 | `/nexus-nodes/*`；`tools/nexus_node_inventory.py`、`tools/nexus_runtime_takeover.py` | 所有已接管服务器改为原生编译；兼容桥已下线 | `crates/compiler/src/preserved.rs`、`singbox_nexus_*` 运行时表、保护触发器 |
 | Nexus 兼容桥 | 旧订阅渲染、兼容桥用户的资格与计量、钱包表 | `singbox_nexus_bridge`；`tools/nexus_compatibility.py` 同步循环（是否仍在运行需核对） | 订阅全部由 apsp 生成（路线图 1.4）；兼容桥下线（路线图 1.5） | 兼容桥表、钱包与已停写的成员运营表（先导出归档，[执行计划 C17](09-execution.md#3-当前规范冲突清单)）、兼容桥用户的计量分支 |
 | 旧 Agent 兼容 | 不支持检查点的设备（以心跳补记已应用）；没有内存日志命令的 OpenRC 设备（`apsp-singbox-legacy.openrc`） | 自动按设备能力选择 | 所有在用 Agent 都具备检查点能力（`runtime:checkpoint-v1`）与内存日志命令 | 心跳补记已应用的分支（[状态设计 §5](06-states.md#5-现状对照与改动)）、旧 OpenRC 服务定义 |

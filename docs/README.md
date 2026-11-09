@@ -23,7 +23,7 @@
 | 配置代理协议、端点和证书 | [协议与证书](proxy-protocols.md) |
 | 整理节点库，导入外部来源并把外部节点放进策略组 | [节点库与外部来源](node-catalog.md) |
 | 配置策略组、套餐与重置周期 | [策略与套餐](singbox-groups.md) |
-| 查看运行时状态，导入外部来源并创建链路 | [Agent 运维与链路](agent-runtime-and-chains.md) |
+| 查看运行时状态，导入外部来源并创建链路 | [Agent 运维](agent-runtime-and-chains.md)、[sing-box 管理](singbox-management.md) |
 | 为代理用户开通自助门户与 Passkey | [Passkey 登录与开通](passkeys.md) |
 | 了解运维与代理用户的完整流程 | [运维与代理用户流程](singbox-operations-workflows.md)、[读取与编辑保护](singbox-snapshot-editing.md) |
 
@@ -60,7 +60,7 @@
 | --- | --- |
 | 管理员与权限、凭据、API 令牌、会话与审计 | [管理与安全](control-center.md)、[全局搜索与可见性](control-center-search.md) |
 | 管理管理员及代理用户的通行密钥 | [Passkey 登录与开通](passkeys.md) |
-| 查看插件说明、已验证版本与执行服务器（制品与版本） | [插件中心与执行边界](plugin-catalog.md) |
+| 查看 Agent、运行时与诊断工具的已验证版本 | [制品与版本](deploy.md#导入签名-release)（系统 › 制品与版本） |
 | 面板备份与恢复 | [备份恢复与自动化](operations-recovery.md)、[部署与节点接入](deploy.md) |
 
 ### 迁移与兼容
@@ -68,12 +68,11 @@
 | 需要做什么 | 文档 |
 | --- | --- |
 | Nexus 用户、节点与运行时迁移，旧订阅兼容桥 | [Nexus 与 Wallos 迁移](nexus-migration.md)、[Nexus 服务器向 apsp Agent 迁移](nexus-agent-migration.md) |
-| 来源与链路统一（数字编号来源、两跳旧链路、混合链路） | [阶段三迁移方案](rearchitecture-phase3-plan.md)、[收敛方案](redesign/07-convergence.md#3-兼容流程独立) |
 
 ## 开发与设计
 
 - [协作规则](../AGENTS.md)：现行规则；2026-11-08 整理前的原文与各条去向见[整理记录](history/agents-rules-20261108.md)。
-- [功能划分与逻辑结构](architecture.md)：九个领域、依赖与写入规则、运行模型、代码结构、上游代码归属与迁移阶段（ADR 0128）。
+- [功能划分与逻辑结构](architecture.md)：九个领域、依赖与写入规则、运行模型、代码结构、上游代码归属与迁移阶段（ADR 0128）；每类对象只留一套模型与执行顺序见 [ADR 0131](adr/0131-one-model-per-object.md)。
 - [领域归属表](domain-map.md)：每项功能属于哪个领域、核心对象、关键约束、协作领域与实现位置。
 - [重新设计方案](redesign/README.md)：设计依据、功能盘点、对象词典、工作区、主线流程、状态设计（已接受）；收敛方案、工程整理与执行计划。
 - [仓库目录与维护约定](repository.md)：修改入口、模块归属、脚本及测试的位置。
@@ -81,7 +80,6 @@
 - [HTTP API](api.md)、[面板与 Agent 协议](protocol.md)、[术语表](glossary.md)：公共契约与技术术语。
 - [架构决策索引](adr/README.md)、[执行中的问题与选择](open-questions.md)：设计依据及范围变更。
 - [数据库基线](database-baseline.md)：当前基线、旧库处理与生产接入。
-- [混合链路设计](node-chain-design.md)、[订阅来源设计](chain-subscription-sources.md)、[订阅实现与参考记录](subscription-source-implementation-notes.md)。
 - [NodeQuality Debian 输入收集](nodequality-rootfs-collection.md)、[NodeQuality 离线工厂操作边界](nodequality-rootfs-factory.md)。
 - 历史基线：[原始 MVP 任务](requirements.md)、[G1–G9 计划](PLAN.md)；后续授权和现行约束以 [AGENTS.md](../AGENTS.md) 及相应 ADR 为准。
 

@@ -20,7 +20,7 @@ controller = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(controller)
 
 COMMON = {
-    "lib.rs", "relays.rs", "external.rs", "protocols.rs", "certificates.rs",
+    "lib.rs", "external.rs", "protocols.rs", "certificates.rs",
     "paths/mod.rs", "paths/model.rs", "paths/network.rs", "paths/context.rs",
     "paths/validate.rs", "paths/render.rs", "paths/transport_validation.rs",
     "paths/outbound_validation.rs",

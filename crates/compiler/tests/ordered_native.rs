@@ -2,7 +2,7 @@
 
 use apsp_compiler::{
     Access, ManagedAcceptance, ManagedEndpointSnapshot, Node, OrderedPath, PathHop, ProbeControl,
-    ProtocolConfig, Relay, compile_server_with_paths, compile_server_with_relays,
+    ProtocolConfig, compile_server_with_paths,
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::json;
@@ -137,7 +137,7 @@ fn accept(generation: u64, position: u8, id: i64, identity: u128) -> ManagedAcce
 
 #[test]
 #[ignore = "requires exact sing-box 1.14.4-apsp.2 with full observed feature tags and a private evidence directory"]
-fn exact_native_checks_three_and_four_hops_acceptances_and_legacy_bytes() {
+fn exact_native_checks_three_and_four_hops_and_acceptances() {
     let binary = absolute_input("APSP_ORDERED_NATIVE_BINARY");
     assert!(binary.is_file(), "native binary input must be a file");
     native_version(&binary);
@@ -176,7 +176,6 @@ fn exact_native_checks_three_and_four_hops_acceptances_and_legacy_bytes() {
     };
     let three = compile_server_with_paths(
         std::slice::from_ref(&entry),
-        &[],
         std::slice::from_ref(&current),
         &[],
         Some(&probe),
@@ -184,7 +183,6 @@ fn exact_native_checks_three_and_four_hops_acceptances_and_legacy_bytes() {
     .unwrap();
     let coexist = compile_server_with_paths(
         std::slice::from_ref(&entry),
-        &[],
         &[current.clone(), candidate.clone()],
         &[],
         Some(&probe),
@@ -193,58 +191,20 @@ fn exact_native_checks_three_and_four_hops_acceptances_and_legacy_bytes() {
     candidate.active = true;
     let four = compile_server_with_paths(
         std::slice::from_ref(&entry),
-        &[],
         std::slice::from_ref(&candidate),
         &[],
         Some(&probe),
     )
     .unwrap();
     let transit =
-        compile_server_with_paths(&[node(2, false)], &[], &[], &[accept(2, 1, 2, 2002)], None)
-            .unwrap();
+        compile_server_with_paths(&[node(2, false)], &[], &[accept(2, 1, 2, 2002)], None).unwrap();
     let shared_exit = compile_server_with_paths(
         &[node(3, true)],
-        &[],
         &[],
         &[accept(1, 2, 3, 3001), accept(2, 3, 3, 3002)],
         None,
     )
     .unwrap();
-    let relay = Relay {
-        settings: Default::default(),
-        fingerprint: Default::default(),
-        chain_id: 11,
-        entry_node_id: 1,
-        exit_node_id: 3,
-        uuid: Uuid::from_u128(101),
-        public_host: "node-3.example.com".into(),
-        port: 443,
-        sni: "www.example.com".into(),
-        public_key: URL_SAFE_NO_PAD.encode([2; 32]),
-        short_id: "1234abcd".into(),
-    };
-    let legacy_entry =
-        compile_server_with_relays(std::slice::from_ref(&entry), std::slice::from_ref(&relay))
-            .unwrap();
-    assert_eq!(
-        legacy_entry,
-        compile_server_with_paths(
-            std::slice::from_ref(&entry),
-            std::slice::from_ref(&relay),
-            &[],
-            &[],
-            None
-        )
-        .unwrap()
-    );
-    let exit = node(3, true);
-    let legacy_exit =
-        compile_server_with_relays(std::slice::from_ref(&exit), std::slice::from_ref(&relay))
-            .unwrap();
-    assert_eq!(
-        legacy_exit,
-        compile_server_with_paths(std::slice::from_ref(&exit), &[relay], &[], &[], None).unwrap()
-    );
     let external_server=serde_json::to_string_pretty(&json!({"inbounds":[{"type":"http","listen":"127.0.0.1","listen_port":8080,
         "users":[{"username":"TEST_ONLY_ACCOUNT","password":"TEST_ONLY_PASSWORD"}]}],"outbounds":[{"type":"direct","tag":"direct"}],"route":{"final":"direct"}})).unwrap();
     for (name, config) in [
@@ -254,8 +214,6 @@ fn exact_native_checks_three_and_four_hops_acceptances_and_legacy_bytes() {
         ("managed-transit", transit),
         ("shared-exit", shared_exit),
         ("external-http", external_server),
-        ("legacy-entry", legacy_entry),
-        ("legacy-exit", legacy_exit),
     ] {
         let file = directory.join(format!("{name}.json"));
         fs::write(&file, config).expect("native fixture write failed");

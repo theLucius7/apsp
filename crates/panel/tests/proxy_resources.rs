@@ -803,7 +803,7 @@ async fn batch_rejects_unauthorized_entries_and_invalid_managed_topologies(
     )
     .await?;
     assert_eq!(status, StatusCode::CONFLICT, "{created}");
-    panel.import_legacy_chain(&cookie, "AB", na, nb).await?;
+    panel.insert_chain("AB", na, nb).await?;
     let before = state(&pool).await?;
     for item in [
         existing_entry("Cycle", nb, na),
@@ -947,10 +947,6 @@ async fn resource_delete_preserves_shared_exit_history_and_deleted_request_repla
     for (path, policies) in [
         (format!("/nodes/{exit}"), exit_policies.clone()),
         (
-            format!("/proxy-resources/direct/{exit}"),
-            exit_policies.clone(),
-        ),
-        (
             format!("/ordered-proxy-resources/direct/{exit}"),
             exit_policies.clone(),
         ),
@@ -1088,21 +1084,6 @@ async fn resource_delete_preserves_shared_exit_history_and_deleted_request_repla
     .await?;
     assert_eq!(retained["available"], true);
     assert_eq!(retained["path_kind"], "ordered");
-    // The old relationship endpoint cannot partially detach a new ordered path.
-    let before_detach = state(&pool).await?;
-    assert_eq!(
-        panel
-            .admin(
-                Method::DELETE,
-                &format!("{ROOT}/chains/{}", chains[1]),
-                &cookie,
-                None
-            )
-            .await?
-            .status(),
-        StatusCode::CONFLICT
-    );
-    assert_eq!(state(&pool).await?, before_detach);
     call(
         &panel,
         &cookie,
@@ -1117,40 +1098,6 @@ async fn resource_delete_preserves_shared_exit_history_and_deleted_request_repla
         .fetch_one(&pool)
         .await?;
     assert!(removed.is_some());
-    // Explicitly imported legacy relationships still detach without deleting the entry.
-    let compatibility_entry = id(&panel
-        .create_node(&cookie, a, "Legacy detachable entry")
-        .await?)?;
-    let compatibility_chain = id(&panel
-        .import_legacy_chain(
-            &cookie,
-            "Imported legacy relationship",
-            compatibility_entry,
-            exit,
-        )
-        .await?)?;
-    call(
-        &panel,
-        &cookie,
-        Method::DELETE,
-        &format!("/chains/{compatibility_chain}"),
-        None,
-    )
-    .await?;
-    let retained: Option<i64> = sqlx::query_scalar("SELECT deleted_at FROM nodes WHERE id=$1")
-        .bind(compatibility_entry)
-        .fetch_one(&pool)
-        .await?;
-    assert_eq!(retained, None);
-    let direct = call(
-        &panel,
-        &cookie,
-        Method::GET,
-        &format!("/ordered-proxy-resources/direct/{compatibility_entry}"),
-        None,
-    )
-    .await?;
-    assert_eq!(direct["kind"], "direct");
     let before_replay = state(&pool).await?;
     assert_eq!(
         batch(&panel, &cookie, body).await?,
@@ -1161,7 +1108,6 @@ async fn resource_delete_preserves_shared_exit_history_and_deleted_request_repla
     let policy = policy(&panel, &cookie, "Direct protected", &[exit], &[]).await?;
     for path in [
         format!("/nodes/{exit}"),
-        format!("/proxy-resources/direct/{exit}"),
         format!("/ordered-proxy-resources/direct/{exit}"),
     ] {
         let blocked = panel
@@ -1190,14 +1136,9 @@ async fn damaged_chains_stay_readable_and_cleanable_without_exposing_private_con
     let b = panel.create_server(&cookie, "Exit").await?;
     let entry = id(&panel.create_node(&cookie, a, "Existing entry").await?)?;
     let orphan_old = id(&panel.create_node(&cookie, a, "Old cleanup").await?)?;
-    let orphan_numeric = id(&panel
-        .create_node(&cookie, a, "Numeric resource cleanup")
-        .await?)?;
     let orphan_new = id(&panel.create_node(&cookie, a, "Resource cleanup").await?)?;
     let exit = id(&panel.create_node(&cookie, b, "Existing exit").await?)?;
-    let imported = panel
-        .import_legacy_chain(&cookie, "Historical chain", entry, exit)
-        .await?;
+    let imported = panel.insert_chain("Historical chain", entry, exit).await?;
     let chain = id(&imported)?;
     assert_eq!(imported["entry_node_id"], entry);
     assert_eq!(
@@ -1209,7 +1150,7 @@ async fn damaged_chains_stay_readable_and_cleanable_without_exposing_private_con
             None
         )
         .await?["path_kind"],
-        "legacy"
+        "ordered"
     );
     let original_settings: Value = sqlx::query_scalar("SELECT settings FROM nodes WHERE id=$1")
         .bind(exit)
@@ -1454,10 +1395,6 @@ async fn damaged_chains_stay_readable_and_cleanable_without_exposing_private_con
     for (node, path) in [
         (orphan_old, format!("/nodes/{orphan_old}")),
         (
-            orphan_numeric,
-            format!("/proxy-resources/direct/{orphan_numeric}"),
-        ),
-        (
             orphan_new,
             format!("/ordered-proxy-resources/direct/{orphan_new}"),
         ),
@@ -1512,7 +1449,6 @@ async fn retired_node_cleanup_keeps_damaged_ordered_owners_and_bounded_public_re
     let before = state(&pool).await?;
     let paths = [
         format!("/nodes/{entry}"),
-        format!("/proxy-resources/direct/{entry}"),
         format!("/ordered-proxy-resources/direct/{entry}"),
     ];
     for path in &paths {
@@ -1589,10 +1525,9 @@ async fn retired_node_cleanup_keeps_damaged_ordered_owners_and_bounded_public_re
     }
     assert_eq!(state(&pool).await?, before);
     // Missing selected versions retain the raw hop with an actionable owner,
-    // across the old, numeric and ordered direct-node deletion endpoints.
+    // across both direct-node deletion endpoints.
     for path in [
         format!("/nodes/{exit}"),
-        format!("/proxy-resources/direct/{exit}"),
         format!("/ordered-proxy-resources/direct/{exit}"),
     ] {
         let response = panel

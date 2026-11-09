@@ -2,9 +2,8 @@ mod clone;
 mod mutation;
 mod projection;
 
-pub(crate) use mutation::ensure_external_removable;
 pub use mutation::{batch_remove, batch_update};
-pub(crate) use projection::catalog_on;
+pub(crate) use mutation::{ensure_external_removable, ensure_externals_removable};
 pub use projection::list;
 
 pub fn router() -> axum::Router<crate::AppState> {

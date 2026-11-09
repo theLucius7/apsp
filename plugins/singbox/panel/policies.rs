@@ -114,8 +114,7 @@ async fn save(state: &AppState, id: Option<i64>, request: PolicyRequest) -> ApiR
     super::entitlements::lock(&mut tx).await?;
     let valid_nodes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM nodes n JOIN servers s ON s.id=n.server_id WHERE n.id=ANY($1) AND n.deleted_at IS NULL AND s.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM singbox_chains c WHERE c.entry_node_id=n.id AND (c.deleted_at IS NULL OR (c.path_kind='ordered' AND c.phase<>'retired')))")
         .bind(&nodes).fetch_one(&mut *tx).await?;
-    let mut valid_chains: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM singbox_live_chains c WHERE c.id=ANY($1) AND (singbox_path_resources_available(c.id) OR EXISTS(SELECT 1 FROM singbox_policy_chains p WHERE p.chain_id=c.id AND p.group_id=$2))")
-        .bind(&chains).bind(id).fetch_one(&mut *tx).await?;
+    let mut valid_chains: i64 = 0;
     let ordered: Vec<(i64, bool)> = sqlx::query_as("SELECT c.id,EXISTS(SELECT 1 FROM singbox_policy_chains p WHERE p.chain_id=c.id AND p.group_id=$2) FROM singbox_chains c WHERE c.id=ANY($1) AND c.path_kind='ordered' AND c.deleted_at IS NULL ORDER BY c.id")
         .bind(&chains).bind(id).fetch_all(&mut *tx).await?;
     for (chain, retained) in ordered {

@@ -15,8 +15,8 @@ test('old device DDNS, catalog alias and unified node selection retain their des
   expect(resolveRoute('/servers/42/ddns')).toEqual({ page: 'server', serverId: 42, section: 'ddns' })
   expect(currentNavigation(resolveRoute('/servers/42/ddns'))?.path).toBe('/dns')
   expect(currentNavigation(resolveRoute('/servers/42/node-quality'))?.path).toBe('/servers')
-  expect(resolveRoute('/settings/plugins')).toEqual({ page: 'catalog' })
-  expect(currentNavigation(resolveRoute('/settings/plugins'))?.path).toBe('/settings/plugins')
+  expect(resolveRoute('/settings/plugins')).toEqual({ page: 'artifacts' })
+  expect(currentNavigation(resolveRoute('/settings/plugins'))?.path).toBe('/settings/artifacts')
   expect(resolveRoute('/nodes?server=42')).toEqual({ page: 'nodes', serverId: 42, chains: false })
   expect(resolveRoute('/nodes?kind=chains')).toEqual({ page: 'nodes', chains: true })
   expect(resolveRoute('/nodes/chain/42')).toEqual({ page: 'nodes', selected: { kind: 'chain', id: 42 } })
@@ -131,14 +131,17 @@ test('platform management pages preserve selected server context alongside the n
   }
 })
 
-test('server sections, plugin centre views and split settings resolve to one sidebar entry each', () => {
-  for (const section of ['assets', 'agent', 'plugins', 'ip-info', 'node-quality', 'tcp-quality'] as const) {
+test('server sections, artifact and runtime views and split settings resolve to one sidebar entry each', () => {
+  for (const section of ['assets', 'agent', 'services', 'ip-info', 'node-quality', 'tcp-quality'] as const) {
     expect(resolveRoute(`/servers/42/${section}`)).toEqual({ page: 'server', serverId: 42, section })
     expect(currentNavigation(resolveRoute(`/servers/42/${section}`))?.path).toBe('/servers')
   }
-  expect(resolveRoute('/settings/plugins/servers')).toEqual({ page: 'plugins' })
-  expect(currentNavigation(resolveRoute('/settings/plugins/servers'))?.label).toBe('插件中心')
-  expect(currentNavigation(resolveRoute('/settings/plugins'))?.label).toBe('插件中心')
+  // The network services tab's previous address opens the same tab.
+  expect(resolveRoute('/servers/42/plugins')).toEqual({ page: 'server', serverId: 42, section: 'services' })
+  expect(resolveRoute('/settings/plugins/servers')).toEqual({ page: 'nodes', view: 'runtimes' })
+  expect(currentNavigation(resolveRoute('/settings/plugins/servers'))?.path).toBe('/nodes')
+  expect(currentNavigation(resolveRoute('/settings/artifacts'))?.label).toBe('制品与版本')
+  expect(currentNavigation(resolveRoute('/settings/plugins'))?.label).toBe('制品与版本')
   expect(resolveRoute('/alerts/settings')).toEqual({ page: 'alert-settings' })
   expect(currentNavigation(resolveRoute('/alerts/settings'))?.group).toBe('监控与设置')
   expect(currentNavigation(resolveRoute('/settings'))?.label).toBe('面板设置')

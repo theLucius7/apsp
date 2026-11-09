@@ -1,8 +1,4 @@
-use super::super::{
-    business,
-    chains::{BatchEntry, BatchReceipt, BatchRequest},
-    subscription_sources::models::ProtectedJson,
-};
+use super::super::{business, subscription_sources::models::ProtectedJson};
 use super::{models::*, storage};
 use crate::{
     AppState,
@@ -17,9 +13,56 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sqlx::PgConnection;
-use std::collections::BTreeSet;
+use sqlx::{PgConnection, Postgres, Transaction};
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
+
+/// One request of 「新建链路」: each item creates a chain and, when asked, its own entry node.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BatchRequest {
+    pub request_id: Uuid,
+    pub items: Vec<BatchItem>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BatchItem {
+    pub name: String,
+    pub entry: BatchEntry,
+    pub hops: Vec<BatchHop>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+pub enum BatchEntry {
+    New {
+        server_id: i64,
+        public_host: String,
+        sni: String,
+        port: Option<i64>,
+    },
+    Existing {
+        node_id: i64,
+    },
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+pub struct BatchHop {
+    pub kind: String,
+    #[serde(default)]
+    pub node_id: Option<i64>,
+    #[serde(flatten)]
+    pub additional: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BatchReceipt {
+    pub request_id: Uuid,
+    pub chain_ids: Vec<i64>,
+    pub entry_node_ids: Vec<i64>,
+}
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -34,7 +77,7 @@ enum HopInput {
         update_mode: String,
     },
 }
-fn parsed_hops(item: &super::super::chains::BatchItem, index: usize) -> ApiResult<Vec<HopInput>> {
+fn parsed_hops(item: &BatchItem, index: usize) -> ApiResult<Vec<HopInput>> {
     if item.hops.is_empty() || item.hops.len() > 8 {
         return Err(ApiError::BadRequest(format!(
             "第 {} 条：入口后需要 1 至 8 个有序代理跳",
@@ -276,7 +319,7 @@ pub async fn create_batch(
                 index + 1
             )));
         }
-        let conflict:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_chains WHERE (entry_node_id=$1 OR exit_node_id=$1) AND (deleted_at IS NULL OR (path_kind='ordered' AND phase<>'retired'))) OR EXISTS(SELECT 1 FROM singbox_chain_hops h JOIN singbox_live_chains c ON c.id=h.chain_id WHERE h.managed_node_id=$1) OR EXISTS(SELECT 1 FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE h.managed_node_id=$1 AND (c.deleted_at IS NULL OR c.phase<>'retired') AND (h.generation=ANY(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) OR EXISTS(SELECT 1 FROM unnest(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) AS selected(generation) WHERE selected.generation IS NOT NULL AND NOT EXISTS(SELECT 1 FROM singbox_ordered_chain_versions v WHERE v.chain_id=c.id AND v.generation=selected.generation)))) OR EXISTS(SELECT 1 FROM accesses WHERE node_id=$1) OR EXISTS(SELECT 1 FROM singbox_policy_nodes WHERE node_id=$1)").bind(entry).fetch_one(&mut *tx).await?;
+        let conflict:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_chains WHERE entry_node_id=$1 AND (deleted_at IS NULL OR phase<>'retired')) OR EXISTS(SELECT 1 FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE h.managed_node_id=$1 AND (c.deleted_at IS NULL OR c.phase<>'retired') AND (h.generation=ANY(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) OR EXISTS(SELECT 1 FROM unnest(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) AS selected(generation) WHERE selected.generation IS NOT NULL AND NOT EXISTS(SELECT 1 FROM singbox_ordered_chain_versions v WHERE v.chain_id=c.id AND v.generation=selected.generation)))) OR EXISTS(SELECT 1 FROM accesses WHERE node_id=$1) OR EXISTS(SELECT 1 FROM singbox_policy_nodes WHERE node_id=$1)").bind(entry).fetch_one(&mut *tx).await?;
         if conflict {
             return Err(ApiError::Conflict(format!(
                 "第 {} 条：入口需要尚未授权且未被其他路径引用的独立节点",
@@ -290,7 +333,6 @@ pub async fn create_batch(
             let mut frozen = FrozenVersion {
                 entry: entry_snapshot,
                 hops: Vec::new(),
-                legacy_relay_uuid: None,
             };
             let mut endpoint_servers = BTreeSet::from([frozen.entry.server_id]);
             let mut identities = BTreeSet::new();
@@ -368,7 +410,6 @@ pub async fn create_batch(
                 id,
                 1,
                 &frozen,
-                false,
                 &Capabilities {
                     tcp: caps.tcp,
                     udp: caps.udp,
@@ -487,7 +528,7 @@ pub async fn update_resource(
         .map(|chain| chain.entry_node_id)
         .unwrap_or(id);
     if kind == "direct" {
-        super::super::chains::ensure_direct(&mut tx, entry_id).await?;
+        ensure_direct(&mut tx, entry_id).await?;
     }
     let query = format!(
         "SELECT {} FROM nodes n WHERE n.id=$1 AND n.deleted_at IS NULL FOR UPDATE",
@@ -671,4 +712,31 @@ pub async fn apply_node_versions(
     save_receipt(&mut tx, &hash, &receipt).await?;
     tx.commit().await?;
     Ok(Json(receipt))
+}
+
+/// A chain entry must be an ordinary managed node: not a migrated line and not another chain's entry.
+async fn ensure_direct(tx: &mut Transaction<'_, Postgres>, node: i64) -> ApiResult<()> {
+    let preserved: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM singbox_nexus_runtime_nodes WHERE node_id=$1)",
+    )
+    .bind(node)
+    .fetch_one(&mut **tx)
+    .await?;
+    if preserved {
+        return Err(ApiError::Conflict(
+            "迁移线路保留原客户端身份，不能用作链路节点；调整谁能使用请编辑它所在的策略组".into(),
+        ));
+    }
+    let entry: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM singbox_chains WHERE entry_node_id=$1 AND (deleted_at IS NULL OR (path_kind='ordered' AND phase<>'retired')))",
+    )
+    .bind(node)
+    .fetch_one(&mut **tx)
+    .await?;
+    if entry {
+        return Err(ApiError::Conflict(
+            "此节点是链路入口，请通过包含该链路的策略组授权".into(),
+        ));
+    }
+    Ok(())
 }

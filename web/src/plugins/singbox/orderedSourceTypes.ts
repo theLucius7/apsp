@@ -139,10 +139,3 @@ export function orderedPreviewError(preview: OrderedPreview, selected: string[],
   if (!selected.length || selected.length > 5000 || new Set(selected).size !== selected.length || selected.some(key => !preview.nodes.some(node => node.key === key && node.selectable))) return '请至少选择一个可导入的节点；所选节点须受支持且身份唯一。'
   return ''
 }
-
-// Numbered sources become a read-only archive once the source migration ran.
-export const sourceMigrationPath = '/api/plugins/sing-box/source-migration'
-export type SourceMigration = { migrated: boolean; migrated_at: number | null }
-export function validSourceMigration(v: unknown): v is SourceMigration {
-  return record(v) && exact(v, 'migrated migrated_at') && typeof v.migrated === 'boolean' && (v.migrated ? integer(v.migrated_at) : v.migrated_at === null)
-}

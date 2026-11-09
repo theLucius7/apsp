@@ -4,7 +4,7 @@ import { Field, FormDialog, RefreshNotice, DialogPresence } from '../../componen
 import { resourceWriteError, useAction, useRefreshNotice, useResource } from '../../hooks'
 import type { Node, PluginServer } from '../../types'
 import { assignmentRequestId, proxyResourceKey, validatedSnapshot, validProxyResources } from './groupTypes'
-import type { Chain, ProxyResource, ResourceSnapshot } from './groupTypes'
+import type { ProxyResource, ResourceSnapshot } from './groupTypes'
 import { sourceRoot, validSourceNodePage, validSubscriptionSources } from './orderedSourceTypes'
 import type { SourceNode, SourceNodePage, SubscriptionSource } from './orderedSourceTypes'
 import ChainPathEditor from './ChainPathEditor'
@@ -16,59 +16,9 @@ import { Notice } from '@/components/panel'
 
 const root = '/api/plugins/sing-box'
 
-type Snapshot<T> = { data?: T[]; fresh: boolean; error: string }
-export type ChainWriteSnapshot = { chains: Snapshot<Chain>; nodes: Snapshot<Node>; servers: Snapshot<PluginServer> }
-type ChainRequest = { name: string; entry_node_id: number; exit_node_id: number }
-
-export function chainWriteError(snapshot: ChainWriteSnapshot, id?: number) {
-  const error = resourceWriteError(snapshot.chains, snapshot.nodes, snapshot.servers)
-  if (error) return error
-  if (!snapshot.chains.data || !snapshot.nodes.data || !snapshot.servers.data) return '正在刷新相关信息，暂不能修改；草稿已保留。'
-  return id !== undefined && !snapshot.chains.data.some(chain => chain.id === id)
-    ? '此链路已不可用，暂不能提交。可关闭窗口后重新选择。' : ''
-}
-
 function nodeId(value: string) {
   const id = Number(value)
   return /^[1-9]\d*$/.test(value) && Number.isSafeInteger(id) ? id : null
-}
-
-export function chainSelectionError(snapshot: ChainWriteSnapshot, entry: string, exit: string) {
-  for (const value of [entry, exit].filter(Boolean)) {
-    const id = nodeId(value)
-    const node = snapshot.nodes.data?.find(node => node.id === id)
-    const server = node && snapshot.servers.data?.find(server => server.id === node.server_id)
-    if (!node || node.protocol !== 'vless-reality' || node.enabled === false || !server?.enabled) {
-      return '已选节点已不可用或所属服务器尚未安装 sing-box，请重新选择；名称和其他草稿已保留。'
-    }
-  }
-  const entryId = nodeId(entry), exitId = nodeId(exit)
-  if (entryId !== null && exitId !== null) {
-    const entryNode = snapshot.nodes.data?.find(node => node.id === entryId)
-    const exitNode = snapshot.nodes.data?.find(node => node.id === exitId)
-    if (entryNode?.server_id === exitNode?.server_id) return '入口和出口必须属于两台不同服务器；草稿已保留。'
-  }
-  if (snapshot.chains.data?.some(chain => chain.entry_node_id === entryId || chain.exit_node_id === entryId || chain.entry_node_id === exitId)) {
-    return '已选节点的链路身份已变更，不支持重复入口、嵌套或循环链路；请重新选择，草稿已保留。'
-  }
-  return ''
-}
-
-export async function createChain(form: FormData, snapshot: ChainWriteSnapshot, write: (request: ChainRequest) => Promise<unknown> = request => api(`${root}/chains`, 'POST', request)) {
-  const entry = String(form.get('entry_node_id') ?? ''), exit = String(form.get('exit_node_id') ?? '')
-  const error = chainWriteError(snapshot) || chainSelectionError(snapshot, entry, exit)
-  if (error) throw new Error(error)
-  const entryId = nodeId(entry), exitId = nodeId(exit)
-  if (entryId === null || exitId === null) throw new Error('请选择入口节点和出口节点；草稿已保留。')
-  const name = String(form.get('name') ?? '').trim()
-  if (!name || Array.from(name).length > 128) throw new Error('请填写不超过 128 个字符的名称；草稿已保留。')
-  return write({ name, entry_node_id: entryId, exit_node_id: exitId })
-}
-
-export async function deleteChain(id: number, snapshot: ChainWriteSnapshot, write: (id: number) => Promise<unknown> = id => api(`${root}/chains/${id}`, 'DELETE')) {
-  const error = chainWriteError(snapshot, id)
-  if (error) throw new Error(error)
-  return write(id)
 }
 
 export type ProxyWriteSnapshot = { resources: ResourceSnapshot<ProxyResource[]>; nodes: ResourceSnapshot<Node[]>; servers: ResourceSnapshot<PluginServer[]>; sources?: ResourceSnapshot<SubscriptionSource[]>; sourceNodes?: Record<number, ResourceSnapshot<SourceNodePage>> }
@@ -360,15 +310,15 @@ export default function Chains({ snapshot, serverId, getServerId, refresh, onCre
     {refreshNotice.visible && <RefreshNotice />}
     <DialogPresence>{creating && <FormDialog wide title="创建链路" onClose={() => setCreating(false)} onSubmit={submit} busy={action.busy} disabled={Boolean(writeError)} submitDisabled={Boolean(selectionError)} error={writeError || selectionError || action.error} retry={writeError || selectionError ? refresh : undefined} submitLabel={lastRequestId && unchanged ? '重试原批次' : '创建未授权链路'}>
       <p className="text-muted-foreground mt-3 text-xs leading-relaxed">入口固定为受管 Reality，之后按顺序选 1–8 个受管或订阅节点，最后一跳为出口；提交时一并校验整条路径。</p>
-      <Field label="链路模板" hint={`模板只预填入口之后的跳数，之后仍可增删、调整顺序，最多 8 跳。${draft.rows.some(row => row.hops) ? '已单独编辑的路径不随模板变化。' : ''}`}><NativeSelect className="w-full" value={template} onChange={event => { const next = event.target.value; if (next === 'two-hop' || next === 'relay' || next === 'subscription') update({ hops: chainTemplateHops(next, draft.hops ?? []) }) }}><option value="two-hop">入口 → 落地（两跳）</option><option value="relay">入口 → 中转 → 落地</option><option value="subscription">含订阅来源节点</option>{template === 'custom' && <option value="custom" disabled>自定义路径（{draft.hops?.length ?? 0} 跳）</option>}</NativeSelect></Field>
+      <Field label="链路模板" hint={`模板只预填入口之后的跳数，之后仍可增删、调整顺序，最多 8 跳。${draft.rows.some(row => row.hops) ? '已单独编辑的路径不随模板变化。' : ''}`}><NativeSelect className="w-full" value={template} onChange={event => { const next = event.target.value; if (next === 'two-hop' || next === 'relay' || next === 'subscription') update({ hops: chainTemplateHops(next, draft.hops ?? []) }) }}><option value="two-hop">入口 → 落地（两跳）</option><option value="relay">入口 → 中转 → 落地</option><option value="subscription">含外部节点</option>{template === 'custom' && <option value="custom" disabled>自定义路径（{draft.hops?.length ?? 0} 跳）</option>}</NativeSelect></Field>
       <Field label="入口方式"><NativeSelect className="w-full" name="entry_mode" value={draft.mode} onChange={event => update({ mode: event.target.value as 'new' | 'existing', rows: event.target.value === 'existing' ? draft.rows.slice(0, 1) : draft.rows })}><option value="new">新建 Reality 专用入口</option><option value="existing">使用现有未授权入口（单条）</option></NativeSelect></Field>
       <div className="grid gap-x-5 sm:grid-cols-2">
         {draft.mode === 'new' ? <><Field label="入口服务器"><NativeSelect className="w-full" name="server_id" required value={draft.server_id} onChange={event => update({ server_id: event.target.value })}><option value="" disabled>选择入口服务器</option>{draft.server_id && !enabledServers.some(server => String(server.id) === draft.server_id) && <option value={draft.server_id}>服务器 #{draft.server_id}（已不可用）</option>}{enabledServers.map(server => <option key={server.id} value={server.id}>{server.name}{server.online ? ' · 在线' : ' · 离线，等待应用'}</option>)}</NativeSelect></Field><Field label="入口公开地址" hint="同批次共享客户端连接域名或 IP，不含协议、端口和路径。"><Input name="public_host" required value={draft.public_host} onChange={event => update({ public_host: event.target.value })} placeholder="entry.example.com" autoComplete="off" /></Field><Field label="Reality 协议域名" hint="同批次共享 SNI。"><Input name="sni" required value={draft.sni} onChange={event => update({ sni: event.target.value })} placeholder="www.example.com" autoComplete="off" /></Field></> : <Field label="入口节点" hint="只能选择未授权、无链路引用的独立 Reality 节点。"><NativeSelect className="w-full" name="entry_node_id" required value={draft.entry_node_id} onChange={event => update({ entry_node_id: event.target.value })}><option value="" disabled>选择入口</option>{draft.entry_node_id && !choices.some(node => String(node.id) === draft.entry_node_id) && <option value={draft.entry_node_id}>节点 #{draft.entry_node_id}（已不可用，请重新选择）</option>}{choices.map(node => <option key={node.id} value={node.id}>{node.name}（服务器 #{node.server_id}）</option>)}</NativeSelect></Field>}
       </div>
       {draft.hops && <p data-slot="reality-hint" className="text-muted-foreground mt-3 text-xs leading-relaxed">链路中的受管段只能使用 VLESS + Reality 节点；其他协议的节点不会出现在这里。{otherProtocolNodes > 0 && `另有 ${otherProtocolNodes} 个已启用的其他协议节点未列出。`}</p>}
-      {draft.hops && <ChainPathEditor label="共享有序路径" hops={draft.hops} onChange={hops => update({ hops })} snapshot={writeSnapshot} />}
+      {draft.hops && <ChainPathEditor label="共享路径" hops={draft.hops} onChange={hops => update({ hops })} snapshot={writeSnapshot} />}
       {draft.hops && <ChainExitExpansion draft={draft} snapshot={writeSnapshot} onChange={value => update(value)} />}
-      {draft.hops && onAddSource && <Button variant="ghost" size="sm" type="button" onClick={() => { setCreating(false); onAddSource() }}>添加订阅来源并保留链路草稿</Button>}
+      {draft.hops && onAddSource && <Button variant="ghost" size="sm" type="button" onClick={() => { setCreating(false); onAddSource() }}>添加外部来源并保留链路草稿</Button>}
       {replacementBlocked ? <Notice role="status">先确认已发送批次的结果，原草稿和精确请求已保留。确认后再选择创建替代链路。</Notice> : replacementDraft && <Notice role="status">替代链路将创建新入口与凭据，不继承任何授权。完成后需明确调整策略组引用，等待新路径应用，再清理旧链路；不承诺无损切换。</Notice>}
       <h3 className="mt-3 mb-4 text-sm font-semibold">链路与入口端口 <span className="bg-muted text-muted-foreground min-w-5 rounded px-1.5 text-center text-xs font-medium tabular-nums">{draft.rows.length} / 32</span></h3>
       {draft.rows.map((row, index) => <div data-slot="chain-draft-row" className="grid items-start gap-4 max-md:mb-4 max-md:gap-0 max-md:border-b max-md:pb-3 md:grid-cols-[1fr_10.5rem_auto]" key={index}><Field label={`链路 ${index + 1} 名称`}><Input name={index === 0 ? 'name' : `name_${index}`} required maxLength={128} value={row.name} onChange={event => rowUpdate(index, { name: event.target.value })} autoComplete="off" /></Field>{draft.mode === 'new' && <Field label={`入口端口 ${index + 1}`} hint="留空时分别自动分配；18085 为保留端口。"><Input name={`entry_port_${index}`} type="number" min={1} max={65535} step={1} value={row.port} onChange={event => rowUpdate(index, { port: event.target.value })} placeholder="自动分配" /></Field>}{draft.rows.length > 1 && <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20 mt-8 max-md:mt-0 max-md:justify-self-start" type="button" onClick={() => update({ rows: draft.rows.filter((_, i) => i !== index) })}>移除第 {index + 1} 条</Button>}</div>)}

@@ -38,7 +38,7 @@ pub(crate) async fn chain(
     lock: bool,
 ) -> ApiResult<ChainRow> {
     sqlx::query_as(&format!(
-        "SELECT {CHAIN_COLUMNS} FROM singbox_chains WHERE id=$1 AND path_kind IN ('legacy','ordered'){}",
+        "SELECT {CHAIN_COLUMNS} FROM singbox_chains WHERE id=$1 AND path_kind='ordered'{}",
         if lock { " FOR UPDATE" } else { "" }
     ))
     .bind(id)
@@ -46,15 +46,13 @@ pub(crate) async fn chain(
     .await?
     .ok_or(ApiError::NotFound)
 }
-/// The lifecycle also drives the candidate of a mixed chain under conversion;
-/// that chain stays mixed until its entry switches.
 pub(crate) async fn lifecycle_chain(
     connection: &mut PgConnection,
     id: i64,
     lock: bool,
 ) -> ApiResult<ChainRow> {
     sqlx::query_as(&format!(
-        "SELECT {CHAIN_COLUMNS} FROM singbox_chains WHERE id=$1 AND (path_kind IN ('legacy','ordered') OR EXISTS(SELECT 1 FROM singbox_mixed_conversions m WHERE m.chain_id=singbox_chains.id AND m.state='preparing')){}",
+        "SELECT {CHAIN_COLUMNS} FROM singbox_chains WHERE id=$1 AND path_kind='ordered'{}",
         if lock { " FOR UPDATE" } else { "" }
     ))
     .bind(id)
@@ -67,7 +65,7 @@ pub(crate) async fn version(
     id: i64,
     generation: i64,
 ) -> ApiResult<VersionRow> {
-    sqlx::query_as("SELECT generation,legacy,capabilities,snapshot FROM singbox_ordered_chain_versions WHERE chain_id=$1 AND generation=$2").bind(id).bind(generation).fetch_optional(connection).await?.ok_or(ApiError::NotFound)
+    sqlx::query_as("SELECT generation,capabilities,snapshot FROM singbox_ordered_chain_versions WHERE chain_id=$1 AND generation=$2").bind(id).bind(generation).fetch_optional(connection).await?.ok_or(ApiError::NotFound)
 }
 pub(crate) fn compiler_path(
     chain_id: i64,
@@ -193,12 +191,11 @@ pub(crate) async fn save_version(
     id: i64,
     generation: i64,
     frozen: &FrozenVersion,
-    legacy: bool,
     caps: &Capabilities,
 ) -> ApiResult<()> {
     let hash = sha(frozen)?;
-    sqlx::query("INSERT INTO singbox_ordered_chain_versions(chain_id,generation,legacy,entry_endpoint_version,semantic_sha256,capabilities,snapshot,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
-        .bind(id).bind(generation).bind(legacy).bind(frozen.entry.version_id).bind(hash).bind(json!(caps)).bind(json!(frozen)).bind(now_timestamp()).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO singbox_ordered_chain_versions(chain_id,generation,entry_endpoint_version,semantic_sha256,capabilities,snapshot,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)")
+        .bind(id).bind(generation).bind(frozen.entry.version_id).bind(hash).bind(json!(caps)).bind(json!(frozen)).bind(now_timestamp()).execute(&mut **tx).await?;
     for (index, hop) in frozen.hops.iter().enumerate() {
         match hop {
             FrozenHop::Managed {
@@ -226,7 +223,7 @@ pub(crate) async fn referenced_servers(
     connection: &mut PgConnection,
     id: i64,
 ) -> ApiResult<Vec<i64>> {
-    Ok(sqlx::query_scalar("SELECT DISTINCT server_id FROM (SELECT n.server_id FROM singbox_chains c JOIN nodes n ON n.id=c.entry_node_id WHERE c.id=$1 UNION SELECT h.managed_server_id FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE c.id=$1 AND h.kind='managed' AND (h.generation=ANY(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) OR EXISTS(SELECT 1 FROM unnest(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) AS selected(generation) WHERE selected.generation IS NOT NULL AND NOT EXISTS(SELECT 1 FROM singbox_ordered_chain_versions v WHERE v.chain_id=c.id AND v.generation=selected.generation))) UNION SELECT n.server_id FROM singbox_chains c JOIN nodes n ON n.id=c.exit_node_id WHERE c.id=$1) refs ORDER BY server_id").bind(id).fetch_all(connection).await?)
+    Ok(sqlx::query_scalar("SELECT DISTINCT server_id FROM (SELECT n.server_id FROM singbox_chains c JOIN nodes n ON n.id=c.entry_node_id WHERE c.id=$1 UNION SELECT h.managed_server_id FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE c.id=$1 AND h.kind='managed' AND (h.generation=ANY(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) OR EXISTS(SELECT 1 FROM unnest(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) AS selected(generation) WHERE selected.generation IS NOT NULL AND NOT EXISTS(SELECT 1 FROM singbox_ordered_chain_versions v WHERE v.chain_id=c.id AND v.generation=selected.generation)))) refs ORDER BY server_id").bind(id).fetch_all(connection).await?)
 }
 // This checks the managed runtime dependencies of an already frozen lineage.
 // Archiving, replacing or losing a subscription source stops new references and
@@ -314,11 +311,6 @@ pub(crate) async fn node_configuration_references(
         "SELECT DISTINCT node_id,id,name FROM (
             SELECT c.entry_node_id AS node_id,c.id,c.name FROM singbox_chains c
             WHERE c.deleted_at IS NULL OR c.phase<>'retired'
-            UNION ALL
-            SELECT c.exit_node_id AS node_id,c.id,c.name FROM singbox_live_chains c
-            UNION ALL
-            SELECT h.managed_node_id AS node_id,c.id,c.name FROM singbox_chain_hops h
-            JOIN singbox_live_chains c ON c.id=h.chain_id
             UNION ALL
             SELECT h.managed_node_id AS node_id,c.id,c.name FROM singbox_ordered_chain_hops h
             JOIN singbox_chains c ON c.id=h.chain_id

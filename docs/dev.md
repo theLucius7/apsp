@@ -80,7 +80,7 @@ python3 tools/check-source-artifacts.py
 
 前端构建放在 Rust 检查之前，因为面板嵌入 `web/dist`。前端有修改时只提交源码、依赖锁和测试，生成产物不提交。CI 在构建环境生成产物并检查 Git 索引没有误跟踪构建目录；本轮只修改工作流定义，不恢复或触发暂停的 CI。冻结源码用于隔离验收时，仍须将本地构建的 `web/dist` 纳入该次冻结清单，不能把未构建的源码当作可直接编译的完整面板输入。
 
-`bun test` 运行 `web/tests/*.test.ts` 的数据与协议逻辑回归；`web/tests/*.mjs` 是使用本地 API 夹具的浏览器回归。修改登录/导航/路由时可选择已有的 `dashboard.mjs`、`server-operations.mjs`、`plugin-catalog.mjs` 和 `node-routes.mjs`，修改插件时再加对应插件场景。它们读取构建后的 `web/dist`，需要本地 Playwright/Chromium；可通过 `APSP_PLAYWRIGHT_MODULE` 与 `APSP_CHROME_PATH` 指定已安装位置，然后用 `bun web/tests/<场景>.mjs` 执行。浏览器测试不需要连接生产面板。
+`bun test` 运行 `web/tests/*.test.ts` 的数据与协议逻辑回归；`web/tests/*.mjs` 是使用本地 API 夹具的浏览器回归。修改登录/导航/路由时可选择已有的 `dashboard.mjs`、`server-operations.mjs`、`shell-navigation.mjs` 和 `node-routes.mjs`，修改某个领域的页面时再加该领域的场景。它们读取构建后的 `web/dist`，需要本地 Playwright/Chromium；可通过 `APSP_PLAYWRIGHT_MODULE` 与 `APSP_CHROME_PATH` 指定已安装位置，然后用 `bun web/tests/<场景>.mjs` 执行。浏览器测试不需要连接生产面板。
 
 依赖真实上游二进制的测试默认标记为 ignored，设置 `APSP_TEST_SINGBOX` 后显式执行，不能把默认 `cargo test` 当作这些专项检查已经通过：
 

@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
-import { flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+import { proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
 import { assertNativeSelectContrast } from './native-select-contrast.mjs'
 
 // TEST_ONLY read-only resources; no device execution or secret template content is claimed.
@@ -54,7 +54,7 @@ try {
     const proxyResources = () => {
       const missingIds = [...new Set(chainEntries.flatMap(chain => [chain.entry_node_id, chain.exit_node_id]))].filter(id => !nodes.some(node => node.id === id))
       const retired = missingIds.map((id, index) => ({ id, name: `已删除历史节点 ${id}`, server_id: index % 2 + 1, protocol: 'vless-reality', public_host: 'retired.example.com', port: 20000 + id, sni: 'www.example.com', node_deleted: true }))
-      return flatResourceFixtures([...nodes, ...retired], servers, chainEntries)
+      return proxyResourceFixtures([...nodes, ...retired], servers, chainEntries)
     }
     const user = { id: 1, name: '测试代理用户', subscription_token: 'TEST_ONLY', subscription_url: 'https://panel.example.com/s/TEST_ONLY' }
     const usage = { uplink: '10', downlink: '20', total: '30', by_user: [{ user_id: 1, name: user.name, deleted: false, uplink: '10', downlink: '20' }], by_node: [] }
@@ -151,11 +151,9 @@ try {
         assert.deepEqual(payload, { name: '已保留的用户草稿' })
         userWrites.push(payload); Object.assign(user, payload); value = user
       }
-      else if (pathname === `${prefix}/proxy-resources` && method === 'GET') value = proxyResources()
-      else if (pathname === `${prefix}/ordered-proxy-resources` && method === 'GET') value = []
+      else if (pathname === `${prefix}/ordered-proxy-resources` && method === 'GET') value = proxyResources()
       else if (pathname === `${prefix}/external-node-candidates` && method === 'GET') value = { available_nodes: [] }
       else if (pathname === `${prefix}/nodes` && method === 'GET') value = nodes
-      else if (pathname === `${prefix}/chains` && method === 'GET') value = chainEntries
       else if (pathname === `${prefix}/policy-groups` && method === 'GET') value = policies
       else if (pathname === `${prefix}/policy-groups` && method === 'POST') {
         const payload = request.postDataJSON()
@@ -403,16 +401,16 @@ try {
     // Let the actual periodic GET begin; no prior error or click behind the open dialog.
     assert.equal(failures.size, 0)
     await enabled(dialog.getByRole('button', { name: '保存', exact: true }))
-    await recoverRead(`${prefix}/proxy-resources`, null, async () => {
+    await recoverRead(`${prefix}/ordered-proxy-resources`, null, async () => {
       // A poll in flight leaves the draft submittable (ADR 0102); only a failed read blocks it.
       await enabled(dialog.getByRole('button', { name: '保存', exact: true }))
       assert.equal(await dialog.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '已保留的策略草稿')
       assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="2"])').isChecked(), true)
     })
     await enabled(dialog.getByRole('button', { name: '保存', exact: true }))
-    await failedRead(`${prefix}/proxy-resources`)
+    await failedRead(`${prefix}/ordered-proxy-resources`)
     await blockedForm(dialog, '保存')
-    await recoverRead(`${prefix}/proxy-resources`, dialog.getByRole('button', { name: '重试', exact: true }), async () => {
+    await recoverRead(`${prefix}/ordered-proxy-resources`, dialog.getByRole('button', { name: '重试', exact: true }), async () => {
       await blockedForm(dialog, '保存')
       assert.equal(await dialog.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '已保留的策略草稿')
       assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="2"])').isChecked(), true)
@@ -443,9 +441,9 @@ try {
     dialog = page.getByRole('dialog')
     assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="chain_ids"][value="42"])').isChecked(), true)
     assert.equal(await dialog.getByRole('button', { name: '保存', exact: true }).isDisabled(), true)
-    await failedRead(`${prefix}/proxy-resources`)
+    await failedRead(`${prefix}/ordered-proxy-resources`)
     await blockedForm(dialog, '保存')
-    await recoverRead(`${prefix}/proxy-resources`, dialog.getByRole('button', { name: '重试', exact: true }), async () => {
+    await recoverRead(`${prefix}/ordered-proxy-resources`, dialog.getByRole('button', { name: '重试', exact: true }), async () => {
       await blockedForm(dialog, '保存')
       assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="chain_ids"][value="42"])').isChecked(), true)
       chainEntries = chainEntries.filter(chain => chain.id !== 42)

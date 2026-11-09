@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Notice } from '@/components/panel'
 
 export type SourceEditorSession = { mode: SourceEditorMode; source?: SubscriptionSource; generation: number }
-const titles: Record<SourceEditorMode, string> = { create: '添加订阅来源', metadata: '修改来源设置', update: '更新同一来源内容', replace: '更换订阅来源', archive: '归档订阅来源', unarchive: '恢复订阅来源' }
+const titles: Record<SourceEditorMode, string> = { create: '添加外部来源', metadata: '修改来源设置', update: '更新同一来源内容', replace: '更换外部来源', archive: '归档外部来源', unarchive: '恢复外部来源' }
 export default function SourceEditor({ session, open, snapshot, refresh, onClose, onSaved, onReset }: { session: SourceEditorSession; open: boolean; snapshot: SourceSnapshot; refresh: () => void; onClose: () => void; onSaved: (receipt: SourceReceipt) => void; onReset: () => void }) {
   const [draft, setDraft] = useState<SourceDraft>(emptySourceDraft)
   const [inputError, setInputError] = useState('')

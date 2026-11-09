@@ -146,13 +146,11 @@ async fn full_four_hop_creation_freezes_ordered_identities_without_opening_user_
     assert_eq!(view["path_state"]["candidate_generation"], 1);
     assert_eq!(view["exit"]["id"], fixture.nodes[2]);
     no_secrets(&view);
-    let (route, legacy_exit, legacy_relay): (bool, Option<i64>, Option<Uuid>) = sqlx::query_as(
-        "SELECT route_enabled,exit_node_id,relay_uuid FROM singbox_chains WHERE id=$1",
-    )
-    .bind(chain)
-    .fetch_one(&fixture.panel.state.pool)
-    .await?;
-    assert!(!route && legacy_exit.is_none() && legacy_relay.is_none());
+    let route: bool = sqlx::query_scalar("SELECT route_enabled FROM singbox_chains WHERE id=$1")
+        .bind(chain)
+        .fetch_one(&fixture.panel.state.pool)
+        .await?;
+    assert!(!route);
     let frozen: Value = sqlx::query_scalar(
         "SELECT snapshot FROM singbox_ordered_chain_versions WHERE chain_id=$1 AND generation=1",
     )

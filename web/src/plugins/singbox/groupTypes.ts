@@ -2,7 +2,6 @@ import type { ExternalEntry } from './externalAccessTypes'
 /** `legacy_group_id` marks a group that stands for an original Nexus permission group (ADR 0115). */
 export type PolicyGroup = { id: number; name: string; node_ids: number[]; chain_ids: number[]; member_count: number; external_nodes?: ExternalEntry[]; legacy_group_id?: number | null; migrated_node_ids?: number[]; legacy_lines?: number }
 export type PackageGroup = { id: number; name: string; monthly_bytes: string | null; reset_day: number; reset_hour: number; reset_minute: number; timezone: string; duration_days: number }
-export type Chain = { id: number; name: string; entry_node_id: number; exit_node_id: number; available: boolean }
 export type ProxyResourceKind = 'direct' | 'chain'
 export type ProxyResourceFilter = 'all' | 'direct' | 'chains'
 export type ProxyResourceServerRole = 'any' | 'entry' | 'middle' | 'exit'
@@ -16,17 +15,19 @@ export type ProxyResource = {
   kind: ProxyResourceKind; id: number; name: string; entry: ResourceEndpoint; exit: ResourceEndpoint | null;
   available: boolean; unavailable_reasons: string[]; policy_group_ids: number[]; user_count: number;
   chain_refs: { id: number; name: string; role: 'entry' | 'exit'; hop_position: number | null; generation: number; state: 'desired' | 'applied' | 'candidate' | 'recovery' | 'retained' | 'unresolved' }[];
-  settings_revision: number; path_kind: 'legacy' | 'ordered' | null; hops: PublicHop[]; path_state: PathState | null;
+  settings_revision: number; path_kind: 'ordered' | null; hops: PublicHop[]; path_state: PathState | null;
 }
 export type PublicHop = { kind: 'managed'; position: number; node_id: number; endpoint_version_id: string; endpoint: ResourceEndpoint }
   | { kind: 'subscription'; position: number; source_id: number; source_name: string; identity_epoch: number;
     external_node_id: string; node_version_id: string; source_revision_id: string; update_mode: 'follow_node' | 'pinned';
     name: string; protocol: string; server: string; server_port: number; sni: string | null; transport: string | null;
     capabilities: { tcp: boolean; udp: boolean }; source_archived: boolean; node_present: boolean; update_error: string | null }
+/** A chain's hops as one line: managed hops by node and server, external hops by source and pinned or followed version. */
+export function publicPathText(hops: PublicHop[]) { return hops.map(hop => hop.kind === 'managed' ? `受管 ${hop.endpoint.name}（服务器 #${hop.endpoint.server_id}）` : `订阅 ${hop.source_name} / ${hop.name}（${hop.update_mode === 'pinned' ? '固定' : '跟随'} ${hop.node_version_id.slice(0, 8)}）`).join(' → ') }
 export type PathDependency = { server_id: number; role: 'entry' | 'managed'; hop_position: number | null; generation: number; stage: string;
   required_revision: number | null; applied_revision: number | null; bundle_sha256: string | null; state: 'pending' | 'ready' | 'failed' | 'retired'; observed_at: number | null }
 export type PathProbe = { stage: 'candidate' | 'switched'; request_id: string; state: 'pending' | 'verified' | 'failed' | 'expired'; observed_at: number | null; error: string | null }
-export type PathPhase = 'legacy' | 'preparing_dependencies' | 'preparing_entry' | 'probing_candidate' | 'switching_entry' | 'probing_switched' | 'fixing_barrier' | 'retiring_old' | 'applied' | 'restoring' | 'failed' | 'retiring' | 'retired'
+export type PathPhase = 'preparing_dependencies' | 'preparing_entry' | 'probing_candidate' | 'switching_entry' | 'probing_switched' | 'fixing_barrier' | 'retiring_old' | 'applied' | 'restoring' | 'failed' | 'retiring' | 'retired'
 export type PathState = { desired_generation: number; candidate_generation: number | null; applied_generation: number | null;
   recovery_generation: number | null; minimum_generation: number; phase: PathPhase; capabilities: { tcp: boolean; udp: boolean };
   last_error: string | null; dependencies: PathDependency[]; probe: PathProbe | null;
@@ -67,7 +68,7 @@ export function validPathState(value: unknown): value is PathState {
   const generations = value.generations
   return exact(value, 'desired_generation candidate_generation applied_generation recovery_generation minimum_generation phase capabilities last_error dependencies probe generations')
     && integer(value.desired_generation, 1) && ['candidate_generation', 'applied_generation', 'recovery_generation'].every(key => value[key] === null || integer(value[key], 1) && value[key] <= Number(value.desired_generation)) && integer(value.minimum_generation) && value.minimum_generation <= value.desired_generation
-    && ['legacy', 'preparing_dependencies', 'preparing_entry', 'probing_candidate', 'switching_entry', 'probing_switched', 'fixing_barrier', 'retiring_old', 'applied', 'restoring', 'failed', 'retiring', 'retired'].includes(String(value.phase))
+    && ['preparing_dependencies', 'preparing_entry', 'probing_candidate', 'switching_entry', 'probing_switched', 'fixing_barrier', 'retiring_old', 'applied', 'restoring', 'failed', 'retiring', 'retired'].includes(String(value.phase))
     && capabilities(value.capabilities) && nullableText(value.last_error) && Array.isArray(value.dependencies) && value.dependencies.length <= 512
     && value.dependencies.every(dep => object(dep) && exact(dep, 'server_id role hop_position generation stage required_revision applied_revision bundle_sha256 state observed_at')
       && integer(dep.server_id, 1) && ['entry', 'managed'].includes(String(dep.role)) && (dep.role === 'entry' ? dep.hop_position === null : integer(dep.hop_position, 1) && dep.hop_position <= 8)
@@ -94,9 +95,8 @@ export function validProxyResource(value: unknown): value is ProxyResource {
     && typeof value.name === 'string' && validResourceEndpoint(value.entry)
     && (value.exit === null || validResourceEndpoint(value.exit)) && integer(value.settings_revision, 1)
     && (value.kind === 'direct' ? value.exit === null && value.entry.id === value.id && value.path_kind === null && Array.isArray(value.hops) && value.hops.length === 0 && value.path_state === null
-      : ['legacy', 'ordered'].includes(String(value.path_kind)) && validPublicHops(value.hops) && validPathState(value.path_state)
+      : value.path_kind === 'ordered' && validPublicHops(value.hops) && validPathState(value.path_state)
         && (value.hops[value.hops.length - 1].kind === 'managed' ? validResourceEndpoint(value.exit) && value.exit.id === (value.hops[value.hops.length - 1] as Extract<PublicHop, { kind: 'managed' }>).node_id : value.exit === null)
-        && (value.path_kind !== 'legacy' || value.hops.length === 1 && value.hops[0].kind === 'managed')
         && JSON.stringify(value.path_state.generations.find(view => view.state === 'desired')?.hops) === JSON.stringify(value.hops))
     && typeof value.available === 'boolean' && Array.isArray(value.unavailable_reasons) && value.unavailable_reasons.every(reason => typeof reason === 'string')
     && Array.isArray(value.policy_group_ids) && value.policy_group_ids.every(id => integer(id, 1)) && integer(value.user_count)

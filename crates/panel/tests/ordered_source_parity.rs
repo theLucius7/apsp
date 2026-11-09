@@ -365,7 +365,7 @@ async fn adoption_uses_the_current_version_and_keeps_chain_selection_unchanged(
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn public_ids_share_the_numbered_source_sequences(pool: PgPool) -> Result<()> {
+async fn public_ids_come_from_the_ordered_source_sequences(pool: PgPool) -> Result<()> {
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let receipt = call(&panel, &cookie, Method::POST, "/ordered-subscription-sources", Some(json!({"request_id":Uuid::new_v4(),"name":"Inline","input":{"kind":"inline","content":config(vec![proxy("One", "a.example.com"), proxy("Two", "b.example.com")])}})), StatusCode::ACCEPTED).await?;
@@ -377,11 +377,12 @@ async fn public_ids_share_the_numbered_source_sequences(pool: PgPool) -> Result<
         .filter_map(|node| node["public_id"].as_i64())
         .collect();
     assert_eq!(issued.len(), 2);
-    let next_node: i64 = sqlx::query_scalar("SELECT nextval('singbox_external_nodes_id_seq')")
-        .fetch_one(&pool)
-        .await?;
+    let next_node: i64 =
+        sqlx::query_scalar("SELECT nextval('singbox_ordered_external_nodes_public_id_seq')")
+            .fetch_one(&pool)
+            .await?;
     assert!(issued.iter().all(|value| *value < next_node));
-    let (max_version, next_version): (i64, i64) = sqlx::query_as("SELECT (SELECT MAX(public_id) FROM singbox_ordered_external_node_versions),nextval('singbox_external_node_versions_id_seq')").fetch_one(&pool).await?;
+    let (max_version, next_version): (i64, i64) = sqlx::query_as("SELECT (SELECT MAX(public_id) FROM singbox_ordered_external_node_versions),nextval('singbox_ordered_external_node_versions_public_id_seq')").fetch_one(&pool).await?;
     assert!(max_version < next_version);
     Ok(())
 }

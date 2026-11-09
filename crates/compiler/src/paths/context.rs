@@ -1,6 +1,6 @@
 use super::validate::{address, compatible, endpoint, error};
 use super::{ManagedAcceptance, OrderedPath, PathHop, ProbeControl};
-use crate::{CompileError, Node, Relay};
+use crate::{CompileError, Node};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
@@ -14,7 +14,6 @@ fn failure(chain_id: i64, reason: &'static str) -> CompileError {
 
 pub(super) fn validate(
     nodes: &[Node],
-    legacy: &[Relay],
     paths: &[OrderedPath],
     accepts: &[ManagedAcceptance],
     probe: Option<&ProbeControl>,
@@ -134,18 +133,6 @@ pub(super) fn validate(
                 ));
             }
         }
-        for relay in legacy
-            .iter()
-            .filter(|relay| relay.entry_node_id == path.entry_node_id)
-        {
-            if relay.chain_id != path.chain_id || path.active {
-                return Err(error(
-                    path,
-                    None,
-                    "legacy and ordered routes compete for the same public entry",
-                ));
-            }
-        }
     }
     for path in paths {
         for hop in &path.hops {
@@ -161,7 +148,7 @@ pub(super) fn validate(
         }
     }
     let mut acceptance_ids = BTreeSet::new();
-    let mut relay_uuids: BTreeSet<Uuid> = legacy.iter().map(|relay| relay.uuid).collect();
+    let mut relay_uuids: BTreeSet<Uuid> = BTreeSet::new();
     let mut listeners: BTreeMap<i64, &Node> = nodes.iter().map(|node| (node.id, node)).collect();
     let mut ports: BTreeMap<u16, i64> = nodes.iter().map(|node| (node.port, node.id)).collect();
     for accept in accepts {
@@ -178,11 +165,7 @@ pub(super) fn validate(
                 "internal acceptance requires a unique frozen position and identity",
             ));
         }
-        if entries.contains_key(&accept.endpoint.node.id)
-            || legacy
-                .iter()
-                .any(|relay| relay.entry_node_id == accept.endpoint.node.id)
-        {
+        if entries.contains_key(&accept.endpoint.node.id) {
             return Err(failure(
                 accept.chain_id,
                 "public entry cannot also accept an internal relay",
