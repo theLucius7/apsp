@@ -1,10 +1,11 @@
 #![forbid(unsafe_code)]
 //! Costs domain (ADR 0128): recurring paid services, payments, renewal reminders and the
-//! renewal calendar, supplier comparison and reminders before a server's planned
-//! cancellation, independent of the proxy business.
+//! renewal calendar, exchange rates into the statistics currency, supplier comparison and
+//! reminders before a server's planned cancellation, independent of the proxy business.
 mod api;
 mod calendar;
 pub mod cancellation_reminders;
+pub mod exchange;
 mod history;
 mod migration;
 pub mod renewals;
@@ -32,6 +33,8 @@ use uuid::Uuid;
 type Tx<'a> = Transaction<'a, Postgres>;
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/api/exchange-rates", get(exchange::get))
+        .route("/api/exchange-rates/refresh", post(exchange::refresh))
         .route("/api/operations/suppliers", get(suppliers::comparison))
         .route(
             "/api/operations/cancellation-reminders",

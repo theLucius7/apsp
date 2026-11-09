@@ -77,7 +77,6 @@ EXCEPTIONS = {
 # Panel host: HTTP and Windows API spellings plus URL userinfo test fixtures.
 HOST_EXCEPTIONS = {
     "src/config.rs": (r'"https://user:secret@example\.invalid"',),
-    "src/exchange/fetch.rs": (r"\.user_agent\(",),
     "src/installation/windows.rs": (
         r"\[Security\.Principal\.WindowsIdentity\]::GetCurrent\(\)\.User\b",
         r"\.DefaultRequestHeaders\.UserAgent\b",

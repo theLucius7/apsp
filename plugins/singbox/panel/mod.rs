@@ -13,6 +13,7 @@ pub mod business;
 pub mod catalog;
 pub mod chains;
 pub mod deployments;
+pub mod device_config;
 pub mod entitlements;
 pub mod external_access;
 pub mod host_support;
@@ -54,8 +55,10 @@ pub mod proxy_resources;
 pub mod proxy_users;
 pub mod publisher;
 pub mod reachability;
+pub mod runtime_control;
 mod runtime_controls;
 pub mod runtime_operations;
+pub mod runtime_validations;
 mod secret_access;
 pub mod server_profiles;
 pub mod settings;
@@ -78,7 +81,7 @@ pub use portal::{HostNetwork, install_host_network};
 pub(crate) use apsp_panel_host::config;
 pub(crate) use apsp_panel_host::{
     AppState, agent_api, artifacts, auth, control_center, device_work, error,
-    network_configuration, passkeys, releases, runtime_control,
+    network_configuration, passkeys, releases,
 };
 use axum::{
     Router,
@@ -216,4 +219,17 @@ pub fn router() -> Router<AppState> {
             management.merge(subscription_sources::routes()),
         )
         .route("/sub/{token}", get(subscriptions::get))
+        // What each device runs and confirms: manifests, bundles, runtime checkpoints and
+        // runtime validations.
+        .merge(runtime_control::routes())
+        .route("/api/agent/v1/manifest", get(device_config::manifest))
+        .route("/api/agent/v1/bundles/{rev}", get(device_config::bundle))
+        .route(
+            "/api/agent/v1/runtime-validations",
+            get(runtime_validations::pending),
+        )
+        .route(
+            "/api/agent/v1/runtime-validations/{id}/result",
+            post(runtime_validations::complete),
+        )
 }

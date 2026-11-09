@@ -8,6 +8,7 @@ rust-version.workspace = true
 [dependencies]
 apsp-panel-host.workspace = true
 apsp-protocol.workspace = true
+apsp-plugin-singbox.workspace = true
 axum.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
@@ -19,3 +20,6 @@ sha2.workspace = true
 reqwest.workspace = true
 tracing.workspace = true
 time = "=0.3.55"
+
+[dev-dependencies]
+futures-util.workspace = true

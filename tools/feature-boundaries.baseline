@@ -120,7 +120,6 @@ import	web/src/system/BackupSchedules.tsx	web/src/operations/types.ts	governance
 import	web/src/system/Settings.tsx	web/src/system/ExchangeRateSettings.tsx	governance->costs
 import	web/src/system/Settings.tsx	web/src/system/TelemetryPolicy.tsx	governance->observability
 import	web/src/types.ts	web/src/plugins/singbox/NodeSettingsFields.tsx	platform->traffic
-ref	crates/observability/src/dashboard.rs	crates/panel-host/src/exchange.rs	observability->costs
 ref	crates/panel-host/src/agent_updates.rs	crates/panel-host/src/server_assets.rs	governance->resources
 ref	crates/panel-host/src/artifacts.rs	crates/panel-host/src/installation.rs	governance->resources
 ref	crates/panel-host/src/artifacts.rs	crates/panel-host/src/servers.rs	governance->resources
@@ -374,7 +373,6 @@ sql	crates/panel-host/src/retirement.rs	write	diagnostic_jobs	resources->observa
 sql	crates/panel-host/src/retirement.rs	write	enrollment_tokens	resources->governance
 sql	crates/panel-host/src/retirement.rs	write	fleet_terminal_sessions	resources->operations
 sql	crates/panel-host/src/retirement.rs	write	sessions	resources->governance
-sql	crates/panel-host/src/runtime_validations.rs	read	server_retirements	traffic->resources
 sql	crates/panel-host/src/server_lifecycle.rs	read	fleet_cost_records	resources->costs
 sql	crates/panel-host/src/server_lifecycle.rs	read	network_probes	resources->observability
 sql	crates/panel-host/src/server_lifecycle.rs	read	server_module_status	resources->traffic
@@ -555,6 +553,7 @@ sql	plugins/singbox/panel/reachability/targets.rs	read	singbox_nexus_nodes	obser
 sql	plugins/singbox/panel/runtime_operations.rs	read	runtime_operations	traffic->operations
 sql	plugins/singbox/panel/runtime_operations.rs	read	server_retirements	traffic->resources
 sql	plugins/singbox/panel/runtime_operations.rs	write	runtime_operations	traffic->operations
+sql	plugins/singbox/panel/runtime_validations.rs	read	server_retirements	traffic->resources
 sql	plugins/singbox/panel/settings.rs	write	servers	traffic->resources
 sql	plugins/singbox/panel/source_migration/import.rs	read	singbox_policy_external_nodes	traffic->access
 sql	plugins/singbox/panel/source_migration/rehearsal.rs	read	users	traffic->access

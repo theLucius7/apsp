@@ -242,8 +242,10 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "apsp-panel-host",
+ "apsp-plugin-singbox",
  "apsp-protocol",
  "axum 0.8.9",
+ "futures-util",
  "reqwest",
  "serde",
  "serde_json",

@@ -1,5 +1,33 @@
 # 执行进度
 
+## 2026-11-09：领域架构阶段 B2c——成本与流量服务留在宿主的部分迁出
+
+- 用户要求：继续下一步（领域重构）。观测迁出后，宿主里还有成本的汇率，以及流量服务的设备配置、运行时检查点与运行时校验。B2c 把这些都迁出，宿主只剩平台、治理、资源、基础网络与名称的 ACME。
+- 成本：
+  - 汇率（每日汇率、刷新、管理接口 `/api/exchange-rates` 与后台任务）从宿主迁到 `crates/costs` 的 `exchange.rs`，路由由成本的 `routes()` 登记，后台任务的守护名称 `exchange-rates` 不变。
+  - 看板的汇率入口 `/api/dashboard/exchange-rates` 属于看板，地址与访问规则不变，留在观测。汇率改经观测声明的 `dashboard::ExchangeRates` 取得（成本与观测同组、互不依赖），应用层接线。
+  - 成本排在流量服务与服务权益之后，外部来源报告的到期改为直接读 sing-box crate，`RenewalSources` 接口删除。
+- 流量服务：
+  - 设备的清单与配置包、已应用修订与应用结果（`device_config.rs`），运行时检查点、回执与路径探测（`runtime_control/`），以及运行时校验（`runtime_validations.rs`）从宿主迁到 sing-box crate（阶段 C 成为流量服务 crate），路由由它的 `router()` 登记。
+  - `ConfigSource` 接口删除，Agent 通道的设备回报仍经 `DeviceReports` 交给它。宿主的 `domains/traffic.rs`、`domains/costs.rs` 删除。取舍见 `docs/open-questions.md`。
+- 边界检查：越界从 575 条减到 574 条（SQL 363、代码引用 91、前端引用 120），按搬家前后的路径对照没有新增：运行时校验读资源退役记录的 1 条随文件换了位置，看板引用汇率的 1 条消失。
+- 依赖检查：成本依赖 sing-box crate（它所含的领域都排在成本前面）。汇率抓取里 `user_agent` 的词汇例外随代码离开平台删除。
+- 路由与规模：静态比对路由登记，538 个组合不变。所有领域路由仍合进同一个 Router，套同一个权限守卫与专属地址网关。宿主从 22091 行减到 20084 行。
+- 公共 Rust 路径：
+  - `apsp_panel::exchange` 改由成本 crate 提供，`apsp_panel::{device_config, runtime_control, runtime_validations}` 改由 sing-box crate 提供。
+  - `apsp_panel::agent_api::{bundle, manifest, record_apply_result}` 与 `apsp_panel::plugins::manifest_modules` 不变。
+  - `apsp_costs::renewals::{RenewalSources, install}` 删除。
+- 看板汇率接口的字段与值不变；JSON 经 `serde_json::Value` 转交，键序改为按字母排列。
+- 验证：
+  - `cargo fmt --check` 与全工作区 `cargo clippy --all-targets -- -D warnings` 通过。
+  - 本地 PostgreSQL 16 上受影响 crate 的测试全部通过：宿主 76、观测 93、作业 10、成本 13、名称与证书 64、云接口 8、sing-box 216（1 个原有忽略）、阿里云 101、应用库 1、应用集成测试 86 个目标共 422 个（8 个原有忽略，需要真实运行时或测试机），合计 1004 个通过、0 失败。宿主少的 6 个、成本多的 6 个是随代码迁走的汇率测试，它们用注入的替身抓取，不连外部汇率来源。
+  - 两个边界检查通过（574 条已知越界，没有新增），检查器单元测试 34 个通过；文档链接与锚点 0 错误。
+  - 前端源码未改，只构建了 `web/dist` 供编译。验证后已删除本轮的编译目录、前端依赖与产物和临时数据库。
+- 未验证：
+  - Agent 一侧（agent-core、适配器、tcp-probe）代码未改，只经 clippy 类型检查。前端源码未改，前端测试未运行。CI 仍暂停，未触发。
+  - 没有在测试机上用真实设备验证清单、配置包、运行时检查点与运行时校验。没有请求真实汇率来源。
+- 下一步：阶段 B2 继续。先迁基础网络与名称：名称与证书的 ACME 还在宿主的 `network_configuration/` 里，要先拆开它对网络配置的引用。然后是资源，最后是治理。之后是阶段 C（sing-box 拆为流量服务与服务权益）。
+
 ## 2026-11-08：领域架构阶段 B2b——观测迁出宿主
 
 - 用户要求：继续下一步（领域重构）。作业之后，观测是宿主里排在最后的领域，B2b 把它迁成独立的 `crates/observability`。

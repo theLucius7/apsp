@@ -1,8 +1,8 @@
 //! Configuration versions a device should run and the revisions it reports applying.
 //!
-//! The device channel hands apply results and applied-revision hints here; the module
-//! list and the configuration bundles come from the traffic runtime through
-//! [`ConfigSource`], which the application connects.
+//! The device channel hands apply results and applied-revision hints here. The traffic
+//! runtime is the only module a device runs today; its manifest entry and its
+//! configuration bundles come from `agent`.
 
 use std::collections::BTreeMap;
 
@@ -18,53 +18,24 @@ use axum::{
 };
 use sqlx::Row;
 
-use crate::{
-    AppState, agent_api, artifacts, auth,
-    error::{ApiError, ApiResult},
-    ports::{BoxFuture, Port},
-};
+use crate::{AppState, agent_api, artifacts, auth, error::ApiResult};
 
-/// Modules and bundles of the traffic runtime, answered by the runtime's owner.
-pub trait ConfigSource: Send + Sync {
-    /// Lists the modules a device must run, keyed by module identifier.
-    fn manifest_modules<'a>(
-        &'a self,
-        state: &'a AppState,
-        server_id: i64,
-        info: &'a serde_json::Value,
-    ) -> BoxFuture<'a, ApiResult<BTreeMap<String, ModuleManifest>>>;
-
-    /// Returns the published configuration bundle at one revision.
-    fn bundle<'a>(
-        &'a self,
-        state: &'a AppState,
-        server_id: i64,
-        rev: i64,
-    ) -> BoxFuture<'a, ApiResult<String>>;
-}
-
-static SOURCE: Port<dyn ConfigSource> = Port::new();
-
-pub fn install(source: &'static dyn ConfigSource) {
-    SOURCE.install(source);
-}
-
+/// The modules a device must run, keyed by module identifier.
 pub async fn manifest_modules(
     state: &AppState,
     server_id: i64,
     info: &serde_json::Value,
 ) -> ApiResult<BTreeMap<String, ModuleManifest>> {
-    match SOURCE.get() {
-        Some(source) => source.manifest_modules(state, server_id, info).await,
-        None => Ok(BTreeMap::new()),
+    let mut modules = BTreeMap::new();
+    if let Some(module) = crate::agent::manifest_module(state, server_id, info).await? {
+        modules.insert("singbox".into(), module);
     }
+    Ok(modules)
 }
 
+/// The published configuration bundle at one revision.
 pub async fn bundle_text(state: &AppState, server_id: i64, rev: i64) -> ApiResult<String> {
-    match SOURCE.get() {
-        Some(source) => source.bundle(state, server_id, rev).await,
-        None => Err(ApiError::NotFound),
-    }
+    crate::agent::bundle(state, server_id, rev).await
 }
 
 pub async fn manifest(

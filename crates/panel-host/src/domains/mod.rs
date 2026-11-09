@@ -4,8 +4,6 @@
 //! the domain crates. When a domain moves into its own crate, its entry module
 //! moves with it and becomes that crate's root.
 
-pub mod costs;
 pub mod governance;
 pub mod networking;
 pub mod resources;
-pub mod traffic;

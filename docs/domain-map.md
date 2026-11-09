@@ -33,8 +33,8 @@
 | 受管节点 | 开一个代理入口 | 受管节点（服务端点） | 端口不冲突；被链路引用时锁定部分配置；没有授权用户时不监听 | 名称（公开地址、证书）；服务权益（加入策略组） | sing-box `nodes*`；网络服务 › 节点 |
 | 链路 | 让流量按顺序经过多个端点 | 链路与不可变版本 | 只引用存在的端点；线性无环；入口单次计量；内部凭据不进订阅 | 外部来源 | sing-box `ordered_paths/`；网络服务 › 链路 |
 | 外部来源与外部节点 | 引入机场等外部节点 | 外部来源、外部节点版本 | 先预览再采用；失败保留上一个成功修订 | 服务权益（策略组引用）；成本（报告的到期只读） | sing-box `subscription_sources/`、`subscription_parser/`；网络服务 › 外部来源 |
-| 配置编译与发布 | 把期望配置变成每台服务器的完整快照并下发 | 配置版本、部署 | 同一输入同一字节；字节相同不产生新修订；只有回执才算已应用 | 服务权益（授权凭据，经依赖倒置接口）；平台（Agent 通道） | `crates/compiler`；sing-box `publisher.rs`、`deployments.rs`；宿主 `device_config.rs`（设备的清单与配置包、已应用修订、应用结果） |
-| 运行时检查点与路径验证 | 确认目标修订真的在运行、路径真的通 | 已应用状态与验证证据 | 证据有有效期；旧代次的回执不覆盖新代次 | 平台（Agent 通道） | 宿主 `runtime_control.rs`、`runtime_validations.rs`；sing-box 路径探测 |
+| 配置编译与发布 | 把期望配置变成每台服务器的完整快照并下发 | 配置版本、部署 | 同一输入同一字节；字节相同不产生新修订；只有回执才算已应用 | 服务权益（授权凭据，经依赖倒置接口）；平台（Agent 通道） | `crates/compiler`；sing-box `publisher.rs`、`deployments.rs`、`device_config.rs`（设备的清单与配置包、已应用修订、应用结果，阶段 B2c 从宿主迁入） |
+| 运行时检查点与路径验证 | 确认目标修订真的在运行、路径真的通 | 已应用状态与验证证据 | 证据有有效期；旧代次的回执不覆盖新代次 | 平台（Agent 通道） | sing-box `runtime_control/`（检查点、回执与路径探测）、`runtime_validations.rs`（阶段 B2c 从宿主迁入） |
 | 运行时运维 | 检查、重启运行时或重试部署 | 运行时操作的合法性 | 只对受管运行时；结果未知不自动重试 | 作业（执行记录） | `crates/operations` 的 `runtime_operations.rs`（设备队列与回执）；sing-box `runtime_operations.rs` |
 | 服务器端逐用户限制的执行 | 把限速与连接数编进配置 | 运行时能力 `user-limits` | 运行时不支持时拒绝而不是忽略 | 服务权益（限制的值） | `crates/compiler/src/limits.rs` |
 | 旧模型兼容 | 迁移两跳、混合链路、数字编号来源与 Nexus 运行时 | 历史模型 | 只经迁移流程进入；有退出条件 | 治理（迁移授权） | sing-box `legacy_takeover.rs`、`mixed_conversion.rs`、`source_migration/`、`nexus_nodes/`；系统 › 迁移与兼容 |
@@ -75,10 +75,10 @@
 | 续费项目与付费服务 | 记下要周期付费的服务 | 续费项目、付款记录 | 金额、周期与币种清楚；预测与实际分开 | — | `crates/costs`（原费用插件）；费用与续费 |
 | 服务器费用 | 记录服务器的购买、续费与退款 | 服务器费用记录 | 服务器到期以资源的资产为准，这里只读 | 资源 | 宿主 `server_lifecycle.rs` 的费用记录、`fleet_cost_records`（阶段 B 并入成本） |
 | 供应商计费流量与免费额度 | 按供应商口径看额度用了多少 | 计费流量历史、额度状态 | 保留供应商口径，不与网卡计数或用户用量混算 | 资源（实例）；作业（超额处置） | 阿里云 `billing.rs`、`costs.rs`、`history.rs` |
-| 汇率与统计币种 | 把不同币种折算成统计币种 | 每日汇率 | 来源可追溯，不编造缺失币种 | — | 宿主 `exchange.rs` |
+| 汇率与统计币种 | 把不同币种折算成统计币种 | 每日汇率 | 来源可追溯，不编造缺失币种 | — | `crates/costs` 的 `exchange.rs`（阶段 B2c 从宿主迁入）；`/api/exchange-rates` |
 | 续费提醒与日历 | 按时提醒续费 | 提醒、日历输出 | 提醒只告知，不付款 | 平台（通知通道） | `crates/costs` 的后台任务；`/api/plugins/expenses/calendar.ics` |
 | 退订提醒与供应商 | 记得在合适的时候退订 | 退订提醒、供应商 | — | 资源；观测（提醒记为故障事件） | `crates/costs` 的 `cancellation_reminders.rs`、`suppliers.rs` |
-| 外部来源报告的到期 | 机场订阅的到期一起看 | 到期引用 | 只读，仅供参考 | 流量服务 | `crates/costs` 的 `renewals` 接口，应用层接到 sing-box 的外部来源 |
+| 外部来源报告的到期 | 机场订阅的到期一起看 | 到期引用 | 只读，仅供参考 | 流量服务 | `crates/costs` 的 `renewals.rs` 直接读 sing-box 的外部来源（成本排在流量服务之后，不需要接口） |
 | Wallos 导入 | 从 Wallos 迁入 | 导入批次 | 先预览后导入 | — | `tools/export_wallos.py`、`crates/costs` 的导入接口 |
 | 云资源与费用对照（冻结） | 对比供应商价格 | 费用对照 | 只读 | 资源 | `crates/costs` 的 `suppliers.rs`；宿主 `cloud_resources.rs` 的账单与预算观测 |
 
@@ -101,7 +101,7 @@
 | 功能 | 意图 | 核心对象 | 关键约束 | 协作 | 实现与入口 |
 | --- | --- | --- | --- | --- | --- |
 | 遥测与历史 | 知道机器现在与过去怎样 | 采集计划、样本、历史聚合、服务器事件时间线 | 实时样本与持久化确认分开 | 资源（服务器视图经资源的 `server_observation` 取得流量摘要与实时遥测；事件经平台的 `evidence` 记录） | `crates/observability` 的 `telemetry/`、`server_monitoring.rs`（健康、事件时间线与两台比较）；Agent 遥测；服务器详情 › 概况、Agent |
-| 服务器看板与公开看板 | 一眼看清所有服务器 | 看板视图（汇总，不拥有数据） | 公开看板只读白名单，匿名不公开成本 | 资源；成本（汇率入口仍读宿主的 `exchange`） | `crates/observability` 的 `dashboard.rs`；服务器列表的看板视图、`/#/dashboard` |
+| 服务器看板与公开看板 | 一眼看清所有服务器 | 看板视图（汇总，不拥有数据） | 公开看板只读白名单，匿名不公开成本 | 资源；成本（看板折算用的汇率经观测声明的 `dashboard::ExchangeRates` 取得） | `crates/observability` 的 `dashboard.rs`；服务器列表的看板视图、`/#/dashboard` |
 | 网卡流量计数与矫正 | 记下机器实际的网络活动 | 网卡计数、矫正记录 | 不改代理用量账本 | 资源（网卡额度设置；视图的流量摘要类型属于资源） | `crates/observability` 的 `server_traffic.rs`、`traffic_correction.rs`；表 `server_network_*`、`server_traffic_corrections` |
 | 告警与通知 | 出事时告诉管理员 | 告警规则、告警事件、处置记录 | 通知只提醒，不执行付款、停用或远程命令 | 平台（通知通道） | `crates/observability` 的 `alerts/`（规则、评估与告警事件；发件箱与渠道归平台的 `notifications`）；监测与诊断 › 告警 |
 | 故障事件（实验） | 聚合告警并记录处置 | 故障事件、处置记录 | 计划与告警合并（路线图 4.3） | 作业；资源、治理与成本经平台的 `evidence` 打开与恢复 | `crates/observability` 的 `incidents.rs` |

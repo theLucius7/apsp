@@ -2,7 +2,7 @@
 //! previous public path; the device configuration handlers now belong to traffic.
 
 pub use apsp_panel_host::agent_api::*;
-pub use apsp_panel_host::device_config::{bundle, manifest, record_apply_result};
+pub use apsp_plugin_singbox::device_config::{bundle, manifest, record_apply_result};
 
 /// Handles one device message once the domains' interfaces are connected.
 pub async fn process_message(

@@ -1,8 +1,11 @@
+//! Daily exchange rates into the statistics currency, from a traceable source; missing
+//! currencies stay missing instead of being invented.
+
 mod fetch;
 #[cfg(test)]
 mod tests;
 
-use crate::{
+use apsp_panel_host::{
     AppState, auth,
     error::{ApiError, ApiResult},
 };

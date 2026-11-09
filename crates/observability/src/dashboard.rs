@@ -5,6 +5,7 @@ use crate::{
     servers::{SERVER_COLUMNS, Server},
     settings, telemetry,
 };
+use apsp_panel_host::ports::{BoxFuture, Port};
 use apsp_protocol::{ProbeResult, ProbeSpec, now_timestamp};
 use axum::{
     Json, Router,
@@ -267,9 +268,24 @@ async fn live(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Js
 async fn exchange_rates(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> ApiResult<Json<apsp_panel_host::exchange::ExchangeView>> {
+) -> ApiResult<Json<Value>> {
     allowed(&state, &headers, None).await?;
-    Ok(Json(apsp_panel_host::exchange::current(&state.pool).await?))
+    let rates = EXCHANGE_RATES
+        .get()
+        .ok_or_else(|| ApiError::Conflict("汇率的提供方未登记，不能显示统计币种的折算".into()))?;
+    Ok(Json(rates.current(&state.pool).await?))
+}
+
+/// The exchange rates the dashboard converts costs with. Costs owns them and is a peer of
+/// observability in the dependency order, so the application connects it.
+pub trait ExchangeRates: Send + Sync {
+    fn current<'a>(&'a self, pool: &'a sqlx::PgPool) -> BoxFuture<'a, ApiResult<Value>>;
+}
+
+static EXCHANGE_RATES: Port<dyn ExchangeRates> = Port::new();
+
+pub fn install(rates: &'static dyn ExchangeRates) {
+    EXCHANGE_RATES.install(rates);
 }
 
 async fn history(

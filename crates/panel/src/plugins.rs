@@ -73,7 +73,7 @@ pub async fn manifest_modules(
     server_id: i64,
     info: &serde_json::Value,
 ) -> ApiResult<BTreeMap<String, ModuleManifest>> {
-    crate::wiring::manifest_modules(state, server_id, info).await
+    singbox::device_config::manifest_modules(state, server_id, info).await
 }
 
 pub async fn bundle(state: &AppState, server_id: i64, rev: i64) -> ApiResult<String> {

@@ -7,11 +7,11 @@
 
 pub use apsp_panel_host::{
     AgentConnection, AppState, DomainStates, agent_updates, artifacts, auth, config,
-    control_center, error, exchange, frontend, installation, network_configuration, passkeys,
-    releases, retirement, runtime_control, runtime_validations, server_assets, servers, settings,
+    control_center, error, frontend, installation, network_configuration, passkeys, releases,
+    retirement, server_assets, servers, settings,
 };
-// Operations and observability moved to their own crates; their modules keep their
-// previous public paths.
+// Domains that moved out of the platform crate keep their previous public paths.
+pub use apsp_costs::exchange;
 pub use apsp_observability::{
     dashboard, diagnostic_plugins, diagnostics, incidents, ip_quality, latency_tasks,
     network_workbench, probes, server_monitoring, server_traffic, statistics, telemetry,
@@ -19,6 +19,7 @@ pub use apsp_observability::{
 };
 pub use apsp_operations::jobs as operations;
 pub use apsp_operations::{commands, fleet, runtime_operations};
+pub use apsp_plugin_singbox::{device_config, runtime_control, runtime_validations};
 
 /// Notification delivery from the platform, with alert evaluation, events and rules from
 /// observability, under the previous public path.
@@ -49,8 +50,6 @@ pub fn router(state: AppState) -> axum::Router {
         .merge(domains::governance::routes())
         .merge(domains::resources::routes())
         .merge(domains::networking::routes())
-        .merge(domains::traffic::routes())
-        .merge(domains::costs::routes())
         .merge(apsp_observability::routes())
         .merge(apsp_operations::routes())
         .merge(plugins::router());

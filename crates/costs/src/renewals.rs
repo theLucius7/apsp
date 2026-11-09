@@ -1,12 +1,8 @@
 //! Expiries that other owners observe, listed in the ledger for reference only:
-//! they have no price and are never renewed. Answered by those owners and
-//! connected by the application.
+//! they have no price and are never renewed. External proxy sources report theirs to
+//! the traffic service, which comes before costs in the dependency order.
 
-use apsp_panel_host::{
-    AppState,
-    error::ApiResult,
-    ports::{BoxFuture, Port},
-};
+use apsp_panel_host::{AppState, error::ApiResult};
 use serde::Serialize;
 
 /// One externally observed expiry, for example a proxy subscription source.
@@ -27,22 +23,22 @@ pub struct RenewalReference {
     pub capability: &'static str,
 }
 
-pub trait RenewalSources: Send + Sync {
-    fn renewal_references<'a>(
-        &'a self,
-        state: &'a AppState,
-    ) -> BoxFuture<'a, ApiResult<Vec<RenewalReference>>>;
-}
-
-static SOURCES: Port<dyn RenewalSources> = Port::new();
-
-pub fn install(sources: &'static dyn RenewalSources) {
-    SOURCES.install(sources);
-}
-
 pub async fn renewal_references(state: &AppState) -> ApiResult<Vec<RenewalReference>> {
-    match SOURCES.get() {
-        Some(sources) => sources.renewal_references(state).await,
-        None => Ok(Vec::new()),
-    }
+    Ok(
+        apsp_plugin_singbox::subscription_sources::renewal_references(state)
+            .await?
+            .into_iter()
+            .map(|source| RenewalReference {
+                kind: source.kind,
+                id: source.id,
+                name: source.name,
+                expires_at: source.expires_at,
+                used_bytes: source.used_bytes,
+                total_bytes: source.total_bytes,
+                reported_at: source.reported_at,
+                path: source.path,
+                capability: source.capability,
+            })
+            .collect(),
+    )
 }

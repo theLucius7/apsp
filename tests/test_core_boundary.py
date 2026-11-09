@@ -98,7 +98,7 @@ class CoreBoundaryTests(unittest.TestCase):
     def test_panel_host_passes_and_its_exceptions_stay_scoped(self):
         root = SCRIPT.parents[1]
         self.assertTrue(boundary.check(root / "crates/panel-host", boundary.HOST_EXCEPTIONS))
-        relative, source = "src/exchange/fetch.rs", '.user_agent("Apsp-exchange-rates/1")'
+        relative, source = "src/releases/network.rs", '.user_agent("apsp-panel")'
         self.assertFalse(boundary.violations(relative, source, boundary.HOST_EXCEPTIONS))
         self.assertTrue(boundary.violations(relative, source))
         self.assertTrue(boundary.violations("src/servers.rs", source, boundary.HOST_EXCEPTIONS))

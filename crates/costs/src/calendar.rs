@@ -299,7 +299,7 @@ pub(super) async fn summary(
         },
     )
     .await?;
-    let exchange = serde_json::to_value(apsp_panel_host::exchange::current(&state.pool).await?)
+    let exchange = serde_json::to_value(crate::exchange::current(&state.pool).await?)
         .map_err(anyhow::Error::from)?;
     let base: String = settings.try_get("base_currency")?;
     let rates = &exchange["rates"];

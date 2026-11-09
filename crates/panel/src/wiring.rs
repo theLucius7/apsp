@@ -1,12 +1,8 @@
-//! Connects the typed interfaces at startup (ADR 0128): device reports, the traffic
-//! runtime's configuration, administration contributions, device work, observability
-//! evidence, server observation, the member portal's host network, DNS-01 records and
-//! renewal references. This is the only place that names which owner answers each
-//! interface.
+//! Connects the typed interfaces at startup (ADR 0128): device reports, administration
+//! contributions, device work, observability evidence, server observation, the member
+//! portal's host network, the dashboard's exchange rates and DNS-01 records. This is the
+//! only place that names which owner answers each interface.
 
-use std::collections::BTreeMap;
-
-use apsp_costs::renewals::{self, RenewalReference, RenewalSources};
 use apsp_naming as naming;
 use apsp_observability as observability;
 use apsp_operations::{fleet, runtime_operations};
@@ -15,22 +11,20 @@ use apsp_panel_host::{
     agent_api::{self, DeviceReports},
     artifacts::ArtifactEntry,
     control_center::contributions::{self, Contributions, RoutePolicy, SearchSource},
-    device_config::{self, ConfigSource},
     device_work::{self, DeviceWork},
     error::ApiResult,
     evidence::{self, Evidence, IncidentReport},
     network_configuration::dns_challenges::{self, Dns01, DnsChallenge},
     ports::BoxFuture,
-    retirement, runtime_control,
+    retirement,
     server_observation::{self, ServerObservation},
     servers::{self, Server},
 };
 use apsp_plugin_singbox as singbox;
 use apsp_protocol::{
-    AppliedRevisions, ApplyResult, DiagnosticCancelResult, Metrics, ModuleManifest, ProbeSpec,
-    RetirementResult, RuntimeCheckpointResult, RuntimeControlAck, RuntimeOperationRequest,
-    RuntimePathProbeResult, RuntimeRecoveryBarrierResult, RuntimeSessionReport, StaticInfo,
-    UsageBatch, fleet::Operation,
+    AppliedRevisions, ApplyResult, DiagnosticCancelResult, Metrics, ProbeSpec, RetirementResult,
+    RuntimeCheckpointResult, RuntimeControlAck, RuntimeOperationRequest, RuntimePathProbeResult,
+    RuntimeRecoveryBarrierResult, RuntimeSessionReport, StaticInfo, UsageBatch, fleet::Operation,
 };
 use axum::http::Method;
 use serde_json::Value;
@@ -44,27 +38,13 @@ static WIRING: Wiring = Wiring;
 /// Connects every interface; repeated calls keep the first connection.
 pub fn install() {
     agent_api::install(&WIRING);
-    device_config::install(&WIRING);
     contributions::install(&WIRING);
     device_work::install(&WIRING);
     evidence::install(&WIRING);
     server_observation::install(&WIRING);
     singbox::install_host_network(&WIRING);
+    observability::dashboard::install(&WIRING);
     dns_challenges::install(&WIRING);
-    renewals::install(&WIRING);
-}
-
-/// The modules each device runs; the traffic runtime is the only module today.
-pub async fn manifest_modules(
-    state: &AppState,
-    server_id: i64,
-    info: &Value,
-) -> ApiResult<BTreeMap<String, ModuleManifest>> {
-    let mut modules = BTreeMap::new();
-    if let Some(module) = singbox::agent::manifest_module(state, server_id, info).await? {
-        modules.insert("singbox".into(), module);
-    }
-    Ok(modules)
 }
 
 impl DeviceReports for Wiring {
@@ -76,10 +56,11 @@ impl DeviceReports for Wiring {
         applied: AppliedRevisions,
     ) -> BoxFuture<'a, anyhow::Result<()>> {
         Box::pin(async move {
-            runtime_control::register_capabilities(state, server_id, &capabilities).await?;
+            singbox::runtime_control::register_capabilities(state, server_id, &capabilities)
+                .await?;
             servers::record_capabilities(state, server_id, &capabilities).await?;
-            device_config::reconcile_applied(state, server_id, applied).await?;
-            runtime_control::replay_pending(state, server_id).await
+            singbox::device_config::reconcile_applied(state, server_id, applied).await?;
+            singbox::runtime_control::replay_pending(state, server_id).await
         })
     }
 
@@ -91,8 +72,8 @@ impl DeviceReports for Wiring {
     ) -> BoxFuture<'a, anyhow::Result<()>> {
         Box::pin(async move {
             servers::record_heartbeat(state, server_id).await?;
-            device_config::reconcile_applied(state, server_id, applied).await?;
-            runtime_control::replay_pending(state, server_id).await
+            singbox::device_config::reconcile_applied(state, server_id, applied).await?;
+            singbox::runtime_control::replay_pending(state, server_id).await
         })
     }
 
@@ -122,7 +103,9 @@ impl DeviceReports for Wiring {
         server_id: i64,
         result: ApplyResult,
     ) -> BoxFuture<'a, anyhow::Result<()>> {
-        Box::pin(device_config::record_apply_result(state, server_id, result))
+        Box::pin(singbox::device_config::record_apply_result(
+            state, server_id, result,
+        ))
     }
 
     fn checkpoint_result<'a>(
@@ -131,7 +114,7 @@ impl DeviceReports for Wiring {
         server_id: i64,
         result: RuntimeCheckpointResult,
     ) -> BoxFuture<'a, anyhow::Result<RuntimeControlAck>> {
-        Box::pin(runtime_control::record_checkpoint_result(
+        Box::pin(singbox::runtime_control::record_checkpoint_result(
             state, server_id, result,
         ))
     }
@@ -142,7 +125,7 @@ impl DeviceReports for Wiring {
         server_id: i64,
         result: RuntimePathProbeResult,
     ) -> BoxFuture<'a, anyhow::Result<RuntimeControlAck>> {
-        Box::pin(runtime_control::record_path_probe_result(
+        Box::pin(singbox::runtime_control::record_path_probe_result(
             state, server_id, result,
         ))
     }
@@ -153,7 +136,7 @@ impl DeviceReports for Wiring {
         server_id: i64,
         result: RuntimeRecoveryBarrierResult,
     ) -> BoxFuture<'a, anyhow::Result<RuntimeControlAck>> {
-        Box::pin(runtime_control::record_barrier_result(
+        Box::pin(singbox::runtime_control::record_barrier_result(
             state, server_id, result,
         ))
     }
@@ -196,26 +179,6 @@ impl DeviceReports for Wiring {
         result: RetirementResult,
     ) -> BoxFuture<'a, anyhow::Result<()>> {
         Box::pin(retirement::record_result(state, server_id, result))
-    }
-}
-
-impl ConfigSource for Wiring {
-    fn manifest_modules<'a>(
-        &'a self,
-        state: &'a AppState,
-        server_id: i64,
-        info: &'a Value,
-    ) -> BoxFuture<'a, ApiResult<BTreeMap<String, ModuleManifest>>> {
-        Box::pin(manifest_modules(state, server_id, info))
-    }
-
-    fn bundle<'a>(
-        &'a self,
-        state: &'a AppState,
-        server_id: i64,
-        rev: i64,
-    ) -> BoxFuture<'a, ApiResult<String>> {
-        Box::pin(singbox::agent::bundle(state, server_id, rev))
     }
 }
 
@@ -313,6 +276,17 @@ impl DeviceWork for Wiring {
         Box::pin(runtime_operations::latest_for_principal(
             tx, server, module, pattern,
         ))
+    }
+}
+
+impl observability::dashboard::ExchangeRates for Wiring {
+    fn current<'a>(&'a self, pool: &'a PgPool) -> BoxFuture<'a, ApiResult<Value>> {
+        Box::pin(async move {
+            Ok(
+                serde_json::to_value(apsp_costs::exchange::current(pool).await?)
+                    .map_err(anyhow::Error::from)?,
+            )
+        })
     }
 }
 
@@ -452,30 +426,5 @@ impl singbox::HostNetwork for Wiring {
             server,
             static_info,
         ))
-    }
-}
-
-impl RenewalSources for Wiring {
-    fn renewal_references<'a>(
-        &'a self,
-        state: &'a AppState,
-    ) -> BoxFuture<'a, ApiResult<Vec<RenewalReference>>> {
-        Box::pin(async move {
-            Ok(singbox::subscription_sources::renewal_references(state)
-                .await?
-                .into_iter()
-                .map(|source| RenewalReference {
-                    kind: source.kind,
-                    id: source.id,
-                    name: source.name,
-                    expires_at: source.expires_at,
-                    used_bytes: source.used_bytes,
-                    total_bytes: source.total_bytes,
-                    reported_at: source.reported_at,
-                    path: source.path,
-                    capability: source.capability,
-                })
-                .collect())
-        })
     }
 }
