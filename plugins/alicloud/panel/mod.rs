@@ -1,25 +1,28 @@
 #![forbid(unsafe_code)]
-//! Alibaba Cloud plugin: CDT traffic, ECS power, billing and cost tracking.
+//! Alibaba Cloud capabilities, organized by domain until they move into the domain crates
+//! (ADR 0128 stage D): accounts and resources, CDT traffic and bills, power and address
+//! automation, security groups and notifications.
 
+// Each module belongs to one domain (tools/feature-boundaries.toml); the application
+// composes their routes and workers (ADR 0128, ADR 0131).
 mod addresses;
-mod api;
+pub mod api;
 mod billing;
 mod client;
 mod costs;
-mod eip_rotation;
-mod history;
+pub mod eip_rotation;
+pub mod history;
+mod inventory;
 mod model;
 mod notices;
-mod operations;
-mod power;
-mod security_groups;
+pub mod operations;
+pub mod overview;
+pub mod power;
+pub mod security_groups;
 #[cfg(test)]
 mod tests;
-mod worker;
-
-pub use api::routes;
-pub use security_groups::routes as security_groups_routes;
-pub use worker::run;
+mod work;
+pub mod worker;
 
 pub(crate) use apsp_cloud_api as cloud_api;
 #[cfg(test)]
@@ -27,7 +30,7 @@ pub(crate) use apsp_panel_host::config;
 pub(crate) use apsp_panel_host::{AppState, auth, control_center, error, notifications, settings};
 
 use crate::error::{ApiError, ApiResult};
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgPool, Postgres, Transaction, types::Json};
 use uuid::Uuid;
 
 async fn lock(pool: &PgPool, account_id: Uuid) -> ApiResult<Transaction<'static, Postgres>> {
@@ -53,6 +56,23 @@ async fn resource(pool: &PgPool, id: Uuid) -> ApiResult<model::Resource> {
         .fetch_optional(pool)
         .await?
         .ok_or(ApiError::NotFound)
+}
+
+/// Stores what the cloud reported for a resource.
+async fn snapshot_on(
+    tx: &mut Transaction<'_, Postgres>,
+    resource: Uuid,
+    snapshot: &model::Snapshot,
+) -> ApiResult<()> {
+    sqlx::query(
+        "UPDATE alicloud_resources SET snapshot=$2,checked_at=$3,error_code=NULL WHERE id=$1",
+    )
+    .bind(resource)
+    .bind(Json(snapshot))
+    .bind(apsp_protocol::now_timestamp())
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 /// Whether an hourly retention pass is due, claiming it when it is.

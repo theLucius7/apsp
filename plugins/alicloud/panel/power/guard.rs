@@ -1,14 +1,13 @@
+use super::super::model::{GuardConfig, GuardState, State};
 use super::super::{
     billing,
     client::Cloud,
     model::{Account, Resource},
 };
-use super::State;
 use crate::{
     cloud_api::Failure,
     error::{ApiError, ApiResult},
 };
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction, types::Json};
 
@@ -19,14 +18,7 @@ mod tests;
 
 pub(super) const MAX_BYTES: u64 = 9_007_199_254_740_991;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(in super::super) struct Config {
-    pub threshold_bytes: u64,
-    pub jump_bytes: u64,
-    pub auto_start: bool,
-}
-impl Config {
+impl GuardConfig {
     pub fn validate(&self) -> ApiResult<()> {
         if !(1..=MAX_BYTES).contains(&self.threshold_bytes)
             || !(1..=MAX_BYTES).contains(&self.jump_bytes)
@@ -37,20 +29,6 @@ impl Config {
         }
         Ok(())
     }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(in super::super) struct Observation {
-    pub billing_cycle: String,
-    pub region: String,
-    pub cloud_id: String,
-    pub key_digest: String,
-    pub account_revision: i64,
-    pub max_usage_bytes: u64,
-    pub max_jump_bytes: u64,
-    pub queried_at: i64,
-    #[serde(default)]
-    pub cdt_observed: bool,
 }
 
 pub(super) fn key_digest(key: &str) -> String {
@@ -72,13 +50,13 @@ pub(super) fn valid_cycle(cycle: &str) -> bool {
 }
 
 pub(super) fn observe(
-    previous: Option<&Observation>,
+    previous: Option<&GuardState>,
     raw_bytes: u64,
     account: &Account,
     resource: &Resource,
     digest: &str,
     now: i64,
-) -> Result<Observation, Failure> {
+) -> Result<GuardState, Failure> {
     let cycle = billing::month(now);
     let (mut usage, mut jump) = (raw_bytes, 0);
     let mut cdt_observed = raw_bytes > 0;
@@ -112,7 +90,7 @@ pub(super) fn observe(
     if usage > MAX_BYTES {
         return Err("invalid_response".into());
     }
-    Ok(Observation {
+    Ok(GuardState {
         billing_cycle: cycle,
         region: resource.region.clone(),
         cloud_id: resource.cloud_id.clone(),
@@ -131,12 +109,12 @@ pub(super) fn observe(
 /// trusted positive live reading, and only while this cycle has shown no usage
 /// yet; anything else stays an invalid reading, as before.
 pub(super) fn observe_empty(
-    previous: Option<&Observation>,
+    previous: Option<&GuardState>,
     account: &Account,
     resource: &Resource,
     digest: &str,
     now: i64,
-) -> Result<Observation, Failure> {
+) -> Result<GuardState, Failure> {
     let cycle = billing::month(now);
     let eligible = previous.is_some_and(|old| {
         old.queried_at > 0
@@ -224,7 +202,7 @@ pub(super) async fn read(
     r: &Resource,
     cloud: &Cloud,
     started_at: i64,
-) -> Result<Observation, Failure> {
+) -> Result<GuardState, Failure> {
     match cloud.guard_usage(account, &r.region).await {
         Ok((bytes, digest)) => {
             let now = apsp_protocol::now_timestamp();

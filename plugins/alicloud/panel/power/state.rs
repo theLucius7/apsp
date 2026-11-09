@@ -1,26 +1,10 @@
 use super::super::{
     client::Cloud,
-    model::{Account, Resource},
+    model::{Account, Resource, State},
 };
 use crate::cloud_api::Failure;
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(in super::super) struct State {
-    pub cloud_id: String,
-    pub region: String,
-    pub status: String,
-    pub stopped_mode: Option<String>,
-    pub charge_type: String,
-    pub network_type: String,
-    pub spot_strategy: String,
-    pub interruption_behavior: Option<String>,
-    pub public_ips: Vec<String>,
-    #[serde(default)]
-    pub public_ipv6: Vec<String>,
-    pub locked: bool,
-}
 impl State {
     pub fn spot(&self) -> bool {
         matches!(

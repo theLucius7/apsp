@@ -47,6 +47,7 @@ pub fn install() {
     access::install_host_network(&WIRING);
     traffic::users::install(&WIRING);
     traffic::china_reachability::install(&WIRING);
+    apsp_plugin_alicloud::operations::install();
     observability::dashboard::install(&WIRING);
     dns_challenges::install(&WIRING);
 }

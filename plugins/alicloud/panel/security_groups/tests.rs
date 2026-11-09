@@ -19,6 +19,8 @@ impl Drop for Fixture {
 }
 impl Fixture {
     async fn new(pool: PgPool) -> anyhow::Result<Self> {
+        // Operations answers whether a resource is idle, as the application connects it.
+        crate::operations::install();
         let directory =
             std::env::temp_dir().join(format!("apsp-security-groups-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory)?;

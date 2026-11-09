@@ -19,12 +19,12 @@ pub(super) struct Account {
     pub balance_enabled: bool,
     pub limit_gb: i64,
     pub revision: i64,
-    pub bill: Option<Json<super::billing::Bill>>,
-    pub traffic: Option<Json<super::billing::Traffic>>,
+    pub bill: Option<Json<Bill>>,
+    pub traffic: Option<Json<Traffic>>,
     pub traffic_error: Option<String>,
     pub error_code: Option<String>,
     pub next_run_at: i64,
-    pub balance: Option<Json<super::costs::Balance>>,
+    pub balance: Option<Json<Balance>>,
     pub balance_error: Option<String>,
     pub balance_next_at: i64,
 }
@@ -43,17 +43,17 @@ pub(super) struct Resource {
     pub snapshot: Option<Json<Snapshot>>,
     pub checked_at: Option<i64>,
     pub error_code: Option<String>,
-    pub instance_bill: Option<Json<super::costs::InstanceBill>>,
+    pub instance_bill: Option<Json<InstanceBill>>,
     pub bill_error: Option<String>,
     pub bill_next_at: i64,
-    pub power_policy: Json<super::power::Policy>,
-    pub power_state: Option<Json<super::power::State>>,
+    pub power_policy: Json<Policy>,
+    pub power_state: Option<Json<State>>,
     pub power_checked_at: Option<i64>,
     pub power_error: Option<String>,
     pub next_power_at: i64,
     pub manual_hold: bool,
     pub threshold_hold: bool,
-    pub cdt_guard_state: Option<Json<super::power::GuardState>>,
+    pub cdt_guard_state: Option<Json<GuardState>>,
     pub cdt_guard_error: Option<String>,
     pub cdt_guard_next_at: i64,
     pub ipv6_addresses: Json<Vec<String>>,
@@ -184,4 +184,132 @@ pub(super) fn message(code: &str) -> &'static str {
         "old_eip_retained" => "旧 EIP 未能释放，请到阿里云控制台手动释放，否则闲置会产生费用",
         _ => "云接口暂时不可用",
     }
+}
+
+// The stored shapes of the cost and power columns of the account and resource rows.
+// Their rules live with costs and operations.
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(super) struct BillRow {
+    pub instance_id: String,
+    pub region: String,
+    pub product_type: String,
+    pub billing_item: String,
+    pub usage: String,
+    pub unit: String,
+    pub amount: String,
+    pub currency: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(super) struct Bill {
+    pub month: String,
+    pub queried_at: i64,
+    pub rows: Vec<BillRow>,
+    // None means the complete response cannot be used for automatic control.
+    pub usage_micro_gb: Option<u64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(super) struct Traffic {
+    pub queried_at: i64,
+    pub mainland_bytes: String,
+    pub overseas_bytes: String,
+    pub regions: Vec<TrafficRegion>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(super) struct TrafficRegion {
+    pub region: String,
+    pub bytes: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(super) struct Balance {
+    pub available: String,
+    pub currency: String,
+    pub queried_at: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(super) struct CostRow {
+    pub item: String,
+    pub amount: String,
+    pub currency: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(super) struct InstanceBill {
+    pub month: String,
+    pub queried_at: i64,
+    pub rows: Vec<CostRow>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Policy {
+    pub enabled: bool,
+    pub stop_mode: String,
+    pub threshold_action: String,
+    pub limit_gb: u64,
+    pub threshold_percent: u64,
+    pub schedule_enabled: bool,
+    #[serde(default)]
+    pub schedule_mode: ScheduleMode,
+    #[serde(default)]
+    pub start_cron: String,
+    #[serde(default)]
+    pub stop_cron: String,
+    pub start_time: String,
+    pub stop_time: String,
+    pub utc_offset_minutes: i64,
+    pub keepalive: bool,
+    #[serde(default)]
+    pub cdt_guard: Option<GuardConfig>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum ScheduleMode {
+    #[default]
+    Daily,
+    Cron,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) struct State {
+    pub cloud_id: String,
+    pub region: String,
+    pub status: String,
+    pub stopped_mode: Option<String>,
+    pub charge_type: String,
+    pub network_type: String,
+    pub spot_strategy: String,
+    pub interruption_behavior: Option<String>,
+    pub public_ips: Vec<String>,
+    #[serde(default)]
+    pub public_ipv6: Vec<String>,
+    pub locked: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct GuardConfig {
+    pub threshold_bytes: u64,
+    pub jump_bytes: u64,
+    pub auto_start: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(super) struct GuardState {
+    pub billing_cycle: String,
+    pub region: String,
+    pub cloud_id: String,
+    pub key_digest: String,
+    pub account_revision: i64,
+    pub max_usage_bytes: u64,
+    pub max_jump_bytes: u64,
+    pub queried_at: i64,
+    #[serde(default)]
+    pub cdt_observed: bool,
 }

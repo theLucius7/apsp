@@ -1,3 +1,6 @@
+mod api;
+pub use api::routes;
+
 use super::{
     account_on, billing,
     client::Cloud,
@@ -35,6 +38,83 @@ pub(super) async fn idle(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> ApiRes
     Ok(())
 }
 
+/// Whether any of the resources has a bandwidth operation, power job or security group
+/// change that was sent and whose result is still unknown.
+async fn unresolved(tx: &mut Transaction<'_, Postgres>, resources: &[Uuid]) -> ApiResult<bool> {
+    if super::power::unresolved(tx, resources).await? {
+        return Ok(true);
+    }
+    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM alicloud_operations WHERE resource_id=ANY($1) AND status IN ('running','uncertain')) OR EXISTS(SELECT 1 FROM alicloud_security_group_operations WHERE resource_id=ANY($1) AND status IN ('running','unknown'))")
+        .bind(resources).fetch_one(&mut **tx).await?)
+}
+
+/// Cancels the resources' previews, and their queued bandwidth operations and power jobs
+/// when `queued` is set. Address rotations are only cancelled in preview.
+async fn cancel_pending(
+    tx: &mut Transaction<'_, Postgres>,
+    resources: &[Uuid],
+    queued: bool,
+) -> ApiResult<()> {
+    let now = apsp_protocol::now_timestamp();
+    let statuses: &[&str] = if queued {
+        &["preview", "queued"]
+    } else {
+        &["preview"]
+    };
+    sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id=ANY($1) AND status=ANY($3)").bind(resources).bind(now).bind(statuses).execute(&mut **tx).await?;
+    super::power::cancel_pending(tx, resources, statuses, now).await?;
+    super::eip_rotation::cancel_previews(tx, resources, now).await
+}
+
+/// The latest bandwidth operations, unfinished ones first.
+pub(super) async fn recent(pool: &PgPool) -> ApiResult<Vec<Operation>> {
+    Ok(sqlx::query_as("SELECT * FROM alicloud_operations ORDER BY (status IN ('queued','running','uncertain')) DESC,created_at DESC,id LIMIT 100").fetch_all(pool).await?)
+}
+
+/// Operations answers what resources and security groups ask about work in progress.
+struct Work;
+impl super::work::CloudWork for Work {
+    fn ensure_idle<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        resource: Uuid,
+    ) -> apsp_panel_host::ports::BoxFuture<'a, ApiResult<()>> {
+        Box::pin(idle(tx, resource))
+    }
+
+    fn in_rotation<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        allocation: &'a str,
+    ) -> apsp_panel_host::ports::BoxFuture<'a, ApiResult<bool>> {
+        Box::pin(super::eip_rotation::involves(tx, allocation))
+    }
+
+    fn unresolved<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        resources: &'a [Uuid],
+    ) -> apsp_panel_host::ports::BoxFuture<'a, ApiResult<bool>> {
+        Box::pin(unresolved(tx, resources))
+    }
+
+    fn cancel_pending<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        resources: &'a [Uuid],
+        queued: bool,
+    ) -> apsp_panel_host::ports::BoxFuture<'a, ApiResult<()>> {
+        Box::pin(cancel_pending(tx, resources, queued))
+    }
+}
+
+static WORK: Work = Work;
+
+/// Connects the answer to the resources' and security groups' question.
+pub fn install() {
+    super::work::install(&WORK);
+}
+
 pub(super) async fn prepare(
     tx: &mut Transaction<'_, Postgres>,
     account: &Account,
@@ -53,22 +133,6 @@ pub(super) async fn prepare(
         .bind(id).bind(resource.id).bind(account.revision).bind(resource.revision).bind(Json(before)).bind(Json(target))
         .bind(if cycle.is_some(){"automatic"}else{"manual"}).bind(cycle).bind(if cycle.is_some(){"queued"}else{"preview"}).bind(now).bind(now+300).execute(&mut **tx).await?;
     Ok(id)
-}
-
-pub(super) async fn snapshot_on(
-    tx: &mut Transaction<'_, Postgres>,
-    resource: Uuid,
-    snapshot: &Snapshot,
-) -> ApiResult<()> {
-    sqlx::query(
-        "UPDATE alicloud_resources SET snapshot=$2,checked_at=$3,error_code=NULL WHERE id=$1",
-    )
-    .bind(resource)
-    .bind(Json(snapshot))
-    .bind(apsp_protocol::now_timestamp())
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
 }
 
 pub(super) async fn preview(
@@ -94,7 +158,7 @@ pub(super) async fn preview(
     if target.matches(&before) {
         return Err(ApiError::Conflict("资源已是目标配置，无需调整".into()));
     }
-    snapshot_on(&mut tx, id, &before).await?;
+    super::snapshot_on(&mut tx, id, &before).await?;
     let operation = prepare(&mut tx, &account, &resource, &before, &target, None).await?;
     tx.commit().await?;
     load(pool, operation).await
@@ -212,7 +276,7 @@ async fn readback(
             let matches = operation.target.matches(&snapshot)
                 && snapshot.attached_eip_id == operation.before_state.attached_eip_id
                 && snapshot.public_ip == operation.before_state.public_ip;
-            snapshot_on(tx, resource.id, &snapshot).await?;
+            super::snapshot_on(tx, resource.id, &snapshot).await?;
             finish(
                 tx,
                 operation.id,
@@ -265,7 +329,7 @@ pub(super) async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult
             return Ok(());
         }
     };
-    snapshot_on(&mut tx, resource.id, &current).await?;
+    super::snapshot_on(&mut tx, resource.id, &current).await?;
     if current != operation.before_state.0 {
         finish(&mut tx, id, "failed", Some("state_changed")).await?;
         tx.commit().await?;

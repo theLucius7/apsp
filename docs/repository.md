@@ -34,7 +34,7 @@
 | `operations` | 作业领域：远程命令、终端、固定设备操作及其核对、运行时操作，以及作业、计划、维护窗口、有界自动处置与面板备份步骤；排在依赖顺序最后，直接调用流量服务与成本 |
 | `traffic` | 流量服务领域：节点、链路、外部来源与节点库，服务器运行时的配置编译与发布、部署检查与发布批次、运行时控制与校验，Nexus 兼容桥的流量部分（`nexus_nodes/`）；用户的限速、设备数与运维记录经自己声明的 `users` 接口由服务权益回答 |
 | `access` | 服务权益领域：代理用户、策略组与套餐、资格与配额、订阅与专属地址、成员门户与账号、用户限速与会话、代理运维流程（预览与应用）、Nexus 兼容（`nexus/`：兼容桥 `bridge` 与设备会话 `sessions`，兼容桥的表只在 `bridge` 中出现）；排在流量服务之后，直接调用它 |
-| `plugins/alicloud/panel` | 尚未拆分的 crate：云资源、安全组、CDT 计费流量与启停、换 IP 作业（阶段 D 分回各领域）；拆分前保持现有依赖，排在它所含全部领域之后的领域 crate 可以依赖它。诊断工具（IPQuality、NodeQuality、TcpQuality）的面板代码在 `crates/observability/src/diagnostic_plugins/`，`plugins/` 下只留它们的打包脚本与上游锁定文件 |
+| `plugins/alicloud/panel` | 尚未搬进领域 crate 的阿里云能力，内部已按所有者分开（阶段 D 第一步）：资源（`api`、`inventory`、`model`、`client`、`addresses`，以及向作业提问的 `work` 接口）、基础网络（`security_groups`）、成本（`billing`、`costs`、`history`）、观测（`notices`）、作业（`operations`、`power`、`eip_rotation`、`worker`），应用层的组合视图 `overview`；各组路由与后台任务由应用层的 `domains` 组合，第二步搬进各领域 crate。拆分前保持现有依赖，排在它所含全部领域之后的领域 crate 可以依赖它。诊断工具（IPQuality、NodeQuality、TcpQuality）的面板代码在 `crates/observability/src/diagnostic_plugins/`，`plugins/` 下只留它们的打包脚本与上游锁定文件 |
 | `panel` | 应用：组合平台与各领域（`domains`）、接线依赖倒置接口（`wiring`）、运行跨流量服务与服务权益的代理发布周期（`publisher`）、启动服务与后台任务；保存唯一的当前数据库初始化 SQL。平台模块保留 `apsp_panel::*` 路径，代理领域直接用 `apsp_traffic`、`apsp_access` |
 | `agent-core` | 设备身份、传输、对账、持久状态、遥测、计量与制品；工作区依赖仅 `protocol`、`adapter-sdk` |
 | `adapter-sdk` | 无状态适配器接口与共享模型 |

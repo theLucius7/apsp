@@ -2,13 +2,10 @@ use super::super::{
     account_on, billing,
     client::Cloud,
     lock,
-    model::{Account, Resource},
+    model::{Account, Resource, State},
     notices, resource,
 };
-use super::{
-    State,
-    jobs::{self, Intent},
-};
+use super::jobs::{self, Intent};
 use crate::error::ApiResult;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;

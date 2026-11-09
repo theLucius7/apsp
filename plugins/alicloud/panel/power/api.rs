@@ -1,5 +1,5 @@
-use super::super::{account_on, client::Cloud, failure, lock, operations, resource};
-use super::{Job, Policy, jobs, policy};
+use super::super::{account_on, client::Cloud, failure, lock, model::Policy, operations, resource};
+use super::{Job, jobs, policy};
 use crate::{
     AppState, auth,
     error::{ApiError, ApiResult},
@@ -14,7 +14,7 @@ use serde::Deserialize;
 use sqlx::types::Json as SqlJson;
 use uuid::Uuid;
 
-pub(in super::super) fn routes() -> Router<AppState> {
+pub fn routes() -> Router<AppState> {
     Router::new()
         .merge(super::guard::seed::routes())
         .route("/api/plugins/alicloud/cron-preview", post(cron_preview))

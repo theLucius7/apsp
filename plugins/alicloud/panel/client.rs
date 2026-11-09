@@ -1,7 +1,4 @@
-use super::{
-    billing,
-    model::{Account, Resource, Snapshot, Target},
-};
+use super::model::{Account, Resource, Snapshot, Target};
 use crate::cloud_api::{Failure, aliyun::Aliyun};
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Mutex};
@@ -97,35 +94,6 @@ impl Cloud {
             return Err("credential_invalid".into());
         }
         Ok(resolved)
-    }
-    pub async fn bill(&self, account: &Account, now: i64) -> Result<billing::Bill, Failure> {
-        let resolved = self.resolved_account(account).await?;
-        let account = &resolved;
-        let service = if account.site == "international" {
-            &self.bss_international
-        } else {
-            &self.bss
-        };
-        tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            billing::query(service, account, now),
-        )
-        .await
-        .unwrap_or(Err("request_timeout".into()))
-    }
-    pub async fn traffic(&self, account: &Account, now: i64) -> Result<billing::Traffic, Failure> {
-        let resolved = self.resolved_account(account).await?;
-        let account = &resolved;
-        let result = self
-            .cdt
-            .call(
-                &account.access_key_id,
-                &account.access_key_secret,
-                "ListCdtInternetTraffic",
-                &[("RegionId", "cn-hongkong".into())],
-            )
-            .await?;
-        billing::traffic(&result, now)
     }
     pub async fn snapshot(
         &self,

@@ -30,8 +30,15 @@ pub fn router() -> Router<AppState> {
         .merge(traffic::device_routes())
         .merge(naming::routes())
         .merge(costs::routes())
-        .merge(alicloud::routes())
-        .merge(alicloud::security_groups_routes())
+        // Cloud capabilities by domain: accounts and resources, bandwidth operations,
+        // power, address rotation, CDT history, security groups and the combined view.
+        .merge(alicloud::api::routes())
+        .merge(alicloud::operations::routes())
+        .merge(alicloud::power::routes())
+        .merge(alicloud::eip_rotation::routes())
+        .merge(alicloud::history::routes())
+        .merge(alicloud::security_groups::routes())
+        .merge(alicloud::overview::routes())
 }
 
 pub async fn run(state: AppState) {
@@ -47,7 +54,7 @@ pub async fn run(state: AppState) {
             let pool = pool.clone();
             move || naming::run(pool.clone())
         }),
-        supervise("alicloud", move || alicloud::run(pool.clone())),
+        supervise("alicloud", move || alicloud::worker::run(pool.clone())),
         supervise("expenses", move || costs::run(expense_state.clone()))
     );
 }

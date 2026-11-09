@@ -143,28 +143,6 @@ ref	crates/panel-host/src/network_configuration/x509.rs	crates/panel-host/src/ne
 ref	crates/panel-host/src/releases/agents.rs	crates/panel-host/src/servers.rs	governance->resources
 ref	crates/panel-host/src/state.rs	crates/panel-host/src/auth.rs	platform->governance
 ref	crates/panel-host/src/state.rs	crates/panel-host/src/passkeys/mod.rs	platform->governance
-ref	plugins/alicloud/panel/api.rs	plugins/alicloud/panel/eip_rotation.rs	resources->operations
-ref	plugins/alicloud/panel/api.rs	plugins/alicloud/panel/history.rs	resources->costs
-ref	plugins/alicloud/panel/api.rs	plugins/alicloud/panel/operations.rs	resources->operations
-ref	plugins/alicloud/panel/api.rs	plugins/alicloud/panel/power/mod.rs	resources->operations
-ref	plugins/alicloud/panel/client.rs	plugins/alicloud/panel/billing.rs	resources->costs
-ref	plugins/alicloud/panel/model.rs	plugins/alicloud/panel/billing.rs	resources->costs
-ref	plugins/alicloud/panel/model.rs	plugins/alicloud/panel/costs.rs	resources->costs
-ref	plugins/alicloud/panel/model.rs	plugins/alicloud/panel/power/mod.rs	resources->operations
-ref	plugins/alicloud/panel/power/policy.rs	plugins/alicloud/panel/billing.rs	resources->costs
-ref	plugins/alicloud/panel/power/policy.rs	plugins/alicloud/panel/power/cron.rs	resources->operations
-ref	plugins/alicloud/panel/power/policy.rs	plugins/alicloud/panel/power/guard.rs	resources->operations
-ref	plugins/alicloud/panel/power/policy.rs	plugins/alicloud/panel/power/mod.rs	resources->operations
-ref	plugins/alicloud/panel/power/state.rs	plugins/alicloud/panel/power/mod.rs	resources->operations
-ref	plugins/alicloud/panel/security_groups.rs	plugins/alicloud/panel/operations.rs	networking->operations
-ref	plugins/alicloud/panel/security_groups/execution.rs	plugins/alicloud/panel/operations.rs	networking->operations
-ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/billing.rs	resources->costs
-ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/costs.rs	resources->costs
-ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/eip_rotation.rs	resources->operations
-ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/history.rs	resources->costs
-ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/notices.rs	resources->observability
-ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/operations.rs	resources->operations
-ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/power/mod.rs	resources->operations
 sql	crates/access/src/external_access/model.rs	read	singbox_external_node_states	access->traffic
 sql	crates/access/src/external_access/model.rs	read	singbox_node_metadata	access->traffic
 sql	crates/access/src/nexus/sessions.rs	read	singbox_nexus_runtime_hosts	access->traffic
@@ -456,16 +434,7 @@ sql	crates/traffic/src/runtime_workflows/rollouts.rs	read	runtime_operations	tra
 sql	crates/traffic/src/runtime_workflows/rollouts.rs	read	server_retirements	traffic->resources
 sql	crates/traffic/src/runtime_workflows/rollouts.rs	write	runtime_operations	traffic->operations
 sql	crates/traffic/src/settings.rs	write	servers	traffic->resources
-sql	plugins/alicloud/panel/api.rs	read	alicloud_deliveries	resources->observability
-sql	plugins/alicloud/panel/api.rs	read	alicloud_eip_rotations	resources->operations
-sql	plugins/alicloud/panel/api.rs	read	alicloud_events	resources->observability
-sql	plugins/alicloud/panel/api.rs	read	alicloud_operations	resources->operations
-sql	plugins/alicloud/panel/api.rs	read	alicloud_power_jobs	resources->operations
-sql	plugins/alicloud/panel/api.rs	read	alicloud_security_group_operations	resources->operations
 sql	plugins/alicloud/panel/api.rs	read	credential_entries	resources->platform
-sql	plugins/alicloud/panel/api.rs	write	alicloud_eip_rotations	resources->operations
-sql	plugins/alicloud/panel/api.rs	write	alicloud_operations	resources->operations
-sql	plugins/alicloud/panel/api.rs	write	alicloud_power_jobs	resources->operations
 sql	plugins/alicloud/panel/api.rs	write	alicloud_traffic_history	resources->costs
 sql	plugins/alicloud/panel/costs.rs	read	alicloud_accounts	costs->resources
 sql	plugins/alicloud/panel/costs.rs	read	alicloud_resources	costs->resources
@@ -492,9 +461,3 @@ sql	plugins/alicloud/panel/security_groups.rs	write	alicloud_security_group_oper
 sql	plugins/alicloud/panel/security_groups/execution.rs	read	alicloud_resources	networking->resources
 sql	plugins/alicloud/panel/security_groups/execution.rs	read	operations_cloud_links	networking->resources
 sql	plugins/alicloud/panel/security_groups/execution.rs	write	alicloud_security_group_operations	networking->operations
-sql	plugins/alicloud/panel/worker.rs	read	alicloud_eip_rotations	resources->operations
-sql	plugins/alicloud/panel/worker.rs	read	alicloud_operations	resources->operations
-sql	plugins/alicloud/panel/worker.rs	read	alicloud_power_jobs	resources->operations
-sql	plugins/alicloud/panel/worker.rs	write	alicloud_events	resources->observability
-sql	plugins/alicloud/panel/worker.rs	write	alicloud_operations	resources->operations
-sql	plugins/alicloud/panel/worker.rs	write	alicloud_traffic_history	resources->costs

@@ -1,5 +1,5 @@
 //! Display history from the existing account-wide CDT observations.
-use super::{billing::Traffic, model::Account};
+use super::model::{Account, Traffic};
 use crate::{AppState, auth, error::ApiResult};
 use axum::{
     Json, Router,
@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use sqlx::{FromRow, Postgres, Transaction};
 use uuid::Uuid;
 
-pub(super) fn routes() -> Router<AppState> {
+pub fn routes() -> Router<AppState> {
     Router::new().route(
         "/api/plugins/alicloud/accounts/{id}/traffic-history",
         get(history),
@@ -87,6 +87,42 @@ async fn history(
     Ok(Json(
         serde_json::json!({"account_id":id,"queried_at":now,"groups":groups}),
     ))
+}
+
+/// Stores the CDT traffic an account refresh read, adding it to the history, or the
+/// reason it could not be read.
+pub(super) async fn store_traffic(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    traffic: Result<(Traffic, String), crate::cloud_api::Failure>,
+) -> ApiResult<()> {
+    match traffic {
+        Ok((traffic, identity)) => {
+            record(tx, id, &traffic, &identity).await?;
+            sqlx::query("UPDATE alicloud_accounts SET traffic=$2,traffic_error=NULL WHERE id=$1")
+                .bind(id)
+                .bind(sqlx::types::Json(traffic))
+                .execute(&mut **tx)
+                .await?;
+        }
+        Err(error) => {
+            sqlx::query("UPDATE alicloud_accounts SET traffic_error=$2 WHERE id=$1")
+                .bind(id)
+                .bind(error.code)
+                .execute(&mut **tx)
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Drops history buckets that started before `before`.
+pub(super) async fn prune(pool: &sqlx::PgPool, before: i64) -> ApiResult<()> {
+    sqlx::query("DELETE FROM alicloud_traffic_history WHERE bucket_start<$1")
+        .bind(before)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 #[cfg(test)]

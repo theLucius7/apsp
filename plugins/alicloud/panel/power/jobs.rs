@@ -2,10 +2,10 @@ use super::super::{
     account_on,
     client::Cloud,
     lock,
-    model::{Account, Resource},
+    model::{Account, Resource, State},
     notices, resource,
 };
-use super::{Job, State, scheduler};
+use super::{Job, scheduler};
 use crate::error::{ApiError, ApiResult};
 use sqlx::{PgPool, Postgres, Transaction, types::Json};
 use uuid::Uuid;
@@ -32,6 +32,27 @@ pub(in super::super) async fn idle(tx: &mut Transaction<'_, Postgres>, id: Uuid)
         ));
     }
     Ok(())
+}
+/// Whether any of the resources has a power job that was sent and whose result is unknown.
+pub(in super::super) async fn unresolved(
+    tx: &mut Transaction<'_, Postgres>,
+    resources: &[Uuid],
+) -> ApiResult<bool> {
+    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM alicloud_power_jobs WHERE resource_id=ANY($1) AND status IN ('running','uncertain'))").bind(resources).fetch_one(&mut **tx).await?)
+}
+/// Cancels the resources' power jobs whose status is one of `statuses`.
+pub(in super::super) async fn cancel_pending(
+    tx: &mut Transaction<'_, Postgres>,
+    resources: &[Uuid],
+    statuses: &[&str],
+    now: i64,
+) -> ApiResult<()> {
+    sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id=ANY($1) AND status=ANY($3)").bind(resources).bind(now).bind(statuses).execute(&mut **tx).await?;
+    Ok(())
+}
+/// The latest power jobs, unfinished ones first.
+pub(in super::super) async fn recent(pool: &PgPool) -> ApiResult<Vec<Job>> {
+    Ok(sqlx::query_as("SELECT * FROM alicloud_power_jobs ORDER BY (status IN ('queued','running','uncertain')) DESC,created_at DESC,id LIMIT 100").fetch_all(pool).await?)
 }
 pub(super) async fn state_on(
     tx: &mut Transaction<'_, Postgres>,

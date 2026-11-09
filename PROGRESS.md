@@ -1,5 +1,25 @@
 # 执行进度
 
+## 2026-11-10：ADR 0131 步骤一（中三）——阶段 D 第一步：阿里云 crate 内部按领域重组
+
+- 用户要求：“continue”，并在阶段 D 的做法上选择“分两步，只拆代码”：表留到阶段 F，第一步在 crate 内按所有者重组、行为不变，第二步把文件搬进领域 crate，每步单独上线。取舍见 `docs/open-questions.md`，结果见 [architecture.md §9](docs/architecture.md)。
+- 重组（`plugins/alicloud/panel`）：
+  - 路由按所有者登记：资源的账号与资源接口留在 `api`，带宽变更的预览、确认、取消与忽略移到作业的 `operations/api`，启停、换 IP、CDT 流量历史与安全组的路由不再经资源合并；云页面的组合视图（`GET /api/plugins/alicloud`）移到应用层的 `overview`，改为调用各所有者的列表函数。应用层的 `domains` 合并 7 组路由，后台任务改为 `alicloud::worker::run`，守护名称不变。
+  - 账号刷新与定期清理归作业（`worker`）：刷新的资源部分移到 `inventory`，账单与 CDT 流量的写入移到成本的 `costs::store_bill` 与 `history::store_traffic`，流量历史与事件的清理调用成本与观测的 `prune`；读取账单与流量的客户端方法移到 `billing`。
+  - 资源向作业提问改经资源声明的 `work::CloudWork`（作业回答，应用层的 `wiring` 接线）：资源是否空闲（资源删除、安全组变更）、地址是否在换 IP 中（登记 EIP）、账号下是否有结果待核对的操作（换站点或密钥）、配置变化后取消预览与排队中的操作（改账号、改资源、删资源）。
+  - 共享类型移到资源的 `model`：`Bill`、`Traffic`、`Balance`、`InstanceBill`、`Policy`、`State`、`GuardConfig`（原 `guard::Config`）、`GuardState`（原 `guard::Observation`）。资源写快照的 `snapshot_on` 移到 crate 根。
+  - 边界配置：`operations/`、`worker.rs` 归作业，`overview.rs` 归应用；`power/policy.rs` 与 `power/state.rs` 的资源例外删除（类型已移出，剩下的判断代码与执行同归作业）。
+- 边界：越界从 498 条减到 461 条（SQL 318、代码引用 28、前端引用 115），没有新增。阿里云 crate 从 64 条减到 27 条：指向排在后面领域的 22 条代码引用全部消失；SQL 少 15 条（资源接口读写作业与观测的表 9 条、原归资源的后台任务读写作业、观测与成本的表 6 条）。剩下的 27 条都是 SQL，其中 18 条是作业与成本读写云资源与云账号行里属于自己的列，等阶段 F 拆表。
+- 规模：Rust 30 个文件，新增约 800 行、删除约 450 行（多为搬家；新文件 4 个：`inventory.rs`、`work.rs`、`overview.rs`、`operations/api.rs`）；`Cargo.toml` 与 `Cargo.lock` 不变。
+- 没有修改数据库基线、面板与 Agent 协议、部署方式与前端；接口地址不变。
+- 验证（本地，基于 main `483f46d9`）：
+  - `cargo fmt --check`、全工作区 `cargo clippy --all-targets -- -D warnings` 通过。
+  - 本地 PostgreSQL 16 上阿里云 crate 的 101 个测试全部通过；首轮安全组的 5 个测试失败，因为它们在 crate 内直接调用，没有接上 `work::CloudWork`，接口按设计拒绝，改为在测试夹具里接上作业的回答后通过。应用的集成测试 `alicloud`（9）、`control_center`（6）、`foundation`（8）、`frontend`（3）通过，它们都启动完整路由，路由合并没有冲突。
+  - 路由静态比对：33 个“路径、方法、处理函数”组合前后相同。两项边界检查通过（461 条已知越界，没有新增），检查器单元测试 13 + 21 个通过，文档内链接 0 错误。
+  - 前端没有改动，只为编译构建了 `web/dist`，前端测试未运行；其他 crate 只经全工作区 clippy。CI 暂停，未触发。
+- 交付：没有改数据库基线、协议、部署方式与生产数据，按协作规则直接提交 main。
+- 下一步：阶段 D 第二步（按所有者把模块搬进领域 crate，组合视图移入应用 crate，改用不带供应商的名称）与阶段 E（前端按领域目录），以及 `plugins/` 下 sing-box 服务文件与诊断工具打包脚本的去处。
+
 ## 2026-11-09：ADR 0131 步骤一（中二）——阶段 C 收尾：兼容桥收拢，流量服务与服务权益互不写对方的表
 
 - 用户要求：“continue”。完成阶段 C 的其余完成标准；取舍见 `docs/open-questions.md`，结果见 [architecture.md §9](docs/architecture.md)。

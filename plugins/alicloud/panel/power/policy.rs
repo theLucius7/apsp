@@ -1,39 +1,9 @@
 use super::super::{
     billing,
-    model::{Account, Resource},
+    model::{Account, Policy, Resource, ScheduleMode},
 };
 use crate::error::{ApiError, ApiResult};
-use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(in super::super) struct Policy {
-    pub enabled: bool,
-    pub stop_mode: String,
-    pub threshold_action: String,
-    pub limit_gb: u64,
-    pub threshold_percent: u64,
-    pub schedule_enabled: bool,
-    #[serde(default)]
-    pub schedule_mode: ScheduleMode,
-    #[serde(default)]
-    pub start_cron: String,
-    #[serde(default)]
-    pub stop_cron: String,
-    pub start_time: String,
-    pub stop_time: String,
-    pub utc_offset_minutes: i64,
-    pub keepalive: bool,
-    #[serde(default)]
-    pub cdt_guard: Option<super::guard::Config>,
-}
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(in super::super) enum ScheduleMode {
-    #[default]
-    Daily,
-    Cron,
-}
 impl Policy {
     pub fn validate(&self) -> ApiResult<()> {
         if let Some(guard) = &self.cdt_guard {

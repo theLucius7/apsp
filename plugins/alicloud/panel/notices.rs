@@ -95,3 +95,17 @@ where
     }
     Ok(())
 }
+
+/// Drops notification events created before `before`.
+pub(super) async fn prune(pool: &PgPool, before: i64) -> ApiResult<()> {
+    sqlx::query("DELETE FROM alicloud_events WHERE created_at<$1")
+        .bind(before)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// The latest notification events with their delivery attempts, newest first.
+pub(super) async fn recent(pool: &PgPool) -> ApiResult<Vec<Value>> {
+    Ok(sqlx::query_scalar("SELECT jsonb_build_object('id',e.id,'resource_id',e.resource_id,'title',e.title,'message',e.message,'created_at',e.created_at,'deliveries',COALESCE((SELECT jsonb_agg(jsonb_build_object('channel',d.channel,'status',d.status,'attempts',d.attempts,'last_error',d.last_error,'next_attempt_at',d.next_attempt_at,'delivered_at',d.delivered_at) ORDER BY d.id) FROM alicloud_deliveries d WHERE d.event_id=e.id),'[]'::jsonb)) FROM alicloud_events e ORDER BY e.id DESC LIMIT 100").fetch_all(pool).await?)
+}

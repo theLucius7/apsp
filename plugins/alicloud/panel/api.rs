@@ -2,8 +2,8 @@ use super::{
     account_on,
     client::Cloud,
     failure, lock,
-    model::{self, Account, Operation, Resource, Target},
-    operations, resource,
+    model::{self, Account, Resource},
+    resource,
 };
 use crate::{
     AppState, auth,
@@ -13,18 +13,15 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
-    routing::{get, patch, post},
+    routing::{patch, post},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
+use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .merge(super::power::routes())
-        .merge(super::history::routes())
-        .merge(super::eip_rotation::routes())
-        .route("/api/plugins/alicloud", get(list))
         .route("/api/plugins/alicloud/accounts", post(create_account))
         .route(
             "/api/plugins/alicloud/accounts/{id}",
@@ -43,37 +40,25 @@ pub fn routes() -> Router<AppState> {
             "/api/plugins/alicloud/resources/{id}/refresh",
             post(refresh_resource),
         )
-        .route(
-            "/api/plugins/alicloud/resources/{id}/preview",
-            post(preview),
-        )
-        .route(
-            "/api/plugins/alicloud/operations/{id}/confirm",
-            post(confirm),
-        )
-        .route("/api/plugins/alicloud/operations/{id}/cancel", post(cancel))
-        .route(
-            "/api/plugins/alicloud/operations/{id}/dismiss",
-            post(dismiss),
-        )
 }
-async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
-    auth::require_admin(&state, &headers).await?;
-    let accounts: Vec<Account> =
-        sqlx::query_as("SELECT * FROM alicloud_accounts WHERE NOT archived ORDER BY name,id")
-            .fetch_all(&state.pool)
-            .await?;
-    let resources: Vec<Resource> =
-        sqlx::query_as("SELECT * FROM alicloud_resources WHERE NOT archived ORDER BY name,id")
-            .fetch_all(&state.pool)
-            .await?;
-    let operations: Vec<Operation> = sqlx::query_as("SELECT * FROM alicloud_operations ORDER BY (status IN ('queued','running','uncertain')) DESC,created_at DESC,id LIMIT 100").fetch_all(&state.pool).await?;
-    let power_jobs: Vec<super::power::Job> = sqlx::query_as("SELECT * FROM alicloud_power_jobs ORDER BY (status IN ('queued','running','uncertain')) DESC,created_at DESC,id LIMIT 100").fetch_all(&state.pool).await?;
-    let events: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',e.id,'resource_id',e.resource_id,'title',e.title,'message',e.message,'created_at',e.created_at,'deliveries',COALESCE((SELECT jsonb_agg(jsonb_build_object('channel',d.channel,'status',d.status,'attempts',d.attempts,'last_error',d.last_error,'next_attempt_at',d.next_attempt_at,'delivered_at',d.delivered_at) ORDER BY d.id) FROM alicloud_deliveries d WHERE d.event_id=e.id),'[]'::jsonb)) FROM alicloud_events e ORDER BY e.id DESC LIMIT 100").fetch_all(&state.pool).await?;
-    let eip_rotations: Vec<super::eip_rotation::Rotation> = sqlx::query_as("SELECT * FROM alicloud_eip_rotations ORDER BY (status IN ('running','unknown')) DESC,created_at DESC,id LIMIT 50").fetch_all(&state.pool).await?;
-    Ok(Json(
-        json!({"accounts":accounts,"resources":resources,"operations":operations,"power_jobs":power_jobs,"eip_rotations":eip_rotations,"events":events}),
-    ))
+/// Every resource registered under the account, archived ones included: their pending work
+/// follows the account's configuration.
+async fn account_resources(
+    tx: &mut Transaction<'_, Postgres>,
+    account: Uuid,
+) -> ApiResult<Vec<Uuid>> {
+    Ok(
+        sqlx::query_scalar("SELECT id FROM alicloud_resources WHERE account_id=$1")
+            .bind(account)
+            .fetch_all(&mut **tx)
+            .await?,
+    )
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Revision {
+    revision: i64,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -206,29 +191,21 @@ async fn update_account(
         }
     }
     let (key, secret, credential) = input.credentials(Some(&previous))?;
+    let resources = account_resources(&mut tx, id).await?;
     if credential != previous.credential_id {
         validate_reference(&state, credential).await?;
     }
-    if input.site != previous.site
+    let rekeyed = input.site != previous.site
         || key != previous.access_key_id
         || secret != previous.access_key_secret
-        || credential != previous.credential_id
-    {
-        let unresolved: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM alicloud_operations o JOIN alicloud_resources r ON r.id=o.resource_id WHERE r.account_id=$1 AND o.status IN ('running','uncertain')) OR EXISTS(SELECT 1 FROM alicloud_power_jobs j JOIN alicloud_resources r ON r.id=j.resource_id WHERE r.account_id=$1 AND j.status IN ('running','uncertain')) OR EXISTS(SELECT 1 FROM alicloud_security_group_operations o JOIN alicloud_resources r ON r.id=o.resource_id WHERE r.account_id=$1 AND o.status IN ('running','unknown'))")
-            .bind(id).fetch_one(&mut *tx).await?;
-        if unresolved {
-            return Err(ApiError::Conflict(
-                "此账号仍有已发送或结果待核对的云操作，请先核对或结束跟踪，再更换站点及访问密钥"
-                    .into(),
-            ));
-        }
+        || credential != previous.credential_id;
+    if rekeyed && super::work::unresolved(&mut tx, &resources).await? {
+        return Err(ApiError::Conflict(
+            "此账号仍有已发送或结果待核对的云操作，请先核对或结束跟踪，再更换站点及访问密钥".into(),
+        ));
     }
     // Any edit invalidates queued authorization and cached billing evidence.
-    if input.site != previous.site
-        || key != previous.access_key_id
-        || secret != previous.access_key_secret
-        || credential != previous.credential_id
-    {
+    if rekeyed {
         sqlx::query("DELETE FROM alicloud_traffic_history WHERE account_id=$1")
             .bind(id)
             .execute(&mut *tx)
@@ -237,10 +214,7 @@ async fn update_account(
     }
     sqlx::query("UPDATE alicloud_accounts SET name=$2,site=$3,access_key_id=$4,access_key_secret=$5,enabled=$6,auto_enabled=$7,limit_gb=$8,credential_id=$9,billing_enabled=$10,balance_enabled=$11,revision=revision+1,bill=NULL,traffic=NULL,traffic_error=NULL,error_code=NULL,next_run_at=0,balance=NULL,balance_error=NULL,balance_next_at=0 WHERE id=$1")
         .bind(id).bind(input.name.trim()).bind(input.site).bind(key).bind(secret).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).bind(credential).bind(billing_enabled).bind(balance_enabled).execute(&mut *tx).await?;
-    sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id IN (SELECT id FROM alicloud_resources WHERE account_id=$1) AND status IN ('preview','queued')")
-        .bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
-    sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id IN (SELECT id FROM alicloud_resources WHERE account_id=$1) AND status IN ('preview','queued')").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
-    sqlx::query("UPDATE alicloud_eip_rotations SET status='cancelled',updated_at=$2 WHERE resource_id IN (SELECT id FROM alicloud_resources WHERE account_id=$1) AND status='preview'").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
+    super::work::cancel_pending(&mut tx, &resources, true).await?;
     sqlx::query("UPDATE alicloud_resources SET instance_bill=NULL,bill_error=NULL,bill_next_at=0,next_power_at=0,cdt_guard_next_at=0 WHERE account_id=$1").bind(id).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
@@ -351,7 +325,7 @@ async fn create_resource(
     }
     // An unfinished EIP rotation may still release this address; registering it
     // now would leave a record of a released EIP behind.
-    if input.kind == "eip" && super::eip_rotation::involves(&mut tx, &input.cloud_id).await? {
+    if input.kind == "eip" && super::work::in_rotation(&mut tx, &input.cloud_id).await? {
         return Err(ApiError::Conflict(
             "此 EIP 正在更换公网 IP 的流程中，请在流程结束后再登记".into(),
         ));
@@ -402,9 +376,7 @@ async fn update_resource(
         ));
     }
     sqlx::query("UPDATE alicloud_resources SET name=$2,auto_enabled=$3,cap_mbps=$4,revision=revision+1 WHERE id=$1").bind(id).bind(input.name.trim()).bind(input.auto_enabled).bind(input.cap_mbps).execute(&mut *tx).await?;
-    sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status IN ('preview','queued')").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
-    sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status IN ('preview','queued')").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
-    sqlx::query("UPDATE alicloud_eip_rotations SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status='preview'").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
+    super::work::cancel_pending(&mut tx, &[id], true).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -426,11 +398,9 @@ async fn remove_resource(
     if input.is_some_and(|Json(input)| input.revision != current.revision) {
         return Err(ApiError::Conflict("资源配置已变化，请刷新后重试".into()));
     }
-    operations::idle(&mut tx, id).await?;
+    super::work::ensure_idle(&mut tx, id).await?;
     sqlx::query("UPDATE alicloud_resources SET archived=true,auto_enabled=false,revision=revision+1 WHERE id=$1").bind(id).execute(&mut *tx).await?;
-    sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status='preview'").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
-    sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status='preview'").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
-    sqlx::query("UPDATE alicloud_eip_rotations SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status='preview'").bind(id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
+    super::work::cancel_pending(&mut tx, &[id], false).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -457,65 +427,7 @@ async fn refresh_resource(
         .snapshot(&account, &resource)
         .await
         .map_err(failure)?;
-    operations::snapshot_on(&mut tx, id, &snapshot).await?;
+    super::snapshot_on(&mut tx, id, &snapshot).await?;
     tx.commit().await?;
     Ok(Json(snapshot))
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Preview {
-    target: Target,
-    revision: i64,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Revision {
-    revision: i64,
-}
-async fn preview(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<Uuid>,
-    Json(input): Json<Preview>,
-) -> ApiResult<Json<Operation>> {
-    auth::require_admin(&state, &headers).await?;
-    Ok(Json(
-        operations::preview(
-            &state.pool,
-            id,
-            input.target,
-            input.revision,
-            &Cloud::new(&state.pool).map_err(failure)?,
-        )
-        .await?,
-    ))
-}
-async fn confirm(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<Uuid>,
-) -> ApiResult<(StatusCode, Json<Operation>)> {
-    auth::require_admin(&state, &headers).await?;
-    Ok((
-        StatusCode::ACCEPTED,
-        Json(operations::confirm(&state.pool, id).await?),
-    ))
-}
-async fn cancel(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<Uuid>,
-) -> ApiResult<StatusCode> {
-    auth::require_admin(&state, &headers).await?;
-    operations::cancel(&state.pool, id, false).await?;
-    Ok(StatusCode::NO_CONTENT)
-}
-async fn dismiss(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<Uuid>,
-) -> ApiResult<StatusCode> {
-    auth::require_admin(&state, &headers).await?;
-    operations::cancel(&state.pool, id, true).await?;
-    Ok(StatusCode::NO_CONTENT)
 }

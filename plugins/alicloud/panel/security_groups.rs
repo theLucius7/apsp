@@ -331,7 +331,7 @@ async fn preview_with(
     let impact = impact(&before, &target)?;
     let hash = digest(&json!({"before":before,"target":target,"impact":impact}))?;
     let mut tx = lock(&state.pool, account.id).await?;
-    super::operations::idle(&mut tx, id).await?;
+    super::work::ensure_idle(&mut tx, id).await?;
     let operation = Uuid::new_v4();
     let now = now_timestamp();
     sqlx::query("INSERT INTO alicloud_security_group_operations(id,resource_id,requested_by,before_state,target_groups,impact,snapshot_digest,status,created_at,expires_at,updated_at,observed_at) VALUES($1,$2,$3,$4,$5,$6,$7,'preview',$8,$9,$8,$10)")

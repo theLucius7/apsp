@@ -1,6 +1,6 @@
-use super::super::super::{account_on, lock, resource};
+use super::super::super::{account_on, lock, model::Policy, resource};
 use super::super::jobs;
-use super::super::{Job, Policy, scheduler};
+use super::super::{Job, scheduler};
 use super::*;
 use crate::cloud_api::test_support::{Mock, Reply};
 use serde_json::{Value, json};
@@ -46,12 +46,12 @@ fn power(status: &str) -> Reply {
         "Ipv6Address":["2001:db8::1"],"PublicIpAddress":{"IpAddress":[]},"OperationLocks":{"LockReason":[]}}]}}),
     )
 }
-fn observation(a: &Account, r: &Resource, usage: u64, jump: u64, now: i64) -> Observation {
+fn observation(a: &Account, r: &Resource, usage: u64, jump: u64, now: i64) -> GuardState {
     let mut value = observe(None, usage, a, r, &key_digest(KEY), now).unwrap();
     value.max_jump_bytes = jump;
     value
 }
-async fn save_observation(pool: &PgPool, r: Uuid, value: &Observation) {
+async fn save_observation(pool: &PgPool, r: Uuid, value: &GuardState) {
     sqlx::query("UPDATE alicloud_resources SET cdt_guard_state=$2 WHERE id=$1")
         .bind(r)
         .bind(Json(value))
@@ -135,7 +135,8 @@ fn script_mode_is_opt_in_and_excludes_conflicting_automation() {
 
 #[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn combined_guard_cron_and_keepalive_preserve_stop_priority_and_start_gates(pool: PgPool) {
-    use super::super::{policy::ScheduleMode, scheduler};
+    use super::super::super::model::ScheduleMode;
+    use super::super::scheduler;
     let (account, mut resource) = seed(&pool).await;
     let base = 1_793_923_200; // Friday 08:00 at UTC+08.
     let state: State = serde_json::from_value(json!({"cloud_id":"i-guardtest","region":"cn-hongkong","status":"Stopped","stopped_mode":"StopCharging","charge_type":"PostPaid","network_type":"vpc","spot_strategy":"SpotAsPriceGo","interruption_behavior":"Stop","public_ips":[],"locked":false})).unwrap();
@@ -533,7 +534,7 @@ async fn confirmed_cdt_accepts_zero_month_reset_without_additional_permissions(p
     let repeated = observe(Some(reset), 0, &a, &saved, &key_digest(KEY), now + 1).unwrap();
     assert!(repeated.cdt_observed);
     // A restored controller retains proof without needing a product-list query.
-    let restored: Observation =
+    let restored: GuardState =
         serde_json::from_str(&serde_json::to_string(&repeated).unwrap()).unwrap();
     assert!(observe(Some(&restored), 0, &a, &saved, &key_digest(KEY), now + 2).is_ok());
     assert!(observe(Some(&restored), 0, &a, &saved, "changed-key", now + 2).is_err());
@@ -608,7 +609,7 @@ async fn empty_listing_never_replaces_evidence(pool: PgPool) {
     let (a, r) = seed(&pool).await;
     let now = apsp_protocol::now_timestamp();
     let digest = key_digest(KEY);
-    let reject = |result: Result<Observation, Failure>| result.unwrap_err().code;
+    let reject = |result: Result<GuardState, Failure>| result.unwrap_err().code;
     // No history at all.
     assert_eq!(
         reject(observe_empty(None, &a, &r, &digest, now)),

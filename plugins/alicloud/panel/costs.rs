@@ -2,13 +2,12 @@ use super::{
     account_on, billing,
     client::Cloud,
     lock,
-    model::{Account, Resource},
+    model::{Account, Balance, CostRow, InstanceBill, Resource},
 };
 use crate::{
     cloud_api::{Failure, aliyun::Aliyun},
     error::ApiResult,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{PgPool, types::Json};
 use std::collections::BTreeSet;
@@ -17,24 +16,6 @@ use uuid::Uuid;
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(super) struct Balance {
-    pub available: String,
-    pub currency: String,
-    pub queried_at: i64,
-}
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(super) struct CostRow {
-    pub item: String,
-    pub amount: String,
-    pub currency: String,
-}
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(super) struct InstanceBill {
-    pub month: String,
-    pub queried_at: i64,
-    pub rows: Vec<CostRow>,
-}
 fn currency(value: &Value) -> Result<String, Failure> {
     value
         .as_str()
@@ -328,6 +309,33 @@ pub(super) async fn tick(pool: &PgPool, cloud: &Cloud) -> ApiResult<()> {
     let resources:Vec<Uuid>=sqlx::query_scalar("SELECT r.id FROM alicloud_resources r JOIN alicloud_accounts a ON a.id=r.account_id WHERE a.enabled AND a.billing_enabled AND NOT a.archived AND NOT r.archived AND (r.bill_next_at<=$1 OR (r.instance_bill->>'month'<>$2 AND r.bill_error IS NULL)) ORDER BY r.bill_next_at,r.id LIMIT 1").bind(now).bind(billing::month(now)).fetch_all(pool).await?;
     for id in resources {
         refresh_bill(pool, id, cloud, now).await?;
+    }
+    Ok(())
+}
+
+/// Stores the CDT bill an account refresh read, or the reason it could not: a failure
+/// becomes the account's error and defers the next pass.
+pub(super) async fn store_bill(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    account: &mut Account,
+    bill: Result<super::model::Bill, Failure>,
+    now: i64,
+) -> ApiResult<()> {
+    match bill {
+        Ok(bill) => {
+            sqlx::query("UPDATE alicloud_accounts SET bill=$2,error_code=NULL WHERE id=$1")
+                .bind(account.id)
+                .bind(Json(&bill))
+                .execute(&mut **tx)
+                .await?;
+            account.bill = Some(Json(bill));
+            account.error_code = None;
+        }
+        Err(error) => {
+            sqlx::query("UPDATE alicloud_accounts SET error_code=$2,next_run_at=GREATEST(next_run_at,$3) WHERE id=$1")
+                .bind(account.id).bind(error.code).bind(now+error.retry_after.max(300)).execute(&mut **tx).await?;
+            account.error_code = Some(error.code.into());
+        }
     }
     Ok(())
 }

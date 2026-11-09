@@ -1,5 +1,11 @@
-use super::super::{account_on, billing, client::Cloud, lock, model::Resource, operations};
-use super::{State, api, jobs, policy::Policy, scheduler};
+use super::super::{
+    account_on, billing,
+    client::Cloud,
+    lock,
+    model::{Policy, Resource, State},
+    operations,
+};
+use super::{api, jobs, scheduler};
 use crate::cloud_api::test_support::{Mock, Reply};
 use serde_json::json;
 use sqlx::{PgPool, types::Json};

@@ -8,12 +8,10 @@ mod state;
 #[cfg(test)]
 mod tests;
 
-pub(super) use api::routes;
-pub(super) use guard::Observation as GuardState;
-pub(super) use jobs::idle;
-pub(super) use policy::Policy;
-pub(super) use state::State;
+pub use api::routes;
+pub(super) use jobs::{cancel_pending, idle, recent, unresolved};
 
+use super::model::State;
 use serde::Serialize;
 use sqlx::{FromRow, types::Json};
 use uuid::Uuid;

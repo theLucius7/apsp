@@ -254,6 +254,21 @@ pub(super) async fn involves(
         .bind(allocation).fetch_one(&mut **tx).await?)
 }
 
+/// Cancels the resources' address rotations that are still in preview.
+pub(super) async fn cancel_previews(
+    tx: &mut Transaction<'_, Postgres>,
+    resources: &[Uuid],
+    now: i64,
+) -> ApiResult<()> {
+    sqlx::query("UPDATE alicloud_eip_rotations SET status='cancelled',updated_at=$2 WHERE resource_id=ANY($1) AND status='preview'").bind(resources).bind(now).execute(&mut **tx).await?;
+    Ok(())
+}
+
+/// The latest address rotations, unfinished ones first.
+pub(super) async fn recent(pool: &PgPool) -> ApiResult<Vec<Rotation>> {
+    Ok(sqlx::query_as("SELECT * FROM alicloud_eip_rotations ORDER BY (status IN ('running','unknown')) DESC,created_at DESC,id LIMIT 50").fetch_all(pool).await?)
+}
+
 async fn load(pool: &PgPool, id: Uuid) -> ApiResult<Rotation> {
     sqlx::query_as("SELECT * FROM alicloud_eip_rotations WHERE id=$1")
         .bind(id)

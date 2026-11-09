@@ -1,29 +1,10 @@
-use super::model::Account;
+use super::{
+    client::Cloud,
+    model::{Account, Bill, BillRow, Traffic, TrafficRegion},
+};
 use crate::cloud_api::{Failure, aliyun::Aliyun, signing};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(super) struct BillRow {
-    pub instance_id: String,
-    pub region: String,
-    pub product_type: String,
-    pub billing_item: String,
-    pub usage: String,
-    pub unit: String,
-    pub amount: String,
-    pub currency: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(super) struct Bill {
-    pub month: String,
-    pub queried_at: i64,
-    pub rows: Vec<BillRow>,
-    // None means the complete response cannot be used for automatic control.
-    pub usage_micro_gb: Option<u64>,
-}
 
 pub(super) fn month(now: i64) -> String {
     signing::iso_time(now.saturating_add(8 * 3600))[..7].into()
@@ -180,19 +161,6 @@ pub(super) fn exceeded(account: &Account, now: i64) -> bool {
         })
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(super) struct Traffic {
-    pub queried_at: i64,
-    pub mainland_bytes: String,
-    pub overseas_bytes: String,
-    pub regions: Vec<TrafficRegion>,
-}
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(super) struct TrafficRegion {
-    pub region: String,
-    pub bytes: String,
-}
-
 pub(super) fn traffic(result: &Value, now: i64) -> Result<Traffic, Failure> {
     let entries = result
         .get("TrafficDetails")
@@ -245,4 +213,37 @@ pub(super) fn traffic(result: &Value, now: i64) -> Result<Traffic, Failure> {
         overseas_bytes: overseas.to_string(),
         regions,
     })
+}
+
+/// The CDT bill and traffic of an account, read through the account's cloud client.
+impl Cloud {
+    pub(super) async fn bill(&self, account: &Account, now: i64) -> Result<Bill, Failure> {
+        let resolved = self.resolved_account(account).await?;
+        let account = &resolved;
+        let service = if account.site == "international" {
+            &self.bss_international
+        } else {
+            &self.bss
+        };
+        tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            query(service, account, now),
+        )
+        .await
+        .unwrap_or(Err("request_timeout".into()))
+    }
+    pub(super) async fn traffic(&self, account: &Account, now: i64) -> Result<Traffic, Failure> {
+        let resolved = self.resolved_account(account).await?;
+        let account = &resolved;
+        let result = self
+            .cdt
+            .call(
+                &account.access_key_id,
+                &account.access_key_secret,
+                "ListCdtInternetTraffic",
+                &[("RegionId", "cn-hongkong".into())],
+            )
+            .await?;
+        traffic(&result, now)
+    }
 }

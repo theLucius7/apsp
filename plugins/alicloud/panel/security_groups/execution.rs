@@ -106,7 +106,7 @@ pub(super) async fn confirm(
         tx.commit().await?;
         return load(&state.pool, id).await;
     }
-    super::super::operations::idle(&mut tx, resource.id).await?;
+    super::super::work::ensure_idle(&mut tx, resource.id).await?;
     let evidence = steps(&operation);
     sqlx::query("UPDATE alicloud_security_group_operations SET status='running',steps=$2,updated_at=$3,observed_at=$4,actual_groups=$5 WHERE id=$1 AND status='preview'")
         .bind(id).bind(&evidence).bind(now_timestamp()).bind(observed_at).bind(&fresh.current_groups).execute(&mut *tx).await?;

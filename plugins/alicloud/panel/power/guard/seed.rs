@@ -1,8 +1,9 @@
+use super::super::super::model::GuardState;
 use super::super::{
     super::{account_on, billing, client::Cloud, failure, lock, operations, resource},
     jobs,
 };
-use super::{MAX_BYTES, Observation, key_digest, meter, valid_cycle};
+use super::{MAX_BYTES, key_digest, meter, valid_cycle};
 use crate::{
     AppState, auth,
     error::{ApiError, ApiResult},
@@ -149,7 +150,7 @@ pub(super) async fn import_on(pool: &PgPool, id: Uuid, input: Input) -> ApiResul
         .resolved_account(&account)
         .await
         .map_err(failure)?;
-    let mut imported = Observation {
+    let mut imported = GuardState {
         billing_cycle: input.billing_cycle,
         region: r.region.clone(),
         cloud_id: r.cloud_id.clone(),

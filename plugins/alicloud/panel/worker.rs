@@ -1,12 +1,6 @@
-use super::{
-    account_on, billing,
-    client::Cloud,
-    lock,
-    model::{Resource, Target},
-    operations,
-};
+use super::{billing, client::Cloud, inventory, lock, model::Target, operations};
 use crate::error::ApiResult;
-use sqlx::{PgPool, types::Json};
+use sqlx::PgPool;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -17,29 +11,8 @@ use uuid::Uuid;
 /// edited meanwhile. An edit resets the schedule, so its refresh follows at once.
 pub(super) async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
     let now = apsp_protocol::now_timestamp();
-    let (account, resources) = {
-        let mut tx = lock(pool, id).await?;
-        let account = account_on(&mut tx, id).await?;
-        if !account.enabled || account.next_run_at > now {
-            return Ok(());
-        }
-        sqlx::query("UPDATE alicloud_accounts SET last_attempt_at=$2,next_run_at=$3 WHERE id=$1")
-            .bind(id)
-            .bind(now)
-            .bind(now + 300)
-            .execute(&mut *tx)
-            .await?;
-        // Poll at most eight resources per pass; rotate by last attempt, including failures.
-        let resources: Vec<Resource> = sqlx::query_as("SELECT * FROM alicloud_resources WHERE account_id=$1 AND NOT archived ORDER BY last_attempt_at,id LIMIT 8")
-            .bind(id).fetch_all(&mut *tx).await?;
-        let ids: Vec<Uuid> = resources.iter().map(|resource| resource.id).collect();
-        sqlx::query("UPDATE alicloud_resources SET last_attempt_at=$2 WHERE id=ANY($1)")
-            .bind(&ids)
-            .bind(now)
-            .execute(&mut *tx)
-            .await?;
-        tx.commit().await?;
-        (account, resources)
+    let Some((account, resources)) = inventory::claim_refresh(pool, id, now).await? else {
+        return Ok(());
     };
     let bill = if account.billing_enabled {
         Some(cloud.bill(&account, now).await)
@@ -61,55 +34,17 @@ pub(super) async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult
     }
 
     let mut tx = lock(pool, id).await?;
-    let current: Option<super::model::Account> =
-        sqlx::query_as("SELECT * FROM alicloud_accounts WHERE id=$1 AND NOT archived")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let current = inventory::current_account(&mut tx, id).await?;
     let Some(mut account) = current.filter(|current| current.revision == account.revision) else {
         // Edited or archived meanwhile: these results describe the old settings.
         return Ok(());
     };
-    match bill {
-        Some(Ok(bill)) => {
-            sqlx::query("UPDATE alicloud_accounts SET bill=$2,error_code=NULL WHERE id=$1")
-                .bind(id)
-                .bind(Json(&bill))
-                .execute(&mut *tx)
-                .await?;
-            account.bill = Some(Json(bill));
-            account.error_code = None;
-        }
-        Some(Err(error)) => {
-            sqlx::query("UPDATE alicloud_accounts SET error_code=$2,next_run_at=GREATEST(next_run_at,$3) WHERE id=$1")
-                .bind(id).bind(error.code).bind(now+error.retry_after.max(300)).execute(&mut *tx).await?;
-            account.error_code = Some(error.code.into());
-        }
-        None => {}
+    if let Some(bill) = bill {
+        super::costs::store_bill(&mut tx, &mut account, bill, now).await?;
     }
-    match traffic {
-        Ok((traffic, identity)) => {
-            super::history::record(&mut tx, id, &traffic, &identity).await?;
-            sqlx::query("UPDATE alicloud_accounts SET traffic=$2,traffic_error=NULL WHERE id=$1")
-                .bind(id)
-                .bind(Json(traffic))
-                .execute(&mut *tx)
-                .await?;
-        }
-        Err(error) => {
-            sqlx::query("UPDATE alicloud_accounts SET traffic_error=$2 WHERE id=$1")
-                .bind(id)
-                .bind(error.code)
-                .execute(&mut *tx)
-                .await?;
-        }
-    }
+    super::history::store_traffic(&mut tx, id, traffic).await?;
     for (polled, snapshot) in snapshots {
-        let resource: Option<Resource> =
-            sqlx::query_as("SELECT * FROM alicloud_resources WHERE id=$1 AND NOT archived")
-                .bind(polled.id)
-                .fetch_optional(&mut *tx)
-                .await?;
+        let resource = inventory::current_resource(&mut tx, polled.id).await?;
         // The snapshot describes the cloud, not local settings, so it stays valid
         // across a resource edit; automatic action uses the settings read here.
         let Some(resource) = resource else {
@@ -132,15 +67,11 @@ pub(super) async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult
         let snapshot = match snapshot {
             Ok(snapshot) => snapshot,
             Err(error) => {
-                sqlx::query("UPDATE alicloud_resources SET error_code=$2 WHERE id=$1")
-                    .bind(resource.id)
-                    .bind(error.code)
-                    .execute(&mut *tx)
-                    .await?;
+                inventory::snapshot_failed(&mut tx, resource.id, error.code).await?;
                 continue;
             }
         };
-        operations::snapshot_on(&mut tx, resource.id, &snapshot).await?;
+        super::snapshot_on(&mut tx, resource.id, &snapshot).await?;
         if !resource.auto_enabled
             || snapshot.attached_eip_id.is_some()
             || !billing::exceeded(&account, apsp_protocol::now_timestamp())
@@ -260,25 +191,17 @@ async fn tick(pool: &PgPool) -> ApiResult<()> {
             }
         }
     }
-    let accounts: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM alicloud_accounts WHERE enabled AND NOT archived AND next_run_at<=$1 ORDER BY next_run_at,id LIMIT 1")
-        .bind(now).fetch_all(pool).await?;
-    for id in accounts {
+    for id in inventory::due_accounts(pool, now).await? {
         refresh(pool, id, &cloud).await?;
     }
     sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$1 WHERE status='preview' AND expires_at<=$1").bind(now).execute(pool).await?;
     // Retention is measured in months; checking it hourly instead of on every
     // five-second tick avoids scanning both tables 17,000 times a day.
     if super::prune_due(&LAST_PRUNE, now) {
-        sqlx::query("DELETE FROM alicloud_traffic_history WHERE bucket_start<$1")
-            .bind(now - 32 * 86400)
-            .execute(pool)
-            .await?;
+        super::history::prune(pool, now - 32 * 86400).await?;
         sqlx::query("DELETE FROM alicloud_operations WHERE status IN ('preview','cancelled','dismissed','failed','succeeded') AND created_at<$1")
             .bind(now-180*86400).execute(pool).await?;
-        sqlx::query("DELETE FROM alicloud_events WHERE created_at<$1")
-            .bind(now - 180 * 86400)
-            .execute(pool)
-            .await?;
+        super::notices::prune(pool, now - 180 * 86400).await?;
     }
     if let Some(error) = first_error {
         return Err(error);
