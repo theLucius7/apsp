@@ -417,7 +417,7 @@ pub async fn update(
     .ok_or(ApiError::NotFound)?;
     if task.is_some() {
         return Err(ApiError::Conflict(
-            "此目标由统一延迟任务管理，请在延迟检测页面修改".into(),
+            "此目标由延迟任务管理，请在线路质量 › 检测设置中修改".into(),
         ));
     }
     if input.revision != Some(revision) {
@@ -472,7 +472,7 @@ pub async fn remove(
     .ok_or(ApiError::NotFound)?;
     if task.is_some() {
         return Err(ApiError::Conflict(
-            "此目标由统一延迟任务管理，请在延迟检测页面取消分配".into(),
+            "此目标由延迟任务管理，请在线路质量 › 检测设置中取消分配".into(),
         ));
     }
     if input.and_then(|Json(input)| input.revision) != Some(revision) {

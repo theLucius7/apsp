@@ -30,7 +30,7 @@ function saved(items: Item[] | null | undefined): Item[] {
   })
 }
 
-const kinds: Record<string, string> = { page: '页面', server: '服务器', ip: '服务器地址', 'ip-observation': 'IP来源观测', 'ip-quality': 'IP质量资料', node: '节点', 'proxy-user': '代理用户', domain: '域名', certificate: '证书', 'dns-rule': 'DNS规则', 'network-rule': '网络规则', 'diagnostic-task': '诊断任务', 'test-plan': '测试方案', 'test-run': '测试运行', 'command-task': '远程命令', 'fleet-task': '设备操作', 'operation-task': '运维任务', 'operation-schedule': '任务计划', 'remediation-rule': '自动处置规则', maintenance: '维护窗口', incident: '故障事件', 'probe-rule': '探测规则', 'alert-rule': '告警规则', 'latency-task': '延迟监测', task: '任务', rule: '规则' }
+const kinds: Record<string, string> = { page: '页面', server: '服务器', ip: '服务器地址', 'ip-observation': 'IP来源观测', 'ip-quality': 'IP质量资料', node: '节点', 'proxy-user': '代理用户', domain: '域名', certificate: '证书', 'dns-rule': 'DNS规则', 'network-rule': '网络规则', 'diagnostic-task': '诊断任务', 'test-plan': '测试方案', 'test-run': '测试运行', 'command-task': '远程命令', 'fleet-task': '设备操作', 'operation-task': '运维任务', 'operation-schedule': '任务计划', 'remediation-rule': '自动处置规则', maintenance: '维护窗口', incident: '故障事件', 'probe-rule': '探测规则', 'alert-rule': '告警规则', 'latency-task': '延迟任务', task: '任务', rule: '规则' }
 const kindIcons: Record<string, LucideIcon> = { server: ServerIcon, ip: ServerIcon, node: WaypointsIcon, 'proxy-user': UsersIcon, domain: GlobeIcon, 'dns-rule': GlobeIcon, certificate: ShieldCheckIcon, incident: BellRingIcon, 'alert-rule': BellRingIcon }
 const taskKinds = new Set(['diagnostic-task', 'test-plan', 'test-run', 'command-task', 'fleet-task', 'operation-task', 'operation-schedule', 'task'])
 

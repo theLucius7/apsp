@@ -471,7 +471,7 @@ visible_servers AS (
                 .await?;
             output.append(&state, &scope, &pattern, "latency-task", "", r#"
  SELECT jsonb_build_object('kind','latency-task','id',t.id,
-   'label',COALESCE(t.spec->>'name','延迟监测')||' · '||t.id,'path','/latency',
+   'label',COALESCE(t.spec->>'name','延迟任务')||' · '||t.id,'path','/latency/settings',
    'sampled_at',(SELECT MAX(r.sampled_at) FROM probe_results r JOIN network_probes p ON p.id=r.probe_id WHERE p.task_id=t.id),
    'sampled_at_unit','milliseconds')
  FROM latency_tasks t CROSS JOIN visibility v WHERE v.unrestricted

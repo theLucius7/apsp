@@ -1,4 +1,4 @@
-import { BellRingIcon, BlocksIcon, CalendarClockIcon, ChartColumnIcon, CloudCogIcon, DatabaseBackupIcon, GaugeIcon, GlobeIcon, HouseIcon, KeyRoundIcon, LayersIcon, LayoutDashboardIcon, NetworkIcon, RssIcon, ServerIcon, Settings2Icon, ShieldCheckIcon, SlidersHorizontalIcon, TimerIcon, UsersIcon, WaypointsIcon, WorkflowIcon } from 'lucide-react'
+import { BellRingIcon, BlocksIcon, CalendarClockIcon, ChartColumnIcon, CloudCogIcon, DatabaseBackupIcon, GaugeIcon, GlobeIcon, HouseIcon, KeyRoundIcon, LayersIcon, LayoutDashboardIcon, NetworkIcon, RssIcon, ServerIcon, Settings2Icon, RadarIcon, ShieldCheckIcon, SlidersHorizontalIcon, UsersIcon, WaypointsIcon, WorkflowIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AppRoute } from './routes'
 import type { Tier } from './tiers'
@@ -51,8 +51,11 @@ const groups: readonly NavigationGroup[] = [
   { label: '监控与设置', items: [
     { page: 'notifications', path: '/alerts', label: '告警事件', navLabel: '告警', icon: BellRingIcon },
     { page: 'alert-settings', path: '/alerts/settings', label: '告警设置', icon: SlidersHorizontalIcon, parent: '/alerts' },
-    { page: 'network-workbench', path: '/network-workbench', label: '网络检测', navLabel: '线路检测', icon: GaugeIcon },
-    { page: 'latency', path: '/latency', label: '延迟检测', icon: TimerIcon, parent: '/network-workbench' },
+    // ADR 0130: latency and China reachability answer one question and share the overview;
+    // the checks are configured in one tab, and ad-hoc network tests sit beside them.
+    { page: 'latency', path: '/latency', label: '质量概况', navLabel: '线路质量', icon: GaugeIcon },
+    { page: 'latency-settings', path: '/latency/settings', label: '检测设置', icon: SlidersHorizontalIcon, parent: '/latency' },
+    { page: 'network-workbench', path: '/network-workbench', label: '网络检测', icon: RadarIcon, parent: '/latency' },
     { page: 'settings', path: settingsPath, label: '面板设置', navLabel: '设置', icon: Settings2Icon },
     { page: 'catalog', path: '/settings/plugins', label: '插件中心', icon: BlocksIcon, parent: settingsPath },
     { page: 'backup', path: '/settings/backup', label: '备份与恢复', icon: DatabaseBackupIcon, parent: settingsPath },
@@ -100,8 +103,6 @@ export function currentNavigation(route: AppRoute): NavigationItem | undefined {
   const page = route.page === 'server' ? (serverWorkspaces.has(route.section ?? '') ? route.section : 'servers')
     // Plugin enablement is the second view of the plugin centre.
     : route.page === 'plugins' ? 'catalog'
-      // China reachability is the second view of the recurring line checks.
-      : route.page === 'latency-reachability' ? 'latency'
       : serverPages.has(route.page) ? 'servers'
         : route.page
   return navigation.find(item => item.page === page)

@@ -59,8 +59,8 @@ const Settings = lazyPage(() => import('../system/Settings'))
 const Backup = lazyPage(() => import('../system/Backup'))
 const AlertSettings = lazyPage(() => import('../monitoring/AlertSettings'))
 const Notifications = lazyPage(() => import('../monitoring/Notifications'), true)
-const LatencyTasks = lazyPage(() => import('../monitoring/LatencyTasks'))
-const ChinaReachability = lazyPage(() => import('../monitoring/ChinaReachability'))
+const LineQuality = lazyPage(() => import('../monitoring/LineQuality'))
+const LineQualitySettings = lazyPage(() => import('../monitoring/LineQualitySettings'))
 const Statistics = lazyPage(() => import('../statistics/Statistics'), true)
 const SingboxOverview = lazyPage(() => import('../plugins/singbox/Overview'), true)
 const Nodes = lazyPage(() => import('../plugins/singbox/Nodes'), true)
@@ -84,7 +84,7 @@ export function preloadRoute(route: AppRoute) {
   const pages: Partial<Record<AppRoute['page'], { preload: () => void }>> = {
     server: ServerDetail, fleet: FleetOperations, 'batch-enrollment': BatchEnrollment, 'network-workbench': NetworkWorkbench,
     'network-configuration': NetworkConfiguration, operations: OperationsPage, 'control-center': ControlCenter, servers: Servers,
-    'singbox-overview': SingboxOverview, statistics: Statistics, latency: LatencyTasks, 'latency-reachability': ChinaReachability,
+    'singbox-overview': SingboxOverview, statistics: Statistics, latency: LineQuality, 'latency-settings': LineQualitySettings,
     alicloud: Alicloud, ddns: Ddns, nodes: Nodes, expenses: Expenses, 'proxy-users': ProxyUsers, 'subscription-board': SubscriptionBoard,
     groups: Groups, plugins: PluginEnablement, catalog: PluginCatalog, settings: Settings, backup: Backup,
     'alert-settings': AlertSettings, notifications: Notifications, security: Security,
@@ -115,8 +115,8 @@ function page(route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' | 'm
     case 'servers': return <Servers />
     case 'singbox-overview': return <SingboxOverview />
     case 'statistics': return <Statistics />
-    case 'latency': return <LatencyTasks />
-    case 'latency-reachability': return <ChinaReachability />
+    case 'latency': return <LineQuality />
+    case 'latency-settings': return <LineQualitySettings />
     case 'alicloud': return <Alicloud />
     case 'ddns': return <Ddns />
     case 'nodes': return <Nodes

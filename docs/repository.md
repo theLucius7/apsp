@@ -79,7 +79,7 @@
 | `web/src/servers/` | 服务器列表、接入与编辑、服务器详情分页（概况、资产与流量、Agent 与任务、插件、线路诊断、运维）及其组成部分 |
 | `web/src/server-diagnostics/` | 服务器详情「线路诊断」中的 IP 信息、TCP 诊断与节点验机 |
 | `web/src/fleet/`、`operations/` | 服务器详情「运维」与批量接入；实验功能「自动化与维护」 |
-| `web/src/monitoring/` | 告警事件、延迟检测、告警设置及其规则、Webhook 和渠道状态 |
+| `web/src/monitoring/` | 告警事件、线路质量（质量概况、检测设置）、告警设置及其规则、Webhook 和渠道状态 |
 | `web/src/network-workbench/`、`network-configuration/` | 监控告警「网络检测」；实验功能「网络配置」 |
 | `web/src/plugins/` | 插件中心（目录与 sing-box 安装）及 sing-box、DDNS、阿里云、费用界面（阶段 E 按领域拆开，现在每个文件已登记所属领域） |
 | `web/src/system/`、`control-center/` | 面板设置（含功能显示）、备份与恢复、账号安全；管理与安全及全局搜索、外观偏好 |

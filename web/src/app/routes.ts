@@ -7,7 +7,7 @@ import type { NodeView } from '../plugins/singbox/nodeRoute'
 // Sections of one server; ddns, fleet, network and operations are workspaces
 // opened with this server preselected.
 type ServerSection = 'assets' | 'agent' | 'ip-info' | 'node-quality' | 'tcp-quality' | 'plugins' | 'ddns' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations'
-type SimplePage = 'singbox-overview' | 'servers' | 'statistics' | 'latency' | 'latency-reachability' | 'alicloud' | 'ddns'
+type SimplePage = 'singbox-overview' | 'servers' | 'statistics' | 'latency' | 'latency-settings' | 'alicloud' | 'ddns'
   | 'subscription-board' | 'groups' | 'plugins' | 'catalog' | 'settings' | 'backup' | 'batch-enrollment' | 'alert-settings' | 'notifications' | 'security' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations' | 'control-center' | 'not-found'
 
 export type AppRoute =
@@ -33,7 +33,9 @@ const pages: Readonly<Record<string, SimplePage>> = {
   '/statistics': 'statistics',
   '/subscriptions': 'subscription-board',
   '/latency': 'latency',
-  '/latency/reachability': 'latency-reachability',
+  '/latency/settings': 'latency-settings',
+  // China reachability became a column of the quality overview (ADR 0130).
+  '/latency/reachability': 'latency',
   '/alerts/settings': 'alert-settings',
   '/alicloud': 'alicloud',
   '/dns': 'ddns',

@@ -1,5 +1,17 @@
 # 执行进度
 
+## 2026-11-09：线路质量——三网延迟与中国可达性合为质量概况
+
+- 用户要求（在延迟检测页面）：“这几个页面整理重做，相同的目标应该合并，你来规划重写这个页面”，确认方案后说“开始”。决策见 [ADR 0130](docs/adr/0130-line-quality-overview.md)，取舍见 `docs/open-questions.md`。
+- 侧栏「线路检测」改为「线路质量」，分三个分页：质量概况 `/#/latency`、检测设置 `/#/latency/settings`、网络检测 `/#/network-workbench`。旧地址 `/#/latency/reachability` 打开质量概况。
+- 质量概况：每台服务器一行，三网各一列（最近一次延迟与丢包，下方两行是最近 20 个采样时段的条形，与看板同一个组件），所有者另有中国可达性一列。顶部统计需要关注的服务器、三网延迟中位数与可达端点数；可筛选「需要关注」、排序、搜索。展开一行看检测目标的方式与错误、该服务器的延迟与丢包曲线、各端点的国内与海外结果；封锁与恢复记录在页面底部。「需要关注」只看离线、检测不可用或过期、授权失效、最近平均丢包不低于 5% 与可达性异常，不看绝对延迟。
+- 检测设置：延迟任务列表与编辑框原样迁入；中国可达性的开关、间隔、令牌与立即检测（仅所有者）。
+- 共用件：`display/ProbeQuality.tsx` 导出 `QualityBars`；`monitoring/ReachabilityEndpoints.tsx` 是端点与记录的显示；聚合与判断在 `monitoring/line-quality.ts`。原 `LatencyTasks`、`ChinaReachability`、`LatencyTabs` 删除。质量分级「较差」的颜色由图表青绿改为警告与危险之间的颜色（看板同时改正）。
+- 后端只改文字与地址：拨测接口拒绝修改任务副本时提示到「线路质量 › 检测设置」；全局搜索的延迟任务改称「延迟任务」并打开检测设置。没有改接口与数据库。
+- 测试：新增 `web/tests/line-quality.test.ts`（聚合、异常、排序、筛选、统计）与浏览器测试 `web/tests/line-quality.mjs`（1440/390/320 与非所有者、旧地址、筛选排序搜索、展开详情）；`carrier-monitoring`、`china-reachability`、`monitoring`、`probe-authorization`、`singbox-resource-snapshots`、`visual-hierarchy` 与导航辅助改到新页面；`quality.test.ts` 改读 B2b 之后 `crates/observability` 中的字段定义（main 上此前读不到文件）。
+- 验证（本地）：前端构建与 `bun test` 257 项通过；浏览器测试 71 项通过（`mixed-chains` 首轮在主机高负载下点击后等待超时，单独重跑通过；`line-quality` 首轮发现“需要关注”在可达性数据到达前先显示较小的数，改为等全部来源后再显示）；`cargo fmt --check`、`cargo clippy --all-targets -D warnings`（观测、宿主）与应用集成测试 `control_center_search` 8 项、`latency_tasks` 3 项通过；两项边界检查通过，前端跨领域引用减少 2 条。界面在 1440、390、320 宽度下用接近生产的数据截图核对（所有者与非所有者）。CI 暂停，未运行。
+- 未做：网络检测的整理与基础探测并入、回程路由、IP 质量与解锁历史、按入口/中转/落地分组（路线图 4.1 其余部分）。
+
 ## 2026-11-09：领域架构阶段 B2c——成本与流量服务留在宿主的部分迁出
 
 - 用户要求：继续下一步（领域重构）。观测迁出后，宿主里还有成本的汇率，以及流量服务的设备配置、运行时检查点与运行时校验。B2c 把这些都迁出，宿主只剩平台、治理、资源、基础网络与名称的 ACME。

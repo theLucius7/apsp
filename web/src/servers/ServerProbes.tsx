@@ -33,7 +33,7 @@ export default function ServerProbes({ serverId }: { serverId: number }) {
     return ''
   }
   return <>
-    <Panel><PanelHeader><PanelTitle>持续网络拨测</PanelTitle><Refresh onClick={() => { probes.reload(); results.reload(); selectedHistory.reload() }} /><a className={buttonVariants({ variant: 'outline', size: 'sm' })} href="#/latency">配置延迟检测</a></PanelHeader><div className="p-4">
+    <Panel><PanelHeader><PanelTitle>持续网络拨测</PanelTitle><Refresh onClick={() => { probes.reload(); results.reload(); selectedHistory.reload() }} /><a className={buttonVariants({ variant: 'outline', size: 'sm' })} href="#/latency/settings">管理延迟任务</a></PanelHeader><div className="p-4">
       <ErrorNotice message={probes.error || results.error || writeError(editing ? probe : undefined) || probeAction.error} />
       <form onSubmit={event => { event.preventDefault(); if (writeError(editing ? probe : undefined)) return; void probeAction.run(() => saveServerProbe(writeSnapshot.current, serverId, editing ? origin : null, editing ? bindProbeAuthorization(probe) : probe, body => api<Probe>(editing ? `${base}/probes/${probe.id}` : `${base}/probes`, editing ? 'PATCH' : 'POST', body)), () => { setProbe(emptyProbe); setOrigin(null); setEditing(false); probes.reload() }) }}>
         <div className="grid gap-x-4 sm:grid-cols-2"><label className="grid min-w-0 gap-1.5 text-sm">名称<Input required maxLength={128} value={probe.name} onChange={event => setProbe({ ...probe, name: event.target.value })} /></label>

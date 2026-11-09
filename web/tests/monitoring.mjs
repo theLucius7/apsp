@@ -51,6 +51,8 @@ try {
       if (path === '/api/dashboard/access') return respond({ authenticated: true, public_dashboard: false })
       if (path === '/api/servers') return respond(servers)
       if (path === '/api/probes/overview') return respond([])
+      // Latency tasks share the settings tab with China reachability, which is off here.
+      if (path === '/api/plugins/sing-box/reachability' && method === 'GET') return respond({ settings: { enabled: false, interval_minutes: 60, minimum_interval_minutes: 15, maximum_interval_minutes: 1440, token_configured: false, revision: 1, next_run_at: 0, run_requested: false, running: false, last_run: {} }, targets: [], events: [] })
       if (method !== 'GET') writes.push({ path, method, body: request.postDataJSON() })
       if (path === '/api/latency-tasks') {
         if (method === 'POST') {
@@ -99,8 +101,8 @@ try {
       unexpected.push(`${method} ${path}`); return respond({ error: 'Unexpected request' }, 500)
     })
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/latency`)
-    await page.getByRole('heading', { name: '延迟检测', exact: true }).waitFor()
+    await page.goto(`${origin}/#/latency/settings`)
+    await page.getByRole('heading', { name: '检测设置', exact: true }).waitFor()
     await page.getByRole('button', { name: '添加任务', exact: true }).click()
     let dialog = page.getByRole('dialog')
     await dialog.getByLabel('任务名称').fill('亚洲回显')
@@ -240,7 +242,7 @@ try {
     // The entry only appears once the shell has read this administrator, so wait for it before counting.
     const navigation = page.getByRole('navigation', { name: '主导航', includeHidden: true })
     await navigation.getByRole('link', { name: '告警', exact: true, includeHidden: true }).waitFor({ state: 'attached' })
-    for (const [name, count] of [['告警', 1], ['线路检测', 1], ['设置', 1]]) assert.equal(await navigation.getByRole('link', { name, exact: true, includeHidden: true }).count(), count, name)
+    for (const [name, count] of [['告警', 1], ['线路质量', 1], ['设置', 1]]) assert.equal(await navigation.getByRole('link', { name, exact: true, includeHidden: true }).count(), count, name)
     assert.deepEqual(errors, []); assert.deepEqual(unexpected, [])
     results.push({ width, assignment: 'passed', notificationConfig: 'passed', rules: 'passed', history: 'passed', settingsFailure: 'passed', otherAdministrators: 'passed' })
     await context.close()

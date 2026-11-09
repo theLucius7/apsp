@@ -207,3 +207,7 @@
 ## 代理管理能力（2026-11-07）
 
 - [ADR 0129：按 S-UI 补齐代理管理能力](0129-sui-capability-alignment.md)：用户暂停与恢复、逐用户每服务器限速与连接数、认证连接查询与断开、客户端分流模板，服务端 DNS/路由/出口与 Cloudflared、Realm、VPN 端点；基线随 `scripts/baseline-adoption-sui-20261107.sql` 接入。
+
+## 线路质量（2026-11-09）
+
+- [ADR 0130：线路质量合为一个入口，三网延迟与中国可达性同表](0130-line-quality-overview.md)：侧栏「线路质量」分质量概况、检测设置、网络检测三个分页；每台服务器一行显示三网延迟、丢包与中国可达性，异常只看可用性、丢包与可达性；旧地址 `/#/latency/reachability` 打开质量概况。

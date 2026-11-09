@@ -75,6 +75,7 @@ try {
         else if (path === `${prefix}/servers` || path === '/api/servers') value = hosts
         else if (path === '/api/latency-tasks') value = tasks
         else if (path === '/api/probes/overview') value = []
+        else if (path === '/api/plugins/sing-box/reachability') value = { settings: { enabled: false, interval_minutes: 60, minimum_interval_minutes: 15, maximum_interval_minutes: 1440, token_configured: false, revision: 1, next_run_at: 0, run_requested: false, running: false, last_run: {} }, targets: [], events: [] }
         else if (path === `${prefix}/nodes`) value = nodes
         else if (path === `${prefix}/source-migration`) value = { migrated: false, migrated_at: null }
         else if ([`${prefix}/ordered-proxy-resources`, `${prefix}/ordered-subscription-sources`].includes(path)) value = []
@@ -177,14 +178,14 @@ try {
       await runtime.getByRole('alert').getByText('期望版本已改变，请取消后重新确认。', { exact: true }).waitFor()
       await forceClick(runtime.getByRole('button', { name: '确认重启', exact: true })); assert.equal(writes.length, 1, 'A confirmation must never retarget to a newer revision')
     })
-    await fixture('/latency', async control => {
+    await fixture('/latency/settings', async control => {
       const { page, writes } = control
       await page.getByRole('row').filter({ hasText: 'TEST_ONLY 周期任务' }).getByRole('button', { name: '编辑', exact: true }).click()
       const dialog = page.getByRole('dialog'); await dialog.getByLabel('任务名称').fill('TEST_ONLY 周期草稿')
       await block(control, '/api/latency-tasks', () => nodesRefresh(page), () => forceForm(dialog.locator('form')), () => dialog.getByRole('button', { name: '保存任务', exact: true }).click(), async () => assert.equal(await dialog.getByLabel('任务名称').inputValue(), 'TEST_ONLY 周期草稿'))
       assert.equal(writes[0].body.revision, 1); assert.equal(writes[0].body.spec.enabled, false)
     })
-    await fixture('/latency', async ({ page, writes, tasks }) => {
+    await fixture('/latency/settings', async ({ page, writes, tasks }) => {
       const row = page.getByRole('row').filter({ hasText: 'TEST_ONLY 周期任务' })
       await wait(() => row.getByRole('button', { name: '编辑', exact: true }).isEnabled(), 'Initial task revision')
       delete tasks[0].revision

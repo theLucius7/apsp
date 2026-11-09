@@ -93,6 +93,11 @@ export function riskLabel(risk: Risk) {
 
 const severity: ReachabilityState[] = ['ip_blocked', 'port_blocked', 'unconfirmed', 'partial', 'service_down', 'unknown', 'reachable', 'not_applicable']
 
+/** The most severe state among some endpoints, by the same order as `sortTargets`. */
+export function worstState(targets: Pick<ReachabilityTarget, 'state'>[]): ReachabilityState {
+  return targets.reduce<ReachabilityState>((worst, target) => severity.indexOf(target.state) < severity.indexOf(worst) ? target.state : worst, 'not_applicable')
+}
+
 /** Problems first, then a failure still waiting for its second run, then by endpoint. */
 export function sortTargets(targets: ReachabilityTarget[]) {
   return [...targets].sort((a, b) => severity.indexOf(a.state) - severity.indexOf(b.state)

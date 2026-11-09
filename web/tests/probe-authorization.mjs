@@ -43,6 +43,7 @@ try {
       const request = route.request(), path = new URL(request.url()).pathname, method = request.method()
       const respond = (json, status = 200) => route.fulfill({ status, json })
       if (path === '/api/probes/overview') return respond([])
+      if (path === '/api/plugins/sing-box/reachability' && method === 'GET') return respond({ settings: { enabled: false, interval_minutes: 60, minimum_interval_minutes: 15, maximum_interval_minutes: 1440, token_configured: false, revision: 1, next_run_at: 0, run_requested: false, running: false, last_run: {} }, targets: [], events: [] })
       if (path === '/api/dashboard/access') return respond({ authenticated: true, public_dashboard: false })
       if (method !== 'GET') writes.push({ method, path, body: request.postDataJSON() })
       if (method === 'GET' && ['/api/servers', '/api/latency-tasks'].includes(path)) {
@@ -71,7 +72,7 @@ try {
       unexpected.push(`${method} ${path}`); return respond({ error: 'Unexpected request' }, 500)
     })
     await installControlCenterFixtures(page)
-    await page.goto(`${origin}/#/latency`)
+    await page.goto(`${origin}/#/latency/settings`)
     await page.getByText('未取得执行授权', { exact: true }).waitFor()
     await page.getByRole('button', { name: '添加任务', exact: true }).click()
     let dialog = page.getByRole('dialog')

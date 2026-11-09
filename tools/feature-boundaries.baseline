@@ -18,11 +18,9 @@ import	web/src/display/ServerDisplay.tsx	web/src/display/CurrencyContext.tsx	obs
 import	web/src/display/ServerMonitor.tsx	web/src/server-assets.ts	observability->resources
 import	web/src/fleet/FleetOperations.tsx	web/src/control-center/FormDraftToolbar.tsx	operations->governance
 import	web/src/fleet/FleetOperations.tsx	web/src/display/data.ts	operations->observability
-import	web/src/monitoring/AlertRules.tsx	web/src/servers/ServerPicker.tsx	observability->resources
 import	web/src/monitoring/AlertSettings.tsx	web/src/monitoring/NotificationChannels.tsx	observability->governance
 import	web/src/monitoring/AlertSettings.tsx	web/src/monitoring/WebhookSettings.tsx	observability->governance
 import	web/src/monitoring/AlertSettings.tsx	web/src/system/panelSettings.ts	observability->governance
-import	web/src/monitoring/LatencyTasks.tsx	web/src/servers/ServerPicker.tsx	observability->resources
 import	web/src/network-configuration/AcmePlan.tsx	web/src/network-configuration/types.ts	naming->networking
 import	web/src/network-configuration/CertificateDeployments.tsx	web/src/network-configuration/types.ts	naming->networking
 import	web/src/network-configuration/Certificates.tsx	web/src/network-configuration/types.ts	naming->networking

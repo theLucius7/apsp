@@ -41,11 +41,17 @@ test('an entry of the costs and renewals ledger has its own address', () => {
   for (const path of ['/expenses/items/0', '/expenses/items/x', '/expenses/servers/9007199254740992', '/expenses/other/1']) expect(resolveRoute(path)).toEqual({ page: 'not-found' })
 })
 
-test('china reachability is a view of the latency entry, not another sidebar entry', () => {
-  expect(resolveRoute('/latency/reachability')).toEqual({ page: 'latency-reachability' })
-  expect(currentNavigation(resolveRoute('/latency/reachability'))?.path).toBe('/latency')
+test('line quality is one entry: the overview, its settings and the network tests (ADR 0130)', () => {
   expect(resolveRoute('/latency')).toEqual({ page: 'latency' })
-  expect(sectionTabs(currentNavigation(resolveRoute('/latency/reachability')), navigation).map(item => item.label)).toEqual(['网络检测', '延迟检测'])
+  expect(resolveRoute('/latency/settings')).toEqual({ page: 'latency-settings' })
+  // China reachability became a column of the overview; its old address opens the overview.
+  expect(resolveRoute('/latency/reachability')).toEqual({ page: 'latency' })
+  for (const path of ['/latency', '/latency/settings', '/network-workbench']) {
+    expect(currentNavigation(resolveRoute(path))?.parent ?? currentNavigation(resolveRoute(path))?.path).toBe('/latency')
+    expect(sectionTabs(currentNavigation(resolveRoute(path)), navigation).map(item => item.label)).toEqual(['质量概况', '检测设置', '网络检测'])
+  }
+  // A server opens the network tests with itself selected, under the same entry.
+  expect(currentNavigation(resolveRoute('/servers/3/network-workbench'))?.page).toBe('network-workbench')
 })
 
 test('unsafe resource IDs and ambiguous filtered paths never fall through into management routes', () => {
@@ -81,13 +87,12 @@ test('node page sections are addressable and malformed sections are refused', ()
 test('navigation groups follow administrator tasks and keep every destination', () => {
   expect([...new Set(navigation.map(item => item.group))]).toEqual(['总览', '代理服务', '服务器', '监控与设置', '实验功能'])
   // Every destination stays; pages about the same thing are tabs of one sidebar entry (ADR 0102).
-  expect(navigation).toHaveLength(22)
+  expect(navigation).toHaveLength(23)
   const everyday = sidebarEntries(navigation.filter(item => !item.tier))
-  expect(everyday.map(entry => entry.root.navLabel ?? entry.root.label)).toEqual(['概览', '费用与续费', '代理节点', '代理用户', '策略与套餐', '服务器', '域名解析', '阿里云 CDT', '告警', '线路检测', '设置'])
+  expect(everyday.map(entry => entry.root.navLabel ?? entry.root.label)).toEqual(['概览', '费用与续费', '代理节点', '代理用户', '策略与套餐', '服务器', '域名解析', '阿里云 CDT', '告警', '线路质量', '设置'])
   expect(navigation.filter(item => item.group === '代理服务').map(item => item.label)).toEqual(['代理节点', '代理用户', '策略与套餐'])
   expect(sectionTabs(currentNavigation(resolveRoute('/dashboard')), navigation).map(item => item.label)).toEqual(['概览', '统计报表', '服务器看板', '订阅看板'])
   expect(sectionTabs(currentNavigation(resolveRoute('/subscriptions')), navigation).map(item => item.label)).toEqual(['概览', '统计报表', '服务器看板', '订阅看板'])
-  expect(sectionTabs(currentNavigation(resolveRoute('/latency')), navigation).map(item => item.label)).toEqual(['网络检测', '延迟检测'])
   expect(sectionTabs(currentNavigation(resolveRoute('/nodes')), navigation)).toEqual([])
   // Someone who may only open some tabs of an entry goes to the first of those.
   const limited = navigation.filter(item => item.page === 'control-center' || item.page === 'security')

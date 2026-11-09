@@ -14,6 +14,11 @@ const translatedAttributeSources = new WeakMap<Element, Map<string, string>>()
 // messages intentionally fall back to their source text when no translation is
 // available.
 const english: Record<string, string> = {
+  // Line quality (ADR 0130).
+  '服务器线路': 'Server lines', '中国可达性': 'China reachability', '未分配': 'Not assigned', '可达性变化': 'Reachability changes', '检测目标': 'Check targets',
+  '按延迟': 'By latency', '按丢包': 'By loss', '异常在前': 'Problems first', '筛选服务器': 'Filter servers', '需要关注': 'Needs attention', '端点可达性': 'Endpoint reachability',
+  '延迟任务': 'Latency tasks', '立即检测': 'Check now', '服务器详情': 'Server details', '添加延迟任务': 'Add latency task', '尚未配置延迟任务': 'No latency tasks yet', '尚无服务器': 'No servers yet',
+  '统计说明': 'About these figures', '判定说明': 'How blocking is judged', '任务说明': 'About tasks', '变化说明': 'About changes',
   // Costs and renewals (ADR 0118).
   '即将续费': 'Upcoming', '支出': 'Spending', '未来 30 天': 'Next 30 days', '待处理': 'To do', '添加项目': 'Add item', '确认续期': 'Confirm renewal',
   '费用记录': 'Cost records', '导出日历': 'Export calendar', '每月费用构成': 'Monthly cost by category', '实际付款': 'Payments', '费用与续费设置': 'Costs and renewals settings', '登记费用': 'Record a cost',
@@ -32,7 +37,7 @@ const english: Record<string, string> = {
   '负载（1 / 5 / 15 分钟）': 'Load (1 / 5 / 15 min)', '看板已隐藏': 'Hidden from dashboard',
   // Connection state, account menu and the sign-in page (ADR 0102).
   '专属地址': 'Own address', '用户专属地址': 'Personal addresses', '登录地址': 'Sign-in address', '订阅链接': 'Subscription link', '订阅详情': 'Subscription details', '复制订阅链接': 'Copy subscription link', '权限与套餐': 'Permissions and package', '单独授权': 'Direct grants', '流量明细': 'Traffic details', '诊断与安全': 'Diagnostics and security', '添加 Cloudflare 账号': 'Add Cloudflare account', '验证并保存': 'Verify and save', '其他提供方': 'Other providers', 'DNS 账号': 'DNS accounts', '添加解析': 'Add record', '添加两条解析': 'Add both records', '解析记录': 'DNS records', '解析到': 'Points to', '添加账号': 'Add account', '添加 DNS 账号': 'Add DNS account', '连接 DNS 账号': 'Connect a DNS account', '先连接 DNS 账号': 'Connect a DNS account first', '还没有解析': 'No records yet', '管理记录': 'Manage records', '更多设置': 'More settings', '批量修改': 'Bulk edit', '立即同步': 'Sync now', '恢复同步': 'Resume sync', '暂停': 'Pause', '核对与历史': 'Check and history', '检查连接': 'Check connection', '解析操作': 'Record actions', '账号操作': 'Account actions', '这个页面显示时出错了': 'This page failed to display',
-  '监控与设置': 'Monitoring and settings', '告警': 'Alerts', '线路检测': 'Line tests', '设置': 'Settings', '域名解析': 'DNS', '本节页面': 'Pages in this section', '显示实验与冻结功能': 'Show experimental and frozen features',
+  '监控与设置': 'Monitoring and settings', '告警': 'Alerts', '线路质量': 'Line quality', '设置': 'Settings', '域名解析': 'DNS', '本节页面': 'Pages in this section', '显示实验与冻结功能': 'Show experimental and frozen features',
   '暂时连不上面板': 'Cannot reach the panel right now', '正在自动重试，恢复后会直接进入。': 'Retrying automatically; you will go straight in once it is back.', '立即重试': 'Retry now',
   '已连接面板': 'Connected to panel', '网络已断开': 'Network disconnected', '正在重新连接': 'Reconnecting', '已恢复连接': 'Connection restored', '与面板的连接中断，正在重试': 'Connection to the panel was lost, retrying',
   '显示的是': 'Showing data from', '的数据': '', '账号选项': 'Account options', '当前项': 'Current', '或': 'or',
@@ -41,7 +46,7 @@ const english: Record<string, string> = {
   '概览': 'Overview', '服务器': 'Servers', '代理服务': 'Proxy service', '扩展插件': 'Extensions', '系统': 'System',
   '统计仪表盘': 'Statistics dashboard', '服务器看板': 'Server dashboard', '接入与日常运维': 'Enrollment and daily operations',
   '网络与验机': 'Network and diagnostics', '网络与证书': 'Network and certificates', '批量运维与恢复': 'Bulk operations and recovery',
-  '延迟检测': 'Latency checks', '代理节点': 'Proxy nodes', '代理用户': 'Proxy users', '策略与套餐': 'Policies and packages',
+  '质量概况': 'Quality overview', '检测设置': 'Check settings', '代理节点': 'Proxy nodes', '代理用户': 'Proxy users', '策略与套餐': 'Policies and packages',
   '动态域名解析': 'Dynamic DNS', '阿里云 CDT': 'Alibaba Cloud CDT', '服务器插件': 'Server plugins', '插件目录': 'Plugin catalog',
   '看板与通知': 'Dashboard and notifications', '告警通知': 'Alert notifications', '管理与安全': 'Management and security',
   '系统管理员': 'System administrator', '管理员': 'Administrator', '控制面板': 'Control panel', '管理员会话已登录': 'Administrator session active',
@@ -146,7 +151,7 @@ const english: Record<string, string> = {
   '选择套餐': 'Select package', '选择节点': 'Select node', '选择链路': 'Select chain', '选择目标': 'Select target', '选择工具': 'Select tool',
   '跟随所选节点更新': 'Follow selected node updates', '固定所选版本': 'Pin selected version', '其他客户端（当前未支持）': 'Other client (not supported)',
   '配置可生成': 'Configuration can be generated', '当前不可用': 'Currently unavailable', '检查协议与字段兼容': 'Check protocol and field compatibility',
-  '全局搜索': 'Global search', '搜索服务器、域名、节点、任务…': 'Search servers, domains, nodes, tasks…', '搜索结果': 'Search results', '收藏与最近访问': 'Favorites and recent pages', '关闭搜索': 'Close search', '没有匹配的授权对象': 'No matching authorized objects', '输入搜索词或访问对象后添加收藏。': 'Enter a search term or visit an object to add it to favorites.', 'Ctrl / ⌘ + K 打开，Esc 关闭': 'Press Ctrl / ⌘ + K to open, Esc to close', '收藏': 'Favorite', '服务器地址': 'Server address', 'IP来源观测': 'IP source observation', 'IP质量资料': 'IP quality data', '节点': 'Node', '域名': 'Domain', '证书': 'Certificate', 'DNS规则': 'DNS rule', '网络规则': 'Network rule', '诊断任务': 'Diagnostic task', '测试运行': 'Test run', '远程命令': 'Remote command', '设备操作': 'Device operation', '运维任务': 'Operations task', '任务计划': 'Operations schedule', '自动处置规则': 'Remediation rule', '维护窗口': 'Maintenance window', '故障事件': 'Incident', '探测规则': 'Probe rule', '告警规则': 'Alert rule', '延迟监测': 'Latency monitor', '任务': 'Task', '规则': 'Rule',
+  '全局搜索': 'Global search', '搜索服务器、域名、节点、任务…': 'Search servers, domains, nodes, tasks…', '搜索结果': 'Search results', '收藏与最近访问': 'Favorites and recent pages', '关闭搜索': 'Close search', '没有匹配的授权对象': 'No matching authorized objects', '输入搜索词或访问对象后添加收藏。': 'Enter a search term or visit an object to add it to favorites.', 'Ctrl / ⌘ + K 打开，Esc 关闭': 'Press Ctrl / ⌘ + K to open, Esc to close', '收藏': 'Favorite', '服务器地址': 'Server address', 'IP来源观测': 'IP source observation', 'IP质量资料': 'IP quality data', '节点': 'Node', '域名': 'Domain', '证书': 'Certificate', 'DNS规则': 'DNS rule', '网络规则': 'Network rule', '诊断任务': 'Diagnostic task', '测试运行': 'Test run', '远程命令': 'Remote command', '设备操作': 'Device operation', '运维任务': 'Operations task', '任务计划': 'Operations schedule', '自动处置规则': 'Remediation rule', '维护窗口': 'Maintenance window', '故障事件': 'Incident', '探测规则': 'Probe rule', '告警规则': 'Alert rule', '任务': 'Task', '规则': 'Rule',
   '搜索或跳转…': 'Search or jump to…', '搜索或跳转': 'Search or jump to', '输入页面名称或服务器、域名、节点等对象，用方向键选择，回车打开。': 'Type a page name or a server, domain, node or other object; use the arrow keys to choose and Enter to open.', '搜索页面或对象': 'Search pages or objects', '搜索页面、服务器、域名、节点、任务…': 'Search pages, servers, domains, nodes, tasks…', '正在搜索…': 'Searching…', '没有匹配的页面或对象': 'No matching pages or objects', '输入搜索词，或从页面开始。': 'Type a search term, or start from a page.', '选择': 'Select', '打开': 'Open', '取消收藏': 'Remove favorite', '收藏当前项': 'Favorite this item', '已收藏': 'Favorited', '最近访问': 'Recent', '页面': 'Pages',
   '当前账号': 'Signed in as', '更多操作': 'More actions',
   '跳到服务器信息': 'Skip to server information', 'apsp服务器看板': 'apsp server dashboard', '切换浅色主题': 'Switch to light theme', '切换深色主题': 'Switch to dark theme',

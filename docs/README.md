@@ -43,7 +43,7 @@
 
 | 需要做什么 | 文档 |
 | --- | --- |
-| 配置告警阈值、Telegram 与 Webhook；延迟检测与中国可达性 | [延迟检测与通知](monitoring.md) |
+| 配置告警阈值、Telegram 与 Webhook；线路质量（三网延迟与中国可达性） | [线路质量与通知](monitoring.md) |
 | 测量连通性、路由与 IP 质量；吞吐测试（实验）与硬件测试（冻结） | [网络检测](network-workbench.md) |
 | 回顾网卡与代理流量趋势，理解统计口径 | [统计报表](statistics.md) |
 

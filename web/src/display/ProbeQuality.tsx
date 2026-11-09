@@ -9,14 +9,20 @@ const valueClass = 'text-xs font-semibold whitespace-nowrap tabular-nums'
 const barsClass = 'mt-1.5 grid grid-cols-[repeat(20,minmax(0,1fr))] gap-0.5'
 const bar = (tone: string) => cn('h-2.5 rounded-[1px]', qualityFill[tone])
 
+/** Recent samples of one probe, one bar per time slot coloured by `field`; empty slots are grey. */
+export function QualityBars({ slots, field, label, className }: { slots: (ProbeResult | undefined)[]; field: ProbeField; label: string; className?: string }) {
+  const format = field === 'latency_ms' ? latency : loss
+  return <div className={cn(barsClass, className)} aria-label={label}>{slots.map((point, index) => {
+    const value = probeValue(point, field)
+    const reading = point ? `${time(point.sampled_at / 1000)} · ${point.error != null && point.attempts !== 4 ? '检测不可用' : `${format(value)}${point.error ? ` · ${point.error}` : ''}`}` : '此时段无采样'
+    return <span key={index} data-slot="quality-bar" className={bar(probeTone(value, field))} title={reading} />
+  })}</div>
+}
+
 function Quality({ label, field, latest, slots, live, compact }: { label: string; field: ProbeField; latest?: ProbeResult; slots: (ProbeResult | undefined)[]; live: boolean; compact?: boolean }) {
   const format = field === 'latency_ms' ? latency : loss
   const current = live ? probeValue(latest, field) : null
-  return <div data-slot="quality-panel" className={cn(panelClass, compact && 'bg-transparent p-0')}><div className="text-muted-foreground flex items-center justify-between gap-1 text-xs"><span>{label}</span><strong data-slot="quality-value" className={cn(valueClass, qualityText[probeTone(current, field)])}>{format(current)}</strong></div>{!compact && <div className={barsClass} aria-label={`${label}近期采样，空缺为灰色`}>{slots.map((point, index) => {
-    const value = probeValue(point, field)
-    const title = point ? `${time(point.sampled_at / 1000)} · ${point.error != null && point.attempts !== 4 ? '检测不可用' : `${label} ${format(value)}${point.error ? ` · ${point.error}` : ''}`}` : '此时段无采样'
-    return <span key={index} data-slot="quality-bar" className={bar(probeTone(value, field))} title={title} />
-  })}</div>}</div>
+  return <div data-slot="quality-panel" className={cn(panelClass, compact && 'bg-transparent p-0')}><div className="text-muted-foreground flex items-center justify-between gap-1 text-xs"><span>{label}</span><strong data-slot="quality-value" className={cn(valueClass, qualityText[probeTone(current, field)])}>{format(current)}</strong></div>{!compact && <QualityBars slots={slots} field={field} label={`${label}近期采样，空缺为灰色`} />}</div>
 }
 
 export default function ProbeQuality({ probes, now, unavailable, loading, online, compact = false }: { probes?: ProbeOverview[]; now: number; unavailable: boolean; loading: boolean; online: boolean; compact?: boolean }) {
@@ -42,11 +48,7 @@ export default function ProbeQuality({ probes, now, unavailable, loading, online
         const value = state === '最近采样' ? probeValue(latest, field) : null
         return <div className="min-w-0" key={probe.id}>
           <div className="text-muted-foreground flex items-center gap-1.5 text-xs" title={`${title} · ${field === 'latency_ms' ? '延迟' : lossLabel(probe)}`}><span className="min-w-0 flex-1 truncate">{label}</span><strong data-slot="quality-value" className={cn(valueClass, 'font-medium', qualityText[probeTone(value, field)])}>{format(value)}</strong></div>
-          <div className={cn(barsClass, 'mt-1 gap-px')} aria-label={`${label}近期${field === 'latency_ms' ? '延迟' : lossLabel(probe)}`}>{slots.map((point, index) => {
-            const value = probeValue(point, field)
-            const reading = point ? `${time(point.sampled_at / 1000)} · ${point.error != null && point.attempts !== 4 ? '检测不可用' : `${format(value)}${point.error ? ` · ${point.error}` : ''}`}` : '此时段无采样'
-            return <span key={index} data-slot="quality-bar" className={bar(probeTone(value, field))} title={reading} />
-          })}</div>
+          <QualityBars className="mt-1 gap-px" slots={slots} field={field} label={`${label}近期${field === 'latency_ms' ? '延迟' : lossLabel(probe)}`} />
           {state !== '最近采样' && <small className="text-muted-foreground mt-1 block text-xs">{state}</small>}
         </div>
       })}
