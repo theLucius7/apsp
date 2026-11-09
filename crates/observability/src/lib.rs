@@ -11,6 +11,7 @@
 //! the application connects both to this crate.
 
 pub mod alerts;
+pub mod cloud_notices;
 pub mod dashboard;
 pub mod diagnostic_plugins;
 pub mod diagnostics;

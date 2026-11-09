@@ -1,5 +1,26 @@
 # 执行进度
 
+## 2026-11-10：ADR 0131 步骤一（中四）——阶段 D 第二步：云能力搬进领域 crate
+
+- 用户要求：“continue”，按已选的“分两步，只拆代码”做第二步：把阿里云 crate 的文件按所有者搬进领域 crate，单独上线。取舍见 `docs/open-questions.md`，结果见 [architecture.md §9](docs/architecture.md)。
+- 搬家（44 个源文件用 `git mv`，原 crate `apsp-plugin-alicloud` 与 `plugins/alicloud/` 删除）：
+  - 新建 `crates/resources`（`apsp-resources`，`cloud/`：账号与资源接口、客户端、读取与快照、地址、模型、`work` 接口）与 `crates/networking`（`apsp-networking`，`security_groups/`）。
+  - 成本 `cloud/`（`billing`、`cost_cache`、`traffic_history`），观测 `cloud_notices`，作业 `cloud/`（`bandwidth`、`power`、`eip_rotation`、`worker` 与原 crate 根下的刷新与带宽测试），应用 `cloud_overview`。应用层的 `domains` 与 `wiring` 改用新路径，路由、守护名与接线不变。
+  - 路径由脚本按旧的模块树解析后改写：同一单元内的相对路径保留，跨出单元的改为新 crate 的绝对路径；原来整个 crate 可见的条目改为公开。
+- 跨 crate 不能写固有方法，所以成本与作业里给 `Cloud` 加的方法改为以 `cloud: &Cloud` 为参数的函数（`billing::bill`、`billing::traffic`、`cost_cache::balance`、`cost_cache::instance_bill`、`power::state::power_state`、`power_control`、`guard::meter::guard_usage`），CDT 响应的解析函数改名 `parse_traffic`；作业写在资源类型上的规则改为作业内部的 trait `PolicyRules`、`StateRules`、`GuardRules`。
+- 测试：安全组测试改用基础网络里的替身回答资源是否空闲（只查安全组操作，与作业的规则一致），测作业空闲判断的一个测试搬进作业；地址与 CDT 历史的测试各自插入账号与资源，不再借用作业的测试工具；资源增加 `test-support` 特性提供 `Cloud::local`。
+- 边界：越界 461 条（SQL 318、代码引用 28、前端引用 115），与第一步相同，27 条云的 SQL 越界换了路径，没有新增；依赖检查登记两个新的领域 crate，删除过渡规则，检查器单元测试随之更新。路由静态比对 33 个组合不变。
+- 规模：Rust 54 个文件（44 个搬家），新增约 920 行、删除约 810 行；`Cargo.lock` 只有工作区 crate 的变化，第三方依赖版本不变。
+- 没有修改数据库基线、面板与 Agent 协议、部署方式与前端；接口地址、表名与后台任务名不变。
+- 未做：两个 Globalping 客户端与两处 Cloudflare 接口的合并（阶段 D 表中的另一项）。
+- 验证（本地，基于 main `e7cc19b9`）：
+  - `cargo fmt --check`、全工作区 `cargo clippy --all-targets -- -D warnings` 通过。
+  - 本地 PostgreSQL 16 上搬家的 101 个测试全部通过（资源 2、基础网络 7、成本 4、作业 88），成本与作业 crate 的全部测试（17、98）通过；应用的集成测试 `alicloud`（9）、`control_center`（6）、`foundation`（8）、`frontend`（3）通过。首轮编译中改写方法调用的脚本按过期的字节位置改错了 5 个文件，这些文件从暂存区恢复后重做，没有留下错误改动。
+  - 两项边界检查通过，检查器单元测试 13 + 21 个通过，文档内链接 0 错误。
+  - 观测 crate 只新增模块，它的测试未运行；前端没有改动，只为编译构建了 `web/dist`。CI 暂停，未触发。
+- 交付：没有改数据库基线、协议、部署方式与生产数据，按协作规则直接提交 main。
+- 下一步：阶段 E（前端按领域目录），以及 `plugins/` 下 sing-box 服务文件与诊断工具打包脚本的去处；Globalping 与 Cloudflare 客户端的合并。
+
 ## 2026-11-10：ADR 0131 步骤一（中三）——阶段 D 第一步：阿里云 crate 内部按领域重组
 
 - 用户要求：“continue”，并在阶段 D 的做法上选择“分两步，只拆代码”：表留到阶段 F，第一步在 crate 内按所有者重组、行为不变，第二步把文件搬进领域 crate，每步单独上线。取舍见 `docs/open-questions.md`，结果见 [architecture.md §9](docs/architecture.md)。

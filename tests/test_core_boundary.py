@@ -139,6 +139,8 @@ class CoreBoundaryTests(unittest.TestCase):
             "crates/panel-host/Cargo.toml": protocol,
             "crates/cloud-api/Cargo.toml": protocol,
             "crates/compiler/Cargo.toml": "[package]\n",
+            "crates/resources/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-cloud-api.workspace = true\n",
+            "crates/networking/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-resources.workspace = true\n",
             "crates/naming/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-cloud-api.workspace = true\n",
             "crates/costs/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-naming.workspace = true\n",
             "crates/operations/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-costs.workspace = true\napsp-observability.workspace = true\napsp-traffic.workspace = true\n",
@@ -146,7 +148,6 @@ class CoreBoundaryTests(unittest.TestCase):
             # Traffic builds on its own configuration compiler; access builds on traffic.
             "crates/traffic/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-compiler.workspace = true\n",
             "crates/access/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-traffic.workspace = true\n",
-            "plugins/alicloud/panel/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-cloud-api.workspace = true\n",
             "crates/panel/Cargo.toml": "[dependencies]\napsp-costs.workspace = true\napsp-traffic.workspace = true\napsp-access.workspace = true\n",
         }
         broken = {
@@ -156,17 +157,19 @@ class CoreBoundaryTests(unittest.TestCase):
             # A domain depends only on earlier groups, never on a later domain or a peer.
             "crates/naming/Cargo.toml": "[dependencies]\napsp-costs.workspace = true\n",
             "crates/compiler/Cargo.toml": "[dependencies]\napsp-costs.workspace = true\n",
-            "crates/costs/Cargo.toml": "[dependencies]\napsp-plugin-alicloud.workspace = true\n",
-            # A crate that still holds a domain of the same or a later group is not earlier.
-            "crates/operations/Cargo.toml": "[dependencies]\napsp-plugin-alicloud.workspace = true\n",
+            "crates/costs/Cargo.toml": "[dependencies]\napsp-operations.workspace = true\n",
+            "crates/resources/Cargo.toml": "[dev-dependencies]\napsp-networking.workspace = true\n",
+            # Networking and naming are peers in one group.
+            "crates/networking/Cargo.toml": "[dependencies]\napsp-naming.workspace = true\n",
             # Peers in one group do not depend on each other.
             "crates/observability/Cargo.toml": "[dependencies]\napsp-costs.workspace = true\n",
             # Traffic comes before access, so it cannot depend on it.
             "crates/traffic/Cargo.toml": "[dependencies]\napsp-access.workspace = true\n",
             "crates/protocol/Cargo.toml": "[dependencies]\napsp-compiler.workspace = true\n",
             "crates/agent-core/Cargo.toml": "[target.'cfg(unix)'.dependencies]\napsp-adapter-singbox.workspace = true\n",
-            # Every workspace crate needs a layer.
+            # Every workspace crate needs a layer, including a crate placed under plugins/.
             "crates/billing/Cargo.toml": "[package]\n",
+            "plugins/alicloud/panel/Cargo.toml": "[package]\n",
         }
 
         def tree(directory, files):
@@ -185,24 +188,21 @@ class CoreBoundaryTests(unittest.TestCase):
             self.assertFalse(boundary.check_dependencies(root))
         with tempfile.TemporaryDirectory() as directory:
             self.assertTrue(boundary.check_dependencies(tree(directory, manifests)))
-        self.assertEqual(boundary.domain_dependencies("naming"),
-                         {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api"})
-        self.assertEqual(boundary.domain_dependencies("costs"),
-                         {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api", "apsp-naming", "apsp-compiler",
-                          "apsp-traffic", "apsp-access"})
+        base = {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api"}
+        self.assertEqual(boundary.domain_dependencies("resources"), base)
+        self.assertEqual(boundary.domain_dependencies("naming"), base | {"apsp-resources"})
+        before_costs = base | {"apsp-resources", "apsp-networking", "apsp-naming", "apsp-compiler",
+                               "apsp-traffic", "apsp-access"}
+        self.assertEqual(boundary.domain_dependencies("costs"), before_costs)
+        self.assertEqual(boundary.domain_dependencies("observability"), before_costs)
         self.assertEqual(boundary.domain_dependencies("operations"),
-                         {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api", "apsp-naming", "apsp-compiler",
-                          "apsp-traffic", "apsp-access", "apsp-costs", "apsp-observability"})
-        self.assertEqual(boundary.domain_dependencies("observability"),
-                         {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api", "apsp-naming", "apsp-compiler",
-                          "apsp-traffic", "apsp-access"})
+                         before_costs | {"apsp-costs", "apsp-observability"})
         # Another crate of the same domain is allowed, the crate itself is not.
         self.assertEqual(boundary.domain_dependencies("traffic", "apsp-traffic"),
-                         {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api", "apsp-naming", "apsp-compiler"})
+                         base | {"apsp-resources", "apsp-networking", "apsp-naming", "apsp-compiler"})
         self.assertEqual(boundary.domain_dependencies("access", "apsp-access"),
-                         {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api", "apsp-naming", "apsp-compiler",
-                          "apsp-traffic"})
-
+                         base | {"apsp-resources", "apsp-networking", "apsp-naming", "apsp-compiler",
+                                 "apsp-traffic"})
 
 if __name__ == "__main__":
     unittest.main()

@@ -28,6 +28,7 @@ pub mod notifications {
 }
 
 pub mod agent_api;
+mod cloud_overview;
 pub mod domains;
 mod integration_policy;
 pub mod maintenance;

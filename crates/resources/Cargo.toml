@@ -1,0 +1,24 @@
+[package]
+name = "apsp-resources"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+# Lets other domains' tests reach the cloud through a local mock endpoint (`Cloud::local`).
+test-support = ["apsp-cloud-api/test-support"]
+
+[dependencies]
+apsp-panel-host.workspace = true
+apsp-cloud-api.workspace = true
+apsp-protocol.workspace = true
+axum.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+apsp-cloud-api = { workspace = true, features = ["test-support"] }

@@ -119,7 +119,7 @@
 
 `tools/check-feature-boundaries.py` 按 `tools/feature-boundaries.toml` 检查四类越界：跨领域的 SQL（写其他所有者的表，读其他所有者的私有表或平台的表，逆着依赖顺序读公开只读表）、逆着依赖顺序的代码引用（从平台指向领域、从前面的领域指向后面的领域或同组的领域；同一 crate 内的 `crate::`、`super::` 路径，其他 crate 的路径如 `apsp_panel_host::incidents`，以及 crate 根再导出的其他 crate 的模块都算，代码搬到别的 crate 后越界跟着走）、跨 crate 的 `#[path]`、前端跨领域的引用（应用层的组合页面可以引用各领域）。清单里的依赖顺序与公开只读表就是 5.1、5.2 的规则；宿主、sing-box 与阿里云 crate 中尚未迁出的代码按所属领域登记，越界在代码搬家之前就被计量。现有越界记在 `tools/feature-boundaries.baseline`，只许减少，新增越界直接失败，新增表或新的所有者名没有登记也失败。
 
-`tools/check-core-boundary.py` 检查 Agent core 与平台 crate（`panel-host`、`cloud-api`）不出现代理业务词汇，并按层级检查每个 crate 的工作区依赖：平台只依赖 `protocol`；领域 crate 只依赖平台、`protocol` 与依赖顺序中排在前面的领域 crate；尚未拆分的 sing-box 与阿里云 crate 冻结现有依赖；新增的 crate 没有登记层级就失败。
+`tools/check-core-boundary.py` 检查 Agent core 与平台 crate（`panel-host`、`cloud-api`）不出现代理业务词汇，并按层级检查每个 crate 的工作区依赖：平台只依赖 `protocol`；领域 crate 只依赖平台、`protocol`、依赖顺序中排在前面的领域 crate 与同一领域的其他 crate；新增的 crate 没有登记层级就失败。
 
 ### 5.4 代码结构
 
@@ -128,7 +128,7 @@
 | 部分 | 现在（阶段 A 之后） | 目标 |
 | --- | --- | --- |
 | 平台 | `crates/panel-host`：技术部分（HTTP 外壳 `shell`、Agent 通道 `agent_api`、接口机制 `ports`、设备任务接口 `device_work`、观测证据接口 `evidence`、各领域运行时状态的槽 `DomainStates`、令牌、文本与摘要检查、地址分类、设置存储、通知发送、基线核对、后台任务守护）不再引用任何领域，只剩 `AppState` 里治理的管理员初始化与 Passkey 服务；还装着治理、资源、基础网络的代码与名称与证书的 ACME，已逐个路径登记所有者，各领域在 `domains/` 声明自己的路由。`crates/cloud-api` | `crates/panel-host` 只剩技术机制（阶段 B2）；供应商接口的签名、分页与重试留在 `crates/cloud-api` |
-| 领域 | `crates/naming`、`crates/costs`、`crates/compiler`（流量服务的配置编译）、`crates/traffic`（流量服务）与 `crates/access`（服务权益，阶段 C 从 sing-box crate 拆出）、`crates/observability`（观测，阶段 B2b 迁出，阶段 C 迁入中国可达性）、`crates/operations`（作业，阶段 B2a 迁出）；待拆的 `plugins/alicloud/panel`（阶段 D） | 每个领域一个 crate `crates/<领域标识>/`，内部按对象分模块，对象的模型、规则、存储与接口放在同一模块；参考过的上游代码放在该 crate 的 `upstream/` |
+| 领域 | `crates/naming`、`crates/costs`、`crates/compiler`（流量服务的配置编译）、`crates/traffic`（流量服务）与 `crates/access`（服务权益，阶段 C 从 sing-box crate 拆出）、`crates/observability`（观测，阶段 B2b 迁出，阶段 C 迁入中国可达性）、`crates/operations`（作业，阶段 B2a 迁出）；`crates/resources`（资源）与 `crates/networking`（基础网络），阶段 D 迁入阿里云的云账号、云资源与安全组，其余部分仍在宿主；成本、观测与作业 crate 的 `cloud` 模块是阶段 D 迁入的云能力 | 每个领域一个 crate `crates/<领域标识>/`，内部按对象分模块，对象的模型、规则、存储与接口放在同一模块；参考过的上游代码放在该 crate 的 `upstream/` |
 | 应用 | `crates/panel`：组合各领域的路由并套上治理的权限守卫（`domains`），30 秒维护循环，跨流量服务与服务权益的代理发布周期（`publisher`），`wiring` 接线全部类型化接口 | 不变：路由与后台任务的登记、跨领域流程、依赖倒置接口的接线、唯一的数据库基线 |
 | 前端 | `web/src/` 下按旧功能与插件分目录，已逐个路径登记所有者 | `web/src/<领域标识>/` 放该领域的页面、模型与接口调用；`web/src/app/` 放外框、路由、侧栏与组合页面（服务器详情、概览）；`components/`、`lib/`、`stores/` 是平台的通用界面层（阶段 E） |
 
@@ -207,7 +207,7 @@ flowchart TD
 - 插件外壳退出界面：「插件中心」改为「系统 › 制品与版本」，各服务器的运行时汇总是网络服务的「运行时」视图，服务器详情的「插件」分页改为「网络服务」，节点页的独立部署弹窗删除。
 - 以上基线变更附 `scripts/baseline-adoption-one-model-20261109.sql`。
 - 流量服务与服务权益拆成两个 crate（阶段 C 的拆分部分，结果见下）：`crates/traffic`（`apsp-traffic`）与 `crates/access`（`apsp-access`），中国可达性迁入 `crates/observability`；应用层的 `plugins.rs` 改为 `domains.rs`，去掉 `singbox`、`expenses`、`ddns` 等别名与代理领域的兼容再导出，调用方与测试改用各领域 crate 的路径。
-- 阿里云 crate 在内部按领域分开（阶段 D 第一步，结果见下）：路由、后台任务、刷新流程与共享类型各归其所有者，不再有指向排在后面领域的代码引用；第二步把各部分搬进领域 crate。
+- 阿里云能力分回各领域（阶段 D，结果见下）：先在原 crate 内按所有者重组（路由、后台任务、刷新流程与共享类型），再把文件搬进资源、基础网络、成本、观测与作业的 crate，组合视图归应用；`plugins/` 下不再有 crate。
 
 | 阶段 | 内容 | 完成标准 |
 | --- | --- | --- |
@@ -218,7 +218,7 @@ flowchart TD
 | **B2c 成本与流量服务留在宿主的部分迁出**（2026-11-09 完成，见下） | 汇率迁到 `crates/costs`，看板经观测声明的 `ExchangeRates` 读取；设备的清单与配置包、运行时检查点与运行时校验迁到 sing-box crate（阶段 C 成为流量服务 crate），设备配置接口去掉；成本直接读取 sing-box 的外部来源到期，续费引用接口去掉 | 宿主只剩平台、治理、资源、基础网络与名称 |
 | B2 其余领域代码迁出宿主 | 按依赖顺序从后往前：基础网络与名称（同组，先拆开名称的 ACME 对网络配置的引用）、资源、治理迁到各自的 crate；`AppState` 只留平台状态 | 平台没有业务代码与业务表 |
 | **C 流量服务与服务权益分开**（2026-11-09 完成，见下；节点凭据仍由流量服务直接读取） | sing-box crate 拆为 `traffic` 与 `access`；凭据经依赖倒置接口进入配置编译；中国可达性迁到观测；Nexus 兼容收拢为两个领域内的兼容模块 | 两个领域各自编译与测试；服务权益不写流量服务的表；兼容桥只在一个模块中出现 |
-| D 云与供应商能力分回领域（第一步 2026-11-10 完成，见下） | 阿里云按资源（实例、EIP）、基础网络（安全组）、成本（CDT 计费流量与账单）、作业（启停与换 IP 工作流）、观测（事件）拆分，分两步：先在 crate 内按所有者重组，再搬进各领域 crate；云账号与云资源表里各领域的列留到阶段 F 拆；Globalping 与 Cloudflare 客户端各合并为一个 | 没有以供应商命名的业务模块；供应商实现只在平台的技术层与各领域的实现目录中 |
+| **D 云与供应商能力分回领域**（阿里云的拆分 2026-11-10 完成，见下；两个 Globalping 与两处 Cloudflare 客户端的合并未做） | 阿里云按资源（实例、EIP）、基础网络（安全组）、成本（CDT 计费流量与账单）、作业（启停与换 IP 工作流）、观测（事件）拆分，分两步：先在 crate 内按所有者重组，再搬进各领域 crate；云账号与云资源表里各领域的列留到阶段 F 拆；Globalping 与 Cloudflare 客户端各合并为一个 | 没有以供应商命名的业务模块；供应商实现只在平台的技术层与各领域的实现目录中 |
 | E 前端与菜单 | 前端按领域目录组织，清单声明入口与工作区；侧栏按 ADR 0126 改为六个工作区 | 加一个页面只改所属领域的目录；侧栏与功能地图一致 |
 | F 数据收尾 | 表名前缀与所有者对齐、旧模型与旧商务表删除（需授权）、外键只指向身份表 | 边界清单中跨领域 SQL 只剩登记过的公开只读 |
 
@@ -257,7 +257,21 @@ flowchart TD
 - 资源向作业提的问题由资源声明 `work::CloudWork`、作业回答、应用层的 `wiring` 接线：资源有没有进行中的操作、地址是否在换 IP 中、账号下有没有结果待核对的操作、配置变化后取消预览与排队中的操作。安全组也经它确认资源空闲。没接上时调用方的事务失败。
 - 云账号与云资源行里的类型归资源的 `model`：账单与 CDT 流量（`Bill`、`Traffic`）、余额与实例账单、启停规则与电源状态（`Policy`、`State`）、CDT 守护的设置与观察（`GuardConfig`、`GuardState`），表拆开之前按行的所有者放；读取账单与流量的客户端方法搬进成本的 `billing`。
 - 越界从 498 条减到 461 条（SQL 318、代码引用 28、前端引用 115），没有新增。阿里云 crate 从 64 条减到 27 条：指向排在后面领域的 22 条代码引用全部消失，SQL 少 15 条。剩下的 27 条都是 SQL：作业与成本读写云资源与云账号行里属于自己的列 18 条（阶段 F 拆表）；安全组读云资源与云链接 3 条、读写作业的安全组操作表 3 条；资源读平台凭据库、换密钥时清理成本的流量历史、观测读平台设置各 1 条。
-- 第二步：按所有者把模块搬进领域 crate（成本、观测、作业已有 crate；资源与基础网络还没有，随 B2 其余部分新建），组合视图移入应用 crate，模块改用不带供应商的名称。
+
+阶段 D 第二步的结果（2026-11-10）：
+
+- 文件按所有者用 `git mv` 搬进领域 crate，原 crate `apsp-plugin-alicloud` 删除，`plugins/` 下不再有 crate。新建 `crates/resources`（`apsp-resources`）与 `crates/networking`（`apsp-networking`）：资源与基础网络的其余代码仍在宿主，随 B2 其余部分迁入。
+  - 资源：`apsp_resources::cloud`（`api`、`client`、`inventory`、`addresses`、`model`、`work`，以及账号锁、读取账号与资源、写快照等共用函数）。
+  - 基础网络：`apsp_networking::security_groups`。
+  - 成本：`apsp_costs::cloud`（`billing`、`cost_cache`（原 `costs`）、`traffic_history`（原 `history`））。
+  - 观测：`apsp_observability::cloud_notices`（原 `notices`）。
+  - 作业：`apsp_operations::cloud`（`bandwidth`（原 `operations`）、`power`、`eip_rotation`、`worker`）。
+  - 应用：`crates/panel/src/cloud_overview.rs`（原 `overview`）。
+- 模块名不再带供应商：各 crate 里叫 `cloud` 或按功能命名。只有阿里云一家实现，阿里云的接口调用留在这些模块里，不加供应商抽象（ADR 0131：有多个实现才抽象）。表名、接口前缀 `/api/plugins/alicloud` 与后台任务名 `alicloud*` 不变。
+- 原来整个 crate 可见的条目改为公开；`Cloud` 的方法搬到资源之外的改为以 `cloud: &Cloud` 为参数的函数（账单、CDT 流量、余额、实例账单、电源状态与操作、CDT 用量）；资源拥有的行类型上由作业实现的规则改为作业内部的扩展 trait（`PolicyRules`、`StateRules`、`GuardRules`），类型随行留在资源，阶段 F 拆表时一起移走。
+- 依赖：资源只依赖平台；基础网络依赖资源；成本与观测依赖资源；作业依赖资源、基础网络、成本与观测；依赖检查登记两个新的领域 crate，删除未拆分 crate 的过渡规则。
+- 越界 461 条（SQL 318、代码引用 28、前端引用 115），与第一步相同；27 条云的 SQL 越界随文件换了路径，没有新增。路由静态比对 33 个组合不变。
+- 未做：两个 Globalping 客户端（平台 `cloud-api` 与观测的可达性检测）与两处 Cloudflare 接口（名称的 DNS 与服务权益的专属地址）的合并，它们改的是外部接口的用法，另行处理。
 
 ## 10. 上游代码：每个领域自己维护
 

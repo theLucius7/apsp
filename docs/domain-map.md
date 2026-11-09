@@ -11,8 +11,8 @@
 | 服务器资产 | 记录地区、标签、到期与采购配置 | 服务器资产 | 一份资产记录（运维区的采购配置并入，路线图 4.4） | 成本（只读到期与成本） | 宿主 `server_assets.rs`、`server_lifecycle.rs`（资产档案、本机运维策略、生命周期与迁移，表 `fleet_profiles`）；服务器详情 › 资产与流量、运维 |
 | 服务器退役 | 安全删除一台服务器 | 退役记录 | 在线退役以设备签名回执为准；离线退役单独标明 | 流量服务（停止服务）；作业（执行） | 宿主 `retirement.rs` |
 | Agent 能力 | 知道每台 Agent 能做什么 | Agent 能力与绑定代次 | 迟到的回执不能覆盖新绑定代次 | 治理（版本策略） | 宿主 `agent_api.rs` 的能力登记 |
-| 云实例与 EIP | 知道云上有哪些实例与 EIP 及其状态 | 云资源、云账号关联 | 只经官方接口读回确认 | 成本（账单）；基础网络（安全组） | 阿里云 `api.rs`、`inventory.rs`、`addresses.rs`、`model.rs`；`operations_cloud_links`；云账号 `alicloud_accounts`（其中的账单与额度字段由成本写入，阶段 F 拆表）；服务器 › 云资源 |
-| 云实例启停规则 | 判断一台实例此刻能否开关机 | 实例电源状态 | 关机前确认不影响在用服务与保护策略 | 作业（执行与计划）；成本（额度触发） | 阿里云 `model.rs` 的 `Policy`（规则）与 `State`（电源状态）；按规则判断与读取电源状态的代码在 `power/policy.rs`、`state.rs`，与执行一起归作业 |
+| 云实例与 EIP | 知道云上有哪些实例与 EIP 及其状态 | 云资源、云账号关联 | 只经官方接口读回确认 | 成本（账单）；基础网络（安全组） | `crates/resources` 的 `cloud/`（`api`、`client`、`inventory`、`addresses`、`model`）；`operations_cloud_links`；云账号 `alicloud_accounts`（其中的账单与额度字段由成本写入，阶段 F 拆表）；服务器 › 云资源 |
+| 云实例启停规则 | 判断一台实例此刻能否开关机 | 实例电源状态 | 关机前确认不影响在用服务与保护策略 | 作业（执行与计划）；成本（额度触发） | 资源的 `cloud/model.rs` 中的 `Policy`（规则）与 `State`（电源状态）；按规则判断与读取电源状态的代码在作业的 `cloud/power/`（`PolicyRules`、`StateRules`），与执行在一起 |
 | 资源替换 | 用新机器替换旧机器并保留关联 | 替换关系 | 显式替换，不凭相同 IP 或名称合并 | 名称；流量服务；成本 | 网络配置的服务器替换（实验）；`network_server_migration_previews` |
 | Hetzner 资源（冻结） | 查看 Hetzner 资源 | 云资源 | 只读 | 成本 | 宿主 `cloud_resources/hetzner`（云资源关联与账单观测在 `cloud_resources.rs`） |
 
@@ -23,7 +23,7 @@
 | 主机网络参数、受管防火墙、私有组网、反向隧道（冻结） | 改变服务器的网络条件 | 主机网络规则 | 作用域明确、可回滚；需要确认 | 作业（执行）；观测（验证） | 宿主 `network_configuration/`；Agent `system_network`；服务器 › 网络配置 |
 | 端口转发（实验） | 把一个端口的流量转到别处 | 转发规则 | 不与服务端点冲突 | 流量服务（计划重做为中转规则后归流量服务） | Agent `system_forwarding`；服务器 › 网络配置 |
 | 端点台账（实验） | 记录服务器的网络端点 | 端点台账 | 只是台账，不代替服务端点 | 流量服务 | `network_documents` |
-| 云安全组（冻结） | 管理云上的入站规则 | 安全组规则 | 保留云厂商的作用域语义 | 资源；作业（执行） | 阿里云 `security_groups/` |
+| 云安全组（冻结） | 管理云上的入站规则 | 安全组规则 | 保留云厂商的作用域语义 | 资源；作业（执行） | `crates/networking` 的 `security_groups/` |
 
 ## 流量服务 `traffic`
 
@@ -74,7 +74,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 续费项目与付费服务 | 记下要周期付费的服务 | 续费项目、付款记录 | 金额、周期与币种清楚；预测与实际分开 | — | `crates/costs`（原费用插件）；费用与续费 |
 | 服务器费用 | 记录服务器的购买、续费与退款 | 服务器费用记录 | 服务器到期以资源的资产为准，这里只读 | 资源 | 宿主 `server_lifecycle.rs` 的费用记录、`fleet_cost_records`（阶段 B 并入成本） |
-| 供应商计费流量与免费额度 | 按供应商口径看额度用了多少 | 计费流量历史、额度状态 | 保留供应商口径，不与网卡计数或用户用量混算 | 资源（实例）；作业（超额处置） | 阿里云 `billing.rs`、`costs.rs`、`history.rs`（类型在资源的 `model.rs`，随所在的行） |
+| 供应商计费流量与免费额度 | 按供应商口径看额度用了多少 | 计费流量历史、额度状态 | 保留供应商口径，不与网卡计数或用户用量混算 | 资源（实例）；作业（超额处置） | `crates/costs` 的 `cloud/`（`billing`、`cost_cache`、`traffic_history`；类型在资源的 `cloud/model.rs`，随所在的行） |
 | 汇率与统计币种 | 把不同币种折算成统计币种 | 每日汇率 | 来源可追溯，不编造缺失币种 | — | `crates/costs` 的 `exchange.rs`（阶段 B2c 从宿主迁入）；`/api/exchange-rates` |
 | 续费提醒与日历 | 按时提醒续费 | 提醒、日历输出 | 提醒只告知，不付款 | 平台（通知通道） | `crates/costs` 的后台任务；`/api/plugins/expenses/calendar.ics` |
 | 退订提醒与供应商 | 记得在合适的时候退订 | 退订提醒、供应商 | — | 资源；观测（提醒记为故障事件） | `crates/costs` 的 `cancellation_reminders.rs`、`suppliers.rs` |
@@ -103,7 +103,7 @@
 | 遥测与历史 | 知道机器现在与过去怎样 | 采集计划、样本、历史聚合、服务器事件时间线 | 实时样本与持久化确认分开 | 资源（服务器视图经资源的 `server_observation` 取得流量摘要与实时遥测；事件经平台的 `evidence` 记录） | `crates/observability` 的 `telemetry/`、`server_monitoring.rs`（健康、事件时间线与两台比较）；Agent 遥测；服务器详情 › 概况、Agent |
 | 服务器看板与公开看板 | 一眼看清所有服务器 | 看板视图（汇总，不拥有数据） | 公开看板只读白名单，匿名不公开成本 | 资源；成本（看板折算用的汇率经观测声明的 `dashboard::ExchangeRates` 取得） | `crates/observability` 的 `dashboard.rs`；服务器列表的看板视图、`/#/dashboard` |
 | 网卡流量计数与矫正 | 记下机器实际的网络活动 | 网卡计数、矫正记录 | 不改代理用量账本 | 资源（网卡额度设置；视图的流量摘要类型属于资源） | `crates/observability` 的 `server_traffic.rs`、`traffic_correction.rs`；表 `server_network_*`、`server_traffic_corrections` |
-| 告警与通知 | 出事时告诉管理员 | 告警规则、告警事件、处置记录 | 通知只提醒，不执行付款、停用或远程命令 | 平台（通知通道） | `crates/observability` 的 `alerts/`（规则、评估与告警事件；发件箱与渠道归平台的 `notifications`）；阿里云的事件与投递在阿里云 crate 的 `notices.rs`；监测与诊断 › 告警 |
+| 告警与通知 | 出事时告诉管理员 | 告警规则、告警事件、处置记录 | 通知只提醒，不执行付款、停用或远程命令 | 平台（通知通道） | `crates/observability` 的 `alerts/`（规则、评估与告警事件；发件箱与渠道归平台的 `notifications`）；云事件与投递在 `cloud_notices.rs`；监测与诊断 › 告警 |
 | 故障事件（实验） | 聚合告警并记录处置 | 故障事件、处置记录 | 计划与告警合并（路线图 4.3） | 作业；资源、治理与成本经平台的 `evidence` 打开与恢复 | `crates/observability` 的 `incidents.rs` |
 | 延迟检测与周期拨测 | 测三网延迟与丢包 | 拨测、拨测结果 | 执行许可可撤销；只测授权目标 | 资源（新服务器与接入模板的拨测经资源的 `server_observation`） | `crates/observability` 的 `probes.rs`、`latency_tasks.rs`；Agent 拨测；线路质量 |
 | 中国可达性 | 区分端口封锁、IP 封锁与服务故障 | 可达性观测与事件 | 默认关闭；用量不超额度的 80% | 流量服务（节点端点；Nexus 切换前经 `china_reachability` 读取最近测量） | `crates/observability` `reachability/` |
@@ -119,7 +119,7 @@
 | 终端、日志与文件（实验） | 交互式处理一台服务器 | 终端会话、文件操作 | 本机运维策略授权 | 资源 | `crates/operations` 的 `fleet/terminal.rs`、`fleet/operations.rs`；服务器详情 › 运维 |
 | 批量任务、定时计划、维护窗口、有界自动处置（实验） | 跨服务器按计划执行固定步骤 | 作业、执行尝试、计划 | 步骤由所属领域判断合法；结果未知要核对 | 所属领域 | `crates/operations` 的 `jobs/`；服务器 › 自动化与维护 |
 | 固定类型的设备操作 | 下发有类型的设备操作并收回执 | 设备操作 | 过期与未知分开；迟到结果仍接受 | 资源；平台（其他领域经 `device_work` 提交） | `crates/operations` 的 `fleet/`（含能否接收新任务的判断） |
-| 云实例启停与换 IP 工作流 | 按计划或阈值开关机、更换公网 IP | 启停作业、换 IP 作业 | 只经官方接口读回确认；失败绑回原地址 | 资源（是否允许）；成本（阈值）；观测（可达性验证） | 阿里云 `power/jobs.rs`、`scheduler.rs`、`eip_rotation/`、`operations.rs`（带宽变更）、`worker.rs`（账号刷新与自动降速）；资源经 `work::CloudWork` 询问进行中的操作 |
+| 云实例启停与换 IP 工作流 | 按计划或阈值开关机、更换公网 IP | 启停作业、换 IP 作业 | 只经官方接口读回确认；失败绑回原地址 | 资源（是否允许）；成本（阈值）；观测（可达性验证） | `crates/operations` 的 `cloud/`（`power/`、`eip_rotation/`、`bandwidth`（带宽变更）、`worker`（账号刷新与自动降速））；资源经 `cloud::work::CloudWork` 询问进行中的操作 |
 | 备份、升级与部署的执行 | 把治理或流量服务批准的变更执行出来 | 执行记录 | 只执行，不决定是否合法 | 治理；流量服务 | `crates/operations` 的 `jobs/`（部署步骤直接调用流量服务） |
 
 ## 平台 `platform` 与应用 `app`
@@ -127,5 +127,5 @@
 | 部分 | 内容 | 实现 |
 | --- | --- | --- |
 | 平台 | 数据库连接与事务、基线核对、后台任务与心跳、Agent 通道、设备任务与观测证据的接口、各领域运行时状态的槽、加密凭据库、制品存储、通知发送通道、HTTP 外壳与中间件、设置存储、类型化接口的机制、文本与摘要检查、地址分类 | 宿主 `crates/panel-host` 的 `shell`、`agent_api`、`device_work`、`evidence`、`state`（`DomainStates`）、`ports`、`tokens`、`text`、`digest`、`net`、`settings`、`notifications` 的发送部分等技术模块（阶段 B1 起不引用领域，B2 迁出其余领域代码）；`crates/cloud-api`（供应商接口的签名、分页与重试） |
-| 应用 | 组合各领域、HTTP 路由、后台任务登记、跨领域流程、依赖倒置接口的接线、命令行入口 | `crates/panel`：`lib.rs` 套上权限守卫，`domains.rs` 组合各领域的路由与后台任务，`wiring.rs` 接线类型化接口，`maintenance.rs` 运行 30 秒维护循环，`publisher.rs` 运行代理发布周期；阿里云页面的组合视图暂在阿里云 crate 的 `overview.rs`（阶段 D 第二步移入） |
+| 应用 | 组合各领域、HTTP 路由、后台任务登记、跨领域流程、依赖倒置接口的接线、命令行入口 | `crates/panel`：`lib.rs` 套上权限守卫，`domains.rs` 组合各领域的路由与后台任务，`wiring.rs` 接线类型化接口，`maintenance.rs` 运行 30 秒维护循环，`publisher.rs` 运行代理发布周期，`cloud_overview.rs` 是云页面的组合视图 |
 | Agent | 本地执行、采集与状态协调；运行时与诊断工具的适配器 | `crates/agent-core`、`crates/adapter-*`、`crates/agent` |

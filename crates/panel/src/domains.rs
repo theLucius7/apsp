@@ -4,9 +4,11 @@
 use apsp_access as access;
 use apsp_costs as costs;
 use apsp_naming as naming;
+use apsp_networking as networking;
 use apsp_observability as observability;
+use apsp_operations as operations;
 use apsp_panel_host::AppState;
-use apsp_plugin_alicloud as alicloud;
+use apsp_resources as resources;
 use apsp_traffic as traffic;
 use axum::Router;
 
@@ -30,15 +32,16 @@ pub fn router() -> Router<AppState> {
         .merge(traffic::device_routes())
         .merge(naming::routes())
         .merge(costs::routes())
-        // Cloud capabilities by domain: accounts and resources, bandwidth operations,
-        // power, address rotation, CDT history, security groups and the combined view.
-        .merge(alicloud::api::routes())
-        .merge(alicloud::operations::routes())
-        .merge(alicloud::power::routes())
-        .merge(alicloud::eip_rotation::routes())
-        .merge(alicloud::history::routes())
-        .merge(alicloud::security_groups::routes())
-        .merge(alicloud::overview::routes())
+        // Cloud capabilities by domain: accounts and resources, bandwidth changes, power,
+        // address rotation, CDT traffic history, security groups and the combined view.
+        // They keep the `/api/plugins/alicloud` prefix until the prefixes change (ADR 0131).
+        .merge(resources::cloud::api::routes())
+        .merge(operations::cloud::bandwidth::routes())
+        .merge(operations::cloud::power::routes())
+        .merge(operations::cloud::eip_rotation::routes())
+        .merge(costs::cloud::traffic_history::routes())
+        .merge(networking::security_groups::routes())
+        .merge(crate::cloud_overview::routes())
 }
 
 pub async fn run(state: AppState) {
@@ -54,7 +57,9 @@ pub async fn run(state: AppState) {
             let pool = pool.clone();
             move || naming::run(pool.clone())
         }),
-        supervise("alicloud", move || alicloud::worker::run(pool.clone())),
+        supervise("alicloud", move || operations::cloud::worker::run(
+            pool.clone()
+        )),
         supervise("expenses", move || costs::run(expense_state.clone()))
     );
 }

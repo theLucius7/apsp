@@ -113,6 +113,8 @@ PLATFORM_DEPENDENCIES = {"apsp-protocol"}
 DOMAIN_ORDER = (("governance",), ("resources",), ("networking", "naming"), ("traffic",),
                 ("access",), ("costs", "observability"), ("operations",))
 DOMAIN_CRATES = {
+    "crates/resources": ("apsp-resources", "resources"),
+    "crates/networking": ("apsp-networking", "networking"),
     "crates/naming": ("apsp-naming", "naming"),
     "crates/compiler": ("apsp-compiler", "traffic"),
     "crates/costs": ("apsp-costs", "costs"),
@@ -120,15 +122,6 @@ DOMAIN_CRATES = {
     "crates/observability": ("apsp-observability", "observability"),
     "crates/traffic": ("apsp-traffic", "traffic"),
     "crates/access": ("apsp-access", "access"),
-}
-# Crates that still hold several domains keep their current dependencies until they are
-# split (docs/architecture.md section 9, stage D). A domain crate may depend on
-# one when all of its domains come in earlier groups.
-TRANSITIONAL_DEPENDENCIES = {
-    "plugins/alicloud/panel": {"apsp-panel-host", "apsp-protocol", "apsp-cloud-api"},
-}
-TRANSITIONAL_DOMAINS = {
-    "apsp-plugin-alicloud": ("resources", "networking", "costs", "observability", "operations"),
 }
 # The application and the Agent binary compose the layers.
 COMPOSERS = ("crates/panel", "crates/agent")
@@ -188,8 +181,6 @@ def domain_dependencies(domain, own=None):
     rank = {name: index for index, group in enumerate(DOMAIN_ORDER) for name in group}
     earlier = {crate for crate, other in DOMAIN_CRATES.values()
                if rank[other] < rank[domain] or (other == domain and own not in (None, crate))}
-    earlier |= {crate for crate, domains in TRANSITIONAL_DOMAINS.items()
-                if all(rank[other] < rank[domain] for other in domains)}
     return {"apsp-protocol", *PLATFORM_CRATES.values(), *earlier}
 
 
@@ -205,8 +196,6 @@ def layer_rules(root):
         rules[root / crate / "Cargo.toml"] = PLATFORM_DEPENDENCIES
     for crate, (name, domain) in DOMAIN_CRATES.items():
         rules[root / crate / "Cargo.toml"] = domain_dependencies(domain, name)
-    for crate, allowed in TRANSITIONAL_DEPENDENCIES.items():
-        rules[root / crate / "Cargo.toml"] = allowed
     return rules
 
 

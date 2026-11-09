@@ -266,8 +266,10 @@ name = "apsp-costs"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "apsp-cloud-api",
  "apsp-panel-host",
  "apsp-protocol",
+ "apsp-resources",
  "apsp-traffic",
  "axum 0.8.9",
  "futures-util",
@@ -303,13 +305,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "apsp-networking"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-cloud-api",
+ "apsp-panel-host",
+ "apsp-protocol",
+ "apsp-resources",
+ "axum 0.8.9",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "apsp-observability"
 version = "0.3.0"
 dependencies = [
  "anyhow",
  "apsp-access",
+ "apsp-cloud-api",
  "apsp-panel-host",
  "apsp-protocol",
+ "apsp-resources",
  "apsp-traffic",
  "axum 0.8.9",
  "flate2",
@@ -334,10 +356,13 @@ name = "apsp-operations"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "apsp-cloud-api",
  "apsp-costs",
+ "apsp-networking",
  "apsp-observability",
  "apsp-panel-host",
  "apsp-protocol",
+ "apsp-resources",
  "apsp-traffic",
  "axum 0.8.9",
  "base64 0.22.1",
@@ -364,11 +389,12 @@ dependencies = [
  "apsp-compiler",
  "apsp-costs",
  "apsp-naming",
+ "apsp-networking",
  "apsp-observability",
  "apsp-operations",
  "apsp-panel-host",
- "apsp-plugin-alicloud",
  "apsp-protocol",
+ "apsp-resources",
  "apsp-traffic",
  "argon2",
  "axum 0.8.9",
@@ -443,24 +469,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "apsp-plugin-alicloud"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "apsp-cloud-api",
- "apsp-panel-host",
- "apsp-protocol",
- "axum 0.8.9",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "sqlx",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "apsp-protocol"
 version = "0.3.0"
 dependencies = [
@@ -472,6 +480,21 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
+name = "apsp-resources"
+version = "0.3.0"
+dependencies = [
+ "apsp-cloud-api",
+ "apsp-panel-host",
+ "apsp-protocol",
+ "axum 0.8.9",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
  "uuid",
 ]
 

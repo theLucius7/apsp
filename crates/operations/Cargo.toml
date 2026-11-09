@@ -11,6 +11,9 @@ apsp-protocol.workspace = true
 apsp-traffic.workspace = true
 apsp-costs.workspace = true
 apsp-observability.workspace = true
+apsp-resources.workspace = true
+apsp-networking.workspace = true
+apsp-cloud-api.workspace = true
 axum.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
@@ -21,3 +24,7 @@ uuid.workspace = true
 sha2.workspace = true
 base64.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+apsp-cloud-api = { workspace = true, features = ["test-support"] }
+apsp-resources = { workspace = true, features = ["test-support"] }

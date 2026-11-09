@@ -9,6 +9,8 @@ rust-version.workspace = true
 apsp-panel-host.workspace = true
 apsp-protocol.workspace = true
 apsp-traffic.workspace = true
+apsp-resources.workspace = true
+apsp-cloud-api.workspace = true
 axum.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
@@ -23,3 +25,5 @@ time = "=0.3.55"
 
 [dev-dependencies]
 futures-util.workspace = true
+apsp-cloud-api = { workspace = true, features = ["test-support"] }
+apsp-resources = { workspace = true, features = ["test-support"] }

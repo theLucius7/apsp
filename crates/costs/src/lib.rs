@@ -5,6 +5,7 @@
 mod api;
 mod calendar;
 pub mod cancellation_reminders;
+pub mod cloud;
 pub mod exchange;
 mod history;
 mod migration;
@@ -16,8 +17,8 @@ mod worker;
 pub use worker::tick;
 
 use apsp_panel_host::{
-    AppState, control_center,
-    error::{ApiError, ApiResult},
+    AppState, auth, control_center,
+    error::{self, ApiError, ApiResult},
 };
 use apsp_protocol::now_timestamp;
 use axum::{

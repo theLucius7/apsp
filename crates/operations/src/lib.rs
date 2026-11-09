@@ -9,17 +9,18 @@
 //! The platform's device work interface (`apsp_panel_host::device_work`) lets earlier
 //! domains submit device work here; the application connects it.
 
+pub mod cloud;
 pub mod commands;
 pub mod fleet;
 pub mod jobs;
 pub mod runtime_operations;
 
 pub(crate) use apsp_observability::{incidents, server_monitoring};
-#[cfg(test)]
-pub(crate) use apsp_panel_host::config;
 pub(crate) use apsp_panel_host::{
     AppState, auth, backups, cloud_resources, control_center, digest, error, text,
 };
+#[cfg(test)]
+pub(crate) use apsp_panel_host::{config, settings};
 use axum::{
     Router,
     routing::{get, post},
