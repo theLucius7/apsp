@@ -57,3 +57,15 @@ pub async fn list(
             .collect(),
     ))
 }
+
+/// A deleted node's user credentials go with it.
+pub async fn remove_node(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    node: i64,
+) -> ApiResult<()> {
+    sqlx::query("DELETE FROM accesses WHERE node_id=$1")
+        .bind(node)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}

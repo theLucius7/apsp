@@ -518,11 +518,7 @@ async fn soft_delete_node(tx: &mut Transaction<'_, Postgres>, id: i64) -> ApiRes
         .bind(now_timestamp())
         .execute(&mut **tx)
         .await?;
-    sqlx::query("DELETE FROM accesses WHERE node_id=$1")
-        .bind(id)
-        .execute(&mut **tx)
-        .await?;
-    Ok(())
+    crate::users::remove_node_accesses(tx, id).await
 }
 
 #[derive(Serialize, FromRow)]

@@ -375,3 +375,11 @@ pub(crate) async fn inspect_member(
         json!({"state":"inspection_queued","request_id":inspect.id}),
     ))
 }
+
+/// Copies finished inspection results onto their rollout members.
+pub(super) async fn record_inspection_results(tx: &mut Transaction<'_, Postgres>) -> ApiResult<()> {
+    sqlx::query("UPDATE singbox_runtime_rollout_members r SET inspection_result=o.result FROM runtime_operations o WHERE o.id=r.inspect_request_id AND o.result IS NOT NULL AND r.inspection_result IS NULL")
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}

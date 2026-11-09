@@ -165,13 +165,10 @@ ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/history.rs	resources
 ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/notices.rs	resources->observability
 ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/operations.rs	resources->operations
 ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/power/mod.rs	resources->operations
-sql	crates/access/src/entitlements.rs	read	singbox_chain_state	access->traffic
-sql	crates/access/src/entitlements.rs	read	singbox_chains	access->traffic
-sql	crates/access/src/entitlements.rs	write	singbox_chain_state	access->traffic
 sql	crates/access/src/external_access/model.rs	read	singbox_external_node_states	access->traffic
 sql	crates/access/src/external_access/model.rs	read	singbox_node_metadata	access->traffic
-sql	crates/access/src/nexus_sessions.rs	read	singbox_nexus_runtime_hosts	access->traffic
-sql	crates/access/src/nexus_sessions.rs	read	singbox_nexus_runtime_nodes	access->traffic
+sql	crates/access/src/nexus/sessions.rs	read	singbox_nexus_runtime_hosts	access->traffic
+sql	crates/access/src/nexus/sessions.rs	read	singbox_nexus_runtime_nodes	access->traffic
 sql	crates/access/src/operations_workflows/diagnosis.rs	read	deployments	access->traffic
 sql	crates/access/src/operations_workflows/diagnosis.rs	read	passkey_credentials	access->governance
 sql	crates/access/src/operations_workflows/diagnosis.rs	read	runtime_control_receipts	access->traffic
@@ -183,11 +180,8 @@ sql	crates/access/src/operations_workflows/diagnosis.rs	read	singbox_nexus_nodes
 sql	crates/access/src/operations_workflows/diagnosis.rs	read	singbox_nexus_runtime_hosts	access->traffic
 sql	crates/access/src/operations_workflows/diagnosis.rs	read	singbox_nexus_runtime_nodes	access->traffic
 sql	crates/access/src/operations_workflows/mod.rs	read	record_retention_policy	access->governance
-sql	crates/access/src/operations_workflows/mod.rs	read	runtime_operations	access->operations
 sql	crates/access/src/operations_workflows/mod.rs	read	singbox_chains	access->traffic
 sql	crates/access/src/operations_workflows/mod.rs	read	singbox_ordered_chain_hops	access->traffic
-sql	crates/access/src/operations_workflows/mod.rs	write	singbox_deployment_preflights	access->traffic
-sql	crates/access/src/operations_workflows/mod.rs	write	singbox_runtime_rollout_members	access->traffic
 sql	crates/access/src/operations_workflows/mutations.rs	read	server_module_status	access->traffic
 sql	crates/access/src/operations_workflows/snapshots.rs	read	server_module_status	access->traffic
 sql	crates/access/src/operations_workflows/snapshots.rs	read	server_retirements	access->resources
@@ -411,17 +405,12 @@ sql	crates/traffic/src/catalog/mutation.rs	read	singbox_policy_external_nodes	tr
 sql	crates/traffic/src/host_support.rs	read	users	traffic->access
 sql	crates/traffic/src/nexus_nodes/mod.rs	write	credential_entries	traffic->platform
 sql	crates/traffic/src/nexus_nodes/mod.rs	write	management_audit	traffic->governance
-sql	crates/traffic/src/nexus_nodes/mod.rs	write	singbox_policy_nodes	traffic->access
-sql	crates/traffic/src/nexus_nodes/runtime.rs	read	singbox_nexus_bridge	traffic->access
 sql	crates/traffic/src/nexus_nodes/runtime.rs	write	credential_entries	traffic->platform
 sql	crates/traffic/src/nexus_nodes/runtime.rs	write	management_audit	traffic->governance
-sql	crates/traffic/src/nexus_nodes/runtime.rs	write	singbox_policy_nodes	traffic->access
 sql	crates/traffic/src/nexus_nodes/runtime_publish.rs	read	singbox_nexus_identities	traffic->access
 sql	crates/traffic/src/nexus_nodes/runtime_publish.rs	read	singbox_policy_nodes	traffic->access
 sql	crates/traffic/src/nexus_nodes/runtime_publish.rs	read	singbox_user_policies	traffic->access
-sql	crates/traffic/src/nexus_nodes/runtime_publish.rs	read	usage_records	traffic->access
 sql	crates/traffic/src/nexus_nodes/runtime_publish.rs	write	servers	traffic->resources
-sql	crates/traffic/src/nexus_nodes/runtime_publish.rs	write	singbox_nexus_usage_deliveries	traffic->access
 sql	crates/traffic/src/nodes/removal.rs	read	singbox_policy_nodes	traffic->access
 sql	crates/traffic/src/ordered_paths/api.rs	read	accesses	traffic->access
 sql	crates/traffic/src/ordered_paths/api.rs	read	server_retirements	traffic->resources
@@ -431,7 +420,6 @@ sql	crates/traffic/src/proxy_resources.rs	read	singbox_policy_groups	traffic->ac
 sql	crates/traffic/src/proxy_resources.rs	read	singbox_policy_nodes	traffic->access
 sql	crates/traffic/src/proxy_resources.rs	read	singbox_user_policies	traffic->access
 sql	crates/traffic/src/proxy_resources.rs	read	users	traffic->access
-sql	crates/traffic/src/proxy_resources.rs	write	accesses	traffic->access
 sql	crates/traffic/src/publisher.rs	write	servers	traffic->resources
 sql	crates/traffic/src/runtime_operations.rs	read	runtime_operations	traffic->operations
 sql	crates/traffic/src/runtime_operations.rs	read	server_retirements	traffic->resources

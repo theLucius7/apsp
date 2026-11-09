@@ -206,7 +206,7 @@ pub(crate) async fn assign_on(
     package_group_id: i64,
     request_id: uuid::Uuid,
 ) -> ApiResult<Assignment> {
-    let unmapped: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_nexus_bridge b WHERE b.enabled AND NOT EXISTS(SELECT 1 FROM singbox_nexus_plan_mappings p WHERE p.import_id=b.import_id AND p.package_group_id=$1 AND p.legacy_group_id IS NOT NULL))").bind(package_group_id).fetch_one(&mut **tx).await?;
+    let unmapped = crate::nexus::bridge::package_unmapped(tx, package_group_id).await?;
     if unmapped {
         return Err(ApiError::Conflict(
             "原订阅兼容期间只能分配已映射的套餐".into(),

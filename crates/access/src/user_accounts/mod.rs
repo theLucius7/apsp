@@ -145,7 +145,7 @@ pub(crate) async fn require_compatible_package(
     .bind(user)
     .fetch_one(&mut **tx)
     .await?;
-    let missing:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_nexus_bridge b WHERE b.enabled AND NOT EXISTS(SELECT 1 FROM singbox_nexus_plan_mappings p WHERE p.import_id=b.import_id AND p.package_group_id=$1 AND p.legacy_group_id IS NOT NULL))").bind(package).fetch_one(&mut **tx).await?;
+    let missing = crate::nexus::bridge::package_unmapped(tx, package).await?;
     if enrolled && missing {
         return Err(conflict(
             "此套餐尚未配置原节点权限映射，不能分配给兼容通道中的成员",
@@ -166,10 +166,7 @@ async fn ensure_profile(tx: &mut Tx<'_>, id: i64) -> ApiResult<()> {
     if exists {
         return Ok(());
     }
-    let bridged: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_nexus_bridge WHERE enabled)")
-            .fetch_one(&mut **tx)
-            .await?;
+    let bridged = crate::nexus::bridge::enabled(tx).await?;
     if bridged {
         return Err(conflict(
             "原系统兼容期间，此账号请使用 Passkey 登录；邮箱和密码在兼容结束后开放",

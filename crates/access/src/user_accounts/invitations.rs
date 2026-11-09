@@ -181,8 +181,7 @@ pub(super) async fn settings_save(
         }
         // Invited accounts are members of the compatibility bridge while it runs; an
         // unmapped package there would stop every later synchronization.
-        let unmapped: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_nexus_bridge b WHERE b.enabled AND NOT EXISTS(SELECT 1 FROM singbox_nexus_plan_mappings p WHERE p.import_id=b.import_id AND p.package_group_id=$1 AND p.legacy_group_id IS NOT NULL))")
-            .bind(package).fetch_one(&mut *tx).await?;
+        let unmapped = crate::nexus::bridge::package_unmapped(&mut tx, package).await?;
         if unmapped {
             return Err(conflict(
                 "原订阅兼容期间，受邀账号只能使用已对应原权限组的套餐",

@@ -111,16 +111,17 @@ pub async fn overview(
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<ProxyUserOverview>>> {
     require_admin(&state, &headers).await?;
-    let rows = sqlx::query_as::<_, ProxyUserOverview>(
+    let rows = sqlx::query_as::<_, ProxyUserOverview>(&format!(
         "SELECT e.user_id AS id,e.status,e.allowed,e.package_name,e.monthly_bytes,e.used_bytes,e.expires_at,\
-         COALESCE((SELECT array_agg(p.group_id ORDER BY p.group_id) FROM singbox_user_policies p WHERE p.user_id=e.user_id),'{}'::BIGINT[]) AS group_ids,\
+         COALESCE((SELECT array_agg(p.group_id ORDER BY p.group_id) FROM singbox_user_policies p WHERE p.user_id=e.user_id),'{{}}'::BIGINT[]) AS group_ids,\
          (SELECT count(DISTINCT x.external_node_id) FROM singbox_user_policies p JOIN singbox_policy_external_nodes x ON x.group_id=p.group_id WHERE p.user_id=e.user_id) AS external_nodes,\
-         EXISTS(SELECT 1 FROM singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id WHERE b.enabled AND i.user_id=e.user_id) AS bridged,\
+         {} AS bridged,\
          portal.account_id IS NOT NULL AS portal_created,\
          (SELECT count(*) FROM passkey_credentials c WHERE c.account_id=portal.account_id) AS portal_keys,\
          CASE WHEN portal.activation_expires_at>$1 THEN portal.activation_expires_at END AS activation_expires_at \
          FROM singbox_entitlements($1) e LEFT JOIN singbox_portal_accounts portal ON portal.user_id=e.user_id ORDER BY e.user_id",
-    )
+        crate::nexus::bridge::member_sql("e.user_id")
+    ))
     .bind(now_timestamp())
     .fetch_all(&state.pool)
     .await?;
@@ -241,7 +242,7 @@ pub async fn reset_subscription(
     let mut tx = state.pool.begin().await?;
     apsp_traffic::business::lock_publication(&mut tx).await?;
     apsp_traffic::business::lock_user(&mut tx, id).await?;
-    let legacy: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_nexus_bridge b JOIN singbox_nexus_identities i ON i.import_id=b.import_id WHERE b.enabled AND i.user_id=$1)").bind(id).fetch_one(&mut *tx).await?;
+    let legacy = crate::nexus::bridge::is_member(&mut tx, id).await?;
     if legacy {
         // The token stays with the retained renderer; the user's own address still rotates.
         let enabled: bool = sqlx::query_scalar(

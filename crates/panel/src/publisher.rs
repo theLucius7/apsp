@@ -1,7 +1,8 @@
 //! The proxy publication cycle (every second). It runs work of two owners in one order:
 //! package eligibility (access) before ordered path transitions and configuration
-//! publication (traffic), then operation retention every 30 s and device-limit policies
-//! every 10 s (access). One heartbeat, `sing-box`, covers the whole cycle.
+//! publication (traffic), then every 30 s rollout inspection results (traffic) and record
+//! retention (access), and every 10 s device-limit policies (access). One heartbeat,
+//! `sing-box`, covers the whole cycle.
 
 use apsp_access as access;
 use apsp_panel_host::{AppState, control_center};
@@ -31,20 +32,23 @@ pub async fn run(state: AppState) {
             failed.push("configuration-publication");
         }
         if now_timestamp() >= next_maintenance {
-            maintenance_healthy = match access::operations_workflows::maintenance(&state).await {
-                Ok(()) => true,
-                Err(error) => {
-                    tracing::warn!(%error, "proxy operation retention failed; work retained");
-                    false
-                }
-            };
+            // Rollout inspection results (traffic) and record retention (access).
+            let results = [
+                traffic::runtime_workflows::maintenance(&state).await,
+                access::operations_workflows::maintenance(&state).await,
+            ];
+            maintenance_healthy = true;
+            for error in results.into_iter().filter_map(Result::err) {
+                tracing::warn!(%error, "proxy operation retention failed; work retained");
+                maintenance_healthy = false;
+            }
             next_maintenance = now_timestamp() + 30;
         }
         if !maintenance_healthy {
             failed.push("operation-retention");
         }
         if now_timestamp() >= next_admission {
-            if let Err(error) = access::nexus_sessions::push_policies(&state).await {
+            if let Err(error) = access::nexus::sessions::push_policies(&state).await {
                 tracing::warn!(%error, "device limit policies were not sent; will retry");
                 failed.push("device-limits");
             }

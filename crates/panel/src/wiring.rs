@@ -173,7 +173,7 @@ impl DeviceReports for Wiring {
         server_id: i64,
         report: RuntimeSessionReport,
     ) -> BoxFuture<'a, anyhow::Result<()>> {
-        Box::pin(access::nexus_sessions::ingest(state, server_id, report))
+        Box::pin(access::nexus::sessions::ingest(state, server_id, report))
     }
 
     fn retirement_result<'a>(
@@ -448,7 +448,44 @@ impl traffic::users::Users for Wiring {
         server: i64,
         now: i64,
     ) -> BoxFuture<'a, anyhow::Result<(i64, bool)>> {
-        Box::pin(access::nexus_sessions::limits_on_host(tx, server, now))
+        Box::pin(access::nexus::sessions::limits_on_host(tx, server, now))
+    }
+
+    fn nexus_bridge_synced<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        since: i64,
+    ) -> BoxFuture<'a, ApiResult<bool>> {
+        Box::pin(async move { Ok(access::nexus::bridge::synced_since(tx, since).await?) })
+    }
+
+    fn remove_node_accesses<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        node: i64,
+    ) -> BoxFuture<'a, ApiResult<()>> {
+        Box::pin(access::accesses::remove_node(tx, node))
+    }
+
+    fn leave_policy_groups<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        nodes: &'a [i64],
+    ) -> BoxFuture<'a, ApiResult<()>> {
+        Box::pin(access::policies::leave_groups(tx, nodes))
+    }
+
+    fn follow_legacy_groups<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        node: i64,
+        legacy_groups: &'a [i64],
+    ) -> BoxFuture<'a, ApiResult<()>> {
+        Box::pin(access::policies::follow_legacy_groups(
+            tx,
+            node,
+            legacy_groups,
+        ))
     }
 
     fn record_event<'a, 't>(

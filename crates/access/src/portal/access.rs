@@ -163,7 +163,7 @@ pub(super) async fn view(
         format!("{}/sub/{token}?format=clash", state.config.public_url);
     let mut upload = usage.try_get::<String, _>("uplink")?;
     let mut download = usage.try_get::<String, _>("downlink")?;
-    let legacy=sqlx::query("SELECT b.subscription_base,b.last_sync_at,m.upload::text,m.download::text FROM singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id AND b.enabled LEFT JOIN singbox_nexus_metering m ON m.user_id=i.user_id WHERE i.user_id=$1").bind(id).fetch_optional(&mut *tx).await?;
+    let legacy = sqlx::query(&format!("SELECT b.subscription_base,b.last_sync_at,m.upload::text,m.download::text FROM {} LEFT JOIN singbox_nexus_metering m ON m.user_id=i.user_id WHERE i.user_id=$1", crate::nexus::bridge::MEMBERS)).bind(id).fetch_optional(&mut *tx).await?;
     let compatibility = if let Some(legacy) = legacy {
         let base = legacy.try_get::<String, _>("subscription_base")?;
         subscription_url = format!("{base}{token}");

@@ -83,17 +83,16 @@ fn address_of(domain: &Domain, slug: &str, path: &str) -> String {
     format!("https://{}/{path}", host_name(domain, slug))
 }
 
-const BRIDGED: &str = "EXISTS(SELECT 1 FROM singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id WHERE b.enabled AND i.user_id=u.id)";
-
 /// Whether the retained legacy renderer still serves this user's subscription.
 pub async fn is_bridged(pool: &PgPool, user: i64) -> ApiResult<bool> {
-    Ok(
-        sqlx::query_scalar(&format!("SELECT {BRIDGED} FROM users u WHERE u.id=$1"))
-            .bind(user)
-            .fetch_optional(pool)
-            .await?
-            .unwrap_or(false),
-    )
+    Ok(sqlx::query_scalar(&format!(
+        "SELECT {} FROM users u WHERE u.id=$1",
+        crate::nexus::bridge::member_sql("u.id")
+    ))
+    .bind(user)
+    .fetch_optional(pool)
+    .await?
+    .unwrap_or(false))
 }
 
 /// Hostnames that can be handed out now. A host whose DNS record is not ready falls
@@ -103,7 +102,8 @@ pub async fn own_addresses(pool: &PgPool) -> ApiResult<HashMap<i64, String>> {
         return Ok(HashMap::new());
     };
     let rows: Vec<(i64, String, String, String, bool)> = sqlx::query_as(&format!(
-        "SELECT h.user_id,h.slug,h.path_token,h.state,{BRIDGED} FROM singbox_subscription_hosts h JOIN users u ON u.id=h.user_id"
+        "SELECT h.user_id,h.slug,h.path_token,h.state,{} FROM singbox_subscription_hosts h JOIN users u ON u.id=h.user_id",
+        crate::nexus::bridge::member_sql("u.id")
     ))
     .fetch_all(pool)
     .await?;
@@ -121,9 +121,10 @@ pub async fn own_address(pool: &PgPool, user: i64) -> ApiResult<Option<String>> 
 /// Where each user's subscription can really be fetched, when that is not the panel's
 /// own `/sub/{token}`: their hostname, or else the retained renderer that serves them.
 pub async fn addresses(pool: &PgPool) -> ApiResult<HashMap<i64, String>> {
-    let bridged: Vec<(i64, String)> = sqlx::query_as(
-        "SELECT i.user_id,b.subscription_base||u.subscription_token FROM singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id JOIN users u ON u.id=i.user_id WHERE b.enabled AND u.deleted_at IS NULL",
-    )
+    let bridged: Vec<(i64, String)> = sqlx::query_as(&format!(
+        "SELECT i.user_id,b.subscription_base||u.subscription_token FROM {} JOIN users u ON u.id=i.user_id WHERE u.deleted_at IS NULL",
+        crate::nexus::bridge::MEMBERS
+    ))
     .fetch_all(pool)
     .await?;
     let mut addresses: HashMap<i64, String> = bridged.into_iter().collect();
@@ -201,9 +202,10 @@ struct OwnHost {
 }
 
 async fn own_host(pool: &PgPool, slug: &str) -> Option<OwnHost> {
-    let row: Option<(i64, String, String, Option<String>)> = sqlx::query_as(
-        "SELECT h.user_id,u.subscription_token,h.path_token,(SELECT b.subscription_base FROM singbox_nexus_identities i JOIN singbox_nexus_bridge b ON b.import_id=i.import_id WHERE b.enabled AND i.user_id=u.id) FROM singbox_subscription_hosts h JOIN users u ON u.id=h.user_id WHERE h.slug=$1 AND u.deleted_at IS NULL",
-    )
+    let row: Option<(i64, String, String, Option<String>)> = sqlx::query_as(&format!(
+        "SELECT h.user_id,u.subscription_token,h.path_token,{} FROM singbox_subscription_hosts h JOIN users u ON u.id=h.user_id WHERE h.slug=$1 AND u.deleted_at IS NULL",
+        crate::nexus::bridge::subscription_base_sql("u.id")
+    ))
     .bind(slug)
     .fetch_optional(pool)
     .await

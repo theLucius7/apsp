@@ -665,7 +665,7 @@ async fn device_limits_need_session_control_and_are_shared_with_legacy_nodes(
         .await?;
     let principal = format!("u{user}_n{native}");
     // The device reports one admitted address; names of other nodes are ignored.
-    apsp_access::nexus_sessions::ingest(
+    apsp_access::nexus::sessions::ingest(
         &panel.state,
         server,
         apsp_protocol::RuntimeSessionReport {
@@ -720,7 +720,7 @@ async fn device_limits_need_session_control_and_are_shared_with_legacy_nodes(
     .await?;
     assert_eq!(healthy["managed"][0]["healthy"], true);
     // The device's policy counts the legacy address but not its own sessions.
-    let policy = apsp_access::nexus_sessions::admission_policy(&panel.state, server)
+    let policy = apsp_access::nexus::sessions::admission_policy(&panel.state, server)
         .await?
         .expect("limited member has a policy");
     assert_eq!(policy.groups.len(), 1);
@@ -733,7 +733,7 @@ async fn device_limits_need_session_control_and_are_shared_with_legacy_nodes(
     // Removing the last limit must send a replacement, not leave the old
     // policy in the Agent forever because there are no groups left to send.
     bridge_devices(&pool, json!({user.to_string(): 0}), json!({})).await?;
-    let cleared = apsp_access::nexus_sessions::admission_policy(&panel.state, server)
+    let cleared = apsp_access::nexus::sessions::admission_policy(&panel.state, server)
         .await?
         .expect("empty policy explicitly clears the previous limit");
     assert!(cleared.valid());

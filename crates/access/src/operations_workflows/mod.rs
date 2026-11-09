@@ -83,9 +83,10 @@ pub fn router() -> Router<AppState> {
         .route("/users/{id}/compatibility", post(client::compatibility))
 }
 
+/// Keeps operation previews, events and deployment checks only as long as the privacy
+/// settings allow.
 pub async fn maintenance(state: &AppState) -> ApiResult<()> {
     let mut tx = state.pool.begin().await?;
-    sqlx::query("UPDATE singbox_runtime_rollout_members r SET inspection_result=o.result FROM runtime_operations o WHERE o.id=r.inspect_request_id AND o.result IS NOT NULL AND r.inspection_result IS NULL").execute(&mut *tx).await?;
     prune(&mut tx).await?;
     tx.commit().await?;
     Ok(())
@@ -127,7 +128,18 @@ pub(super) async fn prune(tx: &mut Transaction<'_, Postgres>) -> ApiResult<()> {
         .execute(&mut **tx)
         .await?;
     sqlx::query("DELETE FROM singbox_operation_previews q USING singbox_operation_privacy p WHERE q.receipt IS NOT NULL AND q.created_at<$1-86400::bigint*LEAST(p.administrator_days,COALESCE((SELECT days FROM record_retention_policy WHERE kind='audit'),p.administrator_days))").bind(apsp_protocol::now_timestamp()).execute(&mut **tx).await?;
-    sqlx::query("DELETE FROM singbox_deployment_preflights q USING singbox_operation_privacy p WHERE q.created_at<$1-86400::bigint*LEAST(p.administrator_days,COALESCE((SELECT days FROM record_retention_policy WHERE kind='audit'),p.administrator_days))").bind(apsp_protocol::now_timestamp()).execute(&mut **tx).await?;
+    // Deployment checks are traffic's records; how long administrators' records stay is
+    // the privacy setting here.
+    let administrator_days: Option<i32> = sqlx::query_scalar("SELECT LEAST(p.administrator_days,COALESCE((SELECT days FROM record_retention_policy WHERE kind='audit'),p.administrator_days)) FROM singbox_operation_privacy p")
+        .fetch_optional(&mut **tx)
+        .await?;
+    if let Some(days) = administrator_days {
+        apsp_traffic::runtime_workflows::prune_preflights(
+            tx,
+            apsp_protocol::now_timestamp() - 86400 * i64::from(days),
+        )
+        .await?;
+    }
     sqlx::query("DELETE FROM singbox_operation_events e USING singbox_operation_privacy p WHERE e.created_at<$1-86400::bigint*CASE WHEN e.action='subscription_fetch' THEN LEAST(p.subscription_days,COALESCE((SELECT days FROM record_retention_policy WHERE kind='proxy-access'),p.subscription_days)) WHEN e.action LIKE 'security_%' THEN LEAST(p.security_days,COALESCE((SELECT days FROM record_retention_policy WHERE kind='audit'),p.security_days)) ELSE LEAST(p.administrator_days,COALESCE((SELECT days FROM record_retention_policy WHERE kind='audit'),p.administrator_days)) END").bind(apsp_protocol::now_timestamp()).execute(&mut **tx).await?;
     Ok(())
 }

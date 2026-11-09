@@ -61,31 +61,8 @@ pub async fn refresh(pool: &PgPool, at: i64) -> ApiResult<()> {
         sqlx::query_scalar("SELECT DISTINCT n.server_id FROM accesses a JOIN nodes n ON n.id=a.node_id WHERE a.user_id=ANY($1) ORDER BY n.server_id")
             .bind(&changed).fetch_all(&mut *tx).await?
     };
-    let chain_ids: Vec<i64> = sqlx::query_scalar(
-        "SELECT id FROM singbox_chains WHERE path_kind='ordered' AND (deleted_at IS NULL OR phase<>'retired') ORDER BY id",
-    )
-    .fetch_all(&mut *tx)
-    .await?;
-    // All chains are checked together; only changed ones are written.
-    let available_chains =
-        apsp_traffic::ordered_paths::storage::chains_structurally_available(&mut tx, &chain_ids)
-            .await?;
-    let previous: std::collections::HashMap<i64, bool> =
-        sqlx::query_as("SELECT chain_id,available FROM singbox_chain_state WHERE chain_id=ANY($1)")
-            .bind(&chain_ids)
-            .fetch_all(&mut *tx)
-            .await?
-            .into_iter()
-            .collect();
-    for id in chain_ids {
-        let available = available_chains.contains(&id);
-        if previous.get(&id) != Some(&available) {
-            servers.extend(
-                apsp_traffic::ordered_paths::storage::referenced_servers(&mut tx, id).await?,
-            );
-            sqlx::query("INSERT INTO singbox_chain_state(chain_id,available) VALUES($1,$2) ON CONFLICT(chain_id) DO UPDATE SET available=EXCLUDED.available").bind(id).bind(available).execute(&mut *tx).await?;
-        }
-    }
+    // Chains that became available or unavailable change what their servers publish.
+    servers.extend(apsp_traffic::ordered_paths::storage::refresh_availability(&mut tx).await?);
     servers.sort_unstable();
     servers.dedup();
     apsp_traffic::business::mark_dirty(&mut tx, &servers).await?;

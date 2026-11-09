@@ -114,10 +114,12 @@ async fn insert_lines(
         let id: i64 = sqlx::query_scalar("INSERT INTO nodes(name,server_id,protocol,port,public_host,sni,private_key,public_key,short_id,protocol_config,enabled,settings) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id")
             .bind(&node.name).bind(server).bind(node.protocol_config.kind()).bind(i32::from(node.port)).bind(&node.public_host).bind(&node.sni).bind(&node.private_key).bind(&node.public_key).bind(&node.short_id)
             .bind(json!(node.protocol_config)).bind(node.enabled).bind(json!(node.settings)).fetch_one(&mut **tx).await?;
-        sqlx::query("INSERT INTO singbox_nexus_runtime_nodes(inventory_id,node_id,server_id,legacy_group_ids,rate) SELECT id,$3,server_id,ARRAY(SELECT (g->>'id')::bigint FROM jsonb_array_elements(display->'groups') g),(display->>'rate')::numeric FROM singbox_nexus_nodes WHERE source_id=$1 AND legacy_node_id=$2")
-            .bind(source).bind(entry.legacy_node_id).bind(id).execute(&mut **tx).await?;
-        sqlx::query("INSERT INTO singbox_policy_nodes(group_id,node_id) SELECT singbox_legacy_policy_group(g),node_id FROM singbox_nexus_runtime_nodes, unnest(legacy_group_ids) g WHERE node_id=$1 ON CONFLICT DO NOTHING")
-            .bind(id).execute(&mut **tx).await?;
+        let groups: Option<Vec<i64>> = sqlx::query_scalar("INSERT INTO singbox_nexus_runtime_nodes(inventory_id,node_id,server_id,legacy_group_ids,rate) SELECT id,$3,server_id,ARRAY(SELECT (g->>'id')::bigint FROM jsonb_array_elements(display->'groups') g),(display->>'rate')::numeric FROM singbox_nexus_nodes WHERE source_id=$1 AND legacy_node_id=$2 RETURNING legacy_group_ids")
+            .bind(source).bind(entry.legacy_node_id).bind(id).fetch_optional(&mut **tx).await?;
+        // The new line joins the policy groups standing for its original groups.
+        if let Some(groups) = groups {
+            crate::users::follow_legacy_groups(tx, id, &groups).await?;
+        }
     }
     Ok(())
 }
@@ -498,12 +500,7 @@ async fn activate(
             "用户授权或候选配置已改变，需重新检查候选后再切换".into(),
         ));
     }
-    let bridge: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM singbox_nexus_bridge WHERE enabled AND last_sync_at>=$1)",
-    )
-    .bind(now_timestamp() - 120)
-    .fetch_one(&mut *tx)
-    .await?;
+    let bridge = crate::users::nexus_bridge_synced(&mut tx, now_timestamp() - 120).await?;
     if !bridge {
         return Err(ApiError::Conflict(
             "订阅与流量兼容桥未就绪，保留原服务".into(),
@@ -597,10 +594,7 @@ async fn discard(
     .bind(server)
     .fetch_all(&mut *tx)
     .await?;
-    sqlx::query("DELETE FROM singbox_policy_nodes WHERE node_id=ANY($1)")
-        .bind(&nodes)
-        .execute(&mut *tx)
-        .await?;
+    crate::users::leave_policy_groups(&mut tx, &nodes).await?;
     sqlx::query("DELETE FROM nodes WHERE id=ANY($1)")
         .bind(&nodes)
         .execute(&mut *tx)

@@ -22,7 +22,13 @@ pub(super) async fn portal(
             .bind(user)
             .fetch_one(&mut *tx)
             .await?;
-    let (token,base):(String,Option<String>)=sqlx::query_as("SELECT u.subscription_token,b.subscription_base FROM users u LEFT JOIN singbox_nexus_identities i ON i.user_id=u.id LEFT JOIN singbox_nexus_bridge b ON b.import_id=i.import_id AND b.enabled WHERE u.id=$1").bind(user).fetch_one(&mut *tx).await?;
+    let (token, base): (String, Option<String>) = sqlx::query_as(&format!(
+        "SELECT u.subscription_token,{} FROM users u WHERE u.id=$1",
+        crate::nexus::bridge::subscription_base_sql("u.id")
+    ))
+    .bind(user)
+    .fetch_one(&mut *tx)
+    .await?;
     let own_host = super::super::subscription_hosts::own_address(&state.pool, user).await?;
     let url = match (own_host, base) {
         (Some(host), Some(_)) => host,

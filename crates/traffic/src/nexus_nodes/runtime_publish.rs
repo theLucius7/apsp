@@ -194,20 +194,6 @@ pub(crate) async fn membership(state: &AppState) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn enqueue_usage(
-    tx: &mut Transaction<'_, Postgres>,
-    server: i64,
-    batch: &apsp_protocol::UsageBatch,
-) -> anyhow::Result<()> {
-    {
-        // Ingest already validates the published identity and inserts its raw
-        // record in this transaction. Preserve the multiplier for every retry.
-        sqlx::query("INSERT INTO singbox_nexus_usage_deliveries(server_id,epoch,seq,stat_name,user_id,uplink,downlink,rate,period_start,period_end) SELECT u.server_id,u.epoch,u.seq,u.stat_name,u.user_id,u.uplink,u.downlink,r.rate,u.period_start,u.period_end FROM usage_records u JOIN singbox_nexus_runtime_nodes r ON r.node_id=u.node_id AND r.server_id=u.server_id WHERE u.server_id=$1 AND u.epoch=$2 AND u.seq=$3::text::numeric ON CONFLICT(server_id,epoch,seq,stat_name) DO NOTHING")
-            .bind(server).bind(batch.epoch).bind(batch.seq.to_string()).execute(&mut **tx).await?;
-    }
-    Ok(())
-}
-
 /// The host's session control secret, fixed when the host was prepared.
 async fn session_secret(tx: &mut Transaction<'_, Postgres>, server: i64) -> anyhow::Result<String> {
     Ok(sqlx::query_scalar(
@@ -215,5 +201,19 @@ async fn session_secret(tx: &mut Transaction<'_, Postgres>, server: i64) -> anyh
     )
     .bind(server)
     .fetch_one(&mut **tx)
+    .await?)
+}
+
+/// The usage rate of each preserved line on a host, as exact decimal text. Access applies
+/// it to the usage it delivers to the bridge.
+pub async fn runtime_rates(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+) -> anyhow::Result<Vec<(i64, String)>> {
+    Ok(sqlx::query_as(
+        "SELECT node_id,rate::text FROM singbox_nexus_runtime_nodes WHERE server_id=$1 ORDER BY node_id",
+    )
+    .bind(server)
+    .fetch_all(&mut **tx)
     .await?)
 }

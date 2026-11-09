@@ -235,6 +235,35 @@ pub async fn chain_is_structurally_available(
         .contains(&id))
 }
 
+/// Records which chains are structurally available now and returns the servers whose
+/// configuration changes because a chain's availability did. All chains are checked
+/// together; only changed ones are written. The entitlement refresh calls this under the
+/// publication lock, in the transaction that records the users' eligibility.
+pub async fn refresh_availability(connection: &mut PgConnection) -> ApiResult<Vec<i64>> {
+    let chain_ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT id FROM singbox_chains WHERE path_kind='ordered' AND (deleted_at IS NULL OR phase<>'retired') ORDER BY id",
+    )
+    .fetch_all(&mut *connection)
+    .await?;
+    let available_chains = chains_structurally_available(connection, &chain_ids).await?;
+    let previous: std::collections::HashMap<i64, bool> =
+        sqlx::query_as("SELECT chain_id,available FROM singbox_chain_state WHERE chain_id=ANY($1)")
+            .bind(&chain_ids)
+            .fetch_all(&mut *connection)
+            .await?
+            .into_iter()
+            .collect();
+    let mut servers = Vec::new();
+    for id in chain_ids {
+        let available = available_chains.contains(&id);
+        if previous.get(&id) != Some(&available) {
+            servers.extend(referenced_servers(connection, id).await?);
+            sqlx::query("INSERT INTO singbox_chain_state(chain_id,available) VALUES($1,$2) ON CONFLICT(chain_id) DO UPDATE SET available=EXCLUDED.available").bind(id).bind(available).execute(&mut *connection).await?;
+        }
+    }
+    Ok(servers)
+}
+
 /// The chains among `ids` whose entry and current managed hop nodes all exist,
 /// are enabled REALITY nodes on live sing-box servers and pass validation.
 /// Three statements serve any number of chains; each node is validated once.

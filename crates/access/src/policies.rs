@@ -294,3 +294,32 @@ pub(crate) async fn sync_users(tx: &mut Transaction<'_, Postgres>, users: &[i64]
     }
     Ok(())
 }
+
+/// Removed nodes leave every policy group.
+pub async fn leave_groups(tx: &mut Transaction<'_, Postgres>, nodes: &[i64]) -> ApiResult<()> {
+    sqlx::query("DELETE FROM singbox_policy_nodes WHERE node_id=ANY($1)")
+        .bind(nodes)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+/// A taken-over Nexus line belongs to the policy groups standing for its original groups
+/// (ADR 0115). Only those groups follow the source; groups an administrator made keep it.
+pub async fn follow_legacy_groups(
+    tx: &mut Transaction<'_, Postgres>,
+    node: i64,
+    legacy_groups: &[i64],
+) -> ApiResult<()> {
+    sqlx::query("DELETE FROM singbox_policy_nodes p USING singbox_policy_groups g WHERE g.id=p.group_id AND p.node_id=$1 AND g.legacy_group_id IS NOT NULL AND NOT g.legacy_group_id=ANY($2)")
+        .bind(node)
+        .bind(legacy_groups)
+        .execute(&mut **tx)
+        .await?;
+    sqlx::query("INSERT INTO singbox_policy_nodes(group_id,node_id) SELECT singbox_legacy_policy_group(g),$1 FROM unnest($2::bigint[]) g ON CONFLICT DO NOTHING")
+        .bind(node)
+        .bind(legacy_groups)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}

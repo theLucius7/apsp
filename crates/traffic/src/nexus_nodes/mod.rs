@@ -3,6 +3,7 @@ mod model;
 mod runtime;
 mod runtime_model;
 pub mod runtime_publish;
+pub use runtime_publish::runtime_rates;
 pub mod topology;
 
 use crate::{
@@ -188,16 +189,7 @@ async fn legacy_groups(
     if let Some((node, _)) = &runtime {
         // Only the groups standing for original groups follow the source; groups
         // an administrator made keep the line.
-        sqlx::query("DELETE FROM singbox_policy_nodes p USING singbox_policy_groups g WHERE g.id=p.group_id AND p.node_id=$1 AND g.legacy_group_id IS NOT NULL AND NOT g.legacy_group_id=ANY($2)")
-            .bind(node)
-            .bind(&ids)
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query("INSERT INTO singbox_policy_nodes(group_id,node_id) SELECT singbox_legacy_policy_group(g),$1 FROM unnest($2::bigint[]) g ON CONFLICT DO NOTHING")
-            .bind(node)
-            .bind(&ids)
-            .execute(&mut *tx)
-            .await?;
+        crate::users::follow_legacy_groups(&mut tx, *node, &ids).await?;
     }
     if let (Some(server), Some((_, state))) = (server, &runtime)
         && state == "active"
@@ -285,10 +277,7 @@ async fn retire(
             .bind(id)
             .execute(&mut *tx)
             .await?;
-        sqlx::query("DELETE FROM singbox_policy_nodes WHERE node_id=$1")
-            .bind(node)
-            .execute(&mut *tx)
-            .await?;
+        crate::users::leave_policy_groups(&mut tx, &[*node]).await?;
         // Usage history still refers to the native row, so it is retired, not deleted.
         sqlx::query(
             "UPDATE nodes SET enabled=FALSE,deleted_at=COALESCE(deleted_at,$2) WHERE id=$1",

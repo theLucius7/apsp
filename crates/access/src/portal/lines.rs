@@ -225,8 +225,7 @@ pub(super) async fn view(
         .await?
         .into_iter()
         .collect();
-    let mappings: Vec<(i64, i64, String)> = sqlx::query_as("SELECT p.legacy_group_id,p.package_group_id,g.name FROM singbox_nexus_plan_mappings p JOIN singbox_nexus_bridge b ON b.import_id=p.import_id AND b.enabled JOIN singbox_package_groups g ON g.id=p.package_group_id WHERE p.legacy_group_id IS NOT NULL ORDER BY g.name,g.id")
-        .fetch_all(&mut *tx).await?;
+    let mappings = crate::nexus::bridge::plan_mappings(&mut tx).await?;
     let rows = sqlx::query("SELECT n.legacy_node_id,n.server_id,n.display,(r.node_id IS NOT NULL AND h.state='active') AS taken_over,r.node_id AS runtime_node FROM singbox_nexus_nodes n LEFT JOIN singbox_nexus_runtime_nodes r ON r.inventory_id=n.id LEFT JOIN singbox_nexus_runtime_hosts h ON h.server_id=r.server_id WHERE COALESCE((n.display->>'visible')::BOOLEAN,FALSE) ORDER BY COALESCE((n.display->>'sort_order')::BIGINT,0),n.legacy_node_id LIMIT 2000")
         .fetch_all(&mut *tx).await?;
     let lines: Vec<Line> = rows

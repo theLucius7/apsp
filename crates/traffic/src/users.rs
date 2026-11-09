@@ -1,6 +1,7 @@
 //! What the traffic service needs from proxy-user access (ADR 0128 section 5.5): the
-//! users' rate and connection limits in a compiled server configuration, the device
-//! limits on preserved Nexus hosts and the proxy operation log.
+//! users' rate and connection limits in a compiled server configuration, what follows a
+//! node's removal or takeover in users' grants and policy groups, the device limits and
+//! the bridge state of preserved Nexus hosts, and the proxy operation log.
 //!
 //! Access comes after traffic in the dependency order, so traffic declares this, access
 //! answers and the application connects it. Without a connection the caller's
@@ -29,6 +30,37 @@ pub trait Users: Send + Sync {
         server: i64,
         now: i64,
     ) -> BoxFuture<'a, anyhow::Result<(i64, bool)>>;
+
+    /// Whether the Nexus compatibility bridge is enabled and has synchronized since `since`.
+    fn nexus_bridge_synced<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        since: i64,
+    ) -> BoxFuture<'a, ApiResult<bool>>;
+
+    /// A deleted node's user credentials go with it.
+    fn remove_node_accesses<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        node: i64,
+    ) -> BoxFuture<'a, ApiResult<()>>;
+
+    /// Removed nodes leave every policy group.
+    fn leave_policy_groups<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        nodes: &'a [i64],
+    ) -> BoxFuture<'a, ApiResult<()>>;
+
+    /// A taken-over Nexus line belongs to the policy groups standing for its original groups,
+    /// and leaves those standing for other original groups; groups an administrator made
+    /// keep it.
+    fn follow_legacy_groups<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        node: i64,
+        legacy_groups: &'a [i64],
+    ) -> BoxFuture<'a, ApiResult<()>>;
 
     /// Adds an administrator or user action to the proxy operation log.
     fn record_event<'a, 't>(
@@ -68,6 +100,34 @@ pub async fn nexus_device_limits(
     required()?.nexus_device_limits(tx, server, now).await
 }
 
+pub async fn nexus_bridge_synced(
+    tx: &mut Transaction<'_, Postgres>,
+    since: i64,
+) -> ApiResult<bool> {
+    required()?.nexus_bridge_synced(tx, since).await
+}
+
+pub async fn remove_node_accesses(tx: &mut Transaction<'_, Postgres>, node: i64) -> ApiResult<()> {
+    required()?.remove_node_accesses(tx, node).await
+}
+
+pub async fn leave_policy_groups(
+    tx: &mut Transaction<'_, Postgres>,
+    nodes: &[i64],
+) -> ApiResult<()> {
+    required()?.leave_policy_groups(tx, nodes).await
+}
+
+pub async fn follow_legacy_groups(
+    tx: &mut Transaction<'_, Postgres>,
+    node: i64,
+    legacy_groups: &[i64],
+) -> ApiResult<()> {
+    required()?
+        .follow_legacy_groups(tx, node, legacy_groups)
+        .await
+}
+
 pub async fn record_event(
     tx: &mut Transaction<'_, Postgres>,
     administrator: Option<i64>,
@@ -80,8 +140,8 @@ pub async fn record_event(
         .await
 }
 
-/// For this crate's own tests: users without limits, devices without device limits and
-/// an operation log that keeps nothing. The application connects the real answers.
+/// For this crate's own tests: users without limits or grants, no Nexus bridge and an
+/// operation log that keeps nothing. The application connects the real answers.
 #[cfg(test)]
 pub(crate) fn install_without_users() {
     struct WithoutUsers;
@@ -101,6 +161,39 @@ pub(crate) fn install_without_users() {
             _now: i64,
         ) -> BoxFuture<'a, anyhow::Result<(i64, bool)>> {
             Box::pin(async { Ok((0, true)) })
+        }
+
+        fn nexus_bridge_synced<'a, 't>(
+            &'a self,
+            _tx: &'a mut Transaction<'t, Postgres>,
+            _since: i64,
+        ) -> BoxFuture<'a, ApiResult<bool>> {
+            Box::pin(async { Ok(false) })
+        }
+
+        fn remove_node_accesses<'a, 't>(
+            &'a self,
+            _tx: &'a mut Transaction<'t, Postgres>,
+            _node: i64,
+        ) -> BoxFuture<'a, ApiResult<()>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn leave_policy_groups<'a, 't>(
+            &'a self,
+            _tx: &'a mut Transaction<'t, Postgres>,
+            _nodes: &'a [i64],
+        ) -> BoxFuture<'a, ApiResult<()>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn follow_legacy_groups<'a, 't>(
+            &'a self,
+            _tx: &'a mut Transaction<'t, Postgres>,
+            _node: i64,
+            _legacy_groups: &'a [i64],
+        ) -> BoxFuture<'a, ApiResult<()>> {
+            Box::pin(async { Ok(()) })
         }
 
         fn record_event<'a, 't>(

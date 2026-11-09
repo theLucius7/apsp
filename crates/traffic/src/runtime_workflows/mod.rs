@@ -13,6 +13,23 @@ pub use automation::{
 use inventory::inventory;
 use rollouts::{advance, create_rollout, inspect_member, pause, rollouts};
 
+/// The rollouts' periodic step: inspection results reach their members.
+pub async fn maintenance(state: &AppState) -> ApiResult<()> {
+    let mut tx = state.pool.begin().await?;
+    rollouts::record_inspection_results(&mut tx).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Deletes deployment checks created before `before`; access decides the retention period.
+pub async fn prune_preflights(tx: &mut Transaction<'_, Postgres>, before: i64) -> ApiResult<()> {
+    sqlx::query("DELETE FROM singbox_deployment_preflights WHERE created_at<$1")
+        .bind(before)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
 /// Deployment checks, rollouts and the runtime inventory of each server's proxy runtime.
 pub fn router() -> axum::Router<AppState> {
     use axum::routing::{get, post};
