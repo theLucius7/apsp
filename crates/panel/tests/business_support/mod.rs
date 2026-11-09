@@ -385,7 +385,7 @@ impl TestPanel {
         sqlx::query("UPDATE servers SET dirty_at=0 WHERE dirty_at IS NOT NULL")
             .execute(&self.state.pool)
             .await?;
-        apsp_panel::publisher::publish_due(&self.state).await
+        apsp_traffic::publisher::publish_due(&self.state).await
     }
 
     /// Complete the normal deployment gate with controlled TEST_ONLY observations.

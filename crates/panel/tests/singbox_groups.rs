@@ -13,7 +13,7 @@ mod release_support;
 mod scheduling;
 
 use anyhow::{Context, Result, ensure};
-use apsp_panel::plugins::singbox::entitlements;
+use apsp_access::entitlements;
 use apsp_protocol::{Bundle, UsageBatch, UsageRecord, now_timestamp};
 use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};

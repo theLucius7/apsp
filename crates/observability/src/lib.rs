@@ -19,6 +19,7 @@ pub mod ip_quality;
 pub mod latency_tasks;
 pub mod network_workbench;
 pub mod probes;
+pub mod reachability;
 pub mod server_monitoring;
 pub mod server_traffic;
 pub mod statistics;

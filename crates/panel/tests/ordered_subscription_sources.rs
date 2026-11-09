@@ -5,7 +5,7 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
-use apsp_panel::plugins::singbox::subscription_sources::worker;
+use apsp_traffic::subscription_sources::worker;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};

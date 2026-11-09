@@ -1,0 +1,28 @@
+[package]
+name = "apsp-traffic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+apsp-panel-host.workspace = true
+apsp-protocol.workspace = true
+apsp-compiler.workspace = true
+axum.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+saphyr-parser = { version = "=0.1.0", default-features = false }
+uuid.workspace = true
+rand.workspace = true
+sha2.workspace = true
+base64.workspace = true
+futures-util.workspace = true
+flate2 = "1"
+reqwest.workspace = true
+rustls = { version = "0.23", default-features = false }
+tracing.workspace = true
+x25519-dalek = { version = "2", features = ["static_secrets"] }

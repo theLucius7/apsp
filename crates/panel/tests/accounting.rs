@@ -5,7 +5,7 @@ mod business_support;
 mod release_support;
 
 use anyhow::Result;
-use apsp_panel::usage;
+use apsp_access::usage;
 use apsp_protocol::{Envelope, UsageAck, UsageBatch, UsageRecord};
 use business_support::{TestPanel, id, receive_envelope, send_envelope};
 use reqwest::{Method, StatusCode};

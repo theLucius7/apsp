@@ -19,7 +19,7 @@ pub async fn activity_on(
     server: i64,
 ) -> ApiResult<ProxyActivity> {
     let now = now_timestamp();
-    let evidence = apsp_plugin_singbox::runtime_activity_on(connection, server, now).await?;
+    let evidence = apsp_traffic::runtime_activity_on(connection, server, now).await?;
     let latest = evidence.last_positive_at;
     let (state, reason) = if latest.is_some_and(|sampled| sampled >= now - 60) {
         (

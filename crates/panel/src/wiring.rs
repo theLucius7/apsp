@@ -1,8 +1,10 @@
 //! Connects the typed interfaces at startup (ADR 0128): device reports, administration
 //! contributions, device work, observability evidence, server observation, the member
-//! portal's host network, the dashboard's exchange rates and DNS-01 records. This is the
+//! portal's host network, the proxy users traffic compiles in, China reachability for the
+//! Nexus cutover, the dashboard's exchange rates and DNS-01 records. This is the
 //! only place that names which owner answers each interface.
 
+use apsp_access as access;
 use apsp_naming as naming;
 use apsp_observability as observability;
 use apsp_operations::{fleet, runtime_operations};
@@ -20,12 +22,12 @@ use apsp_panel_host::{
     server_observation::{self, ServerObservation},
     servers::{self, Server},
 };
-use apsp_plugin_singbox as singbox;
 use apsp_protocol::{
     AppliedRevisions, ApplyResult, DiagnosticCancelResult, Metrics, ProbeSpec, RetirementResult,
     RuntimeCheckpointResult, RuntimeControlAck, RuntimeOperationRequest, RuntimePathProbeResult,
     RuntimeRecoveryBarrierResult, RuntimeSessionReport, StaticInfo, UsageBatch, fleet::Operation,
 };
+use apsp_traffic as traffic;
 use axum::http::Method;
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -42,7 +44,9 @@ pub fn install() {
     device_work::install(&WIRING);
     evidence::install(&WIRING);
     server_observation::install(&WIRING);
-    singbox::install_host_network(&WIRING);
+    access::install_host_network(&WIRING);
+    traffic::users::install(&WIRING);
+    traffic::china_reachability::install(&WIRING);
     observability::dashboard::install(&WIRING);
     dns_challenges::install(&WIRING);
 }
@@ -56,11 +60,11 @@ impl DeviceReports for Wiring {
         applied: AppliedRevisions,
     ) -> BoxFuture<'a, anyhow::Result<()>> {
         Box::pin(async move {
-            singbox::runtime_control::register_capabilities(state, server_id, &capabilities)
+            traffic::runtime_control::register_capabilities(state, server_id, &capabilities)
                 .await?;
             servers::record_capabilities(state, server_id, &capabilities).await?;
-            singbox::device_config::reconcile_applied(state, server_id, applied).await?;
-            singbox::runtime_control::replay_pending(state, server_id).await
+            traffic::device_config::reconcile_applied(state, server_id, applied).await?;
+            traffic::runtime_control::replay_pending(state, server_id).await
         })
     }
 
@@ -72,8 +76,8 @@ impl DeviceReports for Wiring {
     ) -> BoxFuture<'a, anyhow::Result<()>> {
         Box::pin(async move {
             servers::record_heartbeat(state, server_id).await?;
-            singbox::device_config::reconcile_applied(state, server_id, applied).await?;
-            singbox::runtime_control::replay_pending(state, server_id).await
+            traffic::device_config::reconcile_applied(state, server_id, applied).await?;
+            traffic::runtime_control::replay_pending(state, server_id).await
         })
     }
 
@@ -103,7 +107,7 @@ impl DeviceReports for Wiring {
         server_id: i64,
         result: ApplyResult,
     ) -> BoxFuture<'a, anyhow::Result<()>> {
-        Box::pin(singbox::device_config::record_apply_result(
+        Box::pin(traffic::device_config::record_apply_result(
             state, server_id, result,
         ))
     }
@@ -114,7 +118,7 @@ impl DeviceReports for Wiring {
         server_id: i64,
         result: RuntimeCheckpointResult,
     ) -> BoxFuture<'a, anyhow::Result<RuntimeControlAck>> {
-        Box::pin(singbox::runtime_control::record_checkpoint_result(
+        Box::pin(traffic::runtime_control::record_checkpoint_result(
             state, server_id, result,
         ))
     }
@@ -125,7 +129,7 @@ impl DeviceReports for Wiring {
         server_id: i64,
         result: RuntimePathProbeResult,
     ) -> BoxFuture<'a, anyhow::Result<RuntimeControlAck>> {
-        Box::pin(singbox::runtime_control::record_path_probe_result(
+        Box::pin(traffic::runtime_control::record_path_probe_result(
             state, server_id, result,
         ))
     }
@@ -136,7 +140,7 @@ impl DeviceReports for Wiring {
         server_id: i64,
         result: RuntimeRecoveryBarrierResult,
     ) -> BoxFuture<'a, anyhow::Result<RuntimeControlAck>> {
-        Box::pin(singbox::runtime_control::record_barrier_result(
+        Box::pin(traffic::runtime_control::record_barrier_result(
             state, server_id, result,
         ))
     }
@@ -160,7 +164,7 @@ impl DeviceReports for Wiring {
         server_id: i64,
         batch: UsageBatch,
     ) -> BoxFuture<'a, anyhow::Result<()>> {
-        Box::pin(singbox::usage::ingest(state, server_id, batch))
+        Box::pin(access::usage::ingest(state, server_id, batch))
     }
 
     fn runtime_sessions<'a>(
@@ -169,7 +173,7 @@ impl DeviceReports for Wiring {
         server_id: i64,
         report: RuntimeSessionReport,
     ) -> BoxFuture<'a, anyhow::Result<()>> {
-        Box::pin(singbox::ingest_runtime_sessions(state, server_id, report))
+        Box::pin(access::nexus_sessions::ingest(state, server_id, report))
     }
 
     fn retirement_result<'a>(
@@ -414,7 +418,7 @@ impl ServerObservation for Wiring {
     }
 }
 
-impl singbox::HostNetwork for Wiring {
+impl access::HostNetwork for Wiring {
     fn member_network<'a>(
         &'a self,
         state: &'a AppState,
@@ -426,5 +430,61 @@ impl singbox::HostNetwork for Wiring {
             server,
             static_info,
         ))
+    }
+}
+
+impl traffic::users::Users for Wiring {
+    fn apply_limits<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        config: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<String>> {
+        Box::pin(access::user_limits::compile(tx, config))
+    }
+
+    fn nexus_device_limits<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        server: i64,
+        now: i64,
+    ) -> BoxFuture<'a, anyhow::Result<(i64, bool)>> {
+        Box::pin(access::nexus_sessions::limits_on_host(tx, server, now))
+    }
+
+    fn record_event<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        administrator: Option<i64>,
+        user: Option<i64>,
+        action: &'a str,
+        detail: Value,
+    ) -> BoxFuture<'a, ApiResult<()>> {
+        Box::pin(access::operations_workflows::event(
+            tx,
+            administrator,
+            user,
+            action,
+            detail,
+        ))
+    }
+}
+
+impl traffic::china_reachability::ChinaReachability for Wiring {
+    fn nexus_node<'a>(
+        &'a self,
+        pool: &'a PgPool,
+        node: i64,
+    ) -> BoxFuture<'a, ApiResult<Option<traffic::china_reachability::Measurement>>> {
+        Box::pin(async move {
+            Ok(observability::reachability::latest_node_state(
+                pool,
+                observability::reachability::NodeReference::Nexus(node),
+            )
+            .await?
+            .map(|state| traffic::china_reachability::Measurement {
+                blocked: state.blocked,
+                checked_at: state.checked_at,
+            }))
+        })
     }
 }

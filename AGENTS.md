@@ -48,10 +48,10 @@
 - `adapter-*` 的工作区依赖只能是 `adapter-sdk`。适配器只负责无状态翻译，不自行持久化，不连接面板。
 - 只有 `agent` 二进制入口同时依赖 core 和具体适配器，并将适配器注册到 core。
 - `agent-core` 目录内任何文件不得出现 `singbox` 或 `sing-box` 字样；使用模块标识、能力和统一接口。
-- core 管服务器；代理用户、授权、订阅、用户流量、配额和周期属于服务权益领域（拆分前位于 sing-box crate），详见 [ADR 0023](docs/adr/0023-proxy-business-boundary.md) 与 [搬迁及启用兼容 ADR 0030](docs/adr/0030-singbox-plugin-business.md)。core 不得引用代理业务的 `user`、`subscription`、`quota`，含复数、蛇形和驼峰形式；CI 使用 `tools/check-core-boundary.py` 检查。系统账户与 SQLite 原生 API 仅允许检查器列出的具体表达式，不允许文件或整行豁免。
+- core 管服务器；代理用户、授权、订阅、用户流量、配额和周期属于服务权益领域（`crates/access`），详见 [ADR 0023](docs/adr/0023-proxy-business-boundary.md) 与 [搬迁及启用兼容 ADR 0030](docs/adr/0030-singbox-plugin-business.md)。core 不得引用代理业务的 `user`、`subscription`、`quota`，含复数、蛇形和驼峰形式；CI 使用 `tools/check-core-boundary.py` 检查。系统账户与 SQLite 原生 API 仅允许检查器列出的具体表达式，不允许文件或整行豁免。
 - 面板是按领域组织的一体化系统，分平台、领域和应用三层，不再有插件（[ADR 0128](docs/adr/0128-domain-architecture.md)；九个领域、依赖顺序与写入规则见[功能划分与逻辑结构](docs/architecture.md)，逐项功能的归属见[领域归属表](docs/domain-map.md)）：
   - 平台（`crates/panel-host`、`crates/cloud-api`）只放技术机制，工作区依赖只能是 `protocol`，不依赖任何领域；目录内禁止 sing-box 名称和上述代理业务词汇，例外表达式由检查器逐条列出。宿主里尚未迁出的领域代码已按领域登记所有者，路由由各领域在 `crates/panel-host/src/domains/` 声明，阶段 B2 迁出。
-  - 领域 crate（`crates/naming`、`crates/costs`、`crates/compiler`、`crates/observability`、`crates/operations`）只依赖平台、`protocol` 和依赖顺序中排在前面的领域 crate。`plugins/singbox/panel`（流量服务与服务权益，阶段 C 拆分）与 `plugins/alicloud/panel`（云能力，阶段 D 分回各领域）拆分前保持现有依赖、不再新增；排在它们所含全部领域之后的领域 crate 可以依赖它们。领域代码不得移回平台或应用 crate。诊断代码（IPQuality、NodeQuality、TcpQuality）在观测 crate 的 `diagnostic_plugins/`。
+  - 领域 crate（`crates/naming`、`crates/compiler` 与 `crates/traffic`（流量服务）、`crates/access`（服务权益）、`crates/costs`、`crates/observability`、`crates/operations`）只依赖平台、`protocol`、依赖顺序中排在前面的领域 crate 和同一领域的其他 crate。`plugins/alicloud/panel`（云能力，阶段 D 分回各领域）拆分前保持现有依赖、不再新增；排在它所含全部领域之后的领域 crate 可以依赖它。领域代码不得移回平台或应用 crate。诊断代码（IPQuality、NodeQuality、TcpQuality）在观测 crate 的 `diagnostic_plugins/`。
   - 只有应用 `apsp-panel` 组合平台与各领域、接线依赖倒置接口（清单见 [architecture.md §5.5](docs/architecture.md#55-类型化接口)，接线在 `crates/panel/src/wiring.rs`），并保存唯一的数据库基线。不再新增插件式的全局钩子：需要逆着依赖顺序调用时，由调用方声明类型化接口。
   - `tools/check-core-boundary.py` 检查每个 crate 的层级与依赖方向；新增 crate 先在检查器里登记层级。
 - 每张表只有一个所有者（`tools/feature-boundaries.toml`）。提交前运行 `python3 tools/check-feature-boundaries.py`：现有越界记在 `tools/feature-boundaries.baseline`，只许减少；新增的跨领域 SQL（写其他领域的表、读其他领域的私有表或平台的表、逆着依赖顺序读公开只读表）、逆着依赖顺序的代码引用（平台引用领域，或前面的领域引用后面的领域、同组的领域，同一 crate 内与跨 crate 都算）、跨 crate `#[path]` 或前端跨领域引用会失败，应改为经所有者的接口，而不是加进清单。新增表必须在所有者清单里登记。

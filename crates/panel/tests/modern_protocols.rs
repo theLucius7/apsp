@@ -102,7 +102,7 @@ async fn new_protocol_credentials_snapshots_and_revocation(pool: PgPool) -> Resu
         panel.client.get(&sub).send().await?.status(),
         StatusCode::CONFLICT
     );
-    apsp_panel::agent_api::record_apply_result(
+    apsp_traffic::device_config::record_apply_result(
         &panel.state,
         server,
         ApplyResult {

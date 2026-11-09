@@ -60,7 +60,7 @@ async fn refresh(
         None => call(panel,cookie,Method::POST,"/ordered-subscription-sources",Some(json!({"request_id":Uuid::new_v4(),"name":"Source","input":{"kind":"inline","content":content}}))).await?,
         Some((id, revision)) => call(panel,cookie,Method::PATCH,&format!("/ordered-subscription-sources/{id}"),Some(json!({"request_id":Uuid::new_v4(),"settings_revision":revision,"input":{"kind":"inline","content":content,"identity_action":"update"}}))).await?,
     };
-    apsp_panel::plugins::singbox::subscription_sources::worker::run_once(&panel.state)
+    apsp_traffic::subscription_sources::worker::run_once(&panel.state)
         .await
         .map_err(|_| anyhow::anyhow!("source worker failed"))?;
     match source {

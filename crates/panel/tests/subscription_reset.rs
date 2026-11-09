@@ -5,7 +5,7 @@ mod business_support;
 mod release_support;
 
 use anyhow::Result;
-use apsp_panel::{agent_api, usage};
+use apsp_access::usage;
 use apsp_protocol::{ApplyResult, ApplyStatus, UsageBatch, UsageRecord};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use business_support::{TestPanel, id};
@@ -31,7 +31,7 @@ async fn reset_immediately_revokes_old_links_and_preserves_accesses_usage_and_co
     let user_id = id(&user)?;
     panel.grant(&cookie, user_id, node).await?;
     panel.publish_now().await?;
-    agent_api::record_apply_result(
+    apsp_traffic::device_config::record_apply_result(
         &panel.state,
         server,
         ApplyResult {

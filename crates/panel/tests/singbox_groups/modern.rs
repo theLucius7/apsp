@@ -146,7 +146,7 @@ async fn group_credentials_and_quota_cover_all_modern_protocols_without_losing_m
         StatusCode::CONFLICT
     );
     for node in &nodes {
-        apsp_panel::usage::ingest(
+        apsp_access::usage::ingest(
             &panel.state,
             server,
             usage(uid, *node, now_timestamp(), 1, 0),

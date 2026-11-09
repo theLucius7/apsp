@@ -56,7 +56,7 @@ async fn main() -> anyhow::Result<()> {
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
-    apsp_panel::plugins::install();
+    apsp_panel::domains::install();
     let config = Config::from_env()?;
     let listen = config.listen;
     let pool = PgPoolOptions::new()
@@ -95,7 +95,7 @@ async fn main() -> anyhow::Result<()> {
         let pool = state.pool.clone();
         move || telemetry_history(pool.clone())
     }));
-    let plugins = tokio::spawn(apsp_panel::plugins::run(state.clone()));
+    let domains = tokio::spawn(apsp_panel::domains::run(state.clone()));
     let control_center = tokio::spawn(supervise("control-center", {
         let state = state.clone();
         move || apsp_panel::control_center::run(state.clone())
@@ -139,7 +139,7 @@ async fn main() -> anyhow::Result<()> {
     maintenance.abort();
     exchange.abort();
     telemetry.abort();
-    plugins.abort();
+    domains.abort();
     control_center.abort();
     operations.abort();
     network.abort();

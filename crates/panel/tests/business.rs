@@ -5,8 +5,8 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result};
-use apsp_panel::{agent_api, publisher};
 use apsp_protocol::{ApplyResult, ApplyStatus, Envelope, Heartbeat};
+use apsp_traffic::publisher;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use business_support::{TestPanel, id, receive_envelope, send_envelope};
 use reqwest::{Method, StatusCode};
@@ -16,7 +16,7 @@ use std::{collections::BTreeSet, time::Duration};
 use uuid::Uuid;
 
 async fn applied(panel: &TestPanel, server_id: i64, rev: u64) -> Result<()> {
-    agent_api::record_apply_result(
+    apsp_traffic::device_config::record_apply_result(
         &panel.state,
         server_id,
         ApplyResult {
@@ -480,7 +480,7 @@ async fn apply_results_are_monotonic_and_heartbeat_repairs_lost_results(
     .fetch_one(&pool)
     .await?;
     assert_eq!(repaired, 1);
-    agent_api::record_apply_result(&panel.state, server, first.clone()).await?;
+    apsp_traffic::device_config::record_apply_result(&panel.state, server, first.clone()).await?;
     panel
         .admin(
             Method::PATCH,
@@ -507,7 +507,7 @@ async fn apply_results_are_monotonic_and_heartbeat_repairs_lost_results(
         receive_envelope(&mut socket).await?.message_type,
         "manifest.changed"
     );
-    agent_api::record_apply_result(
+    apsp_traffic::device_config::record_apply_result(
         &panel.state,
         server,
         ApplyResult {
@@ -523,7 +523,7 @@ async fn apply_results_are_monotonic_and_heartbeat_repairs_lost_results(
     assert_eq!(repaired.get::<i64, _>("applied_rev"), 2);
     assert!(repaired.get::<bool, _>("healthy"));
     assert!(repaired.get::<Option<String>, _>("last_error").is_none());
-    agent_api::record_apply_result(&panel.state, server, first).await?;
+    apsp_traffic::device_config::record_apply_result(&panel.state, server, first).await?;
     applied(&panel, server, 2).await?;
     let status = sqlx::query("SELECT applied_rev,last_result_rev,healthy,last_error FROM server_module_status WHERE server_id=$1 AND module='singbox'").bind(server).fetch_one(&pool).await?;
     assert_eq!(status.get::<i64, _>("applied_rev"), 2);
@@ -539,7 +539,7 @@ async fn apply_results_are_monotonic_and_heartbeat_repairs_lost_results(
         error: None,
     };
     assert!(
-        agent_api::record_apply_result(&panel.state, server, unauthorized)
+        apsp_traffic::device_config::record_apply_result(&panel.state, server, unauthorized)
             .await
             .is_err()
     );

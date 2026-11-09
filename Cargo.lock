@@ -92,6 +92,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "apsp-access"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-compiler",
+ "apsp-panel-host",
+ "apsp-protocol",
+ "apsp-traffic",
+ "argon2",
+ "axum 0.8.9",
+ "base64 0.22.1",
+ "bcrypt",
+ "lettre",
+ "rand 0.8.8",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "apsp-adapter-ipquality"
 version = "0.3.0"
 dependencies = [
@@ -242,8 +267,8 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "apsp-panel-host",
- "apsp-plugin-singbox",
  "apsp-protocol",
+ "apsp-traffic",
  "axum 0.8.9",
  "futures-util",
  "reqwest",
@@ -282,9 +307,10 @@ name = "apsp-observability"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "apsp-access",
  "apsp-panel-host",
- "apsp-plugin-singbox",
  "apsp-protocol",
+ "apsp-traffic",
  "axum 0.8.9",
  "flate2",
  "futures-util",
@@ -311,8 +337,8 @@ dependencies = [
  "apsp-costs",
  "apsp-observability",
  "apsp-panel-host",
- "apsp-plugin-singbox",
  "apsp-protocol",
+ "apsp-traffic",
  "axum 0.8.9",
  "base64 0.22.1",
  "serde",
@@ -329,6 +355,7 @@ name = "apsp-panel"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "apsp-access",
  "apsp-adapter-nodequality",
  "apsp-adapter-sdk",
  "apsp-adapter-singbox",
@@ -341,8 +368,8 @@ dependencies = [
  "apsp-operations",
  "apsp-panel-host",
  "apsp-plugin-alicloud",
- "apsp-plugin-singbox",
  "apsp-protocol",
+ "apsp-traffic",
  "argon2",
  "axum 0.8.9",
  "base64 0.22.1",
@@ -434,36 +461,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "apsp-plugin-singbox"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "apsp-compiler",
- "apsp-panel-host",
- "apsp-protocol",
- "argon2",
- "axum 0.8.9",
- "base64 0.22.1",
- "bcrypt",
- "flate2",
- "futures-util",
- "lettre",
- "rand 0.8.8",
- "reqwest",
- "rustls",
- "saphyr-parser",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "sqlx",
- "thiserror 2.0.21",
- "tokio",
- "tracing",
- "uuid",
- "x25519-dalek",
-]
-
-[[package]]
 name = "apsp-protocol"
 version = "0.3.0"
 dependencies = [
@@ -487,6 +484,32 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tokio",
+]
+
+[[package]]
+name = "apsp-traffic"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "apsp-compiler",
+ "apsp-panel-host",
+ "apsp-protocol",
+ "axum 0.8.9",
+ "base64 0.22.1",
+ "flate2",
+ "futures-util",
+ "rand 0.8.8",
+ "reqwest",
+ "rustls",
+ "saphyr-parser",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+ "x25519-dalek",
 ]
 
 [[package]]

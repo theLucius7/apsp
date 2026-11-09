@@ -1,0 +1,311 @@
+use crate::error::{ApiError, ApiResult};
+use apsp_compiler::{client::ExternalClientNode, external::ExternalOutbound};
+use apsp_traffic::subscription_sources::Version;
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, PgConnection};
+use std::collections::BTreeMap;
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateMode {
+    FollowNode,
+    Pinned,
+}
+impl UpdateMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FollowNode => "follow_node",
+            Self::Pinned => "pinned",
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Reference {
+    pub external_node_id: i64,
+    pub source_id: i64,
+    pub identity_epoch: i64,
+    pub node_version_id: i64,
+    pub update_mode: UpdateMode,
+    pub metadata_revision: i64,
+}
+
+#[derive(FromRow)]
+pub struct Binding {
+    pub external_node_id: i64,
+    pub source_id: i64,
+    pub identity_epoch: i64,
+    pub node_version_id: i64,
+    pub update_mode: String,
+    pub created_at: i64,
+}
+impl Binding {
+    pub fn matches(&self, value: &Reference) -> bool {
+        self.external_node_id == value.external_node_id
+            && self.source_id == value.source_id
+            && self.identity_epoch == value.identity_epoch
+            && self.node_version_id == value.node_version_id
+            && self.update_mode == value.update_mode.as_str()
+    }
+    pub fn reference(&self, metadata_revision: i64) -> Reference {
+        Reference {
+            external_node_id: self.external_node_id,
+            source_id: self.source_id,
+            identity_epoch: self.identity_epoch,
+            node_version_id: self.node_version_id,
+            metadata_revision,
+            update_mode: if self.update_mode == "pinned" {
+                UpdateMode::Pinned
+            } else {
+                UpdateMode::FollowNode
+            },
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct Entry {
+    #[serde(flatten)]
+    pub reference: Reference,
+    pub name: String,
+    pub source_name: String,
+    pub protocol: String,
+    pub server: String,
+    pub port: u16,
+    pub available: bool,
+    pub reason: Option<&'static str>,
+    pub current_version_id: Option<i64>,
+    pub resolved_version_id: Option<i64>,
+    pub source_last_error: Option<String>,
+}
+
+#[derive(FromRow)]
+pub struct NodeState {
+    pub id: i64,
+    pub source_id: i64,
+    pub identity_epoch: i64,
+    pub current_version_id: Option<i64>,
+    pub name: String,
+    pub source_name: String,
+    pub adopted: bool,
+    pub present: bool,
+    pub identity_unique: bool,
+    pub source_epoch: i64,
+    pub source_archived: bool,
+    pub source_deleted: bool,
+    pub source_last_error: Option<String>,
+    pub enabled: bool,
+    pub deleted: bool,
+    pub metadata_revision: i64,
+    pub sort_order: i64,
+}
+
+impl NodeState {
+    pub fn reason(
+        &self,
+        version: Option<&Version>,
+        epoch: i64,
+        new_access: bool,
+    ) -> Option<&'static str> {
+        if self.source_deleted {
+            return Some("source_deleted");
+        }
+        if self.source_archived {
+            return Some("source_archived");
+        }
+        if epoch != self.identity_epoch || epoch != self.source_epoch {
+            return Some("source_replaced");
+        }
+        if self.deleted {
+            return Some("node_deleted");
+        }
+        if !self.adopted {
+            return Some("node_not_adopted");
+        }
+        if !self.enabled {
+            return Some("node_disabled");
+        }
+        if !self.identity_unique {
+            return Some("ambiguous_node_identity");
+        }
+        if !self.present {
+            return Some("node_missing");
+        }
+        let Some(version) = version else {
+            return Some("version_missing");
+        };
+        if version.external_node_id != self.id
+            || version.source_id != self.source_id
+            || version.identity_epoch != epoch
+        {
+            return Some("version_identity_mismatch");
+        }
+        if version.outbound().is_none() {
+            return Some("invalid_version");
+        }
+        if new_access && !version.current_parser() {
+            return Some("parser_update_required");
+        }
+        None
+    }
+    pub fn entry(
+        &self,
+        reference: Reference,
+        version: Option<&Version>,
+        new_access: bool,
+    ) -> Entry {
+        let reason = self.reason(version, reference.identity_epoch, new_access);
+        let outbound = version.and_then(Version::outbound);
+        Entry {
+            reference,
+            name: self.name.clone(),
+            source_name: self.source_name.clone(),
+            protocol: outbound
+                .as_ref()
+                .map(|v| v.protocol().into())
+                .unwrap_or_default(),
+            server: outbound
+                .as_ref()
+                .map(|v| v.server().into())
+                .unwrap_or_default(),
+            port: outbound.as_ref().map_or(0, ExternalOutbound::port),
+            available: reason.is_none(),
+            reason,
+            current_version_id: self.current_version_id,
+            resolved_version_id: version.map(|v| v.id),
+            source_last_error: self.source_last_error.clone(),
+        }
+    }
+}
+
+/// A user's external nodes come from every policy group they are in. When two
+/// groups hold the same node, the binding that still matches the node's identity
+/// and follows its updates wins.
+pub async fn bindings(connection: &mut PgConnection, user_id: i64) -> ApiResult<Vec<Binding>> {
+    Ok(sqlx::query_as("SELECT DISTINCT ON (p.external_node_id) p.external_node_id,s.source_id,p.identity_epoch,p.node_version_id,p.update_mode,p.created_at FROM singbox_user_policies up JOIN singbox_policy_external_nodes p ON p.group_id=up.group_id JOIN singbox_external_node_states s ON s.id=p.external_node_id WHERE up.user_id=$1 ORDER BY p.external_node_id,(p.identity_epoch=s.identity_epoch) DESC,(p.update_mode='follow_node') DESC,p.node_version_id DESC")
+        .bind(user_id).fetch_all(connection).await?)
+}
+
+/// The external nodes one group holds, or every group's when `group` is `None`.
+pub async fn group_bindings(
+    connection: &mut PgConnection,
+    group: Option<i64>,
+) -> ApiResult<Vec<(i64, Binding)>> {
+    let rows: Vec<GroupBinding> = sqlx::query_as("SELECT p.group_id,p.external_node_id,s.source_id,p.identity_epoch,p.node_version_id,p.update_mode,p.created_at FROM singbox_policy_external_nodes p JOIN singbox_external_node_states s ON s.id=p.external_node_id WHERE $1::BIGINT IS NULL OR p.group_id=$1 ORDER BY p.group_id,p.external_node_id")
+        .bind(group).fetch_all(connection).await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            (
+                row.group_id,
+                Binding {
+                    external_node_id: row.external_node_id,
+                    source_id: row.source_id,
+                    identity_epoch: row.identity_epoch,
+                    node_version_id: row.node_version_id,
+                    update_mode: row.update_mode,
+                    created_at: row.created_at,
+                },
+            )
+        })
+        .collect())
+}
+
+#[derive(FromRow)]
+struct GroupBinding {
+    group_id: i64,
+    external_node_id: i64,
+    source_id: i64,
+    identity_epoch: i64,
+    node_version_id: i64,
+    update_mode: String,
+    created_at: i64,
+}
+
+/// Resolves bindings to the version a subscription would use and describes them.
+pub async fn resolve(
+    connection: &mut PgConnection,
+    bindings: &[Binding],
+) -> ApiResult<(BTreeMap<i64, NodeState>, BTreeMap<i64, Version>)> {
+    let states = states(
+        connection,
+        Some(
+            &bindings
+                .iter()
+                .map(|v| v.external_node_id)
+                .collect::<Vec<_>>(),
+        ),
+    )
+    .await?;
+    let ids = bindings
+        .iter()
+        .filter_map(|binding| {
+            if binding.update_mode == "pinned" {
+                Some(binding.node_version_id)
+            } else {
+                states.get(&binding.external_node_id)?.current_version_id
+            }
+        })
+        .collect();
+    let versions = apsp_traffic::subscription_sources::versions(connection, ids).await?;
+    Ok((states, versions))
+}
+
+pub async fn states(
+    connection: &mut PgConnection,
+    ids: Option<&[i64]>,
+) -> ApiResult<BTreeMap<i64, NodeState>> {
+    let rows: Vec<NodeState> = sqlx::query_as("SELECT n.id,n.source_id,n.identity_epoch,n.current_version_id,COALESCE(m.name_override,n.name) AS name,n.source_name,n.adopted,n.present,n.identity_unique,n.source_epoch,n.source_archived,n.source_deleted_at IS NOT NULL AS source_deleted,n.source_last_error,COALESCE(m.enabled,TRUE) AS enabled,m.deleted_at IS NOT NULL AS deleted,COALESCE(m.revision,0) AS metadata_revision,COALESCE(m.sort_order,0) AS sort_order FROM singbox_external_node_states n LEFT JOIN singbox_node_metadata m ON m.kind='external' AND m.id=n.id WHERE ($1::BIGINT[] IS NULL OR n.id=ANY($1)) ORDER BY n.id")
+        .bind(ids).fetch_all(connection).await?;
+    Ok(rows.into_iter().map(|row| (row.id, row)).collect())
+}
+
+pub struct SubscriptionNodes {
+    pub granted: usize,
+    pub nodes: Vec<ExternalClientNode>,
+    pub entries: Vec<Entry>,
+}
+
+pub async fn subscription_nodes(
+    connection: &mut PgConnection,
+    user_id: i64,
+) -> ApiResult<SubscriptionNodes> {
+    let bindings = bindings(connection, user_id).await?;
+    let (states, versions) = resolve(connection, &bindings).await?;
+    let mut result = SubscriptionNodes {
+        granted: bindings.len(),
+        nodes: Vec::new(),
+        entries: Vec::new(),
+    };
+    for binding in bindings {
+        let state = states.get(&binding.external_node_id).ok_or_else(|| {
+            ApiError::Internal(anyhow::anyhow!("external authorization identity missing"))
+        })?;
+        let version = if binding.update_mode == "pinned" {
+            versions.get(&binding.node_version_id)
+        } else {
+            state.current_version_id.and_then(|id| versions.get(&id))
+        };
+        let entry = state.entry(binding.reference(state.metadata_revision), version, false);
+        if entry.available
+            && let Some(outbound) = version.and_then(Version::outbound)
+        {
+            result.nodes.push(ExternalClientNode {
+                id: state.id,
+                name: state.name.clone(),
+                sort_order: state.sort_order,
+                outbound,
+            });
+        }
+        result.entries.push(entry);
+    }
+    result.nodes.sort_by_key(|node| (node.sort_order, node.id));
+    result.entries.sort_by_key(|entry| {
+        (
+            states[&entry.reference.external_node_id].sort_order,
+            entry.reference.external_node_id,
+        )
+    });
+    Ok(result)
+}

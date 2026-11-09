@@ -2,7 +2,8 @@
 //! Cancellation reminders (costs) raise incidents (observability) through the platform's
 //! evidence interface that the application connects.
 
-use apsp_panel::{AppState, config::Config, plugins::costs::cancellation_reminders};
+use apsp_costs::cancellation_reminders;
+use apsp_panel::{AppState, config::Config};
 use apsp_protocol::now_timestamp;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -18,7 +19,7 @@ impl Drop for Directory {
 async fn explicit_reminders_do_not_replay_and_revocation_stops_new_events(
     pool: PgPool,
 ) -> anyhow::Result<()> {
-    apsp_panel::plugins::install();
+    apsp_panel::domains::install();
     let directory = Directory(std::env::temp_dir().join(format!(
         "apsp-cancellation-reminder-test-{}",
         Uuid::new_v4()

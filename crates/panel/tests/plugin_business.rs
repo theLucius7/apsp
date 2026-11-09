@@ -47,14 +47,11 @@ async fn monitoring_server_requires_explicit_enablement_and_never_publishes_prox
         .bind(server)
         .execute(&pool)
         .await?;
-    apsp_panel::plugins::singbox::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state).await?;
     let mut connection = pool.acquire().await?;
-    let activity = apsp_panel::plugins::runtime_activity_on(
-        &mut connection,
-        server,
-        apsp_protocol::now_timestamp(),
-    )
-    .await?;
+    let activity =
+        apsp_traffic::runtime_activity_on(&mut connection, server, apsp_protocol::now_timestamp())
+            .await?;
     assert!(!activity.configured);
     assert_eq!(activity.last_positive_at, None);
     drop(connection);
@@ -209,8 +206,7 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
         sqlx::query_scalar("INSERT INTO servers(name) VALUES('Legacy deployment') RETURNING id")
             .fetch_one(&pool)
             .await?;
-    let (private_key, public_key) =
-        apsp_panel::plugins::singbox::business::generate_reality_keypair();
+    let (private_key, public_key) = apsp_traffic::business::generate_reality_keypair();
     let node_id: i64 = sqlx::query_scalar("INSERT INTO nodes(name,server_id,port,public_host,sni,private_key,public_key,short_id) VALUES('Imported node',$1,$2,$3,'www.example.com',$4,$5,'0123abcd') RETURNING id").bind(server).bind(i32::from(port)).bind(host).bind(&private_key).bind(&public_key).fetch_one(&pool).await?;
     let token = "imported-permanent-subscription-token";
     let user_id: i64 = sqlx::query_scalar(
@@ -323,7 +319,7 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
         legacy
     );
     let mut connection = pool.acquire().await?;
-    let activity = apsp_panel::plugins::runtime_activity_on(&mut connection, server, 20).await?;
+    let activity = apsp_traffic::runtime_activity_on(&mut connection, server, 20).await?;
     assert!(activity.configured);
     assert_eq!(activity.last_positive_at, Some(20));
     drop(connection);
@@ -335,7 +331,7 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
         initial_observation
     );
     let replay_started = apsp_protocol::now_timestamp();
-    apsp_panel::plugins::singbox::usage::ingest(&panel.state, server, batch.clone()).await?;
+    apsp_access::usage::ingest(&panel.state, server, batch.clone()).await?;
     let replayed = batch_observation(&pool, server, epoch).await?;
     assert_eq!(
         replayed.0, None,
@@ -355,7 +351,7 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
     let mut altered = batch;
     altered.records[0].downlink += 1;
     assert!(
-        apsp_panel::plugins::singbox::usage::ingest(&panel.state, server, altered)
+        apsp_access::usage::ingest(&panel.state, server, altered)
             .await
             .is_err()
     );
@@ -485,8 +481,8 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
                 downlink: delta_down,
             }],
         };
-        apsp_panel::plugins::singbox::usage::ingest(&panel.state, server, actual.clone()).await?;
-        apsp_panel::plugins::singbox::usage::ingest(&panel.state, server, actual).await?;
+        apsp_access::usage::ingest(&panel.state, server, actual.clone()).await?;
+        apsp_access::usage::ingest(&panel.state, server, actual).await?;
         let totals: (i64, i64, i64) = sqlx::query_as("SELECT SUM(uplink)::bigint,SUM(downlink)::bigint,COUNT(*) FROM usage_records WHERE user_id=$1 AND node_id=$2 AND epoch=$3")
             .bind(user_id).bind(node_id).bind(epoch).fetch_one(&pool).await?;
         assert_eq!(

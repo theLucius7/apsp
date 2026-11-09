@@ -64,7 +64,7 @@ async fn explicit_enable_queues_once_and_first_publication_has_no_public_listene
             .await?,
         due
     );
-    apsp_panel::plugins::singbox::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state).await?;
     let bundle: String = sqlx::query_scalar(
         "SELECT bundle FROM deployments WHERE server_id=$1 AND module='singbox'",
     )
@@ -177,7 +177,7 @@ async fn missing_signed_runtime_is_visible_and_preparation_never_confirms_applic
         healthy: false,
         error: Some("TEST_ONLY runtime did not start".into()),
     };
-    apsp_panel::agent_api::record_apply_result(&panel.state, server, failure).await?;
+    apsp_traffic::device_config::record_apply_result(&panel.state, server, failure).await?;
     panel
         .client
         .get(&manifest_url)
@@ -198,7 +198,7 @@ async fn missing_signed_runtime_is_visible_and_preparation_never_confirms_applic
         metadata(&panel, &cookie, server).await?["installation"]["state"],
         "failed"
     );
-    apsp_panel::agent_api::record_apply_result(
+    apsp_traffic::device_config::record_apply_result(
         &panel.state,
         server,
         ApplyResult {
@@ -255,7 +255,7 @@ async fn installation_distinguishes_mode_offline_and_stale_preparation_error(
         "offline"
     );
     supported_online(&pool, server).await?;
-    apsp_panel::agent_api::record_apply_result(
+    apsp_traffic::device_config::record_apply_result(
         &panel.state,
         server,
         ApplyResult {
@@ -292,7 +292,7 @@ async fn installation_distinguishes_mode_offline_and_stale_preparation_error(
     supported_online(&pool, server).await?;
     let info = json!({"arch":"unknown"});
     assert!(
-        apsp_panel::plugins::singbox::agent::manifest_module(&panel.state, server, &info)
+        apsp_traffic::agent::manifest_module(&panel.state, server, &info)
             .await
             .is_err()
     );
@@ -300,7 +300,7 @@ async fn installation_distinguishes_mode_offline_and_stale_preparation_error(
         metadata(&panel, &cookie, server).await?["installation"]["state"],
         "failed"
     );
-    apsp_panel::agent_api::record_apply_result(
+    apsp_traffic::device_config::record_apply_result(
         &panel.state,
         server,
         ApplyResult {
@@ -332,7 +332,7 @@ async fn installation_distinguishes_mode_offline_and_stale_preparation_error(
         .contains("目标版本 1：")
     );
     assert!(
-        apsp_panel::plugins::singbox::agent::manifest_module(&panel.state, server, &info)
+        apsp_traffic::agent::manifest_module(&panel.state, server, &info)
             .await
             .is_err()
     );
@@ -374,7 +374,7 @@ async fn authenticated_heartbeat_recovers_installation_after_lost_result_and_old
             "manifest.changed"
         );
         if prior_failure {
-            apsp_panel::agent_api::record_apply_result(
+            apsp_traffic::device_config::record_apply_result(
                 &panel.state,
                 server,
                 ApplyResult {

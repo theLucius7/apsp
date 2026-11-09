@@ -25,7 +25,7 @@ pub struct RenewalReference {
 
 pub async fn renewal_references(state: &AppState) -> ApiResult<Vec<RenewalReference>> {
     Ok(
-        apsp_plugin_singbox::subscription_sources::renewal_references(state)
+        apsp_traffic::subscription_sources::renewal_references(state)
             .await?
             .into_iter()
             .map(|source| RenewalReference {

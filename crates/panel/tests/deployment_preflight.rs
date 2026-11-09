@@ -5,12 +5,14 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
-use apsp_panel::{agent_api, plugins::singbox::entitlements, publisher, runtime_control};
+use apsp_access::entitlements;
+use apsp_panel::agent_api;
 use apsp_protocol::{
     ApplyResult, ApplyStatus, Bundle, Heartbeat, Hello, Message, PROTOCOL_VERSION,
     RUNTIME_CHECKPOINT_CAPABILITY, RuntimeCheckpoint, RuntimeCheckpointRequest,
     RuntimeCheckpointResult, UsageBatch, UsageRecord, now_timestamp,
 };
+use apsp_traffic::{publisher, runtime_control};
 use business_support::{
     TestPanel,
     deployment::{RuntimeObservation, observe, observe_runtime},
@@ -359,7 +361,7 @@ async fn same_listener_credentials_quota_and_final_revocation_publish_without_ne
         .json()
         .await?;
     let starts = assignment["starts_at"].as_i64().context("package starts")?;
-    apsp_panel::usage::ingest(
+    apsp_access::usage::ingest(
         &panel.state,
         server,
         UsageBatch {
@@ -533,7 +535,7 @@ async fn bootstrapped_runtime_listener_is_owned_once_its_checkpoint_is_answered(
         StatusCode::CONFLICT,
         "a listener is not the managed runtime's before a checkpoint proves its deployment"
     );
-    agent_api::record_apply_result(
+    apsp_traffic::device_config::record_apply_result(
         &panel.state,
         server,
         ApplyResult {

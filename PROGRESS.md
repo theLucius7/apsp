@@ -1,5 +1,25 @@
 # 执行进度
 
+## 2026-11-09：ADR 0131 步骤一（中）——流量服务与服务权益拆成两个 crate
+
+- 用户要求：“continue”（继续 ADR 0131 步骤一的其余部分）。这次完成阶段 C 的拆分部分；取舍见 `docs/open-questions.md`，结果与剩余部分见 [architecture.md §9](docs/architecture.md)。
+- 拆分：
+  - sing-box crate（`plugins/singbox/panel`，`apsp-plugin-singbox`）按已登记的所有者拆为 `crates/traffic`（`apsp-traffic`，迁入 72 个源文件）与 `crates/access`（`apsp-access`，34 个），中国可达性（11 个）迁入 `crates/observability`。文件用 `git mv` 搬家；运维流程里属于流量服务的部分改名 `runtime_workflows/`，Nexus 设备会话改名 `nexus_sessions`。
+  - 流量服务不再引用服务权益。20 处 `entitlements::lock` 改为直接调用流量服务的发布锁；外部节点版本的读取、Nexus 主机的会话密钥、运维流程的 `ids` 与 `digest` 搬进流量服务。用户限速与连接数、Nexus 设备数限制、代理运维记录经流量服务声明的 `users::Users` 由服务权益回答；Nexus 切换前的国内可达性经 `china_reachability::ChinaReachability` 由观测回答。两个接口在 `crates/panel/src/wiring.rs` 接线，没接上时调用方的事务失败。
+  - 原来在 sing-box 发布循环里交替运行的两个领域的步骤由应用层的 `publisher::run` 按原顺序与原间隔组合，心跳与守护名称 `sing-box` 不变。
+  - 应用层：`plugins.rs` 改为 `domains.rs`，去掉 `singbox`、`expenses`、`ddns`、`naming`、`costs` 等别名，以及 `apsp_panel::{users, accesses, business, nodes, subscriptions, usage, deployments, device_config, runtime_control, runtime_validations}` 与 `agent_api` 里的设备配置再导出；集成测试改用 `apsp_traffic`、`apsp_access`、`apsp_costs`。
+  - 接口前缀 `/api/plugins/sing-box` 与全部地址不变：拆分前后 123 条路由登记（路径与方法）静态比对相同，两个领域的管理接口由应用层合并后嵌套在同一前缀下。
+- 边界：越界从 538 条减到 510 条（SQL 345、代码引用 50、前端引用 115），按搬家前后的路径对照没有新增；消失的 28 条是流量服务指向服务权益的 26 条代码引用、流量服务指向观测的 1 条与服务权益读外部节点版本视图的 1 条。依赖检查允许领域 crate 依赖同一领域的其他 crate（流量服务依赖配置编译库），sing-box crate 的过渡规则删除；检查器单元测试随之更新。
+- 规模：184 个文件（其中约 170 个是搬家），新增约 1500 行、删除约 1300 行；`Cargo.lock` 只把 `apsp-plugin-singbox` 换成 `apsp-traffic` 与 `apsp-access`，第三方依赖版本不变。
+- 没有修改数据库基线、面板与 Agent 协议、部署方式与前端。
+- 验证（本地，基于 main `c9b004ee`）：
+  - `cargo fmt --check`、全工作区 `cargo clippy --all-targets -- -D warnings` 通过。
+  - 本地 PostgreSQL 16 上受影响的 6 个 crate（流量服务、服务权益、观测、成本、作业、应用）：93 个测试目标共 685 个通过、0 失败、7 个忽略（需要真实运行时或专用测试机）。首轮流量服务自己的 3 个发布测试失败：它们在 crate 内直接发布，没有接上 `users` 接口，接口按设计拒绝；改为在这些测试里登记一个不加限速的测试实现后，流量服务库测试 69 个全部通过。应用的两个端到端目标（真实 Agent 经 WebSocket）通过。
+  - 两项边界检查通过（510 条已知越界，没有新增），检查器单元测试 13 + 21 个通过；路由静态比对 123 条相同；文档内链接 0 错误。
+  - 前端没有改动，只为编译构建了 `web/dist`，前端测试未运行；没改代码的 crate（编译器、宿主、名称与证书、阿里云、Agent 一侧）只经全工作区 clippy。CI 暂停，未触发。
+- 交付：没有改数据库基线、协议、部署方式与生产数据，按协作规则直接提交 main。
+- 剩余（阶段 C 的下一部分）：Nexus 兼容桥的 `singbox_nexus_bridge` 仍在 10 个文件中出现；服务权益仍写 3 张流量服务的表，流量服务仍写 4 处服务权益的表（见 architecture.md）。之后是阶段 D（阿里云按领域拆分）与阶段 E（前端按领域目录），以及 `plugins/` 下 sing-box 服务文件与诊断工具打包脚本的去处。
+
 ## 2026-11-09：ADR 0131 步骤一（上）——一套链路、一套外部来源，插件外壳退出界面
 
 - 用户要求：激进修改 apsp，“整合之前的功能，按照底层逻辑本质，重新划分规划，不要按照 plugin，按照本质修改”，随后“继续”。决策见新增的 [ADR 0131](docs/adr/0131-one-model-per-object.md)：一类对象一套模型，有替代实现就整套删除（接口、页面、分支、测试、脚本、文档一起删，调用方一起改，不留别名）；三条主链（供给、使用、证据与执行）与五个承载面重新整合按插件组织的功能；后续按三个大步骤执行。取舍见 `docs/open-questions.md`，AGENTS.md 的删除授权与“一类对象一套模型”规则指向 ADR 0131。

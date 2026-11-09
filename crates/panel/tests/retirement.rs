@@ -96,7 +96,7 @@ async fn online_delete_waits_for_signed_receipt_and_preserves_usage(pool: PgPool
     let user = id(&panel.create_user(&cookie, "user").await?)?;
     panel.grant(&cookie, user, node).await?;
     panel.publish_now().await?;
-    apsp_panel::usage::ingest(
+    apsp_access::usage::ingest(
         &panel.state,
         server,
         UsageBatch {

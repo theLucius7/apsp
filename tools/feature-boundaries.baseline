@@ -165,33 +165,67 @@ ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/history.rs	resources
 ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/notices.rs	resources->observability
 ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/operations.rs	resources->operations
 ref	plugins/alicloud/panel/worker.rs	plugins/alicloud/panel/power/mod.rs	resources->operations
-ref	plugins/singbox/panel/catalog/clone.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/catalog/mutation.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/catalog/projection.rs	plugins/singbox/panel/external_access/model.rs	traffic->access
-ref	plugins/singbox/panel/nexus_nodes/mod.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/nexus_nodes/runtime.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/nexus_nodes/runtime.rs	plugins/singbox/panel/nexus_nodes/sessions.rs	traffic->access
-ref	plugins/singbox/panel/nexus_nodes/runtime.rs	plugins/singbox/panel/reachability/mod.rs	traffic->observability
-ref	plugins/singbox/panel/nexus_nodes/runtime_publish.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/nexus_nodes/runtime_publish.rs	plugins/singbox/panel/nexus_nodes/sessions.rs	traffic->access
-ref	plugins/singbox/panel/nexus_nodes/runtime_publish.rs	plugins/singbox/panel/user_limits.rs	traffic->access
-ref	plugins/singbox/panel/nodes.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/operations_workflows/runtime/mod.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/operations_workflows/runtime/mod.rs	plugins/singbox/panel/operations_workflows/mod.rs	traffic->access
-ref	plugins/singbox/panel/operations_workflows/runtime/preflight.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/operations_workflows/runtime/preflight.rs	plugins/singbox/panel/operations_workflows/mod.rs	traffic->access
-ref	plugins/singbox/panel/operations_workflows/runtime/preflight/bootstrap.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/operations_workflows/runtime/rollouts.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/operations_workflows/runtime/rollouts.rs	plugins/singbox/panel/operations_workflows/mod.rs	traffic->access
-ref	plugins/singbox/panel/ordered_paths/api.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/ordered_paths/lifecycle.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/proxy_resources.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/publisher.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/publisher.rs	plugins/singbox/panel/nexus_nodes/sessions.rs	traffic->access
-ref	plugins/singbox/panel/publisher.rs	plugins/singbox/panel/operations_workflows/mod.rs	traffic->access
-ref	plugins/singbox/panel/publisher.rs	plugins/singbox/panel/user_limits.rs	traffic->access
-ref	plugins/singbox/panel/subscription_sources/mutations.rs	plugins/singbox/panel/entitlements.rs	traffic->access
-ref	plugins/singbox/panel/subscription_sources/previews.rs	plugins/singbox/panel/entitlements.rs	traffic->access
+sql	crates/access/src/entitlements.rs	read	singbox_chain_state	access->traffic
+sql	crates/access/src/entitlements.rs	read	singbox_chains	access->traffic
+sql	crates/access/src/entitlements.rs	write	singbox_chain_state	access->traffic
+sql	crates/access/src/external_access/model.rs	read	singbox_external_node_states	access->traffic
+sql	crates/access/src/external_access/model.rs	read	singbox_node_metadata	access->traffic
+sql	crates/access/src/nexus_sessions.rs	read	singbox_nexus_runtime_hosts	access->traffic
+sql	crates/access/src/nexus_sessions.rs	read	singbox_nexus_runtime_nodes	access->traffic
+sql	crates/access/src/operations_workflows/diagnosis.rs	read	deployments	access->traffic
+sql	crates/access/src/operations_workflows/diagnosis.rs	read	passkey_credentials	access->governance
+sql	crates/access/src/operations_workflows/diagnosis.rs	read	runtime_control_receipts	access->traffic
+sql	crates/access/src/operations_workflows/diagnosis.rs	read	runtime_deployment_bindings	access->traffic
+sql	crates/access/src/operations_workflows/diagnosis.rs	read	runtime_module_checkpoints	access->traffic
+sql	crates/access/src/operations_workflows/diagnosis.rs	read	server_module_status	access->traffic
+sql	crates/access/src/operations_workflows/diagnosis.rs	read	singbox_chains	access->traffic
+sql	crates/access/src/operations_workflows/diagnosis.rs	read	singbox_nexus_nodes	access->traffic
+sql	crates/access/src/operations_workflows/diagnosis.rs	read	singbox_nexus_runtime_hosts	access->traffic
+sql	crates/access/src/operations_workflows/diagnosis.rs	read	singbox_nexus_runtime_nodes	access->traffic
+sql	crates/access/src/operations_workflows/mod.rs	read	record_retention_policy	access->governance
+sql	crates/access/src/operations_workflows/mod.rs	read	runtime_operations	access->operations
+sql	crates/access/src/operations_workflows/mod.rs	read	singbox_chains	access->traffic
+sql	crates/access/src/operations_workflows/mod.rs	read	singbox_ordered_chain_hops	access->traffic
+sql	crates/access/src/operations_workflows/mod.rs	write	singbox_deployment_preflights	access->traffic
+sql	crates/access/src/operations_workflows/mod.rs	write	singbox_runtime_rollout_members	access->traffic
+sql	crates/access/src/operations_workflows/mutations.rs	read	server_module_status	access->traffic
+sql	crates/access/src/operations_workflows/snapshots.rs	read	server_module_status	access->traffic
+sql	crates/access/src/operations_workflows/snapshots.rs	read	server_retirements	access->resources
+sql	crates/access/src/operations_workflows/snapshots.rs	read	singbox_chains	access->traffic
+sql	crates/access/src/operations_workflows/snapshots.rs	read	singbox_ordered_chain_hops	access->traffic
+sql	crates/access/src/policies.rs	read	singbox_chains	access->traffic
+sql	crates/access/src/policies.rs	read	singbox_nexus_nodes	access->traffic
+sql	crates/access/src/policies.rs	read	singbox_nexus_runtime_hosts	access->traffic
+sql	crates/access/src/policies.rs	read	singbox_nexus_runtime_nodes	access->traffic
+sql	crates/access/src/portal/access.rs	read	passkey_credentials	access->governance
+sql	crates/access/src/portal/administration.rs	read	passkey_credentials	access->governance
+sql	crates/access/src/portal/administration.rs	write	passkey_accounts	access->governance
+sql	crates/access/src/portal/administration.rs	write	passkey_credentials	access->governance
+sql	crates/access/src/portal/ceremonies.rs	read	passkey_credentials	access->governance
+sql	crates/access/src/portal/ceremonies.rs	write	passkey_credentials	access->governance
+sql	crates/access/src/portal/lines.rs	read	network_probes	access->observability
+sql	crates/access/src/portal/lines.rs	read	probe_results	access->observability
+sql	crates/access/src/portal/lines.rs	read	server_module_status	access->traffic
+sql	crates/access/src/portal/lines.rs	read	singbox_nexus_node_status	access->traffic
+sql	crates/access/src/portal/lines.rs	read	singbox_nexus_nodes	access->traffic
+sql	crates/access/src/portal/lines.rs	read	singbox_nexus_runtime_hosts	access->traffic
+sql	crates/access/src/portal/lines.rs	read	singbox_nexus_runtime_nodes	access->traffic
+sql	crates/access/src/proxy_users.rs	read	passkey_credentials	access->governance
+sql	crates/access/src/proxy_users.rs	write	passkey_accounts	access->governance
+sql	crates/access/src/subscriptions.rs	read	deployments	access->traffic
+sql	crates/access/src/subscriptions.rs	read	record_retention_policy	access->governance
+sql	crates/access/src/subscriptions.rs	read	server_module_status	access->traffic
+sql	crates/access/src/subscriptions.rs	read	singbox_chains	access->traffic
+sql	crates/access/src/subscriptions.rs	read	singbox_deployment_projections	access->traffic
+sql	crates/access/src/subscriptions.rs	read	singbox_deployment_public_projection	access->traffic
+sql	crates/access/src/usage.rs	read	deployments	access->traffic
+sql	crates/access/src/user_accounts/accounts.rs	write	passkey_accounts	access->governance
+sql	crates/access/src/user_accounts/accounts.rs	write	passkey_credentials	access->governance
+sql	crates/access/src/user_accounts/invitations.rs	read	passkey_credentials	access->governance
+sql	crates/access/src/user_accounts/invitations.rs	write	passkey_accounts	access->governance
+sql	crates/access/src/user_accounts/mod.rs	write	passkey_ceremonies	access->governance
+sql	crates/access/src/user_limits.rs	read	deployments	access->traffic
+sql	crates/access/src/user_limits.rs	read	server_module_status	access->traffic
 sql	crates/costs/src/cancellation_reminders.rs	read	operations_incidents	costs->observability
 sql	crates/costs/src/cancellation_reminders.rs	write	operations_incident_deliveries	costs->observability
 sql	crates/costs/src/suppliers.rs	read	diagnostic_jobs	costs->observability
@@ -221,6 +255,10 @@ sql	crates/observability/src/incidents/certificates.rs	read	network_documents	ob
 sql	crates/observability/src/ip_quality.rs	write	servers	observability->resources
 sql	crates/observability/src/ip_quality/cache.rs	write	servers	observability->resources
 sql	crates/observability/src/probes.rs	write	servers	observability->resources
+sql	crates/observability/src/reachability/alerts.rs	read	fleet_profiles	observability->resources
+sql	crates/observability/src/reachability/alerts.rs	read	operations_maintenance	observability->operations
+sql	crates/observability/src/reachability/api.rs	write	credential_entries	observability->platform
+sql	crates/observability/src/reachability/targets.rs	read	singbox_nexus_nodes	observability->traffic
 sql	crates/observability/src/server_monitoring.rs	read	fleet_operations	observability->operations
 sql	crates/observability/src/server_monitoring.rs	read	notification_outbox	observability->platform
 sql	crates/observability/src/server_monitoring.rs	read	remote_commands	observability->operations
@@ -365,6 +403,71 @@ sql	crates/panel-host/src/servers.rs	write	enrollment_tokens	resources->governan
 sql	crates/panel-host/src/servers.rs	write	network_probes	resources->observability
 sql	crates/panel-host/src/servers.rs	write	server_traffic_corrections	resources->observability
 sql	crates/panel-host/src/settings.rs	read	server_alert_events	platform->observability
+sql	crates/traffic/src/activity.rs	read	usage_records	traffic->access
+sql	crates/traffic/src/business.rs	read	accesses	traffic->access
+sql	crates/traffic/src/business.rs	read	users	traffic->access
+sql	crates/traffic/src/business.rs	write	servers	traffic->resources
+sql	crates/traffic/src/catalog/mutation.rs	read	singbox_policy_external_nodes	traffic->access
+sql	crates/traffic/src/host_support.rs	read	users	traffic->access
+sql	crates/traffic/src/nexus_nodes/mod.rs	write	credential_entries	traffic->platform
+sql	crates/traffic/src/nexus_nodes/mod.rs	write	management_audit	traffic->governance
+sql	crates/traffic/src/nexus_nodes/mod.rs	write	singbox_policy_nodes	traffic->access
+sql	crates/traffic/src/nexus_nodes/runtime.rs	read	singbox_nexus_bridge	traffic->access
+sql	crates/traffic/src/nexus_nodes/runtime.rs	write	credential_entries	traffic->platform
+sql	crates/traffic/src/nexus_nodes/runtime.rs	write	management_audit	traffic->governance
+sql	crates/traffic/src/nexus_nodes/runtime.rs	write	singbox_policy_nodes	traffic->access
+sql	crates/traffic/src/nexus_nodes/runtime_publish.rs	read	singbox_nexus_identities	traffic->access
+sql	crates/traffic/src/nexus_nodes/runtime_publish.rs	read	singbox_policy_nodes	traffic->access
+sql	crates/traffic/src/nexus_nodes/runtime_publish.rs	read	singbox_user_policies	traffic->access
+sql	crates/traffic/src/nexus_nodes/runtime_publish.rs	read	usage_records	traffic->access
+sql	crates/traffic/src/nexus_nodes/runtime_publish.rs	write	servers	traffic->resources
+sql	crates/traffic/src/nexus_nodes/runtime_publish.rs	write	singbox_nexus_usage_deliveries	traffic->access
+sql	crates/traffic/src/nodes/removal.rs	read	singbox_policy_nodes	traffic->access
+sql	crates/traffic/src/ordered_paths/api.rs	read	accesses	traffic->access
+sql	crates/traffic/src/ordered_paths/api.rs	read	server_retirements	traffic->resources
+sql	crates/traffic/src/ordered_paths/api.rs	read	singbox_policy_nodes	traffic->access
+sql	crates/traffic/src/proxy_resources.rs	read	singbox_policy_chains	traffic->access
+sql	crates/traffic/src/proxy_resources.rs	read	singbox_policy_groups	traffic->access
+sql	crates/traffic/src/proxy_resources.rs	read	singbox_policy_nodes	traffic->access
+sql	crates/traffic/src/proxy_resources.rs	read	singbox_user_policies	traffic->access
+sql	crates/traffic/src/proxy_resources.rs	read	users	traffic->access
+sql	crates/traffic/src/proxy_resources.rs	write	accesses	traffic->access
+sql	crates/traffic/src/publisher.rs	write	servers	traffic->resources
+sql	crates/traffic/src/runtime_operations.rs	read	runtime_operations	traffic->operations
+sql	crates/traffic/src/runtime_operations.rs	read	server_retirements	traffic->resources
+sql	crates/traffic/src/runtime_operations.rs	write	runtime_operations	traffic->operations
+sql	crates/traffic/src/runtime_validations.rs	read	server_retirements	traffic->resources
+sql	crates/traffic/src/runtime_workflows/automation.rs	read	diagnostic_jobs	traffic->observability
+sql	crates/traffic/src/runtime_workflows/automation.rs	read	fleet_operations	traffic->operations
+sql	crates/traffic/src/runtime_workflows/automation.rs	read	fleet_profiles	traffic->resources
+sql	crates/traffic/src/runtime_workflows/automation.rs	read	operations_history	traffic->operations
+sql	crates/traffic/src/runtime_workflows/automation.rs	read	operations_jobs	traffic->operations
+sql	crates/traffic/src/runtime_workflows/automation.rs	read	operations_maintenance	traffic->operations
+sql	crates/traffic/src/runtime_workflows/automation.rs	read	operations_server_locks	traffic->operations
+sql	crates/traffic/src/runtime_workflows/automation.rs	read	remote_commands	traffic->operations
+sql	crates/traffic/src/runtime_workflows/automation.rs	read	runtime_operations	traffic->operations
+sql	crates/traffic/src/runtime_workflows/automation.rs	read	server_retirements	traffic->resources
+sql	crates/traffic/src/runtime_workflows/automation.rs	write	operations_history	traffic->operations
+sql	crates/traffic/src/runtime_workflows/automation.rs	write	runtime_operations	traffic->operations
+sql	crates/traffic/src/runtime_workflows/automation/reconciliation.rs	read	operations_history	traffic->operations
+sql	crates/traffic/src/runtime_workflows/automation/reconciliation.rs	read	runtime_operations	traffic->operations
+sql	crates/traffic/src/runtime_workflows/automation/reconciliation.rs	write	operations_history	traffic->operations
+sql	crates/traffic/src/runtime_workflows/automation/reconciliation.rs	write	runtime_operations	traffic->operations
+sql	crates/traffic/src/runtime_workflows/mod.rs	read	server_retirements	traffic->resources
+sql	crates/traffic/src/runtime_workflows/preflight.rs	read	fleet_operations	traffic->operations
+sql	crates/traffic/src/runtime_workflows/preflight.rs	read	fleet_profiles	traffic->resources
+sql	crates/traffic/src/runtime_workflows/preflight.rs	read	network_documents	traffic->networking
+sql	crates/traffic/src/runtime_workflows/preflight.rs	read	operations_maintenance	traffic->operations
+sql	crates/traffic/src/runtime_workflows/preflight.rs	read	server_retirements	traffic->resources
+sql	crates/traffic/src/runtime_workflows/preflight/bootstrap.rs	read	fleet_operations	traffic->operations
+sql	crates/traffic/src/runtime_workflows/preflight/bootstrap.rs	write	servers	traffic->resources
+sql	crates/traffic/src/runtime_workflows/preflight_network.rs	read	network_certificate_versions	traffic->naming
+sql	crates/traffic/src/runtime_workflows/preflight_network.rs	read	network_documents	traffic->networking
+sql	crates/traffic/src/runtime_workflows/preflight_network.rs	read	network_observations	traffic->networking
+sql	crates/traffic/src/runtime_workflows/rollouts.rs	read	runtime_operations	traffic->operations
+sql	crates/traffic/src/runtime_workflows/rollouts.rs	read	server_retirements	traffic->resources
+sql	crates/traffic/src/runtime_workflows/rollouts.rs	write	runtime_operations	traffic->operations
+sql	crates/traffic/src/settings.rs	write	servers	traffic->resources
 sql	plugins/alicloud/panel/api.rs	read	alicloud_deliveries	resources->observability
 sql	plugins/alicloud/panel/api.rs	read	alicloud_eip_rotations	resources->operations
 sql	plugins/alicloud/panel/api.rs	read	alicloud_events	resources->observability
@@ -407,134 +510,3 @@ sql	plugins/alicloud/panel/worker.rs	read	alicloud_power_jobs	resources->operati
 sql	plugins/alicloud/panel/worker.rs	write	alicloud_events	resources->observability
 sql	plugins/alicloud/panel/worker.rs	write	alicloud_operations	resources->operations
 sql	plugins/alicloud/panel/worker.rs	write	alicloud_traffic_history	resources->costs
-sql	plugins/singbox/panel/activity.rs	read	usage_records	traffic->access
-sql	plugins/singbox/panel/business.rs	read	accesses	traffic->access
-sql	plugins/singbox/panel/business.rs	read	users	traffic->access
-sql	plugins/singbox/panel/business.rs	write	servers	traffic->resources
-sql	plugins/singbox/panel/catalog/mutation.rs	read	singbox_policy_external_nodes	traffic->access
-sql	plugins/singbox/panel/entitlements.rs	read	singbox_chain_state	access->traffic
-sql	plugins/singbox/panel/entitlements.rs	read	singbox_chains	access->traffic
-sql	plugins/singbox/panel/entitlements.rs	write	singbox_chain_state	access->traffic
-sql	plugins/singbox/panel/external_access/model.rs	read	singbox_external_node_states	access->traffic
-sql	plugins/singbox/panel/external_access/model.rs	read	singbox_external_version_configs	access->traffic
-sql	plugins/singbox/panel/external_access/model.rs	read	singbox_node_metadata	access->traffic
-sql	plugins/singbox/panel/host_support.rs	read	users	traffic->access
-sql	plugins/singbox/panel/nexus_nodes/mod.rs	write	credential_entries	traffic->platform
-sql	plugins/singbox/panel/nexus_nodes/mod.rs	write	management_audit	traffic->governance
-sql	plugins/singbox/panel/nexus_nodes/mod.rs	write	singbox_policy_nodes	traffic->access
-sql	plugins/singbox/panel/nexus_nodes/runtime.rs	read	singbox_nexus_bridge	traffic->access
-sql	plugins/singbox/panel/nexus_nodes/runtime.rs	write	credential_entries	traffic->platform
-sql	plugins/singbox/panel/nexus_nodes/runtime.rs	write	management_audit	traffic->governance
-sql	plugins/singbox/panel/nexus_nodes/runtime.rs	write	singbox_policy_nodes	traffic->access
-sql	plugins/singbox/panel/nexus_nodes/runtime_publish.rs	read	singbox_nexus_identities	traffic->access
-sql	plugins/singbox/panel/nexus_nodes/runtime_publish.rs	read	singbox_policy_nodes	traffic->access
-sql	plugins/singbox/panel/nexus_nodes/runtime_publish.rs	read	singbox_user_policies	traffic->access
-sql	plugins/singbox/panel/nexus_nodes/runtime_publish.rs	read	usage_records	traffic->access
-sql	plugins/singbox/panel/nexus_nodes/runtime_publish.rs	write	servers	traffic->resources
-sql	plugins/singbox/panel/nexus_nodes/runtime_publish.rs	write	singbox_nexus_usage_deliveries	traffic->access
-sql	plugins/singbox/panel/nexus_nodes/sessions.rs	read	singbox_nexus_runtime_hosts	access->traffic
-sql	plugins/singbox/panel/nexus_nodes/sessions.rs	read	singbox_nexus_runtime_nodes	access->traffic
-sql	plugins/singbox/panel/nodes/removal.rs	read	singbox_policy_nodes	traffic->access
-sql	plugins/singbox/panel/operations_workflows/diagnosis.rs	read	deployments	access->traffic
-sql	plugins/singbox/panel/operations_workflows/diagnosis.rs	read	passkey_credentials	access->governance
-sql	plugins/singbox/panel/operations_workflows/diagnosis.rs	read	runtime_control_receipts	access->traffic
-sql	plugins/singbox/panel/operations_workflows/diagnosis.rs	read	runtime_deployment_bindings	access->traffic
-sql	plugins/singbox/panel/operations_workflows/diagnosis.rs	read	runtime_module_checkpoints	access->traffic
-sql	plugins/singbox/panel/operations_workflows/diagnosis.rs	read	server_module_status	access->traffic
-sql	plugins/singbox/panel/operations_workflows/diagnosis.rs	read	singbox_chains	access->traffic
-sql	plugins/singbox/panel/operations_workflows/diagnosis.rs	read	singbox_nexus_nodes	access->traffic
-sql	plugins/singbox/panel/operations_workflows/diagnosis.rs	read	singbox_nexus_runtime_hosts	access->traffic
-sql	plugins/singbox/panel/operations_workflows/diagnosis.rs	read	singbox_nexus_runtime_nodes	access->traffic
-sql	plugins/singbox/panel/operations_workflows/mod.rs	read	record_retention_policy	access->governance
-sql	plugins/singbox/panel/operations_workflows/mod.rs	read	runtime_operations	access->operations
-sql	plugins/singbox/panel/operations_workflows/mod.rs	read	singbox_chains	access->traffic
-sql	plugins/singbox/panel/operations_workflows/mod.rs	read	singbox_ordered_chain_hops	access->traffic
-sql	plugins/singbox/panel/operations_workflows/mod.rs	write	singbox_deployment_preflights	access->traffic
-sql	plugins/singbox/panel/operations_workflows/mod.rs	write	singbox_runtime_rollout_members	access->traffic
-sql	plugins/singbox/panel/operations_workflows/mutations.rs	read	server_module_status	access->traffic
-sql	plugins/singbox/panel/operations_workflows/runtime/automation.rs	read	diagnostic_jobs	traffic->observability
-sql	plugins/singbox/panel/operations_workflows/runtime/automation.rs	read	fleet_operations	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/automation.rs	read	fleet_profiles	traffic->resources
-sql	plugins/singbox/panel/operations_workflows/runtime/automation.rs	read	operations_history	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/automation.rs	read	operations_jobs	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/automation.rs	read	operations_maintenance	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/automation.rs	read	operations_server_locks	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/automation.rs	read	remote_commands	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/automation.rs	read	runtime_operations	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/automation.rs	read	server_retirements	traffic->resources
-sql	plugins/singbox/panel/operations_workflows/runtime/automation.rs	write	operations_history	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/automation.rs	write	runtime_operations	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/automation/reconciliation.rs	read	operations_history	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/automation/reconciliation.rs	read	runtime_operations	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/automation/reconciliation.rs	write	operations_history	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/automation/reconciliation.rs	write	runtime_operations	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/mod.rs	read	server_retirements	traffic->resources
-sql	plugins/singbox/panel/operations_workflows/runtime/preflight.rs	read	fleet_operations	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/preflight.rs	read	fleet_profiles	traffic->resources
-sql	plugins/singbox/panel/operations_workflows/runtime/preflight.rs	read	network_documents	traffic->networking
-sql	plugins/singbox/panel/operations_workflows/runtime/preflight.rs	read	operations_maintenance	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/preflight.rs	read	server_retirements	traffic->resources
-sql	plugins/singbox/panel/operations_workflows/runtime/preflight/bootstrap.rs	read	fleet_operations	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/preflight/bootstrap.rs	write	servers	traffic->resources
-sql	plugins/singbox/panel/operations_workflows/runtime/preflight_network.rs	read	network_certificate_versions	traffic->naming
-sql	plugins/singbox/panel/operations_workflows/runtime/preflight_network.rs	read	network_documents	traffic->networking
-sql	plugins/singbox/panel/operations_workflows/runtime/preflight_network.rs	read	network_observations	traffic->networking
-sql	plugins/singbox/panel/operations_workflows/runtime/rollouts.rs	read	runtime_operations	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/runtime/rollouts.rs	read	server_retirements	traffic->resources
-sql	plugins/singbox/panel/operations_workflows/runtime/rollouts.rs	write	runtime_operations	traffic->operations
-sql	plugins/singbox/panel/operations_workflows/snapshots.rs	read	server_module_status	access->traffic
-sql	plugins/singbox/panel/operations_workflows/snapshots.rs	read	server_retirements	access->resources
-sql	plugins/singbox/panel/operations_workflows/snapshots.rs	read	singbox_chains	access->traffic
-sql	plugins/singbox/panel/operations_workflows/snapshots.rs	read	singbox_ordered_chain_hops	access->traffic
-sql	plugins/singbox/panel/ordered_paths/api.rs	read	accesses	traffic->access
-sql	plugins/singbox/panel/ordered_paths/api.rs	read	server_retirements	traffic->resources
-sql	plugins/singbox/panel/ordered_paths/api.rs	read	singbox_policy_nodes	traffic->access
-sql	plugins/singbox/panel/policies.rs	read	singbox_chains	access->traffic
-sql	plugins/singbox/panel/policies.rs	read	singbox_nexus_nodes	access->traffic
-sql	plugins/singbox/panel/policies.rs	read	singbox_nexus_runtime_hosts	access->traffic
-sql	plugins/singbox/panel/policies.rs	read	singbox_nexus_runtime_nodes	access->traffic
-sql	plugins/singbox/panel/portal/access.rs	read	passkey_credentials	access->governance
-sql	plugins/singbox/panel/portal/administration.rs	read	passkey_credentials	access->governance
-sql	plugins/singbox/panel/portal/administration.rs	write	passkey_accounts	access->governance
-sql	plugins/singbox/panel/portal/administration.rs	write	passkey_credentials	access->governance
-sql	plugins/singbox/panel/portal/ceremonies.rs	read	passkey_credentials	access->governance
-sql	plugins/singbox/panel/portal/ceremonies.rs	write	passkey_credentials	access->governance
-sql	plugins/singbox/panel/portal/lines.rs	read	network_probes	access->observability
-sql	plugins/singbox/panel/portal/lines.rs	read	probe_results	access->observability
-sql	plugins/singbox/panel/portal/lines.rs	read	server_module_status	access->traffic
-sql	plugins/singbox/panel/portal/lines.rs	read	singbox_nexus_node_status	access->traffic
-sql	plugins/singbox/panel/portal/lines.rs	read	singbox_nexus_nodes	access->traffic
-sql	plugins/singbox/panel/portal/lines.rs	read	singbox_nexus_runtime_hosts	access->traffic
-sql	plugins/singbox/panel/portal/lines.rs	read	singbox_nexus_runtime_nodes	access->traffic
-sql	plugins/singbox/panel/proxy_resources.rs	read	singbox_policy_chains	traffic->access
-sql	plugins/singbox/panel/proxy_resources.rs	read	singbox_policy_groups	traffic->access
-sql	plugins/singbox/panel/proxy_resources.rs	read	singbox_policy_nodes	traffic->access
-sql	plugins/singbox/panel/proxy_resources.rs	read	singbox_user_policies	traffic->access
-sql	plugins/singbox/panel/proxy_resources.rs	read	users	traffic->access
-sql	plugins/singbox/panel/proxy_resources.rs	write	accesses	traffic->access
-sql	plugins/singbox/panel/proxy_users.rs	read	passkey_credentials	access->governance
-sql	plugins/singbox/panel/proxy_users.rs	write	passkey_accounts	access->governance
-sql	plugins/singbox/panel/publisher.rs	write	servers	traffic->resources
-sql	plugins/singbox/panel/reachability/alerts.rs	read	fleet_profiles	observability->resources
-sql	plugins/singbox/panel/reachability/alerts.rs	read	operations_maintenance	observability->operations
-sql	plugins/singbox/panel/reachability/api.rs	write	credential_entries	observability->platform
-sql	plugins/singbox/panel/reachability/targets.rs	read	singbox_nexus_nodes	observability->traffic
-sql	plugins/singbox/panel/runtime_operations.rs	read	runtime_operations	traffic->operations
-sql	plugins/singbox/panel/runtime_operations.rs	read	server_retirements	traffic->resources
-sql	plugins/singbox/panel/runtime_operations.rs	write	runtime_operations	traffic->operations
-sql	plugins/singbox/panel/runtime_validations.rs	read	server_retirements	traffic->resources
-sql	plugins/singbox/panel/settings.rs	write	servers	traffic->resources
-sql	plugins/singbox/panel/subscriptions.rs	read	deployments	access->traffic
-sql	plugins/singbox/panel/subscriptions.rs	read	record_retention_policy	access->governance
-sql	plugins/singbox/panel/subscriptions.rs	read	server_module_status	access->traffic
-sql	plugins/singbox/panel/subscriptions.rs	read	singbox_chains	access->traffic
-sql	plugins/singbox/panel/subscriptions.rs	read	singbox_deployment_projections	access->traffic
-sql	plugins/singbox/panel/subscriptions.rs	read	singbox_deployment_public_projection	access->traffic
-sql	plugins/singbox/panel/usage.rs	read	deployments	access->traffic
-sql	plugins/singbox/panel/user_accounts/accounts.rs	write	passkey_accounts	access->governance
-sql	plugins/singbox/panel/user_accounts/accounts.rs	write	passkey_credentials	access->governance
-sql	plugins/singbox/panel/user_accounts/invitations.rs	read	passkey_credentials	access->governance
-sql	plugins/singbox/panel/user_accounts/invitations.rs	write	passkey_accounts	access->governance
-sql	plugins/singbox/panel/user_accounts/mod.rs	write	passkey_ceremonies	access->governance
-sql	plugins/singbox/panel/user_limits.rs	read	deployments	access->traffic
-sql	plugins/singbox/panel/user_limits.rs	read	server_module_status	access->traffic

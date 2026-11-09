@@ -1,8 +1,6 @@
-//! The device channel with the application's interfaces connected. Kept at its
-//! previous public path; the device configuration handlers now belong to traffic.
+//! The device channel with the application's interfaces connected.
 
 pub use apsp_panel_host::agent_api::*;
-pub use apsp_plugin_singbox::device_config::{bundle, manifest, record_apply_result};
 
 /// Handles one device message once the domains' interfaces are connected.
 pub async fn process_message(
@@ -10,6 +8,6 @@ pub async fn process_message(
     server_id: i64,
     message: apsp_protocol::Message,
 ) -> anyhow::Result<()> {
-    crate::plugins::install();
+    crate::domains::install();
     apsp_panel_host::agent_api::process_message(state, server_id, message).await
 }

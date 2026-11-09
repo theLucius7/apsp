@@ -8,7 +8,8 @@ rust-version.workspace = true
 [dependencies]
 apsp-panel-host.workspace = true
 apsp-protocol.workspace = true
-apsp-plugin-singbox.workspace = true
+apsp-traffic.workspace = true
+apsp-access.workspace = true
 axum.workspace = true
 sqlx.workspace = true
 tokio.workspace = true

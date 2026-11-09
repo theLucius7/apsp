@@ -231,7 +231,7 @@
 | --- | --- | --- | --- |
 | 概览 | 应用层组合各领域的汇总 | `plugins/singbox/Overview.tsx` | 读取各领域的汇总接口 |
 | 服务器 | 资源、名称与证书、基础网络、作业；看板与遥测属观测 | `servers/`、`display/`、`plugins/ddns/`、`plugins/alicloud/`；实验 `fleet/`、`operations/`、`network-configuration/` | `panel-host` 的 `servers`、`telemetry`；`crates/naming/`、`plugins/alicloud/panel/`；实验 `panel-host` 的 `fleet`、`operations`、`network_configuration`；Agent 在 `crates/agent-core/` |
-| 网络服务 | 流量服务、服务权益 | `plugins/singbox/` | `plugins/singbox/panel/`、`crates/compiler/`、`crates/adapter-singbox/` |
+| 网络服务 | 流量服务、服务权益 | `crates/traffic/`、`crates/access/` | `crates/traffic/`、`crates/access/`、`crates/compiler/`、`crates/adapter-singbox/` |
 | 监测与诊断 | 观测 | `monitoring/`、`network-workbench/`、`server-diagnostics/`、`statistics/` | `panel-host` 的 `notifications`、`probes`、`latency_tasks`、`network_workbench`、`ip_quality`、`statistics`；诊断代码 `plugins/{nodequality,ipquality,tcpquality}/` |
 | 费用与续费 | 成本 | `plugins/expenses/`、`subscriptions/` | `crates/costs/` |
 | 系统 | 平台治理（含制品、备份与恢复）；汇率属成本 | `system/`（含 `Artifacts.tsx`）、`control-center/` | `panel-host` 的 `settings`、`control_center`、`auth`、`passkeys`、`exchange`、`artifacts`、`operations` 中的备份 |

@@ -118,16 +118,16 @@ DOMAIN_CRATES = {
     "crates/costs": ("apsp-costs", "costs"),
     "crates/operations": ("apsp-operations", "operations"),
     "crates/observability": ("apsp-observability", "observability"),
+    "crates/traffic": ("apsp-traffic", "traffic"),
+    "crates/access": ("apsp-access", "access"),
 }
 # Crates that still hold several domains keep their current dependencies until they are
-# split (docs/architecture.md section 9, stages C and D). A domain crate may depend on
+# split (docs/architecture.md section 9, stage D). A domain crate may depend on
 # one when all of its domains come in earlier groups.
 TRANSITIONAL_DEPENDENCIES = {
-    "plugins/singbox/panel": {"apsp-panel-host", "apsp-protocol", "apsp-compiler"},
     "plugins/alicloud/panel": {"apsp-panel-host", "apsp-protocol", "apsp-cloud-api"},
 }
 TRANSITIONAL_DOMAINS = {
-    "apsp-plugin-singbox": ("traffic", "access"),
     "apsp-plugin-alicloud": ("resources", "networking", "costs", "observability", "operations"),
 }
 # The application and the Agent binary compose the layers.
@@ -182,10 +182,12 @@ def workspace_dependencies(manifest):
     return {name for table in tables for name in table if name.startswith("apsp-")}
 
 
-def domain_dependencies(domain):
-    """The platform, the protocol and the domain crates of earlier groups."""
+def domain_dependencies(domain, own=None):
+    """The platform, the protocol, the domain crates of earlier groups and the other crates
+    of the same domain (traffic's service builds on its configuration compiler)."""
     rank = {name: index for index, group in enumerate(DOMAIN_ORDER) for name in group}
-    earlier = {crate for crate, other in DOMAIN_CRATES.values() if rank[other] < rank[domain]}
+    earlier = {crate for crate, other in DOMAIN_CRATES.values()
+               if rank[other] < rank[domain] or (other == domain and own not in (None, crate))}
     earlier |= {crate for crate, domains in TRANSITIONAL_DOMAINS.items()
                 if all(rank[other] < rank[domain] for other in domains)}
     return {"apsp-protocol", *PLATFORM_CRATES.values(), *earlier}
@@ -201,8 +203,8 @@ def layer_rules(root):
         rules[root / crate / "Cargo.toml"] = set()
     for crate in PLATFORM_CRATES:
         rules[root / crate / "Cargo.toml"] = PLATFORM_DEPENDENCIES
-    for crate, (_, domain) in DOMAIN_CRATES.items():
-        rules[root / crate / "Cargo.toml"] = domain_dependencies(domain)
+    for crate, (name, domain) in DOMAIN_CRATES.items():
+        rules[root / crate / "Cargo.toml"] = domain_dependencies(domain, name)
     for crate, allowed in TRANSITIONAL_DEPENDENCIES.items():
         rules[root / crate / "Cargo.toml"] = allowed
     return rules

@@ -7,7 +7,7 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
-use apsp_panel::plugins::singbox::subscription_sources::worker;
+use apsp_traffic::subscription_sources::worker;
 use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};

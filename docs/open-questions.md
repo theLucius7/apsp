@@ -1,5 +1,18 @@
 # 执行中的问题与选择
 
+## 2026-11-09：流量服务与服务权益拆成两个 crate（ADR 0131 步骤一、阶段 C 的拆分部分）的取舍
+
+- 问题：用户要求继续 ADR 0131 步骤一的其余部分。sing-box crate 装着流量服务（约 2.5 万行）、服务权益（约 1 万行）与中国可达性（约 4500 行），流量服务有 26 处代码引用指向服务权益，拆成两个 crate 必须先去掉这些反向引用。
+- 选择：
+  - **按所有者拆，不按功能重写。** 每个文件按 `tools/feature-boundaries.toml` 已登记的所有者搬到 `crates/traffic`、`crates/access` 或 `crates/observability`，用 `git mv` 保留历史；只有两处改名：运维流程里属于流量服务的部署检查、发布批次与运行时清单（原 `operations_workflows/runtime/`）改为 `runtime_workflows/`，自己登记路由；Nexus 的设备会话（原 `nexus_nodes/sessions.rs`）改为服务权益的 `nexus_sessions`。
+  - **20 处引用不需要接口。** 它们调用的 `entitlements::lock` 只转调流量服务的 `business::lock_publication`，改为直接调用发布锁，`entitlements::lock` 删除。外部节点版本（`Version`、`versions`）、Nexus 主机的会话密钥、运维流程的 `ids` 与 `digest` 只用流量服务的数据或不用数据库，搬进流量服务。
+  - **真正需要服务权益的三件事用一个接口。** 编译进配置的用户限速与连接数、Nexus 主机的设备数限制、代理运维记录由流量服务声明 `users::Users`，服务权益回答，应用层接线。没接上时调用方的事务失败：宁可不发布，也不发布缺少用户限速的配置。Nexus 切换前的国内可达性同理由流量服务声明 `china_reachability::ChinaReachability`，观测回答。
+  - **发布循环放到应用层。** 循环里交替运行两个领域的步骤（套餐资格→有序链路→配置发布→每 30 秒运维记录保留→每 10 秒设备数策略），由应用层的 `publisher::run` 按原顺序与原间隔组合；心跳名称 `sing-box` 与检查步骤不变，守护名称 `sing-box` 不变。
+  - **领域 crate 可以依赖同一领域的其他 crate。** 流量服务的服务 crate 依赖它的配置编译库 `crates/compiler`，依赖检查改为允许同一领域、不允许自己；sing-box crate 的过渡规则删除。
+  - **应用层去掉代理领域的兼容路径。** `crates/panel/src/plugins.rs` 改为 `domains.rs`，`singbox`、`expenses`、`ddns`、`naming`、`costs` 等别名与 `apsp_panel::{users, accesses, business, nodes, ...}`、`device_config` 等再导出删除，测试改用 `apsp_traffic`、`apsp_access`、`apsp_costs`。平台与观测、作业模块的再导出（`apsp_panel::auth`、`apsp_panel::telemetry` 等）这次不动，随 B2 其余部分一起处理。
+  - **接口前缀 `/api/plugins/sing-box` 不变。** 两个领域的管理接口由应用层合并后嵌套在同一前缀下，123 条路由登记前后相同；按领域改名等兼容桥退出后一次完成（ADR 0131）。
+  - **SQL 越界这次不处理。** 服务权益写流量服务的 3 张表、流量服务写服务权益的 4 处与 Nexus 兼容桥的分散查询（10 个文件）留到阶段 C 的下一部分：它们要改业务流程（谁负责清理、谁负责接管），不是搬家。
+
 ## 2026-11-09：ADR 0131 步骤一（一套链路、一套来源、去掉插件外壳）的取舍
 
 - 问题：用户要求激进收敛（ADR 0131）。2026-11-09 只读核对生产：三套链路的全部表都是 0 行；数字编号来源 11-04 已迁到 B，A 只剩存档；17 台接管的服务器都走 Nexus 保留配置发布，不经原生编译。

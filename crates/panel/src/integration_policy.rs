@@ -59,7 +59,7 @@ pub fn route_policy(path: &str, method: &Method) -> Option<RoutePolicy> {
 }
 
 pub fn sensitive_key(key: &str) -> bool {
-    apsp_plugin_singbox::host_support::sensitive_key(key)
+    apsp_traffic::host_support::sensitive_key(key)
 }
 
 pub fn worker_names() -> &'static [&'static str] {
@@ -75,15 +75,15 @@ pub fn worker_names() -> &'static [&'static str] {
 }
 
 pub async fn audit_snapshot(state: &AppState, path: &str) -> ApiResult<Option<Value>> {
-    apsp_plugin_singbox::host_support::audit_snapshot(state, path).await
+    apsp_traffic::host_support::audit_snapshot(state, path).await
 }
 
 pub fn signed_tool_packages(entries: &[apsp_panel_host::artifacts::ArtifactEntry]) -> Vec<Value> {
-    apsp_plugin_singbox::host_support::signed_tool_packages(entries)
+    apsp_traffic::host_support::signed_tool_packages(entries)
 }
 
 pub fn search_sources() -> Vec<SearchSource> {
-    apsp_plugin_singbox::host_support::search_sources()
+    apsp_traffic::host_support::search_sources()
 }
 
 #[cfg(test)]

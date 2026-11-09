@@ -66,7 +66,7 @@
 ### 4.1 现状
 
 - 三个 `CHECK` 约束把运行时版本写成枚举（`0001_current.sql` 第 2411、3881、3908 行：`singbox_chain_runtime_requirements`、`singbox_runtime_manifest_facts`、`singbox_runtime_rollouts`），每个都列着 1.14.2、1.14.2-apsp.1、1.14.0-apsp.1、1.14.4-apsp.1；客户端模板另有 `client_version = '1.14.2'`（第 2484 行）。
-- 当前版本写在 `plugins/singbox/panel/mod.rs` 的 `RUNTIME_VERSION`，版本字符串 `1.14.4-apsp.1` 出现在约 60 个源码、测试与文档文件中。
+- 当前版本写在 `crates/traffic/src/lib.rs` 的 `RUNTIME_VERSION`，版本字符串 `1.14.4-apsp.1` 出现在约 60 个源码、测试与文档文件中。
 - 后果：**每次升级内核都是一次数据库基线变更**，需要接入脚本并经过部署门禁。#249 就是这样一次变更，接入脚本只在 PostgreSQL 18 的源码副本上验证，合并后自动部署，面板拒绝启动约 19 分钟。
 
 运行时内核版本是易变决定（[设计依据 §3.2](01-principles.md#32-按可能变化的决定划分模块)），应当藏在运行时制品与能力声明后面，而不是写进数据库结构。

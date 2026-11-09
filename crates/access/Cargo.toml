@@ -1,0 +1,27 @@
+[package]
+name = "apsp-access"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+apsp-traffic.workspace = true
+apsp-panel-host.workspace = true
+apsp-protocol.workspace = true
+apsp-compiler.workspace = true
+axum.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+rand.workspace = true
+sha2.workspace = true
+base64.workspace = true
+reqwest.workspace = true
+tracing.workspace = true
+argon2 = "0.5"
+lettre = { version = "=0.11.23", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "ring", "webpki-roots"] }
+bcrypt = "=0.19.3"

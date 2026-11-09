@@ -1,0 +1,99 @@
+use crate::{
+    AppState,
+    auth::require_admin,
+    error::{ApiError, ApiResult},
+};
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::HeaderMap,
+};
+use serde::Serialize;
+use sqlx::{FromRow, PgPool};
+
+#[derive(Serialize, FromRow)]
+pub struct Entitlement {
+    pub user_id: i64,
+    pub package_group_id: Option<i64>,
+    pub package_name: Option<String>,
+    pub monthly_bytes: Option<String>,
+    pub reset_day: Option<i32>,
+    pub reset_hour: Option<i32>,
+    pub reset_minute: Option<i32>,
+    pub timezone: Option<String>,
+    pub starts_at: Option<i64>,
+    pub expires_at: Option<i64>,
+    pub cycle_start: Option<i64>,
+    pub next_reset: Option<i64>,
+    pub used_bytes: String,
+    pub status: String,
+    pub allowed: bool,
+}
+
+pub async fn get(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<Entitlement>> {
+    require_admin(&state, &headers).await?;
+    let value = sqlx::query_as("SELECT * FROM singbox_entitlements($1) WHERE user_id=$2")
+        .bind(apsp_protocol::now_timestamp())
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok(Json(value))
+}
+
+/// Persist eligibility transitions so expiry/reset also publish without HTTP traffic.
+/// Re-evaluating the same state does not keep pushing the debounce deadline forward.
+pub async fn refresh(pool: &PgPool, at: i64) -> ApiResult<()> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        .execute(&mut *tx)
+        .await?;
+    apsp_traffic::business::lock_publication(&mut tx).await?;
+    let changed: Vec<i64> = sqlx::query_scalar("SELECT e.user_id FROM singbox_entitlements($1) e LEFT JOIN singbox_entitlement_state s USING(user_id) WHERE s.allowed IS DISTINCT FROM e.allowed ORDER BY e.user_id")
+        .bind(at).fetch_all(&mut *tx).await?;
+    let mut servers: Vec<i64> = if changed.is_empty() {
+        Vec::new()
+    } else {
+        sqlx::query_scalar("SELECT DISTINCT n.server_id FROM accesses a JOIN nodes n ON n.id=a.node_id WHERE a.user_id=ANY($1) ORDER BY n.server_id")
+            .bind(&changed).fetch_all(&mut *tx).await?
+    };
+    let chain_ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT id FROM singbox_chains WHERE path_kind='ordered' AND (deleted_at IS NULL OR phase<>'retired') ORDER BY id",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    // All chains are checked together; only changed ones are written.
+    let available_chains =
+        apsp_traffic::ordered_paths::storage::chains_structurally_available(&mut tx, &chain_ids)
+            .await?;
+    let previous: std::collections::HashMap<i64, bool> =
+        sqlx::query_as("SELECT chain_id,available FROM singbox_chain_state WHERE chain_id=ANY($1)")
+            .bind(&chain_ids)
+            .fetch_all(&mut *tx)
+            .await?
+            .into_iter()
+            .collect();
+    for id in chain_ids {
+        let available = available_chains.contains(&id);
+        if previous.get(&id) != Some(&available) {
+            servers.extend(
+                apsp_traffic::ordered_paths::storage::referenced_servers(&mut tx, id).await?,
+            );
+            sqlx::query("INSERT INTO singbox_chain_state(chain_id,available) VALUES($1,$2) ON CONFLICT(chain_id) DO UPDATE SET available=EXCLUDED.available").bind(id).bind(available).execute(&mut *tx).await?;
+        }
+    }
+    servers.sort_unstable();
+    servers.dedup();
+    apsp_traffic::business::mark_dirty(&mut tx, &servers).await?;
+    // Most ticks change nothing; skip a second evaluation of every user's entitlement.
+    if !changed.is_empty() {
+        sqlx::query("INSERT INTO singbox_entitlement_state SELECT user_id,allowed FROM singbox_entitlements($1) WHERE user_id=ANY($2) ON CONFLICT(user_id) DO UPDATE SET allowed=EXCLUDED.allowed")
+            .bind(at).bind(&changed).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}

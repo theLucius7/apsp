@@ -16,7 +16,7 @@ async fn exact_devices_require_observation_and_cannot_downgrade_to_legacy_trust(
     .await?;
     assert_eq!(health(&panel.state.pool, server).await?, (0, false));
     let request = pending(&panel.state.pool, server).await?;
-    agent_api::record_apply_result(&panel.state, server, applied(1)).await?;
+    apsp_traffic::device_config::record_apply_result(&panel.state, server, applied(1)).await?;
     assert_eq!(pending(&panel.state.pool, server).await?, request);
     assert_eq!(health(&panel.state.pool, server).await?, (0, false));
     runtime_control::record_checkpoint_result(&panel.state, server, success(&request)).await?;
@@ -193,7 +193,7 @@ async fn late_and_superseded_success_are_historical_facts_without_health_promoti
         "superseded"
     );
     assert_eq!(health(&panel.state.pool, server).await?, (2, true));
-    agent_api::record_apply_result(&panel.state, server, applied(1)).await?;
+    apsp_traffic::device_config::record_apply_result(&panel.state, server, applied(1)).await?;
     assert_eq!(health(&panel.state.pool, server).await?, (2, true));
     assert_eq!(count(&panel.state.pool, "runtime_apply_facts").await?, 1);
     Ok(())
@@ -254,11 +254,12 @@ async fn successful_poll_is_bounded_but_failed_observation_can_be_reauthenticate
 ) -> Result<()> {
     let (panel, server) = fixture(pool).await?;
     let apply = applied(1);
-    agent_api::record_apply_result(&panel.state, server, apply.clone()).await?;
+    apsp_traffic::device_config::record_apply_result(&panel.state, server, apply.clone()).await?;
     let request = pending(&panel.state.pool, server).await?;
     runtime_control::record_checkpoint_result(&panel.state, server, success(&request)).await?;
     for _ in 0..100 {
-        agent_api::record_apply_result(&panel.state, server, apply.clone()).await?;
+        apsp_traffic::device_config::record_apply_result(&panel.state, server, apply.clone())
+            .await?;
         agent_api::process_message(
             &panel.state,
             server,
@@ -289,7 +290,7 @@ async fn successful_poll_is_bounded_but_failed_observation_can_be_reauthenticate
     )
     .await?;
     assert_eq!(health(&panel.state.pool, server).await?, (1, false));
-    agent_api::record_apply_result(&panel.state, server, apply.clone()).await?;
+    apsp_traffic::device_config::record_apply_result(&panel.state, server, apply.clone()).await?;
     let retry = pending(&panel.state.pool, server).await?;
     assert_ne!(retry.request_id, check.request_id);
     runtime_control::record_checkpoint_result(&panel.state, server, success(&retry)).await?;
@@ -299,7 +300,7 @@ async fn successful_poll_is_bounded_but_failed_observation_can_be_reauthenticate
     conflicting.healthy = false;
     conflicting.error = Some("different fact".into());
     assert!(
-        agent_api::record_apply_result(&panel.state, server, conflicting)
+        apsp_traffic::device_config::record_apply_result(&panel.state, server, conflicting)
             .await
             .is_err()
     );

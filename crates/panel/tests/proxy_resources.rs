@@ -9,8 +9,9 @@ use business_support::release_fixture;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
-use apsp_panel::{AppState, agent_api, runtime_control};
+use apsp_panel::{AppState, agent_api};
 use apsp_protocol::*;
+use apsp_traffic::runtime_control;
 use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -73,9 +74,9 @@ async fn advance_phase(panel: &TestPanel, chain: i64, terminal: &str) -> Result<
         }
         panel.publish_now().await?;
         ordered_support::confirm_devices(&panel.state).await?;
-        apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&panel.state).await?;
+        apsp_traffic::ordered_paths::reconcile_pending(&panel.state).await?;
         ordered_support::finish_controls(&panel.state, true).await?;
-        apsp_panel::plugins::singbox::ordered_paths::reconcile_pending(&panel.state).await?;
+        apsp_traffic::ordered_paths::reconcile_pending(&panel.state).await?;
     }
     anyhow::bail!("controlled chain {chain} did not reach {terminal}; phases: {phases:?}")
 }

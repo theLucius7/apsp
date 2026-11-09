@@ -128,8 +128,8 @@
 | 部分 | 现在（阶段 A 之后） | 目标 |
 | --- | --- | --- |
 | 平台 | `crates/panel-host`：技术部分（HTTP 外壳 `shell`、Agent 通道 `agent_api`、接口机制 `ports`、设备任务接口 `device_work`、观测证据接口 `evidence`、各领域运行时状态的槽 `DomainStates`、令牌、文本与摘要检查、地址分类、设置存储、通知发送、基线核对、后台任务守护）不再引用任何领域，只剩 `AppState` 里治理的管理员初始化与 Passkey 服务；还装着治理、资源、基础网络的代码与名称与证书的 ACME，已逐个路径登记所有者，各领域在 `domains/` 声明自己的路由。`crates/cloud-api` | `crates/panel-host` 只剩技术机制（阶段 B2）；供应商接口的签名、分页与重试留在 `crates/cloud-api` |
-| 领域 | `crates/naming`、`crates/costs`、`crates/compiler`（流量服务的配置编译）、`crates/observability`（观测，阶段 B2b 迁出）、`crates/operations`（作业，阶段 B2a 迁出）；待拆的 `plugins/singbox/panel`（阶段 C）与 `plugins/alicloud/panel`（阶段 D） | 每个领域一个 crate `crates/<领域标识>/`，内部按对象分模块，对象的模型、规则、存储与接口放在同一模块；参考过的上游代码放在该 crate 的 `upstream/` |
-| 应用 | `crates/panel`：组合各领域的路由并套上治理的权限守卫，30 秒维护循环，`wiring` 接线全部类型化接口 | 不变：路由与后台任务的登记、跨领域流程、依赖倒置接口的接线、唯一的数据库基线 |
+| 领域 | `crates/naming`、`crates/costs`、`crates/compiler`（流量服务的配置编译）、`crates/traffic`（流量服务）与 `crates/access`（服务权益，阶段 C 从 sing-box crate 拆出）、`crates/observability`（观测，阶段 B2b 迁出，阶段 C 迁入中国可达性）、`crates/operations`（作业，阶段 B2a 迁出）；待拆的 `plugins/alicloud/panel`（阶段 D） | 每个领域一个 crate `crates/<领域标识>/`，内部按对象分模块，对象的模型、规则、存储与接口放在同一模块；参考过的上游代码放在该 crate 的 `upstream/` |
+| 应用 | `crates/panel`：组合各领域的路由并套上治理的权限守卫（`domains`），30 秒维护循环，跨流量服务与服务权益的代理发布周期（`publisher`），`wiring` 接线全部类型化接口 | 不变：路由与后台任务的登记、跨领域流程、依赖倒置接口的接线、唯一的数据库基线 |
 | 前端 | `web/src/` 下按旧功能与插件分目录，已逐个路径登记所有者 | `web/src/<领域标识>/` 放该领域的页面、模型与接口调用；`web/src/app/` 放外框、路由、侧栏与组合页面（服务器详情、概览）；`components/`、`lib/`、`stores/` 是平台的通用界面层（阶段 E） |
 
 跨领域共用的数据模型不进公共目录：由所有者公开类型与函数，其他领域引用所有者的公开部分。
@@ -148,6 +148,8 @@
 | `server_observation::ServerObservation` | 资源 | 观测 | 服务器视图的流量摘要与实时遥测、新服务器与接入模板的拨测与告警规则检查、延迟检测分配的锁与默认分配 | 长期：资源排在观测之前；视图的流量摘要类型属于资源 |
 | `HostNetwork`（sing-box 的门户） | 服务权益（成员线路目录） | 观测 | 成员可见的主机网络属性（只含网络身份、用途、风险标记与评分） | 阶段 C 随服务权益迁出后保留 |
 | `dashboard::ExchangeRates`（观测的看板） | 观测 | 成本（`crates/costs`） | 看板折算成本用的当前汇率 | 长期：成本与观测同组，互不依赖 |
+| `users::Users`（流量服务） | 流量服务 | 服务权益（`crates/access`） | 编译进配置的用户限速与连接数、Nexus 主机的设备数限制、代理运维记录 | 长期：服务权益排在流量服务之后 |
+| `china_reachability::ChinaReachability`（流量服务） | 流量服务（Nexus 切换） | 观测 | 节点最近是否测得国内不可达 | 长期：观测排在流量服务之后 |
 
 ## 6. 运行模型：期望、执行、已应用、观测分别保存
 
@@ -204,6 +206,7 @@ flowchart TD
 - 外部来源只剩 B 模型：`sources/`、`source_migration/`、`/subscription-sources*`、`/source-migration`、`source-migration` 命令、界面与测试删除；基线删除 9 张表、3 个函数与 8 个触发器，两个共享视图与两个检查函数只读 B，B 的公开编号序列改名归 B 表。
 - 插件外壳退出界面：「插件中心」改为「系统 › 制品与版本」，各服务器的运行时汇总是网络服务的「运行时」视图，服务器详情的「插件」分页改为「网络服务」，节点页的独立部署弹窗删除。
 - 以上基线变更附 `scripts/baseline-adoption-one-model-20261109.sql`。
+- 流量服务与服务权益拆成两个 crate（阶段 C 的拆分部分，结果见下）：`crates/traffic`（`apsp-traffic`）与 `crates/access`（`apsp-access`），中国可达性迁入 `crates/observability`；应用层的 `plugins.rs` 改为 `domains.rs`，去掉 `singbox`、`expenses`、`ddns` 等别名与代理领域的兼容再导出，调用方与测试改用各领域 crate 的路径。
 
 | 阶段 | 内容 | 完成标准 |
 | --- | --- | --- |
@@ -213,7 +216,7 @@ flowchart TD
 | **B2b 观测迁出宿主**（2026-11-08 完成，见下） | 遥测、网卡计数、拨测与延迟检测、诊断服务与诊断工具、告警、故障事件、服务器健康、统计与看板迁到 `crates/observability`；诊断工具去掉 `#[path]`；`AppState` 的观测状态改放平台的 `DomainStates` 槽；前面的领域经 `evidence`、`server_observation` 与门户的 `HostNetwork` 取得观测；运行活动接口去掉 | 宿主不含观测代码，也不引用观测；`#[path]` 越界为零 |
 | **B2c 成本与流量服务留在宿主的部分迁出**（2026-11-09 完成，见下） | 汇率迁到 `crates/costs`，看板经观测声明的 `ExchangeRates` 读取；设备的清单与配置包、运行时检查点与运行时校验迁到 sing-box crate（阶段 C 成为流量服务 crate），设备配置接口去掉；成本直接读取 sing-box 的外部来源到期，续费引用接口去掉 | 宿主只剩平台、治理、资源、基础网络与名称 |
 | B2 其余领域代码迁出宿主 | 按依赖顺序从后往前：基础网络与名称（同组，先拆开名称的 ACME 对网络配置的引用）、资源、治理迁到各自的 crate；`AppState` 只留平台状态 | 平台没有业务代码与业务表 |
-| C 流量服务与服务权益分开 | sing-box crate 拆为 `traffic` 与 `access`；凭据经依赖倒置接口进入配置编译；中国可达性迁到观测；Nexus 兼容收拢为两个领域内的兼容模块 | 两个领域各自编译与测试；服务权益不写流量服务的表；兼容桥只在一个模块中出现 |
+| **C 流量服务与服务权益分开**（2026-11-09 完成拆分，见下；兼容桥与跨领域写入未完成） | sing-box crate 拆为 `traffic` 与 `access`；凭据经依赖倒置接口进入配置编译；中国可达性迁到观测；Nexus 兼容收拢为两个领域内的兼容模块 | 两个领域各自编译与测试；服务权益不写流量服务的表；兼容桥只在一个模块中出现 |
 | D 云与供应商能力分回领域 | 阿里云按资源（实例、EIP）、基础网络（安全组）、成本（CDT 计费流量与账单）、作业（启停与换 IP 工作流）、观测（事件）拆分；Globalping 与 Cloudflare 客户端各合并为一个 | 没有以供应商命名的业务模块；供应商实现只在平台的技术层与各领域的实现目录中 |
 | E 前端与菜单 | 前端按领域目录组织，清单声明入口与工作区；侧栏按 ADR 0126 改为六个工作区 | 加一个页面只改所属领域的目录；侧栏与功能地图一致 |
 | F 数据收尾 | 表名前缀与所有者对齐、旧模型与旧商务表删除（需授权）、外键只指向身份表 | 边界清单中跨领域 SQL 只剩登记过的公开只读 |
@@ -229,6 +232,16 @@ flowchart TD
 阶段 B2b 的结果（2026-11-08）：越界从 595 条减到 575 条（SQL 363、代码引用 92、前端引用 120），按搬家前后的路径对照没有新增：575 条没变或只换了位置（29 条在新路径），消失 20 条——诊断工具的 `#[path]` 3 条，资源指向观测 11 条，平台的 `state.rs` 指向观测 2 条，治理、成本、流量服务与服务权益指向观测各 1 条。平台代码指向领域的引用只剩 `state.rs` 指向治理的 2 条（管理员初始化与 Passkey 服务）。宿主从约 3.7 万行减到约 2.2 万行，观测 crate 约 1.8 万行（含原来经 `#[path]` 编入的诊断工具约 3,000 行）。
 
 阶段 B2c 的结果（2026-11-09）：越界从 575 条减到 574 条（SQL 363、代码引用 91、前端引用 120），按搬家前后的路径对照没有新增：运行时校验读资源退役记录的 1 条随文件换了位置，看板引用汇率的 1 条消失。类型化接口去掉两个（设备配置、续费引用），增加一个（看板的汇率）。宿主约 2.0 万行。
+
+阶段 C 拆分部分的结果（2026-11-09）：
+
+- 两个 crate 各自编译与测试，流量服务不再引用服务权益：原来 26 处代码引用里，20 处是服务权益的 `entitlements::lock`（它只是转调流量服务的 `business::lock_publication`），改为直接调用发布锁；外部节点版本的读取（`Version`、`versions`）只读流量服务的视图，搬进 `subscription_sources`；Nexus 主机的会话密钥搬进 `nexus_nodes`；运维流程的 `ids`、`digest` 搬进 `business`。
+- 流量服务需要服务权益回答的三件事（编译进配置的用户限速与连接数、Nexus 主机的设备数限制、代理运维记录）由流量服务声明 `users::Users`，服务权益回答；Nexus 切换前的国内可达性由流量服务声明 `china_reachability::ChinaReachability`，观测回答。两个接口都在应用层的 `wiring` 接线，没接上时调用方的事务失败。
+- 原来在 sing-box 发布循环里的服务权益步骤（套餐资格、运维记录保留、设备数策略）与流量服务步骤（有序链路状态、配置发布）由应用层的 `publisher` 按原顺序、原间隔组合，心跳名称 `sing-box` 与检查步骤不变。运维流程里属于流量服务的部署检查、发布批次与运行时清单改名 `runtime_workflows`，路由由它自己登记。
+- 路由静态比对：123 条路由登记（路径与方法）拆分前后相同，代理控制台接口仍在 `/api/plugins/sing-box`（ADR 0131：兼容桥退出后再按领域改名）。
+- 越界从 538 条减到 510 条（SQL 345、代码引用 50、前端引用 115），按搬家前后的路径对照没有新增：消失的 28 条是流量服务指向服务权益的 26 条代码引用、流量服务指向观测的 1 条与服务权益读外部节点版本视图的 1 条 SQL。
+- 依赖检查：领域 crate 可以依赖同一领域的其他 crate（流量服务依赖它的配置编译库），不能依赖自己或排在后面的领域；sing-box crate 的过渡规则删除。
+- 未完成：Nexus 兼容桥的 `singbox_nexus_bridge` 仍出现在 10 个文件（服务权益 9、流量服务 1）；服务权益仍写 3 张流量服务的表（`entitlements.rs` 写 `singbox_chain_state`，运维流程的保留任务写 `singbox_deployment_preflights` 与 `singbox_runtime_rollout_members`），流量服务仍写 4 处服务权益的表（Nexus 接管写 `singbox_policy_nodes` 两处与 `singbox_nexus_usage_deliveries`，`proxy_resources.rs` 写 `accesses`）。这些是阶段 C 剩下的部分。
 
 ## 10. 上游代码：每个领域自己维护
 

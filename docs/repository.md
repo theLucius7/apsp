@@ -29,11 +29,13 @@
 | `panel-host` | 平台：HTTP 外壳、数据库、Agent 通道、凭据库、通知发送、设备任务与观测证据的接口、各领域运行时状态的槽、类型化接口机制与通用的文本、摘要和地址检查；工作区依赖仅 `protocol`，不依赖任何领域。尚未迁出的治理、资源、基础网络代码，以及名称与证书的 ACME 也在这里，已逐个路径登记所属领域（阶段 B2 迁出） |
 | `cloud-api` | 平台的云接口客户端：签名、传输、重试与错误码；工作区依赖仅 `protocol` |
 | `naming` | 名称与证书领域：DNS 账号与记录、DDNS、DNS-01 验证记录 |
-| `costs` | 成本领域：付费服务、付款、续费提醒与续费日历、供应商对照、计划退订提醒、汇率与统计币种；直接读 sing-box crate 的外部来源到期 |
-| `observability` | 观测领域：遥测与历史、网卡计数与矫正、拨测与延迟检测、共用诊断任务服务与诊断工具（IP 质量、NodeQuality、TCP 质量、网络检测）、告警规则与事件、故障事件、服务器健康与事件时间线、统计与看板；直接调用 sing-box crate 的运行活动 |
-| `operations` | 作业领域：远程命令、终端、固定设备操作及其核对、运行时操作，以及作业、计划、维护窗口、有界自动处置与面板备份步骤；排在依赖顺序最后，直接调用流量服务（sing-box crate）与成本 |
-| `plugins/singbox/panel`、`plugins/alicloud/panel` | 尚未拆分的 crate：前者装着流量服务与服务权益（阶段 C 拆开；设备的清单与配置包、运行时检查点与运行时校验在阶段 B2c 从宿主迁入），后者装着云资源、安全组、CDT 计费流量与启停、换 IP 作业（阶段 D 分回各领域）；拆分前保持现有依赖，排在它们所含全部领域之后的领域 crate 可以依赖它们（作业依赖 sing-box crate）。诊断工具（IPQuality、NodeQuality、TcpQuality）的面板代码在 `crates/observability/src/diagnostic_plugins/`，`plugins/` 下只留它们的打包脚本与上游锁定文件 |
-| `panel` | 应用：组合平台与各领域、接线依赖倒置接口、启动服务与后台任务；保存唯一的当前数据库初始化 SQL，保留原有 `apsp_panel::*` Rust 路径 |
+| `costs` | 成本领域：付费服务、付款、续费提醒与续费日历、供应商对照、计划退订提醒、汇率与统计币种；直接读流量服务的外部来源到期 |
+| `observability` | 观测领域：遥测与历史、网卡计数与矫正、拨测与延迟检测、共用诊断任务服务与诊断工具（IP 质量、NodeQuality、TCP 质量、网络检测）、告警规则与事件、故障事件、服务器健康与事件时间线、统计与看板、中国可达性；直接调用流量服务的运行活动 |
+| `operations` | 作业领域：远程命令、终端、固定设备操作及其核对、运行时操作，以及作业、计划、维护窗口、有界自动处置与面板备份步骤；排在依赖顺序最后，直接调用流量服务与成本 |
+| `traffic` | 流量服务领域：节点、链路、外部来源与节点库，服务器运行时的配置编译与发布、部署检查与发布批次、运行时控制与校验，Nexus 兼容桥的流量部分（`nexus_nodes/`）；用户的限速、设备数与运维记录经自己声明的 `users` 接口由服务权益回答 |
+| `access` | 服务权益领域：代理用户、策略组与套餐、资格与配额、订阅与专属地址、成员门户与账号、用户限速与会话、代理运维流程（预览与应用）、Nexus 兼容桥的设备会话（`nexus_sessions`）；排在流量服务之后，直接调用它 |
+| `plugins/alicloud/panel` | 尚未拆分的 crate：云资源、安全组、CDT 计费流量与启停、换 IP 作业（阶段 D 分回各领域）；拆分前保持现有依赖，排在它所含全部领域之后的领域 crate 可以依赖它。诊断工具（IPQuality、NodeQuality、TcpQuality）的面板代码在 `crates/observability/src/diagnostic_plugins/`，`plugins/` 下只留它们的打包脚本与上游锁定文件 |
+| `panel` | 应用：组合平台与各领域（`domains`）、接线依赖倒置接口（`wiring`）、运行跨流量服务与服务权益的代理发布周期（`publisher`）、启动服务与后台任务；保存唯一的当前数据库初始化 SQL。平台模块保留 `apsp_panel::*` 路径，代理领域直接用 `apsp_traffic`、`apsp_access` |
 | `agent-core` | 设备身份、传输、对账、持久状态、遥测、计量与制品；工作区依赖仅 `protocol`、`adapter-sdk` |
 | `adapter-sdk` | 无状态适配器接口与共享模型 |
 | `adapter-singbox`、`adapter-nodequality`、`adapter-ipquality`、`adapter-tcpquality` | 运行时或工具翻译；工作区依赖仅 `adapter-sdk` |
@@ -60,7 +62,7 @@
 
 - 领域之间需要逆着依赖顺序调用，或调用方还在宿主里时，由调用方声明类型化接口、实现方回答、应用层接线，清单见[功能划分与逻辑结构 §5.5](architecture.md#55-类型化接口)。Agent 通道把设备回报经 `DeviceReports` 交给各领域，不再有插件接口。
 - 领域路由由应用层组合后放进平台的外壳；各领域的后台任务由应用层分别守护，一个崩溃不会停掉其他任务。
-- `crates/naming/`、`crates/costs/`、`crates/observability/`、`crates/operations/`、`plugins/singbox/panel/`、`plugins/alicloud/panel/` 各自是独立 crate，只经平台公开接口与排在前面的领域使用面板能力；`crates/cloud-api/` 是平台的云接口客户端。排在前面的领域要向设备派发任务时经平台的 `device_work`（设备能否接收新任务、提交固定设备操作），作业实现、应用层接线。
+- `crates/naming/`、`crates/traffic/`、`crates/access/`、`crates/costs/`、`crates/observability/`、`crates/operations/`、`plugins/alicloud/panel/` 各自是独立 crate，只经平台公开接口与排在前面的领域使用面板能力；`crates/cloud-api/` 是平台的云接口客户端。排在前面的领域要向设备派发任务时经平台的 `device_work`（设备能否接收新任务、提交固定设备操作），作业实现、应用层接线。
 - 诊断工具（IP 质量、NodeQuality、TCP 质量）是观测 crate 的 `diagnostic_plugins/` 子模块，共用诊断服务负责生命周期、预算、取消和历史；不再有跨 crate 的 `#[path]`。
 - 领域在进程内的运行时状态（实时遥测缓存、IP 查询提供方）放在 `AppState` 的 `domain_states` 槽里，类型属于领域，平台不认识；测试用 `with` 换成替身。资源、治理与成本经平台的 `evidence` 记录服务器事件与故障，资源的服务器视图与新服务器的拨测、延迟检测经资源声明的 `server_observation` 取得观测的数据；观测与成本同组、互不依赖，看板折算用的汇率经观测声明的 `dashboard::ExchangeRates` 取得。
 

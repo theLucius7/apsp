@@ -188,8 +188,8 @@
 | 对象 | 所有者 | 现在的代码位置 | 已知越界与去向 |
 | --- | --- | --- | --- |
 | 服务器、接入、遥测、网卡流量 | 内核·设备 | `crates/panel-host`；Agent 侧 `agent-core` | — |
-| 运行时 | `proxy-runtime`；部署记录与模块状态是内核机制 | `plugins/singbox/panel`（`settings.rs`、`publisher.rs`、`deployments.rs`）；`adapter-singbox` | 插件直接写内核的部署与模块状态表，改经运行时模块接口（architecture.md §1、§4.1） |
-| 节点、链路、外部来源 | `proxy-nodes` | `plugins/singbox/panel`（`nodes*`、`catalog/`、`ordered_paths/`、`subscription_sources/`）；`crates/compiler` | 已只剩一套链路与来源模型（ADR 0131） |
+| 运行时 | `proxy-runtime`；部署记录与模块状态是内核机制 | `crates/traffic`（`settings.rs`、`publisher.rs`、`deployments.rs`）；`adapter-singbox` | 插件直接写内核的部署与模块状态表，改经运行时模块接口（architecture.md §1、§4.1） |
+| 节点、链路、外部来源 | `proxy-nodes` | `crates/traffic`（`nodes*`、`catalog/`、`ordered_paths/`、`subscription_sources/`）；`crates/compiler` | 已只剩一套链路与来源模型（ADR 0131） |
 | 用户、策略组、套餐、计量账本 | `proxy-users` | `proxy_users.rs`、`policies.rs`、`packages.rs`、`entitlements.rs`、`usage.rs` | — |
 | 客户端订阅、专属地址 | `proxy-delivery` | `subscriptions.rs`、`subscription_hosts.rs` | 专属地址用自己的 Cloudflare 客户端写 DNS 记录，改经 `dns` 的端口（ADR 0125 §5.2 第 2 条） |
 | 门户账号、邀请 | `proxy-portal` | `portal/`、`user_accounts/` | — |

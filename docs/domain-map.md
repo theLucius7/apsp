@@ -29,32 +29,32 @@
 
 | 功能 | 意图 | 核心对象 | 关键约束 | 协作 | 实现与入口 |
 | --- | --- | --- | --- | --- | --- |
-| 运行时安装与升级 | 让服务器运行 sing-box | 服务实例、运行时版本 | 只用已导入的签名制品；安装完成以 Agent 回报为准 | 资源；治理（制品可信）；作业（升级执行） | sing-box `settings.rs`（启用记录 `server_plugins`）、运行时升级记录；服务器详情 › 网络服务 |
-| 受管节点 | 开一个代理入口 | 受管节点（服务端点） | 端口不冲突；被链路引用时锁定部分配置；没有授权用户时不监听 | 名称（公开地址、证书）；服务权益（加入策略组） | sing-box `nodes*`；网络服务 › 节点 |
-| 链路 | 让流量按顺序经过多个端点（唯一的链路模型，ADR 0131） | 链路与不可变版本 | 只引用存在的端点；线性无环；入口单次计量；内部凭据不进订阅 | 外部来源 | sing-box `ordered_paths/`；网络服务 › 链路 |
-| 外部来源与外部节点 | 引入机场等外部节点 | 外部来源、外部节点版本 | 先预览再采用；失败保留上一个成功修订 | 服务权益（策略组引用）；成本（报告的到期只读） | sing-box `subscription_sources/`、`subscription_parser/`（唯一的来源模型，ADR 0131）；网络服务 › 外部来源 |
-| 配置编译与发布 | 把期望配置变成每台服务器的完整快照并下发 | 配置版本、部署 | 同一输入同一字节；字节相同不产生新修订；只有回执才算已应用 | 服务权益（授权凭据，经依赖倒置接口）；平台（Agent 通道） | `crates/compiler`；sing-box `publisher.rs`、`deployments.rs`、`device_config.rs`（设备的清单与配置包、已应用修订、应用结果，阶段 B2c 从宿主迁入） |
-| 运行时检查点与路径验证 | 确认目标修订真的在运行、路径真的通 | 已应用状态与验证证据 | 证据有有效期；旧代次的回执不覆盖新代次 | 平台（Agent 通道） | sing-box `runtime_control/`（检查点、回执与路径探测）、`runtime_validations.rs`（阶段 B2c 从宿主迁入；混合链路退出后只为在用 Agent 保留空的轮询接口，随下一次 Agent 协议变更删除） |
-| 运行时运维 | 检查、重启运行时或重试部署 | 运行时操作的合法性 | 只对受管运行时；结果未知不自动重试 | 作业（执行记录） | `crates/operations` 的 `runtime_operations.rs`（设备队列与回执）；sing-box `runtime_operations.rs` |
+| 运行时安装与升级 | 让服务器运行 sing-box | 服务实例、运行时版本 | 只用已导入的签名制品；安装完成以 Agent 回报为准 | 资源；治理（制品可信）；作业（升级执行） | `crates/traffic` `settings.rs`（启用记录 `server_plugins`）、运行时升级记录；服务器详情 › 网络服务 |
+| 受管节点 | 开一个代理入口 | 受管节点（服务端点） | 端口不冲突；被链路引用时锁定部分配置；没有授权用户时不监听 | 名称（公开地址、证书）；服务权益（加入策略组） | `crates/traffic` `nodes*`；网络服务 › 节点 |
+| 链路 | 让流量按顺序经过多个端点（唯一的链路模型，ADR 0131） | 链路与不可变版本 | 只引用存在的端点；线性无环；入口单次计量；内部凭据不进订阅 | 外部来源 | `crates/traffic` `ordered_paths/`；网络服务 › 链路 |
+| 外部来源与外部节点 | 引入机场等外部节点 | 外部来源、外部节点版本 | 先预览再采用；失败保留上一个成功修订 | 服务权益（策略组引用）；成本（报告的到期只读） | `crates/traffic` `subscription_sources/`、`subscription_parser/`（唯一的来源模型，ADR 0131）；网络服务 › 外部来源 |
+| 配置编译与发布 | 把期望配置变成每台服务器的完整快照并下发 | 配置版本、部署 | 同一输入同一字节；字节相同不产生新修订；只有回执才算已应用 | 服务权益（授权凭据，经依赖倒置接口）；平台（Agent 通道） | `crates/compiler`；`crates/traffic` `publisher.rs`、`deployments.rs`、`device_config.rs`（设备的清单与配置包、已应用修订、应用结果，阶段 B2c 从宿主迁入） |
+| 运行时检查点与路径验证 | 确认目标修订真的在运行、路径真的通 | 已应用状态与验证证据 | 证据有有效期；旧代次的回执不覆盖新代次 | 平台（Agent 通道） | `crates/traffic` `runtime_control/`（检查点、回执与路径探测）、`runtime_validations.rs`（阶段 B2c 从宿主迁入；混合链路退出后只为在用 Agent 保留空的轮询接口，随下一次 Agent 协议变更删除） |
+| 运行时运维 | 检查、重启运行时或重试部署 | 运行时操作的合法性 | 只对受管运行时；结果未知不自动重试 | 作业（执行记录） | `crates/operations` 的 `runtime_operations.rs`（设备队列与回执）；`crates/traffic` `runtime_operations.rs` |
 | 服务器端逐用户限制的执行 | 把限速与连接数编进配置 | 运行时能力 `user-limits` | 运行时不支持时拒绝而不是忽略 | 服务权益（限制的值） | `crates/compiler/src/limits.rs` |
-| Nexus 运行时兼容 | 让接管的 Nexus 主机在兼容桥退出前继续用保留配置 | 保留配置、受保护节点 | 只经接管流程进入；兼容桥退出（路线图 1.5）后删除 | 治理（迁移授权）；服务权益（兼容桥） | sing-box `nexus_nodes/`、`crates/compiler/src/preserved.rs`；系统 › 迁移与兼容 |
+| Nexus 运行时兼容 | 让接管的 Nexus 主机在兼容桥退出前继续用保留配置 | 保留配置、受保护节点 | 只经接管流程进入；兼容桥退出（路线图 1.5）后删除 | 治理（迁移授权）；服务权益（兼容桥） | `crates/traffic` `nexus_nodes/`、`crates/compiler/src/preserved.rs`；系统 › 迁移与兼容 |
 
 ## 服务权益与交付 `access`
 
 | 功能 | 意图 | 核心对象 | 关键约束 | 协作 | 实现与入口 |
 | --- | --- | --- | --- | --- | --- |
-| 服务用户 | 给一个人开通服务 | 用户聚合（用户、凭据、限制） | 删除时撤销全部凭据，历史用量保留 | 流量服务（凭据编入配置） | sing-box `proxy_users.rs`、`accesses.rs`；网络服务 › 用户 |
-| 策略组 | 决定用户能用哪些资源 | 策略组、成员关系 | 用户只经策略组获得资源 | 流量服务（资源目录） | sing-box `policies.rs`、`external_access/`；网络服务 › 策略与套餐 |
-| 套餐与资格 | 约定额度、有效期与重置周期 | 套餐模板、套餐快照、资格 | 快照不可变；资格变化才触发重新发布 | 流量服务（重新发布） | sing-box `packages.rs`、`entitlements.rs` |
-| 用量账本与周期重置 | 记账并判断还能不能用 | 用量批次与记录、额度补偿 | 批次幂等；只在入口计量；重置记为补偿，不删记录 | 平台（Agent 通道收批次） | sing-box `usage.rs`；用户详情 |
-| 速率与连接数限制 | 给用户设上限 | 用户限制 | 0 表示不限；按服务器执行 | 流量服务（编进配置） | sing-box `user_limits.rs` |
-| 客户端订阅 | 让用户的客户端拿到可用配置 | 订阅令牌、订阅输出 | 只包含有效权益覆盖的服务；不调用第三方转换；令牌可重置 | 流量服务（可交付服务描述） | sing-box `subscriptions.rs`、`crates/compiler` 的客户端部分；`/sub/{token}` |
-| 专属地址 | 每个用户独立、可重置的主机名与路径 | 专属地址 | 默认关闭；令牌只进加密凭据 | 名称（DNS 记录，应经名称的接口；现在自带 Cloudflare 客户端，阶段 C 改） | sing-box `subscription_hosts.rs`；用户 › 门户设置 |
-| 门户与登录 | 让用户自己查看订阅、用量与到期 | 门户账号、会话、Passkey | 与管理员会话分开；开通不得使用订阅令牌 | 治理（复用 WebAuthn 机制） | sing-box `portal/`、`user_accounts/`；`/#/account/{id}`、`/#/member` |
-| 邀请 | 已有用户邀请熟人 | 邀请名额、邀请码 | 不收费、无佣金；套餐与策略组取邀请的默认值 | — | sing-box `user_accounts/invitations.rs`；`/#/join` |
-| 公告、指南与提醒 | 告诉用户怎么用、何时到期 | 公告、指南、提醒 | 提醒只告知，不改权益 | 平台（邮件与通知通道） | sing-box `user_accounts/` |
-| 用户操作流程 | 批量分配、换套餐、重置额度、轮换凭据 | 权益变更计划 | 先预览再应用；轮换凭据要等设备确认 | 流量服务（下发）；作业（执行记录） | sing-box `operations_workflows/` |
-| 用户诊断 | 回答“这个用户为什么用不了” | 诊断结论（引用其他领域的证据） | 每一步写明依据与时间 | 流量服务（下发状态）；观测（线路质量） | sing-box `operations_workflows/diagnosis.rs`；用户详情 › 诊断 |
+| 服务用户 | 给一个人开通服务 | 用户聚合（用户、凭据、限制） | 删除时撤销全部凭据，历史用量保留 | 流量服务（凭据编入配置） | `crates/access` `proxy_users.rs`、`accesses.rs`；网络服务 › 用户 |
+| 策略组 | 决定用户能用哪些资源 | 策略组、成员关系 | 用户只经策略组获得资源 | 流量服务（资源目录） | `crates/access` `policies.rs`、`external_access/`；网络服务 › 策略与套餐 |
+| 套餐与资格 | 约定额度、有效期与重置周期 | 套餐模板、套餐快照、资格 | 快照不可变；资格变化才触发重新发布 | 流量服务（重新发布） | `crates/access` `packages.rs`、`entitlements.rs` |
+| 用量账本与周期重置 | 记账并判断还能不能用 | 用量批次与记录、额度补偿 | 批次幂等；只在入口计量；重置记为补偿，不删记录 | 平台（Agent 通道收批次） | `crates/access` `usage.rs`；用户详情 |
+| 速率与连接数限制 | 给用户设上限 | 用户限制 | 0 表示不限；按服务器执行 | 流量服务（编进配置） | `crates/access` `user_limits.rs` |
+| 客户端订阅 | 让用户的客户端拿到可用配置 | 订阅令牌、订阅输出 | 只包含有效权益覆盖的服务；不调用第三方转换；令牌可重置 | 流量服务（可交付服务描述） | `crates/access` `subscriptions.rs`、`crates/compiler` 的客户端部分；`/sub/{token}` |
+| 专属地址 | 每个用户独立、可重置的主机名与路径 | 专属地址 | 默认关闭；令牌只进加密凭据 | 名称（DNS 记录，应经名称的接口；现在自带 Cloudflare 客户端，阶段 C 改） | `crates/access` `subscription_hosts.rs`；用户 › 门户设置 |
+| 门户与登录 | 让用户自己查看订阅、用量与到期 | 门户账号、会话、Passkey | 与管理员会话分开；开通不得使用订阅令牌 | 治理（复用 WebAuthn 机制） | `crates/access` `portal/`、`user_accounts/`；`/#/account/{id}`、`/#/member` |
+| 邀请 | 已有用户邀请熟人 | 邀请名额、邀请码 | 不收费、无佣金；套餐与策略组取邀请的默认值 | — | `crates/access` `user_accounts/invitations.rs`；`/#/join` |
+| 公告、指南与提醒 | 告诉用户怎么用、何时到期 | 公告、指南、提醒 | 提醒只告知，不改权益 | 平台（邮件与通知通道） | `crates/access` `user_accounts/` |
+| 用户操作流程 | 批量分配、换套餐、重置额度、轮换凭据 | 权益变更计划 | 先预览再应用；轮换凭据要等设备确认 | 流量服务（下发）；作业（执行记录） | `crates/access` `operations_workflows/` |
+| 用户诊断 | 回答“这个用户为什么用不了” | 诊断结论（引用其他领域的证据） | 每一步写明依据与时间 | 流量服务（下发状态）；观测（线路质量） | `crates/access` `operations_workflows/diagnosis.rs`；用户详情 › 诊断 |
 | Nexus 迁移用户与兼容桥 | 让迁移用户继续使用旧订阅 | 兼容桥成员、旧订阅渲染 | 有退出条件（路线图 1.4、1.5） | 流量服务（兼容运行时） | 散在 10 个源文件中的兼容桥查询（阶段 C 收拢）；系统 › 迁移与兼容 |
 
 ## 名称与证书 `naming`
@@ -106,7 +106,7 @@
 | 告警与通知 | 出事时告诉管理员 | 告警规则、告警事件、处置记录 | 通知只提醒，不执行付款、停用或远程命令 | 平台（通知通道） | `crates/observability` 的 `alerts/`（规则、评估与告警事件；发件箱与渠道归平台的 `notifications`）；监测与诊断 › 告警 |
 | 故障事件（实验） | 聚合告警并记录处置 | 故障事件、处置记录 | 计划与告警合并（路线图 4.3） | 作业；资源、治理与成本经平台的 `evidence` 打开与恢复 | `crates/observability` 的 `incidents.rs` |
 | 延迟检测与周期拨测 | 测三网延迟与丢包 | 拨测、拨测结果 | 执行许可可撤销；只测授权目标 | 资源（新服务器与接入模板的拨测经资源的 `server_observation`） | `crates/observability` 的 `probes.rs`、`latency_tasks.rs`；Agent 拨测；线路质量 |
-| 中国可达性 | 区分端口封锁、IP 封锁与服务故障 | 可达性观测与事件 | 默认关闭；用量不超额度的 80% | 流量服务（节点端点，阶段 C 改经接口读取） | sing-box `reachability/`（阶段 C 迁入观测） |
+| 中国可达性 | 区分端口封锁、IP 封锁与服务故障 | 可达性观测与事件 | 默认关闭；用量不超额度的 80% | 流量服务（节点端点；Nexus 切换前经 `china_reachability` 读取最近测量） | `crates/observability` `reachability/` |
 | 网络检测 | 测连通性、路由与 IP 资料 | 检测方案、运行与结果 | 只测量，不改动 | 资源 | `crates/observability` 的 `network_workbench/`；线路质量 |
 | IP 质量、TCP 诊断、服务器验机 | 判断一台服务器的出口与线路质量 | 诊断任务与报告 | 共用诊断任务生命周期（ADR 0028）；完整验机门禁未解除 | 资源；服务权益（门户经 `HostNetwork` 显示成员可见的网络属性） | `crates/observability` 的 `diagnostics/`、`ip_quality/`、`diagnostic_plugins/{ipquality,nodequality,tcpquality}/`（打包脚本与上游锁定文件仍在 `plugins/`）；Agent 诊断适配器；服务器详情 › 诊断 |
 | 趋势与报表 | 回顾一段时间的整体运行 | 汇总视图（网卡计数与代理用量两本账） | 两本账分开显示，各自标明口径 | 服务权益（用量，经接口） | `crates/observability` 的 `statistics.rs`（网卡计数）、`statistics/proxy_usage.rs`（代理用量，原 sing-box `statistics.rs`） |
