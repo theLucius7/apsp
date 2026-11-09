@@ -20,7 +20,11 @@
 - 用户要求：身份钩子 `.claude/hooks/git-identity.sh` 不上传 GitHub、只在本地，身份改回用户本人。该钩子 2026-11-07 随 imengying/apsp 的 #245 合入，把 fork 所有者 `imengying <yuzuzv@gmail.com>` 写成了本仓库的提交身份，本机两个克隆的仓库级配置也被改成了它，此后所有者会话的提交都署了 imengying。
 - 删除跟踪的 `.claude/hooks/git-identity.sh` 与只注册它的 `.claude/settings.json`；`.gitignore` 忽略 `/.claude/hooks/git-identity.sh` 与 `/.claude/settings.local.json`，身份脚本只放本地。AGENTS.md「提交身份」改为按 `origin` 区分：为 `theLucius7/apsp` 工作的会话用 `Lucius7 Nya <i@lucius7.dev>`，fork 贡献者用自己的身份，合入别人的提交保留原作者。
 - 本机 `~/apsp-structure`、`~/apsp-runtime-20261101` 的仓库级配置已改为 `Lucius7 Nya <i@lucius7.dev>`（worktree 共用）。
-- 区分结果（main `6a52d548..af327493`）：所有者会话做的、署了 imengying 的提交 11 个——`6a52d548`、`2d5008ba`（#253）、`bb99ebf5`（#258）、`052a3129`（#260）、`44ed6036`、`b7aee37b`、`68a0ac33`、`4f205cec`、`c83a0c62`、`b74a60c9`、`af327493`；`442141f3`、`1791681a`、`dbf61e28` 是 imengying 的 #255 提交，作者正确，提交者是所有者会话变基时写成的 imengying。#245、#249 与 2026-09/10 的 imengying 提交都来自 imengying/apsp 的 PR，作者正确。
+- 区分结果（原 main `6a52d548..af327493`）：所有者会话做的、署了 imengying 的提交 11 个——`6a52d548`、`2d5008ba`（#253）、`bb99ebf5`（#258）、`052a3129`（#260）、`44ed6036`、`b7aee37b`、`68a0ac33`、`4f205cec`、`c83a0c62`、`b74a60c9`、`af327493`；`442141f3`、`1791681a`、`dbf61e28` 是 imengying 的 #255 提交，作者正确，提交者是所有者会话变基时写成的 imengying。#245、#249 与 2026-09/10 的 imengying 提交都来自 imengying/apsp 的 PR，作者正确，不改。
+- 改写历史（用户选择全部改写）：上面 11 个提交的作者与提交者改为 `Lucius7 Nya <i@lucius7.dev>`，3 个 #255 提交只改提交者，作者仍是 imengying；文件树逐字节不变，日期与提交信息不变。从原 `6a52d548` 起的 20 个提交换了哈希（新旧对照：`6a52d548→a6e1f488`、`2d5008ba→1c43b6a5`、`a32ec49b→d24bd135`、`f29c49ee→39c8a11c`、`bb99ebf5→05bdf86c`、`052a3129→1291fd22`、`6dd388cc→76be2383`、`44ed6036→38f89244`、`b7aee37b→3e7b0032`、`51f9de7f→2be8d44a`、`68a0ac33→fa6ba311`、`4f205cec→880d6545`、`c83a0c62→bc9c5ea6`、`442141f3→8e2f2cfa`、`1791681a→a9867db8`、`dbf61e28→2672eaf3`、`b74a60c9→da73c774`、`af327493→7345021a`、`796873f8→e3d2d484`、`78c70e64→7c72ed42`），本提交把文档里引用的旧哈希换成新哈希。四个 GitHub squash 合并提交因改写失去 GitHub 签名。
+- 已签名发布的 `agent-v0.3.8` 标签不移动，仍指向原提交 `2d5008ba`（作者仍是 imengying，不在 main 上），文档中“从 `2d5008ba` 签名发布”保持原样。
+- 生产部署器要求 main 包含已部署版本：推送时持有部署锁，把 `work/apsp-production/state.json` 的 `deployed_sha` 记为改写后的 `7c72ed42`（与原 `78c70e64` 文件树相同，无需重建）。
+- imengying/apsp 的 main 仍是改写前的历史，需由 imengying 重置到新 main，否则下一个 PR 会带回旧提交；合入前核对。
 - 未改：`tools/singbox-runtime/apply.py` 给补丁后的 sing-box 源码提交固定写入 imengying 身份（#249 引入），它决定运行时构建的源码提交哈希，属于 #249 的构建输入，不在本次范围。
 - 验证：只改文档、`.gitignore` 与 `.claude` 配置，不影响构建输入；`git var GIT_AUTHOR_IDENT` 在两个克隆中均为 `Lucius7 Nya <i@lucius7.dev>`。
 
@@ -61,7 +65,7 @@
 - 其余：设置与通知渠道的管理接口移到治理，存储、校验与发送留在平台；告警事件列表归观测；30 秒维护循环移到应用层，步骤、顺序与心跳不变。
 - 边界检查：增加同一 crate 内代码引用方向的检查（平台引用领域、前面的领域引用后面的领域或同组领域算越界），越界清单按新规则重建：B1 之前的代码计量为 701 条（代码引用 184 条，其中平台指向领域 53 条），之后 647 条（SQL 389、代码引用 135、前端引用 120、`#[path]` 3）；平台指向领域只剩 `state.rs` 的 4 条（`AppState` 中的领域运行时状态，B2 处理）。
 - 公共 Rust 路径：`apsp_panel::agent_api`（含 `process_message`、`record_apply_result`、`manifest`、`bundle`）、`apsp_panel::maintenance`、`apsp_panel::plugins::*` 保持可用；`apsp_panel::plugin_api` 随插件接口删除。
-- 验证：`cargo fmt --check` 与全工作区 `cargo clippy --all-targets -- -D warnings` 通过；本地 PostgreSQL 16 上受影响 crate 的测试全部通过：宿主 184、sing-box 211（1 个原有忽略）、阿里云 101、名称与证书 64、成本 6、云接口 8、应用库 2、应用集成测试 84 个目标共 415 个（8 个原有忽略，需要真实运行时或测试机），合计 991 个通过、0 失败；Agent 回报经 `apsp_panel::agent_api::process_message` 的集成测试覆盖。两个边界检查通过（647 条已知越界，没有新增），检查器单元测试 33 个通过；文档链接与锚点 1932 个，0 错误。前端源码未改，只构建了 `web/dist` 供编译。#261 合入 main 后，本提交变基到 68a0ac33（含“重新部署”提交），复核两个边界检查（647 条，无新增）、检查器测试、文档链接、fmt 与 clippy，并重跑宿主、sing-box 与应用的测试：宿主 184、sing-box 212、应用库 2、应用集成测试 84 个目标共 417 个，合计 815 个通过、0 失败、9 个原有忽略。验证后已删除本轮的编译目录、前端依赖与产物和临时数据库。
+- 验证：`cargo fmt --check` 与全工作区 `cargo clippy --all-targets -- -D warnings` 通过；本地 PostgreSQL 16 上受影响 crate 的测试全部通过：宿主 184、sing-box 211（1 个原有忽略）、阿里云 101、名称与证书 64、成本 6、云接口 8、应用库 2、应用集成测试 84 个目标共 415 个（8 个原有忽略，需要真实运行时或测试机），合计 991 个通过、0 失败；Agent 回报经 `apsp_panel::agent_api::process_message` 的集成测试覆盖。两个边界检查通过（647 条已知越界，没有新增），检查器单元测试 33 个通过；文档链接与锚点 1932 个，0 错误。前端源码未改，只构建了 `web/dist` 供编译。#261 合入 main 后，本提交变基到 fa6ba311（含“重新部署”提交），复核两个边界检查（647 条，无新增）、检查器测试、文档链接、fmt 与 clippy，并重跑宿主、sing-box 与应用的测试：宿主 184、sing-box 212、应用库 2、应用集成测试 84 个目标共 417 个，合计 815 个通过、0 失败、9 个原有忽略。验证后已删除本轮的编译目录、前端依赖与产物和临时数据库。
 - 未验证：Agent 一侧（agent-core、适配器、tcp-probe）代码未改，只经 clippy 类型检查；前端测试未运行；CI 仍暂停，未触发；没有部署，也没有在测试机上用真实设备连接验证。
 - 下一步：阶段 B2（`AppState` 按领域拆分运行时状态；治理、资源、观测、作业、基础网络迁出宿主；诊断代码去掉 `#[path]`）与阶段 C（sing-box 拆为流量服务与服务权益）。
 
@@ -82,7 +86,7 @@
 - 归属落到检查：`tools/feature-boundaries.toml` 给 253 张表与视图全部登记了所有者（平台 7、治理 20、资源 13、基础网络 5、名称与证书 13、流量服务 64、服务权益 58、成本 11、观测 42、作业 20），登记三张公开只读的身份表（`servers`、`nodes`、`users`），并按依赖顺序检查读取方向；宿主、sing-box 与阿里云 crate 中尚未迁出的代码、前端的每个文件都逐个路径登记了领域。越界清单按新规则从零重建为 517 条（SQL 394、前端引用 120、`#[path]` 3；按位置：宿主 201、sing-box 149、前端 120、阿里云 42、`crates/naming` 5；旧规则下 226 条），最多的是流量服务与服务权益之间 103 条。`tools/check-core-boundary.py` 改为按层级检查每个 crate 的依赖方向：平台不依赖领域，领域 crate 只依赖排在前面的领域，未拆分的 sing-box 与阿里云 crate 冻结现有依赖，新 crate 必须先登记层级；业务词汇检查扩到平台的云接口客户端。
 - 代码：DDNS、费用与云接口三个插件 crate 迁为 `crates/naming`（`apsp-naming`）、`crates/costs`（`apsp-costs`）、`crates/cloud-api`（`apsp-cloud-api`），改用标准的 `src/lib.rs` 布局；应用层按领域接线，`apsp_panel::plugins::ddns`、`::expenses` 保留为别名。后台任务名、接口前缀 `/api/plugins/...`、数据库基线、协议与部署方式不变；`plugins/` 下不再有这三个 crate。
 - 协作规则的分层条款、功能地图、仓库说明、术语表、文档导航、重新设计各篇与 ADR 索引改为领域说法（较早 ADR 中的旧路径由索引统一说明）；功能分级中的“可选插件”改称“可选”。取舍见 [open-questions](docs/open-questions.md)。
-- 验证：两个边界检查通过（517 条已知越界，没有新增），两个检查器的单元测试 28 个通过；`cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings`（17 个工作区 crate）通过，`Cargo.lock` 只变了两个包名、依赖版本不变。在本地 PostgreSQL 16 上，`apsp-naming` 64、`apsp-costs` 6、`apsp-cloud-api` 8、`apsp-plugin-alicloud` 101 个测试通过（与迁移前的测试数一致，`apsp-naming` 的数据库测试经新的基线路径建库）；`apsp-panel` 的库测试 2 个与 `control_center`、`ddns`、`expense_subscriptions` 集成测试 6、6、3 个通过，覆盖领域路由经完整路由器注册。文档：全部 Markdown 的相对链接与锚点 1926 个，0 错误；改动的 25 个文档表格列数一致；`git diff --check` 与 `tools/check-source-artifacts.py` 通过。前端源码未改，只构建了 `web/dist` 供面板编译。提交前 main 合入了 `b7aee37b`（代理用户重置流量与调整有效期），本提交变基到它之上，新增的两个前端文件登记为服务权益；变基后复核两个边界检查（仍为 517 条、没有新增）、文档链接与锚点 1930 个 0 错误、`cargo fmt --check` 与全工作区 clippy 通过，上面的测试是在变基前的 `44ed6036` 上运行的。验证后已删除本轮的编译目录、前端依赖与产物和临时数据库。
+- 验证：两个边界检查通过（517 条已知越界，没有新增），两个检查器的单元测试 28 个通过；`cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings`（17 个工作区 crate）通过，`Cargo.lock` 只变了两个包名、依赖版本不变。在本地 PostgreSQL 16 上，`apsp-naming` 64、`apsp-costs` 6、`apsp-cloud-api` 8、`apsp-plugin-alicloud` 101 个测试通过（与迁移前的测试数一致，`apsp-naming` 的数据库测试经新的基线路径建库）；`apsp-panel` 的库测试 2 个与 `control_center`、`ddns`、`expense_subscriptions` 集成测试 6、6、3 个通过，覆盖领域路由经完整路由器注册。文档：全部 Markdown 的相对链接与锚点 1926 个，0 错误；改动的 25 个文档表格列数一致；`git diff --check` 与 `tools/check-source-artifacts.py` 通过。前端源码未改，只构建了 `web/dist` 供面板编译。提交前 main 合入了 `3e7b0032`（代理用户重置流量与调整有效期），本提交变基到它之上，新增的两个前端文件登记为服务权益；变基后复核两个边界检查（仍为 517 条、没有新增）、文档链接与锚点 1930 个 0 错误、`cargo fmt --check` 与全工作区 clippy 通过，上面的测试是在变基前的 `38f89244` 上运行的。验证后已删除本轮的编译目录、前端依赖与产物和临时数据库。
 - 未验证：其余 crate（sing-box、宿主、Agent 等，代码未改）只经 clippy 全量类型检查，没有运行测试；前端测试未运行；CI 仍暂停，未触发；没有部署，也没有在测试机上运行。本轮只移动与改名，生产行为预期不变，合入后由自动部署重建面板镜像。
 - 下一步：阶段 B（平台收口与显式接口：`PanelPlugins` 的钩子换成各领域的类型化接口，宿主里的治理、资源、观测、作业、基础网络代码迁出，诊断代码去掉 `#[path]`）与阶段 C（sing-box crate 拆为流量服务与服务权益）可以并行开始；每完成一个阶段用 `python3 tools/check-feature-boundaries.py --summary` 复核越界数字。
 
@@ -100,7 +104,7 @@
   - 浏览器测试：新增 `web/tests/user-validity.mjs`，在 1440/390/320 宽度通过。
   - 已有浏览器测试：`user-limits` 通过；`singbox-entitlement-draft` 补上 #249 后缺少的限制接口夹具后通过。
   - 功能边界检查无新增。
-- 已知问题：`web/tests/singbox-snapshot-writes.mjs` 在未改动的 main（6dd388cc）上同样失败，找不到「创建策略组」按钮，与本次无关，未处理。CI 仍暂停，未运行。
+- 已知问题：`web/tests/singbox-snapshot-writes.mjs` 在未改动的 main（76be2383）上同样失败，找不到「创建策略组」按钮，与本次无关，未处理。CI 仍暂停，未运行。
 
 ## 2026-11-08：重新设计步骤 1，校正方案与当前规范
 
@@ -115,7 +119,7 @@
 ## 2026-11-07：重新设计方案（功能划分、业务模型、操作流程与发布）
 
 - 用户要求按评审意见重新设计：先定功能归属、核心对象、操作流程与发布条件，再按新的职责边界决定哪些文件值得移动；每项功能自己维护（参考上游，不跟随上游结构）。产出 [`docs/redesign/`](docs/redesign/README.md) 十篇：设计依据（理论与项目原则，规则 R1–R18）、功能盘点与新归属、核心对象词典、六工作区方案、三条主线流程、状态设计、模型与发布收敛方案、工程整理子方案、执行计划（含 C1–C23 当前规范冲突清单）。
-- 依据是对 main `a32ec49b` 的五项只读扫描（页面与功能、对象模型、状态流转、发布与兼容、工程结构）。扫描期间 main 合入了 ADR 0125 与 `docs/architecture.md`（#257、`bb99ebf5`），方案变基到它之上并对齐：以它的功能模块作为代码与数据的领域，“与侧栏一一对应”按入口级理解，`plugins/sing-box` 并入 `plugins/singbox/assets`，中国可达性归 `lines`；提议改变它现有表述的三处（六工作区分组、「插件中心」改名、恢复已发给代理用户的旧地址改写）列为待确认。引用到的源码事实逐项抽查，并纠正了上一版方案的四处判断：组装层命令入口不是放错的业务代码；`compiler` 是代理配置编译库；“包名不变下游不受影响”不成立，分层检查在目录移动后会静默少查；带连字符的测试由 CI 按路径执行，但日常运维工具与设备侧恢复脚本的测试确实从未进入 CI。
+- 依据是对 main `d24bd135` 的五项只读扫描（页面与功能、对象模型、状态流转、发布与兼容、工程结构）。扫描期间 main 合入了 ADR 0125 与 `docs/architecture.md`（#257、`05bdf86c`），方案变基到它之上并对齐：以它的功能模块作为代码与数据的领域，“与侧栏一一对应”按入口级理解，`plugins/sing-box` 并入 `plugins/singbox/assets`，中国可达性归 `lines`；提议改变它现有表述的三处（六工作区分组、「插件中心」改名、恢复已发给代理用户的旧地址改写）列为待确认。引用到的源码事实逐项抽查，并纠正了上一版方案的四处判断：组装层命令入口不是放错的业务代码；`compiler` 是代理配置编译库；“包名不变下游不受影响”不成立，分层检查在目录移动后会静默少查；带连字符的测试由 CI 按路径执行，但日常运维工具与设备侧恢复脚本的测试确实从未进入 CI。
 - 交付方式：协作规则要求直接在 main 完成。本次是供评审、尚待用户确认的方案，只新增文档，不改源码、数据库、部署或生产数据，按本会话的分支要求经 `claude/dreamy-heisenberg-w2g0rn` 与 PR 交付，是否合入 main 由用户决定。合入只改动文档，部署器只记录版本，不重建、不重启面板（#256）。
 - 验证：文档相对链接与锚点检查（按 GitHub 锚点规则）通过。没有源码改动，未运行 Rust 与前端测试；CI 保持暂停。方案中的门禁、迁移与删除都没有执行，需要确认的事项见[执行计划 §4](docs/redesign/09-execution.md#4-需要用户确认的事项)。
 
