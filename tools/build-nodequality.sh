@@ -83,7 +83,7 @@ for arch in ("amd64", "arm64"):
 PY
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/apsp-nodequality-build.XXXXXX")
 script_dir=$(cd "$(dirname "$0")" && pwd -P)
-plugin_dir=$script_dir/../plugins/nodequality
+plugin_dir=$script_dir/../crates/observability/upstream/nodequality
 python3 "$plugin_dir/source-helper.py" admission "$plugin_dir/execution-admission.json" >/dev/null
 python3 "$plugin_dir/source-helper.py" downloads "$plugin_dir/source-lock.json" \
   | while IFS=$'\t' read -r filename source_url; do

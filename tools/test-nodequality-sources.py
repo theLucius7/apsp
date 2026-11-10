@@ -23,7 +23,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from nodequality_native_fixture_process import OwnedProcesses
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN = ROOT / 'plugins/nodequality'
+PLUGIN = ROOT / 'crates/observability/upstream/nodequality'
 VERSION = 'a92fca6c0067df29ddd03fdc2fee6f3000f64545-r22'
 FULL_START_GUARD = "[[ $mode != full ]] || die 'new full diagnostics are paused: complete tool provenance, redistribution rights, upload control and host side effects remain unverified'"
 
@@ -321,11 +321,11 @@ class SourceTests(unittest.TestCase):
     def build_tree(self):
         tree = self.root / 'project'
         (tree / 'tools').mkdir(parents=True)
-        shutil.copytree(self.fixture_plugin, tree / 'plugins/nodequality')
+        shutil.copytree(self.fixture_plugin, tree / 'crates/observability/upstream/nodequality')
         shutil.copy2(ROOT / 'tools/build-nodequality.sh', tree / 'tools/build-nodequality.sh')
         # Only this private test tree has synthetic source hashes. The production
         # manifest remains unchanged and exposes no runtime source override.
-        (tree / 'plugins/nodequality/source-lock.json').write_bytes(self.lock_path.read_bytes())
+        (tree / 'crates/observability/upstream/nodequality/source-lock.json').write_bytes(self.lock_path.read_bytes())
         binaries = self.root / 'bin'
         binaries.mkdir()
         fake = binaries / 'curl'
@@ -393,7 +393,7 @@ sys.stdout.buffer.write((pathlib.Path(os.environ['NQ_INPUTS']) / matching[0]['na
 
     def test_builder_rejects_a_changed_or_missing_report_policy_helper_before_artifact(self):
         tree, environment = self.build_tree()
-        target = tree / 'plugins/nodequality/report-policy.py'
+        target = tree / 'crates/observability/upstream/nodequality/report-policy.py'
         original = target.read_bytes()
         for content in (original[:-1] + b'!', None):
             if content is None:
@@ -410,7 +410,7 @@ sys.stdout.buffer.write((pathlib.Path(os.environ['NQ_INPUTS']) / matching[0]['na
 
     def test_builder_refuses_full_admission_claims_or_removed_unverified_rights(self):
         tree, environment = self.build_tree()
-        path = tree / 'plugins/nodequality/execution-admission.json'
+        path = tree / 'crates/observability/upstream/nodequality/execution-admission.json'
         original = json.loads(path.read_bytes())
         for mutation in ('full', 'downloads', 'rights', 'type'):
             record = copy.deepcopy(original)
@@ -438,7 +438,7 @@ sys.stdout.buffer.write((pathlib.Path(os.environ['NQ_INPUTS']) / matching[0]['na
             if row['repository'] == 'LloydAsp/NodeQuality':
                 row['commit'] = '0' * 40
         self.lock_path.write_text(json.dumps(self.lock))
-        (tree / 'plugins/nodequality/source-lock.json').write_bytes(self.lock_path.read_bytes())
+        (tree / 'crates/observability/upstream/nodequality/source-lock.json').write_bytes(self.lock_path.read_bytes())
         result = self.build(tree, environment, 'amd64')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(b'entrypoint source commit differs', result.stderr)
@@ -482,18 +482,18 @@ sys.stdout.buffer.write((pathlib.Path(os.environ['NQ_INPUTS']) / matching[0]['na
         self.assertEqual(release.verify_bundle(bundle, [key], shutil.which('minisign'))['artifacts'][0]['version'], VERSION)
         with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as archive:
             content = archive.extractfile('nodequality').read()
-        self.assertIn((tree / 'plugins/nodequality/report-policy.py').read_bytes(), content)
-        self.assertIn((tree / 'plugins/nodequality/swap-policy.py').read_bytes(), content)
-        self.assertIn((tree / 'plugins/nodequality/dependency-policy.py').read_bytes(), content)
-        self.assertIn((tree / 'plugins/nodequality/data-policy.py').read_bytes(), content)
-        self.assertIn((tree / 'plugins/nodequality/loader-policy.py').read_bytes(), content)
-        self.assertIn((tree / 'plugins/nodequality/ranking-policy.py').read_bytes(), content)
-        self.assertIn((tree / 'plugins/nodequality/ip-score-policy.py').read_bytes(), content)
-        self.assertIn((tree / 'plugins/nodequality/netflix-policy.py').read_bytes(), content)
-        self.assertIn((tree / 'plugins/nodequality/browser-policy.py').read_bytes(), content)
-        self.assertIn((tree / 'plugins/nodequality/public-access-policy.py').read_bytes(), content)
-        self.assertIn((tree / 'plugins/nodequality/official-ip.py').read_bytes(), content)
-        self.assertIn((tree / 'plugins/nodequality/execution-admission.json').read_bytes(), content)
+        self.assertIn((tree / 'crates/observability/upstream/nodequality/report-policy.py').read_bytes(), content)
+        self.assertIn((tree / 'crates/observability/upstream/nodequality/swap-policy.py').read_bytes(), content)
+        self.assertIn((tree / 'crates/observability/upstream/nodequality/dependency-policy.py').read_bytes(), content)
+        self.assertIn((tree / 'crates/observability/upstream/nodequality/data-policy.py').read_bytes(), content)
+        self.assertIn((tree / 'crates/observability/upstream/nodequality/loader-policy.py').read_bytes(), content)
+        self.assertIn((tree / 'crates/observability/upstream/nodequality/ranking-policy.py').read_bytes(), content)
+        self.assertIn((tree / 'crates/observability/upstream/nodequality/ip-score-policy.py').read_bytes(), content)
+        self.assertIn((tree / 'crates/observability/upstream/nodequality/netflix-policy.py').read_bytes(), content)
+        self.assertIn((tree / 'crates/observability/upstream/nodequality/browser-policy.py').read_bytes(), content)
+        self.assertIn((tree / 'crates/observability/upstream/nodequality/public-access-policy.py').read_bytes(), content)
+        self.assertIn((tree / 'crates/observability/upstream/nodequality/official-ip.py').read_bytes(), content)
+        self.assertIn((tree / 'crates/observability/upstream/nodequality/execution-admission.json').read_bytes(), content)
         # Mutate an embedded license's base64 representation inside the runner.
         bundle_text = helper.pack(self.lock, self.sources)
         self.assertIn(bundle_text, content)

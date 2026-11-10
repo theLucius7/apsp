@@ -211,6 +211,7 @@ flowchart TD
 - 前端按领域分目录（阶段 E 第一步，结果见下）：`web/src/` 下的文件按已登记的所有者搬进 `<领域标识>/` 与 `app/`，`plugins/` 等旧功能目录删除。
 - 应用 crate 不再保留兼容的再导出（2026-11-10）：`apsp_panel` 只导出自己定义的路由、领域组合、Agent 通道分派、维护与发布周期；平台模块、观测、作业与汇率的旧路径（含 `apsp_panel::operations`、合并两处的 `apsp_panel::notifications`）删除，调用方改用 `apsp_panel_host`、`apsp_observability`、`apsp_operations`、`apsp_costs`。
 - 旧商务表随一次基线变更删除（2026-11-10，PR 待合并）：Nexus 迁移带来的九张商务与支付表（订单、邀请、报价、设置、支付异常与回执、充值、钱包流水、Nexus 记录）已无代码读写，行数据先导出到受保护的存档；基线删除这九张表，附 `scripts/baseline-adoption-commerce-20261110.sql`，合并后由部署器先在生产结构副本试启动再在生产执行。
+- `plugins/` 目录退出（2026-11-10，PR 待合并）：sing-box 运行时的三个服务定义搬到 `deploy/`，IPQuality 与 NodeQuality 的打包脚本、策略、锁定文件与历史源码搬到 `crates/observability/upstream/`；签名制品、对应源码包与推导账本里的文件名仍是原来的 `plugins/...`（格式不变，已发布的制品照常校验），引导脚本按新位置重新生成。
 
 | 阶段 | 内容 | 完成标准 |
 | --- | --- | --- |
@@ -290,7 +291,7 @@ flowchart TD
 | 上游 | 归属 | 现在 | 目标 |
 | --- | --- | --- | --- |
 | sing-box（SagerNet） | 流量服务 | 构建时克隆 v1.14.4，打补丁（`tools/singbox-runtime/`） | 补丁队列与配方移入流量服务的 `upstream/sing-box/`，记录每个补丁的目的；运行时压缩包附带许可 |
-| NodeQuality、HardwareQuality、IPQuality、NetQuality（AGPL-3.0） | 观测 | 打包时下载原版脚本，再按策略脚本改写 | 固定版本的脚本连同许可放进观测的 `upstream/`，策略改写变成提交过的补丁，离线构建 |
+| NodeQuality、HardwareQuality、IPQuality、NetQuality（AGPL-3.0） | 观测 | 打包时下载原版脚本，再按策略脚本改写；打包脚本、策略与锁定文件在 `crates/observability/upstream/`（签名制品与引导脚本里仍按原名 `plugins/...` 记录） | 固定版本的脚本连同许可放进观测的 `upstream/`，策略改写变成提交过的补丁，离线构建 |
 | TcpQuality | 观测 | 只借用命令约定，自写 `tcp-probe` | 不变；`UPSTREAM.md` 记录来源与无许可的原因 |
 | Nexus：Xboard、xboard-node | 流量服务与服务权益的兼容模块 | 兼容桥在旧面板里执行 PHP；多数迁移用户的订阅仍由旧面板渲染 | 不维护分支；完成路线图 1.4、1.5 的迁移后删除兼容模块 |
 | lego（go-acme） | 名称与证书 | 期待签名制品，仓库里没有构建配方 | 补固定版本的配方，或随网络配置一起冻结（待定） |

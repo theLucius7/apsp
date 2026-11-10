@@ -18,7 +18,7 @@ from unittest import mock
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN = ROOT / 'plugins/nodequality'
+PLUGIN = ROOT / 'crates/observability/upstream/nodequality'
 spec = importlib.util.spec_from_file_location('official_ip', PLUGIN / 'official-ip.py')
 official = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(official)

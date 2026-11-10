@@ -26,12 +26,12 @@ SOURCES = ("tools/bootstrap.py", "tools/legacy_agent_checkpoint.py", "tools/rele
            "tools/nodequality-rootfs-build.py", "tools/nodequality-rootfs-collect.py",
            "tools/build-ipquality.py", "LICENSE",
            "deploy/release-public-keys.json")
-PLUGIN_SOURCES = tuple("plugins/nodequality/" + name for name in sorted(
+PLUGIN_SOURCES = tuple("crates/observability/upstream/nodequality/" + name for name in sorted(
     set(legacy_rootfs.HELPERS.values()) | set(native_rootfs.HELPERS.values())
     | {"source-lock.json", "node-query.py", "rootfs.py"}
     | {"historical-r19/" + name for name in history.IDENTITIES}
     | {"historical-native-r1/" + name for name in history.NATIVE_IDENTITIES}
-)) + tuple("plugins/ipquality/" + name for name in (
+)) + tuple("crates/observability/upstream/ipquality/" + name for name in (
     "runner.py", "source-lock.json", "source-helper.py", "source-policy.py", "transport.py", "SOURCE.md"
 ))
 MAX_PAYLOAD = 2 * 1024 * 1024
@@ -55,10 +55,10 @@ def source_files(root, trusted_keys, installer):
     for filename in SOURCES + PLUGIN_SOURCES:
         path = trusted_keys if filename == SOURCES[-1] else root / filename
         content = ordinary_source(path)
-        if filename.startswith("plugins/nodequality/historical-r19/"):
+        if filename.startswith("crates/observability/upstream/nodequality/historical-r19/"):
             ensure(hashlib.sha256(content).hexdigest() == history.IDENTITIES[path.name]
                    and len(content) <= history.MAX_FILE, "historical r19 source identity mismatch")
-        if filename.startswith("plugins/nodequality/historical-native-r1/"):
+        if filename.startswith("crates/observability/upstream/nodequality/historical-native-r1/"):
             ensure(hashlib.sha256(content).hexdigest() == history.NATIVE_IDENTITIES[path.name]
                    and len(content) <= history.MAX_FILE, "historical native source identity mismatch")
         destination = "public-keys.json" if filename == SOURCES[-1] else filename
@@ -136,7 +136,7 @@ def render(root=ROOT, trusted_keys=None, publication=True, test_installer=None):
     ensure(test_installer is None or not publication, "test installer cannot be published")
     installer = test_installer if test_installer is not None else installer_source(
         root / "deploy/install.sh.tmpl", root / "deploy/apsp-agent.service",
-        root / "plugins/sing-box/apsp-singbox@.service", source_root=root)
+        root / "deploy/apsp-singbox@.service", source_root=root)
     if not installer.endswith("\n"):
         installer += "\n"
     program = materializer(source_files(root, trusted_keys, installer))

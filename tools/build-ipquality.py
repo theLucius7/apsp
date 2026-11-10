@@ -266,13 +266,13 @@ def source_files(bundle_path, review_path, guard):
     original = helper.bundle_files(bundle)
     transformed = helper.transform_files(original)
     sources = {'upstream/' + name: content for name, content in original.items()}
-    for directory in (artifact.PLUGIN, artifact.ROOT / 'plugins/nodequality'):
+    for directory in (artifact.PLUGIN, artifact.NODEQUALITY):
         chosen = list(directory.glob('*.py')) if directory == artifact.PLUGIN else [directory / 'rootfs.py']
         if directory == artifact.PLUGIN:
             chosen.extend(directory.glob('policies/*.py'))
             chosen.append(directory / 'source-lock.json')
         for path in chosen:
-            sources[path.relative_to(artifact.ROOT).as_posix()] = read(path, artifact.MAX_RUNNER, guard)
+            sources[artifact.source_name(path)] = read(path, artifact.MAX_RUNNER, guard)
     for name, content in helper.policy_bytes().items():
         sources['plugins/ipquality/policies/' + name + '-policy.py'] = content
     sources['plugins/ipquality/SOURCE.md'] = read(artifact.PLUGIN / 'SOURCE.md', artifact.MAX_RUNNER, guard)

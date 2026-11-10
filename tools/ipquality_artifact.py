@@ -11,7 +11,28 @@ import tarfile
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN = ROOT / 'plugins/ipquality'
+PLUGIN = ROOT / 'crates/observability/upstream/ipquality'
+NODEQUALITY = ROOT / 'crates/observability/upstream/nodequality'
+# Signed artifacts, their corresponding source and the derivation ledgers name these sources
+# as they were named when the formats were fixed (under `plugins/`); the repository keeps the
+# files with the observability domain. The names are part of the formats and do not change.
+SOURCE_PREFIXES = (('plugins/ipquality/', PLUGIN), ('plugins/nodequality/', NODEQUALITY))
+
+
+def source_path(name):
+    """The file that a source name in an artifact or ledger stands for."""
+    for prefix, directory in SOURCE_PREFIXES:
+        if name.startswith(prefix):
+            return directory / name[len(prefix):]
+    return ROOT / name
+
+
+def source_name(path):
+    """The name a source file carries in artifacts and ledgers."""
+    for prefix, directory in SOURCE_PREFIXES:
+        if path.is_relative_to(directory):
+            return prefix + path.relative_to(directory).as_posix()
+    return path.relative_to(ROOT).as_posix()
 BINARY = 'ipquality'
 VERSION = '87397e2c3196ec796f5477c83343c2354df601ea-node-r1'
 SOURCE_COMMIT = '87397e2c3196ec796f5477c83343c2354df601ea'
@@ -40,7 +61,7 @@ def module(name, path):
 
 
 def runtime():
-    return module('apsp_ipquality_rootfs_runtime', ROOT / 'plugins/nodequality/rootfs.py')
+    return module('apsp_ipquality_rootfs_runtime', NODEQUALITY / 'rootfs.py')
 
 
 def factory():
@@ -71,7 +92,7 @@ def decode(content):
 
 def runner():
     source = runtime().ordinary(PLUGIN / 'runner.py', MAX_RUNNER)
-    verifier = runtime().ordinary(ROOT / 'plugins/nodequality/rootfs.py', MAX_RUNNER)
+    verifier = runtime().ordinary(NODEQUALITY / 'rootfs.py', MAX_RUNNER)
     anchor = b"ROOTFS_SOURCE = '@ROOTFS_HELPER@'"
     ensure(source.count(anchor) == 1, 'runner verifier marker differs')
     result = source.replace(anchor, b'ROOTFS_SOURCE = ' + repr(verifier.decode()).encode(), 1)
@@ -378,14 +399,14 @@ def validate_files(files, version, arch, intake_parent=None, progress=None):
            'actual license review is absent from corresponding source')
     check_license_review(decode(sources['license-review.json']), metadata, manifest)
     ensure(sources.get('plugins/ipquality/runner.py') == runtime().ordinary(PLUGIN / 'runner.py', MAX_RUNNER)
-           and sources.get('plugins/nodequality/rootfs.py') == runtime().ordinary(ROOT / 'plugins/nodequality/rootfs.py', MAX_RUNNER),
+           and sources.get('plugins/nodequality/rootfs.py') == runtime().ordinary(NODEQUALITY / 'rootfs.py', MAX_RUNNER),
            'corresponding runner and rootfs-verifier source differs')
     for name in ('plugins/ipquality/source-helper.py', 'plugins/ipquality/SOURCE.md',
                  'tools/build-ipquality.py', 'tools/ipquality_artifact.py', 'tools/ipquality-rootfs.py',
                  'tools/nodequality-rootfs-build.py', 'tools/nodequality-rootfs-collect.py',
                  'tools/ipquality-inputs.py', 'tools/ipquality-inputs-capacity.py',
                  'tools/ipquality-profile.py', 'LICENSE'):
-        ensure(sources.get(name) == runtime().ordinary(ROOT / name, MAX_SOURCE),
+        ensure(sources.get(name) == runtime().ordinary(source_path(name), MAX_SOURCE),
                'complete corresponding Apsp source differs or is absent: ' + name)
     for name in ('inputs-lock.json', 'source-inventory.json', 'license-inventory.json', 'ipquality-profile.json'):
         ensure(sources.get('debian/' + name) == metadata['usr/share/apsp-rootfs/' + name],

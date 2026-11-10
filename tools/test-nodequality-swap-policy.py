@@ -14,7 +14,7 @@ from unittest import mock
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN = ROOT / 'plugins/nodequality'
+PLUGIN = ROOT / 'crates/observability/upstream/nodequality'
 READONLY_SOURCES = None
 
 
@@ -268,7 +268,7 @@ main
             fixture.setUp()
             try:
                 tree, env = fixture.build_tree()
-                path = tree / 'plugins/nodequality/swap-policy.py'
+                path = tree / 'crates/observability/upstream/nodequality/swap-policy.py'
                 if corrupt:
                     path.write_bytes(path.read_bytes() + b'!')
                 else:

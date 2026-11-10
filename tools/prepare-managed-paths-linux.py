@@ -43,7 +43,7 @@ def verify_frozen(source, frozen_file, frozen_sha):
     require(frozen.get("schema") == 1 and isinstance(rows, dict) and 1 <= len(rows) <= 3000,
             "frozen_manifest_shape_invalid")
     require({"Cargo.toml", "Cargo.lock", "AGENTS.md", "crates/agent-core/src/config.rs",
-             "deploy/apsp-agent.service", "plugins/sing-box/apsp-singbox@.service"} <= rows.keys(),
+             "deploy/apsp-agent.service", "deploy/apsp-singbox@.service"} <= rows.keys(),
             "frozen_manifest_missing_build_inputs")
     for relative, expected in rows.items():
         path = Path(relative)
@@ -57,7 +57,7 @@ def verify_frozen(source, frozen_file, frozen_sha):
         require(identity(candidate, 32 * 1024**2) == expected, "frozen_source_changed")
     # Cargo cannot reach unlisted crate manifests or module inputs from this copy.
     required = set()
-    for name in ("crates", "plugins", "tools", "scripts", "deploy", "web/src", "web/public", "web/dist"):
+    for name in ("crates", "tools", "scripts", "deploy", "web/src", "web/public", "web/dist"):
         for path in (source / name).rglob("*"):
             require(not path.is_symlink(), "source_tree_symlink_refused")
             if path.is_file() and "__pycache__" not in path.parts:

@@ -16,7 +16,7 @@ from unittest import mock
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN = ROOT / 'plugins/nodequality'
+PLUGIN = ROOT / 'crates/observability/upstream/nodequality'
 READONLY_SOURCES = None
 
 
@@ -315,7 +315,7 @@ pre_fetch_info(){ osinfo=(fixture); meminfo=(fixture); diskinfo=(fixture); }
             fixture.setUp()
             try:
                 tree, env = fixture.build_tree()
-                path = tree / 'plugins/nodequality/loader-policy.py'
+                path = tree / 'crates/observability/upstream/nodequality/loader-policy.py'
                 if missing:
                     path.unlink()
                 else:

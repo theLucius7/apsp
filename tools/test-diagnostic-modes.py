@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-HELPER = ROOT / "plugins/nodequality/daily.py"
+HELPER = ROOT / "crates/observability/upstream/nodequality/daily.py"
 spec = importlib.util.spec_from_file_location("daily", HELPER)
 daily = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(daily)

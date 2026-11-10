@@ -233,7 +233,7 @@ class LegacyCheckpointTests(unittest.TestCase):
         template = (ROOT / "deploy/install.sh.tmpl").read_text()
         self.assertEqual(template.count("@@LEGACY_CHECKPOINT_PREFLIGHT@@"), 2)
         rendered = release.installer_source(ROOT / "deploy/install.sh.tmpl", ROOT / "deploy/apsp-agent.service",
-                                           ROOT / "plugins/sing-box/apsp-singbox@.service", source_root=ROOT)
+                                           ROOT / "deploy/apsp-singbox@.service", source_root=ROOT)
         self.assertEqual(rendered.count((ROOT / "tools/legacy_agent_checkpoint.py").read_text().rstrip()), 2)
         first, last = rendered.index('python3 -I - "$VERSION"'), rendered.rindex('python3 -I - "$VERSION"')
         enroll = rendered.index('"/opt/apsp/core/$VERSION/apsp-agent" enroll')

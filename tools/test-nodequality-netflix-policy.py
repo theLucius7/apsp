@@ -19,7 +19,7 @@ from unittest import mock
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN = ROOT / 'plugins/nodequality'
+PLUGIN = ROOT / 'crates/observability/upstream/nodequality'
 READONLY_SOURCES = None
 TITLES = ('81280792', '70143836')
 BASH = os.environ.get('APSP_NODEQUALITY_TEST_BASH', '/bin/bash')
@@ -404,7 +404,7 @@ class NetflixTests(unittest.TestCase):
             fixture.setUp()
             try:
                 tree, env = fixture.build_tree()
-                path = tree/'plugins/nodequality/netflix-policy.py'
+                path = tree/'crates/observability/upstream/nodequality/netflix-policy.py'
                 if missing:
                     path.unlink()
                 else:

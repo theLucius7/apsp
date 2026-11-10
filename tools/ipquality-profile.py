@@ -19,6 +19,17 @@ CODE_FILES = ('tools/ipquality-profile.py', 'tools/ipquality-rootfs.py',
               'tools/ipquality-inputs.py', 'tools/ipquality-inputs-capacity.py',
               'tools/nodequality-rootfs-build.py', 'tools/nodequality-rootfs-collect.py',
               'plugins/nodequality/rootfs.py')
+
+
+def code_path(name):
+    """The file of a code inventory name. The NodeQuality verifier keeps its recorded name
+    `plugins/nodequality/rootfs.py`; the file lives with the observability domain."""
+    prefix = 'plugins/nodequality/'
+    if name.startswith(prefix):
+        return ROOT / 'crates/observability/upstream/nodequality' / name[len(prefix):]
+    return ROOT / name
+
+
 FALSE_FLAGS = ('builder_approved', 'runtime_image_identity_verified',
                'reproducibility_verified', 'full_ready')
 
@@ -153,7 +164,7 @@ class Profile:
                       'minimal preparation output overlaps original inputs (parent)')
 
     def code(self, deadline):
-        return {name: self.build.file_identity(ROOT / name, self.build.MAX_LOCK, deadline)['sha256']
+        return {name: self.build.file_identity(code_path(name), self.build.MAX_LOCK, deadline)['sha256']
                 for name in CODE_FILES}
 
     def selection(self, solver, materials):
@@ -372,7 +383,7 @@ class Profile:
         """Read actual archived status and metadata after fresh prepared admission."""
         build = self.build
         specification = importlib.util.spec_from_file_location('apsp_ipquality_export_runtime',
-                                                               ROOT / 'plugins/nodequality/rootfs.py')
+                                                               code_path('plugins/nodequality/rootfs.py'))
         helper = importlib.util.module_from_spec(specification)
         specification.loader.exec_module(helper)
         original_deadline = helper._deadline

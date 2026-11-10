@@ -72,7 +72,7 @@ def openai_anchors(name):
 def netflix_anchors(name):
     if name != 'ip.sh':
         return b''
-    policy = module('fixture_netflix_policy', Path(__file__).resolve().parents[1] / 'plugins/nodequality/native-netflix-policy.py')
+    policy = module('fixture_netflix_policy', Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/native-netflix-policy.py')
     # The prior query layer already supplies FETCH. Only the original
     # classifier anchors are needed in the inert packaging source.
     extra = b''.join(before for before, _ in policy.REPLACEMENTS if before != policy.FETCH)
@@ -82,7 +82,7 @@ def netflix_anchors(name):
 def access_anchors(name):
     if name != 'ip.sh':
         return b''
-    policy = module('fixture_access_policy', Path(__file__).resolve().parents[1] / 'plugins/nodequality/access-policy.py')
+    policy = module('fixture_access_policy', Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/access-policy.py')
     functions = b''.join((key + '(){\n: # Synthetic uncalled provider function.\n}\n').encode()
                          for key in policy.FUNCTIONS)
     return functions + b"fixture_unused_access_metadata(){\ncat <<'APSP_FIXTURE_ACCESS'\n" + policy.JSON_ANCHOR + b'APSP_FIXTURE_ACCESS\n}\n'
@@ -91,14 +91,14 @@ def access_anchors(name):
 def query_anchors(name):
     if name != 'ip.sh':
         return b''
-    policy = module('fixture_query_policy', Path(__file__).resolve().parents[1] / 'plugins/nodequality/query-policy.py')
+    policy = module('fixture_query_policy', Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/query-policy.py')
     return b"fixture_unused_queries(){\ncat <<'APSP_FIXTURE_QUERY'\n" + b''.join(a for a, _ in policy.REPLACEMENTS) + b'APSP_FIXTURE_QUERY\n}\n'
 
 
 def undo_queries(role, patched):
     if role != 'ip.sh':
         return patched
-    policy = module('fixture_undo_query', Path(__file__).resolve().parents[1] / 'plugins/nodequality/query-policy.py')
+    policy = module('fixture_undo_query', Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/query-policy.py')
     if policy.HELPERS not in patched:
         return patched
     for before, after in reversed(policy.REPLACEMENTS):
@@ -116,7 +116,7 @@ def undo_browser(role, patched):
     patched = undo_queries(role, patched)
     if role not in ('ip.sh', 'net.sh'):
         return patched
-    policy = module('fixture_undo_browser', Path(__file__).resolve().parents[1] / 'plugins/nodequality/native-browser-policy.py')
+    policy = module('fixture_undo_browser', Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/native-browser-policy.py')
     for before, after in reversed(policy.REPLACEMENTS):
         patched = replace_once(patched, after, before)
     return patched
@@ -125,14 +125,14 @@ def undo_browser(role, patched):
 def ip_score_anchors(name):
     if name != 'ip.sh':
         return b''
-    policy = module('fixture_ip_score_policy', Path(__file__).resolve().parents[1] / 'plugins/nodequality/ip-score-policy.py')
+    policy = module('fixture_ip_score_policy', Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/ip-score-policy.py')
     return b"fixture_unused_ip_scores(){\ncat <<'APSP_FIXTURE_IP_SCORES'\n" + b''.join(a for a, _ in policy.REPLACEMENTS) + b'APSP_FIXTURE_IP_SCORES\n}\n'
 
 
 def undo_ip_scores(role, patched):
     if role != 'ip.sh':
         return patched
-    policy = module('fixture_undo_ip_scores', Path(__file__).resolve().parents[1] / 'plugins/nodequality/ip-score-policy.py')
+    policy = module('fixture_undo_ip_scores', Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/ip-score-policy.py')
     for before, after in reversed(policy.REPLACEMENTS):
         patched = replace_once(patched, after, before)
     return patched
@@ -141,7 +141,7 @@ def undo_ip_scores(role, patched):
 def ranking_anchors(name):
     if name != 'hardware.sh':
         return b''
-    policy = module('fixture_ranking_policy', Path(__file__).resolve().parents[1] / 'plugins/nodequality/ranking-policy.py')
+    policy = module('fixture_ranking_policy', Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/ranking-policy.py')
     # These anchors stay inside an uncalled heredoc; no script runs here.
     return b"fixture_unused_ranking(){\ncat <<'APSP_FIXTURE_RANKING'\n" + b''.join(a for a, _ in policy.REPLACEMENTS) + b'APSP_FIXTURE_RANKING\n}\n'
 
@@ -149,7 +149,7 @@ def ranking_anchors(name):
 def undo_ranking(role, patched):
     if role != 'hardware.sh':
         return patched
-    policy = module('fixture_undo_ranking', Path(__file__).resolve().parents[1] / 'plugins/nodequality/ranking-policy.py')
+    policy = module('fixture_undo_ranking', Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/ranking-policy.py')
     for before, after in reversed(policy.REPLACEMENTS):
         patched = replace_once(patched, after, before)
     return patched
@@ -158,7 +158,7 @@ def undo_ranking(role, patched):
 def loader_anchors(name, existing=b''):
     if name != 'NodeQuality.sh':
         return b''
-    policy = module('fixture_loader_policy', Path(__file__).resolve().parents[1] / 'plugins/nodequality/loader-policy.py')
+    policy = module('fixture_loader_policy', Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/loader-policy.py')
     missing = [before for before, _ in policy.REPLACEMENTS if before not in existing]
     return b'fixture_unused_loaders(){\n' + b''.join(missing) + b'}\n'
 
@@ -166,21 +166,21 @@ def loader_anchors(name, existing=b''):
 def undo_loader(role, patched):
     if role != 'NodeQuality.sh':
         return patched
-    policy = module('fixture_undo_loader', Path(__file__).resolve().parents[1] / 'plugins/nodequality/loader-policy.py')
+    policy = module('fixture_undo_loader', Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/loader-policy.py')
     for before, after in reversed(policy.REPLACEMENTS):
         patched = replace_once(patched, after, before)
     return patched
 
 
 def data_anchors(name):
-    policy = module('fixture_data_policy', Path(__file__).resolve().parents[1] / 'plugins/nodequality/data-policy.py')
+    policy = module('fixture_data_policy', Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/data-policy.py')
     if name not in policy.REQUESTS:
         return b''
     return b'fixture_unused_data(){\n' + b'\n'.join(policy.REQUESTS[name]) + b'\n}\n'
 
 
 def undo_data(role, patched, contents):
-    policy = module('fixture_undo_data', Path(__file__).resolve().parents[1] / 'plugins/nodequality/data-policy.py')
+    policy = module('fixture_undo_data', Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/data-policy.py')
     for request, name in policy.REQUESTS.get(role, {}).items():
         patched = replace_once(patched, policy.data_command(contents[name]), request)
     return patched
@@ -197,7 +197,7 @@ def assignment(content, name, value):
 
 
 def dependency_anchors(name):
-    policy = module('fixture_dependency_policy', Path(__file__).resolve().parents[1] / 'plugins/nodequality/dependency-policy.py')
+    policy = module('fixture_dependency_policy', Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/dependency-policy.py')
     if name == 'NodeQuality.sh':
         return b'fixture_unused_dependencies(){\n' + b''.join(a for a, _ in policy.ENTRY_REPLACEMENTS) + b'}\n'
     if name in policy.END_MARKERS:
@@ -208,7 +208,7 @@ def dependency_anchors(name):
 
 
 def swap_anchors(name):
-    policy = module('fixture_swap_policy', Path(__file__).resolve().parents[1] / 'plugins/nodequality/swap-policy.py')
+    policy = module('fixture_swap_policy', Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/swap-policy.py')
     if name == 'NodeQuality.sh':
         return b'fixture_unused_entry_swaps(){\n' + b''.join(a for a, _ in policy.ENTRY_REPLACEMENTS) + b'}\n'
     if name == 'hardware.sh':
@@ -217,7 +217,7 @@ def swap_anchors(name):
 
 
 def undo_dependencies(role, patched, original):
-    policy = module('fixture_undo_dependencies', Path(__file__).resolve().parents[1] / 'plugins/nodequality/dependency-policy.py')
+    policy = module('fixture_undo_dependencies', Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/dependency-policy.py')
     if role == 'NodeQuality.sh':
         for before, after in reversed(policy.ENTRY_REPLACEMENTS):
             patched = replace_once(patched, after, before)

@@ -14,7 +14,7 @@ from unittest import mock
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN = ROOT / 'plugins/nodequality'
+PLUGIN = ROOT / 'crates/observability/upstream/nodequality'
 READONLY_SOURCES = None
 
 
@@ -252,7 +252,7 @@ L(){ printf cleanup; }
         for corrupt in (False,True):
             fixture=sources.SourceTests(methodName='runTest');fixture.setUp()
             try:
-                tree,env=fixture.build_tree();path=tree/'plugins/nodequality/dependency-policy.py'
+                tree,env=fixture.build_tree();path=tree/'crates/observability/upstream/nodequality/dependency-policy.py'
                 if corrupt:path.write_bytes(path.read_bytes()+b'!')
                 else:path.unlink()
                 run=fixture.build(tree,env,'arm64');self.assertNotEqual(run.returncode,0)

@@ -5,7 +5,7 @@ from pathlib import Path
 import stat
 from types import SimpleNamespace
 
-DIRECTORY = Path(__file__).resolve().parents[1] / 'plugins/nodequality/historical-r19'
+DIRECTORY = Path(__file__).resolve().parents[1] / 'crates/observability/upstream/nodequality/historical-r19'
 NATIVE_DIRECTORY = DIRECTORY.parent / 'historical-native-r1'
 NATIVE_IDENTITIES = {
     'native-runner.sh.tmpl': '9d24b242669b3b6152e294a00e07d8396462c576ed82be5500b479e723f1584f',

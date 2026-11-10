@@ -1,5 +1,19 @@
 # 执行进度
 
+## 2026-11-10：ADR 0131 步骤一（中八）——`plugins/` 目录退出（PR，待合并）
+
+- 用户要求：在 `plugins/` 的选择中选“搬文件，保留格式”。取舍见 `docs/open-questions.md`。
+- 搬家（49 个文件 `git mv`，内容逐字节不变）：sing-box 运行时的 `apsp-singbox@.service`、`apsp-singbox.openrc`、`apsp-singbox-legacy.openrc` 搬到 `deploy/`；IPQuality 与 NodeQuality 的打包脚本、策略、锁定文件与历史源码（`historical-r19/`、`historical-native-r1/`）搬到 `crates/observability/upstream/{ipquality,nodequality}/`。仓库不再有 `plugins/` 目录。
+- 制品格式不变：签名制品的对应源码包、推导账本里的文件名仍是 `plugins/...`。`ipquality_artifact.py` 增加名字与仓库文件之间的对照（`source_path`、`source_name`），`build-ipquality.py` 打包时用它生成名字，校验时用它找文件；`ipquality-inputs.py`、`ipquality-profile.py` 各有一个只对照 `plugins/nodequality/rootfs.py` 的 `code_path`。这些都在已列入对应源码包的文件里，对应源码包的文件清单不变。设备上的 `/opt/apsp/plugins/...`、`/var/lib/apsp/plugins/...` 不变。
+- 其余引用改到新位置：发布、签名与端到端脚本，渲染安装脚本的命令（含 `.github/workflows/release.yml`），冻结构建输入的检查（必需文件改为 `deploy/apsp-singbox@.service`），NodeQuality 构建脚本、样例与约 40 个工具测试，边界检查的路径登记。
+- 引导脚本按新位置重新生成：所带的 60 个文件不变，其中 39 个换成新路径，内容变化的只有改过的 7 个工具与 #255 的 `release.py`；217 KB，在 256 KB 限额内。
+- 文档：仓库说明、架构的上游代码表、领域归属表、需求与部署说明、改名说明、AGENTS.md、`tools/README.md`。
+- 验证（本地，基于 main `94a8edc2`）：
+  - 按 CI 的方式在 main（`94a8edc2`）与本分支上各跑一遍 49 条 Python 测试命令（CI 中需要 sudo 的一条除外），都从 `umask 022` 的导出副本运行：结果逐条相同，main 的 4 条失败都是本机环境所致（`tests/` 套件里依赖本机的静态 ELF 运行时检查、CI 专用的 cargo 包装、需要 sudo 的诊断测试、需要 `$GITHUB_ENV` 的脚本）。`tests/` 套件里 main 的引导脚本过期检查失败，本分支通过（16 → 15 项失败，其余都是静态 ELF 检查）。第一轮对照中 `tools/test-nodequality-native.py` 失败：测试按 NodeQuality 目录的上两级找仓库根目录，目录变深后找错，改为按测试文件找仓库根目录后通过（42 项），CI 中需要 sudo 的 `tools/test-nodequality.py` 同样修正并通过编译检查。
+  - `render-bootstrap.py --check` 通过；49 个搬家文件全部 100% 相似（内容不变）；`apsp-panel-host` 的安装测试 7 项、`foundation`（8）、`server_setup`（3）通过；两项边界检查通过（461 条），依赖检查通过。
+  - 新引导脚本 blob `b7a961c3…`，SHA-256 `ce2815f5…`。
+- 交付：改动接入引导脚本与发布工具，按协作规则开 PR；用户在备用机器上做一次接入测试后合并。
+
 ## 2026-11-10：ADR 0131 步骤一（中七）——删除九张旧商务表（PR，待合并）
 
 - 用户要求：在“旧表”的选择中选“先导出，再经 PR 删除”。取舍见 `docs/open-questions.md`。
