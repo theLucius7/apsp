@@ -102,7 +102,7 @@ try {
 
     // The former member operations address opens 代理用户; no 成员运营 entry remains.
     await page.goto(`${origin}/#/users`)
-    await page.locator('[data-slot=page-header]').getByRole('heading', { name: '代理用户', exact: true }).waitFor()
+    await page.locator('[data-slot=page-header]').getByRole('heading', { name: '用户', exact: true }).waitFor()
     assert.equal(await page.getByRole('link', { name: '成员运营', includeHidden: true }).count(), 0)
     await page.locator('[data-slot=user-heading]').getByRole('heading', { name: user.name, exact: true }).waitFor()
     await page.getByRole('button', { name: '门户设置', exact: true }).click()

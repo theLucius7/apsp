@@ -62,7 +62,7 @@ export default function ServerDetail({ id, section = 'overview' }: { id: number;
   </>
   const capabilities = Array.isArray(entry.capabilities) ? entry.capabilities : []
   const workspaces = [
-    { path: 'ddns', label: '域名解析' },
+    { path: 'ddns', label: '地址与域名' },
     { path: 'network-workbench', label: '网络检测' },
     ...(showExperimental ? [{ path: 'network-configuration', label: '网络配置（实验）' }, { path: 'operations', label: '自动化与维护（实验）' }] : []),
   ]

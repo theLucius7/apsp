@@ -78,7 +78,7 @@
 | `web/src/<领域>/pages.tsx` | 该领域的页面清单：每个页面的地址与旧地址、名称与图标、所在分组与位置、所属入口、打开权限（能力、是否须看见全部服务器）与按需加载的组件。新增页面只改这里 |
 | `web/src/lib/pages.tsx` | 页面清单的类型与按需加载（平台层） |
 | `web/src/app/routes.ts` | 解析 URL：带参数的地址（服务器详情、节点、代理用户、费用条目、看板）在这里解析，其余按各领域清单登记的地址与旧地址查找 |
-| `web/src/app/navigation.ts` | 汇总各领域的页面清单：分组的名称与顺序、当前页面归属；功能分级标记在平台的 `lib/tiers.ts`。现有界面是五个分组，目标是 ADR 0126 的六个工作区，规则与对照见[功能地图](product-map.md) |
+| `web/src/app/navigation.ts` | 汇总各领域的页面清单：分组的名称与顺序、当前页面归属；功能分级标记在平台的 `lib/tiers.ts`。分组是 ADR 0126 的六个工作区，规则与对照见[功能地图](product-map.md) |
 | `web/src/app/AdminPage.tsx` | 按解析结果选择页面：普通页面由清单绘制，带参数的页面在这里传入参数，保留服务器筛选和组件重挂载边界 |
 | `web/src/app/AdminShell.tsx`、`Login.tsx` | 后台布局与登录表单 |
 | `web/src/app/Overview.tsx`、`ServerDetail.tsx`、`CommandPalette.tsx` | 组合几个领域的页面：概览、服务器详情、命令面板（页面跳转与对象搜索） |

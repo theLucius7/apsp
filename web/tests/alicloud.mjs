@@ -140,7 +140,7 @@ try {
   }
   await installControlCenterFixtures(page)
   await page.goto(`${origin}/#/alicloud`)
-  await page.getByRole('heading', { name: '阿里云 CDT 与带宽', exact: true }).waitFor()
+  await page.getByRole('heading', { name: '云资源', exact: true }).waitFor()
   await page.getByRole('button', { name: '添加云账号' }).click()
   let dialog = page.getByRole('dialog')
   await dialog.getByLabel('账号名称').fill('测试云账号')

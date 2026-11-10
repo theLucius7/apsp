@@ -164,7 +164,7 @@ try {
     await page.evaluate(() => { location.hash = '#/settings/backup' })
     await page.locator('[data-slot=page-failure]').waitFor()
     assert.equal(await page.locator('[data-slot=sidebar]').count(), 1, 'The console survives')
-    await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '服务器', exact: true }).click()
+    await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '服务器列表', exact: true }).click()
     await page.getByRole('heading', { name: '服务器列表', exact: true }).waitFor()
     assert.equal(await page.locator('[data-slot=page-failure]').count(), 0, 'Going elsewhere clears the failure')
     summary.push('page-boundary')

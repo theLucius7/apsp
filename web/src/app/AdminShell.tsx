@@ -155,7 +155,8 @@ function Navigation({ items, current, collapsed }: { items: readonly NavigationI
     {groups.map((group, index) => <div key={group} className="contents">
       {collapsed
         ? index > 0 && <div className="bg-sidebar-border mx-2 my-1.5 h-px" aria-hidden="true" />
-        : <div className="text-muted-foreground flex items-center gap-1.5 px-2.5 pt-4 pb-1.5 text-[11px] font-medium tracking-[0.08em] first:pt-1"><span className="truncate">{t(group)}</span>{entries.find(entry => entry.root.group === group)?.root.tier && <TierBadge tier="experimental" className="ml-auto" />}</div>}
+        : entries.find(entry => entry.root.group === group)?.root.heading !== false
+          && <div className="text-muted-foreground flex items-center gap-1.5 px-2.5 pt-4 pb-1.5 text-[11px] font-medium tracking-[0.08em] first:pt-1"><span className="truncate">{t(group)}</span></div>}
       {entries.filter(entry => entry.root.group === group).map(({ root, href, path }) => {
         const active = activePath === path
         const Icon = root.icon
@@ -169,6 +170,7 @@ function Navigation({ items, current, collapsed }: { items: readonly NavigationI
           )}>
           <Icon className={cn('size-4 shrink-0 transition-colors', active ? 'text-sidebar-primary' : 'opacity-75 group-hover/nav:opacity-100')} aria-hidden="true" />
           <span className={cn('truncate', collapsed && 'sr-only')}>{label}</span>
+          {root.tier && !collapsed && <TierBadge tier={root.tier} className="ml-auto" />}
         </a>
         return <div key={path} className="contents">
           {collapsed ? <Tooltip><TooltipTrigger asChild>{link}</TooltipTrigger><TooltipContent side="right">{label}{root.tier && ` · ${t('实验')}`}</TooltipContent></Tooltip> : link}

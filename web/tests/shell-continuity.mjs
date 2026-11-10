@@ -113,7 +113,7 @@ try {
       await bar.getByRole('button', { name: '清空选择', exact: true }).click(); await bar.waitFor({ state: 'hidden' })
       // The open menu takes part of the screen; the page below it still scrolls.
       await page.getByRole('button', { name: '菜单', exact: true }).click()
-      await page.locator('#admin-navigation').getByRole('link', { name: '服务器', exact: true }).waitFor()
+      await page.locator('#admin-navigation').getByRole('link', { name: '服务器列表', exact: true }).waitFor()
       const menu = await metrics()
       assert.equal(menu.client > 0 && menu.height > menu.client, true, 'The page keeps a scrolling area below the open menu')
       await page.mouse.move(195, 880); await page.mouse.wheel(0, 600)
@@ -165,7 +165,7 @@ try {
     try {
       await page.goto(`${origin}/#/alerts/settings`)
       await page.getByRole('heading', { name: '告警设置', exact: true }).waitFor()
-      await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '服务器', exact: true }).click()
+      await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '服务器列表', exact: true }).click()
       await page.getByRole('heading', { name: '服务器列表', exact: true }).waitFor()
       await page.locator('header[data-slot=page-header]').getByRole('button', { name: '添加服务器', exact: true }).click()
       const dialog = page.getByRole('dialog').filter({ has: page.getByLabel('服务器名称') }), name = dialog.getByLabel('服务器名称')

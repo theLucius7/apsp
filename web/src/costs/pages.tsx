@@ -8,9 +8,8 @@ const SubscriptionBoard = lazyPage(() => import('./subscriptions/SubscriptionBoa
 
 export const pages = [
   // The administrator's own paid subscriptions (Wallos style) at a glance (ADR 0117).
-  { page: 'subscription-board', path: '/subscriptions', label: '订阅看板', icon: RssIcon, workspace: 'overview', order: 40,
-    parent: '/home', features: ['cloud'], allServers: true, preload: SubscriptionBoard.preload, render: () => <SubscriptionBoard /> },
-  // ADR 0087: costs and renewals sit with the overview.
-  { page: 'expenses', path: '/expenses', label: '费用与续费', icon: CalendarClockIcon, workspace: 'overview', order: 50,
+  { page: 'subscription-board', path: '/subscriptions', label: '付费服务', icon: RssIcon, workspace: 'costs', order: 11,
+    parent: '/expenses', features: ['cloud'], allServers: true, preload: SubscriptionBoard.preload, render: () => <SubscriptionBoard /> },
+  { page: 'expenses', path: '/expenses', label: '续费项目', icon: CalendarClockIcon, workspace: 'costs', order: 10,
     features: ['cloud'], allServers: true, preload: Expenses.preload },
 ] as const satisfies readonly PageEntry[]

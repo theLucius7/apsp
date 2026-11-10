@@ -25,8 +25,8 @@ const origin = `http://127.0.0.1:${http.address().port}`
 const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
 const GiB = 1024 ** 3
 
-async function open(width, state) {
-  const page = await browser.newPage({ viewport: { width, height: 700 } })
+async function open(width, state, height = 700) {
+  const page = await browser.newPage({ viewport: { width, height } })
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
   await page.route('**/api/**', async route => {
@@ -57,9 +57,10 @@ function servers(count, online) {
 
 const results = {}
 try {
-  // Phones: the page scrolls and the menu closes on Escape or an outside press.
+  // Phones: the page scrolls and the menu closes on Escape or an outside press. The menu
+  // fills a 700-pixel-tall phone, so this one is taller and leaves part of the page uncovered.
   {
-    const { page, errors } = await open(390, { servers: () => servers(30, () => true) })
+    const { page, errors } = await open(390, { servers: () => servers(30, () => true) }, 844)
     await page.locator('[data-slot=server-list-card]').filter({ has: page.getByText('TEST_ONLY 服务器 30', { exact: true }) }).waitFor()
     const column = page.locator('[data-slot=main-scroller]')
     const scrolled = await column.evaluate(element => { element.scrollTop = element.scrollHeight; return element.scrollTop })
@@ -72,7 +73,9 @@ try {
     await menu.click()
     assert.equal(await menu.getAttribute('aria-expanded'), 'true')
     // A press near the bottom of the viewport lands on the page, outside the menu.
-    await page.mouse.click(195, 690)
+    const panel = await page.locator('#admin-navigation').boundingBox()
+    assert.ok(panel.y + panel.height < 834, 'The menu ends above the press')
+    await page.mouse.click(195, 834)
     assert.equal(await menu.getAttribute('aria-expanded'), 'false', 'An outside press closes the menu')
     assert.equal(new URL(page.url()).hash, '#/servers', 'The press closed the menu without following a link')
     assert.deepEqual(errors, [])

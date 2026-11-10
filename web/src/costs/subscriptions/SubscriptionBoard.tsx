@@ -77,7 +77,7 @@ const SubscriptionCard = memo(function SubscriptionCard({ entry: { item, view },
     </div>
     <div className="grid grid-cols-3 gap-1.5 px-3.5 pb-3">
       <Datum icon={CalendarIcon} label="下次续费" value={view.next.label} tone={view.next.tone} title={view.next.title} />
-      <Datum icon={RefreshCcwIcon} label="续费方式" value={item.inactive ? '—' : view.renewal} tone="muted" title={item.auto_renew ? '服务商自动扣款；到日后自动进入下一期' : '需要手动续费，并在「费用与续费」确认'} />
+      <Datum icon={RefreshCcwIcon} label="续费方式" value={item.inactive ? '—' : view.renewal} tone="muted" title={item.auto_renew ? '服务商自动扣款；到日后自动进入下一期' : '需要手动续费，并在「续费项目」确认'} />
       <Datum icon={CreditCardIcon} label="付款" value={view.payment || '—'} tone="muted" title={view.payment ? `付款方式：${view.payment}` : '未设置付款方式'} />
     </div>
     {item.notes && <p className="text-muted-foreground -mt-1 truncate px-3.5 pb-3 text-xs" title={item.notes}>{item.notes}</p>}
@@ -130,7 +130,7 @@ export default function SubscriptionBoard() {
   const chooseSort = (value: string) => { const next = savedSort(value); setSort(next); savePreference('sort', next) }
 
   return <div data-slot="subscription-board" className="flex flex-col gap-3">
-    <PageHeader title="订阅看板">
+    <PageHeader title="付费服务">
       <Refresh onClick={refresh} />
       <a className={buttonVariants({ variant: 'outline' })} href="#/expenses">在费用与续费中管理</a>
       <InfoTip label="图例"><p>卡片上的圆环是本期已经过去的时间，中间是距下次续费的天数。</p></InfoTip>
@@ -177,7 +177,7 @@ export default function SubscriptionBoard() {
     </div>
 
     {!items ? !data.items.error && !malformed && <CardsLoading />
-      : !entries.length ? <Empty icon={RssIcon} title="还没有订阅" description="在「费用与续费」里添加你付费的服务，或从 Wallos 导入。"><a className={buttonVariants()} href="#/expenses">前往费用与续费</a></Empty>
+      : !entries.length ? <Empty icon={RssIcon} title="还没有订阅" description="在「续费项目」里添加你付费的服务，或从 Wallos 导入。"><a className={buttonVariants()} href="#/expenses">前往续费项目</a></Empty>
         : !visible.length ? <div className="text-muted-foreground flex min-h-60 flex-col items-center justify-center gap-3 p-6 text-center"><RssIcon className="size-8" aria-hidden="true" /><strong className="text-foreground text-sm font-medium">没有匹配的订阅</strong><Button onClick={reset}>清除筛选</Button></div>
           : view === 'cards' ? <section aria-label="订阅" className={grid}>{visible.map(entry => <div key={entry.key} className="min-w-0"><SubscriptionCard entry={entry} base={base} /></div>)}</section>
             : <SubscriptionTable entries={visible} base={base} />}

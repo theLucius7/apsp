@@ -17,7 +17,7 @@ export default function Statistics() {
   const proxy = useResource<ProxyStatistics>(`/api/plugins/sing-box/statistics?days=${days}`, 30_000)
   const data = servers.data, business = proxy.data
   return <div data-slot="statistics-page" className="min-w-0">
-    <PageHeader title="统计报表">
+    <PageHeader title="趋势与报表">
       <SegmentedGroup role="group" aria-label="统计时间范围">{[7, 30].map(value => <SegmentedButton key={value} type="button" aria-pressed={days === value} onClick={() => setDays(value)}>近 {value} 天</SegmentedButton>)}</SegmentedGroup>
       <Refresh onClick={() => { servers.reload(); proxy.reload() }} />
     </PageHeader>

@@ -6,6 +6,6 @@ import type { PageEntry } from '@/lib/pages'
 export const Nodes = lazyPage(() => import('./Nodes'), true)
 
 export const pages = [
-  { page: 'nodes', path: '/nodes', label: '代理节点', icon: WaypointsIcon, workspace: 'proxy', order: 10,
+  { page: 'nodes', path: '/nodes', label: '节点', icon: WaypointsIcon, workspace: 'network', order: 10,
     features: ['proxy'], allServers: true, preload: Nodes.preload },
 ] as const satisfies readonly PageEntry[]

@@ -9,7 +9,6 @@ import { pages as resources } from '../resources/pages'
 import { pages as traffic } from '../traffic/pages'
 import { pages as own } from './pages'
 import type { PageEntry, Workspace } from '@/lib/pages'
-import type { Tier } from '@/lib/tiers'
 import type { AppRoute } from './routes'
 
 /** Every administrator page, as the domains declare them (`<domain>/pages.tsx`). */
@@ -17,26 +16,30 @@ export const pageEntries = [...own, ...observability, ...costs, ...traffic, ...a
   ...operations, ...networking, ...governance] as const
 export type PageName = (typeof pageEntries)[number]['page']
 
-export type NavigationItem = PageEntry & { group: string }
+/** A sidebar page with its workspace's name, and whether the workspace shows that name as a heading. */
+export type NavigationItem = PageEntry & { group: string; heading: boolean }
 
-// Twelve entries in four groups, in the order of the main journey: see the whole
-// network, run the proxy service, manage the servers it runs on, watch alerts and
-// lines and set up the panel. Pages about the same thing are tabs of one entry
-// instead of separate entries. Downgraded workspaces stay hidden until the panel
-// settings show them. Each page's domain declares its section and position; the
-// sections' names and order are decided here. See docs/product-map.md and ADR 0102.
-const workspaces: readonly { id: Workspace; label: string; tier?: Tier }[] = [
-  { id: 'overview', label: '总览' },
-  { id: 'proxy', label: '代理服务' },
+// Six workspaces, each answering one question, in the order they are used (ADR 0126,
+// docs/redesign/04-workspaces.md): what needs me now, which machines and are they well,
+// which services for whom, where is the problem, what does it cost, how does the panel
+// run. Pages about the same thing are tabs of one entry instead of separate entries;
+// experimental pages stay in the workspace of their domain, labelled, and hidden until the
+// panel settings show them. Each page's domain declares its workspace and position; the
+// workspaces' names and order are decided here. See docs/product-map.md.
+const workspaces: readonly { id: Workspace; label: string; heading?: false }[] = [
+  // The overview is one entry on its own, without a heading.
+  { id: 'overview', label: '概览', heading: false },
   { id: 'servers', label: '服务器' },
-  { id: 'settings', label: '监控与设置' },
-  { id: 'experimental', label: '实验功能', tier: 'experimental' },
+  { id: 'network', label: '网络服务' },
+  { id: 'monitoring', label: '监测与诊断' },
+  { id: 'costs', label: '费用与续费' },
+  { id: 'system', label: '系统' },
 ]
 
 export const navigation: readonly NavigationItem[] = workspaces.flatMap(workspace => pageEntries
   .filter(entry => entry.workspace === workspace.id && !('within' in entry))
   .sort((a, b) => a.order - b.order)
-  .map(entry => ({ ...entry, group: workspace.label, ...(workspace.tier ? { tier: workspace.tier } : {}) })))
+  .map(entry => ({ ...entry, group: workspace.label, heading: workspace.heading !== false })))
 
 const familyPath = (item: NavigationItem) => item.parent ?? item.path
 

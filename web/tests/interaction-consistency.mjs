@@ -218,7 +218,7 @@ try {
       await page.getByRole('heading', { name: '服务器列表', exact: true }).waitFor()
       const button = page.getByRole('button', { name: '菜单', exact: true }), menu = page.locator('#admin-navigation')
       const expanded = async () => await button.getAttribute('aria-expanded') === 'true'
-      await button.click(); await menu.getByRole('link', { name: '服务器', exact: true }).waitFor()
+      await button.click(); await menu.getByRole('link', { name: '服务器列表', exact: true }).waitFor()
       await menu.getByRole('link', { name: '告警', exact: true }).focus()
       await page.keyboard.press('Escape')
       await until(async () => !await expanded(), 'Escape closes the menu')

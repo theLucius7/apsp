@@ -11,22 +11,22 @@ const LineQualitySettings = lazyPage(() => import('./monitoring/LineQualitySetti
 export const NetworkWorkbench = lazyPage(() => import('./network-workbench/NetworkWorkbench'))
 
 export const pages = [
-  { page: 'statistics', path: '/statistics', label: '统计报表', icon: ChartColumnIcon, workspace: 'overview', order: 20,
-    parent: '/home', features: ['monitoring'], allServers: true, preload: Statistics.preload, render: () => <Statistics /> },
-  // The server dashboard is a view of the whole network, a tab of the overview like the
-  // reports; the application draws it, also for visitors of the public dashboard.
-  { page: 'dashboard', path: '/dashboard', label: '服务器看板', icon: LayoutDashboardIcon, workspace: 'overview', order: 30,
-    parent: '/home', features: ['monitoring'], allServers: true },
-  { page: 'notifications', path: '/alerts', label: '告警事件', navLabel: '告警', icon: BellRingIcon, workspace: 'settings', order: 10,
+  { page: 'statistics', path: '/statistics', label: '趋势与报表', icon: ChartColumnIcon, workspace: 'monitoring', order: 30,
+    features: ['monitoring'], allServers: true, preload: Statistics.preload, render: () => <Statistics /> },
+  // The server dashboard is a view of the server list; the application draws it, also for
+  // visitors of the public dashboard.
+  { page: 'dashboard', path: '/dashboard', label: '服务器看板', icon: LayoutDashboardIcon, workspace: 'servers', order: 15,
+    parent: '/servers', features: ['monitoring'], allServers: true },
+  { page: 'notifications', path: '/alerts', label: '告警事件', navLabel: '告警', icon: BellRingIcon, workspace: 'monitoring', order: 10,
     features: ['monitoring'], allServers: true, preload: Notifications.preload, render: () => <Notifications /> },
-  { page: 'alert-settings', path: '/alerts/settings', label: '告警设置', icon: SlidersHorizontalIcon, workspace: 'settings', order: 20,
+  { page: 'alert-settings', path: '/alerts/settings', label: '告警设置', icon: SlidersHorizontalIcon, workspace: 'monitoring', order: 11,
     parent: '/alerts', features: ['monitoring'], allServers: true, preload: AlertSettings.preload, render: () => <AlertSettings /> },
   // ADR 0130: latency and China reachability answer one question and share the overview;
   // the checks are configured in one tab, and ad-hoc network tests sit beside them.
-  { page: 'latency', path: '/latency', label: '质量概况', navLabel: '线路质量', icon: GaugeIcon, workspace: 'settings', order: 30,
+  { page: 'latency', path: '/latency', label: '质量概况', navLabel: '线路质量', icon: GaugeIcon, workspace: 'monitoring', order: 20,
     aliases: ['/latency/reachability'], features: ['monitoring'], allServers: true, preload: LineQuality.preload, render: () => <LineQuality /> },
-  { page: 'latency-settings', path: '/latency/settings', label: '检测设置', icon: SlidersHorizontalIcon, workspace: 'settings', order: 40,
+  { page: 'latency-settings', path: '/latency/settings', label: '检测设置', icon: SlidersHorizontalIcon, workspace: 'monitoring', order: 21,
     parent: '/latency', preload: LineQualitySettings.preload, render: () => <LineQualitySettings /> },
-  { page: 'network-workbench', path: '/network-workbench', label: '网络检测', icon: RadarIcon, workspace: 'settings', order: 50,
+  { page: 'network-workbench', path: '/network-workbench', label: '网络检测', icon: RadarIcon, workspace: 'monitoring', order: 22,
     parent: '/latency', features: ['diagnostics'], preload: NetworkWorkbench.preload, render: () => <NetworkWorkbench /> },
 ] as const satisfies readonly PageEntry[]

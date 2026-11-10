@@ -6,6 +6,6 @@ import type { PageEntry } from '@/lib/pages'
 export const Ddns = lazyPage(() => import('./dns/Ddns'))
 
 export const pages = [
-  { page: 'ddns', path: '/dns', label: '域名解析', icon: GlobeIcon, workspace: 'servers', order: 20,
+  { page: 'ddns', path: '/dns', label: '地址与域名', icon: GlobeIcon, workspace: 'servers', order: 20,
     features: ['dns'], preload: Ddns.preload, render: () => <Ddns /> },
 ] as const satisfies readonly PageEntry[]

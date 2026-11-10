@@ -235,7 +235,7 @@ try {
     await page.getByRole('link', { name: new RegExp(`^${escaped}.*安装状态待确认`) }).click()
     await page.waitForURL(/#\/servers\/1\/services$/)
     await page.getByRole('link', { name: '管理节点', exact: true }).click()
-    await page.getByRole('heading', { name: '代理节点', exact: true }).waitFor()
+    await page.getByRole('heading', { name: '节点', exact: true }).waitFor()
     assert.equal(new URL(page.url()).hash, '#/nodes?server=1')
     assert.equal(await page.getByRole('combobox', { name: '按服务器筛选', exact: true }).inputValue(), '1')
     await page.getByRole('button', { name: '创建节点', exact: true }).click()
@@ -284,13 +284,13 @@ try {
     await services.getByRole('button', { name: '重试', exact: true }).click()
     await services.getByText('部署夹具读取失败', { exact: true }).waitFor({ state: 'hidden' })
     await page.goBack()
-    await page.getByRole('heading', { name: '代理节点', exact: true, level: 1 }).waitFor()
+    await page.getByRole('heading', { name: '节点', exact: true, level: 1 }).waitFor()
     // The following independent chain scenarios start with an enabled entry.
     node.enabled = true
     chainFixtures = true
     await refreshPage()
     await showView('链路')
-    await page.getByRole('heading', { name: '代理节点', exact: true, level: 1 }).waitFor()
+    await page.getByRole('heading', { name: '节点', exact: true, level: 1 }).waitFor()
     await page.getByRole('heading', { name: /^链路与资源引用/, level: 2 }).waitFor()
     // The Nodes component and these headings remain mounted across section hash changes.
     await page.locator('nav[aria-label="节点视图"] a[aria-current="page"]').filter({ hasText: /^链路/ }).waitFor()
@@ -460,8 +460,8 @@ try {
     await enrollment.getByRole('link', { name: '前往代理服务', exact: true }).click()
     await page.getByRole('heading', { name: '概览', exact: true }).waitFor()
 
-    await navigate('代理用户')
-    await page.getByRole('heading', { name: '代理用户', exact: true }).waitFor()
+    await navigate('用户')
+    await page.getByRole('heading', { name: '用户', exact: true }).waitFor()
     await page.getByRole('heading', { name: '创建代理用户，开始分配节点', exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: '创建代理用户', exact: true }).count(), 2)
     await navigate('账号安全')

@@ -83,7 +83,7 @@ try {
       // Typing filters pages; arrow keys move and wrap without leaving the field.
       await input.fill('告警')
       await dialog.getByRole('option', { name: /告警设置/ }).waitFor()
-      assert.equal(await dialog.getByRole('option', { name: /代理节点/ }).count(), 0, 'Unrelated pages are filtered out')
+      assert.equal(await dialog.getByRole('option', { name: /节点/ }).count(), 0, 'Unrelated pages are filtered out')
       const total = await options.count()
       assert.equal(total >= 2, true)
       const first = await selected().getAttribute('id')
