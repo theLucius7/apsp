@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { resolveRoute } from '../src/app/routes'
 import { currentNavigation, homePath, navigation, sectionTabs, sidebarEntries } from '../src/app/navigation'
-import { visibleByTier } from '../src/app/tiers'
+import { visibleByTier } from '../src/lib/tiers'
 import { nodeHash } from '../src/traffic/nodeRoute'
 
 test('dashboard aliases keep the public read-only route after shell extraction', () => {
@@ -25,7 +25,7 @@ test('old device DDNS, catalog alias and unified node selection retain their des
 
 test('the subscription board sits beside the server board and its cards open one proxy user', () => {
   expect(resolveRoute('/subscriptions')).toEqual({ page: 'subscription-board' })
-  expect(currentNavigation(resolveRoute('/subscriptions'))).toMatchObject({ label: '订阅看板', group: '总览', parent: '/home' })
+  expect(currentNavigation(resolveRoute('/subscriptions'))).toMatchObject({ label: '付费服务', group: '费用与续费', parent: '/expenses' })
   expect(resolveRoute('/users')).toEqual({ page: 'proxy-users' })
   expect(resolveRoute('/users')).toEqual({ page: 'proxy-users' })
   expect(resolveRoute('/users/42')).toEqual({ page: 'proxy-users', userId: 42 })
@@ -85,14 +85,18 @@ test('node page sections are addressable and malformed sections are refused', ()
 })
 
 test('navigation groups follow administrator tasks and keep every destination', () => {
-  expect([...new Set(navigation.map(item => item.group))]).toEqual(['总览', '代理服务', '服务器', '监控与设置', '实验功能'])
+  expect([...new Set(navigation.map(item => item.group))]).toEqual(['概览', '服务器', '网络服务', '监测与诊断', '费用与续费', '系统'])
   // Every destination stays; pages about the same thing are tabs of one sidebar entry (ADR 0102).
   expect(navigation).toHaveLength(23)
   const everyday = sidebarEntries(navigation.filter(item => !item.tier))
-  expect(everyday.map(entry => entry.root.navLabel ?? entry.root.label)).toEqual(['概览', '费用与续费', '代理节点', '代理用户', '策略与套餐', '服务器', '域名解析', '阿里云 CDT', '告警', '线路质量', '设置'])
-  expect(navigation.filter(item => item.group === '代理服务').map(item => item.label)).toEqual(['代理节点', '代理用户', '策略与套餐'])
-  expect(sectionTabs(currentNavigation(resolveRoute('/dashboard')), navigation).map(item => item.label)).toEqual(['概览', '统计报表', '服务器看板', '订阅看板'])
-  expect(sectionTabs(currentNavigation(resolveRoute('/subscriptions')), navigation).map(item => item.label)).toEqual(['概览', '统计报表', '服务器看板', '订阅看板'])
+  expect(everyday.map(entry => entry.root.navLabel ?? entry.root.label)).toEqual(['概览', '服务器列表', '地址与域名', '云资源', '节点', '用户', '策略与套餐', '告警', '线路质量', '趋势与报表', '续费项目', '设置'])
+  expect(navigation.filter(item => item.group === '网络服务').map(item => item.label)).toEqual(['节点', '用户', '策略与套餐'])
+  // Experimental pages stay in their domain's workspace, labelled.
+  expect(navigation.filter(item => item.tier).map(item => [item.group, item.label])).toEqual([['服务器', '自动化与维护'], ['服务器', '网络配置']])
+  // The overview is one entry without a heading.
+  expect(navigation.filter(item => !item.heading).map(item => item.page)).toEqual(['singbox-overview'])
+  expect(sectionTabs(currentNavigation(resolveRoute('/dashboard')), navigation).map(item => item.label)).toEqual(['服务器列表', '服务器看板'])
+  expect(sectionTabs(currentNavigation(resolveRoute('/subscriptions')), navigation).map(item => item.label)).toEqual(['续费项目', '付费服务'])
   expect(sectionTabs(currentNavigation(resolveRoute('/nodes')), navigation)).toEqual([])
   // Someone who may only open some tabs of an entry goes to the first of those.
   const limited = navigation.filter(item => item.page === 'control-center' || item.page === 'security')
@@ -101,12 +105,12 @@ test('navigation groups follow administrator tasks and keep every destination', 
   expect(sidebarEntries(limited)[0].root.navLabel).toBe('设置')
   expect(navigation.filter(item => item.tier === 'experimental').map(item => item.page)).toEqual(['operations', 'network-configuration'])
   expect(navigation[0]).toMatchObject({ page: 'singbox-overview', label: '概览', path: homePath })
-  // A group never repeats its own name as a page.
-  for (const item of navigation) expect(item.label).not.toBe(item.group)
+  // A workspace heading never repeats as a page name; the overview has no heading.
+  for (const item of navigation) if (item.heading) expect(item.label).not.toBe(item.group)
   expect(new Set(navigation.map(item => item.path)).size).toBe(navigation.length)
-  expect(currentNavigation(resolveRoute('/nodes?view=sources'))?.label).toBe('代理节点')
-  expect(currentNavigation(resolveRoute('/nodes?view=sources'))?.group).toBe('代理服务')
-  expect(currentNavigation(resolveRoute('/home'))?.group).toBe('总览')
+  expect(currentNavigation(resolveRoute('/nodes?view=sources'))?.label).toBe('节点')
+  expect(currentNavigation(resolveRoute('/nodes?view=sources'))?.group).toBe('网络服务')
+  expect(currentNavigation(resolveRoute('/home'))?.group).toBe('概览')
 })
 
 test('platform management pages preserve selected server context alongside the node views', () => {
@@ -123,9 +127,9 @@ test('platform management pages preserve selected server context alongside the n
   expect(resolveRoute('/servers/batch')).toEqual({ page: 'batch-enrollment' })
   expect(currentNavigation(resolveRoute('/servers/batch'))?.path).toBe('/servers')
   expect(resolveRoute('/settings/backup')).toEqual({ page: 'backup' })
-  expect(currentNavigation(resolveRoute('/settings/backup'))?.group).toBe('监控与设置')
+  expect(currentNavigation(resolveRoute('/settings/backup'))?.group).toBe('系统')
   expect(resolveRoute('/settings/admin')).toEqual({ page: 'control-center' })
-  expect(currentNavigation(resolveRoute('/settings/admin'))?.group).toBe('监控与设置')
+  expect(currentNavigation(resolveRoute('/settings/admin'))?.group).toBe('系统')
   for (const path of ['/servers/0/fleet', '/servers/9007199254740992/network-workbench', '/servers/42/operations/extra']) {
     expect(resolveRoute(path)).toEqual({ page: 'not-found' })
   }
@@ -143,13 +147,13 @@ test('server sections, artifact and runtime views and split settings resolve to 
   expect(currentNavigation(resolveRoute('/settings/artifacts'))?.label).toBe('制品与版本')
   expect(currentNavigation(resolveRoute('/settings/plugins'))?.label).toBe('制品与版本')
   expect(resolveRoute('/alerts/settings')).toEqual({ page: 'alert-settings' })
-  expect(currentNavigation(resolveRoute('/alerts/settings'))?.group).toBe('监控与设置')
+  expect(currentNavigation(resolveRoute('/alerts/settings'))?.group).toBe('监测与诊断')
   expect(currentNavigation(resolveRoute('/settings'))?.label).toBe('面板设置')
-  expect(currentNavigation(resolveRoute('/alerts'))?.group).toBe('监控与设置')
+  expect(currentNavigation(resolveRoute('/alerts'))?.group).toBe('监测与诊断')
   expect(currentNavigation(resolveRoute('/dns'))?.group).toBe('服务器')
   expect(currentNavigation(resolveRoute('/alicloud'))?.group).toBe('服务器')
-  expect(currentNavigation(resolveRoute('/settings/plugins'))?.group).toBe('监控与设置')
-  expect(currentNavigation(resolveRoute('/network-workbench'))?.group).toBe('监控与设置')
+  expect(currentNavigation(resolveRoute('/settings/plugins'))?.group).toBe('系统')
+  expect(currentNavigation(resolveRoute('/network-workbench'))?.group).toBe('监测与诊断')
   for (const path of ['/servers/42/overview', '/servers/42/assets/extra', '/alerts/settings/extra']) expect(resolveRoute(path)).toEqual({ page: 'not-found' })
 })
 
@@ -157,7 +161,7 @@ test('member and expense destinations preserve public and administrator boundari
   expect(resolveRoute('/member')).toEqual({ page: 'member-login' })
   expect(resolveRoute('/users')).toEqual({ page: 'proxy-users' })
   expect(resolveRoute('/expenses')).toEqual({ page: 'expenses' })
-  expect(currentNavigation(resolveRoute('/expenses'))?.group).toBe('总览')
+  expect(currentNavigation(resolveRoute('/expenses'))?.group).toBe('费用与续费')
 })
 
 test('frozen entries stay hidden until the panel shows them', () => {

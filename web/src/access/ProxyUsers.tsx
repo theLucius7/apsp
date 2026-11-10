@@ -132,7 +132,7 @@ export default function ProxyUsers({ initialUserId }: { initialUserId?: number }
   const address = user ? user.subscription_url || revealed[user.id] || '' : ''
   const empty = Boolean(users.data && !users.data.length)
   return <>
-    <PageHeader title="代理用户">
+    <PageHeader title="用户">
       <Refresh onClick={refresh} />
       <Button variant="outline" onClick={() => setPortalOpen(true)}><Settings2Icon aria-hidden="true" />门户设置</Button>
       <Button disabled={Boolean(userError())} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />创建代理用户</Button>

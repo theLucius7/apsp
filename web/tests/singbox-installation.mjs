@@ -144,7 +144,7 @@ try {
     // The network services workspace lists every runtime and sends installation to the server's tab.
     await page.goto(`${origin}/#/nodes?view=runtimes`)
     await page.getByRole('heading', { name: '各服务器的运行时', exact: true }).waitFor()
-    assert.equal(await page.title(), '代理节点 · apsp')
+    assert.equal(await page.title(), '节点 · apsp')
     const row = page.locator('tbody tr').filter({ has: page.getByRole('link', { name, exact: true }) })
     await row.getByText('已安装并运行', { exact: true }).waitFor()
     assert.equal(await row.getByRole('link', { name: '查看部署', exact: true }).getAttribute('href'), '#/servers/1/services')

@@ -206,7 +206,7 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     const details = event.target.closest('details')
     if (details) details.open = true
   }}>
-    <PageHeader title="代理节点">
+    <PageHeader title="节点">
       <Refresh onClick={refresh} />
       <Button disabled={!canCreate} aria-describedby={createBlocked ? 'create-blocked-reason' : undefined} onClick={() => edit('new')}><PlusIcon aria-hidden="true" />创建节点</Button>
       <Button variant="outline" disabled={!canCreateChain} aria-describedby={createBlocked ? 'create-blocked-reason' : undefined} onClick={openChainCreate}>创建链路</Button>

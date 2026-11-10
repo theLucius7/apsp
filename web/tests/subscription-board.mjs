@@ -73,7 +73,7 @@ try {
 
     // It is a tab of the overview, beside the server board.
     const tabs = page.getByRole('navigation', { name: '本节页面', exact: true }).getByRole('link')
-    assert.deepEqual((await tabs.allInnerTexts()).map(text => text.trim()), ['概览', '统计报表', '服务器看板', '订阅看板'])
+    assert.deepEqual((await tabs.allInnerTexts()).map(text => text.trim()), ['续费项目', '付费服务'])
     assert.equal(await tabs.last().getAttribute('aria-current'), 'page')
     const stat = async label => (await page.locator('[data-slot=overview-item]').filter({ has: page.locator('[data-slot=overview-label]').getByText(label, { exact: true }) }).locator('[data-slot=overview-value]').innerText()).replace(/\s+/g, ' ')
     assert.equal(await stat('使用中'), '4 / 5 个')
