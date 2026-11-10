@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { resolveRoute } from '../src/app/routes'
 import { currentNavigation, homePath, navigation, sectionTabs, sidebarEntries } from '../src/app/navigation'
-import { visibleByTier } from '../src/app/tiers'
+import { visibleByTier } from '../src/lib/tiers'
 import { nodeHash } from '../src/traffic/nodeRoute'
 
 test('dashboard aliases keep the public read-only route after shell extraction', () => {

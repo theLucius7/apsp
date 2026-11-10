@@ -3,12 +3,16 @@ import { nodeRoute } from '../traffic/nodeRoute'
 import { resourceRoute } from '../traffic/resourceTypes'
 import type { ResourceKey } from '../traffic/resourceTypes'
 import type { NodeView } from '../traffic/nodeRoute'
+import { pageEntries } from './navigation'
+import type { PageName } from './navigation'
 
 // Sections of one server; ddns, fleet, network and operations are workspaces
 // opened with this server preselected.
 type ServerSection = 'assets' | 'agent' | 'ip-info' | 'node-quality' | 'tcp-quality' | 'services' | 'ddns' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations'
-type SimplePage = 'singbox-overview' | 'servers' | 'statistics' | 'latency' | 'latency-settings' | 'alicloud' | 'ddns'
-  | 'subscription-board' | 'groups' | 'artifacts' | 'settings' | 'backup' | 'batch-enrollment' | 'alert-settings' | 'notifications' | 'security' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations' | 'control-center' | 'not-found'
+// Pages whose address carries parameters are parsed here; every other page is found
+// through the address its domain declares (`<domain>/pages.tsx`).
+type ParameterizedPage = 'dashboard' | 'proxy-users' | 'expenses' | 'nodes'
+type SimplePage = Exclude<PageName, ParameterizedPage> | 'not-found'
 
 export type AppRoute =
   | { page: 'dashboard'; serverId?: number }
@@ -21,33 +25,11 @@ export type AppRoute =
   | { page: 'nodes'; serverId?: number; chains?: boolean; selected?: ResourceKey; kind?: 'direct'; serverRole?: 'any' | 'entry' | 'middle' | 'exit'; view?: NodeView }
   | { page: SimplePage }
 
-const pages: Readonly<Record<string, SimplePage>> = {
-  '/servers': 'servers',
-  '/servers/batch': 'batch-enrollment',
-  '/fleet': 'fleet',
-  '/network-workbench': 'network-workbench',
-  '/network-configuration': 'network-configuration',
-  '/operations': 'operations',
-  '/settings/admin': 'control-center',
-  '/home': 'singbox-overview',
-  '/statistics': 'statistics',
-  '/subscriptions': 'subscription-board',
-  '/latency': 'latency',
-  '/latency/settings': 'latency-settings',
-  // China reachability became a column of the quality overview (ADR 0130).
-  '/latency/reachability': 'latency',
-  '/alerts/settings': 'alert-settings',
-  '/alicloud': 'alicloud',
-  '/dns': 'ddns',
-  '/groups': 'groups',
-  '/settings/artifacts': 'artifacts',
-  // The plugin centre's address until 2026-11-09 (ADR 0131); kept for one release.
-  '/settings/plugins': 'artifacts',
-  '/settings': 'settings',
-  '/settings/backup': 'backup',
-  '/alerts': 'notifications',
-  '/settings/account': 'security',
-}
+type SimpleEntry = Extract<(typeof pageEntries)[number], { page: Exclude<SimplePage, 'not-found'> }>
+const parameterized = new Set<string>(['dashboard', 'proxy-users', 'expenses', 'nodes'] satisfies ParameterizedPage[])
+const isSimple = (entry: (typeof pageEntries)[number]): entry is SimpleEntry => !parameterized.has(entry.page)
+const pages = new Map<string, SimplePage>(pageEntries.filter(isSimple)
+  .flatMap(entry => [entry.path, ...('aliases' in entry ? entry.aliases : [])].map(path => [path, entry.page] as const)))
 
 export function resolveRoute(path: string): AppRoute {
   if (path === '/member') return { page: 'member-login' }
@@ -87,5 +69,5 @@ export function resolveRoute(path: string): AppRoute {
   const resource = resourceRoute(path)
   if (resource) return { page: 'nodes', selected: resource }
 
-  return { page: Object.hasOwn(pages, path) ? pages[path] : 'not-found' }
+  return { page: pages.get(path) ?? 'not-found' }
 }

@@ -1,74 +1,42 @@
-import { BellRingIcon, CalendarClockIcon, ChartColumnIcon, CloudCogIcon, DatabaseBackupIcon, GaugeIcon, GlobeIcon, HouseIcon, KeyRoundIcon, LayersIcon, LayoutDashboardIcon, NetworkIcon, PackageIcon, RssIcon, ServerIcon, Settings2Icon, RadarIcon, ShieldCheckIcon, SlidersHorizontalIcon, UsersIcon, WaypointsIcon, WorkflowIcon } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { pages as access } from '../access/pages'
+import { pages as costs } from '../costs/pages'
+import { pages as governance } from '../governance/pages'
+import { pages as naming } from '../naming/pages'
+import { pages as networking } from '../networking/pages'
+import { pages as observability } from '../observability/pages'
+import { pages as operations } from '../operations/pages'
+import { pages as resources } from '../resources/pages'
+import { pages as traffic } from '../traffic/pages'
+import { pages as own } from './pages'
+import type { PageEntry, Workspace } from '@/lib/pages'
+import type { Tier } from '@/lib/tiers'
 import type { AppRoute } from './routes'
-import type { Tier } from './tiers'
 
-export type NavigationItem = {
-  page: AppRoute['page']
-  path: string
-  /** The page's own name: its title and its tab. */
-  label: string
-  icon: LucideIcon
-  group: string
-  /** The sidebar entry this page is a tab of; pages without one are sidebar entries. */
-  parent?: string
-  /** The sidebar's name for an entry whose tabs go by more specific names. */
-  navLabel?: string
-  /** Set for downgraded features, which stay usable but are labelled. */
-  tier?: Tier
-}
+/** Every administrator page, as the domains declare them (`<domain>/pages.tsx`). */
+export const pageEntries = [...own, ...observability, ...costs, ...traffic, ...access, ...resources, ...naming,
+  ...operations, ...networking, ...governance] as const
+export type PageName = (typeof pageEntries)[number]['page']
 
-type NavigationGroup = { label: string; tier?: Tier; items: readonly Omit<NavigationItem, 'group' | 'tier'>[] }
+export type NavigationItem = PageEntry & { group: string }
 
 // Twelve entries in four groups, in the order of the main journey: see the whole
 // network, run the proxy service, manage the servers it runs on, watch alerts and
 // lines and set up the panel. Pages about the same thing are tabs of one entry
 // instead of separate entries. Downgraded workspaces stay hidden until the panel
-// settings show them. Addresses name what a page is for; earlier ones still open
-// the same pages (app/paths.ts, ADR 0120). See docs/product-map.md and ADR 0102.
-const settingsPath = '/settings'
-const groups: readonly NavigationGroup[] = [
-  { label: '总览', items: [
-    { page: 'singbox-overview', path: '/home', label: '概览', icon: HouseIcon },
-    { page: 'statistics', path: '/statistics', label: '统计报表', icon: ChartColumnIcon, parent: '/home' },
-    // The server dashboard is a view of the whole network, a tab of the overview like the reports.
-    { page: 'dashboard', path: '/dashboard', label: '服务器看板', icon: LayoutDashboardIcon, parent: '/home' },
-    // The administrator's own paid subscriptions (Wallos style) at a glance, next to the servers (ADR 0117).
-    { page: 'subscription-board', path: '/subscriptions', label: '订阅看板', icon: RssIcon, parent: '/home' },
-    // ADR 0087: costs and renewals sit with the overview.
-    { page: 'expenses', path: '/expenses', label: '费用与续费', icon: CalendarClockIcon },
-  ] },
-  { label: '代理服务', items: [
-    { page: 'nodes', path: '/nodes', label: '代理节点', icon: WaypointsIcon },
-    { page: 'proxy-users', path: '/users', label: '代理用户', icon: UsersIcon },
-    { page: 'groups', path: '/groups', label: '策略与套餐', icon: LayersIcon },
-  ] },
-  { label: '服务器', items: [
-    { page: 'servers', path: '/servers', label: '服务器列表', navLabel: '服务器', icon: ServerIcon },
-    { page: 'ddns', path: '/dns', label: '域名解析', icon: GlobeIcon },
-    { page: 'alicloud', path: '/alicloud', label: '阿里云 CDT', icon: CloudCogIcon },
-  ] },
-  { label: '监控与设置', items: [
-    { page: 'notifications', path: '/alerts', label: '告警事件', navLabel: '告警', icon: BellRingIcon },
-    { page: 'alert-settings', path: '/alerts/settings', label: '告警设置', icon: SlidersHorizontalIcon, parent: '/alerts' },
-    // ADR 0130: latency and China reachability answer one question and share the overview;
-    // the checks are configured in one tab, and ad-hoc network tests sit beside them.
-    { page: 'latency', path: '/latency', label: '质量概况', navLabel: '线路质量', icon: GaugeIcon },
-    { page: 'latency-settings', path: '/latency/settings', label: '检测设置', icon: SlidersHorizontalIcon, parent: '/latency' },
-    { page: 'network-workbench', path: '/network-workbench', label: '网络检测', icon: RadarIcon, parent: '/latency' },
-    { page: 'settings', path: settingsPath, label: '面板设置', navLabel: '设置', icon: Settings2Icon },
-    { page: 'artifacts', path: '/settings/artifacts', label: '制品与版本', icon: PackageIcon, parent: settingsPath },
-    { page: 'backup', path: '/settings/backup', label: '备份与恢复', icon: DatabaseBackupIcon, parent: settingsPath },
-    { page: 'control-center', path: '/settings/admin', label: '管理与安全', icon: ShieldCheckIcon, parent: settingsPath },
-    { page: 'security', path: '/settings/account', label: '账号安全', icon: KeyRoundIcon, parent: settingsPath },
-  ] },
-  { label: '实验功能', tier: 'experimental', items: [
-    { page: 'operations', path: '/operations', label: '自动化与维护', icon: WorkflowIcon },
-    { page: 'network-configuration', path: '/network-configuration', label: '网络配置', icon: NetworkIcon },
-  ] },
+// settings show them. Each page's domain declares its section and position; the
+// sections' names and order are decided here. See docs/product-map.md and ADR 0102.
+const workspaces: readonly { id: Workspace; label: string; tier?: Tier }[] = [
+  { id: 'overview', label: '总览' },
+  { id: 'proxy', label: '代理服务' },
+  { id: 'servers', label: '服务器' },
+  { id: 'settings', label: '监控与设置' },
+  { id: 'experimental', label: '实验功能', tier: 'experimental' },
 ]
 
-export const navigation: readonly NavigationItem[] = groups.flatMap(group => group.items.map(item => ({ ...item, group: group.label, ...(group.tier ? { tier: group.tier } : {}) })))
+export const navigation: readonly NavigationItem[] = workspaces.flatMap(workspace => pageEntries
+  .filter(entry => entry.workspace === workspace.id && !('within' in entry))
+  .sort((a, b) => a.order - b.order)
+  .map(entry => ({ ...entry, group: workspace.label, ...(workspace.tier ? { tier: workspace.tier } : {}) })))
 
 const familyPath = (item: NavigationItem) => item.parent ?? item.path
 
@@ -93,15 +61,17 @@ export function sectionTabs(current: NavigationItem | undefined, pages: readonly
 /** The page an administrator lands on after signing in. */
 export const homePath = '/home'
 
-// Workspaces opened from a server keep their own sidebar entry; every other
-// server section belongs to the server list. The operations tools and batch
-// enrollment moved into the server pages, so their old addresses do too.
+// Workspaces opened from a server keep their own sidebar entry; every other server
+// section belongs to the server list. Pages reached from another page keep that
+// page's entry marked.
 const serverWorkspaces = new Set<string>(['ddns', 'network-workbench', 'network-configuration', 'operations'])
-const serverPages = new Set<string>(['fleet', 'batch-enrollment'])
 
 export function currentNavigation(route: AppRoute): NavigationItem | undefined {
-  const page = route.page === 'server' ? (serverWorkspaces.has(route.section ?? '') ? route.section : 'servers')
-      : serverPages.has(route.page) ? 'servers'
-        : route.page
-  return navigation.find(item => item.page === page)
+  if (route.page === 'server') {
+    const page = serverWorkspaces.has(route.section ?? '') ? route.section : 'servers'
+    return navigation.find(item => item.page === page)
+  }
+  const entry = pageEntries.find(item => item.page === route.page)
+  if (entry && 'within' in entry) return navigation.find(item => item.path === entry.within)
+  return navigation.find(item => item.page === route.page)
 }

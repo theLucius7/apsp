@@ -1,5 +1,5 @@
 import { TierBadge } from '../../components'
-import type { Tier } from '../../app/tiers'
+import type { Tier } from '@/lib/tiers'
 import { SegmentedGroup, SegmentedLink, SegmentedNav } from '@/components/segmented'
 import { useFeatureStore } from '@/stores/features'
 
