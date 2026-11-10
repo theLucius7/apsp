@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { agentInstallTargets, linuxAgentTarget } from '../src/agent-installation'
+import { agentInstallTargets, linuxAgentTarget } from '../src/resources/agent-installation'
 
 test('ARM static Agent packages offer both compatible Linux hosts without AMD', () => {
   expect(agentInstallTargets(['arm64', 'linux-musl-arm64'], 'unix')).toEqual(['linux-gnu-arm64', 'linux-musl-arm64'])

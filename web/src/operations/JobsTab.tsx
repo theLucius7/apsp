@@ -5,7 +5,7 @@ import type { ActionRunner, BackupScheduleOption, Job, JobDetail, Maintenance, P
 import { states, time } from './types'
 import RemediationRules from './RemediationRules'
 import FleetReconciliation from './FleetReconciliation'
-import FormDraftToolbar from '../control-center/FormDraftToolbar'
+import FormDraftToolbar from '../governance/control-center/FormDraftToolbar'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'

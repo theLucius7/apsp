@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
-import { boardCounts, renewalView, savedSort, selectEntries, validRenewalSummary, validRenewals } from '../src/subscriptions/board'
-import type { Entry } from '../src/subscriptions/board'
-import type { Expense, Label } from '../src/plugins/expenses/types'
-import type { ExchangeRates } from '../src/display/currency'
+import { boardCounts, renewalView, savedSort, selectEntries, validRenewalSummary, validRenewals } from '../src/costs/subscriptions/board'
+import type { Entry } from '../src/costs/subscriptions/board'
+import type { Expense, Label } from '../src/costs/expenses/types'
+import type { ExchangeRates } from '../src/costs/currency/currency'
 
 const today = '2026-11-06'
 const rates = { base: 'CNY', rates: { USD: 0.14 }, rate_dates: {}, rate_date: '2026-11-05', source: 'frankfurter', source_url: null, fetched_at: 0, attempted_at: 0, next_refresh_at: 0, stale: false, status: 'fresh', error_code: null } satisfies ExchangeRates

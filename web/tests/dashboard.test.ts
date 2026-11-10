@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import type { Server } from '../src/types'
-import { defaultAssets } from '../src/server-assets'
-import { dashboardCounts, dashboardRoute, dashboardServer, savedSort, savedView, selectServers, snapshotUnavailable } from '../src/display/dashboard'
+import { defaultAssets } from '../src/resources/server-assets'
+import { dashboardCounts, dashboardRoute, dashboardServer, savedSort, savedView, selectServers, snapshotUnavailable } from '../src/observability/display/dashboard'
 
 const base: Server = { id: 1, name: '服务器 1', device_public_key: 'TEST_ONLY', online: true, last_seen: 1000, last_heartbeat_at: 1000, metrics_sampled_at: 1000, metrics_stale: false, static_info: { system: 'Debian', memory_total: 100, disk_total: 100 }, latest_metrics: { cpu_percent: 0, memory_used: 0, disk_used: 0, network_interfaces: { eth0: { transmit_bytes_per_sec: 0, receive_bytes_per_sec: 0 } } }, manifest_rev: 0 }
 

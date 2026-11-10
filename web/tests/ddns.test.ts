@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { ddnsMessage, ddnsWrite, matchZone, ruleState, zoneName } from '../src/plugins/ddns/types'
-import type { DdnsConfig, DdnsRule } from '../src/plugins/ddns/types'
+import { ddnsMessage, ddnsWrite, matchZone, ruleState, zoneName } from '../src/naming/dns/types'
+import type { DdnsConfig, DdnsRule } from '../src/naming/dns/types'
 
 describe('DDNS credentials and status', () => {
   const config: DdnsConfig = { name: '测试', server_id: 1, zone_id: '00000000000000000000000000000001', record_name: 'node.example.com', record_type: 'A', ttl: 300, proxied: false, interval_secs: 300, enabled: true, adopt_existing: false }

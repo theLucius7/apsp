@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { diagnosticActive, diagnosticCancelError } from '../src/diagnostics'
+import { diagnosticActive, diagnosticCancelError } from '../src/observability/diagnostics'
 import type { DiagnosticRecord } from '../src/types'
 
 const record: DiagnosticRecord = { id: 'a0000000-0000-0000-0000-000000000145', status: 'failed', agent_completed: false, cancel_requested_at: null, cancel_error: null, job: { plugin: 'nodequality', options: { ip_version: 'ipv4' } }, report: { text: 'TEST_ONLY retained report' }, error: 'TEST_ONLY panel deadline', created_at: 1, updated_at: 2, expires_at: 2 }

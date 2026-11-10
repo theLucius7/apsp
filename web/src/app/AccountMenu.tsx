@@ -1,6 +1,6 @@
 import { CheckIcon, ChevronsUpDownIcon, KeyRoundIcon, LogOutIcon, MonitorIcon, MoonIcon, SunIcon } from 'lucide-react'
-import { usePreference } from '../control-center/preferences'
-import { localeChosenEvent } from '../control-center/Appearance'
+import { usePreference } from '../governance/control-center/preferences'
+import { localeChosenEvent } from '../governance/control-center/Appearance'
 import { useI18n } from '../i18n'
 import type { Locale } from '../i18n'
 import { cn } from '@/lib/utils'

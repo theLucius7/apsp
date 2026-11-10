@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { portalAccessError, validPortalAccess } from '../src/plugins/singbox/portalAccess'
+import { portalAccessError, validPortalAccess } from '../src/access/portalAccess'
 
 test('portal zero-key readiness and immutable invitation identity fail closed', () => {
   const original = { configuration: { enabled: true, reason: null, origin: 'https://panel.example.com' }, keys: 0, url: null, activation_expires_at: null }

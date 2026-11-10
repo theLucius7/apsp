@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { artifactComponent, artifactGroups } from '../src/system/artifactGroups'
+import { artifactComponent, artifactGroups } from '../src/governance/system/artifactGroups'
 import { resolveRoute } from '../src/app/routes'
 import type { Artifact } from '../src/types'
 

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { probeRevisionMatches, probeWriteError, familyLabel, authorizationMatches, bindProbeAuthorization, changeProbe, lossLabel, probeSlots, probeState, probeTone, probeValue } from '../src/probes'
-import type { Probe, ProbeResult } from '../src/probes'
+import { probeRevisionMatches, probeWriteError, familyLabel, authorizationMatches, bindProbeAuthorization, changeProbe, lossLabel, probeSlots, probeState, probeTone, probeValue } from '../src/observability/probes'
+import type { Probe, ProbeResult } from '../src/observability/probes'
 
 const probe: Probe = { id: 'probe', name: '回环', kind: 'icmp', target: '127.0.0.1', port: null, interval_secs: 10, carrier: '', enabled: true, monitor: { region: '', address_family: 'any', authorization: { kind: 'owned', source: 'TEST_ONLY owner', scope: 'TEST_ONLY owned loopback measurement', enabled: true, expires_at: null, identity: { kind: 'icmp', target: '127.0.0.1', port: null, address_family: 'any' } } } }
 const point: ProbeResult = { id: 'point', probe_id: probe.id, sampled_at: 100_000, latency_ms: 0, loss_percent: 0, error: null }

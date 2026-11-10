@@ -1,8 +1,8 @@
-import { dashboardRoute } from '../display/dashboard'
-import { nodeRoute } from '../plugins/singbox/nodeRoute'
-import { resourceRoute } from '../plugins/singbox/resourceTypes'
-import type { ResourceKey } from '../plugins/singbox/resourceTypes'
-import type { NodeView } from '../plugins/singbox/nodeRoute'
+import { dashboardRoute } from '../observability/display/dashboard'
+import { nodeRoute } from '../traffic/nodeRoute'
+import { resourceRoute } from '../traffic/resourceTypes'
+import type { ResourceKey } from '../traffic/resourceTypes'
+import type { NodeView } from '../traffic/nodeRoute'
 
 // Sections of one server; ddns, fleet, network and operations are workspaces
 // opened with this server preselected.

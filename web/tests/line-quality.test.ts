@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
-import { carrierFigures, carrierHeading, lineProblems, lineSample, matchLines, reachabilityFigures, serverLines, sortLines } from '../src/monitoring/line-quality'
-import { worstState } from '../src/monitoring/reachability'
-import type { Probe, ProbeOverview, ProbeResult } from '../src/probes'
-import type { ReachabilityState, ReachabilityTarget } from '../src/monitoring/reachability'
+import { carrierFigures, carrierHeading, lineProblems, lineSample, matchLines, reachabilityFigures, serverLines, sortLines } from '../src/observability/monitoring/line-quality'
+import { worstState } from '../src/observability/monitoring/reachability'
+import type { Probe, ProbeOverview, ProbeResult } from '../src/observability/probes'
+import type { ReachabilityState, ReachabilityTarget } from '../src/observability/monitoring/reachability'
 
 const now = 1_800_000_000_000
 const id = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`

@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test'
-import { validatedSnapshot } from '../src/plugins/singbox/groupTypes'
-import { adoptSourceNode, cancelSourceJob, deleteSource, emptySourceDraft, prepareSourceMutation, previewCommit, previewInput, refreshSource, SourceFileReader, sourceAuthHeaders, sourceCommand, sourceMetadataError, sourceMutationReplay, sourceWriteError, submitSourceMutation } from '../src/plugins/singbox/sourceRequests'
-import type { SourceSnapshot } from '../src/plugins/singbox/sourceRequests'
-import { MAX_SOURCE_BYTES, orderedPreviewError, sourceInterval, sourceJobActive, sourceRoot, sourceStatusText, validOrderedPreview, validSourceCounts, validSourceHistory, validSourceJob, validSourceNodePage, validSubscriptionSource, validSubscriptionSources } from '../src/plugins/singbox/orderedSourceTypes'
-import type { OrderedPreview, SourceJob, SourceNode, SourceNodePage, SubscriptionSource } from '../src/plugins/singbox/orderedSourceTypes'
+import { validatedSnapshot } from '../src/access/groupTypes'
+import { adoptSourceNode, cancelSourceJob, deleteSource, emptySourceDraft, prepareSourceMutation, previewCommit, previewInput, refreshSource, SourceFileReader, sourceAuthHeaders, sourceCommand, sourceMetadataError, sourceMutationReplay, sourceWriteError, submitSourceMutation } from '../src/traffic/sourceRequests'
+import type { SourceSnapshot } from '../src/traffic/sourceRequests'
+import { MAX_SOURCE_BYTES, orderedPreviewError, sourceInterval, sourceJobActive, sourceRoot, sourceStatusText, validOrderedPreview, validSourceCounts, validSourceHistory, validSourceJob, validSourceNodePage, validSubscriptionSource, validSubscriptionSources } from '../src/traffic/orderedSourceTypes'
+import type { OrderedPreview, SourceJob, SourceNode, SourceNodePage, SubscriptionSource } from '../src/traffic/orderedSourceTypes'
 import { sourceJobFixture, sourceNodeFixture, sourceNodePageFixture, sourcePreviewFixture, sourceRevisionFixture, sourceUuid, subscriptionSourceFixture } from './subscription-source-fixtures.mjs'
 const source = () => subscriptionSourceFixture() as SubscriptionSource
 const snapshot = (): SourceSnapshot => ({ data: [source()], fresh: true, error: '' })

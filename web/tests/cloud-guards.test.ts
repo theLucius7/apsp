@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test'
-import { accountError, bandwidthError, checked, cloudBusy, credentialError, operationError, powerError, registrationError, resourceError } from '../src/plugins/alicloud/guards'
-import { billUsable, defaultPowerPolicy, exactUsage } from '../src/plugins/alicloud/types'
-import type { Account, EipRotation, Operation, Overview, PowerJob, Resource } from '../src/plugins/alicloud/types'
-import { editorError, ruleError } from '../src/plugins/ddns/guards'
-import type { DdnsConfig, DdnsRule } from '../src/plugins/ddns/types'
+import { accountError, bandwidthError, checked, cloudBusy, credentialError, operationError, powerError, registrationError, resourceError } from '../src/operations/cloud/guards'
+import { billUsable, defaultPowerPolicy, exactUsage } from '../src/resources/cloud/types'
+import type { Account, EipRotation, Operation, Overview, PowerJob, Resource } from '../src/resources/cloud/types'
+import { editorError, ruleError } from '../src/naming/dns/guards'
+import type { DdnsConfig, DdnsRule } from '../src/naming/dns/types'
 
 const now = Date.parse('2026-10-02T00:00:00Z') / 1000
 const account = { id: 'TEST_ONLY account', enabled: true, revision: 2, error_code: null, bill: { month: '2026-10', queried_at: now, usage_micro_gb: 0, rows: [] } } as Account

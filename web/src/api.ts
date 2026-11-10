@@ -1,4 +1,4 @@
-import { requestReauthentication } from './control-center/reauthentication-request'
+import { requestReauthentication } from './governance/control-center/reauthentication-request'
 import { isGatewayStatus, panelAnswered, panelUnreachable } from './stores/connection'
 
 export class ApiError extends Error {

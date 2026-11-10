@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { catalogKey, catalogMutationError, filterCatalog, parsedTags, renamed, tagsError, validCatalog } from '../src/plugins/singbox/catalog'
-import type { CatalogNode, CatalogFilter } from '../src/plugins/singbox/catalog'
-import { sourceReason } from '../src/plugins/singbox/sourceTypes'
+import { catalogKey, catalogMutationError, filterCatalog, parsedTags, renamed, tagsError, validCatalog } from '../src/traffic/catalog'
+import type { CatalogNode, CatalogFilter } from '../src/traffic/catalog'
+import { sourceReason } from '../src/traffic/sourceTypes'
 
 const node = (fields: Partial<CatalogNode>): CatalogNode => ({ id: 1, kind: 'direct', name: '香港入口', original_name: '香港入口', public_host: 'node.example.com', protocol: 'vless-reality', enabled: true, available: true, server_id: 1, server_name: '测试服务器', port: 443, role: 'direct', tcp: true, udp: true, stage: 'direct', reference_count: 0, sort_order: 0, revision: '1'.repeat(64), tags: [], note: '', ...fields }) as CatalogNode
 const empty: CatalogFilter = { search: '', kind: '', protocol: '', tag: '', status: '', source: '', server: '', role: '' }

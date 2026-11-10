@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { isOwnAddressPath, RequestIdentity } from '../src/plugins/singbox/accounts/types'
-import { parseAmount, decimal } from '../src/plugins/expenses/types'
+import { isOwnAddressPath, RequestIdentity } from '../src/access/accounts/types'
+import { parseAmount, decimal } from '../src/costs/expenses/types'
 import { resolveRoute } from '../src/app/routes'
 
 test('expense amounts keep four decimal places', () => {

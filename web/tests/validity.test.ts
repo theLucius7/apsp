@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { addCalendar, fromLocalInput, localInput } from '../src/plugins/singbox/validity'
+import { addCalendar, fromLocalInput, localInput } from '../src/access/validity'
 
 // Built from local calendar fields, so the checks hold in whatever time zone the test runs.
 const at = (year: number, month: number, day: number, hour = 0, minute = 0) => Math.floor(new Date(year, month - 1, day, hour, minute).getTime() / 1000)

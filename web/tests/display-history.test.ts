@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
-import { aggregatePoints, appendLive, historyPollInterval } from '../src/display/history'
-import type { AggregateHistory, HistoryBucket } from '../src/display/history'
-import { segments } from '../src/display/data'
+import { aggregatePoints, appendLive, historyPollInterval } from '../src/observability/display/history'
+import type { AggregateHistory, HistoryBucket } from '../src/observability/display/history'
+import { segments } from '../src/observability/display/data'
 
 const bucket = (at: number, metrics: HistoryBucket['metrics']): HistoryBucket => ({ bucket_at: at, first_sampled_at: at + 100, last_sampled_at: at + 900, sample_count: 10, metrics, network_counters: { eth0: { sampled_at: at + 900, received_bytes: '18446744073709551615', transmitted_bytes: null } }, partial: false })
 const history: AggregateHistory = { window: '24h', from: 500, to: 10_000, bucket_ms: 1000, retention_days: 30, points: [

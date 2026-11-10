@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { amount, ratio, utcDay } from '../src/statistics/data'
+import { amount, ratio, utcDay } from '../src/observability/statistics/data'
 
 test('large byte totals remain integers until chart geometry is calculated', () => {
   const maximum = 18446744073709551617n

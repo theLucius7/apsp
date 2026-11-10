@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
-import { currencyDigits, minorToUnits, parseMinor } from '../src/plugins/expenses/types'
-import { dueState, itemRow, ledgerTotals, monthGroups, monthlyByCategory, paymentYears, selectRows, serverMonthly, serverRow, signedUnits, validItems, validServers } from '../src/plugins/expenses/model'
-import type { Payment, ServerRenewal } from '../src/plugins/expenses/model'
-import { itemInput } from '../src/plugins/expenses/types'
-import type { Expense, Label } from '../src/plugins/expenses/types'
-import type { ExchangeRates } from '../src/display/currency'
+import { currencyDigits, minorToUnits, parseMinor } from '../src/costs/expenses/types'
+import { dueState, itemRow, ledgerTotals, monthGroups, monthlyByCategory, paymentYears, selectRows, serverMonthly, serverRow, signedUnits, validItems, validServers } from '../src/costs/expenses/model'
+import type { Payment, ServerRenewal } from '../src/costs/expenses/model'
+import { itemInput } from '../src/costs/expenses/types'
+import type { Expense, Label } from '../src/costs/expenses/types'
+import type { ExchangeRates } from '../src/costs/currency/currency'
 
 test('server cost records use each currency’s own minor unit', () => {
   expect(currencyDigits('USD')).toBe(2)

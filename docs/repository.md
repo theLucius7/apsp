@@ -73,19 +73,22 @@
 
 | 路径 | 职责 |
 | --- | --- |
-| `web/src/App.tsx` | 会话读取、失效处理、公开看板访问控制与顶层页面组合 |
-| `web/src/app/routes.ts` | 解析 URL，复用看板/插件的严格路径解析及旧链接兼容 |
+| `web/src/main.tsx` | 入口：挂载 `app/App.tsx` |
+| `web/src/app/App.tsx` | 会话读取、失效处理、公开看板访问控制与顶层页面组合 |
+| `web/src/app/routes.ts` | 解析 URL，复用看板与代理控制台的严格路径解析及旧链接兼容 |
 | `web/src/app/navigation.ts`、`tiers.ts` | 后台侧栏的分组、入口名称、当前页面归属与功能分级标记。现有界面是五个分组，目标是 ADR 0126 的六个工作区，规则与对照见[功能地图](product-map.md) |
 | `web/src/app/AdminPage.tsx` | 按解析结果选择页面，保留服务器筛选和组件重挂载边界 |
 | `web/src/app/AdminShell.tsx`、`Login.tsx` | 后台布局与登录表单 |
-| `web/src/display/`、`statistics/` | 总览：服务器看板与统计报表 |
-| `web/src/servers/` | 服务器列表、接入与编辑、服务器详情分页（概况、资产与流量、Agent 与任务、插件、线路诊断、运维）及其组成部分 |
-| `web/src/server-diagnostics/` | 服务器详情「线路诊断」中的 IP 信息、TCP 诊断与节点验机 |
-| `web/src/fleet/`、`operations/` | 服务器详情「运维」与批量接入；实验功能「自动化与维护」 |
-| `web/src/monitoring/` | 告警事件、线路质量（质量概况、检测设置）、告警设置及其规则、Webhook 和渠道状态 |
-| `web/src/network-workbench/`、`network-configuration/` | 监控告警「网络检测」；实验功能「网络配置」 |
-| `web/src/plugins/` | sing-box、DDNS、阿里云、费用界面（阶段 E 按领域拆开，现在每个文件已登记所属领域）；插件中心已删除，制品与版本在 `web/src/system/` |
-| `web/src/system/`、`control-center/` | 面板设置（含功能显示）、备份与恢复、账号安全；管理与安全及全局搜索、外观偏好 |
+| `web/src/app/Overview.tsx`、`ServerDetail.tsx`、`CommandPalette.tsx` | 组合几个领域的页面：概览、服务器详情、命令面板（页面跳转与对象搜索） |
+| `web/src/resources/` | 资源：服务器列表、接入、编辑与资产（`servers/`），云账号与云资源（`cloud/`） |
+| `web/src/networking/` | 基础网络：网络配置（`configuration/`，实验）、云安全组 |
+| `web/src/naming/` | 名称与证书：DNS 账号、记录与解析规则（`dns/`），证书与 ACME（`certificates/`） |
+| `web/src/traffic/` | 流量服务：节点、链路、外部来源与节点库，部署检查与发布 |
+| `web/src/access/` | 服务权益：代理用户、策略组与套餐、订阅与专属地址，成员门户与账号（`accounts/`）、成员线路（`lines/`） |
+| `web/src/costs/` | 成本：费用与续费（`expenses/`）、订阅看板（`subscriptions/`）、货币与汇率（`currency/`）、CDT 计费流量（`cloud/`）、供应商对照 |
+| `web/src/observability/` | 观测：服务器看板（`display/`）、统计（`statistics/`）、告警与线路质量（`monitoring/`）、网络检测（`network-workbench/`）、线路诊断（`server-diagnostics/`）、服务器的拨测与遥测设置（`servers/`）、云事件（`cloud/`）、故障事件 |
+| `web/src/operations/` | 作业：自动化与维护（实验）、服务器的运维（`fleet/`）、远程命令，云的启停、换 IP 与 CDT 守护（`cloud/`） |
+| `web/src/governance/` | 平台治理：管理与安全、外观偏好（`control-center/`），面板设置、制品与版本、备份与恢复、账号安全（`system/`），通知渠道与 Webhook（`notifications/`），Passkey |
 | `web/src/api.ts`、`hooks.ts`、`components.tsx` | 共享请求、状态钩子和通用组件（页头、通知、弹窗、确认框、字段、复制） |
 | `web/src/index.css` | Tailwind CSS v4 入口与全部设计参数：浅色/暗色颜色、圆角、密度、基础样式 |
 | `web/src/components/ui/` | shadcn/ui Nova 组件源码（Radix UI 底层），按普通源码维护 |
@@ -94,9 +97,9 @@
 | `web/src/stores/` | Zustand 跨组件界面状态：语言、外观、外框、会话与看板货币 |
 | `web/src/i18n.tsx` | 语言上下文、浏览器语言选择、管理员偏好同步及静态界面词典 |
 
-前端按领域目录组织（[ADR 0128](adr/0128-domain-architecture.md)、[ADR 0126](adr/0126-workspaces-language-and-addresses.md)）：每个入口属于一个领域，新增页面放进它所属领域的目录；侧栏分组由清单声明，调整分组不搬目录；同一对象允许多个入口，但只有一套模型和编辑逻辑。目标目录结构（`web/src/<领域标识>/`、`app/` 与平台的 `components/`、`lib/`、`stores/`）见[功能划分与逻辑结构 §5.4](architecture.md#54-代码结构)；迁移前，现有目录的每个文件已在 `tools/feature-boundaries.toml` 登记所属领域，跨领域共用的数据模型暂留在 `web/src/` 根目录（如 `probes.ts`、`server-assets.ts`）。页面标题与入口同名，不加眉题，说明文字先讲“在这里做什么”。
+前端按领域目录组织（[ADR 0128](adr/0128-domain-architecture.md)、[ADR 0126](adr/0126-workspaces-language-and-addresses.md)）：每个入口属于一个领域，新增页面放进它所属领域的目录；侧栏分组由清单声明，调整分组不搬目录；同一对象允许多个入口，但只有一套模型和编辑逻辑。目录结构是 `web/src/<领域标识>/`、应用层的 `app/` 与平台的 `components/`、`lib/`、`stores/` 和根目录的通用文件（[功能划分与逻辑结构 §5.4](architecture.md#54-代码结构)），每个目录在 `tools/feature-boundaries.toml` 登记为一行；跨领域共用的数据模型由所有者公开（如观测的 `probes.ts`、资源的 `server-assets.ts`），其他领域直接引用所有者的文件。页面标题与入口同名，不加眉题，说明文字先讲“在这里做什么”。
 
-界面约定见 [ADR 0088](adr/0088-ui-component-system.md)：组件使用 `components/ui/` 中的 shadcn/ui Nova 组件，样式只写 Tailwind 类并引用 `index.css` 的设计变量，不再新增 CSS 文件或颜色字面量；图标来自 `lucide-react`，图标按钮必须有 `aria-label`；动画只用 `motion/react` 的 `m.*` 与 `lib/motion.ts` 预设，需要阅读的内容进入时只做位移、不得从透明或隐藏开始；可调分栏通过 `components/ui/resizable.tsx`，拖拽排序通过 `components/sortable.tsx`；跨组件界面状态放入 `stores/`，服务端数据仍经 `useResource` 与写保护。分区导航用 `SegmentedNav`，按钮通过 `aria-pressed`、页面链接通过 `aria-current="page"` 标记当前项；测试钩子使用 `data-slot` 与 `data-dialog`。首次加载用 `Loading` 的 `table`、`cards`、`panel` 形态显示与内容一致的骨架；开关类设置行用 `SettingRow`；用量条用 `Meter`（默认 75% 警告、90% 危险）；页面跳转与对象搜索集中在 `control-center/CommandPalette.tsx`，可跳转页面取自侧栏并按当前账号权限过滤。行操作只直接显示常用项，其余放进 `ActionMenu`（“更多操作”）；内容丰富的宽表格用容器查询在窄面板中堆叠为卡片，仍保持同一张表。页面跳转用 `navigate()` 或普通链接，不直接写 `location.hash`；有未保存输入的表单用 `useLeaveGuard`（或 `useFormDraft`）登记，离开检查集中在 `lib/leave-guard.ts`。响应式布局只增删外围元素，不替换承载页面内容的组件树；随数据变化的状态文字用 `t()`。按条件显示的弹窗包在 `DialogPresence` 中，让关闭动画有机会执行；列表的次要筛选与视图设置放进 `ToolbarPanel`。
+界面约定见 [ADR 0088](adr/0088-ui-component-system.md)：组件使用 `components/ui/` 中的 shadcn/ui Nova 组件，样式只写 Tailwind 类并引用 `index.css` 的设计变量，不再新增 CSS 文件或颜色字面量；图标来自 `lucide-react`，图标按钮必须有 `aria-label`；动画只用 `motion/react` 的 `m.*` 与 `lib/motion.ts` 预设，需要阅读的内容进入时只做位移、不得从透明或隐藏开始；可调分栏通过 `components/ui/resizable.tsx`，拖拽排序通过 `components/sortable.tsx`；跨组件界面状态放入 `stores/`，服务端数据仍经 `useResource` 与写保护。分区导航用 `SegmentedNav`，按钮通过 `aria-pressed`、页面链接通过 `aria-current="page"` 标记当前项；测试钩子使用 `data-slot` 与 `data-dialog`。首次加载用 `Loading` 的 `table`、`cards`、`panel` 形态显示与内容一致的骨架；开关类设置行用 `SettingRow`；用量条用 `Meter`（默认 75% 警告、90% 危险）；页面跳转与对象搜索集中在 `app/CommandPalette.tsx`，可跳转页面取自侧栏并按当前账号权限过滤。行操作只直接显示常用项，其余放进 `ActionMenu`（“更多操作”）；内容丰富的宽表格用容器查询在窄面板中堆叠为卡片，仍保持同一张表。页面跳转用 `navigate()` 或普通链接，不直接写 `location.hash`；有未保存输入的表单用 `useLeaveGuard`（或 `useFormDraft`）登记，离开检查集中在 `lib/leave-guard.ts`。响应式布局只增删外围元素，不替换承载页面内容的组件树；随数据变化的状态文字用 `t()`。按条件显示的弹窗包在 `DialogPresence` 中，让关闭动画有机会执行；列表的次要筛选与视图设置放进 `ToolbarPanel`。
 
 Hash URL 是书签与兼容入口，地址按 ADR 0126 的地址策略管理：已发给代理用户的地址永不失效，控制台地址改名后至少保留一个发布版本的改写。新增页面要同时考虑路由、导航、管理员访问边界；公开访问只放行明确的看板路由，不据路径前缀推断权限。
 

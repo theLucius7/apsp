@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { cdtGuardExceeded } from '../src/plugins/alicloud/guardUsage'
-import type { Account, Resource } from '../src/plugins/alicloud/types'
+import { cdtGuardExceeded } from '../src/operations/cloud/guardUsage'
+import type { Account, Resource } from '../src/resources/cloud/types'
 
 const now = Date.parse('2026-10-01T00:00:00Z') / 1000, gib = 1024 ** 3
 const account = { enabled: true, revision: 2, error_code: 'billing_incomplete' } as Account

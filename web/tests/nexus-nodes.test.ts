@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { filterNexusNodes, nexusEndpoint, nexusProtocol, validNexusNodes } from '../src/plugins/singbox/nexusNodeTypes'
-import type { NexusNode } from '../src/plugins/singbox/nexusNodeTypes'
+import { filterNexusNodes, nexusEndpoint, nexusProtocol, validNexusNodes } from '../src/traffic/nexusNodeTypes'
+import type { NexusNode } from '../src/traffic/nexusNodeTypes'
 
 const node: NexusNode = { id: 1, source_id: 'fixture', legacy_node_id: 31, legacy_machine_id: 7, legacy_host_id: 1,
   server_id: 20, server_name: '第一台主机', machine_name: '旧实例', machine_active: true, name: '测试入口', protocol: 'vless',

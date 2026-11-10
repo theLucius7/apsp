@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { nodeIpCancelError, nodeIpStartError } from '../src/ip-quality'
+import { nodeIpCancelError, nodeIpStartError } from '../src/observability/ip-quality'
 import type { DiagnosticRecord, NodeIpQuality } from '../src/types'
 
 const record: DiagnosticRecord = { id: 'job', status: 'running', agent_completed: false, cancel_requested_at: null, cancel_error: null, job: { plugin: 'ipquality', options: { ip_version: '4' } }, report: null, error: null, created_at: 1, updated_at: 1, expires_at: 100 }

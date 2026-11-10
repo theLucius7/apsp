@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { aggregate, filterServers, fresh, network, number, percentage, ratio, sampleGap, segments, size, status } from '../src/display/data'
-import type { Sample } from '../src/display/data'
+import { aggregate, filterServers, fresh, network, number, percentage, ratio, sampleGap, segments, size, status } from '../src/observability/display/data'
+import type { Sample } from '../src/observability/display/data'
 import type { Server } from '../src/types'
 
 const server: Server = { id: 1, name: '测试服务器', device_public_key: 'TEST_ONLY', static_info: { system: 'FreeBSD', arch: 'arm64' }, last_seen: 1, last_heartbeat_at: 1, metrics_sampled_at: 1000, metrics_stale: false, online: true, latest_metrics: { network_interfaces: { eth0: { transmit_bytes_per_sec: 0, receive_bytes_per_sec: 1024 } } }, manifest_rev: 0 }

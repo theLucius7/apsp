@@ -1,5 +1,21 @@
 # 执行进度
 
+## 2026-11-10：ADR 0131 步骤一（中五）——阶段 E 第一步：前端按领域分目录
+
+- 用户要求：“continue”。做阶段 E 中目录的部分：`web/src/` 下的文件按已登记的所有者搬进领域目录。取舍见 `docs/open-questions.md`，结果见 [architecture.md §9](docs/architecture.md)。
+- 搬家：224 个文件用 `git mv` 搬进 `resources/`（22 个）、`networking/`（5）、`naming/`（12）、`traffic/`（34）、`access/`（35）、`costs/`（21）、`observability/`（55）、`operations/`（15，另有原地不动的 5 个）、`governance/`（21）与 `app/`（4：`App.tsx`、概览、服务器详情、命令面板）；`plugins/`、`servers/`、`display/`、`monitoring/`、`system/`、`control-center/`、`fleet/`、`statistics/`、`subscriptions/`、`network-configuration/`、`network-workbench/`、`server-diagnostics/` 删除。平台的 `components/`、`lib/`、`stores/` 与根目录的通用文件不动，`main.tsx` 留在根目录。
+- 引用：699 处随文件改写，保持原写法（`@/` 别名或相对路径）；`web/tests/` 的单元测试引用一起改。改写后 2147 处本地引用全部能解析。
+- 边界：前端的所有者登记从约 80 条逐个文件的例外变为每个目录一行，301 个文件的所有者与搬家前相同；越界仍是 461 条（前端引用 115 条换成新路径），没有新增。检查器单元测试的前端样例改用新目录。
+- 规模：277 个文件（224 个搬家），源码只改引用（699 行），文档与清单另改约 160 行。
+- 没有修改后端、数据库基线、协议、部署方式；界面与地址不变。
+- 未做：各领域声明自己的页面清单（“加一个页面只改所属领域的目录”）；侧栏六个工作区属于步骤二。
+- 验证（本地，基于 main `0ce33936`）：
+  - `bun run build`（`tsc -b` 与 Vite 构建）通过；搬家前后的构建产物逐字节相同：101 个文件的 SHA-256 全部一致，界面行为不变，浏览器测试只加载构建产物，因此没有重跑。
+  - `bun test`：42 个文件 238 个测试全部通过。
+  - 两项边界检查通过，检查器单元测试 13 + 21 个通过，文档内链接 0 错误。后端没有改动，Rust 测试未运行。CI 暂停，未触发。
+- 交付：没有改数据库基线、协议、部署方式与生产数据，按协作规则直接提交 main。
+- 下一步：各领域的页面清单（阶段 E 的其余部分），`plugins/` 下 sing-box 服务文件与诊断工具打包脚本的去处，Globalping 与 Cloudflare 客户端的合并。
+
 ## 2026-11-10：ADR 0131 步骤一（中四）——阶段 D 第二步：云能力搬进领域 crate
 
 - 用户要求：“continue”，按已选的“分两步，只拆代码”做第二步：把阿里云 crate 的文件按所有者搬进领域 crate，单独上线。取舍见 `docs/open-questions.md`，结果见 [architecture.md §9](docs/architecture.md)。

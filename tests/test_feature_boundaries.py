@@ -39,8 +39,8 @@ CONFIG = textwrap.dedent('''
     [web]
     "web/src" = "platform"
     "web/src/app" = "app"
-    "web/src/plugins/singbox" = "traffic"
-    "web/src/plugins/ddns" = "naming"
+    "web/src/traffic" = "traffic"
+    "web/src/naming" = "naming"
 ''')
 SCHEMA = textwrap.dedent('''
     CREATE TABLE public.notification_outbox (id bigint);
@@ -311,18 +311,18 @@ class TreeTests(unittest.TestCase):
 
     def test_web_imports_between_domains_and_into_the_shell_are_reported(self):
         root = self.tree({
-            "web/src/components.tsx": "import { tiers } from './app/tiers'\nimport { Node } from './plugins/singbox/types'",
+            "web/src/components.tsx": "import { tiers } from './app/tiers'\nimport { Node } from './traffic/types'",
             "web/src/app/tiers.ts": "export const tiers = 1",
-            "web/src/app/routes.ts": "import { Node } from '../plugins/singbox/types'",
-            "web/src/plugins/singbox/types.ts": "export type Node = 1",
-            "web/src/plugins/singbox/Domain.tsx": "import { Account } from '../ddns/Accounts'\nimport { Panel } from '@/components'\nimport { tiers } from '../../app/tiers'",
-            "web/src/plugins/ddns/Accounts.tsx": "export type Account = 1",
+            "web/src/app/routes.ts": "import { Node } from '../traffic/types'",
+            "web/src/traffic/types.ts": "export type Node = 1",
+            "web/src/traffic/Domain.tsx": "import { Account } from '../naming/Accounts'\nimport { Panel } from '@/components'\nimport { tiers } from '../app/tiers'",
+            "web/src/naming/Accounts.tsx": "export type Account = 1",
         })
         self.assertEqual(self.crossings(root), {
             "import\tweb/src/components.tsx\tweb/src/app/tiers.ts\tplatform->app",
-            "import\tweb/src/components.tsx\tweb/src/plugins/singbox/types.ts\tplatform->traffic",
-            "import\tweb/src/plugins/singbox/Domain.tsx\tweb/src/plugins/ddns/Accounts.tsx\ttraffic->naming",
-            "import\tweb/src/plugins/singbox/Domain.tsx\tweb/src/app/tiers.ts\ttraffic->app",
+            "import\tweb/src/components.tsx\tweb/src/traffic/types.ts\tplatform->traffic",
+            "import\tweb/src/traffic/Domain.tsx\tweb/src/naming/Accounts.tsx\ttraffic->naming",
+            "import\tweb/src/traffic/Domain.tsx\tweb/src/app/tiers.ts\ttraffic->app",
         })
 
     def test_tables_without_an_owner_fail(self):

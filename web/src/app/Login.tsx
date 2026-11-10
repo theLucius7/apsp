@@ -3,7 +3,7 @@ import { ArrowRightIcon, EyeIcon, EyeOffIcon, KeyRoundIcon, LockKeyholeIcon, Shi
 import { api, ApiError } from '../api'
 import { ErrorNotice } from '../components'
 import { useAction } from '../hooks'
-import { loginPasskey, passkeySupport } from '../passkeys'
+import { loginPasskey, passkeySupport } from '../governance/passkeys'
 import { LanguageSelect, useI18n } from '../i18n'
 import { useSystemTheme } from '@/lib/use-system-theme'
 import { Button } from '@/components/ui/button'

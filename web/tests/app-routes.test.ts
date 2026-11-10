@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { resolveRoute } from '../src/app/routes'
 import { currentNavigation, homePath, navigation, sectionTabs, sidebarEntries } from '../src/app/navigation'
 import { visibleByTier } from '../src/app/tiers'
-import { nodeHash } from '../src/plugins/singbox/nodeRoute'
+import { nodeHash } from '../src/traffic/nodeRoute'
 
 test('dashboard aliases keep the public read-only route after shell extraction', () => {
   for (const path of ['/', '/dashboard', '/overview']) expect(resolveRoute(path)).toEqual({ page: 'dashboard' })

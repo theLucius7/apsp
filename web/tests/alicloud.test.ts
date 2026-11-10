@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
-import { accountWrite, billUsable, charge, defaultPowerPolicy, gib, message, status, updated } from '../src/plugins/alicloud/types'
-import type { Account, Resource } from '../src/plugins/alicloud/types'
-import { POWER_RESULT, ROTATION_RESULTS, activityItems, deliveryText } from '../src/plugins/alicloud/history'
-import type { EipRotation } from '../src/plugins/alicloud/types'
-import { cdtGuardProgress } from '../src/plugins/alicloud/guardUsage'
-import { trafficPoints, readingStale } from '../src/plugins/alicloud/usageHistory'
+import { accountWrite, billUsable, charge, defaultPowerPolicy, gib, message, status, updated } from '../src/resources/cloud/types'
+import type { Account, Resource } from '../src/resources/cloud/types'
+import { POWER_RESULT, ROTATION_RESULTS, activityItems, deliveryText } from '../src/costs/cloud/history'
+import type { EipRotation } from '../src/resources/cloud/types'
+import { cdtGuardProgress } from '../src/operations/cloud/guardUsage'
+import { trafficPoints, readingStale } from '../src/costs/cloud/usageHistory'
 
 test('attached EIP billing is displayed without relabelling dominant traffic as ordinary traffic', () => {
   expect(charge('PayByDominantTraffic')).toBe('按主流量计费')

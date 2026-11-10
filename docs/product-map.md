@@ -229,12 +229,12 @@
 
 | 工作区 | 领域（ADR 0128） | 现在的前端目录（`web/src/`） | 现在的后端位置 |
 | --- | --- | --- | --- |
-| 概览 | 应用层组合各领域的汇总 | `plugins/singbox/Overview.tsx` | 读取各领域的汇总接口 |
-| 服务器 | 资源、名称与证书、基础网络、作业；看板与遥测属观测 | `servers/`、`display/`、`plugins/ddns/`、`plugins/alicloud/`；实验 `fleet/`、`operations/`、`network-configuration/` | `panel-host` 的 `servers`、`telemetry`；`crates/naming/`、`plugins/alicloud/panel/`；实验 `panel-host` 的 `fleet`、`operations`、`network_configuration`；Agent 在 `crates/agent-core/` |
-| 网络服务 | 流量服务、服务权益 | `crates/traffic/`、`crates/access/` | `crates/traffic/`、`crates/access/`、`crates/compiler/`、`crates/adapter-singbox/` |
-| 监测与诊断 | 观测 | `monitoring/`、`network-workbench/`、`server-diagnostics/`、`statistics/` | `panel-host` 的 `notifications`、`probes`、`latency_tasks`、`network_workbench`、`ip_quality`、`statistics`；诊断代码 `plugins/{nodequality,ipquality,tcpquality}/` |
-| 费用与续费 | 成本 | `plugins/expenses/`、`subscriptions/` | `crates/costs/` |
-| 系统 | 平台治理（含制品、备份与恢复）；汇率属成本 | `system/`（含 `Artifacts.tsx`）、`control-center/` | `panel-host` 的 `settings`、`control_center`、`auth`、`passkeys`、`exchange`、`artifacts`、`operations` 中的备份 |
+| 概览 | 应用层组合各领域的汇总 | `app/Overview.tsx` | 读取各领域的汇总接口 |
+| 服务器 | 资源、名称与证书、基础网络、作业；看板与遥测属观测 | `resources/`（服务器与云资源）、`observability/display/`、`naming/`、`networking/`；实验 `operations/`、`networking/configuration/` | `panel-host` 的 `servers`；`crates/resources/`、`crates/networking/`、`crates/naming/`、`crates/observability/` |
+| 网络服务 | 流量服务、服务权益 | `traffic/`、`access/` | `crates/traffic/`、`crates/access/`、`crates/compiler/`、`crates/adapter-singbox/` |
+| 监测与诊断 | 观测 | `observability/`（`monitoring/`、`network-workbench/`、`server-diagnostics/`、`statistics/`） | `crates/observability/`（诊断工具在 `diagnostic_plugins/`） |
+| 费用与续费 | 成本 | `costs/`（`expenses/`、`subscriptions/`、`currency/`、`cloud/`） | `crates/costs/` |
+| 系统 | 平台治理（含制品、备份与恢复）；汇率属成本 | `governance/`（`system/` 含 `Artifacts.tsx`、`control-center/`、`notifications/`）、`costs/currency/` | `panel-host` 的 `settings`、`control_center`、`auth`、`passkeys`、`artifacts`、`backups`；汇率在 `crates/costs/` |
 
 后端的平台、领域与应用分层不随功能分级改变，见[仓库目录与维护约定](repository.md)。
 

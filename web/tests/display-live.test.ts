@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { mergeLiveServers, mergeLiveSnapshot } from '../src/display/live'
-import type { LiveSnapshot } from '../src/display/live'
+import { mergeLiveServers, mergeLiveSnapshot } from '../src/observability/display/live'
+import type { LiveSnapshot } from '../src/observability/display/live'
 import type { Server } from '../src/types'
 
 const node = { id: 1, name: '节点一', public_view: false, metrics_sampled_at: 2000, latest_metrics: { cpu_percent: 20 } } as Server

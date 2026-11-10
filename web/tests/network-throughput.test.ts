@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { curvePoints, throughput } from '../src/network-workbench/throughput'
-import type { IntervalPoint } from '../src/network-workbench/throughput'
+import { curvePoints, throughput } from '../src/observability/network-workbench/throughput'
+import type { IntervalPoint } from '../src/observability/network-workbench/throughput'
 const sample = (start: number, end: number, bps: number, sender = true) => ({ start, end, bits_per_second: bps, sender, bytes: bps * (end - start) / 8 })
 function report(intervals: unknown[], protocol = 'tcp', direction = 'forward') {
  return { parameters: { kind: 'throughput', protocol, direction, receiver_server: 2, client_mode: 'managed' }, data: { tool_output: { intervals } } }

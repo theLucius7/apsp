@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
-import { convert, costSummary, money, price, quoteDate, quoteState, remainingCost } from '../src/display/currency'
-import type { ExchangeRates } from '../src/display/currency'
+import { convert, costSummary, money, price, quoteDate, quoteState, remainingCost } from '../src/costs/currency/currency'
+import type { ExchangeRates } from '../src/costs/currency/currency'
 import type { Server } from '../src/types'
-import { defaultAssets } from '../src/server-assets'
+import { defaultAssets } from '../src/resources/server-assets'
 
 const quote: ExchangeRates = { base: 'CNY', rates: { CNY: 1, USD: .125, EUR: .1 }, rate_dates: { USD: '2026-09-30', EUR: '2026-09-29' }, rate_date: '2026-09-29', source: 'frankfurter', source_url: 'https://frankfurter.dev', fetched_at: 1, attempted_at: 1, next_refresh_at: 2, stale: true, status: 'stale', error_code: 'fetch_failed' }
 

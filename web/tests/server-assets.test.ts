@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { assetDraft, assetPayload, defaultAssets, expiryState, parseTraffic, trafficSize } from '../src/server-assets'
-import { filterServers } from '../src/display/data'
+import { assetDraft, assetPayload, defaultAssets, expiryState, parseTraffic, trafficSize } from '../src/resources/server-assets'
+import { filterServers } from '../src/observability/display/data'
 import type { Server } from '../src/types'
 
 test('large traffic limits survive editing exactly and decimal units are explicit', () => {

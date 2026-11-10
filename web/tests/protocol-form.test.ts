@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { protocolRequest } from '../src/plugins/singbox/ProtocolFields'
-import { nodeSettingsRequest } from '../src/plugins/singbox/NodeSettingsFields'
+import { protocolRequest } from '../src/traffic/ProtocolFields'
+import { nodeSettingsRequest } from '../src/traffic/NodeSettingsFields'
 
 function form(values: Record<string, string>) {
   const form = new FormData()

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { carrierSummary, detailLines, intervalError, pendingNote, riskLabel, runErrorText, runLine, sortTargets, stateLabels, stateTones } from '../src/monitoring/reachability'
-import type { Probe, ReachabilityState, ReachabilityTarget } from '../src/monitoring/reachability'
+import { carrierSummary, detailLines, intervalError, pendingNote, riskLabel, runErrorText, runLine, sortTargets, stateLabels, stateTones } from '../src/observability/monitoring/reachability'
+import type { Probe, ReachabilityState, ReachabilityTarget } from '../src/observability/monitoring/reachability'
 
 const probe = (carrier: string, connected: boolean): Probe => ({ carrier, network: 'fixture', city: 'fixture', connected, avg_ms: connected ? 30 : null })
 const target = (key: string, state: ReachabilityState, pending: ReachabilityState | null = null): ReachabilityTarget => ({

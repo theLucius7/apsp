@@ -6,7 +6,7 @@
 
 ## 来源、权限与任务
 
-入口 `/api/network-workbench`；独立 UI 位于 `web/src/network-workbench/NetworkWorkbench.tsx`。`router()` 返回 `Router<AppState>`；后台每五秒调用 `tick(&state)`。清单、目标、许可工具、资料源、方案、任务、报告、分享及本地配对都有实际接口。只有经过授权的管理员会话能提交排队方案；来源服务器、接收端及反向执行端分别授权，后台每次执行重新核对当前权限。API 令牌读请求仍取管理员与令牌的权限交集。
+入口 `/api/network-workbench`；独立 UI 位于 `web/src/observability/network-workbench/NetworkWorkbench.tsx`。`router()` 返回 `Router<AppState>`；后台每五秒调用 `tick(&state)`。清单、目标、许可工具、资料源、方案、任务、报告、分享及本地配对都有实际接口。只有经过授权的管理员会话能提交排队方案；来源服务器、接收端及反向执行端分别授权，后台每次执行重新核对当前权限。API 令牌读请求仍取管理员与令牌的权限交集。
 
 方案冻结服务器集合、目标及参数，按成功依赖顺序运行，支持失败终止、手动暂停/恢复、并发来源上限、定时与错过窗口只补一次或跳过。对同机任务复用共用服务互斥。派发后先用任务 metadata 恢复尚未关联的 job，防止掉线或事务中断后重复创建任务。队列、运行、清理、请求取消、真正取消和失败分开展示；没有新数据不会变成成功。
 

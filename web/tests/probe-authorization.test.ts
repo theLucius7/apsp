@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { authorizationState, deleteLatencyTask, deleteServerProbe, initialProbePayloads, probePayloadError, probeState, saveLatencyTask, saveServerProbe } from '../src/probes'
-import type { LatencyTask, Probe, ProbeAuthorization, ProbeWriteSnapshot, TaskWriteSnapshot } from '../src/probes'
+import { authorizationState, deleteLatencyTask, deleteServerProbe, initialProbePayloads, probePayloadError, probeState, saveLatencyTask, saveServerProbe } from '../src/observability/probes'
+import type { LatencyTask, Probe, ProbeAuthorization, ProbeWriteSnapshot, TaskWriteSnapshot } from '../src/observability/probes'
 
 const authorization: ProbeAuthorization = { kind: 'owned', source: '自有管理清单', scope: 'TEST_ONLY 管理确认：TCP 443，每30秒', enabled: true, expires_at: null, identity: { kind: 'tcp', target: '127.0.0.1', port: 443, address_family: 'any' } }
 const probe: Probe = { id: 'probe-1', name: '回环目标', kind: 'tcp', target: '127.0.0.1', port: 443, interval_secs: 30, carrier: '', enabled: true, revision: 1, monitor: { region: '测试地区', address_family: 'any', authorization } }

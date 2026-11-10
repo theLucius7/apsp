@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { asnLabel, bestLatency, defaultFilter, filterLines, flag, kindBadges, protocolLabel, rateLabel, riskFlags, routeLabel } from '../src/plugins/singbox/lines/atlas'
-import type { Host, Line, Topology } from '../src/plugins/singbox/lines/types'
+import { asnLabel, bestLatency, defaultFilter, filterLines, flag, kindBadges, protocolLabel, rateLabel, riskFlags, routeLabel } from '../src/access/lines/atlas'
+import type { Host, Line, Topology } from '../src/access/lines/types'
 
 const direct: Topology = { region: 'HK', provider: 'Example', residential: false, dynamic: false, classification_source: 'node_catalog', kind: 'direct', source: 'node_catalog', inferred: false, position_precision: 'region', front_node_id: null, points: [{ id: 'entry', role: 'entry', region: 'HK', provider: 'Example', node_id: 1 }], edges: [] }
 const relay: Topology = { ...direct, region: 'JP', residential: true, dynamic: true, classification_source: 'catalog_tag', kind: 'relay', source: 'shared_ingress', inferred: true, front_node_id: 1, points: [direct.points[0], { id: 'egress', role: 'egress', region: 'JP', provider: null, node_id: 2 }], edges: [{ from: 'entry', to: 'egress', traffic: 'all' }] }

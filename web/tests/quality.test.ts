@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { qualityValue } from '../src/quality'
+import { qualityValue } from '../src/observability/quality'
 import type { QualityField } from '../src/types'
 
 test('legacy UI field types agree with every registered backend field', () => {

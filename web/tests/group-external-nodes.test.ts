@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { externalSelectionError } from '../src/plugins/singbox/GroupExternalNodes'
-import { externalReference } from '../src/plugins/singbox/externalAccessTypes'
-import type { ExternalEntry } from '../src/plugins/singbox/externalAccessTypes'
+import { externalSelectionError } from '../src/access/GroupExternalNodes'
+import { externalReference } from '../src/access/externalAccessTypes'
+import type { ExternalEntry } from '../src/access/externalAccessTypes'
 
 const node: ExternalEntry = { external_node_id: 1, source_id: 2, identity_epoch: 1, node_version_id: 3, update_mode: 'follow_node', metadata_revision: 0, name: '原节点', source_name: '原来源', protocol: 'tuic', server: 'provider.example.com', port: 443, available: true, reason: null, current_version_id: 3, resolved_version_id: 3, source_last_error: null }
 const gone: ExternalEntry = { ...node, available: false, reason: 'node_missing', resolved_version_id: null }
