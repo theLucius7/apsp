@@ -63,7 +63,7 @@ export default function Alicloud() {
   const orphans = data?.resources.filter(resource => !data.accounts.some(account => account.id === resource.account_id)) ?? []
   return <div className="grid min-w-0 gap-5">
     <div className="grid gap-2">
-      <PageHeader title="阿里云 CDT 与带宽"><Refresh onClick={overview.reload} /><Button disabled={!available || action.busy || (data?.accounts.length ?? 8) >= 8} onClick={() => open({ type: 'account' })}><PlusIcon aria-hidden="true" />添加云账号</Button></PageHeader>
+      <PageHeader title="云资源"><Refresh onClick={overview.reload} /><Button disabled={!available || action.busy || (data?.accounts.length ?? 8) >= 8} onClick={() => open({ type: 'account' })}><PlusIcon aria-hidden="true" />添加云账号</Button></PageHeader>
       <details data-slot="cloud-reading-note" className="text-muted-foreground text-xs leading-relaxed">
         <summary className="w-fit">用量与费用读数说明</summary>
         <p className="mt-2 max-w-3xl">中国内地 / 海外 CDT 用量是兼容 CDT-Monitor 的读数（1 GiB = 1024³ 字节），只用于展示；CDT 守护每分钟单独读取所属额度池，自动降速依据带账期的完整 CDT 账单，账单有延迟。查询失败时保留上次读数，以“更新于”为准。账单与余额是可选查询，在账号设置中开启，缓存 6 小时，以云端为准。免费额度与开通状态请在<a className="text-primary underline-offset-4 hover:underline" href="https://cdt.console.aliyun.com/" target="_blank" rel="noreferrer">阿里云 CDT 控制台</a>核对。</p>

@@ -57,7 +57,7 @@ export default function Ddns({ serverId }: { serverId?: number }) {
   const addDisabled = action.busy || !available || !scope.length || full
 
   return <div>
-    <PageHeader title="域名解析"><Refresh onClick={refresh} /><Button disabled={addDisabled} onClick={() => open('new')}><PlusIcon aria-hidden="true" />添加解析</Button></PageHeader>
+    <PageHeader title="地址与域名"><Refresh onClick={refresh} /><Button disabled={addDisabled} onClick={() => open('new')}><PlusIcon aria-hidden="true" />添加解析</Button></PageHeader>
     <ErrorNotice message={rules.error || servers.error || action.error} retry={refresh} />
     <Panel>
       <PanelHeader>

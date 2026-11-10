@@ -10,7 +10,7 @@ import type { Tier } from './tiers'
  * each domain only says where its pages belong, so moving a page between sections never
  * moves its code.
  */
-export type Workspace = 'overview' | 'proxy' | 'servers' | 'settings' | 'experimental'
+export type Workspace = 'overview' | 'servers' | 'network' | 'monitoring' | 'costs' | 'system'
 
 /**
  * One administrator page, declared by the domain that owns it (`<domain>/pages.ts`). The
