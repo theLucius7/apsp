@@ -14,7 +14,6 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
 COPY deploy/ ./deploy/
-COPY plugins/ ./plugins/
 COPY --from=web /src/web/dist ./web/dist
 ARG CARGO_BUILD_JOBS=2
 ARG APSP_RELEASE_PUBLIC_KEYS
