@@ -2372,87 +2372,6 @@ CREATE SEQUENCE public.singbox_commerce_events_id_seq
 
 ALTER SEQUENCE public.singbox_commerce_events_id_seq OWNED BY public.singbox_commerce_events.id;
 
-CREATE TABLE public.singbox_commerce_invitations (
-    id uuid NOT NULL,
-    issuer_id bigint NOT NULL,
-    request_id uuid NOT NULL,
-    request_hash text NOT NULL,
-    token_hash text NOT NULL,
-    offer_id bigint,
-    snapshot jsonb,
-    admission_cents bigint NOT NULL,
-    prepaid_cents bigint DEFAULT 0 NOT NULL,
-    funding_ledger_id bigint NOT NULL,
-    batch_id uuid NOT NULL,
-    state text DEFAULT 'available'::text NOT NULL,
-    recipient_id bigint,
-    created_at bigint NOT NULL,
-    claim_hash text,
-    claimed_at bigint,
-    revoked_at bigint,
-    CONSTRAINT singbox_commerce_invitations_admission_cents_check CHECK ((admission_cents > 0)),
-    CONSTRAINT singbox_commerce_invitations_check CHECK (((offer_id IS NULL) = (snapshot IS NULL))),
-    CONSTRAINT singbox_commerce_invitations_check1 CHECK (((state = 'claimed'::text) = (recipient_id IS NOT NULL))),
-    CONSTRAINT singbox_commerce_invitations_prepaid_cents_check CHECK ((prepaid_cents >= 0)),
-    CONSTRAINT singbox_commerce_invitations_state_check CHECK ((state = ANY (ARRAY['available'::text, 'claimed'::text, 'revoked'::text])))
-);
-
-CREATE TABLE public.singbox_commerce_offers (
-    id bigint NOT NULL,
-    name text NOT NULL,
-    description text DEFAULT ''::text NOT NULL,
-    package_group_id bigint NOT NULL,
-    package_snapshot jsonb NOT NULL,
-    policy_group_ids bigint[] DEFAULT '{}'::bigint[] NOT NULL,
-    price_cents bigint NOT NULL,
-    duration_months integer,
-    enabled boolean DEFAULT false NOT NULL,
-    renewable boolean DEFAULT true NOT NULL,
-    capacity integer,
-    version bigint DEFAULT 1 NOT NULL,
-    created_at bigint NOT NULL,
-    updated_at bigint NOT NULL,
-    CONSTRAINT singbox_commerce_offers_capacity_check CHECK (((capacity >= 1) AND (capacity <= 1000000))),
-    CONSTRAINT singbox_commerce_offers_duration_months_check CHECK (((duration_months >= 1) AND (duration_months <= 1200))),
-    CONSTRAINT singbox_commerce_offers_price_cents_check CHECK (((price_cents >= 0) AND (price_cents <= 100000000)))
-);
-
-CREATE SEQUENCE public.singbox_commerce_offers_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-ALTER SEQUENCE public.singbox_commerce_offers_id_seq OWNED BY public.singbox_commerce_offers.id;
-
-CREATE TABLE public.singbox_commerce_orders (
-    id uuid NOT NULL,
-    payer_id bigint NOT NULL,
-    beneficiary_id bigint NOT NULL,
-    request_id uuid NOT NULL,
-    request_hash text NOT NULL,
-    offer_id bigint NOT NULL,
-    snapshot jsonb NOT NULL,
-    amount_cents bigint NOT NULL,
-    assignment_id bigint,
-    state text NOT NULL,
-    created_at bigint NOT NULL,
-    CONSTRAINT singbox_commerce_orders_amount_cents_check CHECK (((amount_cents >= 0) AND (amount_cents <= 100000000))),
-    CONSTRAINT singbox_commerce_orders_state_check CHECK ((state = ANY (ARRAY['fulfilled'::text, 'refunded'::text])))
-);
-
-CREATE TABLE public.singbox_commerce_settings (
-    singleton boolean DEFAULT true NOT NULL,
-    enabled boolean DEFAULT false NOT NULL,
-    invitations_enabled boolean DEFAULT false NOT NULL,
-    invite_price_cents bigint DEFAULT 100 NOT NULL,
-    version bigint DEFAULT 1 NOT NULL,
-    updated_at bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT singbox_commerce_settings_invite_price_cents_check CHECK (((invite_price_cents >= 1) AND (invite_price_cents <= 100000000))),
-    CONSTRAINT singbox_commerce_settings_singleton_check CHECK (singleton)
-);
-
 CREATE TABLE public.singbox_credential_rotations (
     id uuid NOT NULL,
     user_id bigint NOT NULL,
@@ -3045,14 +2964,6 @@ CREATE TABLE public.singbox_nexus_plan_mappings (
     legacy_group_id bigint
 );
 
-CREATE TABLE public.singbox_nexus_records (
-    import_id uuid NOT NULL,
-    kind text NOT NULL,
-    source_id text NOT NULL,
-    user_id bigint,
-    record jsonb NOT NULL
-);
-
 CREATE TABLE public.singbox_nexus_runtime_hosts (
     server_id bigint NOT NULL,
     source_id text NOT NULL,
@@ -3344,63 +3255,6 @@ CREATE SEQUENCE public.singbox_payment_channels_id_seq
     CACHE 1;
 
 ALTER SEQUENCE public.singbox_payment_channels_id_seq OWNED BY public.singbox_payment_channels.id;
-
-CREATE TABLE public.singbox_payment_exceptions (
-    id bigint NOT NULL,
-    topup_id uuid NOT NULL,
-    receipt_id bigint NOT NULL,
-    code text NOT NULL,
-    state text DEFAULT 'open'::text NOT NULL,
-    resolution text,
-    created_at bigint NOT NULL,
-    resolved_at bigint,
-    CONSTRAINT singbox_payment_exceptions_state_check CHECK ((state = ANY (ARRAY['open'::text, 'credited'::text, 'refunded'::text])))
-);
-
-CREATE SEQUENCE public.singbox_payment_exceptions_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-ALTER SEQUENCE public.singbox_payment_exceptions_id_seq OWNED BY public.singbox_payment_exceptions.id;
-
-CREATE TABLE public.singbox_payment_receipts (
-    id bigint NOT NULL,
-    topup_id uuid NOT NULL,
-    channel_id bigint NOT NULL,
-    provider_reference text NOT NULL,
-    amount_cents bigint NOT NULL,
-    created_at bigint NOT NULL
-);
-
-CREATE SEQUENCE public.singbox_payment_receipts_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-ALTER SEQUENCE public.singbox_payment_receipts_id_seq OWNED BY public.singbox_payment_receipts.id;
-
-CREATE TABLE public.singbox_payment_topups (
-    id uuid NOT NULL,
-    user_id bigint NOT NULL,
-    request_id uuid NOT NULL,
-    request_hash text NOT NULL,
-    channel_id bigint NOT NULL,
-    merchant text NOT NULL,
-    amount_cents bigint NOT NULL,
-    fee_cents bigint NOT NULL,
-    state text DEFAULT 'pending'::text NOT NULL,
-    created_at bigint NOT NULL,
-    expires_at bigint NOT NULL,
-    paid_at bigint,
-    CONSTRAINT singbox_payment_topups_amount_cents_check CHECK (((amount_cents >= 100) AND (amount_cents <= 1000000))),
-    CONSTRAINT singbox_payment_topups_fee_cents_check CHECK ((fee_cents >= 0)),
-    CONSTRAINT singbox_payment_topups_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'paid'::text, 'cancelled'::text, 'expired'::text, 'exception'::text])))
-);
 
 CREATE TABLE public.singbox_policy_external_nodes (
     group_id bigint NOT NULL,
@@ -3708,33 +3562,6 @@ CREATE TABLE public.singbox_user_packages (
     assignment_id bigint NOT NULL
 );
 
-CREATE TABLE public.singbox_wallet_ledger (
-    id bigint NOT NULL,
-    user_id bigint NOT NULL,
-    request_key text NOT NULL,
-    request_hash text NOT NULL,
-    action text NOT NULL,
-    delta_cents bigint NOT NULL,
-    balance_before bigint NOT NULL,
-    balance_after bigint NOT NULL,
-    source_id text NOT NULL,
-    actor text NOT NULL,
-    reason text NOT NULL,
-    created_at bigint NOT NULL,
-    CONSTRAINT singbox_wallet_ledger_balance_after_check CHECK (((balance_after >= 0) AND (balance_after <= 2147483647))),
-    CONSTRAINT singbox_wallet_ledger_balance_before_check CHECK (((balance_before >= 0) AND (balance_before <= 2147483647))),
-    CONSTRAINT singbox_wallet_ledger_check CHECK ((balance_after = (balance_before + delta_cents)))
-);
-
-CREATE SEQUENCE public.singbox_wallet_ledger_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-ALTER SEQUENCE public.singbox_wallet_ledger_id_seq OWNED BY public.singbox_wallet_ledger.id;
-
 CREATE TABLE public.singbox_wallets (
     user_id bigint NOT NULL,
     balance_cents bigint DEFAULT 0 NOT NULL,
@@ -3904,8 +3731,6 @@ ALTER TABLE ONLY public.singbox_chains ALTER COLUMN id SET DEFAULT nextval('publ
 
 ALTER TABLE ONLY public.singbox_commerce_events ALTER COLUMN id SET DEFAULT nextval('public.singbox_commerce_events_id_seq'::regclass);
 
-ALTER TABLE ONLY public.singbox_commerce_offers ALTER COLUMN id SET DEFAULT nextval('public.singbox_commerce_offers_id_seq'::regclass);
-
 ALTER TABLE ONLY public.singbox_deployment_preflights ALTER COLUMN sequence SET DEFAULT nextval('public.singbox_deployment_preflights_sequence_seq'::regclass);
 
 ALTER TABLE ONLY public.singbox_invitation_quota_events ALTER COLUMN id SET DEFAULT nextval('public.singbox_invitation_quota_events_id_seq'::regclass);
@@ -3928,10 +3753,6 @@ ALTER TABLE ONLY public.singbox_package_groups ALTER COLUMN id SET DEFAULT nextv
 
 ALTER TABLE ONLY public.singbox_payment_channels ALTER COLUMN id SET DEFAULT nextval('public.singbox_payment_channels_id_seq'::regclass);
 
-ALTER TABLE ONLY public.singbox_payment_exceptions ALTER COLUMN id SET DEFAULT nextval('public.singbox_payment_exceptions_id_seq'::regclass);
-
-ALTER TABLE ONLY public.singbox_payment_receipts ALTER COLUMN id SET DEFAULT nextval('public.singbox_payment_receipts_id_seq'::regclass);
-
 ALTER TABLE ONLY public.singbox_policy_groups ALTER COLUMN id SET DEFAULT nextval('public.singbox_policy_groups_id_seq'::regclass);
 
 ALTER TABLE ONLY public.singbox_reachability_deliveries ALTER COLUMN id SET DEFAULT nextval('public.singbox_reachability_deliveries_id_seq'::regclass);
@@ -3941,8 +3762,6 @@ ALTER TABLE ONLY public.singbox_reachability_history ALTER COLUMN id SET DEFAULT
 ALTER TABLE ONLY public.singbox_reachability_targets ALTER COLUMN id SET DEFAULT nextval('public.singbox_reachability_targets_id_seq'::regclass);
 
 ALTER TABLE ONLY public.singbox_subscription_source_revisions ALTER COLUMN generation SET DEFAULT nextval('public.singbox_subscription_source_revisions_generation_seq'::regclass);
-
-ALTER TABLE ONLY public.singbox_wallet_ledger ALTER COLUMN id SET DEFAULT nextval('public.singbox_wallet_ledger_id_seq'::regclass);
 
 ALTER TABLE ONLY public.system_observer_reports ALTER COLUMN id SET DEFAULT nextval('public.system_observer_reports_id_seq'::regclass);
 
@@ -4440,30 +4259,6 @@ ALTER TABLE ONLY public.singbox_client_templates
 ALTER TABLE ONLY public.singbox_commerce_events
     ADD CONSTRAINT singbox_commerce_events_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.singbox_commerce_invitations
-    ADD CONSTRAINT singbox_commerce_invitations_issuer_id_request_id_key UNIQUE (issuer_id, request_id);
-
-ALTER TABLE ONLY public.singbox_commerce_invitations
-    ADD CONSTRAINT singbox_commerce_invitations_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.singbox_commerce_invitations
-    ADD CONSTRAINT singbox_commerce_invitations_recipient_id_key UNIQUE (recipient_id);
-
-ALTER TABLE ONLY public.singbox_commerce_invitations
-    ADD CONSTRAINT singbox_commerce_invitations_token_hash_key UNIQUE (token_hash);
-
-ALTER TABLE ONLY public.singbox_commerce_offers
-    ADD CONSTRAINT singbox_commerce_offers_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.singbox_commerce_orders
-    ADD CONSTRAINT singbox_commerce_orders_payer_id_request_id_key UNIQUE (payer_id, request_id);
-
-ALTER TABLE ONLY public.singbox_commerce_orders
-    ADD CONSTRAINT singbox_commerce_orders_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.singbox_commerce_settings
-    ADD CONSTRAINT singbox_commerce_settings_pkey PRIMARY KEY (singleton);
-
 ALTER TABLE ONLY public.singbox_credential_rotations
     ADD CONSTRAINT singbox_credential_rotations_pkey PRIMARY KEY (id);
 
@@ -4566,9 +4361,6 @@ ALTER TABLE ONLY public.singbox_nexus_nodes
 ALTER TABLE ONLY public.singbox_nexus_plan_mappings
     ADD CONSTRAINT singbox_nexus_plan_mappings_pkey PRIMARY KEY (package_group_id);
 
-ALTER TABLE ONLY public.singbox_nexus_records
-    ADD CONSTRAINT singbox_nexus_records_pkey PRIMARY KEY (import_id, kind, source_id);
-
 ALTER TABLE ONLY public.singbox_nexus_runtime_hosts
     ADD CONSTRAINT singbox_nexus_runtime_hosts_credential_id_key UNIQUE (credential_id);
 
@@ -4658,24 +4450,6 @@ ALTER TABLE ONLY public.singbox_path_stage_deployments
 
 ALTER TABLE ONLY public.singbox_payment_channels
     ADD CONSTRAINT singbox_payment_channels_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.singbox_payment_exceptions
-    ADD CONSTRAINT singbox_payment_exceptions_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.singbox_payment_exceptions
-    ADD CONSTRAINT singbox_payment_exceptions_receipt_id_key UNIQUE (receipt_id);
-
-ALTER TABLE ONLY public.singbox_payment_receipts
-    ADD CONSTRAINT singbox_payment_receipts_channel_id_provider_reference_key UNIQUE (channel_id, provider_reference);
-
-ALTER TABLE ONLY public.singbox_payment_receipts
-    ADD CONSTRAINT singbox_payment_receipts_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.singbox_payment_topups
-    ADD CONSTRAINT singbox_payment_topups_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.singbox_payment_topups
-    ADD CONSTRAINT singbox_payment_topups_user_id_request_id_key UNIQUE (user_id, request_id);
 
 ALTER TABLE ONLY public.singbox_policy_chains
     ADD CONSTRAINT singbox_policy_chains_pkey PRIMARY KEY (group_id, chain_id);
@@ -4787,12 +4561,6 @@ ALTER TABLE ONLY public.singbox_user_packages
 
 ALTER TABLE ONLY public.singbox_user_policies
     ADD CONSTRAINT singbox_user_policies_pkey PRIMARY KEY (user_id, group_id);
-
-ALTER TABLE ONLY public.singbox_wallet_ledger
-    ADD CONSTRAINT singbox_wallet_ledger_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.singbox_wallet_ledger
-    ADD CONSTRAINT singbox_wallet_ledger_user_id_request_key_key UNIQUE (user_id, request_key);
 
 ALTER TABLE ONLY public.singbox_wallets
     ADD CONSTRAINT singbox_wallets_pkey PRIMARY KEY (user_id);
@@ -4994,10 +4762,6 @@ CREATE UNIQUE INDEX singbox_chain_one_live_entry ON public.singbox_chains USING 
 
 CREATE INDEX singbox_chain_source_refs ON public.singbox_ordered_chain_hops USING btree (source_id, chain_id, generation);
 
-CREATE INDEX singbox_commerce_invitations_issuer ON public.singbox_commerce_invitations USING btree (issuer_id, created_at DESC);
-
-CREATE INDEX singbox_commerce_orders_member ON public.singbox_commerce_orders USING btree (beneficiary_id, created_at DESC);
-
 CREATE INDEX singbox_deployment_preflights_latest ON public.singbox_deployment_preflights USING btree (server_id, sequence DESC);
 
 CREATE UNIQUE INDEX singbox_external_nodes_identity_idx ON public.singbox_ordered_external_nodes USING btree (source_id, identity_epoch, identity_key) WHERE (identity_state = 'unique'::text);
@@ -5063,8 +4827,6 @@ CREATE INDEX singbox_usage_daily_day_idx ON public.singbox_usage_daily USING btr
 CREATE INDEX singbox_usage_daily_node_idx ON public.singbox_usage_daily USING btree (node_id, day);
 
 CREATE INDEX singbox_user_policies_group_idx ON public.singbox_user_policies USING btree (group_id);
-
-CREATE INDEX singbox_wallet_ledger_member ON public.singbox_wallet_ledger USING btree (user_id, id DESC);
 
 CREATE INDEX system_observer_received ON public.system_observer_reports USING btree (received_at);
 
@@ -5599,33 +5361,6 @@ ALTER TABLE ONLY public.singbox_client_templates
 ALTER TABLE ONLY public.singbox_commerce_events
     ADD CONSTRAINT singbox_commerce_events_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
 
-ALTER TABLE ONLY public.singbox_commerce_invitations
-    ADD CONSTRAINT singbox_commerce_invitations_funding_ledger_id_fkey FOREIGN KEY (funding_ledger_id) REFERENCES public.singbox_wallet_ledger(id);
-
-ALTER TABLE ONLY public.singbox_commerce_invitations
-    ADD CONSTRAINT singbox_commerce_invitations_issuer_id_fkey FOREIGN KEY (issuer_id) REFERENCES public.users(id);
-
-ALTER TABLE ONLY public.singbox_commerce_invitations
-    ADD CONSTRAINT singbox_commerce_invitations_offer_id_fkey FOREIGN KEY (offer_id) REFERENCES public.singbox_commerce_offers(id);
-
-ALTER TABLE ONLY public.singbox_commerce_invitations
-    ADD CONSTRAINT singbox_commerce_invitations_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES public.users(id);
-
-ALTER TABLE ONLY public.singbox_commerce_offers
-    ADD CONSTRAINT singbox_commerce_offers_package_group_id_fkey FOREIGN KEY (package_group_id) REFERENCES public.singbox_package_groups(id);
-
-ALTER TABLE ONLY public.singbox_commerce_orders
-    ADD CONSTRAINT singbox_commerce_orders_assignment_id_fkey FOREIGN KEY (assignment_id) REFERENCES public.singbox_package_assignments(id);
-
-ALTER TABLE ONLY public.singbox_commerce_orders
-    ADD CONSTRAINT singbox_commerce_orders_beneficiary_id_fkey FOREIGN KEY (beneficiary_id) REFERENCES public.users(id);
-
-ALTER TABLE ONLY public.singbox_commerce_orders
-    ADD CONSTRAINT singbox_commerce_orders_offer_id_fkey FOREIGN KEY (offer_id) REFERENCES public.singbox_commerce_offers(id);
-
-ALTER TABLE ONLY public.singbox_commerce_orders
-    ADD CONSTRAINT singbox_commerce_orders_payer_id_fkey FOREIGN KEY (payer_id) REFERENCES public.users(id);
-
 ALTER TABLE ONLY public.singbox_credential_rotations
     ADD CONSTRAINT singbox_credential_rotations_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id);
 
@@ -5721,12 +5456,6 @@ ALTER TABLE ONLY public.singbox_nexus_plan_mappings
 
 ALTER TABLE ONLY public.singbox_nexus_plan_mappings
     ADD CONSTRAINT singbox_nexus_plan_mappings_package_group_id_fkey FOREIGN KEY (package_group_id) REFERENCES public.singbox_package_groups(id);
-
-ALTER TABLE ONLY public.singbox_nexus_records
-    ADD CONSTRAINT singbox_nexus_records_import_id_fkey FOREIGN KEY (import_id) REFERENCES public.singbox_nexus_imports(id);
-
-ALTER TABLE ONLY public.singbox_nexus_records
-    ADD CONSTRAINT singbox_nexus_records_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
 
 ALTER TABLE ONLY public.singbox_nexus_runtime_hosts
     ADD CONSTRAINT singbox_nexus_runtime_hosts_credential_id_fkey FOREIGN KEY (credential_id) REFERENCES public.credential_entries(id);
@@ -5845,24 +5574,6 @@ ALTER TABLE ONLY public.singbox_path_stage_deployments
 ALTER TABLE ONLY public.singbox_payment_channels
     ADD CONSTRAINT singbox_payment_channels_credential_id_fkey FOREIGN KEY (credential_id) REFERENCES public.credential_entries(id);
 
-ALTER TABLE ONLY public.singbox_payment_exceptions
-    ADD CONSTRAINT singbox_payment_exceptions_receipt_id_fkey FOREIGN KEY (receipt_id) REFERENCES public.singbox_payment_receipts(id);
-
-ALTER TABLE ONLY public.singbox_payment_exceptions
-    ADD CONSTRAINT singbox_payment_exceptions_topup_id_fkey FOREIGN KEY (topup_id) REFERENCES public.singbox_payment_topups(id);
-
-ALTER TABLE ONLY public.singbox_payment_receipts
-    ADD CONSTRAINT singbox_payment_receipts_channel_id_fkey FOREIGN KEY (channel_id) REFERENCES public.singbox_payment_channels(id);
-
-ALTER TABLE ONLY public.singbox_payment_receipts
-    ADD CONSTRAINT singbox_payment_receipts_topup_id_fkey FOREIGN KEY (topup_id) REFERENCES public.singbox_payment_topups(id);
-
-ALTER TABLE ONLY public.singbox_payment_topups
-    ADD CONSTRAINT singbox_payment_topups_channel_id_fkey FOREIGN KEY (channel_id) REFERENCES public.singbox_payment_channels(id);
-
-ALTER TABLE ONLY public.singbox_payment_topups
-    ADD CONSTRAINT singbox_payment_topups_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
-
 ALTER TABLE ONLY public.singbox_policy_chains
     ADD CONSTRAINT singbox_policy_chains_chain_id_fkey FOREIGN KEY (chain_id) REFERENCES public.singbox_chains(id);
 
@@ -5962,9 +5673,6 @@ ALTER TABLE ONLY public.singbox_user_policies
 ALTER TABLE ONLY public.singbox_user_policies
     ADD CONSTRAINT singbox_user_policies_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
 
-ALTER TABLE ONLY public.singbox_wallet_ledger
-    ADD CONSTRAINT singbox_wallet_ledger_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
-
 ALTER TABLE ONLY public.singbox_wallets
     ADD CONSTRAINT singbox_wallets_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
 
@@ -6011,7 +5719,6 @@ INSERT INTO public.record_retention_policy VALUES ('ip', 30, 0);
 INSERT INTO public.record_retention_policy VALUES ('terminal', 7, 0);
 INSERT INTO public.record_retention_policy VALUES ('proxy-access', 30, 0);
 INSERT INTO public.record_retention_policy VALUES ('audit', 365, 0);
-INSERT INTO public.singbox_commerce_settings VALUES (true, false, false, 100, 1, 0);
 INSERT INTO public.singbox_invitation_settings VALUES (true, false, NULL, 0, 1, 0);
 INSERT INTO public.singbox_mail_settings VALUES (true, false, false, '', 465, 'tls', '', '', NULL, '{}', 1);
 INSERT INTO public.singbox_operation_privacy VALUES (true, 180, 7, 90);
