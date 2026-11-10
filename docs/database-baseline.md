@@ -61,3 +61,7 @@
 从 #249 的基线（`287de2b2`，与生产一致）接入 [ADR 0129](adr/0129-sui-capability-alignment.md) 的基线使用 `scripts/baseline-adoption-sui-20261107.sql`：增加用户暂停状态、运行时控制凭据及服务器配置表，扩展节点协议与运行时约束，更新客户端模板版本约束。脚本校验来源校验和、实际结构指纹和结果指纹。部署器先在生产结构副本上试启动新镜像并执行该脚本，通过后才在生产执行并换镜像；旧开发库仍由使用者手动重建，应用不会自动迁移或删数据。
 
 从 S-UI 的基线（`405612a7`，指纹 `7701ab9e`）接入 [ADR 0131](adr/0131-one-model-per-object.md) 的基线使用 `scripts/baseline-adoption-one-model-20261109.sql`：删除两跳旧链路、混合链路与数字编号来源的 17 张表、`singbox_live_chains` 视图、7 个函数及其触发器；两个外部节点视图与两个检查函数只读 B 模型，B 的两个公开编号序列先改归 B 表再改名；`singbox_chains` 与 `singbox_ordered_chain_versions` 在生产是空表，按新定义重建（删列会留下空的列序号，指纹不可能等于空库初始化），连同引用它们的 8 个外键与 `singbox_desired_accesses` 视图。脚本校验来源校验和与指纹、两张链路表为空，结果指纹必须等于空库初始化的值（`00168f4f`）。删除前，数字编号来源的存档行从生产备份导出到 `~/backups/apsp-numbered-sources-archive-20261109/`。
+
+### 旧商务表删除（2026-11-10）
+
+从 ADR 0131 的基线（`838b323f`，指纹 `00168f4f`）接入删除旧商务表的基线（`a1c4b16e`，指纹 `bd3c95e0`）使用 `scripts/baseline-adoption-commerce-20261110.sql`：删除 Nexus 迁移带来、自 2026-11-05（ADR 0113）起已无代码读写的九张表——`singbox_commerce_invitations`、`singbox_commerce_offers`、`singbox_commerce_orders`、`singbox_commerce_settings`、`singbox_payment_exceptions`、`singbox_payment_receipts`、`singbox_payment_topups`、`singbox_wallet_ledger`、`singbox_nexus_records`，连同它们的序列、约束与索引。删除前的行（钱包流水 51、Nexus 记录 4778、订单 1、报价 4、邀请 1、设置 1，其余 3 张为空）已导出到服务器上的受保护存档（目录 700、文件 600，附 SHA256SUMS），不进仓库。脚本校验来源校验和与实际结构指纹，删除不带 CASCADE（有任何依赖就失败），结束时校验结果指纹并更新基线记录；`singbox_commerce_events`（成员账号的内容审计仍在写）与 `singbox_payment_channels`（恢复脚本会停用）不在其内。部署器在合并后先在生产结构副本上试启动并执行它，再在生产执行。

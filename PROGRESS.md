@@ -1,5 +1,17 @@
 # 执行进度
 
+## 2026-11-10：ADR 0131 步骤一（中七）——删除九张旧商务表（PR，待合并）
+
+- 用户要求：在“旧表”的选择中选“先导出，再经 PR 删除”。取舍见 `docs/open-questions.md`。
+- 导出：九张表从生产只读导出到受保护存档（`pg_dump -Fc` 与每张表一份 CSV，附 SHA256SUMS，目录 700、文件 600；不进仓库）；CSV 行数与生产一致：钱包流水 51、Nexus 记录 4778、订单 1、报价 4、邀请 1、设置 1，支付异常、回执、充值为空。
+- 基线：删除 `singbox_commerce_invitations`、`singbox_commerce_offers`、`singbox_commerce_orders`、`singbox_commerce_settings`、`singbox_payment_exceptions`、`singbox_payment_receipts`、`singbox_payment_topups`、`singbox_wallet_ledger`、`singbox_nexus_records` 及其序列、约束、索引与初始行（60 条语句）。校验和 `838b323f…` → `a1c4b16e…`，结构指纹 `00168f4f…` → `bd3c95e0…`（PostgreSQL 16，带 sqlx 的 `_sqlx_migrations` 首次初始化得出）。
+- 接入脚本 `scripts/baseline-adoption-commerce-20261110.sql`：来源校验和与结构指纹前提，一条不带 CASCADE 的 `DROP TABLE`，结果指纹校验与基线记录更新。
+- 验证（本地）：
+  - 按首次启动的方式初始化旧基线，得到的指纹与生产记录的 `00168f4f…` 相同；在它上面执行脚本通过，结果指纹与校验和等于新基线的首次初始化；再执行一次被前提拒绝，没有改动。
+  - 取生产的结构（只读 `pg_dump --schema-only` 加 `_sqlx_migrations` 与 `apsp_schema_baseline` 两张表的行）恢复到本地 PostgreSQL 16，执行脚本通过：236 张表变为 227 张，指纹与校验和等于新基线。
+  - 新基线上的 `schema_baseline`（7）、`user_accounts`（5）集成测试与服务权益库测试（28）通过；九张表在代码与测试里都没有引用。两项边界检查通过。
+- 交付：基线变更与生产数据删除，按协作规则开 PR，由用户合并；合并后部署器先在生产结构副本试启动并执行脚本，再在生产执行。
+
 ## 2026-11-10：ADR 0131 步骤一（中六）——应用 crate 删除兼容的再导出
 
 - 用户要求：“continue”。ADR 0131 步骤一包括“过渡别名删除”：应用 crate `apsp_panel` 仍把平台模块、搬出宿主的观测与作业模块和汇率以旧路径再导出，其中 `apsp_panel::operations` 是 `apsp_operations::jobs` 的改名别名，`apsp_panel::notifications` 把平台的通知发送与观测的告警评估合在一个路径下。
