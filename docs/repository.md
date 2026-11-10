@@ -7,10 +7,9 @@
 | 路径 | 职责 |
 | --- | --- |
 | `crates/` | Rust 工作区：公共协议、面板平台、领域 crate、面板应用、Agent、适配器及原生 TCP 工具 |
-| `plugins/` | sing-box 服务文件与诊断工具（IPQuality、NodeQuality）的打包脚本、上游锁定文件；不再有 crate，不再新增插件。诊断工具的面板代码在 `crates/observability/src/diagnostic_plugins/` |
 | `web/src/` | React 界面（中文为源语言，英文为翻译，[ADR 0127](adr/0127-chinese-source-language.md)）；前端依赖与构建由 Bun 管理 |
 | `web/dist/` | 仅在本地或构建环境生成、由面板嵌入的产物；不提交 Git，不手工编辑 |
-| `deploy/` | Compose、服务定义、安装模板、生成后的独立 bootstrap 入口和发布公钥 |
+| `deploy/` | Compose、Agent 与 sing-box 运行时的服务定义、安装模板、生成后的独立 bootstrap 入口和发布公钥 |
 | `scripts/` | [面板运维、接入与验收入口](../scripts/README.md)；包含已有 CI 包装脚本 |
 | `tools/` | [构建、签名、发布、规则检查与隔离测试工具](../tools/README.md) |
 | `tests/` | 仓库工具的 Python 回归；Rust 和前端测试各自随所属代码放置 |
@@ -32,7 +31,7 @@
 | `networking` | 基础网络领域：目前是云安全组（`security_groups/`，冻结）；网络配置仍在宿主，随阶段 B2 迁入 |
 | `naming` | 名称与证书领域：DNS 账号与记录、DDNS、DNS-01 验证记录 |
 | `costs` | 成本领域：付费服务、付款、续费提醒与续费日历、供应商对照、计划退订提醒、汇率与统计币种，云的 CDT 计费流量、账单、余额与实例账单（`cloud/`）；直接读流量服务的外部来源到期 |
-| `observability` | 观测领域：遥测与历史、网卡计数与矫正、拨测与延迟检测、共用诊断任务服务与诊断工具（IP 质量、NodeQuality、TCP 质量、网络检测）、告警规则与事件、故障事件、服务器健康与事件时间线、统计与看板、中国可达性、云事件通知（`cloud_notices`）；直接调用流量服务的运行活动 |
+| `observability` | 观测领域：遥测与历史、网卡计数与矫正、拨测与延迟检测、共用诊断任务服务与诊断工具（IP 质量、NodeQuality、TCP 质量、网络检测）、告警规则与事件、故障事件、服务器健康与事件时间线、统计与看板、中国可达性、云事件通知（`cloud_notices`）；直接调用流量服务的运行活动；诊断工具（IPQuality、NodeQuality）的打包脚本、策略与上游锁定文件在 `upstream/`，签名制品与引导脚本里仍按原名 `plugins/...` 记录 |
 | `operations` | 作业领域：远程命令、终端、固定设备操作及其核对、运行时操作，以及作业、计划、维护窗口、有界自动处置与面板备份步骤，云的带宽变更、启停、换 IP 与账号刷新（`cloud/`）；排在依赖顺序最后，直接调用前面的领域 |
 | `traffic` | 流量服务领域：节点、链路、外部来源与节点库，服务器运行时的配置编译与发布、部署检查与发布批次、运行时控制与校验，Nexus 兼容桥的流量部分（`nexus_nodes/`）；用户的限速、设备数与运维记录经自己声明的 `users` 接口由服务权益回答 |
 | `access` | 服务权益领域：代理用户、策略组与套餐、资格与配额、订阅与专属地址、成员门户与账号、用户限速与会话、代理运维流程（预览与应用）、Nexus 兼容（`nexus/`：兼容桥 `bridge` 与设备会话 `sessions`，兼容桥的表只在 `bridge` 中出现）；排在流量服务之后，直接调用它 |

@@ -568,7 +568,7 @@ else:
 
     def test_export_matches_independent_runtime_manifest_and_metadata_contract(self):
         directory, _, _ = self.export_fixture()
-        spec = importlib.util.spec_from_file_location('nodequality_rootfs_runtime', REPO / 'plugins/nodequality/rootfs.py')
+        spec = importlib.util.spec_from_file_location('nodequality_rootfs_runtime', REPO / 'crates/observability/upstream/nodequality/rootfs.py')
         runtime = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(runtime)
         manifest = runtime.load_manifest((directory / 'rootfs-manifest.json').read_bytes(), 'amd64')

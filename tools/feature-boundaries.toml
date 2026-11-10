@@ -125,10 +125,6 @@ operations = [
 "crates/panel/src" = "app"
 "crates/traffic" = "traffic"
 "crates/access" = "access"
-"plugins/sing-box" = "traffic"
-"plugins/ipquality" = "observability"
-"plugins/nodequality" = "observability"
-"plugins/tcpquality" = "observability"
 
 # Integration tests and the Agent (which keeps its own SQLite ledger) are outside the panel
 # database rules.

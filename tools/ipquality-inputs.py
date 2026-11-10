@@ -37,6 +37,15 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def code_path(name):
+    """The file of a code inventory name. The NodeQuality verifier keeps its recorded name
+    `plugins/nodequality/rootfs.py`; the file lives with the observability domain."""
+    prefix = 'plugins/nodequality/'
+    if name.startswith(prefix):
+        return ROOT / 'crates/observability/upstream/nodequality' / name[len(prefix):]
+    return ROOT / name
+
+
 def modules():
     import importlib.util
     def load(name, relative):
@@ -373,7 +382,7 @@ def output_plan(build, parent, max_output_bytes, reserve_free_bytes):
 
 
 def code_ledger(build, deadline):
-    return [{'path': name, 'identity': snapshot_file(ROOT / name, build.MAX_LOCK, deadline)}
+    return [{'path': name, 'identity': snapshot_file(code_path(name), build.MAX_LOCK, deadline)}
             for name in CODE_FILES]
 
 
@@ -383,7 +392,7 @@ def verify_code(ledger, build, deadline):
     for row in ledger:
         require(isinstance(row, dict) and set(row) == {'path', 'identity'}, 'invalid code snapshot')
         validate_snapshot(row['identity'], build)
-        require(snapshot_file(ROOT / row['path'], build.MAX_LOCK, deadline) == row['identity'],
+        require(snapshot_file(code_path(row['path']), build.MAX_LOCK, deadline) == row['identity'],
                 'derivation implementation changed')
 
 

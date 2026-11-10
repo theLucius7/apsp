@@ -161,7 +161,7 @@ jobs:
           path: ${{ runner.temp }}/artifacts
       - name: Render immutable installer and canonical manifests
         run: |
-          python3 tools/release.py render-installer --template deploy/install.sh.tmpl --agent-unit deploy/apsp-agent.service --runtime-unit plugins/sing-box/apsp-singbox@.service --output '${{ runner.temp }}/install.sh'
+          python3 tools/release.py render-installer --template deploy/install.sh.tmpl --agent-unit deploy/apsp-agent.service --runtime-unit deploy/apsp-singbox@.service --output '${{ runner.temp }}/install.sh'
           python3 tools/release.py assemble --source '${{ runner.temp }}/artifacts' --output '${{ runner.temp }}/release' --agent-version "$AGENT_VERSION" --runtime-version 1.14.4-apsp.2 --include-musl-runtime --tag "$RELEASE_TAG" --installer '${{ runner.temp }}/install.sh'
       - name: Create draft without any signing secret
         run: |

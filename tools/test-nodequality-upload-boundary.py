@@ -13,7 +13,7 @@ import zipfile
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN = ROOT / 'plugins/nodequality'
+PLUGIN = ROOT / 'crates/observability/upstream/nodequality'
 URL = 'https://api.nodequality.com/api/v1/record'
 POST = ['-X', 'POST', '--data-binary', '@-', URL]
 

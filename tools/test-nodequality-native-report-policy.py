@@ -49,7 +49,7 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN = ROOT / 'plugins/nodequality'
+PLUGIN = ROOT / 'crates/observability/upstream/nodequality'
 READONLY_SOURCES = None
 
 
@@ -608,7 +608,7 @@ class WiringTests(unittest.TestCase):
         self.base.policy_outputs = source_tests.fixture.prepare_policy(self.base.fixture_plugin,
             {name: (self.base.sources / name).read_bytes() for name in source_tests.helper.FILES})
         self.tree, self.env = self.base.build_tree()
-        self.plugin = self.tree / 'plugins/nodequality'
+        self.plugin = self.tree / 'crates/observability/upstream/nodequality'
         # Only this private inert copy bypasses the full gate and host prerequisites.
         path = self.plugin / 'native-runner.sh.tmpl'
         text = path.read_text()

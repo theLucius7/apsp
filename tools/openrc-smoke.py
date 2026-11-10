@@ -250,7 +250,7 @@ def install_script(origin):
     subprocess.run(["python3", str(ROOT / "tools/release.py"), "render-installer",
                     "--template", str(ROOT / "deploy/install.sh.tmpl"),
                     "--agent-unit", str(ROOT / "deploy/apsp-agent.service"),
-                    "--runtime-unit", str(ROOT / "plugins/sing-box/apsp-singbox@.service"),
+                    "--runtime-unit", str(ROOT / "deploy/apsp-singbox@.service"),
                     "--output", str(BUNDLE / "install.sh")], check=True)
     proof = RELEASE["proof"]("agent", AGENT_VERSION, "apsp-agent", AGENT, arch=RELEASE["architecture"]())
     lines = dict(line.split("  ")[::-1] for line in proof["checksums"].splitlines())
@@ -366,10 +366,10 @@ def main():
         # Agent. Its service must never call a command that binary does not have.
         unit = Path(f"/etc/init.d/{RUNTIME_SERVICE}")
         run(*script, env={**environment, "APSP_TEST_NO_MEMORY_LOG": "1"})
-        assert unit.read_bytes() == (ROOT / "plugins/sing-box/apsp-singbox-legacy.openrc").read_bytes()
+        assert unit.read_bytes() == (ROOT / "deploy/apsp-singbox-legacy.openrc").read_bytes()
         assert pid(RUNTIME_STATE) == runtime_pid
         run(*script, env=environment)
-        assert unit.read_bytes() == (ROOT / "plugins/sing-box/apsp-singbox.openrc").read_bytes()
+        assert unit.read_bytes() == (ROOT / "deploy/apsp-singbox.openrc").read_bytes()
         assert pid(RUNTIME_STATE) == runtime_pid
         agent_pid = wait_for(lambda: pid(AGENT_STATE), "Agent after compatibility installation")
         expect_memory_log("fixture runtime started", collectors)
@@ -461,7 +461,7 @@ def main():
                 "restart apsp-agent.service",
             ]
             assert Path("/etc/systemd/system/apsp-agent.service").read_text() == (ROOT / "deploy/apsp-agent.service").read_text()
-            assert Path("/etc/systemd/system/apsp-singbox@.service").read_text() == (ROOT / "plugins/sing-box/apsp-singbox@.service").read_text()
+            assert Path("/etc/systemd/system/apsp-singbox@.service").read_text() == (ROOT / "deploy/apsp-singbox@.service").read_text()
         finally:
             systemctl.unlink()
             Path("/etc/systemd/system/apsp-agent.service").unlink(missing_ok=True)

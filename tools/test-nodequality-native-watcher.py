@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 from nodequality_native_fixture_process import ObservedProcess, group_has_live_members
 
-REPORT = ROOT / "plugins/nodequality/native-report.py"
+REPORT = ROOT / "crates/observability/upstream/nodequality/native-report.py"
 MAX_LOG = 128 * 1024
 WAIT_SECONDS = 6
 

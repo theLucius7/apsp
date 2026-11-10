@@ -82,7 +82,7 @@ def main():
     command([sys.executable, str(args.release_tools / "release.py"), "render-installer",
              "--template", str(ROOT / "deploy/install.sh.tmpl"),
              "--agent-unit", str(ROOT / "deploy/apsp-agent.service"),
-             "--runtime-unit", str(ROOT / "plugins/sing-box/apsp-singbox@.service"),
+             "--runtime-unit", str(ROOT / "deploy/apsp-singbox@.service"),
              "--output", str(installer)])
     command([sys.executable, str(args.release_tools / "release.py"), "assemble",
              "--source", str(args.source), "--output", str(args.bundle),

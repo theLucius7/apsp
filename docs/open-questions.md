@@ -1,5 +1,15 @@
 # 执行中的问题与选择
 
+## 2026-11-10：`plugins/` 目录退出时保留制品格式
+
+- 问题：ADR 0131 步骤一要求仓库没有 `plugins/` 目录。剩下的是 sing-box 运行时的三个服务定义与 IPQuality、NodeQuality 的打包脚本、策略、锁定文件和历史源码。搬家时发现：`plugins/ipquality/...`、`plugins/nodequality/rootfs.py` 这些名字写在已签名的 IPQuality 制品的对应源码包、推导账本（`ipquality-inputs`、`ipquality-profile` 的代码清单）里，校验时按名字比对；接入引导脚本也按仓库路径带着这 39 个文件。改掉名字会让已发布的签名制品校验失败，除非重新构建并签名。
+- 选择（用户 2026-11-10 选“搬文件，保留格式”）：
+  - **仓库位置与制品里的名字分开。** 服务定义搬到 `deploy/`（与 Agent 的服务定义放在一起），诊断工具的文件搬到 `crates/observability/upstream/{ipquality,nodequality}/`，内容逐字节不变（49 个文件全部 100% 相似）。制品与账本里的名字仍是 `plugins/...`：`ipquality_artifact.py` 增加 `source_path`（名字 → 仓库文件）与 `source_name`（仓库文件 → 名字），打包时 `build-ipquality.py` 用 `source_name` 生成名字，校验时用 `source_path` 找文件；两个账本工具各有一个只处理 `plugins/nodequality/rootfs.py` 的 `code_path`。这些函数都放在已列入 IPQuality 对应源码包的文件里，不新增工具文件，对应源码包的文件清单不变。
+  - **设备上的安装路径不动。** `/opt/apsp/plugins/...`、`/var/lib/apsp/plugins/...` 是已接入服务器的布局，属于 Agent 与安装方式，这次不改。
+  - **引导脚本按新位置重新生成。** 引导脚本不是签名制品，每个版本自洽：它带的文件按新路径展开，里面的工具按新路径找文件。重新生成同时带上 #255 对 `release.py` 的修改（另有 #265 只做这一项）。
+  - **验证靠两套对照。** 按 CI 的方式在 main 与本分支上各跑一遍 Python 测试（从 `umask 022` 的导出副本运行），逐条比对结果；用户在备用机器上做一次接入测试后合并。
+  - **两处没改的文字。** `crates/observability/upstream/ipquality/SOURCE.md` 里的相对链接按制品里的布局写，改它会改变文件摘要，使已发布的制品校验失败，保持原样；历史验收记录 `docs/acceptance/` 里指向旧路径的链接是当时的证据，保持原样。
+
 ## 2026-11-10：删除九张旧商务表（ADR 0131 步骤一的旧表清理）
 
 - 问题：Nexus 迁移带来的九张商务与支付表自 ADR 0113（2026-11-05）起已无代码读写，但生产里还有行（钱包流水 51、Nexus 记录 4778、订单 1、报价 4、邀请 1、设置 1，另 3 张为空），删除就是删除数据，需要用户授权（architecture.md §11 的待决定项）。

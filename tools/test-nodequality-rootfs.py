@@ -21,7 +21,7 @@ from unittest import mock
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / 'plugins/nodequality/rootfs.py'
+SCRIPT = ROOT / 'crates/observability/upstream/nodequality/rootfs.py'
 SPEC = importlib.util.spec_from_file_location('nodequality_rootfs', SCRIPT)
 rootfs = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(rootfs)

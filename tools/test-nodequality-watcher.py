@@ -12,7 +12,7 @@ spec = importlib.util.spec_from_file_location(
 suite = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = suite
 spec.loader.exec_module(suite)
-suite.REPORT = ROOT / "plugins/nodequality/report.py"
+suite.REPORT = ROOT / "crates/observability/upstream/nodequality/report.py"
 # Actual owners must execute this entrypoint, so their collectors use the same
 # selected implementation as the assertions and readiness observations.
 suite.__file__ = str(Path(__file__).resolve())

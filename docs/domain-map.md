@@ -108,7 +108,7 @@
 | 延迟检测与周期拨测 | 测三网延迟与丢包 | 拨测、拨测结果 | 执行许可可撤销；只测授权目标 | 资源（新服务器与接入模板的拨测经资源的 `server_observation`） | `crates/observability` 的 `probes.rs`、`latency_tasks.rs`；Agent 拨测；线路质量 |
 | 中国可达性 | 区分端口封锁、IP 封锁与服务故障 | 可达性观测与事件 | 默认关闭；用量不超额度的 80% | 流量服务（节点端点；Nexus 切换前经 `china_reachability` 读取最近测量） | `crates/observability` `reachability/` |
 | 网络检测 | 测连通性、路由与 IP 资料 | 检测方案、运行与结果 | 只测量，不改动 | 资源 | `crates/observability` 的 `network_workbench/`；线路质量 |
-| IP 质量、TCP 诊断、服务器验机 | 判断一台服务器的出口与线路质量 | 诊断任务与报告 | 共用诊断任务生命周期（ADR 0028）；完整验机门禁未解除 | 资源；服务权益（门户经 `HostNetwork` 显示成员可见的网络属性） | `crates/observability` 的 `diagnostics/`、`ip_quality/`、`diagnostic_plugins/{ipquality,nodequality,tcpquality}/`（打包脚本与上游锁定文件仍在 `plugins/`）；Agent 诊断适配器；服务器详情 › 诊断 |
+| IP 质量、TCP 诊断、服务器验机 | 判断一台服务器的出口与线路质量 | 诊断任务与报告 | 共用诊断任务生命周期（ADR 0028）；完整验机门禁未解除 | 资源；服务权益（门户经 `HostNetwork` 显示成员可见的网络属性） | `crates/observability` 的 `diagnostics/`、`ip_quality/`、`diagnostic_plugins/{ipquality,nodequality,tcpquality}/`（打包脚本、策略与上游锁定文件在 `crates/observability/upstream/{ipquality,nodequality}/`）；Agent 诊断适配器；服务器详情 › 诊断 |
 | 趋势与报表 | 回顾一段时间的整体运行 | 汇总视图（网卡计数与代理用量两本账） | 两本账分开显示，各自标明口径 | 服务权益（用量，经接口） | `crates/observability` 的 `statistics.rs`（网卡计数）、`statistics/proxy_usage.rs`（代理用量，原 sing-box `statistics.rs`） |
 
 ## 变更与作业 `operations`
