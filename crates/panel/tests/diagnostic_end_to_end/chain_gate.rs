@@ -28,7 +28,7 @@ async fn saved_preparing_full_is_refused_after_upgrade_without_starting_a_servic
     )
     .await?;
     // A resumed Preparing task verifies the signed host architecture before adapter preparation.
-    let artifact = apsp_panel::artifacts::descriptor(
+    let artifact = apsp_panel_host::artifacts::descriptor(
         &harness.state,
         "nodequality",
         VERSION,

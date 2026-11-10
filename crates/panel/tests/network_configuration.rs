@@ -4,7 +4,7 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result};
-use apsp_panel::auth::{hash_token, random_token};
+use apsp_panel_host::auth::{hash_token, random_token};
 use apsp_protocol::now_timestamp;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode, header};

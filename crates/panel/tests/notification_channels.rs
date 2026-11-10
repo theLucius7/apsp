@@ -3,7 +3,8 @@ mod business_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::Result;
-use apsp_panel::{notifications, settings::Settings};
+use apsp_observability::alerts::evaluate;
+use apsp_panel_host::{notifications, settings::Settings};
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -97,7 +98,7 @@ async fn webhook_settings_require_admin_hide_secrets_preserve_blanks_and_test_on
         assert!(!text.contains("TEST_ONLY"));
         assert!(text.contains("url_configured"));
     }
-    let saved = apsp_panel::settings::read(&panel.state.pool)
+    let saved = apsp_panel_host::settings::read(&panel.state.pool)
         .await?
         .webhook
         .unwrap();
@@ -168,7 +169,7 @@ async fn webhook_settings_require_admin_hide_secrets_preserve_blanks_and_test_on
         .await?
         .error_for_status()?;
     assert!(
-        apsp_panel::settings::read(&panel.state.pool)
+        apsp_panel_host::settings::read(&panel.state.pool)
             .await?
             .webhook
             .unwrap()
@@ -180,7 +181,7 @@ async fn webhook_settings_require_admin_hide_secrets_preserve_blanks_and_test_on
         .await?
         .error_for_status()?;
     assert!(
-        apsp_panel::settings::read(&panel.state.pool)
+        apsp_panel_host::settings::read(&panel.state.pool)
             .await?
             .webhook
             .is_none()
@@ -221,7 +222,7 @@ async fn changing_one_channel_only_cancels_its_pending_messages(pool: PgPool) ->
         .bind(now - 600)
         .execute(pool)
         .await?;
-    notifications::evaluate(pool, now - 600, now).await?;
+    evaluate(pool, now - 600, now).await?;
     let mut general = json!({"public_dashboard":false,"offline_alerts":true,"offline_minutes":5,"telegram_enabled":true,"telegram_chat_id":"-100001"});
     panel
         .admin(
@@ -243,7 +244,12 @@ async fn changing_one_channel_only_cancels_its_pending_messages(pool: PgPool) ->
             ("webhook".into(), "pending".into())
         ]
     );
-    assert!(apsp_panel::settings::read(pool).await?.webhook.is_some());
+    assert!(
+        apsp_panel_host::settings::read(pool)
+            .await?
+            .webhook
+            .is_some()
+    );
     // Change the Webhook destination, retaining the other channel's new event.
     sqlx::query("UPDATE notification_outbox SET status='pending' WHERE channel='telegram'")
         .execute(pool)
@@ -286,7 +292,7 @@ async fn changing_one_channel_only_cancels_its_pending_messages(pool: PgPool) ->
 
 #[sqlx::test(migrations = false)]
 async fn reopening_preserves_pending_channel_deliveries(pool: PgPool) -> Result<()> {
-    apsp_panel::schema::initialize(&pool).await?;
+    apsp_panel_host::schema::initialize(&pool).await?;
     let server: i64 = sqlx::query_scalar(
         "INSERT INTO servers(name) VALUES('notification migration fixture') RETURNING id",
     )
@@ -294,7 +300,7 @@ async fn reopening_preserves_pending_channel_deliveries(pool: PgPool) -> Result<
     .await?;
     let event: i64 = sqlx::query_scalar("INSERT INTO server_alert_events(server_id,server_name,opened_at) VALUES($1,'fixture',1) RETURNING id").bind(server).fetch_one(&pool).await?;
     sqlx::query("INSERT INTO notification_outbox(event_id,kind,message,attempts,next_attempt_at) VALUES($1,'offline','original',3,100)").bind(event).execute(&pool).await?;
-    apsp_panel::schema::initialize(&pool).await?;
+    apsp_panel_host::schema::initialize(&pool).await?;
     let row: (String, String, i32, i64) =
         sqlx::query_as("SELECT channel,message,attempts,next_attempt_at FROM notification_outbox")
             .fetch_one(&pool)
@@ -337,7 +343,7 @@ async fn automatic_webhook_delivers_offline_and_recovery_with_event_metadata(
             .bind(if recovery { now } else { now - 600 })
             .execute(pool)
             .await?;
-        notifications::evaluate(pool, now - 600, now).await?;
+        evaluate(pool, now - 600, now).await?;
         notifications::dispatch(pool, now).await?;
         let received = tokio::time::timeout(std::time::Duration::from_secs(5), worker).await??;
         assert_eq!(received["event"], expected);

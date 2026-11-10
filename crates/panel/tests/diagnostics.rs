@@ -14,7 +14,8 @@ use business_support::release_fixture;
 mod release_support;
 
 use anyhow::Result;
-use apsp_panel::{agent_api, diagnostics, ip_quality};
+use apsp_observability::{diagnostics, ip_quality};
+use apsp_panel::agent_api;
 use apsp_protocol::{Hello, HelloAck, Message, PROTOCOL_VERSION};
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
@@ -193,7 +194,8 @@ async fn diagnostic_queue_is_durable_deduplicated_and_device_scoped(pool: PgPool
         .await?;
     assert_eq!(count, 1);
     let fresh_state =
-        apsp_panel::AppState::new(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
+        apsp_panel_host::AppState::new(panel.state.pool.clone(), (*panel.state.config).clone())
+            .await?;
     let persisted: Value =
         sqlx::query_scalar("SELECT report FROM diagnostic_jobs WHERE server_id=$1")
             .bind(server_id)

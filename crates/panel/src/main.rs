@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
-use apsp_panel::{AppState, config::Config, maintenance::supervise, router};
+use apsp_panel::{maintenance::supervise, router};
+
+use apsp_panel_host::{AppState, config::Config};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 
 async fn telemetry_history(pool: PgPool) {
@@ -8,12 +10,12 @@ async fn telemetry_history(pool: PgPool) {
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         timer.tick().await;
-        let result = apsp_panel::telemetry::maintain(&pool).await;
+        let result = apsp_observability::telemetry::maintain(&pool).await;
         let status = if result.is_ok() { "healthy" } else { "failed" };
         if let Err(error) = result {
             tracing::warn!(%error, "telemetry history maintenance failed");
         }
-        if let Err(error) = apsp_panel::control_center::system::heartbeat(
+        if let Err(error) = apsp_panel_host::control_center::system::heartbeat(
             &pool,
             "telemetry-history",
             status,
@@ -31,12 +33,12 @@ async fn network_workbench(state: AppState) {
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         timer.tick().await;
-        let result = apsp_panel::network_workbench::tick(&state).await;
+        let result = apsp_observability::network_workbench::tick(&state).await;
         let status = if result.is_ok() { "healthy" } else { "failed" };
         if let Err(error) = result {
             tracing::warn!(%error,"network workbench dispatch failed");
         }
-        if let Err(error) = apsp_panel::control_center::system::heartbeat(
+        if let Err(error) = apsp_panel_host::control_center::system::heartbeat(
             &state.pool,
             "network-workbench",
             status,
@@ -67,7 +69,7 @@ async fn main() -> anyhow::Result<()> {
     let recovery_verified = match std::env::var("APSP_RECOVERY_VERIFY_CREDENTIALS") {
         Ok(value) if value == "true" => {
             let count =
-                apsp_panel::control_center::credentials::verify_recovery_material(&state.pool)
+                apsp_panel_host::control_center::credentials::verify_recovery_material(&state.pool)
                     .await?;
             tracing::info!(
                 verified_credentials = count,
@@ -89,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
     }));
     let exchange = tokio::spawn(supervise("exchange-rates", {
         let pool = state.pool.clone();
-        move || apsp_panel::exchange::run(pool.clone())
+        move || apsp_costs::exchange::run(pool.clone())
     }));
     let telemetry = tokio::spawn(supervise("telemetry-history", {
         let pool = state.pool.clone();
@@ -98,11 +100,11 @@ async fn main() -> anyhow::Result<()> {
     let domains = tokio::spawn(apsp_panel::domains::run(state.clone()));
     let control_center = tokio::spawn(supervise("control-center", {
         let state = state.clone();
-        move || apsp_panel::control_center::run(state.clone())
+        move || apsp_panel_host::control_center::run(state.clone())
     }));
     let operations = tokio::spawn(supervise("operations", {
         let state = state.clone();
-        move || apsp_panel::operations::run(state.clone())
+        move || apsp_operations::jobs::run(state.clone())
     }));
     let network = tokio::spawn(supervise("network-workbench", {
         let state = state.clone();
@@ -110,7 +112,7 @@ async fn main() -> anyhow::Result<()> {
     }));
     let certificates = tokio::spawn(supervise("network-certificates", {
         let state = state.clone();
-        move || apsp_panel::network_configuration::run(state.clone())
+        move || apsp_panel_host::network_configuration::run(state.clone())
     }));
     let mut application = router(state);
     if recovery_verified {

@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use anyhow::Result;
-use apsp_panel::schema::initialize;
+use apsp_panel_host::schema::initialize;
 use sqlx::PgPool;
 
 async fn rejected(pool: &PgPool) -> Result<()> {

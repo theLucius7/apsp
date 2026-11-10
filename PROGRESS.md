@@ -1,5 +1,19 @@
 # 执行进度
 
+## 2026-11-10：ADR 0131 步骤一（中六）——应用 crate 删除兼容的再导出
+
+- 用户要求：“continue”。ADR 0131 步骤一包括“过渡别名删除”：应用 crate `apsp_panel` 仍把平台模块、搬出宿主的观测与作业模块和汇率以旧路径再导出，其中 `apsp_panel::operations` 是 `apsp_operations::jobs` 的改名别名，`apsp_panel::notifications` 把平台的通知发送与观测的告警评估合在一个路径下。
+- 改动：
+  - `crates/panel/src/lib.rs` 删除全部再导出，只导出自己定义的 `router`、`domains`、`agent_api`、`maintenance`、`publisher`；库内两处用法（云页面的组合视图、Agent 通道分派）改用 `apsp_panel_host`。
+  - `main.rs` 与 50 个集成测试文件（含 9 个辅助模块）改用所有者的路径（脚本逐条改写 `use` 树与行内路径）：平台模块 → `apsp_panel_host`，观测 → `apsp_observability`，作业 → `apsp_operations`（`operations` → `jobs`），汇率 → `apsp_costs`。用到合并路径 `notifications` 的 3 个测试手工改为 `apsp_observability::alerts::evaluate` 与 `apsp_panel_host::notifications`。
+  - 各 crate 内部的两个改名导出（观测的 `observe_service_result`、平台的 `valid_template`）是本 crate 的接口命名，不属于兼容路径，保留。
+- 没有修改行为、数据库基线、协议、部署方式与前端；文档同步（repository.md、architecture.md）。
+- 验证（本地，基于 main `721de7a7`）：
+  - `cargo fmt --check`、全工作区 `cargo clippy --all-targets -- -D warnings` 通过（所有改写过路径的测试都编译通过）。
+  - 本地 PostgreSQL 16 上手工改过的与代表性的集成测试：`notification_channels`（4）、`notification_rules`（3）、`server_operations`（7）、`operations_reconciliation`（5）、`control_center`（6）、`foundation`（8）全部通过；其余 44 个测试文件只换了路径，指向的条目与原再导出完全相同，未逐个运行。
+  - 两项边界检查通过（461 条，没有新增）。CI 暂停，未触发。
+- 交付：没有改数据库基线、协议、部署方式与生产数据，按协作规则直接提交 main。
+
 ## 2026-11-10：ADR 0131 步骤一（中五）——阶段 E 第一步：前端按领域分目录
 
 - 用户要求：“continue”。做阶段 E 中目录的部分：`web/src/` 下的文件按已登记的所有者搬进领域目录。取舍见 `docs/open-questions.md`，结果见 [architecture.md §9](docs/architecture.md)。
@@ -14,7 +28,8 @@
   - `bun test`：42 个文件 238 个测试全部通过。
   - 两项边界检查通过，检查器单元测试 13 + 21 个通过，文档内链接 0 错误。后端没有改动，Rust 测试未运行。CI 暂停，未触发。
 - 交付：没有改数据库基线、协议、部署方式与生产数据，按协作规则直接提交 main。
-- 下一步：各领域的页面清单（阶段 E 的其余部分），`plugins/` 下 sing-box 服务文件与诊断工具打包脚本的去处，Globalping 与 Cloudflare 客户端的合并。
+- 生产部署（2026-11-10 10:24 完成，`721de7a7`）：部署器试启动后换镜像，没有执行接入脚本。部署后只读核对：公网返回的 `index.html` 与本地构建逐字节相同，入口脚本、样式与 `motion`、`radix`、`react` 分块的摘要与本地一致；14 个后台任务心跳健康，面板日志没有错误，健康检查 200。
+- 下一步：各领域的页面清单与侧栏六个工作区（ADR 0131 步骤二），`plugins/` 下 sing-box 服务文件与诊断工具打包脚本的去处，Globalping 与 Cloudflare 客户端的合并。
 
 ## 2026-11-10：ADR 0131 步骤一（中四）——阶段 D 第二步：云能力搬进领域 crate
 

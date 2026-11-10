@@ -5,7 +5,8 @@ mod release_fixture;
 mod release_support;
 
 use anyhow::{Context, Result, bail};
-use apsp_panel::{AppState, config::Config, router};
+use apsp_panel::router;
+use apsp_panel_host::{AppState, config::Config};
 use apsp_protocol::{
     AuthChallenge, AuthResponse, EnrollRequest, EnrollResponse, Envelope, Hello, HelloAck,
     Manifest, PROTOCOL_VERSION, StaticInfo, now_timestamp,
@@ -648,7 +649,7 @@ async fn websocket_challenges_are_connection_bound_and_sessions_expire(pool: PgP
     let stored_expiry: i64 = sqlx::query_scalar(
         "SELECT expires_at FROM sessions WHERE token_hash = $1 AND server_id = $2",
     )
-    .bind(apsp_panel::auth::hash_token(&ack.session_token))
+    .bind(apsp_panel_host::auth::hash_token(&ack.session_token))
     .bind(server_id)
     .fetch_one(&pool)
     .await?;
@@ -800,7 +801,7 @@ async fn panel_never_serves_agent_binaries_even_with_a_live_token(pool: PgPool) 
     assert_eq!(installation["target"], "auto");
     assert_eq!(
         installation["bootstrap_url"],
-        apsp_panel::installation::bootstrap_url()
+        apsp_panel_host::installation::bootstrap_url()
     );
     let install_command = installation["install_command"].as_str().unwrap();
     assert!(install_command.contains("https://api.github.com/repos/theLucius7/apsp/git/blobs/"));
@@ -1263,7 +1264,7 @@ async fn installation_uses_independent_trusted_contract_and_preserves_server_mir
         assert!(installation["tag"].is_null());
         assert_eq!(
             installation["bootstrap_url"],
-            apsp_panel::installation::bootstrap_url()
+            apsp_panel_host::installation::bootstrap_url()
         );
         let command = installation["install_command"].as_str().unwrap();
         assert!(command.contains(installation["bootstrap_url"].as_str().unwrap()));

@@ -77,7 +77,7 @@ async fn compiled_embedded_frontend_matches_every_dist_file_for_get_and_head() -
         }
         for uri in uris {
             for method in [Method::GET, Method::HEAD] {
-                let response = apsp_panel::frontend::serve(
+                let response = apsp_panel_host::frontend::serve(
                     method.clone(),
                     uri.parse::<Uri>()?,
                     HeaderMap::new(),
@@ -125,7 +125,8 @@ async fn unhashed_assets_revalidate_with_their_etag() -> Result<()> {
     use axum::http::{HeaderMap, HeaderValue, Method, Uri};
 
     let uri = "/display-icons/os-debian.svg".parse::<Uri>()?;
-    let response = apsp_panel::frontend::serve(Method::GET, uri.clone(), HeaderMap::new()).await;
+    let response =
+        apsp_panel_host::frontend::serve(Method::GET, uri.clone(), HeaderMap::new()).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
     let etag = response
@@ -136,18 +137,18 @@ async fn unhashed_assets_revalidate_with_their_etag() -> Result<()> {
 
     let mut conditional = HeaderMap::new();
     conditional.insert(header::IF_NONE_MATCH, etag.clone());
-    let response = apsp_panel::frontend::serve(Method::GET, uri.clone(), conditional).await;
+    let response = apsp_panel_host::frontend::serve(Method::GET, uri.clone(), conditional).await;
     assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
     assert_eq!(response.headers()[header::ETAG], etag);
 
     let mut stale = HeaderMap::new();
     stale.insert(header::IF_NONE_MATCH, HeaderValue::from_static("\"stale\""));
-    let response = apsp_panel::frontend::serve(Method::GET, uri, stale).await;
+    let response = apsp_panel_host::frontend::serve(Method::GET, uri, stale).await;
     assert_eq!(response.status(), StatusCode::OK);
 
     // Hashed assets are immutable and index.html is never cached: neither needs one.
     let response =
-        apsp_panel::frontend::serve(Method::GET, "/".parse::<Uri>()?, HeaderMap::new()).await;
+        apsp_panel_host::frontend::serve(Method::GET, "/".parse::<Uri>()?, HeaderMap::new()).await;
     assert!(response.headers().get(header::ETAG).is_none());
     Ok(())
 }

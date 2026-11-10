@@ -1,7 +1,7 @@
 use super::*;
 
 async fn saved_full(panel: &TestPanel, server: i64, version: &str, status: &str) -> Result<Uuid> {
-    let artifact = apsp_panel::artifacts::descriptor(
+    let artifact = apsp_panel_host::artifacts::descriptor(
         &panel.state,
         "nodequality",
         diagnostics::PLUGIN_VERSION,

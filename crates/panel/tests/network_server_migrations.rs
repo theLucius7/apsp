@@ -261,7 +261,7 @@ async fn configured_target_collision_and_expired_session_proof_block_apply(
         .strip_prefix("apsp_session=")
         .context("test cookie")?;
     sqlx::query("DELETE FROM administrator_reauth WHERE session_hash=$1")
-        .bind(apsp_panel::auth::hash_token(token))
+        .bind(apsp_panel_host::auth::hash_token(token))
         .execute(&pool)
         .await?;
     assert_eq!(
@@ -340,9 +340,9 @@ async fn target_only_scope_cannot_read_source_candidates_or_migration_history(
         .bind(target)
         .execute(&pool)
         .await?;
-    let token = apsp_panel::auth::random_token();
+    let token = apsp_panel_host::auth::random_token();
     sqlx::query("INSERT INTO sessions(token_hash,admin_id,expires_at) VALUES($1,$2,$3)")
-        .bind(apsp_panel::auth::hash_token(&token))
+        .bind(apsp_panel_host::auth::hash_token(&token))
         .bind(actor)
         .bind(apsp_protocol::now_timestamp() + 3600)
         .execute(&pool)

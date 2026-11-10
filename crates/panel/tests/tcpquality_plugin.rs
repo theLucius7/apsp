@@ -7,7 +7,7 @@ use business_support::release_fixture;
 mod release_support;
 
 use anyhow::Result;
-use apsp_panel::diagnostic_plugins::tcpquality::PLUGIN_VERSION;
+use apsp_observability::diagnostic_plugins::tcpquality::PLUGIN_VERSION;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -23,7 +23,7 @@ async fn ready(panel: &TestPanel, server: i64) -> Result<()> {
     for (name, version, binary_name) in [
         (
             "nodequality",
-            apsp_panel::diagnostics::PLUGIN_VERSION,
+            apsp_observability::diagnostics::PLUGIN_VERSION,
             "nodequality",
         ),
         ("tcpquality", PLUGIN_VERSION, "apsp-tcp-probe"),

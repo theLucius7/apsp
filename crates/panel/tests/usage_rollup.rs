@@ -236,7 +236,7 @@ async fn entitlement_usage_keeps_the_original_cycle_boundaries(pool: PgPool) -> 
 
 #[sqlx::test(migrations = false)]
 async fn reopening_preserves_quota_credits_and_late_charges(pool: PgPool) -> Result<()> {
-    apsp_panel::schema::initialize(&pool).await?;
+    apsp_panel_host::schema::initialize(&pool).await?;
     let (server, users, nodes) = identities(&pool).await?;
     let user = users[0];
     let at = BASE + 15 * 86_400;
@@ -273,7 +273,7 @@ async fn reopening_preserves_quota_credits_and_late_charges(pool: PgPool) -> Res
     .fetch_one(&pool)
     .await?;
     assert_eq!(prior_entitlement, ("900".into(), "active".into(), true));
-    apsp_panel::schema::initialize(&pool).await?;
+    apsp_panel_host::schema::initialize(&pool).await?;
     let upgraded: (String, String, bool) = sqlx::query_as(
         "SELECT used_bytes,status,allowed FROM singbox_entitlements($1) WHERE user_id=$2",
     )

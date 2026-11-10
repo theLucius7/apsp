@@ -4,7 +4,7 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
-use apsp_panel::{
+use apsp_panel_host::{
     auth::{hash_token, random_token},
     control_center::credentials,
 };

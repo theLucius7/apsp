@@ -5,7 +5,7 @@ mod probe_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::Result;
-use apsp_panel::probes::ConfiguredProbe;
+use apsp_observability::probes::ConfiguredProbe;
 use apsp_protocol::{
     CommandResult, CommandStatus, ProbeBatch, ProbeKind, ProbeResult, ProbeSpec, RemoteCommand,
     TaskAck, now_timestamp, telemetry::now_millis,

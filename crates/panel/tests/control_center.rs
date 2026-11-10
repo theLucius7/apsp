@@ -1,10 +1,10 @@
 #![forbid(unsafe_code)]
 use anyhow::{Context, Result};
-use apsp_panel::{
+use apsp_panel::router;
+use apsp_panel_host::{
     AppState,
     auth::{hash_token, random_token},
     config::Config,
-    router,
 };
 use apsp_protocol::now_timestamp;
 use reqwest::{Client, StatusCode, header};

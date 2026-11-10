@@ -146,7 +146,7 @@ async fn replay_identity_outlives_raw_rows_and_aggregates_only_observed_values(
         .error_for_status()?;
     let before:Value=sqlx::query_scalar("SELECT jsonb_build_object('up',SUM(uploaded)::text,'down',SUM(downloaded)::text) FROM server_network_daily WHERE server_id=$1").bind(server).fetch_one(&panel.state.pool).await?;
     assert_eq!(before, json!({"up":"200","down":"200"}));
-    apsp_panel::telemetry::maintain(&panel.state.pool).await?;
+    apsp_observability::telemetry::maintain(&panel.state.pool).await?;
     for _ in 0..2 {
         post(
             &panel,
@@ -162,9 +162,14 @@ async fn replay_identity_outlives_raw_rows_and_aggregates_only_observed_values(
             .fetch_one(&panel.state.pool)
             .await?;
     assert_eq!(count, 0);
-    let points =
-        apsp_panel::telemetry::read_window(&panel.state.pool, server, at, at + 120_000, 300_000)
-            .await?;
+    let points = apsp_observability::telemetry::read_window(
+        &panel.state.pool,
+        server,
+        at,
+        at + 120_000,
+        300_000,
+    )
+    .await?;
     assert_eq!(
         points.iter().map(|point| point.sample_count).sum::<u64>(),
         3
@@ -245,7 +250,8 @@ async fn rollups_are_atomic_weighted_and_repeatable_and_retention_runs_without_i
         }
     }
     for _ in 0..3 {
-        apsp_panel::telemetry::maintain_at(&panel.state.pool, now, Duration::from_secs(6)).await?;
+        apsp_observability::telemetry::maintain_at(&panel.state.pool, now, Duration::from_secs(6))
+            .await?;
     }
     let rows:Vec<(i32,Value)>=sqlx::query_as("SELECT resolution_secs,summary FROM telemetry_history WHERE server_id=$1 ORDER BY bucket_at").bind(server).fetch_all(&panel.state.pool).await?;
     assert_eq!(rows.len(), 2);
@@ -263,7 +269,7 @@ async fn rollups_are_atomic_weighted_and_repeatable_and_retention_runs_without_i
     let token = cookie
         .strip_prefix("apsp_session=")
         .expect("test session cookie");
-    let session = apsp_panel::auth::hash_token(token);
+    let session = apsp_panel_host::auth::hash_token(token);
     sqlx::query("DELETE FROM administrator_reauth WHERE session_hash=$1")
         .bind(&session)
         .execute(&panel.state.pool)
@@ -291,7 +297,8 @@ async fn rollups_are_atomic_weighted_and_repeatable_and_retention_runs_without_i
         )
         .await?
         .error_for_status()?;
-    apsp_panel::telemetry::maintain_at(&panel.state.pool, now, Duration::from_secs(6)).await?;
+    apsp_observability::telemetry::maintain_at(&panel.state.pool, now, Duration::from_secs(6))
+        .await?;
     let mirrored: i32 =
         sqlx::query_scalar("SELECT days FROM record_retention_policy WHERE kind='monitoring'")
             .fetch_one(&panel.state.pool)
@@ -322,8 +329,12 @@ async fn bootstrap_preserves_uninitialized_raw_and_busy_servers_do_not_block_mai
         let sample = sample(at, Some(30.0), 100);
         sqlx::query("INSERT INTO telemetry_samples(server_id,id,sampled_at,digest,metrics) VALUES($1,$2,$3,'TEST_ONLY',$4)").bind(id).bind(sample.id).bind(at).bind(json!(sample.metrics)).execute(&panel.state.pool).await?;
     }
-    apsp_panel::telemetry::maintain_at(&panel.state.pool, now_millis(), Duration::from_secs(6))
-        .await?;
+    apsp_observability::telemetry::maintain_at(
+        &panel.state.pool,
+        now_millis(),
+        Duration::from_secs(6),
+    )
+    .await?;
     let remaining: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM telemetry_samples WHERE server_id=$1")
             .bind(ids[9])
@@ -337,7 +348,7 @@ async fn bootstrap_preserves_uninitialized_raw_and_busy_servers_do_not_block_mai
         .await?;
     tokio::time::timeout(
         Duration::from_secs(1),
-        apsp_panel::telemetry::maintain_at(
+        apsp_observability::telemetry::maintain_at(
             &panel.state.pool,
             now_millis(),
             Duration::from_millis(150),
@@ -345,8 +356,12 @@ async fn bootstrap_preserves_uninitialized_raw_and_busy_servers_do_not_block_mai
     )
     .await??;
     tx.rollback().await?;
-    apsp_panel::telemetry::maintain_at(&panel.state.pool, now_millis(), Duration::from_secs(6))
-        .await?;
+    apsp_observability::telemetry::maintain_at(
+        &panel.state.pool,
+        now_millis(),
+        Duration::from_secs(6),
+    )
+    .await?;
     let summaries: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM telemetry_history WHERE server_id=ANY($1)")
             .bind(&ids)
@@ -457,8 +472,12 @@ async fn locked_bootstrap_prefix_does_not_starve_other_servers(pool: PgPool) -> 
         .bind(&ids[..8])
         .fetch_all(&mut *locked)
         .await?;
-    apsp_panel::telemetry::maintain_at(&panel.state.pool, now_millis(), Duration::from_secs(6))
-        .await?;
+    apsp_observability::telemetry::maintain_at(
+        &panel.state.pool,
+        now_millis(),
+        Duration::from_secs(6),
+    )
+    .await?;
     let initialized: Vec<i64> = sqlx::query_scalar(
         "SELECT server_id FROM telemetry_history_initialized ORDER BY server_id",
     )

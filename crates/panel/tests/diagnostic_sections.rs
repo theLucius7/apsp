@@ -6,7 +6,8 @@ use business_support::release_fixture;
 mod release_support;
 
 use anyhow::Result;
-use apsp_panel::{agent_api, diagnostics};
+use apsp_observability::diagnostics;
+use apsp_panel::agent_api;
 use apsp_protocol::{Hello, HelloAck, Message, PROTOCOL_VERSION};
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
@@ -191,7 +192,8 @@ async fn diagnostic_chapters_survive_failure_duplicates_late_delivery_and_recrea
     assert_eq!(report["report"], Value::Null);
     assert_eq!(report["error"], "OOM fixture");
     let recreated =
-        apsp_panel::AppState::new(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
+        apsp_panel_host::AppState::new(panel.state.pool.clone(), (*panel.state.config).clone())
+            .await?;
     let saved: String = sqlx::query_scalar(
         "SELECT text FROM diagnostic_report_sections WHERE job_id=$1 AND name='header_info'",
     )
@@ -303,7 +305,7 @@ async fn reopening_preserves_reports_and_current_lifecycle_constraints(pool: PgP
     sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,job,status,report,created_at,updated_at,expires_at,expected_sections,report_completeness) VALUES($1,$2,'{}','succeeded',$3,1,1,2,ARRAY['header_info'],'complete')")
         .bind(id).bind(server).bind(json!({"text":"保存的历史报告"})).execute(&pool).await?;
     sqlx::query("INSERT INTO diagnostic_report_sections(job_id,name,text,complete,revision,collected_at,received_at) VALUES($1,'header_info','保存的完整章节',TRUE,1,1,1)").bind(id).execute(&pool).await?;
-    apsp_panel::schema::initialize(&pool).await?;
+    apsp_panel_host::schema::initialize(&pool).await?;
     let row: (String, Value, String, Option<i64>) = sqlx::query_as("SELECT status,report,report_completeness,cancel_requested_at FROM diagnostic_jobs WHERE id=$1").bind(id).fetch_one(&pool).await?;
     assert_eq!(
         row,

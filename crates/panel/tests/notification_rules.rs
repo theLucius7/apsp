@@ -3,7 +3,8 @@ mod business_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::Result;
-use apsp_panel::{notifications, settings::Settings};
+use apsp_observability::alerts::evaluate;
+use apsp_panel_host::settings::Settings;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -91,7 +92,7 @@ async fn resource_windows_require_complete_valid_samples_and_recover_once(
             .await?;
         rules.push(rule);
     }
-    notifications::evaluate(pool, now, now).await?;
+    evaluate(pool, now, now).await?;
     assert_eq!(
         count(pool, "resource").await?,
         0,
@@ -102,10 +103,7 @@ async fn resource_windows_require_complete_valid_samples_and_recover_once(
             minute(pool, id, end - offset, cpu).await?;
         }
     }
-    let (a, b) = tokio::join!(
-        notifications::evaluate(pool, now, now),
-        notifications::evaluate(pool, now, now)
-    );
+    let (a, b) = tokio::join!(evaluate(pool, now, now), evaluate(pool, now, now));
     a?;
     b?;
     assert_eq!(
@@ -124,7 +122,7 @@ async fn resource_windows_require_complete_valid_samples_and_recover_once(
         .bind((end - 60) * 1000)
         .execute(pool)
         .await?;
-    notifications::evaluate(pool, now, now).await?;
+    evaluate(pool, now, now).await?;
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM server_alert_events WHERE resolved_at IS NULL"
@@ -137,8 +135,8 @@ async fn resource_windows_require_complete_valid_samples_and_recover_once(
     for offset in [120, 60] {
         minute(pool, server, end - offset, 10.0).await?;
     }
-    notifications::evaluate(pool, now, now).await?;
-    notifications::evaluate(pool, now, now).await?;
+    evaluate(pool, now, now).await?;
+    evaluate(pool, now, now).await?;
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM notification_outbox")
             .fetch_one(pool)
@@ -163,7 +161,7 @@ async fn resource_windows_require_complete_valid_samples_and_recover_once(
         .bind((end - 60) * 1000)
         .execute(pool)
         .await?;
-    notifications::evaluate(pool, now, now).await?;
+    evaluate(pool, now, now).await?;
     assert_eq!(count(pool, "resource").await?, 1);
     let path = format!("/api/alert-rules/{}", rules[0]["id"].as_str().unwrap());
     let mut updated = spec("average", vec![server]);
@@ -231,8 +229,8 @@ async fn expiry_and_traffic_reminders_deduplicate_by_record_and_cycle(pool: PgPo
         .await?;
     sqlx::query("INSERT INTO server_network_daily(server_id,day,interface,uploaded,downloaded,first_sample_at,last_sample_at) VALUES($1,$2,'eth0',850,0,$3,$3)")
         .bind(id).bind(now/86400*86400).bind(now*1000).execute(pool).await?;
-    notifications::evaluate(pool, now, now).await?;
-    notifications::evaluate(pool, now, now).await?;
+    evaluate(pool, now, now).await?;
+    evaluate(pool, now, now).await?;
     assert_eq!(count(pool, "expiry").await?, 1);
     assert_eq!(count(pool, "traffic").await?, 2, "80% and 85% milestones");
     let cycle: i64 = sqlx::query_scalar("SELECT apsp_traffic_cycle_start($1,1)")
@@ -241,12 +239,12 @@ async fn expiry_and_traffic_reminders_deduplicate_by_record_and_cycle(pool: PgPo
         .await?;
     sqlx::query("INSERT INTO server_traffic_corrections(server_id,cycle_start,reset_day,network_interface,uploaded_offset,downloaded_offset,reason,created_at) VALUES($1,$2,1,'',-400,0,'test', $3)")
         .bind(id).bind(cycle).bind(now).execute(pool).await?;
-    notifications::evaluate(pool, now, now).await?;
+    evaluate(pool, now, now).await?;
     sqlx::query("UPDATE server_traffic_corrections SET uploaded_offset=0 WHERE server_id=$1")
         .bind(id)
         .execute(pool)
         .await?;
-    notifications::evaluate(pool, now, now).await?;
+    evaluate(pool, now, now).await?;
     assert_eq!(
         count(pool, "traffic").await?,
         2,
@@ -256,14 +254,14 @@ async fn expiry_and_traffic_reminders_deduplicate_by_record_and_cycle(pool: PgPo
         .bind(id)
         .execute(pool)
         .await?;
-    notifications::evaluate(pool, now, now).await?;
+    evaluate(pool, now, now).await?;
     assert_eq!(count(pool, "traffic").await?, 5);
     sqlx::query(
         "UPDATE panel_settings SET settings=jsonb_set(settings,'{notification_enabled}','false')",
     )
     .execute(pool)
     .await?;
-    notifications::evaluate(pool, now, now).await?;
+    evaluate(pool, now, now).await?;
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM notification_outbox WHERE status='pending'"
@@ -273,7 +271,7 @@ async fn expiry_and_traffic_reminders_deduplicate_by_record_and_cycle(pool: PgPo
         0
     );
     config(pool, 7, 80).await?;
-    notifications::evaluate(pool, now, now).await?;
+    evaluate(pool, now, now).await?;
     assert_eq!(count(pool, "expiry").await?, 1);
     assert_eq!(count(pool, "traffic").await?, 5);
     // A new billing cycle has independent receipts and observed bytes.
@@ -283,7 +281,7 @@ async fn expiry_and_traffic_reminders_deduplicate_by_record_and_cycle(pool: PgPo
         .await?;
     sqlx::query("INSERT INTO server_network_daily(server_id,day,interface,uploaded,downloaded,first_sample_at,last_sample_at) VALUES($1,$2,'eth0',800,0,$3,$3)")
         .bind(id).bind(next).bind(next*1000).execute(pool).await?;
-    notifications::evaluate(pool, now, next + 60).await?;
+    evaluate(pool, now, next + 60).await?;
     assert_eq!(count(pool, "traffic").await?, 6);
     Ok(())
 }
@@ -355,7 +353,7 @@ async fn settings_validate_templates_mask_secrets_and_cancel_changed_recipient(
         .bind(now - 600)
         .execute(pool)
         .await?;
-    notifications::evaluate(pool, now - 600, now).await?;
+    evaluate(pool, now - 600, now).await?;
     settings["telegram_thread_id"] = json!(13);
     panel
         .admin(

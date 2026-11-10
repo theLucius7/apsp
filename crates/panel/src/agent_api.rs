@@ -4,7 +4,7 @@ pub use apsp_panel_host::agent_api::*;
 
 /// Handles one device message once the domains' interfaces are connected.
 pub async fn process_message(
-    state: &crate::AppState,
+    state: &apsp_panel_host::AppState,
     server_id: i64,
     message: apsp_protocol::Message,
 ) -> anyhow::Result<()> {

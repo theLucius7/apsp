@@ -3,7 +3,7 @@ mod business_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::{Context, Result, ensure};
-use apsp_panel::auth::hash_token;
+use apsp_panel_host::auth::hash_token;
 use apsp_protocol::now_timestamp;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};

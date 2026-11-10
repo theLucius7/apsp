@@ -3,7 +3,8 @@
 use crate::release_support;
 
 use anyhow::{Context, Result, bail};
-use apsp_panel::{AppState, config::Config, router};
+use apsp_panel::router;
+use apsp_panel_host::{AppState, config::Config};
 use apsp_protocol::{
     AuthChallenge, AuthResponse, EnrollRequest, Envelope, Hello, HelloAck, PROTOCOL_VERSION,
     StaticInfo,
@@ -34,7 +35,7 @@ pub async fn prove(pool: &PgPool, cookie: &str) -> Result<()> {
         .context("session cookie")?;
     let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET verified_at=$2,expires_at=$3")
-        .bind(apsp_panel::auth::hash_token(token))
+        .bind(apsp_panel_host::auth::hash_token(token))
         .bind(now)
         .bind(now + 300)
         .execute(pool)
@@ -95,7 +96,7 @@ impl TestPanel {
         state.release_keys = Some(Arc::new(release_support::trusted_keys()));
         state.domain_states = state
             .domain_states
-            .with(apsp_panel::ip_quality::ProviderRegistry::default());
+            .with(apsp_observability::ip_quality::ProviderRegistry::default());
         let app = router(state.clone());
         let task = tokio::spawn(async move {
             axum::serve(

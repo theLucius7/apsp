@@ -78,7 +78,7 @@ async fn explicit_installation_distinguishes_missing_protocol_and_platform_failu
             Err(ApiError::Conflict(message)) => assert!(message.contains(expected), "{message}"),
             other => panic!("expected explicit selection failure, got {other:?}"),
         }
-        let installation = apsp_panel::installation::select_with_mirror(
+        let installation = apsp_panel_host::installation::select_with_mirror(
             &fixture.state,
             Some(version),
             "fixture-token",
@@ -92,7 +92,7 @@ async fn explicit_installation_distinguishes_missing_protocol_and_platform_failu
             _ => panic!("expected explicit installation failure"),
         }
     }
-    let installed = apsp_panel::installation::select_with_mirror(
+    let installed = apsp_panel_host::installation::select_with_mirror(
         &fixture.state,
         Some("0.9.0"),
         "fixture-token",
@@ -144,7 +144,7 @@ async fn signed_legacy_identity_is_preserved_but_not_offered_as_standard_install
             format!("fixture Agent {version} linux-musl-amd64").as_bytes()
         );
     }
-    let selected = apsp_panel::installation::select_with_mirror(
+    let selected = apsp_panel_host::installation::select_with_mirror(
         &fixture.state,
         Some("0.4.0"),
         "TEST_ONLY fixture token",

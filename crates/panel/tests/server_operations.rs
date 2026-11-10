@@ -3,7 +3,8 @@ mod business_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::Result;
-use apsp_panel::{notifications, server_traffic, servers::Server};
+use apsp_observability::{alerts::evaluate, server_traffic};
+use apsp_panel_host::servers::Server;
 use apsp_protocol::now_timestamp;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
@@ -327,15 +328,15 @@ async fn offline_alerts_survive_restarts_deduplicate_and_record_recovery(
         .admin(Method::PATCH, "/api/settings", &cookie, Some(config))
         .await?
         .error_for_status()?;
-    notifications::evaluate(&panel.state.pool, now, now).await?;
+    evaluate(&panel.state.pool, now, now).await?;
     let count = || {
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM server_alert_events")
             .fetch_one(&panel.state.pool)
     };
     assert_eq!(count().await?, 0);
     let (a, b) = tokio::join!(
-        notifications::evaluate(&panel.state.pool, now - 600, now),
-        notifications::evaluate(&panel.state.pool, now - 600, now)
+        evaluate(&panel.state.pool, now - 600, now),
+        evaluate(&panel.state.pool, now - 600, now)
     );
     a?;
     b?;
@@ -354,8 +355,8 @@ async fn offline_alerts_survive_restarts_deduplicate_and_record_recovery(
         .bind(now)
         .execute(&panel.state.pool)
         .await?;
-    notifications::evaluate(&panel.state.pool, now - 600, now).await?;
-    notifications::evaluate(&panel.state.pool, now - 600, now).await?;
+    evaluate(&panel.state.pool, now - 600, now).await?;
+    evaluate(&panel.state.pool, now - 600, now).await?;
     let (resolution, total): (String, i64) = sqlx::query_as(
         "SELECT resolution,(SELECT COUNT(*) FROM notification_outbox) FROM server_alert_events",
     )
@@ -368,7 +369,7 @@ async fn offline_alerts_survive_restarts_deduplicate_and_record_recovery(
         .bind(now - 600)
         .execute(&panel.state.pool)
         .await?;
-    notifications::evaluate(&panel.state.pool, now - 600, now + 1).await?;
+    evaluate(&panel.state.pool, now - 600, now + 1).await?;
     assert_eq!(count().await?, 2);
     panel
         .admin(
@@ -498,7 +499,7 @@ async fn monitoring_only_sessions_and_tokens_keep_private_server_fields_hidden(
     }
     let token = "apsp_api_TEST_ONLY_MONITORING";
     sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,all_servers,expires_at,created_at) VALUES($1,1,$2,'test-monitoring',$3,'[]',true,$4,$5)")
-        .bind(uuid::Uuid::new_v4()).bind(apsp_panel::auth::hash_token(token)).bind(json!(["monitoring:read"]))
+        .bind(uuid::Uuid::new_v4()).bind(apsp_panel_host::auth::hash_token(token)).bind(json!(["monitoring:read"]))
         .bind(now_timestamp()+3600).bind(now_timestamp()).execute(&panel.state.pool).await?;
     for suffix in ["/servers", "/live"] {
         let response = panel
@@ -612,9 +613,9 @@ async fn offline_alert_threshold_counts_from_the_real_disconnect(pool: PgPool) -
             .fetch_one(&panel.state.pool)
     };
     // Measured from the backdated last_seen, two minutes would already have passed.
-    notifications::evaluate(&panel.state.pool, contact - 600, contact + 60).await?;
+    evaluate(&panel.state.pool, contact - 600, contact + 60).await?;
     assert_eq!(alerts().await?, 0);
-    notifications::evaluate(&panel.state.pool, contact - 600, contact + 120).await?;
+    evaluate(&panel.state.pool, contact - 600, contact + 120).await?;
     assert_eq!(alerts().await?, 1);
     let recorded: Option<i64> =
         sqlx::query_scalar("SELECT last_seen FROM server_alert_events WHERE server_id=$1")

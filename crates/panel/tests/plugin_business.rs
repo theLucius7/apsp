@@ -196,7 +196,7 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
     } else {
         "imported.example.com"
     };
-    apsp_panel::schema::initialize(&pool).await?;
+    apsp_panel_host::schema::initialize(&pool).await?;
     let server: i64 = sqlx::query_scalar("INSERT INTO servers(name,device_public_key,manifest_rev) VALUES('Imported server','imported-device-key',7) RETURNING id").fetch_one(&pool).await?;
     let monitor: i64 =
         sqlx::query_scalar("INSERT INTO servers(name) VALUES('Pure monitor') RETURNING id")
@@ -293,7 +293,7 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
             downlink,
         }],
     };
-    let payload_hash = apsp_panel::auth::hash_token(&serde_json::to_string(&batch)?);
+    let payload_hash = apsp_panel_host::auth::hash_token(&serde_json::to_string(&batch)?);
     sqlx::query("INSERT INTO usage_batches(server_id,epoch,seq,payload_hash) VALUES($1,$2,1,$3)")
         .bind(server)
         .bind(epoch)
@@ -325,7 +325,7 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
     drop(connection);
     // Reopening the current database must neither duplicate enablement nor
     // alter previously acknowledged batches. Offline outbox replay still dedupes.
-    apsp_panel::schema::initialize(&pool).await?;
+    apsp_panel_host::schema::initialize(&pool).await?;
     assert_eq!(
         batch_observation(&pool, server, epoch).await?,
         initial_observation

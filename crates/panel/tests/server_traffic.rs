@@ -5,7 +5,8 @@ mod business_support;
 mod release_support;
 
 use anyhow::Result;
-use apsp_panel::{server_traffic, servers::Server};
+use apsp_observability::server_traffic;
+use apsp_panel_host::servers::Server;
 use apsp_protocol::{
     Metrics, NetworkMetrics, TelemetryAck, TelemetryBatch, TelemetrySample, telemetry::now_millis,
 };

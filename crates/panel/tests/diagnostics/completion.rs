@@ -116,7 +116,8 @@ async fn cleaning_keeps_mutex_reports_and_chapters_until_terminal_confirmation(
         assert_eq!(view["reports"][0]["sections"][0]["text"], chapter["text"]);
     }
     let recreated =
-        apsp_panel::AppState::new(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
+        apsp_panel_host::AppState::new(panel.state.pool.clone(), (*panel.state.config).clone())
+            .await?;
     diagnostics::expire(&recreated).await?;
     assert_eq!(stored(&panel, id).await?, saved);
     assert_eq!(
@@ -744,7 +745,7 @@ async fn reopening_preserves_reports_and_current_lifecycle_constraints(pool: PgP
     let before = stored(&panel, historical_id).await?;
     let running = Uuid::new_v4();
     sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,job,status,created_at,updated_at,expires_at) VALUES($1,$2,'{}','running',1,1,9999999999)").bind(running).bind(server).execute(&pool).await?;
-    apsp_panel::schema::initialize(&pool).await?;
+    apsp_panel_host::schema::initialize(&pool).await?;
     assert_eq!(stored(&panel, historical_id).await?, before);
     let chapter: (String, bool, i64, i64, i64) = sqlx::query_as("SELECT text,complete,revision,collected_at,received_at FROM diagnostic_report_sections WHERE job_id=$1").bind(historical_id).fetch_one(&pool).await?;
     assert_eq!(chapter, ("迁移前的独立章节".into(), true, 2, 1, 2));

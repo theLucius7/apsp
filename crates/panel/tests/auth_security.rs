@@ -1,7 +1,8 @@
 #![forbid(unsafe_code)]
 
 use anyhow::{Context, Result};
-use apsp_panel::{AppState, config::Config, router};
+use apsp_panel::router;
+use apsp_panel_host::{AppState, config::Config};
 use apsp_protocol::now_timestamp;
 use data_encoding::BASE32_NOPAD;
 use hmac::{Hmac, Mac};

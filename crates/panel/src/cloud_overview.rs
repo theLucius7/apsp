@@ -2,9 +2,9 @@
 //! settings, bandwidth operations, power jobs, address rotations and notifications. It
 //! joins several domains, so it belongs to the application (ADR 0128).
 
-use crate::{AppState, auth, error::ApiResult};
 use apsp_observability::cloud_notices;
 use apsp_operations::cloud::{bandwidth, eip_rotation, power};
+use apsp_panel_host::{AppState, auth, error::ApiResult};
 use apsp_resources::cloud::inventory;
 use axum::{Json, Router, extract::State, http::HeaderMap, routing::get};
 use serde_json::{Value, json};

@@ -7,7 +7,7 @@ mod probe_support;
 mod release_support;
 
 use anyhow::Result;
-use apsp_panel::probes::ConfiguredProbe;
+use apsp_observability::probes::ConfiguredProbe;
 use apsp_protocol::AgentSettings;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};

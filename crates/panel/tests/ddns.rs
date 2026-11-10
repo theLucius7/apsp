@@ -17,7 +17,7 @@ async fn prove_cookie(pool: &PgPool, cookie: &str) -> Result<()> {
         .context("test session cookie")?;
     let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET verified_at=$2,expires_at=$3")
-        .bind(apsp_panel::auth::hash_token(token)).bind(now).bind(now + 300).execute(pool).await?;
+        .bind(apsp_panel_host::auth::hash_token(token)).bind(now).bind(now + 300).execute(pool).await?;
     Ok(())
 }
 
@@ -281,7 +281,7 @@ async fn administrator_crud_redacts_credentials_guards_revisions_and_never_delet
         .strip_prefix("apsp_session=")
         .context("test session cookie")?;
     sqlx::query("DELETE FROM administrator_reauth WHERE session_hash=$1")
-        .bind(apsp_panel::auth::hash_token(session_token))
+        .bind(apsp_panel_host::auth::hash_token(session_token))
         .execute(&pool)
         .await?;
     assert_eq!(

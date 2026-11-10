@@ -3,7 +3,7 @@
 //! evidence interface that the application connects.
 
 use apsp_costs::cancellation_reminders;
-use apsp_panel::{AppState, config::Config};
+use apsp_panel_host::{AppState, config::Config};
 use apsp_protocol::now_timestamp;
 use sqlx::PgPool;
 use uuid::Uuid;

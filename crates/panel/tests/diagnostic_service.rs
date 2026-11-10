@@ -19,7 +19,7 @@ async fn ready(panel: &TestPanel, server: i64) -> Result<()> {
     release_fixture::write(
         &panel.state.config.data_dir,
         "nodequality",
-        apsp_panel::diagnostics::PLUGIN_VERSION,
+        apsp_observability::diagnostics::PLUGIN_VERSION,
         "nodequality",
         &archive,
         binary,
@@ -144,7 +144,7 @@ async fn revoked_workbench_delivery_blocks_the_entire_same_server_mixed_response
     for (name, version, binary) in [
         (
             "nodequality",
-            apsp_panel::diagnostics::PLUGIN_VERSION,
+            apsp_observability::diagnostics::PLUGIN_VERSION,
             &b"TEST_ONLY fixed diagnostic service fixture"[..],
         ),
         (
@@ -162,11 +162,11 @@ async fn revoked_workbench_delivery_blocks_the_entire_same_server_mixed_response
         }
     }
     release_fixture::write_entries(&panel.state.config.data_dir, artifacts)?;
-    let entries = apsp_panel::releases::entries(&panel.state).await?;
+    let entries = apsp_panel_host::releases::entries(&panel.state).await?;
     assert_eq!(entries.len(), 4);
     for name in ["nodequality", "network-workbench"] {
         let version = if name == "nodequality" {
-            apsp_panel::diagnostics::PLUGIN_VERSION
+            apsp_observability::diagnostics::PLUGIN_VERSION
         } else {
             "1.0.0"
         };

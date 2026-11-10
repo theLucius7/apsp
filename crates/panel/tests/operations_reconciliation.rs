@@ -4,10 +4,8 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result};
-use apsp_panel::{
-    auth::{hash_token, random_token},
-    operations,
-};
+use apsp_operations::jobs;
+use apsp_panel_host::auth::{hash_token, random_token};
 use apsp_protocol::{
     fleet::{AccessPolicy, JobResult, OPERATIONS_CAPABILITY, Operation, Work},
     now_timestamp,
@@ -205,7 +203,7 @@ async fn manual_automation_reconciliation_requires_fresh_linked_inspection_and_p
     assert!(row.get::<Option<Value>, _>("result").is_none());
     assert!(row.get::<Option<String>, _>("result_digest").is_none());
     assert!(row.get::<Option<i64>, _>("reconciled_at").is_some());
-    operations::tick(&panel.state).await?;
+    jobs::tick(&panel.state).await?;
     let state: String = sqlx::query_scalar(
         "SELECT state FROM operations_target_steps WHERE job_id=$1 AND server_id=$2",
     )
@@ -230,7 +228,7 @@ async fn manual_automation_reconciliation_requires_fresh_linked_inspection_and_p
     assert_eq!(row.get::<String, _>("status"), "succeeded");
     assert_eq!(row.get::<Value, _>("result"), json!(late));
     assert!(row.get::<Option<Value>, _>("reconciliation").is_some());
-    operations::tick(&panel.state).await?;
+    jobs::tick(&panel.state).await?;
     let state: String = sqlx::query_scalar(
         "SELECT state FROM operations_target_steps WHERE job_id=$1 AND server_id=$2",
     )

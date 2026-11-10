@@ -9,7 +9,8 @@ use business_support::release_fixture;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
-use apsp_panel::{AppState, agent_api};
+use apsp_panel::agent_api;
+use apsp_panel_host::AppState;
 use apsp_protocol::*;
 use apsp_traffic::runtime_control;
 use business_support::{TestPanel, id};

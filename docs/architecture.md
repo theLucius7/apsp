@@ -209,6 +209,7 @@ flowchart TD
 - 流量服务与服务权益拆成两个 crate（阶段 C 的拆分部分，结果见下）：`crates/traffic`（`apsp-traffic`）与 `crates/access`（`apsp-access`），中国可达性迁入 `crates/observability`；应用层的 `plugins.rs` 改为 `domains.rs`，去掉 `singbox`、`expenses`、`ddns` 等别名与代理领域的兼容再导出，调用方与测试改用各领域 crate 的路径。
 - 阿里云能力分回各领域（阶段 D，结果见下）：先在原 crate 内按所有者重组（路由、后台任务、刷新流程与共享类型），再把文件搬进资源、基础网络、成本、观测与作业的 crate，组合视图归应用；`plugins/` 下不再有 crate。
 - 前端按领域分目录（阶段 E 第一步，结果见下）：`web/src/` 下的文件按已登记的所有者搬进 `<领域标识>/` 与 `app/`，`plugins/` 等旧功能目录删除。
+- 应用 crate 不再保留兼容的再导出（2026-11-10）：`apsp_panel` 只导出自己定义的路由、领域组合、Agent 通道分派、维护与发布周期；平台模块、观测、作业与汇率的旧路径（含 `apsp_panel::operations`、合并两处的 `apsp_panel::notifications`）删除，调用方改用 `apsp_panel_host`、`apsp_observability`、`apsp_operations`、`apsp_costs`。
 
 | 阶段 | 内容 | 完成标准 |
 | --- | --- | --- |

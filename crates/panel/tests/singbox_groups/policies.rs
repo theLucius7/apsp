@@ -215,10 +215,10 @@ async fn new_management_routes_require_administrator_and_validate_inputs(
 
 #[sqlx::test(migrations = false)]
 async fn reopening_retains_identifiers_credentials_and_usage(pool: PgPool) -> Result<()> {
-    apsp_panel::schema::initialize(&pool).await?;
+    apsp_panel_host::schema::initialize(&pool).await?;
     sqlx::raw_sql("INSERT INTO servers(id,name) VALUES(1,'Legacy'); INSERT INTO nodes(id,name,server_id,port,public_host,sni,private_key,public_key,short_id) VALUES(1,'Legacy',1,443,'proxy.example.com','www.example.com','old-key','old-key','1234abcd'); INSERT INTO users(id,name,subscription_token) VALUES(1,'Legacy','TEST_ONLY-token'); INSERT INTO accesses(user_id,node_id,uuid,stat_name) VALUES(1,1,'00000000-0000-0000-0000-000000000001','u1_n1'); INSERT INTO usage_batches VALUES(1,'00000000-0000-0000-0000-000000000002',1,'TEST_ONLY-hash'); INSERT INTO usage_records VALUES(1,'00000000-0000-0000-0000-000000000002',1,'u1_n1',1,1,20,30,100,101);").execute(&pool).await?;
     sqlx::raw_sql("INSERT INTO singbox_policy_groups(id,name) VALUES(1,'TEST_ONLY restart grant'); INSERT INTO singbox_policy_nodes(group_id,node_id) VALUES(1,1); INSERT INTO singbox_user_policies(user_id,group_id) VALUES(1,1)").execute(&pool).await?;
-    apsp_panel::schema::initialize(&pool).await?;
+    apsp_panel_host::schema::initialize(&pool).await?;
     let token: String = sqlx::query_scalar("SELECT subscription_token FROM users WHERE id=1")
         .fetch_one(&pool)
         .await?;

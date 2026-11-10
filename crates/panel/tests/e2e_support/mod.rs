@@ -11,7 +11,8 @@ use apsp_agent_core::{
     system::SystemOps,
     transport,
 };
-use apsp_panel::{AppState, config::Config, publisher, router};
+use apsp_panel::{publisher, router};
+use apsp_panel_host::{AppState, config::Config};
 use flate2::{Compression, write::GzEncoder};
 use reqwest::{Client, Method, header};
 use serde_json::{Value, json};

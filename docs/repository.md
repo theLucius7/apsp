@@ -36,7 +36,7 @@
 | `operations` | 作业领域：远程命令、终端、固定设备操作及其核对、运行时操作，以及作业、计划、维护窗口、有界自动处置与面板备份步骤，云的带宽变更、启停、换 IP 与账号刷新（`cloud/`）；排在依赖顺序最后，直接调用前面的领域 |
 | `traffic` | 流量服务领域：节点、链路、外部来源与节点库，服务器运行时的配置编译与发布、部署检查与发布批次、运行时控制与校验，Nexus 兼容桥的流量部分（`nexus_nodes/`）；用户的限速、设备数与运维记录经自己声明的 `users` 接口由服务权益回答 |
 | `access` | 服务权益领域：代理用户、策略组与套餐、资格与配额、订阅与专属地址、成员门户与账号、用户限速与会话、代理运维流程（预览与应用）、Nexus 兼容（`nexus/`：兼容桥 `bridge` 与设备会话 `sessions`，兼容桥的表只在 `bridge` 中出现）；排在流量服务之后，直接调用它 |
-| `panel` | 应用：组合平台与各领域（`domains`）、接线依赖倒置接口（`wiring`）、运行跨流量服务与服务权益的代理发布周期（`publisher`）、组合云页面的列表（`cloud_overview`）、启动服务与后台任务；保存唯一的当前数据库初始化 SQL。平台模块保留 `apsp_panel::*` 路径，代理领域直接用 `apsp_traffic`、`apsp_access` |
+| `panel` | 应用：组合平台与各领域（`domains`）、接线依赖倒置接口（`wiring`）、运行跨流量服务与服务权益的代理发布周期（`publisher`）、组合云页面的列表（`cloud_overview`）、启动服务与后台任务；保存唯一的当前数据库初始化 SQL。只导出自己定义的内容（`router`、`domains`、`agent_api`、`maintenance`、`publisher`）；平台与各领域经各自的 crate 使用（`apsp_panel_host`、`apsp_traffic` 等），不再有兼容的再导出 |
 | `agent-core` | 设备身份、传输、对账、持久状态、遥测、计量与制品；工作区依赖仅 `protocol`、`adapter-sdk` |
 | `adapter-sdk` | 无状态适配器接口与共享模型 |
 | `adapter-singbox`、`adapter-nodequality`、`adapter-ipquality`、`adapter-tcpquality` | 运行时或工具翻译；工作区依赖仅 `adapter-sdk` |
@@ -57,7 +57,7 @@
 | `domains/resources.rs` | 服务器、接入令牌、Agent 接入与退役回执、接入模板与批量接入、服务器资产档案、生命周期、迁移与费用记录、云资源关联与 Hetzner 清单 |
 | `domains/networking.rs` | 网络配置 |
 
-作业已迁到 `crates/operations`，它的 `routes()` 注册设备操作与终端、自动化与维护、远程命令与 Agent 的命令通道、运行时操作；观测已迁到 `crates/observability`，它的 `routes()` 注册统计、告警事件与规则、故障事件、网络检测、看板、遥测与历史、服务器健康与比较、流量矫正、拨测与延迟检测、IP 查询与共用诊断服务，以及 Agent 的遥测、拨测与诊断上报。流量服务的运行时检查点、设备的清单与配置包、运行时校验由 sing-box crate 的 `router()` 注册，汇率由 `crates/costs` 的 `routes()` 注册（阶段 B2c 起）。路由文件只组合处理函数，鉴权和业务校验仍由原处理函数负责。`apsp_panel::router`、`AppState`、`AgentConnection`、`apsp_panel::agent_api` 及旧代理业务 Rust 导出继续可用。新增接口放进所属领域的声明，不加到平台。
+作业已迁到 `crates/operations`，它的 `routes()` 注册设备操作与终端、自动化与维护、远程命令与 Agent 的命令通道、运行时操作；观测已迁到 `crates/observability`，它的 `routes()` 注册统计、告警事件与规则、故障事件、网络检测、看板、遥测与历史、服务器健康与比较、流量矫正、拨测与延迟检测、IP 查询与共用诊断服务，以及 Agent 的遥测、拨测与诊断上报。流量服务的运行时检查点、设备的清单与配置包、运行时校验由 `crates/traffic` 注册，汇率由 `crates/costs` 的 `routes()` 注册（阶段 B2c 起）。路由文件只组合处理函数，鉴权和业务校验仍由原处理函数负责。应用 crate 只导出 `apsp_panel::router`、`apsp_panel::agent_api` 等自己定义的部分；`AppState`、`AgentConnection` 与平台模块从 `apsp_panel_host` 引用，领域模块从各自的 crate 引用。新增接口放进所属领域的声明，不加到平台。
 
 领域与平台的接线：
 

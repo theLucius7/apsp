@@ -9,7 +9,7 @@ mod targets;
 mod versions;
 
 use anyhow::{Context, Result, bail};
-use apsp_panel::{AppState, config::Config, error::ApiError, releases};
+use apsp_panel_host::{AppState, config::Config, error::ApiError, releases};
 use apsp_protocol::release::{ReleaseMetadata, ReleaseProof, native_arch};
 use release_support as signing;
 use sqlx::postgres::PgPoolOptions;
@@ -39,7 +39,7 @@ impl Fixture {
             device_lifecycle: Default::default(),
             pool: PgPoolOptions::new().connect_lazy("postgres://fixture@127.0.0.1/unused")?,
             login_permits: Arc::new(Semaphore::new(4)),
-            passkeys: Arc::new(apsp_panel::passkeys::Service::new("http://127.0.0.1")),
+            passkeys: Arc::new(apsp_panel_host::passkeys::Service::new("http://127.0.0.1")),
             quality_permits: Arc::new(Semaphore::new(2)),
             domain_states: Default::default(),
             release_permits: Arc::new(Semaphore::new(1)),

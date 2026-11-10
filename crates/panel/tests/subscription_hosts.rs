@@ -6,7 +6,7 @@ mod release_support;
 
 use anyhow::{Context, Result};
 use apsp_access::subscription_hosts::{DnsApi, reconcile, sweep};
-use apsp_panel::auth::{hash_token, random_token};
+use apsp_panel_host::auth::{hash_token, random_token};
 use axum::{
     Json, Router,
     extract::{Path, RawQuery},
@@ -653,7 +653,7 @@ async fn a_user_acts_on_their_account_from_their_own_host(pool: PgPool) -> Resul
     sqlx::query(
         "INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET verified_at=EXCLUDED.verified_at,expires_at=EXCLUDED.expires_at",
     )
-    .bind(apsp_panel::auth::hash_token(
+    .bind(apsp_panel_host::auth::hash_token(
         cookie.split_once('=').context("cookie")?.1,
     ))
     .bind(now)
@@ -768,7 +768,7 @@ async fn records_of_deleted_users_do_not_outlive_them(pool: PgPool) -> Result<()
     let cookie = panel.admin_cookie().await?;
     let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET verified_at=EXCLUDED.verified_at,expires_at=EXCLUDED.expires_at")
-        .bind(apsp_panel::auth::hash_token(cookie.split_once('=').context("cookie")?.1))
+        .bind(apsp_panel_host::auth::hash_token(cookie.split_once('=').context("cookie")?.1))
         .bind(now)
         .bind(now + 3600)
         .execute(&pool)

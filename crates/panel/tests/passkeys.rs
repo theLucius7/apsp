@@ -311,7 +311,7 @@ async fn proxy_invitations_are_scoped_hashed_rotatable_and_removed_with_the_owne
             .bind(id)
             .fetch_one(&pool)
             .await?;
-    assert_eq!(saved, apsp_panel::auth::hash_token(token));
+    assert_eq!(saved, apsp_panel_host::auth::hash_token(token));
     let view: Value = panel
         .admin(Method::GET, &path, &cookie, None)
         .await?
@@ -556,7 +556,7 @@ async fn named_administrators_have_their_own_passkey_accounts(pool: PgPool) -> R
     // API tokens cannot manage anyone's passkeys.
     let token = "apsp_api_named_passkey_token";
     sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,all_servers,expires_at,created_at) VALUES($1,7,$2,'viewer','[\"servers:read\"]','[]',true,$3,0)")
-        .bind(uuid::Uuid::new_v4()).bind(apsp_panel::auth::hash_token(token)).bind(apsp_protocol::now_timestamp() + 3600).execute(&pool).await?;
+        .bind(uuid::Uuid::new_v4()).bind(apsp_panel_host::auth::hash_token(token)).bind(apsp_protocol::now_timestamp() + 3600).execute(&pool).await?;
     assert_eq!(
         panel
             .client
