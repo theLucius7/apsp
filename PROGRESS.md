@@ -1,5 +1,12 @@
 # 执行进度
 
+## 2026-11-10：重新生成接入引导脚本（PR，待合并）
+
+- 问题：#255（2026-11-07）修改了 `tools/release.py`，没有重新生成 `deploy/bootstrap.sh`；`python3 tools/render-bootstrap.py --check` 在 main 上失败，`tests/test_bootstrap.py` 有 1 项失败。新接入的服务器拿到的引导脚本里仍是旧的 `release.py`。用户 2026-11-10 选择单独开 PR 重新生成。
+- 改动：只重新生成 `deploy/bootstrap.sh`，引导脚本所带文件中只有 `tools/release.py` 一项变化（清单条目与压缩内容两行）。接入时的区别：清单校验对 sing-box `1.14.4-apsp.2` 运行时增加附属库（`libcronet`）约定；当前发布的 agent-v0.3.8 清单只有 `1.14.4-apsp.1` 的 4 个 sing-box 条目，不受影响。
+- 验证（本地，基于 main `94a8edc2`）：`render-bootstrap.py --check` 通过；`tests/test_bootstrap.py` 28 项通过（3 项跳过；main 上同一套测试 1 项失败）；`apsp-panel-host` 的安装测试 7 项、`foundation`（8）与 `server_setup`（3）通过。
+- 交付：接入流程属于部署方式，按协作规则开 PR；用户在备用机器上做一次接入测试后合并。新脚本的 blob 为 `ce7fd082…`，SHA-256 为 `5bc2a6e4…`。
+
 ## 2026-11-10：ADR 0131 步骤一（中七）——删除九张旧商务表（PR，待合并）
 
 - 用户要求：在“旧表”的选择中选“先导出，再经 PR 删除”。取舍见 `docs/open-questions.md`。
