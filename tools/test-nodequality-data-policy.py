@@ -14,7 +14,7 @@ from unittest import mock
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN = ROOT / 'plugins/nodequality'
+PLUGIN = ROOT / 'crates/observability/upstream/nodequality'
 READONLY_SOURCES = None
 
 
@@ -173,7 +173,7 @@ class DataTests(unittest.TestCase):
                     self.assertEqual(read.stdout, contents[filename])
 
     def test_builder_rejects_changed_or_missing_policy_and_data_without_publishing(self):
-        for relative in ('plugins/nodequality/data-policy.py', 'inputs/ip-dnsbl.list'):
+        for relative in ('crates/observability/upstream/nodequality/data-policy.py', 'inputs/ip-dnsbl.list'):
             for missing in (True, False):
                 with self.subTest(path=relative, missing=missing):
                     fixture = self.fixture()

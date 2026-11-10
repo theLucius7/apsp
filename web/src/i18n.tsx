@@ -52,7 +52,7 @@ const english: Record<string, string> = {
   '系统管理员': 'System administrator', '管理员': 'Administrator', '控制面板': 'Control panel', '管理员会话已登录': 'Administrator session active',
   // Navigation groups, entries and page headers follow docs/product-map.md.
   '总览': 'Overview', '监控告警': 'Monitoring and alerts', '网络': 'Network', '扩展': 'Extensions',
-  '统计报表': 'Statistics', '服务器列表': 'Server list', '运维工具': 'Operations tools', '自动化与恢复': 'Automation and recovery',
+  '统计报表': 'Statistics', '趋势与报表': 'Trends and reports', '地址与域名': 'Addresses and domains', '云资源': 'Cloud resources', '用户': 'Users', '付费服务': 'Paid services', '监测与诊断': 'Monitoring and diagnostics', '服务器列表': 'Server list', '运维工具': 'Operations tools', '自动化与恢复': 'Automation and recovery',
   '告警事件': 'Alert events', '告警设置': 'Alert settings', '网络检测': 'Network tests', '网络配置': 'Network configuration',
   '服务概览': 'Service overview', '制品与版本': 'Artifacts and versions', '网络服务': 'Network services', '运行时': 'Runtimes', '外部来源': 'External sources', '面板设置': 'Panel settings', '账号安全': 'Account security',
   '实验功能': 'Experimental', '实验': 'Experimental', '冻结': 'Frozen', '备份与恢复': 'Backup and recovery',

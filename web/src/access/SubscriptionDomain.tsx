@@ -40,7 +40,7 @@ export default function SubscriptionDomain({ onSaved }: { onSaved: () => void })
     if (saved.configured) { setEnabled(saved.enabled); setPrefix(saved.host_prefix); setTarget(saved.target); setLegacy(saved.legacy_paths) }
   }, [loaded, view.data, accounts.data])
   const zoneName = account?.config.zone_names?.[zoneId] ?? view.data?.zone_name ?? ''
-  const error = resourceWriteError(view) || (loaded && !usable.length ? '还没有可用的 Cloudflare 账号，请先在「域名解析」添加。' : '')
+  const error = resourceWriteError(view) || (loaded && !usable.length ? '还没有可用的 Cloudflare 账号，请先在「地址与域名」添加。' : '')
   const submit = () => {
     const current = view.getCurrent()
     if (!current || !account) return

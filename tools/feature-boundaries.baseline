@@ -10,7 +10,6 @@ import	web/src/access/lines/MemberLines.tsx	web/src/observability/quality.ts	acc
 import	web/src/access/portalAccess.ts	web/src/governance/passkeys.ts	access->governance
 import	web/src/api.ts	web/src/governance/control-center/reauthentication-request.ts	platform->governance
 import	web/src/components.tsx	web/src/app/section.ts	platform->app
-import	web/src/components.tsx	web/src/app/tiers.ts	platform->app
 import	web/src/costs/SupplierComparison.tsx	web/src/operations/types.ts	costs->operations
 import	web/src/costs/cloud/TrafficHistory.tsx	web/src/observability/display/Chart.tsx	costs->observability
 import	web/src/costs/cloud/TrafficHistory.tsx	web/src/resources/cloud/types.ts	costs->resources
@@ -56,7 +55,6 @@ import	web/src/observability/monitoring/AlertSettings.tsx	web/src/governance/sys
 import	web/src/observability/network-workbench/NetworkWorkbench.tsx	web/src/governance/control-center/FormDraftToolbar.tsx	observability->governance
 import	web/src/observability/servers/TrafficCorrection.tsx	web/src/resources/server-assets.ts	observability->resources
 import	web/src/operations/JobsTab.tsx	web/src/governance/control-center/FormDraftToolbar.tsx	operations->governance
-import	web/src/operations/OperationsPage.tsx	web/src/app/tiers.ts	operations->app
 import	web/src/operations/OperationsPage.tsx	web/src/governance/control-center/reauthentication-request.ts	operations->governance
 import	web/src/operations/OperationsPage.tsx	web/src/observability/IncidentsTab.tsx	operations->observability
 import	web/src/operations/OperationsPage.tsx	web/src/resources/cloud/CloudTab.tsx	operations->resources
@@ -90,7 +88,6 @@ import	web/src/resources/servers/ServerAssets.tsx	web/src/costs/currency/Currenc
 import	web/src/resources/servers/ServerAssets.tsx	web/src/costs/currency/currency.ts	resources->costs
 import	web/src/resources/servers/ServerAssets.tsx	web/src/observability/servers/TrafficCorrection.tsx	resources->observability
 import	web/src/resources/servers/ServerMigrations.tsx	web/src/networking/configuration/types.ts	resources->networking
-import	web/src/resources/servers/ServerNavigation.tsx	web/src/app/tiers.ts	resources->app
 import	web/src/resources/servers/ServerSetup.tsx	web/src/governance/control-center/preferences.ts	resources->governance
 import	web/src/resources/servers/ServerSetup.tsx	web/src/observability/probes.ts	resources->observability
 import	web/src/resources/servers/ServerSetup.tsx	web/src/observability/servers/ProbeMonitoringFields.tsx	resources->observability

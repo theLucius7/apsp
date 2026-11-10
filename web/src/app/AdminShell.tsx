@@ -10,7 +10,8 @@ import { useI18n } from '../i18n'
 import { navigation, sectionTabs, sidebarEntries } from './navigation'
 import type { NavigationItem } from './navigation'
 import AccountMenu from './AccountMenu'
-import { preloadPages, preloadRoute } from './AdminPage'
+import { preloadRoute } from './AdminPage'
+import { preloadPages } from '@/lib/pages'
 import { resolveRoute } from './routes'
 import { ConnectionNotice, ConnectionStatus } from './ConnectionStatus'
 import { SectionContext } from './section'
@@ -34,8 +35,6 @@ type Props = {
   children: ReactNode
 }
 
-const features: Record<string, string[]> = { servers: ['servers'], fleet: ['servers'], 'batch-enrollment': ['servers'], statistics: ['monitoring'], dashboard: ['monitoring'], latency: ['monitoring'], notifications: ['monitoring'], 'alert-settings': ['monitoring'], 'network-workbench': ['diagnostics'], 'network-configuration': ['network'], operations: ['operations', 'cloud'], backup: ['recovery'], expenses: ['cloud'], alicloud: ['cloud'], ddns: ['dns'], 'singbox-overview': ['proxy'], nodes: ['proxy'], 'proxy-users': ['proxy'], 'subscription-board': ['cloud'], groups: ['proxy'] }
-const globalPages = new Set(['backup', 'statistics', 'dashboard', 'latency', 'notifications', 'alert-settings', 'expenses', 'alicloud', 'singbox-overview', 'nodes', 'proxy-users', 'subscription-board', 'groups'])
 
 export default function AdminShell({ current, exact = true, busy, error, onLogout, children }: Props) {
   const { t } = useI18n()
@@ -46,7 +45,9 @@ export default function AdminShell({ current, exact = true, busy, error, onLogou
   const actor = resource.data ?? remembered
   useEffect(() => { if (resource.data) writeShellActor(resource.data) }, [resource.data])
   useEffect(preloadPages, [])
-  const visibleNavigation = navigation.filter(item => item.page === 'control-center' || item.page === 'security' || actor?.role === 'owner' || ((!globalPages.has(item.page) || actor?.all_servers) && features[item.page]?.some(feature => actor?.capabilities.includes(`${feature}:read`))))
+  // Each page's domain declares who may open it (`<domain>/pages.tsx`).
+  const visibleNavigation = navigation.filter(item => item.everyAdministrator || actor?.role === 'owner'
+    || ((!item.allServers || actor?.all_servers) && item.features?.some(feature => actor?.capabilities.includes(`${feature}:read`))))
   const desktop = useMediaQuery('(min-width: 768px)')
   const collapsed = useShellStore(state => state.collapsed)
   const setCollapsed = useShellStore(state => state.setCollapsed)
@@ -154,7 +155,8 @@ function Navigation({ items, current, collapsed }: { items: readonly NavigationI
     {groups.map((group, index) => <div key={group} className="contents">
       {collapsed
         ? index > 0 && <div className="bg-sidebar-border mx-2 my-1.5 h-px" aria-hidden="true" />
-        : <div className="text-muted-foreground flex items-center gap-1.5 px-2.5 pt-4 pb-1.5 text-[11px] font-medium tracking-[0.08em] first:pt-1"><span className="truncate">{t(group)}</span>{entries.find(entry => entry.root.group === group)?.root.tier && <TierBadge tier="experimental" className="ml-auto" />}</div>}
+        : entries.find(entry => entry.root.group === group)?.root.heading !== false
+          && <div className="text-muted-foreground flex items-center gap-1.5 px-2.5 pt-4 pb-1.5 text-[11px] font-medium tracking-[0.08em] first:pt-1"><span className="truncate">{t(group)}</span></div>}
       {entries.filter(entry => entry.root.group === group).map(({ root, href, path }) => {
         const active = activePath === path
         const Icon = root.icon
@@ -168,6 +170,7 @@ function Navigation({ items, current, collapsed }: { items: readonly NavigationI
           )}>
           <Icon className={cn('size-4 shrink-0 transition-colors', active ? 'text-sidebar-primary' : 'opacity-75 group-hover/nav:opacity-100')} aria-hidden="true" />
           <span className={cn('truncate', collapsed && 'sr-only')}>{label}</span>
+          {root.tier && !collapsed && <TierBadge tier={root.tier} className="ml-auto" />}
         </a>
         return <div key={path} className="contents">
           {collapsed ? <Tooltip><TooltipTrigger asChild>{link}</TooltipTrigger><TooltipContent side="right">{label}{root.tier && ` · ${t('实验')}`}</TooltipContent></Tooltip> : link}

@@ -157,7 +157,7 @@ try {
     assert(scale > .95 && scale < 1.05, 'Chart labels must retain their readable font size on mobile')
     if (screenshots) await page.screenshot({ path: resolve(screenshots, `detail-dark-${width}.png`), fullPage: true, animations: 'disabled' })
     if (screenshots) await page.screenshot({ path: resolve(screenshots, `detail-light-${width}.png`), fullPage: true, animations: 'disabled' })
-    await openNav(page, '服务器')
+    await openNav(page, '服务器列表')
     await page.locator('[data-slot=sidebar]').waitFor()
     assert.equal(await page.locator('[data-slot=server-display]').count(), 0)
     assert.equal(await page.evaluate(() => document.body.classList.contains('has-server-display')), false)

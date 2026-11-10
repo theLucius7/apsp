@@ -19,7 +19,7 @@ from unittest import mock
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN = ROOT / 'plugins/nodequality'
+PLUGIN = ROOT / 'crates/observability/upstream/nodequality'
 READONLY_SOURCES = None
 BASH = os.environ.get('APSP_NODEQUALITY_TEST_BASH', '/bin/bash')
 

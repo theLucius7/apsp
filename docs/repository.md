@@ -7,10 +7,9 @@
 | 路径 | 职责 |
 | --- | --- |
 | `crates/` | Rust 工作区：公共协议、面板平台、领域 crate、面板应用、Agent、适配器及原生 TCP 工具 |
-| `plugins/` | sing-box 服务文件与诊断工具（IPQuality、NodeQuality）的打包脚本、上游锁定文件；不再有 crate，不再新增插件。诊断工具的面板代码在 `crates/observability/src/diagnostic_plugins/` |
 | `web/src/` | React 界面（中文为源语言，英文为翻译，[ADR 0127](adr/0127-chinese-source-language.md)）；前端依赖与构建由 Bun 管理 |
 | `web/dist/` | 仅在本地或构建环境生成、由面板嵌入的产物；不提交 Git，不手工编辑 |
-| `deploy/` | Compose、服务定义、安装模板、生成后的独立 bootstrap 入口和发布公钥 |
+| `deploy/` | Compose、Agent 与 sing-box 运行时的服务定义、安装模板、生成后的独立 bootstrap 入口和发布公钥 |
 | `scripts/` | [面板运维、接入与验收入口](../scripts/README.md)；包含已有 CI 包装脚本 |
 | `tools/` | [构建、签名、发布、规则检查与隔离测试工具](../tools/README.md) |
 | `tests/` | 仓库工具的 Python 回归；Rust 和前端测试各自随所属代码放置 |
@@ -32,7 +31,7 @@
 | `networking` | 基础网络领域：目前是云安全组（`security_groups/`，冻结）；网络配置仍在宿主，随阶段 B2 迁入 |
 | `naming` | 名称与证书领域：DNS 账号与记录、DDNS、DNS-01 验证记录 |
 | `costs` | 成本领域：付费服务、付款、续费提醒与续费日历、供应商对照、计划退订提醒、汇率与统计币种，云的 CDT 计费流量、账单、余额与实例账单（`cloud/`）；直接读流量服务的外部来源到期 |
-| `observability` | 观测领域：遥测与历史、网卡计数与矫正、拨测与延迟检测、共用诊断任务服务与诊断工具（IP 质量、NodeQuality、TCP 质量、网络检测）、告警规则与事件、故障事件、服务器健康与事件时间线、统计与看板、中国可达性、云事件通知（`cloud_notices`）；直接调用流量服务的运行活动 |
+| `observability` | 观测领域：遥测与历史、网卡计数与矫正、拨测与延迟检测、共用诊断任务服务与诊断工具（IP 质量、NodeQuality、TCP 质量、网络检测）、告警规则与事件、故障事件、服务器健康与事件时间线、统计与看板、中国可达性、云事件通知（`cloud_notices`）；直接调用流量服务的运行活动；诊断工具（IPQuality、NodeQuality）的打包脚本、策略与上游锁定文件在 `upstream/`，签名制品与引导脚本里仍按原名 `plugins/...` 记录 |
 | `operations` | 作业领域：远程命令、终端、固定设备操作及其核对、运行时操作，以及作业、计划、维护窗口、有界自动处置与面板备份步骤，云的带宽变更、启停、换 IP 与账号刷新（`cloud/`）；排在依赖顺序最后，直接调用前面的领域 |
 | `traffic` | 流量服务领域：节点、链路、外部来源与节点库，服务器运行时的配置编译与发布、部署检查与发布批次、运行时控制与校验，Nexus 兼容桥的流量部分（`nexus_nodes/`）；用户的限速、设备数与运维记录经自己声明的 `users` 接口由服务权益回答 |
 | `access` | 服务权益领域：代理用户、策略组与套餐、资格与配额、订阅与专属地址、成员门户与账号、用户限速与会话、代理运维流程（预览与应用）、Nexus 兼容（`nexus/`：兼容桥 `bridge` 与设备会话 `sessions`，兼容桥的表只在 `bridge` 中出现）；排在流量服务之后，直接调用它 |
@@ -75,9 +74,11 @@
 | --- | --- |
 | `web/src/main.tsx` | 入口：挂载 `app/App.tsx` |
 | `web/src/app/App.tsx` | 会话读取、失效处理、公开看板访问控制与顶层页面组合 |
-| `web/src/app/routes.ts` | 解析 URL，复用看板与代理控制台的严格路径解析及旧链接兼容 |
-| `web/src/app/navigation.ts`、`tiers.ts` | 后台侧栏的分组、入口名称、当前页面归属与功能分级标记。现有界面是五个分组，目标是 ADR 0126 的六个工作区，规则与对照见[功能地图](product-map.md) |
-| `web/src/app/AdminPage.tsx` | 按解析结果选择页面，保留服务器筛选和组件重挂载边界 |
+| `web/src/<领域>/pages.tsx` | 该领域的页面清单：每个页面的地址与旧地址、名称与图标、所在分组与位置、所属入口、打开权限（能力、是否须看见全部服务器）与按需加载的组件。新增页面只改这里 |
+| `web/src/lib/pages.tsx` | 页面清单的类型与按需加载（平台层） |
+| `web/src/app/routes.ts` | 解析 URL：带参数的地址（服务器详情、节点、代理用户、费用条目、看板）在这里解析，其余按各领域清单登记的地址与旧地址查找 |
+| `web/src/app/navigation.ts` | 汇总各领域的页面清单：分组的名称与顺序、当前页面归属；功能分级标记在平台的 `lib/tiers.ts`。分组是 ADR 0126 的六个工作区，规则与对照见[功能地图](product-map.md) |
+| `web/src/app/AdminPage.tsx` | 按解析结果选择页面：普通页面由清单绘制，带参数的页面在这里传入参数，保留服务器筛选和组件重挂载边界 |
 | `web/src/app/AdminShell.tsx`、`Login.tsx` | 后台布局与登录表单 |
 | `web/src/app/Overview.tsx`、`ServerDetail.tsx`、`CommandPalette.tsx` | 组合几个领域的页面：概览、服务器详情、命令面板（页面跳转与对象搜索） |
 | `web/src/resources/` | 资源：服务器列表、接入、编辑与资产（`servers/`），云账号与云资源（`cloud/`） |
@@ -97,7 +98,7 @@
 | `web/src/stores/` | Zustand 跨组件界面状态：语言、外观、外框、会话与看板货币 |
 | `web/src/i18n.tsx` | 语言上下文、浏览器语言选择、管理员偏好同步及静态界面词典 |
 
-前端按领域目录组织（[ADR 0128](adr/0128-domain-architecture.md)、[ADR 0126](adr/0126-workspaces-language-and-addresses.md)）：每个入口属于一个领域，新增页面放进它所属领域的目录；侧栏分组由清单声明，调整分组不搬目录；同一对象允许多个入口，但只有一套模型和编辑逻辑。目录结构是 `web/src/<领域标识>/`、应用层的 `app/` 与平台的 `components/`、`lib/`、`stores/` 和根目录的通用文件（[功能划分与逻辑结构 §5.4](architecture.md#54-代码结构)），每个目录在 `tools/feature-boundaries.toml` 登记为一行；跨领域共用的数据模型由所有者公开（如观测的 `probes.ts`、资源的 `server-assets.ts`），其他领域直接引用所有者的文件。页面标题与入口同名，不加眉题，说明文字先讲“在这里做什么”。
+前端按领域目录组织（[ADR 0128](adr/0128-domain-architecture.md)、[ADR 0126](adr/0126-workspaces-language-and-addresses.md)）：每个入口属于一个领域，新增页面放进它所属领域的目录，并在该领域的 `pages.tsx` 里登记；侧栏分组由清单声明，调整分组不搬目录；同一对象允许多个入口，但只有一套模型和编辑逻辑。目录结构是 `web/src/<领域标识>/`、应用层的 `app/` 与平台的 `components/`、`lib/`、`stores/` 和根目录的通用文件（[功能划分与逻辑结构 §5.4](architecture.md#54-代码结构)），每个目录在 `tools/feature-boundaries.toml` 登记为一行；跨领域共用的数据模型由所有者公开（如观测的 `probes.ts`、资源的 `server-assets.ts`），其他领域直接引用所有者的文件。页面标题与入口同名，不加眉题，说明文字先讲“在这里做什么”。
 
 界面约定见 [ADR 0088](adr/0088-ui-component-system.md)：组件使用 `components/ui/` 中的 shadcn/ui Nova 组件，样式只写 Tailwind 类并引用 `index.css` 的设计变量，不再新增 CSS 文件或颜色字面量；图标来自 `lucide-react`，图标按钮必须有 `aria-label`；动画只用 `motion/react` 的 `m.*` 与 `lib/motion.ts` 预设，需要阅读的内容进入时只做位移、不得从透明或隐藏开始；可调分栏通过 `components/ui/resizable.tsx`，拖拽排序通过 `components/sortable.tsx`；跨组件界面状态放入 `stores/`，服务端数据仍经 `useResource` 与写保护。分区导航用 `SegmentedNav`，按钮通过 `aria-pressed`、页面链接通过 `aria-current="page"` 标记当前项；测试钩子使用 `data-slot` 与 `data-dialog`。首次加载用 `Loading` 的 `table`、`cards`、`panel` 形态显示与内容一致的骨架；开关类设置行用 `SettingRow`；用量条用 `Meter`（默认 75% 警告、90% 危险）；页面跳转与对象搜索集中在 `app/CommandPalette.tsx`，可跳转页面取自侧栏并按当前账号权限过滤。行操作只直接显示常用项，其余放进 `ActionMenu`（“更多操作”）；内容丰富的宽表格用容器查询在窄面板中堆叠为卡片，仍保持同一张表。页面跳转用 `navigate()` 或普通链接，不直接写 `location.hash`；有未保存输入的表单用 `useLeaveGuard`（或 `useFormDraft`）登记，离开检查集中在 `lib/leave-guard.ts`。响应式布局只增删外围元素，不替换承载页面内容的组件树；随数据变化的状态文字用 `t()`。按条件显示的弹窗包在 `DialogPresence` 中，让关闭动画有机会执行；列表的次要筛选与视图设置放进 `ToolbarPanel`。
 

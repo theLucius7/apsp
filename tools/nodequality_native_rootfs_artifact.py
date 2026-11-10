@@ -11,7 +11,7 @@ import tempfile
 import nodequality_history as history
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN = ROOT / "plugins/nodequality"
+PLUGIN = ROOT / "crates/observability/upstream/nodequality"
 CANONICAL_VERSION = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r1"
 VERSION = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-offline-rootfs-r1"
 BINARY = "nodequality"

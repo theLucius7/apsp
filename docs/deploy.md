@@ -216,7 +216,7 @@ Agent 资产缺失或缺少对应架构时，由维护者检查可信 GitHub Rel
 sudo apt-get update
 sudo apt-get install -y python3 minisign ca-certificates curl coreutils passwd
 sudo install -d -m 755 /usr/local/lib/apsp /etc/apsp/trust
-python3 tools/release.py render-installer --template deploy/install.sh.tmpl --agent-unit deploy/apsp-agent.service --runtime-unit plugins/sing-box/apsp-singbox@.service --output /临时目录/trusted-install.sh
+python3 tools/release.py render-installer --template deploy/install.sh.tmpl --agent-unit deploy/apsp-agent.service --runtime-unit deploy/apsp-singbox@.service --output /临时目录/trusted-install.sh
 sudo install -m 644 /临时目录/trusted-install.sh /usr/local/lib/apsp/trusted-install.sh
 sudo install -m 755 tools/bootstrap.py /usr/local/lib/apsp/bootstrap.py
 sudo install -m 644 tools/release.py /usr/local/lib/apsp/release.py

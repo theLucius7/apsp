@@ -117,11 +117,12 @@ apsp/
 │   ├── adapter-sdk/           包名 apsp-adapter-sdk
 │   └── adapter-singbox/       包名 apsp-adapter-singbox
 ├── web/                       前端
-├── plugins/sing-box/          systemd 与 OpenRC 运行时服务模板
 ├── deploy/
 │   ├── install.sh.tmpl        安装脚本模板（由面板渲染）
 │   ├── apsp-agent.service
 │   ├── apsp-agent.openrc
+│   ├── apsp-singbox@.service   sing-box 运行时服务模板（systemd）
+│   ├── apsp-singbox.openrc     sing-box 运行时服务模板（OpenRC）
 │   └── docker-compose.yml     面板 + PostgreSQL
 ├── tools/build-singbox.sh     从上游源码构建 sing-box
 ├── scripts/e2e-real.sh        真实服务器上的手动端到端验证步骤
@@ -343,7 +344,7 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-`plugins/sing-box/apsp-singbox@.service`：
+`deploy/apsp-singbox@.service`：
 
 ```ini
 [Unit]
@@ -366,7 +367,7 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-OpenRC 使用 `deploy/apsp-agent.openrc`、`plugins/sing-box/apsp-singbox.openrc`，安装为 `/etc/init.d/apsp-agent` 和 `/etc/init.d/apsp-singbox@main`。两个服务独立监督，runtime 使用专用用户、ambient capability 与 no_new_privs；日志保存在 `/var/log/apsp/`。运行时配置路径与 systemd 相同。
+OpenRC 使用 `deploy/apsp-agent.openrc`、`deploy/apsp-singbox.openrc`，安装为 `/etc/init.d/apsp-agent` 和 `/etc/init.d/apsp-singbox@main`。两个服务独立监督，runtime 使用专用用户、ambient capability 与 no_new_privs；日志保存在 `/var/log/apsp/`。运行时配置路径与 systemd 相同。
 
 **安装脚本**（`deploy/install.sh.tmpl`）：检查 root、Linux 和运行中的 systemd/OpenRC；识别架构（x86_64 对应 amd64，aarch64 对应 arm64）；支持 shadow 或 BusyBox 创建系统用户与组 `apsp-singbox`（nologin）；创建目录并设置权限；从面板下载 Agent 二进制并校验 sha256；先执行暂存二进制 `enroll`，成功后安装到版本目录、更新 current 链接和对应服务文件；启用两个服务，重启 Agent。OpenRC 使用 default runlevel，首次发布前不启动尚无配置的运行时。脚本必须可以重复执行，重复执行就相当于升级 Agent，保留已有身份与账本。
 

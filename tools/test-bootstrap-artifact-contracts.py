@@ -135,7 +135,7 @@ print('exact isolated histories and strict derivation closure')
         for directory, names in (("historical-r19", ("runner.sh.tmpl", "report.py", "rootfs.py")),
                                  ("historical-native-r1", ("native-runner.sh.tmpl", "native-report.py"))):
             for name in names:
-                path = self.stage / "plugins/nodequality" / directory / name
+                path = self.stage / "crates/observability/upstream/nodequality" / directory / name
                 original = path.read_bytes()
                 try:
                     path.write_bytes(b"raise AssertionError('changed historical code executed')\n")
@@ -161,10 +161,10 @@ inputs.loader.exec_module(module)
 closure=module.modules()
 assert set(closure)=={'profile','build','collect','parent_build','capacity'}
 for name in module.CODE_FILES:
- assert ip.runtime().ordinary(stage/name,ip.MAX_SOURCE)
+ assert ip.runtime().ordinary(ip.source_path(name),ip.MAX_SOURCE)
 for name in ('plugins/ipquality/source-helper.py','plugins/ipquality/SOURCE.md','tools/build-ipquality.py',
              'plugins/ipquality/source-lock.json','plugins/ipquality/source-policy.py','plugins/ipquality/transport.py','LICENSE'):
- assert ip.runtime().ordinary(stage/name,ip.MAX_SOURCE)
+ assert ip.runtime().ordinary(ip.source_path(name),ip.MAX_SOURCE)
 helper=ip.module('TEST_ONLY_ip_sources',ip.PLUGIN/'source-helper.py')
 assert set(helper.policy_bytes())==set(helper.POLICIES)
 assert helper.validate(helper.decode(helper.ordinary(ip.PLUGIN/'source-lock.json')))
@@ -174,7 +174,7 @@ embedded=[node.value for node in ast.parse(runner.decode('utf-8')).body
           and target.id=='ROOTFS_SOURCE' for target in node.targets)]
 assert len(embedded)==1
 verifier=ast.literal_eval(embedded[0])
-assert isinstance(verifier,str) and verifier.encode('utf-8')==(stage/'plugins/nodequality/rootfs.py').read_bytes()
+assert isinstance(verifier,str) and verifier.encode('utf-8')==(stage/'crates/observability/upstream/nodequality/rootfs.py').read_bytes()
 files={name:b'not a valid artifact' for name in ip.FILES}
 files[ip.BINARY]=runner
 try:ip.validate_files(files,ip.VERSION,'amd64')
@@ -195,7 +195,7 @@ print('isolated current IPQuality proof closure remains strict')
             if change == "modified":
                 values["tools/nodequality_history.py"] = "changed"
             elif change == "missing":
-                del values["plugins/nodequality/historical-r19/rootfs.py"]
+                del values["crates/observability/upstream/nodequality/historical-r19/rootfs.py"]
             else:
                 values["../outside.py"] = "changed"
             compressed = lzma.compress(json.dumps(values).encode(), format=lzma.FORMAT_XZ,

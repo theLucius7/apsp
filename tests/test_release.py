@@ -629,7 +629,7 @@ class ReleaseTests(unittest.TestCase):
         # Execute the actual production path through its first Agent execution.
         # Render it exactly as a release does so embedded preflight markers are expanded.
         text = release.installer_source(ROOT / "deploy/install.sh.tmpl", ROOT / "deploy/apsp-agent.service",
-                                        ROOT / "plugins/sing-box/apsp-singbox@.service", source_root=ROOT)
+                                        ROOT / "deploy/apsp-singbox@.service", source_root=ROOT)
         text = text.split("# Reject unverifiable legacy caches", 1)[0] + "\nexit 0\n"
         # Select systemd through a private marker instead of creating /run/systemd/system on the host.
         systemd_marker = self.directory / "run-systemd-system"

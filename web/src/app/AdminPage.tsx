@@ -1,94 +1,24 @@
-import { useEffect, useState } from 'react'
-import type { ComponentType, ReactNode } from 'react'
-import { ErrorNotice, PageSkeleton } from '../components'
+import type { ReactNode } from 'react'
 import type { AppRoute } from './routes'
-import { homePath } from './navigation'
+import { homePath, pageEntries } from './navigation'
+import { ServerDetail } from './pages'
+import { ProxyUsers } from '../access/pages'
+import { Expenses } from '../costs/pages'
+import { Ddns } from '../naming/pages'
+import { NetworkConfiguration } from '../networking/pages'
+import { NetworkWorkbench } from '../observability/pages'
+import { OperationsPage } from '../operations/pages'
+import { Nodes } from '../traffic/pages'
 import { buttonVariants } from '@/components/ui/button'
-import { reloadForNewRelease } from '@/lib/new-release'
-
-const preloads: (() => void)[] = []
-
-/**
- * Loads a page on its first visit. Unlike React.lazy with Suspense, completion
- * is a plain state update, so revealing the page never waits on timers; a
- * page loaded once renders synchronously afterwards. A failed load usually
- * means a new release replaced the old files, so it recovers by itself.
- */
-function lazyPage<P extends object>(load: () => Promise<{ default: ComponentType<P> }>, preload = false) {
-  let loaded: ComponentType<P> | undefined
-  let pending: Promise<ComponentType<P>> | undefined
-  const start = () => (pending ??= load().then(module => (loaded = module.default)))
-  if (preload) preloads.push(() => { void start().catch(() => { pending = undefined }) })
-  function LazyPage(props: P) {
-    const [page, setPage] = useState<ComponentType<P> | undefined>(() => loaded)
-    const [failed, setFailed] = useState(false)
-    useEffect(() => {
-      if (page) return
-      let active = true
-      start().then(component => { if (active) setPage(() => component) }, () => {
-        pending = undefined
-        if (!active) return
-        void reloadForNewRelease().then(reloading => { if (active && !reloading) setFailed(true) })
-      })
-      return () => { active = false }
-    }, [page])
-    const Page = page
-    if (Page) return <Page {...props} />
-    return failed ? <ErrorNotice message="页面加载失败，请检查网络后刷新重试。" retry={() => window.location.reload()} /> : <PageSkeleton />
-  }
-  return Object.assign(LazyPage, { preload: () => void start().catch(() => { pending = undefined }) })
-}
-
-/** Fetches the everyday pages while idle, so moving between them never waits on the network. */
-export function preloadPages() {
-  const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
-  if (connection?.saveData) return
-  const run = () => { for (const page of preloads) page() }
-  if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 4000 })
-  else setTimeout(run, 1500)
-}
-
-// Each administrator page loads on first visit, keeping the initial bundle small.
-const Servers = lazyPage(() => import('../resources/servers/Servers'), true)
-const ServerDetail = lazyPage(() => import('./ServerDetail'), true)
-const BatchEnrollment = lazyPage(() => import('../resources/servers/BatchEnrollmentPage'))
-const Artifacts = lazyPage(() => import('../governance/system/Artifacts'))
-const Security = lazyPage(() => import('../governance/system/Security'))
-const Settings = lazyPage(() => import('../governance/system/Settings'))
-const Backup = lazyPage(() => import('../governance/system/Backup'))
-const AlertSettings = lazyPage(() => import('../observability/monitoring/AlertSettings'))
-const Notifications = lazyPage(() => import('../observability/monitoring/Notifications'), true)
-const LineQuality = lazyPage(() => import('../observability/monitoring/LineQuality'))
-const LineQualitySettings = lazyPage(() => import('../observability/monitoring/LineQualitySettings'))
-const Statistics = lazyPage(() => import('../observability/statistics/Statistics'), true)
-const SingboxOverview = lazyPage(() => import('./Overview'), true)
-const Nodes = lazyPage(() => import('../traffic/Nodes'), true)
-const ProxyUsers = lazyPage(() => import('../access/ProxyUsers'), true)
-const SubscriptionBoard = lazyPage(() => import('../costs/subscriptions/SubscriptionBoard'), true)
-const Groups = lazyPage(() => import('../access/Groups'), true)
-const Expenses = lazyPage(() => import('../costs/expenses/Expenses'), true)
-const Ddns = lazyPage(() => import('../naming/dns/Ddns'))
-const Alicloud = lazyPage(() => import('../resources/cloud/Alicloud'))
-const FleetOperations = lazyPage(() => import('../operations/fleet/FleetOperations'))
-const NetworkWorkbench = lazyPage(() => import('../observability/network-workbench/NetworkWorkbench'))
-const NetworkConfiguration = lazyPage(() => import('../networking/configuration/NetworkConfiguration'))
-const OperationsPage = lazyPage(() => import('../operations/OperationsPage'))
-const ControlCenter = lazyPage(() => import('../governance/control-center/ControlCenter'))
 
 /**
  * Starts fetching the code of the page a route opens. The first screen calls it while
  * the session is still being checked, so the page is ready when the console appears.
  */
 export function preloadRoute(route: AppRoute) {
-  const pages: Partial<Record<AppRoute['page'], { preload: () => void }>> = {
-    server: ServerDetail, fleet: FleetOperations, 'batch-enrollment': BatchEnrollment, 'network-workbench': NetworkWorkbench,
-    'network-configuration': NetworkConfiguration, operations: OperationsPage, 'control-center': ControlCenter, servers: Servers,
-    'singbox-overview': SingboxOverview, statistics: Statistics, latency: LineQuality, 'latency-settings': LineQualitySettings,
-    alicloud: Alicloud, ddns: Ddns, nodes: Nodes, expenses: Expenses, 'proxy-users': ProxyUsers, 'subscription-board': SubscriptionBoard,
-    groups: Groups, artifacts: Artifacts, settings: Settings, backup: Backup,
-    'alert-settings': AlertSettings, notifications: Notifications, security: Security,
-  }
-  pages[route.page]?.preload()
+  if (route.page === 'server') return ServerDetail.preload()
+  const entry = pageEntries.find(item => item.page === route.page)
+  if (entry && 'preload' in entry) entry.preload()
 }
 
 export default function AdminPage({ route }: { route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' | 'member-join' | 'member-login' }> }) {
@@ -105,19 +35,6 @@ function page(route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' | 'm
       if (section === 'ddns') return <Ddns key={serverId} serverId={serverId} />
       return <ServerDetail key={serverId} id={serverId} section={section} />
     }
-    case 'fleet': return <FleetOperations />
-    case 'batch-enrollment': return <BatchEnrollment />
-    case 'network-workbench': return <NetworkWorkbench />
-    case 'network-configuration': return <NetworkConfiguration />
-    case 'operations': return <OperationsPage />
-    case 'control-center': return <ControlCenter />
-    case 'servers': return <Servers />
-    case 'singbox-overview': return <SingboxOverview />
-    case 'statistics': return <Statistics />
-    case 'latency': return <LineQuality />
-    case 'latency-settings': return <LineQualitySettings />
-    case 'alicloud': return <Alicloud />
-    case 'ddns': return <Ddns />
     case 'nodes': return <Nodes
       key="nodes"
       serverId={route.serverId}
@@ -129,18 +46,15 @@ function page(route: Exclude<AppRoute, { page: 'dashboard' | 'proxy-portal' | 'm
     />
     case 'expenses': return <Expenses item={route.item} server={route.server} />
     case 'proxy-users': return <ProxyUsers key={route.userId ?? 'users'} initialUserId={route.userId} />
-    case 'subscription-board': return <SubscriptionBoard />
-    case 'groups': return <Groups />
-    case 'artifacts': return <Artifacts />
-    case 'settings': return <Settings />
-    case 'backup': return <Backup />
-    case 'alert-settings': return <AlertSettings />
-    case 'notifications': return <Notifications />
-    case 'security': return <Security />
-    case 'not-found': return <div className="grid justify-items-center gap-4 px-5 py-16 text-center">
-      <h1 className="text-base font-semibold">这个页面不存在</h1>
-      <p className="text-muted-foreground text-sm">链接可能已失效。从左侧导航选择一个页面，或回到概览。</p>
-      <a className={buttonVariants()} href={`#${homePath}`}>返回概览</a>
-    </div>
+    default: {
+      const entry = pageEntries.find(item => item.page === route.page)
+      return entry && 'render' in entry ? entry.render() : notFound
+    }
   }
 }
+
+const notFound = <div className="grid justify-items-center gap-4 px-5 py-16 text-center">
+  <h1 className="text-base font-semibold">这个页面不存在</h1>
+  <p className="text-muted-foreground text-sm">链接可能已失效。从左侧导航选择一个页面，或回到概览。</p>
+  <a className={buttonVariants()} href={`#${homePath}`}>返回概览</a>
+</div>

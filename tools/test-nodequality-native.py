@@ -23,7 +23,7 @@ from unittest import mock
 
 sys.dont_write_bytecode = True
 from nodequality_native_fixture_process import OwnedProcesses, cancellation_signals
-PLUGIN = pathlib.Path(__file__).resolve().parent.parent / "plugins/nodequality"
+PLUGIN = pathlib.Path(__file__).resolve().parent.parent / "crates/observability/upstream/nodequality"
 FULL_START_GUARD = "[[ $mode != full ]] || die 'new full diagnostics are paused: complete tool provenance, redistribution rights, upload control and host side effects remain unverified'"
 module_spec = importlib.util.spec_from_file_location("nodequality_report", PLUGIN / "native-report.py")
 report = importlib.util.module_from_spec(module_spec)
@@ -522,7 +522,7 @@ class BuildTests(unittest.TestCase):
             manifest = root / "SHA256SUMS"
             checksum = hashlib.sha256(content).hexdigest() + "  amd64\n"
             manifest.write_text(checksum)
-            result = subprocess.run(["bash", str(PLUGIN.parents[1] / "tools/build-nodequality-native.sh"), "amd64", directory],
+            result = subprocess.run(["bash", str(pathlib.Path(__file__).resolve().parents[1] / "tools/build-nodequality-native.sh"), "amd64", directory],
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("immutable artifact already exists", result.stderr)
@@ -591,14 +591,14 @@ class BuildTests(unittest.TestCase):
                 self.assertFalse(workspace.exists())
 
     def test_shell_syntax_and_nonexecuting_help(self):
-        for script in (PLUGIN / "native-runner.sh.tmpl", PLUGIN / "exit-observer.sh", PLUGIN / "curl-shim.sh", PLUGIN / "runtime-curl.sh", PLUGIN / "chroot-shim.sh", PLUGIN.parents[1] / "tools/build-nodequality-native.sh"):
+        for script in (PLUGIN / "native-runner.sh.tmpl", PLUGIN / "exit-observer.sh", PLUGIN / "curl-shim.sh", PLUGIN / "runtime-curl.sh", PLUGIN / "chroot-shim.sh", pathlib.Path(__file__).resolve().parents[1] / "tools/build-nodequality-native.sh"):
             subprocess.run(["bash", "-n", str(script)], check=True)
         result = subprocess.run(["bash", str(PLUGIN / "native-runner.sh.tmpl"), "--version"],
                                 capture_output=True, text=True, check=True)
         self.assertEqual(result.stdout.strip(), "nodequality a92fca6c0067df29ddd03fdc2fee6f3000f64545-apsp-native-r2")
 
     def test_existing_architecture_checksums_are_not_replaced(self):
-        script = (PLUGIN.parents[1] / "tools/build-nodequality-native.sh").read_text()
+        script = (pathlib.Path(__file__).resolve().parents[1] / "tools/build-nodequality-native.sh").read_text()
         source = script.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
         for state in ("empty", "valid", "tampered", "missing-sum", "missing-file", "duplicate", "symlink"):
             with self.subTest(state=state):

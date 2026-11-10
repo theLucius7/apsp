@@ -14,7 +14,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('node_query', ROOT / 'plugins/nodequality/node-query.py')
+spec = importlib.util.spec_from_file_location('node_query', ROOT / 'crates/observability/upstream/nodequality/node-query.py')
 query = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(query)
 KEY = 'TEST_ONLY_private_api_credential_12345'
@@ -228,7 +228,7 @@ class NodeQueryContracts(unittest.TestCase):
             workspace = Path(directory).resolve()
             source = workspace / 'node-ips.json'
             os.mkfifo(source, mode=0o600)
-            result = subprocess.run([sys.executable, str(ROOT / 'plugins/nodequality/node-query.py'),
+            result = subprocess.run([sys.executable, str(ROOT / 'crates/observability/upstream/nodequality/node-query.py'),
                                      '--workspace', str(workspace), '--ips-file', str(source),
                                      '--ip-version', 'both', '--job-id', JOB],
                                     capture_output=True, text=True, timeout=3)
@@ -279,7 +279,7 @@ with patch.object(Path, 'lstat', return_value=parent), patch.object(query.os, 'f
 '''
             # Preserve the existing root/stat fixture contract, but open a real
             # owned FIFO with no writer in a bounded, independently reaped child.
-            result = subprocess.run([sys.executable, '-c', script, str(ROOT / 'plugins/nodequality/node-query.py'), str(path)],
+            result = subprocess.run([sys.executable, '-c', script, str(ROOT / 'crates/observability/upstream/nodequality/node-query.py'), str(path)],
                                     capture_output=True, text=True, timeout=3)
             self.assertEqual(result.returncode, 0, result.stderr)
             configured = json.loads(result.stdout)

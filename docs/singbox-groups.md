@@ -1,6 +1,6 @@
 # sing-box 策略与套餐使用说明
 
-策略组与套餐组位于 **sing-box 插件 → 策略与套餐**；直连节点、订阅来源和有序链路在 **代理节点** 内管理，不属于服务器的通用监控配置。代理用户详情分别分配策略组和套餐。实现约束见 [ADR 0035](adr/0035-singbox-policy-package-groups.md) 与 [资源生命周期 ADR 0071](adr/0071-proxy-resource-batch-lifecycle.md)。
+策略组与套餐组位于 **网络服务 → 策略与套餐**；直连节点、订阅来源和有序链路在 **网络服务 → 节点** 内管理，不属于服务器的通用监控配置。代理用户详情分别分配策略组和套餐。实现约束见 [ADR 0035](adr/0035-singbox-policy-package-groups.md) 与 [资源生命周期 ADR 0071](adr/0071-proxy-resource-batch-lifecycle.md)。
 
 订阅来源的获取、导入、不可变版本，以及受管节点与订阅节点混合的有序链路已经实现。有序链路由一个受管公开入口和其后 1 至 8 个代理跳组成，订阅中的具体节点可以作为中间跳或出口；来源本身不是服务器，也不是对用户开放的入口。来源生命周期见 [ADR 0072](adr/0072-subscription-source-lifecycle.md) 和订阅来源规则，完整路径约束见 [ADR 0073](adr/0073-ordered-path-publication-and-native-probe.md)。源码、本地回归与原生流量证据见[有序链路验收记录](acceptance/ordered-paths.md)；真实 Agent 托管整链与正式部署仍待验。
 
