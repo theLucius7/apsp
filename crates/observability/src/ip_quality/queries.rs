@@ -1,8 +1,9 @@
 use super::providers::ProviderRegistry;
 use super::{
     CACHE_SECS, IpQuality, QualityDatabase, QueryAttempt, QueryError, QueryErrorKind,
-    database_result, documentation_ip, public_ip,
+    database_result,
 };
+use crate::net::{documentation_ip, public_ip};
 use apsp_protocol::now_timestamp;
 use futures_util::{StreamExt, stream};
 use reqwest::Client;

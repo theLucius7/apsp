@@ -21,6 +21,7 @@ use apsp_governance::{auth, control_center};
 use apsp_panel_host::{
     AppState,
     error::{self, ApiError, ApiResult},
+    notifications::queue::{Policy, Queue},
 };
 use apsp_protocol::now_timestamp;
 use axum::{
@@ -34,6 +35,10 @@ use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
 type Tx<'a> = Transaction<'a, Postgres>;
+
+/// The message queues costs keeps, each drained by the platform's deliverer.
+pub const QUEUES: &[Policy] = &[<worker::Reminders<'static> as Queue>::POLICY];
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .merge(cloud::traffic_history::routes())

@@ -6,8 +6,13 @@ use crate::text::label;
 use crate::{
     AppState, control_center,
     error::{ApiError, ApiResult},
+    notifications::{
+        Failure,
+        queue::{self, Backoff, Claim, Claimed, Claiming, Claims, Outcome, Policy, Queue},
+    },
     settings::Settings,
 };
+use apsp_panel_host::ports::BoxFuture;
 use apsp_protocol::now_timestamp;
 use axum::{
     Json,
@@ -37,14 +42,28 @@ async fn authorize(
     control_center::require_servers(state, headers, targets, scope).await
 }
 
+/// SQL that holds true while notifications about the server `server` are held back at
+/// `at` (both SQL expressions): a maintenance window that suppresses notifications covers
+/// the server, or the server is in its own maintenance lifecycle. Incidents, server alerts
+/// and reachability alerts share this one condition.
+pub(crate) fn notifications_held(server: &str, at: &str) -> String {
+    format!(
+        "(EXISTS(SELECT 1 FROM operations_maintenance held_m WHERE {server}=ANY(held_m.targets) AND held_m.suppress_notifications AND held_m.starts_at<={at} AND held_m.ends_at>{at}) \
+         OR EXISTS(SELECT 1 FROM fleet_profiles held_p WHERE held_p.server_id={server} AND held_p.lifecycle='maintenance' AND COALESCE(held_p.maintenance_from,0)<={at} AND (held_p.maintenance_until IS NULL OR held_p.maintenance_until>{at})))"
+    )
+}
+
 /// A maintenance window or the server's own maintenance lifecycle silences its incidents.
 async fn notifications_suppressed(
     pool: &sqlx::PgPool,
     server: i64,
     now: i64,
 ) -> Result<bool, sqlx::Error> {
-    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM operations_maintenance WHERE $1=ANY(targets) AND suppress_notifications AND starts_at<=$2 AND ends_at>$2) OR EXISTS(SELECT 1 FROM fleet_profiles WHERE server_id=$1 AND lifecycle='maintenance' AND COALESCE(maintenance_from,0)<=$2 AND (maintenance_until IS NULL OR maintenance_until>$2))")
-        .bind(server).bind(now).fetch_one(pool).await
+    sqlx::query_scalar(&format!("SELECT {}", notifications_held("$1", "$2")))
+        .bind(server)
+        .bind(now)
+        .fetch_one(pool)
+        .await
 }
 
 pub async fn list(
@@ -644,69 +663,141 @@ async fn enqueue(
     Ok(())
 }
 
+/// Incident messages: up to four leased together and sent after the claim commits, so a
+/// failed commit after a successful send cannot deliver one again; a crash retries it after
+/// the lease. Five sends each; held messages wait a minute.
+const POLICY: Policy = Policy {
+    table: "operations_incident_deliveries",
+    claims: 1,
+    claiming: Claiming::Leased {
+        seconds: 300,
+        batch: 4,
+    },
+    attempts: 5,
+    backoff: Backoff::Doubling {
+        first: 30,
+        doublings: 5,
+        min: 1,
+        max: 86_400,
+    },
+    held: Some(60),
+};
+
+/// The incident messages due in one observation pass, all at the time of the pass.
+pub(crate) struct Deliveries<'a> {
+    state: &'a AppState,
+    settings: &'a Settings,
+    now: i64,
+}
+
+pub(crate) struct Delivery {
+    id: i64,
+    channel: String,
+    payload: String,
+}
+
+impl Queue for Deliveries<'_> {
+    const POLICY: Policy = POLICY;
+    type Message = Delivery;
+    type Error = ApiError;
+
+    fn now(&self) -> i64 {
+        self.now
+    }
+
+    fn claim(&self, claim: Claim) -> Claims<'_, Delivery, ApiError> {
+        Box::pin(async move {
+            let mut tx = self.state.pool.begin().await?;
+            let rows=sqlx::query("SELECT d.*,i.server_id,i.status AS incident_status,i.source_key,i.evidence FROM operations_incident_deliveries d JOIN operations_incidents i ON i.id=d.incident_id WHERE d.status='pending' AND d.next_attempt_at<=$1 ORDER BY d.id LIMIT $2 FOR UPDATE OF d SKIP LOCKED").bind(claim.now).bind(claim.limit).fetch_all(&mut *tx).await?;
+            let mut claimed = Vec::new();
+            for row in rows {
+                let id: i64 = row.get("id");
+                let server: Option<i64> = row.get("server_id");
+                let server_suppressed = if let Some(server) = server {
+                    notifications_suppressed(&self.state.pool, server, claim.now).await?
+                } else {
+                    false
+                };
+                let certificate_suppressed =
+                    certificates::certificate(&row.get::<String, _>("source_key")).is_some()
+                        && certificates::suppressed(
+                            self.state,
+                            &row.get::<Value, _>("evidence"),
+                            claim.now,
+                        )
+                        .await?;
+                if server_suppressed || certificate_suppressed {
+                    sqlx::query(
+                        "UPDATE operations_incident_deliveries SET next_attempt_at=$2 WHERE id=$1",
+                    )
+                    .bind(id)
+                    .bind(claim.held_until)
+                    .execute(&mut *tx)
+                    .await?;
+                    continue;
+                }
+                if row.get::<String, _>("incident_status") == "resolved"
+                    && row.get::<String, _>("kind") != "recovery"
+                {
+                    sqlx::query(
+                        "UPDATE operations_incident_deliveries SET status='cancelled' WHERE id=$1",
+                    )
+                    .bind(id)
+                    .execute(&mut *tx)
+                    .await?;
+                    continue;
+                }
+                sqlx::query("UPDATE operations_incident_deliveries SET attempts=attempts+1,next_attempt_at=$2 WHERE id=$1")
+                    .bind(id)
+                    .bind(claim.lease_until)
+                    .execute(&mut *tx)
+                    .await?;
+                claimed.push(Claimed {
+                    message: Delivery {
+                        id,
+                        channel: row.get("channel"),
+                        payload: row.get("payload"),
+                    },
+                    attempts: row.get("attempts"),
+                });
+            }
+            tx.commit().await?;
+            Ok(claimed)
+        })
+    }
+
+    fn send<'a>(&'a self, delivery: &'a Delivery) -> BoxFuture<'a, Result<(), Failure>> {
+        Box::pin(crate::notifications::delivery::send(
+            self.settings,
+            &delivery.channel,
+            &delivery.payload,
+        ))
+    }
+
+    fn settle(&self, delivery: Delivery, outcome: Outcome) -> BoxFuture<'_, ApiResult<()>> {
+        Box::pin(async move {
+            if outcome.sent() {
+                sqlx::query("UPDATE operations_incident_deliveries SET status='sent',delivered_at=$2,last_error=NULL WHERE id=$1").bind(delivery.id).bind(outcome.finished_at).execute(&self.state.pool).await?;
+            } else {
+                sqlx::query("UPDATE operations_incident_deliveries SET status=$2,last_error=$3,next_attempt_at=$4 WHERE id=$1").bind(delivery.id).bind(if outcome.last_attempt { "failed" } else { "pending" }).bind(&outcome.error).bind(outcome.retry_at).execute(&self.state.pool).await?;
+            }
+            Ok(())
+        })
+    }
+}
+
 async fn dispatch(state: &AppState, now: i64) -> ApiResult<()> {
-    let mut tx = state.pool.begin().await?;
     let settings: Value = sqlx::query_scalar("SELECT settings FROM panel_settings WHERE singleton")
-        .fetch_one(&mut *tx)
+        .fetch_one(&state.pool)
         .await?;
     let settings: Settings = serde_json::from_value(settings).map_err(anyhow::Error::from)?;
     if !settings.notification_enabled {
         return Ok(());
     }
-    let rows=sqlx::query("SELECT d.*,i.server_id,i.status AS incident_status,i.source_key,i.evidence FROM operations_incident_deliveries d JOIN operations_incidents i ON i.id=d.incident_id WHERE d.status='pending' AND d.next_attempt_at<=$1 ORDER BY d.id LIMIT 4 FOR UPDATE OF d SKIP LOCKED").bind(now).fetch_all(&mut *tx).await?;
-    let mut claimed = Vec::new();
-    for row in rows {
-        let id: i64 = row.get("id");
-        let server: Option<i64> = row.get("server_id");
-        let server_suppressed = if let Some(server) = server {
-            notifications_suppressed(&state.pool, server, now).await?
-        } else {
-            false
-        };
-        let certificate_suppressed = certificates::certificate(&row.get::<String, _>("source_key"))
-            .is_some()
-            && certificates::suppressed(state, &row.get::<Value, _>("evidence"), now).await?;
-        if server_suppressed || certificate_suppressed {
-            sqlx::query("UPDATE operations_incident_deliveries SET next_attempt_at=$2 WHERE id=$1")
-                .bind(id)
-                .bind(now + 60)
-                .execute(&mut *tx)
-                .await?;
-            continue;
-        }
-        if row.get::<String, _>("incident_status") == "resolved"
-            && row.get::<String, _>("kind") != "recovery"
-        {
-            sqlx::query("UPDATE operations_incident_deliveries SET status='cancelled' WHERE id=$1")
-                .bind(id)
-                .execute(&mut *tx)
-                .await?;
-            continue;
-        }
-        // Lease the delivery and commit before sending, so a failed commit after a
-        // successful send cannot deliver it again; a crash retries after the lease.
-        sqlx::query("UPDATE operations_incident_deliveries SET attempts=attempts+1,next_attempt_at=$2 WHERE id=$1")
-            .bind(id)
-            .bind(now + 300)
-            .execute(&mut *tx)
-            .await?;
-        claimed.push((
-            id,
-            row.get::<String, _>("channel"),
-            row.get::<String, _>("payload"),
-            row.get::<i32, _>("attempts"),
-        ));
-    }
-    tx.commit().await?;
-    for (id, channel, payload, attempts) in claimed {
-        match crate::notifications::delivery::send(&settings, &channel, &payload).await {
-            Ok(()) => {
-                sqlx::query("UPDATE operations_incident_deliveries SET status='sent',delivered_at=$2,last_error=NULL WHERE id=$1").bind(id).bind(now).execute(&state.pool).await?;
-            }
-            Err((error, retry)) => {
-                sqlx::query("UPDATE operations_incident_deliveries SET status=CASE WHEN attempts>=5 THEN 'failed' ELSE 'pending' END,last_error=$2,next_attempt_at=$3 WHERE id=$1").bind(id).bind(error).bind(now+retry.unwrap_or(30*(1_i64<<attempts.min(5)))).execute(&state.pool).await?;
-            }
-        }
-    }
-    Ok(())
+    queue::deliver(&Deliveries {
+        state,
+        settings: &settings,
+        now,
+    })
+    .await
 }

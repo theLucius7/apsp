@@ -156,61 +156,6 @@ async fn run(config: &Config, network: &MockNetwork) -> Result<Outcome, Failure>
 }
 
 #[test]
-fn literal_targets_reject_special_ipv4_and_embedded_or_reserved_ipv6() {
-    for ip in [
-        "0.0.0.0",
-        "0.0.0.1",
-        "10.0.0.1",
-        "127.0.0.1",
-        "169.254.169.254",
-        "172.16.0.1",
-        "192.168.0.1",
-        "100.64.0.1",
-        "192.0.0.9",
-        "192.0.2.1",
-        "192.88.99.1",
-        "198.18.0.1",
-        "198.51.100.1",
-        "203.0.113.1",
-        "224.0.0.1",
-        "240.0.0.1",
-        "255.255.255.255",
-        "::",
-        "::1",
-        "::7f00:1",
-        "::ffff:8.8.8.8",
-        "::ffff:127.0.0.1",
-        "::ffff:0:7f00:1",
-        "64:ff9b::808:808",
-        "64:ff9b:1::1",
-        "fc00::1",
-        "fd00::1",
-        "fe80::1",
-        "2001::1",
-        "2001:20::1",
-        "2001:db8::1",
-        "2002:808:808::1",
-        "3fff::1",
-        // The whole 3fff::/16 stays blocked, not only the documentation /20.
-        "3fff:1000::1",
-        "5f00::1",
-    ] {
-        assert!(!public_address(ip.parse().unwrap()), "{ip}");
-    }
-    for ip in [
-        "8.8.8.8",
-        "1.1.1.1",
-        "2003::1",
-        "2600::1",
-        "2a00::1",
-        "2606:4700::1111",
-        "2001:4860:4860::8888",
-    ] {
-        assert!(public_address(ip.parse().unwrap()), "{ip}");
-    }
-}
-
-#[test]
 fn url_and_auth_validation_are_write_only_and_do_not_allow_header_overrides() {
     for url in [
         "http://download.example.invalid/a",

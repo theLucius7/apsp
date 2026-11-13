@@ -53,24 +53,20 @@ impl Request {
     }
 }
 
+/// A probe target: a name, with at most one trailing dot, or a unicast address.
 fn valid_target(value: &str) -> bool {
-    if let Ok(ip) = value.parse::<std::net::IpAddr>() {
-        return !ip.is_unspecified()
-            && !ip.is_multicast()
-            && !matches!(ip, std::net::IpAddr::V4(ip) if ip.is_broadcast());
-    }
-    value.len() <= 253
-        && value.trim_end_matches('.').split('.').all(|label| {
-            !label.is_empty()
-                && label.len() <= 63
-                && !label.starts_with('-')
-                && !label.ends_with('-')
-                && label
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-        })
-        && !value.is_empty()
-        && !value.ends_with("..")
+    crate::net::host(
+        value,
+        crate::net::HostRules {
+            ip: Some(|ip| {
+                !ip.is_unspecified()
+                    && !ip.is_multicast()
+                    && !matches!(ip, std::net::IpAddr::V4(ip) if ip.is_broadcast())
+            }),
+            trailing_dots: 1,
+            ..Default::default()
+        },
+    )
 }
 
 #[derive(Clone, Serialize)]

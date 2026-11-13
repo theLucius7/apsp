@@ -1,6 +1,7 @@
 use super::*;
 use crate::ip_quality::{QueryErrorKind, query_all};
 use anyhow::Result;
+use apsp_panel_host::http::Outbound;
 use axum::{
     Json, Router,
     extract::{Query, State},
@@ -86,10 +87,11 @@ impl Source {
             )
             .with_state(mode.clone());
         let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let client = Client::builder()
-            .no_proxy()
-            .timeout(Duration::from_secs(2))
-            .build()?;
+        let client = Outbound {
+            timeout: Some(Duration::from_secs(2)),
+            ..Outbound::default()
+        }
+        .build()?;
         Ok(Self {
             origin,
             mode,
@@ -99,11 +101,12 @@ impl Source {
     }
 
     async fn query(&self, ips: &[String], at: i64) -> Vec<IpQuality> {
-        let timeout_client = Client::builder()
-            .no_proxy()
-            .timeout(Duration::from_millis(100))
-            .build()
-            .unwrap();
+        let timeout_client = Outbound {
+            timeout: Some(Duration::from_millis(100)),
+            ..Outbound::default()
+        }
+        .build()
+        .unwrap();
         let client = if self.mode.load(Ordering::SeqCst) == 3 {
             &timeout_client
         } else {
@@ -268,7 +271,7 @@ async fn concurrent_admission_and_an_interrupted_refresh_use_durable_locks(
         .execute(&pool)
         .await?;
     let mut failed = query_all(
-        &Client::new(),
+        &Outbound::default().build()?,
         "http://source.invalid",
         &["192.0.2.1".into()],
         false,

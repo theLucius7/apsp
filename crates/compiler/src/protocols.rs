@@ -1,4 +1,5 @@
-use crate::{Access, CompileError, Node, invalid_node, stat_name, valid_dns_name};
+use crate::{Access, CompileError, Node, invalid_node, stat_name};
+use apsp_protocol::names::hostname;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -178,7 +179,7 @@ pub(crate) fn validate(node: &Node) -> Result<(), CompileError> {
         || node.protocol_config.tls().is_some()
         || matches!(node.protocol_config, ProtocolConfig::Shadowtls { .. })
     {
-        if !valid_dns_name(&node.sni) || node.sni.parse::<std::net::IpAddr>().is_ok() {
+        if !hostname(&node.sni) || node.sni.parse::<std::net::IpAddr>().is_ok() {
             return Err(fail("sni must be a DNS hostname"));
         }
     } else if !node.sni.is_empty() {
@@ -260,7 +261,7 @@ pub(crate) fn validate(node: &Node) -> Result<(), CompileError> {
                 || email.chars().any(|c| c.is_whitespace() || c.is_control())
                 || !email.split_once('@').is_some_and(|(local, domain)| {
                     !local.is_empty()
-                        && valid_dns_name(domain)
+                        && hostname(domain)
                         && domain.contains('.')
                         && !domain.contains('@')
                 })
@@ -285,7 +286,7 @@ pub(crate) fn validate(node: &Node) -> Result<(), CompileError> {
             || domains.len() > 32
             || domains
                 .iter()
-                .any(|d| !valid_dns_name(d.strip_prefix("*.").unwrap_or(d)))
+                .any(|d| !hostname(d.strip_prefix("*.").unwrap_or(d)))
             || !domains.iter().any(|d| {
                 d == &node.sni
                     || d.strip_prefix("*.").is_some_and(|d| {

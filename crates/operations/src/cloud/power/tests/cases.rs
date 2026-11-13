@@ -217,7 +217,10 @@ async fn cloud_notices_deduplicate_and_retry_without_real_delivery(pool: PgPool)
         assert_eq!(channel, "telegram");
         assert!(payload.contains("测试事件"));
         assert!(!payload.contains("TEST_ONLY_SECRET"));
-        Err(("测试限流".into(), Some(321)))
+        Err(apsp_panel_host::notifications::Failure {
+            message: "测试限流".into(),
+            retry_after: Some(321),
+        })
     })
     .await
     .unwrap();

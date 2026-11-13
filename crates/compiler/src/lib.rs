@@ -14,6 +14,7 @@ pub use paths::{
     required_build_tags, validate_path,
 };
 
+use apsp_protocol::names::hostname;
 use base64::{
     Engine,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
@@ -307,8 +308,8 @@ fn validate_node(node: &Node) -> Result<(), CompileError> {
             || !address_names.insert(&address.name)
             || !valid_public_host(&address.server)
             || address.port == 0
-            || address.sni.as_ref().is_some_and(|s| !valid_dns_name(s))
-            || address.host.as_ref().is_some_and(|s| !valid_dns_name(s))
+            || address.sni.as_ref().is_some_and(|s| !hostname(s))
+            || address.host.as_ref().is_some_and(|s| !hostname(s))
         {
             return Err(invalid_node(node, "invalid or duplicate public address"));
         }
@@ -376,7 +377,7 @@ fn valid_public_host(value: &str) -> bool {
     if host != value {
         return host.parse::<std::net::Ipv6Addr>().is_ok();
     }
-    host.parse::<IpAddr>().is_ok() || valid_dns_name(host)
+    host.parse::<IpAddr>().is_ok() || hostname(host)
 }
 
 fn unbracket_host(value: &str) -> &str {
@@ -384,20 +385,6 @@ fn unbracket_host(value: &str) -> &str {
         .strip_prefix('[')
         .and_then(|host| host.strip_suffix(']'))
         .unwrap_or(value)
-}
-
-fn valid_dns_name(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 253
-        && value.split('.').all(|label| {
-            !label.is_empty()
-                && label.len() <= 63
-                && !label.starts_with('-')
-                && !label.ends_with('-')
-                && label
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-        })
 }
 
 fn percent_encode(value: &str) -> String {

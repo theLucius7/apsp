@@ -80,13 +80,12 @@ impl Source {
         registry
     }
     pub fn client(&self) -> reqwest::Client {
-        reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .retry(reqwest::retry::never())
-            .timeout(Duration::from_millis(100))
-            .build()
-            .unwrap()
+        apsp_panel_host::http::Outbound {
+            timeout: Some(Duration::from_millis(100)),
+            ..Default::default()
+        }
+        .build()
+        .unwrap()
     }
 }
 

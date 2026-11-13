@@ -1,5 +1,5 @@
 use super::{
-    lock_settings,
+    lock_settings, outbox,
     webhook::{self, Config, Preset},
 };
 use crate::{
@@ -81,17 +81,15 @@ pub async fn apply(state: &AppState, update: Update) -> ApiResult<Json<Value>> {
         ));
     }
     webhook::validate(&config).map_err(|message| ApiError::BadRequest(message.into()))?;
-    if !config.enabled || settings.webhook.as_ref() != Some(&config) {
-        sqlx::query("UPDATE notification_outbox SET status='cancelled' WHERE channel='webhook' AND status='pending'")
-            .execute(&mut *tx).await?;
-    }
     if settings.webhook.as_ref() != Some(&config) {
         sqlx::query("DELETE FROM notification_channel_tests WHERE channel='webhook'")
             .execute(&mut *tx)
             .await?;
     }
     let result = view(Some(&config));
+    let old = settings.clone();
     settings.webhook = Some(config);
+    outbox::settings_changed(&mut tx, &old, &settings).await?;
     sqlx::query("UPDATE panel_settings SET settings=$1 WHERE singleton")
         .bind(json!(settings))
         .execute(&mut *tx)
@@ -110,12 +108,13 @@ fn same_origin(left: &str, right: &str) -> bool {
 pub async fn clear(state: &AppState) -> ApiResult<Json<Value>> {
     let mut tx = state.pool.begin().await?;
     let mut settings = lock_settings(&mut tx).await?;
+    let old = settings.clone();
     settings.webhook = None;
     sqlx::query("UPDATE panel_settings SET settings=$1 WHERE singleton")
         .bind(json!(settings))
         .execute(&mut *tx)
         .await?;
-    sqlx::query("UPDATE notification_outbox SET status='cancelled' WHERE channel='webhook' AND status='pending'").execute(&mut *tx).await?;
+    outbox::settings_changed(&mut tx, &old, &settings).await?;
     sqlx::query("DELETE FROM notification_channel_tests WHERE channel='webhook'")
         .execute(&mut *tx)
         .await?;

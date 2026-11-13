@@ -194,12 +194,13 @@ async fn fetch_json(
     Err(last)
 }
 async fn fetch_json_once(endpoint: &str, credential: Option<&Value>) -> Result<Value, String> {
-    use futures_util::StreamExt;
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|e| e.to_string())?;
+    use apsp_panel_host::http::{self, BodyError, Outbound};
+    let client = Outbound {
+        timeout: Some(std::time::Duration::from_secs(10)),
+        ..Outbound::default()
+    }
+    .build()
+    .map_err(|e| e.to_string())?;
     let mut request = client.get(endpoint);
     if let Some(token) = credential.and_then(|value| value["token"].as_str()) {
         request = request.bearer_auth(token);
@@ -224,16 +225,13 @@ async fn fetch_json_once(endpoint: &str, credential: Option<&Value>) -> Result<V
     if !response.status().is_success() {
         return Err(format!("资料源HTTP状态 {}", response.status().as_u16()));
     }
-    let mut bytes = vec![];
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| "资料源响应读取失败".to_string())?;
-        if bytes.len() + chunk.len() > 64 * 1024 {
-            return Err("资料源响应超过64KiB".into());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    serde_json::from_slice(&bytes).map_err(|_| "资料源未返回有效JSON".into())
+    http::json(response, 64 * 1024)
+        .await
+        .map_err(|error| match error {
+            BodyError::TooLarge => "资料源响应超过64KiB".into(),
+            BodyError::Read(_) => "资料源响应读取失败".into(),
+            BodyError::Invalid => "资料源未返回有效JSON".into(),
+        })
 }
 pub async fn ip_history(
     State(state): State<AppState>,

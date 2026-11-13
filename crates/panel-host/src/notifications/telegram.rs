@@ -1,8 +1,8 @@
-use reqwest::{Client, redirect::Policy};
+use crate::http::{self, Outbound};
 use serde_json::{Value, json};
 use std::time::Duration;
 
-pub(super) struct Failure {
+pub struct Failure {
     pub message: String,
     pub retry_after: Option<i64>,
 }
@@ -27,34 +27,29 @@ pub(super) async fn send(
 }
 
 async fn deliver(url: &str, chat: &str, thread: Option<i32>, text: &str) -> Result<(), Failure> {
-    let client = Client::builder()
-        .redirect(Policy::none())
-        .no_proxy()
-        .connect_timeout(Duration::from_secs(4))
-        .timeout(Duration::from_secs(8))
-        .build()
-        .map_err(|_| Failure::request())?;
+    let client = Outbound {
+        connect_timeout: Some(Duration::from_secs(4)),
+        timeout: Some(Duration::from_secs(8)),
+        ..Outbound::default()
+    }
+    .build()
+    .map_err(|_| Failure::request())?;
     // Do not log reqwest errors or remote descriptions: either can contain the bot token.
     let mut payload =
         json!({"chat_id":chat,"text":text,"link_preview_options":{"is_disabled":true}});
     if let Some(thread) = thread {
         payload["message_thread_id"] = json!(thread);
     }
-    let mut response = client
+    let response = client
         .post(url)
         .json(&payload)
         .send()
         .await
         .map_err(|_| Failure::request())?;
     let status = response.status();
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| Failure::request())? {
-        if bytes.len() + chunk.len() > 64 * 1024 {
-            return Err(Failure::request());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    let value: Value = serde_json::from_slice(&bytes).map_err(|_| Failure::request())?;
+    let value: Value = http::json(response, 64 * 1024)
+        .await
+        .map_err(|_| Failure::request())?;
     if status.is_success() && value.get("ok").and_then(Value::as_bool) == Some(true) {
         return Ok(());
     }
@@ -66,7 +61,7 @@ async fn deliver(url: &str, chat: &str, thread: Option<i32>, text: &str) -> Resu
         retry_after: value
             .pointer("/parameters/retry_after")
             .and_then(Value::as_i64)
-            .map(|delay| delay.clamp(1, 86400)),
+            .map(|delay| super::RETRY_AFTER.seconds(delay)),
     })
 }
 

@@ -167,7 +167,6 @@ sql	crates/governance/src/control_center/credentials.rs	write	credential_entries
 sql	crates/governance/src/control_center/events.rs	read	servers	governance->resources
 sql	crates/governance/src/control_center/system.rs	read	diagnostic_jobs	governance->observability
 sql	crates/governance/src/control_center/system.rs	read	fleet_operations	governance->operations
-sql	crates/governance/src/control_center/system.rs	read	notification_outbox	governance->platform
 sql	crates/governance/src/control_center/system.rs	read	operations_backup_records	governance->operations
 sql	crates/governance/src/control_center/system.rs	read	operations_backup_schedules	governance->operations
 sql	crates/governance/src/control_center/system.rs	read	operations_jobs	governance->operations
@@ -221,10 +220,6 @@ sql	crates/networking/src/security_groups.rs	write	alicloud_security_group_opera
 sql	crates/networking/src/security_groups/execution.rs	read	alicloud_resources	networking->resources
 sql	crates/networking/src/security_groups/execution.rs	read	operations_cloud_links	networking->resources
 sql	crates/networking/src/security_groups/execution.rs	write	alicloud_security_group_operations	networking->operations
-sql	crates/observability/src/alerts/evaluation.rs	read	notification_outbox	observability->platform
-sql	crates/observability/src/alerts/events.rs	read	notification_outbox	observability->platform
-sql	crates/observability/src/alerts/events.rs	write	notification_outbox	observability->platform
-sql	crates/observability/src/alerts/rules.rs	write	notification_outbox	observability->platform
 sql	crates/observability/src/cloud_notices.rs	read	panel_settings	observability->platform
 sql	crates/observability/src/incidents.rs	read	administrator_profiles	observability->governance
 sql	crates/observability/src/incidents.rs	read	admins	observability->governance
@@ -240,12 +235,9 @@ sql	crates/observability/src/incidents/certificates.rs	read	network_documents	ob
 sql	crates/observability/src/ip_quality.rs	write	servers	observability->resources
 sql	crates/observability/src/ip_quality/cache.rs	write	servers	observability->resources
 sql	crates/observability/src/probes.rs	write	servers	observability->resources
-sql	crates/observability/src/reachability/alerts.rs	read	fleet_profiles	observability->resources
-sql	crates/observability/src/reachability/alerts.rs	read	operations_maintenance	observability->operations
 sql	crates/observability/src/reachability/api.rs	write	credential_entries	observability->platform
 sql	crates/observability/src/reachability/targets.rs	read	singbox_nexus_nodes	observability->traffic
 sql	crates/observability/src/server_monitoring.rs	read	fleet_operations	observability->operations
-sql	crates/observability/src/server_monitoring.rs	read	notification_outbox	observability->platform
 sql	crates/observability/src/server_monitoring.rs	read	remote_commands	observability->operations
 sql	crates/observability/src/server_monitoring/service_events.rs	read	fleet_operations	observability->operations
 sql	crates/observability/src/statistics/proxy_usage.rs	read	singbox_usage_daily	observability->access
@@ -292,11 +284,6 @@ sql	crates/operations/src/jobs/worker.rs	read	server_retirements	operations->res
 sql	crates/operations/src/runtime_operations.rs	read	diagnostic_jobs	operations->observability
 sql	crates/operations/src/runtime_operations.rs	read	fleet_profiles	operations->resources
 sql	crates/operations/src/runtime_operations.rs	read	server_retirements	operations->resources
-sql	crates/panel-host/src/notifications/outbox.rs	read	fleet_profiles	platform->resources
-sql	crates/panel-host/src/notifications/outbox.rs	read	operations_maintenance	platform->operations
-sql	crates/panel-host/src/notifications/outbox.rs	read	server_alert_events	platform->observability
-sql	crates/panel-host/src/notifications/outbox.rs	read	servers	platform->resources
-sql	crates/panel-host/src/settings.rs	read	server_alert_events	platform->observability
 sql	crates/panel/src/search.rs	read	alert_rules	app->observability
 sql	crates/panel/src/search.rs	read	ddns_rules	app->naming
 sql	crates/panel/src/search.rs	read	diagnostic_jobs	app->observability

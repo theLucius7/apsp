@@ -3,6 +3,7 @@ use crate::{
     error::{ApiError, ApiResult},
     net::public_ip,
 };
+use apsp_panel_host::http::{self, BodyError, Outbound};
 use apsp_protocol::now_timestamp;
 use axum::{
     Json,
@@ -367,14 +368,14 @@ pub async fn refresh(
 }
 
 async fn refresh_inner(state: &AppState, id: i64, ips: &[String]) -> ApiResult<Vec<IpQuality>> {
-    let client = Client::builder()
-        .dns_resolver(Arc::new(QualityDnsResolver))
-        .redirect(reqwest::redirect::Policy::none())
-        .retry(reqwest::retry::never())
-        .connect_timeout(Duration::from_secs(3))
-        .timeout(Duration::from_secs(6))
-        .build()
-        .map_err(anyhow::Error::from)?;
+    let client = Outbound {
+        connect_timeout: Some(Duration::from_secs(3)),
+        timeout: Some(Duration::from_secs(6)),
+        resolver: Some(Arc::new(QualityDnsResolver)),
+        ..Outbound::default()
+    }
+    .build()
+    .map_err(anyhow::Error::from)?;
     let mut quality = queries::query_sources(
         &client,
         &providers(state),
@@ -421,16 +422,6 @@ async fn query_all_with_limit(
         total_limit,
     )
     .await
-}
-
-fn documentation_ip(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ip) => {
-            let [a, b, c, _] = ip.octets();
-            matches!((a, b, c), (192, 0, 2) | (198, 51, 100) | (203, 0, 113))
-        }
-        IpAddr::V6(ip) => ip.segments()[0] == 0x2001 && ip.segments()[1] == 0x0db8,
-    }
 }
 
 fn database_result(
@@ -503,39 +494,24 @@ async fn query_database(
 }
 
 async fn query_json(request: reqwest::RequestBuilder) -> Result<Value, QueryError> {
-    let mut response = request
+    let response = request
         .send()
         .await
         .map_err(|error| QueryError::request(&error, false))?;
     if !response.status().is_success() {
         return Err(QueryError::http(response.status().as_u16()));
     }
-    if response
-        .content_length()
-        .is_some_and(|bytes| bytes > RESPONSE_LIMIT as u64)
-    {
-        return Err(QueryError::new(
-            QueryErrorKind::ResponseLimit,
-            "质量查询响应超过 64 KiB",
-        ));
-    }
-    let mut body = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
+    http::json(response, RESPONSE_LIMIT)
         .await
-        .map_err(|error| QueryError::request(&error, true))?
-    {
-        if body.len() + chunk.len() > RESPONSE_LIMIT {
-            return Err(QueryError::new(
-                QueryErrorKind::ResponseLimit,
-                "质量查询响应超过 64 KiB",
-            ));
-        }
-        body.extend_from_slice(&chunk);
-    }
-    let value: Value = serde_json::from_slice(&body)
-        .map_err(|_| QueryError::new(QueryErrorKind::NonJson, "质量查询返回的内容不是有效 JSON"))?;
-    Ok(value)
+        .map_err(|error| match error {
+            BodyError::TooLarge => {
+                QueryError::new(QueryErrorKind::ResponseLimit, "质量查询响应超过 64 KiB")
+            }
+            BodyError::Read(error) => QueryError::request(&error, true),
+            BodyError::Invalid => {
+                QueryError::new(QueryErrorKind::NonJson, "质量查询返回的内容不是有效 JSON")
+            }
+        })
 }
 
 #[cfg(test)]
@@ -580,12 +556,12 @@ mod tests {
             }
         })).route("/unexpected-redirect", get(move || { let count = redirect_count.clone(); async move { count.fetch_add(1, Ordering::SeqCst); "unexpected" } }));
         let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let client = Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(Duration::from_secs(2))
-            .build()
-            .unwrap();
+        let client = Outbound {
+            timeout: Some(Duration::from_secs(2)),
+            ..Outbound::default()
+        }
+        .build()
+        .unwrap();
         let quality = query_all(
             &client,
             &format!("http://{address}"),
@@ -639,11 +615,12 @@ mod tests {
             ),
         );
         let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let client = Client::builder()
-            .no_proxy()
-            .timeout(Duration::from_millis(50))
-            .build()
-            .unwrap();
+        let client = Outbound {
+            timeout: Some(Duration::from_millis(50)),
+            ..Outbound::default()
+        }
+        .build()
+        .unwrap();
         let base = format!("http://{address}");
         let oversized = query_database(&client, &base, "192.0.2.1", "maxmind")
             .await

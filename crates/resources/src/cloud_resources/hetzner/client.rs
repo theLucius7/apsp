@@ -1,4 +1,5 @@
-use reqwest::{Client, Response, header::HeaderValue};
+use apsp_panel_host::http::{self, BodyError, Outbound};
+use reqwest::{Client, header::HeaderValue};
 use serde_json::{Value, json};
 use std::{collections::HashSet, time::Duration};
 
@@ -27,18 +28,24 @@ pub(super) async fn fetch(token: &str) -> Inventory {
     if authorization(token).is_none() {
         return failed_inventory("credential_invalid");
     }
-    let client = match client_builder().https_only(true).build() {
+    let client = match (Outbound {
+        https_only: true,
+        ..outbound()
+    })
+    .build()
+    {
         Ok(client) => client,
         Err(_) => return failed_inventory("network_error"),
     };
     fetch_with_client(&client, ENDPOINT, token).await
 }
 
-fn client_builder() -> reqwest::ClientBuilder {
-    Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(15))
+fn outbound() -> Outbound {
+    Outbound {
+        connect_timeout: Some(Duration::from_secs(5)),
+        timeout: Some(Duration::from_secs(15)),
+        ..Outbound::default()
+    }
 }
 
 fn authorization(token: &str) -> Option<HeaderValue> {
@@ -109,8 +116,12 @@ async fn collect(
                 "http_other"
             });
         }
-        let body = bounded_body(response).await?;
-        let document: Value = serde_json::from_slice(&body).map_err(|_| "invalid_response")?;
+        let document: Value = http::json(response, MAX_BODY_BYTES)
+            .await
+            .map_err(|error| match error {
+                BodyError::Read(error) => network_error(error),
+                BodyError::TooLarge | BodyError::Invalid => "invalid_response",
+            })?;
         let raw_servers = document["servers"].as_array().ok_or("invalid_response")?;
         let pagination = pagination(&document, page_number, expected_total, raw_servers.len())?;
         let mut page_ids = HashSet::new();
@@ -147,23 +158,6 @@ fn network_error(error: reqwest::Error) -> &'static str {
     } else {
         "network_error"
     }
-}
-
-async fn bounded_body(mut response: Response) -> Result<Vec<u8>, &'static str> {
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_BODY_BYTES as u64)
-    {
-        return Err("invalid_response");
-    }
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(network_error)? {
-        if chunk.len() > MAX_BODY_BYTES.saturating_sub(body.len()) {
-            return Err("invalid_response");
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Ok(body)
 }
 
 struct Pagination {

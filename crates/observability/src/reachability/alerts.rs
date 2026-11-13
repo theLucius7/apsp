@@ -1,23 +1,47 @@
 //! Alerts for transitions into and out of a blocked state.
 //!
 //! Follows the path the expense reminders use: the event and its per-channel
-//! deliveries live in this domain's tables and are rendered and sent through the
-//! platform's channels. The event is recorded even when no channel is configured.
+//! deliveries live in this domain's tables, are rendered for the platform's channels and
+//! delivered by the platform's deliverer. The event is recorded even when no channel is
+//! configured.
 
 use super::{classify::Transition, targets::Target};
-use crate::error::ApiResult;
+use crate::{
+    error::{ApiError, ApiResult},
+    incidents,
+};
 use apsp_panel_host::{
-    notifications::{delivery, webhook::Message},
+    notifications::{
+        Failure, delivery,
+        queue::{self, Backoff, Claim, Claimed, Claiming, Claims, Outcome, Policy, Queue},
+        webhook::Message,
+    },
+    ports::BoxFuture,
     settings::{self, Settings as PanelSettings},
 };
-use apsp_protocol::now_timestamp;
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-const MAX_ATTEMPTS: i32 = 5;
-const DELIVERIES_PER_TICK: usize = 20;
+/// Reachability alerts: leased one at a time and sent after the claim commits, up to
+/// twenty per pass, five sends each. Messages held back by maintenance stay due.
+const POLICY: Policy = Policy {
+    table: "singbox_reachability_deliveries",
+    claims: 20,
+    claiming: Claiming::Leased {
+        seconds: 120,
+        batch: 1,
+    },
+    attempts: 5,
+    backoff: Backoff::Doubling {
+        first: 30,
+        doublings: 4,
+        min: 30,
+        max: 86_400,
+    },
+    held: None,
+};
 
 fn tally(probes: &Value) -> BTreeMap<String, (u32, u32)> {
     let mut counts = BTreeMap::new();
@@ -161,11 +185,92 @@ pub(super) async fn record(
         .bind(if error.is_some() { "failed" } else { "pending" })
         .bind(now)
         .bind(&error)
-        .bind(if error.is_some() { MAX_ATTEMPTS } else { 0 })
+        .bind(if error.is_some() { POLICY.attempts } else { 0 })
         .execute(&mut **tx)
         .await?;
     }
     Ok(())
+}
+
+/// The reachability alerts due for the channels.
+pub(super) struct Deliveries<'a> {
+    pool: &'a PgPool,
+    panel: &'a PanelSettings,
+}
+
+pub(super) struct Delivery {
+    id: i64,
+    channel: String,
+    payload: String,
+}
+
+impl Queue for Deliveries<'_> {
+    const POLICY: Policy = POLICY;
+    type Message = Delivery;
+    type Error = ApiError;
+
+    fn claim(&self, claim: Claim) -> Claims<'_, Delivery, ApiError> {
+        Box::pin(async move {
+            let mut tx = self.pool.begin().await?;
+            let rows = sqlx::query(&format!(
+                "SELECT d.id,d.channel,d.payload,d.attempts FROM singbox_reachability_deliveries d JOIN singbox_reachability_events e ON e.id=d.event_id \
+                 WHERE d.attempts<$2 AND ((d.state IN ('pending','failed') AND d.next_attempt_at<=$1) OR (d.state='sending' AND d.lease_until<$1)) \
+                 AND NOT {} \
+                 ORDER BY d.id LIMIT $3 FOR UPDATE OF d SKIP LOCKED",
+                incidents::notifications_held("e.server_id", "$1")
+            ))
+            .bind(claim.now)
+            .bind(Self::POLICY.attempts)
+            .bind(claim.limit)
+            .fetch_all(&mut *tx)
+            .await?;
+            let mut claimed = Vec::new();
+            for row in rows {
+                let id: i64 = row.try_get("id")?;
+                sqlx::query(
+                    "UPDATE singbox_reachability_deliveries SET state='sending',attempts=attempts+1,lease_until=$2 WHERE id=$1",
+                )
+                .bind(id)
+                .bind(claim.lease_until)
+                .execute(&mut *tx)
+                .await?;
+                claimed.push(Claimed {
+                    message: Delivery {
+                        id,
+                        channel: row.try_get("channel")?,
+                        payload: row.try_get("payload")?,
+                    },
+                    attempts: row.try_get("attempts")?,
+                });
+            }
+            tx.commit().await?;
+            Ok(claimed)
+        })
+    }
+
+    fn send<'a>(&'a self, alert: &'a Delivery) -> BoxFuture<'a, Result<(), Failure>> {
+        Box::pin(delivery::send(self.panel, &alert.channel, &alert.payload))
+    }
+
+    fn settle(&self, alert: Delivery, outcome: Outcome) -> BoxFuture<'_, ApiResult<()>> {
+        Box::pin(async move {
+            let (state, next) = if outcome.sent() {
+                ("sent", outcome.finished_at)
+            } else {
+                ("failed", outcome.retry_at)
+            };
+            sqlx::query(
+                "UPDATE singbox_reachability_deliveries SET state=$2,last_error=$3,next_attempt_at=$4,lease_until=NULL WHERE id=$1 AND state='sending'",
+            )
+            .bind(alert.id)
+            .bind(state)
+            .bind(&outcome.error)
+            .bind(next)
+            .execute(self.pool)
+            .await?;
+            Ok(())
+        })
+    }
 }
 
 /// Sends what is due. Maintenance windows hold a delivery back like server alerts,
@@ -177,57 +282,14 @@ pub(super) async fn deliver(pool: &PgPool) -> ApiResult<()> {
     )
     .bind(panel.telegram_ready())
     .bind(panel.webhook_ready())
-    .bind(MAX_ATTEMPTS)
+    .bind(POLICY.attempts)
     .execute(pool)
     .await?;
-    for _ in 0..DELIVERIES_PER_TICK {
-        let mut tx = pool.begin().await?;
-        let now = now_timestamp();
-        let row = sqlx::query(
-            "SELECT d.id,d.channel,d.payload,d.attempts FROM singbox_reachability_deliveries d JOIN singbox_reachability_events e ON e.id=d.event_id \
-             WHERE d.attempts<$2 AND ((d.state IN ('pending','failed') AND d.next_attempt_at<=$1) OR (d.state='sending' AND d.lease_until<$1)) \
-             AND NOT EXISTS(SELECT 1 FROM operations_maintenance m WHERE e.server_id=ANY(m.targets) AND m.suppress_notifications AND m.starts_at<=$1 AND m.ends_at>$1) \
-             AND NOT EXISTS(SELECT 1 FROM fleet_profiles p WHERE p.server_id=e.server_id AND p.lifecycle='maintenance' AND COALESCE(p.maintenance_from,0)<=$1 AND (p.maintenance_until IS NULL OR p.maintenance_until>$1)) \
-             ORDER BY d.id LIMIT 1 FOR UPDATE OF d SKIP LOCKED",
-        )
-        .bind(now)
-        .bind(MAX_ATTEMPTS)
-        .fetch_optional(&mut *tx)
-        .await?;
-        let Some(row) = row else {
-            break;
-        };
-        let id: i64 = row.try_get("id")?;
-        let attempts: i32 = row.try_get("attempts")?;
-        sqlx::query(
-            "UPDATE singbox_reachability_deliveries SET state='sending',attempts=attempts+1,lease_until=$2 WHERE id=$1",
-        )
-        .bind(id)
-        .bind(now + 120)
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
-        let channel: String = row.try_get("channel")?;
-        let payload: String = row.try_get("payload")?;
-        let (state, error, retry) = match delivery::send(&panel, &channel, &payload).await {
-            Ok(()) => ("sent", None, 0),
-            Err((error, after)) => (
-                "failed",
-                Some(error.chars().take(500).collect::<String>()),
-                after.unwrap_or(30 * (1_i64 << attempts)).clamp(30, 86400),
-            ),
-        };
-        sqlx::query(
-            "UPDATE singbox_reachability_deliveries SET state=$2,last_error=$3,next_attempt_at=$4,lease_until=NULL WHERE id=$1 AND state='sending'",
-        )
-        .bind(id)
-        .bind(state)
-        .bind(error)
-        .bind(now_timestamp() + retry)
-        .execute(pool)
-        .await?;
-    }
-    Ok(())
+    queue::deliver(&Deliveries {
+        pool,
+        panel: &panel,
+    })
+    .await
 }
 
 #[cfg(test)]

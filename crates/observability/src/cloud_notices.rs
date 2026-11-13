@@ -1,11 +1,35 @@
+//! Cloud resource notices: an event per notice and a message per ready channel, delivered
+//! by the platform's deliverer.
+
 use crate::{
-    error::ApiResult,
-    notifications::{delivery, webhook},
+    error::{ApiError, ApiResult},
+    notifications::{
+        Failure, delivery,
+        queue::{self, Backoff, Claim, Claimed, Claiming, Claims, Outcome, Policy, Queue},
+        webhook,
+    },
     settings::Settings,
 };
+use apsp_panel_host::ports::BoxFuture;
 use apsp_resources::cloud::model::Resource;
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
+
+/// Cloud notices: each channel claims one message per pass and keeps it locked, with the
+/// settings it is sent with, until the outcome is recorded; eight sends each.
+const POLICY: Policy = Policy {
+    table: "alicloud_deliveries",
+    claims: 1,
+    claiming: Claiming::Locked,
+    attempts: 8,
+    backoff: Backoff::Doubling {
+        first: 30,
+        doublings: 7,
+        min: 1,
+        max: 86_400,
+    },
+    held: None,
+};
 
 pub async fn record(
     tx: &mut Transaction<'_, Postgres>,
@@ -48,50 +72,113 @@ pub async fn record(
     }
     Ok(())
 }
+
+/// Sends one rendered message through a channel; tests stand in for the channels.
+type Sender<'a> =
+    dyn Fn(Settings, String, String) -> BoxFuture<'static, Result<(), Failure>> + Sync + 'a;
+
+/// The notices of one channel.
+pub(crate) struct Notices<'a> {
+    pool: &'a PgPool,
+    channel: &'static str,
+    send: &'a Sender<'a>,
+}
+
+pub(crate) struct Notice {
+    tx: Transaction<'static, Postgres>,
+    settings: Settings,
+    id: i64,
+    payload: String,
+}
+
+impl Queue for Notices<'_> {
+    const POLICY: Policy = POLICY;
+    type Message = Notice;
+    type Error = ApiError;
+
+    fn claim(&self, claim: Claim) -> Claims<'_, Notice, ApiError> {
+        Box::pin(async move {
+            let mut tx = self.pool.begin().await?;
+            let value: Option<Value> =
+                sqlx::query_scalar("SELECT settings FROM panel_settings WHERE singleton FOR SHARE")
+                    .fetch_optional(&mut *tx)
+                    .await?;
+            let Some(value) = value else {
+                return Ok(Vec::new());
+            };
+            let settings: Settings = serde_json::from_value(value).map_err(anyhow::Error::from)?;
+            if (self.channel == "telegram" && !settings.telegram_ready())
+                || (self.channel == "webhook" && !settings.webhook_ready())
+            {
+                return Ok(Vec::new());
+            }
+            let row:Option<(i64,String,i32)>=sqlx::query_as("SELECT d.id,d.payload,d.attempts FROM alicloud_deliveries d WHERE d.status='pending' AND d.channel=$1 AND d.next_attempt_at<=$2 ORDER BY d.next_attempt_at,d.id LIMIT 1 FOR UPDATE OF d SKIP LOCKED").bind(self.channel).bind(claim.now).fetch_optional(&mut *tx).await?;
+            Ok(row
+                .map(|(id, payload, attempts)| Claimed {
+                    message: Notice {
+                        tx,
+                        settings,
+                        id,
+                        payload,
+                    },
+                    attempts,
+                })
+                .into_iter()
+                .collect())
+        })
+    }
+
+    fn send<'a>(&'a self, notice: &'a Notice) -> BoxFuture<'a, Result<(), Failure>> {
+        (self.send)(
+            notice.settings.clone(),
+            self.channel.to_owned(),
+            notice.payload.clone(),
+        )
+    }
+
+    fn settle(&self, notice: Notice, outcome: Outcome) -> BoxFuture<'_, ApiResult<()>> {
+        Box::pin(async move {
+            let Notice { mut tx, id, .. } = notice;
+            let (status, next) = if outcome.sent() {
+                ("sent", outcome.finished_at)
+            } else if outcome.last_attempt {
+                ("failed", outcome.retry_at)
+            } else {
+                ("pending", outcome.retry_at)
+            };
+            sqlx::query("UPDATE alicloud_deliveries SET status=$2,last_error=$3,attempts=attempts+1,next_attempt_at=$4,delivered_at=CASE WHEN $2='sent' THEN $5 ELSE NULL END WHERE id=$1").bind(id).bind(status).bind(&outcome.error).bind(next).bind(outcome.finished_at).execute(&mut *tx).await?;
+            tx.commit().await?;
+            Ok(())
+        })
+    }
+}
+
 pub async fn dispatch(pool: &PgPool) -> ApiResult<()> {
     dispatch_with(pool, |settings, channel, payload| async move {
         delivery::send(&settings, &channel, &payload).await
     })
     .await
 }
-pub async fn dispatch_with<F, Fut>(pool: &PgPool, mut send: F) -> ApiResult<()>
+
+/// Sends the due notices of each channel in turn, with `send` standing in for the channels.
+pub async fn dispatch_with<F, Fut>(pool: &PgPool, send: F) -> ApiResult<()>
 where
-    F: FnMut(Settings, String, String) -> Fut,
-    Fut: std::future::Future<Output = Result<(), (String, Option<i64>)>>,
+    F: Fn(Settings, String, String) -> Fut + Sync,
+    Fut: std::future::Future<Output = Result<(), Failure>> + Send + 'static,
 {
+    let send = move |settings: Settings,
+                     channel: String,
+                     payload: String|
+          -> BoxFuture<'static, Result<(), Failure>> {
+        Box::pin(send(settings, channel, payload))
+    };
     for channel in ["telegram", "webhook"] {
-        let mut tx = pool.begin().await?;
-        let value: Option<Value> =
-            sqlx::query_scalar("SELECT settings FROM panel_settings WHERE singleton FOR SHARE")
-                .fetch_optional(&mut *tx)
-                .await?;
-        let Some(value) = value else {
-            return Ok(());
-        };
-        let settings: Settings = serde_json::from_value(value).map_err(anyhow::Error::from)?;
-        if (channel == "telegram" && !settings.telegram_ready())
-            || (channel == "webhook" && !settings.webhook_ready())
-        {
-            continue;
-        }
-        let now = apsp_protocol::now_timestamp();
-        let row:Option<(i64,String,i32)>=sqlx::query_as("SELECT d.id,d.payload,d.attempts FROM alicloud_deliveries d WHERE d.status='pending' AND d.channel=$1 AND d.next_attempt_at<=$2 ORDER BY d.next_attempt_at,d.id LIMIT 1 FOR UPDATE OF d SKIP LOCKED").bind(channel).bind(now).fetch_optional(&mut *tx).await?;
-        let Some((id, payload, attempts)) = row else {
-            continue;
-        };
-        let (status, error, delay) = match send(settings, channel.into(), payload).await {
-            Ok(()) => ("sent", None, 0),
-            Err((message, retry)) => (
-                if attempts >= 7 { "failed" } else { "pending" },
-                Some(message),
-                retry
-                    .unwrap_or(30 * (1_i64 << attempts.clamp(0, 7)))
-                    .clamp(1, 86400),
-            ),
-        };
-        let completed = apsp_protocol::now_timestamp();
-        sqlx::query("UPDATE alicloud_deliveries SET status=$2,last_error=$3,attempts=attempts+1,next_attempt_at=$4,delivered_at=CASE WHEN $2='sent' THEN $5 ELSE NULL END WHERE id=$1").bind(id).bind(status).bind(error).bind(completed+delay).bind(completed).execute(&mut *tx).await?;
-        tx.commit().await?;
+        queue::deliver(&Notices {
+            pool,
+            channel,
+            send: &send,
+        })
+        .await?;
     }
     Ok(())
 }

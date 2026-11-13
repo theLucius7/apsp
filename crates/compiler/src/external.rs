@@ -577,25 +577,11 @@ fn network_contains(value: &Value, network: &str) -> bool {
 }
 
 fn valid_host(value: &str) -> Result<()> {
-    if value.parse::<IpAddr>().is_ok() {
-        return Ok(());
+    if value.parse::<IpAddr>().is_ok() || apsp_protocol::names::hostname(value) {
+        Ok(())
+    } else {
+        Err(ExternalError("invalid proxy hostname"))
     }
-    if value.is_empty()
-        || value.len() > 253
-        || value.ends_with('.')
-        || !value.split('.').all(|label| {
-            !label.is_empty()
-                && label.len() <= 63
-                && !label.starts_with('-')
-                && !label.ends_with('-')
-                && label
-                    .bytes()
-                    .all(|c| c.is_ascii_alphanumeric() || c == b'-')
-        })
-    {
-        return Err(ExternalError("invalid proxy hostname"));
-    }
-    Ok(())
 }
 
 fn object(value: &Value) -> Result<&Map<String, Value>> {

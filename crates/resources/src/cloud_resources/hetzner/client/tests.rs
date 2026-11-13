@@ -84,7 +84,7 @@ impl Fixture {
     }
 
     async fn fetch(&self, token: &str) -> Inventory {
-        let client = client_builder().no_proxy().build().unwrap();
+        let client = outbound().build().unwrap();
         fetch_with_client(&client, &self.endpoint(), token).await
     }
 }

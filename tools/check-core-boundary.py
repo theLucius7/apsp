@@ -4,8 +4,10 @@
 The Agent core (`crates/agent-core`) and the platform crates (`crates/panel-host`,
 `crates/cloud-api`) are checked. Crate manifests are also checked so that every
 workspace crate has a layer and depends only in the documented direction: the
-platform never depends on a domain, and a domain crate depends only on the
-platform and on domain crates of earlier groups (ADR 0128, docs/architecture.md).
+platform never depends on a domain (its base `panel-host` depends only on the
+protocol, and `cloud-api` builds on `panel-host`), and a domain crate depends only
+on the platform and on domain crates of earlier groups (ADR 0128, ADR 0133,
+docs/architecture.md).
 """
 import argparse
 from pathlib import Path
@@ -74,9 +76,11 @@ EXCEPTIONS = {
     ),
 }
 
-# Panel platform: a URL userinfo test fixture.
+# Panel platform: a URL userinfo test fixture, and the HTTP client method that sets the
+# product token an outbound client identifies itself with.
 HOST_EXCEPTIONS = {
     "src/config.rs": (r'"https://user:secret@example\.invalid"',),
+    "src/http.rs": (r'(?<=builder\.)user_agent(?=\(product\))',),
 }
 
 # Cloud API client: the HTTP header name and the constant that fills it.
@@ -98,9 +102,13 @@ AGENT_CORE_DEPENDENCIES = {"apsp-adapter-sdk", "apsp-protocol"}
 ADAPTER_DEPENDENCIES = {"apsp-adapter-sdk"}
 # Crates without workspace dependencies.
 LEAVES = ("crates/protocol", "crates/adapter-sdk", "crates/tcp-probe")
-# The platform knows no domain.
+# The platform knows no domain. The panel host is its base; the cloud provider client
+# builds on the panel host's mechanisms (outbound HTTP), never the other way round.
 PLATFORM_CRATES = {"crates/panel-host": "apsp-panel-host", "crates/cloud-api": "apsp-cloud-api"}
-PLATFORM_DEPENDENCIES = {"apsp-protocol"}
+PLATFORM_DEPENDENCIES = {
+    "crates/panel-host": {"apsp-protocol"},
+    "crates/cloud-api": {"apsp-protocol", "apsp-panel-host"},
+}
 # Domain groups in dependency order (docs/architecture.md section 5.1) and the domain crates.
 DOMAIN_ORDER = (("governance",), ("resources",), ("networking",), ("naming",), ("traffic",),
                 ("access",), ("costs", "observability"), ("operations",))
@@ -186,7 +194,7 @@ def layer_rules(root):
     for crate in LEAVES:
         rules[root / crate / "Cargo.toml"] = set()
     for crate in PLATFORM_CRATES:
-        rules[root / crate / "Cargo.toml"] = PLATFORM_DEPENDENCIES
+        rules[root / crate / "Cargo.toml"] = PLATFORM_DEPENDENCIES[crate]
     for crate, (name, domain) in DOMAIN_CRATES.items():
         rules[root / crate / "Cargo.toml"] = domain_dependencies(domain, name)
     return rules

@@ -1,51 +1,25 @@
 use anyhow::{Result, ensure};
+use apsp_panel_host::{
+    http::{self, BodyError, Outbound},
+    net,
+};
 use apsp_protocol::release::{
     MAX_CHECKSUMS_BYTES, MAX_METADATA_BYTES, MAX_SIGNATURE_BYTES, RELEASE_SOURCE_REPO,
     ReleaseProof, TrustedKeys, verify_release,
 };
-use reqwest::{Client, Url, redirect::Policy};
+use reqwest::Url;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::{net::IpAddr, time::Duration};
 
+/// A public address; an IPv4-mapped IPv6 answer is judged by its IPv4 address.
 fn public_address(address: IpAddr) -> bool {
-    match address {
-        IpAddr::V4(ip) => {
-            let b = ip.octets();
-            !ip.is_private()
-                && !ip.is_loopback()
-                && !ip.is_link_local()
-                && !ip.is_multicast()
-                && !ip.is_broadcast()
-                && !ip.is_documentation()
-                && b[0] != 0
-                && b[0] < 224
-                && !(b[0] == 100 && (64..=127).contains(&b[1]))
-                && !(b[0] == 198 && matches!(b[1], 18 | 19))
-                && !(b[0] == 192 && b[1] == 0 && b[2] == 0)
-        }
-        IpAddr::V6(ip) => {
-            if let Some(mapped) = ip.to_ipv4_mapped() {
-                return public_address(IpAddr::V4(mapped));
-            }
-            let s = ip.segments();
-            !ip.is_unspecified()
-                && !ip.is_loopback()
-                && !ip.is_multicast()
-                && s[0] & 0xfe00 != 0xfc00
-                && s[0] & 0xffc0 != 0xfe80
-                && !(s[0] == 0x2001 && s[1] == 0xdb8)
-                && s[0] & 0xe000 == 0x2000
-        }
-    }
+    net::public_ip(address.to_canonical())
 }
 
 fn allowed(url: &Url) -> bool {
-    url.scheme() == "https"
+    net::plain_url(url, &["https"])
         && url.port_or_known_default() == Some(443)
-        && url.username().is_empty()
-        && url.password().is_none()
-        && url.fragment().is_none()
         && matches!(
             url.host_str(),
             Some(
@@ -69,19 +43,19 @@ pub(super) async fn download(value: &str, maximum: usize) -> Result<Vec<u8>> {
         .await??
         .collect();
         ensure!(
-            !addresses.is_empty() && addresses.iter().all(|a| public_address(a.ip())),
+            net::check_resolved(&addresses, usize::MAX, public_address).is_ok(),
             "release download DNS returned a non-public address"
         );
-        let client = Client::builder()
-            .no_proxy()
-            .https_only(true)
-            .redirect(Policy::none())
-            .resolve_to_addrs(host, &addresses)
-            .connect_timeout(Duration::from_secs(20))
-            .timeout(Duration::from_secs(300))
-            .user_agent("Apsp-release-import")
-            .build()?;
-        let mut response = client
+        let client = Outbound {
+            connect_timeout: Some(Duration::from_secs(20)),
+            timeout: Some(Duration::from_secs(300)),
+            https_only: true,
+            pin: Some((host.to_owned(), addresses)),
+            product: Some("Apsp-release-import"),
+            ..Outbound::default()
+        }
+        .build()?;
+        let response = client
             .get(url.clone())
             .send()
             .await
@@ -101,21 +75,11 @@ pub(super) async fn download(value: &str, maximum: usize) -> Result<Vec<u8>> {
             "release download returned HTTP {}",
             response.status()
         );
-        ensure!(
-            response
-                .content_length()
-                .is_none_or(|size| size <= maximum as u64),
-            "release download exceeds size limit"
-        );
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await? {
-            ensure!(
-                chunk.len() <= maximum.saturating_sub(bytes.len()),
-                "release download exceeds size limit"
-            );
-            bytes.extend_from_slice(&chunk);
-        }
-        return Ok(bytes);
+        return match http::body(response, maximum).await {
+            Ok(bytes) => Ok(bytes),
+            Err(BodyError::Read(error)) => Err(error.into()),
+            Err(_) => anyhow::bail!("release download exceeds size limit"),
+        };
     }
     anyhow::bail!("release redirect did not terminate")
 }
@@ -142,6 +106,7 @@ mod tests {
         }
         assert!(public_address("8.8.8.8".parse().unwrap()));
         assert!(public_address("2606:4700::1111".parse().unwrap()));
+        assert!(public_address("::ffff:8.8.8.8".parse().unwrap()));
         for value in [
             "http://github.com/",
             "https://github.com:8443/",

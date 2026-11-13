@@ -2,6 +2,7 @@ use super::{documents, models::Configuration, x509};
 use crate::{
     AppState,
     error::{ApiError, ApiResult},
+    net,
 };
 use axum::{
     Json, Router,
@@ -192,40 +193,22 @@ async fn handshake(host: &str, port: u16, expected: &str) -> Result<String, &'st
     .map_err(|_| "dns_failed")?
     .take(16)
     .collect();
-    if resolved.is_empty()
-        || resolved
-            .iter()
-            .any(|address| !crate::net::public_ip(address.ip()))
-    {
-        return Err("public_address_required");
-    }
-    let roots = rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let config = rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
-        rustls::crypto::ring::default_provider(),
-    ))
-    .with_safe_default_protocol_versions()
-    .map_err(|_| "tls_configuration_failed")?
-    .with_root_certificates(roots)
-    .with_no_client_auth();
-    let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(config));
-    let name = rustls::pki_types::ServerName::try_from(host.to_owned())
-        .map_err(|_| "invalid_tls_hostname")?;
+    net::check_resolved(&resolved, 16, net::public_ip).map_err(|_| "public_address_required")?;
+    let tls = net::Tls::new(host).map_err(|error| match error {
+        net::TlsSetup::Configuration(_) => "tls_configuration_failed",
+        net::TlsSetup::Name(_) => "invalid_tls_hostname",
+    })?;
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut connection = None;
         for address in resolved {
-            if let Ok(Ok(stream)) = tokio::time::timeout(
-                Duration::from_secs(3),
-                tokio::net::TcpStream::connect(address),
-            )
-            .await
-            {
+            if let Ok(stream) = net::dial(address, Duration::from_secs(3)).await {
                 connection = Some(stream);
                 break;
             }
         }
         let stream = connection.ok_or("connection_failed")?;
-        let tls = connector
-            .connect(name, stream)
+        let tls = tls
+            .handshake(stream)
             .await
             .map_err(|_| "tls_certificate_or_handshake_failed")?;
         let certificate = tls

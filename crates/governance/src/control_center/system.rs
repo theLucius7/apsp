@@ -40,10 +40,7 @@ pub async fn health(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
     )
     .fetch_one(&state.pool)
     .await?;
-    let notifications: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM notification_outbox WHERE status='pending'")
-            .fetch_one(&state.pool)
-            .await?;
+    let notifications = crate::notifications::outbox::waiting(&state.pool).await?;
     let fleet:i64=sqlx::query_scalar("SELECT count(*) FROM fleet_operations WHERE status IN ('queued','dispatched','unknown') AND reconciled_at IS NULL").fetch_one(&state.pool).await?;
     let operations:i64=sqlx::query_scalar("SELECT count(*) FROM operations_jobs WHERE status IN ('queued','running','paused','cancel_requested','uncertain')").fetch_one(&state.pool).await?;
     // The platform stores heartbeat details bounded; the view redacts them as the audit does.

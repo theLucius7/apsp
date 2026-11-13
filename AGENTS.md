@@ -50,7 +50,7 @@
 - `agent-core` 目录内任何文件不得出现 `singbox` 或 `sing-box` 字样；使用模块标识、能力和统一接口。
 - core 管服务器；代理用户、授权、订阅、用户流量、配额和周期属于服务权益领域（`crates/access`），详见 [ADR 0023](docs/adr/0023-proxy-business-boundary.md) 与 [搬迁及启用兼容 ADR 0030](docs/adr/0030-singbox-plugin-business.md)。core 不得引用代理业务的 `user`、`subscription`、`quota`，含复数、蛇形和驼峰形式；CI 使用 `tools/check-core-boundary.py` 检查。系统账户与 SQLite 原生 API 仅允许检查器列出的具体表达式，不允许文件或整行豁免。
 - 面板是按领域组织的一体化系统，分平台、领域和应用三层，不再有插件（[ADR 0128](docs/adr/0128-domain-architecture.md)；九个领域、依赖顺序与写入规则见[功能划分与逻辑结构](docs/architecture.md)，逐项功能的归属见[领域归属表](docs/domain-map.md)）：
-  - 平台（`crates/panel-host`、`crates/cloud-api`）只放技术机制，工作区依赖只能是 `protocol`，不依赖任何领域；目录内禁止 sing-box 名称和上述代理业务词汇，例外表达式由检查器逐条列出。
+  - 平台（`crates/panel-host`、`crates/cloud-api`）只放技术机制，`panel-host` 是底座，工作区依赖只能是 `protocol`；`cloud-api` 建在它上面，只能依赖 `protocol` 与 `panel-host`（[ADR 0134](docs/adr/0134-outbound-network-and-delivery.md)），不依赖任何领域；目录内禁止 sing-box 名称和上述代理业务词汇，例外表达式由检查器逐条列出。
   - 领域 crate（`crates/governance`、`crates/resources`、`crates/networking`、`crates/naming`、`crates/compiler` 与 `crates/traffic`（流量服务）、`crates/access`（服务权益）、`crates/costs`、`crates/observability`、`crates/operations`）只依赖平台、`protocol`、依赖顺序中排在前面的领域 crate 和同一领域的其他 crate。领域代码不得移回平台或应用 crate。仓库没有 `plugins/` 目录：运行时服务定义在 `deploy/`，诊断工具的打包脚本、策略与锁定文件在 `crates/observability/upstream/`（签名制品里仍按原名 `plugins/...` 记录，这是制品格式）。诊断代码（IPQuality、NodeQuality、TcpQuality）在观测 crate 的 `diagnostic_tools/`。
   - 只有应用 `apsp-panel` 组合平台与各领域（组合在 `crates/panel/src/domains.rs`：路由与后台任务各一张清单，每个领域 crate 只导出一个 `routes()`，路由的完整路径写在声明处）、接线依赖倒置接口（清单见 [architecture.md §5.5](docs/architecture.md#55-类型化接口)，接线在 `crates/panel/src/wiring.rs`），并保存唯一的数据库基线。不再新增插件式的全局钩子：需要逆着依赖顺序调用时，由调用方声明类型化接口。
   - 控制台接口地址按对象所属领域命名（`/api/traffic/…`、`/api/access/…`、`/api/naming/…`、`/api/costs/…`、`/api/observability/…`、`/api/resources/alicloud/…`；其余地址不变），路由的权限结论记在 `crates/panel/tests/fixtures/route-policy.tsv`，新增或改动路由后运行 `python3 tools/route-policy.py`（见 [ADR 0132](docs/adr/0132-platform-only-host-and-domain-addresses.md)）。
@@ -66,7 +66,7 @@
 ## 实现与检查
 
 - 一类对象一套模型（[ADR 0131](docs/adr/0131-one-model-per-object.md)）：新功能只加在当前模型上；替代实现完成后，旧实现连同接口、页面、分支、测试、脚本与文档一起删除，调用方一起改，不保留旧函数名、旧模块路径或旧 crate 名的包装与再导出。
-- 一种底层机制一套实现（[ADR 0133](docs/adr/0133-one-implementation-per-mechanism.md)）：后台任务一律经 `apsp_panel_host::maintenance::periodic` 运行并报心跳，心跳名登记在 `crates/panel/src/domains.rs` 的 `HEARTBEATS`；咨询锁一律用 `apsp_panel_host::locks`，锁键由所有者在自己的 `src/locks.rs` 声明。两者的守卫随 `cargo test` 运行，例外写明原因，只许减少。
+- 一种底层机制一套实现（[ADR 0133](docs/adr/0133-one-implementation-per-mechanism.md)）：后台任务一律经 `apsp_panel_host::maintenance::periodic` 运行并报心跳，心跳名登记在 `crates/panel/src/domains.rs` 的 `HEARTBEATS`；咨询锁一律用 `apsp_panel_host::locks`，锁键由所有者在自己的 `src/locks.rs` 声明。对外 HTTP 客户端一律经 `apsp_panel_host::http::Outbound` 构建，地址与名称的判断、受控出站与拨号用 `apsp_panel_host::net`，排队投递的消息一律由所有者实现 `notifications::queue::Queue`、经平台的投递器发送（[ADR 0134](docs/adr/0134-outbound-network-and-delivery.md)）。这些守卫都随 `cargo test` 运行，例外写明原因，只许减少。
 - Rust stable、edition 2024；每个 crate 根文件（含二进制根、测试 crate 和构建脚本）使用 `#![forbid(unsafe_code)]`，禁止引入 `unsafe` 代码。
 - 代码标识符、代码注释使用英文；`docs/`、README、PROGRESS 使用中文。界面以中文为源语言，英文是翻译（[ADR 0127](docs/adr/0127-chinese-source-language.md)）。
 - 只使用任务说明列出的依赖；确需新增依赖时先在 `docs/adr/` 说明必要性和替代方案。

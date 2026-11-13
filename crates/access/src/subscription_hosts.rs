@@ -9,7 +9,10 @@ use crate::{
     control_center,
     error::{ApiError, ApiResult},
 };
-use apsp_panel_host::maintenance::{self, Cadence};
+use apsp_panel_host::{
+    http::{self, Outbound},
+    maintenance::{self, Cadence},
+};
 use apsp_protocol::now_timestamp;
 use axum::{
     Json,
@@ -391,11 +394,14 @@ const RELAYED_HEADERS: [&str; 6] = [
     "profile-title",
 ];
 const RELAY_LIMIT: usize = 16 * 1024 * 1024;
-static RELAY: LazyLock<Client> = LazyLock::new(|| {
-    Client::builder()
-        .timeout(Duration::from_secs(20))
-        .build()
-        .unwrap_or_default()
+/// `None` only when the TLS backend cannot start; the relay then answers 502.
+static RELAY: LazyLock<Option<Client>> = LazyLock::new(|| {
+    Outbound {
+        timeout: Some(Duration::from_secs(20)),
+        ..Outbound::default()
+    }
+    .build()
+    .ok()
 });
 
 /// Answers from the retained renderer, which still holds this user's nodes. The client
@@ -406,10 +412,6 @@ async fn relay(renderer: &str, token: &str, query: Option<&str>, headers: &Heade
         url.push(if url.contains('?') { '&' } else { '?' });
         url.push_str(query);
     }
-    let mut upstream = RELAY.get(url);
-    if let Some(agent) = headers.get(header::USER_AGENT) {
-        upstream = upstream.header(header::USER_AGENT, agent);
-    }
     let unavailable = || {
         (
             StatusCode::BAD_GATEWAY,
@@ -418,7 +420,14 @@ async fn relay(renderer: &str, token: &str, query: Option<&str>, headers: &Heade
         )
             .into_response()
     };
-    let Ok(mut answer) = upstream.send().await else {
+    let Some(client) = RELAY.as_ref() else {
+        return unavailable();
+    };
+    let mut upstream = client.get(url);
+    if let Some(agent) = headers.get(header::USER_AGENT) {
+        upstream = upstream.header(header::USER_AGENT, agent);
+    }
+    let Ok(answer) = upstream.send().await else {
         return unavailable();
     };
     let mut response = Response::builder()
@@ -430,16 +439,9 @@ async fn relay(renderer: &str, token: &str, query: Option<&str>, headers: &Heade
             response = response.header(name, value);
         }
     }
-    let mut body = Vec::new();
-    loop {
-        match answer.chunk().await {
-            Ok(Some(chunk)) if body.len() + chunk.len() <= RELAY_LIMIT => {
-                body.extend_from_slice(&chunk)
-            }
-            Ok(None) => break,
-            _ => return unavailable(),
-        }
-    }
+    let Ok(body) = http::body(answer, RELAY_LIMIT).await else {
+        return unavailable();
+    };
     response
         .body(Body::from(body))
         .unwrap_or_else(|_| unavailable())
@@ -507,7 +509,8 @@ pub async fn settle(pool: &PgPool) {
 
 /// The few Cloudflare calls this feature needs.
 pub struct DnsApi {
-    client: Client,
+    /// `None` only when the TLS backend cannot start; every call then fails to connect.
+    client: Option<Client>,
     base: String,
 }
 
@@ -546,10 +549,12 @@ impl DnsApi {
         Self::new(CLOUDFLARE_API)
     }
     pub fn new(base: &str) -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-            .unwrap_or_default();
+        let client = Outbound {
+            timeout: Some(Duration::from_secs(15)),
+            ..Outbound::default()
+        }
+        .build()
+        .ok();
         Self {
             client,
             base: base.trim_end_matches('/').to_owned(),
@@ -562,8 +567,11 @@ impl DnsApi {
         path: &str,
         body: Option<Value>,
     ) -> Result<Option<T>, String> {
-        let mut request = self
+        let client = self
             .client
+            .as_ref()
+            .ok_or_else(|| "无法连接 Cloudflare".to_owned())?;
+        let mut request = client
             .request(method, format!("{}{path}", self.base))
             .bearer_auth(token);
         if let Some(body) = body {
@@ -856,19 +864,16 @@ pub struct SettingsWrite {
     revision: i64,
 }
 
+/// A lowercase host name of at least two labels.
 fn hostname(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 253
-        && value.contains('.')
-        && value.split('.').all(|label| {
-            !label.is_empty()
-                && label.len() <= 63
-                && !label.starts_with('-')
-                && !label.ends_with('-')
-                && label
-                    .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-        })
+    apsp_panel_host::net::host(
+        value,
+        apsp_panel_host::net::HostRules {
+            dotted: true,
+            lowercase: true,
+            ..Default::default()
+        },
+    )
 }
 
 pub async fn put_settings(

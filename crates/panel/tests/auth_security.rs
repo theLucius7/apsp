@@ -46,10 +46,11 @@ impl Panel {
         let task = tokio::spawn(async move {
             axum::serve(listener, app).await.expect("test HTTP server");
         });
-        let client = Client::builder()
-            .no_proxy()
-            .timeout(Duration::from_secs(15))
-            .build()?;
+        let client = apsp_panel_host::http::Outbound {
+            timeout: Some(Duration::from_secs(15)),
+            ..Default::default()
+        }
+        .build()?;
         Ok(Self {
             pool,
             permits,

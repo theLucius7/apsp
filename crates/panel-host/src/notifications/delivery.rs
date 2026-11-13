@@ -1,4 +1,4 @@
-use super::{telegram, template, webhook};
+use super::{Failure, telegram, template, webhook};
 use crate::settings::Settings;
 
 pub fn render(
@@ -31,12 +31,8 @@ pub fn render(
     }
     payloads
 }
-pub async fn send(
-    settings: &Settings,
-    channel: &str,
-    message: &str,
-) -> Result<(), (String, Option<i64>)> {
-    let result = if channel == "webhook"
+pub async fn send(settings: &Settings, channel: &str, message: &str) -> Result<(), Failure> {
+    if channel == "webhook"
         && let Some(config) = &settings.webhook
     {
         webhook::send(config, message).await
@@ -49,7 +45,9 @@ pub async fn send(
         )
         .await
     } else {
-        return Err(("通知渠道未配置".into(), None));
-    };
-    result.map_err(|e| (e.message, e.retry_after))
+        Err(Failure {
+            message: "通知渠道未配置".into(),
+            retry_after: None,
+        })
+    }
 }

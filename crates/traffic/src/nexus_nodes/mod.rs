@@ -49,19 +49,15 @@ struct PublicEndpoint {
     public_port: u16,
 }
 
+/// A host name or any IP address.
 fn valid_public_host(host: &str) -> bool {
-    host.parse::<std::net::IpAddr>().is_ok()
-        || (!host.is_empty()
-            && host.len() <= 253
-            && host.split('.').all(|label| {
-                !label.is_empty()
-                    && label.len() <= 63
-                    && !label.starts_with('-')
-                    && !label.ends_with('-')
-                    && label
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-            }))
+    apsp_panel_host::net::host(
+        host,
+        apsp_panel_host::net::HostRules {
+            ip: Some(|_| true),
+            ..Default::default()
+        },
+    )
 }
 
 /// Records where clients reach an imported node after its IP or public port

@@ -5,11 +5,14 @@
 //! deadline-limited bodies, and a fixed set of credential headers. Each stack
 //! adapts [`Failure`] to its own error vocabulary.
 
+use apsp_panel_host::{
+    http::Outbound,
+    net::{self, Refused},
+};
 use futures_util::{Stream, StreamExt};
 use reqwest::{
-    Client, Url,
+    Url,
     header::{self, HeaderMap, HeaderName, HeaderValue},
-    redirect::Policy,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -158,11 +161,7 @@ pub(crate) fn validate_url(input: &str) -> Result<Url, Failure> {
     }
     let url = Url::parse(input).map_err(|_| failure(FailureKind::Url, "订阅地址格式不合法"))?;
     if url.as_str().len() > MAX_URL_BYTES
-        || url.scheme() != "https"
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.fragment().is_some()
-        || url.host().is_none()
+        || !net::plain_url(&url, &["https"])
         || url.port_or_known_default().is_none_or(|port| port == 0)
     {
         return Err(failure(
@@ -172,7 +171,7 @@ pub(crate) fn validate_url(input: &str) -> Result<Url, Failure> {
     }
     let host = hostname(&url)?;
     let blocked = match host.parse::<IpAddr>() {
-        Ok(ip) => !public_address(ip),
+        Ok(ip) => !net::egress_ip(ip),
         Err(_) => {
             let host = host.trim_end_matches('.').to_ascii_lowercase();
             host == "localhost"
@@ -258,51 +257,17 @@ pub(crate) fn valid_cache_value(value: &str) -> bool {
         && HeaderValue::from_str(value).is_ok()
 }
 
-pub(crate) fn public_address(address: IpAddr) -> bool {
-    match address {
-        IpAddr::V4(ip) => {
-            let b = ip.octets();
-            !ip.is_private()
-                && !ip.is_loopback()
-                && !ip.is_link_local()
-                && !ip.is_multicast()
-                && !ip.is_broadcast()
-                && !ip.is_documentation()
-                && b[0] != 0
-                && b[0] < 224
-                && !(b[0] == 100 && (64..=127).contains(&b[1]))
-                && !(b[0] == 198 && matches!(b[1], 18 | 19))
-                && !(b[0] == 192 && b[1] == 0 && b[2] == 0)
-                && !(b[0] == 192 && b[1] == 88 && b[2] == 99)
-        }
-        IpAddr::V6(ip) => {
-            let s = ip.segments();
-            // Only ordinary global unicast. Protocol assignments, tunnels,
-            // documentation and every IPv4 embedding cannot bypass IPv4 policy.
-            s[0] & 0xe000 == 0x2000
-                && !(s[0] == 0x2001 && s[1] < 0x0200)
-                && !(s[0] == 0x2001 && s[1] == 0x0db8)
-                && s[0] != 0x2002
-                && s[0] != 0x3fff
-        }
-    }
-}
-
 fn checked_addresses(addresses: Vec<SocketAddr>, port: u16) -> Result<Vec<SocketAddr>, Failure> {
-    if addresses.is_empty() {
-        return Err(failure(FailureKind::DnsEmpty, "订阅主机没有可用地址"));
-    }
-    if addresses.len() > MAX_DNS_ADDRESSES {
-        return Err(failure(FailureKind::DnsLimit, "订阅主机返回过多地址"));
-    }
-    if addresses
-        .iter()
-        .any(|a| a.port() != port || !public_address(a.ip()))
-    {
-        return Err(failure(
-            FailureKind::PrivateAddress,
-            "订阅地址解析到非允许公网范围",
-        ));
+    let private = failure(FailureKind::PrivateAddress, "订阅地址解析到非允许公网范围");
+    net::check_resolved(&addresses, MAX_DNS_ADDRESSES, net::egress_ip).map_err(|refused| {
+        match refused {
+            Refused::Empty => failure(FailureKind::DnsEmpty, "订阅主机没有可用地址"),
+            Refused::TooMany => failure(FailureKind::DnsLimit, "订阅主机返回过多地址"),
+            Refused::NotPublic => private,
+        }
+    })?;
+    if addresses.iter().any(|a| a.port() != port) {
+        return Err(private);
     }
     Ok(addresses
         .into_iter()
@@ -419,21 +384,16 @@ impl Network for PublicNetwork {
             return Err(TIMEOUT);
         }
         let host = hostname(url)?;
-        // Decompression stays under the bounded decoder below, never inside reqwest.
-        let client = Client::builder()
-            .no_proxy()
-            .https_only(true)
-            .redirect(Policy::none())
-            .referer(false)
-            .no_gzip()
-            .no_brotli()
-            .no_deflate()
-            .no_zstd()
-            .resolve_to_addrs(&host, addresses)
-            .connect_timeout(remaining.min(CONNECT_TIMEOUT))
-            .timeout(remaining)
-            .build()
-            .map_err(|_| failure(FailureKind::Client, "无法初始化订阅连接"))?;
+        // Decompression stays under the bounded decoder below, never inside the client.
+        let client = Outbound {
+            connect_timeout: Some(remaining.min(CONNECT_TIMEOUT)),
+            timeout: Some(remaining),
+            https_only: true,
+            pin: Some((host, addresses.to_vec())),
+            ..Outbound::default()
+        }
+        .build()
+        .map_err(|_| failure(FailureKind::Client, "无法初始化订阅连接"))?;
         let response = client
             .get(url.clone())
             .headers(headers)

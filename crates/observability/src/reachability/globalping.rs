@@ -5,7 +5,7 @@
 //! service rejects it for IPv6 literals and infers the family from the target.
 
 use super::budget::Limits;
-use reqwest::redirect::Policy;
+use apsp_panel_host::http::{self, Outbound};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{future::Future, net::IpAddr, time::Duration};
@@ -55,18 +55,17 @@ pub struct ReqwestTransport {
 impl ReqwestTransport {
     pub fn new() -> anyhow::Result<Self> {
         Ok(Self {
-            client: reqwest::Client::builder()
-                .https_only(true)
-                .no_proxy()
-                .redirect(Policy::none())
-                .referer(false)
-                .user_agent(concat!(
+            client: Outbound {
+                connect_timeout: Some(Duration::from_secs(10)),
+                timeout: Some(Duration::from_secs(20)),
+                https_only: true,
+                product: Some(concat!(
                     "apsp-panel-reachability/",
                     env!("CARGO_PKG_VERSION")
-                ))
-                .connect_timeout(Duration::from_secs(10))
-                .timeout(Duration::from_secs(20))
-                .build()?,
+                )),
+                ..Outbound::default()
+            }
+            .build()?,
         })
     }
 }
@@ -84,15 +83,11 @@ impl Transport for ReqwestTransport {
         if let Some(token) = &request.bearer {
             builder = builder.bearer_auth(token);
         }
-        let mut response = builder.send().await.map_err(|_| TransportFailure)?;
+        let response = builder.send().await.map_err(|_| TransportFailure)?;
         let status = response.status().as_u16();
-        let mut body = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(|_| TransportFailure)? {
-            if body.len() + chunk.len() > MAX_RESPONSE_BYTES {
-                return Err(TransportFailure);
-            }
-            body.extend_from_slice(&chunk);
-        }
+        let body = http::body(response, MAX_RESPONSE_BYTES)
+            .await
+            .map_err(|_| TransportFailure)?;
         Ok(Response { status, body })
     }
 }

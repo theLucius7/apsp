@@ -229,10 +229,12 @@ async fn cloudflare_zones(url: &str, token: &str) -> ApiResult<Vec<CloudflareZon
     let refused = || {
         ApiError::Conflict("Cloudflare 没有接受这个令牌，请检查令牌是否完整、是否仍然有效".into())
     };
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(anyhow::Error::from)?;
+    let client = apsp_panel_host::http::Outbound {
+        timeout: Some(std::time::Duration::from_secs(15)),
+        ..Default::default()
+    }
+    .build()
+    .map_err(anyhow::Error::from)?;
     let response = client
         .get(url)
         .bearer_auth(token)

@@ -26,6 +26,10 @@ use uuid::Uuid;
 
 type Tx<'a> = Transaction<'a, Postgres>;
 
+/// The queue of reminder mail, as the crate declares its queues.
+pub(super) const QUEUE: apsp_panel_host::notifications::queue::Policy =
+    <messages::Mailbox<'static> as apsp_panel_host::notifications::queue::Queue>::POLICY;
+
 pub(super) fn router() -> Router<AppState> {
     Router::new()
         .route(

@@ -1,4 +1,4 @@
-use super::{lock_settings, telegram, template, webhook};
+use super::{lock_settings, outbox, telegram, template, webhook};
 use crate::{
     AppState,
     error::{ApiError, ApiResult},
@@ -28,13 +28,10 @@ pub async fn status(state: &AppState) -> ApiResult<Json<Value>> {
             settings.webhook.as_ref().is_some_and(|value| value.enabled),
         ),
     ] {
-        let counts: Value = sqlx::query_scalar("SELECT jsonb_build_object('pending',COUNT(*) FILTER(WHERE status='pending'),'failed',COUNT(*) FILTER(WHERE status='failed'),'sent',COUNT(*) FILTER(WHERE status='sent'),'next_attempt_at',MIN(next_attempt_at) FILTER(WHERE status='pending')) FROM notification_outbox WHERE channel=$1")
-            .bind(channel).fetch_one(&mut *tx).await?;
-        let last_delivery: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('status',status,'attempts',attempts,'last_error',last_error,'attempted_at',last_attempt_at,'delivered_at',delivered_at) FROM notification_outbox WHERE channel=$1 AND last_attempt_at IS NOT NULL ORDER BY last_attempt_at DESC,id DESC LIMIT 1")
-            .bind(channel).fetch_optional(&mut *tx).await?;
+        let deliveries = outbox::deliveries(&mut tx, channel).await?;
         let test: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('attempted_at',attempted_at,'success',success,'last_error',last_error) FROM notification_channel_tests WHERE channel=$1")
             .bind(channel).fetch_optional(&mut *tx).await?;
-        channels.push(json!({"channel":channel,"configured":configured,"enabled":enabled,"notification_enabled":settings.notification_enabled,"counts":counts,"last_delivery":last_delivery,"test":test}));
+        channels.push(json!({"channel":channel,"configured":configured,"enabled":enabled,"notification_enabled":settings.notification_enabled,"counts":deliveries.counts,"last_delivery":deliveries.last,"test":test}));
     }
     tx.commit().await?;
     Ok(Json(json!(channels)))

@@ -94,20 +94,8 @@ impl Cloudflare {
             .send()
             .await
             .map_err(|_| Failure::from("network_error"))?;
-        let status = response.status();
-        if status.as_u16() == 429 {
-            return Err(transport::rate_limited(&response));
-        }
-        if !status.is_success() {
-            return Err(match status.as_u16() {
-                401 | 403 => "authentication_failed",
-                404 => "resource_missing",
-                400 | 409 => "provider_rejected",
-                500..=599 => "provider_unavailable",
-                300..=399 => "redirect_refused",
-                _ => "http_error",
-            }
-            .into());
+        if let Some(failure) = transport::refusal(&response, "http_error") {
+            return Err(failure);
         }
         let envelope = transport::bounded_json(response).await?;
         if envelope["success"] != true

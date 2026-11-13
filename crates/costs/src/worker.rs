@@ -1,11 +1,35 @@
 use super::*;
 use apsp_panel_host::{
     maintenance::{self, Cadence},
-    notifications::{delivery, webhook::Message},
+    notifications::{
+        Failure, delivery,
+        queue::{self, Backoff, Claim, Claimed, Claiming, Claims, Outcome, Policy, Queue},
+        webhook::Message,
+    },
+    ports::BoxFuture,
     settings,
 };
 use axum::{Json, extract::State};
 use time::Duration;
+
+/// Renewal reminders: leased one at a time under the expenses lock and sent after the claim
+/// commits, up to twenty per pass, five sends each.
+const POLICY: Policy = Policy {
+    table: "expense_deliveries",
+    claims: 20,
+    claiming: Claiming::Leased {
+        seconds: 120,
+        batch: 1,
+    },
+    attempts: 5,
+    backoff: Backoff::Doubling {
+        first: 30,
+        doublings: 4,
+        min: 30,
+        max: 86_400,
+    },
+    held: None,
+};
 
 pub(super) async fn run(state: AppState) {
     maintenance::periodic(
@@ -127,7 +151,7 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
                 Ok(body) => (body, None),
                 Err(error) => (String::new(), Some(error)),
             };
-            sqlx::query("INSERT INTO expense_deliveries(event_id,channel,payload,state,next_attempt_at,last_error,attempts) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(id).bind(channel).bind(body).bind(if error.is_some(){"failed"}else{"pending"}).bind(timestamp).bind(&error).bind(if error.is_some(){5}else{0}).execute(&mut *tx).await?;
+            sqlx::query("INSERT INTO expense_deliveries(event_id,channel,payload,state,next_attempt_at,last_error,attempts) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(id).bind(channel).bind(body).bind(if error.is_some(){"failed"}else{"pending"}).bind(timestamp).bind(&error).bind(if error.is_some(){POLICY.attempts}else{0}).execute(&mut *tx).await?;
         }
     }
     sqlx::query("UPDATE expense_deliveries d SET state='cancelled' FROM expense_events e LEFT JOIN expense_subscriptions s ON s.id=e.subscription_id WHERE d.event_id=e.id AND d.state IN('pending','failed') AND (NOT $1 OR s.id IS NULL OR s.inactive OR NOT s.notify)").bind(reminders).execute(&mut *tx).await?;
@@ -139,32 +163,68 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
 }
 
 async fn deliver(state: &AppState, settings: &settings::Settings) -> ApiResult<()> {
-    for _ in 0..20 {
-        let mut tx = state.pool.begin().await?;
-        lock(&mut tx).await?;
-        let now = now_timestamp();
-        let row=sqlx::query("SELECT d.id,d.channel,d.payload,d.attempts FROM expense_deliveries d JOIN expense_events e ON e.id=d.event_id JOIN expense_subscriptions s ON s.id=e.subscription_id WHERE (SELECT reminders_enabled FROM expense_settings WHERE singleton) AND NOT s.inactive AND s.notify AND d.attempts<5 AND ((d.state IN('pending','failed') AND d.next_attempt_at<=$1) OR (d.state='sending' AND d.lease_until<$1)) ORDER BY d.id LIMIT 1 FOR UPDATE OF d SKIP LOCKED").bind(now).fetch_optional(&mut *tx).await?;
-        let Some(row) = row else {
-            break;
-        };
-        let id: i64 = row.try_get("id")?;
-        let attempts: i32 = row.try_get("attempts")?;
-        sqlx::query("UPDATE expense_deliveries SET state='sending',attempts=attempts+1,lease_until=$2 WHERE id=$1").bind(id).bind(now+120).execute(&mut *tx).await?;
-        tx.commit().await?;
-        let channel: String = row.try_get("channel")?;
-        let payload: String = row.try_get("payload")?;
-        let result = delivery::send(settings, &channel, &payload).await;
-        let (status, error, retry) = match result {
-            Ok(()) => ("sent", None, 0),
-            Err((error, after)) => (
-                "failed",
-                Some(error.chars().take(500).collect::<String>()),
-                after.unwrap_or(30 * (1_i64 << attempts)).clamp(30, 86400),
-            ),
-        };
-        sqlx::query("UPDATE expense_deliveries SET state=$2,last_error=$3,next_attempt_at=$4,lease_until=NULL WHERE id=$1 AND state='sending'").bind(id).bind(status).bind(error).bind(now_timestamp()+retry).execute(&state.pool).await?;
+    queue::deliver(&Reminders { state, settings }).await
+}
+
+/// The renewal reminders due for the channels.
+pub(super) struct Reminders<'a> {
+    state: &'a AppState,
+    settings: &'a settings::Settings,
+}
+
+pub(super) struct Reminder {
+    id: i64,
+    channel: String,
+    payload: String,
+}
+
+impl Queue for Reminders<'_> {
+    const POLICY: Policy = POLICY;
+    type Message = Reminder;
+    type Error = ApiError;
+
+    fn claim(&self, claim: Claim) -> Claims<'_, Reminder, ApiError> {
+        Box::pin(async move {
+            let mut tx = self.state.pool.begin().await?;
+            lock(&mut tx).await?;
+            let rows=sqlx::query("SELECT d.id,d.channel,d.payload,d.attempts FROM expense_deliveries d JOIN expense_events e ON e.id=d.event_id JOIN expense_subscriptions s ON s.id=e.subscription_id WHERE (SELECT reminders_enabled FROM expense_settings WHERE singleton) AND NOT s.inactive AND s.notify AND d.attempts<$2 AND ((d.state IN('pending','failed') AND d.next_attempt_at<=$1) OR (d.state='sending' AND d.lease_until<$1)) ORDER BY d.id LIMIT $3 FOR UPDATE OF d SKIP LOCKED").bind(claim.now).bind(Self::POLICY.attempts).bind(claim.limit).fetch_all(&mut *tx).await?;
+            let mut claimed = Vec::new();
+            for row in rows {
+                let id: i64 = row.try_get("id")?;
+                sqlx::query("UPDATE expense_deliveries SET state='sending',attempts=attempts+1,lease_until=$2 WHERE id=$1").bind(id).bind(claim.lease_until).execute(&mut *tx).await?;
+                claimed.push(Claimed {
+                    message: Reminder {
+                        id,
+                        channel: row.try_get("channel")?,
+                        payload: row.try_get("payload")?,
+                    },
+                    attempts: row.try_get("attempts")?,
+                });
+            }
+            tx.commit().await?;
+            Ok(claimed)
+        })
     }
-    Ok(())
+
+    fn send<'a>(&'a self, reminder: &'a Reminder) -> BoxFuture<'a, Result<(), Failure>> {
+        Box::pin(delivery::send(
+            self.settings,
+            &reminder.channel,
+            &reminder.payload,
+        ))
+    }
+
+    fn settle(&self, reminder: Reminder, outcome: Outcome) -> BoxFuture<'_, ApiResult<()>> {
+        Box::pin(async move {
+            let (state, next) = if outcome.sent() {
+                ("sent", outcome.finished_at)
+            } else {
+                ("failed", outcome.retry_at)
+            };
+            sqlx::query("UPDATE expense_deliveries SET state=$2,last_error=$3,next_attempt_at=$4,lease_until=NULL WHERE id=$1 AND state='sending'").bind(reminder.id).bind(state).bind(&outcome.error).bind(next).execute(&self.state.pool).await?;
+            Ok(())
+        })
+    }
 }
 
 pub(super) async fn notifications(

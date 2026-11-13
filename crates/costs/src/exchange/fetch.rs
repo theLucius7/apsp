@@ -1,4 +1,5 @@
-use reqwest::{Client, redirect::Policy};
+use apsp_panel_host::http::{self, BodyError, Outbound};
+use reqwest::Client;
 use serde_json::Value;
 use std::{collections::BTreeMap, time::Duration};
 
@@ -14,15 +15,15 @@ pub(super) struct FetchedRates {
 }
 
 pub(super) async fn latest() -> Result<FetchedRates, &'static str> {
-    let client = Client::builder()
-        .https_only(true)
-        .no_proxy()
-        .redirect(Policy::none())
-        .connect_timeout(Duration::from_secs(3))
-        .timeout(Duration::from_secs(8))
-        .user_agent("Apsp-exchange-rates/1")
-        .build()
-        .map_err(|_| "download_failed")?;
+    let client = Outbound {
+        connect_timeout: Some(Duration::from_secs(3)),
+        timeout: Some(Duration::from_secs(8)),
+        https_only: true,
+        product: Some("Apsp-exchange-rates/1"),
+        ..Outbound::default()
+    }
+    .build()
+    .map_err(|_| "download_failed")?;
     let now = apsp_protocol::now_timestamp();
     if let Ok(body) = download(&client, PRIMARY).await
         && let Ok(value) = parse(&body, now, true)
@@ -34,7 +35,7 @@ pub(super) async fn latest() -> Result<FetchedRates, &'static str> {
 }
 
 async fn download(client: &Client, url: &str) -> Result<Value, &'static str> {
-    let mut response = client
+    let response = client
         .get(url)
         .header(reqwest::header::ACCEPT, "application/json")
         .send()
@@ -43,20 +44,13 @@ async fn download(client: &Client, url: &str) -> Result<Value, &'static str> {
     if !response.status().is_success() {
         return Err("source_http_failed");
     }
-    if response
-        .content_length()
-        .is_some_and(|size| size > MAX_BODY as u64)
-    {
-        return Err("response_too_large");
-    }
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| "download_failed")? {
-        if chunk.len() > MAX_BODY.saturating_sub(body.len()) {
-            return Err("response_too_large");
-        }
-        body.extend_from_slice(&chunk);
-    }
-    serde_json::from_slice(&body).map_err(|_| "invalid_response")
+    http::json(response, MAX_BODY)
+        .await
+        .map_err(|error| match error {
+            BodyError::TooLarge => "response_too_large",
+            BodyError::Read(_) => "download_failed",
+            BodyError::Invalid => "invalid_response",
+        })
 }
 
 pub(super) fn date_day(value: &str) -> Option<i64> {
@@ -234,11 +228,11 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let address = listener.local_addr()?;
         let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let client = Client::builder()
-            .no_proxy()
-            .redirect(Policy::none())
-            .timeout(Duration::from_secs(2))
-            .build()?;
+        let client = Outbound {
+            timeout: Some(Duration::from_secs(2)),
+            ..Outbound::default()
+        }
+        .build()?;
         assert_eq!(
             download(&client, &format!("http://{address}/redirect")).await,
             Err("source_http_failed")

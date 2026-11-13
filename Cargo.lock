@@ -237,6 +237,7 @@ dependencies = [
 name = "apsp-cloud-api"
 version = "0.3.0"
 dependencies = [
+ "apsp-panel-host",
  "apsp-protocol",
  "axum 0.8.9",
  "base64 0.22.1",
@@ -255,6 +256,7 @@ dependencies = [
 name = "apsp-compiler"
 version = "0.3.0"
 dependencies = [
+ "apsp-protocol",
  "base64 0.22.1",
  "serde",
  "serde_json",
@@ -340,10 +342,8 @@ dependencies = [
  "sqlx",
  "tar",
  "tokio",
- "tokio-rustls",
  "tracing",
  "uuid",
- "webpki-roots 1.0.9",
 ]
 
 [[package]]
@@ -388,11 +388,9 @@ dependencies = [
  "sqlx",
  "thiserror 2.0.21",
  "tokio",
- "tokio-rustls",
  "tower-http",
  "tracing",
  "uuid",
- "webpki-roots 1.0.9",
 ]
 
 [[package]]
@@ -486,6 +484,7 @@ dependencies = [
  "apsp-protocol",
  "axum 0.8.9",
  "base64 0.22.1",
+ "futures-util",
  "httpdate",
  "rand 0.8.8",
  "reqwest",
@@ -497,8 +496,10 @@ dependencies = [
  "sqlx",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-rustls",
  "tracing",
  "uuid",
+ "webpki-roots 1.0.9",
 ]
 
 [[package]]

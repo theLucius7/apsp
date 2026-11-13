@@ -576,27 +576,21 @@ fn valid_hex(value: &str) -> bool {
 fn valid_resolvers(value: &[String]) -> bool {
     !value.is_empty() && value.len() <= 8 && value.iter().all(|v| v.parse::<IpAddr>().is_ok())
 }
+/// A target host: a name, with any number of trailing dots, or an address that is neither
+/// unspecified nor multicast.
 pub fn valid_host(value: &str) -> bool {
-    if let Ok(ip) = value.parse::<IpAddr>() {
-        return !ip.is_unspecified() && !ip.is_multicast();
-    }
-    !value.is_empty()
-        && value.len() <= 253
-        && value.trim_end_matches('.').split('.').all(|v| {
-            !v.is_empty()
-                && v.len() <= 63
-                && !v.starts_with('-')
-                && !v.ends_with('-')
-                && v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-        })
+    crate::net::host(
+        value,
+        crate::net::HostRules {
+            ip: Some(|ip| !ip.is_unspecified() && !ip.is_multicast()),
+            trailing_dots: usize::MAX,
+            ..Default::default()
+        },
+    )
 }
 pub fn valid_url(value: &str, schemes: &[&str]) -> bool {
     reqwest::Url::parse(value).is_ok_and(|url| {
-        schemes.contains(&url.scheme())
-            && url.host_str().is_some_and(valid_host)
-            && url.username().is_empty()
-            && url.password().is_none()
-            && url.fragment().is_none()
+        crate::net::plain_url(&url, schemes) && url.host_str().is_some_and(valid_host)
     })
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]

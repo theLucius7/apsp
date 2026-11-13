@@ -32,6 +32,7 @@ pub mod traffic_correction;
 pub(crate) use apsp_governance::{artifacts, auth, control_center};
 #[cfg(test)]
 pub(crate) use apsp_panel_host::config;
+use apsp_panel_host::notifications::queue::{Policy, Queue};
 pub(crate) use apsp_panel_host::{
     AppState, device_work, error, net, notifications, settings, text,
 };
@@ -40,6 +41,14 @@ use axum::{
     Router,
     routing::{get, post},
 };
+
+/// The message queues observability keeps, each drained by the platform's deliverer.
+pub const QUEUES: &[Policy] = &[
+    <alerts::outbox::Outbox<'static> as Queue>::POLICY,
+    <cloud_notices::Notices<'static> as Queue>::POLICY,
+    <incidents::Deliveries<'static> as Queue>::POLICY,
+    reachability::QUEUE,
+];
 
 pub fn routes() -> Router<AppState> {
     Router::new()

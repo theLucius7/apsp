@@ -1,4 +1,5 @@
 use super::*;
+use apsp_panel_host::http::Outbound;
 use axum::{Router, http::StatusCode, response::IntoResponse, routing::get};
 use reqwest::dns::{self, Resolve};
 use serde_json::json;
@@ -6,12 +7,12 @@ use std::{error::Error as StdError, io};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 fn local_client() -> Client {
-    Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(2))
-        .build()
-        .unwrap()
+    Outbound {
+        timeout: Some(Duration::from_secs(2)),
+        ..Outbound::default()
+    }
+    .build()
+    .unwrap()
 }
 
 #[test]
@@ -111,11 +112,12 @@ impl dns::Resolve for FailingResolver {
 
 #[tokio::test]
 async fn typed_dns_failure_is_distinct_from_a_refused_connection() {
-    let client = Client::builder()
-        .no_proxy()
-        .dns_resolver(Arc::new(FailingResolver))
-        .build()
-        .unwrap();
+    let client = Outbound {
+        resolver: Some(Arc::new(FailingResolver)),
+        ..Outbound::default()
+    }
+    .build()
+    .unwrap();
     let error = query_database(&client, "http://source.invalid", "192.0.2.1", "maxmind")
         .await
         .unwrap_err();
@@ -183,11 +185,12 @@ async fn timeout_and_a_truncated_http_body_have_distinct_categories() {
         }),
     );
     let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let client = Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_millis(50))
-        .build()
-        .unwrap();
+    let client = Outbound {
+        timeout: Some(Duration::from_millis(50)),
+        ..Outbound::default()
+    }
+    .build()
+    .unwrap();
     let error = query_database(
         &client,
         &format!("http://{address}"),

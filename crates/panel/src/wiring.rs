@@ -1,8 +1,9 @@
 //! Connects the typed interfaces at startup (ADR 0128): device reports, the audit trail's
-//! object snapshots, device work, observability evidence, server observation, the member
-//! portal's host network, the proxy users traffic compiles in, China reachability for the
-//! Nexus cutover and the dashboard's exchange rates. This is the only place that names
-//! which owner answers each interface.
+//! object snapshots, device work, observability evidence, the alert outbox the
+//! notification settings and channels reach, server observation, the member portal's host
+//! network, the proxy users traffic compiles in, China reachability for the Nexus cutover
+//! and the dashboard's exchange rates. This is the only place that names which owner
+//! answers each interface.
 
 use apsp_access as access;
 use apsp_governance::control_center::guard::{self, AuditSnapshots};
@@ -13,7 +14,9 @@ use apsp_panel_host::{
     device_work::{self, DeviceWork},
     error::ApiResult,
     evidence::{self, Evidence, IncidentReport},
+    notifications::outbox::{self, ChannelDeliveries, Outbox},
     ports::BoxFuture,
+    settings::Settings,
 };
 use apsp_protocol::{
     AppliedRevisions, ApplyResult, DiagnosticCancelResult, Metrics, ProbeSpec, RetirementResult,
@@ -41,6 +44,7 @@ pub fn install() {
     guard::install(&WIRING);
     device_work::install(&WIRING);
     evidence::install(&WIRING);
+    outbox::install(&WIRING);
     server_observation::install(&WIRING);
     access::install_host_network(&WIRING);
     traffic::users::install(&WIRING);
@@ -322,6 +326,31 @@ impl Evidence for Wiring {
             observed_at,
             notify,
         ))
+    }
+}
+
+impl Outbox for Wiring {
+    fn settings_changed<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        old: &'a Settings,
+        new: &'a Settings,
+    ) -> BoxFuture<'a, ApiResult<()>> {
+        Box::pin(observability::alerts::outbox::settings_changed(
+            tx, old, new,
+        ))
+    }
+
+    fn deliveries<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        channel: &'a str,
+    ) -> BoxFuture<'a, ApiResult<ChannelDeliveries>> {
+        Box::pin(observability::alerts::outbox::deliveries(tx, channel))
+    }
+
+    fn waiting<'a>(&'a self, pool: &'a PgPool) -> BoxFuture<'a, ApiResult<i64>> {
+        Box::pin(observability::alerts::outbox::waiting(pool))
     }
 }
 

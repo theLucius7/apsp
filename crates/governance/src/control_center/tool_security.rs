@@ -3,9 +3,9 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_panel_host::http::{self, Outbound};
 use apsp_protocol::now_timestamp;
 use axum::{Json, extract::State, http::HeaderMap};
-use futures_util::StreamExt;
 use serde_json::{Value, json};
 use sqlx::Row;
 use std::collections::BTreeSet;
@@ -87,23 +87,7 @@ async fn bounded_json(response: reqwest::Response) -> anyhow::Result<Value> {
         response.status().is_success(),
         "official advisory API returned non-success status"
     );
-    anyhow::ensure!(
-        response
-            .content_length()
-            .is_none_or(|length| length <= LIMIT as u64),
-        "advisory response limit exceeded"
-    );
-    let mut bytes = Vec::new();
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
-        anyhow::ensure!(
-            chunk.len() <= LIMIT.saturating_sub(bytes.len()),
-            "advisory response limit exceeded"
-        );
-        bytes.extend_from_slice(&chunk);
-    }
-    Ok(serde_json::from_slice(&bytes)?)
+    Ok(http::json(response, LIMIT).await?)
 }
 fn vulnerability_ids(result: &Value) -> anyhow::Result<Vec<String>> {
     let object = result
@@ -198,12 +182,13 @@ pub async fn refresh(State(state): State<AppState>, headers: HeaderMap) -> ApiRe
             "此安全建议查询刚执行过，请五分钟后再试；可以先查看已保存来源结果".into(),
         ));
     }
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(15))
-        .https_only(true)
-        .build()
-        .map_err(anyhow::Error::from)?;
+    let client = Outbound {
+        timeout: Some(Duration::from_secs(15)),
+        https_only: true,
+        ..Outbound::default()
+    }
+    .build()
+    .map_err(anyhow::Error::from)?;
     let mut all = packages();
     if let Ok(Ok(entries)) =
         tokio::time::timeout(Duration::from_secs(5), crate::releases::entries(&state)).await

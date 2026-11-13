@@ -177,15 +177,7 @@ pub(super) fn domain(value: &str) -> Option<String> {
     if name.len() > 253
         || host.parse::<IpAddr>().is_ok()
         || !host.contains('.')
-        || !host.split('.').all(|label| {
-            !label.is_empty()
-                && label.len() <= 63
-                && !label.starts_with('-')
-                && !label.ends_with('-')
-                && label
-                    .bytes()
-                    .all(|c| c.is_ascii_alphanumeric() || c == b'-')
-        })
+        || !apsp_protocol::names::hostname(host)
     {
         return None;
     }

@@ -1,5 +1,26 @@
 # 执行进度
 
+## 2026-11-13：底层机制统一第二部分——对外请求、网络校验与通知投递各只留一套（ADR 0134）
+
+- 用户要求：第一部分上线后“continue”（“目前是底层原理深度统一”）。决策见 [ADR 0134](docs/adr/0134-outbound-network-and-delivery.md)，取舍见 `docs/open-questions.md`。基于 main `9806187b`。不改数据库基线、协议消息、路由与用户看到的文字；行为变化只在对外请求的代理与重定向默认值，见下。
+- 完成项：
+  - 平台内部分层：`cloud-api` 可以依赖 `panel-host`，`panel-host` 仍只依赖 `protocol`；`tools/check-core-boundary.py` 与它的测试按 crate 检查。
+  - 对外请求（`apsp_panel_host::http`）：出站客户端只有 `Outbound` 一种描述（不走代理、不跟随重定向、不重试、不带 Referer、不解压），面板侧 14 个客户端与 18 个测试或夹具客户端改用它；有界读取（11 份）、状态码映射（2 份）、`Retry-After`（3 份）各合为一处，`cloud-api` 的传输层与平台通知的重试解析改用它们。
+  - 网络校验（`apsp_panel_host::net`）：公网地址（3 处）、解析结果检查（5 处）、TLS 建立（2 处）、固定解析（2 处）、TCP 拨号（3 处）、URL（4 处）、主机名（8 处）合为一处；配置编译库用的主机名检查放进 `protocol::names`。
+  - 通知投递（`apsp_panel_host::notifications::queue`）：六个队列各自实现 `Queue`，由平台的投递器按各自原来的规则认领、发送、重试；告警发件箱 `notification_outbox` 归观测（`alerts::outbox`），平台经新接口 `notifications::outbox::Outbox` 取消过时的待发消息、读投递统计与积压数。平台不再读任何领域的表。
+  - 守卫（随 `cargo test` 运行）：出站客户端只在 `http.rs` 构建；地址分类只在 `net.rs`（两处有理由的例外）；带下次尝试时间的表都是登记的队列、每个 `Queue` 都已登记、改写尝试次数与下次时间的语句只在队列实现里、按尝试次数算等待只在平台投递器里。
+  - 边界：越界清单 390 → 377。
+  - 文档：ADR 0134 与索引、`AGENTS.md`（平台依赖、机制规则）、`docs/architecture.md`（§3.3、§5.1、§5.4、§5.5 第十一个接口、§12）、`docs/open-questions.md`。
+- 验证结果（本地，2026-11-13；CI 仍暂停，未触发）：
+  - `cargo fmt --all --check` 通过；`cargo clippy --all-targets -- -D warnings` 覆盖 `apsp-protocol`、`apsp-compiler`、`apsp-panel-host`、`apsp-cloud-api`、九个领域 crate 与 `apsp-panel`，通过。
+  - 单元测试：这 14 个 crate 的 `--lib` 共 620 项通过、1 项按原有标注忽略。
+  - 面板集成测试：除 `end_to_end` 外的 80 个目标共 391 项通过、0 项失败、6 项按原有标注忽略。
+  - `tools/check-core-boundary.py`、`tools/check-feature-boundaries.py`（377 条已知越界，没有新增）、`tools/route-policy.py`（505 条路由）与三个检查器的 Python 测试通过；前端构建通过（前端没有改动）。
+  - 过程：两个切片由两个子代理在各自的工作区与各自的编译目录里完成，合并后在全新的编译目录里重跑以上全部。
+  - 未验证：`end_to_end`；真实的 Telegram、Webhook 与邮件发送（开发验证不发真实通知，上线后只读核对队列状态）；镜像由部署器构建。
+- 已知问题：扫描中发现、照原样保留的问题（工作台 URL 检查不接受 IPv6 字面量、工作台数据源不做公网检查、Cloudflare 两处读取响应无大小上限、外部订阅出站主机 IDNA 后不查长度）记在 `docs/open-questions.md`；四处语义不同的主机名检查没有并入（architecture.md §12.2）。
+- 下一步：Cloudflare 三处与 Globalping 两处客户端（基于这一批的 `http`）、服务器可用判断、健康视图组合与保留期由所有者执行、几类小机制。
+
 ## 2026-11-13：底层机制统一第一部分——咨询锁与后台任务各只留一套（ADR 0133）
 
 - 用户要求：“目前是底层原理深度统一”（接“扫描 apsp 和查看仓库记录，优化”）。决策见 [ADR 0133](docs/adr/0133-one-implementation-per-mechanism.md)，取舍见 `docs/open-questions.md`。基于 main `4da54e67`。可见的变化只有系统健康页多出 6 个后台任务的心跳；行为上另有两处：管理员偏好锁不再与新建或修改管理员、刷新工具通告共用一把锁，作业的三个循环一拍失败时的日志由 ERROR 改为 WARN。不改数据库基线、协议与设备。

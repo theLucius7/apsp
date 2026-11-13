@@ -1,8 +1,29 @@
 use super::*;
-use apsp_panel_host::maintenance::{self, Cadence};
+use apsp_panel_host::{
+    maintenance::{self, Cadence},
+    notifications::{
+        Failure,
+        queue::{self, Backoff, Claim, Claimed, Claiming, Claims, Outcome, Policy, Queue},
+    },
+    ports::BoxFuture,
+};
 use axum::{
     Json,
     extract::{Path, State},
+};
+
+/// Reminder mail: leased one at a time and sent after the claim commits, up to twenty per
+/// pass, five sends each, five minutes apart.
+const POLICY: Policy = Policy {
+    table: "singbox_member_messages",
+    claims: 20,
+    claiming: Claiming::Leased {
+        seconds: 120,
+        batch: 1,
+    },
+    attempts: 5,
+    backoff: Backoff::Fixed(300),
+    held: None,
 };
 
 pub(super) async fn add(
@@ -136,19 +157,73 @@ async fn tick(state: &AppState) -> ApiResult<()> {
     if !config.enabled || !config.reminders_enabled {
         return Ok(());
     }
-    for _ in 0..20 {
-        let mut tx = state.pool.begin().await?;
-        let row=sqlx::query("SELECT n.id,n.message,m.email FROM singbox_member_messages n JOIN singbox_members m ON m.user_id=n.user_id JOIN users u ON u.id=m.user_id WHERE m.state IN('active','pending') AND u.deleted_at IS NULL AND m.email_verified_at IS NOT NULL AND n.mail_attempts<5 AND ((n.mail_state IN('pending','failed') AND n.next_attempt_at<=$1) OR (n.mail_state='sending' AND n.lease_until<$1)) AND CASE n.kind WHEN 'expiry' THEN m.remind_expire WHEN 'traffic' THEN m.remind_traffic ELSE FALSE END ORDER BY n.id LIMIT 1 FOR UPDATE OF n SKIP LOCKED").bind(now_timestamp()).fetch_optional(&mut *tx).await?;
-        let Some(row) = row else {
-            break;
-        };
-        let id: i64 = row.try_get("id")?;
-        sqlx::query("UPDATE singbox_member_messages SET mail_state='sending',mail_attempts=mail_attempts+1,lease_until=$2 WHERE id=$1").bind(id).bind(now_timestamp()+120).execute(&mut *tx).await?;
-        tx.commit().await?;
-        let message: String = row.try_get("message")?;
-        let email: String = row.try_get("email")?;
-        let result = mail::send(state, &config, &email, "apsp 账号提醒", &message).await;
-        sqlx::query("UPDATE singbox_member_messages SET mail_state=$2,next_attempt_at=$3,lease_until=NULL WHERE id=$1 AND mail_state='sending'").bind(id).bind(if result.is_ok(){"sent"}else{"failed"}).bind(now_timestamp()+300).execute(&state.pool).await?;
+    queue::deliver(&Mailbox {
+        state,
+        config: &config,
+    })
+    .await
+}
+
+/// The reminder mail due for verified contact addresses.
+pub(super) struct Mailbox<'a> {
+    state: &'a AppState,
+    config: &'a mail::Configuration,
+}
+
+pub(super) struct Mail {
+    id: i64,
+    email: String,
+    message: String,
+}
+
+impl Queue for Mailbox<'_> {
+    const POLICY: Policy = POLICY;
+    type Message = Mail;
+    type Error = ApiError;
+
+    fn claim(&self, claim: Claim) -> Claims<'_, Mail, ApiError> {
+        Box::pin(async move {
+            let mut tx = self.state.pool.begin().await?;
+            let rows=sqlx::query("SELECT n.id,n.message,n.mail_attempts,m.email FROM singbox_member_messages n JOIN singbox_members m ON m.user_id=n.user_id JOIN users u ON u.id=m.user_id WHERE m.state IN('active','pending') AND u.deleted_at IS NULL AND m.email_verified_at IS NOT NULL AND n.mail_attempts<$2 AND ((n.mail_state IN('pending','failed') AND n.next_attempt_at<=$1) OR (n.mail_state='sending' AND n.lease_until<$1)) AND CASE n.kind WHEN 'expiry' THEN m.remind_expire WHEN 'traffic' THEN m.remind_traffic ELSE FALSE END ORDER BY n.id LIMIT $3 FOR UPDATE OF n SKIP LOCKED").bind(claim.now).bind(Self::POLICY.attempts).bind(claim.limit).fetch_all(&mut *tx).await?;
+            let mut claimed = Vec::new();
+            for row in rows {
+                let id: i64 = row.try_get("id")?;
+                sqlx::query("UPDATE singbox_member_messages SET mail_state='sending',mail_attempts=mail_attempts+1,lease_until=$2 WHERE id=$1").bind(id).bind(claim.lease_until).execute(&mut *tx).await?;
+                claimed.push(Claimed {
+                    message: Mail {
+                        id,
+                        email: row.try_get("email")?,
+                        message: row.try_get("message")?,
+                    },
+                    attempts: row.try_get("mail_attempts")?,
+                });
+            }
+            tx.commit().await?;
+            Ok(claimed)
+        })
     }
-    Ok(())
+
+    fn send<'a>(&'a self, reminder: &'a Mail) -> BoxFuture<'a, Result<(), Failure>> {
+        Box::pin(async move {
+            mail::send(
+                self.state,
+                self.config,
+                &reminder.email,
+                "apsp 账号提醒",
+                &reminder.message,
+            )
+            .await
+            .map_err(|error| Failure {
+                message: error.to_string(),
+                retry_after: None,
+            })
+        })
+    }
+
+    fn settle(&self, reminder: Mail, outcome: Outcome) -> BoxFuture<'_, ApiResult<()>> {
+        Box::pin(async move {
+            sqlx::query("UPDATE singbox_member_messages SET mail_state=$2,next_attempt_at=$3,lease_until=NULL WHERE id=$1 AND mail_state='sending'").bind(reminder.id).bind(if outcome.sent(){"sent"}else{"failed"}).bind(outcome.retry_at).execute(&self.state.pool).await?;
+            Ok(())
+        })
+    }
 }

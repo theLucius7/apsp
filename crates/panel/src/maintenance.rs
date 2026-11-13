@@ -59,7 +59,7 @@ async fn pass(state: &AppState) -> Pass {
         healthy = false;
         tracing::error!(%error, "server alert evaluation failed");
     }
-    if let Err(error) = apsp_panel_host::notifications::dispatch(&state.pool, now).await {
+    if let Err(error) = apsp_observability::alerts::dispatch(&state.pool, now).await {
         healthy = false;
         tracing::error!(%error, "notification delivery failed");
     }

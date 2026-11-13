@@ -52,7 +52,7 @@ impl Panel {
         Ok(Self {
             pool,
             base,
-            client: Client::builder().no_proxy().build()?,
+            client: apsp_panel_host::http::Outbound::default().build()?,
             directory,
             task,
         })

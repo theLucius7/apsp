@@ -73,6 +73,7 @@ observability = [
   "alert_*", "server_alert_events", "fleet_events", "diagnostic_*", "server_ip_quality*",
   "network_probes", "network_workbench_*", "latency_tasks", "probe_*", "tcpquality_*",
   "operations_incident*", "singbox_reachability_*", "alicloud_events", "alicloud_deliveries",
+  "notification_outbox",
 ]
 operations = [
   "operations_backup_*", "operations_restore_drills",

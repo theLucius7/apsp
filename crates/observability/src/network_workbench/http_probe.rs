@@ -1,11 +1,11 @@
 //! Bounded HTTP/1.1 observations measured on the connection serving the request.
 use super::models::{Check, Execution, Family};
 use crate::error::{ApiError, ApiResult};
+use apsp_panel_host::net::Refused;
 use apsp_protocol::now_timestamp;
 use serde_json::{Value, json};
 use std::{
     net::IpAddr,
-    sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::{
@@ -52,16 +52,18 @@ fn authorized(execution: &Execution, url: &reqwest::Url) -> ApiResult<()> {
 pub(super) fn panel_destination(address: IpAddr) -> bool {
     crate::net::public_ip(address)
 }
-fn refuse_private(
+/// Checks the addresses a target resolved to (at most 64, taken in the selected family).
+pub(super) fn refuse_private(
     addresses: &[std::net::SocketAddr],
     destination: fn(IpAddr) -> bool,
+    empty: &str,
 ) -> ApiResult<()> {
-    if addresses.iter().any(|address| !destination(address.ip())) {
-        return Err(conflict(
-            "目标解析到回环、内网或保留地址，面板不会从自身连接；请改由服务器执行此检测",
-        ));
-    }
-    Ok(())
+    crate::net::check_resolved(addresses, 64, destination).map_err(|refused| match refused {
+        Refused::Empty => conflict(empty),
+        Refused::TooMany | Refused::NotPublic => {
+            conflict("目标解析到回环、内网或保留地址，面板不会从自身连接；请改由服务器执行此检测")
+        }
+    })
 }
 
 #[cfg(test)]
@@ -174,11 +176,8 @@ where
         .collect();
     let dns_ms = milliseconds(dns);
     authorized(execution, url)?;
-    if addresses.is_empty() {
-        return Err(conflict("HTTP目标没有选定地址族"));
-    }
     // Every request, including each redirect, is resolved and checked again.
-    refuse_private(&addresses, destination)?;
+    refuse_private(&addresses, destination, "HTTP目标没有选定地址族")?;
     let connecting = Instant::now();
     let mut connected = None;
     let mut last_error = None;
@@ -217,21 +216,10 @@ where
         agent_header = reqwest::header::USER_AGENT.as_str(),
     );
     let (mut response, tls_ms) = if url.scheme() == "https" {
-        let roots =
-            rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        let config = rustls::ClientConfig::builder_with_provider(Arc::new(
-            rustls::crypto::ring::default_provider(),
-        ))
-        .with_safe_default_protocol_versions()
-        .map_err(anyhow::Error::from)?
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-        let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
-        let server_name = rustls::pki_types::ServerName::try_from(name.to_owned())
-            .map_err(anyhow::Error::from)?;
+        let session = crate::net::Tls::new(name).map_err(anyhow::Error::from)?;
         let tls = Instant::now();
-        let stream = connector
-            .connect(server_name, tcp)
+        let stream = session
+            .handshake(tcp)
             .await
             .map_err(|error| conflict(format!("HTTP TLS握手失败：{error}")))?;
         let tls_ms = milliseconds(tls);

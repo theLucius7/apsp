@@ -262,11 +262,9 @@ impl LiveProbe {
 }
 impl Probe for LiveProbe {
     async fn reachable(&self, ip: &str, port: u16) -> bool {
-        let connect = tokio::net::TcpStream::connect((ip, port));
-        matches!(
-            tokio::time::timeout(Duration::from_secs(5), connect).await,
-            Ok(Ok(_))
-        )
+        apsp_panel_host::net::dial((ip, port), Duration::from_secs(5))
+            .await
+            .is_ok()
     }
     async fn start(&self, ip: &str, port: u16, plan: Plan) -> Result<String, Failure> {
         self.service

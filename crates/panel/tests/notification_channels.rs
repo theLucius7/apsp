@@ -3,8 +3,8 @@ mod business_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::Result;
-use apsp_observability::alerts::evaluate;
-use apsp_panel_host::{notifications, settings::Settings};
+use apsp_observability::alerts::{dispatch, evaluate};
+use apsp_panel_host::settings::Settings;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -344,7 +344,7 @@ async fn automatic_webhook_delivers_offline_and_recovery_with_event_metadata(
             .execute(pool)
             .await?;
         evaluate(pool, now - 600, now).await?;
-        notifications::dispatch(pool, now).await?;
+        dispatch(pool, now).await?;
         let received = tokio::time::timeout(std::time::Duration::from_secs(5), worker).await??;
         assert_eq!(received["event"], expected);
         if recovery {

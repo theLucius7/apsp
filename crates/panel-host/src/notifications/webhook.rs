@@ -1,12 +1,15 @@
 use super::telegram::Failure;
+use crate::http::{self, BodyError, Outbound};
 use reqwest::{
-    Client, Url,
+    Url,
     header::{HeaderMap, HeaderName, HeaderValue},
-    redirect::Policy,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{str::FromStr, time::Duration};
+use std::{
+    str::FromStr,
+    time::{Duration, SystemTime},
+};
 
 pub const DEFAULT_BODY: &str = r#"{"event":"{{event}}","event_id":"{{event_id}}","category":"{{category}}","node":"{{server}}","title":"{{title}}","message":"{{message}}","site":"{{site}}","time":"{{time}}"}"#;
 const KEYS: [&str; 9] = [
@@ -41,11 +44,7 @@ pub struct Config {
 pub(super) fn validate(config: &Config) -> Result<(), &'static str> {
     let url = Url::parse(&config.url).map_err(|_| "Webhook 地址无效")?;
     if config.url.len() > 2048
-        || !matches!(url.scheme(), "http" | "https")
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.fragment().is_some()
+        || !crate::net::plain_url(&url, &["http", "https"])
         || config.url.chars().any(char::is_whitespace)
     {
         return Err("Webhook 地址必须为 HTTP 或 HTTPS，不得包含用户信息、空白或片段");
@@ -238,15 +237,15 @@ pub(super) async fn send(config: &Config, body: &str) -> Result<(), Failure> {
             .extend_pairs(parameters)
             .append_pair("wait", "true");
     }
-    let client = Client::builder()
-        .no_proxy()
-        .redirect(Policy::none())
-        .connect_timeout(Duration::from_secs(4))
-        .timeout(Duration::from_secs(8))
-        .build()
-        .map_err(|_| failure("Webhook 客户端初始化失败"))?;
+    let client = Outbound {
+        connect_timeout: Some(Duration::from_secs(4)),
+        timeout: Some(Duration::from_secs(8)),
+        ..Outbound::default()
+    }
+    .build()
+    .map_err(|_| failure("Webhook 客户端初始化失败"))?;
     let headers = headers(&config.headers).map_err(failure)?;
-    let mut response = client
+    let response = client
         .post(target)
         .headers(headers)
         .body(body.to_owned())
@@ -254,11 +253,7 @@ pub(super) async fn send(config: &Config, body: &str) -> Result<(), Failure> {
         .await
         .map_err(|_| failure("Webhook 请求失败，请检查地址、认证配置与网络"))?;
     let status = response.status();
-    let retry_after = response
-        .headers()
-        .get(reqwest::header::RETRY_AFTER)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| super::retry::after(value, std::time::SystemTime::now()));
+    let retry_after = super::RETRY_AFTER.header(response.headers(), SystemTime::now());
     if !status.is_success() {
         return Err(Failure {
             message: format!(
@@ -268,17 +263,12 @@ pub(super) async fn send(config: &Config, body: &str) -> Result<(), Failure> {
             retry_after,
         });
     }
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
+    let bytes = http::body(response, 64 * 1024)
         .await
-        .map_err(|_| failure("Webhook 响应读取失败"))?
-    {
-        if bytes.len() + chunk.len() > 64 * 1024 {
-            return Err(failure("Webhook 响应超过 64 KiB"));
-        }
-        bytes.extend_from_slice(&chunk);
-    }
+        .map_err(|error| match error {
+            BodyError::TooLarge => failure("Webhook 响应超过 64 KiB"),
+            BodyError::Read(_) | BodyError::Invalid => failure("Webhook 响应读取失败"),
+        })?;
     if acknowledged(config.preset, &bytes, body) {
         Ok(())
     } else {

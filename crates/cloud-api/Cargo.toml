@@ -10,10 +10,10 @@ rust-version.workspace = true
 test-support = []
 
 [dependencies]
+apsp-panel-host.workspace = true
 apsp-protocol.workspace = true
 axum.workspace = true
 base64.workspace = true
-futures-util.workspace = true
 hmac = "0.12"
 httpdate = "1.0.3"
 reqwest.workspace = true
@@ -22,3 +22,6 @@ sha1 = "0.10"
 sha2.workspace = true
 tokio.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+futures-util.workspace = true

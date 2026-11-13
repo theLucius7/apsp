@@ -182,16 +182,7 @@ pub async fn apply(state: &AppState, update: Update) -> ApiResult<Json<Value>> {
         .execute(&mut *tx)
         .await?;
     // Do not deliver stale notifications to a newly configured recipient.
-    if !settings.telegram_ready()
-        || old.telegram_chat_id != settings.telegram_chat_id
-        || old.telegram_token != settings.telegram_token
-        || old.telegram_thread_id != settings.telegram_thread_id
-        || old.telegram_template != settings.telegram_template
-    {
-        sqlx::query("UPDATE notification_outbox SET status='cancelled' WHERE channel='telegram' AND status='pending'")
-            .execute(&mut *tx)
-            .await?;
-    }
+    crate::notifications::outbox::settings_changed(&mut tx, &old, &settings).await?;
     if old.telegram_chat_id != settings.telegram_chat_id
         || old.telegram_token != settings.telegram_token
         || old.telegram_thread_id != settings.telegram_thread_id
@@ -200,23 +191,6 @@ pub async fn apply(state: &AppState, update: Update) -> ApiResult<Json<Value>> {
         sqlx::query("DELETE FROM notification_channel_tests WHERE channel='telegram'")
             .execute(&mut *tx)
             .await?;
-    }
-    if !settings.notification_enabled {
-        sqlx::query("UPDATE notification_outbox SET status='cancelled' WHERE status='pending'")
-            .execute(&mut *tx)
-            .await?;
-    }
-    if !settings.offline_alerts {
-        sqlx::query("UPDATE notification_outbox o SET status='cancelled' FROM server_alert_events e WHERE o.event_id=e.id AND e.category='offline' AND o.status='pending'").execute(&mut *tx).await?;
-    }
-    for (category, enabled) in [
-        ("expiry", settings.expiry_alert_days > 0),
-        ("traffic", settings.traffic_alert_percentage > 0),
-    ] {
-        if !enabled {
-            sqlx::query("UPDATE notification_outbox o SET status='cancelled' FROM server_alert_events e WHERE o.event_id=e.id AND e.category=$1 AND o.status='pending'")
-                .bind(category).execute(&mut *tx).await?;
-        }
     }
     tx.commit().await?;
     Ok(Json(settings.view()))

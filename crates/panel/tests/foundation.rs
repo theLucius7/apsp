@@ -62,10 +62,11 @@ impl TestPanel {
         });
         Ok(Self {
             state,
-            client: Client::builder()
-                .no_proxy()
-                .timeout(Duration::from_secs(10))
-                .build()?,
+            client: apsp_panel_host::http::Outbound {
+                timeout: Some(Duration::from_secs(10)),
+                ..Default::default()
+            }
+            .build()?,
             base,
             directory,
             task,

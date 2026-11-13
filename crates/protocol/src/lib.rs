@@ -9,6 +9,7 @@ pub mod tasks;
 pub mod upgrade;
 pub use upgrade::{AgentRelease, release_version};
 pub mod fleet;
+pub mod names;
 pub mod telemetry;
 pub use tasks::*;
 pub use telemetry::{

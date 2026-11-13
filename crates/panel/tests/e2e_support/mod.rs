@@ -64,10 +64,11 @@ impl Harness {
         let publisher = tokio::spawn(async move {
             publisher::run(publisher_state).await;
         });
-        let client = Client::builder()
-            .no_proxy()
-            .timeout(Duration::from_secs(5))
-            .build()?;
+        let client = apsp_panel_host::http::Outbound {
+            timeout: Some(Duration::from_secs(5)),
+            ..Default::default()
+        }
+        .build()?;
         let response = client
             .post(format!("{base}/api/login"))
             .json(&json!({"password": "end-to-end-test-password"}))

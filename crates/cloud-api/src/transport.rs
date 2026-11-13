@@ -1,11 +1,18 @@
 use super::Failure;
-use futures_util::StreamExt;
-use reqwest::{Client, RequestBuilder, Response};
+use apsp_panel_host::http::{self, BodyError, Outbound, Refusal, RetryAfter};
+use reqwest::{Client, RequestBuilder, Response, StatusCode};
 use serde_json::Value;
 use std::{
     sync::OnceLock,
     time::{Duration, SystemTime},
 };
+
+/// How long a provider may make the panel wait after a 429: one to sixty minutes.
+pub const RETRY_AFTER: RetryAfter = RetryAfter::new(60, 3600);
+/// The wait after a 429 that names none, or none the panel can read.
+const DEFAULT_RETRY_AFTER: i64 = 300;
+/// The largest provider answer the panel reads.
+const LIMIT: usize = 256 * 1024;
 
 /// The client every cloud provider call shares. Background loops create their
 /// provider handles every few seconds; one client keeps the TLS setup and
@@ -15,14 +22,13 @@ pub fn client() -> Result<Client, Failure> {
     if let Some(client) = CLIENT.get() {
         return Ok(client.clone());
     }
-    let client = Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .retry(reqwest::retry::never())
-        .connect_timeout(Duration::from_secs(3))
-        .timeout(Duration::from_secs(6))
-        .build()
-        .map_err(|_| Failure::from("client_error"))?;
+    let client = Outbound {
+        connect_timeout: Some(Duration::from_secs(3)),
+        timeout: Some(Duration::from_secs(6)),
+        ..Outbound::default()
+    }
+    .build()
+    .map_err(|_| Failure::from("client_error"))?;
     Ok(CLIENT.get_or_init(|| client).clone())
 }
 
@@ -52,73 +58,53 @@ async fn json_inner(request: RequestBuilder, power: bool) -> Result<Value, Failu
         .send()
         .await
         .map_err(|_| Failure::from("network_error"))?;
-    let status = response.status().as_u16();
-    if status == 429 {
-        return Err(rate_limited(&response));
-    }
-    if !(200..300).contains(&status) && !(power && (400..500).contains(&status)) {
-        return Err(match status {
-            401 | 403 => "authentication_failed",
-            404 => "resource_missing",
-            300..=399 => "redirect_refused",
-            500..=599 => "provider_unavailable",
-            _ => "provider_rejected",
-        }
-        .into());
+    let status = response.status();
+    // Power actions explain a refused request in the body, so their 4xx answers are read.
+    let explained = power && status.is_client_error() && status != StatusCode::TOO_MANY_REQUESTS;
+    if !explained && let Some(failure) = refusal(&response, "provider_rejected") {
+        return Err(failure);
     }
     let value = bounded_json(response).await?;
     if power && let Some(code) = power_rejection(&value) {
         return Err(code.into());
     }
-    if !(200..300).contains(&status) {
+    if !status.is_success() {
         return Err("provider_rejected".into());
     }
     Ok(value)
 }
 
+/// The failure a provider's answer stands for by its status, or `None` when it succeeded.
+/// `other` names a status outside the shared categories.
+pub fn refusal(response: &Response, other: &'static str) -> Option<Failure> {
+    Some(match Refusal::of(response.status())? {
+        Refusal::RateLimited => rate_limited(response),
+        Refusal::Credentials => "authentication_failed".into(),
+        Refusal::Missing => "resource_missing".into(),
+        Refusal::Rejected => "provider_rejected".into(),
+        Refusal::Redirect => "redirect_refused".into(),
+        Refusal::Unavailable => "provider_unavailable".into(),
+        Refusal::Other => other.into(),
+    })
+}
+
 /// A 429 answer, waiting as long as the provider asks (one to sixty minutes).
-pub fn rate_limited(response: &Response) -> Failure {
+fn rate_limited(response: &Response) -> Failure {
     Failure {
         code: "rate_limited",
-        retry_after: response
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| retry_after(v, SystemTime::now()))
-            .unwrap_or(300),
+        retry_after: RETRY_AFTER
+            .header(response.headers(), SystemTime::now())
+            .unwrap_or(DEFAULT_RETRY_AFTER),
     }
 }
 
 /// Reads a JSON body of at most 256 KiB, whatever the declared length says.
 pub async fn bounded_json(response: Response) -> Result<Value, Failure> {
-    const LIMIT: usize = 256 * 1024;
-    if response.content_length().is_some_and(|v| v > LIMIT as u64) {
-        return Err("response_too_large".into());
-    }
-    let mut bytes = Vec::new();
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| Failure::from("network_error"))?;
-        if bytes.len() + chunk.len() > LIMIT {
-            return Err("response_too_large".into());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    serde_json::from_slice(&bytes).map_err(|_| Failure::from("invalid_response"))
-}
-
-pub fn retry_after(value: &str, now: SystemTime) -> Option<i64> {
-    let value = value.trim();
-    let seconds = if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
-        value.parse::<u64>().ok()?
-    } else {
-        let duration = httpdate::parse_http_date(value)
-            .ok()?
-            .duration_since(now)
-            .unwrap_or_default();
-        duration
-            .as_secs()
-            .saturating_add(u64::from(duration.subsec_nanos() != 0))
-    };
-    Some(seconds.clamp(60, 3600) as i64)
+    http::json(response, LIMIT).await.map_err(|error| {
+        Failure::from(match error {
+            BodyError::TooLarge => "response_too_large",
+            BodyError::Read(_) => "network_error",
+            BodyError::Invalid => "invalid_response",
+        })
+    })
 }

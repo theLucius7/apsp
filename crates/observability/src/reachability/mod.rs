@@ -20,6 +20,10 @@ mod worker;
 pub use classify::ReachabilityState;
 
 use crate::{AppState, error::ApiResult};
+use apsp_panel_host::notifications::queue::{Policy, Queue};
+
+/// The queue of reachability alerts, as the crate declares its queues.
+pub(crate) const QUEUE: Policy = <alerts::Deliveries<'static> as Queue>::POLICY;
 use axum::Router;
 use sqlx::PgPool;
 

@@ -4,6 +4,7 @@ use crate::{
     diagnostics::service,
     error::{ApiError, ApiResult},
 };
+use apsp_panel_host::net::DialFailure;
 use apsp_protocol::now_timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -627,14 +628,7 @@ where
     tokio::time::timeout(Duration::from_secs(seconds), async {
         authorize().await?;
         let addresses = lookup.await.map_err(anyhow::Error::from)?;
-        if addresses.is_empty() {
-            return Err(ApiError::Conflict("目标没有选定地址族".into()));
-        }
-        if addresses.iter().any(|address| !destination(address.ip())) {
-            return Err(ApiError::Conflict(
-                "目标解析到回环、内网或保留地址，面板不会从自身连接；请改由服务器执行此检测".into(),
-            ));
-        }
+        super::http_probe::refuse_private(&addresses, destination, "目标没有选定地址族")?;
         if target.authorized_until.is_some_and(|end| end <= now_timestamp()) {
             return Err(ApiError::Conflict("探测目标授权已到期".into()));
         }
@@ -650,11 +644,10 @@ where
                 if target.authorized_until.is_some_and(|end| end <= now_timestamp()) {
                     return Err(ApiError::Conflict("探测目标授权已到期".into()));
                 }
-                let result = tokio::time::timeout(Duration::from_secs(3), tokio::net::TcpStream::connect(address)).await;
-                observation = match result {
-                    Ok(Ok(stream)) => { let peer=stream.peer_addr().map_err(anyhow::Error::from)?; drop(stream); json!({"connected":true,"elapsed_ms":timer.elapsed().as_secs_f64()*1000.0,"address":peer.ip().to_string()}) },
-                    Ok(Err(error)) => json!({"connected":false,"failure":error.to_string()}),
-                    Err(_) => json!({"connected":false,"failure":"连接超时"}),
+                observation = match crate::net::dial(*address, Duration::from_secs(3)).await {
+                    Ok(stream) => { let peer=stream.peer_addr().map_err(anyhow::Error::from)?; drop(stream); json!({"connected":true,"elapsed_ms":timer.elapsed().as_secs_f64()*1000.0,"address":peer.ip().to_string()}) },
+                    Err(DialFailure::Failed(error)) => json!({"connected":false,"failure":error.to_string()}),
+                    Err(DialFailure::TimedOut) => json!({"connected":false,"failure":"连接超时"}),
                 };
                 if observation["connected"] == true { break; }
             }

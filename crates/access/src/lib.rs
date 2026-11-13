@@ -35,6 +35,9 @@ use axum::{
     routing::{get, post},
 };
 
+/// The message queues access keeps, each drained by the platform's deliverer.
+pub const QUEUES: &[apsp_panel_host::notifications::queue::Policy] = &[user_accounts::QUEUE];
+
 /// Member accounts and personal subscription hosts; the publication cycle that refreshes
 /// entitlements is composed by the application together with traffic.
 pub async fn run(state: AppState) {

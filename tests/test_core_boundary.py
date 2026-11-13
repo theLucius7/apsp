@@ -104,6 +104,13 @@ class CoreBoundaryTests(unittest.TestCase):
         self.assertTrue(boundary.violations("src/settings.rs", source, boundary.HOST_EXCEPTIONS))
         self.assertTrue(boundary.violations(relative, source + "; user_id", boundary.HOST_EXCEPTIONS))
         self.assertTrue(boundary.violations("src/lib.rs", "pub mod singbox;", boundary.HOST_EXCEPTIONS))
+        # The outbound client sets its product token through the client method alone.
+        method = "builder = builder.user_agent(product);"
+        self.assertFalse(boundary.violations("src/http.rs", method, boundary.HOST_EXCEPTIONS))
+        self.assertTrue(boundary.violations("src/http.rs", method))
+        self.assertTrue(boundary.violations("src/net.rs", method, boundary.HOST_EXCEPTIONS))
+        self.assertTrue(boundary.violations("src/http.rs", "builder.user_agent(user)", boundary.HOST_EXCEPTIONS))
+        self.assertTrue(boundary.violations("src/http.rs", method + " // user", boundary.HOST_EXCEPTIONS))
         # Governance, resources and the other domains left the platform crate, so their
         # former exceptions no longer exist there.
         self.assertTrue(boundary.violations("src/releases/network.rs", '.user_agent("apsp-panel")',
@@ -133,7 +140,8 @@ class CoreBoundaryTests(unittest.TestCase):
             "crates/agent-core/Cargo.toml": protocol,
             "crates/agent/Cargo.toml": "[dependencies]\napsp-agent-core.workspace = true\napsp-adapter-singbox.workspace = true\n",
             "crates/panel-host/Cargo.toml": protocol,
-            "crates/cloud-api/Cargo.toml": protocol,
+            # The cloud provider client builds on the panel host's outbound HTTP.
+            "crates/cloud-api/Cargo.toml": protocol + "apsp-panel-host.workspace = true\n",
             "crates/compiler/Cargo.toml": "[package]\n",
             "crates/governance/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\n",
             "crates/resources/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-governance.workspace = true\napsp-cloud-api.workspace = true\n",
@@ -152,6 +160,8 @@ class CoreBoundaryTests(unittest.TestCase):
             # The platform never depends on a domain or on a crate that holds domains.
             "crates/panel-host/Cargo.toml": "[dev-dependencies]\napsp-traffic.workspace = true\n",
             "crates/cloud-api/Cargo.toml": "[dependencies]\napsp-naming.workspace = true\n",
+            # The panel host is the platform's base: it does not depend on the cloud client.
+            "crates/panel-host/Cargo.toml#cloud": "[dependencies]\napsp-cloud-api.workspace = true\n",
             # A domain depends only on earlier groups, never on a later domain or a peer.
             "crates/naming/Cargo.toml": "[dependencies]\napsp-costs.workspace = true\n",
             "crates/compiler/Cargo.toml": "[dependencies]\napsp-costs.workspace = true\n",
@@ -178,8 +188,10 @@ class CoreBoundaryTests(unittest.TestCase):
                 (root / relative).write_text(text)
             return root
 
-        for path, manifest in broken.items():
-            with self.subTest(path=path), tempfile.TemporaryDirectory() as directory:
+        for case, manifest in broken.items():
+            # A suffix after "#" names a further case for the same manifest.
+            path = case.split("#")[0]
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
                 self.assertFalse(boundary.check_dependencies(tree(directory, {**manifests, path: manifest})))
         # A layered crate that moves away without updating the rules fails.
         with tempfile.TemporaryDirectory() as directory:

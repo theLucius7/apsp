@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 //! Platform client for cloud provider APIs (ADR 0128): request signing, transport, retries
-//! and error codes, with no business decisions.
+//! and error codes, with no business decisions. Built on the panel host's outbound HTTP
+//! (`apsp_panel_host::http`): clients, bounded bodies, status categories and waits.
 
 pub mod aliyun;
 pub mod globalping;
