@@ -1,5 +1,23 @@
 # 执行进度
 
+## 2026-11-13：发布循环的数据库开销——关闭 JIT，每轮只算一次资格
+
+- 用户要求：“扫描 apsp 和查看仓库记录，优化”。先读了仓库记录（本文件最近的“下一步”、`docs/architecture.md` §12、`docs/open-questions.md` 的性能遗留项），再只读查看生产：数据库容器持续占满一个 CPU 核，面板 4 小时内有 1148 条超过 1 秒的慢语句。原因与取舍见 `docs/open-questions.md` 同日条目；只改代码，不改数据库基线、协议与界面。
+- 完成项：
+  - 面板的数据库连接设 `jit=off`（`crates/panel/src/main.rs`）。资格函数的成本估算错到 24 亿，PostgreSQL 每次执行都做 LLVM 编译：逐台读取成员一次 1120 毫秒，其中编译 818 毫秒。
+  - 发布循环每轮只算一次全部用户的资格：`entitlements::refresh` 返回本轮允许的用户，应用层的 `publisher.rs` 把它交给主机成员摘要（`publish_due`/`membership`）与设备数限制策略（`push_policies`）；资格刷新失败时两者照旧自己计算。资格变化写回时用同一次计算的结果。
+  - 设备数限制策略一次算出全部主机（原来 17 台主机各算一遍全部用户的资格），每台的策略与逐台计算时相同；单台的 `admission_policy`、`limits_on_host` 共用同一个成员查询。
+  - 补上 11-10 记下的检查：`crates/panel/tests/frontend.rs` 确认 `Dockerfile` 从构建上下文复制的每个来源都存在。
+- 验证结果（本地，2026-11-13；CI 仍暂停，未触发）：
+  - `cargo fmt --all --check` 通过；`cargo clippy --all-targets -- -D warnings` 覆盖 `apsp-access`、`apsp-traffic`、`apsp-panel`，通过。
+  - 单元测试：`apsp-access`、`apsp-traffic` 的 `--lib` 共 96 项通过。
+  - 面板集成测试：除 `end_to_end` 外的 80 个目标与 `--lib` 共 392 项通过、0 项失败、6 项按原有标注忽略。`nexus_runtime_takeover` 新加的核对：本轮资格给出与自行计算相同的成员摘要（主机不被标脏）、策略组变化仍让主机重新发布、设备数限制策略相同；`expired_device_addresses_are_purged_without_new_reports` 运行真实的发布循环。
+  - `tools/check-core-boundary.py`、`tools/check-feature-boundaries.py`（392 条已知越界，没有新增）、`tools/route-policy.py`（505 条路由）通过。前端没有改动，只为编译内嵌构建了 `web/dist`。
+  - 生产只读测量（改动前，13:58–14:45）：`pg_stat_activity` 400 次采样中约九成是三条资格相关查询；关 JIT 前后同一查询 1120 毫秒对 270 毫秒；`sing-box` 心跳（应每秒一次）60 次采样滞后中位 5 秒、最长 21 秒。
+  - 未验证：`end_to_end`（需要真实的 Agent 部署）；镜像没有在本地构建，由部署器把关；上线后的效果补记在下面。
+- 已知问题：资格计算本身仍要对兼容桥的投递表按周期逐行求和（每次约 20.8 万行，约 190 毫秒），按日预汇总要改基线，另开 PR；`runtime_control_requests` 缺按服务器的索引与保留期（见 `docs/open-questions.md`）。
+- 下一步：投递用量按日预汇总的基线 PR（附接入脚本，用户同意后合并上线）；其余沿用上一条的“下一步”。
+
 ## 2026-11-13：阶段 B2 收尾——宿主只剩平台机制，设备连接归资源，接口地址按领域（ADR 0132）
 
 - 用户要求：“查看 apsp 根据仓库的内容，继续重构”，“激进一点修改，删掉重复的内容，用底层统一，不再使用之前的 plugin 模式，扫描”，并给出六行的归属表。决策见 [ADR 0132](docs/adr/0132-platform-only-host-and-domain-addresses.md)，取舍见 `docs/open-questions.md`。基于 main `91059f8c`；可见的变化只有控制台接口地址（审计记录里的地址随之变化）与界面上四处不再出现“插件”的文字，其余行为不变；不改数据库基线、Agent 协议与设备上的路径。

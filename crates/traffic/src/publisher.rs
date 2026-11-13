@@ -11,13 +11,16 @@ use std::collections::BTreeMap;
 const MODULE: &str = "singbox";
 const DUE: &str = "dirty_at <= FLOOR(EXTRACT(EPOCH FROM clock_timestamp())*1000)::bigint - 5000";
 
-pub async fn publish_due(state: &AppState) -> anyhow::Result<()> {
+/// `allowed` is the publication cycle's evaluation of which users are allowed now
+/// (the eligibility refresh that starts the cycle); without it the host membership
+/// check evaluates entitlements itself.
+pub async fn publish_due(state: &AppState, allowed: Option<&[i64]>) -> anyhow::Result<()> {
     let query = format!(
         "SELECT s.id FROM servers s LEFT JOIN server_plugins p ON p.server_id=s.id AND p.plugin='sing-box' WHERE s.deleted_at IS NULL AND {DUE} AND ({}) IS NOT NULL ORDER BY s.id",
         super::settings::SOURCE_SQL
     );
     let ids: Vec<i64> = sqlx::query_scalar(&query).fetch_all(&state.pool).await?;
-    super::nexus_nodes::runtime_publish::membership(state).await?;
+    super::nexus_nodes::runtime_publish::membership(state, allowed).await?;
     let mut first_error = None;
     for server_id in ids {
         if let Err(error) = publish_server(state, server_id, false).await {

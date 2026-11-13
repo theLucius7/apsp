@@ -64,7 +64,7 @@ async fn explicit_enable_queues_once_and_first_publication_has_no_public_listene
             .await?,
         due
     );
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
     let bundle: String = sqlx::query_scalar(
         "SELECT bundle FROM deployments WHERE server_id=$1 AND module='singbox'",
     )

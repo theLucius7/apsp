@@ -2,7 +2,8 @@
 
 use apsp_panel::router;
 use apsp_panel_host::config::Config;
-use sqlx::postgres::PgPoolOptions;
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+use std::str::FromStr;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -14,9 +15,14 @@ async fn main() -> anyhow::Result<()> {
     apsp_panel::domains::install();
     let config = Config::from_env()?;
     let listen = config.listen;
+    // No JIT: the panel's statements are short, but the planner's estimates for
+    // the set-returning functions in the entitlement path run into billions, so
+    // PostgreSQL compiled, inlined and optimized them with LLVM on every
+    // execution (about 0.8 s of compilation for 0.3 s of work).
+    let options = PgConnectOptions::from_str(&config.database_url)?.options([("jit", "off")]);
     let pool = PgPoolOptions::new()
         .max_connections(10)
-        .connect(&config.database_url)
+        .connect_with(options)
         .await?;
     let state = apsp_panel::state(pool, config).await?;
     let recovery_verified = match std::env::var("APSP_RECOVERY_VERIFY_CREDENTIALS") {

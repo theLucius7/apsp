@@ -137,7 +137,7 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     sqlx::query("UPDATE servers SET dirty_at=0")
         .execute(&pool)
         .await?;
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM deployments")
             .fetch_one(&pool)
@@ -406,11 +406,37 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
             .is_err()
     );
     // Establish membership before forcing the test debounce deadline.
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
     sqlx::query("UPDATE servers SET dirty_at=0")
         .execute(&pool)
         .await?;
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
+    // The publication cycle's own evaluation of who is allowed gives the host
+    // the digest it already has, so nothing is dirtied or published again.
+    let digest = |pool: PgPool| async move {
+        sqlx::query_scalar::<_, Option<String>>(
+            "SELECT membership_digest FROM singbox_nexus_runtime_hosts WHERE server_id=$1",
+        )
+        .bind(server)
+        .fetch_one(&pool)
+        .await
+    };
+    let established = digest(pool.clone()).await?;
+    assert!(established.is_some());
+    let allowed = apsp_access::entitlements::refresh(&pool, now_timestamp()).await?;
+    assert!(allowed.contains(&user));
+    sqlx::query("UPDATE servers SET dirty_at=NULL")
+        .execute(&pool)
+        .await?;
+    apsp_traffic::publisher::publish_due(&panel.state, Some(&allowed)).await?;
+    assert_eq!(digest(pool.clone()).await?, established);
+    assert_eq!(
+        sqlx::query_scalar::<_, Option<i64>>("SELECT dirty_at FROM servers WHERE id=$1")
+            .bind(server)
+            .fetch_one(&pool)
+            .await?,
+        None
+    );
     let bundle: String =
         sqlx::query_scalar("SELECT bundle FROM deployments ORDER BY rev DESC LIMIT 1")
             .fetch_one(&pool)
@@ -508,11 +534,23 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     .bind(user)
     .execute(&pool)
     .await?;
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    // The cycle's allowed users are unchanged, but the membership check still
+    // sees the group change and dirties the host.
+    let allowed = apsp_access::entitlements::refresh(&pool, now_timestamp()).await?;
+    assert!(allowed.contains(&user));
+    apsp_traffic::publisher::publish_due(&panel.state, Some(&allowed)).await?;
+    assert_ne!(digest(pool.clone()).await?, established);
+    assert!(
+        sqlx::query_scalar::<_, Option<i64>>("SELECT dirty_at FROM servers WHERE id=$1")
+            .bind(server)
+            .fetch_one(&pool)
+            .await?
+            .is_some()
+    );
     sqlx::query("UPDATE servers SET dirty_at=0")
         .execute(&pool)
         .await?;
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
     let saved: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM deployments")
         .fetch_one(&pool)
         .await?;
@@ -521,7 +559,7 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     sqlx::query("UPDATE servers SET dirty_at=0")
         .execute(&pool)
         .await?;
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM deployments")
             .fetch_one(&pool)
@@ -644,11 +682,11 @@ async fn device_limits_need_session_control_and_are_shared_with_legacy_nodes(
     )
     .await?)
     .await?;
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
     sqlx::query("UPDATE servers SET dirty_at=0")
         .execute(&pool)
         .await?;
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
     let bundle: String =
         sqlx::query_scalar("SELECT bundle FROM deployments ORDER BY rev DESC LIMIT 1")
             .fetch_one(&pool)
@@ -721,9 +759,16 @@ async fn device_limits_need_session_control_and_are_shared_with_legacy_nodes(
     .await?;
     assert_eq!(healthy["managed"][0]["healthy"], true);
     // The device's policy counts the legacy address but not its own sessions.
-    let policy = apsp_access::nexus::sessions::admission_policy(&panel.state, server)
+    let policy = apsp_access::nexus::sessions::admission_policy(&panel.state, server, None)
         .await?
         .expect("limited member has a policy");
+    // The publication cycle's own evaluation of who is allowed gives the same policy.
+    let allowed = apsp_access::entitlements::refresh(&pool, now_timestamp()).await?;
+    let cycle =
+        apsp_access::nexus::sessions::admission_policy(&panel.state, server, Some(&allowed))
+            .await?
+            .expect("limited member has a policy");
+    assert_eq!(cycle.groups, policy.groups);
     assert_eq!(policy.groups.len(), 1);
     assert_eq!(policy.groups[0].principals, vec![principal]);
     assert_eq!(policy.groups[0].limit, 3);
@@ -734,7 +779,7 @@ async fn device_limits_need_session_control_and_are_shared_with_legacy_nodes(
     // Removing the last limit must send a replacement, not leave the old
     // policy in the Agent forever because there are no groups left to send.
     bridge_devices(&pool, json!({user.to_string(): 0}), json!({})).await?;
-    let cleared = apsp_access::nexus::sessions::admission_policy(&panel.state, server)
+    let cleared = apsp_access::nexus::sessions::admission_policy(&panel.state, server, None)
         .await?
         .expect("empty policy explicitly clears the previous limit");
     assert!(cleared.valid());
@@ -949,11 +994,11 @@ async fn retired_line_leaves_the_running_host_and_the_bridge(pool: PgPool) -> Re
         .bind(server)
         .execute(&pool)
         .await?;
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
     sqlx::query("UPDATE servers SET dirty_at=0")
         .execute(&pool)
         .await?;
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
     assert_eq!(published_ports(&pool, server).await?, vec![23456, 23457]);
     let managed = bridge_devices(&pool, json!({}), json!({})).await?;
     assert_eq!(managed["managed"].as_array().map(Vec::len), Some(2));
@@ -1016,11 +1061,11 @@ async fn retired_line_leaves_the_running_host_and_the_bridge(pool: PgPool) -> Re
     );
     // The snapshot still lists the line; publication leaves it out. The
     // membership change restarts the debounce, as on the first publication.
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
     sqlx::query("UPDATE servers SET dirty_at=0")
         .execute(&pool)
         .await?;
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
     assert_eq!(published_ports(&pool, server).await?, vec![23456]);
     let managed = bridge_devices(&pool, json!({}), json!({})).await?;
     assert_eq!(managed["managed"][0]["legacy_node_id"], 43);
@@ -1425,11 +1470,11 @@ async fn redeploy_repeats_a_running_hosts_bundle_as_a_higher_revision(pool: PgPo
         .bind(server)
         .execute(&pool)
         .await?;
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
     sqlx::query("UPDATE servers SET dirty_at=0")
         .execute(&pool)
         .await?;
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
     let revisions = || async {
         sqlx::query_as::<_, (i64, String)>(
             "SELECT rev,bundle_sha256 FROM deployments WHERE server_id=$1 ORDER BY rev",
@@ -1461,7 +1506,7 @@ async fn redeploy_repeats_a_running_hosts_bundle_as_a_higher_revision(pool: PgPo
     sqlx::query("UPDATE servers SET dirty_at=0")
         .execute(&pool)
         .await?;
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
     assert_eq!(revisions().await?.len(), after.len());
     Ok(())
 }

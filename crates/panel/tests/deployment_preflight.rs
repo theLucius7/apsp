@@ -39,7 +39,7 @@ async fn due(panel: &TestPanel, server: i64) -> Result<()> {
         .bind(server)
         .execute(&panel.state.pool)
         .await?;
-    publisher::publish_due(&panel.state).await
+    publisher::publish_due(&panel.state, None).await
 }
 
 async fn revision(pool: &PgPool, server: i64) -> Result<i64> {

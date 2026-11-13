@@ -47,14 +47,28 @@ pub async fn get(
 
 /// Persist eligibility transitions so expiry/reset also publish without HTTP traffic.
 /// Re-evaluating the same state does not keep pushing the debounce deadline forward.
-pub async fn refresh(pool: &PgPool, at: i64) -> ApiResult<()> {
+///
+/// Returns the users allowed at `at`. Evaluating every user's entitlement is the
+/// most expensive statement of the publication cycle, so the cycle's later steps
+/// (host membership, device-limit policies) use this evaluation.
+pub async fn refresh(pool: &PgPool, at: i64) -> ApiResult<Vec<i64>> {
     let mut tx = pool.begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
         .execute(&mut *tx)
         .await?;
     apsp_traffic::business::lock_publication(&mut tx).await?;
-    let changed: Vec<i64> = sqlx::query_scalar("SELECT e.user_id FROM singbox_entitlements($1) e LEFT JOIN singbox_entitlement_state s USING(user_id) WHERE s.allowed IS DISTINCT FROM e.allowed ORDER BY e.user_id")
+    let evaluated: Vec<(i64, bool, bool)> = sqlx::query_as("SELECT e.user_id,e.allowed,s.allowed IS DISTINCT FROM e.allowed FROM singbox_entitlements($1) e LEFT JOIN singbox_entitlement_state s USING(user_id) ORDER BY e.user_id")
         .bind(at).fetch_all(&mut *tx).await?;
+    let allowed: Vec<i64> = evaluated
+        .iter()
+        .filter(|(_, allowed, _)| *allowed)
+        .map(|(user, _, _)| *user)
+        .collect();
+    let (changed, changed_allowed): (Vec<i64>, Vec<bool>) = evaluated
+        .iter()
+        .filter(|(_, _, changed)| *changed)
+        .map(|(user, allowed, _)| (*user, *allowed))
+        .unzip();
     let mut servers: Vec<i64> = if changed.is_empty() {
         Vec::new()
     } else {
@@ -66,11 +80,12 @@ pub async fn refresh(pool: &PgPool, at: i64) -> ApiResult<()> {
     servers.sort_unstable();
     servers.dedup();
     apsp_traffic::business::mark_dirty(&mut tx, &servers).await?;
-    // Most ticks change nothing; skip a second evaluation of every user's entitlement.
+    // Most ticks change nothing. The values come from the evaluation above (same
+    // snapshot and instant), not from a second one.
     if !changed.is_empty() {
-        sqlx::query("INSERT INTO singbox_entitlement_state SELECT user_id,allowed FROM singbox_entitlements($1) WHERE user_id=ANY($2) ON CONFLICT(user_id) DO UPDATE SET allowed=EXCLUDED.allowed")
-            .bind(at).bind(&changed).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO singbox_entitlement_state(user_id,allowed) SELECT * FROM UNNEST($1::bigint[],$2::boolean[]) ON CONFLICT(user_id) DO UPDATE SET allowed=EXCLUDED.allowed")
+            .bind(&changed).bind(&changed_allowed).execute(&mut *tx).await?;
     }
     tx.commit().await?;
-    Ok(())
+    Ok(allowed)
 }

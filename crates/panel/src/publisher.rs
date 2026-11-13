@@ -3,6 +3,10 @@
 //! publication (traffic), then every 30 s rollout inspection results (traffic) and record
 //! retention (access), and every 10 s device-limit policies (access). One heartbeat,
 //! `sing-box`, covers the whole cycle.
+//!
+//! Every user's entitlement is evaluated once per cycle, by the eligibility refresh; host
+//! membership and device-limit policies take its allowed users. When the refresh fails
+//! they evaluate entitlements themselves, as they would on their own.
 
 use apsp_access as access;
 use apsp_governance::control_center;
@@ -20,15 +24,19 @@ pub async fn run(state: AppState) {
     loop {
         interval.tick().await;
         let mut failed = Vec::new();
-        if let Err(error) = access::entitlements::refresh(&state.pool, now_timestamp()).await {
-            tracing::error!(%error, "package eligibility refresh failed; will retry");
-            failed.push("entitlements");
-        }
+        let allowed = match access::entitlements::refresh(&state.pool, now_timestamp()).await {
+            Ok(allowed) => Some(allowed),
+            Err(error) => {
+                tracing::error!(%error, "package eligibility refresh failed; will retry");
+                failed.push("entitlements");
+                None
+            }
+        };
         if let Err(_error) = traffic::ordered_paths::lifecycle::tick(&state).await {
             tracing::error!("ordered path transition failed; durable work retained");
             failed.push("ordered-path-lifecycle");
         }
-        if let Err(error) = traffic::publisher::publish_due(&state).await {
+        if let Err(error) = traffic::publisher::publish_due(&state, allowed.as_deref()).await {
             tracing::error!(%error, "configuration publication failed; pending work retained");
             failed.push("configuration-publication");
         }
@@ -49,7 +57,9 @@ pub async fn run(state: AppState) {
             failed.push("operation-retention");
         }
         if now_timestamp() >= next_admission {
-            if let Err(error) = access::nexus::sessions::push_policies(&state).await {
+            if let Err(error) =
+                access::nexus::sessions::push_policies(&state, allowed.as_deref()).await
+            {
                 tracing::warn!(%error, "device limit policies were not sent; will retry");
                 failed.push("device-limits");
             }

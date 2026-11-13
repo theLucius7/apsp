@@ -47,7 +47,7 @@ async fn monitoring_server_requires_explicit_enablement_and_never_publishes_prox
         .bind(server)
         .execute(&pool)
         .await?;
-    apsp_traffic::publisher::publish_due(&panel.state).await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
     let mut connection = pool.acquire().await?;
     let activity =
         apsp_traffic::runtime_activity_on(&mut connection, server, apsp_protocol::now_timestamp())

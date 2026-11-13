@@ -9,6 +9,45 @@ use business_support::TestPanel;
 use reqwest::{StatusCode, header};
 use sqlx::PgPool;
 
+/// The image is built from the repository: every `COPY`/`ADD` source taken from the
+/// build context must exist. On 2026-11-10 `plugins/` moved away while the Dockerfile
+/// still copied it, and only the production image build noticed.
+#[test]
+fn dockerfile_copies_only_repository_paths_that_exist() -> Result<()> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let dockerfile = std::fs::read_to_string(root.join("Dockerfile"))?;
+    let mut sources = Vec::new();
+    for line in dockerfile.lines() {
+        let mut words = line.split_whitespace();
+        if !matches!(words.next(), Some("COPY" | "ADD")) {
+            continue;
+        }
+        let words: Vec<&str> = words.collect();
+        // Copies from another build stage do not read the build context.
+        if words.iter().any(|word| word.starts_with("--from=")) {
+            continue;
+        }
+        let paths: Vec<&str> = words
+            .into_iter()
+            .filter(|word| !word.starts_with("--"))
+            .collect();
+        let (_, copied) = paths.split_last().context("COPY without a destination")?;
+        anyhow::ensure!(!copied.is_empty(), "COPY without a source: {line}");
+        sources.extend_from_slice(copied);
+    }
+    anyhow::ensure!(
+        sources.contains(&"crates/"),
+        "the Dockerfile was not parsed: {sources:?}"
+    );
+    for source in sources {
+        anyhow::ensure!(
+            root.join(source).exists(),
+            "the Dockerfile copies {source}, which is not in the repository"
+        );
+    }
+    Ok(())
+}
+
 #[tokio::test]
 async fn compiled_embedded_frontend_matches_every_dist_file_for_get_and_head() -> Result<()> {
     use axum::{

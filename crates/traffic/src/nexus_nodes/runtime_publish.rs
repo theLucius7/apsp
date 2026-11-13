@@ -155,7 +155,8 @@ pub(crate) async fn publish(
 }
 
 /// Group changes must also dirty migrated hosts even when eligibility stays true.
-pub(crate) async fn membership(state: &AppState) -> anyhow::Result<()> {
+/// `allowed` is the publication cycle's evaluation of who is allowed now, if any.
+pub(crate) async fn membership(state: &AppState, allowed: Option<&[i64]>) -> anyhow::Result<()> {
     // Every publisher tick calls this; avoid the entitlement lock until a host
     // has actually been handed over.
     let active: bool = sqlx::query_scalar(
@@ -168,11 +169,24 @@ pub(crate) async fn membership(state: &AppState) -> anyhow::Result<()> {
     }
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
-    // One evaluation of every user's entitlement serves all hosts; only hosts
-    // whose membership changed are locked and dirtied. The per-host member list
-    // and its digest are the same as when each host was read on its own.
-    let hosts: Vec<(i64, Value)> = sqlx::query_as("WITH e AS MATERIALIZED (SELECT user_id FROM singbox_entitlements($1) WHERE allowed) SELECT h.server_id,COALESCE((SELECT jsonb_agg(jsonb_build_array(m.node_id,m.user_id,m.legacy_uuid) ORDER BY m.node_id,m.user_id) FROM (SELECT DISTINCT r.node_id,i.user_id,i.legacy_uuid FROM singbox_nexus_runtime_nodes r JOIN singbox_policy_nodes pn ON pn.node_id=r.node_id JOIN singbox_user_policies up ON up.group_id=pn.group_id JOIN e ON e.user_id=up.user_id JOIN singbox_nexus_identities i ON i.user_id=e.user_id WHERE r.server_id=h.server_id) m),'[]'::jsonb) FROM singbox_nexus_runtime_hosts h WHERE h.state='active' ORDER BY h.server_id")
-        .bind(now_timestamp()).fetch_all(&mut *tx).await?;
+    // One evaluation of every user's entitlement serves all hosts (the cycle's
+    // own when it has one); only hosts whose membership changed are locked and
+    // dirtied. The per-host member list and its digest are the same as when each
+    // host was read on its own.
+    let allowed_users = if allowed.is_some() {
+        "SELECT unnest($1::bigint[]) AS user_id"
+    } else {
+        "SELECT user_id FROM singbox_entitlements($1) WHERE allowed"
+    };
+    let query = format!(
+        "WITH e AS MATERIALIZED ({allowed_users}) SELECT h.server_id,COALESCE((SELECT jsonb_agg(jsonb_build_array(m.node_id,m.user_id,m.legacy_uuid) ORDER BY m.node_id,m.user_id) FROM (SELECT DISTINCT r.node_id,i.user_id,i.legacy_uuid FROM singbox_nexus_runtime_nodes r JOIN singbox_policy_nodes pn ON pn.node_id=r.node_id JOIN singbox_user_policies up ON up.group_id=pn.group_id JOIN e ON e.user_id=up.user_id JOIN singbox_nexus_identities i ON i.user_id=e.user_id WHERE r.server_id=h.server_id) m),'[]'::jsonb) FROM singbox_nexus_runtime_hosts h WHERE h.state='active' ORDER BY h.server_id"
+    );
+    let query = sqlx::query_as(&query);
+    let query = match allowed {
+        Some(users) => query.bind(users),
+        None => query.bind(now_timestamp()),
+    };
+    let hosts: Vec<(i64, Value)> = query.fetch_all(&mut *tx).await?;
     let digests: Vec<String> = hosts
         .iter()
         .map(|(_, members)| crate::auth::hash_token(&members.to_string()))

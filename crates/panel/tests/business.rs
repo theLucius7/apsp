@@ -249,7 +249,7 @@ async fn publication_debounces_and_deduplicates_native_configurations(pool: PgPo
     let user = panel.create_user(&cookie, "User").await?;
     panel.grant(&cookie, id(&user)?, id(&node)?).await?;
     panel.prepare_deployment_preflights().await?;
-    publisher::publish_due(&panel.state).await?;
+    publisher::publish_due(&panel.state, None).await?;
     assert_eq!(latest_revision(&pool, server).await?, 0);
     let dirty: i64 = sqlx::query_scalar("SELECT dirty_at FROM servers WHERE id=$1")
         .bind(server)
@@ -258,15 +258,15 @@ async fn publication_debounces_and_deduplicates_native_configurations(pool: PgPo
     assert!(dirty > 0);
     sqlx::query("UPDATE servers SET dirty_at=FLOOR(EXTRACT(EPOCH FROM clock_timestamp())*1000)::bigint-4000 WHERE id=$1")
         .bind(server).execute(&pool).await?;
-    publisher::publish_due(&panel.state).await?;
+    publisher::publish_due(&panel.state, None).await?;
     assert_eq!(latest_revision(&pool, server).await?, 0);
     sqlx::query("UPDATE servers SET dirty_at=0 WHERE id=$1")
         .bind(server)
         .execute(&pool)
         .await?;
     let (first, second) = tokio::join!(
-        publisher::publish_due(&panel.state),
-        publisher::publish_due(&panel.state)
+        publisher::publish_due(&panel.state, None),
+        publisher::publish_due(&panel.state, None)
     );
     first?;
     second?;
