@@ -16,6 +16,7 @@
   - 面板集成测试：除 `end_to_end` 外的 80 个目标共 393 项通过、0 项失败、6 项按原有标注忽略，含新测试 `the_health_view_joins_the_panel_with_each_owners_backlog_and_backups`（逐键核对返回的 JSON，在改动前的代码上同样通过）与 `each_owner_purges_its_own_records_past_the_retention_policy`。
   - 三项检查与它们的 Python 测试通过（第一次运行发现检查器测试仍断言已删除的例外，已改正后重跑）；前端构建通过，`bun test` 238 项通过。
   - 未验证：`end_to_end`；真实的 Cloudflare 与 Globalping 调用（测试只用替身，上线后只读核对心跳）；镜像由部署器构建。
+- 上线（2026-11-13）：21:46 推送 `1930c176`，部署器 21:47 开始（备份期间面板按部署器的流程停止；同时有本机的编译，构建约 35 分钟），22:24 换上新镜像并通过本机与公网的健康检查。只读核对：面板 22:24:05 启动，启动后的日志没有错误、警告或慢语句；21 个后台任务心跳全部健康，含新增的 `operations-retention`，以及改用新客户端的 `ddns`、`subscription-hosts`（Cloudflare）与 `china-reachability`（Globalping）；换镜像后没有新的配置发布，主机成员摘要不变，18 台在用服务器两分钟内都有上报。
 - 已知问题：边缘情况的差别见 ADR 0135“后果”（81044 的判断方式、Globalping 先看状态码、两处新增的响应上限等）。
 - 下一步：第四部分——服务器状态（可用判断、服务器行锁、资产设置读取）与几类小机制（审计写入、密码散列、文本、金额、时间、随机码、Cookie、设置读取、保留策略的剩余直接读取）。
 
