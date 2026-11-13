@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
 //! Changes and jobs (ADR 0128 section 3.2): remote commands, terminals, fixed device
-//! operations and their reconciliation, runtime operations, the Agent's own upgrade,
-//! panel backups, and the jobs, schedules, maintenance windows and bounded remediation
-//! that run them. Operations carries out what the owning domain allows and records the
-//! attempts; whether an operation is valid stays with that domain.
+//! operations and their reconciliation, runtime operations and staged runtime rollouts,
+//! the Agent's own upgrade, panel backups, and the jobs, schedules, maintenance windows and
+//! bounded remediation that run them. Operations carries out what the owning domain allows
+//! and records the attempts; whether an operation is valid stays with that domain.
 //!
 //! Operations comes last in the dependency order, so it calls the other domains directly.
 //! The platform's device work interface (`apsp_panel_host::device_work`) lets earlier
@@ -18,6 +18,7 @@ pub mod jobs;
 pub mod locks;
 pub mod retention;
 pub mod runtime_operations;
+pub mod runtime_rollouts;
 
 pub(crate) use apsp_governance::{auth, control_center, releases};
 pub(crate) use apsp_observability::{incidents, server_monitoring};
@@ -25,7 +26,7 @@ pub(crate) use apsp_panel_host::{AppState, digest, error, evidence, text};
 #[cfg(test)]
 pub(crate) use apsp_panel_host::{config, settings};
 pub(crate) use apsp_resources::{
-    cloud_resources, device_channel, server_assets, server_lifecycle, servers,
+    cloud_resources, device_channel, retirement, server_assets, server_lifecycle, servers,
 };
 use axum::{
     Router,
@@ -59,6 +60,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .merge(fleet::router())
         .merge(jobs::router())
+        .merge(runtime_rollouts::router())
         .merge(cloud::bandwidth::routes())
         .merge(cloud::power::routes())
         .merge(cloud::eip_rotation::routes())
@@ -89,6 +91,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/servers/{id}/commands/{command}/cancel",
             post(commands::cancel),
+        )
+        .route(
+            "/api/traffic/servers/{id}/runtime-operations",
+            get(runtime_operations::list).post(runtime_operations::create),
         )
         .route(
             "/api/agent/v1/runtime-operations",

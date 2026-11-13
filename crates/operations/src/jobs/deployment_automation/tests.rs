@@ -1,8 +1,11 @@
 use super::*;
 use apsp_protocol::{
-    RuntimeCheckpoint, RuntimeCheckpointResult, RuntimeServiceState, RuntimeSnapshot,
+    RuntimeCheckpoint, RuntimeCheckpointRequest, RuntimeCheckpointResult, RuntimeOperation,
+    RuntimeServiceState, RuntimeSnapshot,
 };
 use sqlx::PgPool;
+
+const MODULE: &str = "singbox";
 
 #[sqlx::test(migrations = "../panel/migrations")]
 async fn interrupted_mutation_is_reconciled_only_with_its_new_verified_read_and_keeps_original_result(
@@ -238,6 +241,55 @@ async fn success_requires_a_fresh_exact_checkpoint_and_current_fixed_artifact(
         automation_deployment_receipt(&mut tx, request).await?["state"],
         "uncertain"
     );
+    tx.rollback().await?;
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../panel/migrations")]
+async fn retries_wait_for_unresolved_work_and_a_verified_read_after_an_interruption(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let (server, original, binding) = fixture(
+        &pool,
+        true,
+        false,
+        Some(RuntimeOperationError::Interrupted),
+        false,
+    )
+    .await?;
+    let mut tx = pool.begin().await?;
+    assert!(
+        !crate::runtime_operations::automation_blocked(&mut tx, server, now_timestamp()).await?
+    );
+    assert!(interrupted(&mut tx, server).await?);
+    let read = request_automation_deployment_checkpoint_tx(&mut tx, original).await?;
+    tx.commit().await?;
+    let result = RuntimeCheckpointResult {
+        request_id: read.request_id,
+        request_digest: read.digest()?,
+        observed: Some(RuntimeCheckpoint {
+            binding,
+            activation_id: Uuid::new_v4(),
+            instance_id: "TEST_ONLY-read-after-interruption".into(),
+            healthy: true,
+        }),
+        success: true,
+        error: None,
+    };
+    sqlx::query("INSERT INTO runtime_control_receipts(request_id,result_json,result_sha256,received_at,outcome) VALUES($1,$2,$3,$4,'verified')").bind(read.request_id).bind(serde_json::to_value(result)?).bind("e".repeat(64)).bind(now_timestamp()).execute(&pool).await?;
+    let mut tx = pool.begin().await?;
+    assert!(!interrupted(&mut tx, server).await?);
+    let queued = RuntimeOperationRequest {
+        id: Uuid::new_v4(),
+        module: MODULE.into(),
+        operation: RuntimeOperation::Inspect,
+        expected_revision: None,
+        session_filter: None,
+        requested_at: now_timestamp(),
+        expires_at: now_timestamp() + 600,
+    };
+    crate::runtime_operations::enqueue(&mut tx, server, MODULE, &queued).await?;
+    assert!(crate::runtime_operations::automation_blocked(&mut tx, server, now_timestamp()).await?);
     tx.rollback().await?;
     Ok(())
 }

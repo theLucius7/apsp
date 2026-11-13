@@ -26,7 +26,6 @@ pub mod proxy_resources;
 pub mod publisher;
 pub mod runtime_control;
 mod runtime_controls;
-pub mod runtime_operations;
 pub mod runtime_validations;
 pub mod runtime_workflows;
 pub mod server_profiles;
@@ -108,10 +107,6 @@ fn management() -> Router<AppState> {
         .route(
             "/api/traffic/servers/{id}/deployments/redeploy",
             post(deployments::redeploy),
-        )
-        .route(
-            "/api/traffic/servers/{id}/runtime-operations",
-            get(runtime_operations::list).post(runtime_operations::create),
         )
         .route("/api/traffic/nodes", get(nodes::list).post(nodes::create))
         .route(

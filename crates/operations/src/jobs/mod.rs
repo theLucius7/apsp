@@ -1,6 +1,6 @@
 //! Jobs: templates, previews and confirmed jobs across servers, schedules, maintenance
-//! windows, bounded remediation and the panel backup step, with their execution
-//! history and reconciliation of unknown results.
+//! windows, bounded remediation, the panel backup step and the runtime deployment step,
+//! with their execution history and reconciliation of unknown results.
 
 mod api;
 pub mod deployment_automation;

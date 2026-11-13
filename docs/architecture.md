@@ -359,12 +359,14 @@ flowchart TD
 
 **ADR 0136（第四部分，2026-11-13）已处理**：服务器的退役、生命周期、维护期与行锁、资产设置由资源领域各给一处（维护窗口由作业判断）；审计写入、口令散列、短文本、金额、时间、随机值、Cookie、设置读取各合为一处，服务权益与观测改经治理的保留期接口；外部来源的到期引用只留流量服务那一份。下面的表已改写相应的行。
 
+**作业胶水（2026-11-14）已处理**：部署自动化（排队、取消、回执、检查点、结果未知的核对）、分批升级与运行时操作的列表和创建迁到 `crates/operations`（`jobs/deployment_automation.rs`、`runtime_rollouts.rs`、`runtime_operations.rs`），流量服务只回答“这一步是否合法”（`runtime_workflows::{automation, rollouts}`）；流量服务指向作业的 SQL 从 20 条减为 3 条。
+
 ### 12.1 归属：代码或数据还不在对象所属的领域
 
 | 事项 | 位置 | 为什么这一步没做 | 需要什么 |
 | --- | --- | --- | --- |
 | 凭据库的表登记在平台，读写它的代码在治理 | 表 `credential_entries`；`crates/governance/src/control_center/credentials.rs` | 治理的代码迁出宿主后，这张表仍登记给平台；它算平台机制还是治理的对象要先定（任务心跳已在 ADR 0133 收归平台 `maintenance`） | 二选一：表改登记给治理（其他领域读写凭据库的 11 条 SQL 改经治理的函数），或把保管做成平台模块 |
-| 流量服务里的作业胶水 | `crates/traffic/src/runtime_workflows/automation.rs`、`automation/reconciliation.rs`、`rollouts.rs`，`crates/traffic/src/runtime_operations.rs` | 这些代码直接读写作业的 `operations_history`、`runtime_operations` 等表（流量服务指向作业的 20 条 SQL 里有 17 条在这四个文件）；搬家要同时改作业一侧的调用与事务 | 迁到作业；流量服务只回答“这一步是否合法” |
+| 流量服务里的作业胶水（余下） | `crates/traffic/src/runtime_workflows/preflight.rs`、`preflight/bootstrap.rs` | 部署自动化、分批升级与运行时操作已迁到作业（2026-11-14）；部署预检与首次安装的检查仍读作业的表（3 条 SQL），流量服务排在作业之前，不能调用作业 | 预检改为由作业组合（作业调用流量服务的检查），或由作业声明一个类型化接口给流量服务 |
 | 代理用量统计的处理函数在观测 | `crates/observability/src/statistics/proxy_usage.rs`，地址 `/api/access/statistics` | 对象是服务权益的用量，处理函数读它的私有表；地址已经按对象改了，代码没搬 | 迁到服务权益的 `usage`，趋势与报表页调用它 |
 | 资源替观测建默认拨测与告警规则；成本与门户直接读观测的表 | `crates/resources/src/servers.rs`、`batch_enrollment.rs`、`server_lifecycle.rs`、`retirement.rs`；`crates/costs/src/cancellation_reminders.rs`、`suppliers.rs`；`crates/access/src/portal/lines.rs` | 现有接口只覆盖了一部分调用 | 扩充已有的 `ServerObservation`、`Evidence`、`HostNetwork`，不新增接口 |
 | 流量服务与服务权益互读对方的私有表 | 服务权益读流量服务 36 条 SQL，流量服务读服务权益 13 条 SQL（前端另有 3 条与 9 条引用） | 数量多，每一处都要核对事务边界后才能换成函数调用 | 所有者提供查询函数；流量服务需要服务权益回答的，经 `users::Users` |

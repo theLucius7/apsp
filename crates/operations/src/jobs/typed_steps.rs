@@ -7,6 +7,7 @@ use crate::{
     error::{ApiError, ApiResult},
 };
 use apsp_protocol::now_timestamp;
+use apsp_traffic::runtime_workflows::automation;
 use axum::http::HeaderMap;
 use serde_json::{Value, json};
 use sqlx::{Postgres, Row, Transaction};
@@ -41,7 +42,7 @@ pub(super) async fn preview(
             for server in targets {
                 candidates.insert(
                     server.to_string(),
-                    super::deployment_automation::automation_candidate(state, tx, *server).await?,
+                    automation::automation_candidate(state, tx, *server).await?,
                 );
             }
             previews.push(json!({"position":position,"kind":step.kind,"targets":candidates,"version":step.runtime_version,"scope":"仅重新应用固定失败部署，不生成新的业务配置或选择其他版本"}));

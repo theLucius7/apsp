@@ -1,16 +1,230 @@
+//! Runtime operations on a server's proxy runtime: the console's list and requests, what
+//! each Agent fetches and reports, and the checks other operations work shares before
+//! queuing one. Whether an operation fits the current deployment stays with the traffic
+//! service (`apsp_traffic::deployments`).
+
 use crate::{
-    AppState,
+    AppState, auth,
     error::{ApiError, ApiResult},
 };
-use apsp_protocol::{RuntimeOperationRequest, RuntimeOperationResult, TaskAck, now_timestamp};
+use apsp_protocol::{
+    RUNTIME_OPERATIONS_CAPABILITY, RuntimeOperation, RuntimeOperationRequest,
+    RuntimeOperationResult, TaskAck, now_timestamp,
+};
 use axum::{
     Json,
     extract::{Path, State},
     http::HeaderMap,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::Row;
+use sqlx::{PgConnection, Row};
+use std::collections::HashMap;
 use uuid::Uuid;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Create {
+    pub operation: RuntimeOperation,
+    pub expected_revision: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub struct OperationView {
+    pub spec: RuntimeOperationRequest,
+    pub result: Option<RuntimeOperationResult>,
+    pub dispatched_at: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct View {
+    pub supported: bool,
+    pub online: bool,
+    pub retiring: bool,
+    pub operations: Vec<OperationView>,
+}
+
+pub async fn list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server): Path<i64>,
+) -> ApiResult<Json<View>> {
+    auth::require_admin(&state, &headers).await?;
+    let mut tx = state.pool.begin().await?;
+    crate::servers::lock(&mut tx, server).await?;
+    apsp_traffic::settings::require_enabled(&mut tx, server).await?;
+    let row = sqlx::query(&format!(
+        "SELECT capabilities,last_seen,{} AS retiring FROM servers WHERE id=$1",
+        crate::retirement::retiring_sql("$1")
+    ))
+    .bind(server)
+    .fetch_one(&mut *tx)
+    .await?;
+    let capabilities: Value = row.get("capabilities");
+    let supported = capabilities
+        .as_array()
+        .is_some_and(|caps| caps.iter().any(|cap| cap == RUNTIME_OPERATIONS_CAPABILITY));
+    let rows = sqlx::query("SELECT spec,result,dispatched_at FROM runtime_operations WHERE server_id=$1 AND module='singbox' ORDER BY requested_at DESC,id DESC LIMIT 20").bind(server).fetch_all(&mut *tx).await?;
+    let operations = rows
+        .into_iter()
+        .map(|row| {
+            Ok(OperationView {
+                spec: serde_json::from_value(row.get("spec"))?,
+                result: row
+                    .get::<Option<Value>, _>("result")
+                    .map(serde_json::from_value)
+                    .transpose()?,
+                dispatched_at: row.get("dispatched_at"),
+            })
+        })
+        .collect::<Result<Vec<_>, serde_json::Error>>()
+        .map_err(anyhow::Error::from)?;
+    tx.commit().await?;
+    Ok(Json(View {
+        supported,
+        online: row
+            .get::<Option<i64>, _>("last_seen")
+            .is_some_and(|at| now_timestamp().saturating_sub(at) <= 60),
+        retiring: row.get("retiring"),
+        operations,
+    }))
+}
+
+pub async fn create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server): Path<i64>,
+    Json(body): Json<Create>,
+) -> ApiResult<Json<RuntimeOperationRequest>> {
+    auth::require_admin(&state, &headers).await?;
+    if matches!(
+        body.operation,
+        RuntimeOperation::InspectSessions | RuntimeOperation::CloseSessions
+    ) {
+        return Err(ApiError::BadRequest("请从代理用户的连接管理执行".into()));
+    }
+    let now = now_timestamp();
+    let request = RuntimeOperationRequest {
+        id: Uuid::new_v4(),
+        module: "singbox".into(),
+        operation: body.operation,
+        expected_revision: body.expected_revision,
+        session_filter: None,
+        requested_at: now,
+        expires_at: now + 600,
+    };
+    if !request.valid() {
+        return Err(ApiError::BadRequest("运行时操作或期望版本无效".into()));
+    }
+    let mut tx = state.pool.begin().await?;
+    crate::servers::lock(&mut tx, server).await?;
+    apsp_traffic::settings::require_enabled(&mut tx, server).await?;
+    crate::fleet::ensure_accepts_tasks_tx(&mut tx, server).await?;
+    let row = sqlx::query(&format!(
+        "SELECT capabilities,last_seen,dirty_at,{} AS retiring FROM servers WHERE id=$1",
+        crate::retirement::retiring_sql("$1")
+    ))
+    .bind(server)
+    .fetch_one(&mut *tx)
+    .await?;
+    let capabilities: Value = row.get("capabilities");
+    if !capabilities
+        .as_array()
+        .is_some_and(|caps| caps.iter().any(|cap| cap == RUNTIME_OPERATIONS_CAPABILITY))
+    {
+        return Err(ApiError::Conflict(
+            "Agent 尚不支持运行时运维，请先升级 Agent".into(),
+        ));
+    }
+    if row.get::<bool, _>("retiring") {
+        return Err(ApiError::Conflict(
+            "服务器正在退役，不能执行运行时操作".into(),
+        ));
+    }
+    if !row
+        .get::<Option<i64>, _>("last_seen")
+        .is_some_and(|at| now.saturating_sub(at) <= 60)
+    {
+        return Err(ApiError::Conflict(
+            "设备离线，恢复连接后再执行运行时操作".into(),
+        ));
+    }
+    if unresolved(&mut tx, server, "singbox").await? {
+        return Err(ApiError::Conflict(
+            "已有运行时操作等待确认，请等待设备回报".into(),
+        ));
+    }
+    let latest: Option<i64> =
+        sqlx::query_scalar("SELECT MAX(requested_at) FROM runtime_operations WHERE server_id=$1")
+            .bind(server)
+            .fetch_one(&mut *tx)
+            .await?;
+    if latest.is_some_and(|at| now.saturating_sub(at) < 10) {
+        return Err(ApiError::Busy);
+    }
+    apsp_traffic::deployments::require_runtime_operation_fits(
+        &mut tx,
+        server,
+        &request,
+        row.get::<Option<i64>, _>("dirty_at").is_some(),
+    )
+    .await?;
+    enqueue(&mut tx, server, &request.module, &request).await?;
+    sqlx::query("DELETE FROM runtime_operations WHERE server_id=$1 AND automation_job_id IS NULL AND result IS NOT NULL AND id NOT IN (SELECT id FROM runtime_operations WHERE server_id=$1 ORDER BY requested_at DESC,id DESC LIMIT 100)").bind(server).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(Json(request))
+}
+
+/// SQL that holds while server `$1` takes no automation work at `$2`: it is closed, or a
+/// fixed operation, a remote command or a diagnostic job there is unresolved.
+fn unresolved_work_sql() -> String {
+    format!(
+        "{} OR EXISTS(SELECT 1 FROM fleet_operations WHERE server_id=$1 AND reconciled_at IS NULL AND status IN ('queued','dispatched','unknown')) OR EXISTS(SELECT 1 FROM remote_commands WHERE server_id=$1 AND state IN ('queued','claimed','running','cancel_requested')) OR EXISTS(SELECT 1 FROM diagnostic_jobs WHERE server_id=$1 AND (status IN ('queued','running','cleaning','cancel_requested') OR (NOT agent_completed AND job ? 'id')))",
+        crate::fleet::closed_sql("$1", "$2")
+    )
+}
+
+/// Whether an automation deployment may not be queued on the server at `now`: other work
+/// is unresolved there, or any runtime operation still waits for its result.
+pub(crate) async fn automation_blocked(
+    connection: &mut PgConnection,
+    server: i64,
+    now: i64,
+) -> ApiResult<bool> {
+    Ok(sqlx::query_scalar(&format!("SELECT {} OR EXISTS(SELECT 1 FROM runtime_operations WHERE server_id=$1 AND result IS NULL AND cancelled_at IS NULL AND reconciled_at IS NULL)", unresolved_work_sql()))
+        .bind(server)
+        .bind(now)
+        .fetch_one(connection)
+        .await?)
+}
+
+/// Whether an operation of the module on the server still waits for its result: queued or
+/// dispatched, neither cancelled nor reconciled. A server runs one at a time per module.
+pub(crate) async fn unresolved(
+    connection: &mut PgConnection,
+    server: i64,
+    module: &str,
+) -> ApiResult<bool> {
+    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM runtime_operations WHERE server_id=$1 AND module=$2 AND result IS NULL AND cancelled_at IS NULL AND reconciled_at IS NULL)")
+        .bind(server)
+        .bind(module)
+        .fetch_one(connection)
+        .await?)
+}
+
+/// The results of those operations among `ids` that finished.
+pub(crate) async fn results(
+    connection: &mut PgConnection,
+    ids: &[Uuid],
+) -> ApiResult<HashMap<Uuid, Value>> {
+    let rows: Vec<(Uuid, Value)> = sqlx::query_as(
+        "SELECT id,result FROM runtime_operations WHERE id=ANY($1) AND result IS NOT NULL",
+    )
+    .bind(ids)
+    .fetch_all(connection)
+    .await?;
+    Ok(rows.into_iter().collect())
+}
 
 pub async fn pending(
     State(state): State<AppState>,
@@ -61,8 +275,11 @@ pub async fn pending(
             } else {
                 false
             };
-            let blocked: bool = sqlx::query_scalar(&format!("SELECT {} OR EXISTS(SELECT 1 FROM fleet_operations WHERE server_id=$1 AND reconciled_at IS NULL AND status IN ('queued','dispatched','unknown')) OR EXISTS(SELECT 1 FROM remote_commands WHERE server_id=$1 AND state IN ('queued','claimed','running','cancel_requested')) OR EXISTS(SELECT 1 FROM diagnostic_jobs WHERE server_id=$1 AND (status IN ('queued','running','cleaning','cancel_requested') OR (NOT agent_completed AND job ? 'id')))", crate::fleet::closed_sql("$1", "$2")))
-                .bind(server).bind(now).fetch_one(&mut *tx).await?;
+            let blocked: bool = sqlx::query_scalar(&format!("SELECT {}", unresolved_work_sql()))
+                .bind(server)
+                .bind(now)
+                .fetch_one(&mut *tx)
+                .await?;
             authorized
                 && !blocked
                 && crate::jobs::deployment_automation::automation_dispatch_matches_tx(

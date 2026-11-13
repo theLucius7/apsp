@@ -36,7 +36,7 @@
 | 外部来源与外部节点 | 引入机场等外部节点 | 外部来源、外部节点版本 | 先预览再采用；失败保留上一个成功修订 | 服务权益（策略组引用）；成本（报告的到期只读） | `crates/traffic` `subscription_sources/`、`subscription_parser/`（唯一的来源模型，ADR 0131）；网络服务 › 外部来源 |
 | 配置编译与发布 | 把期望配置变成每台服务器的完整快照并下发 | 配置版本、部署 | 同一输入同一字节；字节相同不产生新修订；只有回执才算已应用 | 服务权益（授权凭据，经依赖倒置接口）；资源（设备通道） | `crates/compiler`；`crates/traffic` `publisher.rs`、`deployments.rs`、`device_config.rs`（设备的清单与配置包、已应用修订、应用结果，阶段 B2c 从宿主迁入） |
 | 运行时检查点与路径验证 | 确认目标修订真的在运行、路径真的通 | 已应用状态与验证证据 | 证据有有效期；旧代次的回执不覆盖新代次 | 资源（设备通道） | `crates/traffic` `runtime_control/`（检查点、回执与路径探测）、`runtime_validations.rs`（阶段 B2c 从宿主迁入；混合链路退出后只为在用 Agent 保留空的轮询接口，随下一次 Agent 协议变更删除） |
-| 运行时运维 | 检查、重启运行时或重试部署 | 运行时操作的合法性 | 只对受管运行时；结果未知不自动重试 | 作业（执行记录） | `crates/operations` 的 `runtime_operations.rs`（设备队列与回执）；`crates/traffic` `runtime_operations.rs` |
+| 运行时运维 | 检查、重启运行时或重试部署 | 运行时操作的合法性 | 只对受管运行时；结果未知不自动重试 | 作业（执行记录） | `crates/operations` 的 `runtime_operations.rs`（列表、创建、设备队列与回执）、`jobs/deployment_automation.rs`（部署自动化）、`runtime_rollouts.rs`（分批升级）；合法性由 `crates/traffic` 的 `runtime_workflows::{automation, rollouts}` 回答 |
 | 服务器端逐用户限制的执行 | 把限速与连接数编进配置 | 运行时能力 `user-limits` | 运行时不支持时拒绝而不是忽略 | 服务权益（限制的值） | `crates/compiler/src/limits.rs` |
 | Nexus 运行时兼容 | 让接管的 Nexus 主机在兼容桥退出前继续用保留配置 | 保留配置、受保护节点 | 只经接管流程进入；兼容桥退出（路线图 1.5）后删除 | 治理（迁移授权）；服务权益（兼容桥） | `crates/traffic` `nexus_nodes/`、`crates/compiler/src/preserved.rs`；系统 › 迁移与兼容 |
 

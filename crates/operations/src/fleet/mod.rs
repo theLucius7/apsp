@@ -158,16 +158,11 @@ mod tests {
 
     /// Files that match maintenance windows by hand: their owners come before operations in
     /// the dependency order, so they cannot call `closed_sql`.
-    const OTHER_OWNERS: [(&str, &str); 3] = [
+    const OTHER_OWNERS: [(&str, &str); 2] = [
         (
             "traffic/src/runtime_workflows/preflight.rs",
             "the sing-box deployment preflight reports whether the server accepts new tasks; \
              it moves to operations with the deployment glue (architecture.md section 12.1)",
-        ),
-        (
-            "traffic/src/runtime_workflows/automation.rs",
-            "the automation retry checks the server is quiet; it moves to operations with the \
-             deployment glue (architecture.md section 12.1)",
         ),
         (
             "observability/src/incidents.rs",

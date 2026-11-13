@@ -1,6 +1,7 @@
 use crate::error::{ApiError, ApiResult};
 pub use crate::{digest::json as digest, text::label};
 use apsp_protocol::fleet::Operation;
+use apsp_traffic::runtime_workflows::automation::runtime_step_policy;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use uuid::Uuid;
@@ -30,7 +31,7 @@ pub struct Plan {
 
 impl Step {
     pub fn is_runtime(&self) -> bool {
-        super::deployment_automation::runtime_step_policy(&self.kind).is_some()
+        runtime_step_policy(&self.kind).is_some()
     }
     pub fn is_panel(&self) -> bool {
         self.kind == "panel_backup"
@@ -53,7 +54,7 @@ impl Step {
             }
             return Ok(());
         }
-        if let Some(policy) = super::deployment_automation::runtime_step_policy(&self.kind) {
+        if let Some(policy) = runtime_step_policy(&self.kind) {
             if self.service.is_some()
                 || self.backup_schedule_id.is_some()
                 || self.runtime_version.as_deref() != Some(policy.version)
@@ -107,7 +108,7 @@ impl Step {
     pub fn permission(&self) -> &'static str {
         if self.is_panel() {
             "recovery:write"
-        } else if let Some(policy) = super::deployment_automation::runtime_step_policy(&self.kind) {
+        } else if let Some(policy) = runtime_step_policy(&self.kind) {
             policy.capability
         } else if self.kind == "system_snapshot" {
             "operations:read"

@@ -1,26 +1,16 @@
-mod automation;
+//! Each server's proxy runtime as the traffic service checks it: the operations view with
+//! its configuration checkpoint, deployment preflights and the signed runtime inventory, and
+//! the rules operations follows when it retries a fixed deployment (`automation`) or rolls a
+//! runtime version out in stages (`rollouts`).
+
+pub mod automation;
 mod inventory;
 mod preflight;
 mod preflight_network;
 use preflight::{bootstrap_install, confirm as confirm_preflight, request as preflight_request};
 pub(crate) use preflight::{ordinary_shape_changes_tx, publisher_ready_tx};
-mod rollouts;
-pub use automation::{
-    automation_candidate, automation_deployment_receipt, automation_dispatch_matches_tx,
-    cancel_automation_deployment_tx, enqueue_automation_deployment_tx,
-    reconcile_automation_deployment_tx, request_automation_deployment_checkpoint_tx,
-    runtime_step_policy,
-};
+pub mod rollouts;
 use inventory::inventory;
-use rollouts::{advance, create_rollout, inspect_member, pause, rollouts};
-
-/// The rollouts' periodic step: inspection results reach their members.
-pub async fn maintenance(state: &AppState) -> ApiResult<()> {
-    let mut tx = state.pool.begin().await?;
-    rollouts::record_inspection_results(&mut tx).await?;
-    tx.commit().await?;
-    Ok(())
-}
 
 /// Deletes deployment checks created before `before`; access decides the retention period.
 pub async fn prune_preflights(tx: &mut Transaction<'_, Postgres>, before: i64) -> ApiResult<()> {
@@ -31,7 +21,7 @@ pub async fn prune_preflights(tx: &mut Transaction<'_, Postgres>, before: i64) -
     Ok(())
 }
 
-/// Deployment checks, rollouts and the runtime inventory of each server's proxy runtime.
+/// Deployment checks and the runtime inventory of each server's proxy runtime.
 pub fn router() -> axum::Router<AppState> {
     use axum::routing::{get, post};
     axum::Router::new()
@@ -53,16 +43,6 @@ pub fn router() -> axum::Router<AppState> {
             post(bootstrap_install),
         )
         .route("/api/traffic/runtime-inventory", get(inventory))
-        .route(
-            "/api/traffic/runtime-rollouts",
-            get(rollouts).post(create_rollout),
-        )
-        .route("/api/traffic/runtime-rollouts/{id}/advance", post(advance))
-        .route("/api/traffic/runtime-rollouts/{id}/pause", post(pause))
-        .route(
-            "/api/traffic/runtime-rollouts/{id}/members/{server}/inspect",
-            post(inspect_member),
-        )
 }
 
 use crate::{

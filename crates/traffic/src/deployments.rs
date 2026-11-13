@@ -2,6 +2,7 @@ use crate::{
     AppState, auth,
     error::{ApiError, ApiResult},
 };
+use apsp_protocol::{RuntimeOperation, RuntimeOperationRequest};
 use axum::{
     Json,
     extract::{Path, State},
@@ -237,4 +238,46 @@ pub async fn applied_state(
         healthy: row.get("healthy"),
         bundle: row.get("bundle"),
     }))
+}
+
+#[derive(FromRow)]
+struct RuntimeDeployment {
+    target_rev: i64,
+    applied_rev: i64,
+    last_result_rev: i64,
+    last_error: Option<String>,
+}
+
+/// Whether a runtime operation fits the server's current sing-box deployment, for the
+/// runtime operations operations queues. A read always does; anything else needs the
+/// expected target revision with no publication pending, a restart needs the target applied
+/// and a retry needs a failed deployment of the target.
+pub async fn require_runtime_operation_fits(
+    connection: &mut sqlx::PgConnection,
+    server_id: i64,
+    request: &RuntimeOperationRequest,
+    publication_pending: bool,
+) -> ApiResult<()> {
+    if request.operation == RuntimeOperation::Inspect {
+        return Ok(());
+    }
+    let deployment: RuntimeDeployment = sqlx::query_as("SELECT target_rev,applied_rev,last_result_rev,last_error FROM server_module_status WHERE server_id=$1 AND module='singbox'").bind(server_id).fetch_optional(connection).await?.ok_or_else(|| ApiError::Conflict("尚无可操作的运行时部署".into()))?;
+    if publication_pending || request.expected_revision != u64::try_from(deployment.target_rev).ok()
+    {
+        return Err(ApiError::Conflict(
+            "期望版本已改变或正在发布，请刷新后重试".into(),
+        ));
+    }
+    match request.operation {
+        RuntimeOperation::Restart if deployment.applied_rev != deployment.target_rev => {
+            Err(ApiError::Conflict("目标版本尚未应用，请先完成部署".into()))
+        }
+        RuntimeOperation::RetryDeployment
+            if deployment.last_result_rev != deployment.target_rev
+                || deployment.last_error.is_none() =>
+        {
+            Err(ApiError::Conflict("当前期望版本没有失败部署可重试".into()))
+        }
+        _ => Ok(()),
+    }
 }

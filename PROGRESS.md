@@ -1,5 +1,18 @@
 # 执行进度
 
+## 2026-11-14：流量服务里的作业胶水迁到作业
+
+- 用户要求：“continue，依次”（阶段 F → 作业胶水 → 前端重复）。取舍见 `docs/open-questions.md` 同日条目。基于 main `00609ef3`；只改代码，不改数据库基线、协议、路由与用户看到的文字。
+- 完成项：
+  - 部署自动化（排队、取消、回执、派发前检查、一次性的确认检查点、结果未知时请求检查点与核对记录）迁到 `crates/operations/src/jobs/deployment_automation.rs`（含 `reconciliation.rs` 与原有测试）；分批升级的创建、列表、推进、暂停、检查与结果交接迁到 `crates/operations/src/runtime_rollouts.rs`；控制台的运行时操作列表与创建迁到 `crates/operations/src/runtime_operations.rs`。`operations_history` 只由作业读写。
+  - 流量服务只回答合法性：`runtime_workflows::automation`（目标、候选是否仍是当前、检查点是否已核实、能否重试等）、`runtime_workflows::rollouts`（自己的发布批次表）、`deployments::require_runtime_operation_fits`，作业直接调用；跨两个领域的步骤仍在同一个事务里。
+  - 流量服务的 `runtime_operations.rs` 与 `automation/` 删除；作业维护窗口守卫的一条例外随之去掉。
+  - 边界：流量服务指向作业的 SQL 20 → 3；越界清单 332 → 314。
+  - 文档：`docs/architecture.md` §12、`docs/domain-map.md`、`docs/open-questions.md`。
+- 验证结果（本地，2026-11-14；CI 仍暂停，未触发）：在全新的编译目录里，`cargo fmt --all --check` 通过；`cargo clippy --all-targets -- -D warnings` 覆盖 14 个面板侧 crate，通过；14 个 crate 的 `--lib` 共 651 项通过；除 `end_to_end` 外的 80 个面板集成目标共 393 项通过、0 项失败、6 项按原有标注忽略；三项检查（314 条已知越界，没有新增）与它们的 Python 测试通过。未验证：`end_to_end`；分批升级的处理函数只有单元测试（交接检查结果），没有集成测试。
+- 已知问题：部署预检与首次安装的检查还有 3 条 SQL 读作业的表（architecture.md §12.1）。
+- 下一步：阶段 F 第一步（草稿 PR，ADR 0137）合并上线后，按 ADR 0137 的顺序继续 F4–F7；之后处理前端重复。
+
 ## 2026-11-13：底层机制统一第四部分——服务器状态与几类小机制（ADR 0136）
 
 - 用户要求：同上（“目前是底层原理深度统一”，“continue”）。决策见 [ADR 0136](docs/adr/0136-server-state-and-small-mechanisms.md)，取舍见 `docs/open-questions.md`。基于 main `4ae77b73`。不改数据库基线、协议、路由与用户看到的文字。
