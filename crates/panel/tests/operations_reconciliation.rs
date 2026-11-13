@@ -50,7 +50,7 @@ async fn fixture(panel: &TestPanel, cookie: &str) -> Result<(i64, Uuid, Uuid, St
     .execute(&panel.state.pool)
     .await?;
     let token = random_token();
-    sqlx::query("INSERT INTO sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
+    sqlx::query("INSERT INTO device_sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
         .bind(hash_token(&token))
         .bind(server)
         .bind(now + 3600)

@@ -105,13 +105,12 @@ pub(super) async fn login(
     let token =
         crate::portal::access::issue(&mut tx, account, crate::portal::access::Proof::Password)
             .await?;
-    event(
+    crate::operations_workflows::event(
         &mut tx,
+        None,
         Some(id),
-        "account",
-        "password_login",
-        &account.to_string(),
-        json!({}),
+        "security_portal_login",
+        json!({"authentication":"password","result":"verified"}),
     )
     .await?;
     tx.commit().await?;
@@ -199,12 +198,11 @@ pub(super) async fn reset(
     let token =
         crate::portal::access::issue(&mut tx, account, crate::portal::access::Proof::Password)
             .await?;
-    event(
+    crate::operations_workflows::event(
         &mut tx,
+        None,
         Some(id),
-        "account",
-        "password_recovered",
-        &id.to_string(),
+        "security_portal_password_recovery",
         json!({"passkeys_removed":keys_removed}),
     )
     .await?;
@@ -245,12 +243,11 @@ pub(super) async fn password_change(
         .await?;
     revoke_sessions(&mut tx, id).await?;
     let token = crate::portal::access::issue(&mut tx, account, proof).await?;
-    event(
+    crate::operations_workflows::event(
         &mut tx,
+        None,
         Some(id),
-        "account",
-        "password_changed",
-        &id.to_string(),
+        "security_portal_password_change",
         json!({}),
     )
     .await?;
@@ -368,12 +365,11 @@ pub(super) async fn email_finish(
     sqlx::query("UPDATE singbox_members SET email=$2,email_verified_at=$3,version=version+1 WHERE user_id=$1").bind(id).bind(&challenge.address).bind(now_timestamp()).execute(&mut *tx).await?;
     revoke_sessions(&mut tx, id).await?;
     let token = crate::portal::access::issue(&mut tx, account, proof).await?;
-    event(
+    crate::operations_workflows::event(
         &mut tx,
+        None,
         Some(id),
-        "account",
-        "email_changed",
-        &id.to_string(),
+        "security_portal_email_change",
         json!({}),
     )
     .await?;

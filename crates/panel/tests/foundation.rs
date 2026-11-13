@@ -334,7 +334,7 @@ async fn admin_sessions_are_scoped_expiring_and_not_reset_on_restart(pool: PgPoo
         StatusCode::UNAUTHORIZED
     );
 
-    sqlx::query("UPDATE sessions SET expires_at = 0 WHERE admin_id IS NOT NULL")
+    sqlx::query("UPDATE sessions SET expires_at = 0")
         .execute(&pool)
         .await?;
     assert_eq!(
@@ -605,7 +605,7 @@ async fn websocket_challenges_are_connection_bound_and_sessions_expire(pool: PgP
     sqlx::query("SET LOCAL lock_timeout = '5s'")
         .execute(&mut *blocker)
         .await?;
-    sqlx::query("LOCK TABLE sessions IN SHARE MODE")
+    sqlx::query("LOCK TABLE device_sessions IN SHARE MODE")
         .execute(&mut *blocker)
         .await?;
     send_envelope(&mut first, Envelope::new("auth.response", response)?).await?;
@@ -614,7 +614,7 @@ async fn websocket_challenges_are_connection_bound_and_sessions_expire(pool: PgP
             let waiting: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='relation'
                  AND database=(SELECT oid FROM pg_database WHERE datname=current_database())
-                 AND relation='sessions'::regclass AND mode='RowExclusiveLock' AND NOT granted
+                 AND relation='device_sessions'::regclass AND mode='RowExclusiveLock' AND NOT granted
                  AND $1=ANY(pg_blocking_pids(pid)))",
             )
             .bind(blocker_pid)
@@ -647,7 +647,7 @@ async fn websocket_challenges_are_connection_bound_and_sessions_expire(pool: PgP
     assert!((auth_started_at..=ack_received_at).contains(&issued_at));
     assert!((issued_at..=ack_received_at).contains(&ack.server_time));
     let stored_expiry: i64 = sqlx::query_scalar(
-        "SELECT expires_at FROM sessions WHERE token_hash = $1 AND server_id = $2",
+        "SELECT expires_at FROM device_sessions WHERE token_hash = $1 AND server_id = $2",
     )
     .bind(apsp_governance::auth::hash_token(&ack.session_token))
     .bind(server_id)
@@ -699,6 +699,32 @@ async fn websocket_challenges_are_connection_bound_and_sessions_expire(pool: PgP
             .status(),
         StatusCode::UNAUTHORIZED
     );
+    // Device and administrator sessions live in separate tables: neither token opens the
+    // other's interface.
+    assert_eq!(
+        panel
+            .client
+            .get(format!("{}/api/me", panel.base))
+            .header(
+                header::COOKIE,
+                format!("apsp_session={}", ack.session_token)
+            )
+            .send()
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let administrator_token = cookie.split_once('=').context("administrator cookie")?.1;
+    assert_eq!(
+        panel
+            .client
+            .get(format!("{}/api/agent/v1/manifest", panel.base))
+            .bearer_auth(administrator_token)
+            .send()
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
 
     send_envelope(
         &mut first,
@@ -723,7 +749,7 @@ async fn websocket_challenges_are_connection_bound_and_sessions_expire(pool: PgP
         Ok::<_, anyhow::Error>(())
     })
     .await??;
-    sqlx::query("UPDATE sessions SET expires_at = 0 WHERE server_id = $1")
+    sqlx::query("UPDATE device_sessions SET expires_at = 0 WHERE server_id = $1")
         .bind(server_id)
         .execute(&pool)
         .await?;

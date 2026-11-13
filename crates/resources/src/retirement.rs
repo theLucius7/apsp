@@ -42,7 +42,7 @@ async fn delete_record(tx: &mut Transaction<'_, Postgres>, id: i64) -> Result<()
         .bind(now)
         .execute(&mut **tx)
         .await?;
-    sqlx::query("DELETE FROM sessions WHERE server_id=$1")
+    sqlx::query("DELETE FROM device_sessions WHERE server_id=$1")
         .bind(id)
         .execute(&mut **tx)
         .await?;

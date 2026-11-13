@@ -85,7 +85,7 @@ pub(super) async fn server(state: &AppState, token: &str) -> anyhow::Result<i64>
         .bind(json!({"os":"linux","arch":"amd64","ip_addresses":["192.0.2.1"]})).bind(now_timestamp())
         .bind(json!([CAPABILITY,apsp_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,apsp_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY]))
         .fetch_one(&state.pool).await?;
-    sqlx::query("INSERT INTO sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
+    sqlx::query("INSERT INTO device_sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
         .bind(auth::hash_token(token))
         .bind(id)
         .bind(now_timestamp() + 600)

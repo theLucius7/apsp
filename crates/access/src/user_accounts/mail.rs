@@ -34,7 +34,7 @@ pub(super) async fn save(
     headers: HeaderMap,
     Json(input): Json<Configuration>,
 ) -> ApiResult<Json<Value>> {
-    let actor = administrator(&state, &headers, true).await?;
+    let administrator = administrator(&state, &headers, true).await?;
     if !["tls", "starttls"].contains(&input.security.as_str())
         || !(1..=65535).contains(&input.port)
         || input.blocked_domains.len() > 200
@@ -95,12 +95,11 @@ pub(super) async fn save(
     if !input.enabled || !input.reminders_enabled {
         sqlx::query("UPDATE singbox_member_messages SET mail_state='cancelled' WHERE mail_state IN('pending','failed')").execute(&mut *tx).await?;
     }
-    event(
+    crate::operations_workflows::event(
         &mut tx,
+        Some(administrator),
         None,
-        &actor,
         "mail_settings_changed",
-        "mail",
         json!({"enabled":input.enabled,"reminders_enabled":input.reminders_enabled}),
     )
     .await?;

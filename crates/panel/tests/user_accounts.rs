@@ -296,6 +296,18 @@ async fn invitation_codes_spend_quota_and_create_accounts(pool: PgPool) -> Resul
         .fetch_one(&pool)
         .await?;
     assert_eq!(users, 2);
+    // The claim is recorded once for the new account, and the settings change for the
+    // administrator who saved it.
+    let claims: Vec<Value> = sqlx::query_scalar("SELECT detail FROM singbox_operation_events WHERE action='invitation_claimed' AND user_id=$1 AND administrator_id IS NULL")
+        .bind(friend).fetch_all(&pool).await?;
+    assert_eq!(claims.len(), 1);
+    assert_eq!(claims[0]["issuer_id"], issuer);
+    let saved_by: Vec<Option<i64>> = sqlx::query_scalar(
+        "SELECT administrator_id FROM singbox_operation_events WHERE action='invitation_settings_saved'",
+    )
+    .fetch_all(&pool)
+    .await?;
+    assert!(!saved_by.is_empty() && saved_by.iter().all(Option::is_some));
 
     let detail = ok(request(
         &panel,
@@ -390,6 +402,17 @@ async fn migrated_member_signs_in_with_the_original_password(pool: PgPool) -> Re
     assert_eq!(view["profile"]["email"], "original@example.com");
     assert_eq!(view["profile"]["has_password"], true);
     assert_eq!(view["invitations"]["enabled"], false);
+    // The sign-in is a portal security event in the user's operation record.
+    let events = diagnosis(&panel, &cookie, user).await?;
+    let logins: Vec<&Value> = events["events"]
+        .as_array()
+        .context("events")?
+        .iter()
+        .filter(|event| event["action"] == "security_portal_login")
+        .collect();
+    assert_eq!(logins.len(), 1);
+    assert_eq!(logins[0]["detail"]["authentication"], "password");
+    assert_eq!(logins[0]["administrator_id"], Value::Null);
     // A suspended member cannot sign in.
     sqlx::query("UPDATE singbox_members SET state='suspended' WHERE user_id=$1")
         .bind(user)
@@ -404,7 +427,6 @@ async fn migrated_member_signs_in_with_the_original_password(pool: PgPool) -> Re
     )
     .await?;
     assert_eq!(suspended.status(), StatusCode::UNAUTHORIZED);
-    let _ = cookie;
     Ok(())
 }
 
@@ -620,10 +642,11 @@ async fn administrators_delete_notices_and_guides(pool: PgPool) -> Result<()> {
     assert_eq!(listed["entries"], json!([]));
     let again = request(&panel, Method::DELETE, &path, &cookie, json!(null)).await?;
     assert_eq!(again.status(), StatusCode::NOT_FOUND);
+    // The deletion is an operation event of the administrator who made it.
     let audited: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM singbox_commerce_events WHERE action='content_deleted' AND object_id=$1",
+        "SELECT COUNT(*) FROM singbox_operation_events WHERE action='content_deleted' AND detail->'content_id'=to_jsonb($1::bigint) AND administrator_id IS NOT NULL AND user_id IS NULL",
     )
-    .bind(guide.to_string())
+    .bind(guide)
     .fetch_one(&pool)
     .await?;
     assert_eq!(audited, 1);

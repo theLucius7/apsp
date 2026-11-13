@@ -296,7 +296,7 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
         .execute(&pool)
         .await?;
     sqlx::query("INSERT INTO usage_records(server_id,epoch,seq,stat_name,user_id,node_id,uplink,downlink,period_start,period_end) VALUES($1,$2,1,$3,$4,$5,$6,$7,10,20)").bind(server).bind(epoch).bind(&stat_name).bind(user_id).bind(node_id).bind(i64::try_from(uplink)?).bind(i64::try_from(downlink)?).execute(&pool).await?;
-    sqlx::query("INSERT INTO sessions(token_hash,server_id,expires_at) VALUES('TEST_ONLY-imported-device-session',$1,4099680000)")
+    sqlx::query("INSERT INTO device_sessions(token_hash,server_id,expires_at) VALUES('TEST_ONLY-imported-device-session',$1,4099680000)")
         .bind(server).execute(&pool).await?;
     sqlx::query("INSERT INTO enrollment_tokens(token_hash,server_id,expires_at,consumed_at) VALUES('TEST_ONLY-imported-enrollment',$1,4099680000,1234)")
         .bind(server).execute(&pool).await?;

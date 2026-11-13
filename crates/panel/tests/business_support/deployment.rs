@@ -247,7 +247,7 @@ async fn prepare_server(
     // Work must actually dispatch each requested typed job before a receipt can
     // be accepted. No operation status or confirmation is updated directly.
     let token = format!("TEST_ONLY-preflight-{}", Uuid::new_v4());
-    sqlx::query("INSERT INTO sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
+    sqlx::query("INSERT INTO device_sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
         .bind(apsp_governance::auth::hash_token(&token))
         .bind(server)
         .bind(now_timestamp() + 300)
@@ -281,7 +281,7 @@ async fn prepare_server(
         }
         Ok::<_,anyhow::Error>(())
     }.await;
-    sqlx::query("DELETE FROM sessions WHERE token_hash=$1")
+    sqlx::query("DELETE FROM device_sessions WHERE token_hash=$1")
         .bind(apsp_governance::auth::hash_token(&token))
         .execute(&panel.state.pool)
         .await?;

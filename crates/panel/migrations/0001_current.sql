@@ -2263,10 +2263,8 @@ ALTER SEQUENCE public.servers_id_seq OWNED BY public.servers.id;
 
 CREATE TABLE public.sessions (
     token_hash text NOT NULL,
-    admin_id bigint,
-    server_id bigint,
-    expires_at bigint NOT NULL,
-    CONSTRAINT sessions_check CHECK (((admin_id IS NOT NULL) <> (server_id IS NOT NULL)))
+    admin_id bigint NOT NULL,
+    expires_at bigint NOT NULL
 );
 
 CREATE TABLE public.singbox_account_challenges (
@@ -2352,25 +2350,6 @@ CREATE TABLE public.singbox_client_templates (
     CONSTRAINT singbox_client_templates_client_version_check CHECK ((client_version = '1.14.4'::text)),
     CONSTRAINT singbox_client_templates_revision_check CHECK ((revision > 0))
 );
-
-CREATE TABLE public.singbox_commerce_events (
-    id bigint NOT NULL,
-    user_id bigint,
-    actor text NOT NULL,
-    action text NOT NULL,
-    object_id text NOT NULL,
-    detail jsonb NOT NULL,
-    created_at bigint NOT NULL
-);
-
-CREATE SEQUENCE public.singbox_commerce_events_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-ALTER SEQUENCE public.singbox_commerce_events_id_seq OWNED BY public.singbox_commerce_events.id;
 
 CREATE TABLE public.singbox_credential_rotations (
     id uuid NOT NULL,
@@ -3729,7 +3708,6 @@ ALTER TABLE ONLY public.servers ALTER COLUMN id SET DEFAULT nextval('public.serv
 
 ALTER TABLE ONLY public.singbox_chains ALTER COLUMN id SET DEFAULT nextval('public.singbox_chains_id_seq'::regclass);
 
-ALTER TABLE ONLY public.singbox_commerce_events ALTER COLUMN id SET DEFAULT nextval('public.singbox_commerce_events_id_seq'::regclass);
 
 ALTER TABLE ONLY public.singbox_deployment_preflights ALTER COLUMN sequence SET DEFAULT nextval('public.singbox_deployment_preflights_sequence_seq'::regclass);
 
@@ -4256,9 +4234,6 @@ ALTER TABLE ONLY public.singbox_chains
 ALTER TABLE ONLY public.singbox_client_templates
     ADD CONSTRAINT singbox_client_templates_pkey PRIMARY KEY (user_id);
 
-ALTER TABLE ONLY public.singbox_commerce_events
-    ADD CONSTRAINT singbox_commerce_events_pkey PRIMARY KEY (id);
-
 ALTER TABLE ONLY public.singbox_credential_rotations
     ADD CONSTRAINT singbox_credential_rotations_pkey PRIMARY KEY (id);
 
@@ -4751,8 +4726,6 @@ CREATE UNIQUE INDEX server_one_active_alert ON public.server_alert_events USING 
 CREATE INDEX server_traffic_correction_lookup ON public.server_traffic_corrections USING btree (server_id, cycle_start, reset_day, network_interface, id DESC);
 
 CREATE INDEX sessions_expiry_idx ON public.sessions USING btree (expires_at);
-
-CREATE INDEX sessions_server_idx ON public.sessions USING btree (server_id);
 
 CREATE INDEX singbox_chain_external_refs ON public.singbox_ordered_chain_hops USING btree (external_node_id, chain_id, generation);
 
@@ -5337,9 +5310,6 @@ ALTER TABLE ONLY public.server_traffic_corrections
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_admin_id_fkey FOREIGN KEY (admin_id) REFERENCES public.admins(id);
 
-ALTER TABLE ONLY public.sessions
-    ADD CONSTRAINT sessions_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id);
-
 ALTER TABLE ONLY public.singbox_account_challenges
     ADD CONSTRAINT singbox_account_challenges_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
 
@@ -5357,9 +5327,6 @@ ALTER TABLE ONLY public.singbox_chains
 
 ALTER TABLE ONLY public.singbox_client_templates
     ADD CONSTRAINT singbox_client_templates_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
-
-ALTER TABLE ONLY public.singbox_commerce_events
-    ADD CONSTRAINT singbox_commerce_events_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
 
 ALTER TABLE ONLY public.singbox_credential_rotations
     ADD CONSTRAINT singbox_credential_rotations_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id);
@@ -5749,10 +5716,21 @@ CREATE TABLE public.singbox_server_profiles (
     updated_at BIGINT NOT NULL
 );
 
+CREATE TABLE public.device_sessions (
+    token_hash text PRIMARY KEY,
+    server_id bigint NOT NULL REFERENCES public.servers(id),
+    expires_at bigint NOT NULL
+);
+
+CREATE INDEX device_sessions_server_idx ON public.device_sessions USING btree (server_id);
+
+CREATE INDEX device_sessions_expiry_idx ON public.device_sessions USING btree (expires_at);
+
 CREATE TABLE public.apsp_schema_baseline (singleton boolean PRIMARY KEY CHECK (singleton), fingerprint text NOT NULL);
 INSERT INTO public.apsp_schema_baseline SELECT true, (SELECT md5(string_agg(definition, E'\n' ORDER BY definition COLLATE "C"))
 FROM (
-    SELECT 'relation:' || c.relname || ':' || c.relkind::text || ':' || a.attname || ':' || a.attnum || ':' ||
+    SELECT 'relation:' || c.relname || ':' || c.relkind::text || ':' || a.attname || ':' ||
+           row_number() OVER (PARTITION BY a.attrelid ORDER BY a.attnum) || ':' ||
            format_type(a.atttypid,a.atttypmod) || ':' || a.attnotnull || ':' ||
            COALESCE(pg_get_expr(d.adbin,d.adrelid),'') AS definition
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace

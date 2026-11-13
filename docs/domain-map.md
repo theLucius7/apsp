@@ -8,7 +8,7 @@
 | 功能 | 意图 | 核心对象 | 关键约束 | 协作 | 实现与入口 |
 | --- | --- | --- | --- | --- | --- |
 | 服务器接入 | 把一台机器纳入管理并能执行任务 | 服务器、接入令牌、Agent 绑定 | 接入令牌一次性、有有效期；资源身份独立于 IP 与名称 | 治理（谁可以接入机器；发布目录里可选的 Agent 版本）；流量服务（安装运行时） | `crates/resources` 的 `servers.rs`、`installation*`、`bootstrap.rs`（安装中的机器凭接入令牌取脚本与可选版本）、`batch_enrollment.rs`；表 `enrollment_tokens`；Agent `enroll`；服务器列表 › 添加服务器、批量接入（实验） |
-| 设备连接 | 让已接入的 Agent 与面板保持经过认证的连接 | 设备会话、在线连接 | 设备用绑定在服务器上的密钥证明身份；连接的登记、移除与退役互斥 | 流量服务、服务权益、观测（设备回报经 `DeviceReports` 交给所有者）；作业（设备任务）；治理（会话与管理员会话共用 `sessions` 表） | `crates/resources` 的 `device_channel.rs`（`/api/agent/v1/ws`、设备请求的身份检查 `require_agent`、`require_signed_agent`）、`device_artifacts.rs`（设备下载制品） |
+| 设备连接 | 让已接入的 Agent 与面板保持经过认证的连接 | 设备会话、在线连接 | 设备用绑定在服务器上的密钥证明身份；连接的登记、移除与退役互斥 | 流量服务、服务权益、观测（设备回报经 `DeviceReports` 交给所有者）；作业（设备任务）；设备会话单独存放在资源的 `device_sessions`（ADR 0137；管理员会话在治理的 `sessions`） | `crates/resources` 的 `device_channel.rs`（`/api/agent/v1/ws`、设备请求的身份检查 `require_agent`、`require_signed_agent`）、`device_artifacts.rs`（设备下载制品） |
 | 服务器资产 | 记录地区、标签、到期与采购配置 | 服务器资产 | 一份资产记录（运维区的采购配置并入，路线图 4.4） | 成本（只读到期与成本） | `crates/resources` 的 `server_assets.rs`、`server_lifecycle.rs`（资产档案、本机运维策略、生命周期与迁移，表 `fleet_profiles`）；服务器详情 › 资产与流量、运维 |
 | 服务器退役 | 安全删除一台服务器 | 退役记录 | 在线退役以设备签名回执为准；离线退役单独标明 | 流量服务（停止服务）；作业（执行） | `crates/resources` 的 `retirement.rs` |
 | Agent 能力 | 知道每台 Agent 能做什么 | Agent 能力与绑定代次 | 迟到的回执不能覆盖新绑定代次 | 治理（版本策略） | `crates/resources` 的 `servers.rs`（设备问候时由设备通道交来的能力登记） |

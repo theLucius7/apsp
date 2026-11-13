@@ -105,8 +105,14 @@ pub async fn authenticate(state: &AppState, headers: &HeaderMap) -> ApiResult<Pr
     let admin_id = if let Some(ref token) = token {
         token.try_get::<i64, _>("admin_id")?
     } else {
-        sqlx::query_scalar::<_,i64>("SELECT admin_id FROM sessions WHERE token_hash=$1 AND admin_id IS NOT NULL AND expires_at>$2")
-            .bind(session_hash(headers).ok_or(ApiError::Unauthorized)?).bind(now).fetch_optional(&state.pool).await?.ok_or(ApiError::Unauthorized)?
+        sqlx::query_scalar::<_, i64>(
+            "SELECT admin_id FROM sessions WHERE token_hash=$1 AND expires_at>$2",
+        )
+        .bind(session_hash(headers).ok_or(ApiError::Unauthorized)?)
+        .bind(now)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(ApiError::Unauthorized)?
     };
     let profile = sqlx::query("SELECT * FROM administrator_profiles WHERE admin_id=$1 AND enabled")
         .bind(admin_id)

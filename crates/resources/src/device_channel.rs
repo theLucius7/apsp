@@ -65,8 +65,20 @@ pub async fn require_agent(state: &AppState, headers: &HeaderMap) -> ApiResult<i
         .and_then(|value| value.strip_prefix("Bearer "))
         .filter(|value| !value.is_empty() && value.len() <= 512)
         .ok_or(ApiError::Unauthorized)?;
-    sqlx::query_scalar::<_, i64>("SELECT sessions.server_id FROM sessions JOIN servers ON servers.id = sessions.server_id WHERE sessions.token_hash = $1 AND sessions.server_id IS NOT NULL AND sessions.expires_at > $2 AND servers.deleted_at IS NULL")
+    sqlx::query_scalar::<_, i64>("SELECT d.server_id FROM device_sessions d JOIN servers ON servers.id = d.server_id WHERE d.token_hash = $1 AND d.expires_at > $2 AND servers.deleted_at IS NULL")
         .bind(tokens::hash_token(token)).bind(now_timestamp()).fetch_optional(&state.pool).await?.ok_or(ApiError::Unauthorized)
+}
+
+/// A device session lasts an hour and is reissued on every reconnect; expired ones can never
+/// authenticate again and are removed by the maintenance cycle.
+pub async fn purge_expired_sessions(pool: &sqlx::PgPool, now: i64) -> anyhow::Result<u64> {
+    Ok(
+        sqlx::query("DELETE FROM device_sessions WHERE expires_at <= $1")
+            .bind(now)
+            .execute(pool)
+            .await?
+            .rows_affected(),
+    )
 }
 
 /// Refuses artifact work for an Agent that cannot verify artifact signatures yet.
@@ -258,12 +270,14 @@ async fn connection(mut socket: WebSocket, state: AppState) -> anyhow::Result<()
             current.as_deref() == Some(&public_key),
             "device was deleted or rebound during authentication"
         );
-        sqlx::query("INSERT INTO sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
-            .bind(tokens::hash_token(&session_token))
-            .bind(server_id)
-            .bind(expires_at)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(
+            "INSERT INTO device_sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)",
+        )
+        .bind(tokens::hash_token(&session_token))
+        .bind(server_id)
+        .bind(expires_at)
+        .execute(&mut *tx)
+        .await?;
         sqlx::query("UPDATE servers SET last_seen=$2,last_contact_at=$2 WHERE id=$1")
             .bind(server_id)
             .bind(now_timestamp())
@@ -460,4 +474,35 @@ pub async fn process_message(
         _ => tracing::debug!("ignoring unsupported device message direction"),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[sqlx::test(migrations = "../panel/migrations")]
+    async fn expired_device_sessions_are_purged_and_live_ones_kept(
+        pool: sqlx::PgPool,
+    ) -> anyhow::Result<()> {
+        let server: i64 =
+            sqlx::query_scalar("INSERT INTO servers(name) VALUES('TEST_ONLY') RETURNING id")
+                .fetch_one(&pool)
+                .await?;
+        for (token, expires_at) in [("expired", 100_i64), ("expired-now", 300), ("live", 301)] {
+            sqlx::query(
+                "INSERT INTO device_sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)",
+            )
+            .bind(tokens::hash_token(token))
+            .bind(server)
+            .bind(expires_at)
+            .execute(&pool)
+            .await?;
+        }
+        assert_eq!(purge_expired_sessions(&pool, 300).await?, 2);
+        let remaining: Vec<String> = sqlx::query_scalar("SELECT token_hash FROM device_sessions")
+            .fetch_all(&pool)
+            .await?;
+        assert_eq!(remaining, [tokens::hash_token("live")]);
+        Ok(())
+    }
 }

@@ -151,7 +151,7 @@ pub(super) async fn settings_save(
     headers: HeaderMap,
     Json(input): Json<SettingsInput>,
 ) -> ApiResult<Json<Settings>> {
-    let actor = administrator(&state, &headers, true).await?;
+    let administrator = administrator(&state, &headers, true).await?;
     if !(0..=1000).contains(&input.default_quota) {
         return Err(bad("受邀账号的初始邀请名额为 0 至 1000"));
     }
@@ -199,12 +199,11 @@ pub(super) async fn settings_save(
     .bind(&groups)
     .execute(&mut *tx)
     .await?;
-    event(
+    crate::operations_workflows::event(
         &mut tx,
+        Some(administrator),
         None,
-        &actor,
         "invitation_settings_saved",
-        "settings",
         json!({"enabled":input.enabled,"package_group_id":input.package_group_id,"policy_group_ids":groups,"default_quota":input.default_quota}),
     )
     .await?;
@@ -248,7 +247,7 @@ pub(super) async fn adjust(
     Path(id): Path<i64>,
     Json(input): Json<Adjust>,
 ) -> ApiResult<Json<Value>> {
-    let actor = administrator(&state, &headers, true).await?;
+    let administrator = administrator(&state, &headers, true).await?;
     if input.delta == 0 || input.delta.abs() > MAX_QUOTA {
         return Err(bad("调整数量须为非零整数，且不超过 100000"));
     }
@@ -260,7 +259,7 @@ pub(super) async fn adjust(
         id,
         input.delta,
         "administrator",
-        &actor,
+        &format!("admin:{administrator}"),
         json!({"reason":reason}),
     )
     .await?;
@@ -358,13 +357,12 @@ pub(super) async fn rotate(
     if changed != 1 {
         return Err(conflict("邀请已使用或已撤销，不能重新生成"));
     }
-    event(
+    crate::operations_workflows::event(
         &mut tx,
+        None,
         Some(user),
-        &format!("account:{user}"),
         "invitation_rotated",
-        &id.to_string(),
-        json!({}),
+        json!({"invitation_id":id}),
     )
     .await?;
     tx.commit().await?;
@@ -582,13 +580,12 @@ pub(super) async fn claim(
         }
         sqlx::query("UPDATE singbox_invitations SET state='claimed',recipient_id=$2,claimed_at=$3,claim_hash=$4 WHERE id=$1")
             .bind(id).bind(user).bind(now_timestamp()).bind(&hash).execute(&mut *tx).await?;
-        event(
+        crate::operations_workflows::event(
             &mut tx,
+            None,
             Some(user),
-            "invitation",
             "invitation_claimed",
-            &id.to_string(),
-            json!({"issuer_id":issuer}),
+            json!({"invitation_id":id,"issuer_id":issuer}),
         )
         .await?;
         (user, account)

@@ -64,8 +64,8 @@ pub(crate) async fn hash_password(password: String) -> anyhow::Result<String> {
     tokio::task::spawn_blocking(move || passwords::hash(password.as_bytes())).await?
 }
 
-/// Device sessions are reissued on every reconnect; expired rows must not wait
-/// for the next administrator login before they are removed.
+/// Removes expired administrator sessions without waiting for the next login. Device
+/// sessions are the resources domain's and expire there.
 pub async fn purge_expired_sessions(pool: &PgPool, now: i64) -> anyhow::Result<()> {
     sqlx::query("DELETE FROM sessions WHERE expires_at <= $1")
         .bind(now)
@@ -251,10 +251,11 @@ async fn login_inner(
 pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
     if let Some(token) = cookies::read(&headers, SESSION_COOKIE) {
         let mut tx = state.pool.begin().await?;
-        let admin:Option<i64>=sqlx::query_scalar("DELETE FROM sessions WHERE token_hash = $1 AND admin_id IS NOT NULL RETURNING admin_id")
-            .bind(hash_token(token))
-            .fetch_optional(&mut *tx)
-            .await?;
+        let admin: Option<i64> =
+            sqlx::query_scalar("DELETE FROM sessions WHERE token_hash = $1 RETURNING admin_id")
+                .bind(hash_token(token))
+                .fetch_optional(&mut *tx)
+                .await?;
         if let Some(admin) = admin {
             audit::record(
                 &mut *tx,
@@ -290,35 +291,28 @@ mod tests {
     async fn expired_sessions_are_purged_and_live_sessions_kept(
         pool: PgPool,
     ) -> anyhow::Result<()> {
-        sqlx::query("INSERT INTO admins(id,password_hash) VALUES(1,'TEST_ONLY')")
+        sqlx::query("INSERT INTO admins(id,password_hash) VALUES(1,'TEST_ONLY'),(2,'TEST_ONLY')")
             .execute(&pool)
             .await?;
-        let server: i64 =
-            sqlx::query_scalar("INSERT INTO servers(name) VALUES('TEST_ONLY') RETURNING id")
-                .fetch_one(&pool)
-                .await?;
-        for (token, admin, device, expires_at) in [
-            ("expired-admin", Some(1_i64), None, 100_i64),
-            ("expired-device", None, Some(server), 200),
-            ("live-admin", Some(1), None, 301),
-            ("live-device", None, Some(server), 400),
+        for (token, admin, expires_at) in [
+            ("expired", 1_i64, 100_i64),
+            ("expired-now", 2, 300),
+            ("live", 1, 301),
+            ("live-other", 2, 400),
         ] {
-            sqlx::query(
-                "INSERT INTO sessions(token_hash,admin_id,server_id,expires_at) VALUES($1,$2,$3,$4)",
-            )
-            .bind(hash_token(token))
-            .bind(admin)
-            .bind(device)
-            .bind(expires_at)
-            .execute(&pool)
-            .await?;
+            sqlx::query("INSERT INTO sessions(token_hash,admin_id,expires_at) VALUES($1,$2,$3)")
+                .bind(hash_token(token))
+                .bind(admin)
+                .bind(expires_at)
+                .execute(&pool)
+                .await?;
         }
         purge_expired_sessions(&pool, 300).await?;
         let mut remaining: Vec<String> = sqlx::query_scalar("SELECT token_hash FROM sessions")
             .fetch_all(&pool)
             .await?;
         remaining.sort();
-        let mut expected = vec![hash_token("live-admin"), hash_token("live-device")];
+        let mut expected = vec![hash_token("live"), hash_token("live-other")];
         expected.sort();
         assert_eq!(remaining, expected);
         Ok(())

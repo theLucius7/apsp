@@ -146,7 +146,10 @@ def env_values(directory):
 
 def isolation_sql(migrations):
     available = {item["version"] for item in migrations}
-    statements = ["UPDATE sessions SET expires_at=0;"]
+    # Neither administrator nor device sessions of the source stay valid in the copy; device
+    # sessions have their own table since the 2026-11-14 baseline.
+    statements = ["UPDATE sessions SET expires_at=0;",
+                  "DO $$BEGIN IF to_regclass('public.device_sessions') IS NOT NULL THEN UPDATE device_sessions SET expires_at=0; END IF; END$$;"]
     if 18 in available:
         statements.append("UPDATE panel_settings SET settings=settings || '{\"notification_enabled\":false}'::jsonb;")
     if 32 in available:

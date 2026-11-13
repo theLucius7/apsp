@@ -37,8 +37,14 @@ pub(super) async fn locked_admin(
     tx: &mut Transaction<'_, Postgres>,
     session: &str,
 ) -> ApiResult<PgRow> {
-    let admin_id: i64 = sqlx::query_scalar("SELECT admin_id FROM sessions WHERE token_hash=$1 AND admin_id IS NOT NULL AND expires_at>$2 FOR UPDATE")
-        .bind(session).bind(now_timestamp()).fetch_optional(&mut **tx).await?.ok_or(ApiError::Unauthorized)?;
+    let admin_id: i64 = sqlx::query_scalar(
+        "SELECT admin_id FROM sessions WHERE token_hash=$1 AND expires_at>$2 FOR UPDATE",
+    )
+    .bind(session)
+    .bind(now_timestamp())
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or(ApiError::Unauthorized)?;
     let row = sqlx::query("SELECT a.* FROM admins a JOIN administrator_profiles p ON p.admin_id=a.id WHERE a.id=$1 AND p.enabled FOR UPDATE OF a,p")
         .bind(admin_id).fetch_optional(&mut **tx).await?.ok_or(ApiError::Unauthorized)?;
     Ok(row)
@@ -54,12 +60,10 @@ pub(super) async fn revoke_other_sessions(
     tx: &mut Transaction<'_, Postgres>,
     current: &str,
 ) -> ApiResult<()> {
-    let admin_id: i64 = sqlx::query_scalar(
-        "SELECT admin_id FROM sessions WHERE token_hash=$1 AND admin_id IS NOT NULL",
-    )
-    .bind(current)
-    .fetch_one(&mut **tx)
-    .await?;
+    let admin_id: i64 = sqlx::query_scalar("SELECT admin_id FROM sessions WHERE token_hash=$1")
+        .bind(current)
+        .fetch_one(&mut **tx)
+        .await?;
     // Pending ceremonies of this administrator's passkey account end with the sessions.
     if let Some(account) = super::passkeys::account_of(&mut **tx, admin_id).await? {
         crate::passkeys::revoke(tx, account).await?;

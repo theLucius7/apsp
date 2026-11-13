@@ -37,7 +37,16 @@ async fn pass(state: &AppState) -> Pass {
             .await
     {
         healthy = false;
-        tracing::error!(%error, "expired session cleanup failed");
+        tracing::error!(%error, "expired administrator session cleanup failed");
+    }
+    if let Err(error) = apsp_resources::device_channel::purge_expired_sessions(
+        &state.pool,
+        apsp_protocol::now_timestamp(),
+    )
+    .await
+    {
+        healthy = false;
+        tracing::error!(%error, "expired device session cleanup failed");
     }
     if let Err(error) = apsp_resources::servers::purge_expired_enrollments(
         &state.pool,

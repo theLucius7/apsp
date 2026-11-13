@@ -120,6 +120,19 @@ async fn changed_structure_is_rejected_even_with_matching_history(pool: PgPool) 
     Ok(())
 }
 
+#[sqlx::test]
+async fn a_dropped_column_leaves_no_gap_in_the_structure(pool: PgPool) -> Result<()> {
+    // Dropping a column keeps its number unused, as a baseline adoption that drops a
+    // column does; a fresh initialisation or a dump copy numbers the same columns
+    // without the gap, so the structure counts positions, not column numbers.
+    sqlx::raw_sql("ALTER TABLE singbox_runtime_controls DROP COLUMN control_secret; ALTER TABLE singbox_runtime_controls ADD COLUMN control_secret TEXT NOT NULL")
+        .execute(&pool)
+        .await?;
+    assert_eq!(sqlx::query_scalar::<_, i16>("SELECT attnum FROM pg_attribute WHERE attrelid='singbox_runtime_controls'::regclass AND attname='control_secret'").fetch_one(&pool).await?, 3);
+    initialize(&pool).await?;
+    Ok(())
+}
+
 #[sqlx::test(migrations = false)]
 async fn initialization_failure_rolls_back_every_table_and_can_be_retried(
     pool: PgPool,

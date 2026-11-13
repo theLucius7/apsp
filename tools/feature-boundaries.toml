@@ -33,8 +33,9 @@ governance = [
   "system_observer_reports", "tool_advisory_observations",
 ]
 resources = [
-  "servers", "server_retirements", "enrollment_tokens", "fleet_profiles", "fleet_templates",
-  "operations_cloud_*", "operations_hetzner_*", "alicloud_accounts", "alicloud_resources",
+  "servers", "server_retirements", "enrollment_tokens", "device_sessions", "fleet_profiles",
+  "fleet_templates", "operations_cloud_*", "operations_hetzner_*", "alicloud_accounts",
+  "alicloud_resources",
 ]
 networking = [
   "network_document*", "network_observations", "network_operation_links",
@@ -54,7 +55,7 @@ traffic = [
 ]
 access = [
   "users", "accesses", "usage_*", "singbox_account_*", "singbox_client_templates",
-  "singbox_commerce_*", "singbox_credential_rotations", "singbox_desired_accesses",
+  "singbox_credential_rotations", "singbox_desired_accesses",
   "singbox_entitlement_state", "singbox_invitation*", "singbox_mail_settings",
   "singbox_member*", "singbox_operation_*", "singbox_package_*", "singbox_payment_*",
   "singbox_policy_*", "singbox_portal_*", "singbox_quota_credits",

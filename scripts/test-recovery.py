@@ -155,6 +155,11 @@ class RecoveryTests(unittest.TestCase):
         # The Nexus compatibility bridge keeps serving legacy links; restores leave it alone.
         self.assertNotIn("singbox_nexus_bridge", statements)
 
+    def test_isolated_restore_expires_administrator_and_device_sessions(self):
+        statements = recovery.isolation_sql([{"version": 1}])
+        self.assertIn("UPDATE sessions SET expires_at=0;", statements)
+        self.assertIn("UPDATE device_sessions SET expires_at=0;", statements)
+
     def test_isolated_restore_stops_reachability_measurements_and_alerts(self):
         self.assertNotIn("singbox_reachability", recovery.isolation_sql([{"version": v} for v in range(1, 78)]))
         statements = recovery.isolation_sql([{"version": v} for v in [*range(1, 78), 79]])

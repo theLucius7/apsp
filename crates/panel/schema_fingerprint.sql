@@ -1,6 +1,7 @@
 SELECT md5(string_agg(definition, E'\n' ORDER BY definition COLLATE "C"))
 FROM (
-    SELECT 'relation:' || c.relname || ':' || c.relkind::text || ':' || a.attname || ':' || a.attnum || ':' ||
+    SELECT 'relation:' || c.relname || ':' || c.relkind::text || ':' || a.attname || ':' ||
+           row_number() OVER (PARTITION BY a.attrelid ORDER BY a.attnum) || ':' ||
            format_type(a.atttypid,a.atttypmod) || ':' || a.attnotnull || ':' ||
            COALESCE(pg_get_expr(d.adbin,d.adrelid),'') AS definition
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace

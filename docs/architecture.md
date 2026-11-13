@@ -361,6 +361,8 @@ flowchart TD
 
 **作业胶水（2026-11-14）已处理**：部署自动化（排队、取消、回执、检查点、结果未知的核对）、分批升级与运行时操作的列表和创建迁到 `crates/operations`（`jobs/deployment_automation.rs`、`runtime_rollouts.rs`、`runtime_operations.rs`），流量服务只回答“这一步是否合法”（`runtime_workflows::{automation, rollouts}`）；流量服务指向作业的 SQL 从 20 条减为 3 条。
 
+**ADR 0137（阶段 F 第一步，草稿 PR）**：结构指纹改按未删除列的序号计算（之后的步骤才能删列）；设备会话单独成表 `device_sessions`（资源），`sessions` 只留管理员会话；服务权益的两份审计流水合为 `singbox_operation_events`。阶段 F 其余各项按 ADR 0137 的判断与顺序处理，下面的表已按此改写。
+
 ### 12.1 归属：代码或数据还不在对象所属的领域
 
 | 事项 | 位置 | 为什么这一步没做 | 需要什么 |
@@ -370,19 +372,19 @@ flowchart TD
 | 代理用量统计的处理函数在观测 | `crates/observability/src/statistics/proxy_usage.rs`，地址 `/api/access/statistics` | 对象是服务权益的用量，处理函数读它的私有表；地址已经按对象改了，代码没搬 | 迁到服务权益的 `usage`，趋势与报表页调用它 |
 | 资源替观测建默认拨测与告警规则；成本与门户直接读观测的表 | `crates/resources/src/servers.rs`、`batch_enrollment.rs`、`server_lifecycle.rs`、`retirement.rs`；`crates/costs/src/cancellation_reminders.rs`、`suppliers.rs`；`crates/access/src/portal/lines.rs` | 现有接口只覆盖了一部分调用 | 扩充已有的 `ServerObservation`、`Evidence`、`HostNetwork`，不新增接口 |
 | 流量服务与服务权益互读对方的私有表 | 服务权益读流量服务 36 条 SQL，流量服务读服务权益 13 条 SQL（前端另有 3 条与 9 条引用） | 数量多，每一处都要核对事务边界后才能换成函数调用 | 所有者提供查询函数；流量服务需要服务权益回答的，经 `users::Users` |
-| 数据的存放与归属不一致 | 域名与证书的文档存放在基础网络的 `network_documents`；管理员会话与设备会话共用 `sessions`；`servers` 上有流量服务（`manifest_rev`、`dirty_at`）与观测（`latest_metrics`、`probe_revision`、`telemetry_settings`、`quality_refresh_started`）写的列；云账号与云资源行里有成本与作业的列 | 都要改数据库基线，属于高风险改动 | 阶段 F：走 PR，附接入脚本 |
+| 数据的存放与归属不一致 | `servers` 上有流量服务（`manifest_rev`、`dirty_at`）与观测（`latest_metrics`、`probe_revision`、`telemetry_settings`、`quality_refresh_started`）写的列；云账号与云资源行里有成本与作业的列；域名与证书的文档存放在基础网络的 `network_documents` | 都要改数据库基线；会话已在 ADR 0137 分开；名称的文档暂缓（实验功能、生产 0 行，先改为经基础网络的函数写入） | 阶段 F 按 ADR 0137 的顺序：观测的列、流量服务的列（连同 `server_plugins` 改名）、云账号与云资源的成本列、作业列，各一个 PR 附接入脚本 |
 | 批量接入页面的界面在作业的目录 | `web/src/operations/fleet/`（页面入口登记在 `web/src/operations/pages.tsx`） | 表单与运维工具写在同一组文件里，拆开要改界面代码 | 把批量接入的表单移到 `web/src/resources/` |
 
 ### 12.2 重复实现：合并要先定行为或改表
 
 | 事项 | 位置 | 为什么这一步没做 | 需要什么 |
 | --- | --- | --- | --- |
-| 通知队列六张表 | 观测 `notification_outbox`、`alicloud_deliveries`、`singbox_reachability_deliveries`、`operations_incident_deliveries`；成本 `expense_deliveries`；服务权益 `singbox_member_messages` | 投递器已统一（ADR 0134），表仍各自一张；合成一张要改基线 | 阶段 F：一张队列表，按所有者与策略区分 |
+| 通知队列六张表 | 观测 `notification_outbox`、`alicloud_deliveries`、`singbox_reachability_deliveries`、`operations_incident_deliveries`；成本 `expense_deliveries`；服务权益 `singbox_member_messages` | 投递器已统一（ADR 0134）；每行挂在各自所有者的事件上，合成一张表会违反“每表一个所有者”，生产里五张表也从未写入过 | 不合表（ADR 0137）；可选：统一状态列与标准列，成员消息拆出邮件投递 |
 | 主机名检查余下 4 处 | 名称 `dns_record_spec`（允许下划线、最长 251 字节）、流量服务 `subscription_parser/outbound`（IDNA 转换后不查长度）、服务权益 `user_accounts/mail`（只查字符集）、观测可达性 `normalize_host`（规范化而非校验） | 语义与 `net::host` 的选项不同，其中外部订阅那处像是缺陷 | 逐处定下接受范围后并入 `net::host` |
 | 服务器状态判断余下的差别 | 成本账本把从未保存的计费周期当作一次性，类型化的资产设置当作 30 天；统计按网卡名精确匹配，服务器页按包含匹配；故障列表的“维护中”只看维护窗口，暂缓通知还看服务器自己的维护期；“服务器忙”在几处含义不同；流量服务的部署预检与自动化、观测的故障通知仍自己读作业的维护窗口 | 前三项是不同的产品语义，合并会改变显示或通知；读维护窗口的几处排在作业之前，不能调用作业 | 前三项由产品定下一种含义后并入资源的判断；部署代码迁到作业（§12.1）之后，维护窗口只由作业判断 |
 | 服务器价格与到期存了四处 | `servers.asset_settings`、`fleet_profiles.asset`、`fleet_cost_records`、`operations_cloud_links` | 四处的金额单位不同，合并要改表并定以哪一份为准 | 以成本的账本与资产设置为准，其余转换后删除（阶段 F） |
-| 预览后确认的存储六套 | 名称、基础网络、服务权益与流量服务各自的预览表 | 合并是改表 | 平台的一套预览存储（阶段 F） |
-| 事件日志五份 | `singbox_operation_events`、`singbox_commerce_events`、`expense_events`、`operations_history`、`fleet_events` | 合并是改表 | 一份事件日志（阶段 F） |
+| 预览后确认的存储六套 | 名称、基础网络、服务权益与流量服务各自的预览表 | 共性只有“过期加一次确认”，其余（结果记录、缓存正文、幂等键、类型化外键）各不相同 | 保留（ADR 0137）；新流程优先用作业行的预览状态 |
+| 事件日志余下三份 | `fleet_events`（观测）、`operations_history`（作业）、`expense_events`（成本） | 服务权益的两份已在 ADR 0137 合并；余下三份的所有者、键、读者与保留期都不同，不是同一对象 | 保留（ADR 0137） |
 | 前端的重复 | 第二套界面组件的残留（`DisplayNotice`、`Track`、`StatusPill`），8 个本地的时间格式函数，金额与字节的格式函数，17 处各自读取 `/api/control-center/me`，输入校验的小函数 | 合并都会改变页面上显示的内容（文字、位数或样式） | 开 PR，附截图审阅 |
 
 ### 12.3 仍带“插件”字样的契约

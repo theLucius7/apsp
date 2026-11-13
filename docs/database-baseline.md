@@ -65,3 +65,13 @@
 ### 旧商务表删除（2026-11-10）
 
 从 ADR 0131 的基线（`838b323f`，指纹 `00168f4f`）接入删除旧商务表的基线（`a1c4b16e`，指纹 `bd3c95e0`）使用 `scripts/baseline-adoption-commerce-20261110.sql`：删除 Nexus 迁移带来、自 2026-11-05（ADR 0113）起已无代码读写的九张表——`singbox_commerce_invitations`、`singbox_commerce_offers`、`singbox_commerce_orders`、`singbox_commerce_settings`、`singbox_payment_exceptions`、`singbox_payment_receipts`、`singbox_payment_topups`、`singbox_wallet_ledger`、`singbox_nexus_records`，连同它们的序列、约束与索引。删除前的行（钱包流水 51、Nexus 记录 4778、订单 1、报价 4、邀请 1、设置 1，其余 3 张为空）已导出到服务器上的受保护存档（目录 700、文件 600，附 SHA256SUMS），不进仓库。脚本校验来源校验和与实际结构指纹，删除不带 CASCADE（有任何依赖就失败），结束时校验结果指纹并更新基线记录；`singbox_commerce_events`（成员账号的内容审计仍在写）与 `singbox_payment_channels`（恢复脚本会停用）不在其内。部署器在合并后先在生产结构副本上试启动并执行它，再在生产执行。
+
+### 会话分表与审计合并（2026-11-14）
+
+从删除旧商务表的基线（`a1c4b16e`，指纹 `bd3c95e0`）接入阶段 F 第一步的基线（`f9a10013`，指纹 `5c70bc13`）使用 `scripts/baseline-adoption-phasef1-20261114.sql`：
+
+- 结构指纹按列在未删除列中的位置计（`row_number() OVER (PARTITION BY attrelid ORDER BY attnum)`），不再用 `attnum`。删除非末尾的列会留下空号，生产库因此永远对不上空库初始化，部署器的 `pg_dump` 结构副本又会重排列号；改后三者一致，以后的基线变更可以删列。`schema_fingerprint.sql` 与基线末尾的内嵌副本同改，历史接入脚本不动；本脚本核对来源时仍按旧算法。
+- 设备会话移到资源领域的新表 `device_sessions`（按服务器、按到期时间各一个索引），过期的由资源在维护周期里删除；`sessions` 只留管理员会话，删去 `server_id` 及其检查约束、索引与外键，`admin_id` 改为非空。
+- `singbox_commerce_events` 并入 `singbox_operation_events` 后删除：`admin:N`、`administrator:N` 记为管理员编号，其余主体与对象编号写进 `detail`；成员本人的账号事件改用 `security_portal_*`（密码登录即 `security_portal_login`，`authentication` 为 `password`），其余动作名不变。并入后这些记录按隐私设置的保留期清理。
+
+执行时旧面板仍在运行，之后也不回滚，所以复制、转换与删除都在一个事务里：先锁 `servers`、`users`、`sessions` 与两张事件表（删外键本来就要 `servers`、`users` 的排他锁，一次拿齐，不中途升级），结束时核对搬动的行数和结果指纹，再更新基线记录；重复执行会被来源核对拒绝。演练：旧基线空库加合成数据、生产结构副本、生产数据副本（隔离网络，用后删除）都通过，数据副本上 19 个设备会话与 4 个管理员会话分开，202 条商务事件全部并入（操作事件 792 → 994），整个事务约 0.14 秒。

@@ -72,7 +72,7 @@ pub(super) async fn user(
         .bind(id).bind(apsp_protocol::now_timestamp()).fetch_all(&mut *tx).await?;
     let credits:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'cycle_start',cycle_start,'next_reset',next_reset,'bytes',bytes::text,'created_at',created_at,'administrator_id',administrator_id) FROM singbox_quota_credits WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100").bind(id).fetch_all(&mut *tx).await?;
     let history:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'package_group_id',package_group_id,'package_name',package_name,'monthly_bytes',monthly_bytes::text,'starts_at',starts_at,'expires_at',expires_at,'reset_day',reset_day,'reset_hour',reset_hour,'reset_minute',reset_minute,'timezone',timezone) FROM singbox_package_assignments WHERE user_id=$1 ORDER BY id DESC LIMIT 100").bind(id).fetch_all(&mut *tx).await?;
-    let events:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'administrator_id',administrator_id,'action',action,'detail',detail,'created_at',created_at) FROM singbox_operation_events WHERE user_id=$1 ORDER BY id DESC LIMIT 100").bind(id).fetch_all(&mut *tx).await?;
+    let events:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'administrator_id',administrator_id,'action',action,'detail',detail,'created_at',created_at) FROM singbox_operation_events WHERE user_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100").bind(id).fetch_all(&mut *tx).await?;
     let rotations = rotations(&mut tx, id).await?;
     let external = super::super::external_access::subscription_nodes(&mut tx, id).await?;
     tx.commit().await?;

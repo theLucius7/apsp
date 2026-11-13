@@ -151,7 +151,7 @@ async fn online_delete_waits_for_signed_receipt_and_preserves_usage(pool: PgPool
     .await?;
     assert_eq!(deletion.await??.status(), StatusCode::NO_CONTENT);
     assert!(!active(&pool, server).await?);
-    for table in ["sessions", "enrollment_tokens"] {
+    for table in ["device_sessions", "enrollment_tokens"] {
         let count: i64 =
             sqlx::query_scalar(&format!("SELECT count(*) FROM {table} WHERE server_id=$1"))
                 .bind(server)
@@ -445,10 +445,11 @@ async fn deletion_serializes_with_reconnect_and_cannot_leave_a_live_session(
             .await
             .contains_key(&server)
     );
-    let sessions: i64 = sqlx::query_scalar("SELECT count(*) FROM sessions WHERE server_id=$1")
-        .bind(server)
-        .fetch_one(&pool)
-        .await?;
+    let sessions: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM device_sessions WHERE server_id=$1")
+            .bind(server)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(
         sessions, 0,
         "deleted devices must not retain a newly created session"

@@ -136,7 +136,7 @@ fn email(value: &str) -> ApiResult<String> {
     }
     Ok(value)
 }
-async fn administrator(state: &AppState, headers: &HeaderMap, write: bool) -> ApiResult<String> {
+async fn administrator(state: &AppState, headers: &HeaderMap, write: bool) -> ApiResult<i64> {
     let id = crate::control_center::require_capability(
         state,
         headers,
@@ -146,7 +146,7 @@ async fn administrator(state: &AppState, headers: &HeaderMap, write: bool) -> Ap
     if write {
         crate::control_center::require_recent_proof(state, headers).await?;
     }
-    Ok(format!("admin:{id}"))
+    Ok(id)
 }
 /// A package assigned outside the member store must still be translatable by an
 /// enabled compatibility bridge, or every later synchronization would fail.
@@ -243,18 +243,6 @@ async fn account_session(
     }
     Ok(id)
 }
-async fn event(
-    tx: &mut Tx<'_>,
-    user: Option<i64>,
-    actor: &str,
-    action: &str,
-    object: &str,
-    detail: Value,
-) -> ApiResult<()> {
-    sqlx::query("INSERT INTO singbox_commerce_events(user_id,actor,action,object_id,detail,created_at) VALUES($1,$2,$3,$4,$5,$6)").bind(user).bind(actor).bind(action).bind(object).bind(detail).bind(now_timestamp()).execute(&mut **tx).await?;
-    Ok(())
-}
-
 async fn list_json(tx: &mut Tx<'_>, sql: &str, id: i64) -> ApiResult<Value> {
     let values: Vec<Value> = sqlx::query_scalar(sql)
         .bind(id)

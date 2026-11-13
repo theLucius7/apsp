@@ -28,8 +28,8 @@ pub(super) async fn create(
     headers: HeaderMap,
     Json(input): Json<Input>,
 ) -> ApiResult<Json<Value>> {
-    let actor = administrator(&state, &headers, true).await?;
-    Ok(Json(save(&state, &actor, None, input).await?))
+    let administrator = administrator(&state, &headers, true).await?;
+    Ok(Json(save(&state, administrator, None, input).await?))
 }
 pub(super) async fn update(
     State(state): State<AppState>,
@@ -37,8 +37,8 @@ pub(super) async fn update(
     Path(id): Path<i64>,
     Json(input): Json<Input>,
 ) -> ApiResult<Json<Value>> {
-    let actor = administrator(&state, &headers, true).await?;
-    Ok(Json(save(&state, &actor, Some(id), input).await?))
+    let administrator = administrator(&state, &headers, true).await?;
+    Ok(Json(save(&state, administrator, Some(id), input).await?))
 }
 /// Removes a notice or guide; the portal stops showing it at once.
 pub(super) async fn remove(
@@ -46,7 +46,7 @@ pub(super) async fn remove(
     headers: HeaderMap,
     Path(id): Path<i64>,
 ) -> ApiResult<axum::http::StatusCode> {
-    let actor = administrator(&state, &headers, true).await?;
+    let administrator = administrator(&state, &headers, true).await?;
     let mut tx = state.pool.begin().await?;
     let title: String =
         sqlx::query_scalar("DELETE FROM singbox_member_content WHERE id=$1 RETURNING title")
@@ -54,19 +54,23 @@ pub(super) async fn remove(
             .fetch_optional(&mut *tx)
             .await?
             .ok_or(ApiError::NotFound)?;
-    event(
+    crate::operations_workflows::event(
         &mut tx,
+        Some(administrator),
         None,
-        &actor,
         "content_deleted",
-        &id.to_string(),
-        json!({"title":title}),
+        json!({"content_id":id,"title":title}),
     )
     .await?;
     tx.commit().await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
-async fn save(state: &AppState, actor: &str, id: Option<i64>, input: Input) -> ApiResult<Value> {
+async fn save(
+    state: &AppState,
+    administrator: i64,
+    id: Option<i64>,
+    input: Input,
+) -> ApiResult<Value> {
     if !["notice", "guide"].contains(&input.kind.as_str()) {
         return Err(bad("内容类型无效"));
     }
@@ -91,13 +95,12 @@ async fn save(state: &AppState, actor: &str, id: Option<i64>, input: Input) -> A
         .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| conflict("内容已变化，请刷新后保存"))?;
-    event(
+    crate::operations_workflows::event(
         &mut tx,
+        Some(administrator),
         None,
-        actor,
         "content_saved",
-        &value["id"].to_string(),
-        json!({"published":input.published}),
+        json!({"content_id":value["id"],"published":input.published}),
     )
     .await?;
     tx.commit().await?;
