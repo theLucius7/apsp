@@ -79,7 +79,7 @@
 | 汇率与统计币种 | 把不同币种折算成统计币种 | 每日汇率 | 来源可追溯，不编造缺失币种 | — | `crates/costs` 的 `exchange.rs`（阶段 B2c 从宿主迁入）；`/api/exchange-rates` |
 | 续费提醒与日历 | 按时提醒续费 | 提醒、日历输出 | 提醒只告知，不付款 | 平台（通知通道） | `crates/costs` 的后台任务；`/api/costs/calendar.ics` |
 | 退订提醒与供应商 | 记得在合适的时候退订 | 退订提醒、供应商 | — | 资源；观测（提醒记为故障事件） | `crates/costs` 的 `cancellation_reminders.rs`、`suppliers.rs` |
-| 外部来源报告的到期 | 机场订阅的到期一起看 | 到期引用 | 只读，仅供参考 | 流量服务 | `crates/costs` 的 `renewals.rs` 直接读流量服务的外部来源（成本排在流量服务之后，不需要接口） |
+| 外部来源报告的到期 | 机场订阅的到期一起看 | 到期引用 | 只读，仅供参考 | 流量服务 | 成本直接使用流量服务的 `subscription_sources::renewals`（成本排在流量服务之后，不需要接口；到期引用只有流量服务这一份，ADR 0136） |
 | Wallos 导入 | 从 Wallos 迁入 | 导入批次 | 先预览后导入 | — | `tools/export_wallos.py`、`crates/costs` 的导入接口 |
 | 云资源与费用对照（冻结） | 对比供应商价格 | 费用对照 | 只读 | 资源 | `crates/costs` 的 `suppliers.rs`；`crates/resources` 的 `cloud_resources.rs` 里的账单与预算观测 |
 

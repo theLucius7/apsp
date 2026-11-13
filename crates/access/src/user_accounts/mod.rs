@@ -116,16 +116,11 @@ fn conflict(message: &str) -> ApiError {
     ApiError::Conflict(message.into())
 }
 fn text(value: &str, maximum: usize, required: bool) -> ApiResult<String> {
-    let value = value.trim();
-    if (required && value.is_empty())
-        || value.chars().count() > maximum
-        || value
-            .chars()
-            .any(|c| c.is_control() && c != '\n' && c != '\t')
-    {
-        return Err(bad("文字长度或格式无效"));
-    }
-    Ok(value.into())
+    let rule = apsp_panel_host::text::Text::chars(maximum).multiline();
+    let rule = if required { rule.not_empty() } else { rule };
+    rule.trimmed(value)
+        .map(str::to_owned)
+        .ok_or_else(|| bad("文字长度或格式无效"))
 }
 fn email(value: &str) -> ApiResult<String> {
     let value = value.trim().to_lowercase();

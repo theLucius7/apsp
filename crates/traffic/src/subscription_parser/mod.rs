@@ -235,7 +235,9 @@ pub(super) fn take_provider_id(
     match object.remove("provider_id") {
         None => Ok(None),
         Some(serde_json::Value::String(id))
-            if !id.trim().is_empty() && id.len() <= 256 && !id.chars().any(char::is_control) =>
+            if apsp_panel_host::text::Text::bytes(256)
+                .not_blank()
+                .accepts(&id) =>
         {
             Ok(Some(id))
         }
@@ -250,9 +252,9 @@ pub(super) fn display_name(value: Option<&str>, ordinal: usize) -> String {
     value
         .map(str::trim)
         .filter(|name| {
-            !name.is_empty()
-                && name.chars().count() <= 256
-                && !name.chars().any(char::is_control)
+            apsp_panel_host::text::Text::chars(256)
+                .not_empty()
+                .accepts(name)
                 && !name.contains("://")
                 && !name.contains(['/', '\\', '?', '#', '@', '=', '&', '%'])
         })

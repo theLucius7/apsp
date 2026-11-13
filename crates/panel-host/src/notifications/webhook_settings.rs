@@ -1,5 +1,5 @@
 use super::{
-    lock_settings, outbox,
+    outbox,
     webhook::{self, Config, Preset},
 };
 use crate::{
@@ -41,7 +41,7 @@ pub struct Update {
 
 pub async fn apply(state: &AppState, update: Update) -> ApiResult<Json<Value>> {
     let mut tx = state.pool.begin().await?;
-    let mut settings = lock_settings(&mut tx).await?;
+    let mut settings = settings::lock(&mut tx).await?;
     // Changing provider never inherits credentials or templates from the previous provider.
     let previous = settings
         .webhook
@@ -90,10 +90,7 @@ pub async fn apply(state: &AppState, update: Update) -> ApiResult<Json<Value>> {
     let old = settings.clone();
     settings.webhook = Some(config);
     outbox::settings_changed(&mut tx, &old, &settings).await?;
-    sqlx::query("UPDATE panel_settings SET settings=$1 WHERE singleton")
-        .bind(json!(settings))
-        .execute(&mut *tx)
-        .await?;
+    settings::store(&mut tx, &settings).await?;
     tx.commit().await?;
     Ok(Json(result))
 }
@@ -107,13 +104,10 @@ fn same_origin(left: &str, right: &str) -> bool {
 
 pub async fn clear(state: &AppState) -> ApiResult<Json<Value>> {
     let mut tx = state.pool.begin().await?;
-    let mut settings = lock_settings(&mut tx).await?;
+    let mut settings = settings::lock(&mut tx).await?;
     let old = settings.clone();
     settings.webhook = None;
-    sqlx::query("UPDATE panel_settings SET settings=$1 WHERE singleton")
-        .bind(json!(settings))
-        .execute(&mut *tx)
-        .await?;
+    settings::store(&mut tx, &settings).await?;
     outbox::settings_changed(&mut tx, &old, &settings).await?;
     sqlx::query("DELETE FROM notification_channel_tests WHERE channel='webhook'")
         .execute(&mut *tx)

@@ -1,4 +1,7 @@
-use super::access::{Principal, authenticate, require_recent_proof, with_request_principal};
+use super::{
+    access::{Principal, authenticate, require_recent_proof, with_request_principal},
+    audit,
+};
 use crate::{
     AppState,
     error::{ApiError, ApiResult},
@@ -546,17 +549,24 @@ pub async fn guard(State(state): State<AppState>, request: Request, next: Next) 
         Err(error) => return error.into_response(),
     };
     let method = request.method().clone();
+    let denied = |phase: &'static str| audit::Entry {
+        admin_id: Some(actor.admin_id),
+        token_id: actor.token_id,
+        action: method.as_str(),
+        object_path: &path,
+        request_diff: json!({"body":"[拒绝请求未读取]"}),
+        result: json!({"phase":phase,"success":false}),
+        occurred_at: now_timestamp(),
+    };
     if let Err(error) = allowed(&state, &actor, &path, &method).await {
-        let _ = sqlx::query("INSERT INTO management_audit(admin_id,token_id,action,object_path,request_diff,result,occurred_at) VALUES($1,$2,$3,$4,$5,$6,$7)")
-            .bind(actor.admin_id).bind(actor.token_id).bind(method.as_str()).bind(&path).bind(json!({"body":"[拒绝请求未读取]"})).bind(json!({"phase":"authorization-denied","success":false})).bind(now_timestamp()).execute(&state.pool).await;
+        let _ = audit::record(&state.pool, denied("authorization-denied")).await;
         return error.into_response();
     }
     if high_risk(&path, &method)
         && let Err(error) = require_recent_proof(&state, &headers).await
     {
         // Repeated attempts from a stolen session must leave a trace.
-        let _ = sqlx::query("INSERT INTO management_audit(admin_id,token_id,action,object_path,request_diff,result,occurred_at) VALUES($1,$2,$3,$4,$5,$6,$7)")
-            .bind(actor.admin_id).bind(actor.token_id).bind(method.as_str()).bind(&path).bind(json!({"body":"[拒绝请求未读取]"})).bind(json!({"phase":"reauth-denied","success":false})).bind(now_timestamp()).execute(&state.pool).await;
+        let _ = audit::record(&state.pool, denied("reauth-denied")).await;
         return error.into_response();
     }
     let mutation = method != Method::GET && method != Method::HEAD && method != Method::OPTIONS;
@@ -591,9 +601,20 @@ pub async fn guard(State(state): State<AppState>, request: Request, next: Next) 
             Err(error) => return error.into_response(),
         };
         let diff = json!({"before":before,"requested":requested,"after":{"state":"pending"}});
-        let audit=sqlx::query_scalar::<_,i64>("INSERT INTO management_audit(admin_id,token_id,action,object_path,request_diff,result,occurred_at) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id")
-            .bind(actor.admin_id).bind(actor.token_id).bind(method.as_str()).bind(&path).bind(diff).bind(json!({"phase":"accepted"})).bind(now_timestamp()).fetch_one(&state.pool).await;
-        let id = match audit {
+        let accepted = audit::record(
+            &state.pool,
+            audit::Entry {
+                admin_id: Some(actor.admin_id),
+                token_id: actor.token_id,
+                action: method.as_str(),
+                object_path: &path,
+                request_diff: diff,
+                result: json!({"phase":"accepted"}),
+                occurred_at: now_timestamp(),
+            },
+        )
+        .await;
+        let id = match accepted {
             Ok(id) => id,
             Err(error) => return ApiError::Database(error).into_response(),
         };
@@ -607,7 +628,14 @@ pub async fn guard(State(state): State<AppState>, request: Request, next: Next) 
         let after = snapshot(&state, &path)
             .await
             .unwrap_or(json!({"state":"unavailable","reason":"结果状态读取失败"}));
-        if let Err(error)=sqlx::query("UPDATE management_audit SET result=$2,request_diff=jsonb_set(request_diff,'{after}',$3) WHERE id=$1").bind(id).bind(json!({"phase":"returned","http_status":response.status().as_u16(),"success":response.status().is_success(),"snapshot_semantics":"邻近请求的状态观察；事务性差异以功能历史为准"})).bind(after).execute(&state.pool).await {
+        if let Err(error) = audit::complete(
+            &state.pool,
+            id,
+            json!({"phase":"returned","http_status":response.status().as_u16(),"success":response.status().is_success(),"snapshot_semantics":"邻近请求的状态观察；事务性差异以功能历史为准"}),
+            after,
+        )
+        .await
+        {
             tracing::error!(%error,audit_id=id,"audit result persistence failed");
         }
     }

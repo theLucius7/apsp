@@ -55,7 +55,8 @@ impl Huawei {
             url.query_pairs_mut()
                 .extend_pairs(query.iter().map(|(k, v)| (*k, v)));
         }
-        let date = signing::iso_time(apsp_protocol::now_timestamp()).replace(['-', ':'], "");
+        let date =
+            apsp_panel_host::time::iso8601(apsp_protocol::now_timestamp()).replace(['-', ':'], "");
         let body = body.map(|v| v.to_string()).unwrap_or_default();
         let auth = signing::huawei(key, secret, method.as_str(), &url, &body, &date);
         let response = transport::json(

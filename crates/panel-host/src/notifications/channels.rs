@@ -1,7 +1,8 @@
-use super::{lock_settings, outbox, telegram, template, webhook};
+use super::{outbox, telegram, template, webhook};
 use crate::{
     AppState,
     error::{ApiError, ApiResult},
+    settings,
 };
 use axum::Json;
 use serde_json::{Value, json};
@@ -9,12 +10,7 @@ use serde_json::{Value, json};
 /// Configuration, delivery counts and the last test of every channel.
 pub async fn status(state: &AppState) -> ApiResult<Json<Value>> {
     let mut tx = state.pool.begin().await?;
-    let value: Value =
-        sqlx::query_scalar("SELECT settings FROM panel_settings WHERE singleton FOR SHARE")
-            .fetch_one(&mut *tx)
-            .await?;
-    let settings: crate::settings::Settings =
-        serde_json::from_value(value).map_err(anyhow::Error::from)?;
+    let settings = settings::share(&mut tx).await?;
     let mut channels = Vec::new();
     for (channel, configured, enabled) in [
         (
@@ -40,7 +36,7 @@ pub async fn status(state: &AppState) -> ApiResult<Json<Value>> {
 /// Sends one test message through a configured channel, at most every 30 seconds.
 pub async fn test(state: &AppState, channel: &str) -> ApiResult<Json<Value>> {
     let mut tx = state.pool.begin().await?;
-    let settings = lock_settings(&mut tx).await?;
+    let settings = settings::lock(&mut tx).await?;
     match channel {
         "telegram"
             if settings.telegram_token.is_empty() || settings.telegram_chat_id.is_empty() =>
@@ -121,7 +117,7 @@ pub async fn test(state: &AppState, channel: &str) -> ApiResult<Json<Value>> {
     };
     // A settings change may have removed this record while the test was in flight.
     let mut result_tx = state.pool.begin().await?;
-    let current = lock_settings(&mut result_tx).await?;
+    let current = settings::lock(&mut result_tx).await?;
     let unchanged = if channel == "webhook" {
         current.webhook == settings.webhook
     } else {

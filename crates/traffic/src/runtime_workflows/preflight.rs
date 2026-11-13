@@ -75,9 +75,9 @@ struct Context {
 }
 
 async fn context(tx: &mut Transaction<'_, Postgres>, server: i64) -> ApiResult<Context> {
-    crate::business::lock_server(tx, server).await?;
+    crate::servers::lock(tx, server).await?;
     crate::settings::require_enabled(tx, server).await?;
-    let row=sqlx::query("SELECT s.static_info,s.capabilities,s.last_seen,COALESCE(p.policy,'{}'::jsonb) AS policy,m.target_rev,EXISTS(SELECT 1 FROM server_retirements WHERE server_id=s.id) OR COALESCE(p.lifecycle IN('draining','retired'),FALSE) OR COALESCE(p.lifecycle='maintenance' AND COALESCE(p.maintenance_from,0)<=$2 AND (p.maintenance_until IS NULL OR p.maintenance_until>$2),FALSE) OR EXISTS(SELECT 1 FROM operations_maintenance w WHERE s.id=ANY(w.targets) AND w.block_new_tasks AND w.starts_at<=$2 AND w.ends_at>$2) AS blocked FROM servers s LEFT JOIN fleet_profiles p ON p.server_id=s.id LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id=$1").bind(server).bind(now_timestamp()).fetch_one(&mut **tx).await?;
+    let row=sqlx::query(&format!("SELECT s.static_info,s.capabilities,s.last_seen,COALESCE(p.policy,'{{}}'::jsonb) AS policy,m.target_rev,{} OR EXISTS(SELECT 1 FROM operations_maintenance w WHERE s.id=ANY(w.targets) AND w.block_new_tasks AND w.starts_at<=$2 AND w.ends_at>$2) AS blocked FROM servers s LEFT JOIN fleet_profiles p ON p.server_id=s.id LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id=$1", crate::server_lifecycle::blocks_work_sql("s.id", "$2"))).bind(server).bind(now_timestamp()).fetch_one(&mut **tx).await?;
     let network_references=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'revision',revision,'active_version',active_version,'config',config) FROM network_documents WHERE (kind='endpoint' AND (config->>'server_id')::bigint=$1) OR (kind='certificate' AND EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(config->'targets','[]'::jsonb)) target WHERE (target->>'server_id')::bigint=$1)) ORDER BY id")
         .bind(server).fetch_all(&mut **tx).await?;
     let profile =

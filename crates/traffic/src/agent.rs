@@ -30,7 +30,7 @@ async fn preparation_result(
     }
     let mut tx = state.pool.begin().await?;
     // Match the publisher's server-before-module order, including FK checks.
-    super::business::lock_server(&mut tx, server_id).await?;
+    crate::servers::lock(&mut tx, server_id).await?;
     let current: Option<i64> = sqlx::query_scalar("SELECT target_rev FROM server_module_status WHERE server_id=$1 AND module='singbox' FOR UPDATE")
         .bind(server_id).fetch_optional(&mut *tx).await?;
     if current == Some(revision) {

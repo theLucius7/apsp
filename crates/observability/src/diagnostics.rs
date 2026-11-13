@@ -91,13 +91,15 @@ pub async fn pending(
     }
     expire(&state).await?;
     let mut tx = state.pool.begin().await?;
-    let capabilities: Value = sqlx::query_scalar(
-        "SELECT capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",
+    let capabilities: Value = crate::servers::lock_row(
+        &mut tx,
+        server_id,
+        crate::servers::RowLock::Update,
+        "capabilities",
     )
-    .bind(server_id)
-    .fetch_optional(&mut *tx)
     .await?
-    .ok_or(ApiError::NotFound)?;
+    .ok_or(ApiError::NotFound)?
+    .get("capabilities");
     match crate::device_work::ensure_accepts_tasks_tx(&mut tx, server_id).await {
         Ok(()) => {}
         Err(ApiError::Conflict(_)) => {
@@ -194,10 +196,14 @@ pub async fn update(
     let mut tx = state.pool.begin().await?;
     // Creation and cancellation use this same lock order. A late cleanup
     // checkpoint cannot race a new task admitted after a panel-only timeout.
-    let _: i64 = sqlx::query_scalar("SELECT id FROM servers WHERE id=$1 FOR UPDATE")
-        .bind(server_id)
-        .fetch_one(&mut *tx)
-        .await?;
+    crate::servers::lock_row(
+        &mut tx,
+        server_id,
+        crate::servers::RowLock::UpdateRecord,
+        "id",
+    )
+    .await?
+    .ok_or(sqlx::Error::RowNotFound)?;
     let row = sqlx::query(
         "SELECT status,expires_at,agent_completed,job FROM diagnostic_jobs WHERE id=$1 AND server_id=$2 FOR UPDATE",
     )

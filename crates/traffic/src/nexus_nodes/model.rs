@@ -69,7 +69,12 @@ fn text(value: &Value, limit: usize, empty: bool) -> ApiResult<&str> {
     value
         .as_str()
         .filter(|s| {
-            (empty || !s.trim().is_empty()) && s.len() <= limit && !s.chars().any(char::is_control)
+            let rule = apsp_panel_host::text::Text::bytes(limit);
+            if empty {
+                rule.accepts(s)
+            } else {
+                rule.not_blank().accepts(s)
+            }
         })
         .ok_or_else(bad)
 }
@@ -176,7 +181,7 @@ fn protocol_summary(protocol: &Value) -> Value {
             v.is_boolean()
                 || v.is_number()
                 || v.as_str()
-                    .is_some_and(|s| s.len() <= 2048 && !s.chars().any(char::is_control))
+                    .is_some_and(|s| apsp_panel_host::text::Text::bytes(2048).accepts(s))
         }) {
             out[name] = value.clone();
         }

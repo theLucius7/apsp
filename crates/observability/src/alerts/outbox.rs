@@ -7,11 +7,11 @@ use crate::{
     error::ApiResult,
     incidents,
     notifications::{
-        self, Failure, delivery,
+        Failure, delivery,
         outbox::ChannelDeliveries,
         queue::{self, Backoff, Claim, Claimed, Claiming, Claims, Outcome, Policy, Queue},
     },
-    settings::Settings,
+    settings::{self, Settings},
 };
 use apsp_panel_host::ports::BoxFuture;
 use serde_json::Value;
@@ -68,7 +68,7 @@ impl Queue for Outbox<'_> {
             let mut tx = self.pool.begin().await?;
             // Hold the shared settings lock through the bounded request so credentials cannot
             // change between checking the destination and attempting delivery.
-            let settings = notifications::share_settings(&mut tx).await?;
+            let settings = settings::share(&mut tx).await?;
             if !settings.telegram_ready() && !settings.webhook_ready() {
                 return Ok(Vec::new());
             }
@@ -77,11 +77,12 @@ impl Queue for Outbox<'_> {
                  JOIN server_alert_events e ON e.id=o.event_id JOIN servers s ON s.id=e.server_id
                  WHERE o.status='pending' AND o.next_attempt_at<=$1 AND s.deleted_at IS NULL AND o.channel=$5
                  AND NOT {}
-                 AND (e.category<>'offline' OR ($2 AND COALESCE(s.asset_settings->>'offline_notify','true')<>'false'))
+                 AND (e.category<>'offline' OR ($2 AND {}))
                  AND ((o.channel='telegram' AND $3) OR (o.channel='webhook' AND $4))
                  AND NOT EXISTS(SELECT 1 FROM notification_outbox earlier WHERE earlier.event_id=o.event_id AND earlier.channel=o.channel AND earlier.id<o.id AND earlier.status='pending')
                  ORDER BY o.next_attempt_at,o.id LIMIT 1 FOR UPDATE OF o SKIP LOCKED",
-                incidents::notifications_held("s.id", "$1")
+                incidents::notifications_held("s.id", "$1"),
+                crate::server_assets::sql::offline_notify("s")
             ))
             .bind(claim.now).bind(settings.offline_alerts).bind(settings.telegram_ready()).bind(settings.webhook_ready()).bind(self.channel).fetch_optional(&mut *tx).await?;
             Ok(row

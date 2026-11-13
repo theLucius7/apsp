@@ -246,13 +246,14 @@ async fn connection(mut socket: WebSocket, state: AppState) -> anyhow::Result<()
     {
         let _lifecycle = devices.lifecycle.lock().await;
         let mut tx = state.pool.begin().await?;
-        let current: Option<String> = sqlx::query_scalar(
-            "SELECT device_public_key FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",
+        let current: Option<String> = crate::servers::lock_row(
+            &mut tx,
+            server_id,
+            crate::servers::RowLock::Update,
+            "device_public_key",
         )
-        .bind(server_id)
-        .fetch_optional(&mut *tx)
         .await?
-        .flatten();
+        .and_then(|row| sqlx::Row::get(&row, "device_public_key"));
         anyhow::ensure!(
             current.as_deref() == Some(&public_key),
             "device was deleted or rebound during authentication"

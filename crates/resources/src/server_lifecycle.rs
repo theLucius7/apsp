@@ -66,6 +66,38 @@ pub async fn locked_profile(
     }))
 }
 
+/// SQL that holds while the server's own lifecycle blocks new work at `at`: a retirement is
+/// recorded, the server is draining or retired, or its maintenance lifecycle covers `at`.
+/// `server` is a parameter or a qualified column and `at` a time in seconds, both SQL. Every
+/// check before work goes to a server starts from this; operations adds the maintenance
+/// windows that block new tasks, which it owns.
+pub fn blocks_work_sql(server: &str, at: &str) -> String {
+    format!(
+        "({} OR EXISTS(SELECT 1 FROM fleet_profiles blocking WHERE blocking.server_id={server} \
+         AND (blocking.lifecycle IN ('draining','retired') OR {})))",
+        crate::retirement::retiring_sql(server),
+        maintenance_window("blocking", at)
+    )
+}
+
+/// SQL that holds while the server is in its own maintenance lifecycle at `at` (both SQL, as
+/// for [`blocks_work_sql`]); notifications about it are held back meanwhile.
+pub fn maintenance_sql(server: &str, at: &str) -> String {
+    format!(
+        "EXISTS(SELECT 1 FROM fleet_profiles maintained WHERE maintained.server_id={server} AND {})",
+        maintenance_window("maintained", at)
+    )
+}
+
+/// The profile row `profile` is in its maintenance lifecycle at `at`; an open start or end
+/// is unbounded.
+fn maintenance_window(profile: &str, at: &str) -> String {
+    format!(
+        "({profile}.lifecycle='maintenance' AND COALESCE({profile}.maintenance_from,0)<={at} \
+         AND ({profile}.maintenance_until IS NULL OR {profile}.maintenance_until>{at}))"
+    )
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProfileInput {
@@ -103,11 +135,7 @@ pub async fn save(
     crate::control_center::require_capability(&state, &headers, "security:write").await?;
     let policy = normalize_policy(input.policy)?;
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT id FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
-        .bind(id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    crate::servers::lock(&mut tx, id).await?;
     let current = sqlx::query("SELECT asset,policy FROM fleet_profiles WHERE server_id=$1")
         .bind(id)
         .fetch_optional(&mut *tx)
@@ -208,11 +236,7 @@ pub async fn lifecycle(
     }
     let reason = crate::text::bounded(&input.reason, 512)?;
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT id FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
-        .bind(id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    crate::servers::lock(&mut tx, id).await?;
     sqlx::query("INSERT INTO fleet_profiles(server_id,lifecycle,maintenance_from,maintenance_until,maintenance_reason,updated_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(server_id) DO UPDATE SET lifecycle=$2,maintenance_from=$3,maintenance_until=$4,maintenance_reason=$5,updated_at=$6")
         .bind(id).bind(&input.lifecycle).bind(input.from).bind(input.until).bind(reason).bind(now_timestamp()).execute(&mut *tx).await?;
     crate::evidence::record_event_tx(
@@ -290,10 +314,12 @@ pub async fn migrate(
     .await?;
     let mut tx = state.pool.begin().await?;
     crate::server_observation::lock_latency_tasks_tx(&mut tx).await?;
-    sqlx::query("SELECT id FROM servers WHERE id=ANY($1) ORDER BY id FOR UPDATE")
-        .bind(vec![id, input.target_server_id])
-        .fetch_all(&mut *tx)
-        .await?;
+    crate::servers::lock_all(
+        &mut tx,
+        &[id, input.target_server_id],
+        crate::servers::RowLock::UpdateRecord,
+    )
+    .await?;
     crate::device_work::ensure_accepts_tasks_tx(&mut tx, input.target_server_id).await?;
     let current = preview(&state, id, input.target_server_id).await?;
     if input.confirmation.as_deref() != current["confirmation"].as_str() {
@@ -366,8 +392,7 @@ pub async fn add_cost(
     ]
     .contains(&input.kind.as_str())
         || !(0..=100_000_000_000).contains(&input.amount_minor)
-        || currency.len() != 3
-        || !currency.bytes().all(|c| c.is_ascii_uppercase())
+        || !apsp_panel_host::money::currency(&currency)
         || input.occurred_at < 0
         || input
             .valid_until

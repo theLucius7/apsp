@@ -11,7 +11,6 @@ use axum::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use futures_util::TryStreamExt;
-use rand::{RngCore, rngs::OsRng};
 use ring::aead::{AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -66,8 +65,7 @@ fn seal(
     if !value.as_object().is_some_and(|fields| !fields.is_empty()) {
         return Err(ApiError::BadRequest("凭据正文必须是非空 JSON 对象".into()));
     }
-    let mut nonce = [0; 12];
-    OsRng.fill_bytes(&mut nonce);
+    let nonce = crate::tokens::bytes::<12>();
     let mut payload = serde_json::to_vec(value).map_err(anyhow::Error::from)?;
     if payload.is_empty() || payload.len() > 65536 {
         return Err(ApiError::BadRequest("凭据正文须在64KiB内".into()));
@@ -292,8 +290,19 @@ pub async fn resolve_reference_pool(
         &row.try_get::<Vec<u8>, _>("nonce")?,
         row.try_get("ciphertext")?,
     )?;
-    sqlx::query("INSERT INTO management_audit(action,object_path,request_diff,result,occurred_at) VALUES('credential.resolve',$1,$2,$3,$4)")
-        .bind(format!("credential:{id}")).bind(json!({"consumer":consumer,"kind":expected_kind})).bind(json!({"success":true,"version":row.try_get::<i64,_>("version")?})).bind(now_timestamp()).execute(pool).await?;
+    super::audit::record(
+        pool,
+        super::audit::Entry {
+            admin_id: None,
+            token_id: None,
+            action: "credential.resolve",
+            object_path: &format!("credential:{id}"),
+            request_diff: json!({"consumer":consumer,"kind":expected_kind}),
+            result: json!({"success":true,"version":row.try_get::<i64,_>("version")?}),
+            occurred_at: now_timestamp(),
+        },
+    )
+    .await?;
     Ok(value)
 }
 

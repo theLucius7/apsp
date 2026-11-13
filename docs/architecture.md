@@ -136,7 +136,7 @@
 
 | 部分 | 现在 | 目标 |
 | --- | --- | --- |
-| 平台 | `crates/panel-host` 只有技术机制：HTTP 外壳与内嵌前端（`shell`、`frontend`）、配置（`config`）、基线核对（`schema`）、共享状态与各领域运行时状态的槽（`state` 的 `AppState`、`DomainStates`）、类型化接口的机制（`ports`）、设备任务接口（`device_work`）、观测证据接口（`evidence`）、后台任务的守护、周期执行器与心跳（`maintenance`，ADR 0133）、咨询锁（`locks`，ADR 0133）、设置存储（`settings`）、通知的渠道、模板与统一的投递器（`notifications`，各队列由所有者实现，告警发件箱归观测）、对外请求（`http`：出站客户端、有界读取、状态码与 `Retry-After`）、令牌、文本与摘要检查（`tokens`、`text`、`digest`）、地址与名称的判断、受控出站与拨号（`net`）、X.509 读取（`x509`）、错误类型（`error`）。`AppState` 只有连接池、启动时间、配置、三个进程级的并发许可、编译进来的发布信任根与 `domain_states`。`crates/cloud-api` 建在 `panel-host` 之上，是供应商接口的签名与客户端 | 不变（告警发件箱已迁到观测，平台不再读任何领域的表） |
+| 平台 | `crates/panel-host` 只有技术机制：HTTP 外壳与内嵌前端（`shell`、`frontend`）、配置（`config`）、基线核对（`schema`）、共享状态与各领域运行时状态的槽（`state` 的 `AppState`、`DomainStates`）、类型化接口的机制（`ports`）、设备任务接口（`device_work`）、观测证据接口（`evidence`）、后台任务的守护、周期执行器与心跳（`maintenance`，ADR 0133）、咨询锁（`locks`，ADR 0133）、设置存储（`settings`：读取、锁定、共享与保存）、口令散列（`passwords`）、金额（`money`）、日期（`time`）、Cookie（`cookies`）、通知的渠道、模板与统一的投递器（`notifications`，各队列由所有者实现，告警发件箱归观测）、对外请求（`http`：出站客户端、有界读取、状态码与 `Retry-After`）、令牌、文本与摘要检查（`tokens`、`text`、`digest`）、地址与名称的判断、受控出站与拨号（`net`）、X.509 读取（`x509`）、错误类型（`error`）。`AppState` 只有连接池、启动时间、配置、三个进程级的并发许可、编译进来的发布信任根与 `domain_states`。`crates/cloud-api` 建在 `panel-host` 之上，是供应商接口的签名与客户端 | 不变（告警发件箱已迁到观测，平台不再读任何领域的表） |
 | 领域 | 每个领域一个 crate：`crates/governance`、`crates/resources`、`crates/networking`、`crates/naming`、`crates/traffic`（配置编译库是同一领域的 `crates/compiler`）、`crates/access`、`crates/costs`、`crates/observability`、`crates/operations`。crate 内按对象分模块；每个 crate 只导出一个 `routes()`，路由的完整路径写在声明处。成本、观测与作业 crate 的 `cloud` 模块是云能力，诊断工具在观测的 `diagnostic_tools/` | 不变；对象的模型、规则、存储与接口放在同一模块，参考过的上游代码放在该 crate 的 `upstream/`（第 10 节） |
 | 应用 | `crates/panel`：`domains.rs` 是唯一的组合处，有一张路由清单（按依赖顺序合并各领域的 `routes()`，加上云页面总览、搜索与系统健康三个跨领域视图）与一张后台任务清单（逐个守护，并声明健康视图应当看到的心跳名）；`wiring.rs` 接线全部类型化接口；`search.rs`（全局搜索）、`cloud_overview.rs`（云页面总览）与 `system_health.rs`（系统健康：治理的面板状态加作业、观测各自给出的积压摘要）是联结几个所有者的组合视图；`moved_paths.rs` 把旧接口地址改写到现地址；`publisher.rs` 是跨流量服务与服务权益的代理发布周期；`maintenance.rs` 是 30 秒维护循环；`lib.rs` 给平台外壳套上治理的权限守卫与专属地址网关；`main.rs` 只建立状态、路由与后台任务。唯一的数据库基线也在这个 crate | 不变；`moved_paths.rs` 在下一个发布版本之后删除 |
 | 前端 | 按领域分目录：`web/src/<领域标识>/` 放该领域的页面、模型与接口调用，每个领域在自己的 `pages.tsx` 声明页面；应用层的 `app/` 放外框与组合页面（服务器详情、概览），并把各领域的清单汇总成路由与侧栏；平台的 `components/`、`lib/`、`stores/` 和根目录的通用文件是通用界面层 | 不变 |
@@ -357,6 +357,8 @@ flowchart TD
 
 **ADR 0135（第三部分，2026-11-13）已处理**：系统健康视图改为应用层的组合视图（各所有者给出自己的积压摘要），保留期由各所有者按治理的保留策略清理自己的行；Cloudflare 与 Globalping 各只留一个客户端（在 `cloud-api`），专属地址的 DNS 记录改经名称领域写入。下面的表已去掉这几项。
 
+**ADR 0136（第四部分，2026-11-13）已处理**：服务器的退役、生命周期、维护期与行锁、资产设置由资源领域各给一处（维护窗口由作业判断）；审计写入、口令散列、短文本、金额、时间、随机值、Cookie、设置读取各合为一处，服务权益与观测改经治理的保留期接口；外部来源的到期引用只留流量服务那一份。下面的表已改写相应的行。
+
 ### 12.1 归属：代码或数据还不在对象所属的领域
 
 | 事项 | 位置 | 为什么这一步没做 | 需要什么 |
@@ -375,7 +377,7 @@ flowchart TD
 | --- | --- | --- | --- |
 | 通知队列六张表 | 观测 `notification_outbox`、`alicloud_deliveries`、`singbox_reachability_deliveries`、`operations_incident_deliveries`；成本 `expense_deliveries`；服务权益 `singbox_member_messages` | 投递器已统一（ADR 0134），表仍各自一张；合成一张要改基线 | 阶段 F：一张队列表，按所有者与策略区分 |
 | 主机名检查余下 4 处 | 名称 `dns_record_spec`（允许下划线、最长 251 字节）、流量服务 `subscription_parser/outbound`（IDNA 转换后不查长度）、服务权益 `user_accounts/mail`（只查字符集）、观测可达性 `normalize_host`（规范化而非校验） | 语义与 `net::host` 的选项不同，其中外部订阅那处像是缺陷 | 逐处定下接受范围后并入 `net::host` |
-| “服务器此刻是否可用”的 SQL 条件 12 处 | 平台的发件箱，观测的故障事件与可达性告警，流量服务的部署自动化与预检，作业的命令、设备操作、作业执行与运行时操作 | 各处的写法要逐一核对后才能换成同一个条件 | 资源提供一个判断（生命周期与维护窗口） |
+| 服务器状态判断余下的差别 | 成本账本把从未保存的计费周期当作一次性，类型化的资产设置当作 30 天；统计按网卡名精确匹配，服务器页按包含匹配；故障列表的“维护中”只看维护窗口，暂缓通知还看服务器自己的维护期；“服务器忙”在几处含义不同；流量服务的部署预检与自动化、观测的故障通知仍自己读作业的维护窗口 | 前三项是不同的产品语义，合并会改变显示或通知；读维护窗口的几处排在作业之前，不能调用作业 | 前三项由产品定下一种含义后并入资源的判断；部署代码迁到作业（§12.1）之后，维护窗口只由作业判断 |
 | 服务器价格与到期存了四处 | `servers.asset_settings`、`fleet_profiles.asset`、`fleet_cost_records`、`operations_cloud_links` | 四处的金额单位不同，合并要改表并定以哪一份为准 | 以成本的账本与资产设置为准，其余转换后删除（阶段 F） |
 | 预览后确认的存储六套 | 名称、基础网络、服务权益与流量服务各自的预览表 | 合并是改表 | 平台的一套预览存储（阶段 F） |
 | 事件日志五份 | `singbox_operation_events`、`singbox_commerce_events`、`expense_events`、`operations_history`、`fleet_events` | 合并是改表 | 一份事件日志（阶段 F） |

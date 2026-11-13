@@ -118,11 +118,7 @@ async fn read_window_with_resolution(
         .ok_or(ApiError::NotFound)?;
     if !initialized {
         let mut tx = pool.begin().await?;
-        sqlx::query("SELECT id FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
-            .bind(server)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or(ApiError::NotFound)?;
+        crate::servers::lock(&mut tx, server).await?;
         persistence::initialized(&mut tx, server).await?;
         tx.commit().await?;
     }

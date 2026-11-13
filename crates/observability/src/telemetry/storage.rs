@@ -1,4 +1,5 @@
 use super::*;
+use crate::control_center::retention;
 use apsp_protocol::telemetry::TelemetrySettings;
 use serde::{Deserialize, Serialize};
 
@@ -47,11 +48,13 @@ pub async fn update_policy(
         .bind(policy.history_retention_days)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("UPDATE record_retention_policy SET days=$1,updated_at=$2 WHERE kind='monitoring'")
-        .bind(policy.history_retention_days)
-        .bind(apsp_protocol::now_timestamp())
-        .execute(&mut *tx)
-        .await?;
+    retention::set(
+        &mut *tx,
+        retention::Kind::Monitoring,
+        policy.history_retention_days,
+        apsp_protocol::now_timestamp(),
+    )
+    .await?;
     tx.commit().await?;
     Ok(Json(policy))
 }

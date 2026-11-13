@@ -254,8 +254,18 @@ pub async fn create_batch(
             .await?;
     }
     for server in &servers {
-        let live:bool=sqlx::query_scalar("SELECT deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM server_retirements r WHERE r.server_id=s.id AND r.status IN ('pending','failed','offline_unconfirmed')) FROM servers s WHERE id=$1 FOR UPDATE").bind(server).fetch_optional(&mut *tx).await?.ok_or_else(||ApiError::BadRequest(format!("服务器 #{server} 不存在")))?;
-        if !live {
+        let locked = crate::servers::lock_row(
+            &mut tx,
+            *server,
+            crate::servers::RowLock::UpdateRecord,
+            "deleted_at IS NOT NULL AS deleted",
+        )
+        .await?
+        .ok_or_else(|| ApiError::BadRequest(format!("服务器 #{server} 不存在")))?;
+        // The retirement marker is read after the lock, in its own statement, so that a
+        // retirement committed while this waited is seen.
+        let deleted: bool = sqlx::Row::get(&locked, "deleted");
+        if deleted || crate::retirement::retiring(&mut tx, *server).await? {
             return Err(ApiError::Conflict(format!(
                 "服务器 #{server} 已退役或正在退役，不能创建链路"
             )));
@@ -548,7 +558,7 @@ pub async fn update_resource(
     if kind == "direct" && node_revision != input.settings_revision {
         return Err(ApiError::Conflict("资源设置已被修改，请刷新后重试".into()));
     }
-    business::lock_server(&mut tx, node.server_id).await?;
+    crate::servers::lock(&mut tx, node.server_id).await?;
     if let Some(name) = input
         .entry_name
         .clone()

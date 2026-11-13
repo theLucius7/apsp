@@ -46,7 +46,7 @@ pub async fn get(
 ) -> ApiResult<Json<DeploymentView>> {
     auth::require_admin(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
-    super::business::lock_server(&mut tx, id).await?;
+    crate::servers::lock(&mut tx, id).await?;
     super::settings::require_enabled(&mut tx, id).await?;
     let pending: bool = sqlx::query_scalar("SELECT dirty_at IS NOT NULL FROM servers WHERE id=$1")
         .bind(id)
@@ -91,7 +91,7 @@ pub async fn check(
 ) -> ApiResult<Json<Readiness>> {
     auth::require_admin(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
-    super::business::lock_server(&mut tx, id).await?;
+    crate::servers::lock(&mut tx, id).await?;
     super::settings::require_enabled(&mut tx, id).await?;
     let row = sqlx::query("SELECT device_public_key IS NOT NULL AS registered,last_seen,capabilities,static_info FROM servers WHERE id=$1").bind(id).fetch_one(&mut *tx).await?;
     tx.commit().await?;
@@ -192,7 +192,7 @@ pub async fn redeploy(
     crate::control_center::require_server(&state, &headers, id, "proxy:write").await?;
     crate::control_center::require_recent_proof(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
-    super::business::lock_server(&mut tx, id).await?;
+    crate::servers::lock(&mut tx, id).await?;
     super::settings::require_enabled(&mut tx, id).await?;
     let deployed: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM deployments WHERE server_id=$1 AND module='singbox')",

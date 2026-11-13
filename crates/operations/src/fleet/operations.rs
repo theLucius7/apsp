@@ -187,13 +187,16 @@ async fn enqueue_tx(
     operation: Operation,
 ) -> ApiResult<Uuid> {
     if let Some(job_id) = automation {
-        sqlx::query("SELECT id FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
-            .bind(id)
-            .fetch_optional(&mut **tx)
-            .await?
-            .ok_or(ApiError::NotFound)?;
-        let blocked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM fleet_profiles WHERE server_id=$1 AND (lifecycle IN ('draining','retired') OR (lifecycle='maintenance' AND COALESCE(maintenance_from,0)<=$3 AND (maintenance_until IS NULL OR maintenance_until>$3)))) OR EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) OR NOT EXISTS(SELECT 1 FROM operations_server_locks WHERE server_id=$1 AND job_id=$2) OR EXISTS(SELECT 1 FROM operations_maintenance WHERE $1=ANY(targets) AND block_new_tasks AND starts_at<=$3 AND ends_at>$3)")
-            .bind(id).bind(job_id).bind(now_timestamp()).fetch_one(&mut **tx).await?;
+        crate::servers::lock(tx, id).await?;
+        let blocked: bool = sqlx::query_scalar(&format!(
+            "SELECT {} OR NOT EXISTS(SELECT 1 FROM operations_server_locks WHERE server_id=$1 AND job_id=$2)",
+            crate::fleet::closed_sql("$1", "$3")
+        ))
+        .bind(id)
+        .bind(job_id)
+        .bind(now_timestamp())
+        .fetch_one(&mut **tx)
+        .await?;
         if blocked {
             return Err(ApiError::Conflict(
                 "自动化锁已变化，或服务器正在维护/退役".into(),
@@ -400,12 +403,16 @@ pub async fn work(State(state): State<AppState>, headers: HeaderMap) -> ApiResul
     }
     let now = now_timestamp();
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT id FROM servers WHERE id=$1 FOR UPDATE")
-        .bind(id)
-        .fetch_one(&mut *tx)
-        .await?;
+    crate::servers::lock_row(&mut tx, id, crate::servers::RowLock::UpdateRecord, "id")
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)?;
     sqlx::query("UPDATE fleet_operations SET status='expired' WHERE server_id=$1 AND status='queued' AND expires_at<=$2").bind(id).bind(now).execute(&mut *tx).await?;
-    let lifecycle_blocked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM fleet_profiles WHERE server_id=$1 AND (lifecycle IN ('draining','retired') OR (lifecycle='maintenance' AND COALESCE(maintenance_from,0)<=$2 AND (maintenance_until IS NULL OR maintenance_until>$2)))) OR EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) OR EXISTS(SELECT 1 FROM operations_maintenance WHERE $1=ANY(targets) AND block_new_tasks AND starts_at<=$2 AND ends_at>$2)").bind(id).bind(now).fetch_one(&mut *tx).await?;
+    let lifecycle_blocked: bool =
+        sqlx::query_scalar(&format!("SELECT {}", crate::fleet::closed_sql("$1", "$2")))
+            .bind(id)
+            .bind(now)
+            .fetch_one(&mut *tx)
+            .await?;
     let conflicting:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM remote_commands WHERE server_id=$1 AND (state IN ('claimed','running','cancel_requested') OR (state='queued' AND (spec->>'expires_at')::BIGINT>$2))) OR EXISTS(SELECT 1 FROM diagnostic_jobs WHERE server_id=$1 AND (status IN ('queued','running','cleaning','cancel_requested') OR (NOT agent_completed AND job ? 'id'))) OR EXISTS(SELECT 1 FROM runtime_operations WHERE server_id=$1 AND result IS NULL AND reconciled_at IS NULL AND dispatched_at IS NOT NULL)").bind(id).bind(now).fetch_one(&mut *tx).await?;
     let allowed = !lifecycle_blocked && !conflicting;
     let rows = if allowed {

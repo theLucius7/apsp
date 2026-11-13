@@ -1,5 +1,8 @@
 use super::*;
-use crate::ip_quality::{IpQuality, QualityDatabase, QueryErrorKind, QueryFailure};
+use crate::{
+    ip_quality::{IpQuality, QualityDatabase, QueryErrorKind, QueryFailure},
+    text::Text,
+};
 use std::{collections::BTreeSet, net::IpAddr};
 
 #[derive(Deserialize)]
@@ -52,9 +55,6 @@ fn public(value: &str) -> bool {
     value
         .parse::<IpAddr>()
         .is_ok_and(|ip| crate::net::server_ip(ip) && ip.to_string() == value)
-}
-fn bounded_text(value: &str, maximum: usize) -> bool {
-    !value.trim().is_empty() && value.len() <= maximum && !value.chars().any(char::is_control)
 }
 
 fn contract(provider: &str) -> Option<(&'static str, &'static str, &'static str, &'static str)> {
@@ -122,7 +122,7 @@ fn safe_data(database: &str, value: &Value, prefix: &str) -> bool {
     } else {
         allowed_path(database, prefix)
             && match value {
-                Value::String(value) => value.len() <= 512 && !value.chars().any(char::is_control),
+                Value::String(value) => Text::bytes(512).accepts(value),
                 Value::Number(_) | Value::Bool(_) => true,
                 _ => false,
             }
@@ -217,7 +217,9 @@ pub(super) fn parse(
         || report.finished_at - report.started_at > 90
         || report.streaming.execution != "node"
         || report.streaming.status != "unknown"
-        || !bounded_text(&report.streaming.reason, 1024)
+        || !Text::bytes(1024)
+            .not_blank()
+            .accepts(&report.streaming.reason)
     {
         return Err(invalid());
     }
@@ -284,7 +286,7 @@ pub(super) fn parse(
             return Err(invalid());
         }
         if let Some(error) = &error
-            && (!bounded_text(&error.message, 1024)
+            && (!Text::bytes(1024).not_blank().accepts(&error.message)
                 || error
                     .http_status
                     .is_some_and(|status| !(300..=599).contains(&status))

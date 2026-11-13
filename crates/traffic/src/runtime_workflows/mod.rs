@@ -118,9 +118,9 @@ pub(super) async fn view(
     crate::control_center::require_server(&state, &headers, server, "proxy:read").await?;
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
-    crate::business::lock_server(&mut tx, server).await?;
+    crate::servers::lock(&mut tx, server).await?;
     crate::settings::require_enabled(&mut tx, server).await?;
-    let row=sqlx::query("SELECT s.static_info,s.capabilities,s.last_seen,s.dirty_at,m.target_rev,m.applied_rev,m.healthy,m.updated_at,m.last_error,EXISTS(SELECT 1 FROM server_retirements WHERE server_id=s.id) AS retiring FROM servers s LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id=$1").bind(server).fetch_one(&mut *tx).await?;
+    let row=sqlx::query(&format!("SELECT s.static_info,s.capabilities,s.last_seen,s.dirty_at,m.target_rev,m.applied_rev,m.healthy,m.updated_at,m.last_error,{} AS retiring FROM servers s LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id=$1", crate::retirement::retiring_sql("s.id"))).bind(server).fetch_one(&mut *tx).await?;
     let query = format!(
         "SELECT {} FROM nodes n JOIN servers s ON s.id=n.server_id WHERE n.server_id=$1 AND n.deleted_at IS NULL ORDER BY n.id",
         crate::business::NODE_COLUMNS
@@ -353,9 +353,15 @@ pub(super) async fn checkpoint(
     let administrator =
         crate::control_center::require_server(&state, &headers, server, "proxy:write").await?;
     let mut tx = state.pool.begin().await?;
-    crate::business::lock_server(&mut tx, server).await?;
+    crate::servers::lock(&mut tx, server).await?;
     crate::settings::require_enabled(&mut tx, server).await?;
-    let row=sqlx::query("SELECT capabilities,last_seen,dirty_at,EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) AS retiring FROM servers WHERE id=$1").bind(server).fetch_one(&mut *tx).await?;
+    let row = sqlx::query(&format!(
+        "SELECT capabilities,last_seen,dirty_at,{} AS retiring FROM servers WHERE id=$1",
+        crate::retirement::retiring_sql("$1")
+    ))
+    .bind(server)
+    .fetch_one(&mut *tx)
+    .await?;
     let caps: Value = row.get("capabilities");
     if !caps.as_array().is_some_and(|v| {
         v.iter()

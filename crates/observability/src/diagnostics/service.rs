@@ -273,8 +273,14 @@ pub(crate) async fn create_job(
 ) -> ApiResult<ReportRecord> {
     let mut tx = state.pool.begin().await?;
     crate::device_work::ensure_accepts_tasks_tx(&mut tx, id).await?;
-    let row = sqlx::query("SELECT static_info,last_seen,capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
-        .bind(id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
+    let row = crate::servers::lock_row(
+        &mut tx,
+        id,
+        crate::servers::RowLock::Update,
+        "static_info,last_seen,capabilities",
+    )
+    .await?
+    .ok_or(ApiError::NotFound)?;
     let arch = ready(&row, plugin)?;
     reject_queued(&mut tx, id).await?;
     let now = now_timestamp();

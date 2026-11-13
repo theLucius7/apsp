@@ -276,7 +276,13 @@ pub(super) async fn references(
     own: Option<Uuid>,
 ) -> ApiResult<()> {
     for server in config.servers() {
-        let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM servers WHERE id=$1 AND deleted_at IS NULL) AND NOT EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1)").bind(server).fetch_one(&mut **tx).await?;
+        let valid: bool = sqlx::query_scalar(&format!(
+            "SELECT EXISTS(SELECT 1 FROM servers WHERE id=$1 AND deleted_at IS NULL) AND NOT {}",
+            crate::retirement::retiring_sql("$1")
+        ))
+        .bind(server)
+        .fetch_one(&mut **tx)
+        .await?;
         if !valid {
             return Err(ApiError::Conflict("关联服务器不存在或正在退役".into()));
         }

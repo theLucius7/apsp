@@ -44,15 +44,8 @@ pub async fn record(
     let Some(id) = id else {
         return Ok(());
     };
-    let value: Option<Value> =
-        sqlx::query_scalar("SELECT settings FROM panel_settings WHERE singleton")
-            .fetch_optional(&mut **tx)
-            .await?;
-    let Some(value) = value else {
-        return Ok(());
-    };
-    let settings: Settings = serde_json::from_value(value).map_err(anyhow::Error::from)?;
-    let time = apsp_cloud_api::signing::iso_time(now);
+    let settings = crate::settings::read(&mut **tx).await?;
+    let time = apsp_panel_host::time::iso8601(now);
     let event_id = format!("alicloud:{id}");
     let message = webhook::Message {
         title,
@@ -99,14 +92,7 @@ impl Queue for Notices<'_> {
     fn claim(&self, claim: Claim) -> Claims<'_, Notice, ApiError> {
         Box::pin(async move {
             let mut tx = self.pool.begin().await?;
-            let value: Option<Value> =
-                sqlx::query_scalar("SELECT settings FROM panel_settings WHERE singleton FOR SHARE")
-                    .fetch_optional(&mut *tx)
-                    .await?;
-            let Some(value) = value else {
-                return Ok(Vec::new());
-            };
-            let settings: Settings = serde_json::from_value(value).map_err(anyhow::Error::from)?;
+            let settings = crate::settings::share(&mut tx).await?;
             if (self.channel == "telegram" && !settings.telegram_ready())
                 || (self.channel == "webhook" && !settings.webhook_ready())
             {

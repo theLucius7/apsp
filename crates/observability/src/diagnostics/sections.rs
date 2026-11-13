@@ -15,11 +15,7 @@ pub async fn upload_section(
     let mut tx = state.pool.begin().await?;
     // Projection may write server caches. Keep the same server -> job lock order
     // as creation, cancellation and terminal updates.
-    sqlx::query("SELECT id FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
-        .bind(server_id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    crate::servers::lock(&mut tx, server_id).await?;
     let row = sqlx::query("SELECT j.expected_sections,j.job,j.created_at,j.expires_at,j.generation FROM diagnostic_jobs j WHERE j.id=$1 AND j.server_id=$2 FOR UPDATE")
         .bind(id).bind(server_id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
     let expected: Vec<String> = row.get("expected_sections");

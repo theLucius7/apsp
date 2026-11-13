@@ -4,6 +4,7 @@ use crate::{
     error::{ApiError, ApiResult},
     passkeys as keys,
 };
+use apsp_panel_host::cookies;
 use apsp_protocol::now_timestamp;
 use axum::{
     extract::{Path, State},
@@ -18,7 +19,7 @@ pub(super) const COOKIE: &str = "apsp_proxy_session";
 const SESSION_SECONDS: i64 = 86400;
 
 pub(crate) fn session_hash(headers: &HeaderMap) -> ApiResult<String> {
-    keys::cookie(headers, COOKIE)
+    cookies::read(headers, COOKIE)
         .map(hash_token)
         .ok_or(ApiError::Unauthorized)
 }
@@ -123,8 +124,8 @@ pub(crate) async fn issue(
 
 pub(crate) fn logged_in(state: &AppState, token: &str) -> ApiResult<Response> {
     let mut response = keys::reply(json!({"ok":true}));
-    keys::set_cookie(state, &mut response, COOKIE, token, SESSION_SECONDS)?;
-    keys::set_cookie(state, &mut response, keys::PORTAL_BINDING, "", 0)?;
+    cookies::set(state, &mut response, COOKIE, token, SESSION_SECONDS)?;
+    cookies::set(state, &mut response, keys::PORTAL_BINDING, "", 0)?;
     Ok(response)
 }
 
@@ -245,6 +246,6 @@ pub(super) async fn logout(
         tx.commit().await?;
     }
     let mut response = keys::reply(json!({"ok":true}));
-    keys::set_cookie(&state, &mut response, COOKIE, "", 0)?;
+    cookies::set(&state, &mut response, COOKIE, "", 0)?;
     Ok(response)
 }

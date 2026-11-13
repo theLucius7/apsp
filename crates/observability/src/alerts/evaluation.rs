@@ -16,14 +16,12 @@ pub async fn evaluate(pool: &PgPool, started_at: i64, now: i64) -> anyhow::Resul
     // Keep telemetry contention local to one server, rather than locking the whole fleet.
     for id in ids {
         let mut tx = pool.begin().await?;
-        let settings = crate::notifications::lock_settings(&mut tx).await?;
-        let query = format!(
-            "SELECT {SERVER_COLUMNS} FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE"
-        );
-        let server: Option<Server> = sqlx::query_as(&query)
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?;
+        let settings = crate::settings::lock(&mut tx).await?;
+        let server: Option<Server> =
+            crate::servers::lock_row(&mut tx, id, crate::servers::RowLock::Update, SERVER_COLUMNS)
+                .await?
+                .map(|row| sqlx::FromRow::from_row(&row))
+                .transpose()?;
         let Some(mut server) = server.filter(|_| settings.notification_enabled) else {
             events::close_obsolete(&mut tx, id, &[], now).await?;
             tx.commit().await?;

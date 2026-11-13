@@ -1,19 +1,16 @@
 use crate::{
     AppState,
+    control_center::audit,
     error::{ApiError, ApiResult},
 };
+use apsp_panel_host::{cookies, passwords};
 use apsp_protocol::now_timestamp;
-use argon2::{
-    Argon2,
-    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
-};
 use axum::{
     Json,
     extract::{ConnectInfo, State},
     http::{HeaderMap, HeaderValue, header},
     response::{IntoResponse, Response},
 };
-use rand::{RngCore, rngs::OsRng};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::{PgPool, Row};
@@ -31,6 +28,8 @@ pub use security::{
 };
 
 const ADMIN_SESSION_SECONDS: i64 = 86_400;
+/// The cookie that carries an administrator's session token.
+pub(crate) const SESSION_COOKIE: &str = "apsp_session";
 
 pub async fn ensure_admin(pool: &PgPool, password: Option<&str>) -> anyhow::Result<()> {
     let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM admins WHERE id = 1)")
@@ -60,19 +59,9 @@ pub async fn ensure_admin(pool: &PgPool, password: Option<&str>) -> anyhow::Resu
     Ok(())
 }
 
-/// Hashes an administrator password with Argon2 and a fresh random salt.
+/// Hashes an administrator password on a blocking thread.
 pub(crate) async fn hash_password(password: String) -> anyhow::Result<String> {
-    tokio::task::spawn_blocking(move || {
-        let mut salt = [0_u8; 16];
-        OsRng.fill_bytes(&mut salt);
-        let salt =
-            SaltString::encode_b64(&salt).map_err(|error| anyhow::anyhow!(error.to_string()))?;
-        Argon2::default()
-            .hash_password(password.as_bytes(), &salt)
-            .map(|hash| hash.to_string())
-            .map_err(|error| anyhow::anyhow!(error.to_string()))
-    })
-    .await?
+    tokio::task::spawn_blocking(move || passwords::hash(password.as_bytes())).await?
 }
 
 /// Device sessions are reissued on every reconnect; expired rows must not wait
@@ -113,12 +102,7 @@ pub(crate) async fn verified_admin_password(
         .await?;
     let expected = hash.clone();
     let (verified, permit) = tokio::task::spawn_blocking(move || {
-        let verified = PasswordHash::new(&expected).is_ok_and(|hash| {
-            Argon2::default()
-                .verify_password(password.as_bytes(), &hash)
-                .is_ok()
-        });
-        (verified, permit)
+        (passwords::verify(password.as_bytes(), &expected), permit)
     })
     .await
     .map_err(anyhow::Error::from)?;
@@ -147,9 +131,21 @@ pub async fn login(
         .collect::<String>();
     let result = login_inner(state.clone(), peer, request).await;
     if result.is_err()
-        && let Err(error)=sqlx::query("INSERT INTO management_audit(action,object_path,request_diff,result,occurred_at) VALUES('login','/api/login',$1,$2,$3)")
-            .bind(json!({"login_name":login_name,"factor":"password"})).bind(json!({"phase":"authentication-denied","success":false})).bind(now_timestamp()).execute(&state.pool).await {
-            tracing::warn!(%error,"authentication denial audit failed");
+        && let Err(error) = audit::record(
+            &state.pool,
+            audit::Entry {
+                admin_id: None,
+                token_id: None,
+                action: "login",
+                object_path: "/api/login",
+                request_diff: json!({"login_name":login_name,"factor":"password"}),
+                result: json!({"phase":"authentication-denied","success":false}),
+                occurred_at: now_timestamp(),
+            },
+        )
+        .await
+    {
+        tracing::warn!(%error, "authentication denial audit failed");
     }
     result
 }
@@ -224,14 +220,28 @@ async fn login_inner(
     .bind(now + 300)
     .execute(&mut *transaction)
     .await?;
-    sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'login','/api/login',$2,$3,$4)")
-        .bind(admin_id).bind(json!({"factor":"password"})).bind(json!({"phase":"authenticated","success":true})).bind(now).execute(&mut *transaction).await?;
+    audit::record(
+        &mut *transaction,
+        audit::Entry {
+            admin_id: Some(admin_id),
+            token_id: None,
+            action: "login",
+            object_path: "/api/login",
+            request_diff: json!({"factor":"password"}),
+            result: json!({"phase":"authenticated","success":true}),
+            occurred_at: now,
+        },
+    )
+    .await?;
     transaction.commit().await?;
     let mut response = Json(json!({"id": admin_id})).into_response();
-    response.headers_mut().insert(
-        header::SET_COOKIE,
-        session_cookie(&state, &token, ADMIN_SESSION_SECONDS)?,
-    );
+    cookies::set(
+        &state,
+        &mut response,
+        SESSION_COOKIE,
+        &token,
+        ADMIN_SESSION_SECONDS,
+    )?;
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -239,57 +249,37 @@ async fn login_inner(
 }
 
 pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
-    if let Some(token) = cookie_token(&headers) {
+    if let Some(token) = cookies::read(&headers, SESSION_COOKIE) {
         let mut tx = state.pool.begin().await?;
         let admin:Option<i64>=sqlx::query_scalar("DELETE FROM sessions WHERE token_hash = $1 AND admin_id IS NOT NULL RETURNING admin_id")
             .bind(hash_token(token))
             .fetch_optional(&mut *tx)
             .await?;
         if let Some(admin) = admin {
-            sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'logout','/api/logout','{}',$2,$3)").bind(admin).bind(json!({"phase":"session-revoked","success":true})).bind(now_timestamp()).execute(&mut *tx).await?;
+            audit::record(
+                &mut *tx,
+                audit::Entry {
+                    admin_id: Some(admin),
+                    token_id: None,
+                    action: "logout",
+                    object_path: "/api/logout",
+                    request_diff: json!({}),
+                    result: json!({"phase":"session-revoked","success":true}),
+                    occurred_at: now_timestamp(),
+                },
+            )
+            .await?;
         }
         tx.commit().await?;
     }
     let mut response = Json(json!({"ok": true})).into_response();
-    response
-        .headers_mut()
-        .insert(header::SET_COOKIE, session_cookie(&state, "", 0)?);
+    cookies::set(&state, &mut response, SESSION_COOKIE, "", 0)?;
     Ok(response)
 }
 
 pub async fn me(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     let actor = crate::control_center::authenticate(&state, &headers).await?;
     Ok(Json(json!({"id": actor.admin_id,"administrator":actor})))
-}
-
-fn session_cookie(state: &AppState, token: &str, lifetime: i64) -> ApiResult<HeaderValue> {
-    let secure = if state.config.public_url.starts_with("https://") {
-        "; Secure"
-    } else {
-        ""
-    };
-    HeaderValue::from_str(&format!(
-        "apsp_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={lifetime}{secure}"
-    ))
-    .map_err(|error| ApiError::Internal(anyhow::Error::from(error)))
-}
-
-fn cookie_token(headers: &HeaderMap) -> Option<&str> {
-    let mut token = None;
-    for header in headers.get_all(header::COOKIE) {
-        for cookie in header.to_str().ok()?.split(';') {
-            let Some((name, value)) = cookie.trim().split_once('=') else {
-                continue;
-            };
-            if name == "apsp_session" {
-                if token.is_some() || value.is_empty() || value.len() > 512 {
-                    return None;
-                }
-                token = Some(value);
-            }
-        }
-    }
-    token
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 use super::{Envelope, invalid, required_option};
-use crate::{error::ApiResult, ip_quality::QueryErrorKind, net::public_ip};
+use crate::{error::ApiResult, ip_quality::QueryErrorKind, net::public_ip, text::Text};
 use serde::Deserialize;
 use std::net::IpAddr;
 
@@ -77,10 +77,6 @@ fn allowed_pair(provider: &str, dataset: &str) -> bool {
         .any(|(source, datasets)| *source == provider && datasets.contains(&dataset))
 }
 
-pub(super) fn bounded_text(text: &str, limit: usize) -> bool {
-    !text.trim().is_empty() && text.len() <= limit && !text.chars().any(char::is_control)
-}
-
 fn allowed_host(provider: &str, host: &str) -> bool {
     match provider {
         "egress-discovery" => matches!(host, "api64.ipify.org" | "ident.me"),
@@ -105,7 +101,7 @@ pub(super) fn validate_attempt(
         || attempt
             .error_message
             .as_ref()
-            .is_some_and(|message| !bounded_text(message, 1024))
+            .is_some_and(|message| !Text::bytes(1024).not_blank().accepts(message))
         || attempt.elapsed_ms.is_some_and(|elapsed| elapsed > 300_000)
         || attempt
             .response_bytes

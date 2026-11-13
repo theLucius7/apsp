@@ -129,10 +129,7 @@ async fn save(state: &AppState, id: Uuid, mut input: Input, editing: bool) -> Ap
     affected.extend(&input.server_ids);
     affected.sort_unstable();
     affected.dedup();
-    sqlx::query("SELECT id FROM servers WHERE id=ANY($1) ORDER BY id FOR UPDATE")
-        .bind(&affected)
-        .fetch_all(&mut *tx)
-        .await?;
+    crate::servers::lock_all(&mut tx, &affected, crate::servers::RowLock::UpdateRecord).await?;
     let servers: Vec<i64> = sqlx::query_scalar(
         "SELECT id FROM servers WHERE id=ANY($1) AND deleted_at IS NULL ORDER BY id",
     )
@@ -210,10 +207,7 @@ pub async fn remove(
     .bind(id)
     .fetch_all(&mut *tx)
     .await?;
-    sqlx::query("SELECT id FROM servers WHERE id=ANY($1) ORDER BY id FOR UPDATE")
-        .bind(&servers)
-        .fetch_all(&mut *tx)
-        .await?;
+    crate::servers::lock_all(&mut tx, &servers, crate::servers::RowLock::UpdateRecord).await?;
     if sqlx::query("DELETE FROM latency_tasks WHERE id=$1")
         .bind(id)
         .execute(&mut *tx)

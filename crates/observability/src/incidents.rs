@@ -49,7 +49,8 @@ async fn authorize(
 pub(crate) fn notifications_held(server: &str, at: &str) -> String {
     format!(
         "(EXISTS(SELECT 1 FROM operations_maintenance held_m WHERE {server}=ANY(held_m.targets) AND held_m.suppress_notifications AND held_m.starts_at<={at} AND held_m.ends_at>{at}) \
-         OR EXISTS(SELECT 1 FROM fleet_profiles held_p WHERE held_p.server_id={server} AND held_p.lifecycle='maintenance' AND COALESCE(held_p.maintenance_from,0)<={at} AND (held_p.maintenance_until IS NULL OR held_p.maintenance_until>{at})))"
+         OR {})",
+        crate::server_lifecycle::maintenance_sql(server, at)
     )
 }
 
@@ -621,10 +622,7 @@ async fn enqueue(
     kind: &str,
     now: i64,
 ) -> ApiResult<()> {
-    let settings: Value = sqlx::query_scalar("SELECT settings FROM panel_settings WHERE singleton")
-        .fetch_one(&mut **tx)
-        .await?;
-    let settings: Settings = serde_json::from_value(settings).map_err(anyhow::Error::from)?;
+    let settings = crate::settings::read(&mut **tx).await?;
     if !settings.notification_enabled {
         return Ok(());
     }
@@ -787,10 +785,7 @@ impl Queue for Deliveries<'_> {
 }
 
 async fn dispatch(state: &AppState, now: i64) -> ApiResult<()> {
-    let settings: Value = sqlx::query_scalar("SELECT settings FROM panel_settings WHERE singleton")
-        .fetch_one(&state.pool)
-        .await?;
-    let settings: Settings = serde_json::from_value(settings).map_err(anyhow::Error::from)?;
+    let settings = crate::settings::read(&state.pool).await?;
     if !settings.notification_enabled {
         return Ok(());
     }

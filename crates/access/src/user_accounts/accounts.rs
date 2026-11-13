@@ -1,13 +1,12 @@
 mod challenges;
 use super::*;
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
+use apsp_panel_host::passwords;
 use axum::{
     Json,
     extract::{ConnectInfo, Path, State},
     response::Response,
 };
 pub(super) use challenges::{challenge, check, consume};
-use rand::rngs::OsRng;
 use std::net::SocketAddr;
 
 pub(super) async fn limit(
@@ -36,10 +35,7 @@ async fn password(state: &AppState, value: String) -> ApiResult<String> {
         .map_err(|_| ApiError::Busy)?;
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        Argon2::default()
-            .hash_password(value.as_bytes(), &SaltString::generate(&mut OsRng))
-            .map(|v| v.to_string())
-            .map_err(|_| bad("密码处理失败"))
+        passwords::hash(value.as_bytes()).map_err(|_| bad("密码处理失败"))
     })
     .await
     .map_err(anyhow::Error::from)?
@@ -79,17 +75,10 @@ pub(super) async fn login(
         let valid = if legacy {
             bcrypt::verify(input.password.as_bytes(), &saved).unwrap_or(false)
         } else {
-            PasswordHash::new(&saved).is_ok_and(|h| {
-                Argon2::default()
-                    .verify_password(input.password.as_bytes(), &h)
-                    .is_ok()
-            })
+            passwords::verify(input.password.as_bytes(), &saved)
         };
         let upgraded = if legacy && valid {
-            Argon2::default()
-                .hash_password(input.password.as_bytes(), &SaltString::generate(&mut OsRng))
-                .ok()
-                .map(|v| v.to_string())
+            passwords::hash(input.password.as_bytes()).ok()
         } else {
             None
         };
@@ -153,7 +142,7 @@ fn reply(state: &AppState, account: Uuid, token: &str) -> ApiResult<Response> {
     let mut response = crate::passkeys::reply(
         json!({"account_id":account,"url":format!("{}/#/account/{account}",state.config.public_url)}),
     );
-    crate::passkeys::set_cookie(state, &mut response, "apsp_proxy_session", token, 86400)?;
+    apsp_panel_host::cookies::set(state, &mut response, "apsp_proxy_session", token, 86400)?;
     Ok(response)
 }
 #[derive(Deserialize)]

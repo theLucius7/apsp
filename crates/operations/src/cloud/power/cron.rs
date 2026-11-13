@@ -32,7 +32,7 @@ impl Cron {
     }
 
     fn day_matches(&self, day: i64) -> bool {
-        let date = apsp_cloud_api::signing::iso_time(day * 86400);
+        let date = apsp_panel_host::time::iso8601(day * 86400);
         let month: u32 = date[5..7].parse().expect("formatted month");
         let date: u32 = date[8..10].parse().expect("formatted day");
         let weekday = (day + 4).rem_euclid(7) as u32;

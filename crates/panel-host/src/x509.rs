@@ -169,26 +169,9 @@ fn time(reader: &mut Reader<'_>) -> anyhow::Result<i64> {
             && (0..60).contains(&second),
         "invalid certificate calendar"
     );
-    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-    let max = match month {
-        2 => {
-            if leap {
-                29
-            } else {
-                28
-            }
-        }
-        4 | 6 | 9 | 11 => 30,
-        _ => 31,
-    };
-    ensure!((1..=max).contains(&day), "invalid certificate day");
-    year -= i64::from(month <= 2);
-    let era = year.div_euclid(400);
-    let yoe = year - era * 400;
-    let adjusted_month = month + if month > 2 { -3 } else { 9 };
-    let doy = (153 * adjusted_month + 2) / 5 + day - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    Ok((era * 146097 + doe - 719468) * 86400 + hour * 3600 + minute * 60 + second)
+    let days = crate::time::day_number(year, month, day)
+        .ok_or_else(|| anyhow::anyhow!("invalid certificate day"))?;
+    Ok(days * 86400 + hour * 3600 + minute * 60 + second)
 }
 
 #[cfg(test)]

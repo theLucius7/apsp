@@ -84,7 +84,10 @@ fn validate(mut request: Batch, deleting: bool) -> ApiResult<Vec<Change>> {
             let mut normalized = Vec::new();
             for tag in tags.iter() {
                 let tag = tag.trim();
-                if tag.is_empty() || tag.len() > 64 || tag.chars().any(char::is_control) {
+                if !apsp_panel_host::text::Text::bytes(64)
+                    .not_empty()
+                    .accepts(tag)
+                {
                     return Err(ApiError::BadRequest(
                         "标签需为 1 至 64 字节，且不能包含控制字符".into(),
                     ));
@@ -96,9 +99,9 @@ fn validate(mut request: Batch, deleting: bool) -> ApiResult<Vec<Change>> {
             *tags = normalized;
         }
         if item.note.as_ref().is_some_and(|v| {
-            v.len() > 1024
-                || v.chars()
-                    .any(|c| c.is_control() && !matches!(c, '\n' | '\t'))
+            !apsp_panel_host::text::Text::bytes(1024)
+                .multiline()
+                .accepts(v)
         }) {
             return Err(ApiError::BadRequest(
                 "备注最多 1024 字节，不能包含异常控制字符".into(),
@@ -163,7 +166,7 @@ pub async fn batch_update(
         .filter_map(|item| current[&(item.kind.clone(), item.id)]["server_id"].as_i64())
         .collect();
     for server in servers {
-        super::super::business::lock_server(&mut tx, server).await?;
+        crate::servers::lock(&mut tx, server).await?;
     }
     for item in &items {
         let resource = &current[&(item.kind.clone(), item.id)];

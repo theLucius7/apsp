@@ -16,13 +16,15 @@ pub async fn request(
 ) -> ApiResult<(StatusCode, Json<ReportRecord>)> {
     auth::require_admin(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
-    let capabilities: Value = sqlx::query_scalar(
-        "SELECT capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",
+    let capabilities: Value = crate::servers::lock_row(
+        &mut tx,
+        server_id,
+        crate::servers::RowLock::Update,
+        "capabilities",
     )
-    .bind(server_id)
-    .fetch_optional(&mut *tx)
     .await?
-    .ok_or(ApiError::NotFound)?;
+    .ok_or(ApiError::NotFound)?
+    .get("capabilities");
     let row = sqlx::query("SELECT status,job,agent_completed FROM diagnostic_jobs WHERE id=$1 AND server_id=$2 FOR UPDATE")
         .bind(id).bind(server_id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
     let status: String = row.get("status");
@@ -110,10 +112,14 @@ pub async fn record_result(
         validate_report(report)?;
     }
     let mut tx = state.pool.begin().await?;
-    let _: i64 = sqlx::query_scalar("SELECT id FROM servers WHERE id=$1 FOR UPDATE")
-        .bind(server_id)
-        .fetch_one(&mut *tx)
-        .await?;
+    crate::servers::lock_row(
+        &mut tx,
+        server_id,
+        crate::servers::RowLock::UpdateRecord,
+        "id",
+    )
+    .await?
+    .ok_or(sqlx::Error::RowNotFound)?;
     let row = sqlx::query(
         "SELECT status,job FROM diagnostic_jobs WHERE id=$1 AND server_id=$2 FOR UPDATE",
     )

@@ -104,7 +104,10 @@ fn independent_rfc3986_and_hmac_vectors_cover_unicode_and_all_provider_schemes()
         signing::aliyun("TEST_ONLY_SECRET", &parameters),
         "+9OGkoeAQj1Et20Wv5YNUn4VkvE="
     );
-    assert_eq!(signing::iso_time(1790812800), "2026-10-01T00:00:00Z");
+    assert_eq!(
+        apsp_panel_host::time::iso8601(1790812800),
+        "2026-10-01T00:00:00Z"
+    );
     assert!(
         signing::tencent(
             "TEST_ONLY_ID",

@@ -1,6 +1,7 @@
 use crate::{
     AppState,
     error::{ApiError, ApiResult},
+    servers::{self, RowLock},
 };
 use apsp_protocol::{
     Envelope, RETIREMENT_CAPABILITY, RetirementReceipt, RetirementRequest, RetirementResult,
@@ -14,12 +15,21 @@ use std::time::Duration;
 use tokio::time::{Instant, sleep, timeout};
 use uuid::Uuid;
 
+/// SQL that holds while a retirement is recorded for the server `server` (a parameter or a
+/// qualified column, such as `"$1"` or `"s.id"`). The record stays once the server is
+/// deleted. Every "is this server being retired" question asks this.
+pub fn retiring_sql(server: &str) -> String {
+    format!(
+        "EXISTS(SELECT 1 FROM server_retirements retirement WHERE retirement.server_id={server})"
+    )
+}
+
 /// Whether the server is being retired, as seen inside the caller's transaction.
 pub async fn retiring(
     tx: &mut Transaction<'_, Postgres>,
     server_id: i64,
 ) -> Result<bool, sqlx::Error> {
-    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1)")
+    sqlx::query_scalar(&format!("SELECT {}", retiring_sql("$1")))
         .bind(server_id)
         .fetch_one(&mut **tx)
         .await
@@ -50,13 +60,9 @@ pub async fn remove(state: &AppState, id: i64) -> ApiResult<StatusCode> {
     let devices = crate::device_channel::devices(state);
     let lifecycle = devices.lifecycle.lock().await;
     let mut tx = state.pool.begin().await?;
-    let server = sqlx::query(
-        "SELECT capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or(ApiError::NotFound)?;
+    let server = servers::lock_row(&mut tx, id, RowLock::Update, "capabilities")
+        .await?
+        .ok_or(ApiError::NotFound)?;
     let connection = devices.connections.read().await.get(&id).cloned();
     let existing: Option<Uuid> =
         sqlx::query_scalar("SELECT request_id FROM server_retirements WHERE server_id=$1")
@@ -136,12 +142,15 @@ pub async fn accept_receipt(state: &AppState, receipt: RetirementReceipt) -> Api
     let devices = crate::device_channel::devices(state);
     let _lifecycle = devices.lifecycle.lock().await;
     let mut tx = state.pool.begin().await?;
-    let public_key: Option<String> =
-        sqlx::query_scalar("SELECT device_public_key FROM servers WHERE id=$1 FOR UPDATE")
-            .bind(receipt.server_id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or(ApiError::NotFound)?;
+    let public_key: Option<String> = servers::lock_row(
+        &mut tx,
+        receipt.server_id,
+        RowLock::UpdateRecord,
+        "device_public_key",
+    )
+    .await?
+    .ok_or(ApiError::NotFound)?
+    .get("device_public_key");
     let request_id: Option<Uuid> =
         sqlx::query_scalar("SELECT request_id FROM server_retirements WHERE server_id=$1")
             .bind(receipt.server_id)

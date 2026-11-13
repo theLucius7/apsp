@@ -427,7 +427,12 @@ pub(super) async fn record_fetch(
     result: &str,
 ) -> ApiResult<()> {
     let mut audit = state.pool.begin().await?;
-    let record: bool = sqlx::query_scalar("SELECT subscription_days>0 AND COALESCE((SELECT days>0 FROM record_retention_policy WHERE kind='proxy-access'),TRUE) FROM singbox_operation_privacy WHERE singleton").fetch_one(&mut *audit).await?;
+    let kept = crate::control_center::retention::days(
+        &mut *audit,
+        crate::control_center::retention::Kind::ProxyAccess,
+    )
+    .await?;
+    let record: bool = sqlx::query_scalar("SELECT subscription_days>0 AND COALESCE($1>0,TRUE) FROM singbox_operation_privacy WHERE singleton").bind(kept).fetch_one(&mut *audit).await?;
     if record {
         super::operations_workflows::record_subscription(
             &mut audit, user_id, format, nodes, result,

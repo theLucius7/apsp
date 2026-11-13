@@ -311,8 +311,14 @@ pub(super) async fn build(
 }
 
 async fn server(tx: &mut Transaction<'_, Postgres>, id: i64) -> ApiResult<Value> {
-    let row=sqlx::query("SELECT id,name,capabilities,static_info,device_public_key FROM servers WHERE id=$1 AND deleted_at IS NULL FOR SHARE")
-        .bind(id).fetch_optional(&mut **tx).await?.ok_or(ApiError::NotFound)?;
+    let row = crate::servers::lock_row(
+        tx,
+        id,
+        crate::servers::RowLock::Share,
+        "id,name,capabilities,static_info,device_public_key",
+    )
+    .await?
+    .ok_or(ApiError::NotFound)?;
     let profile = crate::server_lifecycle::locked_profile(tx, id).await?;
     let retired = crate::retirement::retiring(tx, id).await?;
     if retired {

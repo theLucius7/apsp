@@ -190,7 +190,7 @@ impl Cloud {
 fn text(value: &Value, field: &str) -> Result<String, Failure> {
     value[field]
         .as_str()
-        .filter(|v| !v.is_empty() && v.len() <= 256 && !v.chars().any(char::is_control))
+        .filter(|v| crate::text::Text::bytes(256).not_empty().accepts(v))
         .map(str::to_owned)
         .ok_or(Failure::from("invalid_response"))
 }

@@ -379,7 +379,7 @@ pub(crate) fn probe_target(state: &AppState) -> ApiResult<String> {
         || url.port() == Some(0)
         || raw.contains('@')
         || raw.contains('\\')
-        || raw.chars().any(char::is_control)
+        || apsp_panel_host::text::has_control(raw)
     {
         return Err(ApiError::Conflict(
             "有序链路需要没有凭据、路径前缀或查询参数的面板 HTTPS 根地址".into(),

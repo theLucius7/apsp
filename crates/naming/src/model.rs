@@ -60,7 +60,9 @@ impl Config {
         self.zone_id = self.zone_id.trim().to_ascii_lowercase();
         self.record_name = domain(&self.record_name)
             .ok_or_else(|| ApiError::BadRequest("请输入完整域名，可使用 *.example.com".into()))?;
-        if self.name.is_empty() || self.name.len() > 128 || self.name.chars().any(char::is_control)
+        if !apsp_panel_host::text::Text::bytes(128)
+            .not_empty()
+            .accepts(&self.name)
         {
             return Err(ApiError::BadRequest("名称不能为空或超过 128 字节".into()));
         }
@@ -114,7 +116,9 @@ impl Config {
                 .as_deref()
                 .map(str::trim)
                 .filter(|name| {
-                    !name.is_empty() && name.len() <= 128 && !name.chars().any(char::is_control)
+                    apsp_panel_host::text::Text::bytes(128)
+                        .not_empty()
+                        .accepts(name)
                 })
                 .ok_or_else(|| ApiError::BadRequest("请明确选择地址来源网卡".into()))?;
             self.interface_name = Some(name.into());
@@ -165,9 +169,8 @@ pub(super) fn domain(value: &str) -> Option<String> {
         .strip_prefix("*.")
         .map_or(("", value), |host| ("*.", host));
     if host.is_empty()
-        || host
-            .chars()
-            .any(|c| c.is_control() || c.is_whitespace() || ":/%?#@\\[]*".contains(c))
+        || apsp_panel_host::text::has_control(host)
+        || host.contains(|c: char| c.is_whitespace() || ":/%?#@\\[]*".contains(c))
     {
         return None;
     }

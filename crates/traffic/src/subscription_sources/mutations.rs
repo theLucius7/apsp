@@ -19,7 +19,7 @@ fn input_error(error: SourceFailure) -> ApiError {
 }
 
 pub(super) fn source_name(value: &str) -> ApiResult<String> {
-    if value.contains("://") || value.chars().any(char::is_control) {
+    if value.contains("://") || apsp_panel_host::text::has_control(value) {
         return Err(ApiError::BadRequest(
             "来源名称不能包含链接或控制字符".into(),
         ));

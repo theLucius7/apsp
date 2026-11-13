@@ -400,18 +400,19 @@ async fn enqueue(
     if step.is_panel() {
         return super::typed_steps::queue_backup(tx, id, now).await;
     }
-    let row = sqlx::query(
-        "SELECT capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",
-    )
-    .bind(server)
-    .fetch_optional(&mut **tx)
-    .await?;
+    let row = crate::servers::lock_row(tx, server, crate::servers::RowLock::Update, "capabilities")
+        .await?;
     let Some(row) = row else {
         sqlx::query("UPDATE operations_target_steps SET state='failed',finished_at=$4,result=$5 WHERE job_id=$1 AND server_id=$2 AND position=$3").bind(id).bind(server).bind(position).bind(now).bind(json!({"error":"服务器已删除"})).execute(&mut **tx).await?;
         return Ok(());
     };
     let capabilities: Value = row.get("capabilities");
-    let unavailable:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) OR EXISTS(SELECT 1 FROM operations_maintenance WHERE $1=ANY(targets) AND block_new_tasks AND starts_at<=$2 AND ends_at>$2) OR EXISTS(SELECT 1 FROM fleet_profiles WHERE server_id=$1 AND (lifecycle IN ('draining','retired') OR (lifecycle='maintenance' AND COALESCE(maintenance_from,0)<=$2 AND (maintenance_until IS NULL OR maintenance_until>$2))))").bind(server).bind(now).fetch_one(&mut **tx).await?;
+    let unavailable: bool =
+        sqlx::query_scalar(&format!("SELECT {}", crate::fleet::closed_sql("$1", "$2")))
+            .bind(server)
+            .bind(now)
+            .fetch_one(&mut **tx)
+            .await?;
     if unavailable {
         return Ok(());
     }

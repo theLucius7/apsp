@@ -1,7 +1,6 @@
 use crate::error::{ApiError, ApiResult};
 use apsp_compiler::{Access, Node};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use rand::{RngCore, rngs::OsRng};
 use serde::Serialize;
 use sqlx::{FromRow, Postgres, Transaction};
 use x25519_dalek::{PublicKey, StaticSecret};
@@ -93,7 +92,7 @@ impl NodeRow {
 }
 
 pub fn generate_reality_keypair() -> (String, String) {
-    let secret = StaticSecret::random_from_rng(OsRng);
+    let secret = StaticSecret::from(apsp_panel_host::tokens::bytes::<32>());
     let public = PublicKey::from(&secret);
     (
         URL_SAFE_NO_PAD.encode(secret.to_bytes()),
@@ -102,14 +101,15 @@ pub fn generate_reality_keypair() -> (String, String) {
 }
 
 pub(crate) fn short_id() -> String {
-    let mut bytes = [0_u8; 4];
-    OsRng.fill_bytes(&mut bytes);
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    apsp_panel_host::tokens::hex(4)
 }
 
 pub fn name(value: &str) -> ApiResult<String> {
     let value = value.trim();
-    if value.is_empty() || value.chars().count() > 128 || value.chars().any(char::is_control) {
+    if !apsp_panel_host::text::Text::chars(128)
+        .not_empty()
+        .accepts(value)
+    {
         return Err(ApiError::BadRequest(
             "名称需为 1 至 128 个字符，且不能包含控制字符".into(),
         ));
@@ -129,16 +129,6 @@ pub async fn lock_publication(
     transaction: &mut Transaction<'_, Postgres>,
 ) -> Result<(), sqlx::Error> {
     crate::locks::PUBLICATION.lock(transaction).await
-}
-
-pub async fn lock_server(transaction: &mut Transaction<'_, Postgres>, id: i64) -> ApiResult<()> {
-    let found: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
-            .bind(id)
-            .fetch_optional(&mut **transaction)
-            .await?;
-    found.ok_or(ApiError::NotFound)?;
-    Ok(())
 }
 
 pub async fn mark_dirty(

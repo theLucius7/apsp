@@ -159,15 +159,8 @@ pub async fn update_retention(
         ));
     }
     let mut tx = state.pool.begin().await?;
-    if sqlx::query("UPDATE record_retention_policy SET days=$2,updated_at=$3 WHERE kind=$1")
-        .bind(&kind)
-        .bind(input.days)
-        .bind(now_timestamp())
-        .execute(&mut *tx)
-        .await?
-        .rows_affected()
-        != 1
-    {
+    let policy = super::retention::Kind::parse(&kind).ok_or(ApiError::NotFound)?;
+    if !super::retention::set(&mut *tx, policy, input.days, now_timestamp()).await? {
         return Err(ApiError::NotFound);
     }
     tx.commit().await?;

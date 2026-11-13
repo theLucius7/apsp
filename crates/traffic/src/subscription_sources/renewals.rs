@@ -2,10 +2,14 @@
 //! ledger (ADR 0097). The values come from `subscription-userinfo` and are
 //! shown for reference only; the ledger never prices or renews a source.
 use crate::{AppState, error::ApiResult};
+use serde::Serialize;
 use sqlx::Row;
 
-/// Provider-reported expiry of one subscription source and where it is managed.
+/// Provider-reported expiry of one subscription source and where it is managed, listed in
+/// the costs ledger for reference only.
+#[derive(Clone, Serialize)]
 pub struct RenewalReference {
+    /// Kind of reference, stable for clients (`proxy_source`).
     pub kind: &'static str,
     pub id: i64,
     pub name: String,
@@ -13,7 +17,10 @@ pub struct RenewalReference {
     pub used_bytes: Option<i64>,
     pub total_bytes: Option<i64>,
     pub reported_at: Option<i64>,
+    /// Hash path of the page that manages the referenced object.
     pub path: String,
+    /// Capability the caller needs before the reference is shown.
+    #[serde(skip)]
     pub capability: &'static str,
 }
 

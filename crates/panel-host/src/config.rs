@@ -37,7 +37,7 @@ fn validate_public_url(value: &str) -> anyhow::Result<String> {
         || uri.query().is_some()
         || uri.path() != "/"
         || value.contains(['@', '"', '\\', '#'])
-        || value.chars().any(char::is_control)
+        || crate::text::has_control(value)
     {
         bail!("APSP_PUBLIC_URL must be an HTTP(S) origin without credentials or path");
     }

@@ -37,8 +37,14 @@ fn failure(entry: &QualityDatabase) -> Option<QueryFailure> {
 pub(super) async fn begin_refresh(pool: &PgPool, id: i64, now: i64) -> ApiResult<Vec<String>> {
     let mut tx = pool.begin().await?;
     // Both admission checks run after taking the same durable server lock.
-    let row = sqlx::query("SELECT static_info,quality_refresh_started FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
-        .bind(id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
+    let row = crate::servers::lock_row(
+        &mut tx,
+        id,
+        crate::servers::RowLock::Update,
+        "static_info,quality_refresh_started",
+    )
+    .await?
+    .ok_or(ApiError::NotFound)?;
     let ips = reported_ips(&row.get::<Value, _>("static_info"));
     if ips.is_empty() {
         return Err(ApiError::Conflict(
@@ -95,14 +101,7 @@ async fn persist_checked(
 ) -> ApiResult<()> {
     let mut tx = pool.begin().await?;
     // Serialize result writes with admission and deletion, including stale replies.
-    let exists =
-        sqlx::query("SELECT id FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?;
-    if exists.is_none() {
-        return Err(ApiError::NotFound);
-    }
+    crate::servers::lock(&mut tx, id).await?;
     let generation = if let Some(identity) = identity {
         // Do not take the job lock: section uploads take it before committing,
         // while admission takes the server lock before locking jobs.

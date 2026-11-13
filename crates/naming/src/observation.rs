@@ -77,10 +77,15 @@ impl Observation {
     }
 }
 
-const OBSERVATION: &str = "SELECT name,static_info,static_info_received_at,last_seen,deleted_at,EXISTS(SELECT 1 FROM server_retirements WHERE server_id=servers.id) AS retiring FROM servers WHERE id=$1";
+fn observation_sql() -> String {
+    format!(
+        "SELECT name,static_info,static_info_received_at,last_seen,deleted_at,{} AS retiring FROM servers WHERE id=$1",
+        crate::retirement::retiring_sql("servers.id")
+    )
+}
 
 pub(super) async fn observation(pool: &PgPool, server_id: i64) -> ApiResult<Observation> {
-    sqlx::query_as(OBSERVATION)
+    sqlx::query_as(&observation_sql())
         .bind(server_id)
         .fetch_optional(pool)
         .await?
@@ -94,12 +99,10 @@ pub(super) async fn locked_observation(
     // Acquire the lifecycle lock in its own statement. If retirement commits
     // while this waits, its inserted row must be read using the next statement's
     // fresh READ COMMITTED snapshot, not a snapshot captured before the wait.
-    sqlx::query_scalar::<_, i64>("SELECT id FROM servers WHERE id=$1 FOR SHARE")
-        .bind(server_id)
-        .fetch_optional(&mut **tx)
+    crate::servers::lock_row(tx, server_id, crate::servers::RowLock::ShareRecord, "id")
         .await?
         .ok_or(ApiError::NotFound)?;
-    sqlx::query_as(OBSERVATION)
+    sqlx::query_as(&observation_sql())
         .bind(server_id)
         .fetch_optional(&mut **tx)
         .await?

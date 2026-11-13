@@ -44,7 +44,7 @@ pub(crate) use apsp_networking::network_configuration::{documents, models};
 #[cfg(test)]
 pub(crate) use apsp_panel_host::config;
 pub(crate) use apsp_panel_host::{AppState, device_work, error, net, x509};
-pub(crate) use apsp_resources::device_channel;
+pub(crate) use apsp_resources::{device_channel, retirement, servers};
 
 /// The certificate worker: issues and renews the certificates whose documents ask for it.
 pub async fn run_certificates(state: AppState) {

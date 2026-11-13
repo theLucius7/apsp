@@ -24,7 +24,9 @@ pub(crate) use apsp_observability::{incidents, server_monitoring};
 pub(crate) use apsp_panel_host::{AppState, digest, error, evidence, text};
 #[cfg(test)]
 pub(crate) use apsp_panel_host::{config, settings};
-pub(crate) use apsp_resources::{cloud_resources, device_channel, server_assets};
+pub(crate) use apsp_resources::{
+    cloud_resources, device_channel, server_assets, server_lifecycle, servers,
+};
 use axum::{
     Router,
     routing::{get, post},

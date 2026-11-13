@@ -1,9 +1,11 @@
-use super::receipts::bounded_text;
-use crate::ip_quality::{QualityField, QualityFieldKind};
+use crate::{
+    ip_quality::{QualityField, QualityFieldKind},
+    text::Text,
+};
 use serde_json::Value;
 
 fn meaningful(text: &str) -> bool {
-    bounded_text(text, 512)
+    Text::bytes(512).not_blank().accepts(text)
         && !matches!(
             text.trim().to_ascii_lowercase().as_str(),
             "null" | "unknown" | "undefined" | "n/a" | "nan" | "none" | "-" | "未知"

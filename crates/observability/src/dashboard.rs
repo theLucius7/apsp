@@ -82,8 +82,13 @@ async fn allowed_for(
         Err(error) => return Err(error),
     };
     if let Some(id) = id {
-        let visible: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM servers WHERE id=$1 AND deleted_at IS NULL AND COALESCE(asset_settings->>'hidden','false')<>'true')")
-            .bind(id).fetch_one(&state.pool).await?;
+        let visible: bool = sqlx::query_scalar(&format!(
+            "SELECT EXISTS(SELECT 1 FROM servers WHERE id=$1 AND deleted_at IS NULL AND NOT {})",
+            crate::server_assets::sql::hidden("servers")
+        ))
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
         if !visible {
             return Err(ApiError::NotFound);
         }
@@ -246,7 +251,8 @@ fn server_view(server: Server, admin: bool) -> ApiResult<Value> {
 
 async fn read_servers(state: &AppState, id: Option<i64>) -> ApiResult<Vec<Server>> {
     let query = format!(
-        "SELECT {SERVER_COLUMNS} FROM servers WHERE deleted_at IS NULL AND COALESCE(asset_settings->>'hidden','false')<>'true' AND ($1::bigint IS NULL OR id=$1) ORDER BY id"
+        "SELECT {SERVER_COLUMNS} FROM servers WHERE deleted_at IS NULL AND NOT {} AND ($1::bigint IS NULL OR id=$1) ORDER BY id",
+        crate::server_assets::sql::hidden("servers")
     );
     let mut servers: Vec<_> = sqlx::query_as::<_, Server>(&query)
         .bind(id)

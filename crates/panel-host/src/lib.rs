@@ -4,6 +4,7 @@
 //! application assembles their routes and connects the typed interfaces of [`ports`].
 
 pub mod config;
+pub mod cookies;
 pub mod device_work;
 pub mod digest;
 pub mod error;
@@ -12,13 +13,16 @@ pub mod frontend;
 pub mod http;
 pub mod locks;
 pub mod maintenance;
+pub mod money;
 pub mod net;
 pub mod notifications;
+pub mod passwords;
 pub mod ports;
 pub mod schema;
 pub mod settings;
 mod shell;
 pub mod text;
+pub mod time;
 pub mod tokens;
 pub mod x509;
 

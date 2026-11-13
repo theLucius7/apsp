@@ -1,11 +1,9 @@
+use apsp_panel_host::time::iso8601;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
-use std::{
-    collections::BTreeMap,
-    time::{Duration, UNIX_EPOCH},
-};
+use std::collections::BTreeMap;
 
 pub fn encode(value: &str) -> String {
     let mut result = String::new();
@@ -42,21 +40,6 @@ pub fn huawei_query(url: &reqwest::Url) -> String {
         .join("&")
 }
 
-pub fn iso_time(timestamp: i64) -> String {
-    let date = httpdate::fmt_http_date(
-        UNIX_EPOCH + Duration::from_secs(timestamp.clamp(0, 253402300799) as u64),
-    );
-    let parts: Vec<_> = date.split_whitespace().collect();
-    let month = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ]
-    .iter()
-    .position(|v| *v == parts[2])
-    .expect("HTTP month")
-        + 1;
-    format!("{}-{month:02}-{}T{}Z", parts[3], parts[1], parts[4])
-}
-
 pub fn hash(bytes: impl AsRef<[u8]>) -> String {
     format!("{:x}", Sha256::digest(bytes.as_ref()))
 }
@@ -87,7 +70,7 @@ pub fn tencent(
     body: &str,
     timestamp: i64,
 ) -> String {
-    let date = iso_time(timestamp);
+    let date = iso8601(timestamp);
     let scope = format!("{}/dnspod/tc3_request", &date[..10]);
     let headers = "content-type;host;x-tc-action";
     let canonical = format!(

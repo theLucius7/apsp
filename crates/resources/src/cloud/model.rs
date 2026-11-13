@@ -128,12 +128,11 @@ pub struct Operation {
 }
 
 pub fn label(value: &str) -> ApiResult<String> {
-    let value = value.trim();
-    if value.is_empty() || value.chars().count() > 128 || value.chars().any(char::is_control) {
-        Err(ApiError::BadRequest("名称须为 1–128 个字符".into()))
-    } else {
-        Ok(value.into())
-    }
+    crate::text::Text::chars(128)
+        .not_empty()
+        .trimmed(value)
+        .map(str::to_owned)
+        .ok_or_else(|| ApiError::BadRequest("名称须为 1–128 个字符".into()))
 }
 
 pub fn identifier(value: &str, prefix: &str) -> bool {

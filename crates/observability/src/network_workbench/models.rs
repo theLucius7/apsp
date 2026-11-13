@@ -560,7 +560,7 @@ impl Check {
             )));
         }
         if let Some((_, version)) = self.tool()
-            && (version.is_empty() || version.len() > 128 || version.chars().any(char::is_control))
+            && !crate::text::Text::bytes(128).not_empty().accepts(version)
         {
             return Err(ApiError::BadRequest("必须选择明确的工具版本".into()));
         }

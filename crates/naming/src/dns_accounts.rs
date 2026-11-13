@@ -120,9 +120,9 @@ async fn normalize_scope(
     config: &mut Config,
 ) -> ApiResult<()> {
     config.name = config.name.trim().into();
-    if config.name.is_empty()
-        || config.name.len() > 128
-        || config.name.chars().any(char::is_control)
+    if !apsp_panel_host::text::Text::bytes(128)
+        .not_empty()
+        .accepts(&config.name)
         || config.zone_ids.is_empty()
         || config.zone_ids.len() > 32
         || config.server_ids.len() > 32

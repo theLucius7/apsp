@@ -390,7 +390,9 @@ pub(super) fn hostname(value: &str, wildcard: bool) -> ApiResult<String> {
 
 fn text(value: &mut String, max: usize, required: bool) -> ApiResult<()> {
     *value = value.trim().into();
-    if value.len() > max || value.chars().any(char::is_control) || (required && value.is_empty()) {
+    let rule = apsp_panel_host::text::Text::bytes(max);
+    let rule = if required { rule.not_empty() } else { rule };
+    if !rule.accepts(value) {
         return invalid("文本字段为空、过长或包含控制字符");
     }
     Ok(())

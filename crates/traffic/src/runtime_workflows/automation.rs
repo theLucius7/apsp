@@ -89,7 +89,7 @@ pub async fn automation_candidate(
     tx: &mut Transaction<'_, Postgres>,
     server: i64,
 ) -> ApiResult<Value> {
-    crate::business::lock_server(tx, server).await?;
+    crate::servers::lock(tx, server).await?;
     crate::settings::require_enabled(tx, server).await?;
     let row = sqlx::query("SELECT s.static_info,s.capabilities,s.last_seen,s.dirty_at,m.target_rev,m.last_result_rev,m.last_error,m.healthy,m.updated_at,d.bundle,d.bundle_sha256,(SELECT MAX(rev) FROM deployments WHERE server_id=$1 AND module='singbox') AS latest_rev FROM servers s JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' JOIN deployments d ON d.server_id=s.id AND d.module=m.module AND d.rev=m.target_rev WHERE s.id=$1 FOR UPDATE OF m")
         .bind(server).fetch_optional(&mut **tx).await?.ok_or_else(|| conflict("尚无已发布且失败的 sing-box 部署"))?;
@@ -168,14 +168,14 @@ pub async fn enqueue_automation_deployment_tx(
     for capability in ["operations:write", "proxy:write"] {
         control_center::require_actor_server(state, actor, server, capability).await?;
     }
-    crate::business::lock_server(tx, server).await?;
+    crate::servers::lock(tx, server).await?;
     let now = now_timestamp();
     let owned: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM operations_server_locks l JOIN operations_jobs j ON j.id=l.job_id WHERE l.server_id=$1 AND l.job_id=$2 AND j.requested_by=$3 AND j.status IN ('queued','running') AND j.cancel_requested_at IS NULL AND j.expires_at>$4 AND $1=ANY(j.targets))")
         .bind(server).bind(job).bind(actor).bind(now).fetch_one(&mut **tx).await?;
     if !owned {
         return Err(conflict("自动化任务未持有此服务器的有效互斥锁"));
     }
-    let blocked: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) OR EXISTS(SELECT 1 FROM fleet_profiles WHERE server_id=$1 AND (lifecycle IN ('draining','retired') OR (lifecycle='maintenance' AND COALESCE(maintenance_from,0)<=$2 AND (maintenance_until IS NULL OR maintenance_until>$2)))) OR EXISTS(SELECT 1 FROM operations_maintenance WHERE $1=ANY(targets) AND block_new_tasks AND starts_at<=$2 AND ends_at>$2) OR EXISTS(SELECT 1 FROM remote_commands WHERE server_id=$1 AND state IN ('queued','claimed','running','cancel_requested')) OR EXISTS(SELECT 1 FROM fleet_operations WHERE server_id=$1 AND reconciled_at IS NULL AND status IN ('queued','dispatched','unknown')) OR EXISTS(SELECT 1 FROM diagnostic_jobs WHERE server_id=$1 AND (status IN ('queued','running','cleaning','cancel_requested') OR (NOT agent_completed AND job ? 'id'))) OR EXISTS(SELECT 1 FROM runtime_operations WHERE server_id=$1 AND result IS NULL AND cancelled_at IS NULL AND reconciled_at IS NULL)")
+    let blocked: bool = sqlx::query_scalar(&format!("SELECT {} OR EXISTS(SELECT 1 FROM operations_maintenance WHERE $1=ANY(targets) AND block_new_tasks AND starts_at<=$2 AND ends_at>$2) OR EXISTS(SELECT 1 FROM remote_commands WHERE server_id=$1 AND state IN ('queued','claimed','running','cancel_requested')) OR EXISTS(SELECT 1 FROM fleet_operations WHERE server_id=$1 AND reconciled_at IS NULL AND status IN ('queued','dispatched','unknown')) OR EXISTS(SELECT 1 FROM diagnostic_jobs WHERE server_id=$1 AND (status IN ('queued','running','cleaning','cancel_requested') OR (NOT agent_completed AND job ? 'id'))) OR EXISTS(SELECT 1 FROM runtime_operations WHERE server_id=$1 AND result IS NULL AND cancelled_at IS NULL AND reconciled_at IS NULL)", crate::server_lifecycle::blocks_work_sql("$1", "$2")))
         .bind(server).bind(now).fetch_one(&mut **tx).await?;
     if blocked {
         return Err(conflict("服务器维护、退役或已有未核对操作，不能重试部署"));
@@ -318,7 +318,7 @@ pub async fn automation_deployment_receipt(
         .fetch_optional(&mut **tx)
         .await?
         .ok_or(ApiError::NotFound)?;
-    crate::business::lock_server(tx, server).await?;
+    crate::servers::lock(tx, server).await?;
     let row = sqlx::query("SELECT spec,result,dispatched_at,cancelled_at,automation_job_id,reconciled_at,reconciliation FROM runtime_operations WHERE id=$1 FOR UPDATE").bind(request_id).fetch_one(&mut **tx).await?;
     let job: Uuid = row
         .get::<Option<Uuid>, _>("automation_job_id")

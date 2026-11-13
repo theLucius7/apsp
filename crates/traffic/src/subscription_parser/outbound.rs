@@ -32,9 +32,10 @@ pub(super) fn dependency() -> ParseReason {
 }
 
 pub(super) fn host(value: &str) -> Option<String> {
-    if value.is_empty()
-        || value.len() > 253
-        || value.chars().any(|c| c.is_whitespace() || c.is_control())
+    if !apsp_panel_host::text::Text::bytes(253)
+        .not_empty()
+        .accepts(value)
+        || value.contains(char::is_whitespace)
         || value.contains(['/', '?', '#', '@', '%', '\\'])
     {
         return None;
@@ -285,7 +286,9 @@ fn tls(value: Option<&Value>) -> Result<Option<Tls>, ParseReason> {
         .transpose()?;
     let alpn = strings(value, "alpn")?;
     if alpn.iter().any(|protocol| {
-        protocol.is_empty() || protocol.len() > 255 || protocol.chars().any(char::is_control)
+        !apsp_panel_host::text::Text::bytes(255)
+            .not_empty()
+            .accepts(protocol)
     }) {
         return Err(invalid());
     }

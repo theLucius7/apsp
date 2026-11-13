@@ -39,7 +39,7 @@ pub async fn pending(
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<RuntimeValidationRequest>>> {
     let server = crate::device_channel::require_agent(&state, &headers).await?;
-    let rows = sqlx::query("SELECT id,module,scope,generation,operation,revision,config_hash,expires_at FROM runtime_validations WHERE server_id=$1 AND result IS NULL AND expires_at>$2 AND NOT EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) ORDER BY requested_at,id LIMIT 16").bind(server).bind(now_timestamp()).fetch_all(&state.pool).await?;
+    let rows = sqlx::query(&format!("SELECT id,module,scope,generation,operation,revision,config_hash,expires_at FROM runtime_validations WHERE server_id=$1 AND result IS NULL AND expires_at>$2 AND NOT {} ORDER BY requested_at,id LIMIT 16", crate::retirement::retiring_sql("$1"))).bind(server).bind(now_timestamp()).fetch_all(&state.pool).await?;
     Ok(Json(
         rows.iter().map(request).collect::<ApiResult<Vec<_>>>()?,
     ))

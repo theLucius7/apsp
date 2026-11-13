@@ -1,5 +1,6 @@
 mod access;
 mod administrators;
+pub mod audit;
 pub mod credentials;
 mod events;
 pub mod guard;

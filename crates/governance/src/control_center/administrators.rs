@@ -4,20 +4,15 @@ use super::{
 };
 use crate::{
     AppState,
-    auth::{hash_token, random_token},
+    auth::{hash_password, hash_token, random_token},
     error::{ApiError, ApiResult},
 };
 use apsp_protocol::now_timestamp;
-use argon2::{
-    Argon2,
-    password_hash::{PasswordHasher, SaltString},
-};
 use axum::{
     Json,
     extract::{Path, State},
     http::HeaderMap,
 };
-use rand::{RngCore, rngs::OsRng};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::Row;
@@ -86,18 +81,7 @@ async fn password_hash(password: String) -> ApiResult<String> {
     if password.len() < 12 || password.len() > 1024 {
         return Err(ApiError::BadRequest("管理员密码须为12至1024字节".into()));
     }
-    tokio::task::spawn_blocking(move || {
-        let mut salt = [0; 16];
-        OsRng.fill_bytes(&mut salt);
-        let salt = SaltString::encode_b64(&salt).map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        Argon2::default()
-            .hash_password(password.as_bytes(), &salt)
-            .map(|hash| hash.to_string())
-            .map_err(|e| anyhow::anyhow!(e.to_string()))
-    })
-    .await
-    .map_err(anyhow::Error::from)?
-    .map_err(ApiError::Internal)
+    hash_password(password).await.map_err(ApiError::Internal)
 }
 pub async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     require_owner(&state, &headers).await?;

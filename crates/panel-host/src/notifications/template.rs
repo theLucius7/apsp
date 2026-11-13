@@ -1,11 +1,10 @@
+use crate::text::Text;
+
 const KEYS: [&str; 5] = ["title", "server", "message", "time", "event"];
 
 pub fn valid(template: &str) -> bool {
-    if template.trim().is_empty()
+    if !Text::unbounded().not_blank().multiline().accepts(template)
         || template.encode_utf16().count() > 4000
-        || template
-            .chars()
-            .any(|c| c.is_control() && !matches!(c, '\n' | '\t'))
     {
         return false;
     }

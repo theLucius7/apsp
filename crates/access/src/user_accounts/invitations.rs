@@ -7,7 +7,6 @@ use axum::{
     Json,
     extract::{Path, State},
 };
-use rand::Rng;
 
 const ALPHABET: &[u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const CODE_LENGTH: usize = 16;
@@ -15,10 +14,7 @@ const MAX_QUOTA: i32 = 100_000;
 
 /// A new code: 16 characters of Crockford base32 (80 bits), shown in groups of four.
 fn new_code() -> String {
-    let mut rng = rand::thread_rng();
-    (0..CODE_LENGTH)
-        .map(|_| char::from(ALPHABET[rng.gen_range(0..ALPHABET.len())]))
-        .collect()
+    apsp_panel_host::tokens::code(ALPHABET, CODE_LENGTH)
 }
 fn display(code: &str) -> String {
     code.as_bytes()

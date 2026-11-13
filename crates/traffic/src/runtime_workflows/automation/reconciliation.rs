@@ -18,7 +18,7 @@ async fn unknown_binding(
         .fetch_optional(&mut **tx)
         .await?
         .ok_or(ApiError::NotFound)?;
-    crate::business::lock_server(tx, server).await?;
+    crate::servers::lock(tx, server).await?;
     let row = sqlx::query("SELECT automation_job_id,spec,result,dispatched_at,reconciled_at FROM runtime_operations WHERE id=$1 FOR UPDATE").bind(original).fetch_one(&mut **tx).await?;
     let job: Uuid = row
         .get::<Option<Uuid>, _>("automation_job_id")
@@ -110,11 +110,10 @@ pub async fn reconcile_automation_deployment_tx(
     checkpoint: Uuid,
     evidence: &str,
 ) -> ApiResult<Value> {
-    if evidence.trim().is_empty()
-        || evidence.len() > 4096
-        || evidence
-            .chars()
-            .any(|value| value.is_control() && !matches!(value, '\n' | '\t'))
+    if !apsp_panel_host::text::Text::bytes(4096)
+        .not_blank()
+        .multiline()
+        .accepts(evidence)
     {
         return Err(ApiError::BadRequest(
             "人工核对说明须为 1–4096 字节的普通文字".into(),

@@ -181,7 +181,11 @@ pub(super) async fn change(
         .await?;
     value["RequestId"]
         .as_str()
-        .filter(|id| !id.is_empty() && id.len() <= 256 && !id.chars().any(char::is_control))
+        .filter(|id| {
+            apsp_panel_host::text::Text::bytes(256)
+                .not_empty()
+                .accepts(id)
+        })
         .map(str::to_owned)
         .ok_or(Failure::from("invalid_response"))
 }

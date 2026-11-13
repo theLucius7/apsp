@@ -24,7 +24,6 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use rand::RngCore;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -72,12 +71,7 @@ async fn domain(pool: &PgPool) -> ApiResult<Option<Domain>> {
 fn random_slug() -> String {
     // Lowercase base32: 80 random bits that stay valid in a hostname.
     const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz234567";
-    let mut bytes = [0_u8; SLUG_LENGTH];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
-    bytes
-        .iter()
-        .map(|byte| ALPHABET[usize::from(byte & 31)] as char)
-        .collect()
+    apsp_panel_host::tokens::code(ALPHABET, SLUG_LENGTH)
 }
 
 fn host_name(domain: &Domain, slug: &str) -> String {

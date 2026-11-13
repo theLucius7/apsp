@@ -70,6 +70,6 @@ pub(super) async fn finish(
     let proof = proof::record_recent(&mut tx, &session).await?;
     tx.commit().await?;
     let mut response = keys::reply(proof);
-    keys::set_cookie(&state, &mut response, ADMIN_REAUTH_BINDING, "", 0)?;
+    apsp_panel_host::cookies::set(&state, &mut response, ADMIN_REAUTH_BINDING, "", 0)?;
     Ok(response)
 }

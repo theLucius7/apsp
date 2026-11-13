@@ -434,10 +434,9 @@ async fn lock_uncertain_operation(
             "须选择此作业的确切未知日常操作；部署和备份使用各自证据核对流程".into(),
         ));
     }
-    sqlx::query("SELECT id FROM servers WHERE id=$1 FOR UPDATE")
-        .bind(server)
-        .fetch_one(&mut **tx)
-        .await?;
+    crate::servers::lock_row(tx, server, crate::servers::RowLock::UpdateRecord, "id")
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)?;
     Ok(())
 }
 

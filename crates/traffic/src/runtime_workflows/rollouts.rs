@@ -56,7 +56,7 @@ pub(crate) async fn create_rollout(
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
     for server in &targets {
-        crate::business::lock_server(&mut tx, *server).await?;
+        crate::servers::lock(&mut tx, *server).await?;
         crate::settings::require_enabled(&mut tx, *server).await?;
     }
     let earlier:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM singbox_runtime_rollouts WHERE targets&&$1::bigint[] AND completed_at IS NULL").bind(&targets).fetch_all(&mut *tx).await?;
@@ -156,9 +156,15 @@ async fn dispatch(
     }
     for server in &targets[start..end] {
         super::preflight::require_confirmed_tx(state, headers, *server, tx).await?;
-        crate::business::lock_server(tx, *server).await?;
+        crate::servers::lock(tx, *server).await?;
         crate::settings::require_enabled(tx, *server).await?;
-        let status=sqlx::query("SELECT static_info,capabilities,last_seen,EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) AS retiring FROM servers WHERE id=$1").bind(server).fetch_one(&mut **tx).await?;
+        let status = sqlx::query(&format!(
+            "SELECT static_info,capabilities,last_seen,{} AS retiring FROM servers WHERE id=$1",
+            crate::retirement::retiring_sql("$1")
+        ))
+        .bind(server)
+        .fetch_one(&mut **tx)
+        .await?;
         let caps: Value = status.get("capabilities");
         if status.get::<bool, _>("retiring")
             || !status
@@ -326,7 +332,7 @@ pub(crate) async fn inspect_member(
     let administrator =
         crate::control_center::require_server(&state, &headers, server, "proxy:write").await?;
     let mut tx = state.pool.begin().await?;
-    crate::business::lock_server(&mut tx, server).await?;
+    crate::servers::lock(&mut tx, server).await?;
     crate::device_work::ensure_accepts_tasks_tx(&mut tx, server).await?;
     let member:Option<i64>=sqlx::query_scalar("SELECT server_id FROM singbox_runtime_rollout_members WHERE rollout_id=$1 AND server_id=$2 FOR UPDATE").bind(id).bind(server).fetch_optional(&mut *tx).await?;
     member.ok_or(ApiError::NotFound)?;
@@ -336,7 +342,13 @@ pub(crate) async fn inspect_member(
             "设备仍有运维操作，等待原请求确认后再读取".into(),
         ));
     }
-    let row=sqlx::query("SELECT capabilities,last_seen,EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) AS retiring FROM servers WHERE id=$1").bind(server).fetch_one(&mut *tx).await?;
+    let row = sqlx::query(&format!(
+        "SELECT capabilities,last_seen,{} AS retiring FROM servers WHERE id=$1",
+        crate::retirement::retiring_sql("$1")
+    ))
+    .bind(server)
+    .fetch_one(&mut *tx)
+    .await?;
     let caps: Value = row.get("capabilities");
     if row.get::<bool, _>("retiring")
         || !row

@@ -1,5 +1,5 @@
 use super::*;
-use crate::notifications::{lock_settings, webhook};
+use crate::{notifications::webhook, settings};
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -124,7 +124,7 @@ async fn outbox_retries_in_order_and_concurrent_workers_do_not_duplicate(
             .await?;
     let event: i64 = sqlx::query_scalar("INSERT INTO server_alert_events(server_id,server_name,last_seen,opened_at,resolved_at,resolution) VALUES($1,'outbox fixture',0,1,2,'recovered') RETURNING id").bind(id).fetch_one(&pool).await?;
     let mut tx = pool.begin().await?;
-    let settings = lock_settings(&mut tx).await?;
+    let settings = settings::lock(&mut tx).await?;
     enqueue(&mut tx, &settings, event, "offline", 100).await?;
     enqueue(&mut tx, &settings, event, "recovery", 100).await?;
     tx.commit().await?;

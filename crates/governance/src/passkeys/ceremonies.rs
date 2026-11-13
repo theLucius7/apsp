@@ -1,9 +1,10 @@
-use super::{TTL, cookie, credentials, decode, invalid, json_value, lock, reply, set_cookie};
+use super::{TTL, credentials, decode, invalid, json_value, lock, reply};
 use crate::{
     AppState,
     auth::{hash_token, random_token},
     error::{ApiError, ApiResult},
 };
+use apsp_panel_host::cookies;
 use apsp_protocol::now_timestamp;
 use axum::{http::HeaderMap, response::Response};
 use serde::{Deserialize, Serialize};
@@ -85,7 +86,7 @@ async fn save(
         .bind(id).bind(pending.account).bind(pending.generation).bind(pending.purpose)
         .bind(hash_token(&token)).bind(pending.authorization).bind(pending.state).bind(now+TTL).execute(&mut **tx).await?;
     let mut response = reply(json!({"challenge_id":id,"options":options}));
-    set_cookie(state, &mut response, binding, &token, TTL)?;
+    cookies::set(state, &mut response, binding, &token, TTL)?;
     Ok(response)
 }
 
@@ -107,10 +108,10 @@ pub async fn start_registration(
     holder: Holder<'_>,
 ) -> ApiResult<Response> {
     let name = name.trim();
-    if name.is_empty()
-        || name.chars().count() > 64
+    if !apsp_panel_host::text::Text::chars(64)
+        .not_empty()
+        .accepts(name)
         || name.len() > 256
-        || name.chars().any(char::is_control)
     {
         return Err(ApiError::BadRequest(
             "请填写 1 至 64 个字符的 Passkey 名称。".into(),
@@ -213,7 +214,7 @@ pub async fn consume<T: serde::de::DeserializeOwned>(
     purpose: &str,
     binding: &str,
 ) -> ApiResult<Ceremony<T>> {
-    let token = cookie(headers, binding).ok_or_else(invalid)?;
+    let token = cookies::read(headers, binding).ok_or_else(invalid)?;
     // Consume before cryptographic verification; even rejected attempts cannot be replayed.
     let row = sqlx::query("DELETE FROM passkey_ceremonies WHERE id=$1 AND account_id=$2 AND purpose=$3 AND binding_hash=$4 AND expires_at>$5 RETURNING generation,authorization_binding,state,expires_at")
         .bind(id).bind(account).bind(purpose).bind(hash_token(token)).bind(now_timestamp()).fetch_optional(&state.pool).await?.ok_or_else(invalid)?;

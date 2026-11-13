@@ -93,8 +93,8 @@ async fn targets(connection: &mut sqlx::PgConnection, server: i64) -> ApiResult<
             })?;
             if id != spec.id
                 || !spec.valid()
-                || spec.name.chars().any(char::is_control)
-                || spec.carrier.chars().any(char::is_control)
+                || crate::text::has_control(&spec.name)
+                || crate::text::has_control(&spec.carrier)
                 || !valid_target(&spec.target)
                 || spec.kind != ProbeKind::Tcp
                 || !spec.enabled
@@ -260,11 +260,7 @@ pub async fn set_region(
         return Err(ApiError::BadRequest("目标地区不在允许的预设中".into()));
     }
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT id FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
-        .bind(server)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    crate::servers::lock(&mut tx, server).await?;
     let belongs: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM network_probes WHERE id=$1 AND server_id=$2 AND spec->>'kind'='tcp' AND spec->>'enabled'='true')")
         .bind(probe).bind(server).fetch_one(&mut *tx).await?;
     if !belongs {

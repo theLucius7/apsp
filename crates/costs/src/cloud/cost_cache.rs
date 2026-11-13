@@ -18,7 +18,7 @@ mod tests;
 fn currency(value: &Value) -> Result<String, Failure> {
     value
         .as_str()
-        .filter(|s| s.len() == 3 && s.bytes().all(|b| b.is_ascii_uppercase()))
+        .filter(|s| apsp_panel_host::money::currency(s))
         .map(str::to_owned)
         .ok_or("invalid_response".into())
 }

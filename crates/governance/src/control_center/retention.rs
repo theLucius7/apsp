@@ -1,16 +1,16 @@
 //! The record retention policy (系统自检 › 分类保留期限): how many days each kind of
 //! record is kept. Governance keeps the policy and purges its own records here; every
 //! other owner purges its own records in its own background task, with the cutoffs and
-//! the cadence ([`Purges`]) of this module. Each owner purges in one transaction.
+//! the cadence ([`Purges`]) of this module, and reads or mirrors its period through
+//! [`days`] and [`set`]. Each owner purges in one transaction.
 
-use sqlx::PgPool;
+use sqlx::{PgExecutor, PgPool};
 use std::future::Future;
 
 /// Retention periods are whole days, so a purge once an hour is soon enough.
 const PURGE_EVERY: i64 = 3600;
 
-/// A kind of record the policy keeps for a number of days and its owner purges in the
-/// background.
+/// A kind of record the policy keeps for a number of days.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     /// The request audit, independent observer reports and expired API tokens.
@@ -22,9 +22,22 @@ pub enum Kind {
     /// Server events and the contents of configuration history, fixed device operations
     /// and command output.
     Logs,
+    /// The records of proxy access, such as subscription fetches.
+    ProxyAccess,
+    /// Monitoring history; edited in the panel settings, which mirror it here.
+    Monitoring,
 }
 
 impl Kind {
+    const ALL: [Self; 6] = [
+        Self::Audit,
+        Self::Ip,
+        Self::Terminal,
+        Self::Logs,
+        Self::ProxyAccess,
+        Self::Monitoring,
+    ];
+
     /// The kind as the policy stores it.
     fn key(self) -> &'static str {
         match self {
@@ -32,8 +45,45 @@ impl Kind {
             Self::Ip => "ip",
             Self::Terminal => "terminal",
             Self::Logs => "logs",
+            Self::ProxyAccess => "proxy-access",
+            Self::Monitoring => "monitoring",
         }
     }
+
+    /// The kind a stored key names.
+    pub fn parse(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.key() == key)
+    }
+}
+
+/// The days the policy keeps `kind`, if the policy has a row for it.
+pub async fn days<'e>(
+    executor: impl PgExecutor<'e>,
+    kind: Kind,
+) -> Result<Option<i32>, sqlx::Error> {
+    sqlx::query_scalar("SELECT days FROM record_retention_policy WHERE kind=$1")
+        .bind(kind.key())
+        .fetch_optional(executor)
+        .await
+}
+
+/// Sets the days the policy keeps `kind`; false when the policy has no row for it.
+pub async fn set<'e>(
+    executor: impl PgExecutor<'e>,
+    kind: Kind,
+    days: i32,
+    now: i64,
+) -> Result<bool, sqlx::Error> {
+    Ok(
+        sqlx::query("UPDATE record_retention_policy SET days=$2,updated_at=$3 WHERE kind=$1")
+            .bind(kind.key())
+            .bind(days)
+            .bind(now)
+            .execute(executor)
+            .await?
+            .rows_affected()
+            == 1,
+    )
 }
 
 /// The time before which records of `kind` are past their retention period at `now`.

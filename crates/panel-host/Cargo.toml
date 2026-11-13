@@ -20,6 +20,7 @@ sha2.workspace = true
 base64.workspace = true
 reqwest.workspace = true
 tracing.workspace = true
+argon2 = "0.5"
 httpdate = "1.0.3"
 rustls = { version = "0.23", default-features = false }
 tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring", "tls12"] }

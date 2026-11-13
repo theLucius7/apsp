@@ -3,6 +3,7 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_panel_host::text::Text;
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -62,9 +63,7 @@ fn validate(definition: &Definition) -> ApiResult<()> {
     }
     let mut tags = BTreeSet::new();
     for group in &definition.selection_groups {
-        if group.tag.is_empty()
-            || group.tag.len() > 64
-            || group.tag.chars().any(char::is_control)
+        if !Text::bytes(64).not_empty().accepts(&group.tag)
             || !tags.insert(&group.tag)
             || !matches!(group.kind.as_str(), "selector" | "urltest")
             || (group.outbounds.is_empty() && group.filter.is_empty())
@@ -94,12 +93,10 @@ fn validate(definition: &Definition) -> ApiResult<()> {
             || group
                 .outbounds
                 .iter()
-                .any(|tag| tag.len() > 256 || tag.chars().any(char::is_control))
+                .any(|tag| !Text::bytes(256).accepts(tag))
             || group.outbounds.iter().collect::<BTreeSet<_>>().len() != group.outbounds.len()
             || group.default.as_ref().is_some_and(|tag| {
-                tag.is_empty()
-                    || tag.len() > 256
-                    || tag.chars().any(char::is_control)
+                !Text::bytes(256).not_empty().accepts(tag)
                     || (group.filter.is_empty() && !group.outbounds.contains(tag))
             })
         {
@@ -154,18 +151,15 @@ fn validate(definition: &Definition) -> ApiResult<()> {
                 }
                 let tag = server["tag"]
                     .as_str()
-                    .filter(|tag| {
-                        !tag.is_empty() && tag.len() <= 64 && !tag.chars().any(char::is_control)
-                    })
+                    .filter(|tag| Text::bytes(64).not_empty().accepts(tag))
                     .ok_or_else(|| ApiError::BadRequest("DNS 服务器需设置有效标签".into()))?;
                 if !dns_tags.insert(tag) {
                     return Err(ApiError::BadRequest("DNS 服务器标签重复".into()));
                 }
                 if server["type"] != "local"
                     && !server["server"].as_str().is_some_and(|host| {
-                        !host.is_empty()
-                            && host.len() <= 253
-                            && !host.chars().any(|c| c.is_whitespace() || c.is_control())
+                        Text::bytes(253).not_empty().accepts(host)
+                            && !host.contains(char::is_whitespace)
                     })
                 {
                     return Err(ApiError::BadRequest("DNS 服务器地址无效".into()));

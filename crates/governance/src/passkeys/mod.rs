@@ -174,45 +174,6 @@ pub(crate) async fn password_permit(
     Ok(permit)
 }
 
-pub fn cookie<'a>(headers: &'a HeaderMap, wanted: &str) -> Option<&'a str> {
-    let mut token = None;
-    for header in headers.get_all(header::COOKIE) {
-        for item in header.to_str().ok()?.split(';') {
-            if let Some((name, value)) = item.trim().split_once('=')
-                && name == wanted
-            {
-                if token.is_some() || value.is_empty() || value.len() > 512 {
-                    return None;
-                }
-                token = Some(value);
-            }
-        }
-    }
-    token
-}
-
-pub fn set_cookie(
-    state: &AppState,
-    response: &mut Response,
-    name: &str,
-    value: &str,
-    ttl: i64,
-) -> ApiResult<()> {
-    let secure = if state.config.public_url.starts_with("https://") {
-        "; Secure"
-    } else {
-        ""
-    };
-    response.headers_mut().append(
-        header::SET_COOKIE,
-        HeaderValue::from_str(&format!(
-            "{name}={value}; Path=/; HttpOnly; SameSite=Strict; Max-Age={ttl}{secure}"
-        ))
-        .map_err(|e| ApiError::Internal(e.into()))?,
-    );
-    Ok(())
-}
-
 pub fn reply(value: Value) -> Response {
     let mut response = Json(value).into_response();
     response
@@ -280,25 +241,5 @@ mod tests {
             assert!(Service::new(origin).engine().is_err());
         }
         assert!(Service::new("http://localhost:8080").engine().is_ok());
-    }
-
-    #[test]
-    fn duplicate_binding_cookies_are_rejected() {
-        let mut headers = HeaderMap::new();
-        headers.append(
-            header::COOKIE,
-            HeaderValue::from_static(
-                "apsp_session=TEST_ONLY_ADMIN; apsp_proxy_session=TEST_ONLY_PROXY",
-            ),
-        );
-        assert_eq!(
-            cookie(&headers, "apsp_proxy_session"),
-            Some("TEST_ONLY_PROXY")
-        );
-        headers.append(
-            header::COOKIE,
-            HeaderValue::from_static("apsp_proxy_session=TEST_ONLY_SECOND"),
-        );
-        assert!(cookie(&headers, "apsp_proxy_session").is_none());
     }
 }

@@ -4,7 +4,6 @@ use crate::error::ApiResult;
 use apsp_protocol::{
     RuntimeOperation, RuntimeOperationRequest, RuntimeSessionFilter, now_timestamp,
 };
-use apsp_traffic::business;
 use axum::{
     Json,
     extract::{Path, State},
@@ -78,7 +77,7 @@ pub async fn request(
     let mut tx = state.pool.begin().await?;
     apsp_traffic::business::lock_publication(&mut tx).await?;
     crate::proxy_users::lock_user(&mut tx, id).await?;
-    business::lock_server(&mut tx, host).await?;
+    crate::servers::lock(&mut tx, host).await?;
     crate::device_work::ensure_accepts_tasks_tx(&mut tx, host).await?;
     let row = sqlx::query("SELECT last_seen,capabilities,dirty_at FROM servers WHERE id=$1")
         .bind(host)

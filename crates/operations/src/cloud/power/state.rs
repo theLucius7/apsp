@@ -104,7 +104,11 @@ pub async fn power_control(
 fn field(value: &Value, key: &str) -> Result<String, Failure> {
     value[key]
         .as_str()
-        .filter(|s| !s.is_empty() && s.len() <= 128 && !s.chars().any(char::is_control))
+        .filter(|s| {
+            apsp_panel_host::text::Text::bytes(128)
+                .not_empty()
+                .accepts(s)
+        })
         .map(str::to_owned)
         .ok_or("invalid_response".into())
 }

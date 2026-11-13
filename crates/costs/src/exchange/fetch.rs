@@ -66,37 +66,12 @@ pub(super) fn date_day(value: &str) -> Option<i64> {
         return None;
     }
     let year: i64 = value[..4].parse().ok()?;
-    let month: usize = value[5..7].parse().ok()?;
+    let month: i64 = value[5..7].parse().ok()?;
     let day: i64 = value[8..].parse().ok()?;
-    if !(1970..=9999).contains(&year) || !(1..=12).contains(&month) {
+    if !(1970..=9999).contains(&year) {
         return None;
     }
-    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-    let days = [
-        31,
-        if leap { 29 } else { 28 },
-        31,
-        30,
-        31,
-        30,
-        31,
-        31,
-        30,
-        31,
-        30,
-        31,
-    ];
-    if !(1..=days[month - 1]).contains(&day) {
-        return None;
-    }
-    let prior = year - 1;
-    Some(
-        (year - 1970) * 365 + (prior / 4 - 1969 / 4) - (prior / 100 - 1969 / 100)
-            + (prior / 400 - 1969 / 400)
-            + days[..month - 1].iter().sum::<i64>()
-            + day
-            - 1,
-    )
+    apsp_panel_host::time::day_number(year, month, day)
 }
 
 fn insert(
@@ -108,8 +83,7 @@ fn insert(
 ) -> Result<(), &'static str> {
     let day = date_day(date).ok_or("invalid_response")?;
     let rate = value.as_f64().ok_or("invalid_response")?;
-    if currency.len() != 3
-        || !currency.bytes().all(|b| b.is_ascii_uppercase())
+    if !apsp_panel_host::money::currency(currency)
         || !rate.is_finite()
         || !(1e-12..=1e12).contains(&rate)
         || day > now.div_euclid(DAY)

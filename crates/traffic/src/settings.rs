@@ -205,7 +205,7 @@ pub async fn enable(
 ) -> ApiResult<(StatusCode, Json<RuntimeServer>)> {
     auth::require_admin(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
-    super::business::lock_server(&mut tx, id).await?;
+    crate::servers::lock(&mut tx, id).await?;
     super::runtime_controls::ensure(&mut tx, id).await?;
     sqlx::query("INSERT INTO server_plugins(server_id,plugin,source,enabled_at) VALUES($1,'sing-box','administrator',$2) ON CONFLICT(server_id,plugin) DO UPDATE SET enabled=TRUE,source='administrator'")
         .bind(id).bind(now_timestamp()).execute(&mut *tx).await?;

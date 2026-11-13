@@ -120,11 +120,14 @@ pub(super) async fn save(
 ) -> ApiResult<TelemetryAck> {
     let retention = storage::read_policy(pool).await?.history_retention_days;
     let mut tx = pool.begin().await?;
-    let row = sqlx::query("SELECT asset_settings,latest_metrics,metrics_sampled_at FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
-        .bind(server)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    let row = crate::servers::lock_row(
+        &mut tx,
+        server,
+        crate::servers::RowLock::Update,
+        "asset_settings,latest_metrics,metrics_sampled_at",
+    )
+    .await?
+    .ok_or(ApiError::NotFound)?;
     initialized(&mut tx, server).await?;
     let asset: crate::server_assets::AssetSettings =
         serde_json::from_value(row.get("asset_settings")).map_err(anyhow::Error::from)?;

@@ -98,9 +98,8 @@ async fn save(
     let actor = crate::control_center::require_capability(&state, &headers, "dns:write").await?;
     if !apsp_protocol::release::safe_component(&input.config.tool_version)
         || input.config.tool_version == "latest"
-        || input.config.email.len() > 254
+        || !apsp_panel_host::text::Text::bytes(254).accepts(&input.config.email)
         || !input.config.email.contains('@')
-        || input.config.email.chars().any(char::is_control)
         || !input.config.terms_accepted
         || !input.config.license_accepted
         || !(7..=60).contains(&input.config.renew_before_days)

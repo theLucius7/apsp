@@ -69,12 +69,7 @@ pub(crate) async fn bump_revision(
 
 async fn lock_server(tx: &mut Transaction<'_, Postgres>, server: i64) -> ApiResult<()> {
     crate::latency_tasks::lock(tx).await?;
-    sqlx::query("SELECT id FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
-        .bind(server)
-        .fetch_optional(&mut **tx)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    Ok(())
+    crate::servers::lock(tx, server).await
 }
 
 fn probe_digest(probe: &AuthorizedProbe) -> ApiResult<String> {
@@ -146,7 +141,7 @@ pub(crate) async fn read_overview(
     visible_only: bool,
 ) -> ApiResult<Json<Vec<Overview>>> {
     // One indexed query for all cards; each target has an independent sample budget.
-    let rows: Vec<(i64, serde_json::Value, serde_json::Value)> = sqlx::query_as(
+    let rows: Vec<(i64, serde_json::Value, serde_json::Value)> = sqlx::query_as(&format!(
         "SELECT p.server_id, p.spec, COALESCE(samples.results, '[]'::jsonb)
          FROM network_probes p JOIN servers s ON s.id=p.server_id AND s.deleted_at IS NULL
          LEFT JOIN LATERAL (
@@ -154,8 +149,9 @@ pub(crate) async fn read_overview(
              FROM (SELECT id, sampled_at, result FROM probe_results
                    WHERE server_id=p.server_id AND probe_id=p.id AND sampled_at>$1 AND sampled_at<=$2
                    ORDER BY sampled_at DESC, id DESC LIMIT 20) recent
-         ) samples ON TRUE WHERE (NOT $3 OR COALESCE(s.asset_settings->>'hidden','false')<>'true') ORDER BY p.server_id, p.id",
-    )
+         ) samples ON TRUE WHERE (NOT $3 OR NOT {}) ORDER BY p.server_id, p.id",
+        crate::server_assets::sql::hidden("s")
+    ))
     .bind(now_millis() - 86_400_000)
     .bind(now_millis())
     .bind(visible_only)

@@ -1,4 +1,4 @@
-use apsp_cloud_api::{Failure, aliyun::Aliyun, signing};
+use apsp_cloud_api::{Failure, aliyun::Aliyun};
 use apsp_resources::cloud::{
     client::Cloud,
     model::{Account, Bill, BillRow, Traffic, TrafficRegion},
@@ -7,12 +7,12 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 
 pub fn month(now: i64) -> String {
-    signing::iso_time(now.saturating_add(8 * 3600))[..7].into()
+    apsp_panel_host::time::iso8601(now.saturating_add(8 * 3600))[..7].into()
 }
 
 fn field(value: &Value, key: &str) -> Result<String, Failure> {
     match &value[key] {
-        Value::String(v) if v.len() <= 256 && !v.chars().any(char::is_control) => Ok(v.clone()),
+        Value::String(v) if apsp_panel_host::text::Text::bytes(256).accepts(v) => Ok(v.clone()),
         Value::Number(v) => Ok(v.to_string()),
         Value::Null => Ok(String::new()),
         _ => Err("invalid_response".into()),

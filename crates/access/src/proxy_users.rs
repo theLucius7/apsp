@@ -33,10 +33,7 @@ pub(crate) async fn lock_user_servers(
     user_id: i64,
 ) -> ApiResult<Vec<i64>> {
     let ids: Vec<i64> = sqlx::query_scalar("SELECT DISTINCT n.server_id FROM accesses a JOIN nodes n ON n.id=a.node_id WHERE a.user_id=$1 ORDER BY n.server_id").bind(user_id).fetch_all(&mut **transaction).await?;
-    sqlx::query("SELECT id FROM servers WHERE id=ANY($1) ORDER BY id FOR UPDATE")
-        .bind(&ids)
-        .fetch_all(&mut **transaction)
-        .await?;
+    crate::servers::lock_all(transaction, &ids, crate::servers::RowLock::UpdateRecord).await?;
     Ok(ids)
 }
 

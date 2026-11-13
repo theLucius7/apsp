@@ -133,7 +133,7 @@ pub async fn put(
     }
     let mut tx = state.pool.begin().await?;
     business::lock_publication(&mut tx).await?;
-    business::lock_server(&mut tx, id).await?;
+    crate::servers::lock(&mut tx, id).await?;
     let previous: Option<(Value, i64)> = sqlx::query_as(
         "SELECT definition,revision FROM singbox_server_profiles WHERE server_id=$1 FOR UPDATE",
     )

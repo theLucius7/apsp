@@ -1,5 +1,6 @@
-//! The panel's settings store. Administrators edit it through governance; the
-//! notification channels and alert evaluation read their parts from it.
+//! The panel's settings store (`panel_settings`). Administrators edit it through
+//! governance; the notification channels and every owner that reads a setting go through
+//! [`read`], [`lock`] and [`share`] here, and changes are written with [`store`].
 
 use crate::{
     AppState,
@@ -8,7 +9,7 @@ use crate::{
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sqlx::PgPool;
+use sqlx::{PgExecutor, Postgres, Transaction};
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
@@ -71,11 +72,44 @@ impl Settings {
     }
 }
 
-pub async fn read(pool: &PgPool) -> ApiResult<Settings> {
+/// The current settings.
+pub async fn read<'e>(executor: impl PgExecutor<'e>) -> ApiResult<Settings> {
     let value: Value = sqlx::query_scalar("SELECT settings FROM panel_settings WHERE singleton")
-        .fetch_one(pool)
+        .fetch_one(executor)
         .await?;
     serde_json::from_value(value).map_err(|error| ApiError::Internal(error.into()))
+}
+
+/// The settings, locked for the transaction that changes them or the state that depends on
+/// them.
+pub async fn lock(tx: &mut Transaction<'_, Postgres>) -> anyhow::Result<Settings> {
+    let value: Value =
+        sqlx::query_scalar("SELECT settings FROM panel_settings WHERE singleton FOR UPDATE")
+            .fetch_one(&mut **tx)
+            .await?;
+    Ok(serde_json::from_value(value)?)
+}
+
+/// The settings, held shared for the transaction that sends with them, so that the
+/// credentials cannot change between checking a channel and sending through it.
+pub async fn share(tx: &mut Transaction<'_, Postgres>) -> anyhow::Result<Settings> {
+    let value: Value =
+        sqlx::query_scalar("SELECT settings FROM panel_settings WHERE singleton FOR SHARE")
+            .fetch_one(&mut **tx)
+            .await?;
+    Ok(serde_json::from_value(value)?)
+}
+
+/// Replaces the stored settings; the caller holds them locked ([`lock`]).
+pub async fn store(
+    tx: &mut Transaction<'_, Postgres>,
+    settings: &Settings,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE panel_settings SET settings=$1 WHERE singleton")
+        .bind(json!(settings))
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
 }
 
 /// The settings as administrators see them, without stored secrets.
@@ -106,11 +140,7 @@ pub struct Update {
 /// Validates and stores a partial update, cancelling deliveries it makes stale.
 pub async fn apply(state: &AppState, update: Update) -> ApiResult<Json<Value>> {
     let mut tx = state.pool.begin().await?;
-    let value: Value =
-        sqlx::query_scalar("SELECT settings FROM panel_settings WHERE singleton FOR UPDATE")
-            .fetch_one(&mut *tx)
-            .await?;
-    let old: Settings = serde_json::from_value(value).map_err(anyhow::Error::from)?;
+    let old = lock(&mut tx).await?;
     let settings = Settings {
         public_dashboard: update.public_dashboard.unwrap_or(old.public_dashboard),
         notification_enabled: update
@@ -177,10 +207,7 @@ pub async fn apply(state: &AppState, update: Update) -> ApiResult<Json<Value>> {
             "设置无效：离线阈值需为 2–1440 分钟，到期为 0–365 天，流量阈值为 0 或 50–100%；请检查 Telegram 凭据、话题 ID 和消息模板".into(),
         ));
     }
-    sqlx::query("UPDATE panel_settings SET settings=$1 WHERE singleton")
-        .bind(json!(settings))
-        .execute(&mut *tx)
-        .await?;
+    store(&mut tx, &settings).await?;
     // Do not deliver stale notifications to a newly configured recipient.
     crate::notifications::outbox::settings_changed(&mut tx, &old, &settings).await?;
     if old.telegram_chat_id != settings.telegram_chat_id

@@ -7,13 +7,15 @@ pub(crate) async fn lock_server(
     connection: &mut PgConnection,
     server_id: i64,
 ) -> anyhow::Result<Value> {
-    let capabilities: Option<Value> = sqlx::query_scalar(
-        "SELECT capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",
+    let row = crate::servers::lock_row(
+        connection,
+        server_id,
+        crate::servers::RowLock::Update,
+        "capabilities",
     )
-    .bind(server_id)
-    .fetch_optional(connection)
-    .await?;
-    capabilities.ok_or_else(|| anyhow::anyhow!("unknown or retired device"))
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("unknown or retired device"))?;
+    Ok(row.get("capabilities"))
 }
 
 pub(super) async fn current_binding(

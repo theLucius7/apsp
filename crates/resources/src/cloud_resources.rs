@@ -57,12 +57,7 @@ pub struct Link {
 
 fn money(value: Option<&str>) -> bool {
     value.is_none_or(|value| {
-        let (whole, fraction) = value.split_once('.').unwrap_or((value, ""));
-        !whole.is_empty()
-            && whole.len() <= 18
-            && whole.bytes().all(|v| v.is_ascii_digit())
-            && fraction.len() <= 6
-            && fraction.bytes().all(|v| v.is_ascii_digit())
+        apsp_panel_host::money::decimal(value, 6).is_some_and(|(whole, _)| whole.len() <= 18)
     })
 }
 
@@ -80,7 +75,7 @@ pub async fn link(
         || request
             .currency
             .as_ref()
-            .is_some_and(|s| s.len() != 3 || !s.bytes().all(|v| v.is_ascii_uppercase()))
+            .is_some_and(|s| !apsp_panel_host::money::currency(s))
         || ((request.purchase_amount.is_some() || request.monthly_budget.is_some())
             && request.currency.is_none())
     {
@@ -125,13 +120,9 @@ pub async fn link(
         control_center::require_server(&state, &headers, server, "cloud:write").await?;
     }
     if let Some(server) = request.server_id {
-        sqlx::query_scalar::<_, i64>(
-            "SELECT id FROM servers WHERE id=$1 AND deleted_at IS NULL FOR SHARE",
-        )
-        .bind(server)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+        crate::servers::lock_row(&mut tx, server, crate::servers::RowLock::Share, "id")
+            .await?
+            .ok_or(ApiError::NotFound)?;
     }
     let changing: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM alicloud_security_group_operations WHERE resource_id=$1 AND status IN ('running','unknown'))")
         .bind(id).fetch_one(&mut *tx).await?;

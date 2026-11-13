@@ -1,22 +1,24 @@
 mod reauthentication;
 
 use super::{
-    ADMIN_SESSION_SECONDS, hash_token, proof, random_token, require_admin, security, session_cookie,
+    ADMIN_SESSION_SECONDS, SESSION_COOKIE, hash_token, proof, random_token, require_admin, security,
 };
 use crate::{
     AppState,
+    control_center::audit,
     error::{ApiError, ApiResult},
     passkeys::{
         self as keys, ADMIN, ADMIN_BINDING, Ceremony, FinishAuthentication, FinishRegistration,
         PendingAuthentication, PendingRegistration,
     },
 };
+use apsp_panel_host::cookies;
 use apsp_protocol::now_timestamp;
 use axum::{
     Json, Router,
     body::Bytes,
     extract::{ConnectInfo, DefaultBodyLimit, Path, State},
-    http::{HeaderMap, header},
+    http::HeaderMap,
     response::Response,
     routing::{get, post},
 };
@@ -268,9 +270,21 @@ async fn login_finish(
 ) -> ApiResult<Response> {
     let result = login_finish_inner(state.clone(), peer, headers, input).await;
     if result.is_err()
-        && let Err(error)=sqlx::query("INSERT INTO management_audit(action,object_path,request_diff,result,occurred_at) VALUES('login','/api/login/passkey/finish',$1,$2,$3)")
-            .bind(json!({"factor":"passkey"})).bind(json!({"phase":"authentication-denied","success":false})).bind(now_timestamp()).execute(&state.pool).await {
-            tracing::warn!(%error,"passkey denial audit failed");
+        && let Err(error) = audit::record(
+            &state.pool,
+            audit::Entry {
+                admin_id: None,
+                token_id: None,
+                action: "login",
+                object_path: "/api/login/passkey/finish",
+                request_diff: json!({"factor":"passkey"}),
+                result: json!({"phase":"authentication-denied","success":false}),
+                occurred_at: now_timestamp(),
+            },
+        )
+        .await
+    {
+        tracing::warn!(%error, "passkey denial audit failed");
     }
     result
 }
@@ -315,14 +329,28 @@ async fn login_finish_inner(
         .execute(&mut *tx)
         .await?;
     proof::record_recent(&mut tx, &hash_token(&token)).await?;
-    sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'login','/api/login/passkey/finish',$2,$3,$4)")
-        .bind(admin).bind(json!({"factor":"passkey"})).bind(json!({"phase":"authenticated","success":true})).bind(now).execute(&mut *tx).await?;
+    audit::record(
+        &mut *tx,
+        audit::Entry {
+            admin_id: Some(admin),
+            token_id: None,
+            action: "login",
+            object_path: "/api/login/passkey/finish",
+            request_diff: json!({"factor":"passkey"}),
+            result: json!({"phase":"authenticated","success":true}),
+            occurred_at: now,
+        },
+    )
+    .await?;
     tx.commit().await?;
     let mut response = keys::reply(json!({"id":admin}));
-    response.headers_mut().insert(
-        header::SET_COOKIE,
-        session_cookie(&state, &token, ADMIN_SESSION_SECONDS)?,
-    );
-    keys::set_cookie(&state, &mut response, ADMIN_BINDING, "", 0)?;
+    cookies::set(
+        &state,
+        &mut response,
+        SESSION_COOKIE,
+        &token,
+        ADMIN_SESSION_SECONDS,
+    )?;
+    cookies::set(&state, &mut response, ADMIN_BINDING, "", 0)?;
     Ok(response)
 }

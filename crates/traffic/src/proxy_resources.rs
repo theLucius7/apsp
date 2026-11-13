@@ -505,10 +505,7 @@ pub(super) async fn lock_cleanup_servers(
     servers: &[i64],
 ) -> ApiResult<()> {
     // Retired server identities still protect shared resources during cleanup.
-    sqlx::query("SELECT id FROM servers WHERE id=ANY($1) ORDER BY id FOR UPDATE")
-        .bind(servers)
-        .fetch_all(&mut **tx)
-        .await?;
+    crate::servers::lock_all(tx, servers, crate::servers::RowLock::UpdateRecord).await?;
     Ok(())
 }
 
@@ -567,11 +564,7 @@ fn reference_error(
         .map(|reference| &mut reference.name)
         .chain(chains.iter_mut().map(|reference| &mut reference.name))
     {
-        *name = name
-            .chars()
-            .filter(|value| !value.is_control())
-            .take(128)
-            .collect();
+        *name = apsp_panel_host::text::printable(name, 128);
     }
     let mut names: Vec<String> = policies
         .iter()

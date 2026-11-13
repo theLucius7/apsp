@@ -70,11 +70,8 @@ pub fn normalize_host(raw: &str) -> Option<String> {
         .trim_start_matches('[')
         .trim_end_matches(']')
         .trim_end_matches('.');
-    if host.is_empty()
-        || host.len() > 253
-        || host
-            .chars()
-            .any(|character| character.is_whitespace() || character.is_control())
+    if !crate::text::Text::bytes(253).not_empty().accepts(host)
+        || host.contains(char::is_whitespace)
     {
         return None;
     }

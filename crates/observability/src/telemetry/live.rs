@@ -177,7 +177,7 @@ fn is_stale(sampled: Option<i64>, settings: &Value, now: i64) -> bool {
 }
 
 pub(crate) async fn dashboard_live(state: &AppState, admin: bool) -> ApiResult<Value> {
-    let rows=sqlx::query("SELECT id,last_seen,last_heartbeat_at,NULLIF(metrics_sampled_at,0) AS metrics_sampled_at,agent_settings,asset_settings FROM servers WHERE deleted_at IS NULL AND COALESCE(asset_settings->>'hidden','false')<>'true' ORDER BY id").fetch_all(&state.pool).await?;
+    let rows=sqlx::query(&format!("SELECT id,last_seen,last_heartbeat_at,NULLIF(metrics_sampled_at,0) AS metrics_sampled_at,agent_settings,asset_settings FROM servers WHERE deleted_at IS NULL AND NOT {} ORDER BY id", crate::server_assets::sql::hidden("servers"))).fetch_all(&state.pool).await?;
     // A live sample at least as new as the stored one replaces it, so stored
     // metrics are read only for servers without one.
     let live_store = store(state);

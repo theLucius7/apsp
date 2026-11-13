@@ -15,7 +15,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::VerifyingKey;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sqlx::{FromRow, PgPool, Row};
+use sqlx::{FromRow, PgConnection, PgPool, Row, postgres::PgRow};
 use uuid::Uuid;
 
 pub const SERVER_COLUMNS: &str = "id, name, device_public_key, static_info, last_seen, last_contact_at, last_heartbeat_at, NULLIF(metrics_sampled_at,0) AS metrics_sampled_at, latest_metrics, agent_settings, asset_settings, manifest_rev, capabilities";
@@ -97,6 +97,77 @@ impl Server {
         });
         self
     }
+}
+
+/// How a statement locks server rows. Every server row lock in the panel is taken here
+/// (ADR 0133): work on a server serializes with its deletion, retirement and other work on
+/// it through this one lock. Which locks a transaction takes, and in what order, stays with
+/// the transaction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RowLock {
+    /// `FOR UPDATE` on a server that exists and is not deleted.
+    Update,
+    /// `FOR SHARE` on a server that exists and is not deleted.
+    Share,
+    /// `FOR UPDATE` on the server's row whether or not the server is deleted: device
+    /// results, reconciliation and cleanup still serialize with it after deletion.
+    UpdateRecord,
+    /// `FOR SHARE` on the server's row whether or not the server is deleted.
+    ShareRecord,
+}
+
+impl RowLock {
+    /// The row filter and the locking clause.
+    fn clauses(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Update => (" AND deleted_at IS NULL", "FOR UPDATE"),
+            Self::Share => (" AND deleted_at IS NULL", "FOR SHARE"),
+            Self::UpdateRecord => ("", "FOR UPDATE"),
+            Self::ShareRecord => ("", "FOR SHARE"),
+        }
+    }
+}
+
+/// Locks the row of server `id` for update in the caller's transaction; `NotFound` unless
+/// the server exists and is not deleted.
+pub async fn lock(connection: &mut PgConnection, id: i64) -> ApiResult<()> {
+    match lock_row(connection, id, RowLock::Update, "id").await? {
+        Some(_) => Ok(()),
+        None => Err(ApiError::NotFound),
+    }
+}
+
+/// Locks the row of server `id` as `how` says and reads `columns` (a fixed select list) of
+/// it in the same statement; `None` when no row matches.
+pub async fn lock_row(
+    connection: &mut PgConnection,
+    id: i64,
+    how: RowLock,
+    columns: &'static str,
+) -> sqlx::Result<Option<PgRow>> {
+    let (filter, clause) = how.clauses();
+    sqlx::query(&format!(
+        "SELECT {columns} FROM servers WHERE id=$1{filter} {clause}"
+    ))
+    .bind(id)
+    .fetch_optional(connection)
+    .await
+}
+
+/// Locks the rows of servers `ids` as `how` says in ascending id order, the order every
+/// transaction that locks several servers takes them in, and returns the ids it locked.
+pub async fn lock_all(
+    connection: &mut PgConnection,
+    ids: &[i64],
+    how: RowLock,
+) -> sqlx::Result<Vec<i64>> {
+    let (filter, clause) = how.clauses();
+    sqlx::query_scalar(&format!(
+        "SELECT id FROM servers WHERE id=ANY($1){filter} ORDER BY id {clause}"
+    ))
+    .bind(ids)
+    .fetch_all(connection)
+    .await
 }
 
 #[derive(Deserialize)]
@@ -230,13 +301,10 @@ pub async fn update(
         })
         .transpose()?;
     let mut transaction = state.pool.begin().await?;
-    let previous: Value = sqlx::query_scalar(
-        "SELECT asset_settings FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or(ApiError::NotFound)?;
+    let previous: Value = lock_row(&mut transaction, id, RowLock::Update, "asset_settings")
+        .await?
+        .ok_or(ApiError::NotFound)?
+        .get("asset_settings");
     if let Some(asset) = &asset {
         let previous: AssetSettings =
             serde_json::from_value(previous).map_err(anyhow::Error::from)?;
@@ -298,17 +366,11 @@ pub async fn issue_enrollment(
     let token = random_token();
     let expires_at = now_timestamp() + 86_400;
     let mut transaction = state.pool.begin().await?;
-    let exists = sqlx::query(
-        "SELECT id, asset_settings FROM servers WHERE id = $1 AND deleted_at IS NULL FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *transaction)
-    .await?;
-    if exists.is_none() {
-        return Err(ApiError::NotFound);
-    }
-    let asset: AssetSettings = serde_json::from_value(exists.unwrap().get("asset_settings"))
-        .map_err(anyhow::Error::from)?;
+    let locked = lock_row(&mut transaction, id, RowLock::Update, "asset_settings")
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let asset: AssetSettings =
+        serde_json::from_value(locked.get("asset_settings")).map_err(anyhow::Error::from)?;
     let selection = crate::installation::select_with_mirror(
         &state,
         query.agent_version.as_deref(),
@@ -400,7 +462,7 @@ pub async fn enroll(
 
 fn valid_name(value: &str) -> ApiResult<&str> {
     let value = value.trim();
-    if value.is_empty() || value.chars().count() > 128 || value.chars().any(char::is_control) {
+    if !crate::text::Text::chars(128).not_empty().accepts(value) {
         return Err(ApiError::BadRequest(
             "服务器名称需为 1 至 128 个字符，且不能包含控制字符".into(),
         ));

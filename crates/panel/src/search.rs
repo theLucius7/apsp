@@ -206,7 +206,10 @@ pub async fn search(
 ) -> ApiResult<Json<Value>> {
     let actor = authenticate(&state, &headers).await?;
     let text = input.q.trim();
-    if text.is_empty() || text.len() > 100 || text.chars().any(char::is_control) {
+    if !apsp_panel_host::text::Text::bytes(100)
+        .not_empty()
+        .accepts(text)
+    {
         return Err(ApiError::BadRequest(
             "搜索词须为1至100字节，且不包含控制字符".into(),
         ));

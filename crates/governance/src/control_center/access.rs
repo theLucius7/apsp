@@ -49,13 +49,7 @@ pub fn valid_capability(value: &str) -> bool {
 }
 
 pub(crate) fn session_hash(headers: &HeaderMap) -> Option<String> {
-    let cookie = headers.get(header::COOKIE)?.to_str().ok()?;
-    let values: Vec<_> = cookie
-        .split(';')
-        .filter_map(|part| part.trim().strip_prefix("apsp_session="))
-        .collect();
-    (values.len() == 1 && !values[0].is_empty() && values[0].len() <= 512)
-        .then(|| hash_token(values[0]))
+    apsp_panel_host::cookies::read(headers, crate::auth::SESSION_COOKIE).map(hash_token)
 }
 
 fn management_token(headers: &HeaderMap) -> Option<&str> {

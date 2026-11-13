@@ -19,11 +19,7 @@ pub async fn pending(
     let server = crate::device_channel::require_agent(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
     // Share the server lock order with retirement and operation creation.
-    sqlx::query("SELECT id FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
-        .bind(server)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    crate::servers::lock(&mut tx, server).await?;
     let accepting = match crate::fleet::ensure_accepts_tasks_tx(&mut tx, server).await {
         Ok(()) => true,
         Err(ApiError::Conflict(_)) => false,
@@ -65,7 +61,7 @@ pub async fn pending(
             } else {
                 false
             };
-            let blocked: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) OR EXISTS(SELECT 1 FROM fleet_profiles WHERE server_id=$1 AND (lifecycle IN ('draining','retired') OR (lifecycle='maintenance' AND COALESCE(maintenance_from,0)<=$2 AND (maintenance_until IS NULL OR maintenance_until>$2)))) OR EXISTS(SELECT 1 FROM operations_maintenance WHERE $1=ANY(targets) AND block_new_tasks AND starts_at<=$2 AND ends_at>$2) OR EXISTS(SELECT 1 FROM fleet_operations WHERE server_id=$1 AND reconciled_at IS NULL AND status IN ('queued','dispatched','unknown')) OR EXISTS(SELECT 1 FROM remote_commands WHERE server_id=$1 AND state IN ('queued','claimed','running','cancel_requested')) OR EXISTS(SELECT 1 FROM diagnostic_jobs WHERE server_id=$1 AND (status IN ('queued','running','cleaning','cancel_requested') OR (NOT agent_completed AND job ? 'id')))")
+            let blocked: bool = sqlx::query_scalar(&format!("SELECT {} OR EXISTS(SELECT 1 FROM fleet_operations WHERE server_id=$1 AND reconciled_at IS NULL AND status IN ('queued','dispatched','unknown')) OR EXISTS(SELECT 1 FROM remote_commands WHERE server_id=$1 AND state IN ('queued','claimed','running','cancel_requested')) OR EXISTS(SELECT 1 FROM diagnostic_jobs WHERE server_id=$1 AND (status IN ('queued','running','cleaning','cancel_requested') OR (NOT agent_completed AND job ? 'id')))", crate::fleet::closed_sql("$1", "$2")))
                 .bind(server).bind(now).fetch_one(&mut *tx).await?;
             authorized
                 && !blocked

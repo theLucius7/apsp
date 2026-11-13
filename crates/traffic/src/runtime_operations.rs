@@ -53,9 +53,15 @@ pub async fn list(
 ) -> ApiResult<Json<View>> {
     auth::require_admin(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
-    super::business::lock_server(&mut tx, server).await?;
+    crate::servers::lock(&mut tx, server).await?;
     super::settings::require_enabled(&mut tx, server).await?;
-    let row = sqlx::query("SELECT capabilities,last_seen,EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) AS retiring FROM servers WHERE id=$1").bind(server).fetch_one(&mut *tx).await?;
+    let row = sqlx::query(&format!(
+        "SELECT capabilities,last_seen,{} AS retiring FROM servers WHERE id=$1",
+        crate::retirement::retiring_sql("$1")
+    ))
+    .bind(server)
+    .fetch_one(&mut *tx)
+    .await?;
     let capabilities: Value = row.get("capabilities");
     let supported = capabilities
         .as_array()
@@ -113,10 +119,16 @@ pub async fn create(
         return Err(ApiError::BadRequest("运行时操作或期望版本无效".into()));
     }
     let mut tx = state.pool.begin().await?;
-    super::business::lock_server(&mut tx, server).await?;
+    crate::servers::lock(&mut tx, server).await?;
     super::settings::require_enabled(&mut tx, server).await?;
     crate::device_work::ensure_accepts_tasks_tx(&mut tx, server).await?;
-    let row = sqlx::query("SELECT capabilities,last_seen,dirty_at,EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) AS retiring FROM servers WHERE id=$1").bind(server).fetch_one(&mut *tx).await?;
+    let row = sqlx::query(&format!(
+        "SELECT capabilities,last_seen,dirty_at,{} AS retiring FROM servers WHERE id=$1",
+        crate::retirement::retiring_sql("$1")
+    ))
+    .bind(server)
+    .fetch_one(&mut *tx)
+    .await?;
     let capabilities: Value = row.get("capabilities");
     if !capabilities
         .as_array()

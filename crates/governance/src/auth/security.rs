@@ -1,5 +1,5 @@
 use super::{
-    cookie_token, hash_password, hash_token, rate_limit, require_admin, totp,
+    SESSION_COOKIE, hash_password, hash_token, rate_limit, require_admin, totp,
     verified_admin_password,
 };
 use crate::{
@@ -14,7 +14,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use data_encoding::BASE32_NOPAD;
-use rand::{RngCore, rngs::OsRng};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::{Postgres, Row, Transaction, postgres::PgRow};
@@ -46,7 +45,7 @@ pub(super) async fn locked_admin(
 }
 
 pub fn session_hash(headers: &HeaderMap) -> ApiResult<String> {
-    cookie_token(headers)
+    apsp_panel_host::cookies::read(headers, SESSION_COOKIE)
         .map(hash_token)
         .ok_or(ApiError::Unauthorized)
 }
@@ -153,8 +152,7 @@ pub async fn totp_setup(State(state): State<AppState>, headers: HeaderMap) -> Ap
             "已启用二步验证，请先验证并关闭后再更换".into(),
         ));
     }
-    let mut secret = [0_u8; 20];
-    OsRng.fill_bytes(&mut secret);
+    let secret = crate::tokens::bytes::<20>();
     let expires = now_timestamp() + 300;
     sqlx::query("UPDATE admins SET totp_pending_secret = $1, totp_pending_expires = $2, totp_pending_session = $3 WHERE id = $4")
         .bind(secret.as_slice()).bind(expires).bind(&session).bind(admin_id).execute(&mut *tx).await?;

@@ -138,9 +138,7 @@ async fn save(state: &AppState, id: Uuid, mut input: Input, editing: bool) -> Ap
     let spec = &mut input.spec;
     spec.name = spec.name.trim().into();
     spec.server_ids.sort_unstable();
-    if spec.name.is_empty()
-        || spec.name.chars().count() > 80
-        || spec.name.chars().any(char::is_control)
+    if !crate::text::Text::chars(80).not_empty().accepts(&spec.name)
         || !spec.threshold.is_finite()
         || spec.threshold < 0.01
         || spec.threshold
@@ -163,7 +161,7 @@ async fn save(state: &AppState, id: Uuid, mut input: Input, editing: bool) -> Ap
         spec.server_ids.clear();
     }
     let mut tx = state.pool.begin().await?;
-    crate::notifications::lock_settings(&mut tx).await?;
+    crate::settings::lock(&mut tx).await?;
     let revision = if editing {
         let previous: i64 = sqlx::query_scalar("SELECT revision FROM alert_rules WHERE id=$1")
             .bind(id)
@@ -183,12 +181,8 @@ async fn save(state: &AppState, id: Uuid, mut input: Input, editing: bool) -> Ap
         }
         1
     };
-    let existing: Vec<i64> = sqlx::query_scalar(
-        "SELECT id FROM servers WHERE id=ANY($1) AND deleted_at IS NULL ORDER BY id FOR SHARE",
-    )
-    .bind(&spec.server_ids)
-    .fetch_all(&mut *tx)
-    .await?;
+    let existing: Vec<i64> =
+        crate::servers::lock_all(&mut tx, &spec.server_ids, crate::servers::RowLock::Share).await?;
     if existing != spec.server_ids {
         return Err(ApiError::BadRequest("选择的服务器不存在或已删除".into()));
     }
@@ -218,7 +212,7 @@ pub async fn remove(
 ) -> ApiResult<StatusCode> {
     auth::require_admin(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
-    crate::notifications::lock_settings(&mut tx).await?;
+    crate::settings::lock(&mut tx).await?;
     if sqlx::query("DELETE FROM alert_rules WHERE id=$1")
         .bind(id)
         .execute(&mut *tx)

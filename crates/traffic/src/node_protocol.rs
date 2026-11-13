@@ -1,7 +1,6 @@
 use crate::error::{ApiError, ApiResult};
 use apsp_compiler::{AcmeChallenge, ProtocolConfig, SsMethod, TlsConfig};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use rand::{RngCore, rngs::OsRng};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -253,9 +252,7 @@ pub(super) fn validate_pem(certificate: &str, key: &str) -> ApiResult<()> {
 }
 
 pub fn credential(size: usize) -> String {
-    let mut bytes = vec![0; size];
-    OsRng.fill_bytes(&mut bytes);
-    STANDARD.encode(bytes)
+    STANDARD.encode(apsp_panel_host::tokens::byte_vec(size))
 }
 
 /// Configuration returned by management endpoints must never include secrets.

@@ -24,16 +24,23 @@ pub(crate) async fn load(state: &AppState, principal: &Principal) -> ApiResult<V
     if !principal.allows("servers:read") {
         return Ok(Vec::new());
     }
-    let rows = sqlx::query(
-        "SELECT s.id,s.name,s.asset_settings->>'price' AS price,\
-         COALESCE(s.asset_settings->>'currency','CNY') AS currency,\
-         COALESCE((s.asset_settings->>'billing_cycle')::int,0) AS cycle_days,\
-         COALESCE((s.asset_settings->>'auto_renewal')::boolean,FALSE) AS auto_renewal,\
-         (to_timestamp((s.asset_settings->>'expires_at')::bigint) AT TIME ZONE r.timezone)::date::text AS next_renewal \
+    use apsp_resources::server_assets::sql;
+    // A billing cycle that was never saved counts as a one-off purchase in the ledger, while
+    // the server's typed settings read 30 days.
+    let rows = sqlx::query(&format!(
+        "SELECT s.id,s.name,{price} AS price,{currency} AS currency,\
+         COALESCE({cycle},0) AS cycle_days,{auto_renewal} AS auto_renewal,\
+         (to_timestamp({expires_at}) AT TIME ZONE r.timezone)::date::text AS next_renewal \
          FROM servers s CROSS JOIN expense_settings r \
-         WHERE r.singleton AND s.deleted_at IS NULL AND jsonb_typeof(s.asset_settings->'expires_at')='number' \
+         WHERE r.singleton AND s.deleted_at IS NULL AND {has_expiry} \
          ORDER BY s.id LIMIT 10000",
-    )
+        price = sql::price("s"),
+        currency = sql::currency("s"),
+        cycle = sql::saved_billing_cycle("s"),
+        auto_renewal = sql::auto_renewal("s"),
+        expires_at = sql::expires_at("s"),
+        has_expiry = sql::has_expiry("s"),
+    ))
     .fetch_all(&state.pool)
     .await?;
     let mut servers = Vec::new();
@@ -58,16 +65,7 @@ pub(crate) async fn load(state: &AppState, principal: &Principal) -> ApiResult<V
 
 /// Server prices are decimal strings with at most two fraction digits.
 fn price_units(price: &str) -> Option<String> {
-    let (whole, fraction) = price.split_once('.').unwrap_or((price, ""));
-    if whole.is_empty()
-        || fraction.len() > 2
-        || !whole
-            .bytes()
-            .chain(fraction.bytes())
-            .all(|b| b.is_ascii_digit())
-    {
-        return None;
-    }
+    let (whole, fraction) = apsp_panel_host::money::decimal(price, 2)?;
     let whole: i64 = whole.parse().ok()?;
     let fraction: i64 = format!("{fraction:0<2}").parse().ok()?;
     whole
@@ -168,7 +166,7 @@ mod tests {
 #[derive(Clone, Serialize)]
 pub(crate) struct Reference {
     #[serde(flatten)]
-    pub source: crate::renewals::RenewalReference,
+    pub source: apsp_traffic::subscription_sources::RenewalReference,
     /// The expiry as a date in the ledger time zone.
     pub expires_on: Option<String>,
 }
@@ -177,7 +175,7 @@ pub(crate) async fn references(
     state: &AppState,
     principal: &Principal,
 ) -> ApiResult<Vec<Reference>> {
-    let sources: Vec<_> = crate::renewals::renewal_references(state)
+    let sources: Vec<_> = apsp_traffic::subscription_sources::renewal_references(state)
         .await?
         .into_iter()
         .filter(|r| principal.allows(r.capability))

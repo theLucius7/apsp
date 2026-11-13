@@ -4,7 +4,7 @@ pub mod models;
 mod mutations;
 mod previews;
 mod renewals;
-pub use renewals::renewal_references;
+pub use renewals::{RenewalReference, renewal_references};
 mod service;
 mod snapshots;
 mod versions;

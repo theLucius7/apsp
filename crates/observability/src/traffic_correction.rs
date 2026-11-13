@@ -52,18 +52,15 @@ pub async fn correct(
         bytes(&request.baseline_downloaded)?,
     );
     let reason = request.reason.trim();
-    if reason.is_empty() || reason.chars().count() > 200 || reason.chars().any(char::is_control) {
+    if !crate::text::Text::chars(200).not_empty().accepts(reason) {
         return Err(ApiError::BadRequest("请填写 1–200 字的矫正原因".into()));
     }
     let mut tx = state.pool.begin().await?;
-    let query = format!(
-        "SELECT {SERVER_COLUMNS} FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE"
-    );
-    let mut server = sqlx::query_as::<_, Server>(&query)
-        .bind(id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    let mut server: Server = sqlx::FromRow::from_row(
+        &crate::servers::lock_row(&mut tx, id, crate::servers::RowLock::Update, SERVER_COLUMNS)
+            .await?
+            .ok_or(ApiError::NotFound)?,
+    )?;
     // Telemetry and asset edits use this same server row lock. Preserve every raw counter.
     server_traffic::attach(
         &state.pool,

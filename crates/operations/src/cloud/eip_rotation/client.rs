@@ -364,7 +364,7 @@ fn optional(value: &Value) -> Option<String> {
 }
 fn required(row: &Value, field: &str) -> Result<String, Failure> {
     optional(&row[field])
-        .filter(|text| text.len() <= 256 && !text.chars().any(char::is_control))
+        .filter(|text| apsp_panel_host::text::Text::bytes(256).accepts(text))
         .ok_or(Failure::from("invalid_response"))
 }
 

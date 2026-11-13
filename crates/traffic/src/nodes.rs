@@ -98,7 +98,7 @@ pub async fn create(
     require_admin(&state, &headers).await?;
     let mut transaction = state.pool.begin().await?;
     crate::business::lock_publication(&mut transaction).await?;
-    business::lock_server(&mut transaction, request.server_id).await?;
+    crate::servers::lock(&mut transaction, request.server_id).await?;
     super::settings::require_enabled(&mut transaction, request.server_id).await?;
     let node = create_locked(&mut transaction, request).await?;
     business::mark_dirty(&mut transaction, &[node.server_id]).await?;
@@ -111,7 +111,7 @@ pub(crate) async fn create_on(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     request: CreateNode,
 ) -> ApiResult<NodeView> {
-    business::lock_server(transaction, request.server_id).await?;
+    crate::servers::lock(transaction, request.server_id).await?;
     super::settings::require_enabled(transaction, request.server_id).await?;
     let node = create_locked(transaction, request).await?;
     business::mark_dirty(transaction, &[node.server_id]).await?;
@@ -207,7 +207,7 @@ pub async fn update(
             .fetch_optional(&mut *transaction)
             .await?
             .ok_or(ApiError::NotFound)?;
-    business::lock_server(&mut transaction, server_id).await?;
+    crate::servers::lock(&mut transaction, server_id).await?;
     let query =
         format!("SELECT {NODE_COLUMNS} FROM nodes n WHERE n.id=$1 AND n.deleted_at IS NULL");
     let mut node = sqlx::query_as::<_, NodeRow>(&query)
@@ -320,11 +320,7 @@ async fn populate_references(pool: &sqlx::PgPool, nodes: &mut [NodeView]) -> Api
             if node.referenced_chains.len() < 32 {
                 node.referenced_chains.push(NodeChainReference {
                     id,
-                    name: name
-                        .chars()
-                        .filter(|value| !value.is_control())
-                        .take(128)
-                        .collect(),
+                    name: apsp_panel_host::text::printable(&name, 128),
                 });
             }
         }

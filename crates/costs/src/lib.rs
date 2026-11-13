@@ -10,7 +10,6 @@ pub mod exchange;
 mod history;
 pub mod locks;
 mod migration;
-pub mod renewals;
 pub mod schedule;
 mod servers;
 mod suppliers;
@@ -21,6 +20,7 @@ use apsp_governance::{auth, control_center};
 use apsp_panel_host::{
     AppState,
     error::{self, ApiError, ApiResult},
+    money::currency,
     notifications::queue::{Policy, Queue},
 };
 use apsp_protocol::now_timestamp;
@@ -126,16 +126,11 @@ async fn lock(tx: &mut Tx<'_>) -> ApiResult<()> {
     Ok(())
 }
 fn text(value: &str, max: usize, required: bool) -> ApiResult<String> {
-    let value = value.trim();
-    if (required && value.is_empty())
-        || value.chars().count() > max
-        || value
-            .chars()
-            .any(|c| c.is_control() && c != '\n' && c != '\t')
-    {
-        return Err(bad("字段长度或格式无效"));
-    }
-    Ok(value.into())
+    let rule = apsp_panel_host::text::Text::chars(max).multiline();
+    let rule = if required { rule.not_empty() } else { rule };
+    rule.trimmed(value)
+        .map(str::to_owned)
+        .ok_or_else(|| bad("字段长度或格式无效"))
 }
 fn units(value: &str) -> ApiResult<i64> {
     value
@@ -143,9 +138,6 @@ fn units(value: &str) -> ApiResult<i64> {
         .ok()
         .filter(|n| *n >= 0 && *n <= 9_000_000_000_000_000 && n.to_string() == value)
         .ok_or_else(|| bad("金额须为有效的万分之一货币单位整数"))
-}
-fn currency(value: &str) -> bool {
-    value.len() == 3 && value.bytes().all(|b| b.is_ascii_uppercase())
 }
 async fn event(tx: &mut Tx<'_>, entry: Option<i64>, kind: &str, detail: Value) -> ApiResult<()> {
     let id = Uuid::new_v4();

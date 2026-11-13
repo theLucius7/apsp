@@ -8,9 +8,8 @@ pub(super) fn name(value: &str) -> Option<String> {
     let (prefix, host) = value
         .strip_prefix("*.")
         .map_or(("", value), |host| ("*.", host));
-    if host
-        .chars()
-        .any(|c| c.is_control() || c.is_whitespace() || ":/%?#@\\[]*".contains(c))
+    if apsp_panel_host::text::has_control(host)
+        || host.contains(|c: char| c.is_whitespace() || ":/%?#@\\[]*".contains(c))
     {
         return None;
     }
@@ -105,13 +104,15 @@ pub(super) fn normalize(request: &mut Request, zone: &str) -> ApiResult<()> {
     }) || record.get("comment").is_some_and(|value| {
         value
             .as_str()
-            .is_none_or(|comment| comment.len() > 256 || comment.chars().any(char::is_control))
+            .is_none_or(|comment| !apsp_panel_host::text::Text::bytes(256).accepts(comment))
     }) || record
         .get("data")
         .is_some_and(|value| !value.is_object() || value.to_string().len() > 8192)
         || record.get("line").is_some_and(|value| {
             value.as_str().is_none_or(|line| {
-                line.is_empty() || line.len() > 128 || line.chars().any(char::is_control)
+                !apsp_panel_host::text::Text::bytes(128)
+                    .not_empty()
+                    .accepts(line)
             })
         })
         || record

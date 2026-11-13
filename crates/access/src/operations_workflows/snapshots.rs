@@ -52,9 +52,9 @@ async fn node(tx: &mut Transaction<'_, Postgres>, id: i64) -> ApiResult<Value> {
             .fetch_optional(&mut **tx)
             .await?
             .ok_or(ApiError::NotFound)?;
-    apsp_traffic::business::lock_server(tx, server).await?;
+    crate::servers::lock(tx, server).await?;
     apsp_traffic::settings::require_enabled(tx, server).await?;
-    sqlx::query_scalar("SELECT jsonb_build_object('node',to_jsonb(n),'status',to_jsonb(m)-'updated_at','online',s.last_seen IS NOT NULL AND s.last_seen>=$2-60,'recent_observation',m.updated_at IS NOT NULL AND m.updated_at>=$2-300,'dirty',s.dirty_at,'retiring',EXISTS(SELECT 1 FROM server_retirements WHERE server_id=n.server_id)) FROM nodes n JOIN servers s ON s.id=n.server_id LEFT JOIN server_module_status m ON m.server_id=n.server_id AND m.module='singbox' WHERE n.id=$1 AND n.deleted_at IS NULL FOR UPDATE OF n")
+    sqlx::query_scalar(&format!("SELECT jsonb_build_object('node',to_jsonb(n),'status',to_jsonb(m)-'updated_at','online',s.last_seen IS NOT NULL AND s.last_seen>=$2-60,'recent_observation',m.updated_at IS NOT NULL AND m.updated_at>=$2-300,'dirty',s.dirty_at,'retiring',{}) FROM nodes n JOIN servers s ON s.id=n.server_id LEFT JOIN server_module_status m ON m.server_id=n.server_id AND m.module='singbox' WHERE n.id=$1 AND n.deleted_at IS NULL FOR UPDATE OF n", crate::retirement::retiring_sql("n.server_id")))
         .bind(id).bind(apsp_protocol::now_timestamp()).fetch_optional(&mut **tx).await?.ok_or(ApiError::NotFound)
 }
 

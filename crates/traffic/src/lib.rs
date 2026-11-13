@@ -42,7 +42,7 @@ pub(crate) use apsp_governance::{artifacts, auth, control_center, releases};
 #[cfg(test)]
 pub(crate) use apsp_panel_host::config;
 pub(crate) use apsp_panel_host::{AppState, device_work, digest, error};
-pub(crate) use apsp_resources::device_channel;
+pub(crate) use apsp_resources::{device_channel, retirement, server_lifecycle, servers};
 use axum::{
     Router,
     routing::{get, post},

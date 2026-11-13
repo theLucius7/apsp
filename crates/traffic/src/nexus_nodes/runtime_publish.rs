@@ -198,7 +198,7 @@ pub(crate) async fn membership(state: &AppState, allowed: Option<&[i64]>) -> any
         if stale.binary_search(server).is_err() {
             continue;
         }
-        crate::business::lock_server(&mut tx, *server).await?;
+        crate::servers::lock(&mut tx, *server).await?;
         let changed = sqlx::query("UPDATE singbox_nexus_runtime_hosts SET membership_digest=$2 WHERE server_id=$1 AND membership_digest IS DISTINCT FROM $2").bind(server).bind(digest).execute(&mut *tx).await?.rows_affected();
         if changed > 0 {
             crate::business::mark_dirty(&mut tx, &[*server]).await?;

@@ -1,9 +1,11 @@
 //! Guards that keep each underlying mechanism single. Background work: every loop of the
 //! panel's crates runs on `apsp_panel_host::maintenance::periodic`, and the heartbeat names
 //! those loops record are exactly the ones the health view expects. Advisory locks: see
-//! `locks`. Queued messages: see `queues`.
+//! `locks`. Queued messages: see `queues`. The audit trail, passwords, random values, short
+//! texts, dates, cookies and the panel settings: see `mechanisms`.
 
 mod locks;
+mod mechanisms;
 mod queues;
 
 use super::HEARTBEATS;

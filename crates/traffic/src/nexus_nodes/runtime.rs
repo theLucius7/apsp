@@ -72,7 +72,7 @@ async fn prepare(
     }
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
-    crate::business::lock_server(&mut tx, snapshot.server_id).await?;
+    crate::servers::lock(&mut tx, snapshot.server_id).await?;
     let report = inspect(&state, &mut tx, &snapshot).await?;
     if !report["conflicts"].as_array().unwrap().is_empty() {
         return Err(ApiError::Conflict(
@@ -190,7 +190,7 @@ async fn extend_preview(
     control_center::require_recent_proof(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
-    crate::business::lock_server(&mut tx, server).await?;
+    crate::servers::lock(&mut tx, server).await?;
     let (stored, _, _) = stored_snapshot(&state, &mut tx, server, &input.expected_digest).await?;
     let (merged, mut report) = inspect_extension(
         &state,
@@ -243,7 +243,7 @@ async fn extend(
     }
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
-    crate::business::lock_server(&mut tx, server).await?;
+    crate::servers::lock(&mut tx, server).await?;
     let (stored, host_state, previous) =
         stored_snapshot(&state, &mut tx, server, &input.expected_digest).await?;
     let (merged, report) = inspect_extension(
@@ -301,13 +301,18 @@ async fn extend(
         .iter()
         .map(|r| r.legacy_node_id)
         .collect();
-    sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus.runtime.extend',$2,$3,$4,$5)")
-        .bind(actor)
-        .bind(format!("/api/traffic/nexus-nodes/runtime/{server}/extend"))
-        .bind(json!({"from":input.expected_digest,"to":hash,"added_legacy_nodes":added,"revised_legacy_nodes":revised,"stopped_services":input.stopped_services,"stopped_at":input.stopped_at}))
-        .bind(json!({"state":"recorded","republish":republish}))
-        .bind(now)
-        .execute(&mut *tx)
+    control_center::audit::record(
+        &mut *tx,
+        control_center::audit::Entry {
+            admin_id: Some(actor),
+            token_id: None,
+            action: "nexus.runtime.extend",
+            object_path: &format!("/api/traffic/nexus-nodes/runtime/{server}/extend"),
+            request_diff: json!({"from":input.expected_digest,"to":hash,"added_legacy_nodes":added,"revised_legacy_nodes":revised,"stopped_services":input.stopped_services,"stopped_at":input.stopped_at}),
+            result: json!({"state":"recorded","republish":republish}),
+            occurred_at: now,
+        },
+    )
         .await?;
     tx.commit().await?;
     Ok(Json(
@@ -324,7 +329,7 @@ async fn candidate(
     control_center::require_recent_proof(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
-    crate::business::lock_server(&mut tx, server).await?;
+    crate::servers::lock(&mut tx, server).await?;
     let candidate = runtime_publish::compile(&state, &mut tx, server).await?;
     // This explicit owner-only export is saved as a private file by the cutover
     // tool. The regular inventory/status API never returns native credentials.
@@ -449,7 +454,7 @@ async fn activate(
     let proof = evidence(&input)?;
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
-    crate::business::lock_server(&mut tx, server).await?;
+    crate::servers::lock(&mut tx, server).await?;
     let host = sqlx::query("SELECT h.digest,h.state,s.last_seen,s.static_info,s.capabilities,s.device_public_key FROM singbox_nexus_runtime_hosts h JOIN servers s ON s.id=h.server_id WHERE h.server_id=$1 FOR UPDATE OF h")
         .bind(server).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
     if host.get::<String, _>("digest") != input.expected_digest {
@@ -539,7 +544,7 @@ async fn pause(
     let proof = evidence(&input)?;
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
-    crate::business::lock_server(&mut tx, server).await?;
+    crate::servers::lock(&mut tx, server).await?;
     let changed = sqlx::query("UPDATE singbox_nexus_runtime_hosts SET state='paused',evidence=$3 WHERE server_id=$1 AND digest=$2")
         .bind(server).bind(input.expected_digest).bind(proof).execute(&mut *tx).await?.rows_affected();
     if changed != 1 {
@@ -574,7 +579,7 @@ async fn discard(
     control_center::require_recent_proof(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
-    crate::business::lock_server(&mut tx, server).await?;
+    crate::servers::lock(&mut tx, server).await?;
     let host = sqlx::query("SELECT digest,state,activated_at,credential_id FROM singbox_nexus_runtime_hosts WHERE server_id=$1 FOR UPDATE")
         .bind(server).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
     if host.get::<String, _>("digest") != input.expected_digest {

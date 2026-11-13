@@ -1,5 +1,7 @@
 use super::*;
-use rand::Rng;
+
+/// Mailed verification codes are six decimal digits.
+const DIGITS: &[u8] = b"0123456789";
 
 #[derive(sqlx::FromRow)]
 pub(crate) struct Challenge {
@@ -86,8 +88,8 @@ pub(super) async fn send(
         ));
     }
     let id = Uuid::new_v4();
-    let code = format!("{:06}", rand::thread_rng().gen_range(0..1_000_000));
-    let old_code = old.map(|_| format!("{:06}", rand::thread_rng().gen_range(0..1_000_000)));
+    let code = apsp_panel_host::tokens::code(DIGITS, 6);
+    let old_code = old.map(|_| apsp_panel_host::tokens::code(DIGITS, 6));
     let now = now_timestamp();
     sqlx::query("INSERT INTO singbox_account_challenges(id,purpose,user_id,address,old_address,token_hash,old_token_hash,invitation_hash,created_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)").bind(id).bind(purpose).bind(user).bind(address).bind(old).bind(crate::auth::hash_token(&format!("{id}:{code}"))).bind(old_code.as_ref().map(|c|crate::auth::hash_token(&format!("{id}:{c}")))).bind(invitation).bind(now).bind(now+600).execute(&state.pool).await?;
     let result=async {
