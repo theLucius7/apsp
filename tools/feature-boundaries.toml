@@ -62,7 +62,7 @@ access = [
   "singbox_subscription_host*", "singbox_usage_daily", "singbox_user_*", "singbox_wallet*",
   "singbox_nexus_bridge", "singbox_nexus_device_state", "singbox_nexus_identities",
   "singbox_nexus_imports", "singbox_nexus_metering", "singbox_nexus_plan_mappings",
-  "singbox_nexus_usage_deliveries",
+  "singbox_nexus_usage_deliveries", "singbox_nexus_usage_delivery_daily",
 ]
 costs = [
   "expense_*", "fleet_cost_records", "operations_cancellation_reminders", "exchange_rates",

@@ -65,3 +65,14 @@
 ### 旧商务表删除（2026-11-10）
 
 从 ADR 0131 的基线（`838b323f`，指纹 `00168f4f`）接入删除旧商务表的基线（`a1c4b16e`，指纹 `bd3c95e0`）使用 `scripts/baseline-adoption-commerce-20261110.sql`：删除 Nexus 迁移带来、自 2026-11-05（ADR 0113）起已无代码读写的九张表——`singbox_commerce_invitations`、`singbox_commerce_offers`、`singbox_commerce_orders`、`singbox_commerce_settings`、`singbox_payment_exceptions`、`singbox_payment_receipts`、`singbox_payment_topups`、`singbox_wallet_ledger`、`singbox_nexus_records`，连同它们的序列、约束与索引。删除前的行（钱包流水 51、Nexus 记录 4778、订单 1、报价 4、邀请 1、设置 1，其余 3 张为空）已导出到服务器上的受保护存档（目录 700、文件 600，附 SHA256SUMS），不进仓库。脚本校验来源校验和与实际结构指纹，删除不带 CASCADE（有任何依赖就失败），结束时校验结果指纹并更新基线记录；`singbox_commerce_events`（成员账号的内容审计仍在写）与 `singbox_payment_channels`（恢复脚本会停用）不在其内。部署器在合并后先在生产结构副本上试启动并执行它，再在生产执行。
+### 兼容桥投递用量按日汇总（2026-11-13）
+
+从删除旧商务表的基线（`a1c4b16e`，指纹 `bd3c95e0`）接入新基线（`43294f43`，指纹 `489f47a3`）使用 `scripts/baseline-adoption-delivery-daily-20261113.sql`：
+
+- 新增 `singbox_nexus_usage_delivery_daily`：按用户与 UTC 日汇总兼容桥的用量投递，由投递表的语句级插入触发器维护，与原生账本的 `singbox_usage_daily` 同一做法。汇总只来自投递表，不另设外键。
+- 新增 `singbox_nexus_delivery_window(user, after, until)`：整日取汇总，两端不足一日的部分与负时刻取原表，与 `singbox_usage_window` 相同；`singbox_entitlements` 用它计算周期内已投递的用量，结果与逐行求和相同。
+- `singbox_cycle_bounds` 标注返回一行（`ROWS 1`），修正资格计算的成本估算。
+- 投递只插入、流量不改、不删除，所以脚本先挡住新的投递写入，一次性回填汇总并建立触发器，之后由触发器维护。
+
+演练：旧基线的全新库（带投递数据）与生产结构副本上执行，接入后的指纹等于新基线全新初始化的结果，汇总与原表逐日相同，窗口与原表求和在一组区间上相同，重复执行被拒绝。
+

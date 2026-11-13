@@ -171,6 +171,96 @@ async fn daily_rollup_and_cycle_windows_match_the_ledger(pool: PgPool) -> Result
     Ok(())
 }
 
+/// Inserts delivered compatibility usage, several rows per statement, as (end, uplink, downlink).
+async fn deliveries(
+    pool: &PgPool,
+    (server, epoch): (i64, Uuid),
+    seq: &mut i64,
+    user: i64,
+    rows: &[(i64, u64, u64)],
+) -> Result<()> {
+    let mut seqs = Vec::new();
+    for _ in rows {
+        *seq += 1;
+        seqs.push(*seq);
+    }
+    sqlx::query("INSERT INTO usage_batches(server_id,epoch,seq,payload_hash) SELECT $1,$2,s,'TEST_ONLY' FROM unnest($3::bigint[]) AS s")
+        .bind(server).bind(epoch).bind(&seqs).execute(pool).await?;
+    let ends: Vec<i64> = rows.iter().map(|(end, _, _)| *end).collect();
+    let ups: Vec<String> = rows.iter().map(|(_, up, _)| up.to_string()).collect();
+    let downs: Vec<String> = rows.iter().map(|(_, _, down)| down.to_string()).collect();
+    sqlx::query("INSERT INTO singbox_nexus_usage_deliveries(server_id,epoch,seq,stat_name,user_id,uplink,downlink,rate,period_start,period_end) SELECT $1,$2,s,'u'||$3||'_n1',$3,u::numeric,d::numeric,1.5,e-30,e FROM unnest($4::bigint[],$5::text[],$6::text[],$7::bigint[]) AS t(s,u,d,e)")
+        .bind(server).bind(epoch).bind(user).bind(&seqs).bind(&ups).bind(&downs).bind(&ends).execute(pool).await?;
+    Ok(())
+}
+
+#[sqlx::test]
+async fn delivery_rollup_and_cycle_windows_match_the_deliveries(pool: PgPool) -> Result<()> {
+    let (server, users, _) = identities(&pool).await?;
+    let mut random = StdRng::seed_from_u64(78);
+    let epoch = Uuid::new_v4();
+    let mut seq = 0;
+    // Statements of several rows, clustered around day boundaries as well as inside days.
+    for round in 0..120 {
+        let user = users[random.gen_range(0..users.len())];
+        let mut rows = Vec::new();
+        for _ in 0..random.gen_range(1..6) {
+            let day = random.gen_range(-5..35_i64);
+            let offset = if random.gen_bool(0.3) {
+                [0, 1, 86_399][random.gen_range(0..3)]
+            } else {
+                random.gen_range(0..86_400)
+            };
+            let (up, down) = if round == 0 {
+                (u64::MAX, u64::MAX)
+            } else {
+                (
+                    random.gen_range(0..1_000_000),
+                    random.gen_range(0..1_000_000),
+                )
+            };
+            rows.push((BASE + day * 86_400 + offset, up, down));
+        }
+        deliveries(&pool, (server, epoch), &mut seq, user, &rows).await?;
+    }
+    // The trigger keeps one exact row per user and UTC day.
+    let mismatched: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM (
+            SELECT user_id,period_end/86400*86400 AS day,SUM(uplink) AS up,SUM(downlink) AS down,COUNT(*) AS n FROM singbox_nexus_usage_deliveries GROUP BY 1,2
+         ) l FULL JOIN singbox_nexus_usage_delivery_daily d ON d.user_id=l.user_id AND d.day=l.day
+         WHERE d.uplink IS DISTINCT FROM l.up OR d.downlink IS DISTINCT FROM l.down OR d.records IS DISTINCT FROM l.n",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(mismatched, 0);
+    // Arbitrary cycle windows, including day-aligned, empty, inverted and negative bounds.
+    let mut bounds = vec![
+        (BASE - 1, BASE),
+        (BASE - 1, BASE + 86_399),
+        (BASE, BASE + 86_400),
+        (BASE - 1, BASE + 86_400),
+        (BASE + 1, BASE + 86_400 - 1),
+        (BASE + 86_400, BASE + 86_400),
+        (BASE + 86_400, BASE),
+        (-1, BASE + 3 * 86_400),
+        (0, 253_402_300_799),
+        (BASE - 6 * 86_400, BASE + 40 * 86_400),
+    ];
+    for _ in 0..200 {
+        let after = BASE + random.gen_range(-6 * 86_400..36 * 86_400);
+        let until = after + random.gen_range(0..40 * 86_400);
+        bounds.push((after, until));
+    }
+    for (after, until) in bounds {
+        for user in &users {
+            let (window, raw): (String, String) = sqlx::query_as("SELECT singbox_nexus_delivery_window($1,$2,$3)::text,COALESCE((SELECT SUM(uplink+downlink) FROM singbox_nexus_usage_deliveries WHERE user_id=$1 AND period_end>$2 AND period_end<=$3),0)::text")
+                .bind(user).bind(after).bind(until).fetch_one(&pool).await?;
+            assert_eq!(window, raw, "user {user} window ({after}, {until}]");
+        }
+    }
+    Ok(())
+}
+
 #[sqlx::test]
 async fn entitlement_usage_keeps_the_original_cycle_boundaries(pool: PgPool) -> Result<()> {
     let (server, users, nodes) = identities(&pool).await?;

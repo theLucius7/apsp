@@ -46,7 +46,7 @@ BEGIN
 END $$;
 
 CREATE FUNCTION public.singbox_cycle_bounds(at_s bigint, reset_day integer, reset_hour integer, reset_minute integer, zone text) RETURNS TABLE(cycle_start bigint, next_reset bigint)
-    LANGUAGE plpgsql STABLE STRICT
+    LANGUAGE plpgsql STABLE STRICT ROWS 1
     AS $$
 DECLARE
     month_start TIMESTAMP;
@@ -101,7 +101,7 @@ CREATE FUNCTION public.singbox_entitlements(at_s bigint) RETURNS TABLE(user_id b
         LEFT JOIN singbox_nexus_metering meter ON meter.user_id=u.id AND bridge.singleton
         LEFT JOIN LATERAL singbox_cycle_bounds(at_s,a.reset_day,a.reset_hour,a.reset_minute,a.timezone) native ON TRUE
         LEFT JOIN LATERAL (SELECT CASE WHEN meter.user_id IS NOT NULL THEN COALESCE(meter.last_reset_at,0) ELSE native.cycle_start END AS cycle_start,CASE WHEN meter.user_id IS NOT NULL THEN COALESCE(meter.next_reset_at,253402300799) ELSE native.next_reset END AS next_reset) b ON TRUE
-        LEFT JOIN LATERAL (SELECT CASE WHEN meter.user_id IS NOT NULL THEN meter.upload+meter.download+GREATEST(COALESCE(singbox_usage_window(u.id,b.cycle_start,b.next_reset),0)-COALESCE((SELECT SUM(d.uplink+d.downlink) FROM singbox_nexus_usage_deliveries d WHERE d.user_id=u.id AND d.period_end>b.cycle_start AND d.period_end<=b.next_reset),0),0) ELSE singbox_usage_window(u.id,b.cycle_start,b.next_reset) END AS used) t ON TRUE
+        LEFT JOIN LATERAL (SELECT CASE WHEN meter.user_id IS NOT NULL THEN meter.upload+meter.download+GREATEST(COALESCE(singbox_usage_window(u.id,b.cycle_start,b.next_reset),0)-COALESCE(singbox_nexus_delivery_window(u.id,b.cycle_start,b.next_reset),0),0) ELSE singbox_usage_window(u.id,b.cycle_start,b.next_reset) END AS used) t ON TRUE
         LEFT JOIN LATERAL (SELECT SUM(q.bytes) AS credit FROM singbox_quota_credits q WHERE q.user_id=u.id AND q.cycle_start=b.cycle_start AND q.next_reset=b.next_reset) c ON TRUE
         WHERE u.deleted_at IS NULL
     )
@@ -417,6 +417,46 @@ CREATE FUNCTION public.singbox_usage_window(p_user bigint, p_after bigint, p_unt
                     AND r.period_end <= p_until), 0)
         END
     FROM bounds b
+$$;
+
+CREATE FUNCTION public.singbox_nexus_delivery_window(p_user bigint, p_after bigint, p_until bigint) RETURNS numeric
+    LANGUAGE sql STABLE STRICT
+    AS $$
+    WITH bounds AS (
+        SELECT (ceil((p_after + 1)::NUMERIC / 86400) * 86400)::BIGINT AS lo,
+            (floor((p_until + 1)::NUMERIC / 86400) * 86400)::BIGINT AS hi
+    )
+    SELECT CASE
+        WHEN p_until <= p_after THEN 0::NUMERIC
+        -- Day buckets truncate toward zero, so negative instants use the deliveries only.
+        WHEN p_after < 0 THEN COALESCE((SELECT SUM(d.uplink + d.downlink) FROM singbox_nexus_usage_deliveries d
+            WHERE d.user_id = p_user AND d.period_end > p_after AND d.period_end <= p_until), 0)
+        ELSE COALESCE((SELECT SUM(r.uplink + r.downlink) FROM singbox_nexus_usage_delivery_daily r
+                WHERE r.user_id = p_user AND r.day >= b.lo AND r.day < b.hi), 0)
+            + COALESCE((SELECT SUM(d.uplink + d.downlink) FROM singbox_nexus_usage_deliveries d
+                WHERE d.user_id = p_user AND d.period_end > p_after
+                    AND d.period_end < LEAST(b.lo, p_until + 1)), 0)
+            + COALESCE((SELECT SUM(d.uplink + d.downlink) FROM singbox_nexus_usage_deliveries d
+                WHERE d.user_id = p_user AND d.period_end >= GREATEST(b.lo, b.hi)
+                    AND d.period_end <= p_until), 0)
+        END
+    FROM bounds b
+$$;
+
+CREATE FUNCTION public.singbox_nexus_usage_delivery_daily_apply() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO singbox_nexus_usage_delivery_daily(user_id, day, uplink, downlink, records)
+    SELECT user_id, period_end / 86400 * 86400, SUM(uplink), SUM(downlink), COUNT(*)
+    FROM inserted
+    GROUP BY user_id, period_end / 86400 * 86400
+    ON CONFLICT (user_id, day) DO UPDATE SET
+        uplink = singbox_nexus_usage_delivery_daily.uplink + EXCLUDED.uplink,
+        downlink = singbox_nexus_usage_delivery_daily.downlink + EXCLUDED.downlink,
+        records = singbox_nexus_usage_delivery_daily.records + EXCLUDED.records;
+    RETURN NULL;
+END;
 $$;
 
 CREATE TABLE public.accesses (
@@ -2996,6 +3036,16 @@ CREATE TABLE public.singbox_nexus_usage_deliveries (
     delivered_at bigint
 );
 
+CREATE TABLE public.singbox_nexus_usage_delivery_daily (
+    user_id bigint NOT NULL,
+    day bigint NOT NULL,
+    uplink numeric NOT NULL,
+    downlink numeric NOT NULL,
+    records bigint NOT NULL,
+    CONSTRAINT singbox_nexus_usage_delivery_daily_day_check CHECK (((day % (86400)::bigint) = 0)),
+    CONSTRAINT singbox_nexus_usage_delivery_daily_records_check CHECK ((records > 0))
+);
+
 CREATE SEQUENCE public.singbox_nexus_usage_deliveries_id_seq
     START WITH 1
     INCREMENT BY 1
@@ -4379,6 +4429,9 @@ ALTER TABLE ONLY public.singbox_nexus_usage_deliveries
 ALTER TABLE ONLY public.singbox_nexus_usage_deliveries
     ADD CONSTRAINT singbox_nexus_usage_deliveries_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.singbox_nexus_usage_delivery_daily
+    ADD CONSTRAINT singbox_nexus_usage_delivery_daily_pkey PRIMARY KEY (user_id, day);
+
 ALTER TABLE ONLY public.singbox_node_metadata
     ADD CONSTRAINT singbox_node_metadata_pkey PRIMARY KEY (kind, id);
 
@@ -4869,6 +4922,8 @@ CREATE TRIGGER singbox_policy_external_reference BEFORE INSERT OR UPDATE ON publ
 CREATE TRIGGER singbox_subscription_membership_immutable BEFORE DELETE OR UPDATE ON public.singbox_subscription_revision_nodes FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_subscription_snapshot_change();
 
 CREATE TRIGGER singbox_subscription_revision_immutable BEFORE DELETE OR UPDATE ON public.singbox_subscription_source_revisions FOR EACH ROW EXECUTE FUNCTION public.singbox_reject_subscription_snapshot_change();
+
+CREATE TRIGGER singbox_nexus_usage_delivery_daily_insert AFTER INSERT ON public.singbox_nexus_usage_deliveries REFERENCING NEW TABLE AS inserted FOR EACH STATEMENT EXECUTE FUNCTION public.singbox_nexus_usage_delivery_daily_apply();
 
 CREATE TRIGGER singbox_usage_daily_insert AFTER INSERT ON public.usage_records REFERENCING NEW TABLE AS inserted FOR EACH STATEMENT EXECUTE FUNCTION public.singbox_usage_daily_apply();
 

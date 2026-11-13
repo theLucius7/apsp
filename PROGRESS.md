@@ -1,5 +1,21 @@
 # 执行进度
 
+## 2026-11-13：兼容桥投递用量按日汇总（基线变更，草稿 PR）
+
+- 用户要求：同上一条（“扫描 apsp 和查看仓库记录，优化”）。上一条处理后，资格计算里对兼容桥投递表的逐行求和成为发布循环最大的开销；取舍见 `docs/open-questions.md` 同日条目。
+- 完成项：
+  - 基线新增 `singbox_nexus_usage_delivery_daily` 与触发器、`singbox_nexus_delivery_window`；`singbox_entitlements` 用它计算已投递用量；`singbox_cycle_bounds` 标注 `ROWS 1`。表登记给服务权益。
+  - 接入脚本 `scripts/baseline-adoption-delivery-daily-20261113.sql`（`a1c4b16e…`/`bd3c95e0…` → `43294f43…`/`489f47a3…`），`docs/database-baseline.md` 记录做法。
+  - 测试 `usage_rollup::delivery_rollup_and_cycle_windows_match_the_deliveries`：多行语句插入后汇总与原表逐日相同，210 个周期区间（含整日、空、倒置、负时刻）的窗口与逐行求和相同。
+- 验证结果（本地，2026-11-13；CI 仍暂停，未触发）：
+  - 接入演练：按首次启动的方式（sqlx 先建 `_sqlx_migrations`）初始化旧基线，指纹与记录的 `bd3c95e0…` 相同；放入投递数据后执行脚本，指纹 `489f47a3…` 与校验和 `43294f43…` 等于新基线的全新初始化结果，汇总与原表逐日相同，窗口与逐行求和在一组区间上相同，重复执行被拒绝。生产的结构副本（只读 `pg_dump --schema-only` 加两张基线记录表的行）上同样通过。
+  - `cargo fmt --all --check`、`cargo clippy -p apsp-panel --all-targets -- -D warnings` 通过。
+  - 使用这份基线的 10 个领域与平台 crate 的 `--lib` 共 540 项通过、1 项按原有标注忽略；面板集成测试除 `end_to_end` 外 80 个目标与 `--lib` 共 393 项通过、0 项失败、6 项按原有标注忽略（含新加的 `delivery_rollup_and_cycle_windows_match_the_deliveries`，以及用到兼容桥计量的 `nexus_runtime_takeover`）。
+  - 三项检查通过（越界 392 条没有新增，新表登记给服务权益）。
+  - 未验证：生产上的实际耗时（合并上线后核对）；`end_to_end`。
+- 已知问题：合并即自动部署并在生产执行接入脚本；在用户合并之前保持草稿。
+- 下一步：用户合并后只读核对接入结果（指纹、汇总行数、资格计算耗时）。
+
 ## 2026-11-13：发布循环的数据库开销——关闭 JIT，每轮只算一次资格
 
 - 用户要求：“扫描 apsp 和查看仓库记录，优化”。先读了仓库记录（本文件最近的“下一步”、`docs/architecture.md` §12、`docs/open-questions.md` 的性能遗留项），再只读查看生产：数据库容器持续占满一个 CPU 核，面板 4 小时内有 1148 条超过 1 秒的慢语句。原因与取舍见 `docs/open-questions.md` 同日条目；只改代码，不改数据库基线、协议与界面。
