@@ -205,14 +205,14 @@ try {
     let proven = false
     const users = [{ id: 7, name: 'TEST_ONLY 用户', subscription_token: '', subscription_url: '', credentials_redacted: true }]
     const state = { routes: {
-      '/api/plugins/sing-box/users': route => route.fulfill({ json: users }),
-      '/api/plugins/sing-box/usage': route => route.fulfill({ json: { uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] } }),
-      '/api/plugins/sing-box/policy-groups': route => route.fulfill({ json: [] }),
-      '/api/plugins/sing-box/package-groups': route => route.fulfill({ json: [] }),
-      '/api/plugins/sing-box/users/7/policy-groups': route => route.fulfill({ json: { group_ids: [] } }),
-      '/api/plugins/sing-box/users/7/entitlement': route => route.fulfill({ json: { user_id: 7, package_group_id: null, package_name: null, monthly_bytes: null, reset_day: null, reset_hour: null, reset_minute: null, timezone: null, starts_at: null, expires_at: null, cycle_start: null, next_reset: null, used_bytes: '0', status: 'unmetered', allowed: true } }),
-      '/api/plugins/sing-box/users/7/portal': route => route.fulfill({ json: { configuration: { enabled: true, origin: origin, reason: null }, keys: 0, url: null, activation_expires_at: null } }),
-      '/api/plugins/sing-box/users/7/subscription': route => proven ? route.fulfill({ json: { format: 'singbox', subscription_url: 'https://apsp-TEST.example.test/TEST_ONLY_PATH' } }) : route.fulfill({ status: 403, json: { error: '请先再次验证管理员身份，证明有效期为五分钟' } }),
+      '/api/access/users': route => route.fulfill({ json: users }),
+      '/api/access/usage': route => route.fulfill({ json: { uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] } }),
+      '/api/access/policy-groups': route => route.fulfill({ json: [] }),
+      '/api/access/package-groups': route => route.fulfill({ json: [] }),
+      '/api/access/users/7/policy-groups': route => route.fulfill({ json: { group_ids: [] } }),
+      '/api/access/users/7/entitlement': route => route.fulfill({ json: { user_id: 7, package_group_id: null, package_name: null, monthly_bytes: null, reset_day: null, reset_hour: null, reset_minute: null, timezone: null, starts_at: null, expires_at: null, cycle_start: null, next_reset: null, used_bytes: '0', status: 'unmetered', allowed: true } }),
+      '/api/access/users/7/portal': route => route.fulfill({ json: { configuration: { enabled: true, origin: origin, reason: null }, keys: 0, url: null, activation_expires_at: null } }),
+      '/api/access/users/7/subscription': route => proven ? route.fulfill({ json: { format: 'singbox', subscription_url: 'https://apsp-TEST.example.test/TEST_ONLY_PATH' } }) : route.fulfill({ status: 403, json: { error: '请先再次验证管理员身份，证明有效期为五分钟' } }),
       '/api/control-center/reauth': route => { proven = true; return route.fulfill({ status: 204 }) },
     } }
     const { context, page, reads } = await open(state, '/users', { permissions: ['clipboard-read', 'clipboard-write'] })
@@ -224,10 +224,10 @@ try {
     await page.locator('[data-slot=subscription-address]').filter({ hasText: 'https://apsp-TEST.example.test/TEST_ONLY_PATH' }).waitFor()
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'https://apsp-TEST.example.test/TEST_ONLY_PATH')
     // A second copy asks nothing and reads nothing more.
-    const before = reads.get('/api/plugins/sing-box/users/7/subscription')
+    const before = reads.get('/api/access/users/7/subscription')
     await page.getByRole('button', { name: /复制订阅链接|已复制/ }).click()
     await page.waitForTimeout(100)
-    assert.equal(reads.get('/api/plugins/sing-box/users/7/subscription'), before)
+    assert.equal(reads.get('/api/access/users/7/subscription'), before)
     assert.equal(await dialog.count(), 0)
     summary.push('copy-subscription')
     await context.close()

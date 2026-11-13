@@ -6,7 +6,7 @@ pub const VERSION: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r21";
 pub async fn prepare(panel: &TestPanel, server: i64) -> Result<()> {
     sqlx::query("UPDATE servers SET static_info=static_info || '{\"os\":\"linux\",\"ip_addresses\":[\"1.1.1.1\",\"127.0.0.1\"]}'::jsonb WHERE id=$1")
         .bind(server).execute(&panel.state.pool).await?;
-    apsp_panel::agent_api::process_message(
+    apsp_resources::device_channel::process_message(
         &panel.state,
         server,
         Message::Hello(Hello {

@@ -23,11 +23,11 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 /** Contact email, password and reminder preferences; changes are confirmed with the password or a passkey. */
 export default function AccountServices({ account, profile, reload }: { account: string; profile: MemberProfile; reload: () => void }) {
-  const base = `/api/plugins/sing-box/portal/${account}`, action = useAction()
+  const base = `/api/access/portal/${account}`, action = useAction()
   const [email, setEmail] = useState(profile.email ?? ''), [challenge, setChallenge] = useState<{ challenge_id: string; old_code_required: boolean }>(), [notice, setNotice] = useState('')
   async function verify(password: FormDataEntryValue | null) {
     if (password) {
-      const value = await api<{ account_id: string }>('/api/plugins/sing-box/portal-public/account/login', 'POST', { email: profile.email, password }, undefined, false)
+      const value = await api<{ account_id: string }>('/api/access/portal-public/account/login', 'POST', { email: profile.email, password }, undefined, false)
       if (value.account_id !== account) throw new Error('登录账户不一致，请重新打开个人入口。')
     } else await loginPasskey(`${base}/login`, false)
   }
@@ -73,7 +73,7 @@ export default function AccountServices({ account, profile, reload }: { account:
 /** Messages the panel sent this user; unread ones are marked until they are read. */
 export function MemberMessages({ account }: { account: string }) {
   type Message = { id: number; message: string; created_at: number; read_at: number | null }
-  const [entries, setEntries] = useState<Message[]>([]), [error, setError] = useState(''), [revision, setRevision] = useState(0), action = useAction(), base = `/api/plugins/sing-box/portal/${account}/account/messages`
+  const [entries, setEntries] = useState<Message[]>([]), [error, setError] = useState(''), [revision, setRevision] = useState(0), action = useAction(), base = `/api/access/portal/${account}/account/messages`
   useEffect(() => { const c = new AbortController(); void api<{ entries: Message[] }>(base, 'GET', undefined, c.signal, false).then(v => { setEntries(v.entries); setError('') }).catch(e => { if (!c.signal.aborted) { setEntries([]); setError(errorMessage(e)) } }); return () => c.abort() }, [base, revision])
   const unread = entries.filter(e => !e.read_at)
   return <div data-slot="member-messages" className="grid gap-3">

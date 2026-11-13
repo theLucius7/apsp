@@ -16,7 +16,7 @@ const diagnosisFixture = user => ({ user_id: user.id, account: { user_id: user.i
 const templateFixture = { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY 完整模板未读取。', supported_client: 'singbox', supported_version: '1.14.2', schema_validation: true, runtime_validation: false, limitations: 'TEST_ONLY 没有保存的模板，未执行真实客户端验证。' }
 
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
-const dist = fileURLToPath(new URL('../dist/', import.meta.url)), prefix = '/api/plugins/sing-box'
+const dist = fileURLToPath(new URL('../dist/', import.meta.url)), prefix = '/api/access'
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname, file = resolve(dist, path === '/' ? 'index.html' : `.${path}`)
   if (!file.startsWith(dist.endsWith(sep) ? dist : `${dist}${sep}`)) return response.writeHead(400).end()
@@ -55,21 +55,21 @@ try {
           if (!users.some(user => path === `${prefix}/users/${user.id}/client-template`)) return route.fulfill({ status: 404, json: { error: 'TEST_ONLY 当前模板用户不存在' } })
           value = templateFixture
         }
-        else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/portal$/.test(path)) {
-          const id = Number(path.split('/')[5])
+        else if (method === 'GET' && /^\/api\/access\/users\/\d+\/portal$/.test(path)) {
+          const id = Number(path.split('/')[4])
           if (!users.some(user => user.id === id) || id === 1 && notFound) return route.fulfill({ status: 404, json: { error: 'TEST_ONLY 当前用户入口不存在' } })
           value = id === 1 ? access : original
-        } else if (method === 'POST' && /^\/api\/plugins\/sing-box\/users\/\d+\/portal\/invitation$/.test(path)) {
+        } else if (method === 'POST' && /^\/api\/access\/users\/\d+\/portal\/invitation$/.test(path)) {
           writes.push({ path, body: request.postDataJSON() })
           assert.equal(path, `${portalPath}/invitation`, 'an old draft must never redirect credentials to another user')
           // Identity comes from the shared recent proof; the request never carries a password.
           assert.deepEqual(Object.keys(writes.at(-1).body), ['reset'])
           value = { url: `${origin}/#/account/00000000-0000-4000-8000-000000000001?activate=${'A'.repeat(43)}`, expires_at: Math.floor(Date.now() / 1000) + 900 }
         } else if (method === 'GET' && [ `${prefix}/policy-groups`, `${prefix}/package-groups` ].includes(path)) value = []
-        else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/policy-groups$/.test(path)) value = { group_ids: [] }
-        else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/entitlement$/.test(path)) value = { user_id: Number(path.split('/')[5]), package_group_id: null, package_name: null, monthly_bytes: null, starts_at: null, expires_at: null, used_bytes: '0', status: 'unmetered', allowed: true }
+        else if (method === 'GET' && /^\/api\/access\/users\/\d+\/policy-groups$/.test(path)) value = { group_ids: [] }
+        else if (method === 'GET' && /^\/api\/access\/users\/\d+\/entitlement$/.test(path)) value = { user_id: Number(path.split('/')[4]), package_group_id: null, package_name: null, monthly_bytes: null, starts_at: null, expires_at: null, used_bytes: '0', status: 'unmetered', allowed: true }
         else if (method === 'GET' && path === `${prefix}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
-        else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/limits$/.test(path)) value = { user_id: Number(path.split('/')[5]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } // Per-user limits (ADR 0124) are read on the user page; none are set here.
+        else if (method === 'GET' && /^\/api\/access\/users\/\d+\/limits$/.test(path)) value = { user_id: Number(path.split('/')[4]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } // Per-user limits (ADR 0124) are read on the user page; none are set here.
         else { unexpected.push(`${method} ${path}`); return route.fulfill({ status: 500, json: { error: 'TEST_ONLY 未知请求' } }) }
         return route.fulfill({ json: value })
       })()

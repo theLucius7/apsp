@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { Badge, Confirm, Empty, ErrorNotice, Field, Loading, Modal, Refresh, DialogPresence } from '../components'
-import { bytes, navigate, totalBytes } from '../format'
+import { bytes, dateText, navigate, totalBytes } from '../format'
 import { useAction, useResource } from '../hooks'
 import type { ResourceState } from '../hooks'
-import type { Node, PluginServer, Usage } from '../types'
+import type { Node, RuntimeServer, Usage } from '../types'
 import { protocolName } from './ProtocolFields'
 import Chains, { deleteProxyResource, proxyDeleteError, proxyWriteError, validNodeList, validServerList } from './Chains'
 import type { ProxyWriteSnapshot } from './Chains'
-import { dateText, filterProxyResources, proxyResourceKey, publicPathText, validatedSnapshot, validProxyResource, validProxyResources } from '../access/groupTypes'
+import { filterProxyResources, proxyResourceKey, publicPathText, validProxyResource, validProxyResources } from '../access/groupTypes'
+import { validatedSnapshot } from '@/lib/resource-snapshot'
 import type { ProxyResource, ProxyResourceServerRole, ResourceEndpoint } from '../access/groupTypes'
 import { nodeHash } from './nodeRoute'
 import { installationView } from './Runtimes'
@@ -22,7 +23,7 @@ import { CornerDownRightIcon, WaypointsIcon } from 'lucide-react'
 import { ActionMenu } from '@/components/action-menu'
 import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
-const root = '/api/plugins/sing-box'
+const root = '/api/traffic'
 // The resource table needs about 56rem. In a narrower panel (phones, tablets, a
 // wide sidebar) each row stacks into a card: status and traffic move up next to
 // the name, and every cell shows its column name. It stays one table for
@@ -40,7 +41,7 @@ function address(endpoint: ResourceEndpoint) {
   const host = endpoint.public_host.includes(':') ? `[${endpoint.public_host.replace(/^\[|\]$/g, '')}]` : endpoint.public_host
   return `${host}:${endpoint.public_port}`
 }
-function applicationView(endpoint: ResourceEndpoint, server?: PluginServer, fresh = false) {
+function applicationView(endpoint: ResourceEndpoint, server?: RuntimeServer, fresh = false) {
   if (!fresh || !server?.installation) return { label: '应用状态待确认', tone: 'neutral' as const, reason: '尚未取得最新设备应用状态，请查看服务器详情。' }
   const view = installationView(server)
   if (server.installation.state === 'ready') {
@@ -51,7 +52,7 @@ function applicationView(endpoint: ResourceEndpoint, server?: PluginServer, fres
   }
   return { ...view, label: server.installation.state === 'queued' ? '等待生成配置' : view.label }
 }
-function EndpointView({ endpoint, server, node, fresh }: { endpoint: ResourceEndpoint; server?: PluginServer; node?: Node; fresh: boolean }) {
+function EndpointView({ endpoint, server, node, fresh }: { endpoint: ResourceEndpoint; server?: RuntimeServer; node?: Node; fresh: boolean }) {
   const application = applicationView(endpoint, server, fresh)
   return <div className="grid min-w-44 justify-items-start gap-1.5"><strong className="max-w-72 wrap-anywhere">{endpoint.name}</strong><a className="text-primary max-w-72 underline-offset-4 wrap-anywhere hover:underline" href={`#/servers/${endpoint.server_id}`}>{fresh ? endpoint.server_name : `服务器 #${endpoint.server_id}`}</a><code className="max-w-72 wrap-anywhere">{address(endpoint)}</code><small className="max-w-72 wrap-anywhere">{protocolName(endpoint.protocol)} · {endpoint.sni || '无需证书'}</small>
     {node && <small className="text-muted-foreground mt-1.5 block max-w-72 wrap-anywhere">监听 {node.settings?.listen ?? '::'} / {endpoint.port}</small>}
@@ -89,7 +90,7 @@ function ResourceDetail({ selected, snapshot, onClose }: { selected: ProxyResour
 type Props = {
   resourcesQuery: ResourceState<unknown>
   nodesQuery: ResourceState<Node[]>
-  serversQuery: ResourceState<PluginServer[]>
+  serversQuery: ResourceState<RuntimeServer[]>
   usage: ResourceState<Usage>
   selected?: ProxyResource
   onCloseSelected: () => void
@@ -107,7 +108,7 @@ type Props = {
 const kind = 'chains'
 
 export default function OrderedResources({ resourcesQuery, nodesQuery, serversQuery, usage, selected, onCloseSelected, filter, initialServerRole = 'any', getServerId, onEdit, onChanged, onAddSource, createRequest }: Props) {
-  const history = useRef<{ resources?: ProxyResource[]; nodes?: Node[]; servers?: PluginServer[] }>({})
+  const history = useRef<{ resources?: ProxyResource[]; nodes?: Node[]; servers?: RuntimeServer[] }>({})
   const resources = validatedSnapshot(resourcesQuery, validProxyResources, history.current.resources)
   const nodes = validatedSnapshot(nodesQuery, validNodeList, history.current.nodes)
   const servers = validatedSnapshot(serversQuery, validServerList, history.current.servers)

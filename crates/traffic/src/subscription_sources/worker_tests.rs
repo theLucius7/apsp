@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 
 async fn state(pool: PgPool) -> AppState {
-    AppState::new(
+    apsp_governance::state(
         pool,
         Config {
             database_url: String::new(),

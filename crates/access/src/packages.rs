@@ -185,7 +185,7 @@ pub async fn assign(
     require_admin(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
     apsp_traffic::business::lock_publication(&mut tx).await?;
-    apsp_traffic::business::lock_user(&mut tx, id).await?;
+    crate::proxy_users::lock_user(&mut tx, id).await?;
     if let Some(previous) = sqlx::query_as::<_, Assignment>("SELECT id,user_id,package_group_id,starts_at,expires_at FROM singbox_package_assignments WHERE user_id=$1 AND request_id=$2")
         .bind(id).bind(request.request_id).fetch_optional(&mut *tx).await? {
         if previous.package_group_id != request.package_group_id {
@@ -212,7 +212,7 @@ pub(crate) async fn assign_on(
             "原订阅兼容期间只能分配已映射的套餐".into(),
         ));
     }
-    let servers = apsp_traffic::business::lock_user_servers(tx, user).await?;
+    let servers = crate::proxy_users::lock_user_servers(tx, user).await?;
     let value = sqlx::query_as::<_, Assignment>("INSERT INTO singbox_package_assignments(user_id,request_id,package_group_id,package_name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,starts_at,expires_at) SELECT $1,$2,id,name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,$4,$4+duration_days::bigint*86400 FROM singbox_package_groups WHERE id=$3 AND deleted_at IS NULL RETURNING id,user_id,package_group_id,starts_at,expires_at")
         .bind(user).bind(request_id).bind(package_group_id).bind(apsp_protocol::now_timestamp())
         .fetch_optional(&mut **tx).await?.ok_or(ApiError::NotFound)?;

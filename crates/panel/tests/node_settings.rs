@@ -10,13 +10,11 @@ use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 
-const ROOT: &str = "/api/plugins/sing-box";
-
 async fn patch(panel: &TestPanel, cookie: &str, node: i64, body: Value) -> Result<Value> {
     Ok(panel
         .admin(
             Method::PATCH,
-            &format!("{ROOT}/nodes/{node}"),
+            &format!("/api/traffic/nodes/{node}"),
             cookie,
             Some(body),
         )
@@ -33,8 +31,8 @@ async fn settings_preserve_secrets_validate_atomically_and_pause_without_revokin
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Protocols").await?;
-    panel.enable_plugin(&cookie, server).await?;
-    let node: Value = panel.admin(Method::POST, &format!("{ROOT}/nodes"), &cookie, Some(json!({
+    panel.enable_runtime(&cookie, server).await?;
+    let node: Value = panel.admin(Method::POST, "/api/traffic/nodes", &cookie, Some(json!({
         "name":"HY2", "server_id":server,"port":20443,"public_host":"proxy.example.com","sni":"proxy.example.com",
         "protocol_config":{"type":"hysteria2","tls":{"mode":"acme","email":"admin@example.com","challenge":"http-01"}},
         "settings":{"listen":"0.0.0.0","public_port":443,"hysteria2":{"obfs_enabled":true,"up_mbps":80,"down_mbps":40}}
@@ -69,7 +67,7 @@ async fn settings_preserve_secrets_validate_atomically_and_pause_without_revokin
         let response = panel
             .admin(
                 Method::PATCH,
-                &format!("{ROOT}/nodes/{node}"),
+                &format!("/api/traffic/nodes/{node}"),
                 &cookie,
                 Some(json!({"name":"Should rollback", "settings":settings})),
             )
@@ -77,7 +75,12 @@ async fn settings_preserve_secrets_validate_atomically_and_pause_without_revokin
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
     let current: Value = panel
-        .admin(Method::GET, &format!("{ROOT}/nodes/{node}"), &cookie, None)
+        .admin(
+            Method::GET,
+            &format!("/api/traffic/nodes/{node}"),
+            &cookie,
+            None,
+        )
         .await?
         .json()
         .await?;
@@ -149,7 +152,7 @@ async fn settings_preserve_secrets_validate_atomically_and_pause_without_revokin
     let accesses: Value = panel
         .admin(
             Method::GET,
-            &format!("{ROOT}/users/{uid}/accesses"),
+            &format!("/api/access/users/{uid}/accesses"),
             &cookie,
             None,
         )
@@ -177,7 +180,7 @@ async fn deployment_checks_distinguish_pending_unenrolled_and_missing_artifacts(
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Deployment").await?;
     panel.create_node(&cookie, server, "Reality").await?;
-    let path = format!("{ROOT}/servers/{server}/deployments");
+    let path = format!("/api/traffic/servers/{server}/deployments");
     for (method, path) in [
         (Method::GET, path.clone()),
         (Method::POST, format!("{path}/check")),
@@ -261,7 +264,7 @@ async fn signed_runtime_cannot_make_an_agent_without_signature_support_ready(
     let (server, _socket, ack) = panel
         .authenticated_device(&cookie, "Signature readiness")
         .await?;
-    panel.enable_plugin(&cookie, server).await?;
+    panel.enable_runtime(&cookie, server).await?;
     let binary = b"TEST_ONLY inert signed readiness runtime";
     let archive = release_fixture::archive("sing-box", binary)?;
     release_fixture::write(
@@ -273,7 +276,7 @@ async fn signed_runtime_cannot_make_an_agent_without_signature_support_ready(
         binary,
         "tar.gz",
     )?;
-    let check = format!("{ROOT}/servers/{server}/deployments/check");
+    let check = format!("/api/traffic/servers/{server}/deployments/check");
     for (capabilities, expected) in [
         (json!(["singbox"]), false),
         (

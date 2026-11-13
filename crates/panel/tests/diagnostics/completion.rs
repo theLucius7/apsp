@@ -116,8 +116,7 @@ async fn cleaning_keeps_mutex_reports_and_chapters_until_terminal_confirmation(
         assert_eq!(view["reports"][0]["sections"][0]["text"], chapter["text"]);
     }
     let recreated =
-        apsp_panel_host::AppState::new(panel.state.pool.clone(), (*panel.state.config).clone())
-            .await?;
+        apsp_panel::state(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
     diagnostics::expire(&recreated).await?;
     assert_eq!(stored(&panel, id).await?, saved);
     assert_eq!(
@@ -424,7 +423,7 @@ async fn cleaning_during_cancellation_never_confirms_cleanup_or_erases_report(
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn cleaning_reports_keep_device_plugin_and_size_validation(pool: PgPool) -> Result<()> {
+async fn cleaning_reports_keep_device_tool_and_size_validation(pool: PgPool) -> Result<()> {
     let panel = TestPanel::start(pool).await?;
     let cookie = panel.admin_cookie().await?;
     let (server, _socket, ack) = panel

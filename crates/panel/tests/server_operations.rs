@@ -4,8 +4,8 @@ mod business_support;
 mod release_support;
 use anyhow::Result;
 use apsp_observability::{alerts::evaluate, server_traffic};
-use apsp_panel_host::servers::Server;
 use apsp_protocol::now_timestamp;
+use apsp_resources::servers::Server;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -499,7 +499,7 @@ async fn monitoring_only_sessions_and_tokens_keep_private_server_fields_hidden(
     }
     let token = "apsp_api_TEST_ONLY_MONITORING";
     sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,all_servers,expires_at,created_at) VALUES($1,1,$2,'test-monitoring',$3,'[]',true,$4,$5)")
-        .bind(uuid::Uuid::new_v4()).bind(apsp_panel_host::auth::hash_token(token)).bind(json!(["monitoring:read"]))
+        .bind(uuid::Uuid::new_v4()).bind(apsp_governance::auth::hash_token(token)).bind(json!(["monitoring:read"]))
         .bind(now_timestamp()+3600).bind(now_timestamp()).execute(&panel.state.pool).await?;
     for suffix in ["/servers", "/live"] {
         let response = panel

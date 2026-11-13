@@ -35,8 +35,8 @@ export default function Ddns({ serverId }: { serverId?: number }) {
   const [migrating, setMigrating] = useState(false)
   const [lifecycle, setLifecycle] = useState<DdnsRule | null>(null)
   const [editing, setEditing] = useState<DdnsRule | 'new' | null>(null), [removing, setRemoving] = useState<DdnsRule | null>(null)
-  const rules = useResource<DdnsRule[]>('/api/plugins/ddns/rules'), servers = useResource<Server[]>('/api/plugins/ddns/servers')
-  const accounts = useResource<DnsAccount[]>('/api/plugins/ddns/accounts', 30_000)
+  const rules = useResource<DdnsRule[]>('/api/naming/rules'), servers = useResource<Server[]>('/api/naming/servers')
+  const accounts = useResource<DnsAccount[]>('/api/naming/accounts', 30_000)
   const connect = useAccountConnect(accounts.reload)
   const action = useAction()
   const available = Boolean(rules.data && servers.data && !resourceWriteError(rules, servers))
@@ -50,8 +50,8 @@ export default function Ddns({ serverId }: { serverId?: number }) {
   }
   const perform = (error: () => string, request: () => Promise<unknown>, saved = rules.reload) => void action.run(() => { const reason = error(); if (reason) throw new Error(reason); return request() }, saved)
   const open = (rule: DdnsRule | 'new') => { if (rule === 'new' ? ddnsCurrentError(current) : ruleError(current, rule)) return; action.clearError(); setEditing(rule) }
-  const toggle = (rule: DdnsRule) => perform(() => ruleError(current, rule), () => api(`/api/plugins/ddns/rules/${rule.id}`, 'PATCH', ddnsWrite({ ...rule.config, enabled: !rule.config.enabled }, '', rule.revision)))
-  const sync = (rule: DdnsRule) => perform(() => ruleError(current, rule, true), () => api(`/api/plugins/ddns/rules/${rule.id}/sync`, 'POST'))
+  const toggle = (rule: DdnsRule) => perform(() => ruleError(current, rule), () => api(`/api/naming/rules/${rule.id}`, 'PATCH', ddnsWrite({ ...rule.config, enabled: !rule.config.enabled }, '', rule.revision)))
+  const sync = (rule: DdnsRule) => perform(() => ruleError(current, rule, true), () => api(`/api/naming/rules/${rule.id}/sync`, 'POST'))
   const mixed = new Set(visibleRules?.map(rule => rule.config.provider ?? 'cloudflare')).size > 1
   const noAccounts = accounts.data !== undefined && !accounts.data.some(account => account.config.enabled)
   const addDisabled = action.busy || !available || !scope.length || full
@@ -108,6 +108,6 @@ export default function Ddns({ serverId }: { serverId?: number }) {
     <DialogPresence>{migrating && rules.data && servers.data && <Migration rules={visibleRules ?? []} servers={servers.data} accounts={accounts.data ?? []} close={() => setMigrating(false)} saved={() => { setMigrating(false); refresh() }} />}</DialogPresence>
     <DialogPresence>{lifecycle && <Lifecycle rule={rules.data?.find(rule => rule.id === lifecycle.id) ?? lifecycle} close={() => setLifecycle(null)} changed={refresh} />}</DialogPresence>
     <DialogPresence>{editing && servers.data && <RuleEditor key={editing === 'new' ? 'new' : editing.id} rule={editing === 'new' ? undefined : editing} servers={scope} accounts={accounts.data ?? []} current={current} close={() => setEditing(null)} saved={() => { setEditing(null); refresh() }} connect={() => { setEditing(null); connect.open() }} />}</DialogPresence>
-    <DialogPresence>{removing && <Confirm title="删除解析" busy={action.busy} error={action.error} confirmDisabled={Boolean(ruleError(current, removing))} onClose={() => setRemoving(null)} onConfirm={() => perform(() => ruleError(current, removing), () => api(`/api/plugins/ddns/rules/${removing.id}`, 'DELETE'), () => { setRemoving(null); rules.reload() })}>确认删除“{removing.config.record_name}”的自动解析？DNS 提供方中的记录会保留，只是之后不再自动更新。</Confirm>}</DialogPresence>
+    <DialogPresence>{removing && <Confirm title="删除解析" busy={action.busy} error={action.error} confirmDisabled={Boolean(ruleError(current, removing))} onClose={() => setRemoving(null)} onConfirm={() => perform(() => ruleError(current, removing), () => api(`/api/naming/rules/${removing.id}`, 'DELETE'), () => { setRemoving(null); rules.reload() })}>确认删除“{removing.config.record_name}”的自动解析？DNS 提供方中的记录会保留，只是之后不再自动更新。</Confirm>}</DialogPresence>
   </div>
 }

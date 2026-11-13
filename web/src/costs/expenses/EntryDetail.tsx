@@ -5,7 +5,7 @@ import { api } from '../../api'
 import { Badge, ErrorNotice, Field, Modal } from '../../components'
 import type { Tone as BadgeTone } from '../../components'
 import { money } from '../currency/currency'
-import { toneText } from '../../observability/display/ui'
+import { toneText } from '@/components/board'
 import { useAction, useResource } from '../../hooks'
 import { ActionMenu } from '@/components/action-menu'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -14,6 +14,7 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+import { newRequestId } from '@/lib/request-id'
 import { recordKinds, validCosts, validItemPayments } from './model'
 import type { ItemRow, LedgerRow, ServerRow, Tone } from './model'
 import { confirmed, operationText, runOperation } from './operations'
@@ -53,9 +54,9 @@ function ItemDetail({ row, ledger, onClose, onEdit, onOpenItem }: { row: ItemRow
   const act = (kind: ItemOperation) => {
     if (ledger.stale) return
     action.clearError(); setNotice('')
-    if (confirmed(kind) && asking !== kind) { setAsking(kind as 'renew' | 'delete'); setRequestId(crypto.randomUUID()); return }
+    if (confirmed(kind) && asking !== kind) { setAsking(kind as 'renew' | 'delete'); setRequestId(newRequestId()); return }
     // A confirmed operation keeps the id it was asked with, so a retry is recorded once; the others take a fresh one.
-    const id = confirmed(kind) ? requestId : crypto.randomUUID()
+    const id = confirmed(kind) ? requestId : newRequestId()
     void action.run(() => runOperation(item, kind, id), result => {
       setAsking(null); ledger.reload(); payments.reload()
       if (kind === 'delete') onClose()

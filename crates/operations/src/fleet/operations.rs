@@ -1,5 +1,5 @@
 use crate::{
-    AppState, auth,
+    AppState,
     error::{ApiError, ApiResult},
 };
 use apsp_protocol::{
@@ -385,7 +385,7 @@ pub async fn list(
 }
 
 pub async fn work(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Work>> {
-    let id = auth::require_agent(&state, &headers).await?;
+    let id = crate::device_channel::require_agent(&state, &headers).await?;
     // Agents ask every few seconds and there is almost never anything to hand
     // out. With nothing queued every write below is a no-op and both lists are
     // empty, so answer without locking the server row. Work queued meanwhile is
@@ -510,7 +510,7 @@ pub async fn complete(
     headers: HeaderMap,
     Json(result): Json<JobResult>,
 ) -> ApiResult<Json<Value>> {
-    let id = auth::require_agent(&state, &headers).await?;
+    let id = crate::device_channel::require_agent(&state, &headers).await?;
     let encoded = serde_json::to_vec(&result).map_err(anyhow::Error::from)?;
     if encoded.len() > 768 * 1024 || result.completed_at > now_timestamp() + 60 {
         return Err(ApiError::BadRequest("操作结果大小或时间无效".into()));

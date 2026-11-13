@@ -3,7 +3,7 @@ import { api } from '../api'
 import { Badge, Confirm, DialogPresence, ErrorNotice, Loading, Refresh } from '../components'
 import { time } from '../format'
 import { resourceWriteError, useAction, useResource, settingsPoll } from '../hooks'
-import type { Deployment, Node, PluginServer } from '../types'
+import type { Deployment, Node, RuntimeServer } from '../types'
 import RuntimeOperations from './RuntimeOperations'
 import ServerProfile from './ServerProfile'
 import { installationView } from './Runtimes'
@@ -31,10 +31,10 @@ function Revision({ label, value, tone }: { label: string; value: number | null;
  * The list of every server's runtime is a view of the network services workspace.
  */
 export default function ServerBusiness({ serverId, runtimeVersion }: { serverId: number; runtimeVersion?: string }) {
-  const metadata = useResource<PluginServer>(`/api/plugins/sing-box/servers/${serverId}`, 15_000)
+  const metadata = useResource<RuntimeServer>(`/api/traffic/servers/${serverId}`, 15_000)
   const enabled = metadata.data?.enabled === true
-  const deployment = useResource<Progress>(enabled ? `/api/plugins/sing-box/servers/${serverId}/deployments` : null, 15_000)
-  const nodes = useResource<Node[]>(enabled ? '/api/plugins/sing-box/nodes' : null, settingsPoll, { keep: true })
+  const deployment = useResource<Progress>(enabled ? `/api/traffic/servers/${serverId}/deployments` : null, 15_000)
+  const nodes = useResource<Node[]>(enabled ? '/api/traffic/nodes' : null, settingsPoll, { keep: true })
   const action = useAction()
   const [redeploying, setRedeploying] = useState(false)
   const [notice, setNotice] = useState('')
@@ -46,18 +46,18 @@ export default function ServerBusiness({ serverId, runtimeVersion }: { serverId:
   const outsideRestart = Boolean(status?.last_error?.includes('controlled runtime instance differs from the successfully applied activation'))
   const redeploy = () => {
     if (resourceWriteError(metadata, deployment)) return
-    void action.run(() => api<{ revision: number }>(`/api/plugins/sing-box/servers/${serverId}/deployments/redeploy`, 'POST'), value => { setRedeploying(false); setNotice(`已生成版本 ${value.revision}，等待设备应用。`); refresh() })
+    void action.run(() => api<{ revision: number }>(`/api/traffic/servers/${serverId}/deployments/redeploy`, 'POST'), value => { setRedeploying(false); setNotice(`已生成版本 ${value.revision}，等待设备应用。`); refresh() })
   }
   const readiness = () => {
     if (resourceWriteError(metadata, deployment)) return
     setCheck(null)
-    void action.run(() => api<Readiness>(`/api/plugins/sing-box/servers/${serverId}/deployments/check`, 'POST'), setCheck)
+    void action.run(() => api<Readiness>(`/api/traffic/servers/${serverId}/deployments/check`, 'POST'), setCheck)
   }
   const enable = () => {
     if (resourceWriteError(metadata)) return
     const current = metadata.getCurrent()
     if (!current || current.read_only || current.enabled) return
-    void action.run(() => api(`/api/plugins/sing-box/servers/${serverId}/enable`, 'POST', {}), refresh)
+    void action.run(() => api(`/api/traffic/servers/${serverId}/enable`, 'POST', {}), refresh)
   }
   const server = metadata.data
   const installation = server ? installationView(server) : undefined

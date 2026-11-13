@@ -4,34 +4,42 @@
 //! used through their own crates (`apsp_panel_host`, `apsp_traffic`, ...); this crate only
 //! exports what it defines.
 
-pub mod agent_api;
 mod cloud_overview;
 pub mod domains;
-mod integration_policy;
 pub mod maintenance;
+mod moved_paths;
 pub mod publisher;
+mod search;
 mod wiring;
 
-use apsp_panel_host::{AppState, control_center};
+use apsp_governance::control_center;
+use apsp_panel_host::{AppState, config::Config};
+
+/// The shared state of a running panel: the typed interfaces are connected, governance is
+/// prepared and the registry of connected devices exists, so every later copy of the
+/// state (a portal request scoped to a personal address, for one) shares it.
+pub async fn state(pool: sqlx::PgPool, config: Config) -> anyhow::Result<AppState> {
+    domains::install();
+    let state = apsp_governance::state(pool, config).await?;
+    apsp_resources::device_channel::devices(&state);
+    Ok(state)
+}
 
 /// Builds the panel router: every domain's routes inside the platform shell, guarded by
-/// governance permissions, behind the per-user subscription host gate.
+/// governance permissions, behind the per-user subscription host gate. Requests to an
+/// address the console API had before are answered at its current address.
 pub fn router(state: AppState) -> axum::Router {
-    use apsp_panel_host::domains;
-    crate::domains::install();
-    let routes = axum::Router::new()
-        .merge(apsp_panel_host::agent_api::routes())
-        .merge(domains::governance::routes())
-        .merge(domains::resources::routes())
-        .merge(domains::networking::routes())
-        .merge(apsp_observability::routes())
-        .merge(apsp_operations::routes())
-        .merge(crate::domains::router());
     let guard = axum::middleware::from_fn_with_state(state.clone(), control_center::guard::guard);
     let gate =
         axum::middleware::from_fn_with_state(state.clone(), apsp_access::subscription_hosts::gate);
-    apsp_panel_host::shell(routes)
+    let panel = apsp_panel_host::shell(domains::router())
         .layer(guard)
         .with_state(state)
-        .layer(gate)
+        .layer(gate);
+    // A layer runs after its router has matched the request. The rewrite of former
+    // addresses must run before that, so it sits on an outer router whose only route is
+    // the panel itself.
+    axum::Router::new()
+        .fallback_service(panel)
+        .layer(axum::middleware::from_fn(moved_paths::current))
 }

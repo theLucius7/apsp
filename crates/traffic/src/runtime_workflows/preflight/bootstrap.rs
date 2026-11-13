@@ -199,7 +199,7 @@ pub(in super::super::super) async fn install(
         .await?;
     crate::users::record_event(&mut tx,Some(actor),None,"runtime_empty_bootstrap_requested",json!({"server_id":server,"revision":revision,"preflight_id":request.id,"artifact_sha256":artifact.sha256,"business_inbounds":0,"business_credentials":0,"business_preflight_invalidated":true})).await?;
     tx.commit().await?;
-    crate::agent_api::notify(
+    crate::device_channel::notify(
         &state,
         server,
         apsp_protocol::Envelope::new(

@@ -13,6 +13,33 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+/// Locks a proxy user for the transaction that changes what the user may use.
+pub(crate) async fn lock_user(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    id: i64,
+) -> ApiResult<()> {
+    let found: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut **transaction)
+            .await?;
+    found.ok_or(ApiError::NotFound)?;
+    Ok(())
+}
+
+/// Locks the servers whose nodes the user is granted, in id order, and returns them.
+pub(crate) async fn lock_user_servers(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: i64,
+) -> ApiResult<Vec<i64>> {
+    let ids: Vec<i64> = sqlx::query_scalar("SELECT DISTINCT n.server_id FROM accesses a JOIN nodes n ON n.id=a.node_id WHERE a.user_id=$1 ORDER BY n.server_id").bind(user_id).fetch_all(&mut **transaction).await?;
+    sqlx::query("SELECT id FROM servers WHERE id=ANY($1) ORDER BY id FOR UPDATE")
+        .bind(&ids)
+        .fetch_all(&mut **transaction)
+        .await?;
+    Ok(ids)
+}
+
 #[derive(FromRow)]
 struct ProxyUserRow {
     id: i64,
@@ -202,8 +229,8 @@ pub async fn update(
     let name = business::name(&request.name)?;
     let mut transaction = state.pool.begin().await?;
     apsp_traffic::business::lock_publication(&mut transaction).await?;
-    business::lock_user(&mut transaction, id).await?;
-    let servers = business::lock_user_servers(&mut transaction, id).await?;
+    crate::proxy_users::lock_user(&mut transaction, id).await?;
+    let servers = crate::proxy_users::lock_user_servers(&mut transaction, id).await?;
     let user = sqlx::query_as::<_, ProxyUserRow>(
         "UPDATE users SET name=$2 WHERE id=$1 RETURNING id,name,subscription_token",
     )
@@ -241,7 +268,7 @@ pub async fn reset_subscription(
     crate::control_center::require_recent_proof(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
     apsp_traffic::business::lock_publication(&mut tx).await?;
-    apsp_traffic::business::lock_user(&mut tx, id).await?;
+    crate::proxy_users::lock_user(&mut tx, id).await?;
     let legacy = crate::nexus::bridge::is_member(&mut tx, id).await?;
     if legacy {
         // The token stays with the retained renderer; the user's own address still rotates.
@@ -300,8 +327,8 @@ pub async fn remove(
     require_admin(&state, &headers).await?;
     let mut transaction = state.pool.begin().await?;
     apsp_traffic::business::lock_publication(&mut transaction).await?;
-    business::lock_user(&mut transaction, id).await?;
-    let servers = business::lock_user_servers(&mut transaction, id).await?;
+    crate::proxy_users::lock_user(&mut transaction, id).await?;
+    let servers = crate::proxy_users::lock_user_servers(&mut transaction, id).await?;
     sqlx::query("UPDATE users SET deleted_at=$2 WHERE id=$1")
         .bind(id)
         .bind(now_timestamp())

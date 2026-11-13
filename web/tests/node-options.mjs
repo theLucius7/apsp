@@ -51,16 +51,16 @@ try {
       const url=new URL(route.request().url()), path=url.pathname, method=route.request().method()
       assert.equal(url.origin,origin,'Node options never request external endpoints')
       if(!path.startsWith('/api/')) return route.continue()
-      if(path==='/api/plugins/sing-box/nodes' && method==='GET' && nodeReadGate) {nodeReadGate.reached=true; await nodeReadGate.promise}
+      if(path==='/api/traffic/nodes' && method==='GET' && nodeReadGate) {nodeReadGate.reached=true; await nodeReadGate.promise}
       let value
       if(path==='/api/me') value={authenticated:true}
       else if(path==='/api/dashboard/access') value={authenticated:true,public_dashboard:false}
-      else if(path==='/api/plugins/sing-box/servers') value=servers
-      else if(path==='/api/plugins/sing-box/usage') value={total:'0',by_node:[],by_user:[],uplink:'0',downlink:'0'}
-      else if(path==='/api/plugins/sing-box/node-catalog') value=catalogView(catalogNodeFixtures(nodes, servers, chains))
-      else if(path==='/api/plugins/sing-box/ordered-proxy-resources') value=richResources()
-      else if(path==='/api/plugins/sing-box/ordered-subscription-sources') value=[]
-      else if(path==='/api/plugins/sing-box/nodes') value=nodes
+      else if(path==='/api/traffic/servers') value=servers
+      else if(path==='/api/access/usage') value={total:'0',by_node:[],by_user:[],uplink:'0',downlink:'0'}
+      else if(path==='/api/traffic/node-catalog') value=catalogView(catalogNodeFixtures(nodes, servers, chains))
+      else if(path==='/api/traffic/ordered-proxy-resources') value=richResources()
+      else if(path==='/api/traffic/ordered-subscription-sources') value=[]
+      else if(path==='/api/traffic/nodes') value=nodes
       else if(path.match(/\/nodes\/\d+$/) && method==='PATCH') {const node=nodes.find(node=>node.id===Number(path.split('/').at(-1))); const body=route.request().postDataJSON(); writes.push({id:node.id,body}); Object.assign(node,body); value=node}
       else {errors.push(`Unexpected ${method}: ${path}`); return route.fulfill({status:404,json:{}})}
       await route.fulfill({json:value})

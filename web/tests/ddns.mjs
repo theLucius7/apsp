@@ -41,10 +41,10 @@ try {
       if (method === 'GET') reads.push(path)
       if (method === 'GET' && held?.path === path) { ++held.reached; await held.promise }
       if (path === '/api/dashboard/access') return respond({ authenticated, public_dashboard: false })
-      if (path === '/api/plugins/ddns/accounts' && method === 'GET') return respond(accounts)
-      if (path === '/api/plugins/ddns/servers') return failServers ? respond({ error: '测试：服务器状态不可用' }, 503) : respond(servers)
+      if (path === '/api/naming/accounts' && method === 'GET') return respond(accounts)
+      if (path === '/api/naming/servers') return failServers ? respond({ error: '测试：服务器状态不可用' }, 503) : respond(servers)
       if (method !== 'GET') writes.push({ path, method, body: request.postData() ? request.postDataJSON() : null })
-      if (path === '/api/plugins/ddns/rules') {
+      if (path === '/api/naming/rules') {
         if (method === 'GET') return failRules ? respond({ error: '测试：规则状态不可用' }, 503) : respond(rules)
         if (failSave) return respond({ error: '测试：域名已存在规则' }, 409)
         const body = request.postDataJSON()
@@ -52,21 +52,21 @@ try {
         rules.push({ id, config: body.config, revision: 1, token_configured: true, busy: false, server_name: '测试服务器', candidate_ip: '2001:db8::10', ip_status: 'ready', ip_received_at: now, last_ip: null, last_success_at: null, attempted_at: null, next_run_at: 0, status: 'pending', error_code: null, failures: 0 })
         return respond(rules.at(-1), 201)
       }
-      if (path === '/api/plugins/ddns/rules/dual-stack') {
+      if (path === '/api/naming/rules/dual-stack') {
         if (failSave) return respond({ error: '测试：双栈其中一种记录已存在' }, 409)
         const body = request.postDataJSON()
         const pair = ['A', 'AAAA'].map(record_type => ({ id: `dual-${record_type}`, config: { ...body.config, record_type }, revision: 1, token_configured: true, busy: false, server_name: '测试服务器', candidate_ip: null, ip_status: 'no_public_ip', ip_received_at: now, last_ip: null, last_success_at: null, next_run_at: 0, status: 'pending', error_code: null, failures: 0 }))
         rules.push(...pair)
         return respond({ rules: pair }, 201)
       }
-      if (path === '/api/plugins/ddns/rules/test-rule') {
+      if (path === '/api/naming/rules/test-rule') {
         if (method === 'DELETE') { rules = rules.filter(rule => rule.id !== 'test-rule'); return route.fulfill({ status: 204 }) }
         const body = request.postDataJSON()
         assert.equal(body.revision, rules[0].revision)
         rules[0] = { ...rules[0], config: body.config, revision: body.revision + 1 }
         return respond(rules[0])
       }
-      if (path === '/api/plugins/ddns/rules/test-rule/sync') {
+      if (path === '/api/naming/rules/test-rule/sync') {
         if (failSync) return respond({ error: '测试：规则正在同步，请稍后重试' }, 409)
         Object.assign(rules[0], { status: 'updated', last_ip: '2001:db8::10', last_success_at: now, next_run_at: now + 300 })
         return respond(rules[0])
@@ -115,7 +115,7 @@ try {
     await settle()
     const draftReads = reads.length, draftWrites = writes.length
     await advance(15_000)
-    for (const path of ['/api/plugins/ddns/rules', '/api/plugins/ddns/servers']) assert(reads.slice(draftReads).includes(path), 'Editing keeps both current polling feeds live')
+    for (const path of ['/api/naming/rules', '/api/naming/servers']) assert(reads.slice(draftReads).includes(path), 'Editing keeps both current polling feeds live')
     assert.equal(writes.length, draftWrites, 'Fresh reads do not submit the preserved draft')
     assert.equal(await dialog.getByLabel('名称').inputValue(), '家庭 IPv6')
     assert.equal(await dialog.getByLabel('API Token', { exact: false }).inputValue(), 'TEST_ONLY_CLOUDFLARE_TOKEN')
@@ -227,7 +227,7 @@ try {
     await dialog.getByLabel('API Token', { exact: false }).fill('TEST_ONLY_CLOUDFLARE_TOKEN')
     for (const dependency of ['rules', 'servers']) {
       let release
-      held = { path: `/api/plugins/ddns/${dependency}`, reached: 0, promise: new Promise(resolve => { release = resolve }) }
+      held = { path: `/api/naming/${dependency}`, reached: 0, promise: new Promise(resolve => { release = resolve }) }
       const baseline = writes.length
       await dialog.locator('form').evaluate(form => {
         document.querySelector('header[data-slot=page-header] button').click()
@@ -267,7 +267,7 @@ try {
     failSave = false
     await dialog.getByRole('button', { name: '添加两条解析' }).click()
     await dialog.waitFor({ state: 'hidden' })
-    assert.equal(writes.at(-1).path, '/api/plugins/ddns/rules/dual-stack')
+    assert.equal(writes.at(-1).path, '/api/naming/rules/dual-stack')
     assert.equal(writes.at(-1).body.api_token, 'TEST_ONLY_CLOUDFLARE_TOKEN')
     assert.equal(writes.at(-1).body.config.name, 'dual.example.com')
     assert.deepEqual(Object.keys(writes.at(-1).body).sort(), ['api_token', 'config'])

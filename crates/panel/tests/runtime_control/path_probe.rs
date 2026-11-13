@@ -5,7 +5,7 @@ const ANOTHER: Uuid = Uuid::from_u128(701);
 
 async fn probe_fixture(pool: PgPool) -> Result<(TestPanel, i64)> {
     let (panel, server) = fixture(pool).await?;
-    agent_api::process_message(
+    device_channel::process_message(
         &panel.state,
         server,
         Message::Hello(Hello {
@@ -64,7 +64,8 @@ async fn signed_probe_replays_original_deadline_and_acknowledges_only_committed_
             .await
             .is_err()
     );
-    let restarted = AppState::new(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
+    let restarted =
+        apsp_panel::state(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
     let mut receiver = attach(&restarted, server).await;
     runtime_control::replay_pending(&restarted, server).await?;
     assert_eq!(
@@ -72,7 +73,7 @@ async fn signed_probe_replays_original_deadline_and_acknowledges_only_committed_
         Message::RuntimePathProbeRequest(request.clone())
     );
     let result = probe_success(&request);
-    agent_api::process_message(
+    device_channel::process_message(
         &restarted,
         server,
         Message::RuntimePathProbeResult(result.clone()),

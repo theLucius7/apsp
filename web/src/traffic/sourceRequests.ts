@@ -1,14 +1,14 @@
 import { api } from '../api'
 import { resourceWriteError } from '../hooks'
-import { assignmentRequestId } from '../access/groupTypes'
-import type { ResourceSnapshot } from '../access/groupTypes'
+import { newRequestId } from '@/lib/request-id'
+import type { ResourceSnapshot } from '@/lib/resource-snapshot'
 import { MAX_REFRESH_SECS, MAX_SOURCE_BYTES, MIN_REFRESH_SECS, orderedPreviewError, sourceJobRoot, sourceRoot, sourceUuid, validOrderedPreview, validSourceJob, validSourceNode, validSourceReceipt, validSubscriptionSources } from './orderedSourceTypes'
 import type { OrderedPreview, SourceJob, SourceNode, SourceReceipt, SubscriptionSource } from './orderedSourceTypes'
 
 export type SourceEditorMode = 'create' | 'metadata' | 'update' | 'replace' | 'archive' | 'unarchive'
 export type SourceDraft = { name: string; kind: 'url' | 'inline'; url: string; content: string; interval: string; authorization: string; cookie: string; apiKey: string; authAction: 'preserve' | 'replace' | 'clear'; userAgent: string; autoRefresh: 'on' | 'off' }
 export const emptySourceDraft = (): SourceDraft => ({ name: '', kind: 'url', url: '', content: '', interval: '86400', authorization: '', cookie: '', apiKey: '', authAction: 'preserve', userAgent: '', autoRefresh: 'on' })
-export const previewRoot = '/api/plugins/sing-box/ordered-subscription-source-previews'
+export const previewRoot = '/api/traffic/ordered-subscription-source-previews'
 export type SourceCommand = { mode: SourceEditorMode; source_id?: number; settings_revision?: number; expected_identity_epoch?: number; fields: Record<string, unknown> }
 export type PendingSourceMutation = { command: string; path: string; method: 'POST' | 'PATCH'; request_id: string; serialized: string; attempted: boolean }
 export type SourceSnapshot = ResourceSnapshot<SubscriptionSource[]>
@@ -103,7 +103,7 @@ export function sourceCommandError(command: SourceCommand, snapshot: SourceSnaps
   const source = snapshot.data!.find(item => item.id === command.source_id)!
   return source.identity_epoch !== command.expected_identity_epoch ? '来源身份代次已变化；原请求和草稿已保留，请先确认上次保存结果。' : ''
 }
-export function prepareSourceMutation(command: SourceCommand, snapshot: SourceSnapshot, previous?: PendingSourceMutation, id = assignmentRequestId): PendingSourceMutation {
+export function prepareSourceMutation(command: SourceCommand, snapshot: SourceSnapshot, previous?: PendingSourceMutation, id = newRequestId): PendingSourceMutation {
   const fingerprint = JSON.stringify(command)
   const replay = previous?.attempted && previous.command === fingerprint
   const error = sourceCommandError(command, snapshot, Boolean(replay))

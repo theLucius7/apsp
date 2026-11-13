@@ -62,7 +62,7 @@ try {
       if (path === '/api/servers/1/probe-results') return respond([{ id: 'old-point', probe_id: 'probe-1', sampled_at: Date.now(), latency_ms: 0, loss_percent: 0, error: null }])
       if (path === '/api/servers/1/telemetry-settings') return respond({ persist_interval_secs: 60 })
       if (path === '/api/servers/1/agent-settings') return respond({ sample_interval_secs: 1, upload_interval_secs: 3, auto_update: false, discover_public_ips: false })
-      if (path === '/api/plugins/sing-box/servers/1') return respond({ id: 1, name: entry.name, enabled: false, read_only: false, online: false, agent_supported: false, installation: { state: 'not_enabled', reason: '未启用', target_rev: 0, applied_rev: 0 } })
+      if (path === '/api/traffic/servers/1') return respond({ id: 1, name: entry.name, enabled: false, read_only: false, online: false, agent_supported: false, installation: { state: 'not_enabled', reason: '未启用', target_rev: 0, applied_rev: 0 } })
       if (path === '/api/servers/1/commands' || path === '/api/servers/1/metrics' || path === '/api/probes/overview') return respond([])
       unexpected.push(`${method} ${path}`); return respond({ error: 'Unexpected request' }, 500)
     })

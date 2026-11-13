@@ -549,7 +549,7 @@ impl Check {
             } => *license_acknowledged,
             Self::NodeQualityFull => {
                 return Err(ApiError::Conflict(
-                    crate::diagnostic_plugins::nodequality::FULL_START_DENIAL.into(),
+                    crate::diagnostic_tools::nodequality::FULL_START_DENIAL.into(),
                 ));
             }
         };

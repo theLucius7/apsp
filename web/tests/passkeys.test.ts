@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { resolveRoute } from '../src/app/routes'
 import { api } from '../src/api'
 
-test('only explicit plugin account routes bypass administrator page routing', () => {
+test('only explicit member account routes bypass administrator page routing', () => {
   const account = '00000000-0000-4000-8000-000000000002'
   const token = 'T'.repeat(43)
   // The current address and the one sign-in links used before the rename (ADR 0120).
@@ -23,7 +23,7 @@ test('a proxy authentication error never ends an administrator session', async (
   Object.defineProperty(globalThis, 'window', { configurable: true, value: { dispatchEvent: (event: Event) => events.push(event.type) } })
   globalThis.fetch = (async () => new Response(JSON.stringify({ error: '请登录' }), { status: 401 })) as typeof fetch
   try {
-    await expect(api('/api/plugins/sing-box/portal/test', 'GET', undefined, undefined, false)).rejects.toThrow('请登录')
+    await expect(api('/api/access/portal/test', 'GET', undefined, undefined, false)).rejects.toThrow('请登录')
     await expect(api('/api/login/passkey/finish', 'POST', {})).rejects.toThrow('请登录')
     expect(events).toEqual([])
     await expect(api('/api/security/passkeys')).rejects.toThrow('请登录')

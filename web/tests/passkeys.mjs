@@ -58,7 +58,7 @@ async function native(page, challenge, create = false, credentialId) {
     return { challenge_id: challenge.challenge_id, credential: result.toJSON() }
   }, { challenge, create, credentialId })
 }
-const portalPath = invitation => `/api/plugins/sing-box/portal/${invitation.url.match(/account\/([^?]+)/)[1]}`
+const portalPath = invitation => `/api/access/portal/${invitation.url.match(/account\/([^?]+)/)[1]}`
 const activation = invitation => invitation.url.split('?activate=')[1]
 
 try {
@@ -141,7 +141,7 @@ try {
   results.push('administrator registration is bound to its authorizing session')
 
   await clearLimit()
-  const user = await ok(page, '/api/plugins/sing-box/users', { name: '受验代理用户' })
+  const user = await ok(page, '/api/access/users', { name: '受验代理用户' })
   await page.goto(`${origin}/#/users`)
   // Without a recent proof the shared dialog asks, and the administrator's Passkey satisfies it.
   await sql`UPDATE administrator_reauth SET expires_at=0`
@@ -168,7 +168,7 @@ try {
   const userCookies = await userClient.context.cookies()
   assert.ok(userCookies.some(c => c.name === 'apsp_proxy_session' && c.httpOnly && c.sameSite === 'Strict'))
   assert.equal(userCookies.some(c => c.name === 'apsp_session'), false)
-  for (const path of ['/api/me', '/api/security/passkeys', '/api/plugins/sing-box/users', '/api/plugins/ddns/rules']) {
+  for (const path of ['/api/me', '/api/security/passkeys', '/api/access/users', '/api/naming/rules']) {
     assert.equal((await request(userPage, path, undefined, 'GET')).status, 401)
   }
   assert.equal((await ok(page, userPath, undefined, 'GET')).authenticated, false, 'Administrator session is not a proxy session')
@@ -194,8 +194,8 @@ try {
 
   // Authentication with one account's key cannot satisfy another account's challenge.
   await clearLimit()
-  const peer = await ok(page, '/api/plugins/sing-box/users', { name: '另一个代理用户' })
-  const peerInvite = await ok(page, `/api/plugins/sing-box/users/${peer.id}/portal/invitation`, {})
+  const peer = await ok(page, '/api/access/users', { name: '另一个代理用户' })
+  const peerInvite = await ok(page, `/api/access/users/${peer.id}/portal/invitation`, {})
   const peerPath = portalPath(peerInvite)
   const peerClient = await client(), peerPage = peerClient.page
   await peerPage.goto(peerInvite.url)
@@ -242,11 +242,11 @@ try {
   await clearLimit()
   const staleChallenge = await ok(userPage, `${userPath}/login/start`)
   const staleBody = await native(userPage, staleChallenge)
-  assert.equal((await request(page, `/api/plugins/sing-box/users/${user.id}/portal/invitation`, {})).status, 409)
-  const replacement = await ok(page, `/api/plugins/sing-box/users/${user.id}/portal/invitation`, { reset: true })
+  assert.equal((await request(page, `/api/access/users/${user.id}/portal/invitation`, {})).status, 409)
+  const replacement = await ok(page, `/api/access/users/${user.id}/portal/invitation`, { reset: true })
   assert.equal((await request(userPage, `${userPath}/login/finish`, staleBody)).status, 400)
   assert.equal((await ok(userPage, userPath, undefined, 'GET')).authenticated, false)
-  const unchanged = await ok(page, `/api/plugins/sing-box/users/${user.id}`, undefined, 'GET')
+  const unchanged = await ok(page, `/api/access/users/${user.id}`, undefined, 'GET')
   assert.equal(unchanged.subscription_token, user.subscription_token)
   assert.equal(unchanged.id, user.id)
   await sql`UPDATE singbox_portal_accounts SET activation_expires_at=0 WHERE user_id=${user.id}`
@@ -254,7 +254,7 @@ try {
   results.push('explicit admin recovery revokes keys/sessions/challenges while preserving existing proxy identity')
 
   await clearLimit()
-  const fresh = await ok(page, `/api/plugins/sing-box/users/${user.id}/portal/invitation`, {})
+  const fresh = await ok(page, `/api/access/users/${user.id}/portal/invitation`, {})
   const registration = await ok(userPage, `${userPath}/register/start`, { name: '重开通', activation_token: activation(fresh) })
   const registrationBody = await native(userPage, registration, true)
   const rival = await client()
@@ -263,7 +263,7 @@ try {
   const rivalBody = await native(rival.page, rivalRegistration, true)
   const activated = await Promise.all([request(userPage, `${userPath}/register/finish`, registrationBody), request(rival.page, `${userPath}/register/finish`, rivalBody)])
   assert.deepEqual(activated.map(r => r.status).sort(), [200, 400])
-  await ok(page, `/api/plugins/sing-box/users/${user.id}`, undefined, 'DELETE')
+  await ok(page, `/api/access/users/${user.id}`, undefined, 'DELETE')
   assert.equal((await request(userPage, userPath, undefined, 'GET')).status, 404)
   const count = await sql`SELECT count(*) AS count FROM passkey_credentials WHERE account_id=${userPath.split('/').at(-1)}`
   assert.equal(Number(count[0].count), 0)
@@ -285,7 +285,7 @@ try {
   await sql`UPDATE administrator_reauth SET expires_at=0`
   assert.equal((await request(page, '/api/security/passkeys/register/start', { name: '缺少验证' })).status, 403)
   assert.equal((await request(page, `/api/security/passkeys/${adminKey.id}/remove`)).status, 403)
-  assert.equal((await request(page, `/api/plugins/sing-box/users/${peer.id}/portal/invitation`, { reset: true })).status, 403)
+  assert.equal((await request(page, `/api/access/users/${peer.id}/portal/invitation`, { reset: true })).status, 403)
   assert.equal((await request(page, '/api/control-center/reauth', { password })).status, 400)
   await ok(page, '/api/control-center/reauth', { password, totp_code: totp(totpStep) })
   await ok(page, '/api/security/passkeys/register/start', { name: '需要新验证码' })

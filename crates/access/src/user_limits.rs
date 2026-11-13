@@ -147,7 +147,7 @@ pub async fn put(
     }
     let mut tx = state.pool.begin().await?;
     apsp_traffic::business::lock_publication(&mut tx).await?;
-    business::lock_user(&mut tx, id).await?;
+    crate::proxy_users::lock_user(&mut tx, id).await?;
     let previous = current(&mut tx, id).await?;
     if previous["revision"].as_i64() != Some(request.expected_revision) {
         return Err(ApiError::Conflict(

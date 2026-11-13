@@ -13,7 +13,8 @@ use serde_json::{Value, json};
 use sqlx::{Postgres, Transaction};
 
 const MASK: &str = "__APSP_REDACTED__";
-/// Credential fields of server configuration objects; also redacted from audit records.
+/// Credential fields of server configuration objects. The administration guard's audit
+/// redaction covers every name listed here.
 pub(crate) fn secret(key: &str) -> bool {
     let normalized = key.to_ascii_lowercase();
     let key = normalized.as_str();
@@ -124,7 +125,7 @@ pub async fn put(
     Path(id): Path<i64>,
     Json(mut request): Json<Request>,
 ) -> ApiResult<Json<Value>> {
-    // The administration guard audits this request with secrets removed (`host_support`).
+    // The administration guard audits this request with secrets removed.
     crate::control_center::require_server(&state, &headers, id, "proxy:write").await?;
     crate::control_center::require_recent_proof(&state, &headers).await?;
     if !(0..business::MAX_SAFE_INTEGER).contains(&request.expected_revision) {

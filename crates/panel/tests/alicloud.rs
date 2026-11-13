@@ -18,7 +18,7 @@ const SECRET: &str = "TEST_ONLY_ALICLOUD_SECRET";
 async fn cron_preview_is_authenticated_and_uses_fixed_offset(pool: PgPool) -> Result<()> {
     let panel = TestPanel::start(pool).await?;
     let cookie = panel.admin_cookie().await?;
-    let path = "/api/plugins/alicloud/cron-preview";
+    let path = "/api/resources/alicloud/cron-preview";
     let valid = json!({"expression":"0 8 * * 1-5","utc_offset_minutes":480});
     assert_ne!(
         panel
@@ -64,7 +64,7 @@ async fn traffic_history_requires_admin_and_clears_when_account_identity_changes
     let created = panel
         .admin(
             Method::POST,
-            "/api/plugins/alicloud/accounts",
+            "/api/resources/alicloud/accounts",
             &cookie,
             Some(body.clone()),
         )
@@ -81,7 +81,7 @@ async fn traffic_history_requires_admin_and_clears_when_account_identity_changes
         .bind(now)
         .execute(&pool)
         .await?;
-    let history_path = format!("/api/plugins/alicloud/accounts/{id}/traffic-history");
+    let history_path = format!("/api/resources/alicloud/accounts/{id}/traffic-history");
     assert_eq!(
         panel
             .admin(Method::GET, &history_path, "", None)
@@ -100,7 +100,7 @@ async fn traffic_history_requires_admin_and_clears_when_account_identity_changes
         "9007199254740993"
     );
     assert_eq!(history["groups"][1]["samples"], json!([]));
-    let path = format!("/api/plugins/alicloud/accounts/{id}");
+    let path = format!("/api/resources/alicloud/accounts/{id}");
     body["name"] = "修改名称".into();
     body["revision"] = 1.into();
     assert_eq!(
@@ -150,7 +150,7 @@ async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and
         panel
             .admin(
                 Method::POST,
-                "/api/plugins/alicloud/accounts",
+                "/api/resources/alicloud/accounts",
                 &cookie,
                 Some(account_body.clone()),
             )
@@ -162,7 +162,7 @@ async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and
     let id: Value = panel
         .admin(
             Method::POST,
-            "/api/plugins/alicloud/accounts",
+            "/api/resources/alicloud/accounts",
             &cookie,
             Some(account_body.clone()),
         )
@@ -172,7 +172,7 @@ async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and
         .await?;
     let id = id["id"].as_str().unwrap();
     let overview: Value = panel
-        .admin(Method::GET, "/api/plugins/alicloud", &cookie, None)
+        .admin(Method::GET, "/api/resources/alicloud", &cookie, None)
         .await?
         .error_for_status()?
         .json()
@@ -181,9 +181,9 @@ async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and
     assert!(!text.contains(KEY) && !text.contains(SECRET) && !text.contains("access_key"));
     for method in [Method::GET, Method::POST] {
         let path = if method == Method::GET {
-            "/api/plugins/alicloud"
+            "/api/resources/alicloud"
         } else {
-            "/api/plugins/alicloud/accounts"
+            "/api/resources/alicloud/accounts"
         };
         assert_eq!(
             panel
@@ -200,7 +200,7 @@ async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and
     edit.as_object_mut().unwrap().remove("access_key_id");
     edit.as_object_mut().unwrap().remove("access_key_secret");
     edit["revision"] = 1.into();
-    let account_path = format!("/api/plugins/alicloud/accounts/{id}");
+    let account_path = format!("/api/resources/alicloud/accounts/{id}");
     assert_eq!(
         panel
             .admin(Method::PATCH, &account_path, &cookie, Some(edit.clone()))
@@ -234,7 +234,7 @@ async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and
     let resource: Value = panel
         .admin(
             Method::POST,
-            "/api/plugins/alicloud/resources",
+            "/api/resources/alicloud/resources",
             &cookie,
             Some(resource_body.clone()),
         )
@@ -246,7 +246,7 @@ async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and
         panel
             .admin(
                 Method::POST,
-                "/api/plugins/alicloud/resources",
+                "/api/resources/alicloud/resources",
                 &cookie,
                 Some(resource_body.clone())
             )
@@ -262,7 +262,7 @@ async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and
         StatusCode::CONFLICT
     );
     let resource_path = format!(
-        "/api/plugins/alicloud/resources/{}",
+        "/api/resources/alicloud/resources/{}",
         resource["id"].as_str().unwrap()
     );
     let mut edit = resource_body;
@@ -341,7 +341,7 @@ async fn every_cloud_mutation_requires_administrator_session(pool: PgPool) -> Re
         assert_eq!(
             panel
                 .client
-                .post(format!("{}/api/plugins/alicloud/{path}", panel.base))
+                .post(format!("{}/api/resources/alicloud/{path}", panel.base))
                 .send()
                 .await?
                 .status(),
@@ -363,7 +363,7 @@ async fn manual_refresh_cannot_bypass_provider_rate_limit(pool: PgPool) -> Resul
         panel
             .admin(
                 Method::POST,
-                &format!("/api/plugins/alicloud/accounts/{id}/refresh"),
+                &format!("/api/resources/alicloud/accounts/{id}/refresh"),
                 &cookie,
                 None
             )
@@ -405,7 +405,7 @@ async fn power_policy_validates_revisions_and_power_jobs_are_admin_only_and_canc
             .await?;
     assert_eq!(policy["enabled"], false);
     assert_eq!(policy["stop_mode"], "KeepCharging");
-    let path = format!("/api/plugins/alicloud/resources/{resource}/power-policy");
+    let path = format!("/api/resources/alicloud/resources/{resource}/power-policy");
     let body = json!({"revision":1,"policy":policy});
     assert_eq!(
         panel
@@ -445,7 +445,7 @@ async fn power_policy_validates_revisions_and_power_jobs_are_admin_only_and_canc
         panel
             .admin(
                 Method::PATCH,
-                &format!("/api/plugins/alicloud/resources/{eip}/power-policy"),
+                &format!("/api/resources/alicloud/resources/{eip}/power-policy"),
                 &cookie,
                 Some(body)
             )
@@ -453,7 +453,7 @@ async fn power_policy_validates_revisions_and_power_jobs_are_admin_only_and_canc
             .status(),
         StatusCode::CONFLICT
     );
-    let preview_path = format!("/api/plugins/alicloud/resources/{resource}/power-preview");
+    let preview_path = format!("/api/resources/alicloud/resources/{resource}/power-preview");
     let preview = json!({"revision":2,"action":"stop","stop_mode":"StopCharging"});
     assert_eq!(
         panel
@@ -485,7 +485,7 @@ async fn power_policy_validates_revisions_and_power_jobs_are_admin_only_and_canc
             panel
                 .admin(
                     Method::POST,
-                    &format!("/api/plugins/alicloud/power-jobs/{job}/confirm"),
+                    &format!("/api/resources/alicloud/power-jobs/{job}/confirm"),
                     &cookie,
                     None
                 )
@@ -498,7 +498,7 @@ async fn power_policy_validates_revisions_and_power_jobs_are_admin_only_and_canc
         panel
             .admin(
                 Method::DELETE,
-                &format!("/api/plugins/alicloud/resources/{resource}"),
+                &format!("/api/resources/alicloud/resources/{resource}"),
                 &cookie,
                 None
             )
@@ -510,7 +510,7 @@ async fn power_policy_validates_revisions_and_power_jobs_are_admin_only_and_canc
         panel
             .admin(
                 Method::POST,
-                &format!("/api/plugins/alicloud/power-jobs/{job}/cancel"),
+                &format!("/api/resources/alicloud/power-jobs/{job}/cancel"),
                 &cookie,
                 None
             )
@@ -524,7 +524,7 @@ async fn power_policy_validates_revisions_and_power_jobs_are_admin_only_and_canc
             .fetch_one(&pool)
             .await?
     );
-    let resume_path = format!("/api/plugins/alicloud/resources/{resource}/power-resume");
+    let resume_path = format!("/api/resources/alicloud/resources/{resource}/power-resume");
     assert_eq!(
         panel
             .admin(Method::POST, &resume_path, &cookie, None)
@@ -554,7 +554,7 @@ async fn power_policy_validates_revisions_and_power_jobs_are_admin_only_and_canc
         panel
             .admin(
                 Method::POST,
-                &format!("/api/plugins/alicloud/resources/{resource}/power-resume"),
+                &format!("/api/resources/alicloud/resources/{resource}/power-resume"),
                 &cookie,
                 Some(json!({"revision":2}))
             )
@@ -582,7 +582,7 @@ async fn power_policy_validates_revisions_and_power_jobs_are_admin_only_and_canc
         3
     );
     let overview: Value = panel
-        .admin(Method::GET, "/api/plugins/alicloud", &cookie, None)
+        .admin(Method::GET, "/api/resources/alicloud", &cookie, None)
         .await?
         .error_for_status()?
         .json()

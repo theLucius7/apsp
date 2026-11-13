@@ -5,7 +5,7 @@
 //! arrive through the compatibility bridge. Every active host receives, per
 //! limited member, the stat names that share one budget and the addresses the
 //! member uses everywhere else.
-use crate::{AppState, agent_api};
+use crate::{AppState, device_channel};
 use apsp_protocol::{
     AdmissionGroup, Envelope, RUNTIME_ADMISSION_CAPABILITY, RUNTIME_ADMISSION_POLICY_KIND,
     RuntimeAdmissionPolicy, RuntimeSessionReport, now_timestamp,
@@ -173,7 +173,7 @@ pub async fn push_policies(state: &AppState) -> anyhow::Result<()> {
         let policy = policy(&mut tx, server, now_timestamp()).await?;
         tx.commit().await?;
         if let Some(policy) = policy {
-            agent_api::notify(
+            device_channel::notify(
                 state,
                 server,
                 Envelope::new(RUNTIME_ADMISSION_POLICY_KIND, &policy)?,

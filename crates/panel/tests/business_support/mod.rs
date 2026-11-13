@@ -35,7 +35,7 @@ pub async fn prove(pool: &PgPool, cookie: &str) -> Result<()> {
         .context("session cookie")?;
     let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET verified_at=$2,expires_at=$3")
-        .bind(apsp_panel_host::auth::hash_token(token))
+        .bind(apsp_governance::auth::hash_token(token))
         .bind(now)
         .bind(now + 300)
         .execute(pool)
@@ -76,7 +76,7 @@ impl TestPanel {
         let directory = std::env::temp_dir().join(format!("apsp-business-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&directory)?;
         let directory = directory.canonicalize()?;
-        let mut state = AppState::new(
+        let mut state = apsp_panel::state(
             pool,
             Config {
                 database_url: String::new(),
@@ -174,8 +174,8 @@ impl TestPanel {
     }
 
     pub async fn create_node(&self, cookie: &str, server_id: i64, name: &str) -> Result<Value> {
-        self.enable_plugin(cookie, server_id).await?;
-        let response = self.admin(Method::POST, "/api/plugins/sing-box/nodes", cookie, Some(json!({"name":name,"server_id":server_id,"public_host":"proxy.example.com","sni":"www.example.com"}))).await?;
+        self.enable_runtime(cookie, server_id).await?;
+        let response = self.admin(Method::POST, "/api/traffic/nodes", cookie, Some(json!({"name":name,"server_id":server_id,"public_host":"proxy.example.com","sni":"www.example.com"}))).await?;
         anyhow::ensure!(
             response.status() == StatusCode::CREATED,
             "node creation failed: {}",
@@ -218,10 +218,10 @@ impl TestPanel {
         Ok(json!({"id":chain,"name":name,"entry_node_id":entry}))
     }
 
-    pub async fn enable_plugin(&self, cookie: &str, server_id: i64) -> Result<()> {
+    pub async fn enable_runtime(&self, cookie: &str, server_id: i64) -> Result<()> {
         self.admin(
             Method::POST,
-            &format!("/api/plugins/sing-box/servers/{server_id}/enable"),
+            &format!("/api/traffic/servers/{server_id}/enable"),
             cookie,
             Some(json!({})),
         )
@@ -234,7 +234,7 @@ impl TestPanel {
         let response = self
             .admin(
                 Method::POST,
-                "/api/plugins/sing-box/users",
+                "/api/access/users",
                 cookie,
                 Some(json!({"name":name})),
             )
@@ -259,7 +259,7 @@ impl TestPanel {
         let accesses: Vec<Value> = self
             .admin(
                 Method::GET,
-                &format!("/api/plugins/sing-box/users/{user_id}/accesses"),
+                &format!("/api/access/users/{user_id}/accesses"),
                 cookie,
                 None,
             )
@@ -285,12 +285,7 @@ impl TestPanel {
         self.set_user_groups(cookie, user_id, &groups).await?;
         // An unused single-node group would still reserve the node, as any group does.
         let unused = self
-            .admin(
-                Method::GET,
-                "/api/plugins/sing-box/policy-groups",
-                cookie,
-                None,
-            )
+            .admin(Method::GET, "/api/access/policy-groups", cookie, None)
             .await?
             .error_for_status()?
             .json::<Vec<Value>>()
@@ -300,7 +295,7 @@ impl TestPanel {
         if unused {
             self.admin(
                 Method::DELETE,
-                &format!("/api/plugins/sing-box/policy-groups/{group}"),
+                &format!("/api/access/policy-groups/{group}"),
                 cookie,
                 None,
             )
@@ -313,12 +308,7 @@ impl TestPanel {
     async fn node_group(&self, cookie: &str, node_id: i64) -> Result<i64> {
         let name = format!("node-{node_id}");
         let groups: Vec<Value> = self
-            .admin(
-                Method::GET,
-                "/api/plugins/sing-box/policy-groups",
-                cookie,
-                None,
-            )
+            .admin(Method::GET, "/api/access/policy-groups", cookie, None)
             .await?
             .error_for_status()?
             .json()
@@ -333,7 +323,7 @@ impl TestPanel {
         let response = self
             .admin(
                 Method::POST,
-                "/api/plugins/sing-box/policy-groups",
+                "/api/access/policy-groups",
                 cookie,
                 Some(json!({"name":name,"node_ids":[node_id],"chain_ids":[]})),
             )
@@ -353,7 +343,7 @@ impl TestPanel {
         let value: Value = self
             .admin(
                 Method::GET,
-                &format!("/api/plugins/sing-box/users/{user_id}/policy-groups"),
+                &format!("/api/access/users/{user_id}/policy-groups"),
                 cookie,
                 None,
             )
@@ -372,7 +362,7 @@ impl TestPanel {
     async fn set_user_groups(&self, cookie: &str, user_id: i64, groups: &[i64]) -> Result<()> {
         self.admin(
             Method::PUT,
-            &format!("/api/plugins/sing-box/users/{user_id}/policy-groups"),
+            &format!("/api/access/users/{user_id}/policy-groups"),
             cookie,
             Some(json!({"group_ids":groups})),
         )

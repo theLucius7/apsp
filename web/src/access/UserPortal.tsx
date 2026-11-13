@@ -30,7 +30,7 @@ type View = { configuration: PasskeyInfo } & ({ authenticated: false } | {
 export default function UserPortal({ account, activation }: { account: string; activation?: string }) {
   const { t } = useI18n()
   useSystemTheme()
-  const base = `/api/plugins/sing-box/portal/${account}`
+  const base = `/api/access/portal/${account}`
   const bookmark = `${window.location.origin}${window.location.pathname}#/account/${account}`
   const [token, setToken] = useState(activation)
   const [data, setData] = useState<View>()

@@ -1,5 +1,5 @@
 use crate::{
-    AppState, auth,
+    AppState,
     error::{ApiError, ApiResult},
 };
 use apsp_protocol::{RuntimeOperationRequest, RuntimeOperationResult, TaskAck, now_timestamp};
@@ -16,7 +16,7 @@ pub async fn pending(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<RuntimeOperationRequest>>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
     // Share the server lock order with retirement and operation creation.
     sqlx::query("SELECT id FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
@@ -92,7 +92,7 @@ pub async fn complete(
     Path(id): Path<Uuid>,
     Json(result): Json<RuntimeOperationResult>,
 ) -> ApiResult<Json<TaskAck>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     if result.id != id || !result.valid() || result.finished_at > now_timestamp() + 60 {
         return Err(ApiError::BadRequest("运行时操作结果无效".into()));
     }

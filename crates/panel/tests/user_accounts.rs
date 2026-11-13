@@ -6,7 +6,7 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
-use apsp_panel_host::auth::{hash_token, random_token};
+use apsp_governance::auth::{hash_token, random_token};
 use apsp_protocol::now_timestamp;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
@@ -14,7 +14,6 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-const ROOT: &str = "/api/plugins/sing-box";
 // bcrypt of "fixture-password-123", as the original panel stored it.
 const LEGACY_HASH: &str = "$2y$04$OuGqx53J01YMMaWjdHXc3OQiJLeNMgFD.WSQtOrUIHPIcruHwVKP.";
 
@@ -67,7 +66,7 @@ async fn diagnosis(panel: &TestPanel, cookie: &str, user: i64) -> Result<Value> 
     ok(request(
         panel,
         Method::GET,
-        &format!("{ROOT}/users/{user}/diagnosis"),
+        &format!("/api/access/users/{user}/diagnosis"),
         cookie,
         json!(null),
     )
@@ -94,7 +93,7 @@ async fn invitation_codes_spend_quota_and_create_accounts(pool: PgPool) -> Resul
     let group = ok(request(
         &panel,
         Method::POST,
-        &format!("{ROOT}/policy-groups"),
+        "/api/access/policy-groups",
         &cookie,
         json!({"name":"Friends","node_ids":[node],"chain_ids":[]}),
     )
@@ -102,12 +101,12 @@ async fn invitation_codes_spend_quota_and_create_accounts(pool: PgPool) -> Resul
     .await?["id"]
         .as_i64()
         .context("group")?;
-    let package = ok(request(&panel, Method::POST, &format!("{ROOT}/package-groups"), &cookie, json!({"name":"Plan","monthly_bytes":null,"reset_day":1,"reset_hour":0,"reset_minute":0,"timezone":"UTC","duration_days":30})).await?).await?["id"].as_i64().context("package")?;
+    let package = ok(request(&panel, Method::POST, "/api/access/package-groups", &cookie, json!({"name":"Plan","monthly_bytes":null,"reset_day":1,"reset_hour":0,"reset_minute":0,"timezone":"UTC","duration_days":30})).await?).await?["id"].as_i64().context("package")?;
     let issuer = panel.create_user(&cookie, "Issuer").await?["id"]
         .as_i64()
         .context("issuer")?;
     let (account, session) = portal(&panel, issuer).await?;
-    let create = format!("{ROOT}/portal/{account}/invitations");
+    let create = format!("/api/access/portal/{account}/invitations");
 
     // Closed until the administrator opens invitations.
     let closed = request(
@@ -122,13 +121,13 @@ async fn invitation_codes_spend_quota_and_create_accounts(pool: PgPool) -> Resul
     let settings = ok(request(
         &panel,
         Method::GET,
-        &format!("{ROOT}/invitation-settings"),
+        "/api/access/invitation-settings",
         &cookie,
         json!(null),
     )
     .await?)
     .await?;
-    ok(request(&panel, Method::PUT, &format!("{ROOT}/invitation-settings"), &cookie, json!({"enabled":true,"package_group_id":package,"policy_group_ids":[group],"default_quota":1,"version":settings["version"]})).await?).await?;
+    ok(request(&panel, Method::PUT, "/api/access/invitation-settings", &cookie, json!({"enabled":true,"package_group_id":package,"policy_group_ids":[group],"default_quota":1,"version":settings["version"]})).await?).await?;
     // Out of quota until an administrator grants some.
     let empty = request(
         &panel,
@@ -142,7 +141,7 @@ async fn invitation_codes_spend_quota_and_create_accounts(pool: PgPool) -> Resul
     ok(request(
         &panel,
         Method::POST,
-        &format!("{ROOT}/users/{issuer}/invitations/quota"),
+        &format!("/api/access/users/{issuer}/invitations/quota"),
         &cookie,
         json!({"delta":2,"reason":"friends"}),
     )
@@ -190,7 +189,7 @@ async fn invitation_codes_spend_quota_and_create_accounts(pool: PgPool) -> Resul
     let view = ok(request(
         &panel,
         Method::GET,
-        &format!("{ROOT}/portal/{account}/account"),
+        &format!("/api/access/portal/{account}/account"),
         &session,
         json!(null),
     )
@@ -224,7 +223,7 @@ async fn invitation_codes_spend_quota_and_create_accounts(pool: PgPool) -> Resul
     let inspected = ok(request(
         &panel,
         Method::POST,
-        &format!("{ROOT}/portal-public/invitation"),
+        "/api/access/portal-public/invitation",
         "",
         json!({"token":codes[1]}),
     )
@@ -237,7 +236,7 @@ async fn invitation_codes_spend_quota_and_create_accounts(pool: PgPool) -> Resul
     let inspected = ok(request(
         &panel,
         Method::POST,
-        &format!("{ROOT}/portal-public/invitation"),
+        "/api/access/portal-public/invitation",
         "",
         json!({"token":typed}),
     )
@@ -249,7 +248,7 @@ async fn invitation_codes_spend_quota_and_create_accounts(pool: PgPool) -> Resul
     let claimed = ok(request(
         &panel,
         Method::POST,
-        &format!("{ROOT}/portal-public/claim"),
+        "/api/access/portal-public/claim",
         "",
         claim.clone(),
     )
@@ -272,7 +271,7 @@ async fn invitation_codes_spend_quota_and_create_accounts(pool: PgPool) -> Resul
     let entitlement: Value = ok(request(
         &panel,
         Method::GET,
-        &format!("{ROOT}/users/{friend}/entitlement"),
+        &format!("/api/access/users/{friend}/entitlement"),
         &cookie,
         json!(null),
     )
@@ -285,13 +284,13 @@ async fn invitation_codes_spend_quota_and_create_accounts(pool: PgPool) -> Resul
     ok(request(
         &panel,
         Method::POST,
-        &format!("{ROOT}/portal-public/claim"),
+        "/api/access/portal-public/claim",
         "",
         claim,
     )
     .await?)
     .await?;
-    let again = request(&panel, Method::POST, &format!("{ROOT}/portal-public/claim"), "", json!({"token":codes[0],"request_id":Uuid::new_v4(),"name":"Other","email":"other@example.com"})).await?;
+    let again = request(&panel, Method::POST, "/api/access/portal-public/claim", "", json!({"token":codes[0],"request_id":Uuid::new_v4(),"name":"Other","email":"other@example.com"})).await?;
     assert_eq!(again.status(), StatusCode::CONFLICT);
     let users: i64 = sqlx::query_scalar("SELECT count(*) FROM users WHERE deleted_at IS NULL")
         .fetch_one(&pool)
@@ -301,7 +300,7 @@ async fn invitation_codes_spend_quota_and_create_accounts(pool: PgPool) -> Resul
     let detail = ok(request(
         &panel,
         Method::GET,
-        &format!("{ROOT}/users/{friend}/invitations"),
+        &format!("/api/access/users/{friend}/invitations"),
         &cookie,
         json!(null),
     )
@@ -311,7 +310,7 @@ async fn invitation_codes_spend_quota_and_create_accounts(pool: PgPool) -> Resul
     let history = ok(request(
         &panel,
         Method::GET,
-        &format!("{ROOT}/users/{issuer}/invitations"),
+        &format!("/api/access/users/{issuer}/invitations"),
         &cookie,
         json!(null),
     )
@@ -343,7 +342,7 @@ async fn migrated_member_signs_in_with_the_original_password(pool: PgPool) -> Re
         .bind(user)
         .execute(&pool)
         .await?;
-    let login_path = format!("{ROOT}/portal-public/account/login");
+    let login_path = "/api/access/portal-public/account/login".to_string();
     let wrong = request(
         &panel,
         Method::POST,
@@ -382,7 +381,7 @@ async fn migrated_member_signs_in_with_the_original_password(pool: PgPool) -> Re
     let view = ok(request(
         &panel,
         Method::GET,
-        &format!("{ROOT}/portal/{account}/account"),
+        &format!("/api/access/portal/{account}/account"),
         &session,
         json!(null),
     )
@@ -425,7 +424,7 @@ async fn a_new_profile_never_enrols_a_user_into_a_running_bridge(pool: PgPool) -
     let refused = request(
         &panel,
         Method::PUT,
-        &format!("{ROOT}/portal/{account}/account/reminders"),
+        &format!("/api/access/portal/{account}/account/reminders"),
         &session,
         json!({"remind_expire":false,"remind_traffic":false}),
     )
@@ -441,7 +440,7 @@ async fn a_new_profile_never_enrols_a_user_into_a_running_bridge(pool: PgPool) -
     ok(request(
         &panel,
         Method::PUT,
-        &format!("{ROOT}/portal/{account}/account/reminders"),
+        &format!("/api/access/portal/{account}/account/reminders"),
         &session,
         json!({"remind_expire":false,"remind_traffic":true}),
     )
@@ -461,7 +460,7 @@ async fn diagnosis_explains_where_a_migrated_user_gets_their_lines(pool: PgPool)
     let panel = TestPanel::start_with_localhost(pool.clone()).await?;
     let cookie = admin(&panel).await?;
     let server = panel.create_server(&cookie, "Legacy host").await?;
-    let package = ok(request(&panel, Method::POST, &format!("{ROOT}/package-groups"), &cookie, json!({"name":"Monthly","monthly_bytes":null,"reset_day":1,"reset_hour":0,"reset_minute":0,"timezone":"UTC","duration_days":30})).await?).await?["id"].as_i64().context("package")?;
+    let package = ok(request(&panel, Method::POST, "/api/access/package-groups", &cookie, json!({"name":"Monthly","monthly_bytes":null,"reset_day":1,"reset_hour":0,"reset_minute":0,"timezone":"UTC","duration_days":30})).await?).await?["id"].as_i64().context("package")?;
     let user = panel.create_user(&cookie, "Migrated").await?["id"]
         .as_i64()
         .context("user")?;
@@ -499,7 +498,7 @@ async fn diagnosis_explains_where_a_migrated_user_gets_their_lines(pool: PgPool)
     ok(request(
         &panel,
         Method::POST,
-        &format!("{ROOT}/users/{user}/package"),
+        &format!("/api/access/users/{user}/package"),
         &cookie,
         json!({"package_group_id":package,"request_id":Uuid::new_v4()}),
     )
@@ -527,7 +526,7 @@ async fn diagnosis_explains_where_a_migrated_user_gets_their_lines(pool: PgPool)
         ok(request(
             &panel,
             Method::PUT,
-            &format!("{ROOT}/users/{user}/policy-groups"),
+            &format!("/api/access/users/{user}/policy-groups"),
             &cookie,
             json!({"group_ids":groups}),
         )
@@ -545,7 +544,7 @@ async fn diagnosis_explains_where_a_migrated_user_gets_their_lines(pool: PgPool)
     ok(request(
         &panel,
         Method::PUT,
-        &format!("{ROOT}/users/{user}/policy-groups"),
+        &format!("/api/access/users/{user}/policy-groups"),
         &cookie,
         json!({"group_ids":[nine]}),
     )
@@ -575,7 +574,7 @@ async fn administrators_delete_notices_and_guides(pool: PgPool) -> Result<()> {
     let saved = ok(request(
         &panel,
         Method::POST,
-        &format!("{ROOT}/portal-guides"),
+        "/api/access/portal-guides",
         &cookie,
         json!({"kind":"guide","title":"Outdated guide","category":"Help","body":"<p>Old steps</p>","published":true,"version":null}),
     )
@@ -597,11 +596,11 @@ async fn administrators_delete_notices_and_guides(pool: PgPool) -> Result<()> {
             })
             .unwrap_or_default()
     };
-    let view = format!("{ROOT}/portal/{account}/account");
+    let view = format!("/api/access/portal/{account}/account");
     let before = ok(request(&panel, Method::GET, &view, &session, json!(null)).await?).await?;
     assert_eq!(titles(&before), ["Outdated guide"]);
 
-    let path = format!("{ROOT}/portal-guides/{guide}");
+    let path = format!("/api/access/portal-guides/{guide}");
     let removed = request(&panel, Method::DELETE, &path, &cookie, json!(null)).await?;
     assert_eq!(removed.status(), StatusCode::NO_CONTENT);
     let after = ok(request(&panel, Method::GET, &view, &session, json!(null)).await?).await?;
@@ -612,7 +611,7 @@ async fn administrators_delete_notices_and_guides(pool: PgPool) -> Result<()> {
     let listed = ok(request(
         &panel,
         Method::GET,
-        &format!("{ROOT}/portal-guides"),
+        "/api/access/portal-guides",
         &cookie,
         json!(null),
     )

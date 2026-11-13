@@ -78,7 +78,7 @@ try {
       if (path === '/api/servers/1/probe-results' || path === '/api/servers/1/commands') return fulfill([])
       // The server overview is its monitoring panel, which reads the history it charts.
       if (path === '/api/servers/1/metrics') return fulfill([])
-      if (path === '/api/plugins/sing-box/servers/1') return fulfill({ id: 1, name: entry.name, enabled: false, online: entry.online, agent_supported: false, read_only: false, source: null })
+      if (path === '/api/traffic/servers/1') return fulfill({ id: 1, name: entry.name, enabled: false, online: entry.online, agent_supported: false, read_only: false, source: null })
       unexpected.push(`${request.method()} ${path}`)
       return fulfill({ error: 'Unexpected fixture request' }, 500)
     })

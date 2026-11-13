@@ -23,7 +23,7 @@ const stateTones: Record<IssuedInvitation['state'], Tone> = { available: 'good',
 
 /** The signed-in user's own account: invitations, guides, sign-in settings, notices. */
 export default function AccountPanel({ account }: { account: string }) {
-  const base = `/api/plugins/sing-box/portal/${account}`
+  const base = `/api/access/portal/${account}`
   const [data, setData] = useState<View>(), [error, setError] = useState(''), [revision, setRevision] = useState(0)
   const [tab, setTab] = useState<Tab>('邀请'), [query, setQuery] = useState(''), [created, setCreated] = useState<{ codes: string[]; links: string[] } | null>(null), [notice, setNotice] = useState('')
   const action = useAction(), identity = useRef(new RequestIdentity())

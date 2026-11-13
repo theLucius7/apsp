@@ -2,7 +2,7 @@
 //! (ADR 0087, 0096). The ledger only reads them: price, currency, billing cycle and
 //! expiry stay owned by the server, and expiry reminders stay in monitoring.
 use super::*;
-use apsp_panel_host::control_center::Principal;
+use apsp_governance::control_center::Principal;
 use axum::{Json, extract::State};
 use time::{Date, Duration};
 

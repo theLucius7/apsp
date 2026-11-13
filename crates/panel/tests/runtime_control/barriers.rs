@@ -15,14 +15,15 @@ async fn barrier_uses_current_verified_activation_and_persists_its_floor(
     assert_eq!(request.expected, checkpoint);
     let repeated = runtime_control::request_barrier(&panel.state, server, MODULE, 1).await?;
     assert_eq!(request, repeated);
-    let restarted = AppState::new(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
+    let restarted =
+        apsp_panel::state(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
     let mut receiver = attach(&restarted, server).await;
     runtime_control::replay_pending(&restarted, server).await?;
     assert_eq!(
         receive(&mut receiver).await?,
         Message::RuntimeRecoveryBarrierRequest(request.clone())
     );
-    agent_api::process_message(
+    device_channel::process_message(
         &restarted,
         server,
         Message::RuntimeRecoveryBarrierResult(barrier_success(&request)),
@@ -212,7 +213,8 @@ async fn unreceived_expired_barrier_replays_its_original_payload_until_a_durable
     let mut expired_checkpoint =
         runtime_control::request_checkpoint(&panel.state, server, MODULE).await?;
     expire(&panel.state.pool, &mut expired_checkpoint).await?;
-    let restarted = AppState::new(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
+    let restarted =
+        apsp_panel::state(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
     let mut receiver = attach(&restarted, server).await;
     runtime_control::replay_pending(&restarted, server).await?;
     assert_eq!(
@@ -240,7 +242,7 @@ async fn unreceived_expired_barrier_replays_its_original_payload_until_a_durable
         ),
         "replay never renews the deadline or changes the original request identity"
     );
-    agent_api::process_message(
+    device_channel::process_message(
         &restarted,
         server,
         Message::RuntimeRecoveryBarrierResult(RuntimeRecoveryBarrierResult {

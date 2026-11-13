@@ -10,7 +10,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Notice } from '@/components/panel'
 import { AuthField, AuthShell } from '@/components/auth-shell'
 
-const root = '/api/plugins/sing-box/portal-public/account'
+const root = '/api/access/portal-public/account'
 const link = 'text-primary font-medium underline-offset-4 hover:underline focus-visible:shadow-focus rounded-sm outline-none'
 
 /** Email and password sign-in for proxy users; the same page sets a first password or recovers one by email. */

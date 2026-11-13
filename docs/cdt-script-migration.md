@@ -39,7 +39,7 @@ python3 tools/migrate-cdt-guards.py --source /path/to/legacy-guard \
 
 ## 接管顺序
 
-1. 在原 cron 运行时完成暂停导入；对每个资源调用 `POST /api/plugins/alicloud/resources/{id}/cdt-check`，只读核对真实用量与 ECS 状态，不写历史或启停实例。
+1. 在原 cron 运行时完成暂停导入；对每个资源调用 `POST /api/resources/alicloud/resources/{id}/cdt-check`，只读核对真实用量与 ECS 状态，不写历史或启停实例。
 2. 取得两个原脚本锁，备份原 crontab 与两份状态，持锁重读并重新导入最终状态。
 3. 只删除这两个入口对应的 cron 行，核对其他任务未变化。通过 API 启用两个账号，再启用对应守护策略；账号自动降速保持关闭。
 4. 观察至少两轮：更新时间持续推进、最高用量不回退、两账号互不混用、启停结果可核对；确认原 cron 已停用后结束切换。保留原脚本、配置和回滚材料。

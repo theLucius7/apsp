@@ -18,16 +18,19 @@ use uuid::Uuid;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
-            "/api/plugins/alicloud/resources/{id}/preview",
+            "/api/resources/alicloud/resources/{id}/preview",
             post(preview),
         )
         .route(
-            "/api/plugins/alicloud/operations/{id}/confirm",
+            "/api/resources/alicloud/operations/{id}/confirm",
             post(confirm),
         )
-        .route("/api/plugins/alicloud/operations/{id}/cancel", post(cancel))
         .route(
-            "/api/plugins/alicloud/operations/{id}/dismiss",
+            "/api/resources/alicloud/operations/{id}/cancel",
+            post(cancel),
+        )
+        .route(
+            "/api/resources/alicloud/operations/{id}/dismiss",
             post(dismiss),
         )
 }

@@ -1,34 +1,32 @@
-//! Connects the typed interfaces at startup (ADR 0128): device reports, administration
-//! contributions, device work, observability evidence, server observation, the member
+//! Connects the typed interfaces at startup (ADR 0128): device reports, the audit trail's
+//! object snapshots, device work, observability evidence, server observation, the member
 //! portal's host network, the proxy users traffic compiles in, China reachability for the
-//! Nexus cutover, the dashboard's exchange rates and DNS-01 records. This is the
-//! only place that names which owner answers each interface.
+//! Nexus cutover and the dashboard's exchange rates. This is the only place that names
+//! which owner answers each interface.
 
 use apsp_access as access;
-use apsp_naming as naming;
+use apsp_governance::control_center::guard::{self, AuditSnapshots};
 use apsp_observability as observability;
 use apsp_operations::{fleet, runtime_operations};
 use apsp_panel_host::{
     AppState,
-    agent_api::{self, DeviceReports},
-    artifacts::ArtifactEntry,
-    control_center::contributions::{self, Contributions, RoutePolicy, SearchSource},
     device_work::{self, DeviceWork},
     error::ApiResult,
     evidence::{self, Evidence, IncidentReport},
-    network_configuration::dns_challenges::{self, Dns01, DnsChallenge},
     ports::BoxFuture,
-    retirement,
-    server_observation::{self, ServerObservation},
-    servers::{self, Server},
 };
 use apsp_protocol::{
     AppliedRevisions, ApplyResult, DiagnosticCancelResult, Metrics, ProbeSpec, RetirementResult,
     RuntimeCheckpointResult, RuntimeControlAck, RuntimeOperationRequest, RuntimePathProbeResult,
     RuntimeRecoveryBarrierResult, RuntimeSessionReport, StaticInfo, UsageBatch, fleet::Operation,
 };
+use apsp_resources::{
+    device_channel::{self, DeviceReports},
+    retirement,
+    server_observation::{self, ServerObservation},
+    servers::{self, Server},
+};
 use apsp_traffic as traffic;
-use axum::http::Method;
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -39,8 +37,8 @@ static WIRING: Wiring = Wiring;
 
 /// Connects every interface; repeated calls keep the first connection.
 pub fn install() {
-    agent_api::install(&WIRING);
-    contributions::install(&WIRING);
+    device_channel::install(&WIRING);
+    guard::install(&WIRING);
     device_work::install(&WIRING);
     evidence::install(&WIRING);
     server_observation::install(&WIRING);
@@ -49,7 +47,6 @@ pub fn install() {
     traffic::china_reachability::install(&WIRING);
     apsp_operations::cloud::bandwidth::install();
     observability::dashboard::install(&WIRING);
-    dns_challenges::install(&WIRING);
 }
 
 impl DeviceReports for Wiring {
@@ -187,33 +184,18 @@ impl DeviceReports for Wiring {
     }
 }
 
-impl Contributions for Wiring {
-    fn route_policy(&self, path: &str, method: &Method) -> Option<RoutePolicy> {
-        crate::integration_policy::route_policy(path, method)
-    }
-
-    fn sensitive_key(&self, key: &str) -> bool {
-        crate::integration_policy::sensitive_key(key)
-    }
-
-    fn search_sources(&self) -> Vec<SearchSource> {
-        crate::integration_policy::search_sources()
-    }
-
-    fn worker_names(&self) -> &'static [&'static str] {
-        crate::integration_policy::worker_names()
-    }
-
-    fn signed_tool_packages(&self, entries: &[ArtifactEntry]) -> Vec<Value> {
-        crate::integration_policy::signed_tool_packages(entries)
-    }
-
-    fn audit_snapshot<'a>(
+impl AuditSnapshots for Wiring {
+    fn snapshot<'a>(
         &'a self,
         state: &'a AppState,
         path: &'a str,
     ) -> BoxFuture<'a, ApiResult<Option<Value>>> {
-        Box::pin(crate::integration_policy::audit_snapshot(state, path))
+        Box::pin(async move {
+            match servers::audit_snapshot(state, path).await? {
+                Some(server) => Ok(Some(server)),
+                None => traffic::nodes::audit_snapshot(state, path).await,
+            }
+        })
     }
 }
 
@@ -292,40 +274,6 @@ impl observability::dashboard::ExchangeRates for Wiring {
                     .map_err(anyhow::Error::from)?,
             )
         })
-    }
-}
-
-impl Dns01 for Wiring {
-    fn present<'a>(
-        &'a self,
-        state: &'a AppState,
-        challenge: DnsChallenge<'a>,
-    ) -> BoxFuture<'a, ApiResult<String>> {
-        Box::pin(naming::dns01::present(
-            state,
-            challenge.rule,
-            challenge.challenge,
-            challenge.name,
-            challenge.value,
-            challenge.credential,
-        ))
-    }
-
-    fn cleanup<'a>(
-        &'a self,
-        state: &'a AppState,
-        challenge: DnsChallenge<'a>,
-        record: Option<&'a str>,
-    ) -> BoxFuture<'a, ApiResult<()>> {
-        Box::pin(naming::dns01::cleanup(
-            state,
-            challenge.rule,
-            challenge.challenge,
-            challenge.name,
-            challenge.value,
-            record,
-            challenge.credential,
-        ))
     }
 }
 

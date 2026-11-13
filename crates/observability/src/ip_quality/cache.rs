@@ -119,7 +119,7 @@ async fn persist_checked(
             ) != identity.text_sha256
             || job["plugin"].as_str() != Some("nodequality")
             || job["version"].as_str()
-                != Some(crate::diagnostic_plugins::nodequality::node_queries::NODE_QUERY_VERSION)
+                != Some(crate::diagnostic_tools::nodequality::node_queries::NODE_QUERY_VERSION)
             || job["options"]["mode"].as_str() != Some("ip")
         {
             return Ok(());
@@ -345,7 +345,7 @@ pub(super) async fn read_on_connection(
                         .transpose()?;
                     let fields = success.map(|saved| saved.fields).unwrap_or_default();
                     dataset.fields = if entry.provider.starts_with("ipquality-node/") {
-                        crate::diagnostic_plugins::ipquality::validate_cached_fields(
+                        crate::diagnostic_tools::ipquality::validate_cached_fields(
                             &dataset.database,
                             fields,
                         )

@@ -5,8 +5,8 @@ mod business_support;
 mod release_support;
 
 use anyhow::Result;
-use apsp_panel_host::server_assets::{AssetSettings, TrafficMode, renew_due};
 use apsp_protocol::now_timestamp;
+use apsp_resources::server_assets::{AssetSettings, TrafficMode, renew_due};
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};

@@ -25,15 +25,15 @@ const forceClick = button => button.evaluate(element => {
   try { element.click() } finally { element.disabled = disabled }
 })
 try {
-  for (const width of [1440, 390]) for (const plugin of ['nodequality', 'tcpquality']) {
+  for (const width of [1440, 390]) for (const tool of ['nodequality', 'tcpquality']) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } }); page.setDefaultTimeout(12000)
     page.on('pageerror', error => totals.errors.push(error.message))
-    const readPath = plugin === 'nodequality' ? `${base}/node-quality/reports` : `${base}/diagnostics`
-    const createPath = plugin === 'nodequality' ? readPath : `${base}/diagnostics/tcpquality`
-    const targetPath = '/api/plugins/tcpquality/servers/1/targets'
+    const readPath = tool === 'nodequality' ? `${base}/node-quality/reports` : `${base}/diagnostics`
+    const createPath = tool === 'nodequality' ? readPath : `${base}/diagnostics/tcpquality`
+    const targetPath = '/api/observability/tcp-quality/servers/1/targets'
     const now = Math.floor(Date.now() / 1000), id = 'a0000000-0000-0000-0000-000000000145'
     const target = { id: '00000000-0000-0000-0000-000000000146', name: 'TEST_ONLY 回环目标', target: '127.0.0.1', port: 443, carrier: '', region: 'east_asia' }
-    const record = { id, status: 'succeeded', agent_completed: true, cancel_requested_at: null, cancel_error: null, job: { id, plugin, version: 'TEST_ONLY', options: { mode: 'daily', ip_version: plugin === 'nodequality' ? 'ipv6' : '6', network_mode: 'low', count: '4', concurrency: '1' }, ...(plugin === 'tcpquality' ? { tcpquality: { region: 'configured', targets: [target] } } : {}) }, report: { text: 'TEST_ONLY 已保存报告' }, error: null, created_at: now, updated_at: now, expires_at: now + 300 }
+    const record = { id, status: 'succeeded', agent_completed: true, cancel_requested_at: null, cancel_error: null, job: { id, plugin: tool, version: 'TEST_ONLY', options: { mode: 'daily', ip_version: tool === 'nodequality' ? 'ipv6' : '6', network_mode: 'low', count: '4', concurrency: '1' }, ...(tool === 'tcpquality' ? { tcpquality: { region: 'configured', targets: [target] } } : {}) }, report: { text: 'TEST_ONLY 已保存报告' }, error: null, created_at: now, updated_at: now, expires_at: now + 300 }
     const reports = [record], writes = [], pending = [], failures = new Set(), gates = new Map()
     let ready = true, cancelSupported = true
     const hold = path => { let release; const promise = new Promise(resolve => { release = resolve }); const gate = { promise, release, reached: 0 }; gates.set(path, gate); return gate }
@@ -52,25 +52,25 @@ try {
           writes.push({ path, body: request.postDataJSON() }); record.status = 'queued'; record.agent_completed = false; value = record
         } else if (method === 'POST' && path === `${base}/diagnostics/${id}/cancel`) {
           writes.push({ path }); record.status = 'cancel_requested'; record.cancel_requested_at = now; value = record
-        } else if (method === 'POST' && plugin === 'nodequality' && path === `${base}/ip-quality/refresh`) value = []
+        } else if (method === 'POST' && tool === 'nodequality' && path === `${base}/ip-quality/refresh`) value = []
         else if (method !== 'GET') { totals.unexpected.push(`${method} ${path}`); return route.fulfill({ status: 404, json: {} }) }
         else if (['/api/me', '/api/dashboard/access'].includes(path)) value = { authenticated: true, public_dashboard: false }
         else if (path === base) value = { id: 1, name: 'TEST_ONLY 诊断快照设备', online: true, static_info: {}, latest_metrics: {}, capabilities: [] }
         else if (path === readPath) {
           const currentReports = reports.map(record => ({ ...record, cleanup_pending: record.agent_completed === false && Object.prototype.hasOwnProperty.call(record.job, 'id') }))
-          value = plugin === 'nodequality'
+          value = tool === 'nodequality'
             ? { plugin_ready: ready, plugin_reason: ready ? null : 'TEST_ONLY 缺少完成确认能力', full_ready: false, full_reason: 'TEST_ONLY 完整验机保持关闭', cancel_supported: cancelSupported, reports: currentReports }
-            : { plugins: [{ plugin, ready, reason: ready ? null : 'TEST_ONLY 缺少完成确认能力' }], cancel_supported: cancelSupported, reports: currentReports }
+            : { plugins: [{ plugin: tool, ready, reason: ready ? null : 'TEST_ONLY 缺少完成确认能力' }], cancel_supported: cancelSupported, reports: currentReports }
         }
-        else if (path === targetPath && plugin === 'tcpquality') value = [target]
+        else if (path === targetPath && tool === 'tcpquality') value = [target]
         else { totals.unexpected.push(`${method} ${path}`); return route.fulfill({ status: 404, json: {} }) }
         return route.fulfill({ json: value })
       })()
       pending.push(task); return task
     })
-    const start = page.getByRole('button', { name: plugin === 'nodequality' ? '日常检查' : '开始 TCP 诊断', exact: true })
+    const start = page.getByRole('button', { name: tool === 'nodequality' ? '日常检查' : '开始 TCP 诊断', exact: true })
     const cancel = page.getByRole('button', { name: '请求取消测试', exact: true })
-    const version = plugin === 'nodequality'
+    const version = tool === 'nodequality'
       ? page.getByRole('combobox', { name: /^测试 IP 版本/ })
       : page.getByLabel('IP 版本', { exact: true })
     const refreshFailed = async () => {
@@ -91,24 +91,24 @@ try {
       failures.add(path); gate.release(); gates.delete(path)
       await page.getByText('TEST_ONLY 诊断刷新失败', { exact: true }).first().waitFor()
       await forceClick(button); assert.equal(writes.length, baseline, 'Failed snapshot sends zero writes'); ++totals.blocked
-      assert.equal(await version.inputValue(), plugin === 'nodequality' ? 'ipv6' : '6')
+      assert.equal(await version.inputValue(), tool === 'nodequality' ? 'ipv6' : '6')
       assert.equal(await page.locator('details[data-slot=quality-report-text] pre').textContent(), 'TEST_ONLY 已保存报告')
       failures.delete(path); await refreshFailed()
       await wait(() => button.isEnabled(), 'A successful snapshot restores the original action')
     }
     try {
       await installControlCenterFixtures(page)
-      await page.goto(`${origin}/#/servers/1/${plugin === 'nodequality' ? 'node-quality' : 'tcp-quality'}`)
+      await page.goto(`${origin}/#/servers/1/${tool === 'nodequality' ? 'node-quality' : 'tcp-quality'}`)
       await wait(() => start.isEnabled(), 'Initial diagnostic state is current')
-      await version.selectOption(plugin === 'nodequality' ? 'ipv6' : '6')
+      await version.selectOption(tool === 'nodequality' ? 'ipv6' : '6')
       await block(readPath, start)
-      if (plugin === 'tcpquality') await block(targetPath, start)
+      if (tool === 'tcpquality') await block(targetPath, start)
       ready = false; await page.reload(); await page.getByText('TEST_ONLY 缺少完成确认能力', { exact: true }).waitFor()
       assert.equal(await start.isDisabled(), true); await forceClick(start); assert.equal(writes.length, 0); ++totals.blocked
       ready = true; await page.reload(); await wait(() => start.isEnabled(), 'Current capability restored')
-      await version.selectOption(plugin === 'nodequality' ? 'ipv6' : '6')
+      await version.selectOption(tool === 'nodequality' ? 'ipv6' : '6')
       await start.click(); await wait(() => writes.length === 1, 'Exactly one authorized create'); ++totals.recovered
-      assert.equal(writes[0].body.ip_version, plugin === 'nodequality' ? 'ipv6' : '6')
+      assert.equal(writes[0].body.ip_version, tool === 'nodequality' ? 'ipv6' : '6')
       await wait(() => cancel.isEnabled(), 'Queued task can be cancelled')
       await block(readPath, cancel)
       record.status = 'failed'; record.error = 'TEST_ONLY 面板截止，尚无清理收据'; ready = false
@@ -146,7 +146,7 @@ try {
       // Old text-only history lacks a task identity and must remain readable.
       record.status = 'failed'; record.agent_completed = false; delete record.job.id
       await poll(); await wait(() => start.isEnabled(), 'Text-only history remains readable without occupying diagnostics')
-      if (process.env.APSP_UI_SCREENSHOT_DIR) { await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `diagnostic-snapshot-${plugin}-${width}.png`), fullPage: true }) }
+      if (process.env.APSP_UI_SCREENSHOT_DIR) { await mkdir(process.env.APSP_UI_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: resolve(process.env.APSP_UI_SCREENSHOT_DIR, `diagnostic-snapshot-${tool}-${width}.png`), fullPage: true }) }
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
       ++totals.scenarios
     } finally { for (const gate of gates.values()) gate.release(); await Promise.all(pending); await page.close() }

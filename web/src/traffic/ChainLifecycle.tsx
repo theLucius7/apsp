@@ -1,5 +1,6 @@
 import { Badge } from '../components'
-import { dateText, publicPathText } from '../access/groupTypes'
+import { publicPathText } from '../access/groupTypes'
+import { dateText } from '../format'
 import type { PathPhase, ProxyResource } from '../access/groupTypes'
 import { Notice } from '@/components/panel'
 

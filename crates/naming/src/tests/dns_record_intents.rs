@@ -10,7 +10,7 @@ struct Fixture {
 }
 
 async fn fixture(pool: sqlx::PgPool) -> Fixture {
-    let state = AppState::new(
+    let state = apsp_governance::state(
         pool,
         crate::config::Config {
             database_url: String::new(),

@@ -1,5 +1,5 @@
 use crate::{
-    AppState, agent_api, auth,
+    AppState, auth, device_channel,
     error::{ApiError, ApiResult},
 };
 use anyhow::{Context, ensure};
@@ -101,7 +101,7 @@ pub async fn ingest(state: &AppState, server_id: i64, mut batch: UsageBatch) -> 
     }
     crate::nexus::bridge::enqueue_usage(&mut tx, server_id, &batch).await?;
     tx.commit().await?;
-    agent_api::notify(
+    device_channel::notify(
         state,
         server_id,
         Envelope::new(

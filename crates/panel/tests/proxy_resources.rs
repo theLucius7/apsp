@@ -4,14 +4,15 @@ mod business_support;
 #[allow(dead_code)]
 #[path = "ordered_paths/support.rs"]
 mod ordered_support;
+mod proxy_api;
 use business_support::release_fixture;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
-use apsp_panel::agent_api;
 use apsp_panel_host::AppState;
 use apsp_protocol::*;
+use apsp_resources::device_channel;
 use apsp_traffic::runtime_control;
 use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};
@@ -20,8 +21,6 @@ use sqlx::PgPool;
 use std::collections::BTreeSet;
 use std::ops::Deref;
 use uuid::Uuid;
-
-const ROOT: &str = "/api/plugins/sing-box";
 
 struct ControlledPanel(TestPanel);
 
@@ -90,7 +89,7 @@ async fn call(
     body: Option<Value>,
 ) -> Result<Value> {
     let response = panel
-        .admin(method, &format!("{ROOT}{path}"), cookie, body)
+        .admin(method, &crate::proxy_api::proxy_api(path), cookie, body)
         .await?;
     let status = response.status();
     ensure!(status.is_success(), "{path} returned {status}");
@@ -104,7 +103,7 @@ async fn batch(panel: &TestPanel, cookie: &str, body: Value) -> Result<(StatusCo
     let response = panel
         .admin(
             Method::POST,
-            &format!("{ROOT}/chains/ordered-batch"),
+            "/api/traffic/chains/ordered-batch",
             cookie,
             Some(body),
         )
@@ -284,7 +283,7 @@ async fn catalog_has_typed_ids_distinct_grant_counts_and_preserves_existing_subs
     )
     .await?;
     let entry_server = panel.create_server(&cookie, "Entry server").await?;
-    panel.enable_plugin(&cookie, entry_server).await?;
+    panel.enable_runtime(&cookie, entry_server).await?;
     let legacy = panel.create_user(&cookie, "Existing subscriber").await?;
     let legacy_id = id(&legacy)?;
     let grant = panel.grant(&cookie, legacy_id, exit).await?;
@@ -313,7 +312,7 @@ async fn catalog_has_typed_ids_distinct_grant_counts_and_preserves_existing_subs
                     .request(
                         method,
                         format!(
-                            "{}{ROOT}/ordered-proxy-resources/{kind}/{identity}",
+                            "{}/api/traffic/ordered-proxy-resources/{kind}/{identity}",
                             panel.base
                         )
                     )
@@ -347,7 +346,10 @@ async fn catalog_has_typed_ids_distinct_grant_counts_and_preserves_existing_subs
     assert_eq!(
         panel
             .client
-            .get(format!("{}{ROOT}/ordered-proxy-resources", panel.base))
+            .get(format!(
+                "{}/api/traffic/ordered-proxy-resources",
+                panel.base
+            ))
             .send()
             .await?
             .status(),
@@ -424,7 +426,7 @@ async fn catalog_has_typed_ids_distinct_grant_counts_and_preserves_existing_subs
         panel
             .admin(
                 Method::GET,
-                &format!("{ROOT}/ordered-proxy-resources/direct/{entry}"),
+                &format!("/api/traffic/ordered-proxy-resources/direct/{entry}"),
                 &cookie,
                 None
             )
@@ -487,7 +489,7 @@ async fn batch_middle_failure_rolls_back_entries_chains_and_dirty_markers(
     let panel = controlled_panel(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let entry_server = panel.create_server(&cookie, "Entry").await?;
-    panel.enable_plugin(&cookie, entry_server).await?;
+    panel.enable_runtime(&cookie, entry_server).await?;
     let exit_server = panel.create_server(&cookie, "Exit").await?;
     let exit = id(&panel.create_node(&cookie, exit_server, "Exit").await?)?;
     clean_servers(&pool).await?;
@@ -522,7 +524,7 @@ async fn concurrent_same_request_replays_normalized_body_and_rejects_changed_ord
     let panel = controlled_panel(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let entry_server = panel.create_server(&cookie, "Entry").await?;
-    panel.enable_plugin(&cookie, entry_server).await?;
+    panel.enable_runtime(&cookie, entry_server).await?;
     let exit_server = panel.create_server(&cookie, "Exit").await?;
     let exit = id(&panel.create_node(&cookie, exit_server, "Exit").await?)?;
     let body = request(vec![
@@ -580,7 +582,7 @@ async fn concurrent_batches_allocate_unique_auto_ports_without_partial_reservati
     let panel = controlled_panel(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let entry_server = panel.create_server(&cookie, "Entry").await?;
-    panel.enable_plugin(&cookie, entry_server).await?;
+    panel.enable_runtime(&cookie, entry_server).await?;
     let exit_server = panel.create_server(&cookie, "Exit").await?;
     let exit = id(&panel
         .create_node(&cookie, exit_server, "Shared exit")
@@ -824,7 +826,7 @@ async fn batch_rejects_unauthorized_entries_and_invalid_managed_topologies(
         panel
             .admin(
                 Method::POST,
-                &format!("{ROOT}/policy-groups"),
+                "/api/access/policy-groups",
                 &cookie,
                 Some(json!({"name":"Entry bypass","node_ids":[na],"chain_ids":[]}))
             )
@@ -842,7 +844,7 @@ async fn batch_limits_and_unsupported_paths_fail_before_mutating_existing_busine
     let panel = controlled_panel(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let a = panel.create_server(&cookie, "Entry").await?;
-    panel.enable_plugin(&cookie, a).await?;
+    panel.enable_runtime(&cookie, a).await?;
     let b = panel.create_server(&cookie, "Exit").await?;
     let exit = id(&panel.create_node(&cookie, b, "Exit").await?)?;
     clean_servers(&pool).await?;
@@ -851,7 +853,7 @@ async fn batch_limits_and_unsupported_paths_fail_before_mutating_existing_busine
     assert_eq!(
         panel
             .client
-            .post(format!("{}{ROOT}/chains/ordered-batch", panel.base))
+            .post(format!("{}/api/traffic/chains/ordered-batch", panel.base))
             .json(&valid)
             .send()
             .await?
@@ -894,7 +896,7 @@ async fn resource_delete_preserves_shared_exit_history_and_deleted_request_repla
     let panel = controlled_panel(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let a = panel.create_server(&cookie, "Entry").await?;
-    panel.enable_plugin(&cookie, a).await?;
+    panel.enable_runtime(&cookie, a).await?;
     let b = panel.create_server(&cookie, "Exit").await?;
     let exit = id(&panel.create_node(&cookie, b, "Shared exit").await?)?;
     let legacy = panel.create_user(&cookie, "Direct subscriber").await?;
@@ -925,7 +927,7 @@ async fn resource_delete_preserves_shared_exit_history_and_deleted_request_repla
     let blocked = panel
         .admin(
             Method::DELETE,
-            &format!("{ROOT}/ordered-proxy-resources/chain/{first}"),
+            &format!("/api/traffic/ordered-proxy-resources/chain/{first}"),
             &cookie,
             None,
         )
@@ -955,7 +957,12 @@ async fn resource_delete_preserves_shared_exit_history_and_deleted_request_repla
         (format!("/nodes/{}", entries[0]), json!([])),
     ] {
         let blocked = panel
-            .admin(Method::DELETE, &format!("{ROOT}{path}"), &cookie, None)
+            .admin(
+                Method::DELETE,
+                &crate::proxy_api::proxy_api(&path),
+                &cookie,
+                None,
+            )
             .await?;
         assert_eq!(blocked.status(), StatusCode::CONFLICT);
         let references: Value = blocked.json().await?;
@@ -1006,7 +1013,7 @@ async fn resource_delete_preserves_shared_exit_history_and_deleted_request_repla
     let protected = panel
         .admin(
             Method::DELETE,
-            &format!("{ROOT}/ordered-proxy-resources/direct/{exit}"),
+            &format!("/api/traffic/ordered-proxy-resources/direct/{exit}"),
             &cookie,
             None,
         )
@@ -1068,7 +1075,7 @@ async fn resource_delete_preserves_shared_exit_history_and_deleted_request_repla
         panel
             .admin(
                 Method::GET,
-                &format!("{ROOT}/ordered-proxy-resources/chain/{first}"),
+                &format!("/api/traffic/ordered-proxy-resources/chain/{first}"),
                 &cookie,
                 None
             )
@@ -1113,7 +1120,12 @@ async fn resource_delete_preserves_shared_exit_history_and_deleted_request_repla
         format!("/ordered-proxy-resources/direct/{exit}"),
     ] {
         let blocked = panel
-            .admin(Method::DELETE, &format!("{ROOT}{path}"), &cookie, None)
+            .admin(
+                Method::DELETE,
+                &crate::proxy_api::proxy_api(&path),
+                &cookie,
+                None,
+            )
             .await?;
         assert_eq!(blocked.status(), StatusCode::CONFLICT);
         let references: Value = blocked.json().await?;
@@ -1382,7 +1394,7 @@ async fn damaged_chains_stay_readable_and_cleanable_without_exposing_private_con
         panel
             .admin(
                 Method::GET,
-                &format!("{ROOT}/ordered-proxy-resources/chain/{chain}"),
+                &format!("/api/traffic/ordered-proxy-resources/chain/{chain}"),
                 &cookie,
                 None
             )
@@ -1405,7 +1417,7 @@ async fn damaged_chains_stay_readable_and_cleanable_without_exposing_private_con
             panel
                 .admin(
                     Method::GET,
-                    &format!("{ROOT}/ordered-proxy-resources/direct/{node}"),
+                    &format!("/api/traffic/ordered-proxy-resources/direct/{node}"),
                     &cookie,
                     None
                 )
@@ -1430,7 +1442,7 @@ async fn retired_node_cleanup_keeps_damaged_ordered_owners_and_bounded_public_re
     let panel = controlled_panel(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let a = panel.create_server(&cookie, "Entry").await?;
-    panel.enable_plugin(&cookie, a).await?;
+    panel.enable_runtime(&cookie, a).await?;
     let b = panel.create_server(&cookie, "Exit").await?;
     let exit = id(&panel.create_node(&cookie, b, "Shared exit").await?)?;
     let body = request(vec![new_entry("Retained owner", a, exit, None)]);
@@ -1455,7 +1467,12 @@ async fn retired_node_cleanup_keeps_damaged_ordered_owners_and_bounded_public_re
     ];
     for path in &paths {
         let response = panel
-            .admin(Method::DELETE, &format!("{ROOT}{path}"), &cookie, None)
+            .admin(
+                Method::DELETE,
+                &crate::proxy_api::proxy_api(path),
+                &cookie,
+                None,
+            )
             .await?;
         assert_eq!(response.status(), StatusCode::CONFLICT);
         let error: Value = response.json().await?;
@@ -1506,7 +1523,12 @@ async fn retired_node_cleanup_keeps_damaged_ordered_owners_and_bounded_public_re
     let before = state(&pool).await?;
     for path in &paths {
         let response = panel
-            .admin(Method::DELETE, &format!("{ROOT}{path}"), &cookie, None)
+            .admin(
+                Method::DELETE,
+                &crate::proxy_api::proxy_api(path),
+                &cookie,
+                None,
+            )
             .await?;
         assert_eq!(response.status(), StatusCode::CONFLICT);
         let error: Value = response.json().await?;
@@ -1533,7 +1555,12 @@ async fn retired_node_cleanup_keeps_damaged_ordered_owners_and_bounded_public_re
         format!("/ordered-proxy-resources/direct/{exit}"),
     ] {
         let response = panel
-            .admin(Method::DELETE, &format!("{ROOT}{path}"), &cookie, None)
+            .admin(
+                Method::DELETE,
+                &crate::proxy_api::proxy_api(&path),
+                &cookie,
+                None,
+            )
             .await?;
         assert_eq!(response.status(), StatusCode::CONFLICT);
         let error: Value = response.json().await?;
@@ -1572,7 +1599,12 @@ async fn retired_node_cleanup_keeps_damaged_ordered_owners_and_bounded_public_re
     let before = state(&pool).await?;
     for path in &paths {
         let response = panel
-            .admin(Method::DELETE, &format!("{ROOT}{path}"), &cookie, None)
+            .admin(
+                Method::DELETE,
+                &crate::proxy_api::proxy_api(path),
+                &cookie,
+                None,
+            )
             .await?;
         assert_eq!(response.status(), StatusCode::CONFLICT);
         let error: Value = response.json().await?;

@@ -16,7 +16,7 @@ export function validLimits(value: unknown): value is Limits {
 }
 
 export default function UserLimits({ id, userError, refreshRevision }: { id: number; userError: () => string; refreshRevision: number }) {
-  const resource = useResource<unknown>(`/api/plugins/sing-box/users/${id}/limits`, 10000, { keep: true })
+  const resource = useResource<unknown>(`/api/access/users/${id}/limits`, 10000, { keep: true })
   const action = useAction()
   const [draft, setDraft] = useState<Limits>()
   const current = validLimits(resource.data) && resource.data.user_id === id ? resource.data : undefined
@@ -32,7 +32,7 @@ export default function UserLimits({ id, userError, refreshRevision }: { id: num
   const submit = (form: FormData) => {
     if (!draft || writeError()) return
     const body = { expected_revision: draft.revision, upload_mbps: Number(form.get('upload_mbps')), download_mbps: Number(form.get('download_mbps')), max_connections: Number(form.get('max_connections')) }
-    void action.run(() => api(`/api/plugins/sing-box/users/${id}/limits`, 'PUT', body), () => { setDraft(undefined); resource.reload() })
+    void action.run(() => api(`/api/access/users/${id}/limits`, 'PUT', body), () => { setDraft(undefined); resource.reload() })
   }
   return <Panel>
     <PanelHeader><PanelTitle>用户限制</PanelTitle><div className="flex gap-2"><Refresh onClick={resource.reload} /><Button variant="outline" size="sm" disabled={action.busy || Boolean(writeError())} onClick={() => { if (!writeError() && current) { action.clearError(); setDraft(current) } }}>设置限制</Button></div></PanelHeader>

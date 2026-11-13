@@ -1,6 +1,5 @@
 use super::*;
 
-pub(super) const ROOT: &str = "/api/plugins/sing-box";
 pub(super) struct Fixture {
     pub panel: TestPanel,
     pub cookie: String,
@@ -19,7 +18,7 @@ pub(super) async fn api(
     status: StatusCode,
 ) -> Result<Value> {
     let response = panel
-        .admin(method, &format!("{ROOT}{path}"), cookie, body)
+        .admin(method, &crate::proxy_api::proxy_api(path), cookie, body)
         .await?;
     ensure!(
         response.status() == status,
@@ -198,7 +197,7 @@ pub(super) async fn confirm_devices(state: &AppState) -> Result<()> {
             instance_id: format!("backend:TEST_ONLY-{server}-{revision}"),
             healthy: true,
         };
-        agent_api::process_message(
+        device_channel::process_message(
             state,
             server,
             Message::RuntimeCheckpointResult(RuntimeCheckpointResult {
@@ -241,7 +240,7 @@ pub(super) async fn finish_controls(state: &AppState, probes_successful: bool) -
                 error: None,
             })
         };
-        agent_api::process_message(state, server, message).await?;
+        device_channel::process_message(state, server, message).await?;
     }
     Ok(())
 }

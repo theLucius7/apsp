@@ -176,7 +176,7 @@ async fn modes_require_admin_confirmation_gate_capability_and_bound_daily_target
     assert_eq!(daily["agent_completed"], false);
     assert!(daily["cancel_requested_at"].is_null());
     assert!(daily["cancel_error"].is_null());
-    assert_eq!(daily["job"]["version"], diagnostics::PLUGIN_VERSION);
+    assert_eq!(daily["job"]["version"], diagnostics::TOOL_VERSION);
     assert_eq!(daily["job"]["timeout_secs"], 90);
     assert_eq!(daily["job"]["options"]["network_mode"], "low");
     assert_eq!(daily["job"]["options"]["upload_report"], "false");

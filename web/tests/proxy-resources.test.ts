@@ -1,7 +1,8 @@
 import { expect, test } from 'bun:test'
 import { deleteProxyResource, prepareChainBatch, proxyWriteError, submitChainBatch, validNodeList, validServerList } from '../src/traffic/Chains'
 import type { ChainBatchDraft, ProxyWriteSnapshot } from '../src/traffic/Chains'
-import { filterProxyResources, proxyResourceCounts, proxyResourceKey, validatedSnapshot, validProxyResources } from '../src/access/groupTypes'
+import { filterProxyResources, proxyResourceCounts, proxyResourceKey, validProxyResources } from '../src/access/groupTypes'
+import { validatedSnapshot } from '../src/lib/resource-snapshot'
 import type { ProxyResource, ResourceEndpoint } from '../src/access/groupTypes'
 import { nodeRoute } from '../src/traffic/nodeRoute'
 import { publicResourceFields } from './proxy-resource-fixtures.mjs'
@@ -154,7 +155,7 @@ test('delete uses typed current resource identity and can clean broken configura
   chain.available = false; chain.unavailable_reasons = ['入口公开端口参数无法确认，暂显示监听端口']
   current.nodes.fresh = false; current.nodes.error = '旧节点设置无法解析'; current.servers.fresh = false
   await deleteProxyResource(chain, current, async path => { writes.push(path) })
-  expect(writes).toEqual(['/api/plugins/sing-box/ordered-proxy-resources/chain/1'])
+  expect(writes).toEqual(['/api/traffic/ordered-proxy-resources/chain/1'])
   current.resources.fresh = false
   await expect(deleteProxyResource(chain, current, async path => { writes.push(path) })).rejects.toThrow('正在刷新')
   current.resources.fresh = true; current.resources.data = current.resources.data!.filter(resource => resource.kind !== 'chain')

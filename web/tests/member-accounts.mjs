@@ -19,7 +19,7 @@ const server = createServer(async (request, response) => {
   if (!file.startsWith(dist.endsWith(sep) ? dist : `${dist}${sep}`)) return response.writeHead(400).end()
   try { response.writeHead(200, { 'Content-Type': ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' })[extname(file)] ?? 'application/octet-stream' }).end(await readFile(file)) } catch { response.writeHead(404).end() }
 })
-const root = '/api/plugins/sing-box'
+const root = '/api/access'
 const account = '00000000-0000-4000-8000-000000000041'
 const code = 'ABCD-EFGH-JKMN-PQRS'
 const user = { id: 1, name: 'TEST_ONLY 成员', subscription_token: 'TEST_ONLY', subscription_url: 'http://127.0.0.1/s/TEST_ONLY' }
@@ -94,7 +94,7 @@ try {
         value = { available: true, package_name: 'TEST_ONLY 套餐', email_verification_required: false, configuration: { enabled: true } }
       }
       else if (method === 'POST' && path === `${root}/portal-public/claim`) value = { url: `${origin}/#/account/${account}?activate=${'A'.repeat(43)}` }
-      else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/limits$/.test(path)) value = { user_id: Number(path.split('/')[5]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } // Per-user limits (ADR 0124) are read on the user page; none are set here.
+      else if (method === 'GET' && /^\/api\/access\/users\/\d+\/limits$/.test(path)) value = { user_id: Number(path.split('/')[4]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } // Per-user limits (ADR 0124) are read on the user page; none are set here.
       else { unexpected.push(`${method} ${path}`); return route.fulfill({ status: 404, json: { error: 'TEST_ONLY 未知请求' } }) }
       return route.fulfill({ json: value })
     })

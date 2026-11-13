@@ -19,7 +19,7 @@ async fn ready(panel: &TestPanel, server: i64) -> Result<()> {
     release_fixture::write(
         &panel.state.config.data_dir,
         "nodequality",
-        apsp_observability::diagnostics::PLUGIN_VERSION,
+        apsp_observability::diagnostics::TOOL_VERSION,
         "nodequality",
         &archive,
         binary,
@@ -144,7 +144,7 @@ async fn revoked_workbench_delivery_blocks_the_entire_same_server_mixed_response
     for (name, version, binary) in [
         (
             "nodequality",
-            apsp_observability::diagnostics::PLUGIN_VERSION,
+            apsp_observability::diagnostics::TOOL_VERSION,
             &b"TEST_ONLY fixed diagnostic service fixture"[..],
         ),
         (
@@ -162,11 +162,11 @@ async fn revoked_workbench_delivery_blocks_the_entire_same_server_mixed_response
         }
     }
     release_fixture::write_entries(&panel.state.config.data_dir, artifacts)?;
-    let entries = apsp_panel_host::releases::entries(&panel.state).await?;
+    let entries = apsp_governance::releases::entries(&panel.state).await?;
     assert_eq!(entries.len(), 4);
     for name in ["nodequality", "network-workbench"] {
         let version = if name == "nodequality" {
-            apsp_observability::diagnostics::PLUGIN_VERSION
+            apsp_observability::diagnostics::TOOL_VERSION
         } else {
             "1.0.0"
         };
@@ -506,7 +506,7 @@ async fn shared_service_keeps_legacy_history_and_serializes_both_creation_routes
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn registered_plugins_use_one_server_mutex_and_require_budget_aware_agents(
+async fn registered_tools_use_one_server_mutex_and_require_budget_aware_agents(
     pool: PgPool,
 ) -> Result<()> {
     let panel = TestPanel::start(pool).await?;

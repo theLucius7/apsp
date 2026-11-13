@@ -28,7 +28,7 @@ try {
     await page.clock.install()
     // Dialogs finish closing on animation frames, which the page clock holds here; with reduced motion they close at once.
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    const prefix = '/api/plugins/sing-box', errors = [], writes = [], receipts = new Map()
+    const trafficApi = '/api/traffic', accessApi = '/api/access', errors = [], writes = [], receipts = new Map()
     const servers = [1,2].map(id => ({id,name:`服务器 ${id}`,enabled:true,online:false,read_only:false,agent_supported:true,source:'administrator',installation:{state:'pending',reason:'等待设备应用，尚未确认连通。',target_rev:1,applied_rev:0}}))
     let nodes = [1,2,3,4].map(id => ({id,name:id === 2 ? '共享出口' : `监听 ${id}`,server_id:id === 2 ? 2 : 1,protocol:'vless-reality',enabled:true,port:20000+id,public_host:id === 2 ? 'exit.example.com' : 'entry.example.com',sni:'www.example.com',public_key:'TEST_ONLY',short_id:'abcd',...(id === 3 ? {settings:{public_port:8443}} : {})}))
     let chains = [{id:1,name:'既有链路',entry_node_id:3,exit_node_id:2,available:true}]
@@ -48,21 +48,21 @@ try {
       let value
       if (method === 'GET' && path === '/api/dashboard/access') value={authenticated:true,public_dashboard:false}
       else if (method === 'GET' && path === '/api/me') value={authenticated:true}
-      else if (method === 'GET' && path === `${prefix}/servers`) value=servers
-      else if (method === 'GET' && path === `${prefix}/ordered-subscription-sources`) value=[]
-      else if (method === 'GET' && path === `${prefix}/node-catalog`) value=catalogResourceFixtures(catalogNodeFixtures(nodes,servers,chains))
-      else if (method === 'GET' && path === `${prefix}/nodes`) {
+      else if (method === 'GET' && path === `${trafficApi}/servers`) value=servers
+      else if (method === 'GET' && path === `${trafficApi}/ordered-subscription-sources`) value=[]
+      else if (method === 'GET' && path === `${trafficApi}/node-catalog`) value=catalogResourceFixtures(catalogNodeFixtures(nodes,servers,chains))
+      else if (method === 'GET' && path === `${trafficApi}/nodes`) {
         if (nodesFailure) {await route.fulfill({status:500,json:{error:'旧节点设置无法解析'}});return}
         value=nodes
-      } else if (method === 'GET' && path === `${prefix}/usage`) value={total:'0',uplink:'0',downlink:'0',by_node:[],by_user:[]}
-      else if (method === 'GET' && path === `${prefix}/ordered-proxy-resources`) {
+      } else if (method === 'GET' && path === `${accessApi}/usage`) value={total:'0',uplink:'0',downlink:'0',by_node:[],by_user:[]}
+      else if (method === 'GET' && path === `${trafficApi}/ordered-proxy-resources`) {
         if (resourceFailure) {await route.fulfill({status:403,json:{error:'资源快照读取被拒绝'}});return}
         value=malformed ? [{id:1,name:'旧版不完整元数据'}] : resources()
-      } else if (method === 'GET' && /^\/api\/plugins\/sing-box\/ordered-proxy-resources\/(direct|chain)\/[1-9]\d*$/.test(path)) {
+      } else if (method === 'GET' && /^\/api\/traffic\/ordered-proxy-resources\/(direct|chain)\/[1-9]\d*$/.test(path)) {
         const [,kind,id] = path.match(/\/(direct|chain)\/(\d+)$/)
         value=resources().find(value => value.kind === kind && value.id === Number(id))
         if (!value) {await route.fulfill({status:404,json:{error:'所选资源已删除'}});return}
-      } else if (method === 'POST' && path === `${prefix}/chains/ordered-batch`) {
+      } else if (method === 'POST' && path === `${trafficApi}/chains/ordered-batch`) {
         const body = request.postDataJSON()
         assert.match(body.request_id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
         assert.deepEqual(Object.keys(body).sort(),['items','request_id'])
@@ -100,9 +100,9 @@ try {
           return
         }
         await route.fulfill({status:201,json:result});return
-      } else if (method === 'DELETE' && path === `${prefix}/nodes/2`) {
+      } else if (method === 'DELETE' && path === `${trafficApi}/nodes/2`) {
         await route.fulfill({status:409,json:{error:'出口被链路引用：既有链路 #1；请先解除引用。',references:{policies:[],chains:[{id:1,name:'既有链路',role:'exit'}]}}});return
-      } else if (method === 'DELETE' && path === `${prefix}/ordered-proxy-resources/chain/1`) {
+      } else if (method === 'DELETE' && path === `${trafficApi}/ordered-proxy-resources/chain/1`) {
         assert(broken && nodesFailure,'broken resources must remain cleanable when the old nodes API fails')
         chains=chains.filter(chain => chain.id !== 1);nodes=nodes.filter(node => node.id !== 3)
         assert(nodes.some(node => node.id === 2),'shared exit must remain')
@@ -276,7 +276,7 @@ try {
       await page.waitForTimeout(20)
     }
     assert(!nodes.some(node => node.id === 3));assert(nodes.some(node => node.id === 2))
-    assert.equal(writes.at(-1).path,`${prefix}/ordered-proxy-resources/chain/1`)
+    assert.equal(writes.at(-1).path,`${trafficApi}/ordered-proxy-resources/chain/1`)
     nodesFailure=false;broken=false;await poll();await enabled(create)
     // Bad metadata and a failed GET keep the last good public list readable but block writes.
     malformed=true;await page.locator('header[data-slot=page-header]').getByRole('button',{name:'刷新',exact:true}).click()

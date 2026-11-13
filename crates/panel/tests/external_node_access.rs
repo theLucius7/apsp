@@ -3,6 +3,7 @@
 //! group binds each node to its current version or to one pinned version, and a
 //! user's subscription resolves the union of their groups' bindings.
 mod business_support;
+mod proxy_api;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 
@@ -14,7 +15,6 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-const ROOT: &str = "/api/plugins/sing-box";
 const FIRST: &str = "TEST_ONLY_external_provider_first";
 const SECOND: &str = "TEST_ONLY_external_provider_second";
 const THIRD: &str = "TEST_ONLY_external_provider_third";
@@ -38,7 +38,7 @@ async fn source(panel: &TestPanel, cookie: &str) -> Result<(i64, i64)> {
     let receipt: Value = panel
         .admin(
             Method::POST,
-            &format!("{ROOT}/ordered-subscription-sources"),
+            "/api/traffic/ordered-subscription-sources",
             cookie,
             Some(json!({"request_id":Uuid::new_v4(),"name":"来源","input":{"kind":"inline","content":batch(FIRST)}})),
         )
@@ -67,7 +67,7 @@ async fn version(panel: &TestPanel, cookie: &str, source: i64, password: &str) -
     panel
         .admin(
             Method::PATCH,
-            &format!("{ROOT}/ordered-subscription-sources/{source}"),
+            &format!("/api/traffic/ordered-subscription-sources/{source}"),
             cookie,
             Some(json!({"request_id":Uuid::new_v4(),"settings_revision":revision,"input":{"kind":"inline","content":batch(password),"identity_action":"update"}})),
         )
@@ -114,7 +114,7 @@ async fn adoption(
     panel
         .admin(
             Method::PATCH,
-            &format!("{ROOT}/ordered-subscription-sources/{source}/nodes/{internal}"),
+            &format!("/api/traffic/ordered-subscription-sources/{source}/nodes/{internal}"),
             cookie,
             Some(json!({"adopted":adopted,"settings_revision":settings,"identity_epoch":epoch,"node_version_id":latest,"metadata_revision":metadata})),
         )
@@ -137,7 +137,7 @@ async fn candidates(panel: &TestPanel, cookie: &str) -> Result<Vec<Value>> {
     let response = panel
         .admin(
             Method::GET,
-            &format!("{ROOT}/external-node-candidates"),
+            "/api/access/external-node-candidates",
             cookie,
             None,
         )
@@ -163,7 +163,7 @@ async fn first_candidate(panel: &TestPanel, cookie: &str) -> Result<Value> {
 
 async fn groups(panel: &TestPanel, cookie: &str) -> Result<Vec<Value>> {
     let text = panel
-        .admin(Method::GET, &format!("{ROOT}/policy-groups"), cookie, None)
+        .admin(Method::GET, "/api/access/policy-groups", cookie, None)
         .await?
         .error_for_status()?
         .text()
@@ -197,7 +197,7 @@ impl Group {
         let response = panel
             .admin(
                 Method::POST,
-                &format!("{ROOT}/policy-groups"),
+                "/api/access/policy-groups",
                 cookie,
                 Some(json!({"name":name,"node_ids":[],"chain_ids":[],"external_nodes":[]})),
             )
@@ -280,7 +280,7 @@ async fn save_group(
     let response = panel
         .admin(
             Method::PUT,
-            &format!("{ROOT}/policy-groups/{group}"),
+            &format!("/api/access/policy-groups/{group}"),
             cookie,
             Some(json!({"name":name,"node_ids":[],"chain_ids":[],"external_nodes":external_nodes})),
         )
@@ -296,7 +296,7 @@ async fn user_groups(panel: &TestPanel, cookie: &str, user: i64) -> Result<Vec<i
     let value: Value = panel
         .admin(
             Method::GET,
-            &format!("{ROOT}/users/{user}/policy-groups"),
+            &format!("/api/access/users/{user}/policy-groups"),
             cookie,
             None,
         )
@@ -316,7 +316,7 @@ async fn set_groups(panel: &TestPanel, cookie: &str, user: i64, groups: &[i64]) 
     panel
         .admin(
             Method::PUT,
-            &format!("{ROOT}/users/{user}/policy-groups"),
+            &format!("/api/access/users/{user}/policy-groups"),
             cookie,
             Some(json!({"group_ids":groups})),
         )
@@ -371,7 +371,7 @@ async fn preview(panel: &TestPanel, cookie: &str, user: i64) -> Result<Value> {
     Ok(panel
         .admin(
             Method::GET,
-            &format!("{ROOT}/users/{user}/subscription"),
+            &format!("/api/access/users/{user}/subscription"),
             cookie,
             None,
         )
@@ -386,7 +386,7 @@ async fn authorizations(panel: &TestPanel, cookie: &str, user: i64) -> Result<Ve
     let value: Value = panel
         .admin(
             Method::GET,
-            &format!("{ROOT}/users/{user}/diagnosis"),
+            &format!("/api/access/users/{user}/diagnosis"),
             cookie,
             None,
         )
@@ -427,7 +427,11 @@ async fn group_external_nodes_are_atomic_redacted_validated_and_revocable(
         ensure!(
             panel
                 .client
-                .get(format!("{}{ROOT}/{path}", panel.base))
+                .get(format!(
+                    "{}{}",
+                    panel.base,
+                    crate::proxy_api::proxy_api(&format!("/{path}"))
+                ))
                 .send()
                 .await?
                 .status()
@@ -450,7 +454,7 @@ async fn group_external_nodes_are_atomic_redacted_validated_and_revocable(
     // source cannot be deleted.
     held_by_group(adoption(&panel, &cookie, source, node, false).await?).await?;
     let catalog: Vec<Value> = panel
-        .admin(Method::GET, &format!("{ROOT}/node-catalog"), &cookie, None)
+        .admin(Method::GET, "/api/traffic/node-catalog", &cookie, None)
         .await?
         .error_for_status()?
         .json()
@@ -463,7 +467,7 @@ async fn group_external_nodes_are_atomic_redacted_validated_and_revocable(
         panel
             .admin(
                 Method::DELETE,
-                &format!("{ROOT}/node-catalog/batch"),
+                "/api/traffic/node-catalog/batch",
                 &cookie,
                 Some(
                     json!({"items":[{"kind":"external","id":node,"revision":listed["revision"]}]}),
@@ -482,7 +486,7 @@ async fn group_external_nodes_are_atomic_redacted_validated_and_revocable(
         panel
             .admin(
                 Method::DELETE,
-                &format!("{ROOT}/ordered-subscription-sources/{source}"),
+                &format!("/api/traffic/ordered-subscription-sources/{source}"),
                 &cookie,
                 Some(json!({"settings_revision":settings})),
             )
@@ -715,7 +719,7 @@ async fn catalog_alias_and_order_reach_group_external_subscriptions(pool: PgPool
             ])
     );
     let catalog: Vec<Value> = panel
-        .admin(Method::GET, &format!("{ROOT}/node-catalog"), &cookie, None)
+        .admin(Method::GET, "/api/traffic/node-catalog", &cookie, None)
         .await?
         .error_for_status()?
         .json()
@@ -733,7 +737,7 @@ async fn catalog_alias_and_order_reach_group_external_subscriptions(pool: PgPool
     panel
         .admin(
             Method::PATCH,
-            &format!("{ROOT}/node-catalog/batch"),
+            "/api/traffic/node-catalog/batch",
             &cookie,
             Some(json!({"items":items})),
         )
@@ -811,11 +815,11 @@ async fn mixed_subscription_keeps_managed_applied_health_and_entitlement_gates(
             .len()
             == 1
     );
-    let package:Value=panel.admin(Method::POST,&format!("{ROOT}/package-groups"),&cookie,Some(json!({"name":"过期套餐","monthly_bytes":"1024","reset_day":1,"reset_hour":0,"reset_minute":0,"timezone":"UTC","duration_days":1}))).await?.error_for_status()?.json().await?;
+    let package:Value=panel.admin(Method::POST,"/api/access/package-groups",&cookie,Some(json!({"name":"过期套餐","monthly_bytes":"1024","reset_day":1,"reset_hour":0,"reset_minute":0,"timezone":"UTC","duration_days":1}))).await?.error_for_status()?.json().await?;
     panel
         .admin(
             Method::POST,
-            &format!("{ROOT}/users/{uid}/package"),
+            &format!("/api/access/users/{uid}/package"),
             &cookie,
             Some(json!({"package_group_id":id(&package)?,"request_id":uuid::Uuid::new_v4()})),
         )

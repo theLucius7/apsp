@@ -53,7 +53,7 @@ pub async fn pending_lifecycle(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<RemoteCommand>>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     // Polled every few seconds; without a queued command there is nothing to
     // expire or deliver, so skip the locked pass.
     let queued: bool = sqlx::query_scalar(
@@ -87,7 +87,7 @@ pub async fn claim(
     Path(id): Path<Uuid>,
     Json(request): Json<CommandClaim>,
 ) -> ApiResult<Json<CommandControl>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     if request.claim_id.is_nil() {
         return Err(ApiError::BadRequest("领取标识无效".into()));
     }
@@ -137,7 +137,7 @@ pub async fn control(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<CommandControl>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     let row = sqlx::query("SELECT * FROM remote_commands WHERE id=$1 AND server_id=$2")
         .bind(id)
         .bind(server)
@@ -153,7 +153,7 @@ pub async fn started(
     Path(id): Path<Uuid>,
     Json(request): Json<CommandStarted>,
 ) -> ApiResult<Json<TaskAck>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     if request.started_at <= 0 || request.started_at > now_timestamp() + 60 {
         return Err(ApiError::BadRequest("开始时间无效".into()));
     }

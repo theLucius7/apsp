@@ -57,8 +57,8 @@ fn identity(config: &model::Config) -> String {
 
 pub(super) fn routes() -> Router<AppState> {
     Router::new()
-        .route("/api/plugins/ddns/rules/migration-preview", post(preview))
-        .route("/api/plugins/ddns/rules/migrate", post(apply))
+        .route("/api/naming/rules/migration-preview", post(preview))
+        .route("/api/naming/rules/migrate", post(apply))
 }
 
 async fn preview(

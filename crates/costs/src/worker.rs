@@ -1,6 +1,6 @@
 use super::*;
 use apsp_panel_host::{
-    notifications::{plugin, webhook::Message},
+    notifications::{delivery, webhook::Message},
     settings,
 };
 use axum::{Json, extract::State};
@@ -97,7 +97,7 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
         );
         let id_text = id.to_string();
         let time_text = timestamp.to_string();
-        let payloads = plugin::render(
+        let payloads = delivery::render(
             &settings,
             &Message {
                 title: "订阅续费提醒",
@@ -148,7 +148,7 @@ async fn deliver(state: &AppState, settings: &settings::Settings) -> ApiResult<(
         tx.commit().await?;
         let channel: String = row.try_get("channel")?;
         let payload: String = row.try_get("payload")?;
-        let result = plugin::send(settings, &channel, &payload).await;
+        let result = delivery::send(settings, &channel, &payload).await;
         let (status, error, retry) = match result {
             Ok(()) => ("sent", None, 0),
             Err((error, after)) => (

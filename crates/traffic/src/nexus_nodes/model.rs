@@ -47,13 +47,6 @@ pub(super) fn bad() -> ApiError {
     ApiError::BadRequest("节点快照的格式、数量或引用关系无效".into())
 }
 
-pub(super) fn digest(snapshot: &Snapshot) -> ApiResult<String> {
-    Ok(format!(
-        "{:x}",
-        Sha256::digest(serde_json::to_vec(snapshot).map_err(anyhow::Error::from)?)
-    ))
-}
-
 pub(super) fn source_tag(source: &str, host: i64) -> String {
     format!(
         "nexus:{}:{host}",

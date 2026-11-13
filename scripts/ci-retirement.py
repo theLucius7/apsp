@@ -149,7 +149,7 @@ def cleared_configuration(state):
 
 def usage(panel, state, expected):
     query = urllib.parse.urlencode({"user_id": state["user_id"], "node_id": state["node_id"]})
-    view = panel.request("/api/plugins/sing-box/usage?" + query)
+    view = panel.request("/api/access/usage?" + query)
     require(DRIVER.usage_totals(view) == expected, "retirement changed panel user/node usage totals")
     require(len(view["by_user"]) == 1 and view["by_user"][0]["user_id"] == state["user_id"]
             and len(view["by_node"]) == 1 and view["by_node"][0]["node_id"] == state["node_id"],

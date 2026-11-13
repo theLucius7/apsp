@@ -21,7 +21,7 @@ const wait = async (condition, description) => {
   const deadline = Date.now() + 8000
   while (!await condition()) { assert(Date.now() < deadline, description); await new Promise(done => setTimeout(done, 25)) }
 }
-const prefix = '/api/plugins/sing-box'
+const trafficApi = '/api/traffic', accessApi = '/api/access'
 let browser
 try {
   await new Promise(done => server.listen(0, '127.0.0.1', done))
@@ -55,16 +55,16 @@ try {
       }
       let value
       if (path === '/api/dashboard/access' || path === '/api/me') value = { authenticated: true, public_dashboard: false }
-      else if (path === `${prefix}/nexus-nodes`) {
+      else if (path === `${trafficApi}/nexus-nodes`) {
         nexusReads++
         if (mode === 'failed') return route.fulfill({ status: 503, json: { error: 'TEST_ONLY Nexus 库存读取失败' } })
         value = mode === 'invalid' ? [{ ...imported[0], state: 'active' }] : mode === 'empty' ? [] : imported
-      } else if (path === `${prefix}/nodes`) value = nodes
-      else if (path === `${prefix}/servers`) value = hosts
-      else if (path === `${prefix}/ordered-proxy-resources`) value = ordered
-      else if (path === `${prefix}/node-catalog`) value = catalog
-      else if (path === `${prefix}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
-      else if (path === `${prefix}/ordered-subscription-sources`) value = []
+      } else if (path === `${trafficApi}/nodes`) value = nodes
+      else if (path === `${trafficApi}/servers`) value = hosts
+      else if (path === `${trafficApi}/ordered-proxy-resources`) value = ordered
+      else if (path === `${trafficApi}/node-catalog`) value = catalog
+      else if (path === `${accessApi}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
+      else if (path === `${trafficApi}/ordered-subscription-sources`) value = []
       else { unexpected.push(`GET ${path}`); return route.fulfill({ status: 404, json: { error: 'TEST_ONLY 未声明接口' } }) }
       return route.fulfill({ json: value })
     })

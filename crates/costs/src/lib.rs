@@ -16,8 +16,9 @@ mod suppliers;
 mod worker;
 pub use worker::tick;
 
+use apsp_governance::{auth, control_center};
 use apsp_panel_host::{
-    AppState, auth, control_center,
+    AppState,
     error::{self, ApiError, ApiResult},
 };
 use apsp_protocol::now_timestamp;
@@ -34,6 +35,7 @@ use uuid::Uuid;
 type Tx<'a> = Transaction<'a, Postgres>;
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .merge(cloud::traffic_history::routes())
         .route("/api/exchange-rates", get(exchange::get))
         .route("/api/exchange-rates/refresh", post(exchange::refresh))
         .route("/api/operations/suppliers", get(suppliers::comparison))
@@ -41,41 +43,44 @@ pub fn routes() -> Router<AppState> {
             "/api/operations/cancellation-reminders",
             get(cancellation_reminders::list).post(cancellation_reminders::configure),
         )
-        .nest(
-            "/api/plugins/expenses",
-            Router::new()
-                .route("/settings", get(api::settings).put(api::settings_save))
-                .route("/labels", get(api::labels).post(api::label_create))
-                .route(
-                    "/labels/{id}",
-                    axum::routing::put(api::label_update).delete(api::label_remove),
-                )
-                .route("/subscriptions", get(api::list).post(api::create))
-                .route(
-                    "/subscriptions/{id}",
-                    axum::routing::put(api::update).delete(api::remove),
-                )
-                .route("/subscriptions/{id}/clone", post(api::clone_entry))
-                .route("/subscriptions/{id}/renew", post(api::renew))
-                .route("/subscriptions/{id}/payments", get(api::payments))
-                .route("/servers", get(servers::list))
-                .route("/references", get(servers::reference_list))
-                .route("/payments", get(history::payments))
-                .route("/calendar", get(calendar::calendar))
-                .route("/calendar.ics", get(calendar::ical))
-                .route("/summary", get(calendar::summary))
-                .route("/notifications", get(worker::notifications))
-                .route("/export", get(migration::export))
-                .route(
-                    "/import/preview",
-                    post(migration::preview)
-                        .layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),
-                )
-                .route(
-                    "/import",
-                    post(migration::import)
-                        .layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),
-                ),
+        .route(
+            "/api/costs/settings",
+            get(api::settings).put(api::settings_save),
+        )
+        .route(
+            "/api/costs/labels",
+            get(api::labels).post(api::label_create),
+        )
+        .route(
+            "/api/costs/labels/{id}",
+            axum::routing::put(api::label_update).delete(api::label_remove),
+        )
+        .route("/api/costs/subscriptions", get(api::list).post(api::create))
+        .route(
+            "/api/costs/subscriptions/{id}",
+            axum::routing::put(api::update).delete(api::remove),
+        )
+        .route(
+            "/api/costs/subscriptions/{id}/clone",
+            post(api::clone_entry),
+        )
+        .route("/api/costs/subscriptions/{id}/renew", post(api::renew))
+        .route("/api/costs/subscriptions/{id}/payments", get(api::payments))
+        .route("/api/costs/servers", get(servers::list))
+        .route("/api/costs/references", get(servers::reference_list))
+        .route("/api/costs/payments", get(history::payments))
+        .route("/api/costs/calendar", get(calendar::calendar))
+        .route("/api/costs/calendar.ics", get(calendar::ical))
+        .route("/api/costs/summary", get(calendar::summary))
+        .route("/api/costs/notifications", get(worker::notifications))
+        .route("/api/costs/export", get(migration::export))
+        .route(
+            "/api/costs/import/preview",
+            post(migration::preview).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),
+        )
+        .route(
+            "/api/costs/import",
+            post(migration::import).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),
         )
 }
 pub async fn run(state: AppState) {

@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { errorMessage } from '../../api'
 import { ErrorNotice, PageHeader } from '../../components'
-import { requestReauthentication } from '../control-center/reauthentication-request'
-import type { ActionRunner } from '../../operations/types'
+import { requestReauthentication } from '@/lib/reauthentication-request'
+import type { ActionRunner } from '../../hooks'
 import BackupRecovery from './BackupRecovery'
 import { Button } from '@/components/ui/button'
 

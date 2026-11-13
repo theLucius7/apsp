@@ -1,4 +1,4 @@
-use super::{api, engine, models::*, plugin};
+use super::{api, engine, models::*, tool};
 use crate::{
     AppState, control_center,
     error::{ApiError, ApiResult},
@@ -354,11 +354,11 @@ pub struct Comparison {
 fn normalize_result(value: Value) -> ApiResult<Observation> {
     if let Some(text) = value["text"].as_str() {
         let parsed: Value = serde_json::from_str(text).map_err(anyhow::Error::from)?;
-        plugin::observation(&parsed)
+        tool::observation(&parsed)
     } else if value.get("observation").is_some() {
-        plugin::observation(&value["observation"])
+        tool::observation(&value["observation"])
     } else {
-        plugin::observation(&value)
+        tool::observation(&value)
     }
 }
 fn comparison_conditions_match(

@@ -6,7 +6,7 @@ pub async fn upload_section(
     Path(id): Path<Uuid>,
     Json(update): Json<DiagnosticSectionUpdate>,
 ) -> ApiResult<StatusCode> {
-    let server_id = auth::require_agent(&state, &headers).await?;
+    let server_id = crate::device_channel::require_agent(&state, &headers).await?;
     if id != update.id || !update.valid() || update.collected_at > now_timestamp() + 300 {
         return Err(ApiError::BadRequest(
             "报告章节编号、内容、版本或时间无效".into(),
@@ -27,7 +27,7 @@ pub async fn upload_section(
     {
         return Err(ApiError::BadRequest("任务没有登记此报告章节".into()));
     }
-    let node_results = crate::diagnostic_plugins::nodequality::node_queries::parse_section(
+    let node_results = crate::diagnostic_tools::nodequality::node_queries::parse_section(
         &row.get::<Value, _>("job"),
         &update,
         row.get("created_at"),
@@ -52,7 +52,7 @@ pub async fn upload_section(
             tx.commit().await?;
             // Replayed durable sections repair a cache write that failed after
             // the chapter committed. Job locks are released before server locks.
-            crate::diagnostic_plugins::nodequality::node_queries::persist_section(
+            crate::diagnostic_tools::nodequality::node_queries::persist_section(
                 &state,
                 server_id,
                 node_results,
@@ -73,7 +73,7 @@ pub async fn upload_section(
         return Err(ApiError::BadRequest("已保存报告章节超过 512 KiB".into()));
     }
     let job: Value = row.get("job");
-    if let Some(plugin) = crate::diagnostic_plugins::for_job(&job) {
+    if let Some(plugin) = crate::diagnostic_tools::for_job(&job) {
         plugin
             .record_section(
                 service::SectionContext {
@@ -94,7 +94,7 @@ pub async fn upload_section(
         .bind(id).execute(&mut *tx).await?;
     // Execution status, terminal error and legacy text are deliberately preserved.
     tx.commit().await?;
-    crate::diagnostic_plugins::nodequality::node_queries::persist_section(
+    crate::diagnostic_tools::nodequality::node_queries::persist_section(
         &state,
         server_id,
         node_results,

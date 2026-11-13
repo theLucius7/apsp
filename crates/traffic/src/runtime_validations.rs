@@ -1,5 +1,5 @@
 use crate::{
-    AppState, auth,
+    AppState,
     error::{ApiError, ApiResult},
 };
 use apsp_protocol::{
@@ -38,7 +38,7 @@ pub async fn pending(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<RuntimeValidationRequest>>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     let rows = sqlx::query("SELECT id,module,scope,generation,operation,revision,config_hash,expires_at FROM runtime_validations WHERE server_id=$1 AND result IS NULL AND expires_at>$2 AND NOT EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) ORDER BY requested_at,id LIMIT 16").bind(server).bind(now_timestamp()).fetch_all(&state.pool).await?;
     Ok(Json(
         rows.iter().map(request).collect::<ApiResult<Vec<_>>>()?,
@@ -51,7 +51,7 @@ pub async fn complete(
     Path(id): Path<Uuid>,
     Json(result): Json<RuntimeValidationResult>,
 ) -> ApiResult<Json<TaskAck>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     if id != result.request.id
         || !result.valid()
         || result.checked_at > now_timestamp() + 60

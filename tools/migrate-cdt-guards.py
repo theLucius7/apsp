@@ -183,7 +183,7 @@ def prepare(panel: Panel, profiles: list[Profile], journal_path: Path):
         record = journal["profiles"].setdefault(profile.filename, {"fingerprint": profile.fingerprint()})
         if record["fingerprint"] != profile.fingerprint():
             raise MigrationError("源账号或实例已变化，请核对迁移记录")
-        overview = panel.request("/api/plugins/alicloud")
+        overview = panel.request("/api/resources/alicloud")
         if "resource_id" in record:
             resource = next(r for r in overview["resources"] if r["id"] == record["resource_id"])
             account = next(a for a in overview["accounts"] if a["id"] == record["account_id"])
@@ -198,19 +198,19 @@ def prepare(panel: Panel, profiles: list[Profile], journal_path: Path):
                 "name": profile.name, "kind": "cloud", "secret": {"provider": "alicloud", "access_key_id": profile.key, "access_key_secret": profile.secret}})["id"]
             save(journal_path, journal)
         if "account_id" not in record:
-            record["account_id"] = panel.request("/api/plugins/alicloud/accounts", "POST", {
+            record["account_id"] = panel.request("/api/resources/alicloud/accounts", "POST", {
                 "name": profile.name, "site": "china", "enabled": False, "auto_enabled": False,
                 "limit_gb": 100, "credential_id": record["credential_id"]})["id"]
             save(journal_path, journal)
         if "resource_id" not in record:
-            record["resource_id"] = panel.request("/api/plugins/alicloud/resources", "POST", {
+            record["resource_id"] = panel.request("/api/resources/alicloud/resources", "POST", {
                 "account_id": record["account_id"], "name": profile.name, "kind": "ecs", "region": profile.region,
                 "cloud_id": profile.instance, "auto_enabled": False, "cap_mbps": 1})["id"]
             save(journal_path, journal)
-        path = "/api/plugins/alicloud/resources/" + record["resource_id"]
-        resource = next(r for r in panel.request("/api/plugins/alicloud")["resources"] if r["id"] == record["resource_id"])
+        path = "/api/resources/alicloud/resources/" + record["resource_id"]
+        resource = next(r for r in panel.request("/api/resources/alicloud")["resources"] if r["id"] == record["resource_id"])
         panel.request(path + "/power-policy", "PATCH", {"revision": resource["revision"], "policy": policy(profile)})
-        resource = next(r for r in panel.request("/api/plugins/alicloud")["resources"] if r["id"] == record["resource_id"])
+        resource = next(r for r in panel.request("/api/resources/alicloud")["resources"] if r["id"] == record["resource_id"])
         panel.request(path + "/cdt-state", "POST", {"revision": resource["revision"], "state": profile.state})
         record["prepared"] = True
         save(journal_path, journal)

@@ -9,7 +9,7 @@ pub(super) async fn user_state(
     users: &[i64],
 ) -> ApiResult<Value> {
     for id in users {
-        apsp_traffic::business::lock_user(tx, *id).await?;
+        crate::proxy_users::lock_user(tx, *id).await?;
     }
     let state: Value = sqlx::query_scalar("SELECT COALESCE(jsonb_agg(jsonb_build_object('id',u.id,'name',u.name,'token',u.subscription_token,'entitlement',to_jsonb(e),'assignment',to_jsonb(a),'groups',COALESCE((SELECT jsonb_agg(group_id ORDER BY group_id) FROM singbox_user_policies WHERE user_id=u.id),'[]'),'accesses',COALESCE((SELECT jsonb_agg(to_jsonb(x) ORDER BY node_id) FROM accesses x WHERE x.user_id=u.id),'[]')) ORDER BY u.id),'[]') FROM users u LEFT JOIN singbox_entitlements($2) e ON e.user_id=u.id LEFT JOIN singbox_user_packages p ON p.user_id=u.id LEFT JOIN singbox_package_assignments a ON a.id=p.assignment_id WHERE u.id=ANY($1)")
         .bind(users).bind(apsp_protocol::now_timestamp()).fetch_one(&mut **tx).await?;

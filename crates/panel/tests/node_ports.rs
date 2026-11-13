@@ -38,12 +38,12 @@ async fn explicit_ports_are_validated_and_updates_only_dirty_actual_changes(
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Ports").await?;
-    panel.enable_plugin(&cookie, server).await?;
+    panel.enable_runtime(&cookie, server).await?;
     let create = node(server, json!(443));
     assert_eq!(
         panel
             .client
-            .post(format!("{}/api/plugins/sing-box/nodes", panel.base))
+            .post(format!("{}/api/traffic/nodes", panel.base))
             .json(&create)
             .send()
             .await?
@@ -51,18 +51,13 @@ async fn explicit_ports_are_validated_and_updates_only_dirty_actual_changes(
         StatusCode::UNAUTHORIZED
     );
     let created: Value = panel
-        .admin(
-            Method::POST,
-            "/api/plugins/sing-box/nodes",
-            &cookie,
-            Some(create),
-        )
+        .admin(Method::POST, "/api/traffic/nodes", &cookie, Some(create))
         .await?
         .error_for_status()?
         .json()
         .await?;
     let id = id(&created)?;
-    let path = format!("/api/plugins/sing-box/nodes/{id}");
+    let path = format!("/api/traffic/nodes/{id}");
     assert_eq!(created["port"], 443);
     assert!(dirty(&pool, server).await?.is_some());
     let other = panel.create_node(&cookie, server, "Default").await?;
@@ -82,7 +77,7 @@ async fn explicit_ports_are_validated_and_updates_only_dirty_actual_changes(
         for (method, endpoint, request) in [
             (
                 Method::POST,
-                "/api/plugins/sing-box/nodes",
+                "/api/traffic/nodes",
                 node(server, port.clone()),
             ),
             (Method::PATCH, path.as_str(), json!({"port":port})),
@@ -104,7 +99,7 @@ async fn explicit_ports_are_validated_and_updates_only_dirty_actual_changes(
             panel
                 .admin(
                     Method::POST,
-                    "/api/plugins/sing-box/nodes",
+                    "/api/traffic/nodes",
                     &cookie,
                     Some(node(server, port.clone()))
                 )
@@ -173,7 +168,7 @@ async fn explicit_ports_are_validated_and_updates_only_dirty_actual_changes(
         panel
             .admin(
                 Method::PATCH,
-                "/api/plugins/sing-box/nodes/999999",
+                "/api/traffic/nodes/999999",
                 &cookie,
                 Some(json!({"port":443}))
             )
@@ -202,17 +197,17 @@ async fn concurrent_port_reservations_are_atomic_and_released_after_deletion(
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Atomic ports").await?;
-    panel.enable_plugin(&cookie, server).await?;
+    panel.enable_runtime(&cookie, server).await?;
     let (a, b) = tokio::join!(
         panel.admin(
             Method::POST,
-            "/api/plugins/sing-box/nodes",
+            "/api/traffic/nodes",
             &cookie,
             Some(node(server, json!(20000)))
         ),
         panel.admin(
             Method::POST,
-            "/api/plugins/sing-box/nodes",
+            "/api/traffic/nodes",
             &cookie,
             Some(node(server, json!(20000)))
         )
@@ -227,8 +222,8 @@ async fn concurrent_port_reservations_are_atomic_and_released_after_deletion(
     assert_eq!(automatic["port"], 20001);
     let next = panel.create_node(&cookie, server, "Next").await?;
     assert_eq!(next["port"], 20002);
-    let first_path = format!("/api/plugins/sing-box/nodes/{}", id(&automatic)?);
-    let second_path = format!("/api/plugins/sing-box/nodes/{}", id(&next)?);
+    let first_path = format!("/api/traffic/nodes/{}", id(&automatic)?);
+    let second_path = format!("/api/traffic/nodes/{}", id(&next)?);
     let (a, b) = tokio::join!(
         panel.admin(
             Method::PATCH,
@@ -254,12 +249,12 @@ async fn concurrent_port_reservations_are_atomic_and_released_after_deletion(
     statuses.sort();
     assert_eq!(statuses, vec![200, 409]);
     let another = panel.create_server(&cookie, "Other server").await?;
-    panel.enable_plugin(&cookie, another).await?;
+    panel.enable_runtime(&cookie, another).await?;
     assert_eq!(
         panel
             .admin(
                 Method::POST,
-                "/api/plugins/sing-box/nodes",
+                "/api/traffic/nodes",
                 &cookie,
                 Some(node(another, json!(443)))
             )
@@ -270,7 +265,7 @@ async fn concurrent_port_reservations_are_atomic_and_released_after_deletion(
     panel
         .admin(
             Method::DELETE,
-            &format!("/api/plugins/sing-box/nodes/{winner}"),
+            &format!("/api/traffic/nodes/{winner}"),
             &cookie,
             None,
         )
@@ -280,7 +275,7 @@ async fn concurrent_port_reservations_are_atomic_and_released_after_deletion(
         panel
             .admin(
                 Method::POST,
-                "/api/plugins/sing-box/nodes",
+                "/api/traffic/nodes",
                 &cookie,
                 Some(node(server, json!(443)))
             )

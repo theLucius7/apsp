@@ -16,7 +16,7 @@ const examples: Record<string, Record<string, unknown>> = {
   'OpenConnect 端点': { endpoints: [{ type: 'openconnect', tag: 'extra-vpn', server: 'https://vpn.example.com', username: '', password: '' }], route: { final: 'extra-vpn' } },
 }
 export default function ServerProfile({ serverId }: { serverId: number }) {
-  const path = `/api/plugins/sing-box/servers/${serverId}/profile`
+  const path = `/api/traffic/servers/${serverId}/profile`
   const resource = useResource<Profile>(path)
   const action = useAction()
   const [text, setText] = useState('')

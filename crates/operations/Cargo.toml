@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 apsp-panel-host.workspace = true
+apsp-governance.workspace = true
 apsp-protocol.workspace = true
 apsp-traffic.workspace = true
 apsp-costs.workspace = true
@@ -24,6 +25,8 @@ uuid.workspace = true
 sha2.workspace = true
 base64.workspace = true
 tracing.workspace = true
+tar = "0.4"
+flate2 = "1"
 
 [dev-dependencies]
 apsp-cloud-api = { workspace = true, features = ["test-support"] }

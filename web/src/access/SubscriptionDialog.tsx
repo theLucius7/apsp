@@ -55,7 +55,7 @@ export default function SubscriptionDialog({ user, format, onFormatChange, onClo
     const request = new AbortController(); controller.current = request
     setLoading(true); setData(null); setError(''); setNotice('')
     try {
-      const value = await api<Subscription>(`/api/plugins/sing-box/users/${user.id}/subscription?format=${format}`, 'GET', undefined, request.signal)
+      const value = await api<Subscription>(`/api/access/users/${user.id}/subscription?format=${format}`, 'GET', undefined, request.signal)
       if (!alive.current || request.signal.aborted || revision !== sequence.current) return null
       if (value.format !== format) throw new Error('返回的订阅格式与请求不符，请刷新重试。')
       setData(value)

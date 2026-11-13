@@ -1,0 +1,506 @@
+# Route policy table: method, route, the request guard's verdict. Generated; see tools/route-policy.py.
+GET	/api/access/account-mail	proxy:read, all servers
+PUT	/api/access/account-mail	proxy:write, all servers, recent proof
+GET	/api/access/external-node-candidates	proxy:read, all servers
+GET	/api/access/invitation-settings	proxy:read, all servers
+PUT	/api/access/invitation-settings	proxy:write, all servers, recent proof
+POST	/api/access/operations/preview	proxy:write, all servers
+GET	/api/access/operations/privacy	proxy:read, all servers
+PUT	/api/access/operations/privacy	proxy:write, all servers
+POST	/api/access/operations/{id}/apply	proxy:write, all servers
+GET	/api/access/package-groups	proxy:read, all servers
+POST	/api/access/package-groups	proxy:write, all servers
+DELETE	/api/access/package-groups/{id}	proxy:write, all servers, recent proof
+PUT	/api/access/package-groups/{id}	proxy:write, all servers
+GET	/api/access/policy-groups	proxy:read, all servers
+POST	/api/access/policy-groups	proxy:write, all servers
+DELETE	/api/access/policy-groups/{id}	proxy:write, all servers, recent proof
+PUT	/api/access/policy-groups/{id}	proxy:write, all servers
+GET	/api/access/portal-guides	proxy:read, all servers
+POST	/api/access/portal-guides	proxy:write, all servers, recent proof
+DELETE	/api/access/portal-guides/{id}	proxy:write, all servers, recent proof
+PUT	/api/access/portal-guides/{id}	proxy:write, all servers, recent proof
+POST	/api/access/portal-public/account/challenge	own identity
+POST	/api/access/portal-public/account/login	own identity
+POST	/api/access/portal-public/account/reset	own identity
+POST	/api/access/portal-public/claim	own identity
+POST	/api/access/portal-public/invitation	own identity
+GET	/api/access/portal/{account}	own identity
+GET	/api/access/portal/{account}/account	own identity
+POST	/api/access/portal/{account}/account/email/finish	own identity
+POST	/api/access/portal/{account}/account/email/start	own identity
+GET	/api/access/portal/{account}/account/messages	own identity
+POST	/api/access/portal/{account}/account/messages/read	own identity
+POST	/api/access/portal/{account}/account/password	own identity
+PUT	/api/access/portal/{account}/account/reminders	own identity
+POST	/api/access/portal/{account}/invitations	own identity
+POST	/api/access/portal/{account}/invitations/{id}/revoke	own identity
+POST	/api/access/portal/{account}/invitations/{id}/rotate	own identity
+POST	/api/access/portal/{account}/keys/{id}/remove	own identity
+GET	/api/access/portal/{account}/lines	own identity
+POST	/api/access/portal/{account}/login/finish	own identity
+POST	/api/access/portal/{account}/login/start	own identity
+POST	/api/access/portal/{account}/logout	own identity
+POST	/api/access/portal/{account}/register/finish	own identity
+POST	/api/access/portal/{account}/register/start	own identity
+GET	/api/access/statistics	proxy:read, all servers
+GET	/api/access/subscription-domain	proxy:read, all servers
+PUT	/api/access/subscription-domain	proxy:write, all servers, recent proof
+GET	/api/access/usage	proxy:read, all servers
+GET	/api/access/users	proxy:read, all servers
+POST	/api/access/users	proxy:write, all servers
+GET	/api/access/users/overview	proxy:read, all servers
+DELETE	/api/access/users/{id}	proxy:write, all servers, recent proof
+GET	/api/access/users/{id}	proxy:read, all servers
+PATCH	/api/access/users/{id}	proxy:write, all servers
+GET	/api/access/users/{id}/accesses	proxy:read, all servers
+GET	/api/access/users/{id}/client-template	proxy:read, all servers
+PUT	/api/access/users/{id}/client-template	proxy:write, all servers
+POST	/api/access/users/{id}/compatibility	proxy:write, all servers
+GET	/api/access/users/{id}/control	proxy:read, all servers
+PUT	/api/access/users/{id}/control	proxy:write, all servers
+GET	/api/access/users/{id}/diagnosis	proxy:read, all servers
+GET	/api/access/users/{id}/entitlement	proxy:read, all servers
+GET	/api/access/users/{id}/invitations	proxy:read, all servers
+POST	/api/access/users/{id}/invitations/quota	proxy:write, all servers, recent proof
+GET	/api/access/users/{id}/limits	proxy:read, all servers
+PUT	/api/access/users/{id}/limits	proxy:write, all servers
+POST	/api/access/users/{id}/package	proxy:write, all servers
+GET	/api/access/users/{id}/policy-groups	proxy:read, all servers
+PUT	/api/access/users/{id}/policy-groups	proxy:write, all servers
+GET	/api/access/users/{id}/portal	proxy:read, all servers
+POST	/api/access/users/{id}/portal/invitation	proxy:write, all servers, recent proof
+GET	/api/access/users/{id}/sessions	proxy:read, all servers
+POST	/api/access/users/{id}/sessions/{server}	proxy:write, all servers
+GET	/api/access/users/{id}/subscription	proxy:read, all servers
+POST	/api/access/users/{id}/subscription/reset	proxy:write, all servers, recent proof
+GET	/api/agent/v1/artifacts/{name}/{version}/{arch}	own identity
+GET	/api/agent/v1/bundles/{rev}	own identity
+GET	/api/agent/v1/commands	own identity
+GET	/api/agent/v1/commands/lifecycle	own identity
+POST	/api/agent/v1/commands/{id}	own identity
+POST	/api/agent/v1/commands/{id}/claim	own identity
+GET	/api/agent/v1/commands/{id}/control	own identity
+POST	/api/agent/v1/commands/{id}/started	own identity
+GET	/api/agent/v1/diagnostics	own identity
+GET	/api/agent/v1/diagnostics/cancellations	own identity
+POST	/api/agent/v1/diagnostics/{id}	own identity
+POST	/api/agent/v1/diagnostics/{id}/cancel-confirmation	own identity
+POST	/api/agent/v1/diagnostics/{id}/sections	own identity
+POST	/api/agent/v1/enroll	own identity
+POST	/api/agent/v1/fleet/results	own identity
+POST	/api/agent/v1/fleet/terminal-events	own identity
+GET	/api/agent/v1/fleet/work	own identity
+GET	/api/agent/v1/manifest	own identity
+GET	/api/agent/v1/network-certificates/{id}/inspection	own identity
+GET	/api/agent/v1/network-certificates/{id}/material	own identity
+GET	/api/agent/v1/probe-lease	own identity
+POST	/api/agent/v1/probe-results	own identity
+GET	/api/agent/v1/probes	own identity
+GET	/api/agent/v1/probes/authorized	own identity
+POST	/api/agent/v1/retirement/receipt	own identity
+GET	/api/agent/v1/runtime-operations	own identity
+POST	/api/agent/v1/runtime-operations/{id}	own identity
+GET	/api/agent/v1/runtime-validations	own identity
+POST	/api/agent/v1/runtime-validations/{id}/result	own identity
+GET	/api/agent/v1/settings	own identity
+POST	/api/agent/v1/telemetry	own identity
+GET	/api/agent/v1/telemetry-settings	own identity
+POST	/api/agent/v1/telemetry/live	own identity
+GET	/api/agent/v1/update	own identity
+GET	/api/agent/v1/ws	own identity
+GET	/api/alert-rules	monitoring:read, all servers
+POST	/api/alert-rules	monitoring:write, all servers
+DELETE	/api/alert-rules/{id}	monitoring:write, all servers, recent proof
+PATCH	/api/alert-rules/{id}	monitoring:write, all servers
+GET	/api/artifacts	owner session only (security)
+GET	/api/artifacts/agent-versions	owner session only (security)
+POST	/api/artifacts/import-release	owner session only (security)
+GET	/api/artifacts/targets	owner session only (security)
+GET	/api/bootstrap/versions	own identity
+GET	/api/bootstrap/{version}/{arch}	own identity
+GET	/api/control-center/administrators	owner session only (security)
+POST	/api/control-center/administrators	owner session only (security), recent proof
+PUT	/api/control-center/administrators/{id}	owner session only (security), recent proof
+GET	/api/control-center/audit	owner session only (security)
+GET	/api/control-center/credentials	owner session only (security)
+POST	/api/control-center/credentials	owner session only (security), recent proof
+DELETE	/api/control-center/credentials/{id}	owner session only (security), recent proof
+POST	/api/control-center/credentials/{id}/rotate	owner session only (security), recent proof
+GET	/api/control-center/events	own account: any administrator or token
+GET	/api/control-center/export/servers	own account: any administrator or token
+GET	/api/control-center/health	owner session only (security)
+GET	/api/control-center/me	own account: any administrator or token
+POST	/api/control-center/observers	monitoring:write, all servers
+GET	/api/control-center/preferences/{key}	own account: interactive administrator
+PUT	/api/control-center/preferences/{key}	own account: interactive administrator
+POST	/api/control-center/reauth	own account: interactive administrator
+POST	/api/control-center/reauth/passkey/finish	own account: interactive administrator
+POST	/api/control-center/reauth/passkey/start	own account: interactive administrator
+GET	/api/control-center/retention	owner session only (security)
+PUT	/api/control-center/retention/{kind}	owner session only (security)
+GET	/api/control-center/search	own account: any administrator or token
+GET	/api/control-center/sessions	own account: interactive administrator
+DELETE	/api/control-center/sessions/{id}	own account: interactive administrator
+GET	/api/control-center/tokens	owner session only (security)
+POST	/api/control-center/tokens	owner session only (security)
+DELETE	/api/control-center/tokens/{id}	owner session only (security), recent proof
+GET	/api/control-center/tool-security	owner session only (security)
+POST	/api/control-center/tool-security/refresh	owner session only (security)
+GET	/api/costs/calendar	cloud:read, all servers
+GET	/api/costs/calendar.ics	cloud:read, all servers
+GET	/api/costs/export	cloud:read, all servers
+POST	/api/costs/import	cloud:write, all servers, recent proof
+POST	/api/costs/import/preview	cloud:write, all servers
+GET	/api/costs/labels	cloud:read, all servers
+POST	/api/costs/labels	cloud:write, all servers
+DELETE	/api/costs/labels/{id}	cloud:write, all servers, recent proof
+PUT	/api/costs/labels/{id}	cloud:write, all servers
+GET	/api/costs/notifications	cloud:read, all servers
+GET	/api/costs/payments	cloud:read, all servers
+GET	/api/costs/references	cloud:read, all servers
+GET	/api/costs/servers	cloud:read, any scope
+GET	/api/costs/settings	cloud:read, all servers
+PUT	/api/costs/settings	cloud:write, all servers, recent proof
+GET	/api/costs/subscriptions	cloud:read, all servers
+POST	/api/costs/subscriptions	cloud:write, all servers
+DELETE	/api/costs/subscriptions/{id}	cloud:write, all servers, recent proof
+PUT	/api/costs/subscriptions/{id}	cloud:write, all servers
+POST	/api/costs/subscriptions/{id}/clone	cloud:write, all servers
+GET	/api/costs/subscriptions/{id}/payments	cloud:read, all servers
+POST	/api/costs/subscriptions/{id}/renew	cloud:write, all servers
+GET	/api/costs/summary	cloud:read, all servers
+GET	/api/dashboard/access	own identity
+GET	/api/dashboard/exchange-rates	monitoring:read, all servers, open without a session
+GET	/api/dashboard/live	monitoring:read, all servers, open without a session
+GET	/api/dashboard/probes/overview	monitoring:read, all servers, open without a session
+GET	/api/dashboard/servers	monitoring:read, all servers, open without a session
+GET	/api/dashboard/servers/{id}	monitoring:read, that server, open without a session
+GET	/api/dashboard/servers/{id}/history	monitoring:read, that server, open without a session
+GET	/api/dashboard/servers/{id}/metrics	monitoring:read, that server, open without a session
+GET	/api/dashboard/servers/{id}/probe-results	monitoring:read, that server, open without a session
+GET	/api/dashboard/servers/{id}/probes	monitoring:read, that server, open without a session
+GET	/api/exchange-rates	owner session only (security)
+POST	/api/exchange-rates/refresh	owner session only (security)
+POST	/api/fleet/batch-enrollment	servers:write, all servers, recent proof
+GET	/api/fleet/health	servers:read, all servers
+GET	/api/fleet/operations/{id}	typed by the stored operation, any scope
+POST	/api/fleet/operations/{id}/inspection	typed by the stored operation, any scope
+POST	/api/fleet/operations/{id}/reconcile	typed by the stored operation, any scope
+GET	/api/fleet/templates	servers:read, any scope
+POST	/api/fleet/templates	servers:write, all servers
+DELETE	/api/fleet/terminals/{id}	typed by the stored operation, any scope
+GET	/api/fleet/terminals/{id}	typed by the stored operation, any scope
+POST	/api/fleet/terminals/{id}/input	typed by the stored operation, any scope, recent proof
+GET	/api/latency-tasks	monitoring:read, all servers
+POST	/api/latency-tasks	monitoring:write, all servers
+DELETE	/api/latency-tasks/{id}	monitoring:write, all servers, recent proof
+PATCH	/api/latency-tasks/{id}	monitoring:write, all servers
+POST	/api/login	own identity
+POST	/api/login/passkey/finish	own identity
+POST	/api/login/passkey/start	own identity
+POST	/api/logout	own identity
+GET	/api/me	own account: any administrator or token
+GET	/api/naming/accounts	dns:read, any scope
+POST	/api/naming/accounts	dns:write, any scope
+POST	/api/naming/accounts/access-key	dns:write, any scope
+POST	/api/naming/accounts/cloudflare	dns:write, any scope
+PUT	/api/naming/accounts/{id}	dns:write, any scope
+POST	/api/naming/accounts/{id}/check	dns:read, any scope
+GET	/api/naming/accounts/{id}/observations	dns:read, any scope
+GET	/api/naming/accounts/{id}/records	dns:read, any scope
+POST	/api/naming/accounts/{id}/records/apply	dns:write, any scope
+GET	/api/naming/accounts/{id}/records/history	dns:read, any scope
+POST	/api/naming/accounts/{id}/records/preview	dns:write, any scope
+POST	/api/naming/accounts/{id}/records/{history}/reconcile	dns:read, any scope
+POST	/api/naming/accounts/{id}/records/{history}/rollback	dns:write, any scope
+POST	/api/naming/accounts/{id}/resolve	dns:write, any scope
+GET	/api/naming/rules	dns:read, any scope
+POST	/api/naming/rules	dns:write, any scope
+POST	/api/naming/rules/dual-stack	dns:write, any scope
+POST	/api/naming/rules/migrate	dns:write, any scope
+POST	/api/naming/rules/migration-preview	dns:write, any scope
+DELETE	/api/naming/rules/{id}	dns:write, any scope, recent proof
+PATCH	/api/naming/rules/{id}	dns:write, any scope
+GET	/api/naming/rules/{id}/history	dns:read, any scope
+POST	/api/naming/rules/{id}/preview	dns:read, any scope
+POST	/api/naming/rules/{id}/rollback	dns:write, any scope
+POST	/api/naming/rules/{id}/sync	dns:write, any scope
+GET	/api/naming/servers	dns:read, any scope
+GET	/api/network-configuration/certificates/{id}/acme-plan	network:read, any scope
+PUT	/api/network-configuration/certificates/{id}/acme-plan	network:write, any scope
+POST	/api/network-configuration/certificates/{id}/deployment-preview	network:write, any scope
+GET	/api/network-configuration/certificates/{id}/deployments	network:read, any scope
+GET	/api/network-configuration/certificates/{id}/dns-challenges	network:read, any scope
+POST	/api/network-configuration/certificates/{id}/dns-challenges	network:write, any scope
+GET	/api/network-configuration/certificates/{id}/issuance	network:read, any scope
+POST	/api/network-configuration/certificates/{id}/issue	network:write, any scope
+POST	/api/network-configuration/certificates/{id}/select-version	network:write, any scope
+POST	/api/network-configuration/certificates/{id}/verify	network:write, any scope
+GET	/api/network-configuration/certificates/{id}/versions	network:read, any scope
+POST	/api/network-configuration/certificates/{id}/versions	network:write, any scope
+POST	/api/network-configuration/deployment-previews/{id}/apply	network:write, any scope
+POST	/api/network-configuration/dns-challenges/{id}/cleanup	network:write, any scope
+POST	/api/network-configuration/dns-challenges/{id}/present	network:write, any scope
+GET	/api/network-configuration/documents	network:read, any scope
+POST	/api/network-configuration/documents	network:write, any scope
+POST	/api/network-configuration/documents/preview	network:write, any scope
+DELETE	/api/network-configuration/documents/{id}	network:write, any scope, recent proof
+GET	/api/network-configuration/documents/{id}	network:read, any scope
+PUT	/api/network-configuration/documents/{id}	network:write, any scope
+POST	/api/network-configuration/documents/{id}/execute	network:read or network:write, any scope
+GET	/api/network-configuration/documents/{id}/history	network:read, any scope
+GET	/api/network-configuration/documents/{id}/observations	network:read, any scope
+GET	/api/network-configuration/server-migrations/candidates	network:read, any scope
+POST	/api/network-configuration/server-migrations/preview	network:write, any scope
+GET	/api/network-configuration/server-migrations/{id}	network:read, any scope
+POST	/api/network-configuration/server-migrations/{id}/apply	network:write, any scope
+POST	/api/network-configuration/servers/{server}/inventory	network:read, that server
+GET	/api/network-workbench/catalog	diagnostics:read, any scope
+POST	/api/network-workbench/compare	diagnostics:write, any scope
+GET	/api/network-workbench/exit-history/{server}	diagnostics:read, any scope
+GET	/api/network-workbench/ip-history/{address}	diagnostics:read, any scope
+POST	/api/network-workbench/pairings	diagnostics:write, any scope
+GET	/api/network-workbench/plans	diagnostics:read, any scope
+POST	/api/network-workbench/plans	diagnostics:write, any scope
+PATCH	/api/network-workbench/plans/{id}	diagnostics:write, any scope
+POST	/api/network-workbench/plans/{id}/run	diagnostics:write, any scope
+GET	/api/network-workbench/providers	diagnostics:read, any scope
+POST	/api/network-workbench/providers	diagnostics:write, any scope
+GET	/api/network-workbench/runs	diagnostics:read, any scope
+POST	/api/network-workbench/runs	diagnostics:write, any scope
+GET	/api/network-workbench/runs/{id}	diagnostics:read, any scope
+POST	/api/network-workbench/runs/{id}/cancel	diagnostics:write, any scope
+POST	/api/network-workbench/runs/{id}/import	diagnostics:write, any scope
+POST	/api/network-workbench/runs/{id}/resume	diagnostics:write, any scope
+POST	/api/network-workbench/runs/{id}/shares	diagnostics:write, any scope
+POST	/api/network-workbench/shares/{id}/revoke	diagnostics:write, any scope
+GET	/api/network-workbench/targets	diagnostics:read, any scope
+POST	/api/network-workbench/targets	diagnostics:write, any scope
+DELETE	/api/network-workbench/targets/{id}	diagnostics:write, any scope, recent proof
+PATCH	/api/network-workbench/targets/{id}	diagnostics:write, any scope
+GET	/api/network-workbench/tools	diagnostics:read, any scope
+POST	/api/network-workbench/tools	diagnostics:write, any scope
+GET	/api/notifications	monitoring:read, all servers
+GET	/api/notifications/channels	monitoring:read, all servers
+POST	/api/notifications/telegram/test	monitoring:write, all servers
+DELETE	/api/notifications/webhook	monitoring:write, all servers, recent proof
+GET	/api/notifications/webhook	monitoring:read, all servers
+PATCH	/api/notifications/webhook	monitoring:write, all servers
+POST	/api/notifications/webhook/test	monitoring:write, all servers
+GET	/api/observability/reachability	proxy:read, all servers
+POST	/api/observability/reachability/run	proxy:write, all servers
+GET	/api/observability/reachability/settings	proxy:read, all servers
+PUT	/api/observability/reachability/settings	proxy:write, all servers, recent proof
+GET	/api/observability/tcp-quality/servers/{id}/targets	diagnostics:read, that server
+PATCH	/api/observability/tcp-quality/servers/{id}/targets/{probe}	diagnostics:write, that server
+GET	/api/operations/backup-schedules	recovery:read, any scope
+POST	/api/operations/backup-schedules	recovery:write, any scope
+POST	/api/operations/backup-schedules/{id}/pause	recovery:write, any scope
+GET	/api/operations/backups	recovery:read, any scope
+POST	/api/operations/backups	recovery:write, any scope
+POST	/api/operations/backups/{id}/drills	recovery:write, any scope
+POST	/api/operations/backups/{id}/retire	recovery:write, any scope
+GET	/api/operations/cancellation-reminders	operations:read, any scope
+POST	/api/operations/cancellation-reminders	operations:write, any scope
+GET	/api/operations/cloud	cloud:read, any scope
+GET	/api/operations/cloud/hetzner/accounts	cloud:read, any scope
+POST	/api/operations/cloud/hetzner/accounts	cloud:write, any scope, recent proof
+DELETE	/api/operations/cloud/hetzner/accounts/{id}	cloud:write, any scope, recent proof
+POST	/api/operations/cloud/hetzner/accounts/{id}/refresh	cloud:read, any scope
+GET	/api/operations/cloud/hetzner/resources	cloud:read, any scope
+GET	/api/operations/cloud/hetzner/resources/{id}	cloud:read, any scope
+GET	/api/operations/cloud/hetzner/resources/{id}/history	cloud:read, any scope
+POST	/api/operations/cloud/hetzner/resources/{id}/link	cloud:write, any scope, recent proof
+GET	/api/operations/cloud/security-group-operations/{id}	cloud:read, any scope
+POST	/api/operations/cloud/security-group-operations/{id}/confirm	cloud:write, any scope, recent proof
+POST	/api/operations/cloud/security-group-operations/{id}/reconcile	cloud:write, any scope, recent proof
+GET	/api/operations/cloud/{id}/history	cloud:read, any scope
+POST	/api/operations/cloud/{id}/link	cloud:write, any scope, recent proof
+GET	/api/operations/cloud/{id}/security-groups	cloud:read, any scope
+POST	/api/operations/cloud/{id}/security-groups/preview	cloud:write, any scope, recent proof
+GET	/api/operations/incidents	operations:read, any scope
+GET	/api/operations/incidents/{id}	operations:read, any scope
+POST	/api/operations/incidents/{id}/action	operations:write, any scope
+GET	/api/operations/incidents/{id}/assignees	operations:read, any scope
+GET	/api/operations/jobs	operations:read, any scope
+GET	/api/operations/jobs/{id}	operations:read, any scope
+POST	/api/operations/jobs/{id}/cancel	operations:write, any scope
+POST	/api/operations/jobs/{id}/confirm	operations:write, any scope
+POST	/api/operations/jobs/{id}/inspection	operations:write, any scope
+POST	/api/operations/jobs/{id}/panel-backup/reconcile	operations:write, any scope
+POST	/api/operations/jobs/{id}/reconcile	operations:write, any scope
+POST	/api/operations/jobs/{id}/resume	operations:write, any scope
+POST	/api/operations/jobs/{id}/runtime-reconcile	operations:write, any scope
+POST	/api/operations/jobs/{id}/runtime-reconcile/checkpoint	operations:write, any scope
+GET	/api/operations/maintenance	operations:read, any scope
+POST	/api/operations/maintenance	operations:write, any scope
+POST	/api/operations/preview	operations:write, any scope
+GET	/api/operations/remediation	operations:read, any scope
+POST	/api/operations/remediation	operations:write, any scope
+POST	/api/operations/remediation/{id}/pause	operations:write, any scope
+GET	/api/operations/schedules	operations:read, any scope
+POST	/api/operations/schedules	operations:write, any scope
+POST	/api/operations/schedules/{id}/pause	operations:write, any scope
+GET	/api/operations/suppliers	cloud:read, any scope
+GET	/api/operations/templates	operations:read, any scope
+POST	/api/operations/templates	operations:write, any scope
+GET	/api/probes/overview	monitoring:read, all servers
+GET	/api/resources/alicloud	cloud:read, all servers
+POST	/api/resources/alicloud/accounts	cloud:write, all servers, recent proof
+DELETE	/api/resources/alicloud/accounts/{id}	cloud:write, all servers, recent proof
+PATCH	/api/resources/alicloud/accounts/{id}	cloud:write, all servers, recent proof
+POST	/api/resources/alicloud/accounts/{id}/refresh	cloud:write, all servers
+GET	/api/resources/alicloud/accounts/{id}/traffic-history	cloud:read, all servers
+POST	/api/resources/alicloud/cron-preview	cloud:write, all servers, recent proof
+GET	/api/resources/alicloud/eip-rotations/{id}	cloud:read, all servers
+POST	/api/resources/alicloud/eip-rotations/{id}/cancel	cloud:write, all servers, recent proof
+POST	/api/resources/alicloud/eip-rotations/{id}/confirm	cloud:write, all servers, recent proof
+POST	/api/resources/alicloud/eip-rotations/{id}/reconcile	cloud:write, all servers, recent proof
+POST	/api/resources/alicloud/operations/{id}/cancel	cloud:write, all servers, recent proof
+POST	/api/resources/alicloud/operations/{id}/confirm	cloud:write, all servers, recent proof
+POST	/api/resources/alicloud/operations/{id}/dismiss	cloud:write, all servers, recent proof
+POST	/api/resources/alicloud/power-jobs/{id}/cancel	cloud:write, all servers, recent proof
+POST	/api/resources/alicloud/power-jobs/{id}/confirm	cloud:write, all servers, recent proof
+POST	/api/resources/alicloud/power-jobs/{id}/dismiss	cloud:write, all servers, recent proof
+POST	/api/resources/alicloud/resources	cloud:write, all servers, recent proof
+DELETE	/api/resources/alicloud/resources/{id}	cloud:write, all servers, recent proof
+PATCH	/api/resources/alicloud/resources/{id}	cloud:write, all servers, recent proof
+POST	/api/resources/alicloud/resources/{id}/cdt-check	cloud:read, all servers
+POST	/api/resources/alicloud/resources/{id}/cdt-state	cloud:write, all servers, recent proof
+POST	/api/resources/alicloud/resources/{id}/eip-rotation/preview	cloud:write, all servers
+PATCH	/api/resources/alicloud/resources/{id}/power-policy	cloud:write, all servers, recent proof
+POST	/api/resources/alicloud/resources/{id}/power-preview	cloud:write, all servers, recent proof
+POST	/api/resources/alicloud/resources/{id}/power-resume	cloud:write, all servers, recent proof
+POST	/api/resources/alicloud/resources/{id}/preview	cloud:write, all servers
+POST	/api/resources/alicloud/resources/{id}/refresh	cloud:write, all servers
+GET	/api/security/passkeys	own account: interactive administrator
+POST	/api/security/passkeys/register/finish	own account: interactive administrator
+POST	/api/security/passkeys/register/start	own account: interactive administrator, recent proof
+POST	/api/security/passkeys/{id}/remove	own account: interactive administrator, recent proof
+POST	/api/security/password	own account: interactive administrator, recent proof
+GET	/api/security/totp	own account: interactive administrator
+POST	/api/security/totp/confirm	own account: interactive administrator
+POST	/api/security/totp/disable	own account: interactive administrator, recent proof
+POST	/api/security/totp/setup	own account: interactive administrator, recent proof
+GET	/api/servers	servers:read, any scope
+POST	/api/servers	servers:write, all servers
+DELETE	/api/servers/{id}	servers:write, that server, recent proof
+GET	/api/servers/{id}	servers:read, that server
+PATCH	/api/servers/{id}	servers:write, that server
+GET	/api/servers/{id}/agent-settings	servers:read, that server
+PATCH	/api/servers/{id}/agent-settings	servers:write, that server
+GET	/api/servers/{id}/commands	terminal:read, that server
+POST	/api/servers/{id}/commands	terminal:write, that server, recent proof
+POST	/api/servers/{id}/commands/{command}/cancel	terminal:write, that server
+GET	/api/servers/{id}/diagnostics	diagnostics:read, that server
+POST	/api/servers/{id}/diagnostics/{job}/cancel	diagnostics:write, that server
+POST	/api/servers/{id}/diagnostics/{plugin}	diagnostics:write, that server
+POST	/api/servers/{id}/enrollment	servers:write, that server, recent proof
+GET	/api/servers/{id}/fleet	servers:read, that server
+PUT	/api/servers/{id}/fleet	servers:write, that server
+GET	/api/servers/{id}/fleet/compare	servers:read, that server
+GET	/api/servers/{id}/fleet/config-history	files:read, that server
+GET	/api/servers/{id}/fleet/costs	servers:read, that server
+POST	/api/servers/{id}/fleet/costs	servers:write, that server
+GET	/api/servers/{id}/fleet/events	servers:read, that server
+POST	/api/servers/{id}/fleet/lifecycle	servers:write, that server
+POST	/api/servers/{id}/fleet/migrate	servers:write, that server
+POST	/api/servers/{id}/fleet/migration-preview	servers:write, that server
+GET	/api/servers/{id}/fleet/operations	typed by the stored operation, that server
+POST	/api/servers/{id}/fleet/operations	typed by the stored operation, that server
+GET	/api/servers/{id}/fleet/terminals	terminal:read, that server
+POST	/api/servers/{id}/fleet/terminals	terminal:write, that server, recent proof
+GET	/api/servers/{id}/history	servers:read, that server
+GET	/api/servers/{id}/ip-quality	diagnostics:read, that server
+POST	/api/servers/{id}/ip-quality/node-query	diagnostics:write, that server
+POST	/api/servers/{id}/ip-quality/refresh	diagnostics:write, that server
+GET	/api/servers/{id}/metrics	servers:read, that server
+GET	/api/servers/{id}/node-quality	diagnostics:read, that server
+POST	/api/servers/{id}/node-quality/refresh	diagnostics:write, that server
+GET	/api/servers/{id}/node-quality/reports	diagnostics:read, that server
+POST	/api/servers/{id}/node-quality/reports	diagnostics:write, that server
+GET	/api/servers/{id}/probe-results	servers:read, that server
+GET	/api/servers/{id}/probes	servers:read, that server
+POST	/api/servers/{id}/probes	servers:write, that server
+DELETE	/api/servers/{id}/probes/{probe}	servers:write, that server, recent proof
+PATCH	/api/servers/{id}/probes/{probe}	servers:write, that server
+GET	/api/servers/{id}/runtime-control	servers:read, that server
+POST	/api/servers/{id}/runtime-control/barrier	servers:write, that server
+POST	/api/servers/{id}/runtime-control/checkpoint	servers:write, that server
+GET	/api/servers/{id}/telemetry-settings	servers:read, that server
+PATCH	/api/servers/{id}/telemetry-settings	servers:write, that server
+POST	/api/servers/{id}/traffic-correction	servers:write, that server
+GET	/api/settings	owner session only (security)
+PATCH	/api/settings	owner session only (security)
+GET	/api/statistics	monitoring:read, all servers
+GET	/api/telemetry/policy	monitoring:read, all servers
+PATCH	/api/telemetry/policy	monitoring:write, all servers
+POST	/api/traffic/chains/ordered-batch	proxy:write, all servers
+GET	/api/traffic/nexus-nodes	proxy:read, all servers
+POST	/api/traffic/nexus-nodes/append	proxy:write, all servers, recent proof
+POST	/api/traffic/nexus-nodes/append/preview	proxy:write, all servers
+POST	/api/traffic/nexus-nodes/import	proxy:write, all servers, recent proof
+POST	/api/traffic/nexus-nodes/preview	proxy:write, all servers
+POST	/api/traffic/nexus-nodes/runtime/prepare	proxy:write, all servers, recent proof
+POST	/api/traffic/nexus-nodes/runtime/preview	proxy:write, all servers
+POST	/api/traffic/nexus-nodes/runtime/{id}/activate	proxy:write, all servers, recent proof
+POST	/api/traffic/nexus-nodes/runtime/{id}/candidate	proxy:write, all servers, recent proof
+POST	/api/traffic/nexus-nodes/runtime/{id}/discard	proxy:write, all servers, recent proof
+POST	/api/traffic/nexus-nodes/runtime/{id}/extend	proxy:write, all servers, recent proof
+POST	/api/traffic/nexus-nodes/runtime/{id}/extend/preview	proxy:write, all servers
+POST	/api/traffic/nexus-nodes/runtime/{id}/pause	proxy:write, all servers, recent proof
+PATCH	/api/traffic/nexus-nodes/{id}/groups	proxy:write, all servers, recent proof
+PATCH	/api/traffic/nexus-nodes/{id}/public-endpoint	proxy:write, all servers, recent proof
+POST	/api/traffic/nexus-nodes/{id}/retire	proxy:write, all servers, recent proof
+GET	/api/traffic/node-catalog	proxy:read, all servers
+DELETE	/api/traffic/node-catalog/batch	proxy:write, all servers, recent proof
+PATCH	/api/traffic/node-catalog/batch	proxy:write, all servers
+POST	/api/traffic/node-catalog/batch	proxy:write, all servers
+GET	/api/traffic/nodes	proxy:read, all servers
+POST	/api/traffic/nodes	proxy:write, all servers, recent proof
+DELETE	/api/traffic/nodes/{id}	proxy:write, all servers, recent proof
+GET	/api/traffic/nodes/{id}	proxy:read, all servers
+PATCH	/api/traffic/nodes/{id}	proxy:write, all servers, recent proof
+POST	/api/traffic/nodes/{id}/clone	proxy:write, all servers, recent proof
+GET	/api/traffic/ordered-proxy-resources	proxy:read, all servers
+POST	/api/traffic/ordered-proxy-resources/chain/{id}/apply-node-versions	proxy:write, all servers
+DELETE	/api/traffic/ordered-proxy-resources/{kind}/{id}	proxy:write, all servers, recent proof
+GET	/api/traffic/ordered-proxy-resources/{kind}/{id}	proxy:read, all servers
+PATCH	/api/traffic/ordered-proxy-resources/{kind}/{id}	proxy:write, all servers
+GET	/api/traffic/ordered-subscription-source-jobs/{id}	proxy:read, all servers
+POST	/api/traffic/ordered-subscription-source-jobs/{id}/cancel	proxy:write, all servers
+POST	/api/traffic/ordered-subscription-source-previews	proxy:write, all servers
+DELETE	/api/traffic/ordered-subscription-source-previews/{id}	proxy:write, all servers, recent proof
+POST	/api/traffic/ordered-subscription-source-previews/{id}/commit	proxy:write, all servers
+GET	/api/traffic/ordered-subscription-sources	proxy:read, all servers
+POST	/api/traffic/ordered-subscription-sources	proxy:write, all servers
+DELETE	/api/traffic/ordered-subscription-sources/{id}	proxy:write, all servers, recent proof
+GET	/api/traffic/ordered-subscription-sources/{id}	proxy:read, all servers
+PATCH	/api/traffic/ordered-subscription-sources/{id}	proxy:write, all servers
+GET	/api/traffic/ordered-subscription-sources/{id}/nodes	proxy:read, all servers
+PATCH	/api/traffic/ordered-subscription-sources/{id}/nodes/{node_id}	proxy:write, all servers, recent proof
+POST	/api/traffic/ordered-subscription-sources/{id}/refresh	proxy:write, all servers
+GET	/api/traffic/ordered-subscription-sources/{id}/revisions	proxy:read, all servers
+GET	/api/traffic/ordered-subscription-sources/{id}/revisions/{revision}/nodes	proxy:read, all servers
+GET	/api/traffic/runtime-inventory	proxy:read, all servers
+GET	/api/traffic/runtime-rollouts	proxy:read, all servers
+POST	/api/traffic/runtime-rollouts	proxy:write, all servers
+POST	/api/traffic/runtime-rollouts/{id}/advance	proxy:write, all servers
+POST	/api/traffic/runtime-rollouts/{id}/members/{server}/inspect	proxy:write, all servers
+POST	/api/traffic/runtime-rollouts/{id}/pause	proxy:write, all servers
+GET	/api/traffic/servers	proxy:read, all servers
+GET	/api/traffic/servers/{id}	proxy:read, that server
+GET	/api/traffic/servers/{id}/deployments	proxy:read, that server
+POST	/api/traffic/servers/{id}/deployments/check	proxy:write, that server
+POST	/api/traffic/servers/{id}/deployments/redeploy	proxy:write, that server
+POST	/api/traffic/servers/{id}/enable	proxy:write, that server
+GET	/api/traffic/servers/{id}/operations-view	proxy:read, that server
+POST	/api/traffic/servers/{id}/operations-view/checkpoint	proxy:write, that server
+POST	/api/traffic/servers/{id}/operations-view/preflight	proxy:write, that server
+POST	/api/traffic/servers/{id}/operations-view/preflight/bootstrap	proxy:write, that server
+POST	/api/traffic/servers/{id}/operations-view/preflight/confirm	proxy:write, that server
+GET	/api/traffic/servers/{id}/profile	proxy:read, that server
+PUT	/api/traffic/servers/{id}/profile	proxy:write, that server
+GET	/api/traffic/servers/{id}/runtime-operations	proxy:read, that server
+POST	/api/traffic/servers/{id}/runtime-operations	proxy:write, that server

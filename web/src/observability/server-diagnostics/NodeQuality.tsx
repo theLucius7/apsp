@@ -9,6 +9,7 @@ import type { DiagnosticRecord, IpQuality, NodeQuality as NodeQualityData } from
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { NativeSelect } from '@/components/ui/native-select'
+import { copyText } from '@/lib/clipboard'
 import { ActivityIcon, ArrowRightIcon } from 'lucide-react'
 import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
@@ -41,7 +42,7 @@ function ReportResult({ record, serverId, cancelSupported, writeError, reload }:
     {record.cancel_error && <Notice className="wrap-anywhere my-3">{record.cancel_error}</Notice>}
     {record.error && <Notice tone="error" className="wrap-anywhere my-3">{record.error}</Notice>}
     <DiagnosticSections record={record} />
-    {record.report && <><div className="mt-3 flex flex-wrap items-center gap-2.5">{reportUrl ? <a className={buttonVariants({ variant: 'outline' })} href={reportUrl} target="_blank" rel="noopener noreferrer">打开公开报告 <ArrowRightIcon className="size-3.5" aria-hidden="true" /></a> : <span className="text-muted-foreground mt-3 text-xs leading-relaxed">未生成在线链接，本地报告如下。</span>}<Button variant="outline" disabled={copy.busy} onClick={() => void copy.run(() => navigator.clipboard.writeText(record.report!.text), () => {})}>复制报告文本</Button></div><ErrorNotice message={copy.error} /><details data-slot="quality-report-text" className="mt-4"><summary className="text-primary cursor-pointer text-sm">查看报告文本</summary><pre className="bg-card mt-3 max-h-[460px] overflow-auto rounded-lg border p-4 leading-relaxed whitespace-pre-wrap wrap-anywhere max-sm:p-2.5">{record.report.text}</pre></details></>}
+    {record.report && <><div className="mt-3 flex flex-wrap items-center gap-2.5">{reportUrl ? <a className={buttonVariants({ variant: 'outline' })} href={reportUrl} target="_blank" rel="noopener noreferrer">打开公开报告 <ArrowRightIcon className="size-3.5" aria-hidden="true" /></a> : <span className="text-muted-foreground mt-3 text-xs leading-relaxed">未生成在线链接，本地报告如下。</span>}<Button variant="outline" disabled={copy.busy} onClick={() => void copy.run(() => copyText(record.report!.text), () => {})}>复制报告文本</Button></div><ErrorNotice message={copy.error} /><details data-slot="quality-report-text" className="mt-4"><summary className="text-primary cursor-pointer text-sm">查看报告文本</summary><pre className="bg-card mt-3 max-h-[460px] overflow-auto rounded-lg border p-4 leading-relaxed whitespace-pre-wrap wrap-anywhere max-sm:p-2.5">{record.report.text}</pre></details></>}
   </article>
 }
 

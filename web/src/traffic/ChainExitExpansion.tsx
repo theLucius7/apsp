@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Field } from '../components'
 import { useResource } from '../hooks'
-import { validatedSnapshot } from '../access/groupTypes'
+import { validatedSnapshot } from '@/lib/resource-snapshot'
 import type { ChainBatchDraft, ChainDraftHop, ProxyWriteSnapshot } from './Chains'
 import { sourceRoot, validSourceNodePage } from './orderedSourceTypes'
 import type { SourceNodePage } from './orderedSourceTypes'

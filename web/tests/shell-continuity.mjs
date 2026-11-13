@@ -26,7 +26,7 @@ const http = createServer(async (request, response) => {
 await new Promise(done => http.listen(0, '127.0.0.1', done))
 const origin = `http://127.0.0.1:${http.address().port}`
 const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
-const prefix = '/api/plugins/sing-box'
+const trafficApi = '/api/traffic', accessApi = '/api/access'
 const GiB = 1024 ** 3
 const serverFixture = id => {
   const now = Date.now()
@@ -41,19 +41,19 @@ const serverFixture = id => {
 // Proxy users render their detail beside the list through the shared list/detail layout.
 const user = { id: 1, name: 'TEST_ONLY 代理用户', subscription_token: 'TEST_ONLY', subscription_url: 'http://127.0.0.1/s/TEST_ONLY' }
 const node = { enabled: true, id: 1, name: 'TEST_ONLY 节点', server_id: 1, protocol: 'vless-reality', public_host: '127.0.0.1', port: 24443, sni: 'localhost', public_key: 'TEST_ONLY', short_id: '0123abcd' }
-const pluginServers = [{ id: 1, name: 'TEST_ONLY 服务器', enabled: true, online: true, read_only: false }]
+const runtimeServers = [{ id: 1, name: 'TEST_ONLY 服务器', enabled: true, online: true, read_only: false }]
 const proxyReads = {
-  [`${prefix}/policy-groups`]: [], [`${prefix}/package-groups`]: [], [`${prefix}/nodes`]: [node], [`${prefix}/users`]: [user],
-  [`${prefix}/ordered-proxy-resources`]: proxyResourceFixtures([node], pluginServers),
-  [`${prefix}/usage`]: { uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] },
-  [`${prefix}/users/1/policy-groups`]: { group_ids: [] },
-  [`${prefix}/users/1/entitlement`]: { user_id: 1, package_group_id: null, package_name: null, monthly_bytes: null, starts_at: null, expires_at: null, cycle_start: null, next_reset: null, used_bytes: '0', status: 'unlimited', allowed: true },
-  [`${prefix}/users/1/portal`]: { configuration: { enabled: false, reason: 'TEST_ONLY 尚未启用', origin: 'http://127.0.0.1' }, keys: 0, url: null, activation_expires_at: null },
-  [`${prefix}/users/1/diagnosis`]: { user_id: 1, account: { user_id: 1, name: user.name, portal_created: false, keys: 0, active_sessions: 0, activation_expires_at: null },
+  [`${accessApi}/policy-groups`]: [], [`${accessApi}/package-groups`]: [], [`${trafficApi}/nodes`]: [node], [`${accessApi}/users`]: [user],
+  [`${trafficApi}/ordered-proxy-resources`]: proxyResourceFixtures([node], runtimeServers),
+  [`${accessApi}/usage`]: { uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] },
+  [`${accessApi}/users/1/policy-groups`]: { group_ids: [] },
+  [`${accessApi}/users/1/entitlement`]: { user_id: 1, package_group_id: null, package_name: null, monthly_bytes: null, starts_at: null, expires_at: null, cycle_start: null, next_reset: null, used_bytes: '0', status: 'unlimited', allowed: true },
+  [`${accessApi}/users/1/portal`]: { configuration: { enabled: false, reason: 'TEST_ONLY 尚未启用', origin: 'http://127.0.0.1' }, keys: 0, url: null, activation_expires_at: null },
+  [`${accessApi}/users/1/diagnosis`]: { user_id: 1, account: { user_id: 1, name: user.name, portal_created: false, keys: 0, active_sessions: 0, activation_expires_at: null },
     subscription: { status: 'empty', message: 'TEST_ONLY 真实设备状态未验证。', granted_nodes: 0, ready_managed_nodes: 0, ready_external_nodes: 0 },
     permissions: [], external_authorizations: [], ledger: [], quota_credits: [], package_history: [], rotations: [], events: [],
     limitations: { credentials_read: { available: false, reason: 'TEST_ONLY 敏感内容未读取。' } } },
-  [`${prefix}/users/1/client-template`]: { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY 完整模板未读取。', supported_client: 'singbox', supported_version: '1.14.2', schema_validation: true, runtime_validation: false, limitations: 'TEST_ONLY 没有保存的模板。' },
+  [`${accessApi}/users/1/client-template`]: { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY 完整模板未读取。', supported_client: 'singbox', supported_version: '1.14.2', schema_validation: true, runtime_validation: false, limitations: 'TEST_ONLY 没有保存的模板。' },
 }
 
 async function open(width, height, state) {

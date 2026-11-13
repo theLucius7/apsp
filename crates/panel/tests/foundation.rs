@@ -49,7 +49,7 @@ impl TestPanel {
             data_dir: directory.clone(),
             admin_password: Some(PASSWORD.into()),
         };
-        let mut state = AppState::new(pool, config).await?;
+        let mut state = apsp_panel::state(pool, config).await?;
         state.release_keys = Some(std::sync::Arc::new(release_support::trusted_keys()));
         let app = router(state.clone());
         let task = tokio::spawn(async move {
@@ -323,7 +323,7 @@ async fn admin_sessions_are_scoped_expiring_and_not_reset_on_restart(pool: PgPoo
 
     let mut restarted_config = (*panel.state.config).clone();
     restarted_config.admin_password = Some("replacement-must-not-reset-password".into());
-    AppState::new(pool.clone(), restarted_config).await?;
+    apsp_panel::state(pool.clone(), restarted_config).await?;
     assert!(panel.login(PASSWORD).await?.status().is_success());
     assert_eq!(
         panel
@@ -534,8 +534,7 @@ async fn bundle_download_preserves_bytes_and_cannot_cross_server_identity(
     );
     socket.close(None).await?;
     timeout(Duration::from_secs(5), async {
-        while panel
-            .state
+        while apsp_resources::device_channel::devices(&panel.state)
             .connections
             .read()
             .await
@@ -649,7 +648,7 @@ async fn websocket_challenges_are_connection_bound_and_sessions_expire(pool: PgP
     let stored_expiry: i64 = sqlx::query_scalar(
         "SELECT expires_at FROM sessions WHERE token_hash = $1 AND server_id = $2",
     )
-    .bind(apsp_panel_host::auth::hash_token(&ack.session_token))
+    .bind(apsp_governance::auth::hash_token(&ack.session_token))
     .bind(server_id)
     .fetch_one(&pool)
     .await?;
@@ -801,7 +800,7 @@ async fn panel_never_serves_agent_binaries_even_with_a_live_token(pool: PgPool) 
     assert_eq!(installation["target"], "auto");
     assert_eq!(
         installation["bootstrap_url"],
-        apsp_panel_host::installation::bootstrap_url()
+        apsp_resources::installation::bootstrap_url()
     );
     let install_command = installation["install_command"].as_str().unwrap();
     assert!(install_command.contains("https://api.github.com/repos/theLucius7/apsp/git/blobs/"));
@@ -1264,7 +1263,7 @@ async fn installation_uses_independent_trusted_contract_and_preserves_server_mir
         assert!(installation["tag"].is_null());
         assert_eq!(
             installation["bootstrap_url"],
-            apsp_panel_host::installation::bootstrap_url()
+            apsp_resources::installation::bootstrap_url()
         );
         let command = installation["install_command"].as_str().unwrap();
         assert!(command.contains(installation["bootstrap_url"].as_str().unwrap()));

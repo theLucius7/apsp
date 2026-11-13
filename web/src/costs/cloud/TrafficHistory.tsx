@@ -8,7 +8,7 @@ import type { TrafficHistory as History } from './usageHistory'
 import type { Account } from '../../resources/cloud/types'
 
 export function TrafficHistory({ account, close }: { account: Account; close: () => void }) {
-  const result = useResource<History>(`/api/plugins/alicloud/accounts/${account.id}/traffic-history`, 60000)
+  const result = useResource<History>(`/api/resources/alicloud/accounts/${account.id}/traffic-history`, 60000)
   const [seconds, setSeconds] = useState(3600), [delta, setDelta] = useState(false)
   const group = result.data?.groups.find(group => group.seconds === seconds)
   return <Modal title={`CDT 用量历史 · ${account.name}`} onClose={close}>

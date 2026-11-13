@@ -62,7 +62,7 @@ try {
       if (path === '/api/servers') return respond(servers)
       if (path === '/api/probes/overview') return respond(overview)
       if (path === '/api/latency-tasks') return respond(tasks)
-      if (path === '/api/plugins/sing-box/reachability') return respond(reachability)
+      if (path === '/api/observability/reachability') return respond(reachability)
       const probes = path.match(/^\/api\/servers\/(\d+)\/probes$/)
       if (probes) return respond(overview.filter(row => row.server_id === Number(probes[1])).map(row => row.probe))
       const history = path.match(/^\/api\/servers\/(\d+)\/probe-results$/)
@@ -90,7 +90,7 @@ try {
     assert.match(await figure('联通 · 广东').innerText(), /1 台丢包偏高/)
     assert.equal(await figure('中国可达性').count(), owner ? 1 : 0)
     if (owner) assert.match(await figure('中国可达性').innerText(), /3\/5[\s\S]*1 个端点被封锁/)
-    assert.equal(requested.includes('/api/plugins/sing-box/reachability'), owner, 'Only the owner reads reachability')
+    assert.equal(requested.includes('/api/observability/reachability'), owner, 'Only the owner reads reachability')
 
     // Problems first: offline, loss and blocked endpoints; distance alone is not a problem.
     const problemRows = owner ? ['TEST_ONLY 东京', 'TEST_ONLY 离线', 'TEST_ONLY 孟买', 'TEST_ONLY 仅可达性'] : ['TEST_ONLY 离线', 'TEST_ONLY 孟买']

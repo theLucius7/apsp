@@ -6,7 +6,7 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
-use apsp_panel_host::auth::{hash_token, random_token};
+use apsp_governance::auth::{hash_token, random_token};
 use apsp_protocol::now_timestamp;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode, header};
@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-const ROOT: &str = "/api/plugins/sing-box/reachability";
+const ROOT: &str = "/api/observability/reachability";
 const TOKEN: &str = "fixture-globalping-token-value";
 
 async fn prove(panel: &TestPanel, cookie: &str) -> Result<()> {
@@ -412,11 +412,11 @@ async fn the_owner_sees_flags_and_no_member_or_subscription_response_mentions_th
     for (path, member) in [
         (format!("/sub/{token}"), None),
         (
-            format!("/api/plugins/sing-box/portal/{account}"),
+            format!("/api/access/portal/{account}"),
             Some(member_cookie.clone()),
         ),
         (
-            format!("/api/plugins/sing-box/portal/{account}/account/messages"),
+            format!("/api/access/portal/{account}/account/messages"),
             Some(member_cookie.clone()),
         ),
     ] {

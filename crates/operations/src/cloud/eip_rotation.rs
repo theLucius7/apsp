@@ -37,20 +37,20 @@ const PREVIEW_SECONDS: i64 = 300;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
-            "/api/plugins/alicloud/resources/{id}/eip-rotation/preview",
+            "/api/resources/alicloud/resources/{id}/eip-rotation/preview",
             post(preview),
         )
-        .route("/api/plugins/alicloud/eip-rotations/{id}", get(detail))
+        .route("/api/resources/alicloud/eip-rotations/{id}", get(detail))
         .route(
-            "/api/plugins/alicloud/eip-rotations/{id}/confirm",
+            "/api/resources/alicloud/eip-rotations/{id}/confirm",
             post(confirm),
         )
         .route(
-            "/api/plugins/alicloud/eip-rotations/{id}/cancel",
+            "/api/resources/alicloud/eip-rotations/{id}/cancel",
             post(cancel),
         )
         .route(
-            "/api/plugins/alicloud/eip-rotations/{id}/reconcile",
+            "/api/resources/alicloud/eip-rotations/{id}/reconcile",
             post(reconcile),
         )
 }

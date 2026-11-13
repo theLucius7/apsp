@@ -150,7 +150,7 @@ export default function MemberLines({ account }: { account: string }) {
       if (pending) return
       pending = true
       try {
-        const value = await api<LinesView>(`/api/plugins/sing-box/portal/${account}/lines`, 'GET', undefined, controller.signal, false)
+        const value = await api<LinesView>(`/api/access/portal/${account}/lines`, 'GET', undefined, controller.signal, false)
         if (active) { setData(value); setError('') }
       } catch (error) { if (active && !controller.signal.aborted) setError(errorMessage(error)) }
       finally { pending = false }

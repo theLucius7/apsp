@@ -2,9 +2,11 @@
 
 本页记录面板管理接口，供中文前端和集成测试使用。所有路径都相对于 `APSP_PUBLIC_URL`。管理接口使用同源 Cookie；请求 JSON 时发送 `Content-Type: application/json`。应用错误返回 `{"error":"中文说明"}`，常见状态码为 400（输入无效）、401（未登录）、404（资源不存在）、409（冲突）、429（请求过多）、500（内部错误）。框架对无法解析的 JSON 或路径参数也可能返回文本错误。
 
-策略组、套餐组与代理用户分配接口见 [sing-box 策略与套餐 API](singbox-groups.md#api)。这些业务仅属于 `/api/plugins/sing-box`；管理会话和错误约定沿用本页。
+策略组、套餐组与代理用户分配接口见 [sing-box 策略与套餐 API](singbox-groups.md#api)，地址在 `/api/access/…`；管理会话和错误约定沿用本页。
 
-中国可达性接口（`/api/plugins/sing-box/reachability`，仅所有者会话）见[监控文档](monitoring.md#中国可达性)。
+中国可达性接口（`/api/observability/reachability`，仅所有者会话）见[监控文档](monitoring.md#中国可达性)。
+
+接口地址的第一段是对象所属的领域（[ADR 0132](adr/0132-platform-only-host-and-domain-addresses.md)）：节点、链路、外部来源与服务器上的运行时在 `/api/traffic/…`，代理用户、策略组与套餐组、用量和门户在 `/api/access/…`，DNS 账号与解析规则在 `/api/naming/…`，续费项目在 `/api/costs/…`，中国可达性与 TCP 质量在 `/api/observability/…`，阿里云的云账号与云资源在 `/api/resources/alicloud/…`；`/api/agent/v1/*`、`/sub/{token}` 与本页其余地址没有变。2026-11-13 之前这些接口在 `/api/plugins/{sing-box,ddns,expenses,tcpquality,alicloud}/…` 下；旧地址在一个发布版本内仍然应答，请求先被改写到现地址，再做权限检查，逐项对应见 ADR 0132 第 9 条；续费日历的旧订阅地址 `/api/plugins/expenses/calendar.ics` 长期保留。新写的脚本直接用现地址。
 
 ## 登录
 
@@ -51,15 +53,15 @@
 | `POST /api/login/passkey/finish` | 完成管理员认证，签发原 `apsp_session`，返回 `{id:1}` |
 | `POST /api/control-center/reauth/passkey/start` | 已登录的初始所有者；无请求体，为当前会话创建再次验证挑战，使用独立的 `apsp_admin_reauth` 绑定 Cookie；无需已有五分钟证明 |
 | `POST /api/control-center/reauth/passkey/finish` | 同一初始所有者会话完成验证；返回 `{verified_at,expires_at}`，证明有效五分钟，不替换或延长 `apsp_session`，无需额外 TOTP；API 令牌不可调用 |
-| `GET /api/plugins/sing-box/users/{id}/portal` | 管理员；开通状态、密钥数量、账户登录 URL、开通链接过期时间，不返回开通秘密 |
-| `POST /api/plugins/sing-box/users/{id}/portal/invitation` | 管理员；`{reset:false}`，需要五分钟内的再次验证；返回 `{url,expires_at}`，十五分钟、一次性。已有密钥时必须明确 `reset:true` |
-| `GET /api/plugins/sing-box/portal/{account}` | 插件 UUID 入口；未认证返回 `{authenticated:false,configuration}`，已认证额外返回自身 `name,subscription_url,usage:{uplink,downlink},keys` |
-| `POST /api/plugins/sing-box/portal/{account}/login/start` | 开始该代理账户的认证，无请求体 |
-| `POST /api/plugins/sing-box/portal/{account}/login/finish` | 完成认证，签发独立 `apsp_proxy_session`，返回 `{ok:true}` |
-| `POST /api/plugins/sing-box/portal/{account}/register/start` | 初次开通 `{name,activation_token}`；已认证添加 `{name}`，需五分钟内的 Passkey 验证 |
-| `POST /api/plugins/sing-box/portal/{account}/register/finish` | 完成注册；初次开通同时消费邀请并签发用户会话 |
-| `POST /api/plugins/sing-box/portal/{account}/keys/{id}/remove` | 五分钟内已验证的用户会话；无请求体，保留至少一把密钥，撤销其他用户会话与挑战 |
-| `POST /api/plugins/sing-box/portal/{account}/logout` | 仅清除该代理账户的当前会话 |
+| `GET /api/access/users/{id}/portal` | 管理员；开通状态、密钥数量、账户登录 URL、开通链接过期时间，不返回开通秘密 |
+| `POST /api/access/users/{id}/portal/invitation` | 管理员；`{reset:false}`，需要五分钟内的再次验证；返回 `{url,expires_at}`，十五分钟、一次性。已有密钥时必须明确 `reset:true` |
+| `GET /api/access/portal/{account}` | 插件 UUID 入口；未认证返回 `{authenticated:false,configuration}`，已认证额外返回自身 `name,subscription_url,usage:{uplink,downlink},keys` |
+| `POST /api/access/portal/{account}/login/start` | 开始该代理账户的认证，无请求体 |
+| `POST /api/access/portal/{account}/login/finish` | 完成认证，签发独立 `apsp_proxy_session`，返回 `{ok:true}` |
+| `POST /api/access/portal/{account}/register/start` | 初次开通 `{name,activation_token}`；已认证添加 `{name}`，需五分钟内的 Passkey 验证 |
+| `POST /api/access/portal/{account}/register/finish` | 完成注册；初次开通同时消费邀请并签发用户会话 |
+| `POST /api/access/portal/{account}/keys/{id}/remove` | 五分钟内已验证的用户会话；无请求体，保留至少一把密钥，撤销其他用户会话与挑战 |
+| `POST /api/access/portal/{account}/logout` | 仅清除该代理账户的当前会话 |
 
 `account` 是独立 UUID，`id` 是管理接口中的凭据 UUID；不能混用代理用户数字 ID、订阅令牌或管理员 Cookie。列表不返回 credential ID/公钥材料；标准认证选项中的 allow/exclude credential ID 仅用于对应账户的认证。用户删除、管理员重置或密钥撤销之后，已发起但未提交的认证也不能创建会话。用法及原生认证器未验证范围见 [Passkey](passkeys.md)。
 
@@ -150,13 +152,13 @@
 
 ## 运行时安装
 
-代理管理接口与前端在同一版本切换为 `/api/plugins/sing-box/...`，旧根管理路径不保留别名，返回 404。已有 `/sub/{token}` 订阅地址永久保留，旧表、业务编号、令牌、密钥、授权和用量账本不重写，详见 [ADR 0030](adr/0030-singbox-plugin-business.md)。
+运行时、节点、链路与外部来源的管理接口在 `/api/traffic/...`，代理用户、策略组与套餐组、门户的管理接口在 `/api/access/...`。更早的根路径管理地址（ADR 0030 之前）不保留别名，返回 404。已有 `/sub/{token}` 订阅地址永久保留，旧表、业务编号、令牌、密钥、授权和用量账本不重写，详见 [ADR 0030](adr/0030-singbox-plugin-business.md)。
 
 | 方法与路径 | 请求或用途 |
 |---|---|
-| `GET /api/plugins/sing-box/servers` | 未删除服务器的插件启用元数据列表 |
-| `GET /api/plugins/sing-box/servers/{id}` | 单台服务器的插件启用元数据 |
-| `POST /api/plugins/sing-box/servers/{id}/enable` | 空 JSON `{}`；管理员明确安装 sing-box 并安排首次发布，重复请求幂等（路径沿用 `enable`） |
+| `GET /api/traffic/servers` | 未删除服务器的插件启用元数据列表 |
+| `GET /api/traffic/servers/{id}` | 单台服务器的插件启用元数据 |
+| `POST /api/traffic/servers/{id}/enable` | 空 JSON `{}`；管理员明确安装 sing-box 并安排首次发布，重复请求幂等（路径沿用 `enable`） |
 
 元数据为 `{id,name,enabled,online,agent_supported,read_only,source,installation}`。source 为 `administrator` 或 null（生产只有 `administrator`）；单独的能力声明不自动启用。`installation={state,reason,target_rev,applied_rev}`，state 为 `not_enabled`、`queued`、`waiting_agent`、`offline`、`pending`、`ready` 或 `failed`，reason 提供中文原因。启用安排无部署服务器的首次安全配置，重复请求不延后待办；实际安装仍须签名制品、设备支持和应用确认。创建节点和读取部署需先启用，否则返回 409。未启用服务器详情不请求节点或部署；已有网卡遥测继续显示。详见 [安装流程](singbox-installation.md)。
 
@@ -166,11 +168,11 @@
 
 | 方法与路径 | 请求或用途 |
 |---|---|
-| `GET /api/plugins/sing-box/nodes` | 有效服务器下的节点列表 |
-| `POST /api/plugins/sing-box/nodes` | `{"name":"节点名称","server_id":1,"public_host":"node.example.com","sni":"www.example.com","port":443}`；`port` 可省略 |
-| `GET /api/plugins/sing-box/nodes/{id}` | 节点详情 |
-| `PATCH /api/plugins/sing-box/nodes/{id}` | 可选 `name`、`public_host`、`sni`、`port`、`protocol_config`、`enabled`、`settings`，至少一个字段；省略字段保留现值 |
-| `DELETE /api/plugins/sing-box/nodes/{id}` | 与直连资源删除共用引用保护；策略或链路仍引用时返回 409 清单，否则软删节点、移除现有授权并安排重新发布 |
+| `GET /api/traffic/nodes` | 有效服务器下的节点列表 |
+| `POST /api/traffic/nodes` | `{"name":"节点名称","server_id":1,"public_host":"node.example.com","sni":"www.example.com","port":443}`；`port` 可省略 |
+| `GET /api/traffic/nodes/{id}` | 节点详情 |
+| `PATCH /api/traffic/nodes/{id}` | 可选 `name`、`public_host`、`sni`、`port`、`protocol_config`、`enabled`、`settings`，至少一个字段；省略字段保留现值 |
+| `DELETE /api/traffic/nodes/{id}` | 与直连资源删除共用引用保护；策略或链路仍引用时返回 409 清单，否则软删节点、移除现有授权并安排重新发布 |
 
 ### 节点与链路资源
 
@@ -178,13 +180,13 @@
 
 | 方法与路径 | 请求或用途 |
 | --- | --- |
-| `GET /api/plugins/sing-box/ordered-proxy-resources` | 同一快照中的受管节点与链路公开资源数组；链路的专用入口不作为节点重复出现 |
-| `GET /api/plugins/sing-box/ordered-proxy-resources/{kind}/{id}` | `kind=direct\|chain`；类型与 ID 一起标识资源 |
-| `PATCH /api/plugins/sing-box/ordered-proxy-resources/{kind}/{id}` | 带 `settings_revision` 修改名称或启用状态 |
-| `DELETE /api/plugins/sing-box/ordered-proxy-resources/direct/{id}` | 与节点删除共用策略和链路引用保护 |
-| `DELETE /api/plugins/sing-box/ordered-proxy-resources/chain/{id}` | 无策略引用时删除链路及其专用入口；链路进入退役，设备确认后释放各段；共享出口、历史流量和创建收据保持 |
-| `POST /api/plugins/sing-box/ordered-proxy-resources/chain/{id}/apply-node-versions` | 带期望代数应用外部节点的新版本 |
-| `POST /api/plugins/sing-box/chains/ordered-batch` | 至多 32 行原子创建链路，一次请求保存全部入口与链路或整批回滚 |
+| `GET /api/traffic/ordered-proxy-resources` | 同一快照中的受管节点与链路公开资源数组；链路的专用入口不作为节点重复出现 |
+| `GET /api/traffic/ordered-proxy-resources/{kind}/{id}` | `kind=direct\|chain`；类型与 ID 一起标识资源 |
+| `PATCH /api/traffic/ordered-proxy-resources/{kind}/{id}` | 带 `settings_revision` 修改名称或启用状态 |
+| `DELETE /api/traffic/ordered-proxy-resources/direct/{id}` | 与节点删除共用策略和链路引用保护 |
+| `DELETE /api/traffic/ordered-proxy-resources/chain/{id}` | 无策略引用时删除链路及其专用入口；链路进入退役，设备确认后释放各段；共享出口、历史流量和创建收据保持 |
+| `POST /api/traffic/ordered-proxy-resources/chain/{id}/apply-node-versions` | 带期望代数应用外部节点的新版本 |
+| `POST /api/traffic/chains/ordered-batch` | 至多 32 行原子创建链路，一次请求保存全部入口与链路或整批回滚 |
 
 资源包含 `kind,id,name,entry,exit,available,unavailable_reasons,policy_group_ids,user_count,chain_refs`。公开端点包含节点／服务器 ID 和名称、协议、公开地址、监听 `port`、实际公开 `public_port`、SNI、启用／删除状态，以及 `online,desired_revision,applied_revision,applied_observed_at`；不包含私钥、内部 relay UUID、用户身份或完整配置。`public_port` 使用已有节点设置的有效覆盖值，未覆盖则沿用监听端口；损坏设置、协议配置解析失败或与协议标记不一致，让对应资源不可用并说明原因，不使整个列表失去可读性。`available` 表示结构及插件配置可用，在线和应用观察另列，不表示端到端连通。`user_count` 是未删除代理用户的授权并集人数，不是当前套餐资格人数。退役或软删端点的链路仍可读取与明确清理。
 
@@ -215,7 +217,7 @@
 
 ## 外部来源
 
-外部来源接口（UUID 节点身份）位于 `/api/plugins/sing-box`；节点在节点库中以数字别名 `public_id` 出现，见[节点库说明](node-catalog.md)。见 [ADR 0072](adr/0072-subscription-source-lifecycle.md) 与 [验收边界](acceptance/subscription-sources.md)。仅管理员使用；来源节点不是对用户授权的公开入口。有序链路（`/chains/ordered-batch`）的订阅跳使用本节的节点；迁移前的 mixed 链路使用数字编号来源的节点。
+外部来源接口（UUID 节点身份）位于 `/api/traffic`；节点在节点库中以数字别名 `public_id` 出现，见[节点库说明](node-catalog.md)。见 [ADR 0072](adr/0072-subscription-source-lifecycle.md) 与 [验收边界](acceptance/subscription-sources.md)。仅管理员使用；来源节点不是对用户授权的公开入口。有序链路（`/chains/ordered-batch`）的订阅跳使用本节的节点；迁移前的 mixed 链路使用数字编号来源的节点。
 
 | 方法与相对路径 | 请求／行为 |
 | --- | --- |
@@ -288,13 +290,13 @@
 
 | 方法与路径 | 请求或用途 |
 |---|---|
-| `GET /api/plugins/sing-box/users` | 用户列表 |
-| `POST /api/plugins/sing-box/users` | `{"name":"用户名称"}` |
-| `GET /api/plugins/sing-box/users/{id}` | 用户详情 |
-| `PATCH /api/plugins/sing-box/users/{id}` | `{"name":"新名称"}` |
-| `DELETE /api/plugins/sing-box/users/{id}` | 删除用户和全部现有授权；历史用量保留 |
-| `POST /api/plugins/sing-box/users/{id}/subscription/reset` | 无请求体，原子替换订阅令牌，返回 200 和更新后的完整用户对象 |
-| `GET /api/plugins/sing-box/users/{id}/accesses` | 用户的有效节点授权列表（由所属策略组推出） |
+| `GET /api/access/users` | 用户列表 |
+| `POST /api/access/users` | `{"name":"用户名称"}` |
+| `GET /api/access/users/{id}` | 用户详情 |
+| `PATCH /api/access/users/{id}` | `{"name":"新名称"}` |
+| `DELETE /api/access/users/{id}` | 删除用户和全部现有授权；历史用量保留 |
+| `POST /api/access/users/{id}/subscription/reset` | 无请求体，原子替换订阅令牌，返回 200 和更新后的完整用户对象 |
+| `GET /api/access/users/{id}/accesses` | 用户的有效节点授权列表（由所属策略组推出） |
 
 按人单独授权的写接口（`POST /users/{id}/accesses`、`DELETE /users/{user_id}/accesses/{node_id}`）已随 [ADR 0112](adr/0112-group-only-access.md) 删除；用户只经策略组获得节点、链路与外部节点。
 
@@ -336,7 +338,7 @@
 
 原生配置及包序列化结果确定；包 SHA-256 与最新发布版本相同则不增加版本号。节点名称、公开地址等仅影响客户端的元数据，在这一情况下更新原版本的订阅快照。配置内容变化时增加服务器版本、保存完整包和模型快照，再通知 Agent 拉取。只有事务提交后才发送通知；通知丢失由设备心跳和重新对账恢复。
 
-`GET /api/plugins/sing-box/servers/{id}/deployments` 返回：
+`GET /api/traffic/servers/{id}/deployments` 返回：
 
 ```json
 {
@@ -357,7 +359,7 @@
 
 从未发布时 `status` 为 `null`、`history` 为空。历史按版本倒序，最多 100 条，仅包含元数据。`target_rev` 是最新期望版本；`applied_rev` 是已知成功应用的版本；`last_result_rev` 是最后接受的应用结果版本；`healthy` 表示设备报告当前配置是否健康。失败后成功回滚时可以同时出现 `healthy=true` 和 `last_error`，界面应保留失败提示及当前实际版本。
 
-响应还含 `pending`（存在尚未发布的修改）、`enabled_nodes` 与 `authorized_nodes`（当前有有效授权的节点数）。管理员 `POST /api/plugins/sing-box/servers/{id}/deployments/check` 无请求体，返回 `{ready,checks:[{name,passed,detail}]}`，检查设备接入、60 秒在线、插件能力、设备制品验签能力及现有平台选择规则下的签名运行时。只有设备声明 `artifact:minisign-v1` 才能通过验签能力检查；面板保存已签运行时不能替代设备验签支持。只读检查不会安装、发布或重启；归档验签不随每次状态轮询执行。缺少制品返回检查未通过，内部验证错误不泄露密钥和路径。
+响应还含 `pending`（存在尚未发布的修改）、`enabled_nodes` 与 `authorized_nodes`（当前有有效授权的节点数）。管理员 `POST /api/traffic/servers/{id}/deployments/check` 无请求体，返回 `{ready,checks:[{name,passed,detail}]}`，检查设备接入、60 秒在线、插件能力、设备制品验签能力及现有平台选择规则下的签名运行时。只有设备声明 `artifact:minisign-v1` 才能通过验签能力检查；面板保存已签运行时不能替代设备验签支持。只读检查不会安装、发布或重启；归档验签不随每次状态轮询执行。缺少制品返回检查未通过，内部验证错误不泄露密钥和路径。
 
 较旧的应用结果不能覆盖较新结果。认证设备在 hello/heartbeat 中报告已发布且高于面板记录的已应用版本时，面板补齐成功状态，以恢复应用成功但回报丢失的场景；最近目标版本的错误说明仍保留。
 
@@ -375,7 +377,7 @@
 
 无可用节点时 links 返回空文本，singbox 返回 409 和中文说明；删除用户或重置订阅链接后，旧令牌返回 404。不支持的格式返回 400。
 
-管理员 `GET /api/plugins/sing-box/users/{id}/subscription?format=singbox` 默认完整 JSON，复用上述同一快照与授权检查。返回 `{format,status,message,available_formats,granted_nodes,eligible_nodes,ready_nodes,content,filename,content_type,entitlement,subscription_url}`：
+管理员 `GET /api/access/users/{id}/subscription?format=singbox` 默认完整 JSON，复用上述同一快照与授权检查。返回 `{format,status,message,available_formats,granted_nodes,eligible_nodes,ready_nodes,content,filename,content_type,entitlement,subscription_url}`：
 
 - `status` 为 `ready`、`empty`、`blocked` 或 `format_unavailable`；后三种仍返回 200 以供界面解释状态，`content` 为 null。
 - `granted_nodes` 是当前未删除的授权投影数量；`eligible_nodes` 是套餐/启停资格有效且链路依赖符合条件的数量；`ready_nodes` 为最终快照交集的 `{id,name,protocol}`，不含内部链路秘密或其他用户凭据。
@@ -385,13 +387,13 @@
 
 ## 后台统计
 
-管理员 `GET /api/statistics?days=7` 返回服务器数量、网卡 `traffic` 汇总、逐日 `points` 和 `by_server` 前 8 排行；`GET /api/plugins/sing-box/statistics?days=7` 返回代理节点/用户数量、独立代理 `traffic`、`points`、`by_node` / `by_user` 前 8 排行。`days` 仅支持 7/30；未知查询字段拒绝。公开看板开关不会开放这些接口。
+管理员 `GET /api/statistics?days=7` 返回服务器数量、网卡 `traffic` 汇总、逐日 `points` 和 `by_server` 前 8 排行；`GET /api/access/statistics?days=7` 返回代理节点/用户数量、独立代理 `traffic`、`points`、`by_node` / `by_user` 前 8 排行。`days` 仅支持 7/30；未知查询字段拒绝。公开看板开关不会开放这些接口。
 
 流量以十进制字符串返回，没有记录用 null，真实零用 `"0"`；日期为 UTC 日起点。服务器统计排除删除服务器、包含隐藏服务器，并按当前选定网卡汇总原始日观测；不包含账单流量矫正。代理按批次结束日汇总并保留删除对象历史。完整口径见[统计仪表盘](statistics.md)。
 
 ## 流量与制品
 
-`GET /api/plugins/sing-box/usage` 返回所有已确认流量，也可传入正整数 `user_id` 和/或 `node_id` 筛选：
+`GET /api/access/usage` 返回所有已确认流量，也可传入正整数 `user_id` 和/或 `node_id` 筛选：
 
 ```json
 {
@@ -464,16 +466,16 @@ report 为 `{text,report_url?}`，文本以纯文本呈现，协议接受上限 
 
 | 方法与路径 | 用途 |
 | --- | --- |
-| `GET /api/plugins/ddns/servers` | 可绑定的服务器、在线状态、网卡名与公网发现能力 |
-| `GET /api/plugins/ddns/accounts` | 已保存的 DNS 账号、可管理的区域与域名，无凭据 |
-| `POST /api/plugins/ddns/accounts/cloudflare` | `{name?,api_token}`：校验令牌、找出可管理的域名并保存账号；需再次验证 |
-| `POST /api/plugins/ddns/accounts/access-key` | `{provider,name?,access_key_id,access_key_secret,zone_ids}`：腾讯云、阿里云（根域名）或华为云（Zone ID）账号，加密保存密钥并登记账号，同一事务；需再次验证，不回显密钥 |
-| `GET /api/plugins/ddns/rules` | 规则、候选地址与最近结果，无 Token |
-| `POST /api/plugins/ddns/rules` | 创建规则；服务器须未删除、未退役 |
-| `POST /api/plugins/ddns/rules/dual-stack` | 相同创建请求，一次事务创建 A、AAAA；返回 `201 {rules:[IPv4规则,IPv6规则]}`，任何冲突/容量不足时整组不创建 |
-| `PATCH /api/plugins/ddns/rules/{id}` | 全量替换 config，必须带当前 revision；空 Token 保留 |
-| `DELETE /api/plugins/ddns/rules/{id}` | 删除本地规则及凭据，保留远端 DNS |
-| `POST /api/plugins/ddns/rules/{id}/sync` | 手动同步；规则须已启用，限流返回 429 |
+| `GET /api/naming/servers` | 可绑定的服务器、在线状态、网卡名与公网发现能力 |
+| `GET /api/naming/accounts` | 已保存的 DNS 账号、可管理的区域与域名，无凭据 |
+| `POST /api/naming/accounts/cloudflare` | `{name?,api_token}`：校验令牌、找出可管理的域名并保存账号；需再次验证 |
+| `POST /api/naming/accounts/access-key` | `{provider,name?,access_key_id,access_key_secret,zone_ids}`：腾讯云、阿里云（根域名）或华为云（Zone ID）账号，加密保存密钥并登记账号，同一事务；需再次验证，不回显密钥 |
+| `GET /api/naming/rules` | 规则、候选地址与最近结果，无 Token |
+| `POST /api/naming/rules` | 创建规则；服务器须未删除、未退役 |
+| `POST /api/naming/rules/dual-stack` | 相同创建请求，一次事务创建 A、AAAA；返回 `201 {rules:[IPv4规则,IPv6规则]}`，任何冲突/容量不足时整组不创建 |
+| `PATCH /api/naming/rules/{id}` | 全量替换 config，必须带当前 revision；空 Token 保留 |
+| `DELETE /api/naming/rules/{id}` | 删除本地规则及凭据，保留远端 DNS |
+| `POST /api/naming/rules/{id}/sync` | 手动同步；规则须已启用，限流返回 429 |
 
 写入体为 `{"config":{"name":"示例规则","server_id":1,"zone_id":"00000000000000000000000000000000","record_name":"node.example.com","record_type":"A","ttl":1,"proxied":false,"interval_secs":300,"enabled":false,"adopt_existing":false},"api_token":"YOUR_CLOUDFLARE_API_TOKEN"}`。Zone、域名、Token 与服务器 ID 均需替换为自己管理的资源。更新另加 `revision`；Zone、域名和类型不可改变。接口拒绝重复身份、非法域名/TTL、过期修订及运行中修改。
 
@@ -482,6 +484,6 @@ report 为 `{text,report_url?}`，文本以纯文本呈现，协议接受上限 
 
 ### 阿里云 CDT 历史与 Cron 预览（ADR 0121）
 
-管理员 `GET /api/plugins/alicloud/accounts/{id}/traffic-history` 返回两组固定窗口（小时 25 点／日 31 点）的成功采样：`seconds/from/to/samples`，采样包含 `bucket_start/sampled_at/mainland_bytes/overseas_bytes`，字节数为字符串。缺失桶不补零。
+管理员 `GET /api/resources/alicloud/accounts/{id}/traffic-history` 返回两组固定窗口（小时 25 点／日 31 点）的成功采样：`seconds/from/to/samples`，采样包含 `bucket_start/sampled_at/mainland_bytes/overseas_bytes`，字节数为字符串。缺失桶不补零。
 
-管理员 `POST /api/plugins/alicloud/cron-preview` 接受 `expression` 与 `utc_offset_minutes`，返回秒时间戳数组 `occurrences`（未来五次）及同一偏移；无有效触发或表达式不合法返回 400。启停策略新增可选 `schedule_mode`（`daily` 默认／`cron`）、`start_cron`、`stop_cron`，旧配置可继续读取。资源快照新增 `ipv6_addresses/ipv6_checked_at/ipv6_error`，地址查询失败不代表实例状态失败。
+管理员 `POST /api/resources/alicloud/cron-preview` 接受 `expression` 与 `utc_offset_minutes`，返回秒时间戳数组 `occurrences`（未来五次）及同一偏移；无有效触发或表达式不合法返回 400。启停策略新增可选 `schedule_mode`（`daily` 默认／`cron`）、`start_cron`、`stop_cron`，旧配置可继续读取。资源快照新增 `ipv6_addresses/ipv6_checked_at/ipv6_error`，地址查询失败不代表实例状态失败。

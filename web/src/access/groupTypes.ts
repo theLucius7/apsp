@@ -32,20 +32,6 @@ export type PathState = { desired_generation: number; candidate_generation: numb
   recovery_generation: number | null; minimum_generation: number; phase: PathPhase; capabilities: { tcp: boolean; udp: boolean };
   last_error: string | null; dependencies: PathDependency[]; probe: PathProbe | null;
   generations: { generation: number; state: 'desired' | 'applied' | 'candidate' | 'recovery'; hops: PublicHop[] }[] }
-export type ResourceSnapshot<T> = { data?: T; fresh: boolean; error: string; isCurrent?: () => boolean; getCurrent?: () => T | undefined }
-export function validatedSnapshot<T>(resource: ResourceSnapshot<unknown>, valid: (value: unknown) => value is T, previous?: T): ResourceSnapshot<T> {
-  const accepted = valid(resource.data)
-  const historical = accepted ? resource.data as T : previous
-  const current = () => resource.getCurrent ? resource.getCurrent() : resource.data
-  const fresh = () => (resource.isCurrent ? resource.isCurrent() : resource.fresh) && valid(current()) && !resource.error
-  return {
-    get data() { const value = current(); return valid(value) ? value : historical },
-    get fresh() { return fresh() },
-    get error() { const value = current(); return resource.error || (value !== undefined && !valid(value) || !accepted && resource.data !== undefined ? '面板返回的资源信息格式不完整，请刷新确认。' : '') },
-    isCurrent: fresh,
-    getCurrent: () => { const value = current(); return fresh() && valid(value) ? value : undefined },
-  }
-}
 
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const integer = (value: unknown, minimum = 0): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum
@@ -125,13 +111,6 @@ export type Entitlement = {
 }
 export const statusText = { paused: '已暂停', unmetered: '未分配套餐', not_started: '尚未生效', active: '使用中', expired: '已到期', exhausted: '本期流量已用完' }
 export const scheduleText = (p: Pick<PackageGroup, 'reset_day' | 'reset_hour' | 'reset_minute' | 'timezone'>) => `每月 ${p.reset_day} 日 ${String(p.reset_hour).padStart(2, '0')}:${String(p.reset_minute).padStart(2, '0')}（${p.timezone}）`
-export function dateText(seconds: number | null, zone?: string | null): string {
-  if (seconds === null) return '—'
-  const date = new Date(seconds * 1000)
-  if (!Number.isFinite(date.getTime())) return '时间不可用'
-  try { return date.toLocaleString('zh-CN', { hour12: false, timeZone: zone || undefined }) }
-  catch { return `${date.toLocaleString('zh-CN', { hour12: false, timeZone: 'UTC' })}（UTC；浏览器不支持套餐时区）` }
-}
 
 export function quotaBytes(amount: string, unit: string): string | null {
   if (!amount.trim()) return null
@@ -139,12 +118,4 @@ export function quotaBytes(amount: string, unit: string): string | null {
   const value = BigInt(amount) * (unit === 'GiB' ? 1073741824n : 1n)
   if (value > 18446744073709551615n) throw new Error('每月流量超出支持范围。')
   return value.toString()
-}
-
-export function assignmentRequestId(): string {
-  const value = crypto.getRandomValues(new Uint8Array(16))
-  value[6] = (value[6] & 15) | 64
-  value[8] = (value[8] & 63) | 128
-  const hex = Array.from(value, byte => byte.toString(16).padStart(2, '0')).join('')
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }

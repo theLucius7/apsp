@@ -20,7 +20,7 @@ const templateFixture = { template: null, definition_redacted: false, credential
 
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = process.env.APSP_WEB_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url))
-const root = '/api/plugins/sing-box', candidatesPath = `${root}/external-node-candidates`, groupPath = `${root}/policy-groups/1`
+const trafficApi = '/api/traffic', accessApi = '/api/access', candidatesPath = `${accessApi}/external-node-candidates`, groupPath = `${accessApi}/policy-groups/1`
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname
@@ -68,22 +68,22 @@ try {
       if (path === candidatesPath && gate) { const pending = gate; pending.reached++; await pending.promise }
       let value
       if (path === '/api/dashboard/access') value = { authenticated: true, public_dashboard: false }
-      else if (path === `${root}/policy-groups`) value = [group]
-      else if (path === `${root}/package-groups`) value = []
-      else if (path === `${root}/ordered-proxy-resources`) value = proxyResourceFixtures([node], servers)
+      else if (path === `${accessApi}/policy-groups`) value = [group]
+      else if (path === `${accessApi}/package-groups`) value = []
+      else if (path === `${trafficApi}/ordered-proxy-resources`) value = proxyResourceFixtures([node], servers)
       else if (path === candidatesPath) value = structuredClone(candidates)
-      else if (path === `${root}/users`) value = [user]
-      else if (path === `${root}/usage`) value = { uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] }
-      else if (path === `${root}/users/1/policy-groups`) value = { group_ids: [1] }
-      else if (path === `${root}/users/1/entitlement`) value = { user_id: 1, status: 'unlimited', allowed: true, monthly_bytes: null, used_bytes: '0', expires_at: null }
-      else if (path === `${root}/users/1/portal`) value = { configuration: { enabled: false, reason: 'TEST_ONLY', origin }, keys: 0, url: null, activation_expires_at: null }
-      else if (!url.search && path === `${root}/users/1/diagnosis`) value = diagnosisFixture(user)
-      else if (!url.search && path === `${root}/users/1/client-template`) value = templateFixture
-      else if (path === `${root}/users/1/subscription`) {
+      else if (path === `${accessApi}/users`) value = [user]
+      else if (path === `${accessApi}/usage`) value = { uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] }
+      else if (path === `${accessApi}/users/1/policy-groups`) value = { group_ids: [1] }
+      else if (path === `${accessApi}/users/1/entitlement`) value = { user_id: 1, status: 'unlimited', allowed: true, monthly_bytes: null, used_bytes: '0', expires_at: null }
+      else if (path === `${accessApi}/users/1/portal`) value = { configuration: { enabled: false, reason: 'TEST_ONLY', origin }, keys: 0, url: null, activation_expires_at: null }
+      else if (!url.search && path === `${accessApi}/users/1/diagnosis`) value = diagnosisFixture(user)
+      else if (!url.search && path === `${accessApi}/users/1/client-template`) value = templateFixture
+      else if (path === `${accessApi}/users/1/subscription`) {
         subscriptionReads++
         const format = url.searchParams.get('format') ?? 'singbox'
         value = { format, status: format === 'singbox' ? 'ready' : 'format_unavailable', message: 'TEST_ONLY 订阅', subscription_url: `${origin}/sub/TEST_ONLY`, available_formats: ['singbox'], granted_nodes: 2, eligible_nodes: 2, managed_nodes: 1, external_nodes: 1, external_granted_nodes: 1, ready_nodes: [{ kind: 'managed', id: 1, name: 'TEST_ONLY 受管入口', protocol: 'vless-reality' }, { kind: 'external', id: 1, name: 'TEST_ONLY 外部入口', protocol: 'shadowsocks' }], content: format === 'singbox' ? '{"outbounds":[]}' : null, filename: 'TEST_ONLY.json', content_type: 'application/json', entitlement: { allowed: true, status: 'unlimited', monthly_bytes: null, used_bytes: '0', expires_at: null } }
-      } else if (/^\/api\/plugins\/sing-box\/users\/\d+\/limits$/.test(path)) value = { user_id: Number(path.split('/')[5]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } // Per-user limits (ADR 0124) are read on the user page; none are set here.
+      } else if (/^\/api\/access\/users\/\d+\/limits$/.test(path)) value = { user_id: Number(path.split('/')[4]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } // Per-user limits (ADR 0124) are read on the user page; none are set here.
       else assert.fail(`Unexpected read ${path}`)
       await route.fulfill({ json: value }).catch(() => {})
     })

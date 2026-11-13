@@ -30,8 +30,8 @@ CONFIG = textwrap.dedent('''
     "crates/panel-host/src/operations" = "operations"
     "crates/naming" = "naming"
     "crates/panel/src" = "app"
-    "plugins/singbox" = "traffic"
-    "plugins/singbox/panel/src/users.rs" = "access"
+    "crates/proxy" = "traffic"
+    "crates/proxy/src/users.rs" = "access"
 
     [rust_exempt]
     paths = ["crates/panel/tests"]
@@ -212,11 +212,11 @@ class TreeTests(unittest.TestCase):
             "crates/naming/src/outbox.rs": 'const Q: &str = "INSERT INTO notification_outbox(id) VALUES(1)";',
             "crates/panel/Cargo.toml": "",
             "crates/panel/src/main.rs": 'const A: &str = "SELECT id FROM users"; const B: &str = "DELETE FROM users";',
-            "plugins/singbox/panel/Cargo.toml": "",
-            "plugins/singbox/panel/src/publish.rs": 'const A: &str = "SELECT id FROM servers"; const B: &str = "INSERT INTO management_audit(id) VALUES(1)";',
-            "plugins/singbox/panel/src/hosts.rs": 'const A: &str = "SELECT id FROM dns_records JOIN users ON true";',
-            "plugins/singbox/panel/src/users.rs": 'const A: &str = "UPDATE users SET id=1 FROM singbox_nodes, servers";',
-            "plugins/singbox/panel/src/tests.rs": 'const A: &str = "INSERT INTO servers(id) VALUES(1)";',
+            "crates/proxy/Cargo.toml": "",
+            "crates/proxy/src/publish.rs": 'const A: &str = "SELECT id FROM servers"; const B: &str = "INSERT INTO management_audit(id) VALUES(1)";',
+            "crates/proxy/src/hosts.rs": 'const A: &str = "SELECT id FROM dns_records JOIN users ON true";',
+            "crates/proxy/src/users.rs": 'const A: &str = "UPDATE users SET id=1 FROM singbox_nodes, servers";',
+            "crates/proxy/src/tests.rs": 'const A: &str = "INSERT INTO servers(id) VALUES(1)";',
             "crates/panel/tests/all.rs": 'const A: &str = "DELETE FROM dns_records";',
         })
         self.assertEqual(self.crossings(root), {
@@ -224,10 +224,10 @@ class TreeTests(unittest.TestCase):
             "sql\tcrates/panel-host/src/agent.rs\tread\tservers\tplatform->resources",
             "sql\tcrates/naming/src/outbox.rs\twrite\tnotification_outbox\tnaming->platform",
             "sql\tcrates/panel/src/main.rs\twrite\tusers\tapp->access",
-            "sql\tplugins/singbox/panel/src/publish.rs\twrite\tmanagement_audit\ttraffic->governance",
-            "sql\tplugins/singbox/panel/src/hosts.rs\tread\tdns_records\ttraffic->naming",
-            "sql\tplugins/singbox/panel/src/hosts.rs\tread\tusers\ttraffic->access",
-            "sql\tplugins/singbox/panel/src/users.rs\tread\tsingbox_nodes\taccess->traffic",
+            "sql\tcrates/proxy/src/publish.rs\twrite\tmanagement_audit\ttraffic->governance",
+            "sql\tcrates/proxy/src/hosts.rs\tread\tdns_records\ttraffic->naming",
+            "sql\tcrates/proxy/src/hosts.rs\tread\tusers\ttraffic->access",
+            "sql\tcrates/proxy/src/users.rs\tread\tsingbox_nodes\taccess->traffic",
         })
 
     def test_module_references_against_the_order_are_reported(self):
@@ -261,28 +261,28 @@ class TreeTests(unittest.TestCase):
             "crates/panel-host/src/auth.rs": "pub fn check() {}",
             "crates/panel-host/src/servers.rs": "",
             "crates/panel-host/src/operations/mod.rs": "pub fn enqueue() {}",
-            "plugins/singbox/panel/Cargo.toml": '[package]\nname = "apsp-plugin-singbox"\n\n[lib]\npath = "mod.rs"\n',
-            "plugins/singbox/panel/mod.rs": "pub mod deploy; pub mod local; pub mod users;\n"
+            "crates/proxy/Cargo.toml": '[package]\nname = "apsp-proxy"\n\n[lib]\npath = "mod.rs"\n',
+            "crates/proxy/mod.rs": "pub mod deploy; pub mod local; pub mod users;\n"
                                             "pub(crate) use apsp_panel_host::{auth, servers};\n",
-            "plugins/singbox/panel/local.rs": "pub fn enqueue() {}",
+            "crates/proxy/local.rs": "pub fn enqueue() {}",
             # `crate::servers` names the host through the root's re-export; a local module wins.
-            "plugins/singbox/panel/deploy.rs": "fn f() { crate::auth::check(); crate::servers::x(); crate::local::enqueue(); }",
-            "plugins/singbox/panel/users.rs": "use apsp_panel_host::{auth::check, operations::enqueue};",
+            "crates/proxy/deploy.rs": "fn f() { crate::auth::check(); crate::servers::x(); crate::local::enqueue(); }",
+            "crates/proxy/users.rs": "use apsp_panel_host::{auth::check, operations::enqueue};",
             "crates/panel/Cargo.toml": '[package]\nname = "apsp-panel"\n',
-            "crates/panel/src/lib.rs": "pub use apsp_panel_host::operations;\nfn f() { apsp_plugin_singbox::deploy::f(); }",
+            "crates/panel/src/lib.rs": "pub use apsp_panel_host::operations;\nfn f() { apsp_proxy::deploy::f(); }",
         }, config)
         self.assertEqual(self.crossings(root), {
-            "ref\tplugins/singbox/panel/users.rs\tcrates/panel-host/src/operations/mod.rs\ttraffic->operations",
+            "ref\tcrates/proxy/users.rs\tcrates/panel-host/src/operations/mod.rs\ttraffic->operations",
         })
         # A re-exported later module is a crossing where the root names it and where it is used,
         # under its own name or a new one.
-        (root / "plugins/singbox/panel/mod.rs").write_text(
+        (root / "crates/proxy/mod.rs").write_text(
             "pub mod deploy; pub mod local; pub mod users;\npub(crate) use apsp_panel_host::{auth, operations as jobs, servers};\n")
-        (root / "plugins/singbox/panel/deploy.rs").write_text("fn f() { crate::jobs::enqueue(); }")
+        (root / "crates/proxy/deploy.rs").write_text("fn f() { crate::jobs::enqueue(); }")
         self.assertEqual(self.crossings(root), {
-            "ref\tplugins/singbox/panel/mod.rs\tcrates/panel-host/src/operations/mod.rs\ttraffic->operations",
-            "ref\tplugins/singbox/panel/deploy.rs\tcrates/panel-host/src/operations/mod.rs\ttraffic->operations",
-            "ref\tplugins/singbox/panel/users.rs\tcrates/panel-host/src/operations/mod.rs\ttraffic->operations",
+            "ref\tcrates/proxy/mod.rs\tcrates/panel-host/src/operations/mod.rs\ttraffic->operations",
+            "ref\tcrates/proxy/deploy.rs\tcrates/panel-host/src/operations/mod.rs\ttraffic->operations",
+            "ref\tcrates/proxy/users.rs\tcrates/panel-host/src/operations/mod.rs\ttraffic->operations",
         })
 
     def test_inline_test_modules_are_fixtures(self):
@@ -347,20 +347,20 @@ class TreeTests(unittest.TestCase):
 
     def test_the_baseline_only_shrinks(self):
         root = self.tree({
-            "plugins/singbox/panel/Cargo.toml": "",
-            "plugins/singbox/panel/src/hosts.rs": 'const A: &str = "SELECT id FROM dns_records";',
+            "crates/proxy/Cargo.toml": "",
+            "crates/proxy/src/hosts.rs": 'const A: &str = "SELECT id FROM dns_records";',
         })
         baseline = root / "tools/feature-boundaries.baseline"
         self.assertEqual(boundaries.main(["--root", str(root)]), 0)
         self.assertIn("traffic->naming", baseline.read_text())
         # A new crossing fails and is not added, even with --update.
-        (root / "plugins/singbox/panel/src/more.rs").write_text('const B: &str = "DELETE FROM dns_records";')
+        (root / "crates/proxy/src/more.rs").write_text('const B: &str = "DELETE FROM dns_records";')
         self.assertEqual(boundaries.main(["--root", str(root)]), 1)
         self.assertEqual(boundaries.main(["--root", str(root), "--update"]), 1)
         self.assertNotIn("more.rs", baseline.read_text())
         # Fixing both crossings passes, and --update removes them from the list.
         for name in ("hosts.rs", "more.rs"):
-            (root / "plugins/singbox/panel/src" / name).write_text("")
+            (root / "crates/proxy/src" / name).write_text("")
         self.assertEqual(boundaries.main(["--root", str(root)]), 0)
         self.assertEqual(boundaries.main(["--root", str(root), "--update"]), 0)
         self.assertNotIn("traffic->naming", baseline.read_text())

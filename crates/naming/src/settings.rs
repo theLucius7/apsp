@@ -16,7 +16,7 @@ struct Server {
 }
 
 pub(super) fn routes() -> Router<AppState> {
-    Router::new().route("/api/plugins/ddns/servers", get(list))
+    Router::new().route("/api/naming/servers", get(list))
 }
 
 async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Vec<Server>>> {

@@ -4,7 +4,7 @@ use axum::http::header;
 use sqlx::PgPool;
 
 async fn fixture(pool: PgPool) -> (AppState, HeaderMap, i64, i64, Vec<Selection>) {
-    let state = AppState::new(
+    let state = apsp_governance::state(
         pool.clone(),
         Config {
             database_url: String::new(),

@@ -6,7 +6,6 @@ use crate::{
 use apsp_compiler::{ManagedEndpointSnapshot, OrderedPath};
 use apsp_protocol::now_timestamp;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, Postgres, Transaction};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use uuid::Uuid;
@@ -26,12 +25,6 @@ type ExternalNodeFact = (
     Uuid,
 );
 
-pub(crate) fn sha(value: &impl serde::Serialize) -> ApiResult<String> {
-    Ok(format!(
-        "{:x}",
-        Sha256::digest(serde_json::to_vec(value).map_err(anyhow::Error::from)?)
-    ))
-}
 pub(crate) async fn chain(
     connection: &mut PgConnection,
     id: i64,
@@ -105,7 +98,7 @@ pub(crate) async fn freeze_endpoint(
     }
     super::super::business::validate_node(&row)?;
     super::super::nodes::validate_server_config(tx, &row).await?;
-    let hash = sha(&node)?;
+    let hash = crate::digest::json(&node)?;
     let proposed = Uuid::new_v4();
     sqlx::query("INSERT INTO singbox_managed_endpoint_versions(id,node_id,server_id,snapshot,semantic_sha256,created_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(node_id,semantic_sha256) DO NOTHING")
         .bind(proposed).bind(node_id).bind(row.server_id).bind(json!(node)).bind(&hash).bind(now_timestamp()).execute(&mut **tx).await?;
@@ -193,7 +186,7 @@ pub(crate) async fn save_version(
     frozen: &FrozenVersion,
     caps: &Capabilities,
 ) -> ApiResult<()> {
-    let hash = sha(frozen)?;
+    let hash = crate::digest::json(frozen)?;
     sqlx::query("INSERT INTO singbox_ordered_chain_versions(chain_id,generation,entry_endpoint_version,semantic_sha256,capabilities,snapshot,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)")
         .bind(id).bind(generation).bind(frozen.entry.version_id).bind(hash).bind(json!(caps)).bind(json!(frozen)).bind(now_timestamp()).execute(&mut **tx).await?;
     for (index, hop) in frozen.hops.iter().enumerate() {

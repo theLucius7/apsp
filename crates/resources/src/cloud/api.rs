@@ -22,22 +22,22 @@ use uuid::Uuid;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/api/plugins/alicloud/accounts", post(create_account))
+        .route("/api/resources/alicloud/accounts", post(create_account))
         .route(
-            "/api/plugins/alicloud/accounts/{id}",
+            "/api/resources/alicloud/accounts/{id}",
             patch(update_account).delete(remove_account),
         )
         .route(
-            "/api/plugins/alicloud/accounts/{id}/refresh",
+            "/api/resources/alicloud/accounts/{id}/refresh",
             post(refresh_account),
         )
-        .route("/api/plugins/alicloud/resources", post(create_resource))
+        .route("/api/resources/alicloud/resources", post(create_resource))
         .route(
-            "/api/plugins/alicloud/resources/{id}",
+            "/api/resources/alicloud/resources/{id}",
             patch(update_resource).delete(remove_resource),
         )
         .route(
-            "/api/plugins/alicloud/resources/{id}/refresh",
+            "/api/resources/alicloud/resources/{id}/refresh",
             post(refresh_resource),
         )
 }

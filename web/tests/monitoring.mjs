@@ -52,7 +52,7 @@ try {
       if (path === '/api/servers') return respond(servers)
       if (path === '/api/probes/overview') return respond([])
       // Latency tasks share the settings tab with China reachability, which is off here.
-      if (path === '/api/plugins/sing-box/reachability' && method === 'GET') return respond({ settings: { enabled: false, interval_minutes: 60, minimum_interval_minutes: 15, maximum_interval_minutes: 1440, token_configured: false, revision: 1, next_run_at: 0, run_requested: false, running: false, last_run: {} }, targets: [], events: [] })
+      if (path === '/api/observability/reachability' && method === 'GET') return respond({ settings: { enabled: false, interval_minutes: 60, minimum_interval_minutes: 15, maximum_interval_minutes: 1440, token_configured: false, revision: 1, next_run_at: 0, run_requested: false, running: false, last_run: {} }, targets: [], events: [] })
       if (method !== 'GET') writes.push({ path, method, body: request.postDataJSON() })
       if (path === '/api/latency-tasks') {
         if (method === 'POST') {

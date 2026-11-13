@@ -87,5 +87,3 @@ export function selectEntries(entries: readonly Entry[], { query = '', filter = 
           : (left.view.days ?? Number.MAX_SAFE_INTEGER) - (right.view.days ?? Number.MAX_SAFE_INTEGER))
       || left.item.name.localeCompare(right.item.name, 'zh-CN') || left.item.id - right.item.id)
 }
-
-export const savedSort = (value: string | null): BoardSort => value === 'cost' || value === 'name' ? value : 'next'

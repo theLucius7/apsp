@@ -1,7 +1,7 @@
 use super::{IpQuality, cache};
 use crate::{
     AppState,
-    diagnostic_plugins::ipquality::{IpQualityPlugin, PLUGIN_VERSION, Projection},
+    diagnostic_tools::ipquality::{IpQualityTool, Projection, TOOL_VERSION},
     diagnostics::{
         ReportRecord,
         service::{self, SectionContext},
@@ -36,7 +36,7 @@ pub(crate) async fn view(state: &AppState, server_id: i64) -> ApiResult<NodeQual
     .bind(server_id)
     .fetch_one(&state.pool)
     .await?;
-    let mut readiness = service::readiness(state, &row, &IpQualityPlugin).await;
+    let mut readiness = service::readiness(state, &row, &IpQualityTool).await;
     let source_ready = readiness.ready;
     let source_reason = readiness.reason.clone();
     let reports = service::history(state, server_id, Some("ipquality")).await?;
@@ -53,7 +53,7 @@ pub(crate) async fn view(state: &AppState, server_id: i64) -> ApiResult<NodeQual
     Ok(NodeQualityView {
         ready: readiness.ready,
         reason: readiness.reason,
-        version: PLUGIN_VERSION,
+        version: TOOL_VERSION,
         reports,
         observed_egress_ips: Vec::new(),
         current_egress_ips: Vec::new(),
@@ -93,7 +93,7 @@ pub(crate) async fn cached(
             .provider
             .strip_prefix(PROVIDER_PREFIX)
             .unwrap_or_default();
-        let registered = crate::diagnostic_plugins::ipquality::SOURCES
+        let registered = crate::diagnostic_tools::ipquality::SOURCES
             .iter()
             .any(|(provider, _)| *provider == source);
         let restricted = source.ends_with("-not-configured") || source.ends_with("-disabled");

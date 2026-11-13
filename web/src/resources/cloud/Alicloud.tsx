@@ -27,7 +27,7 @@ type Editor = { type: 'account'; value?: Account } | { type: 'resource'; value?:
 export default function Alicloud() {
   const [editing, setEditing] = useState<Editor | null>(null), [removing, setRemoving] = useState<{ type: 'accounts'; value: Account } | { type: 'resources'; value: Resource; accountRevision: number | undefined } | null>(null)
   const [resume, setResume] = useState<{ value: Resource; accountRevision: number | undefined } | null>(null)
-  const overview = useResource<Overview>('/api/plugins/alicloud'), action = useAction()
+  const overview = useResource<Overview>('/api/resources/alicloud'), action = useAction()
   const data = overview.data, available = Boolean(data && overview.ready && !overview.error)
   const done = () => { setEditing(null); setRemoving(null); setResume(null); overview.reload() }
   const current = overview.getCurrent
@@ -47,11 +47,11 @@ export default function Alicloud() {
     (!current()?.resources.find(r => r.id === resume.value.id)?.manual_hold ? '手动暂停状态已变化，请重新核对。' : '')
   const actions: CloudActions = {
     available, busy: action.busy, full: (data?.resources.length ?? 0) >= 32,
-    refreshAccount: account => perform(() => accountError(current, account, true), () => api(`/api/plugins/alicloud/accounts/${account.id}/refresh`, 'POST')),
+    refreshAccount: account => perform(() => accountError(current, account, true), () => api(`/api/resources/alicloud/accounts/${account.id}/refresh`, 'POST')),
     editAccount: account => open({ type: 'account', value: account }),
     addResource: account => open({ type: 'resource', accountId: account.id }),
     removeAccount: account => { action.clearError(); setRemoving({ type: 'accounts', value: account }) },
-    refreshResource: (resource, account) => perform(() => resourceError(current, resource, { managed: true, accountRevision: account?.revision }), () => api(`/api/plugins/alicloud/resources/${resource.id}/refresh`, 'POST')),
+    refreshResource: (resource, account) => perform(() => resourceError(current, resource, { managed: true, accountRevision: account?.revision }), () => api(`/api/resources/alicloud/resources/${resource.id}/refresh`, 'POST')),
     editResource: resource => open({ type: 'resource', value: resource }),
     bandwidth: resource => open({ type: 'bandwidth', value: resource }),
     powerPolicy: resource => open({ type: 'power-policy', value: resource }),
@@ -82,7 +82,7 @@ export default function Alicloud() {
     <DialogPresence>{editing?.type === 'power' && <PowerEditor resource={editing.value} action={editing.action} available={available} current={current} refresh={overview.reload} close={() => setEditing(null)} saved={done} />}</DialogPresence>
     <DialogPresence>{editing?.type === 'eip-rotation' && <EipRotationEditor resource={editing.value} current={current} close={() => setEditing(null)} saved={done} />}</DialogPresence>
     <DialogPresence>{editing?.type === 'power-policy' && <PowerPolicyEditor resource={editing.value} available={available} current={current} refresh={overview.reload} close={() => setEditing(null)} saved={done} />}</DialogPresence>
-    <DialogPresence>{resume && <Confirm title="恢复自动开机" confirmLabel="恢复自动开机" busyLabel="正在处理…" busy={action.busy} error={action.error} confirmDisabled={Boolean(resumeError())} onClose={() => setResume(null)} onConfirm={() => perform(resumeError, () => api(`/api/plugins/alicloud/resources/${resume.value.id}/power-resume`, 'POST', { revision: resume.value.revision }), done)}>解除“{resume.value.name}”的手动暂停后，已启用的每日计划或保活可能启动实例并产生费用。流量停机保护仍然有效。</Confirm>}</DialogPresence>
-    <DialogPresence>{removing && <Confirm title={removing.type === 'accounts' ? '移除云账号' : '移除资源登记'} busy={action.busy} error={action.error} confirmDisabled={Boolean(removalError())} onClose={() => setRemoving(null)} onConfirm={() => perform(removalError, () => api(`/api/plugins/alicloud/${removing.type}/${removing.value.id}`, 'DELETE', { revision: removing.value.revision }), done)}>确认移除“{removing.value.name}”？这不会删除阿里云资源。账号须先移除全部资源登记；操作历史保留。</Confirm>}</DialogPresence>
+    <DialogPresence>{resume && <Confirm title="恢复自动开机" confirmLabel="恢复自动开机" busyLabel="正在处理…" busy={action.busy} error={action.error} confirmDisabled={Boolean(resumeError())} onClose={() => setResume(null)} onConfirm={() => perform(resumeError, () => api(`/api/resources/alicloud/resources/${resume.value.id}/power-resume`, 'POST', { revision: resume.value.revision }), done)}>解除“{resume.value.name}”的手动暂停后，已启用的每日计划或保活可能启动实例并产生费用。流量停机保护仍然有效。</Confirm>}</DialogPresence>
+    <DialogPresence>{removing && <Confirm title={removing.type === 'accounts' ? '移除云账号' : '移除资源登记'} busy={action.busy} error={action.error} confirmDisabled={Boolean(removalError())} onClose={() => setRemoving(null)} onConfirm={() => perform(removalError, () => api(`/api/resources/alicloud/${removing.type}/${removing.value.id}`, 'DELETE', { revision: removing.value.revision }), done)}>确认移除“{removing.value.name}”？这不会删除阿里云资源。账号须先移除全部资源登记；操作历史保留。</Confirm>}</DialogPresence>
   </div>
 }

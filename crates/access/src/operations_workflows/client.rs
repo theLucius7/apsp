@@ -538,7 +538,7 @@ pub(super) async fn get(
         super::super::secret_access::may_reveal(&state, &headers).await?
     };
     let mut tx = state.pool.begin().await?;
-    apsp_traffic::business::lock_user(&mut tx, id).await?;
+    crate::proxy_users::lock_user(&mut tx, id).await?;
     let mut template: Option<Value> =
         sqlx::query_scalar("SELECT to_jsonb(t) FROM singbox_client_templates t WHERE user_id=$1")
             .bind(id)
@@ -602,7 +602,7 @@ pub(super) async fn save(
     }
     let mut tx = state.pool.begin().await?;
     apsp_traffic::business::lock_publication(&mut tx).await?;
-    apsp_traffic::business::lock_user(&mut tx, id).await?;
+    crate::proxy_users::lock_user(&mut tx, id).await?;
     let revision: Option<i64> = sqlx::query_scalar(
         "SELECT revision FROM singbox_client_templates WHERE user_id=$1 FOR UPDATE",
     )

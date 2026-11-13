@@ -17,21 +17,27 @@ use axum::{
     http::HeaderMap,
     routing::{get, patch, post},
 };
-use model::{Snapshot, digest, prepare, source_tag};
+use model::{Snapshot, prepare, source_tag};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::{Postgres, Row, Transaction};
 
 pub(super) fn router() -> Router<AppState> {
     Router::new()
-        .route("/nexus-nodes", get(list))
-        .route("/nexus-nodes/preview", post(preview))
-        .route("/nexus-nodes/import", post(import))
-        .route("/nexus-nodes/append/preview", post(append_preview))
-        .route("/nexus-nodes/append", post(append))
-        .route("/nexus-nodes/{id}/public-endpoint", patch(public_endpoint))
-        .route("/nexus-nodes/{id}/groups", patch(legacy_groups))
-        .route("/nexus-nodes/{id}/retire", post(retire))
+        .route("/api/traffic/nexus-nodes", get(list))
+        .route("/api/traffic/nexus-nodes/preview", post(preview))
+        .route("/api/traffic/nexus-nodes/import", post(import))
+        .route(
+            "/api/traffic/nexus-nodes/append/preview",
+            post(append_preview),
+        )
+        .route("/api/traffic/nexus-nodes/append", post(append))
+        .route(
+            "/api/traffic/nexus-nodes/{id}/public-endpoint",
+            patch(public_endpoint),
+        )
+        .route("/api/traffic/nexus-nodes/{id}/groups", patch(legacy_groups))
+        .route("/api/traffic/nexus-nodes/{id}/retire", post(retire))
         .merge(runtime::router())
         .layer(DefaultBodyLimit::max(3 * 1024 * 1024))
 }
@@ -106,7 +112,7 @@ async fn public_endpoint(
         .await?;
     sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus.nodes.public_endpoint',$2,$3,$4,$5)")
         .bind(actor)
-        .bind(format!("/api/plugins/sing-box/nexus-nodes/{id}/public-endpoint"))
+        .bind(format!("/api/traffic/nexus-nodes/{id}/public-endpoint"))
         .bind(json!({"from":{"public_host":before["public_host"],"public_port":before["public_port"]},"to":{"public_host":input.public_host,"public_port":port}}))
         .bind(json!({"state":"recorded"}))
         .bind(apsp_protocol::now_timestamp())
@@ -198,7 +204,7 @@ async fn legacy_groups(
     }
     sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus_node_groups',$2,$3,$4,$5)")
         .bind(actor)
-        .bind(format!("/api/plugins/sing-box/nexus-nodes/{id}/groups"))
+        .bind(format!("/api/traffic/nexus-nodes/{id}/groups"))
         .bind(json!({"from":before["groups"],"to":views}))
         .bind(json!({"state":"recorded"}))
         .bind(now_timestamp())
@@ -313,7 +319,7 @@ async fn retire(
         .await?;
     sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus.nodes.retire',$2,$3,$4,$5)")
         .bind(actor)
-        .bind(format!("/api/plugins/sing-box/nexus-nodes/{id}/retire"))
+        .bind(format!("/api/traffic/nexus-nodes/{id}/retire"))
         .bind(json!({"legacy_node_id":legacy,"server_id":server,"name":display["name"]}))
         .bind(json!({"state":"retired","runtime_node_id":runtime.as_ref().map(|(node, _)| *node),"republish":republish}))
         .bind(now_timestamp())
@@ -470,7 +476,7 @@ async fn append_preview(
     let nodes = prepare(&snapshot)?;
     let mut tx = state.pool.begin().await?;
     Ok(Json(
-        inspect_append(&mut tx, &snapshot, &nodes, &digest(&snapshot)?).await?,
+        inspect_append(&mut tx, &snapshot, &nodes, &crate::digest::json(&snapshot)?).await?,
     ))
 }
 
@@ -483,7 +489,7 @@ async fn append(
     control_center::require_recent_proof(&state, &headers).await?;
     let snapshot = input.payload;
     let nodes = prepare(&snapshot)?;
-    let digest = digest(&snapshot)?;
+    let digest = crate::digest::json(&snapshot)?;
     if !input.confirm_staged || input.expected_digest != digest {
         return Err(ApiError::Conflict("请先预览并确认同一份追加快照".into()));
     }
@@ -509,7 +515,7 @@ async fn append(
         .bind(added)
         .execute(&mut *tx)
         .await?;
-        sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus.nodes.append','/api/plugins/sing-box/nexus-nodes/append',$2,$3,$4)")
+        sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus.nodes.append','/api/traffic/nexus-nodes/append',$2,$3,$4)")
             .bind(actor).bind(json!({"source_id":snapshot.source_id,"digest":digest,"infrastructure_digest":snapshot.infrastructure_digest}))
             .bind(json!({"added":report["new_nodes"],"state":"pending_agent"})).bind(now_timestamp()).execute(&mut *tx).await?;
     }
@@ -560,7 +566,7 @@ async fn preview(
     prepare(&snapshot)?;
     let mut tx = state.pool.begin().await?;
     Ok(Json(
-        inspect(&mut tx, &snapshot, &digest(&snapshot)?).await?,
+        inspect(&mut tx, &snapshot, &crate::digest::json(&snapshot)?).await?,
     ))
 }
 
@@ -588,7 +594,7 @@ async fn import(
     control_center::require_recent_proof(&state, &headers).await?;
     let snapshot = input.payload;
     let nodes = prepare(&snapshot)?;
-    let digest = digest(&snapshot)?;
+    let digest = crate::digest::json(&snapshot)?;
     if !input.confirm_staged || input.expected_digest != digest {
         return Err(ApiError::Conflict("请先预览并确认同一份节点快照".into()));
     }
@@ -606,7 +612,7 @@ async fn import(
     if report["already_imported"] != true {
         sqlx::query("INSERT INTO singbox_nexus_node_imports(source_id,digest,infrastructure_digest,exported_at,imported_at,node_count) VALUES($1,$2,$3,$4,$5,$6)").bind(&snapshot.source_id).bind(&digest).bind(&snapshot.infrastructure_digest).bind(snapshot.exported_at).bind(now_timestamp()).bind(nodes.len() as i32).execute(&mut *tx).await?;
         store_nodes(&mut tx, &snapshot.source_id, nodes).await?;
-        sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus.nodes.import','/api/plugins/sing-box/nexus-nodes',$2,$3,$4)")
+        sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus.nodes.import','/api/traffic/nexus-nodes',$2,$3,$4)")
             .bind(actor).bind(json!({"source_id":snapshot.source_id,"digest":digest})).bind(json!({"node_count":snapshot.nodes.len(),"state":"pending_agent"})).bind(now_timestamp()).execute(&mut *tx).await?;
     }
     tx.commit().await?;

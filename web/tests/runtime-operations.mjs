@@ -33,8 +33,8 @@ try {
       if (path === '/api/dashboard/access') value = { authenticated:true,public_dashboard:false }
       else if (path === '/api/me') value = { authenticated:true }
       else if (path === '/api/servers/1') value = server
-      else if (path === '/api/plugins/sing-box/servers/1') value = metadata
-      else if (path === '/api/plugins/sing-box/servers/1/operations-view' && method === 'GET') value = {
+      else if (path === '/api/traffic/servers/1') value = metadata
+      else if (path === '/api/traffic/servers/1/operations-view' && method === 'GET') value = {
         runtime: { supported_versions: [], selected_version: 'TEST_ONLY', reason: 'TEST_ONLY no runtime version evidence', compatibility_metadata: { upstream_release: 'https://example.com/TEST_ONLY', upstream_commit: 'TEST_ONLY', protocols: [], acceptance_scope: 'TEST_ONLY read-only fixture' } },
         preflight: { id: null, ready: false, confirmed: false, device_checks_pending: false, checks: [] },
         drift: { state: 'unknown', target_revision: null, applied_revision: null, last_observed_at: null, reason: 'TEST_ONLY no actual configuration checkpoint', checkpoint_supported: false, checkpoint: { state: 'unknown', observed_at: null, reason: 'TEST_ONLY no process or file evidence' } },
@@ -55,7 +55,7 @@ try {
       else if (path === '/api/servers/1/telemetry-settings' && method === 'GET') value = {persist_interval_secs:60}
       else if (['/probes','/probe-results','/commands','/metrics'].some(suffix=>path.endsWith(suffix))) value=[]
       // The server page also reads the server-side profile (ADR 0129); an empty one here.
-      else if (path === '/api/plugins/sing-box/servers/1/profile' && method === 'GET') value = { definition: { outbounds: [], endpoints: [], services: [], cloudflared: [], dns: null, route: null }, revision: 0 }
+      else if (path === '/api/traffic/servers/1/profile' && method === 'GET') value = { definition: { outbounds: [], endpoints: [], services: [], cloudflared: [], dns: null, route: null }, revision: 0 }
       else { errors.push(`Unexpected ${method}: ${path}`); return route.fulfill({status:404,json:{}}) }
       return route.fulfill({json:value})
     })

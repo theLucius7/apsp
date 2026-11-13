@@ -14,32 +14,32 @@ use axum::{
 
 pub(super) fn router() -> Router<AppState> {
     Router::new()
-        .route("/users/{id}/portal", get(administration::status))
+        .route("/api/access/users/{id}/portal", get(administration::status))
         .route(
-            "/users/{id}/portal/invitation",
+            "/api/access/users/{id}/portal/invitation",
             post(administration::invitation),
         )
-        .route("/portal/{account}", get(access::view))
-        .route("/portal/{account}/logout", post(access::logout))
-        .route("/portal/{account}/lines", get(lines::view))
+        .route("/api/access/portal/{account}", get(access::view))
+        .route("/api/access/portal/{account}/logout", post(access::logout))
+        .route("/api/access/portal/{account}/lines", get(lines::view))
         .route(
-            "/portal/{account}/login/start",
+            "/api/access/portal/{account}/login/start",
             post(ceremonies::login_start),
         )
         .route(
-            "/portal/{account}/login/finish",
+            "/api/access/portal/{account}/login/finish",
             post(ceremonies::login_finish),
         )
         .route(
-            "/portal/{account}/register/start",
+            "/api/access/portal/{account}/register/start",
             post(ceremonies::register_start),
         )
         .route(
-            "/portal/{account}/register/finish",
+            "/api/access/portal/{account}/register/finish",
             post(ceremonies::register_finish),
         )
         .route(
-            "/portal/{account}/keys/{id}/remove",
+            "/api/access/portal/{account}/keys/{id}/remove",
             post(ceremonies::remove),
         )
         .layer(DefaultBodyLimit::max(65536))

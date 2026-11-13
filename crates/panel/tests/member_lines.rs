@@ -4,7 +4,7 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
-use apsp_panel_host::{
+use apsp_governance::{
     auth::{hash_token, random_token},
     control_center::credentials,
 };
@@ -64,10 +64,9 @@ async fn view(
     account: Uuid,
     cookie: Option<&str>,
 ) -> Result<(StatusCode, String)> {
-    let mut request = panel.client.get(format!(
-        "{}/api/plugins/sing-box/portal/{account}/lines",
-        panel.base
-    ));
+    let mut request = panel
+        .client
+        .get(format!("{}/api/access/portal/{account}/lines", panel.base));
     if let Some(cookie) = cookie {
         request = request.header("Cookie", cookie);
     }

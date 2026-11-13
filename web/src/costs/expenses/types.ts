@@ -1,4 +1,4 @@
-export const root = '/api/plugins/expenses'
+export const root = '/api/costs'
 export type Label = { id: number; kind: 'category' | 'payment_method' | 'payer'; name: string; enabled: boolean }
 export type Expense = { id: number; name: string; amount_units: string; currency: string; start_date: string | null; next_payment: string; anchor_payment: string; cycle: 'day' | 'week' | 'month' | 'year'; frequency: number; category_id: number | null; payment_method_id: number | null; payer_id: number | null; notes: string; url: string; inactive: boolean; auto_renew: boolean; notify: boolean; notify_days_before: number; cancellation_date: string | null; replacement_id: number | null; version: number }
 export type Settings = { base_currency: string; budget_units: string | null; timezone: string; reminders_enabled: boolean; version: number }

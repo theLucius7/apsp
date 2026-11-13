@@ -33,31 +33,31 @@ try {
     page.on('pageerror', error => errors.push(error.message))
     let rejected = false
     const progress = { pending:true, enabled_nodes:1, authorized_nodes:0, status:null, history:[] }
-    const pluginServers = [{ id:1, name:'测试服务器', enabled:true, online:false, agent_supported:true, read_only:false }]
+    const runtimeServers = [{ id:1, name:'测试服务器', enabled:true, online:false, agent_supported:true, read_only:false }]
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname, method = route.request().method()
       let value
       if (path === '/api/me') value = { authenticated:true }
       else if (path === '/api/dashboard/access') value = { authenticated:true, public_dashboard:false }
-      else if (path === '/api/plugins/sing-box/servers') value = pluginServers
-      else if (path === '/api/plugins/sing-box/usage') value = { total:'0', by_node:[], by_user:[], uplink:'0',downlink:'0' }
-      else if (path === '/api/plugins/sing-box/node-catalog') value = catalogResourceFixtures(nodes.map(node => ({ ...node, kind:'direct', server_name:'测试服务器', role:'direct', entry_node_id:null, tcp:true, udp:true, available:true, stage:'direct', reference_count:0 })))
-      else if (path === '/api/plugins/sing-box/nodes' && method === 'GET') value = nodes
-      else if (path === '/api/plugins/sing-box/ordered-proxy-resources' && method === 'GET') value = proxyResourceFixtures(nodes, pluginServers)
-      else if (path === '/api/plugins/sing-box/ordered-subscription-sources' && method === 'GET') value = []
-      else if (path === '/api/plugins/sing-box/nodes' && method === 'POST') {
+      else if (path === '/api/traffic/servers') value = runtimeServers
+      else if (path === '/api/access/usage') value = { total:'0', by_node:[], by_user:[], uplink:'0',downlink:'0' }
+      else if (path === '/api/traffic/node-catalog') value = catalogResourceFixtures(nodes.map(node => ({ ...node, kind:'direct', server_name:'测试服务器', role:'direct', entry_node_id:null, tcp:true, udp:true, available:true, stage:'direct', reference_count:0 })))
+      else if (path === '/api/traffic/nodes' && method === 'GET') value = nodes
+      else if (path === '/api/traffic/ordered-proxy-resources' && method === 'GET') value = proxyResourceFixtures(nodes, runtimeServers)
+      else if (path === '/api/traffic/ordered-subscription-sources' && method === 'GET') value = []
+      else if (path === '/api/traffic/nodes' && method === 'POST') {
         const body = route.request().postDataJSON(); writes.push(body)
         value = { ...body,id:1,protocol:body.protocol_config.type,port:body.port ?? 20000 }
         nodes.push(value)
-      } else if (path === '/api/plugins/sing-box/nodes/1' && method === 'PATCH') {
+      } else if (path === '/api/traffic/nodes/1' && method === 'PATCH') {
         const body = route.request().postDataJSON(); writes.push(body)
         if (rejected) { await route.fulfill({status:400,json:{error:'夹具：参数无效'}}); return }
         Object.assign(nodes[0],body); value=nodes[0]
-      } else if (method === 'GET' && !new URL(route.request().url()).search && path === '/api/plugins/sing-box/servers/1/operations-view') value = operationsViewFixture
+      } else if (method === 'GET' && !new URL(route.request().url()).search && path === '/api/traffic/servers/1/operations-view') value = operationsViewFixture
       // A server's deployment lives in its network services tab.
       else if (path === '/api/servers/1') value = { id:1, name:'测试服务器', online:false, device_public_key:'TEST_ONLY', capabilities:[], static_info:{}, latest_metrics:{}, manifest_rev:0 }
-      else if (path === '/api/plugins/sing-box/servers/1') value = { ...pluginServers[0], source:'administrator', installation:{ state:'offline', reason:'设备离线，恢复连接后继续部署', target_rev:0, applied_rev:0 } }
-      else if (path === '/api/plugins/sing-box/servers/1/profile') value = { definition:{ outbounds:[], endpoints:[], services:[], cloudflared:[], dns:null, route:null }, revision:0 }
+      else if (path === '/api/traffic/servers/1') value = { ...runtimeServers[0], source:'administrator', installation:{ state:'offline', reason:'设备离线，恢复连接后继续部署', target_rev:0, applied_rev:0 } }
+      else if (path === '/api/traffic/servers/1/profile') value = { definition:{ outbounds:[], endpoints:[], services:[], cloudflared:[], dns:null, route:null }, revision:0 }
       else if (path.endsWith('/deployments')) value = progress
       else if (path.endsWith('/deployments/check')) value = { ready:false,checks:[{name:'设备在线',passed:false,detail:'设备离线，配置将在重新连接后下发'},{name:'签名运行时',passed:true,detail:'已验证匹配的制品'}] }
       else if (path.endsWith('/runtime-operations')) value = { supported:false,online:false,retiring:false,operations:[] }

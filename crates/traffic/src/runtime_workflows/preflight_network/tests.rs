@@ -79,14 +79,6 @@ fn complete_preparation(node: &Node, compiled: &Value) -> Vec<Value> {
 }
 
 #[test]
-fn wildcard_certificate_only_covers_one_label() {
-    let names = json!(["*.example.com"]);
-    assert!(covers(&names, "proxy.example.com"));
-    assert!(!covers(&names, "example.com"));
-    assert!(!covers(&names, "deep.proxy.example.com"));
-}
-
-#[test]
 fn one_matching_address_does_not_hide_another_wrong_address() {
     let (state, evidence) = dns_evidence(
         ip_set(&["192.0.2.1", "192.0.2.2"]),

@@ -18,7 +18,7 @@ use axum::{
 };
 use sqlx::Row;
 
-use crate::{AppState, agent_api, artifacts, auth, error::ApiResult};
+use crate::{AppState, device_channel, error::ApiResult};
 
 /// The modules a device must run, keyed by module identifier.
 pub async fn manifest_modules(
@@ -42,8 +42,8 @@ pub async fn manifest(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Manifest>> {
-    let server_id = auth::require_agent(&state, &headers).await?;
-    artifacts::require_signed_agent(&state, server_id).await?;
+    let server_id = crate::device_channel::require_agent(&state, &headers).await?;
+    crate::device_channel::require_signed_agent(&state, server_id).await?;
     let row = sqlx::query("SELECT manifest_rev,static_info FROM servers WHERE id=$1")
         .bind(server_id)
         .fetch_one(&state.pool)
@@ -62,7 +62,7 @@ pub async fn bundle(
     headers: HeaderMap,
     Path(rev): Path<i64>,
 ) -> ApiResult<Response> {
-    let server_id = auth::require_agent(&state, &headers).await?;
+    let server_id = crate::device_channel::require_agent(&state, &headers).await?;
     let bundle = bundle_text(&state, server_id, rev).await?;
     Ok((
         [
@@ -135,7 +135,7 @@ pub async fn reconcile_applied(
             .bind(server_id)
             .fetch_one(&state.pool)
             .await?;
-        agent_api::notify(
+        device_channel::notify(
             state,
             server_id,
             Envelope::new("manifest.changed", ManifestChanged { rev: rev as u64 })?,

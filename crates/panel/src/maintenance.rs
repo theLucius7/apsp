@@ -1,8 +1,5 @@
 //! The application's 30-second maintenance cycle: each domain's expiry and retention
 //! step, alert evaluation and notification delivery, recorded under one heartbeat.
-//! The platform provides the supervisor.
-
-pub use apsp_panel_host::maintenance::supervise;
 
 use apsp_panel_host::AppState;
 use std::time::Duration;
@@ -18,13 +15,13 @@ pub async fn run(state: AppState) {
             tracing::error!(%error, "diagnostic expiry cleanup failed");
         }
         if let Err(error) =
-            apsp_panel_host::server_assets::renew_due(&state.pool, apsp_protocol::now_timestamp())
+            apsp_resources::server_assets::renew_due(&state.pool, apsp_protocol::now_timestamp())
                 .await
         {
             healthy = false;
             tracing::error!(%error, "server expiry renewal failed");
         }
-        if let Err(error) = apsp_panel_host::auth::purge_expired_sessions(
+        if let Err(error) = apsp_governance::auth::purge_expired_sessions(
             &state.pool,
             apsp_protocol::now_timestamp(),
         )
@@ -33,7 +30,7 @@ pub async fn run(state: AppState) {
             healthy = false;
             tracing::error!(%error, "expired session cleanup failed");
         }
-        if let Err(error) = apsp_panel_host::servers::purge_expired_enrollments(
+        if let Err(error) = apsp_resources::servers::purge_expired_enrollments(
             &state.pool,
             apsp_protocol::now_timestamp(),
         )
@@ -58,7 +55,7 @@ pub async fn run(state: AppState) {
             healthy = false;
             tracing::error!(%error, "notification delivery failed");
         }
-        if let Err(error) = apsp_panel_host::control_center::system::heartbeat(
+        if let Err(error) = apsp_governance::control_center::system::heartbeat(
             &state.pool,
             "maintenance",
             if healthy { "healthy" } else { "failed" },

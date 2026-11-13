@@ -13,7 +13,7 @@ export function CronField({ label, value, offset, onChange }: { label: string; v
     const epoch = ++generation.current
     setBusy(true); setResult(null)
     try {
-      const response = await api<{ occurrences: number[] }>('/api/plugins/alicloud/cron-preview', 'POST', { expression: value, utc_offset_minutes: offset })
+      const response = await api<{ occurrences: number[] }>('/api/resources/alicloud/cron-preview', 'POST', { expression: value, utc_offset_minutes: offset })
       if (epoch === generation.current && current.current === key) setResult({ key, times: response.occurrences })
     } catch (error) { if (epoch === generation.current && current.current === key) setResult({ key, error: errorMessage(error) }) }
     finally { if (epoch === generation.current) setBusy(false) }

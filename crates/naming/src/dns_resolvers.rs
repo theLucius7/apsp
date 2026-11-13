@@ -40,8 +40,8 @@ fn port() -> u16 {
 
 pub(super) fn routes() -> Router<AppState> {
     Router::new()
-        .route("/api/plugins/ddns/accounts/{id}/resolve", post(resolve))
-        .route("/api/plugins/ddns/accounts/{id}/observations", get(history))
+        .route("/api/naming/accounts/{id}/resolve", post(resolve))
+        .route("/api/naming/accounts/{id}/observations", get(history))
 }
 
 async fn resolve(

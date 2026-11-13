@@ -226,9 +226,9 @@ if all(values):
     request('/api/login', {'password': password, 'totp_code': code})
     del password, code
     try:
-        usage = request('/api/plugins/sing-box/usage?' + urllib.parse.urlencode({'user_id': user, 'node_id': node}))
-        node_data = request('/api/plugins/sing-box/nodes/' + node)
-        deployment = request('/api/plugins/sing-box/servers/' + str(node_data['server_id']) + '/deployments')
+        usage = request('/api/access/usage?' + urllib.parse.urlencode({'user_id': user, 'node_id': node}))
+        node_data = request('/api/traffic/nodes/' + node)
+        deployment = request('/api/traffic/servers/' + str(node_data['server_id']) + '/deployments')
         (output / 'panel-usage.json').write_text(json.dumps(usage, ensure_ascii=False, indent=2) + '\n')
         (output / 'panel-deployment.json').write_text(json.dumps(deployment, ensure_ascii=False, indent=2) + '\n')
         (output / 'selection.json').write_text(json.dumps({'user_id': user, 'node_id': node, 'server_id': node_data['server_id']}, indent=2) + '\n')

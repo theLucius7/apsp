@@ -6,12 +6,12 @@ mod release_support;
 
 use anyhow::{Context, Result, ensure};
 use apsp_access::entitlements;
-use apsp_panel::agent_api;
 use apsp_protocol::{
     ApplyResult, ApplyStatus, Bundle, Heartbeat, Hello, Message, PROTOCOL_VERSION,
     RUNTIME_CHECKPOINT_CAPABILITY, RuntimeCheckpoint, RuntimeCheckpointRequest,
     RuntimeCheckpointResult, UsageBatch, UsageRecord, now_timestamp,
 };
+use apsp_resources::device_channel;
 use apsp_traffic::{publisher, runtime_control};
 use business_support::{
     TestPanel,
@@ -22,8 +22,6 @@ use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
-
-const ROOT: &str = "/api/plugins/sing-box";
 
 async fn scenario(panel: &TestPanel, cookie: &str) -> Result<(i64, i64, i64)> {
     let server = panel.create_server(cookie, "Deployment gate").await?;
@@ -71,7 +69,7 @@ async fn confirm(
     panel
         .admin(
             Method::POST,
-            &format!("{ROOT}/servers/{server}/operations-view/preflight/confirm"),
+            &format!("/api/traffic/servers/{server}/operations-view/preflight/confirm"),
             cookie,
             Some(json!({"id":request,"confirm":true})),
         )
@@ -180,7 +178,7 @@ async fn same_second_requests_use_submission_order_and_cannot_confirm_the_older_
     let view: Value = panel
         .admin(
             Method::GET,
-            &format!("{ROOT}/servers/{server}/operations-view"),
+            &format!("/api/traffic/servers/{server}/operations-view"),
             &cookie,
             None,
         )
@@ -221,7 +219,7 @@ async fn material_changes_and_actor_permission_revocation_cannot_reuse_confirmed
     panel
         .admin(
             Method::PATCH,
-            &format!("{ROOT}/nodes/{node}"),
+            &format!("/api/traffic/nodes/{node}"),
             &cookie,
             Some(json!({"sni":"next.example.com"})),
         )
@@ -336,7 +334,7 @@ async fn same_listener_credentials_quota_and_final_revocation_publish_without_ne
     let plan: Value = panel
         .admin(
             Method::POST,
-            &format!("{ROOT}/package-groups"),
+            "/api/access/package-groups",
             &cookie,
             Some(json!({
                 "name":"Bounded quota","monthly_bytes":"10","reset_day":1,"reset_hour":0,
@@ -350,7 +348,7 @@ async fn same_listener_credentials_quota_and_final_revocation_publish_without_ne
     let assignment: Value = panel
         .admin(
             Method::POST,
-            &format!("{ROOT}/users/{account}/package"),
+            &format!("/api/access/users/{account}/package"),
             &cookie,
             Some(json!({
                 "package_group_id":id(&plan)?,"request_id":Uuid::new_v4(),
@@ -412,7 +410,7 @@ async fn first_bootstrap_publishes_only_empty_business_and_requires_fresh_busine
     let cookie = panel.admin_cookie().await?;
     let (server, _, _) = scenario(&panel, &cookie).await?;
     let evidence = observe(&panel, &cookie, server).await?;
-    let path = format!("{ROOT}/servers/{server}/operations-view/preflight/bootstrap");
+    let path = format!("/api/traffic/servers/{server}/operations-view/preflight/bootstrap");
     let bootstrap: Value = panel
         .admin(
             Method::POST,
@@ -478,7 +476,7 @@ async fn ports(panel: &TestPanel, cookie: &str, server: i64) -> Result<Value> {
     let view: Value = panel
         .admin(
             Method::GET,
-            &format!("{ROOT}/servers/{server}/operations-view"),
+            &format!("/api/traffic/servers/{server}/operations-view"),
             cookie,
             None,
         )
@@ -504,7 +502,7 @@ async fn bootstrapped_runtime_listener_is_owned_once_its_checkpoint_is_answered(
     panel
         .admin(
             Method::POST,
-            &format!("{ROOT}/servers/{server}/operations-view/preflight/bootstrap"),
+            &format!("/api/traffic/servers/{server}/operations-view/preflight/bootstrap"),
             &cookie,
             Some(json!({"id":evidence,"confirm":true})),
         )
@@ -513,7 +511,7 @@ async fn bootstrapped_runtime_listener_is_owned_once_its_checkpoint_is_answered(
     // The Agent certifies exact runtime instances, so the empty revision is
     // applied only through a checkpoint. Its statistics listener now occupies
     // a port every business preflight requires.
-    agent_api::process_message(
+    device_channel::process_message(
         &panel.state,
         server,
         Message::Hello(Hello {
@@ -575,7 +573,7 @@ async fn bootstrapped_runtime_listener_is_owned_once_its_checkpoint_is_answered(
     let installation: Value = panel
         .admin(
             Method::GET,
-            &format!("{ROOT}/servers/{server}"),
+            &format!("/api/traffic/servers/{server}"),
             &cookie,
             None,
         )
@@ -604,7 +602,7 @@ async fn bootstrapped_runtime_listener_is_owned_once_its_checkpoint_is_answered(
     );
     // Each heartbeat requests another checkpoint for the uncertified target. A
     // newer unanswered request must not hide the latest answer.
-    agent_api::process_message(
+    device_channel::process_message(
         &panel.state,
         server,
         Message::Heartbeat(Heartbeat {

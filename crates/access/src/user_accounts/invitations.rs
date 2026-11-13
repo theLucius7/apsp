@@ -258,7 +258,7 @@ pub(super) async fn adjust(
     }
     let reason = text(&input.reason, 200, false)?;
     let mut tx = state.pool.begin().await?;
-    apsp_traffic::business::lock_user(&mut tx, id).await?;
+    crate::proxy_users::lock_user(&mut tx, id).await?;
     let remaining = quota_change(
         &mut tx,
         id,
@@ -294,7 +294,7 @@ pub(super) async fn create(
     }
     let mut tx = state.pool.begin().await?;
     let user = account_session(&mut tx, &state, &headers, account, true).await?;
-    apsp_traffic::business::lock_user(&mut tx, user).await?;
+    crate::proxy_users::lock_user(&mut tx, user).await?;
     let enabled: bool =
         sqlx::query_scalar("SELECT enabled FROM singbox_invitation_settings WHERE singleton")
             .fetch_one(&mut *tx)
@@ -385,7 +385,7 @@ pub(super) async fn revoke(
 ) -> ApiResult<Json<Value>> {
     let mut tx = state.pool.begin().await?;
     let user = account_session(&mut tx, &state, &headers, account, true).await?;
-    apsp_traffic::business::lock_user(&mut tx, user).await?;
+    crate::proxy_users::lock_user(&mut tx, user).await?;
     let status: String = sqlx::query_scalar(
         "SELECT state FROM singbox_invitations WHERE id=$1 AND issuer_id=$2 FOR UPDATE",
     )
@@ -447,7 +447,7 @@ pub(super) async fn inspect(
         .fetch_optional(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(
-        json!({"available":available,"package_name":package,"configuration":state.passkeys.info(),"email_verification_required":mail::config(&state).await?.enabled}),
+        json!({"available":available,"package_name":package,"configuration":crate::passkeys::service(&state).info(),"email_verification_required":mail::config(&state).await?.enabled}),
     ))
 }
 
@@ -474,7 +474,7 @@ pub(super) async fn claim(
     let token_hash = hash_token(&token);
     let name = apsp_traffic::business::name(&input.name)?;
     let email = email(&input.email)?;
-    let hash = fingerprint(&(input.request_id, &name, &email))?;
+    let hash = crate::digest::json(&(input.request_id, &name, &email))?;
     let verification_required = mail::config(&state).await?.enabled;
     let claimed:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_invitations WHERE token_hash=$1 AND claim_hash=$2 AND state='claimed')").bind(&token_hash).bind(&hash).fetch_one(&state.pool).await?;
     let challenge = if !claimed && let Some(id) = input.challenge_id {

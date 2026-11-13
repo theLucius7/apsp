@@ -353,7 +353,7 @@ pub async fn event(
     headers: HeaderMap,
     Json(event): Json<TerminalEvent>,
 ) -> ApiResult<Json<Value>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     if event.sequence <= 0
         || event.input_sequence < 0
         || event.output.len() > 32768

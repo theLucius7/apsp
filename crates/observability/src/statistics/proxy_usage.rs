@@ -1,5 +1,5 @@
 //! Proxy usage of a time window for the trends page, read from the usage ledger of
-//! service access (`/api/plugins/sing-box/statistics`).
+//! service access (`/api/access/statistics`).
 
 use super::StatisticsQuery;
 use crate::{AppState, auth, error::ApiResult};

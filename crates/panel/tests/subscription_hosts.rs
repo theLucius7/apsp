@@ -6,7 +6,7 @@ mod release_support;
 
 use anyhow::{Context, Result};
 use apsp_access::subscription_hosts::{DnsApi, reconcile, sweep};
-use apsp_panel_host::auth::{hash_token, random_token};
+use apsp_governance::auth::{hash_token, random_token};
 use axum::{
     Json, Router,
     extract::{Path, RawQuery},
@@ -19,7 +19,6 @@ use sqlx::PgPool;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-const ROOT: &str = "/api/plugins/sing-box";
 const ZONE: &str = "example.test";
 
 /// The records a stand-in Cloudflare zone holds: id, name and comment.
@@ -99,7 +98,7 @@ async fn fake_zone() -> Result<(String, Arc<Mutex<Vec<String>>>, Records)> {
 }
 
 async fn enable(pool: &PgPool, legacy_paths: bool) -> Result<()> {
-    let credential = apsp_panel_host::control_center::credentials::store_generated(
+    let credential = apsp_governance::control_center::credentials::store_generated(
         pool,
         "fixture",
         "dns",
@@ -215,7 +214,7 @@ async fn reset_releases_the_old_address_and_its_record(pool: PgPool) -> Result<(
     reconcile(&pool, &DnsApi::new(&dns)).await?;
     let (host, path) = host_of(&pool, user).await?;
     let listed: Vec<Value> = panel
-        .admin(Method::GET, &format!("{ROOT}/users"), &cookie, None)
+        .admin(Method::GET, "/api/access/users", &cookie, None)
         .await?
         .json()
         .await?;
@@ -227,7 +226,7 @@ async fn reset_releases_the_old_address_and_its_record(pool: PgPool) -> Result<(
     let reset: Value = panel
         .admin(
             Method::POST,
-            &format!("{ROOT}/users/{user}/subscription/reset"),
+            &format!("/api/access/users/{user}/subscription/reset"),
             &cookie,
             None,
         )
@@ -374,7 +373,7 @@ async fn a_migrated_user_gets_the_working_link_and_their_own_address(pool: PgPoo
     bridge(&pool, user, &renderer).await?;
     // The panel's own path has no nodes for them, so it must not be what people are given.
     let listed: Vec<Value> = panel
-        .admin(Method::GET, &format!("{ROOT}/users"), &cookie, None)
+        .admin(Method::GET, "/api/access/users", &cookie, None)
         .await?
         .json()
         .await?;
@@ -385,7 +384,7 @@ async fn a_migrated_user_gets_the_working_link_and_their_own_address(pool: PgPoo
     reconcile(&pool, &DnsApi::new(&dns)).await?;
     let (host, path) = host_of(&pool, user).await?;
     let listed: Vec<Value> = panel
-        .admin(Method::GET, &format!("{ROOT}/users"), &cookie, None)
+        .admin(Method::GET, "/api/access/users", &cookie, None)
         .await?
         .json()
         .await?;
@@ -417,7 +416,7 @@ async fn a_migrated_user_gets_the_working_link_and_their_own_address(pool: PgPoo
     panel
         .admin(
             Method::POST,
-            &format!("{ROOT}/users/{user}/subscription/reset"),
+            &format!("/api/access/users/{user}/subscription/reset"),
             &cookie,
             None,
         )
@@ -452,12 +451,7 @@ async fn the_user_overview_never_carries_credentials(pool: PgPool) -> Result<()>
         .fetch_one(&pool)
         .await?;
     let text = panel
-        .admin(
-            Method::GET,
-            &format!("{ROOT}/users/overview"),
-            &cookie,
-            None,
-        )
+        .admin(Method::GET, "/api/access/users/overview", &cookie, None)
         .await?
         .text()
         .await?;
@@ -598,7 +592,7 @@ async fn a_users_own_address_takes_their_account_changes(pool: PgPool) -> Result
         panel
             .client
             .put(format!(
-                "{}{ROOT}/portal/{account}/account/reminders",
+                "{}/api/access/portal/{account}/account/reminders",
                 panel.base
             ))
             .header(header::HOST, &host)
@@ -653,7 +647,7 @@ async fn a_user_acts_on_their_account_from_their_own_host(pool: PgPool) -> Resul
     sqlx::query(
         "INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET verified_at=EXCLUDED.verified_at,expires_at=EXCLUDED.expires_at",
     )
-    .bind(apsp_panel_host::auth::hash_token(
+    .bind(apsp_governance::auth::hash_token(
         cookie.split_once('=').context("cookie")?.1,
     ))
     .bind(now)
@@ -673,7 +667,7 @@ async fn a_user_acts_on_their_account_from_their_own_host(pool: PgPool) -> Resul
     let granted = panel
         .client
         .post(format!(
-            "{}{ROOT}/users/{user}/invitations/quota",
+            "{}/api/access/users/{user}/invitations/quota",
             panel.base
         ))
         .header(header::COOKIE, &cookie)
@@ -682,7 +676,7 @@ async fn a_user_acts_on_their_account_from_their_own_host(pool: PgPool) -> Resul
         .send()
         .await?;
     assert!(granted.status().is_success(), "{}", granted.text().await?);
-    let create = format!("{ROOT}/portal/{account}/invitations");
+    let create = format!("/api/access/portal/{account}/invitations");
     let own_origin = format!("https://{host}");
 
     // The page on the user's own address creates an invitation link.
@@ -722,7 +716,10 @@ async fn a_user_acts_on_their_account_from_their_own_host(pool: PgPool) -> Resul
     // Other account writes go through the same check: revoke the code just made.
     let view: Value = panel
         .client
-        .get(format!("{}{ROOT}/portal/{account}/account", panel.base))
+        .get(format!(
+            "{}/api/access/portal/{account}/account",
+            panel.base
+        ))
         .header(header::HOST, &host)
         .header(header::COOKIE, &session)
         .send()
@@ -738,7 +735,7 @@ async fn a_user_acts_on_their_account_from_their_own_host(pool: PgPool) -> Resul
         &host,
         Some(&own_origin),
         &session,
-        &format!("{ROOT}/portal/{account}/invitations/{issued}/revoke"),
+        &format!("/api/access/portal/{account}/invitations/{issued}/revoke"),
         json!({}),
     )
     .await?;
@@ -768,7 +765,7 @@ async fn records_of_deleted_users_do_not_outlive_them(pool: PgPool) -> Result<()
     let cookie = panel.admin_cookie().await?;
     let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET verified_at=EXCLUDED.verified_at,expires_at=EXCLUDED.expires_at")
-        .bind(apsp_panel_host::auth::hash_token(cookie.split_once('=').context("cookie")?.1))
+        .bind(apsp_governance::auth::hash_token(cookie.split_once('=').context("cookie")?.1))
         .bind(now)
         .bind(now + 3600)
         .execute(&pool)
@@ -802,7 +799,7 @@ async fn records_of_deleted_users_do_not_outlive_them(pool: PgPool) -> Result<()
     }
     let removed = panel
         .client
-        .delete(format!("{}{ROOT}/users/{gone}", panel.base))
+        .delete(format!("{}/api/access/users/{gone}", panel.base))
         .header(header::COOKIE, &cookie)
         .header(header::ORIGIN, &panel.state.config.public_url)
         .send()

@@ -12,7 +12,7 @@ from migration_snapshot import connect, rows
 from nexus_agent_migration import (FORMAT, HOST_FIELDS, MACHINE_FIELDS, NODE_FIELDS, Panel, digest, environment,
                                    private_write, readiness, server_request, snapshot, source_tag)
 
-ROOT = "/api/plugins/sing-box/nexus-nodes"
+ROOT = "/api/traffic/nexus-nodes"
 
 
 def node_snapshot(connection, infrastructure, host_receipt):

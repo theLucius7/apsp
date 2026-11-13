@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod business_support;
+mod proxy_api;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 
@@ -13,8 +14,6 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-const ROOT: &str = "/api/plugins/sing-box";
-
 async fn call(
     panel: &TestPanel,
     cookie: &str,
@@ -24,7 +23,7 @@ async fn call(
     expected: StatusCode,
 ) -> Result<Value> {
     let response = panel
-        .admin(method, &format!("{ROOT}{path}"), cookie, body)
+        .admin(method, &crate::proxy_api::proxy_api(path), cookie, body)
         .await?;
     ensure!(
         response.status() == expected,
@@ -639,7 +638,7 @@ async fn source_receipts_are_atomic_concurrent_and_survive_tombstone_without_rev
             "TEST_ONLY-password",
         )]),
     );
-    let path = format!("{ROOT}/ordered-subscription-sources");
+    let path = "/api/traffic/ordered-subscription-sources".to_string();
     let (a, b) = tokio::join!(
         panel.admin(Method::POST, &path, &cookie, Some(body.clone())),
         panel.admin(Method::POST, &path, &cookie, Some(body.clone()))
@@ -858,12 +857,12 @@ async fn url_secrets_write_only_auth_replacement_and_refresh_deduplicate_with_st
     for (method, path, body) in [
         (
             Method::POST,
-            format!("{ROOT}/ordered-subscription-sources"),
+            "/api/traffic/ordered-subscription-sources".to_string(),
             duplicate_create,
         ),
         (
             Method::PATCH,
-            format!("{ROOT}/ordered-subscription-sources/{id}"),
+            format!("/api/traffic/ordered-subscription-sources/{id}"),
             duplicate_patch,
         ),
     ] {

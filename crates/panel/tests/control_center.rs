@@ -1,11 +1,8 @@
 #![forbid(unsafe_code)]
 use anyhow::{Context, Result};
+use apsp_governance::auth::{hash_token, random_token};
 use apsp_panel::router;
-use apsp_panel_host::{
-    AppState,
-    auth::{hash_token, random_token},
-    config::Config,
-};
+use apsp_panel_host::config::Config;
 use apsp_protocol::now_timestamp;
 use reqwest::{Client, StatusCode, header};
 use serde_json::{Value, json};
@@ -28,7 +25,7 @@ impl Panel {
         let base = format!("http://{listen}");
         let directory = std::env::temp_dir().join(format!("apsp-control-test-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory)?;
-        let state = AppState::new(
+        let state = apsp_panel::state(
             pool.clone(),
             Config {
                 database_url: String::new(),
@@ -417,11 +414,11 @@ async fn scoped_operator_cannot_change_shared_settings_and_denied_reauth_is_audi
     // Every combined ledger view exposes panel-wide records, while the dedicated
     // server projection remains available and filters by the actor's server scope.
     for path in [
-        "/api/plugins/expenses/subscriptions",
-        "/api/plugins/expenses/summary",
-        "/api/plugins/expenses/payments",
-        "/api/plugins/expenses/calendar?from=2026-10-01&to=2026-10-31",
-        "/api/plugins/expenses/calendar.ics?from=2026-10-01&to=2026-10-31",
+        "/api/costs/subscriptions",
+        "/api/costs/summary",
+        "/api/costs/payments",
+        "/api/costs/calendar?from=2026-10-01&to=2026-10-31",
+        "/api/costs/calendar.ics?from=2026-10-01&to=2026-10-31",
     ] {
         assert_eq!(
             send(reqwest::Method::GET, path, &scoped, Value::Null)
@@ -433,7 +430,7 @@ async fn scoped_operator_cannot_change_shared_settings_and_denied_reauth_is_audi
     }
     let server_expenses: Value = send(
         reqwest::Method::GET,
-        "/api/plugins/expenses/servers",
+        "/api/costs/servers",
         &scoped,
         Value::Null,
     )

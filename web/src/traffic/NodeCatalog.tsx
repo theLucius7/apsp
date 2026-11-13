@@ -5,13 +5,13 @@ import { Badge, Confirm, Empty, ErrorNotice, Field, FormDialog, Loading, Modal, 
 import { bytes, totalBytes } from '../format'
 import { resourceWriteError, useAction, useRefreshNotice } from '../hooks'
 import type { ResourceState } from '../hooks'
-import type { Node, PluginServer, Usage } from '../types'
+import type { Node, RuntimeServer, Usage } from '../types'
 import { endpoint, resourceLink, roleNames } from './resourceTypes'
 import { protocolName } from './ProtocolFields'
 import { sourceReason } from './sourceTypes'
 import { catalogKey, catalogRef, catalogMutationError, filterCatalog, parsedTags, renamed, tagsError, validCatalog } from './catalog'
 import type { CatalogNode } from './catalog'
-import { validatedSnapshot } from '../access/groupTypes'
+import { validatedSnapshot } from '@/lib/resource-snapshot'
 
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -25,9 +25,9 @@ import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
 import { SortableList, sortableItemClass } from '@/components/sortable'
 import type { SortableItemProps } from '@/components/sortable'
 
-const root = '/api/plugins/sing-box'
+const root = '/api/traffic'
 const kinds = { direct: '直连节点', external: '外部节点' }
-type Props = { query: ResourceState<unknown>; nodes: Node[]; servers: PluginServer[]; getServers: () => PluginServer[] | undefined; usage?: Usage; server: string; getServer: () => string; onServer: (id: string) => void; kind: string; onKind: (kind: string) => void; onChanged: () => void; managedWriteError: () => string; onEdit: (node: Node) => void; onDelete: (node: { kind: 'direct'; id: number; name: string }) => void; onDeployment: (id: number) => void }
+type Props = { query: ResourceState<unknown>; nodes: Node[]; servers: RuntimeServer[]; getServers: () => RuntimeServer[] | undefined; usage?: Usage; server: string; getServer: () => string; onServer: (id: string) => void; kind: string; onKind: (kind: string) => void; onChanged: () => void; managedWriteError: () => string; onEdit: (node: Node) => void; onDelete: (node: { kind: 'direct'; id: number; name: string }) => void; onDeployment: (id: number) => void }
 
 // The catalog reads its data from the node page's shared snapshot, so it refreshes
 // together with the chain and resource lists it is filtered against.
@@ -188,7 +188,7 @@ function CatalogBatch({ mode, nodes, current, stale, server, onClose, onSaved }:
   </FormDialog>
 }
 
-function CloneNode({ node, servers, getServers, stale, onClose, onSaved }: { node: CatalogNode; servers: PluginServer[]; getServers: () => PluginServer[] | undefined; stale: () => string; onClose: () => void; onSaved: () => void }) {
+function CloneNode({ node, servers, getServers, stale, onClose, onSaved }: { node: CatalogNode; servers: RuntimeServer[]; getServers: () => RuntimeServer[] | undefined; stale: () => string; onClose: () => void; onSaved: () => void }) {
   const action = useAction()
   const [serverId, setServerId] = useState(String(node.server_id ?? ''))
   const selectedServer = useRef(serverId); selectedServer.current = serverId

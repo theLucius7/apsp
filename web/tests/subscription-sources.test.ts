@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { validatedSnapshot } from '../src/access/groupTypes'
+import { validatedSnapshot } from '../src/lib/resource-snapshot'
 import { adoptSourceNode, cancelSourceJob, deleteSource, emptySourceDraft, prepareSourceMutation, previewCommit, previewInput, refreshSource, SourceFileReader, sourceAuthHeaders, sourceCommand, sourceMetadataError, sourceMutationReplay, sourceWriteError, submitSourceMutation } from '../src/traffic/sourceRequests'
 import type { SourceSnapshot } from '../src/traffic/sourceRequests'
 import { MAX_SOURCE_BYTES, orderedPreviewError, sourceInterval, sourceJobActive, sourceRoot, sourceStatusText, validOrderedPreview, validSourceCounts, validSourceHistory, validSourceJob, validSourceNodePage, validSubscriptionSource, validSubscriptionSources } from '../src/traffic/orderedSourceTypes'

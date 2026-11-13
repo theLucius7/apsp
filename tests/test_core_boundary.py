@@ -95,23 +95,19 @@ class CoreBoundaryTests(unittest.TestCase):
             (root / "new.sql").write_text("SELECT quota FROM state")
             self.assertFalse(boundary.check(root))
 
-    def test_panel_host_passes_and_its_exceptions_stay_scoped(self):
+    def test_panel_host_passes_and_its_exception_stays_scoped(self):
         root = SCRIPT.parents[1]
         self.assertTrue(boundary.check(root / "crates/panel-host", boundary.HOST_EXCEPTIONS))
-        relative, source = "src/releases/network.rs", '.user_agent("apsp-panel")'
+        relative, source = "src/config.rs", '"https://user:secret@example.invalid"'
         self.assertFalse(boundary.violations(relative, source, boundary.HOST_EXCEPTIONS))
         self.assertTrue(boundary.violations(relative, source))
-        self.assertTrue(boundary.violations("src/servers.rs", source, boundary.HOST_EXCEPTIONS))
+        self.assertTrue(boundary.violations("src/settings.rs", source, boundary.HOST_EXCEPTIONS))
         self.assertTrue(boundary.violations(relative, source + "; user_id", boundary.HOST_EXCEPTIONS))
         self.assertTrue(boundary.violations("src/lib.rs", "pub mod singbox;", boundary.HOST_EXCEPTIONS))
-
-    def test_host_cloud_field_exception_is_expression_scoped(self):
-        relative = "src/cloud_resources/hetzner/client/tests.rs"
-        native = 'raw["user_data"]'
-        self.assertFalse(boundary.violations(relative, native, boundary.HOST_EXCEPTIONS))
-        self.assertTrue(boundary.violations(relative, native + "; user_id=1", boundary.HOST_EXCEPTIONS))
-        self.assertTrue(boundary.violations("src/servers.rs", native, boundary.HOST_EXCEPTIONS))
-        # Provider request limits moved to observability, which is not a platform crate.
+        # Governance, resources and the other domains left the platform crate, so their
+        # former exceptions no longer exist there.
+        self.assertTrue(boundary.violations("src/releases/network.rs", '.user_agent("apsp-panel")',
+                                            boundary.HOST_EXCEPTIONS))
         self.assertTrue(boundary.violations("src/network_workbench/reports.rs", 'r.get("daily_quota")',
                                             boundary.HOST_EXCEPTIONS))
 
@@ -139,9 +135,11 @@ class CoreBoundaryTests(unittest.TestCase):
             "crates/panel-host/Cargo.toml": protocol,
             "crates/cloud-api/Cargo.toml": protocol,
             "crates/compiler/Cargo.toml": "[package]\n",
-            "crates/resources/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-cloud-api.workspace = true\n",
+            "crates/governance/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\n",
+            "crates/resources/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-governance.workspace = true\napsp-cloud-api.workspace = true\n",
             "crates/networking/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-resources.workspace = true\n",
-            "crates/naming/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-cloud-api.workspace = true\n",
+            # Names and certificates build on basic networking, which keeps their documents.
+            "crates/naming/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-cloud-api.workspace = true\napsp-networking.workspace = true\n",
             "crates/costs/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-naming.workspace = true\n",
             "crates/operations/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-costs.workspace = true\napsp-observability.workspace = true\napsp-traffic.workspace = true\n",
             "crates/observability/Cargo.toml": "[dependencies]\napsp-panel-host.workspace = true\napsp-traffic.workspace = true\napsp-access.workspace = true\n",
@@ -159,7 +157,7 @@ class CoreBoundaryTests(unittest.TestCase):
             "crates/compiler/Cargo.toml": "[dependencies]\napsp-costs.workspace = true\n",
             "crates/costs/Cargo.toml": "[dependencies]\napsp-operations.workspace = true\n",
             "crates/resources/Cargo.toml": "[dev-dependencies]\napsp-networking.workspace = true\n",
-            # Networking and naming are peers in one group.
+            # Networking comes before naming, so it cannot depend on it.
             "crates/networking/Cargo.toml": "[dependencies]\napsp-naming.workspace = true\n",
             # Peers in one group do not depend on each other.
             "crates/observability/Cargo.toml": "[dependencies]\napsp-costs.workspace = true\n",
@@ -167,9 +165,10 @@ class CoreBoundaryTests(unittest.TestCase):
             "crates/traffic/Cargo.toml": "[dependencies]\napsp-access.workspace = true\n",
             "crates/protocol/Cargo.toml": "[dependencies]\napsp-compiler.workspace = true\n",
             "crates/agent-core/Cargo.toml": "[target.'cfg(unix)'.dependencies]\napsp-adapter-singbox.workspace = true\n",
-            # Every workspace crate needs a layer, including a crate placed under plugins/.
+            # Governance comes first among the domains, so it cannot depend on a later one.
+            "crates/governance/Cargo.toml": "[dependencies]\napsp-resources.workspace = true\n",
+            # Every workspace crate needs a layer.
             "crates/billing/Cargo.toml": "[package]\n",
-            "plugins/alicloud/panel/Cargo.toml": "[package]\n",
         }
 
         def tree(directory, files):
@@ -188,9 +187,12 @@ class CoreBoundaryTests(unittest.TestCase):
             self.assertFalse(boundary.check_dependencies(root))
         with tempfile.TemporaryDirectory() as directory:
             self.assertTrue(boundary.check_dependencies(tree(directory, manifests)))
-        base = {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api"}
+        platform = {"apsp-protocol", "apsp-panel-host", "apsp-cloud-api"}
+        self.assertEqual(boundary.domain_dependencies("governance"), platform)
+        base = platform | {"apsp-governance"}
         self.assertEqual(boundary.domain_dependencies("resources"), base)
-        self.assertEqual(boundary.domain_dependencies("naming"), base | {"apsp-resources"})
+        self.assertEqual(boundary.domain_dependencies("networking"), base | {"apsp-resources"})
+        self.assertEqual(boundary.domain_dependencies("naming"), base | {"apsp-resources", "apsp-networking"})
         before_costs = base | {"apsp-resources", "apsp-networking", "apsp-naming", "apsp-compiler",
                                "apsp-traffic", "apsp-access"}
         self.assertEqual(boundary.domain_dependencies("costs"), before_costs)

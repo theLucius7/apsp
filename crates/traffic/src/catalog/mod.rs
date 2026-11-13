@@ -9,10 +9,10 @@ pub use projection::list;
 pub fn router() -> axum::Router<crate::AppState> {
     use axum::routing::{get, post};
     axum::Router::new()
-        .route("/node-catalog", get(list))
+        .route("/api/traffic/node-catalog", get(list))
         .route(
-            "/node-catalog/batch",
+            "/api/traffic/node-catalog/batch",
             post(batch_update).patch(batch_update).delete(batch_remove),
         )
-        .route("/nodes/{id}/clone", post(clone::clone_node))
+        .route("/api/traffic/nodes/{id}/clone", post(clone::clone_node))
 }

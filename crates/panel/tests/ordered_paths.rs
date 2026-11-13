@@ -5,6 +5,7 @@ mod business_support;
 mod creation;
 #[path = "ordered_paths/lifecycle.rs"]
 mod lifecycle;
+mod proxy_api;
 use business_support::release_fixture;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
@@ -14,9 +15,9 @@ mod sources;
 mod support;
 
 use anyhow::{Context, Result, ensure};
-use apsp_panel::agent_api;
 use apsp_panel_host::AppState;
 use apsp_protocol::*;
+use apsp_resources::device_channel;
 use apsp_traffic::runtime_control;
 use business_support::{TestPanel, id};
 use reqwest::{Method, StatusCode};

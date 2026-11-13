@@ -4,8 +4,8 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result};
+use apsp_governance::auth::{hash_token, random_token};
 use apsp_operations::jobs;
-use apsp_panel_host::auth::{hash_token, random_token};
 use apsp_protocol::{
     fleet::{AccessPolicy, JobResult, OPERATIONS_CAPABILITY, Operation, Work},
     now_timestamp,

@@ -25,12 +25,12 @@ const MAX_TOKEN_BYTES: usize = 512;
 
 pub(super) fn router() -> Router<AppState> {
     Router::new()
-        .route("/reachability", get(list))
+        .route("/api/observability/reachability", get(list))
         .route(
-            "/reachability/settings",
+            "/api/observability/reachability/settings",
             get(read_settings).put(update_settings),
         )
-        .route("/reachability/run", post(run_now))
+        .route("/api/observability/reachability/run", post(run_now))
 }
 
 fn settings_view(settings: &Settings) -> Value {

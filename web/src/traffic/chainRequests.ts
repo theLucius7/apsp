@@ -1,6 +1,8 @@
 import { resourceWriteError } from '../hooks'
-import { assignmentRequestId, proxyResourceKey, validProxyResources } from '../access/groupTypes'
-import type { ProxyResource, ResourceSnapshot } from '../access/groupTypes'
+import { proxyResourceKey, validProxyResources } from '../access/groupTypes'
+import { newRequestId } from '@/lib/request-id'
+import type { ResourceSnapshot } from '@/lib/resource-snapshot'
+import type { ProxyResource } from '../access/groupTypes'
 import { sourceRequest } from './sourceRequests'
 import { sourceUuid } from './orderedSourceTypes'
 
@@ -37,7 +39,7 @@ export function chainMutationError(snapshot: ResourceSnapshot<ProxyResource[]>, 
   if (command.operation === 'versions' && resource.path_state?.desired_generation !== command.fields.generation) return '路径代数已变化，请先确认候选与已应用版本；原请求已保留。'
   return ''
 }
-export function prepareChainMutation(command: ChainMutation, snapshot: ResourceSnapshot<ProxyResource[]>, previous?: PendingChainMutation, id = assignmentRequestId) {
+export function prepareChainMutation(command: ChainMutation, snapshot: ResourceSnapshot<ProxyResource[]>, previous?: PendingChainMutation, id = newRequestId) {
   validateCommand(command)
   const fingerprint = JSON.stringify(command)
   const replay = previous?.attempted && previous.command === fingerprint
@@ -47,14 +49,14 @@ export function prepareChainMutation(command: ChainMutation, snapshot: ResourceS
   if (!Number.isSafeInteger(command.id) || command.id <= 0 || !Number.isSafeInteger(command.settings_revision) || command.settings_revision < 1) throw new Error('链路标识或设置版本无效。')
   const request_id = id()
   if (!sourceUuid(request_id)) throw new Error('请求标识无效。')
-  const path = `/api/plugins/sing-box/ordered-proxy-resources/chain/${command.id}${command.operation === 'versions' ? '/apply-node-versions' : ''}`
+  const path = `/api/traffic/ordered-proxy-resources/chain/${command.id}${command.operation === 'versions' ? '/apply-node-versions' : ''}`
   return { command: fingerprint, serialized: JSON.stringify({ request_id, settings_revision: command.settings_revision, ...command.fields }), request_id, attempted: false, path }
 }
 export async function submitChainMutation(pending: PendingChainMutation, snapshot: ResourceSnapshot<ProxyResource[]>, writer: (path: string, method: string, body: unknown) => Promise<unknown> = sourceRequest): Promise<ChainMutationReceipt> {
   const command = JSON.parse(pending.command) as ChainMutation
   validateCommand(command)
   const expected = JSON.stringify({ request_id: pending.request_id, settings_revision: command.settings_revision, ...command.fields })
-  const path = `/api/plugins/sing-box/ordered-proxy-resources/chain/${command.id}${command.operation === 'versions' ? '/apply-node-versions' : ''}`
+  const path = `/api/traffic/ordered-proxy-resources/chain/${command.id}${command.operation === 'versions' ? '/apply-node-versions' : ''}`
   if (!sourceUuid(pending.request_id) || pending.serialized !== expected || pending.path !== path || command.kind !== 'chain' || !['edit', 'versions'].includes(command.operation)) throw new Error('原请求不完整，不能重试。')
   const error = chainMutationError(snapshot, command, pending.attempted)
   if (error) throw new Error(error)

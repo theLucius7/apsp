@@ -54,7 +54,7 @@ async fn exact_preparation_probes_switch_and_recovery_barrier_preserve_entry_cre
     assert_eq!(nodes.len(), 1);
     assert_eq!(nodes[0]["uuid"], credential.to_string());
     let retained:Value=sqlx::query_scalar("SELECT jsonb_agg(jsonb_build_array(chain_id,generation,position,node_version_id) ORDER BY chain_id,generation,position) FROM singbox_ordered_chain_hops").fetch_one(&fixture.panel.state.pool).await?;
-    let restarted = AppState::new(
+    let restarted = apsp_panel::state(
         fixture.panel.state.pool.clone(),
         (*fixture.panel.state.config).clone(),
     )
@@ -112,7 +112,7 @@ async fn coarse_apply_or_wrong_probe_receipt_cannot_replace_exact_path_confirmat
     .bind(fixture.servers[2])
     .fetch_one(&fixture.panel.state.pool)
     .await?;
-    agent_api::process_message(
+    device_channel::process_message(
         &fixture.panel.state,
         fixture.servers[2],
         Message::ApplyResult(ApplyResult {
@@ -390,7 +390,7 @@ async fn orphan_probe_request_cannot_be_reassociated_with_a_later_complete_vecto
         "generic entry-only verification can legitimately accept the delayed old result"
     );
     assert!(subscription_nodes(&subscription(&fixture, &user).await?).is_empty());
-    let restarted = AppState::new(
+    let restarted = apsp_panel::state(
         fixture.panel.state.pool.clone(),
         (*fixture.panel.state.config).clone(),
     )

@@ -49,8 +49,10 @@ jobs:
         run: |
           python3 tools/check-core-boundary.py
           python3 tools/check-feature-boundaries.py
+          python3 tools/route-policy.py
           python3 -m unittest discover -s tests -p 'test_core_boundary.py'
           python3 -m unittest discover -s tests -p 'test_feature_boundaries.py'
+          python3 -m unittest discover -s tests -p 'test_route_policy.py'
       - name: Verify artifact build script contracts
         run: python3 tools/test-build-scripts.py
       - name: Verify deployment environment initialization

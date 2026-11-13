@@ -262,7 +262,8 @@ pub async fn commit(
     if selected.len() != input.selected.len() {
         return Err(ApiError::BadRequest("不能重复选择同一个节点".into()));
     }
-    let hash = mutations::digest(&json!({"operation":"preview_commit","preview":id,"body":input}))?;
+    let hash =
+        crate::digest::json(&json!({"operation":"preview_commit","preview":id,"body":input}))?;
     // A replayed commit returns its receipt even though the preview is gone.
     let mut tx = state.pool.begin().await?;
     if let Some(previous) = mutations::receipt(&mut tx, input.request_id, &hash).await? {

@@ -57,7 +57,7 @@ pub async fn request(
         .fetch_one(&mut *tx)
         .await?;
     tx.commit().await?;
-    crate::agent_api::notify(
+    crate::device_channel::notify(
         &state,
         server_id,
         Envelope::new(
@@ -74,7 +74,7 @@ pub async fn pending(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<DiagnosticCancelRequest>>> {
-    let server_id = auth::require_agent(&state, &headers).await?;
+    let server_id = crate::device_channel::require_agent(&state, &headers).await?;
     let jobs: Vec<(Uuid, Value)> = sqlx::query_as("SELECT id,job FROM diagnostic_jobs WHERE server_id=$1 AND status='cancel_requested' ORDER BY cancel_requested_at,id LIMIT 64")
         .bind(server_id).fetch_all(&state.pool).await?;
     let requests = jobs
@@ -90,7 +90,7 @@ pub async fn confirm(
     Path(id): Path<Uuid>,
     Json(result): Json<DiagnosticCancelResult>,
 ) -> ApiResult<StatusCode> {
-    let server_id = auth::require_agent(&state, &headers).await?;
+    let server_id = crate::device_channel::require_agent(&state, &headers).await?;
     if id != result.id {
         return Err(ApiError::BadRequest("任务编号不一致".into()));
     }
@@ -123,7 +123,7 @@ pub async fn record_result(
     .await?
     .ok_or(ApiError::NotFound)?;
     if let Some(report) = &result.report {
-        super::service::validate_plugin_report(&row.get::<Value, _>("job"), report)?;
+        super::service::validate_tool_report(&row.get::<Value, _>("job"), report)?;
     }
     let job = saved_job(row.get("job"), result.id)?;
     if job.id != result.id || job.plugin != result.plugin {

@@ -216,11 +216,11 @@
 | 工作区 | 领域（ADR 0128） | 现在的前端目录（`web/src/`） | 现在的后端位置 |
 | --- | --- | --- | --- |
 | 概览 | 应用层组合各领域的汇总 | `app/Overview.tsx` | 读取各领域的汇总接口 |
-| 服务器 | 资源、名称与证书、基础网络、作业；看板与遥测属观测 | `resources/`（服务器与云资源）、`observability/display/`、`naming/`、`networking/`；实验 `operations/`、`networking/configuration/` | `panel-host` 的 `servers`；`crates/resources/`、`crates/networking/`、`crates/naming/`、`crates/observability/` |
+| 服务器 | 资源、名称与证书、基础网络、作业；看板与遥测属观测 | `resources/`（服务器与云资源）、`observability/display/`、`naming/`、`networking/`；实验 `operations/`、`networking/configuration/` | `crates/resources/`（服务器、接入、设备连接与云资源）、`crates/networking/`、`crates/naming/`、`crates/observability/` |
 | 网络服务 | 流量服务、服务权益 | `traffic/`、`access/` | `crates/traffic/`、`crates/access/`、`crates/compiler/`、`crates/adapter-singbox/` |
-| 监测与诊断 | 观测 | `observability/`（`monitoring/`、`network-workbench/`、`server-diagnostics/`、`statistics/`） | `crates/observability/`（诊断工具在 `diagnostic_plugins/`） |
+| 监测与诊断 | 观测 | `observability/`（`monitoring/`、`network-workbench/`、`server-diagnostics/`、`statistics/`） | `crates/observability/`（诊断工具在 `diagnostic_tools/`） |
 | 费用与续费 | 成本 | `costs/`（`expenses/`、`subscriptions/`、`currency/`、`cloud/`） | `crates/costs/` |
-| 系统 | 平台治理（含制品、备份与恢复）；汇率属成本 | `governance/`（`system/` 含 `Artifacts.tsx`、`control-center/`、`notifications/`）、`costs/currency/` | `panel-host` 的 `settings`、`control_center`、`auth`、`passkeys`、`artifacts`、`backups`；汇率在 `crates/costs/` |
+| 系统 | 平台治理（含制品）；备份与恢复的执行与记录属作业；汇率属成本 | `governance/`（`system/` 含 `Artifacts.tsx`、`control-center/`、`notifications/`）、`costs/currency/` | `crates/governance/`（`control_center`、`auth`、`passkeys`、`releases`、`artifacts`）；设置存储在平台 `crates/panel-host/` 的 `settings`；备份在 `crates/operations/` 的 `backups`；汇率在 `crates/costs/` |
 
 后端的平台、领域与应用分层不随功能分级改变，见[仓库目录与维护约定](repository.md)。
 

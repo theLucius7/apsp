@@ -23,7 +23,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool, Postgres, Row, Transaction, types::Json as DbJson};
 use uuid::Uuid;
 
@@ -92,12 +91,6 @@ struct Operation {
     error_code: Option<String>,
     original_result: Option<String>,
     reconciliation: Option<Value>,
-}
-fn digest<T: Serialize>(value: &T) -> ApiResult<String> {
-    Ok(format!(
-        "{:x}",
-        Sha256::digest(serde_json::to_vec(value).map_err(anyhow::Error::from)?)
-    ))
 }
 fn groups(mut value: Vec<String>) -> ApiResult<Vec<String>> {
     if !(1..=16).contains(&value.len())
@@ -257,7 +250,7 @@ async fn snapshot(
         if !snapshot.current_groups.contains(&group.id) {
             continue;
         }
-        let hash = digest(group)?;
+        let hash = crate::digest::json(group)?;
         let matches = owned.iter().any(|row| {
             row.get::<String, _>("group_id") == group.id
                 && hash == row.get::<String, _>("group_digest")
@@ -331,7 +324,7 @@ async fn preview_with(
     }
     let (before, observed_at) = snapshot(state, cloud, &account, &resource, &target).await?;
     let impact = impact(&before, &target)?;
-    let hash = digest(&json!({"before":before,"target":target,"impact":impact}))?;
+    let hash = crate::digest::json(&json!({"before":before,"target":target,"impact":impact}))?;
     let mut tx = lock(&state.pool, account.id).await?;
     apsp_resources::cloud::work::ensure_idle(&mut tx, id).await?;
     let operation = Uuid::new_v4();

@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use apsp_panel::router;
-use apsp_panel_host::{AppState, config::Config};
+use apsp_panel_host::config::Config;
 use apsp_protocol::now_timestamp;
 use data_encoding::BASE32_NOPAD;
 use hmac::{Hmac, Mac};
@@ -40,7 +40,7 @@ impl Panel {
             data_dir: directory.clone(),
             admin_password: Some(PASSWORD.into()),
         };
-        let state = AppState::new(pool.clone(), config).await?;
+        let state = apsp_panel::state(pool.clone(), config).await?;
         let permits = state.login_permits.clone();
         let app = router(state).into_make_service_with_connect_info::<SocketAddr>();
         let task = tokio::spawn(async move {

@@ -68,9 +68,9 @@
 
 管理员接口（仅所有者会话）：
 
-- `GET /api/plugins/sing-box/reachability`：当前状态、设置、最近事件。
-- `GET/PUT /api/plugins/sing-box/reachability/settings`：修改体为 `{ "enabled": true, "interval_minutes": 30, "revision": 读取到的版本, "api_token": "可选", "clear_token": false }`。
-- `POST /api/plugins/sing-box/reachability/run`：加入一轮检测，未启用时返回 409。
+- `GET /api/observability/reachability`：当前状态、设置、最近事件。
+- `GET/PUT /api/observability/reachability/settings`：修改体为 `{ "enabled": true, "interval_minutes": 30, "revision": 读取到的版本, "api_token": "可选", "clear_token": false }`。
+- `POST /api/observability/reachability/run`：加入一轮检测，未启用时返回 409。
 
 设计与取舍见 [ADR 0105](adr/0105-china-reachability-monitor.md)。
 

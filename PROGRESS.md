@@ -1,5 +1,41 @@
 # 执行进度
 
+## 2026-11-13：阶段 B2 收尾——宿主只剩平台机制，设备连接归资源，接口地址按领域（ADR 0132）
+
+- 用户要求：“查看 apsp 根据仓库的内容，继续重构”，“激进一点修改，删掉重复的内容，用底层统一，不再使用之前的 plugin 模式，扫描”，并给出六行的归属表。决策见 [ADR 0132](docs/adr/0132-platform-only-host-and-domain-addresses.md)，取舍见 `docs/open-questions.md`。基于 main `91059f8c`；可见的变化只有控制台接口地址（审计记录里的地址随之变化）与界面上四处不再出现“插件”的文字，其余行为不变；不改数据库基线、Agent 协议与设备上的路径。
+- 完成项：
+  - 宿主迁空：`crates/panel-host` 只剩平台机制（约 2.0 万行 → 3,066 行），`AppState` 只留平台状态。治理成为新 crate `crates/governance`；服务器、接入、资产、生命周期、退役与云资源关联迁入 `crates/resources`；网络配置迁入 `crates/networking`；ACME、证书与 DNS-01 验证迁入 `crates/naming`（名称排到基础网络之后，`Dns01` 接口删除）；搜索成为应用层的组合视图；X.509 读取成为平台机制。
+  - 归属按表调整：设备通道（原平台的 `agent_api.rs`）、设备认证、设备下载制品与接入令牌归资源；Agent 自更新检查与面板备份（计划、执行、恢复记录）归作业，对应的表改了登记。
+  - 插件式的机制去掉：治理的 `Contributions` 钩子、应用层的 `integration_policy.rs` 与流量服务的 `host_support.rs` 删除；路由权限合为治理请求守卫里的一张表，审计快照改经 `guard::AuditSnapshots`；应用层在 `domains.rs` 一处组合（一张路由清单、一张后台任务清单，不再嵌套前缀）。类型化接口现在十个。
+  - 路由权限的守护：结论表 `crates/panel/tests/fixtures/route-policy.tsv`（505 行：499 行由改动前的守卫生成，重构后的守卫逐行得出相同结论；另 6 行是工具补上 `get as route_get` 这类别名的识别后补入的外部来源 GET 路由）、Rust 测试 `route_policy`、`tools/route-policy.py` 与它的 Python 测试；CI 定义里加了对应步骤（CI 仍暂停）。
+  - 接口地址按领域：`/api/plugins/...` 下的 185 条路由改到 `/api/traffic`、`/api/access`、`/api/naming`、`/api/costs`、`/api/observability`、`/api/resources/alicloud`；旧地址由 `crates/panel/src/moved_paths.rs` 改写，保留一个发布版本。前端、测试、仓库里的运维脚本与现行使用文档一起改。
+  - 名称与重复：`diagnostic_plugins/` 改为 `diagnostic_tools/`，`notifications/plugin.rs` 改为 `delivery.rs`，`PluginServer` 改为 `RuntimeServer`，界面上四处“插件”字样去掉；JSON 内容摘要、服务器地址判断、域名检查、安装脚本地址与 ISO 时间格式各合为一处；前端的统计条、请求编号、资源快照等合为共用模块，删除无人引用的文件与导出。
+  - 边界：越界清单 458 条 → 392 条（SQL 298、前端引用 94，代码引用与 `#[path]` 为零），其中 4 条因代码或表换了所有者而新记；清单的代码部分每个所有者一个 crate 一行；层级检查登记 `crates/governance`。
+  - 扫描：归属、重复实现、插件残留与前端四遍只读扫描；这一步没做的事连同原因与条件列在 [architecture.md §12](docs/architecture.md#12-扫描结论与余下工作2026-11-13)。
+  - 文档：新增 ADR 0132 并登记到 ADR 索引；`docs/architecture.md`（领域表、依赖顺序、三项检查、代码结构、十个接口、阶段 B2 的结果、第 12 节）、`docs/domain-map.md`、`AGENTS.md`「分层」与「实现与检查」、`docs/repository.md`、`docs/dev.md`、`docs/api.md`、`docs/singbox-groups.md`、`docs/product-map.md`、`docs/redesign/03-objects.md` 与文档导航按现在的代码更新；较早的 ADR、验收记录与本文件的历史条目保持原样。
+- 验证结果（本地，2026-11-13；CI 仍暂停，未触发）：
+  - `cargo fmt --all --check` 通过；`cargo clippy --all-targets -- -D warnings` 覆盖 `apsp-panel-host`、`apsp-cloud-api`、`apsp-governance`、`apsp-resources`、`apsp-networking`、`apsp-naming`、`apsp-traffic`、`apsp-access`、`apsp-costs`、`apsp-observability`、`apsp-operations`、`apsp-panel`，全部通过。Agent 一侧的 crate 与 `protocol`、`compiler` 没有改动，没有重跑。
+  - 单元测试：以上 11 个平台与领域 crate 的 `--lib` 共 548 项通过。
+  - 面板集成测试：除 `end_to_end` 外的 80 个目标共 389 项通过、0 项失败、6 项按原有标注忽略；`passkeys` 目标另带 `--include-ignored` 运行，连同浏览器虚拟认证器的往返共 7 项通过。最后几处小改动（日历旧地址长期保留、应用 crate 的构建脚本去掉重复的依赖清单、路由权限表补 6 行）之后补跑 `--lib`、`moved_api_paths`、`route_policy`、`frontend`、`expense_subscriptions`、`control_center`、`foundation`，全部通过。
+  - 路由：代码迁出宿主之后、改地址之前，静态列出的路由与改动前逐条相同（527 行）；改地址之后 `/api/plugins` 下没有登记的路由，旧地址经改写得到与现地址相同的应答（`moved_api_paths`）。路由权限结论表 505 行，其中 499 行在改动前的守卫上生成，重构后的守卫逐行相同。
+  - Python：`tools/check-core-boundary.py`、`tools/check-feature-boundaries.py`（392 条已知越界，没有新增）、`tools/route-policy.py`、`tools/check-source-artifacts.py` 通过；`tests/test_core_boundary.py`、`tests/test_feature_boundaries.py`、`tests/test_route_policy.py` 共 36 项，`scripts/test-e2e-driver.py` 33 项，`tools/test_migrate_cdt_guards.py` 3 项，`tools/test-managed-paths-linux-contracts.py` 31 项，全部通过。
+  - 前端：`tsc -b` 与 `bun run build` 通过，产物里没有 `/api/plugins`；`bun test` 238 项通过；69 个浏览器测试（`web/tests/*.mjs`，`passkeys.mjs` 由上面的 Rust 测试驱动）全部通过。
+  - 未验证：`end_to_end`（需要真实的 Agent 部署，本机在未改动的 main 上同样不通过）；另外 5 项带 `#[ignore]` 的测试（需要真实运行时或 root）；依赖 `minisign` 的发布类 Python 测试；镜像没有在本地构建，由部署器的构建与换镜像前的试启动把关；没有实机验收。
+- 已知问题：
+  - 旧接口地址只保留一个发布版本：改写删除之后，按 `/api/plugins/...` 写的仓库外脚本要改用现地址。续费日历的订阅地址 `/api/plugins/expenses/calendar.ics` 是外部契约，它的改写长期保留。审计记录从这一版起带现地址，旧记录仍是旧地址，按地址查审计时两种都要查。
+  - 地址不代表代码位置：`/api/resources/alicloud` 下的路由由资源、作业、成本与应用层实现，`/api/access/statistics` 的处理函数仍在观测。
+  - 平台的告警发件箱仍读领域的表（5 条 SQL），治理的系统健康视图与保留期清理仍直接读写作业与观测的表；凭据库与任务心跳的表登记在平台，读写它们的代码在治理。
+  - 两个 Globalping 客户端与三处 Cloudflare 接口没有合并，各自保持原来的行为。
+  - 接口响应字段、数据库、后台任务心跳名、Agent 协议与设备目录里仍有 `plugin` 字样（清单见 architecture.md §12.3）；界面与内部命名已不再出现。
+  - CI 仍暂停，未触发。
+- 下一步：
+  1. 告警发件箱迁到观测，平台声明“设置已变更”的接口。
+  2. 合并两个 Globalping 客户端与三处 Cloudflare 接口，先逐项定下行为。
+  3. 系统健康视图改为应用层的组合视图，保留期清理由各所有者执行。
+  4. 流量服务里的作业胶水（部署自动化、运行时操作、运行时版本的分批发布）迁到作业。
+  5. 阶段 F 的数据收尾（文档存储、`sessions`、`servers` 上其他领域的列、表名）：走 PR，附接入脚本。
+  6. 下一个发布版本之后删除 `moved_paths.rs` 里除日历订阅以外的改写与旧页面地址（`/#/settings/plugins` 等）。
+
 ## 2026-11-10：#266 合并后镜像构建失败——`Dockerfile` 仍复制已退出的 `plugins/`
 
 - 现象：用户 18:02、18:03 合并 #266（`plugins/` 目录退出）与 #265（重新生成接入引导脚本）。部署器对 `0f769775`、`dfbd4940` 的两次构建都停在 `Dockerfile` 的 `COPY plugins/ ./plugins/`（目录已不存在），生产仍运行 `5aba3b13` 的镜像，面板健康。部署器在构建前先停面板做完整备份，两次失败各让面板停了约 2 分 50 秒（18:03–18:05、18:05–18:08）；同一提交每 15 分钟重试一次，每次重试都会再停一次。

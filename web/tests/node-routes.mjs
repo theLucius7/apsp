@@ -29,13 +29,13 @@ try {
       if (route.request().method() !== 'GET') { writes.push(path); return route.fulfill({ status:405, json:{} }) }
       let data
       if (path === '/api/dashboard/access') data = { authenticated:true, public_dashboard:false }
-      else if (path === '/api/plugins/sing-box/servers') data = servers
-      else if (path === '/api/plugins/sing-box/nodes') data = nodes
-      else if (path === '/api/plugins/sing-box/ordered-proxy-resources') data = proxyResourceFixtures(nodes, servers)
-      else if (path === '/api/plugins/sing-box/ordered-subscription-sources') data = []
-      else if (path === '/api/plugins/sing-box/node-catalog') data = catalogView(nodes.map(node => ({ ...node, kind:'direct', server_name:`服务器${node.server_id}`, enabled:true, available:true, role:'direct', entry_node_id:null, tcp:true, udp:true, legacy:false, active_generation:null, pending_generation:null, minimum_generation:0, stage:'direct', last_error:null, reference_count:0, entry_eligible:true })))
-      else if (path === '/api/plugins/sing-box/usage') data = { total:'0', uplink:'0', downlink:'0', by_node:[], by_user:[] }
-      else if (['policy-groups','package-groups','chains'].some(key => path === `/api/plugins/sing-box/${key}`)) data = []
+      else if (path === '/api/traffic/servers') data = servers
+      else if (path === '/api/traffic/nodes') data = nodes
+      else if (path === '/api/traffic/ordered-proxy-resources') data = proxyResourceFixtures(nodes, servers)
+      else if (path === '/api/traffic/ordered-subscription-sources') data = []
+      else if (path === '/api/traffic/node-catalog') data = catalogView(nodes.map(node => ({ ...node, kind:'direct', server_name:`服务器${node.server_id}`, enabled:true, available:true, role:'direct', entry_node_id:null, tcp:true, udp:true, legacy:false, active_generation:null, pending_generation:null, minimum_generation:0, stage:'direct', last_error:null, reference_count:0, entry_eligible:true })))
+      else if (path === '/api/access/usage') data = { total:'0', uplink:'0', downlink:'0', by_node:[], by_user:[] }
+      else if (['/api/access/policy-groups','/api/access/package-groups','/api/traffic/chains'].includes(path)) data = []
       else { errors.push(`Unexpected API ${path}`); return route.fulfill({ status:404, json:{} }) }
       await route.fulfill({ json:data })
     })

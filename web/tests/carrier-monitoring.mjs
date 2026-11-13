@@ -46,7 +46,7 @@ try {
       if (path === '/api/dashboard/access' && method === 'GET') return respond({ authenticated: true, public_dashboard: false })
       if (path === '/api/servers' && method === 'GET') return respond(servers)
       if (path === '/api/probes/overview' && method === 'GET') return respond(failing ? { error: 'TEST_ONLY overview unavailable' } : rows, failing ? 503 : 200)
-      if (path === '/api/plugins/sing-box/reachability' && method === 'GET') return respond({ settings: { enabled: false, interval_minutes: 60, minimum_interval_minutes: 15, maximum_interval_minutes: 1440, token_configured: false, revision: 1, next_run_at: 0, run_requested: false, running: false, last_run: {} }, targets: [], events: [] })
+      if (path === '/api/observability/reachability' && method === 'GET') return respond({ settings: { enabled: false, interval_minutes: 60, minimum_interval_minutes: 15, maximum_interval_minutes: 1440, token_configured: false, revision: 1, next_run_at: 0, run_requested: false, running: false, last_run: {} }, targets: [], events: [] })
       const serverProbes = path.match(/^\/api\/servers\/(\d+)\/probes$/)
       if (serverProbes && method === 'GET') return respond(rows.filter(row => row.server_id === Number(serverProbes[1])).map(row => row.probe))
       const history = path.match(/^\/api\/servers\/(\d+)\/probe-results$/)

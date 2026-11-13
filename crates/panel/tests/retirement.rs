@@ -251,7 +251,12 @@ async fn failed_retirement_keeps_server_and_offline_retry_is_not_confirmation(
     }
     socket.close(None).await?;
     timeout(Duration::from_secs(5), async {
-        while panel.state.connections.read().await.contains_key(&server) {
+        while apsp_resources::device_channel::devices(&panel.state)
+            .connections
+            .read()
+            .await
+            .contains_key(&server)
+        {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
@@ -402,7 +407,11 @@ async fn deletion_serializes_with_reconnect_and_cannot_leave_a_live_session(
     });
     timeout(Duration::from_secs(5), async {
         loop {
-            if panel.state.device_lifecycle.try_lock().is_err() {
+            if apsp_resources::device_channel::devices(&panel.state)
+                .lifecycle
+                .try_lock()
+                .is_err()
+            {
                 break;
             }
             tokio::task::yield_now().await;
@@ -429,7 +438,13 @@ async fn deletion_serializes_with_reconnect_and_cannot_leave_a_live_session(
         "a reconnect racing with deletion must not receive hello.ack"
     );
     assert!(!active(&pool, server).await?);
-    assert!(!panel.state.connections.read().await.contains_key(&server));
+    assert!(
+        !apsp_resources::device_channel::devices(&panel.state)
+            .connections
+            .read()
+            .await
+            .contains_key(&server)
+    );
     let sessions: i64 = sqlx::query_scalar("SELECT count(*) FROM sessions WHERE server_id=$1")
         .bind(server)
         .fetch_one(&pool)

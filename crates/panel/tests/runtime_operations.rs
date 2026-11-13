@@ -20,7 +20,7 @@ async fn runtime_operations_are_capability_gated_device_scoped_and_immutable(
     let cookie = panel.admin_cookie().await?;
     let (server, _socket, ack) = panel.authenticated_device(&cookie, "runtime").await?;
     let (_, _other_socket, other_ack) = panel.authenticated_device(&cookie, "other").await?;
-    let path = format!("/api/plugins/sing-box/servers/{server}/runtime-operations");
+    let path = format!("/api/traffic/servers/{server}/runtime-operations");
     sqlx::query("UPDATE servers SET capabilities='[\"singbox\"]' WHERE id=$1")
         .bind(server)
         .execute(&panel.state.pool)
@@ -47,7 +47,7 @@ async fn runtime_operations_are_capability_gated_device_scoped_and_immutable(
             .contains("尚未安装 sing-box")
     );
     // Capability advertisements do not authorize plugin enablement.
-    panel.enable_plugin(&cookie, server).await?;
+    panel.enable_runtime(&cookie, server).await?;
     let unsupported = panel
         .admin(Method::POST, &path, &cookie, Some(inspect.clone()))
         .await?;
@@ -162,7 +162,7 @@ async fn runtime_mutations_require_current_failed_target_and_refuse_retirement(
     let panel = TestPanel::start(pool).await?;
     let cookie = panel.admin_cookie().await?;
     let (server, _socket, _) = panel.authenticated_device(&cookie, "target").await?;
-    let path = format!("/api/plugins/sing-box/servers/{server}/runtime-operations");
+    let path = format!("/api/traffic/servers/{server}/runtime-operations");
     let disabled = panel
         .admin(
             Method::POST,
@@ -178,7 +178,7 @@ async fn runtime_mutations_require_current_failed_target_and_refuse_retirement(
             .unwrap()
             .contains("尚未安装 sing-box")
     );
-    panel.enable_plugin(&cookie, server).await?;
+    panel.enable_runtime(&cookie, server).await?;
     sqlx::query("UPDATE servers SET capabilities='[\"singbox\",\"runtime:operations:v1\"]',dirty_at=NULL WHERE id=$1").bind(server).execute(&panel.state.pool).await?;
     sqlx::query("INSERT INTO server_module_status(server_id,module,target_rev,applied_rev,last_result_rev,healthy,last_error,updated_at) VALUES($1,'singbox',2,1,2,true,'fixture failure',$2)").bind(server).bind(now_timestamp()).execute(&panel.state.pool).await?;
     for body in [

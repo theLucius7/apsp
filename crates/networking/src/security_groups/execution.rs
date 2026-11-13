@@ -93,8 +93,9 @@ pub(super) async fn confirm(
         snapshot(state, cloud, &account, &resource, &initial.target_groups).await?;
     let impact = impact(&fresh, &initial.target_groups)?;
     if fresh != initial.before.0
-        || digest(&json!({"before":fresh,"target":initial.target_groups,"impact":impact}))?
-            != initial.snapshot_digest
+        || crate::digest::json(
+            &json!({"before":fresh,"target":initial.target_groups,"impact":impact}),
+        )? != initial.snapshot_digest
     {
         return Err(ApiError::Conflict(
             "官方当前组、策略、版本或授权关联已变化，请重新预览".into(),
@@ -260,7 +261,7 @@ async fn execute(state: &AppState, headers: &HeaderMap, id: Uuid, cloud: &Cloud)
                     return Ok(());
                 }
             };
-        let fresh_digest = digest(&fresh_group)?;
+        let fresh_digest = crate::digest::json(&fresh_group)?;
         evidence[position]["group_observed_at"] = json!(now_timestamp());
         evidence[position]["group_digest"] = json!(fresh_digest);
         let acceptable = fresh_group.kind == "normal"
@@ -345,7 +346,7 @@ async fn execute(state: &AppState, headers: &HeaderMap, id: Uuid, cloud: &Cloud)
                 .find(|data| data.id == group)
                 .ok_or_else(|| ApiError::Conflict("目标组固定策略缺失".into()))?;
             sqlx::query("INSERT INTO alicloud_managed_security_groups(resource_id,group_id,group_digest,operation_id,confirmed_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(resource_id,group_id) DO NOTHING")
-                .bind(resource.id).bind(&group).bind(digest(data)?).bind(id).bind(now_timestamp()).execute(&mut *tx).await?;
+                .bind(resource.id).bind(&group).bind(crate::digest::json(data)?).bind(id).bind(now_timestamp()).execute(&mut *tx).await?;
         } else {
             sqlx::query(
                 "DELETE FROM alicloud_managed_security_groups WHERE resource_id=$1 AND group_id=$2",

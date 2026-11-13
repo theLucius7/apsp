@@ -39,7 +39,7 @@ pub(super) async fn execute(
             user_id,
             package_group_id,
         } => {
-            let servers = apsp_traffic::business::lock_user_servers(tx, *user_id).await?;
+            let servers = crate::proxy_users::lock_user_servers(tx, *user_id).await?;
             crate::user_accounts::require_compatible_package(tx, *user_id, *package_group_id)
                 .await?;
             let assignment:i64=sqlx::query_scalar("INSERT INTO singbox_package_assignments(user_id,request_id,package_group_id,package_name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,starts_at,expires_at) SELECT $1,$2,id,name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,$4,$4+duration_days::bigint*86400 FROM singbox_package_groups WHERE id=$3 AND deleted_at IS NULL RETURNING id")
@@ -49,7 +49,7 @@ pub(super) async fn execute(
             json!({"status":"saved","assignment_id":assignment,"effective_at":now,"ledger_preserved":true})
         }
         Operation::SetValidity { user_id, until } => {
-            let servers = apsp_traffic::business::lock_user_servers(tx, *user_id).await?;
+            let servers = crate::proxy_users::lock_user_servers(tx, *user_id).await?;
             let previous: i64 = sqlx::query_scalar("SELECT a.expires_at FROM singbox_user_packages p JOIN singbox_package_assignments a ON a.id=p.assignment_id WHERE p.user_id=$1")
                 .bind(user_id).fetch_one(&mut **tx).await?;
             let expires_at = match until {
@@ -70,7 +70,7 @@ pub(super) async fn execute(
             json!({"status":"saved","assignment_id":assignment,"previous_expires_at":shown(previous),"expires_at":shown(expires_at),"quota_reset":false})
         }
         Operation::ResetQuota { user_id } => {
-            let servers = apsp_traffic::business::lock_user_servers(tx, *user_id).await?;
+            let servers = crate::proxy_users::lock_user_servers(tx, *user_id).await?;
             // The credit is the usage found at apply time, never the figure shown by the
             // preview, so traffic that arrived in between is cleared as well. The receipt
             // reports the bytes actually credited.
@@ -80,7 +80,7 @@ pub(super) async fn execute(
             json!({"status":"saved","credit_bytes":credit,"validity_extended":false,"ledger_preserved":true})
         }
         Operation::RotateNodeCredentials { user_id, node_ids } => {
-            let servers = apsp_traffic::business::lock_user_servers(tx, *user_id).await?;
+            let servers = crate::proxy_users::lock_user_servers(tx, *user_id).await?;
             let configs: Vec<(i64, Value)> =
                 sqlx::query_as("SELECT id,protocol_config FROM nodes WHERE id=ANY($1) ORDER BY id")
                     .bind(node_ids)

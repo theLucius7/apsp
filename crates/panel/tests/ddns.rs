@@ -17,7 +17,7 @@ async fn prove_cookie(pool: &PgPool, cookie: &str) -> Result<()> {
         .context("test session cookie")?;
     let now = apsp_protocol::now_timestamp();
     sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET verified_at=$2,expires_at=$3")
-        .bind(apsp_panel_host::auth::hash_token(token)).bind(now).bind(now + 300).execute(pool).await?;
+        .bind(apsp_governance::auth::hash_token(token)).bind(now).bind(now + 300).execute(pool).await?;
     Ok(())
 }
 
@@ -33,7 +33,7 @@ async fn dual_stack_creation_is_atomic_and_redacts_all_provider_credentials(
     let cookie = panel.admin_cookie().await?;
     prove_cookie(&pool, &cookie).await?;
     let server = panel.create_server(&cookie, "TEST_ONLY dual stack").await?;
-    let path = "/api/plugins/ddns/rules/dual-stack";
+    let path = "/api/naming/rules/dual-stack";
     assert_eq!(
         panel
             .admin(Method::POST, path, "", Some(input(server)))
@@ -72,10 +72,7 @@ async fn dual_stack_creation_is_atomic_and_redacts_all_provider_credentials(
         panel
             .admin(
                 Method::DELETE,
-                &format!(
-                    "/api/plugins/ddns/rules/{}",
-                    rules[0]["id"].as_str().unwrap()
-                ),
+                &format!("/api/naming/rules/{}", rules[0]["id"].as_str().unwrap()),
                 &cookie,
                 None,
             )
@@ -117,7 +114,7 @@ async fn dual_stack_reserves_two_slots_and_a_single_family_still_uses_one(
         let mut body = input(server);
         body["config"]["record_name"] = format!("node{i}.example.com").into();
         panel
-            .admin(Method::POST, "/api/plugins/ddns/rules", &cookie, Some(body))
+            .admin(Method::POST, "/api/naming/rules", &cookie, Some(body))
             .await?
             .error_for_status()?;
     }
@@ -125,7 +122,7 @@ async fn dual_stack_reserves_two_slots_and_a_single_family_still_uses_one(
         panel
             .admin(
                 Method::POST,
-                "/api/plugins/ddns/rules/dual-stack",
+                "/api/naming/rules/dual-stack",
                 &cookie,
                 Some(input(server))
             )
@@ -145,7 +142,7 @@ async fn dual_stack_reserves_two_slots_and_a_single_family_still_uses_one(
     panel
         .admin(
             Method::POST,
-            "/api/plugins/ddns/rules/dual-stack",
+            "/api/naming/rules/dual-stack",
             &cookie,
             Some(input(server)),
         )
@@ -172,7 +169,7 @@ async fn administrator_crud_redacts_credentials_guards_revisions_and_never_delet
         assert_eq!(
             panel
                 .client
-                .request(method, format!("{}/api/plugins/ddns/rules", panel.base))
+                .request(method, format!("{}/api/naming/rules", panel.base))
                 .json(&body)
                 .send()
                 .await?
@@ -183,7 +180,7 @@ async fn administrator_crud_redacts_credentials_guards_revisions_and_never_delet
     let response = panel
         .admin(
             Method::POST,
-            "/api/plugins/ddns/rules",
+            "/api/naming/rules",
             &cookie,
             Some(body.clone()),
         )
@@ -194,7 +191,7 @@ async fn administrator_crud_redacts_credentials_guards_revisions_and_never_delet
     assert!(rule.get("api_token").is_none());
     assert_eq!(rule["token_configured"], true);
     assert_eq!(rule["config"]["record_name"], "node.example.com");
-    let path = format!("/api/plugins/ddns/rules/{}", rule["id"].as_str().unwrap());
+    let path = format!("/api/naming/rules/{}", rule["id"].as_str().unwrap());
     for (method, suffix) in [
         (Method::PATCH, ""),
         (Method::DELETE, ""),
@@ -215,7 +212,7 @@ async fn administrator_crud_redacts_credentials_guards_revisions_and_never_delet
         panel
             .admin(
                 Method::POST,
-                "/api/plugins/ddns/rules",
+                "/api/naming/rules",
                 &cookie,
                 Some(body.clone())
             )
@@ -281,7 +278,7 @@ async fn administrator_crud_redacts_credentials_guards_revisions_and_never_delet
         .strip_prefix("apsp_session=")
         .context("test session cookie")?;
     sqlx::query("DELETE FROM administrator_reauth WHERE session_hash=$1")
-        .bind(apsp_panel_host::auth::hash_token(session_token))
+        .bind(apsp_governance::auth::hash_token(session_token))
         .execute(&pool)
         .await?;
     assert_eq!(
@@ -314,7 +311,7 @@ async fn administrator_crud_redacts_credentials_guards_revisions_and_never_delet
         StatusCode::NO_CONTENT
     );
     let rules: Vec<Value> = panel
-        .admin(Method::GET, "/api/plugins/ddns/rules", &cookie, None)
+        .admin(Method::GET, "/api/naming/rules", &cookie, None)
         .await?
         .json()
         .await?;
@@ -332,15 +329,12 @@ async fn only_new_static_reports_are_fresh_and_missing_public_ip_never_contacts_
     let mut body = input(server);
     body["config"]["enabled"] = true.into();
     let rule: Value = panel
-        .admin(Method::POST, "/api/plugins/ddns/rules", &cookie, Some(body))
+        .admin(Method::POST, "/api/naming/rules", &cookie, Some(body))
         .await?
         .error_for_status()?
         .json()
         .await?;
-    let path = format!(
-        "/api/plugins/ddns/rules/{}/sync",
-        rule["id"].as_str().unwrap()
-    );
+    let path = format!("/api/naming/rules/{}/sync", rule["id"].as_str().unwrap());
     // No background worker runs in this fixture. This manual sync must stop
     // locally, even though the rule contains a syntactically valid test token.
     let response: Value = panel
@@ -354,7 +348,7 @@ async fn only_new_static_reports_are_fresh_and_missing_public_ip_never_contacts_
     let info: apsp_protocol::StaticInfo = serde_json::from_value(
         json!({"hostname":"test","os":"test","arch":"x86_64","cpu_model":"test","cpu_cores":1,"memory_total":1,"ip_addresses":["192.0.2.1"]}),
     )?;
-    apsp_panel::agent_api::process_message(
+    apsp_resources::device_channel::process_message(
         &panel.state,
         server,
         apsp_protocol::Message::TelemetryStatic(info.clone()),
@@ -370,7 +364,7 @@ async fn only_new_static_reports_are_fresh_and_missing_public_ip_never_contacts_
         .bind(server)
         .execute(&pool)
         .await?;
-    apsp_panel::agent_api::process_message(
+    apsp_resources::device_channel::process_message(
         &panel.state,
         server,
         apsp_protocol::Message::TelemetryStatic(info),
@@ -407,7 +401,7 @@ async fn multicloud_credentials_are_write_only_rotated_together_and_default_line
         let response = panel
             .admin(
                 Method::POST,
-                "/api/plugins/ddns/rules",
+                "/api/naming/rules",
                 &cookie,
                 Some(body.clone()),
             )
@@ -426,12 +420,12 @@ async fn multicloud_credentials_are_write_only_rotated_together_and_default_line
         );
         assert_eq!(
             panel
-                .admin(Method::POST, "/api/plugins/ddns/rules", &cookie, Some(body))
+                .admin(Method::POST, "/api/naming/rules", &cookie, Some(body))
                 .await?
                 .status(),
             StatusCode::CONFLICT
         );
-        let path = format!("/api/plugins/ddns/rules/{}", rule["id"].as_str().unwrap());
+        let path = format!("/api/naming/rules/{}", rule["id"].as_str().unwrap());
         let mut edit =
             json!({"config":rule["config"],"revision":1,"access_key_id":"TEST_ONLY_NEW_ID"});
         assert_eq!(
@@ -468,7 +462,7 @@ async fn access_key_accounts_are_saved_in_one_step_without_echoing_the_secret(
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     prove_cookie(&pool, &cookie).await?;
-    let path = "/api/plugins/ddns/accounts/access-key";
+    let path = "/api/naming/accounts/access-key";
     let body = |provider: &str, zone: &str| json!({"provider":provider,"access_key_id":"TEST_ONLY_ACCESS_ID","access_key_secret":SECRET,"zone_ids":[zone]});
     assert_eq!(
         panel
@@ -528,7 +522,7 @@ async fn access_key_accounts_are_saved_in_one_step_without_echoing_the_secret(
             .any(|window| window == SECRET.as_bytes())
     );
     let listed = panel
-        .admin(Method::GET, "/api/plugins/ddns/accounts", &cookie, None)
+        .admin(Method::GET, "/api/naming/accounts", &cookie, None)
         .await?
         .text()
         .await?;

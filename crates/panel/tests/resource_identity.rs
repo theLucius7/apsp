@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 mod business_support;
+mod proxy_api;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 
@@ -27,7 +28,7 @@ async fn retiring_chain_entry_is_never_listed_as_a_direct_node(pool: PgPool) -> 
         let listed: Value = panel
             .admin(
                 Method::GET,
-                &format!("/api/plugins/sing-box/{path}"),
+                &proxy_api::proxy_api(&format!("/{path}")),
                 &cookie,
                 None,
             )

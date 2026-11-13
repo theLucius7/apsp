@@ -1,66 +1,112 @@
-//! The domain crates' routes and background work (ADR 0128). The typed interfaces between
-//! owners are connected in `wiring`.
+//! Every domain's routes and background work, in dependency order (ADR 0128). The typed
+//! interfaces between owners are connected in `wiring`.
 
 use apsp_access as access;
 use apsp_costs as costs;
+use apsp_governance as governance;
 use apsp_naming as naming;
 use apsp_networking as networking;
 use apsp_observability as observability;
 use apsp_operations as operations;
-use apsp_panel_host::AppState;
+use apsp_panel_host::{AppState, maintenance::supervise};
 use apsp_resources as resources;
 use apsp_traffic as traffic;
-use axum::Router;
+use axum::{Router, routing::get};
+use sqlx::PgPool;
 
-/// Connects the typed interfaces of the compiled domains; repeated calls are harmless.
+/// The heartbeat names the workers below write, as the system health view lists them.
+const HEARTBEATS: &[&str] = &[
+    "maintenance",
+    "telemetry-history",
+    "control-center",
+    "network-workbench",
+    "operations",
+    "operations-backups",
+    "operations-job-backups",
+    "network-certificates",
+    "ddns",
+    "expenses",
+    "alicloud",
+    "alicloud-cost-cache",
+    "alicloud-power",
+    "alicloud-eip-rotation",
+    "sing-box",
+];
+
+/// Connects the typed interfaces of the compiled domains and declares the workers the
+/// health view expects; repeated calls are harmless.
 pub fn install() {
     crate::wiring::install();
+    governance::control_center::system::expect_workers(HEARTBEATS);
 }
 
-/// The proxy console API keeps its `/api/plugins/sing-box` prefix (ADR 0131: it changes
-/// once the Nexus bridge exits); subscriptions and the device channel keep their paths.
+/// Every domain's routes, with the two views the application composes across domains.
 pub fn router() -> Router<AppState> {
     install();
     Router::new()
-        .nest(
-            "/api/plugins/sing-box",
-            traffic::management()
-                .merge(access::management())
-                .merge(observability::reachability::router()),
-        )
-        .merge(access::subscription_routes())
-        .merge(traffic::device_routes())
+        .merge(governance::routes())
+        .merge(resources::routes())
+        .merge(networking::routes())
         .merge(naming::routes())
+        .merge(traffic::routes())
+        .merge(access::routes())
         .merge(costs::routes())
-        // Cloud capabilities by domain: accounts and resources, bandwidth changes, power,
-        // address rotation, CDT traffic history, security groups and the combined view.
-        // They keep the `/api/plugins/alicloud` prefix until the prefixes change (ADR 0131).
-        .merge(resources::cloud::api::routes())
-        .merge(operations::cloud::bandwidth::routes())
-        .merge(operations::cloud::power::routes())
-        .merge(operations::cloud::eip_rotation::routes())
-        .merge(costs::cloud::traffic_history::routes())
-        .merge(networking::security_groups::routes())
+        .merge(observability::routes())
+        .merge(operations::routes())
         .merge(crate::cloud_overview::routes())
+        .route("/api/control-center/search", get(crate::search::search))
 }
 
+/// Runs every background worker until the returned future is dropped. Each worker is
+/// supervised on its own, so one panic neither stops the others nor goes unnoticed; the
+/// supervisor names are kept so logs and heartbeats stay continuous.
 pub async fn run(state: AppState) {
-    use apsp_panel_host::maintenance::supervise;
     install();
-    // Supervise each domain worker separately: one panic must not stop the others. The
-    // supervisor names are kept so worker heartbeats and logs stay continuous.
     let pool = state.pool.clone();
-    let expense_state = state.clone();
     tokio::join!(
-        supervise("sing-box", move || proxy(state.clone())),
+        supervise("maintenance", {
+            let state = state.clone();
+            move || crate::maintenance::run(state.clone())
+        }),
+        supervise("control-center", {
+            let state = state.clone();
+            move || governance::control_center::run(state.clone())
+        }),
         supervise("ddns", {
             let pool = pool.clone();
             move || naming::run(pool.clone())
         }),
+        supervise("network-certificates", {
+            let state = state.clone();
+            move || naming::run_certificates(state.clone())
+        }),
+        supervise("sing-box", {
+            let state = state.clone();
+            move || proxy(state.clone())
+        }),
+        supervise("expenses", {
+            let state = state.clone();
+            move || costs::run(state.clone())
+        }),
+        supervise("exchange-rates", {
+            let pool = pool.clone();
+            move || costs::exchange::run(pool.clone())
+        }),
+        supervise("telemetry-history", {
+            let pool = pool.clone();
+            move || telemetry_history(pool.clone())
+        }),
+        supervise("network-workbench", {
+            let state = state.clone();
+            move || network_workbench(state.clone())
+        }),
+        supervise("operations", {
+            let state = state.clone();
+            move || operations::jobs::run(state.clone())
+        }),
         supervise("alicloud", move || operations::cloud::worker::run(
             pool.clone()
         )),
-        supervise("expenses", move || costs::run(expense_state.clone()))
     );
 }
 
@@ -73,4 +119,50 @@ async fn proxy(state: AppState) {
         access::run(state.clone()),
         observability::reachability::run(state)
     );
+}
+
+async fn telemetry_history(pool: PgPool) {
+    let mut timer = tokio::time::interval(std::time::Duration::from_secs(60));
+    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        timer.tick().await;
+        let result = observability::telemetry::maintain(&pool).await;
+        let status = if result.is_ok() { "healthy" } else { "failed" };
+        if let Err(error) = result {
+            tracing::warn!(%error, "telemetry history maintenance failed");
+        }
+        if let Err(error) = governance::control_center::system::heartbeat(
+            &pool,
+            "telemetry-history",
+            status,
+            serde_json::json!({"source":"history-maintenance-cycle"}),
+        )
+        .await
+        {
+            tracing::warn!(%error,"telemetry worker heartbeat failed");
+        }
+    }
+}
+
+async fn network_workbench(state: AppState) {
+    let mut timer = tokio::time::interval(std::time::Duration::from_secs(5));
+    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        timer.tick().await;
+        let result = observability::network_workbench::tick(&state).await;
+        let status = if result.is_ok() { "healthy" } else { "failed" };
+        if let Err(error) = result {
+            tracing::warn!(%error,"network workbench dispatch failed");
+        }
+        if let Err(error) = governance::control_center::system::heartbeat(
+            &state.pool,
+            "network-workbench",
+            status,
+            serde_json::json!({"source":"dispatch-cycle"}),
+        )
+        .await
+        {
+            tracing::warn!(%error,"network workbench heartbeat failed");
+        }
+    }
 }

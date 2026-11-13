@@ -31,7 +31,7 @@ async fn totals(panel: &TestPanel, cookie: &str, suffix: &str) -> Result<Value> 
     Ok(panel
         .admin(
             Method::GET,
-            &format!("/api/plugins/sing-box/usage{suffix}"),
+            &format!("/api/access/usage{suffix}"),
             cookie,
             None,
         )
@@ -80,7 +80,7 @@ async fn websocket_acknowledges_committed_and_repeated_batches_once(pool: PgPool
     assert_eq!(
         panel
             .client
-            .get(format!("{}/api/plugins/sing-box/usage", panel.base))
+            .get(format!("{}/api/access/usage", panel.base))
             .send()
             .await?
             .status(),
@@ -192,7 +192,7 @@ async fn terminal_batches_remain_valid_after_revocation_and_deleted_users_keep_h
     panel
         .admin(
             Method::DELETE,
-            &format!("/api/plugins/sing-box/users/{user}"),
+            &format!("/api/access/users/{user}"),
             &cookie,
             None,
         )

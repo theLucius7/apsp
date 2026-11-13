@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 pub fn routes() -> Router<AppState> {
     Router::new().route(
-        "/api/plugins/alicloud/accounts/{id}/traffic-history",
+        "/api/resources/alicloud/accounts/{id}/traffic-history",
         get(history),
     )
 }

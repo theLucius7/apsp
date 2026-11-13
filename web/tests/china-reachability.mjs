@@ -61,10 +61,10 @@ try {
       const respond = (json, status = 200) => route.fulfill({ status, json })
       if (path === '/api/dashboard/access') return respond({ authenticated: true, public_dashboard: false })
       if (path === '/api/servers') return respond([{ id: 1, name: 'TEST_ONLY host', online: true }])
-      if (path === '/api/plugins/sing-box/reachability' && method === 'GET') return respond(overview())
+      if (path === '/api/observability/reachability' && method === 'GET') return respond(overview())
       // Expanding a row loads the server's probe history; this server has no probes.
       if ((path === '/api/probes/overview' || path === '/api/latency-tasks' || /^\/api\/servers\/\d+\/(probes|probe-results)$/.test(path)) && method === 'GET') return respond([])
-      if (path === '/api/plugins/sing-box/reachability/settings' && method === 'PUT') {
+      if (path === '/api/observability/reachability/settings' && method === 'PUT') {
         const body = request.postDataJSON(); writes.push(body); enabled = body.enabled; return respond(overview())
       }
       unexpected.push(`${method} ${path}`)

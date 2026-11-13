@@ -7,7 +7,7 @@ import { extname, resolve, sep } from 'node:path'
 
 // TEST_ONLY: shipping UI and owned loopback API snapshots, without cloud calls.
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
-const dist = fileURLToPath(new URL('../dist/', import.meta.url)), path = '/api/plugins/alicloud'
+const dist = fileURLToPath(new URL('../dist/', import.meta.url)), path = '/api/resources/alicloud'
 const server = createServer(async (request, response) => {
   const name = new URL(request.url, 'http://127.0.0.1').pathname, file = resolve(dist, name === '/' ? 'index.html' : `.${name}`)
   if (!file.startsWith(dist.endsWith(sep) ? dist : `${dist}${sep}`)) return response.writeHead(400).end()

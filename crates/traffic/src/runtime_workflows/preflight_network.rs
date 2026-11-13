@@ -27,21 +27,6 @@ fn addresses(info: &Value) -> BTreeSet<IpAddr> {
         .collect()
 }
 
-fn covers(names: &Value, host: &str) -> bool {
-    names
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .any(|name| {
-            name == host
-                || name.strip_prefix("*.").is_some_and(|suffix| {
-                    host.strip_suffix(&format!(".{suffix}"))
-                        .is_some_and(|prefix| !prefix.is_empty() && !prefix.contains('.'))
-                })
-        })
-}
-
 fn dns_evidence(
     observed: BTreeSet<IpAddr>,
     expected: &BTreeSet<IpAddr>,
@@ -266,14 +251,15 @@ pub(super) fn refresh(
                     certificate,
                     key: private_key,
                 }) => {
-                    let metadata = crate::network_configuration::certificate_metadata(certificate);
+                    let parsed = apsp_panel_host::x509::parse(certificate);
                     let pair = crate::node_protocol::validate_pem(certificate, private_key).is_ok();
-                    let (status, evidence) = match metadata {
-                        Ok(metadata) => {
+                    let (status, evidence) = match parsed {
+                        Ok(parsed) => {
                             let valid = pair
-                                && metadata["not_before"].as_i64().is_some_and(|at| at <= now)
-                                && metadata["not_after"].as_i64().is_some_and(|at| at > now)
-                                && covers(&metadata["names"], &node.sni);
+                                && parsed.not_before <= now
+                                && parsed.not_after > now
+                                && apsp_panel_host::x509::covers(&parsed.names, &node.sni);
+                            let metadata = parsed.metadata();
                             (
                                 if valid { "passed" } else { "failed" },
                                 json!({"node_id":node.id,"server_name":node.sni,"key_pair_matches":pair,"metadata":metadata,"trust_mode":"configured_public_certificate_pin","private_key_returned":false}),
@@ -366,14 +352,10 @@ async fn recent_handshake(
     }
     let expected_fingerprint = match node.protocol_config.tls() {
         Some(TlsConfig::Manual { certificate, .. }) => {
-            let Ok(metadata) = crate::network_configuration::certificate_metadata(certificate)
-            else {
+            let Ok(parsed) = apsp_panel_host::x509::parse(certificate) else {
                 return Ok(None);
             };
-            let Some(fingerprint) = metadata["fingerprint"].as_str() else {
-                return Ok(None);
-            };
-            Some(fingerprint.to_owned())
+            Some(parsed.fingerprint)
         }
         _ => None,
     };

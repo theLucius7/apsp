@@ -65,7 +65,7 @@ try {
       if (path.endsWith('/enrollment')) return fulfill({ token: 'TEST_ONLY', expires_at: second + 86400, install_command: 'sudo apsp-bootstrap --token TEST_ONLY', installation: { version: '0.3.0', tag: 'agent-v0.3.0' } })
       if (path.endsWith('/agent-settings')) return fulfill(settings)
       if (path.endsWith('/probes') || path.endsWith('/probe-results') || path.endsWith('/commands') || path.endsWith('/metrics') || path === '/api/probes/overview') return fulfill([])
-      if (/^\/api\/plugins\/sing-box\/servers\/\d+$/.test(path)) return fulfill({ id: 2, name: '东京资产', enabled: false, online: true, agent_supported: false, read_only: false, source: null })
+      if (/^\/api\/traffic\/servers\/\d+$/.test(path)) return fulfill({ id: 2, name: '东京资产', enabled: false, online: true, agent_supported: false, read_only: false, source: null })
       unexpected.push(`${request.method()} ${path}`)
       return fulfill({ error: 'Unexpected fixture request' }, 500)
     })

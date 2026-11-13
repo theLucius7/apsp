@@ -199,7 +199,7 @@ impl ProviderRegistry {
 }
 
 pub(super) fn node_descriptions(ready: bool, reason: Option<&str>) -> Vec<ProviderDescription> {
-    crate::diagnostic_plugins::ipquality::SOURCES
+    crate::diagnostic_tools::ipquality::SOURCES
         .iter()
         .filter(|(provider, _)| *provider != "egress-discovery")
         .map(|(provider, datasets)| {

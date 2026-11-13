@@ -22,11 +22,11 @@ use uuid::Uuid;
 pub(in super::super) fn routes() -> Router<AppState> {
     Router::new()
         .route(
-            "/api/plugins/alicloud/resources/{id}/cdt-state",
+            "/api/resources/alicloud/resources/{id}/cdt-state",
             post(import),
         )
         .route(
-            "/api/plugins/alicloud/resources/{id}/cdt-check",
+            "/api/resources/alicloud/resources/{id}/cdt-check",
             post(check),
         )
 }

@@ -38,22 +38,16 @@ fn first_page() -> u32 {
 
 pub(super) fn routes() -> Router<AppState> {
     Router::new()
-        .route("/api/plugins/ddns/accounts/{id}/records", get(list))
+        .route("/api/naming/accounts/{id}/records", get(list))
+        .route("/api/naming/accounts/{id}/records/preview", post(preview))
+        .route("/api/naming/accounts/{id}/records/apply", post(apply))
+        .route("/api/naming/accounts/{id}/records/history", get(history))
         .route(
-            "/api/plugins/ddns/accounts/{id}/records/preview",
-            post(preview),
-        )
-        .route("/api/plugins/ddns/accounts/{id}/records/apply", post(apply))
-        .route(
-            "/api/plugins/ddns/accounts/{id}/records/history",
-            get(history),
-        )
-        .route(
-            "/api/plugins/ddns/accounts/{id}/records/{history}/reconcile",
+            "/api/naming/accounts/{id}/records/{history}/reconcile",
             post(super::dns_record_reconcile::reconcile),
         )
         .route(
-            "/api/plugins/ddns/accounts/{id}/records/{history}/rollback",
+            "/api/naming/accounts/{id}/records/{history}/rollback",
             post(super::dns_record_rollback::rollback),
         )
 }

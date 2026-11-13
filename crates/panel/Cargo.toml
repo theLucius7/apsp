@@ -5,10 +5,11 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
-# The panel binary assembles the host with the compiled business plugins.
-# Migrations stay here as one linear sequence shared by the host and plugins.
+# The panel binary assembles the platform with the domain crates.
+# The database baseline stays here as the one schema they share.
 [dependencies]
 apsp-panel-host.workspace = true
+apsp-governance.workspace = true
 apsp-cloud-api.workspace = true
 uuid.workspace = true
 apsp-traffic.workspace = true
@@ -24,13 +25,13 @@ axum.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
 md-5 = "=0.10.6"
-serde.workspace = true
 apsp-compiler.workspace = true
 apsp-adapter-singbox.workspace = true
 blake2.workspace = true
@@ -62,7 +63,3 @@ tower-http = { version = "0.6", features = ["trace", "limit", "set-header"] }
 
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
-
-[build-dependencies]
-serde_json.workspace = true
-toml = "0.8"

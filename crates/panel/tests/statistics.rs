@@ -26,7 +26,7 @@ async fn statistics_require_admin_and_preserve_missing_observations(pool: PgPool
         .execute(&panel.state.pool)
         .await?;
     let cookie = panel.admin_cookie().await?;
-    for path in ["/api/statistics", "/api/plugins/sing-box/statistics"] {
+    for path in ["/api/statistics", "/api/access/statistics"] {
         assert_eq!(
             panel
                 .client
@@ -195,7 +195,7 @@ async fn proxy_statistics_keep_history_precision_and_bounded_rankings(pool: PgPo
     .await?;
     usage(pool, server, user, node, day - 6 * 86_400 - 1, "700").await?;
     usage(pool, server, user, node, now + 3600, "800").await?;
-    let summary = read(&panel, &cookie, "/api/plugins/sing-box/statistics").await?;
+    let summary = read(&panel, &cookie, "/api/access/statistics").await?;
     assert_eq!(summary["nodes"], 9);
     assert_eq!(summary["users"], 9);
     assert_eq!(summary["traffic"]["total"], "18446744073709557115");
@@ -216,7 +216,7 @@ async fn proxy_statistics_keep_history_precision_and_bounded_rankings(pool: PgPo
         .bind(now)
         .execute(pool)
         .await?;
-    let retired = read(&panel, &cookie, "/api/plugins/sing-box/statistics").await?;
+    let retired = read(&panel, &cookie, "/api/access/statistics").await?;
     assert_eq!(retired["nodes"], 0);
     assert_eq!(retired["traffic"], summary["traffic"]);
     assert!(

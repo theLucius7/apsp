@@ -1,6 +1,6 @@
 use crate::{
     error::ApiResult,
-    notifications::{plugin, webhook},
+    notifications::{delivery, webhook},
     settings::Settings,
 };
 use apsp_resources::cloud::model::Resource;
@@ -39,7 +39,7 @@ pub async fn record(
         event_id: &event_id,
         category: "alicloud",
     };
-    for (channel, payload) in plugin::render(&settings, &message) {
+    for (channel, payload) in delivery::render(&settings, &message) {
         let (payload, status, error) = match payload {
             Ok(value) => (value, "pending", None),
             Err(error) => (String::new(), "failed", Some(error)),
@@ -50,7 +50,7 @@ pub async fn record(
 }
 pub async fn dispatch(pool: &PgPool) -> ApiResult<()> {
     dispatch_with(pool, |settings, channel, payload| async move {
-        plugin::send(&settings, &channel, &payload).await
+        delivery::send(&settings, &channel, &payload).await
     })
     .await
 }

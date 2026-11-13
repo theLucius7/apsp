@@ -4,7 +4,7 @@ mod business_support;
 mod release_support;
 
 use anyhow::{Context, Result, ensure};
-use apsp_panel_host::{auth::hash_token, control_center::credentials};
+use apsp_governance::{auth::hash_token, control_center::credentials};
 use apsp_protocol::now_timestamp;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-const ROOT: &str = "/api/plugins/sing-box/nexus-nodes";
+const ROOT: &str = "/api/traffic/nexus-nodes";
 const SECRET: &str = "fixture-private-node-material";
 
 async fn request(

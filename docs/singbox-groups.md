@@ -38,7 +38,7 @@
 
 ## API
 
-所有管理接口位于 `/api/plugins/sing-box`，沿用管理员会话与请求安全校验。新增资源如下：
+下表写相对路径：策略组、套餐组与用户的接口（`/policy-groups`、`/package-groups`、`/users/…`、`/external-node-candidates`）位于 `/api/access`，受管节点与链路的资源接口（`/ordered-proxy-resources…`、`/chains/…`）位于 `/api/traffic`；都沿用管理员会话与请求安全校验。新增资源如下：
 
 | 接口 | 方法 | 内容 |
 | --- | --- | --- |

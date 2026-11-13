@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { PluginServer, Server } from '../types'
+import type { RuntimeServer, Server } from '../types'
 import { installationView } from './Runtimes'
 import { cn } from '@/lib/utils'
 
@@ -13,10 +13,10 @@ const height = 400
  * The proxy network as a drawing: the panel at the centre, each vendor on the
  * inner ring and every server on the outer ring, in its vendor's sector. Colour
  * says what sing-box does there, size how much traffic it carried this cycle, a
- * red ring that the agent is offline. Every server is a link to its plugins tab.
+ * red ring that the agent is offline. Every server is a link to its network services tab.
  * Static SVG laid out once per data change; only the centre's pulse animates.
  */
-export default function NetworkMap({ plugins, servers = [] }: { plugins: PluginServer[]; servers?: Server[] }) {
+export default function NetworkMap({ runtimes, servers = [] }: { runtimes: RuntimeServer[]; servers?: Server[] }) {
   const host = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(880)
   useEffect(() => {
@@ -27,9 +27,9 @@ export default function NetworkMap({ plugins, servers = [] }: { plugins: PluginS
   const layout = useMemo(() => {
     // Every server sing-box knows about is drawn; the server list adds its vendor and traffic when readable.
     const byId = new Map(servers.map(server => [server.id, server]))
-    const entries = plugins.map(plugin => {
-      const server = byId.get(plugin.id)
-      return { plugin, server, view: installationView(plugin), group: server?.asset_settings?.group_name || '未分组', traffic: Number(server?.traffic?.used ?? 0) || 0 }
+    const entries = runtimes.map(runtime => {
+      const server = byId.get(runtime.id)
+      return { runtime, server, view: installationView(runtime), group: server?.asset_settings?.group_name || '未分组', traffic: Number(server?.traffic?.used ?? 0) || 0 }
     })
     const groups = [...new Set(entries.map(entry => entry.group))].map(name => ({ name, members: entries.filter(entry => entry.group === name) }))
       .sort((left, right) => right.members.length - left.members.length || left.name.localeCompare(right.name, 'zh-CN'))
@@ -46,16 +46,16 @@ export default function NetworkMap({ plugins, servers = [] }: { plugins: PluginS
       anchors.push({ name: group.name, x: cx + inner.rx * Math.cos(middle), y: cy + inner.ry * Math.sin(middle), count: group.members.length })
       group.members.forEach((entry, index) => {
         const angle = cursor + span * (index + 0.5) / group.members.length
-        nodes.push({ id: entry.plugin.id, name: entry.plugin.name, group: group.name, angle,
+        nodes.push({ id: entry.runtime.id, name: entry.runtime.name, group: group.name, angle,
           x: cx + outer.rx * Math.cos(angle), y: cy + outer.ry * Math.sin(angle),
-          r: 4.5 + 6 * Math.sqrt(entry.traffic / peak), tone: entry.view.tone, enabled: entry.plugin.enabled,
+          r: 4.5 + 6 * Math.sqrt(entry.traffic / peak), tone: entry.view.tone, enabled: entry.runtime.enabled,
           // A server still waiting for enrollment is not "offline".
-          online: entry.plugin.online || (entry.server ? !entry.server.device_public_key : false), state: entry.view.label })
+          online: entry.runtime.online || (entry.server ? !entry.server.device_public_key : false), state: entry.view.label })
       })
       cursor += span
     }
     return { cx, cy, anchors, nodes }
-  }, [servers, plugins, width])
+  }, [servers, runtimes, width])
   const { cx, cy, anchors, nodes } = layout
   const anchor = (group: string) => anchors.find(entry => entry.name === group)!
   return <div ref={host} data-slot="network-map" className="relative min-w-0">

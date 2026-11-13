@@ -21,7 +21,7 @@ let browser
 try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
-  const origin = `http://127.0.0.1:${server.address().port}`, prefix = '/api/plugins/sing-box'
+  const origin = `http://127.0.0.1:${server.address().port}`, trafficApi = '/api/traffic', accessApi = '/api/access'
   for (const width of [1440, 390, 320]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } }); page.setDefaultTimeout(7000); await page.clock.install()
     // Dialogs finish closing on animation frames, which the page clock holds here; with reduced motion they close at once.
@@ -47,17 +47,17 @@ try {
       let value
       if (method === 'GET' && path === '/api/dashboard/access') value = { authenticated: true, public_dashboard: false }
       else if (method === 'GET' && path === '/api/me') value = { authenticated: true }
-      else if (method === 'GET' && path === `${prefix}/servers`) value = servers
-      else if (method === 'GET' && path === `${prefix}/node-catalog`) value = catalogResourceFixtures(catalogNodeFixtures(nodes.filter(node => !ordered.some(resource => resource.entry.id === node.id)), servers, twoHop))
-      else if (method === 'GET' && path === `${prefix}/nodes`) { if (oldNodesFailure) { await route.fulfill({ status: 500, json: { error: '旧节点配置无法读取' } }); return } value = nodes }
-      else if (method === 'GET' && path === `${prefix}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
-      else if (method === 'GET' && path === `${prefix}/ordered-proxy-resources`) value = resources()
-      else if (method === 'GET' && /^\/api\/plugins\/sing-box\/ordered-proxy-resources\/(direct|chain)\/[1-9]\d*$/.test(path)) { const [, kind, id] = path.match(/\/(direct|chain)\/(\d+)$/); value = resources().find(resource => resource.kind === kind && resource.id === Number(id)); if (!value) { await route.fulfill({ status: 404, json: { error: '资源已删除' } }); return } }
-      else if (method === 'GET' && path === `${prefix}/ordered-subscription-sources`) { if (sourceFailure) { await route.fulfill({ status: 503, json: { error: '来源读取失败' } }); return } value = [getSource()] }
-      else if (method === 'GET' && path === `${prefix}/ordered-subscription-sources/1`) value = getSource()
-      else if (method === 'GET' && path === `${prefix}/ordered-subscription-sources/1/nodes`) value = sourceNodePageFixture({ current_identity_epoch: source.identity_epoch, nodes: sourceNodes })
-      else if (method === 'GET' && path === `${prefix}/ordered-subscription-sources/1/revisions`) value = { source_id: 1, revisions: [sourceRevisionFixture()] }
-      else if (method === 'POST' && path === `${prefix}/chains/ordered-batch`) {
+      else if (method === 'GET' && path === `${trafficApi}/servers`) value = servers
+      else if (method === 'GET' && path === `${trafficApi}/node-catalog`) value = catalogResourceFixtures(catalogNodeFixtures(nodes.filter(node => !ordered.some(resource => resource.entry.id === node.id)), servers, twoHop))
+      else if (method === 'GET' && path === `${trafficApi}/nodes`) { if (oldNodesFailure) { await route.fulfill({ status: 500, json: { error: '旧节点配置无法读取' } }); return } value = nodes }
+      else if (method === 'GET' && path === `${accessApi}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
+      else if (method === 'GET' && path === `${trafficApi}/ordered-proxy-resources`) value = resources()
+      else if (method === 'GET' && /^\/api\/traffic\/ordered-proxy-resources\/(direct|chain)\/[1-9]\d*$/.test(path)) { const [, kind, id] = path.match(/\/(direct|chain)\/(\d+)$/); value = resources().find(resource => resource.kind === kind && resource.id === Number(id)); if (!value) { await route.fulfill({ status: 404, json: { error: '资源已删除' } }); return } }
+      else if (method === 'GET' && path === `${trafficApi}/ordered-subscription-sources`) { if (sourceFailure) { await route.fulfill({ status: 503, json: { error: '来源读取失败' } }); return } value = [getSource()] }
+      else if (method === 'GET' && path === `${trafficApi}/ordered-subscription-sources/1`) value = getSource()
+      else if (method === 'GET' && path === `${trafficApi}/ordered-subscription-sources/1/nodes`) value = sourceNodePageFixture({ current_identity_epoch: source.identity_epoch, nodes: sourceNodes })
+      else if (method === 'GET' && path === `${trafficApi}/ordered-subscription-sources/1/revisions`) value = { source_id: 1, revisions: [sourceRevisionFixture()] }
+      else if (method === 'POST' && path === `${trafficApi}/chains/ordered-batch`) {
         const body = request.postDataJSON(); assert.deepEqual(Object.keys(body).sort(), ['items', 'request_id'])
         if (receipts.has(body.request_id)) { const saved = receipts.get(body.request_id); assert.equal(request.postData(), saved.serialized); await route.fulfill({ status: 200, json: saved.receipt }); return }
         assert.equal(body.items.length, 2)
@@ -72,14 +72,14 @@ try {
         receipts.set(body.request_id, { serialized: request.postData(), receipt })
         if (mode === 'lose-batch') { mode = 'normal'; source = { ...source, identity_epoch: 2, archived: true }; sourceNodes = []; await route.abort('connectionreset'); return }
         await route.fulfill({ status: 201, json: receipt }); return
-      } else if (method === 'POST' && path === `${prefix}/ordered-proxy-resources/chain/11/apply-node-versions`) {
+      } else if (method === 'POST' && path === `${trafficApi}/ordered-proxy-resources/chain/11/apply-node-versions`) {
         const body = request.postDataJSON(), resource = ordered.find(value => value.id === 11)
         assert.equal(body.settings_revision, resource.settings_revision); assert.equal(body.generation, 2); assert.deepEqual(body.versions, [{ hop_position: 2, node_version_id: sourceUuid(406) }])
         assert.equal(resource.path_state.candidate_generation, null)
         const appliedHops = structuredClone(resource.hops), nextHops = structuredClone(resource.hops); nextHops[1].node_version_id = sourceUuid(406)
         resource.hops = nextHops; resource.settings_revision++; resource.path_state = { ...resource.path_state, desired_generation: 3, candidate_generation: 3, applied_generation: 2, recovery_generation: 2, phase: 'preparing_dependencies', generations: [{ state: 'desired', generation: 3, hops: nextHops }, { state: 'candidate', generation: 3, hops: nextHops }, { state: 'applied', generation: 2, hops: appliedHops }, { state: 'recovery', generation: 2, hops: appliedHops }] }
         await route.fulfill({ json: { request_id: body.request_id, kind: 'chain', id: 11, settings_revision: resource.settings_revision, generation: 3 } }); return
-      } else if (method === 'PATCH' && path === `${prefix}/ordered-proxy-resources/chain/11`) {
+      } else if (method === 'PATCH' && path === `${trafficApi}/ordered-proxy-resources/chain/11`) {
         const body = request.postDataJSON(), resource = ordered.find(value => value.id === 11)
         if (mutations.has(body.request_id)) { const saved = mutations.get(body.request_id); assert.equal(request.postData(), saved.serialized); await route.fulfill({ json: saved.receipt }); return }
         assert.deepEqual(Object.keys(body).sort(), ['name', 'request_id', 'settings_revision']); assert.equal(body.settings_revision, resource.settings_revision); assert.equal(body.name, '显示名可独立修改')
@@ -87,7 +87,7 @@ try {
         const receipt = { request_id: body.request_id, kind: 'chain', id: 11, settings_revision: resource.settings_revision, generation: 3 }; mutations.set(body.request_id, { serialized: request.postData(), receipt })
         if (editMode === 'lose-edit') { editMode = 'normal'; await route.abort('connectionreset'); return }
         await route.fulfill({ json: receipt }); return
-      } else if (method === 'DELETE' && path === `${prefix}/ordered-proxy-resources/chain/30`) {
+      } else if (method === 'DELETE' && path === `${trafficApi}/ordered-proxy-resources/chain/30`) {
         assert.equal(oldNodesFailure, true); assert.equal(sourceFailure, true); assert.equal(ordered.find(value => value.id === 30).available, false)
         const entryId = ordered.find(value => value.id === 30).entry.id; ordered = ordered.filter(resource => resource.id !== 30); nodes = nodes.filter(node => node.id !== entryId)
         assert(nodes.some(node => node.id === 2)); assert(nodes.some(node => node.id === 3)); assert(ordered.some(resource => resource.id === 31))

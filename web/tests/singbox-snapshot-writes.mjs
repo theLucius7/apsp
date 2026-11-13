@@ -15,7 +15,7 @@ const templateFixture = { template: null, definition_redacted: false, credential
 
 // TEST_ONLY: the actual dist is served on loopback; every API and external request is intercepted.
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
-const dist = fileURLToPath(new URL('../dist/', import.meta.url)), prefix = '/api/plugins/sing-box'
+const dist = fileURLToPath(new URL('../dist/', import.meta.url)), trafficApi = '/api/traffic', accessApi = '/api/access'
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const server = createServer(async (request, response) => {
   const file = resolve(dist, new URL(request.url, 'http://127.0.0.1').pathname === '/' ? 'index.html' : `.${new URL(request.url, 'http://127.0.0.1').pathname}`)
@@ -73,24 +73,24 @@ try {
           if (gate) { ++gate.reached; const blocked = gate.promise.then(() => undefined); pending.push(blocked); await blocked }
           if (failures.has(path)) { await route.fulfill({ status: 503, json: { error: 'TEST_ONLY 刷新失败，保留旧快照' } }); return }
         }
-        if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\//.test(path) && !users.some(user => user.id === Number(path.split('/')[5]))) { await route.fulfill({ status: 404, json: { error: 'TEST_ONLY 代理用户已不存在' } }); return }
+        if (method === 'GET' && /^\/api\/access\/users\/\d+\//.test(path) && !users.some(user => user.id === Number(path.split('/')[4]))) { await route.fulfill({ status: 404, json: { error: 'TEST_ONLY 代理用户已不存在' } }); return }
         let value
         if (method === 'GET' && (path === '/api/dashboard/access' || path === '/api/me')) value = { authenticated: true, public_dashboard: false }
-        else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/portal$/.test(path)) value = { configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin }, keys: 0, url: null, activation_expires_at: null }
-        else if (method === 'GET' && !url.search && [1, 2, 3].some(id => path === `${prefix}/users/${id}/diagnosis` && users.some(user => user.id === id))) value = diagnosisFixture(users.find(user => path === `${prefix}/users/${user.id}/diagnosis`))
-        else if (method === 'GET' && !url.search && [1, 2, 3].some(id => path === `${prefix}/users/${id}/client-template` && users.some(user => user.id === id))) value = templateFixture
-        else if (method === 'GET' && path === `${prefix}/users`) value = users
-        else if (method === 'GET' && path === `${prefix}/nodes`) value = nodes
-        else if (method === 'GET' && path === `${prefix}/ordered-proxy-resources`) value = resources
-        else if (method === 'GET' && path === `${prefix}/ordered-subscription-sources`) value = []
-        else if (method === 'GET' && path === `${prefix}/external-node-candidates`) value = { available_nodes: [] }
-        else if (method === 'GET' && path === `${prefix}/policy-groups`) value = policies
-        else if (method === 'GET' && path === `${prefix}/package-groups`) value = packages
-        else if (method === 'GET' && path === `${prefix}/usage`) value = usage
-        else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/policy-groups$/.test(path)) value = { group_ids: [...groupIds] }
-        else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/entitlement$/.test(path)) value = entitlement(Number(path.split('/')[5]))
-        else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/subscription$/.test(path)) value = { format: url.searchParams.get('format'), status: 'ready', message: 'TEST_ONLY 订阅就绪', subscription_url: users.find(user => user.id === Number(path.split('/')[5])).subscription_url, available_formats: ['singbox', 'links'], granted_nodes: 1, eligible_nodes: 1, ready_nodes: nodes, content: '{}', filename: 'TEST_ONLY.json', content_type: 'application/json', entitlement: entitlement(Number(path.split('/')[5])) }
-        else if (method === 'POST' && path === `${prefix}/operations/preview`) {
+        else if (method === 'GET' && /^\/api\/access\/users\/\d+\/portal$/.test(path)) value = { configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin }, keys: 0, url: null, activation_expires_at: null }
+        else if (method === 'GET' && !url.search && [1, 2, 3].some(id => path === `${accessApi}/users/${id}/diagnosis` && users.some(user => user.id === id))) value = diagnosisFixture(users.find(user => path === `${accessApi}/users/${user.id}/diagnosis`))
+        else if (method === 'GET' && !url.search && [1, 2, 3].some(id => path === `${accessApi}/users/${id}/client-template` && users.some(user => user.id === id))) value = templateFixture
+        else if (method === 'GET' && path === `${accessApi}/users`) value = users
+        else if (method === 'GET' && path === `${trafficApi}/nodes`) value = nodes
+        else if (method === 'GET' && path === `${trafficApi}/ordered-proxy-resources`) value = resources
+        else if (method === 'GET' && path === `${trafficApi}/ordered-subscription-sources`) value = []
+        else if (method === 'GET' && path === `${accessApi}/external-node-candidates`) value = { available_nodes: [] }
+        else if (method === 'GET' && path === `${accessApi}/policy-groups`) value = policies
+        else if (method === 'GET' && path === `${accessApi}/package-groups`) value = packages
+        else if (method === 'GET' && path === `${accessApi}/usage`) value = usage
+        else if (method === 'GET' && /^\/api\/access\/users\/\d+\/policy-groups$/.test(path)) value = { group_ids: [...groupIds] }
+        else if (method === 'GET' && /^\/api\/access\/users\/\d+\/entitlement$/.test(path)) value = entitlement(Number(path.split('/')[4]))
+        else if (method === 'GET' && /^\/api\/access\/users\/\d+\/subscription$/.test(path)) value = { format: url.searchParams.get('format'), status: 'ready', message: 'TEST_ONLY 订阅就绪', subscription_url: users.find(user => user.id === Number(path.split('/')[4])).subscription_url, available_formats: ['singbox', 'links'], granted_nodes: 1, eligible_nodes: 1, ready_nodes: nodes, content: '{}', filename: 'TEST_ONLY.json', content_type: 'application/json', entitlement: entitlement(Number(path.split('/')[4])) }
+        else if (method === 'POST' && path === `${accessApi}/operations/preview`) {
           const payload = request.postDataJSON()
           assert(['policy_batch', 'replace_package'].includes(payload.operation), 'only the two exact entitlement workflows are permitted')
           if (payload.operation === 'policy_batch') {
@@ -104,7 +104,7 @@ try {
           value = { id, expires_at: Math.floor(Date.now() / 1000) + 300, summary: payload.operation === 'policy_batch'
             ? { effect: 'TEST_ONLY 固定策略目标，历史账本保留', users: [{ id: 1, name: users[0].name }], differences: [{ user_id: 1, added_nodes: payload.group_ids.includes(2) ? [2] : [], removed_nodes: [1], effective_nodes: payload.group_ids.includes(2) ? [2] : [] }] }
             : { effect: 'TEST_ONLY 固定套餐，历史账本保留', plan: packages.find(plan => plan.id === payload.package_group_id), new_cycle: { cycle_start: 1790812800, next_reset: 1793491200, used_bytes: usage.total } } }
-        } else if (method === 'POST' && new RegExp(`^${prefix}/operations/[^/]+/apply$`).test(path)) {
+        } else if (method === 'POST' && new RegExp(`^${accessApi}/operations/[^/]+/apply$`).test(path)) {
           const payload = request.postDataJSON(), fixed = operationSnapshots.get(path.split('/').at(-2))
           assert.deepEqual(payload, { confirm: true }); assert(fixed, 'confirmation binds the exact stored preview identity')
           applications.push({ method, path, payload, request: fixed.request })
@@ -117,20 +117,20 @@ try {
         }
         else if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
           const payload = request.postData() ? request.postDataJSON() : undefined
-          const allowed = method === 'PUT' && /^\/api\/plugins\/sing-box\/(policy-groups|package-groups)\/\d+$/.test(path)
-            || method === 'POST' && [`${prefix}/policy-groups`, `${prefix}/package-groups`, `${prefix}/users`].includes(path)
-            || method === 'DELETE' && /^\/api\/plugins\/sing-box\/(policy-groups|package-groups|users)\/\d+$/.test(path)
-            || method === 'PATCH' && /^\/api\/plugins\/sing-box\/users\/\d+$/.test(path)
-            || method === 'POST' && path === `${prefix}/users/1/subscription/reset`
+          const allowed = method === 'PUT' && /^\/api\/access\/(policy-groups|package-groups)\/\d+$/.test(path)
+            || method === 'POST' && [`${accessApi}/policy-groups`, `${accessApi}/package-groups`, `${accessApi}/users`].includes(path)
+            || method === 'DELETE' && /^\/api\/access\/(policy-groups|package-groups|users)\/\d+$/.test(path)
+            || method === 'PATCH' && /^\/api\/access\/users\/\d+$/.test(path)
+            || method === 'POST' && path === `${accessApi}/users/1/subscription/reset`
           assert(allowed, `unexpected write ${method} ${path}`)
           writes.push({ method, path, payload }); ++totals.writes
-          if (path === `${prefix}/users/1/subscription/reset`) value = { ...users[0], subscription_token: 'TEST_ONLY_RESET' }
+          if (path === `${accessApi}/users/1/subscription/reset`) value = { ...users[0], subscription_token: 'TEST_ONLY_RESET' }
           else if (method === 'PATCH') { Object.assign(users.find(user => user.id === Number(path.split('/').at(-1))), payload); value = users[0] }
-          else if (method === 'POST' && path === `${prefix}/users`) { value = { id: 3, name: payload.name, subscription_token: 'TEST_ONLY_3', subscription_url: 'http://127.0.0.1/s/TEST_ONLY_3' }; users.push(value) }
+          else if (method === 'POST' && path === `${accessApi}/users`) { value = { id: 3, name: payload.name, subscription_token: 'TEST_ONLY_3', subscription_url: 'http://127.0.0.1/s/TEST_ONLY_3' }; users.push(value) }
           else if (method === 'PUT') { const list = path.includes('/policy-groups/') ? policies : packages; Object.assign(list.find(item => item.id === Number(path.split('/').at(-1))), payload); value = {} }
           else if (method === 'DELETE') { const list = path.includes('/policy-groups/') ? policies : path.includes('/package-groups/') ? packages : users; const index = list.findIndex(item => item.id === Number(path.split('/').at(-1))); if (index >= 0) list.splice(index, 1); value = {} }
           else value = {}
-        } else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/limits$/.test(path)) { value = { user_id: Number(path.split('/')[5]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } } // Per-user limits (ADR 0124) are read on the user page; none are set here.
+        } else if (method === 'GET' && /^\/api\/access\/users\/\d+\/limits$/.test(path)) { value = { user_id: Number(path.split('/')[4]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } } // Per-user limits (ADR 0124) are read on the user page; none are set here.
         else { totals.unexpected.push(`${method} ${path}`); await route.fulfill({ status: 404, json: { error: 'TEST_ONLY 未知接口' } }); return }
         await route.fulfill({ json: value })
       })
@@ -186,32 +186,32 @@ try {
         await choice.check(); await apply.click()
         await review.getByRole('alert').filter({ hasText: '固定预览版本冲突' }).waitFor()
         assert.equal(writes.length, baseline, 'stale fixed snapshots cannot perform business mutations'); assert.equal(JSON.stringify(usage), ledger)
-        const nextPreview = page.waitForResponse(response => new URL(response.url()).pathname === `${prefix}/operations/preview` && response.request().method() === 'POST' && response.status() === 200)
+        const nextPreview = page.waitForResponse(response => new URL(response.url()).pathname === `${accessApi}/operations/preview` && response.request().method() === 'POST' && response.status() === 200)
         await review.getByRole('button', { name: '重新预览', exact: true }).click(); await nextPreview; await unconfirmed()
         assert.deepEqual(previews.at(-1).request, request)
       }
       const appliedId = previews.at(-1).id
       await choice.check(); await apply.click(); await review.waitFor({ state: 'hidden' })
       await wait(() => writes.length === baseline + 1, 'only the exact confirmed preview applies once')
-      assert.deepEqual(writes.at(-1), { method: 'POST', path: `${prefix}/operations/${appliedId}/apply`, payload: { confirm: true }, workflow: request })
+      assert.deepEqual(writes.at(-1), { method: 'POST', path: `${accessApi}/operations/${appliedId}/apply`, payload: { confirm: true }, workflow: request })
       assert.equal(JSON.stringify(usage), ledger)
     }
 
-    for (const dependency of ['policy-groups', 'package-groups', 'ordered-proxy-resources']) await fixture('groups', async control => {
+    for (const dependency of [`${accessApi}/policy-groups`, `${accessApi}/package-groups`, `${trafficApi}/ordered-proxy-resources`]) await fixture('groups', async control => {
       const { page, writes } = control
       await page.getByRole('row').filter({ hasText: 'TEST_ONLY 原策略' }).getByRole('button', { name: '编辑', exact: true }).click()
       const dialog = page.getByRole('dialog'), name = dialog.locator('input[name="name"]')
       await name.fill('TEST_ONLY 保留策略草稿'); await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="2"])').check()
       const draft = async () => { assert.equal(await name.inputValue(), 'TEST_ONLY 保留策略草稿'); assert(await dialog.locator('[role=checkbox]:has(+ input[name="chain_ids"][value="10"])').isChecked()); assert(await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="2"])').isChecked()) }
-      await blockAndRecover(control, `${prefix}/${dependency}`, sameEvent => forceSubmit(dialog, sameEvent), () => dialog.getByRole('button', { name: '保存', exact: true }).click(), draft)
-      assert.deepEqual(writes[0], { method: 'PUT', path: `${prefix}/policy-groups/1`, payload: { name: 'TEST_ONLY 保留策略草稿', node_ids: [1, 2], chain_ids: [10], external_nodes: [] } })
+      await blockAndRecover(control, dependency, sameEvent => forceSubmit(dialog, sameEvent), () => dialog.getByRole('button', { name: '保存', exact: true }).click(), draft)
+      assert.deepEqual(writes[0], { method: 'PUT', path: `${accessApi}/policy-groups/1`, payload: { name: 'TEST_ONLY 保留策略草稿', node_ids: [1, 2], chain_ids: [10], external_nodes: [] } })
     })
     await fixture('groups', async control => {
       const { page, writes } = control
       await page.getByRole('button', { name: '套餐组', exact: true }).click()
       await page.getByRole('row').filter({ hasText: 'TEST_ONLY 套餐 1' }).getByRole('button', { name: '编辑', exact: true }).click()
       const dialog = page.getByRole('dialog'); await dialog.locator('input[name="amount"]').fill('7')
-      await blockAndRecover(control, `${prefix}/package-groups`, sameEvent => forceSubmit(dialog, sameEvent), () => dialog.getByRole('button', { name: '保存', exact: true }).click(), async () => assert.equal(await dialog.locator('input[name="amount"]').inputValue(), '7'))
+      await blockAndRecover(control, `${accessApi}/package-groups`, sameEvent => forceSubmit(dialog, sameEvent), () => dialog.getByRole('button', { name: '保存', exact: true }).click(), async () => assert.equal(await dialog.locator('input[name="amount"]').inputValue(), '7'))
       assert.equal(writes[0].payload.monthly_bytes, String(7 * 1073741824))
     })
     for (const kind of ['policy-groups', 'package-groups']) await fixture('groups', async control => {
@@ -219,30 +219,30 @@ try {
       if (kind === 'package-groups') await page.getByRole('button', { name: '套餐组', exact: true }).click()
       await page.getByRole('row').filter({ hasText: kind === 'policy-groups' ? 'TEST_ONLY 新策略' : 'TEST_ONLY 套餐 2' }).getByRole('button', { name: '删除', exact: true }).click()
       const button = page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true })
-      await blockAndRecover(control, `${prefix}/${kind}`, sameEvent => forceClick(button, sameEvent), () => button.click())
-      assert.equal(writes[0].method, 'DELETE'); assert.equal(writes[0].path, `${prefix}/${kind}/2`)
+      await blockAndRecover(control, `${accessApi}/${kind}`, sameEvent => forceClick(button, sameEvent), () => button.click())
+      assert.equal(writes[0].method, 'DELETE'); assert.equal(writes[0].path, `${accessApi}/${kind}/2`)
     })
     for (const kind of ['policy-groups', 'package-groups']) await fixture('groups', async control => {
       const { page, writes } = control
       if (kind === 'package-groups') await page.getByRole('button', { name: '套餐组', exact: true }).click()
       await page.getByRole('button', { name: kind === 'policy-groups' ? '创建策略组' : '创建套餐组', exact: true }).click()
       const dialog = page.getByRole('dialog'); await dialog.locator('input[name="name"]').fill('TEST_ONLY 创建草稿')
-      await blockAndRecover(control, `${prefix}/${kind}`, sameEvent => forceSubmit(dialog, sameEvent), () => dialog.getByRole('button', { name: '保存', exact: true }).click())
-      assert.equal(writes[0].method, 'POST'); assert.equal(writes[0].path, `${prefix}/${kind}`)
+      await blockAndRecover(control, `${accessApi}/${kind}`, sameEvent => forceSubmit(dialog, sameEvent), () => dialog.getByRole('button', { name: '保存', exact: true }).click())
+      assert.equal(writes[0].method, 'POST'); assert.equal(writes[0].path, `${accessApi}/${kind}`)
     })
     for (const dependency of ['users', 'users/1/entitlement']) await fixture('users', async control => {
       const { page, writes } = control
       await page.locator('[data-slot=user-heading]').getByRole('button', { name: '编辑', exact: true }).click()
       const dialog = page.getByRole('dialog'); await dialog.locator('input[name="name"]').fill('TEST_ONLY 用户草稿')
-      await blockAndRecover(control, `${prefix}/${dependency}`, sameEvent => forceSubmit(dialog, sameEvent), () => dialog.getByRole('button', { name: '保存修改', exact: true }).click(), async () => assert.equal(await dialog.locator('input[name="name"]').inputValue(), 'TEST_ONLY 用户草稿'))
-      assert.deepEqual(writes[0], { method: 'PATCH', path: `${prefix}/users/1`, payload: { name: 'TEST_ONLY 用户草稿' } })
+      await blockAndRecover(control, `${accessApi}/${dependency}`, sameEvent => forceSubmit(dialog, sameEvent), () => dialog.getByRole('button', { name: '保存修改', exact: true }).click(), async () => assert.equal(await dialog.locator('input[name="name"]').inputValue(), 'TEST_ONLY 用户草稿'))
+      assert.deepEqual(writes[0], { method: 'PATCH', path: `${accessApi}/users/1`, payload: { name: 'TEST_ONLY 用户草稿' } })
     })
     await fixture('users', async control => {
       const { page, writes } = control
       await page.getByRole('button', { name: '创建代理用户', exact: true }).first().click()
       const dialog = page.getByRole('dialog'); await dialog.locator('input[name="name"]').fill('TEST_ONLY 新用户草稿')
-      await blockAndRecover(control, `${prefix}/users`, sameEvent => forceSubmit(dialog, sameEvent), () => dialog.getByRole('button', { name: '创建代理用户', exact: true }).click())
-      assert.deepEqual(writes[0], { method: 'POST', path: `${prefix}/users`, payload: { name: 'TEST_ONLY 新用户草稿' } })
+      await blockAndRecover(control, `${accessApi}/users`, sameEvent => forceSubmit(dialog, sameEvent), () => dialog.getByRole('button', { name: '创建代理用户', exact: true }).click())
+      assert.deepEqual(writes[0], { method: 'POST', path: `${accessApi}/users`, payload: { name: 'TEST_ONLY 新用户草稿' } })
     })
     for (const dependency of ['policy-groups', 'package-groups', 'users/1/policy-groups', 'users/1/entitlement']) await fixture('users', async control => {
       const { page, writes } = control
@@ -250,7 +250,7 @@ try {
       const save = page.getByRole('button', { name: '保存策略组分配', exact: true })
       const draft = async () => { assert.equal(await page.getByRole('checkbox', { name: /TEST_ONLY 原策略/ }).isChecked(), false); assert(await page.getByRole('checkbox', { name: /TEST_ONLY 新策略/ }).isChecked()) }
       const request = { operation: 'policy_batch', user_ids: [1], group_ids: [2] }
-      await blockAndRecover(control, `${prefix}/${dependency}`, sameEvent => forceClick(save, sameEvent), () => applyWorkflow(control, request, () => save.click(), dependency === 'policy-groups'), draft)
+      await blockAndRecover(control, `${accessApi}/${dependency}`, sameEvent => forceClick(save, sameEvent), () => applyWorkflow(control, request, () => save.click(), dependency === 'policy-groups'), draft)
       assert.deepEqual(writes[0].workflow, request)
     })
     for (const dependency of ['package-groups', 'users/1/entitlement']) await fixture('users', async control => {
@@ -258,22 +258,22 @@ try {
       await page.getByRole('button', { name: '分配或更换套餐', exact: true }).click()
       const dialog = page.getByRole('dialog'), select = dialog.locator('select[name="package_group_id"]'); await select.selectOption('2')
       const request = { operation: 'replace_package', user_id: 1, package_group_id: 2 }
-      await blockAndRecover(control, `${prefix}/${dependency}`, sameEvent => forceSubmit(dialog, sameEvent), () => applyWorkflow(control, request, () => dialog.getByRole('button', { name: '确认分配', exact: true }).click(), dependency === 'package-groups'), async () => assert.equal(await select.inputValue(), '2'))
+      await blockAndRecover(control, `${accessApi}/${dependency}`, sameEvent => forceSubmit(dialog, sameEvent), () => applyWorkflow(control, request, () => dialog.getByRole('button', { name: '确认分配', exact: true }).click(), dependency === 'package-groups'), async () => assert.equal(await select.inputValue(), '2'))
       assert.deepEqual(writes[0].workflow, request)
     })
     await fixture('users', async control => {
       const { page, writes } = control
       await page.locator('[data-slot=user-heading]').getByRole('button', { name: '删除', exact: true }).click()
       const button = page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true })
-      await blockAndRecover(control, `${prefix}/users`, sameEvent => forceClick(button, sameEvent), () => button.click())
-      assert.equal(writes[0].method, 'DELETE'); assert.equal(writes[0].path, `${prefix}/users/1`)
+      await blockAndRecover(control, `${accessApi}/users`, sameEvent => forceClick(button, sameEvent), () => button.click())
+      assert.equal(writes[0].method, 'DELETE'); assert.equal(writes[0].path, `${accessApi}/users/1`)
     })
     await fixture('users', async control => {
       const { page, writes } = control
       await page.getByRole('button', { name: '订阅详情', exact: true }).click(); await page.getByRole('button', { name: '重置订阅链接', exact: true }).click()
       const button = page.getByRole('dialog').getByRole('button', { name: '确认重置', exact: true })
-      await blockAndRecover(control, `${prefix}/users/1/entitlement`, sameEvent => forceClick(button, sameEvent), () => button.click())
-      assert.equal(writes[0].method, 'POST'); assert.equal(writes[0].path, `${prefix}/users/1/subscription/reset`)
+      await blockAndRecover(control, `${accessApi}/users/1/entitlement`, sameEvent => forceClick(button, sameEvent), () => button.click())
+      assert.equal(writes[0].method, 'POST'); assert.equal(writes[0].path, `${accessApi}/users/1/subscription/reset`)
     })
     await fixture('groups', async control => {
       const { page, writes, resources } = control
@@ -322,7 +322,7 @@ try {
       await page.getByRole('button', { name: '创建代理用户', exact: true }).first().click()
       const creation = page.getByRole('dialog'); await creation.locator('input[name="name"]').fill('TEST_ONLY 显式恢复新用户'); await creation.getByRole('button', { name: '创建代理用户', exact: true }).click()
       await wait(() => writes.length === 1, 'explicit deselection must restore creation without reassigning the old draft')
-      assert.deepEqual(writes[0], { method: 'POST', path: `${prefix}/users`, payload: { name: 'TEST_ONLY 显式恢复新用户' } })
+      assert.deepEqual(writes[0], { method: 'POST', path: `${accessApi}/users`, payload: { name: 'TEST_ONLY 显式恢复新用户' } })
     })
     await fixture('users', async control => {
       const { page, users, writes } = control

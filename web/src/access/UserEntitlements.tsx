@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Badge, ErrorNotice, Field, FormDialog, Loading, Meter, DialogPresence } from '../components'
-import { bytes } from '../format'
+import { bytes, dateText } from '../format'
 import { resourceWriteError, useAction, useResource, settingsPoll } from '../hooks'
 import type { ResourceState } from '../hooks'
-import { assignmentRequestId, dateText, scheduleText, statusText } from './groupTypes'
+import { scheduleText, statusText } from './groupTypes'
+import { newRequestId } from '@/lib/request-id'
 import type { Entitlement, PackageGroup, PolicyGroup, UserPolicies } from './groupTypes'
 import OperationReview from './OperationReview'
 import type { WorkflowOperation } from './OperationReview'
@@ -15,7 +16,7 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
 import { cn } from '@/lib/utils'
 
-const root = '/api/plugins/sing-box'
+const root = '/api/access'
 export default function UserEntitlements({ id, entitlement, userError, refreshRevision, onChange, bridged = false }: { id: number; entitlement: ResourceState<Entitlement>; userError: () => string; refreshRevision: number; onChange: () => void; bridged?: boolean }) {
   const policies = useResource<PolicyGroup[]>(`${root}/policy-groups`, settingsPoll)
   const packages = useResource<PackageGroup[]>(`${root}/package-groups`, settingsPoll)
@@ -70,7 +71,7 @@ export default function UserEntitlements({ id, entitlement, userError, refreshRe
         <section aria-label="套餐" className="min-w-0">
           <div className="mb-2 flex min-h-7 flex-wrap items-center justify-between gap-2">
             <h3 className="text-[13px] font-semibold">流量与有效期 <span className="text-muted-foreground font-normal">· 套餐</span></h3>
-            <Button variant="outline" size="sm" disabled={action.busy || Boolean(writeError()) || !packages.data?.length} onClick={() => { if (writeError()) return; action.clearError(); setPackageChoice(''); setAssignment(assignmentRequestId()) }}>分配或更换套餐</Button>
+            <Button variant="outline" size="sm" disabled={action.busy || Boolean(writeError()) || !packages.data?.length} onClick={() => { if (writeError()) return; action.clearError(); setPackageChoice(''); setAssignment(newRequestId()) }}>分配或更换套餐</Button>
           </div>
           {!e ? <Loading variant="panel" rows={2} /> : <>
             <div className="flex flex-wrap items-center gap-2 text-[13px]"><strong className="font-medium">{e.package_name ?? '未设置流量与到期限制'}</strong><Badge tone={e.allowed ? 'good' : 'bad'}>{statusText[e.status]}</Badge></div>

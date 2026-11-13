@@ -9,6 +9,7 @@ import DiagnosticSections from './DiagnosticSections'
 import { Button } from '@/components/ui/button'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { copyText } from '@/lib/clipboard'
 import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
 const regions = [{ value: 'configured', label: '全部已配置目标' }, { value: 'east_asia', label: '东亚' }, { value: 'southeast_asia', label: '东南亚' }, { value: 'europe', label: '欧洲' }, { value: 'americas', label: '美洲' }, { value: 'other', label: '其他地区' }]
@@ -64,13 +65,13 @@ function Report({ record, serverId, cancelSupported, writeError, reload }: { rec
     })}</TableBody></Table></div>
     <p className="text-muted-foreground mt-3 text-xs leading-relaxed">连接成功率不是网络丢包率；本测试不测重传率或带宽。资源限制和启动负载保存在环境章节。</p>
     <DiagnosticSections record={record} />
-    {record.report && <><Button variant="outline" disabled={copy.busy} onClick={() => void copy.run(() => navigator.clipboard.writeText(record.report!.text), () => {})}>复制本次报告 JSON</Button><ErrorNotice message={copy.error} /><details data-slot="quality-report-text" className="mt-4"><summary className="text-primary cursor-pointer text-sm">查看完整原始报告</summary><pre className="bg-card mt-3 max-h-[460px] overflow-auto rounded-lg border p-4 leading-relaxed whitespace-pre-wrap wrap-anywhere max-sm:p-2.5">{record.report.text}</pre></details></>}
+    {record.report && <><Button variant="outline" disabled={copy.busy} onClick={() => void copy.run(() => copyText(record.report!.text), () => {})}>复制本次报告 JSON</Button><ErrorNotice message={copy.error} /><details data-slot="quality-report-text" className="mt-4"><summary className="text-primary cursor-pointer text-sm">查看完整原始报告</summary><pre className="bg-card mt-3 max-h-[460px] overflow-auto rounded-lg border p-4 leading-relaxed whitespace-pre-wrap wrap-anywhere max-sm:p-2.5">{record.report.text}</pre></details></>}
   </article>
 }
 
 export default function TcpQuality({ serverId }: { serverId: number }) {
   const diagnostics = useResource<DiagnosticView>(`/api/servers/${serverId}/diagnostics`)
-  const targets = useResource<TcpQualityTarget[]>(`/api/plugins/tcpquality/servers/${serverId}/targets`)
+  const targets = useResource<TcpQualityTarget[]>(`/api/observability/tcp-quality/servers/${serverId}/targets`)
   const run = useAction()
   const configure = useAction()
   const [region, setRegion] = useState('configured')
@@ -78,7 +79,7 @@ export default function TcpQuality({ serverId }: { serverId: number }) {
   const [count, setCount] = useState(4)
   const [concurrency, setConcurrency] = useState(1)
   const data = diagnostics.data
-  const readiness = diagnostics.error ? undefined : data?.plugins.find(plugin => plugin.plugin === 'tcpquality')
+  const readiness = diagnostics.error ? undefined : data?.plugins.find(tool => tool.plugin === 'tcpquality')
   const active = data?.reports.some(diagnosticActive)
   const currentTargets = targets.error ? undefined : targets.data
   const selected = currentTargets?.filter(target => region === 'configured' || target.region === region)
@@ -87,7 +88,7 @@ export default function TcpQuality({ serverId }: { serverId: number }) {
   const createError = () => {
     const stale = resourceWriteError(diagnostics, targets)
     if (stale) return stale
-    const current = diagnostics.getCurrent()!, readiness = current.plugins.find(plugin => plugin.plugin === 'tcpquality')
+    const current = diagnostics.getCurrent()!, readiness = current.plugins.find(tool => tool.plugin === 'tcpquality')
     if (!readiness?.ready) return readiness?.reason || '当前设备尚不能执行 TCP 诊断，请刷新后确认。'
     if (current.reports.some(diagnosticActive)) return '此服务器已有诊断任务或正在等待设备确认清理，请等待设备完成。'
     const selected = targets.getCurrent()?.filter(target => region === 'configured' || target.region === region)
@@ -99,7 +100,7 @@ export default function TcpQuality({ serverId }: { serverId: number }) {
     {!data ? diagnostics.loading && <Loading /> : <>
       <p className="text-muted-foreground mt-3 text-xs leading-relaxed">原生 Rust 探测，仅连接本机已配置的 TCP 拨测目标，不发送应用数据、不向第三方上传报告、不测速。最多 8 个目标、64 次连接、60 秒；预算 64 MiB / 32 个任务，启动前需额外预留 256 MiB 可用内存和 2 GiB 磁盘。</p>
       {readiness?.reason && <Notice>{readiness.reason}</Notice>}
-      {diagnostics.error ? <Notice>当前诊断状态未知，无法确认设备能力或正在执行的任务；状态恢复前暂停创建。</Notice> : !readiness && <Notice>当前面板尚未登记 TCP 诊断插件。</Notice>}
+      {diagnostics.error ? <Notice>当前诊断状态未知，无法确认设备能力或正在执行的任务；状态恢复前暂停创建。</Notice> : !readiness && <Notice>当前面板尚未登记 TCP 诊断工具。</Notice>}
       {active && <Notice>此服务器已有诊断任务或正在等待取消确认；请等待设备完成。</Notice>}
       <div data-slot="quality-options" className="mt-4 flex flex-wrap items-end gap-3 max-sm:items-stretch">
         <label className="text-muted-foreground grid gap-1.5 text-xs max-sm:min-w-32 max-sm:flex-1">目标地区<NativeSelect className="w-full" aria-label="目标地区" value={region} onChange={event => setRegion(event.target.value)} disabled={run.busy || active}>{regions.map(region => <option key={region.value} value={region.value}>{region.label}</option>)}</NativeSelect></label>
@@ -110,7 +111,7 @@ export default function TcpQuality({ serverId }: { serverId: number }) {
       </div>
       <p className="text-muted-foreground mt-3 text-xs leading-relaxed">{selected ? `本次将冻结 ${selected.length} 个目标` : '尚未取得目标列表，本次目标数未知'}；单次允许 1 至 8 个。IPv4/IPv6 不可解析或连接失败会保留原因。不同目标、地区或参数的结果不做横向排名。</p>
       <details><summary className="cursor-pointer text-sm font-medium">配置目标地区</summary><p className="text-muted-foreground mt-3 text-xs leading-relaxed">地区由管理员标注，不根据 IP 推断。仅使用自有或获准使用的目标；在服务器「Agent 与任务」的周期拨测中添加、停用或修改目标。</p>
-        {!currentTargets ? <p className="text-muted-foreground mt-3 text-xs leading-relaxed">尚未取得已启用的 TCP 拨测目标，当前目标配置未知。</p> : !currentTargets.length ? <p className="text-muted-foreground mt-3 text-xs leading-relaxed">没有已启用的 TCP 拨测目标。</p> : <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>目标</TableHead><TableHead>运营商</TableHead><TableHead>地区</TableHead></TableRow></TableHeader><TableBody>{currentTargets.map(target => <TableRow key={target.id}><TableCell>{target.name}<small className="text-muted-foreground mt-3 text-xs leading-relaxed wrap-anywhere">{target.target}:{target.port}</small></TableCell><TableCell>{target.carrier || '未知'}</TableCell><TableCell><NativeSelect aria-label={`${target.name}地区`} value={target.region ?? ''} disabled={configure.busy} onChange={event => void configure.run(() => api(`/api/plugins/tcpquality/servers/${serverId}/targets/${target.id}`, 'PATCH', { region: event.target.value || null }), targets.reload)}><option value="">地区未知</option>{regions.filter(region => region.value !== 'configured').map(region => <option key={region.value} value={region.value}>{region.label}</option>)}</NativeSelect></TableCell></TableRow>)}</TableBody></Table></div>}
+        {!currentTargets ? <p className="text-muted-foreground mt-3 text-xs leading-relaxed">尚未取得已启用的 TCP 拨测目标，当前目标配置未知。</p> : !currentTargets.length ? <p className="text-muted-foreground mt-3 text-xs leading-relaxed">没有已启用的 TCP 拨测目标。</p> : <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>目标</TableHead><TableHead>运营商</TableHead><TableHead>地区</TableHead></TableRow></TableHeader><TableBody>{currentTargets.map(target => <TableRow key={target.id}><TableCell>{target.name}<small className="text-muted-foreground mt-3 text-xs leading-relaxed wrap-anywhere">{target.target}:{target.port}</small></TableCell><TableCell>{target.carrier || '未知'}</TableCell><TableCell><NativeSelect aria-label={`${target.name}地区`} value={target.region ?? ''} disabled={configure.busy} onChange={event => void configure.run(() => api(`/api/observability/tcp-quality/servers/${serverId}/targets/${target.id}`, 'PATCH', { region: event.target.value || null }), targets.reload)}><option value="">地区未知</option>{regions.filter(region => region.value !== 'configured').map(region => <option key={region.value} value={region.value}>{region.label}</option>)}</NativeSelect></TableCell></TableRow>)}</TableBody></Table></div>}
       </details>
       <div className="min-w-0 border-t pt-5"><h3 className="mb-2 text-sm font-semibold">最近 TCP 报告</h3>{reports.length ? reports.map(record => <Report key={record.id} record={record} serverId={serverId} cancelSupported={data.cancel_supported} writeError={cancelError} reload={diagnostics.reload} />) : <p className="text-muted-foreground mt-3 text-xs leading-relaxed">尚无 TCP 诊断报告。</p>}</div>
     </>}

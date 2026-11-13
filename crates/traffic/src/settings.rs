@@ -38,7 +38,7 @@ pub struct Installation {
 }
 
 #[derive(Serialize, FromRow)]
-pub struct PluginServer {
+pub struct RuntimeServer {
     pub id: i64,
     pub name: String,
     #[serde(skip)]
@@ -73,7 +73,7 @@ pub struct PluginServer {
     #[sqlx(skip)]
     pub installation: Installation,
 }
-impl PluginServer {
+impl RuntimeServer {
     fn view(mut self) -> Self {
         self.enabled = self.source.is_some();
         self.agent_supported = self
@@ -178,20 +178,20 @@ fn query() -> String {
 pub async fn list(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> ApiResult<Json<Vec<PluginServer>>> {
+) -> ApiResult<Json<Vec<RuntimeServer>>> {
     auth::require_admin(&state, &headers).await?;
-    let rows = sqlx::query_as::<_, PluginServer>(&format!("{} ORDER BY s.id", query()))
+    let rows = sqlx::query_as::<_, RuntimeServer>(&format!("{} ORDER BY s.id", query()))
         .fetch_all(&state.pool)
         .await?;
-    Ok(Json(rows.into_iter().map(PluginServer::view).collect()))
+    Ok(Json(rows.into_iter().map(RuntimeServer::view).collect()))
 }
 pub async fn get(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<i64>,
-) -> ApiResult<Json<PluginServer>> {
+) -> ApiResult<Json<RuntimeServer>> {
     auth::require_admin(&state, &headers).await?;
-    let row = sqlx::query_as::<_, PluginServer>(&format!("{} AND s.id=$1", query()))
+    let row = sqlx::query_as::<_, RuntimeServer>(&format!("{} AND s.id=$1", query()))
         .bind(id)
         .fetch_optional(&state.pool)
         .await?
@@ -202,7 +202,7 @@ pub async fn enable(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<i64>,
-) -> ApiResult<(StatusCode, Json<PluginServer>)> {
+) -> ApiResult<(StatusCode, Json<RuntimeServer>)> {
     auth::require_admin(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
     super::business::lock_server(&mut tx, id).await?;

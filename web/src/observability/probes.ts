@@ -13,7 +13,6 @@ export type ProbeField = 'latency_ms' | 'loss_percent'
 export const lossLabel = (probe: Pick<Probe, 'kind'>) => probe.kind === 'tcp' ? '连接失败率' : '丢包率'
 export const latency = (value: number | null) => value === null ? '—' : `${value.toFixed(1)} ms`
 export const loss = (value: number | null) => value === null ? '—' : `${value.toFixed(1)}%`
-export const carrierLabel = (value: string) => (({ telecom: '电信', unicom: '联通', mobile: '移动' } as Record<string, string>)[value] ?? value) || '线路未知'
 export const familyLabel = (probe: Probe, result?: ProbeResult) => result?.address_family ? (result.address_family === 'ipv4' ? 'IPv4' : 'IPv6') : probe.monitor?.address_family === 'ipv4' ? 'IPv4（配置）' : probe.monitor?.address_family === 'ipv6' ? 'IPv6（配置）' : '自动（实际版本未知）'
 export const networks: [ProbeNetwork, string][] = [['telecom', '电信'], ['unicom', '联通'], ['mobile', '移动'], ['other', '其他线路']]
 export const emptyMonitoring = (): ProbeMonitoring => ({ network: 'other', region: '', ip_version: 'auto', authorization: { basis: 'unconfirmed', confirmed: false, source: '', scope: '', expires_at: null } })

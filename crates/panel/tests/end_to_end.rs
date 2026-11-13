@@ -75,14 +75,14 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
     panel
         .api(
             Method::POST,
-            &format!("/api/plugins/sing-box/servers/{server_id}/enable"),
+            &format!("/api/traffic/servers/{server_id}/enable"),
             json!({}),
         )
         .await?;
     let node = panel
         .api(
             Method::POST,
-            "/api/plugins/sing-box/nodes",
+            "/api/traffic/nodes",
             json!({
                 "name": "E2E node", "server_id": server_id,
                 "public_host": "node.example.invalid", "sni": "www.example.com"
@@ -93,7 +93,7 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
     let user = panel
         .api(
             Method::POST,
-            "/api/plugins/sing-box/users",
+            "/api/access/users",
             json!({"name": "E2E user"}),
         )
         .await?;
@@ -101,21 +101,21 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
     let group = panel
         .api(
             Method::POST,
-            "/api/plugins/sing-box/policy-groups",
+            "/api/access/policy-groups",
             json!({"name": "E2E group", "node_ids": [node_id], "chain_ids": []}),
         )
         .await?;
     panel
         .api(
             Method::PUT,
-            &format!("/api/plugins/sing-box/users/{user_id}/policy-groups"),
+            &format!("/api/access/users/{user_id}/policy-groups"),
             json!({"group_ids": [group["id"]]}),
         )
         .await?;
     let access = panel
         .api(
             Method::GET,
-            &format!("/api/plugins/sing-box/users/{user_id}/accesses"),
+            &format!("/api/access/users/{user_id}/accesses"),
             json!(null),
         )
         .await?[0]
@@ -289,7 +289,7 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
         48,
         || async {
             let totals = panel
-                .api(Method::GET, "/api/plugins/sing-box/usage", Value::Null)
+                .api(Method::GET, "/api/access/usage", Value::Null)
                 .await?;
             Ok(totals["uplink"] == "100"
                 && totals["downlink"] == "200"
@@ -372,7 +372,7 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
 
 async fn assert_usage(panel: &Harness, user_id: i64, node_id: i64) -> Result<()> {
     let usage = panel
-        .api(Method::GET, "/api/plugins/sing-box/usage", Value::Null)
+        .api(Method::GET, "/api/access/usage", Value::Null)
         .await?;
     assert_eq!(usage["uplink"], "100");
     assert_eq!(usage["downlink"], "200");

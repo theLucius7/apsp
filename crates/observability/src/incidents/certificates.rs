@@ -212,7 +212,7 @@ mod tests {
             std::env::temp_dir().join(format!("apsp-certificate-scope-{}", Uuid::new_v4())),
         );
         std::fs::create_dir(&directory.0)?;
-        let state = AppState::new(
+        let state = apsp_governance::state(
             pool.clone(),
             crate::config::Config {
                 database_url: String::new(),

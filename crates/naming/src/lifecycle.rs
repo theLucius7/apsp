@@ -60,10 +60,10 @@ use uuid::Uuid;
 
 pub(super) fn routes() -> Router<AppState> {
     Router::new()
-        .route("/api/plugins/ddns/rules/{id}/preview", post(preview))
-        .route("/api/plugins/ddns/rules/{id}/history", get(history_list))
+        .route("/api/naming/rules/{id}/preview", post(preview))
+        .route("/api/naming/rules/{id}/history", get(history_list))
         .route(
-            "/api/plugins/ddns/rules/{id}/rollback",
+            "/api/naming/rules/{id}/rollback",
             post(super::rollback::rollback),
         )
 }

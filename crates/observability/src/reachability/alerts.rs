@@ -1,13 +1,13 @@
 //! Alerts for transitions into and out of a blocked state.
 //!
-//! Follows the plugin path the expense reminders use: the event and its
-//! per-channel deliveries live in plugin tables and are rendered and sent through
-//! the host's channels. The event is recorded even when no channel is configured.
+//! Follows the path the expense reminders use: the event and its per-channel
+//! deliveries live in this domain's tables and are rendered and sent through the
+//! platform's channels. The event is recorded even when no channel is configured.
 
 use super::{classify::Transition, targets::Target};
 use crate::error::ApiResult;
 use apsp_panel_host::{
-    notifications::{plugin, webhook::Message},
+    notifications::{delivery, webhook::Message},
     settings::{self, Settings as PanelSettings},
 };
 use apsp_protocol::now_timestamp;
@@ -136,7 +136,7 @@ pub(super) async fn record(
     .await?;
     let id_text = id.to_string();
     let server = target.server_names();
-    for (channel, payload) in plugin::render(
+    for (channel, payload) in delivery::render(
         panel,
         &Message {
             title,
@@ -209,7 +209,7 @@ pub(super) async fn deliver(pool: &PgPool) -> ApiResult<()> {
         tx.commit().await?;
         let channel: String = row.try_get("channel")?;
         let payload: String = row.try_get("payload")?;
-        let (state, error, retry) = match plugin::send(&panel, &channel, &payload).await {
+        let (state, error, retry) = match delivery::send(&panel, &channel, &payload).await {
             Ok(()) => ("sent", None, 0),
             Err((error, after)) => (
                 "failed",

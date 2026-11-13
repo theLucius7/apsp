@@ -54,8 +54,7 @@ pub(super) async fn login_finish(
         PORTAL_BINDING,
     )
     .await?;
-    let result = match state
-        .passkeys
+    let result = match crate::passkeys::service(&state)
         .authentication(input.credential, &pending.state)
         .await
     {
@@ -197,8 +196,7 @@ pub(super) async fn register_finish(
         PORTAL_BINDING,
     )
     .await?;
-    let key = state
-        .passkeys
+    let key = crate::passkeys::service(&state)
         .registration(input.credential, &pending.state)
         .await?;
     let mut tx = state.pool.begin().await?;

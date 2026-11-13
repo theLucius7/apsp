@@ -10,7 +10,7 @@ type Connection = { id: string; principal: string; source: string; network: stri
 type Report = { observed_at: number; revision: number; truncated: boolean; closed: number; connections: Connection[] }
 type Host = { server_id: number; name: string; online: boolean; supported: boolean; revision: number | null; operation: { expires_at: number; result: { error: string | null; sessions: Report | null } | null } | null }
 export default function UserSessions({ userId, active }: { userId: number; active: boolean }) {
-  const path = `/api/plugins/sing-box/users/${userId}/sessions`
+  const path = `/api/access/users/${userId}/sessions`
   const resource = useResource<{ servers: Host[] }>(active ? path : null, 3000, { keep: true })
   const action = useAction()
   const previous = useRef<Record<number, Report>>({})

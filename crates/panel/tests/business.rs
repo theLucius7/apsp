@@ -58,41 +58,37 @@ async fn links(panel: &TestPanel, token: &str) -> Result<String> {
 async fn business_routes_require_admin_and_node_ports_are_atomic(pool: PgPool) -> Result<()> {
     let panel = TestPanel::start(pool.clone()).await?;
     for (method, path, body) in [
-        (Method::GET, "/api/plugins/sing-box/nodes", None),
-        (Method::GET, "/api/plugins/sing-box/users", None),
-        (Method::GET, "/api/plugins/sing-box/users/1/accesses", None),
-        (
-            Method::GET,
-            "/api/plugins/sing-box/servers/1/deployments",
-            None,
-        ),
+        (Method::GET, "/api/traffic/nodes", None),
+        (Method::GET, "/api/access/users", None),
+        (Method::GET, "/api/access/users/1/accesses", None),
+        (Method::GET, "/api/traffic/servers/1/deployments", None),
         (
             Method::POST,
-            "/api/plugins/sing-box/nodes",
+            "/api/traffic/nodes",
             Some(
                 json!({"name":"Unauthorized", "server_id":1, "public_host":"proxy.example.com", "sni":"www.example.com"}),
             ),
         ),
         (
             Method::PATCH,
-            "/api/plugins/sing-box/nodes/1",
+            "/api/traffic/nodes/1",
             Some(json!({"name":"Unauthorized"})),
         ),
-        (Method::DELETE, "/api/plugins/sing-box/nodes/1", None),
+        (Method::DELETE, "/api/traffic/nodes/1", None),
         (
             Method::POST,
-            "/api/plugins/sing-box/users",
+            "/api/access/users",
             Some(json!({"name":"Unauthorized"})),
         ),
         (
             Method::PATCH,
-            "/api/plugins/sing-box/users/1",
+            "/api/access/users/1",
             Some(json!({"name":"Unauthorized"})),
         ),
-        (Method::DELETE, "/api/plugins/sing-box/users/1", None),
+        (Method::DELETE, "/api/access/users/1", None),
         (
             Method::PUT,
-            "/api/plugins/sing-box/users/1/policy-groups",
+            "/api/access/users/1/policy-groups",
             Some(json!({"group_ids":[]})),
         ),
     ] {
@@ -138,7 +134,7 @@ async fn business_routes_require_admin_and_node_ports_are_atomic(pool: PgPool) -
         panel
             .admin(
                 Method::PATCH,
-                &format!("/api/plugins/sing-box/nodes/{node}"),
+                &format!("/api/traffic/nodes/{node}"),
                 &cookie,
                 Some(json!({"sni":"127.0.0.1"}))
             )
@@ -150,7 +146,7 @@ async fn business_routes_require_admin_and_node_ports_are_atomic(pool: PgPool) -
         panel
             .admin(
                 Method::PATCH,
-                &format!("/api/plugins/sing-box/nodes/{node}"),
+                &format!("/api/traffic/nodes/{node}"),
                 &cookie,
                 Some(json!({"public_host":"https://proxy.example.com/path"}))
             )
@@ -161,14 +157,14 @@ async fn business_routes_require_admin_and_node_ports_are_atomic(pool: PgPool) -
     panel
         .admin(
             Method::PATCH,
-            &format!("/api/plugins/sing-box/nodes/{node}"),
+            &format!("/api/traffic/nodes/{node}"),
             &cookie,
             Some(json!({"name":"Renamed"})),
         )
         .await?
         .error_for_status()?;
     let listed: Value = panel
-        .admin(Method::GET, "/api/plugins/sing-box/nodes", &cookie, None)
+        .admin(Method::GET, "/api/traffic/nodes", &cookie, None)
         .await?
         .error_for_status()?
         .json()
@@ -183,7 +179,7 @@ async fn business_routes_require_admin_and_node_ports_are_atomic(pool: PgPool) -
     panel
         .admin(
             Method::PATCH,
-            &format!("/api/plugins/sing-box/users/{user_id}"),
+            &format!("/api/access/users/{user_id}"),
             &cookie,
             Some(json!({"name":"Renamed user"})),
         )
@@ -194,7 +190,7 @@ async fn business_routes_require_admin_and_node_ports_are_atomic(pool: PgPool) -
         panel
             .admin(
                 Method::DELETE,
-                &format!("/api/plugins/sing-box/nodes/{node}"),
+                &format!("/api/traffic/nodes/{node}"),
                 &cookie,
                 None
             )
@@ -207,7 +203,7 @@ async fn business_routes_require_admin_and_node_ports_are_atomic(pool: PgPool) -
         panel
             .admin(
                 Method::DELETE,
-                &format!("/api/plugins/sing-box/nodes/{node}"),
+                &format!("/api/traffic/nodes/{node}"),
                 &cookie,
                 None
             )
@@ -220,7 +216,7 @@ async fn business_routes_require_admin_and_node_ports_are_atomic(pool: PgPool) -
         panel
             .admin(
                 Method::DELETE,
-                &format!("/api/plugins/sing-box/users/{user_id}"),
+                &format!("/api/access/users/{user_id}"),
                 &cookie,
                 None
             )
@@ -297,7 +293,7 @@ async fn publication_debounces_and_deduplicates_native_configurations(pool: PgPo
     panel
         .admin(
             Method::PATCH,
-            &format!("/api/plugins/sing-box/nodes/{node_id}"),
+            &format!("/api/traffic/nodes/{node_id}"),
             &cookie,
             Some(json!({"name":"Updated display", "public_host":"updated.example.com"})),
         )
@@ -318,7 +314,7 @@ async fn publication_debounces_and_deduplicates_native_configurations(pool: PgPo
     panel
         .admin(
             Method::PATCH,
-            &format!("/api/plugins/sing-box/nodes/{node_id}"),
+            &format!("/api/traffic/nodes/{node_id}"),
             &cookie,
             Some(json!({"sni":"changed.example.com"})),
         )
@@ -333,7 +329,7 @@ async fn publication_debounces_and_deduplicates_native_configurations(pool: PgPo
     let status: Value = panel
         .admin(
             Method::GET,
-            &format!("/api/plugins/sing-box/servers/{server}/deployments"),
+            &format!("/api/traffic/servers/{server}/deployments"),
             &cookie,
             None,
         )
@@ -410,7 +406,7 @@ async fn subscriptions_use_applied_snapshots_and_current_authorization(pool: PgP
     panel
         .admin(
             Method::PATCH,
-            &format!("/api/plugins/sing-box/nodes/{node_id}"),
+            &format!("/api/traffic/nodes/{node_id}"),
             &cookie,
             Some(json!({"sni":"new.example.com"})),
         )
@@ -484,7 +480,7 @@ async fn apply_results_are_monotonic_and_heartbeat_repairs_lost_results(
     panel
         .admin(
             Method::PATCH,
-            &format!("/api/plugins/sing-box/nodes/{}", id(&node)?),
+            &format!("/api/traffic/nodes/{}", id(&node)?),
             &cookie,
             Some(json!({"sni":"next.example.com"})),
         )
@@ -554,7 +550,7 @@ async fn redeploy_repeats_the_current_configuration_as_a_higher_revision(
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Redeploy server").await?;
     panel.create_node(&cookie, server, "Redeploy node").await?;
-    let path = format!("/api/plugins/sing-box/servers/{server}/deployments/redeploy");
+    let path = format!("/api/traffic/servers/{server}/deployments/redeploy");
     business_support::prove(&pool, &cookie).await?;
     // Nothing was deployed yet, so there is nothing to repeat.
     let early = panel.admin(Method::POST, &path, &cookie, None).await?;
@@ -587,7 +583,7 @@ async fn redeploy_repeats_the_current_configuration_as_a_higher_revision(
     let status: Value = panel
         .admin(
             Method::GET,
-            &format!("/api/plugins/sing-box/servers/{server}/deployments"),
+            &format!("/api/traffic/servers/{server}/deployments"),
             &cookie,
             None,
         )

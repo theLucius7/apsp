@@ -1,5 +1,5 @@
-export const sourceRoot = '/api/plugins/sing-box/ordered-subscription-sources'
-export const sourceJobRoot = '/api/plugins/sing-box/ordered-subscription-source-jobs'
+export const sourceRoot = '/api/traffic/ordered-subscription-sources'
+export const sourceJobRoot = '/api/traffic/ordered-subscription-source-jobs'
 export const MAX_SOURCE_BYTES = 2 * 1024 * 1024
 export type SourceCounts = { supported: number; unsupported: number; ambiguous: number; missing: number }
 export type SourceFailure = { stage: string; kind: string; message: string; http_status: number | null }

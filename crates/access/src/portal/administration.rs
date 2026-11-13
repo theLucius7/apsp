@@ -33,7 +33,7 @@ pub(super) async fn status(
     let account: Option<Uuid> = row.try_get("account_id")?;
     let base = login_base(&state, id).await?;
     Ok(keys::reply(
-        json!({"configuration":state.passkeys.info(),"keys":row.try_get::<i64,_>("keys")?,"url":account.map(|id| format!("{base}#/account/{id}")),"activation_expires_at":row.try_get::<Option<i64>,_>("activation_expires_at")?.filter(|time| *time>now_timestamp())}),
+        json!({"configuration":crate::passkeys::service(&state).info(),"keys":row.try_get::<i64,_>("keys")?,"url":account.map(|id| format!("{base}#/account/{id}")),"activation_expires_at":row.try_get::<Option<i64>,_>("activation_expires_at")?.filter(|time| *time>now_timestamp())}),
     ))
 }
 
@@ -53,9 +53,9 @@ pub(super) async fn invitation(
     Json(input): Json<Invitation>,
 ) -> ApiResult<Response> {
     let administrator = auth::require_admin(&state, &headers).await?;
-    state.passkeys.check_session_origin(&headers)?;
+    crate::passkeys::service(&state).check_session_origin(&headers)?;
     let mut tx = state.pool.begin().await?;
-    apsp_traffic::business::lock_user(&mut tx, id).await?;
+    crate::proxy_users::lock_user(&mut tx, id).await?;
     let existing: Option<Uuid> = sqlx::query_scalar(
         "SELECT account_id FROM singbox_portal_accounts WHERE user_id=$1 FOR UPDATE",
     )

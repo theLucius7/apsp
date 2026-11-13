@@ -30,7 +30,7 @@ pub(crate) async fn lock(tx: &mut Transaction<'_, Postgres>, account: Uuid) -> A
             .fetch_optional(&mut **tx)
             .await?
             .ok_or(ApiError::NotFound)?;
-    apsp_traffic::business::lock_user(tx, id).await?;
+    crate::proxy_users::lock_user(tx, id).await?;
     let denied:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_members WHERE user_id=$1 AND state NOT IN('active','pending'))").bind(id).fetch_one(&mut **tx).await?;
     if denied {
         return Err(ApiError::Forbidden("此成员账户暂不可用".into()));
@@ -141,7 +141,7 @@ pub(super) async fn view(
     if let Err(error) = session(&mut tx, account, &hash, false).await {
         return match error {
             ApiError::Unauthorized => Ok(keys::reply(
-                json!({"authenticated":false,"configuration":state.passkeys.info()}),
+                json!({"authenticated":false,"configuration":crate::passkeys::service(&state).info()}),
             )),
             error => Err(error),
         };
@@ -199,7 +199,7 @@ pub(super) async fn view(
             }
         );
     }
-    let result = json!({"authenticated":true,"configuration":state.passkeys.info(),"name":row.try_get::<String,_>("name")?,
+    let result = json!({"authenticated":true,"configuration":crate::passkeys::service(&state).info(),"name":row.try_get::<String,_>("name")?,
         "subscription_url":subscription_url,"clash_subscription_url":clash_subscription_url,"legacy_compatibility":compatibility,
         "usage":{"uplink":upload,"downlink":download},"keys":credentials,"subscription_status":subscription_status});
     tx.commit().await?;
@@ -212,7 +212,7 @@ pub(super) async fn logout(
     Path(account): Path<Uuid>,
 ) -> ApiResult<Response> {
     let state = super::super::subscription_hosts::scoped_state(state, &headers).await;
-    state.passkeys.check_origin(&headers)?;
+    crate::passkeys::service(&state).check_origin(&headers)?;
     if let Ok(hash) = session_hash(&headers) {
         let mut tx = state.pool.begin().await?;
         let deleted = sqlx::query(

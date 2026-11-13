@@ -38,17 +38,17 @@
 
 ## 主要 API
 
-- `POST /api/plugins/sing-box/operations/preview`：七类操作的固定对象预览。
-- `POST /api/plugins/sing-box/operations/{id}/apply`：管理员会话再验证后确认，状态变化则拒绝。
-- `GET /api/plugins/sing-box/users/{id}/diagnosis`：授权来源、套餐、部署、批次、轮换、审计与能力限制。
-- `GET/PUT /api/plugins/sing-box/users/{id}/client-template` 与 `POST .../compatibility`：有版本的完整客户端模板及兼容查询。
-- `POST /api/plugins/sing-box/servers/{id}/operations-view/checkpoint`：请求目标 Agent 主动核对实际配置与进程，结果未回报前保持待确认。
-- `POST /api/plugins/sing-box/servers/{id}/operations-view/preflight` 与 `POST .../preflight/confirm`：完整只读预检与再次验证确认；确认后继续已保存普通节点目标的正常发布，实际应用等待 Agent 回执。
+- `POST /api/access/operations/preview`：七类操作的固定对象预览。
+- `POST /api/access/operations/{id}/apply`：管理员会话再验证后确认，状态变化则拒绝。
+- `GET /api/access/users/{id}/diagnosis`：授权来源、套餐、部署、批次、轮换、审计与能力限制。
+- `GET/PUT /api/access/users/{id}/client-template` 与 `POST .../compatibility`：有版本的完整客户端模板及兼容查询。
+- `POST /api/traffic/servers/{id}/operations-view/checkpoint`：请求目标 Agent 主动核对实际配置与进程，结果未回报前保持待确认。
+- `POST /api/traffic/servers/{id}/operations-view/preflight` 与 `POST .../preflight/confirm`：完整只读预检与再次验证确认；确认后继续已保存普通节点目标的正常发布，实际应用等待 Agent 回执。
 - `POST .../preflight/bootstrap`：仅没有任何 sing-box 部署时，依据本人最新固定预检、真实特权目录/系统后端及本机统计端口证据，再验证后明确创建空运行时目标；已有部署不能覆盖。
-- `GET /api/plugins/sing-box/servers/{id}/operations-view`：当前服务器的部署条件、差异、偏差、路径和历史。
-- `GET/POST /api/plugins/sing-box/runtime-rollouts`、`POST .../{id}/advance`、`.../pause`、`.../members/{server}/inspect`：固定版本分批对账、确认与暂停。
-- `GET /api/plugins/sing-box/runtime-inventory`：真实本地已签名版本/平台/摘要与每个候选的兼容结论；不会把远端版本声明当本地库存。
-- `GET/PUT /api/plugins/sing-box/operations/privacy`：分别设置审计保留；订阅 0 天表示停止记录。
+- `GET /api/traffic/servers/{id}/operations-view`：当前服务器的部署条件、差异、偏差、路径和历史。
+- `GET/POST /api/traffic/runtime-rollouts`、`POST .../{id}/advance`、`.../pause`、`.../members/{server}/inspect`：固定版本分批对账、确认与暂停。
+- `GET /api/traffic/runtime-inventory`：真实本地已签名版本/平台/摘要与每个候选的兼容结论；不会把远端版本声明当本地库存。
+- `GET/PUT /api/access/operations/privacy`：分别设置审计保留；订阅 0 天表示停止记录。
 
 预览保存敏感状态的摘要，不保存原始凭据。应用记录在同一业务事务内写入；高风险操作使用平台最近五分钟的会话证明，目标服务器逐台授权。每台服务器实际执行状态保留为排队、等待设备或已确认，不用 HTTP 保存成功替代实际结果。
 

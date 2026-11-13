@@ -42,33 +42,33 @@ try {
         return { seconds, from: to - 2 * seconds, to, samples: [0, 2].map(index => ({ bucket_start: to - index * seconds, sampled_at: to - index * seconds, mainland_bytes: String(1024 ** 3), overseas_bytes: String((3 - index) * 1024 ** 3) })) }
       }) })
     }
-    if (path === '/api/plugins/alicloud/cron-preview' && method === 'POST') {
+    if (path === '/api/resources/alicloud/cron-preview' && method === 'POST') {
       if (body.expression === 'invalid') return respond({ error: 'Cron 需要五字段' }, 400)
       return respond({ occurrences: [1,2,3,4,5].map(day => now + day * 86400), utc_offset_minutes: body.utc_offset_minutes })
     }
-    if (path === '/api/plugins/alicloud' && method === 'GET') return failRead ? respond({ error: '测试：云状态不可用' }, 503) : respond(overview)
+    if (path === '/api/resources/alicloud' && method === 'GET') return failRead ? respond({ error: '测试：云状态不可用' }, 503) : respond(overview)
     if (method !== 'GET') writes.push({ path, method, body })
-    if (/^\/api\/plugins\/alicloud\/resources\/resource[12]\/refresh$/.test(path) && method === 'POST') {
+    if (/^\/api\/resources\/alicloud\/resources\/resource[12]\/refresh$/.test(path) && method === 'POST') {
       const resource = overview.resources.find(r => path.includes(`/${r.id}/`))
       assert(resource?.snapshot.attached_eip_id)
       return respond(resource.snapshot)
     }
-    if (path === '/api/plugins/alicloud/resources/resource1/eip-rotation/preview' && method === 'POST') {
+    if (path === '/api/resources/alicloud/resources/resource1/eip-rotation/preview' && method === 'POST') {
       assert.deepEqual(body, { probe_port: 8443, max_attempts: 5, resource_revision: overview.resources[0].revision })
       return respond({ ...rotation, status: 'preview' })
     }
-    if (path === '/api/plugins/alicloud/eip-rotations/rotation1/reconcile' && method === 'POST') {
+    if (path === '/api/resources/alicloud/eip-rotations/rotation1/reconcile' && method === 'POST') {
       assert.equal(body.process_stopped, true)
       assert(body.evidence.length >= 32)
       overview.eip_rotations = [{ ...overview.eip_rotations[0], status: 'reconciled' }]
       return respond(overview.eip_rotations[0])
     }
-    if (path === '/api/plugins/alicloud/eip-rotations/rotation1/confirm' && method === 'POST') {
+    if (path === '/api/resources/alicloud/eip-rotations/rotation1/confirm' && method === 'POST') {
       assert.deepEqual(body, { confirm: true, snapshot_digest: rotation.snapshot_digest })
       overview.eip_rotations = [{ ...rotation, status: 'running', phase: 'screen', attempts: [{ n: 1, allocation_id: 'eip-new', ip: '198.51.100.1', verdict: 'pending' }] }]
       return respond(overview.eip_rotations[0])
     }
-    if (path === '/api/plugins/alicloud/accounts' && method === 'POST') {
+    if (path === '/api/resources/alicloud/accounts' && method === 'POST') {
       assert.equal(body.auto_enabled, false)
       assert.equal(body.billing_enabled, false)
       assert.equal(body.balance_enabled, false)
@@ -77,7 +77,7 @@ try {
       overview.accounts.push({ ...body, access_key_id: undefined, access_key_secret: undefined, id: 'account', revision: 1, balance: { available: '1234.5600', currency: 'USD', queried_at: now }, balance_error: null, error_code: null, traffic_error: null, next_run_at: now + 300, traffic: { queried_at: now, mainland_bytes: '1073741824', overseas_bytes: '2147483648', regions: [{ region: 'cn-hangzhou', bytes: '1073741824' }] }, bill: { month, queried_at: now, usage_micro_gb: 10000000, rows: [{ instance_id: 'test', region: '测试地域', billing_item: '公网流量', product_type: 'cdt', usage: '10', unit: 'GB', amount: '0.00', currency: 'CNY' }] } })
       return respond({ id: 'account' }, 201)
     }
-    if (path === '/api/plugins/alicloud/accounts/account' && method === 'PATCH') {
+    if (path === '/api/resources/alicloud/accounts/account' && method === 'PATCH') {
       assert.equal(body.revision, overview.accounts[0].revision)
       for (const field of ['access_key_id', 'access_key_secret']) assert.equal(Object.hasOwn(body, field), false, 'An unchanged credential never replays plaintext')
       if (Object.hasOwn(body, 'credential_id')) assert.equal(body.credential_id, credentialId)
@@ -85,46 +85,46 @@ try {
       overview.accounts[0] = { ...overview.accounts[0], ...body, revision: body.revision + 1 }
       return route.fulfill({ status: 204 })
     }
-    if (path === '/api/plugins/alicloud/resources' && method === 'POST') {
+    if (path === '/api/resources/alicloud/resources' && method === 'POST') {
       assert.equal(body.auto_enabled, false)
       overview.resources.push({ ...body, id: 'resource', revision: 1, snapshot: snap, checked_at: now, error_code: null, power_policy: { ...powerPolicy }, power_state: powerState, power_checked_at: now, manual_hold: false, threshold_hold: false, instance_bill: { month, queried_at: now, rows: [{ item: 'PayAsYouGoBill', amount: '12.3456', currency: 'CNY' }] } })
       return respond({ id: 'resource' }, 201)
     }
-    if (path === '/api/plugins/alicloud/resources/resource/preview') {
+    if (path === '/api/resources/alicloud/resources/resource/preview') {
       assert.equal(method, 'POST'); assert.equal(body.revision, 1)
       const operation = { id: 'operation', resource_id: 'resource', account_revision: overview.accounts[0].revision, resource_revision: overview.resources[0].revision, before_state: snap, target: body.target, source: 'manual', billing_cycle: null, status: 'preview', created_at: now, updated_at: now, expires_at: now + 300, error_code: null, request_id: null }
       overview.operations = [operation]; return respond(operation)
     }
-    if (path === '/api/plugins/alicloud/operations/operation/confirm') {
+    if (path === '/api/resources/alicloud/operations/operation/confirm') {
       if (failConfirm) return respond({ error: '测试：预览状态变化，请重试' }, 409)
       overview.operations[0].status = 'uncertain'; overview.operations[0].error_code = 'awaiting_confirmation'
       return respond(overview.operations[0], 202)
     }
-    if (path === '/api/plugins/alicloud/operations/operation/dismiss') {
+    if (path === '/api/resources/alicloud/operations/operation/dismiss') {
       overview.operations[0].status = 'dismissed'; overview.resources[0].auto_enabled = false; overview.resources[0].power_policy.enabled = false; overview.resources[0].manual_hold = true; overview.resources[0].revision++
       return route.fulfill({ status: 204 })
     }
-    if (path === '/api/plugins/alicloud/resources/resource/power-policy') {
+    if (path === '/api/resources/alicloud/resources/resource/power-policy') {
       assert.equal(method, 'PATCH'); assert.equal(body.revision, overview.resources[0].revision)
       overview.resources[0].power_policy = body.policy; overview.resources[0].revision++
       return route.fulfill({ status: 204 })
     }
-    if (path === '/api/plugins/alicloud/resources/resource/power-preview') {
+    if (path === '/api/resources/alicloud/resources/resource/power-preview') {
       assert.equal(body.revision, overview.resources[0].revision)
       const job = { id: 'power', resource_id: 'resource', account_revision: overview.accounts[0].revision, resource_revision: overview.resources[0].revision, action: body.action, stop_mode: body.stop_mode, before_state: powerState, source: 'manual', status: 'preview', created_at: now, expires_at: now + 300, error_code: null, request_id: null }
       overview.power_jobs = [job]; return respond(job)
     }
-    if (path === '/api/plugins/alicloud/power-jobs/power/confirm') {
+    if (path === '/api/resources/alicloud/power-jobs/power/confirm') {
       if (failPowerConfirm) return respond({ error: '测试：启停配置已变化' }, 409)
       overview.power_jobs[0].status = 'uncertain'; overview.power_jobs[0].error_code = 'awaiting_confirmation'
       overview.resources[0].manual_hold = true
       return respond(overview.power_jobs[0], 202)
     }
-    if (path === '/api/plugins/alicloud/power-jobs/power/dismiss') {
+    if (path === '/api/resources/alicloud/power-jobs/power/dismiss') {
       overview.power_jobs[0].status = 'dismissed'; overview.resources[0].power_policy.enabled = false; overview.resources[0].revision++
       return route.fulfill({ status: 204 })
     }
-    if (path === '/api/plugins/alicloud/resources/resource/power-resume') {
+    if (path === '/api/resources/alicloud/resources/resource/power-resume') {
       assert.equal(body.revision, overview.resources[0].revision)
       overview.resources[0].manual_hold = false; return route.fulfill({ status: 204 })
     }
@@ -241,7 +241,7 @@ try {
   await dialog.getByRole('button', { name: '预览启停操作' }).click()
   const powerConfirm = dialog.getByRole('button', { name: '确认执行启停' })
   assert.equal(await powerConfirm.isDisabled(), true)
-  assert.equal(writes.filter(w => w.path === '/api/plugins/alicloud/power-jobs/power/confirm').length, 0)
+  assert.equal(writes.filter(w => w.path === '/api/resources/alicloud/power-jobs/power/confirm').length, 0)
   await dialog.getByLabel('已核对实例，确认执行').check()
   await powerConfirm.click(); await dialog.getByText('测试：启停配置已变化').waitFor()
   failPowerConfirm = false; await powerConfirm.click()
@@ -341,7 +341,7 @@ try {
     await article.getByRole('button', { name: '资源操作', exact: true }).click()
     await Promise.all([page.waitForResponse(response => response.url().endsWith(`/resource${index + 1}/refresh`)), page.getByRole('menu').getByRole('menuitem', { name: '查询当前配置', exact: true }).click()])
   }
-  assert.deepEqual(writes.slice(previousWrites).map(w => w.path), ['/api/plugins/alicloud/resources/resource1/refresh', '/api/plugins/alicloud/resources/resource2/refresh'])
+  assert.deepEqual(writes.slice(previousWrites).map(w => w.path), ['/api/resources/alicloud/resources/resource1/refresh', '/api/resources/alicloud/resources/resource2/refresh'])
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   if (screenshots) await page.screenshot({ path: `${screenshots}/alicloud-eip-${width}.png`, fullPage: true })
   // Replacing the address never starts before the preview is read and explicitly confirmed.

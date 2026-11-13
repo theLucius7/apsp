@@ -254,7 +254,7 @@ pub async fn agent_list(
     headers: HeaderMap,
     Query(query): Query<AgentProbeQuery>,
 ) -> ApiResult<Json<Vec<serde_json::Value>>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     if query.authorization.is_some_and(|version| version != 1) {
         return Err(ApiError::BadRequest("拨测授权协议版本不支持".into()));
     }
@@ -273,7 +273,7 @@ pub async fn agent_authorized_list(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<ProbeSpec>>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     let mut specs = read(&state, server).await?;
     for spec in &mut specs.0 {
         spec.execution_authorized = None;
@@ -286,7 +286,7 @@ pub async fn agent_lease(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<ProbeLease>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     let session_hash = session_hash(&headers)?;
     let mut tx = state.pool.begin().await?;
     lock_server(&mut tx, server).await?;
@@ -542,7 +542,7 @@ pub async fn ingest(
     headers: HeaderMap,
     Json(batch): Json<ProbeBatch>,
 ) -> ApiResult<Json<TaskAck>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     let now = now_millis();
     let mut ids = std::collections::HashSet::new();
     if batch.results.is_empty()

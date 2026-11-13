@@ -19,7 +19,7 @@ async function main() {
         id: 1, name: '检查入口验收夹具', device_public_key: 'TEST_ONLY', static_info: {},
         latest_metrics: {}, manifest_rev: 0, capabilities: [], online: true, last_seen: 1700000000,
       }
-      else if (path === '/api/plugins/sing-box/servers/1') data = { id: 1, name: '检查入口验收夹具', enabled: false, source: null, read_only: false, online: true, agent_supported: false }
+      else if (path === '/api/traffic/servers/1') data = { id: 1, name: '检查入口验收夹具', enabled: false, source: null, read_only: false, online: true, agent_supported: false }
       else if (path.endsWith('/deployments')) data = { status: null, history: [] }
       else if (path.endsWith('/agent-settings')) data = { sample_interval_secs: 1, upload_interval_secs: 3, auto_update: false, discover_public_ips: false }
       else if (path.endsWith('/node-quality/reports') && request.method() === 'GET') data = {

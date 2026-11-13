@@ -50,9 +50,10 @@
 - `agent-core` 目录内任何文件不得出现 `singbox` 或 `sing-box` 字样；使用模块标识、能力和统一接口。
 - core 管服务器；代理用户、授权、订阅、用户流量、配额和周期属于服务权益领域（`crates/access`），详见 [ADR 0023](docs/adr/0023-proxy-business-boundary.md) 与 [搬迁及启用兼容 ADR 0030](docs/adr/0030-singbox-plugin-business.md)。core 不得引用代理业务的 `user`、`subscription`、`quota`，含复数、蛇形和驼峰形式；CI 使用 `tools/check-core-boundary.py` 检查。系统账户与 SQLite 原生 API 仅允许检查器列出的具体表达式，不允许文件或整行豁免。
 - 面板是按领域组织的一体化系统，分平台、领域和应用三层，不再有插件（[ADR 0128](docs/adr/0128-domain-architecture.md)；九个领域、依赖顺序与写入规则见[功能划分与逻辑结构](docs/architecture.md)，逐项功能的归属见[领域归属表](docs/domain-map.md)）：
-  - 平台（`crates/panel-host`、`crates/cloud-api`）只放技术机制，工作区依赖只能是 `protocol`，不依赖任何领域；目录内禁止 sing-box 名称和上述代理业务词汇，例外表达式由检查器逐条列出。宿主里尚未迁出的领域代码已按领域登记所有者，路由由各领域在 `crates/panel-host/src/domains/` 声明，阶段 B2 迁出。
-  - 领域 crate（`crates/resources`、`crates/networking`、`crates/naming`、`crates/compiler` 与 `crates/traffic`（流量服务）、`crates/access`（服务权益）、`crates/costs`、`crates/observability`、`crates/operations`）只依赖平台、`protocol`、依赖顺序中排在前面的领域 crate 和同一领域的其他 crate。领域代码不得移回平台或应用 crate。仓库没有 `plugins/` 目录：运行时服务定义在 `deploy/`，诊断工具的打包脚本、策略与锁定文件在 `crates/observability/upstream/`（签名制品里仍按原名 `plugins/...` 记录，这是制品格式）。诊断代码（IPQuality、NodeQuality、TcpQuality）在观测 crate 的 `diagnostic_plugins/`。
-  - 只有应用 `apsp-panel` 组合平台与各领域、接线依赖倒置接口（清单见 [architecture.md §5.5](docs/architecture.md#55-类型化接口)，接线在 `crates/panel/src/wiring.rs`），并保存唯一的数据库基线。不再新增插件式的全局钩子：需要逆着依赖顺序调用时，由调用方声明类型化接口。
+  - 平台（`crates/panel-host`、`crates/cloud-api`）只放技术机制，工作区依赖只能是 `protocol`，不依赖任何领域；目录内禁止 sing-box 名称和上述代理业务词汇，例外表达式由检查器逐条列出。
+  - 领域 crate（`crates/governance`、`crates/resources`、`crates/networking`、`crates/naming`、`crates/compiler` 与 `crates/traffic`（流量服务）、`crates/access`（服务权益）、`crates/costs`、`crates/observability`、`crates/operations`）只依赖平台、`protocol`、依赖顺序中排在前面的领域 crate 和同一领域的其他 crate。领域代码不得移回平台或应用 crate。仓库没有 `plugins/` 目录：运行时服务定义在 `deploy/`，诊断工具的打包脚本、策略与锁定文件在 `crates/observability/upstream/`（签名制品里仍按原名 `plugins/...` 记录，这是制品格式）。诊断代码（IPQuality、NodeQuality、TcpQuality）在观测 crate 的 `diagnostic_tools/`。
+  - 只有应用 `apsp-panel` 组合平台与各领域（组合在 `crates/panel/src/domains.rs`：路由与后台任务各一张清单，每个领域 crate 只导出一个 `routes()`，路由的完整路径写在声明处）、接线依赖倒置接口（清单见 [architecture.md §5.5](docs/architecture.md#55-类型化接口)，接线在 `crates/panel/src/wiring.rs`），并保存唯一的数据库基线。不再新增插件式的全局钩子：需要逆着依赖顺序调用时，由调用方声明类型化接口。
+  - 控制台接口地址按对象所属领域命名（`/api/traffic/…`、`/api/access/…`、`/api/naming/…`、`/api/costs/…`、`/api/observability/…`、`/api/resources/alicloud/…`；其余地址不变），路由的权限结论记在 `crates/panel/tests/fixtures/route-policy.tsv`，新增或改动路由后运行 `python3 tools/route-policy.py`（见 [ADR 0132](docs/adr/0132-platform-only-host-and-domain-addresses.md)）。
   - `tools/check-core-boundary.py` 检查每个 crate 的层级与依赖方向；新增 crate 先在检查器里登记层级。
 - 每张表只有一个所有者（`tools/feature-boundaries.toml`）。提交前运行 `python3 tools/check-feature-boundaries.py`：现有越界记在 `tools/feature-boundaries.baseline`，只许减少；新增的跨领域 SQL（写其他领域的表、读其他领域的私有表或平台的表、逆着依赖顺序读公开只读表）、逆着依赖顺序的代码引用（平台引用领域，或前面的领域引用后面的领域、同组的领域，同一 crate 内与跨 crate 都算）、跨 crate `#[path]` 或前端跨领域引用会失败，应改为经所有者的接口，而不是加进清单。新增表必须在所有者清单里登记。
 - 管理界面和使用文档按[功能地图](docs/product-map.md)的六个工作区组织（[ADR 0126](docs/adr/0126-workspaces-language-and-addresses.md)；侧栏已是六个工作区，尚未落地的几处见功能地图）：新增页面先确定所属领域与工作区，一台服务器的事放服务器详情。前端按领域目录组织，每个页面在所属领域的 `pages.tsx` 登记（地址、名称、工作区、权限），每个入口属于一个领域，侧栏分组由清单声明；同一对象允许多个入口，但只有一套模型和编辑逻辑。页面地址按用途命名、与入口一致；已发给代理用户或客户端的地址永不失效，控制台地址改名后旧地址改写到新地址并至少保留一个发布版本。降级功能在界面标“实验”，冻结功能默认隐藏、由面板设置显示，都放在所属工作区内；核心旅程不得依赖降级页面。
@@ -70,7 +71,7 @@
 - 只使用任务说明列出的依赖；确需新增依赖时先在 `docs/adr/` 说明必要性和替代方案。
 - sing-box 只通过 `tools/singbox-runtime/` 的补丁修改（2026-11-01 用户要求维护自己的构建版本，见 ADR 0104），不直接改上游 checkout；不得提交真实密钥、令牌、域名、IP 或其他环境凭证。示例使用占位符、保留示例域名以及明确要求的回环或监听地址。
 - 不在核心路径留下仅有 TODO 的实现，不为范围外功能创建空目录或空模块。
-- 按改动范围做相称的本地验证：代码改动提交前通过 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`、`python3 tools/check-core-boundary.py` 与 `python3 tools/check-feature-boundaries.py`，改前端时另跑前端构建与受影响的测试；只改文档时检查文档内链接与引用。
+- 按改动范围做相称的本地验证：代码改动提交前通过 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`、`python3 tools/check-core-boundary.py`、`python3 tools/check-feature-boundaries.py` 与 `python3 tools/route-policy.py`，改前端时另跑前端构建与受影响的测试；只改文档时检查文档内链接与引用。
 - 测试必须覆盖协议兼容、编译确定性、账本事务与恢复、对账合并与回滚。只需要 PostgreSQL 的测试不标忽略；需要真实运行时、root 权限或测试机而环境不可用的测试使用带原因的 `#[ignore]`，在 `PROGRESS.md` 记录未验证范围与人工步骤，不得宣称已通过实机验收。
 - 生成的 `web/dist` 不提交到 Git，面板编译前先构建前端。正式签名 Release 按原发布流程管理，本地构建不会自动上传 GitHub。
 

@@ -623,7 +623,7 @@ async fn enqueue(
     let message: String = row.get("title");
     let time = now.to_string();
     let event_id = id.to_string();
-    for (channel, payload) in crate::notifications::plugin::render(
+    for (channel, payload) in crate::notifications::delivery::render(
         &settings,
         &crate::notifications::webhook::Message {
             title,
@@ -699,7 +699,7 @@ async fn dispatch(state: &AppState, now: i64) -> ApiResult<()> {
     }
     tx.commit().await?;
     for (id, channel, payload, attempts) in claimed {
-        match crate::notifications::plugin::send(&settings, &channel, &payload).await {
+        match crate::notifications::delivery::send(&settings, &channel, &payload).await {
             Ok(()) => {
                 sqlx::query("UPDATE operations_incident_deliveries SET status='sent',delivered_at=$2,last_error=NULL WHERE id=$1").bind(id).bind(now).execute(&state.pool).await?;
             }

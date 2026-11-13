@@ -129,7 +129,7 @@ pub async fn ingest(
     headers: HeaderMap,
     bytes: Bytes,
 ) -> ApiResult<Json<TelemetryAck>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     let batch = decode(&headers, &bytes)?;
     let now = now_millis();
     let mut ids = HashSet::new();
@@ -151,7 +151,7 @@ pub async fn agent_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<AgentSettings>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     read_settings(&state, server).await
 }
 
@@ -188,15 +188,7 @@ pub async fn update_settings(
             "采样与上传间隔必须在 1–60 秒内，上传间隔不能小于采样间隔".into(),
         ));
     }
-    let result =
-        sqlx::query("UPDATE servers SET agent_settings=$2 WHERE id=$1 AND deleted_at IS NULL")
-            .bind(server)
-            .bind(serde_json::to_value(&settings).map_err(anyhow::Error::from)?)
-            .execute(&state.pool)
-            .await?;
-    if result.rows_affected() == 0 {
-        return Err(ApiError::NotFound);
-    }
+    crate::servers::save_agent_settings(&state.pool, server, &settings).await?;
     Ok(Json(settings))
 }
 

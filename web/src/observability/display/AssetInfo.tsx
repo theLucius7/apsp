@@ -3,7 +3,8 @@ import { assetDate, assetPrice, defaultAssets, expiryState, trafficModes, traffi
 import { useCurrency } from '../../costs/currency/CurrencyContext'
 import { convert, money, price, remainingCost } from '../../costs/currency/currency'
 import CurrencyReference from '../../costs/currency/CurrencyReference'
-import { Track, surface } from './ui'
+import { Track } from './ui'
+import { surface } from '@/components/board'
 import { cn } from '@/lib/utils'
 
 export function AssetChips({ server, className }: { server: Server; className?: string }) {

@@ -17,7 +17,7 @@ const templateFixture = { template: null, definition_redacted: false, credential
 
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = process.env.APSP_WEB_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url))
-const prefix = '/api/plugins/sing-box'
+const trafficApi = '/api/traffic', accessApi = '/api/access'
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const host = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname
@@ -73,24 +73,24 @@ try {
         }
       } else {
         writes.push({ path, method, body: request.postDataJSON() })
-        assert.equal(path, `${prefix}/${pageName === 'groups' ? 'policy-groups' : 'users'}/1`)
+        assert.equal(path, `${accessApi}/${pageName === 'groups' ? 'policy-groups' : 'users'}/1`)
         return route.fulfill({ json: pageName === 'groups' ? row : { ...user, name: request.postDataJSON().name } })
       }
       let value
       if (path === '/api/dashboard/access') value = { authenticated: true, public_dashboard: false }
-      else if (path === `${prefix}/policy-groups`) value = [row]
-      else if (path === `${prefix}/package-groups`) value = []
-      else if (path === `${prefix}/ordered-proxy-resources`) value = proxyResourceFixtures([node], servers)
-      else if (path === `${prefix}/external-node-candidates`) value = { available_nodes: [] }
-      else if (path === `${prefix}/nodes`) value = [node]
-      else if (path === `${prefix}/users`) value = [user]
-      else if (path === `${prefix}/usage`) value = usage
-      else if (path === `${prefix}/users/1/entitlement`) value = { user_id: 1, package_group_id: null, package_name: null, monthly_bytes: null, starts_at: null, expires_at: null, cycle_start: null, next_reset: null, used_bytes: '0', status: 'unlimited', allowed: true }
-      else if (path === `${prefix}/users/1/policy-groups`) value = { group_ids: [] }
-      else if (path === `${prefix}/users/1/portal`) value = { configuration: { enabled: false, reason: 'TEST_ONLY 尚未启用', origin }, keys: 0, url: null, activation_expires_at: null }
-      else if (method === 'GET' && !url.search && path === `${prefix}/users/1/diagnosis`) value = diagnosisFixture(user)
-      else if (method === 'GET' && !url.search && path === `${prefix}/users/1/client-template`) value = templateFixture
-      else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/limits$/.test(path)) value = { user_id: Number(path.split('/')[5]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } // Per-user limits (ADR 0124) are read on the user page; none are set here.
+      else if (path === `${accessApi}/policy-groups`) value = [row]
+      else if (path === `${accessApi}/package-groups`) value = []
+      else if (path === `${trafficApi}/ordered-proxy-resources`) value = proxyResourceFixtures([node], servers)
+      else if (path === `${accessApi}/external-node-candidates`) value = { available_nodes: [] }
+      else if (path === `${trafficApi}/nodes`) value = [node]
+      else if (path === `${accessApi}/users`) value = [user]
+      else if (path === `${accessApi}/usage`) value = usage
+      else if (path === `${accessApi}/users/1/entitlement`) value = { user_id: 1, package_group_id: null, package_name: null, monthly_bytes: null, starts_at: null, expires_at: null, cycle_start: null, next_reset: null, used_bytes: '0', status: 'unlimited', allowed: true }
+      else if (path === `${accessApi}/users/1/policy-groups`) value = { group_ids: [] }
+      else if (path === `${accessApi}/users/1/portal`) value = { configuration: { enabled: false, reason: 'TEST_ONLY 尚未启用', origin }, keys: 0, url: null, activation_expires_at: null }
+      else if (method === 'GET' && !url.search && path === `${accessApi}/users/1/diagnosis`) value = diagnosisFixture(user)
+      else if (method === 'GET' && !url.search && path === `${accessApi}/users/1/client-template`) value = templateFixture
+      else if (method === 'GET' && /^\/api\/access\/users\/\d+\/limits$/.test(path)) value = { user_id: Number(path.split('/')[4]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } // Per-user limits (ADR 0124) are read on the user page; none are set here.
       else assert.fail(`Unexpected read: ${path}`)
       await route.fulfill({ json: value }).catch(() => {})
     })
@@ -112,7 +112,7 @@ try {
         // Dialogs render at the document root, so observe the whole body for inserted notices.
         window.testObserver.observe(document.body, { childList: true, subtree: true })
       })
-      const readPath = `${prefix}/${pageName === 'groups' ? 'policy-groups' : 'users'}`
+      const readPath = `${accessApi}/${pageName === 'groups' ? 'policy-groups' : 'users'}`
       const brief = hold(readPath)
       await page.clock.runFor(5000); await wait(() => brief.reached > 0, 'Automatic poll must start')
       await settle()
@@ -128,7 +128,7 @@ try {
       assert.equal(await input.inputValue(), 'TEST_ONLY 未保存草稿')
 
       let extraDependencies = 0
-      if (pageName === 'groups') for (const path of ['package-groups', 'ordered-proxy-resources', 'external-node-candidates'].map(name => `${prefix}/${name}`)) {
+      if (pageName === 'groups') for (const path of [`${accessApi}/package-groups`, `${trafficApi}/ordered-proxy-resources`, `${accessApi}/external-node-candidates`]) {
         const dependency = hold(path)
         // Start this read on the next poll boundary before measuring its 100ms hold.
         await page.clock.runFor(5000 - (await page.evaluate(() => Date.now())) % 5000)
@@ -154,7 +154,7 @@ try {
       assert.equal(await input.inputValue(), 'TEST_ONLY 未保存草稿')
 
       const manual = hold(readPath)
-      const portalPath = `${prefix}/users/1/portal`
+      const portalPath = `${accessApi}/users/1/portal`
       const portal = pageName === 'users' ? hold(portalPath) : undefined
       await dialog.locator('form').evaluate(form => {
         document.querySelector('[data-slot=page-header] button').click()

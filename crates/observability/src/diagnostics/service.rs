@@ -1,5 +1,5 @@
 use super::*;
-use crate::diagnostic_plugins;
+use crate::diagnostic_tools;
 use apsp_protocol::{DIAGNOSTIC_SERVICE_CAPABILITY, DiagnosticResourceBudget};
 use std::{collections::BTreeMap, future::Future, pin::Pin};
 
@@ -23,7 +23,7 @@ pub struct JobPlan {
 }
 
 /// Plugins translate parameters and parse reports; the service owns task state.
-pub trait DiagnosticPlugin: Send + Sync {
+pub trait DiagnosticTool: Send + Sync {
     fn id(&self) -> &'static str;
     fn version(&self) -> &'static str;
     fn title(&self) -> &'static str;
@@ -58,7 +58,7 @@ pub trait DiagnosticPlugin: Send + Sync {
 }
 
 #[derive(Serialize)]
-pub struct PluginReadiness {
+pub struct ToolReadiness {
     pub plugin: &'static str,
     pub title: &'static str,
     pub version: &'static str,
@@ -69,14 +69,11 @@ pub struct PluginReadiness {
 #[derive(Serialize)]
 pub struct DiagnosticView {
     pub cancel_supported: bool,
-    pub plugins: Vec<PluginReadiness>,
+    pub plugins: Vec<ToolReadiness>,
     pub reports: Vec<ReportRecord>,
 }
 
-pub fn ready(
-    row: &sqlx::postgres::PgRow,
-    plugin: &dyn DiagnosticPlugin,
-) -> ApiResult<&'static str> {
+pub fn ready(row: &sqlx::postgres::PgRow, plugin: &dyn DiagnosticTool) -> ApiResult<&'static str> {
     let info: Value = row.get("static_info");
     if plugin
         .required_os()
@@ -131,15 +128,15 @@ pub fn ready(
 pub(crate) async fn readiness(
     state: &AppState,
     row: &sqlx::postgres::PgRow,
-    plugin: &dyn DiagnosticPlugin,
-) -> PluginReadiness {
+    plugin: &dyn DiagnosticTool,
+) -> ToolReadiness {
     let result = async {
         let arch = ready(row, plugin)?;
         artifacts::descriptor(state, plugin.id(), plugin.version(), arch).await?;
         Ok::<(), ApiError>(())
     }
     .await;
-    PluginReadiness {
+    ToolReadiness {
         plugin: plugin.id(),
         title: plugin.title(),
         version: plugin.version(),
@@ -183,7 +180,7 @@ pub async fn get(
     .await?
     .ok_or(ApiError::NotFound)?;
     let mut plugins = Vec::new();
-    for plugin in diagnostic_plugins::all() {
+    for plugin in diagnostic_tools::all() {
         plugins.push(readiness(&state, &row, *plugin).await);
     }
     Ok(Json(DiagnosticView {
@@ -200,7 +197,7 @@ pub async fn create(
     Json(request): Json<Value>,
 ) -> ApiResult<(StatusCode, Json<ReportRecord>)> {
     auth::require_admin(&state, &headers).await?;
-    let plugin = diagnostic_plugins::find(&plugin)
+    let plugin = diagnostic_tools::find(&plugin)
         .ok_or_else(|| ApiError::BadRequest("诊断插件没有登记".into()))?;
     Ok((
         StatusCode::CREATED,
@@ -216,7 +213,7 @@ fn valid_component(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
 }
 
-fn validate_plan(plugin: &dyn DiagnosticPlugin, plan: &JobPlan) -> ApiResult<()> {
+fn validate_plan(plugin: &dyn DiagnosticTool, plan: &JobPlan) -> ApiResult<()> {
     let names = &plan.expected_sections;
     let mut distinct = std::collections::BTreeSet::new();
     let reserved = [
@@ -271,7 +268,7 @@ fn validate_plan(plugin: &dyn DiagnosticPlugin, plan: &JobPlan) -> ApiResult<()>
 pub(crate) async fn create_job(
     state: &AppState,
     id: i64,
-    plugin: &dyn DiagnosticPlugin,
+    plugin: &dyn DiagnosticTool,
     request: Value,
 ) -> ApiResult<ReportRecord> {
     let mut tx = state.pool.begin().await?;
@@ -338,7 +335,7 @@ pub(super) async fn reject_queued(
     for row in rows {
         let job: Value = row.get("job");
         if let Some(reason) =
-            diagnostic_plugins::for_job(&job).and_then(|plugin| plugin.start_denial(&job))
+            diagnostic_tools::for_job(&job).and_then(|plugin| plugin.start_denial(&job))
         {
             // A panel queue may lag a durable device start. Keep completion false so
             // an existing checkpoint can still return its late report or cancel.
@@ -350,13 +347,13 @@ pub(super) async fn reject_queued(
     Ok(())
 }
 
-pub(super) fn validate_plugin_report(job: &Value, report: &DiagnosticReport) -> ApiResult<()> {
+pub(super) fn validate_tool_report(job: &Value, report: &DiagnosticReport) -> ApiResult<()> {
     let Some(url) = &report.report_url else {
         // Historical text remains writable even when its plugin metadata predates registration.
         return Ok(());
     };
     // Before registration, every diagnostic belonged to the original plugin.
-    let plugin = diagnostic_plugins::for_job(job)
+    let plugin = diagnostic_tools::for_job(job)
         .ok_or_else(|| ApiError::Conflict("任务的诊断插件已不可用".into()))?;
     if !plugin.report_url_allowed(url) {
         return Err(ApiError::BadRequest(

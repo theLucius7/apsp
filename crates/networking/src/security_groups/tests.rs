@@ -75,7 +75,7 @@ impl Fixture {
         let directory =
             std::env::temp_dir().join(format!("apsp-security-groups-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory)?;
-        let state = AppState::new(
+        let state = apsp_governance::state(
             pool.clone(),
             crate::config::Config {
                 database_url: String::new(),
@@ -296,7 +296,7 @@ async fn leaving_a_verified_owned_extra_keeps_every_baseline_group(
     sqlx::query("INSERT INTO alicloud_security_group_operations(id,resource_id,requested_by,before_state,target_groups,impact,snapshot_digest,status,created_at,expires_at,updated_at) VALUES($1,$2,1,$3,$4,'{}','fixture','succeeded',1,2,1)")
         .bind(prior).bind(fixture.resource).bind(DbJson(before)).bind(vec![BASE,EXTRA]).execute(&fixture.state.pool).await?;
     sqlx::query("INSERT INTO alicloud_managed_security_groups(resource_id,group_id,group_digest,operation_id,confirmed_at) VALUES($1,$2,$3,$4,1)")
-        .bind(fixture.resource).bind(EXTRA).bind(digest(&cloud_group)?).bind(prior).execute(&fixture.state.pool).await?;
+        .bind(fixture.resource).bind(EXTRA).bind(crate::digest::json(&cloud_group)?).bind(prior).execute(&fixture.state.pool).await?;
     let mut replies = read(&[BASE, EXTRA], true);
     replies.extend(read(&[BASE, EXTRA], true));
     replies.extend([
@@ -477,7 +477,7 @@ async fn group_policy_changed_after_confirmation_snapshot_blocks_join_and_leave(
     sqlx::query("INSERT INTO alicloud_security_group_operations(id,resource_id,requested_by,before_state,target_groups,impact,snapshot_digest,status,created_at,expires_at,updated_at) VALUES($1,$2,1,$3,$4,'{}','fixture','succeeded',1,2,1)")
         .bind(prior).bind(fixture.resource).bind(DbJson(baseline())).bind(vec![BASE,EXTRA]).execute(&fixture.state.pool).await?;
     sqlx::query("INSERT INTO alicloud_managed_security_groups(resource_id,group_id,group_digest,operation_id,confirmed_at) VALUES($1,$2,$3,$4,1)")
-        .bind(fixture.resource).bind(EXTRA).bind(digest(&cloud_group)?).bind(prior).execute(&fixture.state.pool).await?;
+        .bind(fixture.resource).bind(EXTRA).bind(crate::digest::json(&cloud_group)?).bind(prior).execute(&fixture.state.pool).await?;
     let mut replies = read(&[BASE, EXTRA], true);
     replies.extend(read(&[BASE, EXTRA], true));
     replies.extend([instance(&[BASE, EXTRA]), changed]);

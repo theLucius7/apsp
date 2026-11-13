@@ -11,7 +11,7 @@ use reqwest::Method;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-/// DNS credentials remain inside the plugin and are never included in results.
+/// DNS credentials remain inside this domain and are never included in results.
 pub async fn present(
     state: &AppState,
     rule_id: Uuid,

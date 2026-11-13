@@ -18,10 +18,6 @@ function normalized(path: string) {
   return link.hash
 }
 
-export function hasUnsavedChanges() {
-  return blockers.size > 0
-}
-
 /** Asks once when unsaved input would be lost; true when leaving is fine. */
 export function confirmLeave() {
   return blockers.size === 0 || window.confirm(leaveMessage)

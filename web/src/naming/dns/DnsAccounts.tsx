@@ -26,7 +26,7 @@ function Editor({ account, servers, close, saved }: { account: DnsAccount; serve
   const [config, setConfig] = useState(account.config)
   const [zones, setZones] = useState(config.zone_ids.join('\n'))
   const change = (part: Partial<typeof config>) => setConfig(value => ({ ...value, ...part }))
-  return <FormDialog title={`编辑账号 · ${account.config.name}`} busy={action.busy} error={action.error} onClose={close} onSubmit={() => void action.run(() => api(`/api/plugins/ddns/accounts/${account.id}`, 'PUT', { config: { ...config, zone_ids: zones.split(/[\s,]+/).filter(Boolean) }, revision: account.revision }), saved)}>
+  return <FormDialog title={`编辑账号 · ${account.config.name}`} busy={action.busy} error={action.error} onClose={close} onSubmit={() => void action.run(() => api(`/api/naming/accounts/${account.id}`, 'PUT', { config: { ...config, zone_ids: zones.split(/[\s,]+/).filter(Boolean) }, revision: account.revision }), saved)}>
     <Field label="名称"><Input required value={config.name} maxLength={128} onChange={event => change({ name: event.target.value })} /></Field>
     <Field label="可管理的域名" hint={config.provider === 'cloudflare' || config.provider === 'huawei' ? '每行一个 Zone ID，最多 32 个。' : '每行一个托管的根域名，最多 32 个。'}><Textarea required rows={4} value={zones} onChange={event => setZones(event.target.value)} /></Field>
     <Field label="可用于哪些服务器" hint="都不勾选表示所有服务器。">
@@ -45,8 +45,8 @@ function ConnectAccount({ close, saved }: { close: () => void; saved: (account: 
   const [key, setKey] = useState(''), [secret, setSecret] = useState(''), [zones, setZones] = useState('')
   const cloudflare = provider === 'cloudflare', zoneIds = provider === 'huawei'
   return <FormDialog title="添加 DNS 账号" submitLabel={cloudflare ? '验证并保存' : '保存'} busy={action.busy} error={action.error} onClose={close} onSubmit={() => void action.run(() => cloudflare
-    ? api<DnsAccount>('/api/plugins/ddns/accounts/cloudflare', 'POST', { name: name.trim(), api_token: token.trim() })
-    : api<DnsAccount>('/api/plugins/ddns/accounts/access-key', 'POST', { provider, name: name.trim(), access_key_id: key.trim(), access_key_secret: secret.trim(), zone_ids: zones.split(/[\s,]+/).filter(Boolean) }), saved)}>
+    ? api<DnsAccount>('/api/naming/accounts/cloudflare', 'POST', { name: name.trim(), api_token: token.trim() })
+    : api<DnsAccount>('/api/naming/accounts/access-key', 'POST', { provider, name: name.trim(), access_key_id: key.trim(), access_key_secret: secret.trim(), zone_ids: zones.split(/[\s,]+/).filter(Boolean) }), saved)}>
     <Field label="DNS 提供方"><NativeSelect className="w-full" value={provider} onChange={event => setProvider(event.target.value as keyof typeof providers)}>{Object.entries(providers).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</NativeSelect></Field>
     {cloudflare
       ? <Field label="API 令牌" hint="在 Cloudflare「账户 API 令牌」创建，权限选 DNS 编辑；保存时自动识别可管理的域名，之后不再显示。"><Input type="password" autoComplete="off" required value={token} onChange={event => setToken(event.target.value)} placeholder="cfat_…" /></Field>
@@ -75,7 +75,7 @@ export default function DnsAccounts({ accounts, servers, connect }: { accounts: 
   const [records, setRecords] = useState<DnsAccount | null>(null)
   const [check, setCheck] = useState<{ account: string; result: Check } | null>(null)
   const list = accounts.data ?? []
-  const runCheck = (account: DnsAccount) => void action.run(async () => { setCheck({ account: account.id, result: await api<Check>(`/api/plugins/ddns/accounts/${account.id}/check`, 'POST') }); accounts.reload() })
+  const runCheck = (account: DnsAccount) => void action.run(async () => { setCheck({ account: account.id, result: await api<Check>(`/api/naming/accounts/${account.id}/check`, 'POST') }); accounts.reload() })
   return <Panel>
     <PanelHeader><span className="flex min-w-0 items-center gap-1.5"><PanelTitle>DNS 账号</PanelTitle><InfoTip label="账号说明"><p>令牌加密保存；解析规则和用户专属地址都从这里选。</p></InfoTip></span><Button size="sm" variant="outline" onClick={connect}><PlusIcon aria-hidden="true" />添加账号</Button></PanelHeader>
     {(accounts.error || action.error) && <div className="px-4 pt-4"><ErrorNotice message={accounts.error || action.error} retry={accounts.reload} /></div>}

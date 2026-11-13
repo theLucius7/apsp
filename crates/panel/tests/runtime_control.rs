@@ -13,9 +13,10 @@ mod path_probe;
 mod release_support;
 
 use anyhow::Result;
-use apsp_panel::agent_api;
-use apsp_panel_host::{AgentConnection, AppState};
+use apsp_panel_host::AppState;
 use apsp_protocol::*;
+use apsp_resources::device_channel;
+use apsp_resources::device_channel::AgentConnection;
 use apsp_traffic::runtime_control;
 use business_support::TestPanel;
 use serde_json::{Value, json};
@@ -54,7 +55,7 @@ async fn introduce(
     capable: bool,
     applied: AppliedRevisions,
 ) -> Result<()> {
-    agent_api::process_message(
+    device_channel::process_message(
         state,
         server,
         Message::Hello(Hello {
@@ -147,13 +148,17 @@ async fn confirmed(state: &AppState, server: i64) -> Result<RuntimeCheckpoint> {
 
 async fn attach(state: &AppState, server: i64) -> mpsc::Receiver<Envelope> {
     let (sender, receiver) = mpsc::channel(64);
-    state.connections.write().await.insert(
-        server,
-        AgentConnection {
-            id: Uuid::new_v4(),
-            sender,
-        },
-    );
+    apsp_resources::device_channel::devices(state)
+        .connections
+        .write()
+        .await
+        .insert(
+            server,
+            AgentConnection {
+                id: Uuid::new_v4(),
+                sender,
+            },
+        );
     receiver
 }
 

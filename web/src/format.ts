@@ -16,6 +16,14 @@ export function totalBytes(up: string, down: string): string | undefined {
 }
 export const percent = (value?: number) => value === undefined ? '暂无数据' : `${value.toFixed(1)}%`
 export const time = (value?: number | null) => value ? new Date(value * 1000).toLocaleString('zh-CN', { hour12: false }) : '尚未上报'
+/** A moment in a chosen time zone (the browser's when none is given); a zone the browser does not know falls back to UTC and says so. */
+export function dateText(seconds: number | null, zone?: string | null): string {
+  if (seconds === null) return '—'
+  const date = new Date(seconds * 1000)
+  if (!Number.isFinite(date.getTime())) return '时间不可用'
+  try { return date.toLocaleString('zh-CN', { hour12: false, timeZone: zone || undefined }) }
+  catch { return `${date.toLocaleString('zh-CN', { hour12: false, timeZone: 'UTC' })}（UTC；浏览器不支持套餐时区）` }
+}
 export function uptime(value?: number) {
   if (value === undefined) return '暂无数据'
   const days = Math.floor(value / 86400), hours = Math.floor(value % 86400 / 3600), minutes = Math.floor(value % 3600 / 60)

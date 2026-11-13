@@ -18,7 +18,7 @@ from pathlib import Path
 
 from nexus_agent_migration import Panel, environment, private_write
 
-ROOT = '/api/plugins/sing-box/nexus-nodes/runtime'
+ROOT = '/api/traffic/nexus-nodes/runtime'
 
 
 def main():

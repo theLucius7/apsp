@@ -3,7 +3,8 @@ import { api } from '../api'
 import { Confirm, Empty, ErrorNotice, Field, FormDialog, Loading, PageHeader, Refresh, DialogPresence, InfoTip } from '../components'
 import { bytes } from '../format'
 import { resourceWriteError, useAction, useResource } from '../hooks'
-import { publicPathText, quotaBytes, scheduleText, validatedSnapshot, validProxyResources } from './groupTypes'
+import { publicPathText, quotaBytes, scheduleText, validProxyResources } from './groupTypes'
+import { validatedSnapshot } from '@/lib/resource-snapshot'
 import type { ProxyResource, PackageGroup, PolicyGroup } from './groupTypes'
 import { endpoint } from '../traffic/resourceTypes'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -22,7 +23,8 @@ import type { ProxyUser } from '../types'
 import { externalReference } from './externalAccessTypes'
 import type { ExternalEntry, ExternalReference } from './externalAccessTypes'
 
-const root = '/api/plugins/sing-box'
+const accessApi = '/api/access'
+const trafficApi = '/api/traffic'
 type Tab = 'policy-groups' | 'package-groups'
 type EditorInput = { kind: 'policy-groups'; value?: PolicyGroup } | { kind: 'package-groups'; value?: PackageGroup }
 type Editor = { kind: 'policy-groups'; value?: PolicyGroup; nodeIds: number[]; chainIds: number[]; externals: ExternalReference[] } | { kind: 'package-groups'; value?: PackageGroup }
@@ -36,11 +38,11 @@ function selectable(resources: ProxyResource[]): Selectable[] {
 }
 
 export default function Groups({ initialTab = 'policy-groups' }: { initialTab?: Tab } = {}) {
-  const policies = useResource<PolicyGroup[]>(`${root}/policy-groups`)
-  const users = useResource<ProxyUser[]>(`${root}/users`, 30_000, { keep: true })
-  const packages = useResource<PackageGroup[]>(`${root}/package-groups`)
-  const resourceQuery = useResource<unknown>(`${root}/ordered-proxy-resources`)
-  const externalQuery = useResource<{ available_nodes: ExternalEntry[] }>(`${root}/external-node-candidates`)
+  const policies = useResource<PolicyGroup[]>(`${accessApi}/policy-groups`)
+  const users = useResource<ProxyUser[]>(`${accessApi}/users`, 30_000, { keep: true })
+  const packages = useResource<PackageGroup[]>(`${accessApi}/package-groups`)
+  const resourceQuery = useResource<unknown>(`${trafficApi}/ordered-proxy-resources`)
+  const externalQuery = useResource<{ available_nodes: ExternalEntry[] }>(`${accessApi}/external-node-candidates`)
   const candidates = externalQuery.data?.available_nodes ?? []
   const resourceHistory = useRef<ProxyResource[] | undefined>(undefined)
   const resources = validatedSnapshot(resourceQuery, validProxyResources, resourceHistory.current)
@@ -86,7 +88,7 @@ export default function Groups({ initialTab = 'policy-groups' }: { initialTab?: 
       const value = 'value' in editor ? editor.value : undefined
       const body = editor.kind === 'policy-groups' ? { name, node_ids: editor.nodeIds, chain_ids: editor.chainIds, external_nodes: editor.externals }
         : { name, monthly_bytes: quotaBytes(String(form.get('amount') ?? ''), String(form.get('unit'))), reset_day: Number(form.get('reset_day')), reset_hour: Number(String(form.get('reset_time')).split(':')[0]), reset_minute: Number(String(form.get('reset_time')).split(':')[1]), timezone: String(form.get('timezone')), duration_days: Number(form.get('duration_days')) }
-      return api(`${root}/${editor.kind}${value ? `/${value.id}` : ''}`, value ? 'PUT' : 'POST', body)
+      return api(`${accessApi}/${editor.kind}${value ? `/${value.id}` : ''}`, value ? 'PUT' : 'POST', body)
     }, () => { setEditor(null); refresh() })
   }
   return <>
@@ -113,7 +115,7 @@ export default function Groups({ initialTab = 'policy-groups' }: { initialTab?: 
       </>}
       {editor.kind === 'package-groups' && <PackageFields value={editor.value} />}
     </FormDialog>}</DialogPresence>
-    <DialogPresence>{deleting && <Confirm title={`删除「${deleting.name}」？`} busy={action.busy} disabled={Boolean(writeError(deleting.kind, deleting.id))} error={writeError(deleting.kind, deleting.id) || action.error} retry={writeError(deleting.kind, deleting.id) ? refresh : undefined} onClose={() => setDeleting(null)} onConfirm={() => { if (writeError(deleting.kind, deleting.id)) return; void action.run(() => api(`${root}/${deleting.kind}/${deleting.id}`, 'DELETE'), () => { setDeleting(null); refresh() }) }}>{deleting.kind === 'package-groups' ? '已分配用户的套餐与历史用量保持不变；此套餐不再提供新的分配。' : '已分配给用户的策略组不能直接删除，请先在用户页面取消分配。'}</Confirm>}</DialogPresence>
+    <DialogPresence>{deleting && <Confirm title={`删除「${deleting.name}」？`} busy={action.busy} disabled={Boolean(writeError(deleting.kind, deleting.id))} error={writeError(deleting.kind, deleting.id) || action.error} retry={writeError(deleting.kind, deleting.id) ? refresh : undefined} onClose={() => setDeleting(null)} onConfirm={() => { if (writeError(deleting.kind, deleting.id)) return; void action.run(() => api(`${accessApi}/${deleting.kind}/${deleting.id}`, 'DELETE'), () => { setDeleting(null); refresh() }) }}>{deleting.kind === 'package-groups' ? '已分配用户的套餐与历史用量保持不变；此套餐不再提供新的分配。' : '已分配给用户的策略组不能直接删除，请先在用户页面取消分配。'}</Confirm>}</DialogPresence>
   </>
 }
 

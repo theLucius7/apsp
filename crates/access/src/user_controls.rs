@@ -42,7 +42,7 @@ pub async fn put(
     }
     let mut tx = state.pool.begin().await?;
     apsp_traffic::business::lock_publication(&mut tx).await?;
-    business::lock_user(&mut tx, id).await?;
+    crate::proxy_users::lock_user(&mut tx, id).await?;
     let hosts = crate::user_limits::servers(&mut tx, id).await?;
     for host in &hosts {
         crate::control_center::require_server(&state, &headers, *host, "proxy:write").await?;

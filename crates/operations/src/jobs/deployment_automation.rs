@@ -4,9 +4,9 @@
 //! deployment is valid and how it is applied stays with the traffic service, which
 //! these functions call.
 
-pub use apsp_traffic::host_support::runtime_step_policy;
 pub use apsp_traffic::runtime_workflows::{
     automation_candidate, automation_deployment_receipt, automation_dispatch_matches_tx,
     cancel_automation_deployment_tx, enqueue_automation_deployment_tx,
     reconcile_automation_deployment_tx, request_automation_deployment_checkpoint_tx,
+    runtime_step_policy,
 };

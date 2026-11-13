@@ -73,9 +73,9 @@ try {
       if (method === 'GET') reads.push(path); else writes.push({ path, method, body: request.postDataJSON() })
       const json = value => route.fulfill({ json: value })
       if (path === '/api/dashboard/access') return json({ authenticated: true, public_dashboard: false })
-      if (path === '/api/plugins/expenses/subscriptions' && method === 'GET') return json(state.items)
-      if (path === '/api/plugins/expenses/subscriptions' && method === 'POST') { const created = { ...request.postDataJSON(), id: 40, anchor_payment: request.postDataJSON().next_payment, version: 1 }; delete created.version; state.items.push({ ...created, version: 1 }); return json({ ...created, version: 1 }) }
-      const item = path.match(/^\/api\/plugins\/expenses\/subscriptions\/(\d+)(?:\/(renew|clone|payments))?$/)
+      if (path === '/api/costs/subscriptions' && method === 'GET') return json(state.items)
+      if (path === '/api/costs/subscriptions' && method === 'POST') { const created = { ...request.postDataJSON(), id: 40, anchor_payment: request.postDataJSON().next_payment, version: 1 }; delete created.version; state.items.push({ ...created, version: 1 }); return json({ ...created, version: 1 }) }
+      const item = path.match(/^\/api\/costs\/subscriptions\/(\d+)(?:\/(renew|clone|payments))?$/)
       if (item) {
         const target = state.items.find(entry => entry.id === Number(item[1]))
         if (item[2] === 'payments') return json({ entries: state.payments.items.filter(payment => payment.subscription_id === target?.id).map(({ id, period_start, paid_on, amount_units, currency }) => ({ id, period_start, paid_on, amount_units, currency, created_at: now })) })
@@ -84,12 +84,12 @@ try {
         if (method === 'DELETE') { state.items = state.items.filter(entry => entry !== target); return json({}) }
         if (method === 'PUT') { Object.assign(target, request.postDataJSON(), { version: target.version + 1 }); return json(target) }
       }
-      if (path === '/api/plugins/expenses/labels' && method === 'GET') return json({ entries: state.labels })
-      if (path === '/api/plugins/expenses/labels' && method === 'POST') { const label = { id: 50 + state.labels.length, ...request.postDataJSON() }; state.labels.push(label); return json(label) }
-      if (path === '/api/plugins/expenses/servers') return json({ entries: state.servers })
-      if (path === '/api/plugins/expenses/summary') return json({ from: '2026-11-06', base_currency: state.settings.base_currency, budget_units: state.settings.budget_units, exchange: rates,
+      if (path === '/api/costs/labels' && method === 'GET') return json({ entries: state.labels })
+      if (path === '/api/costs/labels' && method === 'POST') { const label = { id: 50 + state.labels.length, ...request.postDataJSON() }; state.labels.push(label); return json(label) }
+      if (path === '/api/costs/servers') return json({ entries: state.servers })
+      if (path === '/api/costs/summary') return json({ from: '2026-11-06', base_currency: state.settings.base_currency, budget_units: state.settings.budget_units, exchange: rates,
         upcoming: [{ kind: 'server', id: 8, name: 'tw0 · 住宅', date: '2026-11-08', amount_units: '125000', currency: 'USD', auto_renew: false }, { kind: 'item', id: 11, name: 'ChatGPT Plus', date: '2026-11-09', amount_units: '200000', currency: 'USD', auto_renew: true }] })
-      if (path === '/api/plugins/expenses/calendar') {
+      if (path === '/api/costs/calendar') {
         assert.equal(url.searchParams.get('from'), '2026-11-06')
         return json({ entries: [
           { kind: 'server', id: 8, name: 'tw0 · 住宅', date: '2026-11-08', amount_units: '125000', currency: 'USD', auto_renew: false },
@@ -99,13 +99,13 @@ try {
           { kind: 'item', id: 11, name: 'ChatGPT Plus', date: '2026-12-09', amount_units: '200000', currency: 'USD', auto_renew: true },
         ] })
       }
-      if (path === '/api/plugins/expenses/calendar.ics') return route.fulfill({ status: 200, contentType: 'text/calendar', body: 'BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n' })
-      if (path === '/api/plugins/expenses/payments') return json(state.payments)
-      if (path === '/api/plugins/expenses/settings' && method === 'GET') return json(state.settings)
-      if (path === '/api/plugins/expenses/settings' && method === 'PUT') { Object.assign(state.settings, request.postDataJSON(), { version: state.settings.version + 1 }); return json(state.settings) }
-      if (path === '/api/plugins/expenses/notifications') return json({ entries: [{ id: 'n1', kind: 'renewal_reminder', created_at: now - 3600, detail: { name: 'ChatGPT Plus', due: '2026-11-09' }, deliveries: [{ channel: 'telegram', state: 'sent', attempts: 1, last_error: null }] }] })
-      if (path === '/api/plugins/expenses/import/preview') return json({ digest: 'a'.repeat(64), already_imported: false, subscriptions: 2, labels: 1, warnings: [] })
-      if (path === '/api/plugins/expenses/import') return json({ imported: 2 })
+      if (path === '/api/costs/calendar.ics') return route.fulfill({ status: 200, contentType: 'text/calendar', body: 'BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n' })
+      if (path === '/api/costs/payments') return json(state.payments)
+      if (path === '/api/costs/settings' && method === 'GET') return json(state.settings)
+      if (path === '/api/costs/settings' && method === 'PUT') { Object.assign(state.settings, request.postDataJSON(), { version: state.settings.version + 1 }); return json(state.settings) }
+      if (path === '/api/costs/notifications') return json({ entries: [{ id: 'n1', kind: 'renewal_reminder', created_at: now - 3600, detail: { name: 'ChatGPT Plus', due: '2026-11-09' }, deliveries: [{ channel: 'telegram', state: 'sent', attempts: 1, last_error: null }] }] })
+      if (path === '/api/costs/import/preview') return json({ digest: 'a'.repeat(64), already_imported: false, subscriptions: 2, labels: 1, warnings: [] })
+      if (path === '/api/costs/import') return json({ imported: 2 })
       if (path === '/api/operations/cancellation-reminders' && method === 'GET') return json(state.reminders)
       if (path === '/api/operations/cancellation-reminders' && method === 'POST') { Object.assign(state.reminders[0], request.postDataJSON()); return json({}) }
       const costs = path.match(/^\/api\/servers\/(\d+)\/fleet\/costs$/)
@@ -190,12 +190,12 @@ try {
       await form.getByRole('combobox', { name: '分类', exact: true }).locator('option:checked', { hasText: '测试分类' }).waitFor({ state: 'attached' })
       await form.getByRole('button', { name: '添加', exact: true }).last().click()
       await form.waitFor({ state: 'detached' })
-      const created = writes.find(write => write.path === '/api/plugins/expenses/subscriptions' && write.method === 'POST').body
+      const created = writes.find(write => write.path === '/api/costs/subscriptions' && write.method === 'POST').body
       assert.equal(created.amount_units, '123456')
       assert.equal(created.cycle, 'month')
       assert.equal(created.auto_renew, true)
       assert.equal(created.category_id, state.labels.find(label => label.name === '测试分类').id)
-      assert.equal(writes.filter(write => write.path === '/api/plugins/expenses/labels').length, 1)
+      assert.equal(writes.filter(write => write.path === '/api/costs/labels').length, 1)
       await rows.filter({ hasText: '测试线路服务' }).waitFor()
 
       // Confirming a manual renewal records a payment once.
@@ -203,7 +203,7 @@ try {
       const confirm = page.getByRole('alertdialog')
       await confirm.getByRole('button', { name: '确认续期', exact: true }).click()
       await confirm.waitFor({ state: 'detached' })
-      const renew = writes.find(write => write.path === '/api/plugins/expenses/subscriptions/13/renew')
+      const renew = writes.find(write => write.path === '/api/costs/subscriptions/13/renew')
       assert.equal(renew.body.version, 1)
       assert.match(renew.body.request_id, /^[0-9a-f-]{36}$/)
       await page.getByText('「云盘 2TB」已记录付款，下次续费改为 2026-12-01。').waitFor()
@@ -245,8 +245,8 @@ try {
       await settings.getByLabel(/^每月预算/).fill('600')
       await settings.getByRole('button', { name: '保存', exact: true }).click()
       await settings.getByText('已保存', { exact: true }).waitFor()
-      assert.equal(writes.find(write => write.path === '/api/plugins/expenses/settings').body.budget_units, '6000000')
-      assert.equal(writes.find(write => write.path === '/api/plugins/expenses/settings').body.timezone, 'America/New_York')
+      assert.equal(writes.find(write => write.path === '/api/costs/settings').body.budget_units, '6000000')
+      assert.equal(writes.find(write => write.path === '/api/costs/settings').body.timezone, 'America/New_York')
       assert.equal(await settings.getByRole('combobox', { name: /^日期时区/ }).inputValue(), 'America/New_York')
       await settings.getByRole('button', { name: '分类与付款', exact: true }).click()
       await settings.getByLabel('新的付款方式', { exact: true }).fill('支付宝')
@@ -260,7 +260,7 @@ try {
       await settings.getByRole('checkbox').click()
       await settings.getByRole('button', { name: '导入', exact: true }).click()
       await settings.getByText('导入完成').waitFor()
-      assert.equal(writes.find(write => write.path === '/api/plugins/expenses/import').body.confirmed_digest, 'a'.repeat(64))
+      assert.equal(writes.find(write => write.path === '/api/costs/import').body.confirmed_digest, 'a'.repeat(64))
       await settings.getByRole('button', { name: '完成', exact: true }).click()
     } else {
       // Phones get the same detail, form and settings without sideways scrolling.
@@ -281,7 +281,7 @@ try {
       await chooseTimezone(settings)
       await settings.getByRole('button', { name: '保存', exact: true }).click()
       await settings.getByText('已保存', { exact: true }).waitFor()
-      assert.equal(writes.find(write => write.path === '/api/plugins/expenses/settings').body.timezone, 'America/New_York')
+      assert.equal(writes.find(write => write.path === '/api/costs/settings').body.timezone, 'America/New_York')
       await settings.getByRole('button', { name: '完成', exact: true }).click()
       await page.getByRole('button', { name: '设置', exact: true }).click()
       assert.equal(await settings.getByRole('combobox', { name: /^日期时区/ }).inputValue(), 'America/New_York', 'Reopening preserves the saved zone')

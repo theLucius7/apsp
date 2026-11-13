@@ -269,7 +269,7 @@ async fn rollups_are_atomic_weighted_and_repeatable_and_retention_runs_without_i
     let token = cookie
         .strip_prefix("apsp_session=")
         .expect("test session cookie");
-    let session = apsp_panel_host::auth::hash_token(token);
+    let session = apsp_governance::auth::hash_token(token);
     sqlx::query("DELETE FROM administrator_reauth WHERE session_hash=$1")
         .bind(&session)
         .execute(&panel.state.pool)

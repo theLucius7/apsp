@@ -74,17 +74,9 @@ EXCEPTIONS = {
     ),
 }
 
-# Panel host: HTTP and Windows API spellings plus URL userinfo test fixtures.
+# Panel platform: a URL userinfo test fixture.
 HOST_EXCEPTIONS = {
     "src/config.rs": (r'"https://user:secret@example\.invalid"',),
-    "src/installation/windows.rs": (
-        r"\[Security\.Principal\.WindowsIdentity\]::GetCurrent\(\)\.User\b",
-        r"\.DefaultRequestHeaders\.UserAgent\b",
-    ),
-    "src/releases/network.rs": (r"\.user_agent\(", r'"https://user@github\.com/"'),
-    # Exact official cloud initialization field used to prove its omission.
-    "src/cloud_resources/hetzner/client/tests.rs": (r'raw\["user_data"\]',),
-
 }
 
 # Cloud API client: the HTTP header name and the constant that fills it.
@@ -110,9 +102,10 @@ LEAVES = ("crates/protocol", "crates/adapter-sdk", "crates/tcp-probe")
 PLATFORM_CRATES = {"crates/panel-host": "apsp-panel-host", "crates/cloud-api": "apsp-cloud-api"}
 PLATFORM_DEPENDENCIES = {"apsp-protocol"}
 # Domain groups in dependency order (docs/architecture.md section 5.1) and the domain crates.
-DOMAIN_ORDER = (("governance",), ("resources",), ("networking", "naming"), ("traffic",),
+DOMAIN_ORDER = (("governance",), ("resources",), ("networking",), ("naming",), ("traffic",),
                 ("access",), ("costs", "observability"), ("operations",))
 DOMAIN_CRATES = {
+    "crates/governance": ("apsp-governance", "governance"),
     "crates/resources": ("apsp-resources", "resources"),
     "crates/networking": ("apsp-networking", "networking"),
     "crates/naming": ("apsp-naming", "naming"),
@@ -203,7 +196,7 @@ def check_dependencies(root):
     failed = False
     rules = layer_rules(root)
     composers = {root / crate / "Cargo.toml" for crate in COMPOSERS}
-    for manifest in sorted([*root.glob("crates/*/Cargo.toml"), *root.glob("plugins/*/panel/Cargo.toml")]):
+    for manifest in sorted(root.glob("crates/*/Cargo.toml")):
         if manifest not in rules and manifest not in composers:
             print(f"{manifest}: workspace crate has no layer in tools/check-core-boundary.py", file=sys.stderr)
             failed = True

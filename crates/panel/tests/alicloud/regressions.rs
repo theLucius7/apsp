@@ -27,7 +27,7 @@ async fn unresolved_cloud_receipts_block_credential_identity_changes_but_allow_d
     let state = json!({"cloud_id":"i-power-testonly","region":"cn-hangzhou","status":"Running","stopped_mode":"KeepCharging","charge_type":"PostPaid","network_type":"vpc","spot_strategy":"NoSpot","interruption_behavior":null,"public_ips":["192.0.2.2"],"locked":false});
     sqlx::query("INSERT INTO alicloud_power_jobs(id,resource_id,account_revision,resource_revision,action,stop_mode,source,before_state,status,created_at,expires_at,updated_at) VALUES($1,$2,1,1,'stop','KeepCharging','manual',$3,'running',$4,$5,$4)")
         .bind(power).bind(power_resource).bind(state).bind(now).bind(now+300).execute(&pool).await?;
-    let path = format!("/api/plugins/alicloud/accounts/{account}");
+    let path = format!("/api/resources/alicloud/accounts/{account}");
     let body = json!({"name":"测试账号","site":"china","enabled":true,"auto_enabled":false,"limit_gb":100,"revision":1,"access_key_id":"","access_key_secret":"","legacy_credentials":true});
     let mut rotate = body.clone();
     rotate["access_key_id"] = "TEST_ONLY_NEW_KEY".into();
@@ -64,7 +64,7 @@ async fn unresolved_cloud_receipts_block_credential_identity_changes_but_allow_d
         panel
             .admin(
                 Method::POST,
-                &format!("/api/plugins/alicloud/operations/{bandwidth}/dismiss"),
+                &format!("/api/resources/alicloud/operations/{bandwidth}/dismiss"),
                 &cookie,
                 None
             )
@@ -92,7 +92,7 @@ async fn unresolved_cloud_receipts_block_credential_identity_changes_but_allow_d
         panel
             .admin(
                 Method::POST,
-                &format!("/api/plugins/alicloud/power-jobs/{power}/dismiss"),
+                &format!("/api/resources/alicloud/power-jobs/{power}/dismiss"),
                 &cookie,
                 None
             )
@@ -118,7 +118,7 @@ async fn unresolved_cloud_receipts_block_credential_identity_changes_but_allow_d
         ("TEST_ONLY_NEW_KEY".into(), "TEST_ONLY_NEW_SECRET".into(), 3)
     );
     let overview: Value = panel
-        .admin(Method::GET, "/api/plugins/alicloud", &cookie, None)
+        .admin(Method::GET, "/api/resources/alicloud", &cookie, None)
         .await?
         .error_for_status()?
         .json()
@@ -142,12 +142,12 @@ async fn supplied_delete_revisions_reject_stale_resource_and_account_views(
         .bind(resource).bind(account).execute(&pool).await?;
     for (path, table, id) in [
         (
-            format!("/api/plugins/alicloud/resources/{resource}"),
+            format!("/api/resources/alicloud/resources/{resource}"),
             "alicloud_resources",
             resource,
         ),
         (
-            format!("/api/plugins/alicloud/accounts/{account}"),
+            format!("/api/resources/alicloud/accounts/{account}"),
             "alicloud_accounts",
             account,
         ),
@@ -186,7 +186,7 @@ async fn bss_opt_ins_round_trip_preserve_omitted_fields_and_protect_billing_poli
     let created: Value = panel
         .admin(
             Method::POST,
-            "/api/plugins/alicloud/accounts",
+            "/api/resources/alicloud/accounts",
             &cookie,
             Some(body.clone()),
         )
@@ -195,7 +195,7 @@ async fn bss_opt_ins_round_trip_preserve_omitted_fields_and_protect_billing_poli
         .json()
         .await?;
     let id = created["id"].as_str().unwrap();
-    let path = format!("/api/plugins/alicloud/accounts/{id}");
+    let path = format!("/api/resources/alicloud/accounts/{id}");
     let flags: (bool, bool) = sqlx::query_as(
         "SELECT billing_enabled,balance_enabled FROM alicloud_accounts WHERE id=$1::text::uuid",
     )
@@ -222,7 +222,7 @@ async fn bss_opt_ins_round_trip_preserve_omitted_fields_and_protect_billing_poli
         StatusCode::NO_CONTENT
     );
     let overview: Value = panel
-        .admin(Method::GET, "/api/plugins/alicloud", &cookie, None)
+        .admin(Method::GET, "/api/resources/alicloud", &cookie, None)
         .await?
         .error_for_status()?
         .json()

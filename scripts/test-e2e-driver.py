@@ -71,7 +71,7 @@ class EnrollmentPanel:
 
 class PreparationPanel:
     def __init__(self, lose_node_response=False):
-        self.resources = {path: [] for path in ("/api/servers", "/api/plugins/sing-box/nodes", "/api/plugins/sing-box/users")}
+        self.resources = {path: [] for path in ("/api/servers", "/api/traffic/nodes", "/api/access/users")}
         self.node_posts = []
         self.lose_node_response = lose_node_response
         self.groups, self.user_groups = [], []
@@ -85,7 +85,7 @@ class PreparationPanel:
             nodes = sorted({node for group in self.groups if group["id"] in self.user_groups
                             for node in group["node_ids"]})
             return [{"node_id": node, "stat_name": f"u43_n{node}"} for node in nodes]
-        if path == "/api/plugins/sing-box/policy-groups":
+        if path == "/api/access/policy-groups":
             if data is None:
                 return self.groups
             group = {"id": 70 + len(self.groups), "member_count": 0, **data}
@@ -99,11 +99,11 @@ class PreparationPanel:
             if data is None:
                 return self.resources[path]
             item = {"id": 41 + list(self.resources).index(path), **data}
-            if path == "/api/plugins/sing-box/nodes":
+            if path == "/api/traffic/nodes":
                 self.node_posts.append(dict(data))
                 item.setdefault("port", 20000)
             self.resources[path].append(item)
-            if path == "/api/plugins/sing-box/nodes" and self.lose_node_response:
+            if path == "/api/traffic/nodes" and self.lose_node_response:
                 self.lose_node_response = False
                 raise DRIVER.AcceptanceError("node creation response lost after commit")
             return item
@@ -124,7 +124,7 @@ class PreflightPanel:
 
     def request(self, path, data=None, raw=False, method=None):
         self.calls.append((path, method or ("POST" if data is not None else "GET")))
-        base = "/api/plugins/sing-box/servers/41/operations-view"
+        base = "/api/traffic/servers/41/operations-view"
         if path == "/api/servers/41/fleet" and method == "PUT":
             assert data["policy"]["runtime_inspection"] is True and data["expected_digest"] == "digest-1"
             return {}
@@ -360,7 +360,7 @@ class AcceptanceContracts(unittest.TestCase):
             DRIVER.prepare(panel, self.state, self.args)
             self.assertNotIn("port", panel.node_posts[0])
             self.assertEqual(self.state["port"], 20000)
-            panel.resources["/api/plugins/sing-box/nodes"][0]["port"] = 20001
+            panel.resources["/api/traffic/nodes"][0]["port"] = 20001
             with self.assertRaisesRegex(DRIVER.AcceptanceError, "端口已变化"):
                 DRIVER.prepare(panel, self.state, self.args)
         self.assertEqual(self.state["port"], 20000)

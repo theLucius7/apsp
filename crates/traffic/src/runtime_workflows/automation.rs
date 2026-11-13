@@ -13,6 +13,19 @@ use uuid::Uuid;
 const VERSION: &str = crate::RUNTIME_VERSION;
 const MODULE: &str = "singbox";
 
+/// Runtime version and capability that an operations step on this runtime requires.
+pub struct RuntimeStepRequirement {
+    pub version: &'static str,
+    pub capability: &'static str,
+}
+
+pub fn runtime_step_policy(kind: &str) -> Option<RuntimeStepRequirement> {
+    (kind == "singbox_retry_deployment").then_some(RuntimeStepRequirement {
+        version: VERSION,
+        capability: "proxy:write",
+    })
+}
+
 fn conflict(message: &str) -> ApiError {
     ApiError::Conflict(message.into())
 }

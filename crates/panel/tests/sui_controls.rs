@@ -7,7 +7,6 @@ use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use sqlx::PgPool;
-const ROOT: &str = "/api/plugins/sing-box";
 
 #[sqlx::test]
 async fn pause_is_versioned_marks_hosts_and_preserves_identity(pool: PgPool) -> Result<()> {
@@ -28,7 +27,7 @@ async fn pause_is_versioned_marks_hosts_and_preserves_identity(pool: PgPool) -> 
         .bind(server)
         .execute(&pool)
         .await?;
-    let path = format!("{ROOT}/users/{id}/control");
+    let path = format!("/api/access/users/{id}/control");
     assert_eq!(
         panel
             .client
@@ -105,8 +104,8 @@ async fn profiles_redact_secrets_preserve_them_on_edit_and_reject_stale_writes(
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "配置主机").await?;
-    panel.enable_plugin(&cookie, server).await?;
-    let path = format!("{ROOT}/servers/{server}/profile");
+    panel.enable_runtime(&cookie, server).await?;
+    let path = format!("/api/traffic/servers/{server}/profile");
     let definition = json!({"outbounds":[{"type":"socks","tag":"extra-exit","server":"proxy.example.com","server_port":1080,"username":"fixture","password":"TEST_ONLY-private-password"}]});
     let response = panel
         .admin(
@@ -185,7 +184,7 @@ async fn sessions_derive_only_the_selected_users_applied_principals(pool: PgPool
         .as_i64()
         .unwrap();
     let server = panel.create_server(&cookie, "连接主机").await?;
-    let path = format!("{ROOT}/users/{id}/sessions/{server}");
+    let path = format!("/api/access/users/{id}/sessions/{server}");
     let requested = json!({"expected_revision":3,"close":false,"ids":[]});
     assert_eq!(
         panel
@@ -249,14 +248,14 @@ async fn dns_certificate_secrets_are_write_only_and_reuse_stays_on_one_host(
     let server = panel.create_server(&cookie, "证书主机").await?;
     let other = panel.create_server(&cookie, "其他主机").await?;
     for host in [server, other] {
-        panel.enable_plugin(&cookie, host).await?;
+        panel.enable_runtime(&cookie, host).await?;
     }
     let secret = "TEST_ONLY-cloudflare-dns-credential";
     let definition = json!({"name":"DNS 证书","server_id":server,"public_host":"proxy.example.com","sni":"proxy.example.com","protocol_config":{"type":"vless-tls","tls":{"mode":"dns01","email":"admin@example.com","domains":["*.example.com"],"api_token":secret}}});
     let response = panel
         .admin(
             Method::POST,
-            &format!("{ROOT}/nodes"),
+            "/api/traffic/nodes",
             &cookie,
             Some(definition),
         )
@@ -271,7 +270,7 @@ async fn dns_certificate_secrets_are_write_only_and_reuse_stays_on_one_host(
     let response = panel
         .admin(
             Method::POST,
-            &format!("{ROOT}/nodes"),
+            "/api/traffic/nodes",
             &cookie,
             Some(reuse.clone()),
         )
@@ -289,7 +288,7 @@ async fn dns_certificate_secrets_are_write_only_and_reuse_stays_on_one_host(
     reuse["server_id"] = json!(other);
     assert_eq!(
         panel
-            .admin(Method::POST, &format!("{ROOT}/nodes"), &cookie, Some(reuse))
+            .admin(Method::POST, "/api/traffic/nodes", &cookie, Some(reuse))
             .await?
             .status(),
         StatusCode::BAD_REQUEST

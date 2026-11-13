@@ -29,7 +29,9 @@ impl Observation {
                 .manual_ip
                 .as_deref()
                 .and_then(|ip| ip.parse::<IpAddr>().ok())
-                .filter(|ip| ddns_public_ip(*ip) && ip.is_ipv4() == (config.record_type == "A"))
+                .filter(|ip| {
+                    crate::net::server_ip(*ip) && ip.is_ipv4() == (config.record_type == "A")
+                })
                 .ok_or("invalid_configuration");
         }
         if self
@@ -63,7 +65,7 @@ impl Observation {
             .iter()
             .take(256)
             .filter_map(|value| value.as_str()?.parse::<IpAddr>().ok())
-            .filter(|ip| ddns_public_ip(*ip) && ip.is_ipv4() == (config.record_type == "A"))
+            .filter(|ip| crate::net::server_ip(*ip) && ip.is_ipv4() == (config.record_type == "A"))
             .collect();
         if let Some(previous) = previous
             .and_then(|ip| ip.parse().ok())
@@ -72,24 +74,6 @@ impl Observation {
             return Ok(previous);
         }
         candidates.into_iter().next().ok_or("no_public_ip")
-    }
-}
-
-// Ordinary server addresses only; exclude special non-unicast uses even when a
-// historical general IP classifier did not include the newer documentation block.
-pub(super) fn ddns_public_ip(ip: IpAddr) -> bool {
-    if !crate::net::public_ip(ip) {
-        return false;
-    }
-    match ip {
-        IpAddr::V4(ip) => {
-            let [a, b, c, _] = ip.octets();
-            !(a == 192 && b == 88 && c == 99)
-        }
-        IpAddr::V6(ip) => {
-            let [a, b, c, _, _, _, _, _] = ip.segments();
-            !(a == 0x2001 && b == 2 && c == 0) && !(a == 0x3fff && b < 0x1000)
-        }
     }
 }
 

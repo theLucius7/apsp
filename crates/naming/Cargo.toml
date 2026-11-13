@@ -7,7 +7,10 @@ rust-version.workspace = true
 
 [dependencies]
 apsp-panel-host.workspace = true
+apsp-resources.workspace = true
+apsp-governance.workspace = true
 apsp-cloud-api.workspace = true
+apsp-networking.workspace = true
 apsp-protocol.workspace = true
 axum.workspace = true
 sqlx.workspace = true
@@ -20,6 +23,12 @@ futures-util.workspace = true
 reqwest.workspace = true
 httpdate = "1.0.3"
 tracing.workspace = true
+sha2.workspace = true
+tar = "0.4"
+flate2 = "1"
+rustls = { version = "0.23", default-features = false }
+tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring", "tls12"] }
+webpki-roots = "=1.0.9"
 
 [dev-dependencies]
 apsp-cloud-api = { workspace = true, features = ["test-support"] }

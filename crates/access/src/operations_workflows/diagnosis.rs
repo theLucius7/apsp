@@ -22,7 +22,7 @@ pub(super) async fn user(
     crate::control_center::require_capability(&state, &headers, "proxy:read").await?;
     let mut tx = state.pool.begin().await?;
     apsp_traffic::business::lock_publication(&mut tx).await?;
-    apsp_traffic::business::lock_user(&mut tx, id).await?;
+    crate::proxy_users::lock_user(&mut tx, id).await?;
     let account:Value=sqlx::query_scalar("SELECT jsonb_build_object('user_id',u.id,'name',u.name,'portal_created',p.account_id IS NOT NULL,'keys',(SELECT COUNT(*) FROM passkey_credentials WHERE account_id=p.account_id),'active_sessions',(SELECT COUNT(*) FROM singbox_portal_sessions WHERE account_id=p.account_id AND expires_at>$2),'activation_expires_at',p.activation_expires_at) FROM users u LEFT JOIN singbox_portal_accounts p ON p.user_id=u.id WHERE u.id=$1").bind(id).bind(apsp_protocol::now_timestamp()).fetch_one(&mut *tx).await?;
     let mut subscription = super::super::subscriptions::diagnostic_on(&mut tx, id).await?;
     // Migrated users still get their subscription from the retained renderer. It

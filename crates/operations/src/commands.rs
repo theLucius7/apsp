@@ -147,7 +147,7 @@ pub async fn pending(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<RemoteCommand>>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     expire_queued(&state.pool, server).await?;
     let mut tx = state.pool.begin().await?;
     if command_server(&mut tx, server).await?.1 {
@@ -171,7 +171,7 @@ pub async fn complete(
     Path(id): Path<Uuid>,
     Json(result): Json<CommandResult>,
 ) -> ApiResult<Json<TaskAck>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     if id != result.id
         || result.stdout.len() > 256 * 1024
         || result.stderr.len() > 256 * 1024

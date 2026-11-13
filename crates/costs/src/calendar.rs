@@ -18,7 +18,7 @@ pub(super) struct Range {
 #[derive(Serialize)]
 struct Due {
     /// `item` for manually added entries, `server` for servers from asset
-    /// settings, `reference` for plugin-observed expiries without a price.
+    /// settings, `reference` for expiries another domain observed without a price.
     kind: &'static str,
     id: i64,
     name: String,

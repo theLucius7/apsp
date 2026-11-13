@@ -63,7 +63,7 @@ export default function RuleEditor({ rule, servers, accounts, current, close, sa
   const submit = () => void action.run(() => {
     const reason = writeError()
     if (reason) throw new Error(reason)
-    const path = rule ? `/api/plugins/ddns/rules/${rule.id}` : addressMode === 'dual' ? '/api/plugins/ddns/rules/dual-stack' : '/api/plugins/ddns/rules'
+    const path = rule ? `/api/naming/rules/${rule.id}` : addressMode === 'dual' ? '/api/naming/rules/dual-stack' : '/api/naming/rules'
     return api(path, rule ? 'PATCH' : 'POST', ddnsWrite(draft(), token, rule?.revision, key, secret))
   }, () => { setToken(''); setKey(''); setSecret(''); saved() })
   const domainHint = match ? `由「${match.account.config.name}」管理${match.account.config.name.includes(providers[provider]) ? '' : ` · ${providers[provider]}`}` : config.record_name.trim() && usable.length ? '已连接的 DNS 账号里没有这个域名。请检查拼写，或先添加管理它的账号。' : '例如 hk1.example.com，也支持 *.example.com。'

@@ -36,7 +36,6 @@ async function main() {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
     page.setDefaultTimeout(10000)
     const errors = [], writes = [], applied = [], previews = new Map()
-    const root = '/api/plugins/sing-box'
     const nodes = [{ id: 1, name: '标准节点', server_id: 1 }, { id: 2, name: '入口节点', server_id: 1 }, { id: 3, name: '出口节点', server_id: 2 }, { id: 4, name: '备用入口', server_id: 1 }].map(n => ({ ...n, port: 20000 + n.id, protocol: 'vless-reality', public_host: 'proxy.example.com', sni: 'www.example.com' }))
     nodes.push({ ...nodes[0], id: 5, name: '现代节点', server_id: 2, protocol: 'shadowsocks2022' })
     nodes.push({ ...nodes[0], id: 6, name: '混合入口', port: 20006 })
@@ -55,11 +54,11 @@ async function main() {
       let data = []
       if (pathname === '/api/dashboard/access') data = { authenticated: true, public_dashboard: false }
       else if (pathname === '/api/me') data = {}
-      else if (pathname === `${root}/nodes`) data = nodes
-      else if (method === 'GET' && pathname === `${root}/servers`) data = servers
-      else if (method === 'GET' && pathname === `${root}/ordered-subscription-sources`) data = []
-      else if (method === 'GET' && pathname === `${root}/external-node-candidates`) data = { available_nodes: [external] }
-      else if (method === 'GET' && pathname === `${root}/ordered-proxy-resources`) {
+      else if (pathname === `/api/traffic/nodes`) data = nodes
+      else if (method === 'GET' && pathname === `/api/traffic/servers`) data = servers
+      else if (method === 'GET' && pathname === `/api/traffic/ordered-subscription-sources`) data = []
+      else if (method === 'GET' && pathname === `/api/access/external-node-candidates`) data = { available_nodes: [external] }
+      else if (method === 'GET' && pathname === `/api/traffic/ordered-proxy-resources`) {
         const resources = proxyResourceFixtures(nodes, servers, chains).map(resource => {
           if (resource.kind !== 'chain' || resource.id === 1) return resource
           const ordered = orderedResourceFixture({ id: resource.id, name: resource.name, entry: resource.entry,
@@ -76,24 +75,24 @@ async function main() {
             { kind: 'managed', position: 2, node_id: 3, endpoint_version_id: pathFixtureUuid(3), endpoint: resources.find(resource => resource.kind === 'direct' && resource.id === 3).entry }],
         })]
       }
-      else if (pathname === `${root}/policy-groups`) {
+      else if (pathname === `/api/access/policy-groups`) {
         if (method === 'POST') { data = { ...payload, id: policies.length + 1, member_count: 0 }; policies.push(data) }
         else data = policies
-      } else if (pathname === `${root}/package-groups`) {
+      } else if (pathname === `/api/access/package-groups`) {
         if (method === 'POST') { data = { ...payload, id: plans.length + 1 }; plans.push(data) }
         else data = plans
-      } else if (pathname === `${root}/users`) data = [{ id: 1, name: '测试用户', subscription_token: 'TEST_ONLY', subscription_url: 'https://panel.example.com/s/TEST_ONLY' }]
-      else if (pathname === `${root}/usage`) data = { uplink: '40', downlink: '60', total: '100', by_user: [{ user_id: 1, name: '测试用户', deleted: false, uplink: '40', downlink: '60' }], by_node: [] }
-      else if (pathname === `${root}/users/1/portal`) data = { configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin: origin.origin }, keys: 0, url: null, activation_expires_at: null }
-      else if (method === 'GET' && pathname === `${root}/users/1/policy-groups`) data = { group_ids: groupIds }
-      else if (method === 'GET' && pathname === `${root}/users/1/diagnosis`) data = { account: { name: '测试用户', portal_created: false, keys: 0, active_sessions: 0, activation_expires_at: null },
+      } else if (pathname === `/api/access/users`) data = [{ id: 1, name: '测试用户', subscription_token: 'TEST_ONLY', subscription_url: 'https://panel.example.com/s/TEST_ONLY' }]
+      else if (pathname === `/api/access/usage`) data = { uplink: '40', downlink: '60', total: '100', by_user: [{ user_id: 1, name: '测试用户', deleted: false, uplink: '40', downlink: '60' }], by_node: [] }
+      else if (pathname === `/api/access/users/1/portal`) data = { configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin: origin.origin }, keys: 0, url: null, activation_expires_at: null }
+      else if (method === 'GET' && pathname === `/api/access/users/1/policy-groups`) data = { group_ids: groupIds }
+      else if (method === 'GET' && pathname === `/api/access/users/1/diagnosis`) data = { account: { name: '测试用户', portal_created: false, keys: 0, active_sessions: 0, activation_expires_at: null },
         subscription: { status: 'ready', message: 'TEST_ONLY', granted_nodes: 1, ready_managed_nodes: 1, ready_external_nodes: 0 }, legacy: null, permissions: [], ledger: [], rotations: [], events: [], limitations: {} }
-      else if (method === 'GET' && pathname === `${root}/users/1/client-template`) data = { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY', limitations: 'TEST_ONLY' }
-      else if (method === 'GET' && pathname === `${root}/users/1/subscription`) {
+      else if (method === 'GET' && pathname === `/api/access/users/1/client-template`) data = { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY', limitations: 'TEST_ONLY' }
+      else if (method === 'GET' && pathname === `/api/access/users/1/subscription`) {
         const format = new URL(request.url()).searchParams.get('format') ?? 'singbox'
         data = { format, status: 'ready', message: 'TEST_ONLY 订阅', subscription_url: 'https://panel.example.com/s/TEST_ONLY', available_formats: ['singbox'], granted_nodes: 1, eligible_nodes: 1, ready_nodes: [{ kind: 'managed', id: 1, name: '标准节点', protocol: 'vless-reality' }], content: '{"outbounds":[]}', filename: 'TEST_ONLY.json', content_type: 'application/json', entitlement: { allowed: true, status: 'unmetered', monthly_bytes: null, used_bytes: '100', expires_at: null } }
       }
-      else if (method === 'POST' && pathname === `${root}/operations/preview`) {
+      else if (method === 'POST' && pathname === `/api/access/operations/preview`) {
         const id = `00000000-0000-4000-8000-${String(previews.size + 1).padStart(12, '0')}`
         previews.set(id, payload)
         data = { id, expires_at: Math.floor(Date.now() / 1000) + 300, summary: payload.operation === 'policy_batch'
@@ -108,7 +107,7 @@ async function main() {
         if (previewed.operation === 'policy_batch') groupIds = previewed.group_ids
         else assigned = true
         data = { applied: true }
-      } else if (pathname === `${root}/users/1/entitlement`) data = {
+      } else if (pathname === `/api/access/users/1/entitlement`) data = {
         user_id: 1, package_group_id: assigned ? 1 : null, package_name: assigned ? '月度套餐' : null,
         monthly_bytes: assigned ? '536870912000' : null, reset_day: 31, reset_hour: 12, reset_minute: 30, timezone: 'Asia/Taipei',
         starts_at: 1790812800, expires_at: 1822348800, cycle_start: 1790742600, next_reset: 1793421000,

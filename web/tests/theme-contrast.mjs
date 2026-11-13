@@ -59,9 +59,9 @@ function fixtures(scenario) {
     if (path === '/api/dashboard/exchange-rates') return json(rates)
     if (path === '/api/dashboard/probes/overview') return json([])
     if (path === '/api/login') return json({ error: '测试：密码或验证码不正确。' }, 400)
-    if (path === `/api/plugins/sing-box/portal/${account}`) return json(portal)
-    if (path === `/api/plugins/sing-box/portal/${account}/lines`) return json(lines)
-    if (path === `/api/plugins/sing-box/portal/${account}/account`) return json(portalAccount)
+    if (path === `/api/access/portal/${account}`) return json(portal)
+    if (path === `/api/access/portal/${account}/lines`) return json(lines)
+    if (path === `/api/access/portal/${account}/account`) return json(portalAccount)
     return json({ error: '测试：此夹具未提供该数据。' }, 404)
   }
 }

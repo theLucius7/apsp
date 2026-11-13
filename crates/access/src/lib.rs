@@ -26,9 +26,9 @@ pub mod user_sessions;
 
 pub use portal::{HostNetwork, install_host_network};
 
-pub(crate) use apsp_panel_host::{
-    AppState, agent_api, auth, control_center, device_work, error, passkeys,
-};
+pub(crate) use apsp_governance::{auth, control_center, passkeys};
+pub(crate) use apsp_panel_host::{AppState, device_work, digest, error};
+pub(crate) use apsp_resources::device_channel;
 use axum::{
     Router,
     routing::{get, post},
@@ -43,72 +43,85 @@ pub async fn run(state: AppState) {
     );
 }
 
-/// The management API for proxy users, policies, packages, subscriptions, the member
-/// portal and operation workflows, relative to the console prefix the application nests
-/// it under.
-pub fn management() -> Router<AppState> {
+/// The domain's routes: the console API, the member portal and the subscription address.
+pub fn routes() -> Router<AppState> {
+    management().merge(subscription_routes())
+}
+
+/// The console API for proxy users, policies, packages, subscriptions, the member portal
+/// and operation workflows.
+fn management() -> Router<AppState> {
     Router::new()
-        .route("/policy-groups", get(policies::list).post(policies::create))
         .route(
-            "/policy-groups/{id}",
+            "/api/access/policy-groups",
+            get(policies::list).post(policies::create),
+        )
+        .route(
+            "/api/access/policy-groups/{id}",
             axum::routing::put(policies::update).delete(policies::remove),
         )
         .route(
-            "/package-groups",
+            "/api/access/package-groups",
             get(packages::list).post(packages::create),
         )
         .route(
-            "/package-groups/{id}",
+            "/api/access/package-groups/{id}",
             axum::routing::put(packages::update).delete(packages::remove),
         )
         .route(
-            "/users/{id}/policy-groups",
+            "/api/access/users/{id}/policy-groups",
             get(policies::user_get).put(policies::user_set),
         )
-        .route("/users/{id}/package", post(packages::assign))
-        .route("/users/{id}/entitlement", get(entitlements::get))
+        .route("/api/access/users/{id}/package", post(packages::assign))
+        .route("/api/access/users/{id}/entitlement", get(entitlements::get))
         .route(
-            "/users/{id}/limits",
+            "/api/access/users/{id}/limits",
             get(user_limits::get).put(user_limits::put),
         )
-        .route("/users/{id}/sessions", get(user_sessions::get))
+        .route("/api/access/users/{id}/sessions", get(user_sessions::get))
         .route(
-            "/users/{id}/sessions/{server}",
+            "/api/access/users/{id}/sessions/{server}",
             post(user_sessions::request),
         )
         .route(
-            "/users/{id}/control",
+            "/api/access/users/{id}/control",
             get(user_controls::get).put(user_controls::put),
         )
-        .route("/users", get(proxy_users::list).post(proxy_users::create))
-        .route("/users/overview", get(proxy_users::overview))
         .route(
-            "/subscription-domain",
+            "/api/access/users",
+            get(proxy_users::list).post(proxy_users::create),
+        )
+        .route("/api/access/users/overview", get(proxy_users::overview))
+        .route(
+            "/api/access/subscription-domain",
             get(subscription_hosts::get_settings).put(subscription_hosts::put_settings),
         )
         .route(
-            "/users/{id}",
+            "/api/access/users/{id}",
             get(proxy_users::get)
                 .patch(proxy_users::update)
                 .delete(proxy_users::remove),
         )
         .route(
-            "/users/{id}/subscription/reset",
+            "/api/access/users/{id}/subscription/reset",
             post(proxy_users::reset_subscription),
         )
-        .route("/users/{id}/subscription", get(subscriptions::preview))
-        .route("/users/{id}/accesses", get(accesses::list))
         .route(
-            "/external-node-candidates",
+            "/api/access/users/{id}/subscription",
+            get(subscriptions::preview),
+        )
+        .route("/api/access/users/{id}/accesses", get(accesses::list))
+        .route(
+            "/api/access/external-node-candidates",
             get(external_access::candidates),
         )
-        .route("/usage", get(usage::summary))
+        .route("/api/access/usage", get(usage::summary))
         .merge(portal::router())
         .merge(user_accounts::router())
         .merge(operations_workflows::router())
 }
 
 /// The subscription address proxy clients use.
-pub fn subscription_routes() -> Router<AppState> {
+fn subscription_routes() -> Router<AppState> {
     Router::new().route("/sub/{token}", get(subscriptions::get))
 }

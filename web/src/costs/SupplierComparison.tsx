@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, errorMessage } from '../api'
-import type { ActionRunner } from '../operations/types'
+import type { ActionRunner } from '../hooks'
 import { states, time } from '../operations/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'

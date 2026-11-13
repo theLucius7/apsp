@@ -219,7 +219,7 @@ async fn own_host(pool: &PgPool, slug: &str) -> Option<OwnHost> {
     })
 }
 
-const PORTAL_API: &str = "/api/plugins/sing-box/portal/";
+const PORTAL_API: &str = "/api/access/portal/";
 
 async fn portal_account(pool: &PgPool, user: i64) -> Option<Uuid> {
     sqlx::query_scalar("SELECT account_id FROM singbox_portal_accounts WHERE user_id=$1")
@@ -351,10 +351,8 @@ fn portal_scope(
 /// check the origin of the page they came from, as `portal_scope` chooses it, so a
 /// user's own address works for the same writes as the panel's.
 pub async fn check_portal_origin(state: &AppState, headers: &HeaderMap) -> ApiResult<()> {
-    scoped_state(state.clone(), headers)
-        .await
-        .passkeys
-        .check_origin(headers)
+    let scoped = scoped_state(state.clone(), headers).await;
+    crate::passkeys::service(&scoped).check_origin(headers)
 }
 
 /// Portal requests verify Passkeys under the scope `portal_scope` chooses.
@@ -377,7 +375,9 @@ pub async fn scoped_state(state: AppState, headers: &HeaderMap) -> AppState {
         return state;
     };
     let mut scoped = state;
-    scoped.passkeys = std::sync::Arc::new(crate::passkeys::Service::scoped(&origin, &rp_id));
+    scoped.domain_states = scoped
+        .domain_states
+        .with(crate::passkeys::Service::scoped(&origin, &rp_id));
     scoped
 }
 

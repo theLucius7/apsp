@@ -1,10 +1,10 @@
 use super::*;
 
 async fn saved_full(panel: &TestPanel, server: i64, version: &str, status: &str) -> Result<Uuid> {
-    let artifact = apsp_panel_host::artifacts::descriptor(
+    let artifact = apsp_governance::artifacts::descriptor(
         &panel.state,
         "nodequality",
-        diagnostics::PLUGIN_VERSION,
+        diagnostics::TOOL_VERSION,
         "amd64",
     )
     .await?;
@@ -251,7 +251,7 @@ async fn running_full_is_not_redispatched_to_an_agent_without_the_start_gate(
     let (server, _socket, ack) = panel.authenticated_device(&cookie, "旧已运行夹具").await?;
     capable(&panel, server).await?;
     fixture(&panel).await?;
-    let id = saved_full(&panel, server, diagnostics::PLUGIN_VERSION, "running").await?;
+    let id = saved_full(&panel, server, diagnostics::TOOL_VERSION, "running").await?;
     sqlx::query("UPDATE diagnostic_jobs SET job=job-'plugin' WHERE id=$1")
         .bind(id)
         .execute(&panel.state.pool)
@@ -286,7 +286,7 @@ async fn running_full_is_not_redispatched_to_an_agent_without_the_start_gate(
     assert_eq!(queue.as_array().unwrap().len(), 1);
     assert_eq!(queue[0]["id"], id.to_string());
     assert_eq!(queue[0]["plugin"], "nodequality");
-    assert_eq!(queue[0]["version"], diagnostics::PLUGIN_VERSION);
+    assert_eq!(queue[0]["version"], diagnostics::TOOL_VERSION);
     let saved: Value = sqlx::query_scalar("SELECT job FROM diagnostic_jobs WHERE id=$1")
         .bind(id)
         .fetch_one(&panel.state.pool)

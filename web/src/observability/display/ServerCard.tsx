@@ -11,7 +11,8 @@ import { assetDate, assetPrice, defaultAssets, expiryState, trafficSize } from '
 import { useCurrency } from '../../costs/currency/CurrencyContext'
 import { convert, money, remainingCost } from '../../costs/currency/currency'
 import CurrencyReference from '../../costs/currency/CurrencyReference'
-import { Track, cardLink, surface, toneFill, toneText } from './ui'
+import { Track } from './ui'
+import { cardLink, surface, toneFill, toneText } from '@/components/board'
 import { cn } from '@/lib/utils'
 
 export function Metric({ label, value, detail, display }: { label: string; value: number | null; detail: string; display?: string }) {

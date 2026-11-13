@@ -3,7 +3,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use sqlx::Row;
 
 async fn modern_node(panel: &TestPanel, cookie: &str, server: i64, kind: &str) -> Result<i64> {
-    panel.enable_plugin(cookie, server).await?;
+    panel.enable_runtime(cookie, server).await?;
     let tls = matches!(kind, "hysteria2" | "tuic" | "anytls" | "naive");
     let config = if tls {
         json!({"type":kind,"tls":{"mode":"acme","email":"admin@example.com","challenge":"http-01"}})

@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod business_support;
+mod proxy_api;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 
@@ -11,8 +12,6 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-const ROOT: &str = "/api/plugins/sing-box";
-
 async fn call(
     panel: &TestPanel,
     cookie: &str,
@@ -21,7 +20,7 @@ async fn call(
     body: Option<Value>,
 ) -> Result<Value> {
     let response = panel
-        .admin(method, &format!("{ROOT}{path}"), cookie, body)
+        .admin(method, &crate::proxy_api::proxy_api(path), cookie, body)
         .await?;
     let status = response.status();
     let text = response.text().await?;
@@ -81,7 +80,7 @@ async fn optional_settings_preserve_omitted_values_and_clear_explicit_nulls(
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Settings").await?;
-    panel.enable_plugin(&cookie, server).await?;
+    panel.enable_runtime(&cookie, server).await?;
     let values = json!({"public_port":8443,"tcp_keep_alive_seconds":120,"tcp_keep_alive_interval_seconds":30,
         "tls_min_version":"1.2","tls_max_version":"1.3","tls_handshake_timeout_seconds":15,
         "anytls":{"idle_session_check_seconds":30,"padding_scheme":["stop=2","0=30-30","1=100-400,c,500-1000"]}});
@@ -140,7 +139,7 @@ async fn protocol_options_roundtrip_preserve_credentials_and_reach_the_correct_s
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Options").await?;
-    panel.enable_plugin(&cookie, server).await?;
+    panel.enable_runtime(&cookie, server).await?;
     let user = panel.create_user(&cookie, "Subscriber").await?;
     let user_id = id(&user)?;
     let cases = [
@@ -287,7 +286,7 @@ async fn reality_transport_edits_preserve_keys_grants_and_reset_to_tcp(pool: PgP
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Transport").await?;
-    panel.enable_plugin(&cookie, server).await?;
+    panel.enable_runtime(&cookie, server).await?;
     let created = create(&panel, &cookie, server, "vless-reality", json!({})).await?;
     let node = id(&created)?;
     let user = id(&panel.create_user(&cookie, "Transport subscriber").await?)?;
@@ -331,7 +330,7 @@ async fn invalid_options_roll_back_the_entire_node_edit(pool: PgPool) -> Result<
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Validation").await?;
-    panel.enable_plugin(&cookie, server).await?;
+    panel.enable_runtime(&cookie, server).await?;
     for (kind, invalid) in [
         (
             "vless-reality",
@@ -368,7 +367,7 @@ async fn invalid_options_roll_back_the_entire_node_edit(pool: PgPool) -> Result<
         let response = panel
             .admin(
                 Method::PATCH,
-                &format!("{ROOT}/nodes/{node}"),
+                &format!("/api/traffic/nodes/{node}"),
                 &cookie,
                 Some(json!({"name":"Should rollback","settings":invalid})),
             )
@@ -420,7 +419,7 @@ async fn chain_configuration_lock_uses_public_identity_and_releases_after_retire
         let denied = panel
             .admin(
                 Method::PATCH,
-                &format!("{ROOT}/nodes/{node}"),
+                &format!("/api/traffic/nodes/{node}"),
                 &cookie,
                 Some(json!({"settings":{"tcp_keep_alive_seconds":25}})),
             )

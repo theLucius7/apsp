@@ -159,14 +159,14 @@ def resource(panel, path, state, kind, fields, state_path):
 
 def policy_group(panel, state, node_id, state_path):
     name = state["prefix"] + "-group"
-    matches = [item for item in panel.request("/api/plugins/sing-box/policy-groups") if item["name"] == name]
+    matches = [item for item in panel.request("/api/access/policy-groups") if item["name"] == name]
     ensure(len(matches) <= 1, "专用验收名称出现重复；保留现状并人工检查")
     if matches:
         group = matches[0]
     else:
         # The unique name is persisted before POST, so a lost response is recoverable.
         save(state_path, state)
-        group = panel.request("/api/plugins/sing-box/policy-groups",
+        group = panel.request("/api/access/policy-groups",
                               {"name": name, "node_ids": [node_id], "chain_ids": []})
     ensure(state.get("group_id") in (None, group["id"]), "验收对象已改名；拒绝操作其他对象")
     ensure(group["node_ids"] == [node_id] and not group["chain_ids"], "验收策略组配置与私有 state 不一致")
@@ -223,22 +223,22 @@ def install(panel, state, state_path, refresh=False, agent_version=None):
 
 def prepare(panel, state, args):
     server = resource(panel, "/api/servers", state, "server", {}, args.state)
-    panel.request(f"/api/plugins/sing-box/servers/{server['id']}/enable", {})
+    panel.request(f"/api/traffic/servers/{server['id']}/enable", {})
     fields = {"server_id": server["id"], "public_host": state["public_host"], "sni": state["sni"]}
     if state.get("requested_port") is not None:
         fields["port"] = state["requested_port"]
-    node = resource(panel, "/api/plugins/sing-box/nodes", state, "node", fields, args.state)
+    node = resource(panel, "/api/traffic/nodes", state, "node", fields, args.state)
     ensure("port" not in state or node["port"] == state["port"],
            "验收节点的端口已变化；保留原 state 并检查面板")
-    user = resource(panel, "/api/plugins/sing-box/users", state, "user", {}, args.state)
-    existing = panel.request(f"/api/plugins/sing-box/users/{user['id']}/accesses")
+    user = resource(panel, "/api/access/users", state, "user", {}, args.state)
+    existing = panel.request(f"/api/access/users/{user['id']}/accesses")
     ensure(all(item["node_id"] == node["id"] for item in existing),
            "专用验收用户出现其他授权；拒绝修改")
     # Nodes are granted only through policy groups; this run's group holds just its node.
     group = policy_group(panel, state, node["id"], args.state)
-    panel.request(f"/api/plugins/sing-box/users/{user['id']}/policy-groups",
+    panel.request(f"/api/access/users/{user['id']}/policy-groups",
                   {"group_ids": [group["id"]]}, method="PUT")
-    access = next((item for item in panel.request(f"/api/plugins/sing-box/users/{user['id']}/accesses")
+    access = next((item for item in panel.request(f"/api/access/users/{user['id']}/accesses")
                    if item["node_id"] == node["id"]), None)
     ensure(access is not None, "策略组没有把验收节点授权给专用用户")
     state["port"] = node["port"]
@@ -262,11 +262,11 @@ def usage_totals(view):
 def snapshot(panel, state, command=None):
     server = panel.request(f"/api/servers/{state['server_id']}")
     ensure(server["name"] == state["prefix"] + "-server", "服务器不再属于本次验收")
-    plugin = panel.request(f"/api/plugins/sing-box/servers/{state['server_id']}")
-    deployment_view = panel.request(f"/api/plugins/sing-box/servers/{state['server_id']}/deployments")
+    plugin = panel.request(f"/api/traffic/servers/{state['server_id']}")
+    deployment_view = panel.request(f"/api/traffic/servers/{state['server_id']}/deployments")
     deployment = deployment_view["status"]
     query = urllib.parse.urlencode({"user_id": state["user_id"], "node_id": state["node_id"]})
-    usage = panel.request("/api/plugins/sing-box/usage?" + query)
+    usage = panel.request("/api/access/usage?" + query)
     usage_totals(usage)
     result = {
         "observed_at": int(time.time()), "usage": usage, "deployment": deployment,
@@ -454,7 +454,7 @@ def bootstrap_installed(status, drift):
 
 def diagnose(panel, state, args):
     """Print the deployment and checkpoint state in fixed vocabulary only."""
-    base = f"/api/plugins/sing-box/servers/{state['server_id']}/operations-view"
+    base = f"/api/traffic/servers/{state['server_id']}/operations-view"
     print("运行时状态=" + json.dumps(install_status(snapshot(panel, state)["deployment"],
                                                   panel.request(base).get("drift")), ensure_ascii=False))
 
@@ -484,7 +484,7 @@ def preflight(panel, state, args):
     while RUNTIME_PREFLIGHT_CAPABILITY not in (panel.request(f"/api/servers/{server}/fleet").get("capabilities") or []):
         ensure(time.monotonic() < deadline, "超时：Agent 未声明只读运行时预检能力，请检查本机 fleet-policy.json")
         time.sleep(2)
-    base = f"/api/plugins/sing-box/servers/{server}/operations-view"
+    base = f"/api/traffic/servers/{server}/operations-view"
     view = collect_preflight(panel, base, deadline)
     bootstrap = view.get("bootstrap") or {}
     if bootstrap.get("available") is True:
@@ -536,7 +536,7 @@ def ready(panel, state, args):
             raise AcceptanceError("超时：设备未在线、配置未健康应用或版本不符；状态="
                                   + json.dumps(status, ensure_ascii=False, separators=(",", ":")))
         time.sleep(min(2, args.timeout))
-    user = panel.request(f"/api/plugins/sing-box/users/{state['user_id']}")
+    user = panel.request(f"/api/access/users/{state['user_id']}")
     token = urllib.parse.quote(user["subscription_token"], safe="")
     client = panel.request(f"/sub/{token}?format=singbox")
     proxies = [item for item in client["outbounds"] if item["type"] == "vless"]

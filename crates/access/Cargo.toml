@@ -8,6 +8,8 @@ rust-version.workspace = true
 [dependencies]
 apsp-traffic.workspace = true
 apsp-panel-host.workspace = true
+apsp-resources.workspace = true
+apsp-governance.workspace = true
 apsp-protocol.workspace = true
 apsp-compiler.workspace = true
 axum.workspace = true

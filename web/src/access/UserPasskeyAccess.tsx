@@ -3,7 +3,7 @@ import { api } from '../api'
 import { CopyButton, CopyField, ErrorNotice, FormDialog, Loading, Modal, Refresh, DialogPresence } from '../components'
 import { time } from '../format'
 import { resourceWriteError, useAction, useResource } from '../hooks'
-import { validatedSnapshot } from './groupTypes'
+import { validatedSnapshot } from '@/lib/resource-snapshot'
 import { portalAccessError, validPortalAccess } from './portalAccess'
 import type { PortalAccess } from './portalAccess'
 import { Button } from '@/components/ui/button'
@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 type Invitation = { url: string; expires_at: number }
 
 export default function UserPasskeyAccess({ id, userError, refreshRevision }: { id: number; userError: () => string; refreshRevision: number }) {
-  const resource = useResource<unknown>(`/api/plugins/sing-box/users/${id}/portal`, 0)
+  const resource = useResource<unknown>(`/api/access/users/${id}/portal`, 0)
   const history = useRef<PortalAccess | undefined>(undefined)
   const snapshot = validatedSnapshot(resource, validPortalAccess, history.current)
   if (snapshot.fresh) history.current = snapshot.data
@@ -31,7 +31,7 @@ export default function UserPasskeyAccess({ id, userError, refreshRevision }: { 
   // Identity is verified through the shared dialog (Passkey or password) when the panel asks.
   const submit = () => {
     if (!editing || editing.id !== id || writeError(editing.access)) return
-    void action.run(() => api<Invitation>(`/api/plugins/sing-box/users/${editing.id}/portal/invitation`, 'POST', { reset: editing.reset }),
+    void action.run(() => api<Invitation>(`/api/access/users/${editing.id}/portal/invitation`, 'POST', { reset: editing.reset }),
       value => { setEditing(undefined); setInvitation(value); resource.reload() })
   }
   const state = !access ? '' : reset ? `对方已绑定 ${access.keys} 把 Passkey，可以直接用这个地址登录。`

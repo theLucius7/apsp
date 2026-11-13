@@ -3,11 +3,12 @@ import { AlertTriangleIcon, CalendarClockIcon, PlusIcon, ReceiptIcon, Settings2I
 import { api } from '../../api'
 import { Confirm, DialogPresence, ErrorNotice, PageHeader, Refresh } from '../../components'
 import { convert, money } from '../currency/currency'
-import { Stat, StatStrip } from '../../observability/display/ui'
+import { Stat, StatStrip } from '@/components/board'
 import { navigate } from '../../format'
 import { useAction } from '../../hooks'
 import { SegmentedButton, SegmentedNav } from '@/components/segmented'
 import { Button } from '@/components/ui/button'
+import { newRequestId } from '@/lib/request-id'
 import EntryDetail from './EntryDetail'
 import ExpenseForm from './ExpenseForm'
 import LedgerList from './LedgerList'
@@ -61,8 +62,8 @@ export default function Expenses({ item, server }: { item?: number; server?: num
   const operate = (target: Expense, kind: ItemOperation) => {
     if (ledger.stale) return
     operation.clearError(); setNotice('')
-    if (confirmed(kind)) { request.current = crypto.randomUUID(); setAsking({ item: target, kind: kind as 'renew' | 'delete' }); return }
-    void operation.run(() => runOperation(target, kind, crypto.randomUUID()), result => {
+    if (confirmed(kind)) { request.current = newRequestId(); setAsking({ item: target, kind: kind as 'renew' | 'delete' }); return }
+    void operation.run(() => runOperation(target, kind, newRequestId()), result => {
       ledger.reload()
       if (kind === 'clone' && result) navigate(entryPath({ kind: 'item', id: result.id }))
       else setNotice(kind === 'toggle' ? `「${target.name}」${target.inactive ? '已恢复使用' : '已停用'}。` : '')

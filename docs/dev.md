@@ -14,7 +14,7 @@
 
 需要 Rust stable、PostgreSQL 16。仓库不再跟踪 `web/dist`。首次编译面板及每次修改前端后，使用固定版本 **Bun 1.4.4** 执行 `cd web && bun install --frozen-lockfile && bun run build`，随后回到仓库根目录编译 Rust。生成产物只留在本地；不要使用 `git add -f` 提交。CI 与 Docker 前端构建使用相同版本。
 
-Passkey 验证使用 `webauthn-rs`，源码构建面板还需 OpenSSL 开发库和 `pkg-config`（Debian/Ubuntu：`libssl-dev pkg-config`）。Dockerfile 已安装构建及运行库；Agent 无此新增依赖。默认 Rust 测试覆盖来源、权限、挑战、邀请和速率约束；完整虚拟认证器回归需设置 `APSP_PLAYWRIGHT_MODULE`、`APSP_CHROME_PATH` 后执行 `cargo test -p apsp-panel --test passkeys virtual_authenticator_browser_roundtrip -- --ignored --nocapture`。它使用 sqlx 创建的隔离数据库和回环 HTTP 服务，不启用后台插件，不访问真实云 API。该用例默认忽略，不能将默认 cargo test 结果作为浏览器/硬件认证验收。
+Passkey 验证使用 `webauthn-rs`，源码构建面板还需 OpenSSL 开发库和 `pkg-config`（Debian/Ubuntu：`libssl-dev pkg-config`）。Dockerfile 已安装构建及运行库；Agent 无此新增依赖。默认 Rust 测试覆盖来源、权限、挑战、邀请和速率约束；完整虚拟认证器回归需设置 `APSP_PLAYWRIGHT_MODULE`、`APSP_CHROME_PATH` 后执行 `cargo test -p apsp-panel --test passkeys virtual_authenticator_browser_roundtrip -- --ignored --nocapture`。它使用 sqlx 创建的隔离数据库和回环 HTTP 服务，不启动后台任务，不访问真实云 API。该用例默认忽略，不能将默认 cargo test 结果作为浏览器/硬件认证验收。
 
 尚未安装 Bun 时，按[官方安装说明](https://bun.com/docs/installation)安装指定版本，并确认当前终端可调用：
 
@@ -70,6 +70,8 @@ export APSP_RELEASE_PUBLIC_KEYS="$(cat crates/protocol/tests/fixtures/public-key
 export APSP_CREDENTIAL_KEYS='{"TEST_ONLY":"VEVTVF9PTkxZIGNpIGNyZWRlbnRpYWwga2V5cmluZyE="}'
 export APSP_CREDENTIAL_CURRENT_KEY=TEST_ONLY
 python3 tools/check-core-boundary.py
+python3 tools/check-feature-boundaries.py
+python3 tools/route-policy.py
 cargo fmt --check
 (cd web && bun install --frozen-lockfile && bun test && bun run build)
 cargo clippy --all-targets -- -D warnings
@@ -77,6 +79,8 @@ cargo test
 git diff --check
 python3 tools/check-source-artifacts.py
 ```
+
+三项 Python 检查分别管 crate 的层级与依赖方向、表与代码的领域归属、路由权限表的路由清单，说明见[功能划分与逻辑结构 §5.3](architecture.md#53-自动守护)。路由权限的结论由 `cargo test` 里的 `route_policy`（`crates/panel/tests/route_policy.rs`）逐行核对；新增或改动路由后先按该节的步骤更新结论表 `crates/panel/tests/fixtures/route-policy.tsv`，定向命令是 `cargo test -p apsp-panel --test route_policy`。
 
 前端构建放在 Rust 检查之前，因为面板嵌入 `web/dist`。前端有修改时只提交源码、依赖锁和测试，生成产物不提交。CI 在构建环境生成产物并检查 Git 索引没有误跟踪构建目录；本轮只修改工作流定义，不恢复或触发暂停的 CI。冻结源码用于隔离验收时，仍须将本地构建的 `web/dist` 纳入该次冻结清单，不能把未构建的源码当作可直接编译的完整面板输入。
 

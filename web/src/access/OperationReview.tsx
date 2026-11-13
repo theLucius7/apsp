@@ -31,7 +31,7 @@ export default function OperationReview({ request, onClose, onApplied }: { reque
     const controller = new AbortController()
     let active = true
     setPreview(undefined); setConfirmed(false); setError('')
-    void api<Preview>('/api/plugins/sing-box/operations/preview', 'POST', request, controller.signal).then(value => { if (active) setPreview(value) }).catch(error => { if (active && !controller.signal.aborted) setError(errorMessage(error)) })
+    void api<Preview>('/api/access/operations/preview', 'POST', request, controller.signal).then(value => { if (active) setPreview(value) }).catch(error => { if (active && !controller.signal.aborted) setError(errorMessage(error)) })
     return () => { active = false; controller.abort() }
   }, [request, reload])
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now() / 1000), 1000); return () => window.clearInterval(timer) }, [])
@@ -39,7 +39,7 @@ export default function OperationReview({ request, onClose, onApplied }: { reque
   const apply = async () => {
     if (!preview || !confirmed || expired || busy) return
     setBusy(true); setError('')
-    try { await api(`/api/plugins/sing-box/operations/${preview.id}/apply`, 'POST', { confirm: true }); onApplied() }
+    try { await api(`/api/access/operations/${preview.id}/apply`, 'POST', { confirm: true }); onApplied() }
     catch (error) { setError(errorMessage(error)) }
     finally { setBusy(false) }
   }

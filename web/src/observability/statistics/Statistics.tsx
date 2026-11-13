@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ErrorNotice, InfoTip, Loading, PageHeader, Refresh } from '../../components'
-import { Stat, StatStrip } from '../display/ui'
+import { Stat, StatStrip } from '@/components/board'
 import { bytes, time } from '../../format'
 import { useResource } from '../../hooks'
 import Ranking from './Ranking'
@@ -14,7 +14,7 @@ import { SegmentedButton, SegmentedGroup } from '@/components/segmented'
 export default function Statistics() {
   const [days, setDays] = useState(7)
   const servers = useResource<ServerStatistics>(`/api/statistics?days=${days}`, 30_000)
-  const proxy = useResource<ProxyStatistics>(`/api/plugins/sing-box/statistics?days=${days}`, 30_000)
+  const proxy = useResource<ProxyStatistics>(`/api/access/statistics?days=${days}`, 30_000)
   const data = servers.data, business = proxy.data
   return <div data-slot="statistics-page" className="min-w-0">
     <PageHeader title="趋势与报表">

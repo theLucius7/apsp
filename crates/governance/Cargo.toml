@@ -1,0 +1,35 @@
+[package]
+name = "apsp-governance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+apsp-panel-host.workspace = true
+apsp-protocol.workspace = true
+axum.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+rand.workspace = true
+sha2.workspace = true
+base64.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+tracing.workspace = true
+tar = "0.4"
+flate2 = "1"
+argon2 = "0.5"
+webauthn-rs = { version = "=0.5.5", default-features = false, features = ["danger-allow-state-serialisation"] }
+hmac = "0.12"
+sha1 = "0.10"
+data-encoding = "2"
+ring = "=0.17.14"
+
+[build-dependencies]
+serde_json.workspace = true
+toml = "0.8"

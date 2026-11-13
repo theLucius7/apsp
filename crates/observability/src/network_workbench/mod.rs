@@ -4,9 +4,9 @@ mod authorization;
 mod engine;
 mod http_probe;
 mod models;
-mod plugin;
 mod prepare;
 mod reports;
+mod tool;
 use crate::AppState;
 pub(crate) use authorization::delivery as authorize_delivery;
 use axum::{
@@ -15,7 +15,7 @@ use axum::{
 };
 pub use engine::tick;
 pub use models::{Check, Execution, Observation, Plan};
-pub use plugin::NetworkWorkbenchPlugin;
+pub use tool::NetworkWorkbenchTool;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/network-workbench/catalog", get(api::catalog))

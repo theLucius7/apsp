@@ -13,7 +13,7 @@
 pub mod alerts;
 pub mod cloud_notices;
 pub mod dashboard;
-pub mod diagnostic_plugins;
+pub mod diagnostic_tools;
 pub mod diagnostics;
 pub mod incidents;
 pub mod ip_quality;
@@ -28,12 +28,13 @@ pub mod telemetry;
 pub mod traffic_correction;
 
 // Platform modules and earlier domains that the code names as `crate::...`.
+pub(crate) use apsp_governance::{artifacts, auth, control_center};
 #[cfg(test)]
 pub(crate) use apsp_panel_host::config;
 pub(crate) use apsp_panel_host::{
-    AppState, agent_api, artifacts, auth, control_center, device_work, error, net, notifications,
-    server_assets, servers, settings, text,
+    AppState, device_work, error, net, notifications, settings, text,
 };
+pub(crate) use apsp_resources::{device_channel, server_assets, servers};
 use axum::{
     Router,
     routing::{get, post},
@@ -41,9 +42,10 @@ use axum::{
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .merge(reachability::router())
         .route("/api/statistics", get(statistics::summary))
         .route(
-            "/api/plugins/sing-box/statistics",
+            "/api/access/statistics",
             get(statistics::proxy_usage::summary),
         )
         .route("/api/notifications", get(alerts::events::list))
@@ -126,7 +128,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/servers/{id}/ip-quality", get(ip_quality::get))
         .route(
             "/api/servers/{id}/ip-quality/node-query",
-            post(diagnostic_plugins::nodequality::node_queries::create),
+            post(diagnostic_tools::nodequality::node_queries::create),
         )
         .route(
             "/api/servers/{id}/ip-quality/refresh",
@@ -149,12 +151,12 @@ pub fn routes() -> Router<AppState> {
             post(diagnostics::cancellation::request),
         )
         .route(
-            "/api/plugins/tcpquality/servers/{id}/targets",
-            get(diagnostic_plugins::tcpquality::list_targets),
+            "/api/observability/tcp-quality/servers/{id}/targets",
+            get(diagnostic_tools::tcpquality::list_targets),
         )
         .route(
-            "/api/plugins/tcpquality/servers/{id}/targets/{probe}",
-            axum::routing::patch(diagnostic_plugins::tcpquality::set_region),
+            "/api/observability/tcp-quality/servers/{id}/targets/{probe}",
+            axum::routing::patch(diagnostic_tools::tcpquality::set_region),
         )
         .route("/api/agent/v1/settings", get(telemetry::agent_settings))
         .route(

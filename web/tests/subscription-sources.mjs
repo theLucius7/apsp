@@ -22,7 +22,7 @@ let browser
 try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHROME_PATH ? { executablePath: process.env.APSP_CHROME_PATH } : {}) })
-  const origin = `http://127.0.0.1:${server.address().port}`, prefix = '/api/plugins/sing-box', sourceRoot = `${prefix}/ordered-subscription-sources`, jobRoot = `${prefix}/ordered-subscription-source-jobs`, previewRoot = `${prefix}/ordered-subscription-source-previews`
+  const origin = `http://127.0.0.1:${server.address().port}`, trafficApi = '/api/traffic', accessApi = '/api/access', sourceRoot = `${trafficApi}/ordered-subscription-sources`, jobRoot = `${trafficApi}/ordered-subscription-source-jobs`, previewRoot = `${trafficApi}/ordered-subscription-source-previews`
   for (const width of [1440, 390, 320]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } })
     page.setDefaultTimeout(8000)
@@ -47,33 +47,33 @@ try {
       let value
       if (method === 'GET' && path === '/api/dashboard/access') value = { authenticated: true, public_dashboard: false }
       else if (method === 'GET' && path === '/api/me') value = { authenticated: true }
-      else if (method === 'GET' && path === `${prefix}/servers`) value = servers
-      else if (method === 'GET' && path === `${prefix}/nodes`) {
+      else if (method === 'GET' && path === `${trafficApi}/servers`) value = servers
+      else if (method === 'GET' && path === `${trafficApi}/nodes`) {
         if (oldNodesFailure) { await route.fulfill({ status: 500, json: { error: '旧节点元数据损坏' } }); return }
         value = nodes
-      } else if (method === 'GET' && path === `${prefix}/node-catalog`) value = catalogResourceFixtures(catalogNodeFixtures(nodes, servers))
-      else if (method === 'GET' && path === `${prefix}/ordered-proxy-resources`) value = proxyResourceFixtures(nodes, servers)
-      else if (method === 'GET' && path === `${prefix}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
+      } else if (method === 'GET' && path === `${trafficApi}/node-catalog`) value = catalogResourceFixtures(catalogNodeFixtures(nodes, servers))
+      else if (method === 'GET' && path === `${trafficApi}/ordered-proxy-resources`) value = proxyResourceFixtures(nodes, servers)
+      else if (method === 'GET' && path === `${accessApi}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
       else if (method === 'GET' && path === sourceRoot) {
         if (listMode === 'failed') { await route.fulfill({ status: 403, json: { error: '来源夹具读取被拒绝' } }); return }
         if (listMode === 'held') { heldEntered(); await heldDone }
         value = listMode === 'malformed' ? [{ id: 1, name: '旧版残缺元数据' }] : sources
-      } else if (method === 'GET' && /^\/api\/plugins\/sing-box\/ordered-subscription-sources\/[1-9]\d*$/.test(path)) {
+      } else if (method === 'GET' && /^\/api\/traffic\/ordered-subscription-sources\/[1-9]\d*$/.test(path)) {
         value = sources.find(source => source.id === Number(path.split('/').at(-1)))
         if (!value) { await route.fulfill({ status: 404, json: { error: '来源已删除' } }); return }
-      } else if (method === 'GET' && /^\/api\/plugins\/sing-box\/ordered-subscription-sources\/[1-9]\d*\/revisions$/.test(path)) {
+      } else if (method === 'GET' && /^\/api\/traffic\/ordered-subscription-sources\/[1-9]\d*\/revisions$/.test(path)) {
         const sourceId = Number(path.split('/').at(-2)), item = sources.find(source => source.id === sourceId)
         assert(item); value = { source_id: sourceId, revisions: item.latest_success ? sourceId === 1 ? [revision, olderRevision] : [item.latest_success] : [] }
-      } else if (method === 'GET' && /^\/api\/plugins\/sing-box\/ordered-subscription-sources\/[1-9]\d*(\/revisions\/[0-9a-f-]+)?\/nodes$/.test(path)) {
-        const segments = path.split('/'), sourceId = Number(segments[5]), item = sources.find(source => source.id === sourceId), historical = segments.includes('revisions')
+      } else if (method === 'GET' && /^\/api\/traffic\/ordered-subscription-sources\/[1-9]\d*(\/revisions\/[0-9a-f-]+)?\/nodes$/.test(path)) {
+        const segments = path.split('/'), sourceId = Number(segments[4]), item = sources.find(source => source.id === sourceId), historical = segments.includes('revisions')
         assert(item)
-        const success = historical ? [revision, olderRevision].find(value => value.id === segments[7]) : item.latest_success
+        const success = historical ? [revision, olderRevision].find(value => value.id === segments[6]) : item.latest_success
         assert(!historical || success)
         const rows = historical ? success.id === olderRevision.id ? [preview[2]] : preview.filter(node => node.present_in_latest) : preview
         value = sourceNodePageFixture({ source_id: sourceId, current_settings_revision: item.settings_revision, current_identity_epoch: item.identity_epoch, success_revision: success, nodes: sourceId === 1 && (historical || item.identity_epoch === 1) ? rows.map(node => ({ ...node, selectable: !historical && !item.archived && node.selectable, ...(historical ? { present_in_latest: true, reasons: [...node.reasons, '历史批次仅供查看'] } : {}) })) : [] })
       } else if (method === 'GET' && path.startsWith(`${jobRoot}/`)) {
         value = jobs.get(path.split('/').at(-1)); assert(value)
-      } else if ((method === 'POST' && path === sourceRoot) || (method === 'PATCH' && /^\/api\/plugins\/sing-box\/ordered-subscription-sources\/[1-9]\d*$/.test(path))) {
+      } else if ((method === 'POST' && path === sourceRoot) || (method === 'PATCH' && /^\/api\/traffic\/ordered-subscription-sources\/[1-9]\d*$/.test(path))) {
         const body = request.postDataJSON()
         assert.match(body.request_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
         if (receipts.has(body.request_id)) { const previous = receipts.get(body.request_id); assert.equal(request.postData(), previous.serialized); await route.fulfill({ json: previous.receipt }); return }
@@ -108,19 +108,19 @@ try {
         if (method === 'POST' && createMode === 'timeout') { createMode = 'normal'; timeoutEntered(); await timeoutDone; await route.abort('timedout').catch(error => { if (!/handled|closed|cancel|abort/i.test(error.message)) throw error }); return }
         if (method === 'PATCH' && patchMode === 'lose') { patchMode = 'normal'; await route.abort('connectionreset'); return }
         await route.fulfill({ status: method === 'POST' ? 202 : 200, json: result }); return
-      } else if (method === 'POST' && /^\/api\/plugins\/sing-box\/ordered-subscription-sources\/[1-9]\d*\/refresh$/.test(path)) {
+      } else if (method === 'POST' && /^\/api\/traffic\/ordered-subscription-sources\/[1-9]\d*\/refresh$/.test(path)) {
         const item = sources.find(source => source.id === Number(path.split('/').at(-2))); assert(item)
         assert.deepEqual(request.postDataJSON(), { settings_revision: item.settings_revision })
         const job = item.active_job ?? sourceJobFixture(item.id, { id: sourceUuid(800 + item.id), settings_revision: item.settings_revision, identity_epoch: item.identity_epoch, status: 'running', stage: 'fetch', started_at: 1790860801 })
         item.active_job = job; jobs.set(job.id, job); await route.fulfill({ status: 202, json: job }); return
-      } else if (method === 'POST' && /^\/api\/plugins\/sing-box\/ordered-subscription-source-jobs\/[0-9a-f-]+\/cancel$/.test(path)) {
+      } else if (method === 'POST' && /^\/api\/traffic\/ordered-subscription-source-jobs\/[0-9a-f-]+\/cancel$/.test(path)) {
         const job = jobs.get(path.split('/').at(-2)); assert(job); assert.equal(request.postData(), null)
         job.status = 'cancelling'; value = job
       } else if (method === 'DELETE' && path === `${sourceRoot}/1`) {
         assert.deepEqual(request.postDataJSON(), { settings_revision: sources.find(source => source.id === 1).settings_revision })
         if (deleteConflict) { await route.fulfill({ status: 409, json: { error: '来源仍被当前路径「引用示例」#7 引用；请先解除引用。' } }); return }
         sources = sources.filter(source => source.id !== 1); await route.fulfill({ status: 204, body: '' }); return
-      } else if (method === 'PATCH' && /^\/api\/plugins\/sing-box\/ordered-subscription-sources\/1\/nodes\/[0-9a-f-]+$/.test(path)) {
+      } else if (method === 'PATCH' && /^\/api\/traffic\/ordered-subscription-sources\/1\/nodes\/[0-9a-f-]+$/.test(path)) {
         const body = request.postDataJSON(), node = preview.find(item => item.id === path.split('/').at(-1)); assert(node)
         assert.deepEqual(body, { adopted: !node.adopted, settings_revision: sources.find(source => source.id === 1).settings_revision, identity_epoch: node.identity_epoch, node_version_id: node.version_id, metadata_revision: node.metadata_revision })
         node.adopted = body.adopted; node.metadata_revision++; value = node

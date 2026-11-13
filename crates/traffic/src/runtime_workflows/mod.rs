@@ -9,6 +9,7 @@ pub use automation::{
     automation_candidate, automation_deployment_receipt, automation_dispatch_matches_tx,
     cancel_automation_deployment_tx, enqueue_automation_deployment_tx,
     reconcile_automation_deployment_tx, request_automation_deployment_checkpoint_tx,
+    runtime_step_policy,
 };
 use inventory::inventory;
 use rollouts::{advance, create_rollout, inspect_member, pause, rollouts};
@@ -34,26 +35,32 @@ pub async fn prune_preflights(tx: &mut Transaction<'_, Postgres>, before: i64) -
 pub fn router() -> axum::Router<AppState> {
     use axum::routing::{get, post};
     axum::Router::new()
-        .route("/servers/{id}/operations-view", get(view))
-        .route("/servers/{id}/operations-view/checkpoint", post(checkpoint))
+        .route("/api/traffic/servers/{id}/operations-view", get(view))
         .route(
-            "/servers/{id}/operations-view/preflight",
+            "/api/traffic/servers/{id}/operations-view/checkpoint",
+            post(checkpoint),
+        )
+        .route(
+            "/api/traffic/servers/{id}/operations-view/preflight",
             post(preflight_request),
         )
         .route(
-            "/servers/{id}/operations-view/preflight/confirm",
+            "/api/traffic/servers/{id}/operations-view/preflight/confirm",
             post(confirm_preflight),
         )
         .route(
-            "/servers/{id}/operations-view/preflight/bootstrap",
+            "/api/traffic/servers/{id}/operations-view/preflight/bootstrap",
             post(bootstrap_install),
         )
-        .route("/runtime-inventory", get(inventory))
-        .route("/runtime-rollouts", get(rollouts).post(create_rollout))
-        .route("/runtime-rollouts/{id}/advance", post(advance))
-        .route("/runtime-rollouts/{id}/pause", post(pause))
+        .route("/api/traffic/runtime-inventory", get(inventory))
         .route(
-            "/runtime-rollouts/{id}/members/{server}/inspect",
+            "/api/traffic/runtime-rollouts",
+            get(rollouts).post(create_rollout),
+        )
+        .route("/api/traffic/runtime-rollouts/{id}/advance", post(advance))
+        .route("/api/traffic/runtime-rollouts/{id}/pause", post(pause))
+        .route(
+            "/api/traffic/runtime-rollouts/{id}/members/{server}/inspect",
             post(inspect_member),
         )
 }

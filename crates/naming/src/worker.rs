@@ -157,7 +157,7 @@ async fn write_guard(
         .begin()
         .await
         .map_err(|_| Failure::from("storage_error"))?;
-    // Claims and plugin disable use this same order. Holding the lock through
+    // Claims and switching DDNS off use this same order. Holding the lock through
     // the write prevents an expired wall-clock lease being reclaimed mid-request.
     sqlx::query("SELECT pg_advisory_xact_lock(739104824)")
         .execute(&mut *tx)

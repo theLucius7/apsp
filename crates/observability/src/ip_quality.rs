@@ -191,7 +191,7 @@ pub async fn view(state: &AppState, server_id: i64) -> ApiResult<ServerIpInfoVie
         node_quality.source_reason.as_deref(),
     ));
     let node_query_reason =
-        crate::diagnostic_plugins::nodequality::node_queries::readiness(state, server_id).await?;
+        crate::diagnostic_tools::nodequality::node_queries::readiness(state, server_id).await?;
     Ok(ServerIpInfoView {
         server_id,
         quality,

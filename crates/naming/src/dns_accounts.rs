@@ -51,17 +51,11 @@ struct Write {
 
 pub(super) fn routes() -> Router<AppState> {
     Router::new()
-        .route("/api/plugins/ddns/accounts", get(list).post(create))
-        .route(
-            "/api/plugins/ddns/accounts/cloudflare",
-            post(connect_cloudflare),
-        )
-        .route(
-            "/api/plugins/ddns/accounts/access-key",
-            post(connect_access_key),
-        )
-        .route("/api/plugins/ddns/accounts/{id}", put(update))
-        .route("/api/plugins/ddns/accounts/{id}/check", post(check))
+        .route("/api/naming/accounts", get(list).post(create))
+        .route("/api/naming/accounts/cloudflare", post(connect_cloudflare))
+        .route("/api/naming/accounts/access-key", post(connect_access_key))
+        .route("/api/naming/accounts/{id}", put(update))
+        .route("/api/naming/accounts/{id}/check", post(check))
 }
 
 pub(super) async fn load(pool: &PgPool, id: Uuid) -> ApiResult<Account> {

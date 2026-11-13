@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { segments } from './data'
 import type { Point } from './data'
-import { surface } from './ui'
+import { surface } from '@/components/board'
 import { cn } from '@/lib/utils'
 
 export type Series = { label: string; color: string; points: Point[] }

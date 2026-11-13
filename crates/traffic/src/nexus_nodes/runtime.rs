@@ -1,5 +1,5 @@
 use super::{
-    runtime_model::{Revision, RuntimeNode, RuntimeSnapshot, digest, inspect, inspect_extension},
+    runtime_model::{Revision, RuntimeNode, RuntimeSnapshot, inspect, inspect_extension},
     runtime_publish,
 };
 use crate::{
@@ -19,17 +19,26 @@ use sqlx::{Postgres, Row, Transaction};
 
 pub(super) fn router() -> Router<AppState> {
     Router::new()
-        .route("/nexus-nodes/runtime/preview", post(preview))
-        .route("/nexus-nodes/runtime/prepare", post(prepare))
-        .route("/nexus-nodes/runtime/{id}/candidate", post(candidate))
-        .route("/nexus-nodes/runtime/{id}/activate", post(activate))
-        .route("/nexus-nodes/runtime/{id}/pause", post(pause))
-        .route("/nexus-nodes/runtime/{id}/discard", post(discard))
+        .route("/api/traffic/nexus-nodes/runtime/preview", post(preview))
+        .route("/api/traffic/nexus-nodes/runtime/prepare", post(prepare))
         .route(
-            "/nexus-nodes/runtime/{id}/extend/preview",
+            "/api/traffic/nexus-nodes/runtime/{id}/candidate",
+            post(candidate),
+        )
+        .route(
+            "/api/traffic/nexus-nodes/runtime/{id}/activate",
+            post(activate),
+        )
+        .route("/api/traffic/nexus-nodes/runtime/{id}/pause", post(pause))
+        .route(
+            "/api/traffic/nexus-nodes/runtime/{id}/discard",
+            post(discard),
+        )
+        .route(
+            "/api/traffic/nexus-nodes/runtime/{id}/extend/preview",
             post(extend_preview),
         )
-        .route("/nexus-nodes/runtime/{id}/extend", post(extend))
+        .route("/api/traffic/nexus-nodes/runtime/{id}/extend", post(extend))
 }
 
 #[derive(Deserialize)]
@@ -57,7 +66,7 @@ async fn prepare(
     control_center::require_owner(&state, &headers).await?;
     control_center::require_recent_proof(&state, &headers).await?;
     let snapshot = input.payload;
-    let hash = digest(&snapshot)?;
+    let hash = crate::digest::json(&snapshot)?;
     if input.expected_digest.as_deref() != Some(&hash) {
         return Err(ApiError::Conflict("请先预览并确认同一份运行配置".into()));
     }
@@ -90,7 +99,7 @@ async fn prepare(
             &snapshot.nodes,
         )
         .await?;
-        // An explicit disabled plugin also blocks capability-based auto-enable.
+        // An explicitly disabled runtime also blocks capability-based auto-enable.
         crate::runtime_controls::ensure(&mut tx, snapshot.server_id).await?;
         sqlx::query("INSERT INTO server_plugins(server_id,plugin,enabled,source,enabled_at) VALUES($1,'sing-box',FALSE,'administrator',$2) ON CONFLICT(server_id,plugin) DO UPDATE SET enabled=FALSE,source='administrator'")
             .bind(snapshot.server_id).bind(now_timestamp()).execute(&mut *tx).await?;
@@ -250,7 +259,7 @@ async fn extend(
             "追加的线路与原资料或目标主机冲突，请重新预览".into(),
         ));
     }
-    let hash = digest(&merged)?;
+    let hash = crate::digest::json(&merged)?;
     if input.extended_digest.as_deref() != Some(hash.as_str()) {
         return Err(ApiError::Conflict("请先预览并确认同一份追加配置".into()));
     }
@@ -294,7 +303,7 @@ async fn extend(
         .collect();
     sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'nexus.runtime.extend',$2,$3,$4,$5)")
         .bind(actor)
-        .bind(format!("/api/plugins/sing-box/nexus-nodes/runtime/{server}/extend"))
+        .bind(format!("/api/traffic/nexus-nodes/runtime/{server}/extend"))
         .bind(json!({"from":input.expected_digest,"to":hash,"added_legacy_nodes":added,"revised_legacy_nodes":revised,"stopped_services":input.stopped_services,"stopped_at":input.stopped_at}))
         .bind(json!({"state":"recorded","republish":republish}))
         .bind(now)

@@ -9,13 +9,11 @@ use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 
-const ROOT: &str = "/api/plugins/sing-box";
-
 async fn preview(panel: &TestPanel, cookie: &str, user: i64, format: &str) -> Result<Value> {
     let response = panel
         .admin(
             Method::GET,
-            &format!("{ROOT}/users/{user}/subscription?format={format}"),
+            &format!("/api/access/users/{user}/subscription?format={format}"),
             cookie,
             None,
         )
@@ -32,7 +30,7 @@ async fn previews_and_downloads_use_the_same_applied_seven_protocol_snapshot(
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Subscriptions").await?;
-    panel.enable_plugin(&cookie, server).await?;
+    panel.enable_runtime(&cookie, server).await?;
     let user = panel.create_user(&cookie, "First").await?;
     let uid = id(&user)?;
     let other = panel.create_user(&cookie, "Second").await?;
@@ -54,13 +52,16 @@ async fn previews_and_downloads_use_the_same_applied_seven_protocol_snapshot(
         if kind == "shadowsocks2022" {
             protocol["method"] = json!("2022-blake3-aes-128-gcm");
         }
-        let node: Value = panel.admin(Method::POST,&format!("{ROOT}/nodes"),&cookie,Some(json!({"server_id":server,"name":kind,"sni":if ["shadowsocks2022","snell-v6"].contains(&kind) { "" } else { "proxy.example.com" },"public_host":"proxy.example.com","protocol_config":protocol}))).await?.error_for_status()?.json().await?;
+        let node: Value = panel.admin(Method::POST,"/api/traffic/nodes",&cookie,Some(json!({"server_id":server,"name":kind,"sni":if ["shadowsocks2022","snell-v6"].contains(&kind) { "" } else { "proxy.example.com" },"public_host":"proxy.example.com","protocol_config":protocol}))).await?.error_for_status()?.json().await?;
         panel.grant(&cookie, uid, id(&node)?).await?;
         panel.grant(&cookie, id(&other)?, id(&node)?).await?;
     }
     let response = panel
         .client
-        .get(format!("{}{ROOT}/users/{uid}/subscription", panel.base))
+        .get(format!(
+            "{}/api/access/users/{uid}/subscription",
+            panel.base
+        ))
         .send()
         .await?;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -122,7 +123,7 @@ async fn previews_and_downloads_use_the_same_applied_seven_protocol_snapshot(
     let updated: Value = panel
         .admin(
             Method::POST,
-            &format!("{ROOT}/users/{uid}/subscription/reset"),
+            &format!("/api/access/users/{uid}/subscription/reset"),
             &cookie,
             None,
         )
@@ -171,7 +172,7 @@ async fn paused_and_expired_entitlements_cannot_return_preview_credentials(
     panel
         .admin(
             Method::PATCH,
-            &format!("{ROOT}/nodes/{node}"),
+            &format!("/api/traffic/nodes/{node}"),
             &cookie,
             Some(json!({"enabled":false})),
         )
@@ -184,17 +185,17 @@ async fn paused_and_expired_entitlements_cannot_return_preview_credentials(
     panel
         .admin(
             Method::PATCH,
-            &format!("{ROOT}/nodes/{node}"),
+            &format!("/api/traffic/nodes/{node}"),
             &cookie,
             Some(json!({"enabled":true})),
         )
         .await?
         .error_for_status()?;
-    let package: Value = panel.admin(Method::POST,&format!("{ROOT}/package-groups"),&cookie,Some(json!({"name":"Plan","monthly_bytes":"18446744073709551615","reset_day":1,"reset_hour":0,"reset_minute":0,"timezone":"UTC","duration_days":1}))).await?.error_for_status()?.json().await?;
+    let package: Value = panel.admin(Method::POST,"/api/access/package-groups",&cookie,Some(json!({"name":"Plan","monthly_bytes":"18446744073709551615","reset_day":1,"reset_hour":0,"reset_minute":0,"timezone":"UTC","duration_days":1}))).await?.error_for_status()?.json().await?;
     panel
         .admin(
             Method::POST,
-            &format!("{ROOT}/users/{uid}/package"),
+            &format!("/api/access/users/{uid}/package"),
             &cookie,
             Some(json!({"package_group_id":id(&package)?,"request_id":uuid::Uuid::new_v4()})),
         )

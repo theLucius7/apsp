@@ -144,28 +144,6 @@ pub async fn lock_server(transaction: &mut Transaction<'_, Postgres>, id: i64) -
     Ok(())
 }
 
-pub async fn lock_user(transaction: &mut Transaction<'_, Postgres>, id: i64) -> ApiResult<()> {
-    let found: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
-            .bind(id)
-            .fetch_optional(&mut **transaction)
-            .await?;
-    found.ok_or(ApiError::NotFound)?;
-    Ok(())
-}
-
-pub async fn lock_user_servers(
-    transaction: &mut Transaction<'_, Postgres>,
-    user_id: i64,
-) -> ApiResult<Vec<i64>> {
-    let ids: Vec<i64> = sqlx::query_scalar("SELECT DISTINCT n.server_id FROM accesses a JOIN nodes n ON n.id=a.node_id WHERE a.user_id=$1 ORDER BY n.server_id").bind(user_id).fetch_all(&mut **transaction).await?;
-    sqlx::query("SELECT id FROM servers WHERE id=ANY($1) ORDER BY id FOR UPDATE")
-        .bind(&ids)
-        .fetch_all(&mut **transaction)
-        .await?;
-    Ok(ids)
-}
-
 pub async fn mark_dirty(
     transaction: &mut Transaction<'_, Postgres>,
     server_ids: &[i64],

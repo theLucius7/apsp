@@ -288,6 +288,9 @@ export function resourceWriteError(...resources: { isCurrent?: () => boolean; fr
     ? '' : resourceRefreshingMessage
 }
 
+/** The runner a page hands to its sections, so they share one busy state and one error line; `proof` asks the administrator to confirm their identity first. */
+export type ActionRunner = (action: () => Promise<void>, proof?: boolean) => void
+
 export function useAction() {
   const alive = useRef(true)
   const locked = useRef(false)

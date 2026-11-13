@@ -19,26 +19,29 @@ use uuid::Uuid;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .merge(super::guard::seed::routes())
-        .route("/api/plugins/alicloud/cron-preview", post(cron_preview))
+        .route("/api/resources/alicloud/cron-preview", post(cron_preview))
         .route(
-            "/api/plugins/alicloud/resources/{id}/power-policy",
+            "/api/resources/alicloud/resources/{id}/power-policy",
             patch(update_policy),
         )
         .route(
-            "/api/plugins/alicloud/resources/{id}/power-preview",
+            "/api/resources/alicloud/resources/{id}/power-preview",
             post(preview),
         )
         .route(
-            "/api/plugins/alicloud/resources/{id}/power-resume",
+            "/api/resources/alicloud/resources/{id}/power-resume",
             post(resume),
         )
         .route(
-            "/api/plugins/alicloud/power-jobs/{id}/confirm",
+            "/api/resources/alicloud/power-jobs/{id}/confirm",
             post(confirm),
         )
-        .route("/api/plugins/alicloud/power-jobs/{id}/cancel", post(cancel))
         .route(
-            "/api/plugins/alicloud/power-jobs/{id}/dismiss",
+            "/api/resources/alicloud/power-jobs/{id}/cancel",
+            post(cancel),
+        )
+        .route(
+            "/api/resources/alicloud/power-jobs/{id}/dismiss",
             post(dismiss),
         )
 }

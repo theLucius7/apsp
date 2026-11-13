@@ -55,7 +55,7 @@ export function Activity({ data, available, current, reload }: { data: Overview;
       source = o.source === 'manual' ? '手动' : '自动降速'
       state = { label: status(o.status), tone: tone(o.status) }
       notes = settled(o.status) ? [] : [message(o.error_code), o.request_id ? `云请求：${o.request_id}` : '']
-      if (['preview', 'queued'].includes(o.status)) controls = <Button variant="ghost" size="sm" disabled={disabled} onClick={() => run(() => operationError(current, o, false, ['preview', 'queued']), () => api(`/api/plugins/alicloud/operations/${o.id}/cancel`, 'POST'))}>取消</Button>
+      if (['preview', 'queued'].includes(o.status)) controls = <Button variant="ghost" size="sm" disabled={disabled} onClick={() => run(() => operationError(current, o, false, ['preview', 'queued']), () => api(`/api/resources/alicloud/operations/${o.id}/cancel`, 'POST'))}>取消</Button>
       if (o.status === 'uncertain') controls = <Button variant="ghost" size="sm" disabled={disabled} onClick={() => { action.clearError(); setVerified(false); setOperation(o) }}>已人工核对</Button>
     } else if (item.kind === 'power') {
       const { job: j } = item
@@ -64,7 +64,7 @@ export function Activity({ data, available, current, reload }: { data: Overview;
       source = powerSource(j.source)
       state = { label: j.status === 'failed' ? '未按预期完成' : status(j.status), tone: tone(j.status) }
       notes = [...settled(j.status) ? [] : [message(j.error_code), j.request_id ? `云请求：${j.request_id}` : ''], deliveryText(item.event)]
-      if (['preview', 'queued'].includes(j.status)) controls = <Button variant="ghost" size="sm" disabled={disabled} onClick={() => run(() => operationError(current, j, true, ['preview', 'queued']), () => api(`/api/plugins/alicloud/power-jobs/${j.id}/cancel`, 'POST'))}>取消任务</Button>
+      if (['preview', 'queued'].includes(j.status)) controls = <Button variant="ghost" size="sm" disabled={disabled} onClick={() => run(() => operationError(current, j, true, ['preview', 'queued']), () => api(`/api/resources/alicloud/power-jobs/${j.id}/cancel`, 'POST'))}>取消任务</Button>
       if (j.status === 'uncertain') controls = <Button variant="ghost" size="sm" disabled={disabled} onClick={() => { action.clearError(); setJob(j) }}>核对并结束跟踪</Button>
     } else if (item.kind === 'rotation') {
       const { rotation: r } = item
@@ -74,7 +74,7 @@ export function Activity({ data, available, current, reload }: { data: Overview;
       state = { label: rotationStatus(r.status), tone: rotationTone(r.status) }
       notes = [r.status === 'running' ? `第 ${r.attempt} / ${r.max_attempts} 个新地址 · ${rotationPhase(r.phase)}` : '',
         r.attempts.length ? `候选：${r.attempts.map(candidate).join('、')}` : '', message(r.error_code), deliveryText(item.event)]
-      if (r.status === 'preview') controls = <Button variant="ghost" size="sm" disabled={disabled} onClick={() => run(() => rotationError(current, r, ['preview']), () => api(`/api/plugins/alicloud/eip-rotations/${r.id}/cancel`, 'POST'))}>取消</Button>
+      if (r.status === 'preview') controls = <Button variant="ghost" size="sm" disabled={disabled} onClick={() => run(() => rotationError(current, r, ['preview']), () => api(`/api/resources/alicloud/eip-rotations/${r.id}/cancel`, 'POST'))}>取消</Button>
       if (r.status === 'unknown') controls = <Button variant="ghost" size="sm" disabled={disabled} onClick={() => { action.clearError(); setRotation(r) }}>已人工核对</Button>
       if (r.status === 'succeeded') follow = <NodeFollowUp rotation={r} />
     } else {
@@ -102,8 +102,8 @@ export function Activity({ data, available, current, reload }: { data: Overview;
     {!items.length ? <Empty icon={HistoryIcon} title="暂无操作记录" description="带宽调整、开关机（手动、CDT 守护、每日计划与保活）、更换公网 IP 和流量阈值提醒会记录在这里。" />
       : <ul className="divide-border/70 divide-y">{shown.map(row)}</ul>}
     {items.length > LIMIT && <div className="border-t px-4 py-2"><Button variant="ghost" size="sm" onClick={() => setAll(value => !value)}>{all ? '只显示最近' : `显示全部 ${items.length} 条`}</Button></div>}
-    <DialogPresence>{operation && <Modal title="结束不确定操作的跟踪" busy={action.busy} onClose={() => setOperation(null)}><div data-slot="modal-body" className="p-4"><ErrorNotice message={action.error} /><p>请先在阿里云控制台核对资源与订单。结束跟踪不会撤销已提交的调整，会同时暂停此资源的自动降速与自动启停，并保留手动暂停开机标记，避免立即再次执行。</p><label className="my-4 flex items-start gap-2.5 text-sm leading-relaxed"><Checkbox checked={verified} onCheckedChange={checked => setVerified(checked === true)} className="mt-0.5" />已核对云端结果，确认结束跟踪</label></div><footer><Button variant="outline" disabled={action.busy} onClick={() => setOperation(null)}>返回</Button><Button disabled={action.busy || !verified || Boolean(operationError(current, operation, false, ['uncertain']))} onClick={() => { if (verified) run(() => operationError(current, operation, false, ['uncertain']), () => api(`/api/plugins/alicloud/operations/${operation.id}/dismiss`, 'POST'), finish) }}>结束跟踪并暂停资源策略</Button></footer></Modal>}</DialogPresence>
+    <DialogPresence>{operation && <Modal title="结束不确定操作的跟踪" busy={action.busy} onClose={() => setOperation(null)}><div data-slot="modal-body" className="p-4"><ErrorNotice message={action.error} /><p>请先在阿里云控制台核对资源与订单。结束跟踪不会撤销已提交的调整，会同时暂停此资源的自动降速与自动启停，并保留手动暂停开机标记，避免立即再次执行。</p><label className="my-4 flex items-start gap-2.5 text-sm leading-relaxed"><Checkbox checked={verified} onCheckedChange={checked => setVerified(checked === true)} className="mt-0.5" />已核对云端结果，确认结束跟踪</label></div><footer><Button variant="outline" disabled={action.busy} onClick={() => setOperation(null)}>返回</Button><Button disabled={action.busy || !verified || Boolean(operationError(current, operation, false, ['uncertain']))} onClick={() => { if (verified) run(() => operationError(current, operation, false, ['uncertain']), () => api(`/api/resources/alicloud/operations/${operation.id}/dismiss`, 'POST'), finish) }}>结束跟踪并暂停资源策略</Button></footer></Modal>}</DialogPresence>
     <DialogPresence>{rotation && <EipRotationReconcile rotation={rotation} current={current} close={() => setRotation(null)} saved={finish} />}</DialogPresence>
-    <DialogPresence>{job && <Confirm title="结束启停跟踪" confirmLabel="结束跟踪" busyLabel="正在处理…" busy={action.busy} error={action.error} confirmDisabled={Boolean(operationError(current, job, true, ['uncertain']))} onClose={() => setJob(null)} onConfirm={() => run(() => operationError(current, job, true, ['uncertain']), () => api(`/api/plugins/alicloud/power-jobs/${job.id}/dismiss`, 'POST'), finish)}>请先在阿里云核对实例状态及收费模式。结束跟踪不会撤回命令，会暂停此资源的自动启停和降速，并保留手动暂停标记。</Confirm>}</DialogPresence>
+    <DialogPresence>{job && <Confirm title="结束启停跟踪" confirmLabel="结束跟踪" busyLabel="正在处理…" busy={action.busy} error={action.error} confirmDisabled={Boolean(operationError(current, job, true, ['uncertain']))} onClose={() => setJob(null)} onConfirm={() => run(() => operationError(current, job, true, ['uncertain']), () => api(`/api/resources/alicloud/power-jobs/${job.id}/dismiss`, 'POST'), finish)}>请先在阿里云核对实例状态及收费模式。结束跟踪不会撤回命令，会暂停此资源的自动启停和降速，并保留手动暂停标记。</Confirm>}</DialogPresence>
   </Panel>
 }

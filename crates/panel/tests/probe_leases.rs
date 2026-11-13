@@ -121,7 +121,7 @@ async fn issuance_requires_capability_and_reuses_only_the_same_device_session(
     assert_eq!(first, lease(&panel, &ack.session_token).await?);
     let second_token = "TEST_ONLY independent session";
     sqlx::query("INSERT INTO sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
-        .bind(apsp_panel_host::auth::hash_token(second_token))
+        .bind(apsp_governance::auth::hash_token(second_token))
         .bind(server)
         .bind(now_timestamp() + 60)
         .execute(&panel.state.pool)

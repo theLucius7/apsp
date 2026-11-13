@@ -39,7 +39,7 @@ try {
       if (path === '/api/notifications/webhook') return reply({enabled:false,preset:'custom',url_configured:false,headers_configured:false,body_configured:false})
       if (path === '/api/notifications/channels' || path === '/api/alert-rules' || path === '/api/servers') return reply([])
       if (path === '/api/servers/1') return reply({id:1,name:'历史设置夹具',online:true,device_public_key:'TEST_ONLY',static_info:{},latest_metrics:{},manifest_rev:0,capabilities:[]})
-      if (path === '/api/plugins/sing-box/servers/1') return reply({id:1,name:'历史设置夹具',enabled:false,online:true,agent_supported:true,read_only:false,source:null})
+      if (path === '/api/traffic/servers/1') return reply({id:1,name:'历史设置夹具',enabled:false,online:true,agent_supported:true,read_only:false,source:null})
       if (path === '/api/servers/1/agent-settings') {
         if (method !== 'GET') throw new Error('Historical settings must not overwrite legacy AgentSettings')
         return reply({sample_interval_secs:1,upload_interval_secs:3,discover_public_ips:false,auto_update:false})

@@ -1,52 +1,42 @@
-use crate::{auth, config::Config};
-use apsp_protocol::Envelope;
+use crate::config::Config;
 use sqlx::PgPool;
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
     sync::{Arc, PoisonError},
 };
-use tokio::sync::{Mutex, RwLock, Semaphore, mpsc};
-use uuid::Uuid;
+use tokio::sync::Semaphore;
 
-#[derive(Clone)]
-pub struct AgentConnection {
-    pub id: Uuid,
-    pub sender: mpsc::Sender<Envelope>,
-}
-
+/// What every request and background task of the panel shares: the database, the
+/// configuration, process-wide budgets, the compiled release trust root and the runtime
+/// state each domain keeps for itself.
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
     pub started_at: i64,
     pub login_permits: Arc<Semaphore>,
-    pub passkeys: Arc<crate::passkeys::Service>,
     pub quality_permits: Arc<Semaphore>,
     pub release_permits: Arc<Semaphore>,
     pub release_keys: Option<Arc<apsp_protocol::release::TrustedKeys>>,
     pub config: Arc<Config>,
-    pub connections: Arc<RwLock<HashMap<i64, AgentConnection>>>,
-    pub device_lifecycle: Arc<Mutex<()>>,
     pub domain_states: DomainStates,
 }
 
 impl AppState {
+    /// Checks the database baseline and builds the shared state. It prepares nothing that
+    /// belongs to a domain; the application's startup does that.
     pub async fn new(pool: PgPool, config: Config) -> anyhow::Result<Self> {
         crate::schema::initialize(&pool).await?;
-        auth::ensure_admin(&pool, config.admin_password.as_deref()).await?;
         Ok(Self {
             pool,
             started_at: apsp_protocol::now_timestamp(),
             login_permits: Arc::new(Semaphore::new(4)),
-            passkeys: Arc::new(crate::passkeys::Service::new(&config.public_url)),
             quality_permits: Arc::new(Semaphore::new(2)),
             release_permits: Arc::new(Semaphore::new(1)),
             release_keys: apsp_protocol::release::TrustedKeys::compiled()
                 .ok()
                 .map(Arc::new),
             config: Arc::new(config),
-            connections: Arc::default(),
-            device_lifecycle: Arc::default(),
             domain_states: DomainStates::default(),
         })
     }

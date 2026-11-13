@@ -5,7 +5,7 @@ async fn exact_devices_require_observation_and_cannot_downgrade_to_legacy_trust(
     pool: PgPool,
 ) -> Result<()> {
     let (panel, server) = fixture(pool).await?;
-    agent_api::process_message(
+    device_channel::process_message(
         &panel.state,
         server,
         Message::Heartbeat(Heartbeat {
@@ -92,14 +92,15 @@ async fn request_replay_survives_panel_restart_and_receipt_ack_is_durable(
 ) -> Result<()> {
     let (panel, server) = fixture(pool).await?;
     let request = runtime_control::request_checkpoint(&panel.state, server, MODULE).await?;
-    let restarted = AppState::new(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
+    let restarted =
+        apsp_panel::state(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
     let mut receiver = attach(&restarted, server).await;
     runtime_control::replay_pending(&restarted, server).await?;
     assert_eq!(
         receive(&mut receiver).await?,
         Message::RuntimeCheckpointRequest(request.clone())
     );
-    agent_api::process_message(
+    device_channel::process_message(
         &restarted,
         server,
         Message::RuntimeCheckpointResult(success(&request)),
@@ -125,7 +126,7 @@ async fn request_replay_survives_panel_restart_and_receipt_ack_is_durable(
             .bind(request.request_id)
             .fetch_one(&panel.state.pool)
             .await?;
-    agent_api::process_message(
+    device_channel::process_message(
         &restarted,
         server,
         Message::RuntimeCheckpointResult(success(&request)),
@@ -260,7 +261,7 @@ async fn successful_poll_is_bounded_but_failed_observation_can_be_reauthenticate
     for _ in 0..100 {
         apsp_traffic::device_config::record_apply_result(&panel.state, server, apply.clone())
             .await?;
-        agent_api::process_message(
+        device_channel::process_message(
             &panel.state,
             server,
             Message::Heartbeat(Heartbeat {

@@ -190,7 +190,7 @@ async fn atomic_batch_rolls_back_invalid_last_item_and_replay_survives_source_ar
         .panel
         .admin(
             Method::POST,
-            &format!("{ROOT}/chains/ordered-batch"),
+            "/api/traffic/chains/ordered-batch",
             &fixture.cookie,
             Some(
                 json!({"request_id":Uuid::new_v4(),"items":[item(&fixture,"pinned",true),invalid]}),
@@ -263,7 +263,7 @@ async fn loop_duplicate_endpoint_and_unsupported_agent_never_create_partial_reso
             .panel
             .admin(
                 Method::POST,
-                &format!("{ROOT}/chains/ordered-batch"),
+                "/api/traffic/chains/ordered-batch",
                 &fixture.cookie,
                 Some(json!({"request_id":Uuid::new_v4(),"items":[body]})),
             )

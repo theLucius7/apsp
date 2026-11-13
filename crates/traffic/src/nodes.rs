@@ -422,5 +422,23 @@ pub(crate) async fn validate_server_config(
     Ok(())
 }
 
+/// The node behind `/api/traffic/nodes/{id}` for the audit trail: `None` for any other
+/// path, `Null` when that node does not exist.
+pub async fn audit_snapshot(state: &AppState, path: &str) -> ApiResult<Option<serde_json::Value>> {
+    let Some(id) = path
+        .strip_prefix("/api/traffic/nodes/")
+        .filter(|value| !value.contains('/'))
+        .and_then(|value| value.parse::<i64>().ok())
+    else {
+        return Ok(None);
+    };
+    let node: Option<serde_json::Value> =
+        sqlx::query_scalar("SELECT to_jsonb(n) FROM nodes n WHERE id=$1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
+    Ok(Some(node.unwrap_or(serde_json::Value::Null)))
+}
+
 mod removal;
 pub(crate) use removal::ensure_unreferenced_on;

@@ -41,7 +41,7 @@ const origin = `http://127.0.0.1:${server.address().port}`;
  else if(path==='/api/me') data={authenticated:true};
  else if(path==='/api/servers/1')data={id:1,name:'TCP 验收节点',static_info:{},online:true};
  else if(path==='/api/servers/1/diagnostics'){if(diagnosticFailure){await route.fulfill({status:403,json:{error:'DIAGNOSTICS_DENIED_FIXTURE'}});return;}data={cancel_supported:true,plugins:[{plugin:'tcpquality',title:'TCP',version:'fixture',ready,reason:ready?null:'Agent 当前离线'}],reports};}
- else if(path==='/api/plugins/tcpquality/servers/1/targets'){ if(targetFailure){await route.fulfill({status:403,json:{error:'TARGETS_DENIED_FIXTURE'}});return;}data=[target];}
+ else if(path==='/api/observability/tcp-quality/servers/1/targets'){ if(targetFailure){await route.fulfill({status:403,json:{error:'TARGETS_DENIED_FIXTURE'}});return;}data=[target];}
  else if(path.includes('/targets/')&&req.method()==='PATCH'){const body=req.postDataJSON();regionWrites.push(body);target.region=body.region;data={saved:true};}
  else if(path==='/api/servers/1/diagnostics/tcpquality'&&req.method()==='POST'){const body=req.postDataJSON();posts.push(body);const rec={...reports[0],id:'new',status:'queued',agent_completed:false,sections:[],error:null,report_completeness:'empty',job:{...reports[0].job,options:{ip_version:body.ip_version,count:String(body.count),concurrency:String(body.concurrency)},tcpquality:{region:body.region,targets:[{...target}]}}};reports.unshift(rec);data=rec;}
  else if(path==='/api/servers/1/diagnostics/new/cancel'){if(req.method()!=='POST')throw Error('Cancel method invalid');cancelPosts++;reports[0].status='cancel_requested';data=reports[0];}

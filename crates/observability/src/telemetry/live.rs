@@ -104,7 +104,7 @@ pub async fn live(
     headers: HeaderMap,
     Json(sample): Json<TelemetrySample>,
 ) -> ApiResult<Json<Value>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     let now = now_millis();
     if !valid_sample(&sample, now) {
         return Err(ApiError::BadRequest("实时样本格式或时间无效".into()));

@@ -21,7 +21,7 @@ class FakePanel:
 
     def request(self, path, method="GET", body=None):
         if method == "GET":
-            return self.overview if path == "/api/plugins/alicloud" else {"encryption_ready": True}
+            return self.overview if path == "/api/resources/alicloud" else {"encryption_ready": True}
         self.writes.append((path, body))
         if path.endswith("/credentials"):
             return {"id": "cred-" + str(len(self.writes))}

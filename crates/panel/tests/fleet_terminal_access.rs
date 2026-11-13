@@ -1,12 +1,9 @@
 #![forbid(unsafe_code)]
 
 use anyhow::{Context, Result};
+use apsp_governance::auth::{hash_token, random_token};
 use apsp_panel::router;
-use apsp_panel_host::{
-    AppState,
-    auth::{hash_token, random_token},
-    config::Config,
-};
+use apsp_panel_host::config::Config;
 use apsp_protocol::{
     fleet::{AccessPolicy, TERMINAL_CAPABILITY},
     now_timestamp,
@@ -33,7 +30,7 @@ impl Panel {
         let directory =
             std::env::temp_dir().join(format!("apsp-terminal-access-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory)?;
-        let state = AppState::new(
+        let state = apsp_panel::state(
             pool.clone(),
             Config {
                 database_url: String::new(),

@@ -15,7 +15,7 @@ const detail = (record: Snapshot | null) => record ? `${record.values.join(', ')
 const operation: Record<string, string> = { sync: '自动或手动同步', check: '提供方核对', rollback: '回退', migration: '来源绑定迁移' }
 
 export default function Lifecycle({ rule, close, changed }: { rule: DdnsRule; close: () => void; changed: () => void }) {
-  const history = useResource<Entry[]>(`/api/plugins/ddns/rules/${rule.id}/history`)
+  const history = useResource<Entry[]>(`/api/naming/rules/${rule.id}/history`)
   const action = useAction()
   const [preview, setPreview] = useState<Preview | null>(null)
   const [rollback, setRollback] = useState<Entry | null>(null)
@@ -24,7 +24,7 @@ export default function Lifecycle({ rule, close, changed }: { rule: DdnsRule; cl
     <div data-slot="modal-body" className="p-4"><ErrorNotice message={action.error || history.error} retry={history.reload} />
       <p className="text-muted-foreground mt-3 text-xs leading-relaxed">从提供方读取当前记录，不修改 DNS。回退会再次核对远端记录是否仍与该次同步结果一致，并暂停此规则的自动同步；远端发生变化时拒绝覆盖。</p>
       <Button variant="outline" disabled={action.busy || rule.busy} onClick={() => void action.run(async () => {
-        const result = await api<Preview>(`/api/plugins/ddns/rules/${rule.id}/preview`, 'POST', { revision: rule.revision })
+        const result = await api<Preview>(`/api/naming/rules/${rule.id}/preview`, 'POST', { revision: rule.revision })
         setPreview(result); history.reload()
       })}>{action.busy ? '正在读取…' : '读取提供方并预览差异'}</Button>
       {preview && <div className="p-4"><Badge tone={preview.error_code || preview.source_error ? 'warm' : 'good'}>{preview.change === 'create' ? '将新建记录' : preview.change === 'update' ? '地址或设置有差异' : preview.change === 'unchanged' ? '与提供方记录一致' : '同步条件未满足'}</Badge>
@@ -40,7 +40,7 @@ export default function Lifecycle({ rule, close, changed }: { rule: DdnsRule; cl
       </article>)}</div>}
     </div><footer><Button variant="outline" disabled={action.busy} onClick={close}>关闭</Button></footer>
     <DialogPresence>{rollback && <Confirm title="回退 DNS 记录并暂停同步" busy={action.busy} error={action.error} onClose={() => setRollback(null)} onConfirm={() => void action.run(async () => {
-      const result = await api<{ error_code: string | null }>(`/api/plugins/ddns/rules/${rule.id}/rollback`, 'POST', { revision: rule.revision, history_id: rollback.id, confirmed: true })
+      const result = await api<{ error_code: string | null }>(`/api/naming/rules/${rule.id}/rollback`, 'POST', { revision: rule.revision, history_id: rollback.id, confirmed: true })
       refresh(); setPreview(null)
       if (result.error_code) throw new Error(ddnsMessage(result.error_code))
     }, () => setRollback(null))}>将恢复为 {detail(rollback.previous)}。远端当前值必须仍为 {detail(rollback.observed)}；回退后请先核对，再手工决定是否恢复自动同步。</Confirm>}</DialogPresence>

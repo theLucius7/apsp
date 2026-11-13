@@ -60,7 +60,7 @@ try {
         else if (path === `${base}/telemetry-settings`) value = { persist_interval_secs: 60 }
         else if (path === `${base}/probe-results`) value = url.searchParams.get('probe_id') ? samples.filter(item => item.probe_id === url.searchParams.get('probe_id')) : samples
         else if (path === `${base}/commands`) value = []
-        else if (path === '/api/plugins/sing-box/servers/1') value = { id: 1, name: 'TEST_ONLY 拨测修订设备', enabled: false, source: null, online: true, read_only: false, agent_supported: false }
+        else if (path === '/api/traffic/servers/1') value = { id: 1, name: 'TEST_ONLY 拨测修订设备', enabled: false, source: null, online: true, read_only: false, agent_supported: false }
         else { totals.unexpected.push(`${method} ${path}`); return route.fulfill({ status: 404, json: { error: 'Unexpected API' } }) }
         return route.fulfill({ json: value })
       })()

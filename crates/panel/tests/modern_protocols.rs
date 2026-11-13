@@ -27,7 +27,7 @@ async fn new_protocol_credentials_snapshots_and_revocation(pool: PgPool) -> Resu
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Modern protocols").await?;
-    panel.enable_plugin(&cookie, server).await?;
+    panel.enable_runtime(&cookie, server).await?;
     let first = panel.create_user(&cookie, "First").await?;
     let second = panel.create_user(&cookie, "Second").await?;
     let first_id = id(&first)?;
@@ -45,7 +45,7 @@ async fn new_protocol_credentials_snapshots_and_revocation(pool: PgPool) -> Resu
         let response = panel
             .admin(
                 Method::POST,
-                "/api/plugins/sing-box/nodes",
+                "/api/traffic/nodes",
                 &cookie,
                 Some(json!({
                     "name": kind, "server_id": server, "public_host":"proxy.example.com",
@@ -62,7 +62,7 @@ async fn new_protocol_credentials_snapshots_and_revocation(pool: PgPool) -> Resu
         );
         // Reload independently to check management responses do not expose node secrets.
         let views: Vec<Value> = panel
-            .admin(Method::GET, "/api/plugins/sing-box/nodes", &cookie, None)
+            .admin(Method::GET, "/api/traffic/nodes", &cookie, None)
             .await?
             .json()
             .await?;
@@ -239,12 +239,12 @@ async fn certificate_conflicts_and_protocol_changes_are_atomic(pool: PgPool) -> 
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Certificates").await?;
-    panel.enable_plugin(&cookie, server).await?;
+    panel.enable_runtime(&cookie, server).await?;
     let create = |port, config| json!({"name":"TLS node", "server_id":server, "public_host":"proxy.example.com", "sni":"proxy.example.com", "port":port, "protocol_config":config});
     let response = panel
         .admin(
             Method::POST,
-            "/api/plugins/sing-box/nodes",
+            "/api/traffic/nodes",
             &cookie,
             Some(create(20443, protocol("anytls"))),
         )
@@ -262,19 +262,14 @@ async fn certificate_conflicts_and_protocol_changes_are_atomic(pool: PgPool) -> 
         ),
     ] {
         let response = panel
-            .admin(
-                Method::POST,
-                "/api/plugins/sing-box/nodes",
-                &cookie,
-                Some(body),
-            )
+            .admin(Method::POST, "/api/traffic/nodes", &cookie, Some(body))
             .await?;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
     let response = panel
         .admin(
             Method::PATCH,
-            &format!("/api/plugins/sing-box/nodes/{node}"),
+            &format!("/api/traffic/nodes/{node}"),
             &cookie,
             Some(json!({"protocol_config":{"type":"snell-v6"}, "sni":""})),
         )
@@ -292,7 +287,7 @@ async fn certificate_conflicts_and_protocol_changes_are_atomic(pool: PgPool) -> 
     panel
         .admin(
             Method::POST,
-            "/api/plugins/sing-box/nodes",
+            "/api/traffic/nodes",
             &cookie,
             Some(create(20444, protocol("tuic"))),
         )
@@ -304,7 +299,7 @@ async fn certificate_conflicts_and_protocol_changes_are_atomic(pool: PgPool) -> 
     panel
         .admin(
             Method::PATCH,
-            &format!("/api/plugins/sing-box/nodes/{node}"),
+            &format!("/api/traffic/nodes/{node}"),
             &cookie,
             Some(json!({"protocol_config":shared})),
         )
@@ -321,7 +316,7 @@ async fn certificate_conflicts_and_protocol_changes_are_atomic(pool: PgPool) -> 
     let response = panel
         .admin(
             Method::PATCH,
-            &format!("/api/plugins/sing-box/nodes/{node}"),
+            &format!("/api/traffic/nodes/{node}"),
             &cookie,
             Some(json!({"port":443,"protocol_config":invalid})),
         )

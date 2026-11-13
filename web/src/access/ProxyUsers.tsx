@@ -32,7 +32,7 @@ type UserLine = {
 }
 type Section = 'usage' | 'invitations' | 'diagnosis'
 const sections: readonly { key: Section; label: string }[] = [{ key: 'usage', label: '流量明细' }, { key: 'invitations', label: '邀请' }, { key: 'diagnosis', label: '诊断与安全' }]
-const root = '/api/plugins/sing-box'
+const root = '/api/access'
 
 const lineTone = (line?: UserLine) => !line ? 'bg-muted-foreground/40' : !line.allowed ? 'bg-destructive' : line.status === 'not_started' ? 'bg-info' : quotaUsed(line) >= 90 ? 'bg-warning' : line.status === 'active' ? 'bg-success' : 'bg-muted-foreground/40'
 const quotaUsed = (line: UserLine) => line.monthly_bytes ? Number(line.used_bytes) / Number(line.monthly_bytes) * 100 : 0

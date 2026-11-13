@@ -141,13 +141,13 @@ async fn prepare_server(
         policy["runtime_inspection"] = json!(true);
         panel.admin(Method::PUT,&profile_path,cookie,Some(json!({"asset":profile["asset"],"policy":policy,"expected_digest":profile["digest"]}))).await?.error_for_status()?;
     }
-    let path = format!("/api/plugins/sing-box/servers/{server}/operations-view/preflight");
+    let path = format!("/api/traffic/servers/{server}/operations-view/preflight");
     let response = panel.admin(Method::POST, &path, cookie, None).await?;
     if !response.status().is_success() {
         let detail: Value = panel
             .admin(
                 Method::GET,
-                &format!("/api/plugins/sing-box/servers/{server}/operations-view"),
+                &format!("/api/traffic/servers/{server}/operations-view"),
                 cookie,
                 None,
             )
@@ -173,7 +173,7 @@ async fn prepare_server(
     // be accepted. No operation status or confirmation is updated directly.
     let token = format!("TEST_ONLY-preflight-{}", Uuid::new_v4());
     sqlx::query("INSERT INTO sessions(token_hash,server_id,expires_at) VALUES($1,$2,$3)")
-        .bind(apsp_panel_host::auth::hash_token(&token))
+        .bind(apsp_governance::auth::hash_token(&token))
         .bind(server)
         .bind(now_timestamp() + 300)
         .execute(&panel.state.pool)
@@ -207,7 +207,7 @@ async fn prepare_server(
         Ok::<_,anyhow::Error>(())
     }.await;
     sqlx::query("DELETE FROM sessions WHERE token_hash=$1")
-        .bind(apsp_panel_host::auth::hash_token(&token))
+        .bind(apsp_governance::auth::hash_token(&token))
         .execute(&panel.state.pool)
         .await?;
     outcome?;

@@ -34,7 +34,7 @@ try {
     context.setDefaultTimeout(10000)
     const page = await context.newPage()
     const errors = [], unexpected = [], reads = [], writes = []
-    const prefix = '/api/plugins/sing-box/servers'
+    const prefix = '/api/traffic/servers'
     const name = '能力支持但尚未安装服务器'
     const otherName = '另一台未安装服务器'
     const missingArtifact = '清单准备失败：目标版本 1：缺少此平台的已验签 sing-box 1.14.2 制品，请先导入可信发布制品'
@@ -73,13 +73,13 @@ try {
         else if (pathname === `${prefix}/1/profile`) value = {definition:{},revision:0}
         else if (pathname === `${prefix}/1/deployments`) value = { status: null, history: [] }
         else if (pathname === `${prefix}/1/runtime-operations`) value = { supported: false, online: false, retiring: false, operations: [] }
-        else if (pathname === '/api/plugins/sing-box/nodes') value = []
+        else if (pathname === '/api/traffic/nodes') value = []
         else if (pathname === `${prefix}/1/operations-view` && !url.search) value = operationsViewFixture
         // The network services workspace lists every server's runtime beside its nodes and chains.
-        else if (pathname === '/api/plugins/sing-box/ordered-proxy-resources') value = []
-        else if (pathname === '/api/plugins/sing-box/node-catalog') value = []
-        else if (pathname === '/api/plugins/sing-box/ordered-subscription-sources') value = []
-        else if (pathname === '/api/plugins/sing-box/usage') value = { uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] }
+        else if (pathname === '/api/traffic/ordered-proxy-resources') value = []
+        else if (pathname === '/api/traffic/node-catalog') value = []
+        else if (pathname === '/api/traffic/ordered-subscription-sources') value = []
+        else if (pathname === '/api/access/usage') value = { uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] }
       } else if (pathname === `${prefix}/1/enable` && method === 'POST') {
         const payload = request.postDataJSON()
         assert.deepEqual(payload, {})

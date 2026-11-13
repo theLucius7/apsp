@@ -4,6 +4,7 @@
 //! (ADR 0079 phase 3, step S1a).
 
 mod business_support;
+mod proxy_api;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 
@@ -15,8 +16,6 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-const ROOT: &str = "/api/plugins/sing-box";
-
 async fn call(
     panel: &TestPanel,
     cookie: &str,
@@ -26,7 +25,7 @@ async fn call(
     expected: StatusCode,
 ) -> Result<Value> {
     let response = panel
-        .admin(method, &format!("{ROOT}{path}"), cookie, body)
+        .admin(method, &crate::proxy_api::proxy_api(path), cookie, body)
         .await?;
     ensure!(
         response.status() == expected,

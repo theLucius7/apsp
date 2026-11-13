@@ -1,12 +1,19 @@
 #![forbid(unsafe_code)]
 //! Names and certificates domain (ADR 0128): DNS accounts and records, DDNS rules that
-//! keep records pointed at device addresses, and DNS-01 validation records.
+//! keep records pointed at device addresses, DNS-01 validation records, and the
+//! certificates the panel issues, renews and deploys. Certificate documents are stored
+//! in the network configuration documents of basic networking and read from there.
 
+mod acme;
+mod acme_executor;
 mod api;
+mod certificate_deployments;
+mod certificates;
 mod cloudflare;
 mod credentials;
 pub mod dns01;
 mod dns_accounts;
+mod dns_challenges;
 mod dns_record_actions;
 mod dns_record_reconcile;
 mod dns_record_rollback;
@@ -30,9 +37,17 @@ pub use api::routes;
 pub use worker::run;
 
 pub(crate) use apsp_cloud_api as cloud_api;
+pub(crate) use apsp_governance::{auth, control_center, releases};
+pub(crate) use apsp_networking::network_configuration::{documents, models};
 #[cfg(test)]
 pub(crate) use apsp_panel_host::config;
-pub(crate) use apsp_panel_host::{AppState, auth, control_center, error, net};
+pub(crate) use apsp_panel_host::{AppState, device_work, error, net, x509};
+pub(crate) use apsp_resources::device_channel;
+
+/// The certificate worker: issues and renews the certificates whose documents ask for it.
+pub async fn run_certificates(state: AppState) {
+    acme::run(state).await
+}
 
 use crate::error::{ApiError, ApiResult};
 use sqlx::{PgPool, Postgres, Transaction};

@@ -32,12 +32,6 @@ pub(super) struct RuntimeNode {
     pub preserved: PreservedNode,
 }
 
-pub(super) fn digest(snapshot: &RuntimeSnapshot) -> ApiResult<String> {
-    Ok(crate::auth::hash_token(
-        &serde_json::to_string(snapshot).map_err(anyhow::Error::from)?,
-    ))
-}
-
 pub(super) fn validate(snapshot: &RuntimeSnapshot) -> ApiResult<()> {
     let mut ids = BTreeSet::new();
     if snapshot.nodes.is_empty() || snapshot.nodes.len() > 200 {
@@ -196,7 +190,7 @@ pub(super) async fn inspect(
             .bind(snapshot.server_id)
             .fetch_optional(&mut **tx)
             .await?;
-    let hash = digest(snapshot)?;
+    let hash = crate::digest::json(snapshot)?;
     if saved.as_ref().is_some_and(|(value, _)| value != &hash) {
         conflicts.push("该主机已准备另一份运行快照，不能覆盖".into());
     }
@@ -325,7 +319,7 @@ pub(super) async fn inspect_extension(
     if occupied {
         conflicts.push("目标主机已有其他受管节点，不能合并发布所有权".into());
     }
-    let report = json!({"server_id":stored.server_id,"digest":digest(&merged)?,
+    let report = json!({"server_id":stored.server_id,"digest":crate::digest::json(&merged)?,
         "added":added.iter().map(|e| e.legacy_node_id).collect::<Vec<_>>(),
         "revised":revised.iter().map(|r| r.legacy_node_id).collect::<Vec<_>>(),
         "node_count":merged.nodes.len(),"conflicts":conflicts});

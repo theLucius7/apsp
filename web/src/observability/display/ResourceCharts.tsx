@@ -6,7 +6,8 @@ import { aggregatePoints, appendLive, duration, historyPollInterval, historyWind
 import type { HistoryWindow } from './history'
 import { useHistory } from './useHistory'
 import { ActivityIcon } from 'lucide-react'
-import { DisplayNotice, SectionHeading } from './ui'
+import { DisplayNotice } from './ui'
+import { SectionHeading } from '@/components/board'
 import { SegmentedButton, SegmentedGroup } from '@/components/segmented'
 
 const diskSpeed = (metrics: Metrics, field: 'read_bytes_per_sec' | 'write_bytes_per_sec') => {

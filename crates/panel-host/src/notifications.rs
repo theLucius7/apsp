@@ -3,8 +3,8 @@
 //! which queues messages here.
 
 pub mod channels;
+pub mod delivery;
 mod outbox;
-pub mod plugin;
 mod retry;
 mod telegram;
 pub mod template;

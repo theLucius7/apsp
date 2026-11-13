@@ -8,7 +8,7 @@ import { resolve, extname, sep } from 'node:path'
 // Exercise the actual dist with loopback fixtures; no Agent, release, or production access.
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
-// Read-only runtime operations view shown on the server's plugin tab once sing-box is enabled.
+// Read-only runtime operations view shown on the server's network services tab once sing-box is enabled.
 const operationsViewFixture = {
   runtime: { supported_versions: [], selected_version: 'TEST_ONLY', reason: 'TEST_ONLY 未读取真实运行时版本。', compatibility_metadata: { upstream_release: 'https://example.com/TEST_ONLY', upstream_commit: 'TEST_ONLY', protocols: [], acceptance_scope: 'TEST_ONLY 只读夹具' } },
   preflight: { id: null, ready: false, confirmed: false, device_checks_pending: false, checks: [] },
@@ -34,7 +34,7 @@ try {
     context.setDefaultTimeout(10000)
     const page = await context.newPage()
     const errors = [], unexpected = [], reads = [], writes = []
-    const prefix = '/api/plugins/sing-box/servers'
+    const prefix = '/api/traffic/servers'
     const name='TEST_ONLY 服务端配置'
     const selected=()=>({id:1,name,enabled:true,online:true,agent_supported:true,read_only:false,source:'administrator',installation:{state:'ready',reason:'',target_rev:1,applied_rev:1}})
     let definition={outbounds:[],endpoints:[],services:[],cloudflared:[],dns:null,route:null},revision=0,conflict=false
@@ -55,12 +55,12 @@ try {
         else if (pathname === prefix) value = [selected()]
         else if (pathname === `${prefix}/1`) value = selected()
         else if (pathname === `${prefix}/2`) value = selected()
-        // The server's plugin tab shares the server header and shows plugin business once enabled.
+        // The server's network services tab shares the server header and shows the proxy business once enabled.
         else if (pathname === '/api/servers/1') value = { id: 1, name, online: true, device_public_key: 'TEST_ONLY', capabilities: ['singbox'], static_info: {}, latest_metrics: {}, manifest_rev: 1 }
         else if (pathname === `${prefix}/1/profile`) value = {definition,revision}
         else if (pathname === `${prefix}/1/deployments`) value = { status: null, history: [] }
         else if (pathname === `${prefix}/1/runtime-operations`) value = { supported: false, online: false, retiring: false, operations: [] }
-        else if (pathname === '/api/plugins/sing-box/nodes') value = []
+        else if (pathname === '/api/traffic/nodes') value = []
         else if (pathname === `${prefix}/1/operations-view` && !url.search) value = operationsViewFixture
       } else if (pathname === `${prefix}/1/profile` && method === 'PUT') {
         if(conflict) return route.fulfill({status:409,json:{error:'配置已变化，请刷新后重试'}})

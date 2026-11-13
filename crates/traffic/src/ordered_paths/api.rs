@@ -158,7 +158,7 @@ pub async fn create_batch(
     for item in &mut legacy_items {
         item.name = business::name(&item.name)?;
     }
-    let legacy_hash = storage::sha(&legacy_items)?;
+    let legacy_hash = crate::digest::json(&legacy_items)?;
     let mut hops = Vec::new();
     for (index, item) in request.items.iter_mut().enumerate() {
         item.name = business::name(&item.name).map_err(|error| item_error(index, None, error))?;
@@ -192,7 +192,7 @@ pub async fn create_batch(
         }
         hops.push(parsed_hops(item, index)?);
     }
-    let hash = storage::sha(&request.items)?;
+    let hash = crate::digest::json(&request.items)?;
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
     let existing: Option<(String, Value)> = sqlx::query_as(
@@ -489,7 +489,8 @@ pub async fn update_resource(
     {
         return Err(ApiError::BadRequest("至少提供一个可编辑字段".into()));
     }
-    let hash = storage::sha(&json!({"operation":"update","kind":kind,"id":id,"input":input}))?;
+    let hash =
+        crate::digest::json(&json!({"operation":"update","kind":kind,"id":id,"input":input}))?;
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
     if let Some(receipt) = mutation_receipt(&mut tx, input.request_id, &hash).await? {
@@ -617,7 +618,7 @@ pub async fn apply_node_versions(
             "请选择有效链路、代数和 1 至 8 个同节点版本".into(),
         ));
     }
-    let hash = storage::sha(&json!({"operation":"apply_versions","id":id,"input":input}))?;
+    let hash = crate::digest::json(&json!({"operation":"apply_versions","id":id,"input":input}))?;
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
     if let Some(receipt) = mutation_receipt(&mut tx, input.request_id, &hash).await? {

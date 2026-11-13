@@ -21,7 +21,7 @@ const logNames: Record<Entry['kind'], string> = { started: '服务启动', stopp
 const levelNames: Record<Entry['level'], string> = { error: '错误', warning: '警告', info: '信息', unknown: '未分类' }
 
 export default function RuntimeOperations({ serverId, status, deploymentError, getStatus }: { serverId: number; status?: Deployment['status']; deploymentError?: () => string; getStatus?: () => Deployment['status'] | undefined }) {
-  const path = `/api/plugins/sing-box/servers/${serverId}/runtime-operations`
+  const path = `/api/traffic/servers/${serverId}/runtime-operations`
   const resource = useResource<View>(path)
   const action = useAction()
   const [confirmation, setConfirmation] = useState<{ operation: Operation; revision: number } | null>(null)

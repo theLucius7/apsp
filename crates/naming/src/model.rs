@@ -126,7 +126,9 @@ impl Config {
                 .manual_ip
                 .as_deref()
                 .and_then(|value| value.trim().parse::<IpAddr>().ok())
-                .filter(|ip| ddns_public_ip(*ip) && ip.is_ipv4() == (self.record_type == "A"))
+                .filter(|ip| {
+                    crate::net::server_ip(*ip) && ip.is_ipv4() == (self.record_type == "A")
+                })
                 .ok_or_else(|| {
                     ApiError::BadRequest("手工地址必须为当前记录类型的有效公网地址".into())
                 })?;
@@ -230,5 +232,4 @@ pub(super) struct Rule {
 
 #[cfg(test)]
 pub(super) use super::observation::Observation;
-use super::observation::ddns_public_ip;
 pub(super) use super::observation::{locked_observation, observation, view};

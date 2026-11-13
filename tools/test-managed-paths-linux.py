@@ -35,11 +35,10 @@ import uuid
 from managed_paths_support import OwnedProcess, write_pipe
 
 
-PLUGIN = "/api/plugins/sing-box"
-ORDERED_SOURCES = PLUGIN + "/ordered-subscription-sources"
-ORDERED_SOURCE_JOBS = PLUGIN + "/ordered-subscription-source-jobs"
-ORDERED_RESOURCES = PLUGIN + "/ordered-proxy-resources"
-ORDERED_BATCH = PLUGIN + "/chains/ordered-batch"
+ORDERED_SOURCES = "/api/traffic/ordered-subscription-sources"
+ORDERED_SOURCE_JOBS = "/api/traffic/ordered-subscription-source-jobs"
+ORDERED_RESOURCES = "/api/traffic/ordered-proxy-resources"
+ORDERED_BATCH = "/api/traffic/chains/ordered-batch"
 MAX_BYTES = 2 * 1024 * 1024
 SCENARIOS = (
     "baseline", "atomic-replay", "source-versions", "candidate-failure",
@@ -1030,7 +1029,7 @@ class Driver:
 
     def credentials_unchanged(self):
         for which in ("three", "four"):
-            user = self.panel.request(PLUGIN + "/users/" + str(self.state["ids"]["user_" + which]))
+            user = self.panel.request("/api/access/users/" + str(self.state["ids"]["user_" + which]))
             saved = self.state["tokens"][which]
             require(user["subscription_url"] == saved["url"] and user["subscription_token"] == saved["token"],
                     "subscription_identity_changed")
@@ -1043,7 +1042,7 @@ class Driver:
                 "subscription_origin_changed")
         code, content = self.panel.request(parsed.path + "?format=singbox", expected=(409,) if blocked else (200,), raw=True)
         if blocked:
-            preview = self.panel.request(PLUGIN + "/users/" + str(self.state["ids"]["user_" + which]) + "/subscription?format=singbox")
+            preview = self.panel.request("/api/access/users/" + str(self.state["ids"]["user_" + which]) + "/subscription?format=singbox")
             require(preview.get("status") in ("empty", "blocked") and preview.get("content") is None,
                     "blocked_preview_not_empty")
             return None
@@ -1060,7 +1059,7 @@ class Driver:
         user = self.state["ids"]["user_" + which]
         entry = self.state["ids"]["node_" + which]
         return self.wait("qualified_" + which,
-                         lambda: self.panel.request(PLUGIN + f"/users/{user}/subscription?format=singbox"),
+                         lambda: self.panel.request(f"/api/access/users/{user}/subscription?format=singbox"),
                          lambda item: item.get("status") == "ready"
                          and any(node.get("id") == entry for node in item.get("ready_nodes", [])),
                          permit_failure=True)
@@ -1108,7 +1107,7 @@ class Driver:
     def usage(self, which):
         ids = self.state["ids"]
         user, node = ids["user_" + which], ids["node_" + which]
-        return self.panel.request(PLUGIN + f"/usage?user_id={user}&node_id={node}")
+        return self.panel.request(f"/api/access/usage?user_id={user}&node_id={node}")
 
     def quiet_usage(self):
         def drained(_):
@@ -1186,8 +1185,8 @@ class Driver:
                                and capabilities <= set(item.get("capabilities", [])))
             self.state.setdefault("device_keys", {})[role] = server["device_public_key"]
             self.save()
-            self.panel.request(PLUGIN + f"/servers/{server['id']}/enable", "POST", expected=(200, 202))
-            check = self.panel.request(PLUGIN + f"/servers/{server['id']}/deployments/check", "POST")
+            self.panel.request(f"/api/traffic/servers/{server['id']}/enable", "POST", expected=(200, 202))
+            check = self.panel.request(f"/api/traffic/servers/{server['id']}/deployments/check", "POST")
             require(check.get("ready") is True, "signed_runtime_preflight_failed")
         require(len(set(self.state["device_keys"].values())) == 3, "device_key_collision")
         settings = {"reality": {"handshake_server": self.fixtures.manifest["addresses"]["fixture"],
@@ -1195,7 +1194,7 @@ class Driver:
         for role, key, port in (("M", "node_M", 20001), ("B", "node_B", 20001),
                                 ("A", "node_three", 20011), ("A", "node_four", 20012)):
             require(self.manifest["roles"][role]["sni"] == "reality.test", "fixture_reality_sni_mismatch")
-            self.named(key, PLUGIN + "/nodes", {
+            self.named(key, "/api/traffic/nodes", {
                 "server_id": self.state["ids"]["server_" + role],
                 "public_host": self.manifest["roles"][role]["address"],
                 "sni": self.manifest["roles"][role]["sni"], "port": port, "settings": settings})
@@ -1246,15 +1245,15 @@ class Driver:
                 self.resource(which)["path_state"]["phase"] == "failed" for which in ("three", "four")):
             self.patch_source("v1")
         for which in ("three", "four"):
-            user = self.named("user_" + which, PLUGIN + "/users", {})
+            user = self.named("user_" + which, "/api/access/users", {})
             credentials = {"token": user["subscription_token"], "url": user["subscription_url"]}
             previous = self.state["tokens"].get(which)
             require(previous is None or previous == credentials, "user_identity_changed")
             self.state["tokens"][which] = credentials
             self.save()
-            policy = self.named("policy_" + which, PLUGIN + "/policy-groups", {
+            policy = self.named("policy_" + which, "/api/access/policy-groups", {
                 "node_ids": [], "chain_ids": [self.state["ids"]["chain_" + which]]})
-            self.panel.request(PLUGIN + f"/users/{user['id']}/policy-groups", "PUT", {"group_ids": [policy["id"]]})
+            self.panel.request(f"/api/access/users/{user['id']}/policy-groups", "PUT", {"group_ids": [policy["id"]]})
         self.applied("three")
         self.applied("four")
         self.event("setup_complete", owned_ids=self.owned())
@@ -1308,7 +1307,7 @@ class Driver:
         changed = json.loads(canonical(body))
         changed["items"][0]["name"] += "-changed"
         self.panel.request(ORDERED_BATCH, "POST", changed, expected=(409,))
-        before = self.panel.request(PLUGIN + "/nodes")
+        before = self.panel.request("/api/traffic/nodes")
         bad = self.state["requests"].get("invalid-batch", {}).get("body")
         if bad is None:
             bad = json.loads(canonical(body))
@@ -1320,7 +1319,7 @@ class Driver:
                                   "sni": self.manifest["roles"]["A"]["sni"], "port": 20111 + index}
             bad["items"][1]["hops"][0] = {"kind": "managed", "node_id": 0}
         self.request_once("invalid-batch", ORDERED_BATCH, "POST", bad, statuses=(400,))
-        after = self.panel.request(PLUGIN + "/nodes")
+        after = self.panel.request("/api/traffic/nodes")
         require({item["id"] for item in before} == {item["id"] for item in after}, "atomic_batch_left_nodes")
         self.credentials_unchanged()
 
@@ -1515,16 +1514,16 @@ class Driver:
     def scenario_authorization(self):
         user = self.state["ids"]["user_four"]
         stale = self.subscription("four")
-        self.panel.request(PLUGIN + f"/users/{user}/policy-groups", "PUT", {"group_ids": []})
-        self.wait("authorization_removed", lambda: self.panel.request(PLUGIN + f"/users/{user}/subscription?format=singbox"),
+        self.panel.request(f"/api/access/users/{user}/policy-groups", "PUT", {"group_ids": []})
+        self.wait("authorization_removed", lambda: self.panel.request(f"/api/access/users/{user}/subscription?format=singbox"),
                   lambda item: item.get("status") in ("empty", "blocked") and item.get("content") is None)
         self.subscription("four", blocked=True)
-        self.wait("revocation_deployment", lambda: self.panel.request(PLUGIN + f"/servers/{self.state['ids']['server_A']}/deployments"),
+        self.wait("revocation_deployment", lambda: self.panel.request(f"/api/traffic/servers/{self.state['ids']['server_A']}/deployments"),
                   lambda item: item.get("pending") is False and item.get("status", {}).get("healthy") is True)
         client, _ = self.fixtures.client(stale, "revoked-client", 1)
         result = self.fixtures.client_result(client)
         assert_all_traffic_failed(result)
-        self.panel.request(PLUGIN + f"/users/{user}/policy-groups", "PUT",
+        self.panel.request(f"/api/access/users/{user}/policy-groups", "PUT",
                            {"group_ids": [self.state["ids"]["policy_four"]]})
         self.applied("four")
         self.traffic("four")
@@ -1539,8 +1538,8 @@ class Driver:
                            {"settings_revision": source["settings_revision"]}, expected=(409,))
         before = self.quiet_usage()
         for which in ("three", "four"):
-            self.panel.request(PLUGIN + f"/users/{ids['user_' + which]}/policy-groups", "PUT", {"group_ids": []})
-            self.panel.request(PLUGIN + f"/policy-groups/{ids['policy_' + which]}", "DELETE", expected=(204,))
+            self.panel.request(f"/api/access/users/{ids['user_' + which]}/policy-groups", "PUT", {"group_ids": []})
+            self.panel.request(f"/api/access/policy-groups/{ids['policy_' + which]}", "DELETE", expected=(204,))
             self.panel.request(ORDERED_RESOURCES + f"/chain/{ids['chain_' + which]}", "DELETE", expected=(204,))
         evidence = self.wait("paths_retired", lambda: self.control.call("panel_evidence", arguments={"owned_ids": self.owned()}),
                              lambda item: len([chain for chain in item.get("chains", []) if chain.get("phase") == "retired"]) == 2)
@@ -1556,7 +1555,7 @@ class Driver:
         require(not any(item["kind"] == "chain" and item["id"] in self.owned()["chains"] for item in resources),
                 "receipt_replay_revived_deleted_path")
         for role in ("M", "B"):
-            node = self.panel.request(PLUGIN + f"/nodes/{ids['node_' + role]}")
+            node = self.panel.request(f"/api/traffic/nodes/{ids['node_' + role]}")
             require(node["enabled"] is True, "shared_internal_node_deleted")
             snapshot = self.control.call("device_snapshot", role)
             require(snapshot["runtime"]["active"] is True, "shared_internal_runtime_stopped")

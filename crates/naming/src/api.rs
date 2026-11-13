@@ -19,13 +19,14 @@ use uuid::Uuid;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/api/plugins/ddns/rules", get(list).post(create))
-        .route(
-            "/api/plugins/ddns/rules/dual-stack",
-            post(create_dual_stack),
-        )
-        .route("/api/plugins/ddns/rules/{id}", patch(update).delete(remove))
-        .route("/api/plugins/ddns/rules/{id}/sync", post(sync))
+        .route("/api/naming/rules", get(list).post(create))
+        .route("/api/naming/rules/dual-stack", post(create_dual_stack))
+        .route("/api/naming/rules/{id}", patch(update).delete(remove))
+        .route("/api/naming/rules/{id}/sync", post(sync))
+        .merge(super::certificates::routes())
+        .merge(super::acme::routes())
+        .merge(super::certificate_deployments::routes())
+        .merge(super::dns_challenges::routes())
         .merge(super::settings::routes())
         .merge(super::lifecycle::routes())
         .merge(super::migration::routes())

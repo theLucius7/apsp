@@ -5,7 +5,8 @@
 //! `sing-box`, covers the whole cycle.
 
 use apsp_access as access;
-use apsp_panel_host::{AppState, control_center};
+use apsp_governance::control_center;
+use apsp_panel_host::AppState;
 use apsp_protocol::now_timestamp;
 use apsp_traffic as traffic;
 use std::time::Duration;
@@ -58,7 +59,7 @@ pub async fn run(state: AppState) {
             &state.pool,
             "sing-box",
             if failed.is_empty() { "healthy" } else { "failed" },
-            serde_json::json!({"source":"plugin-publisher-cycle","failed_steps":failed,"checked_steps":["entitlements","ordered-path-lifecycle","configuration-publication"],"retention_checked_every_seconds":30}),
+            serde_json::json!({"source":"publication-cycle","failed_steps":failed,"checked_steps":["entitlements","ordered-path-lifecycle","configuration-publication"],"retention_checked_every_seconds":30}),
         )
         .await
         {

@@ -21,7 +21,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
@@ -29,57 +28,81 @@ type Tx<'a> = Transaction<'a, Postgres>;
 
 pub(super) fn router() -> Router<AppState> {
     Router::new()
-        .route("/account-mail", get(mail::settings).put(mail::save))
-        .route("/portal-guides", get(guides::list).post(guides::create))
         .route(
-            "/portal-guides/{id}",
+            "/api/access/account-mail",
+            get(mail::settings).put(mail::save),
+        )
+        .route(
+            "/api/access/portal-guides",
+            get(guides::list).post(guides::create),
+        )
+        .route(
+            "/api/access/portal-guides/{id}",
             axum::routing::put(guides::update).delete(guides::remove),
         )
         .route(
-            "/invitation-settings",
+            "/api/access/invitation-settings",
             get(invitations::settings).put(invitations::settings_save),
         )
-        .route("/users/{id}/invitations", get(invitations::user))
-        .route("/users/{id}/invitations/quota", post(invitations::adjust))
-        .route("/portal/{account}/account", get(admin::portal))
+        .route("/api/access/users/{id}/invitations", get(invitations::user))
         .route(
-            "/portal/{account}/account/password",
+            "/api/access/users/{id}/invitations/quota",
+            post(invitations::adjust),
+        )
+        .route("/api/access/portal/{account}/account", get(admin::portal))
+        .route(
+            "/api/access/portal/{account}/account/password",
             post(accounts::password_change),
         )
         .route(
-            "/portal/{account}/account/email/start",
+            "/api/access/portal/{account}/account/email/start",
             post(accounts::email_start),
         )
         .route(
-            "/portal/{account}/account/email/finish",
+            "/api/access/portal/{account}/account/email/finish",
             post(accounts::email_finish),
         )
-        .route("/portal/{account}/account/messages", get(messages::list))
         .route(
-            "/portal/{account}/account/messages/read",
+            "/api/access/portal/{account}/account/messages",
+            get(messages::list),
+        )
+        .route(
+            "/api/access/portal/{account}/account/messages/read",
             post(messages::read),
         )
         .route(
-            "/portal/{account}/account/reminders",
+            "/api/access/portal/{account}/account/reminders",
             axum::routing::put(messages::preferences),
         )
-        .route("/portal/{account}/invitations", post(invitations::create))
         .route(
-            "/portal/{account}/invitations/{id}/rotate",
+            "/api/access/portal/{account}/invitations",
+            post(invitations::create),
+        )
+        .route(
+            "/api/access/portal/{account}/invitations/{id}/rotate",
             post(invitations::rotate),
         )
         .route(
-            "/portal/{account}/invitations/{id}/revoke",
+            "/api/access/portal/{account}/invitations/{id}/revoke",
             post(invitations::revoke),
         )
-        .route("/portal-public/account/login", post(accounts::login))
         .route(
-            "/portal-public/account/challenge",
+            "/api/access/portal-public/account/login",
+            post(accounts::login),
+        )
+        .route(
+            "/api/access/portal-public/account/challenge",
             post(accounts::challenge),
         )
-        .route("/portal-public/account/reset", post(accounts::reset))
-        .route("/portal-public/invitation", post(invitations::inspect))
-        .route("/portal-public/claim", post(invitations::claim))
+        .route(
+            "/api/access/portal-public/account/reset",
+            post(accounts::reset),
+        )
+        .route(
+            "/api/access/portal-public/invitation",
+            post(invitations::inspect),
+        )
+        .route("/api/access/portal-public/claim", post(invitations::claim))
 }
 
 fn bad(message: &str) -> ApiError {
@@ -87,12 +110,6 @@ fn bad(message: &str) -> ApiError {
 }
 fn conflict(message: &str) -> ApiError {
     ApiError::Conflict(message.into())
-}
-fn fingerprint(value: &impl Serialize) -> ApiResult<String> {
-    Ok(format!(
-        "{:x}",
-        Sha256::digest(serde_json::to_vec(value).map_err(anyhow::Error::from)?)
-    ))
 }
 fn text(value: &str, maximum: usize, required: bool) -> ApiResult<String> {
     let value = value.trim();
@@ -157,7 +174,7 @@ pub(crate) async fn require_compatible_package(
 /// profile would also enrol the user into it and move their subscription to the
 /// retained renderer, so only migrated and invited users get one then.
 async fn ensure_profile(tx: &mut Tx<'_>, id: i64) -> ApiResult<()> {
-    apsp_traffic::business::lock_user(tx, id).await?;
+    crate::proxy_users::lock_user(tx, id).await?;
     let exists: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_members WHERE user_id=$1)")
             .bind(id)

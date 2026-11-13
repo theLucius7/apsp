@@ -59,16 +59,16 @@ try {
       else if (method === 'GET' && ['/api/network-workbench/tools', '/api/network-workbench/providers', '/api/network-workbench/plans'].includes(path)) value = []
       else if (method === 'GET' && path === '/api/network-workbench/runs') value = [{ id: run, name: 'TEST_ONLY 未确认报告', status: 'failed', current_step: 0, error: null, created_at: now - 20 }]
       else if (method === 'GET' && path === `/api/network-workbench/runs/${run}`) value = report
-      else if (method === 'GET' && path === '/api/plugins/ddns/rules') value = []
-      else if (method === 'GET' && path === '/api/plugins/ddns/servers') value = [{ id: 7, name: 'TEST_ONLY DNS服务器', online: true }]
-      else if (method === 'GET' && path === '/api/plugins/ddns/accounts') value = [{ id: account, revision: 3, record_management_available: true, unavailable_reason: null,
+      else if (method === 'GET' && path === '/api/naming/rules') value = []
+      else if (method === 'GET' && path === '/api/naming/servers') value = [{ id: 7, name: 'TEST_ONLY DNS服务器', online: true }]
+      else if (method === 'GET' && path === '/api/naming/accounts') value = [{ id: account, revision: 3, record_management_available: true, unavailable_reason: null,
         config: { name: 'TEST_ONLY 私有DNS账号', provider: 'cloudflare', enabled: true, credential_id: '66666666-6666-4666-8666-666666666666', zone_ids: ['TEST_ONLY_ZONE'], server_ids: [7], region: null } }]
-      else if (method === 'GET' && path === `/api/plugins/ddns/accounts/${account}/records`) {
+      else if (method === 'GET' && path === `/api/naming/accounts/${account}/records`) {
         assert.equal(url.searchParams.get('zone_id'), 'TEST_ONLY_ZONE'); assert.equal(url.searchParams.get('page'), '1')
         value = { records: [], pagination: { total_pages: 1 }, checked_at: now }
-      } else if (method === 'GET' && path === `/api/plugins/ddns/accounts/${account}/records/history`) value = [dns]
-      else if (method === 'GET' && path === `/api/plugins/ddns/accounts/${account}/observations`) value = []
-      else if (method === 'POST' && path === `/api/plugins/ddns/accounts/${account}/records/${intent}/reconcile`) {
+      } else if (method === 'GET' && path === `/api/naming/accounts/${account}/records/history`) value = [dns]
+      else if (method === 'GET' && path === `/api/naming/accounts/${account}/observations`) value = []
+      else if (method === 'POST' && path === `/api/naming/accounts/${account}/records/${intent}/reconcile`) {
         assert.equal(request.postData(), null); reconciliations++
         dns.status = 'observed'; dns.error_code = 'write_ownership_unknown'
         dns.observed = { id: 'TEST_ONLY found record', name: 'target.example.test', type: 'A', content: '192.0.2.1', ttl: 300 }
@@ -113,7 +113,7 @@ try {
     await history.getByText('结果未知', { exact: true }).waitFor()
     for (const expected of [1, 2]) {
       const response = page.waitForResponse(response => response.request().method() === 'POST'
-        && new URL(response.url()).pathname === `/api/plugins/ddns/accounts/${account}/records/${intent}/reconcile`)
+        && new URL(response.url()).pathname === `/api/naming/accounts/${account}/records/${intent}/reconcile`)
       await history.getByRole('button', { name: '只读核对远端结果', exact: true }).click()
       await response
       await dialog.getByText('远端符合期望，但新建记录的归属无法确认，禁止自动回退删除。', { exact: true }).waitFor()

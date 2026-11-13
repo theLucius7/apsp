@@ -1,5 +1,4 @@
-import { bytes } from '../format'
-import { dateText } from '../access/groupTypes'
+import { bytes, dateText } from '../format'
 import type { SourceTraffic } from './orderedSourceTypes'
 
 // The provider's own report (subscription-userinfo); the panel does not meter external nodes.

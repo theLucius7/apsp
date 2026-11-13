@@ -13,12 +13,12 @@ type DomainView = {
   configured: boolean; enabled: boolean; credential_id: string | null; zone_id: string; zone_name: string; host_prefix: string; target: string; legacy_paths: boolean; revision: number
   hosts: { total: number; ready: number; failed: number; last_error: string | null }
 }
-const path = '/api/plugins/sing-box/subscription-domain'
+const path = '/api/access/subscription-domain'
 
 /** Panel-wide switch for each user having their own hostname for subscriptions and sign-in; a tab of 门户设置. */
 export default function SubscriptionDomain({ onSaved }: { onSaved: () => void }) {
   const view = useResource<DomainView>(path, 5000)
-  const accounts = useResource<DnsAccount[]>('/api/plugins/ddns/accounts', 0)
+  const accounts = useResource<DnsAccount[]>('/api/naming/accounts', 0)
   const action = useAction()
   const [saved, setSaved] = useState(false)
   const usable = accounts.data?.filter(account => account.config.provider === 'cloudflare' && account.config.enabled) ?? []

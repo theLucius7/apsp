@@ -85,7 +85,7 @@ pub async fn agent_storage_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<TelemetrySettings>> {
-    let server = auth::require_agent(&state, &headers).await?;
+    let server = crate::device_channel::require_agent(&state, &headers).await?;
     read_storage_settings(&state, server).await
 }
 

@@ -8,14 +8,14 @@ async fn capability_and_its_preserved_old_flag_cannot_create_a_deployment(
     pool: PgPool,
 ) -> Result<()> {
     crate::users::install_without_users();
-    let state = AppState::new(
+    let state = apsp_governance::state(
         pool.clone(),
         Config {
             database_url: String::new(),
             listen: "127.0.0.1:0".parse()?,
             public_url: "http://127.0.0.1".into(),
             data_dir: std::env::temp_dir(),
-            admin_password: Some("TEST_ONLY-plugin-publication-password".into()),
+            admin_password: Some("TEST_ONLY-runtime-publication-password".into()),
         },
     )
     .await?;
@@ -72,7 +72,7 @@ async fn stale_candidate_cannot_publish_after_enablement_is_withdrawn(
     pool: PgPool,
 ) -> anyhow::Result<()> {
     crate::users::install_without_users();
-    let state = AppState::new(
+    let state = apsp_governance::state(
         pool.clone(),
         Config {
             database_url: String::new(),
@@ -134,14 +134,14 @@ async fn stale_candidate_cannot_publish_after_enablement_is_withdrawn(
 #[sqlx::test(migrations = "../panel/migrations")]
 async fn redeploy_publishes_the_unchanged_bundle_as_a_higher_revision(pool: PgPool) -> Result<()> {
     crate::users::install_without_users();
-    let state = AppState::new(
+    let state = apsp_governance::state(
         pool.clone(),
         Config {
             database_url: String::new(),
             listen: "127.0.0.1:0".parse()?,
             public_url: "http://127.0.0.1".into(),
             data_dir: std::env::temp_dir().join(format!("apsp-redeploy-{}", uuid::Uuid::new_v4())),
-            admin_password: Some("TEST_ONLY-plugin-redeploy-password".into()),
+            admin_password: Some("TEST_ONLY-runtime-redeploy-password".into()),
         },
     )
     .await?;

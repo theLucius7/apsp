@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { Confirm, ErrorNotice, Field, FormDialog, InfoTip, PageHeader, Refresh, RefreshNotice, DialogPresence } from '../components'
-import { Stat, StatStrip } from '../observability/display/ui'
+import { Stat, StatStrip } from '@/components/board'
 import { bytes, navigate } from '../format'
 import { resourceWriteError, useAction, useRefreshNotice, useResource, useResourceGroup } from '../hooks'
-import type { Node, PluginServer, Usage } from '../types'
+import type { Node, RuntimeServer, Usage } from '../types'
 import ProtocolFields, { protocolRequest } from './ProtocolFields'
 import { ConnectionFields, nodeSettingsRequest } from './NodeSettingsFields'
 import Sources from './Sources'
@@ -16,7 +16,8 @@ import type { ResourceKey } from './resourceTypes'
 import { resourceLink } from './resourceTypes'
 import OrderedResources from './OrderedResources'
 import type { ProxyResourceFilter, ProxyResourceServerRole, ProxyResource as OrderedResource } from '../access/groupTypes'
-import { validatedSnapshot, validProxyResources } from '../access/groupTypes'
+import { validProxyResources } from '../access/groupTypes'
+import { validatedSnapshot } from '@/lib/resource-snapshot'
 import { validCatalog } from './catalog'
 import { nodeHash } from './nodeRoute'
 import type { NodeView } from './nodeRoute'
@@ -29,7 +30,8 @@ import { ActivityIcon, PlusIcon, RadioTowerIcon, ServerIcon, WaypointsIcon } fro
 import { SegmentedLink, SegmentedNav } from '@/components/segmented'
 import { Notice } from '@/components/panel'
 
-const root = '/api/plugins/sing-box'
+const trafficApi = '/api/traffic'
+const accessApi = '/api/access'
 const views: readonly { key: NodeView; label: string }[] = [
   { key: 'catalog', label: '节点库' },
   { key: 'chains', label: '链路' },
@@ -45,7 +47,7 @@ type Props = {
   initialKind?: ProxyResourceFilter
   initialServerRole?: ProxyResourceServerRole
 }
-type Reads = { nodes: Node[]; ordered: unknown; servers: PluginServer[]; usage: Usage; catalog: unknown }
+type Reads = { nodes: Node[]; ordered: unknown; servers: RuntimeServer[]; usage: Usage; catalog: unknown }
 /** The managed node a delete confirmation names; chains are deleted from the chain list. */
 type Deleting = { kind: 'direct'; id: number; name: string }
 // The node a save just reached; `node` is null when the response did not name it.
@@ -55,17 +57,17 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
   // All sections share one read round, so a refresh never shows one section's new
   // data beside another's old data, such as a deleted chain lingering in the catalog.
   const reads = useResourceGroup<Reads>({
-    nodes: `${root}/nodes`,
-    ordered: `${root}/ordered-proxy-resources`,
-    servers: `${root}/servers`,
-    usage: `${root}/usage`,
-    catalog: `${root}/node-catalog`,
+    nodes: `${trafficApi}/nodes`,
+    ordered: `${trafficApi}/ordered-proxy-resources`,
+    servers: `${trafficApi}/servers`,
+    usage: `${accessApi}/usage`,
+    catalog: `${trafficApi}/node-catalog`,
   })
   const { nodes, servers, usage, catalog } = reads
   // The imported Nexus inventory is owner-only; other administrators never request it.
   const actor = useResource<{ role: string }>('/api/control-center/me', 0)
   const owner = actor.data?.role === 'owner'
-  const nexus = useResource<unknown>(owner ? `${root}/nexus-nodes` : null)
+  const nexus = useResource<unknown>(owner ? `${trafficApi}/nexus-nodes` : null)
   const orderedQuery = reads.ordered
   const orderedHistory = useRef<OrderedResource[] | undefined>(undefined)
   const ordered = validatedSnapshot(orderedQuery, validProxyResources, orderedHistory.current)
@@ -189,7 +191,7 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     const targetServer = editor === 'new' ? Number(draftServer) : editor.server_id
     const created = editor === 'new'
     const editedId = editor === 'new' ? null : editor.id
-    const path = editor === 'new' ? `${root}/nodes` : `${root}/nodes/${editor.id}`
+    const path = editor === 'new' ? `${trafficApi}/nodes` : `${trafficApi}/nodes/${editor.id}`
     void action.run(() => api<{ id?: unknown } | null>(path, editor === 'new' ? 'POST' : 'PATCH', request), receipt => {
       // A new node is named by the response; an edited one keeps its own id.
       const createdId = receipt && typeof receipt.id === 'number' && Number.isSafeInteger(receipt.id) ? receipt.id : null
@@ -198,7 +200,7 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
   }
   const remove = () => {
     if (!deleting || writeError(deleting.id)) return
-    void action.run(() => api(`${root}/nodes/${deleting.id}`, 'DELETE'), () => { setDeleting(null); refresh() })
+    void action.run(() => api(`${trafficApi}/nodes/${deleting.id}`, 'DELETE'), () => { setDeleting(null); refresh() })
   }
 
   return <div data-slot="nodes-page" className="min-w-0" onInvalidCapture={event => {

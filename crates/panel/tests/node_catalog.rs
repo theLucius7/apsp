@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod business_support;
+mod proxy_api;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 
@@ -11,8 +12,6 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-const ROOT: &str = "/api/plugins/sing-box";
-
 async fn call(
     panel: &TestPanel,
     cookie: &str,
@@ -21,7 +20,7 @@ async fn call(
     body: Option<Value>,
 ) -> Result<Value> {
     let response = panel
-        .admin(method, &format!("{ROOT}{path}"), cookie, body)
+        .admin(method, &crate::proxy_api::proxy_api(path), cookie, body)
         .await?;
     let status = response.status();
     let text = response.text().await?;
@@ -105,7 +104,7 @@ async fn metadata_is_safe_persistent_and_batches_reject_stale_edits_atomically(
     ensure!(!json!(before).to_string().contains(&private));
     let anonymous = panel
         .client
-        .get(format!("{}{ROOT}/node-catalog", panel.base))
+        .get(format!("{}/api/traffic/node-catalog", panel.base))
         .send()
         .await?;
     assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
@@ -118,7 +117,7 @@ async fn metadata_is_safe_persistent_and_batches_reject_stale_edits_atomically(
     let updated = catalog(&panel, &cookie).await?;
     assert_eq!(updated[1]["tags"], json!(["HK", "Premium"]));
     assert_eq!(updated[1]["note"], "管理员备注");
-    let stale=panel.admin(Method::POST,&format!("{ROOT}/node-catalog/batch"),&cookie,Some(json!({"items":[change(&updated[0],json!({"name":"Must rollback"})),change(&before[0],json!({"name":"Stale"}))]}))).await?;
+    let stale=panel.admin(Method::POST,"/api/traffic/node-catalog/batch",&cookie,Some(json!({"items":[change(&updated[0],json!({"name":"Must rollback"})),change(&before[0],json!({"name":"Stale"}))]}))).await?;
     assert_eq!(stale.status(), StatusCode::CONFLICT);
     assert_eq!(catalog(&panel, &cookie).await?, updated);
     let after: Value =
@@ -145,7 +144,7 @@ async fn concurrent_catalog_edits_and_legacy_node_edits_cannot_overwrite_stale_f
     let server = panel.create_server(&cookie, "Host").await?;
     let node = id(&panel.create_node(&cookie, server, "Original").await?)?;
     let rows = catalog(&panel, &cookie).await?;
-    let path = format!("{ROOT}/node-catalog/batch");
+    let path = "/api/traffic/node-catalog/batch".to_string();
     let a = panel.admin(
         Method::POST,
         &path,
@@ -252,14 +251,14 @@ async fn deletion_references_and_invalid_metadata_roll_back_all_items(pool: PgPo
     let response = panel
         .admin(
             Method::DELETE,
-            &format!("{ROOT}/node-catalog/batch"),
+            "/api/traffic/node-catalog/batch",
             &cookie,
             Some(json!({"items":rows.iter().map(|v|change(v,json!({}))).collect::<Vec<_>>()})),
         )
         .await?;
     assert_eq!(response.status(), StatusCode::CONFLICT);
     assert_eq!(catalog(&panel, &cookie).await?, rows);
-    let invalid=panel.admin(Method::POST,&format!("{ROOT}/node-catalog/batch"),&cookie,Some(json!({"items":[change(&rows[0],json!({"name":"Should rollback"})),change(&rows[1],json!({"tags":["x".repeat(65)]}))]}))).await?;
+    let invalid=panel.admin(Method::POST,"/api/traffic/node-catalog/batch",&cookie,Some(json!({"items":[change(&rows[0],json!({"name":"Should rollback"})),change(&rows[1],json!({"tags":["x".repeat(65)]}))]}))).await?;
     assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
     assert_eq!(catalog(&panel, &cookie).await?, rows);
     let name: String = sqlx::query_scalar("SELECT name FROM nodes WHERE id=$1")
@@ -275,7 +274,7 @@ async fn cloning_recreates_runtime_identities_and_never_copies_grants(pool: PgPo
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Host").await?;
-    panel.enable_plugin(&cookie, server).await?;
+    panel.enable_runtime(&cookie, server).await?;
     let user = id(&panel.create_user(&cookie, "User").await?)?;
     for protocol in ["vless-reality", "shadowsocks2022", "snell-v6", "hysteria2"] {
         let mut config = json!({"type":protocol});
@@ -310,7 +309,7 @@ async fn cloning_recreates_runtime_identities_and_never_copies_grants(pool: PgPo
         let stale = panel
             .admin(
                 Method::POST,
-                &format!("{ROOT}/nodes/{node}/clone"),
+                &format!("/api/traffic/nodes/{node}/clone"),
                 &cookie,
                 Some(
                     json!({"revision":previous["revision"],"server_id":server,"name":"Stale copy"}),
@@ -442,7 +441,7 @@ async fn catalog_entity_changes_invalidate_original_resource_cas_without_publish
                 current["settings_revision"].as_i64(),
                 before["settings_revision"].as_i64().map(|v| v + 1)
             );
-            let stale = panel.admin(Method::PATCH, &format!("{ROOT}/ordered-proxy-resources/{kind}/{identity}"), &cookie,
+            let stale = panel.admin(Method::PATCH, &format!("/api/traffic/ordered-proxy-resources/{kind}/{identity}"), &cookie,
                 Some(json!({"request_id":Uuid::new_v4(),"settings_revision":before["settings_revision"],"name":"Stale rich editor"}))).await?;
             assert_eq!(stale.status(), StatusCode::CONFLICT);
             assert_eq!(
@@ -504,7 +503,7 @@ async fn catalog_deletion_preserves_damaged_cleanup_owners_and_old_entry_policy_
     let endpoint_change = panel
         .admin(
             Method::PATCH,
-            &format!("{ROOT}/nodes/{exit}"),
+            &format!("/api/traffic/nodes/{exit}"),
             &cookie,
             Some(json!({"public_host":"stale-reuse.example.com"})),
         )
@@ -526,7 +525,7 @@ async fn catalog_deletion_preserves_damaged_cleanup_owners_and_old_entry_policy_
     let denied = panel
         .admin(
             Method::DELETE,
-            &format!("{ROOT}/node-catalog/batch"),
+            "/api/traffic/node-catalog/batch",
             &cookie,
             Some(json!({"items":items})),
         )
@@ -618,7 +617,7 @@ async fn catalog_deletion_preserves_damaged_cleanup_owners_and_old_entry_policy_
     let denied = panel
         .admin(
             Method::DELETE,
-            &format!("{ROOT}/node-catalog/batch"),
+            "/api/traffic/node-catalog/batch",
             &cookie,
             Some(json!({"items":[change(free_row,json!({})),change(held_row,json!({}))]})),
         )

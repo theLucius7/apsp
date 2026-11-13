@@ -8,7 +8,8 @@ order = [
   ["platform"],
   ["governance"],
   ["resources"],
-  ["networking", "naming"],
+  ["networking"],
+  ["naming"],
   ["traffic"],
   ["access"],
   ["costs", "observability"],
@@ -28,18 +29,16 @@ platform = [
 ]
 governance = [
   "admins", "administrator_*", "sessions", "auth_rate_limits", "passkey_*",
-  "management_api_tokens", "management_audit", "enrollment_tokens", "record_retention_policy",
-  "operations_backup_*", "operations_restore_drills", "system_observer_reports",
-  "tool_advisory_observations",
+  "management_api_tokens", "management_audit", "record_retention_policy",
+  "system_observer_reports", "tool_advisory_observations",
 ]
 resources = [
-  "servers", "server_retirements", "fleet_profiles", "fleet_templates", "operations_cloud_*",
-  "operations_hetzner_*", "alicloud_accounts", "alicloud_resources",
-  "network_server_migration_previews",
+  "servers", "server_retirements", "enrollment_tokens", "fleet_profiles", "fleet_templates",
+  "operations_cloud_*", "operations_hetzner_*", "alicloud_accounts", "alicloud_resources",
 ]
 networking = [
   "network_document*", "network_observations", "network_operation_links",
-  "alicloud_managed_security_groups",
+  "network_server_migration_previews", "alicloud_managed_security_groups",
 ]
 naming = [
   "dns_*", "ddns_*", "network_acme_*", "network_certificate_*", "network_dns_challenges",
@@ -76,6 +75,7 @@ observability = [
   "operations_incident*", "singbox_reachability_*", "alicloud_events", "alicloud_deliveries",
 ]
 operations = [
+  "operations_backup_*", "operations_restore_drills",
   "operations_history", "operations_jobs", "operations_maintenance", "operations_panel_steps",
   "operations_remediation_rules", "operations_schedules", "operations_server_locks",
   "operations_target_steps", "operations_templates", "fleet_operations",
@@ -84,47 +84,22 @@ operations = [
   "alicloud_security_group_operations",
 ]
 
-# Code location to owner: the longest matching path prefix wins. Code that still lives in the
-# platform crate or in a crate holding several domains is mapped to the domain it belongs to,
-# so crossings are measured before the code moves (docs/architecture.md section 9).
+# Code location to owner: the longest matching path prefix wins. Every owner has its own
+# crate; the configuration compiler belongs to traffic.
 [rust]
-"crates/panel-host/src" = "platform"
-"crates/panel-host/src/domains/governance.rs" = "governance"
-"crates/panel-host/src/domains/resources.rs" = "resources"
-"crates/panel-host/src/domains/networking.rs" = "networking"
-"crates/panel-host/src/agent_updates.rs" = "governance"
-"crates/panel-host/src/artifacts.rs" = "governance"
-"crates/panel-host/src/auth" = "governance"
-"crates/panel-host/src/passkeys" = "governance"
-"crates/panel-host/src/releases" = "governance"
-"crates/panel-host/src/control_center" = "governance"
-"crates/panel-host/src/control_center/search.rs" = "app"
-"crates/panel-host/src/backups" = "governance"
-"crates/panel-host/src/servers.rs" = "resources"
-"crates/panel-host/src/server_assets.rs" = "resources"
-"crates/panel-host/src/retirement.rs" = "resources"
-"crates/panel-host/src/installation" = "resources"
-"crates/panel-host/src/batch_enrollment.rs" = "resources"
-"crates/panel-host/src/server_lifecycle.rs" = "resources"
-"crates/panel-host/src/server_observation.rs" = "resources"
-"crates/panel-host/src/cloud_resources" = "resources"
-"crates/panel-host/src/network_configuration" = "networking"
-"crates/panel-host/src/network_configuration/acme" = "naming"
-"crates/panel-host/src/network_configuration/certificate" = "naming"
-"crates/panel-host/src/network_configuration/dns_challenges.rs" = "naming"
-"crates/panel-host/src/network_configuration/x509.rs" = "naming"
-"crates/panel-host/src/network_configuration/server_migrations" = "resources"
+"crates/panel-host" = "platform"
 "crates/cloud-api" = "platform"
+"crates/governance" = "governance"
 "crates/resources" = "resources"
 "crates/networking" = "networking"
 "crates/naming" = "naming"
-"crates/costs" = "costs"
 "crates/compiler" = "traffic"
-"crates/operations" = "operations"
-"crates/observability" = "observability"
-"crates/panel/src" = "app"
 "crates/traffic" = "traffic"
 "crates/access" = "access"
+"crates/costs" = "costs"
+"crates/observability" = "observability"
+"crates/operations" = "operations"
+"crates/panel/src" = "app"
 
 # Integration tests and the Agent (which keeps its own SQLite ledger) are outside the panel
 # database rules.

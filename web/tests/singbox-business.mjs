@@ -76,7 +76,7 @@ try {
       { ...exitMetadata, id: 4, name: '版本不一致的服务器', installation: { state: 'ready', reason: '不一致夹具不能认证应用成功。', target_rev: 4, applied_rev: 3 } },
       { ...exitMetadata, id: 5, name: '离线入口服务器', online: false, installation: { state: 'offline', reason: '入口夹具当前离线。', target_rev: 2, applied_rev: 1 } },
     ]
-    let chainsFailure = false, chainFixtures = false, pluginServersFailure = false, nodesEmpty = false, deploymentFailure = false, deploymentError = null
+    let chainsFailure = false, chainFixtures = false, runtimeServersFailure = false, nodesEmpty = false, deploymentFailure = false, deploymentError = null
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
       requests.push(path)
@@ -85,27 +85,27 @@ try {
       if (path === '/api/dashboard/access') return route.fulfill({ json: { authenticated: true, public_dashboard: false } })
       if (path === '/api/me') value = { authenticated: true }
       else if (path === '/api/servers/1') value = entry
-      else if (path === '/api/plugins/sing-box/servers/1') value = metadata
-      else if (route.request().method() === 'GET' && !new URL(route.request().url()).search && path === '/api/plugins/sing-box/servers/1/operations-view') value = operationsViewFixture
-      else if (path === '/api/plugins/sing-box/servers') {
-        if (pluginServersFailure) { await route.fulfill({ status: 500, json: { error: '服务器夹具读取失败' } }); return }
+      else if (path === '/api/traffic/servers/1') value = metadata
+      else if (route.request().method() === 'GET' && !new URL(route.request().url()).search && path === '/api/traffic/servers/1/operations-view') value = operationsViewFixture
+      else if (path === '/api/traffic/servers') {
+        if (runtimeServersFailure) { await route.fulfill({ status: 500, json: { error: '服务器夹具读取失败' } }); return }
         value = chainFixtures ? [metadata, exitMetadata, ...otherMetadata] : [metadata]
       }
-      else if (path === '/api/plugins/sing-box/servers/1/enable') {
+      else if (path === '/api/traffic/servers/1/enable') {
         assert.equal(route.request().method(), 'POST')
         assert.deepEqual(route.request().postDataJSON(), {})
         Object.assign(metadata, { enabled: true, source: 'administrator', installation: { state: 'queued', reason: '安装请求已保存，正在生成初始运行配置', target_rev: 0, applied_rev: 0 } }); value = metadata
-      } else if (path === '/api/plugins/sing-box/servers/1/deployments') {
+      } else if (path === '/api/traffic/servers/1/deployments') {
         assert.equal(metadata.enabled, true)
         if (deploymentFailure) { await route.fulfill({ status: 500, json: { error: '部署夹具读取失败' } }); return }
         const installation = metadata.installation
         value = { status: installation?.target_rev > 0 ? { module: 'singbox', target_rev: installation.target_rev, applied_rev: installation.applied_rev, last_result_rev: installation.applied_rev, healthy: installation.state === 'ready', last_error: deploymentError, updated_at: now } : null,
           pending: ['queued', 'pending'].includes(installation?.state), enabled_nodes: node.enabled === false ? 0 : 1, authorized_nodes: 0, history: [] }
-      } else if (path === '/api/plugins/sing-box/servers/1/deployments/redeploy') {
+      } else if (path === '/api/traffic/servers/1/deployments/redeploy') {
         assert.equal(route.request().method(), 'POST')
         metadata.installation = { state: 'pending', reason: '重新部署已生成新版本，等待设备应用。', target_rev: 6, applied_rev: 5 }
         deploymentError = null; value = { revision: 6 }
-      } else if (path === '/api/plugins/sing-box/nodes/2') {
+      } else if (path === '/api/traffic/nodes/2') {
         assert.equal(route.request().method(), 'PATCH')
         const payload = route.request().postDataJSON()
         assert.deepEqual(payload, { name: node.name, public_host: node.public_host, sni: node.sni, protocol_config: { type: 'vless-reality' }, port: 443, enabled: false,
@@ -113,19 +113,19 @@ try {
         Object.assign(node, payload)
         metadata.installation = { state: 'pending', reason: '节点设置已保存，等待设备应用。', target_rev: 2, applied_rev: 1 }
         value = node
-      } else if (path === '/api/plugins/sing-box/nodes') {
+      } else if (path === '/api/traffic/nodes') {
         assert.equal(metadata.enabled, true); value = nodesEmpty ? [] : chainFixtures ? [node, exitNode, ...additionalNodes] : [node, exitNode]
-      } else if (path === '/api/plugins/sing-box/ordered-subscription-sources') value = []
-      else if (path === '/api/plugins/sing-box/node-catalog') {
+      } else if (path === '/api/traffic/ordered-subscription-sources') value = []
+      else if (path === '/api/traffic/node-catalog') {
         value = catalogResourceFixtures(nodesEmpty ? [] : catalogNodeFixtures([node,exitNode,...additionalNodes],[metadata,exitMetadata,...otherMetadata],chainFixtures ? [...chains,...additionalChains] : chains).filter(resource => chainFixtures || [2,3].includes(resource.id)))
-      } else if (path === '/api/plugins/sing-box/ordered-proxy-resources') {
+      } else if (path === '/api/traffic/ordered-proxy-resources') {
         if (chainsFailure) { await route.fulfill({ status:500,json:{error:'链路夹具读取失败'} }); return }
         value = nodesEmpty ? [] : proxyResourceFixtures([node,exitNode,...additionalNodes],[metadata,exitMetadata,...otherMetadata],chainFixtures ? [...chains,...additionalChains] : chains).filter(resource => chainFixtures || resource.kind === 'chain' || [2,3].includes(resource.id))
-      } else if (/^\/api\/plugins\/sing-box\/ordered-proxy-resources\/chain\/\d+$/.test(path)) {
+      } else if (/^\/api\/traffic\/ordered-proxy-resources\/chain\/\d+$/.test(path)) {
         assert.equal(route.request().method(), 'GET')
         value = proxyResourceFixtures([node,exitNode,...additionalNodes],[metadata,exitMetadata,...otherMetadata],chainFixtures ? [...chains,...additionalChains] : chains).find(resource => resource.kind === 'chain' && resource.id === Number(path.split('/').at(-1)))
         assert(value, 'details must identify a current chain from the rich projection')
-      } else if (path === '/api/plugins/sing-box/chains/ordered-batch') {
+      } else if (path === '/api/traffic/chains/ordered-batch') {
         assert.equal(route.request().method(), 'POST')
         const body = route.request().postDataJSON()
         assert.match(body.request_id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
@@ -133,16 +133,16 @@ try {
         const chain = { id:9,name:'未授权验收链路',entry_node_id:2,exit_node_id:3,available:true,path_kind:'ordered' }
         metadata.installation = { state:'pending',reason:'新链路已保存，两端配置仍待设备应用。',target_rev:2,applied_rev:2 }
         chains.push(chain); value = {request_id:body.request_id,chain_ids:[9],entry_node_ids:[2]}
-      } else if (path === '/api/plugins/sing-box/users') value = []
-      else if (/^\/api\/plugins\/sing-box\/users\/\d+\/portal$/.test(path)) value = { configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin: `http://127.0.0.1:${server.address().port}` }, keys: 0, url: null, activation_expires_at: null }
-      else if (['/api/plugins/sing-box/policy-groups', '/api/plugins/sing-box/package-groups'].includes(path)) value = []
-      else if (path === '/api/plugins/sing-box/usage') value = { uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] }
+      } else if (path === '/api/access/users') value = []
+      else if (/^\/api\/access\/users\/\d+\/portal$/.test(path)) value = { configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin: `http://127.0.0.1:${server.address().port}` }, keys: 0, url: null, activation_expires_at: null }
+      else if (['/api/access/policy-groups', '/api/access/package-groups'].includes(path)) value = []
+      else if (path === '/api/access/usage') value = { uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] }
       // The overview (landing page) also reads servers, open alerts and upcoming renewals.
       else if (path === '/api/servers') value = []
       // The server overview is its monitoring panel; this fixture has no samples to chart.
       else if (/^\/api\/servers\/1\/(metrics|probes|probe-results)$/.test(path)) value = []
       else if (path === '/api/notifications') value = []
-      else if (path === '/api/plugins/expenses/summary') value = { upcoming: [] }
+      else if (path === '/api/costs/summary') value = { upcoming: [] }
       else if (path === '/api/servers/1/agent-settings') value = { sample_interval_secs: 1, upload_interval_secs: 3, discover_public_ips: false, auto_update: false }
       else if (path === '/api/servers/1/telemetry-settings') value = { persist_interval_secs: 60 }
       else if (path === '/api/servers/1/node-quality') value = { ip_addresses: [], quality: [], plugin_ready: false, plugin_reason: '夹具未启用诊断', reports: [] }
@@ -153,7 +153,7 @@ try {
       else if (path === '/api/security/passkeys') value = { configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin: `http://127.0.0.1:${server.address().port}` }, keys: [] }
       else if (path.endsWith('/runtime-operations')) value = { supported:false,online:false,retiring:false,operations:[] }
       // The server page also reads the server-side profile (ADR 0129); an empty one here.
-      else if (path === '/api/plugins/sing-box/servers/1/profile') value = { definition: { outbounds: [], endpoints: [], services: [], cloudflared: [], dns: null, route: null }, revision: 0 }
+      else if (path === '/api/traffic/servers/1/profile') value = { definition: { outbounds: [], endpoints: [], services: [], cloudflared: [], dns: null, route: null }, revision: 0 }
       else { errors.push(`Unexpected API: ${path}`); await route.fulfill({ status: 404, json: {} }); return }
       await route.fulfill({ json: value })
     })
@@ -224,8 +224,8 @@ try {
     assert.equal(await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '网络服务', exact: true }).getAttribute('aria-current'), 'page')
     // The experimental 运维 tab appears only with the experimental features (ADR 0111).
     assert.equal(await page.getByRole('navigation', { name: '服务器导航' }).getByRole('link', { name: '运维', exact: true }).count(), 0)
-    assert.equal(requests.slice(scopedStart).includes('/api/plugins/sing-box/servers/1'), true)
-    assert.equal(requests.slice(scopedStart).includes('/api/plugins/sing-box/servers'), false)
+    assert.equal(requests.slice(scopedStart).includes('/api/traffic/servers/1'), true)
+    assert.equal(requests.slice(scopedStart).includes('/api/traffic/servers'), false)
     assert.equal(await page.getByText('已安装并运行', { exact: true }).count(), 0)
 
     await navigate('概览')
@@ -266,7 +266,7 @@ try {
     assert.equal(await persistedNodeEditor.locator('input[name="public_port"]').inputValue(), '8443')
     assert.equal(await persistedNodeEditor.locator('[role=checkbox]:has(+ input[name="enabled"])').isChecked(), false)
     await persistedNodeEditor.getByRole('button', { name: '取消', exact: true }).click()
-    assert.deepEqual(mutations.slice(nodeMutationStart), [{ path: '/api/plugins/sing-box/nodes/2', method: 'PATCH' }])
+    assert.deepEqual(mutations.slice(nodeMutationStart), [{ path: '/api/traffic/nodes/2', method: 'PATCH' }])
     // The saved node's deployment opens in its server's network services tab.
     await page.getByRole('button', { name: /^查看(差异、完整预检与发布状态|部署状态)$/ }).click()
     await page.waitForURL(/#\/servers\/1\/services$/)
@@ -308,7 +308,7 @@ try {
     // The dialog's batch preview also shows the name, so wait for it to close first.
     await chainDialog.waitFor({ state: 'hidden' })
     await page.getByText('未授权验收链路', { exact: true }).waitFor()
-    assert.deepEqual(mutations.slice(chainMutationStart), [{ path: '/api/plugins/sing-box/chains/ordered-batch', method: 'POST' }])
+    assert.deepEqual(mutations.slice(chainMutationStart), [{ path: '/api/traffic/chains/ordered-batch', method: 'POST' }])
     // The server query includes any managed segment and never shows unrelated chains.
     assert.equal(new URL(page.url()).hash, '#/nodes?server=1&view=chains')
     await page.getByText(`筛选范围：任一受管段属于「${metadata.name}」的链路。`, { exact: false }).waitFor()
@@ -401,7 +401,7 @@ try {
     resourceDetail = await showResourceDetail(9)
     assert.equal(await resourceDetail.getByText('目标配置已应用', { exact: true }).count(), 2)
     await closeResourceDetail()
-    pluginServersFailure = true
+    runtimeServersFailure = true
     await refreshPage()
     await page.getByText('服务器夹具读取失败', { exact: true }).waitFor()
     assert.equal(await createdRow.getByText('应用状态待确认', { exact: true }).count(), 1)
@@ -411,8 +411,8 @@ try {
     assert.equal(await resourceDetail.getByText('目标配置已应用', { exact: true }).count(), 0)
     assert.equal(await resourceDetail.getByRole('link', { name: '服务器 #2', exact: true }).getAttribute('href'), '#/servers/2')
     await closeResourceDetail()
-    assert.deepEqual(mutations.slice(chainMutationStart), [{ path: '/api/plugins/sing-box/chains/ordered-batch', method: 'POST' }])
-    pluginServersFailure = false
+    assert.deepEqual(mutations.slice(chainMutationStart), [{ path: '/api/traffic/chains/ordered-batch', method: 'POST' }])
+    runtimeServersFailure = false
     chainFixtures = false
     await showView('节点库')
     assert.equal(new URL(page.url()).hash, '#/nodes?server=1')
@@ -420,7 +420,7 @@ try {
     // shared exit belongs to server 2, so explicitly clear scope and refresh the
     // changed fixtures rather than expecting a route change to remount loaders.
     await page.getByRole('combobox', { name: '按服务器筛选', exact: true }).selectOption('')
-    const recoveredResources = page.waitForResponse(response => new URL(response.url()).pathname === '/api/plugins/sing-box/ordered-proxy-resources' && response.request().method() === 'GET' && response.status() === 200)
+    const recoveredResources = page.waitForResponse(response => new URL(response.url()).pathname === '/api/traffic/ordered-proxy-resources' && response.request().method() === 'GET' && response.status() === 200)
     await refreshPage()
     await recoveredResources
     const catalogSelector = width < 768 ? '[data-slot=catalog-card]' : '[data-slot=catalog-table] tbody tr'
@@ -478,7 +478,7 @@ try {
     deploymentError = 'controlled runtime instance differs from the successfully applied activation'
     await page.goto(`${origin}/#/servers/1/services`)
     await page.getByText('运行时在 Agent 之外被重新启动过', { exact: true }).waitFor()
-    const redeploys = () => mutations.filter(entry => entry.path === '/api/plugins/sing-box/servers/1/deployments/redeploy').length
+    const redeploys = () => mutations.filter(entry => entry.path === '/api/traffic/servers/1/deployments/redeploy').length
     await page.getByRole('button', { name: '重新部署', exact: true }).click()
     const confirmation = page.getByRole('alertdialog', { name: '重新部署当前配置？' })
     await confirmation.getByRole('button', { name: '取消', exact: true }).click()

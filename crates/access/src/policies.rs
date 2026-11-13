@@ -220,7 +220,7 @@ pub async fn user_get(
 ) -> ApiResult<Json<UserPolicies>> {
     require_admin(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
-    apsp_traffic::business::lock_user(&mut tx, id).await?;
+    crate::proxy_users::lock_user(&mut tx, id).await?;
     let group_ids = sqlx::query_scalar(
         "SELECT group_id FROM singbox_user_policies WHERE user_id=$1 ORDER BY group_id",
     )
@@ -241,7 +241,7 @@ pub async fn user_set(
     let groups = ids(&request.group_ids)?;
     let mut tx = state.pool.begin().await?;
     apsp_traffic::business::lock_publication(&mut tx).await?;
-    apsp_traffic::business::lock_user(&mut tx, id).await?;
+    crate::proxy_users::lock_user(&mut tx, id).await?;
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM singbox_policy_groups WHERE id=ANY($1)")
             .bind(&groups)

@@ -10,7 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Panel } from '@/components/panel'
 
 export default function BatchProxyAssignments({ users, userError, onChanged }: { users: ProxyUser[]; userError: () => string; onChanged: () => void }) {
-  const policies = useResource<PolicyGroup[]>('/api/plugins/sing-box/policy-groups', settingsPoll)
+  const policies = useResource<PolicyGroup[]>('/api/access/policy-groups', settingsPoll)
   const [selectedUsers, setSelectedUsers] = useState<number[]>([])
   const [selectedGroups, setSelectedGroups] = useState<number[]>([])
   const [operation, setOperation] = useState<WorkflowOperation | null>(null)

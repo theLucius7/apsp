@@ -5,8 +5,9 @@ mod fetch;
 #[cfg(test)]
 mod tests;
 
+use apsp_governance::auth;
 use apsp_panel_host::{
-    AppState, auth,
+    AppState,
     error::{ApiError, ApiResult},
 };
 use axum::{Json, extract::State, http::HeaderMap};

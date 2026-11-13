@@ -102,7 +102,7 @@ python3 tools/nexus_runtime_snapshot.py build /private/nodes.json /private/runti
 
 导出时机器令牌不读取，`token_env` 引用一律填占位值；`custom_config` 指向的文件缺失时直接报错，不像旧节点那样静默跳过。汇总只写原因代码：`protocol_requires_conversion`（Hysteria2 等需要证书文件与跳端口规则）、`transport_requires_conversion`、`external_files`、`global_settings_require_reconciliation`、`reality_short_id_count`、`brutal_requires_review`、`tunnel_host_invalid`（隧道源站的旧地址不是域名）、`effective_configuration_missing`（未取得主机文件）等。被阻止的主机继续由旧服务运行。
 
-无 TLS 的 VLESS + WebSocket/HTTPUpgrade 监听（Cloudflare 优选线路的源站）转换为 `vless-tunnel` 节点（[ADR 0109](adr/0109-vless-tunnel-origins.md)）：`sni` 取旧节点地址（隧道主机名），监听收窄为 `127.0.0.1`。切换前确认该主机的隧道连接器转发到 `127.0.0.1:<端口>`；如果连的是其他地址，先改隧道配置。主机已经接管时，用下文“给已接管主机追加线路”加入。切换后用 `PATCH /api/plugins/sing-box/nexus-nodes/{库存编号}/public-endpoint`（`{"public_host":"edge.example.com","public_port":443}`）把公开入口改成成员实际连接的边缘地址；该接口同时更新目录、节点的公开地址和公开端口，监听端口不变。
+无 TLS 的 VLESS + WebSocket/HTTPUpgrade 监听（Cloudflare 优选线路的源站）转换为 `vless-tunnel` 节点（[ADR 0109](adr/0109-vless-tunnel-origins.md)）：`sni` 取旧节点地址（隧道主机名），监听收窄为 `127.0.0.1`。切换前确认该主机的隧道连接器转发到 `127.0.0.1:<端口>`；如果连的是其他地址，先改隧道配置。主机已经接管时，用下文“给已接管主机追加线路”加入。切换后用 `PATCH /api/traffic/nexus-nodes/{库存编号}/public-endpoint`（`{"public_host":"edge.example.com","public_port":443}`）把公开入口改成成员实际连接的边缘地址；该接口同时更新目录、节点的公开地址和公开端口，监听端口不变。
 
 ### 切换步骤
 
@@ -134,7 +134,7 @@ python3 tools/nexus_runtime_snapshot.py build /private/nodes.json /private/runti
 
 ### 下线已接管主机上的单条线路
 
-主机已接管后，某条线路不再使用（例如出口失效，或入口端口在国内被封），用 `POST /api/plugins/sing-box/nexus-nodes/{id}/retire` 下线，请求体为 `{"legacy_node_id": <原节点编号>}`。`{id}` 是 apsp 的库存编号，原节点编号必须一致，防止输错编号删掉另一条线路。
+主机已接管后，某条线路不再使用（例如出口失效，或入口端口在国内被封），用 `POST /api/traffic/nexus-nodes/{id}/retire` 下线，请求体为 `{"legacy_node_id": <原节点编号>}`。`{id}` 是 apsp 的库存编号，原节点编号必须一致，防止输错编号删掉另一条线路。
 
 - 删除这条线路的接管记录和库存记录，停用它单独保存的原配置凭据，原生节点只标记删除，保留已记录的流量；主机正在运行时会重新发布，Agent 应用后该端口不再监听。
 - 加密的运行快照保持不变，作为历史记录；发布时跳过已经没有库存记录的条目。所以用旧快照重新预览会提示节点不全，这是预期结果。
@@ -174,7 +174,7 @@ Agent 把面板发来的核对请求（checkpoint）记在 `/var/lib/apsp/core/s
 
 1. 发布并导入包含运行时 `1.14.2-apsp.1` 的签名版本，把 Agent 升级到 0.3.4。
 2. 用公网端点接口更新换过 IP 或端口的节点，否则目录和可达性检测看到的都是旧地址。
-   导入后在旧面板新增的权限组用 `PATCH /api/plugins/sing-box/nexus-nodes/{id}/groups` 补上，并用 `compare-users` 确认没有缺用户。
+   导入后在旧面板新增的权限组用 `PATCH /api/traffic/nexus-nodes/{id}/groups` 补上，并用 `compare-users` 确认没有缺用户。
 3. 开启国内可达性检测（ADR 0105），记录每台主机切换前的状态。已被封的主机先换 IP。
 4. 每次只切一台，默认间隔 24 小时；观察国内可达性和真实流量后再继续。先切没有历史包袱的主机。
 5. 优先把 REALITY 入口放到 443 端口，并换掉命中风险提示的目标。这会改变客户端配置，需要单独安排。

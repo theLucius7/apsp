@@ -1,4 +1,4 @@
-use super::{models::*, plugin::NetworkWorkbenchPlugin};
+use super::{models::*, tool::NetworkWorkbenchTool};
 use crate::{
     AppState, control_center,
     diagnostics::service,
@@ -460,7 +460,7 @@ async fn advance(state: &AppState, id: Uuid) -> ApiResult<()> {
             match service::create_job(
                 state,
                 server,
-                &NetworkWorkbenchPlugin,
+                &NetworkWorkbenchTool,
                 json!({"run_id":id,"step_index":index,"role":execution.role}),
             )
             .await

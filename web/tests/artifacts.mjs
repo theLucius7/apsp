@@ -44,7 +44,7 @@ try {
       let value
       if (request.method() !== 'GET') {
         mutations.push({ path, method: request.method(), body: request.postDataJSON() })
-        if (path !== '/api/plugins/sing-box/servers/2/enable' || request.method() !== 'POST') {
+        if (path !== '/api/traffic/servers/2/enable' || request.method() !== 'POST') {
           errors.push(`Unexpected mutation: ${path}`); await route.fulfill({ status: 400, json: { error: 'UNEXPECTED_MUTATION' } }); return
         }
         Object.assign(metadata, { enabled: true, source: 'administrator', installation: { state: 'queued', reason: '安装请求已保存，正在生成初始运行配置', target_rev: 0, applied_rev: 0 } }); value = metadata
@@ -54,21 +54,21 @@ try {
         if (artifactFailure) { await route.fulfill({ status: 403, json: { error: 'ARTIFACT_READ_FAILED' } }); return }
         value = inventory
       } else if (path === '/api/servers/2') value = servers[1]
-      else if (path === '/api/plugins/sing-box/servers/2') {
+      else if (path === '/api/traffic/servers/2') {
         if (metadataFailure) { await route.fulfill({ status: 403, json: { error: 'RUNTIME_STATE_UNKNOWN' } }); return }
         value = metadata
       }
       // Once installed, the network services tab also reads this server's deployment and tools.
-      else if (path === '/api/plugins/sing-box/servers/2/deployments') value = { status: null, history: [] }
-      else if (path === '/api/plugins/sing-box/servers/2/profile') value = { definition: { outbounds: [], endpoints: [], services: [], cloudflared: [], dns: null, route: null }, revision: 0 }
-      else if (path === '/api/plugins/sing-box/servers/2/runtime-operations') value = { supported: false, online: false, retiring: false, operations: [] }
-      else if (path === '/api/plugins/sing-box/servers/2/operations-view') value = {
+      else if (path === '/api/traffic/servers/2/deployments') value = { status: null, history: [] }
+      else if (path === '/api/traffic/servers/2/profile') value = { definition: { outbounds: [], endpoints: [], services: [], cloudflared: [], dns: null, route: null }, revision: 0 }
+      else if (path === '/api/traffic/servers/2/runtime-operations') value = { supported: false, online: false, retiring: false, operations: [] }
+      else if (path === '/api/traffic/servers/2/operations-view') value = {
         runtime: { supported_versions: [], selected_version: 'TEST_ONLY', reason: 'TEST_ONLY 未读取真实运行时版本。', compatibility_metadata: { upstream_release: 'https://example.com/TEST_ONLY', upstream_commit: 'TEST_ONLY', protocols: [], acceptance: [] } },
         preflight: { id: null, ready: false, confirmed: false, device_checks_pending: false, checks: [] },
         drift: { state: 'unknown', target_revision: null, applied_revision: null, last_observed_at: null, reason: 'TEST_ONLY 无真实配置检查点。', checkpoint_supported: false, checkpoint: { state: 'unknown', observed_at: null, reason: 'TEST_ONLY 未取得检查点。' } },
         changes: [], history: [], paths: [], hop_observations: [], path_diagnosis: 'TEST_ONLY 无真实路径证据。',
       }
-      else if (path === '/api/plugins/sing-box/nodes') value = []
+      else if (path === '/api/traffic/nodes') value = []
       else { errors.push(`Unexpected read: ${path}`); await route.fulfill({ status: 404, json: {} }); return }
       await route.fulfill({ json: value })
     })
@@ -133,7 +133,7 @@ try {
     await page.getByRole('button', { name: '安装 sing-box', exact: true }).click()
     await page.getByText('安装已安排', { exact: true }).waitFor()
     assert.equal(await page.getByText('已安装并运行', { exact: true }).count(), 0)
-    assert.deepEqual(mutations, [{ path: '/api/plugins/sing-box/servers/2/enable', method: 'POST', body: {} }])
+    assert.deepEqual(mutations, [{ path: '/api/traffic/servers/2/enable', method: 'POST', body: {} }])
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     assert.deepEqual(errors, [])
     await page.close()

@@ -69,18 +69,21 @@ pub(super) const NO_EXPIRY: i64 = 253_402_300_799;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/operations/preview", post(preview))
-        .route("/operations/{id}/apply", post(apply))
+        .route("/api/access/operations/preview", post(preview))
+        .route("/api/access/operations/{id}/apply", post(apply))
         .route(
-            "/operations/privacy",
+            "/api/access/operations/privacy",
             get(diagnosis::privacy).put(diagnosis::save_privacy),
         )
-        .route("/users/{id}/diagnosis", get(diagnosis::user))
+        .route("/api/access/users/{id}/diagnosis", get(diagnosis::user))
         .route(
-            "/users/{id}/client-template",
+            "/api/access/users/{id}/client-template",
             get(client::get).put(client::save),
         )
-        .route("/users/{id}/compatibility", post(client::compatibility))
+        .route(
+            "/api/access/users/{id}/compatibility",
+            post(client::compatibility),
+        )
 }
 
 /// Keeps operation previews, events and deployment checks only as long as the privacy

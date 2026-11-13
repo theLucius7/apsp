@@ -1,7 +1,8 @@
 //! Supplier comparison from recorded costs, observations and diagnostic reports (costs).
 
+use apsp_governance::control_center;
 use apsp_panel_host::{
-    AppState, control_center,
+    AppState,
     digest::json as digest,
     error::{ApiError, ApiResult},
 };

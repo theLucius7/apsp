@@ -10,7 +10,6 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use sqlx::PgConnection;
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -70,13 +69,6 @@ pub(super) fn user_agent(value: &str) -> ApiResult<()> {
     fetch::validate_user_agent(value).map_err(input_error)
 }
 
-pub(super) fn digest(value: &Value) -> ApiResult<String> {
-    Ok(format!(
-        "{:x}",
-        Sha256::digest(serde_json::to_vec(value).map_err(anyhow::Error::from)?)
-    ))
-}
-
 pub(super) async fn receipt(
     connection: &mut PgConnection,
     key: Uuid,
@@ -130,7 +122,7 @@ pub async fn create(
     }
     let auto_refresh = input.auto_refresh.unwrap_or(true);
     input.auto_refresh = Some(auto_refresh);
-    let hash = digest(&json!({"operation":"create","body":input}))?;
+    let hash = crate::digest::json(&json!({"operation":"create","body":input}))?;
     let mut tx = state.pool.begin().await?;
     if let Some(previous) = receipt(&mut tx, input.request_id, &hash).await? {
         tx.commit().await?;
@@ -207,7 +199,7 @@ pub async fn update(
 ) -> ApiResult<Json<MutationReceipt>> {
     auth::require_admin(&state, &headers).await?;
     normalize_patch(&mut input)?;
-    let hash = digest(&json!({"operation":"update","source_id":id,"body":input}))?;
+    let hash = crate::digest::json(&json!({"operation":"update","source_id":id,"body":input}))?;
     let mut tx = state.pool.begin().await?;
     if let Some(previous) = receipt(&mut tx, input.request_id, &hash).await? {
         tx.commit().await?;

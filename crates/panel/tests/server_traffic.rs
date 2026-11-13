@@ -6,10 +6,10 @@ mod release_support;
 
 use anyhow::Result;
 use apsp_observability::server_traffic;
-use apsp_panel_host::servers::Server;
 use apsp_protocol::{
     Metrics, NetworkMetrics, TelemetryAck, TelemetryBatch, TelemetrySample, telemetry::now_millis,
 };
+use apsp_resources::servers::Server;
 use business_support::TestPanel;
 use reqwest::{Method, Response, StatusCode};
 use serde_json::{Value, json};

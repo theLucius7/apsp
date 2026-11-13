@@ -46,12 +46,12 @@
 | --- | --- | --- | --- | --- |
 | Nexus（旧代理面板） | 一次性导入与兼容桥 | `nexus_nodes` 模块、兼容桥（目前散在多个模块中，见[收敛方案 §3.2](07-convergence.md#32-兼容流程怎样独立)）与 `tools/nexus_*.py` | 受管节点、用户、策略组（“原权限组”） | machine、host、plan 等原用语；钱包与订单（ADR 0113 已删除运营功能） |
 | Xboard 一类面板 | 计划的导入（功能地图“适合谁”） | 尚无 | 用户、套餐、策略组 | 公开注册、订单、佣金、工单 |
-| Wallos | 导入导出格式 | `tools/export_wallos.py`、费用插件的导入 | 续费项目、付款记录 | Wallos 的界面与数据结构 |
+| Wallos | 导入导出格式 | `tools/export_wallos.py`、`crates/costs` 的导入 | 续费项目、付款记录 | Wallos 的界面与数据结构 |
 | 机场订阅与分享链接 | 外部节点格式 | 外部来源的解析器（当前 A、B 两套各一份，收敛后只留一份） | 外部节点的不可变版本 | 提供方的分组、规则与客户端配置 |
-| 云 DNS 提供方（Cloudflare、腾讯云、阿里云、华为云） | 提供方接口 | DDNS 插件各提供方适配 | 解析规则与 DNS 记录的观测 | 提供方的账户模型 |
-| 阿里云 API | 提供方接口 | `plugins/cloud_api/panel/`、阿里云插件 | 云资源、CDT 用量、启停与 EIP 操作记录 | 云厂商控制台的其余能力 |
+| 云 DNS 提供方（Cloudflare、腾讯云、阿里云、华为云） | 提供方接口 | `crates/naming` 的各提供方适配（`cloudflare.rs`、`providers/`） | 解析规则与 DNS 记录的观测 | 提供方的账户模型 |
+| 阿里云 API | 提供方接口 | `crates/cloud-api`，以及资源、成本、作业等领域 crate 的 `cloud` 模块 | 云资源、CDT 用量、启停与 EIP 操作记录 | 云厂商控制台的其余能力 |
 | 上游实现参考：NodeFlare、CDT-Monitor、IPFlare、ddns-go、妙妙屋、3X-UI/S-UI、Sub-Store | 设计参考，部分有许可声明（如 `web/public/notices/NodeFlare.txt`） | 无运行时依赖 | 按本词典重建的模型 | 上游的模型、用语与状态 |
-| 诊断上游：NodeQuality、IPQuality | 锁定版本的外部程序与报告格式 | `plugins/nodequality/`、`plugins/ipquality/` 的来源锁定与解析 | 诊断任务与报告 | 上游报告之外的执行环境假设 |
+| 诊断上游：NodeQuality、IPQuality | 锁定版本的外部程序与报告格式 | `crates/observability/upstream/{nodequality,ipquality}/` 的来源锁定，解析在 `crates/observability` 的 `diagnostic_tools/` | 诊断任务与报告 | 上游报告之外的执行环境假设 |
 | sing-box 上游 | 运行时内核，带 apsp 补丁（ADR 0104） | `tools/singbox-runtime/` 补丁队列；`adapter-singbox` | 运行时与内核版本 | 未经补丁队列的上游修改 |
 
 ## 3. 八个核心对象
@@ -187,19 +187,19 @@
 
 | 对象 | 所有者 | 现在的代码位置 | 已知越界与去向 |
 | --- | --- | --- | --- |
-| 服务器、接入、遥测、网卡流量 | 内核·设备 | `crates/panel-host`；Agent 侧 `agent-core` | — |
+| 服务器、接入、遥测、网卡流量 | 内核·设备 | `crates/resources`（服务器、接入与设备连接）、`crates/observability`（遥测、网卡流量）；Agent 侧 `agent-core` | — |
 | 运行时 | `proxy-runtime`；部署记录与模块状态是内核机制 | `crates/traffic`（`settings.rs`、`publisher.rs`、`deployments.rs`）；`adapter-singbox` | 插件直接写内核的部署与模块状态表，改经运行时模块接口（architecture.md §1、§4.1） |
 | 节点、链路、外部来源 | `proxy-nodes` | `crates/traffic`（`nodes*`、`catalog/`、`ordered_paths/`、`subscription_sources/`）；`crates/compiler` | 已只剩一套链路与来源模型（ADR 0131） |
 | 用户、策略组、套餐、计量账本 | `proxy-users` | `proxy_users.rs`、`policies.rs`、`packages.rs`、`entitlements.rs`、`usage.rs` | — |
 | 客户端订阅、专属地址 | `proxy-delivery` | `subscriptions.rs`、`subscription_hosts.rs` | 专属地址用自己的 Cloudflare 客户端写 DNS 记录，改经 `dns` 的端口（ADR 0125 §5.2 第 2 条） |
 | 门户账号、邀请 | `proxy-portal` | `portal/`、`user_accounts/` | — |
 | Nexus 兼容桥与接管 | `proxy-legacy` | `nexus_nodes/` 与散在 10 个源文件中的兼容桥查询 | 收拢为一个模块后随兼容桥下线删除（[收敛方案 §3.2](07-convergence.md#32-兼容流程怎样独立)） |
-| 解析规则、DNS 记录 | `dns` | `plugins/ddns/panel` | 宿主的搜索与网络配置直接查询 DNS 的表，改经端口（architecture.md §1） |
-| 云资源 | `cloud` | `plugins/alicloud/panel`、`plugins/cloud_api/panel` | — |
-| 续费项目 | `costs` | `plugins/expenses/panel`；另有宿主中的成本记录、供应商、取消提醒 | 费用归一（ADR 0125 阶段 5） |
-| 告警规则与事件 | `alerts` | `crates/panel-host/src/notifications/` | 各功能各建发件箱，改为内核的统一发件箱 |
-| 拨测、诊断报告、线路质量观测 | `lines` | 宿主的 `network_workbench`、`ip_quality`、`probes.rs`、`latency_tasks.rs`；三个诊断插件经 `#[path]` 编入宿主 | 诊断工具改为登记（阶段 2）；中国可达性现在由 sing-box 插件写入、表名以 `singbox_` 开头，按 architecture.md §4.2 归 `lines`，节点信息经代理服务的接口读取 |
-| 管理员、会话、凭据、审计、备份、设置、制品 | 内核·身份、内核·平台服务、内核·设备 | `crates/panel-host` | 备份移出实验的 `operations` 模块 |
+| 解析规则、DNS 记录 | `dns` | `crates/naming` | 应用层的搜索与基础网络的网络配置直接查询 DNS 的表，改经所有者的接口（architecture.md §12） |
+| 云资源 | `cloud` | `crates/resources` 的 `cloud/`（账号与资源），成本、作业、基础网络与观测 crate 里各自的云模块；云接口客户端 `crates/cloud-api` | — |
+| 续费项目 | `costs` | `crates/costs`（含供应商与取消提醒）；服务器费用记录的接口在 `crates/resources` 的 `server_lifecycle.rs` | 费用归一（ADR 0125 阶段 5） |
+| 告警规则与事件 | `alerts` | `crates/observability` 的 `alerts/`；发送渠道与发件箱在平台 `crates/panel-host/src/notifications/` | 各功能各建发件箱，改为内核的统一发件箱 |
+| 拨测、诊断报告、线路质量观测 | `lines` | `crates/observability` 的 `network_workbench`、`ip_quality`、`probes.rs`、`latency_tasks.rs`、`reachability/`；三个诊断工具在它的 `diagnostic_tools/` | 诊断工具已是观测 crate 里的模块；中国可达性已迁入观测（表名仍以 `singbox_` 开头），节点信息读流量服务的表 |
+| 管理员、会话、凭据、审计、备份、设置、制品 | 内核·身份、内核·平台服务、内核·设备 | `crates/governance`（管理员、会话、凭据、审计、设置的管理接口、制品）；备份在 `crates/operations` 的 `backups`；设置存储在平台 `crates/panel-host` | 备份的计划、执行与记录归作业领域（[ADR 0132](../adr/0132-platform-only-host-and-domain-addresses.md)）；领域归属不决定功能分级（ADR 0128 第 8 条） |
 
 不属于任何上下文、但有写入约束的部分：`compiler` 不写库，只把模型确定性地编译成配置包；`adapter-singbox` 无持久化，状态由 Agent core 保存；组装 crate `apsp-panel` 登记功能、合成唯一的数据库基线并提供命令行入口，命令逻辑在功能内（[工程整理 §2.1](08-engineering.md#21-面板组装层的命令入口不是放错的业务代码)）。
 

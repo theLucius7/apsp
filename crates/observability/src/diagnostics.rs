@@ -18,8 +18,8 @@ use uuid::Uuid;
 
 pub const REPORT_LIMIT: usize = 512 * 1024;
 pub mod service;
-pub use crate::diagnostic_plugins::nodequality::{
-    LegacyNodeQualityView, NodeQualityView, PLUGIN_VERSION, ReportRequest, create, get, legacy_get,
+pub use crate::diagnostic_tools::nodequality::{
+    LegacyNodeQualityView, NodeQualityView, ReportRequest, TOOL_VERSION, create, get, legacy_get,
     safe_report_url,
 };
 mod sections;
@@ -75,8 +75,8 @@ pub async fn pending(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<DiagnosticJob>>> {
-    let server_id = auth::require_agent(&state, &headers).await?;
-    artifacts::require_signed_agent(&state, server_id).await?;
+    let server_id = crate::device_channel::require_agent(&state, &headers).await?;
+    crate::device_channel::require_signed_agent(&state, server_id).await?;
     // Polled every few seconds by each agent. Without a queued or running job
     // nothing below can be delivered or changed for this server; maintenance
     // still expires other servers' jobs on its own schedule.
@@ -129,7 +129,7 @@ pub async fn pending(
         .bind(server_id).fetch_all(&mut *tx).await?;
     let mut jobs = Vec::new();
     for (id, job) in values {
-        if !crate::diagnostic_plugins::for_job(&job)
+        if !crate::diagnostic_tools::for_job(&job)
             .is_none_or(|plugin| plugin.can_dispatch(&job, &capabilities))
         {
             continue;
@@ -176,7 +176,7 @@ pub async fn update(
     Path(id): Path<Uuid>,
     Json(update): Json<DiagnosticUpdate>,
 ) -> ApiResult<StatusCode> {
-    let server_id = auth::require_agent(&state, &headers).await?;
+    let server_id = crate::device_channel::require_agent(&state, &headers).await?;
     if id != update.id {
         return Err(ApiError::BadRequest("任务编号不一致".into()));
     }
@@ -207,7 +207,7 @@ pub async fn update(
     .await?
     .ok_or(ApiError::NotFound)?;
     if let Some(report) = &update.report {
-        service::validate_plugin_report(&row.get::<Value, _>("job"), report)?;
+        service::validate_tool_report(&row.get::<Value, _>("job"), report)?;
     }
     let status: String = row.get("status");
     if status == "cancel_requested" {

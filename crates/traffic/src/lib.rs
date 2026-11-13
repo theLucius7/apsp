@@ -16,7 +16,6 @@ pub mod catalog;
 pub mod china_reachability;
 pub mod deployments;
 pub mod device_config;
-pub mod host_support;
 pub mod nexus_nodes;
 pub mod node_protocol;
 mod node_settings;
@@ -38,12 +37,11 @@ pub mod users;
 
 pub use activity::{ActivityEvidence, runtime_activity_on};
 
+pub(crate) use apsp_governance::{artifacts, auth, control_center, releases};
 #[cfg(test)]
 pub(crate) use apsp_panel_host::config;
-pub(crate) use apsp_panel_host::{
-    AppState, agent_api, artifacts, auth, control_center, device_work, error,
-    network_configuration, releases,
-};
+pub(crate) use apsp_panel_host::{AppState, device_work, digest, error};
+pub(crate) use apsp_resources::device_channel;
 use axum::{
     Router,
     routing::{get, post},
@@ -64,42 +62,59 @@ pub async fn run(state: AppState) {
     subscription_sources::worker::run(state).await;
 }
 
-/// The management API for nodes, chains, external sources, server runtimes and their
-/// deployment, relative to the console prefix the application nests it under.
-pub fn management() -> Router<AppState> {
+/// The domain's routes: the console API and what each device asks.
+pub fn routes() -> Router<AppState> {
+    management().merge(device_routes())
+}
+
+/// The console API for nodes, chains, external sources, server runtimes and their
+/// deployment.
+fn management() -> Router<AppState> {
     Router::new()
         .route(
-            "/servers/{id}/profile",
+            "/api/traffic/servers/{id}/profile",
             get(server_profiles::get).put(server_profiles::put),
         )
-        .route("/chains/ordered-batch", post(ordered_paths::create_batch))
-        .route("/ordered-proxy-resources", get(proxy_resources::list))
         .route(
-            "/ordered-proxy-resources/{kind}/{id}",
+            "/api/traffic/chains/ordered-batch",
+            post(ordered_paths::create_batch),
+        )
+        .route(
+            "/api/traffic/ordered-proxy-resources",
+            get(proxy_resources::list),
+        )
+        .route(
+            "/api/traffic/ordered-proxy-resources/{kind}/{id}",
             get(proxy_resources::get)
                 .patch(ordered_paths::update_resource)
                 .delete(proxy_resources::remove),
         )
         .route(
-            "/ordered-proxy-resources/chain/{id}/apply-node-versions",
+            "/api/traffic/ordered-proxy-resources/chain/{id}/apply-node-versions",
             post(ordered_paths::apply_node_versions),
         )
-        .route("/servers", get(settings::list))
-        .route("/servers/{id}", get(settings::get))
-        .route("/servers/{id}/enable", post(settings::enable))
-        .route("/servers/{id}/deployments", get(deployments::get))
-        .route("/servers/{id}/deployments/check", post(deployments::check))
+        .route("/api/traffic/servers", get(settings::list))
+        .route("/api/traffic/servers/{id}", get(settings::get))
+        .route("/api/traffic/servers/{id}/enable", post(settings::enable))
         .route(
-            "/servers/{id}/deployments/redeploy",
+            "/api/traffic/servers/{id}/deployments",
+            get(deployments::get),
+        )
+        .route(
+            "/api/traffic/servers/{id}/deployments/check",
+            post(deployments::check),
+        )
+        .route(
+            "/api/traffic/servers/{id}/deployments/redeploy",
             post(deployments::redeploy),
         )
         .route(
-            "/servers/{id}/runtime-operations",
+            "/api/traffic/servers/{id}/runtime-operations",
             get(runtime_operations::list).post(runtime_operations::create),
         )
-        .route("/nodes", get(nodes::list).post(nodes::create))
+        .route("/api/traffic/nodes", get(nodes::list).post(nodes::create))
         .route(
-            "/nodes/{id}",
+            "/api/traffic/nodes/{id}",
             get(nodes::get).patch(nodes::update).delete(nodes::remove),
         )
         .merge(catalog::router())
@@ -110,7 +125,7 @@ pub fn management() -> Router<AppState> {
 
 /// What each device runs and confirms: manifests, bundles, runtime checkpoints and
 /// runtime validations.
-pub fn device_routes() -> Router<AppState> {
+fn device_routes() -> Router<AppState> {
     Router::new()
         .merge(runtime_control::routes())
         .route("/api/agent/v1/manifest", get(device_config::manifest))

@@ -44,7 +44,7 @@ async fn policy_union_preserves_credentials_until_the_last_group_is_removed(
     let blocked = panel
         .admin(
             Method::DELETE,
-            &format!("{ROOT}/policy-groups/{second}"),
+            &format!("/api/access/policy-groups/{second}"),
             &cookie,
             None,
         )
@@ -53,7 +53,7 @@ async fn policy_union_preserves_credentials_until_the_last_group_is_removed(
     let invalid = panel
         .admin(
             Method::PUT,
-            &format!("{ROOT}/users/{user}/policy-groups"),
+            &format!("/api/access/users/{user}/policy-groups"),
             &cookie,
             Some(json!({"group_ids":[999999]})),
         )
@@ -163,7 +163,11 @@ async fn new_management_routes_require_administrator_and_validate_inputs(
         assert_eq!(
             panel
                 .client
-                .get(format!("{}{ROOT}{path}", panel.base))
+                .get(format!(
+                    "{}{}",
+                    panel.base,
+                    crate::proxy_api::proxy_api(path)
+                ))
                 .send()
                 .await?
                 .status(),
@@ -179,7 +183,7 @@ async fn new_management_routes_require_administrator_and_validate_inputs(
             panel
                 .admin(
                     Method::POST,
-                    &format!("{ROOT}/policy-groups"),
+                    "/api/access/policy-groups",
                     &cookie,
                     Some(body)
                 )
@@ -201,7 +205,7 @@ async fn new_management_routes_require_administrator_and_validate_inputs(
             panel
                 .admin(
                     Method::POST,
-                    &format!("{ROOT}/package-groups"),
+                    "/api/access/package-groups",
                     &cookie,
                     Some(body)
                 )
@@ -248,7 +252,7 @@ async fn modern_group_credentials_survive_group_overlap_and_obey_quota(pool: PgP
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
     let server = panel.create_server(&cookie, "Modern policy").await?;
-    panel.enable_plugin(&cookie, server).await?;
+    panel.enable_runtime(&cookie, server).await?;
     let node = id(&call(
         &panel,
         &cookie,

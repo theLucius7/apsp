@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../api'
 import { Badge, ErrorNotice, Field, Modal } from '../components'
-import { assignmentRequestId } from '../access/groupTypes'
+import { newRequestId } from '@/lib/request-id'
 import { commitOrderedPreview, createOrderedPreview, discardOrderedPreview, emptySourceDraft, previewCommit, previewInput, SourceFileReader, sourceMetadataError } from './sourceRequests'
 import type { SourceDraft, SourceSnapshot } from './sourceRequests'
 import { orderedPreviewError, sourceFormatText } from './orderedSourceTypes'
@@ -82,7 +82,7 @@ export default function OrderedSourceImport({ snapshot, onClose, onSaved }: { sn
         setDraft(current => ({ ...current, url: '', content: '', authorization: '', cookie: '', apiKey: '' }))
         setPreview(result); setSelected(result.nodes.filter(node => node.selectable).map(node => node.key)); setPage(0)
       } else {
-        const unsigned = previewCommit(preview, draft, selected, assignmentRequestId())
+        const unsigned = previewCommit(preview, draft, selected, newRequestId())
         const signature = JSON.stringify({ ...unsigned, request_id: null, preview: preview.id })
         if (request.current?.signature !== signature) request.current = { signature, id: unsigned.request_id }
         const receipt = await commitOrderedPreview(preview, { ...unsigned, request_id: request.current.id })

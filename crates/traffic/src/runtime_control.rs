@@ -1,4 +1,4 @@
-use crate::{AppState, agent_api};
+use crate::{AppState, device_channel};
 use apsp_protocol::{
     ApplyResult, ApplyStatus, Envelope, RUNTIME_CHECKPOINT_CAPABILITY,
     RUNTIME_RECOVERY_BARRIER_CAPABILITY, RuntimeCheckpoint, RuntimeCheckpointRequest,
@@ -109,7 +109,7 @@ pub async fn request_checkpoint(
     );
     let request = checkpoint_in_transaction(&mut tx, server_id, module).await?;
     tx.commit().await?;
-    agent_api::notify(
+    device_channel::notify(
         state,
         server_id,
         Envelope::new("runtime.checkpoint.request", &request)?,
@@ -203,7 +203,7 @@ pub async fn notify_barrier(
     server_id: i64,
     request: &RuntimeRecoveryBarrierRequest,
 ) -> anyhow::Result<()> {
-    agent_api::notify(
+    device_channel::notify(
         state,
         server_id,
         Envelope::new("runtime.barrier.request", request)?,
@@ -280,7 +280,7 @@ pub async fn record_apply(
     };
     tx.commit().await?;
     if let Some(request) = request {
-        agent_api::notify(
+        device_channel::notify(
             state,
             server_id,
             Envelope::new("runtime.checkpoint.request", request)?,
@@ -344,7 +344,7 @@ pub async fn replay_pending(state: &AppState, server_id: i64) -> anyhow::Result<
             break;
         }
         replay_bytes += bytes;
-        agent_api::notify(state, server_id, envelope).await;
+        device_channel::notify(state, server_id, envelope).await;
     }
     Ok(())
 }

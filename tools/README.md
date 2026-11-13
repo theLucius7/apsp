@@ -20,8 +20,9 @@
 
 ## 本地规则与回归
 
-- `check-core-boundary.py`：检查 `agent-core` 与面板宿主的禁用词，以及 Agent 核心、适配器、面板宿主和业务插件 `Cargo.toml` 的依赖方向。
-- `check-feature-boundaries.py`：按 `feature-boundaries.toml` 的表与路径归属，检查跨功能的 SQL、跨 crate 的 `#[path]` 和前端跨功能引用；已知的记在 `feature-boundaries.baseline`，只许减少（`--update` 删去已修复的，`--summary` 按所有者统计）。见 ADR 0125。
+- `check-core-boundary.py`：检查 `agent-core` 与平台 crate（`panel-host`、`cloud-api`）的禁用词，以及 Agent 核心、适配器、平台与各领域 crate 的 `Cargo.toml` 依赖方向。
+- `check-feature-boundaries.py`：按 `feature-boundaries.toml` 的表与路径归属，检查跨功能的 SQL、跨 crate 的 `#[path]` 和前端跨功能引用；已知的记在 `feature-boundaries.baseline`，只许减少（`--update` 删去已修复的，`--summary` 按所有者统计）。见 ADR 0128 与[功能划分与逻辑结构 §5.3](../docs/architecture.md#53-自动守护)。
+- `route-policy.py`：核对路由权限表 `crates/panel/tests/fixtures/route-policy.tsv` 与源码登记的路由逐条一致（`--write` 补上新增路由、去掉已删除的；权限结论由 Rust 测试 `route_policy` 写入并比对）。见 ADR 0132。
 - `verify-release-runtime.py`：核验 Release 中运行时与声明的一致性。
 - `test-*.py`：同目录工具、策略、构建脚本和夹具的回归；根 `tests/test_*.py` 也覆盖部分工具。
 - `test-*.cjs`：既有前端浏览器夹具；较新的前端回归位于 `web/tests/`。

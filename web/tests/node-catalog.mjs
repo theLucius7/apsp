@@ -16,7 +16,7 @@ const wait = async (condition, description) => {
 const forceSubmit = dialog => dialog.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = process.env.APSP_WEB_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url))
-const apiRoot = '/api/plugins/sing-box', catalogPath = `${apiRoot}/node-catalog`
+const trafficApi = '/api/traffic', accessApi = '/api/access', catalogPath = `${trafficApi}/node-catalog`
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname
@@ -41,7 +41,7 @@ try {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.clock.pauseAt(new Date('2026-10-24T00:01:00Z'))
     page.on('pageerror', error => errors.push(error.message))
-    const pluginServers = [{ id: 1, name: '服务器', enabled: true, online: true, agent_supported: true, read_only: false }]
+    const runtimeServers = [{ id: 1, name: '服务器', enabled: true, online: true, agent_supported: true, read_only: false }]
     const node = { id: 1, name: '受管节点', server_id: 1, port: 443, public_host: 'managed.example.com', sni: 'www.example.com', protocol: 'vless-reality', enabled: true, protocol_config: { type: 'vless-reality' }, settings: { public_port: 8443 } }
     const managed = { id: 1, kind: 'direct', name: node.name, original_name: node.name, server_id: 1, server_name: '服务器', public_host: node.public_host, port: 443, protocol: node.protocol, enabled: true, available: true, role: 'direct', entry_node_id: null, tcp: true, udp: true, stage: 'direct', reference_count: 0, tags: [], note: '', sort_order: 0, revision: hash('managed-1'), managed_server_ids: [1], metadata_revision: 0, entry_eligible: true }
     const managedNodes = [node]
@@ -59,11 +59,11 @@ try {
       let value
       if (path === '/api/me') value = { authenticated: true }
       else if (path === '/api/dashboard/access') value = { authenticated: true, public_dashboard: false }
-      else if (path === `${apiRoot}/nodes`) value = managedNodes
-      else if (path === `${apiRoot}/ordered-proxy-resources`) value = proxyResourceFixtures(managedNodes, [...pluginServers, ...(!pluginServers.length ? [{ id: 1, name: '服务器', enabled: false, online: false }] : [])])
-      else if (path === `${apiRoot}/ordered-subscription-sources`) value = []
-      else if (path === `${apiRoot}/servers`) value = pluginServers
-      else if (path === `${apiRoot}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
+      else if (path === `${trafficApi}/nodes`) value = managedNodes
+      else if (path === `${trafficApi}/ordered-proxy-resources`) value = proxyResourceFixtures(managedNodes, [...runtimeServers, ...(!runtimeServers.length ? [{ id: 1, name: '服务器', enabled: false, online: false }] : [])])
+      else if (path === `${trafficApi}/ordered-subscription-sources`) value = []
+      else if (path === `${trafficApi}/servers`) value = runtimeServers
+      else if (path === `${accessApi}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
       else if (path === catalogPath && method === 'GET') { if (catalogFail) return route.fulfill({ status: 503, json: { error: 'TEST_ONLY 目录读取失败' } }); value = catalog }
       else if (path === `${catalogPath}/batch` && method === 'POST') {
         if (rejectBatch) return route.fulfill({ status: 409, json: { error: '节点已更新，请重新确认' } })
@@ -78,7 +78,7 @@ try {
         }
         value = body.items.map(item => catalog.find(row => row.kind === item.kind && row.id === item.id)).filter(Boolean)
       }
-      else if (path === `${apiRoot}/nodes/1/clone` && method === 'POST') {
+      else if (path === `${trafficApi}/nodes/1/clone` && method === 'POST') {
         assert.equal(body.revision, catalog.find(row => row.kind === 'direct' && row.id === 1).revision); assert.equal(body.server_id, 1); assert.equal(body.name, 'TEST_ONLY 保留副本草稿'); assert.equal(body.public_host, 'clone.example.com')
         const created = { ...node, id: 2, name: body.name, public_host: body.public_host, port: body.port ?? 20002 }; managedNodes.push(created); catalog.push({ ...managed, id: 2, name: body.name, original_name: body.name, public_host: body.public_host, port: created.port, revision: hash('clone-2') }); value = created
       }
@@ -118,7 +118,7 @@ try {
       await dialog.getByLabel('备注').fill('整理后的备注'); await dialog.getByLabel(/^标签/).fill('常用, 高速')
       const save = dialog.getByRole('button', { name: '确认保存', exact: true })
       await wait(() => save.isEnabled(), 'Current metadata draft is initially writable')
-      for (const dependency of [catalogPath, `${apiRoot}/nodes`, `${apiRoot}/ordered-proxy-resources`, `${apiRoot}/servers`]) {
+      for (const dependency of [catalogPath, `${trafficApi}/nodes`, `${trafficApi}/ordered-proxy-resources`, `${trafficApi}/servers`]) {
         const pending = hold(dependency), before = writes.length
         await refresh(); await wait(() => pending.reached > 0, `Held current GET reached ${dependency}`)
         await forceSubmit(dialog); assert.equal(writes.length, before, `${dependency} pending: actual submit issues zero POST`)
@@ -159,14 +159,14 @@ try {
       await library.getByLabel('按标签筛选').selectOption(''); await library.getByLabel('按类型筛选').selectOption('')
       await rowAction('受管节点', '复制')
       await dialog.getByLabel('副本名称').fill('TEST_ONLY 保留副本草稿'); await dialog.getByLabel('公开地址', { exact: true }).fill('clone.example.com')
-      const cloneSave = dialog.getByRole('button', { name: '创建副本', exact: true }), cloneBefore = writes.length, restoredServers = structuredClone(pluginServers)
-      const cloning = hold(`${apiRoot}/servers`); await refresh(); await wait(() => cloning.reached > 0, 'Clone target GET is held before real submit')
+      const cloneSave = dialog.getByRole('button', { name: '创建副本', exact: true }), cloneBefore = writes.length, restoredServers = structuredClone(runtimeServers)
+      const cloning = hold(`${trafficApi}/servers`); await refresh(); await wait(() => cloning.reached > 0, 'Clone target GET is held before real submit')
       await forceSubmit(dialog); assert.equal(writes.length, cloneBefore, 'A pending target GET blocks the actual clone callback')
       release(false); await wait(() => cloneSave.isEnabled(), 'The unchanged target GET recovers the clone draft')
-      pluginServers.splice(0); await refresh(); await wait(() => cloneSave.isDisabled(), 'Disappeared target server blocks cloning')
+      runtimeServers.splice(0); await refresh(); await wait(() => cloneSave.isDisabled(), 'Disappeared target server blocks cloning')
       assert.equal(await dialog.getByLabel('目标服务器').inputValue(), '1')
       await forceSubmit(dialog); assert.equal(writes.length, cloneBefore, 'Unknown clone target issues zero POST'); assert.equal(await dialog.getByLabel('副本名称').inputValue(), 'TEST_ONLY 保留副本草稿'); assert.equal(await dialog.getByLabel('公开地址', { exact: true }).inputValue(), 'clone.example.com')
-      pluginServers.push(...restoredServers); await refresh(); await wait(() => cloneSave.isEnabled(), 'Original server restores the exact clone draft')
+      runtimeServers.push(...restoredServers); await refresh(); await wait(() => cloneSave.isEnabled(), 'Original server restores the exact clone draft')
       await cloneSave.click(); await dialog.waitFor({ state: 'hidden' }); await row('TEST_ONLY 保留副本草稿').waitFor()
       assert.equal(writes.length, cloneBefore + 1)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `overflow at ${width}`)

@@ -16,7 +16,7 @@ async fn limits_persist_reject_stale_writes_and_mark_hosts(pool: PgPool) -> Resu
     let cookie = fixture.admin_cookie().await?;
     let user = fixture.create_user(&cookie, "限额测试").await?;
     let id = user["id"].as_i64().unwrap();
-    let path = format!("/api/plugins/sing-box/users/{id}/limits");
+    let path = format!("/api/access/users/{id}/limits");
     let initial: Value = fixture
         .admin(Method::GET, &path, &cookie, None)
         .await?

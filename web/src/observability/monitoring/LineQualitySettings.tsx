@@ -20,7 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ActivityIcon, PlayIcon, PlusIcon } from 'lucide-react'
 import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
-const reachabilityRoot = '/api/plugins/sing-box/reachability'
+const reachabilityRoot = '/api/observability/reachability'
 
 type Task = { id: string; spec: Probe; default_enabled: boolean; server_ids: number[]; revision: number }
 const empty: Task = { id: '', spec: { id: '00000000-0000-0000-0000-000000000000', name: '', kind: 'tcp', target: '', port: 443, carrier: '', interval_secs: 30, enabled: true, monitor: null }, default_enabled: false, server_ids: [], revision: 0 }

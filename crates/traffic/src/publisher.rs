@@ -1,6 +1,7 @@
 use crate::{
-    AppState, agent_api,
+    AppState,
     business::{NODE_COLUMNS, NodeRow},
+    device_channel,
 };
 use apsp_compiler::{Access, Node};
 use apsp_protocol::{Bundle, Envelope, ManifestChanged, now_timestamp};
@@ -101,7 +102,7 @@ async fn publish_server(
         }
     };
     if let Some(rev) = revision {
-        agent_api::notify(
+        device_channel::notify(
             state,
             server_id,
             Envelope::new("manifest.changed", ManifestChanged { rev })?,

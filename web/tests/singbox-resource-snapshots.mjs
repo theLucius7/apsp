@@ -16,7 +16,7 @@ const operationsViewFixture = {
   changes: [], history: [], paths: [], hop_observations: [], path_diagnosis: 'TEST_ONLY 无真实路径证据。',
 }
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
-const root = fileURLToPath(new URL('../dist/', import.meta.url)), prefix = '/api/plugins/sing-box'
+const root = fileURLToPath(new URL('../dist/', import.meta.url)), trafficApi = '/api/traffic', accessApi = '/api/access'
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname, file = resolve(root, path === '/' ? 'index.html' : `.${path}`)
   if (!file.startsWith(root.endsWith(sep) ? root : `${root}${sep}`)) return response.writeHead(400).end()
@@ -57,31 +57,31 @@ try {
         }
         let value
         if (method !== 'GET') {
-          const allowed = method === 'POST' && [ `${prefix}/nodes`, `${prefix}/servers/1/enable`, `${prefix}/servers/1/deployments/check`, `${prefix}/servers/1/runtime-operations` ].includes(path)
-            || method === 'PATCH' && path === `${prefix}/nodes/1`
+          const allowed = method === 'POST' && [ `${trafficApi}/nodes`, `${trafficApi}/servers/1/enable`, `${trafficApi}/servers/1/deployments/check`, `${trafficApi}/servers/1/runtime-operations` ].includes(path)
+            || method === 'PATCH' && path === `${trafficApi}/nodes/1`
             || method === 'PATCH' && path === '/api/latency-tasks/00000000-0000-0000-0000-000000000001'
-            || method === 'DELETE' && path === `${prefix}/nodes/1`
+            || method === 'DELETE' && path === `${trafficApi}/nodes/1`
           assert(allowed, `${method} ${path}`)
           const body = request.postData() ? request.postDataJSON() : undefined; writes.push({ method, path, body }); value = {}
           if (path.endsWith('/deployments/check')) value = { ready: true, checks: [] }
           if (path.endsWith('/enable')) hosts[0].enabled = true
           if (path.endsWith('/runtime-operations')) value = { id: 'TEST_ONLY', operation: body.operation, requested_at: 1, expires_at: 600 }
         } else if (['/api/me', '/api/dashboard/access'].includes(path)) value = { authenticated: true, public_dashboard: false }
-        else if (path === `${prefix}/servers` || path === '/api/servers') value = hosts
+        else if (path === `${trafficApi}/servers` || path === '/api/servers') value = hosts
         else if (path === '/api/servers/1') value = { id: 1, name: hosts[0].name, online: true, device_public_key: 'TEST_ONLY', static_info: {}, latest_metrics: {}, last_seen: 1, manifest_rev: 2, capabilities: [] }
-        else if (path === `${prefix}/servers/1`) value = hosts[0]
-        else if (path === `${prefix}/servers/1/profile`) value = { definition: { outbounds: [], endpoints: [], services: [], cloudflared: [], dns: null, route: null }, revision: 0 }
+        else if (path === `${trafficApi}/servers/1`) value = hosts[0]
+        else if (path === `${trafficApi}/servers/1/profile`) value = { definition: { outbounds: [], endpoints: [], services: [], cloudflared: [], dns: null, route: null }, revision: 0 }
         else if (path === '/api/latency-tasks') value = tasks
         else if (path === '/api/probes/overview') value = []
-        else if (path === '/api/plugins/sing-box/reachability') value = { settings: { enabled: false, interval_minutes: 60, minimum_interval_minutes: 15, maximum_interval_minutes: 1440, token_configured: false, revision: 1, next_run_at: 0, run_requested: false, running: false, last_run: {} }, targets: [], events: [] }
-        else if (path === `${prefix}/nodes`) value = nodes
-        else if (path === `${prefix}/ordered-proxy-resources`) value = ordered
-        else if (path === `${prefix}/ordered-subscription-sources`) value = []
-        else if (path === `${prefix}/node-catalog`) value = catalogView(resources)
-        else if (path === `${prefix}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
-        else if (path === `${prefix}/servers/1/deployments`) value = { status, history: [], pending: false, enabled_nodes: 1, authorized_nodes: 1 }
-        else if (!url.search && path === `${prefix}/servers/1/operations-view`) value = operationsViewFixture
-        else if (path === `${prefix}/servers/1/runtime-operations`) value = operation
+        else if (path === '/api/observability/reachability') value = { settings: { enabled: false, interval_minutes: 60, minimum_interval_minutes: 15, maximum_interval_minutes: 1440, token_configured: false, revision: 1, next_run_at: 0, run_requested: false, running: false, last_run: {} }, targets: [], events: [] }
+        else if (path === `${trafficApi}/nodes`) value = nodes
+        else if (path === `${trafficApi}/ordered-proxy-resources`) value = ordered
+        else if (path === `${trafficApi}/ordered-subscription-sources`) value = []
+        else if (path === `${trafficApi}/node-catalog`) value = catalogView(resources)
+        else if (path === `${accessApi}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
+        else if (path === `${trafficApi}/servers/1/deployments`) value = { status, history: [], pending: false, enabled_nodes: 1, authorized_nodes: 1 }
+        else if (!url.search && path === `${trafficApi}/servers/1/operations-view`) value = operationsViewFixture
+        else if (path === `${trafficApi}/servers/1/runtime-operations`) value = operation
         else { totals.unexpected.push(`${method} ${path}`); return route.fulfill({ status: 404, json: {} }) }
         return route.fulfill({ json: value })
       })
@@ -102,7 +102,7 @@ try {
       const { page, writes } = control
       await page.getByRole('button', { name: '创建节点', exact: true }).first().click()
       const dialog = page.getByRole('dialog'); await dialog.locator('[name=name]').fill('TEST_ONLY 节点草稿'); await dialog.locator('[name=public_host]').fill('127.0.0.1'); await dialog.locator('[name=sni]').fill('localhost')
-      await block(control, `${prefix}/servers`, () => nodesRefresh(page), () => forceForm(dialog.locator('form')), () => dialog.getByRole('button', { name: '创建目标节点', exact: true }).click(), async () => assert.equal(await dialog.locator('[name=name]').inputValue(), 'TEST_ONLY 节点草稿'))
+      await block(control, `${trafficApi}/servers`, () => nodesRefresh(page), () => forceForm(dialog.locator('form')), () => dialog.getByRole('button', { name: '创建目标节点', exact: true }).click(), async () => assert.equal(await dialog.locator('[name=name]').inputValue(), 'TEST_ONLY 节点草稿'))
       assert.equal(writes[0].body.server_id, 1)
     })
     await fixture('/nodes', async ({ page, hosts, writes }) => {
@@ -118,7 +118,7 @@ try {
       const { page } = control
       await page.locator(width < 768 ? '[data-slot=catalog-card]' : '[data-slot=catalog-table] tbody tr').filter({ hasText: 'TEST_ONLY 节点 1' }).getByRole('button', { name: '删除', exact: true }).click()
       const button = page.getByRole('alertdialog').getByRole('button', { name: '确认删除', exact: true })
-      await block(control, `${prefix}/ordered-proxy-resources`, () => nodesRefresh(page), () => forceClick(button), () => button.click())
+      await block(control, `${trafficApi}/ordered-proxy-resources`, () => nodesRefresh(page), () => forceClick(button), () => button.click())
     })
     const servicesRefresh = page => page.locator('[data-slot=panel-header]').filter({ hasText: 'sing-box' }).getByRole('button', { name: '刷新', exact: true }).evaluate(button => button.click())
     await fixture('/servers/1/services', async control => {
@@ -126,7 +126,7 @@ try {
       const runtime = page.locator('[data-slot=runtime-operations]'), refresh = () => servicesRefresh(page)
       const inspect = runtime.getByRole('button', { name: '读取状态与日志', exact: true })
       await wait(() => inspect.isEnabled(), 'Runtime/deployment initial snapshots')
-      await block(control, `${prefix}/servers/1/deployments`, refresh, () => forceClick(inspect), () => inspect.click())
+      await block(control, `${trafficApi}/servers/1/deployments`, refresh, () => forceClick(inspect), () => inspect.click())
       await runtime.getByRole('button', { name: '重启运行时', exact: true }).click(); status.target_rev = 3; await refresh()
       await runtime.getByRole('alert').getByText('期望版本已改变，请取消后重新确认。', { exact: true }).waitFor()
       await forceClick(runtime.getByRole('button', { name: '确认重启', exact: true })); assert.equal(writes.length, 1, 'A confirmation must never retarget to a newer revision')
@@ -169,7 +169,7 @@ try {
     await fixture('/servers/1/services', async control => {
       const { page, hosts } = control; hosts[0].enabled = false
       await servicesRefresh(page); const enable = page.getByRole('button', { name: '安装 sing-box', exact: true }); await wait(() => enable.isEnabled(), 'Enable snapshot')
-      await block(control, `${prefix}/servers/1`, () => servicesRefresh(page), () => forceClick(enable), () => enable.click())
+      await block(control, `${trafficApi}/servers/1`, () => servicesRefresh(page), () => forceClick(enable), () => enable.click())
     })
   }
   assert.deepEqual(totals.external, []); assert.deepEqual(totals.unexpected, []); assert.deepEqual(totals.errors, [])

@@ -35,7 +35,7 @@ try {
       let value
       if(path==='/api/dashboard/access')value={authenticated:true,public_dashboard:false}
       else if(path==='/api/servers/1')value={id:1,name:'命令生命周期夹具',online:false,device_public_key:'TEST_ONLY',static_info:{},latest_metrics:{},last_seen:now,manifest_rev:0,capabilities:enabled?['command:execute','command:lifecycle:v1','command:cancel:v1']:[]}
-      else if(path==='/api/plugins/sing-box/servers/1')value={id:1,name:'命令生命周期夹具',enabled:false,source:null,read_only:false,online:false,agent_supported:true}
+      else if(path==='/api/traffic/servers/1')value={id:1,name:'命令生命周期夹具',enabled:false,source:null,read_only:false,online:false,agent_supported:true}
       else if(path==='/api/servers/1/agent-settings')value={sample_interval_secs:1,upload_interval_secs:5,discover_public_ips:false,auto_update:false}
       else if (path === '/api/servers/1/telemetry-settings') value = { persist_interval_secs: 60 }
       else if(path==='/api/servers/1/commands')value=commands

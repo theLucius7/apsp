@@ -6,7 +6,7 @@ import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
 type Control = { paused: boolean; revision: number }
 export default function UserControl({ userId, active, onChanged }: { userId: number; active: boolean; onChanged: () => void }) {
-  const url = `/api/plugins/sing-box/users/${userId}/control`
+  const url = `/api/access/users/${userId}/control`
   const control = useResource<Control>(active ? url : null, 5000, { keep: true })
   const action = useAction()
   const change = () => {

@@ -2,9 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { Field, FormDialog, RefreshNotice, DialogPresence } from '../components'
 import { resourceWriteError, useAction, useRefreshNotice, useResource } from '../hooks'
-import type { Node, PluginServer } from '../types'
-import { assignmentRequestId, proxyResourceKey, validatedSnapshot, validProxyResources } from '../access/groupTypes'
-import type { ProxyResource, ResourceSnapshot } from '../access/groupTypes'
+import type { Node, RuntimeServer } from '../types'
+import { proxyResourceKey, validProxyResources } from '../access/groupTypes'
+import { newRequestId } from '@/lib/request-id'
+import { validatedSnapshot } from '@/lib/resource-snapshot'
+import type { ResourceSnapshot } from '@/lib/resource-snapshot'
+import type { ProxyResource } from '../access/groupTypes'
 import { sourceRoot, validSourceNodePage, validSubscriptionSources } from './orderedSourceTypes'
 import type { SourceNode, SourceNodePage, SubscriptionSource } from './orderedSourceTypes'
 import ChainPathEditor from './ChainPathEditor'
@@ -14,14 +17,14 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Notice } from '@/components/panel'
 
-const root = '/api/plugins/sing-box'
+const root = '/api/traffic'
 
 function nodeId(value: string) {
   const id = Number(value)
   return /^[1-9]\d*$/.test(value) && Number.isSafeInteger(id) ? id : null
 }
 
-export type ProxyWriteSnapshot = { resources: ResourceSnapshot<ProxyResource[]>; nodes: ResourceSnapshot<Node[]>; servers: ResourceSnapshot<PluginServer[]>; sources?: ResourceSnapshot<SubscriptionSource[]>; sourceNodes?: Record<number, ResourceSnapshot<SourceNodePage>> }
+export type ProxyWriteSnapshot = { resources: ResourceSnapshot<ProxyResource[]>; nodes: ResourceSnapshot<Node[]>; servers: ResourceSnapshot<RuntimeServer[]>; sources?: ResourceSnapshot<SubscriptionSource[]>; sourceNodes?: Record<number, ResourceSnapshot<SourceNodePage>> }
 export type ChainDraftHop = { kind: 'managed'; node_id: string } | { kind: 'subscription'; source_id: number; node: Pick<SourceNode, 'id' | 'source_id' | 'identity_epoch' | 'version_id' | 'name' | 'protocol' | 'server' | 'server_port' | 'capabilities'> | null; update_mode: 'follow_node' | 'pinned' }
 export type ChainBatchDraft = { mode: 'new' | 'existing'; server_id: string; public_host: string; sni: string; entry_node_id: string; exit_node_id: string; hops?: ChainDraftHop[]; rows: { name: string; port: string; hops?: ChainDraftHop[] }[] }
 export type ChainRequestHop = { kind: 'managed'; node_id: number } | { kind: 'subscription'; source_id: number; external_node_id: string; node_version_id: string; update_mode: 'follow_node' | 'pinned' }
@@ -83,7 +86,7 @@ export function validNodeList(value: unknown): value is Node[] {
         && (node.protocol_config.tls.challenge === undefined || node.protocol_config.tls.challenge === 'http-01' || node.protocol_config.tls.challenge === 'tls-alpn-01'))))
     && new Set(value.map(node => node.id)).size === value.length
 }
-export function validServerList(value: unknown): value is PluginServer[] {
+export function validServerList(value: unknown): value is RuntimeServer[] {
   return Array.isArray(value) && value.every(server => server && Number.isSafeInteger(server.id) && server.id > 0 && typeof server.name === 'string'
     && typeof server.enabled === 'boolean' && typeof server.online === 'boolean' && typeof server.read_only === 'boolean'
     && (server.installation === undefined || record(server.installation) && typeof server.installation.state === 'string' && typeof server.installation.reason === 'string'
@@ -156,7 +159,7 @@ export function chainBatchSelectionError(draft: ChainBatchDraft, snapshot: Proxy
   return ''
 }
 function publicHost(value: string) { return value.length <= 253 && !/[\s/?#@\\]/.test(value) && !value.includes('://') && (value.includes(':') ? /^\[?[0-9a-fA-F:]+\]?$/.test(value) : /^[a-zA-Z0-9.-]+$/.test(value)) }
-export function prepareChainBatch(draft: ChainBatchDraft, snapshot: ProxyWriteSnapshot, previous?: PendingChainBatch, requestId: () => string = assignmentRequestId): PendingChainBatch {
+export function prepareChainBatch(draft: ChainBatchDraft, snapshot: ProxyWriteSnapshot, previous?: PendingChainBatch, requestId: () => string = newRequestId): PendingChainBatch {
   const writeError = proxyWriteError(snapshot)
   if (writeError) throw new Error(writeError)
   const error = chainBatchSelectionError(draft, snapshot)

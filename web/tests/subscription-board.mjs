@@ -57,12 +57,12 @@ try {
       const request = route.request(), path = new URL(request.url()).pathname
       if (request.method() !== 'GET') writes.push(path)
       if (path === '/api/dashboard/access') return route.fulfill({ json: { authenticated: true, public_dashboard: false } })
-      if (path === '/api/plugins/expenses/subscriptions') { reads++; return route.fulfill({ json: subscriptions }) }
-      if (path === '/api/plugins/expenses/labels') return route.fulfill({ json: labels })
-      if (path === '/api/plugins/expenses/summary') return route.fulfill({ json: summary })
+      if (path === '/api/costs/subscriptions') { reads++; return route.fulfill({ json: subscriptions }) }
+      if (path === '/api/costs/labels') return route.fulfill({ json: labels })
+      if (path === '/api/costs/summary') return route.fulfill({ json: summary })
       // Other people's subscriptions are never read here.
-      if (path.startsWith('/api/plugins/sing-box/') && path !== '/api/plugins/sing-box/users/overview') proxyReads.push(path)
-      if (path.startsWith('/api/plugins/')) return route.fulfill({ json: [] })
+      if (['/api/traffic/', '/api/access/', '/api/observability/reachability'].some(prefix => path.startsWith(prefix)) && path !== '/api/access/users/overview') proxyReads.push(path)
+      if (['/api/traffic/', '/api/access/', '/api/observability/', '/api/naming/', '/api/costs/', '/api/resources/alicloud'].some(prefix => path.startsWith(prefix))) return route.fulfill({ json: [] })
       unexpected.push(path)
       return route.fulfill({ status: 404, json: { error: 'TEST_ONLY' } })
     })
@@ -148,9 +148,9 @@ try {
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
       if (path === '/api/dashboard/access') return route.fulfill({ json: { authenticated: true, public_dashboard: false } })
-      if (path === '/api/plugins/expenses/subscriptions') return route.fulfill({ json: subscriptions })
-      if (path === '/api/plugins/expenses/labels') return route.fulfill({ json: labels })
-      if (path === '/api/plugins/expenses/summary') return route.fulfill({ json: summary })
+      if (path === '/api/costs/subscriptions') return route.fulfill({ json: subscriptions })
+      if (path === '/api/costs/labels') return route.fulfill({ json: labels })
+      if (path === '/api/costs/summary') return route.fulfill({ json: summary })
       return route.fulfill({ status: 403, json: { error: '没有权限' } })
     })
     await installControlCenterFixtures(page)

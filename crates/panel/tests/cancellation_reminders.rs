@@ -3,7 +3,7 @@
 //! evidence interface that the application connects.
 
 use apsp_costs::cancellation_reminders;
-use apsp_panel_host::{AppState, config::Config};
+use apsp_panel_host::config::Config;
 use apsp_protocol::now_timestamp;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -25,7 +25,7 @@ async fn explicit_reminders_do_not_replay_and_revocation_stops_new_events(
         Uuid::new_v4()
     )));
     std::fs::create_dir(&directory.0)?;
-    let state = AppState::new(
+    let state = apsp_panel::state(
         pool.clone(),
         Config {
             database_url: String::new(),

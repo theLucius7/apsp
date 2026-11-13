@@ -43,7 +43,7 @@ try {
       requests.push(path + url.search)
       if (path === '/api/dashboard/access') return route.fulfill({ json: { authenticated: true, public_dashboard: true } })
       if (path === '/api/statistics' && mode === 'failure') return route.fulfill({ status: 500, json: { error: '测试：暂时无法读取网卡统计' } })
-      if (path === '/api/statistics' || path === '/api/plugins/sing-box/statistics') return route.fulfill({ json: data(Number(url.searchParams.get('days')), path.includes('sing-box')) })
+      if (path === '/api/statistics' || path === '/api/access/statistics') return route.fulfill({ json: data(Number(url.searchParams.get('days')), path === '/api/access/statistics') })
       unexpected.push(path); return route.fulfill({ status: 500, json: { error: 'Unexpected request' } })
     })
     await installControlCenterFixtures(page)
@@ -74,7 +74,7 @@ try {
     await page.waitForFunction(() => document.querySelectorAll('[data-slot=statistics-chart-bars]')[0]?.children.length === 30)
     assert.equal(await chart.locator('[data-slot=statistics-chart-bar]').count(), 30)
     assert.ok(requests.includes('/api/statistics?days=30'))
-    assert.ok(requests.includes('/api/plugins/sing-box/statistics?days=30'))
+    assert.ok(requests.includes('/api/access/statistics?days=30'))
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false)
     mode = 'failure'
     await page.getByRole('button', { name: '刷新', exact: true }).click()

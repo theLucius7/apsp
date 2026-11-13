@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 
-import type { ReauthenticationRequest } from './reauthentication-request'
+import type { ReauthenticationRequest } from '@/lib/reauthentication-request'
 export default function Reauthentication() {
   const [pending, setPending] = useState<ReauthenticationRequest[]>([])
   const requests = useRef<ReauthenticationRequest[]>([])

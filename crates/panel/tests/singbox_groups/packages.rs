@@ -124,7 +124,7 @@ async fn assignment_snapshots_idempotency_and_full_precision_quota(pool: PgPool)
     let conflict = panel
         .admin(
             Method::POST,
-            &format!("{ROOT}/users/{user}/package"),
+            &format!("/api/access/users/{user}/package"),
             &cookie,
             Some(json!({"package_group_id":another,"request_id":request})),
         )
@@ -457,7 +457,7 @@ async fn confirm(panel: &TestPanel, cookie: &str, reviewed: &Value) -> Result<(S
         .admin(
             Method::POST,
             &format!(
-                "{ROOT}/operations/{}/apply",
+                "/api/access/operations/{}/apply",
                 reviewed["id"].as_str().context("preview id")?
             ),
             cookie,
@@ -605,7 +605,7 @@ async fn a_new_expiry_renews_an_expired_user_and_never_removes_the_limit(
     let response = panel
         .admin(
             Method::POST,
-            &format!("{ROOT}/operations/preview"),
+            "/api/access/operations/preview",
             &cookie,
             Some(json!({"operation":"set_validity","user_id":uid,"until":{"at":now_timestamp() - 60}})),
         )

@@ -6,8 +6,8 @@ mod release_support;
 use anyhow::{Result, ensure};
 use apsp_access::usage;
 use apsp_compiler::{Node, ProtocolConfig, SsMethod};
+use apsp_governance::control_center::credentials;
 use apsp_panel::publisher;
-use apsp_panel_host::control_center::credentials;
 use apsp_protocol::{UsageBatch, UsageRecord, now_timestamp};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use business_support::{TestPanel, release_fixture};
@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-const ROOT: &str = "/api/plugins/sing-box/nexus-nodes/runtime";
+const ROOT: &str = "/api/traffic/nexus-nodes/runtime";
 async fn post(
     panel: &TestPanel,
     cookie: &str,
@@ -302,7 +302,7 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     .bind(server)
     .fetch_one(&pool)
     .await?;
-    let endpoint = format!("/api/plugins/sing-box/nexus-nodes/{inventory}/public-endpoint");
+    let endpoint = format!("/api/traffic/nexus-nodes/{inventory}/public-endpoint");
     let moved = json!({"public_host":"moved.example.invalid","public_port":443});
     let response = panel
         .admin(Method::PATCH, &endpoint, &cookie, Some(moved))
@@ -336,7 +336,7 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     }
     // A permission group added at the source after import reaches the runtime:
     // the line joins the policy group standing for it, created on first use.
-    let groups = format!("/api/plugins/sing-box/nexus-nodes/{inventory}/groups");
+    let groups = format!("/api/traffic/nexus-nodes/{inventory}/groups");
     let added = json!({"groups":[{"id":1,"name":"Fixture"},{"id":7,"name":"Added"}]});
     for invalid in [
         json!({"groups":[]}),
@@ -810,7 +810,7 @@ async fn unactivated_preparation_can_be_discarded_and_policy_groups_keep_identit
     let policy = ok(panel
         .admin(
             Method::POST,
-            "/api/plugins/sing-box/policy-groups",
+            "/api/access/policy-groups",
             &cookie,
             Some(json!({"name":"TEST_ONLY policy","node_ids":[native],"chain_ids":[]})),
         )
@@ -822,7 +822,7 @@ async fn unactivated_preparation_can_be_discarded_and_policy_groups_keep_identit
     ok(panel
         .admin(
             Method::PUT,
-            &format!("/api/plugins/sing-box/users/{user}/policy-groups"),
+            &format!("/api/access/users/{user}/policy-groups"),
             &cookie,
             Some(json!({"group_ids":[group]})),
         )
@@ -964,7 +964,7 @@ async fn retired_line_leaves_the_running_host_and_the_bridge(pool: PgPool) -> Re
             .fetch_one(&pool)
     };
     let (first, retired) = (inventory(43).await?, inventory(44).await?);
-    let path = |id: i64| format!("/api/plugins/sing-box/nexus-nodes/{id}/retire");
+    let path = |id: i64| format!("/api/traffic/nexus-nodes/{id}/retire");
     let native: i64 =
         sqlx::query_scalar("SELECT node_id FROM singbox_nexus_runtime_nodes WHERE inventory_id=$1")
             .bind(retired)
@@ -1446,7 +1446,7 @@ async fn redeploy_repeats_a_running_hosts_bundle_as_a_higher_revision(pool: PgPo
     let response = panel
         .admin(
             Method::POST,
-            &format!("/api/plugins/sing-box/servers/{server}/deployments/redeploy"),
+            &format!("/api/traffic/servers/{server}/deployments/redeploy"),
             &cookie,
             None,
         )

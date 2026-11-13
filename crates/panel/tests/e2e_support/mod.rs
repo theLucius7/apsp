@@ -39,7 +39,7 @@ impl Harness {
         let directory = PathBuf::from("/tmp").join(format!("sn-e2e-{}", Uuid::new_v4()));
         fs::create_dir_all(&directory)?;
         let directory = directory.canonicalize()?;
-        let mut state = AppState::new(
+        let mut state = apsp_panel::state(
             pool,
             Config {
                 database_url: String::new(),

@@ -7,8 +7,8 @@ mod release_support;
 
 use anyhow::Result;
 use apsp_observability::diagnostics;
-use apsp_panel::agent_api;
 use apsp_protocol::{Hello, HelloAck, Message, PROTOCOL_VERSION};
+use apsp_resources::device_channel;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -22,7 +22,7 @@ async fn capable(panel: &TestPanel, server_id: i64) -> Result<()> {
     .bind(server_id)
     .execute(&panel.state.pool)
     .await?;
-    agent_api::process_message(
+    device_channel::process_message(
         &panel.state,
         server_id,
         Message::Hello(Hello {
@@ -49,7 +49,7 @@ async fn fixture(panel: &TestPanel) -> Result<()> {
     release_fixture::write(
         &panel.state.config.data_dir,
         "nodequality",
-        diagnostics::PLUGIN_VERSION,
+        diagnostics::TOOL_VERSION,
         "nodequality",
         &archive,
         binary,
@@ -192,8 +192,7 @@ async fn diagnostic_chapters_survive_failure_duplicates_late_delivery_and_recrea
     assert_eq!(report["report"], Value::Null);
     assert_eq!(report["error"], "OOM fixture");
     let recreated =
-        apsp_panel_host::AppState::new(panel.state.pool.clone(), (*panel.state.config).clone())
-            .await?;
+        apsp_panel::state(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
     let saved: String = sqlx::query_scalar(
         "SELECT text FROM diagnostic_report_sections WHERE job_id=$1 AND name='header_info'",
     )

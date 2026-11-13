@@ -1,7 +1,7 @@
 use super::receipts::{preliminary_outcome, request_for_result, save_receipt};
 use super::storage::{PendingRequest, current_binding, enqueue};
 use super::{confirmed_is_current, lock_server, supports, target_is_current};
-use crate::{AppState, agent_api};
+use crate::{AppState, device_channel};
 use apsp_protocol::{
     Bundle, Envelope, RUNTIME_PATH_PROBE_CAPABILITY, RuntimeCheckpoint, RuntimeControlAck,
     RuntimePathProbeRequest, RuntimePathProbeResult, now_timestamp,
@@ -147,7 +147,7 @@ pub async fn notify_path_probe(
     server_id: i64,
     request: &RuntimePathProbeRequest,
 ) -> anyhow::Result<()> {
-    agent_api::notify(
+    device_channel::notify(
         state,
         server_id,
         Envelope::new("runtime.path_probe.request", request)?,

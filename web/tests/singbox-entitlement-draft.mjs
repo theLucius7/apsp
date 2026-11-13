@@ -38,7 +38,7 @@ try {
     const failures = new Set(), heldReads = new Map()
     const previews = [], applications = [], operationSnapshots = new Map()
     let previewSequence = 0, operationRevision = 0, heldPreview = null
-    const prefix = '/api/plugins/sing-box'
+    const trafficApi = '/api/traffic', accessApi = '/api/access'
     let groupIds = [1], packageId = 1
     let chainEntries = []
     const policies = [
@@ -141,45 +141,45 @@ try {
       let value
       if (pathname === '/api/dashboard/access' && method === 'GET') value = { authenticated: true, public_dashboard: false }
       else if (pathname === '/api/me' && method === 'GET') value = { authenticated: true }
-      else if (pathname === `${prefix}/users/1/portal` && method === 'GET') value = { configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin }, keys: 0, url: null, activation_expires_at: null }
-      else if (pathname === `${prefix}/users/1/diagnosis` && method === 'GET' && !url.search) value = diagnosisFixture(user)
-      else if (pathname === `${prefix}/users/1/limits` && method === 'GET') value = { user_id: 1, revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] }
-      else if (pathname === `${prefix}/users/1/client-template` && method === 'GET' && !url.search) value = templateFixture
-      else if (pathname === `${prefix}/users` && method === 'GET') value = [user]
-      else if (pathname === `${prefix}/users/1` && method === 'PATCH') {
+      else if (pathname === `${accessApi}/users/1/portal` && method === 'GET') value = { configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin }, keys: 0, url: null, activation_expires_at: null }
+      else if (pathname === `${accessApi}/users/1/diagnosis` && method === 'GET' && !url.search) value = diagnosisFixture(user)
+      else if (pathname === `${accessApi}/users/1/limits` && method === 'GET') value = { user_id: 1, revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] }
+      else if (pathname === `${accessApi}/users/1/client-template` && method === 'GET' && !url.search) value = templateFixture
+      else if (pathname === `${accessApi}/users` && method === 'GET') value = [user]
+      else if (pathname === `${accessApi}/users/1` && method === 'PATCH') {
         const payload = request.postDataJSON()
         assert.deepEqual(payload, { name: '已保留的用户草稿' })
         userWrites.push(payload); Object.assign(user, payload); value = user
       }
-      else if (pathname === `${prefix}/ordered-proxy-resources` && method === 'GET') value = proxyResources()
-      else if (pathname === `${prefix}/external-node-candidates` && method === 'GET') value = { available_nodes: [] }
-      else if (pathname === `${prefix}/nodes` && method === 'GET') value = nodes
-      else if (pathname === `${prefix}/policy-groups` && method === 'GET') value = policies
-      else if (pathname === `${prefix}/policy-groups` && method === 'POST') {
+      else if (pathname === `${trafficApi}/ordered-proxy-resources` && method === 'GET') value = proxyResources()
+      else if (pathname === `${accessApi}/external-node-candidates` && method === 'GET') value = { available_nodes: [] }
+      else if (pathname === `${trafficApi}/nodes` && method === 'GET') value = nodes
+      else if (pathname === `${accessApi}/policy-groups` && method === 'GET') value = policies
+      else if (pathname === `${accessApi}/policy-groups` && method === 'POST') {
         const payload = request.postDataJSON()
         assert.deepEqual(payload, { name: '已保留的策略草稿', node_ids: [1], chain_ids: [], external_nodes: [] })
         groupWrites.push({ pathname, method, payload }); value = { id: 3, ...payload, member_count: 0 }; policies.push(value)
       }
-      else if (pathname === `${prefix}/policy-groups/1` && method === 'PUT') {
+      else if (pathname === `${accessApi}/policy-groups/1` && method === 'PUT') {
         const payload = request.postDataJSON()
         assert.deepEqual(payload, { name: '原策略', node_ids: [1], chain_ids: [], external_nodes: [] })
         groupWrites.push({ pathname, method, payload }); Object.assign(policies[0], payload); value = policies[0]
       }
-      else if (pathname === `${prefix}/package-groups` && method === 'GET') value = packages
-      else if (pathname === `${prefix}/package-groups/2` && method === 'PUT') {
+      else if (pathname === `${accessApi}/package-groups` && method === 'GET') value = packages
+      else if (pathname === `${accessApi}/package-groups/2` && method === 'PUT') {
         const payload = request.postDataJSON()
         assert.deepEqual(payload, { name: '已保留的套餐草稿', monthly_bytes: '2147483648', reset_day: 15, reset_hour: 8, reset_minute: 30, timezone: 'Europe/London', duration_days: 60 })
         groupWrites.push({ pathname, method, payload }); Object.assign(packages[1], payload); value = packages[1]
       }
-      else if (pathname === `${prefix}/package-groups/2` && method === 'DELETE') {
+      else if (pathname === `${accessApi}/package-groups/2` && method === 'DELETE') {
         groupWrites.push({ pathname, method }); packages.splice(1, 1); value = {}
       }
-      else if (pathname === `${prefix}/usage` && method === 'GET') { usageReads.push(Date.now()); value = usage }
-      else if (pathname === `${prefix}/users/1/policy-groups` && method === 'GET') { policyReads.push([...groupIds]); value = { group_ids: [...groupIds] } }
-      else if (pathname === `${prefix}/users/1/entitlement` && method === 'GET') value = entitlement()
+      else if (pathname === `${accessApi}/usage` && method === 'GET') { usageReads.push(Date.now()); value = usage }
+      else if (pathname === `${accessApi}/users/1/policy-groups` && method === 'GET') { policyReads.push([...groupIds]); value = { group_ids: [...groupIds] } }
+      else if (pathname === `${accessApi}/users/1/entitlement` && method === 'GET') value = entitlement()
       // The user page also shows per-user limits (ADR 0124); none are set in this fixture.
-      else if (pathname === `${prefix}/users/1/limits` && method === 'GET') value = { user_id: 1, revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] }
-      else if (pathname === `${prefix}/users/1/subscription` && method === 'GET') {
+      else if (pathname === `${accessApi}/users/1/limits` && method === 'GET') value = { user_id: 1, revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] }
+      else if (pathname === `${accessApi}/users/1/subscription` && method === 'GET') {
         const format = new URL(request.url()).searchParams.get('format')
         assert(['singbox', 'links'].includes(format))
         value = {
@@ -191,7 +191,7 @@ try {
           content_type: format === 'singbox' ? 'application/json' : 'text/plain', entitlement: entitlement(),
         }
       }
-      else if (pathname === `${prefix}/operations/preview` && method === 'POST') {
+      else if (pathname === `${accessApi}/operations/preview` && method === 'POST') {
         const payload = request.postDataJSON()
         assert(['policy_batch', 'replace_package'].includes(payload.operation))
         if (payload.operation === 'policy_batch') assert.deepEqual(payload, { operation: 'policy_batch', user_ids: [1], group_ids: [2] })
@@ -204,7 +204,7 @@ try {
         value = { id, expires_at: Math.floor(Date.now() / 1000) + 300, summary: payload.operation === 'policy_batch'
           ? { effect: 'TEST_ONLY 固定策略范围，历史账本保留', users: [{ id: 1, name: user.name }], differences: [{ user_id: 1, added_nodes: [2], removed_nodes: [1], effective_nodes: [2] }] }
           : { effect: 'TEST_ONLY 更换固定套餐，历史用量保留', plan: packages[1], new_cycle: { cycle_start: 1790812800, next_reset: 1793491200, used_bytes: usage.total } } }
-      } else if (new RegExp(`^${prefix}/operations/[^/]+/apply$`).test(pathname) && method === 'POST') {
+      } else if (new RegExp(`^${accessApi}/operations/[^/]+/apply$`).test(pathname) && method === 'POST') {
         const payload = request.postDataJSON(), fixed = operationSnapshots.get(pathname.split('/').at(-2))
         assert.deepEqual(payload, { confirm: true }); assert(fixed, 'apply must bind an existing exact preview')
         applications.push({ pathname, method, payload, request: fixed.request })
@@ -233,7 +233,7 @@ try {
     const usageCount = usageReads.length
     await previous.uncheck()
     await next.check()
-    const policyFailure = failedRead(`${prefix}/policy-groups`)
+    const policyFailure = failedRead(`${accessApi}/policy-groups`)
     const editedAt = Date.now()
     await page.waitForTimeout(5600)
     await policyFailure
@@ -250,7 +250,7 @@ try {
     assert.equal(await previous.isChecked(), false)
     assert.equal(await next.isChecked(), true)
     assert.equal(writes.length, 0)
-    await recoverRead(`${prefix}/policy-groups`, page.getByRole('button', { name: '重试', exact: true }).first(), async () => {
+    await recoverRead(`${accessApi}/policy-groups`, page.getByRole('button', { name: '重试', exact: true }).first(), async () => {
       assert.equal(await savePolicies.isDisabled(), true)
       assert.equal(await previous.isChecked(), false)
       assert.equal(await next.isChecked(), true)
@@ -288,20 +288,20 @@ try {
     await confirmReview(review)
     await review.getByRole('alert').filter({ hasText: '固定预览版本冲突' }).waitFor()
     assert.equal(writes.length, 0); assert.deepEqual(groupIds, [1]); assert.equal(JSON.stringify(usage), ledger)
-    const freshPreview = page.waitForResponse(response => new URL(response.url()).pathname === `${prefix}/operations/preview` && response.request().method() === 'POST' && response.status() === 200)
+    const freshPreview = page.waitForResponse(response => new URL(response.url()).pathname === `${accessApi}/operations/preview` && response.request().method() === 'POST' && response.status() === 200)
     await review.getByRole('button', { name: '重新预览', exact: true }).click()
     await freshPreview
     await review.getByRole('checkbox', { name: '已核对目标与影响，确认执行', exact: true }).waitFor()
     assert.equal(await review.getByRole('checkbox', { name: '已核对目标与影响，确认执行', exact: true }).isChecked(), false)
     await assertUnconfirmed(review)
     // Assigned snapshots intentionally do not poll; only confirmed apply reloads them.
-    await failedRead(`${prefix}/users/1/policy-groups`, () => confirmReview(review))
+    await failedRead(`${accessApi}/users/1/policy-groups`, () => confirmReview(review))
     await page.getByText('变更已确认保存；历史账本保留，请继续查看设备应用与订阅状态。', { exact: true }).waitFor()
     assert.equal(await savePolicies.isDisabled(), true)
     assert.equal(await previous.isChecked(), false)
     assert.equal(await next.isChecked(), true)
-    const readback = page.waitForResponse(response => new URL(response.url()).pathname === `${prefix}/users/1/policy-groups` && response.request().method() === 'GET' && response.status() === 200)
-    await recoverRead(`${prefix}/users/1/policy-groups`, page.getByRole('button', { name: '重试', exact: true }).first(), async () => {
+    const readback = page.waitForResponse(response => new URL(response.url()).pathname === `${accessApi}/users/1/policy-groups` && response.request().method() === 'GET' && response.status() === 200)
+    await recoverRead(`${accessApi}/users/1/policy-groups`, page.getByRole('button', { name: '重试', exact: true }).first(), async () => {
       assert.equal(await savePolicies.isDisabled(), true)
       assert.equal(await previous.isChecked(), false)
       assert.equal(await next.isChecked(), true)
@@ -322,17 +322,17 @@ try {
     await page.getByRole('button', { name: '分配或更换套餐', exact: true }).click()
     await page.locator('select[name="package_group_id"]').selectOption('2')
     let dialog = page.getByRole('dialog')
-    await failedRead(`${prefix}/package-groups`)
+    await failedRead(`${accessApi}/package-groups`)
     await blockedForm(dialog, '确认分配')
     assert.equal(await dialog.locator('select[name="package_group_id"]').inputValue(), '2')
-    await recoverRead(`${prefix}/package-groups`, () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click()), async () => {
+    await recoverRead(`${accessApi}/package-groups`, () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click()), async () => {
       await blockedForm(dialog, '确认分配')
       assert.equal(await dialog.locator('select[name="package_group_id"]').inputValue(), '2')
     })
     await enabled(dialog.getByRole('button', { name: '确认分配', exact: true }))
-    await failedRead(`${prefix}/users/1/entitlement`)
+    await failedRead(`${accessApi}/users/1/entitlement`)
     await blockedForm(dialog, '确认分配')
-    await recoverRead(`${prefix}/users/1/entitlement`, () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click()), async () => {
+    await recoverRead(`${accessApi}/users/1/entitlement`, () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click()), async () => {
       await blockedForm(dialog, '确认分配')
       assert.equal(await dialog.locator('select[name="package_group_id"]').inputValue(), '2')
     })
@@ -375,17 +375,17 @@ try {
     assert.equal(await page.getByRole('switch', { name: /^授权 / }).count(), 0)
     // A metrics-only failure has no authority over user edits.
     const editUser = page.locator('[data-slot=user-heading]').getByRole('button', { name: '编辑', exact: true })
-    await failedRead(`${prefix}/usage`, () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).click())
+    await failedRead(`${accessApi}/usage`, () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).click())
     await enabled(editUser)
-    failures.delete(`${prefix}/usage`)
+    failures.delete(`${accessApi}/usage`)
     await page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).click()
 
     await page.getByRole('button', { name: '编辑', exact: true }).click()
     dialog = page.getByRole('dialog')
     await dialog.getByRole('textbox', { name: '代理用户名称', exact: true }).fill('已保留的用户草稿')
-    await failedRead(`${prefix}/users`)
+    await failedRead(`${accessApi}/users`)
     await blockedForm(dialog, '保存修改')
-    await recoverRead(`${prefix}/users`, () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click()), async () => {
+    await recoverRead(`${accessApi}/users`, () => page.locator('header[data-slot=page-header]').getByRole('button', { name: '刷新', exact: true, includeHidden: true }).evaluate(button => button.click()), async () => {
       await blockedForm(dialog, '保存修改')
       assert.equal(await dialog.getByRole('textbox', { name: '代理用户名称', exact: true }).inputValue(), '已保留的用户草稿')
     })
@@ -401,16 +401,16 @@ try {
     // Let the actual periodic GET begin; no prior error or click behind the open dialog.
     assert.equal(failures.size, 0)
     await enabled(dialog.getByRole('button', { name: '保存', exact: true }))
-    await recoverRead(`${prefix}/ordered-proxy-resources`, null, async () => {
+    await recoverRead(`${trafficApi}/ordered-proxy-resources`, null, async () => {
       // A poll in flight leaves the draft submittable (ADR 0102); only a failed read blocks it.
       await enabled(dialog.getByRole('button', { name: '保存', exact: true }))
       assert.equal(await dialog.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '已保留的策略草稿')
       assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="2"])').isChecked(), true)
     })
     await enabled(dialog.getByRole('button', { name: '保存', exact: true }))
-    await failedRead(`${prefix}/ordered-proxy-resources`)
+    await failedRead(`${trafficApi}/ordered-proxy-resources`)
     await blockedForm(dialog, '保存')
-    await recoverRead(`${prefix}/ordered-proxy-resources`, dialog.getByRole('button', { name: '重试', exact: true }), async () => {
+    await recoverRead(`${trafficApi}/ordered-proxy-resources`, dialog.getByRole('button', { name: '重试', exact: true }), async () => {
       await blockedForm(dialog, '保存')
       assert.equal(await dialog.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '已保留的策略草稿')
       assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="node_ids"][value="2"])').isChecked(), true)
@@ -441,9 +441,9 @@ try {
     dialog = page.getByRole('dialog')
     assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="chain_ids"][value="42"])').isChecked(), true)
     assert.equal(await dialog.getByRole('button', { name: '保存', exact: true }).isDisabled(), true)
-    await failedRead(`${prefix}/ordered-proxy-resources`)
+    await failedRead(`${trafficApi}/ordered-proxy-resources`)
     await blockedForm(dialog, '保存')
-    await recoverRead(`${prefix}/ordered-proxy-resources`, dialog.getByRole('button', { name: '重试', exact: true }), async () => {
+    await recoverRead(`${trafficApi}/ordered-proxy-resources`, dialog.getByRole('button', { name: '重试', exact: true }), async () => {
       await blockedForm(dialog, '保存')
       assert.equal(await dialog.locator('[role=checkbox]:has(+ input[name="chain_ids"][value="42"])').isChecked(), true)
       chainEntries = chainEntries.filter(chain => chain.id !== 42)
@@ -471,9 +471,9 @@ try {
     await assertNativeSelectContrast(page, theme)
     await dialog.getByRole('combobox', { name: '重置时区', exact: true }).selectOption('Europe/London')
     await dialog.getByRole('textbox', { name: '名称', exact: true }).fill('已保留的套餐草稿')
-    await failedRead(`${prefix}/package-groups`)
+    await failedRead(`${accessApi}/package-groups`)
     await blockedForm(dialog, '保存')
-    await recoverRead(`${prefix}/package-groups`, dialog.getByRole('button', { name: '重试', exact: true }), async () => {
+    await recoverRead(`${accessApi}/package-groups`, dialog.getByRole('button', { name: '重试', exact: true }), async () => {
       await blockedForm(dialog, '保存')
       assert.equal(await dialog.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '已保留的套餐草稿')
       assert.equal(await dialog.locator('input[name="duration_days"]').inputValue(), '60')
@@ -484,10 +484,10 @@ try {
     const renamedPackageRow = page.getByRole('row').filter({ has: page.getByText('已保留的套餐草稿', { exact: true }) })
     await renamedPackageRow.getByRole('button', { name: '删除', exact: true }).click()
     dialog = page.getByRole('alertdialog')
-    await failedRead(`${prefix}/package-groups`)
+    await failedRead(`${accessApi}/package-groups`)
     assert.equal(await dialog.getByRole('button', { name: '确认删除', exact: true }).isDisabled(), true)
     assert.equal(groupWrites.length, 3)
-    await recoverRead(`${prefix}/package-groups`, dialog.getByRole('button', { name: '重试', exact: true }), async () => {
+    await recoverRead(`${accessApi}/package-groups`, dialog.getByRole('button', { name: '重试', exact: true }), async () => {
       assert.equal(await dialog.getByRole('button', { name: '确认删除', exact: true }).isDisabled(), true)
       assert.equal(await dialog.getByRole('button', { name: '取消', exact: true }).isDisabled(), false)
       assert.equal(groupWrites.length, 3)

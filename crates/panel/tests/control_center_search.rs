@@ -1,12 +1,9 @@
 #![forbid(unsafe_code)]
 
 use anyhow::{Context, Result};
+use apsp_governance::auth::{hash_token, random_token};
 use apsp_panel::router;
-use apsp_panel_host::{
-    AppState,
-    auth::{hash_token, random_token},
-    config::Config,
-};
+use apsp_panel_host::config::Config;
 use apsp_protocol::now_timestamp;
 use reqwest::{Client, StatusCode, header};
 use serde_json::{Value, json};
@@ -46,7 +43,7 @@ impl Panel {
         let base = format!("http://{listen}");
         let directory = std::env::temp_dir().join(format!("apsp-search-test-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory)?;
-        let state = AppState::new(
+        let state = apsp_panel::state(
             pool.clone(),
             Config {
                 database_url: String::new(),
@@ -630,7 +627,7 @@ async fn empty_server_scopes_match_shared_workbench_and_document_read_handlers(
     assert_eq!(
         panel
             .client
-            .get(format!("{}/api/plugins/sing-box/users", panel.base))
+            .get(format!("{}/api/access/users", panel.base))
             .header(header::COOKIE, cookie)
             .send()
             .await?

@@ -46,21 +46,21 @@ try {
       const request = route.request(), url = new URL(request.url()), path = url.pathname
       const respond = json => route.fulfill({ json })
       if (path === '/api/dashboard/access') return respond({ authenticated: mode !== 'unauthorized', public_dashboard: false })
-      if (request.method() === 'GET' && !url.search && path === '/api/plugins/sing-box/users/1/diagnosis') return respond(diagnosisFixture(user))
-      if (request.method() === 'GET' && !url.search && path === '/api/plugins/sing-box/users/1/client-template') return respond(templateFixture)
-      if (path === '/api/plugins/sing-box/users/1/portal') return respond({ configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin }, keys: 0, url: null, activation_expires_at: null })
-      if (path === '/api/plugins/sing-box/users') return respond([user])
-      if (path === '/api/plugins/sing-box/nodes') return respond(nodes)
+      if (request.method() === 'GET' && !url.search && path === '/api/access/users/1/diagnosis') return respond(diagnosisFixture(user))
+      if (request.method() === 'GET' && !url.search && path === '/api/access/users/1/client-template') return respond(templateFixture)
+      if (path === '/api/access/users/1/portal') return respond({ configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin }, keys: 0, url: null, activation_expires_at: null })
+      if (path === '/api/access/users') return respond([user])
+      if (path === '/api/traffic/nodes') return respond(nodes)
       if (path.endsWith('/policy-groups') && !path.includes('/users/') || path.endsWith('/package-groups')) return respond([])
-      if (path === '/api/plugins/sing-box/usage') return respond({ uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] })
-      if (path === '/api/plugins/sing-box/users/1/policy-groups') return respond({ group_ids: [] })
-      if (path === '/api/plugins/sing-box/users/1/entitlement') return respond(entitlement)
-      if (path === '/api/plugins/sing-box/users/1/subscription/reset') {
+      if (path === '/api/access/usage') return respond({ uplink: '0', downlink: '0', total: '0', by_user: [], by_node: [] })
+      if (path === '/api/access/users/1/policy-groups') return respond({ group_ids: [] })
+      if (path === '/api/access/users/1/entitlement') return respond(entitlement)
+      if (path === '/api/access/users/1/subscription/reset') {
         assert.equal(request.method(), 'POST'); resets++
         user.subscription_token = `reset-fixture-${resets}`; user.subscription_url = `https://panel.example.com/sub/reset-fixture-${resets}`
         return respond(user)
       }
-      if (path === '/api/plugins/sing-box/users/1/subscription') {
+      if (path === '/api/access/users/1/subscription') {
         assert.equal(request.method(), 'GET'); subscriptionRequests++
         if (mode === 'unauthorized') return route.fulfill({ status: 401, json: { error: '登录已过期' } })
         if (mode === 'failure') return route.fulfill({ status: 500, json: { error: '测试：当前订阅读取失败' } })
@@ -72,7 +72,7 @@ try {
           ready_nodes: status === 'ready' || status === 'format_unavailable' ? nodes.map(node => ({ ...node, protocol: modern ? 'hysteria2' : 'vless-reality' })) : [], external_granted_nodes: format === 'clash' ? 1 : 0, content: lastContent, filename: '../../untrusted.html', content_type: 'text/html',
           entitlement: status === 'blocked' ? { ...entitlement, allowed: false, status: 'exhausted', monthly_bytes: '4096' } : entitlement })
       }
-      if (/^\/api\/plugins\/sing-box\/users\/\d+\/limits$/.test(path)) return route.fulfill({ json: { user_id: Number(path.split('/')[5]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } }) // Per-user limits (ADR 0124) are read on the user page; none are set here.
+      if (/^\/api\/access\/users\/\d+\/limits$/.test(path)) return route.fulfill({ json: { user_id: Number(path.split('/')[4]), revision: 0, upload_mbps: 0, download_mbps: 0, max_connections: 0, servers: [] } }) // Per-user limits (ADR 0124) are read on the user page; none are set here.
       unexpected.push(path); return route.fulfill({ status: 500, json: { error: 'Unexpected API' } })
     })
     await installControlCenterFixtures(page)

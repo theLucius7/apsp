@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
-import { boardCounts, renewalView, savedSort, selectEntries, validRenewalSummary, validRenewals } from '../src/costs/subscriptions/board'
+import { boardCounts, renewalView, selectEntries, validRenewalSummary, validRenewals } from '../src/costs/subscriptions/board'
+import { savedSort } from '../src/costs/expenses/model'
 import type { Entry } from '../src/costs/subscriptions/board'
 import type { Expense, Label } from '../src/costs/expenses/types'
 import type { ExchangeRates } from '../src/costs/currency/currency'

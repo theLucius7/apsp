@@ -3,14 +3,14 @@ mod business_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::{Context, Result, ensure};
-use apsp_panel_host::auth::hash_token;
+use apsp_governance::auth::hash_token;
 use apsp_protocol::now_timestamp;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
-const ROOT: &str = "/api/plugins/expenses";
+const ROOT: &str = "/api/costs";
 async fn call(
     panel: &TestPanel,
     cookie: &str,

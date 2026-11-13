@@ -8,7 +8,7 @@ import { extname, resolve, sep } from 'node:path'
 
 // TEST_ONLY: owned loopback fixtures exercise actual built UI; no provider or production writes.
 const { chromium } = await import(process.env.APSP_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.APSP_PLAYWRIGHT_MODULE).href : 'playwright')
-const dist = fileURLToPath(new URL('../dist/', import.meta.url)), prefix = '/api/plugins/sing-box'
+const dist = fileURLToPath(new URL('../dist/', import.meta.url)), trafficApi = '/api/traffic', accessApi = '/api/access'
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname, file = resolve(dist, path === '/' ? 'index.html' : `.${path}`)
   if (!file.startsWith(dist.endsWith(sep) ? dist : `${dist}${sep}`)) return response.writeHead(400).end()
@@ -22,7 +22,7 @@ const browser = await chromium.launch({ headless: true, ...(process.env.APSP_CHR
 const wait = async (condition, description) => { const deadline = Date.now() + 10000; while (!await condition()) { assert(Date.now() < deadline, description); await new Promise(resolve => setTimeout(resolve, 20)) } }
 const refresh = page => page.locator('[data-slot=page-header] button').filter({ hasText: /^刷新$/ }).evaluate(button => button.click())
 const refreshReads = async page => {
-  const responses = ['nodes', 'ordered-proxy-resources', 'servers'].map(name => page.waitForResponse(response => new URL(response.url()).pathname === `${prefix}/${name}` && response.request().method() === 'GET'))
+  const responses = ['nodes', 'ordered-proxy-resources', 'servers'].map(name => page.waitForResponse(response => new URL(response.url()).pathname === `${trafficApi}/${name}` && response.request().method() === 'GET'))
   await refresh(page); await Promise.all(responses)
 }
 const forceForm = (form, reload = false) => form.evaluate((element, reload) => {
@@ -61,11 +61,11 @@ try {
           let value
           if (method !== 'GET') { totals.unexpected.push(`${method} ${path}`); return route.fulfill({ status: 404, json: {} }) }
           else if (['/api/me', '/api/dashboard/access'].includes(path)) value = { authenticated: true, public_dashboard: false }
-          else if (path === `${prefix}/servers`) value = hosts
-          else if (path === `${prefix}/nodes`) value = nodes
-          else if ([`${prefix}/ordered-proxy-resources`, `${prefix}/ordered-subscription-sources`].includes(path)) value = []
-      else if (path === `${prefix}/node-catalog`) value = catalogResourceFixtures(resources)
-          else if (path === `${prefix}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
+          else if (path === `${trafficApi}/servers`) value = hosts
+          else if (path === `${trafficApi}/nodes`) value = nodes
+          else if ([`${trafficApi}/ordered-proxy-resources`, `${trafficApi}/ordered-subscription-sources`].includes(path)) value = []
+      else if (path === `${trafficApi}/node-catalog`) value = catalogResourceFixtures(resources)
+          else if (path === `${accessApi}/usage`) value = { total: '0', uplink: '0', downlink: '0', by_node: [], by_user: [] }
           else { totals.unexpected.push(`${method} ${path}`); return route.fulfill({ status: 404, json: {} }) }
           return route.fulfill({ json: value })
         })()

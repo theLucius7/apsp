@@ -15,8 +15,8 @@ mod release_support;
 
 use anyhow::Result;
 use apsp_observability::{diagnostics, ip_quality};
-use apsp_panel::agent_api;
 use apsp_protocol::{Hello, HelloAck, Message, PROTOCOL_VERSION};
+use apsp_resources::device_channel;
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -31,7 +31,7 @@ async fn capable(panel: &TestPanel, server_id: i64) -> Result<()> {
     .bind(server_id)
     .execute(&panel.state.pool)
     .await?;
-    agent_api::process_message(
+    device_channel::process_message(
         &panel.state,
         server_id,
         Message::Hello(Hello {
@@ -58,7 +58,7 @@ async fn fixture(panel: &TestPanel) -> Result<()> {
     release_fixture::write(
         &panel.state.config.data_dir,
         "nodequality",
-        diagnostics::PLUGIN_VERSION,
+        diagnostics::TOOL_VERSION,
         "nodequality",
         &archive,
         binary,
@@ -194,8 +194,7 @@ async fn diagnostic_queue_is_durable_deduplicated_and_device_scoped(pool: PgPool
         .await?;
     assert_eq!(count, 1);
     let fresh_state =
-        apsp_panel_host::AppState::new(panel.state.pool.clone(), (*panel.state.config).clone())
-            .await?;
+        apsp_panel::state(panel.state.pool.clone(), (*panel.state.config).clone()).await?;
     let persisted: Value =
         sqlx::query_scalar("SELECT report FROM diagnostic_jobs WHERE server_id=$1")
             .bind(server_id)
@@ -282,8 +281,7 @@ async fn expiry_preserves_late_durable_reports_and_deleted_servers_cancel_work(
     // This assertion exercises offline deletion; online deletion now requires retirement.
     socket.close(None).await?;
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
-        while panel
-            .state
+        while apsp_resources::device_channel::devices(&panel.state)
             .connections
             .read()
             .await
