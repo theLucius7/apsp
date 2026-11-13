@@ -1,9 +1,12 @@
 #![forbid(unsafe_code)]
 //! Platform client for cloud provider APIs (ADR 0128): request signing, transport, retries
 //! and error codes, with no business decisions. Built on the panel host's outbound HTTP
-//! (`apsp_panel_host::http`): clients, bounded bodies, status categories and waits.
+//! (`apsp_panel_host::http`): clients, bounded bodies, status categories and waits. Each
+//! vendor API has one client here (Cloudflare, Globalping); callers state their timeouts,
+//! limits and the words they report failures in.
 
 pub mod aliyun;
+pub mod cloudflare;
 pub mod globalping;
 pub mod signing;
 #[cfg(any(test, feature = "test-support"))]

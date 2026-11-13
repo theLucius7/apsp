@@ -11,8 +11,8 @@ use std::{
 pub const RETRY_AFTER: RetryAfter = RetryAfter::new(60, 3600);
 /// The wait after a 429 that names none, or none the panel can read.
 const DEFAULT_RETRY_AFTER: i64 = 300;
-/// The largest provider answer the panel reads.
-const LIMIT: usize = 256 * 1024;
+/// The largest provider answer the panel reads, unless a client states its own limit.
+pub const LIMIT: usize = 256 * 1024;
 
 /// The client every cloud provider call shares. Background loops create their
 /// provider handles every few seconds; one client keeps the TLS setup and
@@ -64,7 +64,7 @@ async fn json_inner(request: RequestBuilder, power: bool) -> Result<Value, Failu
     if !explained && let Some(failure) = refusal(&response, "provider_rejected") {
         return Err(failure);
     }
-    let value = bounded_json(response).await?;
+    let value = bounded_json(response, LIMIT).await?;
     if power && let Some(code) = power_rejection(&value) {
         return Err(code.into());
     }
@@ -75,32 +75,39 @@ async fn json_inner(request: RequestBuilder, power: bool) -> Result<Value, Failu
 }
 
 /// The failure a provider's answer stands for by its status, or `None` when it succeeded.
-/// `other` names a status outside the shared categories.
+/// `other` names a status outside the shared categories. A 429 waits as long as the
+/// provider asks (one to sixty minutes).
 pub fn refusal(response: &Response, other: &'static str) -> Option<Failure> {
-    Some(match Refusal::of(response.status())? {
-        Refusal::RateLimited => rate_limited(response),
+    let category = Refusal::of(response.status())?;
+    let mut failure = refused(category, other);
+    if category == Refusal::RateLimited
+        && let Some(wait) = RETRY_AFTER.header(response.headers(), SystemTime::now())
+    {
+        failure.retry_after = wait;
+    }
+    Some(failure)
+}
+
+/// The failure a category of refused status stands for, when only the status is known: a
+/// 429 waits the default time. `other` names a status outside the shared categories.
+pub fn refused(category: Refusal, other: &'static str) -> Failure {
+    match category {
+        Refusal::RateLimited => Failure {
+            code: "rate_limited",
+            retry_after: DEFAULT_RETRY_AFTER,
+        },
         Refusal::Credentials => "authentication_failed".into(),
         Refusal::Missing => "resource_missing".into(),
         Refusal::Rejected => "provider_rejected".into(),
         Refusal::Redirect => "redirect_refused".into(),
         Refusal::Unavailable => "provider_unavailable".into(),
         Refusal::Other => other.into(),
-    })
-}
-
-/// A 429 answer, waiting as long as the provider asks (one to sixty minutes).
-fn rate_limited(response: &Response) -> Failure {
-    Failure {
-        code: "rate_limited",
-        retry_after: RETRY_AFTER
-            .header(response.headers(), SystemTime::now())
-            .unwrap_or(DEFAULT_RETRY_AFTER),
     }
 }
 
-/// Reads a JSON body of at most 256 KiB, whatever the declared length says.
-pub async fn bounded_json(response: Response) -> Result<Value, Failure> {
-    http::json(response, LIMIT).await.map_err(|error| {
+/// Reads a JSON body of at most `limit` bytes, whatever the declared length says.
+pub async fn bounded_json(response: Response, limit: usize) -> Result<Value, Failure> {
+    http::json(response, limit).await.map_err(|error| {
         Failure::from(match error {
             BodyError::TooLarge => "response_too_large",
             BodyError::Read(_) => "network_error",

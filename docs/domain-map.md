@@ -50,7 +50,7 @@
 | 用量账本与周期重置 | 记账并判断还能不能用 | 用量批次与记录、额度补偿 | 批次幂等；只在入口计量；重置记为补偿，不删记录 | 资源（设备通道收批次） | `crates/access` `usage.rs`；用户详情 |
 | 速率与连接数限制 | 给用户设上限 | 用户限制 | 0 表示不限；按服务器执行 | 流量服务（编进配置） | `crates/access` `user_limits.rs` |
 | 客户端订阅 | 让用户的客户端拿到可用配置 | 订阅令牌、订阅输出 | 只包含有效权益覆盖的服务；不调用第三方转换；令牌可重置 | 流量服务（可交付服务描述） | `crates/access` `subscriptions.rs`、`crates/compiler` 的客户端部分；`/sub/{token}` |
-| 专属地址 | 每个用户独立、可重置的主机名与路径 | 专属地址 | 默认关闭；令牌只进加密凭据 | 名称（DNS 记录，应经名称的接口；现在自带 Cloudflare 客户端，合并见 [architecture.md §12](architecture.md#12-扫描结论与余下工作2026-11-13)） | `crates/access` `subscription_hosts.rs`；用户 › 门户设置 |
+| 专属地址 | 每个用户独立、可重置的主机名与路径 | 专属地址 | 默认关闭；令牌只进加密凭据 | 名称（DNS 记录经名称的 `zone_records` 写入，Cloudflare 客户端在 `cloud-api`，[ADR 0135](adr/0135-health-retention-vendor-clients.md)） | `crates/access` `subscription_hosts.rs`；用户 › 门户设置 |
 | 门户与登录 | 让用户自己查看订阅、用量与到期 | 门户账号、会话、Passkey | 与管理员会话分开；开通不得使用订阅令牌 | 治理（复用 WebAuthn 机制） | `crates/access` `portal/`、`user_accounts/`；`/#/account/{id}`、`/#/member` |
 | 邀请 | 已有用户邀请熟人 | 邀请名额、邀请码 | 不收费、无佣金；套餐与策略组取邀请的默认值 | — | `crates/access` `user_accounts/invitations.rs`；`/#/join` |
 | 公告、指南与提醒 | 告诉用户怎么用、何时到期 | 公告、指南、提醒 | 提醒只告知，不改权益 | 平台（邮件与通知通道） | `crates/access` `user_accounts/` |

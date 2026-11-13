@@ -348,10 +348,6 @@ impl Outbox for Wiring {
     ) -> BoxFuture<'a, ApiResult<ChannelDeliveries>> {
         Box::pin(observability::alerts::outbox::deliveries(tx, channel))
     }
-
-    fn waiting<'a>(&'a self, pool: &'a PgPool) -> BoxFuture<'a, ApiResult<i64>> {
-        Box::pin(observability::alerts::outbox::waiting(pool))
-    }
 }
 
 impl ServerObservation for Wiring {

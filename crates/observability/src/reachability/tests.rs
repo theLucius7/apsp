@@ -3,11 +3,11 @@
 use super::{
     NodeReachability, NodeReference, ReachabilityState, alerts,
     budget::BASE_TESTS,
-    globalping::{Method, Request, Response, Transport, TransportFailure},
     latest_node_state, store, targets,
     worker::{Resolver, cycle},
 };
 use anyhow::Result;
+use apsp_cloud_api::globalping::{Method, Request, Response, Transport, TransportFailure};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::{collections::HashMap, net::IpAddr, sync::Mutex};

@@ -3,10 +3,11 @@ mod huawei;
 mod tencent;
 
 use super::{
-    cloudflare::{Cloudflare, Failure, Outcome},
+    cloudflare::{self, Failure, Outcome},
     lifecycle::{Snapshot, expected_matches},
     model::{Provider, Rule, domain},
 };
+use crate::cloud_api::cloudflare::Cloudflare;
 use serde_json::Value;
 use std::{future::Future, net::IpAddr};
 
@@ -20,7 +21,7 @@ pub(super) struct Providers {
 impl Providers {
     pub(super) fn new() -> Result<Self, Failure> {
         Ok(Self {
-            cloudflare: Cloudflare::new()?,
+            cloudflare: cloudflare::client()?,
             aliyun: aliyun::AliDns::new()?,
             tencent: tencent::Tencent::new()?,
             huawei: huawei::Huawei::new()?,
@@ -35,7 +36,7 @@ impl Providers {
     #[cfg(test)]
     pub(super) fn local(endpoint: &str) -> Self {
         Self {
-            cloudflare: Cloudflare::local(endpoint),
+            cloudflare: cloudflare::local(endpoint),
             aliyun: aliyun::AliDns::local(endpoint),
             tencent: tencent::Tencent::local(endpoint),
             huawei: huawei::Huawei::local(endpoint),
@@ -61,7 +62,7 @@ impl Providers {
 
     pub(super) async fn inspect(&self, rule: &Rule) -> Result<Option<Snapshot>, Failure> {
         match rule.config.provider {
-            Provider::Cloudflare => self.cloudflare.inspect(rule).await,
+            Provider::Cloudflare => cloudflare::inspect(&self.cloudflare, rule).await,
             Provider::Aliyun => self.aliyun.inspect(rule).await,
             Provider::Tencent => self.tencent.inspect(rule).await,
             Provider::Huawei => self.huawei.inspect(rule).await,
@@ -82,9 +83,15 @@ impl Providers {
     {
         match rule.config.provider {
             Provider::Cloudflare => {
-                self.cloudflare
-                    .reconcile_expected_guarded(rule, ip, expected, observed, check)
-                    .await
+                cloudflare::reconcile_expected_guarded(
+                    &self.cloudflare,
+                    rule,
+                    ip,
+                    expected,
+                    observed,
+                    check,
+                )
+                .await
             }
             Provider::Aliyun => {
                 self.aliyun

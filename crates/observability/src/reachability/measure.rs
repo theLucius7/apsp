@@ -6,12 +6,26 @@ use super::{
         OVERSEAS_TESTS,
     },
     classify::{Carrier, Control, Evidence, Measured, Probe, needs_control},
-    globalping::{
-        Client, MeasureError, ProbeResult, Transport, china_locations, overseas_locations,
-    },
 };
+use apsp_cloud_api::globalping::{Client, MeasureError, ProbeResult, Transport};
 use serde_json::{Value, json};
 use std::net::IpAddr;
+
+/// Handshakes each probe makes with the target.
+const PACKETS: u32 = 3;
+
+/// China Telecom twice, China Unicom and China Mobile once each (`CHINA_TESTS`).
+fn china_locations() -> Value {
+    json!([
+        {"magic":"China Telecom","limit":2},
+        {"magic":"China Unicom","limit":1},
+        {"magic":"China Mobile","limit":1},
+    ])
+}
+
+fn overseas_locations(limit: u32) -> Value {
+    json!([{"magic":"Europe","limit":limit}])
+}
 
 pub enum Outcome {
     Measured(Evidence),
@@ -79,7 +93,7 @@ async fn compare<T: Transport>(
     for port in CONTROL_PORTS.into_iter().filter(|port| *port != node_port) {
         reserved -= CONTROL_SEARCH_PROBES;
         match client
-            .tcp_ping(ip, port, overseas_locations(CONTROL_SEARCH_PROBES))
+            .tcp_ping(ip, port, PACKETS, overseas_locations(CONTROL_SEARCH_PROBES))
             .await
         {
             Ok(results) if results.iter().any(|result| result.received > 0.0) => {
@@ -101,7 +115,7 @@ async fn compare<T: Transport>(
     };
     // Any reservation beyond the mainland probes is returned.
     ledger.refund(reserved - CHINA_TESTS);
-    match client.tcp_ping(ip, port, china_locations()).await {
+    match client.tcp_ping(ip, port, PACKETS, china_locations()).await {
         Ok(results) => Control::Checked {
             port,
             china: china_probes(results),
@@ -125,8 +139,8 @@ pub async fn measure<T: Transport>(
         return Outcome::Deferred;
     }
     let (china, overseas) = tokio::join!(
-        client.tcp_ping(ip, port, china_locations()),
-        client.tcp_ping(ip, port, overseas_locations(OVERSEAS_TESTS)),
+        client.tcp_ping(ip, port, PACKETS, china_locations()),
+        client.tcp_ping(ip, port, PACKETS, overseas_locations(OVERSEAS_TESTS)),
     );
     if [&china, &overseas]
         .iter()
@@ -173,8 +187,8 @@ pub fn evidence_detail(evidence: &Evidence) -> Value {
 #[cfg(test)]
 mod tests {
     use super::super::classify::{ReachabilityState, classify};
-    use super::super::globalping::fake::{Scripted, probe};
     use super::*;
+    use apsp_cloud_api::globalping::fake::{Scripted, probe};
     use serde_json::json;
 
     const IP: &str = "198.51.100.7";
@@ -228,10 +242,12 @@ mod tests {
     impl Transport for ByLocation {
         async fn send(
             &self,
-            request: super::super::globalping::Request,
-        ) -> Result<super::super::globalping::Response, super::super::globalping::TransportFailure>
-        {
-            use super::super::globalping::{Method, Response};
+            request: apsp_cloud_api::globalping::Request,
+        ) -> Result<
+            apsp_cloud_api::globalping::Response,
+            apsp_cloud_api::globalping::TransportFailure,
+        > {
+            use apsp_cloud_api::globalping::{Method, Response};
             if request.method == Method::Post {
                 let body = request.body.unwrap();
                 let region = if body["locations"][0]["magic"] == "Europe" {

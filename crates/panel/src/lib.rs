@@ -10,6 +10,7 @@ pub mod maintenance;
 mod moved_paths;
 pub mod publisher;
 mod search;
+mod system_health;
 mod wiring;
 
 use apsp_governance::control_center;

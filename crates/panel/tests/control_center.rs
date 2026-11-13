@@ -745,6 +745,7 @@ async fn background_heartbeats_are_stored_by_the_platform_and_shown_in_the_healt
         "maintenance",
         "expenses",
         "exchange-rates",
+        "operations-retention",
         "subscription-sources",
         "member-messages",
         "subscription-hosts",
@@ -756,5 +757,376 @@ async fn background_heartbeats_are_stored_by_the_platform_and_shown_in_the_healt
             .with_context(|| format!("{name} is expected"))?;
         assert_eq!(worker["status"], "unknown", "{name}");
     }
+    Ok(())
+}
+
+#[sqlx::test]
+async fn the_health_view_joins_the_panel_with_each_owners_backlog_and_backups(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = Panel::start(pool.clone()).await?;
+    let servers = [
+        panel.server("health first").await?,
+        panel.server("health second").await?,
+    ];
+    let now = now_timestamp();
+    // Operations: four unfinished commands, three unreconciled device operations and five
+    // unfinished jobs, each next to finished ones that are not counted.
+    for state in [
+        "queued",
+        "claimed",
+        "running",
+        "cancel_requested",
+        "succeeded",
+    ] {
+        sqlx::query("INSERT INTO remote_commands(id,server_id,requested_at,spec,state) VALUES($1,$2,0,'{}',$3)")
+            .bind(Uuid::new_v4()).bind(servers[0]).bind(state).execute(&pool).await?;
+    }
+    for (status, reconciled) in [
+        ("queued", None),
+        ("dispatched", None),
+        ("unknown", None),
+        ("unknown", Some(now)),
+        ("succeeded", None),
+    ] {
+        sqlx::query("INSERT INTO fleet_operations(id,server_id,operation,policy,requested_at,expires_at,status,reconciled_at) VALUES($1,$2,'{}','{}',0,0,$3,$4)")
+            .bind(Uuid::new_v4()).bind(servers[0]).bind(status).bind(reconciled).execute(&pool).await?;
+    }
+    for status in [
+        "queued",
+        "running",
+        "paused",
+        "cancel_requested",
+        "uncertain",
+        "succeeded",
+    ] {
+        sqlx::query("INSERT INTO operations_jobs(id,name,requested_by,spec,targets,status,created_at,updated_at,expires_at,preview_digest) VALUES($1,'health fixture',1,'{}',$2,$3,0,0,0,'fixture')")
+            .bind(Uuid::new_v4()).bind(vec![servers[0]]).bind(status).execute(&pool).await?;
+    }
+    // Observability: two active diagnostic jobs (one per server) and one waiting alert.
+    for (server, status) in [
+        (servers[0], "queued"),
+        (servers[1], "running"),
+        (servers[0], "succeeded"),
+    ] {
+        sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,job,status,created_at,updated_at,expires_at) VALUES($1,$2,'{}',$3,0,0,0)")
+            .bind(Uuid::new_v4()).bind(server).bind(status).execute(&pool).await?;
+    }
+    let event: i64 = sqlx::query_scalar("INSERT INTO server_alert_events(server_id,server_name,opened_at) VALUES($1,'fixture',1) RETURNING id")
+        .bind(servers[0]).fetch_one(&pool).await?;
+    for (channel, status) in [("telegram", "pending"), ("webhook", "sent")] {
+        sqlx::query("INSERT INTO notification_outbox(event_id,kind,channel,message,status,next_attempt_at) VALUES($1,'offline',$2,'fixture',$3,0)")
+            .bind(event).bind(channel).bind(status).execute(&pool).await?;
+    }
+    // Backups: the newest kept record with its latest drill, schedules by last change.
+    let (older, newer) = (Uuid::new_v4(), Uuid::new_v4());
+    for (id, name, updated, error) in [
+        (older, "older plan", 10_i64, None),
+        (newer, "newer plan", 20, Some("fixture failure")),
+    ] {
+        sqlx::query("INSERT INTO operations_backup_schedules(id,name,requested_by,interval_secs,next_run_at,recipient,retention_count,retention_days,last_error,created_at,updated_at) VALUES($1,$2,1,86400,$3,'fixture',7,30,$4,0,$3)")
+            .bind(id).bind(name).bind(updated).bind(error).execute(&pool).await?;
+    }
+    let (kept, retired) = (Uuid::new_v4(), Uuid::new_v4());
+    for (id, name, created, retired_at) in [
+        (kept, "kept backup", 100_i64, None),
+        (retired, "retired backup", 200, Some(300_i64)),
+    ] {
+        sqlx::query("INSERT INTO operations_backup_records(id,name,manifest,manifest_sha256,location,encrypted,verification,created_at,imported_at,imported_by,retired_at) VALUES($1,$2,'{}','fixture','fixture',true,'integrity_verified',$3,$3,1,$4)")
+            .bind(id).bind(name).bind(created).bind(retired_at).execute(&pool).await?;
+    }
+    for (recorded, passed, action) in [(110_i64, false, "restore"), (120, true, "verify")] {
+        sqlx::query("INSERT INTO operations_restore_drills(id,backup_id,report,report_sha256,passed,recorded_at,recorded_by) VALUES($1,$2,$3,'fixture',$4,$5,1)")
+            .bind(Uuid::new_v4()).bind(kept).bind(json!({"action":action})).bind(passed).bind(recorded).execute(&pool).await?;
+    }
+    // Governance: an independent observer's report.
+    sqlx::query("INSERT INTO system_observer_reports(observer_name,target_origin,observed_at,received_at,available,elapsed_ms,evidence) VALUES('fixture observer',$1,$2,$2,true,12,'{\"status\":200}')")
+        .bind(&panel.base).bind(now).execute(&pool).await?;
+
+    let url = format!("{}/api/control-center/health", panel.base);
+    let cookie = panel.session(1, false).await?;
+    let health: Value = panel
+        .client
+        .get(&url)
+        .header(header::COOKIE, cookie)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let keys: Vec<&str> = health
+        .as_object()
+        .context("the view is an object")?
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            "backlog",
+            "backup",
+            "database",
+            "disk",
+            "independent_observers",
+            "sampled_at",
+            "update",
+            "uptime_seconds",
+            "version",
+            "workers"
+        ]
+    );
+    assert_eq!(health["version"], env!("CARGO_PKG_VERSION"));
+    assert!(health["sampled_at"].as_i64() >= Some(now));
+    assert!(health["uptime_seconds"].is_i64());
+    assert_eq!(
+        health["backlog"],
+        json!({"commands":4,"diagnostics":2,"notifications":1,"fleet":3,"operations":5})
+    );
+    assert_eq!(
+        health["backup"],
+        json!({
+            "status": "recorded",
+            "latest": {"id":kept,"name":"kept backup","created_at":100,"encrypted":true,"verification":"integrity_verified","last_drill":{"passed":true,"recorded_at":120,"action":"verify"}},
+            "schedules": [
+                {"id":newer,"name":"newer plan","paused":false,"next_run_at":20,"last_started_at":null,"last_finished_at":null,"last_error":"fixture failure"},
+                {"id":older,"name":"older plan","paused":false,"next_run_at":10,"last_started_at":null,"last_finished_at":null,"last_error":null},
+            ],
+            "source": "local-backup-ledger",
+        })
+    );
+    assert_eq!(health["database"]["available"], true);
+    for key in ["elapsed_ms", "bytes", "pool_size", "idle"] {
+        assert!(health["database"][key].is_u64(), "database {key}");
+    }
+    assert!(health["disk"]["status"].is_string());
+    assert_eq!(
+        health["independent_observers"],
+        json!([{"observer_name":"fixture observer","target_origin":panel.base,"observed_at":now,"received_at":now,"available":true,"elapsed_ms":12,"evidence":{"status":200}}])
+    );
+    assert_eq!(health["update"]["remote_checked"], false);
+    assert!(health["workers"].is_array());
+    // Only an owner session sees the view.
+    let viewer = panel.viewer(servers[0]).await?;
+    let viewer = panel.session(viewer, false).await?;
+    assert_eq!(
+        panel
+            .client
+            .get(&url)
+            .header(header::COOKIE, viewer)
+            .send()
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    Ok(())
+}
+
+#[sqlx::test]
+async fn each_owner_purges_its_own_records_past_the_retention_policy(pool: PgPool) -> Result<()> {
+    let panel = Panel::start(pool.clone()).await?;
+    let server = panel.server("retention fixture").await?;
+    // Distinct periods, so a record purged under another kind's period shows.
+    sqlx::query("UPDATE record_retention_policy SET days=CASE kind WHEN 'audit' THEN 400 WHEN 'ip' THEN 20 WHEN 'terminal' THEN 5 WHEN 'logs' THEN 10 ELSE days END")
+        .execute(&pool).await?;
+    let now = now_timestamp();
+    let past = |days: i64| now - (days + 1) * 86_400;
+    let within = |days: i64| now - (days - 1) * 86_400;
+
+    // Governance (audit): the request audit, observer reports and API tokens.
+    for (path, at) in [
+        ("/fixture/past", past(400)),
+        ("/fixture/within", within(400)),
+    ] {
+        sqlx::query("INSERT INTO management_audit(action,object_path,request_diff,result,occurred_at) VALUES('GET',$1,'{}','{}',$2)")
+            .bind(path).bind(at).execute(&pool).await?;
+        sqlx::query("INSERT INTO system_observer_reports(observer_name,target_origin,observed_at,received_at,evidence) VALUES($1,'fixture',$2,$2,'{}')")
+            .bind(path).bind(at).execute(&pool).await?;
+    }
+    for (name, expires, revoked) in [
+        ("expired", past(400), None),
+        ("revoked within", past(400), Some(within(400))),
+        ("valid", within(400), None),
+    ] {
+        sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,expires_at,revoked_at,created_at) VALUES($1,1,$2,$3,'[]','[]',$4,$5,0)")
+            .bind(Uuid::new_v4()).bind(format!("fixture {name}")).bind(name).bind(expires).bind(revoked).execute(&pool).await?;
+    }
+    // Observability: IP quality results (ip) and server events (logs).
+    for (ip, checked, dataset) in [
+        ("192.0.2.1", past(20), Some(past(20))),
+        ("192.0.2.2", past(20), Some(within(20))),
+        ("192.0.2.3", within(20), None),
+    ] {
+        sqlx::query(
+            "INSERT INTO server_ip_quality(server_id,ip,payload,checked_at) VALUES($1,$2,'{}',$3)",
+        )
+        .bind(server)
+        .bind(ip)
+        .bind(checked)
+        .execute(&pool)
+        .await?;
+        if let Some(at) = dataset {
+            sqlx::query("INSERT INTO server_ip_quality_datasets(server_id,ip,provider,database,checked_at,last_attempt) VALUES($1,$2,'check-place','maxmind',$3,'{}')")
+                .bind(server).bind(ip).bind(at).execute(&pool).await?;
+        }
+    }
+    for (kind, at) in [("past", past(10)), ("within", within(10))] {
+        sqlx::query("INSERT INTO fleet_events(id,server_id,kind,source,occurred_at,detail) VALUES($1,$2,$3,'fixture',$4,'{}')")
+            .bind(Uuid::new_v4()).bind(server).bind(kind).bind(at).execute(&pool).await?;
+    }
+    // Operations: closed terminal sessions (terminal), and the contents of configuration
+    // history, finished device operations and command output (logs).
+    for (status, expires) in [
+        ("closed", past(5)),
+        ("running", past(5)),
+        ("failed", within(5)),
+    ] {
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO fleet_terminal_sessions(id,server_id,admin_id,account,admin_session_hash,policy,columns,rows,created_at,expires_at,last_input_at,status) VALUES($1,$2,1,'root',$3,'{}',80,24,0,$4,0,$5)")
+            .bind(id).bind(server).bind(format!("fixture {status}")).bind(expires).bind(status).execute(&pool).await?;
+        sqlx::query(
+            "INSERT INTO fleet_terminal_inputs(session_id,sequence,data) VALUES($1,1,'input')",
+        )
+        .bind(id)
+        .execute(&pool)
+        .await?;
+        sqlx::query("INSERT INTO fleet_terminal_outputs(session_id,sequence,data,digest,created_at) VALUES($1,1,'output','fixture',0)")
+            .bind(id).execute(&pool).await?;
+    }
+    let write = json!({"kind":"write","content":"secret"});
+    let operations = [
+        (
+            "succeeded",
+            None,
+            past(10),
+            write.clone(),
+            Some(json!({"ok":true})),
+        ),
+        ("dispatched", None, past(10), write.clone(), None),
+        (
+            "unknown",
+            Some(now),
+            past(10),
+            json!({"kind":"service"}),
+            Some(json!({"ok":false})),
+        ),
+        (
+            "succeeded",
+            None,
+            within(10),
+            write.clone(),
+            Some(json!({"ok":true})),
+        ),
+    ]
+    .map(|(status, reconciled, requested, operation, result)| {
+        (
+            Uuid::new_v4(),
+            status,
+            reconciled,
+            requested,
+            operation,
+            result,
+        )
+    });
+    for (id, status, reconciled, requested, operation, result) in &operations {
+        sqlx::query("INSERT INTO fleet_operations(id,server_id,operation,policy,requested_at,expires_at,status,result,reconciled_at) VALUES($1,$2,$3,'{}',$4,$4,$5,$6,$7)")
+            .bind(id).bind(server).bind(operation).bind(requested).bind(status).bind(result).bind(reconciled).execute(&pool).await?;
+    }
+    for (operation, path, created) in [
+        (operations[0].0, "/etc/past.conf", past(10)),
+        (operations[3].0, "/etc/within.conf", within(10)),
+    ] {
+        sqlx::query("INSERT INTO fleet_config_history(id,server_id,path,operation_id,previous_sha256,sha256,content,created_at) VALUES($1,$2,$3,$4,'fixture','fixture','configuration',$5)")
+            .bind(Uuid::new_v4()).bind(server).bind(path).bind(operation).bind(created).execute(&pool).await?;
+    }
+    let output = json!({"stdout":"out","stderr":"err","exit_code":0});
+    for (state, finished) in [
+        ("succeeded", past(10)),
+        ("running", past(10)),
+        ("failed", within(10)),
+    ] {
+        sqlx::query("INSERT INTO remote_commands(id,server_id,requested_at,spec,state,result,finished_at) VALUES($1,$2,0,'{}',$3,$4,$5)")
+            .bind(Uuid::new_v4()).bind(server).bind(state).bind(&output).bind(finished).execute(&pool).await?;
+    }
+
+    apsp_governance::control_center::retention::purge(&pool, now).await?;
+    apsp_observability::retention::purge(&pool, now).await?;
+    apsp_operations::retention::purge(&pool, now).await?;
+
+    let audit: Vec<String> = sqlx::query_scalar("SELECT object_path FROM management_audit WHERE object_path LIKE '/fixture/%' ORDER BY object_path")
+        .fetch_all(&pool).await?;
+    assert_eq!(audit, ["/fixture/within"]);
+    let observers: Vec<String> = sqlx::query_scalar(
+        "SELECT observer_name FROM system_observer_reports ORDER BY observer_name",
+    )
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(observers, ["/fixture/within"]);
+    let tokens: Vec<String> =
+        sqlx::query_scalar("SELECT name FROM management_api_tokens ORDER BY name")
+            .fetch_all(&pool)
+            .await?;
+    assert_eq!(tokens, ["revoked within", "valid"]);
+    let quality: Vec<(String, i64)> = sqlx::query_as("SELECT q.ip,(SELECT count(*) FROM server_ip_quality_datasets d WHERE d.server_id=q.server_id AND d.ip=q.ip) FROM server_ip_quality q WHERE q.server_id=$1 ORDER BY q.ip")
+        .bind(server).fetch_all(&pool).await?;
+    assert_eq!(
+        quality,
+        [("192.0.2.2".to_owned(), 1), ("192.0.2.3".to_owned(), 0)],
+        "a result goes once it and all its datasets are past the period"
+    );
+    let events: Vec<String> =
+        sqlx::query_scalar("SELECT kind FROM fleet_events WHERE server_id=$1 ORDER BY kind")
+            .bind(server)
+            .fetch_all(&pool)
+            .await?;
+    assert_eq!(events, ["within"]);
+    let terminals: Vec<(String, i64, i64)> = sqlx::query_as("SELECT s.status,(SELECT count(*) FROM fleet_terminal_inputs i WHERE i.session_id=s.id),(SELECT count(*) FROM fleet_terminal_outputs o WHERE o.session_id=s.id) FROM fleet_terminal_sessions s WHERE s.server_id=$1 ORDER BY s.status")
+        .bind(server).fetch_all(&pool).await?;
+    assert_eq!(
+        terminals,
+        [("failed".to_owned(), 1, 1), ("running".to_owned(), 1, 1)],
+        "only closed sessions past the period go, with their input and output"
+    );
+    let stored: Vec<(Value, Option<Value>)> = sqlx::query_as("SELECT operation,result FROM fleet_operations WHERE id=ANY($1) ORDER BY array_position($1,id)")
+        .bind(operations.iter().map(|operation| operation.0).collect::<Vec<_>>()).fetch_all(&pool).await?;
+    assert_eq!(
+        stored,
+        [
+            (json!({"kind":"write","content":""}), None),
+            (write.clone(), None),
+            (json!({"kind":"service"}), None),
+            (write, Some(json!({"ok":true}))),
+        ],
+        "finished or reconciled operations past the period keep their rows without contents"
+    );
+    let history: Vec<(String, String)> = sqlx::query_as(
+        "SELECT path,content FROM fleet_config_history WHERE server_id=$1 ORDER BY path",
+    )
+    .bind(server)
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(
+        history,
+        [
+            ("/etc/past.conf".to_owned(), String::new()),
+            ("/etc/within.conf".to_owned(), "configuration".to_owned()),
+        ]
+    );
+    let commands: Vec<(String, Value)> = sqlx::query_as(
+        "SELECT state,result FROM remote_commands WHERE server_id=$1 ORDER BY state",
+    )
+    .bind(server)
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(
+        commands,
+        [
+            ("failed".to_owned(), output.clone()),
+            ("running".to_owned(), output),
+            (
+                "succeeded".to_owned(),
+                json!({"stdout":"[按保留策略清理]","stderr":"[按保留策略清理]","exit_code":0})
+            ),
+        ]
+    );
     Ok(())
 }

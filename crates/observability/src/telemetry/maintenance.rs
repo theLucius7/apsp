@@ -3,8 +3,46 @@ use super::{
     persistence::{self, DAY_MS, RAW_MS, REPLAY_MS},
     *,
 };
+use crate::control_center::retention::Purges;
+use apsp_panel_host::maintenance::{Cadence, Failure, Pass, periodic};
+use apsp_protocol::now_timestamp;
 use sqlx::PgPool;
 use std::time::Duration;
+
+/// Observability's history maintenance, under the heartbeat `telemetry-history`: every
+/// minute the monitoring history is expired, compacted and initialized, and on the
+/// retention cadence the other records past their retention period are purged
+/// ([`crate::retention`]). Either failing fails the pass; neither keeps the other from
+/// running.
+pub async fn run(pool: PgPool) {
+    periodic(
+        "telemetry-history",
+        pool.clone(),
+        Cadence::every(Duration::from_secs(60)),
+        (pool, Purges::default()),
+        |(pool, purges)| Box::pin(pass(pool, purges)),
+    )
+    .await
+}
+
+async fn pass(pool: &PgPool, purges: &mut Purges) -> Pass {
+    let details = serde_json::json!({"source":"history-maintenance-cycle"});
+    let maintained = maintain(pool).await.map_err(|error| error.to_string());
+    let now = now_timestamp();
+    let purged = purges
+        .run(now, crate::retention::purge(pool, now))
+        .await
+        .map_err(|error| error.to_string());
+    let errors: Vec<String> = [maintained.err(), purged.err()]
+        .into_iter()
+        .flatten()
+        .collect();
+    if errors.is_empty() {
+        Ok(details)
+    } else {
+        Err(Failure::new(errors.join("; "), details))
+    }
+}
 
 pub async fn maintain(pool: &PgPool) -> ApiResult<()> {
     maintain_at(pool, now_millis(), Duration::from_secs(2)).await

@@ -96,8 +96,10 @@ name = "apsp-access"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "apsp-cloud-api",
  "apsp-compiler",
  "apsp-governance",
+ "apsp-naming",
  "apsp-panel-host",
  "apsp-protocol",
  "apsp-resources",
@@ -245,6 +247,7 @@ dependencies = [
  "hmac",
  "httpdate",
  "reqwest",
+ "serde",
  "serde_json",
  "sha1",
  "sha2 0.10.9",

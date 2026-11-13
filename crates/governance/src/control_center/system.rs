@@ -1,4 +1,8 @@
-use super::{require_capability, require_owner};
+//! What governance observes of the panel itself for the system health view (系统自检),
+//! and the reports independent observers submit. The application composes the view with
+//! the work the other owners have not finished and the panel backups.
+
+use super::require_capability;
 use crate::{
     AppState,
     error::{ApiError, ApiResult},
@@ -8,20 +12,26 @@ use apsp_protocol::now_timestamp;
 use axum::{Json, extract::State, http::HeaderMap};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sqlx::{PgPool, Row};
+use sqlx::Row;
 use std::time::Duration;
 
-static EXPECTED_WORKERS: std::sync::OnceLock<&'static [&'static str]> = std::sync::OnceLock::new();
-
-/// Declares the heartbeat names the panel's background work writes, so the health view
-/// can show a worker that has never reported. The application names them with the
-/// workers it starts; later calls keep the first list.
-pub fn expect_workers(names: &'static [&'static str]) {
-    let _ = EXPECTED_WORKERS.set(names);
+/// The panel itself as the system health view shows it: the database, the data
+/// directory's disk, the background tasks' heartbeats, the latest independent observer
+/// reports and the signed artifacts on record, each as the view's JSON.
+pub struct PanelHealth {
+    pub version: &'static str,
+    pub sampled_at: i64,
+    pub uptime_seconds: i64,
+    pub database: Value,
+    pub disk: Value,
+    pub workers: Vec<Value>,
+    pub independent_observers: Vec<Value>,
+    pub update: Value,
 }
 
-pub async fn health(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
-    require_owner(&state, &headers).await?;
+/// Observes the panel itself. `expected` names the heartbeats the panel's background tasks
+/// write, so a task that has never reported is listed as unknown.
+pub async fn panel_health(state: &AppState, expected: &[&str]) -> ApiResult<PanelHealth> {
     let now = now_timestamp();
     let start = std::time::Instant::now();
     tokio::time::timeout(
@@ -34,15 +44,6 @@ pub async fn health(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
     let database_bytes: i64 = sqlx::query_scalar("SELECT pg_database_size(current_database())")
         .fetch_one(&state.pool)
         .await?;
-    let commands:i64=sqlx::query_scalar("SELECT count(*) FROM remote_commands WHERE state IN ('queued','claimed','running','cancel_requested')").fetch_one(&state.pool).await?;
-    let diagnostics: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM diagnostic_jobs WHERE status IN ('queued','running')",
-    )
-    .fetch_one(&state.pool)
-    .await?;
-    let notifications = crate::notifications::outbox::waiting(&state.pool).await?;
-    let fleet:i64=sqlx::query_scalar("SELECT count(*) FROM fleet_operations WHERE status IN ('queued','dispatched','unknown') AND reconciled_at IS NULL").fetch_one(&state.pool).await?;
-    let operations:i64=sqlx::query_scalar("SELECT count(*) FROM operations_jobs WHERE status IN ('queued','running','paused','cancel_requested','uncertain')").fetch_one(&state.pool).await?;
     // The platform stores heartbeat details bounded; the view redacts them as the audit does.
     let mut workers: Vec<Value> = maintenance::heartbeats(&state.pool)
         .await?
@@ -51,13 +52,7 @@ pub async fn health(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
             json!({"name":beat.name,"status":if now-beat.observed_at>120 {"stale".to_owned()} else {beat.status},"observed_at":beat.observed_at,"last_success_at":beat.last_success_at,"details":super::guard::redact(&beat.details)})
         })
         .collect();
-    for name in EXPECTED_WORKERS
-        .get()
-        .copied()
-        .unwrap_or_default()
-        .iter()
-        .copied()
-    {
+    for name in expected.iter().copied() {
         if !workers
             .iter()
             .any(|value| value["name"].as_str() == Some(name))
@@ -85,13 +80,8 @@ pub async fn health(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
         }
         _ => json!({"status":"unknown","reason":"磁盘观察工具不可用或请求超时"}),
     };
-    let backup:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',b.id,'name',b.name,'created_at',b.created_at,'encrypted',b.encrypted,'verification',b.verification,'last_drill',(SELECT jsonb_build_object('passed',d.passed,'recorded_at',d.recorded_at,'action',d.report->>'action') FROM operations_restore_drills d WHERE d.backup_id=b.id ORDER BY d.recorded_at DESC LIMIT 1)) FROM operations_backup_records b WHERE b.retired_at IS NULL ORDER BY b.created_at DESC LIMIT 1").fetch_optional(&state.pool).await?;
-    let backup_schedules:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'name',name,'paused',paused,'next_run_at',next_run_at,'last_started_at',last_started_at,'last_finished_at',last_finished_at,'last_error',last_error) FROM operations_backup_schedules ORDER BY updated_at DESC LIMIT 20").fetch_all(&state.pool).await?;
-    let update = match tokio::time::timeout(
-        Duration::from_secs(5),
-        crate::releases::entries(&state),
-    )
-    .await
+    let update = match tokio::time::timeout(Duration::from_secs(5), crate::releases::entries(state))
+        .await
     {
         Ok(Ok(entries)) => {
             json!({"status":"observed","source":"local-signed-artifact-inventory","observed_at":now,"entries":entries,"remote_checked":false})
@@ -100,9 +90,16 @@ pub async fn health(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
             json!({"status":"unknown","reason":"本地签名制品清单不可用或读取超时","remote_checked":false})
         }
     };
-    Ok(Json(
-        json!({"version":env!("CARGO_PKG_VERSION"),"sampled_at":now,"uptime_seconds":now-state.started_at,"database":{"available":true,"elapsed_ms":database_elapsed_ms,"bytes":database_bytes,"pool_size":state.pool.size(),"idle":state.pool.num_idle()},"disk":disk,"backlog":{"commands":commands,"diagnostics":diagnostics,"notifications":notifications,"fleet":fleet,"operations":operations},"workers":workers,"independent_observers":reports,"backup":{"status":if backup.is_some(){"recorded"}else{"unknown"},"latest":backup,"schedules":backup_schedules,"source":"local-backup-ledger"},"update":update}),
-    ))
+    Ok(PanelHealth {
+        version: env!("CARGO_PKG_VERSION"),
+        sampled_at: now,
+        uptime_seconds: now - state.started_at,
+        database: json!({"available":true,"elapsed_ms":database_elapsed_ms,"bytes":database_bytes,"pool_size":state.pool.size(),"idle":state.pool.num_idle()}),
+        disk,
+        workers,
+        independent_observers: reports,
+        update,
+    })
 }
 
 fn disk_observation(raw: &str, now: i64) -> Value {
@@ -184,60 +181,4 @@ pub async fn observe(
     Ok(Json(
         json!({"id":id,"received_at":now,"source":"independent-observer-submitted-evidence"}),
     ))
-}
-
-pub async fn maintain(pool: &PgPool) -> Result<(), sqlx::Error> {
-    let now = now_timestamp();
-    let audit: i32 =
-        sqlx::query_scalar("SELECT days FROM record_retention_policy WHERE kind='audit'")
-            .fetch_one(pool)
-            .await?;
-    let ip: i32 = sqlx::query_scalar("SELECT days FROM record_retention_policy WHERE kind='ip'")
-        .fetch_one(pool)
-        .await?;
-    let terminal: i32 =
-        sqlx::query_scalar("SELECT days FROM record_retention_policy WHERE kind='terminal'")
-            .fetch_one(pool)
-            .await?;
-    let logs: i32 =
-        sqlx::query_scalar("SELECT days FROM record_retention_policy WHERE kind='logs'")
-            .fetch_one(pool)
-            .await?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("DELETE FROM management_audit WHERE occurred_at<$1")
-        .bind(now - i64::from(audit) * 86400)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("DELETE FROM server_ip_quality_datasets WHERE checked_at<$1")
-        .bind(now - i64::from(ip) * 86400)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("DELETE FROM server_ip_quality WHERE checked_at<$1 AND NOT EXISTS(SELECT 1 FROM server_ip_quality_datasets d WHERE d.server_id=server_ip_quality.server_id AND d.ip=server_ip_quality.ip AND d.provider=server_ip_quality.provider)").bind(now-i64::from(ip)*86400).execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM system_observer_reports WHERE received_at<$1")
-        .bind(now - i64::from(audit) * 86400)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("DELETE FROM management_api_tokens WHERE expires_at<$1 AND (revoked_at IS NULL OR revoked_at<$1)").bind(now-i64::from(audit)*86400).execute(&mut *tx).await?;
-    let terminal_cutoff = now - i64::from(terminal) * 86400;
-    sqlx::query("DELETE FROM fleet_terminal_inputs i USING fleet_terminal_sessions s WHERE i.session_id=s.id AND s.status IN ('closed','failed') AND s.expires_at<$1").bind(terminal_cutoff).execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM fleet_terminal_outputs o USING fleet_terminal_sessions s WHERE o.session_id=s.id AND s.status IN ('closed','failed') AND s.expires_at<$1").bind(terminal_cutoff).execute(&mut *tx).await?;
-    sqlx::query(
-        "DELETE FROM fleet_terminal_sessions WHERE status IN ('closed','failed') AND expires_at<$1",
-    )
-    .bind(terminal_cutoff)
-    .execute(&mut *tx)
-    .await?;
-    let log_cutoff = now - i64::from(logs) * 86400;
-    sqlx::query("UPDATE fleet_config_history SET content='' WHERE created_at<$1 AND content<>''")
-        .bind(log_cutoff)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("UPDATE fleet_operations SET operation=CASE WHEN operation ? 'content' THEN jsonb_set(operation,'{content}',to_jsonb(''::text)) ELSE operation END,result=NULL WHERE requested_at<$1 AND (status IN ('succeeded','failed','expired','cancelled') OR reconciled_at IS NOT NULL) AND (COALESCE(operation->>'content','')<>'' OR result IS NOT NULL)").bind(log_cutoff).execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM fleet_events WHERE occurred_at<$1")
-        .bind(log_cutoff)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("UPDATE remote_commands SET result=jsonb_set(jsonb_set(result,'{stdout}',to_jsonb('[按保留策略清理]'::text)),'{stderr}',to_jsonb('[按保留策略清理]'::text)) WHERE finished_at<$1 AND state IN ('succeeded','failed','cancelled','expired','interrupted') AND result IS NOT NULL AND (COALESCE(result->>'stdout','') NOT IN ('','[按保留策略清理]') OR COALESCE(result->>'stderr','') NOT IN ('','[按保留策略清理]'))").bind(log_cutoff).execute(&mut *tx).await?;
-    tx.commit().await?;
-    Ok(())
 }

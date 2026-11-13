@@ -12,7 +12,7 @@ use crate::{
     settings::Settings,
 };
 use serde_json::Value;
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{Postgres, Transaction};
 
 /// What the channel page shows of the messages queued for one channel.
 pub struct ChannelDeliveries {
@@ -40,9 +40,6 @@ pub trait Outbox: Send + Sync {
         tx: &'a mut Transaction<'t, Postgres>,
         channel: &'a str,
     ) -> BoxFuture<'a, ApiResult<ChannelDeliveries>>;
-
-    /// Messages still waiting for any channel.
-    fn waiting<'a>(&'a self, pool: &'a PgPool) -> BoxFuture<'a, ApiResult<i64>>;
 }
 
 static OUTBOX: Port<dyn Outbox> = Port::new();
@@ -72,8 +69,4 @@ pub async fn deliveries(
     channel: &str,
 ) -> ApiResult<ChannelDeliveries> {
     required()?.deliveries(tx, channel).await
-}
-
-pub async fn waiting(pool: &PgPool) -> ApiResult<i64> {
-    required()?.waiting(pool).await
 }

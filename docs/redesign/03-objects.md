@@ -191,7 +191,7 @@
 | 运行时 | `proxy-runtime`；部署记录与模块状态是内核机制 | `crates/traffic`（`settings.rs`、`publisher.rs`、`deployments.rs`）；`adapter-singbox` | 插件直接写内核的部署与模块状态表，改经运行时模块接口（architecture.md §1、§4.1） |
 | 节点、链路、外部来源 | `proxy-nodes` | `crates/traffic`（`nodes*`、`catalog/`、`ordered_paths/`、`subscription_sources/`）；`crates/compiler` | 已只剩一套链路与来源模型（ADR 0131） |
 | 用户、策略组、套餐、计量账本 | `proxy-users` | `proxy_users.rs`、`policies.rs`、`packages.rs`、`entitlements.rs`、`usage.rs` | — |
-| 客户端订阅、专属地址 | `proxy-delivery` | `subscriptions.rs`、`subscription_hosts.rs` | 专属地址用自己的 Cloudflare 客户端写 DNS 记录，改经 `dns` 的端口（ADR 0125 §5.2 第 2 条） |
+| 客户端订阅、专属地址 | `proxy-delivery` | `subscriptions.rs`、`subscription_hosts.rs` | 专属地址的 DNS 记录经名称领域的 `zone_records` 写入（ADR 0135） |
 | 门户账号、邀请 | `proxy-portal` | `portal/`、`user_accounts/` | — |
 | Nexus 兼容桥与接管 | `proxy-legacy` | `nexus_nodes/` 与散在 10 个源文件中的兼容桥查询 | 收拢为一个模块后随兼容桥下线删除（[收敛方案 §3.2](07-convergence.md#32-兼容流程怎样独立)） |
 | 解析规则、DNS 记录 | `dns` | `crates/naming` | 应用层的搜索与基础网络的网络配置直接查询 DNS 的表，改经所有者的接口（architecture.md §12） |

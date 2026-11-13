@@ -10,7 +10,7 @@ pub(crate) use history::read_aggregate;
 pub use history::{AggregateHistory, AggregateQuery, aggregate_history, read_minutes, read_window};
 pub(crate) use live::dashboard_live;
 pub use live::{LiveSample, LiveStore, attach_live, latest_live, live};
-pub use maintenance::{maintain, maintain_at};
+pub use maintenance::{maintain, maintain_at, run};
 pub use storage::{
     agent_storage_settings, policy, storage_settings, update_policy, update_storage_settings,
 };

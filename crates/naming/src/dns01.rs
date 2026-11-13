@@ -1,10 +1,10 @@
 use super::{
-    cloudflare::Cloudflare,
-    load,
+    cloudflare, load,
     model::{Provider, domain},
 };
 use crate::{
     AppState,
+    cloud_api::cloudflare::Cloudflare,
     error::{ApiError, ApiResult},
 };
 use reqwest::Method;
@@ -135,7 +135,7 @@ async fn context(
     } else {
         rule.api_token
     };
-    let client = Cloudflare::new().map_err(failure)?;
+    let client = cloudflare::client().map_err(failure)?;
     let zone_path = format!("zones/{}", rule.config.zone_id);
     let zone = client
         .call(Method::GET, &zone_path, &token, &[], None)

@@ -16,6 +16,7 @@ pub mod commands;
 pub mod fleet;
 pub mod jobs;
 pub mod locks;
+pub mod retention;
 pub mod runtime_operations;
 
 pub(crate) use apsp_governance::{auth, control_center, releases};
@@ -28,6 +29,29 @@ use axum::{
     Router,
     routing::{get, post},
 };
+
+/// Work operations has not finished, as the system health view counts it.
+pub struct Backlog {
+    /// Remote commands queued, claimed, running or being cancelled.
+    pub commands: i64,
+    /// Fixed device operations queued, dispatched or of unknown result, not yet
+    /// reconciled.
+    pub fleet: i64,
+    /// Jobs queued, running, paused, being cancelled or of uncertain result.
+    pub jobs: i64,
+}
+
+/// Operations' backlog for the system health view.
+pub async fn backlog(pool: &sqlx::PgPool) -> error::ApiResult<Backlog> {
+    let commands: i64 = sqlx::query_scalar("SELECT count(*) FROM remote_commands WHERE state IN ('queued','claimed','running','cancel_requested')").fetch_one(pool).await?;
+    let fleet: i64 = sqlx::query_scalar("SELECT count(*) FROM fleet_operations WHERE status IN ('queued','dispatched','unknown') AND reconciled_at IS NULL").fetch_one(pool).await?;
+    let jobs: i64 = sqlx::query_scalar("SELECT count(*) FROM operations_jobs WHERE status IN ('queued','running','paused','cancel_requested','uncertain')").fetch_one(pool).await?;
+    Ok(Backlog {
+        commands,
+        fleet,
+        jobs,
+    })
+}
 
 pub fn routes() -> Router<AppState> {
     Router::new()

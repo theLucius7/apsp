@@ -1,6 +1,7 @@
 use super::{aliyun::AliDns, huawei::Huawei, tencent::Tencent};
 use crate::{
-    cloudflare::{Cloudflare, Failure},
+    cloud_api::cloudflare::Cloudflare,
+    cloudflare::{self, Failure},
     dns_records::Request,
     model::{Provider, domain, identifier, token},
 };
@@ -44,7 +45,7 @@ impl RecordClient {
         };
         Ok(Self {
             provider,
-            cloudflare: Cloudflare::new()?,
+            cloudflare: cloudflare::client()?,
             aliyun: AliDns::new()?,
             tencent: Tencent::new()?,
             huawei: Huawei::new()?,
@@ -56,7 +57,7 @@ impl RecordClient {
     pub(crate) fn local(provider: Provider, endpoint: &str) -> Self {
         Self {
             provider,
-            cloudflare: Cloudflare::local(endpoint),
+            cloudflare: cloudflare::local(endpoint),
             aliyun: AliDns::local(endpoint),
             tencent: Tencent::local(endpoint),
             huawei: Huawei::local(endpoint),

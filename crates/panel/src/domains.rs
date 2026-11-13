@@ -15,13 +15,12 @@ use apsp_panel_host::{
 use apsp_resources as resources;
 use apsp_traffic as traffic;
 use axum::{Router, routing::get};
-use sqlx::PgPool;
 use std::time::Duration;
 
 /// The heartbeat names the workers below write, as the system health view lists them.
 /// Every background loop runs on the platform's periodic executor under exactly one of
 /// these names; the tests below hold this list to the loops.
-const HEARTBEATS: &[&str] = &[
+pub(crate) const HEARTBEATS: &[&str] = &[
     "maintenance",
     "telemetry-history",
     "control-center",
@@ -29,6 +28,7 @@ const HEARTBEATS: &[&str] = &[
     "operations",
     "operations-backups",
     "operations-job-backups",
+    "operations-retention",
     "network-certificates",
     "ddns",
     "expenses",
@@ -44,14 +44,12 @@ const HEARTBEATS: &[&str] = &[
     "china-reachability",
 ];
 
-/// Connects the typed interfaces of the compiled domains and declares the workers the
-/// health view expects; repeated calls are harmless.
+/// Connects the typed interfaces of the compiled domains; repeated calls are harmless.
 pub fn install() {
     crate::wiring::install();
-    governance::control_center::system::expect_workers(HEARTBEATS);
 }
 
-/// Every domain's routes, with the two views the application composes across domains.
+/// Every domain's routes, with the views the application composes across domains.
 pub fn router() -> Router<AppState> {
     install();
     Router::new()
@@ -66,6 +64,10 @@ pub fn router() -> Router<AppState> {
         .merge(operations::routes())
         .merge(crate::cloud_overview::routes())
         .route("/api/control-center/search", get(crate::search::search))
+        .route(
+            "/api/control-center/health",
+            get(crate::system_health::health),
+        )
 }
 
 /// Runs every background worker until the returned future is dropped. Each worker is
@@ -105,7 +107,7 @@ pub async fn run(state: AppState) {
         }),
         supervise("telemetry-history", {
             let pool = pool.clone();
-            move || telemetry_history(pool.clone())
+            move || observability::telemetry::run(pool.clone())
         }),
         supervise("network-workbench", {
             let state = state.clone();
@@ -114,6 +116,10 @@ pub async fn run(state: AppState) {
         supervise("operations", {
             let state = state.clone();
             move || operations::jobs::run(state.clone())
+        }),
+        supervise("operations-retention", {
+            let pool = pool.clone();
+            move || operations::retention::run(pool.clone())
         }),
         supervise("alicloud", move || operations::cloud::worker::run(
             pool.clone()
@@ -130,24 +136,6 @@ async fn proxy(state: AppState) {
         access::run(state.clone()),
         observability::reachability::run(state)
     );
-}
-
-async fn telemetry_history(pool: PgPool) {
-    periodic(
-        "telemetry-history",
-        pool.clone(),
-        Cadence::every(Duration::from_secs(60)),
-        pool,
-        |pool| {
-            Box::pin(async move {
-                outcome(
-                    observability::telemetry::maintain(pool).await,
-                    serde_json::json!({"source":"history-maintenance-cycle"}),
-                )
-            })
-        },
-    )
-    .await
 }
 
 async fn network_workbench(state: AppState) {

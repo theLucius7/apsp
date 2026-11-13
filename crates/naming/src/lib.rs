@@ -33,6 +33,7 @@ mod settings;
 #[cfg(test)]
 mod tests;
 mod worker;
+pub mod zone_records;
 
 pub use api::routes;
 pub use worker::run;

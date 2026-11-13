@@ -9,7 +9,6 @@ mod alerts;
 mod api;
 mod budget;
 mod classify;
-mod globalping;
 mod measure;
 mod store;
 mod targets;

@@ -1,7 +1,75 @@
 use super::*;
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+};
 
 mod transport_tests;
+
+/// The Rust sources below `crates/`, without build output.
+fn sources(directory: &Path, found: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(directory).expect("readable source directory") {
+        let entry = entry.expect("directory entry");
+        let kind = entry.file_type().expect("file type");
+        let path = entry.path();
+        if kind.is_dir() && entry.file_name() != "target" {
+            sources(&path, found);
+        } else if kind.is_file() && path.extension().is_some_and(|extension| extension == "rs") {
+            found.push(path);
+        }
+    }
+}
+
+/// Each vendor API is reached through its one client here: the API's address appears in no
+/// other source, so a second client, or a test that would reach the real service, fails.
+#[test]
+fn vendor_api_addresses_appear_only_in_their_clients() {
+    // Spelled in two parts so that this guard does not name them itself.
+    let clients = [
+        (
+            concat!("api.cloud", "flare.com"),
+            "cloud-api/src/cloudflare.rs",
+        ),
+        (
+            concat!("api.global", "ping.io"),
+            "cloud-api/src/globalping.rs",
+        ),
+    ];
+    let crates = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates directory");
+    let mut files = Vec::new();
+    sources(crates, &mut files);
+    assert!(files.len() > 100, "the workspace sources were not found");
+    let mut misplaced = Vec::new();
+    for path in &files {
+        let relative = path.strip_prefix(crates).expect("path under crates/");
+        let source = fs::read_to_string(path).expect("readable source");
+        for (address, client) in clients {
+            if relative == Path::new(client) {
+                continue;
+            }
+            for (index, line) in source.lines().enumerate() {
+                if line.contains(address) {
+                    misplaced.push(format!("{}:{}: {}", path.display(), index + 1, line.trim()));
+                }
+            }
+        }
+    }
+    assert!(
+        misplaced.is_empty(),
+        "call these vendors through their clients in crates/cloud-api:\n{}",
+        misplaced.join("\n")
+    );
+    for (address, client) in clients {
+        let source = fs::read_to_string(crates.join(client)).expect("client source");
+        assert!(
+            source.contains(address),
+            "{client} no longer names {address}"
+        );
+    }
+}
 
 #[test]
 fn huawei_signing_retains_and_sorts_all_encoded_query_pairs() {

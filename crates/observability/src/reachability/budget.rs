@@ -1,5 +1,6 @@
 //! Test budget for one run. Each probe counts as one test against the limit.
 
+use apsp_cloud_api::globalping::Limits;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// China Telecom twice, China Unicom and China Mobile once each.
@@ -13,13 +14,6 @@ pub const BASE_TESTS: u32 = CHINA_TESTS + OVERSEAS_TESTS;
 pub const FOLLOW_UP_TESTS: u32 = CONTROL_PORTS.len() as u32 * CONTROL_SEARCH_PROBES + CHINA_TESTS;
 /// The monitor never takes more than this share of the provider's limit.
 const LIMIT_PERCENT: u64 = 80;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Limits {
-    pub limit: u32,
-    pub remaining: u32,
-    pub reset_secs: u32,
-}
 
 /// Tests this run may still use. Tests already spent in the window, by this
 /// panel or anything else sharing the IP address, count against the same cap.

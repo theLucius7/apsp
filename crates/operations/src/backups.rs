@@ -17,7 +17,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -41,6 +41,21 @@ pub async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResul
     Ok(Json(
         json!({"schedules":rows,"executor":"面板本机 pg_dump 与 age；数据库导出快照和签名制品写锁","storage_configured":std::env::var_os("APSP_BACKUP_DIR").is_some(),"immutable_images_configured":std::env::var_os("APSP_BACKUP_PANEL_IMAGE").is_some()&&std::env::var_os("APSP_BACKUP_POSTGRES_IMAGE").is_some(),"keyring_material":"仅备份外部保管位置和所需密钥ID，不打包解密主密钥"}),
     ))
+}
+
+/// What the system health view shows of panel backups.
+pub struct Summary {
+    /// The newest backup still kept, with its latest restore drill.
+    pub latest: Option<Value>,
+    /// The twenty most recently changed schedules.
+    pub schedules: Vec<Value>,
+}
+
+/// Panel backups as the system health view shows them.
+pub async fn summary(pool: &PgPool) -> ApiResult<Summary> {
+    let latest: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',b.id,'name',b.name,'created_at',b.created_at,'encrypted',b.encrypted,'verification',b.verification,'last_drill',(SELECT jsonb_build_object('passed',d.passed,'recorded_at',d.recorded_at,'action',d.report->>'action') FROM operations_restore_drills d WHERE d.backup_id=b.id ORDER BY d.recorded_at DESC LIMIT 1)) FROM operations_backup_records b WHERE b.retired_at IS NULL ORDER BY b.created_at DESC LIMIT 1").fetch_optional(pool).await?;
+    let schedules: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',id,'name',name,'paused',paused,'next_run_at',next_run_at,'last_started_at',last_started_at,'last_finished_at',last_finished_at,'last_error',last_error) FROM operations_backup_schedules ORDER BY updated_at DESC LIMIT 20").fetch_all(pool).await?;
+    Ok(Summary { latest, schedules })
 }
 
 pub async fn create(

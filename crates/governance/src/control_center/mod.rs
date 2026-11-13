@@ -4,6 +4,7 @@ pub mod credentials;
 mod events;
 pub mod guard;
 pub mod panel_settings;
+pub mod retention;
 pub mod system;
 mod tool_security;
 mod workspace;
@@ -16,7 +17,7 @@ pub use access::{
 };
 
 use crate::{AppState, auth, error::ApiResult};
-use apsp_panel_host::maintenance::{self, Cadence, Failure, Pass};
+use apsp_panel_host::maintenance::{self, Cadence, Pass, outcome};
 use axum::{
     Json, Router,
     extract::{ConnectInfo, State},
@@ -82,7 +83,6 @@ pub fn router() -> Router<AppState> {
             "/api/control-center/retention/{kind}",
             put(workspace::update_retention),
         )
-        .route("/api/control-center/health", get(system::health))
         .route(
             "/api/control-center/tool-security",
             get(tool_security::inventory),
@@ -117,28 +117,24 @@ async fn reauthenticate(
     tx.commit().await?;
     Ok(Json(proof))
 }
-/// Purges the records past their retention period. The heartbeat is recorded once a
-/// minute; retention periods are whole days, so the purge itself runs hourly and a failed
-/// one is retried on the next minute.
+/// Purges governance's own records past their retention period; the other owners purge
+/// theirs in their own tasks. The heartbeat is recorded once a minute; the purge runs
+/// hourly and a failed one is retried on the next minute ([`retention::Purges`]).
 pub async fn run(state: AppState) {
     maintenance::periodic(
         "control-center",
         state.pool.clone(),
         Cadence::every(Duration::from_secs(60)),
-        (state.pool, 0_i64),
-        |(pool, next_purge)| Box::pin(retention(pool, next_purge)),
+        (state.pool, retention::Purges::default()),
+        |(pool, purges)| Box::pin(purge(pool, purges)),
     )
     .await
 }
 
-async fn retention(pool: &PgPool, next_purge: &mut i64) -> Pass {
-    let details = json!({"source":"retention-cycle"});
+async fn purge(pool: &PgPool, purges: &mut retention::Purges) -> Pass {
     let now = apsp_protocol::now_timestamp();
-    if now >= *next_purge {
-        if let Err(error) = system::maintain(pool).await {
-            return Err(Failure::new(error, details));
-        }
-        *next_purge = now + 3600;
-    }
-    Ok(details)
+    outcome(
+        purges.run(now, retention::purge(pool, now)).await,
+        json!({"source":"retention-cycle"}),
+    )
 }

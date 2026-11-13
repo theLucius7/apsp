@@ -7,7 +7,9 @@ rust-version.workspace = true
 
 [dependencies]
 apsp-traffic.workspace = true
+apsp-naming.workspace = true
 apsp-panel-host.workspace = true
+apsp-cloud-api.workspace = true
 apsp-resources.workspace = true
 apsp-governance.workspace = true
 apsp-protocol.workspace = true

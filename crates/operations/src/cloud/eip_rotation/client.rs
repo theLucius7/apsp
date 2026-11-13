@@ -1,14 +1,16 @@
 use apsp_cloud_api::{
     Failure,
-    globalping::{Globalping, ProbeResult},
+    globalping::{Client, Live, Measurement},
+    transport,
 };
+use apsp_panel_host::http::Outbound;
 use apsp_resources::cloud::{
     client::Cloud,
     model::{Account, Resource, identifier},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::time::Duration;
+use std::{sync::OnceLock, time::Duration};
 use uuid::Uuid;
 
 /// Pay-by-traffic EIPs accept at most this peak while allocated; a shared
@@ -74,6 +76,13 @@ impl Allocation {
     }
 }
 
+/// What one probe found: its network, and whether one of its handshakes completed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct ProbeRow {
+    pub network: String,
+    pub reached: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct Tally {
     pub total: usize,
@@ -82,7 +91,7 @@ pub(super) struct Tally {
 impl Tally {
     /// Probes inside Alibaba's own network reach its addresses regardless of the
     /// border filter, so they cannot show whether an address is usable.
-    pub fn from_rows(rows: &[ProbeResult]) -> Self {
+    pub fn from_rows(rows: &[ProbeRow]) -> Self {
         let independent = rows.iter().filter(|row| !row.network.contains("Alibaba"));
         Self {
             total: independent.clone().count(),
@@ -250,14 +259,38 @@ impl Ops for LiveOps<'_> {
     }
 }
 
+/// Globalping, read anonymously one step at a time: the engine polls a measurement on its
+/// own schedule and keeps its identifier between passes.
 pub(super) struct LiveProbe {
-    service: Globalping,
+    globalping: Live,
 }
 impl LiveProbe {
     pub fn new() -> Result<Self, Failure> {
+        // Built once, so that the TLS setup and the kept-alive connection outlive a pass:
+        // three seconds to connect and six for an exchange, named `apsp-panel`, and answers
+        // read up to the size every cloud provider call allows.
+        static GLOBALPING: OnceLock<Live> = OnceLock::new();
+        if let Some(globalping) = GLOBALPING.get() {
+            return Ok(Self {
+                globalping: globalping.clone(),
+            });
+        }
+        let client = Outbound {
+            connect_timeout: Some(Duration::from_secs(3)),
+            timeout: Some(Duration::from_secs(6)),
+            product: Some("apsp-panel"),
+            ..Outbound::default()
+        }
+        .build()
+        .map_err(|_| Failure::from("client_error"))?;
         Ok(Self {
-            service: Globalping::new()?,
+            globalping: GLOBALPING
+                .get_or_init(|| Live::new(client, transport::LIMIT))
+                .clone(),
         })
+    }
+    fn client(&self) -> Client<'_, Live> {
+        Client::new(&self.globalping, None)
     }
 }
 impl Probe for LiveProbe {
@@ -267,16 +300,56 @@ impl Probe for LiveProbe {
             .is_ok()
     }
     async fn start(&self, ip: &str, port: u16, plan: Plan) -> Result<String, Failure> {
-        self.service
-            .tcp_ping(ip, port, PROBE_COUNTRY, plan.limit, plan.packets)
-            .await
+        let target: std::net::IpAddr = ip.parse().map_err(|_| Failure::from("invalid_response"))?;
+        let id = self
+            .client()
+            .start(
+                target,
+                port,
+                plan.packets,
+                json!([{"country":PROBE_COUNTRY}]),
+                Some(plan.limit),
+            )
+            .await?;
+        if !measurement_id(&id) {
+            return Err("invalid_response".into());
+        }
+        Ok(id)
     }
     async fn read(&self, id: &str) -> Result<Option<Tally>, Failure> {
-        Ok(self
-            .service
-            .read(id)
-            .await?
-            .map(|rows| Tally::from_rows(&rows)))
+        if !measurement_id(id) {
+            return Err("invalid_response".into());
+        }
+        let measurement = self.client().measurement(id).await?;
+        Ok(rows(measurement)?.map(|rows| Tally::from_rows(&rows)))
+    }
+}
+
+/// The measurement identifiers this flow stores and reads back: up to 64 letters and digits.
+fn measurement_id(id: &str) -> bool {
+    (1..=64).contains(&id.len()) && id.bytes().all(|byte| byte.is_ascii_alphanumeric())
+}
+
+/// A reading in this flow's terms: `None` while it runs, then every probe's network and
+/// whether it reached the address. A probe without counters is counted, as unreached.
+fn rows(measurement: Measurement) -> Result<Option<Vec<ProbeRow>>, Failure> {
+    match measurement.status.as_str() {
+        "in-progress" => Ok(None),
+        "finished" => Ok(Some(
+            measurement
+                .results
+                .ok_or(Failure::from("invalid_response"))?
+                .into_iter()
+                .map(|answer| ProbeRow {
+                    reached: answer
+                        .stats
+                        .and_then(|stats| stats.loss)
+                        .is_some_and(|loss| loss < 100.0),
+                    network: answer.network,
+                })
+                .collect(),
+        )),
+        _ => Err("invalid_response".into()),
     }
 }
 
@@ -364,6 +437,7 @@ fn parse_eip(value: &Value, id: &str) -> Result<Option<Eip>, Failure> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use apsp_cloud_api::globalping::{Answer, Stats};
 
     fn row() -> Value {
         json!({"AllocationId":"eip-testonly","IpAddress":"192.0.2.1","Status":"InUse","InstanceId":"i-testonly","BandwidthPackageId":"cbwp-testonly","ISP":"BGP","Netmode":"public","InternetChargeType":"PayByTraffic","ChargeType":"PostPaid","Bandwidth":"500","EipBandwidth":"200","Mode":"NAT","BusinessStatus":"Normal","DeletionProtection":false,"SecurityProtectionTypes":{"SecurityProtectionType":[]},"SegmentInstanceId":"","ResourceGroupId":"rg-testonly"})
@@ -407,7 +481,7 @@ mod tests {
             ("China Telecom", false),
             ("China Unicom", true),
         ]
-        .map(|(network, reached)| ProbeResult {
+        .map(|(network, reached)| ProbeRow {
             network: network.into(),
             reached,
         });
@@ -418,5 +492,54 @@ mod tests {
                 reached: 1
             }
         );
+    }
+
+    fn answer(network: &str, loss: Option<f64>, counted: bool) -> Answer {
+        Answer {
+            network: network.into(),
+            city: String::new(),
+            country: None,
+            stats: counted.then_some(Stats {
+                loss,
+                ..Stats::default()
+            }),
+        }
+    }
+
+    #[test]
+    fn running_measurements_stay_pending_and_missing_statistics_count_as_unreached() {
+        let reading = |status: &str, results: Option<Vec<Answer>>| Measurement {
+            status: status.into(),
+            results,
+        };
+        assert!(rows(reading("in-progress", None)).unwrap().is_none());
+        assert!(rows(reading("other", Some(Vec::new()))).is_err());
+        assert!(rows(reading("finished", None)).is_err());
+        let found = rows(reading(
+            "finished",
+            Some(vec![
+                answer("Example Telecom", Some(0.0), true),
+                answer("Example Mobile", Some(100.0), true),
+                answer("Example Unicom", None, false),
+                answer("", Some(66.6), true),
+                answer("Example Broadband", None, true),
+            ]),
+        ))
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            found.iter().map(|row| row.reached).collect::<Vec<_>>(),
+            [true, false, false, true, false]
+        );
+        assert_eq!(found[0].network, "Example Telecom");
+        assert_eq!(found[3].network, "");
+    }
+
+    #[test]
+    fn measurement_identifiers_cannot_alter_the_request_path() {
+        assert!(measurement_id("abc123XYZ"));
+        for invalid in ["", "../admin", "a/b", "a?b", "a-b", &"a".repeat(65)] {
+            assert!(!measurement_id(invalid), "{invalid}");
+        }
     }
 }

@@ -22,6 +22,7 @@ pub mod locks;
 pub mod network_workbench;
 pub mod probes;
 pub mod reachability;
+pub mod retention;
 pub mod server_monitoring;
 pub mod server_traffic;
 pub mod statistics;
@@ -41,6 +42,27 @@ use axum::{
     Router,
     routing::{get, post},
 };
+
+/// Work observability has not finished, as the system health view counts it.
+pub struct Backlog {
+    /// Diagnostic jobs queued or running.
+    pub diagnostics: i64,
+    /// Alert messages still waiting for a channel.
+    pub notifications: i64,
+}
+
+/// Observability's backlog for the system health view.
+pub async fn backlog(pool: &sqlx::PgPool) -> error::ApiResult<Backlog> {
+    let diagnostics: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM diagnostic_jobs WHERE status IN ('queued','running')",
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(Backlog {
+        diagnostics,
+        notifications: alerts::outbox::waiting(pool).await?,
+    })
+}
 
 /// The message queues observability keeps, each drained by the platform's deliverer.
 pub const QUEUES: &[Policy] = &[

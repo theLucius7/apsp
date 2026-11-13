@@ -9,6 +9,8 @@ use crate::{
     control_center,
     error::{ApiError, ApiResult},
 };
+use apsp_cloud_api::cloudflare::{self, Cloudflare};
+use apsp_naming::zone_records::{self, Alias, Listed};
 use apsp_panel_host::{
     http::{self, Outbound},
     maintenance::{self, Cadence},
@@ -38,7 +40,6 @@ use std::{
 use tokio::sync::Notify;
 use uuid::Uuid;
 
-const CLOUDFLARE_API: &str = "https://api.cloudflare.com/client/v4";
 const SLUG_LENGTH: usize = 16;
 const BATCH: i64 = 25;
 const RECORD_COMMENT: &str = "apsp subscription host; managed by the panel";
@@ -507,144 +508,89 @@ pub async fn settle(pool: &PgPool) {
     WAKE.notify_one();
 }
 
-/// The few Cloudflare calls this feature needs.
+/// The few Cloudflare calls this feature needs. The records are names' objects and are
+/// written through them (`apsp_naming::zone_records`); this keeps the feature's client
+/// settings and words Cloudflare's answers for administrators.
 pub struct DnsApi {
     /// `None` only when the TLS backend cannot start; every call then fails to connect.
-    client: Option<Client>,
-    base: String,
+    api: Option<Cloudflare>,
 }
 
-#[derive(Deserialize)]
-struct Envelope<T> {
-    success: bool,
-    #[serde(default)]
-    errors: Vec<ApiFailure>,
-    result: Option<T>,
+/// The largest answer read; a page of 500 records stays far below it.
+const ANSWER_LIMIT: usize = 4 * 1024 * 1024;
+/// Records listed a page at a time, at most `PAGES` pages, so that a huge zone cannot stall
+/// the worker.
+const PAGE: usize = 500;
+const PAGES: u32 = 40;
+
+/// Fifteen seconds for a whole call.
+fn dns_client() -> Option<Client> {
+    Outbound {
+        timeout: Some(Duration::from_secs(15)),
+        ..Outbound::default()
+    }
+    .build()
+    .ok()
 }
-#[derive(Deserialize)]
-struct ApiFailure {
-    #[serde(default)]
-    code: i64,
-    #[serde(default)]
-    message: String,
-}
-#[derive(Deserialize)]
-struct RecordId {
-    id: String,
-}
-#[derive(Deserialize)]
-struct Listed {
-    id: String,
-    name: String,
-    #[serde(default)]
-    comment: Option<String>,
-}
-#[derive(Deserialize)]
-struct Zone {
-    name: String,
+
+/// How a refused call reads in this feature's state and errors.
+fn refusal(error: cloudflare::Error) -> String {
+    match error {
+        cloudflare::Error::Unsent => "无法连接 Cloudflare".to_owned(),
+        cloudflare::Error::Unreadable => "Cloudflare 返回了无法识别的内容".to_owned(),
+        cloudflare::Error::Rejected(Some(reason)) => {
+            format!("Cloudflare {}：{}", reason.code, reason.message)
+        }
+        cloudflare::Error::Rejected(None) => "Cloudflare 拒绝了请求".to_owned(),
+    }
 }
 
 impl DnsApi {
     pub fn production() -> Self {
-        Self::new(CLOUDFLARE_API)
+        Self {
+            api: dns_client().map(|client| Cloudflare::new(client, ANSWER_LIMIT)),
+        }
     }
     pub fn new(base: &str) -> Self {
-        let client = Outbound {
-            timeout: Some(Duration::from_secs(15)),
-            ..Outbound::default()
-        }
-        .build()
-        .ok();
         Self {
-            client,
-            base: base.trim_end_matches('/').to_owned(),
+            api: dns_client().and_then(|client| Cloudflare::at(client, base, ANSWER_LIMIT)),
         }
     }
-    async fn call<T: for<'de> Deserialize<'de>>(
-        &self,
-        token: &str,
-        method: reqwest::Method,
-        path: &str,
-        body: Option<Value>,
-    ) -> Result<Option<T>, String> {
-        let client = self
-            .client
+    fn api(&self) -> Result<&Cloudflare, String> {
+        self.api
             .as_ref()
-            .ok_or_else(|| "无法连接 Cloudflare".to_owned())?;
-        let mut request = client
-            .request(method, format!("{}{path}", self.base))
-            .bearer_auth(token);
-        if let Some(body) = body {
-            request = request.json(&body);
-        }
-        let response = request
-            .send()
-            .await
-            .map_err(|_| "无法连接 Cloudflare".to_owned())?;
-        let envelope: Envelope<T> = response
-            .json()
-            .await
-            .map_err(|_| "Cloudflare 返回了无法识别的内容".to_owned())?;
-        if envelope.success {
-            return Ok(envelope.result);
-        }
-        Err(envelope.errors.first().map_or_else(
-            || "Cloudflare 拒绝了请求".to_owned(),
-            |failure| format!("Cloudflare {}：{}", failure.code, failure.message),
-        ))
+            .ok_or_else(|| refusal(cloudflare::Error::Unsent))
     }
     async fn zone_name(&self, token: &str, zone: &str) -> Result<String, String> {
-        let zone: Option<Zone> = self
-            .call(token, reqwest::Method::GET, &format!("/zones/{zone}"), None)
-            .await?;
-        zone.map(|zone| zone.name)
+        zone_records::zone_name(self.api()?, token, zone)
+            .await
+            .map_err(refusal)?
             .ok_or_else(|| "Cloudflare 没有返回这个域名".to_owned())
     }
     async fn create(&self, token: &str, domain: &Domain, slug: &str) -> Result<String, String> {
         let name = host_name(domain, slug);
-        let created: Option<RecordId> = self
-            .call(token, reqwest::Method::POST, &format!("/zones/{}/dns_records", domain.zone_id), Some(json!({"type":"CNAME","name":name,"content":domain.target,"proxied":true,"ttl":1,"comment":RECORD_COMMENT})))
-            .await?;
-        created
-            .map(|record| record.id)
+        let alias = Alias {
+            name: &name,
+            target: &domain.target,
+            comment: RECORD_COMMENT,
+        };
+        zone_records::create_alias(self.api()?, token, &domain.zone_id, &alias)
+            .await
+            .map_err(refusal)?
             .ok_or_else(|| "Cloudflare 没有返回记录标识".to_owned())
     }
-    /// The zone's CNAME records, page by page; bounded so a huge zone cannot stall the worker.
+    /// The zone's CNAME records.
     async fn list(&self, token: &str, zone: &str) -> Result<Vec<Listed>, String> {
-        const PAGE: usize = 500;
-        let mut records = Vec::new();
-        for page in 1..=40 {
-            let batch: Vec<Listed> = self
-                .call(
-                    token,
-                    reqwest::Method::GET,
-                    &format!("/zones/{zone}/dns_records?type=CNAME&per_page={PAGE}&page={page}"),
-                    None,
-                )
-                .await?
-                .unwrap_or_default();
-            let last = batch.len() < PAGE;
-            records.extend(batch);
-            if last {
-                break;
-            }
-        }
-        Ok(records)
+        zone_records::list(self.api()?, token, zone, "CNAME", PAGE, PAGES)
+            .await
+            .map_err(refusal)
     }
     async fn delete(&self, token: &str, zone: &str, record: &str) -> Result<(), String> {
-        match self
-            .call::<RecordId>(
-                token,
-                reqwest::Method::DELETE,
-                &format!("/zones/{zone}/dns_records/{record}"),
-                None,
-            )
-            .await
-        {
-            Ok(_) => Ok(()),
+        match zone_records::delete(self.api()?, token, zone, record).await {
+            Ok(()) => Ok(()),
             // Already gone: 81044 is Cloudflare's "record does not exist".
-            Err(error) if error.contains("81044") => Ok(()),
-            Err(error) => Err(error),
+            Err(cloudflare::Error::Rejected(Some(reason))) if reason.code == 81044 => Ok(()),
+            Err(error) => Err(refusal(error)),
         }
     }
 }

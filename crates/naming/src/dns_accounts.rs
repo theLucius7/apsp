@@ -3,7 +3,9 @@ use super::{
     providers::RecordClient,
 };
 use crate::{
-    AppState, control_center,
+    AppState,
+    cloud_api::cloudflare::{self, Cloudflare},
+    control_center,
     error::{ApiError, ApiResult},
 };
 use axum::{
@@ -12,6 +14,7 @@ use axum::{
     http::HeaderMap,
     routing::{get, post, put},
 };
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::{FromRow, PgPool};
@@ -209,23 +212,17 @@ struct CloudflareConnect {
 }
 
 #[derive(Deserialize)]
-struct CloudflareZones {
-    #[serde(default)]
-    success: bool,
-    #[serde(default)]
-    result: Vec<CloudflareZone>,
-}
-#[derive(Deserialize)]
 struct CloudflareZone {
     id: String,
     name: String,
 }
 
-const CLOUDFLARE_ZONES: &str =
-    "https://api.cloudflare.com/client/v4/zones?per_page=32&status=active";
+/// The largest zone listing read; 32 zones take a few kilobytes each.
+const ZONE_LISTING_LIMIT: usize = 1024 * 1024;
 
-/// The domains this token may manage; an empty list means it may manage none.
-async fn cloudflare_zones(url: &str, token: &str) -> ApiResult<Vec<CloudflareZone>> {
+/// The domains this token may manage, up to 32 active ones; an empty list means it may
+/// manage none. Cloudflare's envelope alone decides, whatever the HTTP status.
+async fn cloudflare_zones(token: &str) -> ApiResult<Vec<CloudflareZone>> {
     let refused = || {
         ApiError::Conflict("Cloudflare 没有接受这个令牌，请检查令牌是否完整、是否仍然有效".into())
     };
@@ -235,17 +232,21 @@ async fn cloudflare_zones(url: &str, token: &str) -> ApiResult<Vec<CloudflareZon
     }
     .build()
     .map_err(anyhow::Error::from)?;
-    let response = client
-        .get(url)
-        .bearer_auth(token)
-        .send()
-        .await
-        .map_err(|_| ApiError::Conflict("暂时无法连接 Cloudflare，请稍后重试".into()))?;
-    let zones: CloudflareZones = response.json().await.map_err(|_| refused())?;
-    if zones.success {
-        Ok(zones.result)
-    } else {
-        Err(refused())
+    let zones = Cloudflare::new(client, ZONE_LISTING_LIMIT)
+        .result::<Vec<CloudflareZone>>(
+            Method::GET,
+            "zones",
+            token,
+            &[("per_page", "32"), ("status", "active")],
+            None,
+        )
+        .await;
+    match zones {
+        Ok(zones) => Ok(zones.unwrap_or_default()),
+        Err(cloudflare::Error::Unsent) => Err(ApiError::Conflict(
+            "暂时无法连接 Cloudflare，请稍后重试".into(),
+        )),
+        Err(cloudflare::Error::Unreadable | cloudflare::Error::Rejected(_)) => Err(refused()),
     }
 }
 
@@ -259,7 +260,7 @@ async fn connect_cloudflare(
     control_center::require_recent_proof(&state, &headers).await?;
     control_center::require_credential_choice(&state, &headers, true).await?;
     let token = super::model::token(input.api_token.trim())?;
-    let zones = cloudflare_zones(CLOUDFLARE_ZONES, &token).await?;
+    let zones = cloudflare_zones(&token).await?;
     if zones.is_empty() {
         return Err(ApiError::Conflict(
             "这个令牌有效，但没有可管理的域名。请在 Cloudflare 给令牌加上 DNS 编辑权限和对应域名"

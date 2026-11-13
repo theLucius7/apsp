@@ -83,18 +83,12 @@ HOST_EXCEPTIONS = {
     "src/http.rs": (r'(?<=builder\.)user_agent(?=\(product\))',),
 }
 
-# Cloud API client: the HTTP header name and the constant that fills it.
-CLOUD_API_EXCEPTIONS = {
-    "src/globalping.rs": (
-        r'(?<=const )USER_AGENT(?=: &str = "apsp-panel";)',
-        r'\.header\("user-agent", USER_AGENT\)',
-    ),
-}
-
+# Cloud API clients: none. A client names its product through the panel host's outbound
+# client (`Outbound::product`), not with a header of its own.
 CORES = {
     "crates/agent-core": EXCEPTIONS,
     "crates/panel-host": HOST_EXCEPTIONS,
-    "crates/cloud-api": CLOUD_API_EXCEPTIONS,
+    "crates/cloud-api": {},
 }
 
 # Workspace crates each layer may depend on (all dependency tables).

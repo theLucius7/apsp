@@ -118,16 +118,16 @@ class CoreBoundaryTests(unittest.TestCase):
         self.assertTrue(boundary.violations("src/network_workbench/reports.rs", 'r.get("daily_quota")',
                                             boundary.HOST_EXCEPTIONS))
 
-    def test_cloud_api_passes_and_its_header_exception_stays_scoped(self):
+    def test_cloud_api_passes_without_exceptions(self):
         root = SCRIPT.parents[1]
         exceptions = boundary.CORES["crates/cloud-api"]
+        self.assertEqual(exceptions, {})
         self.assertTrue(boundary.check(root / "crates/cloud-api", exceptions))
-        relative = "src/globalping.rs"
+        # Clients name their product through the platform's outbound client
+        # (`Outbound::product`), so a user-agent header of their own is a violation again.
         native = 'const USER_AGENT: &str = "apsp-panel";\n.header("user-agent", USER_AGENT)'
-        self.assertFalse(boundary.violations(relative, native, exceptions))
-        self.assertTrue(boundary.violations("src/aliyun.rs", native, exceptions))
-        self.assertTrue(boundary.violations(relative, native + "; user_id", exceptions))
-        self.assertTrue(boundary.violations(relative, '.header("x-user", USER_AGENT)', exceptions))
+        self.assertTrue(boundary.violations("src/globalping.rs", native, exceptions))
+        self.assertTrue(boundary.violations("src/cloudflare.rs", native, exceptions))
 
     def test_layers_depend_in_the_documented_direction(self):
         self.assertTrue(boundary.check_dependencies(SCRIPT.parents[1]))

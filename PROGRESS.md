@@ -1,5 +1,24 @@
 # 执行进度
 
+## 2026-11-13：底层机制统一第三部分——健康视图、保留期与供应商客户端（ADR 0135）
+
+- 用户要求：同上（“目前是底层原理深度统一”，“continue”）。决策见 [ADR 0135](docs/adr/0135-health-retention-vendor-clients.md)，取舍见 `docs/open-questions.md`。基于 main `7bde9b54`。不改数据库基线、协议、路由与用户看到的文字；健康页多出一行“运维记录清理”。
+- 完成项：
+  - 系统健康视图移到应用层（`crates/panel/src/system_health.rs`），由治理的面板状态、作业的积压与备份摘要、观测的积压拼成；22 条 SQL 原样迁到各自的所有者；去掉治理的“期待的后台任务名”全局变量与平台 `Outbox` 的积压方法。
+  - 保留期：治理的 `control_center::retention` 定策略；治理、观测、作业各自清理自己的行（观测放进 `telemetry-history`，作业新增 `operations-retention` 任务），保留时长、节奏与删除内容不变，一个所有者一个事务。
+  - 供应商客户端：Cloudflare 与 Globalping 各只留一个，在 `cloud-api`；名称公开 `zone_records`，专属地址的 DNS 记录经它写入；观测的 Globalping 客户端删除，更换 EIP 的检查经参数保留原语义。`cloud-api` 的词汇例外减为零，检查器的测试随之改为断言没有例外。
+  - 守卫：供应商接口地址只出现在各自的客户端里；后台任务名与健康视图期待的心跳名一致（新增的任务已登记）。
+  - 边界：越界清单 377 → 360。
+  - 文档：ADR 0135 与索引、`AGENTS.md`、`docs/architecture.md`（§5.4、§5.5、§12）、`docs/domain-map.md`、`docs/redesign/03-objects.md`、`docs/open-questions.md`。
+- 验证结果（本地，2026-11-13；CI 仍暂停，未触发）：
+  - `cargo fmt --all --check` 通过；`cargo clippy --all-targets -- -D warnings` 覆盖 14 个面板侧 crate，通过。
+  - 单元测试：14 个 crate 的 `--lib` 共 630 项通过、1 项按原有标注忽略。
+  - 面板集成测试：除 `end_to_end` 外的 80 个目标共 393 项通过、0 项失败、6 项按原有标注忽略，含新测试 `the_health_view_joins_the_panel_with_each_owners_backlog_and_backups`（逐键核对返回的 JSON，在改动前的代码上同样通过）与 `each_owner_purges_its_own_records_past_the_retention_policy`。
+  - 三项检查与它们的 Python 测试通过（第一次运行发现检查器测试仍断言已删除的例外，已改正后重跑）；前端构建通过，`bun test` 238 项通过。
+  - 未验证：`end_to_end`；真实的 Cloudflare 与 Globalping 调用（测试只用替身，上线后只读核对心跳）；镜像由部署器构建。
+- 已知问题：边缘情况的差别见 ADR 0135“后果”（81044 的判断方式、Globalping 先看状态码、两处新增的响应上限等）。
+- 下一步：第四部分——服务器状态（可用判断、服务器行锁、资产设置读取）与几类小机制（审计写入、密码散列、文本、金额、时间、随机码、Cookie、设置读取、保留策略的剩余直接读取）。
+
 ## 2026-11-13：底层机制统一第二部分——对外请求、网络校验与通知投递各只留一套（ADR 0134）
 
 - 用户要求：第一部分上线后“continue”（“目前是底层原理深度统一”）。决策见 [ADR 0134](docs/adr/0134-outbound-network-and-delivery.md)，取舍见 `docs/open-questions.md`。基于 main `9806187b`。不改数据库基线、协议消息、路由与用户看到的文字；行为变化只在对外请求的代理与重定向默认值，见下。

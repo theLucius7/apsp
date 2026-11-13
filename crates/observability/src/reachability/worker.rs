@@ -4,13 +4,16 @@ use super::{
     alerts,
     budget::{self, Ledger},
     classify::{ReachabilityState, classify},
-    globalping::{Client, ReqwestTransport, Transport},
     measure::{self, Outcome},
     store::{self, Claim, Observation, RowMap, TargetRow},
     targets::{self, Target},
 };
 use crate::{AppState, control_center, error::ApiResult};
-use apsp_panel_host::maintenance::{self, Cadence, Pass};
+use apsp_cloud_api::globalping::{Client, Live, Transport};
+use apsp_panel_host::{
+    http::Outbound,
+    maintenance::{self, Cadence, Pass},
+};
 use apsp_protocol::now_timestamp;
 use futures_util::future::join_all;
 use serde::Serialize;
@@ -29,6 +32,8 @@ const MAX_RESOLVED_ADDRESSES: usize = 16;
 const DUE_SLACK_SECS: i64 = 60;
 /// How soon to retry after the provider could not be asked about the budget.
 const FAILURE_RETRY_SECS: i64 = 300;
+/// The largest Globalping answer the monitor reads.
+const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 pub(super) const CREDENTIAL_KIND: &str = "external-api";
 
 /// Finds the addresses of a host; replaced in tests so no lookup is made.
@@ -384,8 +389,25 @@ pub(super) async fn cycle<T: Transport, R: Resolver>(
     Ok(true)
 }
 
+/// Globalping through the monitor's own client: HTTPS only, ten seconds to connect and
+/// twenty for an exchange, named after the monitor.
+fn globalping() -> anyhow::Result<Live> {
+    let client = Outbound {
+        connect_timeout: Some(Duration::from_secs(10)),
+        timeout: Some(Duration::from_secs(20)),
+        https_only: true,
+        product: Some(concat!(
+            "apsp-panel-reachability/",
+            env!("CARGO_PKG_VERSION")
+        )),
+        ..Outbound::default()
+    }
+    .build()?;
+    Ok(Live::new(client, MAX_RESPONSE_BYTES))
+}
+
 pub(super) async fn run(state: AppState) {
-    let transport = match ReqwestTransport::new() {
+    let transport = match globalping() {
         Ok(transport) => transport,
         Err(error) => {
             tracing::error!(%error, "reachability monitor cannot start its HTTP client");
@@ -408,7 +430,7 @@ pub(super) async fn run(state: AppState) {
 /// Delivers pending alerts, runs a check when one is due and delivers the alerts it
 /// raised. A failed check is recorded in the run's summary; the pass fails only when a
 /// step could not be carried out.
-async fn scheduled(pool: &PgPool, transport: &ReqwestTransport) -> Pass {
+async fn scheduled(pool: &PgPool, transport: &Live) -> Pass {
     let mut healthy = true;
     if let Err(error) = alerts::deliver(pool).await {
         tracing::warn!(%error, "reachability alert delivery failed");

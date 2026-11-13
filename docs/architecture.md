@@ -138,7 +138,7 @@
 | --- | --- | --- |
 | 平台 | `crates/panel-host` 只有技术机制：HTTP 外壳与内嵌前端（`shell`、`frontend`）、配置（`config`）、基线核对（`schema`）、共享状态与各领域运行时状态的槽（`state` 的 `AppState`、`DomainStates`）、类型化接口的机制（`ports`）、设备任务接口（`device_work`）、观测证据接口（`evidence`）、后台任务的守护、周期执行器与心跳（`maintenance`，ADR 0133）、咨询锁（`locks`，ADR 0133）、设置存储（`settings`）、通知的渠道、模板与统一的投递器（`notifications`，各队列由所有者实现，告警发件箱归观测）、对外请求（`http`：出站客户端、有界读取、状态码与 `Retry-After`）、令牌、文本与摘要检查（`tokens`、`text`、`digest`）、地址与名称的判断、受控出站与拨号（`net`）、X.509 读取（`x509`）、错误类型（`error`）。`AppState` 只有连接池、启动时间、配置、三个进程级的并发许可、编译进来的发布信任根与 `domain_states`。`crates/cloud-api` 建在 `panel-host` 之上，是供应商接口的签名与客户端 | 不变（告警发件箱已迁到观测，平台不再读任何领域的表） |
 | 领域 | 每个领域一个 crate：`crates/governance`、`crates/resources`、`crates/networking`、`crates/naming`、`crates/traffic`（配置编译库是同一领域的 `crates/compiler`）、`crates/access`、`crates/costs`、`crates/observability`、`crates/operations`。crate 内按对象分模块；每个 crate 只导出一个 `routes()`，路由的完整路径写在声明处。成本、观测与作业 crate 的 `cloud` 模块是云能力，诊断工具在观测的 `diagnostic_tools/` | 不变；对象的模型、规则、存储与接口放在同一模块，参考过的上游代码放在该 crate 的 `upstream/`（第 10 节） |
-| 应用 | `crates/panel`：`domains.rs` 是唯一的组合处，有一张路由清单（按依赖顺序合并各领域的 `routes()`，加上云页面总览与搜索两个跨领域视图）与一张后台任务清单（逐个守护，并声明健康视图应当看到的心跳名）；`wiring.rs` 接线全部类型化接口；`search.rs`（全局搜索）与 `cloud_overview.rs`（云页面总览）是联结几个所有者的组合视图；`moved_paths.rs` 把旧接口地址改写到现地址；`publisher.rs` 是跨流量服务与服务权益的代理发布周期；`maintenance.rs` 是 30 秒维护循环；`lib.rs` 给平台外壳套上治理的权限守卫与专属地址网关；`main.rs` 只建立状态、路由与后台任务。唯一的数据库基线也在这个 crate | 不变；`moved_paths.rs` 在下一个发布版本之后删除 |
+| 应用 | `crates/panel`：`domains.rs` 是唯一的组合处，有一张路由清单（按依赖顺序合并各领域的 `routes()`，加上云页面总览、搜索与系统健康三个跨领域视图）与一张后台任务清单（逐个守护，并声明健康视图应当看到的心跳名）；`wiring.rs` 接线全部类型化接口；`search.rs`（全局搜索）、`cloud_overview.rs`（云页面总览）与 `system_health.rs`（系统健康：治理的面板状态加作业、观测各自给出的积压摘要）是联结几个所有者的组合视图；`moved_paths.rs` 把旧接口地址改写到现地址；`publisher.rs` 是跨流量服务与服务权益的代理发布周期；`maintenance.rs` 是 30 秒维护循环；`lib.rs` 给平台外壳套上治理的权限守卫与专属地址网关；`main.rs` 只建立状态、路由与后台任务。唯一的数据库基线也在这个 crate | 不变；`moved_paths.rs` 在下一个发布版本之后删除 |
 | 前端 | 按领域分目录：`web/src/<领域标识>/` 放该领域的页面、模型与接口调用，每个领域在自己的 `pages.tsx` 声明页面；应用层的 `app/` 放外框与组合页面（服务器详情、概览），并把各领域的清单汇总成路由与侧栏；平台的 `components/`、`lib/`、`stores/` 和根目录的通用文件是通用界面层 | 不变 |
 
 跨领域共用的数据模型不进公共目录：由所有者公开类型与函数，其他领域引用所有者的公开部分。
@@ -161,7 +161,7 @@
 | `china_reachability::ChinaReachability`（流量服务） | 流量服务（Nexus 切换） | 观测 | 节点最近是否测得国内不可达 | 长期：观测排在流量服务之后 |
 | `HostNetwork`（服务权益的门户） | 服务权益（成员线路目录） | 观测 | 成员可见的主机网络属性（只含网络身份、用途、风险标记与评分） | 长期：观测排在服务权益之后 |
 | `dashboard::ExchangeRates`（观测的看板） | 观测 | 成本（`crates/costs`） | 看板折算成本用的当前汇率 | 长期：成本与观测同组，互不依赖 |
-| `notifications::outbox::Outbox` | 平台（通知设置、渠道页与健康视图） | 观测（告警发件箱 `alerts::outbox`） | 设置或渠道变更时取消过时的待发消息、渠道页的投递统计、健康视图的积压数 | 长期：发件箱是观测的告警投递队列，平台不读领域的表 |
+| `notifications::outbox::Outbox` | 平台（通知设置与渠道页） | 观测（告警发件箱 `alerts::outbox`） | 设置或渠道变更时取消过时的待发消息、渠道页的投递统计 | 长期：发件箱是观测的告警投递队列，平台不读领域的表 |
 
 ## 6. 运行模型：期望、执行、已应用、观测分别保存
 
@@ -355,13 +355,13 @@ flowchart TD
 
 **ADR 0134（第二部分，2026-11-13）已处理**：对外请求（出站客户端、有界读取、状态码与 `Retry-After`）、地址与名称判断、受控出站与拨号各只留一处；六个通知队列共用平台的投递器；告警发件箱归观测，平台不再读任何领域的表。下面的表已去掉或改写这几项。
 
+**ADR 0135（第三部分，2026-11-13）已处理**：系统健康视图改为应用层的组合视图（各所有者给出自己的积压摘要），保留期由各所有者按治理的保留策略清理自己的行；Cloudflare 与 Globalping 各只留一个客户端（在 `cloud-api`），专属地址的 DNS 记录改经名称领域写入。下面的表已去掉这几项。
+
 ### 12.1 归属：代码或数据还不在对象所属的领域
 
 | 事项 | 位置 | 为什么这一步没做 | 需要什么 |
 | --- | --- | --- | --- |
 | 凭据库的表登记在平台，读写它的代码在治理 | 表 `credential_entries`；`crates/governance/src/control_center/credentials.rs` | 治理的代码迁出宿主后，这张表仍登记给平台；它算平台机制还是治理的对象要先定（任务心跳已在 ADR 0133 收归平台 `maintenance`） | 二选一：表改登记给治理（其他领域读写凭据库的 11 条 SQL 改经治理的函数），或把保管做成平台模块 |
-| 系统健康视图用 SQL 拼其他领域的积压 | `crates/governance/src/control_center/system.rs` | 直接读作业（备份计划与记录、恢复演练、作业、设备操作、远程命令）、观测（诊断任务、IP 质量数据集）与平台（发件箱、心跳）的表；治理排在最前，不能反过来调用它们 | 改成应用层的组合视图，各所有者给出自己的积压摘要 |
-| 保留期清理替别的领域删行 | 同上，`system::maintain` | 在一个事务里删观测的 `server_ip_quality*`、`fleet_events` 与作业的 `fleet_terminal_*`、`fleet_operations`、`remote_commands`、`fleet_config_history`；拆开会改变“一轮清理一个事务”的行为 | 各所有者按治理公开的保留策略清理自己的行 |
 | 流量服务里的作业胶水 | `crates/traffic/src/runtime_workflows/automation.rs`、`automation/reconciliation.rs`、`rollouts.rs`，`crates/traffic/src/runtime_operations.rs` | 这些代码直接读写作业的 `operations_history`、`runtime_operations` 等表（流量服务指向作业的 20 条 SQL 里有 17 条在这四个文件）；搬家要同时改作业一侧的调用与事务 | 迁到作业；流量服务只回答“这一步是否合法” |
 | 代理用量统计的处理函数在观测 | `crates/observability/src/statistics/proxy_usage.rs`，地址 `/api/access/statistics` | 对象是服务权益的用量，处理函数读它的私有表；地址已经按对象改了，代码没搬 | 迁到服务权益的 `usage`，趋势与报表页调用它 |
 | 资源替观测建默认拨测与告警规则；成本与门户直接读观测的表 | `crates/resources/src/servers.rs`、`batch_enrollment.rs`、`server_lifecycle.rs`、`retirement.rs`；`crates/costs/src/cancellation_reminders.rs`、`suppliers.rs`；`crates/access/src/portal/lines.rs` | 现有接口只覆盖了一部分调用 | 扩充已有的 `ServerObservation`、`Evidence`、`HostNetwork`，不新增接口 |
@@ -373,8 +373,6 @@ flowchart TD
 
 | 事项 | 位置 | 为什么这一步没做 | 需要什么 |
 | --- | --- | --- | --- |
-| Globalping 客户端两个 | `crates/cloud-api/src/globalping.rs`（更换 EIP 时检查新地址的可达性）；`crates/observability/src/reachability/globalping.rs`（中国可达性） | 两处的测量地点、令牌、限额、轮询、结果解析与超时都不同；更换 EIP 的检查守着一次真实的地址释放，合并必须同时保住两种语义与各自的测试 | 以观测的客户端为基础并入 `cloud-api`，逐项对照更换 EIP 的行为后再切换 |
-| Cloudflare 接口三处 | `crates/naming/src/cloudflare.rs`；`crates/access/src/subscription_hosts.rs` 的 `DnsApi`；`crates/naming/src/dns_accounts.rs` 的区域列表 | 专属地址的那一份有自己的客户端、分页、错误码 81044 的处理与中文错误文字，合并会改变超时与用户看到的文字 | 以名称的调用为基础做成一个客户端，专属地址经名称写记录；错误文字逐条对照 |
 | 通知队列六张表 | 观测 `notification_outbox`、`alicloud_deliveries`、`singbox_reachability_deliveries`、`operations_incident_deliveries`；成本 `expense_deliveries`；服务权益 `singbox_member_messages` | 投递器已统一（ADR 0134），表仍各自一张；合成一张要改基线 | 阶段 F：一张队列表，按所有者与策略区分 |
 | 主机名检查余下 4 处 | 名称 `dns_record_spec`（允许下划线、最长 251 字节）、流量服务 `subscription_parser/outbound`（IDNA 转换后不查长度）、服务权益 `user_accounts/mail`（只查字符集）、观测可达性 `normalize_host`（规范化而非校验） | 语义与 `net::host` 的选项不同，其中外部订阅那处像是缺陷 | 逐处定下接受范围后并入 `net::host` |
 | “服务器此刻是否可用”的 SQL 条件 12 处 | 平台的发件箱，观测的故障事件与可达性告警，流量服务的部署自动化与预检，作业的命令、设备操作、作业执行与运行时操作 | 各处的写法要逐一核对后才能换成同一个条件 | 资源提供一个判断（生命周期与维护窗口） |
