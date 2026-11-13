@@ -3,6 +3,7 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_panel_host::maintenance::{self, Cadence};
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -12,6 +13,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::Row;
+use std::time::Duration;
 use uuid::Uuid;
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -242,26 +244,29 @@ async fn queue(
     Ok(id)
 }
 
+/// Issues one certificate job per pass. A job can take minutes; the heartbeat is kept
+/// alive while it runs, and the passes missed meanwhile run back to back afterwards.
 pub(super) async fn run(state: AppState) {
-    let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
-    loop {
-        tick.tick().await;
-        match iteration(&state).await {
-            Ok(()) => {
-                let _=crate::control_center::system::heartbeat(&state.pool,"network-certificates","healthy",json!({"scope":"dispatcher","iteration":"completed","certificate_results":"issuance_history"})).await;
-            }
-            Err(error) => {
-                let _ = crate::control_center::system::heartbeat(
-                    &state.pool,
-                    "network-certificates",
-                    "failed",
-                    json!({"scope":"dispatcher","error":"iteration_failed"}),
-                )
-                .await;
-                tracing::warn!(error=%error,"certificate worker iteration failed");
-            }
-        }
-    }
+    maintenance::periodic(
+        "network-certificates",
+        state.pool.clone(),
+        Cadence::catching_up(Duration::from_secs(30)),
+        state,
+        |state| {
+            Box::pin(async move {
+                match iteration(state).await {
+                    Ok(()) => Ok(
+                        json!({"scope":"dispatcher","iteration":"completed","certificate_results":"issuance_history"}),
+                    ),
+                    Err(error) => Err(maintenance::Failure::new(
+                        error,
+                        json!({"scope":"dispatcher","error":"iteration_failed"}),
+                    )),
+                }
+            })
+        },
+    )
+    .await
 }
 async fn iteration(state: &AppState) -> ApiResult<()> {
     let now = apsp_protocol::now_timestamp();
@@ -294,11 +299,14 @@ async fn iteration(state: &AppState) -> ApiResult<()> {
         job.get("plan_revision"),
         job.get("requested_by"),
     );
-    tokio::pin!(execution);
-    let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(30));
-    let result = loop {
-        tokio::select! {value=&mut execution=>break value,_=heartbeat.tick()=>{let _=crate::control_center::system::heartbeat(&state.pool,"network-certificates","healthy",json!({"scope":"dispatcher","phase":"processing_job","job_id":id,"certificate_issued":"pending_job_result"})).await;}}
-    };
+    let result = maintenance::beat_while(
+        "network-certificates",
+        &state.pool,
+        Duration::from_secs(30),
+        &json!({"scope":"dispatcher","phase":"processing_job","job_id":id,"certificate_issued":"pending_job_result"}),
+        execution,
+    )
+    .await;
     let (status, value) = match result {
         Ok(value) => ("succeeded", value),
         Err(error) => {

@@ -123,9 +123,7 @@ async fn save_account(
             .bind(id).bind(input.name.trim()).bind(input.credential_id).bind(next).bind(now).bind(actor).execute(&mut *tx).await?;
         next
     } else {
-        sqlx::query("SELECT pg_advisory_xact_lock(530119)")
-            .execute(&mut *tx)
-            .await?;
+        crate::locks::HETZNER_ACCOUNTS.lock(&mut tx).await?;
         let count: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM operations_hetzner_accounts WHERE NOT archived",
         )

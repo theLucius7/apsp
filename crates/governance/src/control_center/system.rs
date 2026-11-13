@@ -3,6 +3,7 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_panel_host::maintenance;
 use apsp_protocol::now_timestamp;
 use axum::{Json, extract::State, http::HeaderMap};
 use serde::Deserialize;
@@ -17,17 +18,6 @@ static EXPECTED_WORKERS: std::sync::OnceLock<&'static [&'static str]> = std::syn
 /// workers it starts; later calls keep the first list.
 pub fn expect_workers(names: &'static [&'static str]) {
     let _ = EXPECTED_WORKERS.set(names);
-}
-
-pub async fn heartbeat(
-    pool: &PgPool,
-    name: &str,
-    status: &str,
-    details: Value,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("INSERT INTO system_worker_heartbeats(name,status,observed_at,last_success_at,details) VALUES($1,$2,$3,CASE WHEN $2='healthy' THEN $3 END,$4) ON CONFLICT(name) DO UPDATE SET status=EXCLUDED.status,observed_at=EXCLUDED.observed_at,last_success_at=COALESCE(EXCLUDED.last_success_at,system_worker_heartbeats.last_success_at),details=EXCLUDED.details")
-        .bind(name).bind(status).bind(now_timestamp()).bind(super::guard::redact(&details)).execute(pool).await?;
-    Ok(())
 }
 
 pub async fn health(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
@@ -56,10 +46,14 @@ pub async fn health(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
             .await?;
     let fleet:i64=sqlx::query_scalar("SELECT count(*) FROM fleet_operations WHERE status IN ('queued','dispatched','unknown') AND reconciled_at IS NULL").fetch_one(&state.pool).await?;
     let operations:i64=sqlx::query_scalar("SELECT count(*) FROM operations_jobs WHERE status IN ('queued','running','paused','cancel_requested','uncertain')").fetch_one(&state.pool).await?;
-    let rows = sqlx::query("SELECT * FROM system_worker_heartbeats ORDER BY name")
-        .fetch_all(&state.pool)
-        .await?;
-    let mut workers:Vec<Value>=rows.iter().map(|r| { let observed:i64=r.try_get("observed_at")?;Ok(json!({"name":r.try_get::<String,_>("name")?,"status":if now-observed>120 {"stale".to_owned()} else {r.try_get::<String,_>("status")?},"observed_at":observed,"last_success_at":r.try_get::<Option<i64>,_>("last_success_at")?,"details":r.try_get::<Value,_>("details")?})) }).collect::<Result<_,sqlx::Error>>()?;
+    // The platform stores heartbeat details bounded; the view redacts them as the audit does.
+    let mut workers: Vec<Value> = maintenance::heartbeats(&state.pool)
+        .await?
+        .into_iter()
+        .map(|beat| {
+            json!({"name":beat.name,"status":if now-beat.observed_at>120 {"stale".to_owned()} else {beat.status},"observed_at":beat.observed_at,"last_success_at":beat.last_success_at,"details":super::guard::redact(&beat.details)})
+        })
+        .collect();
     for name in EXPECTED_WORKERS
         .get()
         .copied()

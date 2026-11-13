@@ -109,9 +109,7 @@ async fn create_rules(
     super::credentials::validate_reference(&state.pool, &input.config).await?;
     let (token, key, secret) = credentials(&input, None)?;
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(739104823)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::DDNS_RULES.lock(&mut tx).await?;
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM ddns_rules")
         .fetch_one(&mut *tx)
         .await?;

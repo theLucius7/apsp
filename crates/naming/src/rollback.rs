@@ -130,9 +130,7 @@ async fn claim(
     after: &Snapshot,
 ) -> ApiResult<(Uuid, Rule, IpAddr)> {
     let mut tx = pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(739104824)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::DNS_WRITES.lock(&mut tx).await?;
     let mut rule = editable(&mut tx, id).await?;
     if rule.revision != revision {
         return Err(ApiError::Conflict("规则已被修改，请刷新后重试".into()));
@@ -190,8 +188,8 @@ async fn guard(
         .begin()
         .await
         .map_err(|_| super::cloudflare::Failure::from("storage_error"))?;
-    sqlx::query("SELECT pg_advisory_xact_lock(739104824)")
-        .execute(&mut *tx)
+    crate::locks::DNS_WRITES
+        .lock(&mut tx)
         .await
         .map_err(|_| super::cloudflare::Failure::from("storage_error"))?;
     let owned: Option<Uuid> = sqlx::query_scalar("SELECT id FROM ddns_rules WHERE id=$1 AND lease_id=$2 AND revision=$3 AND lease_until>$4 FOR SHARE")

@@ -178,9 +178,7 @@ pub async fn create(
     let expires_at = now + PREVIEW_SECS;
     let view = projection(id, expires_at, &parsed);
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(73402904,1)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::SOURCE_PREVIEWS.lock(&mut tx).await?;
     sqlx::query("DELETE FROM singbox_ordered_source_previews WHERE expires_at<=$1")
         .bind(now)
         .execute(&mut *tx)
@@ -324,9 +322,7 @@ pub async fn commit(
             "预览已变化、过期或解析器已更新，请重新解析".into(),
         ));
     }
-    sqlx::query("SELECT pg_advisory_xact_lock(73402902,1)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::SOURCE_CREATION.lock(&mut tx).await?;
     let count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM singbox_ordered_subscription_sources WHERE deleted_at IS NULL",
     )

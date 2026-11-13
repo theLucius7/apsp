@@ -7,6 +7,7 @@
 pub mod artifacts;
 pub mod auth;
 pub mod control_center;
+pub mod locks;
 pub mod passkeys;
 pub mod releases;
 mod routes;

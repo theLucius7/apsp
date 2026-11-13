@@ -292,9 +292,9 @@ pub(super) async fn references(
     } = config
         && owner == "apsp"
     {
-        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
-            .bind(format!("apsp-forward:{server_id}:{protocol}:{listen_port}"))
-            .execute(&mut **tx)
+        let listener = crate::locks::forwarding_listener(*server_id, protocol, *listen_port);
+        crate::locks::FORWARDING_LISTENER
+            .lock(tx, &listener)
             .await?;
         let conflicts:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM network_documents WHERE kind='forwarding' AND ($1::UUID IS NULL OR id<>$1) AND (config->>'server_id')::bigint=$2 AND (config->>'listen_port')::integer=$3 AND config->>'protocol'=$4 AND config->>'owner'='apsp' AND config->>'enabled'='true' AND (config->>'listen_address'=$5 OR config->>'listen_address' IN ('0.0.0.0','::') OR $5 IN ('0.0.0.0','::')))").bind(own).bind(server_id).bind(i32::from(*listen_port)).bind(protocol).bind(listen_address).fetch_one(&mut **tx).await?;
         if conflicts {

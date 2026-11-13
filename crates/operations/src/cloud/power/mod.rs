@@ -14,38 +14,37 @@ pub use jobs::{cancel_pending, idle, recent, unresolved};
 pub(crate) use policy::PolicyRules;
 pub(crate) use state::StateRules;
 
+use apsp_panel_host::maintenance::{self, Cadence, Pass};
 use apsp_resources::cloud::model::State;
 use serde::Serialize;
 use sqlx::{FromRow, types::Json};
+use std::time::Duration;
 use uuid::Uuid;
 
 pub async fn run(pool: sqlx::PgPool) {
-    let mut timer = tokio::time::interval(std::time::Duration::from_secs(5));
-    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        timer.tick().await;
-        let result = match apsp_resources::cloud::client::Cloud::new(&pool) {
-            Ok(cloud) => jobs::tick(&pool, &cloud).await,
-            Err(error) => Err(apsp_resources::cloud::failure(error)),
-        };
-        let (status, details) = match result {
-            Ok(()) => (
-                "healthy",
-                serde_json::json!({"scope":"power_scheduler_and_reconciliation_cycle","completed":true,"remote_resource_health_confirmed":false}),
-            ),
-            Err(error) => {
-                tracing::warn!(%error,"Cloud power reconciliation failed");
-                (
-                    "failed",
-                    serde_json::json!({"scope":"power_scheduler_and_reconciliation_cycle","completed":false,"error":error.to_string(),"remote_resource_health_confirmed":false}),
-                )
-            }
-        };
-        if let Err(error) =
-            crate::control_center::system::heartbeat(&pool, "alicloud-power", status, details).await
-        {
-            tracing::warn!(%error,"Cloud power heartbeat storage failed");
-        }
+    maintenance::periodic(
+        "alicloud-power",
+        pool.clone(),
+        Cadence::every(Duration::from_secs(5)),
+        pool,
+        |pool| Box::pin(reconcile(pool)),
+    )
+    .await
+}
+
+async fn reconcile(pool: &sqlx::PgPool) -> Pass {
+    let result = match apsp_resources::cloud::client::Cloud::new(pool) {
+        Ok(cloud) => jobs::tick(pool, &cloud).await,
+        Err(error) => Err(apsp_resources::cloud::failure(error)),
+    };
+    match result {
+        Ok(()) => Ok(
+            serde_json::json!({"scope":"power_scheduler_and_reconciliation_cycle","completed":true,"remote_resource_health_confirmed":false}),
+        ),
+        Err(error) => Err(maintenance::Failure::new(
+            &error,
+            serde_json::json!({"scope":"power_scheduler_and_reconciliation_cycle","completed":false,"error":error.to_string(),"remote_resource_health_confirmed":false}),
+        )),
     }
 }
 

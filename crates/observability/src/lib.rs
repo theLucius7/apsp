@@ -18,6 +18,7 @@ pub mod diagnostics;
 pub mod incidents;
 pub mod ip_quality;
 pub mod latency_tasks;
+pub mod locks;
 pub mod network_workbench;
 pub mod probes;
 pub mod reachability;

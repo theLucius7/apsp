@@ -495,9 +495,7 @@ async fn append(
     }
     let mut tx = state.pool.begin().await?;
     // Same lock as a full import: one inventory writer at a time.
-    sqlx::query("SELECT pg_advisory_xact_lock(71410071)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::NODE_INVENTORY.lock(&mut tx).await?;
     let report = inspect_append(&mut tx, &snapshot, &nodes, &digest).await?;
     if !report["conflicts"].as_array().unwrap().is_empty() {
         return Err(ApiError::Conflict(
@@ -600,9 +598,7 @@ async fn import(
     }
     let mut tx = state.pool.begin().await?;
     // Serialize imports across requests, including ambiguous HTTP retries.
-    sqlx::query("SELECT pg_advisory_xact_lock(71410071)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::NODE_INVENTORY.lock(&mut tx).await?;
     let report = inspect(&mut tx, &snapshot, &digest).await?;
     if !report["conflicts"].as_array().unwrap().is_empty() {
         return Err(ApiError::Conflict(

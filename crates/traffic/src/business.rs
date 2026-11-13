@@ -128,10 +128,7 @@ pub(crate) fn validate_node(node: &NodeRow) -> ApiResult<()> {
 pub async fn lock_publication(
     transaction: &mut Transaction<'_, Postgres>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("SELECT pg_advisory_xact_lock(73201001)")
-        .execute(&mut **transaction)
-        .await?;
-    Ok(())
+    crate::locks::PUBLICATION.lock(transaction).await
 }
 
 pub async fn lock_server(transaction: &mut Transaction<'_, Postgres>, id: i64) -> ApiResult<()> {

@@ -11,6 +11,7 @@ pub mod cloud_resources;
 pub mod device_artifacts;
 pub mod device_channel;
 pub mod installation;
+pub mod locks;
 pub mod retirement;
 mod routes;
 pub mod server_assets;

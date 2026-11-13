@@ -9,9 +9,7 @@ const FINGERPRINT: &str = include_str!("../../panel/schema_fingerprint.sql");
 pub async fn initialize(pool: &PgPool) -> Result<()> {
     let mut tx = pool.begin().await?;
     // Transaction-scoped locking also releases on cancellation or initialization failure.
-    sqlx::query("SELECT pg_advisory_xact_lock(73401220)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::BASELINE.lock(&mut tx).await?;
     sqlx::query("SET LOCAL search_path TO public")
         .execute(&mut *tx)
         .await?;

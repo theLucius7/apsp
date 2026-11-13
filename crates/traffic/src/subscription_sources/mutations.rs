@@ -78,10 +78,10 @@ pub(super) async fn receipt(
         return Err(ApiError::BadRequest("request_id 必须为非零 UUID".into()));
     }
     let bytes = key.as_bytes();
-    let lock_key = i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-    sqlx::query("SELECT pg_advisory_xact_lock(73402901,$1)")
-        .bind(lock_key)
-        .execute(&mut *connection)
+    let object = i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+    crate::locks::SOURCE_REQUESTS
+        .offset(object.into())
+        .lock(connection)
         .await?;
     let previous: Option<(String, Value)> = sqlx::query_as("SELECT request_sha256,receipt FROM singbox_subscription_source_requests WHERE request_id=$1").bind(key).fetch_optional(connection).await?;
     match previous {
@@ -128,9 +128,7 @@ pub async fn create(
         tx.commit().await?;
         return Ok((StatusCode::OK, Json(previous)));
     }
-    sqlx::query("SELECT pg_advisory_xact_lock(73402902,1)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::SOURCE_CREATION.lock(&mut tx).await?;
     let count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM singbox_ordered_subscription_sources WHERE deleted_at IS NULL",
     )

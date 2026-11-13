@@ -76,7 +76,7 @@
 
 | 层 | 标识 | 内容 | 不包含 |
 | --- | --- | --- | --- |
-| 平台 | `platform` | 数据库连接与基线核对、HTTP 外壳与中间件、内嵌前端、类型化接口的机制、向设备派发任务与接收观测证据的接口、各领域运行时状态的槽、后台任务守护、设置存储、通知发送通道（渠道、模板、投递、重试与发件箱）、编译进来的发布信任根、令牌与内容摘要、文本检查、地址与名称的分类、X.509 证书读取、通用界面组件、供应商接口的技术实现（签名、分页、限流、重试） | 任何业务决定：什么时候续证书、什么时候发额度提醒、账单怎样换算、什么时候允许重启服务。设备连接归资源，凭据保管与制品存储归治理，消息定义在 `protocol` |
+| 平台 | `platform` | 数据库连接与基线核对、HTTP 外壳与中间件、内嵌前端、类型化接口的机制、向设备派发任务与接收观测证据的接口、各领域运行时状态的槽、后台任务的守护、周期执行与心跳、咨询锁的机制（锁键由各领域在自己的 `src/locks.rs` 声明）、设置存储、通知发送通道（渠道、模板、投递、重试与发件箱）、编译进来的发布信任根、令牌与内容摘要、文本检查、地址与名称的分类、X.509 证书读取、通用界面组件、供应商接口的技术实现（签名、分页、限流、重试） | 任何业务决定：什么时候续证书、什么时候发额度提醒、账单怎样换算、什么时候允许重启服务。设备连接归资源，凭据保管与制品存储归治理，消息定义在 `protocol` |
 | 应用 | `app` | 组合各领域：HTTP 路由、后台任务、跨领域流程的编排、联结几个所有者的组合视图（搜索、云页面总览）、依赖倒置接口的接线 | 领域规则本身 |
 
 `common`、`shared`、`system` 这类目录只收明确的技术机制。一个模型被多处使用，先考虑由所有者公开稳定接口，而不是搬进公共目录。
@@ -136,7 +136,7 @@
 
 | 部分 | 现在 | 目标 |
 | --- | --- | --- |
-| 平台 | `crates/panel-host` 只有技术机制：HTTP 外壳与内嵌前端（`shell`、`frontend`）、配置（`config`）、基线核对（`schema`）、共享状态与各领域运行时状态的槽（`state` 的 `AppState`、`DomainStates`）、类型化接口的机制（`ports`）、设备任务接口（`device_work`）、观测证据接口（`evidence`）、后台任务守护（`maintenance`）、设置存储（`settings`）、通知的渠道、模板、投递、重试与发件箱（`notifications`）、令牌、文本与摘要检查（`tokens`、`text`、`digest`）、地址与名称的分类（`net`）、X.509 读取（`x509`）、错误类型（`error`）。`AppState` 只有连接池、启动时间、配置、三个进程级的并发许可、编译进来的发布信任根与 `domain_states`。`crates/cloud-api` 是供应商接口的签名、传输与重试 | 不变；告警发件箱迁到观测之后，平台不再读任何领域的表（第 12 节） |
+| 平台 | `crates/panel-host` 只有技术机制：HTTP 外壳与内嵌前端（`shell`、`frontend`）、配置（`config`）、基线核对（`schema`）、共享状态与各领域运行时状态的槽（`state` 的 `AppState`、`DomainStates`）、类型化接口的机制（`ports`）、设备任务接口（`device_work`）、观测证据接口（`evidence`）、后台任务的守护、周期执行器与心跳（`maintenance`，ADR 0133）、咨询锁（`locks`，ADR 0133）、设置存储（`settings`）、通知的渠道、模板、投递、重试与发件箱（`notifications`）、令牌、文本与摘要检查（`tokens`、`text`、`digest`）、地址与名称的分类（`net`）、X.509 读取（`x509`）、错误类型（`error`）。`AppState` 只有连接池、启动时间、配置、三个进程级的并发许可、编译进来的发布信任根与 `domain_states`。`crates/cloud-api` 是供应商接口的签名、传输与重试 | 不变；告警发件箱迁到观测之后，平台不再读任何领域的表（第 12 节） |
 | 领域 | 每个领域一个 crate：`crates/governance`、`crates/resources`、`crates/networking`、`crates/naming`、`crates/traffic`（配置编译库是同一领域的 `crates/compiler`）、`crates/access`、`crates/costs`、`crates/observability`、`crates/operations`。crate 内按对象分模块；每个 crate 只导出一个 `routes()`，路由的完整路径写在声明处。成本、观测与作业 crate 的 `cloud` 模块是云能力，诊断工具在观测的 `diagnostic_tools/` | 不变；对象的模型、规则、存储与接口放在同一模块，参考过的上游代码放在该 crate 的 `upstream/`（第 10 节） |
 | 应用 | `crates/panel`：`domains.rs` 是唯一的组合处，有一张路由清单（按依赖顺序合并各领域的 `routes()`，加上云页面总览与搜索两个跨领域视图）与一张后台任务清单（逐个守护，并声明健康视图应当看到的心跳名）；`wiring.rs` 接线全部类型化接口；`search.rs`（全局搜索）与 `cloud_overview.rs`（云页面总览）是联结几个所有者的组合视图；`moved_paths.rs` 把旧接口地址改写到现地址；`publisher.rs` 是跨流量服务与服务权益的代理发布周期；`maintenance.rs` 是 30 秒维护循环；`lib.rs` 给平台外壳套上治理的权限守卫与专属地址网关；`main.rs` 只建立状态、路由与后台任务。唯一的数据库基线也在这个 crate | 不变；`moved_paths.rs` 在下一个发布版本之后删除 |
 | 前端 | 按领域分目录：`web/src/<领域标识>/` 放该领域的页面、模型与接口调用，每个领域在自己的 `pages.tsx` 声明页面；应用层的 `app/` 放外框与组合页面（服务器详情、概览），并把各领域的清单汇总成路由与侧栏；平台的 `components/`、`lib/`、`stores/` 和根目录的通用文件是通用界面层 | 不变 |
@@ -350,12 +350,14 @@ flowchart TD
 
 2026-11-13 随 [ADR 0132](adr/0132-platform-only-host-and-domain-addresses.md) 的改动，对仓库做了四遍只读扫描：归属（代码与表是否在对象所属的领域）、重复实现（面板各 crate 里同一机制的多份实现）、插件残留（名称、接口与数据里仍按插件命名的地方）、前端（重复、残留与跨领域引用）。这一步已经处理的不再列出（见第 9 节“阶段 B2 收尾的结果”）；下面三张表是有意留下的，每项写明为什么这一步没做、需要什么。表里的越界条数取自 `tools/feature-boundaries.baseline`。
 
+**ADR 0133 第一部分（2026-11-13）已处理**：后台循环统一经平台的周期执行器并全部报心跳（新增 6 个），心跳的读写收归平台；咨询锁键由各领域在 `src/locks.rs` 声明、平台提供加锁机制，查出并消除了一处无意共用（管理员偏好锁）。两项都有随 `cargo test` 运行的守卫。下面的表已去掉这两项。
+
 ### 12.1 归属：代码或数据还不在对象所属的领域
 
 | 事项 | 位置 | 为什么这一步没做 | 需要什么 |
 | --- | --- | --- | --- |
 | 告警发件箱在平台 | `crates/panel-host/src/notifications/outbox.rs`、`settings.rs`；表 `notification_outbox` | 它实际是观测的告警投递队列：投递时联结 `server_alert_events`、`servers`、`fleet_profiles`、`operations_maintenance`，设置或渠道变化时取消待发的告警。迁走要先有办法把“设置变了”告诉观测 | 迁到观测，平台声明一个“设置已变更”的接口；之后平台不再读任何领域的表（现在 5 条 SQL） |
-| 凭据库与任务心跳的表登记在平台，读写它们的代码在治理 | 表 `credential_entries`、`system_worker_heartbeats`；`crates/governance/src/control_center/credentials.rs`、`system.rs` | 治理的代码迁出宿主后，这两张表仍登记给平台；它们算平台机制还是治理的对象要先定 | 二选一：表改登记给治理（其他领域读写凭据库的 11 条 SQL 改经治理的函数），或把保管与心跳做成平台模块 |
+| 凭据库的表登记在平台，读写它的代码在治理 | 表 `credential_entries`；`crates/governance/src/control_center/credentials.rs` | 治理的代码迁出宿主后，这张表仍登记给平台；它算平台机制还是治理的对象要先定（任务心跳已在 ADR 0133 收归平台 `maintenance`） | 二选一：表改登记给治理（其他领域读写凭据库的 11 条 SQL 改经治理的函数），或把保管做成平台模块 |
 | 系统健康视图用 SQL 拼其他领域的积压 | `crates/governance/src/control_center/system.rs` | 直接读作业（备份计划与记录、恢复演练、作业、设备操作、远程命令）、观测（诊断任务、IP 质量数据集）与平台（发件箱、心跳）的表；治理排在最前，不能反过来调用它们 | 改成应用层的组合视图，各所有者给出自己的积压摘要 |
 | 保留期清理替别的领域删行 | 同上，`system::maintain` | 在一个事务里删观测的 `server_ip_quality*`、`fleet_events` 与作业的 `fleet_terminal_*`、`fleet_operations`、`remote_commands`、`fleet_config_history`；拆开会改变“一轮清理一个事务”的行为 | 各所有者按治理公开的保留策略清理自己的行 |
 | 流量服务里的作业胶水 | `crates/traffic/src/runtime_workflows/automation.rs`、`automation/reconciliation.rs`、`rollouts.rs`，`crates/traffic/src/runtime_operations.rs` | 这些代码直接读写作业的 `operations_history`、`runtime_operations` 等表（流量服务指向作业的 20 条 SQL 里有 17 条在这四个文件）；搬家要同时改作业一侧的调用与事务 | 迁到作业；流量服务只回答“这一步是否合法” |
@@ -375,8 +377,6 @@ flowchart TD
 | `reqwest` 客户端各自配置，共 14 处 | 只有 `cloud-api` 共用一个，其余在平台的通知渠道与各领域里各建各的 | 超时、重定向与代理设置各不相同，统一成预设会改变其中一些的行为 | 定出几种命名的预设，一处构建、各处选用 |
 | 主机名检查另有 11 处 | 名称、基础网络、流量服务与配置编译库、服务权益、观测各自的校验函数（这一步只合并了 `net::dns_name`） | 各处接受的范围不同 | `net` 里带选项的一个检查；配置编译库不依赖平台，它用的那份要放在 `protocol` |
 | “服务器此刻是否可用”的 SQL 条件 12 处 | 平台的发件箱，观测的故障事件与可达性告警，流量服务的部署自动化与预检，作业的命令、设备操作、作业执行与运行时操作 | 各处的写法要逐一核对后才能换成同一个条件 | 资源提供一个判断（生命周期与维护窗口） |
-| 后台循环 13 个，其中 6 个不写心跳 | 名称、作业、应用、成本、服务权益、观测与流量服务各自的循环 | 统一后原来不写心跳的任务会出现在健康视图里，要先定哪些任务该有心跳 | 平台 `maintenance` 里一个周期任务的助手 |
-| 咨询锁的键没有登记处 | 39 处直接写数字（名称 8、流量服务 8、作业 7、资源 6、治理 5，其余 5） | 要先确认没有两处无意中共用同一个键 | 一个给键命名的模块 |
 | 服务器价格与到期存了四处 | `servers.asset_settings`、`fleet_profiles.asset`、`fleet_cost_records`、`operations_cloud_links` | 四处的金额单位不同，合并要改表并定以哪一份为准 | 以成本的账本与资产设置为准，其余转换后删除（阶段 F） |
 | 预览后确认的存储六套 | 名称、基础网络、服务权益与流量服务各自的预览表 | 合并是改表 | 平台的一套预览存储（阶段 F） |
 | 事件日志五份 | `singbox_operation_events`、`singbox_commerce_events`、`expense_events`、`operations_history`、`fleet_events` | 合并是改表 | 一份事件日志（阶段 F） |
@@ -391,7 +391,7 @@ flowchart TD
 | 接口响应里的字段 | `plugins[]`、`plugin`（诊断视图），`plugin_ready`、`plugin_reason`（验机视图），`plugin_enabled`（代理资源），`related.plugins` 与 `business_requires_plugin_migration`（服务器迁移），`condition.plugin`（供应商对照）；路由参数 `{plugin}`（`/api/servers/{id}/diagnostics/{plugin}`） | 响应字段是接口契约，前端与脚本按这些名字读取；其中 `plugin`、`plugins[]` 与下面的诊断任务键、Agent 协议字段同名 | 服务端与前端在同一次改动里改名；与协议同名的随协议一起改 |
 | 已保存的原因代码 | `plugin_disabled`（解析规则的错误代码，服务端已不再写出，前端保留它的说明文字） | 是已保存的数据值 | 确认生产里不再有这个值之后删除说明文字 |
 | 数据库 | 表 `server_plugins`（运行时的启用记录，只有 `sing-box` 一个值）；`diagnostic_jobs.job` 里的 `plugin` 键 | 改表名与已保存的键是基线与数据变更 | 阶段 F：走 PR，附接入脚本 |
-| 后台任务心跳名 | `sing-box`、`ddns`、`alicloud`、`expenses`（`crates/panel/src/domains.rs`） | 是已保存的标识，日志与心跳靠它保持连续；控制台已显示为各自的中文名称 | 要改名时连同已保存的心跳行一起迁移 |
+| 后台任务心跳名 | `sing-box`、`ddns`、`alicloud`、`expenses` 等（全部 20 个登记在 `crates/panel/src/domains.rs` 的 `HEARTBEATS`） | 是已保存的标识，日志与心跳靠它保持连续；控制台已显示为各自的中文名称 | 要改名时连同已保存的心跳行一起迁移 |
 | Agent 协议与设备 | 消息字段 `DiagnosticJob.plugin`、`DiagnosticCancelResult.plugin`，检查点 `diagnostics:active`，设备目录 `/opt/apsp/plugins`、`/var/lib/apsp/plugins`，签名制品里的来源名 `plugins/...`，IPQuality 报告里的 `"plugin":"ipquality"`，适配器描述里的 `plugin_name` | 是协议、设备上的布局与已签名的制品格式，已接入的服务器都按它运行 | 只随一次 Agent 发布改变 |
 | 工具 | `tools/test-nodequality*.py` 等脚本里的 `PLUGIN` 常量，`tools/prepare-plugin-install-acceptance.py` | 一部分工具文件列在已签名制品的对应源码包里，改内容会改变摘要；验收工具的名字出现在已记录的证据里 | 随下一次重新构建并签名制品时改名 |
 | 旧页面地址 | `/#/settings/plugins`、`/#/settings/plugins/servers`、`/#/servers/{id}/plugins`（2026-11-09 起改写到新地址） | 地址策略要求旧地址至少保留一个发布版本 | 下一个发布版本之后删除，与 `moved_paths.rs` 里除日历订阅以外的改写一起 |

@@ -33,10 +33,7 @@ pub struct Task {
 
 // Serialize default assignment and group edits before taking server row locks.
 pub async fn lock(tx: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error> {
-    sqlx::query("SELECT pg_advisory_xact_lock(1936289389, 1)")
-        .execute(&mut **tx)
-        .await?;
-    Ok(())
+    crate::locks::LATENCY_TASKS.lock(tx).await
 }
 
 pub async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Vec<Task>>> {

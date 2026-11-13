@@ -9,6 +9,7 @@ use crate::{
     control_center,
     error::{ApiError, ApiResult},
 };
+use apsp_panel_host::maintenance::{self, Cadence};
 use apsp_protocol::now_timestamp;
 use axum::{
     Json,
@@ -768,17 +769,24 @@ async fn sweep_with(
     Ok(removed)
 }
 
+/// Reconciles the hosts' DNS records 30 seconds after the previous pass, or at once when
+/// a change wakes it.
 pub async fn run(state: AppState) {
-    let dns = DnsApi::production();
-    loop {
-        if let Err(error) = reconcile(&state.pool, &dns).await {
-            tracing::warn!(%error, "subscription host reconcile failed");
-        }
-        tokio::select! {
-            () = tokio::time::sleep(Duration::from_secs(30)) => {}
-            () = WAKE.notified() => {}
-        }
-    }
+    maintenance::periodic(
+        "subscription-hosts",
+        state.pool.clone(),
+        Cadence::after(Duration::from_secs(30), &WAKE),
+        (state.pool, DnsApi::production()),
+        |(pool, dns)| {
+            Box::pin(async move {
+                maintenance::outcome(
+                    reconcile(pool, dns).await,
+                    json!({"source":"dns-record-cycle"}),
+                )
+            })
+        },
+    )
+    .await
 }
 
 #[derive(Serialize)]

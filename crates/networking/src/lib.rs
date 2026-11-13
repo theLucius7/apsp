@@ -3,6 +3,7 @@
 //! network configuration documents with their deployment (`network_configuration`) and
 //! the cloud security groups (`security_groups`).
 
+pub mod locks;
 pub mod network_configuration;
 pub mod security_groups;
 

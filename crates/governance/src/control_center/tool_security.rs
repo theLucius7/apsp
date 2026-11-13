@@ -185,9 +185,7 @@ pub async fn refresh(State(state): State<AppState>, headers: HeaderMap) -> ApiRe
     require_owner(&state, &headers).await?;
     require_recent_proof(&state, &headers).await?;
     let mut lease = state.pool.begin().await?;
-    let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(73002112)")
-        .fetch_one(&mut *lease)
-        .await?;
+    let acquired = crate::locks::TOOL_ADVISORIES.try_lock(&mut lease).await?;
     if !acquired {
         return Err(ApiError::Busy);
     }

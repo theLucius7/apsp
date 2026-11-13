@@ -6,6 +6,7 @@ use crate::{
     AppState, control_center,
     error::{ApiError, ApiResult},
 };
+use apsp_panel_host::maintenance::{self, Cadence, Failure, Pass};
 use apsp_protocol::now_timestamp;
 use serde_json::{Value, json};
 use sqlx::{Postgres, Row, Transaction};
@@ -14,64 +15,45 @@ use uuid::Uuid;
 
 pub async fn run(state: AppState) {
     tokio::join!(
-        run_operations(state.clone()),
-        run_backups(state.clone()),
+        maintenance::periodic(
+            "operations",
+            state.pool.clone(),
+            Cadence::every(Duration::from_secs(5)),
+            state.clone(),
+            |state| Box::pin(orchestration(state)),
+        ),
+        maintenance::periodic(
+            "operations-backups",
+            state.pool.clone(),
+            Cadence::every(Duration::from_secs(30)),
+            state.clone(),
+            |state| Box::pin(backup_schedules(state)),
+        ),
         super::panel_backup::run(state)
     );
 }
 
-async fn run_operations(state: AppState) {
-    let mut interval = tokio::time::interval(Duration::from_secs(5));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        interval.tick().await;
-        let outcome = tick(&state).await;
-        let (status, details) = match outcome {
-            Ok(()) => (
-                "healthy",
-                json!({"scope":"orchestration_cycle","completed":true,"target_service_health_confirmed":false}),
-            ),
-            Err(error) => {
-                tracing::error!(%error,"operations worker failed");
-                (
-                    "failed",
-                    json!({"scope":"orchestration_cycle","completed":false,"error":error.to_string(),"target_service_health_confirmed":false}),
-                )
-            }
-        };
-        if let Err(error) =
-            control_center::system::heartbeat(&state.pool, "operations", status, details).await
-        {
-            tracing::error!(%error,"operations heartbeat storage failed");
-        }
+async fn orchestration(state: &AppState) -> Pass {
+    match tick(state).await {
+        Ok(()) => Ok(
+            json!({"scope":"orchestration_cycle","completed":true,"target_service_health_confirmed":false}),
+        ),
+        Err(error) => Err(Failure::new(
+            &error,
+            json!({"scope":"orchestration_cycle","completed":false,"error":error.to_string(),"target_service_health_confirmed":false}),
+        )),
     }
 }
 
-async fn run_backups(state: AppState) {
-    let mut interval = tokio::time::interval(Duration::from_secs(30));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        interval.tick().await;
-        let outcome = crate::backups::tick(&state).await;
-        let (status, details) = match outcome {
-            Ok(()) => (
-                "healthy",
-                json!({"scope":"backup_scheduler_cycle","backup_success":"查看实际备份执行记录","completed":true}),
-            ),
-            Err(error) => {
-                tracing::error!(%error,"backup executor failed");
-                (
-                    "failed",
-                    json!({"scope":"backup_scheduler_cycle","completed":false,"error":error.to_string()}),
-                )
-            }
-        };
-        if let Err(error) =
-            control_center::system::heartbeat(&state.pool, "operations-backups", status, details)
-                .await
-        {
-            tracing::error!(%error,"backup heartbeat storage failed");
-        }
+async fn backup_schedules(state: &AppState) -> Pass {
+    match crate::backups::tick(state).await {
+        Ok(()) => Ok(
+            json!({"scope":"backup_scheduler_cycle","backup_success":"查看实际备份执行记录","completed":true}),
+        ),
+        Err(error) => Err(Failure::new(
+            &error,
+            json!({"scope":"backup_scheduler_cycle","completed":false,"error":error.to_string()}),
+        )),
     }
 }
 

@@ -66,6 +66,7 @@
 ## 实现与检查
 
 - 一类对象一套模型（[ADR 0131](docs/adr/0131-one-model-per-object.md)）：新功能只加在当前模型上；替代实现完成后，旧实现连同接口、页面、分支、测试、脚本与文档一起删除，调用方一起改，不保留旧函数名、旧模块路径或旧 crate 名的包装与再导出。
+- 一种底层机制一套实现（[ADR 0133](docs/adr/0133-one-implementation-per-mechanism.md)）：后台任务一律经 `apsp_panel_host::maintenance::periodic` 运行并报心跳，心跳名登记在 `crates/panel/src/domains.rs` 的 `HEARTBEATS`；咨询锁一律用 `apsp_panel_host::locks`，锁键由所有者在自己的 `src/locks.rs` 声明。两者的守卫随 `cargo test` 运行，例外写明原因，只许减少。
 - Rust stable、edition 2024；每个 crate 根文件（含二进制根、测试 crate 和构建脚本）使用 `#![forbid(unsafe_code)]`，禁止引入 `unsafe` 代码。
 - 代码标识符、代码注释使用英文；`docs/`、README、PROGRESS 使用中文。界面以中文为源语言，英文是翻译（[ADR 0127](docs/adr/0127-chinese-source-language.md)）。
 - 只使用任务说明列出的依赖；确需新增依赖时先在 `docs/adr/` 说明必要性和替代方案。

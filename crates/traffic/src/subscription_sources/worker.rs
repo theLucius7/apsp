@@ -9,6 +9,7 @@ use crate::{
     error::ApiResult,
     subscription_parser::{self, FormatHint, PARSER_VERSION},
 };
+use apsp_panel_host::maintenance::{self, Cadence, Pass};
 use apsp_protocol::now_timestamp;
 use sqlx::{FromRow, PgConnection};
 use std::{
@@ -87,9 +88,7 @@ async fn claim_due(state: &AppState, local: &BTreeSet<Uuid>) -> ApiResult<Vec<Cl
     renew(state, local).await?;
     let mut tx = state.pool.begin().await?;
     // This short scheduler lock also bounds workers across panel processes.
-    sqlx::query("SELECT pg_advisory_xact_lock(73402903,1)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::SOURCE_REFRESHES.lock(&mut tx).await?;
     expire(&mut tx, &local.iter().copied().collect::<Vec<_>>()).await?;
     sqlx::query("DELETE FROM singbox_ordered_source_previews WHERE expires_at<=$1")
         .bind(now_timestamp())
@@ -372,23 +371,81 @@ pub async fn run_once(state: &AppState) -> ApiResult<()> {
     }
 }
 
+/// Starts the due refresh jobs every second, at most four at a time across panel
+/// processes, and keeps the leases of the jobs this process runs. Its health is recorded
+/// every thirty seconds, or at once when it changes.
 pub async fn run(state: AppState) {
-    let mut poll = tokio::time::interval(Duration::from_secs(1));
-    poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut workers = JoinSet::new();
-    let mut local = BTreeSet::new();
-    let mut task_ids = HashMap::new();
-    loop {
-        tokio::select! {
-            _=poll.tick()=>match claim_due(&state,&local).await {
-                Ok(claims)=>for claim in claims { local.insert(claim.job_id);let id=claim.job_id; let state=state.clone(); let handle=workers.spawn(async move { process(&state,claim).await });task_ids.insert(handle.id(),id); },
-                Err(_)=>tracing::error!("subscription source scheduler failed; pending work retained"),
-            },
-            result=workers.join_next_with_id(), if !workers.is_empty()=>match result {
-                Some(Ok((task_id,result)))=>{if let Some(id)=task_ids.remove(&task_id){local.remove(&id);if result.is_err(){tracing::error!(job_id=%id,"subscription source task persistence failed; lease retained");}}},
-                Some(Err(error))=>{if let Some(id)=task_ids.remove(&error.id()){local.remove(&id);}tracing::error!("subscription source worker interrupted; lease retained");},
-                None=>{},
+    let scheduler = Scheduler {
+        state: state.clone(),
+        workers: JoinSet::new(),
+        local: BTreeSet::new(),
+        task_ids: HashMap::new(),
+    };
+    maintenance::periodic(
+        "subscription-sources",
+        state.pool,
+        Cadence::every(Duration::from_secs(1)).reporting_every(Duration::from_secs(30)),
+        scheduler,
+        |scheduler| Box::pin(scheduler.pass()),
+    )
+    .await
+}
+
+/// The jobs this process runs, kept from one scheduler pass to the next.
+struct Scheduler {
+    state: AppState,
+    workers: JoinSet<ApiResult<()>>,
+    local: BTreeSet<Uuid>,
+    task_ids: HashMap<tokio::task::Id, Uuid>,
+}
+
+impl Scheduler {
+    /// Collects the jobs that finished since the last pass, then claims and starts the
+    /// due ones.
+    async fn pass(&mut self) -> Pass {
+        let mut healthy = true;
+        while let Some(result) = self.workers.try_join_next_with_id() {
+            match result {
+                Ok((task_id, result)) => {
+                    if let Some(id) = self.task_ids.remove(&task_id) {
+                        self.local.remove(&id);
+                        if result.is_err() {
+                            tracing::error!(job_id=%id,"subscription source task persistence failed; lease retained");
+                            healthy = false;
+                        }
+                    }
+                }
+                Err(error) => {
+                    if let Some(id) = self.task_ids.remove(&error.id()) {
+                        self.local.remove(&id);
+                    }
+                    tracing::error!("subscription source worker interrupted; lease retained");
+                    healthy = false;
+                }
             }
+        }
+        match claim_due(&self.state, &self.local).await {
+            Ok(claims) => {
+                for claim in claims {
+                    self.local.insert(claim.job_id);
+                    let id = claim.job_id;
+                    let state = self.state.clone();
+                    let handle = self
+                        .workers
+                        .spawn(async move { process(&state, claim).await });
+                    self.task_ids.insert(handle.id(), id);
+                }
+            }
+            Err(_) => {
+                tracing::error!("subscription source scheduler failed; pending work retained");
+                healthy = false;
+            }
+        }
+        let details = serde_json::json!({"source":"source-refresh-cycle"});
+        if healthy {
+            Ok(details)
+        } else {
+            Err(maintenance::Failure::logged(details))
         }
     }
 }

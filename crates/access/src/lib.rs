@@ -9,6 +9,7 @@
 pub mod accesses;
 pub mod entitlements;
 pub mod external_access;
+pub mod locks;
 pub mod nexus;
 pub mod operations_workflows;
 pub mod packages;

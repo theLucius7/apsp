@@ -156,8 +156,8 @@ pub async fn execute(
     name: &str,
 ) -> ApiResult<Uuid> {
     let mut serialization = state.pool.begin().await?;
-    let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(530118)")
-        .fetch_one(&mut *serialization)
+    let acquired = crate::locks::FULL_BACKUP
+        .try_lock(&mut serialization)
         .await?;
     if !acquired {
         // Nothing ran; callers decide whether to wait for the running backup.
@@ -400,9 +400,7 @@ pub async fn retention(state: &AppState, schedule: Uuid, count: i32, days: i32) 
         .await
         .map_err(anyhow::Error::from)?;
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(530018)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::BACKUP_RECORDS.lock(&mut tx).await?;
     let rows=sqlx::query("SELECT id,location,created_at,retain_until FROM operations_backup_records WHERE source_schedule=$1 AND encrypted AND retired_at IS NULL ORDER BY created_at DESC,id DESC FOR UPDATE").bind(schedule).fetch_all(&mut *tx).await?;
     let mut retired = Vec::new();
     for (index, row) in rows.into_iter().enumerate() {
@@ -562,9 +560,7 @@ mod tests {
         let schedule = Uuid::new_v4();
         let recipient = format!("age1{}", "a".repeat(58));
         let mut existing = pool.begin().await?;
-        sqlx::query("SELECT pg_advisory_xact_lock(530118)")
-            .execute(&mut *existing)
-            .await?;
+        crate::locks::FULL_BACKUP.lock(&mut existing).await?;
         let error = execute(&state, Uuid::new_v4(), schedule, &recipient, 1, "TEST_ONLY")
             .await
             .unwrap_err();

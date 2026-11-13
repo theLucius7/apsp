@@ -17,32 +17,11 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-const RECORD_LOCK: i64 = 739104824;
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Apply {
     preview_id: Uuid,
     confirmed: bool,
-}
-
-pub(super) async fn lock(connection: &mut sqlx::PgConnection) -> ApiResult<()> {
-    sqlx::query("SELECT pg_advisory_xact_lock($1)")
-        .bind(RECORD_LOCK)
-        .execute(connection)
-        .await?;
-    Ok(())
-}
-
-pub(super) async fn try_lock(connection: &mut sqlx::PgConnection) -> ApiResult<()> {
-    let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock($1)")
-        .bind(RECORD_LOCK)
-        .fetch_one(connection)
-        .await?;
-    if !acquired {
-        return Err(ApiError::Busy);
-    }
-    Ok(())
 }
 
 pub(super) async fn idle(connection: &mut sqlx::PgConnection, account: Uuid) -> ApiResult<()> {
@@ -146,7 +125,7 @@ pub(super) async fn apply(
         return Err(ApiError::BadRequest("请确认 DNS 变更预览".into()));
     }
     let mut tx = state.pool.begin().await?;
-    lock(&mut tx).await?;
+    crate::locks::DNS_WRITES.lock(&mut tx).await?;
     let locked: Account = sqlx::query_as("SELECT * FROM dns_accounts WHERE id=$1 FOR UPDATE")
         .bind(id)
         .fetch_one(&mut *tx)
@@ -220,7 +199,7 @@ async fn perform_with(
     let mut tx = state.pool.begin().await?;
     // This transaction protects current account and credential identity, but is not the intent.
     // Dropping it releases the writer lock without erasing the already committed operation.
-    lock(&mut tx).await?;
+    crate::locks::DNS_WRITES.lock(&mut tx).await?;
     let account: Account = sqlx::query_as("SELECT * FROM dns_accounts WHERE id=$1 FOR UPDATE")
         .bind(account_id)
         .fetch_one(&mut *tx)

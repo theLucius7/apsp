@@ -126,7 +126,9 @@ pub(super) async fn reconcile(
     let mut tx = state.pool.begin().await?;
     // An active writer holds this transaction lock across provider I/O. After its request
     // disappears, the lock is released but the committed uncertain intent remains.
-    super::dns_record_actions::try_lock(&mut tx).await?;
+    if !crate::locks::DNS_WRITES.try_lock(&mut tx).await? {
+        return Err(ApiError::Busy);
+    }
     let account: Account = sqlx::query_as("SELECT * FROM dns_accounts WHERE id=$1 FOR SHARE")
         .bind(account_id)
         .fetch_one(&mut *tx)

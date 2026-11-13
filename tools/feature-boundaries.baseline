@@ -174,7 +174,6 @@ sql	crates/governance/src/control_center/system.rs	read	operations_jobs	governan
 sql	crates/governance/src/control_center/system.rs	read	operations_restore_drills	governance->operations
 sql	crates/governance/src/control_center/system.rs	read	remote_commands	governance->operations
 sql	crates/governance/src/control_center/system.rs	read	server_ip_quality_datasets	governance->observability
-sql	crates/governance/src/control_center/system.rs	read	system_worker_heartbeats	governance->platform
 sql	crates/governance/src/control_center/system.rs	write	fleet_config_history	governance->operations
 sql	crates/governance/src/control_center/system.rs	write	fleet_events	governance->observability
 sql	crates/governance/src/control_center/system.rs	write	fleet_operations	governance->operations
@@ -184,7 +183,6 @@ sql	crates/governance/src/control_center/system.rs	write	fleet_terminal_sessions
 sql	crates/governance/src/control_center/system.rs	write	remote_commands	governance->operations
 sql	crates/governance/src/control_center/system.rs	write	server_ip_quality	governance->observability
 sql	crates/governance/src/control_center/system.rs	write	server_ip_quality_datasets	governance->observability
-sql	crates/governance/src/control_center/system.rs	write	system_worker_heartbeats	governance->platform
 sql	crates/governance/src/releases/selection.rs	read	servers	governance->resources
 sql	crates/naming/src/acme.rs	read	network_documents	naming->networking
 sql	crates/naming/src/acme_executor.rs	read	network_documents	naming->networking

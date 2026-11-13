@@ -1,5 +1,24 @@
 # 执行进度
 
+## 2026-11-13：底层机制统一第一部分——咨询锁与后台任务各只留一套（ADR 0133）
+
+- 用户要求：“目前是底层原理深度统一”（接“扫描 apsp 和查看仓库记录，优化”）。决策见 [ADR 0133](docs/adr/0133-one-implementation-per-mechanism.md)，取舍见 `docs/open-questions.md`。基于 main `4da54e67`。可见的变化只有系统健康页多出 6 个后台任务的心跳；行为上另有两处：管理员偏好锁不再与新建或修改管理员、刷新工具通告共用一把锁，作业的三个循环一拍失败时的日志由 ERROR 改为 WARN。不改数据库基线、协议与设备。
+- 完成项：
+  - 咨询锁：平台 `apsp_panel_host::locks` 提供锁键（64 位键或两整数键，`offset` 为每个对象取一把）、按文本取哈希的键、加锁与试锁；9 个领域各自在 `src/locks.rs` 声明锁键，号码不变，只在基线函数里用的键也由所有者声明；41 处加锁调用（生产代码 38、测试 3，27 个文件）改用声明的键，顺带去掉名称领域的锁包装函数与两处重复的锁写法。管理员偏好锁改为两整数键（类 73002000）。
+  - 后台任务：平台 `maintenance::periodic` 是唯一的周期执行器（`Cadence`、一拍的结果 `Pass`、长任务保活 `beat_while`）；心跳的读写收归平台，治理的 `system::heartbeat` 删除，健康视图经平台读取；20 个后台循环全部经执行器运行。新增心跳：`expenses`、`exchange-rates`、`member-messages`、`china-reachability`、`subscription-hosts`、`subscription-sources`；`SystemHealth.tsx` 为它们与 `operations-job-backups` 加了中文名称。
+  - 守卫（随 `cargo test` 运行）：平台 `locks::tests::advisory_locks_go_through_declared_keys`；应用 `domains::tests` 的锁号码唯一、声明列全、基线用到的锁已声明，以及后台循环只经执行器、任务名与健康视图期待的心跳名一致。
+  - 边界：越界清单 392 → 390（心跳表的两条）。
+  - 文档：ADR 0133 与索引、`docs/architecture.md`（§3.3、§5.4、§12）、`AGENTS.md`「实现与检查」一条、`docs/open-questions.md`。
+- 验证结果（本地，2026-11-13；CI 仍暂停，未触发）：
+  - `cargo fmt --all --check` 通过；`cargo clippy --all-targets -- -D warnings` 覆盖 `apsp-panel-host`、`apsp-governance`、`apsp-resources`、`apsp-networking`、`apsp-naming`、`apsp-traffic`、`apsp-access`、`apsp-costs`、`apsp-observability`、`apsp-operations`、`apsp-panel`，通过。
+  - 单元测试：这 11 个 crate 的 `--lib` 共 554 项通过、1 项按原有标注忽略，其中有一项数据库测试核对每个声明的键取的锁与原来写的数字相同。
+  - 面板集成测试：除 `end_to_end` 外的 80 个目标共 391 项通过、0 项失败、6 项按原有标注忽略。
+  - `tools/check-core-boundary.py`、`tools/check-feature-boundaries.py`（390 条已知越界，没有新增）、`tools/route-policy.py`（505 条路由）通过。前端构建通过，`bun test` 238 项通过。
+  - 过程：两个切片由两个子代理在各自的工作区同时完成。它们共用的编译目录会让两个工作区用到对方的产物（cargo 按工作区内的相对路径命名产物），所以子代理各自的 clippy 结果不作数；上面的结果是合并后在全新的编译目录里重跑的。
+  - 未验证：`end_to_end`（需要真实的 Agent 部署）；镜像由部署器构建；上线后的核对补记在下面。
+- 已知问题：后台循环的守卫只认 tokio 的间隔，不认用 sleep 写的循环；按文本取哈希的锁键与固定号码之间的碰撞无法静态检查；`china-reachability` 一次运行超过 120 秒时，健康视图会显示“观察已过期”（原有的长任务也是这样）。
+- 下一步：ADR 0133 第二部分——对外请求（先定平台两个 crate 的层级）、网络校验与受控出站、“服务器此刻是否可用”、投递器与告警发件箱迁到观测、Cloudflare 与 Globalping 客户端、健康视图组合与保留期由所有者执行（`docs/architecture.md` §12）。
+
 ## 2026-11-13：发布循环的数据库开销——关闭 JIT，每轮只算一次资格
 
 - 用户要求：“扫描 apsp 和查看仓库记录，优化”。先读了仓库记录（本文件最近的“下一步”、`docs/architecture.md` §12、`docs/open-questions.md` 的性能遗留项），再只读查看生产：数据库容器持续占满一个 CPU 核，面板 4 小时内有 1148 条超过 1 秒的慢语句。原因与取舍见 `docs/open-questions.md` 同日条目；只改代码，不改数据库基线、协议与界面。

@@ -149,9 +149,7 @@ async fn a_running_full_backup_leaves_the_step_queued_without_a_start_record(
 ) -> anyhow::Result<()> {
     let (state, _directory, job, _schedule) = setup(pool.clone()).await?;
     let mut scheduled = pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(530118)")
-        .execute(&mut *scheduled)
-        .await?;
+    crate::locks::FULL_BACKUP.lock(&mut scheduled).await?;
     assert!(claim(&state).await?.is_none());
     let (step, starts): (String, i64) = sqlx::query_as("SELECT (SELECT state FROM operations_panel_steps WHERE job_id=$1),(SELECT count(*) FROM operations_history WHERE job_id=$1 AND action='panel_backup_started')")
         .bind(job)

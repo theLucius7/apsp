@@ -151,9 +151,7 @@ async fn create_account(
     validate_reference(&state, credential).await?;
     let id = Uuid::new_v4();
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(739104831)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::ALICLOUD_ACCOUNTS.lock(&mut tx).await?;
     let count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM alicloud_accounts WHERE NOT archived")
             .fetch_one(&mut *tx)
@@ -313,9 +311,7 @@ async fn create_resource(
     input.validate()?;
     let mut tx = lock(&state.pool, input.account_id).await?;
     account_on(&mut tx, input.account_id).await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(739104832)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::ALICLOUD_RESOURCES.lock(&mut tx).await?;
     let count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM alicloud_resources WHERE NOT archived")
             .fetch_one(&mut *tx)

@@ -9,6 +9,7 @@ pub mod digest;
 pub mod error;
 pub mod evidence;
 pub mod frontend;
+pub mod locks;
 pub mod maintenance;
 pub mod net;
 pub mod notifications;

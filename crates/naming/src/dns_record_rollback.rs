@@ -41,7 +41,7 @@ pub(super) async fn rollback(
         ));
     }
     let mut tx = state.pool.begin().await?;
-    super::dns_record_actions::lock(&mut tx).await?;
+    crate::locks::DNS_WRITES.lock(&mut tx).await?;
     let account: Account = sqlx::query_as("SELECT * FROM dns_accounts WHERE id=$1 FOR UPDATE")
         .bind(account_id)
         .fetch_one(&mut *tx)

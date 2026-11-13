@@ -63,12 +63,10 @@ struct FakeState {
 /// Whether another connection could take the account's lock right now.
 async fn account_lock_free(pool: &PgPool, account: Uuid) -> bool {
     let mut tx = pool.begin().await.unwrap();
-    let free: bool =
-        sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(hashtextextended($1,739104830))")
-            .bind(account.to_string())
-            .fetch_one(&mut *tx)
-            .await
-            .unwrap();
+    let free = apsp_resources::locks::CLOUD_ACCOUNT
+        .try_lock(&mut tx, &account.to_string())
+        .await
+        .unwrap();
     tx.rollback().await.unwrap();
     free
 }

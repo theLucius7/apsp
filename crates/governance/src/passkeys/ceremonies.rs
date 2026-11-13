@@ -63,9 +63,7 @@ async fn save(
 ) -> ApiResult<Response> {
     let now = now_timestamp();
     // Serialize capacity checks across accounts without retaining browser-side state.
-    sqlx::query("SELECT pg_advisory_xact_lock(739104859)")
-        .execute(&mut **tx)
-        .await?;
+    crate::locks::PASSKEY_CEREMONIES.lock(tx).await?;
     sqlx::query("DELETE FROM passkey_ceremonies WHERE expires_at <= $1")
         .bind(now)
         .execute(&mut **tx)

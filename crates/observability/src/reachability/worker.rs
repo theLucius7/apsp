@@ -10,6 +10,7 @@ use super::{
     targets::{self, Target},
 };
 use crate::{AppState, control_center, error::ApiResult};
+use apsp_panel_host::maintenance::{self, Cadence, Pass};
 use apsp_protocol::now_timestamp;
 use futures_util::future::join_all;
 use serde::Serialize;
@@ -394,22 +395,43 @@ pub(super) async fn run(state: AppState) {
     if let Err(error) = store::release_lease(&state.pool).await {
         tracing::warn!(%error, "reachability lease reset failed");
     }
-    let mut tick = tokio::time::interval(TICK);
-    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        tick.tick().await;
-        if let Err(error) = alerts::deliver(&state.pool).await {
-            tracing::warn!(%error, "reachability alert delivery failed");
-        }
-        match cycle(&state.pool, &transport, &SystemResolver).await {
-            Ok(true) => {
-                if let Err(error) = alerts::deliver(&state.pool).await {
-                    tracing::warn!(%error, "reachability alert delivery failed");
-                }
+    maintenance::periodic(
+        "china-reachability",
+        state.pool.clone(),
+        Cadence::every(TICK),
+        (state.pool, transport),
+        |(pool, transport)| Box::pin(scheduled(pool, transport)),
+    )
+    .await
+}
+
+/// Delivers pending alerts, runs a check when one is due and delivers the alerts it
+/// raised. A failed check is recorded in the run's summary; the pass fails only when a
+/// step could not be carried out.
+async fn scheduled(pool: &PgPool, transport: &ReqwestTransport) -> Pass {
+    let mut healthy = true;
+    if let Err(error) = alerts::deliver(pool).await {
+        tracing::warn!(%error, "reachability alert delivery failed");
+        healthy = false;
+    }
+    match cycle(pool, transport, &SystemResolver).await {
+        Ok(true) => {
+            if let Err(error) = alerts::deliver(pool).await {
+                tracing::warn!(%error, "reachability alert delivery failed");
+                healthy = false;
             }
-            Ok(false) => {}
-            Err(error) => tracing::warn!(%error, "reachability cycle failed"),
         }
+        Ok(false) => {}
+        Err(error) => {
+            tracing::warn!(%error, "reachability cycle failed");
+            healthy = false;
+        }
+    }
+    let details = json!({"source":"reachability-cycle"});
+    if healthy {
+        Ok(details)
+    } else {
+        Err(maintenance::Failure::logged(details))
     }
 }
 

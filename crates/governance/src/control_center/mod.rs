@@ -16,6 +16,7 @@ pub use access::{
 };
 
 use crate::{AppState, auth, error::ApiResult};
+use apsp_panel_host::maintenance::{self, Cadence, Failure, Pass};
 use axum::{
     Json, Router,
     extract::{ConnectInfo, State},
@@ -23,7 +24,8 @@ use axum::{
     routing::{get, post, put},
 };
 use serde_json::{Value, json};
-use std::net::SocketAddr;
+use sqlx::PgPool;
+use std::{net::SocketAddr, time::Duration};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -115,35 +117,28 @@ async fn reauthenticate(
     tx.commit().await?;
     Ok(Json(proof))
 }
+/// Purges the records past their retention period. The heartbeat is recorded once a
+/// minute; retention periods are whole days, so the purge itself runs hourly and a failed
+/// one is retried on the next minute.
 pub async fn run(state: AppState) {
-    let mut timer = tokio::time::interval(std::time::Duration::from_secs(60));
-    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    // Retention periods are whole days, so purge hourly; a failed pass is
-    // retried on the next minute. The heartbeat stays once a minute.
-    let mut next_purge = 0;
-    let mut status = "healthy";
-    loop {
-        timer.tick().await;
-        let now = apsp_protocol::now_timestamp();
-        if now >= next_purge {
-            let result = system::maintain(&state.pool).await;
-            status = if result.is_ok() { "healthy" } else { "failed" };
-            match result {
-                Ok(()) => next_purge = now + 3600,
-                Err(error) => {
-                    tracing::warn!(%error,"control center retention maintenance failed")
-                }
-            }
+    maintenance::periodic(
+        "control-center",
+        state.pool.clone(),
+        Cadence::every(Duration::from_secs(60)),
+        (state.pool, 0_i64),
+        |(pool, next_purge)| Box::pin(retention(pool, next_purge)),
+    )
+    .await
+}
+
+async fn retention(pool: &PgPool, next_purge: &mut i64) -> Pass {
+    let details = json!({"source":"retention-cycle"});
+    let now = apsp_protocol::now_timestamp();
+    if now >= *next_purge {
+        if let Err(error) = system::maintain(pool).await {
+            return Err(Failure::new(error, details));
         }
-        if let Err(error) = system::heartbeat(
-            &state.pool,
-            "control-center",
-            status,
-            json!({"source":"retention-cycle"}),
-        )
-        .await
-        {
-            tracing::warn!(%error,"control center heartbeat failed");
-        }
+        *next_purge = now + 3600;
     }
+    Ok(details)
 }

@@ -16,6 +16,7 @@ pub mod catalog;
 pub mod china_reachability;
 pub mod deployments;
 pub mod device_config;
+pub mod locks;
 pub mod nexus_nodes;
 pub mod node_protocol;
 mod node_settings;

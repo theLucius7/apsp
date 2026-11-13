@@ -4,8 +4,10 @@ use super::{
 };
 use crate::error::ApiResult;
 use apsp_cloud_api::Failure;
+use apsp_panel_host::maintenance::{self, Cadence};
 use apsp_protocol::now_timestamp;
 use sqlx::{PgPool, Postgres, Transaction, types::Json as DbJson};
+use std::time::Duration;
 use uuid::Uuid;
 
 const STALL_SECONDS: i64 = 180;
@@ -692,42 +694,27 @@ pub(super) async fn run_steps<P: Probe>(
     Ok(())
 }
 
+/// The pass runs every two seconds; its health is recorded every thirty seconds, or at
+/// once when it changes.
 pub async fn run(pool: PgPool) {
-    let mut timer = tokio::time::interval(std::time::Duration::from_secs(2));
-    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let (mut reported_at, mut reported_healthy) = (0, None);
-    loop {
-        timer.tick().await;
-        let result = tick(&pool).await;
-        if let Err(error) = &result {
-            tracing::warn!(%error,"Cloud EIP rotation pass failed");
-        }
-        // The pass runs every two seconds; its health is reported every thirty
-        // seconds, or at once when it changes.
-        let now = now_timestamp();
-        let healthy = result.is_ok();
-        if now - reported_at < 30 && reported_healthy == Some(healthy) {
-            continue;
-        }
-        (reported_at, reported_healthy) = (now, Some(healthy));
-        let details = match &result {
-            Ok(()) => {
-                serde_json::json!({"scope":"eip_rotation_cycle","completed":true,"remote_resource_health_confirmed":false})
-            }
-            Err(error) => {
-                serde_json::json!({"scope":"eip_rotation_cycle","completed":false,"error":error.to_string(),"remote_resource_health_confirmed":false})
-            }
-        };
-        let status = if healthy { "healthy" } else { "failed" };
-        if let Err(error) = crate::control_center::system::heartbeat(
-            &pool,
-            "alicloud-eip-rotation",
-            status,
-            details,
-        )
-        .await
-        {
-            tracing::warn!(%error,"Cloud EIP rotation heartbeat storage failed");
-        }
-    }
+    maintenance::periodic(
+        "alicloud-eip-rotation",
+        pool.clone(),
+        Cadence::every(Duration::from_secs(2)).reporting_every(Duration::from_secs(30)),
+        pool,
+        |pool| {
+            Box::pin(async move {
+                match tick(pool).await {
+                    Ok(()) => Ok(
+                        serde_json::json!({"scope":"eip_rotation_cycle","completed":true,"remote_resource_health_confirmed":false}),
+                    ),
+                    Err(error) => Err(maintenance::Failure::new(
+                        &error,
+                        serde_json::json!({"scope":"eip_rotation_cycle","completed":false,"error":error.to_string(),"remote_resource_health_confirmed":false}),
+                    )),
+                }
+            })
+        },
+    )
+    .await
 }

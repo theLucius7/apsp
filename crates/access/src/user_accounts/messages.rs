@@ -1,4 +1,5 @@
 use super::*;
+use apsp_panel_host::maintenance::{self, Cadence};
 use axum::{
     Json,
     extract::{Path, State},
@@ -65,15 +66,20 @@ pub(super) async fn preferences(
     tx.commit().await?;
     Ok(Json(json!({"ok":true})))
 }
+/// Queues the expiry and traffic reminders that are due and mails the pending ones.
 pub(super) async fn run(state: AppState) {
-    let mut timer = tokio::time::interval(std::time::Duration::from_secs(60));
-    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        timer.tick().await;
-        if let Err(error) = tick(&state).await {
-            tracing::warn!(%error,"member notification maintenance failed");
-        }
-    }
+    maintenance::periodic(
+        "member-messages",
+        state.pool.clone(),
+        Cadence::every(std::time::Duration::from_secs(60)),
+        state,
+        |state| {
+            Box::pin(async move {
+                maintenance::outcome(tick(state).await, json!({"source":"reminder-cycle"}))
+            })
+        },
+    )
+    .await
 }
 async fn tick(state: &AppState) -> ApiResult<()> {
     let mut tx = state.pool.begin().await?;

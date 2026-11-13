@@ -245,13 +245,16 @@ pub(super) async fn build(
             ..
         } = after
         {
-            listener_locks.insert(format!("apsp-forward:{server_id}:{protocol}:{listen_port}"));
+            listener_locks.insert(crate::locks::forwarding_listener(
+                *server_id,
+                protocol,
+                *listen_port,
+            ));
         }
     }
     for listener in listener_locks {
-        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
-            .bind(listener)
-            .execute(&mut **tx)
+        crate::locks::FORWARDING_LISTENER
+            .lock(tx, &listener)
             .await?;
     }
     let existing:Vec<Document>=sqlx::query_as("SELECT * FROM network_documents WHERE config->>'server_id'=$1 OR config->'server_ids' @> $2::JSONB OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(config->'targets','[]'::JSONB)) AS target WHERE target->>'server_id'=$1) ORDER BY id LIMIT 1001 FOR SHARE")

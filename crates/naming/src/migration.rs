@@ -160,9 +160,7 @@ async fn apply(
         return Err(ApiError::BadRequest("请确认批量变更的目标与影响".into()));
     }
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(739104824)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::DNS_WRITES.lock(&mut tx).await?;
     let row: Option<StoredPreviewRow> = sqlx::query_as("SELECT target_server_id,snapshot,expires_at,applied_at FROM ddns_migration_previews WHERE id=$1 FOR UPDATE")
         .bind(input.preview_id).fetch_optional(&mut *tx).await?;
     let (target_id, sqlx::types::Json(snapshot), expires_at, applied_at) =

@@ -23,6 +23,7 @@ mod dns_resolvers;
 mod dns_wire;
 mod history;
 mod lifecycle;
+pub mod locks;
 mod migration;
 mod model;
 mod observation;

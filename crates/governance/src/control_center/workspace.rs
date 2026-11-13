@@ -96,9 +96,9 @@ pub async fn save_preference(
         ));
     }
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock($1)")
-        .bind(actor.admin_id.saturating_add(73002000))
-        .execute(&mut *tx)
+    crate::locks::PREFERENCES
+        .offset(actor.admin_id)
+        .lock(&mut tx)
         .await?;
     let revision:Option<i64>=sqlx::query_scalar("SELECT revision FROM administrator_preferences WHERE admin_id=$1 AND preference_key=$2 FOR UPDATE").bind(actor.admin_id).bind(&key).fetch_optional(&mut *tx).await?;
     let current = revision.unwrap_or(0);

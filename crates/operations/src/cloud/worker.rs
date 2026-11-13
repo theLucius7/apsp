@@ -1,6 +1,7 @@
 use crate::cloud::bandwidth;
 use crate::error::ApiResult;
 use apsp_costs::cloud::billing;
+use apsp_panel_host::maintenance::{self, Cadence, Failure, Pass};
 use apsp_resources::cloud::{client::Cloud, inventory, lock, model::Target};
 use sqlx::PgPool;
 use std::time::Duration;
@@ -112,72 +113,57 @@ pub async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
 
 pub async fn run(pool: PgPool) {
     tokio::join!(
-        maintenance(pool.clone()),
+        maintenance::periodic(
+            "alicloud",
+            pool.clone(),
+            Cadence::every(Duration::from_secs(5)),
+            pool.clone(),
+            |pool| Box::pin(scheduler(pool)),
+        ),
         super::power::run(pool.clone()),
         super::eip_rotation::run(pool.clone()),
-        ancillary(pool)
+        maintenance::periodic(
+            "alicloud-cost-cache",
+            pool.clone(),
+            Cadence::every(Duration::from_secs(10)),
+            pool,
+            |pool| Box::pin(ancillary(pool)),
+        )
     );
 }
 
-async fn ancillary(pool: PgPool) {
-    let mut timer = tokio::time::interval(Duration::from_secs(10));
-    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        timer.tick().await;
-        let costs = match Cloud::new(&pool) {
-            Ok(cloud) => apsp_costs::cloud::cost_cache::tick(&pool, &cloud).await,
-            Err(error) => Err(apsp_resources::cloud::failure(error)),
-        };
-        let deliveries = apsp_observability::cloud_notices::dispatch(&pool).await;
-        let mut errors = Vec::new();
-        if let Err(error) = costs {
-            tracing::warn!(%error,"Cloud cost cache failed");
-            errors.push(serde_json::json!({"stage":"cost_cache","error":error.to_string()}));
-        }
-        if let Err(error) = deliveries {
-            tracing::warn!(%error,"Cloud notification delivery failed");
-            errors.push(
-                serde_json::json!({"stage":"notification_dispatch","error":error.to_string()}),
-            );
-        }
-        let status = if errors.is_empty() {
-            "healthy"
-        } else {
-            "failed"
-        };
-        let details = serde_json::json!({"scope":"cost_cache_and_notification_cycle","completed":errors.is_empty(),"errors":errors,"remote_resource_health_confirmed":false,"bill_freshness":"以资源实际查询时间为准"});
-        if let Err(error) =
-            crate::control_center::system::heartbeat(&pool, "alicloud-cost-cache", status, details)
-                .await
-        {
-            tracing::warn!(%error,"Cloud ancillary heartbeat storage failed");
-        }
+async fn ancillary(pool: &PgPool) -> Pass {
+    let costs = match Cloud::new(pool) {
+        Ok(cloud) => apsp_costs::cloud::cost_cache::tick(pool, &cloud).await,
+        Err(error) => Err(apsp_resources::cloud::failure(error)),
+    };
+    let deliveries = apsp_observability::cloud_notices::dispatch(pool).await;
+    let mut errors = Vec::new();
+    if let Err(error) = costs {
+        tracing::warn!(%error,"Cloud cost cache failed");
+        errors.push(serde_json::json!({"stage":"cost_cache","error":error.to_string()}));
+    }
+    if let Err(error) = deliveries {
+        tracing::warn!(%error,"Cloud notification delivery failed");
+        errors.push(serde_json::json!({"stage":"notification_dispatch","error":error.to_string()}));
+    }
+    let details = serde_json::json!({"scope":"cost_cache_and_notification_cycle","completed":errors.is_empty(),"errors":errors,"remote_resource_health_confirmed":false,"bill_freshness":"以资源实际查询时间为准"});
+    if errors.is_empty() {
+        Ok(details)
+    } else {
+        Err(Failure::logged(details))
     }
 }
-async fn maintenance(pool: PgPool) {
-    let mut timer = tokio::time::interval(Duration::from_secs(5));
-    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        timer.tick().await;
-        let outcome = tick(&pool).await;
-        let (status, details) = match outcome {
-            Ok(()) => (
-                "healthy",
-                serde_json::json!({"scope":"scheduler_and_reconciliation_cycle","completed":true,"remote_resource_health_confirmed":false}),
-            ),
-            Err(error) => {
-                tracing::warn!(%error,"Cloud management maintenance failed");
-                (
-                    "failed",
-                    serde_json::json!({"scope":"scheduler_and_reconciliation_cycle","completed":false,"error":error.to_string(),"remote_resource_health_confirmed":false}),
-                )
-            }
-        };
-        if let Err(error) =
-            crate::control_center::system::heartbeat(&pool, "alicloud", status, details).await
-        {
-            tracing::warn!(%error,"Cloud scheduler heartbeat storage failed");
-        }
+
+async fn scheduler(pool: &PgPool) -> Pass {
+    match tick(pool).await {
+        Ok(()) => Ok(
+            serde_json::json!({"scope":"scheduler_and_reconciliation_cycle","completed":true,"remote_resource_health_confirmed":false}),
+        ),
+        Err(error) => Err(Failure::new(
+            &error,
+            serde_json::json!({"scope":"scheduler_and_reconciliation_cycle","completed":false,"error":error.to_string(),"remote_resource_health_confirmed":false}),
+        )),
     }
 }
 

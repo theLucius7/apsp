@@ -71,9 +71,7 @@ pub async fn import_backup(
     let hash = digest(&request.manifest)?;
     let id = Uuid::new_v4();
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(530018)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::BACKUP_RECORDS.lock(&mut tx).await?;
     for dependency in &request.dependency_ids {
         let exists:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM operations_backup_records WHERE id=$1 AND retired_at IS NULL)").bind(dependency).fetch_one(&mut *tx).await?;
         if !exists {
@@ -122,9 +120,7 @@ pub async fn import_drill(
         ));
     }
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(530018)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::BACKUP_RECORDS.lock(&mut tx).await?;
     let row = sqlx::query(
         "SELECT manifest_sha256,manifest,retired_at FROM operations_backup_records WHERE id=$1 FOR UPDATE",
     )
@@ -170,9 +166,7 @@ pub async fn retire(
     crate::control_center::require_global_material(&state, &headers, "recovery:write").await?;
     control_center::require_recent_proof(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(530018)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::BACKUP_RECORDS.lock(&mut tx).await?;
     let _: Uuid =
         sqlx::query_scalar("SELECT id FROM operations_backup_records WHERE id=$1 FOR UPDATE")
             .bind(id)

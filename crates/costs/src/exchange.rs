@@ -9,6 +9,7 @@ use apsp_governance::auth;
 use apsp_panel_host::{
     AppState,
     error::{ApiError, ApiResult},
+    maintenance::{self, Cadence},
 };
 use axum::{Json, extract::State, http::HeaderMap};
 use serde::Serialize;
@@ -139,13 +140,22 @@ where
     complete(pool, id, apsp_protocol::now_timestamp(), result).await
 }
 
+/// Refreshes the rates when they are due; a failed download keeps the previous snapshot
+/// and is recorded with it, so only a storage failure fails the pass.
 pub async fn run(pool: PgPool) {
-    let mut timer = tokio::time::interval(Duration::from_secs(60));
-    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        timer.tick().await;
-        if let Err(error) = refresh_with(&pool, false, fetch::latest).await {
-            tracing::warn!(%error, "exchange-rate maintenance failed; retained previous snapshot");
-        }
-    }
+    maintenance::periodic(
+        "exchange-rates",
+        pool.clone(),
+        Cadence::every(Duration::from_secs(60)),
+        pool,
+        |pool| {
+            Box::pin(async move {
+                maintenance::outcome(
+                    refresh_with(pool, false, fetch::latest).await,
+                    serde_json::json!({"source":"exchange-rate-cycle"}),
+                )
+            })
+        },
+    )
+    .await
 }

@@ -7,6 +7,7 @@ use crate::{
     AppState, control_center,
     error::{ApiError, ApiResult},
 };
+use apsp_panel_host::maintenance::{self, Cadence};
 use apsp_protocol::now_timestamp;
 use axum::{
     Json,
@@ -20,35 +21,26 @@ use std::time::Duration;
 use uuid::Uuid;
 
 pub(super) async fn run(state: AppState) {
-    let mut interval = tokio::time::interval(Duration::from_secs(5));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        interval.tick().await;
-        let outcome = tick(&state).await;
-        let (status, details) = match outcome {
-            Ok(()) => (
-                "healthy",
-                json!({"scope":"once_per_job_backup_cycle","actual_results":"任务内单一完整恢复点的实际执行记录"}),
-            ),
-            Err(error) => {
-                tracing::error!(%error,"job backup worker failed");
-                (
-                    "failed",
-                    json!({"scope":"once_per_job_backup_cycle","completed":false}),
-                )
-            }
-        };
-        if let Err(error) = control_center::system::heartbeat(
-            &state.pool,
-            "operations-job-backups",
-            status,
-            details,
-        )
-        .await
-        {
-            tracing::error!(%error,"job backup heartbeat storage failed");
-        }
-    }
+    maintenance::periodic(
+        "operations-job-backups",
+        state.pool.clone(),
+        Cadence::every(Duration::from_secs(5)),
+        state,
+        |state| {
+            Box::pin(async move {
+                match tick(state).await {
+                    Ok(()) => Ok(
+                        json!({"scope":"once_per_job_backup_cycle","actual_results":"任务内单一完整恢复点的实际执行记录"}),
+                    ),
+                    Err(error) => Err(maintenance::Failure::new(
+                        error,
+                        json!({"scope":"once_per_job_backup_cycle","completed":false}),
+                    )),
+                }
+            })
+        },
+    )
+    .await
 }
 
 struct Execution {
@@ -112,9 +104,7 @@ async fn claim(state: &AppState) -> ApiResult<Option<Execution>> {
     }
     // While another full backup holds the backup lock, leave the step queued without
     // recording a start; the transaction-scoped probe is released at commit.
-    let free: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(530118)")
-        .fetch_one(&mut *tx)
-        .await?;
+    let free = crate::locks::FULL_BACKUP.try_lock(&mut tx).await?;
     if !free {
         return Ok(None);
     }

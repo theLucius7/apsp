@@ -8,6 +8,7 @@ pub mod cancellation_reminders;
 pub mod cloud;
 pub mod exchange;
 mod history;
+pub mod locks;
 mod migration;
 pub mod renewals;
 pub mod schedule;
@@ -116,9 +117,7 @@ async fn principal(
     Ok(principal)
 }
 async fn lock(tx: &mut Tx<'_>) -> ApiResult<()> {
-    sqlx::query("SELECT pg_advisory_xact_lock(73201067)")
-        .execute(&mut **tx)
-        .await?;
+    crate::locks::EXPENSES.lock(tx).await?;
     Ok(())
 }
 fn text(value: &str, max: usize, required: bool) -> ApiResult<String> {

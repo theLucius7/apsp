@@ -8,13 +8,19 @@ use apsp_naming as naming;
 use apsp_networking as networking;
 use apsp_observability as observability;
 use apsp_operations as operations;
-use apsp_panel_host::{AppState, maintenance::supervise};
+use apsp_panel_host::{
+    AppState,
+    maintenance::{Cadence, outcome, periodic, supervise},
+};
 use apsp_resources as resources;
 use apsp_traffic as traffic;
 use axum::{Router, routing::get};
 use sqlx::PgPool;
+use std::time::Duration;
 
 /// The heartbeat names the workers below write, as the system health view lists them.
+/// Every background loop runs on the platform's periodic executor under exactly one of
+/// these names; the tests below hold this list to the loops.
 const HEARTBEATS: &[&str] = &[
     "maintenance",
     "telemetry-history",
@@ -26,11 +32,16 @@ const HEARTBEATS: &[&str] = &[
     "network-certificates",
     "ddns",
     "expenses",
+    "exchange-rates",
     "alicloud",
     "alicloud-cost-cache",
     "alicloud-power",
     "alicloud-eip-rotation",
     "sing-box",
+    "subscription-sources",
+    "member-messages",
+    "subscription-hosts",
+    "china-reachability",
 ];
 
 /// Connects the typed interfaces of the compiled domains and declares the workers the
@@ -122,47 +133,40 @@ async fn proxy(state: AppState) {
 }
 
 async fn telemetry_history(pool: PgPool) {
-    let mut timer = tokio::time::interval(std::time::Duration::from_secs(60));
-    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        timer.tick().await;
-        let result = observability::telemetry::maintain(&pool).await;
-        let status = if result.is_ok() { "healthy" } else { "failed" };
-        if let Err(error) = result {
-            tracing::warn!(%error, "telemetry history maintenance failed");
-        }
-        if let Err(error) = governance::control_center::system::heartbeat(
-            &pool,
-            "telemetry-history",
-            status,
-            serde_json::json!({"source":"history-maintenance-cycle"}),
-        )
-        .await
-        {
-            tracing::warn!(%error,"telemetry worker heartbeat failed");
-        }
-    }
+    periodic(
+        "telemetry-history",
+        pool.clone(),
+        Cadence::every(Duration::from_secs(60)),
+        pool,
+        |pool| {
+            Box::pin(async move {
+                outcome(
+                    observability::telemetry::maintain(pool).await,
+                    serde_json::json!({"source":"history-maintenance-cycle"}),
+                )
+            })
+        },
+    )
+    .await
 }
 
 async fn network_workbench(state: AppState) {
-    let mut timer = tokio::time::interval(std::time::Duration::from_secs(5));
-    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        timer.tick().await;
-        let result = observability::network_workbench::tick(&state).await;
-        let status = if result.is_ok() { "healthy" } else { "failed" };
-        if let Err(error) = result {
-            tracing::warn!(%error,"network workbench dispatch failed");
-        }
-        if let Err(error) = governance::control_center::system::heartbeat(
-            &state.pool,
-            "network-workbench",
-            status,
-            serde_json::json!({"source":"dispatch-cycle"}),
-        )
-        .await
-        {
-            tracing::warn!(%error,"network workbench heartbeat failed");
-        }
-    }
+    periodic(
+        "network-workbench",
+        state.pool.clone(),
+        Cadence::every(Duration::from_secs(5)),
+        state,
+        |state| {
+            Box::pin(async move {
+                outcome(
+                    observability::network_workbench::tick(state).await,
+                    serde_json::json!({"source":"dispatch-cycle"}),
+                )
+            })
+        },
+    )
+    .await
 }
+
+#[cfg(test)]
+mod tests;

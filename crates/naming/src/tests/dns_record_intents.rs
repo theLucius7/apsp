@@ -69,7 +69,7 @@ async fn intent(fixture: &Fixture) -> (Uuid, Uuid) {
     let now = apsp_protocol::now_timestamp();
     let request = tests::request();
     let mut tx = fixture.state.pool.begin().await.unwrap();
-    lock(&mut tx).await.unwrap();
+    crate::locks::DNS_WRITES.lock(&mut tx).await.unwrap();
     sqlx::query("INSERT INTO dns_record_previews(id,account_id,account_revision,request,snapshot,created_at,expires_at) VALUES($1,$2,1,$3,'null',$4,$5)")
         .bind(preview).bind(fixture.account.id).bind(json!(request)).bind(now).bind(now+300)
         .execute(&mut *tx).await.unwrap();
@@ -126,7 +126,7 @@ async fn committed_unsent_intent_consumes_preview_blocks_writes_and_reconciles_w
             .unwrap();
     assert!(applied.is_some());
     let mut tx = fixture.state.pool.begin().await.unwrap();
-    lock(&mut tx).await.unwrap();
+    crate::locks::DNS_WRITES.lock(&mut tx).await.unwrap();
     assert!(matches!(
         idle(&mut tx, fixture.account.id).await,
         Err(ApiError::Conflict(_))
@@ -169,7 +169,7 @@ async fn active_writer_prevents_reconciliation_and_retention_never_removes_uncer
     let fixture = fixture(pool).await;
     let (_, operation) = intent(&fixture).await;
     let mut writer = fixture.state.pool.begin().await.unwrap();
-    lock(&mut writer).await.unwrap();
+    crate::locks::DNS_WRITES.lock(&mut writer).await.unwrap();
     let result = super::super::dns_record_reconcile::reconcile(
         State(fixture.state.clone()),
         fixture.headers.clone(),
@@ -298,7 +298,7 @@ async fn dropped_caller_after_actual_provider_write_keeps_intent_and_blocks_new_
     assert!(caller.await.unwrap_err().is_cancelled());
     delayed_state.reply.notify_one();
     let mut tx = fixture.state.pool.begin().await.unwrap();
-    lock(&mut tx).await.unwrap();
+    crate::locks::DNS_WRITES.lock(&mut tx).await.unwrap();
     for (preview, rollback) in [(Some(Uuid::new_v4()), None), (None, Some(Uuid::new_v4()))] {
         assert!(
             reserve(
@@ -636,7 +636,7 @@ async fn another_account_cannot_bypass_uncertain_owner_or_record_identity(pool: 
     .await
     .unwrap();
     let mut tx = fixture.state.pool.begin().await.unwrap();
-    lock(&mut tx).await.unwrap();
+    crate::locks::DNS_WRITES.lock(&mut tx).await.unwrap();
     idle(&mut tx, alias.id).await.unwrap();
     assert!(
         reserve(

@@ -8,6 +8,7 @@ use super::{
     providers::Providers,
 };
 use crate::error::{ApiError, ApiResult};
+use apsp_panel_host::maintenance::{self, Cadence};
 use futures_util::{StreamExt, stream};
 use sqlx::PgPool;
 use std::{net::IpAddr, time::Duration};
@@ -15,9 +16,7 @@ use uuid::Uuid;
 
 async fn claim(pool: &PgPool, id: Uuid, force: bool) -> ApiResult<Option<(Uuid, Rule)>> {
     let mut tx = pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(739104824)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::DNS_WRITES.lock(&mut tx).await?;
     let now = apsp_protocol::now_timestamp();
     let active: i64 = sqlx::query_scalar("SELECT count(*) FROM ddns_rules WHERE lease_until>$1")
         .bind(now)
@@ -159,8 +158,8 @@ async fn write_guard(
         .map_err(|_| Failure::from("storage_error"))?;
     // Claims and switching DDNS off use this same order. Holding the lock through
     // the write prevents an expired wall-clock lease being reclaimed mid-request.
-    sqlx::query("SELECT pg_advisory_xact_lock(739104824)")
-        .execute(&mut *tx)
+    crate::locks::DNS_WRITES
+        .lock(&mut tx)
         .await
         .map_err(|_| Failure::from("storage_error"))?;
     let now = apsp_protocol::now_timestamp();
@@ -237,27 +236,23 @@ pub(super) async fn sync(pool: &PgPool, id: Uuid, force: bool) -> ApiResult<()> 
 }
 
 pub async fn run(pool: PgPool) {
-    let mut timer = tokio::time::interval(Duration::from_secs(15));
-    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        timer.tick().await;
-        let result = tick(&pool).await;
-        let (status, details) = match result {
-            Ok(details) => ("healthy", details),
-            Err(error) => {
-                tracing::warn!(%error,"DDNS maintenance failed");
-                (
-                    "failed",
-                    serde_json::json!({"source":"ddns_dispatcher_tick","scope":"dispatcher","rule_results_source":"ddns_rules_and_history","error_code":"dispatcher_failed"}),
-                )
-            }
-        };
-        if let Err(error) =
-            crate::control_center::system::heartbeat(&pool, "ddns", status, details).await
-        {
-            tracing::warn!(%error,"DDNS heartbeat persistence failed");
-        }
-    }
+    maintenance::periodic(
+        "ddns",
+        pool.clone(),
+        Cadence::every(Duration::from_secs(15)),
+        pool,
+        |pool| {
+            Box::pin(async move {
+                tick(pool).await.map_err(|error| {
+                    maintenance::Failure::new(
+                        error,
+                        serde_json::json!({"source":"ddns_dispatcher_tick","scope":"dispatcher","rule_results_source":"ddns_rules_and_history","error_code":"dispatcher_failed"}),
+                    )
+                })
+            })
+        },
+    )
+    .await
 }
 
 async fn tick(pool: &PgPool) -> ApiResult<serde_json::Value> {

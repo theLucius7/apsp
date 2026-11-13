@@ -19,9 +19,8 @@ use uuid::Uuid;
 /// Opens a transaction that holds the account's lock: one writer per cloud account.
 pub async fn lock(pool: &PgPool, account_id: Uuid) -> ApiResult<Transaction<'static, Postgres>> {
     let mut tx = pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,739104830))")
-        .bind(account_id.to_string())
-        .execute(&mut *tx)
+    crate::locks::CLOUD_ACCOUNT
+        .lock(&mut tx, &account_id.to_string())
         .await?;
     Ok(tx)
 }

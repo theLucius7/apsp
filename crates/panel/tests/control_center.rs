@@ -2,12 +2,15 @@
 use anyhow::{Context, Result};
 use apsp_governance::auth::{hash_token, random_token};
 use apsp_panel::router;
-use apsp_panel_host::config::Config;
+use apsp_panel_host::{
+    config::Config,
+    maintenance::{Cadence, Failure, periodic},
+};
 use apsp_protocol::now_timestamp;
 use reqwest::{Client, StatusCode, header};
 use serde_json::{Value, json};
 use sqlx::PgPool;
-use std::{net::SocketAddr, path::PathBuf};
+use std::{net::SocketAddr, path::PathBuf, time::Duration};
 use tokio::{net::TcpListener, task::JoinHandle};
 use uuid::Uuid;
 
@@ -658,5 +661,100 @@ async fn authorization_changes_revoke_existing_credentials_and_protect_the_last_
     let serialized = serde_json::to_string(&audits)?;
     assert!(!serialized.contains("control-test-password"));
     assert!(!serialized.contains("wrong-sensitive-password"));
+    Ok(())
+}
+
+#[sqlx::test]
+async fn background_heartbeats_are_stored_by_the_platform_and_shown_in_the_health_view(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = Panel::start(pool.clone()).await?;
+    // A fixture loop whose first pass succeeds and whose later passes fail; the pass
+    // count lives in the loop's context.
+    let task = tokio::spawn(periodic(
+        "fixture-loop",
+        pool.clone(),
+        Cadence::every(Duration::from_millis(20)),
+        0_u64,
+        |passes| {
+            Box::pin(async move {
+                *passes += 1;
+                if *passes == 1 {
+                    Ok(json!({"source":"fixture","pass":1}))
+                } else {
+                    Err(Failure::new(
+                        "fixture failure",
+                        json!({"source":"fixture","pass":*passes,"error":"e".repeat(600),"token":"TEST_ONLY"}),
+                    ))
+                }
+            })
+        },
+    ));
+    let stored = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let row: Option<(String, i64, Option<i64>, Value)> = sqlx::query_as("SELECT status,observed_at,last_success_at,details FROM system_worker_heartbeats WHERE name='fixture-loop'")
+                .fetch_optional(&pool)
+                .await?;
+            if let Some(row) = row
+                && row.3["pass"].as_u64() >= Some(3)
+            {
+                return Ok::<_, sqlx::Error>(row);
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .context("the fixture loop records its heartbeat")??;
+    task.abort();
+    let _ = task.await;
+    let (status, observed_at, last_success_at, details) = stored;
+    assert_eq!(status, "failed");
+    assert!(
+        last_success_at.is_some_and(|success| success <= observed_at),
+        "a failed pass keeps the time of the last success"
+    );
+    assert_eq!(
+        details["error"].as_str().map(|error| error.chars().count()),
+        Some(512),
+        "stored details are bounded"
+    );
+    let cookie = panel.session(1, false).await?;
+    let health: Value = panel
+        .client
+        .get(format!("{}/api/control-center/health", panel.base))
+        .header(header::COOKIE, cookie)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let workers = health["workers"].as_array().context("workers")?;
+    let fixture = workers
+        .iter()
+        .find(|worker| worker["name"] == "fixture-loop")
+        .context("the fixture heartbeat is listed")?;
+    assert_eq!(fixture["status"], "failed");
+    assert_eq!(fixture["details"]["source"], "fixture");
+    assert_eq!(
+        fixture["details"]["token"], "[已脱敏]",
+        "the view redacts details as the audit does"
+    );
+    // No background loop runs in the test panel, so every expected name, including the
+    // tasks that report a heartbeat for the first time, is listed as unknown.
+    for name in [
+        "maintenance",
+        "expenses",
+        "exchange-rates",
+        "subscription-sources",
+        "member-messages",
+        "subscription-hosts",
+        "china-reachability",
+    ] {
+        let worker = workers
+            .iter()
+            .find(|worker| worker["name"] == name)
+            .with_context(|| format!("{name} is expected"))?;
+        assert_eq!(worker["status"], "unknown", "{name}");
+    }
     Ok(())
 }

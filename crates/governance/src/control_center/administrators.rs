@@ -123,9 +123,7 @@ pub async fn create(
     )
     .await?;
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(73002001)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::ADMINISTRATORS.lock(&mut tx).await?;
     if sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM administrator_profiles WHERE login_name=$1)",
     )
@@ -161,9 +159,7 @@ pub async fn update(
         None => None,
     };
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(73002001)")
-        .execute(&mut *tx)
-        .await?;
+    crate::locks::ADMINISTRATORS.lock(&mut tx).await?;
     if sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM administrator_profiles WHERE login_name=$1 AND admin_id<>$2)",
     )

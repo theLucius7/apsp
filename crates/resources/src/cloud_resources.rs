@@ -101,11 +101,7 @@ pub async fn link(
     .fetch_optional(&state.pool)
     .await?
     .ok_or(ApiError::NotFound)?;
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1::text,739104830))")
-        .bind(account.to_string())
-        .execute(&mut *tx)
-        .await?;
+    let mut tx = crate::cloud::lock(&state.pool, account).await?;
     let current: Option<Uuid> = sqlx::query_scalar(
         "SELECT account_id FROM alicloud_resources WHERE id=$1 AND NOT archived FOR UPDATE",
     )
@@ -200,9 +196,7 @@ fn decimal(value: &str) -> Option<i128> {
 
 pub async fn observe(pool: &PgPool) -> ApiResult<()> {
     let mut tx = pool.begin().await?;
-    let locked: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(530019)")
-        .fetch_one(&mut *tx)
-        .await?;
+    let locked = crate::locks::CLOUD_OBSERVATIONS.try_lock(&mut tx).await?;
     if !locked {
         return Ok(());
     }

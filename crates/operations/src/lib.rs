@@ -15,6 +15,7 @@ pub mod cloud;
 pub mod commands;
 pub mod fleet;
 pub mod jobs;
+pub mod locks;
 pub mod runtime_operations;
 
 pub(crate) use apsp_governance::{auth, control_center, releases};
