@@ -21,6 +21,12 @@
   - Python：`tools/check-core-boundary.py`、`tools/check-feature-boundaries.py`（392 条已知越界，没有新增）、`tools/route-policy.py`、`tools/check-source-artifacts.py` 通过；`tests/test_core_boundary.py`、`tests/test_feature_boundaries.py`、`tests/test_route_policy.py` 共 36 项，`scripts/test-e2e-driver.py` 33 项，`tools/test_migrate_cdt_guards.py` 3 项，`tools/test-managed-paths-linux-contracts.py` 31 项，全部通过。
   - 前端：`tsc -b` 与 `bun run build` 通过，产物里没有 `/api/plugins`；`bun test` 238 项通过；69 个浏览器测试（`web/tests/*.mjs`，`passkeys.mjs` 由上面的 Rust 测试驱动）全部通过。
   - 未验证：`end_to_end`（需要真实的 Agent 部署，本机在未改动的 main 上同样不通过）；另外 5 项带 `#[ignore]` 的测试（需要真实运行时或 root）；依赖 `minisign` 的发布类 Python 测试；镜像没有在本地构建，由部署器的构建与换镜像前的试启动把关；没有实机验收。
+- 上线（2026-11-13）：09:30 提交并推送 `2c27d828`，部署器 09:31 开始，09:57 换上新镜像并通过本机与公网的健康检查；备份在 09:31–09:34，按部署器的流程面板在此期间停止。只读核对：
+  - 面板 09:57:44 启动，启动后的日志只有慢查询提醒，没有错误。
+  - 18 台在用服务器在一分钟内全部重新认证（18 个新的设备会话），并经设备的 HTTP 接口继续上报拨测结果；用量批次照常到达。
+  - 14 个后台任务心跳全部正常；没有新的配置发布，没有积压的远程命令与待发告警。
+  - 旧接口地址与现地址对未登录的请求给出同样的应答；公网上的控制台是这一版的构建，入口脚本里没有 `/api/plugins`。
+  - 与本次无关的现状：`alice-hk1`（服务器 19）的受管服务故障事件自 2026-11-12 12:12 起一直打开（Agent 回报“受控运行时实例与已应用的激活不一致”），本次上线前后没有变化；备份停机期间服务器 15 有一条同类事件，一秒后恢复。
 - 已知问题：
   - 旧接口地址只保留一个发布版本：改写删除之后，按 `/api/plugins/...` 写的仓库外脚本要改用现地址。续费日历的订阅地址 `/api/plugins/expenses/calendar.ics` 是外部契约，它的改写长期保留。审计记录从这一版起带现地址，旧记录仍是旧地址，按地址查审计时两种都要查。
   - 地址不代表代码位置：`/api/resources/alicloud` 下的路由由资源、作业、成本与应用层实现，`/api/access/statistics` 的处理函数仍在观测。
