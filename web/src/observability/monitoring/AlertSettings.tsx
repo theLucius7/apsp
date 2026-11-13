@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Panel } from '@/components/panel'
+import { useActor } from '@/lib/actor'
 
 const defaultTemplate = 'apsp · {{title}}\n服务器：{{server}}\n{{message}}\n时间：{{time}}\n事件：{{event}}'
 const examples: Record<string, string> = { title: '资源超限告警', server: '示例服务器', message: '处理器使用率达到设定阈值。', time: '示例时间（UTC）', event: '示例事件' }
@@ -41,7 +42,7 @@ function Form({ initial }: { initial: Preferences }) {
 }
 
 export default function AlertSettings() {
-  const actor = useResource<{ role: string }>('/api/control-center/me', 0)
+  const actor = useActor()
   const owner = actor.data?.role === 'owner'
   // Switches, thresholds and Telegram are panel settings, which only an owner session may read.
   // Other administrators skip the read instead of leaving a denied request in the audit log on every visit.

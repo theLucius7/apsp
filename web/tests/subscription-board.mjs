@@ -87,7 +87,7 @@ try {
     const chat = cards(page).filter({ hasText: 'ChatGPT Plus' })
     assert.equal(await chat.getAttribute('href'), '#/expenses/items/11')
     const chatText = await chat.innerText()
-    for (const phrase of ['USD 20', '即将续费', '3 天后', 'AI 服务', '信用卡', '自动']) assert(chatText.includes(phrase), `The card shows ${phrase}`)
+    for (const phrase of ['USD\u00a020.00', '即将续费', '3 天后', 'AI 服务', '信用卡', '自动']) assert(chatText.includes(phrase), `The card shows ${phrase}`)
     assert.match(chatText, /142\.86/)
     assert.match(await cards(page).filter({ hasText: '云盘' }).innerText(), /待确认续费[\s\S]*已过 5 天/)
     assert.equal(await cards(page).filter({ hasText: '旧 VPN 服务' }).getAttribute('data-stopped'), 'true')

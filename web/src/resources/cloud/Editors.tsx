@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { api } from '../../api'
 import { ErrorNotice, Field, FormDialog, Modal } from '../../components'
 import { useAction } from '../../hooks'
-import { accountWrite, charge, time } from './types'
+import { time } from '../../format'
+import { accountWrite, charge } from './types'
 import type { Account, Operation, Resource, Target } from './types'
 import { accountError, bandwidthError, checked, credentialError, operationError, registrationError, resourceError } from '../../operations/cloud/guards'
 import type { CurrentCloud } from '../../operations/cloud/guards'
@@ -10,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
+import { isUuid } from '@/lib/validate'
 type Events = { close: () => void; saved: () => void; available: boolean; current: CurrentCloud; refresh: () => void }
 
 export function AccountEditor({ account, close, saved, current }: Events & { account?: Account }) {
@@ -17,7 +19,7 @@ export function AccountEditor({ account, close, saved, current }: Events & { acc
   const [key, setKey] = useState(''), [secret, setSecret] = useState(''), action = useAction()
   const [credentialId, setCredentialId] = useState(account?.credential_id ?? '')
   const [legacy, setLegacy] = useState(Boolean(account && !account.credential_id))
-  const writeError = () => accountError(current, account) || (legacy ? credentialError(key, secret, !account || Boolean(account.credential_id)) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(credentialId.trim()) ? '' : '请填写集中云凭据的 UUID。')
+  const writeError = () => accountError(current, account) || (legacy ? credentialError(key, secret, !account || Boolean(account.credential_id)) : isUuid(credentialId.trim()) ? '' : '请填写集中云凭据的 UUID。')
   return <FormDialog title={account ? '编辑阿里云账号' : '添加阿里云账号'} busy={action.busy} error={action.error || accountError(current, account)} onClose={close} submitDisabled={Boolean(writeError())} onSubmit={() => void action.run(() => checked(writeError, () => api(account ? `/api/resources/alicloud/accounts/${account.id}` : '/api/resources/alicloud/accounts', account ? 'PATCH' : 'POST', accountWrite(draft, legacy ? key : '', legacy ? secret : '', account?.revision, legacy ? '' : credentialId, legacy))), () => { setKey(''); setSecret(''); saved() })}>
     <Field label="账号名称"><Input required maxLength={128} value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} /></Field>
     <Field label="阿里云账号站点" hint="用于选择中国站或国际站账单接口，与资源所在地域不同。"><NativeSelect className="w-full" value={draft.site} onChange={e => setDraft({ ...draft, site: e.target.value as Account['site'] })}><option value="china">中国站</option><option value="international">国际站</option></NativeSelect></Field>

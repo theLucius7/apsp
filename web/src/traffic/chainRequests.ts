@@ -4,7 +4,7 @@ import { newRequestId } from '@/lib/request-id'
 import type { ResourceSnapshot } from '@/lib/resource-snapshot'
 import type { ProxyResource } from '../access/groupTypes'
 import { sourceRequest } from './sourceRequests'
-import { sourceUuid } from './orderedSourceTypes'
+import { hasExactKeys, isInteger, isPort, isRecord, isUuid } from '@/lib/validate'
 
 export type ChainMutation = { kind: 'chain'; id: number; settings_revision: number; operation: 'edit' | 'versions'; fields: Record<string, unknown> }
 export type PendingChainMutation = { command: string; serialized: string; request_id: string; attempted: boolean; path: string }
@@ -12,16 +12,16 @@ export type ChainMutationReceipt = { request_id: string; kind: 'direct' | 'chain
 function validateCommand(command: ChainMutation) {
   if (command.kind !== 'chain' || !Number.isSafeInteger(command.id) || command.id <= 0 || !Number.isSafeInteger(command.settings_revision) || command.settings_revision < 1) throw new Error('链路标识或设置版本无效。')
   const fields = command.fields
-  if (!fields || typeof fields !== 'object' || Array.isArray(fields)) throw new Error('公开修改字段不完整。')
+  if (!isRecord(fields)) throw new Error('公开修改字段不完整。')
   if (command.operation === 'edit') {
     if (!Object.keys(fields).length || Object.keys(fields).some(key => !['name', 'entry_name', 'public_host', 'port', 'sni'].includes(key))) throw new Error('只允许修改名称与公开入口参数，不能修改拓扑或秘密。')
     for (const key of ['name', 'entry_name', 'public_host', 'sni']) if (fields[key] !== undefined && (typeof fields[key] !== 'string' || !(fields[key] as string).trim() || /[\u0000-\u001f\u007f]/.test(fields[key] as string))) throw new Error('公开文本字段无效。')
-    if (fields.port !== undefined && (!Number.isSafeInteger(fields.port) || Number(fields.port) < 1 || Number(fields.port) > 65535 || fields.port === 18085)) throw new Error('入口端口无效。')
+    if (fields.port !== undefined && (!isPort(fields.port) || fields.port === 18085)) throw new Error('入口端口无效。')
   } else if (command.operation === 'versions') {
     if (Object.keys(fields).sort().join(',') !== 'generation,versions' || !Number.isSafeInteger(fields.generation) || Number(fields.generation) < 1 || !Array.isArray(fields.versions) || !fields.versions.length || fields.versions.length > 8) throw new Error('版本更新须绑定当前路径代数与明确跳位置。')
     const positions = new Set<number>()
     for (const version of fields.versions) {
-      if (!version || typeof version !== 'object' || Object.keys(version).sort().join(',') !== 'hop_position,node_version_id' || !Number.isSafeInteger(version.hop_position) || version.hop_position < 1 || version.hop_position > 8 || !sourceUuid(version.node_version_id) || positions.has(version.hop_position)) throw new Error('版本更新不能重复位置或携带其他节点身份及秘密。')
+      if (!isRecord(version) || !hasExactKeys(version, 'hop_position node_version_id') || !isInteger(version.hop_position, 1) || version.hop_position > 8 || !isUuid(version.node_version_id) || positions.has(version.hop_position)) throw new Error('版本更新不能重复位置或携带其他节点身份及秘密。')
       positions.add(version.hop_position)
     }
   } else throw new Error('链路操作无效。')
@@ -48,7 +48,7 @@ export function prepareChainMutation(command: ChainMutation, snapshot: ResourceS
   if (replay) return previous!
   if (!Number.isSafeInteger(command.id) || command.id <= 0 || !Number.isSafeInteger(command.settings_revision) || command.settings_revision < 1) throw new Error('链路标识或设置版本无效。')
   const request_id = id()
-  if (!sourceUuid(request_id)) throw new Error('请求标识无效。')
+  if (!isUuid(request_id)) throw new Error('请求标识无效。')
   const path = `/api/traffic/ordered-proxy-resources/chain/${command.id}${command.operation === 'versions' ? '/apply-node-versions' : ''}`
   return { command: fingerprint, serialized: JSON.stringify({ request_id, settings_revision: command.settings_revision, ...command.fields }), request_id, attempted: false, path }
 }
@@ -57,7 +57,7 @@ export async function submitChainMutation(pending: PendingChainMutation, snapsho
   validateCommand(command)
   const expected = JSON.stringify({ request_id: pending.request_id, settings_revision: command.settings_revision, ...command.fields })
   const path = `/api/traffic/ordered-proxy-resources/chain/${command.id}${command.operation === 'versions' ? '/apply-node-versions' : ''}`
-  if (!sourceUuid(pending.request_id) || pending.serialized !== expected || pending.path !== path || command.kind !== 'chain' || !['edit', 'versions'].includes(command.operation)) throw new Error('原请求不完整，不能重试。')
+  if (!isUuid(pending.request_id) || pending.serialized !== expected || pending.path !== path || command.kind !== 'chain' || !['edit', 'versions'].includes(command.operation)) throw new Error('原请求不完整，不能重试。')
   const error = chainMutationError(snapshot, command, pending.attempted)
   if (error) throw new Error(error)
   pending.attempted = true

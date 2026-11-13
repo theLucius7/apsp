@@ -1,3 +1,5 @@
+import { isRecord } from '@/lib/validate'
+
 export type Preset = 'custom' | 'bark' | 'discord' | 'slack' | 'wecom' | 'dingtalk' | 'feishu' | 'ntfy' | 'gotify'
 const text = '{{title}}\n{{server}}\n{{message}}'
 const body = (value: unknown) => JSON.stringify(value, null, 2)
@@ -18,7 +20,7 @@ export function previewWebhook(template: string): string {
     const replace = (value: unknown): unknown => {
       if (typeof value === 'string') return value.replace(/\{\{([^{}]+)\}\}/g, (token, key: string) => webhookExamples[key] ?? token)
       if (Array.isArray(value)) return value.map(replace)
-      if (value !== null && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, value]) => [key, replace(value)]))
+      if (isRecord(value)) return Object.fromEntries(Object.entries(value).map(([key, value]) => [key, replace(value)]))
       return value
     }
     return body(replace(JSON.parse(template)))

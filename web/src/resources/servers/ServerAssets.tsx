@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import TrafficCorrection from '../../observability/servers/TrafficCorrection'
 import { Badge, Meter, DialogPresence } from '../../components'
-import { time } from '../../format'
-import { assetDate, assetPrice, defaultAssets, expiryState, trafficModes, trafficSize } from '../server-assets'
+import { bytes, money, time } from '../../format'
+import { assetDate, assetPrice, defaultAssets, expiryState, trafficModes } from '../server-assets'
 import type { Server } from '../../types'
 import { useCurrency } from '../../costs/currency/CurrencyContext'
-import { convert, money, price, remainingCost } from '../../costs/currency/currency'
+import { convert, price, remainingCost } from '../../costs/currency/currency'
 import CurrencyReference from '../../costs/currency/CurrencyReference'
 import { Button } from '@/components/ui/button'
 import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
@@ -25,9 +25,9 @@ export default function ServerAssets({ server, onEdit, onReload }: { server: Ser
       <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground text-sm">成本</dt><dd className="m-0 text-right text-sm"><span>{assetPrice(asset)}</span>{asset.price !== null && <span data-slot="asset-conversion" className="text-muted-foreground mt-0.5 block text-xs">{converted === null ? `缺少 ${asset.currency} → ${currency} 汇率` : asset.currency === currency ? '' : `折算 ${money(converted, currency)} · `}{remainder !== null && `剩余价值 ${money(remainder, currency)}`} <CurrencyReference from={asset.currency} to={currency} /></span>}</dd></div>
       <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground text-sm">到期日期（UTC）</dt><dd className="m-0 text-sm">{assetDate(asset.expires_at)} <Badge tone={expiry.tone}>{expiry.label}</Badge>{asset.auto_renewal && ' · 自动顺延记录'}</dd></div>
       <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground text-sm">流量周期（UTC）</dt><dd className="m-0 text-sm">{traffic ? `${assetDate(traffic.cycle_start)} 至 ${assetDate(traffic.cycle_end)}（不含）` : '等待读取周期'} · 每月 {asset.reset_day} 日重置</dd></div>
-      <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground text-sm">本期观测 / 额度</dt><dd className="m-0 text-sm">{observed ? trafficSize(traffic?.used) : '等待本期采样'} / {asset.traffic_limit === '0' ? '未设额度' : trafficSize(asset.traffic_limit)}{traffic?.exceeded && <Badge tone="bad">额度已用尽</Badge>}</dd></div>
-      <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground text-sm">本期上传 / 下载</dt><dd className="m-0 text-sm">{observed ? `${trafficSize(traffic?.uploaded)} / ${trafficSize(traffic?.downloaded)}` : '暂无本期数据'}</dd></div>
-      <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground text-sm">剩余流量 / 口径</dt><dd className="m-0 text-sm">{trafficSize(traffic?.remaining)} / {trafficModes[asset.traffic_limit_type]}</dd></div>
+      <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground text-sm">本期观测 / 额度</dt><dd className="m-0 text-sm">{observed ? bytes(traffic?.used, '—') : '等待本期采样'} / {asset.traffic_limit === '0' ? '未设额度' : bytes(asset.traffic_limit, '—')}{traffic?.exceeded && <Badge tone="bad">额度已用尽</Badge>}</dd></div>
+      <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground text-sm">本期上传 / 下载</dt><dd className="m-0 text-sm">{observed ? `${bytes(traffic?.uploaded, '—')} / ${bytes(traffic?.downloaded, '—')}` : '暂无本期数据'}</dd></div>
+      <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground text-sm">剩余流量 / 口径</dt><dd className="m-0 text-sm">{bytes(traffic?.remaining, '—')} / {trafficModes[asset.traffic_limit_type]}</dd></div>
       <div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground text-sm">统计网卡</dt><dd className="m-0 text-sm">{asset.network_interface || '所有上报网卡'}{traffic?.interfaces?.length ? `（已观测：${traffic.interfaces.join('、')}）` : ''}</dd></div>
     </dl>
     {traffic?.percent != null && <div className="my-4 flex items-center gap-3 text-sm"><Meter value={traffic.percent} label="本期流量用量" warning={80} danger={100} /><span>{traffic.percent.toFixed(1)}%</span></div>}

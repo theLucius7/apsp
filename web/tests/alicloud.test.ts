@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
-import { accountWrite, billUsable, charge, defaultPowerPolicy, gib, message, status, updated } from '../src/resources/cloud/types'
+import { accountWrite, billUsable, charge, defaultPowerPolicy, message, status, updated } from '../src/resources/cloud/types'
+import { bytes } from '../src/format'
 import type { Account, Resource } from '../src/resources/cloud/types'
 import { POWER_RESULT, ROTATION_RESULTS, activityItems, deliveryText } from '../src/costs/cloud/history'
 import type { EipRotation } from '../src/resources/cloud/types'
@@ -119,5 +120,6 @@ test('each reading shows its clock today and its date otherwise', () => {
   expect(updated(Math.floor(new Date(2026, 10, 6, 1, 42, 16).getTime() / 1000), now)).toBe('01:42:16')
   expect(updated(Math.floor(new Date(2026, 10, 5, 1, 42, 16).getTime() / 1000), now)).toContain('2026')
   expect(updated(null, now)).toBe('尚未查询')
-  expect(gib(String(16.363 * 1024 ** 3))).toBe('16.36')
+  // CDT readings are binary gigabytes and read like every other size.
+  expect(bytes(Math.round(16.363 * 1024 ** 3))).toBe('16.3 GiB')
 })

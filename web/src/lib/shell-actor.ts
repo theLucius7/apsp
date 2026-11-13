@@ -1,7 +1,9 @@
+import type { Actor } from './actor'
+
 // What the sidebar needs to know about the signed-in administrator, remembered so
 // a reload draws the same navigation immediately instead of growing it after the
 // first read. It decides only which links appear; the panel enforces every access.
-export type ShellActor = { role: string; display_name: string; all_servers: boolean; capabilities: string[]; show_frozen_features?: boolean }
+export type ShellActor = Pick<Actor, 'role' | 'display_name' | 'all_servers' | 'capabilities' | 'show_frozen_features'>
 
 const STORAGE_KEY = 'apsp-shell-actor'
 

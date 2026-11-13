@@ -212,7 +212,7 @@ try {
       await page.goto(`${origin}/#/expenses/items/12`)
       await detail.getByText('在 Cloudflare 续费').waitFor()
       await detail.getByText('覆盖 2026-03-02 起的一期').waitFor()
-      assert.match(await detail.innerText(), /CNY 90 · 每年[\s\S]*手动续费[\s\S]*2026-03-02/)
+      assert.match(await detail.innerText(), /CNY\u00a090\.00 · 每年[\s\S]*手动续费[\s\S]*2026-03-02/)
       await detail.getByRole('button', { name: 'example.com 的更多操作', exact: true }).click()
       await page.getByRole('menuitem', { name: '删除', exact: true }).click()
       await detail.locator('[data-slot=confirm]').waitFor()

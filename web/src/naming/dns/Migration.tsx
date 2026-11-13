@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api } from '../../api'
 import { ErrorNotice, Field, Modal } from '../../components'
+import { clock } from '../../format'
 import { useAction } from '../../hooks'
 import { ddnsMessage, providers } from './types'
 import type { DdnsRule } from './types'
@@ -45,7 +46,7 @@ export default function Migration({ rules, servers, accounts, close, saved }: { 
         }) })
         setPreview(result); setConfirmed(false)
       })}>预览 {selected.size} 条规则的影响</Button>
-      {preview && <div className="p-4"><p className="text-muted-foreground mt-3 text-xs leading-relaxed">预览有效至 {new Date(preview.expires_at * 1000).toLocaleTimeString('zh-CN', { hour12: false })}。应用时再次核对所有规则版本与目标服务器状态；任一冲突时整批停止。</p>
+      {preview && <div className="p-4"><p className="text-muted-foreground mt-3 text-xs leading-relaxed">预览有效至 {clock(preview.expires_at)}。应用时再次核对所有规则版本与目标服务器状态；任一冲突时整批停止。</p>
         {preview.items.map(item => <article data-slot="ddns-rule" className="border-t py-5 first:border-t-0" key={item.id}><strong>{item.name} · {item.record_name} · {item.record_type}</strong><p>{item.source_server_name} → {item.target_server_name}</p><p className="text-muted-foreground mt-3 text-xs leading-relaxed">上次成功地址 {item.previous_ip ?? '暂无'}；目标候选地址 {item.candidate_ip ?? ddnsMessage(item.source_status)}；{item.enabled ? '确认后按新配置自动同步' : '保持暂停'}。</p><details><summary className="cursor-pointer text-sm font-medium">配置差异</summary><p className="text-muted-foreground mt-3 text-xs leading-relaxed">此前配置</p><pre className="bg-muted/50 max-h-[28rem] overflow-auto rounded-lg border p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap wrap-anywhere">{JSON.stringify(item.previous_config, null, 2)}</pre><p className="text-muted-foreground mt-3 text-xs leading-relaxed">目标配置</p><pre className="bg-muted/50 max-h-[28rem] overflow-auto rounded-lg border p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap wrap-anywhere">{JSON.stringify(item.desired_config, null, 2)}</pre></details></article>)}
         <label className="my-5 flex items-start gap-3 text-sm"><Checkbox disabled={action.busy} checked={confirmed} onCheckedChange={checked => setConfirmed(checked === true)} className="mt-0.5" /><span>已核对所有来源、目标和后续 DNS 影响，并完成管理员再次验证。</span></label>
       </div>}

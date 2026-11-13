@@ -1,19 +1,21 @@
+import { isRecord } from '@/lib/validate'
+
 export type IntervalPoint = {
  start: number; end: number; bps: number; bytes: number | null; retransmits: number | null
  jitterMs: number | null; lostPackets: number | null; packets: number | null; lostPercent: number | null
 }
 export type ThroughputSeries = { key: string; sender: boolean | null; from: string; to: string; points: (IntervalPoint | null)[] }
 export type Throughput = { protocol: 'tcp' | 'udp'; direction: string; series: ThroughputSeries[]; intervalCount: number; inspectedCount: number; clipped: boolean; error: string | null }
-const object = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+const section = (value: unknown): Record<string, unknown> | null => isRecord(value) ? value : null
 const nonnegative = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
 const sumKeys = ['sum', 'sum_bidir_reverse', 'sum_sent', 'sum_received'] as const
 const INPUT_LIMIT = 3600
 export const CURVE_POINT_LIMIT = 512
 
 export function throughput(observation: Record<string, unknown> | null, role: string, sourceServer: number | null, clientSource?: string): Throughput | null {
- const parameters = object(observation?.parameters)
+ const parameters = section(observation?.parameters)
  if (parameters?.kind !== 'throughput') return null
- const data = object(observation?.data), output = object(data?.tool_output)
+ const data = section(observation?.data), output = section(data?.tool_output)
  const protocol = parameters.protocol === 'udp' ? 'udp' : parameters.protocol === 'tcp' ? 'tcp' : null
  if (!protocol) return null
  const direction = typeof parameters.direction === 'string' ? parameters.direction : 'unknown'
@@ -26,10 +28,10 @@ export function throughput(observation: Record<string, unknown> | null, role: st
  const peer = listener ? client : receiver
  const byKey = new Map<string, ThroughputSeries>()
  for (let index = 0; index < result.inspectedCount; index++) {
-  const interval = object(intervals[index])
+  const interval = section(intervals[index])
   for (const series of byKey.values()) series.points.push(null)
   for (const key of sumKeys) {
-   const sum = object(interval?.[key])
+   const sum = section(interval?.[key])
    if (!sum) continue
    const sender = typeof sum.sender === 'boolean' ? sum.sender : null
    const seriesKey = `${key}:${String(sender)}`

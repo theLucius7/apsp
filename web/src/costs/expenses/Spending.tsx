@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { ErrorNotice, InfoTip } from '../../components'
-import { money } from '../currency/currency'
-import { Track } from '../../observability/display/ui'
+import { ErrorNotice, InfoTip, Meter } from '../../components'
+import { money } from '../../format'
 import { toneText } from '@/components/board'
 import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
 import { SegmentedButton, SegmentedGroup } from '@/components/segmented'
@@ -37,11 +36,11 @@ export default function Spending({ ledger, onOpen }: { ledger: Ledger; onOpen: (
         {budget !== null && base && <div data-slot="budget" className="grid gap-1.5">
           <div className="flex items-baseline justify-between gap-3 text-xs"><span className="text-muted-foreground">月预算 {money(budget, base)}</span>
             <span className={cn('tabular-nums', used !== null && used > 100 ? toneText.danger : used !== null && used >= 90 ? toneText.warning : 'text-muted-foreground')}>{used === null ? '' : used > 100 ? `超出 ${money(monthly - budget, base)}` : `已用 ${Math.round(used)}%`}</span></div>
-          <Track value={used} tone={used !== null && used > 100 ? 'danger' : used !== null && used >= 90 ? 'warning' : 'good'} label={`月预算已用 ${Math.round(used ?? 0)}%`} />
+          <Meter value={used} tone={used !== null && used > 100 ? 'danger' : used !== null && used >= 90 ? 'warning' : 'good'} label={`月预算已用 ${Math.round(used ?? 0)}%`} className="mt-0 max-w-none" />
         </div>}
         {categories.length ? <ul className="grid gap-3">{categories.map(group => <li key={group.name} className="grid gap-1">
           <div className="flex items-baseline justify-between gap-3 text-[13px]"><span className="min-w-0 truncate">{group.name}<span className="text-muted-foreground ml-1.5 text-xs">{group.count} 项</span></span><span className="flex-none tabular-nums">{money(group.monthly, base!)}<span className="text-muted-foreground ml-1.5 text-xs">{Math.round(group.share)}%</span></span></div>
-          <Track value={group.share} tone="info" />
+          <Meter value={group.share} tone="info" className="mt-0 max-w-none" />
         </li>)}</ul> : <p className="text-muted-foreground text-sm">还没有可折算的周期费用。</p>}
         {ledger.totals.unconverted > 0 && <p className="text-warning text-xs">{ledger.totals.unconverted} 项缺少到 {base} 的汇率，未计入。</p>}
       </div>

@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
-import { convert, costSummary, money, price, quoteDate, quoteState, remainingCost } from '../src/costs/currency/currency'
+import { convert, costSummary, price, quoteDate, quoteState, remainingCost } from '../src/costs/currency/currency'
+import { money } from '../src/format'
 import type { ExchangeRates } from '../src/costs/currency/currency'
 import type { Server } from '../src/types'
 import { defaultAssets } from '../src/resources/server-assets'

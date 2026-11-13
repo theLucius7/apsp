@@ -21,6 +21,7 @@ const noticeVariants = cva('mb-4 flex items-start justify-between gap-3 rounded-
     tone: {
       info: 'bg-muted/60 text-foreground',
       error: 'border-destructive/25 bg-destructive/5 text-destructive break-words',
+      warning: 'border-warning/30 bg-warning/5 text-foreground',
       success: 'border-success/25 bg-success/5 text-foreground',
       quiet: 'bg-muted/60 text-foreground justify-start',
     },

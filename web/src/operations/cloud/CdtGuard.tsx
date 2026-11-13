@@ -1,7 +1,7 @@
 import { Badge, Field, Meter } from '../../components'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { gib, time } from '../../resources/cloud/types'
+import { bytes, time } from '../../format'
 import { cdtGuardProgress } from './guardUsage'
 import type { CdtGuardConfig, Resource } from '../../resources/cloud/types'
 
@@ -31,10 +31,10 @@ export function CdtGuardSummary({ resource }: { resource: Resource }) {
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
       <span className="font-medium">CDT 守护</span>
       {paused && <Badge>已暂停</Badge>}
-      {progress ? <span className={progress.left === 0 ? 'text-destructive' : undefined}>{progress.left === 0 ? '已达停机线' : `距停机线 ${gib(progress.left)} GiB`}</span> : <span className="text-muted-foreground">尚未建立月度状态</span>}
+      {progress ? <span className={progress.left === 0 ? 'text-destructive' : undefined}>{progress.left === 0 ? '已达停机线' : `距停机线 ${bytes(progress.left)}`}</span> : <span className="text-muted-foreground">尚未建立月度状态</span>}
     </div>
     {progress && <Meter value={progress.percent} label={`CDT 用量占停机线 ${Math.round(progress.percent)}%`} className="max-w-72" />}
-    <p className="text-muted-foreground text-xs leading-relaxed">停机线 {gib(config.threshold_bytes)} GiB{config.auto_start ? ' · 低于停机线自动开机' : ' · 仅自动停机'}{progress && progress.backlog > 0 ? ` · 含突增缓冲 ${gib(progress.backlog)} GiB` : ''}{progress?.stale && !paused ? ' · 读数超过 2 分钟，暂不据此启停' : ''}</p>
+    <p className="text-muted-foreground text-xs leading-relaxed">停机线 {bytes(config.threshold_bytes)}{config.auto_start ? ' · 低于停机线自动开机' : ' · 仅自动停机'}{progress && progress.backlog > 0 ? ` · 含突增缓冲 ${bytes(progress.backlog)}` : ''}{progress?.stale && !paused ? ' · 读数超过 2 分钟，暂不据此启停' : ''}</p>
   </section>
 }
 
@@ -43,10 +43,10 @@ export function cdtGuardFacts(resource: Resource): [string, string][] {
   const progress = cdtGuardProgress(resource), config = resource.power_policy?.cdt_guard
   if (!config) return []
   return [
-    ['CDT 守护', `停机线 ${gib(config.threshold_bytes)} GiB · 突增阈值 ${gib(config.jump_bytes)} GiB`],
+    ['CDT 守护', `停机线 ${bytes(config.threshold_bytes)} · 突增阈值 ${bytes(config.jump_bytes)}`],
     ...(progress ? [
-      [`${progress.state.billing_cycle} 用量`, `月度最高 ${gib(progress.state.max_usage_bytes)} GiB · 最大突增 ${gib(progress.state.max_jump_bytes)} GiB · 当前缓冲 ${gib(progress.backlog)} GiB`],
-      ['用量查询', progress.state.queried_at ? time(progress.state.queried_at) : '已导入历史，等待首次查询'],
+      [`${progress.state.billing_cycle} 用量`, `月度最高 ${bytes(progress.state.max_usage_bytes)} · 最大突增 ${bytes(progress.state.max_jump_bytes)} · 当前缓冲 ${bytes(progress.backlog)}`],
+      ['用量查询', progress.state.queried_at ? time(progress.state.queried_at, '尚未查询') : '已导入历史，等待首次查询'],
     ] as [string, string][] : []),
   ]
 }

@@ -3,7 +3,7 @@ import { api } from '../../api'
 import { Field } from '../../components'
 import { useResource } from '../../hooks'
 import type { Document, Target, Version } from '../../networking/configuration/types'
-import { time } from '../../networking/configuration/types'
+import { time } from '../../format'
 import AcmePlan from './AcmePlan'
 import CertificateDeployments from './CertificateDeployments'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { Panel } from '@/components/panel'
+import { isRecord } from '@/lib/validate'
 
 export default function Certificates({ document, run, changed }: { document: Document; run: (work: () => Promise<unknown>) => Promise<void>; changed: () => void }) {
   const versions = useResource<Version[]>(`/api/network-configuration/certificates/${document.id}/versions`)
@@ -20,7 +21,7 @@ export default function Certificates({ document, run, changed }: { document: Doc
   const [confirmed, setConfirmed] = useState(false)
   const targets = document.config.targets as Target[]
   const renewal = document.config.renewal
-  const isDns01 = typeof renewal === 'object' && renewal !== null && 'mode' in renewal && renewal.mode === 'dns01'
+  const isDns01 = isRecord(renewal) && renewal.mode === 'dns01'
   return <><AcmePlan certificateId={document.id} run={run} /><CertificateDeployments document={document} run={run} /><Panel className="grid gap-3 p-5"><h3 className="text-sm font-semibold">签发、保存、部署与握手</h3><p className="text-muted-foreground mt-3 text-xs leading-relaxed">这里保存公开证书并选择期望版本；受管部署在独立预览中排队，外部部署由维护方执行。握手验证会从面板发起真实 TLS 连接，检查域名、信任链和指纹，适用于不同 TLS 服务。列表与日志均不保存私钥。</p>
     <Field label="公开 PEM 证书链"><Textarea className="w-full" rows={5} value={pem} onChange={event => setPem(event.target.value)} placeholder="仅粘贴公开证书；不接受私钥" /></Field>
     <Button variant="outline" disabled={!pem.trim()} onClick={() => void run(async () => { await api(`/api/network-configuration/certificates/${document.id}/versions`, 'POST', { public_chain: pem, revision: document.revision }); setPem(''); versions.reload(); changed() })}>检查并保存证书版本</Button>

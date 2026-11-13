@@ -29,6 +29,7 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { ActivityIcon, PlusIcon, RadioTowerIcon, ServerIcon, WaypointsIcon } from 'lucide-react'
 import { SegmentedLink, SegmentedNav } from '@/components/segmented'
 import { Notice } from '@/components/panel'
+import { useActor } from '@/lib/actor'
 
 const trafficApi = '/api/traffic'
 const accessApi = '/api/access'
@@ -65,7 +66,7 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
   })
   const { nodes, servers, usage, catalog } = reads
   // The imported Nexus inventory is owner-only; other administrators never request it.
-  const actor = useResource<{ role: string }>('/api/control-center/me', 0)
+  const actor = useActor()
   const owner = actor.data?.role === 'owner'
   const nexus = useResource<unknown>(owner ? `${trafficApi}/nexus-nodes` : null)
   const orderedQuery = reads.ordered

@@ -11,21 +11,19 @@ import { Button } from '@/components/ui/button'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Notice } from '@/components/panel'
+import { recordOf } from '@/lib/validate'
 
 const statusLabels = { queued: '等待设备领取', running: '设备正在查询', cleaning: '等待设备确认清理', cancel_requested: '等待设备确认取消', cancelled: '设备已确认取消', succeeded: '执行已完成', failed: '执行失败' }
 type Scope = { serverId: number; fresh: boolean; error: string; data?: NodeIpQualityData; isCurrent?: () => boolean; getCurrent?: () => NodeIpQualityData | undefined }
-function object(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
-}
 function envelope(record: DiagnosticRecord) {
   const section = record.sections?.find(item => item.name === 'ipquality_result')
-  try { return object(JSON.parse(section?.text ?? record.report?.text ?? '')) } catch { return {} }
+  try { return recordOf(JSON.parse(section?.text ?? record.report?.text ?? '')) } catch { return {} }
 }
 
 function NodeReport({ record, current, reload }: { record: DiagnosticRecord; current: React.RefObject<Scope>; reload: () => void }) {
   const cancel = useAction()
   const result = envelope(record)
-  const attempts = Array.isArray(result.attempts) ? result.attempts.map(object) : []
+  const attempts = Array.isArray(result.attempts) ? result.attempts.map(recordOf) : []
   const server = current.current.serverId
   const cancelable = diagnosticCancellable(record)
   const submitCancel = () => void cancel.run(async () => {

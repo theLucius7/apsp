@@ -1,10 +1,10 @@
 import { createContext, useContext } from 'react'
+import type { Actor } from '@/lib/actor'
 
-export type FleetActor = { role: string; capabilities: string[]; all_servers: boolean; server_ids: number[] }
 type Scope = number | 'global'
 export type FleetPermissions = { allows: (capability: string, server?: Scope) => boolean; reason: (capability: string, server?: Scope) => string }
 
-export function fleetPermissions(resource: { getCurrent: () => FleetActor | undefined; error: string }): FleetPermissions {
+export function fleetPermissions(resource: { getCurrent: () => Actor | undefined; error: string }): FleetPermissions {
   const reason = (capability: string, server?: Scope) => {
     const actor = resource.getCurrent()
     if (!actor) return resource.error ? '管理员权限读取失败，暂不能操作。' : '管理员权限正在刷新，完成后可操作。'

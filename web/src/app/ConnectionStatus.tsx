@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { clock } from '../format'
 import { useI18n } from '../i18n'
 import { cn } from '@/lib/utils'
 import { retryConnection, useConnectionStore } from '@/stores/connection'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-
-const clock = (at: number) => new Date(at).toLocaleTimeString('zh-CN', { hour12: false })
 
 /** The state of the connection to the panel, always in the same place. */
 export function ConnectionStatus({ compact = false }: { compact?: boolean }) {
@@ -48,7 +47,7 @@ export function ConnectionNotice() {
   return <div data-slot="connection-notice" data-state="lost" role="status" className="absolute top-2 left-1/2 z-40 max-w-[calc(100%-1.5rem)] -translate-x-1/2">
     <div className="bg-popover text-popover-foreground ring-foreground/10 flex items-center gap-2.5 rounded-full py-1 pr-1 pl-3 text-xs shadow-md ring-1">
       <span className="bg-warning size-2 shrink-0 animate-pulse rounded-full" aria-hidden="true" />
-      <span className="min-w-0">{t(status === 'offline' ? '网络已断开' : '与面板的连接中断，正在重试')}{lastContact ? ` · ${t('显示的是')} ${clock(lastContact)} ${t('的数据')}` : ''}</span>
+      <span className="min-w-0">{t(status === 'offline' ? '网络已断开' : '与面板的连接中断，正在重试')}{lastContact ? ` · ${t('显示的是')} ${clock(lastContact / 1000)} ${t('的数据')}` : ''}</span>
       <Button variant="ghost" size="xs" className="rounded-full" onClick={retryConnection}>{t('立即重试')}</Button>
     </div>
   </div>

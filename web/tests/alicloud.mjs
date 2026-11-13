@@ -316,8 +316,8 @@ try {
   overview.resources.forEach((resource, index) => { resource.power_policy.enabled = true; resource.cdt_guard_state = { billing_cycle: month, region: resource.region, cloud_id: resource.cloud_id, account_revision: accountTemplate.revision, max_usage_bytes: Math.round([16.36, 145][index] * 1024 ** 3), max_jump_bytes: Math.round([2.16, 3.77][index] * 1024 ** 3), queried_at: now } })
   overview.operations = []; overview.power_jobs = []
   await page.reload()
-  await page.getByText('距停机线 133.64 GiB', { exact: true }).waitFor()
-  await page.getByText('距停机线 5 GiB', { exact: true }).waitFor()
+  await page.getByText('距停机线 133.6 GiB', { exact: true }).waitFor()
+  await page.getByText('距停机线 5.0 GiB', { exact: true }).waitFor()
   await page.getByText('2000 Mbps · 按主流量计费', { exact: true }).waitFor()
   await page.getByText('500 Mbps · 按主流量计费', { exact: true }).waitFor()
   assert.equal(await page.getByText('查询异常', { exact: true }).count(), 0)

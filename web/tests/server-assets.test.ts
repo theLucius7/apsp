@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { assetDraft, assetPayload, defaultAssets, expiryState, parseTraffic, trafficSize } from '../src/resources/server-assets'
+import { assetDraft, assetPayload, defaultAssets, expiryState, parseTraffic } from '../src/resources/server-assets'
 import { filterServers } from '../src/observability/display/data'
 import type { Server } from '../src/types'
 
@@ -12,8 +12,6 @@ test('large traffic limits survive editing exactly and decimal units are explici
   expect(() => parseTraffic('0.1', 'B')).toThrow()
   expect(() => parseTraffic('18446744073709551616', 'B')).toThrow()
   expect(() => parseTraffic('1e2', 'GB')).toThrow()
-  expect(trafficSize('0')).toBe('0 B')
-  expect(trafficSize(null)).toBe('—')
 })
 
 test('asset edits retain free versus unknown cost, clear optional fields and use UTC dates', () => {

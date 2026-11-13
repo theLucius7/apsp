@@ -6,8 +6,9 @@ import { convert } from '../currency/currency'
 import type { ExchangeRates } from '../currency/currency'
 import { amount, cycles, daysUntil, minorToUnits, monthlyAmount } from './types'
 import type { Expense, Label } from './types'
+import type { Tone } from '@/components/board'
+import { isInteger, isRecord } from '@/lib/validate'
 
-export type Tone = 'good' | 'warning' | 'danger' | 'muted' | 'info'
 /** Renewing within this many days needs attention. */
 export const SOON_DAYS = 7
 const DAYS_PER_MONTH = 365.25 / 12
@@ -16,30 +17,28 @@ export type ServerRenewal = { id: number; name: string; amount_units: string | n
 export type Due = { kind: 'item' | 'server' | 'reference'; id: number; name: string; date: string; amount_units: string | null; currency: string; auto_renew: boolean; path?: string }
 export type LedgerSummary = { from: string; base_currency: string; budget_units: string | null; exchange: ExchangeRates; upcoming?: Due[] }
 
-const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
-const integer = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value)
-const nullableInteger = (value: unknown) => value === null || value === undefined || integer(value)
+const nullableInteger = (value: unknown) => value === null || value === undefined || isInteger(value)
 const counter = (value: unknown) => typeof value === 'string' && /^\d{1,20}$/.test(value)
 const day = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
 const signedCounter = (value: unknown) => typeof value === 'string' && /^-?\d{1,20}$/.test(value)
 /** Minor currency units: the cost records send numbers, the payment history text. */
-const minor = (value: unknown) => (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) || counter(value)
+const minor = (value: unknown) => isInteger(value) || counter(value)
 const text = (value: unknown) => typeof value === 'string'
 
 export function validItems(value: unknown): value is Expense[] {
-  return Array.isArray(value) && value.every(item => record(item) && integer(item.id) && typeof item.name === 'string' && counter(item.amount_units) && typeof item.currency === 'string'
-    && day(item.next_payment) && ['day', 'week', 'month', 'year'].includes(String(item.cycle)) && integer(item.frequency) && Number(item.frequency) > 0
+  return Array.isArray(value) && value.every(item => isRecord(item) && isInteger(item.id) && typeof item.name === 'string' && counter(item.amount_units) && typeof item.currency === 'string'
+    && day(item.next_payment) && ['day', 'week', 'month', 'year'].includes(String(item.cycle)) && isInteger(item.frequency) && Number(item.frequency) > 0
     && typeof item.inactive === 'boolean' && typeof item.auto_renew === 'boolean' && (item.cancellation_date === null || item.cancellation_date === undefined || day(item.cancellation_date))
     && ['category_id', 'payment_method_id', 'payer_id'].every(key => nullableInteger(item[key])))
 }
 export function validServers(value: unknown): value is { entries: ServerRenewal[] } {
-  return record(value) && Array.isArray(value.entries) && value.entries.every(server => record(server) && integer(server.id) && typeof server.name === 'string'
-    && (server.amount_units === null || counter(server.amount_units)) && typeof server.currency === 'string' && integer(server.cycle_days) && day(server.next_renewal) && typeof server.auto_renewal === 'boolean')
+  return isRecord(value) && Array.isArray(value.entries) && value.entries.every(server => isRecord(server) && isInteger(server.id) && typeof server.name === 'string'
+    && (server.amount_units === null || counter(server.amount_units)) && typeof server.currency === 'string' && isInteger(server.cycle_days) && day(server.next_renewal) && typeof server.auto_renewal === 'boolean')
 }
-export const validLabels = (value: unknown): value is { entries: Label[] } => record(value) && Array.isArray(value.entries) && value.entries.every(label => record(label) && integer(label.id) && typeof label.name === 'string' && ['category', 'payment_method', 'payer'].includes(String(label.kind)))
+export const validLabels = (value: unknown): value is { entries: Label[] } => isRecord(value) && Array.isArray(value.entries) && value.entries.every(label => isRecord(label) && isInteger(label.id) && typeof label.name === 'string' && ['category', 'payment_method', 'payer'].includes(String(label.kind)))
 export function validSummary(value: unknown): value is LedgerSummary {
-  return record(value) && day(value.from) && typeof value.base_currency === 'string' && /^[A-Z]{3}$/.test(value.base_currency)
-    && (value.budget_units === null || counter(value.budget_units)) && record(value.exchange) && (value.upcoming === undefined || Array.isArray(value.upcoming))
+  return isRecord(value) && day(value.from) && typeof value.base_currency === 'string' && /^[A-Z]{3}$/.test(value.base_currency)
+    && (value.budget_units === null || counter(value.budget_units)) && isRecord(value.exchange) && (value.upcoming === undefined || Array.isArray(value.upcoming))
 }
 
 /** "11/9" for a ledger date; ledger dates are calendar days in the ledger's own time zone. */
@@ -207,19 +206,19 @@ export type ServerPayment = { kind: 'server'; id: string; server_id: number; nam
 export type Payment = ItemPayment | ServerPayment
 
 export function validPayments(value: unknown): value is { items: ItemPayment[]; servers: ServerPayment[] } {
-  return record(value) && Array.isArray(value.items) && Array.isArray(value.servers)
-    && value.items.every(payment => record(payment) && (text(payment.id) || integer(payment.id)) && integer(payment.subscription_id) && text(payment.name) && day(payment.paid_on) && day(payment.period_start) && counter(payment.amount_units) && text(payment.currency))
-    && value.servers.every(payment => record(payment) && text(payment.id) && integer(payment.server_id) && text(payment.name) && text(payment.record_kind) && day(payment.paid_on) && minor(payment.amount_minor) && text(payment.currency) && nullableInteger(payment.valid_until))
+  return isRecord(value) && Array.isArray(value.items) && Array.isArray(value.servers)
+    && value.items.every(payment => isRecord(payment) && (text(payment.id) || isInteger(payment.id)) && isInteger(payment.subscription_id) && text(payment.name) && day(payment.paid_on) && day(payment.period_start) && counter(payment.amount_units) && text(payment.currency))
+    && value.servers.every(payment => isRecord(payment) && text(payment.id) && isInteger(payment.server_id) && text(payment.name) && text(payment.record_kind) && day(payment.paid_on) && minor(payment.amount_minor) && text(payment.currency) && nullableInteger(payment.valid_until))
 }
 export type ItemPaymentRow = { id: string | number; period_start: string; paid_on: string; amount_units: string; currency: string }
-export const validItemPayments = (value: unknown): value is { entries: ItemPaymentRow[] } => record(value) && Array.isArray(value.entries)
-  && value.entries.every(payment => record(payment) && (text(payment.id) || integer(payment.id)) && day(payment.paid_on) && day(payment.period_start) && counter(payment.amount_units) && text(payment.currency))
+export const validItemPayments = (value: unknown): value is { entries: ItemPaymentRow[] } => isRecord(value) && Array.isArray(value.entries)
+  && value.entries.every(payment => isRecord(payment) && (text(payment.id) || isInteger(payment.id)) && day(payment.paid_on) && day(payment.period_start) && counter(payment.amount_units) && text(payment.currency))
 export type CostRecord = { id: string; kind: string; amount_minor: number | string; currency: string; occurred_at: number; valid_until: number | null; reference: string }
 export type Costs = { records: CostRecord[]; annual: { year: number; currency: string; amount_minor: string }[] }
 export function validCosts(value: unknown): value is Costs {
-  return record(value) && Array.isArray(value.records) && Array.isArray(value.annual)
-    && value.records.every(entry => record(entry) && text(entry.id) && text(entry.kind) && minor(entry.amount_minor) && text(entry.currency) && integer(entry.occurred_at) && nullableInteger(entry.valid_until) && (entry.reference === null || entry.reference === undefined || text(entry.reference)))
-    && value.annual.every(entry => record(entry) && integer(entry.year) && text(entry.currency) && signedCounter(entry.amount_minor))
+  return isRecord(value) && Array.isArray(value.records) && Array.isArray(value.annual)
+    && value.records.every(entry => isRecord(entry) && text(entry.id) && text(entry.kind) && minor(entry.amount_minor) && text(entry.currency) && isInteger(entry.occurred_at) && nullableInteger(entry.valid_until) && (entry.reference === null || entry.reference === undefined || text(entry.reference)))
+    && value.annual.every(entry => isRecord(entry) && isInteger(entry.year) && text(entry.currency) && signedCounter(entry.amount_minor))
 }
 export const recordKinds: Record<string, string> = { renewal: '续费', purchase: '购买', price_change: '价格变化', refund: '退款', cancellation: '退订' }
 

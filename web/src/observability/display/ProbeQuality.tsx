@@ -1,7 +1,7 @@
 import { time } from '../../format'
 import { authorizationState, familyLabel, latency, loss, lossLabel, networkLabel, probeSlots, probeState, probeTone, probeValue } from '../probes'
 import type { ProbeField, ProbeOverview, ProbeResult } from '../probes'
-import { qualityFill, qualityText } from './ui'
+import { qualityFill, qualityText } from '@/components/board'
 import { cn } from '@/lib/utils'
 
 const panelClass = 'bg-muted/50 min-w-0 rounded-lg px-2 py-1.5'

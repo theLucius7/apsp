@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api } from '../../api'
 import { Badge, Confirm, Empty, ErrorNotice, Loading, Modal, DialogPresence } from '../../components'
+import { time } from '../../format'
 import { useAction, useResource } from '../../hooks'
 import { ddnsMessage } from './types'
 import type { DdnsRule } from './types'
@@ -10,7 +11,6 @@ import { WaypointsIcon } from 'lucide-react'
 type Snapshot = { id: string; name: string; kind: string; line: string; values: string[]; ttl: number; proxied: boolean; active: boolean }
 type Entry = { id: string; revision: number; operation: string; previous: Snapshot | null; observed: Snapshot | null; desired_ip: string | null; status: string; error_code: string | null; occurred_at: number }
 type Preview = { revision: number; desired_ip: string | null; remote: Snapshot | null; source_error: string | null; error_code: string | null; change: string; checked_at: number }
-const time = (value: number) => new Date(value * 1000).toLocaleString('zh-CN', { hour12: false })
 const detail = (record: Snapshot | null) => record ? `${record.values.join(', ')} · TTL ${record.ttl === 1 ? '自动' : record.ttl} · ${record.proxied ? '代理开启' : '仅 DNS'}` : '没有记录值'
 const operation: Record<string, string> = { sync: '自动或手动同步', check: '提供方核对', rollback: '回退', migration: '来源绑定迁移' }
 

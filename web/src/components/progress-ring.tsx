@@ -1,8 +1,9 @@
 import { useId } from 'react'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import type { Tone } from '@/components/board'
 
-export type RingTone = 'good' | 'warning' | 'danger' | 'info' | 'muted' | 'brand'
+export type RingTone = Tone | 'brand'
 const strokeTone: Record<Exclude<RingTone, 'brand'>, string> = { good: 'stroke-success', warning: 'stroke-warning', danger: 'stroke-destructive', info: 'stroke-info', muted: 'stroke-muted-foreground/60' }
 const RADIUS = 22
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../api'
 import { Badge, ErrorNotice, Field, Modal } from '../components'
+import { clock } from '../format'
 import { newRequestId } from '@/lib/request-id'
 import { commitOrderedPreview, createOrderedPreview, discardOrderedPreview, emptySourceDraft, previewCommit, previewInput, SourceFileReader, sourceMetadataError } from './sourceRequests'
 import type { SourceDraft, SourceSnapshot } from './sourceRequests'
@@ -113,7 +114,7 @@ export default function OrderedSourceImport({ snapshot, onClose, onSaved }: { sn
           {fileBusy && <p role="status">正在读取文件…</p>}{fileName && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">已读取：{fileName}</p>}
         </>}
       </> : <>
-        <div className="mb-4 flex flex-wrap justify-between gap-3"><span>{sourceFormatText[preview.format] ?? preview.format} · 可加入 {preview.nodes.filter(node => node.selectable).length} · 不支持 {preview.unsupported_count}</span><small className="text-muted-foreground">预览保留至 {new Date(preview.expires_at * 1000).toLocaleTimeString('zh-CN', { hour12: false })}</small></div>
+        <div className="mb-4 flex flex-wrap justify-between gap-3"><span>{sourceFormatText[preview.format] ?? preview.format} · 可加入 {preview.nodes.filter(node => node.selectable).length} · 不支持 {preview.unsupported_count}</span><small className="text-muted-foreground">预览保留至 {clock(preview.expires_at)}</small></div>
         {preview.warnings.map(warning => <p key={warning.code} className="text-muted-foreground mt-3 text-xs leading-relaxed">{warning.message}</p>)}
         <Field label="筛选预览节点"><Input value={filter} onChange={event => { setFilter(event.target.value); setPage(0) }} placeholder="搜索名称、协议或地址" /></Field>
         <div className="flex flex-wrap items-center justify-end gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => choose(visible.filter(node => node.selectable).map(node => node.key), true)}>选择筛选结果</Button><Button type="button" variant="ghost" size="sm" onClick={() => choose(visible.map(node => node.key), false)}>取消选择筛选结果</Button><Button type="button" variant="ghost" size="sm" onClick={restart}>重新填写来源</Button></div>

@@ -2,14 +2,15 @@ import { useEffect, useState } from 'react'
 import { api, errorMessage } from '../../api'
 import type { Server } from '../../types'
 import type { ActionRunner } from '../../hooks'
-import { time } from '../../operations/types'
+import { time } from '../../format'
+import { useActor } from '@/lib/actor'
+import { isUuid } from '@/lib/validate'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 
-type Actor = { role: string; all_servers: boolean; capabilities: string[] }
 type Account = { id: string; name: string; credential_id: string; archived: boolean; revision: number; last_attempt_at: number | null; last_read_at: number | null; last_error: string | null }
 type Provider = { id: string; inventory_read: boolean; resource_linking: boolean; history: boolean; billing: boolean; balance: boolean; remote_writes: boolean; official_source: string }
 type Snapshot = {
@@ -44,14 +45,13 @@ type ReadResult = { account_id: string; complete: boolean; pages: number; observ
 type History = { id: string; resource_id: string; observed_at: number; source: string; presence: 'observed' | 'absent' | 'unknown'; snapshot: Snapshot | null; changes: unknown; refresh_id: string }
 type AccountDraft = { id: string | null; name: string; credential_id: string; expected_revision: number | null }
 const emptyAccount: AccountDraft = { id: null, name: '', credential_id: '', expected_revision: null }
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const presenceNames = { observed: '完整清单已发现', absent: '完整清单未发现', unknown: '存在状态未知' }
 const statusNames: Record<string, string> = { initializing: '初始化中', starting: '启动中', running: '运行中', stopping: '停止中', off: '已关闭', deleting: '删除中', rebuilding: '重装中', migrating: '迁移中', unknown: '未知' }
 const errorNames: Record<string, string> = { credential_unavailable: '加密凭据不可用', credential_invalid: '凭据格式不符合提供方要求', network_timeout: '官方读取超时', network_error: '官方连接失败', http_401: '官方凭据验证失败', http_403: '官方接口拒绝访问', http_429: '官方接口限流', http_5xx: '官方服务异常', http_other: '官方接口返回其他错误', invalid_response: '官方响应无法解析', pagination_inconsistent: '分页结果不一致', inventory_limit: '清单超过受控读取上限' }
 const describeError = (code: string | null) => code ? `${errorNames[code] ?? '读取出现其他错误'}（${code}）` : ''
 
 export default function HetznerInventory({ servers, run, version }: { servers: Server[]; run: ActionRunner; version: number }) {
-  const [actor, setActor] = useState<Actor | null>(null)
+  const { data: actor, error: actorError } = useActor()
   const [accounts, setAccounts] = useState<Account[]>([])
   const [inventory, setInventory] = useState<Inventory | null>(null)
   const [accountDraft, setAccountDraft] = useState<AccountDraft>(emptyAccount)
@@ -75,15 +75,13 @@ export default function HetznerInventory({ servers, run, version }: { servers: S
   const canChooseServers = allows('servers:read')
 
   const refresh = async () => {
+    if (!actor) return
     setLoading(true)
     setError('')
     try {
-      const principal = await api<Actor>('/api/control-center/me')
-      setActor(principal)
-      const globalRead = (principal.role === 'owner' || principal.all_servers) && (principal.role === 'owner' || principal.capabilities.includes('cloud:read'))
       const [resourceResult, accountResult] = await Promise.allSettled([
         api<Inventory>('/api/operations/cloud/hetzner/resources'),
-        globalRead ? api<{ accounts: Account[]; provider: Provider }>('/api/operations/cloud/hetzner/accounts') : Promise.resolve(null),
+        canReadAccounts ? api<{ accounts: Account[]; provider: Provider }>('/api/operations/cloud/hetzner/accounts') : Promise.resolve(null),
       ])
       if (accountResult.status === 'fulfilled') { setAccounts(accountResult.value?.accounts ?? []); setAccountError('') }
       else setAccountError(errorMessage(accountResult.reason))
@@ -96,7 +94,7 @@ export default function HetznerInventory({ servers, run, version }: { servers: S
       setLoading(false)
     }
   }
-  useEffect(() => { run(refresh) }, [version]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (actor) run(refresh) }, [version, actor]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveAccount = () => {
     const draft = { ...accountDraft }
@@ -104,7 +102,7 @@ export default function HetznerInventory({ servers, run, version }: { servers: S
       setAccountError('')
       setMessage('')
       try {
-        if (!draft.name.trim() || !uuid.test(draft.credential_id.trim())) throw new Error('请填写账号名称和有效的加密云凭据引用编号。')
+        if (!draft.name.trim() || !isUuid(draft.credential_id.trim())) throw new Error('请填写账号名称和有效的加密云凭据引用编号。')
         await api('/api/operations/cloud/hetzner/accounts', 'POST', { ...(draft.id ? { id: draft.id, expected_revision: draft.expected_revision } : {}), name: draft.name.trim(), credential_id: draft.credential_id.trim() })
         setMessage('本地账号引用已保存。官方清单须另行明确读取。')
         await refresh()
@@ -153,7 +151,7 @@ export default function HetznerInventory({ servers, run, version }: { servers: S
     <h3 className="mt-0 mb-2 text-sm font-semibold">Hetzner 官方只读资源清单</h3>
     <p>支持服务器清单、公网地址、机型、数据中心、状态以及本地资产关联和历史。官方来源为 Hetzner Cloud v1 的服务器接口；账单、余额、启停、带宽和安全组等远端修改当前不可用。</p>
     <Button variant="outline" type="button" disabled={loading} onClick={() => run(refresh)}>读取面板缓存与授权状态</Button>
-    {error && <p className="border-destructive bg-destructive/5 text-destructive border-l-[3px] p-3 text-sm" role="alert">{error}{inventory && '；下方保留上次读取的缓存。'}</p>}
+    {(error || !actor && actorError) && <p className="border-destructive bg-destructive/5 text-destructive border-l-[3px] p-3 text-sm" role="alert">{error || actorError}{inventory && '；下方保留上次读取的缓存。'}</p>}
     {message && <p role="status">{message}</p>}
     {loading && <p role="status">正在读取面板中的资源记录。</p>}
     {actor && !canReadAccounts && <p>当前账号可查看已授权关联资源；提供方账号清单和官方读取入口需要所有服务器范围的云读取授权。</p>}
@@ -165,7 +163,7 @@ export default function HetznerInventory({ servers, run, version }: { servers: S
         const result = readResults[account.id]
         return <TableRow key={account.id}>
           <TableCell className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">{account.name}<small className="block max-w-[30rem] opacity-80">{account.archived ? '本地账号已归档' : `账号记录版本 ${account.revision}`}</small><small className="block max-w-[30rem] opacity-80">加密凭据引用：{account.credential_id}</small></TableCell>
-          <TableCell className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">最近完整读取 {time(account.last_read_at)}<small className="block max-w-[30rem] opacity-80">最近尝试 {time(account.last_attempt_at)}</small>{account.last_error && <small className="block max-w-[30rem] opacity-80">{describeError(account.last_error)}</small>}{result && <small className="block max-w-[30rem] opacity-80">{result.complete ? '本次清单完整' : '本次读取不完整，未确认缺失资源'} · 已读取 {result.pages} 页、观测 {result.observed} 个资源 · 缓存共 {result.total_cached} 条{result.error_code ? ` · ${describeError(result.error_code)}` : ''}</small>}</TableCell>
+          <TableCell className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">最近完整读取 {time(account.last_read_at, '暂无观测')}<small className="block max-w-[30rem] opacity-80">最近尝试 {time(account.last_attempt_at, '暂无观测')}</small>{account.last_error && <small className="block max-w-[30rem] opacity-80">{describeError(account.last_error)}</small>}{result && <small className="block max-w-[30rem] opacity-80">{result.complete ? '本次清单完整' : '本次读取不完整，未确认缺失资源'} · 已读取 {result.pages} 页、观测 {result.observed} 个资源 · 缓存共 {result.total_cached} 条{result.error_code ? ` · ${describeError(result.error_code)}` : ''}</small>}</TableCell>
           <TableCell className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5"><Button variant="outline" type="button" disabled={account.archived || readingAccount !== null} onClick={() => readAccount(account)}>{readingAccount === account.id ? '正在读取官方清单' : '从官方接口读取清单'}</Button>{canManageAccounts && !account.archived && <><Button variant="outline" type="button" onClick={() => { setAccountDraft({ id: account.id, name: account.name, credential_id: account.credential_id, expected_revision: account.revision }); setAccountError(''); setMessage('') }}>编辑本地账号引用</Button><Button variant="outline" type="button" onClick={() => run(async () => { await api(`/api/operations/cloud/hetzner/accounts/${account.id}`, 'DELETE'); setMessage('本地账号已归档，云服务器与历史记录保留。'); if (accountDraft.id === account.id) setAccountDraft(emptyAccount); await refresh() }, true)}>验证身份并归档本地账号</Button></>}</TableCell>
         </TableRow>
       })}</TableBody></Table></div>
@@ -187,7 +185,7 @@ export default function HetznerInventory({ servers, run, version }: { servers: S
         <TableCell className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">{value.name}<small className="block max-w-[30rem] opacity-80">{value.account_name} · 云资源编号 {value.cloud_id}</small>{value.account_archived && <small className="block max-w-[30rem] opacity-80">提供方账号已在本地归档</small>}</TableCell>
         <TableCell className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">{presenceNames[value.presence]}<small className="block max-w-[30rem] opacity-80">{value.stale ? '缓存已过期或缺少完整验证证据' : '缓存未过期'}</small><small className="block max-w-[30rem] opacity-80">最近缓存的运行状态：{value.snapshot ? statusNames[value.snapshot.status] ?? '其他状态' : '未知'}</small><small className="block max-w-[30rem] opacity-80">IPv4：{value.snapshot?.ipv4 ?? '未观测'}</small><small className="block max-w-[30rem] opacity-80">IPv6：{value.snapshot?.ipv6 ?? '未观测'}</small>{value.error_code && <small className="block max-w-[30rem] opacity-80">{describeError(value.error_code)}</small>}{value.presence === 'absent' && <small className="block max-w-[30rem] opacity-80">完整清单未发现该资源；这不单独证明资源已删除。</small>}</TableCell>
         <TableCell className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">{value.snapshot ? <>{value.snapshot.server_type.name}<small className="block max-w-[30rem] opacity-80">核心数 {value.snapshot.server_type.cores ?? '未知'} · 内存 {value.snapshot.server_type.memory_gb ?? '未知'} GB · 磁盘 {value.snapshot.server_type.disk_gb ?? '未知'} GB</small><small className="block max-w-[30rem] opacity-80">架构 {value.snapshot.server_type.architecture ?? '未知'}</small><small className="block max-w-[30rem] opacity-80">{value.snapshot.datacenter.name} · {value.snapshot.location.name ?? '地区未知'} · {value.snapshot.location.city ?? '城市未知'} · {value.snapshot.location.country ?? '国家未知'}</small></> : '尚无机型观测'}</TableCell>
-        <TableCell className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">最后发现 {time(value.last_seen_at)}<small className="block max-w-[30rem] opacity-80">完整验证 {time(value.verified_at)}</small><small className="block max-w-[30rem] opacity-80">最近尝试 {time(value.last_attempt_at)}</small></TableCell>
+        <TableCell className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">最后发现 {time(value.last_seen_at, '暂无观测')}<small className="block max-w-[30rem] opacity-80">完整验证 {time(value.verified_at, '暂无观测')}</small><small className="block max-w-[30rem] opacity-80">最近尝试 {time(value.last_attempt_at, '暂无观测')}</small></TableCell>
         <TableCell className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">{value.link?.server_id !== null && value.link?.server_id !== undefined ? <small className="block max-w-[30rem] opacity-80">关联服务器 {servers.find(server => server.id === value.link?.server_id)?.name ?? value.link.server_id}</small> : <small className="block max-w-[30rem] opacity-80">独立云资源</small>}{value.link?.notes && <small className="block max-w-[30rem] opacity-80">{value.link.notes}</small>}{canEditLinks && <Button variant="outline" type="button" onClick={() => chooseResource(value)}>编辑本地关联与备注</Button>}<Button variant="outline" type="button" onClick={() => run(async () => { const entries = await api<History[]>(`/api/operations/cloud/hetzner/resources/${value.id}/history`); setHistoryResource(value); setHistory(entries) })}>查看来源与变化历史</Button><details><summary className="cursor-pointer text-sm font-medium">官方缓存原始字段</summary><pre className="bg-muted/50 max-h-96 overflow-auto rounded-lg p-3 whitespace-pre-wrap wrap-anywhere">{JSON.stringify(value.snapshot, null, 2)}</pre></details></TableCell>
       </TableRow>)}</TableBody></Table></div>
     </>}

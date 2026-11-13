@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api } from '../../api'
 import { Badge, ErrorNotice, Field, Loading, InfoTip } from '../../components'
+import { numberText, time } from '../../format'
 import { useAction, useResource } from '../../hooks'
 import { currencyCode, displayCurrencies } from './currency'
 import type { ExchangeRates } from './currency'
@@ -11,7 +12,6 @@ import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
 
 const preferenceKey = 'apsp-display-currency'
 const currencyNames: Record<string, string> = { CNY: '人民币', USD: '美元', EUR: '欧元', HKD: '港币', JPY: '日元', GBP: '英镑', SGD: '新加坡元', CAD: '加元', AUD: '澳元', CHF: '瑞士法郎', KRW: '韩元', RUB: '俄罗斯卢布', VND: '越南盾' }
-const dateTime = (value: number | null | undefined) => value && Number.isFinite(value) ? new Date(value * 1000).toLocaleString('zh-CN', { hour12: false }) : '—'
 
 function readPreference() {
   try { return { currency: currencyCode(localStorage.getItem(preferenceKey)), error: '' } }
@@ -60,9 +60,9 @@ export default function ExchangeRateSettings() {
       <ErrorNotice message={action.error || rates.error} />
       {feedback && <p role="status">{feedback}</p>}
       {rates.loading && !quote ? <Loading /> : <>
-        <dl data-slot="exchange-rate-meta" className="my-5 grid gap-4 text-xs [grid-template-columns:repeat(auto-fit,minmax(180px,1fr))] max-sm:grid-cols-1"><div><dt className="text-muted-foreground mb-1.5">报价日期</dt><dd className="m-0 wrap-anywhere">{quote?.rate_date ?? '—'}</dd></div><div><dt className="text-muted-foreground mb-1.5">汇率来源</dt><dd className="m-0 wrap-anywhere">{sourceUrl ? <a className="text-primary underline-offset-4 hover:underline" href={sourceUrl} target="_blank" rel="noreferrer">{source}</a> : source}</dd></div><div><dt className="text-muted-foreground mb-1.5">最近成功获取</dt><dd className="m-0 wrap-anywhere">{dateTime(quote?.fetched_at)}</dd></div><div><dt className="text-muted-foreground mb-1.5">最近尝试</dt><dd className="m-0 wrap-anywhere">{dateTime(quote?.attempted_at)}</dd></div><div><dt className="text-muted-foreground mb-1.5">下次自动尝试</dt><dd className="m-0 wrap-anywhere">{dateTime(quote?.next_refresh_at)}</dd></div></dl>
+        <dl data-slot="exchange-rate-meta" className="my-5 grid gap-4 text-xs [grid-template-columns:repeat(auto-fit,minmax(180px,1fr))] max-sm:grid-cols-1"><div><dt className="text-muted-foreground mb-1.5">报价日期</dt><dd className="m-0 wrap-anywhere">{quote?.rate_date ?? '—'}</dd></div><div><dt className="text-muted-foreground mb-1.5">汇率来源</dt><dd className="m-0 wrap-anywhere">{sourceUrl ? <a className="text-primary underline-offset-4 hover:underline" href={sourceUrl} target="_blank" rel="noreferrer">{source}</a> : source}</dd></div><div><dt className="text-muted-foreground mb-1.5">最近成功获取</dt><dd className="m-0 wrap-anywhere">{time(quote?.fetched_at, '—')}</dd></div><div><dt className="text-muted-foreground mb-1.5">最近尝试</dt><dd className="m-0 wrap-anywhere">{time(quote?.attempted_at, '—')}</dd></div><div><dt className="text-muted-foreground mb-1.5">下次自动尝试</dt><dd className="m-0 wrap-anywhere">{time(quote?.next_refresh_at, '—')}</dd></div></dl>
         {quote?.error_code && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">最近获取失败，{unavailable ? '暂时只能使用原币金额。' : '当前仍按上次成功获取的汇率折算。'}</p>}
-        <details><summary className="text-primary cursor-pointer text-sm">查看汇率表（{entries.length} 个币种）</summary><div className="mt-3.5 overflow-x-auto"><Table><TableHeader><TableRow><TableHead>币种</TableHead><TableHead>1 人民币可兑换</TableHead><TableHead>报价日期</TableHead></TableRow></TableHeader><TableBody>{entries.map(([code, value]) => <TableRow key={code}><TableCell>{currencyNames[code] ? `${currencyNames[code]} · ` : ''}{code}</TableCell><TableCell>{new Intl.NumberFormat('zh-CN', { maximumSignificantDigits: 8 }).format(value)}</TableCell><TableCell>{code === 'CNY' ? '基准币种' : quote?.rate_dates[code] ?? '—'}</TableCell></TableRow>)}</TableBody></Table>{!entries.length && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">暂无报价。</p>}</div></details>
+        <details><summary className="text-primary cursor-pointer text-sm">查看汇率表（{entries.length} 个币种）</summary><div className="mt-3.5 overflow-x-auto"><Table><TableHeader><TableRow><TableHead>币种</TableHead><TableHead>1 人民币可兑换</TableHead><TableHead>报价日期</TableHead></TableRow></TableHeader><TableBody>{entries.map(([code, value]) => <TableRow key={code}><TableCell>{currencyNames[code] ? `${currencyNames[code]} · ` : ''}{code}</TableCell><TableCell>{numberText(value, 8)}</TableCell><TableCell>{code === 'CNY' ? '基准币种' : quote?.rate_dates[code] ?? '—'}</TableCell></TableRow>)}</TableBody></Table>{!entries.length && <p className="text-muted-foreground mt-3 text-xs leading-relaxed">暂无报价。</p>}</div></details>
       </>}
     </div>
   </Panel>

@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RuntimeServer, Server } from '../types'
 import { installationView } from './Runtimes'
 import { cn } from '@/lib/utils'
+import type { Tone } from '../components'
 
-type Tone = 'good' | 'bad' | 'warm' | 'neutral'
 type Placed = { id: number; name: string; group: string; x: number; y: number; r: number; angle: number; tone: Tone; enabled: boolean; online: boolean; state: string }
 
 const fill: Record<Tone, string> = { good: 'var(--success)', bad: 'var(--destructive)', warm: 'var(--warning)', neutral: 'var(--card)' }

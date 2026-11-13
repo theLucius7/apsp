@@ -26,7 +26,7 @@ test('answers are validated before anything is drawn', () => {
 test('a subscription shows its price, monthly cost in the ledger currency and the next renewal', () => {
   const result = view()
   expect(result.status).toEqual({ label: '自动续费', tone: 'good' })
-  expect([result.price, result.cycle, result.days, result.next.label, result.category, result.payment, result.renewal]).toEqual(['USD 20', '每月', 14, '11/20', 'AI 服务', '信用卡', '自动'])
+  expect([result.price, result.cycle, result.days, result.next.label, result.category, result.payment, result.renewal]).toEqual(['USD\u00a020.00', '每月', 14, '11/20', 'AI 服务', '信用卡', '自动'])
   expect(result.monthly).toBeCloseTo(20 / 0.14, 6)
   expect(result.nextAmount).toBeCloseTo(20 / 0.14, 6)
   expect(result.progress).toBeGreaterThan(50)

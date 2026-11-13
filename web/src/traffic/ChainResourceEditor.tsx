@@ -6,6 +6,7 @@ import type { ResourceSnapshot } from '@/lib/resource-snapshot'
 import { chainMutationError, prepareChainMutation, submitChainMutation } from './chainRequests'
 import type { ChainMutation, PendingChainMutation } from './chainRequests'
 import { Input } from '@/components/ui/input'
+import { isPort } from '@/lib/validate'
 
 export default function ChainResourceEditor({ resource, snapshot, open, onClose, onSaved, onPending, refresh }: { resource: ProxyResource; snapshot: ResourceSnapshot<ProxyResource[]>; open: boolean; onClose: () => void; onSaved: () => void; onPending: (value: boolean) => void; refresh: () => void }) {
   const initial = useRef({ name: resource.name, entry_name: resource.entry.name, public_host: resource.entry.public_host, port: String(resource.entry.port), sni: resource.entry.sni })
@@ -23,7 +24,7 @@ export default function ChainResourceEditor({ resource, snapshot, open, onClose,
     if (action.busy || chainMutationError(snapshot, command, replay) || !Object.keys(fields).length) return
     void action.run(async () => {
       for (const key of ['name', 'entry_name'] as const) if (!draft[key].trim() || [...draft[key].trim()].length > 128 || /[\u0000-\u001f\u007f]/.test(draft[key])) throw new Error('名称需为 1–128 个字符，不能含控制字符。')
-      if (fields.port !== undefined && (!/^[1-9]\d*$/.test(draft.port.trim()) || !Number.isSafeInteger(fields.port) || Number(fields.port) > 65535 || fields.port === 18085)) throw new Error('监听端口需为 1–65535，18085 为保留端口。')
+      if (fields.port !== undefined && (!/^[1-9]\d*$/.test(draft.port.trim()) || !isPort(fields.port) || fields.port === 18085)) throw new Error('监听端口需为 1–65535，18085 为保留端口。')
       if (fields.public_host !== undefined && (!draft.public_host.trim() || /[\s/@?#\\]/.test(draft.public_host) || draft.public_host.includes('://'))) throw new Error('公开地址不能含协议、路径或端口。')
       if (fields.sni !== undefined && !/^[a-zA-Z0-9.-]+$/.test(draft.sni.trim())) throw new Error('请输入有效 Reality 域名。')
       const request = prepareChainMutation(command, snapshot, pending.current)

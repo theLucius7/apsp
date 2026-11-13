@@ -11,6 +11,7 @@ import { resolveRoute } from './routes'
 import { useI18n } from '../i18n'
 import { useSessionStore } from '../stores/session'
 import { acceptHashChange, guardLinks } from '@/lib/leave-guard'
+import { useActor, useActorSource } from '@/lib/actor'
 import { Button } from '@/components/ui/button'
 
 const ServerDisplay = lazy(() => import('../observability/display/ServerDisplay'))
@@ -39,6 +40,9 @@ function addressPath() {
   return window.location.hash.slice(1) || '/dashboard'
 }
 
+/** Pages with their own sign-in; the administrator's endpoints are not used there. */
+const standalonePages = ['proxy-portal', 'member-login', 'member-join']
+
 export default function App() {
   const { t } = useI18n()
   const session = useSessionStore(state => state.authenticated)
@@ -48,6 +52,9 @@ export default function App() {
   const bootError = useSessionStore(state => state.bootError)
   const [bootAttempt, setBootAttempt] = useState(0)
   const [path, setPath] = useState(addressPath)
+  // Set by the access check: the bare address still has to pick a first page, or the
+  // server board has to be checked, once the administrator is known.
+  const [landing, setLanding] = useState<'home' | 'dashboard' | null>(null)
   const shown = useRef(path)
   shown.current = path
   const action = useAction()
@@ -74,7 +81,7 @@ export default function App() {
   useEffect(() => {
     // Proxy users and members have their own sign-in; on a user's own hostname the
     // administrator's endpoints do not exist at all.
-    if (['proxy-portal', 'member-login', 'member-join'].includes(resolveRoute(shown.current).page)) return bindRouter()
+    if (standalonePages.includes(resolveRoute(shown.current).page)) return bindRouter()
     const store = useSessionStore.getState()
     const controller = new AbortController()
     let active = true
@@ -88,16 +95,8 @@ export default function App() {
         // Signed-in administrators land on the overview of the proxy network;
         // without access to it they start at the servers or their own settings.
         // An explicit #/dashboard keeps the server board for those who may see it.
-        const landing = window.location.hash === '' || window.location.hash === '#/'
-        if (access.authenticated && (landing || window.location.hash === '#/dashboard')) {
-          void api<{ role: string; all_servers: boolean; capabilities: string[] }>('/api/control-center/me').then(actor => {
-            if (!active) return
-            const owner = actor.role === 'owner'
-            const fallback = actor.capabilities.includes('servers:read') ? '/servers' : '/settings/admin'
-            if (landing) window.location.hash = owner || (actor.all_servers && actor.capabilities.includes('proxy:read')) ? homePath : fallback
-            else if (!owner && (!actor.all_servers || !actor.capabilities.includes('monitoring:read'))) window.location.hash = fallback
-          }).catch(() => { if (active && landing) window.location.hash = homePath })
-        }
+        const bare = window.location.hash === '' || window.location.hash === '#/'
+        if (access.authenticated && (bare || window.location.hash === '#/dashboard')) setLanding(bare ? 'home' : 'dashboard')
       }
     }).catch(error => {
       // No answer says nothing about the session: never send anyone to sign-in for it.
@@ -116,6 +115,19 @@ export default function App() {
   }, [accessRevision, bootAttempt])
 
   const route = resolveRoute(path)
+  // The signed-in administrator is read once for the whole console.
+  useActorSource(session === true && !standalonePages.includes(route.page))
+  const actor = useActor()
+  useEffect(() => {
+    if (!landing || (!actor.data && !actor.error)) return
+    setLanding(null)
+    const known = actor.data
+    if (!known) { if (landing === 'home') window.location.hash = homePath; return }
+    const owner = known.role === 'owner'
+    const fallback = known.capabilities.includes('servers:read') ? '/servers' : '/settings/admin'
+    if (landing === 'home') window.location.hash = owner || (known.all_servers && known.capabilities.includes('proxy:read')) ? homePath : fallback
+    else if (!owner && (!known.all_servers || !known.capabilities.includes('monitoring:read'))) window.location.hash = fallback
+  }, [landing, actor.data, actor.error])
   const current = currentNavigation(route)
   const title = t(current?.label ?? '控制面板')
   useEffect(() => { document.title = `${title} · ${t('apsp')}` }, [title, t])

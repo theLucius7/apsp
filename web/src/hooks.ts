@@ -48,7 +48,8 @@ export function useResource<T>(path: string | null, poll = 5000, options: Resour
   const isCurrent = useCallback(() => currentPath.current === path && snapshot.current.valid && snapshot.current.path === path, [path])
   const getCurrent = useCallback(() => isCurrent() ? snapshot.current.value : undefined, [isCurrent])
   useEffect(() => {
-    if (!path) { snapshot.current = { path: null, valid: false }; setData(undefined); setAvailability({ ready: false }); setLoading(false); return }
+    // No path reads nothing, so nothing is known and nothing has failed; a later read starts clean.
+    if (!path) { snapshot.current = { path: null, valid: false }; setData(undefined); setError(''); setAvailability({ ready: false }); setLoading(false); return }
     if (previousPath.current !== path) {
       const kept = keep ? readKept<T>(path) : undefined
       snapshot.current = { path, valid: false, value: kept }

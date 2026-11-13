@@ -8,8 +8,7 @@ import type { ProbeOverview } from '../probes'
 import type { Server } from '../../types'
 import ProbeCharts from '../display/ProbeCharts'
 import { QualityBars } from '../display/ProbeQuality'
-import { qualityText } from '../display/ui'
-import { Stat, StatStrip } from '@/components/board'
+import { qualityText, Stat, StatStrip } from '@/components/board'
 import { carrierFigures, carrierHeading, carriers, lineOrders, lossThreshold, matchLines, reachabilityFigures, serverLines, sortLines } from './line-quality'
 import type { Carrier, LineOrder, LineSample, ServerLine } from './line-quality'
 import { sortTargets, stateLabels, stateTones } from './reachability'
@@ -22,6 +21,7 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { SegmentedButton, SegmentedGroup } from '@/components/segmented'
 import { ChevronDownIcon, GaugeIcon, GlobeIcon, ServerIcon, WaypointsIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useActor } from '@/lib/actor'
 
 const reachabilityRoot = '/api/observability/reachability'
 const settingsPath = '#/latency/settings'
@@ -110,7 +110,7 @@ function Row({ line, columns, owner, reachabilityEnabled, open, onToggle, now }:
 }
 
 export default function LineQuality() {
-  const actor = useResource<{ role: string }>('/api/control-center/me', 0)
+  const actor = useActor()
   const owner = actor.data?.role === 'owner'
   const servers = useResource<Server[]>('/api/servers', 30_000)
   const overview = useResource<ProbeOverview[]>('/api/probes/overview', 15_000)

@@ -1,5 +1,6 @@
-import { bytes } from '../../format'
+import { bytes, numberText } from '../../format'
 import type { Metrics, Server } from '../../types'
+import type { Tone } from '@/components/board'
 
 export type Sample = { id: string; sampled_at: number; metrics: Metrics }
 export type Point = { at: number; value: number | null; range?: { from: number; to: number; count: number; min: number; max: number; samples: number; partial: boolean; live?: boolean; bucketFrom?: number; bucketTo?: number } }
@@ -17,7 +18,7 @@ export function ratio(used: unknown, total: unknown): number | null {
 export const percentage = (value: unknown) => number(value) === null ? '—' : `${(value as number).toFixed(1)}%`
 export const size = (value: unknown) => number(value) === null ? '—' : bytes(value as number)
 export const speed = (value: unknown) => number(value) === null ? '—' : `${bytes(value as number)}/秒`
-export const count = (value: unknown) => number(value) === null ? '—' : (value as number).toLocaleString('zh-CN')
+export const count = (value: unknown) => number(value) === null ? '—' : numberText(value as number)
 
 export function interfaceSelected(name: string, patterns = ''): boolean {
   const entries = patterns.split(',').map(value => value.trim()).filter(Boolean)
@@ -35,7 +36,7 @@ export function fresh(server: Server): boolean {
   return server.online && !server.metrics_stale && number(server.metrics_sampled_at) !== null && server.metrics_sampled_at! > 0
 }
 
-export function status(server: Server, unavailable = false) {
+export function status(server: Server, unavailable = false): { label: string; tone: Tone } {
   if (unavailable) return { label: '状态未知', tone: 'warning' }
   if (server.online) return { label: '在线', tone: 'good' }
   return (server.registered ?? Boolean(server.device_public_key)) ? { label: '离线', tone: 'danger' } : { label: '待接入', tone: 'muted' }

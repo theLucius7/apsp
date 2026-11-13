@@ -5,11 +5,11 @@
 import { convert } from '../currency/currency'
 import type { ExchangeRates } from '../currency/currency'
 import { SOON_DAYS, itemRow } from '../expenses/model'
-import type { LedgerSummary, Tone } from '../expenses/model'
+import type { LedgerSummary } from '../expenses/model'
+import type { Tone } from '@/components/board'
 import { cycleDays } from '../expenses/types'
 import type { Expense, Label } from '../expenses/types'
 
-export type { Tone }
 export type RenewalSummary = LedgerSummary
 // The ledger's own validators: the board reads the same endpoints as the page.
 export { validItems as validRenewals, validLabels, validSummary as validRenewalSummary } from '../expenses/model'

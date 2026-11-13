@@ -2,8 +2,9 @@ import { api } from '../api'
 import { resourceWriteError } from '../hooks'
 import { newRequestId } from '@/lib/request-id'
 import type { ResourceSnapshot } from '@/lib/resource-snapshot'
-import { MAX_REFRESH_SECS, MAX_SOURCE_BYTES, MIN_REFRESH_SECS, orderedPreviewError, sourceJobRoot, sourceRoot, sourceUuid, validOrderedPreview, validSourceJob, validSourceNode, validSourceReceipt, validSubscriptionSources } from './orderedSourceTypes'
+import { MAX_REFRESH_SECS, MAX_SOURCE_BYTES, MIN_REFRESH_SECS, orderedPreviewError, sourceJobRoot, sourceRoot, validOrderedPreview, validSourceJob, validSourceNode, validSourceReceipt, validSubscriptionSources } from './orderedSourceTypes'
 import type { OrderedPreview, SourceJob, SourceNode, SourceReceipt, SubscriptionSource } from './orderedSourceTypes'
+import { isUuid } from '@/lib/validate'
 
 export type SourceEditorMode = 'create' | 'metadata' | 'update' | 'replace' | 'archive' | 'unarchive'
 export type SourceDraft = { name: string; kind: 'url' | 'inline'; url: string; content: string; interval: string; authorization: string; cookie: string; apiKey: string; authAction: 'preserve' | 'replace' | 'clear'; userAgent: string; autoRefresh: 'on' | 'off' }
@@ -110,7 +111,7 @@ export function prepareSourceMutation(command: SourceCommand, snapshot: SourceSn
   if (error) throw new Error(error)
   if (replay) return previous!
   const request_id = id()
-  if (!sourceUuid(request_id)) throw new Error('请求标识无效。')
+  if (!isUuid(request_id)) throw new Error('请求标识无效。')
   const method = command.mode === 'create' ? 'POST' : 'PATCH'
   const path = command.mode === 'create' ? sourceRoot : `${sourceRoot}/${command.source_id}`
   const body = { request_id, ...(command.mode === 'create' ? {} : { settings_revision: command.settings_revision }), ...command.fields }
@@ -128,7 +129,7 @@ export async function submitSourceMutation(pending: PendingSourceMutation, snaps
   let command: SourceCommand, body: Record<string, unknown>
   try { command = JSON.parse(pending.command); body = JSON.parse(pending.serialized) } catch { throw new Error('原请求已损坏，请重新填写。') }
   const expected = { request_id: pending.request_id, ...(command.mode === 'create' ? {} : { settings_revision: command.settings_revision }), ...command.fields }
-  if (!sourceUuid(pending.request_id) || JSON.stringify(expected) !== pending.serialized || pending.path !== (command.mode === 'create' ? sourceRoot : `${sourceRoot}/${command.source_id}`) || pending.method !== (command.mode === 'create' ? 'POST' : 'PATCH')) throw new Error('原请求与草稿不一致，请重新填写。')
+  if (!isUuid(pending.request_id) || JSON.stringify(expected) !== pending.serialized || pending.path !== (command.mode === 'create' ? sourceRoot : `${sourceRoot}/${command.source_id}`) || pending.method !== (command.mode === 'create' ? 'POST' : 'PATCH')) throw new Error('原请求与草稿不一致，请重新填写。')
   const error = sourceCommandError(command, snapshot, pending.attempted)
   if (error) throw new Error(error)
   pending.attempted = true
@@ -195,7 +196,7 @@ export async function createOrderedPreview(request: ReturnType<typeof previewInp
   return preview
 }
 export async function discardOrderedPreview(id: string, writer = sourceRequest<unknown>) {
-  if (!sourceUuid(id)) return
+  if (!isUuid(id)) return
   await writer(`${previewRoot}/${id}`, 'DELETE')
 }
 export type PreviewCommit = { request_id: string; name: string; selected: string[]; refresh_interval_secs: number | null; auto_refresh: boolean }
@@ -204,7 +205,7 @@ export function previewCommit(preview: OrderedPreview, draft: SourceDraft, selec
   if (error) throw new Error(error)
   const name = draft.name.trim()
   if (!name || [...name].length > 128 || name.includes('://') || /[\u0000-\u001f\u007f-\u009f]/.test(name)) throw new Error('来源名称需为 1–128 个字符，不能包含链接或控制字符。')
-  if (!sourceUuid(requestId)) throw new Error('请求标识无效。')
+  if (!isUuid(requestId)) throw new Error('请求标识无效。')
   return { request_id: requestId, name, selected: [...selected].sort(), refresh_interval_secs: draft.kind === 'url' ? refreshInterval(draft.interval) : null, auto_refresh: draft.kind === 'url' && draft.autoRefresh === 'on' }
 }
 export async function commitOrderedPreview(preview: OrderedPreview, body: PreviewCommit, writer = sourceRequest<unknown>): Promise<SourceReceipt> {

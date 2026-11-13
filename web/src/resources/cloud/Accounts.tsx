@@ -8,7 +8,8 @@ import type { Tone } from '../../components'
 import { ActionMenu } from '../../components/action-menu'
 import { CdtGuardSummary, cdtGuardFacts } from '../../operations/cloud/CdtGuard'
 import { cloudBusy } from '../../operations/cloud/guards'
-import { billUsable, charge, exactUsage, gib, message, powerStatus, stopMode, time, updated, utcOffset } from './types'
+import { bytes, numberText, time } from '../../format'
+import { billUsable, charge, exactUsage, message, powerStatus, stopMode, updated, utcOffset } from './types'
 import type { Account, Overview, Resource } from './types'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -48,9 +49,9 @@ function AccountUsage({ account }: { account: Account }) {
   const errors = [account.traffic_error && `用量：${message(account.traffic_error)}`, account.error_code && `${billing ? '账单' : '账号'}：${message(account.error_code)}`, balance && account.balance_error && `余额：${message(account.balance_error)}`].filter(Boolean).join('；')
   return <div data-slot="cloud-account-usage" className="grid gap-3 border-b px-4 py-3.5">
     <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:flex sm:flex-wrap">
-      <Figure label="中国内地 CDT">{traffic ? `${gib(traffic.mainland_bytes)} GiB` : '—'}</Figure>
-      <Figure label="海外 CDT">{traffic ? `${gib(traffic.overseas_bytes)} GiB` : '—'}</Figure>
-      {billing && <Figure label={`${account.bill?.month ?? '当月'} 已出账`}>{usage !== null ? `${usage.toLocaleString('zh-CN', { maximumFractionDigits: 3 })} GB` : '—'}</Figure>}
+      <Figure label="中国内地 CDT">{traffic ? `${bytes(traffic.mainland_bytes)}` : '—'}</Figure>
+      <Figure label="海外 CDT">{traffic ? `${bytes(traffic.overseas_bytes)}` : '—'}</Figure>
+      {billing && <Figure label={`${account.bill?.month ?? '当月'} 已出账`}>{usage !== null ? `${numberText(usage)} GB` : '—'}</Figure>}
       {balance && <Figure label="可用额度">{account.balance ? `${account.balance.available} ${account.balance.currency}` : '尚未查询'}</Figure>}
     </dl>
     <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs" aria-label="分项采集时间">
@@ -63,7 +64,7 @@ function AccountUsage({ account }: { account: Account }) {
     {billing && account.auto_enabled && account.enabled && <p className="m-0 text-[13px]">自动降速：已出账达到 {account.limit_gb} GB 后降低所选资源带宽{billUsable(account) ? '' : ' · 等待当月完整账单'}</p>}
     {errors && <ErrorNotice message={errors} />}
     {(traffic?.regions.length || billing) && <div className="flex flex-wrap gap-x-5 gap-y-2 text-[13px]">
-      {!!traffic?.regions.length && <details><summary className="text-muted-foreground">地域明细</summary><ul className="mt-2 grid gap-1">{traffic.regions.map(row => <li key={row.region} className="tabular-nums">{row.region}：{gib(row.bytes)} GiB</li>)}</ul></details>}
+      {!!traffic?.regions.length && <details><summary className="text-muted-foreground">地域明细</summary><ul className="mt-2 grid gap-1">{traffic.regions.map(row => <li key={row.region} className="tabular-nums">{row.region}：{bytes(row.bytes)}</li>)}</ul></details>}
       {billing && <details className="min-w-0 basis-full sm:basis-auto"><summary className="text-muted-foreground">账单项目（{account.bill?.rows.length ?? 0}）</summary><p className="text-muted-foreground mt-2 text-xs leading-relaxed">列出全部 CDT 项目，可能同时包含公网与跨地域流量，不按币种混加费用。无账单不代表未开通或没有用量。</p><div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>地域 / 实例</TableHead><TableHead>账单项目</TableHead><TableHead>用量</TableHead><TableHead>费用</TableHead></TableRow></TableHeader><TableBody>{account.bill?.rows.map((row, index) => <TableRow key={index}><TableCell>{row.region || '—'}<br /><code>{row.instance_id || '—'}</code></TableCell><TableCell>{row.billing_item || row.product_type || '—'}</TableCell><TableCell>{row.usage || '—'} {row.unit}</TableCell><TableCell>{row.amount || '—'} {row.currency || '币种未知'}</TableCell></TableRow>)}</TableBody></Table></div></details>}
     </div>}
   </div>
@@ -100,14 +101,14 @@ function ResourceDetails({ resource, account }: { resource: Resource; account?: 
     ...(state?.status === 'Stopped' ? [['停机模式', state.stopped_mode ? stopMode(state.stopped_mode) : '待核实']] as [string, ReactNode][] : []),
     ...(state && state.spot_strategy !== 'NoSpot' ? [['实例类型', `抢占式实例${state.interruption_behavior === 'Terminate' ? '，云端中断会释放实例，释放后无法保活' : ''}`]] as [string, ReactNode][] : []),
     ...cdtGuardFacts(resource),
-    ...(ecs ? [['IPv6 查询', `${time(resource.ipv6_checked_at ?? null)}${resource.ipv6_error ? ' · ' + message(resource.ipv6_error) + '；请核对 ecs:DescribeNetworkInterfaces 权限' : ''}`]] as [string, ReactNode][] : []),
-    ['查询时间', `配置 ${time(resource.checked_at)}${ecs ? ` · 运行状态 ${time(resource.power_checked_at ?? null)}` : ''}`],
+    ...(ecs ? [['IPv6 查询', `${time(resource.ipv6_checked_at, '尚未查询')}${resource.ipv6_error ? ' · ' + message(resource.ipv6_error) + '；请核对 ecs:DescribeNetworkInterfaces 权限' : ''}`]] as [string, ReactNode][] : []),
+    ['查询时间', `配置 ${time(resource.checked_at, '尚未查询')}${ecs ? ` · 运行状态 ${time(resource.power_checked_at, '尚未查询')}` : ''}`],
   ]
   const bill = resource.instance_bill
   return <details data-slot="cloud-resource-details" className="text-[13px]">
     <summary className="text-muted-foreground w-fit">详情</summary>
     <dl className="mt-2 grid gap-x-6 gap-y-2 sm:grid-cols-[max-content_minmax(0,1fr)]">{facts.map(([label, value]) => <div key={label} className="contents"><dt className="text-muted-foreground">{label}</dt><dd className="m-0 wrap-anywhere">{value}</dd></div>)}
-      {account?.billing_enabled !== false && <div className="contents"><dt className="text-muted-foreground">实例账单</dt><dd className="m-0 wrap-anywhere">{bill?.rows.length ? bill.rows.map((row, index) => <span key={index} className="block">{billItems[row.item] ?? '账单项目'}：{row.amount} {row.currency}</span>) : '无项目'}<span className="text-muted-foreground block text-xs">{bill?.month ?? '当月'} · {time(bill?.queried_at ?? null)} · 缓存 6 小时，跨月重新查询</span>{resource.bill_error && <span className="text-destructive block text-xs">{message(resource.bill_error)}</span>}</dd></div>}
+      {account?.billing_enabled !== false && <div className="contents"><dt className="text-muted-foreground">实例账单</dt><dd className="m-0 wrap-anywhere">{bill?.rows.length ? bill.rows.map((row, index) => <span key={index} className="block">{billItems[row.item] ?? '账单项目'}：{row.amount} {row.currency}</span>) : '无项目'}<span className="text-muted-foreground block text-xs">{bill?.month ?? '当月'} · {time(bill?.queried_at, '尚未查询')} · 缓存 6 小时，跨月重新查询</span>{resource.bill_error && <span className="text-destructive block text-xs">{message(resource.bill_error)}</span>}</dd></div>}
     </dl>
   </details>
 }

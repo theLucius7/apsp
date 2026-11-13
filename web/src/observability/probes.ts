@@ -1,4 +1,5 @@
 import { resourceWriteError } from '../hooks'
+import { isPort } from '@/lib/validate'
 
 export type ProbeNetwork = 'other' | 'telecom' | 'unicom' | 'mobile'
 export type ProbeMonitoring = { network: ProbeNetwork; region: string; ip_version: 'auto' | 'ipv4' | 'ipv6'; authorization: { basis: 'unconfirmed' | 'owned' | 'permission'; confirmed: boolean; source: string; scope: string; expires_at: number | null } }
@@ -119,7 +120,7 @@ export function probePayloadError(probe: Probe, now = Date.now()): string {
   if (!probe.name.trim() || controls.test(probe.name) || bytes(probe.name) > 128) return '拨测名称无效。'
   if (!['tcp', 'icmp'].includes(probe.kind) || !probe.target.trim() || !/^[A-Za-z0-9._:-]+$/.test(probe.target.trim()) || bytes(probe.target) > 253) return '拨测目标必须为主机名或 IP 地址。'
   if (!Number.isSafeInteger(probe.interval_secs) || probe.interval_secs < 10 || probe.interval_secs > 3600) return '拨测间隔应为 10–3600 秒的整数。'
-  if (probe.kind === 'tcp' && (!Number.isSafeInteger(probe.port) || probe.port! < 1 || probe.port! > 65535)) return '拨测端口应为 1–65535 的整数。'
+  if (probe.kind === 'tcp' && !isPort(probe.port)) return '拨测端口应为 1–65535 的整数。'
   if (controls.test(probe.carrier) || bytes(probe.carrier) > 64 || typeof probe.enabled !== 'boolean') return '拨测配置无效。'
   const monitor = probe.monitor, authorization = monitor?.authorization
   if (monitor && (!['any', 'ipv4', 'ipv6'].includes(monitor.address_family) || controls.test(monitor.region) || bytes(monitor.region) > 64)) return '目标地区或地址家族无效。'

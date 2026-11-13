@@ -10,8 +10,8 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { isPort } from '@/lib/validate'
 
-const validPort = (value: number) => Number.isInteger(value) && value >= 1 && value <= 65535
 const validAttempts = (value: number) => Number.isInteger(value) && value >= 1 && value <= 12
 
 /** Reads the instance's EIP into a preview, then starts the rotation only on an explicit confirmation. */
@@ -34,7 +34,7 @@ export function EipRotationEditor({ resource, close, saved, current }: { resourc
     <Field label="探测端口" hint="实例上正在监听、安全组已放行的 TCP 端口，用来判断新地址从国内能否连接。"><Input required type="number" min={1} max={65535} step={1} value={port} onChange={event => setPort(Number(event.target.value))} /></Field>
     <Field label="最多尝试几个新地址" hint="超过后放弃，实例绑回原地址。"><Input required type="number" min={1} max={12} step={1} value={attempts} onChange={event => setAttempts(Number(event.target.value))} /></Field>
     <p className="text-muted-foreground mt-3 text-xs leading-relaxed">下一步只读取云端配置并生成预览，确认后才会申请新地址。</p>
-  </fieldset>}</div><footer><Button variant="outline" type="button" disabled={action.busy} onClick={preview ? () => { setPreview(null); setConfirmed(false) } : close}>{preview ? '重新预览' : '取消'}</Button><Button type="submit" disabled={action.busy || Boolean(writeError()) || (preview ? !confirmed : !validPort(port) || !validAttempts(attempts))}>{action.busy ? '正在处理…' : preview ? '确认更换' : '读取并预览'}</Button></footer></form></Modal>
+  </fieldset>}</div><footer><Button variant="outline" type="button" disabled={action.busy} onClick={preview ? () => { setPreview(null); setConfirmed(false) } : close}>{preview ? '重新预览' : '取消'}</Button><Button type="submit" disabled={action.busy || Boolean(writeError()) || (preview ? !confirmed : !isPort(port) || !validAttempts(attempts))}>{action.busy ? '正在处理…' : preview ? '确认更换' : '读取并预览'}</Button></footer></form></Modal>
 }
 
 /** Closes a halted rotation on the administrator's word; nothing is bound or released by it. */

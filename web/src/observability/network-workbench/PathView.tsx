@@ -1,6 +1,7 @@
+import { isRecord } from '@/lib/validate'
 type Hop = { hop?: number; ip?: string | null; responders?: string[]; asn?: unknown; reverse_dns?: unknown; geolocation?: { latitude: number; longitude: number; source?: string; is_estimate?: boolean } | null; metadata_source?: string }
 export default function PathView({ data }: { data: unknown }) {
- if (!data || typeof data !== 'object') return null
+ if (!isRecord(data)) return null
  const value = data as { hops?: Hop[]; external_as_path?: unknown }
  if (!Array.isArray(value.hops) || !value.hops.length) return null
  const locations = value.hops.map((hop, index) => ({ hop, index, location: hop.geolocation })).filter(item => item.location && Number.isFinite(item.location.latitude) && Number.isFinite(item.location.longitude))

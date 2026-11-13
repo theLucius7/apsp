@@ -385,7 +385,7 @@ flowchart TD
 | 服务器价格与到期存了四处 | `servers.asset_settings`、`fleet_profiles.asset`、`fleet_cost_records`、`operations_cloud_links` | 四处的金额单位不同，合并要改表并定以哪一份为准 | 以成本的账本与资产设置为准，其余转换后删除（阶段 F） |
 | 预览后确认的存储六套 | 名称、基础网络、服务权益与流量服务各自的预览表 | 共性只有“过期加一次确认”，其余（结果记录、缓存正文、幂等键、类型化外键）各不相同 | 保留（ADR 0137）；新流程优先用作业行的预览状态 |
 | 事件日志余下三份 | `fleet_events`（观测）、`operations_history`（作业）、`expense_events`（成本） | 服务权益的两份已在 ADR 0137 合并；余下三份的所有者、键、读者与保留期都不同，不是同一对象 | 保留（ADR 0137） |
-| 前端的重复 | 第二套界面组件的残留（`DisplayNotice`、`Track`、`StatusPill`），8 个本地的时间格式函数，金额与字节的格式函数，17 处各自读取 `/api/control-center/me`，输入校验的小函数 | 合并都会改变页面上显示的内容（文字、位数或样式） | 开 PR，附截图审阅 |
+| 前端的重复（余下） | 面板 `Notice` 的错误色调与 `ErrorNotice` 仍是两种错误样式；云资源余额与账单、供应商的“最小货币单位”与 CDT 图表的数值仍不经 `money`/`bytes`；约 10 处 UTC 日期截取；5 处本地的权限判断；地区名称查找两份；`useNow`、`useDashboardPoll`、`Chart` 仍在观测的目录 | 界面组件、时间、字节、金额、当前管理员与输入校验已各合为一处（2026-11-14，草稿 PR），守卫 `web/tests/one-implementation.test.ts`；余下的合并同样会改变显示 | 逐项附截图审阅 |
 
 ### 12.3 仍带“插件”字样的契约
 

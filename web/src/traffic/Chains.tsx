@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Notice } from '@/components/panel'
+import { isPort, isRecord, isUuid } from '@/lib/validate'
 
 const root = '/api/traffic'
 
@@ -53,17 +54,16 @@ export function chainTemplateHops(template: ChainTemplate, hops: ChainDraftHop[]
 /** A new form starts from the two-hop template: the entry plus one exit. */
 const blankDraft = (): ChainBatchDraft => ({ mode: 'new', server_id: '', public_host: '', sni: '', entry_node_id: '', exit_node_id: '', hops: chainTemplateHops('two-hop', []), rows: [{ name: '', port: '' }] })
 
-const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 function validSettings(value: unknown) {
   if (value === undefined) return true
-  if (!record(value)) return false
+  if (!isRecord(value)) return false
   for (const [key, field] of Object.entries(value)) {
     if (['listen'].includes(key) && typeof field !== 'string') return false
-    if (key === 'public_port' && field !== null && (!Number.isSafeInteger(field) || Number(field) < 1 || Number(field) > 65535)) return false
+    if (key === 'public_port' && field !== null && !isPort(field)) return false
     if (key === 'tcp_fast_open' && typeof field !== 'boolean') return false
     if (key === 'tls_alpn' && (!Array.isArray(field) || !field.every(item => typeof item === 'string'))) return false
     if (['reality', 'hysteria2', 'tuic', 'anytls'].includes(key)) {
-      if (!record(field)) return false
+      if (!isRecord(field)) return false
       for (const [name, setting] of Object.entries(field)) {
         if (['handshake_server', 'fingerprint', 'congestion_control'].includes(name) && typeof setting !== 'string' && !(name === 'handshake_server' && setting === null)) return false
         if (['ignore_client_bandwidth', 'obfs_enabled', 'zero_rtt_handshake'].includes(name) && typeof setting !== 'boolean') return false
@@ -77,10 +77,10 @@ function validSettings(value: unknown) {
 export function validNodeList(value: unknown): value is Node[] {
   return Array.isArray(value) && value.every(node => node && Number.isSafeInteger(node.id) && node.id > 0 && Number.isSafeInteger(node.server_id) && node.server_id > 0
     && typeof node.name === 'string' && typeof node.protocol === 'string' && typeof node.public_host === 'string' && typeof node.sni === 'string'
-    && Number.isSafeInteger(node.port) && node.port >= 1 && node.port <= 65535 && (node.enabled === undefined || typeof node.enabled === 'boolean') && validSettings(node.settings)
-    && (node.protocol_config === undefined || record(node.protocol_config) && typeof node.protocol_config.type === 'string'
+    && isPort(node.port) && (node.enabled === undefined || typeof node.enabled === 'boolean') && validSettings(node.settings)
+    && (node.protocol_config === undefined || isRecord(node.protocol_config) && typeof node.protocol_config.type === 'string'
       && (node.protocol_config.method === undefined || typeof node.protocol_config.method === 'string')
-      && (node.protocol_config.tls === undefined || record(node.protocol_config.tls) && (node.protocol_config.tls.mode === 'acme' || node.protocol_config.tls.mode === 'manual')
+      && (node.protocol_config.tls === undefined || isRecord(node.protocol_config.tls) && (node.protocol_config.tls.mode === 'acme' || node.protocol_config.tls.mode === 'manual')
         && (node.protocol_config.tls.email === undefined || typeof node.protocol_config.tls.email === 'string')
         && (node.protocol_config.tls.configured === undefined || typeof node.protocol_config.tls.configured === 'boolean')
         && (node.protocol_config.tls.challenge === undefined || node.protocol_config.tls.challenge === 'http-01' || node.protocol_config.tls.challenge === 'tls-alpn-01'))))
@@ -89,7 +89,7 @@ export function validNodeList(value: unknown): value is Node[] {
 export function validServerList(value: unknown): value is RuntimeServer[] {
   return Array.isArray(value) && value.every(server => server && Number.isSafeInteger(server.id) && server.id > 0 && typeof server.name === 'string'
     && typeof server.enabled === 'boolean' && typeof server.online === 'boolean' && typeof server.read_only === 'boolean'
-    && (server.installation === undefined || record(server.installation) && typeof server.installation.state === 'string' && typeof server.installation.reason === 'string'
+    && (server.installation === undefined || isRecord(server.installation) && typeof server.installation.state === 'string' && typeof server.installation.reason === 'string'
       && Number.isSafeInteger(server.installation.target_rev) && Number(server.installation.target_rev) >= 0 && Number.isSafeInteger(server.installation.applied_rev) && Number(server.installation.applied_rev) >= 0))
     && new Set(value.map(server => server.id)).size === value.length
 }
@@ -178,7 +178,7 @@ export function prepareChainBatch(draft: ChainBatchDraft, snapshot: ProxyWriteSn
     const name = row.name.trim(), port = row.port.trim() ? Number(row.port.trim()) : null
     if (!name || Array.from(name).length > 128) throw new Error('每条链路需填写不超过 128 个字符的名称；草稿已保留。')
     if (draft.mode === 'new' && port !== null) {
-      if (!/^[1-9]\d*$/.test(row.port.trim()) || !Number.isSafeInteger(port) || port > 65535 || port === 18085) throw new Error('入口端口需为 1–65535 的整数，18085 为保留端口；留空可自动分配。')
+      if (!/^[1-9]\d*$/.test(row.port.trim()) || !isPort(port) || port === 18085) throw new Error('入口端口需为 1–65535 的整数，18085 为保留端口；留空可自动分配。')
       if (ports.has(port)) throw new Error('同一入口服务器上的批次端口不能重复；自动端口会分别分配。')
       ports.add(port)
     }
@@ -194,7 +194,7 @@ export function prepareChainBatch(draft: ChainBatchDraft, snapshot: ProxyWriteSn
 }
 function savedBatchRequest(pending: PendingChainBatch): ChainBatchRequest {
   const request = JSON.parse(pending.serialized) as ChainBatchRequest
-  if (!request || request.request_id !== pending.request_id || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(request.request_id)
+  if (!request || request.request_id !== pending.request_id || !isUuid(request.request_id)
     || !Array.isArray(request.items) || JSON.stringify(request.items) !== pending.draft || request.items.length < 1 || request.items.length > 32
     || JSON.stringify(request) !== pending.serialized) throw new Error('原批次信息不完整，请重新填写草稿。')
   return request

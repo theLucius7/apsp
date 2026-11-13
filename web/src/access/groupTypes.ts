@@ -1,4 +1,5 @@
 import type { ExternalEntry } from './externalAccessTypes'
+import { hasExactKeys, isInteger, isPort, isRecord, isUuid } from '@/lib/validate'
 /** `legacy_group_id` marks a group that stands for an original Nexus permission group (ADR 0115). */
 export type PolicyGroup = { id: number; name: string; node_ids: number[]; chain_ids: number[]; member_count: number; external_nodes?: ExternalEntry[]; legacy_group_id?: number | null; migrated_node_ids?: number[]; legacy_lines?: number }
 export type PackageGroup = { id: number; name: string; monthly_bytes: string | null; reset_day: number; reset_hour: number; reset_minute: number; timezone: string; duration_days: number }
@@ -33,61 +34,57 @@ export type PathState = { desired_generation: number; candidate_generation: numb
   last_error: string | null; dependencies: PathDependency[]; probe: PathProbe | null;
   generations: { generation: number; state: 'desired' | 'applied' | 'candidate' | 'recovery'; hops: PublicHop[] }[] }
 
-const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
-const integer = (value: unknown, minimum = 0): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum
-const nullableInteger = (value: unknown) => value === null || integer(value)
-const uuid = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
-const exact = (value: Record<string, unknown>, keys: string) => Object.keys(value).length === keys.split(' ').length && keys.split(' ').every(key => Object.hasOwn(value, key))
+const nullableInteger = (value: unknown) => value === null || isInteger(value)
 const nullableText = (value: unknown) => value === null || typeof value === 'string'
-const capabilities = (value: unknown) => object(value) && exact(value, 'tcp udp') && typeof value.tcp === 'boolean' && typeof value.udp === 'boolean'
+const capabilities = (value: unknown) => isRecord(value) && hasExactKeys(value, 'tcp udp') && typeof value.tcp === 'boolean' && typeof value.udp === 'boolean'
 export function validPublicHop(value: unknown): value is PublicHop {
-  if (!object(value) || !integer(value.position, 1) || value.position > 8) return false
-  if (value.kind === 'managed') return exact(value, 'kind position node_id endpoint_version_id endpoint') && integer(value.node_id, 1) && uuid(value.endpoint_version_id) && validResourceEndpoint(value.endpoint) && value.node_id === value.endpoint.id
-  return value.kind === 'subscription' && exact(value, 'kind position source_id source_name identity_epoch external_node_id node_version_id source_revision_id update_mode name protocol server server_port sni transport capabilities source_archived node_present update_error')
-    && integer(value.source_id, 1) && integer(value.identity_epoch, 1) && typeof value.source_name === 'string' && uuid(value.external_node_id) && uuid(value.node_version_id) && uuid(value.source_revision_id)
+  if (!isRecord(value) || !isInteger(value.position, 1) || value.position > 8) return false
+  if (value.kind === 'managed') return hasExactKeys(value, 'kind position node_id endpoint_version_id endpoint') && isInteger(value.node_id, 1) && isUuid(value.endpoint_version_id) && validResourceEndpoint(value.endpoint) && value.node_id === value.endpoint.id
+  return value.kind === 'subscription' && hasExactKeys(value, 'kind position source_id source_name identity_epoch external_node_id node_version_id source_revision_id update_mode name protocol server server_port sni transport capabilities source_archived node_present update_error')
+    && isInteger(value.source_id, 1) && isInteger(value.identity_epoch, 1) && typeof value.source_name === 'string' && isUuid(value.external_node_id) && isUuid(value.node_version_id) && isUuid(value.source_revision_id)
     && ['follow_node', 'pinned'].includes(String(value.update_mode)) && typeof value.name === 'string' && typeof value.protocol === 'string' && value.protocol.length > 0 && typeof value.server === 'string' && value.server.length > 0 && !/[\s/@?#\\]/.test(value.server)
-    && ['sni', 'transport', 'update_error'].every(key => nullableText(value[key])) && integer(value.server_port, 1) && value.server_port <= 65535 && capabilities(value.capabilities) && typeof value.source_archived === 'boolean' && typeof value.node_present === 'boolean'
+    && ['sni', 'transport', 'update_error'].every(key => nullableText(value[key])) && isPort(value.server_port) && capabilities(value.capabilities) && typeof value.source_archived === 'boolean' && typeof value.node_present === 'boolean'
 }
 export function validPublicHops(value: unknown): value is PublicHop[] { return Array.isArray(value) && value.length >= 1 && value.length <= 8 && value.every((hop, index) => validPublicHop(hop) && hop.position === index + 1) }
 export function validPathState(value: unknown): value is PathState {
-  if (!object(value)) return false
+  if (!isRecord(value)) return false
   const generations = value.generations
-  return exact(value, 'desired_generation candidate_generation applied_generation recovery_generation minimum_generation phase capabilities last_error dependencies probe generations')
-    && integer(value.desired_generation, 1) && ['candidate_generation', 'applied_generation', 'recovery_generation'].every(key => value[key] === null || integer(value[key], 1) && value[key] <= Number(value.desired_generation)) && integer(value.minimum_generation) && value.minimum_generation <= value.desired_generation
+  return hasExactKeys(value, 'desired_generation candidate_generation applied_generation recovery_generation minimum_generation phase capabilities last_error dependencies probe generations')
+    && isInteger(value.desired_generation, 1) && ['candidate_generation', 'applied_generation', 'recovery_generation'].every(key => value[key] === null || isInteger(value[key], 1) && value[key] <= Number(value.desired_generation)) && isInteger(value.minimum_generation) && value.minimum_generation <= value.desired_generation
     && ['preparing_dependencies', 'preparing_entry', 'probing_candidate', 'switching_entry', 'probing_switched', 'fixing_barrier', 'retiring_old', 'applied', 'restoring', 'failed', 'retiring', 'retired'].includes(String(value.phase))
     && capabilities(value.capabilities) && nullableText(value.last_error) && Array.isArray(value.dependencies) && value.dependencies.length <= 512
-    && value.dependencies.every(dep => object(dep) && exact(dep, 'server_id role hop_position generation stage required_revision applied_revision bundle_sha256 state observed_at')
-      && integer(dep.server_id, 1) && ['entry', 'managed'].includes(String(dep.role)) && (dep.role === 'entry' ? dep.hop_position === null : integer(dep.hop_position, 1) && dep.hop_position <= 8)
-      && integer(dep.generation, 1) && typeof dep.stage === 'string' && ['required_revision', 'applied_revision', 'observed_at'].every(key => nullableInteger(dep[key]))
+    && value.dependencies.every(dep => isRecord(dep) && hasExactKeys(dep, 'server_id role hop_position generation stage required_revision applied_revision bundle_sha256 state observed_at')
+      && isInteger(dep.server_id, 1) && ['entry', 'managed'].includes(String(dep.role)) && (dep.role === 'entry' ? dep.hop_position === null : isInteger(dep.hop_position, 1) && dep.hop_position <= 8)
+      && isInteger(dep.generation, 1) && typeof dep.stage === 'string' && ['required_revision', 'applied_revision', 'observed_at'].every(key => nullableInteger(dep[key]))
       && (dep.bundle_sha256 === null || typeof dep.bundle_sha256 === 'string' && /^[a-f0-9]{64}$/.test(dep.bundle_sha256)) && ['pending', 'ready', 'failed', 'retired'].includes(String(dep.state)))
-    && (value.probe === null || object(value.probe) && exact(value.probe, 'stage request_id state observed_at error') && ['candidate', 'switched'].includes(String(value.probe.stage)) && uuid(value.probe.request_id)
-      && ['pending', 'verified', 'failed', 'expired'].includes(String(value.probe.state)) && nullableInteger(value.probe.observed_at) && (value.probe.state !== 'verified' || integer(value.probe.observed_at)) && nullableText(value.probe.error))
-    && Array.isArray(generations) && generations.length >= 1 && generations.length <= 4 && generations.every(view => object(view) && exact(view, 'generation state hops')
-      && integer(view.generation, 1) && ['desired', 'applied', 'candidate', 'recovery'].includes(String(view.state)) && validPublicHops(view.hops)
+    && (value.probe === null || isRecord(value.probe) && hasExactKeys(value.probe, 'stage request_id state observed_at error') && ['candidate', 'switched'].includes(String(value.probe.stage)) && isUuid(value.probe.request_id)
+      && ['pending', 'verified', 'failed', 'expired'].includes(String(value.probe.state)) && nullableInteger(value.probe.observed_at) && (value.probe.state !== 'verified' || isInteger(value.probe.observed_at)) && nullableText(value.probe.error))
+    && Array.isArray(generations) && generations.length >= 1 && generations.length <= 4 && generations.every(view => isRecord(view) && hasExactKeys(view, 'generation state hops')
+      && isInteger(view.generation, 1) && ['desired', 'applied', 'candidate', 'recovery'].includes(String(view.state)) && validPublicHops(view.hops)
       && view.generation === value[`${view.state}_generation`]) && new Set(generations.map(view => view.state)).size === generations.length
     && generations.some(view => view.state === 'desired') && ['applied', 'candidate', 'recovery'].every(state => value[`${state}_generation`] === null || generations.some(view => view.state === state))
 }
 
 export function proxyResourceKey(resource: Pick<ProxyResource, 'kind' | 'id'>) { return `${resource.kind}:${resource.id}` }
 export function validResourceEndpoint(value: unknown): value is ResourceEndpoint {
-  return object(value) && exact(value, 'id name server_id server_name protocol port public_port public_host sni enabled node_deleted server_deleted plugin_enabled online desired_revision applied_revision applied_observed_at') && integer(value.id, 1) && integer(value.server_id, 1)
+  return isRecord(value) && hasExactKeys(value, 'id name server_id server_name protocol port public_port public_host sni enabled node_deleted server_deleted plugin_enabled online desired_revision applied_revision applied_observed_at') && isInteger(value.id, 1) && isInteger(value.server_id, 1)
     && ['name', 'server_name', 'protocol', 'public_host', 'sni'].every(key => typeof value[key] === 'string')
-    && integer(value.port, 1) && value.port <= 65535 && integer(value.public_port, 1) && value.public_port <= 65535
+    && isPort(value.port) && isPort(value.public_port)
     && ['enabled', 'node_deleted', 'server_deleted', 'plugin_enabled', 'online'].every(key => typeof value[key] === 'boolean')
     && ['desired_revision', 'applied_revision', 'applied_observed_at'].every(key => nullableInteger(value[key]))
 }
 export function validProxyResource(value: unknown): value is ProxyResource {
-  return object(value) && exact(value, 'kind id name entry exit available unavailable_reasons policy_group_ids user_count chain_refs settings_revision path_kind hops path_state') && (value.kind === 'direct' || value.kind === 'chain') && integer(value.id, 1)
+  return isRecord(value) && hasExactKeys(value, 'kind id name entry exit available unavailable_reasons policy_group_ids user_count chain_refs settings_revision path_kind hops path_state') && (value.kind === 'direct' || value.kind === 'chain') && isInteger(value.id, 1)
     && typeof value.name === 'string' && validResourceEndpoint(value.entry)
-    && (value.exit === null || validResourceEndpoint(value.exit)) && integer(value.settings_revision, 1)
+    && (value.exit === null || validResourceEndpoint(value.exit)) && isInteger(value.settings_revision, 1)
     && (value.kind === 'direct' ? value.exit === null && value.entry.id === value.id && value.path_kind === null && Array.isArray(value.hops) && value.hops.length === 0 && value.path_state === null
       : value.path_kind === 'ordered' && validPublicHops(value.hops) && validPathState(value.path_state)
         && (value.hops[value.hops.length - 1].kind === 'managed' ? validResourceEndpoint(value.exit) && value.exit.id === (value.hops[value.hops.length - 1] as Extract<PublicHop, { kind: 'managed' }>).node_id : value.exit === null)
         && JSON.stringify(value.path_state.generations.find(view => view.state === 'desired')?.hops) === JSON.stringify(value.hops))
     && typeof value.available === 'boolean' && Array.isArray(value.unavailable_reasons) && value.unavailable_reasons.every(reason => typeof reason === 'string')
-    && Array.isArray(value.policy_group_ids) && value.policy_group_ids.every(id => integer(id, 1)) && integer(value.user_count)
-    && Array.isArray(value.chain_refs) && value.chain_refs.every(ref => object(ref) && exact(ref, 'id name role hop_position generation state') && integer(ref.id, 1) && typeof ref.name === 'string' && ['entry', 'exit'].includes(String(ref.role))
-      && (ref.role === 'entry' ? ref.hop_position === null : integer(ref.hop_position, 1) && ref.hop_position <= 8) && integer(ref.generation, 1) && ['desired', 'applied', 'candidate', 'recovery', 'retained', 'unresolved'].includes(String(ref.state)))
+    && Array.isArray(value.policy_group_ids) && value.policy_group_ids.every(id => isInteger(id, 1)) && isInteger(value.user_count)
+    && Array.isArray(value.chain_refs) && value.chain_refs.every(ref => isRecord(ref) && hasExactKeys(ref, 'id name role hop_position generation state') && isInteger(ref.id, 1) && typeof ref.name === 'string' && ['entry', 'exit'].includes(String(ref.role))
+      && (ref.role === 'entry' ? ref.hop_position === null : isInteger(ref.hop_position, 1) && ref.hop_position <= 8) && isInteger(ref.generation, 1) && ['desired', 'applied', 'candidate', 'recovery', 'retained', 'unresolved'].includes(String(ref.state)))
 }
 export function validProxyResources(value: unknown): value is ProxyResource[] {
   return Array.isArray(value) && value.every(validProxyResource) && new Set(value.map(proxyResourceKey)).size === value.length

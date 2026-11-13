@@ -7,8 +7,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 // Building blocks every board shares: the public dashboard, the overview and the
 // headline figures above a page's list. They read the console's design tokens.
 
+/** How a reading looks: fine, needs a look, failing, not applicable or plain information. */
+export type Tone = 'good' | 'warning' | 'danger' | 'muted' | 'info'
 export const toneText: Record<string, string> = { good: 'text-success', warning: 'text-warning', danger: 'text-destructive', muted: 'text-muted-foreground', info: 'text-info' }
 export const toneFill: Record<string, string> = { good: 'bg-success', warning: 'bg-warning', danger: 'bg-destructive', muted: 'bg-muted-foreground', info: 'bg-info' }
+/** Probe quality grades, from probeTone(): five steps in order; "poor" mixes warning and danger. */
+export const qualityText: Record<string, string> = { good: 'text-success', fair: 'text-info', warning: 'text-warning', poor: 'text-[color-mix(in_oklch,var(--warning),var(--destructive))]', danger: 'text-destructive', empty: 'text-muted-foreground' }
+export const qualityFill: Record<string, string> = { good: 'bg-success', fair: 'bg-info', warning: 'bg-warning', poor: 'bg-[color-mix(in_oklch,var(--warning),var(--destructive))]', danger: 'bg-destructive', empty: 'bg-muted-foreground/20' }
 
 /** Card surface used for every board section; the same as the console's panels. */
 export const surface = 'bg-card text-card-foreground shadow-soft rounded-xl border'

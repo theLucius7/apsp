@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
+import { clock, shortTime } from '../../format'
 import { segments } from './data'
 import type { Point } from './data'
 import { surface } from '@/components/board'
@@ -9,8 +10,6 @@ export type Series = { label: string; color: string; points: Point[] }
 const height = 210, right = 12, top = 12, bottom = 30
 // Axis labels are 10px: about 6px per Latin character and 10px per CJK one.
 const labelWidth = (text: string) => [...text].reduce((total, char) => total + (char.charCodeAt(0) > 0x2e80 ? 10 : 6), 0)
-const clock = (value: number) => new Date(value).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-const date = (value: number) => new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour12: false, hour: '2-digit', minute: '2-digit' })
 
 /**
  * A monotone cubic curve through the points (Fritsch–Carlson). It passes through
@@ -75,7 +74,8 @@ export default function Chart({ title, series, from, to, gap, maximum, format }:
     return Math.abs(point.at - selected) <= (point.range ? gap / 2 : Math.min(gap / 2, 30_000)) ? point : null
   }
   const aggregated = visible.some(item => item.points.some(point => point.range))
-  const axisTime = to - from >= 86_400_000 ? date : clock
+  // Points are in milliseconds; a range of a day or more names the day as well.
+  const axisTime = (at: number) => to - from >= 86_400_000 ? shortTime(at / 1000) : clock(at / 1000)
   const onKey = (event: KeyboardEvent<SVGSVGElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) || !times.length) return
     event.preventDefault()

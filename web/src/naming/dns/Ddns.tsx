@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { api } from '../../api'
 import { Badge, Confirm, Empty, ErrorNotice, Loading, PageHeader, Refresh, DialogPresence } from '../../components'
 import { ActionMenu } from '../../components/action-menu'
-import { ago } from '../../format'
+import { ago, time } from '../../format'
 import { ddnsWrite, providers, ruleState } from './types'
 import type { DdnsRule } from './types'
 import { resourceWriteError, useAction, useResource } from '../../hooks'
@@ -24,7 +24,7 @@ const MAX_RULES = 32
 function Address({ rule, known }: { rule: DdnsRule; known: boolean }) {
   const next = known ? rule.candidate_ip : null
   const shown = next ?? rule.last_ip
-  const checked = rule.last_success_at === null ? null : new Date(rule.last_success_at * 1000).toLocaleString('zh-CN', { hour12: false })
+  const checked = rule.last_success_at === null ? null : time(rule.last_success_at)
   return <div className="min-w-0">
     <div className="font-mono text-xs wrap-anywhere">{shown ?? '—'}</div>
     <small className="text-muted-foreground block text-xs" title={checked ?? undefined}>{next && rule.last_ip && next !== rule.last_ip ? `DNS 现为 ${rule.last_ip}` : rule.last_success_at === null ? '尚未同步' : rule.last_success_at > 0 ? `${ago(rule.last_success_at)}核对` : `${checked} 核对`}</small>

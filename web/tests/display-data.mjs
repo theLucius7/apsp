@@ -360,11 +360,11 @@ try {
     holdLive = true; holdDetail = true
     await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' }); document.dispatchEvent(new Event('visibilitychange')) })
     await page.getByText('超过 15 秒未收到新的服务器快照，状态待确认。', { exact: false }).waitFor()
-    assert.equal(await page.locator('[data-slot=detail-hero] [data-slot=status]').innerText(), '状态未知')
+    assert.equal(await page.locator('[data-slot=detail-hero] [data-slot=badge]').innerText(), '状态未知')
     assert.equal(await page.locator('[data-slot=live-network] strong').first().innerText(), '—')
     await settle(); assert(heldLive && heldDetail)
     heldLive(); heldDetail(); heldLive = undefined; heldDetail = undefined
-    await page.locator('[data-slot=detail-hero] [data-slot=status]').filter({ hasText: '在线' }).waitFor()
+    await page.locator('[data-slot=detail-hero] [data-slot=badge]').filter({ hasText: '在线' }).waitFor()
     await page.getByRole('link', { name: '返回服务器看板', exact: true }).click()
     await page.locator('[data-slot=server-card]').first().waitFor()
     assert.deepEqual(writes, Array(3).fill('/api/exchange-rates/refresh'), 'Only explicitly requested backend FX refreshes write')

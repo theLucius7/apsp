@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
-import { currencyDigits, minorToUnits, parseMinor } from '../src/costs/expenses/types'
+import { minorToUnits, parseMinor } from '../src/costs/expenses/types'
+import { currencyDigits } from '../src/format'
 import { dueState, itemRow, ledgerTotals, monthGroups, monthlyByCategory, paymentYears, selectRows, serverMonthly, serverRow, signedUnits, validItems, validServers } from '../src/costs/expenses/model'
 import type { Payment, ServerRenewal } from '../src/costs/expenses/model'
 import { itemInput } from '../src/costs/expenses/types'
@@ -44,11 +45,11 @@ test('items renew and servers expire, each with its own words for the same dates
 
 test('rows carry the price, the monthly cost in the ledger currency and the label names', () => {
   const item = itemRow(expense(1), context)
-  expect(item).toMatchObject({ kind: 'item', price: 'USD 20', cycle: '每月', ownMonthly: 20, category: 'AI 服务', payment: '信用卡', payer: '' })
+  expect(item).toMatchObject({ kind: 'item', price: 'USD\u00a020.00', cycle: '每月', ownMonthly: 20, category: 'AI 服务', payment: '信用卡', payer: '' })
   expect(item.monthly).toBeCloseTo(20 / 0.14, 6)
   expect(itemRow(expense(2, { currency: 'JPY' }), context).monthly).toBeNull()
   const host = serverRow(server(7), context)
-  expect(host).toMatchObject({ kind: 'server', price: 'CNY 30', cycle: '每 30 天', inactive: false })
+  expect(host).toMatchObject({ kind: 'server', price: 'CNY\u00a030.00', cycle: '每 30 天', inactive: false })
   expect(host.monthly).toBeCloseTo(30 / 30 * 365.25 / 12, 6)
   expect(serverMonthly(server(8, { cycle_days: 0 }))).toBeNull()
   expect(serverRow(server(9, { amount_units: null }), context)).toMatchObject({ price: null, monthly: null })

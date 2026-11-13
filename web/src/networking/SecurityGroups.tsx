@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { ErrorNotice } from '../components'
-import { resourceWriteError, useAction, useResource, settingsPoll } from '../hooks'
+import { resourceWriteError, useAction, useResource } from '../hooks'
 import type { ActionRunner } from '../hooks'
 import type { CloudResource } from '../operations/types'
-import { time } from '../operations/types'
+import { time } from '../format'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
+import { useActor } from '@/lib/actor'
+import type { Actor } from '@/lib/actor'
 
-type Actor = { admin_id: number; role: string; all_servers: boolean; capabilities: string[]; server_ids: number[] }
 type Membership = { current_groups: string[]; managed_groups: string[]; protected_groups: string[]; server_ids: number[]; region: string; instance_id: string; resource_revision: number; account_revision: number }
 type Fee = { status: string; reason: string }
 type GroupOperation = {
@@ -38,7 +39,7 @@ function authorization(actor: Actor | undefined, serverIds: number[], write: boo
 }
 
 export default function SecurityGroups({ resources, run, version }: { resources: CloudResource[]; run: ActionRunner; version: number }) {
-  const actor = useResource<Actor>('/api/control-center/me', settingsPoll)
+  const actor = useActor()
   const [resourceId, setResourceId] = useState(''), [target, setTarget] = useState<string[]>([]), [extra, setExtra] = useState('')
   const [operationId, setOperationId] = useState(''), [stopped, setStopped] = useState(false), [evidence, setEvidence] = useState(''), [message, setMessage] = useState(''), [submitting, setSubmitting] = useState(false)
   const selected = resources.find(resource => resource.id === resourceId)
@@ -109,7 +110,7 @@ export default function SecurityGroups({ resources, run, version }: { resources:
       {current.error_code && <p className="text-destructive text-sm" role="alert">官方错误：{current.error_code}</p>}
       {current.steps.length > 0 && <div className="min-w-0 overflow-auto"><Table><TableHeader><TableRow><TableHead className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">附加组</TableHead><TableHead className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">动作</TableHead><TableHead className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">真实阶段</TableHead><TableHead className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">官方请求证据</TableHead></TableRow></TableHeader><TableBody>{current.steps.map((step, index) => <TableRow key={`${step.group_id}-${index}`}><TableCell className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">{step.group_id}</TableCell><TableCell className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">{step.action === 'join' ? '加入' : '退出'}</TableCell><TableCell className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">{stepStates[step.state] ?? step.state}</TableCell><TableCell className="border-b p-2.5 text-left align-top max-sm:min-w-24 max-sm:p-1.5">{step.request_id || '尚无官方请求编号'}{step.error_code && <small className="block max-w-[30rem] opacity-80">{step.error_code}</small>}{step.observed_groups && <small className="block max-w-[30rem] opacity-80">官方观测 {step.observed_groups.join('、') || '无组'}</small>}</TableCell></TableRow>)}</TableBody></Table></div>}
       {current.reconciliation != null && <details><summary className="cursor-pointer text-sm font-medium">新的官方只读证据与人工结论（原请求结果仍未知）</summary><pre className="bg-muted/50 max-h-96 overflow-auto rounded-lg p-3 whitespace-pre-wrap wrap-anywhere">{JSON.stringify(current.reconciliation, null, 2)}</pre></details>}
-      {current.actual_groups && <p>最新实际组关系：{current.actual_groups.join('、') || '无'} · {time(current.observed_at)}。</p>}
+      {current.actual_groups && <p>最新实际组关系：{current.actual_groups.join('、') || '无'} · {time(current.observed_at, '暂无观测')}。</p>}
       {['unknown', 'running'].includes(current.status) && <><p>禁止重复确认、自动重试与盲目回退。下面的核对会调用新的官方只读接口；人工结束保留原请求未知结果。</p><fieldset disabled={Boolean(unavailable) || action.busy || submitting || current.requested_by !== actor.getCurrent()?.admin_id}><label className="my-2 grid min-w-0 flex-[1_1_12rem] gap-1.5 text-sm has-[[role=checkbox]]:flex has-[[role=checkbox]]:flex-none has-[[role=checkbox]]:items-center"><Checkbox checked={stopped} onCheckedChange={checked => setStopped(checked === true)} />已人工确认原官方请求执行结束</label><label className="my-2 grid min-w-0 flex-[1_1_12rem] gap-1.5 text-sm has-[[role=checkbox]]:flex has-[[role=checkbox]]:flex-none has-[[role=checkbox]]:items-center">核对步骤、证据来源及结论（32 至 4096 字节，不填凭据）<Textarea className="min-h-20 w-full" value={evidence} maxLength={4096} onChange={event => setEvidence(event.target.value)} /></label><Button variant="outline" disabled={!stopped || evidenceBytes(evidence) < 32 || evidenceBytes(evidence) > 4096 || !receipt.fresh} onClick={reconcile}>验证身份并进行新的官方读取核对</Button></fieldset></>}
     </div>}
   </section>

@@ -5,14 +5,15 @@ import { resourceWriteError, useAction, useResource } from '../hooks'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
+import { isRecord } from '@/lib/validate'
 
 type Limits = { user_id: number; revision: number; upload_mbps: number; download_mbps: number; max_connections: number; servers?: { server_id: number; name: string; state: 'pending' | 'device_confirmed' }[] }
 export function validLimits(value: unknown): value is Limits {
-  if (!value || typeof value !== 'object') return false
+  if (!isRecord(value)) return false
   const item = value as Limits
   return Number.isSafeInteger(item.user_id) && item.user_id > 0 && Number.isSafeInteger(item.revision) && item.revision >= 0
     && [item.upload_mbps, item.download_mbps, item.max_connections].every(n => Number.isSafeInteger(n) && n >= 0 && n <= 1000000)
-    && Array.isArray(item.servers) && item.servers.every(server => server !== null && typeof server === 'object' && Number.isSafeInteger(server.server_id) && typeof server.name === 'string' && ['pending', 'device_confirmed'].includes(server.state))
+    && Array.isArray(item.servers) && item.servers.every(server => isRecord(server) && Number.isSafeInteger(server.server_id) && typeof server.name === 'string' && ['pending', 'device_confirmed'].includes(server.state))
 }
 
 export default function UserLimits({ id, userError, refreshRevision }: { id: number; userError: () => string; refreshRevision: number }) {

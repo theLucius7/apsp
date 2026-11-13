@@ -3,8 +3,7 @@ import type { ReactNode } from 'react'
 import { ExternalLinkIcon, PlusIcon } from 'lucide-react'
 import { api } from '../../api'
 import { Badge, ErrorNotice, Field, Modal } from '../../components'
-import type { Tone as BadgeTone } from '../../components'
-import { money } from '../currency/currency'
+import { currencyDigits, money } from '../../format'
 import { toneText } from '@/components/board'
 import { useAction, useResource } from '../../hooks'
 import { ActionMenu } from '@/components/action-menu'
@@ -16,14 +15,13 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { newRequestId } from '@/lib/request-id'
 import { recordKinds, validCosts, validItemPayments } from './model'
-import type { ItemRow, LedgerRow, ServerRow, Tone } from './model'
+import type { ItemRow, LedgerRow, ServerRow } from './model'
 import { confirmed, operationText, runOperation } from './operations'
 import type { ItemOperation } from './operations'
-import { amount, currencies, currencyDigits, minorToUnits, parseMinor, root } from './types'
+import { amount, currencies, minorToUnits, parseMinor, root } from './types'
 import type { Expense } from './types'
 import type { Ledger } from './useLedger'
 
-const badgeTone: Record<Tone, BadgeTone> = { good: 'good', warning: 'warm', danger: 'bad', info: 'neutral', muted: 'neutral' }
 const isoDay = (at: number | null | undefined) => at ? new Date(at * 1000).toISOString().slice(0, 10) : ''
 
 /** Facts as a two-column list; empty facts are left out instead of showing dashes. */
@@ -37,7 +35,7 @@ function Facts({ facts }: { facts: [string, ReactNode, boolean?][] }) {
 
 function Heading({ row }: { row: LedgerRow }) {
   return <div className="flex flex-wrap items-center gap-2">
-    <Badge tone={badgeTone[row.due.status.tone]}>{row.due.status.label}</Badge>
+    <Badge tone={row.due.status.tone}>{row.due.status.label}</Badge>
     {!row.inactive && <span className={cn('text-xs', row.due.next.tone === 'muted' ? 'text-muted-foreground' : toneText[row.due.next.tone])}>{row.kind === 'server' ? '到期' : '下次续费'} {row.next}{row.due.days !== null ? ` · ${row.due.days < 0 ? `已过 ${-row.due.days} 天` : row.due.days === 0 ? '今天' : `${row.due.days} 天后`}` : ''}</span>}
   </div>
 }

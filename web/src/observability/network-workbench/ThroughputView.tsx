@@ -1,7 +1,8 @@
+import { numberText } from '../../format'
 import { curvePoints, throughput } from './throughput'
 import type { IntervalPoint } from './throughput'
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-const metric = (value: number | null, suffix = '') => value === null ? '未知' : `${value.toLocaleString('zh-CN', { maximumFractionDigits: 3 })}${suffix}`
+const metric = (value: number | null, suffix = '') => value === null ? '未知' : `${numberText(value)}${suffix}`
 const directionLabels: Record<string, string> = { forward: '客户端 → 监听端', reverse: '监听端 → 客户端', bidirectional: '客户端 ⇄ 监听端（分别采样）' }
 const colors = ['var(--chart-2)', 'var(--chart-3)', 'var(--success)', 'var(--destructive)']
 export default function ThroughputView({ observation, role, sourceServer, clientSource }: { observation: Record<string, unknown> | null; role: string; sourceServer: number | null; clientSource?: string }) {

@@ -1,4 +1,5 @@
 import type { roleNames } from './resourceTypes'
+import { isInteger, isPort, isRecord } from '@/lib/validate'
 
 /** One row of the node catalog: a managed node or an adopted external node. */
 export type CatalogNode = {
@@ -26,15 +27,13 @@ export function renamed(name: string, mode: string, value: string, replacement =
 export function parsedTags(value: string): string[] { return [...new Set(value.split(/[,，\n]/).map(tag => tag.trim()).filter(Boolean))] }
 export function tagsError(tags: string[]): string { return tags.length > 16 || tags.some(tag => new TextEncoder().encode(tag).length > 64) ? '最多 16 个标签，每个标签不超过 64 字节。' : '' }
 
-const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
-const integer = (value: unknown, minimum = 0): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum
 const text = (value: unknown) => typeof value === 'string'
 export const validCatalogRevision = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
 export function validCatalogNode(value: unknown): value is CatalogNode {
-  if (!object(value) || !['direct', 'external'].includes(String(value.kind)) || !integer(value.id, 1) || !validCatalogRevision(value.revision) || !['name', 'original_name', 'note', 'stage'].every(key => text(value[key])) || !Array.isArray(value.tags) || !value.tags.every(text) || !integer(value.sort_order, Number.MIN_SAFE_INTEGER) || !['enabled', 'available', 'tcp', 'udp'].every(key => typeof value[key] === 'boolean') || !integer(value.reference_count)) return false
-  if (!['protocol', 'public_host'].every(key => value[key] === null || text(value[key])) || !(value.port === null || integer(value.port, 1) && value.port <= 65535)) return false
-  if (value.kind === 'external') return value.role === 'external' && value.server_id === null && value.server_name === null && integer(value.source_id, 1) && text(value.source_name) && integer(value.identity_epoch, 1) && (value.version_id === null || integer(value.version_id, 1))
-  return ['direct', 'managed_hop'].includes(String(value.role)) && integer(value.server_id, 1) && text(value.server_name) && text(value.protocol) && text(value.public_host) && integer(value.port, 1)
+  if (!isRecord(value) || !['direct', 'external'].includes(String(value.kind)) || !isInteger(value.id, 1) || !validCatalogRevision(value.revision) || !['name', 'original_name', 'note', 'stage'].every(key => text(value[key])) || !Array.isArray(value.tags) || !value.tags.every(text) || !isInteger(value.sort_order, Number.MIN_SAFE_INTEGER) || !['enabled', 'available', 'tcp', 'udp'].every(key => typeof value[key] === 'boolean') || !isInteger(value.reference_count)) return false
+  if (!['protocol', 'public_host'].every(key => value[key] === null || text(value[key])) || !(value.port === null || isPort(value.port))) return false
+  if (value.kind === 'external') return value.role === 'external' && value.server_id === null && value.server_name === null && isInteger(value.source_id, 1) && text(value.source_name) && isInteger(value.identity_epoch, 1) && (value.version_id === null || isInteger(value.version_id, 1))
+  return ['direct', 'managed_hop'].includes(String(value.role)) && isInteger(value.server_id, 1) && text(value.server_name) && text(value.protocol) && text(value.public_host) && isInteger(value.port, 1)
 }
 export function validCatalog(value: unknown): value is CatalogNode[] {
   return Array.isArray(value) && value.every(validCatalogNode) && new Set(value.map(catalogKey)).size === value.length

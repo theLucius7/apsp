@@ -14,12 +14,9 @@ import	web/src/costs/cloud/TrafficHistory.tsx	web/src/observability/display/Char
 import	web/src/costs/cloud/TrafficHistory.tsx	web/src/resources/cloud/types.ts	costs->resources
 import	web/src/costs/cloud/history.ts	web/src/resources/cloud/types.ts	costs->resources
 import	web/src/costs/currency/CurrencyContext.tsx	web/src/observability/display/useDashboardPoll.ts	costs->observability
-import	web/src/costs/expenses/Spending.tsx	web/src/observability/display/ui.tsx	costs->observability
 import	web/src/governance/system/BackupRecovery.tsx	web/src/operations/types.ts	governance->operations
-import	web/src/governance/system/BackupSchedules.tsx	web/src/operations/types.ts	governance->operations
 import	web/src/governance/system/Settings.tsx	web/src/costs/currency/ExchangeRateSettings.tsx	governance->costs
 import	web/src/governance/system/Settings.tsx	web/src/observability/TelemetryPolicy.tsx	governance->observability
-import	web/src/naming/certificates/AcmePlan.tsx	web/src/networking/configuration/types.ts	naming->networking
 import	web/src/naming/certificates/CertificateDeployments.tsx	web/src/networking/configuration/types.ts	naming->networking
 import	web/src/naming/certificates/Certificates.tsx	web/src/networking/configuration/types.ts	naming->networking
 import	web/src/networking/SecurityGroups.tsx	web/src/operations/types.ts	networking->operations
@@ -70,7 +67,6 @@ import	web/src/resources/cloud/CloudTab.tsx	web/src/costs/SupplierComparison.tsx
 import	web/src/resources/cloud/CloudTab.tsx	web/src/networking/SecurityGroups.tsx	resources->networking
 import	web/src/resources/cloud/CloudTab.tsx	web/src/operations/types.ts	resources->operations
 import	web/src/resources/cloud/Editors.tsx	web/src/operations/cloud/guards.ts	resources->operations
-import	web/src/resources/cloud/HetznerInventory.tsx	web/src/operations/types.ts	resources->operations
 import	web/src/resources/servers/AgentSettings.tsx	web/src/observability/servers/TelemetrySettings.tsx	resources->observability
 import	web/src/resources/servers/AgentTasks.tsx	web/src/observability/servers/ServerProbes.tsx	resources->observability
 import	web/src/resources/servers/AgentTasks.tsx	web/src/operations/CommandsPanel.tsx	resources->operations

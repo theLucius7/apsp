@@ -1,14 +1,15 @@
 import type { ReactNode } from 'react'
 import { ActivityIcon, ArrowDownIcon, ArrowUpIcon, ClockIcon, CpuIcon, DatabaseIcon, NetworkIcon, ServerIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { time, uptime } from '../../format'
+import { bytes, time, uptime } from '../../format'
 import type { Server } from '../../types'
-import { defaultAssets, trafficSize } from '../../resources/server-assets'
+import { defaultAssets } from '../../resources/server-assets'
 import { count, fresh, network, number, percentage, ratio, size, speed } from './data'
 import ProbeCharts from './ProbeCharts'
 import ResourceCharts from './ResourceCharts'
-import { DisplayNotice, Track } from './ui'
+import { Meter } from '../../components'
 import { surface } from '@/components/board'
+import { Notice } from '@/components/panel'
 import { cn } from '@/lib/utils'
 import { ProgressRing } from '@/components/progress-ring'
 
@@ -73,7 +74,7 @@ export default function ServerMonitor({ server, base, now, unavailable, modern, 
   const load = [metrics.load_1, metrics.load_5, metrics.load_15].map(value => number(value) === null ? '—' : value!.toFixed(2)).join(' / ')
   const disks = metrics.disks ?? [], gpus = metrics.gpus ?? [], interfaces = Object.entries(metrics.network_interfaces ?? {})
   return <div data-slot="server-monitor" className="flex min-w-0 flex-col gap-4">
-    {!live && <DisplayNotice>{unavailable ? '超过 15 秒未收到新的服务器快照，状态待确认。' : !server.online ? (server.registered ?? Boolean(server.device_public_key)) ? '设备离线。' : '设备尚未接入。' : server.metrics_stale ? '指标已过期；在线心跳不代表指标仍在采集。' : '采样时间未知，无法确认指标是否仍然有效。'}以下为最后上报的数据，实时速率暂不显示。</DisplayNotice>}
+    {!live && <Notice tone="warning" className="mb-0">{unavailable ? '超过 15 秒未收到新的服务器快照，状态待确认。' : !server.online ? (server.registered ?? Boolean(server.device_public_key)) ? '设备离线。' : '设备尚未接入。' : server.metrics_stale ? '指标已过期；在线心跳不代表指标仍在采集。' : '采样时间未知，无法确认指标是否仍然有效。'}以下为最后上报的数据，实时速率暂不显示。</Notice>}
     <section data-slot="live-strip" aria-label="实时状态" className="grid min-w-0 grid-cols-6 gap-2.5 sm:gap-3 xl:grid-cols-5">
       <Gauge label="处理器" value={number(metrics.cpu_percent)} main={percentage(metrics.cpu_percent)} detail={`${info.cpu_cores ? `${info.cpu_cores} 核 · ` : ''}负载 ${number(metrics.load_1) === null ? '—' : metrics.load_1!.toFixed(2)}`} />
       <Gauge label="内存" value={ratio(metrics.memory_used, info.memory_total)} main={size(metrics.memory_used)} detail={`共 ${size(info.memory_total)}`} />
@@ -86,9 +87,9 @@ export default function ServerMonitor({ server, base, now, unavailable, modern, 
       </div>
       <div data-slot="live-traffic" className={cn(surface, 'col-span-3 grid min-w-0 content-center gap-1.5 px-3.5 py-3 xl:col-span-1')}>
         <span className="text-muted-foreground flex items-center justify-between gap-2 text-xs"><span>本期流量</span>{traffic?.exceeded ? <span className="text-destructive">额度已用尽</span> : traffic?.incomplete ? <span className="text-warning">观测不完整</span> : null}</span>
-        <strong className="truncate text-base leading-tight font-semibold tabular-nums">{trafficKnown ? trafficSize(traffic?.used) : '等待采样'}<small className="text-muted-foreground ml-1 text-xs font-normal">/ {quota ? trafficSize(asset.traffic_limit) : '不限'}</small></strong>
-        {quota && traffic?.percent != null ? <Track value={traffic.percent} tone={traffic.exceeded ? 'danger' : traffic.percent >= 80 ? 'warning' : 'good'} label={`流量额度已使用 ${traffic.percent.toFixed(1)}%`} /> : <span className="bg-foreground/10 block h-1 rounded-full" aria-hidden="true" />}
-        <small className="text-muted-foreground truncate text-xs">每月 {asset.reset_day} 日重置{traffic?.remaining != null && quota ? ` · 剩余 ${trafficSize(traffic.remaining)}` : ''}</small>
+        <strong className="truncate text-base leading-tight font-semibold tabular-nums">{trafficKnown ? bytes(traffic?.used, '—') : '等待采样'}<small className="text-muted-foreground ml-1 text-xs font-normal">/ {quota ? bytes(asset.traffic_limit, '—') : '不限'}</small></strong>
+        <Meter value={quota ? traffic?.percent : null} tone={!quota || traffic?.percent == null ? 'muted' : traffic.exceeded ? 'danger' : traffic.percent >= 80 ? 'warning' : 'good'} label={quota && traffic?.percent != null ? `流量额度已使用 ${traffic.percent.toFixed(1)}%` : undefined} className="mt-0 max-w-none" />
+        <small className="text-muted-foreground truncate text-xs">每月 {asset.reset_day} 日重置{traffic?.remaining != null && quota ? ` · 剩余 ${bytes(traffic.remaining, '—')}` : ''}</small>
       </div>
     </section>
     <ResourceCharts key={`resources/${base}`} server={server} base={base} now={now} unavailable={unavailable} />

@@ -1,8 +1,9 @@
 import type { PasskeyInfo } from '../governance/passkeys'
+import { isRecord } from '@/lib/validate'
 
 export type PortalAccess = { configuration: PasskeyInfo; keys: number; url: string | null; activation_expires_at: number | null }
 export function validPortalAccess(value: unknown): value is PortalAccess {
-  if (!value || typeof value !== 'object') return false
+  if (!isRecord(value)) return false
   const access = value as Partial<PortalAccess>, configuration = access.configuration
   if (!configuration) return false
   return Number.isSafeInteger(access.keys) && access.keys! >= 0

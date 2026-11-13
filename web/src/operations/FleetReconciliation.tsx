@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import type { ActionRunner } from '../hooks'
-import { time } from './types'
+import { time } from '../format'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -61,7 +61,7 @@ export default function FleetReconciliation({ job, server, original, run, refres
       if (!request || request.id !== inspection || !current.current(request)) return
       const value = await api<Inspection>(`/api/fleet/operations/${request.id}`)
       if (current.accepts(request, value)) setReceipt(value)
-    }) }}>读取实际只读回执</Button><details><summary className="cursor-pointer text-sm font-medium">查看设备观测</summary><pre className="bg-muted/50 max-h-[28rem] overflow-auto rounded-lg border p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap wrap-anywhere">{JSON.stringify(receipt, null, 2)}</pre></details><p>实际回执时间：{time(receipt?.result?.completed_at)}</p></>}
+    }) }}>读取实际只读回执</Button><details><summary className="cursor-pointer text-sm font-medium">查看设备观测</summary><pre className="bg-muted/50 max-h-[28rem] overflow-auto rounded-lg border p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap wrap-anywhere">{JSON.stringify(receipt, null, 2)}</pre></details><p>实际回执时间：{time(receipt?.result?.completed_at, '暂无观测')}</p></>}
     <label className="flex items-center gap-2 text-sm"><Checkbox checked={stopped} onCheckedChange={checked => setStopped(checked === true)} />已实际确认原操作进程停止</label>
     <label className="flex items-center gap-2 text-sm"><Checkbox checked={cleaned} onCheckedChange={checked => setCleaned(checked === true)} />已实际核对并清理临时文件、监听与恢复资源</label>
     <label className="grid min-w-0 gap-1.5 text-sm">实际观察时间<Input type="datetime-local" value={observedAt} onChange={event => setObservedAt(event.target.value)} /></label>

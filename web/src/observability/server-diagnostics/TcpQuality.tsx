@@ -11,25 +11,23 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { copyText } from '@/lib/clipboard'
 import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
+import { recordOf } from '@/lib/validate'
 
 const regions = [{ value: 'configured', label: '全部已配置目标' }, { value: 'east_asia', label: '东亚' }, { value: 'southeast_asia', label: '东南亚' }, { value: 'europe', label: '欧洲' }, { value: 'americas', label: '美洲' }, { value: 'other', label: '其他地区' }]
 const statuses = { queued: '等待设备领取', running: '设备正在测试', cleaning: '等待设备确认清理', cancel_requested: '等待设备确认取消', cancelled: '设备已确认取消', succeeded: '测试已完成', failed: '测试失败' }
 const regionLabel = (value?: string | null) => regions.find(region => region.value === value)?.label ?? '地区未知'
 const numeric = (value: unknown, unit = '') => typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(2)}${unit}` : '未知'
-function object(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
-}
 function parsed(text?: string): Record<string, unknown> {
-  try { return object(JSON.parse(text ?? '')) } catch { return {} }
+  try { return recordOf(JSON.parse(text ?? '')) } catch { return {} }
 }
 function targetResults(record: DiagnosticRecord) {
   const results = new Map<string, Record<string, unknown>>()
   const add = (value: unknown) => {
-    const entry = object(value); const target = object(entry.target)
-    const attempted = object(entry.summary).attempted
+    const entry = recordOf(value); const target = recordOf(entry.target)
+    const attempted = recordOf(entry.summary).attempted
     if (typeof target.id !== 'string' || !target.id || typeof entry.complete !== 'boolean' || typeof attempted !== 'number' || !Number.isSafeInteger(attempted) || attempted < 0) return
     const existing = results.get(target.id)
-    const existingAttempted = object(existing?.summary).attempted
+    const existingAttempted = recordOf(existing?.summary).attempted
     if (!existing || (entry.complete && !existing.complete) || (entry.complete === existing.complete && typeof existingAttempted === 'number' && attempted > existingAttempted)) results.set(target.id, entry)
   }
   const report = parsed(record.report?.text)
@@ -43,7 +41,7 @@ function Report({ record, serverId, cancelSupported, writeError, reload }: { rec
   const copy = useAction()
   const metadata = record.job.tcpquality
   const report = parsed(record.report?.text)
-  const engine = object(report.engine)
+  const engine = recordOf(report.engine)
   const results = targetResults(record)
   const canCancel = diagnosticCancellable(record)
   return <article data-slot="quality-report" className="bg-muted/40 mt-4 min-w-0 rounded-xl border p-4 max-sm:p-3">
@@ -60,7 +58,7 @@ function Report({ record, serverId, cancelSupported, writeError, reload }: { rec
     {record.error && <Notice tone="error" className="my-3">{record.error}</Notice>}
     <h4 className="text-sm font-medium">本次冻结的目标范围</h4>
     <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>目标</TableHead><TableHead>地区 / 运营商</TableHead><TableHead>连接成功</TableHead><TableHead>连接耗时</TableHead><TableHead>执行情况</TableHead></TableRow></TableHeader><TableBody>{(Array.isArray(metadata?.targets) ? metadata.targets : []).map(target => {
-      const result = results.get(target.id) ?? {}; const summary = object(result.summary)
+      const result = results.get(target.id) ?? {}; const summary = recordOf(result.summary)
       return <TableRow key={target.id}><TableCell><strong>{target.name}</strong><small className="text-muted-foreground mt-3 text-xs leading-relaxed wrap-anywhere">{target.target}:{target.port}{typeof result.address === 'string' && ` · 实际 ${result.address}`}</small></TableCell><TableCell>{regionLabel(target.region)} / {target.carrier || '运营商未知'}</TableCell><TableCell>{numeric(summary.connection_success_percent, '%')}<small className="text-muted-foreground mt-3 text-xs leading-relaxed">{typeof summary.succeeded === 'number' && typeof summary.attempted === 'number' ? `${summary.succeeded} / ${summary.attempted} 次` : '尚未回报'}</small></TableCell><TableCell>均值 {numeric(summary.latency_mean_ms, ' ms')}<small className="text-muted-foreground mt-3 text-xs leading-relaxed">最小 {numeric(summary.latency_min_ms, ' ms')} / 最大 {numeric(summary.latency_max_ms, ' ms')}</small></TableCell><TableCell>{result.complete === true ? '已完成' : '未完成'}{typeof result.error === 'string' && <small className="text-muted-foreground mt-3 text-xs leading-relaxed">{result.error}</small>}</TableCell></TableRow>
     })}</TableBody></Table></div>
     <p className="text-muted-foreground mt-3 text-xs leading-relaxed">连接成功率不是网络丢包率；本测试不测重传率或带宽。资源限制和启动负载保存在环境章节。</p>

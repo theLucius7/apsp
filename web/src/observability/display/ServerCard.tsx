@@ -2,16 +2,16 @@ import { memo } from 'react'
 import { ArrowDownIcon, ArrowUpIcon, CalendarIcon, WalletIcon } from 'lucide-react'
 import type { ProbeOverview } from '../probes'
 import ProbeQuality from './ProbeQuality'
-import { time, uptime } from '../../format'
+import { bytes, money, time, uptime } from '../../format'
 import type { Server } from '../../types'
 import { fresh, network, number, percentage, ratio, size, speed, status } from './data'
 import { OSIcon, Region } from './Icon'
 import { serverHref } from './dashboard'
-import { assetDate, assetPrice, defaultAssets, expiryState, trafficSize } from '../../resources/server-assets'
+import { assetDate, assetPrice, defaultAssets, expiryState } from '../../resources/server-assets'
 import { useCurrency } from '../../costs/currency/CurrencyContext'
-import { convert, money, remainingCost } from '../../costs/currency/currency'
+import { convert, remainingCost } from '../../costs/currency/currency'
 import CurrencyReference from '../../costs/currency/CurrencyReference'
-import { Track } from './ui'
+import { Meter } from '../../components'
 import { cardLink, surface, toneFill, toneText } from '@/components/board'
 import { cn } from '@/lib/utils'
 
@@ -22,7 +22,7 @@ export function Metric({ label, value, detail, display }: { label: string; value
       <span className="text-muted-foreground min-w-0 truncate">{label}</span>
       <strong className={cn('flex-none font-medium tabular-nums', value !== null && value >= 75 && toneText[tone])}>{display ?? percentage(value)}</strong>
     </div>
-    <Track value={value} tone={tone} />
+    <Meter value={value} tone={tone} className="mt-0 max-w-none" />
     <small className="text-muted-foreground truncate text-xs leading-3.5 tabular-nums" title={detail}>{detail}</small>
   </div>
 }
@@ -55,11 +55,11 @@ export const ServerCard = memo(function ServerCard({ server, unavailable, probes
         {!server.public_view && asset.price !== null && <span title={assetPrice(asset)}>{assetPrice(asset)}</span>}
       </div>
       {offline && <div data-slot="offline-overlay" className="flex flex-wrap items-baseline justify-between gap-x-2 text-xs"><strong className="text-destructive font-semibold">{state.label}</strong><span className="text-muted-foreground truncate">{server.last_seen ? `最后在线 ${time(server.last_seen)}` : '等待设备首次接入'}</span></div>}
-      <div className={cn('grid grid-cols-2 gap-x-4 gap-y-2', !live && '[&_[data-slot=metric]_span>span]:opacity-45')}>
+      <div className={cn('grid grid-cols-2 gap-x-4 gap-y-2', !live && '[&_[data-slot=metric]_[data-slot=progress-indicator]]:opacity-45')}>
         <Metric label={`处理器${info.cpu_cores ? ` · ${info.cpu_cores} 核` : ''}`} value={number(metrics.cpu_percent)} detail={[metrics.load_1, metrics.load_5, metrics.load_15].map(value => number(value) === null ? '—' : value!.toFixed(2)).join(' / ')} />
         <Metric label="内存" value={ratio(metrics.memory_used, info.memory_total)} detail={`${size(metrics.memory_used)} / ${size(info.memory_total)}`} />
         <Metric label="磁盘" value={ratio(metrics.disk_used, info.disk_total)} detail={`${size(metrics.disk_used)} / ${size(info.disk_total)}`} />
-        <Metric label="流量" value={quota ? server.traffic?.percent ?? null : null} display={quota ? undefined : '∞'} detail={`${trafficKnown ? trafficSize(server.traffic?.used) : '—'} / ${quota ? trafficSize(asset.traffic_limit) : '∞'}${server.traffic?.incomplete ? ' · 不完整' : ''}`} />
+        <Metric label="流量" value={quota ? server.traffic?.percent ?? null : null} display={quota ? undefined : '∞'} detail={`${trafficKnown ? bytes(server.traffic?.used, '—') : '—'} / ${quota ? bytes(asset.traffic_limit, '—') : '∞'}${server.traffic?.incomplete ? ' · 不完整' : ''}`} />
       </div>
       <div data-slot="data-grid" className={cn('grid gap-1.5', showAsset ? 'grid-cols-3' : 'grid-cols-2')}>
         <div data-slot="data" className={datum} title="实时速率" aria-label="实时速率"><span className="text-success"><ArrowUpIcon aria-hidden="true" />{live ? speed(up) : '—'}</span><span className="text-info"><ArrowDownIcon aria-hidden="true" />{live ? speed(down) : '—'}</span></div>

@@ -1,3 +1,5 @@
+import { clock, time } from '../../format'
+
 export type Target = { bandwidth_mbps: number; charge_type: 'PayByTraffic' | 'PayByBandwidth' }
 export type Snapshot = { bandwidth_mbps: number; charge_type: string; kind: string; cloud_id: string; region: string; public_ip: string; resource_charge_type: string; status: string; attached_eip_id?: string | null }
 export type Bill = { month: string; queried_at: number; usage_micro_gb: number | null; rows: { instance_id: string; region: string; product_type: string; billing_item: string; usage: string; unit: string; amount: string; currency: string }[] }
@@ -27,14 +29,10 @@ const powerSources: Record<string, string> = { manual: '手动', cdt_guard: 'CDT
 export const powerSource = (value: string) => Object.hasOwn(powerSources, value) ? powerSources[value] : '未知来源'
 export const utcOffset = (minutes: number) => `UTC${minutes < 0 ? '−' : '+'}${String(Math.floor(Math.abs(minutes) / 60)).padStart(2, '0')}:${String(Math.abs(minutes) % 60).padStart(2, '0')}`
 export const charge = (value: string) => value === 'PayByTraffic' ? '按流量计费' : value === 'PayByBandwidth' ? '按带宽计费' : value === 'PayByDominantTraffic' ? '按主流量计费' : value === 'PayBy95' ? '按增强 95 计费' : '其他计费方式'
-export const time = (value: number | null) => value ? new Date(value * 1000).toLocaleString('zh-CN', { hour12: false }) : '尚未查询'
-/** Binary gigabytes (1024³ bytes), the unit of both the CDT readings and the guard. */
-export const gib = (bytes: string | number) => (Number(bytes) / 1024 ** 3).toLocaleString('zh-CN', { maximumFractionDigits: 2 })
 /** The one “更新于” time of a card: the clock time today, the full date otherwise. */
 export function updated(value: number | null | undefined, now = new Date()) {
   if (!value) return '尚未查询'
-  const date = new Date(value * 1000)
-  return date.toDateString() === now.toDateString() ? date.toLocaleTimeString('zh-CN', { hour12: false }) : time(value)
+  return new Date(value * 1000).toDateString() === now.toDateString() ? clock(value) : time(value)
 }
 const states: Record<string, string> = { preview: '等待确认', queued: '等待执行', running: '执行中', uncertain: '结果待核对', succeeded: '已核对完成', failed: '未执行', cancelled: '已取消', dismissed: '已人工结束跟踪' }
 const messages: Record<string, string> = {

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { CalendarCheckIcon, DownloadIcon } from 'lucide-react'
 import { ErrorNotice } from '../../components'
-import { convert, money } from '../currency/currency'
+import { convert } from '../currency/currency'
+import { money } from '../../format'
 import { toneText } from '@/components/board'
 import { useAction, useResource } from '../../hooks'
 import { SegmentedButton, SegmentedGroup } from '@/components/segmented'
@@ -12,12 +13,13 @@ import type { Due, LedgerRow } from './model'
 import { amount, download, root } from './types'
 import type { Expense } from './types'
 import type { Ledger } from './useLedger'
+import { isRecord } from '@/lib/validate'
 
 const ranges = [[30, '30 天'], [90, '90 天'], [365, '12 个月']] as const
 type Range = typeof ranges[number][0]
 const savedRange = (): Range => { try { const value = Number(localStorage.getItem('apsp-expenses-range')); return value === 90 || value === 365 ? value : 30 } catch { return 30 } }
 const kindText = { item: '服务', server: '服务器', reference: '机场订阅' } as const
-const validDues = (value: unknown): value is { entries: Due[] } => typeof value === 'object' && value !== null && Array.isArray((value as { entries?: unknown }).entries)
+const validDues = (value: unknown): value is { entries: Due[] } => isRecord(value) && Array.isArray(value.entries)
 
 /** One renewal on the timeline; items and servers open their detail, a source opens its page. */
 function DueRow({ due, base, ledger, onOpen }: { due: Due; base?: string; ledger: Ledger; onOpen: (row: LedgerRow) => void }) {

@@ -1,3 +1,4 @@
+import { money } from '../format'
 import type { ServerAssets } from '../types'
 
 export const defaultAssets: ServerAssets = { region: '', group_name: '', tags: [], hidden: false, offline_notify: true, agent_mirror: '', price: null, currency: 'CNY', billing_cycle: 30, expires_at: null, auto_renewal: false, traffic_limit: '0', traffic_limit_type: 'sum', reset_day: 1, network_interface: '' }
@@ -34,17 +35,8 @@ export function assetPayload(draft: AssetDraft): ServerAssets {
   return { region: draft.region.trim().toUpperCase(), group_name: draft.group_name.trim(), tags: [...new Set(draft.tags.split(/[,，]/).map(value => value.trim()).filter(Boolean))], hidden: draft.hidden, offline_notify: draft.offline_notify, agent_mirror: draft.agent_mirror.trim(), price: draft.price.trim() || null, currency: draft.currency, billing_cycle: Number(draft.billing_cycle), expires_at, auto_renewal: draft.auto_renewal, traffic_limit: parseTraffic(draft.amount, draft.unit), traffic_limit_type: draft.traffic_limit_type, reset_day: Number(draft.reset_day), network_interface: draft.network_interface.trim() }
 }
 
-export function trafficSize(value: string | null | undefined): string {
-  if (value == null || !/^\d+$/.test(value)) return '—'
-  const bytes = BigInt(value), units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB']
-  let scale = 1n, index = 0
-  while (bytes >= scale * 1024n && index < units.length - 1) { scale *= 1024n; index++ }
-  const tenths = (bytes * 10n + scale / 2n) / scale
-  return `${tenths / 10n}${index > 0 ? `.${tenths % 10n}` : ''} ${units[index]}`
-}
-
 export const assetDate = (value: number | null | undefined) => value == null ? '未设置' : new Date(value * 1000).toISOString().slice(0, 10)
-export const assetPrice = (asset: ServerAssets) => asset.price === null ? '未填写成本' : `${asset.currency} ${asset.price} / ${asset.billing_cycle === 0 ? '一次性' : `${asset.billing_cycle} 天`}`
+export const assetPrice = (asset: ServerAssets) => asset.price === null ? '未填写成本' : `${money(Number(asset.price), asset.currency, 4)} / ${asset.billing_cycle === 0 ? '一次性' : `${asset.billing_cycle} 天`}`
 export function expiryState(asset: ServerAssets, now = Date.now()) {
   if (asset.expires_at === null) return { label: '未设置到期', tone: 'neutral' as const }
   const days = Math.ceil((asset.expires_at * 1000 - now) / 86_400_000)

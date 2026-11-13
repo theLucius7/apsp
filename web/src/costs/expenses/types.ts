@@ -1,3 +1,5 @@
+import { currencyDigits, money } from '../../format'
+
 export const root = '/api/costs'
 export type Label = { id: number; kind: 'category' | 'payment_method' | 'payer'; name: string; enabled: boolean }
 export type Expense = { id: number; name: string; amount_units: string; currency: string; start_date: string | null; next_payment: string; anchor_payment: string; cycle: 'day' | 'week' | 'month' | 'year'; frequency: number; category_id: number | null; payment_method_id: number | null; payer_id: number | null; notes: string; url: string; inactive: boolean; auto_renew: boolean; notify: boolean; notify_days_before: number; cancellation_date: string | null; replacement_id: number | null; version: number }
@@ -15,7 +17,8 @@ export function decimal(units: string): string {
   const number = BigInt(units), fraction = (number % 10000n).toString().padStart(4, '0').replace(/0+$/, '')
   return `${number / 10000n}${fraction ? `.${fraction}` : ''}`
 }
-export const amount = (units: string, currency: string) => `${currency} ${decimal(units)}`
+/** A ledger amount (units of 1/10000) as money, keeping every recorded decimal. */
+export const amount = (units: string, currency: string) => money(Number(units) / 10_000, currency, 4)
 
 /** Whole days from `today` to a ledger date (both YYYY-MM-DD in the ledger's time zone); negative once it has passed. */
 export function daysUntil(date: string, today = new Date().toISOString().slice(0, 10)): number | null {
@@ -44,10 +47,7 @@ export async function download(path: string, filename: string) {
 }
 
 // Server cost records (fleet_cost_records) keep amounts in the currency's minor
-// unit; Intl knows how many decimals each currency uses (JPY has none).
-export function currencyDigits(code: string): number {
-  try { return Math.min(4, new Intl.NumberFormat('en', { style: 'currency', currency: code }).resolvedOptions().maximumFractionDigits ?? 2) } catch { return 2 }
-}
+// unit; currencyDigits says how many decimals each currency uses (JPY has none).
 export function minorToUnits(minor: string, code: string): string {
   return (BigInt(minor) * 10n ** BigInt(4 - currencyDigits(code))).toString()
 }

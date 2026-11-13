@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '../../api'
 import { ErrorNotice, Field, Loading } from '../../components'
-import { time } from '../../format'
+import { money, time } from '../../format'
 import { settingsPoll, useAction, useResource } from '../../hooks'
 import { invitationStates, root } from './types'
 import type { IssuedInvitation } from './types'
@@ -35,7 +35,7 @@ export default function UserInvitations({ userId, active }: { userId: number; ac
           <Button variant="outline" disabled={action.busy}>调整</Button>
         </form>
         {data.issued.length > 0 && <div className="max-w-full min-w-0"><Table><TableHeader><TableRow><TableHead>邀请码</TableHead><TableHead>状态</TableHead><TableHead>生成时间</TableHead></TableRow></TableHeader><TableBody>{data.issued.map(entry => <TableRow key={entry.id}><TableCell className="font-mono text-xs">{entry.hint ? `····-${entry.hint}` : '早期邀请链接'}</TableCell><TableCell>{invitationStates[entry.state]}{entry.recipient && <small className="text-muted-foreground block">{entry.recipient.name}</small>}</TableCell><TableCell>{time(entry.created_at)}</TableCell></TableRow>)}</TableBody></Table></div>}
-        {data.events.length > 0 && <details><summary className="cursor-pointer text-sm font-medium">名额变动记录</summary><ul className="mt-2 space-y-1 text-xs">{data.events.map(entry => <li key={entry.id} className="tabular-nums">{time(entry.created_at)} · {reasons[entry.reason] ?? entry.reason} {entry.delta > 0 ? `+${entry.delta}` : entry.delta}，剩余 {entry.remaining}{entry.reason === 'balance_conversion' && entry.detail.balance_cents !== undefined ? `（余额 ¥${(entry.detail.balance_cents / 100).toFixed(2)}，每份 ¥${((entry.detail.price_cents ?? 0) / 100).toFixed(2)}）` : ''}{entry.detail.reason ? ` · ${entry.detail.reason}` : ''}</li>)}</ul></details>}
+        {data.events.length > 0 && <details><summary className="cursor-pointer text-sm font-medium">名额变动记录</summary><ul className="mt-2 space-y-1 text-xs">{data.events.map(entry => <li key={entry.id} className="tabular-nums">{time(entry.created_at)} · {reasons[entry.reason] ?? entry.reason} {entry.delta > 0 ? `+${entry.delta}` : entry.delta}，剩余 {entry.remaining}{entry.reason === 'balance_conversion' && entry.detail.balance_cents !== undefined ? `（余额 ${money(entry.detail.balance_cents / 100, 'CNY')}，每份 ${money((entry.detail.price_cents ?? 0) / 100, 'CNY')}）` : ''}{entry.detail.reason ? ` · ${entry.detail.reason}` : ''}</li>)}</ul></details>}
       </>}
     </div>
   </Panel>

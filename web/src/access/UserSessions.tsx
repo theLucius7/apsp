@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { ErrorNotice } from '../components'
-import { bytes } from '../format'
+import { bytes, clock } from '../format'
 import { resourceWriteError, useAction, useResource } from '../hooks'
 import { Button } from '@/components/ui/button'
 import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
@@ -47,7 +47,7 @@ export default function UserSessions({ userId, active }: { userId: number; activ
       const disabled = action.busy || busy || !host.online || !host.supported || !host.revision || Boolean(resourceWriteError(resource))
       return <section key={host.server_id} className="min-w-0 rounded border p-3">
         <div className="flex flex-wrap items-center gap-2"><strong className="mr-auto break-all">{host.name}</strong><Button variant="outline" disabled={disabled} onClick={() => request(host, false)}>查询连接</Button><Button variant="outline" disabled={disabled || !fresh || !report?.connections.length} onClick={() => request(host, true)}>批量断开</Button></div>
-        <p className="my-2 text-sm">{!host.online ? '服务器离线' : !host.supported ? '请升级 Agent' : busy ? '等待服务器回报…' : expired ? '查询已过期，请重新查询' : operation?.result?.error ? '操作失败，请检查运行时版本和部署状态' : report ? `${fresh ? '当前采样' : '历史采样'} · ${new Date(report.observed_at * 1000).toLocaleTimeString()} · ${report.connections.length} 条连接${report.truncated ? '（已截断，请分批处理）' : ''} · 本次确认断开 ${report.closed} 条` : '尚未查询'}</p>
+        <p className="my-2 text-sm">{!host.online ? '服务器离线' : !host.supported ? '请升级 Agent' : busy ? '等待服务器回报…' : expired ? '查询已过期，请重新查询' : operation?.result?.error ? '操作失败，请检查运行时版本和部署状态' : report ? `${fresh ? '当前采样' : '历史采样'} · ${clock(report.observed_at)} · ${report.connections.length} 条连接${report.truncated ? '（已截断，请分批处理）' : ''} · 本次确认断开 ${report.closed} 条` : '尚未查询'}</p>
         {report?.connections.map(item => { const rate = rates[`${host.server_id}:${item.id}`]; return <div key={item.id} className="flex flex-wrap items-center gap-2 border-t py-2 text-xs"><span className="min-w-0 flex-1 break-all">{item.network.toUpperCase()} · {item.source}<br />累计 ↑ {bytes(item.upload)} · ↓ {bytes(item.download)}{rate && fresh ? ` · 速率 ↑ ${bytes(rate[0])}/秒 · ↓ ${bytes(rate[1])}/秒` : ''}</span><Button size="sm" variant="outline" disabled={disabled || !fresh} onClick={() => request(host, true, [item.id])}>断开</Button></div> })}
       </section>
     })}

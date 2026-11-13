@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { DownloadIcon, LinkIcon } from 'lucide-react'
 import { Badge, CopyField, Refresh } from '../../components'
 import type { Tone } from '../../components'
-import { bytes, time } from '../../format'
+import { bytes, day, time } from '../../format'
 import { buttonVariants } from '@/components/ui/button'
 import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
 import { ProgressRing } from '@/components/progress-ring'
@@ -19,7 +19,6 @@ const states: Record<string, { label: string; tone: Tone }> = {
   format_unavailable: { label: '订阅暂不可用', tone: 'warm' },
 }
 
-const day = (seconds: number) => new Date(seconds * 1000).toLocaleDateString('zh-CN')
 function fromNow(seconds: number, now = Date.now() / 1000) {
   const days = Math.ceil((seconds - now) / 86400)
   return days <= 1 ? '一天内' : `${days} 天后`

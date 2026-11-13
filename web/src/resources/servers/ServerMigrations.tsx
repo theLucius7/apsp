@@ -2,13 +2,15 @@ import { useState } from 'react'
 import { api } from '../../api'
 import { Field, ErrorNotice } from '../../components'
 import { resourceWriteError, useResource } from '../../hooks'
-import { labels, time } from '../../networking/configuration/types'
+import { time } from '../../format'
+import { labels } from '../../networking/configuration/types'
 import type { Draft, Kind, Server } from '../../networking/configuration/types'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { Panel } from '@/components/panel'
+import { isRecord } from '@/lib/validate'
 
 type Candidate = { id: string; kind: Kind; revision: number; before: Draft; suggested_config: Draft; identity: string }
 type Candidates = { candidates: Candidate[]; truncated: boolean }
@@ -28,7 +30,7 @@ export default function ServerMigrations({ servers, initialServerId, busy, run, 
     const selections = selectedIds.map(document_id => {
       let target_config: unknown
       try { target_config = JSON.parse(selected[document_id]) } catch { throw new Error('替换配置必须为有效 JSON；请修正所选对象。') }
-      if (!target_config || typeof target_config !== 'object' || Array.isArray(target_config)) throw new Error('替换配置必须为对象。')
+      if (!isRecord(target_config)) throw new Error('替换配置必须为对象。')
       return { document_id, target_config }
     })
     const response = await api<Preview>('/api/network-configuration/server-migrations/preview', 'POST', { source_server_id: source, target_server_id: target, selections })

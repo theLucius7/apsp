@@ -12,6 +12,8 @@ import { useI18n } from './i18n'
 import { SegmentedLink, SegmentedNav } from '@/components/segmented'
 import { copyText } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
+import { toneFill } from '@/components/board'
+import type { Tone as ReadingTone } from '@/components/board'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Badge as UiBadge } from '@/components/ui/badge'
@@ -23,7 +25,8 @@ import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 export type Tone = 'good' | 'bad' | 'warm' | 'neutral'
-const toneVariant = { good: 'success', bad: 'destructive', warm: 'warning', neutral: 'secondary' } as const
+// Badges also take the boards' reading tones (components/board), so a reading's tone colours its badge directly.
+const toneVariant = { good: 'success', bad: 'destructive', warm: 'warning', neutral: 'secondary', warning: 'warning', danger: 'destructive', muted: 'secondary', info: 'secondary' } as const
 const refreshNoticeDelay = 1200
 
 /**
@@ -54,7 +57,7 @@ export function Brand({ className, compact = false }: { className?: string; comp
     <strong className={cn('min-w-0 truncate leading-tight font-semibold tracking-[-0.02em]', compact ? 'text-base' : 'text-xl')}>{t('apsp')}</strong>
   </div>}
 
-export function Badge({ children, tone = 'neutral', className }: { children: ReactNode; tone?: Tone; className?: string }) {
+export function Badge({ children, tone = 'neutral', className }: { children: ReactNode; tone?: Tone | ReadingTone; className?: string }) {
   return <UiBadge data-tone={tone} variant={toneVariant[tone]} className={className}>
     <span className="size-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />{children}
   </UiBadge>
@@ -107,7 +110,7 @@ export function PageHeader({ title, meta, leading, children }: { title: string; 
   </header>
 }
 
-export function ErrorNotice({ message, retry }: { message?: string; retry?: () => void }) {
+export function ErrorNotice({ message, retry, retryLabel = '重试', className }: { message?: string; retry?: () => void; retryLabel?: string; className?: string }) {
   const { t } = useI18n()
   const transient = message === resourceRefreshingMessage
   const [showRefresh, setShowRefresh] = useState(false)
@@ -120,9 +123,9 @@ export function ErrorNotice({ message, retry }: { message?: string; retry?: () =
   // Waiting for a read is not a failure: it appears only when the wait is noticeable, and quietly.
   if (transient) return showRefresh && <p data-slot="refresh-pending" role="status" className="text-muted-foreground mb-3 flex items-center gap-2 text-xs"><Spinner role="presentation" aria-hidden="true" aria-label={undefined} />{t('正在同步最新信息，完成后可以提交；当前草稿已保留。')}</p>
   // A resolved error leaves at once so it never lingers beside recovered data.
-  return Boolean(message) && <Alert variant="destructive" className="mb-4 flex items-start justify-between gap-3">
+  return Boolean(message) && <Alert variant="destructive" className={cn('mb-4 flex items-start justify-between gap-3', className)}>
     <span className="flex min-w-0 items-start gap-2"><CircleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><span className="min-w-0 break-words">{message}</span></span>
-    {retry && <Button variant="outline" size="xs" type="button" onClick={retry}>{t('重试')}</Button>}
+    {retry && <Button variant="outline" size="xs" type="button" onClick={retry}>{t(retryLabel)}</Button>}
   </Alert>
 }
 
@@ -230,11 +233,15 @@ export function InfoTip({ label = '说明', children, className }: { label?: str
   </Popover>
 }
 
-/** Usage bar that turns warning and then destructive, matching the dashboard thresholds (75% / 90% by default). */
-export function Meter({ value, label, warning = 75, danger = 90, className }: { value?: number; label?: string; warning?: number; danger?: number; className?: string }) {
+/**
+ * The one usage bar: it turns warning and then destructive at the dashboard thresholds
+ * (75% / 90% by default), or takes a reading's `tone` when the page judges the level
+ * itself. Without a label it is decorative and the figure beside it is what is read.
+ */
+export function Meter({ value, label, warning = 75, danger = 90, tone, className }: { value?: number | null; label?: string; warning?: number; danger?: number; tone?: ReadingTone; className?: string }) {
   const level = Math.min(100, Math.max(0, value ?? 0))
-  const tone = level >= danger ? 'bg-destructive' : level >= warning ? 'bg-warning' : undefined
-  return <Progress value={level} aria-label={label} indicatorClassName={tone} className={cn('mt-1.5 h-1 max-w-28', className)} />
+  const fill = tone ? toneFill[tone] : level >= danger ? 'bg-destructive' : level >= warning ? 'bg-warning' : undefined
+  return <Progress value={level} aria-label={label} aria-hidden={label ? undefined : true} indicatorClassName={fill} className={cn('mt-1.5 h-1 max-w-28', className)} />
 }
 
 /**

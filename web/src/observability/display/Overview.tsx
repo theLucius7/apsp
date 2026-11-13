@@ -11,8 +11,10 @@ import ServerTable from './ServerTable'
 import { useDashboardPoll } from './useDashboardPoll'
 import { useDashboardServers } from './useDashboardServers'
 import { useCurrency } from '../../costs/currency/CurrencyContext'
-import { costSummary, money, quoteState } from '../../costs/currency/currency'
-import { DisplayNotice } from './ui'
+import { costSummary, quoteState } from '../../costs/currency/currency'
+import { ErrorNotice } from '../../components'
+import { money } from '../../format'
+import { Notice } from '@/components/panel'
 import { Stat, StatStrip, surface } from '@/components/board'
 import { cn } from '@/lib/utils'
 import { revealMotion } from '@/lib/motion'
@@ -130,9 +132,9 @@ export default function Overview({ now }: { now: number }) {
         </m.div>}
       </AnimatePresence>
     </div>
-    {!error && unavailable && servers && <DisplayNotice role="status" onRetry={refresh}>连接中断，等待更新</DisplayNotice>}
-    {error && <DisplayNotice tone="error" onRetry={refresh}>{error}</DisplayNotice>}
-    {probes.error && <DisplayNotice tone="error" onRetry={probes.reload} retryLabel="重试拨测">拨测读取失败</DisplayNotice>}
+    {!error && unavailable && servers && <Notice tone="warning" role="status" className="mb-0 items-center"><span>连接中断，等待更新</span><Button variant="outline" size="xs" type="button" onClick={refresh}>重试</Button></Notice>}
+    <ErrorNotice message={error} retry={refresh} className="mb-0" />
+    {probes.error && <ErrorNotice message="拨测读取失败" retry={probes.reload} retryLabel="重试拨测" className="mb-0" />}
     {!servers ? !error && (loading ? <CardsLoading /> : <div className="text-muted-foreground flex min-h-80 flex-col items-center justify-center gap-3 p-6 text-center text-sm" role="status">等待数据</div>) : visible.length ? view === 'cards' ?
       <section aria-label="服务器列表" className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start gap-3 max-sm:grid-cols-1">
         {/* Polling and filtering change cards in place; nothing moves unless the order really changed. */}

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { DownloadIcon, UploadIcon } from 'lucide-react'
 import { api } from '../../api'
 import { ErrorNotice, Field, Modal, SettingRow } from '../../components'
+import { time } from '../../format'
 import { useAction, useResource } from '../../hooks'
 import { ActionMenu } from '@/components/action-menu'
 import { SegmentedButton, SegmentedNav } from '@/components/segmented'
@@ -99,7 +100,7 @@ function ActivityLog() {
     <ErrorNotice message={data.error} retry={data.reload} />
     {!data.data ? !data.error && <p className="text-muted-foreground text-sm">正在读取…</p> : data.data.entries.length === 0 ? <p className="text-muted-foreground text-sm">还没有提醒或改动。</p>
       : <ul className="divide-y rounded-lg border text-[13px]">{data.data.entries.map(entry => <li key={entry.id} className="grid gap-0.5 px-3 py-2">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3"><span>{activityKinds[entry.kind] ?? entry.kind}{entry.detail.name && <span className="text-muted-foreground"> · {entry.detail.name}{entry.detail.due ? ` · ${entry.detail.due}` : ''}</span>}</span><time className="text-muted-foreground text-xs tabular-nums">{new Date(entry.created_at * 1000).toLocaleString('zh-CN', { hour12: false })}</time></div>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3"><span>{activityKinds[entry.kind] ?? entry.kind}{entry.detail.name && <span className="text-muted-foreground"> · {entry.detail.name}{entry.detail.due ? ` · ${entry.detail.due}` : ''}</span>}</span><time className="text-muted-foreground text-xs tabular-nums">{time(entry.created_at)}</time></div>
         {entry.deliveries.map(delivery => <small key={delivery.channel} className={cn('text-xs', delivery.state === 'failed' ? 'text-destructive' : 'text-muted-foreground')}>{delivery.channel === 'telegram' ? 'Telegram' : 'Webhook'} · {deliveryStates[delivery.state] ?? delivery.state}{delivery.attempts > 1 ? ` · 第 ${delivery.attempts} 次` : ''}{delivery.last_error ? ` · ${delivery.last_error}` : ''}</small>)}
       </li>)}</ul>}
   </div>

@@ -6,7 +6,7 @@ import { aggregatePoints, appendLive, duration, historyPollInterval, historyWind
 import type { HistoryWindow } from './history'
 import { useHistory } from './useHistory'
 import { ActivityIcon } from 'lucide-react'
-import { DisplayNotice } from './ui'
+import { ErrorNotice } from '../../components'
 import { SectionHeading } from '@/components/board'
 import { SegmentedButton, SegmentedGroup } from '@/components/segmented'
 
@@ -31,7 +31,7 @@ export default function ResourceCharts({ server, base, now, unavailable }: { ser
     points: modern ? aggregate ? appendLive(aggregatePoints(aggregate, key), aggregate, !unavailable && fresh(server) ? server.metrics_sampled_at : null, read(server.latest_metrics), now) : [] : samples.map(sample => ({ at: sample.sampled_at, value: read(sample.metrics) })) })
   return <section data-slot="resource-charts" className="flex flex-col gap-3">
     <SectionHeading icon={ActivityIcon} title="资源趋势"><SegmentedGroup aria-label="资源时间范围" className="max-[480px]:grid max-[480px]:grid-cols-3 max-sm:*:flex-1">{historyWindows.filter((_, index) => modern || index < 3).map(item => <SegmentedButton key={item.value} aria-pressed={window === item.value} onClick={() => setWindow(item.value)}>{item.label}</SegmentedButton>)}</SegmentedGroup></SectionHeading>
-    {history.error && <DisplayNotice tone="error" onRetry={history.reload}>{history.error} 历史采样刷新失败。</DisplayNotice>}
+    {history.error && <ErrorNotice message={`${history.error} 历史采样刷新失败。`} retry={history.reload} className="mb-0" />}
     {history.loading && <p className="text-muted-foreground text-xs" role="status">正在读取历史采样…</p>}
     {aggregate && <p data-slot="history-resolution" className="text-muted-foreground m-0 text-xs" title="曲线为平均值，色带为最小值至最大值，末端实心点为最新实际采样；空缺不补零。">每 {duration(aggregate.bucket_ms)} 聚合 · {duration(historyPollInterval(aggregate.bucket_ms))} 刷新 · 历史保留 {aggregate.retention_days} 天</p>}
     <div className="grid gap-3 md:grid-cols-2">

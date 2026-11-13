@@ -19,6 +19,7 @@ import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ActivityIcon, PlayIcon, PlusIcon } from 'lucide-react'
 import { Panel, PanelHeader, PanelTitle } from '@/components/panel'
+import { useActor } from '@/lib/actor'
 
 const reachabilityRoot = '/api/observability/reachability'
 
@@ -86,7 +87,7 @@ function ReachabilityPanel({ overview, loading, onChanged, writeError }: { overv
 
 export default function LineQualitySettings() {
   const tasks = useResource<Task[]>('/api/latency-tasks'), servers = useResource<Server[]>('/api/servers')
-  const actor = useResource<{ role: string }>('/api/control-center/me', 0)
+  const actor = useActor()
   const owner = actor.data?.role === 'owner'
   const reachability = useResource<ReachabilityOverview>(owner ? reachabilityRoot : null, 15_000)
   const [editing, setEditing] = useState<Task | null>(null), [removing, setRemoving] = useState<Task | null>(null)

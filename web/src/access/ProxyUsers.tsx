@@ -24,6 +24,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { CheckIcon, CopyIcon, PlusIcon, Settings2Icon, UsersIcon } from 'lucide-react'
 import { Notice, Panel, PanelHeader, PanelTitle } from '@/components/panel'
 import { SegmentedButton, SegmentedNav } from '@/components/segmented'
+import { useActor } from '@/lib/actor'
 
 /** A line of the user list from /users/overview; contains no credentials. */
 type UserLine = {
@@ -50,7 +51,7 @@ export default function ProxyUsers({ initialUserId }: { initialUserId?: number }
   const users = useResource<ProxyUser[]>(`${root}/users`, 5000, { keep: true })
   const lines = useResource<UserLine[]>(`${root}/users/overview`, 15_000, { keep: true })
   const usage = useResource<Usage>(`${root}/usage`, 5000, { keep: true })
-  const actor = useResource<{ role: string }>('/api/control-center/me', 30_000, { keep: true })
+  const actor = useActor()
   const action = useAction()
   const linkAction = useAction()
   const [selected, setSelected] = useState<number | null>(initialUserId ?? null)

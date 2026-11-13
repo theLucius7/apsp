@@ -33,11 +33,6 @@ export function convert(amount: number | null, from: string, to: string, quote: 
   return Number.isFinite(result) ? result : null
 }
 
-export function money(amount: number | null, currency: string): string {
-  if (amount === null || !Number.isFinite(amount)) return '—'
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: currencyCode(currency), currencyDisplay: 'code', maximumFractionDigits: 2 }).format(amount)
-}
-
 export function remainingCost(asset: ServerAssets | undefined, now: number): number | null {
   const amount = price(asset?.price)
   if (amount === null || !asset || !Number.isFinite(asset.billing_cycle) || asset.billing_cycle < 0 || asset.expires_at === null || !Number.isFinite(asset.expires_at) || !Number.isFinite(now)) return null

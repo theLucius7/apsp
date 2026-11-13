@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { LogOutIcon, MenuIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, XIcon } from 'lucide-react'
-import { useResource } from '../hooks'
 import CommandPalette from './CommandPalette'
 import Reauthentication from '../governance/control-center/Reauthentication'
 import Appearance from '../governance/control-center/Appearance'
@@ -17,7 +16,7 @@ import { ConnectionNotice, ConnectionStatus } from './ConnectionStatus'
 import { SectionContext } from './section'
 import { cn } from '@/lib/utils'
 import { readShellActor, writeShellActor } from '@/lib/shell-actor'
-import type { ShellActor } from '@/lib/shell-actor'
+import { useActor } from '@/lib/actor'
 import { useMediaQuery } from '@/lib/use-media-query'
 import { useShellStore } from '@/stores/shell'
 import { useFeatureStore } from '@/stores/features'
@@ -38,7 +37,7 @@ type Props = {
 
 export default function AdminShell({ current, exact = true, busy, error, onLogout, children }: Props) {
   const { t } = useI18n()
-  const resource = useResource<ShellActor>('/api/control-center/me', 30_000)
+  const resource = useActor()
   const [remembered] = useState(readShellActor)
   // The navigation is drawn from the remembered actor until the panel confirms it,
   // so it never grows from two links to all of them after a reload.

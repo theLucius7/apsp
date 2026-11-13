@@ -11,7 +11,7 @@ import type { Server } from '../../types'
 import ServerSetup from './ServerSetup'
 import ServerEnrollment from './ServerEnrollment'
 import ServerEdit from './ServerEdit'
-import { assetDate, assetPrice, defaultAssets, expiryState, trafficSize } from '../server-assets'
+import { assetDate, assetPrice, defaultAssets, expiryState } from '../server-assets'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -22,6 +22,7 @@ import { Separator } from '@/components/ui/separator'
 import { barMotion } from '@/lib/motion'
 import { useMediaQuery } from '@/lib/use-media-query'
 import { Region } from '../../observability/display/Icon'
+import { useActor } from '@/lib/actor'
 
 type Lifecycle = 'maintenance' | 'draining' | 'active'
 // What each state means for the panel: maintenance (bounded by the chosen duration) and
@@ -35,7 +36,7 @@ const lifecycles: Record<Lifecycle, { label: string; effect: string }> = {
 export default function Servers() {
   const { t } = useI18n()
   const resource = useResource<Server[]>('/api/servers', 5000, { keep: true })
-  const actor = useResource<{ role: string; capabilities: string[] }>('/api/control-center/me', 30_000, { keep: true })
+  const actor = useActor()
   const canWrite = actor.data?.role === 'owner' || Boolean(actor.data?.capabilities.includes('servers:write'))
   const action = useAction()
   const [editor, setEditor] = useState<Server | 'new' | null>(null)
@@ -108,7 +109,7 @@ export default function Servers() {
   const traffic = (server: Server) => {
     const asset = { ...defaultAssets, ...server.asset_settings }
     const limited = asset.traffic_limit !== '0'
-    return <div className="min-w-24 text-[13px]"><span>{(server.traffic?.observed_from != null || server.traffic?.corrected) ? trafficSize(server.traffic.used) : '等待采样'}<small className="text-muted-foreground text-xs"> / {limited ? trafficSize(asset.traffic_limit) : '不限'}</small></span>{limited && server.traffic?.percent != null && <Meter value={server.traffic.percent} label={`${server.name} 流量额度`} warning={80} danger={100} />}{server.traffic?.exceeded && <small className="text-destructive block text-xs">额度已用尽</small>}</div>
+    return <div className="min-w-24 text-[13px]"><span>{(server.traffic?.observed_from != null || server.traffic?.corrected) ? bytes(server.traffic.used, '—') : '等待采样'}<small className="text-muted-foreground text-xs"> / {limited ? bytes(asset.traffic_limit, '—') : '不限'}</small></span>{limited && server.traffic?.percent != null && <Meter value={server.traffic.percent} label={`${server.name} 流量额度`} warning={80} danger={100} />}{server.traffic?.exceeded && <small className="text-destructive block text-xs">额度已用尽</small>}</div>
   }
   const actions = (server: Server, className: string) => <div className={`flex items-center gap-0.5 ${className}`}><Button variant="ghost" size="icon-sm" aria-label="编辑" title="编辑" disabled={!canWrite} onClick={() => edit(server)}><PencilIcon aria-hidden="true" /></Button><Button variant="ghost" size="icon-sm" aria-label="删除" title="删除" className="text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20" disabled={!canWrite} onClick={() => { action.clearError(); setDeleting(server) }}><Trash2Icon aria-hidden="true" /></Button></div>
   return <>
