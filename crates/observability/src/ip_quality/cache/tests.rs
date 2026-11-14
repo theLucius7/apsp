@@ -264,12 +264,12 @@ async fn concurrent_admission_and_an_interrupted_refresh_use_durable_locks(
         Err(ApiError::Conflict(_))
     ));
     begin_refresh(&reopened, id, now + 61).await?;
-    let cleared = sqlx::query("UPDATE servers SET quality_refresh_started=NULL WHERE id=$1 AND quality_refresh_started=$2").bind(id).bind(now).execute(&pool).await?;
-    assert_eq!(cleared.rows_affected(), 0);
-    sqlx::query("UPDATE servers SET quality_refresh_started=NULL WHERE id=$1")
-        .bind(id)
-        .execute(&pool)
-        .await?;
+    // The first refresh ends after a later one replaced its lease: the later lease stays.
+    assert!(!end_refresh(&pool, id, now).await?);
+    assert!(end_refresh(&pool, id, now + 61).await?);
+    assert!(!end_refresh(&pool, id, now + 61).await?);
+    begin_refresh(&pool, id, now + 62).await?;
+    assert!(end_refresh(&pool, id, now + 62).await?);
     let mut failed = query_all(
         &Outbound::default().build()?,
         "http://source.invalid",

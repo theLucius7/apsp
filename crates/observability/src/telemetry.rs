@@ -12,7 +12,8 @@ pub(crate) use live::dashboard_live;
 pub use live::{LiveSample, LiveStore, attach_live, latest_live, live};
 pub use maintenance::{maintain, maintain_at, run};
 pub use storage::{
-    agent_storage_settings, policy, storage_settings, update_policy, update_storage_settings,
+    LatestMetrics, agent_storage_settings, copy_settings_tx, latest_metrics, policy, sampled_at,
+    save_settings_tx, settings_of, storage_settings, update_policy, update_storage_settings,
 };
 
 use crate::{
@@ -252,7 +253,7 @@ pub async fn record_metrics(
     let mut tx = state.pool.begin().await?;
     // Legacy envelopes contain no collection timestamp. Preserve the metrics,
     // but do not label their reception time as a fresh collection.
-    sqlx::query("UPDATE servers SET latest_metrics=$2,metrics_sampled_at=0 WHERE id=$1")
+    sqlx::query("INSERT INTO telemetry_servers(server_id,latest_metrics,sampled_at) SELECT id,$2,0 FROM servers WHERE id=$1 ON CONFLICT(server_id) DO UPDATE SET latest_metrics=EXCLUDED.latest_metrics,sampled_at=0")
         .bind(server_id)
         .bind(&value)
         .execute(&mut *tx)

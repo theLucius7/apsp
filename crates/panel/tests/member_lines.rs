@@ -81,9 +81,11 @@ async fn members_see_lines_status_and_measured_network_without_private_details(
     let panel = TestPanel::start_with_localhost(pool.clone()).await?;
     let now = now_timestamp();
     // One host with an apsp Agent, one still served only by the legacy panel.
-    let agent: i64 = sqlx::query_scalar("INSERT INTO servers(name,last_seen,latest_metrics,static_info) VALUES('TEST_ONLY agent host',$1,$2,$3) RETURNING id")
-        .bind(now).bind(json!({"cpu_percent":12.34,"memory_used":512,"memory_total":1024,"disk_used":1,"disk_total":4,"uptime_secs":3600}))
-        .bind(json!({"ip_addresses":[ADDRESS,"10.0.0.2"]})).fetch_one(&pool).await?;
+    let agent: i64 = sqlx::query_scalar("INSERT INTO servers(name,last_seen,static_info) VALUES('TEST_ONLY agent host',$1,$2) RETURNING id")
+        .bind(now).bind(json!({"ip_addresses":[ADDRESS,"10.0.0.2"]})).fetch_one(&pool).await?;
+    sqlx::query("INSERT INTO telemetry_servers(server_id,latest_metrics) VALUES($1,$2)")
+        .bind(agent).bind(json!({"cpu_percent":12.34,"memory_used":512,"memory_total":1024,"disk_used":1,"disk_total":4,"uptime_secs":3600}))
+        .execute(&pool).await?;
     let legacy: i64 = sqlx::query_scalar(
         "INSERT INTO servers(name) VALUES('TEST_ONLY legacy host') RETURNING id",
     )

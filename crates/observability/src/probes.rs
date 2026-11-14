@@ -56,11 +56,13 @@ impl<'de> serde::Deserialize<'de> for ConfiguredProbe {
     }
 }
 
+/// Raises the revision of the server's probe assignment, which starts at 0; Agents ignore
+/// an assignment whose revision is lower than one they have seen.
 pub(crate) async fn bump_revision(
     tx: &mut Transaction<'_, Postgres>,
     server: i64,
 ) -> ApiResult<()> {
-    sqlx::query("UPDATE servers SET probe_revision=probe_revision+1 WHERE id=$1")
+    sqlx::query("INSERT INTO probe_assignments(server_id,revision) SELECT id,1 FROM servers WHERE id=$1 ON CONFLICT(server_id) DO UPDATE SET revision=probe_assignments.revision+1")
         .bind(server)
         .execute(&mut **tx)
         .await?;
@@ -291,7 +293,7 @@ pub async fn agent_lease(
         serde_json::Value,
         Option<String>,
     ) = sqlx::query_as(
-        "SELECT probe_revision,capabilities,probe_fingerprint FROM servers WHERE id=$1",
+        "SELECT COALESCE(p.revision,0),s.capabilities,p.fingerprint FROM servers s LEFT JOIN probe_assignments p ON p.server_id=s.id WHERE s.id=$1",
     )
     .bind(server)
     .fetch_one(&mut *tx)
@@ -316,7 +318,7 @@ pub async fn agent_lease(
         Sha256::digest(serde_json::to_vec(&digests).map_err(anyhow::Error::from)?)
     );
     if previous_fingerprint.as_deref() != Some(fingerprint.as_str()) {
-        revision = sqlx::query_scalar("UPDATE servers SET probe_revision=probe_revision+1,probe_fingerprint=$2 WHERE id=$1 RETURNING probe_revision")
+        revision = sqlx::query_scalar("INSERT INTO probe_assignments(server_id,revision,fingerprint) VALUES($1,1,$2) ON CONFLICT(server_id) DO UPDATE SET revision=probe_assignments.revision+1,fingerprint=EXCLUDED.fingerprint RETURNING revision")
             .bind(server).bind(fingerprint).fetch_one(&mut *tx).await?;
     }
     let saved: Option<(Uuid, i64, i64, serde_json::Value)> = sqlx::query_as(
@@ -558,10 +560,12 @@ pub async fn ingest(
     }
     let mut tx = state.pool.begin().await?;
     lock_server(&mut tx, server).await?;
-    let revision: i64 = sqlx::query_scalar("SELECT probe_revision FROM servers WHERE id=$1")
-        .bind(server)
-        .fetch_one(&mut *tx)
-        .await?;
+    let revision: i64 = sqlx::query_scalar(
+        "SELECT COALESCE((SELECT revision FROM probe_assignments WHERE server_id=$1),0)",
+    )
+    .bind(server)
+    .fetch_one(&mut *tx)
+    .await?;
     let mut acknowledged = Vec::new();
     for result in batch.results {
         let digest = format!(

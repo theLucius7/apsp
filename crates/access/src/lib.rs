@@ -29,7 +29,7 @@ pub use portal::{HostNetwork, install_host_network};
 
 pub(crate) use apsp_governance::{auth, control_center, passkeys};
 pub(crate) use apsp_panel_host::{AppState, device_work, digest, error};
-pub(crate) use apsp_resources::{device_channel, retirement, servers};
+pub(crate) use apsp_resources::{device_channel, retirement, server_observation, servers};
 use axum::{
     Router,
     routing::{get, post},

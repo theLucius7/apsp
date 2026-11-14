@@ -362,8 +362,7 @@ pub async fn refresh(
     let now = now_timestamp();
     let ips = cache::begin_refresh(&state.pool, id, now).await?;
     let result = refresh_inner(&state, id, &ips).await;
-    sqlx::query("UPDATE servers SET quality_refresh_started=NULL WHERE id=$1 AND quality_refresh_started=$2")
-        .bind(id).bind(now).execute(&state.pool).await?;
+    cache::end_refresh(&state.pool, id, now).await?;
     result.map(Json)
 }
 

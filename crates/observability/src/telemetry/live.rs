@@ -120,30 +120,43 @@ fn store(state: &AppState) -> Arc<LiveStore> {
     state.domain_states.get_or_init(LiveStore::default)
 }
 
+/// Fills each server's stored metrics and telemetry settings (the defaults where none are
+/// stored), then replaces the metrics with a live sample at least as new.
 pub async fn attach_live(
     state: &AppState,
     servers: &mut [crate::servers::Server],
 ) -> ApiResult<()> {
     let ids: Vec<i64> = servers.iter().map(|server| server.id).collect();
-    let rows = sqlx::query("SELECT id,telemetry_settings FROM servers WHERE id=ANY($1)")
-        .bind(&ids)
-        .fetch_all(&state.pool)
-        .await?;
-    let settings: HashMap<i64, TelemetrySettings> = rows
+    let rows = sqlx::query(
+        "SELECT server_id,settings,latest_metrics,sampled_at FROM telemetry_servers WHERE server_id=ANY($1)",
+    )
+    .bind(&ids)
+    .fetch_all(&state.pool)
+    .await?;
+    let mut stored: HashMap<i64, (TelemetrySettings, Value, i64)> = rows
         .into_iter()
         .map(|row| {
             Ok((
-                row.get("id"),
-                serde_json::from_value(row.get("telemetry_settings"))?,
+                row.get("server_id"),
+                (
+                    serde_json::from_value(row.get("settings"))?,
+                    row.get("latest_metrics"),
+                    row.get("sampled_at"),
+                ),
             ))
         })
         .collect::<Result<_, serde_json::Error>>()
         .map_err(anyhow::Error::from)?;
     let now = now_millis();
     for server in servers {
+        let (settings, metrics, sampled_at) = stored
+            .remove(&server.id)
+            .unwrap_or_else(|| (TelemetrySettings::default(), json!({}), 0));
+        server.latest_metrics = metrics;
+        server.metrics_sampled_at = (sampled_at != 0).then_some(sampled_at);
         server.metrics_persisted_at = server.metrics_sampled_at;
         server.served_at = now;
-        server.telemetry_settings = settings.get(&server.id).cloned();
+        server.telemetry_settings = Some(settings);
         if let Some(value) = latest_live(state, server.id)
             .filter(|value| Some(value.sample.sampled_at) >= server.metrics_sampled_at)
         {
@@ -177,7 +190,7 @@ fn is_stale(sampled: Option<i64>, settings: &Value, now: i64) -> bool {
 }
 
 pub(crate) async fn dashboard_live(state: &AppState, admin: bool) -> ApiResult<Value> {
-    let rows=sqlx::query(&format!("SELECT id,last_seen,last_heartbeat_at,NULLIF(metrics_sampled_at,0) AS metrics_sampled_at,agent_settings,asset_settings FROM servers WHERE deleted_at IS NULL AND NOT {} ORDER BY id", crate::server_assets::sql::hidden("servers"))).fetch_all(&state.pool).await?;
+    let rows=sqlx::query(&format!("SELECT s.id,s.last_seen,s.last_heartbeat_at,NULLIF(t.sampled_at,0) AS metrics_sampled_at,s.agent_settings,s.asset_settings FROM servers s LEFT JOIN telemetry_servers t ON t.server_id=s.id WHERE s.deleted_at IS NULL AND NOT {} ORDER BY s.id", crate::server_assets::sql::hidden("s"))).fetch_all(&state.pool).await?;
     // A live sample at least as new as the stored one replaces it, so stored
     // metrics are read only for servers without one.
     let live_store = store(state);
@@ -200,12 +213,14 @@ pub(crate) async fn dashboard_live(state: &AppState, admin: bool) -> ApiResult<V
     let mut stored: HashMap<i64, Value> = if missing.is_empty() {
         HashMap::new()
     } else {
-        sqlx::query_as("SELECT id,latest_metrics FROM servers WHERE id=ANY($1)")
-            .bind(&missing)
-            .fetch_all(&state.pool)
-            .await?
-            .into_iter()
-            .collect()
+        sqlx::query_as(
+            "SELECT server_id,latest_metrics FROM telemetry_servers WHERE server_id=ANY($1)",
+        )
+        .bind(&missing)
+        .fetch_all(&state.pool)
+        .await?
+        .into_iter()
+        .collect()
     };
     let now = now_millis();
     let mut servers = Vec::with_capacity(rows.len());
@@ -219,7 +234,7 @@ pub(crate) async fn dashboard_live(state: &AppState, admin: bool) -> ApiResult<V
                 (Some(*sampled), Some(*received), metrics)
             }
             None => {
-                let mut metrics = stored.remove(&id).unwrap_or(Value::Null);
+                let mut metrics = stored.remove(&id).unwrap_or_else(|| json!({}));
                 without_process_detail(&mut metrics);
                 (persisted, None, metrics)
             }

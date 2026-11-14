@@ -1,7 +1,14 @@
+//! The monitoring history policy and what observability keeps for each server in
+//! `telemetry_servers`: the telemetry settings its Agent follows and its newest metrics. A
+//! server without a row has the default settings and no stored metrics.
+
 use super::*;
 use crate::control_center::retention;
 use apsp_protocol::telemetry::TelemetrySettings;
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use sqlx::{PgConnection, Postgres, Transaction};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -59,20 +66,130 @@ pub async fn update_policy(
     Ok(Json(policy))
 }
 
+/// The newest metrics stored for a server.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LatestMetrics {
+    /// Milliseconds since the epoch; 0 when the device did not say when it sampled them.
+    pub sampled_at: i64,
+    /// Every metric of the newest sample, process and pressure detail included.
+    pub metrics: Value,
+}
+
+impl Default for LatestMetrics {
+    /// What a server without stored metrics shows: no sample time and no metrics.
+    fn default() -> Self {
+        Self {
+            sampled_at: 0,
+            metrics: json!({}),
+        }
+    }
+}
+
+/// The newest stored metrics of each of `servers` that has any.
+pub async fn latest_metrics(
+    connection: &mut PgConnection,
+    servers: &[i64],
+) -> ApiResult<HashMap<i64, LatestMetrics>> {
+    let rows: Vec<(i64, i64, Value)> = sqlx::query_as(
+        "SELECT server_id,sampled_at,latest_metrics FROM telemetry_servers WHERE server_id=ANY($1)",
+    )
+    .bind(servers)
+    .fetch_all(connection)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(server, sampled_at, metrics)| {
+            (
+                server,
+                LatestMetrics {
+                    sampled_at,
+                    metrics,
+                },
+            )
+        })
+        .collect())
+}
+
+/// When the newest stored metrics of each of `servers` were sampled, for those whose
+/// stored metrics say so.
+pub async fn sampled_at(
+    connection: &mut PgConnection,
+    servers: &[i64],
+) -> ApiResult<HashMap<i64, i64>> {
+    Ok(sqlx::query_as(
+        "SELECT server_id,sampled_at FROM telemetry_servers WHERE server_id=ANY($1) AND sampled_at<>0",
+    )
+    .bind(servers)
+    .fetch_all(connection)
+    .await?
+    .into_iter()
+    .collect())
+}
+
+/// The telemetry settings of each of `servers` as saved, the defaults where none are.
+pub async fn settings_of(pool: &sqlx::PgPool, servers: &[i64]) -> ApiResult<HashMap<i64, Value>> {
+    let mut saved: HashMap<i64, Value> =
+        sqlx::query_as("SELECT server_id,settings FROM telemetry_servers WHERE server_id=ANY($1)")
+            .bind(servers)
+            .fetch_all(pool)
+            .await?
+            .into_iter()
+            .collect();
+    Ok(servers
+        .iter()
+        .map(|server| {
+            let settings = saved
+                .remove(server)
+                .unwrap_or_else(|| json!(TelemetrySettings::default()));
+            (*server, settings)
+        })
+        .collect())
+}
+
+/// Saves the telemetry settings of a server that exists, in the caller's transaction.
+pub async fn save_settings_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    settings: &TelemetrySettings,
+) -> ApiResult<()> {
+    sqlx::query("INSERT INTO telemetry_servers(server_id,settings) VALUES($1,$2) ON CONFLICT(server_id) DO UPDATE SET settings=EXCLUDED.settings")
+        .bind(server)
+        .bind(serde_json::to_value(settings).map_err(anyhow::Error::from)?)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+/// Gives `target` the telemetry settings of `source`, as saved, in the caller's transaction.
+pub async fn copy_settings_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    source: i64,
+    target: i64,
+) -> ApiResult<()> {
+    sqlx::query("INSERT INTO telemetry_servers(server_id,settings) VALUES($2,COALESCE((SELECT settings FROM telemetry_servers WHERE server_id=$1),$3)) ON CONFLICT(server_id) DO UPDATE SET settings=EXCLUDED.settings")
+        .bind(source)
+        .bind(target)
+        .bind(json!(TelemetrySettings::default()))
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
 pub(super) async fn read_storage_settings(
     state: &AppState,
     server: i64,
 ) -> ApiResult<Json<TelemetrySettings>> {
-    let value: serde_json::Value = sqlx::query_scalar(
-        "SELECT telemetry_settings FROM servers WHERE id=$1 AND deleted_at IS NULL",
+    let saved: Option<Value> = sqlx::query_scalar(
+        "SELECT t.settings FROM servers s LEFT JOIN telemetry_servers t ON t.server_id=s.id WHERE s.id=$1 AND s.deleted_at IS NULL",
     )
     .bind(server)
     .fetch_optional(&state.pool)
     .await?
     .ok_or(ApiError::NotFound)?;
-    Ok(Json(
-        serde_json::from_value(value).map_err(anyhow::Error::from)?,
-    ))
+    Ok(Json(match saved {
+        Some(value) => serde_json::from_value(value).map_err(anyhow::Error::from)?,
+        None => TelemetrySettings::default(),
+    }))
 }
 
 pub async fn storage_settings(
@@ -102,12 +219,11 @@ pub async fn update_storage_settings(
     if !settings.valid() {
         return Err(ApiError::BadRequest("历史写入间隔须为 15–3600 秒".into()));
     }
-    let changed =
-        sqlx::query("UPDATE servers SET telemetry_settings=$2 WHERE id=$1 AND deleted_at IS NULL")
-            .bind(server)
-            .bind(serde_json::to_value(&settings).map_err(anyhow::Error::from)?)
-            .execute(&state.pool)
-            .await?;
+    let changed = sqlx::query("INSERT INTO telemetry_servers(server_id,settings) SELECT id,$2 FROM servers WHERE id=$1 AND deleted_at IS NULL ON CONFLICT(server_id) DO UPDATE SET settings=EXCLUDED.settings")
+        .bind(server)
+        .bind(serde_json::to_value(&settings).map_err(anyhow::Error::from)?)
+        .execute(&state.pool)
+        .await?;
     if changed.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }

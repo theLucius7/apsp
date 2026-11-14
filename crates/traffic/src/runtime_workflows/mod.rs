@@ -134,7 +134,18 @@ pub(super) async fn view(
     let changes = differences(&applied, &desired)?;
     let history:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('revision',d.rev,'bundle_sha256',d.bundle_sha256,'created_at',d.created_at,'runtime_version',f.runtime_version,'artifact_sha256',f.artifact_sha256) FROM deployments d LEFT JOIN singbox_runtime_manifest_facts f ON f.server_id=d.server_id AND f.module=d.module AND f.revision=d.rev WHERE d.server_id=$1 AND d.module='singbox' ORDER BY d.rev DESC LIMIT 100").bind(server).fetch_all(&mut *tx).await?;
     let paths:Vec<Value>=sqlx::query_scalar("SELECT DISTINCT jsonb_build_object('id',c.id,'name',c.name,'kind',c.path_kind,'phase',c.phase,'desired_generation',c.desired_generation,'applied_generation',c.applied_generation,'candidate_generation',c.candidate_generation,'last_error',c.last_error,'route_enabled',c.route_enabled) FROM singbox_chains c LEFT JOIN nodes n ON n.id=c.entry_node_id LEFT JOIN singbox_ordered_chain_hops h ON h.chain_id=c.id WHERE (n.server_id=$1 OR h.managed_server_id=$1) AND (c.deleted_at IS NULL OR c.phase<>'retired')").bind(server).fetch_all(&mut *tx).await?;
-    let mut hop_observations:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('server_id',s.id,'name',s.name,'last_seen',s.last_seen,'metrics',s.latest_metrics,'target_revision',m.target_rev,'applied_revision',m.applied_rev,'healthy',m.healthy,'last_error',m.last_error) FROM servers s LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id IN (SELECT $1 UNION SELECT h.managed_server_id FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id JOIN nodes n ON n.id=c.entry_node_id WHERE n.server_id=$1 AND h.generation=c.desired_generation AND h.managed_server_id IS NOT NULL) ORDER BY s.id").bind(server).fetch_all(&mut *tx).await?;
+    let mut hop_observations:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('server_id',s.id,'name',s.name,'last_seen',s.last_seen,'metrics',NULL,'target_revision',m.target_rev,'applied_revision',m.applied_rev,'healthy',m.healthy,'last_error',m.last_error) FROM servers s LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id IN (SELECT $1 UNION SELECT h.managed_server_id FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id JOIN nodes n ON n.id=c.entry_node_id WHERE n.server_id=$1 AND h.generation=c.desired_generation AND h.managed_server_id IS NOT NULL) ORDER BY s.id").bind(server).fetch_all(&mut *tx).await?;
+    // Observability keeps each hop's newest metrics.
+    let hops: Vec<i64> = hop_observations
+        .iter()
+        .filter_map(|hop| hop["server_id"].as_i64())
+        .collect();
+    let mut metrics = crate::server_observation::stored_metrics(&mut tx, &hops).await?;
+    for hop in &mut hop_observations {
+        if let Some(id) = hop["server_id"].as_i64() {
+            hop["metrics"] = metrics.remove(&id).unwrap_or_default().metrics;
+        }
+    }
     let target = row.get::<Option<i64>, _>("target_rev");
     let checkpoint = configuration_observation(&mut tx, server, target).await?;
     tx.commit().await?;

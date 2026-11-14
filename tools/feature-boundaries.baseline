@@ -157,7 +157,6 @@ sql	crates/costs/src/suppliers.rs	read	telemetry_history	costs->observability
 sql	crates/governance/src/control_center/administrators.rs	read	servers	governance->resources
 sql	crates/governance/src/control_center/credentials.rs	read	credential_entries	governance->platform
 sql	crates/governance/src/control_center/credentials.rs	write	credential_entries	governance->platform
-sql	crates/governance/src/control_center/events.rs	read	servers	governance->resources
 sql	crates/governance/src/releases/selection.rs	read	servers	governance->resources
 sql	crates/naming/src/acme.rs	read	network_documents	naming->networking
 sql	crates/naming/src/acme_executor.rs	read	network_documents	naming->networking
@@ -203,9 +202,6 @@ sql	crates/observability/src/incidents.rs	read	server_module_status	observabilit
 sql	crates/observability/src/incidents/certificates.rs	read	network_acme_jobs	observability->naming
 sql	crates/observability/src/incidents/certificates.rs	read	network_certificate_versions	observability->naming
 sql	crates/observability/src/incidents/certificates.rs	read	network_documents	observability->networking
-sql	crates/observability/src/ip_quality.rs	write	servers	observability->resources
-sql	crates/observability/src/ip_quality/cache.rs	write	servers	observability->resources
-sql	crates/observability/src/probes.rs	write	servers	observability->resources
 sql	crates/observability/src/reachability/api.rs	write	credential_entries	observability->platform
 sql	crates/observability/src/reachability/targets.rs	read	singbox_nexus_nodes	observability->traffic
 sql	crates/observability/src/server_monitoring.rs	read	fleet_operations	observability->operations
@@ -213,9 +209,6 @@ sql	crates/observability/src/server_monitoring.rs	read	remote_commands	observabi
 sql	crates/observability/src/server_monitoring/service_events.rs	read	fleet_operations	observability->operations
 sql	crates/observability/src/statistics/proxy_usage.rs	read	singbox_usage_daily	observability->access
 sql	crates/observability/src/statistics/proxy_usage.rs	read	usage_records	observability->access
-sql	crates/observability/src/telemetry.rs	write	servers	observability->resources
-sql	crates/observability/src/telemetry/persistence.rs	write	servers	observability->resources
-sql	crates/observability/src/telemetry/storage.rs	write	servers	observability->resources
 sql	crates/operations/src/backups/executor.rs	read	credential_entries	operations->platform
 sql	crates/operations/src/cloud/bandwidth.rs	read	alicloud_resources	operations->resources
 sql	crates/operations/src/cloud/bandwidth.rs	write	alicloud_resources	operations->resources

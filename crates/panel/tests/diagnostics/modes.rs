@@ -292,7 +292,7 @@ async fn recent_proxy_traffic_remains_a_warning_even_when_metrics_show_idle(
     sqlx::query("INSERT INTO usage_records(server_id,epoch,seq,stat_name,user_id,node_id,uplink,downlink,period_start,period_end) VALUES($1,$2,1,'TEST_ONLY',$3,$4,1024,1024,$5,$6)")
         .bind(server).bind(epoch).bind(account["id"].as_i64().unwrap()).bind(node["id"].as_i64().unwrap())
         .bind(now-30).bind(now).execute(&panel.state.pool).await?;
-    sqlx::query("UPDATE servers SET latest_metrics='{\"net_in_speed\":0,\"net_out_speed\":0}'::jsonb WHERE id=$1")
+    sqlx::query("INSERT INTO telemetry_servers(server_id,latest_metrics) VALUES($1,'{\"net_in_speed\":0,\"net_out_speed\":0}'::jsonb) ON CONFLICT(server_id) DO UPDATE SET latest_metrics=EXCLUDED.latest_metrics")
         .bind(server).execute(&panel.state.pool).await?;
     let view: Value = panel
         .admin(

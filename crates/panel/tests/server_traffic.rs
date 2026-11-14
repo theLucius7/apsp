@@ -284,7 +284,7 @@ async fn clock_jump_and_storage_failure_keep_checkpoint_telemetry_and_daily_rows
         totals(&panel.state.pool, server).await?,
         ("0".into(), "0".into())
     );
-    let saved: (i64,i64) = sqlx::query_as("SELECT s.metrics_sampled_at,(c.checkpoint->>'sampled_at')::bigint FROM servers s JOIN server_network_counters c ON c.server_id=s.id WHERE s.id=$1").bind(server).fetch_one(&panel.state.pool).await?;
+    let saved: (i64,i64) = sqlx::query_as("SELECT t.sampled_at,(c.checkpoint->>'sampled_at')::bigint FROM telemetry_servers t JOIN server_network_counters c ON c.server_id=t.server_id WHERE t.server_id=$1").bind(server).fetch_one(&panel.state.pool).await?;
     assert_eq!(saved, (at, at));
     sqlx::query("DROP TRIGGER reject_daily_fixture ON server_network_daily")
         .execute(&panel.state.pool)

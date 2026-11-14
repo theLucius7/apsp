@@ -33,10 +33,6 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/control-center/me", get(me))
         .route("/api/control-center/events", get(events::subscribe))
-        .route(
-            "/api/control-center/export/servers",
-            get(events::export_servers),
-        )
         .route("/api/control-center/reauth", post(reauthenticate))
         .route(
             "/api/control-center/administrators",

@@ -1,8 +1,6 @@
 use super::{authenticate, require_capability};
 use crate::{AppState, error::ApiResult};
-use apsp_protocol::now_timestamp;
 use axum::{
-    Json,
     extract::{Query, State},
     http::HeaderMap,
     response::sse::{Event, KeepAlive, Sse},
@@ -91,23 +89,5 @@ pub async fn subscribe(
         KeepAlive::new()
             .interval(Duration::from_secs(15))
             .text("连接保持"),
-    ))
-}
-pub async fn export_servers(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> ApiResult<Json<Value>> {
-    let actor = authenticate(&state, &headers).await?;
-    require_capability(&state, &headers, "servers:read").await?;
-    let rows=sqlx::query("SELECT id,name,last_seen,manifest_rev,static_info,latest_metrics FROM servers WHERE deleted_at IS NULL ORDER BY id LIMIT 10000").fetch_all(&state.pool).await?;
-    let mut values = Vec::new();
-    for row in rows {
-        let id: i64 = row.try_get("id")?;
-        if actor.allows_server(id) {
-            values.push(json!({"id":id,"name":row.try_get::<String,_>("name")?,"last_seen":row.try_get::<Option<i64>,_>("last_seen")?,"manifest_rev":row.try_get::<i64,_>("manifest_rev")?,"static_info":row.try_get::<Value,_>("static_info")?,"metrics":row.try_get::<Value,_>("latest_metrics")?}));
-        }
-    }
-    Ok(Json(
-        json!({"schema_version":1,"exported_at":now_timestamp(),"scope":"authorized-servers","servers":values,"credentials_included":false}),
     ))
 }

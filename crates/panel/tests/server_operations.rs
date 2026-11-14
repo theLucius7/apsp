@@ -80,10 +80,13 @@ async fn public_dashboard_is_opt_in_and_never_exposes_hidden_servers_or_private_
     let visible = panel.create_server(&cookie, "公开设备").await?;
     let hidden = panel.create_server(&cookie, "隐藏设备").await?;
     for id in [visible, hidden] {
-        sqlx::query("UPDATE servers SET device_public_key=$2,static_info=$3,asset_settings=$4,latest_metrics=$5 WHERE id=$1")
+        sqlx::query("UPDATE servers SET device_public_key=$2,static_info=$3,asset_settings=$4 WHERE id=$1")
             .bind(id).bind(format!("TEST_ONLY_KEY_{id}"))
             .bind(json!({"hostname":"PRIVATE_HOST","ip_addresses":["192.0.2.1"],"cpu_cores":4}))
             .bind(json!({"hidden":id==hidden,"price":"12.00","agent_mirror":"https://mirror.example.com","region":"JP"}))
+            .execute(&panel.state.pool).await?;
+        sqlx::query("INSERT INTO telemetry_servers(server_id,latest_metrics) VALUES($1,$2) ON CONFLICT(server_id) DO UPDATE SET latest_metrics=EXCLUDED.latest_metrics")
+            .bind(id)
             .bind(json!({"cpu_percent":10,"network_interfaces":{"PRIVATE_INTERFACE":{"transmitted_bytes":123}},"disks":[{"mount_point":"PRIVATE_PATH"}]}))
             .execute(&panel.state.pool).await?;
     }
@@ -490,10 +493,13 @@ async fn monitoring_only_sessions_and_tokens_keep_private_server_fields_hidden(
     let visible = panel.create_server(&cookie, "监控可见").await?;
     let hidden = panel.create_server(&cookie, "监控隐藏").await?;
     for id in [visible, hidden] {
-        sqlx::query("UPDATE servers SET device_public_key=$2,static_info=$3,asset_settings=$4,latest_metrics=$5 WHERE id=$1")
+        sqlx::query("UPDATE servers SET device_public_key=$2,static_info=$3,asset_settings=$4 WHERE id=$1")
             .bind(id).bind("TEST_ONLY_PRIVATE_IDENTITY")
             .bind(json!({"hostname":"TEST_ONLY_PRIVATE_HOST","ip_addresses":["192.0.2.1"],"cpu_cores":4}))
             .bind(json!({"hidden":id==hidden,"price":"123.45","agent_mirror":"https://mirror.example.com","region":"JP"}))
+            .execute(&panel.state.pool).await?;
+        sqlx::query("INSERT INTO telemetry_servers(server_id,latest_metrics) VALUES($1,$2) ON CONFLICT(server_id) DO UPDATE SET latest_metrics=EXCLUDED.latest_metrics")
+            .bind(id)
             .bind(json!({"cpu_percent":10,"process_resources":{"private":"TEST_ONLY_PROCESS_DETAIL"},"network_interfaces":{"TEST_ONLY_PRIVATE_INTERFACE":{"transmitted_bytes":123}}}))
             .execute(&panel.state.pool).await?;
     }

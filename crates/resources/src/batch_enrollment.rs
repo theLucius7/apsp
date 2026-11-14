@@ -152,8 +152,16 @@ async fn register(state: &AppState, config: &TemplateConfig, name: &str) -> ApiR
     let now = now_timestamp();
     let mut tx = state.pool.begin().await?;
     crate::server_observation::lock_latency_tasks_tx(&mut tx).await?;
-    let id: i64=sqlx::query_scalar("INSERT INTO servers(name,agent_settings,telemetry_settings,asset_settings) VALUES($1,$2,$3,$4) RETURNING id")
-        .bind(name).bind(json!(config.agent_settings)).bind(json!(config.telemetry_settings)).bind(json!(config.asset_settings)).fetch_one(&mut *tx).await?;
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO servers(name,agent_settings,asset_settings) VALUES($1,$2,$3) RETURNING id",
+    )
+    .bind(name)
+    .bind(json!(config.agent_settings))
+    .bind(json!(config.asset_settings))
+    .fetch_one(&mut *tx)
+    .await?;
+    crate::server_observation::save_telemetry_settings_tx(&mut tx, id, &config.telemetry_settings)
+        .await?;
     sqlx::query("INSERT INTO fleet_profiles(server_id,asset,updated_at) VALUES($1,$2,$3)")
         .bind(id)
         .bind(&config.asset)

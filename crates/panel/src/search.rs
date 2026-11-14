@@ -227,6 +227,7 @@ pub async fn search(
     };
 
     if actor.allows("servers:read") {
+        let first = output.items.len();
         output
             .append(
                 &state,
@@ -236,7 +237,7 @@ pub async fn search(
                 "",
                 r#"
  SELECT jsonb_build_object('kind','server','id',s.id,'label',s.name,
-   'path','/servers/'||s.id,'server_id',s.id,'sampled_at',NULLIF(s.metrics_sampled_at,0),
+   'path','/servers/'||s.id,'server_id',s.id,'sampled_at',NULL,
    'sampled_at_unit','milliseconds','received_at',s.static_info_received_at)
  FROM servers s CROSS JOIN visibility v
  WHERE s.deleted_at IS NULL AND (v.unrestricted OR s.id=ANY(v.server_ids))
@@ -244,6 +245,20 @@ pub async fn search(
  ORDER BY s.name,s.id"#,
             )
             .await?;
+        // Observability keeps when each server's newest metrics were sampled.
+        let found = &mut output.items[first..];
+        let ids: Vec<i64> = found
+            .iter()
+            .filter_map(|item| item["server_id"].as_i64())
+            .collect();
+        let sampled =
+            apsp_observability::telemetry::sampled_at(&mut *state.pool.acquire().await?, &ids)
+                .await?;
+        for item in found {
+            if let Some(at) = item["server_id"].as_i64().and_then(|id| sampled.get(&id)) {
+                item["sampled_at"] = json!(at);
+            }
+        }
         output.append(&state, &scope, &pattern, "ip", r#",
 visible_servers AS (
  SELECT s.* FROM servers s CROSS JOIN visibility v

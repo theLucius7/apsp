@@ -65,6 +65,10 @@ pub fn router() -> Router<AppState> {
         .merge(crate::cloud_overview::routes())
         .route("/api/control-center/search", get(crate::search::search))
         .route(
+            "/api/control-center/export/servers",
+            get(crate::server_export::export_servers),
+        )
+        .route(
             "/api/control-center/health",
             get(crate::system_health::health),
         )

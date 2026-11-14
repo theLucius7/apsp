@@ -57,10 +57,12 @@ async fn live_receipt_is_not_persistence_and_public_scope_is_rechecked_for_each_
         .send()
         .await?
         .error_for_status()?;
-    let persisted: i64 = sqlx::query_scalar("SELECT metrics_sampled_at FROM servers WHERE id=$1")
-        .bind(id)
-        .fetch_one(&panel.state.pool)
-        .await?;
+    let persisted: i64 = sqlx::query_scalar(
+        "SELECT COALESCE((SELECT sampled_at FROM telemetry_servers WHERE server_id=$1),0)",
+    )
+    .bind(id)
+    .fetch_one(&panel.state.pool)
+    .await?;
     assert_eq!(persisted, 0);
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM telemetry_receipts WHERE server_id=$1")
@@ -246,7 +248,7 @@ async fn capacity_extensions_are_numeric_and_legacy_public_rows_cannot_expose_ne
     assert_eq!(receipts, 0);
     // Old optional extension fields may already contain arbitrary JSON. Keep
     // that administrator evidence while filtering every anonymous projection.
-    sqlx::query("UPDATE servers SET latest_metrics=$2,metrics_sampled_at=$3 WHERE id=$1")
+    sqlx::query("INSERT INTO telemetry_servers(server_id,latest_metrics,sampled_at) VALUES($1,$2,$3) ON CONFLICT(server_id) DO UPDATE SET latest_metrics=EXCLUDED.latest_metrics,sampled_at=EXCLUDED.sampled_at")
         .bind(id).bind(json!({"cpu_percent":0,"memory_used":0,"memory_total":{"PRIVATE_CAPACITY":"secret"},"disk_total":"PRIVATE_CAPACITY","network_interfaces":{"PRIVATE_INTERFACE":{"received_bytes":0,"receive_bytes_per_sec":{"PRIVATE_RATE":"secret"}}}})).bind(now_millis()).execute(&panel.state.pool).await?;
     sqlx::query("UPDATE panel_settings SET settings=settings || '{\"public_dashboard\":true}'::jsonb WHERE singleton").execute(&panel.state.pool).await?;
     for route in [

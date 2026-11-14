@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use sqlx::{FromRow, PgConnection, PgPool, Row, postgres::PgRow};
 use uuid::Uuid;
 
-pub const SERVER_COLUMNS: &str = "id, name, device_public_key, static_info, last_seen, last_contact_at, last_heartbeat_at, NULLIF(metrics_sampled_at,0) AS metrics_sampled_at, latest_metrics, agent_settings, asset_settings, manifest_rev, capabilities";
+pub const SERVER_COLUMNS: &str = "id, name, device_public_key, static_info, last_seen, last_contact_at, last_heartbeat_at, agent_settings, asset_settings, manifest_rev, capabilities";
 
 /// Network traffic of the server's current billing cycle against its allowance, filled
 /// by observability.
@@ -53,6 +53,9 @@ pub struct Server {
     #[sqlx(default)]
     pub last_contact_at: Option<i64>,
     pub last_heartbeat_at: Option<i64>,
+    /// When the newest stored metrics were sampled; this and `latest_metrics` are kept by
+    /// observability and filled by `server_observation::attach_live`.
+    #[sqlx(skip)]
     pub metrics_sampled_at: Option<i64>,
     #[sqlx(skip)]
     pub metrics_received_at: Option<i64>,
@@ -67,6 +70,7 @@ pub struct Server {
     pub asset_settings: AssetSettings,
     #[sqlx(skip)]
     pub traffic: Option<TrafficSummary>,
+    #[sqlx(skip)]
     pub latest_metrics: Value,
     pub manifest_rev: i64,
     pub capabilities: Value,
@@ -77,24 +81,14 @@ pub struct Server {
 }
 
 impl Server {
+    /// Renews the asset dates and marks whether the device was seen in the last minute.
+    /// Whether the metrics are stale is decided with them, by `attach_live`.
     pub fn with_online(mut self) -> Self {
         let now = now_timestamp();
         self.asset_settings.renew(now);
         self.online = self
             .last_seen
             .is_some_and(|seen| now.saturating_sub(seen) <= 60);
-        let settings =
-            serde_json::from_value::<apsp_protocol::AgentSettings>(self.agent_settings.clone())
-                .unwrap_or_default();
-        let allowance = settings
-            .sample_interval_secs
-            .saturating_mul(3)
-            .saturating_add(settings.upload_interval_secs.saturating_mul(2))
-            .max(15);
-        self.metrics_stale = self.metrics_sampled_at.is_some_and(|sampled| {
-            apsp_protocol::telemetry::now_millis().saturating_sub(sampled)
-                > (allowance as i64).saturating_mul(1000)
-        });
         self
     }
 }
@@ -109,6 +103,11 @@ pub enum RowLock {
     Update,
     /// `FOR SHARE` on a server that exists and is not deleted.
     Share,
+    /// `FOR KEY SHARE` on a server that exists and is not deleted, the lock a foreign key to
+    /// the server takes: it waits for the server's deletion and other work that locks it for
+    /// update, and never blocks updates of the server's own columns such as its contact
+    /// times.
+    KeyShare,
     /// `FOR UPDATE` on the server's row whether or not the server is deleted: device
     /// results, reconciliation and cleanup still serialize with it after deletion.
     UpdateRecord,
@@ -122,6 +121,7 @@ impl RowLock {
         match self {
             Self::Update => (" AND deleted_at IS NULL", "FOR UPDATE"),
             Self::Share => (" AND deleted_at IS NULL", "FOR SHARE"),
+            Self::KeyShare => (" AND deleted_at IS NULL", "FOR KEY SHARE"),
             Self::UpdateRecord => ("", "FOR UPDATE"),
             Self::ShareRecord => ("", "FOR SHARE"),
         }
@@ -235,15 +235,20 @@ pub async fn create(
     let mut transaction = state.pool.begin().await?;
     server_observation::lock_latency_tasks_tx(&mut transaction).await?;
     let query = format!(
-        "INSERT INTO servers (name, agent_settings, asset_settings, telemetry_settings) VALUES ($1, $2, $3, $4) RETURNING {SERVER_COLUMNS}"
+        "INSERT INTO servers (name, agent_settings, asset_settings) VALUES ($1, $2, $3) RETURNING {SERVER_COLUMNS}"
     );
     let server = sqlx::query_as::<_, Server>(&query)
         .bind(name)
         .bind(json!(request.agent_settings))
         .bind(json!(asset))
-        .bind(json!(request.telemetry_settings))
         .fetch_one(&mut *transaction)
         .await?;
+    server_observation::save_telemetry_settings_tx(
+        &mut transaction,
+        server.id,
+        &request.telemetry_settings,
+    )
+    .await?;
     for spec in request.probes {
         sqlx::query("INSERT INTO network_probes (id, server_id, spec) VALUES ($1, $2, $3)")
             .bind(spec.id)

@@ -34,27 +34,26 @@ fn failure(entry: &QualityDatabase) -> Option<QueryFailure> {
     })
 }
 
+/// Admits one refresh of the server's IP quality and records its lease, which lasts a
+/// minute or until [`end_refresh`]; the lease outlives a process that stops mid-refresh.
 pub(super) async fn begin_refresh(pool: &PgPool, id: i64, now: i64) -> ApiResult<Vec<String>> {
     let mut tx = pool.begin().await?;
     // Both admission checks run after taking the same durable server lock.
-    let row = crate::servers::lock_row(
-        &mut tx,
-        id,
-        crate::servers::RowLock::Update,
-        "static_info,quality_refresh_started",
-    )
-    .await?
-    .ok_or(ApiError::NotFound)?;
+    let row = crate::servers::lock_row(&mut tx, id, crate::servers::RowLock::Update, "static_info")
+        .await?
+        .ok_or(ApiError::NotFound)?;
     let ips = reported_ips(&row.get::<Value, _>("static_info"));
     if ips.is_empty() {
         return Err(ApiError::Conflict(
             "Agent 尚未上报 IP 地址，请先升级或等待设备上报".into(),
         ));
     }
-    if row
-        .get::<Option<i64>, _>("quality_refresh_started")
-        .is_some_and(|started| started >= now.saturating_sub(60))
-    {
+    let started: Option<i64> =
+        sqlx::query_scalar("SELECT started_at FROM server_ip_quality_refreshes WHERE server_id=$1")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if started.is_some_and(|started| started >= now.saturating_sub(60)) {
         return Err(ApiError::Conflict(
             "IP 质量查询正在进行，请稍后刷新查看结果".into(),
         ));
@@ -71,13 +70,27 @@ pub(super) async fn begin_refresh(pool: &PgPool, id: i64, now: i64) -> ApiResult
             "刚刚查询过 IP 质量，请至少等待一分钟再刷新".into(),
         ));
     }
-    sqlx::query("UPDATE servers SET quality_refresh_started=$2 WHERE id=$1")
+    sqlx::query("INSERT INTO server_ip_quality_refreshes(server_id,started_at) VALUES($1,$2) ON CONFLICT(server_id) DO UPDATE SET started_at=EXCLUDED.started_at")
         .bind(id)
         .bind(now)
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
     Ok(ips)
+}
+
+/// Ends the refresh lease taken at `started`, unless a later refresh has replaced it;
+/// returns whether it ended.
+pub(super) async fn end_refresh(pool: &PgPool, id: i64, started: i64) -> ApiResult<bool> {
+    Ok(
+        sqlx::query("DELETE FROM server_ip_quality_refreshes WHERE server_id=$1 AND started_at=$2")
+            .bind(id)
+            .bind(started)
+            .execute(pool)
+            .await?
+            .rows_affected()
+            == 1,
+    )
 }
 
 pub(super) async fn persist(pool: &PgPool, id: i64, quality: &[IpQuality]) -> ApiResult<()> {

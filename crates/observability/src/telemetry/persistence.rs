@@ -112,6 +112,31 @@ pub(super) async fn merge(
     Ok(())
 }
 
+/// Locks the server's stored newest metrics for one batch and reads them. Batches of a
+/// server queue on this row, which a server's first batch creates.
+async fn lock_latest(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+) -> ApiResult<(serde_json::Value, i64)> {
+    const LOCK: &str =
+        "SELECT latest_metrics,sampled_at FROM telemetry_servers WHERE server_id=$1 FOR UPDATE";
+    if let Some(latest) = sqlx::query_as(LOCK)
+        .bind(server)
+        .fetch_optional(&mut **tx)
+        .await?
+    {
+        return Ok(latest);
+    }
+    sqlx::query("INSERT INTO telemetry_servers(server_id) VALUES($1) ON CONFLICT DO NOTHING")
+        .bind(server)
+        .execute(&mut **tx)
+        .await?;
+    Ok(sqlx::query_as(LOCK)
+        .bind(server)
+        .fetch_one(&mut **tx)
+        .await?)
+}
+
 pub(super) async fn save(
     pool: &PgPool,
     server: i64,
@@ -120,21 +145,24 @@ pub(super) async fn save(
 ) -> ApiResult<TelemetryAck> {
     let retention = storage::read_policy(pool).await?.history_retention_days;
     let mut tx = pool.begin().await?;
+    // The key share lock the telemetry tables' foreign keys take anyway, taken first: a
+    // batch waits for the server's deletion and for work that locks the server for update
+    // (asset edits, traffic corrections, alert evaluation; history maintenance skips the
+    // server meanwhile), and never blocks or rewrites the server row itself.
     let row = crate::servers::lock_row(
         &mut tx,
         server,
-        crate::servers::RowLock::Update,
-        "asset_settings,latest_metrics,metrics_sampled_at",
+        crate::servers::RowLock::KeyShare,
+        "asset_settings",
     )
     .await?
     .ok_or(ApiError::NotFound)?;
+    // The newest metrics so far: each sample is compared with the one before
+    // it, exactly as when every sample re-read and replaced the stored value.
+    let (mut latest, mut latest_at) = lock_latest(&mut tx, server).await?;
     initialized(&mut tx, server).await?;
     let asset: crate::server_assets::AssetSettings =
         serde_json::from_value(row.get("asset_settings")).map_err(anyhow::Error::from)?;
-    // The newest metrics so far: each sample is compared with the one before
-    // it, exactly as when every sample re-read and replaced the stored value.
-    let mut latest: serde_json::Value = row.get("latest_metrics");
-    let mut latest_at: i64 = row.get("metrics_sampled_at");
     let mut latest_changed = false;
     let mut entries = Vec::with_capacity(batch.samples.len());
     // Digest and time of each identity's first occurrence in this batch.
@@ -230,7 +258,7 @@ pub(super) async fn save(
             .bind(server).bind(&raw.0).bind(&raw.1).bind(&raw.2).bind(&raw.3).execute(&mut *tx).await?;
     }
     if latest_changed {
-        sqlx::query("UPDATE servers SET latest_metrics=$2,metrics_sampled_at=$3 WHERE id=$1 AND metrics_sampled_at<$3").bind(server).bind(&latest).bind(latest_at).execute(&mut *tx).await?;
+        sqlx::query("UPDATE telemetry_servers SET latest_metrics=$2,sampled_at=$3 WHERE server_id=$1 AND sampled_at<$3").bind(server).bind(&latest).bind(latest_at).execute(&mut *tx).await?;
     }
     if !minutes.is_empty() {
         // Comparisons need the last observation, not the aggregate's mean.

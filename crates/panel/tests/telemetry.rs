@@ -70,7 +70,7 @@ async fn compressed_replays_are_atomic_and_delayed_samples_do_not_replace_curren
             .await?;
     assert_eq!(count, 2);
     let current: serde_json::Value =
-        sqlx::query_scalar("SELECT latest_metrics FROM servers WHERE id=$1")
+        sqlx::query_scalar("SELECT latest_metrics FROM telemetry_servers WHERE server_id=$1")
             .bind(server)
             .fetch_one(&panel.state.pool)
             .await?;
@@ -294,5 +294,222 @@ async fn legacy_metrics_keep_values_without_inventing_collection_time(pool: PgPo
         }
     })
     .await??;
+    Ok(())
+}
+
+/// The top-level keys of a JSON object body, in the order the body lists them.
+fn top_level_keys(body: &str) -> Vec<String> {
+    let (mut keys, mut depth, mut chars) = (Vec::new(), 0, body.chars().peekable());
+    while let Some(c) = chars.next() {
+        match c {
+            '{' | '[' => depth += 1,
+            '}' | ']' => depth -= 1,
+            '"' => {
+                let mut text = String::new();
+                while let Some(c) = chars.next() {
+                    match c {
+                        '\\' => {
+                            chars.next();
+                        }
+                        '"' => break,
+                        c => text.push(c),
+                    }
+                }
+                if depth == 1 && chars.peek() == Some(&':') {
+                    keys.push(text);
+                }
+            }
+            _ => {}
+        }
+    }
+    keys
+}
+
+#[sqlx::test]
+async fn server_views_show_the_metrics_and_settings_observability_keeps(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start(pool).await?;
+    let cookie = panel.admin_cookie().await?;
+    let created = panel
+        .admin(
+            Method::POST,
+            "/api/servers",
+            &cookie,
+            Some(json!({"name":"stored view","telemetry_settings":{"persist_interval_secs":120}})),
+        )
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    // The server view keeps its fields and their order now that observability keeps the
+    // metrics and settings in its own table.
+    assert_eq!(
+        top_level_keys(&created),
+        [
+            "id",
+            "name",
+            "device_public_key",
+            "static_info",
+            "last_seen",
+            "last_heartbeat_at",
+            "metrics_sampled_at",
+            "metrics_received_at",
+            "metrics_persisted_at",
+            "served_at",
+            "telemetry_settings",
+            "agent_settings",
+            "asset_settings",
+            "traffic",
+            "latest_metrics",
+            "manifest_rev",
+            "capabilities",
+            "online",
+            "metrics_stale",
+        ]
+    );
+    let created: serde_json::Value = serde_json::from_str(&created)?;
+    let id = created["id"].as_i64().unwrap();
+    assert_eq!(created["latest_metrics"], json!({}));
+    assert!(created["metrics_sampled_at"].is_null());
+    assert!(created["metrics_persisted_at"].is_null());
+    assert_eq!(
+        created["telemetry_settings"],
+        json!({"persist_interval_secs":120})
+    );
+    assert_eq!(created["metrics_stale"], true);
+    let sampled = now_millis() - 2_000;
+    sqlx::query("UPDATE telemetry_servers SET latest_metrics=$2,sampled_at=$3 WHERE server_id=$1")
+        .bind(id)
+        .bind(json!({"cpu_percent":42.5,"process_resources":{"TEST_ONLY":1},"system_pressure":{"cpu":{"some_avg10":1.5}}}))
+        .bind(sampled)
+        .execute(&panel.state.pool)
+        .await?;
+    // A server whose row has no metrics or settings stored shows the defaults.
+    let bare: i64 =
+        sqlx::query_scalar("INSERT INTO servers(name) VALUES('TEST_ONLY bare') RETURNING id")
+            .fetch_one(&panel.state.pool)
+            .await?;
+    let listed: Vec<serde_json::Value> = panel
+        .admin(Method::GET, "/api/servers", &cookie, None)
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let detail: serde_json::Value = panel
+        .admin(Method::GET, &format!("/api/servers/{id}"), &cookie, None)
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    for view in [&listed[0], &detail] {
+        assert_eq!(view["id"], id);
+        assert_eq!(view["latest_metrics"], json!({"cpu_percent":42.5}));
+        assert_eq!(view["metrics_sampled_at"], sampled);
+        assert_eq!(view["metrics_persisted_at"], sampled);
+        assert!(view["metrics_received_at"].is_null());
+        assert_eq!(view["metrics_stale"], false);
+        assert_eq!(
+            view["telemetry_settings"],
+            json!({"persist_interval_secs":120})
+        );
+    }
+    assert_eq!(listed[1]["id"], bare);
+    assert_eq!(listed[1]["latest_metrics"], json!({}));
+    assert!(listed[1]["metrics_sampled_at"].is_null());
+    assert_eq!(
+        listed[1]["telemetry_settings"],
+        json!({"persist_interval_secs":60})
+    );
+    // The fleet profile shows the stored process and pressure detail.
+    let profile: serde_json::Value = panel
+        .admin(
+            Method::GET,
+            &format!("/api/servers/{id}/fleet"),
+            &cookie,
+            None,
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(profile["sampled_at"], sampled);
+    assert_eq!(profile["processes"], json!({"TEST_ONLY":1}));
+    assert_eq!(profile["pressure"], json!({"cpu":{"some_avg10":1.5}}));
+    let profile: serde_json::Value = panel
+        .admin(
+            Method::GET,
+            &format!("/api/servers/{bare}/fleet"),
+            &cookie,
+            None,
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(profile["sampled_at"], 0);
+    assert!(profile["processes"].is_null());
+    Ok(())
+}
+
+#[sqlx::test]
+async fn a_batch_neither_rewrites_nor_waits_for_the_server_row(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start(pool).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, _socket, ack) = panel.authenticated_device(&cookie, "row lock").await?;
+    // A contact time update in progress holds the server row, as the device channel does
+    // several times a second across the fleet.
+    let mut contact = panel.state.pool.begin().await?;
+    sqlx::query("UPDATE servers SET last_contact_at=last_contact_at WHERE id=$1")
+        .bind(server)
+        .execute(&mut *contact)
+        .await?;
+    let sampled = now_millis() - 1_000;
+    let batch = TelemetryBatch {
+        samples: vec![TelemetrySample {
+            id: Uuid::new_v4(),
+            sampled_at: sampled,
+            metrics: Metrics {
+                cpu_percent: Some(33.0),
+                ..Default::default()
+            },
+        }],
+    };
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        panel
+            .client
+            .post(format!("{}/api/agent/v1/telemetry", panel.base))
+            .bearer_auth(&ack.session_token)
+            .header("Content-Encoding", "gzip")
+            .body(body(&batch)?)
+            .send(),
+    )
+    .await
+    .expect("a telemetry batch waited for the server row")?;
+    assert_eq!(response.status(), StatusCode::OK);
+    contact.rollback().await?;
+    let stored: (i64, serde_json::Value) = sqlx::query_as(
+        "SELECT sampled_at,latest_metrics FROM telemetry_servers WHERE server_id=$1",
+    )
+    .bind(server)
+    .fetch_one(&panel.state.pool)
+    .await?;
+    assert_eq!(stored.0, sampled);
+    assert_eq!(stored.1["cpu_percent"], 33.0);
+    // A deleted server takes no more batches.
+    sqlx::query("UPDATE servers SET deleted_at=1 WHERE id=$1")
+        .bind(server)
+        .execute(&panel.state.pool)
+        .await?;
+    let response = panel
+        .client
+        .post(format!("{}/api/agent/v1/telemetry", panel.base))
+        .bearer_auth(&ack.session_token)
+        .header("Content-Encoding", "gzip")
+        .body(body(&batch)?)
+        .send()
+        .await?;
+    assert_ne!(response.status(), StatusCode::OK);
     Ok(())
 }

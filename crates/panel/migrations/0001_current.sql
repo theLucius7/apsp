@@ -2233,23 +2233,16 @@ CREATE TABLE public.servers (
     device_public_key text,
     static_info jsonb DEFAULT '{}'::jsonb NOT NULL,
     last_seen bigint,
-    latest_metrics jsonb DEFAULT '{}'::jsonb NOT NULL,
     manifest_rev bigint DEFAULT 0 NOT NULL,
     dirty_at bigint,
     deleted_at bigint,
     capabilities jsonb DEFAULT '[]'::jsonb NOT NULL,
-    quality_refresh_started bigint,
     agent_settings jsonb DEFAULT '{"auto_update": false, "discover_public_ips": true, "sample_interval_secs": 1, "upload_interval_secs": 3}'::jsonb NOT NULL,
-    metrics_sampled_at bigint DEFAULT 0 NOT NULL,
     last_heartbeat_at bigint,
     asset_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
-    telemetry_settings jsonb DEFAULT '{"persist_interval_secs": 60}'::jsonb NOT NULL,
     static_info_received_at bigint,
-    probe_revision bigint DEFAULT 0 NOT NULL,
-    probe_fingerprint text,
     last_contact_at bigint,
-    CONSTRAINT servers_manifest_rev_check CHECK ((manifest_rev >= 0)),
-    CONSTRAINT servers_probe_revision_check CHECK ((probe_revision >= 0))
+    CONSTRAINT servers_manifest_rev_check CHECK ((manifest_rev >= 0))
 );
 
 CREATE SEQUENCE public.servers_id_seq
@@ -5725,6 +5718,24 @@ CREATE TABLE public.device_sessions (
 CREATE INDEX device_sessions_server_idx ON public.device_sessions USING btree (server_id);
 
 CREATE INDEX device_sessions_expiry_idx ON public.device_sessions USING btree (expires_at);
+
+CREATE TABLE public.telemetry_servers (
+    server_id bigint PRIMARY KEY REFERENCES public.servers(id) ON DELETE CASCADE,
+    settings jsonb DEFAULT '{"persist_interval_secs": 60}'::jsonb NOT NULL,
+    latest_metrics jsonb DEFAULT '{}'::jsonb NOT NULL,
+    sampled_at bigint DEFAULT 0 NOT NULL
+);
+
+CREATE TABLE public.probe_assignments (
+    server_id bigint PRIMARY KEY REFERENCES public.servers(id) ON DELETE CASCADE,
+    revision bigint DEFAULT 0 NOT NULL CHECK (revision >= 0),
+    fingerprint text
+);
+
+CREATE TABLE public.server_ip_quality_refreshes (
+    server_id bigint PRIMARY KEY REFERENCES public.servers(id) ON DELETE CASCADE,
+    started_at bigint NOT NULL
+);
 
 CREATE TABLE public.apsp_schema_baseline (singleton boolean PRIMARY KEY CHECK (singleton), fingerprint text NOT NULL);
 INSERT INTO public.apsp_schema_baseline SELECT true, (SELECT md5(string_agg(definition, E'\n' ORDER BY definition COLLATE "C"))

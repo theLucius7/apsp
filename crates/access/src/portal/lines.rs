@@ -258,16 +258,20 @@ pub(super) async fn view(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let hosts: BTreeMap<i64, Host> = sqlx::query("SELECT s.id,s.last_seen,COALESCE(s.latest_metrics,'{}'::JSONB) AS metrics,COALESCE(s.static_info,'{}'::JSONB) AS info,COALESCE(m.healthy AND m.applied_rev=m.target_rev,FALSE) AS healthy FROM servers s LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id=ANY($1) AND s.deleted_at IS NULL")
+    let mut metrics = crate::server_observation::stored_metrics(&mut tx, &server_ids).await?;
+    let hosts: BTreeMap<i64, Host> = sqlx::query("SELECT s.id,s.last_seen,COALESCE(s.static_info,'{}'::JSONB) AS info,COALESCE(m.healthy AND m.applied_rev=m.target_rev,FALSE) AS healthy FROM servers s LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id=ANY($1) AND s.deleted_at IS NULL")
         .bind(&server_ids).fetch_all(&mut *tx).await?
         .iter()
-        .map(|row| Ok((row.try_get("id")?, Host {
-            server_id: row.try_get("id")?,
-            agent_seen: row.try_get("last_seen")?,
-            metrics: row.try_get("metrics")?,
-            static_info: row.try_get("info")?,
-            runtime_healthy: row.try_get("healthy")?,
-        })))
+        .map(|row| {
+            let id: i64 = row.try_get("id")?;
+            Ok((id, Host {
+                server_id: id,
+                agent_seen: row.try_get("last_seen")?,
+                metrics: metrics.remove(&id).unwrap_or_default().metrics,
+                static_info: row.try_get("info")?,
+                runtime_healthy: row.try_get("healthy")?,
+            }))
+        })
         .collect::<Result<_, sqlx::Error>>()?;
     let probes: Vec<(i64, Value, Value)> = sqlx::query_as("SELECT p.server_id,p.spec,COALESCE((SELECT jsonb_agg(r.result ORDER BY r.sampled_at DESC) FROM (SELECT result,sampled_at FROM probe_results WHERE server_id=p.server_id AND probe_id=p.id AND sampled_at>$2 ORDER BY sampled_at DESC LIMIT 120) r),'[]'::JSONB) FROM network_probes p WHERE p.server_id=ANY($1) ORDER BY p.server_id,p.id")
         .bind(&server_ids).bind(apsp_protocol::telemetry::now_millis() - LATENCY_WINDOW_MS).fetch_all(&mut *tx).await?;

@@ -67,7 +67,11 @@ async fn resource_windows_require_complete_valid_samples_and_recover_once(
     let now = apsp_protocol::now_timestamp();
     let end = now / 60 * 60;
     config(pool, 0, 0).await?;
-    sqlx::query("UPDATE servers SET last_seen=$1,metrics_sampled_at=$1*1000")
+    sqlx::query("UPDATE servers SET last_seen=$1")
+        .bind(now)
+        .execute(pool)
+        .await?;
+    sqlx::query("INSERT INTO telemetry_servers(server_id,sampled_at) SELECT id,$1*1000 FROM servers ON CONFLICT(server_id) DO UPDATE SET sampled_at=EXCLUDED.sampled_at")
         .bind(now)
         .execute(pool)
         .await?;

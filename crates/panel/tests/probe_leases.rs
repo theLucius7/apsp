@@ -424,3 +424,47 @@ async fn anonymous_history_redacts_execution_proof_but_preserves_monitor_fields(
     assert!(!wire.contains("lease_id"));
     Ok(())
 }
+
+#[sqlx::test]
+async fn an_adopted_assignment_revision_only_moves_forward(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start(pool).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, _socket, ack) = panel
+        .authenticated_device(&cookie, "adopted revision")
+        .await?;
+    configured(&panel, &cookie, server).await?;
+    capable(&panel, server).await?;
+    // The revision and fingerprint as the baseline adoption copies them from the server row.
+    sqlx::query(
+        "UPDATE probe_assignments SET revision=41,fingerprint='TEST_ONLY adopted' WHERE server_id=$1",
+    )
+    .bind(server)
+    .execute(&panel.state.pool)
+    .await?;
+    let first = lease(&panel, &ack.session_token).await?;
+    assert_eq!(first.revision, 42);
+    assert_eq!(lease(&panel, &ack.session_token).await?.revision, 42);
+    configured(&panel, &cookie, server).await?;
+    let changed = lease(&panel, &ack.session_token).await?;
+    assert!(changed.revision > first.revision);
+    let stored: i64 =
+        sqlx::query_scalar("SELECT revision FROM probe_assignments WHERE server_id=$1")
+            .bind(server)
+            .fetch_one(&panel.state.pool)
+            .await?;
+    assert_eq!(u64::try_from(stored)?, changed.revision);
+    // A server whose row has no assignment starts at revision 0.
+    let bare: i64 =
+        sqlx::query_scalar("INSERT INTO servers(name) VALUES('TEST_ONLY bare') RETURNING id")
+            .fetch_one(&panel.state.pool)
+            .await?;
+    let probe = configured(&panel, &cookie, bare).await?;
+    assert_eq!(probe.revision, Some(1));
+    let stored: i64 =
+        sqlx::query_scalar("SELECT revision FROM probe_assignments WHERE server_id=$1")
+            .bind(bare)
+            .fetch_one(&panel.state.pool)
+            .await?;
+    assert_eq!(stored, 1);
+    Ok(())
+}

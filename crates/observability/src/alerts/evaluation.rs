@@ -152,6 +152,15 @@ pub async fn evaluate(pool: &PgPool, started_at: i64, now: i64) -> anyhow::Resul
         } else {
             Vec::new()
         };
+        // Telemetry batches keep the newest sample time in their own row; they wait for
+        // this transaction's lock on the server row, so it cannot move under the rules.
+        let sampled_at = if online && !rules.is_empty() {
+            crate::telemetry::sampled_at(&mut tx, &[id])
+                .await?
+                .remove(&id)
+        } else {
+            None
+        };
 
         for rule in rules {
             let key = format!("resource:{}:{}", rule.id, rule.revision);
@@ -162,7 +171,7 @@ pub async fn evaluate(pool: &PgPool, started_at: i64, now: i64) -> anyhow::Resul
                     &samples,
                     &server.asset_settings.network_interface,
                     now,
-                    server.metrics_sampled_at,
+                    sampled_at,
                 )
             {
                 let unit = rule.spec.metric.unit();

@@ -26,12 +26,13 @@ use apsp_protocol::{
 use apsp_resources::{
     device_channel::{self, DeviceReports},
     retirement,
-    server_observation::{self, ServerObservation},
+    server_observation::{self, ServerObservation, StoredMetrics},
     servers::{self, Server},
 };
 use apsp_traffic as traffic;
 use serde_json::Value;
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgConnection, PgPool, Postgres, Transaction};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 struct Wiring;
@@ -366,6 +367,60 @@ impl ServerObservation for Wiring {
         servers: &'a mut [Server],
     ) -> BoxFuture<'a, ApiResult<()>> {
         Box::pin(observability::telemetry::attach_live(state, servers))
+    }
+
+    fn stored_metrics<'a>(
+        &'a self,
+        connection: &'a mut PgConnection,
+        servers: &'a [i64],
+    ) -> BoxFuture<'a, ApiResult<HashMap<i64, StoredMetrics>>> {
+        Box::pin(async move {
+            Ok(
+                observability::telemetry::latest_metrics(connection, servers)
+                    .await?
+                    .into_iter()
+                    .map(|(server, latest)| {
+                        (
+                            server,
+                            StoredMetrics {
+                                sampled_at: latest.sampled_at,
+                                metrics: latest.metrics,
+                            },
+                        )
+                    })
+                    .collect(),
+            )
+        })
+    }
+
+    fn telemetry_settings<'a>(
+        &'a self,
+        pool: &'a PgPool,
+        servers: &'a [i64],
+    ) -> BoxFuture<'a, ApiResult<HashMap<i64, Value>>> {
+        Box::pin(observability::telemetry::settings_of(pool, servers))
+    }
+
+    fn save_telemetry_settings_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        server: i64,
+        settings: &'a apsp_protocol::telemetry::TelemetrySettings,
+    ) -> BoxFuture<'a, ApiResult<()>> {
+        Box::pin(observability::telemetry::save_settings_tx(
+            tx, server, settings,
+        ))
+    }
+
+    fn copy_telemetry_settings_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        source: i64,
+        target: i64,
+    ) -> BoxFuture<'a, ApiResult<()>> {
+        Box::pin(observability::telemetry::copy_settings_tx(
+            tx, source, target,
+        ))
     }
 
     fn prepare_probe(&self, spec: &mut ProbeSpec) -> ApiResult<()> {

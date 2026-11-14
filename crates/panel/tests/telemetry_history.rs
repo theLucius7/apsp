@@ -97,10 +97,11 @@ async fn comparison_storage_keeps_only_last_numeric_values_without_changing_hist
             .fetch_one(&panel.state.pool)
             .await?;
     assert_eq!(raw, json!(newest.metrics));
-    let latest: Value = sqlx::query_scalar("SELECT latest_metrics FROM servers WHERE id=$1")
-        .bind(server)
-        .fetch_one(&panel.state.pool)
-        .await?;
+    let latest: Value =
+        sqlx::query_scalar("SELECT latest_metrics FROM telemetry_servers WHERE server_id=$1")
+            .bind(server)
+            .fetch_one(&panel.state.pool)
+            .await?;
     assert_eq!(latest, raw);
     let summary: Value = sqlx::query_scalar("SELECT summary FROM telemetry_history WHERE server_id=$1 AND resolution_secs=60 AND bucket_at=$2")
         .bind(server).bind(at).fetch_one(&panel.state.pool).await?;
@@ -497,5 +498,131 @@ async fn locked_bootstrap_prefix_does_not_starve_other_servers(pool: PgPool) -> 
             .await?;
     assert_eq!(retained, 8);
     locked.rollback().await?;
+    Ok(())
+}
+
+#[sqlx::test]
+async fn telemetry_settings_default_without_a_row_and_move_with_a_migrated_collection(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start(pool).await?;
+    let cookie = panel.admin_cookie().await?;
+    let source: Value = panel
+        .admin(
+            Method::POST,
+            "/api/servers",
+            &cookie,
+            Some(json!({"name":"source","telemetry_settings":{"persist_interval_secs":120}})),
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let source = source["id"].as_i64().unwrap();
+    let target = panel.create_server(&cookie, "target").await?;
+    let bare: i64 =
+        sqlx::query_scalar("INSERT INTO servers(name) VALUES('TEST_ONLY bare') RETURNING id")
+            .fetch_one(&panel.state.pool)
+            .await?;
+    let settings = |id: i64| format!("/api/servers/{id}/telemetry-settings");
+    let read = |id: i64| {
+        let panel = &panel;
+        let cookie = &cookie;
+        async move {
+            let value: Value = panel
+                .admin(Method::GET, &settings(id), cookie, None)
+                .await?
+                .error_for_status()?
+                .json()
+                .await?;
+            Ok::<_, anyhow::Error>(value)
+        }
+    };
+    assert_eq!(read(bare).await?, json!({"persist_interval_secs":60}));
+    panel
+        .admin(
+            Method::PATCH,
+            &settings(bare),
+            &cookie,
+            Some(json!({"persist_interval_secs":300})),
+        )
+        .await?
+        .error_for_status()?;
+    assert_eq!(read(bare).await?, json!({"persist_interval_secs":300}));
+    sqlx::query("UPDATE servers SET deleted_at=1 WHERE id=$1")
+        .bind(bare)
+        .execute(&panel.state.pool)
+        .await?;
+    assert_eq!(
+        panel
+            .admin(
+                Method::PATCH,
+                &settings(bare),
+                &cookie,
+                Some(json!({"persist_interval_secs":600})),
+            )
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    let preview: Value = panel
+        .admin(
+            Method::POST,
+            &format!("/api/servers/{source}/fleet/migration-preview"),
+            &cookie,
+            Some(json!({"target_server_id":target})),
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let collection = &preview["snapshot"]["collection"];
+    assert_eq!(collection[0]["id"], source);
+    assert_eq!(
+        collection[0]["telemetry_settings"],
+        json!({"persist_interval_secs":120})
+    );
+    assert_eq!(
+        collection[1]["telemetry_settings"],
+        json!({"persist_interval_secs":60})
+    );
+    panel
+        .admin(
+            Method::POST,
+            &format!("/api/servers/{source}/fleet/migrate"),
+            &cookie,
+            Some(json!({"target_server_id":target,"confirmation":preview["confirmation"]})),
+        )
+        .await?
+        .error_for_status()?;
+    assert_eq!(read(target).await?, json!({"persist_interval_secs":120}));
+    assert_eq!(read(source).await?, json!({"persist_interval_secs":120}));
+    // Servers enrolled from a template start with the template's settings.
+    let template: Value = panel
+        .admin(
+            Method::POST,
+            "/api/fleet/templates",
+            &cookie,
+            Some(json!({"name":"TEST_ONLY template","config":{"telemetry_settings":{"persist_interval_secs":180}}})),
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    business_support::prove(&panel.state.pool, &cookie).await?;
+    let enrolled: Vec<Value> = panel
+        .admin(
+            Method::POST,
+            "/api/fleet/batch-enrollment",
+            &cookie,
+            Some(json!({"template_id":template["id"],"names":["TEST_ONLY enrolled"]})),
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(enrolled[0]["status"], "registered");
+    let enrolled = enrolled[0]["registration"]["server_id"].as_i64().unwrap();
+    assert_eq!(read(enrolled).await?, json!({"persist_interval_secs":180}));
     Ok(())
 }

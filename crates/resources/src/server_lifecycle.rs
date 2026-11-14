@@ -23,8 +23,14 @@ pub async fn get(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<Value>> {
     crate::control_center::require_server(&state, &headers, id, "servers:read").await?;
-    let row=sqlx::query("SELECT s.static_info,s.capabilities,s.agent_settings,s.asset_settings,s.metrics_sampled_at,s.latest_metrics,p.asset,p.policy,p.lifecycle,p.maintenance_from,p.maintenance_until,p.maintenance_reason FROM servers s LEFT JOIN fleet_profiles p ON p.server_id=s.id WHERE s.id=$1 AND s.deleted_at IS NULL")
+    let row=sqlx::query("SELECT s.static_info,s.capabilities,s.agent_settings,s.asset_settings,p.asset,p.policy,p.lifecycle,p.maintenance_from,p.maintenance_until,p.maintenance_reason FROM servers s LEFT JOIN fleet_profiles p ON p.server_id=s.id WHERE s.id=$1 AND s.deleted_at IS NULL")
         .bind(id).fetch_optional(&state.pool).await?.ok_or(ApiError::NotFound)?;
+    // The profile shows the process and pressure detail that polled server reads leave out.
+    let latest =
+        crate::server_observation::stored_metrics(&mut *state.pool.acquire().await?, &[id])
+            .await?
+            .remove(&id)
+            .unwrap_or_default();
     let static_info: Value = row.get("static_info");
     let asset: Option<Value> = row.get("asset");
     let asset = asset.unwrap_or_else(|| json!({}));
@@ -38,7 +44,7 @@ pub async fn get(
     let observed = json!({"cpu_cores":static_info["cpu_cores"],"cpu_model":static_info["cpu_model"],"memory_bytes":static_info["memory_total"],"disk_bytes":static_info["disk_total"],"bandwidth_mbps":null});
     let related = references(&state.pool, id).await?;
     Ok(Json(
-        json!({"server_id":id,"asset":asset,"policy":policy,"digest":digest,"lifecycle":row.get::<Option<String>,_>("lifecycle").unwrap_or_else(||"active".into()),"maintenance_from":row.get::<Option<i64>,_>("maintenance_from"),"maintenance_until":row.get::<Option<i64>,_>("maintenance_until"),"maintenance_reason":row.get::<Option<String>,_>("maintenance_reason"),"capabilities":row.get::<Value,_>("capabilities"),"purchased":purchased,"observed":observed,"asset_settings":row.get::<Value,_>("asset_settings"),"related":related,"sampled_at":row.get::<i64,_>("metrics_sampled_at"),"processes":row.get::<Value,_>("latest_metrics")["process_resources"],"pressure":row.get::<Value,_>("latest_metrics")["system_pressure"]}),
+        json!({"server_id":id,"asset":asset,"policy":policy,"digest":digest,"lifecycle":row.get::<Option<String>,_>("lifecycle").unwrap_or_else(||"active".into()),"maintenance_from":row.get::<Option<i64>,_>("maintenance_from"),"maintenance_until":row.get::<Option<i64>,_>("maintenance_until"),"maintenance_reason":row.get::<Option<String>,_>("maintenance_reason"),"capabilities":row.get::<Value,_>("capabilities"),"purchased":purchased,"observed":observed,"asset_settings":row.get::<Value,_>("asset_settings"),"related":related,"sampled_at":latest.sampled_at,"processes":latest.metrics["process_resources"],"pressure":latest.metrics["system_pressure"]}),
     ))
 }
 
@@ -271,16 +277,18 @@ async fn preview(state: &AppState, source: i64, target: i64) -> ApiResult<Value>
     if source == target {
         return Err(ApiError::BadRequest("迁移来源与目标必须不同".into()));
     }
-    let rows=sqlx::query("SELECT id,name,agent_settings,telemetry_settings,device_public_key FROM servers WHERE id=ANY($1) AND deleted_at IS NULL ORDER BY id").bind(vec![source,target]).fetch_all(&state.pool).await?;
+    let rows=sqlx::query("SELECT id,name,agent_settings,device_public_key FROM servers WHERE id=ANY($1) AND deleted_at IS NULL ORDER BY id").bind(vec![source,target]).fetch_all(&state.pool).await?;
     if rows.len() != 2 {
         return Err(ApiError::NotFound);
     }
+    let mut telemetry =
+        crate::server_observation::telemetry_settings(&state.pool, &[source, target]).await?;
     let probes: Vec<Value> =
         sqlx::query_scalar("SELECT spec FROM network_probes WHERE server_id=$1 ORDER BY id")
             .bind(source)
             .fetch_all(&state.pool)
             .await?;
-    let snapshot = json!({"source":source,"target":target,"collection":rows.iter().map(|row|json!({"id":row.get::<i64,_>("id"),"name":row.get::<String,_>("name"),"agent_settings":row.get::<Value,_>("agent_settings"),"telemetry_settings":row.get::<Value,_>("telemetry_settings"),"enrolled":row.get::<Option<String>,_>("device_public_key").is_some()})).collect::<Vec<_>>(),"probes":probes,"related":references(&state.pool,source).await?,"scope":["agent_settings","telemetry_settings","network_probes"],"identity_copied":false,"business_requires_plugin_migration":true});
+    let snapshot = json!({"source":source,"target":target,"collection":rows.iter().map(|row|json!({"id":row.get::<i64,_>("id"),"name":row.get::<String,_>("name"),"agent_settings":row.get::<Value,_>("agent_settings"),"telemetry_settings":telemetry.remove(&row.get::<i64,_>("id")),"enrolled":row.get::<Option<String>,_>("device_public_key").is_some()})).collect::<Vec<_>>(),"probes":probes,"related":references(&state.pool,source).await?,"scope":["agent_settings","telemetry_settings","network_probes"],"identity_copied":false,"business_requires_plugin_migration":true});
     let digest = format!(
         "{:x}",
         Sha256::digest(serde_json::to_vec(&snapshot).map_err(anyhow::Error::from)?)
@@ -335,8 +343,10 @@ pub async fn migrate(
             "目标已有拨测，不能直接覆盖；请先处理目标配置".into(),
         ));
     }
-    sqlx::query("UPDATE servers target SET agent_settings=source.agent_settings,telemetry_settings=source.telemetry_settings FROM servers source WHERE target.id=$2 AND source.id=$1")
+    sqlx::query("UPDATE servers target SET agent_settings=source.agent_settings FROM servers source WHERE target.id=$2 AND source.id=$1")
         .bind(id).bind(input.target_server_id).execute(&mut *tx).await?;
+    crate::server_observation::copy_telemetry_settings_tx(&mut tx, id, input.target_server_id)
+        .await?;
     for spec in current["snapshot"]["probes"]
         .as_array()
         .into_iter()
