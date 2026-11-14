@@ -85,10 +85,6 @@ export function operationError(current: CurrentCloud, draft: Operation | PowerJo
   return ''
 }
 
-export function credentialError(key: string, secret: string, required = false) {
-  return Boolean(key.trim()) !== Boolean(secret.trim()) || (required && (!key.trim() || !secret.trim())) ? '请同时填写访问密钥 ID 与 Secret；编辑时两项留空保留。' : ''
-}
-
 export function checked<T>(error: () => string, request: () => Promise<T>) {
   const reason = error()
   if (reason) throw new Error(reason)

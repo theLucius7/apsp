@@ -2,7 +2,10 @@ mod api;
 pub use api::routes;
 
 use crate::error::{ApiError, ApiResult};
-use apsp_costs::cloud::billing;
+use apsp_costs::cloud::{
+    accounts::{self, AccountBilling},
+    billing,
+};
 use apsp_resources::cloud::{
     account_on,
     client::Cloud,
@@ -239,7 +242,13 @@ pub async fn cancel(pool: &PgPool, id: Uuid, dismiss: bool) -> ApiResult<()> {
     Ok(())
 }
 
-fn eligible(operation: &Operation, account: &Account, resource: &Resource, now: i64) -> bool {
+fn eligible(
+    operation: &Operation,
+    account: &Account,
+    costs: &AccountBilling,
+    resource: &Resource,
+    now: i64,
+) -> bool {
     account.enabled
         && operation.before_state.attached_eip_id.is_none()
         && account.revision == operation.account_revision
@@ -247,7 +256,7 @@ fn eligible(operation: &Operation, account: &Account, resource: &Resource, now: 
         && operation.expires_at > now
         && (operation.source == "manual"
             || (resource.auto_enabled
-                && billing::exceeded(account, now)
+                && billing::exceeded(account, costs, now)
                 && operation.billing_cycle.as_deref() == Some(billing::month(now).as_str())
                 && operation.target.charge_type == "PayByTraffic"
                 && operation.before_state.charge_type == "PayByTraffic"
@@ -304,6 +313,7 @@ pub async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
         .fetch_one(&mut *tx)
         .await?;
     let account = account_on(&mut tx, resource.account_id).await?;
+    let costs = accounts::account_on(&mut tx, resource.account_id).await?;
     let resource = fresh_resource(&mut tx, resource.id).await?;
     let now = apsp_protocol::now_timestamp();
     if operation.next_check_at > now {
@@ -317,7 +327,7 @@ pub async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
     if operation.status != "queued" {
         return Ok(());
     }
-    if !eligible(&operation, &account, &resource, now) {
+    if !eligible(&operation, &account, &costs, &resource, now) {
         finish(&mut tx, id, "cancelled", Some("policy_inactive")).await?;
         tx.commit().await?;
         return Ok(());
@@ -345,6 +355,7 @@ pub async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
     tx.commit().await?;
     let mut tx = lock(pool, resource.account_id).await?;
     let account = account_on(&mut tx, resource.account_id).await?;
+    let costs = accounts::account_on(&mut tx, resource.account_id).await?;
     let resource = fresh_resource(&mut tx, resource.id).await?;
     let operation: Operation = sqlx::query_as("SELECT * FROM alicloud_operations WHERE id=$1")
         .bind(id)
@@ -356,6 +367,7 @@ pub async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
     if !eligible(
         &operation,
         &account,
+        &costs,
         &resource,
         apsp_protocol::now_timestamp(),
     ) {

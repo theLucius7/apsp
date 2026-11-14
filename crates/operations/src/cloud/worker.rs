@@ -1,6 +1,6 @@
 use crate::cloud::bandwidth;
 use crate::error::ApiResult;
-use apsp_costs::cloud::billing;
+use apsp_costs::cloud::{accounts, billing, cost_cache, traffic_history};
 use apsp_panel_host::maintenance::{self, Cadence, Failure, Pass};
 use apsp_resources::cloud::{client::Cloud, inventory, lock, model::Target};
 use sqlx::PgPool;
@@ -12,26 +12,23 @@ use uuid::Uuid;
 /// CDT guard, power jobs and edits: claim the pass, call the cloud without a
 /// transaction, then store the results unless the account or a resource was
 /// edited meanwhile. An edit resets the schedule, so its refresh follows at once.
+/// The account's revision covers its billing settings too, so the bill read here is
+/// discarded with the rest when they change.
 pub async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
     let now = apsp_protocol::now_timestamp();
     let Some((account, resources)) = inventory::claim_refresh(pool, id, now).await? else {
         return Ok(());
     };
-    let bill = if account.billing_enabled {
-        Some(apsp_costs::cloud::billing::bill(cloud, &account, now).await)
+    let bill = if accounts::account(pool, id).await?.billing_enabled {
+        Some(billing::bill(cloud, &account, now).await)
     } else {
         None
     };
     // Compatibility counters are display-only: no trustworthy period field is supplied.
-    let traffic = match cloud.resolved_account(&account).await {
-        Ok(resolved) => apsp_costs::cloud::billing::traffic(cloud, &resolved, now)
+    let traffic = match cloud.keys(&account).await {
+        Ok(keys) => billing::traffic(cloud, &keys, now)
             .await
-            .map(|traffic| {
-                (
-                    traffic,
-                    apsp_costs::cloud::traffic_history::identity(&resolved),
-                )
-            }),
+            .map(|traffic| (traffic, traffic_history::identity(&account, &keys))),
         Err(error) => Err(error),
     };
     let mut snapshots = Vec::with_capacity(resources.len());
@@ -42,14 +39,15 @@ pub async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
 
     let mut tx = lock(pool, id).await?;
     let current = inventory::current_account(&mut tx, id).await?;
-    let Some(mut account) = current.filter(|current| current.revision == account.revision) else {
+    let Some(account) = current.filter(|current| current.revision == account.revision) else {
         // Edited or archived meanwhile: these results describe the old settings.
         return Ok(());
     };
+    let mut costs = accounts::account_on(&mut tx, id).await?;
     if let Some(bill) = bill {
-        apsp_costs::cloud::cost_cache::store_bill(&mut tx, &mut account, bill, now).await?;
+        cost_cache::store_bill(&mut tx, id, &mut costs, bill, now).await?;
     }
-    apsp_costs::cloud::traffic_history::store_traffic(&mut tx, id, traffic).await?;
+    traffic_history::store_traffic(&mut tx, id, traffic).await?;
     for (polled, snapshot) in snapshots {
         let resource = inventory::current_resource(&mut tx, polled.id).await?;
         // The snapshot describes the cloud, not local settings, so it stays valid
@@ -81,7 +79,7 @@ pub async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
         apsp_resources::cloud::snapshot_on(&mut tx, resource.id, &snapshot).await?;
         if !resource.auto_enabled
             || snapshot.attached_eip_id.is_some()
-            || !billing::exceeded(&account, apsp_protocol::now_timestamp())
+            || !billing::exceeded(&account, &costs, apsp_protocol::now_timestamp())
             || snapshot.charge_type != "PayByTraffic"
             || snapshot.bandwidth_mbps <= resource.cap_mbps
         {
@@ -134,7 +132,7 @@ pub async fn run(pool: PgPool) {
 
 async fn ancillary(pool: &PgPool) -> Pass {
     let costs = match Cloud::new(pool) {
-        Ok(cloud) => apsp_costs::cloud::cost_cache::tick(pool, &cloud).await,
+        Ok(cloud) => cost_cache::tick(pool, &cloud).await,
         Err(error) => Err(apsp_resources::cloud::failure(error)),
     };
     let deliveries = apsp_observability::cloud_notices::dispatch(pool).await;

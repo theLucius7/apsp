@@ -3,13 +3,14 @@ use super::super::{Job, scheduler};
 use super::*;
 use crate::cloud::power::{PolicyRules, StateRules};
 use apsp_cloud_api::test_support::{Mock, Reply};
-use apsp_resources::cloud::{account_on, lock, model::Policy, resource};
+use apsp_resources::cloud::{account_on, client::TEST_ONLY_KEY_ID, lock, model::Policy, resource};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
 const GIB: u64 = 1024 * 1024 * 1024;
-const KEY: &str = "TEST_ONLY_KEY";
+// The key the test handle answers the account's credential reference with.
+const KEY: &str = TEST_ONLY_KEY_ID;
 fn config() -> Policy {
     serde_json::from_value(json!({"enabled":true,"stop_mode":"StopCharging","threshold_action":"off",
         "limit_gb":100,"threshold_percent":95,"schedule_enabled":false,"start_time":"08:00","stop_time":"23:00",
@@ -18,8 +19,22 @@ fn config() -> Policy {
 async fn seed(pool: &PgPool) -> (Account, Resource) {
     let aid = Uuid::new_v4();
     let rid = Uuid::new_v4();
-    sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret) VALUES($1,'测试云账号',$2,'TEST_ONLY_SECRET')")
-        .bind(aid).bind(KEY).execute(pool).await.unwrap();
+    // A sealed credential: the state import reads the key through the credential store, the
+    // test handle answers with the same key.
+    let credential = crate::control_center::credentials::store_generated(
+        pool,
+        "TEST_ONLY",
+        "cloud",
+        json!({"provider":"alicloud","access_key_id":KEY,"access_key_secret":"TEST_ONLY_CLOUD_SECRET"}),
+    )
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO alicloud_accounts(id,name,credential_id) VALUES($1,'测试云账号',$2)")
+        .bind(aid)
+        .bind(credential)
+        .execute(pool)
+        .await
+        .unwrap();
     sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id,power_policy) VALUES($1,$2,'测试实例','ecs','cn-hongkong','i-guardtest',$3)")
         .bind(rid).bind(aid).bind(Json(config())).execute(pool).await.unwrap();
     let mut tx = lock(pool, aid).await.unwrap();
@@ -177,9 +192,16 @@ async fn combined_guard_cron_and_keepalive_preserve_stop_priority_and_start_gate
         let mut state = state.clone();
         state.status = if running { "Running" } else { "Stopped" }.into();
         let mut tx = pool.begin().await.unwrap();
-        scheduler::evaluate(&mut tx, &account, &mut resource, &state, now)
-            .await
-            .unwrap();
+        scheduler::evaluate(
+            &mut tx,
+            &account,
+            &AccountBilling::default(),
+            &mut resource,
+            &state,
+            now,
+        )
+        .await
+        .unwrap();
         let jobs: Vec<Job> =
             sqlx::query_as("SELECT * FROM alicloud_power_jobs WHERE resource_id=$1")
                 .bind(resource.id)
@@ -192,13 +214,31 @@ async fn combined_guard_cron_and_keepalive_preserve_stop_priority_and_start_gate
             "minute={minute} over={over} stale={stale} hold={hold} same={same_time}"
         );
         if let Some(job) = jobs.first() {
-            assert!(jobs::allowed(job, &account, &resource, now));
+            assert!(jobs::allowed(
+                job,
+                &account,
+                &AccountBilling::default(),
+                &resource,
+                now
+            ));
             if job.action == "start" {
                 resource.manual_hold = true;
-                assert!(!jobs::allowed(job, &account, &resource, now));
+                assert!(!jobs::allowed(
+                    job,
+                    &account,
+                    &AccountBilling::default(),
+                    &resource,
+                    now
+                ));
                 resource.manual_hold = false;
                 resource.cdt_guard_error = Some("request_timeout".into());
-                assert!(!jobs::allowed(job, &account, &resource, now));
+                assert!(!jobs::allowed(
+                    job,
+                    &account,
+                    &AccountBilling::default(),
+                    &resource,
+                    now
+                ));
             }
         }
         tx.rollback().await.unwrap();
@@ -222,6 +262,7 @@ async fn guard_backoff_skips_meter_but_still_evaluates_scheduled_stop(pool: PgPo
     poll(
         &mut tx,
         &account,
+        &AccountBilling::default(),
         &mut resource,
         &state,
         &Cloud::local(&mock.endpoint),
@@ -235,7 +276,13 @@ async fn guard_backoff_skips_meter_but_still_evaluates_scheduled_stop(pool: PgPo
         .await
         .unwrap();
     assert_eq!(job.action, "stop");
-    assert!(jobs::allowed(&job, &account, &resource, now));
+    assert!(jobs::allowed(
+        &job,
+        &account,
+        &AccountBilling::default(),
+        &resource,
+        now
+    ));
     assert!(mock.requests().is_empty());
 }
 
@@ -423,10 +470,12 @@ async fn invalid_meter_cancels_start_and_retains_history(pool: PgPool) {
         10 * GIB
     );
     assert_eq!(exceeded(&a, &r, apsp_protocol::now_timestamp()), None);
-    assert!(
-        r.power_policy
-            .blocks_start(&a, &r, apsp_protocol::now_timestamp())
-    );
+    assert!(r.power_policy.blocks_start(
+        &a,
+        &AccountBilling::default(),
+        &r,
+        apsp_protocol::now_timestamp()
+    ));
     mock.exhausted();
 }
 
@@ -508,7 +557,10 @@ async fn import_is_monotonic_paused_and_never_fresh_authorization(pool: PgPool) 
         100 * GIB
     );
     r.power_policy.enabled = true;
-    assert!(r.power_policy.blocks_start(&a, &r, now));
+    assert!(
+        r.power_policy
+            .blocks_start(&a, &AccountBilling::default(), &r, now)
+    );
     assert!(queued(&pool, r.id).await.is_empty());
 }
 

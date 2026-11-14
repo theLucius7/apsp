@@ -4,13 +4,28 @@ use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Mutex};
 use uuid::Uuid;
 
+/// The access key a test handle (`Cloud::local`) answers every credential reference with.
+#[cfg(any(test, feature = "test-support"))]
+pub const TEST_ONLY_KEY_ID: &str = "TEST_ONLY_CLOUD_ID";
+#[cfg(any(test, feature = "test-support"))]
+const TEST_ONLY_KEY_SECRET: &str = "TEST_ONLY_CLOUD_SECRET";
+
+/// An account's access key pair, read from the credential store.
+#[derive(Clone)]
+pub struct Keys {
+    pub access_key_id: String,
+    pub access_key_secret: String,
+}
+
 /// A handle lives for one background pass or one request. Within it, each
 /// referenced credential is decrypted (and audited) once instead of per call.
-type ResolvedKeys = Mutex<HashMap<(Uuid, Uuid), (String, String)>>;
+type ResolvedKeys = Mutex<HashMap<(Uuid, Uuid), Keys>>;
 
 pub struct Cloud {
     pool: Option<sqlx::PgPool>,
     resolved: ResolvedKeys,
+    // A test handle answers every credential reference with these keys.
+    fixed: Option<Keys>,
     pub ecs: Aliyun,
     pub vpc: Aliyun,
     pub bss: Aliyun,
@@ -22,6 +37,7 @@ impl Cloud {
         Ok(Self {
             pool: Some(pool.clone()),
             resolved: ResolvedKeys::default(),
+            fixed: None,
             ecs: Aliyun::new("ecs")?,
             vpc: Aliyun::new("vpc")?,
             bss: Aliyun::new("bss")?,
@@ -30,12 +46,17 @@ impl Cloud {
         })
     }
     /// A handle whose calls go to a local mock endpoint, for tests here and in other
-    /// domains (feature `test-support`).
+    /// domains (feature `test-support`). It answers every credential reference with
+    /// `TEST_ONLY_KEY_ID` instead of reading the credential store.
     #[cfg(any(test, feature = "test-support"))]
     pub fn local(endpoint: &str) -> Self {
         Self {
             pool: None,
             resolved: ResolvedKeys::default(),
+            fixed: Some(Keys {
+                access_key_id: TEST_ONLY_KEY_ID.into(),
+                access_key_secret: TEST_ONLY_KEY_SECRET.into(),
+            }),
             ecs: Aliyun::local("ecs", endpoint),
             vpc: Aliyun::local("vpc", endpoint),
             bss: Aliyun::local("bss", endpoint),
@@ -43,67 +64,67 @@ impl Cloud {
             cdt: Aliyun::local("cdt", endpoint),
         }
     }
-    pub async fn resolved_account(&self, account: &Account) -> Result<Account, Failure> {
-        let mut resolved = account.clone();
-        if let Some(id) = account.credential_id {
-            let cached = self
-                .resolved
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .get(&(account.id, id))
-                .cloned();
-            if let Some((key, secret)) = cached {
-                resolved.access_key_id = key;
-                resolved.access_key_secret = secret;
-                return Ok(resolved);
-            }
-            let pool = self
-                .pool
-                .as_ref()
-                .ok_or(Failure::from("credential_unavailable"))?;
-            let value = crate::control_center::credentials::resolve_reference_pool(
-                pool,
-                id,
-                "cloud",
-                &format!("alicloud:{}", account.id),
-            )
-            .await
-            .map_err(|_| Failure::from("credential_unavailable"))?;
-            if value
-                .get("provider")
-                .and_then(Value::as_str)
-                .is_some_and(|v| !matches!(v, "alicloud" | "aliyun"))
-            {
-                return Err("credential_invalid".into());
-            }
-            let key = value["access_key_id"]
-                .as_str()
-                .filter(|v| apsp_cloud_api::credential(v))
-                .ok_or(Failure::from("credential_invalid"))?;
-            let secret = value["access_key_secret"]
-                .as_str()
-                .filter(|v| apsp_cloud_api::credential(v))
-                .ok_or(Failure::from("credential_invalid"))?;
-            resolved.access_key_id = key.into();
-            resolved.access_key_secret = secret.into();
-            self.resolved
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .insert((account.id, id), (key.into(), secret.into()));
-        } else if !apsp_cloud_api::credential(&account.access_key_id)
-            || !apsp_cloud_api::credential(&account.access_key_secret)
+    /// The account's access keys from the credential store it references. An account
+    /// without a reference (an archived one) has none.
+    pub async fn keys(&self, account: &Account) -> Result<Keys, Failure> {
+        let id = account
+            .credential_id
+            .ok_or(Failure::from("credential_unavailable"))?;
+        if let Some(keys) = &self.fixed {
+            return Ok(keys.clone());
+        }
+        let cached = self
+            .resolved
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&(account.id, id))
+            .cloned();
+        if let Some(keys) = cached {
+            return Ok(keys);
+        }
+        let pool = self
+            .pool
+            .as_ref()
+            .ok_or(Failure::from("credential_unavailable"))?;
+        let value = crate::control_center::credentials::resolve_reference_pool(
+            pool,
+            id,
+            "cloud",
+            &format!("alicloud:{}", account.id),
+        )
+        .await
+        .map_err(|_| Failure::from("credential_unavailable"))?;
+        if value
+            .get("provider")
+            .and_then(Value::as_str)
+            .is_some_and(|v| !matches!(v, "alicloud" | "aliyun"))
         {
             return Err("credential_invalid".into());
         }
-        Ok(resolved)
+        let key = value["access_key_id"]
+            .as_str()
+            .filter(|v| apsp_cloud_api::credential(v))
+            .ok_or(Failure::from("credential_invalid"))?;
+        let secret = value["access_key_secret"]
+            .as_str()
+            .filter(|v| apsp_cloud_api::credential(v))
+            .ok_or(Failure::from("credential_invalid"))?;
+        let keys = Keys {
+            access_key_id: key.into(),
+            access_key_secret: secret.into(),
+        };
+        self.resolved
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert((account.id, id), keys.clone());
+        Ok(keys)
     }
     pub async fn snapshot(
         &self,
         account: &Account,
         resource: &Resource,
     ) -> Result<Snapshot, Failure> {
-        let resolved = self.resolved_account(account).await?;
-        let account = &resolved;
+        let keys = self.keys(account).await?;
         let (service, action, params) = if resource.kind == "ecs" {
             (
                 &self.ecs,
@@ -128,8 +149,8 @@ impl Cloud {
         };
         let result = service
             .call(
-                &account.access_key_id,
-                &account.access_key_secret,
+                &keys.access_key_id,
+                &keys.access_key_secret,
                 action,
                 &params,
             )
@@ -147,8 +168,7 @@ impl Cloud {
         if before.attached_eip_id.is_some() {
             return Err("attached_eip_read_only".into());
         }
-        let resolved = self.resolved_account(account).await?;
-        let account = &resolved;
+        let keys = self.keys(account).await?;
         let (service, action, mut params) = if resource.kind == "ecs" {
             (
                 &self.ecs,
@@ -177,8 +197,8 @@ impl Cloud {
         }
         let result = service
             .call(
-                &account.access_key_id,
-                &account.access_key_secret,
+                &keys.access_key_id,
+                &keys.access_key_secret,
                 action,
                 &params,
             )

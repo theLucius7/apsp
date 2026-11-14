@@ -12,7 +12,7 @@
 | 服务器资产 | 记录地区、标签、到期与采购配置 | 服务器资产 | 一份资产记录（运维区的采购配置并入，路线图 4.4） | 成本（只读到期与成本） | `crates/resources` 的 `server_assets.rs`、`server_lifecycle.rs`（资产档案、本机运维策略、生命周期与迁移，表 `fleet_profiles`）；服务器详情 › 资产与流量、运维 |
 | 服务器退役 | 安全删除一台服务器 | 退役记录 | 在线退役以设备签名回执为准；离线退役单独标明 | 流量服务（停止服务）；作业（执行） | `crates/resources` 的 `retirement.rs` |
 | Agent 能力 | 知道每台 Agent 能做什么 | Agent 能力与绑定代次 | 迟到的回执不能覆盖新绑定代次 | 治理（版本策略） | `crates/resources` 的 `servers.rs`（设备问候时由设备通道交来的能力登记） |
-| 云实例与 EIP | 知道云上有哪些实例与 EIP 及其状态 | 云资源、云账号关联 | 只经官方接口读回确认 | 成本（账单）；基础网络（安全组） | `crates/resources` 的 `cloud/`（`api`、`client`、`inventory`、`addresses`、`model`）；`operations_cloud_links`；云账号 `alicloud_accounts`（其中的账单与额度字段由成本写入，阶段 F 拆表）；服务器 › 云资源 |
+| 云实例与 EIP | 知道云上有哪些实例与 EIP 及其状态 | 云资源、云账号关联 | 只经官方接口读回确认 | 成本（账单）；基础网络（安全组） | `crates/resources` 的 `cloud/`（`api`、`client`、`inventory`、`addresses`、`model`）；`operations_cloud_links`；云账号 `alicloud_accounts`（账单、余额与 CDT 流量已迁到成本的 `cloud_account_billing`、`cloud_resource_billing`；自动化与额度字段由作业写入，阶段 F 第七步拆表）；服务器 › 云资源 |
 | 云实例启停规则 | 判断一台实例此刻能否开关机 | 实例电源状态 | 关机前确认不影响在用服务与保护策略 | 作业（执行与计划）；成本（额度触发） | 资源的 `cloud/model.rs` 中的 `Policy`（规则）与 `State`（电源状态）；按规则判断与读取电源状态的代码在作业的 `cloud/power/`（`PolicyRules`、`StateRules`），与执行在一起 |
 | 资源替换 | 用新机器替换旧机器并保留关联 | 替换关系 | 显式替换，不凭相同 IP 或名称合并 | 名称；流量服务；成本 | 网络配置的服务器替换（实验，代码在 `crates/networking` 的 `network_configuration/server_migrations*`）；`network_server_migration_previews` |
 | Hetzner 资源（冻结） | 查看 Hetzner 资源 | 云资源 | 只读 | 成本 | `crates/resources` 的 `cloud_resources/hetzner`（云资源关联与账单观测在 `cloud_resources.rs`） |

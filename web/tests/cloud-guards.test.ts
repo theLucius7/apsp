@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { accountError, bandwidthError, checked, cloudBusy, credentialError, operationError, powerError, registrationError, resourceError } from '../src/operations/cloud/guards'
+import { accountError, bandwidthError, checked, cloudBusy, operationError, powerError, registrationError, resourceError } from '../src/operations/cloud/guards'
 import { billUsable, defaultPowerPolicy, exactUsage } from '../src/resources/cloud/types'
 import type { Account, EipRotation, Operation, Overview, PowerJob, Resource } from '../src/resources/cloud/types'
 import { editorError, ruleError } from '../src/naming/dns/guards'
@@ -76,9 +76,6 @@ test('billing display preserves exact zero and never rounds unsafe, negative or 
     expect(exactUsage(value)).toBeNull()
     expect(billUsable({ ...account, bill: { ...account.bill!, usage_micro_gb: value as number } }, now)).toBeFalse()
   }
-  expect(credentialError('TEST_ONLY_KEY', '')).not.toBe('')
-  expect(credentialError(' ', ' ', true)).not.toBe('')
-  expect(credentialError('', '')).toBe('')
 })
 
 test('legacy Cloudflare drafts stay readable, but stale revisions and vanished server choices cannot write', () => {

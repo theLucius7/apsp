@@ -1,17 +1,12 @@
 use super::*;
 use crate::cloud::power::PolicyRules;
 use apsp_costs::cloud::cost_cache;
+use apsp_resources::cloud::billing::{Change, Settings};
 
 #[sqlx::test(migrations = "../panel/migrations")]
 async fn minimum_permissions_skip_all_bss_calls_and_keep_cdt_and_ecs_queries(pool: PgPool) {
     let (id, resource_id) = seed(&pool, "ecs").await;
-    sqlx::query(
-        "UPDATE alicloud_accounts SET billing_enabled=false,balance_enabled=false WHERE id=$1",
-    )
-    .bind(id)
-    .execute(&pool)
-    .await
-    .unwrap();
+    super::set_billing(&pool, id, false, false).await;
     let mock = Mock::start(vec![billing_cases::traffic(), snapshot("ecs", 10)]).await;
     let cloud = Cloud::local(&mock.endpoint);
     worker::refresh(&pool, id, &cloud).await.unwrap();
@@ -23,9 +18,9 @@ async fn minimum_permissions_skip_all_bss_calls_and_keep_cdt_and_ecs_queries(poo
     cost_cache::refresh_bill(&pool, resource_id, &cloud, now)
         .await
         .unwrap();
-    let a = account(&pool, id).await;
+    let a = costs(&pool, id).await;
     assert!(a.traffic.is_some());
-    assert!(a.error_code.is_none());
+    assert!(a.bill_error.is_none());
     assert!(a.balance_error.is_none());
     assert!(
         apsp_resources::cloud::resource(&pool, resource_id)
@@ -47,13 +42,7 @@ async fn minimum_permissions_skip_all_bss_calls_and_keep_cdt_and_ecs_queries(poo
 #[sqlx::test(migrations = "../panel/migrations")]
 async fn optional_balance_failure_does_not_enable_bills_or_block_monitoring(pool: PgPool) {
     let (id, resource_id) = seed(&pool, "ecs").await;
-    sqlx::query(
-        "UPDATE alicloud_accounts SET billing_enabled=false,balance_enabled=true WHERE id=$1",
-    )
-    .bind(id)
-    .execute(&pool)
-    .await
-    .unwrap();
+    super::set_billing(&pool, id, false, true).await;
     let mock = Mock::start(vec![
         Reply {
             action: "QueryAccountBalance".into(),
@@ -67,9 +56,9 @@ async fn optional_balance_failure_does_not_enable_bills_or_block_monitoring(pool
     let cloud = Cloud::local(&mock.endpoint);
     cost_cache::tick(&pool, &cloud).await.unwrap();
     worker::refresh(&pool, id, &cloud).await.unwrap();
-    let a = account(&pool, id).await;
+    let a = costs(&pool, id).await;
     assert!(a.balance_error.is_some());
-    assert!(a.error_code.is_none());
+    assert!(a.bill_error.is_none());
     assert!(a.traffic.is_some());
     assert!(
         apsp_resources::cloud::resource(&pool, resource_id)
@@ -85,11 +74,25 @@ async fn optional_balance_failure_does_not_enable_bills_or_block_monitoring(pool
 #[sqlx::test(migrations = "../panel/migrations")]
 async fn new_accounts_default_to_minimum_permissions(pool: PgPool) {
     let id = Uuid::new_v4();
-    sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret) VALUES($1,'测试最小权限',$2,$3)")
-        .bind(id).bind(KEY).bind(SECRET).execute(&pool).await.unwrap();
-    let a = account(&pool, id).await;
+    credential_account(&pool, id, "测试最小权限").await;
+    let a = costs(&pool, id).await;
     assert!(!a.billing_enabled);
     assert!(!a.balance_enabled);
+    // The account form saves the defaults through costs' answer.
+    apsp_costs::cloud::accounts::install();
+    let mut tx = pool.begin().await.unwrap();
+    apsp_resources::cloud::billing::changed(&mut tx, id, Change::Created(Settings::default()))
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let stored: (bool, bool) = sqlx::query_as(
+        "SELECT billing_enabled,balance_enabled FROM cloud_account_billing WHERE account_id=$1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(stored, (false, false));
 }
 
 #[sqlx::test(migrations = "../panel/migrations")]
@@ -97,8 +100,13 @@ async fn disabled_billing_never_reuses_cached_evidence_for_automatic_control(poo
     let (id, resource_id) = seed(&pool, "ecs").await;
     let now = apsp_protocol::now_timestamp();
     let cached = json!({"month":billing::month(now),"queried_at":now,"usage_micro_gb":999_000_000_000_u64,"rows":[]});
+    sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true WHERE id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query(
-        "UPDATE alicloud_accounts SET billing_enabled=false,auto_enabled=true,bill=$2 WHERE id=$1",
+        "UPDATE cloud_account_billing SET billing_enabled=false,bill=$2 WHERE account_id=$1",
     )
     .bind(id)
     .bind(sqlx::types::Json(cached))
@@ -106,11 +114,12 @@ async fn disabled_billing_never_reuses_cached_evidence_for_automatic_control(poo
     .await
     .unwrap();
     let a = account(&pool, id).await;
+    let c = costs(&pool, id).await;
     let r = apsp_resources::cloud::resource(&pool, resource_id)
         .await
         .unwrap();
-    assert!(!billing::exceeded(&a, now));
-    assert_eq!(r.power_policy.exceeded(&a, now), None);
+    assert!(!billing::exceeded(&a, &c, now));
+    assert_eq!(r.power_policy.exceeded(&a, &c, now), None);
 }
 
 #[sqlx::test(migrations = "../panel/migrations")]
@@ -119,25 +128,20 @@ async fn reopening_does_not_implicitly_enable_billable_services(pool: PgPool) {
     let threshold = Uuid::new_v4();
     let display = Uuid::new_v4();
     for id in [threshold, display] {
-        sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret) VALUES($1,'测试升级',$2,$3)")
-            .bind(id).bind(KEY).bind(SECRET).execute(&pool).await.unwrap();
+        credential_account(&pool, id, "测试升级").await;
     }
-    sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true,balance_enabled=false WHERE id=$1")
+    sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true WHERE id=$1")
         .bind(automatic)
         .execute(&pool)
         .await
         .unwrap();
+    super::set_billing(&pool, automatic, true, false).await;
     sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id,power_policy) VALUES($1,$2,'测试阈值','ecs','cn-hangzhou','i-threshold', '{\"enabled\":true,\"threshold_action\":\"stop\"}')")
         .bind(Uuid::new_v4()).bind(threshold).execute(&pool).await.unwrap();
     apsp_panel_host::schema::initialize(&pool).await.unwrap();
     for (id, expected) in [(automatic, true), (threshold, false), (display, false)] {
-        let flags: (bool, bool) = sqlx::query_as(
-            "SELECT billing_enabled,balance_enabled FROM alicloud_accounts WHERE id=$1",
-        )
-        .bind(id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        let stored = costs(&pool, id).await;
+        let flags = (stored.billing_enabled, stored.balance_enabled);
         assert_eq!(flags, (expected, false));
     }
 }

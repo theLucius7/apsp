@@ -5,6 +5,7 @@ use crate::{
     AppState, auth,
     error::{ApiError, ApiResult},
 };
+use apsp_costs::cloud::accounts;
 use apsp_resources::cloud::{account_on, client::Cloud, failure, lock, model::Policy, resource};
 use axum::{
     Json, Router,
@@ -88,8 +89,9 @@ async fn update_policy(
     input.policy.validate()?;
     let initial = resource(&state.pool, id).await?;
     let mut tx = lock(&state.pool, initial.account_id).await?;
-    let account = account_on(&mut tx, initial.account_id).await?;
-    if input.policy.enabled && input.policy.threshold_action != "off" && !account.billing_enabled {
+    account_on(&mut tx, initial.account_id).await?;
+    let billing = accounts::account_on(&mut tx, initial.account_id).await?;
+    if input.policy.enabled && input.policy.threshold_action != "off" && !billing.billing_enabled {
         return Err(ApiError::BadRequest(
             "账单阈值策略需要先在云账号中启用账单查询".into(),
         ));
@@ -134,6 +136,7 @@ async fn preview(
     let initial = resource(&state.pool, id).await?;
     let mut tx = lock(&state.pool, initial.account_id).await?;
     let account = account_on(&mut tx, initial.account_id).await?;
+    let billing = accounts::account_on(&mut tx, initial.account_id).await?;
     let r = jobs::fresh(&mut tx, id).await?;
     let now = apsp_protocol::now_timestamp();
     if r.kind != "ecs" || !account.enabled || r.revision != input.revision {
@@ -141,7 +144,7 @@ async fn preview(
             "仅支持已启用账号的 ECS，请刷新配置后重试".into(),
         ));
     }
-    if input.action == "start" && r.power_policy.blocks_start(&account, &r, now) {
+    if input.action == "start" && r.power_policy.blocks_start(&account, &billing, &r, now) {
         return Err(ApiError::Conflict(
             "流量停机保护生效，或当前账单无法验证；请核对用量及阈值策略".into(),
         ));
@@ -202,10 +205,11 @@ pub(super) async fn confirm_on(pool: &sqlx::PgPool, id: Uuid) -> ApiResult<()> {
         return Ok(());
     }
     let account = account_on(&mut tx, initial_r.account_id).await?;
+    let billing = accounts::account_on(&mut tx, initial_r.account_id).await?;
     let r = jobs::fresh(&mut tx, initial_r.id).await?;
     if job.source != "manual"
         || job.status != "preview"
-        || !jobs::allowed(&job, &account, &r, apsp_protocol::now_timestamp())
+        || !jobs::allowed(&job, &account, &billing, &r, apsp_protocol::now_timestamp())
     {
         return Err(ApiError::Conflict(
             "预览已过期、配置变化或流量保护生效，请重新预览".into(),

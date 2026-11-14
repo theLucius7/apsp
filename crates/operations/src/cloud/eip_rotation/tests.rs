@@ -274,7 +274,7 @@ async fn seed(pool: &PgPool, status: &str) -> (Account, Resource) {
         .unwrap();
     let account = Uuid::new_v4();
     let resource = Uuid::new_v4();
-    sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret) VALUES($1,'TEST_ONLY','TEST_ONLY_CLOUD_ID','TEST_ONLY_CLOUD_SECRET')").bind(account).execute(pool).await.unwrap();
+    crate::cloud::tests::credential_account(pool, account, "TEST_ONLY").await;
     sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id,snapshot) VALUES($1,$2,'TEST_ONLY ECS','ecs','cn-hangzhou',$3,$4)")
         .bind(resource).bind(account).bind(INSTANCE)
         .bind(json!({"kind":"ecs","cloud_id":INSTANCE,"region":"cn-hangzhou","public_ip":OLD_IP,"bandwidth_mbps":200,"charge_type":"PayByTraffic","resource_charge_type":"PostPaid","status":status,"attached_eip_id":OLD}))
@@ -1087,7 +1087,7 @@ async fn lost_credentials_surface_instead_of_holding_the_resource_forever(pool: 
     let probe = FakeProbe::new(&[]);
     let id = start(&pool, &fake, &probe, 3).await;
     let row = load(&pool, id).await.unwrap();
-    sqlx::query("UPDATE alicloud_accounts SET access_key_id='',access_key_secret='' WHERE id=$1")
+    sqlx::query("UPDATE alicloud_accounts SET credential_id=NULL WHERE id=$1")
         .bind(row.before.account_id)
         .execute(&pool)
         .await
@@ -1096,7 +1096,10 @@ async fn lost_credentials_surface_instead_of_holding_the_resource_forever(pool: 
     run_steps(&pool, id, &cloud, &probe).await.unwrap();
     let waiting = load(&pool, id).await.unwrap();
     assert_eq!(waiting.status, "running");
-    assert_eq!(waiting.error_code.as_deref(), Some("credential_invalid"));
+    assert_eq!(
+        waiting.error_code.as_deref(),
+        Some("credential_unavailable")
+    );
     age_phase(&pool, id).await;
     run_steps(&pool, id, &cloud, &probe).await.unwrap();
     assert_eq!(load(&pool, id).await.unwrap().status, "unknown");

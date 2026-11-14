@@ -5,7 +5,7 @@ use apsp_cloud_api::{
 };
 use apsp_panel_host::http::Outbound;
 use apsp_resources::cloud::{
-    client::Cloud,
+    client::{Cloud, Keys},
     model::{Account, Resource, identifier},
 };
 use serde::{Deserialize, Serialize};
@@ -127,7 +127,7 @@ pub(super) trait Probe {
 
 pub(super) struct LiveOps<'a> {
     cloud: &'a Cloud,
-    account: Account,
+    keys: Keys,
     region: String,
     instance: String,
 }
@@ -139,7 +139,7 @@ impl<'a> LiveOps<'a> {
     ) -> Result<Self, Failure> {
         Ok(Self {
             cloud,
-            account: cloud.resolved_account(account).await?,
+            keys: cloud.keys(account).await?,
             region: resource.region.clone(),
             instance: resource.cloud_id.clone(),
         })
@@ -149,8 +149,8 @@ impl<'a> LiveOps<'a> {
         self.cloud
             .vpc
             .call(
-                &self.account.access_key_id,
-                &self.account.access_key_secret,
+                &self.keys.access_key_id,
+                &self.keys.access_key_secret,
                 action,
                 &params,
             )
@@ -170,8 +170,8 @@ impl Ops for LiveOps<'_> {
             .cloud
             .ecs
             .call(
-                &self.account.access_key_id,
-                &self.account.access_key_secret,
+                &self.keys.access_key_id,
+                &self.keys.access_key_secret,
                 "DescribeInstances",
                 &[
                     ("RegionId", self.region.clone()),

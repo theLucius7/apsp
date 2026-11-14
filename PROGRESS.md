@@ -1,5 +1,18 @@
 # 执行进度
 
+## 2026-11-14：阶段 F 第六步——成本的云账号与云资源状态迁出资源的行，删除明文密钥旧模式（PR）
+
+- 用户要求：“你来合并，然后继续，处理其他任务修复完成”；按 ADR 0137 的顺序做第六步。改数据库基线，走 PR，由执行者验证后合并。取舍见 `docs/open-questions.md` 同日条目。
+- 完成项：
+  - `alicloud_accounts` 的 `billing_enabled`、`balance_enabled`、`bill`、`error_code`（改名 `bill_error`）、`traffic`、`traffic_error`、`traffic_history_identity`、`balance`、`balance_error`、`balance_next_at` → 成本的 `cloud_account_billing`；`alicloud_resources` 的 `instance_bill`、`bill_error`、`bill_next_at` → `cloud_resource_billing`。
+  - 资源新接口 `cloud::billing::CloudBilling`（成本回答）：账号的新建、编辑、归档与刷新结果在同一事务里交给成本；两个云视图（云页面与 `/api/operations/cloud`）在应用层 `cloud_overview.rs` 组合，地址与权限不变，JSON 不变；作业的电源、带宽与工作循环在账号锁下读取 `AccountBilling`，账单是否够新只由 `AccountBilling::usage` 判断。
+  - 明文密钥旧模式删除：两列、接口字段、云客户端的回退与界面的兼容模式。
+  - 接入脚本 `scripts/baseline-adoption-phasef6-20261114.sql`：前提 `345adb3b…`/`09938605…`，先锁两张云表，同一事务里建表、复制（含已归档的）、逐行核对、删列，写入指纹 `6a79e639…` 与校验和 `4e5b8783…`；仍存有明文密钥或重复执行时拒绝。
+  - 边界：越界清单 276 → 269。文档：architecture.md §5.5（十三个接口）、§12，`domain-map.md`、`operations-recovery.md`、`database-baseline.md`。
+- 验证结果：本地，2026-11-14；CI 仍暂停，未触发。在全新的编译目录里：`cargo fmt --all --check` 通过；14 个面板侧 crate 的 `cargo clippy --all-targets -- -D warnings` 通过；`--lib` 660 项通过；除 `end_to_end` 外的 80 个面板集成目标 404 项通过、0 项失败、6 项按原有标注忽略；三项检查（269 条已知越界，没有新增）与它们的 Python 测试通过；前端 `bun run build`（含 `tsc -b`）通过，`bun test` 246 项通过。子代理另跑了 `alicloud.mjs` 浏览器测试（三种宽度）。接入演练三遍（第五步基线的全新库加合成数据、生产结构副本——第四步与第五步时各一次、生产数据副本）都通过，生产数据副本上 3 个账号、3 个资源迁出的每个值与 552 条 CDT 历史、`/api/operations/cloud` 的每一行都与接入前一致。独立只读审阅没有阻断或应修的问题。未验证：`end_to_end`；真实的生产接入（合并后由部署器执行）。
+- 已知问题：接入与换镜像之间的几秒里，旧面板读取云账号与云资源行的语句都会失败（刷新、账单、电源与 CDT 守护、带宽、EIP 与安全组步骤不写入，排队的作业等新镜像，云页面返回错误）；接入后不能回滚到旧镜像。
+- 下一步：上线后只读核对（逐个账号与资源比对迁出的值、刷新照常）；然后第七步（作业的列）。
+
 ## 2026-11-14：修复网络工作台与外部订阅的三处出站缺陷
 
 - 用户要求：“你来合并，然后继续，处理其他任务修复完成”。修 ADR 0134 时记下、留给各功能的三处缺陷，取舍见 `docs/open-questions.md` 同日条目。只改代码，不改基线、协议与路由。

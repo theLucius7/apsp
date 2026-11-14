@@ -17,30 +17,32 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::{PgPool, Row};
+use std::collections::HashMap;
 use uuid::Uuid;
 
-pub async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
-    let actor = control_center::authenticate(&state, &headers).await?;
-    if !actor.allows("cloud:read") {
-        return Err(ApiError::Forbidden("当前账号没有云资源读取权限".into()));
-    }
-    let servers: Vec<i64> = actor
-        .server_ids
-        .iter()
-        .copied()
-        .filter(|id| actor.allows_server(*id))
-        .collect();
-    let token_servers = actor.token_servers.clone();
-    let server_filter = if actor.all_servers {
-        token_servers.unwrap_or(servers)
-    } else {
-        servers
-    };
-    let values: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',r.id,'account_id',r.account_id,'account_name',a.name,'provider','alicloud','kind',r.kind,'region',r.region,'cloud_id',r.cloud_id,'name',r.name,'snapshot',r.snapshot,'checked_at',r.checked_at,'error_code',r.error_code,'instance_bill',r.instance_bill,'bill_error',r.bill_error,'balance',CASE WHEN $2 THEN a.balance ELSE NULL END,'balance_error',CASE WHEN $2 THEN a.balance_error ELSE NULL END,'balance_scope',CASE WHEN $2 THEN 'cloud_account_global' ELSE 'resource_only' END,'manual_hold',r.manual_hold,'power_policy',r.power_policy,'power_state',r.power_state,'power_error',r.power_error,'link',CASE WHEN l.resource_id IS NULL THEN NULL ELSE to_jsonb(l) END,'actual_costs_by_currency',COALESCE((SELECT jsonb_object_agg(currency,total) FROM (SELECT e->>'currency' AS currency,sum((e->>'amount')::numeric)::text AS total FROM jsonb_array_elements(COALESCE(r.instance_bill->'rows','[]'::jsonb)) e GROUP BY e->>'currency') costs),'{}'::jsonb),'bill_stale',r.instance_bill IS NULL OR (r.instance_bill->>'queried_at')::bigint<$1-21600,'provider_read_only_source','阿里云 ECS/VPC/BSS 官方 API 缓存') FROM alicloud_resources r JOIN alicloud_accounts a ON a.id=r.account_id LEFT JOIN operations_cloud_links l ON l.resource_id=r.id WHERE NOT r.archived AND NOT a.archived AND ($2 OR l.server_id=ANY($3)) ORDER BY a.name,r.name LIMIT 500")
-        .bind(now_timestamp()).bind(actor.global_servers()).bind(server_filter).fetch_all(&state.pool).await?;
-    Ok(Json(
-        json!({"resources":values,"providers":[{"id":"alicloud","supported_resources":["ecs_fixed_public_ip","independent_pay_as_you_go_eip"],"official_interfaces":["DescribeInstances","DescribeEipAddresses","QueryAccountBalance","DescribeInstanceBill","QueryInstanceBill","DescribeSecurityGroupAttribute","JoinSecurityGroup","LeaveSecurityGroup"],"operations":"使用阿里云插件预览与未知结果对账流程","security_group_membership":{"available":true,"resource_kind":"registered_ecs","group_kind":"normal","baseline_preserved":true,"rules_edit_available":false,"fee":"unknown"},"billing_note":"账单和余额为带查询时间的缓存，不能作为实时硬限额；账号余额需要全局授权"}],"comparison":"使用本平台的历史观测、诊断报告和采购金额；不引入外部排名"}),
-    ))
+/// A registered cloud resource as the operations page lists it: what resources keeps of it
+/// (identity, account, cloud snapshot, server link) and, until operations keeps its own
+/// rows, the power columns. The page adds what costs keeps (`/api/operations/cloud`, composed
+/// in the application).
+pub struct Listed {
+    pub id: Uuid,
+    pub account_id: Uuid,
+    pub view: Value,
+}
+
+/// The page's resources by account and resource name: all of them for `global` readers,
+/// otherwise those linked to `servers`.
+pub async fn listed(pool: &PgPool, global: bool, servers: &[i64]) -> ApiResult<Vec<Listed>> {
+    let rows: Vec<(Uuid, Uuid, Value)> = sqlx::query_as("SELECT r.id,r.account_id,jsonb_build_object('id',r.id,'account_id',r.account_id,'account_name',a.name,'provider','alicloud','kind',r.kind,'region',r.region,'cloud_id',r.cloud_id,'name',r.name,'snapshot',r.snapshot,'checked_at',r.checked_at,'error_code',r.error_code,'manual_hold',r.manual_hold,'power_policy',r.power_policy,'power_state',r.power_state,'power_error',r.power_error,'link',CASE WHEN l.resource_id IS NULL THEN NULL ELSE to_jsonb(l) END,'provider_read_only_source','阿里云 ECS/VPC/BSS 官方 API 缓存') FROM alicloud_resources r JOIN alicloud_accounts a ON a.id=r.account_id LEFT JOIN operations_cloud_links l ON l.resource_id=r.id WHERE NOT r.archived AND NOT a.archived AND ($1 OR l.server_id=ANY($2)) ORDER BY a.name,r.name LIMIT 500")
+        .bind(global).bind(servers).fetch_all(pool).await?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, account_id, view)| Listed {
+            id,
+            account_id,
+            view,
+        })
+        .collect())
 }
 
 #[derive(Deserialize)]
@@ -185,20 +187,31 @@ fn decimal(value: &str) -> Option<i128> {
     Some(if negative { -total } else { total })
 }
 
-pub async fn observe(pool: &PgPool) -> ApiResult<()> {
+/// What costs last read of a resource's monthly bill, as stored: the bill, or why it could
+/// not be read.
+pub struct Bill {
+    pub bill: Option<Value>,
+    pub error: Option<String>,
+}
+
+/// Records each resource's cloud snapshot and bill in its observation history, and opens
+/// the budget and expiry incidents. `bills` holds what costs read, by resource.
+pub async fn observe(pool: &PgPool, bills: &HashMap<Uuid, Bill>) -> ApiResult<()> {
     let mut tx = pool.begin().await?;
     let locked = crate::locks::CLOUD_OBSERVATIONS.try_lock(&mut tx).await?;
     if !locked {
         return Ok(());
     }
-    let rows=sqlx::query("SELECT r.id,r.name,r.snapshot,r.checked_at,r.error_code,r.last_attempt_at,r.instance_bill,r.bill_error,l.server_id,l.monthly_budget,l.currency,l.expires_at FROM alicloud_resources r LEFT JOIN operations_cloud_links l ON l.resource_id=r.id WHERE NOT r.archived AND (r.checked_at IS NOT NULL OR r.last_attempt_at>0) ORDER BY r.last_attempt_at DESC LIMIT 500").fetch_all(&mut *tx).await?;
+    let rows=sqlx::query("SELECT r.id,r.name,r.snapshot,r.checked_at,r.error_code,r.last_attempt_at,l.server_id,l.monthly_budget,l.currency,l.expires_at FROM alicloud_resources r LEFT JOIN operations_cloud_links l ON l.resource_id=r.id WHERE NOT r.archived AND (r.checked_at IS NOT NULL OR r.last_attempt_at>0) ORDER BY r.last_attempt_at DESC LIMIT 500").fetch_all(&mut *tx).await?;
     for row in rows {
         let id: Uuid = row.get("id");
+        let bill = bills.get(&id);
+        let bill_error = bill.and_then(|bill| bill.error.clone());
         let checked = row
             .get::<Option<i64>, _>("checked_at")
             .unwrap_or(0)
             .max(row.get("last_attempt_at"));
-        let snapshot = json!({"resource":row.get::<Option<Value>,_>("snapshot"),"error_code":row.get::<Option<String>,_>("error_code"),"bill":row.get::<Option<Value>,_>("instance_bill"),"bill_error":row.get::<Option<String>,_>("bill_error")});
+        let snapshot = json!({"resource":row.get::<Option<Value>,_>("snapshot"),"error_code":row.get::<Option<String>,_>("error_code"),"bill":bill.and_then(|bill| bill.bill.clone()),"bill_error":bill_error});
         let checked = checked.max(snapshot["bill"]["queried_at"].as_i64().unwrap_or(0));
         let previous:Option<Value>=sqlx::query_scalar("SELECT snapshot FROM operations_cloud_observations WHERE resource_id=$1 ORDER BY checked_at DESC,id DESC LIMIT 1").bind(id).fetch_optional(&mut *tx).await?;
         let mut changes = Vec::new();
@@ -224,7 +237,7 @@ pub async fn observe(pool: &PgPool) -> ApiResult<()> {
         let currency: Option<String> = row.get("currency");
         let budget: Option<String> = row.get("monthly_budget");
         let queried = snapshot["bill"]["queried_at"].as_i64();
-        if row.get::<Option<String>, _>("bill_error").is_none()
+        if bill_error.is_none()
             && queried.is_some_and(|v| v <= now && now - v <= 21600)
             && let (Some(currency), Some(budget), Some(entries)) =
                 (currency, budget, snapshot["bill"]["rows"].as_array())

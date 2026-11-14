@@ -11,8 +11,13 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-const KEY: &str = "TEST_ONLY_ALICLOUD_ID";
-const SECRET: &str = "TEST_ONLY_ALICLOUD_SECRET";
+/// A cloud credential an account may reference. The form only checks that it exists and is
+/// enabled; its sealed contents are never read here.
+async fn credential(pool: &PgPool) -> Result<Uuid> {
+    Ok(sqlx::query_scalar("INSERT INTO credential_entries(id,name,kind,key_id,nonce,ciphertext,created_at,updated_at) VALUES(gen_random_uuid(),'TEST_ONLY','cloud','TEST_ONLY',decode(repeat('00',12),'hex'),decode('00','hex'),0,0) RETURNING id")
+        .fetch_one(pool)
+        .await?)
+}
 
 #[sqlx::test]
 async fn cron_preview_is_authenticated_and_uses_fixed_offset(pool: PgPool) -> Result<()> {
@@ -60,7 +65,7 @@ async fn traffic_history_requires_admin_and_clears_when_account_identity_changes
 ) -> Result<()> {
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
-    let mut body = json!({"name":"测试账号","site":"china","enabled":false,"auto_enabled":false,"limit_gb":100,"access_key_id":KEY,"access_key_secret":SECRET,"legacy_credentials":true});
+    let mut body = json!({"name":"测试账号","site":"china","enabled":false,"auto_enabled":false,"limit_gb":100,"credential_id":credential(&pool).await?});
     let created = panel
         .admin(
             Method::POST,
@@ -119,7 +124,7 @@ async fn traffic_history_requires_admin_and_clears_when_account_identity_changes
         .await?,
         1
     );
-    body["access_key_id"] = "TEST_ONLY_REPLACEMENT".into();
+    body["credential_id"] = credential(&pool).await?.to_string().into();
     body["revision"] = 2.into();
     assert_eq!(
         panel
@@ -145,7 +150,9 @@ async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and
 ) -> Result<()> {
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
-    let mut account_body = json!({"name":"测试账号","site":"china","enabled":false,"auto_enabled":false,"limit_gb":100,"access_key_id":KEY,"access_key_secret":SECRET});
+    let reference = credential(&pool).await?;
+    let mut account_body = json!({"name":"测试账号","site":"china","enabled":false,"auto_enabled":false,"limit_gb":100});
+    // Without a credential reference nothing is stored, and plaintext keys are no field.
     assert_eq!(
         panel
             .admin(
@@ -158,7 +165,42 @@ async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and
             .status(),
         StatusCode::BAD_REQUEST
     );
-    account_body["legacy_credentials"] = true.into();
+    let mut plaintext = account_body.clone();
+    plaintext["access_key_id"] = "TEST_ONLY_ALICLOUD_ID".into();
+    plaintext["access_key_secret"] = "TEST_ONLY_ALICLOUD_SECRET".into();
+    plaintext["legacy_credentials"] = true.into();
+    assert_eq!(
+        panel
+            .admin(
+                Method::POST,
+                "/api/resources/alicloud/accounts",
+                &cookie,
+                Some(plaintext.clone()),
+            )
+            .await?
+            .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    plaintext["credential_id"] = reference.to_string().into();
+    assert_eq!(
+        panel
+            .admin(
+                Method::POST,
+                "/api/resources/alicloud/accounts",
+                &cookie,
+                Some(plaintext),
+            )
+            .await?
+            .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM alicloud_accounts")
+            .fetch_one(&pool)
+            .await?,
+        0
+    );
+    account_body["credential_id"] = reference.to_string().into();
     let id: Value = panel
         .admin(
             Method::POST,
@@ -177,8 +219,11 @@ async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and
         .error_for_status()?
         .json()
         .await?;
-    let text = overview.to_string();
-    assert!(!text.contains(KEY) && !text.contains(SECRET) && !text.contains("access_key"));
+    assert!(!overview.to_string().contains("access_key"));
+    assert_eq!(
+        overview["accounts"][0]["credential_id"],
+        reference.to_string()
+    );
     for method in [Method::GET, Method::POST] {
         let path = if method == Method::GET {
             "/api/resources/alicloud"
@@ -196,9 +241,9 @@ async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and
             StatusCode::UNAUTHORIZED
         );
     }
+    // An edit without a reference keeps the stored one.
     let mut edit = account_body.clone();
-    edit.as_object_mut().unwrap().remove("access_key_id");
-    edit.as_object_mut().unwrap().remove("access_key_secret");
+    edit.as_object_mut().unwrap().remove("credential_id");
     edit["revision"] = 1.into();
     let account_path = format!("/api/resources/alicloud/accounts/{id}");
     assert_eq!(
@@ -209,10 +254,10 @@ async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and
         StatusCode::NO_CONTENT
     );
     assert_eq!(
-        sqlx::query_scalar::<_, String>("SELECT access_key_secret FROM alicloud_accounts")
+        sqlx::query_scalar::<_, Option<Uuid>>("SELECT credential_id FROM alicloud_accounts")
             .fetch_one(&pool)
             .await?,
-        SECRET
+        Some(reference)
     );
     assert_eq!(
         panel
@@ -222,7 +267,7 @@ async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and
         StatusCode::CONFLICT
     );
     edit["revision"] = 2.into();
-    edit["access_key_id"] = "TEST_ONLY_REPLACEMENT".into();
+    edit["credential_id"] = Uuid::new_v4().to_string().into();
     assert_eq!(
         panel
             .admin(Method::PATCH, &account_path, &cookie, Some(edit))
@@ -316,11 +361,11 @@ async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and
             .status(),
         StatusCode::NO_CONTENT
     );
-    let stored: (String, String, bool) =
-        sqlx::query_as("SELECT access_key_id,access_key_secret,archived FROM alicloud_accounts")
+    let stored: (Option<Uuid>, bool) =
+        sqlx::query_as("SELECT credential_id,archived FROM alicloud_accounts")
             .fetch_one(&pool)
             .await?;
-    assert_eq!(stored, (String::new(), String::new(), true));
+    assert_eq!(stored, (None, true));
     Ok(())
 }
 #[sqlx::test]
@@ -357,8 +402,10 @@ async fn manual_refresh_cannot_bypass_provider_rate_limit(pool: PgPool) -> Resul
     let cookie = panel.admin_cookie().await?;
     let id = Uuid::new_v4();
     let now = apsp_protocol::now_timestamp();
-    sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret,error_code,last_attempt_at,next_run_at) VALUES($1,'TEST_ONLY throttled',$2,$3,'rate_limited',$4,$5)")
-        .bind(id).bind(KEY).bind(SECRET).bind(now-61).bind(now+900).execute(&pool).await?;
+    sqlx::query("INSERT INTO alicloud_accounts(id,name,last_attempt_at,next_run_at) VALUES($1,'TEST_ONLY throttled',$2,$3)")
+        .bind(id).bind(now-61).bind(now+900).execute(&pool).await?;
+    sqlx::query("INSERT INTO cloud_account_billing(account_id,billing_enabled,bill_error) VALUES($1,true,'rate_limited')")
+        .bind(id).execute(&pool).await?;
     assert_eq!(
         panel
             .admin(
@@ -391,7 +438,10 @@ async fn power_policy_validates_revisions_and_power_jobs_are_admin_only_and_canc
     let resource = Uuid::new_v4();
     let eip = Uuid::new_v4();
     let now = apsp_protocol::now_timestamp();
-    sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret,enabled) VALUES($1,'测试账号',$2,$3,false)").bind(account).bind(KEY).bind(SECRET).execute(&pool).await?;
+    sqlx::query("INSERT INTO alicloud_accounts(id,name,enabled) VALUES($1,'测试账号',false)")
+        .bind(account)
+        .execute(&pool)
+        .await?;
     for (id, kind, cloud_id) in [
         (resource, "ecs", "i-testonly"),
         (eip, "eip", "eip-testonly"),
@@ -588,6 +638,6 @@ async fn power_policy_validates_revisions_and_power_jobs_are_admin_only_and_canc
         .json()
         .await?;
     assert_eq!(overview["power_jobs"][0]["status"], "cancelled");
-    assert!(!overview.to_string().contains(SECRET));
+    assert!(!overview.to_string().contains("access_key"));
     Ok(())
 }

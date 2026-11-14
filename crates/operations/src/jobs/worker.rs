@@ -75,10 +75,7 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
     }
     record("incidents".into(), crate::incidents::observe(state).await);
     record("remediation".into(), super::remediation::tick(state).await);
-    record(
-        "cloud".into(),
-        crate::cloud_resources::observe(&state.pool).await,
-    );
+    record("cloud".into(), observe_cloud(&state.pool).await);
     record(
         "cancellation reminders".into(),
         apsp_costs::cancellation_reminders::tick(state).await,
@@ -88,6 +85,12 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
     } else {
         Err(ApiError::Conflict(failures.join("；")))
     }
+}
+
+/// The cloud resources' observation history, with the bills costs read.
+async fn observe_cloud(pool: &sqlx::PgPool) -> ApiResult<()> {
+    let bills = apsp_costs::cloud::accounts::instance_bills(pool).await?;
+    crate::cloud_resources::observe(pool, &bills).await
 }
 
 async fn schedules(state: &AppState) -> ApiResult<()> {

@@ -2,8 +2,9 @@
 //! object snapshots, device work, observability evidence, the alert outbox the
 //! notification settings and channels reach, server observation, the server runtime state
 //! traffic keeps, the member portal's host network, the proxy users traffic compiles in,
-//! China reachability for the Nexus cutover and the dashboard's exchange rates. This is the only place that names which owner
-//! answers each interface.
+//! China reachability for the Nexus cutover, the dashboard's exchange rates, cloud work in
+//! progress and the billing state costs keeps for each cloud account. This is the only
+//! place that names which owner answers each interface.
 
 use apsp_access as access;
 use apsp_governance::control_center::guard::{self, AuditSnapshots};
@@ -53,6 +54,7 @@ pub fn install() {
     traffic::users::install(&WIRING);
     traffic::china_reachability::install(&WIRING);
     apsp_operations::cloud::bandwidth::install();
+    apsp_costs::cloud::accounts::install();
     observability::dashboard::install(&WIRING);
 }
 

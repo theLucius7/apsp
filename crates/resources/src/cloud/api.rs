@@ -1,5 +1,5 @@
 use super::{
-    account_on,
+    account_on, billing,
     client::Cloud,
     failure, lock,
     model::{self, Account, Resource},
@@ -70,11 +70,7 @@ struct AccountWrite {
     billing_enabled: Option<bool>,
     balance_enabled: Option<bool>,
     limit_gb: i64,
-    access_key_id: Option<String>,
-    access_key_secret: Option<String>,
     credential_id: Option<Uuid>,
-    #[serde(default)]
-    legacy_credentials: bool,
     revision: Option<i64>,
 }
 impl AccountWrite {
@@ -89,49 +85,24 @@ impl AccountWrite {
         }
         Ok(())
     }
-    fn credentials(&self, previous: Option<&Account>) -> ApiResult<(String, String, Option<Uuid>)> {
-        let key = self.access_key_id.as_deref().unwrap_or("").trim();
-        let secret = self.access_key_secret.as_deref().unwrap_or("").trim();
-        if let Some(id) = self.credential_id {
-            if !key.is_empty() || !secret.is_empty() {
-                return Err(ApiError::BadRequest(
-                    "集中引用与旧明文密钥不能同时提交".into(),
-                ));
-            }
-            return Ok((String::new(), String::new(), Some(id)));
-        }
-        if key.is_empty() && secret.is_empty() {
-            if let Some(account) = previous {
-                if account.credential_id.is_some() && self.legacy_credentials {
-                    return Err(ApiError::BadRequest(
-                        "切换旧兼容模式必须明确提供独立密钥对".into(),
-                    ));
-                }
-                return Ok((
-                    account.access_key_id.clone(),
-                    account.access_key_secret.clone(),
-                    account.credential_id,
-                ));
-            }
-        } else if self.legacy_credentials
-            && apsp_cloud_api::credential(key)
-            && apsp_cloud_api::credential(secret)
-        {
-            return Ok((key.into(), secret.into(), None));
-        }
-        Err(ApiError::BadRequest(
-            "请引用集中云凭据；只有明确选择旧兼容模式时才接收独立密钥对".into(),
-        ))
+    /// The credential reference to store: the one submitted, or on an edit the stored one.
+    fn credential(&self, previous: Option<&Account>) -> ApiResult<Uuid> {
+        self.credential_id
+            .or_else(|| previous.and_then(|account| account.credential_id))
+            .ok_or_else(|| ApiError::BadRequest("请引用集中云凭据".into()))
     }
 }
-async fn validate_reference(state: &AppState, id: Option<Uuid>) -> ApiResult<()> {
-    if let Some(id) = id {
-        let available:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM credential_entries WHERE id=$1 AND kind='cloud' AND enabled)").bind(id).fetch_one(&state.pool).await?;
-        if !available {
-            return Err(ApiError::BadRequest(
-                "集中云凭据不存在、已停用或用途不符".into(),
-            ));
-        }
+async fn validate_reference(state: &AppState, id: Uuid) -> ApiResult<()> {
+    let available: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM credential_entries WHERE id=$1 AND kind='cloud' AND enabled)",
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+    if !available {
+        return Err(ApiError::BadRequest(
+            "集中云凭据不存在、已停用或用途不符".into(),
+        ));
     }
     Ok(())
 }
@@ -142,12 +113,14 @@ async fn create_account(
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     auth::require_admin(&state, &headers).await?;
     input.validate()?;
-    let billing_enabled = input.billing_enabled.unwrap_or(false);
-    let balance_enabled = input.balance_enabled.unwrap_or(false);
-    if input.auto_enabled && !billing_enabled {
+    let settings = billing::Settings {
+        billing_enabled: input.billing_enabled.unwrap_or(false),
+        balance_enabled: input.balance_enabled.unwrap_or(false),
+    };
+    if input.auto_enabled && !settings.billing_enabled {
         return Err(ApiError::BadRequest("自动降速需要先启用账单查询".into()));
     }
-    let (key, secret, credential) = input.credentials(None)?;
+    let credential = input.credential(None)?;
     validate_reference(&state, credential).await?;
     let id = Uuid::new_v4();
     let mut tx = state.pool.begin().await?;
@@ -159,8 +132,9 @@ async fn create_account(
     if count >= 8 {
         return Err(ApiError::Conflict("最多登记 8 个云账号".into()));
     }
-    sqlx::query("INSERT INTO alicloud_accounts(id,name,site,access_key_id,access_key_secret,enabled,auto_enabled,limit_gb,credential_id,billing_enabled,balance_enabled) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)")
-        .bind(id).bind(input.name.trim()).bind(input.site).bind(key).bind(secret).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).bind(credential).bind(billing_enabled).bind(balance_enabled).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO alicloud_accounts(id,name,site,enabled,auto_enabled,limit_gb,credential_id) VALUES($1,$2,$3,$4,$5,$6,$7)")
+        .bind(id).bind(input.name.trim()).bind(input.site).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).bind(credential).execute(&mut *tx).await?;
+    billing::changed(&mut tx, id, billing::Change::Created(settings)).await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(json!({"id":id}))))
 }
@@ -177,9 +151,12 @@ async fn update_account(
     if input.revision != Some(previous.revision) {
         return Err(ApiError::Conflict("账号配置已变化，请刷新后重试".into()));
     }
-    let billing_enabled = input.billing_enabled.unwrap_or(previous.billing_enabled);
-    let balance_enabled = input.balance_enabled.unwrap_or(previous.balance_enabled);
-    if !billing_enabled {
+    let stored = billing::state(&mut tx, id).await?.settings;
+    let settings = billing::Settings {
+        billing_enabled: input.billing_enabled.unwrap_or(stored.billing_enabled),
+        balance_enabled: input.balance_enabled.unwrap_or(stored.balance_enabled),
+    };
+    if !settings.billing_enabled {
         let uses_bills: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM alicloud_resources WHERE account_id=$1 AND NOT archived AND power_policy->>'enabled'='true' AND power_policy->>'threshold_action' IN ('notify','stop'))")
             .bind(id).fetch_one(&mut *tx).await?;
         if input.auto_enabled || uses_bills {
@@ -188,15 +165,12 @@ async fn update_account(
             ));
         }
     }
-    let (key, secret, credential) = input.credentials(Some(&previous))?;
+    let credential = input.credential(Some(&previous))?;
     let resources = account_resources(&mut tx, id).await?;
-    if credential != previous.credential_id {
+    if Some(credential) != previous.credential_id {
         validate_reference(&state, credential).await?;
     }
-    let rekeyed = input.site != previous.site
-        || key != previous.access_key_id
-        || secret != previous.access_key_secret
-        || credential != previous.credential_id;
+    let rekeyed = input.site != previous.site || Some(credential) != previous.credential_id;
     if rekeyed && super::work::unresolved(&mut tx, &resources).await? {
         return Err(ApiError::Conflict(
             "此账号仍有已发送或结果待核对的云操作，请先核对或结束跟踪，再更换站点及访问密钥".into(),
@@ -204,16 +178,27 @@ async fn update_account(
     }
     // Any edit invalidates queued authorization and cached billing evidence.
     if rekeyed {
-        sqlx::query("DELETE FROM alicloud_traffic_history WHERE account_id=$1")
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
         sqlx::query("UPDATE alicloud_resources SET ipv6_addresses='[]',ipv6_checked_at=NULL,ipv6_error=NULL WHERE account_id=$1").bind(id).execute(&mut *tx).await?;
     }
-    sqlx::query("UPDATE alicloud_accounts SET name=$2,site=$3,access_key_id=$4,access_key_secret=$5,enabled=$6,auto_enabled=$7,limit_gb=$8,credential_id=$9,billing_enabled=$10,balance_enabled=$11,revision=revision+1,bill=NULL,traffic=NULL,traffic_error=NULL,error_code=NULL,next_run_at=0,balance=NULL,balance_error=NULL,balance_next_at=0 WHERE id=$1")
-        .bind(id).bind(input.name.trim()).bind(input.site).bind(key).bind(secret).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).bind(credential).bind(billing_enabled).bind(balance_enabled).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_accounts SET name=$2,site=$3,enabled=$4,auto_enabled=$5,limit_gb=$6,credential_id=$7,revision=revision+1,next_run_at=0 WHERE id=$1")
+        .bind(id).bind(input.name.trim()).bind(input.site).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).bind(credential).execute(&mut *tx).await?;
+    billing::changed(
+        &mut tx,
+        id,
+        billing::Change::Edited {
+            settings,
+            rekeyed,
+            resources: &resources,
+        },
+    )
+    .await?;
     super::work::cancel_pending(&mut tx, &resources, true).await?;
-    sqlx::query("UPDATE alicloud_resources SET instance_bill=NULL,bill_error=NULL,bill_next_at=0,next_power_at=0,cdt_guard_next_at=0 WHERE account_id=$1").bind(id).execute(&mut *tx).await?;
+    sqlx::query(
+        "UPDATE alicloud_resources SET next_power_at=0,cdt_guard_next_at=0 WHERE account_id=$1",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -238,7 +223,8 @@ async fn remove_account(
     if has_resources {
         return Err(ApiError::Conflict("请先移除该账号登记的云资源".into()));
     }
-    sqlx::query("UPDATE alicloud_accounts SET archived=true,enabled=false,auto_enabled=false,access_key_id='',access_key_secret='',credential_id=NULL,bill=NULL,traffic=NULL,balance=NULL WHERE id=$1").bind(id).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_accounts SET archived=true,enabled=false,auto_enabled=false,credential_id=NULL WHERE id=$1").bind(id).execute(&mut *tx).await?;
+    billing::changed(&mut tx, id, billing::Change::Archived).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -258,16 +244,35 @@ async fn refresh_account(
         .fetch_one(&mut *tx)
         .await?;
     let now = apsp_protocol::now_timestamp();
-    if last + 60 > now
-        || (account.error_code.as_deref() == Some("rate_limited") && account.next_run_at > now)
-    {
+    // A bill read refused as rate limited defers the whole pass; a refresh waits for it.
+    let throttled = billing::state(&mut tx, id).await?.throttled;
+    if last + 60 > now || (throttled && account.next_run_at > now) {
         return Err(ApiError::Busy);
     }
-    sqlx::query("UPDATE alicloud_accounts SET next_run_at=0,balance_next_at=CASE WHEN balance_error IS NULL THEN 0 ELSE balance_next_at END WHERE id=$1")
+    sqlx::query("UPDATE alicloud_accounts SET next_run_at=0 WHERE id=$1")
         .bind(id)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("UPDATE alicloud_resources SET bill_next_at=CASE WHEN bill_error IS NULL THEN 0 ELSE bill_next_at END,next_power_at=0 WHERE account_id=$1 AND NOT archived").bind(id).execute(&mut *tx).await?;
+    let resources: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM alicloud_resources WHERE account_id=$1 AND NOT archived",
+    )
+    .bind(id)
+    .fetch_all(&mut *tx)
+    .await?;
+    billing::changed(
+        &mut tx,
+        id,
+        billing::Change::Refreshed {
+            resources: &resources,
+        },
+    )
+    .await?;
+    sqlx::query(
+        "UPDATE alicloud_resources SET next_power_at=0 WHERE account_id=$1 AND NOT archived",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(StatusCode::ACCEPTED)
 }

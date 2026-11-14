@@ -62,8 +62,8 @@ export const rotationVerdict = (value: string) => lookup(rotationVerdicts, value
 export const rotationActive = (value: string) => value === 'running' || value === 'unknown'
 export const status = (value: string) => Object.hasOwn(states, value) ? states[value] : '状态未知'
 export const message = (value: string | null | undefined) => value ? Object.hasOwn(messages, value) ? messages[value] : '云接口暂时不可用' : ''
-export function accountWrite(account: Pick<Account, 'name' | 'site' | 'enabled' | 'auto_enabled' | 'limit_gb' | 'billing_enabled' | 'balance_enabled'>, key: string, secret: string, revision?: number, credentialId = '', legacy = false) {
-  return { name: account.name.trim(), site: account.site, enabled: account.enabled, auto_enabled: account.auto_enabled, limit_gb: account.limit_gb, ...(account.billing_enabled === undefined ? {} : { billing_enabled: account.billing_enabled }), ...(account.balance_enabled === undefined ? {} : { balance_enabled: account.balance_enabled }), ...(revision === undefined ? {} : { revision }), ...(credentialId.trim() ? { credential_id: credentialId.trim() } : legacy ? { legacy_credentials: true, ...(key.trim() || secret.trim() ? { access_key_id: key.trim(), access_key_secret: secret.trim() } : {}) } : {}) }
+export function accountWrite(account: Pick<Account, 'name' | 'site' | 'enabled' | 'auto_enabled' | 'limit_gb' | 'billing_enabled' | 'balance_enabled'>, revision?: number, credentialId = '') {
+  return { name: account.name.trim(), site: account.site, enabled: account.enabled, auto_enabled: account.auto_enabled, limit_gb: account.limit_gb, ...(account.billing_enabled === undefined ? {} : { billing_enabled: account.billing_enabled }), ...(account.balance_enabled === undefined ? {} : { balance_enabled: account.balance_enabled }), ...(revision === undefined ? {} : { revision }), ...(credentialId.trim() ? { credential_id: credentialId.trim() } : {}) }
 }
 export function billUsable(account: Account, now = Date.now() / 1000) {
   const month = new Date((now + 8 * 3600) * 1000).toISOString().slice(0, 7), bill = account.bill

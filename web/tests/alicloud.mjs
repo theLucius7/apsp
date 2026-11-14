@@ -74,14 +74,13 @@ try {
       assert.equal(body.balance_enabled, false)
       assert.equal(body.credential_id, credentialId)
       for (const field of ['access_key_id', 'access_key_secret', 'legacy_credentials']) assert.equal(Object.hasOwn(body, field), false, 'New cloud accounts contain only the encrypted credential reference')
-      overview.accounts.push({ ...body, access_key_id: undefined, access_key_secret: undefined, id: 'account', revision: 1, balance: { available: '1234.5600', currency: 'USD', queried_at: now }, balance_error: null, error_code: null, traffic_error: null, next_run_at: now + 300, traffic: { queried_at: now, mainland_bytes: '1073741824', overseas_bytes: '2147483648', regions: [{ region: 'cn-hangzhou', bytes: '1073741824' }] }, bill: { month, queried_at: now, usage_micro_gb: 10000000, rows: [{ instance_id: 'test', region: '测试地域', billing_item: '公网流量', product_type: 'cdt', usage: '10', unit: 'GB', amount: '0.00', currency: 'CNY' }] } })
+      overview.accounts.push({ ...body, id: 'account', revision: 1, balance: { available: '1234.5600', currency: 'USD', queried_at: now }, balance_error: null, error_code: null, traffic_error: null, next_run_at: now + 300, traffic: { queried_at: now, mainland_bytes: '1073741824', overseas_bytes: '2147483648', regions: [{ region: 'cn-hangzhou', bytes: '1073741824' }] }, bill: { month, queried_at: now, usage_micro_gb: 10000000, rows: [{ instance_id: 'test', region: '测试地域', billing_item: '公网流量', product_type: 'cdt', usage: '10', unit: 'GB', amount: '0.00', currency: 'CNY' }] } })
       return respond({ id: 'account' }, 201)
     }
     if (path === '/api/resources/alicloud/accounts/account' && method === 'PATCH') {
       assert.equal(body.revision, overview.accounts[0].revision)
-      for (const field of ['access_key_id', 'access_key_secret']) assert.equal(Object.hasOwn(body, field), false, 'An unchanged credential never replays plaintext')
-      if (Object.hasOwn(body, 'credential_id')) assert.equal(body.credential_id, credentialId)
-      else assert.equal(body.legacy_credentials, true)
+      for (const field of ['access_key_id', 'access_key_secret', 'legacy_credentials']) assert.equal(Object.hasOwn(body, field), false, 'An edit sends only the encrypted credential reference')
+      assert.equal(body.credential_id, credentialId)
       overview.accounts[0] = { ...overview.accounts[0], ...body, revision: body.revision + 1 }
       return route.fulfill({ status: 204 })
     }
@@ -145,7 +144,7 @@ try {
   let dialog = page.getByRole('dialog')
   await dialog.getByLabel('账号名称').fill('测试云账号')
   await dialog.getByLabel(/^云凭据标识/).fill(credentialId)
-  assert.equal(await dialog.getByLabel(/^凭据来源/).inputValue(), 'center')
+  assert.equal(await dialog.getByLabel(/^凭据来源/).count(), 0)
   assert.equal(await dialog.getByLabel(/访问密钥/).count(), 0)
   assert.equal(await dialog.getByLabel('达到阈值时').isChecked(), false)
   assert.equal(await dialog.getByLabel('达到阈值时').isEnabled(), false)
@@ -171,23 +170,15 @@ try {
   await dialog.waitFor({ state: 'hidden' })
   assert.equal(overview.accounts[0].balance_enabled, true)
   assert.equal(overview.accounts[0].billing_enabled, false)
-  // Re-read an existing legacy account, retain both stored credentials without
-  // exposing them, then explicitly move it back to the encrypted reference.
+  // An account without a credential reference offers no plaintext key fields and
+  // cannot be saved until a reference is entered.
   overview.accounts[0].credential_id = null; overview.accounts[0].revision++
   await page.reload()
   await choose(page, '账号操作', '编辑账号与策略')
   dialog = page.getByRole('dialog')
-  assert.equal(await dialog.getByLabel(/^凭据来源/).inputValue(), 'legacy')
-  assert.equal(await dialog.getByLabel(/^旧兼容访问密钥 ID/).inputValue(), '')
-  assert.equal(await dialog.getByLabel(/^旧兼容访问密钥 Secret/).inputValue(), '')
-  await dialog.getByRole('button', { name: '保存', exact: true }).click()
-  await dialog.waitFor({ state: 'hidden' })
-  const legacyWrite = writes.at(-1).body
-  assert.equal(legacyWrite.legacy_credentials, true)
-  for (const field of ['credential_id', 'access_key_id', 'access_key_secret']) assert.equal(Object.hasOwn(legacyWrite, field), false)
-  await choose(page, '账号操作', '编辑账号与策略')
-  dialog = page.getByRole('dialog')
-  await dialog.getByLabel(/^凭据来源/).selectOption('center')
+  assert.equal(await dialog.getByLabel(/^凭据来源/).count(), 0)
+  assert.equal(await dialog.getByLabel(/^云凭据标识/).inputValue(), '')
+  assert.equal(await dialog.getByRole('button', { name: '保存', exact: true }).isDisabled(), true)
   await dialog.getByLabel(/^云凭据标识/).fill(credentialId)
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })

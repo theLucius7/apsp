@@ -1,6 +1,7 @@
 //! Display history from the existing account-wide CDT observations.
+use crate::cloud::accounts::Traffic;
 use crate::{AppState, auth, error::ApiResult};
-use apsp_resources::cloud::model::{Account, Traffic};
+use apsp_resources::cloud::{client::Keys, model::Account};
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -19,10 +20,11 @@ pub fn routes() -> Router<AppState> {
     )
 }
 
-pub fn identity(account: &Account) -> String {
+/// Which CDT pool the readings come from: the account's site and access key.
+pub fn identity(account: &Account, keys: &Keys) -> String {
     format!(
         "{:x}",
-        Sha256::digest(format!("{}\0{}", account.site, account.access_key_id))
+        Sha256::digest(format!("{}\0{}", account.site, keys.access_key_id))
     )
 }
 
@@ -32,17 +34,19 @@ pub async fn record(
     traffic: &Traffic,
     identity: &str,
 ) -> ApiResult<()> {
-    let previous: Option<String> =
-        sqlx::query_scalar("SELECT traffic_history_identity FROM alicloud_accounts WHERE id=$1")
-            .bind(id)
-            .fetch_one(&mut **tx)
-            .await?;
+    let previous: Option<String> = sqlx::query_scalar(
+        "SELECT traffic_history_identity FROM cloud_account_billing WHERE account_id=$1",
+    )
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .flatten();
     if previous.as_deref() != Some(identity) {
         sqlx::query("DELETE FROM alicloud_traffic_history WHERE account_id=$1")
             .bind(id)
             .execute(&mut **tx)
             .await?;
-        sqlx::query("UPDATE alicloud_accounts SET traffic_history_identity=$2 WHERE id=$1")
+        sqlx::query("INSERT INTO cloud_account_billing(account_id,traffic_history_identity) VALUES($1,$2) ON CONFLICT(account_id) DO UPDATE SET traffic_history_identity=EXCLUDED.traffic_history_identity")
             .bind(id)
             .bind(identity)
             .execute(&mut **tx)
@@ -99,14 +103,14 @@ pub async fn store_traffic(
     match traffic {
         Ok((traffic, identity)) => {
             record(tx, id, &traffic, &identity).await?;
-            sqlx::query("UPDATE alicloud_accounts SET traffic=$2,traffic_error=NULL WHERE id=$1")
+            sqlx::query("INSERT INTO cloud_account_billing(account_id,traffic) VALUES($1,$2) ON CONFLICT(account_id) DO UPDATE SET traffic=EXCLUDED.traffic,traffic_error=NULL")
                 .bind(id)
                 .bind(sqlx::types::Json(traffic))
                 .execute(&mut **tx)
                 .await?;
         }
         Err(error) => {
-            sqlx::query("UPDATE alicloud_accounts SET traffic_error=$2 WHERE id=$1")
+            sqlx::query("INSERT INTO cloud_account_billing(account_id,traffic_error) VALUES($1,$2) ON CONFLICT(account_id) DO UPDATE SET traffic_error=EXCLUDED.traffic_error")
                 .bind(id)
                 .bind(error.code)
                 .execute(&mut **tx)
@@ -131,8 +135,11 @@ mod tests {
     #[sqlx::test(migrations = "../panel/migrations")]
     async fn samples_replace_only_older_observations_and_keep_pools_separate(pool: sqlx::PgPool) {
         let id = Uuid::new_v4();
-        sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret) VALUES($1,'测试账号','TEST_ONLY_CLOUD_ID','TEST_ONLY_CLOUD_SECRET')")
-            .bind(id).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO alicloud_accounts(id,name) VALUES($1,'测试账号')")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
         let mut tx = pool.begin().await.unwrap();
         let sample = |at, inland: &str| Traffic {
             queried_at: at,

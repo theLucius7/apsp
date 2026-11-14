@@ -111,9 +111,11 @@ async fn cloud_resources_apply_scope_before_limit_and_keep_token_intersection(
     .execute(&panel.pool)
     .await?;
     let account = Uuid::new_v4();
-    sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret) VALUES($1,'cloud scope fixture','fixture-only','fixture-only')")
-        .bind(account).execute(&panel.pool).await?;
-    sqlx::query("UPDATE alicloud_accounts SET balance='{}',balance_error='fixture-account-global-error' WHERE id=$1")
+    sqlx::query("INSERT INTO alicloud_accounts(id,name) VALUES($1,'cloud scope fixture')")
+        .bind(account)
+        .execute(&panel.pool)
+        .await?;
+    sqlx::query("INSERT INTO cloud_account_billing(account_id,balance,balance_error) VALUES($1,'{}','fixture-account-global-error')")
         .bind(account).execute(&panel.pool).await?;
     sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id) SELECT gen_random_uuid(),$1,'a hidden','ecs','example-region','i-hidden-'||n FROM generate_series(1,510) n")
         .bind(account).execute(&panel.pool).await?;

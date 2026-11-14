@@ -25,12 +25,12 @@ pub(super) async fn instance(
     account: &Account,
     resource: &Resource,
 ) -> Result<(String, Vec<String>), Failure> {
-    let account = cloud.resolved_account(account).await?;
+    let keys = cloud.keys(account).await?;
     let value = cloud
         .ecs
         .call(
-            &account.access_key_id,
-            &account.access_key_secret,
+            &keys.access_key_id,
+            &keys.access_key_secret,
             "DescribeInstances",
             &[
                 ("RegionId", resource.region.clone()),
@@ -68,12 +68,12 @@ pub(super) async fn group(
     id: &str,
     vpc: &str,
 ) -> Result<Group, Failure> {
-    let resolved = cloud.resolved_account(account).await?;
+    let keys = cloud.keys(account).await?;
     let value = cloud
         .ecs
         .call(
-            &resolved.access_key_id,
-            &resolved.access_key_secret,
+            &keys.access_key_id,
+            &keys.access_key_secret,
             "DescribeSecurityGroupAttribute",
             &[
                 ("RegionId", resource.region.clone()),
@@ -160,7 +160,7 @@ pub(super) async fn change(
     action: &str,
     group: &str,
 ) -> Result<String, Failure> {
-    let account = cloud.resolved_account(account).await?;
+    let keys = cloud.keys(account).await?;
     let action = match action {
         "join" => "JoinSecurityGroup",
         "leave" => "LeaveSecurityGroup",
@@ -169,8 +169,8 @@ pub(super) async fn change(
     let value = cloud
         .ecs
         .call(
-            &account.access_key_id,
-            &account.access_key_secret,
+            &keys.access_key_id,
+            &keys.access_key_secret,
             action,
             &[
                 ("RegionId", resource.region.clone()),

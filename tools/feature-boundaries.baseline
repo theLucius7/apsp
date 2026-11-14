@@ -144,12 +144,6 @@ sql	crates/access/src/user_limits.rs	read	deployments	access->traffic
 sql	crates/access/src/user_limits.rs	read	server_module_status	access->traffic
 sql	crates/costs/src/cancellation_reminders.rs	read	operations_incidents	costs->observability
 sql	crates/costs/src/cancellation_reminders.rs	write	operations_incident_deliveries	costs->observability
-sql	crates/costs/src/cloud/cost_cache.rs	read	alicloud_accounts	costs->resources
-sql	crates/costs/src/cloud/cost_cache.rs	read	alicloud_resources	costs->resources
-sql	crates/costs/src/cloud/cost_cache.rs	write	alicloud_accounts	costs->resources
-sql	crates/costs/src/cloud/cost_cache.rs	write	alicloud_resources	costs->resources
-sql	crates/costs/src/cloud/traffic_history.rs	read	alicloud_accounts	costs->resources
-sql	crates/costs/src/cloud/traffic_history.rs	write	alicloud_accounts	costs->resources
 sql	crates/costs/src/suppliers.rs	read	diagnostic_jobs	costs->observability
 sql	crates/costs/src/suppliers.rs	read	diagnostic_report_sections	costs->observability
 sql	crates/costs/src/suppliers.rs	read	fleet_profiles	costs->resources
@@ -245,7 +239,6 @@ sql	crates/panel/src/search.rs	read	server_ip_quality	app->observability
 sql	crates/resources/src/batch_enrollment.rs	write	alert_rules	resources->observability
 sql	crates/resources/src/batch_enrollment.rs	write	network_probes	resources->observability
 sql	crates/resources/src/cloud/api.rs	read	credential_entries	resources->platform
-sql	crates/resources/src/cloud/api.rs	write	alicloud_traffic_history	resources->costs
 sql	crates/resources/src/cloud_resources.rs	read	alicloud_security_group_operations	resources->operations
 sql	crates/resources/src/cloud_resources/hetzner.rs	read	credential_entries	resources->platform
 sql	crates/resources/src/retirement.rs	write	diagnostic_jobs	resources->observability

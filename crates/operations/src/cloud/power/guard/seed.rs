@@ -147,16 +147,16 @@ pub(super) async fn import_on(pool: &PgPool, id: Uuid, input: Input) -> ApiResul
             "脚本状态身份、版本、账期或观察时间不匹配".into(),
         ));
     }
-    let resolved = Cloud::new(pool)
+    let keys = Cloud::new(pool)
         .map_err(failure)?
-        .resolved_account(&account)
+        .keys(&account)
         .await
         .map_err(failure)?;
     let mut imported = GuardState {
         billing_cycle: input.billing_cycle,
         region: r.region.clone(),
         cloud_id: r.cloud_id.clone(),
-        key_digest: key_digest(&resolved.access_key_id),
+        key_digest: key_digest(&keys.access_key_id),
         account_revision: account.revision,
         max_usage_bytes: usage,
         max_jump_bytes: jump,

@@ -107,9 +107,10 @@ async fn auto_control_requires_opt_in_fresh_current_bill_and_only_lowers_once_pe
         .await
         .unwrap();
     mock.exhausted();
-    let mut current = account(&pool, account_id).await;
+    let current = account(&pool, account_id).await;
+    let mut c = costs(&pool, account_id).await;
     let now = apsp_protocol::now_timestamp();
-    assert!(billing::exceeded(&current, now));
+    assert!(billing::exceeded(&current, &c, now));
     let operation: Uuid =
         sqlx::query_scalar("SELECT id FROM alicloud_operations WHERE source='automatic'")
             .fetch_one(&pool)
@@ -123,14 +124,14 @@ async fn auto_control_requires_opt_in_fresh_current_bill_and_only_lowers_once_pe
             .bandwidth_mbps,
         1
     );
-    current.bill.as_mut().unwrap().queried_at = now - 901;
-    assert!(!billing::exceeded(&current, now));
-    current.bill.as_mut().unwrap().queried_at = now;
-    current.bill.as_mut().unwrap().month = "2000-01".into();
-    assert!(!billing::exceeded(&current, now));
-    current.bill.as_mut().unwrap().month = billing::month(now);
-    current.error_code = Some("network_error".into());
-    assert!(!billing::exceeded(&current, now));
+    c.bill.as_mut().unwrap().queried_at = now - 901;
+    assert!(!billing::exceeded(&current, &c, now));
+    c.bill.as_mut().unwrap().queried_at = now;
+    c.bill.as_mut().unwrap().month = "2000-01".into();
+    assert!(!billing::exceeded(&current, &c, now));
+    c.bill.as_mut().unwrap().month = billing::month(now);
+    c.bill_error = Some("network_error".into());
+    assert!(!billing::exceeded(&current, &c, now));
     // A changed cloud state prevents automatic execution; no blind repeat in this cycle.
     let mock = Mock::start(vec![snapshot("ecs", 20)]).await;
     bandwidth::process(&pool, operation, &Cloud::local(&mock.endpoint))
@@ -188,7 +189,7 @@ async fn refresh_never_replaces_a_snapshot_stored_after_its_pass_began(pool: PgP
         .unwrap();
     mock.exhausted();
     // Account results still land; the resource keeps the newer state.
-    assert!(account(&pool, account_id).await.bill.is_some());
+    assert!(costs(&pool, account_id).await.bill.is_some());
     let resource = apsp_resources::cloud::resource(&pool, id).await.unwrap();
     assert!(resource.snapshot.is_none());
     assert_eq!(resource.checked_at, Some(later));
@@ -220,8 +221,13 @@ async fn missing_or_unreadable_bill_preserves_history_and_cannot_trigger_with_st
         .unwrap();
     mock.exhausted();
     let current = account(&pool, account_id).await;
-    assert!(current.traffic.is_some());
-    assert!(!billing::exceeded(&current, apsp_protocol::now_timestamp()));
+    let c = costs(&pool, account_id).await;
+    assert!(c.traffic.is_some());
+    assert!(!billing::exceeded(
+        &current,
+        &c,
+        apsp_protocol::now_timestamp()
+    ));
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM alicloud_operations")
             .fetch_one(&pool)
@@ -320,12 +326,14 @@ async fn bill_errors_preserve_old_display_but_revoke_control_authority(pool: PgP
         .unwrap();
     mock.exhausted();
     let current = account(&pool, account_id).await;
-    assert_eq!(
-        current.bill.as_ref().unwrap().usage_micro_gb,
-        Some(101_000_000)
-    );
-    assert!(!billing::exceeded(&current, apsp_protocol::now_timestamp()));
-    assert_eq!(current.error_code.as_deref(), Some("rate_limited"));
+    let c = costs(&pool, account_id).await;
+    assert_eq!(c.bill.as_ref().unwrap().usage_micro_gb, Some(101_000_000));
+    assert!(!billing::exceeded(
+        &current,
+        &c,
+        apsp_protocol::now_timestamp()
+    ));
+    assert_eq!(c.bill_error.as_deref(), Some("rate_limited"));
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM alicloud_operations")
             .fetch_one(&pool)
@@ -342,6 +350,7 @@ async fn refund_adjustment_and_missing_bill_identity_keep_rows_without_control_a
     let (id, _) = seed(&pool, "ecs").await;
     let mut account = account(&pool, id).await;
     account.auto_enabled = true;
+    let mut c = costs(&pool, id).await;
     let now = apsp_protocol::now_timestamp();
     for kind in [
         Some("Refund"),
@@ -362,8 +371,8 @@ async fn refund_adjustment_and_missing_bill_identity_keep_rows_without_control_a
         assert_eq!(value.rows.len(), 2);
         assert_eq!(value.rows[1].usage, "1000");
         assert!(value.usage_micro_gb.is_none());
-        account.bill = Some(sqlx::types::Json(value));
-        assert!(!billing::exceeded(&account, now));
+        c.bill = Some(sqlx::types::Json(value));
+        assert!(!billing::exceeded(&account, &c, now));
         mock.exhausted();
     }
     let mut missing_identity = row("1000", "valid-instance");

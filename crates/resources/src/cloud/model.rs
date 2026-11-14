@@ -3,30 +3,19 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, types::Json};
 use uuid::Uuid;
 
+/// A registered cloud account. Its access keys live in the credential store; costs keeps the
+/// account's bills, balance and CDT readings in its own table (ADR 0137 step 6).
 #[derive(Clone, Serialize, FromRow)]
 pub struct Account {
     pub id: Uuid,
     pub name: String,
     pub site: String,
-    #[serde(skip)]
-    pub access_key_id: String,
-    #[serde(skip)]
-    pub access_key_secret: String,
     pub credential_id: Option<Uuid>,
     pub enabled: bool,
     pub auto_enabled: bool,
-    pub billing_enabled: bool,
-    pub balance_enabled: bool,
     pub limit_gb: i64,
     pub revision: i64,
-    pub bill: Option<Json<Bill>>,
-    pub traffic: Option<Json<Traffic>>,
-    pub traffic_error: Option<String>,
-    pub error_code: Option<String>,
     pub next_run_at: i64,
-    pub balance: Option<Json<Balance>>,
-    pub balance_error: Option<String>,
-    pub balance_next_at: i64,
 }
 
 #[derive(Serialize, FromRow)]
@@ -43,9 +32,6 @@ pub struct Resource {
     pub snapshot: Option<Json<Snapshot>>,
     pub checked_at: Option<i64>,
     pub error_code: Option<String>,
-    pub instance_bill: Option<Json<InstanceBill>>,
-    pub bill_error: Option<String>,
-    pub bill_next_at: i64,
     pub power_policy: Json<Policy>,
     pub power_state: Option<Json<State>>,
     pub power_checked_at: Option<i64>,
@@ -185,64 +171,8 @@ pub fn message(code: &str) -> &'static str {
     }
 }
 
-// The stored shapes of the cost and power columns of the account and resource rows.
-// Their rules live with costs and operations.
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BillRow {
-    pub instance_id: String,
-    pub region: String,
-    pub product_type: String,
-    pub billing_item: String,
-    pub usage: String,
-    pub unit: String,
-    pub amount: String,
-    pub currency: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Bill {
-    pub month: String,
-    pub queried_at: i64,
-    pub rows: Vec<BillRow>,
-    // None means the complete response cannot be used for automatic control.
-    pub usage_micro_gb: Option<u64>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Traffic {
-    pub queried_at: i64,
-    pub mainland_bytes: String,
-    pub overseas_bytes: String,
-    pub regions: Vec<TrafficRegion>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TrafficRegion {
-    pub region: String,
-    pub bytes: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Balance {
-    pub available: String,
-    pub currency: String,
-    pub queried_at: i64,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CostRow {
-    pub item: String,
-    pub amount: String,
-    pub currency: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct InstanceBill {
-    pub month: String,
-    pub queried_at: i64,
-    pub rows: Vec<CostRow>,
-}
+// The stored shapes of the power columns of the resource rows. Their rules live with
+// operations.
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

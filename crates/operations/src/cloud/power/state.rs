@@ -41,16 +41,15 @@ pub async fn power_state(
     account: &Account,
     resource: &Resource,
 ) -> Result<State, Failure> {
-    let resolved = cloud.resolved_account(account).await?;
-    let account = &resolved;
+    let keys = cloud.keys(account).await?;
     if resource.kind != "ecs" {
         return Err("unsupported_resource".into());
     }
     let value = cloud
         .ecs
         .call(
-            &account.access_key_id,
-            &account.access_key_secret,
+            &keys.access_key_id,
+            &keys.access_key_secret,
             "DescribeInstances",
             &[
                 ("RegionId", resource.region.clone()),
@@ -68,8 +67,7 @@ pub async fn power_control(
     action: &str,
     mode: &str,
 ) -> Result<String, Failure> {
-    let resolved = cloud.resolved_account(account).await?;
-    let account = &resolved;
+    let keys = cloud.keys(account).await?;
     let mut params = vec![
         ("RegionId", resource.region.clone()),
         ("InstanceId", resource.cloud_id.clone()),
@@ -88,8 +86,8 @@ pub async fn power_control(
     let value = cloud
         .ecs
         .power_call(
-            &account.access_key_id,
-            &account.access_key_secret,
+            &keys.access_key_id,
+            &keys.access_key_secret,
             api_action,
             &params,
         )

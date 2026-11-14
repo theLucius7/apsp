@@ -1,7 +1,10 @@
 use super::jobs::{self, Intent};
 use crate::cloud::power::{PolicyRules, StateRules};
 use crate::error::ApiResult;
-use apsp_costs::cloud::billing;
+use apsp_costs::cloud::{
+    accounts::{self, AccountBilling},
+    billing,
+};
 use apsp_observability::cloud_notices;
 use apsp_resources::cloud::{
     account_on,
@@ -17,6 +20,7 @@ pub async fn poll(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
     let initial = resource(pool, id).await?;
     let mut tx = lock(pool, initial.account_id).await?;
     let account = account_on(&mut tx, initial.account_id).await?;
+    let billing = accounts::account_on(&mut tx, initial.account_id).await?;
     let mut r = jobs::fresh(&mut tx, id).await?;
     let now = apsp_protocol::now_timestamp();
     if r.kind != "ecs" || !account.enabled || r.next_power_at > now {
@@ -47,9 +51,9 @@ pub async fn poll(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
                 }
             }
             if r.power_policy.cdt_guard.is_some() {
-                super::guard::poll(&mut tx, &account, &mut r, &state, cloud, now).await?;
+                super::guard::poll(&mut tx, &account, &billing, &mut r, &state, cloud, now).await?;
             } else {
-                evaluate(&mut tx, &account, &mut r, &state, now).await?;
+                evaluate(&mut tx, &account, &billing, &mut r, &state, now).await?;
             }
         }
         Err(error) => {
@@ -69,6 +73,7 @@ pub async fn poll(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
 pub(super) async fn evaluate(
     tx: &mut Transaction<'_, Postgres>,
     account: &Account,
+    billing: &AccountBilling,
     r: &mut Resource,
     state: &State,
     now: i64,
@@ -81,7 +86,7 @@ pub(super) async fn evaluate(
     let exceeded = if guarded {
         super::guard::exceeded(account, r, now)
     } else {
-        p.exceeded(account, now)
+        p.exceeded(account, billing, now)
     };
     if guarded && exceeded != Some(false) {
         sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',error_code='policy_inactive',updated_at=$2 WHERE resource_id=$1 AND action='start' AND status='queued'").bind(r.id).bind(now).execute(&mut **tx).await?;
@@ -143,7 +148,7 @@ pub(super) async fn evaluate(
             occurrence + 600,
         ))
     } else if !r.manual_hold
-        && !p.blocks_start(account, r, now)
+        && !p.blocks_start(account, billing, r, now)
         && p.schedule_enabled
         && p.in_window(now)
         && p.occurrence("start", now).is_some()
@@ -171,7 +176,7 @@ pub(super) async fn evaluate(
     } else if p.keepalive
         && r.next_power_at <= now
         && !r.manual_hold
-        && !p.blocks_start(account, r, now)
+        && !p.blocks_start(account, billing, r, now)
         && state.spot()
         && state.status == "Stopped"
         && (!p.schedule_enabled || p.in_window(now))

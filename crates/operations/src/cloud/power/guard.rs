@@ -1,6 +1,6 @@
 use crate::error::{ApiError, ApiResult};
 use apsp_cloud_api::Failure;
-use apsp_costs::cloud::billing;
+use apsp_costs::cloud::{accounts::AccountBilling, billing};
 use apsp_resources::cloud::model::{GuardConfig, GuardState, State};
 use apsp_resources::cloud::{
     client::Cloud,
@@ -156,6 +156,7 @@ pub(super) fn exceeded(account: &Account, resource: &Resource, now: i64) -> Opti
 pub(super) async fn poll(
     tx: &mut Transaction<'_, Postgres>,
     account: &Account,
+    costs: &AccountBilling,
     r: &mut Resource,
     state: &State,
     cloud: &Cloud,
@@ -165,7 +166,7 @@ pub(super) async fn poll(
         return Ok(());
     }
     if r.cdt_guard_next_at > started_at {
-        return super::scheduler::evaluate(tx, account, r, state, started_at).await;
+        return super::scheduler::evaluate(tx, account, costs, r, state, started_at).await;
     }
     let reading = read(account, r, cloud, started_at).await;
     match reading {
@@ -197,7 +198,7 @@ pub(super) async fn poll(
         }
     }
     let now = apsp_protocol::now_timestamp();
-    super::scheduler::evaluate(tx, account, r, state, now).await
+    super::scheduler::evaluate(tx, account, costs, r, state, now).await
 }
 
 pub(super) async fn read(

@@ -504,26 +504,14 @@ CREATE TABLE public.alicloud_accounts (
     id uuid NOT NULL,
     name text NOT NULL,
     site text DEFAULT 'china'::text NOT NULL,
-    access_key_id text NOT NULL,
-    access_key_secret text NOT NULL,
     enabled boolean DEFAULT true NOT NULL,
     auto_enabled boolean DEFAULT false NOT NULL,
     limit_gb bigint DEFAULT 100 NOT NULL,
     revision bigint DEFAULT 1 NOT NULL,
-    bill jsonb,
-    traffic jsonb,
-    traffic_error text,
-    error_code text,
     next_run_at bigint DEFAULT 0 NOT NULL,
     last_attempt_at bigint DEFAULT 0 NOT NULL,
     archived boolean DEFAULT false NOT NULL,
-    balance jsonb,
-    balance_error text,
-    balance_next_at bigint DEFAULT 0 NOT NULL,
     credential_id uuid,
-    billing_enabled boolean DEFAULT false NOT NULL,
-    balance_enabled boolean DEFAULT false NOT NULL,
-    traffic_history_identity text,
     CONSTRAINT alicloud_accounts_limit_gb_check CHECK (((limit_gb >= 1) AND (limit_gb <= 1000000000))),
     CONSTRAINT alicloud_accounts_site_check CHECK ((site = ANY (ARRAY['china'::text, 'international'::text])))
 );
@@ -666,9 +654,6 @@ CREATE TABLE public.alicloud_resources (
     last_attempt_at bigint DEFAULT 0 NOT NULL,
     error_code text,
     archived boolean DEFAULT false NOT NULL,
-    instance_bill jsonb,
-    bill_error text,
-    bill_next_at bigint DEFAULT 0 NOT NULL,
     power_policy jsonb DEFAULT '{"enabled": false, "limit_gb": 100, "keepalive": false, "stop_mode": "KeepCharging", "stop_time": "23:00", "start_time": "08:00", "schedule_enabled": false, "threshold_action": "off", "threshold_percent": 95, "utc_offset_minutes": 480}'::jsonb NOT NULL,
     power_state jsonb,
     power_checked_at bigint,
@@ -5740,6 +5725,27 @@ CREATE TABLE public.runtime_publications (
     server_id bigint PRIMARY KEY REFERENCES public.servers(id) ON DELETE CASCADE,
     manifest_rev bigint DEFAULT 0 NOT NULL CHECK (manifest_rev >= 0),
     dirty_at bigint
+);
+
+CREATE TABLE public.cloud_account_billing (
+    account_id uuid PRIMARY KEY REFERENCES public.alicloud_accounts(id),
+    billing_enabled boolean DEFAULT false NOT NULL,
+    balance_enabled boolean DEFAULT false NOT NULL,
+    bill jsonb,
+    bill_error text,
+    traffic jsonb,
+    traffic_error text,
+    traffic_history_identity text,
+    balance jsonb,
+    balance_error text,
+    balance_next_at bigint DEFAULT 0 NOT NULL
+);
+
+CREATE TABLE public.cloud_resource_billing (
+    resource_id uuid PRIMARY KEY REFERENCES public.alicloud_resources(id),
+    instance_bill jsonb,
+    bill_error text,
+    bill_next_at bigint DEFAULT 0 NOT NULL
 );
 
 CREATE TABLE public.apsp_schema_baseline (singleton boolean PRIMARY KEY CHECK (singleton), fingerprint text NOT NULL);

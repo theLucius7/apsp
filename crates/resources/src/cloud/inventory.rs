@@ -1,5 +1,7 @@
 //! The resource side of an account refresh pass: claiming the pass, reading the current
-//! rows and recording what the cloud reported for a resource.
+//! rows and recording what the cloud reported for a resource. The pass is one schedule per
+//! account (`next_run_at`): it also reads the account's CDT bill and traffic for costs and
+//! drives automatic bandwidth, and a bill read that fails defers the whole pass.
 
 use super::{
     account_on, lock,
@@ -77,6 +79,37 @@ pub async fn snapshot_failed(
         .execute(&mut **tx)
         .await?;
     Ok(())
+}
+
+/// Defers the account's next refresh pass to `until` at the earliest; costs does so when
+/// the pass could not read the account's bill.
+pub async fn defer_refresh(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    until: i64,
+) -> ApiResult<()> {
+    sqlx::query("UPDATE alicloud_accounts SET next_run_at=GREATEST(next_run_at,$2) WHERE id=$1")
+        .bind(id)
+        .bind(until)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+/// The enabled accounts that are not archived.
+pub async fn enabled_accounts(pool: &PgPool) -> ApiResult<Vec<Uuid>> {
+    Ok(
+        sqlx::query_scalar("SELECT id FROM alicloud_accounts WHERE enabled AND NOT archived")
+            .fetch_all(pool)
+            .await?,
+    )
+}
+
+/// The resources that are not archived, of enabled accounts that are not archived, each
+/// with its account.
+pub async fn enabled_resources(pool: &PgPool) -> ApiResult<Vec<(Uuid, Uuid)>> {
+    Ok(sqlx::query_as("SELECT r.id,r.account_id FROM alicloud_resources r JOIN alicloud_accounts a ON a.id=r.account_id WHERE a.enabled AND NOT a.archived AND NOT r.archived")
+        .fetch_all(pool).await?)
 }
 
 /// Accounts whose refresh is due, the earliest first; one per tick.

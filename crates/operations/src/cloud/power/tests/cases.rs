@@ -30,7 +30,10 @@ async fn active_power_job_does_not_roll_back_fresh_billing_or_queue_bandwidth_ch
         .unwrap();
     let mut tx = lock(&pool, a).await.unwrap();
     let account = account_on(&mut tx, a).await.unwrap();
-    assert_eq!(account.bill.unwrap().usage_micro_gb, Some(100_000_000));
+    let costs = apsp_costs::cloud::accounts::account_on(&mut tx, a)
+        .await
+        .unwrap();
+    assert_eq!(costs.bill.unwrap().usage_micro_gb, Some(100_000_000));
     assert!(account.next_run_at > now);
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM alicloud_operations")
         .fetch_one(&mut *tx)
@@ -65,6 +68,9 @@ async fn delayed_scheduled_stop_is_revoked_when_the_next_running_window_begins(p
     .await;
     let mut tx = lock(&pool, a).await.unwrap();
     let account = account_on(&mut tx, a).await.unwrap();
+    let costs = apsp_costs::cloud::accounts::account_on(&mut tx, a)
+        .await
+        .unwrap();
     let resource = jobs::fresh(&mut tx, r).await.unwrap();
     let job: super::super::Job = sqlx::query_as("SELECT * FROM alicloud_power_jobs")
         .fetch_one(&mut *tx)
@@ -73,12 +79,14 @@ async fn delayed_scheduled_stop_is_revoked_when_the_next_running_window_begins(p
     assert!(jobs::allowed(
         &job,
         &account,
+        &costs,
         &resource,
         day + 8 * 3600 + 30
     ));
     assert!(!jobs::allowed(
         &job,
         &account,
+        &costs,
         &resource,
         day + 8 * 3600 + 61
     ));
@@ -97,7 +105,7 @@ async fn new_threshold_cancels_queued_start_before_any_write(pool: PgPool) {
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE alicloud_accounts SET bill=$2 WHERE id=$1").bind(a).bind(json!({"month":billing::month(now),"queried_at":now,"rows":[],"usage_micro_gb":94_000_000})).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE cloud_account_billing SET bill=$2 WHERE account_id=$1").bind(a).bind(json!({"month":billing::month(now),"queried_at":now,"rows":[],"usage_micro_gb":94_000_000})).execute(&pool).await.unwrap();
     let id = prepare(
         &pool,
         r,
@@ -107,7 +115,7 @@ async fn new_threshold_cancels_queued_start_before_any_write(pool: PgPool) {
     )
     .await;
     api::confirm_on(&pool, id).await.unwrap();
-    sqlx::query("UPDATE alicloud_accounts SET bill=jsonb_set(bill,'{usage_micro_gb}','95000000') WHERE id=$1").bind(a).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE cloud_account_billing SET bill=jsonb_set(bill,'{usage_micro_gb}','95000000') WHERE account_id=$1").bind(a).execute(&pool).await.unwrap();
     evaluate(&pool, a, r, &state("Stopped", "KeepCharging"), now).await;
     let mock = Mock::start(vec![]).await;
     jobs::process(&pool, id, &Cloud::local(&mock.endpoint))

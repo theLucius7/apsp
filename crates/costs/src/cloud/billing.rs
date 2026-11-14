@@ -1,7 +1,8 @@
+use crate::cloud::accounts::{AccountBilling, Bill, BillRow, Traffic, TrafficRegion};
 use apsp_cloud_api::{Failure, aliyun::Aliyun};
 use apsp_resources::cloud::{
-    client::Cloud,
-    model::{Account, Bill, BillRow, Traffic, TrafficRegion},
+    client::{Cloud, Keys},
+    model::Account,
 };
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -41,7 +42,12 @@ fn micro_gb(value: &str) -> Option<u64> {
         .checked_add(tail.checked_mul(10_u64.pow(6 - digits.len() as u32))?)
 }
 
-pub async fn query(client: &Aliyun, account: &Account, now: i64) -> Result<Bill, Failure> {
+pub async fn query(
+    client: &Aliyun,
+    account: &Account,
+    keys: &Keys,
+    now: i64,
+) -> Result<Bill, Failure> {
     let cycle = month(now);
     let mut rows = Vec::new();
     let mut total_count = None;
@@ -50,8 +56,8 @@ pub async fn query(client: &Aliyun, account: &Account, now: i64) -> Result<Bill,
     for page in 1..=10 {
         let result = client
             .call(
-                &account.access_key_id,
-                &account.access_key_secret,
+                &keys.access_key_id,
+                &keys.access_key_secret,
                 "QueryInstanceBill",
                 &[
                     (
@@ -146,19 +152,14 @@ pub async fn query(client: &Aliyun, account: &Account, now: i64) -> Result<Bill,
     Err("billing_incomplete".into())
 }
 
-pub fn exceeded(account: &Account, now: i64) -> bool {
+/// Whether the account's automatic bandwidth reduction applies: this month's bill shows at
+/// least the account's threshold.
+pub fn exceeded(account: &Account, billing: &AccountBilling, now: i64) -> bool {
     account.enabled
-        && account.billing_enabled
         && account.auto_enabled
-        && account.error_code.is_none()
-        && account.bill.as_ref().is_some_and(|bill| {
-            bill.month == month(now)
-                && bill.queried_at <= now
-                && bill.queried_at + 900 >= now
-                && bill
-                    .usage_micro_gb
-                    .is_some_and(|value| value >= account.limit_gb as u64 * 1_000_000)
-        })
+        && billing
+            .usage(now)
+            .is_some_and(|value| value >= account.limit_gb as u64 * 1_000_000)
 }
 
 pub fn parse_traffic(result: &Value, now: i64) -> Result<Traffic, Failure> {
@@ -215,10 +216,9 @@ pub fn parse_traffic(result: &Value, now: i64) -> Result<Traffic, Failure> {
     })
 }
 
-/// The CDT bill and traffic of an account, read through the account's cloud client.
+/// The CDT bill of an account, read through the account's cloud client.
 pub async fn bill(cloud: &Cloud, account: &Account, now: i64) -> Result<Bill, Failure> {
-    let resolved = cloud.resolved_account(account).await?;
-    let account = &resolved;
+    let keys = cloud.keys(account).await?;
     let service = if account.site == "international" {
         &cloud.bss_international
     } else {
@@ -226,19 +226,18 @@ pub async fn bill(cloud: &Cloud, account: &Account, now: i64) -> Result<Bill, Fa
     };
     tokio::time::timeout(
         std::time::Duration::from_secs(30),
-        query(service, account, now),
+        query(service, account, &keys, now),
     )
     .await
     .unwrap_or(Err("request_timeout".into()))
 }
-pub async fn traffic(cloud: &Cloud, account: &Account, now: i64) -> Result<Traffic, Failure> {
-    let resolved = cloud.resolved_account(account).await?;
-    let account = &resolved;
+/// The CDT traffic of the account the keys belong to.
+pub async fn traffic(cloud: &Cloud, keys: &Keys, now: i64) -> Result<Traffic, Failure> {
     let result = cloud
         .cdt
         .call(
-            &account.access_key_id,
-            &account.access_key_secret,
+            &keys.access_key_id,
+            &keys.access_key_secret,
             "ListCdtInternetTraffic",
             &[("RegionId", "cn-hongkong".into())],
         )

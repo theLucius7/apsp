@@ -1,6 +1,6 @@
 use crate::cloud::power::GuardRules;
 use crate::error::{ApiError, ApiResult};
-use apsp_costs::cloud::billing;
+use apsp_costs::cloud::accounts::AccountBilling;
 use apsp_resources::cloud::model::{Account, Policy, Resource, ScheduleMode};
 
 /// What a resource's power policy allows. The policy is stored on the resource row, so its
@@ -8,9 +8,15 @@ use apsp_resources::cloud::model::{Account, Policy, Resource, ScheduleMode};
 pub(crate) trait PolicyRules {
     fn validate(&self) -> ApiResult<()>;
 
-    fn exceeded(&self, account: &Account, now: i64) -> Option<bool>;
+    fn exceeded(&self, account: &Account, billing: &AccountBilling, now: i64) -> Option<bool>;
 
-    fn blocks_start(&self, account: &Account, resource: &Resource, now: i64) -> bool;
+    fn blocks_start(
+        &self,
+        account: &Account,
+        billing: &AccountBilling,
+        resource: &Resource,
+        now: i64,
+    ) -> bool;
 
     fn in_window(&self, now: i64) -> bool;
 
@@ -61,27 +67,28 @@ impl PolicyRules for Policy {
         }
         Ok(())
     }
-    fn exceeded(&self, account: &Account, now: i64) -> Option<bool> {
-        if !account.enabled || !account.billing_enabled || account.error_code.is_some() {
-            return None;
-        }
-        let bill = account.bill.as_ref()?;
-        if bill.month != billing::month(now) || bill.queried_at > now || now - bill.queried_at > 900
-        {
+    fn exceeded(&self, account: &Account, billing: &AccountBilling, now: i64) -> Option<bool> {
+        if !account.enabled {
             return None;
         }
         Some(
-            bill.usage_micro_gb? as u128 * 100
+            billing.usage(now)? as u128 * 100
                 >= self.limit_gb as u128 * 1_000_000 * self.threshold_percent as u128,
         )
     }
-    fn blocks_start(&self, account: &Account, resource: &Resource, now: i64) -> bool {
+    fn blocks_start(
+        &self,
+        account: &Account,
+        billing: &AccountBilling,
+        resource: &Resource,
+        now: i64,
+    ) -> bool {
         if self.enabled && self.cdt_guard.is_some() {
             return super::guard::exceeded(account, resource, now) != Some(false);
         }
         self.enabled
             && self.threshold_action == "stop"
-            && (resource.threshold_hold || self.exceeded(account, now) != Some(false))
+            && (resource.threshold_hold || self.exceeded(account, billing, now) != Some(false))
     }
     fn in_window(&self, now: i64) -> bool {
         if self.schedule_mode == ScheduleMode::Cron {

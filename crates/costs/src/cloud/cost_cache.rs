@@ -1,11 +1,12 @@
+use crate::cloud::accounts::{self, AccountBilling, Balance, Bill, CostRow, InstanceBill};
 use crate::cloud::billing;
 use crate::error::ApiResult;
 use apsp_cloud_api::{Failure, aliyun::Aliyun};
 use apsp_resources::cloud::{
     account_on,
-    client::Cloud,
-    lock,
-    model::{Account, Balance, CostRow, InstanceBill, Resource},
+    client::{Cloud, Keys},
+    inventory, lock,
+    model::{Account, Resource},
 };
 use serde_json::Value;
 use sqlx::{PgPool, types::Json};
@@ -52,12 +53,11 @@ fn costs_service<'a>(cloud: &'a Cloud, account: &Account) -> &'a Aliyun {
     }
 }
 pub async fn balance(cloud: &Cloud, account: &Account, now: i64) -> Result<Balance, Failure> {
-    let resolved = cloud.resolved_account(account).await?;
-    let account = &resolved;
+    let keys = cloud.keys(account).await?;
     let value = costs_service(cloud, account)
         .call(
-            &account.access_key_id,
-            &account.access_key_secret,
+            &keys.access_key_id,
+            &keys.access_key_secret,
             "QueryAccountBalance",
             &[],
         )
@@ -74,11 +74,10 @@ pub async fn instance_bill(
     r: &Resource,
     now: i64,
 ) -> Result<InstanceBill, Failure> {
-    let resolved = cloud.resolved_account(account).await?;
-    let account = &resolved;
+    let keys = cloud.keys(account).await?;
     tokio::time::timeout(
         std::time::Duration::from_secs(30),
-        instance_bill_pages(cloud, account, r, now),
+        instance_bill_pages(cloud, account, &keys, r, now),
     )
     .await
     .unwrap_or(Err("request_timeout".into()))
@@ -86,6 +85,7 @@ pub async fn instance_bill(
 async fn instance_bill_pages(
     cloud: &Cloud,
     account: &Account,
+    keys: &Keys,
     r: &Resource,
     now: i64,
 ) -> Result<InstanceBill, Failure> {
@@ -109,8 +109,8 @@ async fn instance_bill_pages(
         }
         let value = costs_service(cloud, account)
             .call(
-                &account.access_key_id,
-                &account.access_key_secret,
+                &keys.access_key_id,
+                &keys.access_key_secret,
                 "DescribeInstanceBill",
                 &params,
             )
@@ -179,11 +179,12 @@ pub async fn refresh_balance(pool: &PgPool, id: Uuid, cloud: &Cloud, now: i64) -
     let a = {
         let mut tx = lock(pool, id).await?;
         let a = account_on(&mut tx, id).await?;
-        if !a.enabled || !a.balance_enabled || a.balance_next_at > now {
+        let billing = accounts::account_on(&mut tx, id).await?;
+        if !a.enabled || !billing.balance_enabled || billing.balance_next_at > now {
             return Ok(());
         }
         // Claimed until the result is stored; an edit resets it to now.
-        sqlx::query("UPDATE alicloud_accounts SET balance_next_at=$2 WHERE id=$1")
+        sqlx::query("UPDATE cloud_account_billing SET balance_next_at=$2 WHERE account_id=$1")
             .bind(id)
             .bind(now + 300)
             .execute(&mut *tx)
@@ -198,11 +199,11 @@ pub async fn refresh_balance(pool: &PgPool, id: Uuid, cloud: &Cloud, now: i64) -
     }
     match result {
         Ok(value) => {
-            sqlx::query("UPDATE alicloud_accounts SET balance=$2,balance_error=NULL,balance_next_at=$3 WHERE id=$1").bind(id).bind(Json(value)).bind(now+21600).execute(&mut *tx).await?;
+            sqlx::query("UPDATE cloud_account_billing SET balance=$2,balance_error=NULL,balance_next_at=$3 WHERE account_id=$1").bind(id).bind(Json(value)).bind(now+21600).execute(&mut *tx).await?;
         }
         Err(error) => {
             sqlx::query(
-                "UPDATE alicloud_accounts SET balance_error=$2,balance_next_at=$3 WHERE id=$1",
+                "UPDATE cloud_account_billing SET balance_error=$2,balance_next_at=$3 WHERE account_id=$1",
             )
             .bind(id)
             .bind(error.code)
@@ -219,49 +220,42 @@ pub async fn refresh_bill(pool: &PgPool, id: Uuid, cloud: &Cloud, now: i64) -> A
     let (a, r) = {
         let mut tx = lock(pool, initial.account_id).await?;
         let a = account_on(&mut tx, initial.account_id).await?;
-        let r: Resource =
-            sqlx::query_as("SELECT * FROM alicloud_resources WHERE id=$1 AND NOT archived")
-                .bind(id)
-                .fetch_one(&mut *tx)
-                .await?;
-        let stale_month = r
+        let r = inventory::current_resource(&mut tx, id)
+            .await?
+            .ok_or(sqlx::Error::RowNotFound)?;
+        let billing = accounts::account_on(&mut tx, a.id).await?;
+        let cached = accounts::resource_on(&mut tx, id).await?;
+        let stale_month = cached
             .instance_bill
             .as_ref()
             .is_some_and(|b| b.month != billing::month(now));
         if !a.enabled
-            || !a.billing_enabled
-            || (r.bill_next_at > now && !(stale_month && r.bill_error.is_none()))
+            || !billing.billing_enabled
+            || (cached.bill_next_at > now && !(stale_month && cached.bill_error.is_none()))
         {
             return Ok(());
         }
-        sqlx::query(
-            "UPDATE alicloud_resources SET bill_next_at=GREATEST(bill_next_at,$2) WHERE id=$1",
-        )
-        .bind(id)
-        .bind(now + 300)
-        .execute(&mut *tx)
-        .await?;
+        sqlx::query("INSERT INTO cloud_resource_billing(resource_id,bill_next_at) VALUES($1,$2) ON CONFLICT(resource_id) DO UPDATE SET bill_next_at=GREATEST(cloud_resource_billing.bill_next_at,EXCLUDED.bill_next_at)")
+            .bind(id)
+            .bind(now + 300)
+            .execute(&mut *tx)
+            .await?;
         tx.commit().await?;
         (a, r)
     };
     let result = instance_bill(cloud, &a, &r, now).await;
     let mut tx = lock(pool, initial.account_id).await?;
     // Resource edits change only its name and bandwidth policy, not its bill.
-    let present: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM alicloud_resources WHERE id=$1 AND NOT archived)",
-    )
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await?;
+    let present = inventory::current_resource(&mut tx, id).await?.is_some();
     if !present || !unchanged_account(&mut tx, initial.account_id, a.revision).await? {
         return Ok(());
     }
     match result {
         Ok(value) => {
-            sqlx::query("UPDATE alicloud_resources SET instance_bill=$2,bill_error=NULL,bill_next_at=$3 WHERE id=$1").bind(id).bind(Json(value)).bind(now+21600).execute(&mut *tx).await?;
+            sqlx::query("UPDATE cloud_resource_billing SET instance_bill=$2,bill_error=NULL,bill_next_at=$3 WHERE resource_id=$1").bind(id).bind(Json(value)).bind(now+21600).execute(&mut *tx).await?;
         }
         Err(error) => {
-            sqlx::query("UPDATE alicloud_resources SET bill_error=$2,bill_next_at=$3 WHERE id=$1")
+            sqlx::query("UPDATE cloud_resource_billing SET bill_error=$2,bill_next_at=$3 WHERE resource_id=$1")
                 .bind(id)
                 .bind(error.code)
                 .bind(now + error.retry_after.max(300))
@@ -272,27 +266,32 @@ pub async fn refresh_bill(pool: &PgPool, id: Uuid, cloud: &Cloud, now: i64) -> A
     tx.commit().await?;
     Ok(())
 }
-/// Whether the account still exists, enabled, at the revision a result was read for.
+/// Whether the account still exists, enabled, at the revision a result was read for. The
+/// revision is the account's configuration version, which resources raises on every edit
+/// (billing settings included) and archive.
 async fn unchanged_account(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     id: Uuid,
     revision: i64,
 ) -> ApiResult<bool> {
-    Ok(sqlx::query_scalar::<_, i64>(
-        "SELECT revision FROM alicloud_accounts WHERE id=$1 AND NOT archived AND enabled",
-    )
-    .bind(id)
-    .fetch_optional(&mut **tx)
-    .await?
+    Ok(inventory::current_account(tx, id)
+        .await?
+        .filter(|account| account.enabled)
+        .map(|account| account.revision)
         == Some(revision))
 }
 pub async fn tick(pool: &PgPool, cloud: &Cloud) -> ApiResult<()> {
     let now = apsp_protocol::now_timestamp();
-    let accounts:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM alicloud_accounts WHERE enabled AND balance_enabled AND NOT archived AND balance_next_at<=$1 ORDER BY balance_next_at,id LIMIT 1").bind(now).fetch_all(pool).await?;
+    let enabled = inventory::enabled_accounts(pool).await?;
+    let accounts:Vec<Uuid>=sqlx::query_scalar("SELECT account_id FROM cloud_account_billing WHERE account_id=ANY($1) AND balance_enabled AND balance_next_at<=$2 ORDER BY balance_next_at,account_id LIMIT 1").bind(&enabled).bind(now).fetch_all(pool).await?;
     for id in accounts {
         refresh_balance(pool, id, cloud, now).await?;
     }
-    let resources:Vec<Uuid>=sqlx::query_scalar("SELECT r.id FROM alicloud_resources r JOIN alicloud_accounts a ON a.id=r.account_id WHERE a.enabled AND a.billing_enabled AND NOT a.archived AND NOT r.archived AND (r.bill_next_at<=$1 OR (r.instance_bill->>'month'<>$2 AND r.bill_error IS NULL)) ORDER BY r.bill_next_at,r.id LIMIT 1").bind(now).bind(billing::month(now)).fetch_all(pool).await?;
+    let (resources, owners): (Vec<Uuid>, Vec<Uuid>) = inventory::enabled_resources(pool)
+        .await?
+        .into_iter()
+        .unzip();
+    let resources:Vec<Uuid>=sqlx::query_scalar("SELECT r.id FROM unnest($1::uuid[],$2::uuid[]) AS r(id,account_id) JOIN cloud_account_billing a ON a.account_id=r.account_id LEFT JOIN cloud_resource_billing b ON b.resource_id=r.id WHERE a.billing_enabled AND (COALESCE(b.bill_next_at,0)<=$3 OR (b.instance_bill->>'month'<>$4 AND b.bill_error IS NULL)) ORDER BY COALESCE(b.bill_next_at,0),r.id LIMIT 1").bind(&resources).bind(&owners).bind(now).bind(billing::month(now)).fetch_all(pool).await?;
     for id in resources {
         refresh_bill(pool, id, cloud, now).await?;
     }
@@ -300,27 +299,34 @@ pub async fn tick(pool: &PgPool, cloud: &Cloud) -> ApiResult<()> {
 }
 
 /// Stores the CDT bill an account refresh read, or the reason it could not: a failure
-/// becomes the account's error and defers the next pass.
+/// becomes the bill's error and defers the account's next refresh pass.
 pub async fn store_bill(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    account: &mut Account,
-    bill: Result<apsp_resources::cloud::model::Bill, Failure>,
+    id: Uuid,
+    billing: &mut AccountBilling,
+    bill: Result<Bill, Failure>,
     now: i64,
 ) -> ApiResult<()> {
     match bill {
         Ok(bill) => {
-            sqlx::query("UPDATE alicloud_accounts SET bill=$2,error_code=NULL WHERE id=$1")
-                .bind(account.id)
-                .bind(Json(&bill))
-                .execute(&mut **tx)
-                .await?;
-            account.bill = Some(Json(bill));
-            account.error_code = None;
+            sqlx::query(
+                "UPDATE cloud_account_billing SET bill=$2,bill_error=NULL WHERE account_id=$1",
+            )
+            .bind(id)
+            .bind(Json(&bill))
+            .execute(&mut **tx)
+            .await?;
+            billing.bill = Some(Json(bill));
+            billing.bill_error = None;
         }
         Err(error) => {
-            sqlx::query("UPDATE alicloud_accounts SET error_code=$2,next_run_at=GREATEST(next_run_at,$3) WHERE id=$1")
-                .bind(account.id).bind(error.code).bind(now+error.retry_after.max(300)).execute(&mut **tx).await?;
-            account.error_code = Some(error.code.into());
+            sqlx::query("UPDATE cloud_account_billing SET bill_error=$2 WHERE account_id=$1")
+                .bind(id)
+                .bind(error.code)
+                .execute(&mut **tx)
+                .await?;
+            inventory::defer_refresh(tx, id, now + error.retry_after.max(300)).await?;
+            billing.bill_error = Some(error.code.into());
         }
     }
     Ok(())

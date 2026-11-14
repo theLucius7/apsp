@@ -14,13 +14,23 @@ mod billing_cases;
 mod least_privilege;
 mod rotation_refresh;
 
-const KEY: &str = "TEST_ONLY_CLOUD_ID";
 const SECRET: &str = "TEST_ONLY_CLOUD_SECRET";
+/// Registers an account that references a credential entry; the test handle answers
+/// every reference with its fixed keys.
+pub async fn credential_account(pool: &PgPool, id: Uuid, name: &str) {
+    sqlx::query("WITH credential AS (INSERT INTO credential_entries(id,name,kind,key_id,nonce,ciphertext,created_at,updated_at) VALUES(gen_random_uuid(),'TEST_ONLY','cloud','TEST_ONLY',decode(repeat('00',12),'hex'),decode('00','hex'),0,0) RETURNING id) INSERT INTO alicloud_accounts(id,name,credential_id) SELECT $1,$2,id FROM credential")
+        .bind(id).bind(name).execute(pool).await.unwrap();
+}
+/// Sets which of the account's bills costs reads.
+pub async fn set_billing(pool: &PgPool, account: Uuid, bills: bool, balance: bool) {
+    sqlx::query("INSERT INTO cloud_account_billing(account_id,billing_enabled,balance_enabled) VALUES($1,$2,$3) ON CONFLICT(account_id) DO UPDATE SET billing_enabled=EXCLUDED.billing_enabled,balance_enabled=EXCLUDED.balance_enabled")
+        .bind(account).bind(bills).bind(balance).execute(pool).await.unwrap();
+}
 pub async fn seed(pool: &PgPool, kind: &str) -> (Uuid, Uuid) {
     let account = Uuid::new_v4();
     let resource = Uuid::new_v4();
-    sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret,billing_enabled,balance_enabled) VALUES($1,'测试账号',$2,$3,true,true)")
-        .bind(account).bind(KEY).bind(SECRET).execute(pool).await.unwrap();
+    credential_account(pool, account, "测试账号").await;
+    set_billing(pool, account, true, true).await;
     sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id) VALUES($1,$2,'测试资源',$3,'cn-hangzhou',$4)")
         .bind(resource).bind(account).bind(kind).bind(if kind=="ecs"{"i-testonly"}else{"eip-testonly"}).execute(pool).await.unwrap();
     (account, resource)
@@ -29,6 +39,11 @@ async fn account(pool: &PgPool, id: Uuid) -> Account {
     sqlx::query_as("SELECT * FROM alicloud_accounts WHERE id=$1")
         .bind(id)
         .fetch_one(pool)
+        .await
+        .unwrap()
+}
+async fn costs(pool: &PgPool, id: Uuid) -> apsp_costs::cloud::accounts::AccountBilling {
+    apsp_costs::cloud::accounts::account(pool, id)
         .await
         .unwrap()
 }

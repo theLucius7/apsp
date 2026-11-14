@@ -73,7 +73,7 @@ impl Cloud {
         account: &Account,
         resource: &Resource,
     ) -> Result<Vec<String>, Failure> {
-        let account = self.resolved_account(account).await?;
+        let keys = self.keys(account).await?;
         let mut addresses = BTreeSet::new();
         let mut tokens = BTreeSet::new();
         let mut token = String::new();
@@ -89,8 +89,8 @@ impl Cloud {
             let value = self
                 .ecs
                 .call(
-                    &account.access_key_id,
-                    &account.access_key_secret,
+                    &keys.access_key_id,
+                    &keys.access_key_secret,
                     "DescribeNetworkInterfaces",
                     &params,
                 )
@@ -143,7 +143,7 @@ mod tests {
     async fn fallback_scopes_pages_to_instance_and_rejects_repeated_tokens(pool: sqlx::PgPool) {
         use apsp_cloud_api::test_support::{Mock, Reply};
         let (id, rid) = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
-        sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret) VALUES($1,'测试账号','TEST_ONLY_CLOUD_ID','TEST_ONLY_CLOUD_SECRET')")
+        sqlx::query("WITH credential AS (INSERT INTO credential_entries(id,name,kind,key_id,nonce,ciphertext,created_at,updated_at) VALUES(gen_random_uuid(),'TEST_ONLY','cloud','TEST_ONLY',decode(repeat('00',12),'hex'),decode('00','hex'),0,0) RETURNING id) INSERT INTO alicloud_accounts(id,name,credential_id) SELECT $1,'测试账号',id FROM credential")
             .bind(id).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id) VALUES($1,$2,'测试资源','ecs','cn-hangzhou','i-testonly')")
             .bind(rid).bind(id).execute(&pool).await.unwrap();

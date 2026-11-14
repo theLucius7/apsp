@@ -88,7 +88,7 @@ impl Fixture {
         .await?;
         let account = Uuid::new_v4();
         let resource = Uuid::new_v4();
-        sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret) VALUES($1,'TEST_ONLY','TEST_ONLY_CLOUD_ID','TEST_ONLY_CLOUD_SECRET')").bind(account).execute(&pool).await?;
+        sqlx::query("WITH credential AS (INSERT INTO credential_entries(id,name,kind,key_id,nonce,ciphertext,created_at,updated_at) VALUES(gen_random_uuid(),'TEST_ONLY','cloud','TEST_ONLY',decode(repeat('00',12),'hex'),decode('00','hex'),0,0) RETURNING id) INSERT INTO alicloud_accounts(id,name,credential_id) SELECT $1,'TEST_ONLY',id FROM credential").bind(account).execute(&pool).await?;
         sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id) VALUES($1,$2,'TEST_ONLY ECS','ecs','cn-hangzhou','i-testonly')").bind(resource).bind(account).execute(&pool).await?;
         let server: i64 =
             sqlx::query_scalar("INSERT INTO servers(name) VALUES('TEST_ONLY linked') RETURNING id")

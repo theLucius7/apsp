@@ -5,9 +5,14 @@ use serde_json::json;
 async fn seed(pool: &PgPool) -> (Uuid, Uuid) {
     let a = Uuid::new_v4();
     let r = Uuid::new_v4();
-    sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret,site,billing_enabled,balance_enabled) VALUES($1,'测试账号','TEST_ONLY_KEY','TEST_ONLY_SECRET','international',true,true)").bind(a).execute(pool).await.unwrap();
+    sqlx::query("WITH credential AS (INSERT INTO credential_entries(id,name,kind,key_id,nonce,ciphertext,created_at,updated_at) VALUES(gen_random_uuid(),'TEST_ONLY','cloud','TEST_ONLY',decode(repeat('00',12),'hex'),decode('00','hex'),0,0) RETURNING id) INSERT INTO alicloud_accounts(id,name,site,credential_id) SELECT $1,'测试账号','international',id FROM credential").bind(a).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO cloud_account_billing(account_id,billing_enabled,balance_enabled) VALUES($1,true,true)").bind(a).execute(pool).await.unwrap();
     sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id) VALUES($1,$2,'测试实例','ecs','cn-hangzhou','i-testonly')").bind(r).bind(a).execute(pool).await.unwrap();
     (a, r)
+}
+async fn cached(pool: &PgPool, r: Uuid) -> accounts::ResourceBilling {
+    let mut tx = pool.begin().await.unwrap();
+    accounts::resource_on(&mut tx, r).await.unwrap()
 }
 fn balance(value: Value) -> Reply {
     Reply::ok(
@@ -46,7 +51,7 @@ async fn balance_cache_avoids_repeat_calls_and_retains_stale_value_on_error(pool
         .await
         .unwrap();
     let mut tx = lock(&pool, a).await.unwrap();
-    let stored = account_on(&mut tx, a).await.unwrap();
+    let stored = accounts::account_on(&mut tx, a).await.unwrap();
     let value = stored.balance.unwrap();
     assert_eq!(value.currency, "USD");
     assert_eq!(value.available, "1234.5600");
@@ -74,23 +79,11 @@ async fn instance_cache_collects_pages_keeps_currencies_and_refreshes_on_month_r
     refresh_bill(&pool, r, &cloud, now).await.unwrap();
     refresh_bill(&pool, r, &cloud, now + 1).await.unwrap();
     assert_eq!(mock.requests().len(), 2);
-    let stored = apsp_resources::cloud::resource(&pool, r)
-        .await
-        .unwrap()
-        .instance_bill
-        .unwrap();
+    let stored = cached(&pool, r).await.instance_bill.unwrap();
     assert_eq!(stored.rows[0].amount, "12.3456");
     assert_eq!(stored.rows[1].currency, "USD");
     refresh_bill(&pool, r, &cloud, now + 120).await.unwrap();
-    assert_eq!(
-        apsp_resources::cloud::resource(&pool, r)
-            .await
-            .unwrap()
-            .instance_bill
-            .unwrap()
-            .month,
-        next
-    );
+    assert_eq!(cached(&pool, r).await.instance_bill.unwrap().month, next);
     let requests = mock.requests();
     assert_eq!(requests[1].params["NextToken"], "page-2");
     assert_eq!(requests[0].params["InstanceID"], "i-testonly");
@@ -117,7 +110,7 @@ async fn incomplete_bills_wrong_resource_and_repeated_pages_never_replace_valid_
     refresh_bill(&pool, r, &cloud, now).await.unwrap();
     refresh_bill(&pool, r, &cloud, now + 21600).await.unwrap();
     refresh_bill(&pool, r, &cloud, now + 21900).await.unwrap();
-    let stored = apsp_resources::cloud::resource(&pool, r).await.unwrap();
+    let stored = cached(&pool, r).await;
     assert_eq!(stored.bill_error.as_deref(), Some("billing_incomplete"));
     assert_eq!(stored.instance_bill.unwrap().queried_at, now);
     mock.exhausted();

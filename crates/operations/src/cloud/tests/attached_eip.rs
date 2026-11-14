@@ -152,8 +152,8 @@ async fn attached_eip_refresh_commits_queries_without_automatic_bandwidth_jobs(p
         worker::refresh(&pool, a, &Cloud::local(&mock.endpoint))
             .await
             .unwrap();
-        let account = account(&pool, a).await;
-        assert!(account.error_code.is_none());
+        let account = costs(&pool, a).await;
+        assert!(account.bill_error.is_none());
         assert!(account.traffic_error.is_none());
         assert_eq!(account.bill.unwrap().usage_micro_gb, Some(200_000_000));
         let updated = apsp_resources::cloud::resource(&pool, r).await.unwrap();

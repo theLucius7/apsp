@@ -1,6 +1,7 @@
 use super::{Job, scheduler};
 use crate::cloud::power::{PolicyRules, StateRules};
 use crate::error::{ApiError, ApiResult};
+use apsp_costs::cloud::accounts::{self, AccountBilling};
 use apsp_observability::cloud_notices;
 use apsp_resources::cloud::{
     account_on,
@@ -83,7 +84,13 @@ pub(super) async fn prepare(
         .bind(id).bind(resource.id).bind(account.revision).bind(resource.revision).bind(intent.action).bind(intent.mode).bind(intent.source).bind(intent.key).bind(Json(state)).bind(if intent.source=="manual"{"preview"}else{"queued"}).bind(now).bind(intent.expires_at).execute(&mut **tx).await?;
     Ok((result.rows_affected() != 0).then_some(id))
 }
-pub(super) fn allowed(job: &Job, account: &Account, resource: &Resource, now: i64) -> bool {
+pub(super) fn allowed(
+    job: &Job,
+    account: &Account,
+    billing: &AccountBilling,
+    resource: &Resource,
+    now: i64,
+) -> bool {
     if !account.enabled
         || resource.kind != "ecs"
         || account.revision != job.account_revision
@@ -93,7 +100,7 @@ pub(super) fn allowed(job: &Job, account: &Account, resource: &Resource, now: i6
         return false;
     }
     let policy = &resource.power_policy;
-    if job.action == "start" && policy.blocks_start(account, resource, now) {
+    if job.action == "start" && policy.blocks_start(account, billing, resource, now) {
         return false;
     }
     if job.source == "manual" {
@@ -116,7 +123,8 @@ pub(super) fn allowed(job: &Job, account: &Account, resource: &Resource, now: i6
     }
     match job.source.as_str() {
         "threshold" => {
-            policy.threshold_action == "stop" && policy.exceeded(account, now) == Some(true)
+            policy.threshold_action == "stop"
+                && policy.exceeded(account, billing, now) == Some(true)
         }
         "schedule" => {
             policy.schedule_enabled
@@ -238,6 +246,7 @@ pub async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
         .fetch_one(&mut *tx)
         .await?;
     let account = account_on(&mut tx, r.account_id).await?;
+    let billing = accounts::account_on(&mut tx, r.account_id).await?;
     let r = fresh(&mut tx, r.id).await?;
     let now = apsp_protocol::now_timestamp();
     if job.next_check_at > now {
@@ -251,7 +260,7 @@ pub async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
     if job.status != "queued" {
         return Ok(());
     }
-    if !allowed(&job, &account, &r, now) {
+    if !allowed(&job, &account, &billing, &r, now) {
         finish(&mut tx, &job, &r, "cancelled", Some("policy_inactive"), now).await?;
         tx.commit().await?;
         return Ok(());
@@ -307,6 +316,7 @@ pub async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
     // The durable intent precedes the write. Recovery never resends this job.
     let mut tx = lock(pool, r.account_id).await?;
     let account = account_on(&mut tx, r.account_id).await?;
+    let billing = accounts::account_on(&mut tx, r.account_id).await?;
     let r = fresh(&mut tx, r.id).await?;
     let job: Job = sqlx::query_as("SELECT * FROM alicloud_power_jobs WHERE id=$1")
         .bind(id)
@@ -316,7 +326,7 @@ pub async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
         return Ok(());
     }
     let now = apsp_protocol::now_timestamp();
-    if !allowed(&job, &account, &r, now) {
+    if !allowed(&job, &account, &billing, &r, now) {
         finish(&mut tx, &job, &r, "cancelled", Some("policy_inactive"), now).await?;
     } else {
         match crate::cloud::power::state::power_control(

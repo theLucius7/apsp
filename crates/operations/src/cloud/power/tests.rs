@@ -18,7 +18,8 @@ mod regressions;
 async fn seed(pool: &PgPool) -> (Uuid, Uuid) {
     let a = Uuid::new_v4();
     let r = Uuid::new_v4();
-    sqlx::query("INSERT INTO alicloud_accounts(id,name,access_key_id,access_key_secret,billing_enabled,balance_enabled) VALUES($1,'测试账号','TEST_ONLY_KEY','TEST_ONLY_SECRET',true,true)").bind(a).execute(pool).await.unwrap();
+    crate::cloud::tests::credential_account(pool, a, "测试账号").await;
+    crate::cloud::tests::set_billing(pool, a, true, true).await;
     sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id) VALUES($1,$2,'测试实例','ecs','cn-hangzhou','i-testonly')").bind(r).bind(a).execute(pool).await.unwrap();
     (a, r)
 }
@@ -281,9 +282,12 @@ fn schedule_handles_midnight_window_and_overlapping_due_events() {
 }
 async fn evaluate(pool: &PgPool, a: Uuid, r: Uuid, s: &State, now: i64) -> Resource {
     let mut tx = lock(pool, a).await.unwrap();
+    let costs = apsp_costs::cloud::accounts::account_on(&mut tx, a)
+        .await
+        .unwrap();
     let a = account_on(&mut tx, a).await.unwrap();
     let mut r = jobs::fresh(&mut tx, r).await.unwrap();
-    scheduler::evaluate(&mut tx, &a, &mut r, s, now)
+    scheduler::evaluate(&mut tx, &a, &costs, &mut r, s, now)
         .await
         .unwrap();
     tx.commit().await.unwrap();
@@ -303,7 +307,7 @@ async fn threshold_is_sticky_and_preempts_start_notify_is_deduplicated(pool: PgP
         .unwrap();
     let bill =
         json!({"month":billing::month(now),"queried_at":now,"rows":[],"usage_micro_gb":95_000_000});
-    sqlx::query("UPDATE alicloud_accounts SET bill=$2 WHERE id=$1")
+    sqlx::query("UPDATE cloud_account_billing SET bill=$2 WHERE account_id=$1")
         .bind(a)
         .bind(bill)
         .execute(&pool)
@@ -324,7 +328,7 @@ async fn threshold_is_sticky_and_preempts_start_notify_is_deduplicated(pool: PgP
         .await
         .unwrap();
     assert_eq!(count, 1);
-    sqlx::query("UPDATE alicloud_accounts SET error_code='network_error' WHERE id=$1")
+    sqlx::query("UPDATE cloud_account_billing SET bill_error='network_error' WHERE account_id=$1")
         .bind(a)
         .execute(&pool)
         .await
@@ -334,13 +338,13 @@ async fn threshold_is_sticky_and_preempts_start_notify_is_deduplicated(pool: PgP
             .await
             .threshold_hold
     );
-    sqlx::query("UPDATE alicloud_accounts SET error_code=NULL,bill=jsonb_set(bill,'{usage_micro_gb}','null') WHERE id=$1").bind(a).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE cloud_account_billing SET bill_error=NULL,bill=jsonb_set(bill,'{usage_micro_gb}','null') WHERE account_id=$1").bind(a).execute(&pool).await.unwrap();
     assert!(
         evaluate(&pool, a, r, &state("Stopped", "StopCharging"), now + 60)
             .await
             .threshold_hold
     );
-    sqlx::query("UPDATE alicloud_accounts SET error_code=NULL,bill=jsonb_set(bill,'{usage_micro_gb}','94000000') WHERE id=$1").bind(a).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE cloud_account_billing SET bill_error=NULL,bill=jsonb_set(bill,'{usage_micro_gb}','94000000') WHERE account_id=$1").bind(a).execute(&pool).await.unwrap();
     assert!(
         !evaluate(&pool, a, r, &state("Stopped", "StopCharging"), now + 60)
             .await

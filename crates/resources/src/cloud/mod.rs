@@ -1,12 +1,14 @@
-//! Cloud accounts and resources (Alibaba Cloud): registration and credentials (`api`,
-//! `client`), what the cloud reports about instances and addresses (`inventory`,
-//! `addresses`, `model`), and the question about work in progress that operations answers
-//! (`work`). Costs, power, address rotation, security groups and notifications use these
-//! from their own crates; the account and resource rows also carry their columns until
-//! stage F splits the tables by owner.
+//! Cloud accounts and resources (Alibaba Cloud): registration and credential references
+//! (`api`, `client`), what the cloud reports about instances and addresses (`inventory`,
+//! `addresses`, `model`), the question about work in progress that operations answers
+//! (`work`) and the billing state costs keeps for each account (`billing`). Costs, power,
+//! address rotation, security groups and notifications use these from their own crates;
+//! costs keeps its columns in its own tables (ADR 0137 step 6), the resource rows still
+//! carry the power columns of operations.
 
 pub mod addresses;
 pub mod api;
+pub mod billing;
 pub mod client;
 pub mod inventory;
 pub mod model;

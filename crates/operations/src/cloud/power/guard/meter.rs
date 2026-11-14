@@ -121,17 +121,17 @@ pub async fn guard_usage(
     account: &Account,
     region: &str,
 ) -> Result<(Option<u64>, String), Failure> {
-    let resolved = cloud.resolved_account(account).await?;
+    let keys = cloud.keys(account).await?;
     let value = cloud
         .cdt
         .call(
-            &resolved.access_key_id,
-            &resolved.access_key_secret,
+            &keys.access_key_id,
+            &keys.access_key_secret,
             "ListCdtInternetTraffic",
             &[("RegionId", region.into())],
         )
         .await?;
     // BusinessRegionId is deliberately absent: BGP allowance is shared by pool.
     let usage = traffic(&value, region)?;
-    Ok((usage, key_digest(&resolved.access_key_id)))
+    Ok((usage, key_digest(&keys.access_key_id)))
 }

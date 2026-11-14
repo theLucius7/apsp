@@ -5,7 +5,7 @@ import { useAction } from '../../hooks'
 import { time } from '../../format'
 import { accountWrite, charge } from './types'
 import type { Account, Operation, Resource, Target } from './types'
-import { accountError, bandwidthError, checked, credentialError, operationError, registrationError, resourceError } from '../../operations/cloud/guards'
+import { accountError, bandwidthError, checked, operationError, registrationError, resourceError } from '../../operations/cloud/guards'
 import type { CurrentCloud } from '../../operations/cloud/guards'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -16,15 +16,13 @@ type Events = { close: () => void; saved: () => void; available: boolean; curren
 
 export function AccountEditor({ account, close, saved, current }: Events & { account?: Account }) {
   const [draft, setDraft] = useState<Pick<Account, 'name' | 'site' | 'enabled' | 'auto_enabled' | 'limit_gb' | 'billing_enabled' | 'balance_enabled'>>(account ?? { name: '', site: 'china' as const, enabled: true, auto_enabled: false, billing_enabled: false, balance_enabled: false, limit_gb: 100 })
-  const [key, setKey] = useState(''), [secret, setSecret] = useState(''), action = useAction()
+  const action = useAction()
   const [credentialId, setCredentialId] = useState(account?.credential_id ?? '')
-  const [legacy, setLegacy] = useState(Boolean(account && !account.credential_id))
-  const writeError = () => accountError(current, account) || (legacy ? credentialError(key, secret, !account || Boolean(account.credential_id)) : isUuid(credentialId.trim()) ? '' : '请填写集中云凭据的 UUID。')
-  return <FormDialog title={account ? '编辑阿里云账号' : '添加阿里云账号'} busy={action.busy} error={action.error || accountError(current, account)} onClose={close} submitDisabled={Boolean(writeError())} onSubmit={() => void action.run(() => checked(writeError, () => api(account ? `/api/resources/alicloud/accounts/${account.id}` : '/api/resources/alicloud/accounts', account ? 'PATCH' : 'POST', accountWrite(draft, legacy ? key : '', legacy ? secret : '', account?.revision, legacy ? '' : credentialId, legacy))), () => { setKey(''); setSecret(''); saved() })}>
+  const writeError = () => accountError(current, account) || (isUuid(credentialId.trim()) ? '' : '请填写集中云凭据的 UUID。')
+  return <FormDialog title={account ? '编辑阿里云账号' : '添加阿里云账号'} busy={action.busy} error={action.error || accountError(current, account)} onClose={close} submitDisabled={Boolean(writeError())} onSubmit={() => void action.run(() => checked(writeError, () => api(account ? `/api/resources/alicloud/accounts/${account.id}` : '/api/resources/alicloud/accounts', account ? 'PATCH' : 'POST', accountWrite(draft, account?.revision, credentialId))), saved)}>
     <Field label="账号名称"><Input required maxLength={128} value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} /></Field>
     <Field label="阿里云账号站点" hint="用于选择中国站或国际站账单接口，与资源所在地域不同。"><NativeSelect className="w-full" value={draft.site} onChange={e => setDraft({ ...draft, site: e.target.value as Account['site'] })}><option value="china">中国站</option><option value="international">国际站</option></NativeSelect></Field>
-    <Field label="凭据来源"><NativeSelect className="w-full" value={legacy ? 'legacy' : 'center'} onChange={e => { setLegacy(e.target.value === 'legacy'); setKey(''); setSecret('') }}><option value="center">集中加密云凭据</option>{account && <option value="legacy">明确保留或替换旧兼容密钥</option>}</NativeSelect></Field>
-    {!legacy ? <Field label="云凭据标识" hint="在凭据中心创建用途为“云资源”的凭据（provider=alicloud、access_key_id、access_key_secret），这里只保存引用。"><Input required maxLength={36} spellCheck={false} value={credentialId} onChange={e => setCredentialId(e.target.value.trim())} placeholder="集中云凭据的 UUID" /></Field> : <div className="grid gap-x-4 sm:grid-cols-2"><Field label="旧兼容访问密钥 ID" hint="旧账号两项都留空则保留原值。"><Input type="password" autoComplete="new-password" minLength={8} maxLength={256} required={Boolean(account?.credential_id) || Boolean(secret)} value={key} onChange={e => setKey(e.target.value)} /></Field><Field label="旧兼容访问密钥 Secret"><Input type="password" autoComplete="new-password" minLength={8} maxLength={256} required={Boolean(account?.credential_id) || Boolean(key)} value={secret} onChange={e => setSecret(e.target.value)} /></Field></div>}
+    <Field label="云凭据标识" hint="在凭据中心创建用途为“云资源”的凭据（provider=alicloud、access_key_id、access_key_secret），这里只保存引用。"><Input required maxLength={36} spellCheck={false} value={credentialId} onChange={e => setCredentialId(e.target.value.trim())} placeholder="集中云凭据的 UUID" /></Field>
     <label className="my-4 flex items-start gap-2.5 text-sm leading-relaxed"><Checkbox checked={draft.enabled} onCheckedChange={checked => setDraft({ ...draft, enabled: checked === true })} className="mt-0.5" />启用账号查询与手动管理</label>
     <p className="text-muted-foreground mt-3 text-xs leading-relaxed">所需权限：流量查询、ECS 查询和目标实例启停；余额与账单可选。实例 ARN 须包含 instance/。</p>
     <label className="my-4 flex items-start gap-2.5 text-sm leading-relaxed"><Checkbox checked={draft.balance_enabled ?? false} onCheckedChange={checked => setDraft({ ...draft, balance_enabled: checked === true })} className="mt-0.5" />查询账户余额（可选，需要 bssapi:QueryAccountBalance）</label>
