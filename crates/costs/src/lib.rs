@@ -1,7 +1,8 @@
 #![forbid(unsafe_code)]
 //! Costs domain (ADR 0128): recurring paid services, payments, renewal reminders and the
-//! renewal calendar, exchange rates into the statistics currency, supplier comparison and
-//! reminders before a server's planned cancellation, independent of the proxy business.
+//! renewal calendar, the costs recorded for servers, exchange rates into the statistics
+//! currency, supplier comparison, reminders before a server's planned cancellation and the
+//! cloud bills and budgets, independent of the proxy business.
 mod api;
 mod calendar;
 pub mod cancellation_reminders;
@@ -10,6 +11,7 @@ pub mod exchange;
 mod history;
 pub mod locks;
 mod migration;
+mod records;
 pub mod schedule;
 mod servers;
 mod suppliers;
@@ -72,6 +74,10 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/costs/subscriptions/{id}/renew", post(api::renew))
         .route("/api/costs/subscriptions/{id}/payments", get(api::payments))
+        .route(
+            "/api/servers/{id}/fleet/costs",
+            get(records::list).post(records::add),
+        )
         .route("/api/costs/servers", get(servers::list))
         .route("/api/costs/references", get(servers::reference_list))
         .route("/api/costs/payments", get(history::payments))

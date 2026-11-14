@@ -147,7 +147,7 @@
 
 领域之间需要逆着依赖顺序调用时，由调用方声明一个类型化接口，实现方回答，应用层的 `crates/panel/src/wiring.rs` 在启动时接线（平台的 `ports` 只提供“安装一次、按需读取”的机制）。接口的数据类型属于声明方；实现方排在后面时返回自己的类型，由应用层转换。几个排在前面的领域都要调用同一个后面的所有者、而这件事本身是平台的基础设施时（向设备派发任务、记录观测证据），接口由平台声明，不在每个调用方各声明一份。
 
-现在一共十三个接口，每个只装一件事；不再有把几件不相干的事装在一起、由各领域登记的钩子（[ADR 0132](adr/0132-platform-only-host-and-domain-addresses.md) 拆掉了治理的 `Contributions`，名称迁入自己的 crate 后 `Dns01` 也已删除）。
+现在一共十四个接口，每个只装一件事；不再有把几件不相干的事装在一起、由各领域登记的钩子（[ADR 0132](adr/0132-platform-only-host-and-domain-addresses.md) 拆掉了治理的 `Contributions`，名称迁入自己的 crate 后 `Dns01` 也已删除）。
 
 | 接口 | 声明方 | 实现方 | 内容 | 性质 |
 | --- | --- | --- | --- | --- |
@@ -159,6 +159,7 @@
 | `server_runtime::ServerRuntime` | 资源 | 流量服务 | 服务器视图与档案里的发布修订号（`manifest_rev`）、采集迁移预览里该服务器启用的运行时与部署状态 | 长期：资源排在流量服务之前；发布状态归流量服务（`runtime_publications`） |
 | `cloud::work::CloudWork` | 资源（云账号与云资源） | 作业（`crates/operations` 的 `cloud`） | 资源上有没有进行中或结果未知的操作、地址是否在换 IP 中、配置变化后取消预览与排队中的操作；安全组变更前也经它确认资源空闲 | 长期：作业排在最后 |
 | `cloud::billing::CloudBilling` | 资源（云账号与云资源） | 成本 | 云账号的计费开关与账单状态（读），账号的新建、编辑、归档与刷新结果交给成本（同一事务）；编辑时作废旧配置下的账单、余额与 CDT 读数 | 长期：资源排在成本之前；成本的状态归成本（`cloud_account_billing`、`cloud_resource_billing`） |
+| `cloud_resources::costs::ResourceCosts` | 资源（云资源与服务器的关联） | 成本 | 关联表单里的月预算与未关联服务器时的采购记录（与关联同一事务写入），云资源列表里成本的那部分 | 长期：资源排在成本之前；云资源的采购与预算归成本（`cloud_resource_costs`） |
 | `users::Users`（流量服务） | 流量服务 | 服务权益（`crates/access`） | 编译进配置的用户限速与连接数；节点删除或接管后用户凭据与策略组成员的变化；Nexus 主机的设备数限制与兼容桥同步状态；代理运维记录 | 长期：服务权益排在流量服务之后 |
 | `china_reachability::ChinaReachability`（流量服务） | 流量服务（Nexus 切换） | 观测 | 节点最近是否测得国内不可达 | 长期：观测排在流量服务之后 |
 | `HostNetwork`（服务权益的门户） | 服务权益（成员线路目录） | 观测 | 成员可见的主机网络属性（只含网络身份、用途、风险标记与评分） | 长期：观测排在服务权益之后 |
@@ -363,7 +364,7 @@ flowchart TD
 
 **作业胶水（2026-11-14）已处理**：部署自动化（排队、取消、回执、检查点、结果未知的核对）、分批升级与运行时操作的列表和创建迁到 `crates/operations`（`jobs/deployment_automation.rs`、`runtime_rollouts.rs`、`runtime_operations.rs`），流量服务只回答“这一步是否合法”（`runtime_workflows::{automation, rollouts}`）；流量服务指向作业的 SQL 从 20 条减为 3 条；部署预检与首次安装的检查改经 `DeviceWork`（2026-11-14）后，余下的 3 条也已去掉。
 
-**ADR 0137（阶段 F）**：第一步（2026-11-14 上线）结构指纹改按未删除列的序号计算（之后的步骤才能删列）；设备会话单独成表 `device_sessions`（资源），`sessions` 只留管理员会话；服务权益的两份审计流水合为 `singbox_operation_events`。第四步（2026-11-14）观测写在 `servers` 上的六列迁到观测自己的 `telemetry_servers`、`probe_assignments` 与 `server_ip_quality_refreshes`，遥测批次不再锁、也不再改写服务器行。第五步（2026-11-14）流量服务的发布状态（`manifest_rev`、`dirty_at`）迁到 `runtime_publications`，`server_plugins` 改名 `runtime_enablements`，发布器只对服务器行取 `FOR KEY SHARE`。第六步（2026-11-14）成本写在云账号与云资源行上的账单、余额、CDT 流量与计费开关迁到 `cloud_account_billing`、`cloud_resource_billing`，云账号的明文密钥旧模式删除。阶段 F 其余各项按 ADR 0137 的判断与顺序处理，下面的表已按此改写。
+**ADR 0137（阶段 F）**：第一步（2026-11-14 上线）结构指纹改按未删除列的序号计算（之后的步骤才能删列）；设备会话单独成表 `device_sessions`（资源），`sessions` 只留管理员会话；服务权益的两份审计流水合为 `singbox_operation_events`。第四步（2026-11-14）观测写在 `servers` 上的六列迁到观测自己的 `telemetry_servers`、`probe_assignments` 与 `server_ip_quality_refreshes`，遥测批次不再锁、也不再改写服务器行。第五步（2026-11-14）流量服务的发布状态（`manifest_rev`、`dirty_at`）迁到 `runtime_publications`，`server_plugins` 改名 `runtime_enablements`，发布器只对服务器行取 `FOR KEY SHARE`。第六步（2026-11-14）成本写在云账号与云资源行上的账单、余额、CDT 流量与计费开关迁到 `cloud_account_billing`、`cloud_resource_billing`，云账号的明文密钥旧模式删除。第二步（2026-11-14，排在第六步之后做）服务器的价格与到期只留在资源的资产设置（原资产档案的采购配置并入其 `procurement`），费用记录的接口移到成本，云资源关联只留关联与备注，月预算与未关联云资源的采购记到成本的 `cloud_resource_costs`。阶段 F 其余各项按 ADR 0137 的判断与顺序处理，下面的表已按此改写。
 
 ### 12.1 归属：代码或数据还不在对象所属的领域
 
@@ -383,7 +384,6 @@ flowchart TD
 | 通知队列六张表 | 观测 `notification_outbox`、`alicloud_deliveries`、`singbox_reachability_deliveries`、`operations_incident_deliveries`；成本 `expense_deliveries`；服务权益 `singbox_member_messages` | 投递器已统一（ADR 0134）；每行挂在各自所有者的事件上，合成一张表会违反“每表一个所有者”，生产里五张表也从未写入过 | 不合表（ADR 0137）；可选：统一状态列与标准列，成员消息拆出邮件投递 |
 | 主机名检查余下 4 处 | 名称 `dns_record_spec`（允许下划线、最长 251 字节）、流量服务 `subscription_parser/outbound`（IDNA 转换后不查长度）、服务权益 `user_accounts/mail`（只查字符集）、观测可达性 `normalize_host`（规范化而非校验） | 语义与 `net::host` 的选项不同，其中外部订阅那处像是缺陷 | 逐处定下接受范围后并入 `net::host` |
 | 服务器状态判断余下的差别 | “服务器忙”在几处含义不同；观测的故障通知仍自己读作业的维护窗口 | 计费周期、网卡匹配与故障的“维护中”三处已按控制台的含义统一（2026-11-14）；观测排在作业之前，不能调用作业 | “服务器忙”逐处核对后并入作业的回答；故障通知的维护判断改由作业经接口回答 |
-| 服务器价格与到期存了四处 | `servers.asset_settings`、`fleet_profiles.asset`、`fleet_cost_records`、`operations_cloud_links` | 四处的金额单位不同，合并要改表并定以哪一份为准 | 以成本的账本与资产设置为准，其余转换后删除（阶段 F） |
 | 预览后确认的存储六套 | 名称、基础网络、服务权益与流量服务各自的预览表 | 共性只有“过期加一次确认”，其余（结果记录、缓存正文、幂等键、类型化外键）各不相同 | 保留（ADR 0137）；新流程优先用作业行的预览状态 |
 | 事件日志余下三份 | `fleet_events`（观测）、`operations_history`（作业）、`expense_events`（成本） | 服务权益的两份已在 ADR 0137 合并；余下三份的所有者、键、读者与保留期都不同，不是同一对象 | 保留（ADR 0137） |
 | 前端的重复（余下） | 面板 `Notice` 的错误色调与 `ErrorNotice` 仍是两种错误样式；云资源余额与账单、供应商的“最小货币单位”与 CDT 图表的数值仍不经 `money`/`bytes`；约 10 处 UTC 日期截取；5 处本地的权限判断；地区名称查找两份；`useNow`、`useDashboardPoll`、`Chart` 仍在观测的目录 | 界面组件、时间、字节、金额、当前管理员与输入校验已各合为一处（2026-11-14，草稿 PR），守卫 `web/tests/one-implementation.test.ts`；余下的合并同样会改变显示 | 逐项附截图审阅 |

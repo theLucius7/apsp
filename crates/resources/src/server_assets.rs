@@ -23,6 +23,81 @@ pub struct AssetSettings {
     pub traffic_limit_type: TrafficMode,
     pub reset_day: u8,
     pub network_interface: String,
+    /// Where the server was bought and what was paid for, beside its price and expiry above
+    /// (roadmap 4.4); `None` when nothing is recorded. A request that leaves it out keeps
+    /// the stored record, and an empty one clears it (`servers::update`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub procurement: Option<Procurement>,
+}
+
+/// The server's procurement record, shown and edited in its operations tab: the supplier,
+/// the references of the order and cloud account, and the specification bought, which the
+/// panel compares with what it observes. `region` is the supplier's own name for the
+/// order's region; the server's region for grouping and display is [`AssetSettings::region`].
+/// Price, currency, billing cycle, expiry and renewal are never kept here.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Procurement {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub provider: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub cloud_account_reference: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub region: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub order_reference: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub note: String,
+    #[serde(skip_serializing_if = "Purchased::is_empty")]
+    pub purchased: Purchased,
+}
+
+/// The specification bought; unknown values stay `None`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Purchased {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_cores: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disk_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bandwidth_mbps: Option<u64>,
+}
+
+impl Purchased {
+    pub fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+impl Procurement {
+    /// The trimmed record, or `None` when nothing is recorded; refuses texts over their
+    /// limits.
+    pub fn normalized(mut self) -> ApiResult<Option<Self>> {
+        for (value, limit) in [
+            (&mut self.provider, 128),
+            (&mut self.cloud_account_reference, 256),
+            (&mut self.region, 64),
+            (&mut self.order_reference, 512),
+        ] {
+            *value = Text::chars(limit)
+                .trimmed(value)
+                .ok_or_else(|| {
+                    ApiError::BadRequest(
+                        "供应商最多 128 字、云账号参考 256 字、地区 64 字、订单参考 512 字，不能含控制字符".into(),
+                    )
+                })?
+                .into();
+        }
+        self.note = Text::chars(4096)
+            .multiline()
+            .trimmed(&self.note)
+            .ok_or_else(|| ApiError::BadRequest("采购备注最多 4096 字".into()))?
+            .into();
+        Ok((self != Self::default()).then_some(self))
+    }
 }
 
 /// The billing cycle in days of a server whose cycle was never saved; the ledger and the
@@ -70,6 +145,7 @@ impl Default for AssetSettings {
             traffic_limit_type: TrafficMode::Sum,
             reset_day: 1,
             network_interface: String::new(),
+            procurement: None,
         }
     }
 }
@@ -165,6 +241,11 @@ impl AssetSettings {
             ));
         }
         self.network_interface = patterns.join(",");
+        self.procurement = self
+            .procurement
+            .map(Procurement::normalized)
+            .transpose()?
+            .flatten();
         Ok(self)
     }
 
@@ -299,6 +380,50 @@ pub mod sql {
     pub fn expires_at(server: &str) -> String {
         format!("({server}.asset_settings->>'expires_at')::bigint")
     }
+
+    /// The supplier in the procurement record, NULL when none is recorded.
+    pub fn provider(server: &str) -> String {
+        format!("({server}.asset_settings->'procurement'->>'provider')")
+    }
+
+    /// The order reference in the procurement record, NULL when none is recorded.
+    pub fn order_reference(server: &str) -> String {
+        format!("({server}.asset_settings->'procurement'->>'order_reference')")
+    }
+}
+
+/// Stores the server's procurement record (normalized by the caller), or removes it, in the
+/// caller's transaction; the caller holds the server's row lock.
+pub async fn set_procurement_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    server: i64,
+    procurement: Option<&Procurement>,
+) -> ApiResult<()> {
+    let value = procurement
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(anyhow::Error::from)?;
+    sqlx::query("UPDATE servers SET asset_settings=CASE WHEN $2::jsonb IS NULL THEN asset_settings-'procurement' ELSE jsonb_set(asset_settings,'{procurement}',$2::jsonb) END WHERE id=$1")
+        .bind(server)
+        .bind(value)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+/// Moves the server's expiry to `until`: a purchase or renewal recorded in the costs ledger
+/// with a validity date is the server's new expiry.
+pub async fn record_expiry_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    server: i64,
+    until: i64,
+) -> ApiResult<()> {
+    sqlx::query("UPDATE servers SET asset_settings=jsonb_set(asset_settings,'{expires_at}',to_jsonb($2::bigint)) WHERE id=$1")
+        .bind(server)
+        .bind(until)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
 }
 
 pub async fn renew_due(pool: &PgPool, now: i64) -> anyhow::Result<()> {

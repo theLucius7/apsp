@@ -94,7 +94,7 @@ impl Fixture {
             sqlx::query_scalar("INSERT INTO servers(name) VALUES('TEST_ONLY linked') RETURNING id")
                 .fetch_one(&pool)
                 .await?;
-        sqlx::query("INSERT INTO operations_cloud_links(resource_id,server_id,purchase_reference,notes,updated_at,updated_by) VALUES($1,$2,'','',1,1)").bind(resource).bind(server).execute(&pool).await?;
+        sqlx::query("INSERT INTO operations_cloud_links(resource_id,server_id,notes,updated_at,updated_by) VALUES($1,$2,'',1,1)").bind(resource).bind(server).execute(&pool).await?;
         let token = random_token();
         let hash = hash_token(&token);
         let now = now_timestamp();

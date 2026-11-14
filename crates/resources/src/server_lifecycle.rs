@@ -1,9 +1,11 @@
-//! A server's asset profile, local access policy, lifecycle, migration to another server
-//! and cost records (resources; the cost records join costs in a later stage).
+//! A server's operations profile: its procurement record (kept in the asset settings), local
+//! access policy, lifecycle and migration to another server (resources). The costs recorded
+//! for the server are costs' ledger (`apsp_costs`).
 
 use crate::{
     AppState,
     error::{ApiError, ApiResult},
+    server_assets::{AssetSettings, Procurement},
 };
 use apsp_protocol::{fleet::AccessPolicy, now_timestamp};
 use axum::{
@@ -23,7 +25,7 @@ pub async fn get(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<Value>> {
     crate::control_center::require_server(&state, &headers, id, "servers:read").await?;
-    let row=sqlx::query("SELECT s.static_info,s.capabilities,s.agent_settings,s.asset_settings,p.asset,p.policy,p.lifecycle,p.maintenance_from,p.maintenance_until,p.maintenance_reason FROM servers s LEFT JOIN fleet_profiles p ON p.server_id=s.id WHERE s.id=$1 AND s.deleted_at IS NULL")
+    let row=sqlx::query("SELECT s.static_info,s.capabilities,s.agent_settings,s.asset_settings,p.policy,p.lifecycle,p.maintenance_from,p.maintenance_until,p.maintenance_reason FROM servers s LEFT JOIN fleet_profiles p ON p.server_id=s.id WHERE s.id=$1 AND s.deleted_at IS NULL")
         .bind(id).fetch_optional(&state.pool).await?.ok_or(ApiError::NotFound)?;
     // The profile shows the process and pressure detail that polled server reads leave out.
     let latest =
@@ -32,8 +34,9 @@ pub async fn get(
             .remove(&id)
             .unwrap_or_default();
     let static_info: Value = row.get("static_info");
-    let asset: Option<Value> = row.get("asset");
-    let asset = asset.unwrap_or_else(|| json!({}));
+    let settings: AssetSettings =
+        serde_json::from_value(row.get("asset_settings")).map_err(anyhow::Error::from)?;
+    let asset = procurement_view(settings.procurement.as_ref())?;
     let purchased = asset.get("purchased").cloned().unwrap_or_else(|| json!({}));
     let policy: AccessPolicy = serde_json::from_value(
         row.get::<Option<Value>, _>("policy")
@@ -107,9 +110,17 @@ fn maintenance_window(profile: &str, at: &str) -> String {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProfileInput {
-    asset: Value,
+    asset: Procurement,
     policy: AccessPolicy,
     expected_digest: String,
+}
+
+/// The procurement record as the profile shows it: `{}` when none is recorded.
+fn procurement_view(procurement: Option<&Procurement>) -> ApiResult<Value> {
+    Ok(match procurement {
+        Some(procurement) => serde_json::to_value(procurement).map_err(anyhow::Error::from)?,
+        None => json!({}),
+    })
 }
 fn profile_digest(asset: &Value, policy: &AccessPolicy) -> ApiResult<String> {
     Ok(format!(
@@ -128,46 +139,51 @@ pub async fn save(
 ) -> ApiResult<Json<Value>> {
     crate::control_center::require_server(&state, &headers, id, "servers:write").await?;
     crate::control_center::require_recent_proof(&state, &headers).await?;
-    if !input.asset.is_object()
-        || serde_json::to_vec(&input.asset)
-            .map_err(anyhow::Error::from)?
-            .len()
-            > 16384
-    {
-        return Err(ApiError::BadRequest(
-            "资产资料必须是小于 16 KiB 的对象".into(),
-        ));
-    }
+    let procurement = input.asset.normalized()?;
     crate::control_center::require_capability(&state, &headers, "security:write").await?;
     let policy = normalize_policy(input.policy)?;
     let mut tx = state.pool.begin().await?;
-    crate::servers::lock(&mut tx, id).await?;
-    let current = sqlx::query("SELECT asset,policy FROM fleet_profiles WHERE server_id=$1")
-        .bind(id)
-        .fetch_optional(&mut *tx)
-        .await?;
-    let (asset, original_policy) = if let Some(row) = current {
-        (
-            row.get::<Value, _>("asset"),
-            serde_json::from_value::<AccessPolicy>(row.get("policy"))
-                .map_err(anyhow::Error::from)?,
+    let settings: AssetSettings = serde_json::from_value(
+        crate::servers::lock_row(
+            &mut tx,
+            id,
+            crate::servers::RowLock::Update,
+            "asset_settings",
         )
-    } else {
-        (json!({}), AccessPolicy::default())
-    };
-    if input.expected_digest != profile_digest(&asset, &original_policy)? {
+        .await?
+        .ok_or(ApiError::NotFound)?
+        .get("asset_settings"),
+    )
+    .map_err(anyhow::Error::from)?;
+    let original_policy: AccessPolicy =
+        sqlx::query_scalar::<_, Value>("SELECT policy FROM fleet_profiles WHERE server_id=$1")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(anyhow::Error::from)?
+            .unwrap_or_default();
+    if input.expected_digest
+        != profile_digest(
+            &procurement_view(settings.procurement.as_ref())?,
+            &original_policy,
+        )?
+    {
         return Err(ApiError::Conflict(
             "资产或授权已由其他窗口修改。当前表单保留，请保存草稿、读取最新资料后再确认差异".into(),
         ));
     }
-    let digest = profile_digest(&input.asset, &policy)?;
-    sqlx::query("INSERT INTO fleet_profiles(server_id,asset,policy,updated_at) VALUES($1,$2,$3,$4) ON CONFLICT(server_id) DO UPDATE SET asset=$2,policy=$3,updated_at=$4")
-        .bind(id).bind(&input.asset).bind(json!(policy)).bind(now_timestamp()).execute(&mut *tx).await?;
+    let asset = procurement_view(procurement.as_ref())?;
+    let digest = profile_digest(&asset, &policy)?;
+    crate::server_assets::set_procurement_tx(&mut tx, id, procurement.as_ref()).await?;
+    sqlx::query("INSERT INTO fleet_profiles(server_id,policy,updated_at) VALUES($1,$2,$3) ON CONFLICT(server_id) DO UPDATE SET policy=$2,updated_at=$3")
+        .bind(id).bind(json!(policy)).bind(now_timestamp()).execute(&mut *tx).await?;
     crate::evidence::record_event_tx(
         &mut tx,
         id,
         "profile_changed",
-        json!({"asset":input.asset,"policy":policy}),
+        json!({"asset":asset,"policy":policy}),
     )
     .await?;
     tx.commit().await?;
@@ -368,68 +384,5 @@ pub async fn migrate(
     tx.commit().await?;
     Ok(Json(
         json!({"migrated":true,"business_requires_plugin_migration":true}),
-    ))
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CostInput {
-    kind: String,
-    amount_minor: i64,
-    currency: String,
-    occurred_at: i64,
-    valid_until: Option<i64>,
-    reference: String,
-}
-pub async fn add_cost(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-    Json(input): Json<CostInput>,
-) -> ApiResult<Json<Value>> {
-    crate::control_center::require_server(&state, &headers, id, "servers:write").await?;
-    let currency = input.currency.to_ascii_uppercase();
-    if ![
-        "purchase",
-        "renewal",
-        "price_change",
-        "refund",
-        "cancellation",
-    ]
-    .contains(&input.kind.as_str())
-        || !(0..=100_000_000_000).contains(&input.amount_minor)
-        || !apsp_panel_host::money::currency(&currency)
-        || input.occurred_at < 0
-        || input
-            .valid_until
-            .is_some_and(|until| until < input.occurred_at)
-    {
-        return Err(ApiError::BadRequest(
-            "费用记录参数无效，金额以最小货币单位保存".into(),
-        ));
-    }
-    let updates_expiry = matches!(input.kind.as_str(), "purchase" | "renewal");
-    let record_id = Uuid::new_v4();
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("INSERT INTO fleet_cost_records(id,server_id,kind,amount_minor,currency,occurred_at,valid_until,reference,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)")
-        .bind(record_id).bind(id).bind(input.kind).bind(input.amount_minor).bind(currency).bind(input.occurred_at).bind(input.valid_until).bind(crate::text::bounded(&input.reference,512)?).bind(now_timestamp()).execute(&mut *tx).await?;
-    if updates_expiry && let Some(until) = input.valid_until {
-        sqlx::query("UPDATE servers SET asset_settings=jsonb_set(asset_settings,'{expires_at}',to_jsonb($2::bigint)) WHERE id=$1").bind(id).bind(until).execute(&mut *tx).await?;
-    }
-    crate::evidence::record_event_tx(&mut tx, id, "cost_recorded", json!({"record_id":record_id}))
-        .await?;
-    tx.commit().await?;
-    Ok(Json(json!({"id":record_id})))
-}
-pub async fn costs(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i64>,
-) -> ApiResult<Json<Value>> {
-    crate::control_center::require_server(&state, &headers, id, "servers:read").await?;
-    let records:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(r)-'server_id' FROM fleet_cost_records r WHERE server_id=$1 ORDER BY occurred_at DESC,id LIMIT 1000").bind(id).fetch_all(&state.pool).await?;
-    let annual:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('year',extract(year FROM to_timestamp(occurred_at))::integer,'currency',currency,'amount_minor',sum(CASE WHEN kind='refund' THEN -amount_minor WHEN kind IN ('purchase','renewal') THEN amount_minor ELSE 0 END)::text) FROM fleet_cost_records WHERE server_id=$1 GROUP BY extract(year FROM to_timestamp(occurred_at)),currency ORDER BY extract(year FROM to_timestamp(occurred_at)) DESC,currency").bind(id).fetch_all(&state.pool).await?;
-    Ok(Json(
-        json!({"records":records,"annual":annual,"currency_conversion":false}),
     ))
 }

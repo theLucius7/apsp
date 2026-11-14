@@ -87,10 +87,12 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
     }
 }
 
-/// The cloud resources' observation history, with the bills costs read.
+/// The cloud resources' observation history, with the bills costs read, then costs' budget
+/// and expiry checks of the resources observed.
 async fn observe_cloud(pool: &sqlx::PgPool) -> ApiResult<()> {
     let bills = apsp_costs::cloud::accounts::instance_bills(pool).await?;
-    crate::cloud_resources::observe(pool, &bills).await
+    let observed = crate::cloud_resources::observe(pool, &bills).await?;
+    apsp_costs::cloud::resource_costs::check(pool, &observed).await
 }
 
 async fn schedules(state: &AppState) -> ApiResult<()> {

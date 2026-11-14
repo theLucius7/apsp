@@ -1,12 +1,16 @@
-//! Cloud resources linked to servers: the link records, billing and expiry observations,
-//! and the read-only Hetzner inventory (resources).
+//! Cloud resources linked to servers: the link records, the observation history of each
+//! resource, and the read-only Hetzner inventory (resources). A linked resource's price and
+//! expiry are its server's asset settings; the budget, and the purchase of a resource that is
+//! not linked, are costs' (`costs`).
 
+pub mod costs;
 pub mod hetzner;
 
 use crate::text::label;
 use crate::{
     AppState, control_center,
     error::{ApiError, ApiResult},
+    server_assets::AssetSettings,
 };
 use apsp_protocol::now_timestamp;
 use axum::{
@@ -23,23 +27,33 @@ use uuid::Uuid;
 /// A registered cloud resource as the operations page lists it: what resources keeps of it
 /// (identity, account, cloud snapshot, server link) and, until operations keeps its own
 /// rows, the power columns. The page adds what costs keeps (`/api/operations/cloud`, composed
-/// in the application).
+/// in the application): the bills, the budget in `link` and, for a resource without a
+/// server (`linked` false), its purchase in `link`.
 pub struct Listed {
     pub id: Uuid,
     pub account_id: Uuid,
+    pub linked: bool,
     pub view: Value,
 }
 
 /// The page's resources by account and resource name: all of them for `global` readers,
-/// otherwise those linked to `servers`.
+/// otherwise those linked to `servers`. A linked resource's `link` carries its server's
+/// price, currency, expiry and order reference as the purchase.
 pub async fn listed(pool: &PgPool, global: bool, servers: &[i64]) -> ApiResult<Vec<Listed>> {
-    let rows: Vec<(Uuid, Uuid, Value)> = sqlx::query_as("SELECT r.id,r.account_id,jsonb_build_object('id',r.id,'account_id',r.account_id,'account_name',a.name,'provider','alicloud','kind',r.kind,'region',r.region,'cloud_id',r.cloud_id,'name',r.name,'snapshot',r.snapshot,'checked_at',r.checked_at,'error_code',r.error_code,'manual_hold',r.manual_hold,'power_policy',r.power_policy,'power_state',r.power_state,'power_error',r.power_error,'link',CASE WHEN l.resource_id IS NULL THEN NULL ELSE to_jsonb(l) END,'provider_read_only_source','阿里云 ECS/VPC/BSS 官方 API 缓存') FROM alicloud_resources r JOIN alicloud_accounts a ON a.id=r.account_id LEFT JOIN operations_cloud_links l ON l.resource_id=r.id WHERE NOT r.archived AND NOT a.archived AND ($1 OR l.server_id=ANY($2)) ORDER BY a.name,r.name LIMIT 500")
-        .bind(global).bind(servers).fetch_all(pool).await?;
+    use crate::server_assets::sql;
+    let rows: Vec<(Uuid, Uuid, bool, Value)> = sqlx::query_as(&format!("SELECT r.id,r.account_id,l.server_id IS NOT NULL,jsonb_build_object('id',r.id,'account_id',r.account_id,'account_name',a.name,'provider','alicloud','kind',r.kind,'region',r.region,'cloud_id',r.cloud_id,'name',r.name,'snapshot',r.snapshot,'checked_at',r.checked_at,'error_code',r.error_code,'manual_hold',r.manual_hold,'power_policy',r.power_policy,'power_state',r.power_state,'power_error',r.power_error,'link',CASE WHEN l.resource_id IS NULL THEN NULL WHEN l.server_id IS NULL THEN jsonb_build_object('resource_id',l.resource_id,'server_id',l.server_id,'notes',l.notes,'updated_at',l.updated_at,'updated_by',l.updated_by) ELSE jsonb_build_object('resource_id',l.resource_id,'server_id',l.server_id,'notes',l.notes,'updated_at',l.updated_at,'updated_by',l.updated_by,'purchase_reference',COALESCE({reference},''),'purchase_amount',{price},'currency',CASE WHEN {price} IS NULL THEN NULL ELSE {currency} END,'expires_at',{expires_at}) END,'provider_read_only_source','阿里云 ECS/VPC/BSS 官方 API 缓存') FROM alicloud_resources r JOIN alicloud_accounts a ON a.id=r.account_id LEFT JOIN operations_cloud_links l ON l.resource_id=r.id LEFT JOIN servers s ON s.id=l.server_id WHERE NOT r.archived AND NOT a.archived AND ($1 OR l.server_id=ANY($2)) ORDER BY a.name,r.name LIMIT 500",
+        reference = sql::order_reference("s"),
+        price = sql::price("s"),
+        currency = sql::currency("s"),
+        expires_at = sql::expires_at("s"),
+    ))
+    .bind(global).bind(servers).fetch_all(pool).await?;
     Ok(rows
         .into_iter()
-        .map(|(id, account_id, view)| Listed {
+        .map(|(id, account_id, linked, view)| Listed {
             id,
             account_id,
+            linked,
             view,
         })
         .collect())
@@ -51,16 +65,54 @@ pub struct Link {
     server_id: Option<i64>,
     purchase_reference: String,
     purchase_amount: Option<String>,
+    /// The currency of the purchase amount; consoles from before budgets had their own
+    /// currency send it for both.
     currency: Option<String>,
     monthly_budget: Option<String>,
+    budget_currency: Option<String>,
     expires_at: Option<i64>,
     notes: String,
 }
 
-fn money(value: Option<&str>) -> bool {
-    value.is_none_or(|value| {
-        apsp_panel_host::money::decimal(value, 6).is_some_and(|(whole, _)| whole.len() <= 18)
-    })
+/// Two plain decimal amounts are the same number (`12.5` and `12.50`).
+fn same_amount(left: &str, right: &str) -> bool {
+    let digits = |value: &str| {
+        apsp_panel_host::money::decimal(value, usize::MAX).map(|(whole, fraction)| {
+            let whole = whole.trim_start_matches('0');
+            (whole.to_owned(), fraction.trim_end_matches('0').to_owned())
+        })
+    };
+    digits(left).is_some_and(|left| digits(right) == Some(left))
+}
+
+/// A linked resource's purchase is its server's: the form may leave it empty or repeat the
+/// server's values, but cannot record another.
+fn check_server_purchase(request: &Link, server: &AssetSettings) -> ApiResult<()> {
+    let reference = request.purchase_reference.trim();
+    let order = server
+        .procurement
+        .as_ref()
+        .map_or("", |procurement| procurement.order_reference.as_str());
+    let amount = match (request.purchase_amount.as_deref(), server.price.as_deref()) {
+        (None, _) => true,
+        (Some(amount), Some(price)) => {
+            same_amount(amount, price)
+                && request.currency.as_deref() == Some(server.currency.as_str())
+        }
+        (Some(_), None) => false,
+    };
+    if (reference.is_empty() || reference == order)
+        && amount
+        && request
+            .expires_at
+            .is_none_or(|at| server.expires_at == Some(at))
+    {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest(
+            "已关联服务器的云资源，采购金额、币种、到期与订单参考取自服务器的资产设置，请在服务器的资产与运维页修改".into(),
+        ))
+    }
 }
 
 pub async fn link(
@@ -70,24 +122,6 @@ pub async fn link(
     Json(request): Json<Link>,
 ) -> ApiResult<Json<Value>> {
     let actor = control_center::require_capability(&state, &headers, "cloud:write").await?;
-    if request.purchase_reference.chars().count() > 512
-        || request.notes.chars().count() > 4096
-        || !money(request.purchase_amount.as_deref())
-        || !money(request.monthly_budget.as_deref())
-        || request
-            .currency
-            .as_ref()
-            .is_some_and(|s| !apsp_panel_host::money::currency(s))
-        || ((request.purchase_amount.is_some() || request.monthly_budget.is_some())
-            && request.currency.is_none())
-    {
-        return Err(ApiError::BadRequest(
-            "采购引用、金额、币种或备注无效".into(),
-        ));
-    }
-    if !request.purchase_reference.is_empty() {
-        label(&request.purchase_reference, 512)?;
-    }
     if !request.notes.is_empty() {
         label(&request.notes, 4096)?;
     }
@@ -122,9 +156,17 @@ pub async fn link(
         control_center::require_server(&state, &headers, server, "cloud:write").await?;
     }
     if let Some(server) = request.server_id {
-        crate::servers::lock_row(&mut tx, server, crate::servers::RowLock::Share, "id")
-            .await?
-            .ok_or(ApiError::NotFound)?;
+        let row = crate::servers::lock_row(
+            &mut tx,
+            server,
+            crate::servers::RowLock::Share,
+            "asset_settings",
+        )
+        .await?
+        .ok_or(ApiError::NotFound)?;
+        let settings: AssetSettings =
+            serde_json::from_value(row.get("asset_settings")).map_err(anyhow::Error::from)?;
+        check_server_purchase(&request, &settings)?;
     }
     let changing: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM alicloud_security_group_operations WHERE resource_id=$1 AND status IN ('running','unknown'))")
         .bind(id).fetch_one(&mut *tx).await?;
@@ -133,8 +175,33 @@ pub async fn link(
             "安全组操作仍在执行或等待核对，暂不能修改资源关联".into(),
         ));
     }
-    sqlx::query("INSERT INTO operations_cloud_links(resource_id,server_id,purchase_reference,purchase_amount,currency,monthly_budget,expires_at,notes,updated_at,updated_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(resource_id) DO UPDATE SET server_id=EXCLUDED.server_id,purchase_reference=EXCLUDED.purchase_reference,purchase_amount=EXCLUDED.purchase_amount,currency=EXCLUDED.currency,monthly_budget=EXCLUDED.monthly_budget,expires_at=EXCLUDED.expires_at,notes=EXCLUDED.notes,updated_at=EXCLUDED.updated_at,updated_by=EXCLUDED.updated_by")
-        .bind(id).bind(request.server_id).bind(request.purchase_reference).bind(request.purchase_amount).bind(request.currency).bind(request.monthly_budget).bind(request.expires_at).bind(request.notes).bind(now_timestamp()).bind(actor).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO operations_cloud_links(resource_id,server_id,notes,updated_at,updated_by) VALUES($1,$2,$3,$4,$5) ON CONFLICT(resource_id) DO UPDATE SET server_id=EXCLUDED.server_id,notes=EXCLUDED.notes,updated_at=EXCLUDED.updated_at,updated_by=EXCLUDED.updated_by")
+        .bind(id).bind(request.server_id).bind(&request.notes).bind(now_timestamp()).bind(actor).execute(&mut *tx).await?;
+    let linked = request.server_id.is_some();
+    let budget_currency = match request.budget_currency.as_deref() {
+        Some(currency) => costs::BudgetCurrency::Given(Some(currency)),
+        // A form with one currency for both: repeating a linked server's purchase, that
+        // currency is the purchase's and the budget keeps its own.
+        None if linked && request.purchase_amount.is_some() => {
+            costs::BudgetCurrency::Kept(request.currency.as_deref())
+        }
+        None => costs::BudgetCurrency::Given(request.currency.as_deref()),
+    };
+    costs::record(
+        &mut tx,
+        id,
+        costs::Recorded {
+            purchase: (!linked).then(|| costs::Purchase {
+                reference: &request.purchase_reference,
+                amount: request.purchase_amount.as_deref(),
+                currency: request.currency.as_deref(),
+                expires_at: request.expires_at,
+            }),
+            monthly_budget: request.monthly_budget.as_deref(),
+            budget_currency,
+        },
+    )
+    .await?;
     tx.commit().await?;
     Ok(Json(
         json!({"resource_id":id,"server_id":request.server_id}),
@@ -161,32 +228,6 @@ pub async fn history(
     Ok(Json(sqlx::query_scalar("SELECT to_jsonb(o) FROM operations_cloud_observations o WHERE resource_id=$1 ORDER BY checked_at DESC,id DESC LIMIT 200").bind(id).fetch_all(&state.pool).await?))
 }
 
-fn decimal(value: &str) -> Option<i128> {
-    let (negative, value) = value
-        .strip_prefix('-')
-        .map_or((false, value), |v| (true, v));
-    let (whole, fraction) = value.split_once('.').unwrap_or((value, ""));
-    if whole.is_empty()
-        || whole.len() > 18
-        || fraction.len() > 12
-        || !whole.bytes().all(|v| v.is_ascii_digit())
-        || !fraction.bytes().all(|v| v.is_ascii_digit())
-    {
-        return None;
-    }
-    let whole = whole.parse::<i128>().ok()?.checked_mul(1_000_000_000_000)?;
-    let tail = if fraction.is_empty() {
-        0
-    } else {
-        fraction
-            .parse::<i128>()
-            .ok()?
-            .checked_mul(10_i128.pow(12 - fraction.len() as u32))?
-    };
-    let total = whole.checked_add(tail)?;
-    Some(if negative { -total } else { total })
-}
-
 /// What costs last read of a resource's monthly bill, as stored: the bill, or why it could
 /// not be read.
 pub struct Bill {
@@ -194,15 +235,25 @@ pub struct Bill {
     pub error: Option<String>,
 }
 
-/// Records each resource's cloud snapshot and bill in its observation history, and opens
-/// the budget and expiry incidents. `bills` holds what costs read, by resource.
-pub async fn observe(pool: &PgPool, bills: &HashMap<Uuid, Bill>) -> ApiResult<()> {
+/// A resource whose observation was recorded in this pass, for costs' budget and expiry
+/// checks: its name and the server it is linked to.
+pub struct Observed {
+    pub id: Uuid,
+    pub name: String,
+    pub server_id: Option<i64>,
+}
+
+/// Records each resource's cloud snapshot and bill in its observation history; `bills` holds
+/// what costs read, by resource. Returns the resources observed, none while another pass
+/// holds the observation lock.
+pub async fn observe(pool: &PgPool, bills: &HashMap<Uuid, Bill>) -> ApiResult<Vec<Observed>> {
     let mut tx = pool.begin().await?;
     let locked = crate::locks::CLOUD_OBSERVATIONS.try_lock(&mut tx).await?;
     if !locked {
-        return Ok(());
+        return Ok(Vec::new());
     }
-    let rows=sqlx::query("SELECT r.id,r.name,r.snapshot,r.checked_at,r.error_code,r.last_attempt_at,l.server_id,l.monthly_budget,l.currency,l.expires_at FROM alicloud_resources r LEFT JOIN operations_cloud_links l ON l.resource_id=r.id WHERE NOT r.archived AND (r.checked_at IS NOT NULL OR r.last_attempt_at>0) ORDER BY r.last_attempt_at DESC LIMIT 500").fetch_all(&mut *tx).await?;
+    let rows=sqlx::query("SELECT r.id,r.name,r.snapshot,r.checked_at,r.error_code,r.last_attempt_at,l.server_id FROM alicloud_resources r LEFT JOIN operations_cloud_links l ON l.resource_id=r.id WHERE NOT r.archived AND (r.checked_at IS NOT NULL OR r.last_attempt_at>0) ORDER BY r.last_attempt_at DESC LIMIT 500").fetch_all(&mut *tx).await?;
+    let mut observed = Vec::with_capacity(rows.len());
     for row in rows {
         let id: Uuid = row.get("id");
         let bill = bills.get(&id);
@@ -233,59 +284,12 @@ pub async fn observe(pool: &PgPool, bills: &HashMap<Uuid, Bill>) -> ApiResult<()
         }
         sqlx::query("INSERT INTO operations_cloud_observations(resource_id,checked_at,source,snapshot,previous_snapshot,changes) VALUES($1,$2,'alicloud_official_cache',$3,$4,$5) ON CONFLICT DO NOTHING")
             .bind(id).bind(checked).bind(&snapshot).bind(previous).bind(json!(changes)).execute(&mut *tx).await?;
-        let now = now_timestamp();
-        let currency: Option<String> = row.get("currency");
-        let budget: Option<String> = row.get("monthly_budget");
-        let queried = snapshot["bill"]["queried_at"].as_i64();
-        if bill_error.is_none()
-            && queried.is_some_and(|v| v <= now && now - v <= 21600)
-            && let (Some(currency), Some(budget), Some(entries)) =
-                (currency, budget, snapshot["bill"]["rows"].as_array())
-        {
-            // Bills in another currency are not converted; say so instead of
-            // silently treating the budget as never reached.
-            if entries
-                .iter()
-                .any(|v| v["currency"].as_str() != Some(currency.as_str()))
-            {
-                crate::evidence::open_incident_tx(&mut tx, crate::evidence::IncidentReport { key: &format!("cloud:budget-currency:{id}:{}",snapshot["bill"]["month"].as_str().unwrap_or("unknown")), server: row.get("server_id"), title: &format!("云资源 {} 的账单含预算币种以外的金额，未计入预算比较",row.get::<String,_>("name")), severity: "info", evidence: json!({"provider":"alicloud","resource_id":id,"queried_at":queried,"budget_currency":currency,"bill":snapshot["bill"],"converted":false}), observed_at: queried.unwrap() }).await?;
-            }
-            let actual = entries
-                .iter()
-                .filter(|v| v["currency"].as_str() == Some(currency.as_str()))
-                .try_fold(0_i128, |sum, entry| {
-                    sum.checked_add(decimal(entry["amount"].as_str()?)?)
-                });
-            if let (Some(actual), Some(budget_number)) = (actual, decimal(&budget))
-                && actual >= budget_number
-                && entries
-                    .iter()
-                    .any(|v| v["currency"].as_str() == Some(currency.as_str()))
-            {
-                crate::evidence::open_incident_tx(&mut tx, crate::evidence::IncidentReport { key: &format!("cloud:budget:{id}:{}",snapshot["bill"]["month"].as_str().unwrap_or("unknown")), server: row.get("server_id"), title: &format!("云资源 {} 的账单缓存达到月预算",row.get::<String,_>("name")), severity: "warning", evidence: json!({"provider":"alicloud","resource_id":id,"queried_at":queried,"currency":currency,"budget":budget,"bill":snapshot["bill"],"real_time_limit":false}), observed_at: queried.unwrap() }).await?;
-            }
-        }
-        if let Some(expires) = row.get::<Option<i64>, _>("expires_at")
-            && expires - now <= 7 * 86400
-            && now - expires <= 7 * 86400
-        {
-            crate::evidence::open_incident_tx(&mut tx, crate::evidence::IncidentReport { key: &format!("cloud:expiry:{id}:{expires}"), server: row.get("server_id"), title: &format!("云资源 {} 的采购到期记录需要处理",row.get::<String,_>("name")), severity: "warning", evidence: json!({"resource_id":id,"expires_at":expires,"source":"人工采购台账，非实时云计费状态"}), observed_at: now }).await?;
-        }
+        observed.push(Observed {
+            id,
+            name: row.get("name"),
+            server_id: row.get("server_id"),
+        });
     }
     tx.commit().await?;
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn budget_comparison_keeps_decimal_precision_and_refunds() {
-        assert_eq!(
-            super::decimal("100.000000000001"),
-            Some(100_000_000_000_001)
-        );
-        assert_eq!(super::decimal("-0.01"), Some(-10_000_000_000));
-        assert_eq!(super::decimal("1e3"), None);
-        assert_eq!(super::decimal("1.1234567890123"), None);
-    }
+    Ok(observed)
 }

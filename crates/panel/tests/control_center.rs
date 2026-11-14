@@ -190,6 +190,215 @@ async fn cloud_resources_apply_scope_before_limit_and_keep_token_intersection(
     Ok(())
 }
 
+/// The operations page's cloud links by resource.
+async fn cloud_links(
+    panel: &Panel,
+    cookie: &str,
+) -> Result<std::collections::HashMap<String, Value>> {
+    let response: Value = panel
+        .client
+        .get(format!("{}/api/operations/cloud", panel.base))
+        .header(header::COOKIE, cookie)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let mut links = std::collections::HashMap::new();
+    for resource in response["resources"].as_array().context("resources")? {
+        links.insert(
+            resource["id"].as_str().context("id")?.to_owned(),
+            resource["link"].clone(),
+        );
+    }
+    Ok(links)
+}
+
+#[sqlx::test]
+async fn a_cloud_resource_purchase_is_its_servers_or_recorded_in_costs(pool: PgPool) -> Result<()> {
+    let panel = Panel::start(pool).await?;
+    let server = panel.server("TEST_ONLY linked host").await?;
+    let server_expiry = now_timestamp() + 2 * 86400;
+    sqlx::query("UPDATE servers SET asset_settings=$2 WHERE id=$1")
+        .bind(server)
+        .bind(json!({"price":"20.00","currency":"USD","billing_cycle":30,"expires_at":server_expiry,"procurement":{"order_reference":"TEST_ONLY-ORDER"}}))
+        .execute(&panel.pool)
+        .await?;
+    let account = Uuid::new_v4();
+    sqlx::query("INSERT INTO alicloud_accounts(id,name) VALUES($1,'cloud purchase fixture')")
+        .bind(account)
+        .execute(&panel.pool)
+        .await?;
+    let (standalone, attached) = (Uuid::new_v4(), Uuid::new_v4());
+    for (id, name) in [(standalone, "a standalone"), (attached, "b attached")] {
+        sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id,last_attempt_at) VALUES($1,$2,$3,'eip','example-region',$4,1)")
+            .bind(id).bind(account).bind(name).bind(format!("eip-{id}")).execute(&panel.pool).await?;
+    }
+    let cookie = panel.session(1, true).await?;
+    let link = |resource: Uuid, body: Value| {
+        panel
+            .client
+            .post(format!(
+                "{}/api/operations/cloud/{resource}/link",
+                panel.base
+            ))
+            .header(header::COOKIE, cookie.clone())
+            .header(header::ORIGIN, &panel.base)
+            .json(&body)
+            .send()
+    };
+    type Stored = (
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<i64>,
+    );
+    let stored = |resource: Uuid| {
+        sqlx::query_as::<_, Stored>("SELECT purchase_reference,purchase_amount,currency,monthly_budget,budget_currency,expires_at FROM cloud_resource_costs WHERE resource_id=$1")
+            .bind(resource)
+            .fetch_one(&panel.pool)
+    };
+    // Without a server the purchase is recorded in costs, beside the budget. A form with one
+    // currency (a console from before budgets had their own) gives it to both.
+    let expiry = now_timestamp() + 86400;
+    link(standalone, json!({"server_id":null,"purchase_reference":"TEST_ONLY-PO","purchase_amount":"12.5","currency":"CNY","monthly_budget":"100","expires_at":expiry,"notes":"standalone note"}))
+        .await?
+        .error_for_status()?;
+    let some = |value: &str| Some(value.to_owned());
+    assert_eq!(
+        stored(standalone).await?,
+        (
+            "TEST_ONLY-PO".into(),
+            some("12.5"),
+            some("CNY"),
+            some("100"),
+            some("CNY"),
+            Some(expiry)
+        )
+    );
+    link(standalone, json!({"server_id":null,"purchase_reference":"TEST_ONLY-PO","purchase_amount":"12.5","currency":"CNY","monthly_budget":"100","budget_currency":"USD","expires_at":expiry,"notes":"standalone note"}))
+        .await?
+        .error_for_status()?;
+    assert_eq!(stored(standalone).await?.4, some("USD"));
+    // A linked resource's purchase is its server's: the form records only the budget, and
+    // may repeat the server's values but not record others.
+    link(attached, json!({"server_id":server,"purchase_reference":"","purchase_amount":null,"currency":"EUR","monthly_budget":"50","expires_at":null,"notes":""}))
+        .await?
+        .error_for_status()?;
+    for conflicting in [
+        json!({"purchase_amount":"21","currency":"USD"}),
+        json!({"purchase_amount":"20","currency":"EUR"}),
+        json!({"purchase_reference":"TEST_ONLY-OTHER"}),
+        json!({"expires_at":server_expiry + 1}),
+    ] {
+        let mut body = json!({"server_id":server,"purchase_reference":"","purchase_amount":null,"currency":"EUR","monthly_budget":"50","expires_at":null,"notes":""});
+        for (key, value) in conflicting.as_object().context("fields")? {
+            body[key] = value.clone();
+        }
+        assert_eq!(
+            link(attached, body).await?.status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    // Repeating the server's purchase in its currency leaves the budget's currency alone.
+    link(attached, json!({"server_id":server,"purchase_reference":"TEST_ONLY-ORDER","purchase_amount":"20","currency":"USD","monthly_budget":"50","expires_at":server_expiry,"notes":""}))
+        .await?
+        .error_for_status()?;
+    assert_eq!(
+        stored(attached).await?,
+        (String::new(), None, None, some("50"), some("EUR"), None)
+    );
+    let links = cloud_links(&panel, &cookie).await?;
+    let standalone_link = &links[&standalone.to_string()];
+    for (key, value) in [
+        ("server_id", Value::Null),
+        ("purchase_reference", json!("TEST_ONLY-PO")),
+        ("purchase_amount", json!("12.5")),
+        ("currency", json!("CNY")),
+        ("monthly_budget", json!("100")),
+        ("budget_currency", json!("USD")),
+        ("expires_at", json!(expiry)),
+        ("notes", json!("standalone note")),
+    ] {
+        assert_eq!(standalone_link[key], value, "{key}");
+    }
+    let attached_link = &links[&attached.to_string()];
+    for (key, value) in [
+        ("server_id", json!(server)),
+        ("purchase_reference", json!("TEST_ONLY-ORDER")),
+        ("purchase_amount", json!("20.00")),
+        ("currency", json!("USD")),
+        ("monthly_budget", json!("50")),
+        ("budget_currency", json!("EUR")),
+        ("expires_at", json!(server_expiry)),
+    ] {
+        assert_eq!(attached_link[key], value, "{key}");
+    }
+    link(attached, json!({"server_id":server,"purchase_reference":"","purchase_amount":null,"currency":null,"monthly_budget":"50","budget_currency":"USD","expires_at":null,"notes":""}))
+        .await?
+        .error_for_status()?;
+    assert_eq!(stored(attached).await?.4, some("USD"));
+    // The bill of the linked resource reached its budget, and its server expires in two days;
+    // the standalone purchase expires tomorrow. Costs raises all three after the resources
+    // are observed.
+    let month = "2026-11";
+    sqlx::query("INSERT INTO cloud_resource_billing(resource_id,instance_bill) VALUES($1,$2)")
+        .bind(attached)
+        .bind(json!({"month":month,"queried_at":now_timestamp(),"rows":[{"amount":"30.5","currency":"USD"},{"amount":"19.5","currency":"USD"}],"usage_micro_gb":null}))
+        .execute(&panel.pool)
+        .await?;
+    let bills = apsp_costs::cloud::accounts::instance_bills(&panel.pool).await?;
+    let observed = apsp_resources::cloud_resources::observe(&panel.pool, &bills).await?;
+    assert_eq!(observed.len(), 2);
+    apsp_costs::cloud::resource_costs::check(&panel.pool, &observed).await?;
+    let raised = [
+        (format!("cloud:budget:{attached}:{month}"), Some(server)),
+        (format!("cloud:expiry:{standalone}:{expiry}"), None),
+        (
+            format!("cloud:expiry:{attached}:{server_expiry}"),
+            Some(server),
+        ),
+    ];
+    for (key, server) in &raised {
+        let incident: (Option<i64>, Value) = sqlx::query_as(
+            "SELECT server_id,evidence FROM operations_incidents WHERE source_key=$1",
+        )
+        .bind(key)
+        .fetch_one(&panel.pool)
+        .await?;
+        assert_eq!(incident.0, *server, "{key}");
+        if key.starts_with("cloud:expiry:") {
+            assert_eq!(
+                incident.1["source"], "人工采购台账，非实时云计费状态",
+                "{key}"
+            );
+        }
+    }
+    let others: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM operations_incidents WHERE source_key LIKE 'cloud:%' AND NOT source_key=ANY($1)",
+    )
+    .bind(raised.iter().map(|(key, _)| key.clone()).collect::<Vec<_>>())
+    .fetch_one(&panel.pool)
+    .await?;
+    assert_eq!(others, 0);
+    // Linking the standalone resource drops the purchase it recorded and keeps its budget.
+    link(standalone, json!({"server_id":server,"purchase_reference":"","purchase_amount":null,"currency":"CNY","monthly_budget":"100","expires_at":null,"notes":"standalone note"}))
+        .await?
+        .error_for_status()?;
+    assert_eq!(
+        stored(standalone).await?,
+        (String::new(), None, None, some("100"), some("CNY"), None)
+    );
+    let links = cloud_links(&panel, &cookie).await?;
+    assert_eq!(
+        links[&standalone.to_string()]["purchase_amount"],
+        json!("20.00")
+    );
+    Ok(())
+}
+
 #[sqlx::test]
 async fn scoped_viewer_cannot_read_other_servers_or_mutate(pool: PgPool) -> Result<()> {
     let panel = Panel::start(pool).await?;

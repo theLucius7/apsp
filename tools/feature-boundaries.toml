@@ -68,6 +68,7 @@ access = [
 costs = [
   "expense_*", "fleet_cost_records", "operations_cancellation_reminders", "exchange_rates",
   "alicloud_traffic_history", "cloud_account_billing", "cloud_resource_billing",
+  "cloud_resource_costs",
 ]
 observability = [
   "metrics_minutely", "telemetry_*", "server_network_*", "server_traffic_corrections",

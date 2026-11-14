@@ -1091,7 +1091,6 @@ CREATE TABLE public.fleet_operations (
 
 CREATE TABLE public.fleet_profiles (
     server_id bigint NOT NULL,
-    asset jsonb DEFAULT '{}'::jsonb NOT NULL,
     policy jsonb DEFAULT '{}'::jsonb NOT NULL,
     lifecycle text DEFAULT 'active'::text NOT NULL,
     maintenance_from bigint,
@@ -1573,11 +1572,6 @@ CREATE TABLE public.operations_cancellation_reminders (
 CREATE TABLE public.operations_cloud_links (
     resource_id uuid NOT NULL,
     server_id bigint,
-    purchase_reference text DEFAULT ''::text NOT NULL,
-    purchase_amount text,
-    currency text,
-    monthly_budget text,
-    expires_at bigint,
     notes text DEFAULT ''::text NOT NULL,
     updated_at bigint NOT NULL,
     updated_by bigint NOT NULL
@@ -5746,6 +5740,16 @@ CREATE TABLE public.cloud_resource_billing (
     instance_bill jsonb,
     bill_error text,
     bill_next_at bigint DEFAULT 0 NOT NULL
+);
+
+CREATE TABLE public.cloud_resource_costs (
+    resource_id uuid PRIMARY KEY REFERENCES public.alicloud_resources(id),
+    purchase_reference text DEFAULT ''::text NOT NULL,
+    purchase_amount text,
+    currency text,
+    monthly_budget text,
+    budget_currency text,
+    expires_at bigint
 );
 
 CREATE TABLE public.apsp_schema_baseline (singleton boolean PRIMARY KEY CHECK (singleton), fingerprint text NOT NULL);

@@ -301,13 +301,15 @@ pub async fn update(
 ) -> ApiResult<Json<Server>> {
     require_admin(&state, &headers).await?;
     let name = valid_name(&request.name)?;
+    // The asset form leaves the procurement record out; it is edited in the operations tab.
     let asset = request
         .asset_settings
         .map(|asset| {
+            let procurement_given = asset.procurement.is_some();
             let mut asset = asset.normalized()?;
             validate_mirror(&asset, &state.config.public_url)?;
             asset.renew(now_timestamp());
-            Ok::<_, ApiError>(json!(asset))
+            Ok::<_, ApiError>((asset, procurement_given))
         })
         .transpose()?;
     let mut transaction = state.pool.begin().await?;
@@ -315,16 +317,23 @@ pub async fn update(
         .await?
         .ok_or(ApiError::NotFound)?
         .get("asset_settings");
-    if let Some(asset) = &asset {
-        let previous: AssetSettings =
-            serde_json::from_value(previous).map_err(anyhow::Error::from)?;
-        if asset["reset_day"] != json!(previous.reset_day)
-            || asset["network_interface"] != json!(previous.network_interface)
-        {
-            sqlx::query("UPDATE server_traffic_corrections SET invalidated_at=$2 WHERE server_id=$1 AND invalidated_at IS NULL")
-                .bind(id).bind(now_timestamp()).execute(&mut *transaction).await?;
+    let asset = match asset {
+        Some((mut asset, procurement_given)) => {
+            let previous: AssetSettings =
+                serde_json::from_value(previous).map_err(anyhow::Error::from)?;
+            if asset.reset_day != previous.reset_day
+                || asset.network_interface != previous.network_interface
+            {
+                sqlx::query("UPDATE server_traffic_corrections SET invalidated_at=$2 WHERE server_id=$1 AND invalidated_at IS NULL")
+                    .bind(id).bind(now_timestamp()).execute(&mut *transaction).await?;
+            }
+            if !procurement_given {
+                asset.procurement = previous.procurement;
+            }
+            Some(json!(asset))
         }
-    }
+        None => None,
+    };
     let query = format!(
         "UPDATE servers SET name = $2, asset_settings=COALESCE($3,asset_settings),
          agent_settings=CASE WHEN $4::boolean IS NULL THEN agent_settings ELSE agent_settings || jsonb_build_object('auto_update',$4::boolean) END

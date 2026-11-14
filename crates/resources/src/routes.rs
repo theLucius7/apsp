@@ -60,10 +60,6 @@ pub fn routes() -> Router<AppState> {
             "/api/servers/{id}/fleet/migrate",
             post(server_lifecycle::migrate),
         )
-        .route(
-            "/api/servers/{id}/fleet/costs",
-            get(server_lifecycle::costs).post(server_lifecycle::add_cost),
-        )
         .merge(cloud_resources::hetzner::router())
         .route(
             "/api/operations/cloud/{id}/link",

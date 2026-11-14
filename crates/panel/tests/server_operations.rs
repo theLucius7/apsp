@@ -72,6 +72,187 @@ async fn fleet_asset_and_access_changes_reject_concurrent_stale_forms(pool: PgPo
 }
 
 #[sqlx::test]
+async fn the_procurement_record_is_part_of_the_asset_settings(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start(pool).await?;
+    let cookie = panel.admin_cookie().await?;
+    let id = panel
+        .create_server(&cookie, "TEST_ONLY procurement record")
+        .await?;
+    let path = format!("/api/servers/{id}/fleet");
+    let original: Value = panel
+        .admin(Method::GET, &path, &cookie, None)
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(original["asset"], json!({}));
+    assert_eq!(original["purchased"], json!({}));
+    // The record is typed: price and expiry are the asset settings', other keys are refused.
+    for asset in [
+        json!({"provider":"TEST_ONLY","price":"1.00"}),
+        json!({"expires_at":1}),
+        json!({"purchased":{"gpu":1}}),
+    ] {
+        let body =
+            json!({"asset":asset,"policy":original["policy"],"expected_digest":original["digest"]});
+        assert_eq!(
+            panel
+                .admin(Method::PUT, &path, &cookie, Some(body))
+                .await?
+                .status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
+    let asset = json!({"provider":" TEST_ONLY supplier ","cloud_account_reference":"","order_reference":"TEST_ONLY-ORDER","note":"first line\nsecond","purchased":{"cpu_cores":4,"memory_bytes":null,"bandwidth_mbps":100}});
+    let saved: Value = panel
+        .admin(
+            Method::PUT,
+            &path,
+            &cookie,
+            Some(json!({"asset":asset,"policy":original["policy"],"expected_digest":original["digest"]})),
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let expected = json!({"provider":"TEST_ONLY supplier","order_reference":"TEST_ONLY-ORDER","note":"first line\nsecond","purchased":{"cpu_cores":4,"bandwidth_mbps":100}});
+    let stored: Value =
+        sqlx::query_scalar("SELECT asset_settings->'procurement' FROM servers WHERE id=$1")
+            .bind(id)
+            .fetch_one(&panel.state.pool)
+            .await?;
+    assert_eq!(stored, expected);
+    let current: Value = panel
+        .admin(Method::GET, &path, &cookie, None)
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(current["asset"], expected);
+    assert_eq!(
+        current["purchased"],
+        json!({"cpu_cores":4,"bandwidth_mbps":100})
+    );
+    assert_eq!(current["digest"], saved["digest"]);
+    // The asset form leaves the record out and keeps it; an empty record clears it.
+    let server: Value = panel
+        .admin(Method::GET, &format!("/api/servers/{id}"), &cookie, None)
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(server["asset_settings"]["procurement"], expected);
+    let mut settings = server["asset_settings"].clone();
+    settings
+        .as_object_mut()
+        .expect("asset settings")
+        .remove("procurement");
+    settings["group_name"] = json!("TEST_ONLY group");
+    panel
+        .admin(
+            Method::PATCH,
+            &format!("/api/servers/{id}"),
+            &cookie,
+            Some(json!({"name":"TEST_ONLY procurement record","asset_settings":settings})),
+        )
+        .await?
+        .error_for_status()?;
+    let stored: Value = sqlx::query_scalar("SELECT asset_settings FROM servers WHERE id=$1")
+        .bind(id)
+        .fetch_one(&panel.state.pool)
+        .await?;
+    assert_eq!(stored["group_name"], "TEST_ONLY group");
+    assert_eq!(stored["procurement"], expected);
+    // The supplier comparison groups the server by the recorded supplier.
+    let suppliers: Value = panel
+        .admin(Method::GET, "/api/operations/suppliers", &cookie, None)
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let supplier = suppliers["suppliers"]
+        .as_array()
+        .expect("suppliers")
+        .iter()
+        .find(|supplier| supplier["provider"] == "TEST_ONLY supplier")
+        .expect("recorded supplier");
+    assert_eq!(supplier["server_ids"], json!([id]));
+    settings["procurement"] = json!({});
+    panel
+        .admin(
+            Method::PATCH,
+            &format!("/api/servers/{id}"),
+            &cookie,
+            Some(json!({"name":"TEST_ONLY procurement record","asset_settings":settings})),
+        )
+        .await?
+        .error_for_status()?;
+    let stored: Value = sqlx::query_scalar("SELECT asset_settings FROM servers WHERE id=$1")
+        .bind(id)
+        .fetch_one(&panel.state.pool)
+        .await?;
+    assert!(stored.get("procurement").is_none());
+    // Templates carry the record in their asset settings; the old separate key is refused.
+    let refused = panel
+        .admin(
+            Method::POST,
+            "/api/fleet/templates",
+            &cookie,
+            Some(json!({"name":"TEST_ONLY old template","config":{"asset":{}}})),
+        )
+        .await?;
+    assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let template: Value = panel
+        .admin(
+            Method::POST,
+            "/api/fleet/templates",
+            &cookie,
+            Some(json!({"name":"TEST_ONLY template","config":{"asset_settings":{"procurement":{"provider":"TEST_ONLY template supplier"}}}})),
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    business_support::prove(&panel.state.pool, &cookie).await?;
+    let enrolled: Vec<Value> = panel
+        .admin(
+            Method::POST,
+            "/api/fleet/batch-enrollment",
+            &cookie,
+            Some(json!({"template_id":template["id"],"names":["TEST_ONLY enrolled"]})),
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let enrolled = enrolled[0]["registration"]["server_id"]
+        .as_i64()
+        .expect("enrolled server");
+    let profile: Value = panel
+        .admin(
+            Method::GET,
+            &format!("/api/servers/{enrolled}/fleet"),
+            &cookie,
+            None,
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(
+        profile["asset"],
+        json!({"provider":"TEST_ONLY template supplier"})
+    );
+    let profiles: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM fleet_profiles WHERE server_id=$1")
+            .bind(enrolled)
+            .fetch_one(&panel.state.pool)
+            .await?;
+    assert_eq!(profiles, 0);
+    Ok(())
+}
+
+#[sqlx::test]
 async fn public_dashboard_is_opt_in_and_never_exposes_hidden_servers_or_private_fields(
     pool: PgPool,
 ) -> Result<()> {

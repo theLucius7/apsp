@@ -12,7 +12,9 @@ use serde_json::{Value, json};
 use sqlx::Row;
 use uuid::Uuid;
 
-#[derive(Clone, Serialize, Deserialize)]
+/// What servers enrolled from a template start with; the procurement record is part of the
+/// asset settings.
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct TemplateConfig {
     pub agent_settings: AgentSettings,
@@ -20,19 +22,6 @@ pub struct TemplateConfig {
     pub asset_settings: AssetSettings,
     pub probes: Vec<ProbeSpec>,
     pub alerts: Vec<Value>,
-    pub asset: Value,
-}
-impl Default for TemplateConfig {
-    fn default() -> Self {
-        Self {
-            agent_settings: AgentSettings::default(),
-            telemetry_settings: TelemetrySettings::default(),
-            asset_settings: AssetSettings::default(),
-            probes: Vec::new(),
-            alerts: Vec::new(),
-            asset: json!({}),
-        }
-    }
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -59,14 +48,6 @@ fn normalize(mut config: TemplateConfig) -> ApiResult<TemplateConfig> {
     }
     for alert in &config.alerts {
         crate::server_observation::check_alert_rule(alert)?;
-    }
-    if !config.asset.is_object()
-        || serde_json::to_vec(&config.asset)
-            .map_err(anyhow::Error::from)?
-            .len()
-            > 16 * 1024
-    {
-        return Err(ApiError::BadRequest("采购关系必须是有界 JSON 对象".into()));
     }
     Ok(config)
 }
@@ -161,12 +142,6 @@ async fn register(state: &AppState, config: &TemplateConfig, name: &str) -> ApiR
     .fetch_one(&mut *tx)
     .await?;
     crate::server_observation::save_telemetry_settings_tx(&mut tx, id, &config.telemetry_settings)
-        .await?;
-    sqlx::query("INSERT INTO fleet_profiles(server_id,asset,updated_at) VALUES($1,$2,$3)")
-        .bind(id)
-        .bind(&config.asset)
-        .bind(now)
-        .execute(&mut *tx)
         .await?;
     for spec in &config.probes {
         let mut spec = spec.clone();

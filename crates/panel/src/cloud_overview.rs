@@ -1,11 +1,11 @@
 //! The cloud pages' combined views. The cloud page shows accounts and resources with their
 //! bills and power settings, bandwidth operations, power jobs, address rotations and
 //! notifications; the operations page lists the cloud resources with their server links,
-//! bills and balance. Each object's keys come from the owners that keep them (resources,
-//! costs, until step 7 of ADR 0137 the power columns on resources' rows), so the views
-//! belong to the application (ADR 0128).
+//! bills, balance, budgets and purchases. Each object's keys come from the owners that keep
+//! them (resources, costs, until step 7 of ADR 0137 the power columns on resources' rows), so
+//! the views belong to the application (ADR 0128).
 
-use apsp_costs::cloud::accounts as costs;
+use apsp_costs::cloud::{accounts as costs, resource_costs};
 use apsp_governance::{auth, control_center};
 use apsp_observability::cloud_notices;
 use apsp_operations::cloud::{bandwidth, eip_rotation, power};
@@ -97,11 +97,22 @@ async fn resources(State(state): State<AppState>, headers: HeaderMap) -> ApiResu
         .map(|resource| (resource.id, resource.account_id))
         .collect();
     let mut bills = costs::resource_costs(&state.pool, now_timestamp(), global, &pairs).await?;
+    let linked: Vec<(Uuid, bool)> = listed
+        .iter()
+        .map(|resource| (resource.id, resource.linked))
+        .collect();
+    let mut link_costs = resource_costs::link_values(&state.pool, &linked).await?;
     let values: Vec<Value> = listed
         .into_iter()
         .map(|resource| {
             let part = bills.remove(&resource.id).unwrap_or_else(|| json!({}));
-            merged(resource.view, part)
+            let mut view = merged(resource.view, part);
+            // The link's budget, and an unlinked resource's purchase, are costs'.
+            if let Some(link) = view.get_mut("link").filter(|link| link.is_object()) {
+                let recorded = link_costs.remove(&resource.id).unwrap_or_else(|| json!({}));
+                *link = merged(link.take(), recorded);
+            }
+            view
         })
         .collect();
     Ok(Json(

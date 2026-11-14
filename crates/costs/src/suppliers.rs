@@ -72,7 +72,7 @@ pub async fn comparison(
         .copied()
         .filter(|id| actor.allows_server(*id))
         .collect();
-    let mut servers=sqlx::query("SELECT s.id,COALESCE(NULLIF(p.asset->>'provider',''),'未登记供应商') AS provider FROM servers s LEFT JOIN fleet_profiles p ON p.server_id=s.id WHERE s.deleted_at IS NULL AND ($1 OR s.id=ANY($2)) ORDER BY s.id LIMIT 257").bind(actor.global_servers()).bind(permitted).fetch_all(&state.pool).await?;
+    let mut servers=sqlx::query(&format!("SELECT s.id,COALESCE(NULLIF({},''),'未登记供应商') AS provider FROM servers s WHERE s.deleted_at IS NULL AND ($1 OR s.id=ANY($2)) ORDER BY s.id LIMIT 257",apsp_resources::server_assets::sql::provider("s"))).bind(actor.global_servers()).bind(permitted).fetch_all(&state.pool).await?;
     let server_limit_reached = servers.len() > 256;
     servers.truncate(256);
     let mut suppliers: BTreeMap<String, Supplier> = BTreeMap::new();
