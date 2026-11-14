@@ -16,7 +16,7 @@ fn node(server: i64, port: Value) -> Value {
 
 async fn dirty(pool: &PgPool, server: i64) -> Result<Option<i64>> {
     Ok(
-        sqlx::query_scalar("SELECT dirty_at FROM servers WHERE id=$1")
+        sqlx::query_scalar("SELECT (SELECT dirty_at FROM runtime_publications WHERE server_id=$1)")
             .bind(server)
             .fetch_one(pool)
             .await?,
@@ -24,7 +24,7 @@ async fn dirty(pool: &PgPool, server: i64) -> Result<Option<i64>> {
 }
 
 async fn clean(pool: &PgPool, server: i64) -> Result<()> {
-    sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
+    sqlx::query("UPDATE runtime_publications SET dirty_at=NULL WHERE server_id=$1")
         .bind(server)
         .execute(pool)
         .await?;

@@ -101,7 +101,7 @@ async fn prepare(
         .await?;
         // An explicitly disabled runtime also blocks capability-based auto-enable.
         crate::runtime_controls::ensure(&mut tx, snapshot.server_id).await?;
-        sqlx::query("INSERT INTO server_plugins(server_id,plugin,enabled,source,enabled_at) VALUES($1,'sing-box',FALSE,'administrator',$2) ON CONFLICT(server_id,plugin) DO UPDATE SET enabled=FALSE,source='administrator'")
+        sqlx::query("INSERT INTO runtime_enablements(server_id,module,enabled,source,enabled_at) VALUES($1,'singbox',FALSE,'administrator',$2) ON CONFLICT(server_id,module) DO UPDATE SET enabled=FALSE,source='administrator'")
             .bind(snapshot.server_id).bind(now_timestamp()).execute(&mut *tx).await?;
     }
     tx.commit().await?;
@@ -522,10 +522,12 @@ async fn activate(
     }
     sqlx::query("UPDATE singbox_nexus_runtime_hosts SET state='active',activated_at=COALESCE(activated_at,$2),last_activated_at=$2,evidence=$3 WHERE server_id=$1")
         .bind(server).bind(now_timestamp()).bind(proof).execute(&mut *tx).await?;
-    sqlx::query("UPDATE server_plugins SET enabled=TRUE WHERE server_id=$1 AND plugin='sing-box'")
-        .bind(server)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "UPDATE runtime_enablements SET enabled=TRUE WHERE server_id=$1 AND module='singbox'",
+    )
+    .bind(server)
+    .execute(&mut *tx)
+    .await?;
     crate::business::mark_dirty(&mut tx, &[server]).await?;
     tx.commit().await?;
     Ok(Json(
@@ -550,10 +552,12 @@ async fn pause(
     if changed != 1 {
         return Err(ApiError::Conflict("接管状态已改变".into()));
     }
-    sqlx::query("UPDATE server_plugins SET enabled=FALSE WHERE server_id=$1 AND plugin='sing-box'")
-        .bind(server)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "UPDATE runtime_enablements SET enabled=FALSE WHERE server_id=$1 AND module='singbox'",
+    )
+    .bind(server)
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(Json(
         json!({"server_id":server,"state":"paused","restart_legacy_only_after_agent_stopped":true}),

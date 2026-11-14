@@ -45,7 +45,7 @@ naming = [
   "dns_*", "ddns_*", "network_acme_*", "network_certificate_*", "network_dns_challenges",
 ]
 traffic = [
-  "nodes", "deployments", "server_module_status", "server_plugins", "runtime_*",
+  "nodes", "deployments", "server_module_status", "runtime_*",
   "singbox_chain*", "singbox_ordered_*", "singbox_external_*",
   "singbox_subscription_source*", "singbox_subscription_revision_nodes",
   "singbox_path_*", "singbox_deployment_*", "singbox_runtime_*", "singbox_installation",

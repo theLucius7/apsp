@@ -35,7 +35,7 @@ async fn limits_persist_reject_stale_writes_and_mark_hosts(pool: PgPool) -> Resu
         .bind(apsp_compiler::stat_name(id, node))
         .execute(&pool)
         .await?;
-    sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
+    sqlx::query("UPDATE runtime_publications SET dirty_at=NULL WHERE server_id=$1")
         .bind(server)
         .execute(&pool)
         .await?;
@@ -48,7 +48,7 @@ async fn limits_persist_reject_stale_writes_and_mark_hosts(pool: PgPool) -> Resu
         .json()
         .await?;
     assert_eq!(saved["revision"], 1);
-    let dirty: bool = sqlx::query_scalar("SELECT dirty_at IS NOT NULL FROM servers WHERE id=$1")
+    let dirty: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM runtime_publications WHERE server_id=$1 AND dirty_at IS NOT NULL)")
         .bind(server)
         .fetch_one(&pool)
         .await?;

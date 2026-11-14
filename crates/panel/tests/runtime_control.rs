@@ -42,7 +42,7 @@ async fn publish(pool: &PgPool, server: i64, revision: i64) -> Result<()> {
         .bind(server).bind(MODULE).bind(revision).bind(hash).bind(now_timestamp()).execute(pool).await?;
     sqlx::query("INSERT INTO server_module_status(server_id,module,target_rev) VALUES($1,$2,$3) ON CONFLICT(server_id,module) DO UPDATE SET target_rev=EXCLUDED.target_rev,healthy=false")
         .bind(server).bind(MODULE).bind(revision).execute(pool).await?;
-    sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
+    sqlx::query("UPDATE runtime_publications SET dirty_at=NULL WHERE server_id=$1")
         .bind(server)
         .execute(pool)
         .await?;

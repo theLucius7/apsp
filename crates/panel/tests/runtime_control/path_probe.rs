@@ -182,7 +182,7 @@ async fn late_probe_or_runtime_change_is_retained_without_false_verification(
         "mismatch"
     );
     let request = runtime_control::request_path_probe(&panel.state, server, MODULE, PROBE).await?;
-    sqlx::query("UPDATE servers SET dirty_at=$2 WHERE id=$1")
+    sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) VALUES($1,$2) ON CONFLICT(server_id) DO UPDATE SET dirty_at=EXCLUDED.dirty_at")
         .bind(server)
         .bind(now_timestamp())
         .execute(&panel.state.pool)

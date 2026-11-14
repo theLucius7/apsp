@@ -44,10 +44,13 @@ pub async fn manifest(
 ) -> ApiResult<Json<Manifest>> {
     let server_id = crate::device_channel::require_agent(&state, &headers).await?;
     crate::device_channel::require_signed_agent(&state, server_id).await?;
-    let row = sqlx::query("SELECT manifest_rev,static_info FROM servers WHERE id=$1")
-        .bind(server_id)
-        .fetch_one(&state.pool)
-        .await?;
+    let row = sqlx::query(&format!(
+        "SELECT {} AS manifest_rev,static_info FROM servers WHERE id=$1",
+        crate::publications::revision_sql("$1")
+    ))
+    .bind(server_id)
+    .fetch_one(&state.pool)
+    .await?;
     let rev: i64 = row.get("manifest_rev");
     let info: serde_json::Value = row.get("static_info");
     let modules = manifest_modules(&state, server_id, &info).await?;
@@ -131,10 +134,8 @@ pub async fn reconcile_applied(
         }
     }
     if differs {
-        let rev: i64 = sqlx::query_scalar("SELECT manifest_rev FROM servers WHERE id=$1")
-            .bind(server_id)
-            .fetch_one(&state.pool)
-            .await?;
+        let rev =
+            crate::publications::revision(&mut *state.pool.acquire().await?, server_id).await?;
         device_channel::notify(
             state,
             server_id,

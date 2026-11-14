@@ -263,6 +263,7 @@ async fn read_servers(state: &AppState, id: Option<i64>) -> ApiResult<Vec<Server
         .collect();
     crate::server_traffic::attach(&state.pool, &mut servers, now_timestamp()).await?;
     telemetry::attach_live(state, &mut servers).await?;
+    crate::server_runtime::attach_revisions(&state.pool, &mut servers).await?;
     Ok(servers)
 }
 

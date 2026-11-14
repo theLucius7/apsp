@@ -23,7 +23,7 @@ async fn pause_is_versioned_marks_hosts_and_preserves_identity(pool: PgPool) -> 
         .bind(id)
         .fetch_one(&pool)
         .await?;
-    sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
+    sqlx::query("UPDATE runtime_publications SET dirty_at=NULL WHERE server_id=$1")
         .bind(server)
         .execute(&pool)
         .await?;
@@ -54,7 +54,7 @@ async fn pause_is_versioned_marks_hosts_and_preserves_identity(pool: PgPool) -> 
             .await?;
     assert_eq!(entitlement, ("paused".into(), false));
     assert!(
-        sqlx::query_scalar::<_, bool>("SELECT dirty_at IS NOT NULL FROM servers WHERE id=$1")
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM runtime_publications WHERE server_id=$1 AND dirty_at IS NOT NULL)")
             .bind(server)
             .fetch_one(&pool)
             .await?
@@ -198,10 +198,14 @@ async fn sessions_derive_only_the_selected_users_applied_principals(pool: PgPool
     let bundle = json!({"files":{"config.json":config.to_string()}}).to_string();
     sqlx::query("INSERT INTO deployments(server_id,module,rev,bundle,bundle_sha256,created_at) VALUES($1,'singbox',3,$2,$3,0)").bind(server).bind(bundle).bind("a".repeat(64)).execute(&pool).await?;
     sqlx::query("INSERT INTO server_module_status(server_id,module,applied_rev,target_rev,healthy) VALUES($1,'singbox',3,3,true)").bind(server).execute(&pool).await?;
-    sqlx::query("UPDATE servers SET dirty_at=NULL,last_seen=$2,capabilities=$3 WHERE id=$1")
+    sqlx::query("UPDATE servers SET last_seen=$2,capabilities=$3 WHERE id=$1")
         .bind(server)
         .bind(apsp_protocol::now_timestamp())
         .bind(json!([apsp_protocol::RUNTIME_SESSIONS_CAPABILITY]))
+        .execute(&pool)
+        .await?;
+    sqlx::query("UPDATE runtime_publications SET dirty_at=NULL WHERE server_id=$1")
+        .bind(server)
         .execute(&pool)
         .await?;
     assert_eq!(

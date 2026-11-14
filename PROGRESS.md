@@ -1,5 +1,19 @@
 # 执行进度
 
+## 2026-11-14：阶段 F 第五步——流量服务的发布状态迁出 `servers`，`server_plugins` 改名 `runtime_enablements`（PR）
+
+- 用户要求：“你来合并，然后继续，处理其他任务修复完成”；按 ADR 0137 的顺序做第五步。改数据库基线，走 PR，由执行者验证后合并。取舍见 `docs/open-questions.md` 同日条目。
+- 完成项：
+  - `servers.manifest_rev`、`servers.dirty_at` → 流量服务的 `runtime_publications`；`crates/traffic/src/publications.rs` 回答“待发布 / 当前修订号”，流量服务各处（业务、设置、发布器、Nexus 发布、首次安装检查、设备配置、部署与运行时视图、自动化、分批升级、有序链路、代理资源、运行时控制）与服务权益、作业都经它读写。
+  - `server_plugins` → `runtime_enablements`（列 `plugin` → `module`，运行时存 `singbox`）；迁移预览的 `related.plugins` 仍显示 “sing-box”。
+  - 资源新接口 `server_runtime::ServerRuntime`（流量服务回答）：服务器视图、看板、导出与迁移预览的修订号与运行时；JSON 不变。
+  - 发布器与标记待发布对服务器行只取 `FOR KEY SHARE`；`runtime_control_requests` 新增部分索引 `runtime_control_checkpoint_revision_idx`。
+  - 接入脚本 `scripts/baseline-adoption-phasef5-20261114.sql`：前提 `51ebdbd2…`/`1ff76742…`，先锁 `servers`、`server_plugins`（排他）与 `runtime_control_requests`（共享），同一事务里建表、复制（含已删除的服务器）、逐行核对、删列删表、建索引，写入指纹 `09938605…` 与校验和 `345adb3b…`；重复执行被拒绝。
+  - 边界：越界清单 283 → 276。文档：architecture.md §5.5（十二个接口）、§12，`api.md`、`redesign/03-objects.md`、`database-baseline.md`。
+- 验证结果：本地，2026-11-14；CI 仍暂停，未触发。与随后一项只改代码的修复（网络工作台与外部订阅的出站缺陷）叠在一起，在全新的编译目录里验证一次：`cargo fmt --all --check` 通过；14 个面板侧 crate 的 `cargo clippy --all-targets -- -D warnings` 通过；`--lib` 660 项通过；除 `end_to_end` 外的 80 个面板集成目标 402 项通过、0 项失败、6 项按原有标注忽略；三项检查（276 条已知越界，没有新增）与它们的 Python 测试通过。修正审阅发现的锁之前，单独这一步的完整验证已跑完 clippy、`--lib` 655 项与 32 个集成目标（139 项）全部通过；修正后子代理补跑了流量服务与面板的 clippy、`--lib` 84 项与 13 个相关集成目标 95 项。接入演练三遍都通过；独立只读审阅的一处应修已修正。未验证：`end_to_end`；真实的生产接入（合并后由部署器执行）。
+- 已知问题：接入与换镜像之间的几秒里，旧面板的发布循环、Agent 的清单接口、服务器列表与触发发布的保存会失败（Agent 重试）；接入后不能回滚到旧镜像。
+- 下一步：上线后只读核对（修订号与待发布逐台比对、没有新的发布、摘要不变）；然后第六步（云账号与云资源的成本列）。
+
 ## 2026-11-14：服务器状态三处差别按控制台统一，预检、终端与名称改经所有者的接口
 
 - 用户要求：“你来合并，然后继续，处理其他任务修复完成”。ADR 0136 留下的三处语义差别与几项只改代码的越界由执行者决定并处理，取舍见 `docs/open-questions.md` 同日条目。只改代码，不改数据库基线、协议与路由。

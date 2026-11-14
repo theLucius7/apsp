@@ -49,10 +49,7 @@ pub async fn get(
     let mut tx = state.pool.begin().await?;
     crate::servers::lock(&mut tx, id).await?;
     super::settings::require_enabled(&mut tx, id).await?;
-    let pending: bool = sqlx::query_scalar("SELECT dirty_at IS NOT NULL FROM servers WHERE id=$1")
-        .bind(id)
-        .fetch_one(&mut *tx)
-        .await?;
+    let pending = crate::publications::pending(&mut tx, id).await?;
     let enabled_nodes: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM nodes WHERE server_id=$1 AND deleted_at IS NULL AND enabled",
     )

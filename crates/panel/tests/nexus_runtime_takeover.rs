@@ -134,7 +134,7 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
             .await?,
         1
     );
-    sqlx::query("UPDATE servers SET dirty_at=0")
+    sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) SELECT id,0 FROM servers ON CONFLICT(server_id) DO UPDATE SET dirty_at=0")
         .execute(&pool)
         .await?;
     apsp_traffic::publisher::publish_due(&panel.state, None).await?;
@@ -351,7 +351,7 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
             StatusCode::BAD_REQUEST
         );
     }
-    sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
+    sqlx::query("UPDATE runtime_publications SET dirty_at=NULL WHERE server_id=$1")
         .bind(server)
         .execute(&pool)
         .await?;
@@ -360,7 +360,7 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
         .await?)
     .await?;
     let (recorded, display, dirty): (Vec<i64>, Value, Option<i64>) = sqlx::query_as(
-        "SELECT r.legacy_group_ids,d.display,s.dirty_at FROM singbox_nexus_runtime_nodes r JOIN singbox_nexus_nodes d ON d.id=r.inventory_id JOIN servers s ON s.id=r.server_id WHERE r.inventory_id=$1",
+        "SELECT r.legacy_group_ids,d.display,(SELECT p.dirty_at FROM runtime_publications p WHERE p.server_id=s.id) FROM singbox_nexus_runtime_nodes r JOIN singbox_nexus_nodes d ON d.id=r.inventory_id JOIN servers s ON s.id=r.server_id WHERE r.inventory_id=$1",
     )
     .bind(inventory)
     .fetch_one(&pool)
@@ -407,7 +407,7 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     );
     // Establish membership before forcing the test debounce deadline.
     apsp_traffic::publisher::publish_due(&panel.state, None).await?;
-    sqlx::query("UPDATE servers SET dirty_at=0")
+    sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) SELECT id,0 FROM servers ON CONFLICT(server_id) DO UPDATE SET dirty_at=0")
         .execute(&pool)
         .await?;
     apsp_traffic::publisher::publish_due(&panel.state, None).await?;
@@ -425,16 +425,18 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     assert!(established.is_some());
     let allowed = apsp_access::entitlements::refresh(&pool, now_timestamp()).await?;
     assert!(allowed.contains(&user));
-    sqlx::query("UPDATE servers SET dirty_at=NULL")
+    sqlx::query("UPDATE runtime_publications SET dirty_at=NULL")
         .execute(&pool)
         .await?;
     apsp_traffic::publisher::publish_due(&panel.state, Some(&allowed)).await?;
     assert_eq!(digest(pool.clone()).await?, established);
     assert_eq!(
-        sqlx::query_scalar::<_, Option<i64>>("SELECT dirty_at FROM servers WHERE id=$1")
-            .bind(server)
-            .fetch_one(&pool)
-            .await?,
+        sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT (SELECT dirty_at FROM runtime_publications WHERE server_id=$1)"
+        )
+        .bind(server)
+        .fetch_one(&pool)
+        .await?,
         None
     );
     let bundle: String =
@@ -541,13 +543,15 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     apsp_traffic::publisher::publish_due(&panel.state, Some(&allowed)).await?;
     assert_ne!(digest(pool.clone()).await?, established);
     assert!(
-        sqlx::query_scalar::<_, Option<i64>>("SELECT dirty_at FROM servers WHERE id=$1")
-            .bind(server)
-            .fetch_one(&pool)
-            .await?
-            .is_some()
+        sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT (SELECT dirty_at FROM runtime_publications WHERE server_id=$1)"
+        )
+        .bind(server)
+        .fetch_one(&pool)
+        .await?
+        .is_some()
     );
-    sqlx::query("UPDATE servers SET dirty_at=0")
+    sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) SELECT id,0 FROM servers ON CONFLICT(server_id) DO UPDATE SET dirty_at=0")
         .execute(&pool)
         .await?;
     apsp_traffic::publisher::publish_due(&panel.state, None).await?;
@@ -556,7 +560,7 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
         .await?;
     assert_eq!(saved, 2);
     ok(post(&panel, &cookie, &format!("/{server}/pause"), body).await?).await?;
-    sqlx::query("UPDATE servers SET dirty_at=0")
+    sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) SELECT id,0 FROM servers ON CONFLICT(server_id) DO UPDATE SET dirty_at=0")
         .execute(&pool)
         .await?;
     apsp_traffic::publisher::publish_due(&panel.state, None).await?;
@@ -683,7 +687,7 @@ async fn device_limits_need_session_control_and_are_shared_with_legacy_nodes(
     .await?)
     .await?;
     apsp_traffic::publisher::publish_due(&panel.state, None).await?;
-    sqlx::query("UPDATE servers SET dirty_at=0")
+    sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) SELECT id,0 FROM servers ON CONFLICT(server_id) DO UPDATE SET dirty_at=0")
         .execute(&pool)
         .await?;
     apsp_traffic::publisher::publish_due(&panel.state, None).await?;
@@ -990,12 +994,12 @@ async fn retired_line_leaves_the_running_host_and_the_bridge(pool: PgPool) -> Re
         .bind(server)
         .execute(&pool)
         .await?;
-    sqlx::query("UPDATE server_plugins SET enabled=TRUE WHERE server_id=$1")
+    sqlx::query("UPDATE runtime_enablements SET enabled=TRUE WHERE server_id=$1")
         .bind(server)
         .execute(&pool)
         .await?;
     apsp_traffic::publisher::publish_due(&panel.state, None).await?;
-    sqlx::query("UPDATE servers SET dirty_at=0")
+    sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) SELECT id,0 FROM servers ON CONFLICT(server_id) DO UPDATE SET dirty_at=0")
         .execute(&pool)
         .await?;
     apsp_traffic::publisher::publish_due(&panel.state, None).await?;
@@ -1028,7 +1032,7 @@ async fn retired_line_leaves_the_running_host_and_the_bridge(pool: PgPool) -> Re
             .status(),
         StatusCode::CONFLICT
     );
-    sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
+    sqlx::query("UPDATE runtime_publications SET dirty_at=NULL WHERE server_id=$1")
         .bind(server)
         .execute(&pool)
         .await?;
@@ -1043,7 +1047,7 @@ async fn retired_line_leaves_the_running_host_and_the_bridge(pool: PgPool) -> Re
     .await?;
     assert_eq!(done["republish"], true);
     assert_eq!(done["runtime_node_id"], native);
-    let state: (i64, i64, bool, Option<i64>, i32, bool, Option<i64>) = sqlx::query_as("SELECT (SELECT COUNT(*) FROM singbox_nexus_runtime_nodes),(SELECT COUNT(*) FROM singbox_nexus_nodes),(SELECT enabled FROM nodes WHERE id=$1),(SELECT deleted_at FROM nodes WHERE id=$1),(SELECT node_count FROM singbox_nexus_node_imports),(SELECT enabled FROM credential_entries WHERE id=$2),(SELECT dirty_at FROM servers WHERE id=$3)")
+    let state: (i64, i64, bool, Option<i64>, i32, bool, Option<i64>) = sqlx::query_as("SELECT (SELECT COUNT(*) FROM singbox_nexus_runtime_nodes),(SELECT COUNT(*) FROM singbox_nexus_nodes),(SELECT enabled FROM nodes WHERE id=$1),(SELECT deleted_at FROM nodes WHERE id=$1),(SELECT node_count FROM singbox_nexus_node_imports),(SELECT enabled FROM credential_entries WHERE id=$2),(SELECT dirty_at FROM runtime_publications WHERE server_id=$3)")
         .bind(native).bind(credential).bind(server).fetch_one(&pool).await?;
     assert_eq!(
         (state.0, state.1, state.2, state.4, state.5),
@@ -1062,7 +1066,7 @@ async fn retired_line_leaves_the_running_host_and_the_bridge(pool: PgPool) -> Re
     // The snapshot still lists the line; publication leaves it out. The
     // membership change restarts the debounce, as on the first publication.
     apsp_traffic::publisher::publish_due(&panel.state, None).await?;
-    sqlx::query("UPDATE servers SET dirty_at=0")
+    sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) SELECT id,0 FROM servers ON CONFLICT(server_id) DO UPDATE SET dirty_at=0")
         .execute(&pool)
         .await?;
     apsp_traffic::publisher::publish_due(&panel.state, None).await?;
@@ -1343,7 +1347,7 @@ async fn lines_are_added_to_a_prepared_or_running_host(pool: PgPool) -> Result<(
     // A running host is published again with the added line.
     sqlx::query("UPDATE singbox_nexus_runtime_hosts SET state='active',activated_at=1,last_activated_at=1 WHERE server_id=$1")
         .bind(server).execute(&pool).await?;
-    sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
+    sqlx::query("UPDATE runtime_publications SET dirty_at=NULL WHERE server_id=$1")
         .bind(server)
         .execute(&pool)
         .await?;
@@ -1353,10 +1357,11 @@ async fn lines_are_added_to_a_prepared_or_running_host(pool: PgPool) -> Result<(
     assert_eq!(report["conflicts"], json!([]));
     let done = ok(extend(json!({"expected_digest":extended,"extended_digest":report["digest"],"nodes":[second],"stopped_services":["xboard-node-cf.service"],"stopped_at":now_timestamp()})).await?).await?;
     assert_eq!(done["republish"], true);
-    let dirty: Option<i64> = sqlx::query_scalar("SELECT dirty_at FROM servers WHERE id=$1")
-        .bind(server)
-        .fetch_one(&pool)
-        .await?;
+    let dirty: Option<i64> =
+        sqlx::query_scalar("SELECT (SELECT dirty_at FROM runtime_publications WHERE server_id=$1)")
+            .bind(server)
+            .fetch_one(&pool)
+            .await?;
     assert!(dirty.is_some());
     let audited: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM management_audit WHERE action='nexus.runtime.extend'",
@@ -1466,12 +1471,12 @@ async fn redeploy_repeats_a_running_hosts_bundle_as_a_higher_revision(pool: PgPo
         .bind(server)
         .execute(&pool)
         .await?;
-    sqlx::query("UPDATE server_plugins SET enabled=TRUE WHERE server_id=$1")
+    sqlx::query("UPDATE runtime_enablements SET enabled=TRUE WHERE server_id=$1")
         .bind(server)
         .execute(&pool)
         .await?;
     apsp_traffic::publisher::publish_due(&panel.state, None).await?;
-    sqlx::query("UPDATE servers SET dirty_at=0")
+    sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) SELECT id,0 FROM servers ON CONFLICT(server_id) DO UPDATE SET dirty_at=0")
         .execute(&pool)
         .await?;
     apsp_traffic::publisher::publish_due(&panel.state, None).await?;
@@ -1503,7 +1508,7 @@ async fn redeploy_repeats_a_running_hosts_bundle_as_a_higher_revision(pool: PgPo
     assert_eq!(after.len(), before.len() + 1);
     assert_eq!(after.last(), Some(&(current + 1, digest)));
     // Scheduled publication of the unchanged host keeps the repeated revision.
-    sqlx::query("UPDATE servers SET dirty_at=0")
+    sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) SELECT id,0 FROM servers ON CONFLICT(server_id) DO UPDATE SET dirty_at=0")
         .execute(&pool)
         .await?;
     apsp_traffic::publisher::publish_due(&panel.state, None).await?;

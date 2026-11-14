@@ -497,7 +497,7 @@ async fn rotation_requires_exact_new_applied_identity_and_recent_device_evidence
     }];
     sqlx::query("INSERT INTO deployments(server_id,module,rev,bundle,bundle_sha256,source_json,created_at) VALUES($1,'singbox',2,'TEST_ONLY-bundle','TEST_ONLY-hash',$2,$3)").bind(server).bind(json!([applied])).bind(apsp_protocol::now_timestamp()).execute(&pool).await?;
     sqlx::query("UPDATE server_module_status SET target_rev=2,applied_rev=2,healthy=TRUE,updated_at=$2 WHERE server_id=$1 AND module='singbox'").bind(server).bind(apsp_protocol::now_timestamp()).execute(&pool).await?;
-    sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
+    sqlx::query("UPDATE runtime_publications SET dirty_at=NULL WHERE server_id=$1")
         .bind(server)
         .execute(&pool)
         .await?;

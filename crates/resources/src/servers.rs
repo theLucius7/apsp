@@ -3,7 +3,7 @@ use crate::{
     auth::{hash_token, random_token, require_admin},
     error::{ApiError, ApiResult},
     server_assets::AssetSettings,
-    server_observation,
+    server_observation, server_runtime,
 };
 use apsp_protocol::{AgentSettings, EnrollRequest, EnrollResponse, ProbeSpec, now_timestamp};
 use axum::{
@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use sqlx::{FromRow, PgConnection, PgPool, Row, postgres::PgRow};
 use uuid::Uuid;
 
-pub const SERVER_COLUMNS: &str = "id, name, device_public_key, static_info, last_seen, last_contact_at, last_heartbeat_at, agent_settings, asset_settings, manifest_rev, capabilities";
+pub const SERVER_COLUMNS: &str = "id, name, device_public_key, static_info, last_seen, last_contact_at, last_heartbeat_at, agent_settings, asset_settings, capabilities";
 
 /// Network traffic of the server's current billing cycle against its allowance, filled
 /// by observability.
@@ -72,6 +72,9 @@ pub struct Server {
     pub traffic: Option<TrafficSummary>,
     #[sqlx(skip)]
     pub latest_metrics: Value,
+    /// The revision of the configuration last published to the server, kept by the traffic
+    /// service and filled by `server_runtime::attach_revisions`; 0 before the first.
+    #[sqlx(skip)]
     pub manifest_rev: i64,
     pub capabilities: Value,
     #[sqlx(default)]
@@ -203,6 +206,7 @@ pub async fn list(
     let mut servers: Vec<_> = servers.into_iter().map(Server::with_online).collect();
     server_observation::attach_traffic(&state.pool, &mut servers, now_timestamp()).await?;
     server_observation::attach_live(&state, &mut servers).await?;
+    server_runtime::attach_revisions(&state.pool, &mut servers).await?;
     Ok(Json(servers))
 }
 
@@ -285,6 +289,7 @@ pub async fn get(
     )
     .await?;
     server_observation::attach_live(&state, std::slice::from_mut(&mut server)).await?;
+    server_runtime::attach_revisions(&state.pool, std::slice::from_mut(&mut server)).await?;
     Ok(Json(server))
 }
 
@@ -342,6 +347,7 @@ pub async fn update(
     )
     .await?;
     server_observation::attach_live(&state, std::slice::from_mut(&mut server)).await?;
+    server_runtime::attach_revisions(&state.pool, std::slice::from_mut(&mut server)).await?;
     Ok(Json(server))
 }
 

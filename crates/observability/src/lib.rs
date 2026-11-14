@@ -37,7 +37,9 @@ use apsp_panel_host::notifications::queue::{Policy, Queue};
 pub(crate) use apsp_panel_host::{
     AppState, device_work, error, net, notifications, settings, text,
 };
-pub(crate) use apsp_resources::{device_channel, server_assets, server_lifecycle, servers};
+pub(crate) use apsp_resources::{
+    device_channel, server_assets, server_lifecycle, server_runtime, servers,
+};
 use axum::{
     Router,
     routing::{get, post},

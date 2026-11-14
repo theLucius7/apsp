@@ -235,7 +235,7 @@ async fn wrong_digest_owner_binding_or_dirty_desire_cannot_mark_healthy(
     );
     assert_eq!(health(&panel.state.pool, server).await?, (0, false));
     let request = runtime_control::request_checkpoint(&panel.state, server, MODULE).await?;
-    sqlx::query("UPDATE servers SET dirty_at=$2 WHERE id=$1")
+    sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) VALUES($1,$2) ON CONFLICT(server_id) DO UPDATE SET dirty_at=EXCLUDED.dirty_at")
         .bind(server)
         .bind(now_timestamp())
         .execute(&panel.state.pool)

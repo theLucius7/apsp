@@ -251,16 +251,17 @@ async fn publication_debounces_and_deduplicates_native_configurations(pool: PgPo
     panel.prepare_deployment_preflights().await?;
     publisher::publish_due(&panel.state, None).await?;
     assert_eq!(latest_revision(&pool, server).await?, 0);
-    let dirty: i64 = sqlx::query_scalar("SELECT dirty_at FROM servers WHERE id=$1")
-        .bind(server)
-        .fetch_one(&pool)
-        .await?;
+    let dirty: i64 =
+        sqlx::query_scalar("SELECT (SELECT dirty_at FROM runtime_publications WHERE server_id=$1)")
+            .bind(server)
+            .fetch_one(&pool)
+            .await?;
     assert!(dirty > 0);
-    sqlx::query("UPDATE servers SET dirty_at=FLOOR(EXTRACT(EPOCH FROM clock_timestamp())*1000)::bigint-4000 WHERE id=$1")
+    sqlx::query("UPDATE runtime_publications SET dirty_at=FLOOR(EXTRACT(EPOCH FROM clock_timestamp())*1000)::bigint-4000 WHERE server_id=$1")
         .bind(server).execute(&pool).await?;
     publisher::publish_due(&panel.state, None).await?;
     assert_eq!(latest_revision(&pool, server).await?, 0);
-    sqlx::query("UPDATE servers SET dirty_at=0 WHERE id=$1")
+    sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) VALUES($1,0) ON CONFLICT(server_id) DO UPDATE SET dirty_at=0")
         .bind(server)
         .execute(&pool)
         .await?;

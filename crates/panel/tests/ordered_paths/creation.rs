@@ -1,7 +1,7 @@
 use super::*;
 
 async fn counts(fixture: &Fixture) -> Result<Value> {
-    Ok(sqlx::query_scalar("SELECT jsonb_build_object('nodes',(SELECT count(*) FROM nodes),'chains',(SELECT count(*) FROM singbox_chains),'versions',(SELECT count(*) FROM singbox_ordered_chain_versions),'receipts',(SELECT count(*) FROM singbox_ordered_chain_creation_requests),'dirty',(SELECT jsonb_agg(jsonb_build_array(id,dirty_at) ORDER BY id) FROM servers))")
+    Ok(sqlx::query_scalar("SELECT jsonb_build_object('nodes',(SELECT count(*) FROM nodes),'chains',(SELECT count(*) FROM singbox_chains),'versions',(SELECT count(*) FROM singbox_ordered_chain_versions),'receipts',(SELECT count(*) FROM singbox_ordered_chain_creation_requests),'dirty',(SELECT jsonb_agg(jsonb_build_array(s.id,p.dirty_at) ORDER BY s.id) FROM servers s LEFT JOIN runtime_publications p ON p.server_id=s.id))")
         .fetch_one(&fixture.panel.state.pool).await?)
 }
 
@@ -52,7 +52,7 @@ async fn ordered_node_views_match_candidate_and_damaged_entry_configuration_guar
         StatusCode::OK,
     )
     .await?;
-    sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
+    sqlx::query("UPDATE runtime_publications SET dirty_at=NULL WHERE server_id=$1")
         .bind(fixture.servers[0])
         .execute(&fixture.panel.state.pool)
         .await?;
@@ -73,10 +73,11 @@ async fn ordered_node_views_match_candidate_and_damaged_entry_configuration_guar
     .await?;
     assert_eq!(saved["configuration_locked"], true);
     assert_eq!(saved["referenced_chains"], expected);
-    let dirty: Option<i64> = sqlx::query_scalar("SELECT dirty_at FROM servers WHERE id=$1")
-        .bind(fixture.servers[0])
-        .fetch_one(&fixture.panel.state.pool)
-        .await?;
+    let dirty: Option<i64> =
+        sqlx::query_scalar("SELECT (SELECT dirty_at FROM runtime_publications WHERE server_id=$1)")
+            .bind(fixture.servers[0])
+            .fetch_one(&fixture.panel.state.pool)
+            .await?;
     assert_eq!(dirty, None);
     // TEST_ONLY both pointers are damaged; an unresolved, soft-deleted owner
     // must still lock its entry without exposing a private frozen snapshot.

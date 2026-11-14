@@ -111,7 +111,7 @@ pub async fn automation_candidate(
 ) -> ApiResult<Value> {
     crate::servers::lock(tx, server).await?;
     crate::settings::require_enabled(tx, server).await?;
-    let row = sqlx::query("SELECT s.static_info,s.capabilities,s.last_seen,s.dirty_at,m.target_rev,m.last_result_rev,m.last_error,m.healthy,m.updated_at,d.bundle,d.bundle_sha256,(SELECT MAX(rev) FROM deployments WHERE server_id=$1 AND module='singbox') AS latest_rev FROM servers s JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' JOIN deployments d ON d.server_id=s.id AND d.module=m.module AND d.rev=m.target_rev WHERE s.id=$1 FOR UPDATE OF m")
+    let row = sqlx::query(&format!("SELECT s.static_info,s.capabilities,s.last_seen,{} AS pending,m.target_rev,m.last_result_rev,m.last_error,m.healthy,m.updated_at,d.bundle,d.bundle_sha256,(SELECT MAX(rev) FROM deployments WHERE server_id=$1 AND module='singbox') AS latest_rev FROM servers s JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' JOIN deployments d ON d.server_id=s.id AND d.module=m.module AND d.rev=m.target_rev WHERE s.id=$1 FOR UPDATE OF m", crate::publications::pending_sql("s.id")))
         .bind(server).fetch_optional(&mut **tx).await?.ok_or_else(|| conflict("尚无已发布且失败的 sing-box 部署"))?;
     let now = now_timestamp();
     if !retry_capable(&row.get::<Value, _>("capabilities"))
@@ -125,7 +125,7 @@ pub async fn automation_candidate(
     }
     let revision: i64 = row.get("target_rev");
     if revision <= 0
-        || row.get::<Option<i64>, _>("dirty_at").is_some()
+        || row.get::<bool, _>("pending")
         || row.get::<Option<i64>, _>("latest_rev") != Some(revision)
         || row.get::<i64, _>("last_result_rev") != revision
         || row.get::<bool, _>("healthy")

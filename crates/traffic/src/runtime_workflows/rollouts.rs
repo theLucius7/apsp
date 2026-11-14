@@ -235,7 +235,7 @@ pub async fn record_inspection_tx(
 /// The rollout's members with what each device confirmed, from the inspection results
 /// recorded so far; the rollout completes once every target confirmed the version.
 pub async fn members_tx(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> ApiResult<Vec<Value>> {
-    let rows=sqlx::query("SELECT r.server_id,r.baseline_revision,r.artifact_sha256,r.dispatched_at,r.inspection_result AS result,m.target_rev,m.applied_rev,m.healthy,s.dirty_at,f.runtime_version,f.artifact_sha256 AS observed_artifact_sha256 FROM singbox_runtime_rollout_members r JOIN servers s ON s.id=r.server_id LEFT JOIN server_module_status m ON m.server_id=r.server_id AND m.module='singbox' LEFT JOIN singbox_runtime_manifest_facts f ON f.server_id=r.server_id AND f.module='singbox' AND f.revision=m.applied_rev WHERE r.rollout_id=$1 ORDER BY r.dispatched_at,r.server_id").bind(id).fetch_all(&mut **tx).await?;
+    let rows=sqlx::query(&format!("SELECT r.server_id,r.baseline_revision,r.artifact_sha256,r.dispatched_at,r.inspection_result AS result,m.target_rev,m.applied_rev,m.healthy,{} AS pending,f.runtime_version,f.artifact_sha256 AS observed_artifact_sha256 FROM singbox_runtime_rollout_members r JOIN servers s ON s.id=r.server_id LEFT JOIN server_module_status m ON m.server_id=r.server_id AND m.module='singbox' LEFT JOIN singbox_runtime_manifest_facts f ON f.server_id=r.server_id AND f.module='singbox' AND f.revision=m.applied_rev WHERE r.rollout_id=$1 ORDER BY r.dispatched_at,r.server_id", crate::publications::pending_sql("s.id"))).bind(id).fetch_all(&mut **tx).await?;
     let mut result = Vec::new();
     for row in rows {
         let receipt: Option<RuntimeOperationResult> = row
@@ -256,7 +256,7 @@ pub async fn members_tx(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> ApiResu
             })
             && row.get::<Option<bool>, _>("healthy") == Some(true)
             && row.get::<Option<i64>, _>("target_rev") == row.get::<Option<i64>, _>("applied_rev")
-            && row.get::<Option<i64>, _>("dirty_at").is_none()
+            && !row.get::<bool, _>("pending")
             && row.get::<Option<String>, _>("runtime_version").as_deref()
                 == Some(crate::RUNTIME_VERSION)
             && row

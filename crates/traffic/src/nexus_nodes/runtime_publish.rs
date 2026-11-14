@@ -133,10 +133,7 @@ pub(crate) async fn publish(
     let previous: Option<String> = sqlx::query_scalar("SELECT bundle_sha256 FROM deployments WHERE server_id=$1 AND module='singbox' ORDER BY rev DESC LIMIT 1").bind(server).fetch_optional(&mut **tx).await?;
     // An administrator's redeploy publishes the unchanged bundle as a higher revision.
     if !force && previous.as_deref() == Some(&candidate.hash) {
-        sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
-            .bind(server)
-            .execute(&mut **tx)
-            .await?;
+        crate::publications::settle_tx(tx, server).await?;
         return Ok(Some(None));
     }
     let revision = manifest
@@ -146,11 +143,7 @@ pub(crate) async fn publish(
         .bind(server).bind(revision).bind(candidate.bundle).bind(candidate.hash).bind(candidate.source).bind(now_timestamp()).execute(&mut **tx).await?;
     sqlx::query("INSERT INTO server_module_status(server_id,module,target_rev,updated_at) VALUES($1,'singbox',$2,$3) ON CONFLICT(server_id,module) DO UPDATE SET target_rev=EXCLUDED.target_rev,updated_at=EXCLUDED.updated_at")
         .bind(server).bind(revision).bind(now_timestamp()).execute(&mut **tx).await?;
-    sqlx::query("UPDATE servers SET manifest_rev=$2,dirty_at=NULL WHERE id=$1")
-        .bind(server)
-        .bind(revision)
-        .execute(&mut **tx)
-        .await?;
+    crate::publications::record_tx(tx, server, revision).await?;
     Ok(Some(Some(revision.try_into()?)))
 }
 

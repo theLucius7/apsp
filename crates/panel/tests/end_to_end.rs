@@ -178,7 +178,7 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
     // pending and is applied through the real authenticated WebSocket on restart.
     eventually("debounced confirmed deployment committed while Agent is paused", 15, || async {
         let row: Option<(i64, i64)> = sqlx::query_as(
-            "SELECT manifest_rev,(SELECT count(*) FROM deployments d WHERE d.server_id=s.id AND d.module='singbox') FROM servers s WHERE s.id=$1"
+            "SELECT COALESCE((SELECT p.manifest_rev FROM runtime_publications p WHERE p.server_id=s.id),0),(SELECT count(*) FROM deployments d WHERE d.server_id=s.id AND d.module='singbox') FROM servers s WHERE s.id=$1"
         ).bind(server_id).fetch_optional(&pool).await?;
         Ok(row.is_some_and(|(revision, count)| revision > 0 && count == 1))
     }).await?;

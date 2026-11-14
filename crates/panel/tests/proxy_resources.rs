@@ -179,7 +179,7 @@ async fn memberships(panel: &TestPanel, cookie: &str, user: i64, groups: &[i64])
 }
 
 async fn clean_servers(pool: &PgPool) -> Result<()> {
-    sqlx::query("UPDATE servers SET dirty_at=NULL")
+    sqlx::query("UPDATE runtime_publications SET dirty_at=NULL")
         .execute(pool)
         .await?;
     Ok(())
@@ -187,7 +187,7 @@ async fn clean_servers(pool: &PgPool) -> Result<()> {
 
 async fn state(pool: &PgPool) -> Result<Value> {
     Ok(sqlx::query_scalar(
-        "SELECT jsonb_build_object('nodes',(SELECT COUNT(*) FROM nodes),'chains',(SELECT COUNT(*) FROM singbox_chains),'active_nodes',(SELECT COUNT(*) FROM nodes WHERE deleted_at IS NULL),'grants',(SELECT COUNT(*) FROM accesses),'versions',(SELECT COUNT(*) FROM singbox_ordered_chain_versions),'hops',(SELECT COUNT(*) FROM singbox_ordered_chain_hops),'endpoint_versions',(SELECT COUNT(*) FROM singbox_managed_endpoint_versions),'runtime_requirements',(SELECT COUNT(*) FROM singbox_chain_runtime_requirements),'receipts',(SELECT COUNT(*) FROM singbox_ordered_chain_creation_requests),'servers',(SELECT jsonb_agg(jsonb_build_array(id,dirty_at) ORDER BY id) FROM servers))",
+        "SELECT jsonb_build_object('nodes',(SELECT COUNT(*) FROM nodes),'chains',(SELECT COUNT(*) FROM singbox_chains),'active_nodes',(SELECT COUNT(*) FROM nodes WHERE deleted_at IS NULL),'grants',(SELECT COUNT(*) FROM accesses),'versions',(SELECT COUNT(*) FROM singbox_ordered_chain_versions),'hops',(SELECT COUNT(*) FROM singbox_ordered_chain_hops),'endpoint_versions',(SELECT COUNT(*) FROM singbox_managed_endpoint_versions),'runtime_requirements',(SELECT COUNT(*) FROM singbox_chain_runtime_requirements),'receipts',(SELECT COUNT(*) FROM singbox_ordered_chain_creation_requests),'servers',(SELECT jsonb_agg(jsonb_build_array(s.id,p.dirty_at) ORDER BY s.id) FROM servers s LEFT JOIN runtime_publications p ON p.server_id=s.id))",
     )
     .fetch_one(pool)
     .await?)
@@ -701,10 +701,12 @@ async fn batch_rejects_unauthorized_entries_and_invalid_managed_topologies(
     let legacy_node = id(&panel
         .create_node(&cookie, legacy_server, "Preserved legacy")
         .await?)?;
-    sqlx::query("UPDATE server_plugins SET enabled=FALSE WHERE server_id=$1 AND plugin='sing-box'")
-        .bind(legacy_server)
-        .execute(&pool)
-        .await?;
+    sqlx::query(
+        "UPDATE runtime_enablements SET enabled=FALSE WHERE server_id=$1 AND module='singbox'",
+    )
+    .bind(legacy_server)
+    .execute(&pool)
+    .await?;
     clean_servers(&pool).await?;
     let before = state(&pool).await?;
     for (item, expected) in [
@@ -1331,10 +1333,12 @@ async fn damaged_chains_stay_readable_and_cleanable_without_exposing_private_con
         .bind(b)
         .execute(&pool)
         .await?;
-    sqlx::query("UPDATE server_plugins SET enabled=FALSE WHERE server_id=$1 AND plugin='sing-box'")
-        .bind(b)
-        .execute(&pool)
-        .await?;
+    sqlx::query(
+        "UPDATE runtime_enablements SET enabled=FALSE WHERE server_id=$1 AND module='singbox'",
+    )
+    .bind(b)
+    .execute(&pool)
+    .await?;
     let list = call(
         &panel,
         &cookie,

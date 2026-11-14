@@ -280,7 +280,8 @@ pub async fn chains_structurally_available(
         return Ok(HashSet::new());
     }
     let query = format!(
-        "SELECT n.id FROM nodes n JOIN servers s ON s.id=n.server_id LEFT JOIN server_plugins p ON p.server_id=s.id AND p.plugin='sing-box' WHERE n.id=ANY($1) AND n.deleted_at IS NULL AND n.enabled AND s.deleted_at IS NULL AND ({}) IS NOT NULL",
+        "SELECT n.id FROM nodes n JOIN servers s ON s.id=n.server_id {} WHERE n.id=ANY($1) AND n.deleted_at IS NULL AND n.enabled AND s.deleted_at IS NULL AND ({}) IS NOT NULL",
+        super::super::settings::ENABLEMENT_JOIN,
         super::super::settings::SOURCE_SQL
     );
     let serving: HashSet<i64> = sqlx::query_scalar(&query)

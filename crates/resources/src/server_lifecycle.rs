@@ -256,15 +256,11 @@ pub async fn lifecycle(
     Ok(Json(json!({"saved":true})))
 }
 
+/// The runtimes and deployments the traffic service keeps for the server, which a migration
+/// leaves behind.
 async fn references(pool: &sqlx::PgPool, id: i64) -> ApiResult<Value> {
-    let plugins: Vec<String> = sqlx::query_scalar(
-        "SELECT plugin FROM server_plugins WHERE server_id=$1 AND enabled ORDER BY plugin",
-    )
-    .bind(id)
-    .fetch_all(pool)
-    .await?;
-    let deployments:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('module',module,'target_rev',target_rev,'applied_rev',applied_rev,'healthy',healthy) FROM server_module_status WHERE server_id=$1 ORDER BY module").bind(id).fetch_all(pool).await?;
-    Ok(json!({"plugins":plugins,"applications":deployments}))
+    let references = crate::server_runtime::references(pool, id).await?;
+    Ok(json!({"plugins":references.enabled,"applications":references.deployments}))
 }
 
 #[derive(Deserialize)]

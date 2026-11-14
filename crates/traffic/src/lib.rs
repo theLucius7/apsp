@@ -23,6 +23,7 @@ mod node_settings;
 pub mod nodes;
 pub mod ordered_paths;
 pub mod proxy_resources;
+pub mod publications;
 pub mod publisher;
 pub mod runtime_control;
 mod runtime_controls;

@@ -1,6 +1,7 @@
 use crate::{
     AppState,
     error::{ApiError, ApiResult},
+    servers::RowLock,
 };
 use crate::{business::digest, users::record_event};
 use apsp_compiler::{Access, Node};
@@ -74,8 +75,20 @@ struct Context {
     target: Option<i64>,
 }
 
-async fn context(tx: &mut Transaction<'_, Postgres>, server: i64) -> ApiResult<Context> {
-    crate::servers::lock(tx, server).await?;
+/// What the checks read about `server`, its row locked as `lock` says: `RowLock::Update` for
+/// the console's preflight requests and the first installation, `RowLock::KeyShare` for the
+/// publisher. The publication transaction already serializes through the publication lock
+/// and its own publication row, and it reads in a REPEATABLE READ snapshot: locking for
+/// update the row that every device message writes (`last_seen`) after that snapshot would
+/// fail it with a serialization error.
+async fn context(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    lock: RowLock,
+) -> ApiResult<Context> {
+    crate::servers::lock_row(tx, server, lock, "id")
+        .await?
+        .ok_or(ApiError::NotFound)?;
     crate::settings::require_enabled(tx, server).await?;
     let row=sqlx::query("SELECT s.static_info,s.capabilities,s.last_seen,COALESCE(p.policy,'{}'::jsonb) AS policy,m.target_rev FROM servers s LEFT JOIN fleet_profiles p ON p.server_id=s.id LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id=$1").bind(server).fetch_one(&mut **tx).await?;
     // Operations owns maintenance windows and answers whether they or the server's lifecycle
@@ -358,7 +371,7 @@ pub(in super::super) async fn request(
     }
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
-    let initial = context(&mut tx, server).await?;
+    let initial = context(&mut tx, server, RowLock::Update).await?;
     let expected = fingerprint(&state, &initial).await?;
     let checks = panel_checks(&state, &initial).await?;
     if checks.iter().any(|check| check["blocking"] == true) {
@@ -372,7 +385,7 @@ pub(in super::super) async fn request(
             .await?;
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
-    let current = context(&mut tx, server).await?;
+    let current = context(&mut tx, server, RowLock::Update).await?;
     if fingerprint(&state, &current).await? != expected {
         return Err(ApiError::Conflict(
             "业务、授权、入口或制品在采集期间发生变化，请重新预检".into(),
@@ -818,7 +831,7 @@ async fn aggregate_tx(
 pub(super) async fn view(state: &AppState, headers: &HeaderMap, server: i64) -> ApiResult<Value> {
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
-    let context = context(&mut tx, server).await?;
+    let context = context(&mut tx, server, RowLock::Update).await?;
     let mut result = aggregate_tx(
         state,
         server,
@@ -839,7 +852,7 @@ pub(super) async fn require_confirmed_tx(
     server: i64,
     tx: &mut Transaction<'_, Postgres>,
 ) -> ApiResult<()> {
-    let context = context(tx, server).await?;
+    let context = context(tx, server, RowLock::Update).await?;
     let status = aggregate_tx(
         state,
         server,
@@ -927,7 +940,8 @@ pub(crate) async fn publisher_ready_tx(
             Err(error) => return Err(error),
         }
     }
-    let context = context(tx, server).await?;
+    // The publication claim holds the server row FOR KEY SHARE; see `context`.
+    let context = context(tx, server, RowLock::KeyShare).await?;
     let evidence = aggregate_tx(state, server, tx, &context, true).await?;
     Ok(evidence["ready"] == true && evidence["confirmed"] == true)
 }
@@ -956,7 +970,7 @@ pub(in super::super) async fn confirm(
     }
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
-    let context = context(&mut tx, server).await?;
+    let context = context(&mut tx, server, RowLock::Update).await?;
     let aggregate = aggregate_tx(
         &state,
         server,

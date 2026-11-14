@@ -11,20 +11,11 @@ use std::{
 };
 
 /// Statements that lock server rows without the helpers in `servers.rs`.
-const OTHER_ROW_LOCKS: [(&str, &str); 4] = [
+const OTHER_ROW_LOCKS: [(&str, &str); 2] = [
     (
         "observability/src/telemetry/maintenance.rs",
         "claims a server whose history still has to be initialized with SKIP LOCKED: the \
          background pass takes whichever server is free and leaves a busy one to a later pass",
-    ),
-    (
-        "traffic/src/publisher.rs",
-        "claims a server whose publication is due with SKIP LOCKED, for the same reason",
-    ),
-    (
-        "traffic/src/business.rs",
-        "`mark_dirty` locks, in id order and in one statement, the servers it derives from the \
-         ordered chains that share a touched server",
     ),
     (
         "traffic/src/nexus_nodes/mod.rs",

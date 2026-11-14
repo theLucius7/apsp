@@ -147,7 +147,7 @@
 
 领域之间需要逆着依赖顺序调用时，由调用方声明一个类型化接口，实现方回答，应用层的 `crates/panel/src/wiring.rs` 在启动时接线（平台的 `ports` 只提供“安装一次、按需读取”的机制）。接口的数据类型属于声明方；实现方排在后面时返回自己的类型，由应用层转换。几个排在前面的领域都要调用同一个后面的所有者、而这件事本身是平台的基础设施时（向设备派发任务、记录观测证据），接口由平台声明，不在每个调用方各声明一份。
 
-现在一共十一个接口，每个只装一件事；不再有把几件不相干的事装在一起、由各领域登记的钩子（[ADR 0132](adr/0132-platform-only-host-and-domain-addresses.md) 拆掉了治理的 `Contributions`，名称迁入自己的 crate 后 `Dns01` 也已删除）。
+现在一共十二个接口，每个只装一件事；不再有把几件不相干的事装在一起、由各领域登记的钩子（[ADR 0132](adr/0132-platform-only-host-and-domain-addresses.md) 拆掉了治理的 `Contributions`，名称迁入自己的 crate 后 `Dns01` 也已删除）。
 
 | 接口 | 声明方 | 实现方 | 内容 | 性质 |
 | --- | --- | --- | --- | --- |
@@ -156,6 +156,7 @@
 | `evidence::Evidence` | 平台（观测证据的接收口） | 观测（`crates/observability`） | 服务器时间线上的事件、故障的打开与恢复；资源（生命周期、接入、费用记录、云资源）与成本（计划退订）经它报告，作业的面板备份沿用它 | 长期：观测排在资源之后，与成本同组 |
 | `guard::AuditSnapshots` | 治理（请求守卫的审计） | 资源（`servers::audit_snapshot`）、流量服务（`nodes::audit_snapshot`） | 审计记录里被改动对象在变更前后的快照；地址后面没有所有者保存的对象时答“无” | 长期：治理排在最前 |
 | `server_observation::ServerObservation` | 资源 | 观测 | 服务器视图的流量摘要与实时遥测、存储的指标与遥测设置（视图、新建、批量登记、采集迁移与档案读写；成员线路与流量服务的运行视图也经它读指标）、新服务器与接入模板的拨测与告警规则检查、延迟检测分配的锁与默认分配 | 长期：资源排在观测之前；视图的流量摘要类型属于资源 |
+| `server_runtime::ServerRuntime` | 资源 | 流量服务 | 服务器视图与档案里的发布修订号（`manifest_rev`）、采集迁移预览里该服务器启用的运行时与部署状态 | 长期：资源排在流量服务之前；发布状态归流量服务（`runtime_publications`） |
 | `cloud::work::CloudWork` | 资源（云账号与云资源） | 作业（`crates/operations` 的 `cloud`） | 资源上有没有进行中或结果未知的操作、地址是否在换 IP 中、配置变化后取消预览与排队中的操作；安全组变更前也经它确认资源空闲 | 长期：作业排在最后 |
 | `users::Users`（流量服务） | 流量服务 | 服务权益（`crates/access`） | 编译进配置的用户限速与连接数；节点删除或接管后用户凭据与策略组成员的变化；Nexus 主机的设备数限制与兼容桥同步状态；代理运维记录 | 长期：服务权益排在流量服务之后 |
 | `china_reachability::ChinaReachability`（流量服务） | 流量服务（Nexus 切换） | 观测 | 节点最近是否测得国内不可达 | 长期：观测排在流量服务之后 |
@@ -361,7 +362,7 @@ flowchart TD
 
 **作业胶水（2026-11-14）已处理**：部署自动化（排队、取消、回执、检查点、结果未知的核对）、分批升级与运行时操作的列表和创建迁到 `crates/operations`（`jobs/deployment_automation.rs`、`runtime_rollouts.rs`、`runtime_operations.rs`），流量服务只回答“这一步是否合法”（`runtime_workflows::{automation, rollouts}`）；流量服务指向作业的 SQL 从 20 条减为 3 条；部署预检与首次安装的检查改经 `DeviceWork`（2026-11-14）后，余下的 3 条也已去掉。
 
-**ADR 0137（阶段 F）**：第一步（2026-11-14 上线）结构指纹改按未删除列的序号计算（之后的步骤才能删列）；设备会话单独成表 `device_sessions`（资源），`sessions` 只留管理员会话；服务权益的两份审计流水合为 `singbox_operation_events`。第四步（2026-11-14）观测写在 `servers` 上的六列迁到观测自己的 `telemetry_servers`、`probe_assignments` 与 `server_ip_quality_refreshes`，遥测批次不再锁、也不再改写服务器行。阶段 F 其余各项按 ADR 0137 的判断与顺序处理，下面的表已按此改写。
+**ADR 0137（阶段 F）**：第一步（2026-11-14 上线）结构指纹改按未删除列的序号计算（之后的步骤才能删列）；设备会话单独成表 `device_sessions`（资源），`sessions` 只留管理员会话；服务权益的两份审计流水合为 `singbox_operation_events`。第四步（2026-11-14）观测写在 `servers` 上的六列迁到观测自己的 `telemetry_servers`、`probe_assignments` 与 `server_ip_quality_refreshes`，遥测批次不再锁、也不再改写服务器行。第五步（2026-11-14）流量服务的发布状态（`manifest_rev`、`dirty_at`）迁到 `runtime_publications`，`server_plugins` 改名 `runtime_enablements`，发布器只对服务器行取 `FOR KEY SHARE`。阶段 F 其余各项按 ADR 0137 的判断与顺序处理，下面的表已按此改写。
 
 ### 12.1 归属：代码或数据还不在对象所属的领域
 
@@ -371,7 +372,7 @@ flowchart TD
 | 代理用量统计的处理函数在观测 | `crates/observability/src/statistics/proxy_usage.rs`，地址 `/api/access/statistics` | 对象是服务权益的用量，处理函数读它的私有表；地址已经按对象改了，代码没搬 | 迁到服务权益的 `usage`，趋势与报表页调用它 |
 | 资源替观测建默认拨测与告警规则；成本与门户直接读观测的表 | `crates/resources/src/servers.rs`、`batch_enrollment.rs`、`server_lifecycle.rs`、`retirement.rs`；`crates/costs/src/cancellation_reminders.rs`、`suppliers.rs`；`crates/access/src/portal/lines.rs` | 现有接口只覆盖了一部分调用 | 扩充已有的 `ServerObservation`、`Evidence`、`HostNetwork`，不新增接口 |
 | 流量服务与服务权益互读对方的私有表 | 服务权益读流量服务 36 条 SQL，流量服务读服务权益 13 条 SQL（前端另有 3 条与 9 条引用） | 数量多，每一处都要核对事务边界后才能换成函数调用 | 所有者提供查询函数；流量服务需要服务权益回答的，经 `users::Users` |
-| 数据的存放与归属不一致 | `servers` 上有流量服务写的列（`manifest_rev`、`dirty_at`）；云账号与云资源行里有成本与作业的列；域名与证书的文档存放在基础网络的 `network_documents` | 都要改数据库基线；会话已在 ADR 0137 分开，观测的列已迁出（第四步）；名称的文档暂缓搬表（实验功能、生产 0 行；证书与 ACME 的写入已改经基础网络的函数，`naming/acme.rs` 还直接读一处） | 阶段 F 按 ADR 0137 的顺序：流量服务的列（连同 `server_plugins` 改名）、云账号与云资源的成本列、作业列，各一个 PR 附接入脚本 |
+| 数据的存放与归属不一致 | 云账号与云资源行里有成本与作业的列；域名与证书的文档存放在基础网络的 `network_documents` | 都要改数据库基线；会话已在 ADR 0137 分开，观测与流量服务写在 `servers` 上的列已迁出（第四、五步）；名称的文档暂缓搬表（实验功能、生产 0 行；证书与 ACME 的写入已改经基础网络的函数，`naming/acme.rs` 还直接读一处） | 阶段 F 按 ADR 0137 的顺序：云账号与云资源的成本列、作业列，各一个 PR 附接入脚本 |
 | 批量接入页面的界面在作业的目录 | `web/src/operations/fleet/`（页面入口登记在 `web/src/operations/pages.tsx`） | 表单与运维工具写在同一组文件里，拆开要改界面代码 | 把批量接入的表单移到 `web/src/resources/` |
 
 ### 12.2 重复实现：合并要先定行为或改表
@@ -394,7 +395,7 @@ flowchart TD
 | --- | --- | --- | --- |
 | 接口响应里的字段 | `plugins[]`、`plugin`（诊断视图），`plugin_ready`、`plugin_reason`（验机视图），`plugin_enabled`（代理资源），`related.plugins` 与 `business_requires_plugin_migration`（服务器迁移），`condition.plugin`（供应商对照）；路由参数 `{plugin}`（`/api/servers/{id}/diagnostics/{plugin}`） | 响应字段是接口契约，前端与脚本按这些名字读取；其中 `plugin`、`plugins[]` 与下面的诊断任务键、Agent 协议字段同名 | 服务端与前端在同一次改动里改名；与协议同名的随协议一起改 |
 | 已保存的原因代码 | `plugin_disabled`（解析规则的错误代码，服务端已不再写出，前端保留它的说明文字） | 是已保存的数据值 | 确认生产里不再有这个值之后删除说明文字 |
-| 数据库 | 表 `server_plugins`（运行时的启用记录，只有 `sing-box` 一个值）；`diagnostic_jobs.job` 里的 `plugin` 键 | 改表名与已保存的键是基线与数据变更 | 阶段 F：走 PR，附接入脚本 |
+| 数据库 | `diagnostic_jobs.job` 里的 `plugin` 键（表 `server_plugins` 已在阶段 F 第五步改名 `runtime_enablements`，存模块标识 `singbox`） | 已保存的键随 Agent 协议改名 | 随协议改名时一起改，附接入脚本 |
 | 后台任务心跳名 | `sing-box`、`ddns`、`alicloud`、`expenses` 等（全部 20 个登记在 `crates/panel/src/domains.rs` 的 `HEARTBEATS`） | 是已保存的标识，日志与心跳靠它保持连续；控制台已显示为各自的中文名称 | 要改名时连同已保存的心跳行一起迁移 |
 | Agent 协议与设备 | 消息字段 `DiagnosticJob.plugin`、`DiagnosticCancelResult.plugin`，检查点 `diagnostics:active`，设备目录 `/opt/apsp/plugins`、`/var/lib/apsp/plugins`，签名制品里的来源名 `plugins/...`，IPQuality 报告里的 `"plugin":"ipquality"`，适配器描述里的 `plugin_name` | 是协议、设备上的布局与已签名的制品格式，已接入的服务器都按它运行 | 只随一次 Agent 发布改变 |
 | 工具 | `tools/test-nodequality*.py` 等脚本里的 `PLUGIN` 常量，`tools/prepare-plugin-install-acceptance.py` | 一部分工具文件列在已签名制品的对应源码包里，改内容会改变摘要；验收工具的名字出现在已记录的证据里 | 随下一次重新构建并签名制品时改名 |

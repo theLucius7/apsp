@@ -385,7 +385,7 @@ async fn catalog_entity_changes_invalidate_original_resource_cas_without_publish
     let chain = id(&panel.insert_chain("Chain", entry, exit).await?)?;
     let history: Value = sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(v) ORDER BY generation) FROM singbox_ordered_chain_versions v WHERE chain_id=$1")
         .bind(chain).fetch_one(&pool).await?;
-    sqlx::query("UPDATE servers SET dirty_at=NULL")
+    sqlx::query("UPDATE runtime_publications SET dirty_at=NULL")
         .execute(&pool)
         .await?;
     let rows = catalog(&panel, &cookie).await?;
@@ -399,9 +399,10 @@ async fn catalog_entity_changes_invalidate_original_resource_cas_without_publish
         .fetch_one(&pool)
         .await?;
     assert_eq!(revision, 1);
-    let dirty: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM servers WHERE dirty_at IS NOT NULL")
-        .fetch_one(&pool)
-        .await?;
+    let dirty: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM runtime_publications WHERE dirty_at IS NOT NULL")
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(dirty, 0, "metadata does not schedule a runtime publication");
     for (kind, identity) in [("direct", direct)] {
         for fields in [

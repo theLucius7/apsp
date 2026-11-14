@@ -9,17 +9,12 @@ use sqlx::{Postgres, Row, Transaction};
 use std::collections::BTreeMap;
 
 const MODULE: &str = "singbox";
-const DUE: &str = "dirty_at <= FLOOR(EXTRACT(EPOCH FROM clock_timestamp())*1000)::bigint - 5000";
 
 /// `allowed` is the publication cycle's evaluation of which users are allowed now
 /// (the eligibility refresh that starts the cycle); without it the host membership
 /// check evaluates entitlements itself.
 pub async fn publish_due(state: &AppState, allowed: Option<&[i64]>) -> anyhow::Result<()> {
-    let query = format!(
-        "SELECT s.id FROM servers s LEFT JOIN server_plugins p ON p.server_id=s.id AND p.plugin='sing-box' WHERE s.deleted_at IS NULL AND {DUE} AND ({}) IS NOT NULL ORDER BY s.id",
-        super::settings::SOURCE_SQL
-    );
-    let ids: Vec<i64> = sqlx::query_scalar(&query).fetch_all(&state.pool).await?;
+    let ids = crate::publications::due(&state.pool).await?;
     super::nexus_nodes::runtime_publish::membership(state, allowed).await?;
     let mut first_error = None;
     for server_id in ids {
@@ -168,20 +163,11 @@ async fn publish_server_transaction(
         .await?;
     crate::business::lock_publication(&mut tx).await?;
     let at = now_timestamp();
-    let query = format!(
-        "SELECT s.manifest_rev FROM servers s LEFT JOIN server_plugins p ON p.server_id=s.id AND p.plugin='sing-box' WHERE s.id=$1 AND s.deleted_at IS NULL AND ({DUE} OR $2) AND ({}) IS NOT NULL FOR UPDATE OF s SKIP LOCKED",
-        super::settings::SOURCE_SQL
-    );
-    let Some(manifest_rev) = sqlx::query_scalar::<_, i64>(&query)
-        .bind(server_id)
-        .bind(force)
-        .fetch_optional(&mut *tx)
-        .await?
-    else {
+    let Some(manifest_rev) = crate::publications::claim_tx(&mut tx, server_id, force).await? else {
         return Ok(None);
     };
     // Device declarations may have changed since the due-work scan. Recheck
-    // under the server lock before creating legacy deployment evidence.
+    // under the claim before creating legacy deployment evidence.
     if !super::settings::is_enabled(&mut tx, server_id).await? {
         tx.commit().await?;
         return Ok(None);
@@ -224,10 +210,7 @@ async fn publish_server_transaction(
         .bind(&source)
         .execute(&mut *tx)
         .await?;
-        sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
-            .bind(server_id)
-            .execute(&mut *tx)
-            .await?;
+        crate::publications::settle_tx(&mut tx, server_id).await?;
         tx.commit().await?;
         return Ok(None);
     }
@@ -255,11 +238,7 @@ async fn publish_server_transaction(
     super::ordered_paths::publication::record(&mut tx, server_id, rev, &hash, &plan).await?;
     sqlx::query("INSERT INTO server_module_status(server_id,module,target_rev,updated_at) VALUES($1,$2,$3,$4) ON CONFLICT(server_id,module) DO UPDATE SET target_rev=EXCLUDED.target_rev,updated_at=EXCLUDED.updated_at")
         .bind(server_id).bind(MODULE).bind(rev).bind(now_timestamp()).execute(&mut *tx).await?;
-    sqlx::query("UPDATE servers SET manifest_rev=$2,dirty_at=NULL WHERE id=$1")
-        .bind(server_id)
-        .bind(rev)
-        .execute(&mut *tx)
-        .await?;
+    crate::publications::record_tx(&mut tx, server_id, rev).await?;
     let revision = rev.try_into()?;
     tx.commit().await?;
     Ok(Some(revision))

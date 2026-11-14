@@ -63,13 +63,13 @@
 | 定义 | 一台接入了 Agent 的机器，是运行时、节点、监控、地址与费用的承载单位。 |
 | 不是 | 节点（一台服务器可以有多个节点）；面板主机（面板进程本身不是服务器，承载节点也要单独接入 Agent）；云资源（经 `operations_cloud_links` 关联到服务器）。 |
 | 家 | 服务器 › 服务器详情。所有者 `panel-host`（`servers`、`enrollment_tokens`、`server_retirements`、遥测与网卡流量表、`server_traffic_corrections`）；设备身份密钥由 Agent 的身份目录持有，不进 SQLite。 |
-| 身份与版本 | `servers.id`；接入时登记设备公钥；`manifest_rev` 是单调递增的期望状态修订号。 |
+| 身份与版本 | `servers.id`；接入时登记设备公钥；`manifest_rev` 是单调递增的期望状态修订号（流量服务的 `runtime_publications`）。 |
 | 关系 | 承载一个运行时与其上的节点；链路段通过节点引用它；被解析规则、云资源、费用记录引用。 |
 | 当前模型 | 「添加服务器」生成一次性接入令牌，Agent 执行 `enroll`（`web/src/servers/ServerSetup.tsx`）。批量接入是同一模型的实验入口。 |
 | 历史模型 | 无旧代模型。有两处重复需要合并：资产记录有 `servers.asset_settings` 与运维区的 `fleet_profiles.asset` 两份（路线图 4.4）；生命周期有真实退役（`server_retirements`）与运维区标签 `fleet_profiles.lifecycle`（active、maintenance、draining、retired）两套，后者与 `deleted_at` 无关。 |
 | 用语 | 用“服务器”，不用“机器”“主机”。“退役”只指真实退役；运维区的维护、排空是**运维标记**，不是生命周期，界面不再写 retired。Nexus 的 host 在翻译时对应服务器，machine 对应节点。 |
 
-状态来源：在线由最近一次连接推导（60 秒内有消息）；待发布由 `dirty_at` 表示；退役有 pending、failed、confirmed、offline_unconfirmed 四种结果。
+状态来源：在线由最近一次连接推导（60 秒内有消息）；待发布由流量服务 `runtime_publications` 的 `dirty_at` 表示；退役有 pending、failed、confirmed、offline_unconfirmed 四种结果。
 
 ### 3.2 运行时
 
@@ -77,11 +77,11 @@
 | --- | --- |
 | 定义 | 服务器上由 Agent 管理的一个代理内核服务实例（当前为 sing-box，服务单元 `apsp-singbox@main`），执行面板编译好的完整配置。每台服务器至多一个。 |
 | 不是 | 节点（运行时承载多个节点）；面板插件（sing-box 面板插件是业务模块，运行时是服务器上的进程）；制品（运行时制品是随 Agent 签名发布的二进制，运行时是安装后的实例）。 |
-| 家 | 服务器详情 › 网络服务（运行时卡片）；全部服务器的汇总在网络服务首页。所有者 `proxy-runtime`（安装、预检、发布、部署与运行时升级的业务规则）；部署记录、模块状态与运行时控制表（`deployments`、`server_module_status`、`server_plugins`、`runtime_*`）是内核·设备的机制（ADR 0125 §4.1），现在由 sing-box 插件直接写入，目标是经内核的运行时模块接口写入；Agent（core 对账 + `adapter-singbox`）持有设备上的已应用状态。 |
+| 家 | 服务器详情 › 网络服务（运行时卡片）；全部服务器的汇总在网络服务首页。所有者 `proxy-runtime`（安装、预检、发布、部署与运行时升级的业务规则）；部署记录、模块状态与运行时控制表（`deployments`、`server_module_status`、`runtime_*`，启用记录 `runtime_enablements`）是内核·设备的机制（ADR 0125 §4.1），现在由 sing-box 插件直接写入，目标是经内核的运行时模块接口写入；Agent（core 对账 + `adapter-singbox`）持有设备上的已应用状态。 |
 | 身份与版本 | 以（服务器，模块 `singbox`）标识，没有单独的表。两个独立的版本维度：**配置修订**（`deployments.rev`，字节相同的配置不产生新修订，部署行作为证据永久保留，ADR 0083）与**内核版本**（如 `1.14.4-apsp.1`，记在 `singbox_runtime_manifest_facts`）。 |
 | 关系 | 属于一台服务器；承载该服务器上的受管节点与链路入口；内核版本决定可用能力（如逐用户限速需要 `1.14.4-apsp.1`，ADR 0124）。 |
 | 当前模型 | 管理员在服务器上“安装运行时”，面板写入安装意图并安排第一次发布，Agent 下载、校验、应用并回报后才算安装完成。配置由原生编译生成（`crates/compiler`）。 |
-| 历史模型 | **发布路径两代**：原生编译与 Nexus 保留配置（`crates/compiler/src/preserved.rs`，服务器有 `singbox_nexus_runtime_hosts` 记录时使用），后者在 Nexus 接管完成后退出。**内核四代**（1.14.2、1.14.2-apsp.1、1.14.0-apsp.1、1.14.4-apsp.1）全部写在数据库 `CHECK` 约束中，解耦见[收敛方案 §4](07-convergence.md#4-运行时版本与数据库结构解耦)。`server_plugins.source` 的 `agent_capability`、`legacy_nodes`、`legacy_deployments` 三个取值约束仍允许，但已不再写入。 |
+| 历史模型 | **发布路径两代**：原生编译与 Nexus 保留配置（`crates/compiler/src/preserved.rs`，服务器有 `singbox_nexus_runtime_hosts` 记录时使用），后者在 Nexus 接管完成后退出。**内核四代**（1.14.2、1.14.2-apsp.1、1.14.0-apsp.1、1.14.4-apsp.1）全部写在数据库 `CHECK` 约束中，解耦见[收敛方案 §4](07-convergence.md#4-运行时版本与数据库结构解耦)。`runtime_enablements.source` 的 `agent_capability`、`legacy_nodes`、`legacy_deployments` 三个取值约束仍允许，但已不再写入。 |
 | 用语 | “运行时”指实例，“内核版本”指它的上游版本加补丁号，“运行时制品”指签名的二进制。界面说“安装运行时”，不说“启用插件”；插件标识 `sing-box`、模块名 `singbox`、接口路径中的 `enable` 只是内部标识。 |
 
 状态来源：安装状态由意图与回报推导（未安装、已安排、等待设备、设备离线、等待应用、运行中、失败）；目标修订、已应用修订、健康分别记录；验证来自运行时检查点（[状态设计](06-states.md)）。

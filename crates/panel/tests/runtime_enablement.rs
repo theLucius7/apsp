@@ -43,7 +43,7 @@ async fn monitoring_server_requires_explicit_enablement_and_never_publishes_prox
     let before = metadata(&panel, &cookie, server).await?;
     assert_eq!(before["enabled"], false);
     assert_eq!(before["source"], Value::Null);
-    sqlx::query("UPDATE servers SET dirty_at=0 WHERE id=$1")
+    sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) VALUES($1,0) ON CONFLICT(server_id) DO UPDATE SET dirty_at=0")
         .bind(server)
         .execute(&pool)
         .await?;
@@ -110,7 +110,7 @@ async fn monitoring_server_requires_explicit_enablement_and_never_publishes_prox
     assert_eq!(enabled["source"], "administrator");
     assert_eq!(enabled["read_only"], false);
     assert_eq!(
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM server_plugins WHERE server_id=$1")
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM runtime_enablements WHERE server_id=$1")
             .bind(server)
             .fetch_one(&pool)
             .await?,
@@ -150,7 +150,7 @@ async fn capability_only_establishes_support_and_an_administrator_must_enable_bu
     assert_eq!(declared["read_only"], false);
     assert_eq!(declared["agent_supported"], true);
     assert_eq!(declared["installation"]["state"], "not_enabled");
-    sqlx::query("INSERT INTO server_plugins(server_id,plugin,source,enabled_at) VALUES($1,'sing-box','agent_capability',0)").bind(server).execute(&pool).await?;
+    sqlx::query("INSERT INTO runtime_enablements(server_id,module,source,enabled_at) VALUES($1,'singbox','agent_capability',0)").bind(server).execute(&pool).await?;
     sqlx::query("UPDATE servers SET capabilities='[]' WHERE id=$1")
         .bind(server)
         .execute(&pool)
@@ -192,7 +192,11 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
         "imported.example.com"
     };
     apsp_panel_host::schema::initialize(&pool).await?;
-    let server: i64 = sqlx::query_scalar("INSERT INTO servers(name,device_public_key,manifest_rev) VALUES('Imported server','imported-device-key',7) RETURNING id").fetch_one(&pool).await?;
+    let server: i64 = sqlx::query_scalar("INSERT INTO servers(name,device_public_key) VALUES('Imported server','imported-device-key') RETURNING id").fetch_one(&pool).await?;
+    sqlx::query("INSERT INTO runtime_publications(server_id,manifest_rev) VALUES($1,7)")
+        .bind(server)
+        .execute(&pool)
+        .await?;
     let monitor: i64 =
         sqlx::query_scalar("INSERT INTO servers(name) VALUES('Pure monitor') RETURNING id")
             .fetch_one(&pool)
@@ -301,7 +305,7 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
     sqlx::query("INSERT INTO enrollment_tokens(token_hash,server_id,expires_at,consumed_at) VALUES('TEST_ONLY-imported-enrollment',$1,4099680000,1234)")
         .bind(server).execute(&pool).await?;
     for id in [server, deploy_only] {
-        sqlx::query("INSERT INTO server_plugins(server_id,plugin,enabled,source,enabled_at) VALUES($1,'sing-box',true,'administrator',0)")
+        sqlx::query("INSERT INTO runtime_enablements(server_id,module,enabled,source,enabled_at) VALUES($1,'singbox',true,'administrator',0)")
             .bind(id).execute(&pool).await?;
     }
     let legacy = without_batch_observation_columns(snapshot::current(&pool).await?)?;
@@ -356,7 +360,7 @@ async fn restart_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Resul
         legacy
     );
     assert_eq!(
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM server_plugins")
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM runtime_enablements")
             .fetch_one(&pool)
             .await?,
         2
@@ -528,4 +532,101 @@ fn without_batch_observation_columns(
         }
     }
     Ok(snapshot)
+}
+
+/// The server views show the revision and the runtimes the traffic service keeps in its own
+/// tables (`runtime_publications`, `runtime_enablements`) exactly as they showed them from the
+/// server row and `server_plugins`: `/api/servers`, its detail and update, the dashboard, the
+/// server export and the migration preview, where the module `singbox` is still "sing-box".
+#[sqlx::test(migrations = "./migrations")]
+async fn server_views_show_the_revision_and_runtimes_traffic_keeps(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start(pool).await?;
+    let cookie = panel.admin_cookie().await?;
+    let created: Value = panel
+        .admin(
+            Method::POST,
+            "/api/servers",
+            &cookie,
+            Some(json!({"name":"TEST_ONLY published"})),
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(created["manifest_rev"], 0);
+    let server = id(&created)?;
+    let bare: i64 =
+        sqlx::query_scalar("INSERT INTO servers(name) VALUES('TEST_ONLY bare') RETURNING id")
+            .fetch_one(&panel.state.pool)
+            .await?;
+    sqlx::query("INSERT INTO runtime_publications(server_id,manifest_rev) VALUES($1,7)")
+        .bind(server)
+        .execute(&panel.state.pool)
+        .await?;
+    sqlx::query("INSERT INTO runtime_enablements(server_id,module,source,enabled_at) VALUES($1,'singbox','administrator',0)")
+        .bind(server).execute(&panel.state.pool).await?;
+    sqlx::query("INSERT INTO server_module_status(server_id,module,target_rev,applied_rev,healthy) VALUES($1,'singbox',7,7,TRUE)")
+        .bind(server).execute(&panel.state.pool).await?;
+    let get = |path: String| {
+        let panel = &panel;
+        let cookie = &cookie;
+        async move {
+            panel
+                .admin(Method::GET, &path, cookie, None)
+                .await?
+                .error_for_status()?
+                .json::<Value>()
+                .await
+                .map_err(anyhow::Error::from)
+        }
+    };
+    let listed = get("/api/servers".into()).await?;
+    let detail = get(format!("/api/servers/{server}")).await?;
+    let updated: Value = panel
+        .admin(
+            Method::PATCH,
+            &format!("/api/servers/{server}"),
+            &cookie,
+            Some(json!({"name":"TEST_ONLY published"})),
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let dashboard = get("/api/dashboard/servers".into()).await?;
+    let dashboard_detail = get(format!("/api/dashboard/servers/{server}")).await?;
+    for view in [
+        &listed[0],
+        &detail,
+        &updated,
+        &dashboard[0],
+        &dashboard_detail,
+    ] {
+        assert_eq!(view["id"], server);
+        assert_eq!(view["manifest_rev"], 7);
+    }
+    for view in [&listed[1], &dashboard[1]] {
+        assert_eq!(view["id"], bare);
+        assert_eq!(view["manifest_rev"], 0);
+    }
+    let export = get("/api/control-center/export/servers".into()).await?;
+    assert_eq!(export["servers"][0]["id"], server);
+    assert_eq!(export["servers"][0]["manifest_rev"], 7);
+    assert_eq!(export["servers"][1]["manifest_rev"], 0);
+    let preview: Value = panel
+        .admin(
+            Method::POST,
+            &format!("/api/servers/{server}/fleet/migration-preview"),
+            &cookie,
+            Some(json!({"target_server_id":bare})),
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(
+        preview["snapshot"]["related"],
+        json!({"applications":[{"module":"singbox","target_rev":7,"applied_rev":7,"healthy":true}],"plugins":["sing-box"]})
+    );
+    Ok(())
 }

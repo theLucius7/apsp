@@ -44,7 +44,7 @@ pub async fn get(
     let mut tx = apsp_traffic::read_snapshot(&state.pool).await?;
     let mut value = current(&mut tx, id).await?;
     let ids = servers(&mut tx, id).await?;
-    let rows = sqlx::query("SELECT s.id,s.name,s.dirty_at,s.last_seen,m.target_rev,m.applied_rev,m.healthy,m.updated_at,d.bundle FROM servers s LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' LEFT JOIN deployments d ON d.server_id=s.id AND d.module='singbox' AND d.rev=m.applied_rev WHERE s.id=ANY($1) ORDER BY s.id")
+    let rows = sqlx::query(&format!("SELECT s.id,s.name,{} AS pending,s.last_seen,m.target_rev,m.applied_rev,m.healthy,m.updated_at,d.bundle FROM servers s LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' LEFT JOIN deployments d ON d.server_id=s.id AND d.module='singbox' AND d.rev=m.applied_rev WHERE s.id=ANY($1) ORDER BY s.id", apsp_traffic::publications::pending_sql("s.id")))
         .bind(&ids).fetch_all(&mut *tx).await?;
     let wanted = UserLimits {
         upload_mbps: value["upload_mbps"].as_u64().unwrap_or(0) as u32,
@@ -74,7 +74,7 @@ pub async fn get(
         let applied_revision = row.get::<Option<i64>, _>("applied_rev");
         let confirmed = matches
             && fresh
-            && row.get::<Option<i64>, _>("dirty_at").is_none()
+            && !row.get::<bool, _>("pending")
             && row.get::<Option<bool>, _>("healthy") == Some(true)
             && applied_revision.is_some()
             && applied_revision == row.get::<Option<i64>, _>("target_rev");

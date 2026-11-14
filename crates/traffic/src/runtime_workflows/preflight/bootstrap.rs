@@ -129,7 +129,7 @@ pub(in super::super::super) async fn install(
     }
     let mut tx = state.pool.begin().await?;
     crate::business::lock_publication(&mut tx).await?;
-    let context = context(&mut tx, server).await?;
+    let context = context(&mut tx, server, RowLock::Update).await?;
     let latest=sqlx::query("SELECT * FROM singbox_deployment_preflights WHERE server_id=$1 ORDER BY sequence DESC LIMIT 1").bind(server).fetch_optional(&mut *tx).await?.ok_or_else(||ApiError::Conflict("请先采集首次安装的只读预检证据".into()))?;
     if latest.get::<Uuid, _>("id") != request.id
         || latest.get::<i64, _>("administrator_id") != actor
@@ -174,21 +174,14 @@ pub(in super::super::super) async fn install(
     })
     .map_err(anyhow::Error::from)?;
     let hash = crate::auth::hash_token(&bundle);
-    let manifest: i64 = sqlx::query_scalar("SELECT manifest_rev FROM servers WHERE id=$1")
-        .bind(server)
-        .fetch_one(&mut *tx)
-        .await?;
+    let manifest = crate::publications::lock_tx(&mut tx, server).await?;
     let revision = manifest
         .checked_add(1)
         .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("revision overflow")))?;
     sqlx::query("INSERT INTO deployments(server_id,module,rev,bundle,bundle_sha256,source_json,created_at) VALUES($1,'singbox',$2,$3,$4,'[]'::jsonb,$5)").bind(server).bind(revision).bind(bundle).bind(hash).bind(now).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO singbox_runtime_manifest_facts(server_id,module,revision,runtime_version,artifact_sha256,artifact) VALUES($1,'singbox',$2,'1.14.4-apsp.1',$3,$4)").bind(server).bind(revision).bind(&artifact.sha256).bind(serde_json::to_value(&artifact).map_err(anyhow::Error::from)?).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO server_module_status(server_id,module,target_rev,updated_at) VALUES($1,'singbox',$2,$3) ON CONFLICT(server_id,module) DO UPDATE SET target_rev=EXCLUDED.target_rev,updated_at=EXCLUDED.updated_at").bind(server).bind(revision).bind(now).execute(&mut *tx).await?;
-    sqlx::query("UPDATE servers SET manifest_rev=$2 WHERE id=$1")
-        .bind(server)
-        .bind(revision)
-        .execute(&mut *tx)
-        .await?;
+    crate::publications::advance_tx(&mut tx, server, revision).await?;
     sqlx::query("UPDATE singbox_deployment_preflights SET expires_at=$2 WHERE id=$1")
         .bind(request.id)
         .bind(now)

@@ -100,7 +100,7 @@ pub(super) async fn view(
     crate::business::lock_publication(&mut tx).await?;
     crate::servers::lock(&mut tx, server).await?;
     crate::settings::require_enabled(&mut tx, server).await?;
-    let row=sqlx::query(&format!("SELECT s.static_info,s.capabilities,s.last_seen,s.dirty_at,m.target_rev,m.applied_rev,m.healthy,m.updated_at,m.last_error,{} AS retiring FROM servers s LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id=$1", crate::retirement::retiring_sql("s.id"))).bind(server).fetch_one(&mut *tx).await?;
+    let row=sqlx::query(&format!("SELECT s.static_info,s.capabilities,s.last_seen,{} AS pending,m.target_rev,m.applied_rev,m.healthy,m.updated_at,m.last_error,{} AS retiring FROM servers s LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id=$1", crate::publications::pending_sql("s.id"), crate::retirement::retiring_sql("s.id"))).bind(server).fetch_one(&mut *tx).await?;
     let query = format!(
         "SELECT {} FROM nodes n JOIN servers s ON s.id=n.server_id WHERE n.server_id=$1 AND n.deleted_at IS NULL ORDER BY n.id",
         crate::business::NODE_COLUMNS
@@ -174,11 +174,11 @@ pub(super) async fn view(
     let applied_revision = row.get::<Option<i64>, _>("applied_rev");
     let drift = if !online {
         "stale"
-    } else if row.get::<Option<i64>, _>("dirty_at").is_some()
+    } else if row.get::<bool, _>("pending")
         && preflight["application"]["state"] == "needs_preflight"
     {
         "needs_preflight"
-    } else if row.get::<Option<i64>, _>("dirty_at").is_some() {
+    } else if row.get::<bool, _>("pending") {
         "pending_publish"
     } else if target.is_none() {
         "unknown"
@@ -347,7 +347,8 @@ pub(super) async fn checkpoint(
     crate::servers::lock(&mut tx, server).await?;
     crate::settings::require_enabled(&mut tx, server).await?;
     let row = sqlx::query(&format!(
-        "SELECT capabilities,last_seen,dirty_at,{} AS retiring FROM servers WHERE id=$1",
+        "SELECT capabilities,last_seen,{} AS pending,{} AS retiring FROM servers WHERE id=$1",
+        crate::publications::pending_sql("$1"),
         crate::retirement::retiring_sql("$1")
     ))
     .bind(server)
@@ -363,7 +364,7 @@ pub(super) async fn checkpoint(
         ));
     }
     if row.get::<bool, _>("retiring")
-        || row.get::<Option<i64>, _>("dirty_at").is_some()
+        || row.get::<bool, _>("pending")
         || !row
             .get::<Option<i64>, _>("last_seen")
             .is_some_and(|at| now_timestamp().saturating_sub(at) <= 60)

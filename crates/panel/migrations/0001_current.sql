@@ -2043,6 +2043,15 @@ CREATE TABLE public.runtime_deployment_bindings (
     CONSTRAINT runtime_deployment_bindings_rev_check CHECK ((rev > 0))
 );
 
+CREATE TABLE public.runtime_enablements (
+    server_id bigint NOT NULL,
+    module text NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    source text NOT NULL,
+    enabled_at bigint NOT NULL,
+    CONSTRAINT runtime_enablements_source_check CHECK ((source = ANY (ARRAY['administrator'::text, 'agent_capability'::text, 'legacy_nodes'::text, 'legacy_deployments'::text])))
+);
+
 CREATE TABLE public.runtime_module_checkpoints (
     server_id bigint NOT NULL,
     module text NOT NULL,
@@ -2186,15 +2195,6 @@ CREATE SEQUENCE public.server_offline_events_id_seq
 
 ALTER SEQUENCE public.server_offline_events_id_seq OWNED BY public.server_alert_events.id;
 
-CREATE TABLE public.server_plugins (
-    server_id bigint NOT NULL,
-    plugin text NOT NULL,
-    enabled boolean DEFAULT true NOT NULL,
-    source text NOT NULL,
-    enabled_at bigint NOT NULL,
-    CONSTRAINT server_plugins_source_check CHECK ((source = ANY (ARRAY['administrator'::text, 'agent_capability'::text, 'legacy_nodes'::text, 'legacy_deployments'::text])))
-);
-
 CREATE TABLE public.server_retirements (
     server_id bigint NOT NULL,
     request_id uuid NOT NULL,
@@ -2233,16 +2233,13 @@ CREATE TABLE public.servers (
     device_public_key text,
     static_info jsonb DEFAULT '{}'::jsonb NOT NULL,
     last_seen bigint,
-    manifest_rev bigint DEFAULT 0 NOT NULL,
-    dirty_at bigint,
     deleted_at bigint,
     capabilities jsonb DEFAULT '[]'::jsonb NOT NULL,
     agent_settings jsonb DEFAULT '{"auto_update": false, "discover_public_ips": true, "sample_interval_secs": 1, "upload_interval_secs": 3}'::jsonb NOT NULL,
     last_heartbeat_at bigint,
     asset_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
     static_info_received_at bigint,
-    last_contact_at bigint,
-    CONSTRAINT servers_manifest_rev_check CHECK ((manifest_rev >= 0))
+    last_contact_at bigint
 );
 
 CREATE SEQUENCE public.servers_id_seq
@@ -4161,6 +4158,9 @@ ALTER TABLE ONLY public.runtime_deployment_bindings
 ALTER TABLE ONLY public.runtime_deployment_bindings
     ADD CONSTRAINT runtime_deployment_bindings_server_id_module_rev_key UNIQUE (server_id, module, rev);
 
+ALTER TABLE ONLY public.runtime_enablements
+    ADD CONSTRAINT runtime_enablements_pkey PRIMARY KEY (server_id, module);
+
 ALTER TABLE ONLY public.runtime_module_checkpoints
     ADD CONSTRAINT runtime_module_checkpoints_pkey PRIMARY KEY (server_id, module);
 
@@ -4190,9 +4190,6 @@ ALTER TABLE ONLY public.server_network_daily
 
 ALTER TABLE ONLY public.server_alert_events
     ADD CONSTRAINT server_offline_events_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.server_plugins
-    ADD CONSTRAINT server_plugins_pkey PRIMARY KEY (server_id, plugin);
 
 ALTER TABLE ONLY public.server_retirements
     ADD CONSTRAINT server_retirements_pkey PRIMARY KEY (server_id);
@@ -4693,6 +4690,8 @@ CREATE INDEX probe_result_target_time_idx ON public.probe_results USING btree (s
 CREATE INDEX probe_result_time_idx ON public.probe_results USING btree (server_id, sampled_at);
 
 CREATE INDEX probe_server_idx ON public.network_probes USING btree (server_id);
+
+CREATE INDEX runtime_control_checkpoint_revision_idx ON public.runtime_control_requests USING btree (server_id, (((request_json -> 'expected'::text) ->> 'revision'::text)::bigint)) WHERE (kind = 'checkpoint'::text);
 
 CREATE INDEX runtime_control_expired_barrier_idx ON public.runtime_control_requests USING btree (server_id, created_at) WHERE ((kind = 'barrier'::text) AND (state = 'expired'::text));
 
@@ -5249,6 +5248,9 @@ ALTER TABLE ONLY public.runtime_control_requests
 ALTER TABLE ONLY public.runtime_deployment_bindings
     ADD CONSTRAINT runtime_deployment_bindings_server_id_module_rev_fkey FOREIGN KEY (server_id, module, rev) REFERENCES public.deployments(server_id, module, rev);
 
+ALTER TABLE ONLY public.runtime_enablements
+    ADD CONSTRAINT runtime_enablements_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id);
+
 ALTER TABLE ONLY public.runtime_module_checkpoints
     ADD CONSTRAINT runtime_module_checkpoints_barrier_request_id_fkey FOREIGN KEY (barrier_request_id) REFERENCES public.runtime_control_receipts(request_id);
 
@@ -5290,9 +5292,6 @@ ALTER TABLE ONLY public.server_network_daily
 
 ALTER TABLE ONLY public.server_alert_events
     ADD CONSTRAINT server_offline_events_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id);
-
-ALTER TABLE ONLY public.server_plugins
-    ADD CONSTRAINT server_plugins_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id);
 
 ALTER TABLE ONLY public.server_retirements
     ADD CONSTRAINT server_retirements_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.servers(id);
@@ -5735,6 +5734,12 @@ CREATE TABLE public.probe_assignments (
 CREATE TABLE public.server_ip_quality_refreshes (
     server_id bigint PRIMARY KEY REFERENCES public.servers(id) ON DELETE CASCADE,
     started_at bigint NOT NULL
+);
+
+CREATE TABLE public.runtime_publications (
+    server_id bigint PRIMARY KEY REFERENCES public.servers(id) ON DELETE CASCADE,
+    manifest_rev bigint DEFAULT 0 NOT NULL CHECK (manifest_rev >= 0),
+    dirty_at bigint
 );
 
 CREATE TABLE public.apsp_schema_baseline (singleton boolean PRIMARY KEY CHECK (singleton), fingerprint text NOT NULL);

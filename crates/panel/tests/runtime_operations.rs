@@ -179,7 +179,16 @@ async fn runtime_mutations_require_current_failed_target_and_refuse_retirement(
             .contains("尚未安装 sing-box")
     );
     panel.enable_runtime(&cookie, server).await?;
-    sqlx::query("UPDATE servers SET capabilities='[\"singbox\",\"runtime:operations:v1\"]',dirty_at=NULL WHERE id=$1").bind(server).execute(&panel.state.pool).await?;
+    sqlx::query(
+        "UPDATE servers SET capabilities='[\"singbox\",\"runtime:operations:v1\"]' WHERE id=$1",
+    )
+    .bind(server)
+    .execute(&panel.state.pool)
+    .await?;
+    sqlx::query("UPDATE runtime_publications SET dirty_at=NULL WHERE server_id=$1")
+        .bind(server)
+        .execute(&panel.state.pool)
+        .await?;
     sqlx::query("INSERT INTO server_module_status(server_id,module,target_rev,applied_rev,last_result_rev,healthy,last_error,updated_at) VALUES($1,'singbox',2,1,2,true,'fixture failure',$2)").bind(server).bind(now_timestamp()).execute(&panel.state.pool).await?;
     for body in [
         json!({"operation":"retry_deployment","expected_revision":1}),
@@ -193,7 +202,7 @@ async fn runtime_mutations_require_current_failed_target_and_refuse_retirement(
             StatusCode::CONFLICT
         );
     }
-    sqlx::query("UPDATE servers SET dirty_at=1 WHERE id=$1")
+    sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) VALUES($1,1) ON CONFLICT(server_id) DO UPDATE SET dirty_at=1")
         .bind(server)
         .execute(&panel.state.pool)
         .await?;
@@ -205,7 +214,7 @@ async fn runtime_mutations_require_current_failed_target_and_refuse_retirement(
             .status(),
         StatusCode::CONFLICT
     );
-    sqlx::query("UPDATE servers SET dirty_at=NULL WHERE id=$1")
+    sqlx::query("UPDATE runtime_publications SET dirty_at=NULL WHERE server_id=$1")
         .bind(server)
         .execute(&panel.state.pool)
         .await?;

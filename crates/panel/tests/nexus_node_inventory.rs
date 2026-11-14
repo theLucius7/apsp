@@ -176,7 +176,7 @@ async fn node_inventory_is_atomic_encrypted_idempotent_and_does_not_publish(
         );
         assert_eq!(raw["routes"][0]["action_value"], SECRET);
     }
-    let untouched:(i64,i64,i64,i64)=sqlx::query_as("SELECT (SELECT COUNT(*) FROM nodes),(SELECT COUNT(*) FROM server_plugins),(SELECT COUNT(*) FROM deployments),(SELECT COUNT(*) FROM servers WHERE dirty_at IS NOT NULL)").fetch_one(&pool).await?;
+    let untouched:(i64,i64,i64,i64)=sqlx::query_as("SELECT (SELECT COUNT(*) FROM nodes),(SELECT COUNT(*) FROM runtime_enablements),(SELECT COUNT(*) FROM deployments),(SELECT COUNT(*) FROM runtime_publications WHERE dirty_at IS NOT NULL)").fetch_one(&pool).await?;
     assert_eq!(untouched, (0, 0, 0, 0));
     let audits: Value = sqlx::query_scalar(
         "SELECT COALESCE(jsonb_agg(to_jsonb(a)),'[]'::jsonb) FROM management_audit a",

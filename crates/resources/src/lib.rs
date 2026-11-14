@@ -17,6 +17,7 @@ mod routes;
 pub mod server_assets;
 pub mod server_lifecycle;
 pub mod server_observation;
+pub mod server_runtime;
 #[cfg(test)]
 mod server_state_tests;
 pub mod servers;

@@ -177,7 +177,7 @@ pub(super) async fn authorize(fixture: &Fixture, chain: i64) -> Result<Value> {
 
 /// Device observations are explicit TEST_ONLY facts; this never runs a native process.
 pub(super) async fn confirm_devices(state: &AppState) -> Result<()> {
-    let manifests:Vec<(i64,Value)>=sqlx::query_as("SELECT s.id,s.static_info FROM servers s WHERE s.deleted_at IS NULL AND s.dirty_at IS NULL AND EXISTS(SELECT 1 FROM deployments d WHERE d.server_id=s.id AND d.module='singbox') ORDER BY s.id").fetch_all(&state.pool).await?;
+    let manifests:Vec<(i64,Value)>=sqlx::query_as("SELECT s.id,s.static_info FROM servers s WHERE s.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM runtime_publications p WHERE p.server_id=s.id AND p.dirty_at IS NOT NULL) AND EXISTS(SELECT 1 FROM deployments d WHERE d.server_id=s.id AND d.module='singbox') ORDER BY s.id").fetch_all(&state.pool).await?;
     for (server, info) in manifests {
         ensure!(
             apsp_traffic::agent::manifest_module(state, server, &info)
@@ -186,7 +186,7 @@ pub(super) async fn confirm_devices(state: &AppState) -> Result<()> {
             "TEST_ONLY signed manifest preparation is missing"
         );
     }
-    let servers: Vec<i64> = sqlx::query_scalar("SELECT m.server_id FROM server_module_status m JOIN servers s ON s.id=m.server_id WHERE m.module='singbox' AND m.target_rev>0 AND (NOT m.healthy OR NOT EXISTS(SELECT 1 FROM runtime_module_checkpoints r WHERE r.server_id=m.server_id AND r.module=m.module AND (r.checkpoint_json->'binding'->>'revision')::bigint=m.target_rev AND r.checkpoint_json->>'healthy'='true')) AND s.dirty_at IS NULL AND s.deleted_at IS NULL ORDER BY m.server_id")
+    let servers: Vec<i64> = sqlx::query_scalar("SELECT m.server_id FROM server_module_status m JOIN servers s ON s.id=m.server_id WHERE m.module='singbox' AND m.target_rev>0 AND (NOT m.healthy OR NOT EXISTS(SELECT 1 FROM runtime_module_checkpoints r WHERE r.server_id=m.server_id AND r.module=m.module AND (r.checkpoint_json->'binding'->>'revision')::bigint=m.target_rev AND r.checkpoint_json->>'healthy'='true')) AND NOT EXISTS(SELECT 1 FROM runtime_publications p WHERE p.server_id=s.id AND p.dirty_at IS NOT NULL) AND s.deleted_at IS NULL ORDER BY m.server_id")
         .fetch_all(&state.pool).await?;
     for server in servers {
         let request = runtime_control::request_checkpoint(state, server, "singbox").await?;

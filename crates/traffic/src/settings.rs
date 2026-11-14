@@ -10,11 +10,13 @@ use axum::{
 };
 use serde::Serialize;
 use serde_json::Value;
-use sqlx::{FromRow, Postgres, Transaction};
+use sqlx::{FromRow, PgPool, Postgres, Transaction};
 
+/// Joins the sing-box enablement of the server `s` as `enablement`, for [`SOURCE_SQL`].
+pub(super) const ENABLEMENT_JOIN: &str = "LEFT JOIN runtime_enablements enablement ON enablement.server_id=s.id AND enablement.module='singbox'";
 // Enablement requires an explicit administrator choice.
 // A device capability only establishes support, never installation or enablement.
-pub(super) const SOURCE_SQL: &str = "CASE WHEN EXISTS(SELECT 1 FROM singbox_nexus_runtime_hosts h WHERE h.server_id=s.id AND h.state<>'active') THEN NULL WHEN p.enabled AND p.source <> 'agent_capability' THEN p.source END";
+pub(super) const SOURCE_SQL: &str = "CASE WHEN EXISTS(SELECT 1 FROM singbox_nexus_runtime_hosts h WHERE h.server_id=s.id AND h.state<>'active') THEN NULL WHEN enablement.enabled AND enablement.source <> 'agent_capability' THEN enablement.source END";
 
 #[derive(Default, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -54,8 +56,9 @@ pub struct RuntimeServer {
     pub agent_supported: bool,
     #[sqlx(default)]
     pub read_only: bool,
+    /// A change awaits publication.
     #[serde(skip)]
-    pub dirty_at: Option<i64>,
+    pub pending: bool,
     #[serde(skip)]
     pub target_rev: Option<i64>,
     #[serde(skip)]
@@ -120,10 +123,7 @@ impl RuntimeServer {
                 InstallationState::Offline,
                 "设备当前离线，安装会在重新连接后继续".into(),
             )
-        } else if self.applied_rev == target
-            && self.healthy == Some(true)
-            && self.dirty_at.is_none()
-        {
+        } else if self.applied_rev == target && self.healthy == Some(true) && !self.pending {
             (
                 InstallationState::Ready,
                 "设备已确认应用目标版本，运行时健康检查通过".into(),
@@ -141,7 +141,7 @@ impl RuntimeServer {
             // waits for publication while saved business changes are pending.
             (
                 InstallationState::Pending,
-                if self.dirty_at.is_some() {
+                if self.pending {
                     "设备已回报应用；业务待完整预检确认并发布后，才会核对实际配置与进程并确认安装完成"
                 } else {
                     "设备已回报应用，等待核对实际配置文件、受管进程与签名运行时后确认安装完成"
@@ -171,7 +171,8 @@ impl RuntimeServer {
 }
 fn query() -> String {
     format!(
-        "SELECT s.id,s.name,s.last_seen,s.capabilities,s.dirty_at,{SOURCE_SQL} AS source,m.target_rev,m.applied_rev,m.last_result_rev,m.healthy,m.last_error,e.error AS manifest_error,COALESCE(r.checkpoint_required,false) AS checkpoint_required FROM servers s LEFT JOIN server_plugins p ON p.server_id=s.id AND p.plugin='sing-box' LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' LEFT JOIN singbox_installation e ON e.server_id=s.id AND e.target_rev=m.target_rev LEFT JOIN runtime_control_devices r ON r.server_id=s.id WHERE s.deleted_at IS NULL"
+        "SELECT s.id,s.name,s.last_seen,s.capabilities,{} AS pending,{SOURCE_SQL} AS source,m.target_rev,m.applied_rev,m.last_result_rev,m.healthy,m.last_error,e.error AS manifest_error,COALESCE(r.checkpoint_required,false) AS checkpoint_required FROM servers s {ENABLEMENT_JOIN} LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' LEFT JOIN singbox_installation e ON e.server_id=s.id AND e.target_rev=m.target_rev LEFT JOIN runtime_control_devices r ON r.server_id=s.id WHERE s.deleted_at IS NULL",
+        crate::publications::pending_sql("s.id")
     )
 }
 
@@ -207,10 +208,9 @@ pub async fn enable(
     let mut tx = state.pool.begin().await?;
     crate::servers::lock(&mut tx, id).await?;
     super::runtime_controls::ensure(&mut tx, id).await?;
-    sqlx::query("INSERT INTO server_plugins(server_id,plugin,source,enabled_at) VALUES($1,'sing-box','administrator',$2) ON CONFLICT(server_id,plugin) DO UPDATE SET enabled=TRUE,source='administrator'")
+    sqlx::query("INSERT INTO runtime_enablements(server_id,module,source,enabled_at) VALUES($1,'singbox','administrator',$2) ON CONFLICT(server_id,module) DO UPDATE SET enabled=TRUE,source='administrator'")
         .bind(id).bind(now_timestamp()).execute(&mut *tx).await?;
-    sqlx::query("UPDATE servers SET dirty_at=COALESCE(dirty_at,FLOOR(EXTRACT(EPOCH FROM clock_timestamp())*1000)::bigint) WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM deployments WHERE server_id=$1 AND module='singbox')")
-        .bind(id).execute(&mut *tx).await?;
+    crate::publications::mark_first_pending_tx(&mut tx, id).await?;
     tx.commit().await?;
     let row = get(State(state), headers, Path(id)).await?.0;
     Ok((StatusCode::OK, Json(row)))
@@ -220,9 +220,26 @@ pub(super) async fn is_enabled(
     tx: &mut Transaction<'_, Postgres>,
     id: i64,
 ) -> Result<bool, sqlx::Error> {
-    let source: Option<String> = sqlx::query_scalar(&format!("SELECT {SOURCE_SQL} FROM servers s LEFT JOIN server_plugins p ON p.server_id=s.id AND p.plugin='sing-box' WHERE s.id=$1 AND s.deleted_at IS NULL"))
+    let source: Option<String> = sqlx::query_scalar(&format!("SELECT {SOURCE_SQL} FROM servers s {ENABLEMENT_JOIN} WHERE s.id=$1 AND s.deleted_at IS NULL"))
         .bind(id).fetch_one(&mut **tx).await?;
     Ok(source.is_some())
+}
+
+/// What a collection migration leaves behind on `server`: the runtimes enabled on it by the
+/// names the console has always shown (the module `singbox` is "sing-box"), and each
+/// module's deployment state.
+pub async fn references(pool: &PgPool, server: i64) -> sqlx::Result<(Vec<String>, Vec<Value>)> {
+    let enabled = sqlx::query_scalar(
+        "SELECT CASE module WHEN 'singbox' THEN 'sing-box' ELSE module END AS name FROM runtime_enablements WHERE server_id=$1 AND enabled ORDER BY name",
+    )
+    .bind(server)
+    .fetch_all(pool)
+    .await?;
+    let deployments = sqlx::query_scalar("SELECT jsonb_build_object('module',module,'target_rev',target_rev,'applied_rev',applied_rev,'healthy',healthy) FROM server_module_status WHERE server_id=$1 ORDER BY module")
+        .bind(server)
+        .fetch_all(pool)
+        .await?;
+    Ok((enabled, deployments))
 }
 
 pub async fn require_enabled(tx: &mut Transaction<'_, Postgres>, id: i64) -> ApiResult<()> {

@@ -213,7 +213,7 @@ impl TestPanel {
             .bind(chain).bind(entry_version).bind(frozen).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
         sqlx::query("INSERT INTO singbox_ordered_chain_hops(chain_id,generation,position,kind,endpoint_version_id,managed_node_id,managed_server_id,relay_uuid) VALUES($1,1,1,'managed',$2,$3,$4,$5)")
             .bind(chain).bind(exit_version).bind(exit).bind(exit_server).bind(relay).execute(&mut *tx).await?;
-        sqlx::query("UPDATE servers SET dirty_at=$2 WHERE id IN (SELECT server_id FROM nodes WHERE id=ANY($1))")
+        sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) SELECT DISTINCT server_id,$2::bigint FROM nodes WHERE id=ANY($1) ON CONFLICT(server_id) DO UPDATE SET dirty_at=EXCLUDED.dirty_at")
             .bind(vec![entry,exit]).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(json!({"id":chain,"name":name,"entry_node_id":entry}))
@@ -374,7 +374,7 @@ impl TestPanel {
 
     pub async fn publish_now(&self) -> Result<()> {
         self.prepare_deployment_preflights().await?;
-        sqlx::query("UPDATE servers SET dirty_at=0 WHERE dirty_at IS NOT NULL")
+        sqlx::query("UPDATE runtime_publications SET dirty_at=0 WHERE dirty_at IS NOT NULL")
             .execute(&self.state.pool)
             .await?;
         apsp_traffic::publisher::publish_due(&self.state, None).await

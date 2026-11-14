@@ -199,16 +199,18 @@ async fn quota_blocks_subscription_and_runtime_without_erasing_history(pool: PgP
     );
     assert_eq!(reasons[0], reasons[1]);
     entitlements::refresh(&pool, now_timestamp()).await?;
-    let dirty: Option<i64> = sqlx::query_scalar("SELECT dirty_at FROM servers WHERE id=$1")
-        .bind(server)
-        .fetch_one(&pool)
-        .await?;
+    let dirty: Option<i64> =
+        sqlx::query_scalar("SELECT (SELECT dirty_at FROM runtime_publications WHERE server_id=$1)")
+            .bind(server)
+            .fetch_one(&pool)
+            .await?;
     assert!(dirty.is_some());
     entitlements::refresh(&pool, now_timestamp()).await?;
-    let still_dirty: Option<i64> = sqlx::query_scalar("SELECT dirty_at FROM servers WHERE id=$1")
-        .bind(server)
-        .fetch_one(&pool)
-        .await?;
+    let still_dirty: Option<i64> =
+        sqlx::query_scalar("SELECT (SELECT dirty_at FROM runtime_publications WHERE server_id=$1)")
+            .bind(server)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(dirty, still_dirty);
     panel.publish_now().await?;
     assert!(

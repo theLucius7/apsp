@@ -1,8 +1,8 @@
 //! Connects the typed interfaces at startup (ADR 0128): device reports, the audit trail's
 //! object snapshots, device work, observability evidence, the alert outbox the
-//! notification settings and channels reach, server observation, the member portal's host
-//! network, the proxy users traffic compiles in, China reachability for the Nexus cutover
-//! and the dashboard's exchange rates. This is the only place that names which owner
+//! notification settings and channels reach, server observation, the server runtime state
+//! traffic keeps, the member portal's host network, the proxy users traffic compiles in,
+//! China reachability for the Nexus cutover and the dashboard's exchange rates. This is the only place that names which owner
 //! answers each interface.
 
 use apsp_access as access;
@@ -27,6 +27,7 @@ use apsp_resources::{
     device_channel::{self, DeviceReports},
     retirement,
     server_observation::{self, ServerObservation, StoredMetrics},
+    server_runtime::{self, RuntimeReferences, ServerRuntime},
     servers::{self, Server},
 };
 use apsp_traffic as traffic;
@@ -47,6 +48,7 @@ pub fn install() {
     evidence::install(&WIRING);
     outbox::install(&WIRING);
     server_observation::install(&WIRING);
+    server_runtime::install(&WIRING);
     access::install_host_network(&WIRING);
     traffic::users::install(&WIRING);
     traffic::china_reachability::install(&WIRING);
@@ -462,6 +464,30 @@ impl ServerObservation for Wiring {
         server: i64,
     ) -> BoxFuture<'a, ApiResult<()>> {
         Box::pin(observability::latency_tasks::assign_defaults(tx, server))
+    }
+}
+
+impl ServerRuntime for Wiring {
+    fn publication_revisions<'a>(
+        &'a self,
+        pool: &'a PgPool,
+        servers: &'a [i64],
+    ) -> BoxFuture<'a, ApiResult<HashMap<i64, i64>>> {
+        Box::pin(async move { Ok(traffic::publications::revisions(pool, servers).await?) })
+    }
+
+    fn references<'a>(
+        &'a self,
+        pool: &'a PgPool,
+        server: i64,
+    ) -> BoxFuture<'a, ApiResult<RuntimeReferences>> {
+        Box::pin(async move {
+            let (enabled, deployments) = traffic::settings::references(pool, server).await?;
+            Ok(RuntimeReferences {
+                enabled,
+                deployments,
+            })
+        })
     }
 }
 

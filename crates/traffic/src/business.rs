@@ -131,6 +131,8 @@ pub async fn lock_publication(
     crate::locks::PUBLICATION.lock(transaction).await
 }
 
+/// Marks the servers a change touches, with the other servers of the ordered chains they
+/// share, as pending publication (see `publications`).
 pub async fn mark_dirty(
     transaction: &mut Transaction<'_, Postgres>,
     server_ids: &[i64],
@@ -139,9 +141,9 @@ pub async fn mark_dirty(
     if server_ids.is_empty() {
         return Ok(());
     }
-    let affected: Vec<i64> = sqlx::query_scalar("WITH members AS (SELECT c.id AS chain_id,n.server_id FROM singbox_chains c JOIN nodes n ON n.id=c.entry_node_id WHERE c.path_kind='ordered' AND (c.deleted_at IS NULL OR c.phase<>'retired') UNION SELECT h.chain_id,h.managed_server_id FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE c.path_kind='ordered' AND (c.deleted_at IS NULL OR c.phase<>'retired') AND h.managed_server_id IS NOT NULL AND (h.generation=ANY(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) OR EXISTS(SELECT 1 FROM unnest(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) AS selected(generation) WHERE selected.generation IS NOT NULL AND NOT EXISTS(SELECT 1 FROM singbox_ordered_chain_versions v WHERE v.chain_id=c.id AND v.generation=selected.generation)))), touched AS (SELECT DISTINCT chain_id FROM members WHERE server_id=ANY($1)) SELECT id FROM servers WHERE id=ANY($1) OR id IN (SELECT server_id FROM members JOIN touched USING(chain_id)) ORDER BY id FOR UPDATE")
+    let affected: Vec<i64> = sqlx::query_scalar("WITH members AS (SELECT c.id AS chain_id,n.server_id FROM singbox_chains c JOIN nodes n ON n.id=c.entry_node_id WHERE c.path_kind='ordered' AND (c.deleted_at IS NULL OR c.phase<>'retired') UNION SELECT h.chain_id,h.managed_server_id FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE c.path_kind='ordered' AND (c.deleted_at IS NULL OR c.phase<>'retired') AND h.managed_server_id IS NOT NULL AND (h.generation=ANY(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) OR EXISTS(SELECT 1 FROM unnest(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) AS selected(generation) WHERE selected.generation IS NOT NULL AND NOT EXISTS(SELECT 1 FROM singbox_ordered_chain_versions v WHERE v.chain_id=c.id AND v.generation=selected.generation)))), touched AS (SELECT DISTINCT chain_id FROM members WHERE server_id=ANY($1)) SELECT id FROM servers WHERE id=ANY($1) OR id IN (SELECT server_id FROM members JOIN touched USING(chain_id)) ORDER BY id")
         .bind(server_ids).fetch_all(&mut **transaction).await?;
-    sqlx::query("UPDATE servers SET dirty_at=FLOOR(EXTRACT(EPOCH FROM clock_timestamp())*1000)::bigint WHERE id=ANY($1) AND deleted_at IS NULL").bind(&affected).execute(&mut **transaction).await?;
+    crate::publications::mark_pending_tx(transaction, &affected).await?;
     Ok(())
 }
 

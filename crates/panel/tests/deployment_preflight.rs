@@ -21,6 +21,13 @@ use business_support::{
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use sqlx::PgPool;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
 use uuid::Uuid;
 
 async fn scenario(panel: &TestPanel, cookie: &str) -> Result<(i64, i64, i64)> {
@@ -35,10 +42,12 @@ async fn scenario(panel: &TestPanel, cookie: &str) -> Result<(i64, i64, i64)> {
 
 async fn due(panel: &TestPanel, server: i64) -> Result<()> {
     // Advance only the debounce fixture clock; never create a confirmation or deployment.
-    sqlx::query("UPDATE servers SET dirty_at=0 WHERE id=$1 AND dirty_at IS NOT NULL")
-        .bind(server)
-        .execute(&panel.state.pool)
-        .await?;
+    sqlx::query(
+        "UPDATE runtime_publications SET dirty_at=0 WHERE server_id=$1 AND dirty_at IS NOT NULL",
+    )
+    .bind(server)
+    .execute(&panel.state.pool)
+    .await?;
     publisher::publish_due(&panel.state, None).await
 }
 
@@ -53,7 +62,7 @@ async fn revision(pool: &PgPool, server: i64) -> Result<i64> {
 
 async fn pending(pool: &PgPool, server: i64) -> Result<bool> {
     Ok(
-        sqlx::query_scalar("SELECT dirty_at IS NOT NULL FROM servers WHERE id=$1")
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM runtime_publications WHERE server_id=$1 AND dirty_at IS NOT NULL)")
             .bind(server)
             .fetch_one(pool)
             .await?,
@@ -143,6 +152,93 @@ async fn first_listener_waits_for_real_api_confirmation_and_rejects_expired_evid
             .len(),
         1
     );
+    Ok(())
+}
+
+/// The publication transaction reads in a REPEATABLE READ snapshot and, for a pending
+/// listener, evaluates the confirmed preflight inside it. The device channel writes the
+/// server row (`last_seen`) on every message; such writes committed after the snapshot must
+/// neither fail the publication with a serialization error nor wait for it. The first
+/// attempt's snapshot is taken while this test holds the publication lock, so the first
+/// update is certainly newer than it, and a writer keeps updating the row until the
+/// publication ends, so no retry fits between two updates either.
+#[sqlx::test(migrations = "./migrations")]
+async fn publication_with_a_confirmed_preflight_tolerates_contact_updates_after_its_snapshot(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, _, _) = scenario(&panel, &cookie).await?;
+    due(&panel, server).await?;
+    assert_eq!(revision(&pool, server).await?, 0);
+    let fresh = observe(&panel, &cookie, server).await?;
+    confirm(&panel, &cookie, server, fresh)
+        .await?
+        .error_for_status()?;
+    sqlx::query("UPDATE runtime_publications SET dirty_at=0 WHERE server_id=$1")
+        .bind(server)
+        .execute(&pool)
+        .await?;
+
+    let mut gate = pool.begin().await?;
+    apsp_traffic::business::lock_publication(&mut gate).await?;
+    let publication = tokio::spawn({
+        let state = panel.state.clone();
+        async move { publisher::publish_due(&state, None).await }
+    });
+    let waiting = "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND database=(SELECT oid FROM pg_database WHERE datname=current_database()) AND objid=73201001 AND NOT granted)";
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !sqlx::query_scalar::<_, bool>(waiting)
+        .fetch_one(&pool)
+        .await?
+    {
+        ensure!(
+            Instant::now() < deadline,
+            "the publisher waits for the publication lock"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    // The publisher's snapshot is taken; a device message updates the server row after it.
+    let contact = "UPDATE servers SET last_seen=$2,last_contact_at=$2 WHERE id=$1";
+    sqlx::query(contact)
+        .bind(server)
+        .bind(now_timestamp())
+        .execute(&pool)
+        .await?;
+    let stop = Arc::new(AtomicBool::new(false));
+    let writer = tokio::spawn({
+        let (pool, stop) = (pool.clone(), stop.clone());
+        async move {
+            let mut updates = 0_u64;
+            while !stop.load(Ordering::Relaxed) {
+                sqlx::query(contact)
+                    .bind(server)
+                    .bind(now_timestamp())
+                    .execute(&pool)
+                    .await?;
+                updates += 1;
+            }
+            anyhow::Ok(updates)
+        }
+    });
+    gate.commit().await?;
+    let published = publication.await?;
+    stop.store(true, Ordering::Relaxed);
+    let updates = writer.await??;
+    published?;
+    ensure!(
+        updates > 0,
+        "the device kept writing during the publication"
+    );
+    assert_eq!(revision(&pool, server).await?, 1);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM deployments WHERE server_id=$1")
+            .bind(server)
+            .fetch_one(&pool)
+            .await?,
+        1
+    );
+    assert!(!pending(&pool, server).await?);
     Ok(())
 }
 

@@ -45,23 +45,26 @@ async fn explicit_enable_queues_once_and_first_publication_has_no_public_listene
     assert_eq!(enabled["installation"]["state"], "queued");
     assert_eq!(enabled["installation"]["target_rev"], 0);
     assert_eq!(enabled["installation"]["applied_rev"], 0);
-    let scheduled: i64 = sqlx::query_scalar("SELECT dirty_at FROM servers WHERE id=$1")
-        .bind(server)
-        .fetch_one(&pool)
-        .await?;
+    let scheduled: i64 =
+        sqlx::query_scalar("SELECT (SELECT dirty_at FROM runtime_publications WHERE server_id=$1)")
+            .bind(server)
+            .fetch_one(&pool)
+            .await?;
     // Make a meaningful, already-due timestamp. Repeated enable must retain it.
     let due = scheduled - 6000;
-    sqlx::query("UPDATE servers SET dirty_at=$2 WHERE id=$1")
+    sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) VALUES($1,$2) ON CONFLICT(server_id) DO UPDATE SET dirty_at=EXCLUDED.dirty_at")
         .bind(server)
         .bind(due)
         .execute(&pool)
         .await?;
     panel.enable_runtime(&cookie, server).await?;
     assert_eq!(
-        sqlx::query_scalar::<_, i64>("SELECT dirty_at FROM servers WHERE id=$1")
-            .bind(server)
-            .fetch_one(&pool)
-            .await?,
+        sqlx::query_scalar::<_, i64>(
+            "SELECT (SELECT dirty_at FROM runtime_publications WHERE server_id=$1)"
+        )
+        .bind(server)
+        .fetch_one(&pool)
+        .await?,
         due
     );
     apsp_traffic::publisher::publish_due(&panel.state, None).await?;
@@ -88,10 +91,12 @@ async fn explicit_enable_queues_once_and_first_publication_has_no_public_listene
     assert_eq!(pending["installation"]["applied_rev"], 0);
     panel.enable_runtime(&cookie, server).await?;
     assert_eq!(
-        sqlx::query_scalar::<_, Option<i64>>("SELECT dirty_at FROM servers WHERE id=$1")
-            .bind(server)
-            .fetch_one(&pool)
-            .await?,
+        sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT (SELECT dirty_at FROM runtime_publications WHERE server_id=$1)"
+        )
+        .bind(server)
+        .fetch_one(&pool)
+        .await?,
         None
     );
     Ok(())

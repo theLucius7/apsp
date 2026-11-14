@@ -121,7 +121,8 @@ pub async fn create(
     apsp_traffic::settings::require_enabled(&mut tx, server).await?;
     crate::fleet::ensure_accepts_tasks_tx(&mut tx, server).await?;
     let row = sqlx::query(&format!(
-        "SELECT capabilities,last_seen,dirty_at,{} AS retiring FROM servers WHERE id=$1",
+        "SELECT capabilities,last_seen,{} AS pending,{} AS retiring FROM servers WHERE id=$1",
+        apsp_traffic::publications::pending_sql("$1"),
         crate::retirement::retiring_sql("$1")
     ))
     .bind(server)
@@ -166,7 +167,7 @@ pub async fn create(
         &mut tx,
         server,
         &request,
-        row.get::<Option<i64>, _>("dirty_at").is_some(),
+        row.get::<bool, _>("pending"),
     )
     .await?;
     enqueue(&mut tx, server, &request.module, &request).await?;

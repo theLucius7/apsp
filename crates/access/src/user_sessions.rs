@@ -79,10 +79,13 @@ pub async fn request(
     crate::proxy_users::lock_user(&mut tx, id).await?;
     crate::servers::lock(&mut tx, host).await?;
     crate::device_work::ensure_accepts_tasks_tx(&mut tx, host).await?;
-    let row = sqlx::query("SELECT last_seen,capabilities,dirty_at FROM servers WHERE id=$1")
-        .bind(host)
-        .fetch_one(&mut *tx)
-        .await?;
+    let row = sqlx::query(&format!(
+        "SELECT last_seen,capabilities,{} AS pending FROM servers WHERE id=$1",
+        apsp_traffic::publications::pending_sql("$1")
+    ))
+    .bind(host)
+    .fetch_one(&mut *tx)
+    .await?;
     let (applied, bundle) = apsp_traffic::deployments::applied_state(&mut tx, host)
         .await?
         .and_then(|mut applied| applied.bundle.take().map(|bundle| (applied, bundle)))
@@ -97,7 +100,7 @@ pub async fn request(
     {
         return Err(ApiError::Conflict("需要在线并支持连接管理的 Agent".into()));
     }
-    if row.get::<Option<i64>, _>("dirty_at").is_some()
+    if row.get::<bool, _>("pending")
         || !applied.healthy
         || applied.applied_rev != applied.target_rev
         || Some(body.expected_revision) != u64::try_from(applied.applied_rev).ok()
