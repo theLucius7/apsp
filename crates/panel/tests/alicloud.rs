@@ -448,11 +448,21 @@ async fn power_policy_validates_revisions_and_power_jobs_are_admin_only_and_canc
     ] {
         sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id) VALUES($1,$2,'测试资源',$3,'cn-hangzhou',$4)").bind(id).bind(account).bind(kind).bind(cloud_id).execute(&pool).await?;
     }
-    let policy: Value =
-        sqlx::query_scalar("SELECT power_policy FROM alicloud_resources WHERE id=$1")
-            .bind(resource)
-            .fetch_one(&pool)
-            .await?;
+    // Operations keeps no row for these resources yet: the cloud page shows the default
+    // policy, which the console sends back.
+    let overview: Value = panel
+        .admin(Method::GET, "/api/resources/alicloud", &cookie, None)
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let policy = overview["resources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == resource.to_string())
+        .unwrap()["power_policy"]
+        .clone();
     assert_eq!(policy["enabled"], false);
     assert_eq!(policy["stop_mode"], "KeepCharging");
     let path = format!("/api/resources/alicloud/resources/{resource}/power-policy");
@@ -569,10 +579,12 @@ async fn power_policy_validates_revisions_and_power_jobs_are_admin_only_and_canc
         StatusCode::NO_CONTENT
     );
     assert!(
-        sqlx::query_scalar::<_, bool>("SELECT manual_hold FROM alicloud_resources WHERE id=$1")
-            .bind(resource)
-            .fetch_one(&pool)
-            .await?
+        sqlx::query_scalar::<_, bool>(
+            "SELECT manual_hold FROM cloud_resource_automation WHERE resource_id=$1"
+        )
+        .bind(resource)
+        .fetch_one(&pool)
+        .await?
     );
     let resume_path = format!("/api/resources/alicloud/resources/{resource}/power-resume");
     assert_eq!(
@@ -595,10 +607,12 @@ async fn power_policy_validates_revisions_and_power_jobs_are_admin_only_and_canc
         StatusCode::CONFLICT
     );
     assert!(
-        sqlx::query_scalar::<_, bool>("SELECT manual_hold FROM alicloud_resources WHERE id=$1")
-            .bind(resource)
-            .fetch_one(&pool)
-            .await?
+        sqlx::query_scalar::<_, bool>(
+            "SELECT manual_hold FROM cloud_resource_automation WHERE resource_id=$1"
+        )
+        .bind(resource)
+        .fetch_one(&pool)
+        .await?
     );
     assert_eq!(
         panel

@@ -1,26 +1,20 @@
+use super::model::State;
 use apsp_cloud_api::Failure;
 use apsp_resources::cloud::{
     client::Cloud,
-    model::{Account, Resource, State},
+    model::{Account, Resource},
 };
 use serde_json::{Value, json};
 
-/// Whether an instance's reported power state allows an action. The state is stored on the
-/// resource row; the checks belong to the power work.
-pub(crate) trait StateRules {
-    fn spot(&self) -> bool;
-
-    fn validate(&self, action: &str, mode: &str) -> Result<(), Failure>;
-}
-
-impl StateRules for State {
-    fn spot(&self) -> bool {
+/// Whether an instance's reported power state allows an action.
+impl State {
+    pub(crate) fn spot(&self) -> bool {
         matches!(
             self.spot_strategy.as_str(),
             "SpotWithPriceLimit" | "SpotAsPriceGo"
         )
     }
-    fn validate(&self, action: &str, mode: &str) -> Result<(), Failure> {
+    pub(crate) fn validate(&self, action: &str, mode: &str) -> Result<(), Failure> {
         if self.locked {
             return Err("resource_locked".into());
         }

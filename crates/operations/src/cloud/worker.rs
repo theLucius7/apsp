@@ -1,4 +1,4 @@
-use crate::cloud::bandwidth;
+use crate::cloud::{automation, bandwidth};
 use crate::error::ApiResult;
 use apsp_costs::cloud::{accounts, billing, cost_cache, traffic_history};
 use apsp_panel_host::maintenance::{self, Cadence, Failure, Pass};
@@ -12,8 +12,8 @@ use uuid::Uuid;
 /// CDT guard, power jobs and edits: claim the pass, call the cloud without a
 /// transaction, then store the results unless the account or a resource was
 /// edited meanwhile. An edit resets the schedule, so its refresh follows at once.
-/// The account's revision covers its billing settings too, so the bill read here is
-/// discarded with the rest when they change.
+/// The account's revision covers its billing and automatic bandwidth settings too, so the
+/// bill read here is discarded with the rest when they change.
 pub async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
     let now = apsp_protocol::now_timestamp();
     let Some((account, resources)) = inventory::claim_refresh(pool, id, now).await? else {
@@ -44,6 +44,7 @@ pub async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
         return Ok(());
     };
     let mut costs = accounts::account_on(&mut tx, id).await?;
+    let automatic = automation::account_on(&mut tx, id).await?;
     if let Some(bill) = bill {
         cost_cache::store_bill(&mut tx, id, &mut costs, bill, now).await?;
     }
@@ -77,11 +78,12 @@ pub async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
             }
         };
         apsp_resources::cloud::snapshot_on(&mut tx, resource.id, &snapshot).await?;
-        if !resource.auto_enabled
+        let settings = automation::resource_on(&mut tx, resource.id).await?;
+        if !settings.auto_enabled
             || snapshot.attached_eip_id.is_some()
-            || !billing::exceeded(&account, &costs, apsp_protocol::now_timestamp())
+            || !bandwidth::exceeded(&account, &automatic, &costs, apsp_protocol::now_timestamp())
             || snapshot.charge_type != "PayByTraffic"
-            || snapshot.bandwidth_mbps <= resource.cap_mbps
+            || snapshot.bandwidth_mbps <= settings.cap_mbps
         {
             continue;
         }
@@ -92,7 +94,7 @@ pub async fn refresh(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
             continue;
         }
         let target = Target {
-            bandwidth_mbps: resource.cap_mbps,
+            bandwidth_mbps: settings.cap_mbps,
             charge_type: "PayByTraffic".into(),
         };
         bandwidth::prepare(

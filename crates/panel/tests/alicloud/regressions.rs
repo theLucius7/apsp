@@ -300,8 +300,14 @@ async fn cloud_views_keep_their_keys_and_values_after_costs_moved_out(pool: PgPo
     let (account, bare_account) = (Uuid::new_v4(), Uuid::new_v4());
     let (resource, bare_resource) = (Uuid::new_v4(), Uuid::new_v4());
     let reference = credential(&pool).await?;
-    sqlx::query("INSERT INTO alicloud_accounts(id,name,site,enabled,auto_enabled,limit_gb,revision,next_run_at,last_attempt_at,credential_id) VALUES($1,'TEST_ONLY a','international',true,true,250,7,$2,$3,$4)")
+    sqlx::query("INSERT INTO alicloud_accounts(id,name,site,enabled,revision,next_run_at,last_attempt_at,credential_id) VALUES($1,'TEST_ONLY a','international',true,7,$2,$3,$4)")
         .bind(account).bind(now + 300).bind(now).bind(reference).execute(&pool).await?;
+    sqlx::query(
+        "INSERT INTO cloud_account_automation(account_id,auto_enabled,limit_gb) VALUES($1,true,250)",
+    )
+    .bind(account)
+    .execute(&pool)
+    .await?;
     sqlx::query("INSERT INTO alicloud_accounts(id,name,credential_id) VALUES($1,'TEST_ONLY b',$2)")
         .bind(bare_account)
         .bind(reference)
@@ -617,5 +623,327 @@ async fn account_refreshes_edits_and_archives_reach_what_costs_keeps(pool: PgPoo
             None
         )
     );
+    Ok(())
+}
+
+/// What operations keeps of cloud accounts and resources moved to its own tables (ADR 0137
+/// step 7); both cloud pages still show it under the keys and values the account and
+/// resource rows gave them. The cloud page shows the stored power policy, power state and
+/// CDT reading as read (fields added since read as their defaults), the operations page as
+/// stored; an object without a row reads exactly like one holding the column defaults.
+#[sqlx::test]
+async fn cloud_views_keep_their_keys_and_values_after_operations_moved_out(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let now = apsp_protocol::now_timestamp();
+    let (account, bare_account) = (Uuid::new_v4(), Uuid::new_v4());
+    let (full, defaults, bare) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    let reference = credential(&pool).await?;
+    for (id, name) in [(account, "TEST_ONLY a"), (bare_account, "TEST_ONLY b")] {
+        sqlx::query("INSERT INTO alicloud_accounts(id,name,credential_id) VALUES($1,$2,$3)")
+            .bind(id)
+            .bind(name)
+            .bind(reference)
+            .execute(&pool)
+            .await?;
+    }
+    sqlx::query(
+        "INSERT INTO cloud_account_automation(account_id,auto_enabled,limit_gb) VALUES($1,true,250)",
+    )
+    .bind(account)
+    .execute(&pool)
+    .await?;
+    for (id, name, cloud_id) in [
+        (full, "TEST_ONLY a", "i-full-testonly"),
+        (defaults, "TEST_ONLY b", "i-defaults-testonly"),
+        (bare, "TEST_ONLY c", "i-bare-testonly"),
+    ] {
+        sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id) VALUES($1,$2,$3,'ecs','cn-hangzhou',$4)")
+            .bind(id).bind(account).bind(name).bind(cloud_id).execute(&pool).await?;
+    }
+    // Stored shapes from before later fields existed, as on the production rows: a policy
+    // without the schedule mode and cron fields, a power state without IPv6 addresses and a
+    // CDT reading without the observed flag.
+    let policy = json!({"enabled":true,"limit_gb":100,"keepalive":false,"stop_mode":"StopCharging","stop_time":"23:00","start_time":"08:00","cdt_guard":{"auto_start":true,"jump_bytes":21_474_836_480_u64,"threshold_bytes":161_061_273_600_u64},"schedule_enabled":false,"threshold_action":"off","threshold_percent":95,"utc_offset_minutes":480});
+    let state = json!({"cloud_id":"i-full-testonly","region":"cn-hangzhou","status":"Running","stopped_mode":null,"charge_type":"PostPaid","network_type":"vpc","spot_strategy":"NoSpot","interruption_behavior":null,"public_ips":["192.0.2.1"],"locked":false});
+    let guard = json!({"billing_cycle":"2026-11","region":"cn-hangzhou","cloud_id":"i-full-testonly","key_digest":"TEST_ONLY digest","account_revision":1,"max_usage_bytes":138_521_760_153_u64,"max_jump_bytes":5_303_442_432_u64,"queried_at":now - 10});
+    sqlx::query("INSERT INTO cloud_resource_automation(resource_id,auto_enabled,cap_mbps,power_policy,power_state,power_checked_at,power_error,next_power_at,manual_hold,threshold_hold,cdt_guard_state,cdt_guard_error,cdt_guard_next_at) VALUES($1,true,7,$2,$3,$4,'rate_limited',$5,true,true,$6,'cdt_month_changed',$7)")
+        .bind(full).bind(&policy).bind(&state).bind(now - 20).bind(now + 60).bind(&guard).bind(now + 120).execute(&pool).await?;
+    sqlx::query("INSERT INTO cloud_resource_automation(resource_id) VALUES($1)")
+        .bind(defaults)
+        .execute(&pool)
+        .await?;
+
+    let text = panel
+        .admin(Method::GET, "/api/resources/alicloud", &cookie, None)
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    let overview: Value = serde_json::from_str(&text)?;
+    assert_eq!(text, serde_json::to_string(&overview)?);
+    let accounts = overview["accounts"].as_array().unwrap();
+    assert_eq!(accounts.len(), 2);
+    assert_eq!(
+        (&accounts[0]["auto_enabled"], &accounts[0]["limit_gb"]),
+        (&json!(true), &json!(250))
+    );
+    assert_eq!(
+        (&accounts[1]["auto_enabled"], &accounts[1]["limit_gb"]),
+        (&json!(false), &json!(100))
+    );
+    let listed = overview["resources"].as_array().unwrap();
+    assert_eq!(listed.len(), 3);
+    for item in listed {
+        assert_eq!(keys(item).len(), 28);
+    }
+    let read_policy = {
+        let mut value = policy.clone();
+        value["schedule_mode"] = "daily".into();
+        value["start_cron"] = "".into();
+        value["stop_cron"] = "".into();
+        value
+    };
+    let read_state = {
+        let mut value = state.clone();
+        value["public_ipv6"] = json!([]);
+        value
+    };
+    let read_guard = {
+        let mut value = guard.clone();
+        value["cdt_observed"] = false.into();
+        value
+    };
+    let operations_part = |item: &Value| -> Value {
+        let keys = [
+            "auto_enabled",
+            "cap_mbps",
+            "power_policy",
+            "power_state",
+            "power_checked_at",
+            "power_error",
+            "next_power_at",
+            "manual_hold",
+            "threshold_hold",
+            "cdt_guard_state",
+            "cdt_guard_error",
+            "cdt_guard_next_at",
+        ];
+        Value::Object(
+            keys.iter()
+                .map(|key| (key.to_string(), item[*key].clone()))
+                .collect(),
+        )
+    };
+    assert_eq!(listed[0]["id"], full.to_string());
+    assert_eq!(
+        operations_part(&listed[0]),
+        json!({"auto_enabled":true,"cap_mbps":7,"power_policy":read_policy,"power_state":read_state,"power_checked_at":now - 20,"power_error":"rate_limited","next_power_at":now + 60,"manual_hold":true,"threshold_hold":true,"cdt_guard_state":read_guard,"cdt_guard_error":"cdt_month_changed","cdt_guard_next_at":now + 120})
+    );
+    let default_part = json!({"auto_enabled":false,"cap_mbps":1,"power_policy":{"cdt_guard":null,"enabled":false,"keepalive":false,"limit_gb":100,"schedule_enabled":false,"schedule_mode":"daily","start_cron":"","start_time":"08:00","stop_cron":"","stop_mode":"KeepCharging","stop_time":"23:00","threshold_action":"off","threshold_percent":95,"utc_offset_minutes":480},"power_state":null,"power_checked_at":null,"power_error":null,"next_power_at":0,"manual_hold":false,"threshold_hold":false,"cdt_guard_state":null,"cdt_guard_error":null,"cdt_guard_next_at":0});
+    for (item, id) in [(&listed[1], defaults), (&listed[2], bare)] {
+        assert_eq!(item["id"], id.to_string());
+        assert_eq!(operations_part(item), default_part);
+    }
+
+    let text = panel
+        .admin(Method::GET, "/api/operations/cloud", &cookie, None)
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    let page: Value = serde_json::from_str(&text)?;
+    assert_eq!(text, serde_json::to_string(&page)?);
+    let listed = page["resources"].as_array().unwrap();
+    assert_eq!(listed.len(), 3);
+    let power_part = |item: &Value| -> Value {
+        json!({"manual_hold":item["manual_hold"],"power_error":item["power_error"],"power_policy":item["power_policy"],"power_state":item["power_state"]})
+    };
+    for item in listed {
+        assert_eq!(keys(item).len(), 24);
+    }
+    assert_eq!(listed[0]["id"], full.to_string());
+    assert_eq!(
+        power_part(&listed[0]),
+        json!({"manual_hold":true,"power_error":"rate_limited","power_policy":policy,"power_state":state})
+    );
+    let stored_default: Value = sqlx::query_scalar(
+        "SELECT power_policy FROM cloud_resource_automation WHERE resource_id=$1",
+    )
+    .bind(defaults)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(stored_default.as_object().unwrap().len(), 10);
+    for (item, id) in [(&listed[1], defaults), (&listed[2], bare)] {
+        assert_eq!(item["id"], id.to_string());
+        assert_eq!(
+            power_part(item),
+            json!({"manual_hold":false,"power_error":null,"power_policy":stored_default,"power_state":null})
+        );
+    }
+    Ok(())
+}
+
+/// Operations follows what the account and resource forms do: the forms save the automatic
+/// bandwidth settings in operations' rows, an account edit makes every power and CDT check
+/// of its resources due, a manual refresh the power checks of the active ones, an archive
+/// switches automatic bandwidth off, and bills stay on while a resource's power policy uses
+/// them.
+#[sqlx::test]
+async fn account_and_resource_forms_reach_what_operations_keeps(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let now = apsp_protocol::now_timestamp();
+    let mut account = json!({"name":"TEST_ONLY 自动","site":"china","enabled":true,"auto_enabled":true,"limit_gb":250,"billing_enabled":true,"credential_id":credential(&pool).await?});
+    let created: Value = panel
+        .admin(
+            Method::POST,
+            "/api/resources/alicloud/accounts",
+            &cookie,
+            Some(account.clone()),
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let id: Uuid = created["id"].as_str().unwrap().parse()?;
+    let stored = |pool: PgPool| async move {
+        sqlx::query_as::<_, (bool, i64)>(
+            "SELECT auto_enabled,limit_gb FROM cloud_account_automation WHERE account_id=$1",
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+    };
+    assert_eq!(stored(pool.clone()).await?, (true, 250));
+    let resource = json!({"account_id":id,"name":"TEST_ONLY 实例","kind":"ecs","region":"cn-hangzhou","cloud_id":"i-forms-testonly","auto_enabled":true,"cap_mbps":5});
+    let created: Value = panel
+        .admin(
+            Method::POST,
+            "/api/resources/alicloud/resources",
+            &cookie,
+            Some(resource.clone()),
+        )
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let active: Uuid = created["id"].as_str().unwrap().parse()?;
+    let archived = Uuid::new_v4();
+    sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id,archived) VALUES($1,$2,'TEST_ONLY 归档','ecs','cn-hangzhou','i-archived-testonly',true)")
+        .bind(archived).bind(id).execute(&pool).await?;
+    let settings = |pool: PgPool, resource: Uuid| async move {
+        sqlx::query_as::<_, (bool, i64, i64, i64)>("SELECT auto_enabled,cap_mbps,next_power_at,cdt_guard_next_at FROM cloud_resource_automation WHERE resource_id=$1")
+            .bind(resource)
+            .fetch_one(&pool)
+            .await
+    };
+    assert_eq!(settings(pool.clone(), active).await?, (true, 5, 0, 0));
+    let mut edited = resource.clone();
+    edited["cap_mbps"] = 9.into();
+    edited["revision"] = 1.into();
+    let path = format!("/api/resources/alicloud/resources/{active}");
+    assert_eq!(
+        panel
+            .admin(Method::PATCH, &path, &cookie, Some(edited))
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(settings(pool.clone(), active).await?, (true, 9, 0, 0));
+
+    // A manual refresh makes the active resource's power check due, not the archived one's;
+    // an edit makes every check of all of them due.
+    sqlx::query("INSERT INTO cloud_resource_automation(resource_id,next_power_at,cdt_guard_next_at) VALUES($1,$2,$2)")
+        .bind(archived).bind(now + 999).execute(&pool).await?;
+    sqlx::query(
+        "UPDATE cloud_resource_automation SET next_power_at=$2,cdt_guard_next_at=$2 WHERE resource_id=$1",
+    )
+    .bind(active)
+    .bind(now + 999)
+    .execute(&pool)
+    .await?;
+    let account_path = format!("/api/resources/alicloud/accounts/{id}");
+    assert_eq!(
+        panel
+            .admin(
+                Method::POST,
+                &format!("{account_path}/refresh"),
+                &cookie,
+                None
+            )
+            .await?
+            .status(),
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(
+        settings(pool.clone(), active).await?,
+        (true, 9, 0, now + 999)
+    );
+    assert_eq!(
+        settings(pool.clone(), archived).await?,
+        (false, 1, now + 999, now + 999)
+    );
+    account["auto_enabled"] = false.into();
+    account["limit_gb"] = 300.into();
+    account["revision"] = 1.into();
+    assert_eq!(
+        panel
+            .admin(Method::PATCH, &account_path, &cookie, Some(account.clone()))
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(stored(pool.clone()).await?, (false, 300));
+    assert_eq!(settings(pool.clone(), active).await?, (true, 9, 0, 0));
+    assert_eq!(settings(pool.clone(), archived).await?, (false, 1, 0, 0));
+
+    // A power policy whose bill threshold notifies keeps the account's bills on.
+    sqlx::query("UPDATE cloud_resource_automation SET power_policy=jsonb_set(jsonb_set(power_policy,'{enabled}','true'),'{threshold_action}','\"notify\"') WHERE resource_id=$1")
+        .bind(active).execute(&pool).await?;
+    account["billing_enabled"] = false.into();
+    account["revision"] = 2.into();
+    let refused = panel
+        .admin(Method::PATCH, &account_path, &cookie, Some(account.clone()))
+        .await?;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        refused
+            .text()
+            .await?
+            .contains("请先关闭自动降速及资源账单阈值策略，再关闭账单查询")
+    );
+    sqlx::query("UPDATE cloud_resource_automation SET power_policy=jsonb_set(power_policy,'{threshold_action}','\"off\"') WHERE resource_id=$1")
+        .bind(active).execute(&pool).await?;
+    assert_eq!(
+        panel
+            .admin(Method::PATCH, &account_path, &cookie, Some(account))
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+
+    assert_eq!(
+        panel
+            .admin(Method::DELETE, &path, &cookie, None)
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(settings(pool.clone(), active).await?, (false, 9, 0, 0));
+    sqlx::query("UPDATE cloud_account_automation SET auto_enabled=true WHERE account_id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await?;
+    assert_eq!(
+        panel
+            .admin(Method::DELETE, &account_path, &cookie, None)
+            .await?
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(stored(pool.clone()).await?, (false, 300));
     Ok(())
 }

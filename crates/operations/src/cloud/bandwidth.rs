@@ -1,6 +1,7 @@
 mod api;
 pub use api::routes;
 
+use super::automation::{self, AccountAutomation, Automated};
 use crate::error::{ApiError, ApiResult};
 use apsp_costs::cloud::{
     accounts::{self, AccountBilling},
@@ -23,12 +24,19 @@ pub async fn load(pool: &PgPool, id: Uuid) -> ApiResult<Operation> {
         .await?
         .ok_or(ApiError::NotFound)
 }
-async fn fresh_resource(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> ApiResult<Resource> {
-    sqlx::query_as("SELECT * FROM alicloud_resources WHERE id=$1 AND NOT archived")
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await?
-        .ok_or(ApiError::NotFound)
+/// Whether the account's automatic bandwidth reduction applies: it is on and this month's
+/// bill, fresh enough to drive automatic control, shows at least the account's threshold.
+pub fn exceeded(
+    account: &Account,
+    automation: &AccountAutomation,
+    billing: &AccountBilling,
+    now: i64,
+) -> bool {
+    account.enabled
+        && automation.auto_enabled
+        && billing
+            .usage(now)
+            .is_some_and(|value| value >= automation.limit_gb as u64 * 1_000_000)
 }
 pub async fn idle(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> ApiResult<()> {
     super::power::idle(tx, id).await?;
@@ -149,7 +157,7 @@ pub async fn preview(
     let initial = resource(pool, id).await?;
     let mut tx = lock(pool, initial.account_id).await?;
     let account = account_on(&mut tx, initial.account_id).await?;
-    let resource = fresh_resource(&mut tx, id).await?;
+    let resource = automation::current(&mut tx, id).await?;
     if !account.enabled {
         return Err(ApiError::Conflict("请先启用云账号".into()));
     }
@@ -183,7 +191,7 @@ pub async fn confirm(pool: &PgPool, id: Uuid) -> ApiResult<Operation> {
         return Ok(current);
     }
     let account = account_on(&mut tx, resource.account_id).await?;
-    let resource = fresh_resource(&mut tx, resource.id).await?;
+    let resource = automation::current(&mut tx, resource.id).await?;
     if current.status != "preview"
         || current.expires_at <= apsp_protocol::now_timestamp()
         || !account.enabled
@@ -214,12 +222,7 @@ pub async fn cancel(pool: &PgPool, id: Uuid, dismiss: bool) -> ApiResult<()> {
         .await?;
     let status = if dismiss && current.status == "uncertain" {
         // Closing uncertain tracking never undoes a cloud action. Pause automation.
-        sqlx::query(
-            "UPDATE alicloud_resources SET auto_enabled=false,power_policy=jsonb_set(power_policy,'{enabled}','false'),manual_hold=true,revision=revision+1 WHERE id=$1",
-        )
-        .bind(resource.id)
-        .execute(&mut *tx)
-        .await?;
+        automation::pause(&mut tx, resource.id).await?;
         sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status IN ('preview','queued')")
             .bind(resource.id).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
         sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status IN ('preview','queued')")
@@ -245,8 +248,9 @@ pub async fn cancel(pool: &PgPool, id: Uuid, dismiss: bool) -> ApiResult<()> {
 fn eligible(
     operation: &Operation,
     account: &Account,
+    automatic: &AccountAutomation,
     costs: &AccountBilling,
-    resource: &Resource,
+    resource: &Automated,
     now: i64,
 ) -> bool {
     account.enabled
@@ -255,13 +259,13 @@ fn eligible(
         && resource.revision == operation.resource_revision
         && operation.expires_at > now
         && (operation.source == "manual"
-            || (resource.auto_enabled
-                && billing::exceeded(account, costs, now)
+            || (resource.automation.auto_enabled
+                && exceeded(account, automatic, costs, now)
                 && operation.billing_cycle.as_deref() == Some(billing::month(now).as_str())
                 && operation.target.charge_type == "PayByTraffic"
                 && operation.before_state.charge_type == "PayByTraffic"
-                && operation.target.bandwidth_mbps == resource.cap_mbps
-                && resource.cap_mbps < operation.before_state.bandwidth_mbps))
+                && operation.target.bandwidth_mbps == resource.automation.cap_mbps
+                && resource.automation.cap_mbps < operation.before_state.bandwidth_mbps))
 }
 async fn finish(
     tx: &mut Transaction<'_, Postgres>,
@@ -314,7 +318,8 @@ pub async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
         .await?;
     let account = account_on(&mut tx, resource.account_id).await?;
     let costs = accounts::account_on(&mut tx, resource.account_id).await?;
-    let resource = fresh_resource(&mut tx, resource.id).await?;
+    let automatic = automation::account_on(&mut tx, resource.account_id).await?;
+    let resource = automation::current(&mut tx, resource.id).await?;
     let now = apsp_protocol::now_timestamp();
     if operation.next_check_at > now {
         return Ok(());
@@ -327,7 +332,7 @@ pub async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
     if operation.status != "queued" {
         return Ok(());
     }
-    if !eligible(&operation, &account, &costs, &resource, now) {
+    if !eligible(&operation, &account, &automatic, &costs, &resource, now) {
         finish(&mut tx, id, "cancelled", Some("policy_inactive")).await?;
         tx.commit().await?;
         return Ok(());
@@ -356,7 +361,8 @@ pub async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
     let mut tx = lock(pool, resource.account_id).await?;
     let account = account_on(&mut tx, resource.account_id).await?;
     let costs = accounts::account_on(&mut tx, resource.account_id).await?;
-    let resource = fresh_resource(&mut tx, resource.id).await?;
+    let automatic = automation::account_on(&mut tx, resource.account_id).await?;
+    let resource = automation::current(&mut tx, resource.id).await?;
     let operation: Operation = sqlx::query_as("SELECT * FROM alicloud_operations WHERE id=$1")
         .bind(id)
         .fetch_one(&mut *tx)
@@ -367,6 +373,7 @@ pub async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
     if !eligible(
         &operation,
         &account,
+        &automatic,
         &costs,
         &resource,
         apsp_protocol::now_timestamp(),

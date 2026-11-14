@@ -505,14 +505,11 @@ CREATE TABLE public.alicloud_accounts (
     name text NOT NULL,
     site text DEFAULT 'china'::text NOT NULL,
     enabled boolean DEFAULT true NOT NULL,
-    auto_enabled boolean DEFAULT false NOT NULL,
-    limit_gb bigint DEFAULT 100 NOT NULL,
     revision bigint DEFAULT 1 NOT NULL,
     next_run_at bigint DEFAULT 0 NOT NULL,
     last_attempt_at bigint DEFAULT 0 NOT NULL,
     archived boolean DEFAULT false NOT NULL,
     credential_id uuid,
-    CONSTRAINT alicloud_accounts_limit_gb_check CHECK (((limit_gb >= 1) AND (limit_gb <= 1000000000))),
     CONSTRAINT alicloud_accounts_site_check CHECK ((site = ANY (ARRAY['china'::text, 'international'::text])))
 );
 
@@ -646,28 +643,15 @@ CREATE TABLE public.alicloud_resources (
     kind text NOT NULL,
     region text NOT NULL,
     cloud_id text NOT NULL,
-    auto_enabled boolean DEFAULT false NOT NULL,
-    cap_mbps bigint DEFAULT 1 NOT NULL,
     revision bigint DEFAULT 1 NOT NULL,
     snapshot jsonb,
     checked_at bigint,
     last_attempt_at bigint DEFAULT 0 NOT NULL,
     error_code text,
     archived boolean DEFAULT false NOT NULL,
-    power_policy jsonb DEFAULT '{"enabled": false, "limit_gb": 100, "keepalive": false, "stop_mode": "KeepCharging", "stop_time": "23:00", "start_time": "08:00", "schedule_enabled": false, "threshold_action": "off", "threshold_percent": 95, "utc_offset_minutes": 480}'::jsonb NOT NULL,
-    power_state jsonb,
-    power_checked_at bigint,
-    power_error text,
-    next_power_at bigint DEFAULT 0 NOT NULL,
-    manual_hold boolean DEFAULT false NOT NULL,
-    threshold_hold boolean DEFAULT false NOT NULL,
-    cdt_guard_state jsonb,
-    cdt_guard_error text,
-    cdt_guard_next_at bigint DEFAULT 0 NOT NULL,
     ipv6_addresses jsonb DEFAULT '[]'::jsonb NOT NULL,
     ipv6_checked_at bigint,
     ipv6_error text,
-    CONSTRAINT alicloud_resources_cap_mbps_check CHECK (((cap_mbps >= 1) AND (cap_mbps <= 100))),
     CONSTRAINT alicloud_resources_kind_check CHECK ((kind = ANY (ARRAY['ecs'::text, 'eip'::text])))
 );
 
@@ -5750,6 +5734,28 @@ CREATE TABLE public.cloud_resource_costs (
     monthly_budget text,
     budget_currency text,
     expires_at bigint
+);
+
+CREATE TABLE public.cloud_account_automation (
+    account_id uuid PRIMARY KEY REFERENCES public.alicloud_accounts(id),
+    auto_enabled boolean DEFAULT false NOT NULL,
+    limit_gb bigint DEFAULT 100 NOT NULL CHECK (((limit_gb >= 1) AND (limit_gb <= 1000000000)))
+);
+
+CREATE TABLE public.cloud_resource_automation (
+    resource_id uuid PRIMARY KEY REFERENCES public.alicloud_resources(id),
+    auto_enabled boolean DEFAULT false NOT NULL,
+    cap_mbps bigint DEFAULT 1 NOT NULL CHECK (((cap_mbps >= 1) AND (cap_mbps <= 100))),
+    power_policy jsonb DEFAULT '{"enabled": false, "limit_gb": 100, "keepalive": false, "stop_mode": "KeepCharging", "stop_time": "23:00", "start_time": "08:00", "schedule_enabled": false, "threshold_action": "off", "threshold_percent": 95, "utc_offset_minutes": 480}'::jsonb NOT NULL,
+    power_state jsonb,
+    power_checked_at bigint,
+    power_error text,
+    next_power_at bigint DEFAULT 0 NOT NULL,
+    manual_hold boolean DEFAULT false NOT NULL,
+    threshold_hold boolean DEFAULT false NOT NULL,
+    cdt_guard_state jsonb,
+    cdt_guard_error text,
+    cdt_guard_next_at bigint DEFAULT 0 NOT NULL
 );
 
 CREATE TABLE public.apsp_schema_baseline (singleton boolean PRIMARY KEY CHECK (singleton), fingerprint text NOT NULL);

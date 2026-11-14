@@ -1,13 +1,13 @@
-use super::{Job, scheduler};
-use crate::cloud::power::{PolicyRules, StateRules};
+use super::{Job, model::State, scheduler};
+use crate::cloud::automation::{self, Automated};
 use crate::error::{ApiError, ApiResult};
 use apsp_costs::cloud::accounts::{self, AccountBilling};
 use apsp_observability::cloud_notices;
 use apsp_resources::cloud::{
     account_on,
     client::Cloud,
-    lock,
-    model::{Account, Resource, State},
+    inventory, lock,
+    model::{Account, Resource},
     resource,
 };
 use sqlx::{PgPool, Postgres, Transaction, types::Json};
@@ -17,13 +17,6 @@ pub(super) async fn load(pool: &PgPool, id: Uuid) -> ApiResult<Job> {
     sqlx::query_as("SELECT * FROM alicloud_power_jobs WHERE id=$1")
         .bind(id)
         .fetch_optional(pool)
-        .await?
-        .ok_or(ApiError::NotFound)
-}
-pub(super) async fn fresh(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> ApiResult<Resource> {
-    sqlx::query_as("SELECT * FROM alicloud_resources WHERE id=$1 AND NOT archived")
-        .bind(id)
-        .fetch_optional(&mut **tx)
         .await?
         .ok_or(ApiError::NotFound)
 }
@@ -60,7 +53,8 @@ pub(super) async fn state_on(
     state: &State,
     now: i64,
 ) -> ApiResult<()> {
-    sqlx::query("UPDATE alicloud_resources SET power_state=$2,power_checked_at=$3,power_error=NULL WHERE id=$1").bind(id).bind(Json(state)).bind(now).execute(&mut **tx).await?;
+    automation::row(tx, id).await?;
+    sqlx::query("UPDATE cloud_resource_automation SET power_state=$2,power_checked_at=$3,power_error=NULL WHERE resource_id=$1").bind(id).bind(Json(state)).bind(now).execute(&mut **tx).await?;
     Ok(())
 }
 pub(super) struct Intent<'a> {
@@ -88,7 +82,7 @@ pub(super) fn allowed(
     job: &Job,
     account: &Account,
     billing: &AccountBilling,
-    resource: &Resource,
+    resource: &Automated,
     now: i64,
 ) -> bool {
     if !account.enabled
@@ -99,14 +93,14 @@ pub(super) fn allowed(
     {
         return false;
     }
-    let policy = &resource.power_policy;
+    let policy = &resource.automation.power_policy;
     if job.action == "start" && policy.blocks_start(account, billing, resource, now) {
         return false;
     }
     if job.source == "manual" {
         return true;
     }
-    if !policy.enabled || (job.action == "start" && resource.manual_hold) {
+    if !policy.enabled || (job.action == "start" && resource.automation.manual_hold) {
         return false;
     }
     if job.source == "cdt_guard" {
@@ -228,8 +222,9 @@ async fn defer(
     .bind(until)
     .execute(&mut **tx)
     .await?;
+    automation::row(tx, resource).await?;
     sqlx::query(
-        "UPDATE alicloud_resources SET next_power_at=GREATEST(next_power_at,$2) WHERE id=$1",
+        "UPDATE cloud_resource_automation SET next_power_at=GREATEST(next_power_at,$2) WHERE resource_id=$1",
     )
     .bind(resource)
     .bind(until)
@@ -247,7 +242,7 @@ pub async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
         .await?;
     let account = account_on(&mut tx, r.account_id).await?;
     let billing = accounts::account_on(&mut tx, r.account_id).await?;
-    let r = fresh(&mut tx, r.id).await?;
+    let r = automation::current(&mut tx, r.id).await?;
     let now = apsp_protocol::now_timestamp();
     if job.next_check_at > now {
         return Ok(());
@@ -317,7 +312,7 @@ pub async fn process(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
     let mut tx = lock(pool, r.account_id).await?;
     let account = account_on(&mut tx, r.account_id).await?;
     let billing = accounts::account_on(&mut tx, r.account_id).await?;
-    let r = fresh(&mut tx, r.id).await?;
+    let r = automation::current(&mut tx, r.id).await?;
     let job: Job = sqlx::query_as("SELECT * FROM alicloud_power_jobs WHERE id=$1")
         .bind(id)
         .fetch_one(&mut *tx)
@@ -399,7 +394,9 @@ pub async fn tick(pool: &PgPool, cloud: &Cloud) -> ApiResult<()> {
     for id in jobs {
         process(pool, id, cloud).await?;
     }
-    let resources: Vec<Uuid> = sqlx::query_scalar("SELECT r.id FROM alicloud_resources r JOIN alicloud_accounts a ON a.id=r.account_id WHERE r.kind='ecs' AND NOT r.archived AND NOT a.archived AND a.enabled AND r.next_power_at<=$1 ORDER BY r.next_power_at,r.id LIMIT 4").bind(now).fetch_all(pool).await?;
+    let instances = inventory::enabled_instances(pool).await?;
+    let resources: Vec<Uuid> = sqlx::query_scalar("SELECT r.id FROM unnest($1::uuid[]) AS r(id) LEFT JOIN cloud_resource_automation a ON a.resource_id=r.id WHERE COALESCE(a.next_power_at,0)<=$2 ORDER BY COALESCE(a.next_power_at,0),r.id LIMIT 4")
+        .bind(&instances).bind(now).fetch_all(pool).await?;
     for id in resources {
         scheduler::poll(pool, id, cloud).await?;
     }

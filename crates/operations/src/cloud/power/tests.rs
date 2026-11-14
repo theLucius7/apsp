@@ -1,14 +1,10 @@
+use super::model::{Policy, State};
 use super::{api, jobs, scheduler};
+use crate::cloud::automation::{self, Automated};
 use crate::cloud::bandwidth;
-use crate::cloud::power::PolicyRules;
 use apsp_cloud_api::test_support::{Mock, Reply};
 use apsp_costs::cloud::billing;
-use apsp_resources::cloud::{
-    account_on,
-    client::Cloud,
-    lock,
-    model::{Policy, Resource, State},
-};
+use apsp_resources::cloud::{account_on, client::Cloud, lock};
 use serde_json::json;
 use sqlx::{PgPool, types::Json};
 use uuid::Uuid;
@@ -21,6 +17,7 @@ async fn seed(pool: &PgPool) -> (Uuid, Uuid) {
     crate::cloud::tests::credential_account(pool, a, "测试账号").await;
     crate::cloud::tests::set_billing(pool, a, true, true).await;
     sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id) VALUES($1,$2,'测试实例','ecs','cn-hangzhou','i-testonly')").bind(r).bind(a).execute(pool).await.unwrap();
+    crate::cloud::tests::automate(pool, a, r).await;
     (a, r)
 }
 fn state(status: &str, mode: &str) -> State {
@@ -83,12 +80,7 @@ async fn stop_is_confirmed_once_and_recovers_without_duplicate_write(pool: PgPoo
     let id = prepare(&pool, r, &initial, "stop", "StopCharging").await;
     api::confirm_on(&pool, id).await.unwrap();
     api::confirm_on(&pool, id).await.unwrap();
-    assert!(
-        apsp_resources::cloud::resource(&pool, r)
-            .await
-            .unwrap()
-            .manual_hold
-    );
+    assert!(automation::resource(&pool, r).await.unwrap().manual_hold);
     // A new optional address must not invalidate an otherwise identical stop.
     let mut current = initial.clone();
     current.public_ipv6 = vec!["2001:db8::2".into()];
@@ -252,8 +244,9 @@ async fn optional_ipv6_failure_keeps_instance_status_and_previous_addresses(pool
         .await
         .unwrap();
     let resource = apsp_resources::cloud::resource(&pool, id).await.unwrap();
-    assert_eq!(resource.power_state.unwrap().status, "Running");
-    assert!(resource.power_error.is_none());
+    let power = automation::resource(&pool, id).await.unwrap();
+    assert_eq!(power.power_state.unwrap().status, "Running");
+    assert!(power.power_error.is_none());
     assert_eq!(resource.ipv6_addresses.0, vec!["2001:db8::9"]);
     assert_eq!(resource.ipv6_checked_at, Some(1));
     assert!(resource.ipv6_error.is_some());
@@ -280,13 +273,13 @@ fn schedule_handles_midnight_window_and_overlapping_due_events() {
     p.stop_time = "24:00".into();
     assert!(p.validate().is_err());
 }
-async fn evaluate(pool: &PgPool, a: Uuid, r: Uuid, s: &State, now: i64) -> Resource {
+async fn evaluate(pool: &PgPool, a: Uuid, r: Uuid, s: &State, now: i64) -> Automated {
     let mut tx = lock(pool, a).await.unwrap();
     let costs = apsp_costs::cloud::accounts::account_on(&mut tx, a)
         .await
         .unwrap();
     let a = account_on(&mut tx, a).await.unwrap();
-    let mut r = jobs::fresh(&mut tx, r).await.unwrap();
+    let mut r = automation::current(&mut tx, r).await.unwrap();
     scheduler::evaluate(&mut tx, &a, &costs, &mut r, s, now)
         .await
         .unwrap();
@@ -299,7 +292,7 @@ async fn threshold_is_sticky_and_preempts_start_notify_is_deduplicated(pool: PgP
     let now = apsp_protocol::now_timestamp();
     let mut p = policy();
     p.schedule_enabled = false;
-    sqlx::query("UPDATE alicloud_resources SET power_policy=$2 WHERE id=$1")
+    sqlx::query("UPDATE cloud_resource_automation SET power_policy=$2 WHERE resource_id=$1")
         .bind(r)
         .bind(Json(&p))
         .execute(&pool)
@@ -315,7 +308,7 @@ async fn threshold_is_sticky_and_preempts_start_notify_is_deduplicated(pool: PgP
         .unwrap();
     let running = state("Running", "KeepCharging");
     let result = evaluate(&pool, a, r, &running, now).await;
-    assert!(result.threshold_hold);
+    assert!(result.automation.threshold_hold);
     evaluate(&pool, a, r, &running, now).await;
     let count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM alicloud_power_jobs WHERE source='threshold'")
@@ -336,18 +329,21 @@ async fn threshold_is_sticky_and_preempts_start_notify_is_deduplicated(pool: PgP
     assert!(
         evaluate(&pool, a, r, &state("Stopped", "StopCharging"), now + 60)
             .await
+            .automation
             .threshold_hold
     );
     sqlx::query("UPDATE cloud_account_billing SET bill_error=NULL,bill=jsonb_set(bill,'{usage_micro_gb}','null') WHERE account_id=$1").bind(a).execute(&pool).await.unwrap();
     assert!(
         evaluate(&pool, a, r, &state("Stopped", "StopCharging"), now + 60)
             .await
+            .automation
             .threshold_hold
     );
     sqlx::query("UPDATE cloud_account_billing SET bill_error=NULL,bill=jsonb_set(bill,'{usage_micro_gb}','94000000') WHERE account_id=$1").bind(a).execute(&pool).await.unwrap();
     assert!(
         !evaluate(&pool, a, r, &state("Stopped", "StopCharging"), now + 60)
             .await
+            .automation
             .threshold_hold
     );
 }
@@ -360,14 +356,16 @@ async fn manual_hold_and_non_spot_instances_disable_keepalive_and_schedule_dedup
     p.threshold_action = "off".into();
     p.schedule_enabled = false;
     let now = apsp_protocol::now_timestamp();
-    sqlx::query("UPDATE alicloud_resources SET power_policy=$2,manual_hold=true WHERE id=$1")
+    sqlx::query(
+        "UPDATE cloud_resource_automation SET power_policy=$2,manual_hold=true WHERE resource_id=$1",
+    )
         .bind(r)
         .bind(Json(&p))
         .execute(&pool)
         .await
         .unwrap();
     evaluate(&pool, a, r, &state("Stopped", "KeepCharging"), now).await;
-    sqlx::query("UPDATE alicloud_resources SET manual_hold=false WHERE id=$1")
+    sqlx::query("UPDATE cloud_resource_automation SET manual_hold=false WHERE resource_id=$1")
         .bind(r)
         .execute(&pool)
         .await

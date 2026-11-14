@@ -1,4 +1,4 @@
-use crate::cloud::accounts::{AccountBilling, Bill, BillRow, Traffic, TrafficRegion};
+use crate::cloud::accounts::{Bill, BillRow, Traffic, TrafficRegion};
 use apsp_cloud_api::{Failure, aliyun::Aliyun};
 use apsp_resources::cloud::{
     client::{Cloud, Keys},
@@ -150,16 +150,6 @@ pub async fn query(
         }
     }
     Err("billing_incomplete".into())
-}
-
-/// Whether the account's automatic bandwidth reduction applies: this month's bill shows at
-/// least the account's threshold.
-pub fn exceeded(account: &Account, billing: &AccountBilling, now: i64) -> bool {
-    account.enabled
-        && account.auto_enabled
-        && billing
-            .usage(now)
-            .is_some_and(|value| value >= account.limit_gb as u64 * 1_000_000)
 }
 
 pub fn parse_traffic(result: &Value, now: i64) -> Result<Traffic, Failure> {

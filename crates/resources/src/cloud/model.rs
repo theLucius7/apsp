@@ -4,7 +4,8 @@ use sqlx::{FromRow, types::Json};
 use uuid::Uuid;
 
 /// A registered cloud account. Its access keys live in the credential store; costs keeps the
-/// account's bills, balance and CDT readings in its own table (ADR 0137 step 6).
+/// account's bills, balance and CDT readings and operations its automatic bandwidth
+/// reduction in their own tables (ADR 0137 steps 6 and 7).
 #[derive(Clone, Serialize, FromRow)]
 pub struct Account {
     pub id: Uuid,
@@ -12,12 +13,14 @@ pub struct Account {
     pub site: String,
     pub credential_id: Option<Uuid>,
     pub enabled: bool,
-    pub auto_enabled: bool,
-    pub limit_gb: i64,
     pub revision: i64,
     pub next_run_at: i64,
 }
 
+/// A registered cloud resource: what it is, what the cloud last reported about it and its
+/// IPv6 addresses. Costs keeps its instance bill and operations its automation (bandwidth
+/// reduction, power policy, holds and CDT guard) in their own tables (ADR 0137 steps 6
+/// and 7).
 #[derive(Serialize, FromRow)]
 pub struct Resource {
     pub id: Uuid,
@@ -26,22 +29,10 @@ pub struct Resource {
     pub kind: String,
     pub region: String,
     pub cloud_id: String,
-    pub auto_enabled: bool,
-    pub cap_mbps: i64,
     pub revision: i64,
     pub snapshot: Option<Json<Snapshot>>,
     pub checked_at: Option<i64>,
     pub error_code: Option<String>,
-    pub power_policy: Json<Policy>,
-    pub power_state: Option<Json<State>>,
-    pub power_checked_at: Option<i64>,
-    pub power_error: Option<String>,
-    pub next_power_at: i64,
-    pub manual_hold: bool,
-    pub threshold_hold: bool,
-    pub cdt_guard_state: Option<Json<GuardState>>,
-    pub cdt_guard_error: Option<String>,
-    pub cdt_guard_next_at: i64,
     pub ipv6_addresses: Json<Vec<String>>,
     pub ipv6_checked_at: Option<i64>,
     pub ipv6_error: Option<String>,
@@ -169,76 +160,4 @@ pub fn message(code: &str) -> &'static str {
         "old_eip_retained" => "旧 EIP 未能释放，请到阿里云控制台手动释放，否则闲置会产生费用",
         _ => "云接口暂时不可用",
     }
-}
-
-// The stored shapes of the power columns of the resource rows. Their rules live with
-// operations.
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Policy {
-    pub enabled: bool,
-    pub stop_mode: String,
-    pub threshold_action: String,
-    pub limit_gb: u64,
-    pub threshold_percent: u64,
-    pub schedule_enabled: bool,
-    #[serde(default)]
-    pub schedule_mode: ScheduleMode,
-    #[serde(default)]
-    pub start_cron: String,
-    #[serde(default)]
-    pub stop_cron: String,
-    pub start_time: String,
-    pub stop_time: String,
-    pub utc_offset_minutes: i64,
-    pub keepalive: bool,
-    #[serde(default)]
-    pub cdt_guard: Option<GuardConfig>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ScheduleMode {
-    #[default]
-    Daily,
-    Cron,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct State {
-    pub cloud_id: String,
-    pub region: String,
-    pub status: String,
-    pub stopped_mode: Option<String>,
-    pub charge_type: String,
-    pub network_type: String,
-    pub spot_strategy: String,
-    pub interruption_behavior: Option<String>,
-    pub public_ips: Vec<String>,
-    #[serde(default)]
-    pub public_ipv6: Vec<String>,
-    pub locked: bool,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GuardConfig {
-    pub threshold_bytes: u64,
-    pub jump_bytes: u64,
-    pub auto_start: bool,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GuardState {
-    pub billing_cycle: String,
-    pub region: String,
-    pub cloud_id: String,
-    pub key_digest: String,
-    pub account_revision: i64,
-    pub max_usage_bytes: u64,
-    pub max_jump_bytes: u64,
-    pub queried_at: i64,
-    #[serde(default)]
-    pub cdt_observed: bool,
 }

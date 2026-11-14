@@ -1,12 +1,11 @@
+use super::super::model::GuardState;
 use super::{MAX_BYTES, key_digest, meter, valid_cycle};
-use crate::cloud::power::StateRules;
-use crate::cloud::{bandwidth, power::jobs};
+use crate::cloud::{automation, bandwidth};
 use crate::{
     AppState, auth,
     error::{ApiError, ApiResult},
 };
 use apsp_costs::cloud::billing;
-use apsp_resources::cloud::model::GuardState;
 use apsp_resources::cloud::{account_on, client::Cloud, failure, lock, resource};
 use axum::{
     Json, Router,
@@ -39,9 +38,10 @@ async fn check(
     auth::require_admin(&state, &headers).await?;
     let initial = resource(&state.pool, id).await?;
     let mut tx = lock(&state.pool, initial.account_id).await?;
-    let r = jobs::fresh(&mut tx, id).await?;
+    let r = automation::current(&mut tx, id).await?;
     let account = account_on(&mut tx, r.account_id).await?;
     let config = r
+        .automation
         .power_policy
         .cdt_guard
         .as_ref()
@@ -107,12 +107,12 @@ async fn import(
 pub(super) async fn import_on(pool: &PgPool, id: Uuid, input: Input) -> ApiResult<()> {
     let initial = resource(pool, id).await?;
     let mut tx = lock(pool, initial.account_id).await?;
-    let r = jobs::fresh(&mut tx, id).await?;
+    let r = automation::current(&mut tx, id).await?;
     let account = account_on(&mut tx, r.account_id).await?;
     if r.kind != "ecs"
         || r.revision != input.revision
-        || r.power_policy.enabled
-        || r.power_policy.cdt_guard.is_none()
+        || r.automation.power_policy.enabled
+        || r.automation.power_policy.cdt_guard.is_none()
     {
         return Err(ApiError::Conflict(
             "请先保存已暂停的 CDT 脚本守护策略，再导入状态".into(),
@@ -164,7 +164,7 @@ pub(super) async fn import_on(pool: &PgPool, id: Uuid, input: Input) -> ApiResul
         queried_at: 0,
         cdt_observed: false,
     };
-    if let Some(old) = r.cdt_guard_state {
+    if let Some(old) = r.automation.cdt_guard_state {
         if old.billing_cycle > imported.billing_cycle {
             return Err(ApiError::Conflict("不能用旧账期覆盖已有 CDT 状态".into()));
         }
@@ -173,8 +173,10 @@ pub(super) async fn import_on(pool: &PgPool, id: Uuid, input: Input) -> ApiResul
             imported.max_jump_bytes = imported.max_jump_bytes.max(old.max_jump_bytes);
         }
     }
-    sqlx::query("UPDATE alicloud_resources SET cdt_guard_state=$2,cdt_guard_error=NULL,next_power_at=0,revision=revision+1 WHERE id=$1")
+    automation::row(&mut tx, id).await?;
+    sqlx::query("UPDATE cloud_resource_automation SET cdt_guard_state=$2,cdt_guard_error=NULL,next_power_at=0 WHERE resource_id=$1")
         .bind(id).bind(SqlJson(imported)).execute(&mut *tx).await?;
+    apsp_resources::cloud::revise(&mut tx, id).await?;
     sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id=$1 AND status IN ('preview','queued')")
         .bind(id).bind(now).execute(&mut *tx).await?;
     tx.commit().await?;

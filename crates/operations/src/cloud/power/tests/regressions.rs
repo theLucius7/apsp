@@ -18,7 +18,7 @@ fn snapshot() -> Snapshot {
 async fn bandwidth_preview(pool: &PgPool, a: Uuid, r: Uuid) -> Uuid {
     let mut tx = lock(pool, a).await.unwrap();
     let account = account_on(&mut tx, a).await.unwrap();
-    let resource = jobs::fresh(&mut tx, r).await.unwrap();
+    let resource = automation::current(&mut tx, r).await.unwrap();
     let target = Target {
         bandwidth_mbps: 1,
         charge_type: "PayByTraffic".into(),
@@ -36,7 +36,7 @@ async fn keepalive_rejection_cools_down_from_response_not_old_creation(pool: PgP
     let mut p = policy();
     p.threshold_action = "off".into();
     p.schedule_enabled = false;
-    sqlx::query("UPDATE alicloud_resources SET power_policy=$2 WHERE id=$1")
+    sqlx::query("UPDATE cloud_resource_automation SET power_policy=$2 WHERE resource_id=$1")
         .bind(r)
         .bind(Json(&p))
         .execute(&pool)
@@ -64,7 +64,7 @@ async fn keepalive_rejection_cools_down_from_response_not_old_creation(pool: PgP
     let job = jobs::load(&pool, id).await.unwrap();
     assert_eq!(job.status, "failed");
     assert_eq!(job.error_code.as_deref(), Some("capacity_unavailable"));
-    let resource = apsp_resources::cloud::resource(&pool, r).await.unwrap();
+    let resource = automation::resource(&pool, r).await.unwrap();
     assert!(resource.next_power_at >= job.updated_at + 900);
     evaluate(&pool, a, r, &stopped, job.updated_at + 899).await;
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM alicloud_power_jobs")
@@ -86,7 +86,9 @@ async fn keepalive_rejection_cools_down_from_response_not_old_creation(pool: PgP
 async fn dismissing_unknown_bandwidth_pauses_both_automations_and_old_power_preview(pool: PgPool) {
     let (a, r) = seed(&pool).await;
     let p = policy();
-    sqlx::query("UPDATE alicloud_resources SET auto_enabled=true,power_policy=$2 WHERE id=$1")
+    sqlx::query(
+        "UPDATE cloud_resource_automation SET auto_enabled=true,power_policy=$2 WHERE resource_id=$1",
+    )
         .bind(r)
         .bind(Json(&p))
         .execute(&pool)
@@ -107,10 +109,11 @@ async fn dismissing_unknown_bandwidth_pauses_both_automations_and_old_power_prev
         .await
         .unwrap();
     bandwidth::cancel(&pool, operation, true).await.unwrap();
+    let paused = automation::resource(&pool, r).await.unwrap();
+    assert!(!paused.auto_enabled);
+    assert!(!paused.power_policy.enabled);
+    assert!(paused.manual_hold);
     let resource = apsp_resources::cloud::resource(&pool, r).await.unwrap();
-    assert!(!resource.auto_enabled);
-    assert!(!resource.power_policy.enabled);
-    assert!(resource.manual_hold);
     assert_eq!(resource.revision, 2);
     assert_eq!(
         bandwidth::load(&pool, operation).await.unwrap().status,
@@ -135,7 +138,7 @@ async fn dismissing_unknown_bandwidth_pauses_both_automations_and_old_power_prev
 #[sqlx::test(migrations = "../panel/migrations")]
 async fn resume_requires_current_revision_and_revokes_prior_previews(pool: PgPool) {
     let (a, r) = seed(&pool).await;
-    sqlx::query("UPDATE alicloud_resources SET manual_hold=true WHERE id=$1")
+    sqlx::query("UPDATE cloud_resource_automation SET manual_hold=true WHERE resource_id=$1")
         .bind(r)
         .execute(&pool)
         .await
@@ -150,15 +153,10 @@ async fn resume_requires_current_revision_and_revokes_prior_previews(pool: PgPoo
     .await;
     let operation = bandwidth_preview(&pool, a, r).await;
     assert!(api::resume_on(&pool, r, 0).await.is_err());
-    assert!(
-        apsp_resources::cloud::resource(&pool, r)
-            .await
-            .unwrap()
-            .manual_hold
-    );
+    assert!(automation::resource(&pool, r).await.unwrap().manual_hold);
     api::resume_on(&pool, r, 1).await.unwrap();
+    assert!(!automation::resource(&pool, r).await.unwrap().manual_hold);
     let resource = apsp_resources::cloud::resource(&pool, r).await.unwrap();
-    assert!(!resource.manual_hold);
     assert_eq!(resource.revision, 2);
     assert_eq!(jobs::load(&pool, power).await.unwrap().status, "cancelled");
     assert_eq!(

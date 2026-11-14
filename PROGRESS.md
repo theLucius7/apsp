@@ -1,5 +1,17 @@
 # 执行进度
 
+## 2026-11-14：阶段 F 第七步——作业的云账号与云资源状态迁出资源的行（PR）
+
+- 用户要求：“你来合并，然后继续，处理其他任务修复完成”；按 ADR 0137 的顺序做最后一步列迁移。改数据库基线，走 PR，由执行者验证后合并。取舍见 `docs/open-questions.md` 同日条目。与第二步同一次部署（部署器按顺序先后执行两份接入脚本）。
+- 完成项：
+  - `alicloud_accounts` 的 `auto_enabled`、`limit_gb` → 作业的 `cloud_account_automation`；`alicloud_resources` 的 `auto_enabled`、`cap_mbps`、`power_policy`、`power_state`、`power_checked_at`、`power_error`、`next_power_at`、`manual_hold`、`threshold_hold`、`cdt_guard_state`、`cdt_guard_error`、`cdt_guard_next_at` → `cloud_resource_automation`。
+  - 资源新接口 `cloud::automation::CloudAutomation`（作业回答）；电源的类型移到 `operations::power::model`，`billing::exceeded` 移到 `operations::bandwidth::exceeded`（账单是否够新仍只由 `AccountBilling::usage` 判断）；到期的资源由资源的 `inventory::enabled_instances` 给出、作业按自己的下次检查时间排序；两个云视图加上作业的部分，JSON 不变。
+  - 接入脚本 `scripts/baseline-adoption-phasef7-20261114.sql`：前提 `277a1788…`/`1f00c9b3…`，锁两张云表，有运行中的电源、带宽或安全组操作时拒绝，同一事务里建表、复制（含已归档的）、逐行核对、删列，写入指纹 `ab219b8e…` 与校验和 `edd39c0a…`；重复执行被拒绝。
+  - 边界：越界清单 266 → 257。文档：architecture.md §5.5（十五个接口）、§12，`domain-map.md`、`database-baseline.md`；ADR 0137 记下阶段 F 的列迁移完成与第八步不做的理由。
+- 验证结果：本地，2026-11-14；CI 仍暂停，未触发。叠在第二步之上（即要部署的状态），在全新的编译目录里：`cargo fmt --all --check` 通过；14 个面板侧 crate 的 `cargo clippy --all-targets -- -D warnings` 通过；`--lib` 662 项通过；除 `end_to_end` 外的 80 个面板集成目标 408 项通过、0 项失败、6 项按原有标注忽略；三项检查（257 条已知越界，没有新增）与它们的 Python 测试通过；前端构建与 `bun test` 通过。接入演练三遍（含三种运行中作业的拒绝）都通过，生产数据副本上 3 个账号、3 个资源迁出的值逐个 md5 相同。独立只读审阅确认 CDT 守护的停机路径与旧代码行为一致，部署窗口的风险已加检查。未验证：`end_to_end`；真实触线时的停机（上线后核对）。
+- 已知问题：接入与换镜像之间的几秒里，旧面板的账号刷新、电源轮询、CDT 守护、电源作业、带宽、换 IP 与安全组步骤都会停住（排队的作业等新镜像接着做），两个云页面返回错误；接入后不能回滚到旧镜像。
+- 下一步：上线后只读核对（逐个账号与资源比对迁出的值、守护照常检查），并在最高那台实例触线前后再核对一次守护的停机。
+
 ## 2026-11-14：阶段 F 第二步——服务器与云资源的价格与到期各只留一处（PR）
 
 - 用户要求：“你来合并，然后继续，处理其他任务修复完成”；ADR 0137 留给用户的资产重复问题由执行者决定（不删能力）。改数据库基线，走 PR，由执行者验证后合并。取舍见 `docs/open-questions.md` 同日条目。排在第六步之后、第七步之前做。

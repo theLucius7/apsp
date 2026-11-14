@@ -1,5 +1,7 @@
 use super::{
-    account_on, billing,
+    account_on,
+    automation::{self, AccountChange, AccountSettings, ResourceChange, ResourceSettings},
+    billing,
     client::Cloud,
     failure, lock,
     model::{self, Account, Resource},
@@ -55,6 +57,21 @@ async fn account_resources(
     )
 }
 
+/// The account's resources that are not archived.
+async fn active_resources(
+    tx: &mut Transaction<'_, Postgres>,
+    account: Uuid,
+) -> ApiResult<Vec<Uuid>> {
+    Ok(
+        sqlx::query_scalar(
+            "SELECT id FROM alicloud_resources WHERE account_id=$1 AND NOT archived",
+        )
+        .bind(account)
+        .fetch_all(&mut **tx)
+        .await?,
+    )
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Revision {
@@ -84,6 +101,13 @@ impl AccountWrite {
             ));
         }
         Ok(())
+    }
+    /// The automatic bandwidth reduction operations keeps for the account.
+    fn automation(&self) -> AccountSettings {
+        AccountSettings {
+            auto_enabled: self.auto_enabled,
+            limit_gb: self.limit_gb,
+        }
     }
     /// The credential reference to store: the one submitted, or on an edit the stored one.
     fn credential(&self, previous: Option<&Account>) -> ApiResult<Uuid> {
@@ -132,9 +156,18 @@ async fn create_account(
     if count >= 8 {
         return Err(ApiError::Conflict("最多登记 8 个云账号".into()));
     }
-    sqlx::query("INSERT INTO alicloud_accounts(id,name,site,enabled,auto_enabled,limit_gb,credential_id) VALUES($1,$2,$3,$4,$5,$6,$7)")
-        .bind(id).bind(input.name.trim()).bind(input.site).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).bind(credential).execute(&mut *tx).await?;
+    sqlx::query(
+        "INSERT INTO alicloud_accounts(id,name,site,enabled,credential_id) VALUES($1,$2,$3,$4,$5)",
+    )
+    .bind(id)
+    .bind(input.name.trim())
+    .bind(&input.site)
+    .bind(input.enabled)
+    .bind(credential)
+    .execute(&mut *tx)
+    .await?;
     billing::changed(&mut tx, id, billing::Change::Created(settings)).await?;
+    automation::account_changed(&mut tx, id, AccountChange::Created(input.automation())).await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(json!({"id":id}))))
 }
@@ -157,8 +190,8 @@ async fn update_account(
         balance_enabled: input.balance_enabled.unwrap_or(stored.balance_enabled),
     };
     if !settings.billing_enabled {
-        let uses_bills: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM alicloud_resources WHERE account_id=$1 AND NOT archived AND power_policy->>'enabled'='true' AND power_policy->>'threshold_action' IN ('notify','stop'))")
-            .bind(id).fetch_one(&mut *tx).await?;
+        let active = active_resources(&mut tx, id).await?;
+        let uses_bills = automation::uses_bills(&mut tx, &active).await?;
         if input.auto_enabled || uses_bills {
             return Err(ApiError::BadRequest(
                 "请先关闭自动降速及资源账单阈值策略，再关闭账单查询".into(),
@@ -180,8 +213,8 @@ async fn update_account(
     if rekeyed {
         sqlx::query("UPDATE alicloud_resources SET ipv6_addresses='[]',ipv6_checked_at=NULL,ipv6_error=NULL WHERE account_id=$1").bind(id).execute(&mut *tx).await?;
     }
-    sqlx::query("UPDATE alicloud_accounts SET name=$2,site=$3,enabled=$4,auto_enabled=$5,limit_gb=$6,credential_id=$7,revision=revision+1,next_run_at=0 WHERE id=$1")
-        .bind(id).bind(input.name.trim()).bind(input.site).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).bind(credential).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_accounts SET name=$2,site=$3,enabled=$4,credential_id=$5,revision=revision+1,next_run_at=0 WHERE id=$1")
+        .bind(id).bind(input.name.trim()).bind(&input.site).bind(input.enabled).bind(credential).execute(&mut *tx).await?;
     billing::changed(
         &mut tx,
         id,
@@ -193,11 +226,14 @@ async fn update_account(
     )
     .await?;
     super::work::cancel_pending(&mut tx, &resources, true).await?;
-    sqlx::query(
-        "UPDATE alicloud_resources SET next_power_at=0,cdt_guard_next_at=0 WHERE account_id=$1",
+    automation::account_changed(
+        &mut tx,
+        id,
+        AccountChange::Edited {
+            settings: input.automation(),
+            resources: &resources,
+        },
     )
-    .bind(id)
-    .execute(&mut *tx)
     .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
@@ -223,8 +259,14 @@ async fn remove_account(
     if has_resources {
         return Err(ApiError::Conflict("请先移除该账号登记的云资源".into()));
     }
-    sqlx::query("UPDATE alicloud_accounts SET archived=true,enabled=false,auto_enabled=false,credential_id=NULL WHERE id=$1").bind(id).execute(&mut *tx).await?;
+    sqlx::query(
+        "UPDATE alicloud_accounts SET archived=true,enabled=false,credential_id=NULL WHERE id=$1",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
     billing::changed(&mut tx, id, billing::Change::Archived).await?;
+    automation::account_changed(&mut tx, id, AccountChange::Archived).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -253,12 +295,7 @@ async fn refresh_account(
         .bind(id)
         .execute(&mut *tx)
         .await?;
-    let resources: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM alicloud_resources WHERE account_id=$1 AND NOT archived",
-    )
-    .bind(id)
-    .fetch_all(&mut *tx)
-    .await?;
+    let resources = active_resources(&mut tx, id).await?;
     billing::changed(
         &mut tx,
         id,
@@ -267,11 +304,13 @@ async fn refresh_account(
         },
     )
     .await?;
-    sqlx::query(
-        "UPDATE alicloud_resources SET next_power_at=0 WHERE account_id=$1 AND NOT archived",
+    automation::account_changed(
+        &mut tx,
+        id,
+        AccountChange::Refreshed {
+            resources: &resources,
+        },
     )
-    .bind(id)
-    .execute(&mut *tx)
     .await?;
     tx.commit().await?;
     Ok(StatusCode::ACCEPTED)
@@ -306,6 +345,13 @@ impl ResourceWrite {
         }
         Ok(())
     }
+    /// The automatic bandwidth reduction operations keeps for the resource.
+    fn automation(&self) -> ResourceSettings {
+        ResourceSettings {
+            auto_enabled: self.auto_enabled,
+            cap_mbps: self.cap_mbps,
+        }
+    }
 }
 async fn create_resource(
     State(state): State<AppState>,
@@ -332,8 +378,8 @@ async fn create_resource(
         ));
     }
     let id = Uuid::new_v4();
-    let result=sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id,auto_enabled,cap_mbps) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
-        .bind(id).bind(input.account_id).bind(input.name.trim()).bind(input.kind).bind(input.region).bind(input.cloud_id).bind(input.auto_enabled).bind(input.cap_mbps).execute(&mut *tx).await;
+    let result=sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id) VALUES($1,$2,$3,$4,$5,$6)")
+        .bind(id).bind(input.account_id).bind(input.name.trim()).bind(&input.kind).bind(&input.region).bind(&input.cloud_id).execute(&mut *tx).await;
     if result.as_ref().is_err_and(|e| {
         e.as_database_error()
             .is_some_and(|e| e.is_unique_violation())
@@ -343,6 +389,7 @@ async fn create_resource(
         ));
     }
     result?;
+    automation::resource_changed(&mut tx, id, ResourceChange::Created(input.automation())).await?;
     sqlx::query("UPDATE alicloud_accounts SET next_run_at=0 WHERE id=$1")
         .bind(input.account_id)
         .execute(&mut *tx)
@@ -376,7 +423,12 @@ async fn update_resource(
             "配置已变化，或尝试修改固定的账号、类型、地域和资源标识；请刷新或另行登记".into(),
         ));
     }
-    sqlx::query("UPDATE alicloud_resources SET name=$2,auto_enabled=$3,cap_mbps=$4,revision=revision+1 WHERE id=$1").bind(id).bind(input.name.trim()).bind(input.auto_enabled).bind(input.cap_mbps).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_resources SET name=$2,revision=revision+1 WHERE id=$1")
+        .bind(id)
+        .bind(input.name.trim())
+        .execute(&mut *tx)
+        .await?;
+    automation::resource_changed(&mut tx, id, ResourceChange::Edited(input.automation())).await?;
     super::work::cancel_pending(&mut tx, &[id], true).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
@@ -400,7 +452,11 @@ async fn remove_resource(
         return Err(ApiError::Conflict("资源配置已变化，请刷新后重试".into()));
     }
     super::work::ensure_idle(&mut tx, id).await?;
-    sqlx::query("UPDATE alicloud_resources SET archived=true,auto_enabled=false,revision=revision+1 WHERE id=$1").bind(id).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_resources SET archived=true,revision=revision+1 WHERE id=$1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    automation::resource_changed(&mut tx, id, ResourceChange::Archived).await?;
     super::work::cancel_pending(&mut tx, &[id], false).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)

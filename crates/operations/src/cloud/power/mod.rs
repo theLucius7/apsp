@@ -1,7 +1,13 @@
+//! ECS power automation: the power policy and its form (`api`, `policy`, `cron`), manual and
+//! automatic power jobs (`jobs`, `scheduler`), the CDT guard (`guard`) and the cloud calls
+//! (`state`). The stored shapes are in `model`; operations keeps them in its own table
+//! (`crate::cloud::automation`).
+
 mod api;
 mod cron;
 mod guard;
 mod jobs;
+pub mod model;
 mod policy;
 mod scheduler;
 mod state;
@@ -9,13 +15,10 @@ mod state;
 mod tests;
 
 pub use api::routes;
-pub(crate) use guard::GuardRules;
 pub use jobs::{cancel_pending, idle, recent, unresolved};
-pub(crate) use policy::PolicyRules;
-pub(crate) use state::StateRules;
 
 use apsp_panel_host::maintenance::{self, Cadence, Pass};
-use apsp_resources::cloud::model::State;
+use model::State;
 use serde::Serialize;
 use sqlx::{FromRow, types::Json};
 use std::time::Duration;

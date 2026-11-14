@@ -1,4 +1,7 @@
-use crate::cloud::{bandwidth, worker};
+use crate::cloud::{
+    automation::{self, AccountAutomation},
+    bandwidth, worker,
+};
 use apsp_cloud_api::test_support::{Mock, Reply};
 use apsp_costs::cloud::billing;
 use apsp_resources::cloud::{
@@ -26,6 +29,24 @@ pub async fn set_billing(pool: &PgPool, account: Uuid, bills: bool, balance: boo
     sqlx::query("INSERT INTO cloud_account_billing(account_id,billing_enabled,balance_enabled) VALUES($1,$2,$3) ON CONFLICT(account_id) DO UPDATE SET billing_enabled=EXCLUDED.billing_enabled,balance_enabled=EXCLUDED.balance_enabled")
         .bind(account).bind(bills).bind(balance).execute(pool).await.unwrap();
 }
+/// Gives the account and the resource the rows operations keeps about them, holding the
+/// defaults, as the account and resource forms do.
+pub async fn automate(pool: &PgPool, account: Uuid, resource: Uuid) {
+    sqlx::query(
+        "INSERT INTO cloud_account_automation(account_id) VALUES($1) ON CONFLICT DO NOTHING",
+    )
+    .bind(account)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO cloud_resource_automation(resource_id) VALUES($1) ON CONFLICT DO NOTHING",
+    )
+    .bind(resource)
+    .execute(pool)
+    .await
+    .unwrap();
+}
 pub async fn seed(pool: &PgPool, kind: &str) -> (Uuid, Uuid) {
     let account = Uuid::new_v4();
     let resource = Uuid::new_v4();
@@ -33,6 +54,7 @@ pub async fn seed(pool: &PgPool, kind: &str) -> (Uuid, Uuid) {
     set_billing(pool, account, true, true).await;
     sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id) VALUES($1,$2,'测试资源',$3,'cn-hangzhou',$4)")
         .bind(resource).bind(account).bind(kind).bind(if kind=="ecs"{"i-testonly"}else{"eip-testonly"}).execute(pool).await.unwrap();
+    automate(pool, account, resource).await;
     (account, resource)
 }
 async fn account(pool: &PgPool, id: Uuid) -> Account {
@@ -41,6 +63,9 @@ async fn account(pool: &PgPool, id: Uuid) -> Account {
         .fetch_one(pool)
         .await
         .unwrap()
+}
+async fn automatic(pool: &PgPool, id: Uuid) -> AccountAutomation {
+    automation::account(pool, id).await.unwrap()
 }
 async fn costs(pool: &PgPool, id: Uuid) -> apsp_costs::cloud::accounts::AccountBilling {
     apsp_costs::cloud::accounts::account(pool, id)
@@ -258,18 +283,13 @@ async fn committed_intent_and_external_drift_are_never_blindly_reapplied(pool: P
         "uncertain"
     );
     mock.exhausted();
-    sqlx::query("UPDATE alicloud_resources SET auto_enabled=true WHERE id=$1")
+    sqlx::query("UPDATE cloud_resource_automation SET auto_enabled=true WHERE resource_id=$1")
         .bind(id)
         .execute(&pool)
         .await
         .unwrap();
     bandwidth::cancel(&pool, preview.id, true).await.unwrap();
-    assert!(
-        !apsp_resources::cloud::resource(&pool, id)
-            .await
-            .unwrap()
-            .auto_enabled
-    );
+    assert!(!automation::resource(&pool, id).await.unwrap().auto_enabled);
     assert_eq!(
         bandwidth::load(&pool, preview.id).await.unwrap().status,
         "dismissed"
@@ -322,4 +342,56 @@ async fn queued_cloud_operations_are_blocked_by_unknown_membership_mutations(poo
         .bind(Uuid::new_v4()).bind(resource).bind(admin).execute(&pool).await.unwrap();
     let mut tx = apsp_resources::cloud::lock(&pool, account).await.unwrap();
     assert!(bandwidth::idle(&mut tx, resource).await.is_err());
+}
+
+/// An account or resource without a row of operations' reads exactly like one holding the
+/// column defaults: the defaults in code are the columns' defaults, and the stored default
+/// policy the operations page shows for a missing row is the column's.
+#[sqlx::test(migrations = "../panel/migrations")]
+async fn missing_automation_rows_read_as_the_column_defaults(pool: PgPool) {
+    use crate::cloud::automation::ResourceAutomation;
+    use crate::cloud::power::model::{DEFAULT_POLICY, Policy};
+    fn value(item: impl serde::Serialize) -> Value {
+        serde_json::to_value(item).unwrap()
+    }
+    let (account, resource) = seed(&pool, "ecs").await;
+    let (bare_account, bare_resource) = (Uuid::new_v4(), Uuid::new_v4());
+    credential_account(&pool, bare_account, "测试账号").await;
+    sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id) VALUES($1,$2,'测试资源','ecs','cn-hangzhou','i-bare-testonly')")
+        .bind(bare_resource).bind(bare_account).execute(&pool).await.unwrap();
+    for id in [account, bare_account] {
+        assert_eq!(
+            value(automatic(&pool, id).await),
+            value(AccountAutomation::default())
+        );
+    }
+    for id in [resource, bare_resource] {
+        assert_eq!(
+            value(automation::resource(&pool, id).await.unwrap()),
+            value(ResourceAutomation::default())
+        );
+    }
+    let stored: Value = sqlx::query_scalar(
+        "SELECT power_policy FROM cloud_resource_automation WHERE resource_id=$1",
+    )
+    .bind(resource)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        stored,
+        serde_json::from_str::<Value>(DEFAULT_POLICY).unwrap()
+    );
+    assert_eq!(
+        value(serde_json::from_str::<Policy>(DEFAULT_POLICY).unwrap()),
+        value(Policy::default())
+    );
+    let views = automation::resource_views(&pool, &[resource, bare_resource])
+        .await
+        .unwrap();
+    assert_eq!(views[&resource], views[&bare_resource]);
+    assert_eq!(
+        views[&bare_resource],
+        json!({"manual_hold":false,"power_policy":stored,"power_state":null,"power_error":null})
+    );
 }

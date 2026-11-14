@@ -1,5 +1,4 @@
 use super::*;
-use crate::cloud::power::PolicyRules;
 use apsp_costs::cloud::cost_cache;
 use apsp_resources::cloud::billing::{Change, Settings};
 
@@ -100,7 +99,7 @@ async fn disabled_billing_never_reuses_cached_evidence_for_automatic_control(poo
     let (id, resource_id) = seed(&pool, "ecs").await;
     let now = apsp_protocol::now_timestamp();
     let cached = json!({"month":billing::month(now),"queried_at":now,"usage_micro_gb":999_000_000_000_u64,"rows":[]});
-    sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true WHERE id=$1")
+    sqlx::query("UPDATE cloud_account_automation SET auto_enabled=true WHERE account_id=$1")
         .bind(id)
         .execute(&pool)
         .await
@@ -115,10 +114,13 @@ async fn disabled_billing_never_reuses_cached_evidence_for_automatic_control(poo
     .unwrap();
     let a = account(&pool, id).await;
     let c = costs(&pool, id).await;
-    let r = apsp_resources::cloud::resource(&pool, resource_id)
-        .await
-        .unwrap();
-    assert!(!billing::exceeded(&a, &c, now));
+    let r = automation::resource(&pool, resource_id).await.unwrap();
+    assert!(!bandwidth::exceeded(
+        &a,
+        &automatic(&pool, id).await,
+        &c,
+        now
+    ));
     assert_eq!(r.power_policy.exceeded(&a, &c, now), None);
 }
 
@@ -130,14 +132,17 @@ async fn reopening_does_not_implicitly_enable_billable_services(pool: PgPool) {
     for id in [threshold, display] {
         credential_account(&pool, id, "测试升级").await;
     }
-    sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true WHERE id=$1")
+    sqlx::query("UPDATE cloud_account_automation SET auto_enabled=true WHERE account_id=$1")
         .bind(automatic)
         .execute(&pool)
         .await
         .unwrap();
     super::set_billing(&pool, automatic, true, false).await;
-    sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id,power_policy) VALUES($1,$2,'测试阈值','ecs','cn-hangzhou','i-threshold', '{\"enabled\":true,\"threshold_action\":\"stop\"}')")
-        .bind(Uuid::new_v4()).bind(threshold).execute(&pool).await.unwrap();
+    let thresholded = Uuid::new_v4();
+    sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id) VALUES($1,$2,'测试阈值','ecs','cn-hangzhou','i-threshold')")
+        .bind(thresholded).bind(threshold).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO cloud_resource_automation(resource_id,power_policy) VALUES($1,'{\"enabled\":true,\"threshold_action\":\"stop\"}')")
+        .bind(thresholded).execute(&pool).await.unwrap();
     apsp_panel_host::schema::initialize(&pool).await.unwrap();
     for (id, expected) in [(automatic, true), (threshold, false), (display, false)] {
         let stored = costs(&pool, id).await;

@@ -1,14 +1,14 @@
 //! The cloud pages' combined views. The cloud page shows accounts and resources with their
 //! bills and power settings, bandwidth operations, power jobs, address rotations and
 //! notifications; the operations page lists the cloud resources with their server links,
-//! bills, balance, budgets and purchases. Each object's keys come from the owners that keep
-//! them (resources, costs, until step 7 of ADR 0137 the power columns on resources' rows), so
-//! the views belong to the application (ADR 0128).
+//! bills, balance, budgets, purchases and power state. Each object's keys come from the owners
+//! that keep them (resources, costs and operations, ADR 0137 steps 2, 6 and 7), so the views
+//! belong to the application (ADR 0128).
 
 use apsp_costs::cloud::{accounts as costs, resource_costs};
 use apsp_governance::{auth, control_center};
 use apsp_observability::cloud_notices;
-use apsp_operations::cloud::{bandwidth, eip_rotation, power};
+use apsp_operations::cloud::{automation, bandwidth, eip_rotation, power};
 use apsp_panel_host::{
     AppState,
     error::{ApiError, ApiResult},
@@ -48,18 +48,28 @@ async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Js
     let resource_ids: Vec<Uuid> = resources.iter().map(|resource| resource.id).collect();
     let (mut account_costs, mut resource_costs) =
         costs::listed(&state.pool, &account_ids, &resource_ids).await?;
+    let (mut account_automation, mut resource_automation) =
+        automation::listed(&state.pool, &account_ids, &resource_ids).await?;
     let accounts = accounts
         .iter()
         .map(|account| {
             let billing = account_costs.remove(&account.id).unwrap_or_default();
-            Ok(merged(value(account)?, value(billing)?))
+            let automatic = account_automation.remove(&account.id).unwrap_or_default();
+            Ok(merged(
+                merged(value(account)?, value(billing)?),
+                value(automatic)?,
+            ))
         })
         .collect::<ApiResult<Vec<Value>>>()?;
     let resources = resources
         .iter()
         .map(|resource| {
             let billing = resource_costs.remove(&resource.id).unwrap_or_default();
-            Ok(merged(value(resource)?, value(billing)?))
+            let automatic = resource_automation.remove(&resource.id).unwrap_or_default();
+            Ok(merged(
+                merged(value(resource)?, value(billing)?),
+                value(automatic)?,
+            ))
         })
         .collect::<ApiResult<Vec<Value>>>()?;
     let operations = bandwidth::recent(&state.pool).await?;
@@ -72,7 +82,8 @@ async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Js
 }
 
 /// The operations page's cloud resources the reader may see: all of them with global
-/// scope (with the account balance), otherwise those linked to the reader's servers.
+/// scope (with the account balance), otherwise those linked to the reader's servers. Each
+/// shows its power state as operations keeps it.
 async fn resources(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     let actor = control_center::authenticate(&state, &headers).await?;
     if !actor.allows("cloud:read") {
@@ -102,6 +113,8 @@ async fn resources(State(state): State<AppState>, headers: HeaderMap) -> ApiResu
         .map(|resource| (resource.id, resource.linked))
         .collect();
     let mut link_costs = resource_costs::link_values(&state.pool, &linked).await?;
+    let ids: Vec<Uuid> = pairs.iter().map(|(id, _)| *id).collect();
+    let mut power_views = automation::resource_views(&state.pool, &ids).await?;
     let values: Vec<Value> = listed
         .into_iter()
         .map(|resource| {
@@ -112,7 +125,10 @@ async fn resources(State(state): State<AppState>, headers: HeaderMap) -> ApiResu
                 let recorded = link_costs.remove(&resource.id).unwrap_or_else(|| json!({}));
                 *link = merged(link.take(), recorded);
             }
-            view
+            let automatic = power_views
+                .remove(&resource.id)
+                .unwrap_or_else(|| json!({}));
+            merged(view, automatic)
         })
         .collect();
     Ok(Json(

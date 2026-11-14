@@ -3,9 +3,36 @@ use super::{
     client::Cloud,
     model::{Account, Resource},
 };
+use crate::error::ApiResult;
 use apsp_cloud_api::Failure;
 use serde_json::Value;
+use sqlx::{Postgres, Transaction, types::Json};
 use std::{collections::BTreeSet, net::Ipv6Addr, time::Duration};
+use uuid::Uuid;
+
+/// Stores the IPv6 addresses the cloud reported for the instance, or why they could not be
+/// read; a failed read keeps the addresses read before. Operations' power poll reads them
+/// together with the instance's power state.
+pub async fn ipv6_on(
+    tx: &mut Transaction<'_, Postgres>,
+    resource: Uuid,
+    reading: &Result<Vec<String>, Failure>,
+) -> ApiResult<()> {
+    match reading {
+        Ok(addresses) => {
+            sqlx::query("UPDATE alicloud_resources SET ipv6_addresses=$2,ipv6_checked_at=$3,ipv6_error=NULL WHERE id=$1")
+                .bind(resource).bind(Json(addresses)).bind(apsp_protocol::now_timestamp()).execute(&mut **tx).await?;
+        }
+        Err(error) => {
+            sqlx::query("UPDATE alicloud_resources SET ipv6_error=$2 WHERE id=$1")
+                .bind(resource)
+                .bind(error.code)
+                .execute(&mut **tx)
+                .await?;
+        }
+    }
+    Ok(())
+}
 
 fn collect(value: &Value, output: &mut BTreeSet<String>, depth: usize) {
     if depth > 10 || output.len() >= 64 {

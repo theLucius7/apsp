@@ -1,9 +1,10 @@
 use super::super::jobs;
+use super::super::model::Policy;
 use super::super::{Job, scheduler};
 use super::*;
-use crate::cloud::power::{PolicyRules, StateRules};
+use crate::cloud::automation::ResourceAutomation;
 use apsp_cloud_api::test_support::{Mock, Reply};
-use apsp_resources::cloud::{account_on, client::TEST_ONLY_KEY_ID, lock, model::Policy, resource};
+use apsp_resources::cloud::{account_on, client::TEST_ONLY_KEY_ID, lock};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -16,7 +17,7 @@ fn config() -> Policy {
         "limit_gb":100,"threshold_percent":95,"schedule_enabled":false,"start_time":"08:00","stop_time":"23:00",
         "utc_offset_minutes":480,"keepalive":false,"cdt_guard":{"threshold_bytes":150*GIB,"jump_bytes":20*GIB,"auto_start":true}})).unwrap()
 }
-async fn seed(pool: &PgPool) -> (Account, Resource) {
+async fn seed(pool: &PgPool) -> (Account, Automated) {
     let aid = Uuid::new_v4();
     let rid = Uuid::new_v4();
     // A sealed credential: the state import reads the key through the credential store, the
@@ -35,12 +36,25 @@ async fn seed(pool: &PgPool) -> (Account, Resource) {
         .execute(pool)
         .await
         .unwrap();
-    sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id,power_policy) VALUES($1,$2,'测试实例','ecs','cn-hongkong','i-guardtest',$3)")
-        .bind(rid).bind(aid).bind(Json(config())).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO alicloud_resources(id,account_id,name,kind,region,cloud_id) VALUES($1,$2,'测试实例','ecs','cn-hongkong','i-guardtest')")
+        .bind(rid).bind(aid).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO cloud_resource_automation(resource_id,power_policy) VALUES($1,$2)")
+        .bind(rid)
+        .bind(Json(config()))
+        .execute(pool)
+        .await
+        .unwrap();
     let mut tx = lock(pool, aid).await.unwrap();
     let a = account_on(&mut tx, aid).await.unwrap();
     tx.commit().await.unwrap();
-    (a, resource(pool, rid).await.unwrap())
+    (a, stored(pool, rid).await)
+}
+/// The resource as stored now, with what operations keeps about it.
+async fn stored(pool: &PgPool, id: Uuid) -> Automated {
+    let mut tx = pool.begin().await.unwrap();
+    let r = automation::current(&mut tx, id).await.unwrap();
+    tx.commit().await.unwrap();
+    r
 }
 fn row(region: &str, amount: u64) -> Value {
     json!({"BusinessRegionId":region,"ISPType":"BGP","Traffic":amount.to_string(),
@@ -68,7 +82,7 @@ fn observation(a: &Account, r: &Resource, usage: u64, jump: u64, now: i64) -> Gu
     value
 }
 async fn save_observation(pool: &PgPool, r: Uuid, value: &GuardState) {
-    sqlx::query("UPDATE alicloud_resources SET cdt_guard_state=$2 WHERE id=$1")
+    sqlx::query("UPDATE cloud_resource_automation SET cdt_guard_state=$2 WHERE resource_id=$1")
         .bind(r)
         .bind(Json(value))
         .execute(pool)
@@ -151,8 +165,8 @@ fn script_mode_is_opt_in_and_excludes_conflicting_automation() {
 
 #[sqlx::test(migrations = "../panel/migrations")]
 async fn combined_guard_cron_and_keepalive_preserve_stop_priority_and_start_gates(pool: PgPool) {
+    use super::super::model::ScheduleMode;
     use super::super::scheduler;
-    use apsp_resources::cloud::model::ScheduleMode;
     let (account, mut resource) = seed(&pool).await;
     let base = 1_793_923_200; // Friday 08:00 at UTC+08.
     let state: State = serde_json::from_value(json!({"cloud_id":"i-guardtest","region":"cn-hongkong","status":"Stopped","stopped_mode":"StopCharging","charge_type":"PostPaid","network_type":"vpc","spot_strategy":"SpotAsPriceGo","interruption_behavior":"Stop","public_ips":[],"locked":false})).unwrap();
@@ -167,28 +181,34 @@ async fn combined_guard_cron_and_keepalive_preserve_stop_priority_and_start_gate
         (30, false, false, false, false, false, Some("start")),
     ] {
         let now = base + minute * 60;
-        resource.power_policy.0 = config();
-        resource.power_policy.schedule_enabled = true;
-        resource.power_policy.schedule_mode = ScheduleMode::Cron;
-        resource.power_policy.start_cron = "0 8 * * 1-5".into();
-        resource.power_policy.stop_cron = if same_time {
+        resource.automation.power_policy.0 = config();
+        resource.automation.power_policy.schedule_enabled = true;
+        resource.automation.power_policy.schedule_mode = ScheduleMode::Cron;
+        resource.automation.power_policy.start_cron = "0 8 * * 1-5".into();
+        resource.automation.power_policy.stop_cron = if same_time {
             "0 8 * * 1-5"
         } else {
             "0 9 * * 1-5"
         }
         .into();
-        resource.power_policy.keepalive = true;
-        resource.power_policy.cdt_guard.as_mut().unwrap().auto_start = false;
-        resource.manual_hold = hold;
-        resource.next_power_at = 0;
-        resource.cdt_guard_state = Some(Json(observation(
+        resource.automation.power_policy.keepalive = true;
+        resource
+            .automation
+            .power_policy
+            .cdt_guard
+            .as_mut()
+            .unwrap()
+            .auto_start = false;
+        resource.automation.manual_hold = hold;
+        resource.automation.next_power_at = 0;
+        resource.automation.cdt_guard_state = Some(Json(observation(
             &account,
             &resource,
             if over { 200 * GIB } else { 10 * GIB },
             0,
             if stale { now - 121 } else { now },
         )));
-        resource.cdt_guard_error = None;
+        resource.automation.cdt_guard_error = None;
         let mut state = state.clone();
         state.status = if running { "Running" } else { "Stopped" }.into();
         let mut tx = pool.begin().await.unwrap();
@@ -222,7 +242,7 @@ async fn combined_guard_cron_and_keepalive_preserve_stop_priority_and_start_gate
                 now
             ));
             if job.action == "start" {
-                resource.manual_hold = true;
+                resource.automation.manual_hold = true;
                 assert!(!jobs::allowed(
                     job,
                     &account,
@@ -230,8 +250,8 @@ async fn combined_guard_cron_and_keepalive_preserve_stop_priority_and_start_gate
                     &resource,
                     now
                 ));
-                resource.manual_hold = false;
-                resource.cdt_guard_error = Some("request_timeout".into());
+                resource.automation.manual_hold = false;
+                resource.automation.cdt_guard_error = Some("request_timeout".into());
                 assert!(!jobs::allowed(
                     job,
                     &account,
@@ -250,12 +270,13 @@ async fn guard_backoff_skips_meter_but_still_evaluates_scheduled_stop(pool: PgPo
     let (account, mut resource) = seed(&pool).await;
     let now = apsp_protocol::now_timestamp();
     let local_minute = (now + 28800).rem_euclid(86400) / 60;
-    resource.power_policy.schedule_enabled = true;
-    resource.power_policy.stop_time = format!("{:02}:{:02}", local_minute / 60, local_minute % 60);
+    resource.automation.power_policy.schedule_enabled = true;
+    resource.automation.power_policy.stop_time =
+        format!("{:02}:{:02}", local_minute / 60, local_minute % 60);
     let start = (local_minute + 720) % 1440;
-    resource.power_policy.start_time = format!("{:02}:{:02}", start / 60, start % 60);
-    resource.cdt_guard_next_at = now + 3600;
-    resource.cdt_guard_error = Some("rate_limited".into());
+    resource.automation.power_policy.start_time = format!("{:02}:{:02}", start / 60, start % 60);
+    resource.automation.cdt_guard_next_at = now + 3600;
+    resource.automation.cdt_guard_error = Some("rate_limited".into());
     let state: State = serde_json::from_value(json!({"cloud_id":"i-guardtest","region":"cn-hongkong","status":"Running","stopped_mode":null,"charge_type":"PostPaid","network_type":"vpc","spot_strategy":"NoSpot","interruption_behavior":null,"public_ips":[],"locked":false})).unwrap();
     let mock = Mock::start(vec![]).await;
     let mut tx = pool.begin().await.unwrap();
@@ -295,7 +316,7 @@ async fn monthly_high_water_jump_reset_and_freshness_are_preserved(pool: PgPool)
     assert_eq!(next.max_jump_bytes, 45 * GIB);
     let lower = observe(Some(&next), 80 * GIB, &a, &r, &key_digest(KEY), now + 120).unwrap();
     assert_eq!(lower.max_usage_bytes, 110 * GIB);
-    r.cdt_guard_state = Some(Json(lower));
+    r.automation.cdt_guard_state = Some(Json(lower));
     assert_eq!(exceeded(&a, &r, now + 120), Some(true));
     assert_eq!(exceeded(&a, &r, now + 241), None);
     let mut revised = a.clone();
@@ -347,7 +368,7 @@ async fn buffered_threshold_stops_once_using_existing_durable_jobs_without_bills
     let jobs = queued(&pool, r.id).await;
     assert_eq!(jobs.len(), 1);
     assert_eq!(jobs[0].source, "cdt_guard");
-    let saved = resource(&pool, r.id).await.unwrap();
+    let saved = automation::resource(&pool, r.id).await.unwrap();
     assert_eq!(saved.cdt_guard_state.unwrap().max_usage_bytes, 110 * GIB);
     jobs::process(&pool, jobs[0].id, &cloud).await.unwrap();
     jobs::process(&pool, jobs[0].id, &cloud).await.unwrap();
@@ -424,7 +445,9 @@ async fn ordinary_instance_can_restart_below_limit_but_manual_hold_and_pause_win
     assert_eq!(q.len(), 1);
     assert_eq!(q[0].action, "start");
     assert!(!q[0].before_state.spot());
-    sqlx::query("UPDATE alicloud_resources SET manual_hold=true,next_power_at=0 WHERE id=$1")
+    sqlx::query(
+        "UPDATE cloud_resource_automation SET manual_hold=true,next_power_at=0 WHERE resource_id=$1",
+    )
         .bind(r.id)
         .execute(&pool)
         .await
@@ -454,7 +477,7 @@ async fn invalid_meter_cancels_start_and_retains_history(pool: PgPool) {
     let mut partial = traffic(1);
     partial.value["NextToken"] = "more".into();
     let mock = Mock::start(vec![power("Stopped"), partial]).await;
-    sqlx::query("UPDATE alicloud_resources SET next_power_at=0 WHERE id=$1")
+    sqlx::query("UPDATE cloud_resource_automation SET next_power_at=0 WHERE resource_id=$1")
         .bind(r.id)
         .execute(&pool)
         .await
@@ -464,13 +487,17 @@ async fn invalid_meter_cancels_start_and_retains_history(pool: PgPool) {
         .unwrap();
     assert_eq!(jobs::load(&pool, id).await.unwrap().status, "cancelled");
     assert!(queued(&pool, r.id).await.is_empty());
-    let r = resource(&pool, r.id).await.unwrap();
+    let r = stored(&pool, r.id).await;
     assert_eq!(
-        r.cdt_guard_state.as_ref().unwrap().max_usage_bytes,
+        r.automation
+            .cdt_guard_state
+            .as_ref()
+            .unwrap()
+            .max_usage_bytes,
         10 * GIB
     );
     assert_eq!(exceeded(&a, &r, apsp_protocol::now_timestamp()), None);
-    assert!(r.power_policy.blocks_start(
+    assert!(r.automation.power_policy.blocks_start(
         &a,
         &AccountBilling::default(),
         &r,
@@ -493,21 +520,28 @@ async fn zero_uses_no_extra_permission_and_cannot_clear_exhausted_history(pool: 
         .await
         .unwrap();
     assert!(queued(&pool, r.id).await.is_empty());
-    let r = resource(&pool, r.id).await.unwrap();
+    let r = stored(&pool, r.id).await;
     assert_eq!(
-        r.cdt_guard_state.as_ref().unwrap().max_usage_bytes,
+        r.automation
+            .cdt_guard_state
+            .as_ref()
+            .unwrap()
+            .max_usage_bytes,
         198 * GIB
     );
     assert_eq!(exceeded(&a, &r, apsp_protocol::now_timestamp()), Some(true));
-    assert!(r.cdt_guard_error.is_none());
+    assert!(r.automation.cdt_guard_error.is_none());
     mock.exhausted();
     let mock = Mock::start(vec![traffic(0)]).await;
     assert_eq!(
         read(
             &a,
-            &Resource {
-                cdt_guard_state: None,
-                ..r
+            &Automated {
+                automation: ResourceAutomation {
+                    cdt_guard_state: None,
+                    ..r.automation
+                },
+                resource: r.resource,
             },
             &Cloud::local(&mock.endpoint),
             apsp_protocol::now_timestamp()
@@ -544,21 +578,26 @@ async fn import_is_monotonic_paused_and_never_fresh_authorization(pool: PgPool) 
             .await
             .is_err()
     );
-    sqlx::query("UPDATE alicloud_resources SET power_policy=jsonb_set(power_policy,'{enabled}','false') WHERE id=$1").bind(r.id).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE cloud_resource_automation SET power_policy=jsonb_set(power_policy,'{enabled}','false') WHERE resource_id=$1").bind(r.id).execute(&pool).await.unwrap();
     seed::import_on(&pool, r.id, make_input(1, 100))
         .await
         .unwrap();
     seed::import_on(&pool, r.id, make_input(2, 80))
         .await
         .unwrap();
-    let mut r = resource(&pool, r.id).await.unwrap();
+    let mut r = stored(&pool, r.id).await;
     assert_eq!(
-        r.cdt_guard_state.as_ref().unwrap().max_usage_bytes,
+        r.automation
+            .cdt_guard_state
+            .as_ref()
+            .unwrap()
+            .max_usage_bytes,
         100 * GIB
     );
-    r.power_policy.enabled = true;
+    r.automation.power_policy.enabled = true;
     assert!(
-        r.power_policy
+        r.automation
+            .power_policy
             .blocks_start(&a, &AccountBilling::default(), &r, now)
     );
     assert!(queued(&pool, r.id).await.is_empty());
@@ -579,8 +618,8 @@ async fn confirmed_cdt_accepts_zero_month_reset_without_additional_permissions(p
     scheduler::poll(&pool, r.id, &Cloud::local(&mock.endpoint))
         .await
         .unwrap();
-    let saved = resource(&pool, r.id).await.unwrap();
-    let reset = saved.cdt_guard_state.as_ref().unwrap();
+    let saved = stored(&pool, r.id).await;
+    let reset = saved.automation.cdt_guard_state.as_ref().unwrap();
     assert_eq!(reset.max_usage_bytes, 0);
     assert!(reset.cdt_observed);
     assert_eq!(queued(&pool, r.id).await[0].action, "start");
@@ -646,9 +685,9 @@ async fn empty_listing_in_a_new_cycle_restarts_a_guard_stopped_instance(pool: Pg
     scheduler::poll(&pool, r.id, &Cloud::local(&mock.endpoint))
         .await
         .unwrap();
-    let saved = resource(&pool, r.id).await.unwrap();
-    assert!(saved.cdt_guard_error.is_none());
-    let reset = saved.cdt_guard_state.as_ref().unwrap();
+    let saved = stored(&pool, r.id).await;
+    assert!(saved.automation.cdt_guard_error.is_none());
+    let reset = saved.automation.cdt_guard_state.as_ref().unwrap();
     assert_eq!(reset.max_usage_bytes, 0);
     assert_eq!(reset.billing_cycle, billing::month(now));
     assert_eq!(queued(&pool, r.id).await[0].action, "start");

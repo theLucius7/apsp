@@ -1,30 +1,12 @@
-use crate::cloud::power::GuardRules;
+use super::model::{Policy, ScheduleMode};
+use crate::cloud::automation::Automated;
 use crate::error::{ApiError, ApiResult};
 use apsp_costs::cloud::accounts::AccountBilling;
-use apsp_resources::cloud::model::{Account, Policy, Resource, ScheduleMode};
+use apsp_resources::cloud::model::Account;
 
-/// What a resource's power policy allows. The policy is stored on the resource row, so its
-/// type belongs to resources until stage F; what it means is decided here.
-pub(crate) trait PolicyRules {
-    fn validate(&self) -> ApiResult<()>;
-
-    fn exceeded(&self, account: &Account, billing: &AccountBilling, now: i64) -> Option<bool>;
-
-    fn blocks_start(
-        &self,
-        account: &Account,
-        billing: &AccountBilling,
-        resource: &Resource,
-        now: i64,
-    ) -> bool;
-
-    fn in_window(&self, now: i64) -> bool;
-
-    fn occurrence(&self, action: &str, now: i64) -> Option<i64>;
-}
-
-impl PolicyRules for Policy {
-    fn validate(&self) -> ApiResult<()> {
+/// What a resource's power policy allows.
+impl Policy {
+    pub(crate) fn validate(&self) -> ApiResult<()> {
         if let Some(guard) = &self.cdt_guard {
             guard.validate()?;
             if self.stop_mode != "StopCharging" || self.threshold_action != "off" {
@@ -67,7 +49,14 @@ impl PolicyRules for Policy {
         }
         Ok(())
     }
-    fn exceeded(&self, account: &Account, billing: &AccountBilling, now: i64) -> Option<bool> {
+    /// Whether the account's billed CDT usage this month reaches the policy's threshold;
+    /// `None` when the bill may not drive automatic control.
+    pub(crate) fn exceeded(
+        &self,
+        account: &Account,
+        billing: &AccountBilling,
+        now: i64,
+    ) -> Option<bool> {
         if !account.enabled {
             return None;
         }
@@ -76,11 +65,12 @@ impl PolicyRules for Policy {
                 >= self.limit_gb as u128 * 1_000_000 * self.threshold_percent as u128,
         )
     }
-    fn blocks_start(
+    /// Whether the resource's traffic protection forbids starting it now.
+    pub(crate) fn blocks_start(
         &self,
         account: &Account,
         billing: &AccountBilling,
-        resource: &Resource,
+        resource: &Automated,
         now: i64,
     ) -> bool {
         if self.enabled && self.cdt_guard.is_some() {
@@ -88,9 +78,10 @@ impl PolicyRules for Policy {
         }
         self.enabled
             && self.threshold_action == "stop"
-            && (resource.threshold_hold || self.exceeded(account, billing, now) != Some(false))
+            && (resource.automation.threshold_hold
+                || self.exceeded(account, billing, now) != Some(false))
     }
-    fn in_window(&self, now: i64) -> bool {
+    pub(crate) fn in_window(&self, now: i64) -> bool {
         if self.schedule_mode == ScheduleMode::Cron {
             let previous = |expression: &str| {
                 super::cron::Cron::parse(expression).ok()?.occurrence(
@@ -113,7 +104,7 @@ impl PolicyRules for Policy {
             minute_now >= start || minute_now < stop
         }
     }
-    fn occurrence(&self, action: &str, now: i64) -> Option<i64> {
+    pub(crate) fn occurrence(&self, action: &str, now: i64) -> Option<i64> {
         if self.schedule_mode == ScheduleMode::Cron {
             let expression = if action == "start" {
                 &self.start_cron

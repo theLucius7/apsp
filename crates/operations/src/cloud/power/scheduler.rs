@@ -1,18 +1,13 @@
 use super::jobs::{self, Intent};
-use crate::cloud::power::{PolicyRules, StateRules};
+use super::model::State;
+use crate::cloud::automation::{self, Automated};
 use crate::error::ApiResult;
 use apsp_costs::cloud::{
     accounts::{self, AccountBilling},
     billing,
 };
 use apsp_observability::cloud_notices;
-use apsp_resources::cloud::{
-    account_on,
-    client::Cloud,
-    lock,
-    model::{Account, Resource, State},
-    resource,
-};
+use apsp_resources::cloud::{account_on, addresses, client::Cloud, lock, model::Account, resource};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -21,15 +16,20 @@ pub async fn poll(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
     let mut tx = lock(pool, initial.account_id).await?;
     let account = account_on(&mut tx, initial.account_id).await?;
     let billing = accounts::account_on(&mut tx, initial.account_id).await?;
-    let mut r = jobs::fresh(&mut tx, id).await?;
+    let mut r = automation::current(&mut tx, id).await?;
     let now = apsp_protocol::now_timestamp();
-    if r.kind != "ecs" || !account.enabled || r.next_power_at > now {
+    if r.kind != "ecs" || !account.enabled || r.automation.next_power_at > now {
         return Ok(());
     }
     // Without a policy the poll only refreshes the displayed state, which the
     // five-minute account refresh also reads. Saving a policy resets this time.
-    let interval = if r.power_policy.enabled { 60 } else { 300 };
-    sqlx::query("UPDATE alicloud_resources SET next_power_at=$2 WHERE id=$1")
+    let interval = if r.automation.power_policy.enabled {
+        60
+    } else {
+        300
+    };
+    automation::row(&mut tx, id).await?;
+    sqlx::query("UPDATE cloud_resource_automation SET next_power_at=$2 WHERE resource_id=$1")
         .bind(id)
         .bind(now + interval)
         .execute(&mut *tx)
@@ -38,19 +38,9 @@ pub async fn poll(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
         Ok(state) => {
             jobs::state_on(&mut tx, id, &state, now).await?;
             // Address supplementation is optional and does not change state validity.
-            match cloud.ipv6(&account, &r, &state.public_ipv6).await {
-                Ok(addresses) => {
-                    sqlx::query("UPDATE alicloud_resources SET ipv6_addresses=$2,ipv6_checked_at=$3,ipv6_error=NULL WHERE id=$1").bind(id).bind(sqlx::types::Json(addresses)).bind(apsp_protocol::now_timestamp()).execute(&mut *tx).await?;
-                }
-                Err(error) => {
-                    sqlx::query("UPDATE alicloud_resources SET ipv6_error=$2 WHERE id=$1")
-                        .bind(id)
-                        .bind(error.code)
-                        .execute(&mut *tx)
-                        .await?;
-                }
-            }
-            if r.power_policy.cdt_guard.is_some() {
+            let reading = cloud.ipv6(&account, &r, &state.public_ipv6).await;
+            addresses::ipv6_on(&mut tx, id, &reading).await?;
+            if r.automation.power_policy.cdt_guard.is_some() {
                 super::guard::poll(&mut tx, &account, &billing, &mut r, &state, cloud, now).await?;
             } else {
                 evaluate(&mut tx, &account, &billing, &mut r, &state, now).await?;
@@ -58,7 +48,7 @@ pub async fn poll(pool: &PgPool, id: Uuid, cloud: &Cloud) -> ApiResult<()> {
         }
         Err(error) => {
             sqlx::query(
-                "UPDATE alicloud_resources SET power_error=$2,next_power_at=$3 WHERE id=$1",
+                "UPDATE cloud_resource_automation SET power_error=$2,next_power_at=$3 WHERE resource_id=$1",
             )
             .bind(id)
             .bind(error.code)
@@ -74,11 +64,11 @@ pub(super) async fn evaluate(
     tx: &mut Transaction<'_, Postgres>,
     account: &Account,
     billing: &AccountBilling,
-    r: &mut Resource,
+    r: &mut Automated,
     state: &State,
     now: i64,
 ) -> ApiResult<()> {
-    let p = r.power_policy.0.clone();
+    let p = r.automation.power_policy.0.clone();
     if !p.enabled {
         return Ok(());
     }
@@ -93,14 +83,17 @@ pub(super) async fn evaluate(
     }
     if p.threshold_action == "stop" {
         if let Some(value) = exceeded {
-            r.threshold_hold = value;
-            sqlx::query("UPDATE alicloud_resources SET threshold_hold=$2 WHERE id=$1")
-                .bind(r.id)
-                .bind(value)
-                .execute(&mut **tx)
-                .await?;
+            r.automation.threshold_hold = value;
+            automation::row(tx, r.id).await?;
+            sqlx::query(
+                "UPDATE cloud_resource_automation SET threshold_hold=$2 WHERE resource_id=$1",
+            )
+            .bind(r.id)
+            .bind(value)
+            .execute(&mut **tx)
+            .await?;
         }
-        if r.threshold_hold || exceeded.is_none() {
+        if r.automation.threshold_hold || exceeded.is_none() {
             // Cancel a queued automatic start before it can defeat new protection.
             sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',error_code='policy_inactive',updated_at=$2 WHERE resource_id=$1 AND action='start' AND status='queued'").bind(r.id).bind(now).execute(&mut **tx).await?;
         }
@@ -147,7 +140,7 @@ pub(super) async fn evaluate(
             format!("schedule:{}:stop:{occurrence}", r.id),
             occurrence + 600,
         ))
-    } else if !r.manual_hold
+    } else if !r.automation.manual_hold
         && !p.blocks_start(account, billing, r, now)
         && p.schedule_enabled
         && p.in_window(now)
@@ -163,7 +156,7 @@ pub(super) async fn evaluate(
     } else if guarded
         && exceeded == Some(false)
         && state.status == "Stopped"
-        && !r.manual_hold
+        && !r.automation.manual_hold
         && p.cdt_guard.as_ref().is_some_and(|g| g.auto_start)
         && (!p.schedule_enabled || p.in_window(now))
     {
@@ -174,8 +167,8 @@ pub(super) async fn evaluate(
             now + 90,
         ))
     } else if p.keepalive
-        && r.next_power_at <= now
-        && !r.manual_hold
+        && r.automation.next_power_at <= now
+        && !r.automation.manual_hold
         && !p.blocks_start(account, billing, r, now)
         && state.spot()
         && state.status == "Stopped"

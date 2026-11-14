@@ -1,12 +1,11 @@
-use super::{Job, jobs, policy};
-use crate::cloud::bandwidth;
-use crate::cloud::power::{PolicyRules, StateRules};
+use super::{Job, jobs, model::Policy, policy};
+use crate::cloud::{automation, bandwidth};
 use crate::{
     AppState, auth,
     error::{ApiError, ApiResult},
 };
 use apsp_costs::cloud::accounts;
-use apsp_resources::cloud::{account_on, client::Cloud, failure, lock, model::Policy, resource};
+use apsp_resources::cloud::{account_on, client::Cloud, failure, lock, resource};
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -96,14 +95,16 @@ async fn update_policy(
             "账单阈值策略需要先在云账号中启用账单查询".into(),
         ));
     }
-    let r = jobs::fresh(&mut tx, id).await?;
+    let r = automation::current(&mut tx, id).await?;
     if r.kind != "ecs" || r.revision != input.revision {
         return Err(ApiError::Conflict(
             "仅 ECS 支持启停策略，请刷新配置后重试".into(),
         ));
     }
-    sqlx::query("UPDATE alicloud_resources SET power_policy=$2,revision=revision+1,next_power_at=0,threshold_hold=CASE WHEN $3 THEN threshold_hold ELSE false END WHERE id=$1")
+    automation::row(&mut tx, id).await?;
+    sqlx::query("UPDATE cloud_resource_automation SET power_policy=$2,next_power_at=0,threshold_hold=CASE WHEN $3 THEN threshold_hold ELSE false END WHERE resource_id=$1")
         .bind(id).bind(SqlJson(&input.policy)).bind(input.policy.enabled && input.policy.threshold_action=="stop").execute(&mut *tx).await?;
+    apsp_resources::cloud::revise(&mut tx, id).await?;
     cancel_queued(&mut tx, id).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
@@ -137,14 +138,18 @@ async fn preview(
     let mut tx = lock(&state.pool, initial.account_id).await?;
     let account = account_on(&mut tx, initial.account_id).await?;
     let billing = accounts::account_on(&mut tx, initial.account_id).await?;
-    let r = jobs::fresh(&mut tx, id).await?;
+    let r = automation::current(&mut tx, id).await?;
     let now = apsp_protocol::now_timestamp();
     if r.kind != "ecs" || !account.enabled || r.revision != input.revision {
         return Err(ApiError::Conflict(
             "仅支持已启用账号的 ECS，请刷新配置后重试".into(),
         ));
     }
-    if input.action == "start" && r.power_policy.blocks_start(&account, &billing, &r, now) {
+    if input.action == "start"
+        && r.automation
+            .power_policy
+            .blocks_start(&account, &billing, &r, now)
+    {
         return Err(ApiError::Conflict(
             "流量停机保护生效，或当前账单无法验证；请核对用量及阈值策略".into(),
         ));
@@ -206,7 +211,7 @@ pub(super) async fn confirm_on(pool: &sqlx::PgPool, id: Uuid) -> ApiResult<()> {
     }
     let account = account_on(&mut tx, initial_r.account_id).await?;
     let billing = accounts::account_on(&mut tx, initial_r.account_id).await?;
-    let r = jobs::fresh(&mut tx, initial_r.id).await?;
+    let r = automation::current(&mut tx, initial_r.id).await?;
     if job.source != "manual"
         || job.status != "preview"
         || !jobs::allowed(&job, &account, &billing, &r, apsp_protocol::now_timestamp())
@@ -221,7 +226,8 @@ pub(super) async fn confirm_on(pool: &sqlx::PgPool, id: Uuid) -> ApiResult<()> {
         .bind(apsp_protocol::now_timestamp())
         .execute(&mut *tx)
         .await?;
-    sqlx::query("UPDATE alicloud_resources SET manual_hold=$2 WHERE id=$1")
+    automation::row(&mut tx, r.id).await?;
+    sqlx::query("UPDATE cloud_resource_automation SET manual_hold=$2 WHERE resource_id=$1")
         .bind(r.id)
         .bind(job.action == "stop")
         .execute(&mut *tx)
@@ -249,7 +255,7 @@ struct Revision {
 pub(super) async fn resume_on(pool: &sqlx::PgPool, id: Uuid, revision: i64) -> ApiResult<()> {
     let initial = resource(pool, id).await?;
     let mut tx = lock(pool, initial.account_id).await?;
-    let r = jobs::fresh(&mut tx, id).await?;
+    let r = automation::current(&mut tx, id).await?;
     if r.kind != "ecs" {
         return Err(ApiError::BadRequest("仅 ECS 支持启停策略".into()));
     }
@@ -259,10 +265,13 @@ pub(super) async fn resume_on(pool: &sqlx::PgPool, id: Uuid, revision: i64) -> A
         ));
     }
     bandwidth::idle(&mut tx, id).await?;
-    sqlx::query("UPDATE alicloud_resources SET manual_hold=false,next_power_at=0,revision=revision+1 WHERE id=$1")
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "UPDATE cloud_resource_automation SET manual_hold=false,next_power_at=0 WHERE resource_id=$1",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+    apsp_resources::cloud::revise(&mut tx, id).await?;
     cancel_queued(&mut tx, id).await?;
     tx.commit().await?;
     Ok(())
@@ -294,7 +303,7 @@ pub(super) async fn close(pool: &sqlx::PgPool, id: Uuid, dismiss: bool) -> ApiRe
         .fetch_one(&mut *tx)
         .await?;
     let status = if dismiss && job.status == "uncertain" {
-        sqlx::query("UPDATE alicloud_resources SET power_policy=jsonb_set(power_policy,'{enabled}','false'),auto_enabled=false,manual_hold=true,revision=revision+1 WHERE id=$1").bind(r.id).execute(&mut *tx).await?;
+        automation::pause(&mut tx, r.id).await?;
         cancel_queued(&mut tx, r.id).await?;
         "dismissed"
     } else if !dismiss && matches!(job.status.as_str(), "preview" | "queued") {

@@ -25,10 +25,10 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 /// A registered cloud resource as the operations page lists it: what resources keeps of it
-/// (identity, account, cloud snapshot, server link) and, until operations keeps its own
-/// rows, the power columns. The page adds what costs keeps (`/api/operations/cloud`, composed
-/// in the application): the bills, the budget in `link` and, for a resource without a
-/// server (`linked` false), its purchase in `link`.
+/// (identity, account, cloud snapshot, server link). The page adds what costs and operations
+/// keep (`/api/operations/cloud`, composed in the application): the bills, the budget in
+/// `link` and, for a resource without a server (`linked` false), its purchase in `link`, and
+/// the power state.
 pub struct Listed {
     pub id: Uuid,
     pub account_id: Uuid,
@@ -41,7 +41,7 @@ pub struct Listed {
 /// price, currency, expiry and order reference as the purchase.
 pub async fn listed(pool: &PgPool, global: bool, servers: &[i64]) -> ApiResult<Vec<Listed>> {
     use crate::server_assets::sql;
-    let rows: Vec<(Uuid, Uuid, bool, Value)> = sqlx::query_as(&format!("SELECT r.id,r.account_id,l.server_id IS NOT NULL,jsonb_build_object('id',r.id,'account_id',r.account_id,'account_name',a.name,'provider','alicloud','kind',r.kind,'region',r.region,'cloud_id',r.cloud_id,'name',r.name,'snapshot',r.snapshot,'checked_at',r.checked_at,'error_code',r.error_code,'manual_hold',r.manual_hold,'power_policy',r.power_policy,'power_state',r.power_state,'power_error',r.power_error,'link',CASE WHEN l.resource_id IS NULL THEN NULL WHEN l.server_id IS NULL THEN jsonb_build_object('resource_id',l.resource_id,'server_id',l.server_id,'notes',l.notes,'updated_at',l.updated_at,'updated_by',l.updated_by) ELSE jsonb_build_object('resource_id',l.resource_id,'server_id',l.server_id,'notes',l.notes,'updated_at',l.updated_at,'updated_by',l.updated_by,'purchase_reference',COALESCE({reference},''),'purchase_amount',{price},'currency',CASE WHEN {price} IS NULL THEN NULL ELSE {currency} END,'expires_at',{expires_at}) END,'provider_read_only_source','阿里云 ECS/VPC/BSS 官方 API 缓存') FROM alicloud_resources r JOIN alicloud_accounts a ON a.id=r.account_id LEFT JOIN operations_cloud_links l ON l.resource_id=r.id LEFT JOIN servers s ON s.id=l.server_id WHERE NOT r.archived AND NOT a.archived AND ($1 OR l.server_id=ANY($2)) ORDER BY a.name,r.name LIMIT 500",
+    let rows: Vec<(Uuid, Uuid, bool, Value)> = sqlx::query_as(&format!("SELECT r.id,r.account_id,l.server_id IS NOT NULL,jsonb_build_object('id',r.id,'account_id',r.account_id,'account_name',a.name,'provider','alicloud','kind',r.kind,'region',r.region,'cloud_id',r.cloud_id,'name',r.name,'snapshot',r.snapshot,'checked_at',r.checked_at,'error_code',r.error_code,'link',CASE WHEN l.resource_id IS NULL THEN NULL WHEN l.server_id IS NULL THEN jsonb_build_object('resource_id',l.resource_id,'server_id',l.server_id,'notes',l.notes,'updated_at',l.updated_at,'updated_by',l.updated_by) ELSE jsonb_build_object('resource_id',l.resource_id,'server_id',l.server_id,'notes',l.notes,'updated_at',l.updated_at,'updated_by',l.updated_by,'purchase_reference',COALESCE({reference},''),'purchase_amount',{price},'currency',CASE WHEN {price} IS NULL THEN NULL ELSE {currency} END,'expires_at',{expires_at}) END,'provider_read_only_source','阿里云 ECS/VPC/BSS 官方 API 缓存') FROM alicloud_resources r JOIN alicloud_accounts a ON a.id=r.account_id LEFT JOIN operations_cloud_links l ON l.resource_id=r.id LEFT JOIN servers s ON s.id=l.server_id WHERE NOT r.archived AND NOT a.archived AND ($1 OR l.server_id=ANY($2)) ORDER BY a.name,r.name LIMIT 500",
         reference = sql::order_reference("s"),
         price = sql::price("s"),
         currency = sql::currency("s"),

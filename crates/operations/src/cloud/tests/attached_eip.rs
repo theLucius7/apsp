@@ -124,19 +124,25 @@ async fn attached_eip_never_authorizes_ecs_or_eip_bandwidth_writes(pool: PgPool)
 #[sqlx::test(migrations = "../panel/migrations")]
 async fn attached_eip_refresh_commits_queries_without_automatic_bandwidth_jobs(pool: PgPool) {
     let (a, r) = seed(&pool, "ecs").await;
-    sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true,limit_gb=100 WHERE id=$1")
-        .bind(a)
-        .execute(&pool)
-        .await
-        .unwrap();
     sqlx::query(
-        "UPDATE alicloud_resources SET auto_enabled=true,error_code='invalid_response' WHERE id=$1",
+        "UPDATE cloud_account_automation SET auto_enabled=true,limit_gb=100 WHERE account_id=$1",
     )
-    .bind(r)
+    .bind(a)
     .execute(&pool)
     .await
     .unwrap();
+    sqlx::query("UPDATE cloud_resource_automation SET auto_enabled=true WHERE resource_id=$1")
+        .bind(r)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE alicloud_resources SET error_code='invalid_response' WHERE id=$1")
+        .bind(r)
+        .execute(&pool)
+        .await
+        .unwrap();
     let original = apsp_resources::cloud::resource(&pool, r).await.unwrap();
+    let original_automation = automation::resource(&pool, r).await.unwrap();
     for charge in ["PayByTraffic", "PayByDominantTraffic"] {
         sqlx::query("UPDATE alicloud_accounts SET next_run_at=0 WHERE id=$1")
             .bind(a)
@@ -161,13 +167,14 @@ async fn attached_eip_refresh_commits_queries_without_automatic_bandwidth_jobs(p
         assert!(updated.checked_at.is_some());
         assert_eq!(updated.snapshot.unwrap().bandwidth_mbps, 2000);
         assert_eq!(updated.revision, original.revision);
+        let updated_automation = automation::resource(&pool, r).await.unwrap();
         assert_eq!(
-            serde_json::to_value(updated.power_policy).unwrap(),
-            serde_json::to_value(&original.power_policy).unwrap()
+            serde_json::to_value(updated_automation.power_policy).unwrap(),
+            serde_json::to_value(&original_automation.power_policy).unwrap()
         );
         assert_eq!(
-            serde_json::to_value(updated.cdt_guard_state).unwrap(),
-            serde_json::to_value(&original.cdt_guard_state).unwrap()
+            serde_json::to_value(updated_automation.cdt_guard_state).unwrap(),
+            serde_json::to_value(&original_automation.cdt_guard_state).unwrap()
         );
         assert_eq!(mock.requests().len(), 3);
         mock.exhausted();

@@ -84,7 +84,7 @@ operations = [
   "operations_target_steps", "operations_templates", "fleet_operations",
   "fleet_config_history", "fleet_terminal_*", "remote_commands", "runtime_operations",
   "alicloud_operations", "alicloud_power_jobs", "alicloud_eip_rotations",
-  "alicloud_security_group_operations",
+  "alicloud_security_group_operations", "cloud_account_automation", "cloud_resource_automation",
 ]
 
 # Code location to owner: the longest matching path prefix wins. Every owner has its own

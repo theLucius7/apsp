@@ -112,6 +112,13 @@ pub async fn enabled_resources(pool: &PgPool) -> ApiResult<Vec<(Uuid, Uuid)>> {
         .fetch_all(pool).await?)
 }
 
+/// The ECS instances that are not archived, of enabled accounts that are not archived: the
+/// resources operations' power work polls.
+pub async fn enabled_instances(pool: &PgPool) -> ApiResult<Vec<Uuid>> {
+    Ok(sqlx::query_scalar("SELECT r.id FROM alicloud_resources r JOIN alicloud_accounts a ON a.id=r.account_id WHERE r.kind='ecs' AND a.enabled AND NOT a.archived AND NOT r.archived")
+        .fetch_all(pool).await?)
+}
+
 /// Accounts whose refresh is due, the earliest first; one per tick.
 pub async fn due_accounts(pool: &PgPool, now: i64) -> ApiResult<Vec<Uuid>> {
     Ok(sqlx::query_scalar("SELECT id FROM alicloud_accounts WHERE enabled AND NOT archived AND next_run_at<=$1 ORDER BY next_run_at,id LIMIT 1")

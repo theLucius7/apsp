@@ -1,13 +1,14 @@
 //! Cloud accounts and resources (Alibaba Cloud): registration and credential references
 //! (`api`, `client`), what the cloud reports about instances and addresses (`inventory`,
 //! `addresses`, `model`), the question about work in progress that operations answers
-//! (`work`) and the billing state costs keeps for each account (`billing`). Costs, power,
-//! address rotation, security groups and notifications use these from their own crates;
-//! costs keeps its columns in its own tables (ADR 0137 step 6), the resource rows still
-//! carry the power columns of operations.
+//! (`work`), the billing state costs keeps for each account (`billing`) and the automation
+//! state operations keeps for each account and resource (`automation`). Costs, power,
+//! address rotation, security groups and notifications use these from their own crates and
+//! keep their state in their own tables (ADR 0137 steps 6 and 7).
 
 pub mod addresses;
 pub mod api;
+pub mod automation;
 pub mod billing;
 pub mod client;
 pub mod inventory;
@@ -59,6 +60,17 @@ pub async fn snapshot_on(
     .bind(apsp_protocol::now_timestamp())
     .execute(&mut **tx)
     .await?;
+    Ok(())
+}
+
+/// Records that the resource's configuration changed: work prepared under its previous
+/// revision is discarded. Operations does so when it changes the resource's power policy,
+/// holds or CDT guard state.
+pub async fn revise(tx: &mut Transaction<'_, Postgres>, resource: Uuid) -> ApiResult<()> {
+    sqlx::query("UPDATE alicloud_resources SET revision=revision+1 WHERE id=$1")
+        .bind(resource)
+        .execute(&mut **tx)
+        .await?;
     Ok(())
 }
 

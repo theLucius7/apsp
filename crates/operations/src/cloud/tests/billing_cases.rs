@@ -87,12 +87,12 @@ async fn auto_control_requires_opt_in_fresh_current_bill_and_only_lowers_once_pe
     pool: PgPool,
 ) {
     let (account_id, id) = seed(&pool, "ecs").await;
-    sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true WHERE id=$1")
+    sqlx::query("UPDATE cloud_account_automation SET auto_enabled=true WHERE account_id=$1")
         .bind(account_id)
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE alicloud_resources SET auto_enabled=true WHERE id=$1")
+    sqlx::query("UPDATE cloud_resource_automation SET auto_enabled=true WHERE resource_id=$1")
         .bind(id)
         .execute(&pool)
         .await
@@ -108,9 +108,10 @@ async fn auto_control_requires_opt_in_fresh_current_bill_and_only_lowers_once_pe
         .unwrap();
     mock.exhausted();
     let current = account(&pool, account_id).await;
+    let auto = automatic(&pool, account_id).await;
     let mut c = costs(&pool, account_id).await;
     let now = apsp_protocol::now_timestamp();
-    assert!(billing::exceeded(&current, &c, now));
+    assert!(bandwidth::exceeded(&current, &auto, &c, now));
     let operation: Uuid =
         sqlx::query_scalar("SELECT id FROM alicloud_operations WHERE source='automatic'")
             .fetch_one(&pool)
@@ -125,13 +126,13 @@ async fn auto_control_requires_opt_in_fresh_current_bill_and_only_lowers_once_pe
         1
     );
     c.bill.as_mut().unwrap().queried_at = now - 901;
-    assert!(!billing::exceeded(&current, &c, now));
+    assert!(!bandwidth::exceeded(&current, &auto, &c, now));
     c.bill.as_mut().unwrap().queried_at = now;
     c.bill.as_mut().unwrap().month = "2000-01".into();
-    assert!(!billing::exceeded(&current, &c, now));
+    assert!(!bandwidth::exceeded(&current, &auto, &c, now));
     c.bill.as_mut().unwrap().month = billing::month(now);
     c.bill_error = Some("network_error".into());
-    assert!(!billing::exceeded(&current, &c, now));
+    assert!(!bandwidth::exceeded(&current, &auto, &c, now));
     // A changed cloud state prevents automatic execution; no blind repeat in this cycle.
     let mock = Mock::start(vec![snapshot("ecs", 20)]).await;
     bandwidth::process(&pool, operation, &Cloud::local(&mock.endpoint))
@@ -166,13 +167,18 @@ async fn refresh_never_replaces_a_snapshot_stored_after_its_pass_began(pool: PgP
     // Cloud calls run outside the account lock, so a bandwidth change or manual
     // refresh can store a newer snapshot in between; the pass must yield to it.
     let (account_id, id) = seed(&pool, "ecs").await;
-    sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true WHERE id=$1")
+    sqlx::query("UPDATE cloud_account_automation SET auto_enabled=true WHERE account_id=$1")
         .bind(account_id)
         .execute(&pool)
         .await
         .unwrap();
     let later = apsp_protocol::now_timestamp() + 3600;
-    sqlx::query("UPDATE alicloud_resources SET auto_enabled=true,checked_at=$2 WHERE id=$1")
+    sqlx::query("UPDATE cloud_resource_automation SET auto_enabled=true WHERE resource_id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE alicloud_resources SET checked_at=$2 WHERE id=$1")
         .bind(id)
         .bind(later)
         .execute(&pool)
@@ -205,12 +211,12 @@ async fn missing_or_unreadable_bill_preserves_history_and_cannot_trigger_with_st
     pool: PgPool,
 ) {
     let (account_id, id) = seed(&pool, "ecs").await;
-    sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true WHERE id=$1")
+    sqlx::query("UPDATE cloud_account_automation SET auto_enabled=true WHERE account_id=$1")
         .bind(account_id)
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE alicloud_resources SET auto_enabled=true WHERE id=$1")
+    sqlx::query("UPDATE cloud_resource_automation SET auto_enabled=true WHERE resource_id=$1")
         .bind(id)
         .execute(&pool)
         .await
@@ -223,8 +229,9 @@ async fn missing_or_unreadable_bill_preserves_history_and_cannot_trigger_with_st
     let current = account(&pool, account_id).await;
     let c = costs(&pool, account_id).await;
     assert!(c.traffic.is_some());
-    assert!(!billing::exceeded(
+    assert!(!bandwidth::exceeded(
         &current,
+        &automatic(&pool, account_id).await,
         &c,
         apsp_protocol::now_timestamp()
     ));
@@ -240,12 +247,12 @@ async fn missing_or_unreadable_bill_preserves_history_and_cannot_trigger_with_st
 #[sqlx::test(migrations = "../panel/migrations")]
 async fn automatic_lowering_verifies_the_result_without_switching_charge_mode(pool: PgPool) {
     let (account_id, id) = seed(&pool, "ecs").await;
-    sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true WHERE id=$1")
+    sqlx::query("UPDATE cloud_account_automation SET auto_enabled=true WHERE account_id=$1")
         .bind(account_id)
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE alicloud_resources SET auto_enabled=true WHERE id=$1")
+    sqlx::query("UPDATE cloud_resource_automation SET auto_enabled=true WHERE resource_id=$1")
         .bind(id)
         .execute(&pool)
         .await
@@ -286,7 +293,7 @@ async fn automatic_lowering_verifies_the_result_without_switching_charge_mode(po
 #[sqlx::test(migrations = "../panel/migrations")]
 async fn bill_errors_preserve_old_display_but_revoke_control_authority(pool: PgPool) {
     let (account_id, id) = seed(&pool, "ecs").await;
-    sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true WHERE id=$1")
+    sqlx::query("UPDATE cloud_account_automation SET auto_enabled=true WHERE account_id=$1")
         .bind(account_id)
         .execute(&pool)
         .await
@@ -306,7 +313,7 @@ async fn bill_errors_preserve_old_display_but_revoke_control_authority(pool: PgP
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE alicloud_resources SET auto_enabled=true WHERE id=$1")
+    sqlx::query("UPDATE cloud_resource_automation SET auto_enabled=true WHERE resource_id=$1")
         .bind(id)
         .execute(&pool)
         .await
@@ -328,8 +335,9 @@ async fn bill_errors_preserve_old_display_but_revoke_control_authority(pool: PgP
     let current = account(&pool, account_id).await;
     let c = costs(&pool, account_id).await;
     assert_eq!(c.bill.as_ref().unwrap().usage_micro_gb, Some(101_000_000));
-    assert!(!billing::exceeded(
+    assert!(!bandwidth::exceeded(
         &current,
+        &automatic(&pool, account_id).await,
         &c,
         apsp_protocol::now_timestamp()
     ));
@@ -348,8 +356,11 @@ async fn refund_adjustment_and_missing_bill_identity_keep_rows_without_control_a
     pool: PgPool,
 ) {
     let (id, _) = seed(&pool, "ecs").await;
-    let mut account = account(&pool, id).await;
-    account.auto_enabled = true;
+    let account = account(&pool, id).await;
+    let auto = AccountAutomation {
+        auto_enabled: true,
+        ..Default::default()
+    };
     let mut c = costs(&pool, id).await;
     let now = apsp_protocol::now_timestamp();
     for kind in [
@@ -372,7 +383,7 @@ async fn refund_adjustment_and_missing_bill_identity_keep_rows_without_control_a
         assert_eq!(value.rows[1].usage, "1000");
         assert!(value.usage_micro_gb.is_none());
         c.bill = Some(sqlx::types::Json(value));
-        assert!(!billing::exceeded(&account, &c, now));
+        assert!(!bandwidth::exceeded(&account, &auto, &c, now));
         mock.exhausted();
     }
     let mut missing_identity = row("1000", "valid-instance");

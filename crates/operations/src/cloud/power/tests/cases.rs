@@ -1,5 +1,4 @@
 use super::*;
-use crate::cloud::power::StateRules;
 use apsp_observability::cloud_notices;
 
 #[sqlx::test(migrations = "../panel/migrations")]
@@ -8,12 +7,12 @@ async fn active_power_job_does_not_roll_back_fresh_billing_or_queue_bandwidth_ch
 ) {
     let (a, r) = seed(&pool).await;
     let now = apsp_protocol::now_timestamp();
-    sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true WHERE id=$1")
+    sqlx::query("UPDATE cloud_account_automation SET auto_enabled=true WHERE account_id=$1")
         .bind(a)
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE alicloud_resources SET auto_enabled=true WHERE id=$1")
+    sqlx::query("UPDATE cloud_resource_automation SET auto_enabled=true WHERE resource_id=$1")
         .bind(r)
         .execute(&pool)
         .await
@@ -52,7 +51,7 @@ async fn delayed_scheduled_stop_is_revoked_when_the_next_running_window_begins(p
     p.keepalive = false;
     p.stop_time = "08:00".into();
     p.start_time = "08:01".into();
-    sqlx::query("UPDATE alicloud_resources SET power_policy=$2 WHERE id=$1")
+    sqlx::query("UPDATE cloud_resource_automation SET power_policy=$2 WHERE resource_id=$1")
         .bind(r)
         .bind(Json(&p))
         .execute(&pool)
@@ -71,7 +70,7 @@ async fn delayed_scheduled_stop_is_revoked_when_the_next_running_window_begins(p
     let costs = apsp_costs::cloud::accounts::account_on(&mut tx, a)
         .await
         .unwrap();
-    let resource = jobs::fresh(&mut tx, r).await.unwrap();
+    let resource = automation::current(&mut tx, r).await.unwrap();
     let job: super::super::Job = sqlx::query_as("SELECT * FROM alicloud_power_jobs")
         .fetch_one(&mut *tx)
         .await
@@ -99,7 +98,7 @@ async fn new_threshold_cancels_queued_start_before_any_write(pool: PgPool) {
     let now = apsp_protocol::now_timestamp();
     let mut p = policy();
     p.schedule_enabled = false;
-    sqlx::query("UPDATE alicloud_resources SET power_policy=$2 WHERE id=$1")
+    sqlx::query("UPDATE cloud_resource_automation SET power_policy=$2 WHERE resource_id=$1")
         .bind(r)
         .bind(Json(&p))
         .execute(&pool)
@@ -132,7 +131,7 @@ async fn schedule_restart_deduplicates_completed_events_and_does_not_replay_old_
     p.keepalive = false;
     p.start_time = "08:00".into();
     p.stop_time = "23:00".into();
-    sqlx::query("UPDATE alicloud_resources SET power_policy=$2 WHERE id=$1")
+    sqlx::query("UPDATE cloud_resource_automation SET power_policy=$2 WHERE resource_id=$1")
         .bind(r)
         .bind(Json(&p))
         .execute(&pool)
@@ -172,7 +171,7 @@ async fn cloud_identity_is_checked_and_prepaid_economical_stop_is_rejected(pool:
     let (a, r) = seed(&pool).await;
     let mut tx = lock(&pool, a).await.unwrap();
     let a = account_on(&mut tx, a).await.unwrap();
-    let r = jobs::fresh(&mut tx, r).await.unwrap();
+    let r = automation::current(&mut tx, r).await.unwrap();
     tx.rollback().await.unwrap();
     let mut s = state("Running", "KeepCharging");
     s.cloud_id = "i-other-test".into();
@@ -209,7 +208,7 @@ async fn cloud_notices_deduplicate_and_retry_without_real_delivery(pool: PgPool)
         .await
         .unwrap();
     let mut tx = lock(&pool, a).await.unwrap();
-    let r = jobs::fresh(&mut tx, r).await.unwrap();
+    let r = automation::current(&mut tx, r).await.unwrap();
     for _ in 0..2 {
         cloud_notices::record(&mut tx, &r, "test-event", "流量提醒", "测试事件", now)
             .await

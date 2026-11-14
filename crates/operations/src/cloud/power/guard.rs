@@ -1,7 +1,8 @@
+use super::model::{GuardConfig, GuardState, State};
+use crate::cloud::automation::{self, Automated};
 use crate::error::{ApiError, ApiResult};
 use apsp_cloud_api::Failure;
 use apsp_costs::cloud::{accounts::AccountBilling, billing};
-use apsp_resources::cloud::model::{GuardConfig, GuardState, State};
 use apsp_resources::cloud::{
     client::Cloud,
     model::{Account, Resource},
@@ -17,12 +18,8 @@ mod tests;
 pub(super) const MAX_BYTES: u64 = 9_007_199_254_740_991;
 
 /// Validation of the CDT guard settings stored in a resource's power policy.
-pub(crate) trait GuardRules {
-    fn validate(&self) -> ApiResult<()>;
-}
-
-impl GuardRules for GuardConfig {
-    fn validate(&self) -> ApiResult<()> {
+impl GuardConfig {
+    pub(crate) fn validate(&self) -> ApiResult<()> {
         if !(1..=MAX_BYTES).contains(&self.threshold_bytes)
             || !(1..=MAX_BYTES).contains(&self.jump_bytes)
         {
@@ -130,11 +127,11 @@ pub(super) fn observe_empty(
     observe(previous, 0, account, resource, digest, now)
 }
 
-pub(super) fn exceeded(account: &Account, resource: &Resource, now: i64) -> Option<bool> {
-    let config = resource.power_policy.cdt_guard.as_ref()?;
-    let observation = resource.cdt_guard_state.as_ref()?;
+pub(super) fn exceeded(account: &Account, resource: &Automated, now: i64) -> Option<bool> {
+    let config = resource.automation.power_policy.cdt_guard.as_ref()?;
+    let observation = resource.automation.cdt_guard_state.as_ref()?;
     if !account.enabled
-        || resource.cdt_guard_error.is_some()
+        || resource.automation.cdt_guard_error.is_some()
         || observation.account_revision != account.revision
         || observation.region != resource.region
         || observation.cloud_id != resource.cloud_id
@@ -157,36 +154,37 @@ pub(super) async fn poll(
     tx: &mut Transaction<'_, Postgres>,
     account: &Account,
     costs: &AccountBilling,
-    r: &mut Resource,
+    r: &mut Automated,
     state: &State,
     cloud: &Cloud,
     started_at: i64,
 ) -> ApiResult<()> {
-    if !r.power_policy.enabled {
+    if !r.automation.power_policy.enabled {
         return Ok(());
     }
-    if r.cdt_guard_next_at > started_at {
+    if r.automation.cdt_guard_next_at > started_at {
         return super::scheduler::evaluate(tx, account, costs, r, state, started_at).await;
     }
     let reading = read(account, r, cloud, started_at).await;
+    automation::row(tx, r.id).await?;
     match reading {
         Ok(observation) => {
             // Persist the high-water mark in the same transaction as the durable intent.
             sqlx::query(
-                "UPDATE alicloud_resources SET cdt_guard_state=$2,cdt_guard_error=NULL,cdt_guard_next_at=0 WHERE id=$1",
+                "UPDATE cloud_resource_automation SET cdt_guard_state=$2,cdt_guard_error=NULL,cdt_guard_next_at=0 WHERE resource_id=$1",
             )
             .bind(r.id)
             .bind(Json(&observation))
             .execute(&mut **tx)
             .await?;
-            r.cdt_guard_state = Some(Json(observation));
-            r.cdt_guard_error = None;
-            r.cdt_guard_next_at = 0;
+            r.automation.cdt_guard_state = Some(Json(observation));
+            r.automation.cdt_guard_error = None;
+            r.automation.cdt_guard_next_at = 0;
         }
         Err(error) => {
-            r.cdt_guard_error = Some(error.code.into());
+            r.automation.cdt_guard_error = Some(error.code.into());
             sqlx::query(
-                "UPDATE alicloud_resources SET cdt_guard_error=$2,cdt_guard_next_at=$3 WHERE id=$1",
+                "UPDATE cloud_resource_automation SET cdt_guard_error=$2,cdt_guard_next_at=$3 WHERE resource_id=$1",
             )
             .bind(r.id)
             .bind(error.code)
@@ -203,14 +201,14 @@ pub(super) async fn poll(
 
 pub(super) async fn read(
     account: &Account,
-    r: &Resource,
+    r: &Automated,
     cloud: &Cloud,
     started_at: i64,
 ) -> Result<GuardState, Failure> {
     match crate::cloud::power::guard::meter::guard_usage(cloud, account, &r.region).await {
         Ok((bytes, digest)) => {
             let now = apsp_protocol::now_timestamp();
-            let previous = r.cdt_guard_state.as_ref().map(|v| &v.0);
+            let previous = r.automation.cdt_guard_state.as_ref().map(|v| &v.0);
             if billing::month(now) != billing::month(started_at) {
                 Err(Failure::from("cdt_month_changed"))
             } else if let Some(bytes) = bytes {
