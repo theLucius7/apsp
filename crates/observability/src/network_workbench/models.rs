@@ -507,7 +507,7 @@ impl Check {
                             && proxy_url.as_ref().is_some_and(|value| {
                                 reqwest::Url::parse(value).is_ok_and(|url| {
                                     url.scheme() == "http"
-                                        && url.host_str().is_some_and(|host| {
+                                        && crate::net::url_host(&url).is_some_and(|host| {
                                             host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
                                         })
                                         && url.username().is_empty()
@@ -588,10 +588,21 @@ pub fn valid_host(value: &str) -> bool {
         },
     )
 }
+/// A URL under one of `schemes`, without credentials or fragment, whose host is a valid
+/// target host ([`valid_host`]); an IPv6 literal is judged without its brackets.
 pub fn valid_url(value: &str, schemes: &[&str]) -> bool {
     reqwest::Url::parse(value).is_ok_and(|url| {
-        crate::net::plain_url(&url, schemes) && url.host_str().is_some_and(valid_host)
+        crate::net::plain_url(&url, schemes) && crate::net::url_host(&url).is_some_and(valid_host)
     })
+}
+/// Whether a check's URL is on the target's host as the target names it: an IPv6 literal
+/// without brackets.
+pub fn url_on_host(url: &str, host: &str) -> bool {
+    reqwest::Url::parse(url)
+        .ok()
+        .as_ref()
+        .and_then(crate::net::url_host)
+        == Some(host)
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -807,5 +818,57 @@ mod tests {
     #[test]
     fn full_start_gate_is_not_replaced_by_a_composite_plan() {
         assert!(Check::NodeQualityFull.validate(&Budget::default()).is_err());
+    }
+    #[test]
+    fn urls_take_bracketed_ipv6_literals_wherever_names_and_ipv4_literals_are_taken() {
+        for (value, schemes) in [
+            ("https://[2001:db8::1]:8443/x", &["https"][..]),
+            ("http://[2606:4700::1111]/", &["http", "https"][..]),
+            ("wss://[fd00::1]/socket", &["ws", "wss"][..]),
+            ("https://example.com/x", &["https"][..]),
+            ("https://192.0.2.1:8443/x", &["https"][..]),
+        ] {
+            assert!(valid_url(value, schemes), "{value}");
+        }
+        for value in [
+            "https://[::]/x",
+            "https://[ff02::1]/x",
+            "https://0.0.0.0/x",
+            "https://224.0.0.1/x",
+            "https://user@[2001:db8::1]/x",
+            "https://[2001:db8::1]/x#fragment",
+            "http://[2001:db8::1]/x",
+            "https://[2001:db8::1/x",
+        ] {
+            assert!(!valid_url(value, &["https"]), "{value}");
+        }
+        assert!(url_on_host("https://[2001:db8::1]:8443/x", "2001:db8::1"));
+        assert!(url_on_host("http://192.0.2.1/x", "192.0.2.1"));
+        assert!(url_on_host("https://example.com/x", "example.com"));
+        assert!(!url_on_host("https://[2001:db8::1]/x", "2001:db8::2"));
+        assert!(!url_on_host("https://[2001:db8::1]/x", "[2001:db8::1]"));
+        assert!(!url_on_host("https://example.com/x", "example.net"));
+        let budget = Budget::default();
+        let http = Check::Http {
+            target_id: Uuid::new_v4(),
+            url: "https://[2001:db8::1]:8443/health".into(),
+            family: Family::Ipv6,
+            expected_status: 200,
+            expected_content: None,
+            follow_redirects: false,
+        };
+        assert!(http.validate(&budget).is_ok());
+        let exit = |proxy_url: &str| Check::Exit {
+            discovery_url: "https://[2001:db8::1]/ip".into(),
+            family: Family::Ipv6,
+            route_kind: "proxy_chain".into(),
+            proxy_url: Some(proxy_url.into()),
+        };
+        for proxy in ["http://[::1]:8080", "http://127.0.0.1:8080"] {
+            assert!(exit(proxy).validate(&budget).is_ok(), "{proxy}");
+        }
+        for proxy in ["http://[::2]:8080", "http://[::1]", "http://192.0.2.1:8080"] {
+            assert!(exit(proxy).validate(&budget).is_err(), "{proxy}");
+        }
     }
 }

@@ -455,6 +455,52 @@ fn public_names_and_endpoints_never_echo_urls_or_authentication() {
 }
 
 #[test]
+fn host_limits_apply_to_internationalized_names_after_conversion_to_ascii() {
+    // "例子" becomes "xn--fsqu00a": 21 such labels and "a" fill exactly 253 bytes once
+    // converted, and "a" repeated 53 times before "例" makes a 63-byte label, while every
+    // name as given stays far below the 253-byte input limit.
+    let labels = ["例子"; 21].join(".");
+    let wide = format!("{}例", "a".repeat(53));
+    let wider = format!("{}例", "a".repeat(54));
+    let servers = [
+        "例子.测试".to_owned(),
+        format!("{labels}.a"),
+        format!("{wide}.example"),
+        format!("{labels}.ab"),
+        format!("{wider}.example"),
+    ];
+    let batch = parse(&json_source(
+        servers
+            .iter()
+            .enumerate()
+            .map(|(index, server)| {
+                let mut node = ss(&format!("国际域名{index}"), PASSWORD);
+                node["server"] = json!(server);
+                node
+            })
+            .collect(),
+    ));
+    assert_eq!(batch.supported_count, 3);
+    assert_eq!(batch.unsupported_count, 2);
+    let converted = batch.nodes[..3]
+        .iter()
+        .map(|node| config(node)["server"].as_str().expect("server").to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(converted[0], "xn--fsqu00a.xn--0zwm56d");
+    assert_eq!(converted[1].len(), 253);
+    assert!(converted[2].starts_with(&format!("xn--{}-", "a".repeat(53))));
+    assert_eq!(converted[2].split('.').next().map(str::len), Some(63));
+    for node in &batch.nodes[3..] {
+        assert!(node.outbound.is_none() && node.preview.server.is_none());
+        assert_eq!(node.preview.parse_status, ParseStatus::Unsupported);
+        assert_eq!(
+            node.preview.unsupported_reasons[0].code.as_str(),
+            "invalid_parameter"
+        );
+    }
+}
+
+#[test]
 fn global_configuration_groups_and_provider_urls_are_not_imported_or_executed() {
     let input = json!({"inbounds":[{"type":"tun","interface_name":"TEST_ONLY-interface"}],"dns":{"servers":[{"server":"TEST_ONLY-dns"}]},
         "experimental":{"clash_api":{"secret":PASSWORD}},"outbounds":[{"type":"direct","tag":"DIRECT"},{"type":"selector","outbounds":["edge"]},ss("edge",PASSWORD)]});

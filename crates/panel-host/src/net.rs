@@ -93,6 +93,18 @@ pub fn plain_url(url: &Url, schemes: &[&str]) -> bool {
         && url.fragment().is_none()
 }
 
+/// The host of a URL as address parsing, name checks and resolution take it: an IPv6
+/// literal without the brackets a URL writes around it, anything else as the URL holds it.
+/// `None` when the URL has no host.
+pub fn url_host(url: &Url) -> Option<&str> {
+    let host = url.host_str()?;
+    Some(
+        host.strip_prefix('[')
+            .and_then(|literal| literal.strip_suffix(']'))
+            .unwrap_or(host),
+    )
+}
+
 /// Whether an address can be an ordinary server's public address: globally routable and
 /// outside the special-use blocks the general classifier still lets through (the
 /// deprecated 6to4 relay anycast, the benchmarking block and the newer documentation
@@ -550,5 +562,21 @@ mod tests {
             &Url::parse("http://example.com/").unwrap(),
             &["http", "https"]
         ));
+    }
+
+    #[test]
+    fn url_hosts_drop_only_the_brackets_of_ipv6_literals() {
+        for (value, host) in [
+            ("https://[2001:db8::1]:8443/x", Some("2001:db8::1")),
+            ("wss://[::1]/", Some("::1")),
+            ("http://192.0.2.1:8080/", Some("192.0.2.1")),
+            (
+                "https://Node-1.Example.COM/path",
+                Some("node-1.example.com"),
+            ),
+            ("mailto:someone@example.com", None),
+        ] {
+            assert_eq!(url_host(&Url::parse(value).unwrap()), host, "{value}");
+        }
     }
 }

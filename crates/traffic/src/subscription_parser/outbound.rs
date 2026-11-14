@@ -50,22 +50,11 @@ pub(super) fn host(value: &str) -> Option<String> {
     if value.contains([':', '[', ']']) {
         return None;
     }
+    // The URL parser writes an internationalized name in ASCII (punycode), which can be
+    // longer than the name as given: the RFC 1123 limits apply to the converted name.
     let url = Url::parse(&format!("https://{value}/")).ok()?;
     let domain = url.host_str()?.trim_end_matches('.').to_ascii_lowercase();
-    if domain.is_empty()
-        || domain.split('.').any(|label| {
-            label.is_empty()
-                || label.len() > 63
-                || label.starts_with('-')
-                || label.ends_with('-')
-                || !label
-                    .bytes()
-                    .all(|c| c.is_ascii_alphanumeric() || c == b'-')
-        })
-    {
-        return None;
-    }
-    Some(domain)
+    apsp_protocol::names::hostname(&domain).then_some(domain)
 }
 
 pub(super) fn port(value: &Value) -> Option<u16> {

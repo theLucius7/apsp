@@ -177,7 +177,8 @@ async fn fetch_json(
                 return Err("资料源重试受日配额限制".into());
             }
         }
-        match fetch_json_once(endpoint, credential).await {
+        // A source's endpoint is an administrator's: the egress rules decide where it may go.
+        match fetch_json_once(endpoint, credential, crate::net::egress_ip).await {
             Ok(value) => return Ok(value),
             Err(error) => {
                 let retry = error.contains("连接失败")
@@ -193,15 +194,46 @@ async fn fetch_json(
     }
     Err(last)
 }
-async fn fetch_json_once(endpoint: &str, credential: Option<&Value>) -> Result<Value, String> {
-    use apsp_panel_host::http::{self, BodyError, Outbound};
+/// One request to a data source. Its host is resolved first and every address must pass
+/// `destination` before anything is sent, so a source cannot reach loopback, private or
+/// metadata addresses through the panel; the request then goes only to the checked
+/// addresses. Tests admit their loopback server through `destination`.
+async fn fetch_json_once(
+    endpoint: &str,
+    credential: Option<&Value>,
+    destination: fn(std::net::IpAddr) -> bool,
+) -> Result<Value, String> {
+    use apsp_panel_host::{
+        http::{self, BodyError, Outbound},
+        net::Refused,
+    };
+    // Resolving counts towards the ten seconds of the exchange, as it did inside the client.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    let failed = || "资料源连接失败".to_string();
+    let url = reqwest::Url::parse(endpoint).map_err(|_| failed())?;
+    let host = crate::net::url_host(&url).ok_or_else(failed)?.to_owned();
+    let port = url.port_or_known_default().ok_or_else(failed)?;
+    let addresses: Vec<_> =
+        match tokio::time::timeout_at(deadline, tokio::net::lookup_host((host.as_str(), port)))
+            .await
+        {
+            Ok(Ok(addresses)) => addresses.take(64).collect(),
+            _ => return Err(failed()),
+        };
+    crate::net::check_resolved(&addresses, 64, destination).map_err(|refused| match refused {
+        Refused::Empty => failed(),
+        Refused::TooMany | Refused::NotPublic => {
+            "资料源地址解析到回环、内网或保留地址，面板不会连接".to_string()
+        }
+    })?;
     let client = Outbound {
-        timeout: Some(std::time::Duration::from_secs(10)),
+        timeout: Some(deadline.saturating_duration_since(tokio::time::Instant::now())),
+        pin: Some((host, addresses)),
         ..Outbound::default()
     }
     .build()
     .map_err(|e| e.to_string())?;
-    let mut request = client.get(endpoint);
+    let mut request = client.get(url);
     if let Some(token) = credential.and_then(|value| value["token"].as_str()) {
         request = request.bearer_auth(token);
     }
@@ -658,5 +690,52 @@ mod tests {
         assert_eq!(addresses["nested"][0], "https://example.com/private");
         assert!(!addresses.to_string().contains("password"));
         assert!(!addresses.to_string().contains("token=private"));
+    }
+    #[tokio::test]
+    async fn data_sources_on_loopback_private_or_reserved_addresses_are_refused_before_connecting()
+    {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        for endpoint in [
+            format!("https://127.0.0.1:{port}/8.8.8.8"),
+            format!("https://[::1]:{port}/8.8.8.8"),
+            "https://10.0.0.1/8.8.8.8".into(),
+            "https://169.254.169.254/latest/meta-data".into(),
+            "https://[fd00::1]/8.8.8.8".into(),
+            "https://[::ffff:127.0.0.1]/8.8.8.8".into(),
+            "https://[64:ff9b::a00:1]/8.8.8.8".into(),
+        ] {
+            assert_eq!(
+                fetch_json_once(&endpoint, None, crate::net::egress_ip).await,
+                Err("资料源地址解析到回环、内网或保留地址，面板不会连接".to_string()),
+                "{endpoint}"
+            );
+        }
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(30), listener.accept())
+                .await
+                .is_err()
+        );
+    }
+    #[tokio::test]
+    async fn data_sources_are_asked_at_the_checked_address() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = axum::Router::new().route(
+            "/{ip}",
+            axum::routing::get(|Path(ip): Path<String>, headers: HeaderMap| async move {
+                Json(json!({"ip":ip,"authorized":headers.contains_key("authorization")}))
+            }),
+        );
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let credential = json!({"token":"TEST_ONLY-token"});
+        let answer = fetch_json_once(
+            &format!("http://{address}/192.0.2.1"),
+            Some(&credential),
+            |_| true,
+        )
+        .await;
+        task.abort();
+        assert_eq!(answer, Ok(json!({"ip":"192.0.2.1","authorized":true})));
     }
 }

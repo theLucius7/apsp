@@ -51,12 +51,7 @@ pub(super) async fn enqueue(
                 Check::Http { url, .. }
                 | Check::WebSocket { url, .. }
                 | Check::Quic { url, .. } => {
-                    if reqwest::Url::parse(url)
-                        .ok()
-                        .and_then(|u| u.host_str().map(str::to_owned))
-                        .as_deref()
-                        != Some(target.host.as_str())
-                    {
+                    if !url_on_host(url, &target.host) {
                         return Err(ApiError::BadRequest("URL必须属于选定的授权目标".into()));
                     }
                 }

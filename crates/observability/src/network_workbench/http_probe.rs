@@ -23,9 +23,7 @@ fn milliseconds(timer: Instant) -> f64 {
     timer.elapsed().as_secs_f64() * 1000.0
 }
 fn host(url: &reqwest::Url) -> ApiResult<&str> {
-    url.host_str()
-        .map(|v| v.trim_matches(['[', ']']))
-        .ok_or_else(|| conflict("HTTP目标缺少主机"))
+    crate::net::url_host(url).ok_or_else(|| conflict("HTTP目标缺少主机"))
 }
 fn authorized(execution: &Execution, url: &reqwest::Url) -> ApiResult<()> {
     let target = execution.target.as_ref().ok_or(ApiError::NotFound)?;
