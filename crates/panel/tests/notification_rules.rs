@@ -417,3 +417,42 @@ async fn settings_validate_templates_mask_secrets_and_cancel_changed_recipient(
     );
     Ok(())
 }
+
+/// Whether the incident list shows the incident's notifications as held right now.
+async fn held(panel: &TestPanel, cookie: &str, id: uuid::Uuid) -> Result<Value> {
+    let incidents: Value = panel
+        .admin(Method::GET, "/api/operations/incidents", cookie, None)
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let incident = incidents
+        .as_array()
+        .and_then(|items| items.iter().find(|item| item["id"] == id.to_string()))
+        .ok_or_else(|| anyhow::anyhow!("incident missing: {incidents}"))?;
+    Ok(incident["maintenance_suppressed"].clone())
+}
+
+#[sqlx::test]
+async fn incident_list_shows_the_maintenance_that_holds_notifications(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start(pool).await?;
+    let pool = &panel.state.pool;
+    let cookie = panel.admin_cookie().await?;
+    let server = panel.create_server(&cookie, "maintained server").await?;
+    let now = apsp_protocol::now_timestamp();
+    let id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO operations_incidents(id,source_key,server_id,title,severity,status,opened_at,observed_at,evidence) VALUES($1,'TEST_ONLY maintenance',$2,'TEST_ONLY incident','warning','open',$3,$3,'{}')")
+        .bind(id).bind(server).bind(now).execute(pool).await?;
+    assert_eq!(held(&panel, &cookie, id).await?, json!(false));
+    // The server's own maintenance period holds its notifications, as a window does.
+    sqlx::query("INSERT INTO fleet_profiles(server_id,lifecycle,maintenance_from,maintenance_until) VALUES($1,'maintenance',$2,$3) ON CONFLICT(server_id) DO UPDATE SET lifecycle='maintenance',maintenance_from=$2,maintenance_until=$3")
+        .bind(server).bind(now - 60).bind(now + 3600).execute(pool).await?;
+    assert_eq!(held(&panel, &cookie, id).await?, json!(true));
+    sqlx::query("UPDATE fleet_profiles SET lifecycle='active',maintenance_from=NULL,maintenance_until=NULL WHERE server_id=$1")
+        .bind(server).execute(pool).await?;
+    assert_eq!(held(&panel, &cookie, id).await?, json!(false));
+    sqlx::query("INSERT INTO operations_maintenance(id,name,targets,starts_at,ends_at,suppress_notifications,block_new_tasks,created_by,created_at) VALUES($1,'TEST_ONLY window',$2,$3,$4,true,false,1,$3)")
+        .bind(uuid::Uuid::new_v4()).bind(vec![server]).bind(now - 60).bind(now + 3600).execute(pool).await?;
+    assert_eq!(held(&panel, &cookie, id).await?, json!(true));
+    Ok(())
+}

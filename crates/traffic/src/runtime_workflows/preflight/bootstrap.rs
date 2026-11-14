@@ -143,13 +143,10 @@ pub(in super::super::super) async fn install(
         && fingerprint(&state, &context).await? == latest.get::<String, _>("expected_digest");
     let mut receipts = Vec::new();
     for field in ["permissions_operation_id", "ports_operation_id"] {
-        let receipt: Option<Value> =
-            sqlx::query_scalar("SELECT result FROM fleet_operations WHERE id=$1 AND server_id=$2")
-                .bind(latest.get::<Uuid, _>(field))
-                .bind(server)
-                .fetch_optional(&mut *tx)
+        let receipt =
+            crate::device_work::operation_tx(&mut tx, server, latest.get::<Uuid, _>(field))
                 .await?
-                .flatten();
+                .and_then(|operation| operation.result);
         receipts.push(receipt.unwrap_or(Value::Null));
     }
     let status = status(

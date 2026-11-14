@@ -166,6 +166,15 @@ async fn replacement_is_fixed_scope_idempotent_and_never_copies_agent_identity_o
         .fetch_one(&pool)
         .await?;
     assert_eq!(operations, 0);
+    // The replacement lands on the target's timeline once, through observability's evidence.
+    let events: Vec<Value> = sqlx::query_scalar(
+        "SELECT detail FROM fleet_events WHERE server_id=$1 AND kind='network_business_migrated'",
+    )
+    .bind(target)
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["source_server_id"], source);
     Ok(())
 }
 

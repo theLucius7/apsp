@@ -146,46 +146,21 @@ async fn lock_interactive_actor(
     hash: &str,
     capability: &str,
 ) -> ApiResult<()> {
-    // Pin authorization before server/session locks. NOWAIT prevents waiting
-    // for reauthentication, which may acquire these rows in the reverse order.
-    let profile = authorization_lock(sqlx::query("SELECT role,all_servers,capabilities FROM administrator_profiles WHERE admin_id=$1 AND enabled FOR SHARE NOWAIT")
-        .bind(admin).fetch_optional(&mut **tx).await)?.ok_or(ApiError::Unauthorized)?;
-    authorization_lock(sqlx::query("SELECT token_hash FROM sessions WHERE token_hash=$1 AND admin_id=$2 AND expires_at>$3 FOR SHARE NOWAIT")
-        .bind(hash).bind(admin).bind(now_timestamp()).fetch_optional(&mut **tx).await)?.ok_or(ApiError::Unauthorized)?;
-    let role: String = profile.get("role");
-    let capabilities: Value = profile.get("capabilities");
-    let granted: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM administrator_server_grants WHERE admin_id=$1 AND server_id=$2)")
-        .bind(admin).bind(server).fetch_one(&mut **tx).await?;
-    if (role != "owner"
-        && !capabilities
-            .as_array()
-            .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(capability))))
-        || (role == "viewer" && capability.ends_with(":write"))
-        || (!profile.get::<bool, _>("all_servers") && !granted)
-    {
+    // Pin authorization before server/session locks; governance takes the locks without
+    // waiting, since reauthentication may acquire these rows in the reverse order.
+    let actor = crate::control_center::pin_session_tx(tx, admin, hash).await?;
+    if !actor.allows(capability) || !actor.allows_server(server) {
         return Err(ApiError::Forbidden("管理员已失去此服务器终端权限".into()));
     }
     Ok(())
 }
 
-fn authorization_lock<T>(result: Result<T, sqlx::Error>) -> ApiResult<T> {
-    result.map_err(|error| {
-        if error
-            .as_database_error()
-            .and_then(|error| error.code())
-            .as_deref()
-            == Some("55P03")
-        {
-            ApiError::Conflict("管理员会话、授权或再次验证正在变更，请刷新后重新核对".into())
-        } else {
-            error.into()
-        }
-    })
-}
-
 async fn lock_recent_proof(tx: &mut Transaction<'_, Postgres>, hash: &str) -> ApiResult<()> {
-    authorization_lock(sqlx::query("SELECT session_hash FROM administrator_reauth WHERE session_hash=$1 AND expires_at>$2 FOR SHARE NOWAIT")
-        .bind(hash).bind(now_timestamp()).fetch_optional(&mut **tx).await)?.ok_or_else(||ApiError::Forbidden("终端输入需要当前登录会话的有效再次验证".into()))?;
+    if !crate::control_center::pin_recent_proof_tx(tx, hash).await? {
+        return Err(ApiError::Forbidden(
+            "终端输入需要当前登录会话的有效再次验证".into(),
+        ));
+    }
     Ok(())
 }
 #[derive(Deserialize)]
@@ -314,7 +289,13 @@ pub(super) async fn controls(
     allowed: bool,
 ) -> ApiResult<Vec<TerminalControl>> {
     let now = now_timestamp();
-    sqlx::query("UPDATE fleet_terminal_sessions SET close_requested=TRUE WHERE server_id=$1 AND status IN ('queued','running') AND (expires_at<=$2 OR last_input_at<=$2-300 OR NOT $3 OR NOT EXISTS(SELECT 1 FROM sessions a WHERE a.token_hash=fleet_terminal_sessions.admin_session_hash AND a.admin_id=fleet_terminal_sessions.admin_id AND a.expires_at>$2) OR NOT EXISTS(SELECT 1 FROM fleet_profiles p WHERE p.server_id=$1 AND p.policy->'terminal_accounts' ? fleet_terminal_sessions.account))").bind(server).bind(now).bind(allowed).execute(&mut **tx).await?;
+    // A terminal also ends with the administrator login session that opened it.
+    let session = crate::control_center::session_active_sql(
+        "fleet_terminal_sessions.admin_id",
+        "fleet_terminal_sessions.admin_session_hash",
+        "$2",
+    );
+    sqlx::query(&format!("UPDATE fleet_terminal_sessions SET close_requested=TRUE WHERE server_id=$1 AND status IN ('queued','running') AND (expires_at<=$2 OR last_input_at<=$2-300 OR NOT $3 OR NOT {session} OR NOT EXISTS(SELECT 1 FROM fleet_profiles p WHERE p.server_id=$1 AND p.policy->'terminal_accounts' ? fleet_terminal_sessions.account))")).bind(server).bind(now).bind(allowed).execute(&mut **tx).await?;
     let rows=sqlx::query("SELECT id,admin_id,account,policy,columns,rows,expires_at,close_requested,output_sequence FROM fleet_terminal_sessions WHERE server_id=$1 AND status IN ('queued','running') ORDER BY created_at LIMIT 2").bind(server).fetch_all(&mut **tx).await?;
     let mut controls = Vec::new();
     for row in rows {

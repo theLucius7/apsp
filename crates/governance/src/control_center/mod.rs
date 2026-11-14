@@ -12,9 +12,9 @@ mod workspace;
 
 pub use access::{
     FEATURES, Principal, actor_all_servers, actor_server_allowed, authenticate,
-    require_actor_capability, require_actor_server, require_capability, require_credential_choice,
-    require_global, require_global_material, require_owner, require_recent_proof, require_server,
-    require_servers,
+    pin_recent_proof_tx, pin_session_tx, require_actor_capability, require_actor_server,
+    require_capability, require_credential_choice, require_global, require_global_material,
+    require_owner, require_recent_proof, require_server, require_servers, session_active_sql,
 };
 
 use crate::{AppState, auth, error::ApiResult};

@@ -306,16 +306,12 @@ async fn execute_in(
     let version = Uuid::new_v4();
     let now = apsp_protocol::now_timestamp();
     let mut tx = state.pool.begin().await?;
-    let actual: i64 =
-        sqlx::query_scalar("SELECT revision FROM network_documents WHERE id=$1 FOR UPDATE")
-            .bind(certificate)
-            .fetch_one(&mut *tx)
-            .await?;
+    let actual = documents::lock_revision(&mut tx, certificate).await?;
     let version_revision:i64=sqlx::query_scalar("SELECT COALESCE(max(revision),0)+1 FROM network_certificate_versions WHERE certificate_id=$1").bind(certificate).fetch_one(&mut *tx).await?;
     sqlx::query("INSERT INTO network_certificate_versions(id,certificate_id,revision,public_chain,fingerprint,not_before,not_after,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)").bind(version).bind(certificate).bind(version_revision).bind(pem).bind(&parsed.fingerprint).bind(parsed.not_before).bind(parsed.not_after).bind(now).execute(&mut *tx).await?;
     let selected = actual == revision;
     if selected {
-        sqlx::query("UPDATE network_documents SET active_version=$2,revision=revision+1,updated_at=$3 WHERE id=$1").bind(certificate).bind(version).bind(now).execute(&mut *tx).await?;
+        documents::activate_version(&mut tx, certificate, version, now).await?;
     }
     sqlx::query("UPDATE network_acme_jobs SET key_secret_ref=$2,version_id=$3 WHERE id=$1")
         .bind(job)

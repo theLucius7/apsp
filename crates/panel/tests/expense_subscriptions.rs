@@ -310,6 +310,35 @@ async fn servers_join_the_ledger_read_only_and_renewals_record_payments(
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn a_never_saved_billing_cycle_renews_like_the_server_settings(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let server = panel.create_server(&cookie, "cycle never saved").await?;
+    // Settings saved before the billing cycle existed: only a price and an expiry.
+    sqlx::query("UPDATE servers SET asset_settings=$2 WHERE id=$1")
+        .bind(server)
+        .bind(json!({"price":"6","currency":"USD","expires_at":now_timestamp()+86400}))
+        .execute(&pool)
+        .await?;
+    let detail = ok(panel
+        .admin(
+            Method::GET,
+            &format!("/api/servers/{server}"),
+            &cookie,
+            None,
+        )
+        .await?)
+    .await?;
+    ensure!(detail["asset_settings"]["billing_cycle"] == 30, "{detail}");
+    let ledger = ok(call(&panel, &cookie, Method::GET, "/servers", Value::Null).await?).await?;
+    ensure!(
+        ledger["entries"][0]["id"] == server && ledger["entries"][0]["cycle_days"] == 30,
+        "the ledger reads the cycle the server settings show: {ledger}"
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn ledger_shows_server_cost_records_and_source_expiries(pool: PgPool) -> Result<()> {
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;

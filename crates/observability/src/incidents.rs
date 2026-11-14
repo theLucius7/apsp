@@ -45,7 +45,7 @@ async fn authorize(
 /// SQL that holds true while notifications about the server `server` are held back at
 /// `at` (both SQL expressions): a maintenance window that suppresses notifications covers
 /// the server, or the server is in its own maintenance lifecycle. Incidents, server alerts
-/// and reachability alerts share this one condition.
+/// and reachability alerts share this one condition, and the incident list shows it.
 pub(crate) fn notifications_held(server: &str, at: &str) -> String {
     format!(
         "(EXISTS(SELECT 1 FROM operations_maintenance held_m WHERE {server}=ANY(held_m.targets) AND held_m.suppress_notifications AND held_m.starts_at<={at} AND held_m.ends_at>{at}) \
@@ -72,9 +72,18 @@ pub async fn list(
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<Value>>> {
     control_center::require_capability(&state, &headers, "operations:read").await?;
-    let rows=sqlx::query("SELECT id,server_id,to_jsonb(i)||jsonb_build_object('maintenance_suppressed',EXISTS(SELECT 1 FROM operations_maintenance m WHERE i.server_id=ANY(m.targets) AND m.suppress_notifications AND m.starts_at<=$1 AND m.ends_at>$1)) AS value FROM operations_incidents i ORDER BY opened_at DESC LIMIT 200").bind(now_timestamp()).fetch_all(&state.pool).await?;
-    let mut values = Vec::new();
     let now = now_timestamp();
+    // The flag says whether notifications about the incident are held right now, by the same
+    // condition the notifications themselves wait on.
+    let rows = sqlx::query(&format!(
+        "SELECT id,server_id,to_jsonb(i)||jsonb_build_object('maintenance_suppressed',{}) AS value \
+         FROM operations_incidents i ORDER BY opened_at DESC LIMIT 200",
+        notifications_held("i.server_id", "$1")
+    ))
+    .bind(now)
+    .fetch_all(&state.pool)
+    .await?;
+    let mut values = Vec::new();
     for row in rows {
         match authorize_incident(&state, &headers, row.get("id"), false).await {
             Ok(_) => {

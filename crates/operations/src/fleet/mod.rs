@@ -12,11 +12,13 @@ use crate::{
     AppState,
     error::{ApiError, ApiResult},
 };
+use apsp_panel_host::device_work::OperationState;
 use axum::{
     Router,
     routing::{get, post},
 };
 use sqlx::{PgPool, Postgres, Row, Transaction};
+use uuid::Uuid;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -81,6 +83,43 @@ pub(crate) fn refuses_tasks_sql(server: &str, at: &str) -> String {
          OR (fleet_op.status='queued' AND fleet_op.expires_at>{at}))))",
         closed_sql(server, at)
     )
+}
+
+/// Whether the server takes no new work at `at` ([`closed_sql`]); the device work interface
+/// answers with this for checks that report it, such as the deployment preflight.
+pub async fn closed_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    at: i64,
+) -> ApiResult<bool> {
+    Ok(
+        sqlx::query_scalar(&format!("SELECT {}", closed_sql("$1", "$2")))
+            .bind(server)
+            .bind(at)
+            .fetch_one(&mut **tx)
+            .await?,
+    )
+}
+
+/// The state of the server's fixed operation `id`; `None` when the server has no such
+/// operation. The device work interface answers with this.
+pub async fn operation_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    id: Uuid,
+) -> ApiResult<Option<OperationState>> {
+    let row = sqlx::query(
+        "SELECT status,result,expires_at FROM fleet_operations WHERE id=$1 AND server_id=$2",
+    )
+    .bind(id)
+    .bind(server)
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(row.map(|row| OperationState {
+        status: row.get("status"),
+        result: row.get("result"),
+        expires_at: row.get("expires_at"),
+    }))
 }
 
 pub async fn ensure_accepts_tasks_tx(
@@ -158,17 +197,10 @@ mod tests {
 
     /// Files that match maintenance windows by hand: their owners come before operations in
     /// the dependency order, so they cannot call `closed_sql`.
-    const OTHER_OWNERS: [(&str, &str); 2] = [
-        (
-            "traffic/src/runtime_workflows/preflight.rs",
-            "the sing-box deployment preflight reports whether the server accepts new tasks; \
-             it moves to operations with the deployment glue (architecture.md section 12.1)",
-        ),
-        (
-            "observability/src/incidents.rs",
-            "notifications are held while a window that suppresses them covers the server",
-        ),
-    ];
+    const OTHER_OWNERS: [(&str, &str); 1] = [(
+        "observability/src/incidents.rs",
+        "notifications are held while a window that suppresses them covers the server",
+    )];
 
     /// The panel's Rust sources below `crates/`, without build output, tests or the Agent.
     fn sources(directory: &Path, found: &mut Vec<PathBuf>) {

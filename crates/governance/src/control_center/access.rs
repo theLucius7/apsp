@@ -6,7 +6,7 @@ use crate::{
 use apsp_protocol::now_timestamp;
 use axum::http::{HeaderMap, header};
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
 pub const FEATURES: &[&str] = &[
@@ -318,6 +318,78 @@ pub async fn require_recent_proof(state: &AppState, headers: &HeaderMap) -> ApiR
         ));
     }
     Ok(())
+}
+
+/// Pins an administrator's login for the rest of the transaction and returns what it may
+/// do. The enabled profile and the login session `session_hash` are share-locked without
+/// waiting: a concurrent change (disabling, logout, or reauthentication taking these rows in
+/// the other order) answers Conflict instead of forming a lock cycle. Unauthorized when the
+/// profile is disabled or the session has ended. The principal carries no management token.
+pub async fn pin_session_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    admin: i64,
+    session_hash: &str,
+) -> ApiResult<Principal> {
+    let profile = pinned(sqlx::query("SELECT login_name,display_name,role,all_servers,capabilities FROM administrator_profiles WHERE admin_id=$1 AND enabled FOR SHARE NOWAIT")
+        .bind(admin).fetch_optional(&mut **tx).await)?.ok_or(ApiError::Unauthorized)?;
+    pinned(sqlx::query("SELECT token_hash FROM sessions WHERE token_hash=$1 AND admin_id=$2 AND expires_at>$3 FOR SHARE NOWAIT")
+        .bind(session_hash).bind(admin).bind(now_timestamp()).fetch_optional(&mut **tx).await)?.ok_or(ApiError::Unauthorized)?;
+    let server_ids = sqlx::query_scalar(
+        "SELECT server_id FROM administrator_server_grants WHERE admin_id=$1 ORDER BY server_id",
+    )
+    .bind(admin)
+    .fetch_all(&mut **tx)
+    .await?;
+    Ok(Principal {
+        admin_id: admin,
+        login_name: profile.try_get("login_name")?,
+        display_name: profile.try_get("display_name")?,
+        role: profile.try_get("role")?,
+        all_servers: profile.try_get("all_servers")?,
+        capabilities: serde_json::from_value(profile.try_get("capabilities")?)
+            .map_err(anyhow::Error::from)?,
+        server_ids,
+        token_id: None,
+        token_capabilities: None,
+        token_servers: None,
+    })
+}
+
+/// Pins the reauthentication of the login session `session_hash` like [`pin_session_tx`];
+/// false when the session has none or it expired.
+pub async fn pin_recent_proof_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    session_hash: &str,
+) -> ApiResult<bool> {
+    let proof = pinned(sqlx::query("SELECT session_hash FROM administrator_reauth WHERE session_hash=$1 AND expires_at>$2 FOR SHARE NOWAIT")
+        .bind(session_hash).bind(now_timestamp()).fetch_optional(&mut **tx).await)?;
+    Ok(proof.is_some())
+}
+
+/// A share lock taken without waiting fails while another transaction changes the row.
+fn pinned<T>(result: Result<T, sqlx::Error>) -> ApiResult<T> {
+    result.map_err(|error| {
+        if error
+            .as_database_error()
+            .and_then(|error| error.code())
+            .as_deref()
+            == Some("55P03")
+        {
+            ApiError::Conflict("管理员会话、授权或再次验证正在变更，请刷新后重新核对".into())
+        } else {
+            error.into()
+        }
+    })
+}
+
+/// SQL that holds while the login session `session_hash` of the administrator `admin` is
+/// valid at `at` (all three SQL expressions, such as columns of the caller's row), for
+/// checks that stay in one statement.
+pub fn session_active_sql(admin: &str, session_hash: &str, at: &str) -> String {
+    format!(
+        "EXISTS(SELECT 1 FROM sessions active_session WHERE active_session.token_hash={session_hash} \
+         AND active_session.admin_id={admin} AND active_session.expires_at>{at})"
+    )
 }
 
 /// Accepts the pool or the caller's transaction connection; callers that hold row

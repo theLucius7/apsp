@@ -10,7 +10,7 @@ pub mod security_groups;
 pub(crate) use apsp_governance::{auth, control_center};
 #[cfg(test)]
 pub(crate) use apsp_panel_host::config;
-pub(crate) use apsp_panel_host::{AppState, device_work, digest, error};
+pub(crate) use apsp_panel_host::{AppState, device_work, digest, error, evidence};
 pub(crate) use apsp_resources::{retirement, server_lifecycle, servers};
 
 /// The domain's routes: network configuration and cloud security groups.

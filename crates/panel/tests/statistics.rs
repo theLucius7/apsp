@@ -77,7 +77,9 @@ async fn network_statistics_use_selected_interfaces_and_raw_observations(
     let deleted = panel.create_server(&cookie, "deleted server").await?;
     let now = apsp_protocol::now_timestamp();
     let day = now / 86_400 * 86_400;
-    sqlx::query("UPDATE servers SET device_public_key='fixture',last_seen=$2,asset_settings='{\"network_interface\":\"eth0\"}' WHERE id=$1")
+    // Saved interface patterns select interfaces the way the asset settings describe them:
+    // `eth*` takes eth0 and eth1, the exclusion `!eth1` wins.
+    sqlx::query("UPDATE servers SET device_public_key='fixture',last_seen=$2,asset_settings='{\"network_interface\":\"eth*,!eth1\"}' WHERE id=$1")
         .bind(active).bind(now).execute(pool).await?;
     sqlx::query("UPDATE servers SET device_public_key='fixture-hidden',last_seen=$2,asset_settings='{\"hidden\":true}' WHERE id=$1")
         .bind(hidden).bind(now-600).execute(pool).await?;

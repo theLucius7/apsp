@@ -316,8 +316,13 @@ async fn apply(
         .bind(&result)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("INSERT INTO fleet_events(id,server_id,kind,source,detail,occurred_at) VALUES($1,$2,'network_business_migrated','network_server_migration',$3,$4)")
-        .bind(Uuid::new_v4()).bind(request.target_server_id).bind(json!({"migration_id":id,"source_server_id":request.source_server_id,"objects":applied,"deployment":"not_started"})).bind(now).execute(&mut *tx).await?;
+    crate::evidence::record_event_tx(
+        &mut tx,
+        request.target_server_id,
+        "network_business_migrated",
+        json!({"migration_id":id,"source_server_id":request.source_server_id,"objects":applied,"deployment":"not_started"}),
+    )
+    .await?;
     tx.commit().await?;
     Ok(Json(result))
 }

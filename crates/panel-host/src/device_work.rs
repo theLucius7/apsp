@@ -2,10 +2,10 @@
 //! section 3.3).
 //!
 //! Before a domain sends work to a device it asks here whether the device accepts new
-//! work, and fixed device operations are submitted here. The owner that executes device
-//! work answers (resource lifecycle, maintenance windows, exclusive jobs and outstanding
-//! operations decide); the application connects it at startup. Without a connection no
-//! work is accepted.
+//! work, and fixed device operations are submitted and read back here. The owner that
+//! executes device work answers (resource lifecycle, maintenance windows, exclusive jobs and
+//! outstanding operations decide); the application connects it at startup. Without a
+//! connection no work is accepted.
 
 use apsp_protocol::{RuntimeOperationRequest, fleet::Operation};
 use serde_json::Value;
@@ -18,6 +18,15 @@ use crate::{
     ports::{BoxFuture, Port},
 };
 
+/// A fixed operation as the device work owner keeps it.
+#[derive(Clone, Debug)]
+pub struct OperationState {
+    pub status: String,
+    /// The device's receipt; `None` until it reports one.
+    pub result: Option<Value>,
+    pub expires_at: i64,
+}
+
 pub trait DeviceWork: Send + Sync {
     /// Fails unless the server exists and accepts new work now.
     fn ensure_accepts_tasks_tx<'a, 't>(
@@ -25,6 +34,16 @@ pub trait DeviceWork: Send + Sync {
         tx: &'a mut Transaction<'t, Postgres>,
         server: i64,
     ) -> BoxFuture<'a, ApiResult<()>>;
+
+    /// Whether the server is closed to new work at `at`: its lifecycle blocks work or a
+    /// maintenance window that blocks new tasks covers it. Exclusive jobs and outstanding
+    /// operations do not count here, unlike [`DeviceWork::ensure_accepts_tasks_tx`].
+    fn closed_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        server: i64,
+        at: i64,
+    ) -> BoxFuture<'a, ApiResult<bool>>;
 
     /// Queues a fixed operation that an administrator requested.
     fn submit_tx<'a, 't>(
@@ -43,6 +62,15 @@ pub trait DeviceWork: Send + Sync {
         actor: i64,
         operation: Operation,
     ) -> BoxFuture<'a, ApiResult<Uuid>>;
+
+    /// The state of the server's fixed operation `id`, such as a preflight observation;
+    /// `None` when the server has no such operation.
+    fn operation_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        server: i64,
+        id: Uuid,
+    ) -> BoxFuture<'a, ApiResult<Option<OperationState>>>;
 
     /// Whether the device has a runtime operation in flight, or one requested in the last
     /// few seconds; a new request waits for it instead of piling up.
@@ -91,6 +119,14 @@ pub async fn ensure_accepts_tasks_tx(
     required()?.ensure_accepts_tasks_tx(tx, server).await
 }
 
+pub async fn closed_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    at: i64,
+) -> ApiResult<bool> {
+    required()?.closed_tx(tx, server, at).await
+}
+
 /// Queues an operation in its own transaction.
 pub async fn submit_for_actor(
     state: &AppState,
@@ -114,6 +150,14 @@ pub async fn submit_observation_tx(
     required()?
         .submit_observation_tx(tx, server, actor, operation)
         .await
+}
+
+pub async fn operation_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    id: Uuid,
+) -> ApiResult<Option<OperationState>> {
+    required()?.operation_tx(tx, server, id).await
 }
 
 pub async fn runtime_busy_tx(

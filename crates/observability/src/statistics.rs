@@ -79,32 +79,58 @@ pub async fn summary(
     .bind(window.now - 60)
     .fetch_one(&mut *tx)
     .await?;
-    // The saved interface patterns are compared as one exact name here, unlike the server
-    // view's pattern matching (`AssetSettings::includes`).
-    let interface = crate::server_assets::sql::network_interface("s");
-    let buckets: Vec<TrafficBucket> = sqlx::query_as(&format!(
+    let today = window.now / 86_400 * 86_400;
+    // Each server's saved interface patterns choose the interfaces that count, matched the
+    // way the server view matches them; the totals then add up only those interfaces.
+    let observed: Vec<(i64, String, Vec<String>)> = sqlx::query_as(&format!(
+        "SELECT s.id,{} AS patterns,array_agg(DISTINCT d.interface) AS interfaces
+         FROM server_network_daily d JOIN servers s ON s.id=d.server_id
+         WHERE s.deleted_at IS NULL AND d.day >= $1 AND d.day <= $2
+         GROUP BY s.id",
+        crate::server_assets::sql::network_interface("s")
+    ))
+    .bind(window.from)
+    .bind(today)
+    .fetch_all(&mut *tx)
+    .await?;
+    let (mut counted_servers, mut counted_interfaces) = (Vec::new(), Vec::new());
+    for (server, patterns, interfaces) in observed {
+        for interface in interfaces {
+            if crate::server_assets::includes_interface(&patterns, &interface) {
+                counted_servers.push(server);
+                counted_interfaces.push(interface);
+            }
+        }
+    }
+    let buckets: Vec<TrafficBucket> = sqlx::query_as(
         "SELECT d.day,SUM(d.uploaded)::text AS uploaded,SUM(d.downloaded)::text AS downloaded,
          SUM(d.uploaded+d.downloaded)::text AS total,COUNT(DISTINCT d.server_id) AS sampled_servers,
          COALESCE(BOOL_OR(d.incomplete),FALSE) AS incomplete,MAX(d.last_sample_at) AS last_sample_at
-         FROM server_network_daily d JOIN servers s ON s.id=d.server_id
-         WHERE s.deleted_at IS NULL AND d.day >= $1 AND d.day <= $2
-           AND ({interface}='' OR {interface}=d.interface)
-         GROUP BY GROUPING SETS ((d.day),()) ORDER BY d.day NULLS FIRST"
-    ))
+         FROM server_network_daily d
+         JOIN unnest($3::bigint[],$4::text[]) AS counted(server_id,interface)
+           ON counted.server_id=d.server_id AND counted.interface=d.interface
+         WHERE d.day >= $1 AND d.day <= $2
+         GROUP BY GROUPING SETS ((d.day),()) ORDER BY d.day NULLS FIRST",
+    )
     .bind(window.from)
-    .bind(window.now / 86_400 * 86_400)
+    .bind(today)
+    .bind(&counted_servers)
+    .bind(&counted_interfaces)
     .fetch_all(&mut *tx)
     .await?;
-    let ranking = sqlx::query(&format!(
+    let ranking = sqlx::query(
         "SELECT s.id,s.name,SUM(d.uploaded)::text AS uploaded,SUM(d.downloaded)::text AS downloaded,
          SUM(d.uploaded+d.downloaded)::text AS total,BOOL_OR(d.incomplete) AS incomplete
          FROM server_network_daily d JOIN servers s ON s.id=d.server_id
+         JOIN unnest($3::bigint[],$4::text[]) AS counted(server_id,interface)
+           ON counted.server_id=d.server_id AND counted.interface=d.interface
          WHERE s.deleted_at IS NULL AND d.day >= $1 AND d.day <= $2
-           AND ({interface}='' OR {interface}=d.interface)
-         GROUP BY s.id ORDER BY SUM(d.uploaded+d.downloaded) DESC,s.id LIMIT 8"
-    ))
+         GROUP BY s.id ORDER BY SUM(d.uploaded+d.downloaded) DESC,s.id LIMIT 8",
+    )
     .bind(window.from)
-    .bind(window.now / 86_400 * 86_400)
+    .bind(today)
+    .bind(&counted_servers)
+    .bind(&counted_interfaces)
     .fetch_all(&mut *tx)
     .await?;
     tx.commit().await?;

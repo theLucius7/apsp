@@ -77,7 +77,10 @@ struct Context {
 async fn context(tx: &mut Transaction<'_, Postgres>, server: i64) -> ApiResult<Context> {
     crate::servers::lock(tx, server).await?;
     crate::settings::require_enabled(tx, server).await?;
-    let row=sqlx::query(&format!("SELECT s.static_info,s.capabilities,s.last_seen,COALESCE(p.policy,'{{}}'::jsonb) AS policy,m.target_rev,{} OR EXISTS(SELECT 1 FROM operations_maintenance w WHERE s.id=ANY(w.targets) AND w.block_new_tasks AND w.starts_at<=$2 AND w.ends_at>$2) AS blocked FROM servers s LEFT JOIN fleet_profiles p ON p.server_id=s.id LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id=$1", crate::server_lifecycle::blocks_work_sql("s.id", "$2"))).bind(server).bind(now_timestamp()).fetch_one(&mut **tx).await?;
+    let row=sqlx::query("SELECT s.static_info,s.capabilities,s.last_seen,COALESCE(p.policy,'{}'::jsonb) AS policy,m.target_rev FROM servers s LEFT JOIN fleet_profiles p ON p.server_id=s.id LEFT JOIN server_module_status m ON m.server_id=s.id AND m.module='singbox' WHERE s.id=$1").bind(server).fetch_one(&mut **tx).await?;
+    // Operations owns maintenance windows and answers whether they or the server's lifecycle
+    // close it to new tasks.
+    let blocked = crate::device_work::closed_tx(tx, server, now_timestamp()).await?;
     let network_references=sqlx::query_scalar("SELECT jsonb_build_object('id',id,'revision',revision,'active_version',active_version,'config',config) FROM network_documents WHERE (kind='endpoint' AND (config->>'server_id')::bigint=$1) OR (kind='certificate' AND EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(config->'targets','[]'::jsonb)) target WHERE (target->>'server_id')::bigint=$1)) ORDER BY id")
         .bind(server).fetch_all(&mut **tx).await?;
     let profile =
@@ -94,7 +97,7 @@ async fn context(tx: &mut Transaction<'_, Postgres>, server: i64) -> ApiResult<C
         capabilities: row.get("capabilities"),
         policy: row.get("policy"),
         last_seen: row.get("last_seen"),
-        blocked: row.get("blocked"),
+        blocked,
         target: row.get("target_rev"),
     })
 }
@@ -729,26 +732,23 @@ async fn aggregate_tx(
         }
         checks.push(item);
     }
-    let permissions_operation = sqlx::query(
-        "SELECT status,result,expires_at FROM fleet_operations WHERE id=$1 AND server_id=$2",
+    let permissions_operation = crate::device_work::operation_tx(
+        tx,
+        server,
+        latest.get::<Uuid, _>("permissions_operation_id"),
     )
-    .bind(latest.get::<Uuid, _>("permissions_operation_id"))
-    .bind(server)
-    .fetch_optional(&mut **tx)
     .await?;
-    let ports_operation = sqlx::query(
-        "SELECT status,result,expires_at FROM fleet_operations WHERE id=$1 AND server_id=$2",
-    )
-    .bind(latest.get::<Uuid, _>("ports_operation_id"))
-    .bind(server)
-    .fetch_optional(&mut **tx)
-    .await?;
+    let ports_operation =
+        crate::device_work::operation_tx(tx, server, latest.get::<Uuid, _>("ports_operation_id"))
+            .await?;
     let permissions: Option<Value> = permissions_operation
         .as_ref()
-        .and_then(|row| row.get("result"));
-    let ports: Option<Value> = ports_operation.as_ref().and_then(|row| row.get("result"));
+        .and_then(|operation| operation.result.clone());
+    let ports: Option<Value> = ports_operation
+        .as_ref()
+        .and_then(|operation| operation.result.clone());
     let operations = if access {
-        vec![(latest.get::<Uuid,_>("permissions_operation_id"),permissions_operation.as_ref()),(latest.get::<Uuid,_>("ports_operation_id"),ports_operation.as_ref())].into_iter().map(|(id,row)|json!({"id":id,"status":row.map(|row|if row.get::<Option<Value>,_>("result").is_none()&&row.get::<i64,_>("expires_at")<=now{"unknown".to_string()}else{row.get::<String,_>("status")}).unwrap_or("unknown".into()),"agent_completed":row.is_some_and(|row|row.get::<Option<Value>,_>("result").is_some())})).collect::<Vec<_>>()
+        vec![(latest.get::<Uuid,_>("permissions_operation_id"),permissions_operation.as_ref()),(latest.get::<Uuid,_>("ports_operation_id"),ports_operation.as_ref())].into_iter().map(|(id,operation)|json!({"id":id,"status":operation.map(|operation|if operation.result.is_none()&&operation.expires_at<=now{"unknown".to_string()}else{operation.status.clone()}).unwrap_or("unknown".into()),"agent_completed":operation.is_some_and(|operation|operation.result.is_some())})).collect::<Vec<_>>()
     } else {
         Vec::new()
     };

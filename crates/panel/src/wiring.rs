@@ -11,7 +11,7 @@ use apsp_observability as observability;
 use apsp_operations::{fleet, runtime_operations};
 use apsp_panel_host::{
     AppState,
-    device_work::{self, DeviceWork},
+    device_work::{self, DeviceWork, OperationState},
     error::ApiResult,
     evidence::{self, Evidence, IncidentReport},
     notifications::outbox::{self, ChannelDeliveries, Outbox},
@@ -213,6 +213,15 @@ impl DeviceWork for Wiring {
         Box::pin(fleet::ensure_accepts_tasks_tx(tx, server))
     }
 
+    fn closed_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        server: i64,
+        at: i64,
+    ) -> BoxFuture<'a, ApiResult<bool>> {
+        Box::pin(fleet::closed_tx(tx, server, at))
+    }
+
     fn submit_tx<'a, 't>(
         &'a self,
         tx: &'a mut Transaction<'t, Postgres>,
@@ -233,6 +242,15 @@ impl DeviceWork for Wiring {
         Box::pin(fleet::enqueue_readonly_for_actor_tx(
             tx, server, actor, operation,
         ))
+    }
+
+    fn operation_tx<'a, 't>(
+        &'a self,
+        tx: &'a mut Transaction<'t, Postgres>,
+        server: i64,
+        id: Uuid,
+    ) -> BoxFuture<'a, ApiResult<Option<OperationState>>> {
+        Box::pin(fleet::operation_tx(tx, server, id))
     }
 
     fn runtime_busy_tx<'a, 't>(

@@ -93,6 +93,88 @@ pub fn configuration(document: &Document) -> ApiResult<Configuration> {
         .map_err(|error| ApiError::Internal(error.into()))
 }
 
+/// The name a domain document holds.
+pub async fn domain_name(state: &AppState, id: Uuid) -> ApiResult<String> {
+    Ok(sqlx::query_scalar(
+        "SELECT config->>'name' FROM network_documents WHERE id=$1 AND kind='domain'",
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?)
+}
+
+/// Locks the document until the transaction ends and returns its revision, so a change based
+/// on an earlier revision can be refused or kept apart.
+pub async fn lock_revision(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> ApiResult<i64> {
+    Ok(
+        sqlx::query_scalar("SELECT revision FROM network_documents WHERE id=$1 FOR UPDATE")
+            .bind(id)
+            .fetch_one(&mut **tx)
+            .await?,
+    )
+}
+
+/// Makes `version` the active version of a certificate document, as a new revision.
+pub async fn activate_version(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    version: Uuid,
+    at: i64,
+) -> ApiResult<()> {
+    sqlx::query(
+        "UPDATE network_documents SET active_version=$2,revision=revision+1,updated_at=$3 WHERE id=$1",
+    )
+    .bind(id)
+    .bind(version)
+    .bind(at)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+/// Like [`activate_version`], when the document is still at `revision`; false when it has
+/// changed since.
+pub async fn activate_version_at(
+    state: &AppState,
+    id: Uuid,
+    version: Uuid,
+    revision: i64,
+    at: i64,
+) -> ApiResult<bool> {
+    let changed = sqlx::query(
+        "UPDATE network_documents SET active_version=$2,revision=revision+1,updated_at=$4 WHERE id=$1 AND revision=$3",
+    )
+    .bind(id)
+    .bind(version)
+    .bind(revision)
+    .bind(at)
+    .execute(&state.pool)
+    .await?;
+    Ok(changed.rows_affected() == 1)
+}
+
+/// Records what `source` observed about the document on a server at `observed_at`; the
+/// document's measurements list it.
+pub async fn record_observation(
+    state: &AppState,
+    id: Uuid,
+    server: i64,
+    source: &str,
+    result: &Value,
+    observed_at: i64,
+) -> ApiResult<()> {
+    sqlx::query("INSERT INTO network_observations(id,document_id,server_id,source,result,observed_at) VALUES($1,$2,$3,$4,$5,$6)")
+        .bind(Uuid::new_v4())
+        .bind(id)
+        .bind(server)
+        .bind(source)
+        .bind(result)
+        .bind(observed_at)
+        .execute(&state.pool)
+        .await?;
+    Ok(())
+}
+
 async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Vec<Document>>> {
     auth::require_admin(&state, &headers).await?;
     let documents = sqlx::query_as::<_, Document>(
@@ -428,5 +510,77 @@ pub(super) fn unique(error: sqlx::Error) -> ApiError {
         ApiError::Conflict("域名或受管监听端点已被其他配置占用".into())
     } else {
         ApiError::Database(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Directory(std::path::PathBuf);
+    impl Drop for Directory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[sqlx::test(migrations = "../panel/migrations")]
+    async fn certificate_documents_change_only_through_the_store(
+        pool: sqlx::PgPool,
+    ) -> anyhow::Result<()> {
+        let directory = Directory(
+            std::env::temp_dir().join(format!("apsp-network-documents-{}", Uuid::new_v4())),
+        );
+        std::fs::create_dir(&directory.0)?;
+        let state = apsp_governance::state(
+            pool.clone(),
+            crate::config::Config {
+                database_url: String::new(),
+                listen: "127.0.0.1:0".parse()?,
+                public_url: "http://127.0.0.1:1".into(),
+                data_dir: directory.0.clone(),
+                admin_password: Some("TEST_ONLY network documents".into()),
+            },
+        )
+        .await?;
+        let now = apsp_protocol::now_timestamp();
+        let (domain, certificate, version) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        sqlx::query("INSERT INTO network_documents(id,kind,config,created_at,updated_at) VALUES($1,'domain',$2,$4,$4),($3,'certificate','{}',$4,$4)")
+            .bind(domain).bind(json!({"name":"proxy.example.invalid"})).bind(certificate).bind(now).execute(&pool).await?;
+        sqlx::query("INSERT INTO network_certificate_versions(id,certificate_id,revision,public_chain,fingerprint,not_before,not_after,created_at) VALUES($1,$2,1,'TEST_ONLY','TEST_ONLY',$3,$3,$3)")
+            .bind(version).bind(certificate).bind(now).execute(&pool).await?;
+        let server: i64 = sqlx::query_scalar(
+            "INSERT INTO servers(name) VALUES('TEST_ONLY observed') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await?;
+
+        assert_eq!(domain_name(&state, domain).await?, "proxy.example.invalid");
+        assert!(domain_name(&state, certificate).await.is_err());
+        let mut tx = pool.begin().await?;
+        let revision = lock_revision(&mut tx, certificate).await?;
+        activate_version(&mut tx, certificate, version, now).await?;
+        tx.commit().await?;
+        assert!(
+            !activate_version_at(&state, certificate, version, revision, now).await?,
+            "a change based on an old revision is refused"
+        );
+        assert!(activate_version_at(&state, certificate, version, revision + 1, now).await?);
+        let document = load(&state, certificate).await?;
+        assert_eq!(document.revision, revision + 2);
+        assert_eq!(document.active_version, Some(version));
+        record_observation(
+            &state,
+            certificate,
+            server,
+            "panel_tls_handshake",
+            &json!({"status":"verified"}),
+            now,
+        )
+        .await?;
+        let observed: i64 = sqlx::query_scalar("SELECT count(*) FROM network_observations WHERE document_id=$1 AND server_id=$2 AND source='panel_tls_handshake' AND result->>'status'='verified'")
+            .bind(certificate).bind(server).fetch_one(&pool).await?;
+        assert_eq!(observed, 1);
+        Ok(())
     }
 }

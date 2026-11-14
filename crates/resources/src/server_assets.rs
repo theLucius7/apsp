@@ -25,6 +25,10 @@ pub struct AssetSettings {
     pub network_interface: String,
 }
 
+/// The billing cycle in days of a server whose cycle was never saved; the ledger and the
+/// server's settings both read it.
+const DEFAULT_BILLING_CYCLE: u16 = 30;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TrafficMode {
@@ -59,7 +63,7 @@ impl Default for AssetSettings {
             agent_mirror: String::new(),
             price: None,
             currency: "CNY".into(),
-            billing_cycle: 30,
+            billing_cycle: DEFAULT_BILLING_CYCLE,
             expires_at: None,
             auto_renewal: false,
             traffic_limit: "0".into(),
@@ -178,21 +182,26 @@ impl AssetSettings {
         }
     }
 
+    /// Whether the interface counts for the server's traffic ([`includes_interface`]).
     pub fn includes(&self, interface: &str) -> bool {
-        let patterns: Vec<_> = self
-            .network_interface
-            .split(',')
-            .filter(|p| !p.is_empty())
-            .collect();
-        let included = !patterns.iter().any(|p| !p.starts_with('!'))
-            || patterns
-                .iter()
-                .any(|p| !p.starts_with('!') && matches(p, interface));
-        included
-            && !patterns
-                .iter()
-                .any(|p| p.strip_prefix('!').is_some_and(|p| matches(p, interface)))
+        includes_interface(&self.network_interface, interface)
     }
+}
+
+/// Whether `interface` counts for a server's traffic under its saved `network_interface`
+/// patterns, as the asset settings promise: comma-separated, `*` matches any run of
+/// characters, a leading `!` excludes and exclusions win; without an inclusion pattern every
+/// interface counts. The server view, period traffic, alerts and statistics all ask this.
+pub fn includes_interface(patterns: &str, interface: &str) -> bool {
+    let patterns: Vec<_> = patterns.split(',').filter(|p| !p.is_empty()).collect();
+    let included = !patterns.iter().any(|p| !p.starts_with('!'))
+        || patterns
+            .iter()
+            .any(|p| !p.starts_with('!') && matches(p, interface));
+    included
+        && !patterns
+            .iter()
+            .any(|p| p.strip_prefix('!').is_some_and(|p| matches(p, interface)))
 }
 
 fn matches(pattern: &str, value: &str) -> bool {
@@ -253,7 +262,7 @@ pub mod sql {
     }
 
     /// The interfaces that count for the server's traffic, as saved (comma-separated
-    /// patterns); empty when not saved.
+    /// patterns, matched with [`super::includes_interface`]); empty when not saved.
     pub fn network_interface(server: &str) -> String {
         format!("COALESCE({server}.asset_settings->>'network_interface','')")
     }
@@ -268,10 +277,12 @@ pub mod sql {
         format!("COALESCE({server}.asset_settings->>'currency','CNY')")
     }
 
-    /// The billing cycle in days as saved, NULL when it never was (the typed settings then
-    /// read 30 days).
-    pub fn saved_billing_cycle(server: &str) -> String {
-        format!("({server}.asset_settings->>'billing_cycle')::int")
+    /// The billing cycle in days, 0 for a one-off purchase; never NULL.
+    pub fn billing_cycle(server: &str) -> String {
+        format!(
+            "COALESCE(({server}.asset_settings->>'billing_cycle')::int,{})",
+            super::DEFAULT_BILLING_CYCLE
+        )
     }
 
     /// Whether the expiry renews by itself; never NULL.
@@ -309,4 +320,19 @@ pub async fn renew_due(pool: &PgPool, now: i64) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::includes_interface;
+
+    #[test]
+    fn interface_patterns_match_as_the_settings_describe() {
+        assert!(includes_interface("", "eth0"));
+        assert!(includes_interface("!lo", "eth0") && !includes_interface("!lo", "lo"));
+        assert!(includes_interface("eth*,!eth1", "eth0"));
+        assert!(!includes_interface("eth*,!eth1", "eth1"));
+        assert!(!includes_interface("eth*,!eth1", "wg0"));
+        assert!(includes_interface("en*s*", "enp0s3") && !includes_interface("eth0", "eth01"));
+    }
 }

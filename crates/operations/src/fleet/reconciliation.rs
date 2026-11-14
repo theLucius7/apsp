@@ -130,21 +130,6 @@ pub(crate) fn permissions(server: i64, operation: &Operation) -> Vec<(Option<i64
     .collect()
 }
 
-fn auth_lock<T>(result: Result<T, sqlx::Error>) -> ApiResult<T> {
-    result.map_err(|error| {
-        if error
-            .as_database_error()
-            .and_then(|error| error.code())
-            .as_deref()
-            == Some("55P03")
-        {
-            ApiError::Conflict("管理员会话、授权或再次验证正在变更，请刷新后重新核对".into())
-        } else {
-            error.into()
-        }
-    })
-}
-
 pub(crate) async fn lock_authorization(
     tx: &mut Transaction<'_, Postgres>,
     headers: &HeaderMap,
@@ -152,33 +137,20 @@ pub(crate) async fn lock_authorization(
     requirements: &[(Option<i64>, String)],
 ) -> ApiResult<()> {
     let hash = crate::auth::session_hash(headers)?;
-    // Pin authorization before job/server locks. NOWAIT avoids a lock cycle
-    // with administrator changes or reauthentication taking the reverse order.
-    let profile = auth_lock(sqlx::query("SELECT role,all_servers,capabilities FROM administrator_profiles WHERE admin_id=$1 AND enabled FOR SHARE NOWAIT")
-        .bind(actor).fetch_optional(&mut **tx).await)?.ok_or(ApiError::Unauthorized)?;
-    let now = now_timestamp();
-    auth_lock(sqlx::query("SELECT token_hash FROM sessions WHERE token_hash=$1 AND admin_id=$2 AND expires_at>$3 FOR SHARE NOWAIT")
-        .bind(&hash).bind(actor).bind(now).fetch_optional(&mut **tx).await)?.ok_or(ApiError::Unauthorized)?;
-    auth_lock(sqlx::query("SELECT session_hash FROM administrator_reauth WHERE session_hash=$1 AND expires_at>$2 FOR SHARE NOWAIT")
-        .bind(hash).bind(now).fetch_optional(&mut **tx).await)?.ok_or_else(||ApiError::Forbidden("人工核对需要当前管理员会话的有效再次验证".into()))?;
-    let role: String = profile.get("role");
-    let all_servers: bool = profile.get("all_servers");
-    let capabilities: Value = profile.get("capabilities");
-    let grants: Vec<i64> =
-        sqlx::query_scalar("SELECT server_id FROM administrator_server_grants WHERE admin_id=$1")
-            .bind(actor)
-            .fetch_all(&mut **tx)
-            .await?;
+    // Pin authorization before job/server locks; governance takes the locks without waiting,
+    // avoiding a lock cycle with administrator changes or reauthentication.
+    let principal = crate::control_center::pin_session_tx(tx, actor, &hash).await?;
+    if !crate::control_center::pin_recent_proof_tx(tx, &hash).await? {
+        return Err(ApiError::Forbidden(
+            "人工核对需要当前管理员会话的有效再次验证".into(),
+        ));
+    }
     for (server, capability) in requirements {
-        if (role != "owner"
-            && !capabilities.as_array().is_some_and(|items| {
-                items
-                    .iter()
-                    .any(|item| item.as_str() == Some(capability.as_str()))
-            }))
-            || (role == "viewer" && capability.ends_with(":write"))
-            || (!all_servers && server.is_none_or(|server| !grants.contains(&server)))
-        {
+        let scoped = match server {
+            Some(server) => principal.allows_server(*server),
+            None => principal.global_servers(),
+        };
+        if !principal.allows(capability) || !scoped {
             return Err(ApiError::Forbidden(
                 "管理员已失去此冻结方案或服务器的核对权限".into(),
             ));

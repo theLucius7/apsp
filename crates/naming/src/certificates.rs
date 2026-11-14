@@ -58,29 +58,20 @@ async fn import(
         return Err(ApiError::BadRequest("证书尚未生效或已到期".into()));
     }
     for domain in domain_ids {
-        let name: String = sqlx::query_scalar(
-            "SELECT config->>'name' FROM network_documents WHERE id=$1 AND kind='domain'",
-        )
-        .bind(domain)
-        .fetch_one(&state.pool)
-        .await?;
+        let name = documents::domain_name(&state, *domain).await?;
         if !x509::covers(&certificate.names, &name) {
             return Err(ApiError::BadRequest("证书SAN未覆盖台账域名".into()));
         }
     }
     let mut tx = state.pool.begin().await?;
-    let revision: i64 =
-        sqlx::query_scalar("SELECT revision FROM network_documents WHERE id=$1 FOR UPDATE")
-            .bind(id)
-            .fetch_one(&mut *tx)
-            .await?;
+    let revision = documents::lock_revision(&mut tx, id).await?;
     if revision != input.revision {
         return Err(ApiError::Conflict("证书台账已改变，请刷新".into()));
     }
     let version = Uuid::new_v4();
     let version_revision: i64 = sqlx::query_scalar("SELECT COALESCE(max(revision),0)+1 FROM network_certificate_versions WHERE certificate_id=$1").bind(id).fetch_one(&mut *tx).await?;
     sqlx::query("INSERT INTO network_certificate_versions(id,certificate_id,revision,public_chain,fingerprint,not_before,not_after,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)").bind(version).bind(id).bind(version_revision).bind(input.public_chain).bind(&certificate.fingerprint).bind(certificate.not_before).bind(certificate.not_after).bind(now).execute(&mut *tx).await?;
-    sqlx::query("UPDATE network_documents SET active_version=$2,revision=revision+1,updated_at=$3 WHERE id=$1").bind(id).bind(version).bind(now).execute(&mut *tx).await?;
+    documents::activate_version(&mut tx, id, version, now).await?;
     tx.commit().await?;
     Ok(Json(
         json!({"id":version,"fingerprint":certificate.fingerprint,"not_before":certificate.not_before,"not_after":certificate.not_after,"names":certificate.names,"issued":"external_source","saved":true,"deployed":false,"handshake_verified":false}),
@@ -135,8 +126,15 @@ async fn select(
     } else {
         return Err(ApiError::BadRequest("请选择证书台账".into()));
     }
-    let changed=sqlx::query("UPDATE network_documents SET active_version=$2,revision=revision+1,updated_at=$4 WHERE id=$1 AND revision=$3").bind(id).bind(input.version_id).bind(input.revision).bind(apsp_protocol::now_timestamp()).execute(&state.pool).await?;
-    if changed.rows_affected() != 1 {
+    let changed = documents::activate_version_at(
+        &state,
+        id,
+        input.version_id,
+        input.revision,
+        apsp_protocol::now_timestamp(),
+    )
+    .await?;
+    if !changed {
         return Err(ApiError::Conflict("台账版本已改变".into()));
     }
     Ok(Json(
@@ -179,7 +177,15 @@ async fn verify(
             json!({"status":"failed","error_code":code,"version_id":version,"from":"panel","to":format!("{}:{}",target.domain,target.port),"observed_at":observed_at})
         }
     };
-    sqlx::query("INSERT INTO network_observations(id,document_id,server_id,source,result,observed_at) VALUES($1,$2,$3,'panel_tls_handshake',$4,$5)").bind(Uuid::new_v4()).bind(id).bind(target.server_id).bind(&value).bind(observed_at).execute(&state.pool).await?;
+    documents::record_observation(
+        &state,
+        id,
+        target.server_id,
+        "panel_tls_handshake",
+        &value,
+        observed_at,
+    )
+    .await?;
     Ok(Json(value))
 }
 

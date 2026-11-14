@@ -25,18 +25,18 @@ pub(crate) async fn load(state: &AppState, principal: &Principal) -> ApiResult<V
         return Ok(Vec::new());
     }
     use apsp_resources::server_assets::sql;
-    // A billing cycle that was never saved counts as a one-off purchase in the ledger, while
-    // the server's typed settings read 30 days.
+    // A billing cycle that was never saved has the server settings' default here too, so the
+    // ledger renews a server as often as its settings say.
     let rows = sqlx::query(&format!(
         "SELECT s.id,s.name,{price} AS price,{currency} AS currency,\
-         COALESCE({cycle},0) AS cycle_days,{auto_renewal} AS auto_renewal,\
+         {cycle} AS cycle_days,{auto_renewal} AS auto_renewal,\
          (to_timestamp({expires_at}) AT TIME ZONE r.timezone)::date::text AS next_renewal \
          FROM servers s CROSS JOIN expense_settings r \
          WHERE r.singleton AND s.deleted_at IS NULL AND {has_expiry} \
          ORDER BY s.id LIMIT 10000",
         price = sql::price("s"),
         currency = sql::currency("s"),
-        cycle = sql::saved_billing_cycle("s"),
+        cycle = sql::billing_cycle("s"),
         auto_renewal = sql::auto_renewal("s"),
         expires_at = sql::expires_at("s"),
         has_expiry = sql::has_expiry("s"),
