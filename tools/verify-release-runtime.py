@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "singbox-runtime"))
 import cronet
 
 VERSION = "1.14.4-apsp.2"
-REVISION = "5d74251bd02a4b243a2cf23a6f0e7bdfc2259642"
+REVISION = "a662fcb06c26551b3d506725cad0082d213fce77"
 # Server build tags, including the statistics API the Agent reads.
 TAGS = "with_quic,with_utls,with_grpc,with_wireguard,with_clash_api,with_v2ray_api,with_acme,with_gvisor,with_cloudflared,with_openvpn,with_openconnect,with_tailscale,with_naive_outbound,with_purego"
 MODULES = Path(__file__).resolve().parent / "singbox-runtime" / "modules.txt"
@@ -41,7 +41,7 @@ def pinned_modules():
 def verify_metadata(metadata, arch, libc=None):
     lines = metadata.splitlines()
     require(lines and lines[0].endswith(": go1.26.8"), "unexpected Go toolchain")
-    values, modules = {}, set()
+    values, modules, last = {}, set(), None
     for line in lines[1:]:
         fields = line.strip().split("\t")
         if fields[0] == "build" and len(fields) == 2:
@@ -49,9 +49,14 @@ def verify_metadata(metadata, arch, libc=None):
             require(separator and key not in values, "invalid or duplicate build setting")
             values[key] = value
         elif fields[0] == "dep":
-            modules.add(" ".join(fields[1:4]))
+            last = " ".join(fields[1:4])
+            modules.add(last)
         elif fields[0] == "=>":
-            raise ValueError("runtime must not replace modules")
+            # Only replacements listed in modules.txt (the vendored, patched utls) pass the check below.
+            require(last is not None and len(fields) >= 2, "unexpected module replacement")
+            modules.discard(last)
+            modules.add(f"{last} => {fields[1]}")
+            last = None
     for key, expected in {
         "GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "1" if libc == "musl" else "0",
         "-trimpath": "true", "vcs": "git", "vcs.revision": REVISION,

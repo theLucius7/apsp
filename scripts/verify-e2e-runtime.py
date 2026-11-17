@@ -10,7 +10,7 @@ import tarfile
 
 
 VERSION = "1.14.4-apsp.2"
-REVISION = "5d74251bd02a4b243a2cf23a6f0e7bdfc2259642"
+REVISION = "a662fcb06c26551b3d506725cad0082d213fce77"
 # Server build tags, including the statistics API the Agent reads.
 TAGS = "with_quic,with_utls,with_grpc,with_wireguard,with_clash_api,with_v2ray_api,with_acme,with_gvisor,with_cloudflared,with_openvpn,with_openconnect,with_tailscale,with_naive_outbound,with_purego"
 

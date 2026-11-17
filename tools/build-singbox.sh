@@ -49,7 +49,7 @@ tar_version=$(tar --version)
 version=1.14.4-apsp.2
 upstream_tag=v1.14.4
 upstream_commit=c005f35300ce76427dc285481ec5695f5b179cd2
-patched_commit=5d74251bd02a4b243a2cf23a6f0e7bdfc2259642
+patched_commit=a662fcb06c26551b3d506725cad0082d213fce77
 # Server build tags, including the statistics API the Agent reads.
 tags=with_quic,with_utls,with_grpc,with_wireguard,with_clash_api,with_v2ray_api,with_acme,with_gvisor,with_cloudflared,with_openvpn,with_openconnect,with_tailscale,with_naive_outbound
 cgo=0
@@ -154,16 +154,22 @@ python3 - "$scratch/buildinfo" "$patch_queue/modules.txt" "$arch" "$tags" "$patc
 import sys
 
 buildinfo, modules, arch, tags, commit, cgo = sys.argv[1:]
-settings, deps = {}, set()
+settings, deps, last = {}, set(), None
 for line in open(buildinfo).read().splitlines()[1:]:
     fields = line.strip().split("\t")
     if fields[0] == "build":
         key, _, value = fields[1].partition("=")
         settings[key] = value
     elif fields[0] == "dep":
-        deps.add(" ".join(fields[1:4]))
+        last = " ".join(fields[1:4])
+        deps.add(last)
     elif fields[0] == "=>":
-        raise SystemExit("runtime must not replace modules")
+        # Only replacements listed in modules.txt (the vendored, patched utls) pass the check below.
+        if last is None or len(fields) < 2:
+            raise SystemExit("unexpected module replacement")
+        deps.discard(last)
+        deps.add(f"{last} => {fields[1]}")
+        last = None
 expected = {"GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": cgo, "-tags": tags,
             "-trimpath": "true", "vcs.revision": commit, "vcs.modified": "false"}
 for key, value in expected.items():

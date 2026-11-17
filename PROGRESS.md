@@ -1,5 +1,13 @@
 # 执行进度
 
+## 2026-11-17：在 1.14.4 运行时上恢复 REALITY 仿真补丁（Agent 0.3.9，PR）
+
+- 用户要求：“研究被墙的原因，提供修复然后 pr，修复到 apsp agent 里面；修复完了之后换 ip 更新”。见 [ADR 0139](docs/adr/0139-reality-hardening-on-stable-runtime.md)。
+- 原因调查：11-17 09:37–09:39 五个云的 5 个端口同一小时被封，11:38–11:40 四台主机整 IP 被封，14:40 aliyun-hk2 的 11456 被封；与流量大小无关，早于当天 #276 的部署。生产运行时 `1.14.4-apsp.1` 对未认证探测的关闭行为与真实目标站不同（6 项），认证连接没有握手后记录；ADR 0104 修过这些，ADR 0119 撤下后回到线上。公开资料把 Apple 目标站、非 443 端口、代理常用云列为 2026 年封锁潮的画像。
+- 完成项：`tools/singbox-runtime/` 新增 `utls-reality-hardening.patch`（回落转发 FIN/RST 与半关闭、穿透 sing-box 连接包装、目标站关闭后镜像 RST、模仿握手后记录、Go 测试）与 `sing-box-reality-prepare.patch`；`apply.py` 把已校验的 utls v1.8.7 复制到 `third_party/utls` 打补丁并 `replace`；补丁提交 `a662fcb0` 写入 `build-singbox.sh`、`verify-release-runtime.py`、`build-runtime-native.py`、`scripts/verify-e2e-runtime.py`；`modules.txt` 与两处构建信息检查只允许这一项替换；Agent 0.3.9；`docs/release.md` 发布顺序改为在 main 上打标签（与 `tools/publish.py` 的门禁一致）。版本号仍为未发布的 `1.14.4-apsp.2`，不改数据库基线；面板目标仍为 `1.14.4-apsp.1`。
+- 验证结果：本地，2026-11-17。utls 包 `go test -race -count=3 -run Reality` 通过、`go vet`（linux、windows）通过；`apply.py` 两个全新 checkout 结果一致；`build-singbox.sh amd64 --libc=gnu` 通过（制品 `baef0735…`），`verify-release-runtime.py` 通过；本机对比真实 itunes.apple.com 8 项未认证探测全部一致（生产版 6 项不同），认证连接发送与目标站相同的两条 303 字节记录；sing-box 客户端与 Mihomo v1.19.33（带与不带 MLKEM）Vision 正常，20 MB 下载正常。未验证：musl 与 arm64 制品、其他平台制品、CI、签名发布与生产切换。
+- 已知问题：发布需要用户临时批准开启 CI 与签名工作流；生产切换按 ADR 0139 先切一台观察；目标站、端口与客户端 MLKEM 属于线路配置，不在本补丁内；补丁不能证明不再被封。
+
 ## 2026-11-17：迁移线路为策略组里的每位成员服务（根本修复，PR）
 
 - 用户要求：在 171 的应急修复之后，“从根本上修复这个问题”。改数据库基线，走 PR。决定 D1–D5 由编排者给定，见 [ADR 0138](docs/adr/0138-native-users-on-migrated-lines.md) 与 `docs/open-questions.md` 同日条目。

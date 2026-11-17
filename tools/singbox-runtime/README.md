@@ -1,10 +1,12 @@
 # 自维护 sing-box 运行时
 
-当前 `1.14.4-apsp.2` 基于正式版 `v1.14.4`，上游提交 `c005f35300ce76427dc285481ec5695f5b179cd2`，补丁提交 `5d74251bd02a4b243a2cf23a6f0e7bdfc2259642`。见 ADR 0124、0129。
+当前 `1.14.4-apsp.2` 基于正式版 `v1.14.4`，上游提交 `c005f35300ce76427dc285481ec5695f5b179cd2`，补丁提交 `a662fcb06c26551b3d506725cad0082d213fce77`。见 ADR 0124、0129、0139。
 
-`user-limits.patch` 在认证后的 TCP/UDP 路由入口实施每用户每服务器合计限速与连接数限制；`sessions.patch` 在受密钥保护的回环控制接口提供认证主体。`apply.py` 只接受固定上游的干净 checkout，以固定身份/日期生成可复现提交。上游 checkout 不作为补丁编辑源。
+`user-limits.patch` 在认证后的 TCP/UDP 路由入口实施每用户每服务器合计限速与连接数限制；`sessions.patch` 在受密钥保护的回环控制接口提供认证主体。`utls-reality-hardening.patch` 修改 REALITY 服务端（`metacubex/utls` v1.8.7）：回落时转发目标站与客户端的 FIN/RST 与半关闭、穿透 sing-box 的连接包装、目标站关闭后镜像其 RST、模仿目标站握手后的记录，含 Go 测试；`sing-box-reality-prepare.patch` 让入站启动时开始测量目标站（ADR 0139）。`apply.py` 只接受固定上游的干净 checkout，把已校验的 utls 模块复制到 `third_party/utls` 打补丁并以 `replace` 接入，以固定身份/日期生成可复现提交（需要 `go`）。上游 checkout 不作为补丁编辑源。
 
-`modules.txt` 来自固定上游的 go.sum，限制各平台链接的模块版本与校验和。基础标签包括 QUIC、uTLS、gRPC、WireGuard、Clash/V2Ray API、ACME、gVisor、Cloudflared、OpenVPN/OpenConnect 和 Tailscale。
+修改 utls 补丁：在 `go mod download -json github.com/metacubex/utls@v1.8.7` 得到的目录副本里建 git 仓库并应用现有补丁，修改后运行 `go test -race -run Reality .`，再用 `git diff` 重新导出；`tools/singbox-runtime/wire-probe.py` 或同类未认证探测需与真实目标站逐项一致。
+
+`modules.txt` 来自固定上游的 go.sum，限制各平台链接的模块版本与校验和；唯一允许的替换是 `github.com/metacubex/utls v1.8.7 => ./third_party/utls`，其源码由补丁提交固定。基础标签包括 QUIC、uTLS、gRPC、WireGuard、Clash/V2Ray API、ACME、gVisor、Cloudflared、OpenVPN/OpenConnect 和 Tailscale。
 
 - Linux glibc：`with_naive_outbound,with_purego`，Go 主程序通过 purego 加载动态库，随包固定 Cronet `libcronet.so`，要求 glibc ≥ 2.31。
 - Windows：相同纯 Go 模式，随包固定 `libcronet.dll`。
