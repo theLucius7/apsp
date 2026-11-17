@@ -1,12 +1,16 @@
 # 执行进度
 
-## 2026-11-17：在 1.14.4 运行时上恢复 REALITY 仿真补丁（Agent 0.3.9，PR）
+## 2026-11-17：在 1.14.4 运行时上恢复 REALITY 仿真补丁，阿里云 hk 换 IP（Agent 0.3.9，PR #277）
 
 - 用户要求：“研究被墙的原因，提供修复然后 pr，修复到 apsp agent 里面；修复完了之后换 ip 更新”。见 [ADR 0139](docs/adr/0139-reality-hardening-on-stable-runtime.md)。
 - 原因调查：11-17 09:37–09:39 五个云的 5 个端口同一小时被封，11:38–11:40 四台主机整 IP 被封，14:40 aliyun-hk2 的 11456 被封；与流量大小无关，早于当天 #276 的部署。生产运行时 `1.14.4-apsp.1` 对未认证探测的关闭行为与真实目标站不同（6 项），认证连接没有握手后记录；ADR 0104 修过这些，ADR 0119 撤下后回到线上。公开资料把 Apple 目标站、非 443 端口、代理常用云列为 2026 年封锁潮的画像。
 - 完成项：`tools/singbox-runtime/` 新增 `utls-reality-hardening.patch`（回落转发 FIN/RST 与半关闭、穿透 sing-box 连接包装、目标站关闭后镜像 RST、模仿握手后记录、Go 测试）与 `sing-box-reality-prepare.patch`；`apply.py` 把已校验的 utls v1.8.7 复制到 `third_party/utls` 打补丁并 `replace`；补丁提交 `b8c49498` 写入 `build-singbox.sh`、`verify-release-runtime.py`、`build-runtime-native.py`、`scripts/verify-e2e-runtime.py`；`modules.txt` 与两处构建信息检查只允许这一项替换；按独立审阅补上客户端 RST 被另一方向取走时的转发、目标站关闭后 RST 的观察协程（不阻塞上传）、Windows 重置错误码、回落写入进展超时与测量上限；`extend --revise` 修订 REALITY 目标站时同步节点模型、`nodes.sni` 与目录摘要；Agent 0.3.9；`docs/release.md` 发布顺序改为在 main 上打标签（与 `tools/publish.py` 的门禁一致）。版本号仍为未发布的 `1.14.4-apsp.2`，不改数据库基线；面板目标改为 `1.14.4-apsp.2`（按 #255 留下的顺序撤销 `7345021a` 的保持；main 的真实端到端测试只构建新运行时，不切换无法通过发布门禁）。CI 暂停期间留下的三处失败一并修复：GNU arm64 运行时在 qemu 下缺少 aarch64 glibc、运行时制品检查的测试夹具、PowerShell 测试读取已迁移的文件；发布工作流的运行时构建镜像补上 Cronet musl 工具链需要的 `file` 与 `unzip`（agent-v0.3.9 第一次草稿构建因此失败，本地以修正后的镜像构建 `linux-musl-amd64` 通过，arm64 工具链准备通过）。
 - 验证结果：本地，2026-11-17。utls 包 `go test -race -count=10 -run Reality` 通过（撤掉客户端 RST 修复时对应测试失败）、`go vet`（linux、windows）通过；`apply.py` 两个全新 checkout 结果一致；`build-singbox.sh amd64 --libc=gnu` 通过（制品 `1637c1a3…`），`verify-release-runtime.py` 通过；本机对比真实 itunes.apple.com 8 项未认证探测全部一致（生产版 6 项不同），认证连接发送与目标站相同的两条 303 字节记录；以 www.bandisoft.com 为目标站同样 8 项一致；sing-box 客户端与 Mihomo v1.19.33（带与不带 MLKEM）Vision 正常，20 MB 下载正常；`apsp-panel --test nexus_runtime_takeover` 11 项通过（含新增 REALITY 目标站修订），`cargo fmt --check`、`apsp-traffic` 与该测试的 clippy `-D warnings` 通过；`tests/test_verify_release_runtime.py` 的构建信息用例通过（该文件另有 15 项在 main 上同样失败，与本机环境有关）。未验证：musl 与 arm64 制品、其他平台制品、CI、签名发布与生产切换。
 - 已知问题：发布需要用户临时批准开启 CI 与签名工作流；生产切换按 ADR 0139 先切一台观察；目标站、端口与客户端 MLKEM 属于线路配置，不在本补丁内；补丁不能证明不再被封。
+- 发布与上线（2026-11-17）：PR #277 与 CI 均通过（PR 20/20、main 20/20；`bf71ea39` 补构建镜像的 `file`、`unzip`，main CI 一项计数测试偶发失败后重跑通过）。`agent-v0.3.9` 于 11:58:15 UTC 从 `bf71ea39` 签名发布（VPS 根），发布中的运行时与本地构建逐字节相同；`CI` 与 `Signed release draft` 已停用，本次例外结束。面板 10:56 UTC 部署 `49687316` 起目标为 `1.14.4-apsp.2`；只导入了 `linux-musl-amd64`。aliyun-hk1/hk2 的 Agent 升级到 0.3.9 后换用加固内核，真实客户端正常。
+- aliyun-hk1/hk2 换 IP（用户：“修复好 hk 的问题，换 ip”）：hk1 `47.76.79.98`、hk2 `8.218.155.222`，国内 TCP 443 均 5/5；公网只开 443（转到台湾线路）与 SSH，其余代理端口对外关闭；台湾线路目标站改为 `www.bandisoft.com`（`extend --revise`，`nodes.sni` 由本 PR 的修订同步写回）；旧面板、apsp 公网端点与用户订阅已更新。旧 EIP 未释放。
+- 事故：22:22–22:28 hk1 因 443 转发启用连接跟踪、内存 435 MB 的默认上限 3584 写满而随机丢包；热修改上限为 65536、established 超时 7200 秒并持久化，hk2 同样处理，之后 20/20。
+- 未完成：其余 15 台 Agent 仍是 0.3.7，GNU 与 arm64 制品未导入，**这些服务器的清单下发失败（线路照常，配置变更不下发）**；计划在凌晨逐台导入、升级 Agent、换内核。aliyun-hk3 关机到 12-01。清单见 [交接文档](docs/handoff/2026-11-17-reality-hardening.md)。
 
 ## 2026-11-17：迁移线路为策略组里的每位成员服务（根本修复，PR）
 
