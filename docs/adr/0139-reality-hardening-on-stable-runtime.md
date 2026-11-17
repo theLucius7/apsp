@@ -51,6 +51,10 @@ ADR 0104 的补丁修过前四项与最后一项，曾在约 10 台主机上运�
 2. **穿透连接包装**：sing-box 交给 REALITY 的连接（连接跟踪、计数、TCP Fast Open）不直接提供半关闭和 linger，补丁沿 `Upstream()`/`NetConn()` 找到底层套接字。ADR 0104 的补丁没有这一步，在 1.14.4 上半关闭会退化成立即断开、收不到目标站回复。
 3. **模仿握手后记录**：后台按目标、SNI、ALPN 测量目标站在客户端 Finished 之后发送的记录长度，认证连接握手完成后发送等长的空记录，TLS 1.3 客户端忽略它们。测量只取长度、不校验证书（与 XTLS 相同，不依赖本机证书库），每次测量最多 15 秒；每 6 小时刷新，失败 5 分钟后重试，尚无结果时不发送。
 
+### 修订目标站时同步节点模型
+
+迁移线路的目标站只能用 `extend --revise` 改原生配置；此前修订保留节点模型，`nodes.sni` 仍是旧名字，apsp 自己生成的订阅会下发旧 SNI。修订时把配置中的 `server_name` 与握手目标写回快照模型，并同步 `nodes` 的 `sni`、REALITY 握手设置和目录摘要的 `reality_sni`；公网地址与端口仍只由 `public-endpoint` 修改。监听端口仍不能经修订改变，公网改用 443 时在主机上把 443 转到原监听端口。
+
 ### 不做的
 
 - **按目标站探测可容忍的无效记录数**（XTLS/REALITY #29，针对重放 ClientHello 后发送多条 ChangeCipherSpec 的探测）：在用目标站（itunes.apple.com、updates.cdn-apple.com、www.jd.com）实测都容忍 32 条、第 33 条告警，与 utls v1.8.7 的固定值 32 相同。
