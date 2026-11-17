@@ -1984,3 +1984,152 @@ async fn redeploy_repeats_a_running_hosts_bundle_as_a_higher_revision(pool: PgPo
     assert_eq!(revisions().await?.len(), after.len());
     Ok(())
 }
+
+/// A REALITY line taken over from the legacy service, as the snapshot entry for `extend`.
+async fn added_reality(panel: &TestPanel, server: i64, legacy: i64) -> Result<Value> {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let pool = &panel.state.pool;
+    let node = Node {
+        id: legacy,
+        name: format!("TEST_ONLY reality {legacy}"),
+        port: 22000 + legacy as u16,
+        public_host: "reality.example.invalid".into(),
+        sni: "old-target.example.com".into(),
+        private_key: URL_SAFE_NO_PAD.encode([1u8; 32]),
+        public_key: URL_SAFE_NO_PAD.encode([2u8; 32]),
+        short_id: "0123456789abcdef".into(),
+        users: vec![],
+        enabled: true,
+        settings: Default::default(),
+        protocol_config: ProtocolConfig::VlessReality,
+    };
+    let original = json!({"node":{"id":legacy,"name":node.name,"host":node.public_host,"type":"vless",
+        "protocol_settings":{"tls":2,"flow":"xtls-rprx-vision","reality_settings":{"private_key":node.private_key,
+        "public_key":node.public_key,"short_id":node.short_id,"server_name":node.sni,"server_port":443}},"rate_time_enable":0}});
+    let credential =
+        credentials::store_generated(pool, "TEST_ONLY reality", "backup", original).await?;
+    sqlx::query("INSERT INTO singbox_nexus_nodes(source_id,legacy_node_id,legacy_machine_id,legacy_host_id,server_id,credential_id,display) VALUES('fixture',$4,32,15,$1,$2,$3)")
+        .bind(server).bind(credential)
+        .bind(json!({"listen_port":node.port.to_string(),"rate":"1","groups":[{"id":1,"name":"Fixture"}],"protocol_summary":{"reality_sni":node.sni}}))
+        .bind(legacy).execute(pool).await?;
+    let configuration = json!({"inbounds":[{"type":"vless","tag":"vless-in","listen":"::","listen_port":node.port,
+        "users":[{"name":"placeholder","uuid":"00000000-0000-0000-0000-000000000000","flow":"xtls-rprx-vision"}],
+        "tls":{"enabled":true,"server_name":node.sni,"reality":{"enabled":true,"handshake":{"server":node.sni,"server_port":443},
+        "private_key":node.private_key,"short_id":[node.short_id]}}}],
+        "outbounds":[{"type":"direct","tag":"direct"}],"route":{"final":"direct"}});
+    Ok(json!({"legacy_node_id":legacy,"preserved":{"node":node,"configuration":configuration}}))
+}
+
+/// Moving a REALITY line to another target site is a revision of its native
+/// configuration; the node model follows, or apsp's own subscriptions would keep
+/// handing out the old SNI (ADR 0139). The public endpoint is left alone.
+#[sqlx::test(migrations = "./migrations")]
+async fn a_revised_reality_target_reaches_the_node_model(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, payload, _) = fixture(&panel).await?;
+    let preview = ok(post(&panel, &cookie, "/preview", json!({"payload":payload})).await?).await?;
+    let digest = preview["digest"].as_str().unwrap().to_owned();
+    ok(post(
+        &panel,
+        &cookie,
+        "/prepare",
+        json!({"payload":payload,"expected_digest":digest}),
+    )
+    .await?)
+    .await?;
+    let entry = added_reality(&panel, server, 67).await?;
+    let report = ok(post(
+        &panel,
+        &cookie,
+        &format!("/{server}/extend/preview"),
+        json!({"expected_digest":digest,"nodes":[entry]}),
+    )
+    .await?)
+    .await?;
+    assert_eq!(report["conflicts"], json!([]));
+    let added = report["digest"].as_str().unwrap().to_owned();
+    ok(post(
+        &panel,
+        &cookie,
+        &format!("/{server}/extend"),
+        json!({"expected_digest":digest,"extended_digest":added,
+        "nodes":[entry],"stopped_services":["xboard-node.service"],"stopped_at":now_timestamp()}),
+    )
+    .await?)
+    .await?;
+    let inventory: i64 =
+        sqlx::query_scalar("SELECT id FROM singbox_nexus_nodes WHERE legacy_node_id=67")
+            .fetch_one(&pool)
+            .await?;
+    ok(panel
+        .admin(
+            Method::PATCH,
+            &format!("/api/traffic/nexus-nodes/{inventory}/public-endpoint"),
+            &cookie,
+            Some(json!({"public_host":"203.0.113.7","public_port":443})),
+        )
+        .await?)
+    .await?;
+    let mut configuration = entry["preserved"]["configuration"].clone();
+    configuration["inbounds"][0]["tls"]["server_name"] = json!("new-target.example.org");
+    configuration["inbounds"][0]["tls"]["reality"]["handshake"]["server"] =
+        json!("new-target.example.org");
+    let revision = json!({"expected_digest":added,"configurations":[{"legacy_node_id":67,"configuration":configuration}]});
+    let report = ok(post(
+        &panel,
+        &cookie,
+        &format!("/{server}/extend/preview"),
+        revision.clone(),
+    )
+    .await?)
+    .await?;
+    assert_eq!(report["conflicts"], json!([]));
+    let mut commit = revision;
+    commit["extended_digest"] = report["digest"].clone();
+    ok(post(&panel, &cookie, &format!("/{server}/extend"), commit).await?).await?;
+    let (sni, settings, host, display): (String, Value, String, Value) = sqlx::query_as("SELECT n.sni,n.settings,n.public_host,i.display FROM nodes n JOIN singbox_nexus_runtime_nodes r ON r.node_id=n.id JOIN singbox_nexus_nodes i ON i.id=r.inventory_id WHERE i.legacy_node_id=67")
+        .fetch_one(&pool).await?;
+    assert_eq!(sni, "new-target.example.org");
+    assert_eq!(settings["reality"]["handshake_server"], Value::Null);
+    assert_eq!(settings["reality"]["handshake_port"], 443);
+    assert_eq!(
+        (host.as_str(), settings["public_port"].clone()),
+        ("203.0.113.7", json!(443))
+    );
+    assert_eq!(
+        display["protocol_summary"]["reality_sni"],
+        "new-target.example.org"
+    );
+    // A different handshake server than the SNI is kept as an explicit target.
+    let stored: String =
+        sqlx::query_scalar("SELECT digest FROM singbox_nexus_runtime_hosts WHERE server_id=$1")
+            .bind(server)
+            .fetch_one(&pool)
+            .await?;
+    configuration["inbounds"][0]["tls"]["reality"]["handshake"]["server"] =
+        json!("edge.example.org");
+    configuration["inbounds"][0]["tls"]["reality"]["handshake"]["server_port"] = json!(8443);
+    let revision = json!({"expected_digest":stored,"configurations":[{"legacy_node_id":67,"configuration":configuration}]});
+    let report = ok(post(
+        &panel,
+        &cookie,
+        &format!("/{server}/extend/preview"),
+        revision.clone(),
+    )
+    .await?)
+    .await?;
+    let mut commit = revision;
+    commit["extended_digest"] = report["digest"].clone();
+    ok(post(&panel, &cookie, &format!("/{server}/extend"), commit).await?).await?;
+    let settings: Value = sqlx::query_scalar("SELECT n.settings FROM nodes n JOIN singbox_nexus_runtime_nodes r ON r.node_id=n.id JOIN singbox_nexus_nodes i ON i.id=r.inventory_id WHERE i.legacy_node_id=67")
+        .fetch_one(&pool).await?;
+    assert_eq!(
+        (
+            settings["reality"]["handshake_server"].clone(),
+            settings["reality"]["handshake_port"].clone()
+        ),
+        (json!("edge.example.org"), json!(8443))
+    );
+    Ok(())
+}

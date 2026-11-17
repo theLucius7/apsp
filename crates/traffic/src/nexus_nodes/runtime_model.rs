@@ -255,6 +255,7 @@ pub(super) async fn inspect_extension(
             .find(|r| r.legacy_node_id == entry.legacy_node_id)
         {
             entry.preserved.configuration = revision.configuration.clone();
+            adopt_reality_target(&mut entry.preserved.node, &revision.configuration);
         }
     }
     merged.nodes.extend(added.iter().cloned());
@@ -325,4 +326,28 @@ pub(super) async fn inspect_extension(
         "node_count":merged.nodes.len(),"conflicts":conflicts});
 
     Ok((merged, report))
+}
+
+/// A revision may move a REALITY line to another target site. Clients take the
+/// SNI from the node model, so the model follows the revised listener instead of
+/// keeping the old name (ADR 0139).
+pub(super) fn adopt_reality_target(node: &mut apsp_compiler::Node, configuration: &Value) {
+    if !node.protocol_config.is_reality() {
+        return;
+    }
+    let tls = &configuration["inbounds"][0]["tls"];
+    let Some(server_name) = tls["server_name"].as_str() else {
+        return;
+    };
+    let handshake = &tls["reality"]["handshake"];
+    let server = handshake["server"].as_str().unwrap_or(server_name);
+    node.sni = server_name.to_owned();
+    node.settings.reality.handshake_server = (server != server_name).then(|| server.to_owned());
+    if let Some(port) = handshake["server_port"]
+        .as_u64()
+        .and_then(|port| u16::try_from(port).ok())
+        .filter(|port| *port != 0)
+    {
+        node.settings.reality.handshake_port = port;
+    }
 }

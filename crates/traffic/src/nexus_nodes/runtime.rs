@@ -133,6 +133,39 @@ async fn insert_lines(
     Ok(())
 }
 
+/// Revised lines keep their catalog row and node; only what a revision may
+/// change on them (the REALITY target) is copied from the merged model, so the
+/// public endpoint set through its own API is left alone.
+async fn sync_revised_lines(
+    tx: &mut Transaction<'_, Postgres>,
+    merged: &RuntimeSnapshot,
+    server: i64,
+    revisions: &[Revision],
+) -> ApiResult<()> {
+    for revision in revisions {
+        let Some(entry) = merged
+            .nodes
+            .iter()
+            .find(|entry| entry.legacy_node_id == revision.legacy_node_id)
+        else {
+            continue;
+        };
+        let node = &entry.preserved.node;
+        if !node.protocol_config.is_reality() {
+            continue;
+        }
+        let reality = &node.settings.reality;
+        sqlx::query("UPDATE nodes n SET sni=$1,settings=jsonb_set(jsonb_set(n.settings,'{reality,handshake_server}',COALESCE(to_jsonb($2::text),'null'::jsonb)),'{reality,handshake_port}',to_jsonb($3::int)) FROM singbox_nexus_runtime_nodes r JOIN singbox_nexus_nodes i ON i.id=r.inventory_id WHERE r.node_id=n.id AND i.source_id=$4 AND i.server_id=$5 AND i.legacy_node_id=$6")
+            .bind(&node.sni).bind(reality.handshake_server.as_deref()).bind(i32::from(reality.handshake_port))
+            .bind(&merged.source_id).bind(server).bind(revision.legacy_node_id)
+            .execute(&mut **tx).await?;
+        sqlx::query("UPDATE singbox_nexus_nodes SET display=jsonb_set(display,'{protocol_summary,reality_sni}',to_jsonb($1::text)) WHERE source_id=$2 AND server_id=$3 AND legacy_node_id=$4 AND display ? 'protocol_summary'")
+            .bind(&node.sni).bind(&merged.source_id).bind(server).bind(revision.legacy_node_id)
+            .execute(&mut **tx).await?;
+    }
+    Ok(())
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Extension {
@@ -288,6 +321,7 @@ async fn extend(
         .execute(&mut *tx)
         .await?;
     insert_lines(&mut tx, &merged.source_id, server, &input.nodes).await?;
+    sync_revised_lines(&mut tx, &merged, server, &input.configurations).await?;
     sqlx::query("SELECT set_config('apsp.nexus_runtime_write','',TRUE)")
         .execute(&mut *tx)
         .await?;
