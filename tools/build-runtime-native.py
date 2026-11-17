@@ -19,7 +19,7 @@ import apply as runtime_patches
 import cronet
 
 VERSION = '1.14.4-apsp.2'
-PATCHED_COMMIT = 'a662fcb06c26551b3d506725cad0082d213fce77'
+PATCHED_COMMIT = 'b8c49498e4ec16c883bc5bc5002c5221a08c3dc5'
 COMMIT = 'c005f35300ce76427dc285481ec5695f5b179cd2'
 # Server build tags, including the statistics API the Agent reads.
 TAGS = 'with_quic,with_utls,with_grpc,with_wireguard,with_clash_api,with_v2ray_api,with_acme,with_gvisor,with_cloudflared,with_openvpn,with_openconnect,with_tailscale'

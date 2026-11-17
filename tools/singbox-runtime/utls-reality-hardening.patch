@@ -1,5 +1,5 @@
 diff --git a/reality.go b/reality.go
-index a684b86..8e12a00 100644
+index a684b86..1456dc4 100644
 --- a/reality.go
 +++ b/reality.go
 @@ -20,6 +20,7 @@ import (
@@ -19,17 +19,19 @@ index a684b86..8e12a00 100644
  	}
  	return n, err
  }
-@@ -356,6 +357,9 @@ func RealityServer(ctx context.Context, conn net.Conn, config *RealityConfig) (*
+@@ -356,6 +357,11 @@ func RealityServer(ctx context.Context, conn net.Conn, config *RealityConfig) (*
  
  	underlying := conn
  
 +	realityRefreshPostHandshake(config)
++	relayDone := make(chan struct{})
++	defer close(relayDone)
 +	targetDone := new(atomic.Bool)
 +
  	mutex := new(sync.Mutex)
  
  	hs := realityServerHandshakeStateTLS13{
-@@ -446,7 +450,7 @@ func RealityServer(ctx context.Context, conn net.Conn, config *RealityConfig) (*
+@@ -446,7 +452,7 @@ func RealityServer(ctx context.Context, conn net.Conn, config *RealityConfig) (*
  			if config.Log != nil && hs.clientHello != nil {
  				config.Log("REALITY remoteAddr: %v forwarded SNI: %v", remoteAddr, hs.clientHello.serverName)
  			}
@@ -38,7 +40,7 @@ index a684b86..8e12a00 100644
  		}
  		waitGroup.Done()
  	}()
-@@ -461,7 +465,7 @@ func RealityServer(ctx context.Context, conn net.Conn, config *RealityConfig) (*
+@@ -461,7 +467,7 @@ func RealityServer(ctx context.Context, conn net.Conn, config *RealityConfig) (*
  			n, err := target.Read(buf)
  			if n == 0 {
  				if err != nil {
@@ -47,7 +49,7 @@ index a684b86..8e12a00 100644
  					waitGroup.Done()
  					return
  				}
-@@ -556,6 +560,9 @@ func RealityServer(ctx context.Context, conn net.Conn, config *RealityConfig) (*
+@@ -556,6 +562,9 @@ func RealityServer(ctx context.Context, conn net.Conn, config *RealityConfig) (*
  			if err != nil {
  				break
  			}
@@ -57,7 +59,7 @@ index a684b86..8e12a00 100644
  			hs.c.isHandshakeComplete.Store(true)
  			break
  		}
-@@ -564,12 +571,16 @@ func RealityServer(ctx context.Context, conn net.Conn, config *RealityConfig) (*
+@@ -564,12 +573,17 @@ func RealityServer(ctx context.Context, conn net.Conn, config *RealityConfig) (*
  			if hs.c.conn == conn { // if we processed the Client Hello successfully but the target did not
  				waitGroup.Add(1)
  				go func() {
@@ -68,20 +70,21 @@ index a684b86..8e12a00 100644
  			}
  			conn.Write(s2cSaved)
 -			io.Copy(underlying, newRateLimitedConn(target, &config.LimitFallbackDownload))
-+			_, relayErr := io.Copy(underlying, newRateLimitedConn(target, &config.LimitFallbackDownload))
++			_, relayErr := io.Copy(realityProgressWriter{underlying}, newRateLimitedConn(target, &config.LimitFallbackDownload))
 +			if relayErr == nil {
 +				targetDone.Store(true)
++				go realityWatchTargetReset(target, underlying, relayDone)
 +			}
-+			realityFinishClient(underlying, relayErr)
++			realityFinishClient(underlying, target, relayErr)
  		}
  		waitGroup.Done()
  	}()
 diff --git a/reality_apsp.go b/reality_apsp.go
 new file mode 100644
-index 0000000..445c1af
+index 0000000..615edb2
 --- /dev/null
 +++ b/reality_apsp.go
-@@ -0,0 +1,336 @@
+@@ -0,0 +1,381 @@
 +// Additions made by the Apsp runtime build. They keep a REALITY inbound
 +// indistinguishable from its target at the points an active prober or a
 +// passive observer can measure. Ported in behaviour from XTLS/REALITY
@@ -108,10 +111,13 @@ index 0000000..445c1af
 +	// the target has finished. A real server has fully closed by this point.
 +	realityRelayLinger = 30 * time.Second
 +
-+	// After the target has closed, data the client still sends reaches the
-+	// target, which answers with a reset. Wait this long for that reset so the
-+	// client sees the same reset a direct connection would.
-+	realityResetWait = 3 * time.Second
++	// After the target has finished, the target socket is polled this often
++	// for the reset a closed peer sends back for further client data.
++	realityResetPoll = 10 * time.Millisecond
++
++	// A fallback client that stops reading would otherwise pin the relay
++	// forever; each write to it must make progress within this time.
++	realityRelayWriteTimeout = 2 * time.Minute
 +
 +	realityPostHandshakeRefresh = 6 * time.Hour
 +	realityPostHandshakeRetry   = 5 * time.Minute
@@ -169,7 +175,7 @@ index 0000000..445c1af
 +}
 +
 +func realityIsReset(err error) bool {
-+	return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE)
++	return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || realityPlatformReset(err)
 +}
 +
 +// realityResetConn closes with a TCP reset, the way a peer that received data
@@ -183,8 +189,11 @@ index 0000000..445c1af
 +
 +// realityFinishClient ends the client side the way the target ended its side,
 +// so close type and timing come from the target rather than from this process.
-+func realityFinishClient(client net.Conn, err error) {
++// A reset on either side (the copy fails on whichever socket received it) is
++// passed to both.
++func realityFinishClient(client, target net.Conn, err error) {
 +	if realityIsReset(err) {
++		realityResetConn(target)
 +		realityResetConn(client)
 +		return
 +	}
@@ -215,9 +224,9 @@ index 0000000..445c1af
 +}
 +
 +// realityRelayUpload copies the client's bytes to the target during fallback.
-+// Unlike io.Copy it forwards how the client ended (half-close or reset), and
-+// once the target has finished it mirrors the reset the target sends back for
-+// any further client data.
++// Unlike io.Copy it forwards how the client ended: a half-close as a half-close
++// and a reset as a reset, even when the reset was already consumed by a write on
++// the other relay direction and the read only reports EOF.
 +func realityRelayUpload(target net.Conn, client io.Reader, clientConn net.Conn, targetDone *atomic.Bool) {
 +	buf := make([]byte, 32*1024)
 +	for {
@@ -230,41 +239,74 @@ index 0000000..445c1af
 +				target.Close()
 +				return
 +			}
-+			if targetDone.Load() && realityAwaitReset(target) {
-+				realityResetConn(clientConn)
-+				target.Close()
-+				return
-+			}
 +		}
 +		if err != nil {
++			// A FIN leaves the socket in CLOSE_WAIT; reading EOF from a socket that
++			// is already closed means a reset whose error the other direction took.
++			// Once the target has finished, this side sent a FIN first and a normal
++			// close also ends in that state, so only the pending error counts then.
++			if errors.Is(err, io.EOF) {
++				if closed, reset, _ := realityConnState(clientConn); reset || (closed && !targetDone.Load()) {
++					err = syscall.ECONNRESET
++				}
++			}
 +			realityEndTarget(target, err)
 +			return
 +		}
 +	}
 +}
 +
-+// realityAwaitReset reports whether the target answers data sent after its
-+// close with a reset. Reads cannot tell: once the target's FIN has arrived they
-+// return EOF even after a reset, so the socket's pending error is polled.
-+func realityAwaitReset(target net.Conn) bool {
-+	raw, ok := realityUnwrap[syscall.Conn](target)
++// realityConnState reports whether the socket under conn has closed and whether
++// it closed by a reset; known is false where this cannot be determined.
++func realityConnState(conn net.Conn) (closed, reset, known bool) {
++	raw, ok := realityUnwrap[syscall.Conn](conn)
 +	if !ok {
-+		return false
++		return false, false, false
 +	}
 +	control, err := raw.SyscallConn()
 +	if err != nil {
-+		return false
++		return false, false, false
 +	}
-+	for deadline := time.Now().Add(realityResetWait); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-+		reset, known := realitySocketReset(control)
-+		if !known {
-+			return false
-+		}
-+		if reset {
-+			return true
++	return realitySocketState(control)
++}
++
++// realityWatchTargetReset runs once the target has finished. A closed target
++// answers further client data with a reset, which a direct client would see at
++// once; the relay passes it on without delaying the upload direction. It stops
++// when the target closes normally, when the relay ends or after the linger.
++func realityWatchTargetReset(target, client net.Conn, done <-chan struct{}) {
++	ticker := time.NewTicker(realityResetPoll)
++	defer ticker.Stop()
++	linger := time.NewTimer(realityRelayLinger)
++	defer linger.Stop()
++	for {
++		select {
++		case <-done:
++			return
++		case <-linger.C:
++			return
++		case <-ticker.C:
++			closed, reset, known := realityConnState(target)
++			switch {
++			case !known:
++				return
++			case reset:
++				realityResetConn(client)
++				return
++			case closed:
++				return
++			}
 +		}
 +	}
-+	return false
++}
++
++// realityProgressWriter bounds each fallback write to the client, so a client
++// that stops reading cannot hold the relay's goroutines and sockets forever.
++type realityProgressWriter struct{ net.Conn }
++
++func (w realityProgressWriter) Write(b []byte) (int, error) {
++	w.Conn.SetWriteDeadline(time.Now().Add(realityRelayWriteTimeout))
++	return w.Conn.Write(b)
 +}
 +
 +// realityPostHandshakeEntry holds the record lengths a target sends right after
@@ -321,6 +363,10 @@ index 0000000..445c1af
 +		return
 +	}
 +	defer target.Close()
++	// Fast-open dialers ignore deadlines before the first write; closing the
++	// socket is the bound that always holds.
++	stop := time.AfterFunc(realityPostHandshakeDial+realityPostHandshakeWait, func() { target.Close() })
++	defer stop.Stop()
 +	probe := &realityPostHandshakeConn{Conn: target}
 +	var protocols []string
 +	fingerprint := HelloGolang
@@ -331,7 +377,9 @@ index 0000000..445c1af
 +		protocols = []string{"h2", "http/1.1"}
 +		fingerprint = HelloChrome_Auto
 +	}
-+	client := UClient(probe, &Config{ServerName: serverName, NextProtos: protocols}, fingerprint)
++	// Only record lengths are measured; verifying the certificate would only
++	// make the measurement depend on the local CA store.
++	client := UClient(probe, &Config{ServerName: serverName, NextProtos: protocols, InsecureSkipVerify: true}, fingerprint)
 +	target.SetDeadline(time.Now().Add(realityPostHandshakeDial))
 +	if client.Handshake() != nil {
 +		return
@@ -418,9 +466,50 @@ index 0000000..445c1af
 +	}
 +	return nil
 +}
+diff --git a/reality_apsp_linux.go b/reality_apsp_linux.go
+new file mode 100644
+index 0000000..8ca655b
+--- /dev/null
++++ b/reality_apsp_linux.go
+@@ -0,0 +1,35 @@
++//go:build linux
++
++package tls
++
++import (
++	"encoding/binary"
++	"syscall"
++)
++
++const realityTCPClose = 7 // TCP_CLOSE in the kernel's tcp_states
++
++// realitySocketState reads the TCP state (the first byte of tcp_info) without
++// side effects; only once the socket has closed is its pending error read, to
++// tell a reset (ECONNRESET, or EPIPE in CLOSE_WAIT) from a normal close.
++func realitySocketState(control syscall.RawConn) (closed, reset, known bool) {
++	var info, pending int
++	var infoErr, pendingErr error
++	if control.Control(func(fd uintptr) {
++		info, infoErr = syscall.GetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_INFO)
++		if infoErr != nil {
++			return
++		}
++		var raw [4]byte
++		binary.NativeEndian.PutUint32(raw[:], uint32(info))
++		if raw[0] != realityTCPClose {
++			return
++		}
++		closed = true
++		pending, pendingErr = syscall.GetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_ERROR)
++	}) != nil || infoErr != nil || pendingErr != nil {
++		return false, false, false
++	}
++	errno := syscall.Errno(pending)
++	return closed, closed && (errno == syscall.ECONNRESET || errno == syscall.EPIPE), true
++}
 diff --git a/reality_apsp_other.go b/reality_apsp_other.go
 new file mode 100644
-index 0000000..b1aa71a
+index 0000000..dcdc17c
 --- /dev/null
 +++ b/reality_apsp_other.go
 @@ -0,0 +1,11 @@
@@ -430,17 +519,28 @@ index 0000000..b1aa71a
 +
 +import "syscall"
 +
-+// realitySocketReset is not implemented here; the relay then keeps forwarding
-+// after the target's close, as it did before.
-+func realitySocketReset(syscall.RawConn) (reset bool, known bool) {
-+	return false, false
++// realitySocketState is not implemented here; the relay then keeps forwarding
++// after the target's close instead of mirroring its reset.
++func realitySocketState(syscall.RawConn) (closed, reset, known bool) {
++	return false, false, false
 +}
+diff --git a/reality_apsp_posix.go b/reality_apsp_posix.go
+new file mode 100644
+index 0000000..0372186
+--- /dev/null
++++ b/reality_apsp_posix.go
+@@ -0,0 +1,5 @@
++//go:build !windows
++
++package tls
++
++func realityPlatformReset(error) bool { return false }
 diff --git a/reality_apsp_test.go b/reality_apsp_test.go
 new file mode 100644
-index 0000000..db44979
+index 0000000..05eabdf
 --- /dev/null
 +++ b/reality_apsp_test.go
-@@ -0,0 +1,221 @@
+@@ -0,0 +1,277 @@
 +package tls
 +
 +import (
@@ -662,28 +762,105 @@ index 0000000..db44979
 +	}
 +	t.Fatalf("data after the target's FIN must end in a reset, last error %v", err)
 +}
++
++// A client that resets must reset the target as well, even when the reset is
++// consumed by the relay's blocked write towards the client and the upload
++// direction only reads EOF.
++func TestRealityRelayForwardsClientRST(t *testing.T) {
++	result := make(chan error, 1)
++	client := startRelay(t, func(target net.Conn) {
++		defer target.Close()
++		target.Read(make([]byte, 64))
++		// Fill every buffer up to the client, which never reads, then only read.
++		target.SetWriteDeadline(time.Now().Add(300 * time.Millisecond))
++		target.Write(make([]byte, 64<<20))
++		target.SetReadDeadline(time.Now().Add(5 * time.Second))
++		_, err := io.Copy(io.Discard, target)
++		result <- err
++	})
++	client.Write([]byte("GET / HTTP/1.1\r\n\r\n"))
++	time.Sleep(600 * time.Millisecond)
++	client.SetLinger(0)
++	client.Close()
++	if err := <-result; !errors.Is(err, syscall.ECONNRESET) {
++		t.Fatalf("expected the client's reset to reach the target, got %v", err)
++	}
++}
++
++// Once the target has half-closed and keeps reading, client data must flow on
++// without waiting for a reset that never comes.
++func TestRealityRelayUploadDoesNotStallAfterTargetHalfClose(t *testing.T) {
++	received := make(chan string, 1)
++	client := startRelay(t, func(target net.Conn) {
++		defer target.Close()
++		target.Read(make([]byte, 64))
++		target.Write([]byte("reply"))
++		target.(*net.TCPConn).CloseWrite()
++		data, _ := io.ReadAll(target)
++		received <- string(data)
++	})
++	client.Write([]byte("GET / HTTP/1.1\r\n\r\n"))
++	if data, err := io.ReadAll(client); err != nil || string(data) != "reply" {
++		t.Fatalf("expected the reply and a half-close, got %q, %v", data, err)
++	}
++	start := time.Now()
++	for _, chunk := range []string{"a", "b", "c", "d"} {
++		client.Write([]byte(chunk))
++		time.Sleep(20 * time.Millisecond)
++	}
++	client.CloseWrite()
++	select {
++	case data := <-received:
++		if data != "abcd" || time.Since(start) > time.Second {
++			t.Fatalf("upload after the target's half-close took %v and delivered %q", time.Since(start), data)
++		}
++	case <-time.After(5 * time.Second):
++		t.Fatal("upload after the target's half-close stalled")
++	}
++}
 diff --git a/reality_apsp_unix.go b/reality_apsp_unix.go
 new file mode 100644
-index 0000000..4574eb4
+index 0000000..c94346f
 --- /dev/null
 +++ b/reality_apsp_unix.go
-@@ -0,0 +1,19 @@
-+//go:build unix
+@@ -0,0 +1,20 @@
++//go:build unix && !linux
 +
 +package tls
 +
 +import "syscall"
 +
-+// realitySocketReset reads the socket's pending error. A reset received while
-+// the socket waits in CLOSE_WAIT is reported as EPIPE, otherwise ECONNRESET.
-+func realitySocketReset(control syscall.RawConn) (reset bool, known bool) {
++// realitySocketState reads the socket's pending error. Without tcp_info a
++// normal close is not visible here, so only a reset is reported.
++func realitySocketState(control syscall.RawConn) (closed, reset, known bool) {
 +	var value int
 +	var err error
 +	if control.Control(func(fd uintptr) {
 +		value, err = syscall.GetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_ERROR)
 +	}) != nil || err != nil {
-+		return false, false
++		return false, false, false
 +	}
 +	errno := syscall.Errno(value)
-+	return errno == syscall.ECONNRESET || errno == syscall.EPIPE, true
++	reset = errno == syscall.ECONNRESET || errno == syscall.EPIPE
++	return reset, reset, true
++}
+diff --git a/reality_apsp_windows.go b/reality_apsp_windows.go
+new file mode 100644
+index 0000000..56e5721
+--- /dev/null
++++ b/reality_apsp_windows.go
+@@ -0,0 +1,14 @@
++//go:build windows
++
++package tls
++
++import (
++	"errors"
++	"syscall"
++)
++
++// Windows reports a peer reset as WSAECONNRESET and a local abort as
++// WSAECONNABORTED rather than the POSIX errno values.
++func realityPlatformReset(err error) bool {
++	return errors.Is(err, syscall.Errno(10054)) || errors.Is(err, syscall.Errno(10053))
 +}

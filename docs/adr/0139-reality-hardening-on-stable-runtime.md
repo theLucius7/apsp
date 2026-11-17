@@ -43,13 +43,13 @@ ADR 0104 的补丁修过前四项与最后一项，曾在约 10 台主机上运�
 
 ### 补丁
 
-`tools/singbox-runtime/apply.py` 从已校验的 Go 模块缓存复制 `metacubex/utls` v1.8.7 到 `third_party/utls`，应用 `utls-reality-hardening.patch`，再用 `go.mod` 的 `replace` 接入；`sing-box-reality-prepare.patch` 让 REALITY 入站启动时开始测量目标站。补丁按固定身份和日期提交，提交 `a662fcb06c26551b3d506725cad0082d213fce77` 写入构建与发布校验，包括复制进来的 utls 源码。
+`tools/singbox-runtime/apply.py` 从已校验的 Go 模块缓存复制 `metacubex/utls` v1.8.7 到 `third_party/utls`，应用 `utls-reality-hardening.patch`，再用 `go.mod` 的 `replace` 接入；`sing-box-reality-prepare.patch` 让 REALITY 入站启动时开始测量目标站。补丁按固定身份和日期提交，提交 `b8c49498e4ec16c883bc5bc5002c5221a08c3dc5` 写入构建与发布校验，包括复制进来的 utls 源码。
 
 补丁内容：
 
-1. **回落时转发关闭**：目标站的 FIN、RST 与客户端的半关闭、RST 都转发到另一侧，关闭时机和类型取自目标站。目标站关闭后客户端再发数据，目标站回 RST，客户端同样收到 RST（Unix 上读取套接字错误判断，其他平台保持原样）；目标站关闭后最多再等 30 秒。
+1. **回落时转发关闭**：目标站的 FIN、RST 与客户端的半关闭、RST 都转发到另一侧，关闭时机和类型取自目标站。一侧的 RST 常被另一方向的写入先取走、读取只见 EOF，补丁按套接字已关闭的状态仍按 RST 处理。目标站关闭后客户端再发数据，目标站回 RST，客户端同样收到 RST：目标站结束后由一个观察协程轮询目标套接字（Linux 读 `tcp_info` 状态，关闭后才读取错误码区分 RST；其他 Unix 读错误码；Windows 识别 WSAECONNRESET 但不镜像），上传方向不等待。目标站关闭后最多再等 30 秒；回落时写给客户端的每次写入须在 2 分钟内有进展，不读数据的客户端不能一直占用连接。
 2. **穿透连接包装**：sing-box 交给 REALITY 的连接（连接跟踪、计数、TCP Fast Open）不直接提供半关闭和 linger，补丁沿 `Upstream()`/`NetConn()` 找到底层套接字。ADR 0104 的补丁没有这一步，在 1.14.4 上半关闭会退化成立即断开、收不到目标站回复。
-3. **模仿握手后记录**：后台按目标、SNI、ALPN 测量目标站在客户端 Finished 之后发送的记录长度，认证连接握手完成后发送等长的空记录，TLS 1.3 客户端忽略它们。测量每 6 小时刷新，失败 5 分钟后重试，尚无结果时不发送。
+3. **模仿握手后记录**：后台按目标、SNI、ALPN 测量目标站在客户端 Finished 之后发送的记录长度，认证连接握手完成后发送等长的空记录，TLS 1.3 客户端忽略它们。测量只取长度、不校验证书（与 XTLS 相同，不依赖本机证书库），每次测量最多 15 秒；每 6 小时刷新，失败 5 分钟后重试，尚无结果时不发送。
 
 ### 不做的
 
@@ -77,8 +77,8 @@ ADR 0104 的补丁修过前四项与最后一项，曾在约 10 台主机上运�
 
 ## 验证
 
-- `go test -race`（utls 包内 `Reality` 测试，含包装连接、目标站 RST、客户端半关闭、FIN 后再发数据），`go vet`（Linux 与 Windows）。
-- 同一 `apply.py` 在两个全新 checkout 上得到相同提交；`build-singbox.sh` 构建 `linux-gnu-amd64`（制品 SHA-256 `baef0735…`），`verify-release-runtime.py` 通过。
+- `go test -race -count=10`（utls 包内 `Reality` 测试，含包装连接、目标站 RST、客户端 RST 被另一方向取走、客户端半关闭、FIN 后再发数据、目标站半关闭后上传不停顿）；撤掉客户端 RST 修复后对应测试失败。`go vet`（Linux、Windows、macOS），FreeBSD 与 arm64 编译通过。独立审阅（并发、泄漏、记录封装、`apply.py` 与替换检查）的意见已处理。
+- 同一 `apply.py` 在两个全新 checkout 上得到相同提交；`build-singbox.sh` 构建 `linux-gnu-amd64`（制品 SHA-256 `1637c1a3…`），`verify-release-runtime.py` 通过。
 - 本机对比真实 itunes.apple.com：上表 8 项探测的关闭类型、时机和收到的字节全部一致；认证连接握手后发送两条 303 字节记录，与目标站相同。
 - sing-box 客户端（Vision）、Mihomo v1.19.33（Vision，带与不带 MLKEM）均能正常使用，20 MB 下载正常。
 

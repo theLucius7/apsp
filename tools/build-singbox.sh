@@ -49,7 +49,7 @@ tar_version=$(tar --version)
 version=1.14.4-apsp.2
 upstream_tag=v1.14.4
 upstream_commit=c005f35300ce76427dc285481ec5695f5b179cd2
-patched_commit=a662fcb06c26551b3d506725cad0082d213fce77
+patched_commit=b8c49498e4ec16c883bc5bc5002c5221a08c3dc5
 # Server build tags, including the statistics API the Agent reads.
 tags=with_quic,with_utls,with_grpc,with_wireguard,with_clash_api,with_v2ray_api,with_acme,with_gvisor,with_cloudflared,with_openvpn,with_openconnect,with_tailscale,with_naive_outbound
 cgo=0

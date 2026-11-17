@@ -24,7 +24,13 @@ def metadata(arch):
         "vcs": "git", "vcs.revision": runtime.REVISION, "vcs.modified": "false",
         "-buildmode": "exe", "-compiler": "gc", "-tags": runtime.TAGS,
     }
-    modules = ["\tdep\t" + "\t".join(line.split()) for line in sorted(runtime.pinned_modules())]
+    modules = []
+    for line in sorted(runtime.pinned_modules()):
+        module, _, replacement = line.partition(" => ")
+        modules.append("\tdep\t" + "\t".join(module.split()))
+        if replacement:
+            # go version -m prints a replaced module as its dep line plus a "=>" line.
+            modules.append("\t=>\t" + replacement + "\t(devel)\t")
     return "runtime: go1.26.8\n" + "\n".join(
         modules + ["\tbuild\t" + k + "=" + v for k, v in settings.items()])
 
@@ -118,6 +124,9 @@ class RuntimeInspectionTests(unittest.TestCase):
             (",with_acme", ""), ("with_acme", "with_acme,with_naive_outbound"),
             ("golang.org/x/crypto\t" + crypto, "golang.org/x/crypto\tv0.0.1"),
             ("\tdep\tgolang.org/x/sys", "\t=>\tgolang.org/x/sys"),
+            # Only the vendored, patched utls may be replaced, and it must be.
+            ("\t=>\t./third_party/utls", "\t=>\t./elsewhere/utls"),
+            ("\n\t=>\t./third_party/utls\t(devel)\t", ""),
         ):
             with self.subTest(changed=changed):
                 # A stale fixture value would make the case pass without testing anything.
