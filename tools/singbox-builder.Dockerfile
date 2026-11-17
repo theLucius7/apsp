@@ -3,7 +3,7 @@
 FROM --platform=linux/amd64 golang:1.26.8-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates git python3 python3-requests binutils coreutils curl xz-utils zstd gnupg make \
+    ca-certificates git python3 python3-requests binutils coreutils curl file unzip xz-utils zstd gnupg make \
     && rm -rf /var/lib/apt/lists/*
 
 COPY tools/build-singbox.sh /usr/local/bin/build-singbox
