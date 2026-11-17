@@ -292,6 +292,11 @@ pub(crate) async fn sync_users(tx: &mut Transaction<'_, Postgres>, users: &[i64]
             .bind(user).bind(node).bind(Uuid::new_v4()).bind(apsp_compiler::stat_name(user,node))
             .bind(apsp_traffic::node_protocol::credential(config.credential_size())).execute(&mut **tx).await?;
     }
+    // Migrated lines get no `accesses`: they accept the bridge's client identity, which
+    // only members receive.
+    let migrated: Vec<i64> = sqlx::query_scalar("SELECT DISTINCT p.user_id FROM singbox_user_policies p JOIN singbox_policy_nodes pn ON pn.group_id=p.group_id JOIN singbox_nexus_runtime_nodes r ON r.node_id=pn.node_id WHERE p.user_id=ANY($1) ORDER BY p.user_id")
+        .bind(users).fetch_all(&mut **tx).await?;
+    crate::user_accounts::enrol_into_bridge(tx, &migrated).await?;
     Ok(())
 }
 

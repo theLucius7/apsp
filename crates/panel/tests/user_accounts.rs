@@ -477,6 +477,135 @@ async fn a_new_profile_never_enrols_a_user_into_a_running_bridge(pool: PgPool) -
     Ok(())
 }
 
+/// A migrated line only accepts the bridge's client identity, so a native user whose
+/// policy groups reach one becomes a member, whichever side of the group changed.
+#[sqlx::test(migrations = "./migrations")]
+async fn a_policy_group_with_migrated_lines_enrols_a_native_user(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = admin(&panel).await?;
+    let server = panel.create_server(&cookie, "Migrated host").await?;
+    let migrated = panel.create_node(&cookie, server, "Migrated line").await?["id"]
+        .as_i64()
+        .context("node")?;
+    let other = panel.create_server(&cookie, "Own host").await?;
+    let own = panel.create_node(&cookie, other, "Own line").await?["id"]
+        .as_i64()
+        .context("node")?;
+    let import = Uuid::new_v4();
+    sqlx::query("INSERT INTO singbox_nexus_imports(id,source_id,digest,counts,imported_at,administrator_id) VALUES($1,'fixture','digest','{}',$2,1)")
+        .bind(import).bind(now_timestamp()).execute(&pool).await?;
+    sqlx::query("INSERT INTO singbox_nexus_node_imports(source_id,digest,infrastructure_digest,exported_at,imported_at,node_count) VALUES('fixture',$1,$1,$2,$2,1)")
+        .bind("0".repeat(64)).bind(now_timestamp()).execute(&pool).await?;
+    let credential = Uuid::new_v4();
+    sqlx::query("INSERT INTO credential_entries(id,name,kind,key_id,nonce,ciphertext,created_at,updated_at) VALUES($1,'fixture','external-api','TEST_ONLY',$2,$3,$4,$4)")
+        .bind(credential).bind(vec![0_u8; 12]).bind(vec![0_u8; 16]).bind(now_timestamp()).execute(&pool).await?;
+    sqlx::query("INSERT INTO singbox_nexus_runtime_hosts(server_id,source_id,credential_id,digest,state,created_at) VALUES($1,'fixture',$2,repeat('c',64),'active',1)")
+        .bind(server).bind(credential).execute(&pool).await?;
+    let inventory: i64 = sqlx::query_scalar("INSERT INTO singbox_nexus_nodes(source_id,legacy_node_id,legacy_machine_id,legacy_host_id,server_id,credential_id,display) VALUES('fixture',1,1,1,$1,$2,'{}') RETURNING id")
+        .bind(server).bind(credential).fetch_one(&pool).await?;
+    sqlx::query("INSERT INTO singbox_nexus_runtime_nodes(inventory_id,node_id,server_id,legacy_group_ids,rate) VALUES($1,$2,$3,'{1}',1)")
+        .bind(inventory).bind(migrated).bind(server).execute(&pool).await?;
+    let package = ok(request(&panel, Method::POST, "/api/access/package-groups", &cookie, json!({"name":"Monthly","monthly_bytes":null,"reset_day":1,"reset_hour":0,"reset_minute":0,"timezone":"UTC","duration_days":30})).await?).await?["id"].as_i64().context("package")?;
+    let group = |name: &str, nodes: Vec<i64>| json!({"name":name,"node_ids":nodes,"chain_ids":[]});
+    let lines = ok(request(
+        &panel,
+        Method::POST,
+        "/api/access/policy-groups",
+        &cookie,
+        group("Lines", vec![migrated, own]),
+    )
+    .await?)
+    .await?["id"]
+        .as_i64()
+        .context("group")?;
+    let mine = ok(request(
+        &panel,
+        Method::POST,
+        "/api/access/policy-groups",
+        &cookie,
+        group("Own", vec![own]),
+    )
+    .await?)
+    .await?["id"]
+        .as_i64()
+        .context("group")?;
+    let mut users = Vec::new();
+    for name in ["Native", "Second"] {
+        let user = panel.create_user(&cookie, name).await?["id"]
+            .as_i64()
+            .context("user")?;
+        ok(request(
+            &panel,
+            Method::POST,
+            &format!("/api/access/users/{user}/package"),
+            &cookie,
+            json!({"package_group_id":package,"request_id":Uuid::new_v4()}),
+        )
+        .await?)
+        .await?;
+        users.push(user);
+    }
+    // Assigned before the bridge ran, so it never had to be translatable.
+    sqlx::query("INSERT INTO singbox_nexus_bridge(import_id,subscription_base,enabled,activated_at) VALUES($1,'https://legacy.example.com/s/',TRUE,$2)")
+        .bind(import).bind(now_timestamp()).execute(&pool).await?;
+    let member = |user: i64| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM singbox_members m JOIN singbox_wallets w USING(user_id) WHERE m.user_id=$1 AND m.state='active')")
+                .bind(user)
+                .fetch_one(&pool)
+                .await
+        }
+    };
+    let (panel_ref, cookie_ref) = (&panel, &cookie);
+    let set = |user: i64, groups: Vec<i64>| async move {
+        request(
+            panel_ref,
+            Method::PUT,
+            &format!("/api/access/users/{user}/policy-groups"),
+            cookie_ref,
+            json!({"group_ids":groups}),
+        )
+        .await
+    };
+    // The bridge cannot translate the package yet: enrolling would stop its exchange.
+    let refused = set(users[0], vec![lines]).await?;
+    assert_eq!(refused.status(), StatusCode::CONFLICT);
+    assert!(refused.text().await?.contains("尚未配置原节点权限映射"));
+    assert!(!member(users[0]).await?);
+    sqlx::query("INSERT INTO singbox_nexus_plan_mappings(import_id,package_group_id,legacy_plan_id,legacy_group_id) VALUES($1,$2,1,1)")
+        .bind(import).bind(package).execute(&pool).await?;
+    // Own lines alone keep the user native.
+    ok(set(users[0], vec![mine]).await?).await?;
+    assert!(!member(users[0]).await?);
+    ok(set(users[0], vec![lines]).await?).await?;
+    assert!(member(users[0]).await?);
+    // Adding a migrated line to a group enrols the members it already has.
+    ok(set(users[1], vec![mine]).await?).await?;
+    assert!(!member(users[1]).await?);
+    ok(request(
+        &panel,
+        Method::PUT,
+        &format!("/api/access/policy-groups/{mine}"),
+        &cookie,
+        group("Own", vec![own, migrated]),
+    )
+    .await?)
+    .await?;
+    assert!(member(users[1]).await?);
+    // The next exchange issues both their client identities.
+    sqlx::query("SELECT singbox_nexus_bridge_exchange(jsonb_build_object('import_id',$1::text,'members','[]'::jsonb,'observed_at',$2::bigint))")
+        .bind(import.to_string()).bind(now_timestamp()).execute(&pool).await?;
+    let identities: Vec<i64> = sqlx::query_scalar(
+        "SELECT user_id FROM singbox_nexus_identities WHERE import_id=$1 ORDER BY user_id",
+    )
+    .bind(import)
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(identities, users);
+    Ok(())
+}
+
 #[sqlx::test(migrations = "./migrations")]
 async fn diagnosis_explains_where_a_migrated_user_gets_their_lines(pool: PgPool) -> Result<()> {
     let panel = TestPanel::start_with_localhost(pool.clone()).await?;
