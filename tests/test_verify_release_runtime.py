@@ -18,11 +18,13 @@ runtime = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runtime)
 
 
-def metadata(arch):
+def metadata(arch, libc=None):
+    musl = libc == "musl"
     settings = {
-        "GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "0", "-trimpath": "true",
+        "GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "1" if musl else "0", "-trimpath": "true",
         "vcs": "git", "vcs.revision": runtime.REVISION, "vcs.modified": "false",
-        "-buildmode": "exe", "-compiler": "gc", "-tags": runtime.TAGS,
+        "-buildmode": "exe", "-compiler": "gc",
+        "-tags": runtime.TAGS.replace("with_purego", "with_musl") if musl else runtime.TAGS,
     }
     modules = []
     for line in sorted(runtime.pinned_modules()):
@@ -42,6 +44,10 @@ def static_elf(metadata_text, headers="LOAD", dynamic="No dynamic section"):
 
 class RuntimeInspectionTests(unittest.TestCase):
     def setUp(self):
+        # GNU archives carry the pinned Cronet library; its real bytes are not part of these fixtures.
+        validate = patch.object(runtime.cronet, "validate")
+        validate.start()
+        self.addCleanup(validate.stop)
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         self.directory = self.root / "sing-box" / runtime.VERSION
@@ -61,6 +67,10 @@ class RuntimeInspectionTests(unittest.TestCase):
             member.size = len(binary) if member_type == tarfile.REGTYPE else 0
             member.linkname = "outside"
             package.addfile(member, io.BytesIO(binary))
+            if libc != "musl":
+                cronet = tarfile.TarInfo("libcronet.so")
+                cronet.size = 4
+                package.addfile(cronet, io.BytesIO(b"\x7fELF"))
             if extra:
                 package.addfile(tarfile.TarInfo("extra"))
         archive = gzip.compress(contents.getvalue(), mtime=0)
@@ -72,12 +82,14 @@ class RuntimeInspectionTests(unittest.TestCase):
         for arch in ("amd64", "arm64"):
             for libc in ("gnu", "musl"):
                 self.archive(arch, libc=libc)
-                for headers, dynamic, valid in (("LOAD", "No dynamic section", True),
-                                                 ("INTERP", "No dynamic section", False),
-                                                 ("LOAD", "(NEEDED) libc.so.6", False)):
+                # Musl must be fully static; GNU links the pinned Cronet library dynamically.
+                for headers, dynamic, static in (("LOAD", "No dynamic section", True),
+                                                  ("INTERP", "No dynamic section", False),
+                                                  ("LOAD", "(NEEDED) libc.so.6", False)):
+                    valid = static or libc == "gnu"
                     with self.subTest(arch=arch, libc=libc, headers=headers, dynamic=dynamic), \
                             patch.object(runtime.subprocess, "check_output",
-                                         side_effect=static_elf(metadata(arch), headers, dynamic)) as reader:
+                                         side_effect=static_elf(metadata(arch, libc), headers, dynamic)) as reader:
                         if valid:
                             runtime.verify(self.root, arch, libc=libc)
                         else:

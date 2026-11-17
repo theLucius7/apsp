@@ -233,9 +233,15 @@ jobs:
         with:
           platforms: arm64
       - name: Install the pinned runtime build prerequisites
+        env:
+          RUNTIME_TARGET: ${{ matrix.arch }}-${{ matrix.libc }}
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ca-certificates git python3 binutils coreutils qemu-user-static
+          # The GNU runtime is dynamically linked (purego loads Cronet), so emulation needs an aarch64 glibc.
+          if [ "$RUNTIME_TARGET" = arm64-gnu ]; then
+            sudo apt-get install -y --no-install-recommends libc6-arm64-cross
+          fi
       - name: Build the legacy service kernel for the selected libc
         env:
           RUNTIME_ARCH: ${{ matrix.arch }}
@@ -254,10 +260,13 @@ jobs:
       - name: Verify native configuration, traffic counters, and reload generation
         env:
           RUNTIME_ARCH: ${{ matrix.arch }}
+          RUNTIME_LIBC: ${{ matrix.libc }}
         run: |
           binary="$RUNNER_TEMP/runtime/sing-box"
           if [ "$RUNTIME_ARCH" = arm64 ]; then
-            printf '#!/bin/sh\nexec qemu-aarch64-static "%s" "$@"\n' "$binary" > "$RUNNER_TEMP/runtime/run-runtime"
+            sysroot=
+            if [ "$RUNTIME_LIBC" = gnu ]; then sysroot="-L /usr/aarch64-linux-gnu"; fi
+            printf '#!/bin/sh\nexec qemu-aarch64-static %s "%s" "$@"\n' "$sysroot" "$binary" > "$RUNNER_TEMP/runtime/run-runtime"
             chmod 755 "$RUNNER_TEMP/runtime/run-runtime"
             binary="$RUNNER_TEMP/runtime/run-runtime"
           fi
