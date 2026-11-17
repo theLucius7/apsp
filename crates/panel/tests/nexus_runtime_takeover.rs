@@ -220,7 +220,7 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     release_fixture::write(
         &panel.state.config.data_dir,
         "sing-box",
-        "1.14.4-apsp.1",
+        "1.14.4-apsp.2",
         "sing-box",
         &archive,
         binary,
@@ -656,7 +656,7 @@ async fn device_limits_need_session_control_and_are_shared_with_legacy_nodes(
     release_fixture::write(
         &panel.state.config.data_dir,
         "sing-box",
-        "1.14.4-apsp.1",
+        "1.14.4-apsp.2",
         "sing-box",
         &archive,
         binary,
@@ -1042,7 +1042,7 @@ async fn native_users_are_served_on_a_running_host_by_apsp(pool: PgPool) -> Resu
     release_fixture::write(
         &panel.state.config.data_dir,
         "sing-box",
-        "1.14.4-apsp.1",
+        "1.14.4-apsp.2",
         "sing-box",
         &archive,
         binary,

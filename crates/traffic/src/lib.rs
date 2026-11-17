@@ -7,7 +7,7 @@
 //! through `users`, which access answers.
 
 /// The signed stable runtime with APSP per-user budgets (ADR 0124).
-pub const RUNTIME_VERSION: &str = "1.14.4-apsp.1";
+pub const RUNTIME_VERSION: &str = "1.14.4-apsp.2";
 
 mod activity;
 pub mod agent;
