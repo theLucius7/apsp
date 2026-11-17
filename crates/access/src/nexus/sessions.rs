@@ -82,7 +82,9 @@ pub async fn ingest(
     .bind(now - RETAIN_SECS)
     .execute(&mut *tx)
     .await?;
-    // One statement for the whole snapshot; a repeated address counts once.
+    // One statement for the whole snapshot; a repeated address counts once. Only
+    // members' addresses are kept: the bridge hands them to the legacy panel, which knows
+    // no one else (ADR 0138).
     let mut rows = BTreeMap::<(&str, String), (i64, i64)>::new();
     for (name, addresses) in &report.principals {
         let Some((user, node)) = principal(name).filter(|(_, node)| nodes.contains(node)) else {
@@ -95,7 +97,7 @@ pub async fn ingest(
     if !rows.is_empty() {
         let (names, addresses): (Vec<&str>, Vec<String>) = rows.keys().cloned().unzip();
         let (users, nodes): (Vec<i64>, Vec<i64>) = rows.values().copied().unzip();
-        sqlx::query("INSERT INTO singbox_runtime_session_addresses(server_id,stat_name,user_id,node_id,address,observed_at) SELECT $1,stat_name,user_id,node_id,address,$6 FROM UNNEST($2::text[],$3::bigint[],$4::bigint[],$5::text[]) AS t(stat_name,user_id,node_id,address) ON CONFLICT(server_id,stat_name,address) DO UPDATE SET observed_at=EXCLUDED.observed_at")
+        sqlx::query("INSERT INTO singbox_runtime_session_addresses(server_id,stat_name,user_id,node_id,address,observed_at) SELECT $1,stat_name,user_id,node_id,address,$6 FROM UNNEST($2::text[],$3::bigint[],$4::bigint[],$5::text[]) AS t(stat_name,user_id,node_id,address) WHERE EXISTS(SELECT 1 FROM singbox_nexus_identities i WHERE i.user_id=t.user_id) ON CONFLICT(server_id,stat_name,address) DO UPDATE SET observed_at=EXCLUDED.observed_at")
             .bind(server).bind(&names).bind(&users).bind(&nodes).bind(&addresses).bind(now)
             .execute(&mut *tx).await?;
     }

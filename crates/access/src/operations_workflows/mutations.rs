@@ -81,6 +81,13 @@ pub(super) async fn execute(
         }
         Operation::RotateNodeCredentials { user_id, node_ids } => {
             let servers = crate::proxy_users::lock_user_servers(tx, *user_id).await?;
+            // A user the bridge has since taken on keeps their original identity on preserved
+            // lines; credentials there are no longer granted and go instead (ADR 0138).
+            sqlx::query(&format!("DELETE FROM accesses a WHERE a.user_id=$1 AND a.node_id=ANY($2) AND singbox_legacy_served(a.user_id) AND {} AND NOT EXISTS(SELECT 1 FROM singbox_desired_accesses d WHERE d.user_id=a.user_id AND d.node_id=a.node_id)", apsp_traffic::nexus_nodes::runtime_line_sql("a.node_id")))
+                .bind(user_id)
+                .bind(node_ids)
+                .execute(&mut **tx)
+                .await?;
             let configs: Vec<(i64, Value)> =
                 sqlx::query_as("SELECT id,protocol_config FROM nodes WHERE id=ANY($1) ORDER BY id")
                     .bind(node_ids)

@@ -225,6 +225,25 @@ pub(super) async fn view(
         .await?
         .into_iter()
         .collect();
+    // Users the bridge does not serve use a line apsp runs with the ordinary credential
+    // published for them (ADR 0138); the original software knows only members.
+    let legacy_served: bool = sqlx::query_scalar("SELECT singbox_legacy_served($1)")
+        .bind(user)
+        .fetch_one(&mut *tx)
+        .await?;
+    let ordinary: BTreeSet<i64> = if legacy_served {
+        BTreeSet::new()
+    } else {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT node_id FROM singbox_eligible_accesses($1) WHERE user_id=$2",
+        )
+        .bind(now)
+        .bind(user)
+        .fetch_all(&mut *tx)
+        .await?
+        .into_iter()
+        .collect()
+    };
     let mappings = crate::nexus::bridge::plan_mappings(&mut tx).await?;
     let rows = sqlx::query("SELECT n.legacy_node_id,n.server_id,n.display,(r.node_id IS NOT NULL AND h.state='active') AS taken_over,r.node_id AS runtime_node FROM singbox_nexus_nodes n LEFT JOIN singbox_nexus_runtime_nodes r ON r.inventory_id=n.id LEFT JOIN singbox_nexus_runtime_hosts h ON h.server_id=r.server_id WHERE COALESCE((n.display->>'visible')::BOOLEAN,FALSE) ORDER BY COALESCE((n.display->>'sort_order')::BIGINT,0),n.legacy_node_id LIMIT 2000")
         .fetch_all(&mut *tx).await?;
@@ -404,9 +423,18 @@ pub(super) async fn view(
                 );
             }
         }
-        let access = allowed
-            && original.is_some_and(|group| groups.contains(&group))
-            && (!line.taken_over || line.runtime_node.is_some_and(|node| served.contains(&node)));
+        let access = if legacy_served {
+            allowed
+                && original.is_some_and(|group| groups.contains(&group))
+                && (!line.taken_over
+                    || line.runtime_node.is_some_and(|node| served.contains(&node)))
+        } else {
+            allowed
+                && line.taken_over
+                && line
+                    .runtime_node
+                    .is_some_and(|node| ordinary.contains(&node))
+        };
         let enabled = line.display["enabled"] == true;
         let host = hosts.get(&line.server_id);
         let (online, checked_at, source) = if let Some(host) = host.filter(|_| line.taken_over) {

@@ -24,7 +24,8 @@ pub struct Policy {
     pub member_count: i64,
     /// The original Nexus permission group this group stands for (ADR 0115).
     pub legacy_group_id: Option<i64>,
-    /// Migrated lines in the group; they keep members' original client identities.
+    /// Migrated lines in the group; bridge members keep their original client identities
+    /// there, everyone else gets ordinary credentials (ADR 0138).
     pub migrated_node_ids: Vec<i64>,
     /// Lines of the original group that the old panel still runs and lists.
     pub legacy_lines: i64,
@@ -267,7 +268,9 @@ pub async fn user_set(
 }
 
 /// Materialize credentials for the union of the user's policy groups. Removing one
-/// overlapping group preserves credentials; removing the last one deletes them.
+/// overlapping group preserves credentials; removing the last one deletes them. On a
+/// migrated line only users the bridge does not serve get credentials; its members keep
+/// their original client identity there (`singbox_desired_accesses`, ADR 0138).
 pub(crate) async fn sync_users(tx: &mut Transaction<'_, Postgres>, users: &[i64]) -> ApiResult<()> {
     if users.is_empty() {
         return Ok(());
@@ -292,30 +295,37 @@ pub(crate) async fn sync_users(tx: &mut Transaction<'_, Postgres>, users: &[i64]
             .bind(user).bind(node).bind(Uuid::new_v4()).bind(apsp_compiler::stat_name(user,node))
             .bind(apsp_traffic::node_protocol::credential(config.credential_size())).execute(&mut **tx).await?;
     }
-    // Migrated lines get no `accesses`: they accept the bridge's client identity, which
-    // only members receive.
-    let migrated: Vec<i64> = sqlx::query_scalar("SELECT DISTINCT p.user_id FROM singbox_user_policies p JOIN singbox_policy_nodes pn ON pn.group_id=p.group_id JOIN singbox_nexus_runtime_nodes r ON r.node_id=pn.node_id WHERE p.user_id=ANY($1) ORDER BY p.user_id")
-        .bind(users).fetch_all(&mut **tx).await?;
-    crate::user_accounts::enrol_into_bridge(tx, &migrated).await?;
     Ok(())
 }
 
-/// Removed nodes leave every policy group.
+/// The users of the groups that hold any of the nodes.
+async fn holders(tx: &mut Transaction<'_, Postgres>, nodes: &[i64]) -> ApiResult<Vec<i64>> {
+    Ok(sqlx::query_scalar("SELECT DISTINCT up.user_id FROM singbox_user_policies up JOIN singbox_policy_nodes pn ON pn.group_id=up.group_id WHERE pn.node_id=ANY($1) ORDER BY up.user_id")
+        .bind(nodes)
+        .fetch_all(&mut **tx)
+        .await?)
+}
+
+/// Removed nodes leave every policy group, and their users' credentials on them go.
 pub async fn leave_groups(tx: &mut Transaction<'_, Postgres>, nodes: &[i64]) -> ApiResult<()> {
+    let users = holders(tx, nodes).await?;
     sqlx::query("DELETE FROM singbox_policy_nodes WHERE node_id=ANY($1)")
         .bind(nodes)
         .execute(&mut **tx)
         .await?;
-    Ok(())
+    sync_users(tx, &users).await
 }
 
 /// A taken-over Nexus line belongs to the policy groups standing for its original groups
 /// (ADR 0115). Only those groups follow the source; groups an administrator made keep it.
+/// Users who gain or lose the line get or lose their ordinary credentials on it, unless the
+/// bridge serves them with their original identity (ADR 0138).
 pub async fn follow_legacy_groups(
     tx: &mut Transaction<'_, Postgres>,
     node: i64,
     legacy_groups: &[i64],
 ) -> ApiResult<()> {
+    let before = holders(tx, &[node]).await?;
     sqlx::query("DELETE FROM singbox_policy_nodes p USING singbox_policy_groups g WHERE g.id=p.group_id AND p.node_id=$1 AND g.legacy_group_id IS NOT NULL AND NOT g.legacy_group_id=ANY($2)")
         .bind(node)
         .bind(legacy_groups)
@@ -326,5 +336,9 @@ pub async fn follow_legacy_groups(
         .bind(legacy_groups)
         .execute(&mut **tx)
         .await?;
-    Ok(())
+    let users: BTreeSet<i64> = before
+        .into_iter()
+        .chain(holders(tx, &[node]).await?)
+        .collect();
+    sync_users(tx, &users.into_iter().collect::<Vec<_>>()).await
 }

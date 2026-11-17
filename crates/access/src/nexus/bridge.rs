@@ -69,7 +69,9 @@ pub async fn plan_mappings(connection: &mut PgConnection) -> sqlx::Result<Vec<(i
 
 /// Queues the members' usage of a batch for the bridge, multiplied by each preserved
 /// line's rate. Ingest has already stored the raw records in this transaction; the rate is
-/// fixed with each delivery so every retry reports the same amount.
+/// fixed with each delivery so every retry reports the same amount. Only users with an
+/// original identity are delivered; other users' usage on those lines stays in apsp, which
+/// charges the same rate itself (ADR 0138).
 pub async fn enqueue_usage(
     tx: &mut Transaction<'_, Postgres>,
     server: i64,
@@ -83,7 +85,7 @@ pub async fn enqueue_usage(
     if nodes.is_empty() {
         return Ok(());
     }
-    sqlx::query("INSERT INTO singbox_nexus_usage_deliveries(server_id,epoch,seq,stat_name,user_id,uplink,downlink,rate,period_start,period_end) SELECT u.server_id,u.epoch,u.seq,u.stat_name,u.user_id,u.uplink,u.downlink,r.rate::numeric,u.period_start,u.period_end FROM usage_records u JOIN unnest($4::bigint[],$5::text[]) AS r(node_id,rate) ON r.node_id=u.node_id WHERE u.server_id=$1 AND u.epoch=$2 AND u.seq=$3::text::numeric ON CONFLICT(server_id,epoch,seq,stat_name) DO NOTHING")
+    sqlx::query("INSERT INTO singbox_nexus_usage_deliveries(server_id,epoch,seq,stat_name,user_id,uplink,downlink,rate,period_start,period_end) SELECT u.server_id,u.epoch,u.seq,u.stat_name,u.user_id,u.uplink,u.downlink,r.rate::numeric,u.period_start,u.period_end FROM usage_records u JOIN unnest($4::bigint[],$5::text[]) AS r(node_id,rate) ON r.node_id=u.node_id WHERE u.server_id=$1 AND u.epoch=$2 AND u.seq=$3::text::numeric AND EXISTS(SELECT 1 FROM singbox_nexus_identities i WHERE i.user_id=u.user_id) ON CONFLICT(server_id,epoch,seq,stat_name) DO NOTHING")
         .bind(server)
         .bind(batch.epoch)
         .bind(batch.seq.to_string())

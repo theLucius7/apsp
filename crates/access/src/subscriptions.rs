@@ -205,7 +205,9 @@ async fn load(tx: &mut Transaction<'_, Postgres>, user_id: i64) -> ApiResult<Sna
         current.insert(node_id, (row.get("uuid"), row.get("credential")));
     }
     let eligible_nodes = current.len();
-    let snapshots: Vec<(i64,i64,serde_json::Value)> = sqlx::query_as("SELECT d.server_id,d.rev,COALESCE(p.source_json,d.source_json) FROM deployments d LEFT JOIN singbox_deployment_projections p ON p.server_id=d.server_id AND p.rev=d.rev JOIN server_module_status m ON m.server_id=d.server_id AND m.module=d.module AND m.applied_rev=d.rev JOIN servers s ON s.id=d.server_id WHERE m.module='singbox' AND m.healthy AND s.deleted_at IS NULL AND EXISTS (SELECT 1 FROM nodes n WHERE n.server_id=s.id AND n.id=ANY($1)) ORDER BY d.server_id")
+    // A paused migrated host runs its original software again, which knows only the
+    // members' original identities (ADR 0138).
+    let snapshots: Vec<(i64,i64,serde_json::Value)> = sqlx::query_as(&format!("SELECT d.server_id,d.rev,COALESCE(p.source_json,d.source_json) FROM deployments d LEFT JOIN singbox_deployment_projections p ON p.server_id=d.server_id AND p.rev=d.rev JOIN server_module_status m ON m.server_id=d.server_id AND m.module=d.module AND m.applied_rev=d.rev JOIN servers s ON s.id=d.server_id WHERE m.module='singbox' AND m.healthy AND s.deleted_at IS NULL AND EXISTS (SELECT 1 FROM nodes n WHERE n.server_id=s.id AND n.id=ANY($1)) AND NOT {} ORDER BY d.server_id", apsp_traffic::nexus_nodes::held_host_sql("s.id")))
         .bind(current.keys().copied().collect::<Vec<_>>()).fetch_all(&mut **tx).await?;
     let mut nodes = Vec::new();
     for (server, revision, snapshot) in snapshots {
@@ -322,8 +324,8 @@ fn filename(user_id: i64, format: &str) -> String {
 
 /// Uplink and downlink of one user inside `(after, until]`. This is the split twin of the SQL
 /// function `singbox_usage_window`: whole UTC days come from the daily rollup and at most one
-/// partial day at each end from the ledger, so both sums add up to the cycle usage that quota
-/// enforcement reads. Keep the two in step.
+/// partial day at each end from the ledger, so both sums add up to the raw cycle usage that
+/// `singbox_usage_charged` weights for quota enforcement. Keep the three in step.
 const CYCLE_USAGE: &str = "WITH bounds AS (SELECT (ceil(($2::bigint+1)::numeric/86400)*86400)::bigint AS lo,(floor(($3::bigint+1)::numeric/86400)*86400)::bigint AS hi) \
     SELECT COALESCE(SUM(p.uplink),0)::text AS uplink,COALESCE(SUM(p.downlink),0)::text AS downlink FROM (\
     SELECT d.uplink,d.downlink FROM singbox_usage_daily d,bounds b WHERE d.user_id=$1 AND d.day>=b.lo AND d.day<b.hi \
@@ -340,11 +342,11 @@ fn amount(row: &sqlx::postgres::PgRow, column: &str) -> ApiResult<u128> {
 }
 
 /// Splits the usage that quota enforcement sees between upload and download. A manual quota
-/// reset credits part of the raw ledger, so the raw split is scaled down to keep
-/// upload + download equal to the enforced usage.
+/// reset credits part of the raw ledger and a preserved line's rate weights it (ADR 0138), so
+/// the raw split is scaled to keep upload + download equal to the enforced usage.
 fn enforced_split(used: u128, upload: u128, download: u128) -> (u128, u128) {
     let raw = upload.saturating_add(download);
-    if used >= raw {
+    if used == raw || raw == 0 {
         return (upload, download);
     }
     match used.checked_mul(upload) {
@@ -620,12 +622,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn enforced_usage_keeps_the_raw_split_until_a_credit_reduces_it() {
+    fn enforced_usage_keeps_the_raw_proportions_of_upload_and_download() {
         assert_eq!(enforced_split(100, 40, 60), (40, 60));
         // Half of the raw usage was credited: the split shrinks proportionally.
         assert_eq!(enforced_split(50, 40, 60), (20, 30));
         assert_eq!(enforced_split(0, 40, 60), (0, 0));
         assert_eq!(enforced_split(0, 0, 0), (0, 0));
+        // A line charged at 2.5 times its traffic grows the split the same way.
+        assert_eq!(enforced_split(250, 40, 60), (100, 150));
         // Values too large to scale fall back to the raw split instead of overflowing.
         let big = 1u128 << 100;
         assert_eq!(enforced_split(big, big, big), (big, big));

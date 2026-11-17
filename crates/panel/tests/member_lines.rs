@@ -104,6 +104,9 @@ async fn members_see_lines_status_and_measured_network_without_private_details(
         .execute(&pool)
         .await?;
     let user: i64 = sqlx::query_scalar("INSERT INTO users(name,subscription_token) VALUES('TEST_ONLY member','TEST_ONLY token') RETURNING id").fetch_one(&pool).await?;
+    // A migrated member: the bridge serves them with their original identity (ADR 0138).
+    sqlx::query("INSERT INTO singbox_nexus_identities(user_id,import_id,legacy_uuid,original_state,used_upload,used_download) VALUES($1,$2,$3,'active',0,0)")
+        .bind(user).bind(import).bind(Uuid::new_v4()).execute(&pool).await?;
     let mut groups = Vec::new();
     for (name, legacy_group) in [("TEST_ONLY 标准", 1_i64), ("TEST_ONLY 高级", 2)] {
         let group: i64 = sqlx::query_scalar("INSERT INTO singbox_package_groups(name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,duration_days) VALUES($1,1000000,1,0,0,'UTC',31) RETURNING id").bind(name).fetch_one(&pool).await?;

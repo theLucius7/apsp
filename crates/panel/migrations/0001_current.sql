@@ -101,7 +101,7 @@ CREATE FUNCTION public.singbox_entitlements(at_s bigint) RETURNS TABLE(user_id b
         LEFT JOIN singbox_nexus_metering meter ON meter.user_id=u.id AND bridge.singleton
         LEFT JOIN LATERAL singbox_cycle_bounds(at_s,a.reset_day,a.reset_hour,a.reset_minute,a.timezone) native ON TRUE
         LEFT JOIN LATERAL (SELECT CASE WHEN meter.user_id IS NOT NULL THEN COALESCE(meter.last_reset_at,0) ELSE native.cycle_start END AS cycle_start,CASE WHEN meter.user_id IS NOT NULL THEN COALESCE(meter.next_reset_at,253402300799) ELSE native.next_reset END AS next_reset) b ON TRUE
-        LEFT JOIN LATERAL (SELECT CASE WHEN meter.user_id IS NOT NULL THEN meter.upload+meter.download+GREATEST(COALESCE(singbox_usage_window(u.id,b.cycle_start,b.next_reset),0)-COALESCE((SELECT SUM(d.uplink+d.downlink) FROM singbox_nexus_usage_deliveries d WHERE d.user_id=u.id AND d.period_end>b.cycle_start AND d.period_end<=b.next_reset),0),0) ELSE singbox_usage_window(u.id,b.cycle_start,b.next_reset) END AS used) t ON TRUE
+        LEFT JOIN LATERAL (SELECT CASE WHEN meter.user_id IS NOT NULL THEN meter.upload+meter.download+GREATEST(COALESCE(singbox_usage_window(u.id,b.cycle_start,b.next_reset),0)-COALESCE((SELECT SUM(d.uplink+d.downlink) FROM singbox_nexus_usage_deliveries d WHERE d.user_id=u.id AND d.period_end>b.cycle_start AND d.period_end<=b.next_reset),0),0) WHEN u.id IN (SELECT served.user_id FROM singbox_legacy_served_users() served) THEN singbox_usage_window(u.id,b.cycle_start,b.next_reset) ELSE singbox_usage_charged(u.id,b.cycle_start,b.next_reset) END AS used) t ON TRUE
         LEFT JOIN LATERAL (SELECT SUM(q.bytes) AS credit FROM singbox_quota_credits q WHERE q.user_id=u.id AND q.cycle_start=b.cycle_start AND q.next_reset=b.next_reset) c ON TRUE
         WHERE u.deleted_at IS NULL
     )
@@ -133,6 +133,26 @@ BEGIN
     END IF;
     RETURN found;
 END $$;
+
+CREATE FUNCTION public.singbox_legacy_served(member bigint) RETURNS boolean
+    LANGUAGE sql STABLE
+    AS $$
+    -- Whether singbox_legacy_served_users holds this user.
+    SELECT EXISTS(SELECT 1 FROM singbox_legacy_served_users() s WHERE s.user_id=member)
+$$;
+
+CREATE FUNCTION public.singbox_legacy_served_users() RETURNS TABLE(user_id bigint)
+    LANGUAGE sql STABLE
+    AS $$
+    -- The users the compatibility bridge serves on preserved lines with their original client
+    -- identity: they have one, or the bridge issues it at its next exchange (the same members
+    -- singbox_nexus_bridge_exchange enrols). Everyone else holds ordinary credentials on those
+    -- lines (ADR 0138). A set that queries join once, not a test per row.
+    SELECT i.user_id FROM singbox_nexus_identities i
+    UNION
+    SELECT m.user_id FROM singbox_members m
+    WHERE m.state<>'staged' AND EXISTS(SELECT 1 FROM singbox_nexus_bridge b WHERE b.enabled)
+$$;
 
 CREATE FUNCTION public.singbox_member_legacy_group(member bigint) RETURNS bigint
     LANGUAGE sql STABLE
@@ -274,10 +294,14 @@ CREATE FUNCTION public.singbox_nexus_guard_access() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    IF EXISTS(SELECT 1 FROM singbox_nexus_runtime_nodes WHERE node_id IN (NEW.node_id,OLD.node_id)) THEN
-        RAISE EXCEPTION 'Nexus runtime lines keep the original client identities; grant them through policy groups';
+    -- Users the bridge serves keep their original client identity on preserved lines.
+    -- Removal is always allowed, so a user who becomes one loses ordinary credentials.
+    IF TG_OP='DELETE' THEN RETURN OLD; END IF;
+    IF EXISTS(SELECT 1 FROM singbox_nexus_runtime_nodes WHERE node_id=NEW.node_id)
+        AND singbox_legacy_served(NEW.user_id) THEN
+        RAISE EXCEPTION 'Nexus runtime lines keep the original client identities of bridge members; grant them through policy groups';
     END IF;
-    IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+    RETURN NEW;
 END $$;
 
 CREATE FUNCTION public.singbox_nexus_guard_node() RETURNS trigger
@@ -359,6 +383,57 @@ CREATE FUNCTION public.singbox_reject_subscription_snapshot_change() RETURNS tri
 BEGIN
     RAISE EXCEPTION 'immutable subscription snapshot' USING ERRCODE='55000';
 END;
+$$;
+
+CREATE FUNCTION public.singbox_runtime_credentials() RETURNS TABLE(server_id bigint, node_id bigint, user_id bigint, uuid uuid)
+    LANGUAGE sql STABLE
+    AS $$
+    -- The ordinary credentials on preserved lines that singbox_desired_accesses grants, for the
+    -- hosts' membership digest (ADR 0138). It starts from the credentials on those lines, which
+    -- are few, and checks only their grants.
+    SELECT r.server_id,a.node_id,a.user_id,a.uuid FROM accesses a
+    JOIN singbox_nexus_runtime_nodes r ON r.node_id=a.node_id
+    JOIN nodes n ON n.id=a.node_id AND n.enabled AND n.deleted_at IS NULL
+    JOIN servers s ON s.id=n.server_id AND s.deleted_at IS NULL
+    JOIN users u ON u.id=a.user_id AND u.deleted_at IS NULL
+    WHERE NOT EXISTS(SELECT 1 FROM singbox_legacy_served_users() served WHERE served.user_id=a.user_id)
+        AND EXISTS(SELECT 1 FROM singbox_user_policies up JOIN singbox_policy_nodes pn ON pn.group_id=up.group_id
+            WHERE up.user_id=a.user_id AND pn.node_id=a.node_id)
+$$;
+
+CREATE FUNCTION public.singbox_usage_charged(p_user bigint, p_after bigint, p_until bigint) RETURNS numeric
+    LANGUAGE sql STABLE STRICT
+    AS $$
+    -- The quota usage inside (p_after, p_until] of a user the bridge does not serve:
+    -- singbox_usage_window with each line's traffic weighted by its rate. A preserved line keeps
+    -- its original node's rate, also once retired; every other line counts once (ADR 0138).
+    -- Whole bytes, rounded down.
+    WITH bounds AS (
+        SELECT (ceil((p_after + 1)::NUMERIC / 86400) * 86400)::BIGINT AS lo,
+            (floor((p_until + 1)::NUMERIC / 86400) * 86400)::BIGINT AS hi
+    )
+    SELECT floor(CASE
+        WHEN p_until <= p_after THEN 0::NUMERIC
+        WHEN p_after < 0 THEN COALESCE((SELECT SUM((r.uplink + r.downlink) * COALESCE(x.rate, y.rate, 1)) FROM usage_records r
+            LEFT JOIN singbox_nexus_runtime_nodes x ON x.node_id = r.node_id
+            LEFT JOIN singbox_nexus_runtime_retired_rates y ON y.node_id = r.node_id
+            WHERE r.user_id = p_user AND r.period_end > p_after AND r.period_end <= p_until), 0)
+        ELSE COALESCE((SELECT SUM((d.uplink + d.downlink) * COALESCE(x.rate, y.rate, 1)) FROM singbox_usage_daily d
+                LEFT JOIN singbox_nexus_runtime_nodes x ON x.node_id = d.node_id
+                LEFT JOIN singbox_nexus_runtime_retired_rates y ON y.node_id = d.node_id
+                WHERE d.user_id = p_user AND d.day >= b.lo AND d.day < b.hi), 0)
+            + COALESCE((SELECT SUM((r.uplink + r.downlink) * COALESCE(x.rate, y.rate, 1)) FROM usage_records r
+                LEFT JOIN singbox_nexus_runtime_nodes x ON x.node_id = r.node_id
+                LEFT JOIN singbox_nexus_runtime_retired_rates y ON y.node_id = r.node_id
+                WHERE r.user_id = p_user AND r.period_end > p_after
+                    AND r.period_end < LEAST(b.lo, p_until + 1)), 0)
+            + COALESCE((SELECT SUM((r.uplink + r.downlink) * COALESCE(x.rate, y.rate, 1)) FROM usage_records r
+                LEFT JOIN singbox_nexus_runtime_nodes x ON x.node_id = r.node_id
+                LEFT JOIN singbox_nexus_runtime_retired_rates y ON y.node_id = r.node_id
+                WHERE r.user_id = p_user AND r.period_end >= GREATEST(b.lo, b.hi)
+                    AND r.period_end <= p_until), 0)
+        END)
+    FROM bounds b
 $$;
 
 CREATE FUNCTION public.singbox_usage_daily_apply() RETURNS trigger
@@ -2366,6 +2441,12 @@ CREATE TABLE public.singbox_nexus_runtime_nodes (
     CONSTRAINT singbox_nexus_runtime_nodes_rate_check CHECK ((rate >= (0)::numeric))
 );
 
+CREATE TABLE public.singbox_nexus_runtime_retired_rates (
+    node_id bigint NOT NULL,
+    rate numeric(12,6) NOT NULL,
+    CONSTRAINT singbox_nexus_runtime_retired_rates_rate_check CHECK ((rate >= (0)::numeric))
+);
+
 CREATE TABLE public.singbox_ordered_chain_hops (
     chain_id bigint NOT NULL,
     generation bigint NOT NULL,
@@ -2430,13 +2511,13 @@ CREATE VIEW public.singbox_desired_accesses AS
     granted.node_id
    FROM ((((( SELECT u_1.user_id,
             n_1.node_id
-           FROM (public.singbox_user_policies u_1
+           FROM ((public.singbox_user_policies u_1
              JOIN public.singbox_policy_nodes n_1 ON ((n_1.group_id = u_1.group_id)))
+             LEFT JOIN public.singbox_nexus_runtime_nodes r ON ((r.node_id = n_1.node_id)))
           WHERE ((NOT (EXISTS ( SELECT 1
                    FROM public.singbox_chains c_1
-                  WHERE ((c_1.path_kind = 'ordered'::text) AND (c_1.entry_node_id = n_1.node_id) AND ((c_1.deleted_at IS NULL) OR (c_1.phase <> 'retired'::text)))))) AND (NOT (EXISTS ( SELECT 1
-                   FROM public.singbox_nexus_runtime_nodes r
-                  WHERE (r.node_id = n_1.node_id)))))
+                  WHERE ((c_1.path_kind = 'ordered'::text) AND (c_1.entry_node_id = n_1.node_id) AND ((c_1.deleted_at IS NULL) OR (c_1.phase <> 'retired'::text)))))) AND ((r.node_id IS NULL) OR (NOT (u_1.user_id IN ( SELECT served.user_id
+                   FROM public.singbox_legacy_served_users() served(user_id))))))
         UNION
          SELECT u_1.user_id,
             c_1.entry_node_id
@@ -4301,6 +4382,9 @@ ALTER TABLE ONLY public.singbox_nexus_runtime_nodes
 ALTER TABLE ONLY public.singbox_nexus_runtime_nodes
     ADD CONSTRAINT singbox_nexus_runtime_nodes_pkey PRIMARY KEY (inventory_id);
 
+ALTER TABLE ONLY public.singbox_nexus_runtime_retired_rates
+    ADD CONSTRAINT singbox_nexus_runtime_retired_rates_pkey PRIMARY KEY (node_id);
+
 ALTER TABLE ONLY public.singbox_nexus_usage_deliveries
     ADD CONSTRAINT singbox_nexus_usage_deliverie_server_id_epoch_seq_stat_name_key UNIQUE (server_id, epoch, seq, stat_name);
 
@@ -5396,6 +5480,9 @@ ALTER TABLE ONLY public.singbox_nexus_runtime_nodes
 
 ALTER TABLE ONLY public.singbox_nexus_runtime_nodes
     ADD CONSTRAINT singbox_nexus_runtime_nodes_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.singbox_nexus_runtime_hosts(server_id);
+
+ALTER TABLE ONLY public.singbox_nexus_runtime_retired_rates
+    ADD CONSTRAINT singbox_nexus_runtime_retired_rates_node_id_fkey FOREIGN KEY (node_id) REFERENCES public.nodes(id);
 
 ALTER TABLE ONLY public.singbox_nexus_usage_deliveries
     ADD CONSTRAINT singbox_nexus_usage_deliveries_server_id_epoch_seq_fkey FOREIGN KEY (server_id, epoch, seq) REFERENCES public.usage_batches(server_id, epoch, seq);

@@ -171,8 +171,7 @@ pub(crate) async fn require_compatible_package(
 }
 /// The sign-in profile of a proxy user. While the compatibility bridge runs, a new
 /// profile would also enrol the user into it and move their subscription to the
-/// retained renderer, so only migrated and invited users, and users whose policy
-/// groups reach a migrated line ([`enrol_into_bridge`]), get one then.
+/// retained renderer, so only migrated and invited users get one then.
 async fn ensure_profile(tx: &mut Tx<'_>, id: i64) -> ApiResult<()> {
     crate::proxy_users::lock_user(tx, id).await?;
     let exists: bool =
@@ -190,32 +189,6 @@ async fn ensure_profile(tx: &mut Tx<'_>, id: i64) -> ApiResult<()> {
         ));
     }
     create_profile(tx, id, None, None).await
-}
-/// Makes members of the given users while the compatibility bridge runs. A migrated line
-/// only accepts the client identity the bridge issues to its members at its next
-/// exchange (ADR 0115), so a user whose policy groups reach one must be a member to use
-/// it; their subscription then comes from the retained renderer, like an invitee's. A
-/// package the bridge cannot translate is refused, as for any member: it would stop
-/// every later exchange.
-pub(crate) async fn enrol_into_bridge(tx: &mut Tx<'_>, users: &[i64]) -> ApiResult<()> {
-    if users.is_empty() || !crate::nexus::bridge::enabled(tx).await? {
-        return Ok(());
-    }
-    let pending: Vec<(i64, String, Option<i64>)> = sqlx::query_as("SELECT u.id,u.name,a.package_group_id FROM users u LEFT JOIN singbox_user_packages up ON up.user_id=u.id LEFT JOIN singbox_package_assignments a ON a.id=up.assignment_id WHERE u.id=ANY($1) AND u.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM singbox_members m WHERE m.user_id=u.id) ORDER BY u.id")
-        .bind(users)
-        .fetch_all(&mut **tx)
-        .await?;
-    for (id, name, package) in pending {
-        if let Some(package) = package
-            && crate::nexus::bridge::package_unmapped(tx, package).await?
-        {
-            return Err(conflict(&format!(
-                "用户「{name}」的套餐尚未配置原节点权限映射，不能使用迁移线路"
-            )));
-        }
-        create_profile(tx, id, None, None).await?;
-    }
-    Ok(())
 }
 /// Creates the profile row; the bridge still reads a wallet row for every member.
 async fn create_profile(

@@ -3,7 +3,7 @@ mod business_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use apsp_access::usage;
 use apsp_compiler::{Node, ProtocolConfig, SsMethod};
 use apsp_governance::control_center::credentials;
@@ -110,6 +110,50 @@ async fn bridge_devices(pool: &PgPool, limits: Value, legacy: Value) -> Result<V
             .fetch_one(pool)
             .await?,
     )
+}
+
+/// A user created in apsp, with the fixture's package, in the policy groups given by
+/// their original group ids; the bridge does not serve them (ADR 0138).
+async fn native_user(panel: &TestPanel, cookie: &str, groups: &[i64]) -> Result<(i64, String)> {
+    let pool = &panel.state.pool;
+    let token = format!("TEST_ONLY native token {}", Uuid::new_v4());
+    let user: i64 = sqlx::query_scalar(
+        "INSERT INTO users(name,subscription_token) VALUES('TEST_ONLY native',$1) RETURNING id",
+    )
+    .bind(&token)
+    .fetch_one(pool)
+    .await?;
+    let assignment:i64=sqlx::query_scalar("INSERT INTO singbox_package_assignments(user_id,request_id,package_group_id,package_name,monthly_bytes,reset_day,reset_hour,reset_minute,timezone,starts_at,expires_at) SELECT $1,$2,id,'TEST_ONLY',1000000,1,0,0,'UTC',0,253402300799 FROM singbox_package_groups ORDER BY id LIMIT 1 RETURNING id").bind(user).bind(Uuid::new_v4()).fetch_one(pool).await?;
+    sqlx::query("INSERT INTO singbox_user_packages VALUES($1,$2)")
+        .bind(user)
+        .bind(assignment)
+        .execute(pool)
+        .await?;
+    let groups: Vec<i64> =
+        sqlx::query_scalar("SELECT singbox_legacy_policy_group(g) FROM unnest($1::bigint[]) g")
+            .bind(groups)
+            .fetch_all(pool)
+            .await?;
+    ok(panel
+        .admin(
+            Method::PUT,
+            &format!("/api/access/users/{user}/policy-groups"),
+            cookie,
+            Some(json!({"group_ids":groups})),
+        )
+        .await?)
+    .await?;
+    Ok((user, token))
+}
+
+/// Forces the host's publication now, after the membership check set its debounce.
+async fn publish(panel: &TestPanel) -> Result<()> {
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
+    sqlx::query("INSERT INTO runtime_publications(server_id,dirty_at) SELECT id,0 FROM servers ON CONFLICT(server_id) DO UPDATE SET dirty_at=0")
+        .execute(&panel.state.pool)
+        .await?;
+    apsp_traffic::publisher::publish_due(&panel.state, None).await?;
+    Ok(())
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -423,6 +467,14 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     };
     let established = digest(pool.clone()).await?;
     assert!(established.is_some());
+    // A host only members use keeps the digest the code before ADR 0138 stored, so a
+    // deployment of it republishes nothing.
+    let members_only: Value = sqlx::query_scalar("WITH e AS MATERIALIZED (SELECT user_id FROM singbox_entitlements($1) WHERE allowed) SELECT COALESCE((SELECT jsonb_agg(jsonb_build_array(m.node_id,m.user_id,m.legacy_uuid) ORDER BY m.node_id,m.user_id) FROM (SELECT DISTINCT r.node_id,i.user_id,i.legacy_uuid FROM singbox_nexus_runtime_nodes r JOIN singbox_policy_nodes pn ON pn.node_id=r.node_id JOIN singbox_user_policies up ON up.group_id=pn.group_id JOIN e ON e.user_id=up.user_id JOIN singbox_nexus_identities i ON i.user_id=e.user_id WHERE r.server_id=$2) m),'[]'::jsonb)")
+        .bind(now_timestamp()).bind(server).fetch_one(&pool).await?;
+    assert_eq!(
+        established,
+        Some(apsp_governance::auth::hash_token(&members_only.to_string()))
+    );
     let allowed = apsp_access::entitlements::refresh(&pool, now_timestamp()).await?;
     assert!(allowed.contains(&user));
     sqlx::query("UPDATE runtime_publications SET dirty_at=NULL")
@@ -455,6 +507,11 @@ async fn preserved_runtime_requires_explicit_handoff_and_replays_usage_once(
     assert_eq!(
         config["inbounds"][0]["users"][0]["name"],
         format!("u{user}_n{native}")
+    );
+    assert_eq!(
+        config["inbounds"][0]["users"].as_array().map(Vec::len),
+        Some(1),
+        "a host only members use gets their original identities and nothing else"
     );
     let batch = UsageBatch {
         epoch: Uuid::new_v4(),
@@ -883,6 +940,14 @@ async fn unactivated_preparation_can_be_discarded_and_policy_groups_keep_identit
             .await?,
         0
     );
+    // A user the bridge does not serve holds an ordinary credential on the prepared line
+    // (ADR 0138); it goes with the line.
+    let (native_user, _) = native_user(&panel, &cookie, &[1]).await?;
+    let held: Vec<i64> = sqlx::query_scalar("SELECT node_id FROM accesses WHERE user_id=$1")
+        .bind(native_user)
+        .fetch_all(&pool)
+        .await?;
+    assert_eq!(held, vec![native]);
     assert_eq!(
         post(
             &panel,
@@ -903,9 +968,9 @@ async fn unactivated_preparation_can_be_discarded_and_policy_groups_keep_identit
     .await?)
     .await?;
     assert_eq!(discarded["discarded_nodes"], 1);
-    let remaining: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT COUNT(*) FROM nodes),(SELECT COUNT(*) FROM singbox_nexus_runtime_hosts),(SELECT COUNT(*) FROM credential_entries WHERE name LIKE 'Nexus runtime %' AND enabled)")
+    let remaining: (i64, i64, i64, i64) = sqlx::query_as("SELECT (SELECT COUNT(*) FROM nodes),(SELECT COUNT(*) FROM singbox_nexus_runtime_hosts),(SELECT COUNT(*) FROM credential_entries WHERE name LIKE 'Nexus runtime %' AND enabled),(SELECT COUNT(*) FROM accesses)")
         .fetch_one(&pool).await?;
-    assert_eq!(remaining, (0, 0, 0));
+    assert_eq!(remaining, (0, 0, 0, 0));
     // The same reviewed snapshot can be prepared again after the discard.
     let again = ok(post(
         &panel,
@@ -931,6 +996,335 @@ async fn unactivated_preparation_can_be_discarded_and_policy_groups_keep_identit
         .status(),
         StatusCode::CONFLICT
     );
+    Ok(())
+}
+
+/// A user the bridge does not serve uses a running migrated line with ordinary
+/// credentials and apsp's own subscription; the member next to them keeps their
+/// original identity and the renderer (ADR 0138).
+#[sqlx::test(migrations = "./migrations")]
+async fn native_users_are_served_on_a_running_host_by_apsp(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start_with_localhost(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, payload, member) = fixture(&panel).await?;
+    let preview = ok(post(&panel, &cookie, "/preview", json!({"payload":payload})).await?).await?;
+    ok(post(
+        &panel,
+        &cookie,
+        "/prepare",
+        json!({"payload":payload,"expected_digest":preview["digest"]}),
+    )
+    .await?)
+    .await?;
+    let line: i64 = sqlx::query_scalar("SELECT node_id FROM singbox_nexus_runtime_nodes")
+        .fetch_one(&pool)
+        .await?;
+    let (native, token) = native_user(&panel, &cookie, &[1]).await?;
+    let (uuid, credential): (Uuid, String) =
+        sqlx::query_as("SELECT uuid,credential FROM accesses WHERE user_id=$1 AND node_id=$2")
+            .bind(native)
+            .bind(line)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(
+        STANDARD.decode(&credential)?.len(),
+        16,
+        "an SS 2022 user key"
+    );
+    let members: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accesses WHERE user_id=$1")
+        .bind(member)
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(members, 0, "the member keeps their original identity");
+    // Hand the host over, as covered above.
+    let binary = b"TEST_ONLY signed runtime";
+    let archive = release_fixture::archive("sing-box", binary)?;
+    release_fixture::write(
+        &panel.state.config.data_dir,
+        "sing-box",
+        "1.14.4-apsp.1",
+        "sing-box",
+        &archive,
+        binary,
+        "tar.gz",
+    )?;
+    sqlx::query("UPDATE servers SET device_public_key='TEST_ONLY',last_seen=$2,static_info=$3,capabilities=$4 WHERE id=$1").bind(server).bind(now_timestamp())
+        .bind(json!({"arch":"amd64","os":"linux","libc":"gnu","agent_version":"0.3.4"})).bind(json!(["singbox",apsp_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY])).execute(&pool).await?;
+    bridge_devices(&pool, json!({}), json!({})).await?;
+    let candidate = ok(post(
+        &panel,
+        &cookie,
+        &format!("/{server}/candidate"),
+        Value::Null,
+    )
+    .await?)
+    .await?;
+    let body = json!({"expected_digest":preview["digest"],"config_sha256":candidate["config_sha256"],"backup_sha256":"a".repeat(64),"stopped_at":now_timestamp(),"stopped_services":["TEST_ONLY-old.service"],"ignore_stagger":true,"ignore_reachability":true});
+    ok(post(
+        &panel,
+        &cookie,
+        &format!("/{server}/activate"),
+        body.clone(),
+    )
+    .await?)
+    .await?;
+    publish(&panel).await?;
+    let latest = |pool: PgPool| async move {
+        sqlx::query_as::<_, (i64, String, Value)>(
+            "SELECT rev,bundle,source_json FROM deployments WHERE server_id=$1 ORDER BY rev DESC LIMIT 1",
+        )
+        .bind(server)
+        .fetch_one(&pool)
+        .await
+    };
+    let users = |bundle: &str| -> Result<Vec<(String, String)>> {
+        let bundle: apsp_protocol::Bundle = serde_json::from_str(bundle)?;
+        let config: Value = serde_json::from_str(&bundle.files["config.json"])?;
+        Ok(config["inbounds"][0]["users"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|user| {
+                (
+                    user["name"].as_str().unwrap_or_default().to_owned(),
+                    user["password"].as_str().unwrap_or_default().to_owned(),
+                )
+            })
+            .collect())
+    };
+    let (revision, bundle, source) = latest(pool.clone()).await?;
+    assert_eq!(
+        users(&bundle)?,
+        vec![
+            (
+                format!("u{member}_n{line}"),
+                STANDARD.encode(b"12345678-1234-42")
+            ),
+            (format!("u{native}_n{line}"), credential.clone()),
+        ]
+    );
+    let accounting: Vec<String> = source["accounting_users"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|user| user["stat_name"].as_str().map(str::to_owned))
+        .collect();
+    assert_eq!(
+        accounting,
+        vec![format!("u{member}_n{line}"), format!("u{native}_n{line}")]
+    );
+    // apsp's subscription source lists the line with the ordinary credential only.
+    assert_eq!(source["public_nodes"][0]["id"], line);
+    assert_eq!(
+        source["public_nodes"][0]["users"],
+        json!([{"user_id":native,"uuid":uuid,"credential":credential}])
+    );
+    // Both users' traffic is accepted; only the member's goes to the bridge.
+    let batch = UsageBatch {
+        epoch: Uuid::new_v4(),
+        seq: 1,
+        period_start: now_timestamp() - 10,
+        period_end: now_timestamp(),
+        records: vec![
+            UsageRecord {
+                stat_name: format!("u{member}_n{line}"),
+                uplink: 10,
+                downlink: 20,
+            },
+            UsageRecord {
+                stat_name: format!("u{native}_n{line}"),
+                uplink: 30,
+                downlink: 40,
+            },
+        ],
+    };
+    usage::ingest(&panel.state, server, batch).await?;
+    let delivered: Vec<i64> =
+        sqlx::query_scalar("SELECT user_id FROM singbox_nexus_usage_deliveries")
+            .fetch_all(&pool)
+            .await?;
+    assert_eq!(delivered, vec![member]);
+    let used: String =
+        sqlx::query_scalar("SELECT used_bytes FROM singbox_entitlements($1) WHERE user_id=$2")
+            .bind(now_timestamp())
+            .bind(native)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(
+        used, "175",
+        "the line's rate of 2.5 applies to apsp's own users too"
+    );
+    // Session addresses of users the legacy panel does not know stay out of the bridge.
+    let report = apsp_protocol::RuntimeSessionReport {
+        module: "singbox".into(),
+        observed_at: now_timestamp(),
+        principals: std::collections::BTreeMap::from([
+            (format!("u{member}_n{line}"), vec!["192.0.2.1".parse()?]),
+            (format!("u{native}_n{line}"), vec!["192.0.2.2".parse()?]),
+        ]),
+    };
+    apsp_access::nexus::sessions::ingest(&panel.state, server, report).await?;
+    let kept: Vec<i64> =
+        sqlx::query_scalar("SELECT user_id FROM singbox_runtime_session_addresses")
+            .fetch_all(&pool)
+            .await?;
+    assert_eq!(kept, vec![member]);
+    // Once applied, apsp's own subscription lists the line for the native user; the
+    // member's panel subscription stays empty, the renderer serves them.
+    sqlx::query(
+        "UPDATE server_module_status SET applied_rev=target_rev,healthy=TRUE WHERE server_id=$1",
+    )
+    .bind(server)
+    .execute(&pool)
+    .await?;
+    let subscription = |token: String| {
+        let panel = &panel;
+        async move {
+            panel
+                .client
+                .get(format!("{}/sub/{token}?format=singbox", panel.base))
+                .send()
+                .await
+        }
+    };
+    let served: Value = subscription(token.clone())
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let outbound = |profile: &Value| -> Option<Value> {
+        profile["outbounds"]
+            .as_array()?
+            .iter()
+            .find(|outbound| outbound["tag"] == format!("node-{line}"))
+            .cloned()
+    };
+    // The usage header splits the charged usage (175) in the raw proportions (30:40).
+    let headers = subscription(token.clone()).await?.error_for_status()?;
+    assert_eq!(
+        headers.headers()["subscription-userinfo"],
+        "upload=75; download=100; total=1000000"
+    );
+    let listed = outbound(&served).context("the line is listed")?;
+    assert_eq!(listed["server"], "node.example.invalid");
+    assert!(
+        listed["password"]
+            .as_str()
+            .is_some_and(|password| password.ends_with(&format!(":{credential}")))
+    );
+    let member_token: String =
+        sqlx::query_scalar("SELECT subscription_token FROM users WHERE id=$1")
+            .bind(member)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(
+        subscription(member_token).await?.status(),
+        StatusCode::CONFLICT
+    );
+    // A moved public endpoint reaches the subscription without a new bundle.
+    let inventory: i64 = sqlx::query_scalar("SELECT inventory_id FROM singbox_nexus_runtime_nodes")
+        .fetch_one(&pool)
+        .await?;
+    ok(panel
+        .admin(
+            Method::PATCH,
+            &format!("/api/traffic/nexus-nodes/{inventory}/public-endpoint"),
+            &cookie,
+            Some(json!({"public_host":"moved.example.invalid","public_port":443})),
+        )
+        .await?)
+    .await?;
+    assert!(
+        sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT dirty_at FROM runtime_publications WHERE server_id=$1"
+        )
+        .bind(server)
+        .fetch_one(&pool)
+        .await?
+        .is_some()
+    );
+    publish(&panel).await?;
+    assert_eq!(latest(pool.clone()).await?.0, revision);
+    let moved: Value = subscription(token.clone())
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let listed = outbound(&moved).context("the line is listed")?;
+    assert_eq!(
+        (&listed["server"], &listed["server_port"]),
+        (&json!("moved.example.invalid"), &json!(443))
+    );
+    // Leaving the line's groups without touching credentials still changes the host's
+    // membership, which republishes it without the native user.
+    let digest = |pool: PgPool| async move {
+        sqlx::query_scalar::<_, Option<String>>(
+            "SELECT membership_digest FROM singbox_nexus_runtime_hosts WHERE server_id=$1",
+        )
+        .bind(server)
+        .fetch_one(&pool)
+        .await
+    };
+    let established = digest(pool.clone()).await?;
+    sqlx::query(
+        "UPDATE singbox_user_policies SET group_id=singbox_legacy_policy_group(2) WHERE user_id=$1",
+    )
+    .bind(native)
+    .execute(&pool)
+    .await?;
+    publish(&panel).await?;
+    assert_ne!(digest(pool.clone()).await?, established);
+    let (_, bundle, _) = latest(pool.clone()).await?;
+    assert_eq!(users(&bundle)?.len(), 1);
+    sqlx::query(
+        "UPDATE singbox_user_policies SET group_id=singbox_legacy_policy_group(1) WHERE user_id=$1",
+    )
+    .bind(native)
+    .execute(&pool)
+    .await?;
+    publish(&panel).await?;
+    assert_eq!(digest(pool.clone()).await?, established);
+    sqlx::query(
+        "UPDATE server_module_status SET applied_rev=target_rev,healthy=TRUE WHERE server_id=$1",
+    )
+    .bind(server)
+    .execute(&pool)
+    .await?;
+    assert!(subscription(token.clone()).await?.status().is_success());
+    // A paused host runs its original software, which knows only the member.
+    ok(post(&panel, &cookie, &format!("/{server}/pause"), body).await?).await?;
+    assert_eq!(subscription(token).await?.status(), StatusCode::CONFLICT);
+    // An original group the source adds to the line brings its native users' credentials;
+    // removing it again takes them away.
+    let (other, _) = native_user(&panel, &cookie, &[7]).await?;
+    let held = |pool: PgPool| async move {
+        sqlx::query_scalar::<_, i64>("SELECT node_id FROM accesses WHERE user_id=$1")
+            .bind(other)
+            .fetch_all(&pool)
+            .await
+    };
+    assert_eq!(held(pool.clone()).await?, Vec::<i64>::new());
+    let groups = format!("/api/traffic/nexus-nodes/{inventory}/groups");
+    ok(panel
+        .admin(
+            Method::PATCH,
+            &groups,
+            &cookie,
+            Some(json!({"groups":[{"id":1,"name":"Fixture"},{"id":7,"name":"Added"}]})),
+        )
+        .await?)
+    .await?;
+    assert_eq!(held(pool.clone()).await?, vec![line]);
+    ok(panel
+        .admin(
+            Method::PATCH,
+            &groups,
+            &cookie,
+            Some(json!({"groups":[{"id":1,"name":"Fixture"}]})),
+        )
+        .await?)
+    .await?;
+    assert_eq!(held(pool.clone()).await?, Vec::<i64>::new());
     Ok(())
 }
 
@@ -1006,6 +1400,15 @@ async fn retired_line_leaves_the_running_host_and_the_bridge(pool: PgPool) -> Re
     assert_eq!(published_ports(&pool, server).await?, vec![23456, 23457]);
     let managed = bridge_devices(&pool, json!({}), json!({})).await?;
     assert_eq!(managed["managed"].as_array().map(Vec::len), Some(2));
+    // A user the bridge does not serve holds ordinary credentials on both lines (ADR 0138).
+    let (native_user, _) = native_user(&panel, &cookie, &[1]).await?;
+    let held = |pool: PgPool| async move {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM accesses WHERE user_id=$1")
+            .bind(native_user)
+            .fetch_one(&pool)
+            .await
+    };
+    assert_eq!(held(pool.clone()).await?, 2);
 
     let inventory = |legacy: i64| {
         sqlx::query_scalar::<_, i64>("SELECT id FROM singbox_nexus_nodes WHERE legacy_node_id=$1")
@@ -1019,6 +1422,63 @@ async fn retired_line_leaves_the_running_host_and_the_bridge(pool: PgPool) -> Re
             .bind(retired)
             .fetch_one(&pool)
             .await?;
+    let kept: i64 =
+        sqlx::query_scalar("SELECT node_id FROM singbox_nexus_runtime_nodes WHERE inventory_id=$1")
+            .bind(first)
+            .fetch_one(&pool)
+            .await?;
+    // The native user used the line at a rate of 2.5 and had their quota reset. The credit is
+    // in charged bytes, so the line's rate keeps applying after it is retired (ADR 0138).
+    sqlx::query("UPDATE singbox_nexus_runtime_nodes SET rate=2.5 WHERE node_id=$1")
+        .bind(native)
+        .execute(&pool)
+        .await?;
+    let traffic = |node: i64, seq: i64, bytes: i64| {
+        let pool = pool.clone();
+        async move {
+            let now = now_timestamp();
+            sqlx::query("INSERT INTO usage_batches(server_id,epoch,seq,payload_hash) VALUES($1,$2,$3,repeat('a',64)) ON CONFLICT DO NOTHING")
+                .bind(server).bind(Uuid::nil()).bind(seq).execute(&pool).await?;
+            sqlx::query("INSERT INTO usage_records(server_id,epoch,seq,stat_name,user_id,node_id,uplink,downlink,period_start,period_end) VALUES($1,$2,$3,$4,$5,$6,$7,0,$8,$9)")
+                .bind(server).bind(Uuid::nil()).bind(seq).bind(format!("u{native_user}_n{node}")).bind(native_user).bind(node).bind(bytes).bind(now - 10).bind(now)
+                .execute(&pool).await?;
+            anyhow::Ok(())
+        }
+    };
+    let used = |pool: PgPool| async move {
+        sqlx::query_scalar::<_, String>(
+            "SELECT used_bytes FROM singbox_entitlements($1) WHERE user_id=$2",
+        )
+        .bind(now_timestamp())
+        .bind(native_user)
+        .fetch_one(&pool)
+        .await
+    };
+    traffic(native, 1, 30).await?;
+    assert_eq!(used(pool.clone()).await?, "75");
+    let preview = ok(panel
+        .admin(
+            Method::POST,
+            "/api/access/operations/preview",
+            &cookie,
+            Some(json!({"operation":"reset_quota","user_id":native_user})),
+        )
+        .await?)
+    .await?;
+    let receipt = ok(panel
+        .admin(
+            Method::POST,
+            &format!(
+                "/api/access/operations/{}/apply",
+                preview["id"].as_str().context("preview id")?
+            ),
+            &cookie,
+            Some(json!({"confirm":true})),
+        )
+        .await?)
+    .await?;
+    assert_eq!(receipt["credit_bytes"], "75");
+    assert_eq!(used(pool.clone()).await?, "0");
     // A mistyped id must not remove the other line.
     assert_eq!(
         panel
@@ -1055,6 +1515,15 @@ async fn retired_line_leaves_the_running_host_and_the_bridge(pool: PgPool) -> Re
     );
     assert!(state.3.is_some(), "the native row is retired, not deleted");
     assert!(state.6.is_some(), "the running host must be republished");
+    assert_eq!(
+        held(pool.clone()).await?,
+        1,
+        "the retired line's credential goes"
+    );
+    // New traffic on the remaining line (rate 2.5) counts in full: the reset is not undone
+    // and no quota is gained.
+    traffic(kept, 2, 10).await?;
+    assert_eq!(used(pool.clone()).await?, "25");
     // The generic write path stays closed after the bypass.
     assert!(
         sqlx::query("UPDATE nodes SET port=23458 WHERE server_id=$1")

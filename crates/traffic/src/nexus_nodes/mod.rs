@@ -4,6 +4,20 @@ mod runtime;
 mod runtime_model;
 pub mod runtime_publish;
 pub use runtime_publish::runtime_rates;
+
+/// SQL that is true while the server named by `server` is a migrated host whose original
+/// software runs instead of apsp's (prepared or paused): it serves only the bridge members'
+/// original identities, not ordinary credentials (ADR 0138).
+pub fn held_host_sql(server: &str) -> String {
+    format!(
+        "EXISTS(SELECT 1 FROM singbox_nexus_runtime_hosts h WHERE h.server_id={server} AND h.state<>'active')"
+    )
+}
+
+/// SQL that is true when the node named by `node` is a preserved line of a migrated host.
+pub fn runtime_line_sql(node: &str) -> String {
+    format!("EXISTS(SELECT 1 FROM singbox_nexus_runtime_nodes r WHERE r.node_id={node})")
+}
 pub mod topology;
 
 use crate::{
@@ -65,6 +79,7 @@ fn valid_public_host(host: &str) -> bool {
 /// moved, for example a tunnel origin whose clients enter at the edge on 443.
 /// Only the catalog and client endpoint change: the listener, keys and client
 /// identities stay preserved, so a port-forward in front of the host keeps working.
+/// A running host is republished so apsp's own subscription follows the move.
 async fn public_endpoint(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -77,12 +92,21 @@ async fn public_endpoint(
         return Err(ApiError::BadRequest("公网地址或端口无效".into()));
     }
     let mut tx = state.pool.begin().await?;
-    let before: Value =
-        sqlx::query_scalar("SELECT display FROM singbox_nexus_nodes WHERE id=$1 FOR UPDATE")
+    crate::business::lock_publication(&mut tx).await?;
+    let server: Option<i64> =
+        sqlx::query_scalar("SELECT server_id FROM singbox_nexus_nodes WHERE id=$1")
             .bind(id)
             .fetch_optional(&mut *tx)
             .await?
             .ok_or(ApiError::NotFound)?;
+    if let Some(server) = server {
+        crate::servers::lock(&mut tx, server).await?;
+    }
+    let before: Value =
+        sqlx::query_scalar("SELECT display FROM singbox_nexus_nodes WHERE id=$1 FOR UPDATE")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
     let port = input.public_port.to_string();
     sqlx::query(
         "UPDATE singbox_nexus_nodes SET display=display||jsonb_build_object('public_host',$2::text,'public_port',$3::text) WHERE id=$1",
@@ -107,6 +131,14 @@ async fn public_endpoint(
     sqlx::query("SELECT set_config('apsp.nexus_runtime_write','',TRUE)")
         .execute(&mut *tx)
         .await?;
+    // apsp's own subscription lists a running line from the published catalog (ADR 0138).
+    let running: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_nexus_runtime_nodes r JOIN singbox_nexus_runtime_hosts h ON h.server_id=r.server_id WHERE r.inventory_id=$1 AND h.state='active')")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if let (Some(server), true) = (server, running) {
+        crate::business::mark_dirty(&mut tx, &[server]).await?;
+    }
     audit::record(
         &mut *tx,
         audit::Entry {
@@ -283,7 +315,14 @@ async fn retire(
                 "这是该主机接管的最后一条线路；整台主机停用请暂停接管".into(),
             ));
         }
+        // Users the bridge does not serve hold ordinary credentials on the line (ADR 0138).
+        crate::users::remove_node_accesses(&mut tx, *node).await?;
         sqlx::query("SELECT set_config('apsp.nexus_runtime_write','yes',TRUE)")
+            .execute(&mut *tx)
+            .await?;
+        // Usage already recorded on the line keeps being charged at its rate (ADR 0138).
+        sqlx::query("INSERT INTO singbox_nexus_runtime_retired_rates(node_id,rate) SELECT node_id,rate FROM singbox_nexus_runtime_nodes WHERE inventory_id=$1 ON CONFLICT(node_id) DO UPDATE SET rate=EXCLUDED.rate")
+            .bind(id)
             .execute(&mut *tx)
             .await?;
         sqlx::query("DELETE FROM singbox_nexus_runtime_nodes WHERE inventory_id=$1")

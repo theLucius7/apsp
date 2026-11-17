@@ -612,6 +612,11 @@ async fn discard(
     .bind(server)
     .fetch_all(&mut *tx)
     .await?;
+    // Users the bridge does not serve may already hold ordinary credentials on the
+    // prepared lines (ADR 0138); they go with the lines.
+    for node in &nodes {
+        crate::users::remove_node_accesses(&mut tx, *node).await?;
+    }
     crate::users::leave_policy_groups(&mut tx, &nodes).await?;
     sqlx::query("DELETE FROM nodes WHERE id=ANY($1)")
         .bind(&nodes)

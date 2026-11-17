@@ -1,6 +1,18 @@
 # 执行进度
 
-## 2026-11-17：自建用户加入含迁移线路的策略组时收编进兼容通道
+## 2026-11-17：迁移线路为策略组里的每位成员服务（根本修复，PR）
+
+- 用户要求：在 171 的应急修复之后，“从根本上修复这个问题”。改数据库基线，走 PR。决定 D1–D5 由编排者给定，见 [ADR 0138](docs/adr/0138-native-users-on-migrated-lines.md) 与 `docs/open-questions.md` 同日条目。
+- 完成项：
+  - 基线：新表 `singbox_nexus_runtime_retired_rates`（下线线路的倍率）；新函数 `singbox_legacy_served_users`（兼容通道服务的用户集合：有原身份，或通道运行时状态不为 `staged` 的成员）与 `singbox_legacy_served`（问单个用户）、`singbox_usage_charged`（按线路倍率计的周期用量，下线线路照旧按原倍率）、`singbox_runtime_credentials`（从迁移线路上的凭据出发，供成员摘要）；`singbox_desired_accesses` 只对兼容通道服务的用户排除迁移线路（集合连接，不逐行调用函数）；`singbox_nexus_guard_access` 只拒绝为这些用户写凭据、删除放行；`singbox_entitlements` 中兼容通道不服务的用户按倍率计已用量，其他人算法不变。接入脚本 `scripts/baseline-adoption-native-lines-20261117.sql`（`edd39c0a…`/`ab219b8e…` → `e96786fb…`/`17b172b9…`，一张空表加定义，不改行）。
+  - 流量服务：运行时发布在原身份之后加上普通用户的凭据并写进记账名单；部署的 `public_nodes` 由 `nodes` 行生成、只带普通凭据，并写订阅投影；配置没变时也刷新投影；成员摘要含普通凭据（没有普通用户的主机摘要不变）；公网地址变更让运行中的主机重新发布；线路下线时记下它的倍率，下线与撤销准备先删除线路上的凭据；`nexus_nodes::held_host_sql`。
+  - 服务权益：去掉 `enrol_into_bridge` 及其调用；`follow_legacy_groups`、`leave_groups` 对受影响的用户重新落实授权；投递给兼容通道的流量只含有原身份的用户（与以前相同），设备会话地址只记有原身份的用户；订阅不列暂停接管主机的线路，诊断把它们标为不生效；门户对普通用户按其可用凭据与主机是否运行判断线路可用；订阅头按计费后的已用量拆分上下行；换套餐预览对兼容通道不服务的用户按倍率计；轮换凭据时删除不再授权的迁移线路凭据。
+  - 界面与文档：策略组编辑框对原权限组的说明改写；ADR 0138（新）、ADR 0115 补充改写、ADR 0113 兼容期限制一句改写、`open-questions.md` 条目改写、`database-baseline.md`、`singbox-groups.md`。
+- 验证结果：本地，2026-11-17（按审阅意见修改后重跑）。`cargo fmt --all --check` 通过；`apsp-access`、`apsp-traffic`、`apsp-panel` 的 `cargo clippy --all-targets -D warnings` 通过；边界检查 257 条已知越界、无新增，核心边界与路由表（505 条）通过。28 个面板集成目标（accounting、business、deployment_preflight、expense_subscriptions、external_node_access、member_lines、modern_protocols、nexus_node_inventory、nexus_runtime_takeover、node_catalog、node_settings、operations_reconciliation、ordered_paths、ordered_subscription_sources、proxy_resources、retirement、runtime_enablement、runtime_operations、schema_baseline、singbox_groups、statistics、subscription_hosts、subscription_preview、subscription_reset、sui_controls、usage_rollup、user_accounts、user_limits）161 个通过、2 个忽略；`apsp-access` 库测试 28 个、`apsp-traffic` 库测试 65 个通过。新测试：`user_accounts::native_users_get_ordinary_credentials_on_migrated_lines`（自建用户在迁移线路上拿凭据、成员与待签发原身份的成员不拿；守卫拒绝写入、允许删除；按倍率 2.5 与 0.333 计额度、原始量不变；诊断与门户在主机暂停时显示不可用；取得原身份后改回原算法、凭据不再生效，轮换时删除而不失败，下次落实授权时删除）、`nexus_runtime_takeover::native_users_are_served_on_a_running_host_by_apsp`（运行时配置同时含原身份与普通凭据、记账名单、`public_nodes` 只带普通凭据、流量只投递有原身份的用户、会话地址只记成员、apsp 订阅列出线路而成员的面板订阅仍为 409、订阅头按倍率拆分 `upload=75; download=100`、公网地址变更不出新版本但订阅跟随、退出组改变成员摘要并重新发布、暂停后订阅不再列出、原组变化经节点分组接口授予与收回凭据）；只有成员的主机的成员摘要等于改前的算法、配置只含原身份；线路下线的测试加上自建用户的凭据、倍率 2.5 下的额度重置与下线后照旧计费；撤销准备的测试加上自建用户的凭据；`member_lines` 的成员夹具补上原身份。性能（测试库，生产规模造数，`EXPLAIN ANALYZE` 九次中位数，改前/第一版/现在）：成员摘要 1.7/12.1/2.5 ms，期望授权视图 0.6/4.8/0.9 ms，权益 2.2/2.1/2.1 ms；第一版与现在的成员名单、期望授权逐项相同。`singbox_eligible_accesses` 的改写按真实调用语句（发布器、迁移主机发布、订阅；0/38/600 条普通凭据）比较后撤回，保留原定义（ADR 0138 的表）。演练：(a) 旧镜像（`apsp-panel:local`）在空库初始化出 `edd39c0a…`/`ab219b8e…`，执行脚本后为 `e96786fb…`/`17b172b9…`，与新二进制空库初始化相同，新二进制能启动，重复执行被拒绝；(b) 生产结构副本（只读 `pg_dump --schema-only` 加两张基线表的行，隔离网络）上新二进制执行前拒绝启动、执行后启动，后台报错与旧镜像在同一副本上相同；(c) 部署器备份目录本会话无权读取，改在生产库只读核对：期望授权新旧都是 0 行，`accesses` 0 行，17 台运行中主机的成员名单新旧逐字节相同，40 位用户中 39 位按原计量、没有暂时缺计量的成员，唯一兼容通道不服务的用户（169）计费后的已用量与原始量相同。
+- 已知问题：管理员新建的用户订阅由 apsp 生成，受邀账号（成员）仍由原系统生成；暂停接管的主机不为普通用户服务；在用线路改倍率会重算本周期已用量；扩展预览的配置摘要不含普通用户在新线路上的凭据（提交时才生成）。生产数据副本（部署器备份）上的演练本会话没有执行（读取备份目录被拒绝），改为生产库只读核对。
+- 下一步：编排者合并部署；部署后只读核对 17 台主机没有重新发布、`apsp_schema_baseline` 为 `17b172b9…`。
+
+## 2026-11-17：自建用户加入含迁移线路的策略组时收编进兼容通道（已被上一条取代）
 
 - 用户要求：“检查 apsp 运行的情况，2438895633 这个用户分类了策略组但是不能用，检查原因并修复”。
 - 原因：用户 171（2438895633）是管理员 11-16 新建的，套餐 UwU，策略组「原权限组 · 00」。生产 29 条线路全部是迁移线路，运行时只下发有原身份（`singbox_nexus_identities.legacy_uuid`）的用户；原身份由兼容通道发给有成员资料的用户，而兼容期内管理员新建的用户按 ADR 0113 不建成员资料。所以他在组里却一条线路都没有：11-16 12:01 起 30 次订阅拉取都是 0 个节点（`unavailable`）。受邀的 168、170 有成员资料，同组可用。
@@ -12,6 +24,7 @@
 - 验证结果：本地，2026-11-17；`cargo fmt --all --check` 通过；新测试 `user_accounts::a_policy_group_with_migrated_lines_enrols_a_native_user`（套餐未映射时拒绝、只含自建线路不收编、改用户的组与改组里的线路都收编、交换随后签发两人的原身份）通过，去掉调用后失败；相关的 9 个面板集成目标（business、external_node_access、member_lines、nexus_runtime_takeover、operations_reconciliation、proxy_resources、singbox_groups、subscription_hosts、user_accounts）71 个测试全部通过；`apsp-access`、`apsp-panel` 的 `cargo clippy --all-targets -D warnings` 通过；边界检查 257 条已知越界、无新增。
 - 已知问题：收编后订阅由原系统生成，面板的 `/sub/{token}` 对他与其他迁移用户一样不可用（个人订阅地址转发）；控制台的订阅预览对这类用户显示 0 个受管节点。用户 169（管理员 11-06 新建，套餐 UwU，没有策略组）同样没有原身份，加组后自动收编。
 - 下一步：路线图 1.4（apsp 生成迁移线路的订阅）完成后，连同兼容通道一起去掉收编。
+- 后续（同日）：收编已由上一条的根本修复取代并去掉；171 保持收编（D4）。
 
 ## 2026-11-14：阶段 F 第七步——作业的云账号与云资源状态迁出资源的行（PR）
 

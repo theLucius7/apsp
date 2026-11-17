@@ -407,7 +407,18 @@ pub(crate) async fn record(
     for (id, generation, stage, role, position) in &plan.stages {
         sqlx::query("INSERT INTO singbox_path_stage_deployments(chain_id,generation,stage,server_id,role,hop_position,revision,bundle_sha256,deployment_id,binding_digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(chain_id,generation,stage,server_id) DO UPDATE SET revision=EXCLUDED.revision,bundle_sha256=EXCLUDED.bundle_sha256,deployment_id=EXCLUDED.deployment_id,binding_digest=EXCLUDED.binding_digest,checkpoint_request_id=NULL,barrier_request_id=NULL,barrier_vector=NULL,observed_at=NULL WHERE singbox_path_stage_deployments.revision<>EXCLUDED.revision").bind(id).bind(generation).bind(stage).bind(server).bind(role).bind(position).bind(revision).bind(hash).bind(binding.0).bind(&binding.1).execute(&mut **tx).await?;
     }
-    for node in &plan.nodes {
+    record_public_fields(tx, server, revision, &plan.nodes).await
+}
+
+/// The display fields subscriptions read for a revision's nodes; they may change while the
+/// revision's bundle stays the same.
+pub(crate) async fn record_public_fields(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    revision: i64,
+    nodes: &[Node],
+) -> ApiResult<()> {
+    for node in nodes {
         sqlx::query("INSERT INTO singbox_deployment_public_projection(server_id,module,revision,node_id,public_fields) VALUES($1,'singbox',$2,$3,$4) ON CONFLICT(server_id,module,revision,node_id) DO UPDATE SET public_fields=EXCLUDED.public_fields").bind(server).bind(revision).bind(node.id).bind(json!({"name":node.name,"public_host":node.public_host,"port":node.port,"sni":node.sni,"public_port":node.public_port()})).execute(&mut **tx).await?;
     }
     Ok(())
