@@ -25,6 +25,17 @@
 - aliyun-hk3（server 20）被 CDT 守护关机到 12-01，仍是 Agent 0.3.7、目标站 `updates.cdn-apple.com`、端口 2053。
 - 今天被封的 oracle-sg1/2/3、azure-in1、azure-kr1、huawei-sg1 的 IP/端口仍不可达（国内）。
 
+## 2026-11-18 更新：目标站改为每台服务器自己的网站
+
+- **故障（10:00 前后）**：www.bandisoft.com 的香港节点开始拒绝 aliyun-hk1/hk2 的连接（ping 通、TCP 443 拒绝；从德国正常），REALITY 每次握手都要连目标站，两条台湾线路全部失败。与 Codex/Antigravity 无关（它们没有改这两台的网络与代理配置）。10:37 先把握手目标临时指向 bandisoft 韩国节点恢复。
+- **根本修复（10:53 完成）**：每台服务器跑自己的网站，REALITY 只连本机。
+  - DNS（Cloudflare，solve.ac，仅 DNS 不代理）：`hk1.solve.ac` → 47.76.79.98，`hk2.solve.ac` → 8.218.155.222。**换 IP 时必须同步改这两条记录**（`~/apsp-block-20261117/selfsteal/cf.py upsert <名字> <IP>`，令牌只在内存中从 apsp 凭据解密）。
+  - 主机：nginx（80 端口只做 ACME 验证与跳转 https；`127.0.0.1:8443` 提供 TLS 1.3 + h2 + X25519MLKEM768 的站点），acme.sh 3.1.1 签发 Let's Encrypt 证书（到期 2027-02-16），root crontab 每天 03:17 续期并重载 nginx。脚本：`~/apsp-block-20261117/selfsteal/host-site.sh`（`DOMAIN=hkN.solve.ac`，可重复执行）。
+  - REALITY：台湾线路 SNI 改为 `hk1.solve.ac` / `hk2.solve.ac`，握手目标 `127.0.0.1:8443`（hk1 修订 7、hk2 修订 15）；`nodes.sni`、旧面板 `v2_server` 45/46、用户订阅（Clash 与 Shadowrocket）已同步。
+  - 效果：目标站不会再拒绝我们；握手额外延迟从约 +40 ms 降到 +1–2 ms；SNI 解析到本机 IP、证书真实；直接访问 `https://hkN.solve.ac` 是普通网站。国内 TCP 443 两台均 6/6。
+- **新服务器 aliyun-hk4（server 22，47.239.108.126）**：Codex 11-17 接入了 Agent 0.3.9，没有任何节点（所以“没有 VLESS/Reality”）。按同一标准建线路是下一步：需要确定出口（台湾中转如 hk1，或香港直出），再建节点、`hk4.solve.ac`、自建站点并写入订阅。
+- 第 2 项（hk3）与第 4 项（其他被封云）一律按本节的自建站点方式处理，不再挑选第三方目标站。
+
 ## 需要做什么（按顺序）
 
 ### 1. 其余服务器换新内核（建议凌晨 04:00–06:00，逐台）
