@@ -36,6 +36,12 @@
 - **新服务器 aliyun-hk4（server 22，47.239.108.126）**：Codex 11-17 接入了 Agent 0.3.9，没有任何节点（所以“没有 VLESS/Reality”）。按同一标准建线路是下一步：需要确定出口（台湾中转如 hk1，或香港直出），再建节点、`hk4.solve.ac`、自建站点并写入订阅。
 - 第 2 项（hk3）与第 4 项（其他被封云）一律按本节的自建站点方式处理，不再挑选第三方目标站。
 
+## 2026-11-18 更新：其余 15 台已换新内核（agy 会话执行，编排者逐批复核）
+
+- 14:37–15:20 CST 按 16 17 18 3 6 7 → 1 2 5 13 14 15 19 → 8 21 逐台升级 Agent 0.3.9 并换用 `1.14.4-apsp.2`（`upgrade_agent_039.py`），每台前后真实客户端出口一致，断线 0.11–1.92 秒；升级 wap-tw1 时 hk1/hk2 台湾线不受影响（其落地是独立的 `nexus-tw0-relay.service`）。
+- 复核：16 台运行时主机全部 `1.14.4-apsp.2`、健康、修订一致；`server_module_status` 17 条全部健康、无错误；Agent 18 台 0.3.9，仅关机的 aliyun-hk3 仍是 0.3.7。**清单下发失败的状态已结束。** 逐台记录：`~/apsp-block-20261117/agy/C-fleet-rollout/PROGRESS.md`。
+- 第 1 项完成。仍待：aliyun-hk4（server 22）的阿里云 rna 账号欠费 0.04 元导致 EIP 被锁（OperationLock financial），用户充值后由 agy 会话开 IPv6 并按自建站标准建台湾线路；azure-in1/kr1 可就地改 443 + 自建站（`in1/kr1.solve.ac`，待用户确认）；oracle×3、huawei-sg1 待用户换 IP；hk1/hk2 旧 EIP 待释放。
+
 ## 需要做什么（按顺序）
 
 ### 1. 其余服务器换新内核（建议凌晨 04:00–06:00，逐台）
