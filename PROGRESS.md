@@ -1,5 +1,12 @@
 # 执行进度
 
+## 2026-11-18：台湾线路目标站改为每台服务器自己的网站（aliyun-hk1/hk2）
+
+- 用户要求：“能否一次性从根本上解决这个问题，用最简洁最直接的方式解决”（前一天的 www.bandisoft.com 香港节点开始拒绝两台主机，线路全断，10:37 临时指向其韩国节点恢复）。域名选 solve.ac，范围 hk1、hk2 与新 hk4。
+- 完成项：Cloudflare 记录 `hk1.solve.ac`、`hk2.solve.ac`（仅 DNS）；两台装 nginx 与 acme.sh，Let's Encrypt 证书自动续期，本机 `127.0.0.1:8443` 提供 TLS 1.3、h2、X25519MLKEM768 站点；台湾线路 `extend --revise` 改 SNI 为各自域名、握手目标为本机站点，`nodes.sni` 由修订同步；旧面板与用户订阅同步。
+- 验证结果：真实客户端（sing-box、Mihomo 带 MLKEM）两条线路均出口台湾；外部访问 `https://hkN.solve.ac` 为证书有效的 h2 网站，80 跳转 https；握手额外延迟 +0.6 ms / +2 ms（此前约 +40 ms）；国内 TCP 443 均 6/6。
+- 已知问题：换 IP 必须同步改 DNS 记录；新服务器 aliyun-hk4（server 22）尚无节点，出口待用户确定；其余服务器仍待按交接文档逐台升级。详见 [交接文档](docs/handoff/2026-11-17-reality-hardening.md)。
+
 ## 2026-11-17：在 1.14.4 运行时上恢复 REALITY 仿真补丁，阿里云 hk 换 IP（Agent 0.3.9，PR #277）
 
 - 用户要求：“研究被墙的原因，提供修复然后 pr，修复到 apsp agent 里面；修复完了之后换 ip 更新”。见 [ADR 0139](docs/adr/0139-reality-hardening-on-stable-runtime.md)。
